@@ -769,6 +769,7 @@ result).**
 | `vm.c:vm_bit_operand` | smi-arm | an int64 operand is read exactly; float operands keep the #1740 conversion rule (R1.3) (D1) |
 | `vm.c:vm_number_compare` | smi-arm | int and cross-kind comparisons use exact N2 order, without double rounding (R1.3) (D1) |
 | `vm.c:vm_iter_index` | smi-arm | index metadata accepts an exact int in the C-int range, otherwise exhausts without narrowing (R1.3) (D1) |
+| `vm.c:vm_run_ex/CASE(ITER_NEXT)` | guarded | S9-K1-C: a proven SMI position is overwritten in place with its next exact int; a float or heap slot uses the owning writer, preserving raw-bytecode support and releasing the replaced reference (D3) |
 | `vm.c:vm_iter_limit` | smi-arm | int snapshot metadata clamps the live length; negative snapshots exhaust and oversized positive snapshots keep the live length (R1.3) (D1) |
 | `vm.c:slot_truthy` | smi-arm | an int is truthy when it is not 0; a reserved tag refuses instead of being dereferenced (D1) |
 | `vm.c:slot_type_name` | smi-arm | an SMI reached the final `return "num"` by accident. R1.1 adds the explicit SMI arm ("num", (B)) and aborts on a reserved tag (D1 since R1.1) |
@@ -2159,23 +2160,29 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    - Risks: JIT int loops leave the JIT (§3: +70% Ir on a counter loop),
      and the leaf stops computing int helpers; declare the CodSpeed baseline
      move first. `tools/phase2_cost.sh` reads per-workload and per-tier TSV
-     declarations in `tests/phase2/cost_expect.txt` (`workload`, `tier`,
-     `max_delta_pct`, `recover_round`, `reason`); undeclared rows retain
+     six-column declarations in `tests/phase2/cost_expect.txt` (`workload`, `tier`,
+     `max_local`, `max_ci`, `recover_round`, `reason`). R1.8 applies #1939:
+     each maximum comes from its own gate’s measured delta. The local gate
+     enforces and STALE-checks only `max_local`; undeclared rows retain
      +0.3%. Declare only measured R1.3 costs with §3 as the reason and
      `recover_round=R5`, the JIT/leaf int fast-path round. A row above its
      declared maximum fails, and so does a row more than 0.5 points below it
      (STALE, the R1.3 CI fix): a round that recovers cost must bring the
-     declaration down, or a new regression hides under it. A declaration is
-     the measured delta plus 0.2 points (the largest measured shift: a
-     different workload path moves `alloc_heavy` by 0.16 points), rounded up
+     declaration down, or a new regression hides under it. Each method’s
+     maximum is its own measured delta plus 0.2 points (the largest measured
+     shift: a different workload path moves `alloc_heavy` by 0.16 points), rounded up
      to 0.1. A row whose cost another round moves names that component with
      its measurement: R1.6's int `range` alone removes 58% (jit) and 66%
      (off) of `scalar_loop`'s excess, and raises 14 other rows by up to 44
      points (the range-int control, measured at R1.3).
      `bench/check_regression.sh --vs` (CI's bench job, the default tier)
-     reads the same `jit` rows through `phase2_cost.sh --declared jit`: a
-     declared workload is bounded by its max and prints `DECLARED` with its
-     round; an undeclared one keeps the 5% bound. The observer oracle's known-wrong capability
+     reads the same `jit` rows through
+     `phase2_cost.sh --declared jit --method ci`: a declared workload is
+     bounded and STALE-checked only against `max_ci`, and prints its
+     recovery round; an undeclared one keeps the 5% bound. The CI maximum
+     comes from the CI bench gate’s own log for the pushed head, never
+     from a local run or a value chosen to satisfy both methods (#1939).
+     The observer oracle’s known-wrong capability
      verdicts are declared the same way (#1830): `tests/phase2/oracle_expect.txt`
      (`arm`, `row@checkpoint`, `predicate`, `recover_round`, `reason`) lists the
      32 `int64_count` verdicts R1.3 first measures, `recover_round=R3`, the round

@@ -87,6 +87,38 @@ static void test_embed_int(void) {
         INT_CHECK(!eigs_has_error(), "numeric refusal sets no embed error");
         eigs_value_release(v);
     }
+    /* #1969 census: as_int's float arm is a conversion boundary. Raw
+     * storage also exercises nonfinite payloads constructors can refuse. */
+    const double raw[] = {0x1p-1074, 1.5, -0x1p63, 0x1p63, INFINITY, -INFINITY, NAN};
+    const int modes[] = {FE_TONEAREST, FE_UPWARD, FE_DOWNWARD, FE_TOWARDZERO};
+    fenv_t saved;
+    fegetenv(&saved);
+    for (size_t m = 0; m < sizeof modes / sizeof modes[0]; m++) {
+        for (size_t i = 0; i < sizeof raw / sizeof raw[0]; i++) {
+            EigsValue *v = eigs_value_new_num(0.0);
+            VAL_F64_RAW(v) = raw[i];
+            fesetround(modes[m]);
+            feclearexcept(FE_ALL_EXCEPT);
+            feraiseexcept(FE_DIVBYZERO);
+#if defined(__x86_64__)
+            _mm_setcsr(_mm_getcsr() | (1u << 15) | (1u << 6));
+            unsigned csr = _mm_getcsr();
+#endif
+            int flags = fetestexcept(FE_ALL_EXCEPT), ok = -1;
+            int64_t got = eigs_value_as_int(v, &ok);
+            INT_CHECK(ok == (i == 2) && got == (i == 2 ? INT64_MIN : 0),
+                      "as_int exactness survives every host mode and DAZ");
+            INT_CHECK(fegetround() == modes[m] && fetestexcept(FE_ALL_EXCEPT) == flags,
+                      "as_int restores host rounding and sticky flags");
+#if defined(__x86_64__)
+            INT_CHECK(_mm_getcsr() == csr, "as_int restores FTZ/DAZ and MXCSR flags");
+#endif
+            INT_CHECK(!eigs_has_error(), "raw numeric refusal sets no embed error");
+            fesetenv(&saved);
+            eigs_value_release(v);
+        }
+    }
+    fesetenv(&saved);
     EigsValue *wrong[] = {NULL, eigs_value_new_null(), eigs_value_new_bool(1),
                          eigs_value_new_string("3"), eigs_value_new_list(0),
                          eigs_value_new_dict(0)};
@@ -105,6 +137,16 @@ static void test_embed_int(void) {
         eigs_clear_error();
         eigs_value_release(wrong[i]);
     }
+    EigsValue *fraction = eigs_value_new_num(1.5);
+    eigs_value_as_int(NULL, NULL);
+    char pending[160];
+    snprintf(pending, sizeof pending, "%s", eigs_last_error_message());
+    int ok = -1;
+    INT_CHECK(eigs_value_as_int(fraction, &ok) == 0 && ok == 0 &&
+              strcmp(pending, eigs_last_error_message()) == 0,
+              "numeric refusal preserves an existing error");
+    eigs_clear_error();
+    eigs_value_release(fraction);
     printf("gate.N7.embed-int: checks=%d failures=%d\n", checks, failures - before);
 #undef INT_CHECK
 }

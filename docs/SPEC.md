@@ -227,18 +227,20 @@ above 2^53. `/` returns float; `//` floors (an int for two ints, a float otherwi
 `%` is floor modulo for both kinds, with the sign of the divisor. Both int
 operators are exact, and `INT64_MIN // -1` raises `value` while
 `INT64_MIN % -1` is the int 0. Division, floor division and modulo by zero
-raise `value`, including float and mixed operands (IEEE zero division waits
-for N11). Builtin result kinds are documented individually; int-preserving
+raise `value`, including float and mixed operands. Builtin result kinds
+are documented individually; int-preserving
 arithmetic and reductions use checked int64 operations.
 
-Integer-valued floats print without a
-decimal point. Division is true division. `%` is modulo. There is no
-exponent operator; use `pow of [base, exp]`.
+Floats use Python’s shortest round-trip spelling: integral floats retain
+`.0`, negative zero prints as `-0.0`, and ints print their exact decimal
+digits. `print`, `write`, `str`, f-strings, JSON and store records share
+this number writer. There is no exponent operator; use
+`pow of [base, exp]`.
 
 
 `//` floors the quotient; `%` has the divisor's sign. `//=` applies the same
 operation to its assignment target, like `/=`. Zero divisors raise `value`
-for all numeric operand kinds in this round. Two ints produce an int for
+for int, float and mixed operands. Two ints produce an int for
 `//` and `%`; a float operand produces a float. `/` always produces a float.
 Float and mixed `//` use Python’s `divmod` quotient correction: `1.0 // 0.1`
 is `9.0`, and `1e-300 // -1e300` is `-1.0`. `//=` uses the same rule.
@@ -305,7 +307,7 @@ still running
 
 ### The numeric model (deliberate position)
 
-The float kind is IEEE-754 f64; at this stage there is no
+The numeric kinds are signed int64 and IEEE-754 f64; there is no
 bigint or decimal type. This is a chosen position, not an oversight; the
 consequences are contracts you can rely on:
 
@@ -360,14 +362,13 @@ The IEEE 754 default floating-point environment is part of number semantics.
   value: sqrt: argument out of domain (negative)
   ```
 
-  Under `EIGS_STRICT=0` the same program prints `0` twice.
-  A `0`, `""` or `null` that is a genuine *answer* is untouched
-  in both modes: `try_parse` of invalid syntax still returns `0`, `task_alive`
-  of an unknown id still returns `0`, `char_at` past the end is still `""`,
-  and `num` still *coerces* (`num of ([1, 2])` is `0` — that is its documented
+  Under `EIGS_STRICT=0` the same program prints `0.0` twice.
+  A `false`, `0`, `""` or `null` that is a genuine *answer* is untouched
+  in both modes: `try_parse` of invalid syntax still returns `false`, `task_alive`
+  of an unknown id still returns `false`, `char_at` past the end is still `""`,
+  and `num` still *coerces* (`num of ([1, 2])` is float `0.0` — that is its documented
   contract, not a guard).
-  The distinction is not derivable from the code: `task_alive` has two
-  `return make_float(0)` lines four apart, one a type guard and one the
+  A return expression alone does not distinguish a type guard from a
   documented answer. `tools/strict_differential.sh` checks the distinction
   that can be executed: a guard probe must raise in strict mode, the default
   (with the variable unset or set to `1`), and a pinned documented answer must not.
@@ -523,7 +524,19 @@ argument with its kind; the first argument wins a tie. `num` requires a
 complete numeric-literal string (N10). JSON integer text fitting int64
 decodes exactly (N14).
 
+The [C embedding API](EMBEDDING.md#value-handles) follows Lua’s numeric
+accessors: `eigs_value_new_int` constructs an exact int64, `eigs_value_is_int`
+tests the stored kind (`lua_isinteger`), and `eigs_value_as_int` reports
+whether a number converts exactly to int64 (`lua_tointegerx`).
+`eigs_value_as_num` converts either kind to double (`lua_tonumber`);
+`EIGS_TYPE_NUM` covers both.
+
+LSP hover on a numeric literal reports `int` or `float` from the literal’s
+kind: `3.0` remains a float even though its value is integral.
+
 ```eigenscript
+print of [type of 3, num_type of 3, num_type of 3.0]
+print of [9007199254740993, 3.0, -0.0]
 print of [num_type of (len of "abc"), num_type of (floor of -2.5)]
 print of [num of "9007199254740993", num_type of (num of "3.0")]
 print of [num_type of (min of [3, 3.0]), num_type of (min of [3.0, 3])]
@@ -538,6 +551,8 @@ catch e:
     print of e.kind
 ```
 ```output
+["num", "int", "float"]
+[9007199254740993, 3.0, -0.0]
 ["int", "int"]
 [9007199254740993, "float"]
 ["int", "float"]
@@ -964,9 +979,9 @@ Store handles carry integer `_store_id` and `_store_gen` fields. Every store ope
 int64 numeric keys. Integral floats convert; fractional or out-of-range floats
 raise `value` before lookup or mutation. Numeric keys retain all int64 digits.
 Stored decimal integer text within int64 decodes as an int; a decimal point or
-exponent selects a float. Buffer payloads remain floats. Float persistence keeps
-its existing text format until R1.7, so a whole float such as `3.0` may read back
-as an int during this transition.
+exponent selects a float. Buffer payloads remain floats. Store records preserve
+int64 digits and use shortest round-trip float text, including `.0` for
+integral floats and the sign of `-0.0`, so `3.0` reads back as a float.
 
 ```eigenscript
 path is "store-numbers-example.db"
@@ -974,7 +989,7 @@ if file_exists of path:
     remove_file of path
 s is store_open of path
 print of [num_type of s["_store_id"], num_type of s["_store_gen"]]
-store_put of [s, "c", {"_id": "9007199254740993", "n": 9007199254740993, "f": 2.5}]
+store_put of [s, "c", {"_id": "9007199254740993", "n": 9007199254740993, "f": 3.0}]
 r is store_get of [s, "c", 9007199254740993]
 print of [r.n, num_type of r.n, num_type of r.f]
 try:
@@ -2817,9 +2832,10 @@ The facts that govern every program, in one place:
 4. **Scope**: `is` updates the nearest enclosing binding or creates a
    local; `local` forces the current scope. Functions see and may
    mutate their defining environment (closure capture by reference).
-5. **Values**: numbers are 64-bit floats; strings immutable; lists,
-   dicts, and buffers mutable and passed by reference; `==` is
-   structural.
+5. **Values**: numbers are signed int64 or 64-bit floats under the
+   shared `num` type; `num_type` distinguishes their kinds. Strings
+   are immutable; lists, dicts, and buffers are mutable and passed
+   by reference; `==` is structural.
 6. **Truthiness**: `0`, `null`, `""`, `[]`, `{}` are falsy; everything
    else is truthy. Comparisons yield `1`/`0`.
 7. **Errors**: runtime errors unwind to the nearest `try`; uncaught

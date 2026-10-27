@@ -235,8 +235,9 @@ sqrt(2) = 1.414213562373095
   `num_type of` says "int"/"float", or null for a non-number. Int +, -, *
   raise value on overflow; unary minus and abs raise at INT64_MIN. Mixed
   arithmetic converts to float, while cross-kind comparison is exact.
-  True division `/` and most builtin results remain floats at this stage.
-  Float overflow saturates at ±1e308.
+  True division `/` produces a float. Counts and indices produce ints;
+  other builtin result kinds are documented individually. Float overflow
+  saturates at ±1e308.
   Integer bit ops and bit_* builtins accept exact int64 operands and return ints.
   Right shifts zero-fill, negative counts reverse direction, and counts outside
   (-64,64) give zero (Lua 5.4).
@@ -245,8 +246,8 @@ sqrt(2) = 1.414213562373095
   Strict mode is the DEFAULT: out-of-domain math (`sqrt of -1`), a NaN
   result, a wrong-typed builtin argument (`abs of "x"`) and a malformed
   `json_path` document raise catchable errors. `EIGS_STRICT=0` is the per-run
-  opt-out that brings the finite stand-ins back (`NaN` collapses to `0`,
-  `sqrt of -1` is `0`, `abs of "x"` is `0`).
+  opt-out that brings the finite stand-ins back (`NaN` collapses to float `0.0`,
+  `sqrt of -1` is `0.0`, `abs of "x"` is `0.0`).
   Indexing and iteration refuse stored NaN and infinity with `value` in
   every strict mode, matching `get_at` (N13). Strict NaN keeps its first
   diagnostic and sets `math_flags.invalid`; every execution tier agrees on
@@ -277,7 +278,7 @@ print of [bit_shr of [-1, 1], bit_shl of [8, -1], num_type of (3.0 & 1)]
 
 `//` floors the quotient; `%` has the divisor's sign. `//=` applies the same
 operation to its assignment target, like `/=`. Zero divisors raise `value`
-for all numeric operand kinds in this round. Two ints produce an int for
+for int, float and mixed operands. Two ints produce an int for
 `//` and `%`; a float operand produces a float. `/` always produces a float.
 Float and mixed `//` use Python’s `divmod` quotient correction: `1.0 // 0.1`
 is `9.0`, and `1e-300 // -1e300` is `-1.0`. `//=` uses the same rule.
@@ -312,7 +313,19 @@ argument with its kind; the first argument wins a tie. `num` requires a
 complete numeric-literal string (N10). JSON integer text fitting int64
 decodes exactly (N14).
 
+The [C embedding API](EMBEDDING.md#value-handles) follows Lua’s numeric
+accessors: `eigs_value_new_int` constructs an exact int64, `eigs_value_is_int`
+tests the stored kind (`lua_isinteger`), and `eigs_value_as_int` reports
+whether a number converts exactly to int64 (`lua_tointegerx`).
+`eigs_value_as_num` converts either kind to double (`lua_tonumber`);
+`EIGS_TYPE_NUM` covers both.
+
+LSP hover on a numeric literal reports `int` or `float` from the literal’s
+kind: `3.0` remains a float even though its value is integral.
+
 ```eigenscript
+print of [type of 3, num_type of 3, num_type of 3.0]
+print of [9007199254740993, 3.0, -0.0]
 print of [num_type of (len of "abc"), num_type of (floor of -2.5)]
 print of [num of "9007199254740993", num_type of (num of "3.0")]
 print of [num_type of (min of [3, 3.0]), num_type of (min of [3.0, 3])]
@@ -327,6 +340,8 @@ catch e:
     print of e.kind
 ```
 ```output
+["num", "int", "float"]
+[9007199254740993, 3.0, -0.0]
 ["int", "int"]
 [9007199254740993, "float"]
 ["int", "float"]
@@ -548,9 +563,9 @@ Store handles carry integer `_store_id` and `_store_gen` fields. Every store ope
 int64 numeric keys. Integral floats convert; fractional or out-of-range floats
 raise `value` before lookup or mutation. Numeric keys retain all int64 digits.
 Stored decimal integer text within int64 decodes as an int; a decimal point or
-exponent selects a float. Buffer payloads remain floats. Float persistence keeps
-its existing text format until R1.7, so a whole float such as `3.0` may read back
-as an int during this transition.
+exponent selects a float. Buffer payloads remain floats. Store records preserve
+int64 digits and use shortest round-trip float text, including `.0` for
+integral floats and the sign of `-0.0`, so `3.0` reads back as a float.
 
 See the [stored-record example](SPEC.md#stored-records).
 

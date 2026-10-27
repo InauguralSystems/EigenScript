@@ -92,6 +92,7 @@ MECHANICAL = {
     'R1.6e': ('builtins-table',),
     'R1.6f': ('builtins-table',),
     'R1.6z': ('builtins-table', 'bridge-deletion-compile'),
+    'R1.8': ('embed-int',),
     'R2.1': ('slot-test', 'corpus-diff'),
 }
 ITEMS = ['N%d' % i for i in range(1, 15)] + ['N4b', 'A', 'B', 'T1', 'O1', 'O2', 'O3', 'O4']
@@ -741,6 +742,8 @@ def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
         gates.append('embed-buffer-get-raw')
     if ROUNDS.index(through) >= ROUNDS.index('R1.7'):
         gates.extend(('const-dedup-bits', 'db-param-exact'))
+    if ROUNDS.index(through) > ROUNDS.index('R1.8'):
+        gates.append('embed-int')
     for g in gates:
         if g == 'int-source':
             res[g] = int_source(os.path.join(ROOT, 'src'), out, through)
@@ -789,6 +792,12 @@ def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
         elif g == 'const-dedup-bits':
             res[g], text = tool(['bash', 'tools/phase2_readers.sh', 'release', 'const_dedup_bits'], out, r'.*')
             res[g] = res[g] and len(re.findall(r'^phase2-const-dedup: PASS variant=release$', text, re.M)) == 1
+        elif g == 'embed-int':
+            res[g], text = tool(['make', '--no-print-directory', 'embed-smoke'], out,
+                                r'^(gate.N7.embed-int:|embed_smoke:)')
+            res[g] = res[g] and len(re.findall(
+                r'^gate\.N7\.embed-int: checks=[1-9][0-9]* failures=0$', text, re.M)) == 1
+            res[g] = res[g] and len(re.findall(r'^embed_smoke: OK$', text, re.M)) == 1
         elif g == 'db-param-exact':
             res[g], text = tool(['bash', '-c', 'make db-params-test && build/server-db/test_db_params'], out, r'.*')
             res[g] = res[g] and len(re.findall(r'^db params: 14 passed, 0 failed \(14 declared\)$', text, re.M)) == 1

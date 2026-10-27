@@ -928,16 +928,19 @@ static int vm_number_compare(EigsSlot a, EigsSlot b, int *out) {
 /* Iterator state is exact int metadata made by make_iter_state (S9-K1).
  * Raw bytecode may supply floats too. Check the C range BEFORE conversion. */
 static int vm_iter_index(EigsSlot s, int *out) {
+    int64_t i;
+    if (slot_int_value(s, &i)) {
+        if (i < INT_MIN || i > INT_MAX) return 0;
+        *out = (int)i;
+        return 1;
+    }
     double f;
     if (slot_f64_value(s, &f)) {
         if (!(f >= INT_MIN && f <= INT_MAX)) return 0;
         *out = (int)f;
         return 1;
     }
-    int64_t i;
-    if (!slot_int_value(s, &i) || i < INT_MIN || i > INT_MAX) return 0;
-    *out = (int)i;
-    return 1;
+    return 0;
 }
 static int vm_iter_limit(EigsSlot s, int len) {
     int i;
@@ -1875,8 +1878,13 @@ int jit_helper_iter_next(void) {
     } else {
         elem = slot_read_owned(list_slot(iterable, idx));
     }
-    /* S9-K1: hidden iterator positions are exact counts too. */
-    list_set_slot_owned(state, 1, slot_from_int((int64_t)idx + 1));
+    /* S9-K1-C: valid C-int positions and idx+1 fit in an SMI. Reuse the
+     * immediate slot in place; raw bytecode's float/boxed state still
+     * takes the owning writer, which releases any replaced heap ref. */
+    if (slot_is_smi(list_slot(state, 1)))
+        state->data.list.items[1].u++;  /* no carry into tag: idx < len <= INT_MAX */
+    else
+        list_set_slot_owned(state, 1, slot_from_int((int64_t)idx + 1));
     vm_push_slot(elem);
     return g_has_error ? 2 : 0;
 }
@@ -5185,8 +5193,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if ((unsigned)idx >= (unsigned)len) {
             ip += exit_offset;
         } else {
-            /* S9-K1: mirror the helper's exact iterator index update. */
-            list_set_slot_owned(state, 1, slot_from_int((int64_t)idx + 1));
+            /* S9-K1-C: mirror the helper's in-place SMI update. */
+            if (slot_is_smi(list_slot(state, 1)))
+                state->data.list.items[1].u++;  /* same bounded SMI payload, tag unchanged */
+            else
+                list_set_slot_owned(state, 1, slot_from_int((int64_t)idx + 1));
             if (iterable->type == VAL_BUFFER) {
                 /* Push number immediate directly — skip make_float + immediate-
                  * promote round-trip through vm_push. */

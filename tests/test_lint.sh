@@ -2660,6 +2660,29 @@ OUTPUT=$("$EIGS" --lint "$TMPFILE" 2>&1) || true
 check_contains "unexpected // diagnostic names the token" "$OUTPUT" "unexpected '//'"
 rm -f "$TMPFILE"
 
+# #1758 R1.8: the lint walkers treat both numeric kinds as literal leaves.
+# Preserve clean numeric code and the existing W017 answer for each kind;
+# there is no numeric type-inference rule to add or a type system to invent.
+TMPFILE=$(mktemp /tmp/eigs_numeric_lint_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+whole is 9007199254740993
+fraction is 1.5
+integral is 3.0
+outside is 9223372036854775808
+wrapped is 0xffffffffffffffff
+print of [whole, fraction, integral, outside, wrapped]
+EIGS
+NUMERIC_LINT_RC=0
+OUTPUT=$("$EIGS" --lint "$TMPFILE" 2>&1) || NUMERIC_LINT_RC=$?
+check_status "int and float literal leaves lint clean" "$NUMERIC_LINT_RC" 0
+check_contains "int and float literal leaves report no issues" "$OUTPUT" "no issues found"
+for LITERAL in 9007199254740993 3.0 1.5 9223372036854775808 0xffffffffffffffff; do
+    printf 'print of [%s]\n' "$LITERAL" > "$TMPFILE"
+    OUTPUT=$("$EIGS" --lint "$TMPFILE" 2>&1) || true
+    check_contains "W017 retains its answer for $LITERAL" "$OUTPUT" "W017.*passes one argument"
+done
+rm -f "$TMPFILE"
+
 # --- #1121 ledger: no child of this file may have tripped a sanitizer ---
 # One check, covering every linter invocation above rather than a sample. In a
 # release build no file is ever written and this passes trivially, which is

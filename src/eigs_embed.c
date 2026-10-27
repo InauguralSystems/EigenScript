@@ -369,6 +369,7 @@ EigsValue *eigs_get_global(const char *name) {
 /* ---- Values ------------------------------------------------------- */
 
 EigsValue *eigs_value_new_num(double n)         { return make_float(n); }
+EigsValue *eigs_value_new_int(int64_t n)        { return make_int(n); }
 EigsValue *eigs_value_new_string(const char *s) { return make_str(s ? s : ""); }
 EigsValue *eigs_value_new_null(void)            { return make_null(); }
 EigsValue *eigs_value_new_bool(int b)           { return make_bool(b != 0); }
@@ -435,6 +436,31 @@ double eigs_value_as_num(EigsValue *v) {
     if (v && v->type == VAL_FLOAT) return VAL_F64_RAW(v);
     embed_value_error(EK_TYPE, "eigs_value_as_num: expected a number");
     return (v && v->type == VAL_BOOL) ? NAN : 0.0;
+}
+
+int64_t eigs_value_as_int(EigsValue *v, int *ok) {
+    if (ok) *ok = 0;
+    if (v && v->type == VAL_INT) {
+        if (ok) *ok = 1;
+        return VAL_I64_RAW(v);
+    }
+    if (v && v->type == VAL_FLOAT) {
+        /* The exactness comparison must see subnormals even in a host
+         * callback using DAZ. Preserve host flags as well as its controls. */
+        EmbedFenv fenv;
+        embed_fenv_enter(&fenv);
+        int64_t result = 0;
+        int exact = num_to_i64_exact(VAL_F64_RAW(v), &result);
+        embed_fenv_leave(&fenv);
+        if (ok) *ok = exact;
+        return exact ? result : 0;
+    }
+    embed_value_error(EK_TYPE, "eigs_value_as_int: expected a number");
+    return 0;
+}
+
+int eigs_value_is_int(EigsValue *v) {
+    return v && v->type == VAL_INT;
 }
 
 const char *eigs_value_as_string(EigsValue *v) {

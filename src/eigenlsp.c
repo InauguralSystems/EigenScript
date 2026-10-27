@@ -1143,10 +1143,19 @@ static void handle_hover(int id, const char *params) {
     if (!doc) { lsp_response_null(id); return; }
 
     Token *tok = find_token_at(doc, line, col);
-    if (!tok || !tok->str_val) { lsp_response_null(id); return; }
+    if (!tok || (!tok->str_val && tok->type != TOK_NUM)) {
+        lsp_response_null(id);
+        return;
+    }
 
     const char *hover_text = NULL;
     char hover_buf[1024];
+
+    /* #1758 R1.8: report the kind retained by the lexer/parser, rather
+     * than testing whether a double happens to be integral. In particular
+     * 3.0 is a float, while exact/hex-wrapped int64 literals stay ints. */
+    if (tok->type == TOK_NUM)
+        hover_text = tok->number.is_int ? "int" : "float";
 
     /* A dotted token (`x.name`) is a member access — never a bare builtin,
      * keyword, or document symbol, so those lookups are skipped for it and
@@ -1159,7 +1168,7 @@ static void handle_hover(int id, const char *params) {
     int dotted = (ti >= 1 && doc->tokens.tokens[ti - 1].type == TOK_DOT);
 
     /* Check builtins */
-    if (!dotted)
+    if (!hover_text && !dotted)
         for (int i = 0; builtin_docs[i][0]; i++) {
             if (strcmp(tok->str_val, builtin_docs[i][0]) == 0) {
                 hover_text = builtin_docs[i][1];

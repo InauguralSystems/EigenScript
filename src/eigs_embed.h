@@ -29,6 +29,7 @@
 #define EIGS_EMBED_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -148,7 +149,7 @@ EigsValue  *eigs_get_global(const char *name);
 
 typedef enum {
     EIGS_TYPE_NULL = 0,
-    EIGS_TYPE_NUM,
+    EIGS_TYPE_NUM,      /* int and float, like Lua's LUA_TNUMBER */
     EIGS_TYPE_STR,
     EIGS_TYPE_LIST,
     EIGS_TYPE_DICT,
@@ -159,6 +160,7 @@ typedef enum {
 } EigsValueType;
 
 EigsValue     *eigs_value_new_num(double n);
+EigsValue     *eigs_value_new_int(int64_t n);      /* exact signed int64 */
 EigsValue     *eigs_value_new_string(const char *s);
 EigsValue     *eigs_value_new_null(void);
 EigsValue     *eigs_value_new_bool(int b);         /* #1637: the true/false value */
@@ -169,6 +171,11 @@ void           eigs_value_release(EigsValue *v);
 
 EigsValueType  eigs_value_type(EigsValue *v);
 double         eigs_value_as_num(EigsValue *v);     /* wrong type: sentinel + error; bool sentinel is NaN */
+/* Like lua_tointegerx: exact int64 from int or integral float. Numeric
+ * refusal returns 0 with *ok=0 and sets no error; a non-number also sets a
+ * type error. ok may be NULL. Existing pending errors are never cleared. */
+int64_t        eigs_value_as_int(EigsValue *v, int *ok);
+int            eigs_value_is_int(EigsValue *v);    /* kind only, like lua_isinteger */
 int            eigs_value_as_bool(EigsValue *v);    /* wrong type: 0 + error */
 const char    *eigs_value_as_string(EigsValue *v);  /* NULL if not str; borrowed */
 
