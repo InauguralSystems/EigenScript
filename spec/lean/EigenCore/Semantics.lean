@@ -76,6 +76,10 @@ def evalExpr (fuel : Nat) (e : Expr) : EvalM Value := match fuel with
     | .when n => do let w ← get; match findCell n w.cells with | some i => pure (.int w.cells[i]!.assignments) | none => throw (Err.runtime s!"undefined variable: {n}")
     | .prev _ => throw (.unsupported "prev")
     | .whatWhen _ _ => throw (.unsupported "what-when")
+    | .call (.variable "print") [argument] => do
+        let value ← evalExpr f argument
+        modify fun w => {w with stdout:=w.stdout ++ value.print ++ "\n"}
+        pure value
     | .call _ _ => throw (.unsupported "function call")
 
 def exec (fuel : Nat) (ss : List Stmt) : EvalM (Option Value) := match fuel with

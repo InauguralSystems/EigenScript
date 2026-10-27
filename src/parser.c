@@ -1097,11 +1097,17 @@ static ASTNode* parse_primary(Parser *p) {
         fprintf(stderr, "Parse error line %d: unexpected %s in expression",
                 t->line, tok_type_name(t->type));
         if (t->str_val) fprintf(stderr, " ('%s')", t->str_val);
+        if (t->type == TOK_NOT)
+            fprintf(stderr, "; `not` binds below comparisons and `of`; parenthesize it: (not x)");
         fprintf(stderr, "\n");
         {
             char m[160];
-            snprintf(m, sizeof(m), "unexpected %s in expression",
-                     tok_type_name(t->type));
+            if (t->type == TOK_NOT)
+                snprintf(m, sizeof(m),
+                         "unexpected not in expression; not binds below comparisons and of; parenthesize it: (not x)");
+            else
+                snprintf(m, sizeof(m), "unexpected %s in expression",
+                         tok_type_name(t->type));
             p_record_tok_error(t, "E002", m);
         }
         g_parse_errors++;

@@ -40,7 +40,11 @@ private def execute (o : Options) : IO UInt32 := do
       | .ok tape => pure (.replayStrict tape)
       | .error e => IO.eprintln s!"runtime error: {e}"; return 1
   match parse source with
-  | .error e => IO.eprintln s!"parse error at line {e.line}: {e.construct}"; pure 2
+  | .error e =>
+      -- Modeled parse errors still participate in record/replay parity.  A
+      -- header-only trace is complete for a program rejected before run.
+      match o.trace with | some path => IO.FS.writeFile path (tapeSerialize []) | none => pure ()
+      IO.eprintln s!"parse error at line {e.line}: {e.construct}"; pure 2
   | .ok program =>
       let result := run 100000 program mode
       IO.print result.stdout
