@@ -109,6 +109,18 @@ int main(int argc, char **argv) {
         return 0;
     }
 
+    /* Machine-readable build capabilities.  Keep the JIT value on the same
+     * compile-time gate as jit.c's emitter; callers must not infer a binary's
+     * capabilities from the machine on which it happens to run. */
+    if (argc >= 2 && strcmp(argv[1], "--build-info") == 0) {
+#if EIGS_JIT_ENABLED
+        printf("jit-backend=x86-64\n");
+#else
+        printf("jit-backend=none\n");
+#endif
+        return 0;
+    }
+
     /* --help is likewise pure; print usage and exit before touching state.
      * Without this, `--help` falls through to the file path below and the
      * runtime tries to read a file literally named "--help". */
@@ -137,6 +149,7 @@ int main(int argc, char **argv) {
             "                                      single-file executable: runtime + script + eigs_modules +\n"
             "                                      stdlib (+ optional tape: `out --replay` re-runs it exactly)\n"
             "  eigenscript --version, -v           print the version and exit\n"
+            "  eigenscript --build-info            print machine-readable build capabilities\n"
             "  eigenscript --help, -h              print this help and exit\n"
             "\n"
             "Docs: https://github.com/InauguralSystems/EigenScript\n",
