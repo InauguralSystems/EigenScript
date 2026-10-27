@@ -1,16 +1,31 @@
-# Deliberate data race — validates that the TSan gate is live (tests/test_tsan.sh
-# asserts ThreadSanitizer catches THIS). Two spawned workers do unsynchronized
-# read-modify-write on a shared list (spawned closures share the parent heap by
-# reference; see docs/CONCURRENCY.md). NEVER add this to the normal suite.
-shared is [0]
-define worker(n) as:
-    local i is 0
-    loop while i < 20000:
-        set_at of [shared, 0, (get_at of [shared, 0]) + 1]
-        i is i + 1
-    return 0
-h1 is spawn of [worker, 0]
-h2 is spawn of [worker, 0]
+# Deliberate data race on a captured function-local binding. This validates
+# that the TSan gate is live (tests/test_tsan.sh asserts ThreadSanitizer catches
+# THIS). The ready/release rendezvous makes two spawned workers write the same
+# binding without ordering their writes. NEVER add this to the normal suite.
+define make_racers() as:
+    local victim is 0
+    local ready is channel of null
+    local release_a is channel of null
+    local release_b is channel of null
+    define racer_a as:
+        send of [ready, 1]
+        recv of release_a
+        victim is 1
+        return victim
+    define racer_b as:
+        send of [ready, 1]
+        recv of release_b
+        victim is 2
+        return victim
+    return [racer_a, racer_b, ready, release_a, release_b]
+
+racers is make_racers of null
+h1 is spawn of racers[0]
+h2 is spawn of racers[1]
+recv of racers[2]
+recv of racers[2]
+send of [racers[3], 1]
+send of [racers[4], 1]
 thread_join of h1
 thread_join of h2
-print of (get_at of [shared, 0])
+print of "seeded binding race: done"

@@ -488,8 +488,8 @@ echo "=== loader from workers must be race-free (#1144) ==="
 # loader_mt_userrace.eigs on the Phase 2 branch), which would make a
 # zero-report row flaky. It is a release-binary correctness row in
 # tests/test_loader_mt.sh instead.
-LDR_FIXTURES="loader_mt_import loader_mt_cycle"
-LDR_DECLARED=2
+LDR_FIXTURES="loader_mt_import loader_mt_cycle loader_mt_define_result"
+LDR_DECLARED=3
 LDR_EXAMINED=0
 for t in $LDR_FIXTURES; do
     LDR_EXAMINED=$((LDR_EXAMINED + 1))
