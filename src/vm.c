@@ -2428,7 +2428,8 @@ static inline void vm_borrow_scan(Value *arg, Value *result,
     /* #1665 arm D: a numeric view is caller stack storage; returning one
      * would hand the VM a dangling Value. Views carry EIGS_VIEW_RC, which no
      * counted Value reaches (the immortal singletons sit at 1e6). */
-    if (__builtin_expect(result && result->refcount >= EIGS_VIEW_RC, 0)) {
+    if (__builtin_expect(result &&
+            __atomic_load_n(&result->refcount, __ATOMIC_RELAXED) >= EIGS_VIEW_RC, 0)) {
         fprintf(stderr, "EigenScript FATAL: builtin returned an escaped numeric view\n");
         abort();
     }

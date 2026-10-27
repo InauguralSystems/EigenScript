@@ -5303,9 +5303,9 @@ RBE_OUTPUT=$(bash "$TESTS_DIR/test_replay_boundary_exit.sh" 2>&1); RBE_RC=$?
 RBE_PASS=$(echo "$RBE_OUTPUT" | grep -c "^PASS:" || true)
 RBE_FAIL=$(echo "$RBE_OUTPUT" | grep -c "^FAIL:" || true)
 [ "$RBE_RC" -ne 0 ] && [ "$RBE_FAIL" -eq 0 ] && RBE_FAIL=1
-# 21 checks by construction (1 repro x 2 tiers + 11 boundary builtins + 8
-# controls); fewer PASS lines on a green exit is the child narrowing.
-[ "$RBE_RC" -eq 0 ] && [ "$RBE_PASS" -lt 15 ] && { RBE_FAIL=$((RBE_FAIL + 1)); echo "  FAIL: replay-boundary child ran only $RBE_PASS of 15 checks"; }
+# The child prints 14 PASS lines on a green exit (15 before #1691 removed
+# proc_read_buf's boundary row); fewer is the child narrowing.
+[ "$RBE_RC" -eq 0 ] && [ "$RBE_PASS" -lt 14 ] && { RBE_FAIL=$((RBE_FAIL + 1)); echo "  FAIL: replay-boundary child ran only $RBE_PASS of 14 checks"; }
 TOTAL=$((TOTAL + RBE_PASS + RBE_FAIL)); PASS=$((PASS + RBE_PASS)); FAIL=$((FAIL + RBE_FAIL))
 if [ "$RBE_FAIL" -gt 0 ]; then echo "  FAIL: replay boundary exit contract"; echo "$RBE_OUTPUT" | grep "^FAIL:" | head -5; else echo "  PASS: all $RBE_PASS replay-boundary exit checks (rc 1, no signal, both tiers)"; fi
 echo ""

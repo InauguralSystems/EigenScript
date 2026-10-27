@@ -31,7 +31,7 @@ classify() {
     local f e old_entry new_entry
     while IFS= read -r f; do
         case "$f" in
-            spec/*|tools/spec_lean_no_sorry.py|tools/spec_lean_axioms.py|tools/spec_lean_classify.py|tools/spec_lean_corpus.py|tests/test_doc_examples.py|.github/workflows/ci.yml) spec=true ;;
+            spec/*|tools/spec_lean_no_sorry.py|tools/spec_lean_axioms.py|tools/spec_lean_no_delegation.py|tools/spec_lean_classify.py|tools/spec_lean_corpus.py|tools/spec_lean_parity.py|tests/test_doc_examples.py|.github/workflows/ci.yml) spec=true ;;
         esac
         case "$f" in
             .github/workflows/release.yml|.github/workflows/ci.yml|.github/actions/release-build/*|.devcontainer/Dockerfile|tools/install_release_test_dependencies.sh|tests/run_all_tests.sh) release=true ;;
