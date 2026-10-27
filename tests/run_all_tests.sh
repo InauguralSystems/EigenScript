@@ -204,17 +204,11 @@ eigs_binary_fingerprint() {
 # in from elsewhere) or a `make -q` error is reported and NOT gated on --
 # the suite cannot decide, so it says so instead of pretending.
 ensure_binary_current() {
-    local ino variant target rc
+    local variant target rc resolved_after
     EIGS_ACTIVE_VARIANT=""
-    ino=$(stat -c %i "$EIGS_BIN" 2>/dev/null) || return 0
-    variant=""
-    for cand in ../build/*/eigenscript; do
-        [ -f "$cand" ] || continue
-        if [ "$(stat -c %i "$cand" 2>/dev/null)" = "$ino" ]; then
-            variant=$(basename "$(dirname "$cand")"); break
-        fi
-    done
-    if [ -z "$variant" ]; then
+    variant=$("$TESTS_DIR/../tools/active_variant.sh" "$TESTS_DIR/..")
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
         echo "  NOTE: src/eigenscript is not hard-linked to any build/<variant>/eigenscript -- freshness not checked (#1089)"
         return 0
     fi
@@ -239,7 +233,8 @@ ensure_binary_current() {
         echo "ERROR: rebuild of src/eigenscript ($goal) FAILED -- the linked binary is stale and the suite will not run it (#1089)"
         exit 1
     fi
-    if [ "$(stat -c %i "$EIGS_BIN")" = "$ino" ] && ! make -q --no-print-directory -C .. "$target" >/dev/null 2>&1; then
+    resolved_after=$("$TESTS_DIR/../tools/active_variant.sh" "$TESTS_DIR/.." 2>/dev/null)
+    if [ "$resolved_after" = "$variant" ] && ! make -q --no-print-directory -C .. "$target" >/dev/null 2>&1; then
         echo "ERROR: src/eigenscript is still stale after the rebuild (#1089)"
         exit 1
     fi
