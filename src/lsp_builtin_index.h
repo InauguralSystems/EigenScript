@@ -228,7 +228,7 @@ static const char *builtin_docs[][2] = {
     {"rename", "rename of [old_path, new_path] — rename/replace a file. On POSIX rename(2) is"},
     {"reshape", "reshape of [buf, rows, cols] -> a shaped copy of the flat buffer (rows*cols"},
     {"round", "round — builtin; see docs/BUILTINS.md"},
-    {"sandbox_run", "sandbox_run of [descriptor, max_iterations?, max_bytes?, max_work?] — run an EigenScript-assembled"},
+    {"sandbox_run", "sandbox_run of [descriptor_or_source, max_iterations?, max_bytes?, max_work?] — compile source"},
     {"scan_int_tokens", "scan_int_tokens of text"},
     {"scan_ints", "scan_ints of text"},
     {"scatter_add", "scatter_add of [dst, indices, values] → dst, accumulated IN PLACE (#973)."},
