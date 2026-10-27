@@ -683,6 +683,10 @@ Make targets, not `build.sh` options.
 
 The minimal binary is a single C program with no runtime dependencies.
 
+For toroidal simulations, `nearest_in_range_all` returns one nearest other
+active entity per input entity and never selects that entity itself; the
+position-querying `nearest_in_range` does not implicitly exclude a candidate.
+
 ### Develop in a container
 
 A [devcontainer](.devcontainer/) provides the full toolchain (gcc, clang,
