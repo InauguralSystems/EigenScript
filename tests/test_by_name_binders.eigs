@@ -154,9 +154,15 @@ assert_eq of [type of math, "dict", "1905 module import keeps parent write targe
 module_values is [module_comp_name for module_comp_name in [1, 2, 3]]
 define module_comp_rebind() as:
     module_comp_name is 42
-    return 0
+    return module_comp_name
 module_comp_status is module_comp_rebind of []
-assert_eq of [module_comp_name, 3, "1905 module comprehension keeps parent write target"]
+assert_eq of [module_comp_status, 42, "1905 lexical comprehension does not redirect function local"]
+module_comp_missing is 0
+try:
+    module_comp_read is module_comp_name
+catch module_comp_error:
+    module_comp_missing is 1
+assert_eq of [module_comp_missing, 1, "1737 module comprehension binder does not leak"]
 
 define module_defined_name() as:
     return 1
@@ -172,9 +178,15 @@ catch module_error_name:
     module_error_kind is module_error_name.kind
 define module_error_rebind() as:
     module_error_name is 42
-    return 0
+    return module_error_name
 module_error_status is module_error_rebind of []
-assert_eq of [module_error_name, 42, "module catch binder is a module name"]
+assert_eq of [module_error_status, 42, "lexical catch binder does not redirect function local"]
+module_error_missing is 0
+try:
+    module_error_read is module_error_name
+catch module_error_probe:
+    module_error_missing is 1
+assert_eq of [module_error_missing, 1, "1737 module catch binder does not leak"]
 
 # Issue #1904's four skipped positions.
 define position_if_condition() as:
@@ -300,7 +312,7 @@ define position_interrogate_qualifiers() as:
     ignored_at is what is at_name at (sum of [at_name for at_name in [1]])
     ignored_when is what is when_name when (sum of [when_name for when_name in [1]])
     return [at_name, when_name]
-assert_eq of [position_interrogate_qualifiers of [], [1, 1], "positions: interrogate at/when qualifiers"]
+assert_eq of [position_interrogate_qualifiers of [], [5, 5], "positions: lexical binders in interrogate at/when qualifiers"]
 
 # Plain names, list-pattern stores, parameters, and nested lambda scope do not
 # use the by-name predicate and retain their established answers.

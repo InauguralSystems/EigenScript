@@ -1389,7 +1389,7 @@ rm -f "$TMPFILE"
 # enclosing function locals; a function body reads a module name bound
 # after the definition; a parameter rebound by a `for` is restored after
 # the loop (#1064) and a body-assigned name is function-scoped (#1056);
-# a listcomp var leaks to the containing scope; a closure defined in a
+# a listcomp var is lexical to the comprehension; a closure defined in a
 # module loop body reads the loop var.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 cat > "$TMPFILE" << 'EIGS'
@@ -1406,14 +1406,13 @@ define fn_for(j) as:
     return j + x
 bound_later is 5
 squares is [v * v for v in [1, 2]]
-last_v is v
 fns is []
 for k in [1, 2]:
     define mk() as:
         return k
     append of [fns, mk]
 first is fns[0]
-total_sum is (outer of null) + (late_reader of null) + (fn_for of null) + last_v + (first of null) + squares[0]
+total_sum is (outer of null) + (late_reader of null) + (fn_for of null) + (first of null) + squares[0]
 print of total_sum
 EIGS
 OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)

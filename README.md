@@ -136,6 +136,10 @@ try:
 catch e:
     print of {"kind": e.kind, "message": e.message, "line": e.line}
 ```
+
+Comprehension variables are lexical to the comprehension (after its iterable
+is evaluated), and `catch` names are lexical to their handlers. Neither binder
+overwrites or creates an enclosing name, including when evaluation raises.
 ```output
 7
 Hello hello, x is 42

@@ -182,25 +182,22 @@ push of lst
 assert of [len of lst == 4, "SS14 list mutated through function call"]
 assert of [lst[3] == 3, "SS15 appended values correct"]
 
-# === #633: LISTCOMP / CATCH VAR MUST NOT DOUBLE-BIND VS A SLOT ===
-# A comprehension variable (and a `catch` name) leaks into the surrounding
-# scope by name (env binding). A same-named plain `x is ...` must route to
-# that SAME binding, never a separate frame slot — otherwise the assignment
-# writes the slot while the comprehension/catch writes the env, the two
-# diverge, and later (even never-executed) code that mentions the name flips
-# an earlier read's result. Invariant: program text after a statement must
-# not change that statement's result.
+# === #633/#1737: LEXICAL LISTCOMP / CATCH BINDERS MUST NOT SPLIT SLOTS ===
+# A comprehension variable and a `catch` name use child lexical environments.
+# A same-named plain binding in the parent must remain stable, including when
+# later dead code captures it. This retains #633's protection against a stale
+# slot/env double binding while enforcing #1737's non-leakage contract.
 #
 # The bound names below (cv633, ev633) appear ONLY inside these functions:
 # a name already live at module scope classifies as a write-through global
 # and never takes the slot path, which is exactly the path that must be fixed.
 
-# The comprehension var leaks and overwrites the earlier `cv633 is 100`.
+# The comprehension binder shadows but does not overwrite `cv633`.
 define comp_leak as:
     cv633 is 100
     ys633 is [cv633 for cv633 in [1, 2]]
     return cv633
-assert of [comp_leak of null == 2, "SS16 listcomp var leaks over an earlier plain assignment"]
+assert of [comp_leak of null == 100, "SS16 listcomp var leaves an earlier plain assignment unchanged"]
 
 # Byte-identical body plus a never-called closure that merely mentions cv633:
 # it must NOT change what the earlier read of cv633 produced.
@@ -210,10 +207,9 @@ define comp_leak_dead_closure as:
     seen633 is cv633
     dead633 is () => cv633
     return seen633
-assert of [comp_leak_dead_closure of null == 2, "SS17 a never-called closure does not change an earlier listcomp read"]
+assert of [comp_leak_dead_closure of null == 100, "SS17 dead closure does not change lexical listcomp scope"]
 
-# Same double-bind class via `catch`: the caught error binds ev633 by name, so
-# the earlier `ev633 is 100` slot must not survive as a stale read.
+# Same double-bind class via lexical `catch` shadowing.
 define catch_leak as:
     ev633 is 100
     try:
@@ -221,7 +217,7 @@ define catch_leak as:
     catch ev633:
         noop633 is 1
     return ev633 == 100
-assert of [(not catch_leak of null), "SS18 catch name leaks over an earlier plain assignment"]
+assert of [catch_leak of null, "SS18 catch name leaves an earlier plain assignment unchanged"]
 
 define catch_leak_dead_closure as:
     ev633 is 100
@@ -232,7 +228,7 @@ define catch_leak_dead_closure as:
     stale633 is ev633 == 100
     dead633 is () => ev633
     return stale633
-assert of [not (catch_leak_dead_closure of null), "SS19 a never-called closure does not change an earlier catch read"]
+assert of [catch_leak_dead_closure of null, "SS19 dead closure does not change lexical catch scope"]
 
 # SS20 (#642): the OTHER half of the double-binding defect #633's fix closed —
 # and the one SS16-SS19 cannot see. Those all read the name AFTER the

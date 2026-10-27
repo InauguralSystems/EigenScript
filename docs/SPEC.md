@@ -789,6 +789,17 @@ print of [v for v in xs if v % 2 == 0]
 [2, 4]
 ```
 
+The iterable is evaluated in the enclosing scope, but the comprehension
+variable has a lexical scope covering only the filter and result expression.
+It never creates or overwrites an enclosing binding. This is true for success,
+empty input, and every error path (including iterator, filter, and result
+errors); explicit side effects performed by the filter or result expression
+are not rolled back. A closure made there keeps the local binding alive.
+
+The name after `catch` is likewise local to its handler. Entering or leaving a
+handler, normally or by another error, neither creates nor overwrites that name
+in the enclosing scope.
+
 Destructuring assignment unpacks a list into names:
 
 ```eigenscript

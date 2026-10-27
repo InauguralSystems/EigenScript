@@ -1206,8 +1206,8 @@ static int ast_has_closure(ASTNode *node) {
  * body creates NO binding that lives in the loop env, because such a binding
  * would persist across iterations instead of being fresh each pass. A binding
  * lands in the loop env when the body assigns a name not already bound in an
- * enclosing scope (a loop-local), or via `local`, comprehension-var leakage,
- * a catch error name, a list-pattern, an import, or a closure. This routine
+ * enclosing scope (a loop-local), or via `local`, a lexical comprehension or
+ * catch binder, a list-pattern, an import, or a closure. This routine
  * returns 1 only when it can PROVE the subtree creates none of those: every
  * plain assignment targets a name in `bound` (unconditionally bound before the
  * loop) or an existing global/builtin, and no hard-to-prove binder appears.
@@ -3172,6 +3172,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         emit(c, OP_LISTCOMP_BEGIN, node->line);
         compile_node(c, node->data.listcomp.iter);
         emit(c, OP_ITER_SETUP, node->line);
+        /* The iterable belongs to the enclosing scope; the binder, filter,
+         * and body belong to one comprehension-local lexical scope. */
+        emit(c, OP_LOOP_ENV_FRESH, node->line);
 
         int loop_start = capture_loop_start(c);
         /* #1381: the comprehension variable is filed under the
@@ -3213,6 +3216,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         patch_jump(c, exit_jump);
         emit(c, OP_POP, node->line); /* pop iterator state */
+        emit(c, OP_LOOP_ENV_END, node->line);
         /* listcomp accumulator is now TOS */
         break;
     }
@@ -3243,6 +3247,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         patch_jump(c, catch_jump);
         /* Error message string is on stack, pushed by VM error handler */
+        /* A catch binder is local to its handler, just like a comprehension
+         * binder. TRY unwinding restores this parent on a handler error. */
+        emit(c, OP_LOOP_ENV_FRESH, node->line);
         if (node->data.trycatch.err_name) {
             /* #1381: the catch binding is filed under the `catch` line, not
              * the faulting line inside the try body. */
@@ -3253,6 +3260,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             emit(c, OP_POP, node->line);
         }
         compile_block(c, node->data.trycatch.catch_body, node->data.trycatch.catch_count);
+        emit(c, OP_LOOP_ENV_END, node->line);
         patch_jump(c, end_jump);
         break;
     }

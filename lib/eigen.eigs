@@ -1902,8 +1902,10 @@ define eigen_eval(node, env) as:
         iter is eigen_eval of [node[3], env]
         filter_node is node[4]
         result is []
+        # A comprehension owns one lexical binder scope. The iterable is
+        # deliberately evaluated above in the enclosing environment.
+        comp_env is _env_new of env
         for i in _eigen_range of (_eigen_len of iter):
-            comp_env is _env_new of env
             _env_set_local of [comp_env, var_name, iter[i]]
             if filter_node != null:
                 cond is eigen_eval of [filter_node, comp_env]
