@@ -1318,39 +1318,46 @@ static ASTNode* parse_comparison(Parser *p) {
     return left;
 }
 
-/* Word-form `not` sits between comparisons and `and`/`or` (#1648).
- * Collecting the prefix chain preserves right association without making a
- * long run of `not`s a C-stack recursion path. Arithmetic unary operators
- * remain in parse_unary, above calls, arithmetic, bitwise and comparisons. */
-static ASTNode* parse_not(Parser *p) {
-    Token *ops[PARSE_MAX_DEPTH];
-    int count = 0;
-    while (p_cur(p)->type == TOK_NOT) {
-        if (chain_too_deep(p)) break;
-        ops[count++] = p_advance(p);
-    }
-    ASTNode *operand = parse_comparison(p);
-    while (count > 0) {
-        Token *op_tok = ops[--count];
-        ASTNode *n = make_node_col(AST_UNARY, op_tok->line, op_tok->col);
-        snprintf(n->data.unary.op, sizeof(n->data.unary.op), "not");
-        n->data.unary.operand = operand;
-        operand = n;
-    }
-    return operand;
-}
-
 static ASTNode* parse_and(Parser *p) {
-    ASTNode *left = parse_not(p);
-    while (p_cur(p)->type == TOK_AND) {
-        if (chain_too_deep(p)) break;
-        Token *op_tok = p_advance(p);
-        ASTNode *right = parse_not(p);
-        ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
-        snprintf(n->data.binop.op, sizeof(n->data.binop.op), "and");
-        n->data.binop.left = left;
-        n->data.binop.right = right;
-        left = n;
+    ASTNode *left = NULL;
+    Token *and_tok = NULL;
+
+    for (;;) {
+        /* Word-form `not` sits between comparisons and `and`/`or` (#1648).
+         * Build its right-associated prefix chain from the outside in, then
+         * fill the final operand slot with the comparison. Keeping this in
+         * the iterative and-operand path is important: a separate parse_not
+         * call adds a C frame at EVERY parenthesized nesting level, and its
+         * former PARSE_MAX_DEPTH-sized token array made that frame large
+         * enough to overflow a 256 KiB freestanding stack before the shared
+         * depth guard fired. Each node is still charged through
+         * chain_too_deep, so huge flat `not` chains remain bounded too. */
+        ASTNode *not_head = NULL;
+        ASTNode **not_operand = &not_head;
+        while (p_cur(p)->type == TOK_NOT) {
+            if (chain_too_deep(p)) break;
+            Token *op_tok = p_advance(p);
+            ASTNode *n = make_node_col(AST_UNARY, op_tok->line, op_tok->col);
+            snprintf(n->data.unary.op, sizeof(n->data.unary.op), "not");
+            *not_operand = n;
+            not_operand = &n->data.unary.operand;
+        }
+        ASTNode *right = parse_comparison(p);
+        *not_operand = right;
+        if (not_head) right = not_head;
+
+        if (!left) {
+            left = right;
+        } else {
+            ASTNode *n = make_node_col(AST_BINOP, and_tok->line, and_tok->col);
+            snprintf(n->data.binop.op, sizeof(n->data.binop.op), "and");
+            n->data.binop.left = left;
+            n->data.binop.right = right;
+            left = n;
+        }
+
+        if (p_cur(p)->type != TOK_AND || chain_too_deep(p)) break;
+        and_tok = p_advance(p);
     }
     return left;
 }

@@ -1,0 +1,1 @@
+- `not` chains no longer consume parser recursion stack, so deeply nested input reaches a clean parse-depth error instead of crashing (#1648).
