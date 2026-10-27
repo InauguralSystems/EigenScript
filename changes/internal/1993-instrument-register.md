@@ -1,0 +1,1 @@
+- Add the measurement-device instrument register for #1993.

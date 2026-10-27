@@ -13,9 +13,9 @@ import sys
 import tempfile
 
 DOCS = ('README.md docs/llms.txt CLAUDE.md docs/ARCHITECTURE.md '
-        'docs/BUILTINS.md docs/CONCURRENCY.md ROADMAP.md docs/CI.md').split()
+        'docs/BUILTINS.md docs/CONCURRENCY.md ROADMAP.md docs/CI.md docs/INSTRUMENTS.md').split()
 POP = Path('tools/docs_claims_populations.txt')
-EXEMPT_FLAGS = {'docs/CI.md'}  # This page documents other command-line tools.
+EXEMPT_FLAGS = {'docs/CI.md', 'docs/INSTRUMENTS.md'}  # This page documents other command-line tools.
 SEGMENTS = ('src lib tests tools docs examples editors bench fuzz web reports changes '
             '.github .claude .devcontainer').split()
 TARGET_PROSE = {'sure', 'it', 'them', 'the', 'a', 'an', 'this', 'that', 'your',
