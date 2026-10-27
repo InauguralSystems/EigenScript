@@ -5,18 +5,22 @@ echo "[99d] Binary-fingerprint guard self-test (#681)"
 # tree (where another session/Stop hook could make) and isolated CI.  Standard
 # lock testing probes with an independent non-blocking acquisition; an exported
 # EIGS_TREE_LOCK_HELD flag alone is not evidence that the lock is really owned.
-TOTAL=$((TOTAL + 1))
-sleep 5 & LOCK_PROBE_OWNER=$!
-"$TESTS_DIR/../tools/tree_lock.sh" --try "$TESTS_DIR/.." "$LOCK_PROBE_OWNER" >/dev/null 2>&1
-LOCK_PROBE_RC=$?
-kill "$LOCK_PROBE_OWNER" 2>/dev/null
-wait "$LOCK_PROBE_OWNER" 2>/dev/null
-if [ "$LOCK_PROBE_RC" -eq 75 ]; then
-    PASS=$((PASS + 1))
-    echo "  PASS: suite owns the build lock while the binary-guard control runs (#1708)"
+if ! command -v flock >/dev/null 2>&1 || ! command -v setsid >/dev/null 2>&1; then
+    section_skip "lock-ownership assertion requires flock and setsid; tools/tree_lock.sh builds unlocked without them"
 else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: suite build lock was not busy during binary-guard control (rc=$LOCK_PROBE_RC; want 75)"
+    TOTAL=$((TOTAL + 1))
+    sleep 5 & LOCK_PROBE_OWNER=$!
+    "$TESTS_DIR/../tools/tree_lock.sh" --try "$TESTS_DIR/.." "$LOCK_PROBE_OWNER" >/dev/null 2>&1
+    LOCK_PROBE_RC=$?
+    kill "$LOCK_PROBE_OWNER" 2>/dev/null
+    wait "$LOCK_PROBE_OWNER" 2>/dev/null
+    if [ "$LOCK_PROBE_RC" -eq 75 ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: suite owns the build lock while the binary-guard control runs (#1708)"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: suite build lock was not busy during binary-guard control (rc=$LOCK_PROBE_RC; want 75)"
+    fi
 fi
 TOTAL=$((TOTAL + 1))
 if [ ! -f "$EIGS_BIN" ]; then
