@@ -24,10 +24,12 @@ with tempfile.TemporaryDirectory(prefix="eigs-stop-gate-") as td:
     (root / "changes" / "internal").mkdir(parents=True)
     shutil.copy2(script, root / "tools" / "stop_gate.sh")
     shutil.copy2(script.with_name("tree_lock.sh"), root / "tools" / "tree_lock.sh")
+    shutil.copy2(script.with_name("active_variant.sh"), root / "tools" / "active_variant.sh")
     (root / "build" / "release").mkdir(parents=True)
     (root / "build" / "pool-off").mkdir(parents=True)
-    (root / "Makefile").write_text(r'''all: release
-release:
+    (root / "Makefile").write_text(r'''.PHONY: all build pool-off
+all: build
+build:
 	@printf '#!/bin/sh\nexit 0\n' >build/release/eigenscript.new
 	@chmod +x build/release/eigenscript.new
 	@mv build/release/eigenscript.new build/release/eigenscript
@@ -63,6 +65,17 @@ pool-off:
         print("stop_gate selftest: selected pool-off variant did not survive the gate")
         print(passed.stdout, end="")
         raise SystemExit(1)
+    # The release variant's goal is `build` (no `release` target exists, here or
+    # in the real Makefile): the gate must rebuild through it and keep the alias.
+    run("make", "build", cwd=root)
+    (root / "src" / "vm.c").write_text("documented edit, release\n")
+    passed_release = run("bash", "tools/stop_gate.sh", cwd=root, check=False,
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if passed_release.returncode or not (root / "src" / "eigenscript").samefile(
+            root / "build" / "release" / "eigenscript"):
+        print("stop_gate selftest: selected release variant did not survive the gate")
+        print(passed_release.stdout, end="")
+        raise SystemExit(1)
 
     # The same dirty semantics edit on a branch with no docs delta must block.
     run("git", "reset", "--hard", "-q", "origin/main", cwd=root)
@@ -97,30 +110,23 @@ if [ "$lock_rc" -ne 0 ]; then
     exit 2
 fi
 export EIGS_TREE_LOCK_HELD=1
-# Preserve the selected build.  src/eigenscript is a hard link, so the
-# standard identity test (`test FILE1 -ef FILE2`) finds its owning artifact;
-# deriving candidates from build/ also covers every Makefile variant without
-# maintaining a second variant list here.  With no alias yet, the default
-# release build remains the bootstrap behavior.
-selected=
+# Preserve the selected build through the ONE resolver the suite uses
+# (tools/active_variant.sh --goal): it answers with the make goal that
+# rebuilds the variant src/eigenscript is hard-linked to (release -> build).
+# With no alias yet, the default build is the bootstrap behavior.
+goal=
 if [ -e src/eigenscript ]; then
-    for candidate in build/*/eigenscript; do
-        [ -e "$candidate" ] || continue
-        if [ src/eigenscript -ef "$candidate" ]; then
-            [ -z "$selected" ] || {
-                echo "STOP GATE: src/eigenscript matches more than one build variant; refusing to choose" >&2
-                exit 2
-            }
-            selected=${candidate#build/}
-            selected=${selected%/eigenscript}
+    if goal=$(tools/active_variant.sh --goal .); then :; else
+        rc=$?
+        if [ "$rc" -eq 2 ]; then
+            echo "STOP GATE: src/eigenscript matches more than one build variant; refusing to choose" >&2
+        else
+            echo "STOP GATE: cannot identify the build variant selected by src/eigenscript; refusing to re-point it" >&2
         fi
-    done
-    if [ -z "$selected" ]; then
-        echo "STOP GATE: cannot identify the build variant selected by src/eigenscript; refusing to re-point it" >&2
         exit 2
     fi
 fi
-if ! make -s ${selected:+"$selected"} >"$LOG" 2>&1; then
+if ! make -s ${goal:+"$goal"} >"$LOG" 2>&1; then
     { echo "STOP GATE: build FAILED with uncommitted src changes:"; tail -15 "$LOG"; } >&2
     exit 2
 fi
