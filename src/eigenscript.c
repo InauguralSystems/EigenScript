@@ -5206,6 +5206,16 @@ Value* env_get(Env *env, const char *name) {
     return env_get_hashed(env, name, env_hash_name(name));
 }
 
+Value* env_get_counted(Env *env, const char *name) {
+    EigsSlot held;
+    if (!env_resolve_chain_ref(env, name, 0, NULL, NULL, &held)) return NULL;
+    /* slot_to_value takes its own reference for a heap value (or boxes an
+     * immediate), so release the one taken inside the hold. */
+    Value *v = slot_to_value(held);
+    slot_decref(held);
+    return v;
+}
+
 /* ================================================================
  * HANDLE TABLE — opaque pointer indirection for Store/Thread/Channel
  * Table + lock live on EigsState (see eigenscript.h).

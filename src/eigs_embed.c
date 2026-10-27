@@ -364,10 +364,7 @@ void eigs_set_global(const char *name, EigsValue *val) {
 EigsValue *eigs_get_global(const char *name) {
     if (!name || !eigs_current || !g_global_env) return NULL;
     if (embed_refuse_reserved("eigs_get_global", name)) return NULL;
-    EigsSlot held;
-    Env *owner = env_resolve_chain_ref(g_global_env, name, 0,
-                                       NULL, NULL, &held);
-    return owner ? slot_to_value(held) : NULL;
+    return env_get_counted(g_global_env, name);
 }
 
 /* ---- Values ------------------------------------------------------- */

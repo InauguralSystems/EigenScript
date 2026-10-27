@@ -2098,6 +2098,11 @@ void env_global_shared_unlock(void);
 void env_mark_shared(Env *e);
 void env_set(Env *env, const char *name, Value *val);
 Value* env_get(Env *env, const char *name);
+/* #1869: a COUNTED read for paths reachable while multithreaded. The value is
+ * resolved and counted inside the #607 hold (env_resolve_chain_ref), then
+ * the held slot's reference is handed over: the caller owns exactly one
+ * reference and must val_decref it. NULL when the name is unbound. */
+Value* env_get_counted(Env *env, const char *name);
 void env_set_local(Env *env, const char *name, Value *val);
 uint32_t env_name_hash(const char *name);
 void env_set_hashed(Env *env, const char *name, uint32_t h, Value *val);

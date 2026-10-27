@@ -1658,10 +1658,7 @@ static void handle_request(int fd) {
                         pthread_mutex_unlock(&srv->shared_mu);
                     }
                     if (!auth_src) {
-                        EigsSlot held;
-                        Env *owner = env_resolve_chain_ref(g_global_env, "require_auth", 0,
-                                                           NULL, NULL, &held);
-                        Value *auth_fn = owner ? slot_to_value(held) : NULL;
+                        Value *auth_fn = env_get_counted(g_global_env, "require_auth");
                         if (!auth_fn || (auth_fn->type != VAL_FN && auth_fn->type != VAL_BUILTIN)) {
                             if (auth_fn) val_decref(auth_fn);
                             send_response(fd, 500, "Internal Server Error", "application/json",
