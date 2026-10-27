@@ -47,3 +47,35 @@ for tier in interp default osr; do
     fi
     echo "  PASS: model token range ($tier)"
 done
+
+# A caught refusal is outside the tape bracket. It must not consume the next
+# successful generation record (or the random record after that).
+cat > "$WORK/replay.eigs" <<EIGS
+eigen_model_load of "$WORK/model.json"
+try:
+    eigen_generate of [[8], 0, 1]
+    assert of [false, "invalid generation unexpectedly succeeded"]
+catch e:
+    assert of [e.kind == "index_range", "record/replay refusal kind"]
+    print of "caught index_range"
+print of (eigen_generate of [[0], 0, 1])
+print of (random_int of [0, 1000])
+print of "MODEL TOKEN REPLAY ALL PASS"
+EIGS
+EIGS_JIT_OFF=1 EIGS_TRACE="$WORK/replay.tape" "$EIGS" "$WORK/replay.eigs" \
+    > "$WORK/record.out" 2> "$WORK/record.err"
+record_rc=$?
+EIGS_JIT_OFF=1 EIGS_REPLAY="$WORK/replay.tape" EIGS_REPLAY_STRICT=1 \
+    "$EIGS" "$WORK/replay.eigs" > "$WORK/replay.out" 2> "$WORK/replay.err"
+replay_rc=$?
+sed -n '/^caught index_range$/,$p' "$WORK/record.out" > "$WORK/record.calls"
+sed -n '/^caught index_range$/,$p' "$WORK/replay.out" > "$WORK/replay.calls"
+if [ "$record_rc" -ne 0 ] || [ "$replay_rc" -ne 0 ] || \
+   ! cmp -s "$WORK/record.calls" "$WORK/replay.calls" || \
+   ! grep -q '^MODEL TOKEN REPLAY ALL PASS$' "$WORK/replay.out"; then
+    echo "FAIL model token strict replay (record=$record_rc replay=$replay_rc)"
+    diff -u "$WORK/record.calls" "$WORK/replay.calls" || true
+    cat "$WORK/record.err" "$WORK/replay.err"
+    exit 1
+fi
+echo "  PASS: model token refusal preserves strict replay tape"

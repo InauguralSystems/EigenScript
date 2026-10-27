@@ -532,21 +532,8 @@ Value* builtin_eigen_generate(Value *arg) {
      * token list -- the draws are an implementation detail of the decoding
      * policy. #1405 adds a string outcome for context refusal; every normal
      * return is still a list, including soft argument errors. Replay takes
-     * either outcome before consulting the model, which may be absent or
-     * replaced. Refusal messages carry the recorded lengths, not live config.
-     * The existing list/string value encodings are unchanged. */
-    if (__builtin_expect(g_replay_enabled, 0)) {
-        Value *recorded;
-        if (trace_replay_refuse_off_owner("eigen_generate")) return make_null();
-        if (trace_replay_take("eigen_generate", &recorded)) {
-            if (recorded->type == VAL_STR) {
-                rt_error(EK_VALUE, 0, "%s", recorded->data.str);
-                val_decref(recorded);
-                return make_null();
-            }
-            return recorded;
-        }
-    }
+     * either outcome without running inference. Refusal messages carry the
+     * recorded lengths. Argument refusals precede the tape bracket. */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         fprintf(stderr, "eigen_generate: requires [prompt_ids, temperature, max_tokens]\n");
         TRACE_NONDET_RECORD("eigen_generate", make_list(0));
@@ -613,6 +600,25 @@ Value* builtin_eigen_generate(Value *arg) {
         }
     }
     if (g_has_error) { free(prompt_ids); return make_null(); }
+
+    /* Invalid tokens produce no record while tracing. Validate first so a
+     * caught refusal cannot consume the following call's record on replay. */
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        Value *recorded;
+        if (trace_replay_refuse_off_owner("eigen_generate")) {
+            free(prompt_ids);
+            return make_null();
+        }
+        if (trace_replay_take("eigen_generate", &recorded)) {
+            free(prompt_ids);
+            if (recorded->type == VAL_STR) {
+                rt_error(EK_VALUE, 0, "%s", recorded->data.str);
+                val_decref(recorded);
+                return make_null();
+            }
+            return recorded;
+        }
+    }
 
     int out_len = 0;
     int *output_ids = generate_response(prompt_ids, prompt_len, &g_model, temperature, max_tokens, top_p, &out_len);

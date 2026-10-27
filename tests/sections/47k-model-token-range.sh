@@ -16,7 +16,8 @@ elif [ "$TOKEN_RC" -ne 0 ]; then
 else
     TOTAL=$((TOTAL + 1))
     TOKEN_OUT=$(EIGS_BIN="$EIGS" bash "$TESTS_DIR/test_model_token_range.sh" 2>&1); TOKEN_RC=$?
-    if [ "$TOKEN_RC" -eq 0 ] && [ "$(printf '%s\n' "$TOKEN_OUT" | grep -c '^  PASS: model token range')" -eq 3 ]; then
+    if [ "$TOKEN_RC" -eq 0 ] && [ "$(printf '%s\n' "$TOKEN_OUT" | grep -c '^  PASS: model token range')" -eq 3 ] &&
+       [ "$(printf '%s\n' "$TOKEN_OUT" | grep -c '^  PASS: model token refusal preserves strict replay tape$')" -eq 1 ]; then
         PASS=$((PASS + 1)); echo "  PASS: model token ids raise on all three execution tiers"
     else
         FAIL=$((FAIL + 1)); echo "  FAIL: model token id ranges (rc=$TOKEN_RC)"

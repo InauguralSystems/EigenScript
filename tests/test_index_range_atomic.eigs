@@ -37,3 +37,49 @@ catch e:
     print of "PASS sgd_update_cols"
 
 print of "INDEX RANGE ATOMIC ALL PASS"
+
+# Selectors may alias the matrix being updated. Their validated values are a
+# call-entry snapshot, not live cells that an earlier update may rewrite.
+row_alias is buffer of [2, 2]
+row_grad is buffer of [2, 2]
+buf_fill of [row_grad, 0, 4, 100]
+sgd_update_rows of [row_alias, row_grad, row_alias, 1]
+assert of [row_alias[0] == 0 - 400 and row_alias[1] == 0 - 400,
+           "sgd_update_rows uses aliased selector snapshot"]
+assert of [row_alias[2] == 0 and row_alias[3] == 0,
+           "sgd_update_rows snapshot leaves unselected row"]
+print of "PASS sgd_update_rows alias snapshot"
+
+col_alias is buffer of [2, 2]
+col_grad is buffer of [2, 2]
+buf_fill of [col_grad, 0, 4, 100]
+sgd_update_cols of [col_alias, col_grad, col_alias, 1]
+assert of [col_alias[0] == 0 - 400 and col_alias[2] == 0 - 400,
+           "sgd_update_cols uses aliased selector snapshot"]
+assert of [col_alias[1] == 0 and col_alias[3] == 0,
+           "sgd_update_cols snapshot leaves unselected column"]
+print of "PASS sgd_update_cols alias snapshot"
+
+# Loss callbacks are arbitrary language code and can mutate selector storage.
+# Both sparse numerical-gradient builtins must continue with the entry values.
+row_selector is buf_from_list of [0, 1]
+row_matrix is reshape of [buf_from_list of [1, 2, 3, 4], 2, 2]
+define mutating_row_loss(_) as:
+    set_at of [row_selector, 1, 100]
+    return sum of row_matrix
+row_result is numerical_grad_rows of [mutating_row_loss, row_matrix, row_selector, 0.01]
+assert of [(buf_len of row_result) == 4, "numerical_grad_rows survives selector mutation"]
+assert of [row_selector[1] == 100, "row loss callback ran"]
+print of "PASS numerical_grad_rows callback snapshot"
+
+col_selector is buf_from_list of [0, 1]
+col_matrix is reshape of [buf_from_list of [1, 2, 3, 4], 2, 2]
+define mutating_col_loss(_) as:
+    set_at of [col_selector, 1, 100]
+    return sum of col_matrix
+col_result is numerical_grad_cols of [mutating_col_loss, col_matrix, col_selector, 0.01]
+assert of [(buf_len of col_result) == 4, "numerical_grad_cols survives selector mutation"]
+assert of [col_selector[1] == 100, "column loss callback ran"]
+print of "PASS numerical_grad_cols callback snapshot"
+
+print of "SELECTOR SNAPSHOT ALL PASS"

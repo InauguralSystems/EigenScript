@@ -25,9 +25,10 @@ static Value* model_load_status_json(const char *path) {
     strbuf_init(&sb);
     strbuf_append_fmt(&sb,
         "{\"status\": \"loaded\", \"vocab_size\": %d, \"n_layers\": %d, "
-        "\"d_model\": %d, \"d_ff\": %d, \"path\": ",
+        "\"d_model\": %d, \"d_ff\": %d, \"max_seq_len\": %d, \"path\": ",
         g_model.config.vocab_size, g_model.config.n_layers,
-        g_model.config.d_model, g_model.config.d_ff);
+        g_model.config.d_model, g_model.config.d_ff,
+        g_model.config.max_seq_len);
     eigs_json_escape_string(&sb, path);
     strbuf_append_char(&sb, '}');
     Value *result = make_str(sb.data);
@@ -50,6 +51,34 @@ static void replay_model_load_banner(Value *status) {
     if (path && path->type == VAL_STR) {
         printf("Loading model from: %s\n", path->data.str);
         fflush(stdout);
+    }
+    /* Keep the recorded configuration available for argument validation.
+     * Replay still does not read weights or run inference, but model builtins
+     * must reject the same bad token/context arguments before taking their
+     * own tape records. */
+    EIGS_VIEW(vocab_view);
+    EIGS_VIEW(layers_view);
+    EIGS_VIEW(d_model_view);
+    EIGS_VIEW(d_ff_view);
+    Value *vocab = dict_get_view(root, "vocab_size", &vocab_view);
+    Value *layers = dict_get_view(root, "n_layers", &layers_view);
+    Value *d_model = dict_get_view(root, "d_model", &d_model_view);
+    Value *d_ff = dict_get_view(root, "d_ff", &d_ff_view);
+    if (vocab && vocab->type == VAL_NUM && layers && layers->type == VAL_NUM &&
+        d_model && d_model->type == VAL_NUM && d_ff && d_ff->type == VAL_NUM) {
+        g_model.config.vocab_size = (int)eigs_num_arg(vocab, __func__);
+        g_model.config.n_layers = (int)eigs_num_arg(layers, __func__);
+        g_model.config.d_model = (int)eigs_num_arg(d_model, __func__);
+        g_model.config.d_ff = (int)eigs_num_arg(d_ff, __func__);
+        /* max_seq_len is added to statuses below. Older statuses still carry
+         * the vocabulary; defer their context decision to the taped outcome. */
+        EIGS_VIEW(max_seq_view);
+        Value *max_seq = dict_get_view(root, "max_seq_len", &max_seq_view);
+        if (max_seq && max_seq->type == VAL_NUM)
+            g_model.config.max_seq_len = (int)eigs_num_arg(max_seq, __func__);
+        else
+            g_model.config.max_seq_len = INT_MAX;
+        g_model.loaded = 1;
     }
     val_decref(root);
 }
