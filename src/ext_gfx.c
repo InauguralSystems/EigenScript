@@ -78,7 +78,9 @@ typedef struct {
 /* ---- Function pointers ---- */
 
 static void *g_sdl_lib = NULL;
+#if defined(__linux__)
 static int g_ctype_locale_warned = 0;
+#endif
 static SDL_Window *g_window = NULL;
 static SDL_Renderer *g_renderer = NULL;
 
@@ -144,15 +146,19 @@ static int g_stream_channels = 1;
 static int load_sdl2(void) {
     if (g_sdl_lib) return 1;
 
+#if defined(__linux__)
     /* SDL's X11 backend needs a UTF-8 LC_CTYPE to publish UTF-8 title
      * properties.  Use a fixed locale, never the environment (""), because
      * the runtime's byte-oriented ctype calls must remain replay-deterministic
      * in every user's locale (#1681).  C.UTF-8 classifies non-ASCII bytes like
-     * the initial C locale while still telling Xlib that titles are UTF-8. */
+     * the initial C locale while still telling Xlib that titles are UTF-8.
+     * Linux only: macOS's Cocoa backend takes UTF-8 titles directly, and an
+     * unconditional call there would print the note below on every gfx run. */
     if (!setlocale(LC_CTYPE, "C.UTF-8") && !g_ctype_locale_warned) {
         fprintf(stderr, "note: C.UTF-8 locale unavailable; non-ASCII window titles may be mis-encoded on this system\n");
         g_ctype_locale_warned = 1;
     }
+#endif
 
     g_sdl_lib = dlopen("libSDL2-2.0.so.0", RTLD_LAZY);
     if (!g_sdl_lib) g_sdl_lib = dlopen("libSDL2.so", RTLD_LAZY);
