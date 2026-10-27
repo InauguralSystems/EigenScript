@@ -2291,8 +2291,9 @@ void jit_helper_index_set(void) {
             rt_error(EK_TYPE, g_vm.current_line, "cannot store %s in a buffer (buffers hold numbers)",
                      val_type_name(val->type));
         }
-    } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
-        dict_set(target, idx->data.str, val);
+    } else if (target->type == VAL_DICT) {
+        const char *key = dict_assignment_key(target, idx, g_vm.current_line);
+        if (key) dict_set(target, key, val);
     } else {
         rt_error(EK_TYPE, g_vm.current_line, "cannot index %s for assignment", val_type_name(target->type));
     }
@@ -4794,8 +4795,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 rt_error(EK_TYPE, current_line, "cannot store %s in a buffer (buffers hold numbers)",
                          val_type_name(val->type));
             }
-        } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
-            dict_set(target, idx->data.str, val);
+        } else if (target->type == VAL_DICT) {
+            const char *key = dict_assignment_key(target, idx, current_line);
+            if (key) dict_set(target, key, val);
         } else {
             rt_error(EK_TYPE, current_line, "cannot index %s for assignment", val_type_name(target->type));
         }

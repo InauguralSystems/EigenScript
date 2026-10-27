@@ -45,8 +45,15 @@
 # against an independent line scanner (§122), so the walk cannot quietly stop
 # seeing a document.
 #
-# Usage: test_doc_examples.py [--list] file.md [file2.md ...]
+# Usage: test_doc_examples.py [--list] [file.md ...]
 #        test_doc_examples.py --selftest
+#        test_doc_examples.py --extract DIRECTORY file.md [file2.md ...]
+#
+# With no files, every pinned POPULATION document is checked.
+#
+# --extract is the documented interface for consumers that need the exact
+# executable fence population without duplicating this file's fence grammar.
+# It writes one .eigs file per non-nocheck fence and prints each path.
 
 import re
 import subprocess
@@ -331,6 +338,7 @@ POPULATION = {
     "docs/CONCURRENCY.md":       (  8,    8,     0,      0,      0),   # #1736: +1 paired (detached task catches its own error)
     "docs/STDLIB.md":            ( 15,    7,     8,      0,      0),
     "docs/SYNTAX.md":            ( 35,   15,    20,      0,      1),
+    # #1991: these observer documents are part of the executable doc gate.
     "docs/PREDICATES.md":        ( 13,    2,    10,      1,      4),
     "docs/DIAGNOSTICS.md":       (  4,    1,     3,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
@@ -642,9 +650,41 @@ def count_mode(paths):
     return rc
 
 
+def extract_mode(directory, paths):
+    """Write executable doc-fence programs to DIRECTORY; print their paths."""
+    if not paths:
+        sys.stderr.write("extract: no files given\n")
+        return 2
+    os.makedirs(directory, exist_ok=True)
+    serial = 0
+    for path in paths:
+        if not os.path.isfile(path):
+            sys.stderr.write("extract: not a file: %s\n" % path)
+            return 2
+        for lineno, info, arg, code in blocks(path):
+            if info != "eigenscript":
+                continue
+            kind, payload, err = parse_tag(arg)
+            if err:
+                sys.stderr.write("extract: %s:%d: %s\n" % (path, lineno, err))
+                return 2
+            if kind == "nocheck":
+                continue
+            if kind == "fragment":
+                code = "".join("%s is %s\n" % pair for pair in payload) + code
+            serial += 1
+            name = os.path.join(directory, "%04d.eigs" % serial)
+            with open(name, "w") as out:
+                out.write(code)
+            print(name)
+    return 0
+
+
 def main():
     global PASS, FAIL, SKIP
     args = [a for a in sys.argv[1:] if a != "--list"]
+    if not args:
+        args = [os.path.join(ROOT, path) for path in POPULATION]
     listing = "--list" in sys.argv
     # ROUND 8: the same one-line banner the claims gate prints. A platform
     # difference should identify itself in the CI log on the FIRST run, not
@@ -1131,4 +1171,9 @@ if __name__ == "__main__":
         sys.exit(selftest())
     if "--count" in sys.argv:
         sys.exit(count_mode([a for a in sys.argv[1:] if a != "--count"]))
+    if "--extract" in sys.argv:
+        i = sys.argv.index("--extract")
+        if i + 1 >= len(sys.argv):
+            sys.exit(2)
+        sys.exit(extract_mode(sys.argv[i + 1], sys.argv[i + 2:]))
     sys.exit(main())

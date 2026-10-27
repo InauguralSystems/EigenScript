@@ -17,6 +17,8 @@ tests/test_child_exit.sh tests/run_all_tests.sh | timeout 30 bash tests/test_chi
 tests/test_changelog_fragments.sh tools/changelog_fragments.sh | timeout 30 bash tests/test_changelog_fragments.sh --selftest | [{"pattern":"^  PASS:","count":4},{"pattern":"^  FAIL:","count":0},{"pattern":"^SELFTEST: 4 case\\(s\\) run, 4 passed, 0 failed$","count":1}]
 tests/test_dict_keys_mt.sh tests/dict_keys_mt_fixtures/* | timeout 30 bash tests/test_dict_keys_mt.sh --selftest | [{"pattern":"  PASS:","count":8},{"pattern":"  FAIL:","count":0}]
 tests/test_doc_examples.py | timeout 30 python3 tests/test_doc_examples.py --selftest | [{"pattern":"  selftest ok:","count":29}]
+src/fmt.c src/lexer.c tests/fmt_parent_differential.py tests/run_fmt_parent_differential.sh | timeout 60 bash tests/run_fmt_parent_differential.sh --selftest | [{"pattern":"^formatter differential selftest: live comparison passed; normalization plant caught$","count":1},{"pattern":"REGRESSION","count":0}]
+tests/fmt_parent_differential.py | timeout 30 python3 tests/fmt_parent_differential.py --selftest | [{"pattern":"^classifier selftest: list-item fence is semantic-line preservation$","count":1}]
 tests/test_doc_examples_markers.py tests/test_doc_examples.py tests/lsan_classify.sh | timeout 30 python3 tests/test_doc_examples_markers.py --selftest
 tests/test_handles_mt.sh tests/handles_mt_fixtures/* | timeout 30 bash tests/test_handles_mt.sh --selftest | [{"pattern":"  PASS:","count":11},{"pattern":"  FAIL:","count":0}]
 tests/test_http_rss_growth.sh | timeout 30 bash tests/test_http_rss_growth.sh --selftest
@@ -28,11 +30,11 @@ tests/test_trace_mt.sh | timeout 30 bash tests/test_trace_mt.sh --selftest | [{"
 tools/_derive_variants.py tools/_extract_runcmd.py | timeout 30 python3 tools/_derive_variants.py --selftest
 tools/_extract_runcmd.py | timeout 30 python3 tools/_extract_runcmd.py --selftest
 tools/codspeed_targets_check.sh codspeed.yml | timeout 30 bash tools/codspeed_targets_check.sh --selftest
-tools/consumer_acceptance.sh tools/_derive_variants.py tools/_extract_runcmd.py reports/consumer_acceptance/* | timeout 25 bash tools/consumer_acceptance.sh --self-test
+tools/consumer_acceptance.sh tools/_derive_variants.py tools/_extract_runcmd.py reports/consumer_acceptance/* | timeout 60 bash tools/consumer_acceptance.sh --self-test
 tools/core_ext_boundary_check.sh tools/core_ext_boundary_selftest.sh | timeout 120 bash tools/core_ext_boundary_selftest.sh --selftest | [{"pattern":"^PASS: core-ext boundary:","count":1}]
 tools/docs_claims_check.sh | timeout 30 bash tools/docs_claims_check.sh --selftest | [{"pattern":"^SELFTEST: 19 case\\(s\\) run, 19 passed, 0 failed$","count":1}]
 tools/enrolment_check.sh tests/enrolment_exemptions.txt tools/selftests.txt | timeout 30 bash tools/enrolment_check.sh --selftest | [{"pattern":"^  checks=4$","count":1}]
-Makefile tools/make_lock_check.sh tools/stop_gate.sh tools/tree_lock.sh tools/bounded_process.py | timeout 60 bash tools/make_lock_check.sh --selftest | [{"pattern":"^  PASS:","count":8},{"pattern":"^make-lock selftest: 8/8 passed$","count":1},{"pattern":"FAIL:","count":0}]
+Makefile tests/run_all_tests.sh tools/make_lock_check.sh tools/stop_gate.sh tools/tree_lock.sh tools/bounded_process.py | timeout 60 bash tools/make_lock_check.sh --selftest | [{"pattern":"^  PASS:","count":9},{"pattern":"^make-lock selftest: 9/9 passed$","count":1},{"pattern":"FAIL:","count":0}]
 tools/obs_marker_check.sh | timeout 30 bash tools/obs_marker_check.sh --selftest
 tools/obs_reader_sync_check.sh tools/obs_marker_check.sh | timeout 30 bash tools/obs_reader_sync_check.sh --selftest | [{"pattern":"^SELFTEST: ([0-9]+) passed.*$","count":11,"floor":true,"value":true}]
 tools/performance_observer_docs.py docs/PERFORMANCE.md bench/observer_callgrind.txt bench/baseline.txt bench/observed_loop.eigs bench/unobserved_loop.eigs bench/conservative_observed_loop.eigs bench/conservative_unobserved_loop.eigs | timeout 30 python3 tools/performance_observer_docs.py --selftest

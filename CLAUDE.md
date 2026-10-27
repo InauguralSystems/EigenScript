@@ -86,10 +86,11 @@ see [Build from Source](README.md#build-from-source).
   coexist; `src/eigenscript` is a hard link to the last `make` target
   (hard, not symbolic — `/proc/self/exe`-relative stdlib resolution must
   keep seeing `src/`), so switching variants is an instant relink (`make`
-  after `make asan` costs ~0.2s, not a rebuild). Don't run any `make`
-  variant target while a suite is in flight — it re-points the alias
-  under the suite (the #681 fingerprint guard catches it at the next
-  section seam).
+  after `make asan` costs ~0.2s, not a rebuild). A suite holds the per-tree
+  build lock for its whole run, so a concurrent `make` variant waits rather
+  than re-pointing the alias; the stop gate's non-blocking lock attempt instead
+  skips with its existing busy message. On systems without `flock` or
+  `setsid` (notably stock macOS), builds remain unlocked as before.
 - Benchmarks: `tests/bench_perf.eigs` (micro), `tests/bench_dmg_shape.eigs`
   (dispatch-table interpreter shape, the DMG/cpu_instrs stand-in),
   `tests/bench_idxset.eigs` (fn-local buffer/list write loop — one JIT thunk,

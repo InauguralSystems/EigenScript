@@ -8,6 +8,16 @@
 # told where tests/ is. Unset — every ordinary invocation — this resolves from
 # $0 exactly as before.
 TESTS_DIR="${EIGS_PLAN_TESTS_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+# The suite, not just the makes it happens to invoke, owns the tree while it
+# runs (#1986).  Pass this shell's PID to the normal holder: its polling loop
+# releases the lock on every exit path, including signals and early failures.
+# `make test` exports the flag because its parse-time holder already owns the
+# same lock; a direct suite takes it here.  In both cases inner makes inherit
+# the flag and cannot wait on their own suite.
+if [ -z "${EIGS_TREE_LOCK_HELD:-}" ]; then
+    "$BASH" "$TESTS_DIR/../tools/tree_lock.sh" "$TESTS_DIR/.." $$ || exit 1
+fi
+export EIGS_TREE_LOCK_HELD=1
 export WERROR_FLAGS_FILE="$TESTS_DIR/../tools/werror_flags.txt"
 . "$TESTS_DIR/../tools/read_werror_flags.sh" || exit 1
 export EIGS_TEST_DIR="$TESTS_DIR"
@@ -87,6 +97,7 @@ __eigs_now_us() {
 }
 __EIGS_SEC_LABEL=""
 __EIGS_SEC_T0=""
+__EIGS_LOCK_TEST_SEAM=0
 __eigs_section_close() {
     [ -n "$__EIGS_SEC_LABEL" ] || return 0
     local now d
@@ -95,6 +106,14 @@ __eigs_section_close() {
     [ "$d" -ge 0 ] || d=0
     [ "$EIGS_SECTION_TIME" = "1" ] &&         builtin printf 'SECTION_TIME: %s %d.%02d\n' "$__EIGS_SEC_LABEL" "$(( d / 1000000 ))" "$(( (d % 1000000) / 10000 ))"
     __EIGS_SEC_LABEL=""
+    # Test-only seam rendezvous for the tree-lock lifetime selftest.  The
+    # directory is private to that test; ordinary runs execute only this
+    # empty-variable check.
+    if [ -n "${EIGS_LOCK_TEST_SEAMS:-}" ]; then
+        __EIGS_LOCK_TEST_SEAM=$((__EIGS_LOCK_TEST_SEAM + 1))
+        : >"$EIGS_LOCK_TEST_SEAMS/seam-$__EIGS_LOCK_TEST_SEAM"
+        while [ -e "$EIGS_LOCK_TEST_SEAMS/hold-$__EIGS_LOCK_TEST_SEAM" ]; do sleep 0.02; done
+    fi
     return 0
 }
 echo() {
@@ -5572,7 +5591,16 @@ PASS=$((PASS + FMT_PASS))
 FAIL=$((FAIL + FMT_FAIL))
 if [ "$FMT_FAIL" -gt 0 ]; then
     echo "  FAIL: $FMT_FAIL formatter check(s) failed"
-    echo "$FMT_OUTPUT" | grep "FAIL:" | head -5
+    # A summary without the child's context hid archive/build failures in CI.
+    # Print both ends and count exactly how much was elided.
+    FMT_LINES=$(printf '%s\n' "$FMT_OUTPUT" | wc -l | tr -d ' ')
+    if [ "$FMT_LINES" -le 80 ]; then
+        printf '%s\n' "$FMT_OUTPUT"
+    else
+        printf '%s\n' "$FMT_OUTPUT" | head -40
+        echo "  ... $((FMT_LINES - 80)) formatter output line(s) elided ..."
+        printf '%s\n' "$FMT_OUTPUT" | tail -40
+    fi
 else
     echo "  PASS: all $FMT_PASS formatter checks"
 fi
@@ -6175,7 +6203,8 @@ echo ""
 # The file list is the gate's POPULATION: a document dropped from this line
 # stops being checked, so the checker itself fails when the run does not cover
 # every pinned row ("Doc populations pinned: N of M"), and DOC_POPULATIONS
-# below pins the count here too — the two must agree.
+# below pins the count here too — the two must agree. #1991 keeps both
+# observer guides in this set because both carry executable fences.
 DOC_FILES_ARG="$TESTS_DIR/../README.md $TESTS_DIR/../docs/llms.txt \
 $TESTS_DIR/../docs/SPEC.md $TESTS_DIR/../docs/COMPARISON.md \
 $TESTS_DIR/../docs/CONCURRENCY.md $TESTS_DIR/../docs/STDLIB.md \

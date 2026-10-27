@@ -738,9 +738,11 @@ Value* builtin_dict_set(Value *arg) {
               "dict_set", "[dict, key, value]", make_null());
     Value *d = list_get_ref(arg, 0);
     Value *key = BUILTIN_LIST_VIEW(arg, 1);
-    if (!d || d->type != VAL_DICT || key->type != VAL_STR) return make_null();
+    if (!d || d->type != VAL_DICT) return make_null();
+    const char *dict_key = dict_assignment_key(d, key, 0);
+    if (!dict_key) return make_null();
     Value *val = list_get_owned(arg, 2);
-    dict_set(d, key->data.str, val);
+    dict_set(d, dict_key, val);
     val_decref(val);
     return d;
 }
@@ -751,8 +753,10 @@ Value* builtin_dict_remove(Value *arg) {
               "dict_remove", "[dict, key]", make_null());
     Value *d = list_get_ref(arg, 0);
     Value *key = BUILTIN_LIST_VIEW(arg, 1);
-    if (!d || d->type != VAL_DICT || key->type != VAL_STR) return make_null();
-    dict_remove(d, key->data.str);
+    if (!d || d->type != VAL_DICT) return make_null();
+    const char *dict_key = dict_assignment_key(d, key, 0);
+    if (!dict_key) return make_null();
+    dict_remove(d, dict_key);
     return d;
 }
 
@@ -2473,16 +2477,21 @@ int replay_blocks(const char *fn, const char *boundary) {
 
 /* Free a TokenList's malloc'd storage (token array and str_vals) */
 void free_tokenlist(TokenList *tl) {
-    if (!tl->tokens) return;
-    for (int i = 0; i < tl->count; i++) {
+    for (int i = 0; tl->tokens && i < tl->count; i++) {
         if (tl->tokens[i].str_val) {
             free(tl->tokens[i].str_val);
             tl->tokens[i].str_val = NULL;
         }
     }
     free(tl->tokens);
+    free(tl->literal_spans);
+    free(tl->line_depths);
     tl->tokens = NULL;
+    tl->literal_spans = NULL;
+    tl->line_depths = NULL;
     tl->count = 0;
+    tl->literal_count = tl->literal_capacity = 0;
+    tl->line_depth_count = 0;
 }
 
 /* #1322: user code that receives the lexer's tokens (tokenize_with_names,

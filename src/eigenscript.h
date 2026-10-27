@@ -198,7 +198,19 @@ typedef struct {
     Token *tokens;
     int count;
     int capacity;
+    /* Exact source byte ranges occupied by literals.  The formatter consumes
+     * these instead of maintaining a second string/f-string scanner. */
+    struct LexLiteralSpan *literal_spans;
+    int literal_count;
+    int literal_capacity;
+    int *line_depths;            /* -1: blank/literal/continuation; <-1: comment */
+    int line_depth_count;
 } TokenList;
+
+typedef struct LexLiteralSpan {
+    size_t start;
+    size_t end;                 /* exclusive */
+} LexLiteralSpan;
 
 /* ---- AST ---- */
 
@@ -1773,6 +1785,8 @@ const char* eigs_native_fn_name(BuiltinFn fn);   /* NULL for a plain builtin */
 Value* make_dict(int capacity);
 void dict_set(Value *dict, const char *key, Value *val);
 void dict_set_owned(Value *dict, const char *key, Value *val);
+/* Shared by indexed assignment and builtins which accept dictionary keys. */
+const char *dict_assignment_key(Value *dict, Value *key, int line);
 /* Deep-copy a value for cross-thread channel transfer (#293): re-homes dict
  * keys into a process-global intern table so they survive the sender thread's
  * detach. Returns a heap value (refcount 1). */

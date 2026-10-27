@@ -469,8 +469,10 @@ window of its relative steps (`Δv` over the step's own scale, #1045 — so
 the unit the value is stored in does not matter) sits under the settle
 deadband — the standard mixed-tolerance stopping criterion, built in
 (#861). This run exits
-through the predicate itself in 13 iterations; the deadband is the
-diverges ends via the observer's stall backstop with
+through the predicate itself in 13 iterations. The tolerance is fixed, not
+configurable; its authoritative value is `OBSERVER_DH_ZERO_DEFAULT` in
+`src/eigenscript.h`. A run that diverges ends via the observer's stall
+backstop with
 `__loop_exit__ == "stalled"` instead of hanging or lying. (Use the loop
 inside a function so it gets a fresh binding to watch — see
 `examples/observer_vs_boilerplate.eigs`.) The next section is *why* this

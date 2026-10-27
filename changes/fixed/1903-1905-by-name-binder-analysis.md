@@ -1,0 +1,1 @@
+- Fix #1903, #1904 and #1905 with one complete traversal and one shared, scope-aware classification of names bound through environments, while preserving the parent's dynamic write targets for nested definitions, imports, and loop-only binders.

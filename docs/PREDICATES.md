@@ -91,14 +91,15 @@ MEASUREMENT — `where`, `why`, `how`, trajectory snapshots, container
 folds, the tape — is unchanged everywhere.
 
 Why: entropy is a function of `|x|` alone, so any clause on it is a
-clause on magnitude. Measured against 27 analytically-known sequences
-(`tests/test_convergence_oracle.eigs`), the entropy channel scored 19/27
-— `converged` fired across the whole region `|x| ∈ [77, 1e307]` (a
-geometric runaway certified at `x ≈ 2.9e5`), could never fire for limits
-in `[~0.013, 76]` (Newton's method to `sqrt(2)` was uncertifiable), and
-gave the same computation targeting 5000, 5 and 0.005 three different
-verdicts. The value channel scores 25/27; the two misses are the
-irreducible tolerance floor, not defects (see the honesty bound below).
+clause on magnitude. The current CI corpus compares every predicate, not
+just `converged`, against its labelled question. Run
+`python3 tools/observer_oracle/score.py src/eigenscript` and read its
+**DOCUMENTATION TABLE** for the per-predicate incumbent, `REFERENCE`,
+`REFERENCE_ENTROPY`, and constant-false scores. The command derives every
+cell from the corpus and the selected binary; no score is copied into this
+document. The entropy channel can certify a geometric runaway and can fail
+to certify a finite nonzero limit because magnitude is a lossy proxy for
+motion.
 
 **The numeric definitions** (a fixed window of `N = 10` relative steps — see
 [The window](#the-window-1044) — `rel = Δv / max(|v|, |v_prev|, scale)`, raw
@@ -778,7 +779,9 @@ report of x               # "converged"  — settled AT THE DEADBAND; x is ~98, 
 
 This is the tolerance semantics, not a defect: `converged` means every
 recent step is below the tolerance, and per-step motion of 0.1% at the
-default `dh_zero = 0.001` is exactly the boundary. Tighten the deadband
+fixed `dh_zero = 0.001` is exactly the boundary. This tolerance is not a
+runtime setting; read its authoritative value at
+`OBSERVER_DH_ZERO_DEFAULT` in `src/eigenscript.h`.
 
 The lesson is about **observation cadence**: observe at a rate matched to
 the dynamics, not once per micro-step. The robust pattern is to advance the
@@ -858,8 +861,11 @@ loop while not (converged of x):
         throw of "did not settle"
 ```
 
-- **Tolerance tighter than the default.** `converged` fires at the
-  deadband (`dh_zero`, default 0.1% relative). For a tighter answer,
+- **Tolerance tighter than the fixed value.** `converged` fires at the
+  deadband (`dh_zero`, fixed at 0.1% relative). It is not configurable;
+  read the authoritative value at `OBSERVER_DH_ZERO_DEFAULT` in
+  `src/eigenscript.h`. For a tighter answer, calculate and test the desired
+  residual explicitly.
 
 ## What carries a trajectory
 
