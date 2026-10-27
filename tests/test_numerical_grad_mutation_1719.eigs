@@ -53,4 +53,42 @@ catch e:
     assert of [pc == [[]], "numerical_grad_cols touched the list after callback"]
     print of "PASS numerical_grad_cols"
 
+# A callback may replace a row with another, sufficiently long list.  The
+# replacement must not receive restoration writes, and the retained original
+# row must have its perturbed cell restored before the mutation error escapes.
+original is [1]
+replacement is [2]
+aliased is [original]
+alias_calls is 0
+define loss_alias(_) as:
+    alias_calls is alias_calls + 1
+    if alias_calls == 1:
+        aliased[0] is replacement
+    return 0
+try:
+    numerical_grad of [loss_alias, aliased, 0.01]
+    assert of [false, "numerical_grad accepted a replaced row"]
+catch e:
+    assert of [e.kind == "value", "row replacement error kind"]
+    assert of [e.message == "param mutated during gradient", "row replacement error message"]
+    assert of [original == [1], "numerical_grad restored the original row"]
+    assert of [replacement == [2], "numerical_grad left the replacement row untouched"]
+    print of "PASS numerical_grad row identity"
+
+# Exercise the failure cleanup repeatedly.  The ASan pool-off shard runs this
+# with leak detection, making an unfinished gradient-row leak deterministic.
+leak_iterations is 0
+loop while leak_iterations < 100:
+    leak_param is [[1]]
+    define leak_loss(_) as:
+        list_remove_at of [leak_param, 0]
+        return 0
+    try:
+        numerical_grad of [leak_loss, leak_param, 0.01]
+    catch e:
+        assert of [e.kind == "value", "caught-mutation loop error kind"]
+    leak_iterations is leak_iterations + 1
+assert of [leak_iterations == 100, "caught-mutation loop completed"]
+print of "PASS numerical_grad caught-mutation cleanup loop"
+
 print of "NUMERICAL GRAD MUTATION ALL PASS"

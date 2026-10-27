@@ -1855,11 +1855,24 @@ static int gradient_index_still_valid(const Value *list, int index) {
     return 0;
 }
 
-static Value *gradient_row_still_valid(const Value *matrix, int row, int col) {
-    if (!gradient_index_still_valid(matrix, row)) return NULL;
-    Value *current_row = list_get_ref(matrix, row);
-    if (!gradient_index_still_valid(current_row, col)) return NULL;
-    return current_row;
+static Value *gradient_row_still_valid(const Value *matrix, int row, int col,
+                                       Value *expected_row, double old_val) {
+    Value *current_row = NULL;
+    if (matrix && matrix->type == VAL_LIST && row >= 0 &&
+        row < matrix->data.list.count)
+        current_row = list_get_ref(matrix, row);
+    if (current_row == expected_row && expected_row->type == VAL_LIST &&
+        col >= 0 && col < expected_row->data.list.count)
+        return expected_row;
+
+    /* The caller retains expected_row across arbitrary callback code.  If the
+     * parent now points elsewhere, restore the row that we actually perturbed;
+     * never redirect old_val into the callback's replacement row. */
+    if (expected_row->type == VAL_LIST && col >= 0 &&
+        col < expected_row->data.list.count)
+        list_set_num(expected_row, col, old_val);
+    rt_error(EK_VALUE, 0, "param mutated during gradient");
+    return NULL;
 }
 
 /* numerical_grad of [loss_fn, param, eps]
@@ -1965,31 +1978,37 @@ list_grad_failed:
     /* 2D param */
     int rows = param->data.list.count;
     Value *grad = make_list(rows);
+    Value *unfinished_grad_row = NULL;
     for (int r = 0; r < rows; r++) {
         Value *row = list_get_ref(param, r);
         if (!row || row->type != VAL_LIST) { list_append_owned(grad, make_list(0)); continue; }
         int cols = row->data.list.count;
         Value *grad_row = make_list(cols);
+        unfinished_grad_row = grad_row;
         for (int c = 0; c < cols; c++) {
             double old_val = eigs_slot_num(list_slot(row, c), __func__);
+            val_incref(row);
             list_set_num(row, c, old_val + eps);
             double lp = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            row = gradient_row_still_valid(param, r, c);
-            if (!row) goto matrix_grad_failed;
+            Value *checked_row = gradient_row_still_valid(param, r, c, row, old_val);
+            if (!checked_row) { val_decref(row); goto matrix_grad_failed; }
             list_set_num(row, c, old_val - eps);
             double lm = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            row = gradient_row_still_valid(param, r, c);
-            if (!row) goto matrix_grad_failed;
+            checked_row = gradient_row_still_valid(param, r, c, row, old_val);
+            if (!checked_row) { val_decref(row); goto matrix_grad_failed; }
             list_set_num(row, c, old_val);
+            val_decref(row);
             list_append_owned(grad_row, make_num((lp - lm) / (2.0 * eps)));
         }
         list_append_owned(grad, grad_row);
+        unfinished_grad_row = NULL;
     }
     val_decref(nul);
     if (!loss_valid) { val_decref(grad); return make_null(); }
     return grad;
 matrix_grad_failed:
     val_decref(nul);
+    if (unfinished_grad_row) val_decref(unfinished_grad_row);
     val_decref(grad);
     return make_null();
 }
@@ -2135,15 +2154,17 @@ Value* builtin_numerical_grad_rows(Value *arg) {
 
         for (int c = 0; c < cols && c < row->data.list.count; c++) {
             double old_val = eigs_slot_num(list_slot(row, c), __func__);
+            val_incref(row);
             list_set_num(row, c, old_val + eps);
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
-            row = gradient_row_still_valid(matrix, r, c);
-            if (!row) goto rows_grad_failed;
+            Value *checked_row = gradient_row_still_valid(matrix, r, c, row, old_val);
+            if (!checked_row) { val_decref(row); goto rows_grad_failed; }
             list_set_num(row, c, old_val - eps);
             double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
-            row = gradient_row_still_valid(matrix, r, c);
-            if (!row) goto rows_grad_failed;
+            checked_row = gradient_row_still_valid(matrix, r, c, row, old_val);
+            if (!checked_row) { val_decref(row); goto rows_grad_failed; }
             list_set_num(row, c, old_val);
+            val_decref(row);
             /* gradient — release the zero placeholder this slot held */
             list_set_num(grad_row, c, (loss_plus - loss_minus) / (2.0 * eps));
         }
@@ -2313,18 +2334,20 @@ Value* builtin_numerical_grad_cols(Value *arg) {
             if (!row || row->type != VAL_LIST || col >= row->data.list.count) continue;
 
             double old_val = eigs_slot_num(list_slot(row, col), __func__);
+            val_incref(row);
             /* +eps */
             list_set_num(row, col, old_val + eps);
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
-            row = gradient_row_still_valid(matrix, r, col);
-            if (!row) goto cols_grad_failed;
+            Value *checked_row = gradient_row_still_valid(matrix, r, col, row, old_val);
+            if (!checked_row) { val_decref(row); goto cols_grad_failed; }
             /* -eps */
             list_set_num(row, col, old_val - eps);
             double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
-            row = gradient_row_still_valid(matrix, r, col);
-            if (!row) goto cols_grad_failed;
+            checked_row = gradient_row_still_valid(matrix, r, col, row, old_val);
+            if (!checked_row) { val_decref(row); goto cols_grad_failed; }
             /* restore */
             list_set_num(row, col, old_val);
+            val_decref(row);
             /* gradient — release the zero placeholder this slot held */
             Value *grad_row = list_get_ref(grad, r);
             list_set_num(grad_row, col, (loss_plus - loss_minus) / (2.0 * eps));
