@@ -115,6 +115,11 @@ strerror
 __ctype_b_loc
 __ctype_tolower_loc
 __ctype_toupper_loc
+atoi
+isalnum
+isxdigit
+tolower
+toupper
 qsort
 
 # --- mini-libm (4 kernels + derived) ---
