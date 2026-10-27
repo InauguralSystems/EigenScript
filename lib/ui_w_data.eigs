@@ -13,15 +13,15 @@ define table(id, x, y, w, h, columns, on_select) as:
         "selected": -1,
         "scroll_y": 0,
         "sort_col": -1,
-        "sort_asc": 1,
+        "sort_asc": true,
         "on_select": on_select,
         "on_sort": null,
         "hover_row": -1,
         "hover_col_header": -1,
         "header_h": 24,
         "row_h": 22,
-        "visible": 1,
-        "enabled": 1
+        "visible": true,
+        "enabled": true
     }
 
 define tree(id, x, y, w, h, nodes, on_select) as:
@@ -35,7 +35,7 @@ define tree(id, x, y, w, h, nodes, on_select) as:
         "scroll_y": 0,
         "hover_index": -1,
         "item_h": 22,
-        "visible": 1
+        "visible": true
     }
 
 define item_list(id, x, y, w, h, items, on_select) as:
@@ -50,10 +50,10 @@ define item_list(id, x, y, w, h, items, on_select) as:
         "on_drop": null,
         "on_reorder": null,
         "reorder_insert": -1,
-        "draggable": 0,
+        "draggable": false,
         "hover_index": -1,
         "item_h": 22,
-        "visible": 1
+        "visible": true
     }
 
 define grid(id, x, y, cols, rows, cell_w, cell_h, on_cell) as:
@@ -79,7 +79,7 @@ define grid(id, x, y, cols, rows, cell_w, cell_h, on_cell) as:
         # source of truth — with undo history, pattern switching,
         # randomize — decides in on_cell and pushes the result back,
         # instead of both sides keeping a copy that can drift.
-        "owns_cells": 1,
+        "owns_cells": true,
         "row_labels": null,
         # The row-label gutter is INSIDE the widget rect (#859): when
         # row_labels is set the widget is row_label_w wider and cell (0,0)
@@ -97,7 +97,7 @@ define grid(id, x, y, cols, rows, cell_w, cell_h, on_cell) as:
         "color_off": [40, 40, 55],
         "color_beat": [45, 45, 60],
         "color_hover": [55, 55, 75],
-        "visible": 1
+        "visible": true
     }
 
 # ---- Tree helper ----
@@ -105,14 +105,14 @@ define grid(id, x, y, cols, rows, cell_w, cell_h, on_cell) as:
 define _flatten_tree(nodes, depth, out) as:
     for i in range of (len of nodes):
         nd is nodes[i]
-        expanded is 0
+        expanded is false
         if nd.expanded != null:
             expanded is nd.expanded
-        has_children is 0
+        has_children is false
         if nd.children != null and (len of nd.children) > 0:
-            has_children is 1
+            has_children is true
         append of [out, {"node": nd, "depth": depth, "has_children": has_children, "expanded": expanded}]
-        if expanded == 1 and has_children == 1:
+        if expanded and has_children:
             _flatten_tree of [nd.children, depth + 1, out]
 
 # ---- Render functions ----
@@ -131,7 +131,7 @@ define _render_table(widget, ax, ay) as:
         _draw_text_clipped of [hx + 6, ay + 5, col.width - 12, col.name, _theme.tab_text_active, _theme.font_scale]
         # Sort indicator
         if ci == widget.sort_col:
-            if widget.sort_asc == 1:
+            if widget.sort_asc:
                 gfx_text of [hx + col.width - 14, ay + 5, "^", _theme.accent[0], _theme.accent[1], _theme.accent[2], 1]
             else:
                 gfx_text of [hx + col.width - 14, ay + 5, "v", _theme.accent[0], _theme.accent[1], _theme.accent[2], 1]
@@ -199,8 +199,8 @@ define _render_tree(widget, ax, ay) as:
             else:
                 ntc is _theme.text_color
             # Expand arrow
-            if fe.has_children == 1:
-                if fe.expanded == 1:
+            if fe.has_children:
+                if fe.expanded:
                     gfx_text of [ax + indent - 12, iy + 4, "v", _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], _theme.font_scale]
                 else:
                     gfx_text of [ax + indent - 12, iy + 4, ">", _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], _theme.font_scale]
@@ -344,7 +344,7 @@ define _mousemove_grid(hit, root, mx, my) as:
 # ---- Mousedown functions ----
 
 define _mousedown_table(hit, root, mx, my, ev) as:
-    if hit.enabled == 1:
+    if hit.enabled:
         abs_x is hit._ax
         abs_y is hit._ay
         rel_y is my - abs_y
@@ -355,13 +355,13 @@ define _mousedown_table(hit, root, mx, my, ev) as:
                 col is hit.columns[ci]
                 if (mx - abs_x) >= rx and (mx - abs_x) < rx + col.width:
                     if hit.sort_col == ci:
-                        if hit.sort_asc == 1:
-                            hit.sort_asc is 0
+                        if hit.sort_asc:
+                            hit.sort_asc is false
                         else:
-                            hit.sort_asc is 1
+                            hit.sort_asc is true
                     else:
                         hit.sort_col is ci
-                        hit.sort_asc is 1
+                        hit.sort_asc is true
                     if hit.on_sort != null:
                         hit.on_sort of hit
                 rx is rx + col.width
@@ -383,12 +383,12 @@ define _mousedown_tree(hit, root, mx, my, ev) as:
         abs_x is hit._ax
         indent is 16 * fe.depth + 8
         rel_x is mx - abs_x
-        if fe.has_children == 1 and rel_x < indent:
+        if fe.has_children and rel_x < indent:
             # Toggle expand
-            if fe.expanded == 1:
-                fe.node.expanded is 0
+            if fe.expanded:
+                fe.node.expanded is false
             else:
-                fe.node.expanded is 1
+                fe.node.expanded is true
         else:
             # Select node
             hit.selected_id is fe.node.id
@@ -399,9 +399,9 @@ define _mousedown_item_list(hit, root, mx, my, ev) as:
     abs_y is hit._ay
     idx is floor of ((my - abs_y + hit.scroll_y) / hit.item_h)
     if idx >= 0 and idx < (len of hit.items):
-        if hit.draggable == 1:
+        if hit.draggable:
             # Start DnD
-            _ui.dnd_state.active is 1
+            _ui.dnd_state.active is true
             _ui.dnd_state.source is hit
             _ui.dnd_state.source_index is idx
             _ui.dnd_state.data is hit.items[idx]
@@ -425,7 +425,7 @@ define _mousedown_grid(hit, root, mx, my, ev) as:
     if gc >= 0 and gc < hit.cols and gr >= 0 and gr < hit.rows:
         # Toggle only if the widget owns the pattern (#572) — otherwise
         # report the hit and let on_cell decide against the app's model.
-        if hit.owns_cells != 0:
+        if hit.owns_cells:
             if hit.cells[gr][gc] > 0:
                 hit.cells[gr][gc] is 0
             else:
@@ -496,8 +496,8 @@ _register_widget of ["table", {
     "clear_hover": _clear_hover_table,
     "clear_pressed": null,
     "scroll": _scroll_table,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["tree", {
@@ -508,8 +508,8 @@ _register_widget of ["tree", {
     "clear_hover": _clear_hover_tree,
     "clear_pressed": null,
     "scroll": _scroll_tree,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["item_list", {
@@ -520,8 +520,8 @@ _register_widget of ["item_list", {
     "clear_hover": _clear_hover_item_list,
     "clear_pressed": null,
     "scroll": _scroll_item_list,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["grid", {
@@ -533,8 +533,8 @@ _register_widget of ["grid", {
     "clear_hover": _clear_hover_grid,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 # ---- hex_view: memory/byte-grid viewer (#850) ----
@@ -573,7 +573,7 @@ define hex_view(id, x, y, w, h, reader, size) as:
         "cursor": null,
         "on_select": null,
         "hover_addr": -1,
-        "visible": 1
+        "visible": true
     }
 
 # Cursor seam: silent by contract; on_select reports USER clicks only.
@@ -731,6 +731,6 @@ _register_widget of ["hex_view", {
     "clear_hover": _clear_hover_hex_view,
     "clear_pressed": null,
     "scroll": _scroll_hex_view,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]

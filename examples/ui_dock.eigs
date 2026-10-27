@@ -42,14 +42,14 @@ center is ui.canvas of ["center", 0, 0, 10, 10, paint_center, null]
 ui.dock_set_center of [dk, center]
 
 regs is ui.label of ["regs", 0, 0, "AF=01B0 BC=0013 DE=00D8 HL=014D"]
-regs.auto_size is 0
+regs.auto_size is false
 ui.dock_add of [dk, "west", ui.dock_panel of ["registers", regs]]
 watch is ui.label of ["watch", 0, 0, "watch: (empty)"]
-watch.auto_size is 0
+watch.auto_size is false
 ui.dock_add of [dk, "west", ui.dock_panel of ["watch", watch]]
 
 tiles is ui.label of ["tiles", 0, 0, "tile viewer"]
-tiles.auto_size is 0
+tiles.auto_size is false
 ui.dock_add of [dk, "east", ui.dock_panel of ["tiles", tiles]]
 
 dis is ui.code_view of ["dis", 0, 0, 10, 10, "0100  nop\n0101  jp 0150\n0150  di"]

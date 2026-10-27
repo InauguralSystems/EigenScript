@@ -441,3 +441,5 @@ See docs/TRACE.md and docs/EMBEDDING.md for binding and format compatibility.
 Replay refuses unreconstructable host effects: `mktemp` raises a catchable
 filesystem-boundary error before creating a file; ordinary `mktemp` still
 creates the file and returns its path for later `remove_file`.
+
+UI widget-state contract (#1653): binary fields (`visible`, `enabled`, interaction flags, expansion/collapse flags, and checkbox/toggle/toggle-button `value`) are bools written as `true`/`false` and read by truthiness. Numeric values, selection indices, bitmasks, and explicit `null` sentinels are not coerced to bool. Boolean-valued public constructors/setters reject numeric arguments before UI effects.

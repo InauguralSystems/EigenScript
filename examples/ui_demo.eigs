@@ -43,7 +43,7 @@ define on_pan(w) as:
     status_text is f"Pan: {floor of w.value}"
 
 define on_mute(w) as:
-    if w.value == 1:
+    if w.value:
         status_text is "Muted"
     else:
         status_text is "Unmuted"
@@ -67,7 +67,7 @@ define on_fader(w) as:
     status_text is f"Fader: {floor of w.value} dB"
 
 define on_active(w) as:
-    if w.value == 1:
+    if w.value:
         status_text is "Effect active"
     else:
         status_text is "Effect bypassed"
@@ -103,7 +103,7 @@ define on_table_select(w) as:
 
 define on_table_sort(w) as:
     dir is "asc"
-    if w.sort_asc == 0:
+    if not w.sort_asc:
         dir is "desc"
     status_text is f"Sort: column {w.sort_col} {dir}"
 
@@ -111,13 +111,13 @@ define on_disabled_toggle(w) as:
     vol is ui.find_by_id of [root, "volume"]
     pan_s is ui.find_by_id of [root, "pan"]
     if vol != null:
-        if w.value == 1:
-            vol.enabled is 0
-            pan_s.enabled is 0
+        if w.value:
+            vol.enabled is false
+            pan_s.enabled is false
             status_text is "Sliders disabled"
         else:
-            vol.enabled is 1
-            pan_s.enabled is 1
+            vol.enabled is true
+            pan_s.enabled is true
             status_text is "Sliders enabled"
 
 # Canvas waveform painter
@@ -209,9 +209,9 @@ ui.add_child of [left_col, ui.slider of ["volume", 0, 0, 260, 0, 100, 75, on_vol
 ui.add_child of [left_col, ui.label of ["pan_lbl", 0, 0, "Pan"]]
 ui.add_child of [left_col, ui.slider of ["pan", 0, 0, 260, -100, 100, 0, on_pan]]
 ui.add_child of [left_col, ui.label of ["mute_lbl", 0, 0, "Mute"]]
-ui.add_child of [left_col, ui.toggle of ["mute", 0, 0, 0, on_mute]]
+ui.add_child of [left_col, ui.toggle of ["mute", 0, 0, false, on_mute]]
 ui.add_child of [left_col, ui.label of ["dis_lbl", 0, 0, "Disable sliders"]]
-ui.add_child of [left_col, ui.toggle of ["disable_tog", 0, 0, 0, on_disabled_toggle]]
+ui.add_child of [left_col, ui.toggle of ["disable_tog", 0, 0, false, on_disabled_toggle]]
 
 # Right column: vertical faders in hbox
 right_col is ui.hbox of ["right_col", 310, 10, 300, 300]
@@ -295,19 +295,19 @@ fx_panel.border is null
 
 fx_scroll is ui.scroll_panel of ["fx_list", 10, 10, 400, 300]
 fx_scroll.content_h is 400
-ui.add_child of [fx_scroll, ui.checkbox of ["eq_active", 10, 10, "EQ", 1, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["comp_active", 10, 40, "Compressor", 1, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["rev_active", 10, 70, "Reverb", 0, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["del_active", 10, 100, "Delay", 0, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["cho_active", 10, 130, "Chorus", 0, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["lim_active", 10, 160, "Limiter", 1, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["dist_active", 10, 190, "Distortion", 0, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["flg_active", 10, 220, "Flanger", 0, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["phs_active", 10, 250, "Phaser", 0, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["gate_active", 10, 280, "Noise Gate", 0, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["sat_active", 10, 310, "Saturator", 0, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["wid_active", 10, 340, "Stereo Width", 0, on_active]]
-ui.add_child of [fx_scroll, ui.checkbox of ["de_active", 10, 370, "De-Esser", 0, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["eq_active", 10, 10, "EQ", true, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["comp_active", 10, 40, "Compressor", true, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["rev_active", 10, 70, "Reverb", false, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["del_active", 10, 100, "Delay", false, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["cho_active", 10, 130, "Chorus", false, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["lim_active", 10, 160, "Limiter", true, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["dist_active", 10, 190, "Distortion", false, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["flg_active", 10, 220, "Flanger", false, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["phs_active", 10, 250, "Phaser", false, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["gate_active", 10, 280, "Noise Gate", false, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["sat_active", 10, 310, "Saturator", false, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["wid_active", 10, 340, "Stereo Width", false, on_active]]
+ui.add_child of [fx_scroll, ui.checkbox of ["de_active", 10, 370, "De-Esser", false, on_active]]
 ui.add_child of [fx_panel, fx_scroll]
 
 ctx_menu is ui.menu of ["ctx", ["Cut", "Copy", "Paste", "-", "Delete", "Duplicate"], on_menu_select]
@@ -388,8 +388,8 @@ ui.add_child of [data_panel, demo_chart]
 # Fixed-aspect phase portrait — x and y units are equal per pixel, so the
 # spiral is not stretched by the widget's shape.
 phase is ui.chart of ["phase", 730, 180, 220, 220]
-phase.fixed_aspect is 1
-phase.legend is 0
+phase.fixed_aspect is true
+phase.legend is false
 phase.pad_frac is 0.05
 phase_x is []
 phase_y is []
@@ -436,7 +436,7 @@ ui.add_child of [data_panel, cv]
 demo_props is [
     {"key": "Name", "value": "Synth 1", "type": "text"},
     {"key": "Volume", "value": 75, "type": "number", "min": 0, "max": 100},
-    {"key": "Active", "value": 1, "type": "bool"},
+    {"key": "Active", "value": true, "type": "bool"},
     {"key": "Mode", "value": "Poly", "type": "choice", "items": ["Mono", "Poly", "Unison", "Legato"]}
 ]
 define on_prop_change(info) as:

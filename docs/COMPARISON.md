@@ -744,3 +744,7 @@ Routes and the static root are fixed once `http_serve` starts: `http_route`,
 `http_route_authed` and `http_static` then raise, including from a `code`
 route, and an uncaught error in a `code` route's source answers 500 with a
 generic body; the error message goes to the server's stderr only (#1140).
+
+### UI state booleans
+
+Like Python, Lua, Go, and Rust, EigenScript's UI library uses boolean values for two-state widget fields rather than numeric `0`/`1` flags. Unlike permissive legacy conventions, public boolean-valued UI constructor and setter arguments reject numbers.

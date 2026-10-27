@@ -4,7 +4,7 @@
 # ============================================================
 
 define _build_focus_list(widget) as:
-    if widget.visible == 0:
+    if not widget.visible:
         return null
     if (_is_focusable of widget):
         append of [_ui.focus_list, widget]
@@ -52,7 +52,7 @@ define _focus_next(root, reverse) as:
     _unfocus_all of root
     _ui.focused_input is null
     if _ui.focused_widget.type == "text_input":
-        _ui.focused_widget.focused is 1
+        _ui.focused_widget.focused is true
         _ui.focused_input is _ui.focused_widget
 
 define _handle_focus_key(root, ev) as:
@@ -67,23 +67,23 @@ define _handle_focus_key(root, ev) as:
         return false
     w is _ui.focused_widget
     if ev.key == "return" or ev.key == "space":
-        if w.type == "button" and w.enabled == 1:
+        if w.type == "button" and w.enabled:
             if w.on_click != null:
                 w.on_click of w
             return true
         if w.type == "toggle" or w.type == "checkbox":
-            if w.value == 1:
-                w.value is 0
+            if w.value:
+                w.value is false
             else:
-                w.value is 1
+                w.value is true
             if w.on_change != null:
                 w.on_change of w
             return true
         if w.type == "toggle_button":
-            if w.value == 1:
-                w.value is 0
+            if w.value:
+                w.value is false
             else:
-                w.value is 1
+                w.value is true
             if w.on_click != null:
                 w.on_click of w
             return true
@@ -145,11 +145,11 @@ define _handle_focus_key(root, ev) as:
                 if w.on_select != null:
                     w.on_select of [w, flat[cur_fi + 1].node]
             elif ev.key == "left" and cur_fi >= 0:
-                if flat[cur_fi].expanded == 1:
-                    flat[cur_fi].node.expanded is 0
+                if flat[cur_fi].expanded:
+                    flat[cur_fi].node.expanded is false
             elif ev.key == "right" and cur_fi >= 0:
-                if flat[cur_fi].has_children == 1:
-                    flat[cur_fi].node.expanded is 1
+                if flat[cur_fi].has_children:
+                    flat[cur_fi].node.expanded is true
             return true
     # Grid: arrow keys move hover, space toggles cell
     if w.type == "grid":
@@ -171,7 +171,7 @@ define _handle_focus_key(root, ev) as:
             if w.hover_row >= 0 and w.hover_col >= 0:
                 # Mirror the mouse path's ownership rule (#572), or
                 # keyboard and mouse would disagree about who flips.
-                if w.owns_cells != 0:
+                if w.owns_cells:
                     if w.cells[w.hover_row][w.hover_col] > 0:
                         w.cells[w.hover_row][w.hover_col] is 0
                     else:

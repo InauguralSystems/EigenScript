@@ -14,10 +14,10 @@ define button(id, x, y, w, h, text, on_click) as:
         "x": x, "y": y, "w": w, "h": h,
         "label": text,
         "on_click": on_click,
-        "hover": 0,
-        "pressed": 0,
-        "visible": 1,
-        "enabled": 1
+        "hover": false,
+        "pressed": false,
+        "visible": true,
+        "enabled": true
     }
 
 define toggle_button(id, x, y, w, h, text, on_click) as:
@@ -26,16 +26,17 @@ define toggle_button(id, x, y, w, h, text, on_click) as:
         "id": id,
         "x": x, "y": y, "w": w, "h": h,
         "label": text,
-        "value": 0,
+        "value": false,
         "on_click": on_click,
-        "hover": 0,
-        "visible": 1,
-        "enabled": 1,
+        "hover": false,
+        "visible": true,
+        "enabled": true,
         "color_on": _theme.accent,
         "color_off": _theme.btn_bg
     }
 
 define checkbox(id, x, y, text, value, on_change) as:
+    _ui_require_bool of [value, "checkbox", "value"]
     tw is (text_width of [text, _theme.font_scale]) + 22
     return {
         "type": "checkbox",
@@ -44,21 +45,22 @@ define checkbox(id, x, y, text, value, on_change) as:
         "label": text,
         "value": value,
         "on_change": on_change,
-        "hover": 0,
-        "visible": 1,
-        "enabled": 1
+        "hover": false,
+        "visible": true,
+        "enabled": true
     }
 
 define toggle(id, x, y, value, on_change) as:
+    _ui_require_bool of [value, "toggle", "value"]
     return {
         "type": "toggle",
         "id": id,
         "x": x, "y": y, "w": 32, "h": 16,
         "value": value,
         "on_change": on_change,
-        "hover": 0,
-        "visible": 1,
-        "enabled": 1
+        "hover": false,
+        "visible": true,
+        "enabled": true
     }
 
 # ---- Render functions ----
@@ -72,12 +74,12 @@ define toggle(id, x, y, value, on_change) as:
 # rather than throwing.
 
 define _draw_hover_shade(widget, ax, ay, w, h, radius) as:
-    if widget.enabled == 0:
+    if not widget.enabled:
         return null
     shade is null
-    if widget.pressed == 1:
+    if widget.pressed:
         shade is _theme.pressed_shade
-    elif widget.hover == 1:
+    elif widget.hover:
         shade is _theme.hover_shade
     if shade != null:
         gfx_rrect of [ax, ay, w, h, radius, shade[0], shade[1], shade[2], shade[3]]
@@ -93,12 +95,12 @@ define _render_button(widget, ax, ay) as:
     custom is 1
     if widget.bg == null:
         custom is 0
-    if widget.enabled == 0:
+    if not widget.enabled:
         bg is _theme.btn_disabled
         tc is _theme.btn_text_disabled
-    elif custom == 0 and widget.pressed == 1:
+    elif custom == 0 and widget.pressed:
         bg is _theme.btn_pressed
-    elif custom == 0 and widget.hover == 1:
+    elif custom == 0 and widget.hover:
         bg is _theme.btn_hover
     _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius_sm, bg, _theme.panel_border]
     # Hover/pressed feedback for custom-colored buttons: an alpha shade
@@ -114,15 +116,15 @@ define _render_button(widget, ax, ay) as:
     _draw_text_clipped of [tx, ty, widget.w - 4, widget.label, tc, _theme.font_scale]
 
 define _render_toggle_button(widget, ax, ay) as:
-    if widget.value == 1:
+    if widget.value:
         bg is widget.color_on
-    elif widget.hover == 1:
+    elif widget.hover:
         bg is _theme.btn_hover
     else:
         bg is widget.color_off
     _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius_sm, bg, _theme.panel_border]
     tc is _theme.btn_text
-    if widget.value == 1:
+    if widget.value:
         tc is [255, 255, 255]
     tw is text_width of [widget.label, _theme.font_scale]
     th is text_height of _theme.font_scale
@@ -133,10 +135,10 @@ define _render_toggle_button(widget, ax, ay) as:
 define _render_checkbox(widget, ax, ay) as:
     # Box
     box_bg is _theme.panel_bg
-    if widget.value == 1:
+    if widget.value:
         box_bg is _theme.accent
     gfx_rrect of [ax, ay, 14, 14, 2, box_bg[0], box_bg[1], box_bg[2]]
-    if widget.value == 1:
+    if widget.value:
         # Checkmark — two lines
         gfx_line of [ax + 3, ay + 7, ax + 6, ay + 10, 255, 255, 255]
         gfx_line of [ax + 6, ay + 10, ax + 11, ay + 3, 255, 255, 255]
@@ -151,7 +153,7 @@ define _render_checkbox(widget, ax, ay) as:
     _draw_hover_shade of [widget, ax, ay, widget.w, widget.h, _theme.radius_sm]
 
 define _render_toggle(widget, ax, ay) as:
-    if widget.value == 1:
+    if widget.value:
         bg is _theme.toggle_on
     else:
         bg is _theme.toggle_off
@@ -160,7 +162,7 @@ define _render_toggle(widget, ax, ay) as:
     gfx_rrect of [ax, ay, widget.w, widget.h, pill_r, bg[0], bg[1], bg[2]]
     # Circular knob
     knob_r is pill_r - 3
-    if widget.value == 1:
+    if widget.value:
         knob_cx is ax + widget.w - pill_r
     else:
         knob_cx is ax + pill_r
@@ -171,40 +173,40 @@ define _render_toggle(widget, ax, ay) as:
 # ---- Mousedown functions ----
 
 define _mousedown_button(hit, root, mx, my, ev) as:
-    if hit.enabled == 1:
-        hit.pressed is 1
+    if hit.enabled:
+        hit.pressed is true
 
 define _mousedown_toggle_button(hit, root, mx, my, ev) as:
-    if hit.enabled == 1:
-        if hit.value == 1:
-            hit.value is 0
+    if hit.enabled:
+        if hit.value:
+            hit.value is false
         else:
-            hit.value is 1
+            hit.value is true
         if hit.on_click != null:
             hit.on_click of hit
 
 define _mousedown_checkbox(hit, root, mx, my, ev) as:
-    if hit.enabled == 1:
-        if hit.value == 1:
-            hit.value is 0
+    if hit.enabled:
+        if hit.value:
+            hit.value is false
         else:
-            hit.value is 1
+            hit.value is true
         if hit.on_change != null:
             hit.on_change of hit
 
 define _mousedown_toggle(hit, root, mx, my, ev) as:
-    if hit.enabled == 1:
-        if hit.value == 1:
-            hit.value is 0
+    if hit.enabled:
+        if hit.value:
+            hit.value is false
         else:
-            hit.value is 1
+            hit.value is true
         if hit.on_change != null:
             hit.on_change of hit
 
 # ---- Clear pressed ----
 
 define _clear_pressed_button(widget) as:
-    widget.pressed is 0
+    widget.pressed is false
 
 # ---- Registration ----
 
@@ -216,8 +218,8 @@ _register_widget of ["button", {
     "clear_hover": null,
     "clear_pressed": _clear_pressed_button,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["toggle_button", {
@@ -228,8 +230,8 @@ _register_widget of ["toggle_button", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["checkbox", {
@@ -240,8 +242,8 @@ _register_widget of ["checkbox", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["toggle", {
@@ -252,6 +254,6 @@ _register_widget of ["toggle", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]

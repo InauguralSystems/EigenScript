@@ -2614,3 +2614,7 @@ Routes and the static root are fixed once `http_serve` starts: `http_route`,
 `http_route_authed` and `http_static` then raise, including from a `code`
 route, and an uncaught error in a `code` route's source answers 500 with a
 generic body; the error message goes to the server's stderr only (#1140).
+
+### UI boolean state
+
+The standard UI library represents binary widget state with `true` and `false` and reads it by truthiness. Numeric values, selection indices, bitmasks, and `null` absence sentinels remain distinct; `0` and `1` are not widget booleans. See [UI widget state](UI.md).

@@ -22,7 +22,7 @@ define on_cell(grid, row, col) as:
         status_text is f"{name} off at step {col + 1}"
 
 define on_play(w) as:
-    if w.value == 1:
+    if w.value:
         status_text is "Playing"
     else:
         status_text is "Stopped"
@@ -140,10 +140,10 @@ define on_key(ev) as:
             return 0
         if ev.key == "space":
             pb is ui.find_by_id of [root, "play"]
-            if pb.value == 1:
-                pb.value is 0
+            if pb.value:
+                pb.value is false
             else:
-                pb.value is 1
+                pb.value is true
     return 1
 
 define on_tick(root) as:
@@ -154,7 +154,7 @@ define on_tick(root) as:
     # Animate step highlight when playing
     pb is ui.find_by_id of [root, "play"]
     g is ui.find_by_id of [root, "drum_grid"]
-    if pb != null and pb.value == 1:
+    if pb != null and pb.value:
         _step_timer is _step_timer + 1
         bpm_widget is ui.find_by_id of [root, "bpm"]
         step_speed is 8

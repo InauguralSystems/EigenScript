@@ -33,28 +33,28 @@ define chart(id, x, y, w, h) as:
         "x_label": "",
         "y_label": "",
         # Range: an explicit non-null bound always wins. Otherwise
-        # auto_scale 1 derives it from the data (y padded by pad_frac),
+        # auto_scale true derives it from the data (y padded by pad_frac),
         # auto_scale 0 falls back to 0..1.
-        "auto_scale": 1,
+        "auto_scale": true,
         "x_min": null,
         "x_max": null,
         "y_min": null,
         "y_max": null,
         "pad_frac": 0.1,
-        "grid": 1,
-        "axes": 1,
-        "legend": 1,
+        "grid": true,
+        "axes": true,
+        "legend": true,
         "ticks_x": 5,
         "ticks_y": 4,
         # x and y units equal per pixel — a circle looks circular.
-        "fixed_aspect": 0,
+        "fixed_aspect": false,
         # View transform: pan is in data units, zoom is a scale about the
         # panned centre. chart_reset_view restores 0/0/1.
         "pan_x": 0.0,
         "pan_y": 0.0,
         "zoom": 1.0,
-        "interactive": 1,
-        "hover_enabled": 1,
+        "interactive": true,
+        "hover_enabled": true,
         "pad_left": 44,
         "pad_right": 8,
         "pad_top": 8,
@@ -64,10 +64,10 @@ define chart(id, x, y, w, h) as:
         "bg": null,
         # dispatch's wheel path calls this before the scroll_panel walk.
         "on_wheel": _wheel_chart,
-        "visible": 1,
+        "visible": true,
         # Incremental bounds cache — private, maintained by _chart_scan.
         # (the per-series scan marks live on the series dicts)
-        "_have_bounds": 0,
+        "_have_bounds": false,
         "_bx0": 0, "_bx1": 1, "_by0": 0, "_by1": 1
     }
 
@@ -163,7 +163,7 @@ define _chart_extend(ch, si, vx, vy) as:
     local s is ch.series[si]
     if s._scanned == null:
         return null
-    if ch._have_bounds == 0:
+    if not ch._have_bounds:
         return null
     s._scanned is s._scanned + 1
     s._last_y is vy
@@ -182,7 +182,7 @@ define _chart_extend(ch, si, vx, vy) as:
 # chart_trim, a replaced series dict and a replaced series list are all
 # detected without this; it is the escape hatch for everything else.
 define chart_invalidate(ch) as:
-    ch._have_bounds is 0
+    ch._have_bounds is false
     for si in range of (len of ch.series):
         ch.series[si]._scanned is 0
 
@@ -193,7 +193,7 @@ define chart_invalidate(ch) as:
 define _chart_scan(ch) as:
     local ns is len of ch.series
     local full is 0
-    if ch._have_bounds == 0:
+    if not ch._have_bounds:
         full is 1
     for si in range of ns:
         local s is ch.series[si]
@@ -208,7 +208,7 @@ define _chart_scan(ch) as:
     if full == 1:
         for si in range of ns:
             ch.series[si]._scanned is 0
-        ch._have_bounds is 0
+        ch._have_bounds is false
     for si in range of ns:
         local s is ch.series[si]
         local n is len of s.data
@@ -220,12 +220,12 @@ define _chart_scan(ch) as:
                 if xs != null:
                     vx is xs[di]
                 local vy is s.data[di]
-                if ch._have_bounds == 0:
+                if not ch._have_bounds:
                     ch._bx0 is vx
                     ch._bx1 is vx
                     ch._by0 is vy
                     ch._by1 is vy
-                    ch._have_bounds is 1
+                    ch._have_bounds is true
                 else:
                     if vx < ch._bx0:
                         ch._bx0 is vx
@@ -246,7 +246,7 @@ define chart_bounds(ch) as:
     local bx1 is 1
     local by0 is 0
     local by1 is 1
-    if ch.auto_scale != 0 and ch._have_bounds == 1:
+    if ch.auto_scale and ch._have_bounds:
         bx0 is ch._bx0
         bx1 is ch._bx1
         by0 is ch._by0
@@ -309,7 +309,7 @@ define chart_view(ch) as:
     local x1 is b.x1
     local y0 is b.y0
     local y1 is b.y1
-    if ch.fixed_aspect == 1:
+    if ch.fixed_aspect:
         # Equalize data units per pixel on both axes by growing the axis
         # that is currently denser — never shrinking, so no data leaves.
         local upx is (x1 - x0) / r[2]
@@ -563,7 +563,7 @@ define bar_chart(id, x, y, w, h, labels, values, on_click) as:
         "colors": null,
         "hover_index": -1,
         "bar_gap": 4,
-        "visible": 1
+        "visible": true
     }
 
 define gauge(id, x, y, size, min_val, max_val, value, label) as:
@@ -575,7 +575,7 @@ define gauge(id, x, y, size, min_val, max_val, value, label) as:
         "value": value,
         "label": label,
         "color": _theme.accent,
-        "visible": 1
+        "visible": true
     }
 
 define meter(id, x, y, w, h) as:
@@ -586,7 +586,7 @@ define meter(id, x, y, w, h) as:
         "value": 0,
         "peak": 0,
         "peak_hold": 0,
-        "visible": 1
+        "visible": true
     }
 
 # canvas — the custom-widget escape hatch. on_mouse(w, ev) receives
@@ -601,8 +601,8 @@ define canvas(id, x, y, w, h, on_paint, on_mouse) as:
         "on_paint": on_paint,
         "on_mouse": on_mouse,
         "on_wheel": null,
-        "hover": 0,
-        "visible": 1
+        "hover": false,
+        "visible": true
     }
 
 define waveform_view(id, x, y, w, h) as:
@@ -617,7 +617,7 @@ define waveform_view(id, x, y, w, h) as:
         "sel_end": -1,
         "playhead": -1,
         "color": [80, 160, 220],
-        "visible": 1
+        "visible": true
     }
 
 define code_view(id, x, y, w, h, text) as:
@@ -627,13 +627,13 @@ define code_view(id, x, y, w, h, text) as:
         "x": x, "y": y, "w": w, "h": h,
         "text": text,
         "scroll_y": 0,
-        "line_numbers": 1,
+        "line_numbers": true,
         # #838: styled ranges — [{"start", "end", "bg", "fg"}] with
         # absolute half-open byte offsets into `text`. bg paints a rect
         # behind the range, fg recolors its glyphs; either may be null.
         # Empty = exactly the pre-#838 rendering.
         "spans": [],
-        "visible": 1
+        "visible": true
     }
 
 define _render_chart(widget, ax, ay) as:
@@ -657,7 +657,7 @@ define _render_chart(widget, ax, ay) as:
     local xstep is _chart_nice_step of [v.x1 - v.x0, widget.ticks_x]
     local ystep is _chart_nice_step of [v.y1 - v.y0, widget.ticks_y]
     # Grid + tick labels
-    if widget.grid == 1:
+    if widget.grid:
         local xt is chart_ticks of [v.x0, v.x1, widget.ticks_x]
         for i in range of (len of xt):
             local gp is _chart_map of [v, xt[i], v.y0]
@@ -677,7 +677,7 @@ define _render_chart(widget, ax, ay) as:
             local lb is _chart_fmt of [yt[i], ystep]
             _chart_text of [ax + 2, (floor of gp[1]) - 3, lb, dim, 1, [ax, ay, widget.pad_left - 4, widget.h]]
     # Axis lines at data zero — the reference a phase portrait is read against
-    if widget.axes == 1:
+    if widget.axes:
         local zp is _chart_map of [v, 0, 0]
         _chart_line of [zp[0], v.py, zp[0], v.py + v.ph, r, acol]
         _chart_line of [v.px, zp[1], v.px + v.pw, zp[1], r, acol]
@@ -762,7 +762,7 @@ define _render_chart(widget, ax, ay) as:
             local ht is f"{_chart_fmt of [hx, xstep]}, {_chart_fmt of [hy, ystep]}"
             _chart_text of [(floor of hp[0]) + 6, (floor of hp[1]) - (text_height of 1) - 2, ht, txt, 1, r]
     # Legend
-    if widget.legend == 1:
+    if widget.legend:
         local lgx is v.px + 4
         for si in range of (len of widget.series):
             local s is widget.series[si]
@@ -988,12 +988,12 @@ define _render_code_view(widget, ax, ay) as:
     append of [line_offs, cur_off]
     line_h is _theme.char_h + 4
     gutter_w is 0
-    if widget.line_numbers == 1:
+    if widget.line_numbers:
         gutter_w is 30
     for li in range of (len of lines):
         ly is ay + 2 + li * line_h - widget.scroll_y
         if ly + line_h > ay and ly < ay + widget.h:
-            if widget.line_numbers == 1:
+            if widget.line_numbers:
                 ln_text is f"{li + 1}"
                 gfx_text of [ax + 4, ly, ln_text, _theme.text_dim[0], _theme.text_dim[1], _theme.text_dim[2], 1]
             # #838 span backgrounds — under the text
@@ -1060,7 +1060,7 @@ define _render_code_view(widget, ax, ay) as:
 define _mousemove_chart(hit, root, mx, my) as:
     hit.hover_index is -1
     hit.hover_series is -1
-    if hit.hover_enabled == 0:
+    if not hit.hover_enabled:
         return null
     local v is chart_view of hit
     if mx < v.px:
@@ -1103,7 +1103,7 @@ define _mousemove_chart(hit, root, mx, my) as:
 # Drag to pan. The chart claims the pointer so every following mousemove
 # and the terminating mouseup route here (#567).
 define _mousedown_chart(hit, root, mx, my, ev) as:
-    if hit.interactive == 0:
+    if not hit.interactive:
         return null
     _ui.drag_widget is hit
     _ui.drag_ox is mx
@@ -1121,7 +1121,7 @@ define _drag_chart(w, ev) as:
 # state — reachable from here, so a consumer never shadows mousemove to
 # get it (#822). ev.mx/ev.my are preferred when an event carries them.
 define _wheel_chart(w, ev) as:
-    if w.interactive == 0:
+    if not w.interactive:
         return null
     local mx is _ui.last_mouse_x
     local my is _ui.last_mouse_y
@@ -1264,8 +1264,8 @@ define timeline(id, x, y, w, h) as:
         # scale about the panned centre. timeline_reset_view restores.
         "pan_t": 0.0,
         "zoom": 1.0,
-        "interactive": 1,
-        "hover_enabled": 1,
+        "interactive": true,
+        "hover_enabled": true,
         "hover_item": null,
         # Geometry: lane-label gutter, ruler strip, lane height.
         # lane_h null fits all lanes into the body (min 4 px each).
@@ -1274,9 +1274,9 @@ define timeline(id, x, y, w, h) as:
         "lane_h": null,
         "marker_w": 2,
         "on_wheel": _wheel_timeline,
-        "visible": 1,
+        "visible": true,
         # Incremental time-bounds cache — private (_tl_scan).
-        "_have_bounds": 0,
+        "_have_bounds": false,
         "_bt0": 0, "_bt1": 1,
         "_scan_m": 0,
         "_scan_s": 0,
@@ -1316,14 +1316,14 @@ define timeline_add_marker(tl, m) as:
     # accounted for — an item the consumer appended DIRECTLY leaves a
     # counter gap, and _tl_scan picks that tail up at the next bounds
     # read instead of it being silently skipped.
-    if tl._have_bounds == 1 and tl._scan_m == (len of tl.markers) - 1:
+    if tl._have_bounds and tl._scan_m == (len of tl.markers) - 1:
         tl._scan_m is len of tl.markers
         _tl_widen of [tl, m.t, m.t]
     return (len of tl.markers) - 1
 
 define timeline_add_span(tl, s) as:
     append of [tl.spans, s]
-    if tl._have_bounds == 1 and tl._scan_s == (len of tl.spans) - 1:
+    if tl._have_bounds and tl._scan_s == (len of tl.spans) - 1:
         tl._scan_s is len of tl.spans
         _tl_widen of [tl, s.t0, s.t1]
     return (len of tl.spans) - 1
@@ -1353,7 +1353,7 @@ define _tl_widen(tl, ta, tb) as:
 # path cannot see (rewriting an item's t in place, dropping items).
 # Replaced/shrunk item lists are detected without this.
 define timeline_invalidate(tl) as:
-    tl._have_bounds is 0
+    tl._have_bounds is false
     tl._scan_m is 0
     tl._scan_s is 0
 
@@ -1361,18 +1361,18 @@ define _tl_scan(tl) as:
     local nm is len of tl.markers
     local ns is len of tl.spans
     if nm < tl._scan_m:
-        tl._have_bounds is 0
+        tl._have_bounds is false
     if ns < tl._scan_s:
-        tl._have_bounds is 0
-    if tl._have_bounds == 0:
+        tl._have_bounds is false
+    if not tl._have_bounds:
         tl._scan_m is 0
         tl._scan_s is 0
     for mi in range of [tl._scan_m, nm]:
         local m is tl.markers[mi]
-        if tl._have_bounds == 0:
+        if not tl._have_bounds:
             tl._bt0 is m.t
             tl._bt1 is m.t
-            tl._have_bounds is 1
+            tl._have_bounds is true
         else:
             if m.t < tl._bt0:
                 tl._bt0 is m.t
@@ -1380,10 +1380,10 @@ define _tl_scan(tl) as:
                 tl._bt1 is m.t
     for si in range of [tl._scan_s, ns]:
         local s is tl.spans[si]
-        if tl._have_bounds == 0:
+        if not tl._have_bounds:
             tl._bt0 is s.t0
             tl._bt1 is s.t1
-            tl._have_bounds is 1
+            tl._have_bounds is true
         else:
             if s.t0 < tl._bt0:
                 tl._bt0 is s.t0
@@ -1398,7 +1398,7 @@ define timeline_bounds(tl) as:
     _tl_scan of tl
     local t0 is 0
     local t1 is 1
-    if tl._have_bounds == 1:
+    if tl._have_bounds:
         t0 is tl._bt0
         t1 is tl._bt1
     if tl.t_min != null:
@@ -1665,7 +1665,7 @@ define _tl_scrub_to(tl, sx) as:
 # Ruler press = scrub; body press = pan. Both claim the pointer so the
 # following mousemoves and the terminating mouseup route here (#567).
 define _mousedown_timeline(hit, root, mx, my, ev) as:
-    if hit.interactive == 0:
+    if not hit.interactive:
         return null
     local v is timeline_view of hit
     _ui.drag_widget is hit
@@ -1689,7 +1689,7 @@ define _drag_timeline(w, ev) as:
 # Wheel zooms about the pointer, read from the event or the toolkit's
 # cached position (#822) — never from consumer-shadowed state.
 define _wheel_timeline(w, ev) as:
-    if w.interactive == 0:
+    if not w.interactive:
         return null
     local mx is _ui.last_mouse_x
     if ev.mx != null:
@@ -1710,7 +1710,7 @@ define _wheel_timeline(w, ev) as:
 # hover_enabled 0.
 define _mousemove_timeline(hit, root, mx, my) as:
     hit.hover_item is null
-    if hit.hover_enabled == 0:
+    if not hit.hover_enabled:
         return null
     local v is timeline_view of hit
     if mx < v.px or mx > v.px + v.pw:
@@ -1752,8 +1752,8 @@ _register_widget of ["chart", {
     "clear_hover": _clear_hover_chart,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["bar_chart", {
@@ -1764,8 +1764,8 @@ _register_widget of ["bar_chart", {
     "clear_hover": _clear_hover_bar_chart,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["gauge", {
@@ -1776,8 +1776,8 @@ _register_widget of ["gauge", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["meter", {
@@ -1788,8 +1788,8 @@ _register_widget of ["meter", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 0
+    "container": false,
+    "focusable": false
 }]
 
 _register_widget of ["canvas", {
@@ -1800,8 +1800,8 @@ _register_widget of ["canvas", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["waveform_view", {
@@ -1813,8 +1813,8 @@ _register_widget of ["waveform_view", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["code_view", {
@@ -1825,8 +1825,8 @@ _register_widget of ["code_view", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": _scroll_code_view,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["timeline", {
@@ -1838,6 +1838,6 @@ _register_widget of ["timeline", {
     "clear_hover": _clear_hover_timeline,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]

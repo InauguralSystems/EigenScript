@@ -10,10 +10,10 @@ define slider(id, x, y, w, min_val, max_val, value, on_change) as:
         "x": x, "y": y, "w": w, "h": 16,
         "min_val": min_val, "max_val": max_val, "value": value,
         "on_change": on_change,
-        "dragging": 0,
-        "hover": 0,
-        "visible": 1,
-        "enabled": 1
+        "dragging": false,
+        "hover": false,
+        "visible": true,
+        "enabled": true
     }
 
 define vslider(id, x, y, h, min_val, max_val, value, on_change) as:
@@ -23,10 +23,10 @@ define vslider(id, x, y, h, min_val, max_val, value, on_change) as:
         "x": x, "y": y, "w": 16, "h": h,
         "min_val": min_val, "max_val": max_val, "value": value,
         "on_change": on_change,
-        "dragging": 0,
-        "hover": 0,
-        "visible": 1,
-        "enabled": 1
+        "dragging": false,
+        "hover": false,
+        "visible": true,
+        "enabled": true
     }
 
 define knob(id, x, y, size, min_val, max_val, value, on_change) as:
@@ -36,12 +36,12 @@ define knob(id, x, y, size, min_val, max_val, value, on_change) as:
         "x": x, "y": y, "w": size, "h": size,
         "min_val": min_val, "max_val": max_val, "value": value,
         "on_change": on_change,
-        "dragging": 0,
+        "dragging": false,
         "drag_start_y": 0,
         "drag_start_val": 0,
-        "hover": 0,
-        "visible": 1,
-        "enabled": 1
+        "hover": false,
+        "visible": true,
+        "enabled": true
     }
 
 define scrollbar(id, x, y, length, vertical, on_change) as:
@@ -59,10 +59,10 @@ define scrollbar(id, x, y, length, vertical, on_change) as:
         "value": 0,
         "thumb_size": 0.2,
         "on_change": on_change,
-        "dragging": 0,
-        "hover": 0,
-        "visible": 1,
-        "enabled": 1
+        "dragging": false,
+        "hover": false,
+        "visible": true,
+        "enabled": true
     }
 
 # ---- Render functions ----
@@ -135,7 +135,7 @@ define _render_scrollbar(widget, ax, ay) as:
             thumb_h is 16
         thumb_y is ay + floor of (widget.value * (widget.h - thumb_h))
         tc is _theme.slider_thumb
-        if widget.hover == 1 or widget.dragging == 1:
+        if widget.hover or widget.dragging:
             tc is _theme.slider_fill
         gfx_rrect of [ax + 2, thumb_y, widget.w - 4, thumb_h, 3, tc[0], tc[1], tc[2]]
     else:
@@ -144,36 +144,36 @@ define _render_scrollbar(widget, ax, ay) as:
             thumb_w is 16
         thumb_x is ax + floor of (widget.value * (widget.w - thumb_w))
         tc is _theme.slider_thumb
-        if widget.hover == 1 or widget.dragging == 1:
+        if widget.hover or widget.dragging:
             tc is _theme.slider_fill
         gfx_rrect of [thumb_x, ay + 2, thumb_w, widget.h - 4, 3, tc[0], tc[1], tc[2]]
 
 # ---- Mousedown functions ----
 
 define _mousedown_slider(hit, root, mx, my, ev) as:
-    if hit.enabled == 1:
-        hit.dragging is 1
+    if hit.enabled:
+        hit.dragging is true
         _ui.drag_widget is hit
         _ui.drag_ox is hit._ax
         _update_drag of [hit, mx]
 
 define _mousedown_vslider(hit, root, mx, my, ev) as:
-    if hit.enabled == 1:
-        hit.dragging is 1
+    if hit.enabled:
+        hit.dragging is true
         _ui.drag_widget is hit
         _ui.drag_oy is hit._ay
         _update_vdrag of [hit, my]
 
 define _mousedown_knob(hit, root, mx, my, ev) as:
-    if hit.enabled == 1:
-        hit.dragging is 1
+    if hit.enabled:
+        hit.dragging is true
         hit.drag_start_y is my
         hit.drag_start_val is hit.value
         _ui.drag_widget is hit
 
 define _mousedown_scrollbar(hit, root, mx, my, ev) as:
-    if hit.enabled == 1:
-        hit.dragging is 1
+    if hit.enabled:
+        hit.dragging is true
         _ui.drag_widget is hit
         _ui.drag_ox is hit._ax
         _ui.drag_oy is hit._ay
@@ -282,8 +282,8 @@ _register_widget of ["slider", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["vslider", {
@@ -295,8 +295,8 @@ _register_widget of ["vslider", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["knob", {
@@ -308,8 +308,8 @@ _register_widget of ["knob", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["scrollbar", {
@@ -321,6 +321,6 @@ _register_widget of ["scrollbar", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]

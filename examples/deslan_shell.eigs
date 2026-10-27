@@ -27,7 +27,7 @@ define on_rec(w) as:
     status_text is "Recording..."
 
 define on_loop(w) as:
-    if w.value == 1:
+    if w.value:
         status_text is "Loop enabled"
     else:
         status_text is "Loop disabled"
@@ -55,13 +55,13 @@ define on_pan(w) as:
     status_text is f"Pan: {floor of w.value}"
 
 define on_mute(w) as:
-    if w.value == 1:
+    if w.value:
         status_text is "Muted"
     else:
         status_text is "Unmuted"
 
 define on_solo(w) as:
-    if w.value == 1:
+    if w.value:
         status_text is "Solo"
     else:
         status_text is "Solo off"
@@ -99,7 +99,7 @@ define on_note(kb, note, on) as:
         status_text is f"Note off: {name}{octave}"
 
 define on_fx_active(w) as:
-    if w.value == 1:
+    if w.value:
         status_text is "Effect active"
     else:
         status_text is "Effect bypassed"
@@ -354,7 +354,7 @@ ui.add_child of [fx, ui.section of ["fx_chain_sec", 10, 8, 400, "FX Chain"]]
 fx_names is ["Parametric EQ", "Compressor", "Reverb", "Delay", "Chorus", "Limiter"]
 fy is 28
 for i in range of (len of fx_names):
-    ui.add_child of [fx, ui.checkbox of [f"fx_{i}", 20, fy, fx_names[i], 1, on_fx_active]]
+    ui.add_child of [fx, ui.checkbox of [f"fx_{i}", 20, fy, fx_names[i], true, on_fx_active]]
     fy is fy + 28
 
 # FX knobs area
@@ -401,10 +401,10 @@ define on_key(ev) as:
             return 0
         if ev.key == "space":
             pb is ui.find_by_id of [root, "play"]
-            if pb.value == 1:
-                pb.value is 0
+            if pb.value:
+                pb.value is false
             else:
-                pb.value is 1
+                pb.value is true
     return 1
 
 define on_tick(root) as:
@@ -418,7 +418,7 @@ define on_tick(root) as:
     pb is ui.find_by_id of [root, "play"]
     tl is ui.find_by_id of [root, "time"]
     if pb != null and tl != null:
-        if pb.value == 1:
+        if pb.value:
             secs is _tick / 60.0
             mins is floor of (secs / 60)
             s is secs - mins * 60
@@ -483,7 +483,7 @@ define on_tick(root) as:
     # Drum step highlight
     g is ui.find_by_id of [root, "dg"]
     if pb != null and g != null:
-        if pb.value == 1:
+        if pb.value:
             bpm_w is ui.find_by_id of [root, "bpm"]
             spd is 8
             if bpm_w != null:

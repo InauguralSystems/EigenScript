@@ -36,8 +36,8 @@ define label(id, x, y, text) as:
         "text": text,
         "color": _theme.text_color,
         "scale": _theme.font_scale,
-        "auto_size": 1,
-        "visible": 1
+        "auto_size": true,
+        "visible": true
     }
     _label_measure of lw
     return lw
@@ -54,7 +54,7 @@ define separator(id, x, y, length, vertical) as:
         "id": id,
         "x": x, "y": y, "w": sw, "h": sh,
         "color": _theme.panel_border,
-        "visible": 1
+        "visible": true
     }
 
 define section(id, x, y, w, text) as:
@@ -63,7 +63,7 @@ define section(id, x, y, w, text) as:
         "id": id,
         "x": x, "y": y, "w": w, "h": 20,
         "text": text,
-        "visible": 1
+        "visible": true
     }
 
 define color_dot(id, x, y, size, color) as:
@@ -72,7 +72,7 @@ define color_dot(id, x, y, size, color) as:
         "id": id,
         "x": x, "y": y, "w": size, "h": size,
         "color": color,
-        "visible": 1
+        "visible": true
     }
 
 define badge(id, x, y, text, color) as:
@@ -84,7 +84,7 @@ define badge(id, x, y, text, color) as:
         "x": x, "y": y, "w": bw, "h": bh,
         "text": text,
         "color": color,
-        "visible": 1
+        "visible": true
     }
 
 define progress_bar(id, x, y, w, value) as:
@@ -93,7 +93,7 @@ define progress_bar(id, x, y, w, value) as:
         "id": id,
         "x": x, "y": y, "w": w, "h": 12,
         "value": value,
-        "visible": 1
+        "visible": true
     }
 
 # ---- Render functions ----
@@ -136,8 +136,8 @@ _register_widget of ["label", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 0
+    "container": false,
+    "focusable": false
 }]
 
 _register_widget of ["separator", {
@@ -148,8 +148,8 @@ _register_widget of ["separator", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 0
+    "container": false,
+    "focusable": false
 }]
 
 _register_widget of ["section", {
@@ -160,8 +160,8 @@ _register_widget of ["section", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 0
+    "container": false,
+    "focusable": false
 }]
 
 _register_widget of ["color_dot", {
@@ -172,8 +172,8 @@ _register_widget of ["color_dot", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 0
+    "container": false,
+    "focusable": false
 }]
 
 _register_widget of ["badge", {
@@ -184,8 +184,8 @@ _register_widget of ["badge", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 0
+    "container": false,
+    "focusable": false
 }]
 
 _register_widget of ["progress_bar", {
@@ -196,6 +196,6 @@ _register_widget of ["progress_bar", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 0
+    "container": false,
+    "focusable": false
 }]
