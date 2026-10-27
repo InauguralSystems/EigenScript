@@ -10,6 +10,49 @@
 #include "trace.h"
 #include "repl.h"
 
+#ifdef EIGS_TSAN_TEST_SEAM
+#include <pthread.h>
+#include <stdatomic.h>
+
+/* #2052: planted weak-memory positive control.  This intentionally omits the
+ * release/acquire edge that must publish tsan_probe_payload.  It exists only
+ * in TSan variants and is reachable only through the private test switch. */
+static atomic_int tsan_probe_published;
+static int tsan_probe_payload;
+
+static void *tsan_probe_publish(void *unused) {
+    (void)unused;
+    tsan_probe_payload = 2052;
+    atomic_store_explicit(&tsan_probe_published, 1, memory_order_relaxed);
+    return NULL;
+}
+
+static void *tsan_probe_consume(void *unused) {
+    (void)unused;
+    while (!atomic_load_explicit(&tsan_probe_published,
+                                 memory_order_relaxed)) { }
+    return (void *)(uintptr_t)tsan_probe_payload;
+}
+
+static int tsan_misordered_publish_control(void) {
+    pthread_t publisher, consumer;
+    void *observed = NULL;
+    atomic_store_explicit(&tsan_probe_published, 0, memory_order_relaxed);
+    tsan_probe_payload = 0;
+    if (pthread_create(&consumer, NULL, tsan_probe_consume, NULL) != 0)
+        return 2;
+    if (pthread_create(&publisher, NULL, tsan_probe_publish, NULL) != 0) {
+        atomic_store_explicit(&tsan_probe_published, 1, memory_order_relaxed);
+        (void)pthread_join(consumer, NULL);
+        return 2;
+    }
+    if (pthread_join(publisher, NULL) != 0 ||
+        pthread_join(consumer, &observed) != 0)
+        return 2;
+    return (uintptr_t)observed == 2052 ? 0 : 1;
+}
+#endif
+
 #ifndef EIGENSCRIPT_VERSION
 #define EIGENSCRIPT_VERSION "dev"
 #endif
@@ -36,6 +79,10 @@ static void set_exe_dir(const char *argv0) {
 }
 
 int main(int argc, char **argv) {
+#ifdef EIGS_TSAN_TEST_SEAM
+    if (getenv("EIGS_TSAN_MISORDERED_PUBLISH_CONTROL"))
+        return tsan_misordered_publish_control();
+#endif
     /* #413: a bundled binary (appended archive, trailer magic) extracts
      * itself and rewrites argv to run the extracted script — before ANY
      * flag handling, because in bundle mode the arguments belong to the
@@ -59,6 +106,18 @@ int main(int argc, char **argv) {
      * fatal header check (#411) and must not take down pure queries. */
     if (argc >= 2 && (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-v") == 0)) {
         printf("%s\n", EIGENSCRIPT_VERSION);
+        return 0;
+    }
+
+    /* Machine-readable build capabilities.  Keep the JIT value on the same
+     * compile-time gate as jit.c's emitter; callers must not infer a binary's
+     * capabilities from the machine on which it happens to run. */
+    if (argc >= 2 && strcmp(argv[1], "--build-info") == 0) {
+#if EIGS_JIT_ENABLED
+        printf("jit-backend=x86-64\n");
+#else
+        printf("jit-backend=none\n");
+#endif
         return 0;
     }
 
@@ -90,6 +149,7 @@ int main(int argc, char **argv) {
             "                                      single-file executable: runtime + script + eigs_modules +\n"
             "                                      stdlib (+ optional tape: `out --replay` re-runs it exactly)\n"
             "  eigenscript --version, -v           print the version and exit\n"
+            "  eigenscript --build-info            print machine-readable build capabilities\n"
             "  eigenscript --help, -h              print this help and exit\n"
             "\n"
             "Docs: https://github.com/InauguralSystems/EigenScript\n",

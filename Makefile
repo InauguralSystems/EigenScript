@@ -145,11 +145,11 @@ FLAGS_asan-server := $(ASAN_FLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MO
 LIBS_asan-server  := -lm -lpthread -ldl
 
 SRC_V_tsan := $(SOURCES)
-FLAGS_tsan := -fsanitize=thread $(WERROR_FLAGS) -g -O1 $(DEFS_OFF) $(VERDEF)
+FLAGS_tsan := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGS_TSAN_TEST_SEAM $(DEFS_OFF) $(VERDEF)
 LIBS_tsan  := -lm -lpthread
 
 SRC_V_tsan-server := $(SERVER_SOURCES)
-FLAGS_tsan-server := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+FLAGS_tsan-server := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGS_TSAN_TEST_SEAM -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_tsan-server  := -lm -lpthread -ldl
 
 SRC_V_valgrind := $(HOSTED_SOURCES)

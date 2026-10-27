@@ -14,6 +14,22 @@ EIGS="$TESTS_DIR/../src/eigenscript"
 export TSAN_OPTIONS="halt_on_error=0 exitcode=0"
 PASS=0; FAIL=0
 
+# This is a capability of the binary under test, not of the runner.  main.c
+# prints it from EIGS_JIT_ENABLED, the exact gate used by jit.c's emitter.
+JIT_BACKEND=$($EIGS --build-info 2>/dev/null | awk -F= '$1 == "jit-backend" { print $2; exit }')
+if [ -z "$JIT_BACKEND" ]; then
+    echo "FAIL: binary supplied no jit-backend build-info witness"
+    exit 1
+fi
+# Anti-spread check: the established non-Apple Linux x86-64 lane must never
+# turn loss of its backend into a skip.  uname identifies that required lane;
+# it does not decide whether emitted-code assertions apply to this binary.
+if [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] && \
+   [ "$JIT_BACKEND" = none ]; then
+    echo "FAIL: non-Apple Linux x86-64 binary has no JIT backend ($JIT_BACKEND)"
+    exit 1
+fi
+
 # Every run is timeout-bounded. The seeded race is DELIBERATE UB (a lost
 # update on the slot double-decrefs the displaced element), and undefined
 # behavior may legally hang — on 4-core CI runners it did, at ~1/3 rate,
@@ -49,6 +65,22 @@ seeded_race_row() {
         echo "  PASS: seeded race detected ($w warnings) — the gate is live"; PASS=$((PASS + 1))
     else
         echo "  FAIL: seeded race NOT detected — the TSan gate is vacuous!"; FAIL=$((FAIL + 1))
+    fi
+}
+
+misordered_publish_row() {
+    echo "=== #2052 planted relaxed publish/consume race MUST be caught ==="
+    local out rc w
+    out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R env \
+        EIGS_TSAN_MISORDERED_PUBLISH_CONTROL=1 "$EIGS" 2>&1)
+    rc=$?
+    w=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
+    if [ "$rc" -eq 124 ]; then
+        echo "  FAIL: misordered publish/consume control HUNG"; FAIL=$((FAIL + 1))
+    elif [ "$w" -gt 0 ]; then
+        echo "  PASS: misordered relaxed publish/consume detected ($w warnings)"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: misordered relaxed publish/consume NOT detected (rc=$rc)"; FAIL=$((FAIL + 1))
     fi
 }
 
@@ -148,7 +180,8 @@ if [ "${1:-}" = "--row" ]; then
         rebind-call)    rebind_call_row ;;
         scope-boundary) scope_boundary_row ;;
         dict-readers)   dict_readers_row ;;
-        *) echo "usage: test_tsan.sh --row seeded|rebind-call|scope-boundary|dict-readers"; exit 2 ;;
+        misordered-publish) misordered_publish_row ;;
+        *) echo "usage: test_tsan.sh --row seeded|rebind-call|scope-boundary|dict-readers|misordered-publish"; exit 2 ;;
     esac
     echo ""
     echo "Results: $PASS passed, $FAIL failed"
@@ -237,16 +270,19 @@ for t in $SHAPE_FIXTURES; do
         echo "  FAIL: $t exited $LAST_RC (want $expected_rc)"; FAIL=$((FAIL + 1))
     elif [ "$t" = tsan_worker_exit ] && [ "$RUN_OUTPUT" != WORKER_EXIT_REQUEST ]; then
         echo "  FAIL: $t requires only the pre-exit marker; output='$RUN_OUTPUT'"; FAIL=$((FAIL + 1))
-    elif [ "$t" = tsan_spawn_emitted_jit ] &&
+    elif [ "$t" = tsan_spawn_emitted_jit ] && [ "$JIT_BACKEND" != none ] &&
          ! grep -Eq '\[jit\].*compiled=[1-9][0-9]*' <<< "$RUN_OUTPUT"; then
         echo "  FAIL: $t did not compile emitted JIT code"; FAIL=$((FAIL + 1))
-    elif [ "$t" = tsan_spawn_emitted_jit ] &&
+    elif [ "$t" = tsan_spawn_emitted_jit ] && [ "$JIT_BACKEND" != none ] &&
          ! grep -Eq '^hot[[:space:]]+80[[:space:]]+yes[[:space:]]+[0-9.]+%[[:space:]]+RET[[:space:]]' <<< "$RUN_OUTPUT"; then
         # The named hot row's RET is the native-return sentinel, written by
         # execution; compilation initializes advance to a byte count. The 80
         # entries precede spawn; MT calls do not increment this counter.
         echo "  FAIL: $t missing hot native-return witness after 80 warm calls"; FAIL=$((FAIL + 1))
     else
+        if [ "$t" = tsan_spawn_emitted_jit ] && [ "$JIT_BACKEND" = none ]; then
+            echo "  SKIP: $t emitted-code checks: this build has no JIT backend (jit-backend=$JIT_BACKEND)"
+        fi
         echo "  PASS: $t TSan-clean and exited $expected_rc"; PASS=$((PASS + 1))
     fi
 done
@@ -674,6 +710,7 @@ else
 fi
 
 seeded_race_row
+misordered_publish_row
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

@@ -1371,40 +1371,71 @@ jobs:
   # be data-race-free (the #297 property, now regression-gated), and a seeded
   # race must be caught so the gate can't rot. `setarch -R` disables ASLR, which
   # ThreadSanitizer needs here (see CLAUDE.md).
-  tsan:
-    name: tsan (concurrency race gate)
+  tsan-core:
+    name: tsan / ${{ matrix.arch }} (concurrency race gate)
     needs: scope
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            os: ubuntu-latest
+          - arch: arm64
+            os: ubuntu-24.04-arm
     # Backstop for the per-run timeouts in test_tsan.sh: the seeded-race UB
     # hung ~1/3 of runs overnight (2026-07-05) and burned the 6h default.
     timeout-minutes: 20
     permissions:
       contents: read
     steps:
-      - name: Deferred on pull requests
-        if: github.event_name == 'pull_request'
-        run: echo "deferred to merge queue"
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        if: github.event_name != 'pull_request'
       - name: Install compiler guard
-        if: github.event_name != 'pull_request'
         run: |
           echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
           echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
-      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
+      - if: needs.scope.outputs.code == 'true'
         name: ThreadSanitizer build
         run: make tsan
 
-      - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
+      - if: needs.scope.outputs.code == 'true'
         name: Concurrency race gate (setarch -R)
         run: bash tests/test_tsan.sh
 
       - name: Require compiler guard activity
-        if: github.event_name != 'pull_request' && (always() && needs.scope.outputs.code == 'true')
+        if: always() && needs.scope.outputs.code == 'true'
         run: bash tools/cc_guard.sh --report
+
+  # Keep one stable required check while the queue fans the identical gate out
+  # to x86-64 and ARM64.  The matrix result is success only if both controls and
+  # every zero-report row passed on both architectures.
+  tsan:
+    name: tsan (concurrency race gate)
+    needs: [scope, tsan-core]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Deferred on pull requests
+        if: github.event_name == 'pull_request'
+        run: echo "deferred to merge queue"
+      - name: Require x86-64 and ARM64 race gates
+        if: github.event_name != 'pull_request'
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          CODE: ${{ needs.scope.outputs.code }}
+          TSAN_RESULT: ${{ needs.tsan-core.result }}
+        run: |
+          set -euo pipefail
+          [ "$SCOPE_RESULT" = success ]
+          case "$CODE" in true|false) ;; *) exit 1;; esac
+          [ "$TSAN_RESULT" = success ]
+          echo "x86-64 and ARM64 TSan race gates complete (code=$CODE)"
 
   # ThreadSanitizer over ext_http.c (#1139). The stock tsan lane above builds
   # with $(DEFS_OFF), so the race detector never saw the repo's most concurrent
