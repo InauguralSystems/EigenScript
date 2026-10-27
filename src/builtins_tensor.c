@@ -1675,6 +1675,21 @@ Value* call_eigs_fn(Value *fn, Value *arg) {
 Value* builtin_random_normal(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "random_normal");
     BOOL_REFUSE(arg, "random_normal");   /* before the tape: a type error is not recorded */
+    /* #1750: argument validation is the deterministic, fail-fast half of the
+     * call and therefore belongs before the nondeterministic tape boundary.
+     * eigs_list_num used to discover a bad dimension/scale after TAKE; the
+     * live run then recorded the partially constructed stand-in and strict
+     * replay returned that value instead of raising. Validate every element
+     * the selected overload will read before a replay can consume a record. */
+    if (arg && arg->type == VAL_LIST &&
+        (arg->data.list.count == 2 || arg->data.list.count == 3)) {
+        for (int i = 0; i < arg->data.list.count; i++) {
+            if (list_elem_type(arg, i) != VAL_NUM) {
+                (void)eigs_list_num(arg, i, __func__);
+                return make_null();
+            }
+        }
+    }
     TRACE_NONDET_TAKE("random_normal");
     if (!arg || arg->type != VAL_LIST) TRACE_NONDET_RECORD("random_normal", make_null());
     /* #960: draw from the shared drand48 stream that `seed_random` pins, not

@@ -611,6 +611,9 @@ sessions between evaluations; unread sibling outcomes prevent advance. See [docs
 and [docs/EMBEDDING.md](docs/EMBEDDING.md) for the binding and version contract.
 Replay also refuses side-effecting boundaries the tape cannot reconstruct:
 in particular, `mktemp` raises before creating a temporary file.
+Recorded builtins validate arguments before their tape boundary, so a call
+that raises during recording raises identically during strict replay instead
+of returning a recorded stand-in.
 
 ## Stability
 

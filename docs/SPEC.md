@@ -2070,6 +2070,10 @@ advance. Replacing memory replay preserves a suspended file's complete context.
 Host effects that the tape cannot reconstruct are replay boundaries. In
 particular, `mktemp` raises a catchable filesystem-boundary error before it
 creates a file; outside replay it creates a file and returns its fresh path.
+Recorded builtins validate deterministic argument refusals before consulting
+the tape. A call that raises during recording therefore raises with the same
+kind and message during strict replay; it is never replaced by a recorded
+return value.
 
 Values crossing a channel, `thread_join`, or cooperative-task boundary are
 copied recursively. This includes buffers (payload and shape) and text builders
