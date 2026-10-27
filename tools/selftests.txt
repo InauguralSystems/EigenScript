@@ -63,3 +63,4 @@ tools/phase2_check.py tools/phase2_check.sh tools/phase2_corpus_diff.sh tools/ph
 tools/phase2_plants.sh tests/phase2/slot_layer.sh tests/phase2/slot_layer.c tools/phase2_inventory.py | timeout 1500 bash tools/phase2_plants.sh --selftest | [{"pattern":"^plants=5 killed=5 survived=0 broken=0 transverse=5$","count":1}]
 tools/phase2_cost.sh | timeout 30 bash tools/phase2_cost.sh --self-test | [{"pattern":"^phase2-cost-self-test: positive=6 rejected=15 strict=PASS elapsed=PASS PASS$","count":1}]
 tools/phase2_float_amend.py tests/phase2/r17_float_text.json | timeout 30 python3 tools/phase2_float_amend.py --self-test | [{"pattern":"^float-amend-self-test: positive=1 rejected=11 PASS$","count":1}]
+tools/phase2_cost.sh tools/phase2_cost_declarations.py bench/check_regression.sh tests/phase2/test_cost_methods.py | timeout 30 python3 tests/phase2/test_cost_methods.py --self-test

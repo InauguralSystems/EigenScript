@@ -2,7 +2,9 @@
 # Compare release Ir on the in-repo CodSpeed workload set, in BOTH VM tiers.
 # The target list has one home: codspeed.yml. Consumer targets live elsewhere.
 # Undeclared rows allow +0.3%; declared temporary costs are bounded per row.
-# TSV: workload, tier, max_delta_pct, recover_round, reason (no header).
+# TSV: workload, tier, max_local, max_ci, recover_round, reason (no header).
+# #1939: this gate measures and enforces max_local; CI measures max_ci.
+# Each column is ceil(delta+0.2, 0.1) from its own gate, never the other method.
 # A declared row is bounded on BOTH sides. Above its max it fails (OVER).
 # More than STALE_TOLERANCE points below its max it also fails (STALE): a
 # round recovered cost and the declaration must come down, or a NEW
@@ -14,8 +16,10 @@
 # the same binaries a different workload path moved bench/alloc_heavy by
 # 0.160 points (the heap layout shifts a short string across a strlen
 # alignment boundary, a million times).
-# --declared TIER prints the validated rows of one tier (workload, max,
-# recover_round): bench/check_regression.sh reads the declarations this way.
+# --declared TIER --method METHOD prints validated rows of one tier
+# (workload, that method's max, recover_round); all includes tier as field 2.
+# METHOD defaults to local.
+# bench/check_regression.sh explicitly requests ci, and STALE-checks max_ci.
 # --final requires the declarations file to be empty before integration merges,
 # and the observer oracle's (tests/phase2/oracle_expect.txt, score.py --declared,
 # #1830) as well: #1776 merges only when neither declares anything.
@@ -25,7 +29,7 @@ exec python3 - "$@" <<'PY'
 import argparse
 import math
 import struct
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 import os
 from pathlib import Path
 import re
@@ -35,9 +39,11 @@ import subprocess
 import sys
 import tempfile
 
-THRESHOLD_PCT = Decimal('0.3')
-NOISE = Decimal('0.2')
-STALE_TOLERANCE = 2 * NOISE + Decimal('0.1')
+sys.path.insert(0, str(Path.cwd() / 'tools'))
+from phase2_cost_declarations import (STALE_TOLERANCE, UNDECLARED_MAX,
+                                      assess_row, parse_declarations)
+
+THRESHOLD_PCT = UNDECLARED_MAX['local']
 # N6 is an explicit cost-only comparison mode. Corpus diffs remain exact.
 # Legacy unadorned integer text can denote an integral float; allow its .0 or
 # scientific repr only when conversion retains its exact integer value.
@@ -149,19 +155,23 @@ ap.add_argument('--self-test', action='store_true',
                 help='one-time output-comparator calibration; runs no workload or build')
 ap.add_argument('--final', action='store_true',
                 help='require empty cost_expect.txt and oracle_expect.txt (the pre-merge condition)')
-ap.add_argument('--declared', choices=('jit', 'off'),
-                help='print the validated declarations of one tier (workload, max, recover_round) and exit')
+ap.add_argument('--declared', choices=('jit', 'off', 'all'),
+                help='print validated declarations (workload, method max, recover_round); all includes tier as field 2')
+ap.add_argument('--method', choices=('local', 'ci'),
+                help='column for --declared only (default: local); cost runs always enforce max_local')
 ap.add_argument('base', nargs='?')
 ap.add_argument('cand', nargs='?')
 args = ap.parse_args()
 if args.self_test:
-    if args.base or args.cand or args.final or args.declared or args.n6_text:
+    if args.base or args.cand or args.final or args.declared or args.n6_text or args.method:
         ap.error('--self-test runs alone')
     try:
         output_self_test()
     except (AssertionError, ValueError, OverflowError) as error:
         sys.exit('phase2-cost-self-test: FAIL: ' + str(error))
     sys.exit(0)
+if args.method and not args.declared:
+    ap.error('--method requires --declared; cost runs enforce max_local')
 if args.n6_text and (not args.base or not args.cand or args.declared):
     ap.error('--n6-text requires <base-bin> <cand-bin>')
 expect_path = root / 'tests/phase2/cost_expect.txt'
@@ -202,35 +212,18 @@ expected = {p for p in tracked if local_workload.fullmatch(p)}
 if workloads != expected:
     sys.exit('phase2-cost: FAIL: CodSpeed workload coverage missing=%s stale=%s' %
              (sorted(expected - workloads), sorted(workloads - expected)))
-expectations = {}
-for n, line in enumerate(expect_text.splitlines(), 1):
-    if not line.strip() or line.lstrip().startswith('#'):
-        continue
-    fields = line.split('\t')
-    if len(fields) != 5:
-        sys.exit('phase2-cost: FAIL: cost_expect.txt:%d: expected five TSV fields '
-                 '(workload, tier, max_delta_pct, recover_round, reason)' % n)
-    workload, tier, maximum, recover_round, reason = (f.strip() for f in fields)
-    if workload not in workloads or tier not in ('jit', 'off'):
-        sys.exit('phase2-cost: FAIL: cost_expect.txt:%d: unknown workload/tier: %s %s' %
-                 (n, workload, tier))
-    key = (workload, tier)
-    if key in expectations:
-        sys.exit('phase2-cost: FAIL: cost_expect.txt:%d: duplicate workload/tier: %s %s' %
-                 (n, workload, tier))
-    try:
-        maximum = Decimal(maximum)
-    except InvalidOperation:
-        maximum = Decimal('NaN')
-    if not maximum.is_finite() or maximum < 0:
-        sys.exit('phase2-cost: FAIL: cost_expect.txt:%d: max_delta_pct must be finite and >= 0' % n)
-    if not re.fullmatch(r'R[1-9][0-9]*(?:\.[1-9][0-9]*)?', recover_round) or not reason:
-        sys.exit('phase2-cost: FAIL: cost_expect.txt:%d: recover_round and reason are required' % n)
-    expectations[key] = (maximum, recover_round, reason)
+try:
+    expectations = parse_declarations(expect_text, workloads)
+except ValueError as error:
+    sys.exit('phase2-cost: FAIL: ' + str(error))
 if args.declared:
-    for (workload, tier), (maximum, recover_round, _) in sorted(expectations.items()):
-        if tier == args.declared:
-            print('%s\t%s\t%s' % (workload, maximum, recover_round))
+    for (workload, tier), declaration in sorted(expectations.items()):
+        if tier == args.declared or args.declared == 'all':
+            fields = [workload]
+            if args.declared == 'all':
+                fields.append(tier)
+            fields += [str(declaration.maximum(args.method or 'local')), declaration.recover_round]
+            print('\t'.join(fields))
     sys.exit(0)
 if not shutil.which('valgrind'):
     sys.exit('phase2-cost: FAIL: valgrind is required')
@@ -243,7 +236,7 @@ for binary in bins:
         sys.exit('phase2-cost: FAIL: sanitizer binary: ' + binary)
 logdir = Path(tempfile.mkdtemp(prefix='phase2-cost-'))
 print('phase2-cost: source=codspeed.yml workloads=%d tiers=2 undeclared_max=+%s%% declarations=%d '
-      'stale_below_max=%s logs=%s' %
+      'stale_below_max=%s logs=%s method=local column=max_local' %
       (len(workloads), THRESHOLD_PCT, len(expectations), STALE_TOLERANCE, logdir), flush=True)
 if args.n6_text:
     print('phase2-cost: output_compare=n6-text (exact values/bits, exact integer digits, Python repr)', flush=True)
@@ -285,15 +278,13 @@ for workload in sorted(workloads):
             print('phase2-cost: n6-text workload=%s tier=%s changed_tokens=%d' %
                   (workload, tier, changed), flush=True)
         delta = 100 * (cand - base) / base
-        maximum, recover_round, reason = expectations.get((workload, tier),
-                                                         (THRESHOLD_PCT, None, None))
-        fail = Decimal((cand - base) * 100) > maximum * base
-        # STALE: clearly below a declared max (never for an undeclared row).
-        low = bool(recover_round) and Decimal((cand - base) * 100) < (maximum - STALE_TOLERANCE) * base
-        over += fail
-        stale += low
+        maximum, declaration, verdict = assess_row(expectations, workload, tier, 'local', base, cand)
+        recover_round = declaration.recover_round if declaration else None
+        reason = declaration.reason if declaration else None
+        over += verdict == 'OVER'
+        stale += verdict == 'STALE'
         print('%-34s %-3s base=%12d cand=%12d delta=%+.4f%% max=+%s%% %s%s' %
-              (workload, tier, base, cand, delta, maximum, 'OVER' if fail else 'STALE' if low else 'ok',
+              (workload, tier, base, cand, delta, maximum, verdict,
                (' recover_round=%s reason=%s' % (recover_round, reason)) if recover_round else ''), flush=True)
 print('phase2-cost: workloads=%d rows=%d over_declared_max=%d stale_declarations=%d %s' %
       (len(workloads), len(workloads) * 2, over, stale, 'FAIL' if over or stale else 'PASS'))

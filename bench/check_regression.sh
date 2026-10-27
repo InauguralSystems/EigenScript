@@ -1,24 +1,28 @@
 #!/bin/bash
 # Deterministic perf regression gate (#398). Wall-clock medians flake on shared
 # CI runners, so the GATE uses cachegrind instruction counts (Ir) instead:
-# same binary + same input => identical Ir, run to run, machine to machine. A
-# regression is then a diffable fact, not a statistical argument. Fails if any
+# same binary + same input in one environment gives a diffable instruction
+# count. glibc ifunc selection can change the count across hosts (#1939).
+# Fails if any
 # workload's Ir exceeds its checked-in baseline by more than THRESHOLD_PCT.
 #
 #   bench/check_regression.sh            # gate: compare vs bench/baseline.txt
 #   bench/check_regression.sh --update   # regenerate the baseline
 #   bench/check_regression.sh --selftest # prove a 2x-work pessimization is caught
+#   bench/check_regression.sh --list-vs  # derived --vs workload/tier population
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 EIGS="${EIGENSCRIPT:-$DIR/../src/eigenscript}"
 BASELINE="${BASELINE_OVERRIDE:-$DIR/baseline.txt}"
 THRESHOLD_PCT=5
 
-# The run line fixes the VM tier: every EIGS_* variable is dropped (as
-# tools/phase2_cost.sh does), so EIGS_JIT_OFF is unset and every workload runs
-# in the DEFAULT tier, the JIT. Its declared costs are therefore the `jit` rows.
-ir_of() {  # ir_of <binary> <file> -> instruction count
-    env $(compgen -e | grep '^EIGS_' | sed 's/^/-u /') \
+# Drop caller EIGS_* settings, then select the requested tier explicitly.
+# --vs measures the union of bench/*.eigs (default JIT) and every declared
+# workload/tier pair, so its own CI log can re-declare every max_ci (#1939).
+ir_of() {  # ir_of <binary> <file> [jit|off] -> instruction count
+    local tier="${3:-jit}" tier_env=
+    case "$tier" in jit) ;; off) tier_env=EIGS_JIT_OFF=1 ;; *) return 2 ;; esac
+    env $(compgen -e | grep '^EIGS_' | sed 's/^/-u /') $tier_env \
         valgrind --tool=cachegrind --cachegrind-out-file=/dev/null "$1" "$2" 2>&1 \
         | grep -oE "I *refs:[ ]*[0-9,]+" | grep -oE "[0-9,]+" | tr -d ','
 }
@@ -48,46 +52,46 @@ case "${1:-}" in
         rm -f "$fake"; echo "SELFTEST FAILED: a 2x-stale baseline passed the gate — decay is invisible"; exit 1
     fi
     rm -f "$fake"; echo "SELFTEST OK: a 2x-stale baseline is flagged"; exit 0 ;;
---vs)
-    # Compare THIS binary ($EIGENSCRIPT) against a reference binary ($2) on the
-    # same workloads. Both built in the same environment => the Ir difference is
-    # a pure code-change signal (this is what CI runs: PR binary vs origin/main
-    # binary, so no cross-machine baseline drift). Fails on > THRESHOLD_PCT.
-    # A workload with a DECLARED temporary cost (#1758: the `jit` rows of
-    # tests/phase2/cost_expect.txt, read through their one parser) is bounded
-    # by its declared max instead, and prints the round that recovers it.
-    ref="$2"; fail=0; used=0
-    decl=$(bash "$DIR/../tools/phase2_cost.sh" --declared jit) \
-        || { echo "  FAIL: cannot read the declared costs (tools/phase2_cost.sh --declared jit)"; exit 2; }
-    ndecl=$(awk -F'\t' 'index($1, "bench/") == 1' <<< "$decl" | wc -l)
-    echo "  tier: jit (EIGS_* unset on every run line); declared bench rows: $ndecl"
+--vs|--list-vs)
+    # Base and candidate use this gate's own measurement recipe. Its CI
+    # counts, including off-tier declarations, are the source of max_ci.
+    ref="${2:-}"; fail=0; used=0
+    if [ "$1" = --vs ] && [ -z "$ref" ]; then echo "  FAIL: --vs requires a reference binary"; exit 2; fi
+    decl=$(bash "$DIR/../tools/phase2_cost.sh" --declared all --method ci) \
+        || { echo "  FAIL: cannot read the declared costs (tools/phase2_cost.sh --declared all --method ci)"; exit 2; }
+    ndecl=$(awk 'NF {n++} END {print n+0}' <<< "$decl")
+    work=$(mktemp -d "${TMPDIR:-/tmp}/eigs-bench-vs.XXXXXX") || exit 2
+    trap 'rm -rf "$work"' EXIT
     for f in "$DIR"/*.eigs; do
-        name=$(basename "$f" .eigs)
-        a=$(ir_of "$EIGS" "$f")
-        b=$(ir_of "$ref" "$f")
-        [[ "$a" =~ ^[1-9][0-9]*$ && "$b" =~ ^[1-9][0-9]*$ ]] \
-            || { echo "  FAIL: $name: no instruction count (cand='$a' ref='$b')"; exit 2; }
-        inc=$(( (a - b) * 100 / b ))
-        row=$(awk -F'\t' -v w="bench/$name.eigs" '$1 == w' <<< "$decl")
-        if [ -n "$row" ]; then
-            IFS=$'\t' read -r _ max round <<< "$row"; used=$((used + 1))
-            # Exact decimal compare, the predicate tools/phase2_cost.sh uses.
-            if python3 -c 'import sys; from decimal import Decimal as D; a, b, m = map(D, sys.argv[1:]); sys.exit((a - b) * 100 > m * b)' "$a" "$b" "$max"; then
-                echo "  DECLARED: $name  Ir ${b} -> ${a}  (+${inc}% <= declared +${max}%, recover_round=${round})"
-            else
-                echo "  REGRESSION: $name  Ir ${b} -> ${a}  (+${inc}% > declared +${max}%, recover_round=${round})"; fail=1
-            fi
-        elif [ $(( (a - b) * 100 )) -gt $(( THRESHOLD_PCT * b )) ]; then
-            echo "  REGRESSION: $name  Ir ${b} -> ${a}  (+${inc}% > ${THRESHOLD_PCT}%)"; fail=1
-        else
-            echo "  ok: $name  Ir ${a}  (${inc}% vs ref)"
-        fi
+        printf 'bench/%s\tjit\n' "$(basename "$f")" >> "$work/population.unsorted"
     done
-    # Every declared bench row was applied (a declaration no workload used is
-    # a bound that guards nothing).
-    [ "$used" -eq "$ndecl" ] || { echo "  FAIL: declared bench rows=$ndecl applied=$used"; exit 2; }
-    [ "$fail" -eq 0 ] && echo "no instruction-count regressions vs reference (threshold ${THRESHOLD_PCT}%; declared rows applied=$used)"
+    awk -F'\t' 'NF {print $1 "\t" $2}' <<< "$decl" >> "$work/population.unsorted"
+    LC_ALL=C sort -u "$work/population.unsorted" > "$work/population"
+    if [ "$1" = --list-vs ]; then cat "$work/population"; exit 0; fi
+    nrows=$(wc -l < "$work/population")
+    echo "  tiers: explicit jit/off (caller EIGS_* unset); column: max_ci; stale_below_max=0.5; declared rows: $ndecl; measured rows: $nrows"
+    while IFS=$'\t' read -r workload tier; do
+        f="$DIR/../$workload"
+        [ -f "$f" ] || { echo "  FAIL: missing workload: $workload"; exit 2; }
+        a=$(ir_of "$EIGS" "$f" "$tier")
+        b=$(ir_of "$ref" "$f" "$tier")
+        [[ "$a" =~ ^[1-9][0-9]*$ && "$b" =~ ^[1-9][0-9]*$ ]] \
+            || { echo "  FAIL: $workload $tier: no instruction count (cand='$a' ref='$b')"; exit 2; }
+        row=$(awk -F'\t' -v w="$workload" -v t="$tier" '$1 == w && $2 == t' <<< "$decl")
+        if [ -n "$row" ]; then used=$((used + 1)); fi
+        # One exact two-sided predicate; selects max_ci for both tiers.
+        python3 "$DIR/../tools/phase2_cost_declarations.py" --method ci \
+            --row "$workload" "$tier" "$b" "$a"
+        rc=$?
+        [ "$rc" -le 1 ] || exit "$rc"
+        [ "$rc" -eq 0 ] || fail=1
+    done < "$work/population"
+    # Every declaration was measured exactly once, regardless of workload dir
+    # or tier. The union's population is derived, never hand-maintained.
+    [ "$used" -eq "$ndecl" ] || { echo "  FAIL: declared rows=$ndecl applied=$used"; exit 2; }
+    [ "$fail" -eq 0 ] && echo "no instruction-count regressions vs reference (threshold ${THRESHOLD_PCT}%; declared rows applied=$used; measured rows=$nrows)"
     exit $fail ;;
+
 esac
 
 # Default (local): compare against the checked-in baseline. NOTE the baseline is
