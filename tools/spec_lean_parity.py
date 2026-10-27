@@ -24,6 +24,18 @@ def classified(p,label,command):
  if o=='in-subset':return True
  if o.startswith('out: ') and ' at line ' in o:return False
  raise RuntimeError(f'{command} produced malformed verdict for {label}: {o!r}')
+def classifier_protocol_selfcheck():
+ # Negative controls for classified(): a crashed, an empty and a malformed
+ # classifier response must each be REJECTED. The reported count is derived
+ # from these outcomes, never typed (#2050 review: a literal 3/3 had
+ # replaced the measurement).
+ bad=[subprocess.CompletedProcess([],1,'','crash'),subprocess.CompletedProcess([],0,'',''),subprocess.CompletedProcess([],0,'maybe','')]
+ rejected=0
+ for r in bad:
+  try:classified(r,'self-check','--classify-runtime')
+  except RuntimeError:rejected+=1
+ if rejected!=len(bad):raise RuntimeError(f'classifier protocol self-check failed: {rejected}/{len(bad)} rejected')
+ return rejected,len(bad)
 def projection(p):
  if not p.exists():return []
  return [(f[0],f[-1]) for x in p.read_text(errors='replace').splitlines() if (f:=x.split(' ',2)) and f[0] in ('A','N')]
@@ -39,6 +51,7 @@ def validate_medium(ref,lean_root):
  return bad
 def compare(ref,lean_root,enforce=True):
  if bad:=validate_medium(ref,lean_root):raise RuntimeError('; '.join(bad))
+ pc=classifier_protocol_selfcheck()
  ps=population(); actual={}; examined=roundtrips=cross=old_in=new_in=0; moved=[]; refusals=[]
  with tempfile.TemporaryDirectory() as raw:
   td=Path(raw)
@@ -71,7 +84,7 @@ def compare(ref,lean_root,enforce=True):
  if enforce and set(actual)!=set(ledger):raise RuntimeError(f'known-disagreement ledger mismatch\nnew={[(x,actual[x]) for x in sorted(set(actual)-set(ledger))]}\nstale={sorted(set(ledger)-set(actual))}')
  if enforce and any(k not in ('vm bug','model bug') or not r.strip() for k,r in ledger.values()):raise RuntimeError('invalid disagreement triage')
  lines=[f'population / step1-in / modeled-in / examined: {len(ps)} / {old_in} / {new_in} / {examined}',f'agreements / disagreements: {examined-len(actual)-len(refusals)} / {len(actual)}',f'refused at runtime: {len(refusals)}']
- lines += [f'\t{x}: {why}' for x,why in refusals]+[f'Lean record->strict-replay: {roundtrips}/{examined-len(refusals)}',f'cross-implementation N programs: {cross}','classifier protocol self-checks: 3/3',f'classification moves: {len(moved)}']+['\t'.join(x) for x in moved]
+ lines += [f'\t{x}: {why}' for x,why in refusals]+[f'Lean record->strict-replay: {roundtrips}/{examined-len(refusals)}',f'cross-implementation N programs: {cross}',f'classifier protocol self-checks: {pc[0]}/{pc[1]}',f'classification moves: {len(moved)}']+['\t'.join(x) for x in moved]
  return ('\n'.join(lines)+'\n').encode(),actual
 def replace_once(path,old,new):
  text=path.read_text()
