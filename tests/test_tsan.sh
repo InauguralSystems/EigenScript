@@ -52,6 +52,22 @@ seeded_race_row() {
     fi
 }
 
+misordered_publish_row() {
+    echo "=== #2052 planted relaxed publish/consume race MUST be caught ==="
+    local out rc w
+    out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R env \
+        EIGS_TSAN_MISORDERED_PUBLISH_CONTROL=1 "$EIGS" 2>&1)
+    rc=$?
+    w=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
+    if [ "$rc" -eq 124 ]; then
+        echo "  FAIL: misordered publish/consume control HUNG"; FAIL=$((FAIL + 1))
+    elif [ "$w" -gt 0 ]; then
+        echo "  PASS: misordered relaxed publish/consume detected ($w warnings)"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: misordered relaxed publish/consume NOT detected (rc=$rc)"; FAIL=$((FAIL + 1))
+    fi
+}
+
 rebind_call_row() {
     echo "=== #1171 call vs rebind of a shared binding must be race-free ==="
     # Threads call module-level functions while other threads rebind them to
@@ -148,7 +164,8 @@ if [ "${1:-}" = "--row" ]; then
         rebind-call)    rebind_call_row ;;
         scope-boundary) scope_boundary_row ;;
         dict-readers)   dict_readers_row ;;
-        *) echo "usage: test_tsan.sh --row seeded|rebind-call|scope-boundary|dict-readers"; exit 2 ;;
+        misordered-publish) misordered_publish_row ;;
+        *) echo "usage: test_tsan.sh --row seeded|rebind-call|scope-boundary|dict-readers|misordered-publish"; exit 2 ;;
     esac
     echo ""
     echo "Results: $PASS passed, $FAIL failed"
@@ -674,6 +691,7 @@ else
 fi
 
 seeded_race_row
+misordered_publish_row
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

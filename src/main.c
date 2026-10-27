@@ -10,6 +10,49 @@
 #include "trace.h"
 #include "repl.h"
 
+#ifdef EIGS_TSAN_TEST_SEAM
+#include <pthread.h>
+#include <stdatomic.h>
+
+/* #2052: planted weak-memory positive control.  This intentionally omits the
+ * release/acquire edge that must publish tsan_probe_payload.  It exists only
+ * in TSan variants and is reachable only through the private test switch. */
+static atomic_int tsan_probe_published;
+static int tsan_probe_payload;
+
+static void *tsan_probe_publish(void *unused) {
+    (void)unused;
+    tsan_probe_payload = 2052;
+    atomic_store_explicit(&tsan_probe_published, 1, memory_order_relaxed);
+    return NULL;
+}
+
+static void *tsan_probe_consume(void *unused) {
+    (void)unused;
+    while (!atomic_load_explicit(&tsan_probe_published,
+                                 memory_order_relaxed)) { }
+    return (void *)(uintptr_t)tsan_probe_payload;
+}
+
+static int tsan_misordered_publish_control(void) {
+    pthread_t publisher, consumer;
+    void *observed = NULL;
+    atomic_store_explicit(&tsan_probe_published, 0, memory_order_relaxed);
+    tsan_probe_payload = 0;
+    if (pthread_create(&consumer, NULL, tsan_probe_consume, NULL) != 0)
+        return 2;
+    if (pthread_create(&publisher, NULL, tsan_probe_publish, NULL) != 0) {
+        atomic_store_explicit(&tsan_probe_published, 1, memory_order_relaxed);
+        (void)pthread_join(consumer, NULL);
+        return 2;
+    }
+    if (pthread_join(publisher, NULL) != 0 ||
+        pthread_join(consumer, &observed) != 0)
+        return 2;
+    return (uintptr_t)observed == 2052 ? 0 : 1;
+}
+#endif
+
 #ifndef EIGENSCRIPT_VERSION
 #define EIGENSCRIPT_VERSION "dev"
 #endif
@@ -36,6 +79,10 @@ static void set_exe_dir(const char *argv0) {
 }
 
 int main(int argc, char **argv) {
+#ifdef EIGS_TSAN_TEST_SEAM
+    if (getenv("EIGS_TSAN_MISORDERED_PUBLISH_CONTROL"))
+        return tsan_misordered_publish_control();
+#endif
     /* #413: a bundled binary (appended archive, trailer magic) extracts
      * itself and rewrites argv to run the extracted script — before ANY
      * flag handling, because in bundle mode the arguments belong to the
