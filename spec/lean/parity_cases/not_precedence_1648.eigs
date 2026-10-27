@@ -1,0 +1,2 @@
+print of (not 1 < 2)
+print of (not false and false)

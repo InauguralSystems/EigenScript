@@ -47,27 +47,39 @@ private def expressionFuel : Nat → String → Except String Expr
     let t := trim source
     if t.startsWith "what is " then throw "discarded interrogative"
     else if t.startsWith "(" && t.endsWith ")" then expressionFuel fuel ((t.drop 1).dropEnd 1).toString
-    else if t.startsWith "not " then do pure (.not (← expressionFuel fuel (t.drop 4).toString))
-    else if t.startsWith "when is " then
-      let name := trim (t.drop 8).toString
-      if validIdent name then pure (.when name) else throw "not yet modeled"
     else
-      let operations : List (String × BinOp) :=
-        [(" and ", .and), (" or ", .or), (" == ", .eq), (" != ", .ne), (" <= ", .le),
-         (" >= ", .ge), (" < ", .lt), (" > ", .gt), (" + ", .add), (" - ", .sub), (" * ", .mul)]
-      match operations.find? (fun p => t.contains p.1) with
+      -- `or`, then `and`, then `not`, then comparisons (#1648).  Looking
+      -- for the lower-precedence binary words before the prefix is what makes
+      -- `not true and false` split as `(not true) and false`, while delaying
+      -- every comparison until after the prefix makes `not 1 < 2` negate it.
+      let logic : List (String × BinOp) := [(" or ", .or), (" and ", .and)]
+      match logic.find? (fun p => t.contains p.1) with
       | some (marker, op) =>
         match t.splitOn marker with
         | [a, b] => do pure (.binary op (← expressionFuel fuel a) (← expressionFuel fuel b))
         | _ => throw "not yet modeled"
       | none =>
-        match t.splitOn " of [" with
-        | [fn, args] => do
-          if !args.endsWith "]" then throw "not yet modeled"
-          let inside := trim (args.dropEnd 1).toString
-          let values ← if inside.isEmpty then pure [] else (inside.splitOn ",").mapM (expressionFuel fuel)
-          pure (.call (← atom fn) values)
-        | _ => atom t
+        if t.startsWith "not " then do pure (.not (← expressionFuel fuel (t.drop 4).toString))
+        else if t.startsWith "when is " then
+          let name := trim (t.drop 8).toString
+          if validIdent name then pure (.when name) else throw "not yet modeled"
+        else
+          let operations : List (String × BinOp) :=
+            [(" == ", .eq), (" != ", .ne), (" <= ", .le), (" >= ", .ge),
+             (" < ", .lt), (" > ", .gt), (" + ", .add), (" - ", .sub), (" * ", .mul)]
+          match operations.find? (fun p => t.contains p.1) with
+          | some (marker, op) =>
+            match t.splitOn marker with
+            | [a, b] => do pure (.binary op (← expressionFuel fuel a) (← expressionFuel fuel b))
+            | _ => throw "not yet modeled"
+          | none =>
+            match t.splitOn " of [" with
+            | [fn, args] => do
+              if !args.endsWith "]" then throw "not yet modeled"
+              let inside := trim (args.dropEnd 1).toString
+              let values ← if inside.isEmpty then pure [] else (inside.splitOn ",").mapM (expressionFuel fuel)
+              pure (.call (← atom fn) values)
+            | _ => atom t
 
 private def expression (s : String) : Except String Expr := expressionFuel (s.length + 1) s
 

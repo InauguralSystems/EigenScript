@@ -1155,7 +1155,7 @@ static ASTNode* parse_relation(Parser *p) {
     return left;
 }
 
-/* Depth-guard wrapper. parse_unary self-recurses on prefix `not`/`-`/`~`
+/* Depth-guard wrapper. parse_unary self-recurses on prefix `-`/`~`
  * and, via parse_relation's `of` RHS, on `f of g of ...` — neither path
  * touched the parse-depth guard before, so either could overflow the C
  * stack on a single malformed line (SIGSEGV). Bounding parse_unary bounds
@@ -1180,14 +1180,6 @@ static ASTNode* parse_unary_body(Parser *p) {
         ASTNode *operand = parse_unary(p);
         ASTNode *n = make_node_col(AST_UNARY, op_tok->line, op_tok->col);
         snprintf(n->data.unary.op, sizeof(n->data.unary.op), "-");
-        n->data.unary.operand = operand;
-        return n;
-    }
-    if (p_cur(p)->type == TOK_NOT) {
-        Token *op_tok = p_advance(p);
-        ASTNode *operand = parse_unary(p);
-        ASTNode *n = make_node_col(AST_UNARY, op_tok->line, op_tok->col);
-        snprintf(n->data.unary.op, sizeof(n->data.unary.op), "not");
         n->data.unary.operand = operand;
         return n;
     }
@@ -1326,12 +1318,34 @@ static ASTNode* parse_comparison(Parser *p) {
     return left;
 }
 
+/* Word-form `not` sits between comparisons and `and`/`or` (#1648).
+ * Collecting the prefix chain preserves right association without making a
+ * long run of `not`s a C-stack recursion path. Arithmetic unary operators
+ * remain in parse_unary, above calls, arithmetic, bitwise and comparisons. */
+static ASTNode* parse_not(Parser *p) {
+    Token *ops[PARSE_MAX_DEPTH];
+    int count = 0;
+    while (p_cur(p)->type == TOK_NOT) {
+        if (chain_too_deep(p)) break;
+        ops[count++] = p_advance(p);
+    }
+    ASTNode *operand = parse_comparison(p);
+    while (count > 0) {
+        Token *op_tok = ops[--count];
+        ASTNode *n = make_node_col(AST_UNARY, op_tok->line, op_tok->col);
+        snprintf(n->data.unary.op, sizeof(n->data.unary.op), "not");
+        n->data.unary.operand = operand;
+        operand = n;
+    }
+    return operand;
+}
+
 static ASTNode* parse_and(Parser *p) {
-    ASTNode *left = parse_comparison(p);
+    ASTNode *left = parse_not(p);
     while (p_cur(p)->type == TOK_AND) {
         if (chain_too_deep(p)) break;
         Token *op_tok = p_advance(p);
-        ASTNode *right = parse_comparison(p);
+        ASTNode *right = parse_not(p);
         ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
         snprintf(n->data.binop.op, sizeof(n->data.binop.op), "and");
         n->data.binop.left = left;

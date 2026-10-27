@@ -1,0 +1,1 @@
+- `not` now binds below comparisons and above `and` and `or`, so `not 1 < 2` negates the comparison (#1648).
