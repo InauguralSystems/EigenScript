@@ -27,4 +27,15 @@ assert_eq of [recursive.error.kind, "sandbox", "recursive work refusal is sandbo
 has_budget is index_of of [recursive.error.message, "budget"] >= 0
 assert_eq of [has_budget, true, "recursive refusal names its budget"]
 
+# Temporal history belongs to the host thread: source form is refused like a
+# descriptor, and compiling it must not arm host history for the name.
+temporal is sandbox_run of ["return prev of read_text", 1000, 2000000, 10000]
+assert_eq of [temporal.ok, false, "source form cannot read temporal history"]
+assert_eq of [temporal.error.kind, "sandbox", "temporal refusal is sandbox kind"]
+has_temporal is index_of of [temporal.error.message, "temporal history"] >= 0
+assert_eq of [has_temporal, true, "temporal refusal names temporal history"]
+nested is sandbox_run of ["define f() as:\n    return prev of secret\nreturn 1", 1000, 2000000, 10000]
+assert_eq of [nested.ok, false, "a temporal read in an uncalled function is refused too"]
+assert_eq of [nested.error.kind, "sandbox", "nested temporal refusal is sandbox kind"]
+
 print of "sandbox source budgets passed"

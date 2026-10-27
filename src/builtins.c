@@ -3618,10 +3618,16 @@ Value* builtin_sandbox_run(Value *arg) {
             int devnull = open("/dev/null", O_WRONLY);
             if (devnull >= 0) { dup2(devnull, STDERR_FILENO); close(devnull); }
 #endif
+            /* Compiling sandboxed source must not arm process-wide temporal
+             * history: a `prev of x` compiled here would make later HOST
+             * assignments to x record history that a later sandbox could
+             * read. Suppression is per-thread and nestable (trace.h). */
+            trace_arm_suppress_begin();
             TokenList tl = tokenize(source ? source : "");
             ASTNode *ast = parse(&tl);
             if (g_parse_errors == 0 && ast)
                 chunk = compile_ast(ast, sbox, source ? source : "", "<sandbox>");
+            trace_arm_suppress_end();
             int front_errors = g_parse_errors;
 #if !EIGENSCRIPT_FREESTANDING
             if (saved_stderr >= 0) { dup2(saved_stderr, STDERR_FILENO); close(saved_stderr); }
@@ -3642,6 +3648,15 @@ Value* builtin_sandbox_run(Value *arg) {
                              g_first_error_msg[0] ? g_first_error_msg : "compile error", line);
                 rt_error(EK_PARSE, line, "%s", diagnostic);
                 snprintf(g_error_file, sizeof g_error_file, "%s", "<sandbox>");
+            } else if (chunk_reads_shared_temporal(chunk)) {
+                /* The descriptor path rejects this before building; source
+                 * only has a chunk now, so the same rule applies here.
+                 * Temporal history belongs to the host thread, not the sealed
+                 * Env: `prev` could otherwise recover a host builtin or closure
+                 * the allowlist never sees. */
+                chunk_free(chunk);
+                chunk = NULL;
+                rt_error(EK_SANDBOX, 0, "sandbox source cannot access temporal history");
             }
         }
     }
