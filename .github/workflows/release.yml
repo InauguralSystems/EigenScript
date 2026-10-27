@@ -98,96 +98,15 @@ jobs:
         with:
           ref: ${{ needs.tag.outputs.tag }}
 
-      # Pin the interpreter the venv is built from. `macos-latest` moved to an
-      # image whose `python3` has no audited PyYAML wheel (the v0.47.0 arm64
-      # build: "No matching distribution found for PyYAML==6.0.3"). The hash
-      # file lists cp310-cp314 wheels, so a fixed CPython keeps them matching
-      # whatever the runner image ships.
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      - name: Build and test the release artifact
+        uses: ./.github/actions/release-build
         with:
-          python-version: '3.12'
+          label: ${{ matrix.label }}
+          runner: ${{ matrix.os }}
 
-      # Install the test-only YAML loader before release artifacts exist. Use
-      # a dedicated environment and accept only the audited wheel hashes for
-      # the runner platforms, rather than executing a mutable PyPI release.
-      - name: Install locked PyYAML (the workflow-YAML gate's loader arm)
-        run: |
-          python3 -m venv .release-venv
-          .release-venv/bin/python -m pip install \
-            --require-hashes --only-binary=:all: \
-            -r .github/requirements-release.txt
-          echo "$PWD/.release-venv/bin" >> "$GITHUB_PATH"
-          .release-venv/bin/python -c 'import yaml; print("PyYAML", yaml.__version__)'
-
-      - name: Install GCC (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y gcc
-
-      - name: Build minimal binary
-        run: |
-          ./build.sh
-          cp src/eigenscript eigenscript-${{ matrix.label }}
-          chmod +x eigenscript-${{ matrix.label }}
-
-      - name: Build full binary (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get install -y libpq-dev
-          ./build.sh full
-          mv src/eigenscript eigenscript-full-${{ matrix.label }}
-          chmod +x eigenscript-full-${{ matrix.label }}
-
-      # The suite's dependency-gated sections fail, not skip, when a
-      # dependency is missing, so the runner needs what CI's test
-      # environments carry. Installed AFTER both builds, so the shipped
-      # binaries (and the Linux glibc floor) do not change.
-      # Linux: the runtime packages of .devcontainer/Dockerfile (SDL and
-      # SDL_mixer for the strict-shape backend controls, Xvfb/xdotool for
-      # the real-input checks).
-      - name: Install test dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get install -y --no-install-recommends \
-            libsdl2-dev libsdl2-mixer-2.0-0 xvfb xauth xdotool python3-pil zlib1g-dev
-
-      # macOS: the toolchain step of ci.yml's build-and-test-macos-worker.
-      # coreutils supplies `timeout`, which the gfx example and sanitizer
-      # checks require; upstream LLVM supplies the gfx LeakSanitizer
-      # runtime (LLVM 20 deadlocks before main on macOS 26.4+,
-      # llvm-project#182943, fixed in 22).
-      - name: Install test dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          case '${{ matrix.os }}' in
-            macos-15-intel) formula=llvm@18 ;;
-            *)
-              formula=llvm@22
-              brew install --force-bottle "$formula"
-              ;;
-          esac
-          if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
-            brew install --force-bottle coreutils
-          fi
-          brewbin="$(brew --prefix "$formula")/bin"
-          test -x "$brewbin/clang"
-          echo "PATH=$brewbin:$PATH" >> "$GITHUB_ENV"
-          echo "EIGS_ASAN_GFX_CC=clang" >> "$GITHUB_ENV"
-
-      # TMPDIR: two suite diagnostics redirect into "$TMPDIR/..." and
-      # hosted runners leave it unset (#1624).
-      - name: Run tests against the release binary
-        env:
-          TMPDIR: ${{ runner.temp }}
-        run: |
-          cp eigenscript-${{ matrix.label }} src/eigenscript
-          cd tests && bash run_all_tests.sh
-
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
-        with:
-          name: binaries-${{ matrix.label }}
-          path: eigenscript-*${{ matrix.label }}
-          if-no-files-found: error
-
+  # The CI dry-run reuses the composite build/test recipe above, but cannot
+  # exercise this attestation and release-upload job. It deliberately has no
+  # contents:write permission and never creates a tag or GitHub release.
   release:
     needs: [tag, build]
     runs-on: ubuntu-latest

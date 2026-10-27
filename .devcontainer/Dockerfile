@@ -50,10 +50,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   musl-tools       -> musl-gcc, the second conforming libc header set the
 #                       freestanding gate compiles the profile against
 #                       (tools/freestanding_check.sh, #1985)
-# SDL headers anchor the input fixture to the real SDL ABI; Xvfb and
-# xdotool drive an isolated real-input window without touching a user display.
-# x11-utils supplies the readiness and window-property probes for X11 gfx tests.
-# SDL_mixer supplies the ordinary music-positive strict-shape controls.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         build-essential \
@@ -69,13 +65,12 @@ RUN apt-get update \
         curl \
         procps \
         musl-tools \
-        libsdl2-dev \
-        libsdl2-mixer-2.0-0 \
-        xvfb \
-        xauth \
-        x11-utils \
-        xdotool \
-        python3-pil \
+ && rm -rf /var/lib/apt/lists/*
+
+# Release-suite dependencies have one source for this CI image and native
+# release runners. COPY is relative to the repository-root build context.
+COPY tools/install_release_test_dependencies.sh /usr/local/bin/
+RUN bash /usr/local/bin/install_release_test_dependencies.sh linux \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspaces/EigenScript
