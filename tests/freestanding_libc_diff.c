@@ -211,7 +211,7 @@ static void t_mem_str(void) {
 }
 
 static void t_ctype(void) {
-    printf("[ctype tables]\n");
+    printf("[ctype tables and standard functions]\n");
     const unsigned short *gb = *__ctype_b_loc(), *mb = *eigs_ctype_b_loc();
     const int *gl = *__ctype_tolower_loc(), *ml = *eigs_ctype_tolower_loc();
     const int *gu = *__ctype_toupper_loc(), *mu = *eigs_ctype_toupper_loc();
@@ -219,6 +219,12 @@ static void t_ctype(void) {
         CHECK(gb[i] == mb[i], "ctype_b[%d]: glibc %04x mini %04x", i, gb[i], mb[i]);
         CHECK(gl[i] == ml[i], "tolower[%d]", i);
         CHECK(gu[i] == mu[i], "toupper[%d]", i);
+    }
+    for (int i = -1; i < 256; i++) {
+        CHECK(!!eigs_isalnum(i) == !!isalnum(i), "isalnum[%d]", i);
+        CHECK(!!eigs_isxdigit(i) == !!isxdigit(i), "isxdigit[%d]", i);
+        CHECK(eigs_tolower(i) == tolower(i), "tolower[%d]", i);
+        CHECK(eigs_toupper(i) == toupper(i), "toupper[%d]", i);
     }
 }
 
@@ -229,6 +235,11 @@ static void t_strtol(void) {
         "-9223372036854775808", "9223372036854775808", "99999999999999999999999",
         "-99999999999999999999999", "0x", "abc", "", "  -0x10", "z", "10",
     };
+    const char *atoi_cases[] = {"0", "-1", "+42", "  123abc", "017",
+                                "abc", "", "  -16"};
+    for (size_t i = 0; i < sizeof(atoi_cases)/sizeof(*atoi_cases); i++)
+        CHECK(eigs_atoi(atoi_cases[i]) == atoi(atoi_cases[i]),
+              "atoi('%s')", atoi_cases[i]);
     int bases[] = {0, 10, 16, 8, 2, 36};
     for (size_t i = 0; i < sizeof(cases)/sizeof(*cases); i++) {
         for (size_t b = 0; b < sizeof(bases)/sizeof(*bases); b++) {
