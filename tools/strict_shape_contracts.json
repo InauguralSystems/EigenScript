@@ -1710,18 +1710,6 @@
     }
   },
   {
-    "function": "builtin_proc_read_buf",
-    "file": "src/builtins_host.c",
-    "category": "exact_soft_rejection",
-    "minimum": 2,
-    "maximum": 2,
-    "reason": "count != 2 returns null, not a catchable shape error. Never prefix-consumes; full strict-shape policy should add surplus diagnostic without changing strict-off.",
-    "public_names": [
-      "proc_read_buf"
-    ],
-    "disposition": "guarded"
-  },
-  {
     "function": "builtin_random_int",
     "file": "src/builtins.c",
     "category": "fixed",

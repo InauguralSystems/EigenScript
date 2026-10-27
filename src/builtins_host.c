@@ -1758,45 +1758,6 @@ Value* builtin_exec_capture(Value *arg) {
     return result;
 }
 
-/* #159: binary-safe variant of proc_read. Returns a VAL_BUFFER (no
- * NUL-truncation), null on EOF. Same 10 MB cap as proc_read. */
-Value* builtin_proc_read_buf(Value *arg) {
-    STRICT_LIST_MAX(arg, 2, "proc_read_buf");
-    if (replay_blocks("proc_read_buf", "subprocess/concurrency")) return make_null();
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count != 2)
-        return make_null();
-    EIGS_VIEW(fd_v_view);
-    Value *fd_v  = list_get_view(arg, 0, &fd_v_view);
-    EIGS_VIEW(max_v_view);
-    Value *max_v = list_get_view(arg, 1, &max_v_view);
-    if (!fd_v || fd_v->type != VAL_NUM || !max_v || max_v->type != VAL_NUM)
-        return make_null();
-    int fd = (int)eigs_num_arg(fd_v, __func__);
-    int max = (int)eigs_num_arg(max_v, __func__);
-    if (fd < 0 || max <= 0) return make_null();
-    if (max > 10 * 1024 * 1024) max = 10 * 1024 * 1024;
-    unsigned char *buf = xmalloc((size_t)max);
-    if (!buf) return make_null();
-    ssize_t n;
-    for (;;) {
-        n = read(fd, buf, (size_t)max);
-        if (n >= 0) break;
-        if (errno == EINTR) continue;
-        free(buf);
-        return make_null();
-    }
-    if (n == 0) { free(buf); return make_null(); }
-    Value *v = xcalloc(1, sizeof(Value));
-    v->type = VAL_BUFFER;
-    v->data.buffer.count = (int)n;
-    v->data.buffer.data = xcalloc((size_t)n, sizeof(double));
-    v->refcount = 1;
-    for (ssize_t i = 0; i < n; i++)
-        v->data.buffer.data[i] = (double)buf[i];
-    free(buf);
-    return v;
-}
-
 /* ==== BUILTIN: random_hex ==== */
 /* random_hex of n → string of n random hex characters from /dev/urandom.
  * Capability builtin: provides randomness so .eigs libraries can generate tokens. */
@@ -1928,7 +1889,6 @@ void register_host_builtins(Env *env) {
     env_set_local_owned(env, "write_text", make_builtin(builtin_write_text));
     env_set_local_owned(env, "write_bytes", make_builtin(builtin_write_bytes));
     env_set_local_owned(env, "exec_capture", make_builtin(builtin_exec_capture));
-    env_set_local_owned(env, "proc_read_buf", make_builtin(builtin_proc_read_buf));
     env_set_local_owned(env, "random_hex", make_builtin(builtin_random_hex));
     env_set_local_owned(env, "tensor_save", make_builtin(builtin_tensor_save));
     env_set_local_owned(env, "tensor_load", make_builtin(builtin_tensor_load));
