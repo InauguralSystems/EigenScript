@@ -533,7 +533,7 @@ the process: call `eigs_trace_shutdown()`. A per-request or per-task
 state must not call it; `eigs_close` of a non-last state does not.
 
 "Am I the last state?" is answered ONLY by the return value of
-`eigs_process_state_release()`, which decides and decrements in one step
+`eigs_process_state_release(st)`, which unregisters, decides, and decrements in one step
 under `src/state.c`'s attached-state lock. There is deliberately no
 close-path count read to pair with it: reading the count and *then*
 releasing is a time-of-check/time-of-use window in which two concurrent

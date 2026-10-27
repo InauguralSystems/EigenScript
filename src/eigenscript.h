@@ -764,6 +764,20 @@ typedef enum {
     HANDLE_NET       /* #414 ext_net socket (listener or connection) */
 } HandleType;
 
+/* Live resources which make a mid-state replay install unsafe (#1913). */
+enum {
+    EIGS_LIVE_STORE   = 1u << 0,
+    EIGS_LIVE_THREAD  = 1u << 1,
+    EIGS_LIVE_CHANNEL = 1u << 2,
+    EIGS_LIVE_TASK    = 1u << 3,
+    EIGS_LIVE_SOCKET  = 1u << 4,
+    EIGS_LIVE_FILE    = 1u << 5,
+    EIGS_LIVE_GFX     = 1u << 6,
+    EIGS_LIVE_AUDIO   = 1u << 7,
+    EIGS_LIVE_DATABASE = 1u << 8,
+    EIGS_LIVE_HTTP    = 1u << 9
+};
+
 /* #1146: `gen` is bumped every time the slot is handed out, so a handle
  * VALUE that still names a recycled slot is detectable. Ids recycle
  * round-robin over the 255 usable slots, so after 255 spawn/join cycles a
@@ -816,6 +830,9 @@ void            env_intern_table_unref(EnvInternTable *t);
 /* Per-interpreter-instance config + shared registry. Transparent for
  * internal TUs (Phase 10's embed.h wraps it behind accessors). */
 struct EigsState {
+    /* Intrusive process registry, guarded by state.c's attached lock. */
+    EigsState      *process_next;
+    int             process_registered;
     uint64_t trace_state_token;   /* association metadata; never an address */
     pthread_mutex_t threads_lock;
     EigsThread     *threads;
@@ -1659,7 +1676,8 @@ int  eigs_process_state_count(void);
  * closed by construction and gated structurally —
  * tests/test_trace_mt.sh's `close-count-toctou` check fails any close path
  * that reads a count separately, and pins the count reader's one caller. */
-int  eigs_process_state_release(void);
+int  eigs_process_state_release(EigsState *st);
+void eigs_process_states_visit(void (*visit)(EigsState *, void *), void *ctx);
 /* Tear down a state whose live-count was already released by
  * eigs_process_state_release (eigs_close). Other callers use
  * eigs_state_destroy, which releases. */
@@ -2462,6 +2480,7 @@ Value *builtin_thread_join(Value *arg);
  * Call once execution is done and the value world is still alive (before
  * env/thread teardown). */
 void   handle_table_drain(struct EigsState *st);
+unsigned handle_table_live_kinds(struct EigsState *st);
 void   handle_release(int id, uint32_t gen);
 
 /* `exit`: first request wins within the caller's evaluation scope. Workers

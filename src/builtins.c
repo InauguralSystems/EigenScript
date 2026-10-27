@@ -4890,6 +4890,50 @@ Value* builtin_close_channel(Value *arg) {
     return make_null();
 }
 
+/* A retained slot is not necessarily a live resource: channels remain
+ * queryable after close and cooperative tasks remain queryable after they
+ * finish.  Keep these predicates beside the resource implementations. */
+unsigned handle_table_live_kinds(EigsState *st) {
+    unsigned live = 0;
+    if (!st) return 0;
+    pthread_mutex_lock(&st->handle_mutex);
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        EigsHandleSlot *slot = &st->handle_table[i];
+        if (!slot->ptr) continue;
+        switch (slot->type) {
+        case HANDLE_STORE:
+            live |= EIGS_LIVE_STORE; /* store_close releases its slot */
+            break;
+        case HANDLE_THREAD:
+            live |= EIGS_LIVE_THREAD; /* thread_join claims its slot */
+            break;
+        case HANDLE_CHANNEL: {
+            Channel *ch = (Channel *)slot->ptr;
+            pthread_mutex_lock(&ch->mutex);
+            int open = !ch->closed;
+            pthread_mutex_unlock(&ch->mutex);
+            if (open) live |= EIGS_LIVE_CHANNEL;
+            break;
+        }
+        case HANDLE_TASK: {
+            Task *t = (Task *)slot->ptr;
+            if (!t->detached && (t->state == TASK_READY ||
+                t->state == TASK_RUNNING || t->state == TASK_SUSPENDED))
+                live |= EIGS_LIVE_TASK;
+            break;
+        }
+        case HANDLE_NET:
+            live |= EIGS_LIVE_SOCKET; /* net_close releases its slot */
+            break;
+        }
+    }
+    if (st->deferred_threads ||
+        __atomic_load_n(&st->live_workers, __ATOMIC_ACQUIRE) != 0)
+        live |= EIGS_LIVE_THREAD;
+    pthread_mutex_unlock(&st->handle_mutex);
+    return live;
+}
+
 Value* builtin_channel_closed(Value *arg) {
     /* #971 Phase D: get_channel folds "not a channel handle" into "no such
      * channel". The second is the documented answer (a reclaimed channel is
