@@ -1,1 +1,1 @@
-- The `numerical_grad*` builtins now raise `param mutated during gradient` when a loss callback changes the parameter length, rather than accessing later cells or returning a partial gradient. (#1719).
+- The `numerical_grad*` builtins now reject callback length changes without overwriting values shifted by that callback (#1719).
