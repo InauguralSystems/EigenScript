@@ -652,7 +652,7 @@ vm_dict_slot_cached(Value *dict, const char *key, uint32_t h) {
         return dict_get_hashed_slot(dict, key, h, &found);  /* null when absent */
     }
     DictCacheEntry *ce = dict_cache_probe(dict, h);
-    if (ce && ce->index < dict->data.dict.count) {
+    if (ce && ce->index < dict->data.dict.used) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0)
             return dict_value_slot(dict, ce->index);
@@ -671,7 +671,7 @@ static inline void dict_set_cached(Value *dict, const char *key, uint32_t h, Val
         return;
     }
     DictCacheEntry *ce = dict_cache_probe(dict, h);
-    if (ce && ce->index < dict->data.dict.count) {
+    if (ce && ce->index < dict->data.dict.used) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0) {
             /* Cache hit — update in place */
@@ -694,7 +694,7 @@ dict_set_cached_immediate(Value *dict, const char *key, uint32_t h, double num) 
     if (__builtin_expect(dict->module_ns != 0, 0))
         return 0;                     /* #1057: never in-place on a mirror */
     DictCacheEntry *ce = dict_cache_probe(dict, h);
-    if (ce && ce->index < dict->data.dict.count) {
+    if (ce && ce->index < dict->data.dict.used) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0) {
             /* Slot storage (#1665 arm D B10): a cache hit is a plain
@@ -1149,12 +1149,15 @@ static inline Env *env_resolve_store(Env *start, const char *name, uint32_t h,
     return (t && t == g_builtin_env) ? NULL : t;
 }
 
-/* #1063: the ONE implementation of "store TOS into fn-local slot", shared by
+/* #1063/#2016: the ONE implementation of "store TOS into fn-local slot", shared by
  * CASE(SET_LOCAL) and the JIT's out-of-line path (jit_helper_set_local), so
  * the two can never disagree. The in-place branch is load-bearing beyond
  * speed: g_last_observer may alias the exclusive VAL_NUM being overwritten,
- * and a swap+decref would free it under the observer. */
-static inline void vm_store_local_slot(Env *e, int slot, EigsSlot tos) {
+ * and a swap+decref would free it under the observer. A parameter arrives
+ * with assign_counts=1; every user SET_LOCAL advances that same counter, just
+ * as a name store does. Runtime bookkeeping stores pass count_assignment=0. */
+static inline void vm_store_local_slot(Env *e, int slot, EigsSlot tos,
+                                       int count_assignment) {
     if (slot_is_num(tos)) {
         EigsSlot ex_s = e->values[slot];
         if (slot_is_heap(ex_s)) {
@@ -1162,6 +1165,8 @@ static inline void vm_store_local_slot(Env *e, int slot, EigsSlot tos) {
             if (existing && existing->type == VAL_NUM &&
                 existing->refcount == 1) {
                 VAL_NUM_RAW(existing) = SLOT_NUM_RAW(tos);
+                if (count_assignment && e->assign_counts)
+                    e->assign_counts[slot]++;
                 return;
             }
         }
@@ -1169,6 +1174,7 @@ static inline void vm_store_local_slot(Env *e, int slot, EigsSlot tos) {
     slot_incref(tos);
     slot_decref(e->values[slot]);
     e->values[slot] = tos;
+    if (count_assignment && e->assign_counts) e->assign_counts[slot]++;
 }
 
 /* #1063: record a slot write on the prev/history tape. The table is keyed by
@@ -1201,7 +1207,7 @@ void jit_helper_set_local(EigsChunk *chunk, int slot) {
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     Env *e = frame->fn_env;
     if ((int)slot < e->count)
-        vm_store_local_slot(e, slot, g_vm.stack[g_vm.sp - 1]);
+        vm_store_local_slot(e, slot, g_vm.stack[g_vm.sp - 1], 1);
 }
 
 void jit_helper_set_name(EigsChunk *chunk, int idx) {
@@ -1792,23 +1798,6 @@ int jit_helper_iter_next(void) {
     list_set_num(state, 1, (double)(idx + 1));
     vm_push_slot(elem);
     return g_has_error ? 2 : 0;
-}
-
-/* Integer-valued test for a subscript index: an exact integer (2.0) returns 1
- * and is written to *out; a fractional value (2.5) — or one from float drift
- * (2.9999998) — returns 0 so the caller can raise "index must be an integer"
- * instead of silently truncating. Pure predicate, no side effects: the raise
- * lives at the handling site so a target the fast path doesn't own (string,
- * dict) falls through to the slow path and is diagnosed exactly once. The
- * (double)(int) round-trip is the test — it reuses the cast every index site
- * already performs and is pure SSE2, deliberately avoiding floor()/roundsd
- * (SSE4.1, absent on the Merom target). Negatives pass here and fail the usual
- * >= 0 range check downstream, unchanged. */
-static inline int vm_index_is_int(double d, int *out) {
-    int i = (int)d;
-    if ((double)i != d) return 0;
-    *out = i;
-    return 1;
 }
 
 /* 0.13.0: resolve negative index against len, then bounds-check.
@@ -2439,7 +2428,8 @@ static inline void vm_borrow_scan(Value *arg, Value *result,
     /* #1665 arm D: a numeric view is caller stack storage; returning one
      * would hand the VM a dangling Value. Views carry EIGS_VIEW_RC, which no
      * counted Value reaches (the immortal singletons sit at 1e6). */
-    if (__builtin_expect(result && result->refcount >= EIGS_VIEW_RC, 0)) {
+    if (__builtin_expect(result &&
+            __atomic_load_n(&result->refcount, __ATOMIC_RELAXED) >= EIGS_VIEW_RC, 0)) {
         fprintf(stderr, "EigenScript FATAL: builtin returned an escaped numeric view\n");
         abort();
     }
@@ -2851,40 +2841,6 @@ void jit_helper_return_null(void) {
     g_vm.frame_count--;
     g_vm.stack[g_vm.sp++] = slot_null();
 }
-
-#ifdef EIGS_JIT_CHECKED
-/* `make jit-checked` slot witnesses (jit.h). Print the read site, abort. */
-static void jit_checked_fail(EigsChunk *chunk, uint32_t site,
-                             const char *what, long a, long b) {
-    uint32_t off = site & 0xFFFFFFu;
-    int line = (chunk && chunk->lines && (int)off < chunk->lines_len)
-             ? chunk->lines[off] : 0;
-    fprintf(stderr,
-            "EIGS_JIT_CHECKED: %s (%ld vs %ld) at %s offset %u in chunk '%s' line %d\n",
-            what, a, b, op_name((uint8_t)(site >> 24)), off,
-            (chunk && chunk->name) ? chunk->name : "<anon>", line);
-    fflush(stderr);
-    abort();
-}
-
-void jit_checked_local(uint64_t *cached_values, uint32_t slot,
-                       uint32_t site, EigsChunk *chunk) {
-    Env *e = g_vm.frames[g_vm.frame_count - 1].fn_env;
-    if ((void *)cached_values != (void *)e->values)
-        jit_checked_fail(chunk, site, "stale %r12 values base (cached != fn_env->values)",
-                         (long)(intptr_t)cached_values, (long)(intptr_t)e->values);
-    if ((int)slot >= e->count)
-        jit_checked_fail(chunk, site, "local slot out of range (slot vs fn_env->count)",
-                         (long)slot, (long)e->count);
-}
-
-void jit_checked_env_slot(Env *target, uint32_t slot, uint32_t site,
-                          EigsChunk *chunk) {
-    if ((int)slot >= target->count)
-        jit_checked_fail(chunk, site, "IC slot out of range (slot_idx vs target->count)",
-                         (long)slot, (long)target->count);
-}
-#endif
 
 /* Helper called by the JIT prologue on platforms where the JIT can't
  * encode TLS access directly — Darwin/Mach-O uses TLV descriptors
@@ -3789,7 +3745,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (__builtin_expect(g_trace_hist, 0)) vm_trace_local_slot(chunk, slot);
         Env *e = frame->fn_env;
         if ((int)slot < e->count) {
-            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1]);
+            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1], 1);
         } else {
             /* #348: an out-of-range slot used to DROP the write silently
              * (the assigned variable simply never existed). Compiler-emitted
@@ -3810,7 +3766,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
         if ((int)slot < e->count) {
-            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1]);
+            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1], 0);
         } else {
             rt_error(EK_INTERNAL, current_line,
                      "SET_LOCAL_INTERNAL slot %d out of range (env has %d slots)",
@@ -6544,10 +6500,20 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
         Value *table = slot_as_ptr(table_s);
         int key;
+        /* Integrality first, then range: a fractional key is a value error
+         * wherever it lies (2147483647.5 included), as ordinary indexing
+         * reports it; only an integral key outside int range is index_range. */
         if (!vm_index_is_int(key_d, &key)) {
             slot_decref(arg_s); slot_decref(table_s);
             rt_error(EK_VALUE, current_line,
                 "dispatch key must be an integer, got %g", key_d);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
+        if (key_d < (double)INT_MIN || key_d > (double)INT_MAX) {
+            slot_decref(arg_s); slot_decref(table_s);
+            rt_error(EK_INDEX, current_line,
+                "dispatch key %g out of range", key_d);
             vm_push_slot(slot_null());
             DISPATCH();
         }

@@ -1,0 +1,1 @@
+- Fixed a data race: the borrow check read a builtin result's reference count with a plain load while another thread could drop it. The read is now atomic, and the TSan suite loads a module ending in a `define` concurrently (#1868).

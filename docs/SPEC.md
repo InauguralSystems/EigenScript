@@ -1412,7 +1412,8 @@ and uses the project file. For each request, the order is:
 4. Relative to the **project root**: the nearest ancestor of that containing
    directory with an `eigs.json`, including the containing directory itself.
    If none exists, this step is skipped.
-5. The existing stdlib locations, in order: `<exe>/../<path>`,
+5. The existing stdlib locations, in order: `<exe>/../<path>`; for a source-tree
+   `<repo>/build/<variant>/eigenscript`, `<exe>/../../<path>`; then
    `<exe>/../lib/eigenscript/<path>`, the latter again with a leading `lib/`
    stripped, then `$HOME/.local/lib/eigenscript/<path>` and its `lib/`-stripped
    form. Here `<exe>` is the executable's directory.
@@ -1964,6 +1965,13 @@ moving
 
 ## Temporal interrogatives
 
+**A binding's creation is its first observation: the `local`/first assignment
+for a local, and the call-time binding for a parameter. Every later assignment
+in the same activation adds one.** Thus, for every binding in an activation,
+`when` = (1 if it is a parameter) + the number of tape `A` records for it in
+that activation. The parameter creation event is #1048's “one observation per
+call”; it is not an `A` assignment record.
+
 With temporal queries the runtime records assignment history. `prev of
 x` is the value x held before its latest assignment. `what is x at
 <line>` reads the value x had at a source line. (History recording
@@ -2070,6 +2078,10 @@ advance. Replacing memory replay preserves a suspended file's complete context.
 Host effects that the tape cannot reconstruct are replay boundaries. In
 particular, `mktemp` raises a catchable filesystem-boundary error before it
 creates a file; outside replay it creates a file and returns its fresh path.
+Recorded builtins validate deterministic argument refusals before consulting
+the tape. A call that raises during recording therefore raises with the same
+kind and message during strict replay; it is never replaced by a recorded
+return value.
 
 Values crossing a channel, `thread_join`, or cooperative-task boundary are
 copied recursively. This includes buffers (payload and shape) and text builders

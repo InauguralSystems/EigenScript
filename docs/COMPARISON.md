@@ -198,6 +198,11 @@ print of (map of [xs, (v) => v * 10])
 [10, 20, 30, 40, 50]
 ```
 
+Like Python's executable-relative prefix lookup, EigenScript's source-tree
+runtime finds its standard library from the executable: both `src/eigenscript`
+and a directly invoked `build/<variant>/eigenscript` resolve the repository's
+`lib/`, independent of the process working directory.
+
 ## Numeric arrays: the list is not the fast container
 
 Python separates a `list` of boxed objects from a NumPy array of raw doubles,
@@ -387,6 +392,10 @@ file source's cursor, pending outcomes, correspondence and strictness together.
 Replay refuses host effects it cannot reconstruct: `mktemp`, for example,
 raises at the filesystem boundary before creating a file, while ordinary calls
 retain their create-and-return-path behavior.
+Like fail-fast validation in Go and Rust APIs, recorded EigenScript builtins
+reject deterministic argument errors before entering the effect boundary.
+Strict replay consequently preserves the original error kind and message
+rather than turning a raising call into a recorded value.
 
 Python (threads + queue):
 

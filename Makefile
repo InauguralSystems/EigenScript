@@ -36,7 +36,7 @@ LDFLAGS := -pie -Wl,-z,relro,-z,now -lm -lpthread
 endif
 
 SRC_DIR := src
-SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_buf.c $(SRC_DIR)/builtins_host.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/fsutil.c $(SRC_DIR)/hash.c $(SRC_DIR)/alloc.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/lint_host.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/task.c $(SRC_DIR)/jit.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c $(SRC_DIR)/main.c
+SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_buf.c $(SRC_DIR)/builtins_host.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/fsutil.c $(SRC_DIR)/hash.c $(SRC_DIR)/alloc.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/lint_host.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/task.c $(SRC_DIR)/jit.c $(SRC_DIR)/jit_checked.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c $(SRC_DIR)/main.c
 HOSTED_SOURCES := $(SOURCES) $(SRC_DIR)/ext_gfx.c
 MODEL_SRC := $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
 BINARY  := $(SRC_DIR)/eigenscript
@@ -90,7 +90,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked
+.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx gfx-x11-regressions pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked jit-checked-plant
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -564,6 +564,12 @@ jit-smoke:
 	$(CC) -Wall -Wextra $(WERROR_FLAGS) -O2 -o /tmp/jit_smoke $(SRC_DIR)/jit.c $(SRC_DIR)/jit_smoke.c -lm
 	/tmp/jit_smoke
 
+# Deliberately invalid local operand used only as the jit-checked lane's
+# positive control. The scanner accepts it, then the emitted witness aborts.
+jit-checked-plant:
+	$(CC) -Wall -Wextra $(WERROR_FLAGS) -O2 -DEIGS_JIT_CHECKED -o /tmp/jit_checked_plant \
+		$(SRC_DIR)/jit.c $(SRC_DIR)/jit_checked.c $(SRC_DIR)/jit_smoke.c -lm
+
 EMBED_SOURCES := $(filter-out $(CLI_ONLY),$(SOURCES))
 
 # Single-file amalgamation (#397): "copy two files, call eigs_open".
@@ -630,6 +636,18 @@ build/$(UI_INPUT_VARIANT)/ui_sdl_input: tests/ui_sdl_input.c $(UI_INPUT_OBJ) $(w
 	$(CC) $(FLAGS_$(UI_INPUT_VARIANT)) -I$(SRC_DIR) $$(sdl2-config --cflags) -o $@ $< $(UI_INPUT_OBJ) $(LIBS_$(UI_INPUT_VARIANT)) $$(sdl2-config --libs)
 ui-sdl-input-gfx: build/$(UI_INPUT_VARIANT)/ui_sdl_input
 	SDL_VIDEODRIVER=dummy build/$(UI_INPUT_VARIANT)/ui_sdl_input
+
+# Real-X11 regressions belong in the Linux extensions lane, not the portable
+# suite. Require both scripts' success and their promised positive evidence.
+gfx-x11-regressions: build
+	@set -eu; output=$$(mktemp); trap 'rm -f "$$output"' EXIT HUP INT TERM; \
+	status=0; bash tests/test_gfx_utf8_title.sh >"$$output" 2>&1 || status=$$?; \
+	cat "$$output"; [ "$$status" -eq 0 ]; \
+	grep -q '^  PASS: all four ICCCM/EWMH title transitions$$' "$$output"; \
+	status=0; bash tests/test_gfx_ctype_locale.sh >"$$output" 2>&1 || status=$$?; \
+	cat "$$output"; [ "$$status" -eq 0 ]; \
+	grep -q '^  PASS: gfx leaves byte-oriented ctype answers replay-deterministic$$' "$$output"; \
+	grep -q '^  PASS: LC_CTYPE after SDL loading is C.UTF-8$$' "$$output"
 
 # AddressSanitizer + UndefinedBehaviorSanitizer build. Catches
 # use-after-free, buffer overflow, leaks, and undefined behavior that

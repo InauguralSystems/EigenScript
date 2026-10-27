@@ -1,0 +1,1 @@
+- Fix #1681: publish SDL window titles as UTF-8 on X11 instead of double-encoding non-ASCII text.

@@ -2,13 +2,10 @@
 # local, so it is not a frameless leaf accessor). load_file frees the module's
 # creator chunk after the body runs, so the function is the ONLY holder of
 # its chunk: a call that drops its callee before the new frame holds the
-# chunk runs freed code. Loaded by tests/rebind_call_race.eigs and
-# tests/rebind_call_self.eigs.
+# chunk runs freed code. It deliberately ends in the define: load_file then
+# returns this shared function while another worker can update its refcount,
+# exercising the builtin-result view check from #1868. Loaded by
+# tests/rebind_call_race.eigs and tests/loader_mt_define_result.eigs.
 define lm_gen_fn(x) as:
     local y is x * 2
     return y
-# The module's value is this number, not the function. A module ending in a
-# `define` makes load_file RETURN the shared function, and the caller's
-# borrow-protocol check then reads its refcount without an atomic: a separate
-# formal race, not the call/rebind path these files pin.
-lm_gen_loaded is 1

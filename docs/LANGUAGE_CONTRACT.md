@@ -469,6 +469,10 @@ unary and `of` are right-associative.
   programmer's hands. A value that is fractional only through float drift
   (`2.9999998`) also raises, surfacing the sloppy arithmetic rather than
   mis-indexing.
+- An integer-valued number outside the runtime's C `int` index representation
+  raises `index_range`, just like any other out-of-bounds index. This applies
+  consistently to indexing, dispatch keys, and slice bounds; it is not
+  misdiagnosed as a fractional value.
 
 **Status:** Enforced — `tests/test_trycatch.eigs`; `vm_index_is_int` guards
 every dynamic index site in `OP_INDEX_GET`/`OP_INDEX_SET` and

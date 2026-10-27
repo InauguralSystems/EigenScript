@@ -124,6 +124,21 @@ def apply_rename(doc, result):
     return "\n".join(lines)
 
 
+def selected_text(doc, location):
+    """Return the source selected by a same-line LSP Location range."""
+    if not isinstance(location, dict):
+        return None
+    r = location.get("range", {})
+    start, end = r.get("start", {}), r.get("end", {})
+    if start.get("line") != end.get("line"):
+        return None
+    lines = doc.splitlines()
+    line = start.get("line", -1)
+    if not 0 <= line < len(lines):
+        return None
+    return lines[line][start.get("character", 0):end.get("character", 0)]
+
+
 URI = "file:///test.eigs"
 
 
@@ -592,8 +607,22 @@ def main():
               {"start": {"line": 1, "character": 11},
                "end": {"line": 1, "character": 17}})
 
-    # Parameter spans are a separate older limitation; the function-name fix
-    # must not invent columns beyond a multiline signature's first line.
+    # Parameter declarations use parser-recorded binder positions, including
+    # multiline signatures and tokens which are soft keywords in expressions.
+    ordinary_doc = "define f(value) as:\n    return value\n"
+    ordinary_refs = {"jsonrpc": "2.0", "id": 16140,
+                     "method": "textDocument/references",
+                     "params": {"textDocument": {"uri": URI},
+                                "position": {"line": 1, "character": 11},
+                                "context": {"includeDeclaration": True}}}
+    r = converse([INIT, did_open(ordinary_doc), ordinary_refs, SHUTDOWN, EXIT])
+    res = (by_id(r, 16140) or {}).get("result")
+    check("ordinary parameter references select only the parameter name (#1614)",
+          isinstance(res, list) and len(res) > 0
+          and all(selected_text(ordinary_doc, loc) == "value" for loc in res)
+          and any(loc["range"]["start"] == {"line": 0, "character": 9}
+                  for loc in res))
+
     multiline_doc = "define f(\n    a,\n    b\n) as:\n    return a + b\n"
     multiline_refs = {"jsonrpc": "2.0", "id": 1370,
                       "method": "textDocument/references",
@@ -602,15 +631,56 @@ def main():
                                  "context": {"includeDeclaration": True}}}
     r = converse([INIT, did_open(multiline_doc), multiline_refs, SHUTDOWN, EXIT])
     res = (by_id(r, 1370) or {}).get("result")
-    lines = multiline_doc.splitlines()
-    check("multiline parameter reference ranges stay within source lines (#1369)",
+    check("multiline parameter references select the real declaration (#1614)",
           isinstance(res, list) and len(res) == 2
-          and all(0 <= loc["range"]["start"]["line"] < len(lines)
-                  and loc["range"]["start"]["line"] == loc["range"]["end"]["line"]
-                  and 0 <= loc["range"]["start"]["character"]
-                  <= loc["range"]["end"]["character"]
-                  <= len(lines[loc["range"]["start"]["line"]])
+          and all(selected_text(multiline_doc, loc) == "b" for loc in res)
+          and any(loc["range"]["start"] == {"line": 2, "character": 4}
                   for loc in res))
+
+    soft_doc = "define f(at) as:\n    return at\n"
+    soft_refs = {"jsonrpc": "2.0", "id": 16141,
+                 "method": "textDocument/references",
+                 "params": {"textDocument": {"uri": URI},
+                            "position": {"line": 1, "character": 11},
+                            "context": {"includeDeclaration": True}}}
+    r = converse([INIT, did_open(soft_doc), soft_refs, SHUTDOWN, EXIT])
+    res = (by_id(r, 16141) or {}).get("result")
+    check("soft-keyword parameter references select `at` (#1614)",
+          isinstance(res, list) and len(res) > 0
+          and all(selected_text(soft_doc, loc) == "at" for loc in res)
+          and any(loc["range"]["start"] == {"line": 0, "character": 9}
+                  for loc in res))
+
+    implicit_doc = "define bump as:\n    return n + 1\n"
+    implicit_refs = {"jsonrpc": "2.0", "id": 16142,
+                     "method": "textDocument/references",
+                     "params": {"textDocument": {"uri": URI},
+                                "position": {"line": 1, "character": 11},
+                                "context": {"includeDeclaration": True}}}
+    r = converse([INIT, did_open(implicit_doc), implicit_refs, SHUTDOWN, EXIT])
+    res = (by_id(r, 16142) or {}).get("result")
+    check("implicit parameter has references but no invented declaration (#1614)",
+          isinstance(res, list) and len(res) == 1
+          and selected_text(implicit_doc, res[0]) == "n"
+          and res[0]["range"]["start"] == {"line": 1, "character": 11})
+
+    default_doc = ("b is 9\n"
+                   "define f(a is b, b is 2) as:\n"
+                   "    return b\n")
+    default_refs = {"jsonrpc": "2.0", "id": 16143,
+                    "method": "textDocument/references",
+                    "params": {"textDocument": {"uri": URI},
+                               "position": {"line": 2, "character": 11},
+                               "context": {"includeDeclaration": True}}}
+    r = converse([INIT, did_open(default_doc), default_refs, SHUTDOWN, EXIT])
+    res = (by_id(r, 16143) or {}).get("result")
+    starts = {(loc["range"]["start"]["line"],
+               loc["range"]["start"]["character"]) for loc in res} \
+        if isinstance(res, list) else set()
+    check("default reference is distinct from the later parameter declaration (#1614)",
+          isinstance(res, list) and len(res) > 0
+          and all(selected_text(default_doc, loc) == "b" for loc in res)
+          and {(0, 0), (1, 14), (1, 17), (2, 11)} <= starts)
 
     # #1375: neither result stream may silently stop at its former fixed cap.
     many_ref_doc = "target is 1\n" + "".join("print of target\n" for _ in range(520))

@@ -773,7 +773,7 @@ multi_json_msg is ""
 if (not sr_multi_json["ok"]):
     multi_json_msg is sr_multi_json["error"]["message"]
 assert_eq of [multi_json_msg,
-              "sandbox memory budget exceeded (used 208 + 128 > 263 bytes)",
+              "sandbox memory budget exceeded (used 216 + 128 > 263 bytes)",
               "budget: first refusal remains exact across multiple strbufs"]
 
 # --- #965 (fix3): sandbox descriptors cannot smuggle callable constants ----

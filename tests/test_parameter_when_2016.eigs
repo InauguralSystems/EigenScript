@@ -1,0 +1,29 @@
+# #2016: a parameter's call-time binding is observation one, and each later
+# assignment in the same activation advances the same counter locals use.
+define untouched2016(p_never) as:
+    return when is p_never
+
+define once2016(p_once) as:
+    p_once is p_once + 1
+    return when is p_once
+
+define twice2016(p_twice) as:
+    p_twice is p_twice + 1
+    p_twice is p_twice + 1
+    return when is p_twice
+
+define looped2016(p_loop, n) as:
+    i2016 is 0
+    loop while i2016 < n:
+        p_loop is p_loop + 1
+        i2016 is i2016 + 1
+    return when is p_loop
+
+define local2016() as:
+    local q_local is 0
+    q_local is q_local + 1
+    q_local is q_local + 1
+    return when is q_local
+
+print of [untouched2016 of 0, once2016 of 0, twice2016 of 0,
+          looped2016 of [0, 12], local2016 of 0]

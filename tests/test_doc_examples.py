@@ -335,7 +335,7 @@ POPULATION = {
     "docs/llms.txt":             (  9,    6,     2,      1,      0),
     "docs/SPEC.md":              ( 86,   82,     1,      3,      0),   # #1839: +1 paired (graceful exit status)
     "docs/COMPARISON.md":        ( 19,   18,     1,      0,      0),
-    "docs/CONCURRENCY.md":       (  8,    8,     0,      0,      0),   # #1736: +1 paired (detached task catches its own error)
+    "docs/CONCURRENCY.md":       (  9,    9,     0,      0,      0),   # #1879: +1 paired (thread handle crosses a channel)
     "docs/STDLIB.md":            ( 15,    7,     8,      0,      0),
     "docs/SYNTAX.md":            ( 35,   15,    20,      0,      1),
     # #1991: these observer documents are part of the executable doc gate.

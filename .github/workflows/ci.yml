@@ -82,6 +82,7 @@ jobs:
     timeout-minutes: 30
     outputs:
       code: ${{ steps.detect.outputs.code }}
+      spec: ${{ steps.detect.outputs.spec }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -92,15 +93,61 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "not a PR — treating as code"
-            echo "code=true" >> "$GITHUB_OUTPUT"; exit 0
+            verdict=$(bash tools/ci_scope.sh --all)
+          else
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+            # tools/ci_scope.sh: both sides of a rename count (#1311); its
+            # --selftest is a tools/selftests.txt row.
+            verdict=$(bash tools/ci_scope.sh "$base" "$head")
           fi
-          base="${{ github.event.pull_request.base.sha }}"
-          head="${{ github.event.pull_request.head.sha }}"
-          # tools/ci_scope.sh: both sides of a rename count (#1311); its
-          # --selftest is a tools/selftests.txt row.
-          verdict=$(bash tools/ci_scope.sh "$base" "$head")
-          echo "-> $verdict (code=false: runtime legs report green without building)"
+          echo "-> scope verdicts (code=false: runtime legs report green without building)"
+          echo "$verdict"
           echo "$verdict" >> "$GITHUB_OUTPUT"
+
+  # EigenCore is deliberately independent of the all-platform C suite.
+  spec-lean:
+    name: spec Lean
+    needs: scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: needs.scope.outputs.spec == 'true'
+      - name: Install pinned Lean toolchain and restore Lake cache
+        if: needs.scope.outputs.spec == 'true'
+        uses: leanprover/lean-action@24581d74d674803a25a81b10b059c5c0cdd344c6  # v1.6.2
+        with:
+          lake-package-directory: spec/lean
+          auto-config: false
+          build: false
+          test: false
+          lint: false
+      - name: Build EigenCore-0 reference frontend
+        if: needs.scope.outputs.spec == 'true'
+        working-directory: spec/lean
+        run: lake build
+      - name: Run proof hygiene gates
+        if: needs.scope.outputs.spec == 'true'
+        run: |
+          python3 tools/spec_lean_no_sorry.py
+          python3 tools/spec_lean_axioms.py
+          python3 tools/spec_lean_no_delegation.py
+      - name: Classify the pre-registered corpus
+        if: needs.scope.outputs.spec == 'true'
+        run: |
+          python3 tools/spec_lean_classify.py
+          python3 tools/spec_lean_corpus.py
+      # The parity comparison runs the C VM against eigs-ref, so this job
+      # builds the C VM itself (the standard ./build.sh, as the Linux legs do).
+      - name: Build the C VM for the parity comparison
+        if: needs.scope.outputs.spec == 'true'
+        run: ./build.sh
+      - name: Compare eigs-ref with the C VM on the in-subset corpus
+        if: needs.scope.outputs.spec == 'true'
+        run: python3 tools/spec_lean_parity.py
 
   # Build the shared dev/CI image (.devcontainer/Dockerfile) and push it to
   # GHCR tagged to this commit. Every Linux leg below runs *inside* this image
@@ -214,7 +261,8 @@ jobs:
     # Full history below is required by the formatter incumbent self-test,
     # which resolves `git merge-base HEAD origin/main`.
     name: gate self-tests (changed rows)
-    needs: [dev-image, scope]
+    needs: [dev-image, scope, spec-lean]
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -226,6 +274,10 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - name: Require spec Lean worker success
+        env:
+          SPEC_LEAN_RESULT: ${{ needs.spec-lean.result }}
+        run: test "$SPEC_LEAN_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
@@ -451,6 +503,20 @@ jobs:
           bash tests/run_all_tests.sh 2>&1 | tee "$RUNNER_TEMP/jit-checked.log"
           grep -q 'PLAN: sections=82,100,129,130,0fd,0fe bearing=6 chunks=6$' "$RUNNER_TEMP/jit-checked.log"
           grep -qE '^  RESULTS: [0-9]+/[0-9]+ passed, 0 failed, 0 skipped$' "$RUNNER_TEMP/jit-checked.log"
+
+      # Positive control for the lane itself: scanner-valid bytecode names a
+      # local beyond its frame env. The checked emitter must call the shared
+      # production diagnostic and terminate by SIGABRT (128 + 6).
+      - name: Prove jit-checked local witness can abort
+        run: |
+          make jit-checked-plant
+          set +e
+          /tmp/jit_checked_plant --checked-local-plant >"$RUNNER_TEMP/jit-checked-plant.log" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/jit-checked-plant.log"
+          test "$status" -eq 134
+          grep -q "^EIGS_JIT_CHECKED: local slot out of range (slot vs fn_env->count) (1 vs 1) at GET_LOCAL offset 2 in chunk 'jit-checked-positive-control' line 1704$" "$RUNNER_TEMP/jit-checked-plant.log"
 
       - name: Require compiler guard activity
         if: always()
@@ -827,6 +893,10 @@ jobs:
       - if: needs.scope.outputs.code == 'true'
         name: UI surface and actual SDL input
         run: bash tools/ui_surface_check.sh --gfx-input
+
+      - if: needs.scope.outputs.code == 'true'
+        name: X11 gfx locale and UTF-8 title regressions
+        run: make gfx-x11-regressions
 
       - if: needs.scope.outputs.code == 'true'
         name: Build consolidated server variant

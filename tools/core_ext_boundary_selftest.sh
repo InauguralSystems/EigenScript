@@ -31,8 +31,14 @@ run_gate() {
 }
 
 run_gate green || { cat "$T/green.log"; echo "core-ext selftest: clean gate did not pass"; exit 1; }
-grep -q 'leg A: 28 core TUs scanned' "$T/green.log" &&
-grep -q 'leg B: 28 core TUs compile' "$T/green.log" &&
+# The core-TU population is DECLARED by Makefile SOURCES, so derive the exact
+# count from that declaration (the same derivation as the checker's leg A)
+# instead of pinning a number: a pinned 28 went stale when #2033 added
+# src/jit_checked.c. The floor still catches a derivation that collapses.
+n_tus=$(cd "$T" && make --no-print-directory print-SOURCES 2>/dev/null | tr ' ' '\n' | sed -n 's#^src/##p' | grep '\.c$' | sort -u | wc -l)
+[ "$n_tus" -ge 28 ] || { echo "core-ext selftest: SOURCES declares only $n_tus core TUs (floor 28)"; exit 1; }
+grep -q "leg A: $n_tus core TUs scanned" "$T/green.log" &&
+grep -q "leg B: $n_tus core TUs compile" "$T/green.log" &&
 grep -q 'OK: no core -> extension-private include edge' "$T/green.log" || {
     cat "$T/green.log"; echo "core-ext selftest: clean populations/verdict changed"; exit 1;
 }
@@ -51,4 +57,4 @@ grep -q 'FAIL\[A\]: core TU src/alloc.c includes extension private header "ext_h
 cp "$T/alloc.c.saved" "$T/src/alloc.c"
 run_gate restored || { cat "$T/restored.log"; echo "core-ext selftest: restored gate did not pass"; exit 1; }
 
-echo "PASS: core-ext boundary: 28 TUs and poisoned-header verdict preserved; parallel overlap observed; planted edge rejected; restore green"
+echo "PASS: core-ext boundary: $n_tus TUs and poisoned-header verdict preserved; parallel overlap observed; planted edge rejected; restore green"

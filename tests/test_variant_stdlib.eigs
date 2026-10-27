@@ -1,0 +1,6 @@
+# #1679: this file is copied outside the repository before the variant binary
+# runs it, so only executable-relative stdlib resolution can find lib/test.eigs.
+load_file of "lib/test.eigs"
+
+assert_eq of [2 + 3, 5, "variant binary loaded the repository stdlib"]
+test_summary of null

@@ -355,6 +355,8 @@ and output lengths; callers must choose their context window explicitly.
 
 ## Standard Library
 
+The machine-checkable EigenCore-0 reference frontend lives in [`spec/lean/`](spec/lean/).
+
 Pure EigenScript libraries under `lib/`:
 
 | Module | Description |
@@ -441,6 +443,8 @@ File loading is relative to the containing file, then the `eigs_modules` walk,
 then the nearest `eigs.json` project root, then stdlib locations; absolute paths
 are used as-is. There is no process cwd search. The REPL (including piped input)
 and the embed API without a file path use their working directory as the base.
+Source-tree binaries under `build/<variant>/` also find the repository `lib/`
+through their executable path, so they can be invoked directly from any directory.
 Add `eigs.json` at the root
 when subdirectory files use root-relative paths. See the exact
 [shared import/load_file resolution chain](docs/SPEC.md#modules).
@@ -611,6 +615,9 @@ sessions between evaluations; unread sibling outcomes prevent advance. See [docs
 and [docs/EMBEDDING.md](docs/EMBEDDING.md) for the binding and version contract.
 Replay also refuses side-effecting boundaries the tape cannot reconstruct:
 in particular, `mktemp` raises before creating a temporary file.
+Recorded builtins validate arguments before their tape boundary, so a call
+that raises during recording raises identically during strict replay instead
+of returning a recorded stand-in.
 
 ## Stability
 

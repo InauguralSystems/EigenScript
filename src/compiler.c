@@ -1838,6 +1838,35 @@ static int name_in_enclosing(Compiler *c, const char *name) {
     return 0;
 }
 
+typedef struct {
+    uint8_t set_op;
+    uint16_t set_arg;
+    uint8_t obs_op;
+    uint16_t obs_arg;
+} UserLocalStore;
+
+/* Choose the ONE bytecode route for a user-visible write to a function/module
+ * slot.  Interrogated bindings live on the name path because that store owns
+ * their assignment counter; ordinary bindings retain the slot fast path.
+ * Compiler bookkeeping uses OP_SET_LOCAL_INTERNAL directly and deliberately
+ * does not come through here. */
+static UserLocalStore user_local_store(Compiler *c, const char *name, int slot) {
+    UserLocalStore route;
+    if (name_set_has(&c->interrogated, name)) {
+        int idx = add_string_constant(c, name);
+        route.set_op = OP_SET_FN_NAME_LOCAL;
+        route.set_arg = (uint16_t)idx;
+        route.obs_op = OP_OBSERVE_ASSIGN;
+        route.obs_arg = (uint16_t)idx;
+    } else {
+        route.set_op = OP_SET_LOCAL;
+        route.set_arg = (uint16_t)slot;
+        route.obs_op = OP_OBSERVE_ASSIGN_LOCAL;
+        route.obs_arg = (uint16_t)slot;
+    }
+    return route;
+}
+
 /* Emit OBSERVE + SET ops for an assignment whose value is already on TOS.
  * Mirrors the AST_ASSIGN body so list-pattern destructuring (which leaves
  * each element on TOS via OP_DESTRUCTURE_UNPACK) can reuse the same
@@ -1854,8 +1883,9 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
     if (c->enclosing) {
         int slot = resolve_local(c, name, h);
         if (slot >= 0) {
-            set_op = OP_SET_LOCAL; set_arg = (uint16_t)slot;
-            obs_op = OP_OBSERVE_ASSIGN_LOCAL; obs_arg = (uint16_t)slot;
+            UserLocalStore route = user_local_store(c, name, slot);
+            set_op = route.set_op; set_arg = route.set_arg;
+            obs_op = route.obs_op; obs_arg = route.obs_arg;
         } else if (lev_has(c, name)) {
             /* #1074: the name is this function's active `for` binder in a
              * loop env -- write where the body reads. */
@@ -1884,8 +1914,9 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
             if (local_eligible) {
                 int new_slot = env_bound ? -1 : add_local(c, name, h);
                 if (!env_bound && new_slot >= 0) {
-                    set_op = OP_SET_LOCAL; set_arg = (uint16_t)new_slot;
-                    obs_op = OP_OBSERVE_ASSIGN_LOCAL; obs_arg = (uint16_t)new_slot;
+                    UserLocalStore route = user_local_store(c, name, new_slot);
+                    set_op = route.set_op; set_arg = route.set_arg;
+                    obs_op = route.obs_op; obs_arg = route.obs_arg;
                 } else {
                     int idx = add_string_constant(c, name);
                     set_op = OP_SET_FN_NAME_LOCAL; set_arg = (uint16_t)idx;
@@ -1906,8 +1937,9 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
         if (name_set_has(&c->module_slot_names, name)) {
             int slot = resolve_local(c, name, h);
             if (slot >= 0) {
-                set_op = OP_SET_LOCAL; set_arg = (uint16_t)slot;
-                obs_op = OP_OBSERVE_ASSIGN_LOCAL; obs_arg = (uint16_t)slot;
+                UserLocalStore route = user_local_store(c, name, slot);
+                set_op = route.set_op; set_arg = route.set_arg;
+                obs_op = route.obs_op; obs_arg = route.obs_arg;
                 picked = 1;
             }
         }
@@ -2266,10 +2298,25 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         int counter_depth = c->stack_depth;
         emit_op_u16(c, OP_LOOP_ENTER_NAMED, (uint16_t)counter_depth, node->line);
 
-        int loop_start = capture_loop_start(c);
-        lp->continue_target = loop_start;
-
         int depth_at_loop = c->stack_depth;
+
+        /* Every path which completes an iteration meets at this one guard:
+         * body fallthrough reaches the back edge below, `continue` emits the
+         * same back edge, and JIT/OSR execute that bytecode edge rather than
+         * manufacturing a second counter update.  Jump over the guard on
+         * entry: no iteration has completed before the first condition. */
+        int first_condition = emit_jump(c, OP_JUMP, node->line);
+        int iteration_end = capture_loop_start(c);
+        lp->continue_target = iteration_end;
+
+        /* Observer stall+cap for observer-based conditions, cap-only for
+         * plain loops (opt-in halting; see cond_is_observer_based). */
+        int stall_op = cond_is_observer_based(node->data.loop.cond)
+                           ? OP_LOOP_STALL_NAMED : OP_LOOP_CAP_NAMED;
+        int stall_jump = emit_jump(c, stall_op, node->line);
+        chunk_emit_u16(c->chunk, (uint16_t)counter_depth, node->line);
+
+        patch_jump(c, first_condition);
         compile_node(c, node->data.loop.cond);
         int exit_jump = emit_jump(c, OP_JUMP_IF_FALSE, node->line);
         /* condition popped by JUMP_IF_FALSE */
@@ -2277,16 +2324,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         compile_block(c, node->data.loop.body, node->data.loop.body_count);
         emit(c, OP_POP, node->line); /* discard body result before next iteration */
 
-        /* Loop check — observer stall+cap for observer-based conditions,
-         * cap-only for plain loops (opt-in halting; see cond_is_observer_based). */
-        int stall_op = cond_is_observer_based(node->data.loop.cond)
-                           ? OP_LOOP_STALL_NAMED : OP_LOOP_CAP_NAMED;
-        int stall_jump = emit_jump(c, stall_op, node->line);
-        chunk_emit_u16(c->chunk, (uint16_t)counter_depth, node->line);
-
-        /* Reset depth to loop start for back-edge */
+        /* Reset depth for the shared iteration-end back edge. */
         c->stack_depth = depth_at_loop;
-        emit_loop(c, loop_start, node->line);
+        emit_loop(c, iteration_end, node->line);
 
         /* Exit path: condition was false or stall detected.
          * Set __loop_exit__ and __loop_iterations__ env vars.
@@ -2482,7 +2522,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             /* Bind loop var to a function-env slot. SET_LOCAL leaves the
              * value on the stack (matching SET_NAME_LOCAL's convention),
              * so the POP below still applies. */
-            emit_op_u16(c, OP_SET_LOCAL, (uint16_t)loop_var_slot, node->line);
+            UserLocalStore route = user_local_store(c, loop_var, loop_var_slot);
+            emit_op_u16(c, route.set_op, route.set_arg, node->line);
             emit(c, OP_POP, node->line);
         } else if (can_persist_env) {
             /* Reuse the loop env created once above. Clear tier: reset its
@@ -2691,8 +2732,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         }
 
         /* Default-param prologue: for each trailing param with a default,
-         * emit OP_DEFAULT_PARAM <slot> <skip>; <default expr>; OP_SET_LOCAL;
-         * OP_POP. Skip target is just past OP_POP. The opcode reads
+         * emit OP_DEFAULT_PARAM <slot> <skip>; <default expr>; the store
+         * selected by user_local_store; OP_POP. Skip target is just past
+         * OP_POP. The opcode reads
          * frame->call_argc — if argc > slot, jump skip (default already
          * supplied by caller). Else fall through (run the default). */
         if (node->data.func.param_defaults) {
@@ -2708,7 +2750,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                 compile_node(&fn_compiler, dflt);
                 /* #1381: a default spanning lines is filed under its first */
                 restamp_line(&fn_compiler, line);
-                emit_op_u16(&fn_compiler, OP_SET_LOCAL, (uint16_t)i, line);
+                UserLocalStore route = user_local_store(
+                    &fn_compiler, node->data.func.params[i], i);
+                emit_op_u16(&fn_compiler, route.set_op, route.set_arg, line);
                 chunk_emit(fn_chunk, OP_POP, line);
                 adjust_stack(&fn_compiler, -1);
                 chunk_patch_jump(fn_chunk, skip_patch);

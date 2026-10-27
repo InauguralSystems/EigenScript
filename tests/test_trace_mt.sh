@@ -190,7 +190,7 @@ else
     else
         fail "close-count-toctou: eigs_close body located" "examined=$body_lines lines"
     fi
-    n_release=$(printf '%s\n' "$close_body" | grep -c 'eigs_process_state_release()')
+    n_release=$(printf '%s\n' "$close_body" | grep -c 'eigs_process_state_release(st)')
     if [ "$n_release" -eq 1 ]; then
         ok "close-count-toctou: eigs_close releases exactly once (n=$n_release)"
     else

@@ -763,7 +763,8 @@ Value* builtin_http_post(Value *arg) {
      * (what already worked). Anything else that PARSED is a caller mistake, not
      * a no-header request — it says so instead of dropping the headers. */
     if (hdr_obj && hdr_obj->type == VAL_DICT) {
-        for (int i = 0; i < hdr_obj->data.dict.count && hdr_count < 32 && argc < 90; i++) {
+        DICT_FOR_EACH(hdr_obj, i) {
+            if (hdr_count >= 32 || argc >= 90) break;
             char *hk = xstrdup(hdr_obj->data.dict.keys[i]);
             char *hv = value_to_string(dict_value_get_view(hdr_obj, i, &(EigsView){{0}}));
             http_strip_crlf(hk);
@@ -2009,4 +2010,10 @@ void ext_http_state_destroy(EigsState *st) {
      * threads die before the state does (http_serve returns or process
      * exits), so theirs is already gone. */
     if (eigs_http_active == s) eigs_http_active = NULL;
+}
+
+unsigned ext_http_live_handles(EigsState *st) {
+    Server *s = st ? st->ext_http_server : NULL;
+    return s && (s->early_bind_fd >= 0 || s->init_thread_active || s->serving)
+        ? EIGS_LIVE_HTTP : 0;
 }

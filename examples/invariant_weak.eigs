@@ -132,6 +132,10 @@ STRENGTH is 0.1
 WINDOW is 10
 N_TICKS is 500
 
+# This example is part of the observer differential corpus.  Pin its input
+# stream so the REF and OBS processes measure the same synthetic scene.
+seed_random of 1685
+
 define run_estimator(mode) as:
     history is []
     estimate_series is []
@@ -195,24 +199,4 @@ coh_ratio is res_B[2] / res_A[2]
 print of f"  RMSE improvement (A / B): {rmse_ratio}x"
 print of f"  coherence improvement (B / A): {coh_ratio}x"
 
-# Perf
-times is []
-for trial in range of 5:
-    t0 is monotonic_ms of null
-    for k in range of 10:
-        r is run_estimator of 1
-    append of [times, (monotonic_ms of null) - t0]
-
-sorted_t is []
-for i in range of (len of times):
-    append of [sorted_t, times[i]]
-for i in range of (len of sorted_t):
-    for j in range of ((len of sorted_t) - i - 1):
-        if sorted_t[j] > sorted_t[j+1]:
-            tmp is sorted_t[j]
-            sorted_t[j] is sorted_t[j+1]
-            sorted_t[j+1] is tmp
-
-print of ""
-print of f"eigs ms (10 weak runs of {N_TICKS} ticks): min={sorted_t[0]} median={sorted_t[2]} max={sorted_t[4]}"
 print of "wrote /tmp/egc_weak_eigs_{A,B}.csv"
