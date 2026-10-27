@@ -769,6 +769,26 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
         }
         is_start[i] = 1;
         last_op = op;
+        /* #1977: the private-loop-counter opcodes (OP_LOOP_{ENTER,EXIT,STALL,
+         * CAP}_NAMED) carry a frame-relative operand-stack SLOT depth, and
+         * OP_LOOP_EXIT_NAMED's handler drains every slot above that depth —
+         * a pop count this pass's height-only abstract model cannot bound (a
+         * depth-0 EXIT_NAMED verifies as a one-pop but drains the whole frame,
+         * reaching the caller's operands: a depth-0 descriptor double-freed).
+         * They are a compiler-only lowering; the trusted compiler emits them
+         * into chunks it marks compiler_scanned, and descriptors must use the
+         * legacy shared-counter opcodes (OP_LOOP_{ENTER,STALL_CHECK,CAP_CHECK},
+         * which take no frame-relative slot). Refuse them in any chunk the
+         * compiler did not produce — the only chunks that reach this verifier
+         * are sandbox/vm_run_bytecode descriptors (compiler_scanned == 0) and
+         * the compiler's own output under EIGS_VERIFY_SELF (== 1, exempt). */
+        if (!chunk->compiler_scanned &&
+            (op == OP_LOOP_ENTER_NAMED || op == OP_LOOP_EXIT_NAMED ||
+             op == OP_LOOP_STALL_NAMED || op == OP_LOOP_CAP_NAMED)) {
+            WHY("private-loop-counter opcode %u is compiler-only and not valid "
+                "in assembled bytecode at offset %d", (unsigned)op, i);
+            ok = 0; break;
+        }
         /* #630: OP_LINE has a single 32-bit operand — outside the u16-strided
          * role machinery below. No index to validate; just skip 4 bytes. */
         if (op == OP_LINE) {

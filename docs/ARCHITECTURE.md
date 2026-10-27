@@ -193,12 +193,22 @@ assignment inside one still records its value-window sample (#1049).
 Loop stall detection (`OP_LOOP_STALL_CHECK`) exits while-loops after 100
 consecutive iterations with `|dH| < threshold`, setting `__loop_exit__`
 and `__loop_iterations__` env variables.
-`OP_LOOP_ENTER` resets `__loop_iterations__`, making it the per-loop published
-count for normal, stalled, and limited exits; after a nested loop it describes
-the innermost completed loop.  A separate sandbox counter remains cumulative
-across compiler-emitted loops in one call frame.  As before #1906, calls scope
-that compiler-loop counter per frame, while the back-edge counter is cumulative
-across the entire `sandbox_run`; either counter can exhaust the same budget.
+Each `loop while` carries its own iteration count in a private counter slot
+on the frame's operand stack (#1906): `OP_LOOP_ENTER_NAMED` pushes it and
+publishes zero, `OP_LOOP_STALL_NAMED`/`OP_LOOP_CAP_NAMED` increment it per
+iteration, and `OP_LOOP_EXIT_NAMED` publishes its final value to
+`__loop_iterations__` and pops it.  Because the counter is stack-resident and
+per-loop, a nested loop no longer clobbers its enclosing loop's count:
+`__loop_iterations__` is the per-loop published count for normal, stalled,
+and limited exits, and after a nested loop completes it describes that
+innermost loop.  These four `*_NAMED` opcodes take a frame-relative slot
+operand and are **compiler-only** — `chunk_verify` refuses them in assembled
+(`sandbox_run` / `vm_run_bytecode`) bytecode (#1977), which uses the legacy
+no-slot `OP_LOOP_ENTER`/`OP_LOOP_STALL_CHECK`/`OP_LOOP_CAP_CHECK` instead.
+A separate sandbox counter remains cumulative across compiler-emitted loops in
+one call frame.  As before #1906, calls scope that compiler-loop counter per
+frame, while the back-edge counter is cumulative across the entire
+`sandbox_run`; either counter can exhaust the same budget.
 
 ## Memory
 
