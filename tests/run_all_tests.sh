@@ -6194,7 +6194,8 @@ echo ""
 # The file list is the gate's POPULATION: a document dropped from this line
 # stops being checked, so the checker itself fails when the run does not cover
 # every pinned row ("Doc populations pinned: N of M"), and DOC_POPULATIONS
-# below pins the count here too — the two must agree.
+# below pins the count here too — the two must agree. #1991 keeps both
+# observer guides in this set because both carry executable fences.
 DOC_FILES_ARG="$TESTS_DIR/../README.md $TESTS_DIR/../docs/llms.txt \
 $TESTS_DIR/../docs/SPEC.md $TESTS_DIR/../docs/COMPARISON.md \
 $TESTS_DIR/../docs/CONCURRENCY.md $TESTS_DIR/../docs/STDLIB.md \

@@ -39,6 +39,7 @@ DOC ENROLMENT|docs/COMPARISON.md|1
 DOC ENROLMENT|docs/CONCURRENCY.md|1
 DOC ENROLMENT|docs/STDLIB.md|1
 DOC ENROLMENT|docs/SYNTAX.md|1
+# #1991: observer docs belong to the exact executable-fence document set.
 DOC ENROLMENT|docs/PREDICATES.md|1
 DOC ENROLMENT|docs/DIAGNOSTICS.md|1
 DOC ENROLMENT|docs/OBSERVER.md|1
