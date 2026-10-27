@@ -26,12 +26,12 @@ set -euo pipefail
 classify() {
     local files code=false spec=false
     files=$(git -c core.quotePath=true diff --name-only --no-renames "$1" "$2")
-    [ -n "$files" ] || { echo "ci_scope: empty diff $1..$2" >&2; printf 'code=true\nspec=false\n'; return; }
+    [ -n "$files" ] || { echo "ci_scope: empty diff $1..$2" >&2; printf 'code=true\nspec=true\n'; return; }
     echo "changed files:" >&2; printf '%s\n' "$files" | sed 's/^/  /' >&2
     local f e old_entry new_entry
     while IFS= read -r f; do
         case "$f" in
-            spec/*|tools/spec_lean_no_sorry.py|tools/spec_lean_axioms.py|tools/spec_lean_corpus.py|.github/workflows/ci.yml) spec=true ;;
+            spec/*|tools/spec_lean_no_sorry.py|tools/spec_lean_axioms.py|tools/spec_lean_corpus.py|tests/test_doc_examples.py|.github/workflows/ci.yml) spec=true ;;
         esac
         # name-only classification is insufficient for symlinks: docs/x.md may
         # expose src/x.c. Inspect both trees: only an absent entry or a regular
@@ -89,8 +89,9 @@ selftest() {
     case_ "spec verdict: code-only" true false 'echo "int spec_no;" >> src/foo.c'
     case_ "spec verdict: both" true true 'mkdir -p tools && echo x > tools/spec_lean_axioms.py'
     case_ "spec verdict: neither" false false 'echo neither >> README.md'
+    case_ "spec verdict: corpus extractor" true true 'mkdir -p tests && echo "# x" >> tests/test_doc_examples.py'
     case_ "spec verdict: large diff" true true 'mkdir -p docs .github/workflows; i=0; while [ "$i" -lt 512 ]; do p=$(printf "%0200d" "$i"); echo x > "docs/$p.md"; i=$((i + 1)); done; echo "name: ci" > .github/workflows/ci.yml'
-    [ "$n" -eq 19 ] || { echo "ci_scope selftest: ran $n cases, want 19"; exit 1; }
+    [ "$n" -eq 20 ] || { echo "ci_scope selftest: ran $n cases, want 20"; exit 1; }
     echo "ci_scope selftest: $((n - fail))/$n passed"
     [ "$fail" -eq 0 ]
 }
