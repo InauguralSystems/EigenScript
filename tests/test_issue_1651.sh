@@ -20,15 +20,37 @@ check 'callee frame carries its source file and line' 'grep -Fq "at boom ($MODUL
 check 'loaded module frame carries its source file and line' 'grep -Fq "at <module> ($MODULE:3)" <<<"$OUT"'
 check 'main frame carries its distinct source file and line' 'grep -Fq "at <module> (main.eigs:1)" <<<"$OUT"'
 check 'a source path containing spaces prints intact' 'grep -Fq "space dir/module.eigs:2" <<<"$OUT"'
-cat > "$D/caught.eigs" <<'EIGS'
+cat > "$D/caught-runtime.eigs" <<'EIGS'
+try:
+    x is [1] - 2
+catch e:
+    print of [e.file, e.line]
+    print of e.message
+EIGS
+RUNTIME_OUT=$(cd "$D" && "$BIN" caught-runtime.eigs 2>&1); RUNTIME_RC=$?
+cat > "$D/caught-eval.eigs" <<'EIGS'
 try:
     eval of "x is [1] - 2"
 catch e:
-    print of [e.file, e.line, e.message]
+    print of e.message
 EIGS
-OUT=$(cd "$D" && "$BIN" caught.eigs 2>&1); RC2=$?
-check 'caught runtime error exposes file beside line' 'grep -Fq '"'"'["<eval>", 1,'"'"' <<<"$OUT"'
-check 'caught runtime error message has standard file:line prefix' 'grep -Fq '"'"'"<eval>:1: cannot apply'"'"' <<<"$OUT"'
+EVAL_CAUGHT_OUT=$(cd "$D" && "$BIN" caught-eval.eigs 2>&1); EVAL_CAUGHT_RC=$?
+cat > "$D/caught-module.eigs" <<'EIGS'
+try:
+    load_file of "space dir/module.eigs"
+catch e:
+    print of e.message
+EIGS
+MODULE_CAUGHT_OUT=$(cd "$D" && "$BIN" caught-module.eigs 2>&1); MODULE_CAUGHT_RC=$?
+OUT="$RUNTIME_OUT"
+EXPECTED_LOCATION='["caught-runtime.eigs", 2]'
+EXPECTED_MESSAGE="cannot apply '-' to list and num"
+check 'caught runtime error exposes file beside line' '[ "$(head -n1 <<<"$RUNTIME_OUT")" = "$EXPECTED_LOCATION" ]'
+check 'caught runtime error message is byte-identical to main' '[ "$(tail -n1 <<<"$RUNTIME_OUT")" = "$EXPECTED_MESSAGE" ]'
+check 'caught eval error message is byte-identical to main' '[ "$EVAL_CAUGHT_OUT" = "$EXPECTED_MESSAGE" ]'
+check 'caught loaded-module error message is byte-identical to main' '[ "$MODULE_CAUGHT_OUT" = "$EXPECTED_MESSAGE" ]'
+RC2=0
+[ "$RUNTIME_RC" -eq 0 ] && [ "$EVAL_CAUGHT_RC" -eq 0 ] && [ "$MODULE_CAUGHT_RC" -eq 0 ] || RC2=1
 cat > "$D/eval.eigs" <<'EIGS'
 eval of "x is [1] - 2"
 EIGS

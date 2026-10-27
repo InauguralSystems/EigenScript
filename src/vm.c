@@ -2887,7 +2887,7 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
  * list, string, ...), the catch variable binds that value — ownership
  * of the stash's ref transfers to the stack. Built-in runtime errors
  * bind a {kind, message, file, line} dict (#406): kind from the closed
- * ErrKind vocabulary, message in `file:line: text` form, and line 1-based.
+ * ErrKind vocabulary, the unchanged location-free message, and line 1-based.
  * Built lazily here so the uncaught path never allocates. */
 static Value *vm_take_error_value(void) {
     if (g_error_value) {

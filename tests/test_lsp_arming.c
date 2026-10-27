@@ -7,7 +7,7 @@
 #include "vm.h"
 #include "../src/trace.c"
 
-static EigsChunk *diagnostic_compile(ASTNode *, Env *, const char *);
+static EigsChunk *diagnostic_compile(ASTNode *, Env *, const char *, const char *);
 #define compile_ast diagnostic_compile
 #define main unused_lsp_main
 #include "../src/eigenlsp.c"
@@ -35,7 +35,8 @@ static void check(int ok, const char *name) {
     fprintf(stderr, "%s: %s\n", ok ? "PASS" : "FAIL", name);
     if (ok) passed++; else failed++;
 }
-static EigsChunk *diagnostic_compile(ASTNode *ast, Env *env, const char *src) {
+static EigsChunk *diagnostic_compile(ASTNode *ast, Env *env, const char *src,
+                                     const char *file) {
     calls++;
     ArmState at_entry = saved;
     at_entry.depth++;
@@ -51,7 +52,7 @@ static EigsChunk *diagnostic_compile(ASTNode *ast, Env *env, const char *src) {
     trace_arm_observer_history();
     check(same_state(arm_state(), at_entry),
           "all diagnostic arming requests are inert");
-    EigsChunk *chunk = compile_ast(ast, env, src, "<embed>");
+    EigsChunk *chunk = compile_ast(ast, env, src, file);
     check(same_state(arm_state(), at_entry),
           "real diagnostic compilation leaves arming state unchanged");
     return chunk;

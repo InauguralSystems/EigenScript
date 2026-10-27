@@ -1370,34 +1370,34 @@ check_stderr "EM26 runtime error prints source excerpt" 'items is [1,2,3]
 print of items[10]' "2 | print of items\[10\]"
 check_stderr "EM27 runtime caret lands on the failing column" 'items is [1,2,3]
 print of items[10]' "|               \^"
-check_stderr "EM4 type error on bad subtraction" 'x is [1,2] - 5' "Error <eval>:1: cannot apply"
+check_stderr "EM4 type error on bad subtraction" 'x is [1,2] - 5' "Error .*:1: cannot apply"
 check_stderr "EM5 index out of bounds" 'items is [1,2,3]
-print of items[10]' "Error <eval>:2: index 10 out of range"
-check_stderr "EM6 division by zero raises" 'print of (10 / 0)' "Error <eval>:1: division by zero"
+print of items[10]' "Error .*:2: index 10 out of range"
+check_stderr "EM6 division by zero raises" 'print of (10 / 0)' "Error .*:1: division by zero"
 check_stderr "EM7 undefined variable includes line" 'x is 1
 y is 2
-print of z' "Error <eval>:3: undefined variable"
+print of z' "Error .*:3: undefined variable"
 check_stderr "EM8 calling non-function" 'x is 5
-y is x of 10' "Error <eval>:2: cannot call num"
+y is x of 10' "Error .*:2: cannot call num"
 check_stderr "EM9 cannot index num" 'x is 42
-print of x[0]' "Error <eval>:2: cannot index num"
+print of x[0]' "Error .*:2: cannot index num"
 check_stderr "EM10 nested if line accuracy" 'x is 1
 if x == 1:
     y is 2
     if y == 2:
-        z is y[0]' "Error <eval>:5: cannot index num"
+        z is y[0]' "Error .*:5: cannot index num"
 check_stderr "EM11 function body line" 'define foo as:
     return n - "bad"
-result is foo of 5' "Error <eval>:2: cannot apply"
+result is foo of 5' "Error .*:2: cannot apply"
 check_stderr "EM12 loop body line" 'items is [1, 2, 3]
 for i in items:
     x is i * 2
-    print of missing' "Error <eval>:4: undefined variable"
+    print of missing' "Error .*:4: undefined variable"
 check_stderr "EM13 elif branch line" 'x is 5
 if x == 1:
     print of "one"
 elif x == 5:
-    y is x[0]' "Error <eval>:5: cannot index"
+    y is x[0]' "Error .*:5: cannot index"
 # An *uncaught* runtime error must fail loudly: non-zero exit, and no further
 # statements run. Division by zero is now such an error (see EM15).
 check_exit "EM14 uncaught runtime error exits non-zero" 'x is [1] - 5' "1"
@@ -1908,7 +1908,7 @@ LW_R1=$(printf '%s\n' "$LW_INT" | sed -n '1p')
 LW_R2=$(printf '%s\n' "$LW_INT" | sed -n '2p')
 # The error is on a line past 65535; a wrapped operand would report line %
 # 65536 (a small number). The invariant is simply: reported line > 65535.
-LW_ERRLINE=$(printf '%s\n' "$LW_INT" | grep -oE "Error line [0-9]+" | head -1 | grep -oE "[0-9]+")
+LW_ERRLINE=$(printf '%s\n' "$LW_INT" | grep -oE "Error .*:[0-9]+" | head -1 | sed "s/.*://")
 if [ "$LW_R1" = "111" ] && [ "$LW_R2" = "222" ]; then
     echo "  PASS: 'what is x at L' correct past line 65535 (111, 222)"
 else

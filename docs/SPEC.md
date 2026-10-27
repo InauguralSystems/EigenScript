@@ -1189,8 +1189,8 @@ Sandbox execution does not update shared temporal history: assignment values, na
 
 `try:` / `catch name:` captures runtime errors. A **built-in** runtime
 error binds a small dict `{kind, message, file, line}`: `kind` is drawn from
-a closed vocabulary (below), `message` starts with `file:line:`, `file` is the
-compiled source identity, and `line` is the 1-based source line. `throw of
+a closed vocabulary (below), `message` remains the location-free error text,
+`file` is the compiled source identity, and `line` is the 1-based source line. `throw of
 value` raises a user error and the catch variable binds the thrown
 value itself, unchanged — a thrown string stays a string. An *uncaught*
 runtime error stops the program with a nonzero exit.

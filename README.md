@@ -134,7 +134,7 @@ print of (add5 of 10)    # 15
 try:
     result is risky_operation of data
 catch e:
-    print of f"Error: {e}"
+    print of {"kind": e.kind, "message": e.message, "line": e.line}
 ```
 ```output
 7
@@ -153,7 +153,7 @@ Hello hello, x is 42
 positive
 Alice
 15
-Error: {"kind": "undefined_name", "message": "undefined variable 'risky_operation'", "line": 41}
+{"kind": "undefined_name", "message": "undefined variable 'risky_operation'", "line": 41}
 ```
 
 Comparisons, `not` and predicates return `true`/`false`, a `bool`. A bool is

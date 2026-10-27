@@ -75,11 +75,12 @@ Caught errors print nothing; the handler decides.
 ## What `catch` binds
 
 - A **built-in runtime error** binds a `{kind, message, file, line}` dict
-  (#406): `kind` from the closed vocabulary below, `message` with
-  the standard `file:line:` prefix (`"app.eigs:2: cannot apply '-' to list and num"`),
+  (#406): `kind` from the closed vocabulary below, `message` without a
+  location prefix (`"cannot apply '-' to list and num"`),
   `file` equal to the compiled source identity, and `line` 1-based. File inputs
   retain the loader path; eval, stdin, and unnamed embedding inputs use
-  `<eval>`, `<stdin>`, and `<embed>`. Discriminate on `kind`, never on message text —
+  `<eval>`, `<stdin>`, and `<embed>`. The message remains byte-compatible with
+  earlier releases. Discriminate on `kind`, never on message text —
   messages are wording, kinds are contract.
 - A **thrown value** binds unchanged: `throw of {"kind": "validation"}`
   gives the catch variable that dict — match on fields instead of

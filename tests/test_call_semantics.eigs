@@ -358,7 +358,7 @@ catch shape1398_error:
     shape1398_message is shape1398_error.message
 assert of [shape1398_caught == 1, "coalesce surplus raises by default"]
 assert of [shape1398_kind == "type_mismatch", "coalesce surplus error kind"]
-assert of [contains of [shape1398_message, ": coalesce: expected a fixed-shape list with at most 2 elements"], "coalesce surplus names its exact shape"]
+assert of [shape1398_message == "coalesce: expected a fixed-shape list with at most 2 elements", "coalesce surplus names its exact shape"]
 assert of [big == [[7, 7], 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], "coalesce rejection preserves the input"]
 
 print of "All tests passed"

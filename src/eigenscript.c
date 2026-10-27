@@ -181,7 +181,10 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
     }
     const char *file = vm_current_file();
     snprintf(g_error_file, sizeof(g_error_file), "%s", file);
-    snprintf(g_error_raw, sizeof(g_error_raw), "%s:%d: %s", file, line, tmp);
+    /* The structured message is deliberately location-free.  Source identity
+     * has its own file/line fields; only the uncaught stderr header combines
+     * them for people reading a traceback. */
+    snprintf(g_error_raw, sizeof(g_error_raw), "%s", tmp);
     snprintf(g_error_msg, sizeof(g_error_msg), "Error %s:%d: %s", file, line, tmp);
     g_error_kind = (int)kind;
     g_error_line = line;
