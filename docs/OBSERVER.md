@@ -159,9 +159,12 @@ variable first so there is a binding history to inspect. Dict fields such as
 answer from the value channel described below; non-numeric bindings (and
 the explicit `classify of [t, "entropy"]`) answer from the entropy
 channel.** The routing exists because of everything this section
-documents — the entropy signal's lossiness for "has the value settled"
-was measured at 19/27 against an analytic convergence corpus, vs 25/27
-for the value channel (`tests/test_convergence_oracle.eigs`). The
+documents. The CI oracle now reports a per-predicate comparison: run
+`python3 tools/observer_oracle/score.py src/eigenscript` and read its
+**DOCUMENTATION TABLE** for the incumbent, `REFERENCE`,
+`REFERENCE_ENTROPY`, and constant-false columns. Those cells are derived
+from the current labelled corpus and selected binary rather than copied
+into this document. The
 paragraphs below describe the two signals themselves; where they say
 `report` reads entropy, that is now true only for non-numeric bindings.
 

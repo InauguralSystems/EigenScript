@@ -238,8 +238,8 @@ Requires the `zlib` build (`make zlib`, `-DEIGENSCRIPT_EXT_ZLIB=1
 | `keys` | `keys of dict` | List of keys |
 | `values` | `values of dict` | List of values |
 | `has_key` | `has_key of [dict, "key"]` | `true` or `false` |
-| `dict_set` | `dict_set of [dict, "key", value]` | Set key in dict (mutates), return dict |
-| `dict_remove` | `dict_remove of [dict, "key"]` | Remove key from dict (mutates), return dict |
+| `dict_set` | `dict_set of [dict, "key", value]` | Set key in dict (mutates), return dict. A non-string key raises `type_mismatch`, just like indexed dictionary assignment. |
+| `dict_remove` | `dict_remove of [dict, "key"]` | Remove key from dict (mutates), return dict. A non-string key raises `type_mismatch`, just like indexed dictionary assignment. An absent string key returns the dictionary unchanged. |
 
 ## Interrogatives
 

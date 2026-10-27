@@ -1,0 +1,72 @@
+# #1642: a builtin dictionary write has the same key contract as d[key] is v.
+load_file of "lib/test.eigs"
+
+define index_error(key) as:
+    d is {}
+    caught is null
+    try:
+        d[key] is "value"
+    catch e:
+        caught is e
+    return caught
+
+define builtin_error(key) as:
+    d is {}
+    caught is null
+    try:
+        dict_set of [d, key, "value"]
+    catch e:
+        caught is e
+    return [caught, len of (keys of d)]
+
+define check_refusal(key, label) as:
+    expected is index_error of key
+    actual is builtin_error of key
+    assert_true of [actual[0] != null, f"dict_set {label}: raises"]
+    if actual[0] != null:
+        assert_eq of [actual[0]["kind"], expected["kind"], f"dict_set {label}: index-assignment category"]
+        assert_eq of [actual[0]["message"], expected["message"], f"dict_set {label}: index-assignment message"]
+    assert_eq of [actual[1], 0, f"dict_set {label}: refusal does not store"]
+
+check_refusal of [1.5, "number key"]
+check_refusal of [1, "integer key"]
+check_refusal of [null, "null key"]
+check_refusal of [[1, 2], "list key"]
+check_refusal of [{"key": 1}, "dict key"]
+
+define remove_error(key) as:
+    d is {"kept": 42}
+    caught is null
+    try:
+        dict_remove of [d, key]
+    catch e:
+        caught is e
+    return [caught, d["kept"], len of (keys of d)]
+
+define check_remove_refusal(key, label) as:
+    expected is index_error of key
+    actual is remove_error of key
+    assert_true of [actual[0] != null, f"dict_remove {label}: raises"]
+    if actual[0] != null:
+        assert_eq of [actual[0]["kind"], expected["kind"], f"dict_remove {label}: index-assignment category"]
+        assert_eq of [actual[0]["message"], expected["message"], f"dict_remove {label}: index-assignment message"]
+    assert_eq of [actual[1], 42, f"dict_remove {label}: refusal keeps existing entry"]
+    assert_eq of [actual[2], 1, f"dict_remove {label}: refusal does not mutate"]
+
+check_remove_refusal of [1.5, "number key"]
+check_remove_refusal of [1, "integer key"]
+check_remove_refusal of [null, "null key"]
+check_remove_refusal of [[1, 2], "list key"]
+check_remove_refusal of [{"key": 1}, "dict key"]
+
+d is {}
+result is dict_set of [d, "accepted", 42]
+assert_eq of [result["accepted"], 42, "dict_set string key stores"]
+assert_eq of [d["accepted"], 42, "dict_set string key mutates its dictionary"]
+
+unchanged is {"kept": 42}
+remove_result is dict_remove of [unchanged, "absent"]
+assert_true of [remove_result == unchanged, "dict_remove absent string key returns the dictionary"]
+assert_eq of [unchanged["kept"], 42, "dict_remove absent string key leaves dictionary unchanged"]
+
+test_summary of null

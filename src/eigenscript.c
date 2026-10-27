@@ -2612,6 +2612,14 @@ void dict_set_owned(Value *dict, const char *key, Value *val) {
     val_decref(val);
 }
 
+const char *dict_assignment_key(Value *dict, Value *key, int line) {
+    if (dict && dict->type == VAL_DICT && key && key->type == VAL_STR)
+        return key->data.str;
+    rt_error(EK_TYPE, line, "cannot index %s for assignment",
+             val_type_name(dict ? dict->type : VAL_NULL));
+    return NULL;
+}
+
 /* #293: cross-thread channel transfer. A value sent on a channel can outlive
  * the SENDER thread, but its dict keys are interned in that thread's
  * env_name_interns table (eigs_thread_drain_caches frees it at detach) — the
