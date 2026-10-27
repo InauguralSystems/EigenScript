@@ -331,6 +331,7 @@ void env_hash_insert(EnvHash *ht, uint32_t h, int idx);
 static void env_hash_rebuild(EnvHash *ht, char **names, int count);
 static int env_hash_find(const EnvHash *ht, const char *name, uint32_t h, char **names);
 static int env_hash_remove(EnvHash *ht, const char *name, uint32_t h, char **names);
+static void dict_compact(Value *dict);
 static void env_intern_scope_remove(char *name);
 
 /* ================================================================
@@ -445,7 +446,8 @@ static double compute_entropy_impl(Value *v) {
             eigs_module_ns_sync(v);      /* #1057 whole-dict reader */
             if (v->data.dict.count == 0) return 0.0;
             double sum = 0.0;
-            for (int i = 0; i < v->data.dict.count; i++)
+            int n = dict_value_iter_count(v);
+            for (int i = 0; i < n; i++)
                 sum += ent_child_slot(dict_value_slot(v, i));
             return sum / v->data.dict.count + log2((double)v->data.dict.count + 1.0);
         }
@@ -1677,7 +1679,7 @@ void free_value(Value *v) {
                 Env *me = eigs_module_ns_detach(v);
                 if (me) env_decref(me);
             }
-            for (int i = 0; i < v->data.dict.count; i++) {
+            for (int i = 0; i < v->data.dict.used; i++) {
                 /* Keys have table/private-node ownership; do not free individually. */
                 slot_decref(dict_value_slot(v, i));
             }
@@ -2102,6 +2104,7 @@ Value* make_dict(int capacity) {
     v->data.dict.keys = capacity ? xcalloc(capacity, sizeof(char*)) : NULL;
     *dict_values_storage_ref(v) = capacity ? xcalloc(capacity, sizeof(EigsSlot)) : NULL;
     v->data.dict.count = 0;
+    v->data.dict.used = 0;
     v->data.dict.capacity = capacity;
     /* A literal {} reaches here with capacity zero.  Keep all three backing
      * allocations absent until its first insertion; dict_set_hashed_raw is
@@ -2517,8 +2520,14 @@ void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
         slot_decref(old);
         return;
     }
+    /* Reclaim deleted order slots before growing.  This is CPython's compact
+     * dict arrangement: deletion is O(1), while occasional compaction is
+     * charged to the deletions which created the holes. */
+    if (dict->data.dict.used >= dict->data.dict.capacity &&
+        dict->data.dict.count < dict->data.dict.used)
+        dict_compact(dict);
     /* Grow if needed */
-    if (dict->data.dict.count >= dict->data.dict.capacity) {
+    if (dict->data.dict.used >= dict->data.dict.capacity) {
         int new_cap = dict->data.dict.capacity * 2;
         /* Sandbox chokepoint, dict half (JSON objects): see list_append. */
         if (!sandbox_charge((size_t)(new_cap - dict->data.dict.capacity) *
@@ -2557,14 +2566,15 @@ void dict_set_hashed_raw(Value *dict, const char *key, uint32_t h, Value *val) {
         interned = env_intern_name(key);
         intern_ref_add(&dict->data.dict.intern_refs, eigs_current->intern_tbl);
     }
-    dict->data.dict.keys[dict->data.dict.count] = interned;
+    int insert_at = dict->data.dict.used++;
+    dict->data.dict.keys[insert_at] = interned;
     val_incref(val);                 /* the container's reference; consumed below */
-    dict_value_set_owned(dict, dict->data.dict.count, val);
+    dict_value_set_owned(dict, insert_at, val);
     dict->data.dict.count++;
     if (dict->data.dict.count * 10 > (dict->data.dict.hash.mask + 1) * 7)
-        env_hash_rebuild(&dict->data.dict.hash, dict->data.dict.keys, dict->data.dict.count);
+        env_hash_rebuild(&dict->data.dict.hash, dict->data.dict.keys, dict->data.dict.used);
     else
-        env_hash_insert(&dict->data.dict.hash, h, dict->data.dict.count - 1);
+        env_hash_insert(&dict->data.dict.hash, h, insert_at);
 }
 
 /* Routed store: a module namespace (#1057) writes THROUGH to the module's
@@ -2664,7 +2674,7 @@ static Value *chan_clone_rec(Value *v, int depth) {
              * module env is not shared across the transfer) — refresh it
              * first so the snapshot is the module's CURRENT state. */
             eigs_module_ns_sync(v);
-            int n = v->data.dict.count;
+            int n = dict_value_iter_count(v);
             Value *out = make_dict(n > 0 ? n : 8);
             for (int i = 0; i < n; i++) {
                 EIGS_VIEW(child_view);
@@ -2677,7 +2687,8 @@ static Value *chan_clone_rec(Value *v, int depth) {
              * above has usually already done this (a send happens while
              * multithreaded), but a clone can also run on the last thread after
              * handle_table_drain has cleared the flag — so this stays. */
-            for (int i = 0; i < out->data.dict.count; i++)
+            int out_n = dict_value_iter_count(out);
+            for (int i = 0; i < out_n; i++)
                 out->data.dict.keys[i] = (char *)shared_intern_key(out->data.dict.keys[i]);
             intern_refs_release(&out->data.dict.intern_refs);
             env_intern_release_value(out);
@@ -2780,28 +2791,35 @@ void dict_remove(Value *dict, const char *key) {
     if (idx < 0) return;
     /* keys are interned — do not free */
     env_intern_scope_remove(dict->data.dict.keys[idx]);
-    /* Keep the entry arrays dense with the standard unordered-map
-     * swap-remove technique.  Only the moved entry's hash index needs
-     * repairing; removing an entry must not shift/re-index every survivor. */
-    int last = --dict->data.dict.count;
-    if (idx != last) {
-        dict->data.dict.keys[idx] = dict->data.dict.keys[last];
-        EigsSlot moved = dict_value_take_slot(dict, last);
-        dict_value_set_slot_owned(dict, idx, moved);
-        uint32_t moved_hash = env_hash_name(dict->data.dict.keys[idx]);
-        int slot = moved_hash & dict->data.dict.hash.mask;
-        while (dict->data.dict.hash.generations[slot] == dict->data.dict.hash.generation) {
-            if (dict->data.dict.hash.hashes[slot] == moved_hash &&
-                dict->data.dict.hash.indices[slot] == last) {
-                dict->data.dict.hash.indices[slot] = idx;
-                break;
-            }
-            slot = (slot + 1) & dict->data.dict.hash.mask;
+    slot_decref(dict_value_take_slot(dict, idx));
+    dict->data.dict.keys[idx] = NULL; /* order-array tombstone */
+    dict->data.dict.count--;
+    /* Keep holes bounded.  Repeated deletion remains amortized O(1): each
+     * compaction requires at least as many newly-created holes as survivors. */
+    if (dict->data.dict.count &&
+        dict->data.dict.used - dict->data.dict.count > dict->data.dict.count)
+        dict_compact(dict);
+}
+
+static void dict_compact(Value *dict) {
+    if (dict->data.dict.used == dict->data.dict.count) return;
+    int dst = 0;
+    for (int src = 0; src < dict->data.dict.used; src++) {
+        if (!dict->data.dict.keys[src]) continue;
+        if (dst != src) {
+            dict->data.dict.keys[dst] = dict->data.dict.keys[src];
+            dict_value_set_slot_owned(dict, dst, dict_value_take_slot(dict, src));
+            dict->data.dict.keys[src] = NULL;
         }
-    } else {
-        slot_decref(dict_value_take_slot(dict, last));
+        dst++;
     }
-    dict->data.dict.keys[last] = NULL;
+    dict->data.dict.used = dst;
+    env_hash_rebuild(&dict->data.dict.hash, dict->data.dict.keys, dst);
+}
+
+int dict_value_iter_count(Value *dict) {
+    dict_compact(dict);
+    return dict->data.dict.count;
 }
 
 int list_reserve_one(Value *list) {
@@ -2914,7 +2932,8 @@ static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
             eigs_module_ns_sync(a);      /* #1057 whole-dict reader */
             eigs_module_ns_sync(b);
             if (a->data.dict.count != b->data.dict.count) return 0;
-            for (int i = 0; i < a->data.dict.count; i++) {
+            int n = dict_value_iter_count(a);
+            for (int i = 0; i < n; i++) {
                 EIGS_VIEW(av); EIGS_VIEW(bview);
                 Value *bv = dict_get_view(b, a->data.dict.keys[i], &bview);
                 if (!bv) return 0;
@@ -3020,7 +3039,8 @@ char* value_to_string(Value *v) {
             strbuf_init(&out);
             strbuf_append_char(&out, '{');
             g_vts_depth++;
-            for (int i = 0; i < v->data.dict.count; i++) {
+            int n = dict_value_iter_count(v);
+            for (int i = 0; i < n; i++) {
                 if (i > 0) strbuf_append_n(&out, ", ", 2);
                 eigs_json_escape_string(&out, v->data.dict.keys[i]);
                 strbuf_append_n(&out, ": ", 2);
@@ -4440,7 +4460,7 @@ static int gc_env_is_node(Env *e) {
         gc_value_is_node(slot_as_ptr(list_slot(_v, _i))),                     \
       { EigsSlot _o = list_take_slot(_v, _v->data.list.count - 1);            \
         slot_decref(_o); }, __VA_ARGS__)                                      \
-    X((_k == GC_KIND_VAL && _v->type == VAL_DICT), _v->data.dict.count,       \
+    X((_k == GC_KIND_VAL && _v->type == VAL_DICT), _v->data.dict.used,        \
       slot_as_ptr(dict_value_slot(_v, _i)), GC_KIND_VAL,                      \
       slot_is_ptr(dict_value_slot(_v, _i)) &&                                 \
         gc_value_is_node(slot_as_ptr(dict_value_slot(_v, _i))),               \
@@ -4525,7 +4545,7 @@ static void gc_clear_node(void *obj, int kind) {
         }
     } else if (kind == GC_KIND_VAL) {
         if (_v->type == VAL_LIST) _v->data.list.count = 0;
-        else if (_v->type == VAL_DICT) _v->data.dict.count = 0;
+        else if (_v->type == VAL_DICT) { _v->data.dict.count = 0; _v->data.dict.used = 0; }
     }
 }
 

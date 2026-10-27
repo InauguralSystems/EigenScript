@@ -704,8 +704,9 @@ Value* builtin_throw(Value *arg) {
 Value* builtin_keys(Value *arg) {
     if (arg->type == VAL_DICT) {
         eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
-        Value *list = make_list(arg->data.dict.count);
-        for (int i = 0; i < arg->data.dict.count; i++)
+        int n = dict_value_iter_count(arg);
+        Value *list = make_list(n);
+        for (int i = 0; i < n; i++)
             list_append_owned(list, make_str(arg->data.dict.keys[i]));
         return list;
     }
@@ -715,8 +716,9 @@ Value* builtin_keys(Value *arg) {
 Value* builtin_values(Value *arg) {
     if (arg->type == VAL_DICT) {
         eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
-        Value *list = make_list(arg->data.dict.count);
-        for (int i = 0; i < arg->data.dict.count; i++)
+        int n = dict_value_iter_count(arg);
+        Value *list = make_list(n);
+        for (int i = 0; i < n; i++)
             list_append_slot(list, dict_value_slot(arg, i));
         return list;
     }
@@ -949,7 +951,8 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
         case VAL_DICT: {
             eigs_module_ns_sync(v);      /* #1057 whole-dict reader */
             strbuf_append_char(out, '{');
-            for (int i = 0; i < v->data.dict.count; i++) {
+            int n = dict_value_iter_count(v);
+            for (int i = 0; i < n; i++) {
                 if (i > 0) strbuf_append_char(out, ',');
                 strbuf_append_char(out, '"');
                 for (const char *c = v->data.dict.keys[i]; *c; c++) {
@@ -2929,8 +2932,9 @@ static Value *desc_isolate_const(DescVerify *ctx, Value *v) {
     }
     case VAL_DICT: {
         if (!desc_enter(ctx, v)) return NULL;
-        Value *c = make_dict(v->data.dict.count);
-        for (int i = 0; i < v->data.dict.count; i++) {
+        int n = dict_value_iter_count(v);
+        Value *c = make_dict(n);
+        for (int i = 0; i < n; i++) {
             Value *input = dict_value_get_owned(v, i);
             Value *e = desc_isolate_const(ctx, input);
             val_decref(input);
@@ -3344,7 +3348,8 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
                                            budget, unverified))
                 return 1;
     } else if (v->type == VAL_DICT) {
-        for (int i = 0; i < v->data.dict.count; i++) {
+        int n = dict_value_iter_count(v);
+        for (int i = 0; i < n; i++) {
             /* #1014: this walk once re-homed escaping dict keys as well
              * (a promote_keys arm, run as a second pass at the result
              * boundary). Measured: dict_set_hashed promotes at INSERTION
@@ -5454,7 +5459,7 @@ Value* builtin_nearest_in_range(Value *arg) {
         Value *e = BUILTIN_LIST_VIEW(entities, i);
         if (!e || e->type != VAL_DICT) continue;
         char **keys = e->data.dict.keys;
-        int kcount = e->data.dict.count;
+        int kcount = e->data.dict.used;
 
         Value *av;
         if (hint_active >= 0 && hint_active < kcount && keys[hint_active] == iactive) {
@@ -5583,7 +5588,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
             continue;
         }
         char **keys = e->data.dict.keys;
-        int kcount = e->data.dict.count;
+        int kcount = e->data.dict.used;
 
         Value *av;
         if (hint_active >= 0 && hint_active < kcount && keys[hint_active] == iactive) {

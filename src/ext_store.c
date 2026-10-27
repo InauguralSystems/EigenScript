@@ -221,7 +221,8 @@ static void store_json_encode(Value *v, strbuf *out) {
         case VAL_DICT: {
             strbuf_append_char(out, '{');
             int first = 1;
-            for (int i = 0; i < v->data.dict.count; i++) {
+            int n = dict_value_iter_count(v);
+            for (int i = 0; i < n; i++) {
                 const char *key = v->data.dict.keys[i];
                 /* Skip internal pointer fields */
                 if (key[0] == '_' && (strcmp(key, "_store") == 0)) continue;
@@ -730,7 +731,8 @@ static int store_load_catalog(Store *store) {
     /* Mark page 0 (catalog) as owned */
     visited[0] |= 1;
 
-    for (int i = 0; i < store->catalog->data.dict.count; i++) {
+    int catalog_n = dict_value_iter_count(store->catalog);
+    for (int i = 0; i < catalog_n; i++) {
         const char *name = store->catalog->data.dict.keys[i];
         Value *col = dict_value_get_view(store->catalog, i, &(EigsView){{0}});
 
@@ -1593,8 +1595,9 @@ static Value* builtin_store_collections(Value *arg) {
     Store *store = store_arg(arg, "store_collections");
     if (!store) return make_list(0);
     if (replay_blocks("store_collections", "store")) return make_list(0);
-    Value *list = make_list(store->catalog->data.dict.count);
-    for (int i = 0; i < store->catalog->data.dict.count; i++) {
+    int catalog_n = dict_value_iter_count(store->catalog);
+    Value *list = make_list(catalog_n);
+    for (int i = 0; i < catalog_n; i++) {
         list_append_owned(list, make_str(store->catalog->data.dict.keys[i]));
     }
     return list;
@@ -1648,8 +1651,9 @@ static Value* builtin_store_drop(Value *arg) {
     }
 
     /* Remove from catalog by rebuilding it */
-    Value *new_catalog = make_dict(store->catalog->data.dict.count);
-    for (int i = 0; i < store->catalog->data.dict.count; i++) {
+    int catalog_n = dict_value_iter_count(store->catalog);
+    Value *new_catalog = make_dict(catalog_n);
+    for (int i = 0; i < catalog_n; i++) {
         if (strcmp(store->catalog->data.dict.keys[i], collection) != 0) {
             dict_set_owned(new_catalog, store->catalog->data.dict.keys[i],
                            dict_value_get_owned(store->catalog, i));

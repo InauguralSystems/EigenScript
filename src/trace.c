@@ -3098,7 +3098,7 @@ static void write_value_ptr_full(Value *v, int *budget) {
         }
         case VAL_DICT: {
             wf_putc('{', budget);
-            int n = v->data.dict.count;
+            int n = dict_value_iter_count(v);
             for (int i = 0; i < n && *budget > 0; i++) {
                 if (i) wf_puts(", ", budget);
                 write_string_full(v->data.dict.keys[i], budget);

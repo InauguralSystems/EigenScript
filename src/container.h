@@ -302,7 +302,10 @@ static inline int dict_value_get_num(const Value *dict, int i, double *out) {
 __attribute__((unused))
 static inline int list_iter_count(const Value *list) { return list->data.list.count; }
 __attribute__((unused))
-static inline int dict_value_iter_count(const Value *dict) { return dict->data.dict.count; }
+/* Positional traversal must start here.  It removes order-array tombstones and
+ * returns the resulting dense length; lookup-derived indices use the raw slot
+ * accessors above and therefore do not unexpectedly invalidate themselves. */
+int dict_value_iter_count(Value *dict);
 
 /* Raw storage is confined to bulk allocation/movement/destruction code. */
 __attribute__((unused))

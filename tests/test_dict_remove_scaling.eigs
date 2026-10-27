@@ -3,12 +3,12 @@ load_file of "lib/test.eigs"
 
 d is {}
 i is 0
-loop while i < 40000:
+loop while i < 450000:
     d["n" + (str of (1003 + 2 * i))] is i
     i is i + 1
 
 i is 0
-loop while i < 40000:
+loop while i < 450000:
     dict_remove of [d, "n" + (str of (1003 + 2 * i))]
     i is i + 1
 

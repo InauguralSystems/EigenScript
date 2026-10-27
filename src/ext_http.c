@@ -763,7 +763,8 @@ Value* builtin_http_post(Value *arg) {
      * (what already worked). Anything else that PARSED is a caller mistake, not
      * a no-header request — it says so instead of dropping the headers. */
     if (hdr_obj && hdr_obj->type == VAL_DICT) {
-        for (int i = 0; i < hdr_obj->data.dict.count && hdr_count < 32 && argc < 90; i++) {
+        int hdr_n = dict_value_iter_count(hdr_obj);
+        for (int i = 0; i < hdr_n && hdr_count < 32 && argc < 90; i++) {
             char *hk = xstrdup(hdr_obj->data.dict.keys[i]);
             char *hv = value_to_string(dict_value_get_view(hdr_obj, i, &(EigsView){{0}}));
             http_strip_crlf(hk);
