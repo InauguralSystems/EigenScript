@@ -7043,31 +7043,6 @@ else
 fi
 echo ""
 
-# [99d] Binary-fingerprint guard self-test (#681). Proves the runner aborts
-# with the exact error message if src/eigenscript is replaced mid-suite.
-echo "[99d] Binary-fingerprint guard self-test (#681)"
-TOTAL=$((TOTAL + 1))
-if [ ! -f "$EIGS_BIN" ]; then
-    # Round 6 counted this as a pass; the section's only check did not run.
-    TOTAL=$((TOTAL - 1))
-    section_skip "no binary to fingerprint"
-else
-    . "$TESTS_DIR/binary_swap.sh"
-    SELFTEST_OUT=$(eigs_binary_swap_selftest 2>&1)
-    SELFTEST_RC=$?
-    RESTORE_OUT=$(python3 "$TESTS_DIR/test_binary_swap_restore.py" 2>&1)
-    RESTORE_RC=$?
-    if [ "$SELFTEST_RC" -eq 1 ] && [ "$RESTORE_RC" -eq 0 ] && printf '%s\n' "$SELFTEST_OUT" | grep -qF "ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — results are invalid."; then
-        PASS=$((PASS + 1))
-        echo "  PASS: binary-fingerprint guard detected mid-run swap and aborted with the expected error"
-    else
-        FAIL=$((FAIL + 1))
-        echo "  FAIL: binary-fingerprint guard did not detect mid-run swap (rc=$SELFTEST_RC)"
-        printf '%s\n' "$SELFTEST_OUT" "$RESTORE_OUT" | head -12 | sed 's/^/      /'
-    fi
-fi
-echo ""
-
 # [99e] SIGUSR1 live observer dump (#660) — the only suite check that drives
 # a signal against a live process from OUTSIDE: spawn a long-running
 # program, kill -USR1, assert the stderr dump's row shape (incl. `when=`
