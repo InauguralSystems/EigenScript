@@ -13,6 +13,7 @@
 #include "vm.h"
 #include "trace.h"
 #include "eigs_embed.h"
+#include "ext_register.h"
 #include <stdarg.h>
 #include <fenv.h>
 #if defined(__x86_64__)
@@ -528,9 +529,86 @@ int eigs_trace_bind_stream(const char *key) {
     return trace_bind_stream(key);
 }
 
+/* A memory replay source is process-wide, but its embed entry point belongs
+ * to the currently attached state.  Inventory every resource owned by that
+ * state before publishing the source.  The table and attachment list have
+ * their own locks; never inspect either lock-free while a worker can close or
+ * register a handle. */
+static unsigned replay_live_handles(EigsState *st) {
+    unsigned live = 0;
+    if (!st) return 0;
+
+    pthread_mutex_lock(&st->handle_mutex);
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        if (!st->handle_table[i].ptr) continue;
+        switch (st->handle_table[i].type) {
+        case HANDLE_STORE:   live |= EIGS_LIVE_STORE; break;
+        case HANDLE_THREAD:  live |= EIGS_LIVE_THREAD; break;
+        case HANDLE_CHANNEL: live |= EIGS_LIVE_CHANNEL; break;
+        case HANDLE_TASK:    live |= EIGS_LIVE_TASK; break;
+        case HANDLE_NET:     live |= EIGS_LIVE_SOCKET; break;
+        }
+    }
+    if (st->deferred_threads ||
+        __atomic_load_n(&st->live_workers, __ATOMIC_ACQUIRE) != 0)
+        live |= EIGS_LIVE_THREAD;
+    pthread_mutex_unlock(&st->handle_mutex);
+
+    pthread_mutex_lock(&st->threads_lock);
+    for (EigsThread *th = st->threads; th; th = th->next)
+        if (th->stream_file) { live |= EIGS_LIVE_FILE; break; }
+    pthread_mutex_unlock(&st->threads_lock);
+#if EIGENSCRIPT_EXT_GFX
+    live |= ext_gfx_live_handles();
+#endif
+#if EIGENSCRIPT_EXT_DB
+    if (st->ext_db_conn) live |= EIGS_LIVE_DATABASE;
+#endif
+#if EIGENSCRIPT_EXT_HTTP
+    live |= ext_http_live_handles(st);
+#endif
+    return live;
+}
+
+static void replay_live_handles_text(unsigned live, char *buf, size_t cap) {
+    static const struct { unsigned bit; const char *name; } kinds[] = {
+        {EIGS_LIVE_SOCKET, "sockets"}, {EIGS_LIVE_FILE, "files"},
+        {EIGS_LIVE_STORE, "stores"}, {EIGS_LIVE_THREAD, "threads"},
+        {EIGS_LIVE_CHANNEL, "channels"}, {EIGS_LIVE_TASK, "tasks"},
+        {EIGS_LIVE_GFX, "gfx"}, {EIGS_LIVE_AUDIO, "audio"},
+        {EIGS_LIVE_DATABASE, "database"}, {EIGS_LIVE_HTTP, "http"}
+    };
+    size_t used = 0;
+    buf[0] = '\0';
+    for (size_t i = 0; i < sizeof kinds / sizeof kinds[0]; i++) {
+        if (!(live & kinds[i].bit) || used >= cap) continue;
+        int n = snprintf(buf + used, cap - used, "%s%s",
+                         used ? ", " : "", kinds[i].name);
+        if (n < 0 || (size_t)n >= cap - used) { buf[cap - 1] = '\0'; break; }
+        used += (size_t)n;
+    }
+}
+
 int eigs_set_replay_tape(const char *bytes, size_t len, int strict) {
     EmbedFenv fenv;
     embed_fenv_enter(&fenv);
+    /* Clearing a tape never needs this gate.  Validate live ownership at the
+     * sole memory-install seam so malformed tapes and valid tapes cannot take
+     * different routes around the policy. */
+    if (bytes) {
+        unsigned live = replay_live_handles(eigs_current_state());
+        if (live) {
+            char kinds[128];
+            replay_live_handles_text(live, kinds, sizeof kinds);
+            fprintf(stderr, "trace: refusing replay tape install: state has open handle kinds: %s\n",
+                    kinds);
+            embed_value_error(EK_IO,
+                "eigs_set_replay_tape: refused while state has open handle kinds: %s",
+                kinds);
+            embed_fenv_leave(&fenv);
+            return 0;
+        }
+    }
     int result = trace_set_replay_mem(bytes, len, strict);
     embed_fenv_leave(&fenv);
     return result;

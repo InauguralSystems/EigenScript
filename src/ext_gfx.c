@@ -210,6 +210,16 @@ static int   (*p_Mix_PlayMusic)(void*, int);
 static int   (*p_Mix_VolumeMusic)(int);
 static int   (*p_Mix_HaltMusic)(void);
 
+unsigned ext_gfx_live_handles(void) {
+    unsigned live = 0;
+    if (g_sdl_lib || g_window || g_renderer || g_fb_texture)
+        live |= EIGS_LIVE_GFX;
+    if (g_audio_device || g_capture_device || g_stream_device ||
+        g_mixer_lib || g_mixer_open || g_music)
+        live |= EIGS_LIVE_AUDIO;
+    return live;
+}
+
 static int load_sdl_mixer(void) {
     if (g_mixer_lib) return 1;
     g_mixer_lib = dlopen("libSDL2_mixer-2.0.so.0", RTLD_LAZY);
@@ -490,6 +500,13 @@ Value* builtin_gfx_open(Value *arg) {
 Value* builtin_gfx_close(Value *arg) {
     (void)arg;
     ttf_teardown();
+    if (g_music && p_Mix_FreeMusic) { p_Mix_HaltMusic(); p_Mix_FreeMusic(g_music); g_music = NULL; }
+    if (g_mixer_open && p_Mix_CloseAudio) { p_Mix_CloseAudio(); g_mixer_open = 0; }
+    if (g_mixer_lib) {
+        if (p_Mix_Quit) p_Mix_Quit();
+        dlclose(g_mixer_lib);
+        g_mixer_lib = NULL;
+    }
     if (g_fb_texture && p_SDL_DestroyTexture) { p_SDL_DestroyTexture(g_fb_texture); g_fb_texture = NULL; g_fb_w = 0; g_fb_h = 0; }
     if (g_audio_device) { p_SDL_CloseAudioDevice(g_audio_device); g_audio_device = 0; }
     if (g_capture_device) { p_SDL_CloseAudioDevice(g_capture_device); g_capture_device = 0; }

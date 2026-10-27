@@ -829,6 +829,16 @@ everywhere else in the runtime (version-and-reject, never migrate).
   returns 0 without installing the tape. Replay never falls back to a
   live run: the user asked for a replay, and a plausible-looking live run
   is exactly the silent divergence the header exists to prevent.
+- The embedding API refuses to install a replay tape on a state that already
+  owns live handles. The diagnostic names every populated kind (sockets,
+  files, stores, threads, channels, tasks, gfx, audio, database, and HTTP);
+  close those handles
+  before calling `eigs_set_replay_tape`. A state with no live handles may
+  install a tape between evaluations. This is an install-time rule because a
+  handle acquired outside the tape cannot be replayed deterministically, and
+  merely suppressing its closer would leak the live resource. `EIGS_REPLAY`
+  is installed during CLI startup, before a state can acquire handles, and
+  therefore follows the same rule by construction.
 - Mid-stream `V` records are legal (a journal appended across sessions
   carries one per session) but each must match, or replay aborts. The
   embed seam validates **every** session header at install time, so a

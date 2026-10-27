@@ -241,7 +241,10 @@ void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-
  * (bytes are copied; NULL restores a suspended file source, if any).
  * File and memory sources own separate cursors, pending values, parser state,
  * bindings and strictness; suspension does not rewind or discard any of them.
- * Returns 0 on OOM or when the tape is
+ * A state which owns any live runtime/OS handle (stores, sockets, files,
+ * threads, channels, tasks, gfx, audio, database, or HTTP) cannot acquire a replay tape:
+ * installation returns 0, leaves the prior source untouched, and reports an
+ * error naming every open handle kind. Close the handles first. Returns 0 on OOM or when the tape is
  * REFUSED: a tape whose version headers are missing, torn, or don't
  * match this runtime (format and version both) is never installed —
  * version-and-reject, no migration (#411, docs/TRACE.md; reason goes to

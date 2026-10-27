@@ -763,6 +763,20 @@ typedef enum {
     HANDLE_NET       /* #414 ext_net socket (listener or connection) */
 } HandleType;
 
+/* Live resources which make a mid-state replay install unsafe (#1913). */
+enum {
+    EIGS_LIVE_STORE   = 1u << 0,
+    EIGS_LIVE_THREAD  = 1u << 1,
+    EIGS_LIVE_CHANNEL = 1u << 2,
+    EIGS_LIVE_TASK    = 1u << 3,
+    EIGS_LIVE_SOCKET  = 1u << 4,
+    EIGS_LIVE_FILE    = 1u << 5,
+    EIGS_LIVE_GFX     = 1u << 6,
+    EIGS_LIVE_AUDIO   = 1u << 7,
+    EIGS_LIVE_DATABASE = 1u << 8,
+    EIGS_LIVE_HTTP    = 1u << 9
+};
+
 /* #1146: `gen` is bumped every time the slot is handed out, so a handle
  * VALUE that still names a recycled slot is detectable. Ids recycle
  * round-robin over the 255 usable slots, so after 255 spawn/join cycles a

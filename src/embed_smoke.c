@@ -1278,6 +1278,36 @@ int main(void) {
     if (r) eigs_value_release(r);
     CHECK(eigs_set_replay_tape(NULL, 0, 0) == 1, "replay cleared (411 block)");
 
+    /* #1913: a replay cannot inherit an untaped live OS resource.  The
+     * refusal is at install time and identifies the populated handle kind;
+     * after the same store is closed, the identical tape installs. */
+    {
+        char program[256];
+        snprintf(program, sizeof program,
+                 "issue1913_store is store_open of \"/tmp/eigs-1913-%ld.store\"",
+                 (long)getpid());
+        r = eigs_eval_string(program);
+        CHECK(r && eigs_value_type(r) == EIGS_TYPE_DICT,
+              "replay live-handle setup opens a store");
+        if (r) eigs_value_release(r);
+        CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 0,
+              "replay install refused with a live handle");
+        CHECK(eigs_has_error() && eigs_last_error_message() &&
+                  strstr(eigs_last_error_message(), "stores"),
+              "replay refusal names the open store handle kind");
+        eigs_clear_error();
+        r = eigs_eval_string("store_close of issue1913_store");
+        CHECK(r != NULL, "replay live-handle setup closes the store");
+        if (r) eigs_value_release(r);
+        CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 1,
+              "replay installs after the handle is closed");
+        CHECK(eigs_set_replay_tape(NULL, 0, 0) == 1,
+              "replay cleared after live-handle test");
+        snprintf(program, sizeof program, "/tmp/eigs-1913-%ld.store",
+                 (long)getpid());
+        unlink(program);
+    }
+
     /* --- Source provider: import resolves from the embedder. --------- */
     eigs_set_source_provider(smoke_provider, NULL);
     r = eigs_eval_string("import smokemod\nsmokemod[\"answer\"]");
