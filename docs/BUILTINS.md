@@ -535,11 +535,11 @@ either way, so the numbers are byte-identical.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `numerical_grad` | `numerical_grad of [loss_fn, params, eps]` | Central finite-difference gradient. `params` is a 1-D/2-D list **or a shaped buffer** (#973: each element is perturbed in place and restored; the gradient comes back with the parameter's shape). O(params) forward passes — the gradient-check oracle for `lib/autograd.eigs`, not a training path |
-| `numerical_grad_rows` | `numerical_grad_rows of [loss_fn, params, rows, eps]` | Gradient for specific rows |
-| `numerical_grad_cols` | `numerical_grad_cols of [loss_fn, params, cols, eps]` | Gradient for specific columns |
+| `numerical_grad_rows` | `numerical_grad_rows of [loss_fn, params, rows, eps]` | Gradient for specific rows. Every row index must be in `[0, row_count)`; otherwise raises `index_range` before perturbing any parameter. |
+| `numerical_grad_cols` | `numerical_grad_cols of [loss_fn, params, cols, eps]` | Gradient for specific columns. Every column index must be in `[0, column_count)`; otherwise raises `index_range` before perturbing any parameter. |
 | `sgd_update` | `sgd_update of [params, grad, lr]` | In-place SGD: params -= lr * grad |
-| `sgd_update_rows` | `sgd_update_rows of [params, grad, lr, rows]` | SGD for specific rows |
-| `sgd_update_cols` | `sgd_update_cols of [params, grad, lr, cols]` | SGD for specific columns |
+| `sgd_update_rows` | `sgd_update_rows of [params, grad, rows, lr]` | SGD for specific rows. Every row index must exist in both `params` and `grad` (`[0, min(params_rows, grad_rows))`); otherwise raises `index_range` before any update. |
+| `sgd_update_cols` | `sgd_update_cols of [params, grad, cols, lr]` | SGD for specific columns. Every column index must exist in both `params` and `grad` (`[0, min(params_cols, grad_cols))`); otherwise raises `index_range` before any update. |
 
 ## Tokenizer Introspection
 
@@ -887,9 +887,9 @@ Requires full build. Transformer model inference and training.
 | `eigen_model_load` | `eigen_model_load of "path.json"` | Load model weights from JSON |
 | `eigen_model_loaded` | `eigen_model_loaded of null` | `true` if model loaded, `false` otherwise |
 | `eigen_model_info` | `eigen_model_info of null` | JSON with model config and stats |
-| `eigen_generate` | `eigen_generate of [prompt, temp, max_tokens]` | Generate text from prompt. Raises when the prompt exceeds the model's `max_seq_len`. |
-| `eigen_eval_loss` | `eigen_eval_loss of [prompt, target]` | Return the target token's cross-entropy loss. Raises when the prompt exceeds the model's `max_seq_len`. |
-| `native_train_step_builtin` | `native_train_step_builtin of [input, output, lr]` | Single training step. Raises when the combined input and output length exceeds the model's `max_seq_len`. |
+| `eigen_generate` | `eigen_generate of [prompt, temp, max_tokens]` | Generate text from prompt. Every prompt token id must be in `[0, vocab_size)` or it raises `index_range`. Raises when the prompt exceeds the model's `max_seq_len`. |
+| `eigen_eval_loss` | `eigen_eval_loss of [prompt, target]` | Return the target token's cross-entropy loss. Every prompt and target token id must be in `[0, vocab_size)` or it raises `index_range`. Raises when the prompt exceeds the model's `max_seq_len`. |
+| `native_train_step_builtin` | `native_train_step_builtin of [input, output, lr]` | Single training step. Every input and output token id must be in `[0, vocab_size)` or it raises `index_range` before training. Raises when the combined input and output length exceeds the model's `max_seq_len`. |
 | `model_save_weights` | `model_save_weights of "path.json"` | Save model weights to JSON |
 | `model_load_weights` | `model_load_weights of "path.json"` | Load model weights (alias) |
 

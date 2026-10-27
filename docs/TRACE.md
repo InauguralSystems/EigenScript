@@ -345,15 +345,13 @@ perspective lands on the tape as an `N` record:
   included, so a program that hits one cannot desync the stream. Greedy
   (`temperature < 0.01`) calls ride the same path: the tape cannot show
   which branch ran, and replay may not load a model to re-derive it.
-  A context-limit refusal (#1405) also records one outcome: a string containing
-  the error message. Successful generations and soft empty-list returns keep
-  their existing list payloads; strings are distinguishable because generation
-  never returns a string. Replay reconstructs the catchable `value` error from
-  that string before consulting the model, using the recorded prompt length
-  and limit even if the checkpoint was deleted or replaced. This uses the
-  existing N-record string encoding without changing the tape format. Existing
-  generation list records remain readable; the usual format/runtime-version
-  checks still apply.
+  A model-dependent refusal records one outcome dictionary with `kind` (the
+  runtime error-kind name) and `message`. This covers context-limit and token-id
+  refusals, so replay preserves both the catchable kind and the recorded limits
+  before consulting a missing or replaced model. Successful generations and
+  soft empty-list returns keep their list payloads. For compatibility, old
+  string refusal records still replay as `value` errors; existing generation
+  list records remain readable.
 - **Rendered pixels (gfx extension, #823):** `gfx_read`. Renderer output
   depends on the font rasteriser, the driver and the backend, so the pixel
   a render-decode oracle reads back is a device input and takes the

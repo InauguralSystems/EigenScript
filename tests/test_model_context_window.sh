@@ -117,7 +117,7 @@ for jit_off in 0 1; do
     sed -n '/^CW transcript$/,$p' "$WORK/$trace_name.out" > "$WORK/recorded.out"
     nrec=$(grep -c '^N [0-9][0-9]* eigen_generate=' "$tape")
     nlists=$(grep -c '^N [0-9][0-9]* eigen_generate=\[' "$tape")
-    nrefusals=$(grep -c '^N [0-9][0-9]* eigen_generate="eigen_generate: prompt length 17 exceeds model max_seq_len 16"$' "$tape")
+    nrefusals=$(grep -c '^N [0-9][0-9]* eigen_generate={"kind": "value", "message": "eigen_generate: prompt length 17 exceeds model max_seq_len 16"}$' "$tape")
     nrandom=$(grep -c '^N [0-9][0-9]* random_int=' "$tape")
     if [ "$nrec" = 3 ] && [ "$nlists" = 2 ] && [ "$nrefusals" = 1 ] && [ "$nrandom" = 1 ]; then
         ok "CW-trace-$jit_off one outcome per call, successful lists unchanged"

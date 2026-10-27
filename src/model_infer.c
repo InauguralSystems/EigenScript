@@ -294,8 +294,6 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
     float *x = xcalloc_array(safe_size_mul(seq_len, d_model), sizeof(float));
     for (int i = 0; i < seq_len; i++) {
         int tid = token_ids[i];
-        if (tid < 0) tid = 0;
-        if (tid >= model->config.vocab_size) tid = model->config.vocab_size - 1;
         memcpy(x + i * d_model, model->token_embeddings + tid * d_model, d_model * sizeof(float));
     }
 
@@ -386,8 +384,6 @@ static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel 
     int num_tokens = prompt_len;
     for (int i = 0; i < num_tokens; i++) {
         int tid = prompt_ids[i];
-        if (tid < 0) tid = 0;
-        if (tid >= vocab_size) tid = vocab_size - 1;
         token_ids[i] = tid;
     }
 
@@ -534,23 +530,12 @@ Value* builtin_eigen_generate(Value *arg) {
      * #960: sampling makes this a nondeterministic return, so it rides the
      * tape like random/random_int. ONE record per call carries the emitted
      * token list -- the draws are an implementation detail of the decoding
-     * policy. #1405 adds a string outcome for context refusal; every normal
-     * return is still a list, including soft argument errors. Replay takes
-     * either outcome before consulting the model, which may be absent or
-     * replaced. Refusal messages carry the recorded lengths, not live config.
-     * The existing list/string value encodings are unchanged. */
-    if (__builtin_expect(g_replay_enabled, 0)) {
-        Value *recorded;
-        if (trace_replay_refuse_off_owner("eigen_generate")) return make_null();
-        if (trace_replay_take("eigen_generate", &recorded)) {
-            if (recorded->type == VAL_STR) {
-                rt_error(EK_VALUE, 0, "%s", recorded->data.str);
-                val_decref(recorded);
-                return make_null();
-            }
-            return recorded;
-        }
-    }
+     * policy. Refusals are dictionaries containing `kind` and `message`;
+     * every normal return is still a list, including soft argument errors.
+     * Replay also accepts the old string refusal record as a `value` error.
+     * It takes either outcome before consulting the model, which may be absent
+     * or replaced. Refusal messages carry recorded lengths, not live config.
+     * Deterministic argument validation precedes the tape bracket. */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         fprintf(stderr, "eigen_generate: requires [prompt_ids, temperature, max_tokens]\n");
         TRACE_NONDET_RECORD("eigen_generate", make_list(0));
@@ -576,26 +561,11 @@ Value* builtin_eigen_generate(Value *arg) {
     if (g_has_error) return make_null();
     max_tokens = (int)mt;
 
-    if (!g_model.loaded) TRACE_NONDET_RECORD("eigen_generate", make_list(0));
-
     /* Validate prompt and token count */
     int prompt_len = prompt_list->data.list.count;
     if (prompt_len <= 0) {
         fprintf(stderr, "eigen_generate: prompt must be non-empty\n");
         TRACE_NONDET_RECORD("eigen_generate", make_list(0));
-    }
-    if (prompt_len > g_model.config.max_seq_len) {
-        char message[128];
-        snprintf(message, sizeof(message),
-            "eigen_generate: prompt length %d exceeds model max_seq_len %d",
-            prompt_len, g_model.config.max_seq_len);
-        if (__builtin_expect(g_trace_enabled, 0)) {
-            Value *refusal = make_str(message);
-            trace_nondet_value("eigen_generate", refusal);
-            val_decref(refusal);
-        }
-        rt_error(EK_VALUE, 0, "%s", message);
-        return make_null();
     }
     #define EIGS_MAX_GENERATE_TOKENS 4096
     if (max_tokens <= 0 || max_tokens > EIGS_MAX_GENERATE_TOKENS) {
@@ -611,6 +581,68 @@ Value* builtin_eigen_generate(Value *arg) {
         prompt_ids[i] = (int)eigs_slot_num(list_slot(prompt_list, i), "eigen_generate");   /* #1637: a bool raises */
     }
     if (g_has_error) { free(prompt_ids); return make_null(); }
+
+    if (__builtin_expect(g_replay_enabled, 0)) {
+        Value *recorded;
+        if (trace_replay_refuse_off_owner("eigen_generate")) {
+            free(prompt_ids);
+            return make_null();
+        }
+        if (trace_replay_take("eigen_generate", &recorded)) {
+            free(prompt_ids);
+            if (recorded->type == VAL_STR) {
+                rt_error(EK_VALUE, 0, "%s", recorded->data.str);
+                val_decref(recorded);
+                return make_null();
+            }
+            if (recorded->type == VAL_DICT) {
+                EIGS_VIEW(kind_view); EIGS_VIEW(message_view);
+                Value *kind = dict_get_view(recorded, "kind", &kind_view);
+                Value *message = dict_get_view(recorded, "message", &message_view);
+                ErrKind error_kind;
+                if (kind && kind->type == VAL_STR && message && message->type == VAL_STR &&
+                    err_kind_from_name(kind->data.str, &error_kind)) {
+                    rt_error(error_kind, 0, "%s", message->data.str);
+                    val_decref(recorded);
+                    return make_null();
+                }
+            }
+            return recorded;
+        }
+    }
+
+    if (!g_model.loaded) { free(prompt_ids); TRACE_NONDET_RECORD("eigen_generate", make_list(0)); }
+
+    ErrKind refusal_kind = EK_VALUE;
+    char refusal_message[160];
+    refusal_message[0] = '\0';
+    if (prompt_len > g_model.config.max_seq_len) {
+        snprintf(refusal_message, sizeof(refusal_message),
+            "eigen_generate: prompt length %d exceeds model max_seq_len %d",
+            prompt_len, g_model.config.max_seq_len);
+    } else {
+        for (int i = 0; i < prompt_len; i++) {
+            if (prompt_ids[i] < 0 || prompt_ids[i] >= g_model.config.vocab_size) {
+                refusal_kind = EK_INDEX;
+                snprintf(refusal_message, sizeof(refusal_message),
+                    "eigen_generate: token id %d at prompt index %d out of range [0,%d)",
+                    prompt_ids[i], i, g_model.config.vocab_size);
+                break;
+            }
+        }
+    }
+    if (refusal_message[0]) {
+        if (__builtin_expect(g_trace_enabled, 0)) {
+            Value *refusal = make_dict(2);
+            dict_set_owned(refusal, "kind", make_str(err_kind_name(refusal_kind)));
+            dict_set_owned(refusal, "message", make_str(refusal_message));
+            trace_nondet_value("eigen_generate", refusal);
+            val_decref(refusal);
+        }
+        free(prompt_ids);
+        rt_error(refusal_kind, 0, "%s", refusal_message);
+        return make_null();
+    }
 
     int out_len = 0;
     int *output_ids = generate_response(prompt_ids, prompt_len, &g_model, temperature, max_tokens, top_p, &out_len);
@@ -669,12 +701,9 @@ Value* builtin_eigen_eval_loss(Value *arg) {
     if (!g_model.loaded) return make_num(-1.0);
     int vocab_size = g_model.config.vocab_size;
     if (target_id < 0 || target_id >= vocab_size) {
-        fprintf(stderr, "eigen_eval_loss: target_id %d out of range [0,%d)\n", target_id, vocab_size);
-        /* fs:ANSWER the id is a NUMBER (the type guard above passed) that
-         * names no row of this model's vocabulary — a value-domain answer
-         * relative to the loaded checkpoint, so it changes with the model
-         * rather than with the call. */
-        return make_num(-1.0);
+        rt_error(EK_INDEX, 0, "eigen_eval_loss: target_id %d out of range [0,%d)",
+                 target_id, vocab_size);
+        return make_null();
     }
 
     int prompt_len = prompt_list->data.list.count;
@@ -694,7 +723,12 @@ Value* builtin_eigen_eval_loss(Value *arg) {
     int *prompt_ids = xcalloc(prompt_len, sizeof(int));
     for (int i = 0; i < prompt_len; i++) {
         int t = (int)eigs_slot_num(list_slot(prompt_list, i), "eigen_eval_loss");          /* #1637: a bool raises */
-        if (t < 0 || t >= vocab_size) t = 0;
+        if (!g_has_error && (t < 0 || t >= vocab_size)) {
+            rt_error(EK_INDEX, 0,
+                "eigen_eval_loss: token id %d at prompt index %d out of range [0,%d)",
+                t, i, vocab_size);
+            break;
+        }
         prompt_ids[i] = t;
     }
     if (g_has_error) { free(prompt_ids); return make_null(); }

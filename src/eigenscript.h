@@ -2312,6 +2312,8 @@ typedef enum {
     EK_USER,              /* `throw` — catch binds the thrown value, not a dict */
 } ErrKind;
 const char* err_kind_name(ErrKind k);
+/* Reverse lookup through the same closed vocabulary; false for unknown names. */
+int err_kind_from_name(const char *name, ErrKind *out);
 /* #871: predicate word for a kind (parser/VM/lint share this table). */
 const char* eigs_predicate_name(unsigned kind);
 void rt_error(ErrKind kind, int line, const char *fmt, ...)
