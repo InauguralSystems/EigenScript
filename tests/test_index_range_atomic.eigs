@@ -1,0 +1,39 @@
+define loss(u) as:
+    return q[0][0] * q[0][0]
+
+q is [[1, 2], [3, 4]]
+try:
+    numerical_grad_rows of [loss, q, [0, 2], 0.01]
+    assert of [false, "numerical_grad_rows accepted row 2"]
+catch e:
+    assert of [e.kind == "index_range", "numerical_grad_rows error kind"]
+    assert of [q == [[1, 2], [3, 4]], "numerical_grad_rows restored target"]
+    print of "PASS numerical_grad_rows"
+
+try:
+    numerical_grad_cols of [loss, q, [0, -1], 0.01]
+    assert of [false, "numerical_grad_cols accepted column -1"]
+catch e:
+    assert of [e.kind == "index_range", "numerical_grad_cols error kind"]
+    assert of [q == [[1, 2], [3, 4]], "numerical_grad_cols restored target"]
+    print of "PASS numerical_grad_cols"
+
+m is [[1, 2], [3, 4]]
+g is [[2, 2], [2, 2]]
+try:
+    sgd_update_rows of [m, g, [0, 2], 0.5]
+    assert of [false, "sgd_update_rows accepted row 2"]
+catch e:
+    assert of [e.kind == "index_range", "sgd_update_rows error kind"]
+    assert of [m == [[1, 2], [3, 4]], "sgd_update_rows is atomic"]
+    print of "PASS sgd_update_rows"
+
+try:
+    sgd_update_cols of [m, g, [0, 2], 0.5]
+    assert of [false, "sgd_update_cols accepted column 2"]
+catch e:
+    assert of [e.kind == "index_range", "sgd_update_cols error kind"]
+    assert of [m == [[1, 2], [3, 4]], "sgd_update_cols is atomic"]
+    print of "PASS sgd_update_cols"
+
+print of "INDEX RANGE ATOMIC ALL PASS"

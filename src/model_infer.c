@@ -294,8 +294,6 @@ static void native_forward(int *token_ids, int seq_len, TransformerModel *model,
     float *x = xcalloc_array(safe_size_mul(seq_len, d_model), sizeof(float));
     for (int i = 0; i < seq_len; i++) {
         int tid = token_ids[i];
-        if (tid < 0) tid = 0;
-        if (tid >= model->config.vocab_size) tid = model->config.vocab_size - 1;
         memcpy(x + i * d_model, model->token_embeddings + tid * d_model, d_model * sizeof(float));
     }
 
@@ -386,8 +384,6 @@ static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel 
     int num_tokens = prompt_len;
     for (int i = 0; i < num_tokens; i++) {
         int tid = prompt_ids[i];
-        if (tid < 0) tid = 0;
-        if (tid >= vocab_size) tid = vocab_size - 1;
         token_ids[i] = tid;
     }
 
@@ -609,6 +605,12 @@ Value* builtin_eigen_generate(Value *arg) {
     int *prompt_ids = xcalloc(prompt_len, sizeof(int));
     for (int i = 0; i < prompt_len; i++) {
         prompt_ids[i] = (int)eigs_slot_num(list_slot(prompt_list, i), "eigen_generate");   /* #1637: a bool raises */
+        if (!g_has_error && (prompt_ids[i] < 0 || prompt_ids[i] >= g_model.config.vocab_size)) {
+            rt_error(EK_INDEX, 0,
+                "eigen_generate: token id %d at prompt index %d out of range [0,%d)",
+                prompt_ids[i], i, g_model.config.vocab_size);
+            break;
+        }
     }
     if (g_has_error) { free(prompt_ids); return make_null(); }
 
@@ -669,12 +671,9 @@ Value* builtin_eigen_eval_loss(Value *arg) {
     if (!g_model.loaded) return make_num(-1.0);
     int vocab_size = g_model.config.vocab_size;
     if (target_id < 0 || target_id >= vocab_size) {
-        fprintf(stderr, "eigen_eval_loss: target_id %d out of range [0,%d)\n", target_id, vocab_size);
-        /* fs:ANSWER the id is a NUMBER (the type guard above passed) that
-         * names no row of this model's vocabulary — a value-domain answer
-         * relative to the loaded checkpoint, so it changes with the model
-         * rather than with the call. */
-        return make_num(-1.0);
+        rt_error(EK_INDEX, 0, "eigen_eval_loss: target_id %d out of range [0,%d)",
+                 target_id, vocab_size);
+        return make_null();
     }
 
     int prompt_len = prompt_list->data.list.count;
@@ -694,7 +693,12 @@ Value* builtin_eigen_eval_loss(Value *arg) {
     int *prompt_ids = xcalloc(prompt_len, sizeof(int));
     for (int i = 0; i < prompt_len; i++) {
         int t = (int)eigs_slot_num(list_slot(prompt_list, i), "eigen_eval_loss");          /* #1637: a bool raises */
-        if (t < 0 || t >= vocab_size) t = 0;
+        if (!g_has_error && (t < 0 || t >= vocab_size)) {
+            rt_error(EK_INDEX, 0,
+                "eigen_eval_loss: token id %d at prompt index %d out of range [0,%d)",
+                t, i, vocab_size);
+            break;
+        }
         prompt_ids[i] = t;
     }
     if (g_has_error) { free(prompt_ids); return make_null(); }
