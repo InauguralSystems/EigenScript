@@ -3,7 +3,10 @@ TOKEN_PROBE=$(mktemp "${TMPDIR:-/tmp}/eigs_token_probe.XXXXXX")
 printf '%s\n' 'print of (eigen_model_loaded of null)' > "$TOKEN_PROBE"
 TOKEN_OUT=$("$EIGS" "$TOKEN_PROBE" 2>&1); TOKEN_RC=$?
 rm -f "$TOKEN_PROBE"
-if [ "$TOKEN_RC" -ne 0 ] && grep -q "undefined variable 'eigen_model_loaded'" <<< "$TOKEN_OUT"; then
+# A build without the model extension answers with its capability refusal
+# ("model capability unavailable; use the server profile"); a build with no
+# stub at all would name the builtin undefined. Anything else is a failure.
+if [ "$TOKEN_RC" -ne 0 ] && grep -qE "model capability unavailable|undefined variable 'eigen_model_loaded'" <<< "$TOKEN_OUT"; then
     section_skip "binary built without EIGENSCRIPT_EXT_MODEL; run this section in the server lane"
 elif [ "$TOKEN_RC" -ne 0 ]; then
     # A model build whose probe fails for any OTHER reason is broken, not absent.
