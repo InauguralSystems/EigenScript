@@ -1,0 +1,1 @@
+- Fix LSP references parameter declaration spans (#1614).
