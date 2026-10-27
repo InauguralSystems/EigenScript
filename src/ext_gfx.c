@@ -131,6 +131,8 @@ static void (*p_SDL_ClearQueuedAudio)(int);
 static Uint32 (*p_SDL_DequeueAudio)(int, void*, Uint32);
 
 /* Audio state */
+#define AUDIO_GENERATOR_MAX_SECONDS 30.0
+#define AUDIO_MAX_DEVICE_RATE ((int)((double)INT_MAX / AUDIO_GENERATOR_MAX_SECONDS))
 static int g_audio_device = 0;
 static int g_audio_freq = 44100;
 static int g_audio_channels = 1;
@@ -1332,6 +1334,19 @@ Value* builtin_audio_open(Value *arg) {
         ARG_GUARD(list_elem_type(arg, 0) != VAL_NUM ||
                   list_elem_type(arg, 1) != VAL_NUM,
                   "audio_open", "[number freq, number channels]", make_num(0));
+
+        /* #1821: generator refusal must not depend on an untaped device rate.
+         * At every accepted integer rate, even the longest allowed generator
+         * duration has an int-sized sample count.  Check the double before
+         * the cast below as well, so an enormous positive
+         * argument cannot invoke an out-of-range floating-to-integer conversion. */
+        double requested_rate = eigs_list_num(arg, 0, __func__);
+        if (!(requested_rate <= (double)AUDIO_MAX_DEVICE_RATE)) {
+            rt_error(EK_VALUE, 0,
+                     "audio_open: rate exceeds %d Hz (30-second generator limit)",
+                     AUDIO_MAX_DEVICE_RATE);
+            return make_null();
+        }
     }
     if (!g_sdl_lib) { if (!load_sdl2()) return make_num(0); }  /* fs:ANSWER 0 is not a device id -- line 1095 returns the real one; libSDL2 unavailable is environment state, not an argument */
     if (!p_SDL_OpenAudioDevice) {
@@ -1916,8 +1931,6 @@ Value* builtin_audio_clear(Value *arg) {
     if (g_audio_device) audio_free_channels(1);
     return make_null(); /* fs:VOID audio_clear answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
-
-#define AUDIO_GENERATOR_MAX_SECONDS 30.0
 
 /* Validate the allocation size while it is still a double.  In particular,
  * never cast an out-of-range (or NaN) sample count to int: that conversion is
