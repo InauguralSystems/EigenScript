@@ -1838,6 +1838,35 @@ static int name_in_enclosing(Compiler *c, const char *name) {
     return 0;
 }
 
+typedef struct {
+    uint8_t set_op;
+    uint16_t set_arg;
+    uint8_t obs_op;
+    uint16_t obs_arg;
+} UserLocalStore;
+
+/* Choose the ONE bytecode route for a user-visible write to a function/module
+ * slot.  Interrogated bindings live on the name path because that store owns
+ * their assignment counter; ordinary bindings retain the slot fast path.
+ * Compiler bookkeeping uses OP_SET_LOCAL_INTERNAL directly and deliberately
+ * does not come through here. */
+static UserLocalStore user_local_store(Compiler *c, const char *name, int slot) {
+    UserLocalStore route;
+    if (name_set_has(&c->interrogated, name)) {
+        int idx = add_string_constant(c, name);
+        route.set_op = OP_SET_FN_NAME_LOCAL;
+        route.set_arg = (uint16_t)idx;
+        route.obs_op = OP_OBSERVE_ASSIGN;
+        route.obs_arg = (uint16_t)idx;
+    } else {
+        route.set_op = OP_SET_LOCAL;
+        route.set_arg = (uint16_t)slot;
+        route.obs_op = OP_OBSERVE_ASSIGN_LOCAL;
+        route.obs_arg = (uint16_t)slot;
+    }
+    return route;
+}
+
 /* Emit OBSERVE + SET ops for an assignment whose value is already on TOS.
  * Mirrors the AST_ASSIGN body so list-pattern destructuring (which leaves
  * each element on TOS via OP_DESTRUCTURE_UNPACK) can reuse the same
@@ -1854,18 +1883,9 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
     if (c->enclosing) {
         int slot = resolve_local(c, name, h);
         if (slot >= 0) {
-            /* #2016: an interrogated parameter/local must use the env store,
-             * whose assignment-count update is shared by interpreter and
-             * inline JIT. resolve_local used to win first for parameters,
-             * leaving native SET_LOCAL writes on a value-only fast path. */
-            if (name_set_has(&c->interrogated, name)) {
-                int idx = add_string_constant(c, name);
-                set_op = OP_SET_FN_NAME_LOCAL; set_arg = (uint16_t)idx;
-                obs_op = OP_OBSERVE_ASSIGN; obs_arg = (uint16_t)idx;
-            } else {
-                set_op = OP_SET_LOCAL; set_arg = (uint16_t)slot;
-                obs_op = OP_OBSERVE_ASSIGN_LOCAL; obs_arg = (uint16_t)slot;
-            }
+            UserLocalStore route = user_local_store(c, name, slot);
+            set_op = route.set_op; set_arg = route.set_arg;
+            obs_op = route.obs_op; obs_arg = route.obs_arg;
         } else if (lev_has(c, name)) {
             /* #1074: the name is this function's active `for` binder in a
              * loop env -- write where the body reads. */
@@ -1894,8 +1914,9 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
             if (local_eligible) {
                 int new_slot = env_bound ? -1 : add_local(c, name, h);
                 if (!env_bound && new_slot >= 0) {
-                    set_op = OP_SET_LOCAL; set_arg = (uint16_t)new_slot;
-                    obs_op = OP_OBSERVE_ASSIGN_LOCAL; obs_arg = (uint16_t)new_slot;
+                    UserLocalStore route = user_local_store(c, name, new_slot);
+                    set_op = route.set_op; set_arg = route.set_arg;
+                    obs_op = route.obs_op; obs_arg = route.obs_arg;
                 } else {
                     int idx = add_string_constant(c, name);
                     set_op = OP_SET_FN_NAME_LOCAL; set_arg = (uint16_t)idx;
@@ -1916,8 +1937,9 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
         if (name_set_has(&c->module_slot_names, name)) {
             int slot = resolve_local(c, name, h);
             if (slot >= 0) {
-                set_op = OP_SET_LOCAL; set_arg = (uint16_t)slot;
-                obs_op = OP_OBSERVE_ASSIGN_LOCAL; obs_arg = (uint16_t)slot;
+                UserLocalStore route = user_local_store(c, name, slot);
+                set_op = route.set_op; set_arg = route.set_arg;
+                obs_op = route.obs_op; obs_arg = route.obs_arg;
                 picked = 1;
             }
         }
@@ -2492,7 +2514,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             /* Bind loop var to a function-env slot. SET_LOCAL leaves the
              * value on the stack (matching SET_NAME_LOCAL's convention),
              * so the POP below still applies. */
-            emit_op_u16(c, OP_SET_LOCAL, (uint16_t)loop_var_slot, node->line);
+            UserLocalStore route = user_local_store(c, loop_var, loop_var_slot);
+            emit_op_u16(c, route.set_op, route.set_arg, node->line);
             emit(c, OP_POP, node->line);
         } else if (can_persist_env) {
             /* Reuse the loop env created once above. Clear tier: reset its
@@ -2701,8 +2724,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         }
 
         /* Default-param prologue: for each trailing param with a default,
-         * emit OP_DEFAULT_PARAM <slot> <skip>; <default expr>; OP_SET_LOCAL;
-         * OP_POP. Skip target is just past OP_POP. The opcode reads
+         * emit OP_DEFAULT_PARAM <slot> <skip>; <default expr>; the store
+         * selected by user_local_store; OP_POP. Skip target is just past
+         * OP_POP. The opcode reads
          * frame->call_argc — if argc > slot, jump skip (default already
          * supplied by caller). Else fall through (run the default). */
         if (node->data.func.param_defaults) {
@@ -2718,7 +2742,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                 compile_node(&fn_compiler, dflt);
                 /* #1381: a default spanning lines is filed under its first */
                 restamp_line(&fn_compiler, line);
-                emit_op_u16(&fn_compiler, OP_SET_LOCAL, (uint16_t)i, line);
+                UserLocalStore route = user_local_store(
+                    &fn_compiler, node->data.func.params[i], i);
+                emit_op_u16(&fn_compiler, route.set_op, route.set_arg, line);
                 chunk_emit(fn_chunk, OP_POP, line);
                 adjust_stack(&fn_compiler, -1);
                 chunk_patch_jump(fn_chunk, skip_patch);
