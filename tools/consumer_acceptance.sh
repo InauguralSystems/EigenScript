@@ -1119,7 +1119,7 @@ CANDIDATE
   printf 'provenance=%s\n' "$commit_two" > "$st_root/source-refs"
   st_rc=0; CA_SOURCE_REFS="$st_root/source-refs" st_run || st_rc=$?
   receipt_two="$(grep '^source|provenance|' "$st_record" | head -1)"
-  if [ "$st_rc" -eq 0 ] && [ "$commit_one" != "$commit_two" ] && [ "$receipt_one" != "$receipt_two" ] && printf '%s' "$receipt_one" | grep -Fq "commit=$commit_one" && printf '%s' "$receipt_two" | grep -Fq "commit=$commit_two"; then
+  if [ "$st_rc" -eq 0 ] && [ "$commit_one" != "$commit_two" ] && [ "$receipt_one" != "$receipt_two" ] && [[ "$receipt_one" == *"commit=$commit_one"* ]] && [[ "$receipt_two" == *"commit=$commit_two"* ]]; then
     echo 'plant AC check=consumer-commit-provenance GREEN commits=distinct receipts=distinct'
   else echo 'plant AC check=consumer-commit-provenance SILENT'; st_bad=1; fi
   rm -rf "$st_root"
