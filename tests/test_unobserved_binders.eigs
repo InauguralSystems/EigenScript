@@ -23,15 +23,21 @@ assert_eq of [repeated_kinds,
               ["value", "value", "value", "value", "value", "value", "value", "value"],
               "1883 repeated catch bindings stay readable"]
 
-# An outside reference deliberately prevents promotion.  It pins the catch
-# binding's normal module visibility while the catch-only cases above pin the
-# formerly broken promotion decision.
+# An outside reference used to prevent promotion and pin the catch binding's
+# module visibility.  Since #1737 a catch name is local to its handler, so
+# the outside read is an undefined name; the inside read still pins that the
+# binder reads the storage its binding opcode wrote.
 unobserved:  # lint: allow W020 -- storage transparency is the subject
     try:
         escaping_value is 1 / 0
     catch escaping_error:
         escaping_seen_inside is escaping_error.kind
-assert_eq of [escaping_error.kind, "value", "1883 catch binding remains readable after block"]
+escaping_after_kind is "none"
+try:
+    escaping_probe is escaping_error.kind
+catch escaping_after:
+    escaping_after_kind is escaping_after.kind
+assert_eq of [escaping_after_kind, "undefined_name", "1737 catch binding is not visible after its handler"]
 assert_eq of [escaping_seen_inside, "value", "1883 escaping catch binding is readable inside too"]
 
 # Binder audit probes.  `for` and list-comprehension variables use name-based
