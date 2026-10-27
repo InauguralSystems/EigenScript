@@ -53,6 +53,7 @@ parse_tape() {
         if (s ~ /^O [0-9][0-9]* win [^ ]+ [0-9][0-9]*$/) return 1
         if (s ~ /^V [0-9][0-9]* [^ ]+$/) return 1
         if (s ~ /^B [0-9][0-9]* [0-9][0-9]* [0-9][0-9]* [0-9][0-9]* (root (-|[0-9a-f]+)|host [0-9a-f]+|child [0-9][0-9]* [0-9][0-9]*|local)$/) return 1
+        if (s ~ /^C [0-9][0-9]* /) return 1
         if (s ~ /^[AN] [0-9][0-9]* [^= ]+=/) {
             v = s
             sub(/^[AN] [0-9][0-9]* [^= ]+=/, "", v)
@@ -269,6 +270,54 @@ else
          "rc=$src N=$snrec malformed=$smal examined=$sexamined"
 fi
 
+echo "=== large-answer worker tape (N+C groups stay atomic) ==="
+# Four workers simultaneously record values which require continuation records.
+# Replaying with a changed live value must reproduce stdout exactly.  The
+# reader's framing loop also makes an ordinary record inserted between N and C
+# a loud malformed-tape error rather than silently assigning C to another N.
+large_value=$(awk 'BEGIN { for (i = 0; i < 70000; i++) printf "%c", 120 }')
+EIGS_TRACE_LARGE_VALUE=$large_value
+export EIGS_TRACE_LARGE_VALUE
+large_tape="$TMPDIR/large-workers.tape"
+EIGS_TRACE="$large_tape" "$EIGS" "$TESTS_DIR/trace_mt_large_workers.eigs" \
+    >"$TMPDIR/large-workers.rec" 2>"$TMPDIR/large-workers.rec.err"
+large_record_rc=$?
+EIGS_TRACE_LARGE_VALUE=changed
+export EIGS_TRACE_LARGE_VALUE
+EIGS_REPLAY="$large_tape" "$EIGS" "$TESTS_DIR/trace_mt_large_workers.eigs" \
+    >"$TMPDIR/large-workers.rep" 2>"$TMPDIR/large-workers.rep.err"
+large_replay_rc=$?
+large_n=$(grep -c '^N [0-9][0-9]* env_get=@' "$large_tape" || true)
+large_c=$(grep -c '^C [0-9][0-9]* ' "$large_tape" || true)
+if [ "$large_record_rc" -eq 0 ] && [ "$large_replay_rc" -eq 0 ] \
+   && cmp -s "$TMPDIR/large-workers.rec" "$TMPDIR/large-workers.rep" \
+   && [ "$large_n" -eq 16 ] && [ "$large_c" -eq 16 ]; then
+    ok "large-answer workers: 16 N+C answers replay byte-identically"
+else
+    fail "large-answer workers: 16 N+C answers replay byte-identically" \
+         "record=$large_record_rc replay=$large_replay_rc N=$large_n C=$large_c"
+fi
+
+# Put a valid ordinary record between the first framed N and its C.  This is
+# precisely the corruption that an unlocked multi-record writer could create.
+awk 'BEGIN { inserted=0 }
+     /^N [0-9][0-9]* env_get=@/ && !inserted {
+         print; split($0, f, " "); print "L " f[2] " 999"; inserted=1; next
+     }
+     { print }' "$large_tape" >"$TMPDIR/large-workers-interleaved.tape"
+EIGS_REPLAY="$TMPDIR/large-workers-interleaved.tape" "$EIGS" \
+    "$TESTS_DIR/trace_mt_large_workers.eigs" >/dev/null 2>"$TMPDIR/large-workers-interleaved.err"
+interleaved_rc=$?
+if [ "$interleaved_rc" -eq 3 ] \
+   && grep -q 'malformed v8 .*N value' "$TMPDIR/large-workers-interleaved.err" \
+   && grep -q 'refusing to replay' "$TMPDIR/large-workers-interleaved.err"; then
+    ok "large-answer reader rejects a record interleaved between N and C"
+else
+    fail "large-answer reader rejects a record interleaved between N and C" \
+         "rc=$interleaved_rc err=$(cat "$TMPDIR/large-workers-interleaved.err")"
+fi
+unset EIGS_TRACE_LARGE_VALUE
+
 echo "=== long-scope-name (S record keeps its full name and newline, #1157) ==="
 # emit_scope_transition staged `S <fn> <depth> <serial>` through tp_printf's
 # 128-byte buffer: a name of 121+ chars lost its tail AND the newline, and
@@ -320,13 +369,17 @@ else
     fail "replay-workers: two independent worker streams replay" "rc=$rrc err=$(cat "$TMPDIR/replay.err")"
 fi
 
-# Missing, signed, overflowed, and concatenated stream tags are all red.
+# Missing, signed, overflowed, and concatenated stream tags are all red.  The
+# header is copied from this v8 binary and each short N value is valid v8
+# syntax, so these fixtures reach stream-tag validation rather than framing or
+# format-version rejection.
 printf 'print of (random of null)\n' > "$TMPDIR/take.eigs"
 for bad in 'N random=0.5' 'N -1 random=0.5' 'N 18446744073709551616 random=0.5' 'N 0 random=0.5N 1 random=0.4'; do
     { printf '%s\n' "$vline" 'B 0 1 1 0 root -'; printf '%s\n' "$bad"; } > "$TMPDIR/bad-id.tape"
     EIGS_REPLAY="$TMPDIR/bad-id.tape" "$EIGS" "$TMPDIR/take.eigs" >/dev/null 2>"$TMPDIR/bad-id.err"
     brc=$?
-    if [ "$brc" -eq 3 ] && grep -q 'malformed v7 stream id' "$TMPDIR/bad-id.err"; then
+    tape_format=$(printf '%s\n' "$vline" | awk '{print $2}')
+    if [ "$brc" -eq 3 ] && grep -q "malformed v${tape_format} stream id" "$TMPDIR/bad-id.err"; then
         ok "parser rejects malformed stream tag: $bad"
     else
         fail "parser rejects malformed stream tag: $bad" "rc=$brc"
