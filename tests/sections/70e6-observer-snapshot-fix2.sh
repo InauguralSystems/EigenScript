@@ -10,3 +10,17 @@ else
     echo "  FAIL: observer snapshot fix2 regression (rc=$OSF2_RC)"
     printf '%s\n' "$OSF2_OUTPUT"
 fi
+
+TOTAL=$((TOTAL + 1))
+variant=release
+if [ -e ../build/asan/eigenscript ] && [ ./eigenscript -ef ../build/asan/eigenscript ]; then
+    variant=asan
+fi
+if make -s -C .. NUM_GUARD_VALUE_VARIANT="$variant" num-guard-value-test && \
+   ../build/$variant/test_num_guard_value; then
+    PASS=$((PASS + 1))
+    echo "  PASS: observer normalization matches num_guard values"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: observer normalization diverges from num_guard values"
+fi

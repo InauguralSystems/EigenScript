@@ -624,8 +624,11 @@ static int values_equal_for_observation(Value *a, Value *b, int depth) {
             return 1;
         case VAL_BUFFER:
             if (a->data.buffer.count != b->data.buffer.count) return 0;
-            for (int i = 0; i < a->data.buffer.count; i++)
-                if (a->data.buffer.data[i] != b->data.buffer.data[i]) return 0;
+            for (int i = 0; i < a->data.buffer.count; i++) {
+                double av = num_guard_value(a->data.buffer.data[i]);
+                double bv = num_guard_value(b->data.buffer.data[i]);
+                if (av != bv) return 0;
+            }
             return 1;
         case VAL_TEXT_BUILDER:
             return a->data.text_builder.len == b->data.text_builder.len &&

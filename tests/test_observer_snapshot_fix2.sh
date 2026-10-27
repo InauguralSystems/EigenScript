@@ -93,4 +93,36 @@ echo "  PASS: observer fix2 closure output"
 printf '%s\n' "$STATS" | grep -Eq '^eigs-alloc-stats: cumulative=[0-9]+ live=0 peak=[0-9]+ tracked=0$'
 echo "  PASS: observer fix2 closure ownership: no tracked bytes left"
 
+# A real matmul kernel leaves the null-slot NaN sentinel in unboxed buffer
+# storage after inf-inf.  Language equality and observer equality must apply
+# the same finite-number VALUE mapping without mutating that work area.
+cat >"$TMP/nonfinite.eigs" <<'EOF'
+left is buffer of [1, 2]
+left[0] is 1e200
+left[1] is 1e200
+right is buffer of [2, 1]
+right[0] is 1e200
+right[1] is 0 - 1e200
+x is matmul of [left, right]
+x is x
+x is x
+x is x
+x is x
+x is x
+x is x
+x is x
+x is x
+x is x
+x is x
+x is x
+x is x
+print of (x == x)
+print of (stable of x)
+print of (converged of x)
+EOF
+[ "$(EIGS_STRICT=0 "$EIGS" "$TMP/nonfinite.eigs")" = "true
+true
+true" ]
+echo "  PASS: observer fix2 nonfinite buffer equality"
+
 echo observer-snapshot-fix2-ok

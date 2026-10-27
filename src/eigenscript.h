@@ -1897,6 +1897,17 @@ void free_value(Value *v);
  * branch stays one call on a path a finite program never takes. */
 void eigs_strict_nan_raise(const char *who);
 
+/* Side-effect-free VALUE mapping of num_guard, for readers such as observer
+ * equality which must see language numbers without changing interpreter
+ * state or raising in strict mode.  Keep its branches in sync with
+ * num_guard; tests/test_num_guard_value.c pins their bit-level results. */
+static inline double num_guard_value(double x) {
+    if (x != x) return 0.0;
+    if (x > EIGS_NUM_MAX) return EIGS_NUM_MAX;
+    if (x < -EIGS_NUM_MAX) return -EIGS_NUM_MAX;
+    return x;
+}
+
 static inline double num_guard(double x) {
     /* Fast path unchanged: the flag writes live only on the clamp branches,
      * which a program that does not overflow never takes. */
