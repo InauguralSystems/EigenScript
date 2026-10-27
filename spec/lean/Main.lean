@@ -14,9 +14,9 @@ private def mainClassify (path : String) : IO UInt32 := do
 
 private def mainRuntimeClassify (path : String) : IO UInt32 := do
   let source ← IO.FS.readFile path
-  match parse source with
-  | .ok _ => IO.println "in-subset"; pure 0
-  | .error why => IO.println s!"out: {why.construct} at line {why.line}"; pure 0
+  match classifyModeled source with
+  | .inSubset => IO.println "in-subset"; pure 0
+  | .out why => IO.println s!"out: {why.construct} at line {why.line}"; pure 0
 
 structure Options where
   source : String := ""
@@ -43,6 +43,8 @@ private def execute (o : Options) : IO UInt32 := do
   | .error e => IO.eprintln s!"parse error at line {e.line}: {e.construct}"; pure 2
   | .ok program => match run 100000 program mode with
     | .error .fuel => IO.eprintln "runtime error: fuel exhausted"; pure 1
+    | .error (.unsupported construct) =>
+        IO.eprintln s!"unsupported in EigenCore-0 step 2a: {construct}"; pure 1
     | .error (.runtime e) => IO.eprintln s!"runtime error: {e}"; pure 1
     | .ok result =>
       IO.print result.stdout

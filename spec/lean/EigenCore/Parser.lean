@@ -181,6 +181,51 @@ def parse (source : String) : Except Outside Program := do
     | some line => throw ⟨"unparsed input", line.number⟩
     | none => throw ⟨"unparsed input", 1⟩
 
+private def unsupportedExpr : Expr → Option String
+  | .literal _ | .when _ => none
+  | .variable name =>
+      if name == "converged" || name == "__loop_exit__" || name == "__loop_iterations__" then
+        some s!"builtin {name}"
+      else none
+  | .binary _ left right => unsupportedExpr left |>.orElse (fun _ => unsupportedExpr right)
+  | .not value => unsupportedExpr value
+  | .call (.variable name) _ =>
+      if ["converged", "loop_iterations", "loop_exit"].contains name then
+        some s!"builtin {name}"
+      else
+        some "function call"
+  | .call _ _ => some "function call"
+  | .prev _ => some "prev"
+  | .whatWhen _ _ => some "what-when"
+
+private def unsupportedStmts : Nat → List Stmt → Option String
+  | 0, _ => some "support-check nesting limit"
+  | _, [] => none
+  | fuel + 1, statement :: rest =>
+      let here := match statement with
+        | .assign _ value _ | .print value | .return_ value | .expression value =>
+            unsupportedExpr value
+        | .branch condition yes elifs otherwise =>
+            unsupportedExpr condition
+              |>.orElse (fun _ => unsupportedStmts fuel yes)
+              |>.orElse (fun _ => elifs.findSome? fun (arm : Expr × List Stmt) =>
+                unsupportedExpr arm.1 |>.orElse (fun _ => unsupportedStmts fuel arm.2))
+              |>.orElse (fun _ => otherwise.bind (unsupportedStmts fuel))
+        | .loop condition body =>
+            unsupportedExpr condition |>.orElse (fun _ => unsupportedStmts fuel body)
+        | .define _ _ _ => some "function definition"
+      here.orElse (fun _ => unsupportedStmts fuel rest)
+
+/-- The single support predicate used by both classification and evaluation. -/
+def unsupportedConstruct (program : Program) : Option String := unsupportedStmts 100000 program
+
+def classifyModeled (source : String) : Classification :=
+  match parse source with
+  | .error why => .out why
+  | .ok program => match unsupportedConstruct program with
+    | some construct => .out ⟨s!"unsupported in EigenCore-0 step 2a: {construct}", 1⟩
+    | none => .inSubset
+
 def classify (source : String) : Classification :=
   match parse source with
   | .ok _ => .inSubset

@@ -54,12 +54,13 @@ with tempfile.TemporaryDirectory() as td:
     else:mismatch.append('Lean record/replay')
     if any(k=='N' for k,_ in projection(ct)):
       cross+=1
-    if mismatch: actual[label]=('model bug',','.join(mismatch))
+    if mismatch: actual[label]=','.join(mismatch)
 if set(actual)!=set(ledger):
   missing=sorted(set(actual)-set(ledger)); stale=sorted(set(ledger)-set(actual))
   raise SystemExit(f'known-disagreement ledger mismatch\nnew={[(x,actual[x]) for x in missing]}\nstale={stale}')
-for k,v in actual.items():
-  if ledger[k][0]!=v[0]: raise SystemExit(f'ledger triage changed: {k}')
+for label,(kind,reason) in ledger.items():
+  if kind not in ('vm bug','model bug') or not reason.strip():
+    raise SystemExit(f'invalid disagreement triage: {label}: {kind}: {reason}')
 print(f'population / step1-in / modeled-in / examined: {len(programs)} / {old_in} / {new_in} / {examined}')
 print(f'agreements / disagreements: {examined-len(actual)} / {len(actual)}')
 print(f'Lean record->strict-replay: {roundtrips}/{examined}')

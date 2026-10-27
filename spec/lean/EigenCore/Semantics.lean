@@ -2,7 +2,7 @@ import EigenCore.Parser
 import EigenCore.Value
 namespace EigenCore
 
-inductive Err where | runtime (message : String) | fuel deriving Repr, BEq
+inductive Err where | runtime (message : String) | unsupported (construct : String) | fuel deriving Repr, BEq
 structure Binding where
   envId : Nat
   slot : Nat
@@ -56,7 +56,9 @@ def evalExpr (fuel : Nat) (e : Expr) : EvalM Value := match fuel with
     | .binary .or a b => do let x ← evalExpr f a; if truthy x then pure x else evalExpr f b
     | .binary op a b => do match evalBin op (← evalExpr f a) (← evalExpr f b) with | .ok v => pure v | .error x => throw x
     | .when n => do let w ← get; match findCell n w.cells with | some i => pure (.int w.cells[i]!.history.size) | none => throw (Err.runtime s!"undefined variable: {n}")
-    | .prev _ | .whatWhen _ _ | .call _ _ => throw (Err.runtime "not yet modeled")
+    | .prev _ => throw (.unsupported "prev")
+    | .whatWhen _ _ => throw (.unsupported "what-when")
+    | .call _ _ => throw (.unsupported "function call")
 
 def exec (fuel : Nat) (ss : List Stmt) : EvalM (Option Value) := match fuel with
   | 0 => throw .fuel
@@ -79,15 +81,21 @@ def exec (fuel : Nat) (ss : List Stmt) : EvalM (Option Value) := match fuel with
           | n+1 => do
             if truthy (← evalExpr n condition) then
               match ← exec n body with | some v => pure (some v) | none => again n
-            else exec n rest
+            else do
+              -- `__loop_exit__` is a language-visible loop binding, and hence
+              -- an assignment event under SPEC/TRACE just like source stores.
+              store "__loop_exit__" (.string "normal") false
+              exec n rest
         again f
-      | .define _ _ _ => throw (Err.runtime "not yet modeled")
+      | .define _ _ _ => throw (.unsupported "function definition")
 
 structure RunResult where
   stdout : String
   tape : List String
 
 def run (fuel : Nat) (p : Program) (mode : Mode) : Except Err RunResult := do
+  if let some construct := unsupportedConstruct p then
+    throw (.unsupported construct)
   let (_, w) ← (exec fuel p).run {mode:=mode}
   pure {stdout:=w.stdout,tape:=w.tape}
 end EigenCore
