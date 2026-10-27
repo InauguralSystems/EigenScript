@@ -227,6 +227,9 @@ typedef enum {
     OP_LOOP_CAP_NAMED,  /*obs:DIAG*/ /* [exit:16][stack_depth:16] per-loop cap guard */
     OP_LOOP_ENTER_NAMED,/*obs:DIAG*/ /* [stack_depth:16] push private counter, publish zero */
     OP_LOOP_EXIT_NAMED, /*obs:DIAG*/ /* [stack_depth:16] publish and pop private counter */
+    OP_BINARY_LINE,     /*obs:WRITES*/ /* [line:32] save line caches and stamp one binary op */
+    OP_BINARY_LINE_END, /*obs:WRITES*/ /* restore line caches after a successful binary op */
+
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 
@@ -554,6 +557,10 @@ typedef struct VM {
      * (for example a builtin task entry invoking a user callback). */
     int        execute_depth;
     int        current_line;
+    /* #1425: scratch for adjacent BINARY_LINE / binop / BINARY_LINE_END.
+     * No call, jump or suspension lies inside a compiler-emitted scope. */
+    int        binary_prev_line;
+    int        binary_prev_trace_line;
     /* Back-pointer to the owning EigsThread, set in vm_init. Lets the
      * JIT reach EigsThread fields (e.g. unobserved_depth) via a single
      * `mov off_vm_owner(%rbx), %rax` instead of a TLS read at every
@@ -738,6 +745,8 @@ int        chunk_scan_static_loads(const EigsChunk *chunk,
                                                  void *ud),
                                    void *ud);
 const char *op_name(uint8_t op);
+/* Operand bytes following an opcode. This is the single bytecode-walker
+ * width table; returns -1 for an unknown opcode. */
 /* Verify an assembled (untrusted) chunk's bytecode is in-bounds before the VM
  * runs it. Returns 1 if safe to execute, 0 if it must be rejected. */
 int        chunk_verify(EigsChunk *chunk);

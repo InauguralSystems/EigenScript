@@ -281,6 +281,12 @@ assert_eq of [vm_run_bytecode of [ABI, [LINE,161,134,1,0, CONST,0,0, RETURN], [9
 # truncated 32-bit operand is rejected by the verifier, not read off the end.
 assert_bad_descriptor of [[ABI, [LINE,7,0,0], []], "truncated LINE operand", "verify: truncated OP_LINE raises with its reason"]
 
+# #1425 fix2: the shared-temporal sandbox walker must use the verifier's
+# operand width. Before the fix it decoded BINARY_LINE's line bytes as opcodes
+# and dereferenced constant index 65535, crashing the whole process.
+binary_line_walk is sandbox_run of [[ABI, [0,0,0, 0,1,0, 102,25,255,255,0, 4,103,40], [2,3]], 1000]
+assert_eq of [binary_line_walk["ok"], false, "sandbox refuses malformed BINARY_LINE descriptor without crashing (#1425 fix2)"]
+
 # --- #704: the ABI revision stamp itself ---
 # The canary above catches an operand-width change only for the ONE opcode it
 # happens to emit, and only in this repo. The stamp is the general gate: a
