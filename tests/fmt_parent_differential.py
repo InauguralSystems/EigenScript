@@ -2,10 +2,66 @@
 """Compare the incumbent and candidate formatters over the formatter corpus."""
 
 import glob
+import difflib
 import os
 import subprocess
 import sys
 import tempfile
+
+
+def classify(label, old, new):
+    """Name the intentional formatter defect classes present in one delta."""
+    old_lines, new_lines = old.splitlines(), new.splitlines()
+    old_nonblank = [line for line in old_lines if line.strip()]
+    new_nonblank = [line for line in new_lines if line.strip()]
+    categories = []
+    if [line.lstrip() for line in old_nonblank] == [
+        line.lstrip() for line in new_nonblank
+    ]:
+        if len(old_lines) != len(new_lines):
+            # This also covers extracted Markdown fences nested in list items:
+            # extraction removes the list prefix before the formatter sees the
+            # program, but preserving its physical source lines is the same
+            # semantic-line correction as it is for a regular source file.
+            categories.append("semantic-line preservation")
+        changed = [(a, b) for a, b in zip(old_nonblank, new_nonblank) if a != b]
+        if (
+            all(
+                a.lstrip().startswith(b"#") and b.lstrip().startswith(b"#")
+                for a, b in changed
+            )
+            and changed
+        ):
+            categories.append("standalone-comment depth")
+        elif changed:
+            categories.append("unequal indentation")
+    elif label == "tests/test_fstrings.eigs":
+        # This corpus file is the incumbent's exhaustive f-string fixture;
+        # its substantive delta is the lexer-owned literal-byte fix.
+        categories.append("literal bytes")
+        categories.append("unequal indentation")
+        if len(old_lines) != len(new_lines):
+            categories.append("semantic-line preservation")
+    return categories
+
+
+def selftest():
+    # The doc executor strips Markdown's list prefix.  This is the exact pair
+    # of programs the differential receives for a list-item fence containing
+    # adjacent definitions, so keep the classifier independent of a filename.
+    old = b"define a() as:\n    return 1\n\ndefine b() as:\n    return 2\n"
+    new = b"define a() as:\n    return 1\ndefine b() as:\n    return 2\n"
+    got = classify("doc-fence:synthetic-list-item", old, new)
+    expected = ["semantic-line preservation"]
+    if got != expected:
+        print(f"classifier selftest: got={got!r} expected={expected!r}")
+        return 1
+    print("classifier selftest: list-item fence is semantic-line preservation")
+    return 0
+
+
+if sys.argv[1:] == ["--selftest"]:
+    sys.exit(selftest())
 
 parent, candidate, root = map(os.path.abspath, sys.argv[1:4])
 os.chdir(root)
@@ -67,41 +123,21 @@ with tempfile.TemporaryDirectory(prefix="fmt-parent-diff-") as temp:
             counts["identical"] += 1
             continue
 
-        old_lines, new_lines = old.splitlines(), new.splitlines()
-        old_nonblank = [line for line in old_lines if line.strip()]
-        new_nonblank = [line for line in new_lines if line.strip()]
-        categories = []
-        if [line.lstrip() for line in old_nonblank] == [
-            line.lstrip() for line in new_nonblank
-        ]:
-            if len(old_lines) != len(new_lines):
-                # The parent inserts blank lines between top-level defines.
-                # Source line numbers are observable, so retaining the input's
-                # physical lines is an intentional semantic correction.
-                categories.append("semantic-line preservation")
-            changed = [(a, b) for a, b in zip(old_nonblank, new_nonblank) if a != b]
-            if (
-                all(
-                    a.lstrip().startswith(b"#") and b.lstrip().startswith(b"#")
-                    for a, b in changed
-                )
-                and changed
-            ):
-                categories.append("standalone-comment depth")
-            elif changed:
-                categories.append("unequal indentation")
-        elif label == "tests/test_fstrings.eigs":
-            # This corpus file is the incumbent's exhaustive f-string fixture;
-            # its substantive delta is the lexer-owned literal-byte fix.
-            categories.append("literal bytes")
-            categories.append("unequal indentation")
-            if len(old_lines) != len(new_lines):
-                categories.append("semantic-line preservation")
+        categories = classify(label, old, new)
 
         category = " + ".join(categories) if categories else "REGRESSION"
         print(f"Formatter differential: {label}: {category}")
         if category == "REGRESSION":
             failures.append(label)
+            sys.stdout.buffer.writelines(
+                difflib.diff_bytes(
+                    difflib.unified_diff,
+                    old.splitlines(keepends=True),
+                    new.splitlines(keepends=True),
+                    fromfile=b"parent",
+                    tofile=b"branch",
+                )
+            )
         else:
             for item in categories:
                 counts[item] += 1

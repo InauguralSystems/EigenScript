@@ -365,6 +365,12 @@ check "doc fences format through the executor extraction interface" \
       "extract=$DOC_EXTRACT_RC fences=$DOC_FMT_N bad=$DOC_FMT_BAD" \
       "extract=0 fences=$DOC_FMT_N bad=0"
 
+CLASSIFIER_SELFTEST=$(python3 "$TESTS_DIR/fmt_parent_differential.py" --selftest 2>&1)
+CLASSIFIER_SELFTEST_RC=$?
+check "parent differential classifies a list-item doc fence" \
+      "rc=$CLASSIFIER_SELFTEST_RC output=$CLASSIFIER_SELFTEST" \
+      "rc=0 output=classifier selftest: list-item fence is semantic-line preservation"
+
 check "single changelog fragment names all fixed issues" \
       "$(find "$TESTS_DIR/../changes/fixed" -maxdepth 1 -type f \( -name '*1245*' -o -name '*1246*' -o -name '*1581*' \) | wc -l | tr -d ' ')|$(cat "$TESTS_DIR/../changes/fixed/1581-cloud-fix.md")" \
       "1|- Fixed formatter literal preservation and lexer-owned indentation handling (#1245, #1246, #1581)."
