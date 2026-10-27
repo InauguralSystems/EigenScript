@@ -16,6 +16,7 @@
 #if EIGENSCRIPT_EXT_GFX
 
 #include <dlfcn.h>
+#include <locale.h>
 
 /* ---- SDL2 types (minimal, no headers needed) ---- */
 
@@ -141,6 +142,16 @@ static int g_stream_channels = 1;
 
 static int load_sdl2(void) {
     if (g_sdl_lib) return 1;
+
+    /* SDL's X11 backend converts its UTF-8 title to X text properties using
+     * the process character-type locale.  ISO C starts every process in the
+     * "C" locale; setlocale with an empty string is the standard way to
+     * activate the locale selected by the environment.  Without it, SDL 2
+     * treats each UTF-8 byte as a legacy character, producing a double-
+     * encoded WM_NAME and omitting _NET_WM_NAME (#1681).  LC_CTYPE is the
+     * narrowest category SDL needs and does not alter numeric formatting. */
+    (void)setlocale(LC_CTYPE, "");
+
     g_sdl_lib = dlopen("libSDL2-2.0.so.0", RTLD_LAZY);
     if (!g_sdl_lib) g_sdl_lib = dlopen("libSDL2.so", RTLD_LAZY);
     if (!g_sdl_lib) return 0;
