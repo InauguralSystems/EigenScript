@@ -77,7 +77,7 @@ static int repl_eval_buffer(Env *env, strbuf *input, int *failed) {
      * is no scan that can see a line the user has not typed yet, so the REPL
      * observes unconditionally. */
     eigs_obs_enable_runtime();   /* #915: via the helper, so a mid-run flip records the gap */
-    EigsChunk *repl_chunk = compile_ast(ast, env, input->data);
+    EigsChunk *repl_chunk = compile_ast(ast, env, input->data, "<stdin>");
     if (g_parse_errors > 0) {   /* e.g. an un-encodable jump/loop offset */
         *failed = 1;
         fprintf(stderr, "%d compile error(s) — line not run\n", g_parse_errors);

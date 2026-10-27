@@ -244,10 +244,10 @@ for item in items:
 try:
     x is items[100]
 catch err:
-    print of f"Caught: {err}"
+    print of {"kind": err.kind, "message": err.message, "line": err.line}
 ```
 ```output
-Caught: {"kind": "undefined_name", "message": "undefined variable 'items'", "line": 2}
+{"kind": "undefined_name", "message": "undefined variable 'items'", "line": 2}
 ```
 
 Errors inside a `try` block are caught and bound to the variable after

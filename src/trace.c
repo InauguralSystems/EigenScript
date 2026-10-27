@@ -1131,7 +1131,9 @@ size_t trace_out_capacity(void) {
 
 /* Caller holds g_tape_mu. */
 static void out_flush_locked(void) {
+#if !EIGENSCRIPT_FREESTANDING
     if (g_out_len && g_trace_fp) fwrite(g_out, 1, g_out_len, g_trace_fp);
+#endif
     g_out_len = 0;
 }
 

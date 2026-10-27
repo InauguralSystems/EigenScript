@@ -2,7 +2,7 @@
  * stamp, not 0. A native (AOT) binary calls the linked builtins directly:
  * there is no interpreter frame, but g_trace_current_line is stamped per
  * statement. Before the fix rt_error resolved line 0 through the VM's live
- * line and printed "Error line 0: ..."; the AOT's own helpers, which pass
+ * line and printed "Error <native>:0: ..."; the AOT's own helpers, which pass
  * the stamp, printed the right line -- two different lines for one
  * program. This test raises from outside any frame with the stamp set and
  * requires the recorded message to carry it; then, with the stamp cleared,
@@ -92,19 +92,19 @@ int main(void) {
     g_trace_current_line = 42;
     g_has_error = 0;
     rt_error(EK_VALUE, 0, "probe %d", 1);
-    check(strncmp(g_error_msg, "Error line 42: probe 1", 22) == 0,
+    check(strncmp(g_error_msg, "Error <native>:42: probe 1", 22) == 0,
           "line-0 raise outside any frame reports the trace stamp (42)");
     check(vm_current_line() == 42, "vm_current_line answers the stamp with no live frame");
 
     g_has_error = 0;
     g_trace_current_line = 0;
     rt_error(EK_VALUE, 0, "probe %d", 2);
-    check(strncmp(g_error_msg, "Error line 0: probe 2", 21) == 0,
+    check(strncmp(g_error_msg, "Error <native>:0: probe 2", 21) == 0,
           "with the stamp clear the line stays 0 (nothing invented)");
 
     g_has_error = 0;
     rt_error(EK_VALUE, 7, "probe %d", 3);
-    check(strncmp(g_error_msg, "Error line 7: probe 3", 21) == 0,
+    check(strncmp(g_error_msg, "Error <native>:7: probe 3", 21) == 0,
           "an explicit line is untouched");
 
     /* #1434. ekey's lines are 1-9; its loop gives forced OSR a target and
@@ -132,7 +132,7 @@ int main(void) {
     Value *r = builtin_sort_by(args_bad);
     if (r) val_decref(r);
     check(g_has_error && g_error_line == 50 &&
-          strncmp(g_error_msg, "Error line 50: sort_by: key function", 36) == 0,
+          strncmp(g_error_msg, "Error <native>:50: sort_by: key function", 36) == 0,
           "#1434 sort_by raising after an eval-defined key reports the call's stamp (50)");
 
     g_has_error = 0;
@@ -142,7 +142,7 @@ int main(void) {
     check(!g_has_error && g_trace_current_line == 60,
           "#1434 the stamp is back on the call's line after the callbacks return (60)");
     rt_error(EK_VALUE, 0, "probe %d", 4);
-    check(strncmp(g_error_msg, "Error line 60: probe 4", 22) == 0,
+    check(strncmp(g_error_msg, "Error <native>:60: probe 4", 22) == 0,
           "#1434 a later line-0 raise reports the call's stamp (60)");
 
     /* A store after the call is filed under the stamp: at the key's line it
@@ -173,7 +173,7 @@ int main(void) {
     EigsValue *ev = eigs_eval_string("p is 1\nq is p + 1\n");
     if (ev) eigs_value_release(ev);
     rt_error(EK_VALUE, 0, "probe %d", 5);
-    check(strncmp(g_error_msg, "Error line 90: probe 5", 22) == 0,
+    check(strncmp(g_error_msg, "Error <native>:90: probe 5", 22) == 0,
           "#1434 a raise after eigs_eval_string reports the stamp it entered with (90)");
     /* A callback that ERROR-HALTS: sandbox_run's chunk stamps line 77, then
      * 1 / 0; sandbox_run swallows the error. Opcodes: LINE 68, NUM_ONE 3,
@@ -191,7 +191,7 @@ int main(void) {
     r = builtin_sandbox_run(sb_args);
     if (r) val_decref(r);
     rt_error(EK_VALUE, 0, "probe %d", 6);
-    check(strncmp(g_error_msg, "Error line 100: probe 6", 23) == 0,
+    check(strncmp(g_error_msg, "Error <native>:100: probe 6", 23) == 0,
           "#1434 a raise after an error-halted callback reports the call's stamp (100)");
     val_decref(sb_args);
     val_decref(args_good); val_decref(args_bad); val_decref(good); val_decref(bad);
@@ -206,7 +206,7 @@ int main(void) {
                           "t is task_spawn of [tf, 1]\n");
     if (ev) eigs_value_release(ev);
     rt_error(EK_VALUE, 0, "probe %d", 7);
-    check(strncmp(g_error_msg, "Error line 110: probe 7", 23) == 0,
+    check(strncmp(g_error_msg, "Error <native>:110: probe 7", 23) == 0,
           "#1434 a raise after an eval whose task ran in the scheduler reports the stamp (110)");
 
     /* #1417: the second iterator read follows a body on a different line.

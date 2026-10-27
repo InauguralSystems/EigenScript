@@ -134,7 +134,7 @@ print of (add5 of 10)    # 15
 try:
     result is risky_operation of data
 catch e:
-    print of f"Error: {e}"
+    print of {"kind": e.kind, "message": e.message, "line": e.line}
 ```
 ```output
 7
@@ -153,7 +153,7 @@ Hello hello, x is 42
 positive
 Alice
 15
-Error: {"kind": "undefined_name", "message": "undefined variable 'risky_operation'", "line": 41}
+{"kind": "undefined_name", "message": "undefined variable 'risky_operation'", "line": 41}
 ```
 
 Comparisons, `not` and predicates return `true`/`false`, a `bool`. A bool is
@@ -288,7 +288,7 @@ answer `false` forever, **an observer predicate raises inside an
 `unobserved:` block** (#871):
 
 ```
-Error line 4: converged: the observer is off inside an 'unobserved:'
+Error observer.eigs:4: converged: the observer is off inside an 'unobserved:'
 block, so this predicate has no trajectory to classify — the block's
 depth is dynamic, so it also covers functions called from inside it
 ```
@@ -597,6 +597,8 @@ Full map: **[docs/README.md](docs/README.md)**. Highlights:
 - [docs/BUILTINS.md](docs/BUILTINS.md) — builtin functions; `eigenscript --api` prints the live index
 - [docs/STDLIB.md](docs/STDLIB.md) — standard library guide
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes
+  (runtime headers, caught errors, and every traceback frame identify the
+  compiled source as `file:line`)
 - [docs/TRACE.md](docs/TRACE.md) — execution trace, deterministic replay, temporal interrogatives
 - [docs/DEBUGGING.md](docs/DEBUGGING.md) — the debugging loop and the `--step` tape-stepper (time travel + trajectories)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — lexer → parser → bytecode VM → JIT internals

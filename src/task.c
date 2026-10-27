@@ -957,10 +957,18 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
                 if (m->saved_frames[i].try_count > 0) { catchable = 1; break; }
             g_error_kind = (int)EK_DEADLOCK;
             g_error_line = m->saved_current_line;
+            const char *error_file = "<native>";
+            if (m->saved_frame_count > 0) {
+                CallFrame *f = &m->saved_frames[m->saved_frame_count - 1];
+                if (f->chunk && f->chunk->src && f->chunk->src->file)
+                    error_file = f->chunk->src->file;
+            }
+            snprintf(g_error_file, sizeof(g_error_file), "%s", error_file);
             snprintf(g_error_raw, sizeof(g_error_raw),
                      "all tasks are blocked — deadlock");
             snprintf(g_error_msg, sizeof(g_error_msg),
-                     "Error line %d: all tasks are blocked — deadlock", g_error_line);
+                     "Error %s:%d: all tasks are blocked — deadlock",
+                     g_error_file, g_error_line);
             g_has_error = 1;
             eigs_clear_error_value();
             if (catchable) {

@@ -214,6 +214,28 @@ const int **eigs_ctype_toupper_loc(void) {
     return &g_ctype_upper_ptr;
 }
 
+/* ISO C's ctype functions accept EOF or an unsigned-char value.  Implement
+ * that portable interface directly rather than relying on glibc's private
+ * table macros; the tables above remain only for callers whose libc headers
+ * expand ctype operations to the glibc ABI. */
+int eigs_isalnum(int c) {
+    return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+           (c >= 'a' && c <= 'z');
+}
+
+int eigs_isxdigit(int c) {
+    return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') ||
+           (c >= 'a' && c <= 'f');
+}
+
+int eigs_tolower(int c) {
+    return (c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c;
+}
+
+int eigs_toupper(int c) {
+    return (c >= 'a' && c <= 'z') ? c - 'a' + 'A' : c;
+}
+
 /* ---- strtol / strtoul ---- */
 
 static int digit_val(char c) {
@@ -291,6 +313,10 @@ long eigs_strtol(const char *nptr, char **endptr, int base) {
         return -(long)acc;
     }
     return (long)acc;
+}
+
+int eigs_atoi(const char *nptr) {
+    return (int)eigs_strtol(nptr, NULL, 10);
 }
 
 /* ---- stable mergesort qsort ----
@@ -479,6 +505,11 @@ const char *strerror(int) __attribute__((alias("eigs_strerror")));
 const unsigned short **__ctype_b_loc(void) __attribute__((alias("eigs_ctype_b_loc")));
 const int **__ctype_tolower_loc(void) __attribute__((alias("eigs_ctype_tolower_loc")));
 const int **__ctype_toupper_loc(void) __attribute__((alias("eigs_ctype_toupper_loc")));
+int    isalnum(int) __attribute__((alias("eigs_isalnum")));
+int    isxdigit(int) __attribute__((alias("eigs_isxdigit")));
+int    tolower(int) __attribute__((alias("eigs_tolower")));
+int    toupper(int) __attribute__((alias("eigs_toupper")));
+int    atoi(const char *) __attribute__((alias("eigs_atoi")));
 long          strtol(const char *, char **, int) __attribute__((alias("eigs_strtol")));
 unsigned long strtoul(const char *, char **, int) __attribute__((alias("eigs_strtoul")));
 void qsort(void *, size_t, size_t, int (*)(const void *, const void *)) __attribute__((alias("eigs_qsort")));

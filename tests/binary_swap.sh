@@ -1,4 +1,8 @@
 # [99d] runs in a subshell so its restoration traps cannot replace suite traps.
+# Issue #1708 was environmental interference, not a silent #681 guard: before
+# #1986 the suite left the build lock free, so another make could re-point the
+# alias during this control.  The suite-wide lock now isolates this synchronous
+# mutation, the standard deterministic-test pattern.
 # Move the original directory entry aside: copying it would lose hard-link
 # identity, and recreating a symlink would lose the original symlink inode.
 eigs_binary_swap_selftest() (

@@ -333,7 +333,9 @@ except Exception as e:
 
 EigenScript — `throw of` raises, `catch name:` binds. A thrown value
 binds unchanged; a built-in runtime error binds a `{kind, message,
-line}` dict with `kind` from a closed vocabulary (no exception
+file, line}` dict with `kind` from a closed vocabulary. Like Python's
+`co_filename`, each compiled unit retains its source identity, so the header
+and every traceback frame identify `file:line` (no exception
 hierarchy — discriminate on the kind string):
 
 ```eigenscript

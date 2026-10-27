@@ -12,10 +12,10 @@ here are enforced by the suite (`run_all_tests.sh` EM1–EM30 and
 | Syntax error | `Syntax error line N: ...` | 1 | Tokenizer problem. Accumulates all errors, aborts before execution. |
 | Parse error | `Parse error line N: ...` | 1 | Parser problem. Accumulates all errors, aborts before execution. |
 | Compile error | `Compile error line N: ...` | 1 | Bytecode-generation problem — a construct that parses but cannot be compiled. Accumulates, aborts before execution (see below). |
-| Runtime error (uncaught) | `Error line N: ...` + stack trace | 1 | Type mismatch, undefined variable, index out of bounds, non-callable, uncaught `throw`. Prints to stderr and **halts** — no statement after the error runs. |
-| Runtime error (caught) | `{kind, message, line}` dict bound to the `catch` variable | — | Recoverable with `try`/`catch`; execution continues in the handler. `kind` is from the closed set below. |
+| Runtime error (uncaught) | `Error file:N: ...` + stack trace | 1 | Type mismatch, undefined variable, index out of bounds, non-callable, uncaught `throw`. Prints to stderr and **halts** — no statement after the error runs. |
+| Runtime error (caught) | `{kind, message, file, line}` dict bound to the `catch` variable | — | Recoverable with `try`/`catch`; execution continues in the handler. `kind` is from the closed set below. |
 | Warning | `Warning line N: ...` | 0 | Recoverable issue (division by zero yields `0`). Prints to stderr, continues execution. |
-| Assertion | `Error line N: ASSERT FAIL: ...` | 1 | `assert` failure — an ordinary runtime error with kind `assert` (catchable). |
+| Assertion | `Error file:N: ASSERT FAIL: ...` | 1 | `assert` failure — an ordinary runtime error with kind `assert` (catchable). |
 
 Parse errors prevent execution entirely — the program never runs if
 parsing fails. Warnings allow execution to continue; **uncaught runtime
@@ -57,17 +57,16 @@ the call stack — every frame between the failure and the top level,
 innermost first:
 
 ```
-Error line 6: index 99 out of range (list length 2)
+Error app.eigs:6: index 99 out of range (list length 2)
      6 | v is items[99]
        |           ^
-  at inner (line 6)
-  at middle (line 8)
-  at <module> (line 9)
+  at inner (lib/items.eigs:6)
+  at middle (app.eigs:8)
+  at <module> (app.eigs:9)
 ```
 
-The excerpt block is additive: the `Error line N: ...` message and the
-`  at fn (line N)` trace lines are byte-unchanged, so tools that match
-on them keep working. The caret is suppressed (message + trace only)
+The excerpt block is additive to the source-bearing header and frames. The
+caret is suppressed (message + trace only)
 when the failing position can't be attributed confidently — e.g. inside
 JIT-compiled loops or when the unit's source isn't available.
 
@@ -75,10 +74,14 @@ Caught errors print nothing; the handler decides.
 
 ## What `catch` binds
 
-- A **built-in runtime error** binds a `{kind, message, line}` dict
-  (#406): `kind` from the closed vocabulary below, `message` without
-  the `Error line N:` frame (`"cannot apply '-' to list and num"`),
-  `line` 1-based. Discriminate on `kind`, never on message text —
+- A **built-in runtime error** binds a `{kind, message, file, line}` dict
+  (#406): `kind` from the closed vocabulary below, `message` without a
+  location prefix (`"cannot apply '-' to list and num"`),
+  `file` equal to the compiled source identity, and `line` 1-based. File inputs
+  retain the loader path; eval, stdin, and unnamed embedding inputs use
+  `<eval>`, `<stdin>`, and `<embed>`; sandbox-synthesized errors use
+  `<sandbox>`, and the browser playground uses `<playground>`. The message remains byte-compatible with
+  earlier releases. Discriminate on `kind`, never on message text —
   messages are wording, kinds are contract.
 - A **thrown value** binds unchanged: `throw of {"kind": "validation"}`
   gives the catch variable that dict — match on fields instead of
@@ -110,7 +113,7 @@ below are the contract.)
 `throw` stamps kind `user` for host/embed introspection
 (`eigs_last_error_kind`), but a catch never sees it — the thrown value
 itself binds. `sandbox_run` reports failures with the same shape: its
-result dict gains `"error": {kind, message, line}` when `ok` is 0.
+result dict gains `"error": {kind, message, file, line}` when `ok` is 0.
 
 ## Exit Codes
 
@@ -158,10 +161,10 @@ y is x - 5
 print of "reached"
 
 $ eigenscript type_err.eigs
-Error line 2: cannot apply '-' to list and num
+Error type_err.eigs:2: cannot apply '-' to list and num
      2 | y is x - 5
        |        ^
-  at <module> (line 2)
+  at <module> (type_err.eigs:2)
 $ echo $?
 1
 ```
@@ -522,11 +525,11 @@ two) — ROADMAP's sanctioned alternative to a type system. Its model:
   `# lint: allow E003` works as usual.
 
 `E100` is the **category code** for an uncaught runtime error. It is
-deliberately *not* injected into the `Error line N: ...` text — the
+deliberately *not* injected into the `Error file:N: ...` text — the
 message half of that string is also the `message` field a `try`/`catch`
 binds (see "What `catch` binds"), and in-language error discrimination
 goes through the caught dict's `kind`, not through tag-matching text.
-Tools map the `Error line N:` prefix to `E100`; the specific failure is
+Tools map the runtime-error prefix to `E100`; the specific failure is
 in the message (see "Runtime Error Types").
 
 ## Editor diagnostics

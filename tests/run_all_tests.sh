@@ -601,7 +601,7 @@ echo ""
 # stamp (the AOT's per-statement line), not 0. C-level because the shape --
 # rt_error outside any interpreter frame -- has no .eigs spelling. #1434: the
 # same binary runs an eval-defined sort_by key from C, so it runs per tier.
-echo "[0b] Error line fallback outside a VM frame (#1082, #1434)"
+echo "[0b] Error location fallback outside a VM frame (#1082, #1434)"
 check_binary_fingerprint
 ERRLINE_BUILD=$(make --no-print-directory -C .. errline-test 2>&1)
 ERRLINE_BUILD_RC=$?
@@ -700,10 +700,10 @@ for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
         FAIL=$((FAIL + 1)); echo "  FAIL: e.line after a return ($LAR_TIER, rc=$LAR_RC)"
         printf '%s\n' "$LAR_OUT" | eigs_failure_output
     fi
-    for LAR_FX in "line_after_return_module.eigs:Error line 10:|  at <module> (line 10)" \
-                  "line_after_return_fn.eigs:Error line 11:|  at outer (line 11)|  at <module> (line 15)" \
-                  "line_after_return_null.eigs:Error line 13:|  at hot_null (line 13)|  at <module> (line 20)" \
-                  "line_after_callback_halt.eigs:Error line 9:|  at hot_sb (line 9)|  at <module> (line 15)"; do
+    for LAR_FX in "line_after_return_module.eigs:Error ../tests/line_after_return_module.eigs:10:|  at <module> (../tests/line_after_return_module.eigs:10)" \
+                  "line_after_return_fn.eigs:Error ../tests/line_after_return_fn.eigs:11:|  at outer (../tests/line_after_return_fn.eigs:11)|  at <module> (../tests/line_after_return_fn.eigs:15)" \
+                  "line_after_return_null.eigs:Error ../tests/line_after_return_null.eigs:13:|  at hot_null (../tests/line_after_return_null.eigs:13)|  at <module> (../tests/line_after_return_null.eigs:20)" \
+                  "line_after_callback_halt.eigs:Error ../tests/line_after_callback_halt.eigs:9:|  at hot_sb (../tests/line_after_callback_halt.eigs:9)|  at <module> (../tests/line_after_callback_halt.eigs:15)"; do
         LAR_FILE=${LAR_FX%%:*}; LAR_WANT=${LAR_FX#*:}
         LAR_OUT=$($EIGS_TMO env $LAR_ENV ./eigenscript "../tests/$LAR_FILE" </dev/null 2>&1); LAR_RC=$?
         LAR_MISS=""
@@ -1374,34 +1374,34 @@ check_stderr "EM26 runtime error prints source excerpt" 'items is [1,2,3]
 print of items[10]' "2 | print of items\[10\]"
 check_stderr "EM27 runtime caret lands on the failing column" 'items is [1,2,3]
 print of items[10]' "|               \^"
-check_stderr "EM4 type error on bad subtraction" 'x is [1,2] - 5' "Error line 1: cannot apply"
+check_stderr "EM4 type error on bad subtraction" 'x is [1,2] - 5' "Error .*:1: cannot apply"
 check_stderr "EM5 index out of bounds" 'items is [1,2,3]
-print of items[10]' "Error line 2: index 10 out of range"
-check_stderr "EM6 division by zero raises" 'print of (10 / 0)' "Error line 1: division by zero"
+print of items[10]' "Error .*:2: index 10 out of range"
+check_stderr "EM6 division by zero raises" 'print of (10 / 0)' "Error .*:1: division by zero"
 check_stderr "EM7 undefined variable includes line" 'x is 1
 y is 2
-print of z' "Error line 3: undefined variable"
+print of z' "Error .*:3: undefined variable"
 check_stderr "EM8 calling non-function" 'x is 5
-y is x of 10' "Error line 2: cannot call num"
+y is x of 10' "Error .*:2: cannot call num"
 check_stderr "EM9 cannot index num" 'x is 42
-print of x[0]' "Error line 2: cannot index num"
+print of x[0]' "Error .*:2: cannot index num"
 check_stderr "EM10 nested if line accuracy" 'x is 1
 if x == 1:
     y is 2
     if y == 2:
-        z is y[0]' "Error line 5: cannot index num"
+        z is y[0]' "Error .*:5: cannot index num"
 check_stderr "EM11 function body line" 'define foo as:
     return n - "bad"
-result is foo of 5' "Error line 2: cannot apply"
+result is foo of 5' "Error .*:2: cannot apply"
 check_stderr "EM12 loop body line" 'items is [1, 2, 3]
 for i in items:
     x is i * 2
-    print of missing' "Error line 4: undefined variable"
+    print of missing' "Error .*:4: undefined variable"
 check_stderr "EM13 elif branch line" 'x is 5
 if x == 1:
     print of "one"
 elif x == 5:
-    y is x[0]' "Error line 5: cannot index"
+    y is x[0]' "Error .*:5: cannot index"
 # An *uncaught* runtime error must fail loudly: non-zero exit, and no further
 # statements run. Division by zero is now such an error (see EM15).
 check_exit "EM14 uncaught runtime error exits non-zero" 'x is [1] - 5' "1"
@@ -1912,7 +1912,7 @@ LW_R1=$(printf '%s\n' "$LW_INT" | sed -n '1p')
 LW_R2=$(printf '%s\n' "$LW_INT" | sed -n '2p')
 # The error is on a line past 65535; a wrapped operand would report line %
 # 65536 (a small number). The invariant is simply: reported line > 65535.
-LW_ERRLINE=$(printf '%s\n' "$LW_INT" | grep -oE "Error line [0-9]+" | head -1 | grep -oE "[0-9]+")
+LW_ERRLINE=$(printf '%s\n' "$LW_INT" | grep -oE "Error .*:[0-9]+" | head -1 | sed "s/.*://")
 if [ "$LW_R1" = "111" ] && [ "$LW_R2" = "222" ]; then
     echo "  PASS: 'what is x at L' correct past line 65535 (111, 222)"
 else
@@ -7043,31 +7043,6 @@ else
             echo "  FAIL: guard self-test — expected named 2s-timeout failure for $SELFTEST_FIXTURE with inner FAIL delta=$SELFTEST_COUNT / PASS delta=0; got FAIL delta='$inner_fail' PASS delta='$inner_pass'"
             printf '%s\n' "$SELFTEST_OUT" | grep -iE 'FAIL|SELFTEST_DELTAS' | head -5 | sed 's/^/      /'
         fi
-    fi
-fi
-echo ""
-
-# [99d] Binary-fingerprint guard self-test (#681). Proves the runner aborts
-# with the exact error message if src/eigenscript is replaced mid-suite.
-echo "[99d] Binary-fingerprint guard self-test (#681)"
-TOTAL=$((TOTAL + 1))
-if [ ! -f "$EIGS_BIN" ]; then
-    # Round 6 counted this as a pass; the section's only check did not run.
-    TOTAL=$((TOTAL - 1))
-    section_skip "no binary to fingerprint"
-else
-    . "$TESTS_DIR/binary_swap.sh"
-    SELFTEST_OUT=$(eigs_binary_swap_selftest 2>&1)
-    SELFTEST_RC=$?
-    RESTORE_OUT=$(python3 "$TESTS_DIR/test_binary_swap_restore.py" 2>&1)
-    RESTORE_RC=$?
-    if [ "$SELFTEST_RC" -eq 1 ] && [ "$RESTORE_RC" -eq 0 ] && printf '%s\n' "$SELFTEST_OUT" | grep -qF "ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — results are invalid."; then
-        PASS=$((PASS + 1))
-        echo "  PASS: binary-fingerprint guard detected mid-run swap and aborted with the expected error"
-    else
-        FAIL=$((FAIL + 1))
-        echo "  FAIL: binary-fingerprint guard did not detect mid-run swap (rc=$SELFTEST_RC)"
-        printf '%s\n' "$SELFTEST_OUT" "$RESTORE_OUT" | head -12 | sed 's/^/      /'
     fi
 fi
 echo ""

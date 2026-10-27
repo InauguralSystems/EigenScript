@@ -872,7 +872,8 @@ static void send_diagnostics(Document *doc) {
          * the host's temporal arming state so merely editing a document that
          * mentions state_at/prev cannot affect later in-process execution. */
         trace_arm_suppress_begin();
-        EigsChunk *chunk = compile_ast(doc->ast, cenv, doc->text);
+        EigsChunk *chunk = compile_ast(doc->ast, cenv, doc->text,
+                                       doc->uri[0] ? doc->uri : "<embed>");
         trace_arm_suppress_end();
         g_obs_gate_scan_enabled = obs_saved;
             g_compile_module_slots = 0;
