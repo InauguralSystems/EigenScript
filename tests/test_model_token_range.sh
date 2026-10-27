@@ -48,7 +48,8 @@ for tier in interp default osr; do
     echo "  PASS: model token range ($tier)"
 done
 
-# A caught refusal is outside the tape bracket. It must not consume the next
+# A caught, model-dependent refusal is itself a typed tape outcome. It must
+# replay without consulting the model and must not consume the following
 # successful generation record (or the random record after that).
 cat > "$WORK/replay.eigs" <<EIGS
 eigen_model_load of "$WORK/model.json"
@@ -66,16 +67,24 @@ EIGS_JIT_OFF=1 EIGS_TRACE="$WORK/replay.tape" "$EIGS" "$WORK/replay.eigs" \
     > "$WORK/record.out" 2> "$WORK/record.err"
 record_rc=$?
 EIGS_JIT_OFF=1 EIGS_REPLAY="$WORK/replay.tape" EIGS_REPLAY_STRICT=1 \
-    "$EIGS" "$WORK/replay.eigs" > "$WORK/replay.out" 2> "$WORK/replay.err"
-replay_rc=$?
+    "$EIGS" "$WORK/replay.eigs" > "$WORK/replay-same.out" 2> "$WORK/replay-same.err"
+same_rc=$?
+mv "$WORK/model.json" "$WORK/model.missing"
+EIGS_JIT_OFF=1 EIGS_REPLAY="$WORK/replay.tape" EIGS_REPLAY_STRICT=1 \
+    "$EIGS" "$WORK/replay.eigs" > "$WORK/replay-missing.out" 2> "$WORK/replay-missing.err"
+missing_rc=$?
 sed -n '/^caught index_range$/,$p' "$WORK/record.out" > "$WORK/record.calls"
-sed -n '/^caught index_range$/,$p' "$WORK/replay.out" > "$WORK/replay.calls"
-if [ "$record_rc" -ne 0 ] || [ "$replay_rc" -ne 0 ] || \
-   ! cmp -s "$WORK/record.calls" "$WORK/replay.calls" || \
-   ! grep -q '^MODEL TOKEN REPLAY ALL PASS$' "$WORK/replay.out"; then
-    echo "FAIL model token strict replay (record=$record_rc replay=$replay_rc)"
-    diff -u "$WORK/record.calls" "$WORK/replay.calls" || true
-    cat "$WORK/record.err" "$WORK/replay.err"
+sed -n '/^caught index_range$/,$p' "$WORK/replay-same.out" > "$WORK/replay-same.calls"
+sed -n '/^caught index_range$/,$p' "$WORK/replay-missing.out" > "$WORK/replay-missing.calls"
+if [ "$record_rc" -ne 0 ] || [ "$same_rc" -ne 0 ] || [ "$missing_rc" -ne 0 ] || \
+   ! cmp -s "$WORK/record.calls" "$WORK/replay-same.calls" || \
+   ! cmp -s "$WORK/record.calls" "$WORK/replay-missing.calls" || \
+   ! grep -q '^MODEL TOKEN REPLAY ALL PASS$' "$WORK/replay-missing.out"; then
+    echo "FAIL model token strict replay (record=$record_rc same=$same_rc missing=$missing_rc)"
+    diff -u "$WORK/record.calls" "$WORK/replay-same.calls" || true
+    diff -u "$WORK/record.calls" "$WORK/replay-missing.calls" || true
+    cat "$WORK/record.err" "$WORK/replay-same.err" "$WORK/replay-missing.err"
     exit 1
 fi
-echo "  PASS: model token refusal preserves strict replay tape"
+echo "  PASS: model token refusal preserves strict replay tape (same and missing model)"
+echo "MODEL TOKEN RANGE: 4 passed, 0 failed"

@@ -530,10 +530,12 @@ Value* builtin_eigen_generate(Value *arg) {
      * #960: sampling makes this a nondeterministic return, so it rides the
      * tape like random/random_int. ONE record per call carries the emitted
      * token list -- the draws are an implementation detail of the decoding
-     * policy. #1405 adds a string outcome for context refusal; every normal
-     * return is still a list, including soft argument errors. Replay takes
-     * either outcome without running inference. Refusal messages carry the
-     * recorded lengths. Argument refusals precede the tape bracket. */
+     * policy. Refusals are dictionaries containing `kind` and `message`;
+     * every normal return is still a list, including soft argument errors.
+     * Replay also accepts the old string refusal record as a `value` error.
+     * It takes either outcome before consulting the model, which may be absent
+     * or replaced. Refusal messages carry recorded lengths, not live config.
+     * Deterministic argument validation precedes the tape bracket. */
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         fprintf(stderr, "eigen_generate: requires [prompt_ids, temperature, max_tokens]\n");
         TRACE_NONDET_RECORD("eigen_generate", make_list(0));
@@ -559,26 +561,11 @@ Value* builtin_eigen_generate(Value *arg) {
     if (g_has_error) return make_null();
     max_tokens = (int)mt;
 
-    if (!g_model.loaded) TRACE_NONDET_RECORD("eigen_generate", make_list(0));
-
     /* Validate prompt and token count */
     int prompt_len = prompt_list->data.list.count;
     if (prompt_len <= 0) {
         fprintf(stderr, "eigen_generate: prompt must be non-empty\n");
         TRACE_NONDET_RECORD("eigen_generate", make_list(0));
-    }
-    if (prompt_len > g_model.config.max_seq_len) {
-        char message[128];
-        snprintf(message, sizeof(message),
-            "eigen_generate: prompt length %d exceeds model max_seq_len %d",
-            prompt_len, g_model.config.max_seq_len);
-        if (__builtin_expect(g_trace_enabled, 0)) {
-            Value *refusal = make_str(message);
-            trace_nondet_value("eigen_generate", refusal);
-            val_decref(refusal);
-        }
-        rt_error(EK_VALUE, 0, "%s", message);
-        return make_null();
     }
     #define EIGS_MAX_GENERATE_TOKENS 4096
     if (max_tokens <= 0 || max_tokens > EIGS_MAX_GENERATE_TOKENS) {
@@ -592,17 +579,9 @@ Value* builtin_eigen_generate(Value *arg) {
     int *prompt_ids = xcalloc(prompt_len, sizeof(int));
     for (int i = 0; i < prompt_len; i++) {
         prompt_ids[i] = (int)eigs_slot_num(list_slot(prompt_list, i), "eigen_generate");   /* #1637: a bool raises */
-        if (!g_has_error && (prompt_ids[i] < 0 || prompt_ids[i] >= g_model.config.vocab_size)) {
-            rt_error(EK_INDEX, 0,
-                "eigen_generate: token id %d at prompt index %d out of range [0,%d)",
-                prompt_ids[i], i, g_model.config.vocab_size);
-            break;
-        }
     }
     if (g_has_error) { free(prompt_ids); return make_null(); }
 
-    /* Invalid tokens produce no record while tracing. Validate first so a
-     * caught refusal cannot consume the following call's record on replay. */
     if (__builtin_expect(g_replay_enabled, 0)) {
         Value *recorded;
         if (trace_replay_refuse_off_owner("eigen_generate")) {
@@ -616,8 +595,53 @@ Value* builtin_eigen_generate(Value *arg) {
                 val_decref(recorded);
                 return make_null();
             }
+            if (recorded->type == VAL_DICT) {
+                EIGS_VIEW(kind_view); EIGS_VIEW(message_view);
+                Value *kind = dict_get_view(recorded, "kind", &kind_view);
+                Value *message = dict_get_view(recorded, "message", &message_view);
+                ErrKind error_kind;
+                if (kind && kind->type == VAL_STR && message && message->type == VAL_STR &&
+                    err_kind_from_name(kind->data.str, &error_kind)) {
+                    rt_error(error_kind, 0, "%s", message->data.str);
+                    val_decref(recorded);
+                    return make_null();
+                }
+            }
             return recorded;
         }
+    }
+
+    if (!g_model.loaded) { free(prompt_ids); TRACE_NONDET_RECORD("eigen_generate", make_list(0)); }
+
+    ErrKind refusal_kind = EK_VALUE;
+    char refusal_message[160];
+    refusal_message[0] = '\0';
+    if (prompt_len > g_model.config.max_seq_len) {
+        snprintf(refusal_message, sizeof(refusal_message),
+            "eigen_generate: prompt length %d exceeds model max_seq_len %d",
+            prompt_len, g_model.config.max_seq_len);
+    } else {
+        for (int i = 0; i < prompt_len; i++) {
+            if (prompt_ids[i] < 0 || prompt_ids[i] >= g_model.config.vocab_size) {
+                refusal_kind = EK_INDEX;
+                snprintf(refusal_message, sizeof(refusal_message),
+                    "eigen_generate: token id %d at prompt index %d out of range [0,%d)",
+                    prompt_ids[i], i, g_model.config.vocab_size);
+                break;
+            }
+        }
+    }
+    if (refusal_message[0]) {
+        if (__builtin_expect(g_trace_enabled, 0)) {
+            Value *refusal = make_dict(2);
+            dict_set_owned(refusal, "kind", make_str(err_kind_name(refusal_kind)));
+            dict_set_owned(refusal, "message", make_str(refusal_message));
+            trace_nondet_value("eigen_generate", refusal);
+            val_decref(refusal);
+        }
+        free(prompt_ids);
+        rt_error(refusal_kind, 0, "%s", refusal_message);
+        return make_null();
     }
 
     int out_len = 0;

@@ -1931,6 +1931,7 @@ static void replay_malformed_value(const char *value) {
 #define TK_BOOL_ TK(VAL_BOOL)
 #define TK_NULL_ TK(VAL_NULL)
 #define TK_LIST_ TK(VAL_LIST)
+#define TK_DICT_ TK(VAL_DICT)
 #define TK_BUF_  TK(VAL_BUFFER)
 static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"args",                 TK_LIST_},
@@ -1940,7 +1941,7 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"audio_stream_queued",  TK_NUM_},
     {"clock_unix",           TK_NUM_},
     {"eigen_checkpoint_info", TK_STR_},
-    {"eigen_generate",       TK_LIST_ | TK_STR_},   /* str: the recorded over-length refusal */
+    {"eigen_generate",       TK_LIST_ | TK_STR_ | TK_DICT_}, /* dict: typed refusal; str: legacy refusal */
     {"eigen_model_load",     TK_STR_},
     {"env_get",              TK_STR_},
     {"exe_path",             TK_STR_},

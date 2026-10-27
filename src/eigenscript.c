@@ -137,6 +137,17 @@ const char* err_kind_name(ErrKind k) {
     return "internal";
 }
 
+int err_kind_from_name(const char *name, ErrKind *out) {
+    if (!name) return 0;
+    for (int k = EK_INTERNAL; k <= EK_USER; k++) {
+        if (strcmp(name, err_kind_name((ErrKind)k)) == 0) {
+            if (out) *out = (ErrKind)k;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void rt_error(ErrKind kind, int line, const char *fmt, ...) {
     char tmp[3900];
     va_list args;
