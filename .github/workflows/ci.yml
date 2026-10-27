@@ -140,7 +140,14 @@ jobs:
         run: |
           python3 tools/spec_lean_classify.py
           python3 tools/spec_lean_corpus.py
-          python3 tools/spec_lean_parity.py
+      # The parity comparison runs the C VM against eigs-ref, so this job
+      # builds the C VM itself (the standard ./build.sh, as the Linux legs do).
+      - name: Build the C VM for the parity comparison
+        if: needs.scope.outputs.spec == 'true'
+        run: ./build.sh
+      - name: Compare eigs-ref with the C VM on the in-subset corpus
+        if: needs.scope.outputs.spec == 'true'
+        run: python3 tools/spec_lean_parity.py
 
   # Build the shared dev/CI image (.devcontainer/Dockerfile) and push it to
   # GHCR tagged to this commit. Every Linux leg below runs *inside* this image
