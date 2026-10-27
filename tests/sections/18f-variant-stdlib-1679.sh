@@ -1,8 +1,8 @@
-# [18e] The actual variant path must find the source-tree stdlib. Running this
+# [18f] The actual variant path must find the source-tree stdlib. Running this
 # from a directory outside the checkout excludes containing-file and project-
 # root hits, and using build/<active-variant>/eigenscript (not src/eigenscript)
 # exercises the executable path that exposed #1679.
-echo "[18e] Variant binary stdlib resolution (#1679)"
+echo "[18f] Variant binary stdlib resolution (#1679)"
 VARIANT_STDLIB_DIR=$(mktemp -d "${TMPDIR:-/tmp}/eigs_variant_stdlib.XXXXXX")
 cp "$TESTS_DIR/test_variant_stdlib.eigs" "$VARIANT_STDLIB_DIR/probe.eigs"
 if [ -n "${EIGS_ACTIVE_VARIANT:-}" ]; then
