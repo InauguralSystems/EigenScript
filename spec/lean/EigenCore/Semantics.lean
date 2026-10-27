@@ -79,7 +79,8 @@ def evalExpr (fuel : Nat) (e : Expr) : EvalM Value := match fuel with
     | .call (.variable "print") [argument] => do
         let value ← evalExpr f argument
         modify fun w => {w with stdout:=w.stdout ++ value.print ++ "\n"}
-        pure value
+        -- C's builtin_print returns null (src/builtins.c), not its argument.
+        pure .null
     | .call _ _ => throw (.unsupported "function call")
 
 def exec (fuel : Nat) (ss : List Stmt) : EvalM (Option Value) := match fuel with
