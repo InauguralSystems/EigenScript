@@ -201,11 +201,6 @@ def source_and_products():
     if not tracked:
         red('git ls-files returned no source paths')
     top = {p.split('/')[0] for p in tracked if '/' in p}
-    # A top-level directory containing markdown only is documentation output,
-    # not a source population whose paths can be claimed by runnable docs.
-    markdown_only = {name for name in top if all(
-        Path(p).suffix == '.md' for p in tracked if p.startswith(name + '/'))}
-    top -= markdown_only
     for name in sorted(top - set(SEGMENTS)):
         red(f'top-level source directory {name} is outside PATHS scan')
     # GNU Make versions may warn while still producing a usable database.
