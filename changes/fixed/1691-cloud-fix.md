@@ -1,1 +1,0 @@
-- Remove proc_read_buf if no fd sources found (#1691).
