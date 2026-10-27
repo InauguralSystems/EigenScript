@@ -362,6 +362,15 @@ typedef struct ObserverSlot {
                                  * number to string falls back to the entropy
                                  * channel instead of answering from a stale
                                  * numeric trajectory. */
+    /* #1992 equality route for non-numeric convergence predicates. The
+     * retained value is the preceding assignment snapshot; eq_window records
+     * whether each successive pair compared equal with the language's `==`.
+     * Entropy remains recorded above for report/trajectory diagnostics. */
+    Value   *eq_last;
+    const Value *eq_identity_last; /* non-owning identity token for fn/builtin */
+    uint8_t *eq_window;
+    uint8_t  eq_window_head, eq_window_count, eq_cap;
+    uint8_t  eq_seen;             /* non-numeric route active, even if refused */
 } ObserverSlot;
 
 struct Env {
@@ -1887,6 +1896,17 @@ void free_value(Value *v);
  * num_guard itself for a source nobody enumerated. Out of line so the NaN
  * branch stays one call on a path a finite program never takes. */
 void eigs_strict_nan_raise(const char *who);
+
+/* Side-effect-free VALUE mapping of num_guard, for readers such as observer
+ * equality which must see language numbers without changing interpreter
+ * state or raising in strict mode.  Keep its branches in sync with
+ * num_guard; tests/test_num_guard_value.c pins their bit-level results. */
+static inline double num_guard_value(double x) {
+    if (x != x) return 0.0;
+    if (x > EIGS_NUM_MAX) return EIGS_NUM_MAX;
+    if (x < -EIGS_NUM_MAX) return -EIGS_NUM_MAX;
+    return x;
+}
 
 static inline double num_guard(double x) {
     /* Fast path unchanged: the flag writes live only on the clamp branches,

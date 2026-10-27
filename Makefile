@@ -244,6 +244,17 @@ build/$(SLOT_TEST_VARIANT)/test_container_slots: tests/test_container_slots.c $(
 container-slot-test: build/$(SLOT_TEST_VARIANT)/test_container_slots
 	@echo "Container slot API test built: $<"
 
+# #1992: side-effect-free observer normalization must stay bit-identical to
+# num_guard's non-strict VALUE mapping.  Link the selected suite variant so
+# the test exercises the real thread-local flags and strict-mode state.
+NUM_GUARD_VALUE_VARIANT ?= release
+NUM_GUARD_VALUE_OBJ := $(filter-out build/$(NUM_GUARD_VALUE_VARIANT)/main.o,$(OBJ_$(NUM_GUARD_VALUE_VARIANT)))
+build/$(NUM_GUARD_VALUE_VARIANT)/test_num_guard_value: tests/test_num_guard_value.c $(NUM_GUARD_VALUE_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(NUM_GUARD_VALUE_VARIANT)) -I$(SRC_DIR) -o $@ $< $(NUM_GUARD_VALUE_OBJ) $(LIBS_$(NUM_GUARD_VALUE_VARIANT))
+.PHONY: num-guard-value-test
+num-guard-value-test: build/$(NUM_GUARD_VALUE_VARIANT)/test_num_guard_value
+	@echo "num_guard_value mapping test built: $<"
+
 # Focused lifetime regression for sandbox descriptor interns (#964). Link the
 # public embedding/runtime surface without CLI-only translation units so the
 # C test can inspect the internal thread-local intern accounting directly.

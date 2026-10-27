@@ -529,6 +529,181 @@ static inline size_t obs_v_count(const ObserverSlot *s) {
     size_t n = (size_t)obs_win(s);
     return s->v_window_count < n ? s->v_window_count : n;
 }
+static inline size_t obs_eq_count(const ObserverSlot *s) {
+    size_t n = (size_t)obs_win(s);
+    return s->eq_window_count < n ? s->eq_window_count : n;
+}
+
+static void observer_slot_eq_ensure(ObserverSlot *s, int n) {
+    if (s->eq_window && s->eq_cap >= n) return;
+    uint8_t *nw = xcalloc((size_t)n, sizeof(*nw));
+    int cnt = s->eq_window ? s->eq_window_count : 0;
+    if (cnt > n) cnt = n;
+    for (int i = cnt - 1; i >= 0; i--) {
+        int old = (int)s->eq_window_head - cnt + i;
+        while (old < 0) old += s->eq_cap;
+        nw[i] = s->eq_window[old];
+    }
+    free(s->eq_window);
+    s->eq_window = nw;
+    s->eq_cap = (uint8_t)n;
+    s->eq_window_count = (uint8_t)cnt;
+    s->eq_window_head = (uint8_t)(cnt % n);
+}
+
+#define OBSERVER_EQ_SNAPSHOT_MAX_UNITS 4096
+
+static int observer_eq_charge(size_t *units, size_t add) {
+    if (add > OBSERVER_EQ_SNAPSHOT_MAX_UNITS - *units) return 0;
+    *units += add;
+    return 1;
+}
+
+/* Bound the extra work equality observation adds to an assignment.  This is
+ * deliberately a read-only, short-circuiting walk: assignment is already a
+ * writer, but shared values may concurrently be read, and observer probing
+ * must not hide normalization or caching writes in this traversal. */
+static int observer_eq_within_budget(Value *v, size_t *units, int depth) {
+    if (!v) return 1;
+    if (!observer_eq_charge(units, 1)) return 0;
+    /* The general-purpose clone shares containers beyond its depth bound.
+     * Sharing here would turn a snapshot back into an alias, so refuse it. */
+    if (depth > 64) return 0;
+    /* A closure is an owning edge into its environment.  ObserverSlot is not
+     * a GC edge, so it must never retain one (including inside a container). */
+    if (v->type == VAL_FN || v->type == VAL_BUILTIN) return 0;
+    if (v->type == VAL_LIST) {
+        for (int i = 0; i < v->data.list.count; i++) {
+            EIGS_VIEW(child);
+            if (!observer_eq_within_budget(list_get_view(v, i, &child), units, depth + 1))
+                return 0;
+        }
+    } else if (v->type == VAL_DICT) {
+        DICT_FOR_EACH(v, i) {
+            if (!observer_eq_charge(units, strlen(v->data.dict.keys[i]))) return 0;
+            EIGS_VIEW(child);
+            if (!observer_eq_within_budget(dict_value_get_view(v, i, &child), units, depth + 1))
+                return 0;
+        }
+    } else if (v->type == VAL_STR) {
+        if (!observer_eq_charge(units, strlen(v->data.str))) return 0;
+    } else if (v->type == VAL_BUFFER) {
+        if (!observer_eq_charge(units, (size_t)v->data.buffer.count)) return 0;
+    } else if (v->type == VAL_TEXT_BUILDER) {
+        if (!observer_eq_charge(units, v->data.text_builder.len)) return 0;
+    }
+    return 1;
+}
+
+/* Equality used only by observer bookkeeping.  Unlike language equality it
+ * cannot raise (notably num-vs-bool), set g_has_error, normalize buffers, or
+ * synchronize module namespaces.  Observer snapshots are ordinary detached
+ * values, and unsupported/deep values are refused before reaching here. */
+static int values_equal_for_observation(Value *a, Value *b, int depth) {
+    if (a == b) return 1;
+    if (!a || !b || a->type != b->type || depth > 64) return 0;
+    switch (a->type) {
+        case VAL_NUM: return VAL_NUM_RAW(a) == VAL_NUM_RAW(b);
+        case VAL_STR: return strcmp(a->data.str, b->data.str) == 0;
+        case VAL_NULL: return 1;
+        case VAL_BOOL: return a->data.boolean == b->data.boolean;
+        case VAL_LIST:
+            if (a->data.list.count != b->data.list.count) return 0;
+            for (int i = 0; i < a->data.list.count; i++) {
+                EIGS_VIEW(av); EIGS_VIEW(bv);
+                if (!values_equal_for_observation(list_get_view(a, i, &av),
+                        list_get_view(b, i, &bv), depth + 1)) return 0;
+            }
+            return 1;
+        case VAL_DICT:
+            if (a->data.dict.count != b->data.dict.count) return 0;
+            DICT_FOR_EACH(a, i) {
+                EIGS_VIEW(av); EIGS_VIEW(bv);
+                int j = -1;
+                /* Do not call a lookup path which may synchronize or rebuild
+                 * a namespace/hash: observation is deliberately side-effect
+                 * free, and snapshots are capped so this bounded scan is OK. */
+                DICT_FOR_EACH(b, k)
+                    if (strcmp(a->data.dict.keys[i], b->data.dict.keys[k]) == 0) {
+                        j = k;
+                        break;
+                    }
+                if (j < 0 || !values_equal_for_observation(
+                        dict_value_get_view(a, i, &av),
+                        dict_value_get_view(b, j, &bv), depth + 1)) return 0;
+            }
+            return 1;
+        case VAL_BUFFER:
+            if (a->data.buffer.count != b->data.buffer.count) return 0;
+            for (int i = 0; i < a->data.buffer.count; i++) {
+                double av = num_guard_value(a->data.buffer.data[i]);
+                double bv = num_guard_value(b->data.buffer.data[i]);
+                if (av != bv) return 0;
+            }
+            return 1;
+        case VAL_TEXT_BUILDER:
+            return a->data.text_builder.len == b->data.text_builder.len &&
+                   memcmp(a->data.text_builder.data, b->data.text_builder.data,
+                          a->data.text_builder.len) == 0;
+        case VAL_FN:
+        case VAL_BUILTIN:
+            return 0; /* identity was handled above */
+    }
+    return 0;
+}
+
+static void observer_slot_record_eq_bit(ObserverSlot *s, int n, int equal) {
+    if (!s->eq_window || s->eq_cap < n) observer_slot_eq_ensure(s, n);
+    s->eq_window[s->eq_window_head] = (uint8_t)equal;
+    if (++s->eq_window_head >= s->eq_cap) s->eq_window_head = 0;
+    if (s->eq_window_count < s->eq_cap) s->eq_window_count++;
+}
+
+static void observer_slot_record_equality(ObserverSlot *s, Value *v) {
+    int n = obs_win(s);
+    s->eq_seen = 1;
+    if (v && (v->type == VAL_FN || v->type == VAL_BUILTIN)) {
+        if (s->eq_last || s->eq_identity_last)
+            observer_slot_record_eq_bit(s, n, !s->eq_last && s->eq_identity_last == v);
+        val_decref(s->eq_last);
+        s->eq_last = NULL;
+        s->eq_identity_last = v; /* compare the address, but do not own it */
+        return;
+    }
+    size_t units = 0;
+    if (!observer_eq_within_budget(v, &units, 0)) {
+        /* Refusal to judge: keep the predicate false until a later run of a
+         * full window of bounded values, rather than silently falling back to
+         * entropy or doing value-size-proportional observer work. */
+        val_decref(s->eq_last);
+        s->eq_last = NULL;
+        s->eq_identity_last = NULL;
+        s->eq_window_count = s->eq_window_head = 0;
+        return;
+    }
+    if (s->eq_last || s->eq_identity_last)
+        observer_slot_record_eq_bit(s, n, s->eq_last &&
+                                    values_equal_for_observation(s->eq_last, v, 0));
+    /* Keep a private content snapshot, not a reference to the binding's
+     * mutable container.  In particular, `append of [xs, k]; xs is xs` must
+     * compare the post-append value with the pre-append contents.  Reuse the
+     * existing bounded-depth copier rather than growing a second clone. */
+    Value *snapshot = val_clone_for_send(v);
+    val_decref(s->eq_last);
+    s->eq_last = snapshot;
+    s->eq_identity_last = NULL;
+}
+
+static int observer_slot_eq_settled(const ObserverSlot *s) {
+    size_t n = (size_t)observer_slot_window(s);
+    if (!s || obs_eq_count(s) < n) return 0;
+    for (size_t i = 0; i < n; i++) {
+        int at = (int)s->eq_window_head - 1 - (int)i;
+        while (at < 0) at += s->eq_cap;
+        if (!s->eq_window[at]) return 0;
+    }
+    return 1;
+}
 
 static double observer_slot_window_get(const ObserverSlot *s, size_t offset_back) {
     if (!s->dh_window || offset_back >= s->dh_window_count) return 0.0;
@@ -804,7 +979,10 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
          * a number is assigned again (the recorded windows are kept, matching
          * report_value's documented history semantics). */
         ObserverSlot *s = env_obs_slot(e, idx);
-        if (s) s->v_last = 0;
+        if (s) {
+            s->v_last = 0;
+            observer_slot_record_equality(s, newval);
+        }
     }
 }
 
@@ -816,7 +994,14 @@ void observer_slot_update_num(Env *e, int idx, double num) {
     if (!eigs_obs_gate_open()) return;           /* #915 — see observer_slot_update */
     observer_slot_update_e(e, idx, entropy_of_num(num));
     ObserverSlot *vs = env_obs_slot(e, idx);    /* #294 value-signal channel */
-    if (vs) observer_slot_record_value(vs, num);
+    if (vs) {
+        observer_slot_record_value(vs, num);
+        val_decref(vs->eq_last);
+        vs->eq_last = NULL;
+        vs->eq_identity_last = NULL;
+        vs->eq_window_count = vs->eq_window_head = 0;
+        vs->eq_seen = 0;
+    }
 }
 
 /* #1049: the ELIDED assignment — what an `unobserved:` block still records.
@@ -901,6 +1086,8 @@ void observer_slot_reset_bounded(Env *e, int max_retain_cap) {
         free(e->obs[i].dh_window);
         free(e->obs[i].v_window);   /* #294 value-signal window */
         free(e->obs[i].vr_window);  /* #422 raw-step window */
+        val_decref(e->obs[i].eq_last);
+        free(e->obs[i].eq_window);
     }
     /* observer_obs_grow initializes the entire allocated extent, not merely
      * the binding prefix. Clearing obs_cap slots is therefore both necessary
@@ -1229,14 +1416,19 @@ static int obs_route_num(const ObserverSlot *s) {
  * saturation gates that #889 put on the entropy bodies are gone — a live
  * numeric binding always routes to the value channel, where the family
  * handles saturation itself, so the entropy route can no longer see one. */
-int observer_slot_converged(const ObserverSlot *s) {
-    if (obs_route_num(s)) return obs_num_converged(s);
+static int obs_entropy_converged(const ObserverSlot *s) {
     if (!s) return 0;
     size_t N = (size_t)observer_slot_window(s);
     if (obs_dh_count(s) < N) return 0;
     for (size_t i = 0; i < N; i++)
         if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_zero) return 0;
     return (s->entropy < g_obs_h_low) ? 1 : 0;
+}
+
+int observer_slot_converged(const ObserverSlot *s) {
+    if (obs_route_num(s)) return obs_num_converged(s);
+    if (s && s->eq_seen) return observer_slot_eq_settled(s);
+    return obs_entropy_converged(s);
 }
 
 int observer_slot_equilibrium(const ObserverSlot *s) {
@@ -1298,8 +1490,7 @@ int observer_slot_oscillating(const ObserverSlot *s) {
     return (flips >= FLIPS) ? 1 : 0;
 }
 
-int observer_slot_stable(const ObserverSlot *s) {
-    if (obs_route_num(s)) return obs_num_stable(s);
+static int obs_entropy_stable(const ObserverSlot *s) {
     size_t cnt = s ? obs_dh_count(s) : 0;
     if (cnt < (size_t)observer_slot_window(s)) return 0;
     if (s->entropy < g_obs_h_low) return 0;
@@ -1311,6 +1502,12 @@ int observer_slot_stable(const ObserverSlot *s) {
         if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) return 0;
     }
     return 1;
+}
+
+int observer_slot_stable(const ObserverSlot *s) {
+    if (obs_route_num(s)) return obs_num_stable(s);
+    if (s && s->eq_seen) return observer_slot_eq_settled(s);
+    return obs_entropy_stable(s);
 }
 
 /* #871: the predicate vocabulary, in kind order. The parser derives a kind as
@@ -1335,9 +1532,9 @@ const char *observer_slot_report_entropy(const ObserverSlot *s) {
     if (observer_slot_oscillating(s)) return "oscillating";
     if (observer_slot_diverging(s))   return "diverging";
     if (observer_slot_improving(s))   return "improving";
-    if (observer_slot_converged(s))   return "converged";
+    if (obs_entropy_converged(s))     return "converged";
     if (observer_slot_equilibrium(s)) return "equilibrium";
-    if (observer_slot_stable(s))      return "stable";
+    if (obs_entropy_stable(s))        return "stable";
     /* #735: the instantaneous fallback is for a PARTIAL window only. Ungated,
      * it let a full window whose six predicates are all false still be labelled
      * from the last dH alone — a low-entropy gray-band drift (every step under
@@ -1356,11 +1553,10 @@ const char *observer_slot_report_entropy(const ObserverSlot *s) {
     return "stable";
 }
 
-/* #861: `report` routes exactly as the predicates do — the value channel for
- * a binding whose latest observed assignment is numeric, entropy otherwise.
- * At a full window it agrees with the bare predicates by construction on
- * BOTH routes (each route's report tests that route's own family in the
- * canonical priority order). */
+/* #861: `report` uses the value channel for a binding whose latest observed
+ * assignment is numeric, entropy otherwise. #1992 deliberately narrows the
+ * latter statement for predicates: non-numeric converged/stable use equality,
+ * while report remains the canonical entropy classification surface. */
 const char *observer_slot_report(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_report(s);
     return observer_slot_report_entropy(s);

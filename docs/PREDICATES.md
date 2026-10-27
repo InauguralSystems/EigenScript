@@ -82,13 +82,26 @@ The predicate words and `report` are **routed**: a binding whose most
 recent observed assignment is **numeric** answers from the **value
 channel** — the classifier below, over relative steps
 `rel = Δv / max(|v|, |v_prev|, scale)` (#1045); every
-other binding (strings, containers) answers from the **entropy channel**,
-the windowed formulas in "The six predicates". `report_value of x` is the
+other binding (strings, containers) uses deep equality of successive values
+for **`converged` and `stable`**: both are true exactly when every successive
+pair in the full window is equal under the language's `==`. This makes order
+changes visible and lets an unchanged non-empty value converge. Its other
+four predicates, and `report`, answer from the **entropy channel**, the
+windowed formulas in "The six predicates". `report_value of x` is the
 value-channel classifier by name (identical to the routed words on a
 numeric binding — the two surfaces cannot disagree); `classify of
 [t, "entropy"]` reaches the entropy classifier by name. The entropy
 MEASUREMENT — `where`, `why`, `how`, trajectory snapshots, container
 folds, the tape — is unchanged everywhere.
+
+Each equality entry compares against a private content snapshot, not a
+reference that can be changed through an alias.  Snapshotting is bounded to
+4,096 content units per assignment (value nodes plus string/key bytes, buffer
+elements, and text-builder bytes).  A larger value is **not sampled**: both
+predicates refuse to judge (return false), reset the equality run, and require
+a new full window of bounded samples before either can become true.  Thus the
+observer's additional comparison work is bounded independently of container
+size; the pre-existing entropy calculation remains size-dependent.
 
 Why: entropy is a function of `|x|` alone, so any clause on it is a
 clause on magnitude. The current CI corpus compares every predicate, not
@@ -97,9 +110,10 @@ just `converged`, against its labelled question. Run
 **DOCUMENTATION TABLE** for the per-predicate incumbent, `REFERENCE`,
 `REFERENCE_ENTROPY`, and constant-false scores. The command derives every
 cell from the corpus and the selected binary; no score is copied into this
-document. The entropy channel can certify a geometric runaway and can fail
-to certify a finite nonzero limit because magnitude is a lossy proxy for
-motion.
+document. The explicit entropy channel can certify a geometric runaway and
+can fail to certify a finite nonzero limit because magnitude is a lossy proxy
+for motion. Entropy and dH are still computed and exposed for non-numeric
+bindings; they simply do not decide those bindings' `converged` and `stable`.
 
 **The numeric definitions** (a fixed window of `N = 10` relative steps — see
 [The window](#the-window-1044) — `rel = Δv / max(|v|, |v_prev|, scale)`, raw
@@ -212,7 +226,8 @@ and everything built on it, so these remain **elision-sensitive**:
 | `observe of x` | its `dH`/`prev_dH` elements; the band is routed like `report` |
 | `trajectory of x` | the `dh` list, `dH`, `last_entropy` (`rel`/`raw`/`last_value` are complete) |
 | `classify of [t, "entropy"]` | the explicit entropy channel |
-| `report` / the six predicates on a **non-numeric** binding | the entropy route — its `dh_window` is missing the elided steps |
+| `report` / the four entropy predicates on a **non-numeric** binding | the entropy route — its `dh_window` is missing the elided steps |
+| `converged` / `stable` on a **non-numeric** binding | the equality window is missing the elided comparisons |
 | the loop stall backstop | reads the last observed slot's `dH` |
 | a **bare** predicate | reads the last **observed** binding — the alias is deliberately not moved by an elided assignment, so scratch work inside the block cannot hijack a `loop while not converged` |
 
@@ -381,7 +396,8 @@ single-step rule that the windowed version superseded.
 Since #861 the kinds dispatch by route: a numeric binding answers from
 the value-channel definitions in "Which channel answers" above; the
 windowed-entropy formulas in the next section serve non-numeric bindings
-and the explicit `classify of [t, "entropy"]` channel. `report_value of
+except for equality-routed `converged`/`stable`, and serve the explicit
+`classify of [t, "entropy"]` channel. `report_value of
 x` (#294) is the value-channel classifier by name — on a numeric binding
 it and the predicate words are one classifier and cannot disagree.
 
@@ -389,9 +405,10 @@ it and the predicate words are one classifier and cannot disagree.
 ## The six predicates — the ENTROPY route
 
 **These formulas classify the trajectory of `entropy(value)`. Since #861
-they answer only for non-numeric bindings (strings, containers) and the
-explicit entropy channel; numeric bindings use the value-channel
-definitions above.** The traces and design notes are kept because the
+they answer the four entropy-routed predicates and `report` for non-numeric
+bindings (strings, containers), plus all six predicates on the explicit
+entropy channel; numeric bindings use the value-channel definitions above,
+and routed non-numeric `converged`/`stable` use deep equality.** The traces and design notes are kept because the
 mechanics still run — on the signal they were always sound for.
 
 ### `converged` (kind 0)
