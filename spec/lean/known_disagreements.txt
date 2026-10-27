@@ -1,3 +1,2 @@
 # label<TAB>classification<TAB>reason
 # This ledger is exact: the parity driver rejects both new and stale rows.
-examples/errors/interrogative_discarded.eigs	model bug	partial model does not yet implement discarded interrogative runtime errors

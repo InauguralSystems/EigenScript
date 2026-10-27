@@ -14,7 +14,7 @@ private def mainClassify (path : String) : IO UInt32 := do
 
 private def mainRuntimeClassify (path : String) : IO UInt32 := do
   let source ← IO.FS.readFile path
-  match parseRuntime source with
+  match parse source with
   | .ok _ => IO.println "in-subset"; pure 0
   | .error why => IO.println s!"out: {why.construct} at line {why.line}"; pure 0
 
@@ -39,7 +39,7 @@ private def execute (o : Options) : IO UInt32 := do
     | some path => match tapeParse (← IO.FS.readFile path) with
       | .ok tape => pure (.replayStrict tape)
       | .error e => IO.eprintln s!"runtime error: {e}"; return 1
-  match parseRuntime source with
+  match parse source with
   | .error e => IO.eprintln s!"parse error at line {e.line}: {e.construct}"; pure 2
   | .ok program => match run 100000 program mode with
     | .error .fuel => IO.eprintln "runtime error: fuel exhausted"; pure 1

@@ -1,4 +1,4 @@
-import EigenCore.RuntimeParser
+import EigenCore.Parser
 import EigenCore.Value
 namespace EigenCore
 
@@ -67,7 +67,21 @@ def exec (fuel : Nat) (ss : List Stmt) : EvalM (Option Value) := match fuel with
       | .print e => do let v ← evalExpr f e; modify fun w => {w with stdout:=w.stdout ++ v.print ++ "\n"}; exec f rest
       | .expression e => do let _ ← evalExpr f e; exec f rest
       | .return_ e => do pure (some (← evalExpr f e))
-      | .branch _ _ _ _ | .loop _ _ | .define _ _ _ => throw (Err.runtime "not yet modeled")
+      | .branch condition yes elifs no => do
+        let rec choose : List (Expr × List Stmt) → EvalM (Option Value)
+          | [] => match no with | some body => exec f body | none => pure none
+          | (c, body) :: arms => do if truthy (← evalExpr f c) then exec f body else choose arms
+        let result ← if truthy (← evalExpr f condition) then exec f yes else choose elifs
+        match result with | some v => pure (some v) | none => exec f rest
+      | .loop condition body =>
+        let rec again (remaining : Nat) : EvalM (Option Value) := match remaining with
+          | 0 => throw .fuel
+          | n+1 => do
+            if truthy (← evalExpr n condition) then
+              match ← exec n body with | some v => pure (some v) | none => again n
+            else exec n rest
+        again f
+      | .define _ _ _ => throw (Err.runtime "not yet modeled")
 
 structure RunResult where
   stdout : String

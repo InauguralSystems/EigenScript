@@ -1,196 +1,104 @@
 import EigenCore.Syntax
-
 namespace EigenCore
+structure Outside where construct : String; line : Nat deriving Repr, BEq
+inductive Classification where | inSubset | out (why : Outside) deriving Repr, BEq
+private def trim (s : String) := s.trimAscii.toString
+private def validIdent (s : String) : Bool := match s.toList with | [] => false | c::cs => (c.isAlpha || c == '_') && cs.all (fun x => x.isAlphanum || x == '_')
+private def atom (s : String) : Except String Expr :=
+  let t := trim s
+  if ["break", "continue", "return", "try", "catch", "for", "import"].contains t then throw "not yet modeled"
+  else if t == "true" then pure (.literal (.bool true)) else if t == "false" then pure (.literal (.bool false)) else if t == "null" then pure (.literal .null)
+  else if t.startsWith "\"" && t.endsWith "\"" && t.length >= 2 then pure (.literal (.string ((t.drop 1).dropEnd 1).toString))
+  else match t.toInt? with | some n => if n.natAbs < 9007199254740992 then pure (.literal (.int n)) else throw "integer literal outside |n| < 2^53" | none => if validIdent t then pure (.variable t) else throw "not yet modeled"
+private def expressionFuel : Nat → String → Except String Expr
+| 0, _ => throw "expression nesting limit"
+| fuel+1, s => do
+  let t := trim s
+  if t.startsWith "what is " then throw "discarded interrogative"
+  else if t.startsWith "(" && t.endsWith ")" then expressionFuel fuel ((t.drop 1).dropEnd 1).toString
+  else if t.startsWith "not " then return .not (← expressionFuel fuel (t.drop 4).toString)
+  else if t.startsWith "when is " then let n := trim (t.drop 8).toString; if validIdent n then return .when n else throw "not yet modeled"
+  let operations : List (String × BinOp) := [(" and ",.and),(" or ",.or),(" == ",.eq),(" != ",.ne),(" <= ",.le),(" >= ",.ge),(" < ",.lt),(" > ",.gt),(" + ",.add),(" - ",.sub),(" * ",.mul)]
+  match operations.find? (fun p => t.contains p.1) with
+  | some (marker, op) =>
+    match t.splitOn marker with
+    | [a,b] => pure (.binary op (← expressionFuel fuel a) (← expressionFuel fuel b))
+    | _ => throw "not yet modeled"
+  | none =>
+    match t.splitOn " of [" with
+    | [fn, args] =>
+      if !args.endsWith "]" then throw "not yet modeled"
+      let inside := trim (args.dropEnd 1).toString
+      let values ← if inside.isEmpty then pure [] else (inside.splitOn ",").mapM (expressionFuel fuel)
+      pure (.call (← atom fn) values)
+    | _ => atom t
+private def expression (s : String) := expressionFuel (s.length + 1) s
+private def splitBinding (s : String) : Option (String × String) := match s.splitOn " is " with | n::rhs => if rhs.isEmpty then none else some (trim n, trim (String.intercalate " is " rhs)) | _ => none
+private structure SourceLine where number : Nat; indent : Nat; text : String
+private def lineIndent (s : String) : Nat := s.toList.takeWhile (· == ' ') |>.length
+private def simple (l : SourceLine) : Except Outside Stmt :=
+  let parsed : Except String Stmt :=
+    if l.text.startsWith "print of " then do pure (.print (← expression (l.text.drop 9).toString))
+    else if l.text.startsWith "return " then do pure (.return_ (← expression (l.text.drop 7).toString))
+    else if l.text.startsWith "local " then match splitBinding (l.text.drop 6).toString with | some (n,e) => if validIdent n then do pure (.assign n (← expression e) true) else throw "local declaration" | none => throw "local declaration"
+    else match splitBinding l.text with | some (n,e) => if validIdent n then do pure (.assign n (← expression e) false) else throw "assignment target" | none => do pure (.expression (← expression l.text))
+  parsed.mapError fun why => ⟨why, l.number⟩
 
-structure Outside where
-  construct : String
-  line : Nat
-  deriving Repr, BEq
+private def parseBlock (lines : Array SourceLine) (start indent fuel : Nat) : Except Outside (List Stmt × Nat) :=
+  match fuel with
+  | 0 => throw ⟨"parser fuel exhausted", 1⟩
+  | f+1 => match lines[start]? with
+    | none => pure ([], start)
+    | some l =>
+      if l.indent < indent then pure ([], start)
+      else if l.indent > indent then throw ⟨"unexpected indent", l.number⟩
+      else if (l.text.startsWith "if " || l.text.startsWith "elif ") && l.text.endsWith ":" then
+        let drop := if l.text.startsWith "if " then 3 else 5
+        let condition ← expression ((l.text.drop drop).dropEnd 1).toString |>.mapError fun e => ⟨e,l.number⟩
+        let child ← lines[start+1]?.okOr ⟨"empty block",l.number⟩
+        if child.indent <= indent then throw ⟨"empty block",l.number⟩
+        let (yes, afterYes) ← parseBlock lines (start+1) child.indent f
+        let (elifs, otherwise, after) ← match lines[afterYes]? with
+          | some e => if e.indent == indent && e.text.startsWith "elif " then do
+              let (tail, k) ← parseBlock lines afterYes indent f
+              match tail with | .branch c b es no :: more => pure ((c,b)::es, no, k) | _ => throw ⟨"elif",e.number⟩
+            else if e.indent == indent && e.text == "else:" then do
+              let ec ← lines[afterYes+1]?.okOr ⟨"empty block",e.number⟩
+              let (body,k) ← parseBlock lines (afterYes+1) ec.indent f
+              pure ([], some body, k)
+            else pure ([], none, afterYes)
+          | none => pure ([],none,afterYes)
+        let (rest,k) ← parseBlock lines after indent f
+        pure (.branch condition yes elifs otherwise :: rest, k)
+      else if l.text.startsWith "loop while " && l.text.endsWith ":" then
+        let condition ← expression ((l.text.drop 11).dropEnd 1).toString |>.mapError fun e => ⟨e,l.number⟩
+        let child ← lines[start+1]?.okOr ⟨"empty block",l.number⟩
+        if child.indent <= indent then throw ⟨"empty block",l.number⟩
+        let (body, after) ← parseBlock lines (start+1) child.indent f
+        let (rest,k) ← parseBlock lines after indent f
+        pure (.loop condition body :: rest,k)
+      else if l.text == "else:" then pure ([],start)
+      else if l.text.startsWith "define " && l.text.endsWith " as:" then
+        let sig := trim ((l.text.drop 7).dropEnd 4).toString
+        let name := (sig.splitOn "(").head!
+        if !validIdent name then throw ⟨"function definition",l.number⟩
+        let child ← lines[start+1]?.okOr ⟨"empty block",l.number⟩
+        let (body,after) ← parseBlock lines (start+1) child.indent f
+        let (rest,k) ← parseBlock lines after indent f
+        pure (.define name [] body :: rest,k)
+      else
+        let stmt ← simple l
+        let (rest,k) ← parseBlock lines (start+1) indent f
+        pure (stmt::rest,k)
 
-inductive Classification where
-  | inSubset
-  | out (why : Outside)
-  deriving Repr, BEq
+/-- The classifier and evaluator share this single AST-producing parser. -/
+def parse (source : String) : Except Outside Program := do
+  let lines := ((source.splitOn "\n").zipIdx.filterMap fun (raw,n) =>
+    let text := trim ((raw.splitOn "#").head!)
+    if text.isEmpty then none else some {number:=n+1, indent:=lineIndent raw, text:=text}).toArray
+  let (p,after) ← parseBlock lines 0 0 (lines.size+1)
+  if after == lines.size then pure p else throw ⟨"unparsed input",lines[after]!.number⟩
 
-
-private def trim (s : String) : String :=
-  String.ofList (s.toList.dropWhile Char.isWhitespace |>.reverse.dropWhile Char.isWhitespace |>.reverse)
-
-private def identStart (c : Char) := c.isAlpha || c == '_'
-private def identRest (c : Char) := c.isAlphanum || c == '_'
-private def validIdent (s : String) : Bool :=
-  match s.toList with
-  | [] => false
-  | c :: cs => identStart c && cs.all identRest
-
-private def indentation (s : String) : Nat × String :=
-  let rec go (cs : List Char) (width : Nat) : Nat × List Char :=
-    match cs with
-    | ' ' :: rest => go rest (width + 1)
-    | '\t' :: rest => go rest (((width / 4) + 1) * 4)
-    | rest => (width, rest)
-  let (n, rest) := go s.toList 0
-  (n, String.ofList rest)
-
-/-- Removes a comment, respecting the C lexer's double-quoted string rule. -/
-private def withoutComment (s : String) : String :=
-  let rec go (cs : List Char) (quoted escaped : Bool) (acc : List Char) :=
-    match cs with
-    | [] => String.ofList acc.reverse
-    | c :: rest =>
-      if escaped then go rest quoted false (c :: acc)
-      else if quoted && c == '\\' then go rest quoted true (c :: acc)
-      else if c == '"' then go rest (!quoted) false (c :: acc)
-      else if c == '#' && !quoted then String.ofList acc.reverse
-      else go rest quoted false (c :: acc)
-  go s.toList false false []
-
-private def words (s : String) : List String :=
-  let flush (cur : List Char) (out : List String) :=
-    if cur.isEmpty then out else String.ofList cur.reverse :: out
-  let rec scan (cs : List Char) (quoted escaped : Bool) (cur : List Char) (out : List String) :=
-    match cs with
-    | [] => (flush cur out).reverse
-    | c :: rest =>
-      if escaped then scan rest quoted false (c :: cur) out
-      else if quoted && c == '\\' then scan rest quoted true (c :: cur) out
-      else if c == '"' then scan rest (!quoted) false (c :: cur) out
-      else if !quoted && (c.isWhitespace || "()[],:".contains c) then
-        let out := flush cur out
-        scan rest quoted false [] (if c.isWhitespace then out else c.toString :: out)
-      else if !quoted && "=<>!+-*/%".contains c then
-        scan rest false false [] (c.toString :: flush cur out)
-      else scan rest quoted false (c :: cur) out
-  let rec merge : List String → List String
-    | a :: "=" :: rest => if ["=", "!", "<", ">"].contains a then (a ++ "=") :: merge rest else a :: merge ("=" :: rest)
-    | a :: rest => a :: merge rest
-    | [] => []
-  merge (scan s.toList false false [] [])
-
-private def intMagnitudeOK (t : String) : Bool :=
-  let raw := if t.startsWith "-" then (t.drop 1).toString else t
-  if raw.isEmpty || !raw.toList.all Char.isDigit then false
-  else match raw.toNat? with
-    | some n => n < 9007199254740992
-    | none => false
-
-private def firstBadToken (ts : List String) : Option String :=
-  let excluded := ["for", "in", "try", "catch", "break", "continue", "import", "match", "case",
-    "report", "unobserved", "=>", "at", "who", "where", "why", "how"]
-  let allowed := ["(", ")", "[", "]", ",", "+", "-", "*", "==", "!=",
-    "<", "<=", ">", ">=", "and", "or", "not", "of", "is", "what", "when",
-    "prev", "true", "false", "null"]
-  let rec loop : List String → Option String
-    | [] => none
-    | t :: rest =>
-      if excluded.contains t then some s!"{t} construct"
-      else if t.startsWith "\"" then
-        if t.length >= 2 && t.endsWith "\"" then loop rest else some "unterminated string literal"
-      else if (t.front?.any Char.isDigit) && (t.contains '.' || t.contains 'e') then
-        some "float literal"
-      else if t == "/" then some "division"
-      else if t == "%" then some "modulo"
-      else if t.toList.all Char.isDigit then
-        if intMagnitudeOK t then loop rest else some "integer literal outside |n| < 2^53"
-      else if allowed.contains t || validIdent t then loop rest
-      else some s!"token '{t}'"
-  loop ts
-
-/-- Split at the first unquoted binding delimiter, retaining `is` in the RHS. -/
-private def splitBinding (s : String) : Option (String × String) :=
-  let rec go (cs : List Char) (quoted escaped : Bool) (left : List Char) :=
-    match cs with
-    | [] => none
-    | c :: rest =>
-      if escaped then go rest quoted false (c :: left)
-      else if quoted && c == '\\' then go rest quoted true (c :: left)
-      else if c == '"' then go rest (!quoted) false (c :: left)
-      else match quoted, cs with
-        | false, ' ' :: 'i' :: 's' :: ' ' :: right =>
-          some (trim (String.ofList left.reverse), trim (String.ofList right))
-        | _, _ => go rest quoted false (c :: left)
-  go s.toList false false []
-
-private def statementExpression (line : String) : Except String String :=
-  let t := line |> trim
-  if t.startsWith "local " then
-    let r := (t.drop 6).toString |> trim
-    match splitBinding r with
-    | some (name, expr) => if validIdent name then pure expr else throw "local declaration"
-    | none => throw "local declaration"
-  else if t.startsWith "return " then pure (t.drop 7).toString
-  else if t.startsWith "print of " then pure (t.drop 9).toString
-  else if t.startsWith "loop while " && t.endsWith ":" then pure ((t.drop 11).dropEnd 1).toString
-  else if (t.startsWith "if " || t.startsWith "elif ") && t.endsWith ":" then
-    pure ((t.drop (if t.startsWith "if " then 3 else 5)).dropEnd 1).toString
-  else if t == "else:" then pure "true"
-  else if t.startsWith "define " && t.endsWith ":" then
-    let head := ((t.drop 7).dropEnd 1).toString |> trim
-    if head.endsWith " as" then
-      let signature := trim ((head.dropEnd 3).toString)
-      let name := (signature.splitOn "(").head!
-      if validIdent name then pure "true" else throw "function definition"
-    else throw "function definition"
-  else
-    match splitBinding t with
-    | some (name, expr) => if validIdent name then pure expr else throw "assignment target"
-    | none => pure t
-
-private def hasUnsupportedBracket (ts : List String) : Bool :=
-  let rec loop (previous : Option String) : List String → Bool
-    | [] => false
-    | "[" :: rest => previous != some "of" || loop (some "[") rest
-    | t :: rest => loop (some t) rest
-  loop none ts
-
-private def classifyLine (line : String) (lineNo : Nat) : Option Outside :=
-  let (_, body) := indentation line
-  let clean := trim (withoutComment body)
-  if clean.isEmpty then none
-  else
-    match statementExpression clean with
-    | .error why => some ⟨why, lineNo⟩
-    | .ok expr =>
-      match firstBadToken (words expr) with
-      | some why => some ⟨why, lineNo⟩
-      | none =>
-        if hasUnsupportedBracket (words expr) then some ⟨"list literal or indexing", lineNo⟩ else none
-
-private def indentationError (source : String) : Option Outside :=
-  let rec loop (lines : List String) (lineNo current : Nat) (levels : List Nat)
-      (previousOpened : Bool) : Option Outside :=
-    match lines with
-    | [] => none
-    | line :: rest =>
-      let (width, body) := indentation line
-      let clean := trim (withoutComment body)
-      if clean.isEmpty then loop rest (lineNo + 1) current levels previousOpened
-      else if width > current then
-        if previousOpened then loop rest (lineNo + 1) width (width :: levels) (clean.endsWith ":")
-        else some ⟨"unexpected indent", lineNo⟩
-      else if width < current then
-        if levels.contains width then loop rest (lineNo + 1) width (levels.dropWhile (· > width)) (clean.endsWith ":")
-        else some ⟨"inconsistent dedent", lineNo⟩
-      else loop rest (lineNo + 1) current levels (clean.endsWith ":")
-  loop (source.splitOn "\n") 1 0 [0] false
-
-/-- Classify source without accepting an unsupported construct by recovery. -/
-def classify (source : String) : Classification :=
-  let rec loop (lines : List String) (n : Nat) : Classification :=
-    match lines with
-    | [] => .inSubset
-    | line :: rest => match classifyLine line n with
-      | some why => .out why
-      | none => loop rest (n + 1)
-  match indentationError source, loop (source.splitOn "\n") 1 with
-  | some indentWhy, .out syntaxWhy => if indentWhy.line <= syntaxWhy.line then .out indentWhy else .out syntaxWhy
-  | some why, _ => .out why
-  | none, result => result
-
-/-- Step 1 validates and classifies syntax; construction is completed with semantics in step 2. -/
-def parse (source : String) : Except Outside Program :=
-  match classify source with
-  | .inSubset => pure []
-  | .out why => throw why
-
+def classify (source : String) : Classification := match parse source with
+  | .ok _ => .inSubset | .error why => .out why
 end EigenCore
