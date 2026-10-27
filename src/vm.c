@@ -1149,12 +1149,15 @@ static inline Env *env_resolve_store(Env *start, const char *name, uint32_t h,
     return (t && t == g_builtin_env) ? NULL : t;
 }
 
-/* #1063: the ONE implementation of "store TOS into fn-local slot", shared by
+/* #1063/#2016: the ONE implementation of "store TOS into fn-local slot", shared by
  * CASE(SET_LOCAL) and the JIT's out-of-line path (jit_helper_set_local), so
  * the two can never disagree. The in-place branch is load-bearing beyond
  * speed: g_last_observer may alias the exclusive VAL_NUM being overwritten,
- * and a swap+decref would free it under the observer. */
-static inline void vm_store_local_slot(Env *e, int slot, EigsSlot tos) {
+ * and a swap+decref would free it under the observer. A parameter arrives
+ * with assign_counts=1; every user SET_LOCAL advances that same counter, just
+ * as a name store does. Runtime bookkeeping stores pass count_assignment=0. */
+static inline void vm_store_local_slot(Env *e, int slot, EigsSlot tos,
+                                       int count_assignment) {
     if (slot_is_num(tos)) {
         EigsSlot ex_s = e->values[slot];
         if (slot_is_heap(ex_s)) {
@@ -1162,6 +1165,8 @@ static inline void vm_store_local_slot(Env *e, int slot, EigsSlot tos) {
             if (existing && existing->type == VAL_NUM &&
                 existing->refcount == 1) {
                 VAL_NUM_RAW(existing) = SLOT_NUM_RAW(tos);
+                if (count_assignment && e->assign_counts)
+                    e->assign_counts[slot]++;
                 return;
             }
         }
@@ -1169,6 +1174,7 @@ static inline void vm_store_local_slot(Env *e, int slot, EigsSlot tos) {
     slot_incref(tos);
     slot_decref(e->values[slot]);
     e->values[slot] = tos;
+    if (count_assignment && e->assign_counts) e->assign_counts[slot]++;
 }
 
 /* #1063: record a slot write on the prev/history tape. The table is keyed by
@@ -1201,7 +1207,7 @@ void jit_helper_set_local(EigsChunk *chunk, int slot) {
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     Env *e = frame->fn_env;
     if ((int)slot < e->count)
-        vm_store_local_slot(e, slot, g_vm.stack[g_vm.sp - 1]);
+        vm_store_local_slot(e, slot, g_vm.stack[g_vm.sp - 1], 1);
 }
 
 void jit_helper_set_name(EigsChunk *chunk, int idx) {
@@ -3755,7 +3761,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (__builtin_expect(g_trace_hist, 0)) vm_trace_local_slot(chunk, slot);
         Env *e = frame->fn_env;
         if ((int)slot < e->count) {
-            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1]);
+            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1], 1);
         } else {
             /* #348: an out-of-range slot used to DROP the write silently
              * (the assigned variable simply never existed). Compiler-emitted
@@ -3776,7 +3782,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
         if ((int)slot < e->count) {
-            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1]);
+            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1], 0);
         } else {
             rt_error(EK_INTERNAL, current_line,
                      "SET_LOCAL_INTERNAL slot %d out of range (env has %d slots)",

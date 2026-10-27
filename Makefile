@@ -90,7 +90,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke jit-checked-plant embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked
+.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx gfx-x11-regressions pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked jit-checked-plant
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -636,6 +636,18 @@ build/$(UI_INPUT_VARIANT)/ui_sdl_input: tests/ui_sdl_input.c $(UI_INPUT_OBJ) $(w
 	$(CC) $(FLAGS_$(UI_INPUT_VARIANT)) -I$(SRC_DIR) $$(sdl2-config --cflags) -o $@ $< $(UI_INPUT_OBJ) $(LIBS_$(UI_INPUT_VARIANT)) $$(sdl2-config --libs)
 ui-sdl-input-gfx: build/$(UI_INPUT_VARIANT)/ui_sdl_input
 	SDL_VIDEODRIVER=dummy build/$(UI_INPUT_VARIANT)/ui_sdl_input
+
+# Real-X11 regressions belong in the Linux extensions lane, not the portable
+# suite. Require both scripts' success and their promised positive evidence.
+gfx-x11-regressions: build
+	@set -eu; output=$$(mktemp); trap 'rm -f "$$output"' EXIT HUP INT TERM; \
+	status=0; bash tests/test_gfx_utf8_title.sh >"$$output" 2>&1 || status=$$?; \
+	cat "$$output"; [ "$$status" -eq 0 ]; \
+	grep -q '^  PASS: all four ICCCM/EWMH title transitions$$' "$$output"; \
+	status=0; bash tests/test_gfx_ctype_locale.sh >"$$output" 2>&1 || status=$$?; \
+	cat "$$output"; [ "$$status" -eq 0 ]; \
+	grep -q '^  PASS: gfx leaves byte-oriented ctype answers replay-deterministic$$' "$$output"; \
+	grep -q '^  PASS: LC_CTYPE after SDL loading is C.UTF-8$$' "$$output"
 
 # AddressSanitizer + UndefinedBehaviorSanitizer build. Catches
 # use-after-free, buffer overflow, leaks, and undefined behavior that

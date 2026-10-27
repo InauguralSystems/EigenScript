@@ -51,6 +51,13 @@ history — never from an external reference:
 | `why is x`  | change in that content | how fast that is changing |
 | `how is x`  | settledness in `[0, 1]` | how settled the last step left it |
 
+**A binding's creation is its first observation: the `local`/first assignment
+for a local, and the call-time binding for a parameter. Every later assignment
+in the same activation adds one.** Thus, for every binding in an activation,
+`when` = (1 if it is a parameter) + the number of tape `A` records for it in
+that activation. The parameter creation event is #1048's “one observation per
+call”; it is not an `A` assignment record.
+
 Two of these are the load-bearing pair:
 
 - **`where` — information content (the engine calls it entropy).** It is
