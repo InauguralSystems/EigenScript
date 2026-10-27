@@ -976,7 +976,9 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * inline as 9-byte FS-prefixed inc/dec dword [disp32] — no
              * call, no bail, no sp/env interaction. */
             i += 1; ops++; non_line_ops++;
-        } else if (op == OP_LINE) {
+        } else if (op == OP_BINARY_LINE_END) {
+            i += 1; ops++;
+        } else if (op == OP_LINE || op == OP_BINARY_LINE) {
             /* #630: [op][line:32] = 5 bytes. */
             if (i + 5 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 5; ops++;
@@ -1156,6 +1158,17 @@ static uint8_t *emit_lock_addl_1_disp32_rdi(uint8_t *w, int32_t disp) {
 /* mov disp32(%rbx), %eax   — load 32-bit (6 bytes) */
 static uint8_t *emit_mov_disp32_rbx_to_eax(uint8_t *w, int32_t disp) {
     *w++ = 0x8B; *w++ = 0x83;
+    return emit_u32(w, (uint32_t)disp);
+}
+
+/* #1425: 32-bit stores for the scoped line caches. %eax/%rdx are scratch. */
+static uint8_t *emit_mov_eax_to_disp32_rbx(uint8_t *w, int32_t disp) {
+    *w++ = 0x89; *w++ = 0x83;
+    return emit_u32(w, (uint32_t)disp);
+}
+
+static uint8_t *emit_mov_disp32_rbx_to_edx(uint8_t *w, int32_t disp) {
+    *w++ = 0x8B; *w++ = 0x93;
     return emit_u32(w, (uint32_t)disp);
 }
 
@@ -4359,7 +4372,27 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                 }
             }
             i += 1;
-        } else { /* OP_LINE */
+        } else if (op == OP_BINARY_LINE_END) {
+            w = emit_mov_disp32_rbx_to_eax(w, g_layout.off_binary_prev_line);
+            w = emit_mov_eax_to_disp32_rbx(w, g_layout.off_current_line);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&trace_current_line_addr);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_edx(w, g_layout.off_binary_prev_trace_line);
+            *w++ = 0x89; *w++ = 0x10; /* mov %edx,(%rax) */
+            i += 1;
+        } else { /* OP_LINE / OP_BINARY_LINE */
+            if (op == OP_BINARY_LINE) {
+                w = emit_mov_disp32_rbx_to_eax(w, g_layout.off_current_line);
+                w = emit_mov_eax_to_disp32_rbx(w, g_layout.off_binary_prev_line);
+                w = emit_push_rcx(w);
+                w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&trace_current_line_addr);
+                w = emit_call_rax(w);
+                w = emit_pop_rcx(w);
+                *w++ = 0x8B; *w++ = 0x00; /* mov (%rax),%eax */
+                w = emit_mov_eax_to_disp32_rbx(w, g_layout.off_binary_prev_trace_line);
+            }
             /* #630: 32-bit operand. */
             uint32_t line = (uint32_t)chunk->code[i + 1] |
                             ((uint32_t)chunk->code[i + 2] << 8) |
@@ -4415,7 +4448,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             last_imm = (v && v->type == VAL_NUM);
             break;
         }
-        case OP_LINE:
+        case OP_LINE: case OP_BINARY_LINE: case OP_BINARY_LINE_END:
         case OP_JUMP_IF_FALSE_PEEK: case OP_JUMP_IF_TRUE_PEEK:
             /* Pass-through. LINE touches no stack; the PEEK ops read the
              * condition but leave the operand on the stack (they don't push),
