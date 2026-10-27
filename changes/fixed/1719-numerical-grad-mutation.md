@@ -1,0 +1,1 @@
+- The `numerical_grad*` builtins now reject callback length changes without overwriting values shifted by that callback (#1719).
