@@ -45,8 +45,9 @@
 # against an independent line scanner (§122), so the walk cannot quietly stop
 # seeing a document.
 #
-# Usage: test_doc_examples.py [--list] file.md [file2.md ...]
+# Usage: test_doc_examples.py [--list] [file.md ...]
 #        test_doc_examples.py --selftest
+# With no files, every pinned POPULATION document is checked.
 
 import re
 import subprocess
@@ -331,6 +332,7 @@ POPULATION = {
     "docs/CONCURRENCY.md":       (  8,    8,     0,      0,      0),   # #1736: +1 paired (detached task catches its own error)
     "docs/STDLIB.md":            ( 15,    7,     8,      0,      0),
     "docs/SYNTAX.md":            ( 35,   15,    20,      0,      1),
+    # #1991: these observer documents are part of the executable doc gate.
     "docs/PREDICATES.md":        ( 13,    2,    10,      1,      4),
     "docs/DIAGNOSTICS.md":       (  4,    1,     3,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
@@ -645,6 +647,8 @@ def count_mode(paths):
 def main():
     global PASS, FAIL, SKIP
     args = [a for a in sys.argv[1:] if a != "--list"]
+    if not args:
+        args = [os.path.join(ROOT, path) for path in POPULATION]
     listing = "--list" in sys.argv
     # ROUND 8: the same one-line banner the claims gate prints. A platform
     # difference should identify itself in the CI log on the FIRST run, not
