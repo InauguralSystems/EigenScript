@@ -3,12 +3,12 @@
 # root hits, and using build/<active-variant>/eigenscript (not src/eigenscript)
 # exercises the executable path that exposed #1679.
 echo "[18f] Variant binary stdlib resolution (#1679)"
-if [ "${EIGS_ACTIVE_VARIANT_RC:-1}" -eq 1 ]; then
+if [ "${EIGS_ACTIVE_VARIANT_RC:-unset}" = 1 ]; then
     section_skip "src/eigenscript is not a build/<variant> alias: a build.sh build; the make-based variant lanes run this section"
 else
     VARIANT_STDLIB_DIR=$(mktemp -d "${TMPDIR:-/tmp}/eigs_variant_stdlib.XXXXXX")
     cp "$TESTS_DIR/test_variant_stdlib.eigs" "$VARIANT_STDLIB_DIR/probe.eigs"
-    if [ "${EIGS_ACTIVE_VARIANT_RC:-1}" -eq 0 ] && [ -n "${EIGS_ACTIVE_VARIANT:-}" ]; then
+    if [ "${EIGS_ACTIVE_VARIANT_RC:-unset}" = 0 ] && [ -n "${EIGS_ACTIVE_VARIANT:-}" ]; then
         VARIANT_STDLIB_BIN="$TESTS_DIR/../build/$EIGS_ACTIVE_VARIANT/eigenscript"
         echo "  active variant: $EIGS_ACTIVE_VARIANT"
         VARIANT_STDLIB_OUTPUT=$($EIGS_TMO "$VARIANT_STDLIB_BIN" \
@@ -16,7 +16,7 @@ else
         VARIANT_STDLIB_RC=$?
     else
         VARIANT_STDLIB_BIN=""
-        VARIANT_STDLIB_OUTPUT="ERROR: active build variant resolution is ambiguous (resolver rc=${EIGS_ACTIVE_VARIANT_RC:-unset})"
+        VARIANT_STDLIB_OUTPUT="ERROR: active build variant unresolved: ambiguous, or the resolver did not report (resolver rc=${EIGS_ACTIVE_VARIANT_RC:-unset})"
         VARIANT_STDLIB_RC=${EIGS_ACTIVE_VARIANT_RC:-1}
     fi
     rm -rf "$VARIANT_STDLIB_DIR"
