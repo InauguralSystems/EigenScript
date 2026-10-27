@@ -19,7 +19,32 @@
 # to it. The population it scans is printed so a drop to zero is visible.
 set -uo pipefail
 cd "$(cd "$(dirname "$0")/.." && pwd)"
-SRC=src/ext_gfx.c
+SRC="${GFX_GUARD_SRC:-src/ext_gfx.c}"
+
+if [ "${1:-}" = "--selftest" ]; then
+    work=$(mktemp -d "${TMPDIR:-/tmp}/gfx_guard_order.XXXXXX") || exit 2
+    trap 'rm -rf "$work"' EXIT
+    i=1
+    while [ "$i" -le 11 ]; do
+        printf 'Value* builtin_plant_%s(void) {\n' "$i" >> "$work/ext_gfx.c"
+        if [ "$i" -eq 1 ]; then
+            printf '    load_sdl2();\n    ARG_GUARD(x);\n' >> "$work/ext_gfx.c"
+        else
+            printf '    ARG_GUARD(x);\n    load_sdl2();\n' >> "$work/ext_gfx.c"
+        fi
+        printf '}\n' >> "$work/ext_gfx.c"
+        i=$((i + 1))
+    done
+    if out=$(GFX_GUARD_SRC="$work/ext_gfx.c" bash "$0" 2>&1); then
+        echo "SELFTEST FAILED: planted guard behind SDL load was accepted"; exit 1
+    else
+        case "$out" in *'BAD builtin_plant_1'*)
+            echo "SELFTEST OK: planted guard behind SDL load caught: BAD builtin_plant_1"; exit 0 ;;
+        esac
+    fi
+    echo "SELFTEST FAILED: plant missed expected BAD builtin_plant_1 message"
+    printf '%s\n' "$out"; exit 1
+fi
 
 rc=0
 # STRIP COMMENTS AND STRING LITERALS FIRST. Without this the scanner reads

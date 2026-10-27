@@ -32,6 +32,11 @@ tools/_extract_runcmd.py | timeout 30 python3 tools/_extract_runcmd.py --selftes
 tools/codspeed_targets_check.sh codspeed.yml | timeout 30 bash tools/codspeed_targets_check.sh --selftest
 tools/consumer_acceptance.sh tools/_derive_variants.py tools/_extract_runcmd.py reports/consumer_acceptance/* | timeout 60 bash tools/consumer_acceptance.sh --self-test
 tools/core_ext_boundary_check.sh tools/core_ext_boundary_selftest.sh | timeout 120 bash tools/core_ext_boundary_selftest.sh --selftest | [{"pattern":"^PASS: core-ext boundary:","count":1}]
+tools/gfx_guard_order_check.sh | timeout 30 bash tools/gfx_guard_order_check.sh --selftest | [{"pattern":"^SELFTEST OK: planted guard behind SDL load caught:","count":1}]
+tools/num_read_check.sh | timeout 30 bash tools/num_read_check.sh --selftest | [{"pattern":"^SELFTEST OK: planted raw-number bypass caught:","count":1}]
+tools/pipefail_verdict_check.sh | timeout 30 bash tools/pipefail_verdict_check.sh --selftest | [{"pattern":"^SELFTEST OK: planted early-reader pipeline caught:","count":1}]
+tools/portability_parse_check.sh | timeout 30 bash tools/portability_parse_check.sh --selftest | [{"pattern":"^SELFTEST OK: planted shell syntax fault caught:","count":1}]
+tools/tape_kinds_check.sh | timeout 30 bash tools/tape_kinds_check.sh --selftest | [{"pattern":"^SELFTEST OK: planted missing tape kind caught:","count":1}]
 tools/docs_claims_check.sh | timeout 30 bash tools/docs_claims_check.sh --selftest | [{"pattern":"^SELFTEST: 19 case\\(s\\) run, 19 passed, 0 failed$","count":1}]
 tools/enrolment_check.sh tests/enrolment_exemptions.txt tools/selftests.txt | timeout 30 bash tools/enrolment_check.sh --selftest | [{"pattern":"^  checks=4$","count":1}]
 Makefile tests/run_all_tests.sh tools/make_lock_check.sh tools/stop_gate.sh tools/tree_lock.sh tools/bounded_process.py | timeout 60 bash tools/make_lock_check.sh --selftest | [{"pattern":"^  PASS:","count":9},{"pattern":"^make-lock selftest: 9/9 passed$","count":1},{"pattern":"FAIL:","count":0}]

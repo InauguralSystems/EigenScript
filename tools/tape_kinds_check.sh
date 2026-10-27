@@ -18,6 +18,18 @@
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC_DIR="${TAPE_KINDS_SRC:-$ROOT/src}"
+[ "${1:-}" != "--selftest" ] || {
+    work=$(mktemp -d "${TMPDIR:-/tmp}/tape_kinds_selftest.XXXXXX") || exit 2
+    trap 'rm -rf "$work"' EXIT
+    printf '%s\n' 'void f(void) { TRACE_NONDET_RECORD("planted_missing", v); }' > "$work/plant.c"
+    printf '%s\n' 'static const int k_tape_kinds[] = {' '    {"declared", 1},' '};' 'void g(void) { TRACE_NONDET_RECORD("declared", v); }' > "$work/trace.c"
+    if out=$(TAPE_KINDS_SRC="$work" bash "$0" 2>&1); then
+        echo "SELFTEST FAILED: planted taped builtin without kind row was accepted"; exit 1
+    elif printf '%s\n' "$out" | grep -qF "MISSING: 'planted_missing' records an N value but has no k_tape_kinds row"; then
+        echo "SELFTEST OK: planted missing tape kind caught: MISSING: 'planted_missing'"; exit 0
+    fi
+    echo "SELFTEST FAILED: plant missed expected MISSING message"; printf '%s\n' "$out"; exit 1
+}
 TMP=$(mktemp "${TMPDIR:-/tmp}/tape_kinds.XXXXXX") || exit 2
 trap 'rm -f "$TMP" "$TMP.d"' EXIT
 

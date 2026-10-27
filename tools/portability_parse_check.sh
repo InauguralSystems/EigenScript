@@ -5,10 +5,10 @@
 # portability-parse: oracle-major=N from BASH_VERSINFO, not the banner.
 set -u
 cd "$(dirname "$0")/.." || { echo "portability-parse: ABORTED: cannot cd" >&2; exit 1; }
-FILE_FLOOR=110
-RUN_TARGETS="tools/docs_claims_check.sh tools/child_exit_check.sh tools/suite_label_check.sh"
-RUN_N=3
-MAX=3
+FILE_FLOOR="${PORTABILITY_FILE_FLOOR:-110}"
+RUN_TARGETS="${PORTABILITY_RUN_TARGETS-tools/docs_claims_check.sh tools/child_exit_check.sh tools/suite_label_check.sh}"
+RUN_N="${PORTABILITY_RUN_N:-3}"
+MAX="${PORTABILITY_MAX_MAJOR:-3}"
 OLD=""; MAJOR=""; TRIED=""; REJ=""
 for cand in "${PORTABILITY_BASH:-}" "$HOME/.local/bin/bash32" /usr/local/bin/bash32 /bin/bash /usr/bin/bash; do
     [ -n "$cand" ] || continue
@@ -21,7 +21,8 @@ for cand in "${PORTABILITY_BASH:-}" "$HOME/.local/bin/bash32" /usr/local/bin/bas
     if [ "$m" -gt "$MAX" ]; then REJ="$REJ $cand(major=$m)"; continue; fi
     OLD="$cand"; MAJOR="$m"; break
 done
-indexed=$(git -c safe.directory='*' ls-files '*.sh' 2>/dev/null) || indexed=""
+indexed="${PORTABILITY_FILES:-}"
+if [ -z "$indexed" ]; then indexed=$(git -c safe.directory='*' ls-files '*.sh' 2>/dev/null) || indexed=""; fi
 n=0; files=""
 for f in $indexed; do
     if [ -f "$f" ]; then files="$files$f "; n=$((n + 1)); fi
@@ -29,6 +30,17 @@ done
 if [ "${n:-0}" -lt "$FILE_FLOOR" ]; then
     echo "portability-parse: FAIL: git listed $n tracked *.sh (floor $FILE_FLOOR) — the audit is scanning almost nothing"
     exit 1
+fi
+if [ "${1:-}" = "--selftest" ]; then
+    work=$(mktemp -d "${TMPDIR:-/tmp}/portability_parse_selftest.XXXXXX") || exit 2
+    trap 'rm -rf "$work"' EXIT
+    printf '%s\n' '#!/bin/bash' 'if then' > "$work/plant.sh"
+    if out=$(PORTABILITY_BASH=/bin/bash PORTABILITY_MAX_MAJOR=99 PORTABILITY_FILES="$work/plant.sh" PORTABILITY_FILE_FLOOR=1 PORTABILITY_RUN_TARGETS= PORTABILITY_RUN_N=0 bash "$0" 2>&1); then
+        echo "SELFTEST FAILED: planted shell parse error was accepted"; exit 1
+    elif printf '%s\n' "$out" | grep -qF "does not parse under"; then
+        echo "SELFTEST OK: planted shell syntax fault caught: does not parse under oracle"; exit 0
+    fi
+    echo "SELFTEST FAILED: plant missed expected parse message"; printf '%s\n' "$out"; exit 1
 fi
 if [ -z "$OLD" ]; then
     echo "portability-parse: NO OLD BASH ON THIS MACHINE — $n tracked *.sh were NOT parsed by an old shell,"

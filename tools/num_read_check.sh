@@ -28,6 +28,18 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC_DIR="${NUM_READ_SRC:-$ROOT/src}"
 ALLOW="${NUM_READ_ALLOW:-$ROOT/tools/num_read_allowlist.txt}"
+[ "${1:-}" != "--selftest" ] || {
+    work=$(mktemp -d "${TMPDIR:-/tmp}/num_read_selftest.XXXXXX") || exit 2
+    trap 'rm -rf "$work"' EXIT
+    printf '%s\n' 'double planted(Value *v) {' '    return v->data.num_;' '}' > "$work/plant.c"
+    : > "$work/allow.txt"
+    if out=$(NUM_READ_SRC="$work" NUM_READ_ALLOW="$work/allow.txt" bash "$0" 2>&1); then
+        echo "SELFTEST FAILED: planted direct data.num_ bypass was accepted"; exit 1
+    elif printf '%s\n' "$out" | grep -qF 'VIOLATION: bypass: plant.c:2:'; then
+        echo "SELFTEST OK: planted raw-number bypass caught: VIOLATION: bypass: plant.c:2"; exit 0
+    fi
+    echo "SELFTEST FAILED: plant missed expected bypass message"; printf '%s\n' "$out"; exit 1
+}
 [ -f "$ALLOW" ] || { echo "num-read: FAIL: allowlist $ALLOW missing"; exit 1; }
 TMP=$(mktemp "${TMPDIR:-/tmp}/num_read.XXXXXX") || exit 2
 trap 'rm -f "$TMP" "$TMP.b" "$TMP.c"' EXIT
