@@ -14,10 +14,13 @@ output = p.stdout + p.stderr
 if p.returncode:
     print(output, end='', file=sys.stderr); sys.exit(p.returncode)
 allowed = {'propext', 'Classical.choice', 'Quot.sound'}
-forbidden = {'sorryAx', 'Lean.ofReduceBool'}
-if any(x in output for x in forbidden) or '.native_decide.' in output:
-    sys.exit('axiom gate: forbidden axiom in output\n' + output)
-seen = set(re.findall(r'\b(?:propext|Classical\.choice|Quot\.sound|sorryAx|Lean\.ofReduceBool)\b', output))
+reports = re.findall(r'(?:depends on )?axioms:\s*\[([^]]*)\]', output)
+seen = {
+    axiom.strip()
+    for report in reports
+    for axiom in report.split(',')
+    if axiom.strip()
+}
 unexpected = seen - allowed
 if unexpected:
     sys.exit('axiom gate: unexpected axioms: ' + ', '.join(sorted(unexpected)))

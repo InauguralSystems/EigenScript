@@ -5,7 +5,6 @@ from pathlib import Path
 import importlib.util
 import re
 import subprocess
-import sys
 import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('doc_examples', ROOT/'tests/test_doc_examples.py')
@@ -18,8 +17,17 @@ for rel in docs.POPULATION:  # the checker's own, pinned doc-file list
         if error: raise SystemExit(f'{rel}:{line}: {error}')
         if kind in ('', 'check'):
             programs.append((f'{rel}:{line}', text))
-tracked = subprocess.check_output(
-    ['git', 'ls-files', 'tests/**/*.eigs', 'examples/**/*.eigs'], cwd=ROOT, text=True).splitlines()
+tracked = subprocess.check_output([
+    'git', 'ls-files', ':(glob)tests/**/*.eigs', ':(glob)examples/**/*.eigs'
+], cwd=ROOT, text=True).splitlines()
+# Check the pathspec census against a deliberately independent filesystem walk
+# intersected with Git's complete tracked-file population.
+all_tracked = set(subprocess.check_output(['git', 'ls-files'], cwd=ROOT, text=True).splitlines())
+found = subprocess.check_output(
+    ['find', 'tests', 'examples', '-type', 'f', '-name', '*.eigs'], cwd=ROOT, text=True).splitlines()
+independent = sorted(set(found) & all_tracked)
+if sorted(tracked) != independent:
+    raise SystemExit('tracked .eigs census disagrees with independent find enumeration')
 for rel in tracked:
     programs.append((rel, (ROOT/rel).read_text()))
 expected = len(programs)

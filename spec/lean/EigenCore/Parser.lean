@@ -62,7 +62,7 @@ private def words (s : String) : List String :=
         scan rest false false [] (c.toString :: flush cur out)
       else scan rest quoted false (c :: cur) out
   let rec merge : List String → List String
-    | a :: "=" :: rest => if ["=", "!", "<", ">"].contains a then (a ++ "=") :: merge rest else a :: "=" :: merge rest
+    | a :: "=" :: rest => if ["=", "!", "<", ">"].contains a then (a ++ "=") :: merge rest else a :: merge ("=" :: rest)
     | a :: rest => a :: merge rest
     | [] => []
   merge (scan s.toList false false [] [])
@@ -86,7 +86,7 @@ private def firstBadToken (ts : List String) : Option String :=
       if excluded.contains t then some s!"{t} construct"
       else if t.startsWith "\"" then
         if t.length >= 2 && t.endsWith "\"" then loop rest else some "unterminated string literal"
-      else if t.any (fun c => c == '.') || t.contains 'e' && t.toList.any Char.isDigit then
+      else if (t.front?.any Char.isDigit) && (t.contains '.' || t.contains 'e') then
         some "float literal"
       else if t == "/" then some "division"
       else if t == "%" then some "modulo"
@@ -96,13 +96,28 @@ private def firstBadToken (ts : List String) : Option String :=
       else some s!"token '{t}'"
   loop ts
 
+/-- Split at the first unquoted binding delimiter, retaining `is` in the RHS. -/
+private def splitBinding (s : String) : Option (String × String) :=
+  let rec go (cs : List Char) (quoted escaped : Bool) (left : List Char) :=
+    match cs with
+    | [] => none
+    | c :: rest =>
+      if escaped then go rest quoted false (c :: left)
+      else if quoted && c == '\\' then go rest quoted true (c :: left)
+      else if c == '"' then go rest (!quoted) false (c :: left)
+      else match quoted, cs with
+        | false, ' ' :: 'i' :: 's' :: ' ' :: right =>
+          some (trim (String.ofList left.reverse), trim (String.ofList right))
+        | _, _ => go rest quoted false (c :: left)
+  go s.toList false false []
+
 private def statementExpression (line : String) : Except String String :=
   let t := line |> trim
   if t.startsWith "local " then
     let r := (t.drop 6).toString |> trim
-    match r.splitOn " is " with
-    | [_name, expr] => pure expr
-    | _ => throw "local declaration"
+    match splitBinding r with
+    | some (name, expr) => if validIdent name then pure expr else throw "local declaration"
+    | none => throw "local declaration"
   else if t.startsWith "return " then pure (t.drop 7).toString
   else if t.startsWith "print of " then pure (t.drop 9).toString
   else if t.startsWith "loop while " && t.endsWith ":" then pure ((t.drop 11).dropEnd 1).toString
@@ -111,12 +126,22 @@ private def statementExpression (line : String) : Except String String :=
   else if t == "else:" then pure "true"
   else if t.startsWith "define " && t.endsWith ":" then
     let head := ((t.drop 7).dropEnd 1).toString |> trim
-    let name := (head.splitOn "(").head!
-    if validIdent name && (head.splitOn " as").length > 1 then pure "true" else throw "function definition"
+    if head.endsWith " as" then
+      let signature := trim ((head.dropEnd 3).toString)
+      let name := (signature.splitOn "(").head!
+      if validIdent name then pure "true" else throw "function definition"
+    else throw "function definition"
   else
-    match t.splitOn " is " with
-    | [name, expr] => if validIdent (trim name) then pure expr else throw "assignment target"
-    | _ => pure t
+    match splitBinding t with
+    | some (name, expr) => if validIdent name then pure expr else throw "assignment target"
+    | none => pure t
+
+private def hasUnsupportedBracket (ts : List String) : Bool :=
+  let rec loop (previous : Option String) : List String → Bool
+    | [] => false
+    | "[" :: rest => previous != some "of" || loop (some "[") rest
+    | t :: rest => loop (some t) rest
+  loop none ts
 
 private def classifyLine (line : String) (lineNo : Nat) : Option Outside :=
   let (_, body) := indentation line
@@ -129,8 +154,7 @@ private def classifyLine (line : String) (lineNo : Nat) : Option Outside :=
       match firstBadToken (words expr) with
       | some why => some ⟨why, lineNo⟩
       | none =>
-        let ts := words clean
-        if ts.contains "[" && !ts.contains "of" then some ⟨"list literal", lineNo⟩ else none
+        if hasUnsupportedBracket (words expr) then some ⟨"list literal or indexing", lineNo⟩ else none
 
 private def indentationError (source : String) : Option Outside :=
   let rec loop (lines : List String) (lineNo current : Nat) (levels : List Nat)
