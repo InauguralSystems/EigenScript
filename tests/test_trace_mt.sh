@@ -378,7 +378,8 @@ for bad in 'N random=0.5' 'N -1 random=0.5' 'N 18446744073709551616 random=0.5' 
     { printf '%s\n' "$vline" 'B 0 1 1 0 root -'; printf '%s\n' "$bad"; } > "$TMPDIR/bad-id.tape"
     EIGS_REPLAY="$TMPDIR/bad-id.tape" "$EIGS" "$TMPDIR/take.eigs" >/dev/null 2>"$TMPDIR/bad-id.err"
     brc=$?
-    if [ "$brc" -eq 3 ] && grep -q 'malformed v8 stream id' "$TMPDIR/bad-id.err"; then
+    tape_format=$(printf '%s\n' "$vline" | awk '{print $2}')
+    if [ "$brc" -eq 3 ] && grep -q "malformed v${tape_format} stream id" "$TMPDIR/bad-id.err"; then
         ok "parser rejects malformed stream tag: $bad"
     else
         fail "parser rejects malformed stream tag: $bad" "rc=$brc"

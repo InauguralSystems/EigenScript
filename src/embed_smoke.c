@@ -1205,6 +1205,26 @@ int main(void) {
           "live sensor reads 100 then 101");
     if (r) eigs_value_release(r);
 
+    /* #1816: container cycles are refused before any bytes reach the sink,
+     * while repeated references which are not on the current ancestor path
+     * remain valid (a DAG is not a cycle). */
+    EigsValue *cycle = eigs_value_new_list(1);
+    eigs_value_list_append(cycle, cycle);
+    size_t before_cycle = g_tape_len;
+    eigs_trace_record_nondet("cyclic_host_answer", cycle);
+    CHECK(eigs_has_error() && eigs_last_error_message() &&
+              strstr(eigs_last_error_message(), "cyclic_host_answer") &&
+              strstr(eigs_last_error_message(), "container cycle"),
+          "self-referential trace answer raises a named, catchable error");
+    CHECK(g_tape_len == before_cycle,
+          "refused cyclic trace answer writes no partial record");
+    eigs_clear_error();
+    /* Break the deliberately host-created cycle so the smoke test does not
+     * leak its two owned references. */
+    ((Value *)cycle)->data.list.count = 0;
+    eigs_value_release(cycle);
+    eigs_value_release(cycle);
+
     /* #1441: once the interpreted callback above has returned, a native
      * producer has no VM frame.  Its assignment belongs to module/native
      * scope, not to the callback frame named by the tape's preceding S. */
@@ -1217,6 +1237,20 @@ int main(void) {
         CHECK(strstr(g_tape, "S 0 <native> 0 0\nA 0 native_after_callback=1441\n") != NULL,
               "native assignment after callback carries native scope");
     }
+
+    EigsValue *shared = eigs_value_new_list(1);
+    EigsValue *forty_two = eigs_value_new_num(42);
+    eigs_value_list_append(shared, forty_two);
+    EigsValue *dag = eigs_value_new_list(2);
+    eigs_value_list_append(dag, shared);
+    eigs_value_list_append(dag, shared);
+    CHECK(eigs_trace_declare_kind("shared_host_answer", EIGS_KIND(EIGS_TYPE_LIST)),
+          "shared-list trace kind declared");
+    eigs_trace_record_nondet("shared_host_answer", dag);
+    eigs_value_release(forty_two);
+    eigs_value_release(shared);
+    eigs_value_release(dag);
+
     eigs_set_trace_sink(NULL, NULL);
     CHECK(g_tape_len > 0, "sink captured tape bytes");
     g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
@@ -1240,6 +1274,21 @@ int main(void) {
     CHECK(r != NULL && eigs_value_as_num(r) == 100101.0,
           "replay serves recorded 100 then 101");
     if (r) eigs_value_release(r);
+    EigsValue *replayed_dag = NULL;
+    CHECK(eigs_replay_take("shared_host_answer", &replayed_dag) && replayed_dag &&
+              eigs_value_list_len(replayed_dag) == 2,
+          "shared non-cyclic sub-list records and replays");
+    if (replayed_dag) {
+        EigsValue *left = eigs_value_list_get(replayed_dag, 0);
+        EigsValue *right = eigs_value_list_get(replayed_dag, 1);
+        EigsValue *lv = left ? eigs_value_list_get(left, 0) : NULL;
+        EigsValue *rv = right ? eigs_value_list_get(right, 0) : NULL;
+        CHECK(lv && rv && eigs_value_as_num(lv) == 42 && eigs_value_as_num(rv) == 42,
+              "both occurrences of a shared sub-list retain their value");
+        eigs_value_release(lv); eigs_value_release(rv);
+        eigs_value_release(left); eigs_value_release(right);
+        eigs_value_release(replayed_dag);
+    }
     /* Exhaustion is a replay error; it must not consult the live sensor. */
     r = eigs_eval_string("host_sensor of []");
     CHECK(r == NULL, "tape exhausted: replay raises without a live read");

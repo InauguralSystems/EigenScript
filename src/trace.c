@@ -3076,15 +3076,18 @@ void trace_assign_filtered_at_line(const char *name, EigsSlot value, int line) {
  * length-framed and the encoded value is split into bounded N/C records by
  * trace_nondet_value, so no answer is truncated. */
 
-static strbuf *g_wf_buf;
+typedef struct WfAncestor {
+    const Value *container;
+    const struct WfAncestor *parent;
+} WfAncestor;
 
-static void wf_putc(int c, int *budget) {
-    (void)budget; strbuf_append_char(g_wf_buf, (char)c);
+static void wf_putc(strbuf *buf, int c, int *budget) {
+    (void)budget; strbuf_append_char(buf, (char)c);
 }
-static void wf_puts(const char *s, int *budget) {
-    (void)budget; strbuf_append(g_wf_buf, s);
+static void wf_puts(strbuf *buf, const char *s, int *budget) {
+    (void)budget; strbuf_append(buf, s);
 }
-static void wf_printf(int *budget, const char *fmt, ...) {
+static void wf_printf(strbuf *out, int *budget, const char *fmt, ...) {
     (void)budget;
     char buf[64];
     va_list ap; va_start(ap, fmt);
@@ -3092,95 +3095,106 @@ static void wf_printf(int *budget, const char *fmt, ...) {
     va_end(ap);
     if (n < 0) return;
     if (n >= (int)sizeof(buf)) n = (int)sizeof(buf) - 1;
-    strbuf_append_n(g_wf_buf, buf, (size_t)n);
+    strbuf_append_n(out, buf, (size_t)n);
 }
 
-static void write_string_full_len(const char *s, size_t len, int *budget) {
-    wf_putc('"', budget);
+static void write_string_full_len(strbuf *buf, const char *s, size_t len, int *budget) {
+    wf_putc(buf, '"', budget);
     if (s) {
         for (size_t i = 0; i < len; i++) {
             unsigned char c = (unsigned char)s[i];
-            if (c == '"' || c == '\\') { wf_putc('\\', budget); wf_putc(c, budget); }
-            else if (c == '\n')        { wf_puts("\\n", budget); }
-            else if (c == '\r')        { wf_puts("\\r", budget); }
-            else if (c < 0x20)         { wf_printf(budget, "\\x%02x", c); }
-            else                       { wf_putc(c, budget); }
+            if (c == '"' || c == '\\') { wf_putc(buf, '\\', budget); wf_putc(buf, c, budget); }
+            else if (c == '\n')        { wf_puts(buf, "\\n", budget); }
+            else if (c == '\r')        { wf_puts(buf, "\\r", budget); }
+            else if (c < 0x20)         { wf_printf(buf, budget, "\\x%02x", c); }
+            else                       { wf_putc(buf, c, budget); }
         }
     }
-    wf_putc('"', budget);
+    wf_putc(buf, '"', budget);
 }
 
-static void write_string_full(const char *s, int *budget) {
-    write_string_full_len(s, s ? strlen(s) : 0, budget);
+static void write_string_full(strbuf *buf, const char *s, int *budget) {
+    write_string_full_len(buf, s, s ? strlen(s) : 0, budget);
 }
 
-static void write_value_ptr_full(Value *v, int *budget) {
-    if (!v) { wf_puts("null", budget); return; }
+static int write_value_ptr_full(strbuf *buf, Value *v, int *budget,
+                                const WfAncestor *ancestors) {
+    if (!v) { wf_puts(buf, "null", budget); return 1; }
+    if (v->type == VAL_LIST || v->type == VAL_DICT) {
+        for (const WfAncestor *a = ancestors; a; a = a->parent)
+            if (a->container == v) return 0;
+    }
+    WfAncestor here = {v, ancestors};
     switch (v->type) {
-        case VAL_NUM:  wf_printf(budget, "%.17g", VAL_NUM_RAW(v)); break;
-        case VAL_NULL: wf_puts("null", budget); break;
-        case VAL_BOOL: wf_puts(v->data.boolean ? "true" : "false", budget); break;
-        case VAL_STR:  write_string_full_len(v->data.str, val_str_len(v), budget); break;
+        case VAL_NUM:  wf_printf(buf, budget, "%.17g", VAL_NUM_RAW(v)); break;
+        case VAL_NULL: wf_puts(buf, "null", budget); break;
+        case VAL_BOOL: wf_puts(buf, v->data.boolean ? "true" : "false", budget); break;
+        case VAL_STR:  write_string_full_len(buf, v->data.str, val_str_len(v), budget); break;
         case VAL_LIST: {
-            wf_putc('[', budget);
+            wf_putc(buf, '[', budget);
             int n = v->data.list.count;
             for (int i = 0; i < n; i++) {
-                if (i) wf_puts(", ", budget);
+                if (i) wf_puts(buf, ", ", budget);
                 EIGS_VIEW(item_view);
-                write_value_ptr_full(list_get_view(v, i, &item_view), budget);
+                if (!write_value_ptr_full(buf, list_get_view(v, i, &item_view), budget, &here)) return 0;
             }
-            wf_putc(']', budget);
+            wf_putc(buf, ']', budget);
             break;
         }
         case VAL_DICT: {
-            wf_putc('{', budget);
+            wf_putc(buf, '{', budget);
             int first = 1;
             DICT_FOR_EACH(v, i) {
-                if (!first) wf_puts(", ", budget);
+                if (!first) wf_puts(buf, ", ", budget);
                 first = 0;
-                write_string_full(v->data.dict.keys[i], budget);
-                wf_puts(": ", budget);
+                write_string_full(buf, v->data.dict.keys[i], budget);
+                wf_puts(buf, ": ", budget);
                 EIGS_VIEW(item_view);
-                write_value_ptr_full(dict_value_get_view(v, i, &item_view), budget);
+                if (!write_value_ptr_full(buf, dict_value_get_view(v, i, &item_view), budget, &here)) return 0;
             }
-            wf_putc('}', budget);
+            wf_putc(buf, '}', budget);
             break;
         }
         case VAL_BUFFER: {
             /* Leading 'b' disambiguates from VAL_LIST: both serialize the
              * bracketed numeric body, but only buffers are restored as
              * VAL_BUFFER on replay. */
-            wf_putc('b', budget);
-            wf_putc('[', budget);
+            wf_putc(buf, 'b', budget);
+            wf_putc(buf, '[', budget);
             int n = v->data.buffer.count;
             for (int i = 0; i < n; i++) {
-                if (i) wf_puts(", ", budget);
-                wf_printf(budget, "%.17g", v->data.buffer.data[i]);
+                if (i) wf_puts(buf, ", ", budget);
+                wf_printf(buf, budget, "%.17g", v->data.buffer.data[i]);
             }
-            wf_putc(']', budget);
+            wf_putc(buf, ']', budget);
             break;
         }
-        case VAL_FN:       wf_puts("<fn>", budget); break;
-        case VAL_BUILTIN:  wf_puts("<builtin>", budget); break;
+        case VAL_FN:       wf_puts(buf, "<fn>", budget); break;
+        case VAL_BUILTIN:  wf_puts(buf, "<builtin>", budget); break;
         /* Opaque placeholders (byte-identical to the old `default:` output;
          * these have no replayable N-record encoding). Enumerated so that
          * -Werror=switch forces a new ValType to choose its encoding here. */
-        case VAL_TEXT_BUILDER: wf_puts("<heap>", budget); break;
+        case VAL_TEXT_BUILDER: wf_puts(buf, "<heap>", budget); break;
     }
+    return 1;
 }
 
 void trace_nondet_value(const char *fn, Value *v) {
     if (!tape_emit_begin()) return;
     obs_cfg_sync();
-    emit_scope_transition();
     if (!fn) fn = "?";
     strbuf buf;
     strbuf_init(&buf);
-    g_wf_buf = &buf;
     int budget = 1;
-    write_value_ptr_full(v, &budget);
-    g_wf_buf = NULL;
+    int acyclic = write_value_ptr_full(&buf, v, &budget, NULL);
+    if (!acyclic) {
+        strbuf_free(&buf);
+        tape_emit_end();
+        rt_error(EK_VALUE, 0, "trace record '%s' contains a container cycle; refusing to record", fn);
+        return;
+    }
     if (buf.refused) { strbuf_free(&buf); tape_emit_end(); return; }
+    emit_scope_transition();
     size_t off = 0;
     emit_tag("N");
     tp_puts(fn); tp_putc('=');
