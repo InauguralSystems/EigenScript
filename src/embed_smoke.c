@@ -42,6 +42,73 @@ static int failures = 0;
     }                                                                      \
 } while (0)
 
+/* #1758 Q3: public C API, including boxed ints, exact conversion bounds,
+ * optional success flags, and the two distinct failure contracts. */
+static void test_embed_int(void) {
+    int before = failures, checks = 0;
+#define INT_CHECK(cond, msg) do { checks++; CHECK((cond), (msg)); } while (0)
+    const int64_t ints[] = {0, 3, -3, INT64_C(9007199254740993),
+                           INT64_MIN, INT64_MAX};
+    for (size_t i = 0; i < sizeof ints / sizeof ints[0]; i++) {
+        EigsValue *v = eigs_value_new_int(ints[i]);
+        int ok = -1;
+        INT_CHECK(eigs_value_type(v) == EIGS_TYPE_NUM, "int has public number type");
+        INT_CHECK(eigs_value_is_int(v), "int predicate includes boxed int64");
+        INT_CHECK(eigs_value_as_int(v, &ok) == ints[i] && ok == 1,
+                  "int round-trips all 64 bits");
+        INT_CHECK(eigs_value_as_int(v, NULL) == ints[i], "int permits NULL flag");
+        INT_CHECK(eigs_value_as_num(v) == (double)ints[i], "as_num converts int");
+        INT_CHECK(!eigs_has_error(), "valid int access leaves no error");
+        /* Exercise the owning container bridge with a genuinely boxed int. */
+        EigsValue *list = eigs_value_new_list(1);
+        eigs_value_list_append(list, v);
+        eigs_value_release(v);
+        v = eigs_value_list_get(list, 0);
+        INT_CHECK(eigs_value_as_int(v, &ok) == ints[i] && ok == 1,
+                  "list bridge preserves exact int after caller releases");
+        eigs_value_release(v);
+        eigs_value_release(list);
+    }
+    const struct { double n; int ok; int64_t want; } floats[] = {
+        {3.0, 1, 3}, {-0.0, 1, 0}, {1.5, 0, 0},
+        {-0x1p63, 1, INT64_MIN}, {0x1p63, 0, 0},
+        {0x1.fffffffffffffp62, 1, INT64_MAX - 1023},
+        {-0x1.0000000000001p63, 0, 0}, {0x1p-1074, 0, 0}
+    };
+    for (size_t i = 0; i < sizeof floats / sizeof floats[0]; i++) {
+        EigsValue *v = eigs_value_new_num(floats[i].n);
+        int ok = -1;
+        INT_CHECK(eigs_value_type(v) == EIGS_TYPE_NUM, "float has public number type");
+        INT_CHECK(!eigs_value_is_int(v), "integral float is never int kind");
+        INT_CHECK(eigs_value_as_int(v, &ok) == floats[i].want && ok == floats[i].ok,
+                  "float exact int64 conversion and refusal bounds");
+        INT_CHECK(eigs_value_as_int(v, NULL) == floats[i].want,
+                  "float permits NULL success flag");
+        INT_CHECK(!eigs_has_error(), "numeric refusal sets no embed error");
+        eigs_value_release(v);
+    }
+    EigsValue *wrong[] = {NULL, eigs_value_new_null(), eigs_value_new_bool(1),
+                         eigs_value_new_string("3"), eigs_value_new_list(0),
+                         eigs_value_new_dict(0)};
+    for (size_t i = 0; i < sizeof wrong / sizeof wrong[0]; i++) {
+        int ok = -1;
+        INT_CHECK(!eigs_value_is_int(wrong[i]) && !eigs_has_error(),
+                  "kind predicate is pure on non-numbers");
+        INT_CHECK(eigs_value_as_int(wrong[i], &ok) == 0 && ok == 0,
+                  "non-number fails with zero success flag");
+        INT_CHECK(eigs_has_error() && strcmp(eigs_last_error_kind(), "type_mismatch") == 0
+                  && strstr(eigs_last_error_message(), "eigs_value_as_int"),
+                  "non-number reports embed type error naming accessor");
+        eigs_clear_error();
+        INT_CHECK(eigs_value_as_int(wrong[i], NULL) == 0 && eigs_has_error(),
+                  "wrong type with NULL flag still reports error");
+        eigs_clear_error();
+        eigs_value_release(wrong[i]);
+    }
+    printf("gate.N7.embed-int: checks=%d failures=%d\n", checks, failures - before);
+#undef INT_CHECK
+}
+
 static EigsValue *fenv_nested(EigsValue *arg) {
     (void)arg;
     CHECK(fesetround(FE_UPWARD) == 0, "nested callback sets FE_UPWARD");
@@ -575,6 +642,7 @@ int main(void) {
     /* #1969: every code-running boundary installs IEEE defaults and restores
      * all host controls and sticky flags, including on errors/re-entry. */
     test_fenv_boundary();
+    test_embed_int();
 
     /* #1394: strictness is state-local embedder configuration. Reuse the
      * one-shot state already keeping the process alive, then create a staged
