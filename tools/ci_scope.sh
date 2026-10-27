@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # CI scope (the `scope` job in .github/workflows/ci.yml): does a PR change
-# anything but docs? Prints `code=true` or `code=false`.
+# anything but docs, and does it affect the Lean spec? Prints both the `code`
+# and `spec` verdicts as GitHub-output-compatible lines.
 #
 #   tools/ci_scope.sh BASE HEAD     classify the diff BASE..HEAD
+#   tools/ci_scope.sh --all         conservatively enable both scopes
 #   tools/ci_scope.sh --selftest    build tiny histories and check each verdict
 #
 # It fails CLOSED: a path is docs only when it is plainly docs, and anything it
@@ -22,12 +24,15 @@
 set -euo pipefail
 
 classify() {
-    local files
+    local files code=false spec=false
     files=$(git -c core.quotePath=true diff --name-only --no-renames "$1" "$2")
-    [ -n "$files" ] || { echo "ci_scope: empty diff $1..$2" >&2; echo "code=true"; return; }
+    [ -n "$files" ] || { echo "ci_scope: empty diff $1..$2" >&2; printf 'code=true\nspec=false\n'; return; }
     echo "changed files:" >&2; printf '%s\n' "$files" | sed 's/^/  /' >&2
     local f e old_entry new_entry
     while IFS= read -r f; do
+        case "$f" in
+            spec/*|tools/spec_lean_no_sorry.py|tools/spec_lean_axioms.py|tools/spec_lean_corpus.py|.github/workflows/ci.yml) spec=true ;;
+        esac
         # name-only classification is insufficient for symlinks: docs/x.md may
         # expose src/x.c. Inspect both trees: only an absent entry or a regular
         # file can be docs, so a changed or deleted link, a submodule or a
@@ -35,11 +40,11 @@ classify() {
         old_entry=$(git ls-tree "$1" -- "$f")
         new_entry=$(git ls-tree "$2" -- "$f")
         for e in "$old_entry" "$new_entry"; do
-            case "$e" in ""|"100644 "*|"100755 "*) ;; *) echo "code=true"; return ;; esac
+            case "$e" in ""|"100644 "*|"100755 "*) ;; *) code=true ;; esac
         done
-        case "$f" in CHANGELOG.md|changes/*|tests/*) echo "code=true"; return ;; *.md) ;; *) echo "code=true"; return ;; esac
+        case "$f" in CHANGELOG.md|changes/*|tests/*) code=true ;; *.md) ;; *) code=true ;; esac
     done <<< "$files"
-    echo "code=false"
+    printf 'code=%s\nspec=%s\n' "$code" "$spec"
 }
 
 selftest() {
@@ -49,39 +54,50 @@ selftest() {
     git -C "$d" -c user.name=t -c user.email=t@t commit -q --allow-empty -m root
     mkdir -p "$d/src"; echo 'int x;' > "$d/src/foo.c"; echo doc > "$d/README.md"
     git -C "$d" add -A; git -C "$d" -c user.name=t -c user.email=t@t commit -q -m base
-    # case <name> <want> <mutation>: apply the mutation on a branch off base
+    # case <name> <want-code> <want-spec> <mutation>: mutate a branch off base
     case_() {
-        local name="$1" want="$2"; shift 2
+        local name="$1" want_code="$2" want_spec="$3"; shift 3
         git -C "$d" checkout -q -B "t$n" base
         ( cd "$d" && eval "$*" )
         git -C "$d" add -A; git -C "$d" -c user.name=t -c user.email=t@t commit -q -m "$name"
         got=$(cd "$d" && classify HEAD~1 HEAD 2>/dev/null)
         n=$((n + 1))
-        if [ "$got" = "code=$want" ]; then echo "  PASS: $name -> $got"
-        else echo "  FAIL: $name -> $got, want code=$want"; fail=$((fail + 1)); fi
+        if [ "$got" = "$(printf 'code=%s\nspec=%s' "$want_code" "$want_spec")" ]; then
+            echo "  PASS: $name -> code=$want_code, spec=$want_spec"
+        else
+            echo "  FAIL: $name -> $got, want code=$want_code spec=$want_spec"; fail=$((fail + 1))
+        fi
     }
-    case_ "code edit"          true  'echo "int y;" >> src/foo.c'
-    case_ "docs edit"          false 'echo more >> README.md'
-    case_ "rename .c to .md"   true  'git mv src/foo.c notes.md'
-    case_ "delete .c"          true  'git rm -q src/foo.c'
-    case_ "rename .md to .md"  false 'git mv README.md GUIDE.md'
-    case_ "CHANGELOG.md edit"  true  'echo entry > CHANGELOG.md'
-    case_ "changes/ fragment"  true  'mkdir -p changes/fixed && echo "- x" > changes/fixed/1-x.md'
-    case_ "docs symlink to code" true 'mkdir -p docs && ln -s ../src/foo.c docs/link.md'
+    case_ "code edit"          true false 'echo "int y;" >> src/foo.c'
+    case_ "docs edit"          false false 'echo more >> README.md'
+    case_ "rename .c to .md"   true false 'git mv src/foo.c notes.md'
+    case_ "delete .c"          true false 'git rm -q src/foo.c'
+    case_ "rename .md to .md"  false false 'git mv README.md GUIDE.md'
+    case_ "CHANGELOG.md edit"  true false 'echo entry > CHANGELOG.md'
+    case_ "changes/ fragment"  true false 'mkdir -p changes/fixed && echo "- x" > changes/fixed/1-x.md'
+    case_ "docs symlink to code" true false 'mkdir -p docs && ln -s ../src/foo.c docs/link.md'
     # Fail closed (#1777): what git quotes, a .md under tests/ and a non-file entry are code.
-    case_ "non-ASCII docs path, quoted by git" true 'mkdir -p docs && echo x > "docs/$(printf "\303\251").md"'
-    case_ "non-ASCII code path" true 'echo "int z;" > "src/$(printf "\303\251").c"'
-    case_ "docs path with a space" false 'mkdir -p docs && echo x > "docs/a b.md"'
-    case_ "code path with a space" true 'echo "int s;" > "src/a b.c"'
-    case_ ".md under tests/" true 'mkdir -p tests && echo x > tests/fixture.md'
-    case_ "submodule named .md" true 'git update-index --add --cacheinfo 160000,"$(git rev-parse HEAD)",docs/sub.md && mkdir -p docs/sub.md'
-    [ "$n" -eq 14 ] || { echo "ci_scope selftest: ran $n cases, want 14"; exit 1; }
+    case_ "non-ASCII docs path, quoted by git" true false 'mkdir -p docs && echo x > "docs/$(printf "\303\251").md"'
+    case_ "non-ASCII code path" true false 'echo "int z;" > "src/$(printf "\303\251").c"'
+    case_ "docs path with a space" false false 'mkdir -p docs && echo x > "docs/a b.md"'
+    case_ "code path with a space" true false 'echo "int s;" > "src/a b.c"'
+    case_ ".md under tests/" true false 'mkdir -p tests && echo x > tests/fixture.md'
+    case_ "submodule named .md" true false 'git update-index --add --cacheinfo 160000,"$(git rev-parse HEAD)",docs/sub.md && mkdir -p docs/sub.md'
+    # The spec verdict is independent of the broad code verdict. The large
+    # diff protects the single-pass classifier against the old grep/SIGPIPE bug.
+    case_ "spec verdict: spec-only" false true 'mkdir -p spec && echo x > spec/note.md'
+    case_ "spec verdict: code-only" true false 'echo "int spec_no;" >> src/foo.c'
+    case_ "spec verdict: both" true true 'mkdir -p tools && echo x > tools/spec_lean_axioms.py'
+    case_ "spec verdict: neither" false false 'echo neither >> README.md'
+    case_ "spec verdict: large diff" true true 'mkdir -p docs .github/workflows; i=0; while [ "$i" -lt 512 ]; do p=$(printf "%0200d" "$i"); echo x > "docs/$p.md"; i=$((i + 1)); done; echo "name: ci" > .github/workflows/ci.yml'
+    [ "$n" -eq 19 ] || { echo "ci_scope selftest: ran $n cases, want 19"; exit 1; }
     echo "ci_scope selftest: $((n - fail))/$n passed"
     [ "$fail" -eq 0 ]
 }
 
 case "${1:-}" in
+    --all) [ $# -eq 1 ] || { echo "usage: tools/ci_scope.sh BASE HEAD | --all | --selftest" >&2; exit 2; }; printf 'code=true\nspec=true\n' ;;
     --selftest) selftest ;;
-    -*|"") echo "usage: tools/ci_scope.sh BASE HEAD | --selftest" >&2; exit 2 ;;
-    *) [ $# -eq 2 ] || { echo "usage: tools/ci_scope.sh BASE HEAD" >&2; exit 2; }; classify "$1" "$2" ;;
+    -*|"") echo "usage: tools/ci_scope.sh BASE HEAD | --all | --selftest" >&2; exit 2 ;;
+    *) [ $# -eq 2 ] || { echo "usage: tools/ci_scope.sh BASE HEAD | --all | --selftest" >&2; exit 2; }; classify "$1" "$2" ;;
 esac
