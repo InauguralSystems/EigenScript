@@ -495,6 +495,20 @@ jobs:
           grep -q 'PLAN: sections=82,100,129,130,0fd,0fe bearing=6 chunks=6$' "$RUNNER_TEMP/jit-checked.log"
           grep -qE '^  RESULTS: [0-9]+/[0-9]+ passed, 0 failed, 0 skipped$' "$RUNNER_TEMP/jit-checked.log"
 
+      # Positive control for the lane itself: scanner-valid bytecode names a
+      # local beyond its frame env. The checked emitter must call the shared
+      # production diagnostic and terminate by SIGABRT (128 + 6).
+      - name: Prove jit-checked local witness can abort
+        run: |
+          make jit-checked-plant
+          set +e
+          /tmp/jit_checked_plant --checked-local-plant >"$RUNNER_TEMP/jit-checked-plant.log" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/jit-checked-plant.log"
+          test "$status" -eq 134
+          grep -q "^EIGS_JIT_CHECKED: local slot out of range (slot vs fn_env->count) (1 vs 1) at GET_LOCAL offset 2 in chunk 'jit-checked-positive-control' line 1704$" "$RUNNER_TEMP/jit-checked-plant.log"
+
       - name: Require compiler guard activity
         if: always()
         run: bash tools/cc_guard.sh --report

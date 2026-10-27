@@ -83,7 +83,7 @@ uint32_t env_hash_name(const char *name) { (void)name; return 0; }
 /* Diagnostic histogram in jit_module_shutdown references op_name from
  * chunk.c. The smoke binary never triggers the histogram path because
  * EIGS_JIT_STOPS is not set, but the linker still needs a definition. */
-const char *op_name(uint8_t op) { (void)op; return "?"; }
+const char *op_name(uint8_t op) { return op == OP_GET_LOCAL ? "GET_LOCAL" : "?"; }
 
 /* Stage 4k references &jit_helper_get_name as an immediate in the
  * OP_GET_NAME emitter. Smoke test never invokes that emitter, but
@@ -733,7 +733,61 @@ static int run_bool_cases(void) {
     return rc;
 }
 
-int main(void) {
+#ifdef EIGS_JIT_CHECKED
+/* Deterministic positive control: the bytecode scanner accepts local slot 1,
+ * while the executing frame deliberately has only slot 0. If the emitter's
+ * checked-local call disappears, the thunk returns and this plant fails
+ * normally instead of producing the required abort diagnostic. */
+static int run_checked_local_plant(void) {
+#if EIGS_JIT_ENABLED
+    EigsState state = {0};
+    EigsThread thread = {0};
+    VM vm = {0};
+    Env env = {0};
+    EigsSlot values[2] = {slot_null(), slot_null()};
+    uint8_t code[] = {OP_NULL, OP_POP, OP_GET_LOCAL, 1, 0};
+    int lines[] = {1704, 1704, 1704, 1704, 1704};
+    EigsChunk chunk = {0};
+    thread.state = &state;
+    thread.vm = &vm;
+    vm.owner = &thread;
+    eigs_current = &thread;
+    env.values = values;
+    env.count = env.capacity = 1;
+    chunk.code = code;
+    chunk.code_len = sizeof code;
+    chunk.lines = lines;
+    chunk.lines_len = sizeof lines / sizeof lines[0];
+    chunk.name = "jit-checked-positive-control";
+    chunk.local_count = 2; /* scanner contract; deliberately above env.count */
+    chunk.exec_count = 1;
+    jit_try_compile_chunk(&chunk);
+    if (!chunk.jit_code || chunk.jit_state != 2) {
+        fprintf(stderr, "FAIL: jit-checked positive control did not compile\n");
+        return 1;
+    }
+    vm.frame_count = 1;
+    vm.frames[0].chunk = &chunk;
+    vm.frames[0].fn_env = &env;
+    vm.frames[0].ip = code;
+    jit_call(chunk.jit_code);
+    fprintf(stderr, "FAIL: jit-checked positive control returned without aborting\n");
+    return 1;
+#else
+    fprintf(stderr, "FAIL: jit-checked positive control requires the native JIT\n");
+    return 1;
+#endif
+}
+#endif
+
+int main(int argc, char **argv) {
+#ifdef EIGS_JIT_CHECKED
+    if (argc == 2 && strcmp(argv[1], "--checked-local-plant") == 0)
+        return run_checked_local_plant();
+#else
+    (void)argc;
+    (void)argv;
+#endif
     int rc = 0;
     rc |= run_case(42);
     rc |= run_case(-1);
