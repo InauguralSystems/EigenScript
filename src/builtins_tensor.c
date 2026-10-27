@@ -1845,34 +1845,29 @@ static double numerical_loss(Value *loss_fn, Value *arg, const char *who,
     return 0.0;
 }
 
-/* A loss callback is arbitrary user code and may shrink the list currently
- * being perturbed.  Never use a slot validated before that callback. */
-static int gradient_index_still_valid(const Value *list, int index) {
-    if (list && list->type == VAL_LIST && index >= 0 &&
-        index < list->data.list.count)
-        return 1;
+/* A loss callback is arbitrary user code.  Validate the complete loop-bound
+ * invariant before using any slot after it returns, not merely the cell that
+ * was just perturbed.  For matrix rows, also validate the parent shape and
+ * identity.  The caller retains container so restoration never targets a
+ * callback's replacement row. */
+static int gradient_container_unchanged(Value *container, int expected_len,
+                                        const Value *parent, int expected_parent_len,
+                                        int row, int index, double old_val) {
+    int unchanged = container && container->type == VAL_LIST &&
+                    container->data.list.count == expected_len;
+    if (parent) {
+        unchanged = unchanged && parent->type == VAL_LIST &&
+                    parent->data.list.count == expected_parent_len &&
+                    row >= 0 && row < parent->data.list.count &&
+                    list_get_ref(parent, row) == container;
+    }
+    if (unchanged) return 1;
+
+    if (container && container->type == VAL_LIST && index >= 0 &&
+        index < container->data.list.count)
+        list_set_num(container, index, old_val);
     rt_error(EK_VALUE, 0, "param mutated during gradient");
     return 0;
-}
-
-static Value *gradient_row_still_valid(const Value *matrix, int row, int col,
-                                       Value *expected_row, double old_val) {
-    Value *current_row = NULL;
-    if (matrix && matrix->type == VAL_LIST && row >= 0 &&
-        row < matrix->data.list.count)
-        current_row = list_get_ref(matrix, row);
-    if (current_row == expected_row && expected_row->type == VAL_LIST &&
-        col >= 0 && col < expected_row->data.list.count)
-        return expected_row;
-
-    /* The caller retains expected_row across arbitrary callback code.  If the
-     * parent now points elsewhere, restore the row that we actually perturbed;
-     * never redirect old_val into the callback's replacement row. */
-    if (expected_row->type == VAL_LIST && col >= 0 &&
-        col < expected_row->data.list.count)
-        list_set_num(expected_row, col, old_val);
-    rt_error(EK_VALUE, 0, "param mutated during gradient");
-    return NULL;
 }
 
 /* numerical_grad of [loss_fn, param, eps]
@@ -1958,10 +1953,12 @@ Value* builtin_numerical_grad(Value *arg) {
             double old_val = eigs_slot_num(list_slot(param, i), __func__);
             list_set_num(param, i, old_val + eps);
             double lp = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            if (!gradient_index_still_valid(param, i)) goto list_grad_failed;
+            if (!gradient_container_unchanged(param, len, NULL, 0, -1, i, old_val))
+                goto list_grad_failed;
             list_set_num(param, i, old_val - eps);
             double lm = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            if (!gradient_index_still_valid(param, i)) goto list_grad_failed;
+            if (!gradient_container_unchanged(param, len, NULL, 0, -1, i, old_val))
+                goto list_grad_failed;
             list_set_num(param, i, old_val);
             /* Central difference */
             list_append_owned(grad, make_num((lp - lm) / (2.0 * eps)));
@@ -1990,12 +1987,14 @@ list_grad_failed:
             val_incref(row);
             list_set_num(row, c, old_val + eps);
             double lp = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            Value *checked_row = gradient_row_still_valid(param, r, c, row, old_val);
-            if (!checked_row) { val_decref(row); goto matrix_grad_failed; }
+            if (!gradient_container_unchanged(row, cols, param, rows, r, c, old_val)) {
+                val_decref(row); goto matrix_grad_failed;
+            }
             list_set_num(row, c, old_val - eps);
             double lm = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            checked_row = gradient_row_still_valid(param, r, c, row, old_val);
-            if (!checked_row) { val_decref(row); goto matrix_grad_failed; }
+            if (!gradient_container_unchanged(row, cols, param, rows, r, c, old_val)) {
+                val_decref(row); goto matrix_grad_failed;
+            }
             list_set_num(row, c, old_val);
             val_decref(row);
             list_append_owned(grad_row, make_num((lp - lm) / (2.0 * eps)));
@@ -2150,6 +2149,7 @@ Value* builtin_numerical_grad_rows(Value *arg) {
 
         Value *row = list_get_ref(matrix, r);
         if (!row || row->type != VAL_LIST) continue;
+        int row_len = row->data.list.count;
         Value *grad_row = list_get_ref(grad, r);
 
         for (int c = 0; c < cols && c < row->data.list.count; c++) {
@@ -2157,12 +2157,14 @@ Value* builtin_numerical_grad_rows(Value *arg) {
             val_incref(row);
             list_set_num(row, c, old_val + eps);
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
-            Value *checked_row = gradient_row_still_valid(matrix, r, c, row, old_val);
-            if (!checked_row) { val_decref(row); goto rows_grad_failed; }
+            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, c, old_val)) {
+                val_decref(row); goto rows_grad_failed;
+            }
             list_set_num(row, c, old_val - eps);
             double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
-            checked_row = gradient_row_still_valid(matrix, r, c, row, old_val);
-            if (!checked_row) { val_decref(row); goto rows_grad_failed; }
+            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, c, old_val)) {
+                val_decref(row); goto rows_grad_failed;
+            }
             list_set_num(row, c, old_val);
             val_decref(row);
             /* gradient — release the zero placeholder this slot held */
@@ -2332,19 +2334,22 @@ Value* builtin_numerical_grad_cols(Value *arg) {
         for (int r = 0; r < rows; r++) {
             Value *row = list_get_ref(matrix, r);
             if (!row || row->type != VAL_LIST || col >= row->data.list.count) continue;
+            int row_len = row->data.list.count;
 
             double old_val = eigs_slot_num(list_slot(row, col), __func__);
             val_incref(row);
             /* +eps */
             list_set_num(row, col, old_val + eps);
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
-            Value *checked_row = gradient_row_still_valid(matrix, r, col, row, old_val);
-            if (!checked_row) { val_decref(row); goto cols_grad_failed; }
+            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, col, old_val)) {
+                val_decref(row); goto cols_grad_failed;
+            }
             /* -eps */
             list_set_num(row, col, old_val - eps);
             double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
-            checked_row = gradient_row_still_valid(matrix, r, col, row, old_val);
-            if (!checked_row) { val_decref(row); goto cols_grad_failed; }
+            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, col, old_val)) {
+                val_decref(row); goto cols_grad_failed;
+            }
             /* restore */
             list_set_num(row, col, old_val);
             val_decref(row);

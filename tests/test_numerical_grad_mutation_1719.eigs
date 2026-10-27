@@ -1,57 +1,96 @@
-p1 is [1]
+# A callback can leave the currently perturbed index valid while removing
+# later cells.  The callback runs once for +eps and once for -eps.
+p1 is [1, 2, 3]
 loss1_calls is 0
 define loss1(_) as:
     loss1_calls is loss1_calls + 1
+    assert of [loss1_calls <= 2, "gradient touched another cell after callback mutation"]
     if loss1_calls == 2:
-        list_remove_at of [p1, 0]
+        list_remove_at of [p1, 2]
+        list_remove_at of [p1, 1]
     return 0
 try:
     numerical_grad of [loss1, p1, 0.01]
-    assert of [false, "numerical_grad 1-D accepted a shrunken parameter"]
+    assert of [false, "numerical_grad 1-D accepted a shortened parameter"]
 catch e:
     assert of [e.kind == "value", "numerical_grad 1-D error kind"]
     assert of [e.message == "param mutated during gradient", "numerical_grad 1-D error message"]
-    assert of [p1 == [], "numerical_grad 1-D touched the list after callback"]
-    print of "PASS numerical_grad 1-D"
+    assert of [p1 == [1], "numerical_grad 1-D restored the remaining cell"]
+    assert of [loss1_calls == 2, "numerical_grad 1-D stopped before another cell"]
+    print of "PASS numerical_grad 1-D later-cell shrink"
 
-p2 is [[1]]
+p2 is [[1, 2, 3]]
+loss2_calls is 0
 define loss2(_) as:
-    list_remove_at of [p2, 0]
+    loss2_calls is loss2_calls + 1
+    assert of [loss2_calls <= 2, "gradient touched another cell after callback mutation"]
+    if loss2_calls == 2:
+        list_remove_at of [p2[0], 2]
+        list_remove_at of [p2[0], 1]
     return 0
 try:
     numerical_grad of [loss2, p2, 0.01]
-    assert of [false, "numerical_grad 2-D accepted a shrunken parameter"]
+    assert of [false, "numerical_grad 2-D accepted a shortened row"]
 catch e:
     assert of [e.kind == "value", "numerical_grad 2-D error kind"]
     assert of [e.message == "param mutated during gradient", "numerical_grad 2-D error message"]
-    assert of [p2 == [], "numerical_grad 2-D touched the list after callback"]
-    print of "PASS numerical_grad 2-D"
+    assert of [p2 == [[1]], "numerical_grad 2-D restored the remaining cell"]
+    assert of [loss2_calls == 2, "numerical_grad 2-D stopped before another cell"]
+    print of "PASS numerical_grad 2-D later-cell shrink"
 
-pr is [[1]]
+pr is [[1, 2, 3]]
+rows_calls is 0
 define loss_rows(_) as:
-    list_remove_at of [pr, 0]
+    rows_calls is rows_calls + 1
+    assert of [rows_calls <= 2, "gradient touched another cell after callback mutation"]
+    if rows_calls == 2:
+        list_remove_at of [pr[0], 2]
+        list_remove_at of [pr[0], 1]
     return 0
 try:
     numerical_grad_rows of [loss_rows, pr, [0], 0.01]
-    assert of [false, "numerical_grad_rows accepted a shrunken parameter"]
+    assert of [false, "numerical_grad_rows accepted a row shortened to c+1"]
 catch e:
     assert of [e.kind == "value", "numerical_grad_rows error kind"]
     assert of [e.message == "param mutated during gradient", "numerical_grad_rows error message"]
-    assert of [pr == [], "numerical_grad_rows touched the list after callback"]
-    print of "PASS numerical_grad_rows"
+    assert of [pr == [[1]], "numerical_grad_rows restored the remaining cell"]
+    assert of [rows_calls == 2, "numerical_grad_rows stopped on the mutated row"]
+    print of "PASS numerical_grad_rows c+1 shrink"
 
-pc is [[1]]
+pc is [[1, 2, 3]]
+cols_calls is 0
 define loss_cols(_) as:
-    list_remove_at of [pc[0], 0]
+    cols_calls is cols_calls + 1
+    assert of [cols_calls <= 2, "gradient touched another cell after callback mutation"]
+    if cols_calls == 2:
+        list_remove_at of [pc[0], 2]
+        list_remove_at of [pc[0], 1]
     return 0
 try:
-    numerical_grad_cols of [loss_cols, pc, [0], 0.01]
-    assert of [false, "numerical_grad_cols accepted a shrunken parameter"]
+    numerical_grad_cols of [loss_cols, pc, [0, 1, 2], 0.01]
+    assert of [false, "numerical_grad_cols accepted a row shortened to c+1"]
 catch e:
     assert of [e.kind == "value", "numerical_grad_cols error kind"]
     assert of [e.message == "param mutated during gradient", "numerical_grad_cols error message"]
-    assert of [pc == [[]], "numerical_grad_cols touched the list after callback"]
-    print of "PASS numerical_grad_cols"
+    assert of [pc == [[1]], "numerical_grad_cols restored the remaining cell"]
+    assert of [cols_calls == 2, "numerical_grad_cols stopped on the mutated row"]
+    print of "PASS numerical_grad_cols c+1 shrink"
+
+pg is [1, 2, 3]
+growth_calls is 0
+define loss_growth(_) as:
+    growth_calls is growth_calls + 1
+    if growth_calls == 1:
+        append of [pg, 4]
+    return 0
+try:
+    numerical_grad of [loss_growth, pg, 0.01]
+    assert of [false, "numerical_grad accepted parameter growth"]
+catch e:
+    assert of [e.kind == "value", "numerical_grad growth error kind"]
+    assert of [e.message == "param mutated during gradient", "numerical_grad growth error message"]
+    assert of [pg == [1, 2, 3, 4], "numerical_grad growth restored the perturbed cell"]
+    print of "PASS numerical_grad growth"
 
 # A callback may replace a row with another, sufficiently long list.  The
 # replacement must not receive restoration writes, and the retained original
