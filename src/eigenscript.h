@@ -1058,7 +1058,7 @@ struct EigsThread {
     char         first_error_msg[256];
     struct Value *error_value;      /* thrown payload for structured catch */
     /* #406: structured runtime errors. Kind (ErrKind), 1-based line, and
-     * the bare message (no "Error line N:" frame) of the live error —
+     * the bare message (no "Error path:N:" frame) of the live error —
      * catch binds {kind, message, line} from these when error_value is
      * NULL (i.e. for built-in errors; thrown values bind untouched). */
     int          error_kind;

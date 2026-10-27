@@ -144,7 +144,7 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
     vsnprintf(tmp, sizeof(tmp), fmt, args);
     va_end(args);
     /* Tolerate a trailing newline in the format (some call sites carried one
-     * over from fprintf): the "Error line N:" frame and the stderr write add
+     * over from fprintf): the "Error path:N:" frame and the stderr write add
      * their own, and a trailing \n would also leak into a caught error's text. */
     size_t _tl = strlen(tmp);
     if (_tl > 0 && tmp[_tl - 1] == '\n') tmp[_tl - 1] = '\0';

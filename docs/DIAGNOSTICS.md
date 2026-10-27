@@ -79,7 +79,8 @@ Caught errors print nothing; the handler decides.
   location prefix (`"cannot apply '-' to list and num"`),
   `file` equal to the compiled source identity, and `line` 1-based. File inputs
   retain the loader path; eval, stdin, and unnamed embedding inputs use
-  `<eval>`, `<stdin>`, and `<embed>`. The message remains byte-compatible with
+  `<eval>`, `<stdin>`, and `<embed>`; sandbox-synthesized errors use
+  `<sandbox>`. The message remains byte-compatible with
   earlier releases. Discriminate on `kind`, never on message text —
   messages are wording, kinds are contract.
 - A **thrown value** binds unchanged: `throw of {"kind": "validation"}`

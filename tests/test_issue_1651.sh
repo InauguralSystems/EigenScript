@@ -51,6 +51,36 @@ check 'caught eval error message is byte-identical to main' '[ "$EVAL_CAUGHT_OUT
 check 'caught loaded-module error message is byte-identical to main' '[ "$MODULE_CAUGHT_OUT" = "$EXPECTED_MESSAGE" ]'
 RC2=0
 [ "$RUNTIME_RC" -eq 0 ] && [ "$EVAL_CAUGHT_RC" -eq 0 ] && [ "$MODULE_CAUGHT_RC" -eq 0 ] || RC2=1
+cat > "$D/sandbox-errors.eigs" <<'EIGS'
+loop_cap is sandbox_run of [[1, [63,3,0,30,6,0,40], []], 10]
+callable is sandbox_run of [[1, [25,0,0,40], ["len"]], 10]
+print of loop_cap.error.file
+print of callable.error.file
+EIGS
+SANDBOX_OUT=$(cd "$D" && "$BIN" sandbox-errors.eigs 2>&1); SANDBOX_RC=$?
+OUT="$SANDBOX_OUT"
+check 'sandbox loop-cap error has the stable synthesized file' '[ "$(head -n1 <<<"$SANDBOX_OUT")" = "<sandbox>" ]'
+check 'sandbox callable-refusal error has the stable synthesized file' '[ "$(tail -n1 <<<"$SANDBOX_OUT")" = "<sandbox>" ]'
+cat > "$D/deadlock-after-eval.eigs" <<'EIGS'
+try:
+    eval of "missing_eval_name"
+catch ignored:
+    x is 1
+define da() as:
+    return task_join of db_id
+define db() as:
+    return task_join of da_id
+da_id is task_spawn of da
+db_id is task_spawn of db
+task_join of da_id
+EIGS
+DEADLOCK_OUT=$(cd "$D" && "$BIN" deadlock-after-eval.eigs 2>&1); DEADLOCK_RC=$?
+OUT="$DEADLOCK_OUT"
+check 'deadlock after caught eval reports the script file, not stale eval identity' 'grep -Fq "Error deadlock-after-eval.eigs:11: all tasks are blocked — deadlock" <<<"$DEADLOCK_OUT" && ! grep -Fq "Error <eval>:" <<<"$DEADLOCK_OUT"'
+TEST_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+SWEEP_OUT=$(cd "$TEST_ROOT" && EIGS_DIFF_NEW="$BIN" EIGS_DIFF_SWEEP_SELFTEST=1 bash tools/strict_differential.sh --no-baseline 2>&1); SWEEP_RC=$?
+OUT="$SWEEP_OUT"
+check 'strict sweep classifies a planted own-name raise under the source-bearing header' 'grep -Fxq "sweep-verdict-selftest: RAISED-OWN" <<<"$SWEEP_OUT"'
 cat > "$D/eval.eigs" <<'EIGS'
 eval of "x is [1] - 2"
 EIGS
@@ -66,5 +96,6 @@ IMPORTED=$(cd "$D" && realpath imported.eigs)
 check 'imported module header retains the resolved module identity' 'grep -Fq "Error $IMPORTED:2:" <<<"$OUT"'
 check 'imported closure and caller frames retain distinct identities' 'grep -Fq "at cached_boom ($IMPORTED:2)" <<<"$OUT" && grep -Fq "at <module> (import-main.eigs:2)" <<<"$OUT"'
 printf 'issue-1651: %d passed, %d failed\n' "$pass" "$fail"
-[ "$RC" -eq 1 ] && [ "$RC2" -eq 0 ] && [ "$RC3" -eq 1 ] &&
+[ "$RC" -eq 1 ] && [ "$RC2" -eq 0 ] && [ "$SANDBOX_RC" -eq 0 ] &&
+    [ "$DEADLOCK_RC" -eq 1 ] && [ "$SWEEP_RC" -eq 0 ] && [ "$RC3" -eq 1 ] &&
     [ "$RC4" -eq 1 ] && [ "$fail" -eq 0 ]

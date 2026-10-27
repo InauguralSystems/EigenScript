@@ -597,7 +597,7 @@ echo ""
 # stamp (the AOT's per-statement line), not 0. C-level because the shape --
 # rt_error outside any interpreter frame -- has no .eigs spelling. #1434: the
 # same binary runs an eval-defined sort_by key from C, so it runs per tier.
-echo "[0b] Error line fallback outside a VM frame (#1082, #1434)"
+echo "[0b] Error location fallback outside a VM frame (#1082, #1434)"
 check_binary_fingerprint
 ERRLINE_BUILD=$(make --no-print-directory -C .. errline-test 2>&1)
 ERRLINE_BUILD_RC=$?

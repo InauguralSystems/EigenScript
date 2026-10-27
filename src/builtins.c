@@ -3441,11 +3441,12 @@ Value* builtin_sandbox_run(Value *arg) {
         /* #406: surface the build failure structurally — a descriptor
          * that doesn't verify is a bad argument value, same shape as a
          * runtime failure's error field. */
-        Value *ev = make_dict(3);
+        Value *ev = make_dict(4);
         dict_set_owned(ev, "kind", make_str(err_kind_name(EK_VALUE)));
         dict_set_owned(ev, "message",
                        make_str(abi_err ? abi_err : "invalid chunk descriptor"));
         dict_set_owned(ev, "line", make_num(0));
+        dict_set_owned(ev, "file", make_str("<sandbox>"));
         dict_set_owned(out, "error", ev);
         return sandbox_finish_run(out);
     }
@@ -3630,6 +3631,7 @@ Value* builtin_sandbox_run(Value *arg) {
                  loop_max);
         dict_set_owned(ev, "message", make_str(capmsg));
         dict_set_owned(ev, "line", make_num(0));
+        dict_set_owned(ev, "file", make_str("<sandbox>"));
         dict_set_owned(out, "error", ev);
     }
     if (!ok && g_sandbox_refusal) {
@@ -3637,7 +3639,7 @@ Value* builtin_sandbox_run(Value *arg) {
          * report the FIRST refusal's own triple. Not the latched g_error_*,
          * which an earlier caught ordinary error (e.g. throw("sentinel")) may
          * occupy without being a refusal; and not a later error. */
-        Value *ev = make_dict(3);
+        Value *ev = make_dict(4);
         dict_set_owned(ev, "kind",
                        make_str(err_kind_name((ErrKind)g_sandbox_refusal_kind)));
         dict_set_owned(ev, "message", make_str(g_sandbox_refusal_msg));
@@ -3682,7 +3684,7 @@ Value* builtin_sandbox_run(Value *arg) {
     }
     if (scan_hit && ok) {
         ok = 0;
-        Value *ev = make_dict(3);
+        Value *ev = make_dict(4);
         dict_set_owned(ev, "kind", make_str(err_kind_name(EK_SANDBOX)));
         dict_set_owned(ev, "message",
                        make_str(scan_unverified
@@ -3692,6 +3694,7 @@ Value* builtin_sandbox_run(Value *arg) {
                                 : "sandbox result contains a callable; "
                                   "functions cannot cross the sandbox boundary"));
         dict_set_owned(ev, "line", make_num(0));
+        dict_set_owned(ev, "file", make_str("<sandbox>"));
         dict_set_owned(out, "error", ev);
     }
 

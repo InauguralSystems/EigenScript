@@ -868,7 +868,7 @@ number when approximate is fine. Note `avg()` and `sum(numeric)` return
 column and the fix:
 
 ```
-Error line 3: db: column 'id' value 9007199254740993 exceeds the exact-integer
+Error query.eigs:3: db: column 'id' value 9007199254740993 exceeds the exact-integer
 range of a number (2^53); select it as text (id::text) to keep the digits
 ```
 
