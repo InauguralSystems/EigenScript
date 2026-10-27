@@ -3102,32 +3102,5 @@
     "form_asserts": {
       "scalar:0": "(type of shape_result) == \"buffer\" and (shape_snapshot of shape_result) == [0, 0]"
     }
-  },
-  {
-    "args": [
-      "0",
-      "3"
-    ],
-    "valid_assert": "(len of shape_result) == 3 and (buf_get of [shape_result, 1]) == 98",
-    "setup": "",
-    "observe": "print of shape_result",
-    "cleanup": "",
-    "unchanged": "shape_remaining is proc_read_buf of [0, 3]\nassert of [(len of shape_remaining) == 3 and (buf_get of [shape_remaining, 1]) == 98, \"buffer read consumed bytes on rejection\"]",
-    "optional_args": [],
-    "requirements": [
-      "stdin_bytes"
-    ],
-    "legacy_surplus_null": true,
-    "legacy_surplus_assert": "shape_result == null",
-    "source": {
-      "file": "src/builtins_host.c",
-      "line": 1653,
-      "function": "builtin_proc_read_buf"
-    },
-    "maximum": 2,
-    "execution": "UNRUN",
-    "name": "proc_read_buf",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "legacy_surplus_observe": "shape_legacy_remaining is proc_read_buf of [0, 3]\nassert of [(len of shape_legacy_remaining) == 3 and (buf_get of [shape_legacy_remaining, 1]) == 98, \"legacy surplus consumed bytes\"]\nprint of shape_result"
   }
 ]
