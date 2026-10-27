@@ -6,10 +6,11 @@ waits for a worker and returns its result, or re-raises its error. This
 document is the contract for what is shared, what is copied, and what that
 costs — the questions a static type cannot answer for you.
 
-Closures may capture bindings and containers by reference. **Any concurrent
-access to a shared container (a list, an ordinary dict), or to a binding a
-closure captured from a function's scope, is undefined, including a read
-racing a write.** This is not merely a lost-update rule: measured
+Closures may capture bindings and containers by reference. Concurrent reads
+of a shared container are safe. **Two threads writing the same dict, or one
+writing while another reads, is still your race**, as is concurrent access to
+a shared list or to a binding a closure captured from a function's scope when
+one access writes. This is not merely a lost-update rule: measured
 shared-list races have terminated in `realloc(): invalid old size` and
 `double free or corruption`, and a reader of a captured binding can still
 retain a value after a writer has freed it. A **module-level** binding (the

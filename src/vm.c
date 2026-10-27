@@ -652,7 +652,7 @@ vm_dict_slot_cached(Value *dict, const char *key, uint32_t h) {
         return dict_get_hashed_slot(dict, key, h, &found);  /* null when absent */
     }
     DictCacheEntry *ce = dict_cache_probe(dict, h);
-    if (ce && ce->index < dict->data.dict.count) {
+    if (ce && ce->index < dict->data.dict.used) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0)
             return dict_value_slot(dict, ce->index);
@@ -671,7 +671,7 @@ static inline void dict_set_cached(Value *dict, const char *key, uint32_t h, Val
         return;
     }
     DictCacheEntry *ce = dict_cache_probe(dict, h);
-    if (ce && ce->index < dict->data.dict.count) {
+    if (ce && ce->index < dict->data.dict.used) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0) {
             /* Cache hit — update in place */
@@ -694,7 +694,7 @@ dict_set_cached_immediate(Value *dict, const char *key, uint32_t h, double num) 
     if (__builtin_expect(dict->module_ns != 0, 0))
         return 0;                     /* #1057: never in-place on a mirror */
     DictCacheEntry *ce = dict_cache_probe(dict, h);
-    if (ce && ce->index < dict->data.dict.count) {
+    if (ce && ce->index < dict->data.dict.used) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0) {
             /* Slot storage (#1665 arm D B10): a cache hit is a plain
