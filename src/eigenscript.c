@@ -518,6 +518,51 @@ static inline size_t obs_v_count(const ObserverSlot *s) {
     size_t n = (size_t)obs_win(s);
     return s->v_window_count < n ? s->v_window_count : n;
 }
+static inline size_t obs_eq_count(const ObserverSlot *s) {
+    size_t n = (size_t)obs_win(s);
+    return s->eq_window_count < n ? s->eq_window_count : n;
+}
+
+static void observer_slot_eq_ensure(ObserverSlot *s, int n) {
+    if (s->eq_window && s->eq_cap >= n) return;
+    uint8_t *nw = xcalloc((size_t)n, sizeof(*nw));
+    int cnt = s->eq_window ? s->eq_window_count : 0;
+    if (cnt > n) cnt = n;
+    for (int i = cnt - 1; i >= 0; i--) {
+        int old = (int)s->eq_window_head - cnt + i;
+        while (old < 0) old += s->eq_cap;
+        nw[i] = s->eq_window[old];
+    }
+    free(s->eq_window);
+    s->eq_window = nw;
+    s->eq_cap = (uint8_t)n;
+    s->eq_window_count = (uint8_t)cnt;
+    s->eq_window_head = (uint8_t)(cnt % n);
+}
+
+static void observer_slot_record_equality(ObserverSlot *s, Value *v) {
+    int n = obs_win(s);
+    if (s->eq_last) {
+        if (!s->eq_window || s->eq_cap < n) observer_slot_eq_ensure(s, n);
+        s->eq_window[s->eq_window_head] = (uint8_t)values_equal(s->eq_last, v);
+        if (++s->eq_window_head >= s->eq_cap) s->eq_window_head = 0;
+        if (s->eq_window_count < s->eq_cap) s->eq_window_count++;
+    }
+    val_incref(v);                 /* retain before dropping: v may equal eq_last */
+    val_decref(s->eq_last);
+    s->eq_last = v;
+}
+
+static int observer_slot_eq_settled(const ObserverSlot *s) {
+    size_t n = (size_t)observer_slot_window(s);
+    if (!s || obs_eq_count(s) < n) return 0;
+    for (size_t i = 0; i < n; i++) {
+        int at = (int)s->eq_window_head - 1 - (int)i;
+        while (at < 0) at += s->eq_cap;
+        if (!s->eq_window[at]) return 0;
+    }
+    return 1;
+}
 
 static double observer_slot_window_get(const ObserverSlot *s, size_t offset_back) {
     if (!s->dh_window || offset_back >= s->dh_window_count) return 0.0;
@@ -793,7 +838,10 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
          * a number is assigned again (the recorded windows are kept, matching
          * report_value's documented history semantics). */
         ObserverSlot *s = env_obs_slot(e, idx);
-        if (s) s->v_last = 0;
+        if (s) {
+            s->v_last = 0;
+            observer_slot_record_equality(s, newval);
+        }
     }
 }
 
@@ -805,7 +853,12 @@ void observer_slot_update_num(Env *e, int idx, double num) {
     if (!eigs_obs_gate_open()) return;           /* #915 — see observer_slot_update */
     observer_slot_update_e(e, idx, entropy_of_num(num));
     ObserverSlot *vs = env_obs_slot(e, idx);    /* #294 value-signal channel */
-    if (vs) observer_slot_record_value(vs, num);
+    if (vs) {
+        observer_slot_record_value(vs, num);
+        val_decref(vs->eq_last);
+        vs->eq_last = NULL;
+        vs->eq_window_count = vs->eq_window_head = 0;
+    }
 }
 
 /* #1049: the ELIDED assignment — what an `unobserved:` block still records.
@@ -890,6 +943,8 @@ void observer_slot_reset_bounded(Env *e, int max_retain_cap) {
         free(e->obs[i].dh_window);
         free(e->obs[i].v_window);   /* #294 value-signal window */
         free(e->obs[i].vr_window);  /* #422 raw-step window */
+        val_decref(e->obs[i].eq_last);
+        free(e->obs[i].eq_window);
     }
     /* observer_obs_grow initializes the entire allocated extent, not merely
      * the binding prefix. Clearing obs_cap slots is therefore both necessary
@@ -1218,14 +1273,19 @@ static int obs_route_num(const ObserverSlot *s) {
  * saturation gates that #889 put on the entropy bodies are gone — a live
  * numeric binding always routes to the value channel, where the family
  * handles saturation itself, so the entropy route can no longer see one. */
-int observer_slot_converged(const ObserverSlot *s) {
-    if (obs_route_num(s)) return obs_num_converged(s);
+static int obs_entropy_converged(const ObserverSlot *s) {
     if (!s) return 0;
     size_t N = (size_t)observer_slot_window(s);
     if (obs_dh_count(s) < N) return 0;
     for (size_t i = 0; i < N; i++)
         if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_zero) return 0;
     return (s->entropy < g_obs_h_low) ? 1 : 0;
+}
+
+int observer_slot_converged(const ObserverSlot *s) {
+    if (obs_route_num(s)) return obs_num_converged(s);
+    if (s && s->eq_last) return observer_slot_eq_settled(s);
+    return obs_entropy_converged(s);
 }
 
 int observer_slot_equilibrium(const ObserverSlot *s) {
@@ -1287,8 +1347,7 @@ int observer_slot_oscillating(const ObserverSlot *s) {
     return (flips >= FLIPS) ? 1 : 0;
 }
 
-int observer_slot_stable(const ObserverSlot *s) {
-    if (obs_route_num(s)) return obs_num_stable(s);
+static int obs_entropy_stable(const ObserverSlot *s) {
     size_t cnt = s ? obs_dh_count(s) : 0;
     if (cnt < (size_t)observer_slot_window(s)) return 0;
     if (s->entropy < g_obs_h_low) return 0;
@@ -1300,6 +1359,12 @@ int observer_slot_stable(const ObserverSlot *s) {
         if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) return 0;
     }
     return 1;
+}
+
+int observer_slot_stable(const ObserverSlot *s) {
+    if (obs_route_num(s)) return obs_num_stable(s);
+    if (s && s->eq_last) return observer_slot_eq_settled(s);
+    return obs_entropy_stable(s);
 }
 
 /* #871: the predicate vocabulary, in kind order. The parser derives a kind as
@@ -1324,9 +1389,9 @@ const char *observer_slot_report_entropy(const ObserverSlot *s) {
     if (observer_slot_oscillating(s)) return "oscillating";
     if (observer_slot_diverging(s))   return "diverging";
     if (observer_slot_improving(s))   return "improving";
-    if (observer_slot_converged(s))   return "converged";
+    if (obs_entropy_converged(s))     return "converged";
     if (observer_slot_equilibrium(s)) return "equilibrium";
-    if (observer_slot_stable(s))      return "stable";
+    if (obs_entropy_stable(s))        return "stable";
     /* #735: the instantaneous fallback is for a PARTIAL window only. Ungated,
      * it let a full window whose six predicates are all false still be labelled
      * from the last dH alone — a low-entropy gray-band drift (every step under
@@ -1345,11 +1410,10 @@ const char *observer_slot_report_entropy(const ObserverSlot *s) {
     return "stable";
 }
 
-/* #861: `report` routes exactly as the predicates do — the value channel for
- * a binding whose latest observed assignment is numeric, entropy otherwise.
- * At a full window it agrees with the bare predicates by construction on
- * BOTH routes (each route's report tests that route's own family in the
- * canonical priority order). */
+/* #861: `report` uses the value channel for a binding whose latest observed
+ * assignment is numeric, entropy otherwise. #1992 deliberately narrows the
+ * latter statement for predicates: non-numeric converged/stable use equality,
+ * while report remains the canonical entropy classification surface. */
 const char *observer_slot_report(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_report(s);
     return observer_slot_report_entropy(s);

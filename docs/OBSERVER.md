@@ -163,17 +163,18 @@ variable first so there is a binding history to inspect. Dict fields such as
 ### Two signals: entropy vs. value (`report` vs. `report_value`)
 
 **Since #861 the predicate words and `report` ROUTE: numeric bindings
-answer from the value channel described below; non-numeric bindings (and
-the explicit `classify of [t, "entropy"]`) answer from the entropy
-channel.** The routing exists because of everything this section
+answer from the value channel described below. For non-numeric bindings,
+`converged` and `stable` use deep equality across the full window (#1992),
+while the other predicates and `report` answer from entropy. The explicit
+`classify of [t, "entropy"]` always answers from entropy.** The routing exists because of everything this section
 documents. The CI oracle now reports a per-predicate comparison: run
 `python3 tools/observer_oracle/score.py src/eigenscript` and read its
 **DOCUMENTATION TABLE** for the incumbent, `REFERENCE`,
 `REFERENCE_ENTROPY`, and constant-false columns. Those cells are derived
 from the current labelled corpus and selected binary rather than copied
 into this document. The
-paragraphs below describe the two signals themselves; where they say
-`report` reads entropy, that is now true only for non-numeric bindings.
+paragraphs below describe the two signals themselves; `report` reads entropy
+only for non-numeric bindings, and does not adopt their equality route.
 
 `report`/the bare predicates historically classified the trajectory of
 **`entropy(value)`** — the information content, not the number. That is the right signal for "how

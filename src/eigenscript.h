@@ -362,6 +362,13 @@ typedef struct ObserverSlot {
                                  * number to string falls back to the entropy
                                  * channel instead of answering from a stale
                                  * numeric trajectory. */
+    /* #1992 equality route for non-numeric convergence predicates. The
+     * retained value is the preceding assignment snapshot; eq_window records
+     * whether each successive pair compared equal with the language's `==`.
+     * Entropy remains recorded above for report/trajectory diagnostics. */
+    Value   *eq_last;
+    uint8_t *eq_window;
+    uint8_t  eq_window_head, eq_window_count, eq_cap;
 } ObserverSlot;
 
 struct Env {
