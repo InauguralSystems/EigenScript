@@ -3,6 +3,8 @@
 Continuous integration here has three lanes. This page says which gate lives
 where, why, and what a contributor should expect to wait for.
 
+The [instrument register](INSTRUMENTS.md) records each deciding device’s baseline, validation, resolution, population, blind spots, and next improvement.
+
 ## The measurement that forced the split
 
 PR #1158 (head `8cc1f2d`, 26 checks, all green):
