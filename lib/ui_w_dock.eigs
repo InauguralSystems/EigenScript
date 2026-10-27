@@ -59,14 +59,14 @@ define dock(id, x, y, w, h) as:
         "min_center": 100,
         # Fires ONLY on a user gesture (handle drag / title click).
         "on_layout": null,
-        "interactive": 1,
-        "visible": 1,
+        "interactive": true,
+        "visible": true,
         # Drag gesture: "" | "west" | "east" | "south".
         "_drag_region": ""
     }
 
 define dock_panel(title, widget) as:
-    return {"title": title, "widget": widget, "collapsed": 0}
+    return {"title": title, "widget": widget, "collapsed": false}
 
 define dock_add(dk, region, p) as:
     append of [dk.panels[region], p]
@@ -81,6 +81,7 @@ define dock_set_center(dk, widget) as:
 # Collapse/expand from code — silent by contract (no on_layout). The
 # hosted widget's visibility tracks it on the next layout pass.
 define dock_set_collapsed(dk, p, v) as:
+    _ui_require_bool of [v, "dock", "collapsed"]
     p.collapsed is v
 
 define _dock_title_h() as:
@@ -160,7 +161,7 @@ define dock_view(dk) as:
             local rr is v[reg]
             local n_open is 0
             for i in range of n:
-                if ps[i].collapsed == 0:
+                if not ps[i].collapsed:
                     n_open is n_open + 1
             local body_total is rr[3] - n * th
             if body_total < 0:
@@ -173,7 +174,7 @@ define dock_view(dk) as:
                 local p is ps[i]
                 local pe is {"p": p, "title": [rr[0], y, rr[2], th], "body": null}
                 y is y + th
-                if p.collapsed == 0:
+                if not p.collapsed:
                     local bh is share
                     if bh > 0:
                         pe.body is [rr[0], y, rr[2], bh]
@@ -191,7 +192,7 @@ define dock_view(dk) as:
             if i == ns2 - 1:
                 cw2 is sr[0] + sr[2] - x
             local pe is {"p": p, "title": [x, sr[1], cw2, th], "body": null}
-            if p.collapsed == 0:
+            if not p.collapsed:
                 local bh2 is sr[3] - th
                 if bh2 > 0:
                     pe.body is [x, sr[1] + th, cw2, bh2]
@@ -217,10 +218,10 @@ define _layout_dock(dk) as:
         for i in range of (len of pes):
             local pe is pes[i]
             local hosted is pe.p.widget
-            if pe.p.collapsed == 1 or pe.body == null:
-                hosted.visible is 0
+            if pe.p.collapsed or pe.body == null:
+                hosted.visible is false
             else:
-                hosted.visible is 1
+                hosted.visible is true
                 hosted.x is pe.body[0] - o[0]
                 hosted.y is pe.body[1] - o[1]
                 hosted.w is pe.body[2]
@@ -238,7 +239,7 @@ define _render_dock(widget, ax, ay) as:
     gfx_rect of [ax, ay, widget.w, widget.h, bg[0], bg[1], bg[2]]
     local v is dock_view of widget
     # Center
-    if widget.center != null and widget.center.visible == 1:
+    if widget.center != null and widget.center.visible:
         local cr is v.center
         ui_clip_push of [cr[0], cr[1], cr[2], cr[3]]
         # render() adds the child's own x/y — pass the DOCK origin.
@@ -253,7 +254,7 @@ define _render_dock(widget, ax, ay) as:
             local tr is pe.title
             gfx_rect of [tr[0], tr[1], tr[2], tr[3], tbg[0], tbg[1], tbg[2]]
             local mark is "-"
-            if pe.p.collapsed == 1:
+            if pe.p.collapsed:
                 mark is "+"
             local lab is f"{mark} {pe.p.title}"
             local avail is tr[2] - 8
@@ -261,21 +262,21 @@ define _render_dock(widget, ax, ay) as:
                 _draw_text_clipped of [tr[0] + 4, tr[1] + 3, avail, lab, tfg, 1]
             if pe.body != null:
                 local hosted is pe.p.widget
-                if hosted.visible == 1:
+                if hosted.visible:
                     local br is pe.body
                     ui_clip_push of [br[0], br[1], br[2], br[3]]
                     render of [hosted, ax, ay]
                     ui_clip_pop of null
     # Handles (accented while THIS dock holds the pointer), then the
     # border.
-    local dragging is 0
+    local dragging is false
     if _ui.drag_widget != null:
         if _ui.drag_widget.id == widget.id:
-            dragging is 1
+            dragging is true
     for hr in [v.hw, v.he, v.hs]:
         if hr != null:
             local hc is hcol
-            if dragging == 1:
+            if dragging:
                 hc is _theme.accent
             gfx_rect of [hr[0], hr[1], hr[2], hr[3], hc[0], hc[1], hc[2]]
     gfx_rrect of [ax, ay, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]
@@ -331,7 +332,7 @@ define _hit_test_dock(widget, ax, ay, mx, my) as:
     return widget
 
 define _mousedown_dock(hit, root, mx, my, ev) as:
-    if hit.interactive == 0:
+    if not hit.interactive:
         return null
     local v is dock_view of hit
     if (_dock_in_handle of [v.hw, mx, my, 0]):
@@ -351,7 +352,7 @@ define _mousedown_dock(hit, root, mx, my, ev) as:
         for i in range of (len of pes):
             local pe is pes[i]
             if (_dock_in of [pe.title, mx, my]):
-                pe.p.collapsed is 1 - pe.p.collapsed
+                pe.p.collapsed is not pe.p.collapsed
                 if hit.on_layout != null:
                     hit.on_layout of hit
                 return null
@@ -407,8 +408,8 @@ _register_widget of ["dock", {
     "clear_hover": null,
     "clear_pressed": _clear_pressed_dock,
     "scroll": null,
-    "container": 1,
-    "focusable": 0,
+    "container": true,
+    "focusable": false,
     # One widget id, many click targets (handles, panel titles): rapid
     # clicks on different targets must not read as a double-click.
     "no_dblclick": 1

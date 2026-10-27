@@ -12,9 +12,9 @@ define splitter(id, x, y, w, h, split_pos, on_resize) as:
         "on_resize": on_resize,
         "panel_a": null,
         "panel_b": null,
-        "dragging": 0,
-        "hover": 0,
-        "visible": 1,
+        "dragging": false,
+        "hover": false,
+        "visible": true,
         "bar_width": 4
     }
 
@@ -50,7 +50,7 @@ define piano_keyboard(id, x, y, octaves, on_note) as:
         "pressed_note": -1,
         "hover_note": -1,
         "base_octave": 4,
-        "visible": 1
+        "visible": true
     }
 
 # ---- Piano note helper ----
@@ -95,7 +95,7 @@ define _render_splitter(widget, ax, ay) as:
         ui_clip_pop of null
     # Divider bar
     dbg is _theme.panel_border
-    if widget.hover == 1 or widget.dragging == 1:
+    if widget.hover or widget.dragging:
         dbg is _theme.accent
     gfx_rect of [ax + sp, ay, bw, widget.h, dbg[0], dbg[1], dbg[2]]
     # Panel B (right)
@@ -208,7 +208,7 @@ define _mousemove_piano_kb(hit, root, mx, my) as:
 # ---- Mousedown functions ----
 
 define _mousedown_splitter(hit, root, mx, my, ev) as:
-    hit.dragging is 1
+    hit.dragging is true
     _ui.drag_widget is hit
     _ui.drag_ox is hit._ax
 
@@ -234,7 +234,7 @@ define _mousedown_piano_kb(hit, root, mx, my, ev) as:
 # ---- Clear hover functions ----
 
 define _clear_hover_splitter(widget) as:
-    widget.hover is 0
+    widget.hover is false
 
 define _clear_hover_piano_kb(widget) as:
     widget.hover_note is -1
@@ -263,8 +263,8 @@ _register_widget of ["splitter", {
     "clear_hover": _clear_hover_splitter,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 0
+    "container": false,
+    "focusable": false
 }]
 
 _register_widget of ["piano_kb", {
@@ -275,6 +275,6 @@ _register_widget of ["piano_kb", {
     "clear_hover": _clear_hover_piano_kb,
     "clear_pressed": _clear_pressed_piano_kb,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]

@@ -28,7 +28,7 @@ define dialog(id, w, h, title, message, buttons, on_button) as:
         "on_button": on_button,
         "children": [],
         "hover_btn": -1,
-        "visible": 0
+        "visible": false
     }
 
 # Button `i`'s rect as [x, y, w, h] at the dialog's absolute ax/ay — the
@@ -66,7 +66,7 @@ define color_picker(id, x, y, on_change) as:
         "color": [255, 0, 0],
         "drag_part": null,
         "on_change": on_change,
-        "visible": 1
+        "visible": true
     }
 
 define property_editor(id, x, y, w, h, properties, on_change) as:
@@ -95,11 +95,9 @@ define property_editor(id, x, y, w, h, properties, on_change) as:
             inp is text_input of [f"{id}_inp_{pi}", input_x, row_y, input_w, f"{prop.value}", cb]
             add_child of [sp, inp]
         elif prop.type == "bool":
-            bval is 0
-            if (_ev_flag of prop.value) or prop.value == "true":   # #1637: true, 1 or "true"
-                bval is 1
+            _ui_require_bool of [prop.value, "property_editor", prop.key]
             cb is _make_prop_cb of [on_change, prop.key]
-            inp is toggle of [f"{id}_inp_{pi}", input_x, row_y, bval, cb]
+            inp is toggle of [f"{id}_inp_{pi}", input_x, row_y, prop.value, cb]
             add_child of [sp, inp]
         elif prop.type == "choice":
             items is prop.items
@@ -168,7 +166,7 @@ define _hsv_to_rgb(h, s, v) as:
 # ---- Render functions ----
 
 define _render_dialog(widget, ax, ay) as:
-    if widget.visible == 1:
+    if widget.visible:
         # Overlay dims the background
         gfx_rect of [0, 0, 9999, 9999, 0, 0, 0, 140]
         # Dialog background
@@ -283,7 +281,7 @@ define _drag_color_picker(w, ev) as:
 # reaching the tree behind it.
 
 define _hit_test_dialog(widget, ax, ay, mx, my) as:
-    if widget.visible == 0:
+    if not widget.visible:
         return null
     i is (len of widget.children) - 1
     loop while i >= 0:
@@ -298,7 +296,7 @@ define _hit_test_dialog(widget, ax, ay, mx, my) as:
 define _mousedown_dialog(hit, root, mx, my, ev) as:
     i is _dialog_btn_at of [hit, hit._ax, hit._ay, mx, my]
     if i >= 0:
-        hit.visible is 0
+        hit.visible is false
         if hit.on_button != null:
             hit.on_button of [hit, i]
 
@@ -316,7 +314,7 @@ define _clear_hover_dialog(widget) as:
 # ---- Registration ----
 
 _register_widget of ["dialog", {
-    "clip": 0,
+    "clip": false,
     "render": _render_dialog,
     "hit_test": _hit_test_dialog,
     "on_mousedown": _mousedown_dialog,
@@ -324,8 +322,8 @@ _register_widget of ["dialog", {
     "clear_hover": _clear_hover_dialog,
     "clear_pressed": null,
     "scroll": null,
-    "container": 1,
-    "focusable": 0
+    "container": true,
+    "focusable": false
 }]
 
 _register_widget of ["color_picker", {
@@ -337,8 +335,8 @@ _register_widget of ["color_picker", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 # ============================================================

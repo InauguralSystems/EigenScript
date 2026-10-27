@@ -694,3 +694,5 @@ Codespace and a green CI run can't drift.
 
 > Launching a Codespace bills to *your* account's free monthly hours — you can
 > open this org repo from a personal account without org Codespaces billing.
+
+UI widget flags use `true`/`false`: for example, `button.visible is false` hides a button and `button.enabled is true` enables hit-testing. Checkbox, toggle, and toggle-button `value` fields are also booleans; numeric values and selection indices remain numeric. See [`docs/UI.md`](docs/UI.md).

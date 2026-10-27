@@ -124,7 +124,7 @@ sib859 is canvas of ["sib859", 20, 80, 200, 100, _sib_paint, null]
 add_child of [root859, p859]
 add_child of [root859, sib859]
 _layout of [root859, 0, 0]
-dd859.open is 1
+dd859.open is true
 dd859.hover_index is 0 - 1
 
 define _scene859(with_overlay) as:
@@ -147,7 +147,7 @@ assert_true of [(_is_col of [(gfx_read of [100, 100]), _theme.menu_bg]) == 0, "#
 # ---- planted fault: draw the list IN-TREE again (the pre-#859 body) ----
 define _render_dropdown_intree(widget, ax, ay) as:
     _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius_sm, _theme.dropdown_bg, _theme.panel_border]
-    if widget.open == 1:
+    if widget.open:
         item_h is 24
         menu_h is (len of widget.items) * item_h
         gfx_rrect of [ax, ay + widget.h + 2, widget.w, menu_h, _theme.radius_sm, _theme.menu_bg[0], _theme.menu_bg[1], _theme.menu_bg[2]]
@@ -172,14 +172,14 @@ define _sib_mouse(w, ev) as:
     sib_clicks859[0] is sib_clicks859[0] + 1
 sib859.on_mouse is _sib_mouse
 _ui.last_click_id is ""
-dd859.open is 1
+dd859.open is true
 dd859.hover_index is 0 - 1
 _scene859 of 1
 # item 2 ("c") spans y 99..122 — inside the sibling canvas (y 80..180).
 dispatch of [root859, {"type": "mousedown", "x": 100, "y": 105, "button": 1}]
 assert_eq of [dd859.selected, 2, "#859 the click on the overlaid list selects on the DROPDOWN"]
 assert_eq of [sib_clicks859[0], 0, "#859 the canvas under the open list never saw the click"]
-assert_eq of [dd859.open, 0, "#859 selecting closes the list"]
+assert_eq of [dd859.open, false, "#859 selecting closes the list"]
 _scene859 of 1
 assert_true of [(_is_col of [(gfx_read of [100, 105]), _sib_col]) == 1, "#859 with the list closed those pixels are the sibling's again"]
 # Control: the canvas really is under that point and really does take a

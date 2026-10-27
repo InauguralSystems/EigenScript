@@ -11,10 +11,10 @@ define text_input(id, x, y, w, text, on_change) as:
         "sel_start": -1,
         "sel_end": -1,
         "on_change": on_change,
-        "focused": 0,
-        "hover": 0,
-        "visible": 1,
-        "enabled": 1
+        "focused": false,
+        "hover": false,
+        "visible": true,
+        "enabled": true
     }
 
 define editable_label(id, x, y, text, on_commit) as:
@@ -25,7 +25,7 @@ define editable_label(id, x, y, text, on_commit) as:
         "w": (text_width of [text, _theme.font_scale]) + 8,
         "h": _theme.char_h + 4,
         "text": text,
-        "editing": 0,
+        "editing": false,
         "cursor": 0,
         "sel_start": -1,
         "sel_end": -1,
@@ -33,7 +33,7 @@ define editable_label(id, x, y, text, on_commit) as:
         "on_dblclick": null,
         "color": _theme.text_color,
         "scale": _theme.font_scale,
-        "visible": 1
+        "visible": true
     }
 
 define spinbox(id, x, y, w, min_val, max_val, value, step, on_change) as:
@@ -44,10 +44,10 @@ define spinbox(id, x, y, w, min_val, max_val, value, step, on_change) as:
         "min_val": min_val, "max_val": max_val,
         "value": value, "step": step,
         "on_change": on_change,
-        "hover": 0,
+        "hover": false,
         "hover_btn": 0,
-        "visible": 1,
-        "enabled": 1
+        "visible": true,
+        "enabled": true
     }
 
 define combobox(id, x, y, w, items, on_change) as:
@@ -59,17 +59,17 @@ define combobox(id, x, y, w, items, on_change) as:
         "filter_text": "",
         "filtered": items,
         "selected": -1,
-        "open": 0,
+        "open": false,
         "hover_index": -1,
         "cursor": 0,
         "on_change": on_change,
-        "hover": 0,
-        "visible": 1,
-        "enabled": 1
+        "hover": false,
+        "visible": true,
+        "enabled": true
     }
 
 define _render_text_input(widget, ax, ay) as:
-    if widget.focused == 1:
+    if widget.focused:
         border is _theme.accent
     else:
         border is _theme.panel_border
@@ -88,13 +88,13 @@ define _render_text_input(widget, ax, ay) as:
         gfx_rect of [sel_x, ay + 3, sel_w, widget.h - 6, sbg[0], sbg[1], sbg[2], 100]
     _draw_text_clipped of [ax + 6, ay + 5, widget.w - 12, widget.text, _theme.text_color, _theme.font_scale]
     # Blinking cursor
-    if widget.focused == 1 and ((gfx_ticks of null) % 1000) < 530:
+    if widget.focused and ((gfx_ticks of null) % 1000) < 530:
         cursor_x is ax + 6 + widget.cursor * _theme.char_w
         if cursor_x < ax + widget.w - 4:
             gfx_line of [cursor_x, ay + 4, cursor_x, ay + widget.h - 4, _theme.accent[0], _theme.accent[1], _theme.accent[2]]
 
 define _render_editable_label(widget, ax, ay) as:
-    if widget.editing == 1:
+    if widget.editing:
         # Editing mode — draw like text_input
         ew is widget.w
         if ew < 60:
@@ -132,17 +132,17 @@ define _render_combobox(widget, ax, ay) as:
     # (#859) — see the note in _render_dropdown.
     widget._ax is ax
     widget._ay is ay
-    if widget.hover == 1:
+    if widget.hover:
         cbg is _theme.dropdown_hover
     else:
         cbg is _theme.dropdown_bg
-    if widget.open == 1:
+    if widget.open:
         cb_border is _theme.accent
     else:
         cb_border is _theme.panel_border
     _draw_rbox of [ax, ay, widget.w, widget.h, _theme.radius_sm, cbg, cb_border]
     # Display filter text when open, otherwise selected item text
-    if widget.open == 1:
+    if widget.open:
         disp_text is widget.filter_text
     elif widget.selected >= 0 and widget.selected < (len of widget.items):
         disp_text is widget.items[widget.selected]
@@ -155,7 +155,7 @@ define _render_combobox(widget, ax, ay) as:
     gfx_line of [arrow_x, arrow_y, arrow_x + 4, arrow_y + 6, _theme.dropdown_arrow[0], _theme.dropdown_arrow[1], _theme.dropdown_arrow[2]]
     gfx_line of [arrow_x + 8, arrow_y, arrow_x + 4, arrow_y + 6, _theme.dropdown_arrow[0], _theme.dropdown_arrow[1], _theme.dropdown_arrow[2]]
     # Cursor when open
-    if widget.open == 1 and ((gfx_ticks of null) % 1000) < 530:
+    if widget.open and ((gfx_ticks of null) % 1000) < 530:
         cx_pos is ax + 6 + widget.cursor * _theme.char_w
         if cx_pos < ax + widget.w - 20:
             gfx_line of [cx_pos, ay + 4, cx_pos, ay + widget.h - 4, _theme.accent[0], _theme.accent[1], _theme.accent[2]]
@@ -173,7 +173,7 @@ define _combobox_popup_rect(widget) as:
     return [widget._ax, widget._ay + widget.h + 2, widget.w, menu_h]
 
 define _render_combobox_popup(widget) as:
-    if widget.open != 1:
+    if not widget.open:
         return null
     if widget._ax == null:
         return null
@@ -225,13 +225,13 @@ define _combobox_item_at(widget, my) as:
     return idx
 
 define _mousemove_combobox(hit, root, mx, my) as:
-    if hit.open == 1:
+    if hit.open:
         hit.hover_index is _combobox_item_at of [hit, my]
 
 define _mousedown_text_input(hit, root, mx, my, ev) as:
-    if hit.enabled == 1:
+    if hit.enabled:
         _unfocus_all of root
-        hit.focused is 1
+        hit.focused is true
         _ui.focused_input is hit
 
 define _mousedown_editable_label(hit, root, mx, my, ev) as:
@@ -239,7 +239,7 @@ define _mousedown_editable_label(hit, root, mx, my, ev) as:
     pass is 0
 
 define _mousedown_spinbox(hit, root, mx, my, ev) as:
-    if hit.enabled == 1:
+    if hit.enabled:
         abs_x is hit._ax
         rel_x is mx - abs_x
         if rel_x >= hit.w - 40 and rel_x < hit.w - 20:
@@ -258,8 +258,8 @@ define _mousedown_spinbox(hit, root, mx, my, ev) as:
                 hit.on_change of hit
 
 define _mousedown_combobox(hit, root, mx, my, ev) as:
-    if hit.enabled == 1:
-        if hit.open == 1:
+    if hit.enabled:
+        if hit.open:
             # Select the item the click actually landed on (#577) — under
             # plain dispatch no mousemove need precede the click, so
             # hover_index cannot be trusted as the selection.
@@ -272,24 +272,24 @@ define _mousedown_combobox(hit, root, mx, my, ev) as:
                 for oi in range of (len of hit.items):
                     if hit.items[oi] == sel_text:
                         hit.selected is oi
-                hit.open is 0
+                hit.open is false
                 if hit.on_change != null:
                     hit.on_change of hit
             else:
-                hit.open is 0
+                hit.open is false
         else:
-            hit.open is 1
+            hit.open is true
             hit.filter_text is ""
             hit.filtered is hit.items
             hit.hover_index is 0
             hit.cursor is 0
 
 define _clear_hover_spinbox(widget) as:
-    widget.hover is 0
+    widget.hover is false
     widget.hover_btn is 0
 
 define _clear_hover_combobox(widget) as:
-    widget.hover is 0
+    widget.hover is false
     widget.hover_index is -1
 
 define _handle_text_key(widget, ev) as:
@@ -381,14 +381,14 @@ define _handle_text_key(widget, ev) as:
             _commit_editing of widget
         else:
             _ui.focused_input is null
-            widget.focused is 0
+            widget.focused is false
     elif k == "escape":
         if widget.type == "editable_label":
-            widget.editing is 0
+            widget.editing is false
             _ui.focused_input is null
         else:
             _ui.focused_input is null
-            widget.focused is 0
+            widget.focused is false
     elif k == "space":
         _insert_char of [widget, " "]
     elif (len of k) == 1:
@@ -482,12 +482,12 @@ define _clear_selection(widget) as:
 
 define _start_editing(widget) as:
     _unfocus_all_editable of _ui.edit_root
-    widget.editing is 1
+    widget.editing is true
     widget.cursor is len of widget.text
     _ui.focused_input is widget
 
 define _commit_editing(widget) as:
-    widget.editing is 0
+    widget.editing is false
     widget.w is (text_width of [widget.text, widget.scale]) + 8
     _ui.focused_input is null
     if widget.on_commit != null:
@@ -496,7 +496,7 @@ define _commit_editing(widget) as:
 define _unfocus_all_editable(widget) as:
     if widget == null:
         return null
-    if widget.type == "editable_label" and widget.editing == 1:
+    if widget.type == "editable_label" and widget.editing:
         _commit_editing of widget
     if _is_container of widget.type:
         for i in range of (len of widget.children):
@@ -514,13 +514,13 @@ define _unfocus_all_editable(widget) as:
 define _handle_combobox_key(widget, ev) as:
     k is ev.key
     if k == "escape":
-        widget.open is 0
+        widget.open is false
         return null
     if k == "return":
         if widget.hover_index >= 0 and widget.hover_index < (len of widget.filtered):
             widget.filter_text is widget.filtered[widget.hover_index]
             widget.selected is widget.hover_index
-            widget.open is 0
+            widget.open is false
             if widget.on_change != null:
                 widget.on_change of widget
         return null
@@ -563,8 +563,8 @@ _register_widget of ["text_input", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["editable_label", {
@@ -575,8 +575,8 @@ _register_widget of ["editable_label", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["spinbox", {
@@ -587,8 +587,8 @@ _register_widget of ["spinbox", {
     "clear_hover": _clear_hover_spinbox,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["combobox", {
@@ -599,6 +599,6 @@ _register_widget of ["combobox", {
     "clear_hover": _clear_hover_combobox,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]

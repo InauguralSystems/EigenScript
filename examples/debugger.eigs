@@ -370,7 +370,7 @@ _output_label.color is [120, 120, 150]
 ui.add_child of [_bottom, _output_label]
 
 _output_view is ui.code_view of ["output", 4, 22, 590, BOTTOM_H - 26, ""]
-_output_view.line_numbers is 0
+_output_view.line_numbers is false
 ui.add_child of [_bottom, _output_view]
 
 # Entropy chart (right half)

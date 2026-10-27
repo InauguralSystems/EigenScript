@@ -11,11 +11,11 @@ define dropdown(id, x, y, w, items, selected, on_change) as:
         "items": items,
         "selected": selected,
         "on_change": on_change,
-        "open": 0,
-        "hover": 0,
+        "open": false,
+        "hover": false,
         "hover_index": -1,
-        "visible": 1,
-        "enabled": 1
+        "visible": true,
+        "enabled": true
     }
 
 define menu(id, items, on_select) as:
@@ -26,7 +26,7 @@ define menu(id, items, on_select) as:
         "items": items,
         "on_select": on_select,
         "hover_index": -1,
-        "visible": 0
+        "visible": false
     }
 
 # A desktop menu bar: a strip of titles, each owning a pull-down (#565).
@@ -87,8 +87,8 @@ define menu_bar(id, x, y, w, menus) as:
         "title_x": title_x,
         "open_index": 0 - 1,
         "hover_index": 0 - 1,
-        "visible": 1,
-        "enabled": 1
+        "visible": true,
+        "enabled": true
     }
 
 define radio_group(id, x, y, items, selected, on_change) as:
@@ -100,8 +100,8 @@ define radio_group(id, x, y, items, selected, on_change) as:
         "selected": selected,
         "on_change": on_change,
         "hover_index": -1,
-        "visible": 1,
-        "enabled": 1
+        "visible": true,
+        "enabled": true
     }
 
 define tabs(id, x, y, w, h, tab_names, on_tab) as:
@@ -114,7 +114,7 @@ define tabs(id, x, y, w, h, tab_names, on_tab) as:
         "on_tab": on_tab,
         "tab_panels": [],
         "hover_tab": -1,
-        "visible": 1
+        "visible": true
     }
 
 # ---- Render functions ----
@@ -127,7 +127,7 @@ define _render_dropdown(widget, ax, ay) as:
     # failure than the z-order bug this replaced.
     widget._ax is ax
     widget._ay is ay
-    if widget.hover == 1:
+    if widget.hover:
         dbg is _theme.dropdown_hover
     else:
         dbg is _theme.dropdown_bg
@@ -157,7 +157,7 @@ define _dropdown_popup_rect(widget) as:
     return [widget._ax, widget._ay + widget.h + 2, widget.w, (len of widget.items) * 24]
 
 define _render_dropdown_popup(widget) as:
-    if widget.open != 1:
+    if not widget.open:
         return null
     if widget._ax == null:
         return null
@@ -175,7 +175,7 @@ define _render_dropdown_popup(widget) as:
         _draw_text_clipped of [px + 8, iy + 5, r[2] - 16, widget.items[i], _theme.text_color, _theme.font_scale]
 
 define _render_menu(widget, ax, ay) as:
-    if widget.visible == 1:
+    if widget.visible:
         item_h is 24
         menu_h is (len of widget.items) * item_h
         # Shadow
@@ -240,7 +240,7 @@ define _render_menu_bar_popup(widget) as:
         return null
     p is widget.popups[widget.open_index]
     pos is _menu_bar_popup_pos of [widget, widget.open_index]
-    p.visible is 1
+    p.visible is true
     _render_menu of [p, pos[0], pos[1]]
 
 define _hit_test_menu_bar(widget, ax, ay, mx, my) as:
@@ -258,7 +258,7 @@ define _hit_test_menu_bar(widget, ax, ay, mx, my) as:
     return null
 
 define _mousedown_menu_bar(hit, root, mx, my, ev) as:
-    if hit.enabled == 0:
+    if not hit.enabled:
         return null
     # A click in the open pull-down selects by its own y — no mousemove
     # need precede it (the #577 lesson).
@@ -311,7 +311,7 @@ define _clear_hover_menu_bar(widget) as:
 
 define _menu_bar_close(widget) as:
     if widget.open_index >= 0:
-        widget.popups[widget.open_index].visible is 0
+        widget.popups[widget.open_index].visible is false
         widget.popups[widget.open_index].hover_index is 0 - 1
     widget.open_index is 0 - 1
 
@@ -389,7 +389,7 @@ define _hit_test_tabs(widget, ax, ay, mx, my) as:
     return null
 
 define _hit_test_menu(widget, ax, ay, mx, my) as:
-    if widget.visible == 1:
+    if widget.visible:
         menu_h is (len of widget.items) * 24
         if _point_in_rect of [mx, my, ax, ay, widget.w, menu_h]:
             return widget
@@ -413,7 +413,7 @@ define _dropdown_item_at(widget, my) as:
     return idx
 
 define _mousemove_dropdown(hit, root, mx, my) as:
-    if hit.open == 1:
+    if hit.open:
         hit.hover_index is _dropdown_item_at of [hit, my]
 
 define _mousemove_menu(hit, root, mx, my) as:
@@ -431,8 +431,8 @@ define _mousemove_tabs(hit, root, mx, my) as:
 # ---- Mousedown functions ----
 
 define _mousedown_dropdown(hit, root, mx, my, ev) as:
-    if hit.enabled == 1:
-        if hit.open == 1:
+    if hit.enabled:
+        if hit.open:
             # Select the item the click actually landed on (#577/#859) —
             # under plain dispatch no mousemove need precede the click, so
             # hover_index cannot be trusted as the selection.
@@ -442,9 +442,9 @@ define _mousedown_dropdown(hit, root, mx, my, ev) as:
                 hit.selected is idx
                 if hit.on_change != null:
                     hit.on_change of hit
-            hit.open is 0
+            hit.open is false
         else:
-            hit.open is 1
+            hit.open is true
 
 define _mousedown_menu(hit, root, mx, my, ev) as:
     if hit.hover_index >= 0 and hit.hover_index < (len of hit.items):
@@ -455,10 +455,10 @@ define _mousedown_menu(hit, root, mx, my, ev) as:
         if is_sep == 0:
             if hit.on_select != null:
                 hit.on_select of [hit, hit.hover_index]
-    hit.visible is 0
+    hit.visible is false
 
 define _mousedown_radio_group(hit, root, mx, my, ev) as:
-    if hit.enabled == 1:
+    if hit.enabled:
         abs_x is hit._ax
         idx is _radio_index_at of [hit, mx - abs_x]
         if idx >= 0 and idx != hit.selected:
@@ -477,7 +477,7 @@ define _mousedown_tabs(hit, root, mx, my, ev) as:
 # ---- Clear hover functions ----
 
 define _clear_hover_dropdown(widget) as:
-    widget.hover is 0
+    widget.hover is false
     widget.hover_index is -1
 
 define _clear_hover_radio_group(widget) as:
@@ -518,9 +518,9 @@ define _radio_index_at(widget, rel_x) as:
 
 define _close_dropdowns(widget) as:
     if widget.type == "dropdown":
-        widget.open is 0
+        widget.open is false
     elif widget.type == "combobox":
-        widget.open is 0
+        widget.open is false
     elif _is_container of widget.type:
         for i in range of (len of widget.children):
             _close_dropdowns of widget.children[i]
@@ -542,7 +542,7 @@ define _close_dropdowns(widget) as:
 define _close_dropdowns_except(widget, keep) as:
     if widget.type == "dropdown" or widget.type == "combobox":
         if keep == null or keep.id != widget.id:
-            widget.open is 0
+            widget.open is false
     elif _is_container of widget.type:
         for i in range of (len of widget.children):
             _close_dropdowns_except of [widget.children[i], keep]
@@ -583,7 +583,7 @@ define _close_menu_bars(widget, keep) as:
 # landed on the menu to whatever the menu is covering.
 
 define _find_open_popup_at(widget, mx, my) as:
-    if widget.visible == 0:
+    if not widget.visible:
         return null
     if widget.type == "menu_bar":
         if widget.open_index >= 0:
@@ -596,13 +596,13 @@ define _find_open_popup_at(widget, mx, my) as:
     # An open dropdown / combobox list is painted by the same overlay
     # pass (#859), so it takes the pointer above the whole tree too.
     if widget.type == "dropdown":
-        if widget.open == 1 and widget._ax != null:
+        if widget.open and widget._ax != null:
             dr is _dropdown_popup_rect of widget
             if _point_in_rect of [mx, my, dr[0], dr[1], dr[2], dr[3]]:
                 return widget
         return null
     if widget.type == "combobox":
-        if widget.open == 1 and widget._ax != null:
+        if widget.open and widget._ax != null:
             cr is _combobox_popup_rect of widget
             if _point_in_rect of [mx, my, cr[0], cr[1], cr[2], cr[3]]:
                 return widget
@@ -634,7 +634,7 @@ define _find_open_popup_at(widget, mx, my) as:
     return null
 
 define _render_popups(widget) as:
-    if widget.visible == 0:
+    if not widget.visible:
         return null
     if widget.type == "menu_bar":
         _render_menu_bar_popup of widget
@@ -659,7 +659,7 @@ define _render_popups(widget) as:
 
 define _close_menus(widget) as:
     if widget.type == "menu":
-        widget.visible is 0
+        widget.visible is false
     elif _is_container of widget.type:
         for i in range of (len of widget.children):
             _close_menus of widget.children[i]
@@ -683,12 +683,12 @@ _register_widget of ["dropdown", {
     "clear_hover": _clear_hover_dropdown,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["menu", {
-    "clip": 0,
+    "clip": false,
     "render": _render_menu,
     "hit_test": _hit_test_menu,
     "on_mousedown": _mousedown_menu,
@@ -696,8 +696,8 @@ _register_widget of ["menu", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 0
+    "container": false,
+    "focusable": false
 }]
 
 _register_widget of ["menu_bar", {
@@ -708,8 +708,8 @@ _register_widget of ["menu_bar", {
     "clear_hover": _clear_hover_menu_bar,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 0
+    "container": false,
+    "focusable": false
 }]
 
 _register_widget of ["radio_group", {
@@ -720,8 +720,8 @@ _register_widget of ["radio_group", {
     "clear_hover": _clear_hover_radio_group,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 1
+    "container": false,
+    "focusable": true
 }]
 
 _register_widget of ["tabs", {
@@ -732,6 +732,6 @@ _register_widget of ["tabs", {
     "clear_hover": _clear_hover_tabs,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 0
+    "container": false,
+    "focusable": false
 }]

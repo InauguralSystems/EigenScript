@@ -45,6 +45,13 @@ define _ev_stop(r) as:
         return not r
     return ((type of r) == "num") and (r == 0)
 
+# Binary widget state follows the language boolean standard.  Public APIs
+# validate their boolean inputs before measuring, drawing, or invoking callbacks.
+define _ui_require_bool(value, widget_type, field) as:
+    if (type of value) != "bool":
+        throw of f"{widget_type}: {field} must be bool, got {type of value}"
+    return value
+
 load_file of "lib/ui_theme.eigs"
 load_file of "lib/ui_draw.eigs"
 load_file of "lib/ui_layout.eigs"
@@ -72,14 +79,14 @@ _ui is {
     "hotkeys": [],
     "clipboard": "",
     "modal_stack": [],
-    "dnd_state": {"active": 0, "source": null, "source_index": -1, "data": null, "mx": 0, "my": 0, "text": ""},
+    "dnd_state": {"active": false, "source": null, "source_index": -1, "data": null, "mx": 0, "my": 0, "text": ""},
     "toasts": [],
     "last_mouse_x": 0,
     "last_mouse_y": 0,
     "drag_ox": 0,
     "drag_oy": 0,
     "focused_input": null,
-    "quit_requested": 0
+    "quit_requested": false
 }
 
 # Load sub-modules
@@ -201,7 +208,7 @@ define _render_toasts() as:
 # Rendering — registry-driven dispatch
 
 define render(widget, ox, oy) as:
-    if widget.visible == 0:
+    if not widget.visible:
         return null
     ax is ox + widget.x
     ay is oy + widget.y
@@ -221,14 +228,14 @@ define render(widget, ox, oy) as:
         # stack — canvas on_paint included, so a paint callback cannot
         # spill over surrounding chrome, and a child wider than its
         # parent (the dynamics side-panel label) crops at the parent
-        # edge. A registry entry opts out with "clip": 0 — since #859
+        # edge. A registry entry opts out with "clip": false — since #859
         # exactly TWO do: `menu` (a floating popup positioned in window
         # coordinates by show_menu) and `dialog` (a full-screen dim behind
         # a centred panel). Everything else, dropdown and combobox and
         # grid included, is contained; a widget that needs to paint past
         # its own rect draws in the _render_popups overlay pass instead of
         # opting out of containment.
-        if entry.clip != null and entry.clip == 0:
+        if entry.clip != null and not entry.clip:
             entry.render of [widget, ax, ay]
         else:
             clip_depth is _clip.depth
@@ -244,7 +251,7 @@ define render(widget, ox, oy) as:
                 throw of render_err
             ui_clip_pop of null
     # Disabled overlay
-    if widget.enabled != null and widget.enabled == 0:
+    if widget.enabled != null and not widget.enabled:
         _draw_disabled_overlay of [ax, ay, widget.w, widget.h]
     # Focus ring
     if _ui.focused_widget != null and _ui.focused_widget.id == widget.id:
@@ -282,7 +289,7 @@ define _render_tooltip() as:
 # Hit testing — registry-driven dispatch
 
 define _hit_test(widget, ox, oy, mx, my) as:
-    if widget.visible == 0:
+    if not widget.visible:
         return null
     ax is ox + widget.x
     ay is oy + widget.y
@@ -307,9 +314,9 @@ define _clear_hover(widget) as:
         entry.clear_hover of widget
     else:
         if (type of widget) == "dict":
-            widget.hover is 0
+            widget.hover is false
     # Recurse into children
-    if entry.container == 1:
+    if entry.container:
         for i in range of (len of widget.children):
             _clear_hover of widget.children[i]
     if widget.type == "tabs":
@@ -330,7 +337,7 @@ define _clear_pressed(widget) as:
         return null
     if entry.clear_pressed != null:
         entry.clear_pressed of widget
-    if entry.container == 1:
+    if entry.container:
         for i in range of (len of widget.children):
             _clear_pressed of widget.children[i]
     if widget.type == "tabs":
@@ -353,7 +360,7 @@ define _scroll_panels(widget, dx, dy) as:
         entry.scroll of [widget, dx, dy]
         return null
     # Recurse into children
-    if entry.container == 1:
+    if entry.container:
         for i in range of (len of widget.children):
             _scroll_panels of [widget.children[i], dx, dy]
     if widget.type == "tabs":
@@ -369,7 +376,7 @@ define _scroll_panels(widget, dx, dy) as:
 # Find scrollable at point — registry-driven
 
 define _find_scrollable_at(widget, ox, oy, mx, my) as:
-    if widget.visible == 0:
+    if not widget.visible:
         return null
     ax is ox + widget.x
     ay is oy + widget.y
@@ -407,7 +414,7 @@ define _find_scrollable_at(widget, ox, oy, mx, my) as:
 # DnD render overlay
 
 define _render_dnd() as:
-    if _ui.dnd_state.active == 0:
+    if not _ui.dnd_state.active:
         return null
     tx is _ui.dnd_state.mx + 10
     ty is _ui.dnd_state.my - 10
@@ -419,7 +426,7 @@ define _render_dnd() as:
 
 define _unfocus_all(widget) as:
     if widget.type == "text_input":
-        widget.focused is 0
+        widget.focused is false
     elif _is_container of widget.type:
         for i in range of (len of widget.children):
             _unfocus_all of widget.children[i]
@@ -434,7 +441,7 @@ define _unfocus_all(widget) as:
             _unfocus_all of widget.panel_b
 
 define _find_visible_dialog(widget) as:
-    if widget.type == "dialog" and widget.visible == 1:
+    if widget.type == "dialog" and widget.visible:
         return widget
     if _is_container of widget.type:
         for i in range of (len of widget.children):
@@ -511,7 +518,7 @@ define _match_hotkey(ev) as:
 define push_modal(dlg, parent_w, parent_h) as:
     dlg.x is floor of ((parent_w - dlg.w) / 2)
     dlg.y is floor of ((parent_h - dlg.h) / 2)
-    dlg.visible is 1
+    dlg.visible is true
     dlg.hover_btn is -1
     append of [_ui.modal_stack, dlg]
     # Lay it out now, not on the next frame: a dialog is dispatchable the
@@ -533,7 +540,7 @@ define pop_modal() as:
     if n == 0:
         return null
     top is _ui.modal_stack[n - 1]
-    top.visible is 0
+    top.visible is false
     new_stack is []
     for i in range of (n - 1):
         append of [new_stack, _ui.modal_stack[i]]
@@ -555,7 +562,7 @@ define pop_modal() as:
 define show_menu(menu_widget, x, y) as:
     menu_widget.x is x
     menu_widget.y is y
-    menu_widget.visible is 1
+    menu_widget.visible is true
     menu_widget.hover_index is -1
 
 define show_dialog(dlg, parent_w, parent_h) as:
@@ -574,7 +581,7 @@ define show_dialog(dlg, parent_w, parent_h) as:
 
 define _has_open_popup(widget) as:
     if widget.type == "combobox" or widget.type == "dropdown":
-        if widget.open == 1:
+        if widget.open:
             return true
     if widget.type == "menu_bar":
         if widget.open_index >= 0:
@@ -592,7 +599,7 @@ define release_drag() as:
 # clears the flag on entry, so a later loop is not quit by a stale request.
 
 define request_quit() as:
-    _ui.quit_requested is 1
+    _ui.quit_requested is true
 
 # Keyboard routing (#563) — the toolkit's keydown handling, public so a
 # headless consumer drives keys exactly like mouse and the priority order
@@ -609,7 +616,7 @@ define handle_key(root, ev) as:
     if ev.key == "escape" and (len of _ui.modal_stack) > 0:
         pop_modal of null
         return true
-    if _ui.focused_widget != null and _ui.focused_widget.type == "combobox" and _ui.focused_widget.open == 1:
+    if _ui.focused_widget != null and _ui.focused_widget.type == "combobox" and _ui.focused_widget.open:
         _handle_combobox_key of [_ui.focused_widget, ev]
         return true
     if _ui.focused_input != null:
@@ -649,7 +656,7 @@ define dispatch(root, ev) as:
         my is ev.y
 
     # Handle DnD in progress
-    if ev.type == "mousemove" and _ui.dnd_state.active == 1:
+    if ev.type == "mousemove" and _ui.dnd_state.active:
         _ui.dnd_state.mx is mx
         _ui.dnd_state.my is my
         # Compute reorder insertion index if dragging over source list
@@ -680,7 +687,7 @@ define dispatch(root, ev) as:
             dw.on_mouse of [dw, ev]
         return null
 
-    if ev.type == "mouseup" and _ui.dnd_state.active == 1:
+    if ev.type == "mouseup" and _ui.dnd_state.active:
         # DnD drop
         hit is _hit_test of [root, 0, 0, mx, my]
         drop_data is {"source_widget": _ui.dnd_state.source, "source_index": _ui.dnd_state.source_index, "data": _ui.dnd_state.data}
@@ -695,7 +702,7 @@ define dispatch(root, ev) as:
         # Clean up
         if _ui.dnd_state.source != null and _ui.dnd_state.source.type == "item_list":
             _ui.dnd_state.source.reorder_insert is -1
-        _ui.dnd_state.active is 0
+        _ui.dnd_state.active is false
         _ui.dnd_state.source is null
         _ui.dnd_state.source_index is -1
         _ui.dnd_state.data is null
@@ -708,7 +715,7 @@ define dispatch(root, ev) as:
     if ev.type == "mouseup" and _ui.drag_widget != null:
         local dw is _ui.drag_widget
         _ui.drag_widget is null
-        dw.dragging is 0
+        dw.dragging is false
         if dw.on_mouse != null:
             dw.on_mouse of [dw, ev]
         if dw.on_change != null:
@@ -726,7 +733,7 @@ define dispatch(root, ev) as:
         if hit == null:
             hit is _hit_test of [root, 0, 0, mx, my]
         if hit != null:
-            hit.hover is 1
+            hit.hover is true
             # Tooltip tracking
             if hit.tooltip != null and (len of hit.tooltip) > 0:
                 if _ui.tooltip_widget == null or _ui.tooltip_widget.id != hit.id:
@@ -777,7 +784,7 @@ define dispatch(root, ev) as:
             _ui.focus_index is -1
             return null
         # Universal disabled check
-        if hit.enabled != null and hit.enabled == 0:
+        if hit.enabled != null and not hit.enabled:
             return null
         # Right-click context menu
         btn is 1
@@ -839,7 +846,7 @@ define dispatch(root, ev) as:
         hit is _hit_test of [root, 0, 0, mx, my]
         # Capture the armed button before the release walk disarms it
         clicked is null
-        if hit != null and hit.type == "button" and hit.pressed == 1:
+        if hit != null and hit.type == "button" and hit.pressed:
             clicked is hit
         # Release every pressed widget, wherever the pointer ended up
         # (#570). This used to run only when the mouseup missed every
@@ -850,7 +857,7 @@ define dispatch(root, ev) as:
         # special case here.
         _clear_pressed of root
         if clicked != null:
-            if clicked.on_click != null and clicked.enabled == 1:
+            if clicked.on_click != null and clicked.enabled:
                 clicked.on_click of clicked
             return null
         if hit != null and hit.type == "canvas":
@@ -894,7 +901,7 @@ define app_loop(root, on_key, on_tick) as:
     _ui.window_h is root.h
     _running is 1
     # A request_quit from a previous loop must not quit this one (#564).
-    _ui.quit_requested is 0
+    _ui.quit_requested is false
     # Build initial focus list
     _ui.focus_list is []
     _build_focus_list of root
@@ -902,7 +909,7 @@ define app_loop(root, on_key, on_tick) as:
     # hang during example setup. Normal applications do not set the variable.
     if env_get of "EIGS_GFX_READY" == "1":
         print of "EIGS_GFX_READY"
-    loop while _running == 1 and _ui.quit_requested == 0:
+    loop while _running == 1 and not _ui.quit_requested:
         ev is gfx_poll of null
         loop while ev != null:
             if ev.type == "quit":
@@ -948,7 +955,7 @@ define app_loop(root, on_key, on_tick) as:
         # position to hit-test or draw against (#575).
         for mi in range of (len of _ui.modal_stack):
             mdlg is _ui.modal_stack[mi]
-            if mdlg.visible == 1:
+            if mdlg.visible:
                 _layout of [mdlg, 0, 0]
                 render of [mdlg, 0, 0]
                 # A dropdown hosted by a dialog draws its open list in the
