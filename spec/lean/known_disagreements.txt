@@ -1,2 +1,20 @@
 # label<TAB>classification<TAB>reason
 # This ledger is exact: the parity driver rejects both new and stale rows.
+docs/llms.txt:49	model bug	function definitions and calls are parsed but evaluation is not yet modeled
+tests/dict_keys_mt_module_m.eigs	model bug	function definitions are parsed but evaluation is not yet modeled
+tests/handles_mt_modules/hm_target.eigs	model bug	function definitions are parsed but evaluation is not yet modeled
+tests/lint_fixtures/eigs_json_allow.eigs	model bug	function definitions and calls are parsed but evaluation is not yet modeled
+tests/loader_mt_modules/lm_gen.eigs	model bug	function definitions are parsed but evaluation is not yet modeled
+tests/loader_mt_modules/lm_other.eigs	model bug	function definitions are parsed but evaluation is not yet modeled
+tests/loader_mt_modules/lm_quick.eigs	model bug	function definitions are parsed but evaluation is not yet modeled
+tests/loader_mt_modules/lm_rebind.eigs	model bug	function definitions are parsed but evaluation is not yet modeled
+tests/loader_mt_modules/lm_shared.eigs	model bug	function definitions are parsed but evaluation is not yet modeled
+tests/loader_mt_modules/lm_slow.eigs	model bug	assignment trace projection differs from the C runtime
+tests/loader_mt_modules/lm_spin.eigs	model bug	assignment trace projection differs from the C runtime
+tests/loop_counter_loaded.eigs	model bug	assignment trace projection differs from the C runtime
+tests/modcache_fixture.eigs	model bug	function definitions and calls are parsed but evaluation is not yet modeled
+tests/modlive_counter.eigs	model bug	function definitions are parsed but evaluation is not yet modeled
+tests/modlive_plain.eigs	model bug	function definitions are parsed but evaluation is not yet modeled
+tests/test_jit_andor_leak.eigs	model bug	assignment trace projection differs from the C runtime
+tests/test_jit_hot_osr.eigs	model bug	assignment trace projection differs from the C runtime
+tests/test_loop_exit.eigs	model bug	converged and loop metadata builtins are not yet modeled
