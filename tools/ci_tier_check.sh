@@ -59,7 +59,7 @@ def reads_event(t):
     return next((m.group(0).strip() for m in GH.finditer(t) if (m.group(1) or m.group(2) or "").lower() not in INVARIANT), None)
 IND = re.compile(r"\b(env|vars)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?|\b(needs|steps)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?"
                  r"\s*(?:\.\s*|\[\s*['\"])(outputs|result|outcome|conclusion)['\"]?\s*\]?(?:\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?)?", re.I)
-WAIVE = {("ci.yml", "scope", "detect"): "35784ca855b3e3fd",
+WAIVE = {("ci.yml", "scope", "detect"): "36ae9de471061c1f",
          ("ci.yml", "gate-selftests", "select"): "cd5e284eee927730"}
 used = set()
 def exprs(v): return re.findall(r"\$\{\{(.*?)\}\}", str(v), re.S)

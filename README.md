@@ -355,6 +355,8 @@ and output lengths; callers must choose their context window explicitly.
 
 ## Standard Library
 
+The machine-checkable EigenCore-0 reference frontend lives in [`spec/lean/`](spec/lean/).
+
 Pure EigenScript libraries under `lib/`:
 
 | Module | Description |
