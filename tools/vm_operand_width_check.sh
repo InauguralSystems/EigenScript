@@ -82,7 +82,9 @@ check_tree() {
     decoder=$(decoder_kind_widths)
     raw=$(verifier_raw_ops)
     comments=$(header_kind_widths)
-    verifier_stride=$(sed -nE 's/^[[:space:]]*int end = i[[:space:]]*\+[[:space:]]*1[[:space:]]*\+[[:space:]]*([0-9]+)[[:space:]]*\*[[:space:]]*nops.*/\1/p' "$CHUNK_SOURCE" | awk 'NF { print; exit }')
+    # opcode_operand_bytes is the shared walker definition: ordinary operands
+    # are u16-strided and exceptional widths live beside that rule.
+    verifier_stride=$(sed -nE 's/^[[:space:]]*return[[:space:]]+([0-9]+)[[:space:]]*\*[[:space:]]*op_verify_operands.*/\1/p' "$CHUNK_SOURCE" | awk 'NF { print; exit }')
 
     if [ -z "$decoder" ]; then
         echo "GATE ERROR: no uintN_t/read_uN kind decoder evidence found in $VM_SOURCE"
@@ -95,7 +97,7 @@ check_tree() {
         echo "  either way this gate is now checking less than it was built to check."
         return 1
     fi
-    if [ -z "$raw" ] || [ -z "$verifier_stride" ] || ! sed -n '/void chunk_disassemble/,/\/\* ---- Bytecode verifier/p' "$CHUNK_SOURCE" | grep -qE 'i[[:space:]]*\+= 2'; then
+    if [ -z "$raw" ] || [ -z "$verifier_stride" ] || ! sed -n '/void chunk_disassemble/,/\/\* ---- Bytecode verifier/p' "$CHUNK_SOURCE" | grep -q 'opcode_operand_bytes'; then
         echo "GATE ERROR: no VR_RAW/u16-stride verifier evidence found in $CHUNK_SOURCE"
         return 1
     fi

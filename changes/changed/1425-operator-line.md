@@ -6,3 +6,4 @@
   Single-line code compiles to identical bytecode. Interpreted execution adds a tape line record before
   the operation and a restoring line record on success. Temporal filing remains the statement's first line. Dedicated compound
   field/index assignments retain their prior attribution pending a separate owner decision.
+  Descriptor and native-JIT bytecode walkers now share operand widths, and native trace tapes preserve the restored line event (#1425).

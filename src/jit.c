@@ -980,8 +980,9 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             i += 1; ops++;
         } else if (op == OP_LINE || op == OP_BINARY_LINE) {
             /* #630: [op][line:32] = 5 bytes. */
-            if (i + 5 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
-            i += 5; ops++;
+            int width = opcode_operand_bytes(op);
+            if (i + 1 + width > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            i += 1 + width; ops++;
         } else {
             *stop_op = op; *stop_offset = i;
             break;
@@ -4381,6 +4382,20 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_edx(w, g_layout.off_binary_prev_trace_line);
             *w++ = 0x89; *w++ = 0x10; /* mov %edx,(%rax) */
+            /* The interpreter records the restored line too. Without this
+             * hook native execution loses the scope-exit L event and can
+             * incorrectly deduplicate the next stamp. */
+            uint8_t *no_tape;
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_enabled_storage);
+            w = emit_cmpl_0_mem_rax(w);
+            w = emit_je_rel32(w, &no_tape);
+            w = emit_mov_disp32_rbx_to_eax(w, g_layout.off_current_line);
+            *w++ = 0x89; *w++ = 0xC7; /* mov %eax,%edi */
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&trace_line);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            patch_rel32(no_tape, w);
             i += 1;
         } else { /* OP_LINE / OP_BINARY_LINE */
             if (op == OP_BINARY_LINE) {
@@ -4427,7 +4442,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             patch_rel32(no_tape, w);
-            i += 5;   /* #630: [op][line:32] */
+            i += 1 + opcode_operand_bytes(op);
         }
         /* Update last_imm in lockstep with the scanner's last_push_immediate.
          * Consumed by OP_POP to decide between the `dec %ecx` peephole and

@@ -740,6 +740,9 @@ int        chunk_scan_static_loads(const EigsChunk *chunk,
                                                  void *ud),
                                    void *ud);
 const char *op_name(uint8_t op);
+/* Operand bytes following an opcode. This is the single bytecode-walker
+ * width table; returns -1 for an unknown opcode. */
+int        opcode_operand_bytes(uint8_t op);
 /* Verify an assembled (untrusted) chunk's bytecode is in-bounds before the VM
  * runs it. Returns 1 if safe to execute, 0 if it must be rejected. */
 int        chunk_verify(EigsChunk *chunk);

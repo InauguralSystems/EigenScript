@@ -397,6 +397,13 @@ typedef enum {
 } VerifyRole;
 static int op_verify_operands(uint8_t op8, VerifyRole roles[3]);
 
+int opcode_operand_bytes(uint8_t op) {
+    if (op >= OP_COUNT) return -1;
+    if (op == OP_LINE || op == OP_BINARY_LINE) return 4;
+    VerifyRole roles[3];
+    return 2 * op_verify_operands(op, roles);
+}
+
 void chunk_disassemble(EigsChunk *chunk, const char *label) {
     fprintf(stderr, "=== %s (%s, %d bytes, %d constants) ===\n",
             label, chunk->name, chunk->code_len, chunk->const_count);
@@ -406,7 +413,9 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
         uint8_t op = chunk->code[i];
         fprintf(stderr, "%04d [L%d] %-20s", i, line, op_name(op));
         i++;
-        if ((op == OP_LINE || op == OP_BINARY_LINE) && i + 3 < chunk->code_len) {
+        int operand_bytes = opcode_operand_bytes(op);
+        if ((op == OP_LINE || op == OP_BINARY_LINE) &&
+            operand_bytes == 4 && i + 3 < chunk->code_len) {
             /* #630: 32-bit operand. */
             uint32_t arg = (uint32_t)chunk->code[i] |
                            ((uint32_t)chunk->code[i + 1] << 8) |
@@ -784,15 +793,17 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
         /* #1977: descriptor bytecode cannot use private loop counters. */
         if (!chunk->compiler_scanned &&
             (op == OP_LOOP_ENTER_NAMED || op == OP_LOOP_EXIT_NAMED ||
-             op == OP_LOOP_STALL_NAMED || op == OP_LOOP_CAP_NAMED)) {
-            WHY("private-loop-counter opcode %u is compiler-only and not valid "
+             op == OP_LOOP_STALL_NAMED || op == OP_LOOP_CAP_NAMED ||
+             op == OP_BINARY_LINE || op == OP_BINARY_LINE_END)) {
+            WHY("opcode %u is compiler-only and not valid "
                 "in assembled bytecode at offset %d", (unsigned)op, i);
             ok = 0; break;
         }
         /* #630: OP_LINE has a single 32-bit operand — outside the u16-strided
          * role machinery below. No index to validate; just skip 4 bytes. */
+        int operand_bytes = opcode_operand_bytes(op);
         if (op == OP_LINE || op == OP_BINARY_LINE) {
-            int end = i + 1 + 4;
+            int end = i + 1 + operand_bytes;
             if (end > n) {
                 WHY("truncated LINE operand at offset %d", i);
                 ok = 0; break;
@@ -802,7 +813,7 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
         }
         VerifyRole roles[3];
         int nops = op_verify_operands(op, roles);
-        int end = i + 1 + 2 * nops;
+        int end = i + 1 + operand_bytes;
         if (end > n) {
             WHY("truncated operand for opcode %u at offset %d", (unsigned)op, i);
             ok = 0; break;
@@ -930,8 +941,9 @@ static int chunk_verify_impl(EigsChunk *chunk, char *why, size_t whyn) {
             int h = height[off];
             uint8_t op = code[off];
             int end, operand0 = 0, target = -1;
+            int operand_bytes = opcode_operand_bytes(op);
             if (op == OP_LINE || op == OP_BINARY_LINE) {
-                end = off + 1 + 4;
+                end = off + 1 + operand_bytes;
             } else {
                 VerifyRole roles[3];
                 int nops = op_verify_operands(op, roles);
@@ -1028,9 +1040,7 @@ void chunk_arm_temporal(const EigsChunk *chunk) {
     int n = chunk->code_len, i = 0;
     while (i < n) {
         uint8_t op = code[i];
-        if (op == OP_LINE || op == OP_BINARY_LINE) { i += 1 + 4; continue; }
-        VerifyRole roles[3];
-        int nops = op_verify_operands(op, roles);
+        int operand_bytes = opcode_operand_bytes(op);
         if (op == OP_INTERROGATE_NAMED || op == OP_INTERROGATE_NAMED_AT ||
             op == OP_INTERROGATE_NAMED_WHEN) {
             int kind = code[i + 1] | (code[i + 2] << 8);
@@ -1049,7 +1059,7 @@ void chunk_arm_temporal(const EigsChunk *chunk) {
             if (strcmp(chunk->constants[name_idx]->data.str, "state_at") == 0)
                 trace_arm_history_all();
         }
-        i += 1 + 2 * nops;
+        i += 1 + operand_bytes;
     }
     for (int f = 0; f < chunk->fn_count; f++)
         chunk_arm_temporal(chunk->functions[f]);
@@ -1064,9 +1074,7 @@ int chunk_reads_shared_temporal(const EigsChunk *chunk) {
     int n = chunk->code_len, i = 0;
     while (i < n) {
         uint8_t op = code[i];
-        if (op == OP_LINE) { i += 1 + 4; continue; }
-        VerifyRole roles[3];
-        int nops = op_verify_operands(op, roles);
+        int operand_bytes = opcode_operand_bytes(op);
         if (op == OP_INTERROGATE_NAMED_AT ||
             op == OP_INTERROGATE_NAMED_WHEN)
             return 1;
@@ -1078,7 +1086,7 @@ int chunk_reads_shared_temporal(const EigsChunk *chunk) {
             if (strcmp(chunk->constants[name_idx]->data.str, "state_at") == 0)
                 return 1;
         }
-        i += 1 + 2 * nops;
+        i += 1 + operand_bytes;
     }
     for (int f = 0; f < chunk->fn_count; f++)
         if (chunk_reads_shared_temporal(chunk->functions[f])) return 1;
@@ -1110,16 +1118,16 @@ void chunk_scan_leaf_accessor(EigsChunk *c) {
     const uint8_t *ip = c->code, *end = c->code + c->code_len;
     while (ip < end) {
         uint8_t op = *ip++;
+        int width = opcode_operand_bytes(op);
+        if (width < 0 || ip + width > end) return;
+        const uint8_t *next = ip + width;
         switch (op) {
         case OP_BINARY_LINE_END:
             break;
         case OP_LINE: case OP_BINARY_LINE:
-            if (ip + 4 > end) return;   /* #630: 32-bit operand */
-            ip += 4;
             break;
         case OP_CONST: {
-            if (ip + 2 > end) return;
-            uint16_t idx = (uint16_t)(ip[0] | (ip[1] << 8)); ip += 2;
+            uint16_t idx = (uint16_t)(ip[0] | (ip[1] << 8));
             if (idx >= (uint16_t)c->const_count) return;
             if (c->constants[idx]->type != VAL_NUM) return;
             depth++;
@@ -1130,17 +1138,14 @@ void chunk_scan_leaf_accessor(EigsChunk *c) {
             depth++;
             break;
         case OP_GET_LOCAL: {
-            if (ip + 2 > end) return;
-            uint16_t slot = (uint16_t)(ip[0] | (ip[1] << 8)); ip += 2;
+            uint16_t slot = (uint16_t)(ip[0] | (ip[1] << 8));
             if (slot >= (uint16_t)c->param_count) return;
             depth++;
             break;
         }
         case OP_LOCAL_DOT_GET: {
-            if (ip + 4 > end) return;
             uint16_t slot = (uint16_t)(ip[0] | (ip[1] << 8));
             uint16_t name_idx = (uint16_t)(ip[2] | (ip[3] << 8));
-            ip += 4;
             if (slot >= (uint16_t)c->param_count) return;
             if (name_idx >= (uint16_t)c->const_count) return;
             if (!c->const_interns[name_idx]) return;
@@ -1172,6 +1177,7 @@ void chunk_scan_leaf_accessor(EigsChunk *c) {
         default:
             return;
         }
+        ip = next;
         if (depth > LEAF_ACCESSOR_MAX_DEPTH) return;
     }
 }
@@ -1472,12 +1478,8 @@ int chunk_has_reader_opcode(const EigsChunk *chunk) {
 static int chunk_step_ip(const EigsChunk *chunk, int i) {
     uint8_t op = chunk->code[i];
     i++;
-    if (op == OP_LINE || op == OP_BINARY_LINE) {
-        i += 4;                              /* #630: 32-bit operand */
-    } else if (op < OP_COUNT) {
-        VerifyRole roles[3];
-        i += 2 * op_verify_operands(op, roles);
-    }
+    int width = opcode_operand_bytes(op);
+    if (width > 0) i += width;
     return i;
 }
 
