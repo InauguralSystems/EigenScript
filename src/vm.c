@@ -1804,12 +1804,13 @@ int jit_helper_iter_next(void) {
  * That preserves the predicate's compact
  * interface while sending it through the caller's ordinary out-of-range path;
  * critically, the range test happens before the cast. Values outside the int
- * range but below 2^52 are tested with trunc(); at and above 2^52 every finite
+ * range but below 2^52 are tested with a (long long) round-trip (exact there, and
+ * no libm: the freestanding profile has no trunc()); at and above 2^52 every finite
  * binary64 value is already integral. Negatives pass here and fail the usual
  * range check downstream, unchanged. */
 static inline int vm_index_is_int(double d, int *out) {
     if (d < (double)INT_MIN || d > (double)INT_MAX) {
-        if (!isfinite(d) || (fabs(d) < 4503599627370496.0 && trunc(d) != d))
+        if (!isfinite(d) || (fabs(d) < 4503599627370496.0 && (double)(long long)d != d))
             return 0;
         *out = d < 0.0 ? INT_MIN : INT_MAX;
         return 1;
