@@ -374,6 +374,13 @@ __attribute__((unused))
 static inline void list_set_int(Value *v, int i, int64_t n) {
     list_rewrite_int(v, i, n);
 }
+/* The caller has proved this slot is an SMI with a nonnegative value
+ * below the SMI maximum. Incrementing the payload cannot carry into the tag and
+ * changes no reference ownership. ITER_NEXT additionally bounds it by
+ * idx < len <= INT_MAX. Keep element storage behind this header. */
+static inline void list_bump_smi(Value *v, int i) {
+    v->data.list.items[i].u++;
+}
 __attribute__((unused))
 static inline int list_get_int(const Value *v, int i, int64_t *out) {
     return slot_int_value(list_slot(v, i), out);

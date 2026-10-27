@@ -1879,12 +1879,13 @@ int jit_helper_iter_next(void) {
         elem = slot_read_owned(list_slot(iterable, idx));
     }
     /* S9-K1-C: valid C-int positions and idx+1 fit in an SMI. Reuse the
-     * immediate slot in place; raw bytecode's float/boxed state still
-     * takes the owning writer, which releases any replaced heap ref. */
+     * immediate slot in place. The raw-state fallback also stores a
+     * known canonical SMI and releases the replaced slot; it needs no
+     * generic storage normalization (which inhibits unrelated inlining). */
     if (slot_is_smi(list_slot(state, 1)))
-        state->data.list.items[1].u++;  /* no carry into tag: idx < len <= INT_MAX */
+        list_bump_smi(state, 1);
     else
-        list_set_slot_owned(state, 1, slot_from_int((int64_t)idx + 1));
+        list_set_int(state, 1, (int64_t)idx + 1);
     vm_push_slot(elem);
     return g_has_error ? 2 : 0;
 }
@@ -5195,9 +5196,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         } else {
             /* S9-K1-C: mirror the helper's in-place SMI update. */
             if (slot_is_smi(list_slot(state, 1)))
-                state->data.list.items[1].u++;  /* same bounded SMI payload, tag unchanged */
+                list_bump_smi(state, 1);
             else
-                list_set_slot_owned(state, 1, slot_from_int((int64_t)idx + 1));
+                list_set_int(state, 1, (int64_t)idx + 1);
             if (iterable->type == VAL_BUFFER) {
                 /* Push number immediate directly — skip make_float + immediate-
                  * promote round-trip through vm_push. */
