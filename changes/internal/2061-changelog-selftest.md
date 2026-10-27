@@ -1,0 +1,1 @@
+- Make the changelog-fragment self-test report setup failures and isolate its release-cut case from existing fragments (#2061).

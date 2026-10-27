@@ -11,16 +11,25 @@ trap 'rm -rf "$SCRATCH"' EXIT
 passed=0 failed=0
 
 case_run() { # name setup-function expected diagnostic
-    local name=$1 setup=$2 expected=$3 tree=$SCRATCH/$1 base out rc
+    local name=$1 setup=$2 expected=$3 tree=$SCRATCH/$1 base out rc setup_out setup_rc caller_errexit=0
+    case $- in *e*) caller_errexit=1;; esac
     git clone -q --shared "$ROOT" "$tree" || exit 2
     cd "$tree" || exit 2
     git config user.email selftest@example.invalid
     git config user.name selftest
     base=$(git rev-parse HEAD)
-    "$setup"
     set +e
+    setup_out=$tree/.git/selftest-setup-output
+    "$setup" >"$setup_out" 2>&1; setup_rc=$?
+    if [ "$setup_rc" -ne 0 ]; then
+        cd "$ROOT" || exit 2
+        echo "  FAIL: $name (setup failed: $setup, rc=$setup_rc)"
+        cat "$setup_out"
+        failed=$((failed + 1))
+        [ "$caller_errexit" -eq 0 ] || set -e
+        return 0
+    fi
     out=$(bash tools/changelog_fragments.sh check "$base" 2>&1); rc=$?
-    set -e
     cd "$ROOT" || exit 2
     if [ "$rc" -ne 0 ] && printf '%s\n' "$out" | grep -q "$expected"; then
         echo "  PASS: $name"
@@ -30,6 +39,7 @@ case_run() { # name setup-function expected diagnostic
         printf '%s\n' "$out"
         failed=$((failed + 1))
     fi
+    [ "$caller_errexit" -eq 0 ] || set -e
 }
 
 symlink_fragment() {
@@ -50,6 +60,9 @@ deleted_fragment() {
     git rm -q changes/fixed/999-existing.md && git commit -qm 'delete prior fragment'
 }
 cut_deletes_readme() {
+    find changes -mindepth 2 -type f -delete
+    git add -A && git commit -qm 'remove pre-existing fragments'
+    base=$(git rev-parse HEAD)
     bash tools/changelog_fragments.sh cut 99.99.99 2099-01-01 >/dev/null
     rm changes/README.md
     git add -A && git commit -qm 'release cut plus README deletion'
