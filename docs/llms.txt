@@ -441,3 +441,6 @@ See docs/TRACE.md and docs/EMBEDDING.md for binding and format compatibility.
 Replay refuses unreconstructable host effects: `mktemp` raises a catchable
 filesystem-boundary error before creating a file; ordinary `mktemp` still
 creates the file and returns its path for later `remove_file`.
+Recorded builtins validate deterministic argument refusals before their tape
+boundary. A builtin call that raises during recording must raise with the same
+kind and message during strict replay, never return a recorded stand-in.
