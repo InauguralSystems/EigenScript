@@ -829,6 +829,10 @@ jobs:
         run: bash tools/ui_surface_check.sh --gfx-input
 
       - if: needs.scope.outputs.code == 'true'
+        name: X11 gfx locale and UTF-8 title regressions
+        run: make gfx-x11-regressions
+
+      - if: needs.scope.outputs.code == 'true'
         name: Build consolidated server variant
         run: make server
 
