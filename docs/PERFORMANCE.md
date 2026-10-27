@@ -248,11 +248,22 @@ calls it a coin flip.
 consumer ids, a 40-hex pin, paths under the fetched dir), with a self-test that
 plants each fault, so the lane cannot shrink back to the proxies and stay green.
 
-The lane's headline metric is **instructions**, not CodSpeed's cycle
-estimate: the estimate's cache model attributed ~60% of the DMG shape to cache
-misses, and `perf stat` on real hardware read IPC 1.61 with 1.6% last-level
-references — a busy core. Instructions is the unit the `bench` job uses and the
-one the hardware agreed with (within 1% of cachegrind's `Ir`).
+The lane's headline metric is **modeled cycles at 3.6 GHz**, not instructions
+and not CodSpeed's cycle estimate ([#2002](https://github.com/InauguralSystems/EigenScript/issues/2002)).
+The estimate (the default) weights each instruction by a cycle table: its first
+runs read 3.0 to 3.5 times cachegrind `Ir`, with ~60% of the DMG shape attributed
+to simulated cache misses, and `perf stat` on real hardware read IPC 1.61 with
+1.6% last-level references, a busy core. The lane therefore sets
+`cycle-estimation: false`. That does not make the Value instructions: the runner
+still simulates caches, and a row's Value is exactly 1 cycle per instruction
+fetch and per data load/store, plus 5 per L1 miss and 100 per last-level miss,
+counted on the runner's own callgrind profile. A row reads roughly 1.4 to 1.6
+times its `Ir`, the unit the `bench` job uses. (The perf agreement with `Ir`
+within 1% is about the hardware counter; the lane's Value was never compared
+with it until #2002.) The two gates can therefore disagree on a change that
+trades instructions for memory traffic. The unit is pinned (`runner-version` in
+the workflow) and re-derived on every run by `tools/codspeed_unit_guard.py`;
+what the lane can resolve is registered in [INSTRUMENTS.md](INSTRUMENTS.md).
 
 Two rules carried over from the gate. **Tier is in the target name**: an
 unqualified target measures the default (JIT) tier and the `vm-tier` targets

@@ -67,16 +67,44 @@ jobs:
       # `run` is deliberately omitted: with no command the runner executes the
       # exec-harness targets declared in codspeed.yml at the repository root.
       #
-      # cycle-estimation OFF: the headline metric is then INSTRUCTIONS, the
-      # unit the in-repo Ir gate uses and the unit the dev box agrees with
-      # (perf `instructions:u` matched cachegrind Ir within 1%). With it on,
-      # the first run attributed ~60% of the DMG shape's time to simulated
-      # cache misses; perf stat on the box the same night read IPC 1.61,
-      # 1.6% last-level references and 76 K memory misses in a 1.19 G
-      # instruction run — a busy core, not a stalled one. A model that
-      # disagrees with the hardware by that much is not a headline number.
+      # THE UNIT (#2002). A row's Value is MODELED CYCLES at 3.6 GHz, not
+      # instructions. The runner always simulates caches; cycle-estimation OFF
+      # only drops the per-instruction cycle table. What is left is exact
+      # arithmetic on the runner's own callgrind profile: 1 cycle per
+      # instruction fetch and per data load/store (hit or miss), plus 5 per L1
+      # miss and 100 per last-level miss. A row therefore reads roughly 1.4 to
+      # 1.6 times its cachegrind `Ir`, the bench job's unit (1.39 to 1.56 on the
+      # rows measured; the table is in docs/INSTRUMENTS.md). With
+      # cycle-estimation ON the first runs read 3.0 to 3.5 times Ir, ~60% of the
+      # DMG shape attributed to simulated cache misses that perf stat refuted
+      # (IPC 1.61, 1.6% last-level references); #1221 turned it off for that
+      # reason and described the result as instructions. It never was: the first
+      # run after it already read 1.39 to 1.56 times Ir.
+      #
+      # `runner-version` is PINNED to the runner this action SHA defaults to
+      # (.codspeed-runner-version in the action). The runner, and the valgrind
+      # fork it installs, decide the unit; the action's default moves with
+      # every bump dependabot makes. Move the pin deliberately, in a PR whose
+      # lane run passes the unit guard below; codspeed_targets_check.sh keeps
+      # the pin and the guard from being deleted.
       - name: Run codspeed.yml targets under CPU simulation
+        id: codspeed
         uses: CodSpeedHQ/action@821a40cd6c80e3cfe387caf55668287addd808da  # v5.5.0
         with:
           mode: simulation
           cycle-estimation: false
+          runner-version: 5.5.0
+
+      # The unit is a claim: re-derive it on THIS run (tools/codspeed_unit_guard.py).
+      # It reads the observed_loop row's raw callgrind events from the profile
+      # folder the runner just wrote, reads the run's Value back from CodSpeed's
+      # public API (the action's run-id output) and goes red, naming the property
+      # that moved, unless the Value is the registered modeled-cycles arithmetic.
+      # It also goes red when it cannot verify. Skipped for fork PRs only: a
+      # fork's upload carries no promise of a readable run, and the pin on main
+      # moves only by a reviewed merge.
+      - name: Guard the lane's unit (tools/codspeed_unit_guard.py)
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          CODSPEED_RUN_ID: ${{ steps.codspeed.outputs.run-id }}
+        run: python3 tools/codspeed_unit_guard.py
