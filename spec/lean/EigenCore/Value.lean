@@ -6,7 +6,7 @@ inductive Value where
   | bool (value : Bool)
   | null
   | closure (name : String)
-  deriving Repr, BEq
+  deriving Repr, BEq, Inhabited
 
 /-- The byte representation used by the C VM's `print of`. -/
 def Value.print : Value → String

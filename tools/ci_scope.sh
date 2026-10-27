@@ -31,7 +31,7 @@ classify() {
     local f e old_entry new_entry
     while IFS= read -r f; do
         case "$f" in
-            spec/*|tools/spec_lean_no_sorry.py|tools/spec_lean_axioms.py|tools/spec_lean_classify.py|tools/spec_lean_corpus.py|tests/test_doc_examples.py|.github/workflows/ci.yml) spec=true ;;
+            spec/*|tools/spec_lean_no_sorry.py|tools/spec_lean_axioms.py|tools/spec_lean_no_delegation.py|tools/spec_lean_classify.py|tools/spec_lean_corpus.py|tools/spec_lean_parity.py|tests/test_doc_examples.py|.github/workflows/ci.yml) spec=true ;;
         esac
         # name-only classification is insufficient for symlinks: docs/x.md may
         # expose src/x.c. Inspect both trees: only an absent entry or a regular

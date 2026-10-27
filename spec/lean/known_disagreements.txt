@@ -1,0 +1,2 @@
+# label<TAB>classification<TAB>reason
+# This ledger is exact: the parity driver rejects both new and stale rows.
