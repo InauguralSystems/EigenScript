@@ -1,3 +1,6 @@
 # Test scripts nothing in CI runs, on purpose (tools/enrolment_check.sh, #1264).
 # `path | reason`. A row for a missing or invoked file fails; prefer a section.
 tests/test_gc_runner_controls.py | manual deferred control for the GC traversal runner (tests/GC_TRAVERSAL.md); forks child sessions and must run with the heavy slot released, so it is run by hand
+tools/builtin_usage.sh | maintainer-only source audit that reports builtin use sites; it is not an executable CI check
+tools/doc_coupling_hook.sh | optional local Git pre-commit hook installed by a contributor, not a CI entry point
+tools/mutants.sh | manual mutation-train driver documented in concurrency and trace guides; individual product tests run in CI
