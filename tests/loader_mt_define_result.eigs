@@ -1,0 +1,20 @@
+# #1868: load_file returns the module's last value. lm_gen.eigs deliberately
+# ends in a define, so each concurrent load returns the shared function while
+# the other worker can rebind/refcount it. The returned function is called so
+# a quiet early exit cannot masquerade as loader coverage.
+load_file of "loader_mt_modules/lm_gen.eigs"
+define lm_define_loader(k) as:
+    local i is 0
+    local total is 0
+    loop while i < 1000:
+        local loaded is load_file of "loader_mt_modules/lm_gen.eigs"
+        total is total + (loaded of 1)
+        i is i + 1
+    return total
+h1 is spawn of [lm_define_loader, 1]
+h2 is spawn of [lm_define_loader, 2]
+r1 is thread_join of h1
+r2 is thread_join of h2
+assert of [r1 == 2000, f"worker 1 total {r1}"]
+assert of [r2 == 2000, f"worker 2 total {r2}"]
+print of "loader define result: PASS"

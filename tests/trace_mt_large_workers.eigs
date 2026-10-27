@@ -1,0 +1,20 @@
+# Concurrent oversized nondeterministic answers.  Each env_get produces one
+# length-framed N record and one C continuation in a v8 tape.
+define large_worker(id) as:
+    local total is 0
+    local i is 0
+    loop while i < 4:
+        local value is env_get of "EIGS_TRACE_LARGE_VALUE"
+        total is total + (len of value)
+        i is i + 1
+    return total + id
+
+h1 is spawn of [large_worker, 1]
+h2 is spawn of [large_worker, 2]
+h3 is spawn of [large_worker, 3]
+h4 is spawn of [large_worker, 4]
+a is thread_join of h1
+b is thread_join of h2
+c is thread_join of h3
+d is thread_join of h4
+print of f"{a},{b},{c},{d}"

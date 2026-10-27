@@ -3370,8 +3370,8 @@ static Value *sandbox_finish_run(Value *out) {
     return out;
 }
 
-/* sandbox_run of [descriptor, max_iterations?, max_bytes?, max_work?] — run an EigenScript-assembled
- * chunk (same descriptor as vm_run_bytecode) under safety bounds: dangerous
+/* sandbox_run of [descriptor_or_source, max_iterations?, max_bytes?, max_work?] — compile source
+ * or run an EigenScript-assembled chunk under safety bounds: dangerous
  * builtins are shadowed by a blocked stub, and loops are capped at
  * max_iterations (default 1,000,000). A separate cumulative instruction
  * limit bounds VM work, but does not bound time inside a native builtin. Runtime errors
@@ -3386,6 +3386,8 @@ Value* builtin_sandbox_run(Value *arg) {
      * below, once the chunk exists. */
     Value *desc = (arg && arg->type == VAL_LIST && arg->data.list.count >= 1)
                   ? BUILTIN_LIST_VIEW(arg, 0) : arg;
+    int source_form = desc && desc->type == VAL_STR;
+    const char *source = source_form ? desc->data.str : NULL;
     int max_iter = 1000000;
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2 &&
         BUILTIN_LIST_VIEW(arg, 1) && BUILTIN_LIST_VIEW(arg, 1)->type == VAL_NUM)
@@ -3425,8 +3427,10 @@ Value* builtin_sandbox_run(Value *arg) {
      * gets its own message — a grading ladder must be able to tell "your
      * producer is stale" from "your bytecode is malformed" without re-running. */
     char abibuf[256];
-    const char *abi_err = vm_desc_abi_error(desc, abibuf, sizeof abibuf);
-    EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1, NULL, 0);
+    const char *abi_err = source_form ? NULL :
+                          vm_desc_abi_error(desc, abibuf, sizeof abibuf);
+    EigsChunk *chunk = source_form ? NULL :
+                       (abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1, NULL, 0));
     if (chunk && chunk_reads_shared_temporal(chunk)) {
         chunk_free(chunk);
         chunk = NULL;
@@ -3434,7 +3438,7 @@ Value* builtin_sandbox_run(Value *arg) {
     }
     if (chunk) eigs_obs_enable_runtime();     /* #915: see vm_run_bytecode */
     Value *out = make_dict(2);
-    if (!chunk) {
+    if (!chunk && !source_form) {
         /* Descriptor verification may already have interned constants before
          * rejecting the graph. Restore the caller's scope before constructing
          * the host-owned diagnostic dictionary, then release this run's names. */
@@ -3583,7 +3587,81 @@ Value* builtin_sandbox_run(Value *arg) {
      * after the VM has released the run's frames and operands. */
     int saved_try_depth = g_try_depth;
     int saved_unobserved_depth = g_unobserved_depth;
-    Value *result = vm_execute(chunk, sbox);
+    /* Source compilation is part of the sandbox boundary, not host setup.
+     * Reserve a deterministic compile-phase sub-budget before the lexer sees
+     * the text.  The front end's allocations are bounded by 128 bytes per
+     * input byte plus 1 MiB of fixed working space (tokens, AST nodes, chunk
+     * arrays and compiler tables).  This deliberately conservative bound
+     * makes refusal independent of allocator rounding and replay timing, and
+     * prevents a hostile token stream from reaching x_oom.  Execution still
+     * receives the full cumulative max_bytes allowance.
+     *
+     * Keep this after the sealed root and all three budgets are armed: source
+     * is compiled against exactly the environment it will execute in. */
+    if (source_form) {
+        size_t source_len = source ? strlen(source) : 0;
+        size_t fixed = (size_t)1024 * 1024;
+        int compile_fits = source_len <= (SIZE_MAX - fixed) / 128 &&
+                           source_len * 128 + fixed <= max_bytes;
+        if (!compile_fits) {
+            rt_error(EK_SANDBOX, 0,
+                     "source compile budget exceeded (source_bytes=%zu, max_bytes=%zu)",
+                     source_len, max_bytes);
+        } else {
+            int saved_errors = g_parse_errors;
+            g_parse_errors = 0;
+            g_first_error_line = 0;
+            g_first_error_col = 0;
+            g_first_error_msg[0] = '\0';
+#if !EIGENSCRIPT_FREESTANDING
+            int saved_stderr = dup(STDERR_FILENO);
+            int devnull = open("/dev/null", O_WRONLY);
+            if (devnull >= 0) { dup2(devnull, STDERR_FILENO); close(devnull); }
+#endif
+            /* Compiling sandboxed source must not arm process-wide temporal
+             * history: a `prev of x` compiled here would make later HOST
+             * assignments to x record history that a later sandbox could
+             * read. Suppression is per-thread and nestable (trace.h). */
+            trace_arm_suppress_begin();
+            TokenList tl = tokenize(source ? source : "");
+            ASTNode *ast = parse(&tl);
+            if (g_parse_errors == 0 && ast)
+                chunk = compile_ast(ast, sbox, source ? source : "", "<sandbox>");
+            trace_arm_suppress_end();
+            int front_errors = g_parse_errors;
+#if !EIGENSCRIPT_FREESTANDING
+            if (saved_stderr >= 0) { dup2(saved_stderr, STDERR_FILENO); close(saved_stderr); }
+#endif
+            free_tokenlist(&tl);
+            free_ast(ast);
+            g_parse_errors = saved_errors;
+            if (front_errors || !chunk) {
+                int line = g_first_error_line > 0 ? g_first_error_line : 1;
+                int col = g_first_error_col_known ? g_first_error_col + 1 : 0;
+                char diagnostic[512];
+                if (col > 0)
+                    snprintf(diagnostic, sizeof diagnostic, "%s (line %d, column %d)",
+                             g_first_error_msg[0] ? g_first_error_msg : "compile error",
+                             line, col);
+                else
+                    snprintf(diagnostic, sizeof diagnostic, "%s (line %d)",
+                             g_first_error_msg[0] ? g_first_error_msg : "compile error", line);
+                rt_error(EK_PARSE, line, "%s", diagnostic);
+                snprintf(g_error_file, sizeof g_error_file, "%s", "<sandbox>");
+            } else if (chunk_reads_shared_temporal(chunk)) {
+                /* The descriptor path rejects this before building; source
+                 * only has a chunk now, so the same rule applies here.
+                 * Temporal history belongs to the host thread, not the sealed
+                 * Env: `prev` could otherwise recover a host builtin or closure
+                 * the allowlist never sees. */
+                chunk_free(chunk);
+                chunk = NULL;
+                rt_error(EK_SANDBOX, 0, "sandbox source cannot access temporal history");
+            }
+        }
+    }
+    if (source_form && chunk) eigs_obs_enable_runtime();
+    Value *result = chunk ? vm_execute(chunk, sbox) : NULL;
     g_try_depth = saved_try_depth;
     g_unobserved_depth = saved_unobserved_depth;
 
@@ -4890,6 +4968,50 @@ Value* builtin_close_channel(Value *arg) {
     return make_null();
 }
 
+/* A retained slot is not necessarily a live resource: channels remain
+ * queryable after close and cooperative tasks remain queryable after they
+ * finish.  Keep these predicates beside the resource implementations. */
+unsigned handle_table_live_kinds(EigsState *st) {
+    unsigned live = 0;
+    if (!st) return 0;
+    pthread_mutex_lock(&st->handle_mutex);
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        EigsHandleSlot *slot = &st->handle_table[i];
+        if (!slot->ptr) continue;
+        switch (slot->type) {
+        case HANDLE_STORE:
+            live |= EIGS_LIVE_STORE; /* store_close releases its slot */
+            break;
+        case HANDLE_THREAD:
+            live |= EIGS_LIVE_THREAD; /* thread_join claims its slot */
+            break;
+        case HANDLE_CHANNEL: {
+            Channel *ch = (Channel *)slot->ptr;
+            pthread_mutex_lock(&ch->mutex);
+            int open = !ch->closed;
+            pthread_mutex_unlock(&ch->mutex);
+            if (open) live |= EIGS_LIVE_CHANNEL;
+            break;
+        }
+        case HANDLE_TASK: {
+            Task *t = (Task *)slot->ptr;
+            if (!t->detached && (t->state == TASK_READY ||
+                t->state == TASK_RUNNING || t->state == TASK_SUSPENDED))
+                live |= EIGS_LIVE_TASK;
+            break;
+        }
+        case HANDLE_NET:
+            live |= EIGS_LIVE_SOCKET; /* net_close releases its slot */
+            break;
+        }
+    }
+    if (st->deferred_threads ||
+        __atomic_load_n(&st->live_workers, __ATOMIC_ACQUIRE) != 0)
+        live |= EIGS_LIVE_THREAD;
+    pthread_mutex_unlock(&st->handle_mutex);
+    return live;
+}
+
 Value* builtin_channel_closed(Value *arg) {
     /* #971 Phase D: get_channel folds "not a channel handle" into "no such
      * channel". The second is the documented answer (a reclaimed channel is
@@ -5801,6 +5923,10 @@ Value* builtin_list_insert_at(Value *arg) {
      * copy, then move the tail and install an independently owned value (an
      * immediate number is never retained as a Value view). */
     list_append_slot(list, list_slot(list, count - 1));
+    /* list_append_slot can refuse a capacity growth after raising the
+     * sandbox budget error.  A raise does not unwind this direct C call, so
+     * do not shift into the slot that was never reserved. */
+    if (list->data.list.count != count + 1) return list;
     slot_decref(list_slot(list, count - 1));
     list_move(list, idx + 1, idx, count - idx);
     Value *val = list_get_owned(arg, 2);
@@ -5973,10 +6099,18 @@ Value* builtin_dispatch(Value *arg) {
         rt_error(EK_TYPE, 0, "dispatch: key must be a number");
         return make_null();
     }
-    int key = (int)eigs_num_arg(key_v, __func__);
-    if ((double)key != eigs_num_arg(key_v, __func__)) {
+    double key_d = eigs_num_arg(key_v, __func__);
+    int key;
+    /* Same order as native OP_DISPATCH, through the same predicate (vm.h):
+     * a fractional key is a value error; an integral one outside int range
+     * is index_range. */
+    if (!vm_index_is_int(key_d, &key)) {
         rt_error(EK_VALUE, 0, "dispatch key must be an integer, got %g",
-                      eigs_num_arg(key_v, __func__));
+                      key_d);
+        return make_null();
+    }
+    if (key_d < (double)INT_MIN || key_d > (double)INT_MAX) {
+        rt_error(EK_INDEX, 0, "dispatch key %g out of range", key_d);
         return make_null();
     }
 

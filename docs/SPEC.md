@@ -1994,6 +1994,13 @@ moving
 
 ## Temporal interrogatives
 
+**A binding's creation is its first observation: the `local`/first assignment
+for a local, and the call-time binding for a parameter. Every later assignment
+in the same activation adds one.** Thus, for every binding in an activation,
+`when` = (1 if it is a parameter) + the number of tape `A` records for it in
+that activation. The parameter creation event is #1048's “one observation per
+call”; it is not an `A` assignment record.
+
 With temporal queries the runtime records assignment history. `prev of
 x` is the value x held before its latest assignment. `what is x at
 <line>` reads the value x had at a source line. (History recording

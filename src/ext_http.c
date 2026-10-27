@@ -2011,3 +2011,9 @@ void ext_http_state_destroy(EigsState *st) {
      * exits), so theirs is already gone. */
     if (eigs_http_active == s) eigs_http_active = NULL;
 }
+
+unsigned ext_http_live_handles(EigsState *st) {
+    Server *s = st ? st->ext_http_server : NULL;
+    return s && (s->early_bind_fd >= 0 || s->init_thread_active || s->serving)
+        ? EIGS_LIVE_HTTP : 0;
+}

@@ -1205,6 +1205,26 @@ int main(void) {
           "live sensor reads 100 then 101");
     if (r) eigs_value_release(r);
 
+    /* #1816: container cycles are refused before any bytes reach the sink,
+     * while repeated references which are not on the current ancestor path
+     * remain valid (a DAG is not a cycle). */
+    EigsValue *cycle = eigs_value_new_list(1);
+    eigs_value_list_append(cycle, cycle);
+    size_t before_cycle = g_tape_len;
+    eigs_trace_record_nondet("cyclic_host_answer", cycle);
+    CHECK(eigs_has_error() && eigs_last_error_message() &&
+              strstr(eigs_last_error_message(), "cyclic_host_answer") &&
+              strstr(eigs_last_error_message(), "container cycle"),
+          "self-referential trace answer raises a named, catchable error");
+    CHECK(g_tape_len == before_cycle,
+          "refused cyclic trace answer writes no partial record");
+    eigs_clear_error();
+    /* Break the deliberately host-created cycle so the smoke test does not
+     * leak its two owned references. */
+    ((Value *)cycle)->data.list.count = 0;
+    eigs_value_release(cycle);
+    eigs_value_release(cycle);
+
     /* #1441: once the interpreted callback above has returned, a native
      * producer has no VM frame.  Its assignment belongs to module/native
      * scope, not to the callback frame named by the tape's preceding S. */
@@ -1217,6 +1237,20 @@ int main(void) {
         CHECK(strstr(g_tape, "S 0 <native> 0 0\nA 0 native_after_callback=1441\n") != NULL,
               "native assignment after callback carries native scope");
     }
+
+    EigsValue *shared = eigs_value_new_list(1);
+    EigsValue *forty_two = eigs_value_new_num(42);
+    eigs_value_list_append(shared, forty_two);
+    EigsValue *dag = eigs_value_new_list(2);
+    eigs_value_list_append(dag, shared);
+    eigs_value_list_append(dag, shared);
+    CHECK(eigs_trace_declare_kind("shared_host_answer", EIGS_KIND(EIGS_TYPE_LIST)),
+          "shared-list trace kind declared");
+    eigs_trace_record_nondet("shared_host_answer", dag);
+    eigs_value_release(forty_two);
+    eigs_value_release(shared);
+    eigs_value_release(dag);
+
     eigs_set_trace_sink(NULL, NULL);
     CHECK(g_tape_len > 0, "sink captured tape bytes");
     g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
@@ -1240,6 +1274,21 @@ int main(void) {
     CHECK(r != NULL && eigs_value_as_num(r) == 100101.0,
           "replay serves recorded 100 then 101");
     if (r) eigs_value_release(r);
+    EigsValue *replayed_dag = NULL;
+    CHECK(eigs_replay_take("shared_host_answer", &replayed_dag) && replayed_dag &&
+              eigs_value_list_len(replayed_dag) == 2,
+          "shared non-cyclic sub-list records and replays");
+    if (replayed_dag) {
+        EigsValue *left = eigs_value_list_get(replayed_dag, 0);
+        EigsValue *right = eigs_value_list_get(replayed_dag, 1);
+        EigsValue *lv = left ? eigs_value_list_get(left, 0) : NULL;
+        EigsValue *rv = right ? eigs_value_list_get(right, 0) : NULL;
+        CHECK(lv && rv && eigs_value_as_num(lv) == 42 && eigs_value_as_num(rv) == 42,
+              "both occurrences of a shared sub-list retain their value");
+        eigs_value_release(lv); eigs_value_release(rv);
+        eigs_value_release(left); eigs_value_release(right);
+        eigs_value_release(replayed_dag);
+    }
     /* Exhaustion is a replay error; it must not consult the live sensor. */
     r = eigs_eval_string("host_sensor of []");
     CHECK(r == NULL, "tape exhausted: replay raises without a live read");
@@ -1278,6 +1327,70 @@ int main(void) {
     if (r) eigs_value_release(r);
     CHECK(eigs_set_replay_tape(NULL, 0, 0) == 1, "replay cleared (411 block)");
 
+    /* #1913: a replay cannot inherit an untaped live OS resource.  The
+     * refusal is at install time and identifies the populated handle kind;
+     * after the same store is closed, the identical tape installs. */
+    {
+        char program[256];
+        snprintf(program, sizeof program,
+                 "issue1913_store is store_open of \"/tmp/eigs-1913-%ld.store\"",
+                 (long)getpid());
+        r = eigs_eval_string(program);
+        CHECK(r && eigs_value_type(r) == EIGS_TYPE_DICT,
+              "replay live-handle setup opens a store");
+        if (r) eigs_value_release(r);
+        CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 0,
+              "replay install refused with a live handle");
+        CHECK(eigs_has_error() && eigs_last_error_message() &&
+                  strstr(eigs_last_error_message(), "stores"),
+              "replay refusal names the open store handle kind");
+        eigs_clear_error();
+        r = eigs_eval_string("store_close of issue1913_store");
+        CHECK(r != NULL, "replay live-handle setup closes the store");
+        if (r) eigs_value_release(r);
+        CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 1,
+              "replay installs after the handle is closed");
+        CHECK(eigs_set_replay_tape(NULL, 0, 0) == 1,
+              "replay cleared after live-handle test");
+        snprintf(program, sizeof program, "/tmp/eigs-1913-%ld.store",
+                 (long)getpid());
+        unlink(program);
+
+        r = eigs_eval_string("issue1913_channel is channel of null\n"
+                             "close_channel of issue1913_channel");
+        CHECK(r != NULL, "replay setup creates and closes a channel");
+        if (r) eigs_value_release(r);
+        CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 1,
+              "replay installs after a retained channel handle is closed");
+        CHECK(eigs_set_replay_tape(NULL, 0, 0) == 1,
+              "replay cleared after closed-channel test");
+
+        r = eigs_eval_string("issue1913_open_channel is channel of null");
+        CHECK(r != NULL, "replay setup creates an open channel");
+        if (r) eigs_value_release(r);
+        CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 0,
+              "replay install refuses an open channel");
+        CHECK(eigs_has_error() && eigs_last_error_message() &&
+                  strstr(eigs_last_error_message(), "channels"),
+              "open-channel refusal names channels");
+        eigs_clear_error();
+        r = eigs_eval_string("close_channel of issue1913_open_channel");
+        if (r) eigs_value_release(r);
+
+        r = eigs_eval_string(
+            "define issue1913_worker() as:\n"
+            "    return 7\n"
+            "issue1913_thread is spawn of issue1913_worker\n"
+            "thread_join of issue1913_thread");
+        CHECK(r != NULL && eigs_value_as_num(r) == 7,
+              "replay setup joins a thread");
+        if (r) eigs_value_release(r);
+        CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 1,
+              "replay installs after a thread is joined");
+        CHECK(eigs_set_replay_tape(NULL, 0, 0) == 1,
+              "replay cleared after joined-thread test");
+    }
+
     /* --- Source provider: import resolves from the embedder. --------- */
     eigs_set_source_provider(smoke_provider, NULL);
     r = eigs_eval_string("import smokemod\nsmokemod[\"answer\"]");
@@ -1296,10 +1409,41 @@ int main(void) {
     eigs_set_source_provider(NULL, NULL);
 
     /* --- Multi-state switching on one thread (the M9 scheduler seam). */
+    {
+        char program[256];
+        snprintf(program, sizeof program,
+                 "issue1913_foreign_store is store_open of \"/tmp/eigs-1913-foreign-%ld.store\"",
+                 (long)getpid());
+        r = eigs_eval_string(program);
+        CHECK(r && eigs_value_type(r) == EIGS_TYPE_DICT,
+              "foreign-state replay setup opens a store in state A");
+        if (r) eigs_value_release(r);
+    }
     EigsState *st2 = eigs_state_new();
     CHECK(st2 != NULL, "second state created");
     CHECK(eigs_thread_switch(st2) != NULL, "switch to st2");
     eigs_state_init_runtime(st2);
+    CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 0,
+          "state B refuses replay while state A owns a store");
+    CHECK(eigs_has_error() && eigs_last_error_message() &&
+              strstr(eigs_last_error_message(), "stores") &&
+              strstr(eigs_last_error_message(), "another state"),
+          "cross-state refusal names stores and another state");
+    eigs_clear_error();
+    CHECK(eigs_thread_switch(st) != NULL, "switch to state A to close foreign store");
+    r = eigs_eval_string("store_close of issue1913_foreign_store");
+    CHECK(r != NULL, "state A closes its store");
+    if (r) eigs_value_release(r);
+    CHECK(eigs_thread_switch(st2) != NULL, "switch back to state B after store close");
+    CHECK(eigs_set_replay_tape(g_tape, g_tape_len, 0) == 1,
+          "state B installs replay after state A closes its store");
+    CHECK(eigs_set_replay_tape(NULL, 0, 0) == 1,
+          "replay cleared after cross-state test");
+    {
+        char path[256];
+        snprintf(path, sizeof path, "/tmp/eigs-1913-foreign-%ld.store", (long)getpid());
+        unlink(path);
+    }
     r = eigs_eval_string("mstate is 11\nmstate");
     CHECK(r != NULL && eigs_value_as_num(r) == 11.0, "eval on st2");
     if (r) eigs_value_release(r);

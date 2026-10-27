@@ -301,6 +301,16 @@ static int   (*p_Mix_PlayMusic)(void*, int);
 static int   (*p_Mix_VolumeMusic)(int);
 static int   (*p_Mix_HaltMusic)(void);
 
+unsigned ext_gfx_live_handles(void) {
+    unsigned live = 0;
+    if (g_sdl_lib || g_window || g_renderer || g_fb_texture)
+        live |= EIGS_LIVE_GFX;
+    if (g_audio_device || g_capture_device || g_stream_device ||
+        g_mixer_lib || g_mixer_open || g_music)
+        live |= EIGS_LIVE_AUDIO;
+    return live;
+}
+
 static int load_sdl_mixer(void) {
     if (g_mixer_lib) return 1;
     g_mixer_lib = dlopen("libSDL2_mixer-2.0.so.0", RTLD_LAZY);
@@ -583,6 +593,13 @@ Value* builtin_gfx_open(Value *arg) {
 Value* builtin_gfx_close(Value *arg) {
     (void)arg;
     ttf_teardown();
+    if (g_music && p_Mix_FreeMusic) { p_Mix_HaltMusic(); p_Mix_FreeMusic(g_music); g_music = NULL; }
+    if (g_mixer_open && p_Mix_CloseAudio) { p_Mix_CloseAudio(); g_mixer_open = 0; }
+    if (g_mixer_lib) {
+        if (p_Mix_Quit) p_Mix_Quit();
+        dlclose(g_mixer_lib);
+        g_mixer_lib = NULL;
+    }
     if (g_fb_texture && p_SDL_DestroyTexture) { p_SDL_DestroyTexture(g_fb_texture); g_fb_texture = NULL; g_fb_w = 0; g_fb_h = 0; }
     if (g_audio_device) { p_SDL_CloseAudioDevice(g_audio_device); g_audio_device = 0; }
     if (g_capture_device) { p_SDL_CloseAudioDevice(g_capture_device); g_capture_device = 0; }
@@ -1508,12 +1525,9 @@ Value* builtin_audio_pause(Value *arg) {
  * device id and sample buffers are served off the tape. The b[…]
  * buffer encoding round-trips through N records natively.
  *
- * AUDIO_CAPTURE_READ_MAX bounds one read at 2048 samples so a single
- * N record always fits the tape's TRACE_NONDET_MAX (64 KiB) budget:
- * worst-case %.17g is ~24 bytes/sample + ", " → ~53 KiB. An over-
- * budget record would be …<truncated> and replay would silently fall
- * back to the LIVE microphone — the exact divergence the tape exists
- * to prevent. Callers drain by looping until the read comes back
+ * AUDIO_CAPTURE_READ_MAX bounds one device read at 2048 samples. Its encoded
+ * value fits one tape record; larger values are also supported by the tape's
+ * generic continuation framing. Callers drain by looping until the read comes back
  * empty; the loop replays faithfully (one N record per call). */
 #define AUDIO_CAPTURE_READ_MAX 2048
 
@@ -2210,13 +2224,9 @@ Value* builtin_audio_sweep(Value *arg) {
     return list;
 }
 
-/* audio_noise's samples ride the tape in records of at most this many (#1803).
- * One N record is capped at 64 KiB (TRACE_NONDET_MAX in trace.c) and replay
- * refuses a truncated one, so a single record holds only about 3,000 samples
- * -- lib/audio.eigs's snare asks for 4,410 and a 30-second burst for over a
- * million. A sample is a finite number (the runtime saturates at 1e308), at
- * most 24 bytes of %.17g plus ", ", so 2048 fit with room to spare: the same
- * arithmetic as AUDIO_CAPTURE_READ_MAX. */
+/* audio_noise retains #1803's semantic protocol of sample lists of at most
+ * this many values. Each list fits one physical N record, although v8's
+ * generic continuation framing can also carry larger encoded values. */
 #define AUDIO_NOISE_TAPE_CHUNK 2048
 
 /* Record half: the samples as consecutive N records of at most

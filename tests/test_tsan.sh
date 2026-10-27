@@ -302,7 +302,10 @@ if [ -f "$RP_EIGS" ]; then
     EIGS_TRACE="$RP_HDR" timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" \
         "$TESTS_DIR/../build/tsan_one.eigs" >/dev/null 2>&1 || header_rc=$?
     vline=$(head -1 "$RP_HDR" 2>/dev/null || true)
-    if [ "$header_rc" -ne 0 ] || ! printf '%s\n' "$vline" | grep -q '^V 7 '; then
+    trace_format=$(awk '/^#define TRACE_FORMAT_VERSION / { print $3; exit }' \
+        "$TESTS_DIR/../src/trace.h")
+    if [ "$header_rc" -ne 0 ] || [ "${vline%% *}" != V ] || \
+       [ "$(printf '%s\n' "$vline" | awk '{print $2}')" != "$trace_format" ]; then
         echo "  FAIL: replay-workers header setup rc=$header_rc"
         FAIL=$((FAIL + 1))
     else
@@ -488,8 +491,8 @@ echo "=== loader from workers must be race-free (#1144) ==="
 # loader_mt_userrace.eigs on the Phase 2 branch), which would make a
 # zero-report row flaky. It is a release-binary correctness row in
 # tests/test_loader_mt.sh instead.
-LDR_FIXTURES="loader_mt_import loader_mt_cycle"
-LDR_DECLARED=2
+LDR_FIXTURES="loader_mt_import loader_mt_cycle loader_mt_define_result"
+LDR_DECLARED=3
 LDR_EXAMINED=0
 for t in $LDR_FIXTURES; do
     LDR_EXAMINED=$((LDR_EXAMINED + 1))

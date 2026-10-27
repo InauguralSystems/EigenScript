@@ -1445,6 +1445,58 @@ static int flat_index_is_num(Value *v, int i) {
     return v->type != VAL_LIST || list_elem_type(v, i) == VAL_NUM;
 }
 
+/* Validate and copy selectors in one pass. Sparse writers and numerical-loss
+ * callbacks may mutate the selector's backing value, so validation alone is
+ * not a stable guarantee for later reads. The caller owns *snapshot_out. */
+static int snapshot_flat_indices(Value *indices, int limit, const char *name,
+                                 const char *axis, int **snapshot_out,
+                                 int *count_out) {
+    int count = flat_count(indices);
+    int *snapshot = xcalloc(count > 0 ? count : 1, sizeof(*snapshot));
+    for (int i = 0; i < count; i++) {
+        if (!flat_index_is_num(indices, i)) {
+            rt_error(EK_TYPE, 0, "%s: index %d is %s (expected a number)",
+                     name, i, val_type_name(list_elem_type(indices, i)));
+            free(snapshot);
+            return 0;
+        }
+        int index = flat_index_at(indices, i);
+        if (g_has_error) {
+            free(snapshot);
+            return 0;
+        }
+        if (index < 0 || index >= limit) {
+            rt_error(EK_INDEX, 0, "%s: %s index %d out of range (length %d)",
+                     name, axis, index, limit);
+            free(snapshot);
+            return 0;
+        }
+        snapshot[i] = index;
+    }
+    *snapshot_out = snapshot;
+    *count_out = count;
+    return 1;
+}
+
+static int validate_list_columns_snapshot(const int *indices, int count,
+                                          Value *matrix, const char *name,
+                                          const char *operand) {
+    for (int i = 0; i < count; i++) {
+        int column = indices[i];
+        for (int row = 0; row < matrix->data.list.count; row++) {
+            Value *values = list_get_ref(matrix, row);
+            if (values && values->type == VAL_LIST &&
+                column >= values->data.list.count) {
+                rt_error(EK_INDEX, 0,
+                    "%s: column index %d out of range for %s row %d (length %d)",
+                    name, column, operand, row, values->data.list.count);
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
 /* ==== BUILTIN: gather ==== */
 /* gather of [tensor, indices, dim] -> select one element per row by index.
  *
@@ -1997,18 +2049,15 @@ Value* builtin_numerical_grad_rows(Value *arg) {
     if (matrix->type == VAL_BUFFER && matrix->data.buffer.rows > 0
         && flat_is_vector(row_indices)) {
         int brows = matrix->data.buffer.rows, bcols = matrix->data.buffer.cols;
+        int *row_snapshot = NULL, nidx = 0;
+        if (!snapshot_flat_indices(row_indices, brows, "numerical_grad_rows", "row",
+                                   &row_snapshot, &nidx))
+            return make_null();
         Value *bgrad = make_buffer_like(matrix);
-        if (!bgrad) return make_null();
+        if (!bgrad) { free(row_snapshot); return make_null(); }
         Value *bnul = make_null();
-        int nidx = flat_count(row_indices);
         for (int ri = 0; ri < nidx; ri++) {
-            int r = flat_index_at(row_indices, ri);
-            if (g_has_error) {
-                val_decref(bnul);
-                val_decref(bgrad);
-                return make_null();
-            }
-            if (r < 0 || r >= brows) continue;
+            int r = row_snapshot[ri];
             for (int c = 0; c < bcols; c++) {
                 int64_t k = (int64_t)r * bcols + c;
                 double old_val = matrix->data.buffer.data[k];
@@ -2020,6 +2069,7 @@ Value* builtin_numerical_grad_rows(Value *arg) {
                 bgrad->data.buffer.data[k] = (loss_plus - loss_minus) / (2.0 * eps);
             }
         }
+        free(row_snapshot);
         val_decref(bnul);
         if (!loss_valid) { val_decref(bgrad); return make_null(); }
         return bgrad;
@@ -2029,6 +2079,10 @@ Value* builtin_numerical_grad_rows(Value *arg) {
     int rows = matrix->data.list.count;
     if (rows == 0 || list_elem_type(matrix, 0) != VAL_LIST) return make_null();
     int cols = list_get_ref(matrix, 0)->data.list.count;
+    int *row_snapshot = NULL, nidx = 0;
+    if (!snapshot_flat_indices(row_indices, rows, "numerical_grad_rows", "row",
+                               &row_snapshot, &nidx))
+        return make_null();
     Value *nul = make_null();   /* shared arg for loss_fn calls */
 
     /* Build zero gradient matrix */
@@ -2041,14 +2095,8 @@ Value* builtin_numerical_grad_rows(Value *arg) {
     }
 
     /* Only compute gradients for specified rows */
-    for (int ri = 0; ri < flat_count(row_indices); ri++) {
-        int r = flat_index_at(row_indices, ri);
-        if (g_has_error) {
-            val_decref(nul);
-            val_decref(grad);
-            return make_null();
-        }
-        if (r < 0 || r >= rows) continue;
+    for (int ri = 0; ri < nidx; ri++) {
+        int r = row_snapshot[ri];
 
         Value *row = list_get_ref(matrix, r);
         if (!row || row->type != VAL_LIST) continue;
@@ -2065,6 +2113,7 @@ Value* builtin_numerical_grad_rows(Value *arg) {
             list_set_num(grad_row, c, (loss_plus - loss_minus) / (2.0 * eps));
         }
     }
+    free(row_snapshot);
     val_decref(nul);
     if (!loss_valid) { val_decref(grad); return make_null(); }
     return grad;
@@ -2094,27 +2143,34 @@ Value* builtin_sgd_update_rows(Value *arg) {
     if (matrix->type == VAL_BUFFER && grad->type == VAL_BUFFER
         && matrix->data.buffer.rows > 0 && flat_is_vector(row_indices)) {
         int brows = matrix->data.buffer.rows, bcols = matrix->data.buffer.cols;
+        int row_limit = brows < grad->data.buffer.rows ? brows : grad->data.buffer.rows;
+        int *row_snapshot = NULL, nidx = 0;
+        if (!snapshot_flat_indices(row_indices, row_limit, "sgd_update_rows", "row",
+                                   &row_snapshot, &nidx))
+            return make_null();
         if (grad->data.buffer.rows < brows) brows = grad->data.buffer.rows;
         if (grad->data.buffer.cols < bcols) bcols = grad->data.buffer.cols;
-        int nidx = flat_count(row_indices);
         for (int ri = 0; ri < nidx; ri++) {
-            int r = flat_index_at(row_indices, ri);
-            if (g_has_error) return make_null();
-            if (r < 0 || r >= brows) continue;
+            int r = row_snapshot[ri];
             for (int c = 0; c < bcols; c++)
                 matrix->data.buffer.data[(int64_t)r * matrix->data.buffer.cols + c] -=
                     lr * grad->data.buffer.data[(int64_t)r * grad->data.buffer.cols + c];
         }
+        free(row_snapshot);
         return list_get_return(arg, 0);
     }
     if (matrix->type != VAL_LIST || grad->type != VAL_LIST || !flat_is_vector(row_indices))
         return list_get_return(arg, 0);
 
-    for (int ri = 0; ri < flat_count(row_indices); ri++) {
-        int r = flat_index_at(row_indices, ri);
-        if (g_has_error) return make_null();
-        if (r < 0 || r >= matrix->data.list.count || r >= grad->data.list.count) continue;
+    int row_limit = matrix->data.list.count < grad->data.list.count
+                  ? matrix->data.list.count : grad->data.list.count;
+    int *row_snapshot = NULL, nidx = 0;
+    if (!snapshot_flat_indices(row_indices, row_limit,
+                               "sgd_update_rows", "row", &row_snapshot, &nidx))
+        return make_null();
 
+    for (int ri = 0; ri < nidx; ri++) {
+        int r = row_snapshot[ri];
         Value *mrow = list_get_ref(matrix, r);
         Value *grow = list_get_ref(grad, r);
         if (!mrow || mrow->type != VAL_LIST || !grow || grow->type != VAL_LIST) continue;
@@ -2127,6 +2183,7 @@ Value* builtin_sgd_update_rows(Value *arg) {
             list_set_num(mrow, c, pv - lr * gv);
         }
     }
+    free(row_snapshot);
     return list_get_return(arg, 0);
 }
 
@@ -2157,18 +2214,15 @@ Value* builtin_numerical_grad_cols(Value *arg) {
     if (matrix->type == VAL_BUFFER && matrix->data.buffer.rows > 0
         && flat_is_vector(col_indices)) {
         int brows = matrix->data.buffer.rows, bcols = matrix->data.buffer.cols;
+        int *col_snapshot = NULL, nidx = 0;
+        if (!snapshot_flat_indices(col_indices, bcols, "numerical_grad_cols", "column",
+                                   &col_snapshot, &nidx))
+            return make_null();
         Value *bgrad = make_buffer_like(matrix);
-        if (!bgrad) return make_null();
+        if (!bgrad) { free(col_snapshot); return make_null(); }
         Value *bnul = make_null();
-        int nidx = flat_count(col_indices);
         for (int ci = 0; ci < nidx; ci++) {
-            int col = flat_index_at(col_indices, ci);
-            if (g_has_error) {
-                val_decref(bnul);
-                val_decref(bgrad);
-                return make_null();
-            }
-            if (col < 0 || col >= bcols) continue;
+            int col = col_snapshot[ci];
             for (int r = 0; r < brows; r++) {
                 int64_t k = (int64_t)r * bcols + col;
                 double old_val = matrix->data.buffer.data[k];
@@ -2180,6 +2234,7 @@ Value* builtin_numerical_grad_cols(Value *arg) {
                 bgrad->data.buffer.data[k] = (loss_plus - loss_minus) / (2.0 * eps);
             }
         }
+        free(col_snapshot);
         val_decref(bnul);
         if (!loss_valid) { val_decref(bgrad); return make_null(); }
         return bgrad;
@@ -2189,6 +2244,15 @@ Value* builtin_numerical_grad_cols(Value *arg) {
     int rows = matrix->data.list.count;
     if (rows == 0 || list_elem_type(matrix, 0) != VAL_LIST) return make_null();
     int cols = list_get_ref(matrix, 0)->data.list.count;
+    int *col_snapshot = NULL, nidx = 0;
+    if (!snapshot_flat_indices(col_indices, cols, "numerical_grad_cols", "column",
+                               &col_snapshot, &nidx))
+        return make_null();
+    if (!validate_list_columns_snapshot(col_snapshot, nidx, matrix,
+                                        "numerical_grad_cols", "matrix")) {
+        free(col_snapshot);
+        return make_null();
+    }
     Value *nul = make_null();   /* shared arg for loss_fn calls */
 
     /* Build zero gradient matrix */
@@ -2201,14 +2265,8 @@ Value* builtin_numerical_grad_cols(Value *arg) {
     }
 
     /* Only compute gradients for specified columns, across all rows */
-    for (int ci = 0; ci < flat_count(col_indices); ci++) {
-        int col = flat_index_at(col_indices, ci);
-        if (g_has_error) {
-            val_decref(nul);
-            val_decref(grad);
-            return make_null();
-        }
-        if (col < 0 || col >= cols) continue;
+    for (int ci = 0; ci < nidx; ci++) {
+        int col = col_snapshot[ci];
 
         for (int r = 0; r < rows; r++) {
             Value *row = list_get_ref(matrix, r);
@@ -2228,6 +2286,7 @@ Value* builtin_numerical_grad_cols(Value *arg) {
             list_set_num(grad_row, col, (loss_plus - loss_minus) / (2.0 * eps));
         }
     }
+    free(col_snapshot);
     val_decref(nul);
     if (!loss_valid) { val_decref(grad); return make_null(); }
     return grad;
@@ -2255,18 +2314,21 @@ Value* builtin_sgd_update_cols(Value *arg) {
     /* #1093: shaped-buffer matrix + gradient, list-or-buffer index vector. */
     if (matrix->type == VAL_BUFFER && grad->type == VAL_BUFFER
         && matrix->data.buffer.rows > 0 && flat_is_vector(col_indices)) {
+        int col_limit = matrix->data.buffer.cols < grad->data.buffer.cols
+                      ? matrix->data.buffer.cols : grad->data.buffer.cols;
+        int *col_snapshot = NULL, nidx = 0;
+        if (!snapshot_flat_indices(col_indices, col_limit,
+                                   "sgd_update_cols", "column", &col_snapshot, &nidx))
+            return make_null();
         int brows = matrix->data.buffer.rows;
         if (grad->data.buffer.rows < brows) brows = grad->data.buffer.rows;
-        int nidx = flat_count(col_indices);
         for (int ci = 0; ci < nidx; ci++) {
-            int col = flat_index_at(col_indices, ci);
-            if (g_has_error) return make_null();
-            if (col < 0 || col >= matrix->data.buffer.cols
-                || col >= grad->data.buffer.cols) continue;
+            int col = col_snapshot[ci];
             for (int r = 0; r < brows; r++)
                 matrix->data.buffer.data[(int64_t)r * matrix->data.buffer.cols + col] -=
                     lr * grad->data.buffer.data[(int64_t)r * grad->data.buffer.cols + col];
         }
+        free(col_snapshot);
         return list_get_return(arg, 0);
     }
     if (matrix->type != VAL_LIST || grad->type != VAL_LIST || !flat_is_vector(col_indices))
@@ -2274,12 +2336,27 @@ Value* builtin_sgd_update_cols(Value *arg) {
 
     int rows = matrix->data.list.count < grad->data.list.count
              ? matrix->data.list.count : grad->data.list.count;
+    int matrix_cols = matrix->data.list.count > 0 &&
+                      list_elem_type(matrix, 0) == VAL_LIST
+                    ? list_get_ref(matrix, 0)->data.list.count : 0;
+    int grad_cols = grad->data.list.count > 0 &&
+                    list_elem_type(grad, 0) == VAL_LIST
+                  ? list_get_ref(grad, 0)->data.list.count : 0;
+    int col_limit = matrix_cols < grad_cols ? matrix_cols : grad_cols;
+    int *col_snapshot = NULL, nidx = 0;
+    if (!snapshot_flat_indices(col_indices, col_limit,
+                               "sgd_update_cols", "column", &col_snapshot, &nidx))
+        return make_null();
+    if (!validate_list_columns_snapshot(col_snapshot, nidx, matrix,
+                                        "sgd_update_cols", "matrix") ||
+        !validate_list_columns_snapshot(col_snapshot, nidx, grad,
+                                        "sgd_update_cols", "gradient")) {
+        free(col_snapshot);
+        return make_null();
+    }
 
-    for (int ci = 0; ci < flat_count(col_indices); ci++) {
-        int col = flat_index_at(col_indices, ci);
-        if (g_has_error) return make_null();
-        if (col < 0) continue;
-
+    for (int ci = 0; ci < nidx; ci++) {
+        int col = col_snapshot[ci];
         for (int r = 0; r < rows; r++) {
             Value *mrow = list_get_ref(matrix, r);
             Value *grow = list_get_ref(grad, r);
@@ -2291,6 +2368,7 @@ Value* builtin_sgd_update_cols(Value *arg) {
             list_set_num(mrow, col, pv - lr * gv);
         }
     }
+    free(col_snapshot);
     return list_get_return(arg, 0);
 }
 #if !EIGENSCRIPT_FREESTANDING

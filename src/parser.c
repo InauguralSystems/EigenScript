@@ -433,6 +433,8 @@ void free_ast(ASTNode *node) {
             for (int i = 0; i < node->data.func.param_count; i++)
                 free(node->data.func.params[i]);
             free(node->data.func.params);
+            free(node->data.func.param_lines);
+            free(node->data.func.param_cols);
             if (node->data.func.param_defaults) {
                 for (int i = 0; i < node->data.func.param_count; i++)
                     if (node->data.func.param_defaults[i])
@@ -1420,12 +1422,16 @@ static ASTNode* parse_statement_inner(Parser *p) {
         /* Parse optional named parameters: define add(a, b) as:
          * Each param may carry a default: define f(a, b is 10): */
         char **params = NULL;
+        int *param_lines = NULL;
+        int *param_cols = NULL;
         ASTNode **defaults = NULL;
         int param_count = 0;
         int first_default = -1;
         if (p_cur(p)->type == TOK_LPAREN) {
             p_advance(p); /* skip ( */
             params = xmalloc_array(MAX_PARAMS, sizeof(char*));
+            param_lines = xcalloc(MAX_PARAMS, sizeof(int));
+            param_cols = xcalloc(MAX_PARAMS, sizeof(int));
             defaults = xcalloc(MAX_PARAMS, sizeof(ASTNode*));
             int param_cap_reported = 0;
             int sig_err_base = g_parse_errors;
@@ -1453,6 +1459,8 @@ static ASTNode* parse_statement_inner(Parser *p) {
                     continue;
                 }
                 int slot = param_count;
+                param_lines[slot] = p_cur(p)->line;
+                param_cols[slot] = p_cur(p)->col;
                 params[param_count++] = xstrdup(p_cur(p)->str_val);
                 p_advance(p);
                 if (p_cur(p)->type == TOK_IS) {
@@ -1472,8 +1480,12 @@ static ASTNode* parse_statement_inner(Parser *p) {
         if (param_count == 0) {
             /* No explicit params: default to single param "n" */
             free(params);
+            free(param_lines);
+            free(param_cols);
             free(defaults);
             params = xmalloc(sizeof(char*));
+            param_lines = xcalloc(1, sizeof(int));
+            param_cols = xcalloc(1, sizeof(int));
             params[0] = xstrdup("n");
             defaults = xcalloc(1, sizeof(ASTNode*));
             param_count = 1;
@@ -1493,6 +1505,8 @@ static ASTNode* parse_statement_inner(Parser *p) {
         n->data.func.name = xstrdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
         set_name_hash(n, n->data.func.name);
         n->data.func.params = params;
+        n->data.func.param_lines = param_lines;
+        n->data.func.param_cols = param_cols;
         n->data.func.param_defaults = defaults;
         n->data.func.param_count = param_count;
         n->data.func.first_default = first_default;

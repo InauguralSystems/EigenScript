@@ -342,8 +342,6 @@ static void native_forward_with_cache(int *token_ids, int seq_len, TransformerMo
     float *x = xcalloc_array(safe_size_mul(seq_len, d_model), sizeof(float));
     for (int i = 0; i < seq_len; i++) {
         int tid = token_ids[i];
-        if (tid < 0) tid = 0;
-        if (tid >= model->config.vocab_size) tid = model->config.vocab_size - 1;
         memcpy(x + i * d_model, model->token_embeddings + tid * d_model, d_model * sizeof(float));
     }
 
@@ -781,14 +779,10 @@ static int native_train_step_impl(int *input_ids, int input_len, int *output_ids
     int *token_ids = xcalloc(full_len, sizeof(int));
     for (int i = 0; i < input_len; i++) {
         int tid = input_ids[i];
-        if (tid < 0) tid = 0;
-        if (tid >= vocab_size) tid = vocab_size - 1;
         token_ids[i] = tid;
     }
     for (int i = 0; i < output_len; i++) {
         int tid = output_ids[i];
-        if (tid < 0) tid = 0;
-        if (tid >= vocab_size) tid = vocab_size - 1;
         token_ids[input_len + i] = tid;
     }
 
@@ -1484,9 +1478,21 @@ Value* builtin_native_train_step(Value *arg) {
     int *output_ids = xcalloc(output_len > 0 ? output_len : 1, sizeof(int));
     for (int i = 0; i < input_len; i++) {
         input_ids[i] = (int)eigs_slot_num(list_slot(in_list, i), "native_train_step");   /* #1637: a bool raises */
+        if (!g_has_error && (input_ids[i] < 0 || input_ids[i] >= g_model.config.vocab_size)) {
+            rt_error(EK_INDEX, 0,
+                "native_train_step: token id %d at input index %d out of range [0,%d)",
+                input_ids[i], i, g_model.config.vocab_size);
+            break;
+        }
     }
-    for (int i = 0; i < output_len; i++) {
+    for (int i = 0; i < output_len && !g_has_error; i++) {
         output_ids[i] = (int)eigs_slot_num(list_slot(out_list, i), "native_train_step");
+        if (!g_has_error && (output_ids[i] < 0 || output_ids[i] >= g_model.config.vocab_size)) {
+            rt_error(EK_INDEX, 0,
+                "native_train_step: token id %d at output index %d out of range [0,%d)",
+                output_ids[i], i, g_model.config.vocab_size);
+            break;
+        }
     }
     if (g_has_error) { free(input_ids); free(output_ids); return make_null(); }
 

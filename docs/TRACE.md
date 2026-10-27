@@ -11,7 +11,7 @@ Replay is an **rr-style, side-effect-free execution**. Every filesystem read
 reachable from a running program is either served by the tape or refused
 before the read. Source read by `import` and `load_file`, ordinary file
 readers, hashes, directory queries, and process/network input are taped.
-Reads whose payload is not represented in format v7—tensor checkpoints,
+Reads whose payload is not represented in the current tape format—tensor checkpoints,
 font and music assets, HTTP static serving, stores, and databases—are refused;
 replay never falls back to a live file. Model checkpoints are the exception:
 the verdict of `eigen_model_load` or `eigen_checkpoint_info` is taped, their
@@ -89,12 +89,13 @@ The tape is plain text, one record per line:
 
 | Record | Meaning |
 |--------|---------|
-| `V <format> <runtime>` | Version header — always the first record (e.g. `V 7 0.47.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
+| `V <format> <runtime>` | Version header — always the first record (e.g. `V 8 0.47.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
 | `B <stream_id> <lifetime> <state> <spawn_base> <origin>` | Stream association, before that stream's events. Describes state grouping and host/causal correspondence; folded as metadata by stepping, never a source-line stop. See below. |
 | `L <stream_id> <line>` | Source-line event (from `OP_LINE`, and when native code that ran EigenScript — a builtin's callback, an embedder's eval — gets control back: the line it entered with, so an assignment it makes next is filed under the same line on the tape as in live history, #1434; v5 carries the stream ID shown here). Duplicate lines within the same stream with no intervening `A`/`N` in that stream are deduped — the compiler emits per-statement LINEs and bare repeats are noise. |
 | `S <stream_id> <fn> <depth> <serial>` | Scope transition (#539 v2): the `A` records that follow belong to this frame instance — `<fn>` is the chunk name (`<module>`, `<lambda>`, or the function name), `<depth>` the 0-based frame depth, `<serial>` a per-thread monotonically increasing frame-instance id stamped at frame push. Emitted lazily with the same dedup discipline as `L`: only when the frame owning the next assignment differs from the last `S`, so the byte cost lands at call boundaries that actually assign. Two invocations of the same function carry different serials — their local streams never merge. Skipped on replay; folded by `--step`. |
 | `A <stream_id> <name>=<value>` | Assignment delta: a binding changed. Fires at **every scope** — function locals included — and is scope-qualified by the preceding `S` record, so a function-local `i` and the top-level `i` are separate streams (`--step` resolves names innermost-first along the reconstructed call chain, with shadowing). |
 | `N <stream_id> <fn>=<value>` | Nondeterministic builtin return — the replay-determinism substrate. |
+| `C <stream_id> <bytes>` | Immediate continuation of an oversized `N` value (v8). See [Value serialization](#value-serialization). |
 | `O <stream_id> cfg <dh_zero> <dh_small> <h_low> <window> <scale>` | Observer configuration in force (v3). Written whenever the state's observer knobs differ from what this stream last announced, before its next `L`/`A`/`N`/`O win` record. See [Observer Configuration](#observer-configuration-10441045). |
 
 ### Stream identity and correspondence (v5, #1286)
@@ -249,14 +250,17 @@ into real values on replay:
 - Lists and dicts are emitted recursively: `[1, 2, 3]`,
   `{"key": value}`.
 - Buffers get a leading `b` — `b[1,2,3]` — to disambiguate from lists.
-- Each record has a 64 KiB byte budget. On overflow the record ends
-  with a `…<truncated:RESIDUAL>` marker so partial records remain
-  visually parseable. A truncated record is not replayable: replay
-  refuses it with exit 3 and does not run the builtin live (measured on
-  a 4,410-element `random_normal` list and a 20,000-byte `read_bytes_buf`
-  buffer, #1803). A builtin whose answer can outgrow the budget either
-  bounds what one call returns (`audio_capture_read`, `net_recv`) or
-  splits the answer across records (`audio_noise`, below).
+- An encoded answer of at most 64 KiB stays in its ordinary `N` record. For a
+  larger answer, the value starts `@<total_encoded_bytes>:` and its first
+  64 KiB follows in the `N` record; consecutive `C` records with the same
+  stream ID carry successive chunks of at most 64 KiB. Replay concatenates
+  exactly the declared number of bytes before parsing the value. A missing,
+  empty, wrong-stream, oversized, or orphan continuation is a malformed tape:
+  replay refuses it with exit 3 and never runs the builtin live. Thus the
+  framing applies uniformly to every nondeterministic builtin rather than
+  imposing a maximum answer size. Builtins such as `audio_noise` may still use
+  their semantic multi-`N` protocol described below; each such `N` value is
+  framed independently.
 
 ## Derived, Not Recorded: The Scheduler Trace (#846)
 
@@ -345,15 +349,13 @@ perspective lands on the tape as an `N` record:
   included, so a program that hits one cannot desync the stream. Greedy
   (`temperature < 0.01`) calls ride the same path: the tape cannot show
   which branch ran, and replay may not load a model to re-derive it.
-  A context-limit refusal (#1405) also records one outcome: a string containing
-  the error message. Successful generations and soft empty-list returns keep
-  their existing list payloads; strings are distinguishable because generation
-  never returns a string. Replay reconstructs the catchable `value` error from
-  that string before consulting the model, using the recorded prompt length
-  and limit even if the checkpoint was deleted or replaced. This uses the
-  existing N-record string encoding without changing the tape format. Existing
-  generation list records remain readable; the usual format/runtime-version
-  checks still apply.
+  A model-dependent refusal records one outcome dictionary with `kind` (the
+  runtime error-kind name) and `message`. This covers context-limit and token-id
+  refusals, so replay preserves both the catchable kind and the recorded limits
+  before consulting a missing or replaced model. Successful generations and
+  soft empty-list returns keep their list payloads. For compatibility, old
+  string refusal records still replay as `value` errors; existing generation
+  list records remain readable.
 - **Rendered pixels (gfx extension, #823):** `gfx_read`. Renderer output
   depends on the font rasteriser, the driver and the backend, so the pixel
   a render-decode oracle reads back is a device input and takes the
@@ -374,10 +376,9 @@ perspective lands on the tape as an `N` record:
   capture chain is TAKE/RECORD-wrapped: under `EIGS_REPLAY` the tape is
   taken *before any SDL call* — replay never opens or reads a real
   microphone; the recorded device id and sample buffers (the `b[…]`
-  encoding) are served instead. `audio_capture_read` returns at most
-  2048 samples per call precisely so every `N` record fits the 64 KiB
-  record budget — an over-budget record would be `…<truncated>`, and
-  replay refuses a truncated record. Drain loops
+  encoding) are served instead. `audio_capture_read` retains its 2048-sample
+  per-call device-read bound; those values fit one `N` record without needing
+  v8 continuation records. Drain loops
   ("read until empty") replay faithfully: one record per call, empties
   included. (`audio_capture_close` is deterministic — always `null` —
   and untraced; under replay it is a no-op because no device was
@@ -806,7 +807,9 @@ everywhere else in the runtime (version-and-reject, never migrate).
   refused instead (covered by the existing replay kind-validation cases in
   `tests/test_replay.sh`). **v7** (#1885) adds metadata plus bounded chunk records for `import` and
   `load_file` source, making module acquisition replayable without live reads.
-  Within a v7 tape, replay also refuses a recorded value of a kind its builtin cannot
+  **v8** (#1816) adds length-framed `N` values and `C` continuation records so
+  answers larger than 64 KiB round-trip without truncation.
+  Within a v8 tape, replay also refuses a recorded value of a kind its builtin cannot
   return, with exit 3 and a message naming the record, the builtin, the kinds
   it returns and the tape version. Every taped builtin declares its return
   kinds in one table (`k_tape_kinds` in `src/trace.c`; for example
@@ -828,6 +831,21 @@ everywhere else in the runtime (version-and-reject, never migrate).
   returns 0 without installing the tape. Replay never falls back to a
   live run: the user asked for a replay, and a plausible-looking live run
   is exactly the silent divergence the header exists to prevent.
+- The embedding API refuses to install a replay tape while any live
+  `EigsState` in the process owns live handles. The diagnostic names every
+  live kind (sockets,
+  files, stores, threads, channels, tasks, gfx, audio, database, and HTTP);
+  close those handles
+  before calling `eigs_set_replay_tape`; it also says when another state owns
+  one. Liveness comes from resource state, not retained handle-table entries:
+  closed channels, joined threads, completed or detached tasks, and closed
+  stores, sockets, streams, windows, or audio devices do not block an install.
+  A process whose states have no live handles may install a tape between
+  evaluations. This is an install-time rule because a
+  handle acquired outside the tape cannot be replayed deterministically, and
+  merely suppressing its closer would leak the live resource. `EIGS_REPLAY`
+  is installed during CLI startup, before a state can acquire handles, and
+  therefore follows the same rule by construction.
 - Mid-stream `V` records are legal (a journal appended across sessions
   carries one per session) but each must match, or replay aborts. The
   embed seam validates **every** session header at install time, so a

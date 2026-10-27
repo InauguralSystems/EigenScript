@@ -83,6 +83,7 @@ jobs:
     outputs:
       code: ${{ steps.detect.outputs.code }}
       spec: ${{ steps.detect.outputs.spec }}
+      release: ${{ steps.detect.outputs.release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -104,6 +105,59 @@ jobs:
           echo "-> scope verdicts (code=false: runtime legs report green without building)"
           echo "$verdict"
           echo "$verdict" >> "$GITHUB_OUTPUT"
+
+  # Exercise the exact action used by release.yml before a tag exists. The
+  # scope classifier selects every PR changing the release workflow, its CI
+  # dependency sources/action, ci.yml itself, or tests/run_all_tests.sh; all
+  # merge-queue candidates run it because --all selects every scope.
+  release-dry-run-worker:
+    name: release dry-run / ${{ matrix.label }}
+    needs: scope
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            label: linux-x86_64
+          - os: macos-15-intel
+            label: macos-x86_64
+          - os: macos-latest
+            label: macos-arm64
+    steps:
+      - if: needs.scope.outputs.release == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - if: needs.scope.outputs.release == 'true'
+        name: Build and test without creating a tag or release
+        uses: ./.github/actions/release-build
+        with:
+          label: ${{ matrix.label }}
+          runner: ${{ matrix.os }}
+
+  release-dry-run:
+    name: release build/test dry-run (no tag or release)
+    needs: [scope, release-dry-run-worker]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require selected release dry-run matrix
+        if: needs.scope.outputs.release == 'true'
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          WORKER_RESULT: ${{ needs.release-dry-run-worker.result }}
+        run: |
+          test "$SCOPE_RESULT" = success
+          test "$WORKER_RESULT" = success
+          echo "release build/test recipe passed; this job has no write permission and created no tag or release"
+      - name: Not selected by release inputs
+        if: needs.scope.outputs.release != 'true'
+        run: echo "release inputs unchanged; dry-run not selected"
 
   # EigenCore is deliberately independent of the all-platform C suite.
   spec-lean:
@@ -134,11 +188,20 @@ jobs:
         run: |
           python3 tools/spec_lean_no_sorry.py
           python3 tools/spec_lean_axioms.py
+          python3 tools/spec_lean_no_delegation.py
       - name: Classify the pre-registered corpus
         if: needs.scope.outputs.spec == 'true'
         run: |
           python3 tools/spec_lean_classify.py
           python3 tools/spec_lean_corpus.py
+      # The parity comparison runs the C VM against eigs-ref, so this job
+      # builds the C VM itself (the standard ./build.sh, as the Linux legs do).
+      - name: Build the C VM for the parity comparison
+        if: needs.scope.outputs.spec == 'true'
+        run: ./build.sh
+      - name: Compare eigs-ref with the C VM on the in-subset corpus
+        if: needs.scope.outputs.spec == 'true'
+        run: python3 tools/spec_lean_parity.py
 
   # Build the shared dev/CI image (.devcontainer/Dockerfile) and push it to
   # GHCR tagged to this commit. Every Linux leg below runs *inside* this image
@@ -495,6 +558,20 @@ jobs:
           grep -q 'PLAN: sections=82,100,129,130,0fd,0fe bearing=6 chunks=6$' "$RUNNER_TEMP/jit-checked.log"
           grep -qE '^  RESULTS: [0-9]+/[0-9]+ passed, 0 failed, 0 skipped$' "$RUNNER_TEMP/jit-checked.log"
 
+      # Positive control for the lane itself: scanner-valid bytecode names a
+      # local beyond its frame env. The checked emitter must call the shared
+      # production diagnostic and terminate by SIGABRT (128 + 6).
+      - name: Prove jit-checked local witness can abort
+        run: |
+          make jit-checked-plant
+          set +e
+          /tmp/jit_checked_plant --checked-local-plant >"$RUNNER_TEMP/jit-checked-plant.log" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/jit-checked-plant.log"
+          test "$status" -eq 134
+          grep -q "^EIGS_JIT_CHECKED: local slot out of range (slot vs fn_env->count) (1 vs 1) at GET_LOCAL offset 2 in chunk 'jit-checked-positive-control' line 1704$" "$RUNNER_TEMP/jit-checked-plant.log"
+
       - name: Require compiler guard activity
         if: always()
         run: bash tools/cc_guard.sh --report
@@ -687,24 +764,8 @@ jobs:
       # The fix was backported to LLVM 22 (llvm-project#188913). The gate's
       # bounded executable control and intentional leak still verify it.
       - if: needs.scope.outputs.code == 'true'
-        name: Select gfx LeakSanitizer toolchain
-        run: |
-          case '${{ matrix.os }}' in
-            macos-15-intel) formula=llvm@18 ;;
-            macos-latest)
-              formula=llvm@22
-              brew install --force-bottle "$formula"
-              ;;
-          esac
-          if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
-            brew install --force-bottle coreutils
-          fi
-          brewbin="$(brew --prefix "$formula")/bin"
-          test -x "$brewbin/clang"
-          export PATH="$GITHUB_WORKSPACE/tools/cc-guard-bin:$brewbin:$PATH"
-          clang --version
-          echo "PATH=$PATH" >> "$GITHUB_ENV"
-          echo "EIGS_ASAN_GFX_CC=clang" >> "$GITHUB_ENV"
+        name: Install shared release test dependencies
+        run: bash tools/install_release_test_dependencies.sh macos '${{ matrix.os }}'
 
       - if: needs.scope.outputs.code == 'true'
         name: Verify gfx sanitizer controls

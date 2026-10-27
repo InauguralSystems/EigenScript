@@ -12,6 +12,7 @@
 #
 # ci.yml
 scope
+release build/test dry-run (no tag or release)
 # Every `container:` job runs inside this image; a failed prerequisite SKIPS the
 # required jobs that need it, and GitHub counts a skipped required check as
 # passing — so it is required like the jobs that need it (#1264).

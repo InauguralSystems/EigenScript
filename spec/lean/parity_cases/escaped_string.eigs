@@ -1,0 +1,2 @@
+x is "a\nb\t\"c\"\\d\r"
+print of x

@@ -13,6 +13,7 @@
 #include "vm.h"
 #include "trace.h"
 #include "eigs_embed.h"
+#include "ext_register.h"
 #include <stdarg.h>
 #include <fenv.h>
 #if defined(__x86_64__)
@@ -124,7 +125,7 @@ void eigs_close(EigsState *st) {
     /* Decide-and-decrement is one step under g_attached_lock: the closer
      * that takes the count to zero shuts the tape. Two concurrent closes
      * both reading count==2 used to leave the tape open with zero states. */
-    int last_state = eigs_process_state_release();
+    int last_state = eigs_process_state_release(st);
     if (eigs_current && eigs_current->state == st) {
         handle_table_drain(st);
         if (g_global_env) {
@@ -528,9 +529,87 @@ int eigs_trace_bind_stream(const char *key) {
     return trace_bind_stream(key);
 }
 
+/* A memory replay source is process-wide, but its embed entry point belongs
+ * to the currently attached state.  Inventory every resource owned by that
+ * state before publishing the source.  The table and attachment list have
+ * their own locks; never inspect either lock-free while a worker can close or
+ * register a handle. */
+static unsigned replay_live_handles(EigsState *st) {
+    unsigned live = 0;
+    if (!st) return 0;
+    live |= handle_table_live_kinds(st);
+
+    pthread_mutex_lock(&st->threads_lock);
+    for (EigsThread *th = st->threads; th; th = th->next)
+        if (th->stream_file) { live |= EIGS_LIVE_FILE; break; }
+    pthread_mutex_unlock(&st->threads_lock);
+#if EIGENSCRIPT_EXT_GFX
+    live |= ext_gfx_live_handles();
+#endif
+#if EIGENSCRIPT_EXT_DB
+    if (st->ext_db_conn) live |= EIGS_LIVE_DATABASE;
+#endif
+#if EIGENSCRIPT_EXT_HTTP
+    live |= ext_http_live_handles(st);
+#endif
+    return live;
+}
+
+typedef struct {
+    EigsState *caller;
+    unsigned live;
+    unsigned foreign;
+} ReplayLiveInventory;
+
+static void replay_inventory_state(EigsState *st, void *opaque) {
+    ReplayLiveInventory *inventory = (ReplayLiveInventory *)opaque;
+    unsigned live = replay_live_handles(st);
+    inventory->live |= live;
+    if (st != inventory->caller) inventory->foreign |= live;
+}
+
+static void replay_live_handles_text(unsigned live, char *buf, size_t cap) {
+    static const struct { unsigned bit; const char *name; } kinds[] = {
+        {EIGS_LIVE_SOCKET, "sockets"}, {EIGS_LIVE_FILE, "files"},
+        {EIGS_LIVE_STORE, "stores"}, {EIGS_LIVE_THREAD, "threads"},
+        {EIGS_LIVE_CHANNEL, "channels"}, {EIGS_LIVE_TASK, "tasks"},
+        {EIGS_LIVE_GFX, "gfx"}, {EIGS_LIVE_AUDIO, "audio"},
+        {EIGS_LIVE_DATABASE, "database"}, {EIGS_LIVE_HTTP, "http"}
+    };
+    size_t used = 0;
+    buf[0] = '\0';
+    for (size_t i = 0; i < sizeof kinds / sizeof kinds[0]; i++) {
+        if (!(live & kinds[i].bit) || used >= cap) continue;
+        int n = snprintf(buf + used, cap - used, "%s%s",
+                         used ? ", " : "", kinds[i].name);
+        if (n < 0 || (size_t)n >= cap - used) { buf[cap - 1] = '\0'; break; }
+        used += (size_t)n;
+    }
+}
+
 int eigs_set_replay_tape(const char *bytes, size_t len, int strict) {
     EmbedFenv fenv;
     embed_fenv_enter(&fenv);
+    /* Clearing a tape never needs this gate.  Validate live ownership at the
+     * sole memory-install seam so malformed tapes and valid tapes cannot take
+     * different routes around the policy. */
+    if (bytes) {
+        ReplayLiveInventory inventory = { .caller = eigs_current_state() };
+        eigs_process_states_visit(replay_inventory_state, &inventory);
+        if (inventory.live) {
+            char kinds[128];
+            replay_live_handles_text(inventory.live, kinds, sizeof kinds);
+            const char *where = inventory.foreign
+                ? "another state holds open handle kinds"
+                : "state has open handle kinds";
+            fprintf(stderr, "trace: refusing replay tape install: %s: %s\n",
+                    where, kinds);
+            embed_value_error(EK_IO,
+                "eigs_set_replay_tape: refused while %s: %s", where, kinds);
+            embed_fenv_leave(&fenv);
+            return 0;
+        }
+    }
     int result = trace_set_replay_mem(bytes, len, strict);
     embed_fenv_leave(&fenv);
     return result;
