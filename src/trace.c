@@ -49,9 +49,7 @@
 #endif
 
 #define TRACE_STR_MAX     60       /* truncate strings in `A` events */
-#define TRACE_NONDET_MAX  65536    /* per-record cap for `N` events;
-                                    * over-cap payloads emit a marker so
-                                    * tape stays sized for visual debug */
+#define TRACE_NONDET_MAX  65536    /* maximum encoded value bytes per N/C record */
 
 int g_trace_enabled_storage = 0;
 int g_replay_enabled_storage = 0;
@@ -2501,7 +2499,7 @@ static int replay_scan_locked(ReplayContext *ctx) {
             ctx->boundary = 1;
             return 0;
         }
-        if (len < 2 || !strchr("BLASNO", ctx->line[0])) continue;
+        if (len < 2 || !strchr("BLASNOC", ctx->line[0])) continue;
         uint64_t id = 0;
         char *payload = NULL;
         if (replay_record_prefix(ctx, ctx->line[0], &id, &payload) <= 0)
@@ -2511,6 +2509,9 @@ static int replay_scan_locked(ReplayContext *ctx) {
             return 1;
         }
         if (!replay_association_locked(ctx, id)) replay_malformed_id(ctx);
+        /* C is only legal while the length-framed N immediately before it is
+         * being assembled below.  An orphan continuation is corruption. */
+        if (ctx->line[0] == 'C') replay_malformed_value(ctx->line);
         if (ctx->line[0] != 'N') continue;
         char *eq = strchr(payload, '=');
         if (!eq || eq == payload) replay_malformed_id(ctx);
@@ -2518,7 +2519,44 @@ static int replay_scan_locked(ReplayContext *ctx) {
         ReplayPending *pending = xcalloc(1, sizeof(*pending));
         pending->stream_id = id;
         pending->name = xstrdup(payload);
-        pending->value = xstrdup(eq + 1);
+        char *encoded = eq + 1;
+        if (*encoded != '@') {
+            pending->value = xstrdup(encoded);
+            ReplayPending **tail = &ctx->pending;
+            while (*tail) tail = &(*tail)->next;
+            *tail = pending;
+            return 1;
+        }
+        size_t value_len = 0;
+        char *framing_end = encoded + 1;
+        if (*framing_end < '0' || *framing_end > '9') replay_malformed_value(encoded);
+        while (*framing_end >= '0' && *framing_end <= '9') {
+            unsigned digit = (unsigned)(*framing_end - '0');
+            if (value_len > (SIZE_MAX - digit) / 10) replay_malformed_value(encoded);
+            value_len = value_len * 10 + digit;
+            framing_end++;
+        }
+        if (*framing_end != ':' || value_len <= TRACE_NONDET_MAX)
+            replay_malformed_value(encoded);
+        encoded = framing_end + 1;
+        size_t have = strlen(encoded);
+        if (have > value_len || value_len == SIZE_MAX) replay_malformed_value(eq + 1);
+        pending->value = xmalloc(value_len + 1);
+        memcpy(pending->value, encoded, have);
+        pending->value[have] = '\0';
+        while (have < value_len) {
+            if (read_tape_line(ctx) < 0) replay_malformed_value(pending->value);
+            uint64_t continuation_id = 0;
+            char *continuation = NULL;
+            if (replay_record_prefix(ctx, 'C', &continuation_id, &continuation) <= 0 ||
+                continuation_id != id) replay_malformed_value(ctx->line);
+            size_t part = strlen(continuation);
+            if (!part || part > value_len - have) replay_malformed_value(ctx->line);
+            memcpy(pending->value + have, continuation, part);
+            have += part;
+            pending->value[have] = '\0';
+        }
+        pending->value[have] = '\0';
         ReplayPending **tail = &ctx->pending;
         while (*tail) tail = &(*tail)->next;
         *tail = pending;
@@ -3034,36 +3072,33 @@ void trace_assign_filtered_at_line(const char *name, EigsSlot value, int line) {
 
 /* ----- Full-fidelity writer for nondet records.
  *
- * Recursive emission of lists/dicts; full string content; cap the whole
- * record at TRACE_NONDET_MAX bytes. The `budget` is decremented on every
- * byte written. When budget runs out, the rest of the record collapses
- * to a single "…<truncated:RESIDUAL>" marker so Phase 3 replay knows the
- * record cannot be used for full determinism. */
+ * Recursive emission of lists/dicts into a private buffer.  N records are
+ * length-framed and the encoded value is split into bounded N/C records by
+ * trace_nondet_value, so no answer is truncated. */
+
+static strbuf *g_wf_buf;
 
 static void wf_putc(int c, int *budget) {
-    if (*budget <= 0) return;
-    tp_putc(c); (*budget)--;
+    (void)budget; strbuf_append_char(g_wf_buf, (char)c);
 }
 static void wf_puts(const char *s, int *budget) {
-    while (*s && *budget > 0) { tp_putc(*s++); (*budget)--; }
+    (void)budget; strbuf_append(g_wf_buf, s);
 }
 static void wf_printf(int *budget, const char *fmt, ...) {
-    if (*budget <= 0) return;
+    (void)budget;
     char buf[64];
     va_list ap; va_start(ap, fmt);
     int n = vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
     if (n < 0) return;
     if (n >= (int)sizeof(buf)) n = (int)sizeof(buf) - 1;
-    if (n > *budget) n = *budget;
-    tp_write(buf, (size_t)n);
-    *budget -= n;
+    strbuf_append_n(g_wf_buf, buf, (size_t)n);
 }
 
 static void write_string_full_len(const char *s, size_t len, int *budget) {
     wf_putc('"', budget);
     if (s) {
-        for (size_t i = 0; i < len && *budget > 0; i++) {
+        for (size_t i = 0; i < len; i++) {
             unsigned char c = (unsigned char)s[i];
             if (c == '"' || c == '\\') { wf_putc('\\', budget); wf_putc(c, budget); }
             else if (c == '\n')        { wf_puts("\\n", budget); }
@@ -3080,7 +3115,6 @@ static void write_string_full(const char *s, int *budget) {
 }
 
 static void write_value_ptr_full(Value *v, int *budget) {
-    if (*budget <= 0) return;
     if (!v) { wf_puts("null", budget); return; }
     switch (v->type) {
         case VAL_NUM:  wf_printf(budget, "%.17g", VAL_NUM_RAW(v)); break;
@@ -3090,7 +3124,7 @@ static void write_value_ptr_full(Value *v, int *budget) {
         case VAL_LIST: {
             wf_putc('[', budget);
             int n = v->data.list.count;
-            for (int i = 0; i < n && *budget > 0; i++) {
+            for (int i = 0; i < n; i++) {
                 if (i) wf_puts(", ", budget);
                 EIGS_VIEW(item_view);
                 write_value_ptr_full(list_get_view(v, i, &item_view), budget);
@@ -3102,7 +3136,6 @@ static void write_value_ptr_full(Value *v, int *budget) {
             wf_putc('{', budget);
             int first = 1;
             DICT_FOR_EACH(v, i) {
-                if (*budget <= 0) break;
                 if (!first) wf_puts(", ", budget);
                 first = 0;
                 write_string_full(v->data.dict.keys[i], budget);
@@ -3120,7 +3153,7 @@ static void write_value_ptr_full(Value *v, int *budget) {
             wf_putc('b', budget);
             wf_putc('[', budget);
             int n = v->data.buffer.count;
-            for (int i = 0; i < n && *budget > 0; i++) {
+            for (int i = 0; i < n; i++) {
                 if (i) wf_puts(", ", budget);
                 wf_printf(budget, "%.17g", v->data.buffer.data[i]);
             }
@@ -3141,13 +3174,26 @@ void trace_nondet_value(const char *fn, Value *v) {
     obs_cfg_sync();
     emit_scope_transition();
     if (!fn) fn = "?";
-    emit_tag("N");
-    tp_puts(fn);
-    tp_putc('=');
-    int budget = TRACE_NONDET_MAX;
+    strbuf buf;
+    strbuf_init(&buf);
+    g_wf_buf = &buf;
+    int budget = 1;
     write_value_ptr_full(v, &budget);
-    if (budget <= 0) tp_puts("…<truncated>");
-    tp_putc('\n');
+    g_wf_buf = NULL;
+    if (buf.refused) { strbuf_free(&buf); tape_emit_end(); return; }
+    size_t off = 0;
+    emit_tag("N");
+    tp_puts(fn); tp_putc('=');
+    size_t n = buf.len < TRACE_NONDET_MAX ? buf.len : TRACE_NONDET_MAX;
+    if (buf.len > TRACE_NONDET_MAX) tp_printf("@%zu:", buf.len);
+    tp_write(buf.data, n); off = n; tp_putc('\n');
+    while (off < buf.len) {
+        emit_tag("C");
+        n = buf.len - off;
+        if (n > TRACE_NONDET_MAX) n = TRACE_NONDET_MAX;
+        tp_write(buf.data + off, n); off += n; tp_putc('\n');
+    }
+    strbuf_free(&buf);
     g_emit_stream->line_dirty = 1;
     tape_emit_end();
 }

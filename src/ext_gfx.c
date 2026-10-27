@@ -1508,12 +1508,9 @@ Value* builtin_audio_pause(Value *arg) {
  * device id and sample buffers are served off the tape. The b[…]
  * buffer encoding round-trips through N records natively.
  *
- * AUDIO_CAPTURE_READ_MAX bounds one read at 2048 samples so a single
- * N record always fits the tape's TRACE_NONDET_MAX (64 KiB) budget:
- * worst-case %.17g is ~24 bytes/sample + ", " → ~53 KiB. An over-
- * budget record would be …<truncated> and replay would silently fall
- * back to the LIVE microphone — the exact divergence the tape exists
- * to prevent. Callers drain by looping until the read comes back
+ * AUDIO_CAPTURE_READ_MAX bounds one device read at 2048 samples. Its encoded
+ * value fits one tape record; larger values are also supported by the tape's
+ * generic continuation framing. Callers drain by looping until the read comes back
  * empty; the loop replays faithfully (one N record per call). */
 #define AUDIO_CAPTURE_READ_MAX 2048
 
@@ -2210,13 +2207,9 @@ Value* builtin_audio_sweep(Value *arg) {
     return list;
 }
 
-/* audio_noise's samples ride the tape in records of at most this many (#1803).
- * One N record is capped at 64 KiB (TRACE_NONDET_MAX in trace.c) and replay
- * refuses a truncated one, so a single record holds only about 3,000 samples
- * -- lib/audio.eigs's snare asks for 4,410 and a 30-second burst for over a
- * million. A sample is a finite number (the runtime saturates at 1e308), at
- * most 24 bytes of %.17g plus ", ", so 2048 fit with room to spare: the same
- * arithmetic as AUDIO_CAPTURE_READ_MAX. */
+/* audio_noise retains #1803's semantic protocol of sample lists of at most
+ * this many values. Each list fits one physical N record, although v8's
+ * generic continuation framing can also carry larger encoded values. */
 #define AUDIO_NOISE_TAPE_CHUNK 2048
 
 /* Record half: the samples as consecutive N records of at most
