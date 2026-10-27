@@ -1,8 +1,13 @@
 load_file of "lib/test.eigs"
 
-opened is gfx_open of [120, 80, "eigs-1681 — UTF-8"]
+initial is env_get of "EIGS_INITIAL_TITLE"
+updated is env_get of "EIGS_UPDATED_TITLE"
+opened is gfx_open of [120, 80, initial]
 assert_true of [opened, "X11 window opens"]
-gfx_delay of 10000
+if updated != "":
+    gfx_delay of 500
+    gfx_title of updated
+gfx_delay of 2000
 gfx_close of null
 
 test_summary of null

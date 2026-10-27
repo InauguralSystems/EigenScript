@@ -3,67 +3,89 @@ set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DISPLAY_NUM=":$((90 + ($$ % 900)))"
-TITLE='eigs-1681 — UTF-8'
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/eigs-1681-title.XXXXXX")
 export LC_ALL=C.UTF-8
-XVFB_LOG=$(mktemp "${TMPDIR:-/tmp}/eigs-1681-xvfb.XXXXXX")
-PROGRAM_LOG=$(mktemp "${TMPDIR:-/tmp}/eigs-1681-program.XXXXXX")
 
 cleanup() {
     [ -n "${PROGRAM_PID:-}" ] && kill "$PROGRAM_PID" 2>/dev/null || true
     [ -n "${XVFB_PID:-}" ] && kill "$XVFB_PID" 2>/dev/null || true
     [ -n "${PROGRAM_PID:-}" ] && wait "$PROGRAM_PID" 2>/dev/null || true
     [ -n "${XVFB_PID:-}" ] && wait "$XVFB_PID" 2>/dev/null || true
-    rm -f "$XVFB_LOG" "$PROGRAM_LOG"
+    rm -rf "$TMP"
 }
 trap cleanup EXIT HUP INT TERM
 
-Xvfb "$DISPLAY_NUM" -screen 0 640x480x24 >"$XVFB_LOG" 2>&1 &
+Xvfb "$DISPLAY_NUM" -screen 0 640x480x24 >"$TMP/xvfb.log" 2>&1 &
 XVFB_PID=$!
-for _ in $(seq 1 100); do
+i=0
+while [ "$i" -lt 100 ]; do
     kill -0 "$XVFB_PID" 2>/dev/null || break
     xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1 && break
     sleep 0.1
+    i=$((i + 1))
 done
 if ! xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1; then
     echo "  FAIL: Xvfb did not become ready"
-    cat "$XVFB_LOG"
+    cat "$TMP/xvfb.log"
     exit 1
 fi
 
-# C.UTF-8 supplies the POSIX locale environment an application must activate
-# with setlocale(LC_CTYPE, "").  The parent implementation never activated it,
-# so SDL published only a doubly encoded legacy WM_NAME and no _NET_WM_NAME.
-DISPLAY="$DISPLAY_NUM" SDL_VIDEODRIVER=x11 \
-    "$ROOT/src/eigenscript" "$ROOT/tests/test_gfx_utf8_title.eigs" \
-    >"$PROGRAM_LOG" 2>&1 &
-PROGRAM_PID=$!
+case_number=0
+run_case() {
+    initial=$1 updated=$2 expected=$3 legacy_type=$4 require_xdotool=$5
+    case_number=$((case_number + 1))
+    log="$TMP/program-$case_number.log"
+    EIGS_INITIAL_TITLE="$initial" EIGS_UPDATED_TITLE="$updated" \
+        DISPLAY="$DISPLAY_NUM" SDL_VIDEODRIVER=x11 \
+        "$ROOT/src/eigenscript" "$ROOT/tests/test_gfx_utf8_title.eigs" \
+        >"$log" 2>&1 &
+    PROGRAM_PID=$!
 
-WINDOW_ID=
-for _ in $(seq 1 100); do
-    WINDOW_ID=$(xwininfo -display "$DISPLAY_NUM" -root -tree 2>/dev/null |
-        awk '/"eigs-1681 / { print $1; exit }')
-    [ -n "$WINDOW_ID" ] && break
-    kill -0 "$PROGRAM_PID" 2>/dev/null || break
-    sleep 0.1
-done
+    window_id=
+    i=0
+    while [ "$i" -lt 100 ]; do
+        window_id=$(DISPLAY="$DISPLAY_NUM" xdotool search --pid "$PROGRAM_PID" 2>/dev/null | sed -n '1p')
+        [ -n "$window_id" ] && break
+        kill -0 "$PROGRAM_PID" 2>/dev/null || break
+        sleep 0.1
+        i=$((i + 1))
+    done
 
-ACTUAL=
-if [ -n "$WINDOW_ID" ]; then
-    ACTUAL=$(xprop -display "$DISPLAY_NUM" -id "$WINDOW_ID" \
-        -notype _NET_WM_NAME 2>/dev/null)
-fi
-EXPECTED="_NET_WM_NAME = \"$TITLE\""
+    properties=
+    i=0
+    while [ -n "$window_id" ] && [ "$i" -lt 100 ]; do
+        properties=$(xprop -display "$DISPLAY_NUM" -id "$window_id" 2>/dev/null)
+        printf '%s\n' "$properties" | grep -Fq "WM_NAME($legacy_type) = \"$expected\"" &&
+            printf '%s\n' "$properties" | grep -Fq "_NET_WM_NAME(UTF8_STRING) = \"$expected\"" && break
+        sleep 0.1
+        i=$((i + 1))
+    done
 
-wait "$PROGRAM_PID"
-PROGRAM_RC=$?
-PROGRAM_PID=
+    echo "case $case_number: initial='$initial' updated='${updated:-<none>}'"
+    printf '%s\n' "${properties:-<no xprop output>}" | sed 's/^/  /'
 
-if [ "$PROGRAM_RC" -eq 0 ] && [ "$ACTUAL" = "$EXPECTED" ]; then
-    echo "  PASS: xprop reads the UTF-8 title bytes from _NET_WM_NAME"
-    exit 0
-fi
+    failed=0
+    printf '%s\n' "$properties" | grep -Fq "WM_NAME($legacy_type) = \"$expected\"" || failed=1
+    printf '%s\n' "$properties" | grep -Fq "_NET_WM_NAME(UTF8_STRING) = \"$expected\"" || failed=1
+    if [ "$require_xdotool" = 1 ] &&
+       ! LC_ALL=C DISPLAY="$DISPLAY_NUM" xdotool search --name "^$expected$" >/dev/null 2>&1; then
+        failed=1
+    fi
 
-echo "  FAIL: _NET_WM_NAME UTF-8 title (program rc=$PROGRAM_RC)"
-printf '    expected: %s\n    actual:   %s\n' "$EXPECTED" "${ACTUAL:-<missing>}"
-cat "$PROGRAM_LOG"
-exit 1
+    kill "$PROGRAM_PID" 2>/dev/null || true
+    wait "$PROGRAM_PID" 2>/dev/null || true
+    PROGRAM_PID=
+    if [ "$failed" -ne 0 ]; then
+        echo "  FAIL: title properties for case $case_number"
+        cat "$log"
+        exit 1
+    fi
+    echo "  PASS: title properties for case $case_number"
+}
+
+run_case 'eigs-1681 ASCII' '' 'eigs-1681 ASCII' STRING 1
+run_case 'eigs-1681 — UTF-8' '' 'eigs-1681 — UTF-8' COMPOUND_TEXT 0
+run_case 'DMG' 'DMG — 48 MHz — frame 7' 'DMG — 48 MHz — frame 7' COMPOUND_TEXT 0
+run_case 'eigs-1681 — initial' 'eigs-1681 ASCII retitle' 'eigs-1681 ASCII retitle' STRING 1
+
+echo "  PASS: all four ICCCM/EWMH title transitions"

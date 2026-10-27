@@ -637,7 +637,7 @@ gfx-x11-regressions: build
 	@set -eu; output=$$(mktemp); trap 'rm -f "$$output"' EXIT HUP INT TERM; \
 	status=0; bash tests/test_gfx_utf8_title.sh >"$$output" 2>&1 || status=$$?; \
 	cat "$$output"; [ "$$status" -eq 0 ]; \
-	grep -q '^  PASS: xprop reads the UTF-8 title bytes from _NET_WM_NAME$$' "$$output"; \
+	grep -q '^  PASS: all four ICCCM/EWMH title transitions$$' "$$output"; \
 	status=0; bash tests/test_gfx_ctype_locale.sh >"$$output" 2>&1 || status=$$?; \
 	cat "$$output"; [ "$$status" -eq 0 ]; \
 	grep -q '^  PASS: gfx leaves byte-oriented ctype answers replay-deterministic$$' "$$output"; \
