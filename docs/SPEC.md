@@ -1412,7 +1412,8 @@ and uses the project file. For each request, the order is:
 4. Relative to the **project root**: the nearest ancestor of that containing
    directory with an `eigs.json`, including the containing directory itself.
    If none exists, this step is skipped.
-5. The existing stdlib locations, in order: `<exe>/../<path>`,
+5. The existing stdlib locations, in order: `<exe>/../<path>`; for a source-tree
+   `<repo>/build/<variant>/eigenscript`, `<exe>/../../<path>`; then
    `<exe>/../lib/eigenscript/<path>`, the latter again with a leading `lib/`
    stripped, then `$HOME/.local/lib/eigenscript/<path>` and its `lib/`-stripped
    form. Here `<exe>` is the executable's directory.
