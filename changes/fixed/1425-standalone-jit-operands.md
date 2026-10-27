@@ -1,0 +1,1 @@
+- Standalone JIT builds now share the canonical bytecode operand layout without linking the chunk implementation (#1425).

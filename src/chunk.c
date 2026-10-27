@@ -4,6 +4,7 @@
 
 #include "eigenscript.h"
 #include "vm.h"
+#include "opcode_operands.h"
 #include "jit.h"
 #include "trace.h"
 #include <stdio.h>
@@ -380,30 +381,6 @@ const char *op_name(uint8_t op) {
     return "???";
 }
 
-/* Forward decls: the operand-layout table lives with the verifier below;
- * the disassembler is driven off the SAME table (#737 — the old separate
- * op_has_u16 boolean had drifted on 8 single-operand opcodes and could not
- * express the multi-operand superinstructions at all, so chunk_disassemble
- * desynchronized on 15 opcodes). */
-typedef enum {
-    VR_RAW = 0,   /* count / kind / line / runtime-guarded slot — no bound */
-    VR_CONST,     /* constant-pool index — any value type (OP_CONST push) */
-    VR_NAME,      /* constant-pool index that MUST be a string: the VM derefs it
-                   * as an interned name (const_interns[idx]), which is NULL for
-                   * a non-string constant → NULL deref. Bound AND type-check. */
-    VR_FN,        /* index into nested functions[] */
-    VR_JFWD,      /* forward jump: target = end_of_instruction + offset */
-    VR_JBACK      /* backward jump: target = end_of_instruction - offset */
-} VerifyRole;
-static int op_verify_operands(uint8_t op8, VerifyRole roles[3]);
-
-int opcode_operand_bytes(uint8_t op) {
-    if (op >= OP_COUNT) return -1;
-    if (op == OP_LINE || op == OP_BINARY_LINE) return 4;
-    VerifyRole roles[3];
-    return 2 * op_verify_operands(op, roles);
-}
-
 void chunk_disassemble(EigsChunk *chunk, const char *label) {
     fprintf(stderr, "=== %s (%s, %d bytes, %d constants) ===\n",
             label, chunk->name, chunk->code_len, chunk->const_count);
@@ -463,97 +440,6 @@ void chunk_disassemble(EigsChunk *chunk, const char *label) {
  * the operand stack cannot underflow along any path. NOT checked:
  * local/observer slot operands — the VM already guards every slot access
  * (slot < env->count; observer slots auto-grow), so they cannot fault. */
-/* Fill roles[] for op; return its operand count (0..3). Mirrors the operand
- * layout the VM decodes in vm.c — keep in lockstep if an opcode changes.
- *
- * #737: this is now an EXHAUSTIVE switch on OpCode with NO default arm, so
- * -Werror=switch turns a missing opcode into a build error. The old
- * `default: return 0` silently walked an unknown 3-byte instruction as
- * 1 byte, which marked its operand bytes as valid instruction boundaries —
- * a crafted jump could land mid-instruction and still pass pass 2 (the
- * #721 surface; OP_TRAJECTORY_SLOT had already drifted out this way while
- * its NAME sibling was present). Callers must bounds-check op < OP_COUNT
- * first (chunk_verify pass 1 and the disassembler both do). This is also
- * the disassembler's stepping table — one layout source, not two. */
-static int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
-    switch ((OpCode)op8) {
-    case OP_CONST:
-        roles[0] = VR_CONST; return 1;
-    case OP_GET_NAME: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
-    case OP_SET_FN_NAME_LOCAL: case OP_DOT_GET: case OP_DOT_SET:
-    case OP_REPORT_NAME: case OP_OBSERVE_VALUE_NAME: case OP_OBSERVE_NAME_POST:
-    case OP_REPORT_VALUE_NAME: case OP_TRAJECTORY_NAME:
-    case OP_IMPORT:
-        roles[0] = VR_NAME; return 1;
-    case OP_CLOSURE:
-        roles[0] = VR_FN; return 1;
-    case OP_JUMP: case OP_JUMP_IF_FALSE: case OP_JUMP_IF_TRUE:
-    case OP_JUMP_IF_FALSE_PEEK: case OP_JUMP_IF_TRUE_PEEK:
-    case OP_ITER_NEXT: case OP_TRY_BEGIN:
-        roles[0] = VR_JFWD; return 1;
-    case OP_LOOP_STALL_NAMED: case OP_LOOP_CAP_NAMED:
-        roles[0] = VR_JFWD; roles[1] = VR_RAW; return 2;
-    case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK:
-        roles[0] = VR_JFWD; return 1;
-    case OP_JUMP_BACK:
-        roles[0] = VR_JBACK; return 1;
-    case OP_GET_LOCAL: case OP_SET_LOCAL: case OP_SET_LOCAL_INTERNAL: case OP_CALL:
-    case OP_LIST: case OP_DICT:
-    case OP_OBSERVE_ASSIGN: case OP_OBSERVE_ASSIGN_LOCAL:
-    case OP_REPORT_SLOT: case OP_OBSERVE_VALUE_SLOT:
-    case OP_REPORT_VALUE_SLOT:
-    case OP_TRAJECTORY_SLOT:   /* #737: was missing — the drift this fixes */
-    case OP_INTERROGATE: case OP_PREDICATE:
-    case OP_MATCH: case OP_DESTRUCTURE_UNPACK: case OP_LOOP_ENTER_NAMED:
-    case OP_LOOP_EXIT_NAMED:
-        roles[0] = VR_RAW; return 1;
-    case OP_LOCAL_DOT_GET: case OP_LOCAL_DOT_SET:
-        roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* slot, name */
-    case OP_LOCAL_IDX_GET:
-        roles[0] = VR_RAW; roles[1] = VR_RAW; return 2;     /* slot, list idx */
-    case OP_INTERROGATE_NAMED: case OP_INTERROGATE_NAMED_AT:
-    case OP_INTERROGATE_NAMED_WHEN:
-        roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* kind, name */
-    case OP_PREDICATE_SLOT:
-        roles[0] = VR_RAW; roles[1] = VR_RAW; return 2;     /* kind, slot (runtime-guarded) */
-    case OP_PREDICATE_NAME:
-        roles[0] = VR_RAW; roles[1] = VR_NAME; return 2;    /* kind, name */
-    case OP_DEFAULT_PARAM:
-        roles[0] = VR_RAW; roles[1] = VR_JFWD; return 2;    /* slot, skip */
-    case OP_LOCAL_IDX_DOT_GET: case OP_LOCAL_IDX_DOT_SET:
-        roles[0] = VR_RAW; roles[1] = VR_RAW; roles[2] = VR_NAME; return 3;
-    /* Operand-free opcodes — every one listed, so a new opcode cannot
-     * silently walk wrong. */
-    case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE: case OP_TRUE: case OP_FALSE:
-    case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD:
-    case OP_BAND: case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR:
-    case OP_NEG: case OP_NOT: case OP_BNOT:
-    case OP_EQ: case OP_NE: case OP_LT: case OP_GT: case OP_LE: case OP_GE:
-    case OP_POP: case OP_DUP: case OP_DUP2:
-    case OP_RETURN: case OP_RETURN_NULL:
-    case OP_INDEX_GET: case OP_INDEX_SET:
-    case OP_ITER_SETUP:
-    case OP_LOOP_ENV_FRESH: case OP_LOOP_ENV_END: case OP_LOOP_ENV_CLEAR:
-    case OP_BREAK: case OP_CONTINUE:
-    case OP_TRY_END:
-    case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
-    case OP_LISTCOMP_BEGIN: case OP_LISTCOMP_APPEND:
-    case OP_WIDE:      /* placeholder — the VM decodes no operand either */
-    case OP_DISPATCH:
-    case OP_SLICE_GET: case OP_LOOP_ENTER:
-        return 0;
-    /* OP_LINE's operand is 32-bit (#630); chunk_verify and the
-     * disassembler both special-case it BEFORE consulting this u16-strided
-     * table, so this arm is unreachable — listed for the exhaustiveness
-     * gate, not for behavior. */
-    case OP_LINE: case OP_BINARY_LINE: case OP_BINARY_LINE_END:
-        return 0;
-    case OP_COUNT:     /* sentinel — callers bounds-check first */
-        return 0;
-    }
-    return 0;   /* unreachable; silences non-GCC fallthrough warnings */
-}
-
 /* ---- Stack-height model (pass 4) ----
  *
  * How much operand stack an instruction requires, and what it leaves behind on

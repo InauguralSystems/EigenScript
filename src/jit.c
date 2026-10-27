@@ -2,6 +2,7 @@
 #include "env_flag.h"
 #include "eigenscript.h"
 #include "vm.h"
+#include "opcode_operands.h"
 
 #include <inttypes.h>
 #include <math.h>

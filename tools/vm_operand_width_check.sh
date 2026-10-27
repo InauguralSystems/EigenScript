@@ -4,7 +4,7 @@
 # The enum comments in src/vm.h are an ABI-facing description of the bytecode
 # stream.  This gate derives the truth for every `kind` operand from the VM's
 # uintN_t/read_uN/advance decoder sites and checks that each opcode is also present in
-# chunk.c's shared VR_RAW verifier table.  It therefore does not keep a second
+# the shared VR_RAW verifier table.  It therefore does not keep a second
 # hand-written width list that could drift with the production code.
 #
 # Usage: tools/vm_operand_width_check.sh [--selftest]
@@ -30,6 +30,7 @@ KIND_OPERAND_FLOOR="${KIND_OPERAND_FLOOR:-7}"
 VM_HEADER="${VM_HEADER:-src/vm.h}"
 VM_SOURCE="${VM_SOURCE:-src/vm.c}"
 CHUNK_SOURCE="${CHUNK_SOURCE:-src/chunk.c}"
+OPERAND_HEADER="${OPERAND_HEADER:-src/opcode_operands.h}"
 
 # Emit `OP_NAME type_bits read_bits advance_bytes` for every CASE whose handler
 # reads a kind.  All three widths come from the production decoder expression.
@@ -52,7 +53,7 @@ decoder_kind_widths() {
 # Emit every opcode whose first operand is VR_RAW from the production verifier
 # table.  Case arms are accumulated across lines until roles[0] is assigned.
 verifier_raw_ops() {
-    sed -n '/static int op_verify_operands/,/\/\* ---- Stack-height model/p' "$CHUNK_SOURCE" \
+    sed -n '/static inline int op_verify_operands/,/\/\* ---- Stack-height model/p' "$OPERAND_HEADER" \
     | awk '
         {
             line = $0
@@ -84,7 +85,7 @@ check_tree() {
     comments=$(header_kind_widths)
     # opcode_operand_bytes is the shared walker definition: ordinary operands
     # are u16-strided and exceptional widths live beside that rule.
-    verifier_stride=$(sed -nE 's/^[[:space:]]*return[[:space:]]+([0-9]+)[[:space:]]*\*[[:space:]]*op_verify_operands.*/\1/p' "$CHUNK_SOURCE" | awk 'NF { print; exit }')
+    verifier_stride=$(sed -nE 's/^[[:space:]]*return[[:space:]]+([0-9]+)[[:space:]]*\*[[:space:]]*op_verify_operands.*/\1/p' "$OPERAND_HEADER" | awk 'NF { print; exit }')
 
     if [ -z "$decoder" ]; then
         echo "GATE ERROR: no uintN_t/read_uN kind decoder evidence found in $VM_SOURCE"
@@ -98,7 +99,7 @@ check_tree() {
         return 1
     fi
     if [ -z "$raw" ] || [ -z "$verifier_stride" ] || ! sed -n '/void chunk_disassemble/,/\/\* ---- Bytecode verifier/p' "$CHUNK_SOURCE" | grep -q 'opcode_operand_bytes'; then
-        echo "GATE ERROR: no VR_RAW/u16-stride verifier evidence found in $CHUNK_SOURCE"
+        echo "GATE ERROR: no VR_RAW/u16-stride verifier evidence found in $OPERAND_HEADER"
         return 1
     fi
     if [ -z "$comments" ]; then
@@ -110,7 +111,7 @@ check_tree() {
         <(printf '%s\n' "$decoder" | awk '{print $1}' | sort -u) \
         <(printf '%s\n' "$raw" | sort -u))
     if [ -n "$missing" ]; then
-        echo "GATE ERROR: decoder kind opcode(s) missing from chunk.c VR_RAW verifier table:"
+        echo "GATE ERROR: decoder kind opcode(s) missing from the shared VR_RAW verifier table:"
         printf '%s\n' "$missing" | sed 's/^/  - /'
         return 1
     fi
