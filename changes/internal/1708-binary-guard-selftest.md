@@ -1,0 +1,1 @@
+- Make the #1708 binary-fingerprint guard self-test deterministic and keep it in its own suite section fragment.
