@@ -109,6 +109,23 @@ ACTUAL=$(fmt_str "$(printf 'x is "hello,world"\n')")
 EXPECTED=$(printf 'x is "hello,world"\n')
 check "string content not modified" "$ACTUAL" "$EXPECTED"
 
+# Literal bytes are opaque, but they remain atoms in the whole-line spacing
+# pass so punctuation on either side is normalized (#1581 round 3).
+ACTUAL=$(fmt_str "$(printf 'print of \"a\"+\"b\"\n')")
+check "operator spacing across two literals" "$ACTUAL" "$(printf 'print of \"a\" + \"b\"\n')"
+
+ACTUAL=$(fmt_str "$(printf '[\"a\",\"b\"]\n')")
+check "comma spacing across literals" "$ACTUAL" "$(printf '[\"a\", \"b\"]\n')"
+
+ACTUAL=$(fmt_str "$(printf 'x is f\"{y}\"+\"z\"\n')")
+check "operator spacing across f-string literal" "$ACTUAL" "$(printf 'x is f\"{y}\" + \"z\"\n')"
+
+ACTUAL=$(fmt_str "$(printf 'value is \"a\nb\"+x\n')")
+check "operator after multiline literal closing line" "$ACTUAL" "$(printf 'value is \"a\nb\" + x\n')"
+
+ACTUAL=$(fmt_str "$(printf 'values is [\"a\nb\",2]\n')")
+check "comma after multiline literal closing line" "$ACTUAL" "$(printf 'values is [\"a\nb\", 2]\n')"
+
 # --- Idempotency on clean file ---
 ORIGINAL=$($EIGS --fmt examples/hello.eigs 2>/dev/null)
 TMPF=$(mktemp /tmp/fmt_test_XXXXXX.eigs)
@@ -388,6 +405,15 @@ echo "$SEMANTIC_RESULT"
 echo "Formatter corpus: examined=$CORPUS_N unchanged=$CORPUS_UNCHANGED changed=$CORPUS_CHANGED refused=$CORPUS_REFUSED (reason: lexer rejection)"
 check "--fmt preserves parseability across $CORPUS_N repo files" \
       "broken:$CORPUS_BROKEN" "broken:"
+
+# The incumbent is the compatibility bar: every changed file must be one of
+# the three deliberately fixed formatter defect classes.
+DIFF_OUTPUT=$(bash "$TESTS_DIR/run_fmt_parent_differential.sh" 2>&1)
+DIFF_RC=$?
+printf '%s\n' "$DIFF_OUTPUT"
+check "parent formatter differential has no unexplained files" \
+      "rc=$DIFF_RC regressions=$(printf '%s\n' "$DIFF_OUTPUT" | grep -c ': REGRESSION' || true)" \
+      "rc=0 regressions=0"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $TOTAL total"

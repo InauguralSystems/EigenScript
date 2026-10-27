@@ -193,6 +193,69 @@ static void strip_trailing_ws(strbuf *b) {
     }
 }
 
+/* Format one physical line while treating every lexer-owned literal slice as
+ * a single identifier.  Running fix_spacing once is important: commas and
+ * operators need to see the atoms on both sides of a literal boundary. */
+static void fix_spacing_with_literals(const char *source, size_t start, size_t end,
+                                      const TokenList *tl, int first_span,
+                                      const char *placeholder_prefix, strbuf *out) {
+    strbuf masked;
+    strbuf_init(&masked);
+    size_t pos = start;
+    int si = first_span;
+
+    while (pos < end) {
+        while (si < tl->literal_count && tl->literal_spans[si].end <= pos) si++;
+        if (si < tl->literal_count && tl->literal_spans[si].start <= pos &&
+            pos < tl->literal_spans[si].end) {
+            size_t stop = tl->literal_spans[si].end < end ?
+                tl->literal_spans[si].end : end;
+            char placeholder[48];
+            snprintf(placeholder, sizeof(placeholder), "%s%08d", placeholder_prefix, si);
+            strbuf_append_n(&masked, placeholder, strlen(placeholder));
+            pos = stop;
+        } else {
+            size_t stop = end;
+            if (si < tl->literal_count && tl->literal_spans[si].start < stop)
+                stop = tl->literal_spans[si].start;
+            strbuf_append_n(&masked, source + pos, stop - pos);
+            pos = stop;
+        }
+    }
+
+    strbuf fixed;
+    strbuf_init(&fixed);
+    fix_spacing(masked.data, &fixed);
+    strip_trailing_ws(&fixed);
+
+    pos = 0;
+    while (pos < fixed.len) {
+        int restored = 0;
+        for (si = first_span; si < tl->literal_count &&
+             tl->literal_spans[si].start < end; si++) {
+            size_t literal_start = tl->literal_spans[si].start > start ?
+                tl->literal_spans[si].start : start;
+            size_t literal_end = tl->literal_spans[si].end < end ?
+                tl->literal_spans[si].end : end;
+            if (literal_start >= literal_end) continue;
+            char placeholder[48];
+            snprintf(placeholder, sizeof(placeholder), "%s%08d", placeholder_prefix, si);
+            size_t placeholder_len = strlen(placeholder);
+            if (placeholder_len <= fixed.len - pos &&
+                memcmp(fixed.data + pos, placeholder, placeholder_len) == 0) {
+                strbuf_append_n(out, source + literal_start, literal_end - literal_start);
+                pos += placeholder_len;
+                restored = 1;
+                break;
+            }
+        }
+        if (!restored) strbuf_append_char(out, fixed.data[pos++]);
+    }
+
+    strbuf_free(&masked);
+    strbuf_free(&fixed);
+}
+
 /* ---- Main formatter ---- */
 
 /* Format EigenScript source text. Returns a malloc'd formatted string
@@ -231,6 +294,12 @@ char* format_source_string(const char *source) {
     size_t off = 0;
     int line_no = 0, span_i = 0, prev_blank = 0;
     size_t source_len = strlen(source);
+    char placeholder_prefix[32];
+    unsigned placeholder_nonce = 0;
+    do {
+        snprintf(placeholder_prefix, sizeof(placeholder_prefix),
+                 "EIGSFMTOPAQUE%uZ", placeholder_nonce++);
+    } while (strstr(source, placeholder_prefix));
     while (off < source_len) {
         size_t end = off;
         while (end < source_len && source[end] != '\n') end++;
@@ -264,7 +333,6 @@ char* format_source_string(const char *source) {
 
         int level = depth[line_no];
 
-
         /* Bracket continuations deliberately retain their original leading
          * whitespace.  Other code lines are normalized to four per lexer
          * block.  A physical line beginning inside a literal is all data. */
@@ -273,25 +341,8 @@ char* format_source_string(const char *source) {
             else for (int j = 0; j < level * 4; j++) strbuf_append_char(&output, ' ');
         }
 
-        size_t pos = starts_literal ? off : first;
-        int si = span_i;
-        while (pos < content_end) {
-            while (si < tl.literal_count && tl.literal_spans[si].end <= pos) si++;
-            if (si < tl.literal_count && tl.literal_spans[si].start <= pos && pos < tl.literal_spans[si].end) {
-                size_t stop = tl.literal_spans[si].end < content_end ? tl.literal_spans[si].end : content_end;
-                strbuf_append_n(&output, source + pos, stop - pos);
-                pos = stop;
-            } else {
-                size_t stop = content_end;
-                if (si < tl.literal_count && tl.literal_spans[si].start < stop) stop = tl.literal_spans[si].start;
-                char *part = xmalloc(stop - pos + 1);
-                memcpy(part, source + pos, stop - pos); part[stop - pos] = '\0';
-                strbuf fixed; strbuf_init(&fixed); fix_spacing(part, &fixed);
-                if (stop == content_end) strip_trailing_ws(&fixed);
-                strbuf_append_n(&output, fixed.data, fixed.len);
-                strbuf_free(&fixed); free(part); pos = stop;
-            }
-        }
+        fix_spacing_with_literals(source, starts_literal ? off : first, content_end,
+                                  &tl, span_i, placeholder_prefix, &output);
         strbuf_append_char(&output, '\n');
 
         off = end < source_len ? end + 1 : end;

@@ -699,6 +699,17 @@ def main():
           isinstance(cr_res, list) and len(cr_res) == 1
           and cr_res[0].get("newText") ==
               'value is "start\r\n\t# a+b  \r\nback\\\r\nslash"\nprint of value\n')
+    boundary_doc = ('print of "a"+"b"\n["a","b"]\n'
+                    'x is f"{y}"+"z"\nvalue is "a\nb"+x\n'
+                    'values is ["a\nb",2]\n')
+    boundary_want = ('print of "a" + "b"\n["a", "b"]\n'
+                     'x is f"{y}" + "z"\nvalue is "a\nb" + x\n'
+                     'values is ["a\nb", 2]\n')
+    r = converse([INIT, did_open(boundary_doc), fmt, SHUTDOWN, EXIT])
+    boundary_res = (by_id(r, 8) or {}).get("result")
+    check("formatting normalizes spacing across opaque literal boundaries",
+          isinstance(boundary_res, list) and len(boundary_res) == 1
+          and boundary_res[0].get("newText") == boundary_want)
 
     # --- rename: validate the APPLIED result, not just newText. This is the
     #     regression guard for the column-0 corruption (renaming 'count' must
