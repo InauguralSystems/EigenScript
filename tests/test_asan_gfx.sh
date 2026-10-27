@@ -33,7 +33,7 @@ WERROR_FLAGS_FILE="$(dirname "$0")/../tools/werror_flags.txt"
 # has no gfx builtins. Explicit compiler selection and build failures are
 # errors. libSDL2
 # is NOT required: it is dlopen'd, so the corpus runs either way -- gfx_open
-# answers 0 and the drawing calls no-op, which still walks every allocation
+# answers false and the drawing calls no-op, which still walks every allocation
 # path on the argument side. Whether SDL was present is reported, so a green
 # line is not read as more coverage than the environment gave.
 #
@@ -343,9 +343,17 @@ if [ "$SDL_RC" -ne 0 ] || [ "$SDL_CLASS" -ne 2 ]; then
     echo "ASan gfx: $PASS passed, $FAIL failed"
     exit 1
 fi
-printf '%s' "$SDL_OUT" | grep -q "sdl-present: 1" \
-    || echo "  NOTE: libSDL2 absent — the corpus exercised the argument and"\
-            "allocation paths but no real renderer or audio device."
+if printf '%s\n' "$SDL_OUT" | grep -q '^sdl-present: true$'; then
+    ok "SDL2 real renderer opened under ASan"
+else
+    # gfx_open reports the precise failing stage on stderr (dlopen, SDL_Init,
+    # window creation, or renderer creation). Preserve that diagnostic: a
+    # false result alone cannot distinguish a missing library from a broken
+    # display and must never read as renderer coverage.
+    SDL_REASON=$(printf '%s\n' "$SDL_OUT" | sed -n '/^gfx_open:/p' | tail -1)
+    [ -n "$SDL_REASON" ] || SDL_REASON="gfx_open returned false without a diagnostic"
+    echo "  NOTE: no SDL2 renderer coverage — $SDL_REASON; the corpus exercised the argument and allocation paths only."
+fi
 
 echo "ASan gfx: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ] || exit 1

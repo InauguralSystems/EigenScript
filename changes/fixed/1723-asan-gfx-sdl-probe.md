@@ -1,0 +1,1 @@
+- The ext_gfx sanitizer corpus now recognizes a successful SDL2 renderer probe and reports the precise failure stage when renderer coverage is unavailable (#1723).
