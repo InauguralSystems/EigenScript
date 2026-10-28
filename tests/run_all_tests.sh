@@ -126,7 +126,9 @@ __eigs_section_close() {
     [ "$d" -ge 0 ] || d=0
     section_total=$((TOTAL - __EIGS_SEC_TOTAL0))
     section_skipped=$((SKIPPED - __EIGS_SEC_SKIPPED0))
-    if [ "$section_total" -le 0 ] && [ "$section_skipped" -ne 1 ]; then
+    # At least one assertion or at least one skip: a section may skip several
+    # sub-checks ([80b] skips two). Only "nothing at all" is the vanish class.
+    if [ "$section_total" -le 0 ] && [ "$section_skipped" -le 0 ]; then
         builtin printf '  FAIL: section %s has no outcome (TOTAL delta=%d, SKIPPED delta=%d)\n' \
             "$__EIGS_SEC_LABEL" "$section_total" "$section_skipped"
         SECTION_OUTCOME_VIOLATIONS=$((SECTION_OUTCOME_VIOLATIONS + 1))
