@@ -1,0 +1,1 @@
+- Consumer acceptance now gives EigenLua a measured declared row budget while retaining the default cap for undeclared consumers (#1963).

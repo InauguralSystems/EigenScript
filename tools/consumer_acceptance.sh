@@ -19,6 +19,22 @@ declared_cmd() {
     *) return 1 ;;
   esac
 }
+# Row budgets are release policy, not consumer input.  Keep every exception
+# here so an unrecognised consumer always receives DEFAULT_ROW_BUDGET.  The
+# EigenLua allowance is based on the 2026-10-28 pinned-checkout measurement:
+# 1,800 s reached the warmup-pairs stage. The remaining stage caps put
+# the conservative bound at 7,200 s; the 7,800 s allowance adds 10 minutes
+# of release-box headroom.
+declared_row_budget() {
+  if [ -f "$ECO/.ca_fixture" ] && [ -f "$ECO/$1/.ca_budget" ]; then
+    cat "$ECO/$1/.ca_budget"
+    return 0
+  fi
+  case "$1" in
+    EigenLua) printf '%s' 7800 ;;
+    *) return 1 ;;
+  esac
+}
 contains() { local wanted="$1" item; shift; for item in "$@"; do [ "$item" = "$wanted" ] && return 0; done; return 1; }
 resolve_eco() {
   local requested="${CA_ECO:-}" common main
@@ -418,6 +434,10 @@ consumer_skip_check() {
 row() {
   local i="$1" name="${NAMES[i]}" pin="${PINS[i]}" cmd="${CMDS[i]}" kind="${KINDS[i]}" source_commit="${SOURCE_COMMITS[i]}" source_dirty="${SOURCE_DIRTY[i]}" source_intended="${SOURCE_INTENDED[i]}" source_selector="${SOURCE_SELECTORS[i]}"
   local verdict=PASS rc=- dur=0 calls=0 ok=0 fail=0 skips=0 prereq="" v log start end missing_variant="" actual mutated="" skip_result="" skip_problem="" skip_rc=0 failed_job=""
+  local row_budget="$DEFAULT_ROW_BUDGET" budget_kind=default declared_budget=""
+  if declared_budget="$(declared_row_budget "$name")"; then
+    row_budget="$declared_budget"; budget_kind=declared
+  fi
   local -a session=(setsid)
   if ! command -v setsid >/dev/null 2>&1; then
     session=(python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1],sys.argv[1:])')
@@ -433,7 +453,7 @@ row() {
     start="$(date +%s)"
     ( cd "$ECO/$name" && exec "${session[@]}" env PATH="$SHIM:$PATH" \
         "${SELECTOR_ENV[@]}" EIGS_DIR="$OVERLAY" EIGENSCRIPT_DIR="$OVERLAY" \
-        timeout --kill-after=2s "$BUDGET" bash -e -o pipefail -c "$cmd" ) < /dev/null > "$log" 2>&1 &
+        timeout --kill-after=2s "$row_budget" bash -e -o pipefail -c "$cmd" ) < /dev/null > "$log" 2>&1 &
     ACTIVE=$!
     wait "$ACTIVE" && rc=0 || rc=$?
     stop_row_group
@@ -495,7 +515,7 @@ row() {
   if [ -n "$mutated" ]; then verdict=FAIL; prereq="candidate-mutated:$mutated"; fi
   local line="row|$name|$pin|$verdict|$rc|$dur|cand_calls=$calls|cand_ok=$ok|cand_fail=$fail|consumer_skips=$skips|selectors_overridden=${SELECTORS:-none}"
   [ -z "$prereq" ] || line="$line|prereq=$prereq"
-  line="$line|source_commit=$source_commit|source_dirty=$source_dirty|source_intended=$source_intended|source_selector=$source_selector"
+  line="$line|source_commit=$source_commit|source_dirty=$source_dirty|source_intended=$source_intended|source_selector=$source_selector|row_budget_s=$row_budget|row_budget_kind=$budget_kind"
   echo "$line" | tee -a "$BODY"
   if [ -f "$LOGS/$name.log" ]; then
     printf 'consumer_log|%s|%s\n' "$name" "$LOGS/$name.log" >> "$BODY"
@@ -561,8 +581,8 @@ run() {
       return 2
     fi
   fi
-  BUDGET="${CA_TIMEOUT:-1800}"
-  case "$BUDGET" in ''|*[!0-9]*|0) echo 'CA_TIMEOUT must be positive'; return 2 ;; esac
+  DEFAULT_ROW_BUDGET="${CA_TIMEOUT:-1800}"
+  case "$DEFAULT_ROW_BUDGET" in ''|*[!0-9]*|0) echo 'CA_TIMEOUT must be positive'; return 2 ;; esac
   command -v timeout >/dev/null || { echo 'timeout missing'; return 2; }
   # Output-path selection completes argument validation. Read the old floor,
   # invalidate that exact path, and install traps before any candidate hash.
@@ -632,7 +652,7 @@ run() {
   if [ -n "$SERVER_DB" ]; then SERVER_DB_SHA="$(sha256sum "$SERVER_DB" | awk '{print $1}')" || { echo 'cannot hash server-db variant'; return 2; }; [ "${#SERVER_DB_SHA}" -eq 64 ] || return 2; fi
   CAND_GIT_SHA="$(git -C "$TREE" rev-parse --short HEAD 2>/dev/null)" || CAND_GIT_SHA=none
   WORK="$(mktemp -d "${TMPDIR:-/tmp}/ca-run.XXXXXX")" || { echo 'cannot create scratch'; return 2; }
-  version="$(timeout "$BUDGET" "$candidate" --version 2>/dev/null)" || version=unknown
+  version="$(timeout "$DEFAULT_ROW_BUDGET" "$candidate" --version 2>/dev/null)" || version=unknown
   version="${version%%$'\n'*}"
   [ -n "$version" ] || version=unknown
   # Route former gfx invocations to release only after its binding probe.
@@ -818,6 +838,22 @@ YAML
   printf 'hanging\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
   st_check d timeout-hang 'row|hanging|v0.43.0|HANG|124|' "$st_record"
+  # (d1) A declared exception, and only that exception, gets its larger cap.
+  st_reset; st_consumer EigenLua 'sleep 2; eigenscript pass.eigs'
+  printf 'EigenLua\n' > "$st_eco/.ca_expected"
+  st_rc=0; st_run || st_rc=$?
+  if [ "$st_rc" -eq 0 ] && grep -Eq '^row\|EigenLua\|v0[.]43[.]0\|PASS\|0\|[23]\|.*\|row_budget_s=7800\|row_budget_kind=declared$' "$st_record"; then
+    echo 'plant d1 check=declared-row-budget GREEN EigenLua=7800 default=1'
+  else echo 'plant d1 check=declared-row-budget SILENT'; st_bad=1; fi
+  # Do not wait for the real allowance to prove its edge: execute row() with a
+  # private self-test declaration while retaining the same selection path.
+  st_reset; st_consumer EigenLua 'sleep 8; eigenscript late.eigs'
+  printf '1\n' > "$st_eco/EigenLua/.ca_budget"
+  printf 'EigenLua\n' > "$st_eco/.ca_expected"
+  st_rc=0; st_run || st_rc=$?
+  if [ "$st_rc" -ne 0 ] && grep -Eq '^row\|EigenLua\|v0[.]43[.]0\|HANG\|124\|.*\|row_budget_s=1\|row_budget_kind=declared$' "$st_record"; then
+    echo 'plant d2 check=declared-budget-exceeded RED EigenLua=HANG'
+  else echo 'plant d2 check=declared-budget-exceeded SILENT'; st_bad=1; fi
   # (e) A signal must stop the timeout and the consumer's own child.
   st_reset; st_consumer interrupted 'printf "%s\n" "$PPID" > "$CA_TIMEOUT_PID_FILE"; sleep 31 & child=$!; printf "%s\n" "$child" > "$CA_SLEEP_PID_FILE"; wait "$child"'
   printf 'interrupted\n' > "$st_eco/.ca_expected"
