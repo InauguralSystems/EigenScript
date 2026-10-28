@@ -1,0 +1,1 @@
+- Concurrent assignments now serialize the complete observer measurement for a shared binding without moving entropy computation into the critical section (#1867).

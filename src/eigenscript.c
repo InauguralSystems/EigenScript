@@ -897,11 +897,29 @@ void observer_slot_record_value(ObserverSlot *s, double v) {
 /* #694: grow e->obs to cover `idx`. Defined with the #607 module-env MT
  * helpers below (it needs the lock + retire machinery). Returns 0 on OOM. */
 static int observer_obs_grow(Env *e, int idx);
+static inline void env_shared_lock(const Env *e);
+static inline void env_shared_unlock(const Env *e);
+
+/* #1867: an ObserverSlot is part of the shared binding protected by #607,
+ * not merely an append-only statistic.  Keep the complete fold in one hold;
+ * observer_obs_grow takes the same non-recursive mutex, so callers grow
+ * before entering here.  The TSan-only switch is the gate's planted fault. */
+static void observer_fold_lock(Env *e) {
+#ifdef EIGS_TSAN_TEST_SEAM
+    if (getenv("EIGS_TSAN_OBSERVER_FOLD_OUTSIDE_HOLD")) return;
+#endif
+    env_shared_lock(e);
+}
+static void observer_fold_unlock(Env *e) {
+#ifdef EIGS_TSAN_TEST_SEAM
+    if (getenv("EIGS_TSAN_OBSERVER_FOLD_OUTSIDE_HOLD")) return;
+#endif
+    env_shared_unlock(e);
+}
 
 /* Core: fold a precomputed entropy into binding slot `idx` of env `e`. */
-static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
+static void observer_slot_update_e_locked(Env *e, int idx, double new_entropy) {
     if (!e || idx < 0) return;
-    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
     /* Acquire-load the (possibly just-republished) block rather than reading
      * e->obs plainly: a worker assigning a module binding can reach here while
      * the main thread grows. Which block a racing writer lands in is #607's
@@ -967,7 +985,11 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
      * a program that names it opens the gate at COMPILE time and the flicker
      * cannot change an answer. */
     if (!eigs_obs_gate_open()) return;
-    observer_slot_update_e(e, idx, compute_entropy(newval));
+    double entropy = compute_entropy(newval); /* outside the #607 hold */
+    if (!e || idx < 0) return;
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+    observer_fold_lock(e);
+    observer_slot_update_e_locked(e, idx, entropy);
     /* #294 also fold the raw value into the value-signal channel (numbers only:
      * the relative-delta step is only defined for a scalar trajectory). */
     if (newval && newval->type == VAL_NUM) {
@@ -984,6 +1006,7 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
             observer_slot_record_equality(s, newval);
         }
     }
+    observer_fold_unlock(e);
 }
 
 /* #262 Phase-3 D: update a binding's observer slot from a raw immediate
@@ -992,7 +1015,11 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
 void observer_slot_update_num(Env *e, int idx, double num) {
     eigs_obs_count_call();   /* #972 */
     if (!eigs_obs_gate_open()) return;           /* #915 — see observer_slot_update */
-    observer_slot_update_e(e, idx, entropy_of_num(num));
+    double entropy = entropy_of_num(num); /* outside the #607 hold */
+    if (!e || idx < 0) return;
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+    observer_fold_lock(e);
+    observer_slot_update_e_locked(e, idx, entropy);
     ObserverSlot *vs = env_obs_slot(e, idx);    /* #294 value-signal channel */
     if (vs) {
         observer_slot_record_value(vs, num);
@@ -1002,6 +1029,7 @@ void observer_slot_update_num(Env *e, int idx, double num) {
         vs->eq_window_count = vs->eq_window_head = 0;
         vs->eq_seen = 0;
     }
+    observer_fold_unlock(e);
 }
 
 /* #1049: the ELIDED assignment — what an `unobserved:` block still records.
@@ -1037,10 +1065,13 @@ void observer_slot_update_num(Env *e, int idx, double num) {
 void observer_slot_sample_num_gated(Env *e, int idx, double num) {
     if (!e || idx < 0) return;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+    observer_fold_lock(e);
     ObserverSlot *s = env_obs_slot(e, idx);
-    if (!s) return;
-    observer_slot_record_value(s, num);
-    s->used = 1;
+    if (s) {
+        observer_slot_record_value(s, num);
+        s->used = 1;
+    }
+    observer_fold_unlock(e);
 }
 
 void observer_slot_sample_gated(Env *e, int idx, Value *newval) {
@@ -1050,8 +1081,10 @@ void observer_slot_sample_gated(Env *e, int idx, Value *newval) {
     }
     if (!e || idx < 0) return;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+    observer_fold_lock(e);
     ObserverSlot *s = env_obs_slot(e, idx);
     if (s) s->v_last = 0;   /* #861 route bit only — no walk, no `used` */
+    observer_fold_unlock(e);
 }
 
 void observer_slot_sample_num(Env *e, int idx, double num) {
@@ -1073,10 +1106,11 @@ void observer_slot_sample(Env *e, int idx, Value *newval) {
 int observer_slot_set_window(Env *e, int idx, int n) {
     if (!e || idx < 0) return 0;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return 0;
+    observer_fold_lock(e);
     ObserverSlot *s = env_obs_slot(e, idx);
-    if (!s) return 0;
-    s->win_override = (uint8_t)n;
-    return 1;
+    if (s) s->win_override = (uint8_t)n;
+    observer_fold_unlock(e);
+    return s != NULL;
 }
 
 void observer_slot_reset_bounded(Env *e, int max_retain_cap) {

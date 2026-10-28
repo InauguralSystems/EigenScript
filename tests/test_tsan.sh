@@ -54,6 +54,28 @@ tsan_warnings() {
     WARNINGS=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
 }
 
+observer_shared_fold_rows() {
+    echo "=== #1867 shared ObserverSlot folds must hold #607 ==="
+    local fixtures="tsan_observer_shared_fold tsan_observer_sandbox_probe"
+    local declared=2 examined=0 t marker
+    for t in $fixtures; do
+        examined=$((examined + 1))
+        marker="observer fold repro: PASS"
+        [ "$t" = tsan_observer_sandbox_probe ] && marker="observer sandbox probe: PASS"
+        tsan_warnings "$TESTS_DIR/$t.eigs"
+        if [ "$LAST_RC" -eq 0 ] && [ "$WARNINGS" -eq 0 ] && grep -Fxq "$marker" <<< "$RUN_OUTPUT"; then
+            echo "  PASS: $t TSan-clean"; PASS=$((PASS + 1))
+        else
+            echo "  FAIL: $t warnings=$WARNINGS rc=$LAST_RC"; FAIL=$((FAIL + 1))
+        fi
+    done
+    if [ "$examined" -eq "$declared" ]; then
+        echo "  PASS: observer-fold fixtures examined == declared ($examined)"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: observer-fold fixtures examined == declared (examined=$examined declared=$declared)"; FAIL=$((FAIL + 1))
+    fi
+}
+
 seeded_race_row() {
     echo "=== gate self-validation: a seeded race MUST be caught ==="
     tsan_warnings "$TESTS_DIR/tsan_seeded_race.eigs"
@@ -181,7 +203,8 @@ if [ "${1:-}" = "--row" ]; then
         scope-boundary) scope_boundary_row ;;
         dict-readers)   dict_readers_row ;;
         misordered-publish) misordered_publish_row ;;
-        *) echo "usage: test_tsan.sh --row seeded|rebind-call|scope-boundary|dict-readers|misordered-publish"; exit 2 ;;
+        observer-fold) observer_shared_fold_rows ;;
+        *) echo "usage: test_tsan.sh --row seeded|rebind-call|scope-boundary|dict-readers|misordered-publish|observer-fold"; exit 2 ;;
     esac
     echo ""
     echo "Results: $PASS passed, $FAIL failed"
@@ -578,6 +601,8 @@ else
 fi
 
 rebind_call_row
+
+observer_shared_fold_rows
 
 scope_boundary_row
 
