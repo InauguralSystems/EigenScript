@@ -5833,7 +5833,7 @@ if [ "$(uname -m)" = "x86_64" ]; then
     JFULL_BAILOUTS=$(sed -n 's/^total bailouts: *\([0-9][0-9]*\).*/\1/p' <<< "$JFULL_OUTPUT")
     JFULL_ROWS=$(awk '
         $3 == "full" { n++ }
-        $9 == "full" { n++ }
+        $2 ~ /^[0-9]+$/ { n += $15 + 0 }
         END { print n + 0 }
     ' <<< "$JFULL_OUTPUT")
     if [ -n "$JFULL_SCANNED" ] && [ -n "$JFULL_REJECTS" ] &&

@@ -238,13 +238,29 @@ static void jit_hot_row_fill(EigsJitHotRow *r, const struct EigsChunk *c,
     r->advance         = c->jit_state == 2
         ? (c->jit_advance == -1 ? c->code_len
            : c->jit_advance >= 0 ? c->jit_advance : 0) : 0;
-    r->osr_state       = c->jit_osr[0].state;
-    /* In either entry mode, -2 records a deep bailout, not a byte count.
-     * Unlike -1 (a completed return), it gives no reliable coverage length. */
-    r->osr_advance     = c->jit_osr[0].state == 2
-        ? (c->jit_osr[0].advance == -1 ? c->code_len
-           : c->jit_osr[0].advance >= 0 ? c->jit_osr[0].advance : 0) : 0;
-    r->osr_entry       = c->jit_osr[0].state != 0 ? c->jit_osr[0].entry_offset : 0;
+    /* Aggregate every loop-header slot.  The legacy osr/oadv/oent columns
+     * remain a representative compiled slot (the widest coverage) so the
+     * native-byte weighting keeps its established meaning; oslots/ocomp/
+     * ofull expose the complete attempted/compiled/cache-rejected population. */
+    for (int i = 0; i < JIT_OSR_SLOTS; i++) {
+        uint8_t state = c->jit_osr[i].state;
+        if (!state) continue;
+        r->osr_slots++;
+        if (state == 3) r->osr_cache_full++;
+        if (state != 2) {
+            if (!r->osr_state) r->osr_state = state;
+            continue;
+        }
+        r->osr_compiled++;
+        /* -2 is a deep bailout, not coverage; -1 is a completed return. */
+        int advance = c->jit_osr[i].advance == -1 ? c->code_len
+            : c->jit_osr[i].advance >= 0 ? c->jit_osr[i].advance : 0;
+        if (r->osr_state != 2 || advance > r->osr_advance) {
+            r->osr_state = 2;
+            r->osr_advance = advance;
+            r->osr_entry = c->jit_osr[i].entry_offset;
+        }
+    }
     r->stop_op         = c->jit_stop_op;
 }
 
@@ -425,7 +441,7 @@ void jit_thread_destroy(EigsThread *th) {
             fprintf(stderr,
                 "%-28s %12s  %3s  %6s  %5s %5s %6s  %4s  %3s %5s %5s  %s\n",
                 "chunk", "exec", "jit", "pct", "adv", "len", "nat%", "bked",
-                "osr", "oadv", "oent", "stop");
+                "osr", "oadv", "oent", "stop  oslots ocomp ofull");
             for (int a = 0; a < top; a++) {
                 EigsJitHotRow *r = &rows[a];
                 if (r->exec_count == 0) break;
@@ -449,12 +465,14 @@ void jit_thread_destroy(EigsThread *th) {
                 else
                     snprintf(adv_buf, sizeof adv_buf, "%d", r->advance);
                 fprintf(stderr,
-                        "%-28s %12" PRIu64 "  %s  %5.1f%%  %5s %5d %5.1f%%  %4u  %s %5d %5d  %s\n",
+                        "%-28s %12" PRIu64 "  %s  %5.1f%%  %5s %5d %5.1f%%  %4u  %s %5d %5d  %-12s %6u %5u %5u\n",
                         r->name ? r->name : "<anon>",
                         r->exec_count, jstate, pct, adv_buf, r->code_len, nat,
                         r->back_edge_count, ostate, r->osr_advance, r->osr_entry,
                         r->jit_state == 3 ? "<cache-full>" :
-                        r->stop_op == OP_COUNT ? "<end>" : op_name(r->stop_op));
+                        r->stop_op == OP_COUNT ? "<end>" : op_name(r->stop_op),
+                        r->osr_slots,
+                        r->osr_compiled, r->osr_cache_full);
                 bytes_native_top += r->exec_count * (uint64_t)r->advance
                     + r->back_edge_count * (uint64_t)r->osr_advance;
                 bytes_total_top  += (r->exec_count + r->back_edge_count)

@@ -1026,6 +1026,9 @@ typedef struct EigsJitHotRow {
     int      raw_advance;   /* -1 == the OP_RETURN sentinel */
     int      osr_advance;
     int      osr_entry;
+    uint8_t  osr_slots;      /* attempted slots (state != 0) */
+    uint8_t  osr_compiled;   /* slots with state == 2 */
+    uint8_t  osr_cache_full; /* slots with state == 3 */
     uint8_t  jit_state;
     uint8_t  osr_state;
     uint8_t  stop_op;
