@@ -1,1 +1,0 @@
-- The Lean frontend now ignores nested operators when splitting comparisons and arithmetic expressions (#2062).
