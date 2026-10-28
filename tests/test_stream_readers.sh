@@ -41,7 +41,7 @@ catch e:
     print of f"{e.kind}|{e.message}"
 EOF
 out=$(head -c 10485761 /dev/zero | "$BIN" "$TMP/cap.eigs" 2>&1)
-if echo "$out" | grep -q "^io|read_text: '/dev/stdin' is more than 10485760 bytes$"; then
+if echo "$out" | grep -q "^io|read_text: '/dev/stdin' is 10485761 bytes, over the 10485760-byte cap — pass read_text of \[path, max_bytes\] (hard ceiling 536870912) to raise it$"; then
     pass 'an over-cap stream stops at cap+1 and raises io'
 else
     fail "stream cap: $out"
@@ -53,7 +53,7 @@ fi
 EIGS_TRACE="$TMP/cap.tape" sh -c "head -c 10485761 /dev/zero | '$BIN' '$TMP/cap.eigs'" >"$TMP/cap.record" 2>&1
 EIGS_REPLAY="$TMP/cap.tape" "$BIN" "$TMP/cap.eigs" </dev/null >"$TMP/cap.replay" 2>&1
 if cmp -s "$TMP/cap.record" "$TMP/cap.replay" &&
-   grep -q "^io|read_text: '/dev/stdin' is more than 10485760 bytes$" "$TMP/cap.replay"; then
+   grep -q "^io|read_text: '/dev/stdin' is 10485761 bytes, over the 10485760-byte cap — pass read_text of \[path, max_bytes\] (hard ceiling 536870912) to raise it$" "$TMP/cap.replay"; then
     pass 'stream over-cap replay preserves the non-exact message byte for byte'
 else
     fail "stream cap replay: recorded='$(cat "$TMP/cap.record")' replayed='$(cat "$TMP/cap.replay")'"
