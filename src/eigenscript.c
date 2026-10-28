@@ -3425,17 +3425,19 @@ static int env_hash_remove(EnvHash *ht, const char *name, uint32_t h, char **nam
  * value a racing reader sees is still the program's logic race (#1837). */
 static pthread_mutex_t g_module_env_lock = PTHREAD_MUTEX_INITIALIZER;
 
-/* #1161: ONE definition of "shared env under MT". The old spelling was
+/* #1161/#1866: ONE definition of "shared env under MT". The old spelling was
  * `e->parent == NULL`, which silently excluded every imported module's
  * namespace env (`env_new(g_global_env)` — parent NOT NULL), i.e. exactly the
- * envs two workers can extend through `M.field is v`. Now the env says so
- * itself (Env::mt_shared, set for a root env at env_new and for a module
- * namespace at eigs_module_ns_attach), so a new kind of cross-thread env is
- * one call to env_mark_shared rather than a second predicate. The
+ * envs two workers can extend through `M.field is v`. A captured env is also
+ * reachable by closures published to workers, so #1866 promotes captured
+ * envs to mt_shared at the first spawn (and immediately when captured under
+ * MT). The reader's counted reference and the writer's replacement/decref
+ * are then serialized exactly as they are for module bindings. The
  * g_vm_multithreaded test stays FIRST and is the whole single-threaded cost:
  * one predicted-false load, exactly as before. */
 static inline int env_mt_shared(const Env *e) {
-    return __builtin_expect(g_vm_multithreaded, 0) && e->mt_shared;
+    return __builtin_expect(g_vm_multithreaded, 0) &&
+           __atomic_load_n(&e->mt_shared, __ATOMIC_RELAXED);
 }
 static inline void env_shared_lock(const Env *e) {
     if (env_mt_shared(e)) pthread_mutex_lock(&g_module_env_lock);
@@ -3450,7 +3452,9 @@ void env_global_shared_unlock(void) { env_shared_unlock(g_global_env); }
 
 /* #1161: see Env::mt_shared. Idempotent, and deliberately one-way — an env
  * that has been published to another thread never becomes private again. */
-void env_mark_shared(Env *e) { if (e) e->mt_shared = 1; }
+void env_mark_shared(Env *e) {
+    if (e) __atomic_store_n(&e->mt_shared, 1, __ATOMIC_RELAXED);
+}
 
 /* #1171: the 0->1 multithreaded transition (builtin_spawn), called while the
  * caller is still the state's only attached thread.
@@ -3476,6 +3480,14 @@ void env_mt_invalidate_shared_caches(EigsState *st) {
     if (!st) return;
     if (st->global_env)  st->global_env->binding_version++;
     if (st->builtin_env) st->builtin_env->binding_version++;
+    /* #1866: closures can publish a function-local env to workers just as
+     * surely as a module publishes its namespace.  The captured-env registry
+     * is complete at this still-single-threaded 0->1 transition (the global
+     * env is intentionally absent and was invalidated above). */
+    for (Env *e = st->gc_envs; e; e = e->gc_next) {
+        __atomic_store_n(&e->mt_shared, 1, __ATOMIC_RELAXED);
+        e->binding_version++;
+    }
     pthread_mutex_lock(&st->module_lock);
     for (size_t i = 0; i < st->module_cache_count; i++)
         if (st->module_cache[i].env)
@@ -4150,6 +4162,11 @@ static inline Env *env_resolve_walk(Env *start, const char *name, uint32_t h,
     Env *e = start;
     int depth = 0;
     while (e) {
+#ifdef EIGS_TSAN_TEST_SEAM
+        int omit_captured_read_hold = getenv("EIGS_TSAN_CAPTURED_ENV_READ_NO_HOLD") &&
+            e->parent && __atomic_load_n(&e->captured, __ATOMIC_RELAXED);
+        if (!omit_captured_read_hold)
+#endif
         env_shared_lock(e);   /* #607: module hop vs main-thread binding
                                * creation (grow/rebuild frees the arrays
                                * this probe walks). */
@@ -4160,12 +4177,18 @@ static inline Env *env_resolve_walk(Env *start, const char *name, uint32_t h,
                 slot_incref(s);
                 *out_val = s;
             }
-            env_shared_unlock(e);
+#ifdef EIGS_TSAN_TEST_SEAM
+            if (!omit_captured_read_hold)
+#endif
+                env_shared_unlock(e);
             if (out_slot)  *out_slot  = idx;
             if (out_depth) *out_depth = depth;
             return e;
         }
-        env_shared_unlock(e);
+#ifdef EIGS_TSAN_TEST_SEAM
+        if (!omit_captured_read_hold)
+#endif
+            env_shared_unlock(e);
         e = e->parent;
         depth++;
     }
@@ -4437,6 +4460,11 @@ void env_mark_captured(Env *env) {
      * <- vm_run_ex <- builtin_load_file). The only READER, vm_park_call_env,
      * returns before it under g_vm_multithreaded, so no acquire is owed. */
     __atomic_store_n(&env->captured, 1, __ATOMIC_RELAXED);
+    /* #1866: a closure created after the first spawn may itself be published
+     * by a later spawn. Identical concurrent stores are atomic because two
+     * loader workers can capture the same environment. */
+    if (g_vm_multithreaded)
+        __atomic_store_n(&env->mt_shared, 1, __ATOMIC_RELAXED);
     if (!g_gc_enabled || g_in_gc || env->in_gc_list || env == g_global_env)
         return;
     gc_registry_lock();

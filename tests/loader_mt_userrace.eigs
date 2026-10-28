@@ -14,16 +14,14 @@
 # cannot lean on it (#1489).
 #
 # The deliberate race is the racer pair: two closures each write ONCE to the
-# same NUMBER binding in the function env they share, a race
-# docs/CONCURRENCY.md still leaves to the program. A ready channel plus
+# the same element of a list they share, a race docs/CONCURRENCY.md still
+# leaves to the program. A ready channel plus
 # separate release channels form a real rendezvous: main observes both workers
 # at the barrier before releasing either, and neither release orders one
 # worker's victim write before the other's. The
 # racing word is not a spin/handshake word, so repeated polling cannot evict
 # the first conflicting access from TSan's short per-word history (#1489).
-# It cannot corrupt memory (immediates: no store frees anything, no binding is
-# created during the race). If captured bindings ever become atomic
-# references (#1837), this stops racing and must be re-pointed.
+# It cannot corrupt memory because both stores are immediate numbers.
 define lm_ur_worker(k) as:
     local i is 0
     local n is 0
@@ -34,20 +32,20 @@ define lm_ur_worker(k) as:
     return n
 
 define lm_ur_race_pair() as:
-    local victim is 0
+    local victim is [0]
     local ready is channel of null
     local release_a is channel of null
     local release_b is channel of null
     define racer_a as:
         send of [ready, 1]
         recv of release_a
-        victim is 1
-        return victim
+        victim[0] is 1
+        return victim[0]
     define racer_b as:
         send of [ready, 1]
         recv of release_b
-        victim is 2
-        return victim
+        victim[0] is 2
+        return victim[0]
     return [racer_a, racer_b, ready, release_a, release_b]
 
 racers is lm_ur_race_pair of null

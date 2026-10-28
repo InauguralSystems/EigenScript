@@ -110,6 +110,19 @@ rebind_call_row() {
     fi
 }
 
+captured_rebind_row() {
+    echo "=== #1866 call vs rebind of a captured binding must be race-free ==="
+    local fixture="$TESTS_DIR/tsan_captured_rebind.eigs"
+    tsan_warnings "$fixture"
+    if [ "$LAST_RC" -eq 0 ] && [ "$WARNINGS" -eq 0 ] && \
+       grep -Fxq 'W5 total=40000 rebinds=20000' <<< "$RUN_OUTPUT"; then
+        echo "  PASS: captured binding call/rebind TSan-clean"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: captured binding call/rebind warnings=$WARNINGS rc=$LAST_RC"; FAIL=$((FAIL + 1))
+        grep -A2 'WARNING: ThreadSanitizer' <<< "$RUN_OUTPUT" | head -6
+    fi
+}
+
 scope_boundary_row() {
     echo "=== #1144 scope boundary: the user-level race names NO loader structure ==="
     # tests/loader_mt_userrace.eigs races ON PURPOSE while workers load
@@ -178,10 +191,11 @@ if [ "${1:-}" = "--row" ]; then
     case "${2:-}" in
         seeded)         seeded_race_row ;;
         rebind-call)    rebind_call_row ;;
+        captured-rebind) captured_rebind_row ;;
         scope-boundary) scope_boundary_row ;;
         dict-readers)   dict_readers_row ;;
         misordered-publish) misordered_publish_row ;;
-        *) echo "usage: test_tsan.sh --row seeded|rebind-call|scope-boundary|dict-readers|misordered-publish"; exit 2 ;;
+        *) echo "usage: test_tsan.sh --row seeded|rebind-call|captured-rebind|scope-boundary|dict-readers|misordered-publish"; exit 2 ;;
     esac
     echo ""
     echo "Results: $PASS passed, $FAIL failed"
@@ -711,6 +725,7 @@ fi
 
 seeded_race_row
 misordered_publish_row
+captured_rebind_row
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

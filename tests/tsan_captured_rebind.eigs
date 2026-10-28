@@ -1,0 +1,28 @@
+define make_leaf(tag) as:
+    local payload is [tag, f"leaf-{tag}"]
+    define f(x) as:
+        return x * 2
+    return f
+
+define run_pair() as:
+    local g is make_leaf of 0
+    define caller(k) as:
+        local i is 0
+        local n is 0
+        loop while i < 20000:
+            n is n + (g of 1)
+            i is i + 1
+        return n
+    define rebinder(k) as:
+        local i is 0
+        loop while i < 20000:
+            g is make_leaf of k
+            i is i + 1
+        return i
+    local h1 is spawn of [caller, 1]
+    local h2 is spawn of [rebinder, 2]
+    local t is thread_join of h1
+    local r is thread_join of h2
+    return f"W5 total={t} rebinds={r}"
+
+print of (run_pair of null)
