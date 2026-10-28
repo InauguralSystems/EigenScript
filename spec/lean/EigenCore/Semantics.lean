@@ -31,6 +31,21 @@ structure FunctionDef where
   deriving Inhabited
 inductive OracleValue where | int (v : Int) | string (v : String) | null deriving Repr, BEq
 inductive Mode where | live (oracle : List OracleValue) | record (oracle : List OracleValue) | replayStrict (tape : List String) deriving Repr, BEq
+
+/-- The answer kinds which a successful writer can record. -/
+inductive WriterAnswer where
+  | randomInt (value : Int)
+  | envGet (value : String)
+  | readLine (value : String)
+  | readLineNull
+  deriving Repr, BEq
+
+/-- Structural records emitted since the preceding answer, paired with the
+next answer record. -/
+structure WriterChunk where
+  structural : List String
+  answer : WriterAnswer
+  deriving Repr, BEq
 /-- One answer actually consumed by the evaluator.  Positions are positions in
 the single supplied answer sequence, not byte offsets in a tape. -/
 inductive TapedAnswer where
@@ -68,8 +83,10 @@ structure World where
   nextFrameSerial : Nat := 1
   functions : Array FunctionDef := #[]
   stdout : String := ""
-  tape : List String := []
-  answersConsumed : List TapedAnswer := []
+  /-- Completed answer chunks and the structural tail form the canonical writer
+  state. Keeping this shape makes record/replay invariants structural. -/
+  writerChunks : List WriterChunk := []
+  writerTrailing : List String := []
 abbrev EvalM := ExceptT Err (StateT World Interaction)
 
 private def findCell (name : String) (cells : Array Cell) : Option Nat := cells.findIdx? (fun c => c.name == name)
@@ -360,14 +377,6 @@ theorem parseNValue_string_encode (s : String) :
   · simp [parseNValue, nondetValue, quoted, notNull]
     rfl
 
-/-- The answer kinds which a successful record-mode taped call can write. -/
-inductive WriterAnswer where
-  | randomInt (value : Int)
-  | envGet (value : String)
-  | readLine (value : String)
-  | readLineNull
-  deriving Repr, BEq
-
 private def WriterAnswer.name : WriterAnswer → String
   | .randomInt _ => "random_int"
   | .envGet _ => "env_get"
@@ -514,12 +523,6 @@ theorem normalizeTapeFrom_writerNRecord (position : Nat) (answer : WriterAnswer)
   rw [parseNValue_writerNRecord_payload]
   cases answer <;> simp [WriterAnswer.name, WriterAnswer.value, k_tape_kinds]
 
-/-- One writer answer together with the structural records emitted before its
-N record.  `valid` excludes both another answer and a session-ending header. -/
-structure WriterChunk where
-  structural : List String
-  answer : WriterAnswer
-
 def WriterChunk.Valid (chunk : WriterChunk) : Prop :=
   ∀ line ∈ chunk.structural, StructuralRecord line
 
@@ -609,7 +612,7 @@ private def oracleAnswers (oracle : List OracleValue) : List TapedAnswer :=
 
 private def consumeAnswer (fn : String) : EvalM Value := do
   let w ← get
-  let position := w.answersConsumed.length
+  let position := w.writerChunks.length
   let supplied : TapedAnswer ← liftM
     (Interaction.ask {name := fn} (fun answer => Interaction.done answer))
   let raw ← match supplied with
@@ -626,9 +629,14 @@ private def consumeAnswer (fn : String) : EvalM Value := do
     | "read_line", .string s => pure (.string s)
     | "read_line", .null => pure .null
     | _, _ => throw (.runtime s!"{fn}: oracle value has the wrong kind")
-  let consumed := w.answersConsumed ++ [.value position fn raw]
-  let tape := w.tape ++ [writerNRecordValue fn value]
-  set {w with answersConsumed := consumed, tape := tape}
+  let answer ← match fn, value with
+    | "random_int", .int n => pure (.randomInt n)
+    | "env_get", .string s => pure (.envGet s)
+    | "read_line", .string s => pure (.readLine s)
+    | "read_line", .null => pure .readLineNull
+    | _, _ => throw (.runtime s!"{fn}: internal writer kind mismatch")
+  let chunk : WriterChunk := {structural := w.writerTrailing, answer := answer}
+  set {w with writerChunks := w.writerChunks ++ [chunk], writerTrailing := []}
   pure value
 
 /-- Live and record modes consume the supplied oracle exactly once per taped
@@ -649,7 +657,7 @@ private def store (name : String) (v : Value) (isLocal : Bool) : EvalM Unit := d
           {c with value:=v, history:=(c.history.push v).extract ((c.history.size+1).sub 256) (c.history.size+1), assignments:=c.assignments+1}}
     | none => w.environments.modify current fun environment =>
         {environment with slots := environment.slots.push {name:=name,value:=v,history:=#[v],assignments:=1}}
-  set {w with environments:=environments,tape:=w.tape ++ [s!"A 0 {name}={tapeValue v}"]}
+  set {w with environments:=environments, writerTrailing:=w.writerTrailing ++ [s!"A 0 {name}={tapeValue v}"]}
 
 /-- Parameter creation is its first observation, but is not an assignment tape event. -/
 private def bindParameter (environment : Nat) (name : String) (value : Value) : EvalM Unit := do
@@ -904,7 +912,27 @@ private def evaluateCore (fuel : Nat) (p : Program)
     let interpreted := interpret (((exec fuel p).run).run initial) suppliedWithError
     let (result, w) := interpreted.value
     let error := match result with | .ok _ => none | .error e => some e
-    {stdout := w.stdout, tape := w.tape, answersConsumed := w.answersConsumed, error := error}
+    {stdout := w.stdout, tape := writerProducedRecords w.writerChunks w.writerTrailing,
+      answersConsumed := writerAnswersFrom 0 w.writerChunks, error := error}
+
+/-- A completed evaluator result exposes precisely the canonical writer layout:
+each consumed answer has its structural prefix and exact encoded N record, in
+order, followed by the remaining structural records. -/
+def WriterProjectionInvariant (result : RunResult) : Prop :=
+  ∃ chunks trailing,
+    result.tape = writerProducedRecords chunks trailing ∧
+    result.answersConsumed = writerAnswersFrom 0 chunks
+
+/-- Writer projection invariant. Evaluation exposes its tape and public
+consumed-answer projection from the same canonical chunks. This is the
+structural precursor to the stronger record-run invariant. -/
+theorem writer_projection_invariant (fuel : Nat) (p : Program)
+    (supplied : List TapedAnswer) :
+    WriterProjectionInvariant (evaluateCore fuel p supplied) := by
+  simp only [evaluateCore]
+  split
+  · exact ⟨[], [], rfl, rfl⟩
+  · exact ⟨_, _, rfl, rfl⟩
 
 /-- Entry point of the evaluator core.  The tag is carried so callers from
 different modes can be compared, but cannot affect evaluation. -/
