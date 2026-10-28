@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Score EigenScript's observer against a ground-truth corpus (#1746, #1758).
 
-usage: score.py BINARY [--corpus PATH] [--numbers ieee|clamp] [--expect CAP,...]
+usage: score.py BINARY [--corpus PATH] [--expect CAP,...]
                        [--floor FILE] [--write-floor FILE [--note TEXT]]
 
 labels.json must equal derive.py's derivation (the label gate). Each
@@ -53,7 +53,8 @@ is, and a wrong label is fixed through derive/certify, which re-measures the
 floor. The floor's anchor is the binary build_anchor.sh builds from tag
 v0.46.0 into ${XDG_CACHE_HOME:-~/.cache}/eigs-oracle-anchor/<sha256 of the
 recipe>/. Its identity is the recipe plus the verdict list, re-measured on
-it every --floor run; the binary's sha256 is information only (another
+it when the anchor binary or oracle inputs change and otherwise cached; the
+binary's sha256 is information only (another
 toolchain builds other bytes). --write-floor refuses any binary but the one
 the recipe stamped on this machine. Exit 2 on any harness error (a failing
 program, a bad output line, a value off the generator, a run whose listing
@@ -75,15 +76,19 @@ import tempfile
 
 import derive
 import reference
-from derive import CAPABILITIES as CAPS, PREDS
+from derive import CAPABILITIES as CAPS
 from gen import HarnessError, INT64_MIN, IN_PROGRAM, generate, program
+from schema import PREDS
 
 ROW_TIMEOUT = 120
 CLAMP = 1e308          # the default build saturates here (EIGS_NUM_MAX)
 HERE = os.path.dirname(os.path.abspath(__file__))
-TIERS = {"interp": {"EIGS_JIT_OFF": "1"}, "jit": {}, "osr": {"EIGS_JIT_OSR_THRESHOLD": "1"}}
-ARMS = (("interp", "straight"), ("interp", "loop"), ("jit", "loop"), ("osr", "loop"))
-WARMUP = {"interp": 0, "jit": 50, "osr": 0}       # src/jit.c: a function compiles at 50 calls
+ARMS = {
+    ("interp", "straight"): {"env": {"EIGS_JIT_OFF": "1"}, "warmup": 0},
+    ("interp", "loop"): {"env": {"EIGS_JIT_OFF": "1"}, "warmup": 0},
+    ("jit", "loop"): {"env": {"EIGS_JIT_ENTRY_THRESHOLD": "1"}, "warmup": 1},
+    ("osr", "loop"): {"env": {"EIGS_JIT_OSR_THRESHOLD": "1"}, "warmup": 0},
+}
 DUMP, HOT = {"EIGS_DUMP_BC": "1"}, {"EIGS_JIT_HOT": "1"}
 GRADES = {"straight": ("OBSERVE_ASSIGN", "PREDICATE_NAME"),       # x's observe op, its read op
           "loop": ("OBSERVE_ASSIGN_LOCAL", "PREDICATE_SLOT")}
@@ -393,7 +398,7 @@ def probe(binary, code):
     return p.stdout.strip()
 
 
-def capabilities(binary, asked):
+def capabilities(binary):
     """(ieee numbers?, {capability: present}, probe outputs). ONE probe decides
     the ieee capability and the numbers mode: `1e308 * 10` is inf AND inf * 0
     is NaN, what the ieee rows need; the clamp build gives 1e+308 and no NaN."""
@@ -408,11 +413,8 @@ def capabilities(binary, asked):
                            f" {'overflows to inf' if seen[0] else 'clamps to 1e308'} but inf * 0"
                            f" {'is' if seen[1] else 'is not'} NaN. The ieee rows need both and the clamp"
                            " rows neither: this binary is neither instrument")
-    mode = "ieee" if seen[0] else "clamp"
-    if asked and asked != mode:
-        raise HarnessError(f"--numbers {asked} contradicts the binary: the probe printed {out['ieee']!r}")
     caps = {"ieee": seen[0], "int64": out["int64"] == "true" and out["int64_kind"] == "int"}
-    return mode == "ieee", caps, out
+    return seen[0], caps, out
 
 
 def measure(binary, corpus, caps):
@@ -428,14 +430,16 @@ def measure(binary, corpus, caps):
             xs = generate(row["gen"], row["n"])
             ys = generate(row["second"], row["n"]) if "second" in row else None
             res["held"][rid] = xs          # the values the runtime holds, exactly (ints stay ints)
-            jobs = [("interp", "straight", row["checkpoints"], emit_straight(row, xs, ys))]
-            jobs += [(t, "loop", [c], emit_loop(row, xs, ys, c, WARMUP[t]))
-                     for c in row["checkpoints"] for t in TIERS]
+            jobs = [(tier, form, row["checkpoints"] if form == "straight" else [c],
+                     emit_straight(row, xs, ys) if form == "straight" else
+                     emit_loop(row, xs, ys, c, arm["warmup"]))
+                    for (tier, form), arm in ARMS.items()
+                    for c in ([row["checkpoints"][-1]] if form == "straight" else row["checkpoints"])]
             for tier, form, cks, text in jobs:
                 prog = os.path.join(tmp, f"{rid}@{cks[-1]}.{tier}.{form}.eigs")
                 with open(prog, "w") as f:
                     f.write(text)
-                rc, lines, errors, err, hot = run(binary, prog, {**TIERS[tier], **DUMP,
+                rc, lines, errors, err, hot = run(binary, prog, {**ARMS[(tier, form)]["env"], **DUMP,
                                                                  **(HOT if tier != "interp" else {})})
                 got = parse_run(row, cks, form, rc, lines, errors, xs, ys)
                 grades(rid, tier, form, err, cks)
@@ -524,6 +528,42 @@ def anchor_lock():
         yield
 
 
+def oracle_hash(corpus_path):
+    """Hash every checked-in input that can change an anchor verdict."""
+    names = ["score.py", "derive.py", "gen.py", "reference.py", "schema.py",
+             os.path.basename(corpus_path), "certificate.json", "labels.json"]
+    h = hashlib.sha256()
+    for name in names:
+        path = name if os.path.isabs(name) else os.path.join(os.path.dirname(corpus_path), name)
+        h.update(name.encode() + b"\0")
+        with open(path, "rb") as f:
+            h.update(f.read())
+    return h.hexdigest()
+
+
+def anchor_verdicts(stamp, corpus, caps, labels, rows, corpus_path):
+    """Measure once per anchor binary and oracle revision, then reuse the verdict list."""
+    key = hashlib.sha256((stamp["binary_sha256"] + oracle_hash(corpus_path)).encode()).hexdigest()
+    path = os.path.join(anchor_dir(), f"verdicts-{key}.json")
+    try:
+        with open(path) as f:
+            cached = json.load(f)
+        if cached.get("key") == key and isinstance(cached.get("verdicts"), list):
+            return cached["verdicts"], "cached"
+    except (OSError, ValueError):
+        pass
+    want = right_set(verdicts(measure(stamp["binary"], corpus, caps), corpus, labels), rows)
+    fd, tmp = tempfile.mkstemp(prefix="verdicts-", dir=anchor_dir())
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump({"key": key, "verdicts": want}, f)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+    return want, "measured"
+
+
 def floor_preflight(path):
     """Everything --floor can refuse before measuring anything: no waivers,
     the format, the recipe the floor was measured by, the local anchor."""
@@ -545,15 +585,15 @@ def floor_preflight(path):
     return floor, anchor()
 
 
-def check_floor(pre, path, cand_v, rows, corpus, labels):
+def check_floor(pre, path, cand_v, rows, corpus, labels, corpus_path):
     """1 when a floor verdict is now wrong, 0 otherwise; HarnessError when the
     floor is not the measurement of the recipe's anchor on this machine NOW
     (its identity: the recipe plus the verdict list; the binary's sha256 is
     information only, since another toolchain builds other bytes)."""
     floor, stamp = pre
     with anchor_lock():
-        ieee, caps, _ = capabilities(stamp["binary"], None)
-        want = right_set(verdicts(measure(stamp["binary"], corpus, caps), corpus, labels), rows)
+        _ieee, caps, _ = capabilities(stamp["binary"])
+        want, source = anchor_verdicts(stamp, corpus, caps, labels, rows, corpus_path)
     extra, missing = sorted(set(floor["verdicts"]) - set(want)), sorted(set(want) - set(floor["verdicts"]))
     if extra or missing or len(floor["verdicts"]) != len(want):
         built = stamp.get("toolchain") or "an unrecorded toolchain"
@@ -566,7 +606,7 @@ def check_floor(pre, path, cand_v, rows, corpus, labels):
                            f" (first {missing[:1]}). {cause}. Re-measure the floor where the check runs, in the"
                            f" CI image: make observer-anchor, then score.py {stamp['binary']} --write-floor {path}")
     same = floor["anchor"].get("binary_sha256") == stamp["binary_sha256"]
-    print(f"\nfloor: {len(want)} verdicts ({FLOOR_FORMAT}), re-measured on the anchor {stamp['binary']}"
+    print(f"\nfloor: {len(want)} verdicts ({FLOOR_FORMAT}), {source} on the anchor {stamp['binary']}"
           f" built by build_anchor.sh {stamp['recipe_sha256'][:12]}: the list matches; binary sha256"
           f" {stamp['binary_sha256'][:12]} " + ("as when the floor was measured" if same else
                                                f"differs from the floor's {floor['anchor'].get('binary_sha256', '?')[:12]}"
@@ -613,7 +653,7 @@ def report(v, res, corpus, numbers, caps, probes, labels, reported, expect):
     print("  predicate reads run interpreted in every tier: the JIT compiles neither PREDICATE_SLOT nor PREDICATE_NAME")
     print("\nSCORED VERDICTS, one question per predicate: TP FP FN TN right/total")
     print(f"  {'predicate':12}{'class':11}" + "".join(f"{a:>24}" for a in arms))
-    for p in PREDS + ["all"]:
+    for p in (*PREDS, "all"):
         cells = []
         for a in arms:
             c = [0, 0, 0, 0]
@@ -633,9 +673,6 @@ def report(v, res, corpus, numbers, caps, probes, labels, reported, expect):
         false_score = sum(not x[1] for x in labelled)
         print(f"  {p:12}{cells[0]:>13}{cells[1]:>16}{cells[2]:>18}"
               f"{false_score:>10}/{len(labelled)}")
-    head = [[x[1] == x[2] for k, x in v.items() if k[0] == a] for a in arms]
-    print("HEADLINE, scored verdicts right/total (each verdict counted once): "
-          + ", ".join(f"{a} {sum(h)}/{len(h)}" for a, h in zip(arms, head)))
     for col in reported.values():
         agree = [[labels[f"{rid}@{at}"][col][1] == got for (arm, rid, at, q), (_c, _w, got) in v.items()
                   if arm == a and q == "converged"] for a in arms]
@@ -655,7 +692,7 @@ def report(v, res, corpus, numbers, caps, probes, labels, reported, expect):
 
 def main(argv):
     args, opts = argv[1:], {}
-    for flag in ("--corpus", "--numbers", "--expect", "--floor", "--write-floor", "--note"):
+    for flag in ("--corpus", "--expect", "--floor", "--write-floor", "--note"):
         if flag in args:
             i = args.index(flag)
             if i + 1 >= len(args):
@@ -663,8 +700,8 @@ def main(argv):
             opts[flag] = args[i + 1]
             del args[i:i + 2]
     expect = set(filter(None, opts.get("--expect", "").split(",")))
-    if len(args) != 1 or opts.get("--numbers", "clamp") not in ("ieee", "clamp") or expect - set(CAPS):
-        raise HarnessError("usage: score.py BINARY [--corpus PATH] [--numbers ieee|clamp] [--expect ieee,int64]"
+    if len(args) != 1 or expect - set(CAPS):
+        raise HarnessError("usage: score.py BINARY [--corpus PATH] [--expect ieee,int64]"
                            " [--floor FILE] [--write-floor FILE [--note TEXT]]")
     binary = os.path.abspath(args[0])
     if not (os.path.isfile(binary) and os.access(binary, os.X_OK)):
@@ -680,7 +717,7 @@ def main(argv):
     labels = load_labels(corpus, certs, os.path.join(cdir, "labels.json"))
     pre = floor_preflight(opts["--floor"]) if "--floor" in opts else None
     rows = {r["id"]: r for r in corpus["rows"]}
-    ieee, caps, probes = capabilities(binary, opts.get("--numbers"))
+    ieee, caps, probes = capabilities(binary)
     with anchor_lock() if stamp else contextlib.nullcontext():
         res = measure(binary, corpus, caps)
     v = verdicts(res, corpus, labels)
@@ -704,7 +741,7 @@ def main(argv):
         print(f"  CAPABILITY WRONG {arm} {rid}@{at} {p}: expected={str(v[(arm, rid, at, p)][1]).lower()}")
     fail = 1 if split or capwrong or missing else 0
     if pre:
-        fail |= check_floor(pre, opts["--floor"], v, rows, corpus, labels)
+        fail |= check_floor(pre, opts["--floor"], v, rows, corpus, labels, corpus_path)
     if stamp:
         with open(opts["--write-floor"], "w") as f:
             json.dump({"format": FLOOR_FORMAT, "note": opts.get("--note", ""), "numbers": "ieee" if ieee else "clamp",

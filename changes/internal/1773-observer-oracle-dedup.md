@@ -1,0 +1,1 @@
+- The observer oracle now shares its check vocabulary, fixes its JIT threshold, and caches unchanged anchor verdicts (#1773).
