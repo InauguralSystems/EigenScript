@@ -933,6 +933,168 @@ def interpret : Interaction α → List TapedAnswer → Interpretation α
       {value := result.value, consumed := result.consumed + 1,
         answers := answer :: result.answers}
 
+/-- With no supplied entries, the outermost exhausted interaction keeps the
+consumption count at zero. -/
+theorem interpret_nil_consumed (tree : Interaction α) :
+    (interpret tree []).consumed = 0 := by
+  cases tree <;> rfl
+
+/-- Interpreting a bound interaction concatenates the answers observed by
+its two phases.  The second phase receives precisely the supplied suffix not
+consumed by the first. -/
+theorem interpret_bind (tree : Interaction α) (next : α → Interaction β)
+    (supplied : List TapedAnswer) :
+    let first := interpret tree supplied
+    let second := interpret (next first.value) (supplied.drop first.consumed)
+    interpret (Interaction.bind tree next) supplied =
+      { value := second.value
+        consumed := first.consumed + second.consumed
+        answers := first.answers ++ second.answers } := by
+  induction tree generalizing supplied with
+  | done value => simp [Interaction.bind, interpret]
+  | ask query continuation ih =>
+      cases supplied with
+      | nil =>
+          simp only [Interaction.bind, interpret]
+          rw [ih (deliveredAnswer query (.oracleExhausted 0)) []]
+          simp [interpret_nil_consumed]
+      | cons answer rest =>
+          simp only [Interaction.bind, interpret]
+          rw [ih (deliveredAnswer query answer) rest]
+          simp [List.drop_succ_cons, Nat.add_assoc, List.cons_append]
+          omega
+
+/-- A computation is paired when every successful interpretation preserves
+the starting writer chunks as a prefix and its appended chunks encode exactly
+the interaction answers, numbered from that prefix length.
+
+EigenCore-0 has no user-level catch.  Its only catch is `callFunction`'s frame
+pop, which re-throws the captured error; thus successful runs cannot discard an
+error path that consumed an answer. -/
+def Paired (m : EvalM α) : Prop :=
+  ∀ (w0 : World) (supplied : List TapedAnswer),
+    let interpreted := interpret ((m.run).run w0) supplied
+    ∀ value, interpreted.value.1 = .ok value →
+      ∃ appended,
+        interpreted.value.2.writerChunks = w0.writerChunks ++ appended ∧
+        interpreted.answers = writerAnswersFrom w0.writerChunks.length appended
+
+/-- A pure computation neither changes writer chunks nor observes answers. -/
+theorem Paired_pure (value : α) : Paired (pure value : EvalM α) := by
+  intro w0 supplied
+  dsimp
+  intro result successful
+  change Except.ok value = Except.ok result at successful
+  injection successful with same
+  subst result
+  refine ⟨[], ?_, ?_⟩
+  · change w0.writerChunks = w0.writerChunks ++ []
+    simp
+  · change [] = writerAnswersFrom w0.writerChunks.length []
+    rfl
+
+/-- A thrown error cannot have a successful interpretation. -/
+theorem Paired_throw (error : Err) : Paired (throw error : EvalM α) := by
+  intro w0 supplied
+  dsimp
+  intro value successful
+  change Except.error error = Except.ok value at successful
+  contradiction
+
+/-- Reading the world preserves chunks and performs no interaction. -/
+theorem Paired_get : Paired (get : EvalM World) := by
+  intro w0 supplied
+  dsimp
+  intro value successful
+  change Except.ok w0 = Except.ok value at successful
+  injection successful with same
+  subst value
+  refine ⟨[], ?_, ?_⟩
+  · change w0.writerChunks = w0.writerChunks ++ []
+    simp
+  · change [] = writerAnswersFrom w0.writerChunks.length []
+    rfl
+
+/-- Numbering writer answers across appended chunk lists advances by the
+length of the first list. -/
+theorem writerAnswersFrom_append (position : Nat) (first second : List WriterChunk) :
+    writerAnswersFrom position (first ++ second) =
+      writerAnswersFrom position first ++ writerAnswersFrom (position + first.length) second := by
+  induction first generalizing position with
+  | nil => simp [writerAnswersFrom]
+  | cons chunk chunks ih =>
+      simp only [List.cons_append, writerAnswersFrom, List.length_cons, List.append_assoc,
+        List.cons_append]
+      rw [ih]
+      congr 1
+      simp [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+
+/-- Pairing is compositional for the concrete `ExceptT`/`StateT` evaluator
+bind. -/
+theorem Paired_bind (m : EvalM α) (k : α → EvalM β) (pairedM : Paired m)
+    (pairedK : ∀ value, Paired (k value)) : Paired (m >>= k) := by
+  intro w0 supplied
+  dsimp
+  intro result successful
+  let first := interpret ((m.run).run w0) supplied
+  let secondTree := fun pair : Except Err α × World =>
+    (ExceptT.bindCont k pair.1).run pair.2
+  have composed := interpret_bind (((m.run).run w0)) secondTree supplied
+  change (interpret (Interaction.bind ((m.run).run w0) secondTree) supplied).value.1 =
+    .ok result at successful
+  change ∃ appended,
+    (interpret (Interaction.bind ((m.run).run w0) secondTree) supplied).value.2.writerChunks =
+      w0.writerChunks ++ appended ∧
+    (interpret (Interaction.bind ((m.run).run w0) secondTree) supplied).answers =
+      writerAnswersFrom w0.writerChunks.length appended
+  rw [composed] at successful ⊢
+  dsimp only [secondTree] at successful ⊢
+  cases firstValue : first.value.1 with
+  | error error =>
+      rw [firstValue] at successful
+      change Except.error error = Except.ok result at successful
+      contradiction
+  | ok value =>
+      rw [firstValue] at successful
+      have bindContOk : ExceptT.bindCont k (Except.ok value) = k value := rfl
+      rw [bindContOk] at successful ⊢
+      change (interpret (((k value).run).run first.value.2)
+        (supplied.drop first.consumed)).value.1 = .ok result at successful
+      change ∃ appended,
+        (interpret (((k value).run).run first.value.2)
+          (supplied.drop first.consumed)).value.2.writerChunks = w0.writerChunks ++ appended ∧
+        first.answers ++ (interpret (((k value).run).run first.value.2)
+          (supplied.drop first.consumed)).answers =
+            writerAnswersFrom w0.writerChunks.length appended
+      have firstPaired := pairedM w0 supplied value firstValue
+      obtain ⟨firstChunks, firstWorld, firstAnswers⟩ := firstPaired
+      let remaining := supplied.drop first.consumed
+      have secondPaired := pairedK value first.value.2 remaining result successful
+      obtain ⟨secondChunks, secondWorld, secondAnswers⟩ := secondPaired
+      refine ⟨firstChunks ++ secondChunks, ?_, ?_⟩
+      · rw [secondWorld, firstWorld, List.append_assoc]
+      · rw [firstAnswers, secondAnswers, writerAnswersFrom_append]
+        congr 2
+        have lengths := congrArg List.length firstWorld
+        simp at lengths
+        omega
+
+/-- A world update which preserves writer chunks is paired. -/
+theorem Paired_modify (f : World → World)
+    (preserves : ∀ world, (f world).writerChunks = world.writerChunks) :
+    Paired (modify f : EvalM Unit) := by
+  intro w0 supplied
+  dsimp
+  intro value successful
+  change Except.ok () = Except.ok value at successful
+  injection successful with same
+  subst value
+  refine ⟨[], ?_, ?_⟩
+  · change (f w0).writerChunks = w0.writerChunks ++ []
+    simpa using preserves w0
+  · change [] = writerAnswersFrom w0.writerChunks.length []
+    rfl
+
 /-- Prefix sufficiency for the interaction interpreter.  The strict bound says
 the run stopped before exhausting its supplied stream (callers include an
 explicit error answer).  Thus answers after the exactly-consumed prefix cannot
