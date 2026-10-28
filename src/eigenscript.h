@@ -362,6 +362,15 @@ typedef struct ObserverSlot {
                                  * number to string falls back to the entropy
                                  * channel instead of answering from a stale
                                  * numeric trajectory. */
+    /* #1992 equality route for non-numeric convergence predicates. The
+     * retained value is the preceding assignment snapshot; eq_window records
+     * whether each successive pair compared equal with the language's `==`.
+     * Entropy remains recorded above for report/trajectory diagnostics. */
+    Value   *eq_last;
+    const Value *eq_identity_last; /* non-owning identity token for fn/builtin */
+    uint8_t *eq_window;
+    uint8_t  eq_window_head, eq_window_count, eq_cap;
+    uint8_t  eq_seen;             /* non-numeric route active, even if refused */
 } ObserverSlot;
 
 struct Env {
@@ -1888,6 +1897,17 @@ void free_value(Value *v);
  * branch stays one call on a path a finite program never takes. */
 void eigs_strict_nan_raise(const char *who);
 
+/* Side-effect-free VALUE mapping of num_guard, for readers such as observer
+ * equality which must see language numbers without changing interpreter
+ * state or raising in strict mode.  Keep its branches in sync with
+ * num_guard; tests/test_num_guard_value.c pins their bit-level results. */
+static inline double num_guard_value(double x) {
+    if (x != x) return 0.0;
+    if (x > EIGS_NUM_MAX) return EIGS_NUM_MAX;
+    if (x < -EIGS_NUM_MAX) return -EIGS_NUM_MAX;
+    return x;
+}
+
 static inline double num_guard(double x) {
     /* Fast path unchanged: the flag writes live only on the clamp branches,
      * which a program that does not overflow never takes. */
@@ -2345,6 +2365,7 @@ char* eigs_json_encode(Value *v);
  * above). The declarations below cover the not-yet-migrated globals. */
 void eigs_clear_error_value(void);
 void vm_print_stack_trace(FILE *out);  /* uncaught-error call stack (vm.c); no-ops without a VM */
+int vm_error_has_handler(void);        /* active VM slice has an open try */
 int vm_current_line(void);             /* live source line (vm.c); 0 without a VM */
 const char *vm_current_file(void);      /* stable source identity or <native> */
 void eigs_record_first_error(int line, const char *msg);
@@ -2555,7 +2576,7 @@ int eigs_api_dump(FILE *out, int json);
 /* Seed the shared drand48 stream from entropy unless seed_random already
  * pinned it. Exported so extension samplers (model_infer.c's eigen_generate)
  * draw from the SAME script-seedable stream as random/random_int -- the old
- * private rand() path was seeded by main's srand(time) and could not be
+ * private libc-rand path was seeded by main from the clock and could not be
  * pinned from script at all (found via iLambdaAi's eval-determinism probe,
  * 2026-08-17). */
 void eigs_ensure_random_seeded(void);

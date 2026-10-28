@@ -1,0 +1,36 @@
+# #1648: `not` is below every comparison and above `and` and `or`.
+load_file of "lib/test.eigs"
+import eigen
+
+assert_eq of [not 1 < 2, false, "not (<)"]
+assert_eq of [not 1 <= 1, false, "not (<=)"]
+assert_eq of [not 2 > 1, false, "not (>)"]
+assert_eq of [not 2 >= 2, false, "not (>=)"]
+assert_eq of [not 1 == 2, true, "not (==)"]
+assert_eq of [not 1 != 2, false, "not (!=)"]
+assert_eq of [not not 1 < 2, true, "not (not (<))"]
+assert_eq of [not true and false, false, "(not true) and false"]
+assert_eq of [not false or false, true, "(not false) or false"]
+assert_eq of [not (1 < 2), false, "explicit comparison parentheses"]
+
+# Association sentinels for the neighboring grammar forms requested by the
+# decision.  These values distinguish the stated parse from its alternative.
+assert_eq of [not len of [] == 0, false, "not ((len of []) == 0)"]
+assert_eq of [not -1 < 0, false, "not ((-1) < 0)"]
+assert_eq of [((_) => not 1 < 2) of null, false, "lambda body is not (1 < 2)"]
+assert_eq of [type of (not 0), "bool", "parenthesized not is an of argument"]
+
+raised is false
+try:
+    ignored is (not 1) < 2
+catch e:
+    raised is true
+assert_true of [raised, "(not 1) < 2 raises"]
+
+# The meta-interpreter has its own parser; keep its precedence on the same
+# fixtures rather than merely inspecting the implementation.
+assert_eq of [eigen.eigen_run of "not 1 < 2", false, "meta: not (<)"]
+assert_eq of [eigen.eigen_run of "not true and false", false, "meta: not before and"]
+assert_eq of [eigen.eigen_run of "not not 1 < 2", true, "meta: repeated not"]
+
+print of "not precedence tests passed"

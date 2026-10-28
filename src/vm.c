@@ -452,6 +452,9 @@ static inline void vm_bind_fresh_param(Env *env, int slot_idx,
  * also keeps every EnvIC aimed at the env valid across calls.
  *
  * Park requirements (vm_park_call_env):
+ *   - a call env exists: an exactly-fed `leaf_accessor` call is executed
+ *     frameless by vm_leaf_accessor_exec, before the generic call path, so it
+ *     allocates no Env and consequently has nothing to park;
  *   - single-threaded (chunks are shared across spawn threads);
  *   - frame->env == frame->fn_env (never park a loop-scope child);
  *   - not captured by a closure, env_refcount == 1 (exactly the
@@ -1634,6 +1637,12 @@ static inline Value *obs_slot_value(EigsSlot s) {
 }
 
 static inline void jit_sample_num_gated(Env *e, int slot, double v) {
+    /* #1867: the inline ring writes are valid only for a private env.  A
+     * shared binding must enter the public helper, which folds under #607. */
+    if (__builtin_expect(g_vm_multithreaded, 0) && e->mt_shared) {
+        observer_slot_sample_num_gated(e, slot, v);
+        return;
+    }
     ObserverSlot *s = env_obs_slot(e, slot);
     int n = s && s->win_override ? s->win_override : g_obs_window;
     if (!s || (s->v_used && (!s->v_window || s->v_cap < n))) {
@@ -2017,7 +2026,8 @@ static void loop_iter_store(Env *env, double n) {
      * replacement and assignment count under the existing env lock. The
      * cache lookup and refill below also read shared arrays/version, so
      * return before either path; a thread-local cache is not a slot lock. */
-    if (__builtin_expect(g_vm_multithreaded, 0) && env->mt_shared) {
+    if (__builtin_expect(g_vm_multithreaded, 0) &&
+        __atomic_load_n(&env->mt_shared, __ATOMIC_RELAXED)) {
         Value *iter_val = make_num(n);
         env_set_local(env, "__loop_iterations__", iter_val);
         val_decref(iter_val);
@@ -3013,6 +3023,16 @@ void vm_print_stack_trace(FILE *out) {
         if (line > 0) fprintf(out, "  at %s (%s:%d)\n", fname, file, line);
         else fprintf(out, "  at %s (%s)\n", fname, file);
     }
+}
+
+/* The frames in g_vm are exactly the cooperative task (or ordinary
+ * evaluation) that is running now.  g_try_depth is an aggregate across
+ * suspended task slices, so it cannot answer whether THIS raise is caught. */
+int vm_error_has_handler(void) {
+    if (!eigs_current || !eigs_current->vm) return 0;
+    for (int i = g_vm.frame_count - 1; i >= 0; i--)
+        if (g_vm.frames[i].try_count > 0) return 1;
+    return 0;
 }
 
 /* #407 residual: print a deferred uncaught-error report (message, source
@@ -5875,11 +5895,23 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Value *result;
         if (target->type == VAL_LIST) {
             result = make_list(n);
-            for (int i = 0; i < n; i++) {
+            /* #1722: make_list charges the sandbox allocation budget and, on
+             * refusal, raises a catchable EK_SANDBOX and CAPS capacity at its
+             * 8-slot fallback — it never returns a list sized to a refused n.
+             * Writing n slots then overflows the heap. Match the other
+             * sandbox-refused list allocators (list_reserve_one drops a
+             * refused append; builtin_list_insert_at bails after the raise,
+             * #1710): when the real capacity is short of n, make no stores.
+             * The raise is already latched, so the next DISPATCH's CHECK_ERROR
+             * halts the run and the empty result is discarded by sandbox_run's
+             * {ok:0}. (For n <= 8 capacity is always >= n, so the common path
+             * is unchanged; a successful charge gives capacity == n.) */
+            int fill = result->data.list.capacity < n ? 0 : n;
+            for (int i = 0; i < fill; i++) {
                 EigsSlot e = slot_read_owned(list_slot(target, start + i));
                 list_set_slot_owned(result, i, e);
             }
-            result->data.list.count = n;
+            result->data.list.count = fill;
         } else if (target->type == VAL_STR) {
             /* This raw copy becomes a retained program value. Charge its
              * payload before allocation; make_str_owned then transfers the

@@ -518,6 +518,13 @@ and `not` always returns a bool.
 Truthiness is unchanged: `0`, `0.0`, `null`, `""`, `[]`, `{}` and `false` are
 falsy; every other value, including `true`, is truthy.
 
+Operator precedence from tighter to looser is: calls/postfix operations;
+arithmetic unary `-` and bitwise unary `~`; multiplicative, additive, shift
+and bitwise operators; comparisons (`< <= > >= == !=`); `not`; `and`; `or`;
+and the pipe operator. Thus `not 1 < 2` means `not (1 < 2)`, while
+`(not 1) < 2` explicitly compares a bool and raises. Repeated `not` associates
+to the right.
+
 ```eigenscript
 print of (3 > 2)
 print of (3 < 2)
@@ -1925,8 +1932,9 @@ entropy (the query-time read is unaffected), `dH` and its window
 the tape's observer snapshot, and the bare-predicate alias (a bare
 `converged` keeps reading the last **observed** binding, so scratch work
 inside the block cannot hijack it). Those entropy-channel readers — and
-`report`/the predicates on a **non-numeric** binding, which route
-through the entropy channel — therefore remain sensitive to elision;
+`report` plus the four entropy predicates on a **non-numeric** binding —
+therefore remain sensitive to elision. The non-numeric `converged`/`stable`
+equality window also omits elided assignments;
 [PREDICATES.md](PREDICATES.md#inputs) lists them. (It follows that the
 block is not a way to declare a numeric binding without a sample; seed
 with `null`, which is never sampled.)

@@ -34,6 +34,7 @@
 #include "eigenscript.h"
 
 static int failures = 0;
+static int old_task_ran = 0;
 
 #define CHECK(cond, msg) do {                                              \
     if (!(cond)) {                                                         \
@@ -41,6 +42,12 @@ static int failures = 0;
         failures++;                                                        \
     }                                                                      \
 } while (0)
+
+static EigsValue *mark_old_task_ran(EigsValue *arg) {
+    (void)arg;
+    old_task_ran++;
+    return eigs_value_new_null();
+}
 
 static EigsValue *fenv_nested(EigsValue *arg) {
     (void)arg;
@@ -1617,6 +1624,30 @@ int main(void) {
     CHECK(r != NULL && eigs_value_as_string(r) &&
           strcmp(eigs_value_as_string(r), "CAUGHT") == 0,
           "try/catch still works after a script called exit (#739)");
+    if (r) eigs_value_release(r);
+
+    /* #1806: the cooperative scheduler must consume the task-local unwind,
+     * too. The first eval stops before AFTER and the following eval catches
+     * normally on the same state. */
+    eigs_register_function("mark_old_task_ran", mark_old_task_ran);
+    r = eigs_eval_string("define q() as:\n    exit of 6\n"
+                         "define old_task() as:\n"
+                         "    print of \"OLD_TASK_RAN\"\n"
+                         "    mark_old_task_ran of null\n"
+                         "d is task_spawn of q\n"
+                         "old is task_spawn of old_task\n"
+                         "task_yield of null\n"
+                         "AFTER");
+    CHECK(r == NULL, "cooperative-task exit stops its embed evaluation (#1806)");
+    eigs_clear_error();
+    r = eigs_eval_string("print of \"NEW_EVAL\"\n"
+                         "try:\n    throw of \"boom\"\n"
+                         "catch e:\n    \"CAUGHT\"");
+    CHECK(r != NULL && eigs_value_as_string(r) &&
+          strcmp(eigs_value_as_string(r), "CAUGHT") == 0,
+          "try/catch works after cooperative-task exit (#1806)");
+    CHECK(old_task_ran == 0,
+          "stopped evaluation's outstanding task does not run in next eval (#1808)");
     if (r) eigs_value_release(r);
 
     /* --- #797: the lint allow-list parses FRESH. ----------------------

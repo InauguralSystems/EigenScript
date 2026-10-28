@@ -1,0 +1,3 @@
+load_file of "../lib/test.eigs"
+assert_true of [true, "verdict propagation calibration plant"]
+test_summary of null

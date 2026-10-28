@@ -14,7 +14,7 @@ bench/check_regression.sh bench/*.eigs | timeout 60 bash bench/check_regression.
 tests/http_readiness.py tests/test_http_readiness.sh | timeout 60 python3 tests/http_readiness.py --selftest | [{"pattern":"PASS:","count":510},{"pattern":"^HTTP_READINESS_SELFTEST: 510 passed, 0 failed$","count":1},{"pattern":"FAIL:","count":0}]
 tests/test_arming_mt.sh tests/arming_mt_fixtures/* | timeout 30 bash tests/test_arming_mt.sh --selftest | [{"pattern":"  PASS:","count":5},{"pattern":"  FAIL:","count":0}]
 tests/test_child_exit.sh tests/run_all_tests.sh | timeout 30 bash tests/test_child_exit.sh --selftest
-tests/test_changelog_fragments.sh tools/changelog_fragments.sh | timeout 30 bash tests/test_changelog_fragments.sh --selftest | [{"pattern":"^  PASS:","count":4},{"pattern":"^  FAIL:","count":0},{"pattern":"^SELFTEST: 4 case\\(s\\) run, 4 passed, 0 failed$","count":1}]
+tests/test_changelog_fragments.sh tools/changelog_fragments.sh | timeout 30 bash tests/test_changelog_fragments.sh --selftest | [{"pattern":"^  PASS:","count":4},{"pattern":"^  FAIL:","count":0},{"pattern":"^SELFTEST: 4 case\\(s\\) run, 4 passed, 0 failed$","count":1},{"pattern":"^PLANT OK: ","count":1},{"pattern":"^PLANT FAIL:","count":0}]
 tests/test_dict_keys_mt.sh tests/dict_keys_mt_fixtures/* | timeout 30 bash tests/test_dict_keys_mt.sh --selftest | [{"pattern":"  PASS:","count":8},{"pattern":"  FAIL:","count":0}]
 tests/test_doc_examples.py | timeout 30 python3 tests/test_doc_examples.py --selftest | [{"pattern":"  selftest ok:","count":29}]
 src/fmt.c src/lexer.c tests/fmt_parent_differential.py tests/run_fmt_parent_differential.sh | timeout 60 bash tests/run_fmt_parent_differential.sh --selftest | [{"pattern":"^formatter differential selftest: live comparison passed; normalization plant caught$","count":1},{"pattern":"REGRESSION","count":0}]
@@ -29,7 +29,8 @@ tests/test_string_scaling.sh | timeout 210 bash tests/test_string_scaling.sh --s
 tests/test_trace_mt.sh | timeout 30 bash tests/test_trace_mt.sh --selftest | [{"pattern":"  PASS:","count":6},{"pattern":"  FAIL:","count":0}]
 tools/_derive_variants.py tools/_extract_runcmd.py | timeout 30 python3 tools/_derive_variants.py --selftest
 tools/_extract_runcmd.py | timeout 30 python3 tools/_extract_runcmd.py --selftest
-tools/codspeed_targets_check.sh codspeed.yml | timeout 30 bash tools/codspeed_targets_check.sh --selftest
+tools/codspeed_targets_check.sh codspeed.yml .github/workflows/codspeed.yml tools/codspeed_unit_guard.py | timeout 30 bash tools/codspeed_targets_check.sh --selftest | [{"pattern":"^  ok: plant ","count":21},{"pattern":"^  SELFTEST FAILED","count":0},{"pattern":"^SELFTEST OK: 22/22$","count":1}]
+tools/codspeed_unit_guard.py | timeout 30 python3 tools/codspeed_unit_guard.py --selftest | [{"pattern":"^SELFTEST OK: 49/49$","count":1},{"pattern":"^  FAIL:","count":0}]
 tools/consumer_acceptance.sh tools/_derive_variants.py tools/_extract_runcmd.py reports/consumer_acceptance/* | timeout 60 bash tools/consumer_acceptance.sh --self-test
 tools/core_ext_boundary_check.sh tools/core_ext_boundary_selftest.sh | timeout 120 bash tools/core_ext_boundary_selftest.sh --selftest | [{"pattern":"^PASS: core-ext boundary:","count":1}]
 tools/gfx_guard_order_check.sh | timeout 30 bash tools/gfx_guard_order_check.sh --selftest | [{"pattern":"^SELFTEST OK: clean control passed; exactly one planted guard caught:","count":1}]
@@ -38,8 +39,9 @@ tools/pipefail_verdict_check.sh | timeout 30 bash tools/pipefail_verdict_check.s
 tools/portability_parse_check.sh | timeout 30 bash tools/portability_parse_check.sh --selftest | [{"pattern":"^SELFTEST OK: clean control passed; exactly one planted shell syntax fault caught$","count":1}]
 tools/tape_kinds_check.sh | timeout 30 bash tools/tape_kinds_check.sh --selftest | [{"pattern":"^SELFTEST OK: clean control passed; exactly one planted missing tape kind caught$","count":1}]
 tools/docs_claims_check.sh | timeout 30 bash tools/docs_claims_check.sh --selftest | [{"pattern":"^SELFTEST: 19 case\\(s\\) run, 19 passed, 0 failed$","count":1}]
-tools/enrolment_check.sh tests/enrolment_exemptions.txt tools/selftests.txt | timeout 30 bash tools/enrolment_check.sh --selftest | [{"pattern":"^  checks=4$","count":1}]
+tools/enrolment_check.sh tests/enrolment_exemptions.txt tools/selftests.txt | timeout 420 bash tools/enrolment_check.sh --selftest | [{"pattern":"^  checks=11$","count":1}]
 Makefile tests/run_all_tests.sh tools/make_lock_check.sh tools/stop_gate.sh tools/tree_lock.sh tools/bounded_process.py | timeout 60 bash tools/make_lock_check.sh --selftest | [{"pattern":"^  PASS:","count":9},{"pattern":"^make-lock selftest: 9/9 passed$","count":1},{"pattern":"FAIL:","count":0}]
+tests/fixtures/jit_diff_timeout_both.eigs tools/jit_diff.sh | timeout 90 env JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_timeout_both.eigs bash tools/jit_diff.sh --selftest | [{"pattern":"tests/fixtures/jit_diff_timeout_both\\.eigs OBS: timeout on both sides$","count":1},{"pattern":"^jit_diff: OBS examined=0 denied=0 timeout-both=1$","count":1}]
 tools/obs_marker_check.sh | timeout 30 bash tools/obs_marker_check.sh --selftest
 tools/obs_reader_sync_check.sh tools/obs_marker_check.sh | timeout 30 bash tools/obs_reader_sync_check.sh --selftest | [{"pattern":"^SELFTEST: ([0-9]+) passed.*$","count":11,"floor":true,"value":true}]
 tools/performance_observer_docs.py docs/PERFORMANCE.md bench/observer_callgrind.txt bench/baseline.txt bench/observed_loop.eigs bench/unobserved_loop.eigs bench/conservative_observed_loop.eigs bench/conservative_unobserved_loop.eigs | timeout 30 python3 tools/performance_observer_docs.py --selftest
@@ -61,5 +63,7 @@ tools/precheck.sh tools/portability_verdict.sh | timeout 10 bash tools/precheck.
 tools/workflow_yaml_check.sh tests/sections/99zd-container-commands.sh | timeout 30 bash tools/workflow_yaml_check.sh --selftest | [{"pattern":"^workflow-yaml selftest: 46/46 passed$","count":1}]
 tools/strict_shape_contract.py tools/strict_shape_contracts.json tests/strict_shape_cases.json | timeout 30 python3 tools/strict_shape_contract.py --selftest | [{"pattern":"^PASS:","count":40},{"pattern":"^FAIL:","count":0},{"pattern":"^SHAPE_CONTRACT_SELFTEST: 40 passed, 0 failed, 40 declared$","count":1}]
 tools/strict_differential.sh tests/lsan_classify.sh | timeout 30 bash tools/strict_differential.sh --selftest | [{"pattern":"^  PASS:","count":88},{"pattern":"^  FAIL:","count":0},{"pattern":"^SHAPE_CAPTURE_SELFTEST: 88 passed, 0 failed, 88 declared$","count":1}]
-tools/selftests.sh tools/selftests_selection_selftest.sh | timeout 30 bash tools/selftests_selection_selftest.sh --selftest | [{"pattern":"^  PASS:","count":7},{"pattern":"^  FAIL:","count":0},{"pattern":"^SELFTEST_SELECTION: 7 passed, 0 failed, 7 declared$","count":1}]
+tools/spec_lean_parity.py | ci-step spec-lean python3 tools/spec_lean_parity.py --selftest | -
+tools/selftests.sh tools/selftests_selection_selftest.sh | timeout 30 bash tools/selftests_selection_selftest.sh --selftest | [{"pattern":"^  PASS:","count":11},{"pattern":"^  FAIL:","count":0},{"pattern":"^SELFTEST_SELECTION: 11 passed, 0 failed, 11 declared$","count":1}]
 tools/observer_oracle/* | timeout 600 python3 tools/observer_oracle/plants.py --selftest | [{"pattern":"^RED  floor-each ","count":1},{"pattern":"^plants: 1 examined, 1 red \\(controls included: green is their red\\)$","count":1}]
+tools/verdict_propagation_calibration.sh tests/sections/99aae-verdict-propagation-2059.sh tests/test_verdict_propagation_plant.eigs lib/test.eigs | timeout 60 bash tools/verdict_propagation_calibration.sh --selftest | [{"pattern":"^PASS: verdict-propagation calibration plant was detected$","count":1},{"pattern":"^SELFTEST FAIL","count":0}]

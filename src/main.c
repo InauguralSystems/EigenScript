@@ -51,6 +51,33 @@ static int tsan_misordered_publish_control(void) {
         return 2;
     return (uintptr_t)observed == 2052 ? 0 : 1;
 }
+
+/* #2071: gate-liveness control. Both workers exist before either is joined,
+ * so pthread lifecycle edges do not order these writes. Unlike the former
+ * language-level control, captured-binding lookup cannot add a runtime lock
+ * (and an accidental happens-before edge) around this location. */
+static volatile int tsan_seeded_race_word;
+
+static void *tsan_seeded_race_write(void *value) {
+    tsan_seeded_race_word = (int)(uintptr_t)value;
+    return NULL;
+}
+
+static int tsan_seeded_race_control(void) {
+    pthread_t first, second;
+    tsan_seeded_race_word = 0;
+    if (pthread_create(&first, NULL, tsan_seeded_race_write,
+                       (void *)(uintptr_t)1) != 0)
+        return 2;
+    if (pthread_create(&second, NULL, tsan_seeded_race_write,
+                       (void *)(uintptr_t)2) != 0) {
+        (void)pthread_join(first, NULL);
+        return 2;
+    }
+    if (pthread_join(first, NULL) != 0 || pthread_join(second, NULL) != 0)
+        return 2;
+    return 0;
+}
 #endif
 
 #ifndef EIGENSCRIPT_VERSION
@@ -80,6 +107,8 @@ static void set_exe_dir(const char *argv0) {
 
 int main(int argc, char **argv) {
 #ifdef EIGS_TSAN_TEST_SEAM
+    if (getenv("EIGS_TSAN_SEEDED_RACE_CONTROL"))
+        return tsan_seeded_race_control();
     if (getenv("EIGS_TSAN_MISORDERED_PUBLISH_CONTROL"))
         return tsan_misordered_publish_control();
 #endif
@@ -372,14 +401,16 @@ int main(int argc, char **argv) {
 
     /* No arguments: enter REPL */
     if (argc < 2) {
-        srand(time(NULL));
         eigenscript_set_args(argc, argv);
 
         Env *global = eigs_global_env_create();   /* + builtin layer (#1388) */
 
         eigenscript_repl(global);
-        /* Match file execution: workers may still publish an exit code after
-         * stdin closes, so join them before sampling the state latch. */
+        /* #1811: every way out of eigenscript_repl (plain/editor EOF,
+         * `exit`/`quit`, requested `exit of N`, including an eventual exit
+         * after a recoverable evaluation error) joins here. Match file
+         * execution while the value world is still alive; workers may also
+         * publish an exit code before the join completes. */
         handle_table_drain(eigs_st);
         /* #739: take the exit code BEFORE teardown. It is a bridge macro now
          * (state latch, reached through eigs_current), so eigs_thread_detach
@@ -410,6 +441,12 @@ int main(int argc, char **argv) {
         MODE_EXIT(1);
     }
 
+    /* Private verdict-calibration side channel (#2059).  lib/test.eigs owns
+     * the ledger write; give that seam the actual program operand rather than
+     * making every suite invocation remember to repeat it. */
+    if (!source_string && getenv("EIGS_TEST_FORCE_SUMMARY_LEDGER"))
+        setenv("EIGS_TEST_SCRIPT_PATH", argv[1], 1);
+
     /* Extract script directory for load_file resolution. g_script_dir
      * is an EigsState bridge macro — state is already attached above. */
     {
@@ -436,7 +473,6 @@ int main(int argc, char **argv) {
         for (int i = 2; i + 1 < argc; i++) argv[i] = argv[i + 1];
         argv[--argc] = NULL;
     }
-    srand(time(NULL));
     eigenscript_set_args(argc, argv);
 
     Env *global = eigs_global_env_create();   /* + builtin layer (#1388) */

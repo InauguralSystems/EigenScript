@@ -232,6 +232,9 @@ sqrt(2) = 1.414213562373095
   elements; byte codecs consume the complete list.
 - Hex integer literals: `0xFF`, `0X10` (digits only). Hex-float forms
   (`0x1p4`) are parse errors. No `mod` keyword — the operator is `%`.
+- Precedence: comparisons bind tighter than word-form `not`; `not` binds
+  tighter than `and`, which binds tighter than `or`. Thus `not 1 < 2` means
+  `not (1 < 2)`. Arithmetic unary `-` and bitwise unary `~` bind more tightly.
 - f-strings interpolate: `f"step {i}: {report of x}"`. Escapes: `\n \t \r \\ \" \{ \}`. Each `{…}` converts with the builtin `str`, even if you rebind `str`.
 
 ## Numeric vectors: `buffer`, not `list`

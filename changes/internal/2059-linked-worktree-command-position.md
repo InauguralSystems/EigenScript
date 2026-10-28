@@ -1,0 +1,1 @@
+- Make the test-enrolment gate accept linked worktrees and reject non-command EigenScript mentions. (#2059)

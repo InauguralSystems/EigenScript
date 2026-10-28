@@ -12,12 +12,12 @@ writing while another reads, is still your race**, as is concurrent access to
 a shared list or to a binding a closure captured from a function's scope when
 one access writes. This is not merely a lost-update rule: measured
 shared-list races have terminated in `realloc(): invalid old size` and
-`double free or corruption`, and a reader of a captured binding can still
-retain a value after a writer has freed it. A **module-level** binding (the
-global scope, or a module namespace) is different since #1171: reading or
-calling it while another thread rebinds it never touches a freed value, and
-which value the reader sees is the program's own race (see "Loading from
-workers" below). Transfer values through channels, or join the writer before
+`double free or corruption`. A **binding** is different: a module-level
+binding (the global scope, or a module namespace) since #1171, and a binding
+a closure captured from a function's scope since #1866. Reading or calling it
+while another thread rebinds it never touches a freed value; which value the
+reader sees is still the program's own race (see "Loading from workers"
+below). Transfer values through channels, or join the writer before
 reading them.
 
 ## The one rule: VALUES copy, HANDLES share
@@ -242,9 +242,9 @@ or dict the closure captured is the *same object* the parent still holds. Two
 threads mutating it concurrently is a data race — and the race is yours to
 avoid, exactly as in C. The safe pattern is to *communicate* results (return
 them, or `send` them through a channel) rather than to mutate shared state. The
-unsafe pattern — unsynchronized read-modify-write on a shared list from two
-workers — is caught by the ThreadSanitizer gate below
-(`tests/tsan_seeded_race.eigs`).
+unsafe pattern is an unsynchronized read-modify-write on a shared list from two
+workers. ThreadSanitizer can diagnose such races, but programs must not depend
+on a particular report from an undefined, scheduling-dependent race.
 
 ### A key written by a worker outlives the worker (#1141)
 
@@ -610,8 +610,12 @@ result. `tests/test_tasks.eigs` now runs both models at once.
 
 ## When a task dies of an uncaught error (#1736)
 
-A cooperative task that dies of an uncaught error prints its stack trace.
-What happens next depends on whether anything can still observe that error:
+A cooperative task that dies of an uncaught error prints its stack trace. The
+print decision uses handlers in the dying task's own active frames. A `try` in
+another suspended task cannot suppress it; in particular, main blocked inside
+`try: task_join of worker` still gets the worker's trace before the join
+re-raises the saved error into that handler. What happens next depends on
+whether anything can still observe that error:
 
 | Case | Behaviour | Exit status |
 |---|---|---|
@@ -635,13 +639,21 @@ scheduler — a `task_yield`, or a `task_join`, `task_recv` or `task_sleep` that
 blocks — and main never returns from it. In the second row nothing after the
 `task_detach` call executes, in main or in whichever task made the call. Every
 stop is reported: the `task_detach` stop prints its own message naming the task
-and the error it died of, and a detached death whose trace was suppressed (an
-open `try` in another task does that today, because the try depth that gates
-the print is process-wide, #1808) prints the error when it stops the run.
+and the error it died of. A detached task's own uncaught-error trace has
+already printed, independently of handlers open in other tasks (#1808).
 Neither stop can be caught: a `try` around the `task_yield` or the
 `task_detach` does not see it, because it is not an error delivered to the
 program but the end of the run. In the REPL, or an embedder's eval, it ends
 the current evaluation the way an uncaught error in main does.
+
+`exit of N` is different from every error row above. From a joinable or
+detached cooperative task it requests the same uncatchable whole-state stop
+as it does in main or an OS worker: no later statement in main or another task
+runs, and the status is `N`. The exiting task is not retained as a dead task,
+and a join cannot later re-raise an error synthesized from stale diagnostic
+state. The scheduler consumes its thread-local unwind request at the stop
+boundary, so a long-lived REPL or embedder starts its next evaluation with
+ordinary `try`/`catch` behaviour.
 
 **Both stop points are deterministic.** Where the run stops is a pure function
 of program order (and of the `task_sched_seed`, if one is installed), so a
@@ -773,5 +785,8 @@ The claim that the spawn/channel machinery is data-race-free is not a comment �
 it is regression-gated. `make tsan` builds a ThreadSanitizer interpreter and
 `tests/test_tsan.sh` runs the concurrency test slice under it (`setarch -R`,
 since ThreadSanitizer needs ASLR off here). The same gate runs a **deliberately
-seeded race** and asserts ThreadSanitizer catches it, so the gate cannot rot
-into a vacuous pass. It runs as the `tsan` job in CI.
+seeded C race** (compiled only into TSan Make variants) and asserts
+ThreadSanitizer catches it, so the gate cannot rot into a vacuous pass. Its two
+writes have no synchronization edge between them, making the control
+independent of EigenScript runtime locking and scheduling. It runs as the
+`tsan` job in CI.

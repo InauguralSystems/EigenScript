@@ -604,6 +604,13 @@ With `EIGS_REPLAY` set, each nondet builtin call takes the next `N`
 record from the tape instead of invoking its underlying source. The
 contract:
 
+- **Replay may be recorded.** Setting `EIGS_REPLAY` and `EIGS_TRACE`
+  together writes every successfully served `N` record to the new tape, in
+  serve order. A replayed value is the new run's external input, so retaining
+  it makes the new tape reproduce that run; for an unchanged single-stream
+  program the input and output tapes are byte-identical. Explicit
+  non-replayable markers are not served values and are therefore not copied.
+
 - **Strict ordering within each bound stream.** The recorded sequence of
   that stream's nondeterministic calls is the contract; other streams' values
   remain queued when physical tape order differs from execution scheduling.

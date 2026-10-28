@@ -691,6 +691,7 @@ is_dir|print of (is_dir of 42)
 is_file|print of (is_file of 42)
 read_text|print of (read_text of 42)
 read_bytes|print of (read_bytes of 42)
+read_bytes_buf|print of (read_bytes_buf of 42)
 ls|print of (ls of 42)
 mkdir|print of (mkdir of 42)
 env_get|print of (env_get of 42)
@@ -845,6 +846,7 @@ print of (is_dir of ".")
 print of (is_file of ".")
 try:\n    print of (read_text of "/nonexistent/eigs_1008_probe")\ncatch e:\n    print of e.kind
 try:\n    print of (read_bytes of "/nonexistent/eigs_1008_probe")\ncatch e:\n    print of e.kind
+try:\n    print of (read_bytes_buf of "/nonexistent/eigs_1008_probe")\ncatch e:\n    print of e.kind
 print of (env_get of "EIGS_1008_UNSET_PROBE")
 print of (min of [1, 5, 3])
 print of (max of 9)

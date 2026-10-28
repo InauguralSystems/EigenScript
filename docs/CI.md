@@ -200,10 +200,22 @@ review rounds, can run the full main lane before it enters the queue (#1787):
     gh run list --workflow ci.yml --event workflow_dispatch --branch <branch>
     gh run list --workflow ci.yml --commit <sha>
 
-- **What runs.** A dispatch is not a pull request, so every job runs as on a
-  push to `main`. That includes every heavy worker: the ASan shards, both TSan
-  variants, the native macOS suite, valgrind, the bench gate, the extension
-  suites and the db lane.
+For a RED/GREEN proof that needs only one expensive lane, select it explicitly:
+
+    gh workflow run ci.yml --ref <branch> -f lanes=asan
+
+The choices are `asan`, `tsan`, `fuzz`, `linux`, and `all`. `all` is the
+default and preserves the full run above. A focused dispatch runs its selected
+workers plus their scope, image, and required aggregator dependencies; all
+macOS jobs are reserved for `all`. Unknown choices are rejected by the
+dispatch API and the workflow validates the value again before doing work.
+
+- **What runs.** With the default `lanes=all`, a dispatch is not a pull request,
+  so every job runs as on a push to `main`. That includes every heavy worker:
+  the ASan shards, both TSan variants, the native macOS suite, valgrind, the
+  bench gate, the extension suites and the db lane. A focused lane runs only
+  the population declared for that choice; `fuzz` uses the server/extensions
+  worker containing the curated ASan fuzz smoke.
   - The bench gate measures the branch against its merge-base with `main`, so
     the branch is charged for its own changes, as the queue will measure them.
   - The changed-gate self-tests select what the branch changes against `main`.
@@ -730,7 +742,7 @@ file:
 | `playground (real emcc wasm32 build)` (`pages.yml`) | 1 | **aggregator** over `playground / build (…)`; reports on every PR and in the queue |
 | `playground / build (real emcc, web/build.sh) + docs site` (`pages.yml`) | advisory | the worker; required through the aggregator |
 | `deploy` (`pages.yml`) | advisory | runs only on push and `workflow_dispatch` — it publishes, it does not test |
-| `codspeed (simulation)` (`codspeed.yml`), and the CodSpeed app's `CodSpeed Performance Analysis` | advisory | path-filtered (`paths-ignore: '**.md'`), so it never reports on a docs-only PR; the instruction-count gate that blocks is `bench` |
+| `codspeed (simulation)` (`codspeed.yml`), and the CodSpeed app's `CodSpeed Performance Analysis` | advisory | path-filtered (`paths-ignore: '**.md'`), so it never reports on a docs-only PR; the instruction-count gate that blocks is `bench`. The lane's Value is modeled cycles, not instructions (runner pinned; `tools/codspeed_unit_guard.py` fails the job if that unit drifts; see INSTRUMENTS.md) |
 | `build` (`docker.yml`) | advisory | runs on push to `main`, `v*` tags and `workflow_dispatch`, never on a PR |
 | `Scorecard analysis` (`scorecard.yml`) | advisory | runs on push, schedule and `branch_protection_rule`, never on a PR; a posture score |
 | `Analyze (python)`, `Analyze (javascript-typescript)` | advisory | CodeQL *default setup* (a GitHub app, not a workflow file) over the repo's non-C code; the C analysis that blocks is `Analyze C` |

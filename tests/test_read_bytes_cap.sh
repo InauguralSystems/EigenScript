@@ -76,15 +76,16 @@ run_case "1-arg small read unchanged" \
 print of f\"{buf_len of b} {b[0]} {b[2]}\"" \
 "3 7 9"
 
-# 5. max_bytes validation: zero, over-ceiling, and non-numeric raise value.
-run_case "max_bytes 0 raises value" \
+# 5. Guard-like max_bytes mistakes raise type_mismatch in strict mode; the
+# hard-ceiling policy remains a value error in every mode.
+run_case "max_bytes 0 raises type mismatch" \
 "caught is \"none\"
 try:
     b is read_bytes_buf of [\"$SMALL\", 0]
 catch e:
     caught is e.kind
 print of caught" \
-"value"
+"type_mismatch"
 
 run_case "max_bytes over 512MB ceiling raises value" \
 "caught is \"none\"
@@ -95,14 +96,14 @@ catch e:
 print of caught" \
 "value"
 
-run_case "non-numeric max_bytes raises value" \
+run_case "non-numeric max_bytes raises type mismatch" \
 "caught is \"none\"
 try:
     b is read_bytes_buf of [\"$SMALL\", \"lots\"]
 catch e:
     caught is e.kind
 print of caught" \
-"value"
+"type_mismatch"
 
 # 6. Missing file raises I/O with the OS reason.
 run_case "missing file raises io with OS reason" \

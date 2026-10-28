@@ -202,7 +202,7 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
     if (eigs_current && g_sandbox_active) g_sandbox_error_latched = 1;
     g_has_error = 1;
     eigs_clear_error_value();   /* a new error supersedes any thrown value */
-    if (g_try_depth == 0 && !(eigs_current && g_sandbox_active)) {
+    if (!vm_error_has_handler() && !(eigs_current && g_sandbox_active)) {
         /* #407 residual: when the VM is mid-dispatch, defer the uncaught
          * print to CHECK_ERROR, which knows the failing instruction's
          * bytecode offset and can add a source excerpt + column caret.
@@ -529,6 +529,240 @@ static inline size_t obs_v_count(const ObserverSlot *s) {
     size_t n = (size_t)obs_win(s);
     return s->v_window_count < n ? s->v_window_count : n;
 }
+static inline size_t obs_eq_count(const ObserverSlot *s) {
+    size_t n = (size_t)obs_win(s);
+    return s->eq_window_count < n ? s->eq_window_count : n;
+}
+
+static void observer_slot_eq_ensure(ObserverSlot *s, int n) {
+    if (s->eq_window && s->eq_cap >= n) return;
+    uint8_t *nw = xcalloc((size_t)n, sizeof(*nw));
+    int cnt = s->eq_window ? s->eq_window_count : 0;
+    if (cnt > n) cnt = n;
+    for (int i = cnt - 1; i >= 0; i--) {
+        int old = (int)s->eq_window_head - cnt + i;
+        while (old < 0) old += s->eq_cap;
+        nw[i] = s->eq_window[old];
+    }
+    free(s->eq_window);
+    s->eq_window = nw;
+    s->eq_cap = (uint8_t)n;
+    s->eq_window_count = (uint8_t)cnt;
+    s->eq_window_head = (uint8_t)(cnt % n);
+}
+
+#define OBSERVER_EQ_SNAPSHOT_MAX_UNITS 4096
+
+static int observer_eq_charge(size_t *units, size_t add) {
+    if (add > OBSERVER_EQ_SNAPSHOT_MAX_UNITS - *units) return 0;
+    *units += add;
+    return 1;
+}
+
+/* Bound the extra work equality observation adds to an assignment.  This is
+ * deliberately a read-only, short-circuiting walk: assignment is already a
+ * writer, but shared values may concurrently be read, and observer probing
+ * must not hide normalization or caching writes in this traversal. */
+static int observer_eq_within_budget(Value *v, size_t *units, int depth) {
+    if (!v) return 1;
+    if (!observer_eq_charge(units, 1)) return 0;
+    /* The general-purpose clone shares containers beyond its depth bound.
+     * Sharing here would turn a snapshot back into an alias, so refuse it. */
+    if (depth > 64) return 0;
+    /* A closure is an owning edge into its environment.  ObserverSlot is not
+     * a GC edge, so it must never retain one (including inside a container). */
+    if (v->type == VAL_FN || v->type == VAL_BUILTIN) return 0;
+    if (v->type == VAL_LIST) {
+        for (int i = 0; i < v->data.list.count; i++) {
+            EIGS_VIEW(child);
+            if (!observer_eq_within_budget(list_get_view(v, i, &child), units, depth + 1))
+                return 0;
+        }
+    } else if (v->type == VAL_DICT) {
+        DICT_FOR_EACH(v, i) {
+            if (!observer_eq_charge(units, strlen(v->data.dict.keys[i]))) return 0;
+            EIGS_VIEW(child);
+            if (!observer_eq_within_budget(dict_value_get_view(v, i, &child), units, depth + 1))
+                return 0;
+        }
+    } else if (v->type == VAL_STR) {
+        if (!observer_eq_charge(units, strlen(v->data.str))) return 0;
+    } else if (v->type == VAL_BUFFER) {
+        if (!observer_eq_charge(units, (size_t)v->data.buffer.count)) return 0;
+    } else if (v->type == VAL_TEXT_BUILDER) {
+        if (!observer_eq_charge(units, v->data.text_builder.len)) return 0;
+    }
+    return 1;
+}
+
+/* Equality used only by observer bookkeeping.  Unlike language equality it
+ * cannot raise (notably num-vs-bool), set g_has_error, normalize buffers, or
+ * synchronize module namespaces.  Observer snapshots are ordinary detached
+ * values, and unsupported/deep values are refused before reaching here. */
+static int values_equal_for_observation(Value *a, Value *b, int depth) {
+    if (a == b) return 1;
+    if (!a || !b || a->type != b->type || depth > 64) return 0;
+    switch (a->type) {
+        case VAL_NUM: return VAL_NUM_RAW(a) == VAL_NUM_RAW(b);
+        case VAL_STR: return strcmp(a->data.str, b->data.str) == 0;
+        case VAL_NULL: return 1;
+        case VAL_BOOL: return a->data.boolean == b->data.boolean;
+        case VAL_LIST:
+            if (a->data.list.count != b->data.list.count) return 0;
+            for (int i = 0; i < a->data.list.count; i++) {
+                EIGS_VIEW(av); EIGS_VIEW(bv);
+                if (!values_equal_for_observation(list_get_view(a, i, &av),
+                        list_get_view(b, i, &bv), depth + 1)) return 0;
+            }
+            return 1;
+        case VAL_DICT:
+            if (a->data.dict.count != b->data.dict.count) return 0;
+            DICT_FOR_EACH(a, i) {
+                EIGS_VIEW(av); EIGS_VIEW(bv);
+                int j = -1;
+                /* Do not call a lookup path which may synchronize or rebuild
+                 * a namespace/hash: observation is deliberately side-effect
+                 * free, and snapshots are capped so this bounded scan is OK. */
+                DICT_FOR_EACH(b, k)
+                    if (strcmp(a->data.dict.keys[i], b->data.dict.keys[k]) == 0) {
+                        j = k;
+                        break;
+                    }
+                if (j < 0 || !values_equal_for_observation(
+                        dict_value_get_view(a, i, &av),
+                        dict_value_get_view(b, j, &bv), depth + 1)) return 0;
+            }
+            return 1;
+        case VAL_BUFFER:
+            if (a->data.buffer.count != b->data.buffer.count) return 0;
+            for (int i = 0; i < a->data.buffer.count; i++) {
+                double av = num_guard_value(a->data.buffer.data[i]);
+                double bv = num_guard_value(b->data.buffer.data[i]);
+                if (av != bv) return 0;
+            }
+            return 1;
+        case VAL_TEXT_BUILDER:
+            return a->data.text_builder.len == b->data.text_builder.len &&
+                   memcmp(a->data.text_builder.data, b->data.text_builder.data,
+                          a->data.text_builder.len) == 0;
+        case VAL_FN:
+        case VAL_BUILTIN:
+            return 0; /* identity was handled above */
+    }
+    return 0;
+}
+
+static void observer_slot_record_eq_bit(ObserverSlot *s, int n, int equal) {
+    if (!s->eq_window || s->eq_cap < n) observer_slot_eq_ensure(s, n);
+    s->eq_window[s->eq_window_head] = (uint8_t)equal;
+    if (++s->eq_window_head >= s->eq_cap) s->eq_window_head = 0;
+    if (s->eq_window_count < s->eq_cap) s->eq_window_count++;
+}
+
+typedef struct {
+    Value *snapshot;
+    Value *identity;
+    int within_budget;
+} ObserverEqualitySnapshot;
+
+/* Prepare outside env_shared_fold_lock.  val_clone_for_send() deliberately
+ * synchronizes module namespaces before copying them, which takes the same
+ * non-recursive g_module_env_lock used by the shared observer fold. */
+static ObserverEqualitySnapshot observer_equality_snapshot(Value *v) {
+    ObserverEqualitySnapshot out = {0};
+    if (v && (v->type == VAL_FN || v->type == VAL_BUILTIN)) {
+        out.identity = v;
+        return out;
+    }
+    size_t units = 0;
+    if (!observer_eq_within_budget(v, &units, 0)) return out;
+    out.within_budget = 1;
+    out.snapshot = val_clone_for_send(v);
+    return out;
+}
+
+static void observer_slot_record_equality(ObserverSlot *s,
+                                           ObserverEqualitySnapshot *next) {
+    int n = obs_win(s);
+    s->eq_seen = 1;
+    if (next->identity) {
+        if (s->eq_last || s->eq_identity_last)
+            observer_slot_record_eq_bit(s, n, !s->eq_last &&
+                                        s->eq_identity_last == next->identity);
+        val_decref(s->eq_last);
+        s->eq_last = NULL;
+        s->eq_identity_last = next->identity; /* compare address; do not own */
+        return;
+    }
+    if (!next->within_budget) {
+        /* Refusal to judge: keep the predicate false until a later run of a
+         * full window of bounded values, rather than silently falling back to
+         * entropy or doing value-size-proportional observer work. */
+        val_decref(s->eq_last);
+        s->eq_last = NULL;
+        s->eq_identity_last = NULL;
+        s->eq_window_count = s->eq_window_head = 0;
+        return;
+    }
+    if (s->eq_last || s->eq_identity_last)
+        observer_slot_record_eq_bit(s, n, s->eq_last &&
+                                    values_equal_for_observation(
+                                        s->eq_last, next->snapshot, 0));
+    /* Keep a private content snapshot, not a reference to the binding's
+     * mutable container.  In particular, `append of [xs, k]; xs is xs` must
+     * compare the post-append value with the pre-append contents.  Reuse the
+     * existing bounded-depth copier rather than growing a second clone. */
+    val_decref(s->eq_last);
+    s->eq_last = next->snapshot;
+    next->snapshot = NULL; /* ownership moved into the slot under the hold */
+    s->eq_identity_last = NULL;
+}
+
+/* The ordinary interpreter/JIT path does not need a detached value: no other
+ * thread can mutate the binding while this fold runs.  Keep the old direct
+ * fold there, including making the snapshot only when the equality channel
+ * actually accepts the value.  The shared path above must instead prepare
+ * before taking env_shared_fold_lock (module cloning can take its lock). */
+static void observer_slot_record_equality_local(ObserverSlot *s, Value *v) {
+    int n = obs_win(s);
+    s->eq_seen = 1;
+    if (v && (v->type == VAL_FN || v->type == VAL_BUILTIN)) {
+        if (s->eq_last || s->eq_identity_last)
+            observer_slot_record_eq_bit(s, n, !s->eq_last &&
+                                        s->eq_identity_last == v);
+        val_decref(s->eq_last);
+        s->eq_last = NULL;
+        s->eq_identity_last = v;
+        return;
+    }
+    size_t units = 0;
+    if (!observer_eq_within_budget(v, &units, 0)) {
+        val_decref(s->eq_last);
+        s->eq_last = NULL;
+        s->eq_identity_last = NULL;
+        s->eq_window_count = s->eq_window_head = 0;
+        return;
+    }
+    if (s->eq_last || s->eq_identity_last)
+        observer_slot_record_eq_bit(s, n, s->eq_last &&
+                                    values_equal_for_observation(s->eq_last,
+                                                                 v, 0));
+    Value *snapshot = val_clone_for_send(v);
+    val_decref(s->eq_last);
+    s->eq_last = snapshot;
+    s->eq_identity_last = NULL;
+}
+
+static int observer_slot_eq_settled(const ObserverSlot *s) {
+    size_t n = (size_t)observer_slot_window(s);
+    if (!s || obs_eq_count(s) < n) return 0;
+    for (size_t i = 0; i < n; i++) {
+        int at = (int)s->eq_window_head - 1 - (int)i;
+        while (at < 0) at += s->eq_cap;
+        if (!s->eq_window[at]) return 0;
+    }
+    return 1;
+}
 
 static double observer_slot_window_get(const ObserverSlot *s, size_t offset_back) {
     if (!s->dh_window || offset_back >= s->dh_window_count) return 0.0;
@@ -722,11 +956,24 @@ void observer_slot_record_value(ObserverSlot *s, double v) {
 /* #694: grow e->obs to cover `idx`. Defined with the #607 module-env MT
  * helpers below (it needs the lock + retire machinery). Returns 0 on OOM. */
 static int observer_obs_grow(Env *e, int idx);
+static inline void env_shared_fold_lock(void);
+static inline void env_shared_fold_unlock(void);
+
+/* #1867: an ObserverSlot is part of the shared binding protected by #607,
+ * not merely an append-only statistic.  Keep the complete fold in one hold;
+ * observer_obs_grow takes the same non-recursive mutex, so callers grow
+ * before entering here.  The TSan-only switch is the gate's planted fault. */
+static inline int observer_fold_is_shared(Env *e) {
+    int shared = __builtin_expect(g_vm_multithreaded, 0) && e->mt_shared;
+#ifdef EIGS_TSAN_TEST_SEAM
+    if (shared && getenv("EIGS_TSAN_OBSERVER_FOLD_OUTSIDE_HOLD")) shared = 0;
+#endif
+    return shared;
+}
 
 /* Core: fold a precomputed entropy into binding slot `idx` of env `e`. */
-static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
-    if (!e || idx < 0) return;
-    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+static void observer_slot_update_e_locked(Env *e, int idx, double new_entropy) {
+    if (!e || idx < 0) return; /* defensive for the locked worker contract */
     /* Acquire-load the (possibly just-republished) block rather than reading
      * e->obs plainly: a worker assigning a module binding can reach here while
      * the main thread grows. Which block a racing writer lands in is #607's
@@ -746,6 +993,96 @@ static void observer_slot_update_e(Env *e, int idx, double new_entropy) {
     s->last_entropy = new_entropy;
     s->obs_age++;
     s->used = 1;
+}
+
+static inline void observer_slot_update_locked(Env *e, int idx, Value *newval,
+                                               double entropy) {
+    observer_slot_update_e_locked(e, idx, entropy);
+    if (newval && newval->type == VAL_NUM) {
+        ObserverSlot *s = env_obs_slot(e, idx);
+        if (s) observer_slot_record_value(s, VAL_NUM_RAW(newval));
+    } else {
+        ObserverSlot *s = env_obs_slot(e, idx);
+        if (s) {
+            s->v_last = 0;
+            observer_slot_record_equality_local(s, newval);
+        }
+    }
+}
+
+static inline void observer_slot_update_num_locked(Env *e, int idx, double num,
+                                                   double entropy) {
+    observer_slot_update_e_locked(e, idx, entropy);
+    ObserverSlot *vs = env_obs_slot(e, idx);
+    if (vs) {
+        observer_slot_record_value(vs, num);
+        val_decref(vs->eq_last);
+        vs->eq_last = NULL;
+        vs->eq_identity_last = NULL;
+        vs->eq_window_count = vs->eq_window_head = 0;
+        vs->eq_seen = 0;
+    }
+}
+
+static inline void observer_slot_sample_num_locked(Env *e, int idx, double num) {
+    ObserverSlot *s = env_obs_slot(e, idx);
+    if (s) {
+        observer_slot_record_value(s, num);
+        s->used = 1;
+    }
+}
+
+static inline void observer_slot_sample_locked(Env *e, int idx) {
+    ObserverSlot *s = env_obs_slot(e, idx);
+    if (s) s->v_last = 0;
+}
+
+/* Keep the lock-taking arms out of the single-threaded hot functions. Besides
+ * making the dispatch explicit, this prevents their mutex temporaries from
+ * increasing register saves on every private fold. */
+static void __attribute__((noinline)) observer_slot_update_shared(
+        Env *e, int idx, double entropy, ObserverEqualitySnapshot *eq) {
+    env_shared_fold_lock();
+    observer_slot_update_e_locked(e, idx, entropy);
+    ObserverSlot *s = env_obs_slot(e, idx);
+    if (s) {
+        s->v_last = 0;
+        observer_slot_record_equality(s, eq);
+    }
+    env_shared_fold_unlock();
+}
+
+static void observer_slot_update_value_num_shared(
+        Env *e, int idx, Value *newval, double entropy)
+        __attribute__((noinline));
+static void observer_slot_update_value_num_shared(
+        Env *e, int idx, Value *newval, double entropy) {
+    env_shared_fold_lock();
+    observer_slot_update_e_locked(e, idx, entropy);
+    ObserverSlot *s = env_obs_slot(e, idx);
+    if (s) observer_slot_record_value(s, VAL_NUM_RAW(newval));
+    env_shared_fold_unlock();
+}
+
+static __attribute__((noinline)) void observer_slot_update_num_shared(
+        Env *e, int idx, double num, double entropy) {
+    env_shared_fold_lock();
+    observer_slot_update_num_locked(e, idx, num, entropy);
+    env_shared_fold_unlock();
+}
+
+static __attribute__((noinline)) void observer_slot_sample_num_shared(
+        Env *e, int idx, double num) {
+    env_shared_fold_lock();
+    observer_slot_sample_num_locked(e, idx, num);
+    env_shared_fold_unlock();
+}
+
+static __attribute__((noinline)) void observer_slot_sample_shared(Env *e,
+                                                                  int idx) {
+    env_shared_fold_lock();
+    observer_slot_sample_locked(e, idx);
+    env_shared_fold_unlock();
 }
 
 /* #915: the one place the observer gate is decided — eigs_obs_gate_open,
@@ -792,19 +1129,19 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
      * a program that names it opens the gate at COMPILE time and the flicker
      * cannot change an answer. */
     if (!eigs_obs_gate_open()) return;
-    observer_slot_update_e(e, idx, compute_entropy(newval));
-    /* #294 also fold the raw value into the value-signal channel (numbers only:
-     * the relative-delta step is only defined for a scalar trajectory). */
-    if (newval && newval->type == VAL_NUM) {
-        ObserverSlot *s = env_obs_slot(e, idx);
-        if (s) observer_slot_record_value(s, VAL_NUM_RAW(newval));
+    double entropy = compute_entropy(newval); /* outside the #607 hold */
+    if (!e || idx < 0) return;
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+    if (observer_fold_is_shared(e)) {
+        if (newval && newval->type == VAL_NUM) {
+            observer_slot_update_value_num_shared(e, idx, newval, entropy);
+        } else {
+            ObserverEqualitySnapshot eq = observer_equality_snapshot(newval);
+            observer_slot_update_shared(e, idx, entropy, &eq);
+            val_decref(eq.snapshot);
+        }
     } else {
-        /* #861: a non-numeric assignment ends the numeric trajectory's claim
-         * on this binding — predicates fall back to the entropy channel until
-         * a number is assigned again (the recorded windows are kept, matching
-         * report_value's documented history semantics). */
-        ObserverSlot *s = env_obs_slot(e, idx);
-        if (s) s->v_last = 0;
+        observer_slot_update_locked(e, idx, newval, entropy);
     }
 }
 
@@ -814,9 +1151,14 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
 void observer_slot_update_num(Env *e, int idx, double num) {
     eigs_obs_count_call();   /* #972 */
     if (!eigs_obs_gate_open()) return;           /* #915 — see observer_slot_update */
-    observer_slot_update_e(e, idx, entropy_of_num(num));
-    ObserverSlot *vs = env_obs_slot(e, idx);    /* #294 value-signal channel */
-    if (vs) observer_slot_record_value(vs, num);
+    double entropy = entropy_of_num(num); /* outside the #607 hold */
+    if (!e || idx < 0) return;
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+    if (observer_fold_is_shared(e)) {
+        observer_slot_update_num_shared(e, idx, num, entropy);
+    } else {
+        observer_slot_update_num_locked(e, idx, num, entropy);
+    }
 }
 
 /* #1049: the ELIDED assignment — what an `unobserved:` block still records.
@@ -852,10 +1194,11 @@ void observer_slot_update_num(Env *e, int idx, double num) {
 void observer_slot_sample_num_gated(Env *e, int idx, double num) {
     if (!e || idx < 0) return;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
-    ObserverSlot *s = env_obs_slot(e, idx);
-    if (!s) return;
-    observer_slot_record_value(s, num);
-    s->used = 1;
+    if (observer_fold_is_shared(e)) {
+        observer_slot_sample_num_shared(e, idx, num);
+    } else {
+        observer_slot_sample_num_locked(e, idx, num);
+    }
 }
 
 void observer_slot_sample_gated(Env *e, int idx, Value *newval) {
@@ -865,8 +1208,11 @@ void observer_slot_sample_gated(Env *e, int idx, Value *newval) {
     }
     if (!e || idx < 0) return;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
-    ObserverSlot *s = env_obs_slot(e, idx);
-    if (s) s->v_last = 0;   /* #861 route bit only — no walk, no `used` */
+    if (observer_fold_is_shared(e)) {
+        observer_slot_sample_shared(e, idx);
+    } else {
+        observer_slot_sample_locked(e, idx);
+    }
 }
 
 void observer_slot_sample_num(Env *e, int idx, double num) {
@@ -888,10 +1234,17 @@ void observer_slot_sample(Env *e, int idx, Value *newval) {
 int observer_slot_set_window(Env *e, int idx, int n) {
     if (!e || idx < 0) return 0;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return 0;
-    ObserverSlot *s = env_obs_slot(e, idx);
-    if (!s) return 0;
-    s->win_override = (uint8_t)n;
-    return 1;
+    ObserverSlot *s;
+    if (observer_fold_is_shared(e)) {
+        env_shared_fold_lock();
+        s = env_obs_slot(e, idx);
+        if (s) s->win_override = (uint8_t)n;
+        env_shared_fold_unlock();
+    } else {
+        s = env_obs_slot(e, idx);
+        if (s) s->win_override = (uint8_t)n;
+    }
+    return s != NULL;
 }
 
 void observer_slot_reset_bounded(Env *e, int max_retain_cap) {
@@ -901,6 +1254,8 @@ void observer_slot_reset_bounded(Env *e, int max_retain_cap) {
         free(e->obs[i].dh_window);
         free(e->obs[i].v_window);   /* #294 value-signal window */
         free(e->obs[i].vr_window);  /* #422 raw-step window */
+        val_decref(e->obs[i].eq_last);
+        free(e->obs[i].eq_window);
     }
     /* observer_obs_grow initializes the entire allocated extent, not merely
      * the binding prefix. Clearing obs_cap slots is therefore both necessary
@@ -1229,14 +1584,19 @@ static int obs_route_num(const ObserverSlot *s) {
  * saturation gates that #889 put on the entropy bodies are gone — a live
  * numeric binding always routes to the value channel, where the family
  * handles saturation itself, so the entropy route can no longer see one. */
-int observer_slot_converged(const ObserverSlot *s) {
-    if (obs_route_num(s)) return obs_num_converged(s);
+static int obs_entropy_converged(const ObserverSlot *s) {
     if (!s) return 0;
     size_t N = (size_t)observer_slot_window(s);
     if (obs_dh_count(s) < N) return 0;
     for (size_t i = 0; i < N; i++)
         if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_zero) return 0;
     return (s->entropy < g_obs_h_low) ? 1 : 0;
+}
+
+int observer_slot_converged(const ObserverSlot *s) {
+    if (obs_route_num(s)) return obs_num_converged(s);
+    if (s && s->eq_seen) return observer_slot_eq_settled(s);
+    return obs_entropy_converged(s);
 }
 
 int observer_slot_equilibrium(const ObserverSlot *s) {
@@ -1298,8 +1658,7 @@ int observer_slot_oscillating(const ObserverSlot *s) {
     return (flips >= FLIPS) ? 1 : 0;
 }
 
-int observer_slot_stable(const ObserverSlot *s) {
-    if (obs_route_num(s)) return obs_num_stable(s);
+static int obs_entropy_stable(const ObserverSlot *s) {
     size_t cnt = s ? obs_dh_count(s) : 0;
     if (cnt < (size_t)observer_slot_window(s)) return 0;
     if (s->entropy < g_obs_h_low) return 0;
@@ -1311,6 +1670,12 @@ int observer_slot_stable(const ObserverSlot *s) {
         if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) return 0;
     }
     return 1;
+}
+
+int observer_slot_stable(const ObserverSlot *s) {
+    if (obs_route_num(s)) return obs_num_stable(s);
+    if (s && s->eq_seen) return observer_slot_eq_settled(s);
+    return obs_entropy_stable(s);
 }
 
 /* #871: the predicate vocabulary, in kind order. The parser derives a kind as
@@ -1335,9 +1700,9 @@ const char *observer_slot_report_entropy(const ObserverSlot *s) {
     if (observer_slot_oscillating(s)) return "oscillating";
     if (observer_slot_diverging(s))   return "diverging";
     if (observer_slot_improving(s))   return "improving";
-    if (observer_slot_converged(s))   return "converged";
+    if (obs_entropy_converged(s))     return "converged";
     if (observer_slot_equilibrium(s)) return "equilibrium";
-    if (observer_slot_stable(s))      return "stable";
+    if (obs_entropy_stable(s))        return "stable";
     /* #735: the instantaneous fallback is for a PARTIAL window only. Ungated,
      * it let a full window whose six predicates are all false still be labelled
      * from the last dH alone — a low-entropy gray-band drift (every step under
@@ -1356,11 +1721,10 @@ const char *observer_slot_report_entropy(const ObserverSlot *s) {
     return "stable";
 }
 
-/* #861: `report` routes exactly as the predicates do — the value channel for
- * a binding whose latest observed assignment is numeric, entropy otherwise.
- * At a full window it agrees with the bare predicates by construction on
- * BOTH routes (each route's report tests that route's own family in the
- * canonical priority order). */
+/* #861: `report` uses the value channel for a binding whose latest observed
+ * assignment is numeric, entropy otherwise. #1992 deliberately narrows the
+ * latter statement for predicates: non-numeric converged/stable use equality,
+ * while report remains the canonical entropy classification surface. */
 const char *observer_slot_report(const ObserverSlot *s) {
     if (obs_route_num(s)) return obs_num_report(s);
     return observer_slot_report_entropy(s);
@@ -3229,17 +3593,29 @@ static int env_hash_remove(EnvHash *ht, const char *name, uint32_t h, char **nam
  * value a racing reader sees is still the program's logic race (#1837). */
 static pthread_mutex_t g_module_env_lock = PTHREAD_MUTEX_INITIALIZER;
 
-/* #1161: ONE definition of "shared env under MT". The old spelling was
+/* Observer folds dispatch on the MT predicate once, then use these raw
+ * operations. Calling env_shared_lock/unlock here would retest the predicate
+ * on both sides of every single-threaded fold (#1867). */
+static inline void env_shared_fold_lock(void) {
+    pthread_mutex_lock(&g_module_env_lock);
+}
+static inline void env_shared_fold_unlock(void) {
+    pthread_mutex_unlock(&g_module_env_lock);
+}
+
+/* #1161/#1866: ONE definition of "shared env under MT". The old spelling was
  * `e->parent == NULL`, which silently excluded every imported module's
  * namespace env (`env_new(g_global_env)` — parent NOT NULL), i.e. exactly the
- * envs two workers can extend through `M.field is v`. Now the env says so
- * itself (Env::mt_shared, set for a root env at env_new and for a module
- * namespace at eigs_module_ns_attach), so a new kind of cross-thread env is
- * one call to env_mark_shared rather than a second predicate. The
+ * envs two workers can extend through `M.field is v`. A captured env is also
+ * reachable by closures published to workers, so #1866 promotes captured
+ * envs to mt_shared at the first spawn (and immediately when captured under
+ * MT). The reader's counted reference and the writer's replacement/decref
+ * are then serialized exactly as they are for module bindings. The
  * g_vm_multithreaded test stays FIRST and is the whole single-threaded cost:
  * one predicted-false load, exactly as before. */
 static inline int env_mt_shared(const Env *e) {
-    return __builtin_expect(g_vm_multithreaded, 0) && e->mt_shared;
+    return __builtin_expect(g_vm_multithreaded, 0) &&
+           __atomic_load_n(&e->mt_shared, __ATOMIC_RELAXED);
 }
 static inline void env_shared_lock(const Env *e) {
     if (env_mt_shared(e)) pthread_mutex_lock(&g_module_env_lock);
@@ -3254,7 +3630,9 @@ void env_global_shared_unlock(void) { env_shared_unlock(g_global_env); }
 
 /* #1161: see Env::mt_shared. Idempotent, and deliberately one-way — an env
  * that has been published to another thread never becomes private again. */
-void env_mark_shared(Env *e) { if (e) e->mt_shared = 1; }
+void env_mark_shared(Env *e) {
+    if (e) __atomic_store_n(&e->mt_shared, 1, __ATOMIC_RELAXED);
+}
 
 /* #1171: the 0->1 multithreaded transition (builtin_spawn), called while the
  * caller is still the state's only attached thread.
@@ -3280,6 +3658,14 @@ void env_mt_invalidate_shared_caches(EigsState *st) {
     if (!st) return;
     if (st->global_env)  st->global_env->binding_version++;
     if (st->builtin_env) st->builtin_env->binding_version++;
+    /* #1866: closures can publish a function-local env to workers just as
+     * surely as a module publishes its namespace.  The captured-env registry
+     * is complete at this still-single-threaded 0->1 transition (the global
+     * env is intentionally absent and was invalidated above). */
+    for (Env *e = st->gc_envs; e; e = e->gc_next) {
+        __atomic_store_n(&e->mt_shared, 1, __ATOMIC_RELAXED);
+        e->binding_version++;
+    }
     pthread_mutex_lock(&st->module_lock);
     for (size_t i = 0; i < st->module_cache_count; i++)
         if (st->module_cache[i].env)
@@ -3954,6 +4340,11 @@ static inline Env *env_resolve_walk(Env *start, const char *name, uint32_t h,
     Env *e = start;
     int depth = 0;
     while (e) {
+#ifdef EIGS_TSAN_TEST_SEAM
+        int omit_captured_read_hold = getenv("EIGS_TSAN_CAPTURED_ENV_READ_NO_HOLD") &&
+            e->parent && __atomic_load_n(&e->captured, __ATOMIC_RELAXED);
+        if (!omit_captured_read_hold)
+#endif
         env_shared_lock(e);   /* #607: module hop vs main-thread binding
                                * creation (grow/rebuild frees the arrays
                                * this probe walks). */
@@ -3964,12 +4355,18 @@ static inline Env *env_resolve_walk(Env *start, const char *name, uint32_t h,
                 slot_incref(s);
                 *out_val = s;
             }
-            env_shared_unlock(e);
+#ifdef EIGS_TSAN_TEST_SEAM
+            if (!omit_captured_read_hold)
+#endif
+                env_shared_unlock(e);
             if (out_slot)  *out_slot  = idx;
             if (out_depth) *out_depth = depth;
             return e;
         }
-        env_shared_unlock(e);
+#ifdef EIGS_TSAN_TEST_SEAM
+        if (!omit_captured_read_hold)
+#endif
+            env_shared_unlock(e);
         e = e->parent;
         depth++;
     }
@@ -4241,6 +4638,11 @@ void env_mark_captured(Env *env) {
      * <- vm_run_ex <- builtin_load_file). The only READER, vm_park_call_env,
      * returns before it under g_vm_multithreaded, so no acquire is owed. */
     __atomic_store_n(&env->captured, 1, __ATOMIC_RELAXED);
+    /* #1866: a closure created after the first spawn may itself be published
+     * by a later spawn. Identical concurrent stores are atomic because two
+     * loader workers can capture the same environment. */
+    if (g_vm_multithreaded)
+        __atomic_store_n(&env->mt_shared, 1, __ATOMIC_RELAXED);
     if (!g_gc_enabled || g_in_gc || env->in_gc_list || env == g_global_env)
         return;
     gc_registry_lock();

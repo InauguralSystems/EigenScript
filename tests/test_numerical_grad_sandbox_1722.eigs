@@ -1,0 +1,72 @@
+# #1722 (round 2): the same shape as CASE(SLICE_GET)'s list arm, found by a
+# blind critic in two tensor builtins. builtin_numerical_grad_rows and
+# builtin_numerical_grad_cols (src/builtins_tensor.c) build a zero gradient
+# matrix with `grad = make_list(rows)` and per row `grad_row = make_list(cols)`,
+# filled by list_append_owned. Under an armed sandbox budget make_list caps
+# capacity at its 8-slot fallback and list_reserve_one drops the appends past
+# the 8th, so grad has <= 8 rows and each grad_row <= 8 columns. The compute
+# loop then indexes `list_get_ref(grad, r)` and `list_set_num(grad_row, c|col)`
+# with r/c bounded by the CALLER's matrix dimensions, not by the real (capped)
+# count. A raise does not unwind the direct C call, and neither builtin checks
+# g_has_error between building and the loop, so a matrix taller/wider than 8
+# reads and writes past the arrays: a heap out-of-bounds access.
+#
+# RED CONTRACT (predicted; CI is the oracle): on the base both builtins ABORT
+# under the ASan shards (heap-buffer-overflow) and crash the release/replay
+# lanes (rc=139), exactly as the slice case did (CI run 40627838598). On the
+# fix each builtin stops after the refusal, sandbox_run returns
+# {ok:0, kind:"sandbox"}, every assertion holds, and the marker prints.
+#
+# loss_fn is 0 (never a valid callee): call_eigs_fn returns null for a
+# non-VAL_FN, so numerical_loss is a harmless no-op. The row OOB read fires
+# before any loss call; the column OOB write fires after one such no-op call.
+
+load_file of "lib/test.eigs"
+
+ABI is 1
+CONST is 0
+GET_NAME is 25
+CALL is 39
+RETURN is 40
+
+# A 9x9 numeric matrix — taller AND wider than make_list's 8-slot fallback.
+# Built in the HOST, before sandbox_run arms the budget and before the
+# descriptor deep-copies it, so it is never charged; the first charged
+# allocation of the run is the gradient matrix the builtin allocates. Each row
+# is a fresh literal, so the rows are distinct list objects.
+m9 is []
+for gi in range of 9:
+    append of [m9, [gi, gi, gi, gi, gi, gi, gi, gi, gi]]
+
+# --- numerical_grad_rows: grad[r] read past the capped count ----------------
+# row index 8 >= 8, so once grad is capped to 8 rows, `list_get_ref(grad, 8)`
+# (the first statement of the per-row loop body) reads past the 8-slot array,
+# before any loss call.
+rows_arg is [0, m9, [8], 0.001]
+rows_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN],
+              ["numerical_grad_rows", rows_arg]]
+sr_rows is sandbox_run of [rows_desc, 100000, 1]
+assert_eq of [sr_rows["ok"], false,
+              "#1722 numerical_grad_rows: refused grad allocation raises a sandbox error"]
+assert_eq of [sr_rows["error"]["kind"], "sandbox",
+              "#1722 numerical_grad_rows: refusal names the sandbox kind"]
+rows_mem is index_of of [sr_rows["error"]["message"], "memory budget"]
+assert_eq of [rows_mem >= 0, true,
+              "#1722 numerical_grad_rows: refusal is the make_list byte budget"]
+
+# --- numerical_grad_cols: grad_row[col] written past the capped count -------
+# column index 8 >= 8, so at the first row `list_set_num(grad_row, 8, ...)`
+# writes past grad_row's 8-slot array.
+cols_arg is [0, m9, [8], 0.001]
+cols_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN],
+              ["numerical_grad_cols", cols_arg]]
+sr_cols is sandbox_run of [cols_desc, 100000, 1]
+assert_eq of [sr_cols["ok"], false,
+              "#1722 numerical_grad_cols: refused grad allocation raises a sandbox error"]
+assert_eq of [sr_cols["error"]["kind"], "sandbox",
+              "#1722 numerical_grad_cols: refusal names the sandbox kind"]
+cols_mem is index_of of [sr_cols["error"]["message"], "memory budget"]
+assert_eq of [cols_mem >= 0, true,
+              "#1722 numerical_grad_cols: refusal is the make_list byte budget"]
+
+test_summary of null

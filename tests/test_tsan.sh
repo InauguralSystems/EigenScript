@@ -30,11 +30,8 @@ if [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] && \
     exit 1
 fi
 
-# Every run is timeout-bounded. The seeded race is DELIBERATE UB (a lost
-# update on the slot double-decrefs the displaced element), and undefined
-# behavior may legally hang — on 4-core CI runners it did, at ~1/3 rate,
-# burning the 6h job timeout each time. TSan's warnings are emitted as they
-# happen, so a killed run still yields its warning count.
+# Every run is timeout-bounded. TSan's warnings are emitted as they happen,
+# so a killed run still yields its warning count.
 TSAN_RUN_TIMEOUT=${TSAN_RUN_TIMEOUT:-120}
 # Sets WARNINGS + LAST_RC as globals — deliberately NOT echo-and-capture:
 # `w=$(fn)` would run fn in a subshell and the parent would never see
@@ -54,17 +51,40 @@ tsan_warnings() {
     WARNINGS=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
 }
 
+observer_shared_fold_rows() {
+    echo "=== #1867 shared ObserverSlot folds must hold #607 ==="
+    local fixtures="tsan_observer_shared_fold tsan_observer_sandbox_probe observer_ns_deadlock"
+    local declared=3 examined=0 t marker
+    for t in $fixtures; do
+        examined=$((examined + 1))
+        marker="observer fold repro: PASS"
+        [ "$t" = tsan_observer_sandbox_probe ] && marker="observer sandbox probe: PASS"
+        [ "$t" = observer_ns_deadlock ] && marker="observer namespace deadlock: PASS"
+        tsan_warnings "$TESTS_DIR/$t.eigs"
+        if [ "$LAST_RC" -eq 0 ] && [ "$WARNINGS" -eq 0 ] && grep -Fxq "$marker" <<< "$RUN_OUTPUT"; then
+            echo "  PASS: $t TSan-clean"; PASS=$((PASS + 1))
+        else
+            echo "  FAIL: $t warnings=$WARNINGS rc=$LAST_RC"; FAIL=$((FAIL + 1))
+        fi
+    done
+    if [ "$examined" -eq "$declared" ]; then
+        echo "  PASS: observer-fold fixtures examined == declared ($examined)"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: observer-fold fixtures examined == declared (examined=$examined declared=$declared)"; FAIL=$((FAIL + 1))
+    fi
+}
+
 seeded_race_row() {
     echo "=== gate self-validation: a seeded race MUST be caught ==="
-    tsan_warnings "$TESTS_DIR/tsan_seeded_race.eigs"
-    local w=$WARNINGS
-    if [ "$LAST_RC" -eq 124 ]; then
-        echo "  note: seeded race killed after ${TSAN_RUN_TIMEOUT}s (UB may hang; detection is what's asserted)"
-    fi
+    local out rc w
+    out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R env \
+        EIGS_TSAN_SEEDED_RACE_CONTROL=1 "$EIGS" 2>&1)
+    rc=$?
+    w=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
     if [ "$w" -gt 0 ]; then
         echo "  PASS: seeded race detected ($w warnings) — the gate is live"; PASS=$((PASS + 1))
     else
-        echo "  FAIL: seeded race NOT detected — the TSan gate is vacuous!"; FAIL=$((FAIL + 1))
+        echo "  FAIL: seeded race NOT detected — the TSan gate is vacuous! (rc=$rc)"; FAIL=$((FAIL + 1))
     fi
 }
 
@@ -107,6 +127,19 @@ rebind_call_row() {
         tail -5 <<< "$RUN_OUTPUT"
     else
         echo "  PASS: rebind_call_race TSan-clean, totals conserved"; PASS=$((PASS + 1))
+    fi
+}
+
+captured_rebind_row() {
+    echo "=== #1866 call vs rebind of a captured binding must be race-free ==="
+    local fixture="$TESTS_DIR/tsan_captured_rebind.eigs"
+    tsan_warnings "$fixture"
+    if [ "$LAST_RC" -eq 0 ] && [ "$WARNINGS" -eq 0 ] && \
+       grep -Fxq 'W5 total=40000 rebinds=20000' <<< "$RUN_OUTPUT"; then
+        echo "  PASS: captured binding call/rebind TSan-clean"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: captured binding call/rebind warnings=$WARNINGS rc=$LAST_RC"; FAIL=$((FAIL + 1))
+        grep -A2 'WARNING: ThreadSanitizer' <<< "$RUN_OUTPUT" | head -6
     fi
 }
 
@@ -175,17 +208,20 @@ fi
 # so a row can be proven under load (taskset -c 0 nice -n 19) or against a
 # planted binary without running the whole lane.
 if [ "${1:-}" = "--row" ]; then
+    ROW_EXPECTED=1
     case "${2:-}" in
         seeded)         seeded_race_row ;;
         rebind-call)    rebind_call_row ;;
+        captured-rebind) captured_rebind_row ;;
         scope-boundary) scope_boundary_row ;;
         dict-readers)   dict_readers_row ;;
         misordered-publish) misordered_publish_row ;;
-        *) echo "usage: test_tsan.sh --row seeded|rebind-call|scope-boundary|dict-readers|misordered-publish"; exit 2 ;;
+        observer-fold) ROW_EXPECTED=4; observer_shared_fold_rows ;;
+        *) echo "usage: test_tsan.sh --row seeded|rebind-call|captured-rebind|scope-boundary|dict-readers|misordered-publish|observer-fold"; exit 2 ;;
     esac
     echo ""
     echo "Results: $PASS passed, $FAIL failed"
-    [ "$FAIL" -eq 0 ] && [ "$PASS" -eq 1 ]; exit
+    [ "$FAIL" -eq 0 ] && [ "$PASS" -eq "$ROW_EXPECTED" ]; exit
 fi
 
 echo "=== concurrency slice must be race-free ==="
@@ -579,6 +615,8 @@ fi
 
 rebind_call_row
 
+observer_shared_fold_rows
+
 scope_boundary_row
 
 echo "=== observer arming sets must be race-free (#1145) ==="
@@ -711,6 +749,8 @@ fi
 
 seeded_race_row
 misordered_publish_row
+observer_shared_fold_rows
+captured_rebind_row
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
