@@ -3769,41 +3769,6 @@ void eigs_obs_unmute_for_fatal(void) {
 #endif
 }
 
-static int obs_gate_mute_stderr(void) {
-#if EIGENSCRIPT_FREESTANDING
-    return -1;
-#else
-    int saved = dup(STDERR_FILENO);
-    if (saved < 0) return -1;
-    int devnull = open("/dev/null", O_WRONLY);
-    if (devnull < 0) { close(saved); return -1; }
-    fflush(stderr);
-    if (dup2(devnull, STDERR_FILENO) < 0) { close(devnull); close(saved); return -1; }
-    close(devnull);
-    /* Only the OUTERMOST mute records here: that is the one holding the real
-     * stderr, and it is what a fatal path must restore. Recording every level
-     * meant the inner unmute cleared the flag and the OUTER unmute then saw it
-     * negative and returned WITHOUT restoring — leaking its fd and leaving
-     * stderr pointed at the inner target. Mutual/nested literal loads recurse,
-     * so the suite caught it immediately. */
-    if (g_obs_mute_saved_fd < 0) g_obs_mute_saved_fd = saved;
-    return saved;
-#endif
-}
-
-static void obs_gate_unmute_stderr(int saved) {
-#if !EIGENSCRIPT_FREESTANDING
-    if (saved < 0) return;
-    fflush(stderr);
-    dup2(saved, STDERR_FILENO);
-    /* Clear the fatal-path pointer only when THIS level owned it. */
-    if (g_obs_mute_saved_fd == saved) g_obs_mute_saved_fd = -1;
-    close(saved);
-#else
-    (void)saved;
-#endif
-}
-
 /* Memo of resolved paths this top-level compile has already scanned.
  *
  * Without it the eager pass is EXPONENTIAL in a module DAG, not linear: it walks
@@ -3925,6 +3890,152 @@ static int obs_ast_name_is_observer_builtin(const char *nm) {
         "observe", "report", "report_value", "trajectory", "classify",
         "state_at", "get_observer_thresholds", "eval", "record_history", NULL };
     for (int i = 0; OBS_NAMES[i]; i++) if (strcmp(nm, OBS_NAMES[i]) == 0) return 1;
+    return 0;
+}
+
+/* #1873: Cheap answer for a speculatively-read module.  The host unit has
+ * already been compiled, but a literal target may sit in an uncalled function;
+ * parsing that target (and every target below it) made optional modules charge
+ * their full parser cost at import.  Tokens are sufficient for the deliberately
+ * conservative question asked here: reserved observer forms and value-callable
+ * readers have fixed word spellings, and a nested literal load/import can be
+ * collected without building an AST.
+ *
+ * False positives merely leave recording enabled.  Anything whose load shape
+ * is not exactly provable from tokens therefore returns opaque (1).  String
+ * tokens are data and are never searched for reader names. */
+static int obs_word_is_reader(const char *s, size_t n) {
+    static const char *names[] = {
+        "what", "who", "when", "where", "why", "how", "prev", "at", "converged",
+        "stable", "improving", "oscillating", "diverging", "equilibrium",
+        "observe", "report", "report_value", "trajectory", "classify",
+        "state_at", "get_observer_thresholds", "eval", "record_history", NULL
+    };
+    for (int i = 0; names[i]; i++)
+        if (strlen(names[i]) == n && memcmp(s, names[i], n) == 0) return 1;
+    return 0;
+}
+
+static const char *obs_skip_space(const char *p) {
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+    return p;
+}
+
+/* `of` consumes one unary-or-tighter RHS (parse_relation), so postfix syntax
+ * belongs to that argument while infix syntax resumes outside the call.  A
+ * literal is therefore complete only at a statement boundary or when an
+ * enclosing expression supplies its delimiter; every other continuation is
+ * opaque, just like chunk_scan_static_loads' non-exact bytecode shape. */
+static int obs_literal_argument_ends(const char *p) {
+    while (*p == ' ' || *p == '\t' || *p == '\r') p++;
+    return *p == '\0' || *p == '\n' || *p == '#' ||
+           *p == ')' || *p == ']' || *p == '}' || *p == ',';
+}
+
+static char *obs_copy_word(const char *s, size_t n) {
+    char *copy = xmalloc(n + 1);
+    memcpy(copy, s, n);
+    copy[n] = '\0';
+    return copy;
+}
+
+static int obs_source_scan(const char *source, ObsLoadList *L);
+
+/* Scan only f-string interpolations. The real lexer's one boundary predicate
+ * decides where each code segment ends; literal segments remain data. */
+static int obs_scan_fstring(const char **pp, ObsLoadList *L) {
+    const char *p = *pp + 2;
+    while (*p && *p != '"') {
+        if (*p == '\\') { if (p[1]) p += 2; else p++; continue; }
+        if (*p != '{') { p++; continue; }
+        int too_deep = 0;
+        const char *end = fstr_interp_end(p + 1, 0, &too_deep);
+        if (too_deep || *end != '}') return 1;
+        char *expr = obs_copy_word(p + 1, (size_t)(end - (p + 1)));
+        int opaque = obs_source_scan(expr, L);
+        free(expr);
+        if (opaque) return 1;
+        p = end + 1;
+    }
+    if (*p != '"') return 1;
+    *pp = p + 1;
+    return 0;
+}
+
+/* This byte class replaces strcspn: freestanding's libc contract deliberately
+ * does not include it. Designated entries keep the population reviewable. */
+static const unsigned char OBS_SCAN_BYTE[256] = {
+    ['#'] = 1, ['"'] = 1, ['f'] = 1, ['_'] = 1,
+    ['a'] = 1, ['b'] = 1, ['c'] = 1, ['d'] = 1, ['e'] = 1,
+    ['g'] = 1, ['h'] = 1, ['i'] = 1, ['j'] = 1, ['k'] = 1,
+    ['l'] = 1, ['m'] = 1, ['n'] = 1, ['o'] = 1, ['p'] = 1,
+    ['q'] = 1, ['r'] = 1, ['s'] = 1, ['t'] = 1, ['u'] = 1,
+    ['v'] = 1, ['w'] = 1, ['x'] = 1, ['y'] = 1, ['z'] = 1,
+    ['A'] = 1, ['B'] = 1, ['C'] = 1, ['D'] = 1, ['E'] = 1,
+    ['F'] = 1, ['G'] = 1, ['H'] = 1, ['I'] = 1, ['J'] = 1,
+    ['K'] = 1, ['L'] = 1, ['M'] = 1, ['N'] = 1, ['O'] = 1,
+    ['P'] = 1, ['Q'] = 1, ['R'] = 1, ['S'] = 1, ['T'] = 1,
+    ['U'] = 1, ['V'] = 1, ['W'] = 1, ['X'] = 1, ['Y'] = 1, ['Z'] = 1
+};
+
+static int obs_source_scan(const char *source, ObsLoadList *L) {
+    const char *p = source;
+    while (*p) {
+        while (*p && !OBS_SCAN_BYTE[(unsigned char)*p]) p++;
+        if (!*p) break;
+        if (*p == '#') { while (*p && *p != '\n') p++; continue; }
+        if (*p == 'f' && p[1] == '"') {
+            if (obs_scan_fstring(&p, L)) return 1;
+            continue;
+        }
+        if (*p == '"') {
+            p++;
+            while (*p && *p != '"') {
+                if (*p == '\\' && p[1]) p += 2; else p++;
+            }
+            if (!*p) return 1;
+            p++;
+            continue;
+        }
+        if (!(isalpha((unsigned char)*p) || *p == '_')) { p++; continue; }
+        const char *word = p++;
+        while (isalnum((unsigned char)*p) || *p == '_') p++;
+        size_t n = (size_t)(p - word);
+        if (obs_word_is_reader(word, n)) return 1;
+
+        if (n == 6 && memcmp(word, "import", 6) == 0) {
+            const char *name = obs_skip_space(p), *end = name;
+            if (!(isalpha((unsigned char)*end) || *end == '_')) return 1;
+            while (isalnum((unsigned char)*end) || *end == '_') end++;
+            char *module = obs_copy_word(name, (size_t)(end - name));
+            obs_gate_note_load(module, 1, L);
+            free(module);
+            p = end;
+            continue;
+        }
+        if (n != 9 || memcmp(word, "load_file", 9) != 0) continue;
+        const char *q = obs_skip_space(p);
+        if (q[0] != 'o' || q[1] != 'f' ||
+            isalnum((unsigned char)q[2]) || q[2] == '_') return 1;
+        q = obs_skip_space(q + 2);
+        int paren = *q == '(';
+        if (paren) q = obs_skip_space(q + 1);
+        if (*q++ != '"') return 1;
+        const char *path = q;
+        while (*q && *q != '"') {
+            if (*q == '\\') return 1;
+            q++;
+        }
+        if (!*q) return 1;
+        char *literal = obs_copy_word(path, (size_t)(q - path));
+        q++;
+        if (paren) q = obs_skip_space(q);
+        if (paren && *q++ != ')') { free(literal); return 1; }
+        if (!obs_literal_argument_ends(q)) { free(literal); return 1; }
+        obs_gate_note_load(literal, 0, L);
+        free(literal);
+        p = q;
+    }
     return 0;
 }
 static int obs_ast_scan_d(ASTNode *n, ObsLoadList *L, int depth);
@@ -4224,60 +4335,14 @@ static void obs_gate_resolve_static_loads(EigsChunk *chunk) {
         trace_source_record("observer_source", source, (size_t)size, resolved, NULL);
         }
 
-        int muted = obs_gate_mute_stderr();
-        if (muted < 0) { free(source); eigs_obs_enable_runtime(); break; }
-
-        /* BEFORE tokenize, not after. lexer.c zeroes all five first_error
-         * fields unconditionally at tokenize depth 0, so a snapshot taken after
-         * it saved the ZEROES and the "restore" then wiped the parent's recorded
-         * error — and the parse-error path below exited without restoring at
-         * all, leaving the MODULE's error installed in the parent. The previous
-         * placement was a fix that did not work; found by enumerating the
-         * compile path, not by a test, because the only readers (lint, LSP)
-         * disable this pass. */
-        int saved_fe_line = g_first_error_line, saved_fe_col = g_first_error_col;
-        int saved_fe_len = g_first_error_len, saved_fe_known = g_first_error_col_known;
-        int saved_fe_lexer = g_first_error_from_lexer;
-        char saved_fe_msg[256];
-        snprintf(saved_fe_msg, sizeof saved_fe_msg, "%s", g_first_error_msg);
-        int saved_errors = g_parse_errors;
-        g_parse_errors = 0;
-        TokenList tl = tokenize(source);
-        ASTNode *mast = parse(&tl);
-        if (g_parse_errors > 0 || !mast) {
-            g_parse_errors = saved_errors;
-            free_ast(mast); free_tokenlist(&tl); free(source);
-            g_first_error_line = saved_fe_line; g_first_error_col = saved_fe_col;
-            g_first_error_len = saved_fe_len;   g_first_error_col_known = saved_fe_known;
-            g_first_error_from_lexer = saved_fe_lexer;
-            snprintf(g_first_error_msg, sizeof(((EigsThread *)0)->first_error_msg),
-                     "%s", saved_fe_msg);
-            obs_gate_unmute_stderr(muted);   /* every exit from here unmutes */
-            eigs_obs_enable_runtime(); break;
-        }
-
-        /* #1031: answer from the AST -- no compile_ast here any more. The
-         * compiled chunk was never reusable by load_file (compile_ast numbers
-         * module slots from the env it is given, and the scan env is not
-         * load_file's), so every literal module was compiled twice at
-         * startup. obs_ast_scan mirrors chunk_reads_observer and
-         * chunk_scan_static_loads at the AST level; nested literal loads are
-         * appended to L and visited by this same loop (its bound re-reads
-         * L.count), and an overflow of L is opaque as it is for the host
-         * chunk's own list. Nothing compiles, so nothing arms trace recording
-         * in the parent (the trace_arm_snapshot dance is gone with it). */
+        /* #1873: answer directly from source tokens. Building an AST here charged
+         * optional modules in uncalled functions most of their compile cost.
+         * Nested literal loads are appended to L and visited by this same loop
+         * (whose bound re-reads L.count). */
         L.base = module_dir;
-        int scan_armed = obs_ast_scan(mast, &L) || L.overflow;
+        int scan_armed = obs_source_scan(source, &L) || L.overflow;
         if (scan_armed) eigs_obs_enable_runtime();
-        g_first_error_line = saved_fe_line; g_first_error_col = saved_fe_col;
-        g_first_error_len = saved_fe_len;   g_first_error_col_known = saved_fe_known;
-        g_first_error_from_lexer = saved_fe_lexer;
-        snprintf(g_first_error_msg, sizeof(((EigsThread *)0)->first_error_msg),
-                 "%s", saved_fe_msg);
-        if (g_parse_errors > 0) eigs_obs_enable_runtime();
-        g_parse_errors = saved_errors;
-        free_ast(mast); free_tokenlist(&tl); free(source);
-        obs_gate_unmute_stderr(muted);
+        free(source);
     }
 
 done:

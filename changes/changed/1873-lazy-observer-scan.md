@@ -1,0 +1,1 @@
+- Literal `load_file` targets inside functions now use a lightweight observer-name scan, including code inside f-string interpolations, instead of paying their parse cost at import (#1873).
