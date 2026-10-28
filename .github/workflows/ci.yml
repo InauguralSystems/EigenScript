@@ -205,6 +205,9 @@ jobs:
       - name: Prove the parity instrument detects planted faults
         if: needs.scope.outputs.spec == 'true'
         run: python3 tools/spec_lean_parity.py --selftest
+      - name: Prove the generated differential detects an output fault
+        if: needs.scope.outputs.spec == 'true'
+        run: python3 tests/test_ref_diff.py
 
   # Build the shared dev/CI image (.devcontainer/Dockerfile) and push it to
   # GHCR tagged to this commit. Every Linux leg below runs *inside* this image
