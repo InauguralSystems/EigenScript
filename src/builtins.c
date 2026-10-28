@@ -2048,8 +2048,8 @@ Value* builtin_abs(Value *arg) {
 /* #317: min/max are N-ary reductions over a flat list of numbers — the old
  * code silently read only items[0..1] (`max of [1,2,3]` was 2) and returned 0
  * for a 1-element list. A single bare number returns itself (mirrors `sum`);
- * an empty list or any non-number element keeps the old 0 fallback rather
- * than inventing a partial answer. */
+ * an empty list keeps the old 0 fallback, while a non-number element raises
+ * rather than inventing a partial answer (#1649). */
 static Value* minmax_reduce(Value *arg, int want_max) {
     if (arg && arg->type == VAL_NUM) return make_num(eigs_num_arg(arg, __func__));
     /* Split from the empty-list case below: #317 chose the 0 fallback for BOTH
@@ -2063,7 +2063,12 @@ static Value* minmax_reduce(Value *arg, int want_max) {
     double best = 0.0;
     for (int i = 0; i < arg->data.list.count; i++) {
         Value *v = BUILTIN_LIST_VIEW(arg, i);
-        ARG_GUARD(!v || v->type != VAL_NUM, want_max ? "max" : "min", "every element to be a number", make_num(0));
+        if (!v || v->type != VAL_NUM) {
+            rt_error(EK_TYPE, 0, "%s: element %d is %s (expected a number)",
+                     want_max ? "max" : "min", i,
+                     val_type_name(v ? v->type : VAL_NULL));
+            return make_null();
+        }
         if (i == 0 || (want_max ? eigs_num_arg(v, __func__) > best : eigs_num_arg(v, __func__) < best))
             best = eigs_num_arg(v, __func__);
     }

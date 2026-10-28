@@ -1,0 +1,50 @@
+load_file of "lib/test.eigs"
+
+# The aggregate population is derived from docs/BUILTINS.md: scalar min/max
+# plus the tensor reductions sum/mean/norm.  Every aggregate must diagnose the
+# first bad element with both its zero-based index and runtime type.
+
+sum_caught is false
+try:
+    ignored_sum is sum of [10, "bad", 20]
+catch e:
+    sum_caught is (contains of [e.message, "sum: element 1 is str"])
+assert_true of [sum_caught, "sum names the bad element index and type"]
+
+mean_caught is false
+try:
+    ignored_mean is mean of [10, "bad", 20]
+catch e:
+    mean_caught is (contains of [e.message, "mean: element 1 is str"])
+assert_true of [mean_caught, "mean names the bad element index and type"]
+
+norm_caught is false
+try:
+    ignored_norm is norm of [10, "bad", 20]
+catch e:
+    norm_caught is (contains of [e.message, "norm: element 1 is str"])
+assert_true of [norm_caught, "norm names the bad element index and type"]
+
+min_caught is false
+try:
+    ignored_min is min of [10, "bad", 20]
+catch e:
+    min_caught is (contains of [e.message, "min: element 1 is str"])
+assert_true of [min_caught, "min names the bad element index and type"]
+
+max_caught is false
+try:
+    ignored_max is max of [10, "bad", 20]
+catch e:
+    max_caught is (contains of [e.message, "max: element 1 is str"])
+assert_true of [max_caught, "max names the bad element index and type"]
+
+# Pin the existing empty-list identities explicitly: this issue does not
+# change them.
+assert_eq of [sum of [], 0, "empty sum remains zero"]
+assert_eq of [mean of [], 0, "empty mean remains zero"]
+assert_eq of [norm of [], 0, "empty norm remains zero"]
+assert_eq of [min of [], 0, "empty min remains zero"]
+assert_eq of [max of [], 0, "empty max remains zero"]
+
+print of "All tests passed"

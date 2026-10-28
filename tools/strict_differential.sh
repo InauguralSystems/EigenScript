@@ -652,7 +652,10 @@ has_key|print of (has_key of [42, "k"])
 join|print of (join of [42, ","])
 json_path|print of (json_path of 42)
 list_contains|print of (list_contains of [42, 1])
-max|print of (max of [1, "x", 3])
+max|print of (max of [1, "x", 3])|max: element 1 is str
+sum|print of (sum of [1, "x", 3])|sum: element 1 is str
+mean|print of (mean of [1, "x", 3])|mean: element 1 is str
+norm|print of (norm of [1, "x", 3])|norm: element 1 is str
 path_base|print of (path_base of 42)
 path_dir|print of (path_dir of 42)
 path_ext|print of (path_ext of 42)

@@ -12,7 +12,12 @@ assert_eq of [min of [4, 2, 9, 1, 5], 1, "min N-ary reduction"]
 assert_eq of [max of [-3, -1, -2], -1, "max of all-negative list"]
 assert_eq of [min of (7), 7, "min of a bare number is itself (mirrors sum)"]
 assert_eq of [max of [], 0, "max of empty list keeps the 0 fallback"]
-assert_eq of [max of ["a", 5], 0, "non-number element keeps the 0 fallback"]
+bad_max_caught is false
+try:
+    ignored_bad_max is max of ["a", 5]
+catch e:
+    bad_max_caught is contains of [e.message, "max: element 0 is str"]
+assert_true of [bad_max_caught, "non-number element raises even in compatibility mode"]
 
 # ---- #316: string predicates reject non-string operands ----
 assert_eq of [index_of of [[1, 2, 3], 2], -1, "index_of list haystack is a miss"]

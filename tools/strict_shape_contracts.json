@@ -1427,7 +1427,7 @@
         "2175b6fc725553d83e745e380ecddc20ad81175878ea6d2854231e8bacdeea44"
       ],
       "minmax_reduce": [
-        "fb3260dd7be09f46d9dba30ecd6f70c3a3da01b39e3f342add20836e16d221fd"
+        "96b723fedb15051c304959e8ed377e4efa782ca2de7f77803b06ff5d8d2a1636"
       ]
     }
   },
@@ -1450,7 +1450,7 @@
         "aa04459f66b91bc896e90d66cbef455dc88f9637cdc9c81d8841cd5f64ffdfe6"
       ],
       "minmax_reduce": [
-        "fb3260dd7be09f46d9dba30ecd6f70c3a3da01b39e3f342add20836e16d221fd"
+        "96b723fedb15051c304959e8ed377e4efa782ca2de7f77803b06ff5d8d2a1636"
       ]
     }
   },
@@ -2430,17 +2430,17 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "ed93ef0ca494dc7b108946f17916cf59c9b014dd2ebf2d541eb2216643a3d122"
+      "8d6e2d9d5b0e3091de9a903c7bce88703f3f99b7960fcfb1ef2d472ead4a4937"
     ],
     "source_sha256": {
       "builtin_tensor_mean": [
-        "ed93ef0ca494dc7b108946f17916cf59c9b014dd2ebf2d541eb2216643a3d122"
+        "8d6e2d9d5b0e3091de9a903c7bce88703f3f99b7960fcfb1ef2d472ead4a4937"
       ],
       "tensor_flatten_recursive": [
         "fdaa19d7ba1bcf588fd8be8658a654e5ddbae696a8503715121da43d172ac8e0"
       ],
       "tensor_total": [
-        "399c5e89a5186315a6ed2167f43654b6a1c8bac577abd013cec76b8c2dfc7a0b"
+        "1beba45467365e63a8f1ce473a609f9274e7c48b7dbb495e304003dfcc319ba3"
       ]
     }
   },
@@ -2491,17 +2491,17 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "d7773d3e06290a00543edb1cec8ca706ce3c10dee5a97b1b669a3eaba04a1cc8"
+      "5dac71b8db9006db985e089ebf1bd86567897dca30f429355360fe5e6a80ddcf"
     ],
     "source_sha256": {
       "builtin_tensor_norm": [
-        "d7773d3e06290a00543edb1cec8ca706ce3c10dee5a97b1b669a3eaba04a1cc8"
+        "5dac71b8db9006db985e089ebf1bd86567897dca30f429355360fe5e6a80ddcf"
       ],
       "tensor_flatten_recursive": [
         "fdaa19d7ba1bcf588fd8be8658a654e5ddbae696a8503715121da43d172ac8e0"
       ],
       "tensor_total": [
-        "399c5e89a5186315a6ed2167f43654b6a1c8bac577abd013cec76b8c2dfc7a0b"
+        "1beba45467365e63a8f1ce473a609f9274e7c48b7dbb495e304003dfcc319ba3"
       ]
     }
   },
@@ -2666,17 +2666,17 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "0f2bf6cc4757021f40f7484d25047520648ad260e34fc272ba934fac7d1ff19d"
+      "140ee44cdec4231baa98cc893ad6e92d2451fc68efe9dced8c7351a24115ac78"
     ],
     "source_sha256": {
       "builtin_tensor_sum": [
-        "0f2bf6cc4757021f40f7484d25047520648ad260e34fc272ba934fac7d1ff19d"
+        "140ee44cdec4231baa98cc893ad6e92d2451fc68efe9dced8c7351a24115ac78"
       ],
       "tensor_flatten_recursive": [
         "fdaa19d7ba1bcf588fd8be8658a654e5ddbae696a8503715121da43d172ac8e0"
       ],
       "tensor_total": [
-        "399c5e89a5186315a6ed2167f43654b6a1c8bac577abd013cec76b8c2dfc7a0b"
+        "1beba45467365e63a8f1ce473a609f9274e7c48b7dbb495e304003dfcc319ba3"
       ]
     }
   },
