@@ -40,10 +40,17 @@ inductive WriterAnswer where
   | readLineNull
   deriving Repr, BEq
 
+def StructuralRecord (line : String) : Prop :=
+  ¬ line.startsWith "N " ∧ ¬ line.startsWith "V " ∧
+    '\n' ∉ line.toList ∧ line ≠ ""
+
+/-- A structural tape row whose validity is carried as data. -/
+abbrev StructuralRow := {line : String // StructuralRecord line}
+
 /-- Structural records emitted since the preceding answer, paired with the
 next answer record. -/
 structure WriterChunk where
-  structural : List String
+  structural : List StructuralRow
   answer : WriterAnswer
   deriving Repr, BEq
 /-- One answer actually consumed by the evaluator.  Positions are positions in
@@ -93,7 +100,7 @@ structure World where
   /-- Completed answer chunks and the structural tail form the canonical writer
   state. Keeping this shape makes record/replay invariants structural. -/
   writerChunks : List WriterChunk := []
-  writerTrailing : List String := []
+  writerTrailing : List StructuralRow := []
 abbrev EvalM := ExceptT Err (StateT World Interaction)
 
 private def findCell (name : String) (cells : Array Cell) : Option Nat := cells.findIdx? (fun c => c.name == name)
@@ -512,19 +519,19 @@ private def normalizeTapeFrom (position : Nat) : List String → List TapedAnswe
 def normalizeTape (tape : List String) : List TapedAnswer :=
   normalizeTapeFrom 0 tape
 
-def StructuralRecord (line : String) : Prop :=
-  ¬ line.startsWith "N " ∧ ¬ line.startsWith "V " ∧
-    '\n' ∉ line.toList ∧ line ≠ ""
-
 theorem structuralRecord_A_valid (rest : String) :
     StructuralRecord (structuralRecord ("A " ++ rest)) := by
   constructor
   · simp [structuralRecord, structuralChars]
+
   constructor
   · simp [structuralRecord, structuralChars]
   constructor
   · simpa [structuralRecord] using structuralChars_no_newline ("A " ++ rest).toList
   · simp [structuralRecord, structuralChars]
+
+private def structuralA (rest : String) : StructuralRow :=
+  ⟨structuralRecord ("A " ++ rest), structuralRecord_A_valid rest⟩
 
 /-- Within a session, every non-N structural record (including the writer's
 `A` and `B` records) is skipped without advancing the answer position. -/
@@ -567,15 +574,13 @@ theorem normalizeTapeFrom_writerNRecord (position : Nat) (answer : WriterAnswer)
   rw [parseNValue_writerNRecord_payload]
   cases answer <;> simp [WriterAnswer.name, WriterAnswer.value, k_tape_kinds]
 
-def WriterChunk.Valid (chunk : WriterChunk) : Prop :=
-  ∀ line ∈ chunk.structural, StructuralRecord line
-
 /-- The evaluator writer's record layout: each structural prefix is followed
 by the exact N record appended by `consumeAnswer`, then a structural tail. -/
-def writerProducedRecords : List WriterChunk → List String → List String
-  | [], trailing => trailing
+def writerProducedRecords : List WriterChunk → List StructuralRow → List String
+  | [], trailing => trailing.map fun row => row.val
   | chunk :: chunks, trailing =>
-      chunk.structural ++ writerNRecord chunk.answer :: writerProducedRecords chunks trailing
+      chunk.structural.map (fun row => row.val) ++ writerNRecord chunk.answer ::
+        writerProducedRecords chunks trailing
 
 def writerAnswersFrom : Nat → List WriterChunk → List TapedAnswer
   | _, [] => []
@@ -588,32 +593,35 @@ record-mode writer is exactly its answer sequence, in order, numbered from
 the supplied starting position.  Interleaved structural records and the
 structural tail contribute no answers. -/
 theorem normalizeTapeFrom_writerProducedRecords (position : Nat)
-    (chunks : List WriterChunk) (trailing : List String)
-    (chunksValid : ∀ chunk ∈ chunks, chunk.Valid)
-    (trailingValid : ∀ line ∈ trailing, StructuralRecord line) :
+    (chunks : List WriterChunk) (trailing : List StructuralRow) :
     normalizeTapeFrom position (writerProducedRecords chunks trailing) =
       writerAnswersFrom position chunks := by
   induction chunks generalizing position with
   | nil =>
       simp only [writerProducedRecords, writerAnswersFrom]
-      simpa [normalizeTapeFrom] using normalizeTapeFrom_skips_structural position trailing [] trailingValid
+      have skipped := normalizeTapeFrom_skips_structural position
+        (trailing.map fun row => row.val) [] (by
+          intro line member
+          simp only [List.mem_map] at member
+          obtain ⟨row, _, rfl⟩ := member
+          exact row.property)
+      simpa [normalizeTapeFrom] using skipped
   | cons chunk chunks ih =>
-      have chunkValid : chunk.Valid := chunksValid chunk (by simp)
-      have restValid : ∀ item ∈ chunks, item.Valid := by
-        intro item member
-        exact chunksValid item (by simp [member])
       simp only [writerProducedRecords, writerAnswersFrom]
-      rw [normalizeTapeFrom_skips_structural position chunk.structural _ chunkValid]
+      rw [normalizeTapeFrom_skips_structural position (chunk.structural.map fun row => row.val) _ (by
+        intro line member
+        simp only [List.mem_map] at member
+        obtain ⟨row, _, rfl⟩ := member
+        exact row.property)]
       rw [normalizeTapeFrom_writerNRecord]
-      rw [ih (position := position + 1) restValid]
+      rw [ih (position := position + 1)]
 
 /-- At position zero, the whole writer tape normalizes to positions 0, 1, 2,
 and so on. -/
 theorem normalizeTape_writerProducedRecords (chunks : List WriterChunk)
-    (trailing : List String) (chunksValid : ∀ chunk ∈ chunks, chunk.Valid)
-    (trailingValid : ∀ line ∈ trailing, StructuralRecord line) :
+    (trailing : List StructuralRow) :
     normalizeTape (writerProducedRecords chunks trailing) = writerAnswersFrom 0 chunks := by
-  exact normalizeTapeFrom_writerProducedRecords 0 chunks trailing chunksValid trailingValid
+  exact normalizeTapeFrom_writerProducedRecords 0 chunks trailing
 
 /-- Any delayed normalization error retains the exact answer-sequence position
 at which it will be raised.  In particular, skipped A/B records cannot move an
@@ -716,7 +724,7 @@ private def store (name : String) (v : Value) (isLocal : Bool) : EvalM Unit := d
     | none => w.environments.modify current fun environment =>
         {environment with slots := environment.slots.push {name:=name,value:=v,history:=#[v],assignments:=1}}
   set {w with environments:=environments, writerTrailing:=w.writerTrailing ++
-    [structuralRecord s!"A 0 {name}={tapeValue v}"]}
+    [structuralA s!"0 {name}={tapeValue v}"]}
 
 /-- Parameter creation is its first observation, but is not an assignment tape event. -/
 private def bindParameter (environment : Nat) (name : String) (value : Value) : EvalM Unit := do
