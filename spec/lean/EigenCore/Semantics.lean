@@ -360,6 +360,47 @@ theorem parseNValue_string_encode (s : String) :
   · simp [parseNValue, nondetValue, quoted, notNull]
     rfl
 
+/-- The answer kinds which a successful record-mode taped call can write. -/
+inductive WriterAnswer where
+  | randomInt (value : Int)
+  | envGet (value : String)
+  | readLine (value : String)
+  | readLineNull
+  deriving Repr, BEq
+
+private def WriterAnswer.name : WriterAnswer → String
+  | .randomInt _ => "random_int"
+  | .envGet _ => "env_get"
+  | .readLine _ | .readLineNull => "read_line"
+
+private def WriterAnswer.value : WriterAnswer → OracleValue
+  | .randomInt value => .int value
+  | .envGet value | .readLine value => .string value
+  | .readLineNull => .null
+
+private def WriterAnswer.runtimeValue : WriterAnswer → Value
+  | .randomInt value => .int value
+  | .envGet value | .readLine value => .string value
+  | .readLineNull => .null
+
+/-- The exact physical N record appended by `consumeAnswer`: stream number
+zero, one space after the header, the called builtin name, and its encoded
+runtime value separated by the first equals sign. -/
+private def writerNRecordValue (name : String) (value : Value) : String :=
+  "N 0 " ++ name ++ "=" ++ nondetValue value
+
+private def writerNRecord (answer : WriterAnswer) : String :=
+  writerNRecordValue answer.name answer.runtimeValue
+
+/-- The actual record-mode N-record encoder is decoded by `parseNValue`. -/
+theorem parseNValue_writerNRecord_payload (answer : WriterAnswer) :
+    parseNValue answer.name (nondetValue answer.runtimeValue) = .ok answer.value := by
+  cases answer with
+  | randomInt value => exact parseNValue_random_int_encode value
+  | envGet value => exact (parseNValue_string_encode value).1
+  | readLine value => exact (parseNValue_string_encode value).2
+  | readLineNull => exact parseNValue_read_line_null_encode
+
 /-- Normalize replay input once into the evaluator's answer type.  Non-answer
 records are skipped, and a later `V` header ends the current session.  Parsing
 errors are deliberately stored rather than raised, so evaluation observes one
@@ -378,6 +419,32 @@ private def splitFirstEquals : List Char → List Char × List Char
   | c :: rest =>
     let (name, value) := splitFirstEquals rest
     (c :: name, value)
+
+theorem afterSecondSpace_writerRecord (name recorded : String) :
+    afterSecondSpace ("N 0 " ++ name ++ "=" ++ recorded).toList =
+      (name ++ "=" ++ recorded).toList := by
+  simp [String.toList_append, afterSecondSpace, String.append_assoc]
+
+theorem writerNRecord_parts (answer : WriterAnswer) :
+    splitFirstEquals (afterSecondSpace (writerNRecord answer).toList) =
+      (answer.name.toList, (nondetValue answer.runtimeValue).toList) := by
+  cases answer with
+  | randomInt value =>
+      simp only [writerNRecord, writerNRecordValue, WriterAnswer.name, WriterAnswer.runtimeValue]
+      rw [afterSecondSpace_writerRecord]
+      simp [String.toList_append, splitFirstEquals]
+  | envGet value =>
+      simp only [writerNRecord, writerNRecordValue, WriterAnswer.name, WriterAnswer.runtimeValue]
+      rw [afterSecondSpace_writerRecord]
+      simp [String.toList_append, splitFirstEquals]
+  | readLine value =>
+      simp only [writerNRecord, writerNRecordValue, WriterAnswer.name, WriterAnswer.runtimeValue]
+      rw [afterSecondSpace_writerRecord]
+      simp [String.toList_append, splitFirstEquals]
+  | readLineNull =>
+      simp only [writerNRecord, writerNRecordValue, WriterAnswer.name, WriterAnswer.runtimeValue]
+      rw [afterSecondSpace_writerRecord]
+      simp [String.toList_append, splitFirstEquals]
 
 private def normalizeTapeFrom (position : Nat) : List String → List TapedAnswer
   | [] => []
@@ -402,6 +469,104 @@ private def normalizeTapeFrom (position : Nat) : List String → List TapedAnswe
 
 def normalizeTape (tape : List String) : List TapedAnswer :=
   normalizeTapeFrom 0 tape
+
+def StructuralRecord (line : String) : Prop :=
+  ¬ line.startsWith "N " ∧ ¬ line.startsWith "V "
+
+/-- Within a session, every non-N structural record (including the writer's
+`A` and `B` records) is skipped without advancing the answer position. -/
+theorem normalizeTapeFrom_skips_structural (position : Nat) (records rest : List String)
+    (structural : ∀ line ∈ records, StructuralRecord line) :
+    normalizeTapeFrom position (records ++ rest) = normalizeTapeFrom position rest := by
+  induction records with
+  | nil => rfl
+  | cons line records ih =>
+      have lineStructural := structural line (by simp)
+      have restStructural : ∀ item ∈ records, StructuralRecord item := by
+        intro item member
+        exact structural item (by simp [member])
+      simp only [List.cons_append, normalizeTapeFrom]
+      rw [if_neg lineStructural.2, if_neg lineStructural.1]
+      exact ih restStructural
+
+/-- A V header ends the current replay session: its payload and every record
+after it are ignored.  Structural records before it are skipped normally. -/
+theorem normalizeTapeFrom_stops_at_session (position : Nat) (before rest : List String)
+    (header : String) (structural : ∀ line ∈ before, StructuralRecord line) :
+    normalizeTapeFrom position (before ++ ("V " ++ header) :: rest) = [] := by
+  rw [normalizeTapeFrom_skips_structural position before _ structural]
+  simp [normalizeTapeFrom]
+
+/-- One N record in precisely the form appended by `consumeAnswer` emits the
+corresponding answer and advances the answer-sequence position once. -/
+theorem normalizeTapeFrom_writerNRecord (position : Nat) (answer : WriterAnswer)
+    (rest : List String) :
+    normalizeTapeFrom position (writerNRecord answer :: rest) =
+      .value position answer.name answer.value :: normalizeTapeFrom (position + 1) rest := by
+  simp only [normalizeTapeFrom]
+  have notV : ¬ (writerNRecord answer).startsWith "V " := by
+    cases answer <;> simp [writerNRecord, writerNRecordValue]
+  have startsN : (writerNRecord answer).startsWith "N " := by
+    cases answer <;> simp [writerNRecord, writerNRecordValue]
+  rw [if_neg notV, if_pos startsN]
+  rw [writerNRecord_parts]
+  simp only [String.ofList_toList]
+  rw [parseNValue_writerNRecord_payload]
+  cases answer <;> simp [WriterAnswer.name, WriterAnswer.value, k_tape_kinds]
+
+/-- One writer answer together with the structural records emitted before its
+N record.  `valid` excludes both another answer and a session-ending header. -/
+structure WriterChunk where
+  structural : List String
+  answer : WriterAnswer
+
+def WriterChunk.Valid (chunk : WriterChunk) : Prop :=
+  ∀ line ∈ chunk.structural, StructuralRecord line
+
+/-- The evaluator writer's record layout: each structural prefix is followed
+by the exact N record appended by `consumeAnswer`, then a structural tail. -/
+def writerProducedRecords : List WriterChunk → List String → List String
+  | [], trailing => trailing
+  | chunk :: chunks, trailing =>
+      chunk.structural ++ writerNRecord chunk.answer :: writerProducedRecords chunks trailing
+
+def writerAnswersFrom : Nat → List WriterChunk → List TapedAnswer
+  | _, [] => []
+  | position, chunk :: chunks =>
+      .value position chunk.answer.name chunk.answer.value ::
+        writerAnswersFrom (position + 1) chunks
+
+/-- Whole-tape ANSWER lemma: normalization of the records produced by the
+record-mode writer is exactly its answer sequence, in order, numbered from
+the supplied starting position.  Interleaved structural records and the
+structural tail contribute no answers. -/
+theorem normalizeTapeFrom_writerProducedRecords (position : Nat)
+    (chunks : List WriterChunk) (trailing : List String)
+    (chunksValid : ∀ chunk ∈ chunks, chunk.Valid)
+    (trailingValid : ∀ line ∈ trailing, StructuralRecord line) :
+    normalizeTapeFrom position (writerProducedRecords chunks trailing) =
+      writerAnswersFrom position chunks := by
+  induction chunks generalizing position with
+  | nil =>
+      simp only [writerProducedRecords, writerAnswersFrom]
+      simpa [normalizeTapeFrom] using normalizeTapeFrom_skips_structural position trailing [] trailingValid
+  | cons chunk chunks ih =>
+      have chunkValid : chunk.Valid := chunksValid chunk (by simp)
+      have restValid : ∀ item ∈ chunks, item.Valid := by
+        intro item member
+        exact chunksValid item (by simp [member])
+      simp only [writerProducedRecords, writerAnswersFrom]
+      rw [normalizeTapeFrom_skips_structural position chunk.structural _ chunkValid]
+      rw [normalizeTapeFrom_writerNRecord]
+      rw [ih (position := position + 1) restValid]
+
+/-- At position zero, the whole writer tape normalizes to positions 0, 1, 2,
+and so on. -/
+theorem normalizeTape_writerProducedRecords (chunks : List WriterChunk)
+    (trailing : List String) (chunksValid : ∀ chunk ∈ chunks, chunk.Valid)
+    (trailingValid : ∀ line ∈ trailing, StructuralRecord line) :
+    normalizeTape (writerProducedRecords chunks trailing) = writerAnswersFrom 0 chunks := by
+  exact normalizeTapeFrom_writerProducedRecords 0 chunks trailing chunksValid trailingValid
 
 /-- Any delayed normalization error retains the exact answer-sequence position
 at which it will be raised.  In particular, skipped A/B records cannot move an
@@ -462,7 +627,7 @@ private def consumeAnswer (fn : String) : EvalM Value := do
     | "read_line", .null => pure .null
     | _, _ => throw (.runtime s!"{fn}: oracle value has the wrong kind")
   let consumed := w.answersConsumed ++ [.value position fn raw]
-  let tape := w.tape ++ ["N 0 " ++ fn ++ "=" ++ nondetValue value]
+  let tape := w.tape ++ [writerNRecordValue fn value]
   set {w with answersConsumed := consumed, tape := tape}
   pure value
 
