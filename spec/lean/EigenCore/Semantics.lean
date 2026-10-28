@@ -251,8 +251,10 @@ theorem evalRun_catchToExcept (m : EvalM α) (g : α → β) (world : World) :
 values, preserves its error status, and pops one frame at every leaf. -/
 theorem evalRun_catchPopRethrow (m : EvalM α) (g : α → β) (world : World) :
     evalRun (do
-      let outcome : Except Err β ← tryCatch (m >>= fun value => pure (Except.ok (g value)))
-        (fun error => pure (Except.error error))
+      let outcome : Except Err β ← try
+        let returned ← m
+        pure (Except.ok (g returned))
+      catch error => pure (Except.error error)
       modify fun w => {w with frames := w.frames.pop}
       match outcome with
       | .ok value => pure value
@@ -1351,6 +1353,76 @@ def Paired (m : EvalM α) : Prop :=
         interpreted.value.2.writerChunks = w0.writerChunks ++ appended ∧
         interpreted.answers = writerAnswersFrom w0.writerChunks.length appended
 
+/-- Pairing specialized to one fixed starting world.  This is the useful
+granularity for computations which save that world and later restore a record
+update based on precisely the saved value. -/
+def PairedAt (w0 : World) (m : EvalM α) : Prop :=
+  ∀ (supplied : List TapedAnswer),
+    WellPositioned w0.writerChunks.length supplied →
+    let interpreted := interpret ((m.run).run w0) supplied
+    ∀ value, interpreted.value.1 = .ok value →
+      ∃ appended,
+        interpreted.value.2.writerChunks = w0.writerChunks ++ appended ∧
+        interpreted.answers = writerAnswersFrom w0.writerChunks.length appended
+
+theorem Paired_iff_PairedAt (m : EvalM α) :
+    Paired m ↔ ∀ w0, PairedAt w0 m := Iff.rfl
+
+theorem PairedAt_of_Paired (paired : Paired m) (w0 : World) : PairedAt w0 m :=
+  paired w0
+
+/-- Reading the fixed initial world before continuing is definitionally the
+same run as starting that continuation at the fixed world. -/
+theorem PairedAt_get_bind (w0 : World) (k : World → EvalM α)
+    (paired : PairedAt w0 (k w0)) : PairedAt w0 (get >>= k) := by
+  intro supplied positioned
+  change let interpreted := interpret (evalRun (get >>= k) w0) supplied
+    ∀ value, interpreted.value.1 = .ok value → ∃ appended,
+      interpreted.value.2.writerChunks = w0.writerChunks ++ appended ∧
+      interpreted.answers = writerAnswersFrom w0.writerChunks.length appended
+  rw [evalRun_bind, evalRun_get]
+  exact paired supplied positioned
+
+/-- A successful, interaction-free prefix can be composed at a fixed world
+when it preserves completed writer chunks. -/
+theorem PairedAt_silent_bind (w0 w1 : World) (s : EvalM α) (x : α)
+    (k : α → EvalM β) (runs : evalRun s w0 = .done (.ok x, w1))
+    (preserves : w1.writerChunks = w0.writerChunks)
+    (paired : PairedAt w1 (k x)) : PairedAt w0 (s >>= k) := by
+  intro supplied positioned
+  change let interpreted := interpret (evalRun (s >>= k) w0) supplied
+    ∀ value, interpreted.value.1 = .ok value → ∃ appended,
+      interpreted.value.2.writerChunks = w0.writerChunks ++ appended ∧
+      interpreted.answers = writerAnswersFrom w0.writerChunks.length appended
+  rw [evalRun_bind, runs]
+  simp only [Interaction.bind]
+  have positioned' : WellPositioned w1.writerChunks.length supplied := by
+    simpa [preserves] using positioned
+  intro value successful
+  obtain ⟨appended, world, answers⟩ := paired supplied positioned' value successful
+  refine ⟨appended, ?_, ?_⟩
+  · change (interpret (((k x).run).run w1) supplied).value.2.writerChunks =
+      w0.writerChunks ++ appended
+    simpa [preserves] using world
+  · change (interpret (((k x).run).run w1) supplied).answers =
+      writerAnswersFrom w0.writerChunks.length appended
+    simpa [preserves] using answers
+
+/-- An interaction-free prefix which throws makes fixed-world pairing
+vacuous, because bind cannot turn that error into success. -/
+theorem PairedAt_silent_bind_error (w0 w1 : World) (s : EvalM α) (error : Err)
+    (k : α → EvalM β) (runs : evalRun s w0 = .done (.error error, w1)) :
+    PairedAt w0 (s >>= k) := by
+  intro supplied positioned
+  change let interpreted := interpret (evalRun (s >>= k) w0) supplied
+    ∀ value, interpreted.value.1 = .ok value → ∃ appended,
+      interpreted.value.2.writerChunks = w0.writerChunks ++ appended ∧
+      interpreted.answers = writerAnswersFrom w0.writerChunks.length appended
+  rw [evalRun_bind, runs]
+  simp only [Interaction.bind, interpret]
+  intro value successful
+  contradiction
+
 /-- Any computation which is silent for every initial world and preserves
 writer chunks is paired.  In particular, interpreting its completed tree
 consumes no supplied answers, so the appended chunk witness is empty. -/
@@ -1757,6 +1829,38 @@ theorem Paired_forIn_unit (items : List α) (body : α → EvalM Unit)
   · intro
     exact Paired_pure ()
 
+/-- The raw `forIn` worker before the elaborator's final `pure ()`.  This is
+the exact form retained inside the larger `callFunction` do-block. -/
+theorem Paired_forIn_unit_raw (items : List α) (body : α → EvalM Unit)
+    (paired : ∀ item ∈ items, Paired (body item)) :
+    Paired (forIn items PUnit.unit fun item _ => do
+      body item
+      pure (ForInStep.yield PUnit.unit)) := by
+  induction items with
+  | nil =>
+      change Paired (forIn' [] PUnit.unit fun item _ _ => do
+        body item
+        pure (ForInStep.yield PUnit.unit))
+      rw [List.forIn'_nil]
+      exact Paired_pure PUnit.unit
+  | cons item rest ih =>
+      change Paired (forIn' (item :: rest) PUnit.unit fun item _ _ => do
+        body item
+        pure (ForInStep.yield PUnit.unit))
+      rw [List.forIn'_cons]
+      apply Paired_bind
+      · apply Paired_bind (body item) (fun _ => pure (ForInStep.yield PUnit.unit))
+        · exact paired item (by simp)
+        · intro
+          exact Paired_pure (ForInStep.yield PUnit.unit)
+      · intro step
+        cases step with
+        | done state => exact Paired_pure state
+        | yield state =>
+            apply ih
+            intro tail member
+            exact paired tail (by simp [member])
+
 /-- Popping the active call frame does not alter completed writer chunks. -/
 theorem popFrame_writerChunks (world : World) :
     ({world with frames := world.frames.pop} : World).writerChunks = world.writerChunks := rfl
@@ -1766,9 +1870,10 @@ and rethrowing the captured error preserves pairing.  The proof keeps the
 intermediate error leaf until overall success rules it out. -/
 theorem Paired_catchPopRethrow (m : EvalM α) (g : α → β) (paired : Paired m) :
     Paired (do
-      let outcome : Except Err β ← tryCatch
-        (m >>= fun value => pure (Except.ok (g value)))
-        (fun error => pure (Except.error error))
+      let outcome : Except Err β ← try
+        let returned ← m
+        pure (Except.ok (g returned))
+      catch error => pure (Except.error error)
       modify fun w => {w with frames := w.frames.pop}
       match outcome with
       | .ok value => pure value
@@ -1800,6 +1905,27 @@ theorem Paired_catchPopRethrow (m : EvalM α) (g : α → β) (paired : Paired m
         paired w0 supplied positioned innerValue innerSuccessful
       refine ⟨appended, ?_, answers⟩
       exact chunks
+
+/-- The catch suffix written by `callFunction` is the generic
+catch/pop/rethrow combinator, up to the local binder name. -/
+theorem callFunction_catchPopRethrow_eq (m : EvalM (Option Value)) :
+    (do
+      let outcome : Except Err Value ← try
+        let returned ← m
+        pure (Except.ok (returned.getD .null))
+      catch error => pure (Except.error error)
+      modify fun (w : World) => {w with frames := w.frames.pop}
+      match outcome with
+      | .ok value => pure value
+      | .error error => throw error) =
+    (do
+      let outcome : Except Err Value ← tryCatch
+        (m >>= fun value => pure (Except.ok (value.getD .null)))
+        (fun error => pure (Except.error error))
+      modify fun (w : World) => {w with frames := w.frames.pop}
+      match outcome with
+      | .ok value => pure value
+      | .error error => throw error) := rfl
 
 /-- A world update which preserves writer chunks is paired. -/
 theorem Paired_modify (f : World → World)
