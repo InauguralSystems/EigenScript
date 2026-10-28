@@ -79,13 +79,18 @@ def compare_one(label, source, vm, ref, td, oracle_seed, timeout):
         got, timed_out = run([vm, p], {**os.environ, **extra, "EIGS_REPLAY": str(own), "EIGS_REPLAY_STRICT": "1", "EIGS_TRACE": str(tape), "REF_DIFF_MISSING": ""}, timeout=timeout)
         if timed_out:
             reasons.append(f"{tier} arm {timed_out}")
-            tier_data[tier] = {"exit": "timeout", "witness": False}
+            tier_data[tier] = {"exit": "timeout", "native": "not witnessed"}
             continue
-        tier_data[tier] = {"exit": parity.cls(got), "witness": tier == "interpreter" or b"==" in got.stderr}
+        # The `==` disassembly marker proves only that the arm ran under its
+        # configured environment. Cold generated programs never reach the JIT
+        # threshold or a back edge, and the VM exposes no native-entry counter,
+        # so a native tier is never reported as witnessed here (#2103 review).
+        tier_data[tier] = {"exit": parity.cls(got), "config_marker": tier == "interpreter" or b"==" in got.stderr,
+                           "native": "interpreted" if tier == "interpreter" else "not witnessed"}
         if got.stdout != lo.stdout or parity.cls(got) != parity.cls(lo) or parity.projection(tape) != parity.projection(own):
             reasons.append(f"{tier} tier")
         if tier != "interpreter" and b"==" not in got.stderr:
-            reasons.append(f"{tier} EIGS_DUMP_BC witness")
+            reasons.append(f"{tier} EIGS_DUMP_BC marker missing")
     return True, sorted(set(reasons)), tier_data
 
 
@@ -110,15 +115,15 @@ def compare_hot(label, source, vm, td, timeout):
     reasons, tiers = [], {}
     baseline, timed_out = run([vm, p], {**os.environ, "EIGS_JIT_OFF": "1"}, timeout=timeout)
     if timed_out: return True, [f"interpreter arm {timed_out}"], tiers
-    tiers["interpreter"] = {"exit": parity.cls(baseline), "witness": True}
+    tiers["interpreter"] = {"exit": parity.cls(baseline), "native": "interpreted"}
     for tier, extra in (("jit", {}), ("osr", {"EIGS_JIT_OSR_THRESHOLD": "1"})):
         got, timed_out = run([vm, p], {**os.environ, **extra, "EIGS_JIT_HOT": "1", "EIGS_JIT_STATS": "1"}, timeout=timeout)
         if timed_out:
-            reasons.append(f"{tier} arm {timed_out}"); tiers[tier] = {"exit": "timeout", "witness": False}; continue
+            reasons.append(f"{tier} arm {timed_out}"); tiers[tier] = {"exit": "timeout", "native": "not witnessed"}; continue
         # EIGS_JIT_STATS counts compilations and EIGS_JIT_HOT estimates native
         # coverage, but neither counts entry into emitted code.  Do not turn a
         # compilation proxy into the execution witness requested by the gate.
-        tiers[tier] = {"exit": parity.cls(got), "witness": False}
+        tiers[tier] = {"exit": parity.cls(got), "native": "not witnessed"}
         if got.stdout != baseline.stdout or parity.cls(got) != parity.cls(baseline):
             reasons.append(f"{tier} tier")
         reasons.append(f"{tier} native execution not witnessed")
@@ -176,6 +181,8 @@ def main():
     args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     print(f"compared/in_subset/generated/disagreements: {compared}/{inside}/{generated}/{disagreements}")
     print("coverage: " + " ".join(f"{s}={seams[s]}" for s in gen.SEAMS))
+    native = Counter(t.get("native") for r in rows for name, t in (r["tiers"] or {}).items() if name != "interpreter")
+    print("native tiers: " + (" ".join(f"{k}={v}" for k, v in sorted(native.items())) or "none run"))
     print("reason histogram: " + (" ".join(f"{k}={v}" for k, v in sorted(histogram.items())) or "empty"))
     return 1 if disagreements else 0
 
