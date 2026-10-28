@@ -422,6 +422,162 @@ theorem assembleRecordsFuel_eq_length (rows : List String) (fuel : Nat)
             rw [ih fuel (Nat.lt_succ_self fuel) more moreEnough,
               ih tail.length (by omega) more suffix.length_le]
 
+
+/-- The exact writer domain on which textual tape serialization is injective
+through the reader's line-oriented representation. -/
+def WriterRecords (records : List String) : Prop :=
+  ∀ record ∈ records,
+    '\n' ∉ record.toList ∧ record ≠ "" ∧
+      ¬(record.startsWith "N " ∧
+        let encoded := String.ofList ((splitFirst '=' record.toList).2.getD [])
+        encoded.utf8ByteSize ≤ 65536 ∧ encoded.startsWith "@")
+
+/-- Reading the physical rows emitted for one admissible record reproduces
+that record, then continues with the supplied tail. -/
+theorem assembleRecordsFuel_serializeRecord (record : String) (tail : List String)
+    (valid : '\n' ∉ record.toList ∧ record ≠ "" ∧
+      ¬(record.startsWith "N " ∧
+        let encoded := String.ofList ((splitFirst '=' record.toList).2.getD [])
+        encoded.utf8ByteSize ≤ 65536 ∧ encoded.startsWith "@")) :
+    assembleRecordsFuel (serializeRecord record ++ tail).length
+        (serializeRecord record ++ tail) =
+      (List.cons record <$> assembleRecordsFuel tail.length tail) := by
+  rcases valid with ⟨_, recordNonempty, validFrame⟩
+  simp only [serializeRecord]
+  by_cases notN : (!record.startsWith "N ") = true
+  · simp [notN, assembleRecordsFuel]
+  · have startsN : record.startsWith "N " := by
+      simpa [Bool.not_eq_true] using notN
+    simp only [notN, ite_false]
+    generalize leaderResult : splitFirst '=' record.toList = split
+    rcases split with ⟨leaderChars, encodedChars?⟩
+    let encoded := String.ofList (encodedChars?.getD [])
+    by_cases short : encoded.utf8ByteSize ≤ 65536
+    · have notAt : ¬encoded.startsWith "@" := by
+        intro beginsAt
+        apply validFrame
+        simp only [leaderResult, encoded]
+        exact ⟨startsN, short, beginsAt⟩
+      simp only [short, if_pos]
+      simp [serializeRecord, notN, assembleRecordsFuel, startsN, leaderResult, encoded, short, notAt]
+    · simp only [short, if_neg]
+      have encodedPositive : 0 < encoded.utf8ByteSize := by omega
+      generalize chunkResult : chunks 65536 encoded = pieces
+      cases pieces with
+      | nil =>
+        exact False.elim ((chunks_ne_nil_of_utf8ByteSize_pos 65536 encoded encodedPositive) chunkResult)
+      | cons first rest =>
+        simp only [chunkResult, encoded, short, if_neg]
+        have piecesNotNil := chunks_ne_nil_of_utf8ByteSize_pos 65536 encoded encodedPositive
+        have restNonempty : ∀ chunk ∈ rest, chunk ≠ "" := by
+          intro chunk member
+          apply chunks_all_nonempty 65536 encoded (by omega) chunk
+          rw [chunkResult]
+          simp [member]
+        have sizeSum := chunks_utf8ByteSize_sum 65536 encoded
+        rw [chunkResult] at sizeSum
+        simp only [List.map_cons, List.sum_cons] at sizeSum
+        have gather := gatherContinuations_writer rest tail first.utf8ByteSize first restNonempty
+        rw [sizeSum] at gather
+        have leaderClean := splitFirst_before_not_mem '=' record.toList
+        rw [leaderResult] at leaderClean
+        have recordJoin := splitFirst_join '=' record.toList
+        rw [leaderResult] at recordJoin
+        cases encodedChars? with
+        | none =>
+          simp [encoded] at encodedPositive
+        | some encodedChars =>
+          have encodedEq : encoded = String.ofList encodedChars := rfl
+          have recordEq : record = String.ofList leaderChars ++ "=" ++ encoded := by
+            apply String.ext
+            simp only [String.toList_append, String.toList_ofList]
+            have eqChars : "=".toList = ['='] := by decide
+            rw [eqChars, encodedEq]
+            simpa using recordJoin.symm
+          subst record
+          have framedStartsN :
+              (String.ofList leaderChars ++ "=" ++ "@" ++
+                toString encoded.utf8ByteSize ++ ":" ++ first).startsWith "N " := by
+            simp only [String.startsWith, String.toList_append, String.toList_ofList] at startsN ⊢
+            cases leaderChars with
+            | nil => simp at startsN
+            | cons a chars =>
+              cases chars with
+              | nil => simp at startsN
+              | cons b chars => simpa using startsN
+          simp only [List.length_append]
+          have noEquals : '=' ∉ (String.ofList leaderChars).toList := by simpa using leaderClean
+          have framedEq :
+              String.ofList leaderChars ++ "=" ++ "@" ++
+                  toString (String.ofList encodedChars).utf8ByteSize ++ ":" ++ first =
+                String.ofList leaderChars ++ "=" ++
+                  ("@" ++ toString (String.ofList encodedChars).utf8ByteSize ++ ":" ++ first) := by
+            apply String.ext
+            simp
+          simp only [Bool.false_eq_true, ↓reduceIte, List.length_cons, List.length_map, List.cons_append]
+          rw [show rest.length + 1 + tail.length = Nat.succ (rest.length + tail.length) by omega]
+          simp only [assembleRecordsFuel]
+          simp only [encoded, Option.getD_some] at framedStartsN ⊢
+          rw [show (!(String.ofList leaderChars ++ "=" ++ "@" ++
+              toString (String.ofList encodedChars).utf8ByteSize ++ ":" ++ first).startsWith
+              "N ") = false by simpa using framedStartsN]
+          simp only [Bool.false_eq_true, ↓reduceIte]
+          rw [framedEq]
+          rw [splitFirst_leader_value (String.ofList leaderChars)
+            ("@" ++ toString (String.ofList encodedChars).utf8ByteSize ++ ":" ++ first) noEquals]
+          simp only [Option.getD_some, String.ofList_toList]
+          simp only [show (!("@" ++ toString (String.ofList encodedChars).utf8ByteSize ++
+            ":" ++ first).startsWith "@") = false by
+              have startsAt : ("@" ++ toString (String.ofList encodedChars).utf8ByteSize ++
+                  ":" ++ first).startsWith "@" := by
+                apply String.startsWith_string_iff.mpr
+                exact ⟨Nat.toDigits 10 (String.ofList encodedChars).utf8ByteSize ++
+                  ':' :: first.toList, by simp⟩
+              simpa using startsAt,
+            Bool.false_eq_true, ↓reduceIte]
+          rw [splitFirst_framed_header (String.ofList encodedChars).utf8ByteSize first]
+          simp only [Prod.fst, Prod.snd, String.ofList_toList, Option.getD_some]
+          simp
+          have long : ¬(String.ofList encodedChars).utf8ByteSize ≤ 65536 := by
+            simpa [encoded] using short
+          have gather' : gatherContinuations (String.ofList encodedChars).utf8ByteSize
+              first.utf8ByteSize first (rest.map ("C 0 " ++ ·) ++ tail) =
+                .ok (first ++ String.join rest, tail) := by
+            simpa [encoded] using gather
+          rw [if_neg long, gather']
+          have joined : first ++ String.join rest = String.ofList encodedChars := by
+            have lossless := chunks_join 65536 encoded
+            rw [chunkResult] at lossless
+            calc
+              first ++ String.join rest = String.join (first :: rest) := by
+                apply String.ext
+                simp only [String.toList_append, String.toList_join]
+                simp
+              _ = encoded := lossless
+              _ = String.ofList encodedChars := encodedEq
+          rw [joined]
+          change (List.cons (String.ofList leaderChars ++ "=" ++ String.ofList encodedChars) <$>
+            assembleRecordsFuel (rest.length + tail.length) tail) = _
+          rw [assembleRecordsFuel_eq_length tail (rest.length + tail.length) (by omega)]
+
+/-- The one-record result composes over every admissible writer list. -/
+theorem assembleRecords_serializeRecords (records : List String)
+    (valid : WriterRecords records) :
+    assembleRecordsFuel (records.flatMap serializeRecord).length
+      (records.flatMap serializeRecord) = .ok records := by
+  induction records with
+  | nil => rfl
+  | cons record records ih =>
+    have recordValid := valid record (by simp)
+    have recordsValid : WriterRecords records := by
+      intro r member
+      exact valid r (by simp [member])
+    simp only [List.flatMap_cons]
+    rw [assembleRecordsFuel_serializeRecord record (records.flatMap serializeRecord)
+      recordValid]
+    rw [ih recordsValid]
+    rfl
+
 private def assembleRecords (rows : List String) : Except String (List String) :=
   assembleRecordsFuel rows.length rows
 
