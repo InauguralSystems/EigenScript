@@ -2077,6 +2077,223 @@ theorem Paired_callFunction_succ (f : Nat) (ih : PairedAll f)
         · intro _
           exact Paired_callSuffix _ (execIH definition.body)
 
+/-- Literal and variable expressions preserve pairing at successor fuel. -/
+theorem Paired_evalExpr_succ_literal (f : Nat) (literal : Literal) :
+    Paired (evalExpr (f + 1) (.literal literal)) := by
+  rw [evalExpr.eq_def]
+  cases literal <;> exact Paired_pure _
+
+theorem Paired_evalExpr_succ_variable (f : Nat) (name : String) :
+    Paired (evalExpr (f + 1) (.variable name)) := by
+  rw [evalExpr.eq_def]
+  exact Paired_valueAt name
+
+/-- Boolean and binary expressions preserve pairing when recursive expressions do. -/
+theorem Paired_evalExpr_succ_not (f : Nat) (ih : PairedAll f) (x : Expr) :
+    Paired (evalExpr (f + 1) (.not x)) := by
+  rw [evalExpr.eq_def]
+  exact Paired_bind _ _ (ih.1 x) (fun value => Paired_pure (Value.bool (!truthy value)))
+
+theorem Paired_evalExpr_succ_binary (f : Nat) (ih : PairedAll f)
+    (op : BinOp) (a b : Expr) : Paired (evalExpr (f + 1) (.binary op a b)) := by
+  rw [evalExpr.eq_def]
+  cases op with
+  | and =>
+      apply Paired_bind _ _ (ih.1 a)
+      intro value
+      exact Paired_ite (truthy value) _ _ (ih.1 b) (Paired_pure value)
+  | or =>
+      apply Paired_bind _ _ (ih.1 a)
+      intro value
+      exact Paired_ite (truthy value) _ _ (Paired_pure value) (ih.1 b)
+  | add | sub | mul | eq | ne | lt | le | gt | ge =>
+      apply Paired_bind _ _ (ih.1 a)
+      intro left
+      apply Paired_bind _ _ (ih.1 b)
+      intro right
+      cases evalBin _ left right with
+      | ok value => exact Paired_pure value
+      | error error => exact Paired_throw error
+
+/-- Assignment-count observation and printing preserve pairing. -/
+theorem Paired_evalExpr_succ_when (f : Nat) (name : String) :
+    Paired (evalExpr (f + 1) (.when name)) := by
+  rw [evalExpr.eq_def]
+  apply Paired_bind _ _ Paired_get
+  intro world
+  cases resolve name world with
+  | none => exact Paired_throw (.runtime s!"undefined variable: {name}")
+  | some binding => exact Paired_pure (Value.int
+      world.environments[binding.envId]!.slots[binding.slot]!.assignments)
+
+theorem Paired_evalExpr_succ_print (f : Nat) (ih : PairedAll f) (argument : Expr) :
+    Paired (evalExpr (f + 1) (.call (.variable "print") [argument])) := by
+  rw [evalExpr.eq_def]
+  apply Paired_bind _ _ (ih.1 argument)
+  intro value
+  exact Paired_bind _ _ (Paired_printModify value) (fun _ => Paired_pure Value.null)
+
+/-- The zero-argument taped builtin preserves pairing, including shadowing. -/
+theorem Paired_evalExpr_succ_readLine (f : Nat) (ih : PairedAll f) :
+    Paired (evalExpr (f + 1) (.call (.variable "read_line") [])) := by
+  rw [evalExpr.eq_def]
+  intro world
+  apply PairedAt_get_bind
+  split
+  · apply PairedAt_of_Paired
+    apply Paired_bind _ _ (ih.1 (.variable "read_line"))
+    intro callable
+    cases callable with
+    | closure functionId name => exact ih.2.1 functionId []
+    | _ => exact Paired_throw (.runtime "value is not callable")
+  · exact PairedAt_of_Paired (Paired_tapedCall "read_line") world
+
+theorem Paired_evalExpr_succ_randomInt (f : Nat) (ih : PairedAll f)
+    (loExpr hiExpr : Expr) :
+    Paired (evalExpr (f + 1) (.call (.variable "random_int") [loExpr, hiExpr])) := by
+  rw [evalExpr.eq_def]
+  intro world
+  apply PairedAt_get_bind
+  split
+  · apply PairedAt_of_Paired
+    apply Paired_bind _ _ (ih.1 (.variable "random_int"))
+    intro callable
+    apply Paired_bind _ _ (Paired_mapM (evalExpr f) [loExpr, hiExpr] (fun item _ => ih.1 item))
+    intro values
+    cases callable with
+    | closure functionId name => exact ih.2.1 functionId values
+    | _ => exact Paired_throw (.runtime "value is not callable")
+  · apply PairedAt_of_Paired
+    apply Paired_bind _ _ (ih.1 loExpr)
+    intro lo
+    apply Paired_bind _ _ (ih.1 hiExpr)
+    intro hi
+    cases lo with
+    | int low =>
+        cases hi with
+        | int high =>
+            simp only
+            split
+            · exact Paired_bind _ _ (Paired_throw (.runtime
+                s!"random_int: range span {high - low + 1} exceeds 2^31 (lrand48 supplies 31 bits)"))
+                (fun _ => Paired_tapedCall "random_int")
+            · exact Paired_tapedCall "random_int"
+        | _ => exact Paired_throw (.runtime "random_int expects numeric bounds")
+    | _ => exact Paired_throw (.runtime "random_int expects numeric bounds")
+
+theorem Paired_evalExpr_succ_envGet (f : Nat) (ih : PairedAll f) (nameExpr : Expr) :
+    Paired (evalExpr (f + 1) (.call (.variable "env_get") [nameExpr])) := by
+  rw [evalExpr.eq_def]
+  intro world
+  apply PairedAt_get_bind
+  split
+  · apply PairedAt_of_Paired
+    apply Paired_bind _ _ (ih.1 (.variable "env_get"))
+    intro callable
+    apply Paired_bind _ _ (ih.1 nameExpr)
+    intro value
+    cases callable with
+    | closure functionId name => exact ih.2.1 functionId [value]
+    | _ => exact Paired_throw (.runtime "value is not callable")
+  · apply PairedAt_of_Paired
+    apply Paired_bind _ _ (ih.1 nameExpr)
+    intro name
+    cases name with
+    | string value => exact Paired_tapedCall "env_get"
+    | _ => exact Paired_throw (.runtime "env_get expects a string name")
+
+/-- A general function-call body preserves pairing. -/
+theorem Paired_evalExpr_generalCall (f : Nat) (ih : PairedAll f)
+    (function : Expr) (arguments : List Expr) : Paired (do
+      let callable ← evalExpr f function
+      let values ← arguments.mapM (evalExpr f)
+      match callable with
+      | .closure functionId _ => callFunction f functionId values
+      | _ => throw (.runtime "value is not callable")) := by
+  apply Paired_bind _ _ (ih.1 function)
+  intro callable
+  apply Paired_bind _ _ (Paired_mapM (evalExpr f) arguments (fun item _ => ih.1 item))
+  intro values
+  cases callable with
+  | closure functionId name => exact ih.2.1 functionId values
+  | _ => exact Paired_throw (.runtime "value is not callable")
+
+set_option maxHeartbeats 1000000 in
+/-- Every expression preserves pairing at successor fuel. -/
+theorem Paired_evalExpr_succ (f : Nat) (ih : PairedAll f) :
+    ∀ e, Paired (evalExpr (f + 1) e) := by
+  intro e
+  cases e with
+  | literal literal => exact Paired_evalExpr_succ_literal f literal
+  | «variable» name => exact Paired_evalExpr_succ_variable f name
+  | not x => exact Paired_evalExpr_succ_not f ih x
+  | array items => rw [evalExpr.eq_def]; exact Paired_throw (.unsupported "array literal")
+  | binary op a b => exact Paired_evalExpr_succ_binary f ih op a b
+  | when name => exact Paired_evalExpr_succ_when f name
+  | prev x => rw [evalExpr.eq_def]; exact Paired_throw (.unsupported "prev")
+  | whatWhen a b => rw [evalExpr.eq_def]; exact Paired_throw (.unsupported "what-when")
+  | call function arguments =>
+      rw (occs := .pos [1]) [evalExpr.eq_def]
+      simp only
+      split <;> rename_i h <;> cases h
+      · apply Paired_bind _ _ (ih.1 _)
+        intro value
+        exact Paired_bind _ _ (Paired_printModify value) (fun _ => Paired_pure Value.null)
+      · intro world
+        apply PairedAt_get_bind
+        split
+        · apply PairedAt_of_Paired
+          apply Paired_bind _ _ (ih.1 _)
+          intro callable
+          apply Paired_bind _ _ (Paired_mapM _ _ (fun item _ => ih.1 item))
+          intro values
+          cases callable with
+          | closure functionId name => exact ih.2.1 functionId values
+          | _ => exact Paired_throw (.runtime "value is not callable")
+        · apply PairedAt_of_Paired
+          apply Paired_bind _ _ (ih.1 _)
+          intro lo
+          apply Paired_bind _ _ (ih.1 _)
+          intro hi
+          cases lo with
+          | int low =>
+              cases hi with
+              | int high =>
+                  simp only
+                  split
+                  · exact Paired_bind _ _ (Paired_throw _) (fun _ => Paired_tapedCall "random_int")
+                  · exact Paired_tapedCall "random_int"
+              | _ => exact Paired_throw _
+          | _ => exact Paired_throw _
+      · intro world
+        apply PairedAt_get_bind
+        split
+        · apply PairedAt_of_Paired
+          apply Paired_bind _ _ (ih.1 _)
+          intro callable
+          cases callable with
+          | closure functionId name => exact ih.2.1 functionId []
+          | _ => exact Paired_throw _
+        · exact PairedAt_of_Paired (Paired_tapedCall "read_line") world
+      · intro world
+        apply PairedAt_get_bind
+        split
+        · apply PairedAt_of_Paired
+          apply Paired_bind _ _ (ih.1 _)
+          intro callable
+          apply Paired_bind _ _ (ih.1 _)
+          intro value
+          cases callable with
+          | closure functionId name => exact ih.2.1 functionId [value]
+          | _ => exact Paired_throw _
+        · apply PairedAt_of_Paired
+          apply Paired_bind _ _ (ih.1 _)
+          intro name
+          cases name with
+          | string value => exact Paired_tapedCall "env_get"
+          | _ => exact Paired_throw _
+      · exact Paired_evalExpr_generalCall f ih _ _
+
 /-- The statement-list evaluator preserves pairing at successor fuel. -/
 theorem Paired_exec_succ (f : Nat) (ih : PairedAll f) (statements : List Stmt) :
     Paired (exec (f + 1) statements) := by
@@ -2163,6 +2380,19 @@ theorem Paired_execLoop_succ (f : Nat) (ih : PairedAll f)
     | some returned => exact Paired_pure (some returned)
   · exact Paired_bind _ _ (Paired_store "__loop_exit__" (.string "normal") false)
       (fun _ => execIH rest)
+
+/-- Pairing is preserved when evaluator fuel is increased. -/
+theorem PairedAll_succ (f : Nat) (ih : PairedAll f) : PairedAll (f + 1) := by
+  exact ⟨Paired_evalExpr_succ f ih, Paired_callFunction_succ f ih,
+    Paired_chooseBranch_succ f ih, Paired_execLoop_succ f ih,
+    Paired_exec_succ f ih⟩
+
+/-- All five evaluator entry points preserve the writer/tape pairing invariant. -/
+theorem Paired_evaluator : ∀ fuel, PairedAll fuel := by
+  intro fuel
+  induction fuel with
+  | zero => exact PairedAll_zero
+  | succ f ih => exact PairedAll_succ f ih
 
 /-- Prefix sufficiency for the interaction interpreter.  The strict bound says
 the run stopped before exhausting its supplied stream (callers include an
