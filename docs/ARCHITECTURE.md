@@ -167,6 +167,17 @@ unchanged, and `EIGS_JIT_OFF=1` disables it for bisection.
   (+`EIGS_JIT_DUMP_NATIVE=1` for hex dumps). History and design
   records live in CHANGELOG.md (Stages 4–5h) and
   `docs/JIT_STAGE5_INLINE_IC.md`.
+  Each `EIGS_JIT_HOT` row aggregates all OSR slots: `oslots`, `ocomp`, and
+  `ofull` are respectively the attempted, compiled, and code-cache-rejected
+  slot counts. The legacy `osr`/`oadv`/`oent` fields describe the compiled
+  slot with the widest native coverage (or one attempted slot when none
+  compiled), preserving the native-byte estimate. Thus `cache_full_rejects`
+  reconciles with entry rows whose `jit` state is `full` plus the sum of
+  `ofull`; retained freed-chunk rows use the same snapshot semantics. The
+  freed-chunk retention is bounded by `JIT_HOT_ROWS_MAX` in `src/jit.c`, and
+  the dump reports dropped rows. Its `Hot chunks (top N of M)` header states
+  how many hottest rows are printed; all-chunk totals use the complete
+  retained population.
 
 ### Observer
 
