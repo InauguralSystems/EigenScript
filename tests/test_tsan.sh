@@ -51,6 +51,15 @@ tsan_warnings() {
     WARNINGS=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
 }
 
+# A failing row prints the report of the run that FAILED, whole: from its first
+# WARNING through that report's SUMMARY line. Re-running a racy fixture to show
+# its report usually comes back clean, so an intermittent race printed nothing:
+# ARM64's loader_mt_define_result failed in merge group fb394e5e (2026-10-28)
+# with "reported 1 ThreadSanitizer warning(s)" and no report at all.
+tsan_report() {
+    awk '/WARNING: ThreadSanitizer/ {f=1} f {print "      " $0} f && /^SUMMARY: ThreadSanitizer/ {exit}' | head -80
+}
+
 seeded_race_row() {
     echo "=== gate self-validation: a seeded race MUST be caught ==="
     local out rc w
@@ -60,6 +69,17 @@ seeded_race_row() {
     w=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
     if [ "$w" -gt 0 ]; then
         echo "  PASS: seeded race detected ($w warnings) — the gate is live"; PASS=$((PASS + 1))
+        # The failure print path, run on this real report, shows it whole:
+        # the opening WARNING, both access stacks, and the closing SUMMARY.
+        local rep
+        rep=$(tsan_report <<< "$out")
+        if grep -q "WARNING: ThreadSanitizer" <<< "$rep" && grep -q "SUMMARY: ThreadSanitizer" <<< "$rep" \
+           && [ "$(grep -c '#[0-9]' <<< "$rep")" -ge 2 ]; then
+            echo "  PASS: a failing row prints the failing run's whole report ($(wc -l <<< "$rep") lines)"; PASS=$((PASS + 1))
+        else
+            echo "  FAIL: tsan_report did not print the seeded race's whole report"; FAIL=$((FAIL + 1))
+            printf '%s\n' "$out" | head -20
+        fi
     else
         echo "  FAIL: seeded race NOT detected — the TSan gate is vacuous! (rc=$rc)"; FAIL=$((FAIL + 1))
     fi
@@ -98,7 +118,7 @@ rebind_call_row() {
         echo "  FAIL: rebind_call_race HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
     elif [ "$WARNINGS" -ne 0 ]; then
         echo "  FAIL: rebind_call_race reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
-        grep -A2 "WARNING: ThreadSanitizer" <<< "$RUN_OUTPUT" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
     elif [ "$LAST_RC" -ne 0 ] || ! grep -Fxq 'rebind call race: PASS' <<< "$RUN_OUTPUT"; then
         echo "  FAIL: rebind_call_race exited $LAST_RC without its PASS line"; FAIL=$((FAIL + 1))
         tail -5 <<< "$RUN_OUTPUT"
@@ -219,7 +239,7 @@ for t in $SLICE; do
         echo "  PASS: $t race-free"; PASS=$((PASS + 1))
     else
         echo "  FAIL: $t reported $w ThreadSanitizer warning(s)"
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
         FAIL=$((FAIL + 1))
     fi
 done
@@ -323,7 +343,7 @@ if [ -f "$TAPE_MT" ]; then
     if [ "$LAST_RC" -eq 66 ]; then
         echo "  FAIL: worker-tape ThreadSanitizer race (exit 66)"
         FAIL=$((FAIL + 1))
-        grep -A2 "ThreadSanitizer" "$TESTS_DIR/../build/tsan_trace_mt.err" | head -8
+        tsan_report < "$TESTS_DIR/../build/tsan_trace_mt.err"
     elif [ "$LAST_RC" -eq 124 ]; then
         echo "  FAIL: worker-tape HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"
         FAIL=$((FAIL + 1))
@@ -504,7 +524,7 @@ for t in $DKM_FIXTURES; do
     elif [ "$w" -ne 0 ]; then
         echo "  FAIL: $t reported $w ThreadSanitizer warning(s)"
         FAIL=$((FAIL + 1))
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
     elif [ "$LAST_RC" -ne 0 ]; then
         # A probe that DIED has not shown that the keys survive; a quiet
         # sanitizer on a truncated run is absence of evidence.
@@ -553,7 +573,7 @@ for t in $LDR_FIXTURES; do
         echo "  FAIL: $t HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
     elif [ "$w" -ne 0 ]; then
         echo "  FAIL: $t reported $w ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
     elif [ "$LAST_RC" -ne 0 ]; then
         echo "  FAIL: $t exited $LAST_RC (want 0) — a quiet sanitizer on a truncated run is absence of evidence"
         FAIL=$((FAIL + 1))
@@ -577,7 +597,7 @@ for t in $LDR_DIR_FIXTURES; do
         echo "  PASS: $t TSan-clean and exited 0"; PASS=$((PASS + 1))
     else
         echo "  FAIL: $t reported $WARNINGS warning(s), rc=$LAST_RC"; FAIL=$((FAIL + 1))
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
     fi
 done
 LDR_TOTAL=$((LDR_DECLARED + LDR_DIR_DECLARED))
@@ -608,7 +628,7 @@ for t in $ARM_FIXTURES; do
         echo "  FAIL: $t HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
     elif [ "$WARNINGS" -ne 0 ]; then
         echo "  FAIL: $t reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
     elif [ "$LAST_RC" -ne 0 ]; then
         echo "  FAIL: $t exited $LAST_RC (want 0)"; FAIL=$((FAIL + 1))
     else
@@ -687,7 +707,7 @@ for t in $HMT_FIXTURES; do
         FAIL=$((FAIL + 1))
     elif [ "$WARNINGS" -ne 0 ]; then
         echo "  FAIL: $t reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
     elif [ "$LAST_RC" -ne 0 ]; then
         echo "  FAIL: $t exited $LAST_RC (want 0) — a quiet sanitizer on a truncated run is absence of evidence"
         FAIL=$((FAIL + 1))
@@ -707,7 +727,7 @@ if [ -f "$MODENV_F" ]; then
         echo "  PASS: hm_modenv TSan-clean and exited 0"; PASS=$((PASS + 1))
     else
         echo "  FAIL: hm_modenv reported $WARNINGS warning(s), rc=$LAST_RC"; FAIL=$((FAIL + 1))
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$MODENV_F" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
     fi
 else
     echo "  FAIL: hm_modenv fixture missing ($MODENV_F)"; FAIL=$((FAIL + 1))
