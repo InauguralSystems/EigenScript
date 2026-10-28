@@ -1818,6 +1818,125 @@ theorem Paired_modify (f : World → World)
   · change [] = writerAnswersFrom w0.writerChunks.length []
     rfl
 
+/-- The simultaneous fuel-induction assertion for the five evaluator entry
+points.  Keeping this as one proposition makes every recursive call at the
+previous fuel available to each named successor lemma. -/
+def PairedAll (fuel : Nat) : Prop :=
+  (∀ e, Paired (evalExpr fuel e)) ∧
+  (∀ id args, Paired (callFunction fuel id args)) ∧
+  (∀ arms otherwise, Paired (chooseBranch fuel arms otherwise)) ∧
+  (∀ condition body rest, Paired (execLoop fuel condition body rest)) ∧
+  (∀ statements, Paired (exec fuel statements))
+
+/-- At zero fuel all five evaluator functions immediately raise `fuel`. -/
+theorem PairedAll_zero : PairedAll 0 := by
+  constructor
+  · intro expression
+    rw [evalExpr]
+    exact Paired_throw .fuel
+  constructor
+  · intro functionId arguments
+    rw [callFunction]
+    exact Paired_throw .fuel
+  constructor
+  · intro arms otherwise
+    rw [chooseBranch]
+    exact Paired_throw .fuel
+  constructor
+  · intro condition body rest
+    rw [execLoop]
+    exact Paired_throw .fuel
+  · intro statements
+    rw [exec]
+    exact Paired_throw .fuel
+
+/-- The statement-list evaluator preserves pairing at successor fuel. -/
+theorem Paired_exec_succ (f : Nat) (ih : PairedAll f) (statements : List Stmt) :
+    Paired (exec (f + 1) statements) := by
+  obtain ⟨exprIH, callIH, branchIH, loopIH, execIH⟩ := ih
+  rw [exec.eq_def]
+  cases statements with
+  | nil => exact Paired_pure none
+  | cons statement rest =>
+    cases statement with
+    | assign name expression isLocal =>
+        apply Paired_bind (evalExpr f expression)
+          (fun value => store name value isLocal >>= fun _ => exec f rest) (exprIH expression)
+        intro value
+        exact Paired_bind _ _ (Paired_store name value isLocal) (fun _ => execIH rest)
+    | print expression =>
+        apply Paired_bind (evalExpr f expression) _ (exprIH expression)
+        intro value
+        exact Paired_bind _ _ (Paired_printModify value) (fun _ => execIH rest)
+    | expression expression =>
+        exact Paired_bind _ _ (exprIH expression) (fun _ => execIH rest)
+    | return_ expression =>
+        exact Paired_bind _ _ (exprIH expression) (fun value => Paired_pure (some value))
+    | branch condition yes elifs no =>
+        apply Paired_bind (evalExpr f condition) _ (exprIH condition)
+        intro value
+        apply Paired_ite (truthy value)
+        · apply Paired_bind _ _ (execIH yes)
+          intro result
+          cases result with
+          | none => exact execIH rest
+          | some returned => exact Paired_pure (some returned)
+        · apply Paired_bind _ _ (branchIH elifs no)
+          intro result
+          cases result with
+          | none => exact execIH rest
+          | some returned => exact Paired_pure (some returned)
+    | loop condition body => exact loopIH condition body rest
+    | define name parameters body =>
+        apply Paired_bind (get : EvalM World) _ Paired_get
+        intro world
+        let definition : FunctionDef := {
+          name := name
+          parameters := if parameters.isEmpty then ["n"] else parameters
+          body := body
+          definingEnvironment := currentEnvironment world }
+        apply Paired_bind
+        · exact Paired_defineModify definition
+        · intro _
+          apply Paired_bind
+          · exact Paired_store name (.closure world.functions.size name) true
+          · intro _
+            exact execIH rest
+
+/-- Branch selection preserves pairing at successor fuel. -/
+theorem Paired_chooseBranch_succ (f : Nat) (ih : PairedAll f)
+    (arms : List (Expr × List Stmt)) (otherwise : Option (List Stmt)) :
+    Paired (chooseBranch (f + 1) arms otherwise) := by
+  obtain ⟨exprIH, callIH, branchIH, loopIH, execIH⟩ := ih
+  rw [chooseBranch.eq_def]
+  cases arms with
+  | nil =>
+      cases otherwise with
+      | none => exact Paired_pure none
+      | some body => exact execIH body
+  | cons arm rest =>
+      rcases arm with ⟨condition, body⟩
+      apply Paired_bind (evalExpr f condition) _ (exprIH condition)
+      intro value
+      exact Paired_ite (truthy value) _ _ (execIH body) (branchIH rest otherwise)
+
+/-- Loop execution preserves pairing at successor fuel. -/
+theorem Paired_execLoop_succ (f : Nat) (ih : PairedAll f)
+    (condition : Expr) (body rest : List Stmt) :
+    Paired (execLoop (f + 1) condition body rest) := by
+  obtain ⟨exprIH, callIH, branchIH, loopIH, execIH⟩ := ih
+  rw [execLoop]
+  apply Paired_bind (evalExpr f condition) _ (exprIH condition)
+  intro value
+  apply Paired_ite (truthy value)
+  · apply Paired_bind (exec f body) _ (execIH body)
+    intro result
+    cases result with
+    | none => exact loopIH condition body rest
+    | some returned => exact Paired_pure (some returned)
+  · exact Paired_bind _ _ (Paired_store "__loop_exit__" (.string "normal") false)
+      (fun _ => execIH rest)
+
 /-- Prefix sufficiency for the interaction interpreter.  The strict bound says
 the run stopped before exhausting its supplied stream (callers include an
 explicit error answer).  Thus answers after the exactly-consumed prefix cannot
