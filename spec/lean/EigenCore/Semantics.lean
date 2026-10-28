@@ -122,6 +122,14 @@ private def deliveredAnswer (query : TapedQuery) : TapedAnswer → TapedAnswer
       .value position (if name.isEmpty then query.name else name) value
   | answer => answer
 
+/-- Completing the wildcard name at the effect boundary is idempotent. -/
+theorem deliveredAnswer_idem (query : TapedQuery) (answer : TapedAnswer) :
+    deliveredAnswer query (deliveredAnswer query answer) = deliveredAnswer query answer := by
+  cases answer with
+  | value position name value =>
+      by_cases empty : name.isEmpty <;> simp [deliveredAnswer, empty]
+  | replayError | replayExhausted | oracleExhausted => rfl
+
 /-- The finite interaction tree produced by evaluation.  Its continuation is
 positive: an interpreter, and only an interpreter, supplies taped answers. -/
 inductive Interaction (α : Type) where
@@ -1301,6 +1309,49 @@ theorem interpret_answers_length (tree : Interaction α) (supplied : List TapedA
           simp only [interpret, List.length_cons]
           rw [ih (deliveredAnswer query answer) rest]
 
+/-- An interpretation cannot consume more entries than it was supplied. -/
+theorem interpret_consumed_le (tree : Interaction α) (supplied : List TapedAnswer) :
+    (interpret tree supplied).consumed ≤ supplied.length := by
+  induction tree generalizing supplied with
+  | done value => simp [interpret]
+  | ask query continuation ih =>
+      cases supplied with
+      | nil => simp [interpret]
+      | cons answer rest =>
+          simp only [interpret, List.length_cons]
+          have bounded := ih (deliveredAnswer query answer) rest
+          omega
+
+/-- If every delivered answer is a value, interpretation stopped before the
+first explicit oracle-exhaustion guard. -/
+theorem interpret_consumed_before_oracleExhausted (tree : Interaction α)
+    (entries : List TapedAnswer) (first second : Nat)
+    (onlyValues : ∀ answer ∈
+      (interpret tree (entries ++ [.oracleExhausted first,
+        .oracleExhausted second])).answers,
+      ∃ p name value, answer = .value p name value) :
+    (interpret tree (entries ++ [.oracleExhausted first,
+      .oracleExhausted second])).consumed ≤ entries.length := by
+  induction tree generalizing entries with
+  | done value => simp [interpret]
+  | ask query continuation ih =>
+      cases entries with
+      | nil =>
+          have impossible := onlyValues (.oracleExhausted first) (by simp [interpret, deliveredAnswer])
+          rcases impossible with ⟨p, name, value, contradiction⟩
+          cases contradiction
+      | cons answer rest =>
+          simp only [List.cons_append, interpret, List.length_cons]
+          have childValues : ∀ child ∈
+              (interpret (continuation (deliveredAnswer query answer))
+                (rest ++ [.oracleExhausted first, .oracleExhausted second])).answers,
+              ∃ p name value, child = .value p name value := by
+            intro child member
+            apply onlyValues child
+            simp [interpret, member]
+          have bounded := ih (deliveredAnswer query answer) rest childValues
+          omega
+
 /-- Interpreting a bound interaction concatenates the answers observed by
 its two phases.  The second phase receives precisely the supplied suffix not
 consumed by the first. -/
@@ -1681,6 +1732,19 @@ theorem writerAnswersFrom_length (position : Nat) (chunks : List WriterChunk) :
   | nil => rfl
   | cons chunk chunks ih =>
       simp [writerAnswersFrom, ih]
+
+/-- Writer answer projections contain only ordinary value answers. -/
+theorem writerAnswersFrom_isValue (position : Nat) (chunks : List WriterChunk) :
+    ∀ answer ∈ writerAnswersFrom position chunks,
+      ∃ p name value, answer = .value p name value := by
+  induction chunks generalizing position with
+  | nil => simp [writerAnswersFrom]
+  | cons chunk chunks ih =>
+      intro answer member
+      simp only [writerAnswersFrom, List.mem_cons] at member
+      rcases member with rfl | member
+      · cases chunk.answer <;> simp
+      · exact ih (position + 1) answer member
 
 /-- Numbering writer answers across appended chunk lists advances by the
 length of the first list. -/
@@ -2433,6 +2497,45 @@ theorem interpret_prefix_sufficient (tree : Interaction α) :
             simpa using within
           rw [ih (deliveredAnswer query answer) rest others childWithin tails]
 
+/-- A stream containing the answers already delivered by another interpretation
+replays that interpretation.  This differs from raw prefix sufficiency because
+record-mode values acquire their query names at the effect boundary. -/
+theorem interpret_delivered_congruence (tree : Interaction α) :
+    ∀ (supplied replay : List TapedAnswer),
+      (interpret tree supplied).consumed < supplied.length →
+      replay.take (interpret tree supplied).consumed =
+        (interpret tree supplied).answers →
+      interpret tree replay = interpret tree supplied := by
+  induction tree with
+  | done value =>
+      intro supplied replay within agree
+      simp [interpret]
+  | ask query continuation ih =>
+      intro supplied replay within agree
+      cases supplied with
+      | nil => simp [interpret] at within
+      | cons answer rest =>
+        cases replay with
+        | nil =>
+          simp only [interpret, List.take_nil] at agree
+          simp at agree
+        | cons other others =>
+          simp only [interpret] at within agree ⊢
+          have positive : 0 <
+              (interpret (continuation (deliveredAnswer query answer)) rest).consumed + 1 := by omega
+          have heads : other = deliveredAnswer query answer := by
+            simpa [List.take_succ_cons, positive] using congrArg List.head? agree
+          subst other
+          rw [deliveredAnswer_idem]
+          have tails : others.take
+                (interpret (continuation (deliveredAnswer query answer)) rest).consumed =
+              (interpret (continuation (deliveredAnswer query answer)) rest).answers := by
+            simpa [List.take_succ_cons] using congrArg List.tail agree
+          have childWithin :
+              (interpret (continuation (deliveredAnswer query answer)) rest).consumed < rest.length := by
+            simpa using within
+          rw [ih (deliveredAnswer query answer) rest others childWithin tails]
+
 /-- The two explicit exhaustion guards appended by `evaluateCore` continue the
 numbering of any already well-positioned supplied stream. -/
 theorem wellPositioned_withOracleExhaustion (answers : List TapedAnswer)
@@ -2554,5 +2657,94 @@ def run (fuel : Nat) (p : Program) (mode : Mode) : RunResult :=
   | .record oracle => presentCore fuel p (oracleAnswers oracle) {modeTag := .record, emitAnswers := true}
   | .replayStrict tape => let supplied := normalizeTape tape
     presentCore fuel p (supplied ++ [.replayExhausted supplied.length]) {modeTag := .replayStrict, emitAnswers := true}
+
+/-- A completed recording is a self-contained strict-replay certificate. -/
+theorem record_replay (fuel : Nat) (p : Program) (o : List OracleValue)
+    (r : RunResult) (recorded : run fuel p (.record o) = r)
+    (completed : r.error = none) :
+    run fuel p (.replayStrict r.tape) = r := by
+  subst r
+  simp only [run, presentCore, if_true] at completed ⊢
+  rw [normalizeTape_evaluateCore]
+  let root : Environment := {id := 0, parent := none}
+  let initial : World := {environments := #[root]}
+  let tree := (((exec fuel p).run).run initial)
+  let recordSupplied := oracleAnswers o ++
+    [.oracleExhausted (oracleAnswers o).length,
+     .oracleExhausted ((oracleAnswers o).length + 1)]
+  let recordedInterpretation := interpret tree recordSupplied
+  by_cases supported : unsupportedConstruct p = none
+  · have completedMatch :
+        (match recordedInterpretation.value.1 with
+          | .ok _ => none | .error e => some e) = none := by
+      simpa [evaluateCore, supported, recordedInterpretation, tree, recordSupplied,
+        initial, root] using completed
+    obtain ⟨value, successful⟩ : ∃ value, recordedInterpretation.value.1 = .ok value := by
+      cases outcome : recordedInterpretation.value.1 with
+      | ok value => exact ⟨value, rfl⟩
+      | error error => simp [outcome] at completedMatch
+    have positioned : WellPositioned 0 recordSupplied := by
+      simpa [recordSupplied] using wellPositioned_liveRecordSupplied o
+    have paired : Paired (exec fuel p) := (Paired_evaluator fuel).2.2.2.2 p
+    obtain ⟨chunks, chunksEq, answersEq⟩ :=
+      paired initial recordSupplied (by simpa [initial] using positioned) value successful
+    have resultChunks : recordedInterpretation.value.2.writerChunks = chunks := by
+      simpa [initial] using chunksEq
+    have answersZero : recordedInterpretation.answers = writerAnswersFrom 0 chunks := by
+      simpa [initial] using answersEq
+    have answerCount : recordedInterpretation.consumed = chunks.length := by
+      rw [← interpret_answers_length tree recordSupplied, answersEq,
+        writerAnswersFrom_length]
+    let replayCoreSupplied := writerAnswersFrom 0 chunks ++
+      [.replayExhausted (writerAnswersFrom 0 chunks).length]
+    let replaySupplied := replayCoreSupplied ++
+      [.oracleExhausted replayCoreSupplied.length,
+       .oracleExhausted (replayCoreSupplied.length + 1)]
+    have within : recordedInterpretation.consumed < recordSupplied.length := by
+      have valueAnswers := writerAnswersFrom_isValue 0 chunks
+      have beforeGuard : recordedInterpretation.consumed ≤ (oracleAnswers o).length := by
+        apply interpret_consumed_before_oracleExhausted tree (oracleAnswers o)
+          (oracleAnswers o).length ((oracleAnswers o).length + 1)
+        simpa [recordedInterpretation, recordSupplied, answersZero] using valueAnswers
+      rw [answerCount] at beforeGuard
+      calc
+        recordedInterpretation.consumed = chunks.length := answerCount
+        _ ≤ (oracleAnswers o).length := beforeGuard
+        _ < recordSupplied.length := by simp [recordSupplied]
+    have replayPrefix : replaySupplied.take recordedInterpretation.consumed =
+        recordedInterpretation.answers := by
+      rw [answerCount, answersZero]
+      simp [replaySupplied, replayCoreSupplied, writerAnswersFrom_length]
+    have interpretationsEqual : interpret tree replaySupplied = recordedInterpretation :=
+      interpret_delivered_congruence tree recordSupplied replaySupplied within replayPrefix
+    change evaluateCore fuel p
+        ((evaluateCore fuel p (oracleAnswers o)).answersConsumed ++
+          [.replayExhausted (evaluateCore fuel p (oracleAnswers o)).answersConsumed.length]) =
+      evaluateCore fuel p (oracleAnswers o)
+    have recordAnswers : (evaluateCore fuel p (oracleAnswers o)).answersConsumed =
+        writerAnswersFrom 0 chunks := by
+      simp [evaluateCore, supported, recordedInterpretation, tree, recordSupplied,
+        initial, root, resultChunks]
+    rw [recordAnswers]
+    rw [evaluateCore, evaluateCore, supported]
+    change (let interpreted := interpret tree replaySupplied
+      let (result, w) := interpreted.value
+      ({ stdout := w.stdout
+         tape := writerProducedRecords w.writerChunks w.writerTrailing
+         answersConsumed := writerAnswersFrom 0 w.writerChunks
+         error := match result with | .ok _ => none | .error e => some e } : RunResult)) =
+      (let interpreted := recordedInterpretation
+      let (result, w) := interpreted.value
+      { stdout := w.stdout
+        tape := writerProducedRecords w.writerChunks w.writerTrailing
+        answersConsumed := writerAnswersFrom 0 w.writerChunks
+        error := match result with | .ok _ => none | .error e => some e })
+    rw [interpretationsEqual]
+  · obtain ⟨construct, unsupported⟩ := Option.ne_none_iff_exists'.mp supported
+    change evaluateCore fuel p
+        ((evaluateCore fuel p (oracleAnswers o)).answersConsumed ++
+          [.replayExhausted (evaluateCore fuel p (oracleAnswers o)).answersConsumed.length]) =
+      evaluateCore fuel p (oracleAnswers o)
+    simp [evaluateCore, unsupported]
 
 end EigenCore
