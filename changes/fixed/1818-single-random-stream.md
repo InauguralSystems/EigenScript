@@ -1,0 +1,1 @@
+- Hosted runs no longer seed libc’s separate, untaped random stream, and the build gate prevents that stream from being used again (#1818).

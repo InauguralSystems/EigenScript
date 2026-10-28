@@ -401,7 +401,6 @@ int main(int argc, char **argv) {
 
     /* No arguments: enter REPL */
     if (argc < 2) {
-        srand(time(NULL));
         eigenscript_set_args(argc, argv);
 
         Env *global = eigs_global_env_create();   /* + builtin layer (#1388) */
@@ -474,7 +473,6 @@ int main(int argc, char **argv) {
         for (int i = 2; i + 1 < argc; i++) argv[i] = argv[i + 1];
         argv[--argc] = NULL;
     }
-    srand(time(NULL));
     eigenscript_set_args(argc, argv);
 
     Env *global = eigs_global_env_create();   /* + builtin layer (#1388) */
