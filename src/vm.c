@@ -5895,11 +5895,23 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Value *result;
         if (target->type == VAL_LIST) {
             result = make_list(n);
-            for (int i = 0; i < n; i++) {
+            /* #1722: make_list charges the sandbox allocation budget and, on
+             * refusal, raises a catchable EK_SANDBOX and CAPS capacity at its
+             * 8-slot fallback — it never returns a list sized to a refused n.
+             * Writing n slots then overflows the heap. Match the other
+             * sandbox-refused list allocators (list_reserve_one drops a
+             * refused append; builtin_list_insert_at bails after the raise,
+             * #1710): when the real capacity is short of n, make no stores.
+             * The raise is already latched, so the next DISPATCH's CHECK_ERROR
+             * halts the run and the empty result is discarded by sandbox_run's
+             * {ok:0}. (For n <= 8 capacity is always >= n, so the common path
+             * is unchanged; a successful charge gives capacity == n.) */
+            int fill = result->data.list.capacity < n ? 0 : n;
+            for (int i = 0; i < fill; i++) {
                 EigsSlot e = slot_read_owned(list_slot(target, start + i));
                 list_set_slot_owned(result, i, e);
             }
-            result->data.list.count = n;
+            result->data.list.count = fill;
         } else if (target->type == VAL_STR) {
             /* This raw copy becomes a retained program value. Charge its
              * payload before allocation; make_str_owned then transfers the

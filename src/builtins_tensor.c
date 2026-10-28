@@ -2158,6 +2158,13 @@ Value* builtin_numerical_grad_rows(Value *arg) {
             list_append_owned(grow, make_num(0.0));
         list_append_owned(grad, grow);
     }
+    /* #1722: make_list caps capacity at its 8-slot fallback when the sandbox
+     * refuses the allocation (and list_reserve_one then drops the appends),
+     * so a matrix wider or taller than 8 leaves grad/grad_row shorter than
+     * rows/cols. A raise does not unwind this direct C call, so stop after the
+     * refusal instead of indexing grad[r] / grad_row[c] past the real count
+     * (heap OOB). Matches list_reserve_one's drop and the SLICE_GET fix. */
+    if (g_has_error) goto rows_grad_failed;
 
     /* Only compute gradients for specified rows */
     for (int ri = 0; ri < nidx; ri++) {
@@ -2342,6 +2349,10 @@ Value* builtin_numerical_grad_cols(Value *arg) {
             list_append_owned(grow, make_num(0.0));
         list_append_owned(grad, grow);
     }
+    /* #1722: see numerical_grad_rows — a refused make_list caps grad/grad_row
+     * at 8 slots, so stop after the refusal instead of indexing grad[r] /
+     * grad_row[col] past the real count (heap OOB). */
+    if (g_has_error) goto cols_grad_failed;
 
     /* Only compute gradients for specified columns, across all rows */
     for (int ci = 0; ci < nidx; ci++) {
