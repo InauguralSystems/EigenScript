@@ -34,13 +34,20 @@ fi
 if [ "${1:-}" = "--selftest" ]; then
     work=$(mktemp -d "${TMPDIR:-/tmp}/portability_parse_selftest.XXXXXX") || exit 2
     trap 'rm -rf "$work"' EXIT
-    printf '%s\n' '#!/bin/bash' 'if then' > "$work/plant.sh"
+    printf '%s\n' '#!/bin/bash' 'echo clean' > "$work/plant.sh"
+    if ! out=$(PORTABILITY_BASH=/bin/bash PORTABILITY_MAX_MAJOR=99 PORTABILITY_FILES="$work/plant.sh" PORTABILITY_FILE_FLOOR=1 PORTABILITY_RUN_TARGETS= PORTABILITY_RUN_N=0 bash "$0" 2>&1); then
+        echo "SELFTEST FAILED: clean portability control was rejected"; printf '%s\n' "$out"; exit 1
+    elif ! printf '%s\n' "$out" | grep -qF 'portability-parse: OK: files=1 checked=1 failures=0'; then
+        echo "SELFTEST FAILED: clean portability control did not parse exactly one file"; printf '%s\n' "$out"; exit 1
+    fi
+    printf '%s\n' 'if then' >> "$work/plant.sh"
     if out=$(PORTABILITY_BASH=/bin/bash PORTABILITY_MAX_MAJOR=99 PORTABILITY_FILES="$work/plant.sh" PORTABILITY_FILE_FLOOR=1 PORTABILITY_RUN_TARGETS= PORTABILITY_RUN_N=0 bash "$0" 2>&1); then
         echo "SELFTEST FAILED: planted shell parse error was accepted"; exit 1
-    elif printf '%s\n' "$out" | grep -qF "does not parse under"; then
-        echo "SELFTEST OK: planted shell syntax fault caught: does not parse under oracle"; exit 0
+    elif [ "$(printf '%s\n' "$out" | grep -cF "$work/plant.sh does not parse under")" -eq 1 ] &&
+         printf '%s\n' "$out" | grep -qF 'portability-parse: FAIL: files=1 checked=1 failures=1'; then
+        echo "SELFTEST OK: clean control passed; exactly one planted shell syntax fault caught"; exit 0
     fi
-    echo "SELFTEST FAILED: plant missed expected parse message"; printf '%s\n' "$out"; exit 1
+    echo "SELFTEST FAILED: plant did not produce exactly one parse failure"; printf '%s\n' "$out"; exit 1
 fi
 if [ -z "$OLD" ]; then
     echo "portability-parse: NO OLD BASH ON THIS MACHINE — $n tracked *.sh were NOT parsed by an old shell,"

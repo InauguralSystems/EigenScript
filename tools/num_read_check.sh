@@ -31,14 +31,21 @@ ALLOW="${NUM_READ_ALLOW:-$ROOT/tools/num_read_allowlist.txt}"
 [ "${1:-}" != "--selftest" ] || {
     work=$(mktemp -d "${TMPDIR:-/tmp}/num_read_selftest.XXXXXX") || exit 2
     trap 'rm -rf "$work"' EXIT
+    printf '%s\n' '#define VAL_NUM_RAW(v) ((v)->data.num_)' > "$work/clean.c"
+    printf '%s\n' 'clean.c|#define VAL_NUM_RAW|1|self-test clean control' > "$work/allow.txt"
+    if ! out=$(NUM_READ_SRC="$work" NUM_READ_ALLOW="$work/allow.txt" bash "$0" 2>&1); then
+        echo "SELFTEST FAILED: clean raw-number control was rejected"; printf '%s\n' "$out"; exit 1
+    elif ! printf '%s\n' "$out" | grep -qF 'num-read: examined=1 functions=1 allowlisted=1 violations=0 stale=0'; then
+        echo "SELFTEST FAILED: clean raw-number control did not examine exactly one allowlisted token"; printf '%s\n' "$out"; exit 1
+    fi
     printf '%s\n' 'double planted(Value *v) {' '    return v->data.num_;' '}' > "$work/plant.c"
-    : > "$work/allow.txt"
     if out=$(NUM_READ_SRC="$work" NUM_READ_ALLOW="$work/allow.txt" bash "$0" 2>&1); then
         echo "SELFTEST FAILED: planted direct data.num_ bypass was accepted"; exit 1
-    elif printf '%s\n' "$out" | grep -qF 'VIOLATION: bypass: plant.c:2:'; then
-        echo "SELFTEST OK: planted raw-number bypass caught: VIOLATION: bypass: plant.c:2"; exit 0
+    elif [ "$(printf '%s\n' "$out" | grep -c 'VIOLATION: bypass: plant.c:2:')" -eq 1 ] &&
+         printf '%s\n' "$out" | grep -qF 'num-read: examined=1 functions=1 allowlisted=1 violations=1 stale=0'; then
+        echo "SELFTEST OK: clean control passed; exactly one raw-number bypass caught: plant.c:2"; exit 0
     fi
-    echo "SELFTEST FAILED: plant missed expected bypass message"; printf '%s\n' "$out"; exit 1
+    echo "SELFTEST FAILED: plant did not produce exactly one bypass violation"; printf '%s\n' "$out"; exit 1
 }
 [ -f "$ALLOW" ] || { echo "num-read: FAIL: allowlist $ALLOW missing"; exit 1; }
 TMP=$(mktemp "${TMPDIR:-/tmp}/num_read.XXXXXX") || exit 2

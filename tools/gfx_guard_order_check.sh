@@ -27,22 +27,23 @@ if [ "${1:-}" = "--selftest" ]; then
     i=1
     while [ "$i" -le 11 ]; do
         printf 'Value* builtin_plant_%s(void) {\n' "$i" >> "$work/ext_gfx.c"
-        if [ "$i" -eq 1 ]; then
-            printf '    load_sdl2();\n    ARG_GUARD(x);\n' >> "$work/ext_gfx.c"
-        else
-            printf '    ARG_GUARD(x);\n    load_sdl2();\n' >> "$work/ext_gfx.c"
-        fi
+        printf '    ARG_GUARD(x);\n    load_sdl2();\n' >> "$work/ext_gfx.c"
         printf '}\n' >> "$work/ext_gfx.c"
         i=$((i + 1))
     done
+    if ! out=$(GFX_GUARD_SRC="$work/ext_gfx.c" bash "$0" 2>&1); then
+        echo "SELFTEST FAILED: clean guard-order control was rejected"; printf '%s\n' "$out"; exit 1
+    elif [ "$(printf '%s\n' "$out" | grep -cF 'guarded builtins scanned: 11')" -ne 1 ]; then
+        echo "SELFTEST FAILED: clean guard-order control did not examine exactly 11 guarded builtins"; printf '%s\n' "$out"; exit 1
+    fi
+    printf '%s\n' 'Value* builtin_plant_bad(void) {' '    load_sdl2();' '    ARG_GUARD(x);' '}' >> "$work/ext_gfx.c"
     if out=$(GFX_GUARD_SRC="$work/ext_gfx.c" bash "$0" 2>&1); then
         echo "SELFTEST FAILED: planted guard behind SDL load was accepted"; exit 1
-    else
-        case "$out" in *'BAD builtin_plant_1'*)
-            echo "SELFTEST OK: planted guard behind SDL load caught: BAD builtin_plant_1"; exit 0 ;;
-        esac
+    elif [ "$(printf '%s\n' "$out" | grep -c '^    BAD builtin_plant_bad ')" -eq 1 ] &&
+         [ "$(printf '%s\n' "$out" | grep -cF 'guarded builtins scanned: 12')" -eq 1 ]; then
+        echo "SELFTEST OK: clean control passed; exactly one planted guard caught: BAD builtin_plant_bad"; exit 0
     fi
-    echo "SELFTEST FAILED: plant missed expected BAD builtin_plant_1 message"
+    echo "SELFTEST FAILED: plant did not produce exactly one BAD builtin_plant_bad violation"
     printf '%s\n' "$out"; exit 1
 fi
 
