@@ -95,6 +95,7 @@ PROBES = {"ieee": IEEE_PROBE,
           "int64": "print of ((9223372036854775807 - 9223372036854775806) == 1)",  # 0 in doubles
           "int64_kind": "print of (num_type of 9223372036854775807)"}
 FLOOR_FORMAT = "per-verdict/3"
+CACHE_FORMAT = "anchor-verdicts/1"
 RECIPE = os.path.join(HERE, "build_anchor.sh")
 HOT_BLOCK = re.compile(r"=== Hot chunks.*?\n  bytes native: [^\n]*", re.S)
 DIAG_LINE = re.compile(r"^(=== .* ===$|\d{4,} \[L\d+\] )")
@@ -108,6 +109,22 @@ def read_expr(pred):
 def sha256(path):
     with open(path, "rb") as f:
         return hashlib.sha256(f.read()).hexdigest()
+
+
+def oracle_sha256(cdir):
+    """Hash every input that can change the anchor's measured verdicts."""
+    paths = [__file__, derive.__file__, reference.__file__,
+             os.path.join(HERE, "gen.py"), os.path.join(HERE, "schema.py")]
+    paths += [os.path.join(cdir, name) for name in ("corpus.json", "certificate.json", "labels.json")]
+    h = hashlib.sha256()
+    for path in paths:
+        data = open(path, "rb").read()
+        h.update(os.path.basename(path).encode() + b"\0" + data + b"\0")
+    return h.hexdigest()
+
+
+def verdicts_sha256(verdict_list):
+    return hashlib.sha256(json.dumps(verdict_list, separators=(",", ":")).encode()).hexdigest()
 
 
 def load_labels(corpus, certs, path):
@@ -546,15 +563,50 @@ def floor_preflight(path):
     return floor, anchor()
 
 
-def check_floor(pre, path, cand_v, rows, corpus, labels):
+def cached_anchor_verdicts(stamp, corpus, labels, rows, cdir):
+    """Return the anchor verdict list, never serving a cache whose inputs moved."""
+    cache_path = os.path.join(anchor_dir(), "verdict-cache.json")
+    key = {"anchor_sha256": sha256(stamp["binary"]), "oracle_sha256": oracle_sha256(cdir)}
+    try:
+        with open(cache_path) as f:
+            cached = json.load(f)
+    except (OSError, ValueError):
+        cached = None
+    if isinstance(cached, dict) and cached.get("format") == CACHE_FORMAT \
+            and cached.get("key") == key and isinstance(cached.get("verdicts"), list) \
+            and all(isinstance(v, str) for v in cached["verdicts"]) \
+            and cached.get("verdicts_sha256") == verdicts_sha256(cached["verdicts"]):
+        # Re-read both inputs after the cache read. An anchor replacement or an
+        # oracle edit racing the read can therefore never make this stale hit usable.
+        if key == {"anchor_sha256": sha256(stamp["binary"]), "oracle_sha256": oracle_sha256(cdir)}:
+            return cached["verdicts"]
+    _ieee, caps, _ = capabilities(stamp["binary"])
+    want = right_set(verdicts(measure(stamp["binary"], corpus, caps), corpus, labels), rows)
+    if key != {"anchor_sha256": sha256(stamp["binary"]), "oracle_sha256": oracle_sha256(cdir)}:
+        raise HarnessError("the anchor or oracle changed while the anchor was measured; retry")
+    fd, tmp = tempfile.mkstemp(prefix=".verdict-cache.", dir=anchor_dir(), text=True)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump({"format": CACHE_FORMAT, "key": key, "verdicts": want,
+                       "verdicts_sha256": verdicts_sha256(want)}, f)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, cache_path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+    return want
+
+
+def check_floor(pre, path, cand_v, rows, corpus, labels, cdir):
     """1 when a floor verdict is now wrong, 0 otherwise; HarnessError when the
     floor is not the measurement of the recipe's anchor on this machine NOW
     (its identity: the recipe plus the verdict list; the binary's sha256 is
     information only, since another toolchain builds other bytes)."""
     floor, stamp = pre
     with anchor_lock():
-        _ieee, caps, _ = capabilities(stamp["binary"])
-        want = right_set(verdicts(measure(stamp["binary"], corpus, caps), corpus, labels), rows)
+        want = cached_anchor_verdicts(stamp, corpus, labels, rows, cdir)
     extra, missing = sorted(set(floor["verdicts"]) - set(want)), sorted(set(want) - set(floor["verdicts"]))
     if extra or missing or len(floor["verdicts"]) != len(want):
         built = stamp.get("toolchain") or "an unrecorded toolchain"
@@ -702,7 +754,7 @@ def main(argv):
         print(f"  CAPABILITY WRONG {arm} {rid}@{at} {p}: expected={str(v[(arm, rid, at, p)][1]).lower()}")
     fail = 1 if split or capwrong or missing else 0
     if pre:
-        fail |= check_floor(pre, opts["--floor"], v, rows, corpus, labels)
+        fail |= check_floor(pre, opts["--floor"], v, rows, corpus, labels, cdir)
     if stamp:
         with open(opts["--write-floor"], "w") as f:
             json.dump({"format": FLOOR_FORMAT, "note": opts.get("--note", ""), "numbers": "ieee" if ieee else "clamp",
