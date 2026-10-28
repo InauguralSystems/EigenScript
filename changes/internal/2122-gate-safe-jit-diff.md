@@ -1,1 +1,1 @@
-- `jit_diff` now ledgers unstable comparisons that trace/replay cannot safely adjudicate without changing the observer gate (#2122).
+- `jit_diff` now ledgers unstable comparisons that trace/replay cannot safely adjudicate without changing the observer gate, while allowing such a pair to agree on a later run (#2122).

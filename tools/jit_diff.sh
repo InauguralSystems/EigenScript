@@ -33,7 +33,23 @@ if [ "${1:-}" = "--selftest" ] && [ "${JIT_DIFF_SELFTEST_SUITE:-0}" = "1" ]; the
   timeout 30 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_SELFTEST_PLANT=deterministic JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_taped_divergence.eigs bash tools/jit_diff.sh --selftest || exit 1
   timeout 30 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_SELFTEST_PLANT=gate_nondet JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_gate_nondeterministic.eigs bash tools/jit_diff.sh --selftest || exit 1
   timeout 60 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_OBS_ONLY=tests/test_chunk_verify_stack.eigs bash tools/jit_diff.sh --selftest
-  exit $?
+  [ "$?" -eq 0 ] || exit 1
+  selftest_ledger=$(mktemp); selftest_out=$(mktemp)
+  trap 'rm -f "$selftest_ledger" "$selftest_out"' EXIT
+  echo 'tests/fixtures/jit_diff_agreement.eigs OBS COULD_NOT_ADJUDICATE' > "$selftest_ledger"
+  timeout 60 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_SELFTEST_COMPARE=1 JIT_DIFF_BASE="$selftest_ledger" JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_agreement.eigs bash tools/jit_diff.sh --selftest > "$selftest_out" 2>&1 || {
+    cat "$selftest_out"; echo "jit_diff: FAIL: absent ledgered COULD_NOT_ADJUDICATE row was rejected"; exit 1; }
+  cat "$selftest_out"
+  grep -Fq 'jit_diff: NOTE: ledgered COULD_NOT_ADJUDICATE row absent (pair agreed): tests/fixtures/jit_diff_agreement.eigs OBS COULD_NOT_ADJUDICATE' "$selftest_out" || {
+    echo "jit_diff: FAIL: allowed absent row did not emit its NOTE"; exit 1; }
+  echo 'tests/fixtures/jit_diff_agreement.eigs OBS' > "$selftest_ledger"
+  if timeout 60 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_SELFTEST_COMPARE=1 JIT_DIFF_BASE="$selftest_ledger" JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_agreement.eigs bash tools/jit_diff.sh --selftest > "$selftest_out" 2>&1; then
+    cat "$selftest_out"; echo "jit_diff: FAIL: absent ordinary ledger row was accepted"; exit 1
+  fi
+  grep -Fq '< tests/fixtures/jit_diff_agreement.eigs OBS' "$selftest_out" || {
+    cat "$selftest_out"; echo "jit_diff: FAIL: ordinary stale-row failure was not attributable"; exit 1; }
+  echo 'jit_diff: PASS: absent ordinary ledger row remains stale'
+  exit 0
 fi
 if [ "${1:-}" = "--selftest" ] && [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
   echo "jit_diff: FAIL: --selftest requires JIT_DIFF_OBS_ONLY" >&2; exit 1
@@ -42,7 +58,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT/src"
 export EIGS_TEST_DIR="$ROOT/tests"
 . "$ROOT/tests/suite_program_env.sh" || exit 1
 EIG="${EIGS_BIN:-./eigenscript}"
-BASE="$ROOT/tests/jit_diff_expected.txt"
+BASE="${JIT_DIFF_BASE:-$ROOT/tests/jit_diff_expected.txt}"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 got="$T/got"; : > "$got"; n=0; n_obs=0; n_deny=0; n_timeout=0; n_suite_env=0; adjudicated=0; could_not_adjudicate=0; run_seq=0
 # Only address-shaped hex (8+ digits) is noise; a short 0x1 vs 0x0 is data.
@@ -202,7 +218,7 @@ if [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
   [ "$n_obs" -ge 500 ] || { echo "jit_diff: FAIL: OBS examined=$n_obs denied=$n_deny (floor 500)"; exit 1; }
 fi
 echo "jit_diff: OBS examined=$n_obs denied=$n_deny timeout-both=$n_timeout"
-if [ -n "${JIT_DIFF_OBS_ONLY:-}" ]; then
+if [ -n "${JIT_DIFF_OBS_ONLY:-}" ] && [ -z "${JIT_DIFF_SELFTEST_COMPARE:-}" ]; then
   [ "${1:-}" = "--selftest" ] && cat "$got"
   exit 0
 fi
@@ -214,9 +230,21 @@ if [ "${1:-}" = "--record" ]; then
 fi
 [ -f "$BASE" ] || { echo "jit_diff: no baseline at $BASE (run with --record)"; cat "$got"; exit 1; }
 nled=$(ledger_count "$BASE")
-if diff <(ledger_data "$BASE") "$got" > "$T/d"; then
+# COULD_NOT_ADJUDICATE records an unstable pair that may agree on a later run.
+# Its absence is therefore informational. All present and ordinary rows remain
+# an exact, bidirectional ledger comparison.
+ledger_data "$BASE" | awk '$NF == "COULD_NOT_ADJUDICATE"' > "$T/optional"
+comm -23 "$T/optional" "$got" > "$T/absent_optional"
+ledger_data "$BASE" | awk '$NF != "COULD_NOT_ADJUDICATE"' > "$T/required"
+comm -23 "$T/required" "$got" > "$T/absent_required"
+comm -13 <(ledger_data "$BASE") "$got" > "$T/unexpected"
+if [ ! -s "$T/absent_required" ] && [ ! -s "$T/unexpected" ]; then
+  while IFS= read -r absent; do
+    [ -n "$absent" ] && echo "jit_diff: NOTE: ledgered COULD_NOT_ADJUDICATE row absent (pair agreed): $absent"
+  done < "$T/absent_optional"
   echo "jit_diff: OK ($n programs x {jit, osr} vs the interpreter; suite-env completed=$n_suite_env; OBS examined=$n_obs denied=$n_deny; $adjudicated arms adjudicated; $could_not_adjudicate could not adjudicate; $nled ledgered)"; exit 0
 fi
+diff <(ledger_data "$BASE") "$got" > "$T/d" || true
 echo "jit_diff: LEDGER CHANGED (JIT $n, OBS examined=$n_obs denied=$n_deny)"
 echo "  '<' = ledgered and now identical (improvement -- remove it)"
 echo "  '>' = newly diverging from the interpreter (REGRESSION)"
