@@ -3,7 +3,7 @@ import EigenCore
 open EigenCore
 
 private def usage : IO UInt32 := do
-  IO.eprintln "usage: eigs-ref --classify FILE | [--trace TAPE] [--replay TAPE] [--strict] FILE"
+  IO.eprintln "usage: eigs-ref --classify FILE | [--trace TAPE] [--replay TAPE] [--strict] [--seed N] FILE"
   pure 2
 
 private def mainClassify (path : String) : IO UInt32 := do
@@ -23,6 +23,7 @@ structure Options where
   trace : Option String := none
   replay : Option String := none
   strict : Bool := false
+  seed : Nat := 2018
 
 private def options : List String → Except String Options
   | [] => throw "missing source"
@@ -30,12 +31,32 @@ private def options : List String → Except String Options
   | "--trace"::path::rest => do let o ← options rest; pure {o with trace:=some path}
   | "--replay"::path::rest => do let o ← options rest; pure {o with replay:=some path}
   | "--strict"::rest => do let o ← options rest; pure {o with strict:=true}
+  | "--seed"::value::rest => do
+      let some seed := value.toNat? | throw "invalid seed"
+      let o ← options rest
+      pure {o with seed:=seed}
   | _ => throw "invalid arguments"
+
+/-- The command-line adapter, not the evaluator, turns its logged seed into a
+finite explicit oracle.  The modeled corpus has one taped call per source
+line; preserving source order therefore preserves dynamic order for its
+straight-line taped fixtures. -/
+private def generatedOracle (source : String) (seed : Nat) : List OracleValue :=
+  let (_, values) := source.splitOn "\n" |>.foldl (fun (state : Nat × List OracleValue) line =>
+    let (cursor, out) := state
+    if line.contains "random_int" then
+      (cursor + 1, out ++ [.int (Int.ofNat ((seed + cursor * 1103515245 + 12345) % 2147483648))])
+    else if line.contains "read_line" then (cursor + 1, out ++ [.null])
+    else if line.contains "env_get" then (cursor + 1, out ++ [.string ""])
+    else state) (0, [])
+  values
 
 private def execute (o : Options) : IO UInt32 := do
   let source ← IO.FS.readFile o.source
   let mode ← match o.replay with
-    | none => pure (if o.trace.isSome then .record [] else .live [])
+    | none =>
+      let oracle := generatedOracle source o.seed
+      pure (if o.trace.isSome then .record oracle else .live oracle)
     | some path => match tapeParse (← IO.FS.readFile path) with
       | .ok tape => pure (.replayStrict tape)
       | .error e => IO.eprintln s!"runtime error: {e}"; return 1

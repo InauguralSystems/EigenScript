@@ -144,18 +144,33 @@ private def takeN (fn : String) : EvalM Value := do
       set {w with mode := .replayStrict rest, tape := w.tape ++ [record]}
       pure value
 
-private def tapedCall (fn : String) (live : World → Value) : EvalM Value := do
+private def oracleValue (fn : String) (oracle : List OracleValue) : EvalM Value := do
+  let w ← get
+  let some raw := oracle[w.oracleCursor]?
+    | throw (.runtime s!"{fn}: oracle exhausted at value {w.oracleCursor}")
+  let value ← match fn, raw with
+    | "random_int", .int n => pure (.int n)
+    | "env_get", .string s => pure (.string s)
+    | "read_line", .string s => pure (.string s)
+    | "read_line", .null => pure .null
+    | _, _ => throw (.runtime s!"{fn}: oracle value has the wrong kind")
+  set {w with oracleCursor := w.oracleCursor + 1}
+  pure value
+
+/-- Live and record modes consume the supplied oracle exactly once per taped
+call.  Exhaustion is a runtime error, rather than a fabricated default: this
+keeps completed record runs honest and lets the N values of any successful
+strict replay serve directly as the witness oracle for replay fidelity. -/
+private def tapedCall (fn : String) : EvalM Value := do
   let w ← get
   match w.mode with
   | .replayStrict _ => takeN fn
-  | .live _ =>
-      let value := live w
-      set {w with oracleCursor := w.oracleCursor + 1}
-      pure value
-  | .record _ =>
-      let value := live w
+  | .live oracle => oracleValue fn oracle
+  | .record oracle =>
+      let value ← oracleValue fn oracle
+      let w ← get
       let record := "N 0 " ++ fn ++ "=" ++ nondetValue value
-      set {w with oracleCursor := w.oracleCursor + 1, tape := w.tape ++ [record]}
+      set {w with tape := w.tape ++ [record]}
       pure value
 private def store (name : String) (v : Value) (isLocal : Bool) : EvalM Unit := do
   let w ← get
@@ -219,18 +234,40 @@ mutual
         -- C's builtin_print returns null (src/builtins.c), not its argument.
         pure .null
     | .call (.variable "random_int") [loExpr, hiExpr] => do
+        let w ← get
+        if (resolve "random_int" w).isSome then
+          let callable ← evalExpr f (.variable "random_int")
+          let values ← [loExpr, hiExpr].mapM (evalExpr f)
+          match callable with
+          | .closure functionId _ => callFunction f functionId values
+          | _ => throw (.runtime "value is not callable")
+        else
         let lo ← evalExpr f loExpr; let hi ← evalExpr f hiExpr
         let (.int low) := lo | throw (.runtime "random_int expects numeric bounds")
         let (.int high) := hi | throw (.runtime "random_int expects numeric bounds")
-        tapedCall "random_int" fun w =>
-          if high < low then .int low else
-            let span := (high - low + 1).toNat
-            .int (low + Int.ofNat ((w.oracleCursor * 1103515245 + 12345) % span))
-    | .call (.variable "read_line") [] => tapedCall "read_line" fun _ => .null
+        if high >= low && (high - low + 1) > 2147483648 then
+          throw (.runtime s!"random_int: range span {high - low + 1} exceeds 2^31 (lrand48 supplies 31 bits)")
+        tapedCall "random_int"
+    | .call (.variable "read_line") [] => do
+        let w ← get
+        if (resolve "read_line" w).isSome then
+          let callable ← evalExpr f (.variable "read_line")
+          match callable with
+          | .closure functionId _ => callFunction f functionId []
+          | _ => throw (.runtime "value is not callable")
+        else tapedCall "read_line"
     | .call (.variable "env_get") [nameExpr] => do
+        let w ← get
+        if (resolve "env_get" w).isSome then
+          let callable ← evalExpr f (.variable "env_get")
+          let value ← evalExpr f nameExpr
+          match callable with
+          | .closure functionId _ => callFunction f functionId [value]
+          | _ => throw (.runtime "value is not callable")
+        else
         let name ← evalExpr f nameExpr
         let (.string _) := name | throw (.runtime "env_get expects a string name")
-        tapedCall "env_get" fun _ => .string ""
+        tapedCall "env_get"
     | .call function arguments => do
       let callable ← evalExpr f function
       let values ← arguments.mapM (evalExpr f)
@@ -314,6 +351,7 @@ structure RunResult where
   stdout : String
   tape : List String
   error : Option Err := none
+  deriving Repr, BEq
 
 def run (fuel : Nat) (p : Program) (mode : Mode) : RunResult :=
   if let some construct := unsupportedConstruct p then

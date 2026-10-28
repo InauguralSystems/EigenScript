@@ -99,7 +99,7 @@ def compare(ref,lean_root,enforce=True):
     # Reverse direction: the reference records from its seeded oracle and the
     # VM must consume that tape without consulting a live source.
     lean_own=td/f'lo{i}'; c_replay_tape=td/f'cr{i}'
-    own=subprocess.run([ref,'--trace',lean_own,p],capture_output=True,input=b'')
+    own=subprocess.run([ref,'--seed','2018','--trace',lean_own,p],capture_output=True,input=b'')
     reverse=subprocess.run([VM,p],capture_output=True,input=b'',env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_REPLAY':str(lean_own),'EIGS_REPLAY_STRICT':'1','EIGS_TRACE':str(c_replay_tape)})
     if reverse.stdout!=own.stdout or cls(reverse)!=cls(own) or projection(c_replay_tape)!=projection(lean_own):
      mismatch.append('Lean->C strict replay')
@@ -112,20 +112,23 @@ def compare(ref,lean_root,enforce=True):
  if enforce and any(k not in ('vm bug','model bug') or not r.strip() for k,r in ledger.values()):raise RuntimeError('invalid disagreement triage')
  negative=replay_refusal_cases(ref) if enforce else 0
  lines=[f'population / step1-in / modeled-in / examined: {len(ps)} / {old_in} / {new_in} / {examined}',f'agreements / disagreements: {examined-len(actual)-len(refusals)} / {len(actual)}',f'refused at runtime: {len(refusals)}']
- lines += [f'\t{x}: {why}' for x,why in refusals]+[f'Lean record->strict-replay: {roundtrips}/{examined-len(refusals)}',f'cross-implementation N programs: {cross}',f'replay mismatch/short refusal parity: {negative}/2',f'classifier protocol self-checks: {pc[0]}/{pc[1]}',f'classification moves: {len(moved)}']+['\t'.join(x) for x in moved]
+ lines += [f'\t{x}: {why}' for x,why in refusals]+[f'Lean record->strict-replay: {roundtrips}/{examined-len(refusals)}',f'cross-implementation N programs: {cross}',f'replay mismatch/short refusal parity: {negative}/2','seeded oracle: 2018',f'classifier protocol self-checks: {pc[0]}/{pc[1]}',f'classification moves: {len(moved)}']+['\t'.join(x) for x in moved]
  return ('\n'.join(lines)+'\n').encode(),actual
 def replace_once(path,old,new):
  text=path.read_text()
  if text.count(old)!=1:raise RuntimeError(f'mutant anchor count {text.count(old)} in {path}')
  path.write_text(text.replace(old,new))
 def selftest():
- base=ROOT/'spec/lean'; mutants=[('swap-add-sub','| .add => match a,b with | .int x,.int y => safeInt (x+y)','| .add => match a,b with | .int x,.int y => safeInt (x-y)'),('string-eq-length','| .eq | .ne => match a, b with','| .eq | .ne => match a, b with\n      | .string x, .string y => pure (.bool (if op == .eq then x.length == y.length else x.length != y.length))'),('drop-assignment-tape','set {w with environments:=environments,tape:=w.tape ++ [s!"A 0 {name}={tapeValue v}"]}','set {w with environments:=environments}'),('consume-two-n','set {w with mode := .replayStrict rest, tape := w.tape ++ [record]}','set {w with mode := .replayStrict ((rest.dropWhile fun (line : String) => !(line.startsWith "N ")).drop 1), tape := w.tape ++ [record]}')]; killed=0
+ base=ROOT/'spec/lean'; mutants=[('swap-add-sub','| .add => match a,b with | .int x,.int y => safeInt (x+y)','| .add => match a,b with | .int x,.int y => safeInt (x-y)'),('string-eq-length','| .eq | .ne => match a, b with','| .eq | .ne => match a, b with\n      | .string x, .string y => pure (.bool (if op == .eq then x.length == y.length else x.length != y.length))'),('drop-assignment-tape','set {w with environments:=environments,tape:=w.tape ++ [s!"A 0 {name}={tapeValue v}"]}','set {w with environments:=environments}'),('consume-two-n','set {w with mode := .replayStrict rest, tape := w.tape ++ [record]}','set {w with mode := .replayStrict ((rest.dropWhile fun (line : String) => !(line.startsWith "N ")).drop 1), tape := w.tape ++ [record]}'),('ignore-oracle','| "random_int", .int n => pure (.int n)','| "random_int", .int _ => pure (.int 2)')]; killed=0
  standing={x.split('\t',1)[0] for x in (base/'known_disagreements.txt').read_text().splitlines() if x and not x.startswith('#')}
  with tempfile.TemporaryDirectory() as raw:
   for name,old,new in mutants:
    copy=Path(raw)/name;shutil.copytree(base,copy,symlinks=True,ignore=shutil.ignore_patterns('.lake'));replace_once(copy/'EigenCore/Semantics.lean',old,new)
    p=subprocess.run(['lake','build'],cwd=copy,capture_output=True,text=True)
-   if p.returncode:raise RuntimeError(f'{name}: mutant did not build\n{p.stdout}{p.stderr}')
+   if p.returncode:
+    if name=='ignore-oracle' and 'OracleTests.lean' in p.stderr+p.stdout:
+     killed+=1;print(f'{name}: killed by Lean-native oracle regression');continue
+    raise RuntimeError(f'{name}: mutant did not build\n{p.stdout}{p.stderr}')
    _,found=compare(copy/'.lake/build/bin/eigs-ref',copy,False)
    # A timeout keeps the full population bounded, but is not evidence that a
    # semantic fault was observed: require an actual parity difference.
