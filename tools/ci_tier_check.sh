@@ -68,7 +68,16 @@ IND = re.compile(r"\b(env|vars)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?|\b(ne
 # code/spec from --all and `release` from their own candidate diff, so push and
 # merge_group select identical lanes (#1264); an unknown verdict exits 1.
 WAIVE = {("ci.yml", "scope", "detect"): "a218536a4442faff",
-         ("ci.yml", "gate-selftests", "select"): "d1e9f765e40d53d8"}
+         ("ci.yml", "gate-selftests", "select"): "d1e9f765e40d53d8",
+         # Reviewed for #2105: outputs only describe whether the exact cache
+         # hit or bounded, pinned provisioning made the toolchain available.
+         ("ci.yml", "spec-lean", "toolchain"): "653dcf2522f68246",
+         # Reviewed for #2105 fix round: this combines provisioning and the
+         # pinned Lake-cache action outcomes, and can only suppress Lean work.
+         ("ci.yml", "spec-lean", "prebuild"): "114fa7e323c3f11d",
+         # Reviewed for #2105 fix round: cache-hit only avoids a redundant
+         # save; it cannot select whether the specification runs.
+         ("ci.yml", "spec-lean", "lake-cache"): "4cf2ab867685020a"}
 used = set()
 def exprs(v): return re.findall(r"\$\{\{(.*?)\}\}", str(v), re.S)
 def bad_expr(e, wf, jid, pr_ok, depth=0):

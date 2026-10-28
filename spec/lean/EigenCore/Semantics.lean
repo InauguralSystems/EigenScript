@@ -1,5 +1,6 @@
 import EigenCore.Parser
 import EigenCore.Value
+import Std.Data.String.ToInt
 namespace EigenCore
 
 inductive Err where | runtime (message : String) | replay (message : String) | unsupported (construct : String) | refusal (reason : String) | fuel deriving Repr, BEq
@@ -106,13 +107,19 @@ private def tapeValue : Value → String
   | .array values => s!"<list:{values.length}>"
   | .closure _ _ => "<fn>"
 
+private def nondetChar (c : Char) : List Char :=
+  if c == '"' then ['\\', '"'] else if c == '\\' then ['\\', '\\']
+  else if c == '\n' then ['\\', 'n'] else if c == '\r' then ['\\', 'r']
+  else if c.toNat < 0x20 then
+    ['\\', 'x', lowerHexDigit (c.toNat / 16), lowerHexDigit (c.toNat % 16)]
+  else [c]
+
+private def nondetChars : List Char → List Char
+  | [] => []
+  | c :: rest => nondetChar c ++ nondetChars rest
+
 private def nondetString (s : String) : String :=
-  "\"" ++ s.toList.foldl (fun out c => out ++
-    if c == '"' then "\\\"" else if c == '\\' then "\\\\"
-    else if c == '\n' then "\\n" else if c == '\r' then "\\r"
-    else if c.toNat < 0x20 then
-      "\\x" ++ String.ofList [lowerHexDigit (c.toNat / 16), lowerHexDigit (c.toNat % 16)]
-    else c.toString) "" ++ "\""
+  String.ofList ('"' :: nondetChars s.toList ++ ['"'])
 
 private def nondetValue : Value → String
   | .int n => toString n | .string s => nondetString s | .null => "null"
@@ -124,29 +131,40 @@ def k_tape_kinds : List (String × List String) :=
   [("env_get", ["string"]), ("random_int", ["number"]),
    ("read_line", ["string", "null"])]
 
+private def hexNibble (c : Char) : Option Nat :=
+  if '0' ≤ c && c ≤ '9' then some (c.toNat - '0'.toNat)
+  else if 'a' ≤ c && c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
+  else if 'A' ≤ c && c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
+  else none
+
+private def parseQuotedGo : Nat → List Char → String → Option String
+  | 0, _, _ => none
+  | _, [], out => some out
+  | fuel + 1, '\\' :: 'x' :: hi :: lo :: rest, out =>
+      match hexNibble hi, hexNibble lo with
+      | some h, some l => parseQuotedGo fuel rest (out.push (Char.ofNat (h * 16 + l)))
+      | _, _ => none
+  | fuel + 1, '\\' :: c :: rest, out =>
+      if c == '"' then parseQuotedGo fuel rest (out.push '"')
+      else if c == '\\' then parseQuotedGo fuel rest (out.push '\\')
+      else if c == 'n' then parseQuotedGo fuel rest (out.push '\n')
+      else if c == 'r' then parseQuotedGo fuel rest (out.push '\r')
+      else none
+  | fuel + 1, c :: rest, out => parseQuotedGo fuel rest (out.push c)
+
 private def parseQuoted (s : String) : Option String :=
-  if !(s.startsWith "\"") || !(s.endsWith "\"") then none else
-    let body := ((s.drop 1).dropEnd 1).toString
-    let rec go : Nat → List Char → String → Option String
-      | 0, _, _ => none
-      | _, [], out => some out
-      | fuel + 1, '\\' :: 'x' :: hi :: lo :: rest, out =>
-          let nibble (c : Char) : Option Nat :=
-            if '0' ≤ c && c ≤ '9' then some (c.toNat - '0'.toNat)
-            else if 'a' ≤ c && c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
-            else if 'A' ≤ c && c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
-            else none
-          match nibble hi, nibble lo with
-          | some h, some l => go fuel rest (out.push (Char.ofNat (h * 16 + l)))
-          | _, _ => none
-      | fuel + 1, '\\' :: c :: rest, out =>
-          if c == '"' then go fuel rest (out.push '"')
-          else if c == '\\' then go fuel rest (out.push '\\')
-          else if c == 'n' then go fuel rest (out.push '\n')
-          else if c == 'r' then go fuel rest (out.push '\r')
-          else none
-      | fuel + 1, c :: rest, out => go fuel rest (out.push c)
-    go (body.length + 1) body.toList ""
+  -- C's line buffer retains a raw NUL, but its value parser is deliberately
+  -- NUL-terminated.  It therefore sees the quoted token as truncated and
+  -- reports a malformed taped value.  Only the encoder spelling (`\\x00`)
+  -- may carry NUL in a replayable string.
+  if s.toList.contains (Char.ofNat 0) then none else match s.toList with
+  | '"' :: rest =>
+      match rest.reverse with
+      | '"' :: bodyReverse =>
+          let body := bodyReverse.reverse
+          parseQuotedGo (body.length + 1) body ""
+      | _ => none
+  | _ => none
 
 private def parseNValue (fn raw : String) : Except Err OracleValue :=
   if fn == "random_int" then
@@ -164,19 +182,213 @@ private def parseNValue (fn raw : String) : Except Err OracleValue :=
       | none => throw (.replay s!"tape kind mismatch for {fn}: expected string or null")
   else throw (.replay s!"tape name mismatch: program called {fn}")
 
+theorem hexNibble_lowerHexDigit (n : Nat) (h : n < 16) :
+    hexNibble (lowerHexDigit n) = some n := by
+  have cases : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨
+      n = 6 ∨ n = 7 ∨ n = 8 ∨ n = 9 ∨ n = 10 ∨ n = 11 ∨ n = 12 ∨
+      n = 13 ∨ n = 14 ∨ n = 15 := by omega
+  rcases cases with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
+
+theorem parseQuotedGo_quote (fuel : Nat) (rest : List Char) (out : String) :
+    parseQuotedGo (fuel + 1) (nondetChar '"' ++ rest) out =
+      parseQuotedGo fuel rest (out.push '"') := by
+  rfl
+
+theorem parseQuotedGo_backslash (fuel : Nat) (rest : List Char) (out : String) :
+    parseQuotedGo (fuel + 1) (nondetChar '\\' ++ rest) out =
+      parseQuotedGo fuel rest (out.push '\\') := by
+  rfl
+
+theorem parseQuotedGo_newline (fuel : Nat) (rest : List Char) (out : String) :
+    parseQuotedGo (fuel + 1) (nondetChar '\n' ++ rest) out =
+      parseQuotedGo fuel rest (out.push '\n') := by
+  rfl
+
+theorem parseQuotedGo_return (fuel : Nat) (rest : List Char) (out : String) :
+    parseQuotedGo (fuel + 1) (nondetChar '\r' ++ rest) out =
+      parseQuotedGo fuel rest (out.push '\r') := by
+  rfl
+
+theorem parseQuotedGo_control (c : Char) (fuel : Nat) (rest : List Char) (out : String)
+    (hq : c ≠ '"') (hb : c ≠ '\\') (hn : c ≠ '\n') (hr : c ≠ '\r')
+    (hc : c.toNat < 0x20) :
+    parseQuotedGo (fuel + 1) (nondetChar c ++ rest) out =
+      parseQuotedGo fuel rest (out.push c) := by
+  have hhi : c.toNat / 16 < 16 := by omega
+  have hlo : c.toNat % 16 < 16 := Nat.mod_lt _ (by omega)
+  have rebuilt : Char.ofNat ((c.toNat / 16) * 16 + c.toNat % 16) = c := by
+    rw [Nat.mul_comm (c.toNat / 16) 16]
+    rw [Nat.div_add_mod]
+    exact Char.ofNat_toNat c
+  simp [nondetChar, hq, hb, hn, hr, hc, parseQuotedGo,
+    hexNibble_lowerHexDigit _ hhi, hexNibble_lowerHexDigit _ hlo, rebuilt]
+
+theorem parseQuotedGo_printable (c : Char) (fuel : Nat) (rest : List Char) (out : String)
+    (hq : c ≠ '"') (hb : c ≠ '\\') (hn : c ≠ '\n') (hr : c ≠ '\r')
+    (hc : ¬ c.toNat < 0x20) :
+    parseQuotedGo (fuel + 1) (nondetChar c ++ rest) out =
+      parseQuotedGo fuel rest (out.push c) := by
+  simp [nondetChar, hq, hb, hn, hr, hc, parseQuotedGo]
+
+theorem push_append_ofList (out : String) (c : Char) (rest : List Char) :
+    (out.push c) ++ String.ofList rest = out ++ String.ofList (c :: rest) := by
+  rw [show out.push c = out ++ String.singleton c by apply String.ext; simp]
+  rw [String.ofList_cons, String.append_assoc]
+
+theorem parseQuotedGo_nondetChars (chars : List Char) (fuel : Nat) (out : String)
+    (enough : chars.length < fuel) :
+    parseQuotedGo fuel (nondetChars chars) out = some (out ++ String.ofList chars) := by
+  induction chars generalizing fuel out with
+  | nil =>
+      cases fuel with
+      | zero => simp at enough
+      | succ fuel => simp [nondetChars, parseQuotedGo]
+  | cons c rest ih =>
+      cases fuel with
+      | zero => simp at enough
+      | succ fuel =>
+          have enough' : rest.length < fuel := by simp at enough; omega
+          simp only [nondetChars]
+          by_cases hq : c = '"'
+          · subst c
+            rw [parseQuotedGo_quote, ih fuel (out.push '"') enough']
+            exact congrArg some (push_append_ofList out '"' rest)
+          · by_cases hb : c = '\\'
+            · subst c
+              rw [parseQuotedGo_backslash, ih fuel (out.push '\\') enough']
+              exact congrArg some (push_append_ofList out '\\' rest)
+            · by_cases hn : c = '\n'
+              · subst c
+                rw [parseQuotedGo_newline, ih fuel (out.push '\n') enough']
+                exact congrArg some (push_append_ofList out '\n' rest)
+              · by_cases hr : c = '\r'
+                · subst c
+                  rw [parseQuotedGo_return, ih fuel (out.push '\r') enough']
+                  exact congrArg some (push_append_ofList out '\r' rest)
+                · by_cases hc : c.toNat < 0x20
+                  · rw [parseQuotedGo_control c fuel (nondetChars rest) out hq hb hn hr hc,
+                      ih fuel (out.push c) enough']
+                    exact congrArg some (push_append_ofList out c rest)
+                  · rw [parseQuotedGo_printable c fuel (nondetChars rest) out hq hb hn hr hc,
+                      ih fuel (out.push c) enough']
+                    exact congrArg some (push_append_ofList out c rest)
+
+theorem nondetChars_length (chars : List Char) :
+    chars.length ≤ (nondetChars chars).length := by
+  induction chars with
+  | nil => simp [nondetChars]
+  | cons c rest ih =>
+      simp only [nondetChars, List.length_cons, List.length_append]
+      have one : 1 ≤ (nondetChar c).length := by
+        by_cases hq : c = '"' <;> by_cases hb : c = '\\' <;>
+          by_cases hn : c = '\n' <;> by_cases hr : c = '\r' <;>
+          by_cases hc : c.toNat < 0x20 <;> simp [nondetChar, hq, hb, hn, hr, hc]
+      omega
+
+theorem lowerHexDigit_ne_nul (n : Nat) (h : n < 16) :
+    lowerHexDigit n ≠ Char.ofNat 0 := by
+  have cases : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨
+      n = 6 ∨ n = 7 ∨ n = 8 ∨ n = 9 ∨ n = 10 ∨ n = 11 ∨ n = 12 ∨
+      n = 13 ∨ n = 14 ∨ n = 15 := by omega
+  rcases cases with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+
+theorem nondetChars_no_raw_nul (chars : List Char) :
+    (nondetChars chars).contains (Char.ofNat 0) = false := by
+  induction chars with
+  | nil => rfl
+  | cons c rest ih =>
+      simp only [nondetChars, List.contains_append, Bool.or_eq_false_iff, ih,
+        and_true]
+      by_cases hc : c.toNat < 0x20
+      · have hi := lowerHexDigit_ne_nul (c.toNat / 16) (by omega)
+        have lo := lowerHexDigit_ne_nul (c.toNat % 16) (Nat.mod_lt _ (by omega))
+        by_cases hq : c = '"' <;> by_cases hb : c = '\\' <;>
+          by_cases hn : c = '\n' <;> by_cases hr : c = '\r' <;>
+          simp [nondetChar, hq, hb, hn, hr, hc, hi.symm, lo.symm]
+      · have cnul : Char.ofNat 0 ≠ c := by
+          intro equal
+          have same := congrArg Char.toNat equal
+          simp at same
+          omega
+        by_cases hq : c = '"' <;> by_cases hb : c = '\\' <;>
+          by_cases hn : c = '\n' <;> by_cases hr : c = '\r' <;>
+          simp [nondetChar, hq, hb, hn, hr, hc, cnul]
+
+/-- The VM-compatible quoted-string decoder is a left inverse of its encoder. -/
+theorem parseQuoted_nondetString (s : String) :
+    parseQuoted (nondetString s) = some s := by
+  have noNul : Char.ofNat 0 ∉ nondetChars s.toList := by
+    intro member
+    have : (nondetChars s.toList).contains (Char.ofNat 0) = true :=
+      List.contains_iff_mem.mpr member
+    rw [nondetChars_no_raw_nul] at this
+    contradiction
+  simp [parseQuoted, nondetString, noNul]
+  rw [parseQuotedGo_nondetChars]
+  · simp
+  · have := nondetChars_length s.toList
+    omega
+
+/-- The numeric `N` encoder and decoder are a left inverse.  This is the
+first per-answer round-trip needed by replay fidelity; unlike strings it has
+neither escaping nor continuation framing to account for. -/
+theorem parseNValue_random_int_encode (n : Int) :
+    parseNValue "random_int" (nondetValue (.int n)) = .ok (.int n) := by
+  simp [parseNValue, nondetValue, Int.toInt?_repr]
+  change Except.ok (OracleValue.int n) = Except.ok (OracleValue.int n)
+  rfl
+
+/-- The null spelling used by `read_line` is decoded without ambiguity. -/
+theorem parseNValue_read_line_null_encode :
+    parseNValue "read_line" (nondetValue .null) = .ok .null := by
+  rfl
+
+/-- A quoted string round-trips through either string-valued taped builtin. -/
+theorem parseNValue_string_encode (s : String) :
+    parseNValue "env_get" (nondetValue (.string s)) = .ok (.string s) ∧
+    parseNValue "read_line" (nondetValue (.string s)) = .ok (.string s) := by
+  have quoted := parseQuoted_nondetString s
+  have notNull : nondetString s ≠ "null" := by
+    intro equal
+    rw [equal] at quoted
+    simp [parseQuoted] at quoted
+  constructor
+  · simp only [parseNValue, nondetValue, quoted]
+    rfl
+  · simp [parseNValue, nondetValue, quoted, notNull]
+    rfl
+
 /-- Normalize replay input once into the evaluator's answer type.  Non-answer
 records are skipped, and a later `V` header ends the current session.  Parsing
 errors are deliberately stored rather than raised, so evaluation observes one
 at precisely the corresponding answer position. -/
+private def afterSecondSpace : List Char → List Char
+  | [] => []
+  | ' ' :: rest =>
+    match rest.dropWhile (· != ' ') with
+    | [] => []
+    | _ :: payload => payload
+  | _ :: rest => afterSecondSpace rest
+
+private def splitFirstEquals : List Char → List Char × List Char
+  | [] => ([], [])
+  | '=' :: rest => ([], rest)
+  | c :: rest =>
+    let (name, value) := splitFirstEquals rest
+    (c :: name, value)
+
 private def normalizeTapeFrom (position : Nat) : List String → List TapedAnswer
   | [] => []
   | line :: rest =>
     if line.startsWith "V " then []
     else if line.startsWith "N " then
-      let payload := String.intercalate " " ((line.splitOn " ").drop 2)
-      match payload.splitOn "=" with
-      | name :: valueParts =>
-        let recorded := String.intercalate "=" valueParts
+      let payload := afterSecondSpace line.toList
+      match splitFirstEquals payload with
+      | (nameChars, recordedChars) =>
+        let name := String.ofList nameChars
+        let recorded := String.ofList recordedChars
         -- Unknown recorded names stay as values until the call supplies its
         -- expected name.  This preserves the C/previous-model rule that a
         -- wrong-name error takes precedence over parsing that record's value.
@@ -186,7 +398,6 @@ private def normalizeTapeFrom (position : Nat) : List String → List TapedAnswe
           | .ok value => TapedAnswer.value position name value
           | .error error => TapedAnswer.replayError position error
         answer :: normalizeTapeFrom (position + 1) rest
-      | _ => .replayError position (.replay "malformed N record") :: normalizeTapeFrom (position + 1) rest
     else normalizeTapeFrom position rest
 
 def normalizeTape (tape : List String) : List TapedAnswer :=
@@ -213,19 +424,12 @@ theorem normalizeTape_error_position {tape : List String} {i p : Nat} {e : Err}
       · simp at found
       · split at found
         · split at found
-          · split at found
-            · cases j with
-              | zero => simp at found
-              | succ j =>
-                simp only [List.getElem?_cons_succ] at found
-                have := ih (start + 1) j q error found
-                omega
-            · cases j with
-              | zero => simp at found; omega
-              | succ j =>
-                simp only [List.getElem?_cons_succ] at found
-                have := ih (start + 1) j q error found
-                omega
+          · cases j with
+            | zero => simp at found
+            | succ j =>
+              simp only [List.getElem?_cons_succ] at found
+              have := ih (start + 1) j q error found
+              omega
           · cases j with
             | zero => simp at found; omega
             | succ j =>
