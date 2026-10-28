@@ -185,7 +185,8 @@ def selftest():
   for name,edits in mutants:
    copy=Path(raw)/name;shutil.copytree(base,copy,symlinks=True,ignore=shutil.ignore_patterns('.lake'))
    for edit in edits:
-    relative,old,new=edit if len(edit)==3 else ('EigenCore/Semantics.lean',*edit)
+    if len(edit)==3:relative,old,new=edit
+    else:relative=('EigenCore/Semantics.lean');old,new=edit
     replace_once(copy/relative,old,new)
    p=subprocess.run(['lake','build'],cwd=copy,capture_output=True,text=True)
    if p.returncode:
