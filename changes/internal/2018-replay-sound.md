@@ -1,0 +1,1 @@
+- Lean's executable semantics now proves strict replay soundness against a corresponding recording oracle (#2018).
