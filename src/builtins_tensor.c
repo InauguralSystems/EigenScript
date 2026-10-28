@@ -1745,7 +1745,7 @@ Value* builtin_random_normal(Value *arg) {
     TRACE_NONDET_TAKE("random_normal");
     if (!arg || arg->type != VAL_LIST) TRACE_NONDET_RECORD("random_normal", make_null());
     /* #960: draw from the shared drand48 stream that `seed_random` pins, not
-     * libc rand() (seeded only by main()'s srand(time(NULL)), so a
+     * libc generator (formerly seeded only by main from the clock, so a
      * randn-initialised tensor was unreproducible from script). After the TAKE
      * above: a replayed call serves its record without touching the stream. */
     int argc = arg->data.list.count;

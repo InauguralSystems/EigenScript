@@ -56,6 +56,12 @@ private def splitTopLevel (source marker : String) : List String :=
         scan fuel rest (c :: current) parts nextParen nextBracket nextString nextEscaped
   scan (source.length + 1) source.toList [] [] 0 0 false false
 
+private def firstTopLevelOperation (source : String) (operations : List (String × BinOp)) :
+    Option (List String × BinOp) :=
+  operations.findSome? fun (marker, op) =>
+    let parts := splitTopLevel source marker
+    if parts.length > 1 then some (parts, op) else none
+
 private def atom (s : String) : Except String Expr :=
   let t := trim s
   if ["break", "continue", "return", "try", "catch", "for", "import"].contains t then
@@ -99,9 +105,9 @@ private def expressionFuel : Nat → String → Except String Expr
       -- `not true and false` split as `(not true) and false`, while delaying
       -- every comparison until after the prefix makes `not 1 < 2` negate it.
       let logic : List (String × BinOp) := [(" or ", .or), (" and ", .and)]
-      match logic.find? (fun p => (splitTopLevel t p.1).length > 1) with
-      | some (marker, op) =>
-        match splitTopLevel t marker with
+      match firstTopLevelOperation t logic with
+      | some (parts, op) =>
+        match parts with
         | [a, b] => do pure (.binary op (← expressionFuel fuel a) (← expressionFuel fuel b))
         | _ => throw "not yet modeled"
       | none =>
@@ -120,9 +126,9 @@ private def expressionFuel : Nat → String → Except String Expr
           let operations : List (String × BinOp) :=
             [(" == ", .eq), (" != ", .ne), (" <= ", .le), (" >= ", .ge),
              (" < ", .lt), (" > ", .gt), (" + ", .add), (" - ", .sub), (" * ", .mul)]
-          match operations.find? (fun p => (splitTopLevel t p.1).length > 1) with
-          | some (marker, op) =>
-            match splitTopLevel t marker with
+          match firstTopLevelOperation t operations with
+          | some (parts, op) =>
+            match parts with
             | [a, b] => do pure (.binary op (← operand a) (← operand b))
             | _ => throw "not yet modeled"
           | none =>
