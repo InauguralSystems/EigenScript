@@ -1,0 +1,1 @@
+- A list slice longer than 8 elements no longer writes past its allocation when a sandbox budget refuses (and caps) the result list, matching the other sandbox-refused allocators (#1722).
