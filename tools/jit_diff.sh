@@ -9,8 +9,9 @@
 # The OBS arm is the old observer corpus: every tracked .eigs file, with the
 # gate forced open (EIGS_JIT_OFF=1 EIGS_OBS_FORCE=1), compared to ref.
 # A plain divergence is adjudicated. (1) Both sides run once more; if each
-# reproduces itself, it is a row. (2) Otherwise ref records a tape and the
-# other arm replays it; only a divergence that survives replay is a row.
+# reproduces itself, it is a row. (2) Otherwise the arm is ledgered as unable
+# to be adjudicated. Trace/replay opens the observer gate, so it cannot safely
+# decide a divergence from any arm's ordinary gate configuration (#2122).
 # Every arm receives the same process RNG seed, following V8's differential
 # fuzzer --random-seed precedent (and Go's process-level randautoseed knob), so
 # random output is comparable before trace/replay opens the observer gate.
@@ -30,6 +31,7 @@ if [ "${1:-}" = "--selftest" ] && [ "${JIT_DIFF_SELFTEST_SUITE:-0}" = "1" ]; the
   # product test it replays), which keeps it off the 60 s product-row cap (#1352).
   timeout 90 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_timeout_both.eigs bash tools/jit_diff.sh --selftest || exit 1
   timeout 30 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_SELFTEST_PLANT=deterministic JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_taped_divergence.eigs bash tools/jit_diff.sh --selftest || exit 1
+  timeout 30 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_SELFTEST_PLANT=gate_nondet JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_gate_nondeterministic.eigs bash tools/jit_diff.sh --selftest || exit 1
   timeout 60 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_OBS_ONLY=tests/test_chunk_verify_stack.eigs bash tools/jit_diff.sh --selftest
   exit $?
 fi
@@ -42,7 +44,7 @@ export EIGS_TEST_DIR="$ROOT/tests"
 EIG="${EIGS_BIN:-./eigenscript}"
 BASE="$ROOT/tests/jit_diff_expected.txt"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
-got="$T/got"; : > "$got"; n=0; n_obs=0; n_deny=0; n_timeout=0; n_suite_env=0; adjudicated=0
+got="$T/got"; : > "$got"; n=0; n_obs=0; n_deny=0; n_timeout=0; n_suite_env=0; adjudicated=0; could_not_adjudicate=0; run_seq=0
 # Only address-shaped hex (8+ digits) is noise; a short 0x1 vs 0x0 is data.
 norm() { sed -E 's/0x[0-9a-f]{8,}/0xADDR/g' "$1"; }
 # Flags are on when non-empty and not "0". GNU env takes -u BEFORE assignments.
@@ -50,20 +52,32 @@ REF=(-u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_SEE
 JIT=(-u EIGS_JIT_OFF -u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_SEED_RANDOM=2120)
 OSR=(-u EIGS_JIT_OFF -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_SEED_RANDOM=2120 EIGS_JIT_OSR_THRESHOLD=1)
 OBS=(-u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_GATE_STATS EIGS_SEED_RANDOM=2120 EIGS_JIT_OFF=1 EIGS_OBS_FORCE=1)
-if [ "${1:-}" = "--selftest" ] && [ "${JIT_DIFF_SELFTEST_PLANT:-}" = "deterministic" ]; then
+if [ "${1:-}" = "--selftest" ] && { [ "${JIT_DIFF_SELFTEST_PLANT:-}" = "deterministic" ] || [ "${JIT_DIFF_SELFTEST_PLANT:-}" = "gate_nondet" ]; }; then
   OBS+=(EIGS_JIT_DIFF_SELFTEST_ARM=arm)
 fi
 run() { # $1 out-file, $2 seconds, rest = env args (options first)
   local out="$1" sec="$2" rc; shift 2
-  local setting
+  local setting; local plant_seed=()
+  run_seq=$((run_seq + 1))
+  [ "${JIT_DIFF_SELFTEST_PLANT:-}" = "gate_nondet" ] && plant_seed=(EIGS_SEED_RANDOM=$((9000 + run_seq)))
   setting=$(suite_program_env "$prog") || { echo "jit_diff: FAIL: suite environment lookup failed for $prog" >&2; exit 1; }
   case "$setting" in
-    "") env "$@" timeout "$sec" "$EIG" "$prog" </dev/null > "$out" 2>&1 ;;
-    EIGS_STRICT=0) env "$@" EIGS_STRICT=0 timeout "$sec" "$EIG" "$prog" </dev/null > "$out" 2>&1 ;;
+    "") env "$@" "${plant_seed[@]}" timeout "$sec" "$EIG" "$prog" </dev/null > "$out" 2>&1 ;;
+    EIGS_STRICT=0) env "$@" EIGS_STRICT=0 "${plant_seed[@]}" timeout "$sec" "$EIG" "$prog" </dev/null > "$out" 2>&1 ;;
     *) echo "jit_diff: FAIL: unsupported suite environment for $prog: $setting" >&2; exit 1 ;;
   esac
   rc=$?
-  case " $* " in *' EIGS_JIT_DIFF_SELFTEST_ARM=arm '*) echo "jit-diff deterministic divergence plant" >> "$out" ;; esac
+  case " $* " in
+    *' EIGS_JIT_DIFF_SELFTEST_ARM=arm '*)
+      if [ "${JIT_DIFF_SELFTEST_PLANT:-}" = "gate_nondet" ]; then
+        # Trace and replay force the observer gate open. Model a defect that
+        # exists only on the ordinary, gate-closed path; the per-run plant seed supplies
+        # real output variation and a tape stabilizes the random draw.
+        case " $* " in *' EIGS_TRACE='*|*' EIGS_REPLAY='*) ;; *) echo "jit-diff gate-closed divergence plant" >> "$out" ;; esac
+      else
+        echo "jit-diff deterministic divergence plant" >> "$out"
+      fi ;;
+  esac
   echo "rc=$rc" >> "$out"
 }
 arm_env() { case "$1" in
@@ -113,11 +127,12 @@ consider() {
   if diff -q <(norm "$T/ref") <(norm "$T/ref2") >/dev/null && diff -q <(norm "$T/arm") <(norm "$T/arm2") >/dev/null; then
     echo "$row $tag" >> "$got"; return
   fi
-  rm -f "$T/tape"
-  run "$T/rref" "$sec" "${REF[@]}" EIGS_TRACE="$T/tape"
-  run "$T/rarm" "$sec" "${AE[@]}" EIGS_REPLAY="$T/tape"
-  diff -q <(norm "$T/rref") <(norm "$T/rarm") >/dev/null && return
-  echo "$row $tag" >> "$got"
+  # A tape is not neutral here: recording/replay enables observer snapshots
+  # and opens eigs_obs_gate_open(). It therefore cannot distinguish the OBS
+  # arm, or a JIT/OSR defect confined to the gate-closed path. Fail closed and
+  # put the category in the ledger rather than silently accepting the pair.
+  could_not_adjudicate=$((could_not_adjudicate + 1))
+  echo "$row $tag COULD_NOT_ADJUDICATE" >> "$got"
 }
 if [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
 for f in "$ROOT"/tests/test_*.eigs; do
@@ -194,13 +209,13 @@ fi
 if [ "${1:-}" = "--record" ]; then
   { awk '/^#/ { print }' "$BASE"; echo; cat "$got"; } > "$T/ledger"
   cp "$T/ledger" "$BASE"
-  echo "jit_diff: baseline recorded ($(ledger_count "$BASE") rows, JIT $n, OBS examined=$n_obs denied=$n_deny, $adjudicated arms adjudicated)"
+  echo "jit_diff: baseline recorded ($(ledger_count "$BASE") rows, JIT $n, OBS examined=$n_obs denied=$n_deny, $adjudicated arms adjudicated, $could_not_adjudicate could not adjudicate)"
   exit 0
 fi
 [ -f "$BASE" ] || { echo "jit_diff: no baseline at $BASE (run with --record)"; cat "$got"; exit 1; }
 nled=$(ledger_count "$BASE")
 if diff <(ledger_data "$BASE") "$got" > "$T/d"; then
-  echo "jit_diff: OK ($n programs x {jit, osr} vs the interpreter; suite-env completed=$n_suite_env; OBS examined=$n_obs denied=$n_deny; $adjudicated arms adjudicated; $nled ledgered)"; exit 0
+  echo "jit_diff: OK ($n programs x {jit, osr} vs the interpreter; suite-env completed=$n_suite_env; OBS examined=$n_obs denied=$n_deny; $adjudicated arms adjudicated; $could_not_adjudicate could not adjudicate; $nled ledgered)"; exit 0
 fi
 echo "jit_diff: LEDGER CHANGED (JIT $n, OBS examined=$n_obs denied=$n_deny)"
 echo "  '<' = ledgered and now identical (improvement -- remove it)"
