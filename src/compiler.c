@@ -3924,7 +3924,14 @@ static int obs_word_is_interrogative(const char *s, size_t n) {
 
 static const char *obs_skip_space(const char *p);
 static int obs_next_word_is(const char *p, const char *word) {
-    p = obs_skip_space(p);
+    /* The lexer drops a comment and its newline inside parentheses, so
+     * `prev # note` + newline + `of x` is still `prev of x`: skip comments
+     * as well as whitespace before the next word (codex review on #2130). */
+    for (;;) {
+        p = obs_skip_space(p);
+        if (*p != '#') break;
+        while (*p && *p != '\n') p++;
+    }
     size_t n = strlen(word);
     return strncmp(p, word, n) == 0 &&
            !(isalnum((unsigned char)p[n]) || p[n] == '_');

@@ -52,6 +52,22 @@ printf '%s\n' "$plant" | grep -q 'obs-gate: observed' || fail "observer-reading 
 printf '%s\n' "$plant" | grep -q '^ok$' || fail "planted parent did not execute"
 ok "observer read in an uncalled function's literal module arms the gate"
 
+cat > "$TMP/commented_forms.eigs" <<'EIGS'
+x is 1
+print of (prev # a comment between prev and of
+    of x)
+EIGS
+cat > "$TMP/commented_host.eigs" <<EOF2
+x is 1.0
+define optional() as:
+    return load_file of "$TMP/commented_forms.eigs"
+print of "ok"
+EOF2
+commented=$(EIGS_OBS_GATE_STATS=1 "$EIGS" "$TMP/commented_host.eigs" 2>&1)
+printf '%s\n' "$commented" | grep -q 'obs-gate: observed' || fail "a comment between prev and of hid the observer read"
+printf '%s\n' "$commented" | grep -q '^ok$' || fail "commented-form host did not execute"
+ok "a comment inside an observer form still arms the gate"
+
 cat > "$TMP/soft_keywords.eigs" <<'EIGS'
 local at is 1
 local prev is 2
