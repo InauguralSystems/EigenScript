@@ -2291,6 +2291,54 @@
     }
   },
   {
+    "name": "read_bytes",
+    "args": [
+      "\"@TMP@/bytes\"",
+      "3"
+    ],
+    "setup": "write_text of [\"@TMP@/bytes\", \"abc\"]",
+    "valid_assert": "shape_result == [97, 98, 99]",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [
+      [
+        "\"@TMP@/bytes\""
+      ]
+    ],
+    "scalar_forms": [
+      "\"@TMP@/bytes\""
+    ],
+    "requirements": [
+      "owned_temp"
+    ],
+    "claim": "Typed path and cap forms, returned bytes, and entry-guard ordering; ordinary owned resources only."
+  },
+  {
+    "name": "read_text",
+    "args": [
+      "\"@TMP@/text\"",
+      "3"
+    ],
+    "setup": "write_text of [\"@TMP@/text\", \"abc\"]",
+    "valid_assert": "shape_result == \"abc\"",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [
+      [
+        "\"@TMP@/text\""
+      ]
+    ],
+    "scalar_forms": [
+      "\"@TMP@/text\""
+    ],
+    "requirements": [
+      "owned_temp"
+    ],
+    "claim": "Typed path and cap forms, returned text, and entry-guard ordering; ordinary owned resources only."
+  },
+  {
     "args": [
       "\"@TMP@/bytes\"",
       "3"

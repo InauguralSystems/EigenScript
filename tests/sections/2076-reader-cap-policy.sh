@@ -5,7 +5,7 @@ READER_CAP_FAIL=$(printf '%s\n' "$READER_CAP_OUT" | grep -c '^FAIL:' || true)
 TOTAL=$((TOTAL + READER_CAP_PASS + READER_CAP_FAIL))
 PASS=$((PASS + READER_CAP_PASS))
 FAIL=$((FAIL + READER_CAP_FAIL))
-if [ "$READER_CAP_RC" -ne 0 ] || [ "$READER_CAP_FAIL" -ne 0 ] || [ "$READER_CAP_PASS" -ne 10 ]; then
+if [ "$READER_CAP_RC" -ne 0 ] || [ "$READER_CAP_FAIL" -ne 0 ] || [ "$READER_CAP_PASS" -ne 15 ]; then
     FAIL=$((FAIL + 1)); TOTAL=$((TOTAL + 1))
     echo "  FAIL: reader cap child contract (rc=$READER_CAP_RC, pass=$READER_CAP_PASS, fail=$READER_CAP_FAIL)"
     printf '%s\n' "$READER_CAP_OUT" | sed 's/^/      /'

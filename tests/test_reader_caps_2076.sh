@@ -53,6 +53,45 @@ EOF
     pass "$reader refuses a cap above the hard ceiling"
 done
 
+# Argument guards remain fail-soft outside strict mode, including when the
+# path is wrapped in the new capped form.  These guards execute before the
+# trace take, preserving the historical fallback records.
+for reader in read_text read_bytes read_bytes_buf; do
+    expected=none
+    [ "$reader" = read_text ] && expected=str
+    for arg in '42' '[42, 1024]' '["unused", "bad-cap"]' '["unused", -1]'; do
+        cat >"$TMP/guard.eigs" <<EOF
+print of type of ($reader of $arg)
+EOF
+        got=$(EIGS_STRICT=0 "$EIGS" "$TMP/guard.eigs" 2>"$TMP/err") ||
+            fail "$reader guard for $arg raised outside strict mode"
+        [ "$got" = "$expected" ] ||
+            fail "$reader guard for $arg returned type '$got', expected '$expected'"
+    done
+    pass "$reader path and max_bytes guards retain the historical fallback"
+done
+
+cat >"$TMP/strict.eigs" <<'EOF'
+value is read_text of 42
+EOF
+if EIGS_STRICT=1 "$EIGS" "$TMP/strict.eigs" >"$TMP/out" 2>"$TMP/err"
+then
+    fail "strict read_text accepted a non-string path"
+fi
+grep -F "read_text: expected a string path" "$TMP/err" >/dev/null ||
+    fail "strict read_text did not raise its historical type guard"
+pass "strict read_text raises for a non-string path"
+
+cat >"$TMP/guard.eigs" <<'EOF'
+print of read_text of 42
+EOF
+EIGS_STRICT=0 EIGS_TRACE="$TMP/guard.tape" "$EIGS" "$TMP/guard.eigs" >"$TMP/record" 2>"$TMP/record.err" ||
+    fail "non-string guard trace recording failed"
+EIGS_STRICT=0 EIGS_REPLAY="$TMP/guard.tape" "$EIGS" "$TMP/guard.eigs" >"$TMP/replay-guard" 2>"$TMP/replay-guard.err" ||
+    fail "non-string guard replay failed"
+cmp "$TMP/record" "$TMP/replay-guard" >/dev/null || fail "non-string guard replay diverged"
+pass "a fail-soft argument guard records and replays the same fallback"
+
 # Record a successful read under a raised cap, remove the live input, and prove
 # replay retains the call's cap while serving the recorded value.
 cat >"$TMP/replay.eigs" <<EOF

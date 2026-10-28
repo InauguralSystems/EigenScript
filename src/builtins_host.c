@@ -1180,43 +1180,43 @@ static int file_is_directory(FILE *f) {
 #define READ_BYTES_BUF_HARD_CAP    (512LL * 1024 * 1024)
 
 /* Parse the cap before the tape boundary so live and replay calls use the
- * same policy and malformed calls consume no record. */
-static int reader_cap_parse(const char *fn, Value *arg, Value **path,
-                            long long *cap) {
+ * same policy. Guard failures are returned to each reader so its historical
+ * ARG_GUARD_PRETAKE fallback (and tape entry) remains reader-specific. */
+static const char *reader_cap_parse(const char *fn, Value *arg, Value **path,
+                                    long long *cap) {
     *path = arg;
     *cap = READ_BYTES_BUF_DEFAULT_CAP;
     if (arg && arg->type == VAL_LIST) {
-        if (arg->data.list.count < 1 ||
-            (g_strict && arg->data.list.count > 2)) {
+        if (arg->data.list.count < 1) {
             rt_error(EK_TYPE, 0, "%s requires a path: %s of path, or %s of [path, max_bytes]",
                      fn, fn, fn);
-            return 0;
+            return NULL;
         }
         *path = list_get_ref(arg, 0);
         if (arg->data.list.count == 2) {
             EIGS_VIEW(mv_view);
             Value *mv = list_get_view(arg, 1, &mv_view);
             if (!mv || mv->type != VAL_NUM) {
-                rt_error(EK_VALUE, 0, "%s: max_bytes must be a number", fn);
-                return 0;
+                return "max_bytes to be a number";
             }
             double n = eigs_num_arg(mv, __func__);
             int64_t exact;
-            if (!isfinite(n) || !num_to_i64_exact(n, &exact) || exact < 1 ||
+            if (isfinite(n) && num_to_i64_exact(n, &exact) && exact < 1)
+                return "max_bytes to be a positive number";
+            if (!isfinite(n) || !num_to_i64_exact(n, &exact) ||
                 exact > READ_BYTES_BUF_HARD_CAP) {
                 rt_error(EK_VALUE, 0,
                          "%s: max_bytes must be an exact integer in 1..%lld (got %g)",
                          fn, READ_BYTES_BUF_HARD_CAP, n);
-                return 0;
+                return NULL;
             }
             *cap = (long long)exact;
         }
     }
     if (!*path || (*path)->type != VAL_STR) {
-        rt_error(EK_TYPE, 0, "%s expects a string path, or [path, max_bytes]", fn);
-        return 0;
+        return "a string path";
     }
-    return 1;
+    return "";
 }
 
 /* One raise site shared by all readers and by live and replay paths. */
@@ -1288,9 +1288,12 @@ static int replay_reader_size(const char *fn, Value *v, long long *out) {
 /* read_text of "path" → file contents as string; I/O failure raises EK_IO. */
 /* read_bytes of path — read binary file, return list of byte values (0-255) */
 Value* builtin_read_bytes(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "read_bytes");
     Value *path;
     long long cap;
-    if (!reader_cap_parse("read_bytes", arg, &path, &cap)) return make_null();
+    const char *guard = reader_cap_parse("read_bytes", arg, &path, &cap);
+    if (!guard) return make_null();
+    ARG_GUARD_PRETAKE(*guard, "read_bytes", guard, make_null());
     Value *replayed = NULL;
     if (file_io_replay("read_bytes", &replayed)) {
         if (replayed->type == VAL_NUM) {
@@ -1367,12 +1370,15 @@ Value* builtin_read_bytes(Value *arg) {
  * unbounded fs->RAM amplifier while blocking no realistic asset.
  * Missing/unopenable files raise EK_IO, like the other file readers. */
 Value* builtin_read_bytes_buf(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "read_bytes_buf");
     /* Deterministic argument parse, BEFORE the tape boundary: a bad call
      * shape takes the same path live and under replay, consuming no N
      * record either way. */
     Value *path;
     long long cap;
-    if (!reader_cap_parse("read_bytes_buf", arg, &path, &cap)) return make_null();
+    const char *guard = reader_cap_parse("read_bytes_buf", arg, &path, &cap);
+    if (!guard) return make_null();
+    ARG_GUARD_PRETAKE(*guard, "read_bytes_buf", guard, make_null());
 
     /* Tape boundary. Success records the VAL_BUFFER; unopenable file
      * records an impossible-success error list. A regular-file over-cap
@@ -1448,9 +1454,12 @@ Value* builtin_read_bytes_buf(Value *arg) {
 }
 
 Value* builtin_read_text(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "read_text");
     Value *path;
     long long cap;
-    if (!reader_cap_parse("read_text", arg, &path, &cap)) return make_null();
+    const char *guard = reader_cap_parse("read_text", arg, &path, &cap);
+    if (!guard) return make_null();
+    ARG_GUARD_PRETAKE(*guard, "read_text", guard, make_str(""));
     Value *replayed = NULL;
     if (file_io_replay("read_text", &replayed)) {
         if (replayed->type == VAL_NUM) {

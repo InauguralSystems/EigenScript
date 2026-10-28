@@ -1746,6 +1746,30 @@
     "disposition": "guarded"
   },
   {
+    "function": "builtin_read_bytes",
+    "file": "src/builtins_host.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 2,
+    "reason": "Path scalar or [path, optional max_bytes]; preserve the null fallback and pre-tape validation.",
+    "public_names": [
+      "read_bytes"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_read_text",
+    "file": "src/builtins_host.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 2,
+    "reason": "Path scalar or [path, optional max_bytes]; preserve the empty-string fallback and pre-tape validation.",
+    "public_names": [
+      "read_text"
+    ],
+    "disposition": "guarded"
+  },
+  {
     "function": "builtin_read_bytes_buf",
     "file": "src/builtins_host.c",
     "category": "optional_or_scalar",
