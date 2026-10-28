@@ -3,7 +3,6 @@
 from pathlib import Path
 import importlib.util
 import json
-import os
 import shutil
 import subprocess
 import tempfile
@@ -34,7 +33,7 @@ def main():
         clean_report = d / "clean.json"
         clean = subprocess.run([ROOT / "tools/ref_diff.sh", "--generated", "1", "--seed-start", "4", "--report", clean_report], capture_output=True, text=True)
         assert clean.returncode == 0, clean.stdout + clean.stderr
-        real = shutil.copy2(ref, d / "eigs-ref.real")
+        shutil.copy2(ref, d / "eigs-ref.real")
         mutant.write_text("#!/bin/sh\ncase \"${1:-}\" in --classify*) exec \"$0.real\" \"$@\";; esac\nout=$(\"$0.real\" \"$@\"); rc=$?; printf 'X%s' \"$out\"; exit $rc\n")
         mutant.chmod(0o755)
         bad_report = d / "bad.json"
