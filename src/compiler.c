@@ -3921,6 +3921,17 @@ static const char *obs_skip_space(const char *p) {
     return p;
 }
 
+/* `of` consumes one unary-or-tighter RHS (parse_relation), so postfix syntax
+ * belongs to that argument while infix syntax resumes outside the call.  A
+ * literal is therefore complete only at a statement boundary or when an
+ * enclosing expression supplies its delimiter; every other continuation is
+ * opaque, just like chunk_scan_static_loads' non-exact bytecode shape. */
+static int obs_literal_argument_ends(const char *p) {
+    while (*p == ' ' || *p == '\t' || *p == '\r') p++;
+    return *p == '\0' || *p == '\n' || *p == '#' ||
+           *p == ')' || *p == ']' || *p == '}' || *p == ',';
+}
+
 static char *obs_copy_word(const char *s, size_t n) {
     char *copy = xmalloc(n + 1);
     memcpy(copy, s, n);
@@ -4017,8 +4028,10 @@ static int obs_source_scan(const char *source, ObsLoadList *L) {
         }
         if (!*q) return 1;
         char *literal = obs_copy_word(path, (size_t)(q - path));
-        q = obs_skip_space(q + 1);
+        q++;
+        if (paren) q = obs_skip_space(q);
         if (paren && *q++ != ')') { free(literal); return 1; }
+        if (!obs_literal_argument_ends(q)) { free(literal); return 1; }
         obs_gate_note_load(literal, 0, L);
         free(literal);
         p = q;

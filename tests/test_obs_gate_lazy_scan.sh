@@ -75,3 +75,53 @@ printf '%s\n' "$nested_control" | grep -q 'obs-gate: unobserved' || fail "plain 
 nested_plant=$(gate_for "$TMP/fstr_nested_reader.eigs")
 printf '%s\n' "$nested_plant" | grep -q 'obs-gate: observed' || fail "observer reader in a nested f-string did not arm the gate"
 ok "nested f-string interpolation is scanned in both directions"
+
+# A literal is safe to pre-scan only when it is the complete `of` argument.
+# Postfix indexing belongs to the RHS; infix + does not (it parses as
+# `(load_file of "a") + "b.eigs"`), but both make the exact load shape opaque.
+cat > "$TMP/leaf.eigs" <<'EIGS'
+print of (report of history_value)
+EIGS
+cat > "$TMP/leaf.eigsX" <<'EIGS'
+decoy is 1
+EIGS
+
+continuation_case() {
+    label=$1
+    expression=$2
+    cat > "$TMP/continuation_mid.eigs" <<EOF2
+$expression
+EOF2
+    cat > "$TMP/continuation_host.eigs" <<EOF2
+history_value is 1.0
+history_value is 2.0
+history_value is 4.0
+history_value is 8.0
+load_file of "$TMP/continuation_mid.eigs"
+EOF2
+    out=$(EIGS_OBS_GATE_STATS=1 "$EIGS" "$TMP/continuation_host.eigs" 2>&1) || {
+        printf '%s\n' "$out" >&2
+        fail "$label raised instead of preserving observer history"
+    }
+    printf '%s\n' "$out" | grep -q 'obs-gate: observed' || fail "$label did not arm the gate"
+    printf '%s\n' "$out" | grep -q '^moving$' || fail "$label did not load the observer-reading leaf"
+    ok "$label arms before the parent's assignments"
+}
+
+continuation_case "parenthesized postfix literal" \
+    "load_file of (\"$TMP/leaf.eigsX\")[0:-1]"
+continuation_case "unparenthesized postfix literal" \
+    "load_file of \"$TMP/leaf.eigsX\"[0:-1]"
+
+cat > "$TMP/binary_mid.eigs" <<EOF2
+define optional() as:
+    return load_file of "$TMP/leaf.eigsX" + "b.eigs"
+EOF2
+cat > "$TMP/binary_host.eigs" <<EOF2
+load_file of "$TMP/binary_mid.eigs"
+print of "binary-ok"
+EOF2
+binary_out=$(EIGS_OBS_GATE_STATS=1 "$EIGS" "$TMP/binary_host.eigs" 2>&1) || fail "binary continuation control did not execute"
+printf '%s\n' "$binary_out" | grep -q 'obs-gate: observed' || fail "binary continuation did not make the lazy module opaque"
+printf '%s\n' "$binary_out" | grep -q '^binary-ok$' || fail "binary continuation host did not execute"
+ok "binary continuation arms even though its function is uncalled"
