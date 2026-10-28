@@ -53,8 +53,10 @@ corpus differential against --baseline (the binary from before the round).
 The differential runs each file under its run conditions from the suite's
 loader (tests/suite_program_env.sh) and requires every nonzero exit to be
 declared (tests/phase2/corpus_nonzero.txt); its header is the reference.
-A gate tool that writes to stderr fails, with its words (tool()); the
-checker runs under `python3 -W error` (tools/phase2_check.sh).
+A gate tool that writes to stderr fails, with its words (tool()). The embed
+smoke's deliberate wrong-input diagnostics are allowed explicitly; sanitizer
+output still fails at every exit status. The checker runs under `python3 -W
+error` (tools/phase2_check.sh).
 
 Exit 0 iff the population checks pass, every tier has examined == tag_fail
 == branch_pass > 0 (or the round is mechanical and every gate passed),
@@ -684,12 +686,13 @@ def int_source(src, out, through='R1.1'):
             and defs['slot_from_int'] == 1 and homes == SMI_TAG_HOMES)
 
 
-def tool(cmd, out, tail_re, env=None):
-    """Run a gate tool; echo the lines matching tail_re. Its verdict is its
-    exit code, and a tool that writes to stderr fails here with its words:
-    its stdout is read beside nothing else (the R1.1 critic's class)."""
-    p = subprocess.run(cmd, cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True,
-                       env=dict(os.environ, **(env or {})))
+def tool_output(cmd, p, out, tail_re, allow_test_diagnostics=False):
+    """Judge the real subprocess result, shared with the one-time calibration.
+
+    Gate checkers must keep stderr empty. A behavioral host can deliberately
+    exercise errors, so its caller may allow those diagnostics, while still
+    rejecting every sanitizer report (including recoverable UBSan at rc=0).
+    """
     text = p.stdout.decode('utf-8', 'replace')
     err = p.stderr.decode('utf-8', 'replace')
     for l in text.split('\n'):
@@ -699,7 +702,105 @@ def tool(cmd, out, tail_re, env=None):
     for l in err.split('\n'):
         if l:
             out('  STDERR %s: %s' % (who, l))
-    return p.returncode == 0 and not err, text
+    # This policy rejects *all* sanitizer output, rather than tolerating an
+    # LSan-only exit. Keep it strict like tests/test_lsp.py; no separate copy
+    # of tests/lsan_classify.sh's tolerance decision is needed.
+    sanitizer = allow_test_diagnostics and any(
+        marker in text + err for marker in ('Sanitizer', 'runtime error:'))
+    ok = p.returncode == 0 and (not err or allow_test_diagnostics) and not sanitizer
+    if p.returncode != 0 or err or sanitizer or allow_test_diagnostics:
+        out('  tool %s: rc=%d stderr_bytes=%d stderr_policy=%s verdict=%s' % (
+            who, p.returncode, len(p.stderr),
+            'test-diagnostics' if allow_test_diagnostics else 'empty',
+            'PASS' if ok else 'FAIL'))
+    if sanitizer:
+        out('  tool %s: FAIL: sanitizer output rejected at rc=%d' % (who, p.returncode))
+    elif err and not allow_test_diagnostics:
+        out('  tool %s: FAIL: unexpected stderr (this checker requires empty stderr)' % who)
+    return ok, text
+
+
+def tool(cmd, out, tail_re, env=None, allow_test_diagnostics=False):
+    """Run a tool and apply its explicit stderr policy to the captured result."""
+    p = subprocess.run(cmd, cwd=ROOT, stdin=subprocess.DEVNULL, capture_output=True,
+                       env=dict(os.environ, **(env or {})))
+    return tool_output(cmd, p, out, tail_re, allow_test_diagnostics)
+
+
+def embed_int_result(ok, text, out):
+    """Require one positive, failure-free counter and the host's final OK."""
+    counters = re.findall(r'^gate\.N7\.embed-int:.*$', text, re.M)
+    valid = re.findall(r'^gate\.N7\.embed-int: checks=([1-9][0-9]*) failures=0$', text, re.M)
+    smoke = re.findall(r'^embed_smoke:.*$', text, re.M)
+    final = re.findall(r'^embed_smoke: OK$', text, re.M)
+    out('  embed-int witnesses: counter_lines=%d valid_counters=%d checks=%s '
+        'smoke_lines=%d smoke_ok=%d' % (
+            len(counters), len(valid), ','.join(valid) or '<none>', len(smoke), len(final)))
+    if len(counters) != 1 or len(valid) != 1:
+        out('  embed-int: FAIL: expected exactly one checks>0 failures=0 counter; got %r' % counters)
+    if len(smoke) != 1 or len(final) != 1:
+        out('  embed-int: FAIL: expected exactly one embed_smoke: OK; got %r' % smoke)
+    return ok and len(counters) == len(valid) == len(smoke) == len(final) == 1
+
+
+def embed_int_gate(out):
+    # embed_smoke exercises wrong types, failed evals and replay refusals on
+    # purpose. Their printed errors are expected; its rc and witnesses own
+    # the verdict, with sanitizer output still an unconditional failure.
+    ok, text = tool(['make', '--no-print-directory', 'embed-smoke'], out,
+                    r'^(gate\.N7\.embed-int:|embed_smoke:)', allow_test_diagnostics=True)
+    return embed_int_result(ok, text, out)
+
+
+def tool_contract_calibration(out):
+    """Small result plants, through the same evaluator used by live tools."""
+    good = 'gate.N7.embed-int: checks=219 failures=0\nembed_smoke: OK\n'
+    wrong_type = 'Error line 0: eigs_value_as_int: expected a number\n'
+    cases = [
+        ('checker clean control', 0, good, '', False, False, True, None),
+        ('checker stderr remains forbidden', 0, good, wrong_type, False, False, False,
+         'unexpected stderr'),
+        ('embed expected diagnostics control', 0, good, wrong_type, True, True, True,
+         'stderr_policy=test-diagnostics'),
+        ('embed nonzero rc despite witnesses', 7, good, '', True, True, False, 'rc=7'),
+        ('embed empty stdout', 0, '', '', True, True, False, 'counter_lines=0'),
+        ('embed zero checks', 0, good.replace('checks=219', 'checks=0'), '', True, True, False,
+         'expected exactly one checks>0 failures=0 counter'),
+        ('embed failed assertion counter', 0, good.replace('failures=0', 'failures=1'), '',
+         True, True, False, 'failures=1'),
+        ('embed absent final OK', 0, good.split('embed_smoke:')[0], '', True, True, False,
+         'smoke_ok=0'),
+        ('embed duplicate counter', 0, good + good.splitlines()[0] + '\n', '', True, True, False,
+         'counter_lines=2'),
+        ('embed duplicate final OK', 0, good + 'embed_smoke: OK\n', '', True, True, False,
+         'smoke_ok=2'),
+        ('embed malformed extra counter', 0, good + 'gate.N7.embed-int: truncated\n', '',
+         True, True, False, 'counter_lines=2'),
+        ('embed UBSan at rc zero', 0, good, 'fixture.c:1: runtime error: signed integer overflow\n',
+         True, True, False, 'sanitizer output rejected at rc=0'),
+        ('embed ASan at rc zero', 0, good, 'ERROR: AddressSanitizer: heap-use-after-free\n',
+         True, True, False, 'sanitizer output rejected at rc=0'),
+        ('embed LSan at rc zero', 0, good, 'ERROR: LeakSanitizer: detected memory leaks\n',
+         True, True, False, 'sanitizer output rejected at rc=0'),
+        ('embed sanitizer on stdout', 0, good + 'SUMMARY: ThreadSanitizer: data race\n', '',
+         True, True, False, 'sanitizer output rejected at rc=0'),
+    ]
+    passed = 0
+    for name, rc, stdout, stderr, allow, embed, want, diagnostic in cases:
+        lines = []
+        p = subprocess.CompletedProcess(['fixture'], rc, stdout.encode(), stderr.encode())
+        ok, text = tool_output(['fixture'], p, lines.append, r'.*', allow)
+        if embed:
+            ok = embed_int_result(ok, text, lines.append)
+        expected = ok == want and (diagnostic is None or any(diagnostic in l for l in lines))
+        passed += expected
+        out('  tool-contract %s: %s' % (name, 'PASS' if expected else 'FAIL'))
+        if not expected:
+            for line in lines:
+                out('    | ' + line)
+    out('tool-contract-calibration: checks=%d passed=%d failures=%d' % (
+        len(cases), passed, len(cases) - passed))
+    return passed == len(cases) > 0
 
 
 INVENTORY_TAIL = r'^(FAIL: |UNCLASSIFIED: |slot classifiers: |examined=|phase2-inventory: )'
@@ -793,11 +894,7 @@ def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
             res[g], text = tool(['bash', 'tools/phase2_readers.sh', 'release', 'const_dedup_bits'], out, r'.*')
             res[g] = res[g] and len(re.findall(r'^phase2-const-dedup: PASS variant=release$', text, re.M)) == 1
         elif g == 'embed-int':
-            res[g], text = tool(['make', '--no-print-directory', 'embed-smoke'], out,
-                                r'^(gate.N7.embed-int:|embed_smoke:)')
-            res[g] = res[g] and len(re.findall(
-                r'^gate\.N7\.embed-int: checks=[1-9][0-9]* failures=0$', text, re.M)) == 1
-            res[g] = res[g] and len(re.findall(r'^embed_smoke: OK$', text, re.M)) == 1
+            res[g] = embed_int_gate(out)
         elif g == 'db-param-exact':
             res[g], text = tool(['bash', '-c', 'make db-params-test && build/server-db/test_db_params'], out, r'.*')
             res[g] = res[g] and len(re.findall(r'^db params: 14 passed, 0 failed \(14 declared\)$', text, re.M)) == 1
@@ -928,6 +1025,10 @@ def calibrate(args, out):
 
     def quiet(_):
         pass
+
+    lines = []
+    case('tool stderr policy, process rc and embed counter/OK plants',
+         tool_contract_calibration(lines.append), True, detail=lines)
 
     def sub(rows, ids, mutate=None, tag=None, branch=None, log=quiet):
         with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:

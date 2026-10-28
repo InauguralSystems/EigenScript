@@ -20,13 +20,15 @@
 # tools/*.sh and tools/*.py is an entry point, and so is each tools/<dir>/
 # package holding a script, by the directory listing, never a hand-kept list.
 # Each must be reached from a .github/workflows/*.yml step through invocations
-# (the suite, a top-level tests/ or tools/ shell script, a script beside it
+# (the suite, a top-level tests/, tools/ or bench/ shell script, a script beside it
 # called as "$(dirname "$0")/x"), or be listed in the same exemptions file as
 # local-only with its reason. Not seen: a tool run only through make, a Python
 # subprocess or an import; a package counts as reached when CI runs any of its
 # scripts. Static local uses: ./... steps also reach composite action manifests
 # (action.yml or action.yaml), including nested local actions. Action manifests
 # are graph sources, never roots: an unused action cannot enrol a tool.
+# bench/*.sh also provide graph edges when reached; they are not new
+# enrollment candidates (the candidate population remains tests/ and tools/).
 #
 # Usage: tools/enrolment_check.sh [--selftest]    exit 0 pass, 1 fail, 2 no instrument
 # ENROL_ROOT overrides the repository root (the selftest points it at a copy).
@@ -40,7 +42,7 @@ if [ "${1:-}" = "--selftest" ]; then
     trap 'rm -rf "$ST"' EXIT
     mkdir -p "$ST/tests/sections" "$ST/tools" "$ST/.github"
     cp tests/*.sh tests/*.py "$EXEMPT" "$ST/tests/" && cp tests/sections/*.sh "$ST/tests/sections/" \
-        && cp tools/*.sh tools/*.py tools/selftests.txt "$ST/tools/" && cp -R .github "$ST/" \
+        && cp tools/*.sh tools/*.py tools/selftests.txt "$ST/tools/" && cp -R .github bench "$ST/" \
         && for d in tools/*/; do cp -R "${d%/}" "$ST/tools/"; done
     n=0; bad=0
     case_() {   # case_ <name> <want-rc> <want-substring>
@@ -64,6 +66,18 @@ if [ "${1:-}" = "--selftest" ]; then
         '      - uses: "./.github/actions/zz_enrol_parent"' \
         > "$ST/.github/workflows/zz_enrol.yaml"
     case_ "control: workflow and nested local actions reach their helpers" 0 "PASS: test-enrolment"
+    # A bench script is an intermediate edge, never a root by itself.
+    printf 'raise SystemExit(0)\n' > "$ST/tools/zz_bench_gate.py"
+    printf '%s\n' '#!/bin/bash' 'python3 "$(dirname "$0")/../tools/zz_bench_gate.py"' \
+        > "$ST/bench/zz_enrol.sh"
+    printf '%s\n' 'name: planted bench workflow' 'on: push' 'jobs:' '  bench:' \
+        '    runs-on: ubuntu-latest' '    steps:' \
+        '      - run: bash bench/zz_enrol.sh' \
+        > "$ST/.github/workflows/zz_enrol_bench.yaml"
+    case_ "workflow reaches a helper through its bench script" 0 "PASS: test-enrolment"
+    rm "$ST/.github/workflows/zz_enrol_bench.yaml"
+    case_ "an orphan bench script cannot enrol its helper" 1 "tools/zz_bench_gate.py is invoked by no workflow"
+    rm "$ST/bench/zz_enrol.sh" "$ST/tools/zz_bench_gate.py"
     printf '#!/bin/bash\necho "PASS: x"\n' > "$ST/tests/test_zz_plant.sh"
     case_ "an uninvoked tests/test_zz_plant.sh is red and named" 1 "tests/test_zz_plant.sh is invoked by nothing"
     rm "$ST/tests/test_zz_plant.sh"
@@ -106,10 +120,10 @@ fi
 KNOWN=" $(cd tests && ls | tr '\n' ' ') "
 EDGES=$(mktemp "${TMPDIR:-/tmp}/eigs_enrol.XXXXXX") || exit 2
 trap 'rm -f "$EDGES"' EXIT
-# Every edge "src<TAB>target" out of the roots and all tests/tools shell
+# Every edge "src<TAB>target" out of the roots and all tests/tools/bench shell
 # scripts. Local uses steps add action manifests to awk input once; the
 # closure below keeps only sources reached from workflows or the suite.
-set -- tests/run_all_tests.sh tests/sections/*.sh tests/*.sh tools/*.sh
+set -- tests/run_all_tests.sh tests/sections/*.sh tests/*.sh tools/*.sh bench/*.sh
 for f in .github/workflows/*.yml .github/workflows/*.yaml; do
     [ ! -f "$f" ] || set -- "$@" "$f"
 done
@@ -200,6 +214,7 @@ FNR == 1 { scalar_indent = steps_indent = step_indent = -1 }
         intests = (d ~ /(^|\/)tests$|TESTS_DIR\}?$/) || (d == "$DIR" && FILENAME ~ /^tests\//) || (d == "" && FILENAME !~ /^tools\//)
         if (w !~ /tools\// && w ~ /\.(sh|py)$/ && intests && index(known, " " b " ")) print FILENAME "\ttests/" b
         else if (w ~ /tools\/([^\/]+\/)?[^\/]+\.(sh|py)$/) { t = w; sub(/^.*tools\//, "tools/", t); print FILENAME "\t" t }
+        else if (w ~ /bench\/[^\/]+\.sh$/) { t = w; sub(/^.*bench\//, "bench/", t); print FILENAME "\t" t }
         else if (d == "$DIR" && FILENAME ~ /^tools\// && w ~ /\.(sh|py)$/) { t = FILENAME; sub(/[^\/]*$/, b, t); print FILENAME "\t" t }
     }
 }' "$@" | sort -u > "$EDGES"
