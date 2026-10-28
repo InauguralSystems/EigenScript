@@ -23,6 +23,7 @@
 #include "../src/vm.h"
 #include "../src/trace.h"
 #include <fcntl.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,6 +69,16 @@ static Value *fuzz_leak_plant(Value *arg) {
     return make_null();
 }
 
+/* #2097 positive control for the fuzz smoke's UBSan read-back. Volatile keeps
+ * the recoverable signed overflow in the instrumented runtime. Like the leak
+ * plant, this builtin is absent unless the dedicated plant switch is set. */
+static Value *fuzz_ubsan_plant(Value *arg) {
+    volatile int value = INT_MAX;
+    (void)arg;
+    value += 1;
+    return make_num((double)value);
+}
+
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
     (void)argc; (void)argv;
     srand(0);
@@ -77,6 +88,9 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
     if (getenv("EIGS_FUZZ_LEAK_PLANT"))
         env_set_local_owned(g_global_env, "fuzz_leak_plant",
                             make_builtin(fuzz_leak_plant));
+    if (getenv("EIGS_FUZZ_UBSAN_PLANT"))
+        env_set_local_owned(g_global_env, "fuzz_ubsan_plant",
+                            make_builtin(fuzz_ubsan_plant));
     FUZZ_LSAN_ENABLE();
 
     /* libFuzzer itself writes stats to stderr, so let it through.

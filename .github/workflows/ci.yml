@@ -1157,8 +1157,8 @@ jobs:
       # Edge cases, adversarial inputs and the curated corpus (fuzz/corpus),
       # each run once through the libFuzzer target's per-input body under
       # ASan+UBSan (the gcc-built stdin driver). Leak detection is on: an
-      # input fails on any AddressSanitizer or LeakSanitizer report, or on an
-      # exit other than 0/1 (#1734).
+      # input fails on any AddressSanitizer, LeakSanitizer, or UBSan report, or
+      # on an exit other than 0/1 (#1734, #2097).
       - if: needs.scope.outputs.code == 'true'
         name: Fuzz smoke (ASan harness, curated corpus)
         run: make fuzz && bash fuzz/run_fuzz.sh
@@ -1179,6 +1179,21 @@ jobs:
           [ "$rc" -eq 1 ]
           grep -qxF '  FAIL: plant: orphaned make_dict (LeakSanitizer)' "$result"
           awk 'BEGIN {m = -1} / in make_dict /{m = NR} (/ in fuzz_leak_plant / || / in fuzz_leak_plant$/) && NR == m + 1 {hit = 1} END {exit !hit}' "$result"
+          grep -qxF '  FUZZ: 0 passed, 1 failed' "$result"
+
+      # #2097: prove GCC's separate, recoverable UBSan runtime is wired into
+      # the smoke's shared sanitizer classifier rather than discarded stderr.
+      - if: needs.scope.outputs.code == 'true'
+        name: Fuzz smoke UBSan plant (#2097)
+        shell: bash
+        run: |
+          result=$(mktemp)
+          rc=0
+          bash fuzz/run_fuzz.sh --plant-ubsan > "$result" 2>&1 || rc=$?
+          cat "$result"
+          [ "$rc" -eq 1 ]
+          grep -qxF '  FAIL: plant: signed integer overflow (sanitizer report)' "$result"
+          grep -q 'runtime error: signed integer overflow:' "$result"
           grep -qxF '  FUZZ: 0 passed, 1 failed' "$result"
 
       - name: Require compiler guard activity
