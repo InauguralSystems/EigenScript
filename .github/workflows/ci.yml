@@ -195,13 +195,13 @@ jobs:
     permissions:
       contents: read
     outputs:
-      infrastructure-failure: ${{ steps.toolchain.outputs.infrastructure-failure }}
+      infrastructure-failure: ${{ steps.prebuild.outputs.infrastructure-failure }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         if: needs.scope.outputs.spec == 'true'
       # Cache elan as well as the pinned Lean release.  On an exact hit the
-      # provisioning step below does not invoke elan, so it cannot contact the
-      # toolchain host.  lean-action still owns the normal Lean/Lake setup.
+      # provisioning step below performs only local checks: neither an
+      # installer nor an elan command which can install a toolchain is run.
       - name: Restore pinned Lean toolchain
         if: needs.scope.outputs.spec == 'true'
         id: lean-cache
@@ -218,14 +218,22 @@ jobs:
           set -u
           echo 'infrastructure-failure=false' >> "$GITHUB_OUTPUT"
           echo 'ready=false' >> "$GITHUB_OUTPUT"
+          toolchain=$(cat spec/lean/lean-toolchain)
           if [ "$LEAN_CACHE_HIT" = true ]; then
-            echo 'exact toolchain cache hit; no toolchain download requested'
+            if [ ! -x "$HOME/.elan/bin/elan" ] ||
+               ! "$HOME/.elan/bin/elan" toolchain list | grep -Fqx "$toolchain"; then
+              echo '::error::INFRASTRUCTURE: exact cache hit does not contain the pinned elan toolchain'
+              echo 'infrastructure-failure=true' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo 'exact toolchain cache hit; local elan/toolchain check passed; no installer or toolchain download requested'
+            echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
             echo 'ready=true' >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # Pin both the elan archive and its digest: lean-action is pinned
-          # below, but its installer follows elan's moving master script.
+          # Pin both the elan archive and its digest.  Do not delegate to
+          # lean-action: its pinned revision still downloads a moving script.
           archive="$RUNNER_TEMP/elan.tar.gz"
           if ! curl --fail --location --silent --show-error --retry 3 --retry-delay 2 \
             https://github.com/leanprover/elan/releases/download/v4.2.4/elan-x86_64-unknown-linux-gnu.tar.gz \
@@ -245,7 +253,6 @@ jobs:
             echo 'infrastructure-failure=true' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          toolchain=$(cat spec/lean/lean-toolchain)
           installed=false
           for delay in 0 5 15 30; do
             [ "$delay" -eq 0 ] || { echo "toolchain download failed; retrying in ${delay}s"; sleep "$delay"; }
@@ -259,25 +266,51 @@ jobs:
             echo 'infrastructure-failure=true' >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
           echo 'ready=true' >> "$GITHUB_OUTPUT"
-      - name: Report Lean toolchain infrastructure failure
-        if: needs.scope.outputs.spec == 'true' && steps.toolchain.outputs.infrastructure-failure == 'true'
-        run: |
-          echo '::error::INFRASTRUCTURE failure: the pinned Lean toolchain could not be provisioned; the specification did not run'
-          exit 1
-      - name: Install pinned Lean toolchain and restore Lake cache
+      - name: Restore Lake build cache
         if: needs.scope.outputs.spec == 'true' && steps.toolchain.outputs.ready == 'true'
-        uses: leanprover/lean-action@24581d74d674803a25a81b10b059c5c0cdd344c6  # v1.6.2
+        id: lake-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
-          lake-package-directory: spec/lean
-          auto-config: false
-          build: false
-          test: false
-          lint: false
+          path: spec/lean/.lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('spec/lean/lean-toolchain') }}-${{ hashFiles('spec/lean/lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('spec/lean/lean-toolchain') }}-${{ hashFiles('spec/lean/lake-manifest.json') }}
+      - name: Validate pre-build infrastructure
+        if: always() && needs.scope.outputs.spec == 'true'
+        id: prebuild
+        env:
+          TOOLCHAIN_READY: ${{ steps.toolchain.outputs.ready }}
+          TOOLCHAIN_INFRASTRUCTURE_FAILURE: ${{ steps.toolchain.outputs.infrastructure-failure }}
+          TOOLCHAIN_OUTCOME: ${{ steps.toolchain.outcome }}
+          LAKE_CACHE_OUTCOME: ${{ steps.lake-cache.outcome }}
+        run: |
+          echo 'infrastructure-failure=true' >> "$GITHUB_OUTPUT"
+          if [ "$TOOLCHAIN_OUTCOME" != success ] ||
+             [ "$TOOLCHAIN_READY" != true ] ||
+             [ "$TOOLCHAIN_INFRASTRUCTURE_FAILURE" = true ] ||
+             [ "$LAKE_CACHE_OUTCOME" != success ] ||
+             [ ! -x "$HOME/.elan/bin/elan" ] ||
+             ! command -v elan >/dev/null || ! command -v lake >/dev/null; then
+            echo '::error::INFRASTRUCTURE: toolchain provisioning, PATH setup, or Lake cache restore failed; the specification did not run'
+            exit 0
+          fi
+          echo 'infrastructure-failure=false' >> "$GITHUB_OUTPUT"
+      - name: Report pre-build infrastructure failure
+        if: always() && needs.scope.outputs.spec == 'true' && steps.prebuild.outputs.infrastructure-failure == 'true'
+        run: |
+          echo '::error::INFRASTRUCTURE failure: Lean pre-build setup failed; the specification did not run'
+          exit 1
       - name: Build EigenCore-0 reference frontend
-        if: needs.scope.outputs.spec == 'true'
+        if: needs.scope.outputs.spec == 'true' && steps.prebuild.outputs.infrastructure-failure == 'false'
         working-directory: spec/lean
         run: lake build
+      - name: Save Lake build cache
+        if: needs.scope.outputs.spec == 'true' && success() && steps.lake-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: spec/lean/.lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('spec/lean/lean-toolchain') }}-${{ hashFiles('spec/lean/lake-manifest.json') }}-${{ github.sha }}
       - name: Run proof hygiene gates
         if: needs.scope.outputs.spec == 'true'
         run: |
