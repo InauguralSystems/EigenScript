@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-print('PLAN: 223')
 # #1102: language-level reservation, through the real compile entry points.
 # Every rejection checks status, diagnostic identity/location, and absence of
 # executed statements. Controls ensure the source templates are valid programs.
@@ -16,6 +15,7 @@ import tempfile
 
 binary = str(pathlib.Path(sys.argv[1]).resolve())
 passed = failed = 0
+print('PLAN: 223')
 
 def check(label, ok, result=None):
     global passed, failed
