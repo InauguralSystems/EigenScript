@@ -8,10 +8,12 @@
 # JIT and OSR stay on tests/test_*.eigs. They are not widened in this change.
 # The OBS arm is the old observer corpus: every tracked .eigs file, with the
 # gate forced open (EIGS_JIT_OFF=1 EIGS_OBS_FORCE=1), compared to ref.
-# Divergent reference runs record a tape. A divergence that consumed
-# nondeterministic input goes directly to replay; otherwise both sides first
-# get the cheaper two-run determinism check. Only a divergence that survives its adjudication
-# is a row.
+# A plain divergence is adjudicated. (1) Both sides run once more; if each
+# reproduces itself, it is a row. (2) Otherwise ref records a tape and the
+# other arm replays it; only a divergence that survives replay is a row.
+# Every arm receives the same process RNG seed, following V8's differential
+# fuzzer --random-seed precedent (and Go's process-level randautoseed knob), so
+# random output is comparable before trace/replay opens the observer gate.
 # A timeout on one side is a divergence, not a pass.
 # tests/jit_diff_expected.txt is the ledger. A '#' line or a blank line is a
 # reason, not a row: both are stripped before the comparison and the count.
@@ -23,8 +25,9 @@ set -u
 if [ "${1:-}" = "--selftest" ] && [ "${JIT_DIFF_SELFTEST_SUITE:-0}" = "1" ]; then
   ROOT="$(cd "$(dirname "$0")/.." && pwd)"
   cd "$ROOT" || exit 1
-  timeout 90 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_timeout_both.eigs bash tools/jit_diff.sh --selftest || exit 1
-  timeout 90 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_SELFTEST_PLANT=deterministic JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_taped_divergence.eigs bash tools/jit_diff.sh --selftest
+  timeout 15 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_timeout_both.eigs bash tools/jit_diff.sh --selftest || exit 1
+  timeout 15 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_SELFTEST_PLANT=deterministic JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_taped_divergence.eigs bash tools/jit_diff.sh --selftest || exit 1
+  timeout 15 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_OBS_ONLY=tests/test_chunk_verify_stack.eigs bash tools/jit_diff.sh --selftest
   exit $?
 fi
 if [ "${1:-}" = "--selftest" ] && [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
@@ -40,10 +43,10 @@ got="$T/got"; : > "$got"; n=0; n_obs=0; n_deny=0; n_timeout=0; n_suite_env=0; ad
 # Only address-shaped hex (8+ digits) is noise; a short 0x1 vs 0x0 is data.
 norm() { sed -E 's/0x[0-9a-f]{8,}/0xADDR/g' "$1"; }
 # Flags are on when non-empty and not "0". GNU env takes -u BEFORE assignments.
-REF=(-u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_JIT_OFF=1)
-JIT=(-u EIGS_JIT_OFF -u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS)
-OSR=(-u EIGS_JIT_OFF -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_JIT_OSR_THRESHOLD=1)
-OBS=(-u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_GATE_STATS EIGS_JIT_OFF=1 EIGS_OBS_FORCE=1)
+REF=(-u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_SEED_RANDOM=2120 EIGS_JIT_OFF=1)
+JIT=(-u EIGS_JIT_OFF -u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_SEED_RANDOM=2120)
+OSR=(-u EIGS_JIT_OFF -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_SEED_RANDOM=2120 EIGS_JIT_OSR_THRESHOLD=1)
+OBS=(-u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_GATE_STATS EIGS_SEED_RANDOM=2120 EIGS_JIT_OFF=1 EIGS_OBS_FORCE=1)
 if [ "${1:-}" = "--selftest" ] && [ "${JIT_DIFF_SELFTEST_PLANT:-}" = "deterministic" ]; then
   OBS+=(EIGS_JIT_DIFF_SELFTEST_ARM=arm)
 fi
@@ -102,15 +105,13 @@ consider() {
   fi
   diff -q <(norm "$T/ref") <(norm "$T/arm") >/dev/null && return
   adjudicated=$((adjudicated + 1))
+  run "$T/ref2" "$sec" "${REF[@]}"
+  run "$T/arm2" "$sec" "${AE[@]}"
+  if diff -q <(norm "$T/ref") <(norm "$T/ref2") >/dev/null && diff -q <(norm "$T/arm") <(norm "$T/arm2") >/dev/null; then
+    echo "$row $tag" >> "$got"; return
+  fi
   rm -f "$T/tape"
   run "$T/rref" "$sec" "${REF[@]}" EIGS_TRACE="$T/tape"
-  if ! grep -q '^N ' "$T/tape"; then
-    run "$T/ref2" "$sec" "${REF[@]}"
-    run "$T/arm2" "$sec" "${AE[@]}"
-    if diff -q <(norm "$T/ref") <(norm "$T/ref2") >/dev/null && diff -q <(norm "$T/arm") <(norm "$T/arm2") >/dev/null; then
-      echo "$row $tag" >> "$got"; return
-    fi
-  fi
   run "$T/rarm" "$sec" "${AE[@]}" EIGS_REPLAY="$T/tape"
   diff -q <(norm "$T/rref") <(norm "$T/rarm") >/dev/null && return
   echo "$row $tag" >> "$got"

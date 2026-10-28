@@ -14,6 +14,7 @@
 #include "vm.h"
 #include "builtins_internal.h"
 #include "trace.h"
+#include <errno.h>
 #include <limits.h>
 
 /* Slot-native borrowed views for builtin arguments.  The compound-literal
@@ -2099,13 +2100,26 @@ static void random_seed_once(void) {
         pthread_mutex_unlock(&g_random_lock);
         return;
     }
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
+    const char *seed_env = getenv("EIGS_SEED_RANDOM");
+    long seed;
+    if (seed_env) {
+        char *end = NULL;
+        errno = 0;
+        seed = strtol(seed_env, &end, 10);
+        if (errno == ERANGE || end == seed_env || *end != '\0') {
+            fprintf(stderr, "EIGS_SEED_RANDOM: invalid integer: %s\n", seed_env);
+            exit(EXIT_FAILURE);
+        }
+    } else {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
 #if EIGENSCRIPT_FREESTANDING
-    srand48(ts.tv_sec ^ ts.tv_nsec);   /* no pids on bare metal */
+        seed = ts.tv_sec ^ ts.tv_nsec;   /* no pids on bare metal */
 #else
-    srand48(ts.tv_sec ^ ts.tv_nsec ^ getpid());
+        seed = ts.tv_sec ^ ts.tv_nsec ^ getpid();
 #endif
+    }
+    srand48(seed);
     __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&g_random_lock);
 }
