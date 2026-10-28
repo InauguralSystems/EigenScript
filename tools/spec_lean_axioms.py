@@ -11,14 +11,27 @@ for path in sorted((LEAN/'EigenCore').glob('*.lean'))+[LEAN/'EigenCore.lean']:
  depth=[]
  for line in text.splitlines():
   if m:=re.match(r'\s*namespace\s+([\w.]+)',line):depth.append(m.group(1));continue
+  # `mutual` and `section` are closed by `end` too; without their own scope
+  # marker, the `end` of a mutual block popped the enclosing namespace and
+  # every later theorem fell outside `EigenCore.`, silently unchecked
+  # (runCore_deterministic, 2026-10-28).
+  if re.match(r'\s*(?:mutual|section)\b',line):depth.append(None);continue
   if re.match(r'\s*end(?:\s|$)',line):
    if depth:depth.pop()
    continue
   if m:=re.match(r'\s*(?:private\s+)?(?:theorem|lemma)\s+([\w.]+)',line):
-   prefix='.'.join(depth); name=m.group(1); full=name if name.startswith('EigenCore.') else '.'.join(x for x in (prefix,name) if x)
+   prefix='.'.join(x for x in depth if x); name=m.group(1); full=name if name.startswith('EigenCore.') else '.'.join(x for x in (prefix,name) if x)
    if full.startswith('EigenCore.'):names.append(full)
 names=sorted(set(names))
 if not names:sys.exit('axiom gate: derived theorem population is empty')
+# Both directions: every theorem/lemma written in these sources must be in the
+# population. A scope the parser misreads drops theorems silently otherwise.
+declared=set()
+for path in sorted((LEAN/'EigenCore').glob('*.lean'))+[LEAN/'EigenCore.lean']:
+ for m in re.finditer(r'^\s*(?:private\s+)?(?:theorem|lemma)\s+([\w.]+)',re.sub(r'/-.*?-/','',path.read_text(),flags=re.S),re.M):
+  declared.add(m.group(1).split('.')[-1])
+missing=sorted(declared-{n.split('.')[-1] for n in names})
+if missing:sys.exit(f'axiom gate: declared theorem(s) outside the derived population: {missing}')
 definitions=['EigenCore.evalExpr','EigenCore.run','EigenCore.tapeSerialize','EigenCore.tapeParse']
 with tempfile.NamedTemporaryFile('w',suffix='.lean',dir=LEAN/'Tests',delete=False) as f:
  check=Path(f.name);f.write('import EigenCore\n'+''.join(f'#print axioms {x}\n' for x in names+definitions))

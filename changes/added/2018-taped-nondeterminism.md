@@ -1,0 +1,1 @@
+- EigenCore's Lean reference evaluator now records and strictly replays taped `random_int`, `read_line`, and `env_get` calls. (#2018)

@@ -1,0 +1,4 @@
+local x is random_int of [1, 2]
+local y is random_int of [3, 4]
+print of x
+print of y
