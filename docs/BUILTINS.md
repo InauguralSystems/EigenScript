@@ -421,8 +421,8 @@ automatically at exit.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `abs` | `abs of x` | Absolute value |
-| `min` | `min of [n1, n2, ...]` | Smallest of a list of numbers (any length >= 1) |
-| `max` | `max of [n1, n2, ...]` | Largest of a list of numbers (any length >= 1) |
+| `min` | `min of [n1, n2, ...]` | Smallest of a list of numbers (any length >= 1). A non-number element raises an error naming its index and type; an empty list remains `0`. |
+| `max` | `max of [n1, n2, ...]` | Largest of a list of numbers (any length >= 1). A non-number element raises an error naming its index and type; an empty list remains `0`. |
 | `floor` | `floor of x` | Round down to integer |
 | `ceil` | `ceil of x` | Round up to integer |
 | `round` | `round of x` | Round to nearest integer |
@@ -510,8 +510,9 @@ either way, so the numbers are byte-identical.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `mean` | `mean of t` | Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`) |
-| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer) |
+| `mean` | `mean of t` | Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its flattened index and type. |
+| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its flattened index and type. |
+| `norm` | `norm of t` | Euclidean norm of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its flattened index and type. |
 
 ### Construction
 
