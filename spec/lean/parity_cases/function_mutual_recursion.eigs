@@ -1,0 +1,10 @@
+define even(n) as:
+    if n == 0:
+        return true
+    return odd of [n - 1]
+define odd(n) as:
+    if n == 0:
+        return false
+    return even of [n - 1]
+print of (even of 8)
+print of (odd of 8)

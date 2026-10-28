@@ -16,6 +16,7 @@ inductive Expr where
   | variable (name : String)
   | binary (op : BinOp) (left right : Expr)
   | not (value : Expr)
+  | array (values : List Expr)
   | call (function : Expr) (arguments : List Expr)
   | when (name : String)
   | prev (name : String)

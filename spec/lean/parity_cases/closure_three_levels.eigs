@@ -1,0 +1,9 @@
+define outer as:
+    local value is 9
+    define middle as:
+        define inner as:
+            return value
+        return inner
+    return middle of null
+saved is outer of null
+print of (saved of null)
