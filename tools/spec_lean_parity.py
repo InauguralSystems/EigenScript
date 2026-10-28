@@ -175,10 +175,10 @@ def selftest():
     '| .ok tape => pure (.replayStrict tape)',
     '| .ok tape => pure (.replayStrict (tape.flatMap fun line => if line.startsWith "N " then [line, line] else [line]))')]),
   ('ignore-oracle', [
-    ('private def oracleAnswers (oracle : List OracleValue) : List TapedAnswer :=\n  oracle.zipIdx.map fun (value, position) => .value position "" value',
-     'private def oracleAnswers (oracle : List OracleValue) : List TapedAnswer :=\n  (oracle.map fun _ => .int 2).zipIdx.map fun (value, position) => .value position "" value'),
-    ('wellPositioned_oracleZipIdx 0 oracle',
-     'wellPositioned_oracleZipIdx 0 (oracle.map fun _ => .int 2)')])]
+    ('Main.lean',
+     '| .ok tape => pure (.replayStrict tape)',
+     '| .ok tape => pure (.replayStrict (tape.map fun line =>\n'
+     '        if line.startsWith "N 0 random_int=" then "N 0 random_int=2" else line))')])]
  killed=0
  standing={x.split('\t',1)[0] for x in (base/'known_disagreements.txt').read_text().splitlines() if x and not x.startswith('#')}
  with tempfile.TemporaryDirectory() as raw:
