@@ -1,0 +1,44 @@
+# Regression for #2146: a dict inline-cache hit whose index names a removal
+# tombstone (#2020's compact-dict deletion leaves keys[idx] == NULL) must be
+# a miss, never a strcmp of NULL. Each path reads or writes a field so the
+# cache holds its index, removes the key, then uses the field again.
+load_file of "lib/test.eigs"
+
+define get_a(d) as:
+    return d.a
+
+define set_a(d, v) as:
+    d.a is v
+    return d.a
+
+define bump_n(d) as:
+    d.n is d.n + 1
+    return d.n
+
+# get path (vm_dict_slot_cached)
+g is {"a": 1, "b": 2}
+assert_eq of [(get_a of g), 1, "get before remove"]
+dict_remove of [g, "a"]
+assert_eq of [(get_a of g), null, "get after remove reads absent"]
+assert_eq of [g.b, 2, "neighbour unaffected"]
+
+# set path (dict_set_cached): writing the removed field re-adds it
+s is {"a": 1, "b": 2}
+assert_eq of [(set_a of [s, 5]), 5, "set before remove"]
+dict_remove of [s, "a"]
+assert_eq of [(set_a of [s, 7]), 7, "set after remove re-adds"]
+assert_eq of [(len of (keys of s)), 2, "two live keys after re-add"]
+
+# numeric in-place rewrite (dict_set_cached_immediate, the DMG register path)
+r is {"n": 1, "m": 0}
+i is 0
+loop while i < 50:
+    bump_n of r
+    i is i + 1
+assert_eq of [r.n, 51, "numeric rewrite warmed"]
+dict_remove of [r, "n"]
+r.n is 0
+assert_eq of [(bump_n of r), 1, "numeric rewrite after remove"]
+assert_eq of [r.m, 0, "other numeric field unaffected"]
+
+test_summary of null
