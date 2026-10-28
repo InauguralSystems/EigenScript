@@ -23,7 +23,7 @@ export EIGS_TEST_DIR="$ROOT/tests"
 EIG="${EIGS_BIN:-./eigenscript}"
 BASE="$ROOT/tests/jit_diff_expected.txt"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
-got="$T/got"; : > "$got"; n=0; n_obs=0; n_deny=0; n_suite_env=0; adjudicated=0
+got="$T/got"; : > "$got"; n=0; n_obs=0; n_deny=0; n_timeout=0; n_suite_env=0; adjudicated=0
 # Only address-shaped hex (8+ digits) is noise; a short 0x1 vs 0x0 is data.
 norm() { sed -E 's/0x[0-9a-f]{8,}/0xADDR/g' "$1"; }
 # Flags are on when non-empty and not "0". GNU env takes -u BEFORE assignments.
@@ -73,6 +73,10 @@ consider() {
   local arm="$1" sec="$2" tag rr ar
   tag=$(printf '%s' "$arm" | tr a-z A-Z)
   rr=$(tail -n 1 "$T/ref"); ar=$(tail -n 1 "$T/arm")
+  if [ "$rr" = "rc=124" ] && [ "$ar" = "rc=124" ]; then
+    echo "jit_diff: $row $tag: timeout on both sides"
+    return 2
+  fi
   if { [ "$rr" = "rc=124" ] && [ "$ar" != "rc=124" ]; } || { [ "$ar" = "rc=124" ] && [ "$rr" != "rc=124" ]; }; then
     echo "$row $tag" >> "$got"; return
   fi
@@ -107,7 +111,8 @@ for f in "$ROOT"/tests/test_*.eigs; do
     consider "$arm" 180
   done
 done
-# Denied up front: *gfx*|*paint*|*_game* opens a window; *seeded_race* and
+# Denied up front: a source that uses gfx_open opens a window and cannot finish
+# unattended in the headless gate; *seeded_race* and
 # *userrace* (a user data race: undefined, can crash either side, #1171) are
 # nondeterministic on purpose; *state_at*|*statedump* prints hash-order output.
 if ! obs_files=$(git -c safe.directory="$ROOT" -C "$ROOT" ls-files '*.eigs' 2>/dev/null); then
@@ -116,15 +121,26 @@ fi
 [ -n "$obs_files" ] || { echo "jit_diff: FAIL: tracked OBS corpus is empty" >&2; exit 1; }
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
-  case "$rel" in
-    *gfx*|*paint*|*_game*|*seeded_race*|*userrace*|*state_at*|*statedump*) n_deny=$((n_deny + 1)); continue ;;
-  esac
   [ -f "$ROOT/$rel" ] || { echo "jit_diff: FAIL: OBS corpus entry missing: $rel" >&2; exit 1; }
-  n_obs=$((n_obs + 1)); row=$(row_of "$rel"); prog="$ROOT/$rel"
+  if grep -q 'gfx_open[[:space:]]*of' "$ROOT/$rel"; then
+    n_deny=$((n_deny + 1))
+    echo "jit_diff: $rel OBS: excluded (uses gfx_open; cannot finish unattended headless)"
+    continue
+  fi
+  case "$rel" in
+    *paint*|*_game*|*seeded_race*|*userrace*|*state_at*|*statedump*) n_deny=$((n_deny + 1)); continue ;;
+  esac
+  row=$(row_of "$rel"); prog="$ROOT/$rel"
   run "$T/ref" 25 "${REF[@]}"
   arm_env obs
   run "$T/arm" 25 "${AE[@]}"
   consider obs 25
+  considered=$?
+  if [ "$considered" -eq 2 ]; then
+    n_timeout=$((n_timeout + 1))
+  else
+    n_obs=$((n_obs + 1))
+  fi
 done <<EOF
 $obs_files
 EOF
@@ -132,7 +148,7 @@ sort -o "$got" "$got"
 [ "$n" -ge 100 ] || { echo "jit_diff: only $n JIT programs found -- the scan is vacuous"; exit 1; }
 [ "$n_suite_env" -eq 10 ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=10"; exit 1; }
 [ "$n_obs" -ge 500 ] || { echo "jit_diff: FAIL: OBS examined=$n_obs denied=$n_deny (floor 500)"; exit 1; }
-echo "jit_diff: OBS examined=$n_obs denied=$n_deny"
+echo "jit_diff: OBS examined=$n_obs denied=$n_deny timeout-both=$n_timeout"
 if [ "${1:-}" = "--record" ]; then
   { awk '/^#/ { print }' "$BASE"; echo; cat "$got"; } > "$T/ledger"
   cp "$T/ledger" "$BASE"
