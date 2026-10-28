@@ -1,0 +1,1 @@
+- Make the ThreadSanitizer gate's seeded positive control deterministic and independent of language-level binding synchronization (#2071).
