@@ -197,18 +197,19 @@ fi
 # so a row can be proven under load (taskset -c 0 nice -n 19) or against a
 # planted binary without running the whole lane.
 if [ "${1:-}" = "--row" ]; then
+    ROW_EXPECTED=1
     case "${2:-}" in
         seeded)         seeded_race_row ;;
         rebind-call)    rebind_call_row ;;
         scope-boundary) scope_boundary_row ;;
         dict-readers)   dict_readers_row ;;
         misordered-publish) misordered_publish_row ;;
-        observer-fold) observer_shared_fold_rows ;;
+        observer-fold) ROW_EXPECTED=3; observer_shared_fold_rows ;;
         *) echo "usage: test_tsan.sh --row seeded|rebind-call|scope-boundary|dict-readers|misordered-publish|observer-fold"; exit 2 ;;
     esac
     echo ""
     echo "Results: $PASS passed, $FAIL failed"
-    [ "$FAIL" -eq 0 ] && [ "$PASS" -eq 1 ]; exit
+    [ "$FAIL" -eq 0 ] && [ "$PASS" -eq "$ROW_EXPECTED" ]; exit
 fi
 
 echo "=== concurrency slice must be race-free ==="
