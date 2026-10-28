@@ -1,0 +1,20 @@
+define make_leaf(tag) as:
+    local payload is [tag, f"leaf-{tag}"]
+    define f(x) as:
+        return x * 2
+    return f
+
+g_leaf is make_leaf of 0
+r0 is report of g_leaf
+rebinds is 20000
+define rebinder(k) as:
+    local i is 0
+    loop while i < rebinds:
+        g_leaf is make_leaf of k
+        i is i + 1
+    return i
+r1 is spawn of [rebinder, 1]
+r2 is spawn of [rebinder, 2]
+assert of [(thread_join of r1) == rebinds, "r1"]
+assert of [(thread_join of r2) == rebinds, "r2"]
+print of "observer fold repro: PASS"

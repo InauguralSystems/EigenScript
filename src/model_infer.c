@@ -485,7 +485,7 @@ static int* generate_response(int *prompt_ids, int prompt_len, TransformerModel 
             }
 
             /* Draw from the shared drand48 stream (script-seedable via
-             * seed_random) instead of libc rand(): main() seeds rand() with
+             * seed_random) instead of libc rand: main used to seed it with
              * time(NULL), which made temp>0 sampling unpinnable from script --
              * an eval ranking checkpoints on sampled parse rate was promoting
              * on run-to-run noise (iLambdaAi, 2026-08-17). */

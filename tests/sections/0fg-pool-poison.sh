@@ -52,6 +52,16 @@ else
                 fi
             done
             TOTAL=$((TOTAL + 1))
+            __pp_out=$(ASAN_OPTIONS=detect_leaks=1 $EIGS_TMO "$__pp_bin" leaf </dev/null 2>&1); __pp_rc=$?
+            if [ "$__pp_rc" -eq 0 ] &&
+               grep -q '^PASS: leaf accessor is frameless and has no call env to park$' <<< "$__pp_out" &&
+               ! grep -qE 'AddressSanitizer|LeakSanitizer|runtime error:' <<< "$__pp_out"; then
+                PASS=$((PASS + 1)); echo "  PASS: [0fg] leaf accessor allocates no call env"
+            else
+                FAIL=$((FAIL + 1)); echo "  FAIL: [0fg] leaf accessor call-env control failed (rc=$__pp_rc)"
+                printf '%s\n' "$__pp_out" | sed 's/^/      /'
+            fi
+            TOTAL=$((TOTAL + 1))
             __pp_out=$(ASAN_OPTIONS=detect_leaks=1 $EIGS_TMO "$__pp_bin" control </dev/null 2>&1); __pp_rc=$?
             if [ "$__pp_rc" -eq 0 ] && grep -q '^control: all clean$' <<< "$__pp_out" &&
                ! grep -qE 'AddressSanitizer|LeakSanitizer|runtime error:' <<< "$__pp_out"; then

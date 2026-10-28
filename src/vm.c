@@ -452,6 +452,9 @@ static inline void vm_bind_fresh_param(Env *env, int slot_idx,
  * also keeps every EnvIC aimed at the env valid across calls.
  *
  * Park requirements (vm_park_call_env):
+ *   - a call env exists: an exactly-fed `leaf_accessor` call is executed
+ *     frameless by vm_leaf_accessor_exec, before the generic call path, so it
+ *     allocates no Env and consequently has nothing to park;
  *   - single-threaded (chunks are shared across spawn threads);
  *   - frame->env == frame->fn_env (never park a loop-scope child);
  *   - not captured by a closure, env_refcount == 1 (exactly the
@@ -1634,6 +1637,12 @@ static inline Value *obs_slot_value(EigsSlot s) {
 }
 
 static inline void jit_sample_num_gated(Env *e, int slot, double v) {
+    /* #1867: the inline ring writes are valid only for a private env.  A
+     * shared binding must enter the public helper, which folds under #607. */
+    if (__builtin_expect(g_vm_multithreaded, 0) && e->mt_shared) {
+        observer_slot_sample_num_gated(e, slot, v);
+        return;
+    }
     ObserverSlot *s = env_obs_slot(e, slot);
     int n = s && s->win_override ? s->win_override : g_obs_window;
     if (!s || (s->v_used && (!s->v_window || s->v_cap < n))) {

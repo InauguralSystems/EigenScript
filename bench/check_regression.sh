@@ -24,6 +24,11 @@ THRESHOLD_PERMILLE=$(awk -v pct="$THRESHOLD_PCT" 'BEGIN { printf "%.0f", pct * 1
 # its own wider threshold until a cross-host measurement sets it.
 FILE_THRESHOLD_PCT=5
 FILE_THRESHOLD_PERMILLE=$(( FILE_THRESHOLD_PCT * 10 ))
+# Printed deltas carry 3 decimals. Integer percent printed "+0% > 0.5%" for a
+# +0.61% regression and "0% vs ref" for every passing row, hiding the deltas the
+# 0.5% gate decides on (#2075's ejection, 2026-10-28). Display only: the verdicts
+# above and below stay exact integer permille comparisons.
+pct() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f", (a - b) * 100 / b }'; }
 
 ir_of() {  # ir_of <binary> <file> -> instruction count
     # Capture the producer before parsing it.  This is the standard portable
@@ -61,7 +66,7 @@ case "${1:-}" in
     # ~2x the iterations of scalar_loop => ~2x instructions, well over threshold.
     printf 'total is 0\nfor i in range of 80000:\n    total is total + (i * 2) - 1\nprint of total\n' > "$tmp"
     doubled=$(ir_of "$EIGS" "$tmp") || { status=$?; rm -f "$tmp"; exit "$status"; }; rm -f "$tmp"
-    inc=$(( (doubled - base) * 100 / base ))
+    inc=$(pct "$doubled" "$base")
     if [ $(( (doubled - base) * 1000 )) -gt $(( THRESHOLD_PERMILLE * base )) ]; then
         echo "SELFTEST OK: a 2x-work pessimization is flagged (+${inc}% Ir > ${THRESHOLD_PCT}%)"
     else
@@ -137,7 +142,7 @@ EOF
         name=$(basename "$f" .eigs)
         a=$(ir_of "$EIGS" "$f") || exit $?
         b=$(ir_of "$ref" "$f") || exit $?
-        inc=$(( (a - b) * 100 / b ))
+        inc=$(pct "$a" "$b")
         if [ $(( (a - b) * 1000 )) -gt $(( THRESHOLD_PERMILLE * b )) ]; then
             echo "  REGRESSION: $name  Ir ${b} -> ${a}  (+${inc}% > ${THRESHOLD_PCT}%)"; fail=1
         else
@@ -165,7 +170,7 @@ fail=0; stale=0
 while read -r name base; do
     f="$DIR/$name.eigs"; [ -f "$f" ] || continue
     cur=$(ir_of "$EIGS" "$f") || exit $?
-    inc=$(( (cur - base) * 100 / base ))
+    inc=$(pct "$cur" "$base")
     if [ $(( (cur - base) * 1000 )) -gt $(( FILE_THRESHOLD_PERMILLE * base )) ]; then
         echo "  REGRESSION: $name  Ir ${base} -> ${cur}  (+${inc}% > ${FILE_THRESHOLD_PCT}%)"; fail=1
     elif [ $(( (cur - base) * 1000 )) -lt $(( -FILE_THRESHOLD_PERMILLE * base )) ]; then

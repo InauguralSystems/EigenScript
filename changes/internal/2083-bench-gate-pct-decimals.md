@@ -1,0 +1,1 @@
+- The bench gate (`bench/check_regression.sh`) prints Ir deltas to 3 decimals. It printed integer percents, so a +0.61% regression read "+0% > 0.5%" and every passing row read "0% vs ref". The pass/fail comparisons are unchanged.

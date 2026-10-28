@@ -60,6 +60,30 @@ tsan_report() {
     awk '/WARNING: ThreadSanitizer/ {f=1} f {print "      " $0} f && /^SUMMARY: ThreadSanitizer/ {exit}' | head -80
 }
 
+observer_shared_fold_rows() {
+    echo "=== #1867 shared ObserverSlot folds must hold #607 ==="
+    local fixtures="tsan_observer_shared_fold tsan_observer_sandbox_probe observer_ns_deadlock"
+    local declared=3 examined=0 t marker
+    for t in $fixtures; do
+        examined=$((examined + 1))
+        marker="observer fold repro: PASS"
+        [ "$t" = tsan_observer_sandbox_probe ] && marker="observer sandbox probe: PASS"
+        [ "$t" = observer_ns_deadlock ] && marker="observer namespace deadlock: PASS"
+        tsan_warnings "$TESTS_DIR/$t.eigs"
+        if [ "$LAST_RC" -eq 0 ] && [ "$WARNINGS" -eq 0 ] && grep -Fxq "$marker" <<< "$RUN_OUTPUT"; then
+            echo "  PASS: $t TSan-clean"; PASS=$((PASS + 1))
+        else
+            echo "  FAIL: $t warnings=$WARNINGS rc=$LAST_RC"; FAIL=$((FAIL + 1))
+            tsan_report <<< "$RUN_OUTPUT"
+        fi
+    done
+    if [ "$examined" -eq "$declared" ]; then
+        echo "  PASS: observer-fold fixtures examined == declared ($examined)"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: observer-fold fixtures examined == declared (examined=$examined declared=$declared)"; FAIL=$((FAIL + 1))
+    fi
+}
+
 seeded_race_row() {
     echo "=== gate self-validation: a seeded race MUST be caught ==="
     local out rc w
@@ -206,6 +230,7 @@ fi
 # so a row can be proven under load (taskset -c 0 nice -n 19) or against a
 # planted binary without running the whole lane.
 if [ "${1:-}" = "--row" ]; then
+    ROW_EXPECTED=1
     case "${2:-}" in
         seeded)         seeded_race_row ;;
         rebind-call)    rebind_call_row ;;
@@ -213,11 +238,12 @@ if [ "${1:-}" = "--row" ]; then
         scope-boundary) scope_boundary_row ;;
         dict-readers)   dict_readers_row ;;
         misordered-publish) misordered_publish_row ;;
-        *) echo "usage: test_tsan.sh --row seeded|rebind-call|captured-rebind|scope-boundary|dict-readers|misordered-publish"; exit 2 ;;
+        observer-fold) ROW_EXPECTED=4; observer_shared_fold_rows ;;
+        *) echo "usage: test_tsan.sh --row seeded|rebind-call|captured-rebind|scope-boundary|dict-readers|misordered-publish|observer-fold"; exit 2 ;;
     esac
     echo ""
     echo "Results: $PASS passed, $FAIL failed"
-    [ "$FAIL" -eq 0 ] && [ "$PASS" -eq 1 ]; exit
+    [ "$FAIL" -eq 0 ] && [ "$PASS" -eq "$ROW_EXPECTED" ]; exit
 fi
 
 echo "=== concurrency slice must be race-free ==="
@@ -613,6 +639,8 @@ fi
 
 rebind_call_row
 
+observer_shared_fold_rows
+
 scope_boundary_row
 
 echo "=== observer arming sets must be race-free (#1145) ==="
@@ -745,6 +773,7 @@ fi
 
 seeded_race_row
 misordered_publish_row
+observer_shared_fold_rows
 captured_rebind_row
 
 echo ""
