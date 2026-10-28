@@ -96,7 +96,11 @@ selftest() {
     case_ "spec verdict: large diff" true true true 'mkdir -p docs .github/workflows; i=0; while [ "$i" -lt 512 ]; do p=$(printf "%0200d" "$i"); echo x > "docs/$p.md"; i=$((i + 1)); done; echo "name: ci" > .github/workflows/ci.yml'
     case_ "release workflow" true false true 'mkdir -p .github/workflows && echo "name: release" > .github/workflows/release.yml'
     case_ "shared release dependencies" true false true 'mkdir -p tools && echo x > tools/install_release_test_dependencies.sh'
-    [ "$n" -eq 22 ] || { echo "ci_scope selftest: ran $n cases, want 22"; exit 1; }
+    # The merge-group scope job feeds its base_sha..head_sha through this same
+    # classifier: release inputs select its workers, ordinary source does not.
+    case_ "merge-group release diff" true false true 'mkdir -p .github/actions/release-build && echo x > .github/actions/release-build/action.yml'
+    case_ "merge-group src-only diff" true false false 'echo "int queue;" >> src/foo.c'
+    [ "$n" -eq 24 ] || { echo "ci_scope selftest: ran $n cases, want 24"; exit 1; }
     echo "ci_scope selftest: $((n - fail))/$n passed"
     [ "$fail" -eq 0 ]
 }

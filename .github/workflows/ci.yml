@@ -92,7 +92,15 @@ jobs:
         name: Detect whether any non-docs file changed
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            # Keep the full merge-queue lane for code/spec, but select the
+            # release dry-run from this candidate's actual diff (#2114).
+            verdict=$(bash tools/ci_scope.sh --all)
+            base="${{ github.event.merge_group.base_sha }}"
+            head="${{ github.event.merge_group.head_sha }}"
+            release=$(bash tools/ci_scope.sh "$base" "$head" | sed -n 's/^release=//p')
+            verdict=$(printf '%s\n' "$verdict" | sed "s/^release=.*/release=$release/")
+          elif [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "not a PR — treating as code"
             verdict=$(bash tools/ci_scope.sh --all)
           else
@@ -108,11 +116,12 @@ jobs:
 
   # Exercise the exact action used by release.yml before a tag exists. The
   # scope classifier selects every PR changing the release workflow, its CI
-  # dependency sources/action, ci.yml itself, or tests/run_all_tests.sh; all
-  # merge-queue candidates run it because --all selects every scope.
+  # dependency sources/action, ci.yml itself, or tests/run_all_tests.sh; merge
+  # groups use the same classifier on their base_sha..head_sha candidate diff.
   release-dry-run-worker:
     name: release dry-run / ${{ matrix.label }}
     needs: scope
+    if: needs.scope.outputs.release == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
@@ -128,10 +137,8 @@ jobs:
           - os: macos-latest
             label: macos-arm64
     steps:
-      - if: needs.scope.outputs.release == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - if: needs.scope.outputs.release == 'true'
-        name: Build and test without creating a tag or release
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Build and test without creating a tag or release
         uses: ./.github/actions/release-build
         with:
           label: ${{ matrix.label }}
