@@ -151,9 +151,8 @@ jobs:
     name: release dry-run / ${{ matrix.label }}
     env:
       CI_DISPATCH_LANES: all
-    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all'
     needs: scope
-    if: needs.scope.outputs.release == 'true'
+    if: (needs.scope.outputs.release == 'true') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
