@@ -1351,6 +1351,125 @@ def Paired (m : EvalM α) : Prop :=
         interpreted.value.2.writerChunks = w0.writerChunks ++ appended ∧
         interpreted.answers = writerAnswersFrom w0.writerChunks.length appended
 
+/-- Any computation which is silent for every initial world and preserves
+writer chunks is paired.  In particular, interpreting its completed tree
+consumes no supplied answers, so the appended chunk witness is empty. -/
+theorem Paired_of_silent (m : EvalM α) (r : World → Except Err α) (f : World → World)
+    (runs : ∀ world, evalRun m world = .done (r world, f world))
+    (preserves : ∀ world, (f world).writerChunks = world.writerChunks) : Paired m := by
+  intro w0 supplied positioned
+  change let interpreted := interpret (evalRun m w0) supplied
+    ∀ value, interpreted.value.1 = .ok value → ∃ appended,
+      interpreted.value.2.writerChunks = w0.writerChunks ++ appended ∧
+      interpreted.answers = writerAnswersFrom w0.writerChunks.length appended
+  rw [runs]
+  dsimp only [interpret]
+  intro value successful
+  refine ⟨[], ?_, ?_⟩
+  · simpa using preserves w0
+  · rfl
+
+/-- Variable lookup is silent: resolution either returns a value or throws,
+and both leaves leave the world unchanged. -/
+theorem Paired_valueAt (name : String) : Paired (valueAt name) := by
+  apply Paired_of_silent (valueAt name)
+    (fun world => match resolve name world with
+      | some binding => .ok world.environments[binding.envId]!.slots[binding.slot]!.value
+      | none => .error (Err.runtime s!"undefined variable: {name}"))
+    id
+  · intro world
+    unfold valueAt
+    rw [evalRun_bind, evalRun_get]
+    simp only [Interaction.bind]
+    split <;> rfl
+  · intro world
+    rfl
+
+/-- Creating a parameter is silent and changes only its environment slots. -/
+theorem Paired_bindParameter (environment : Nat) (name : String) (value : Value) :
+    Paired (bindParameter environment name value) := by
+  apply Paired_of_silent (bindParameter environment name value) (fun _ => .ok ())
+    (fun world => {world with environments := world.environments.modify environment fun env =>
+      {env with slots := env.slots.push {name:=name, value:=value, history:=#[value], assignments:=1}}})
+  · intro world
+    unfold bindParameter
+    rw [evalRun_modify]
+  · intro world
+    rfl
+
+/-- Storing a variable appends a structural `A` row to `writerTrailing`, but
+never appends a completed `writerChunks` entry, so it is silent for pairing. -/
+theorem Paired_store (name : String) (value : Value) (isLocal : Bool) :
+    Paired (store name value isLocal) := by
+  apply Paired_of_silent (store name value isLocal) (fun _ => .ok ())
+    (fun world =>
+      let current := currentEnvironment world
+      let found := if isLocal then
+          findCell name world.environments[current]!.slots |>.map
+            ({envId := current, slot := ·})
+        else resolve name world
+      let environments := (match found with
+        | some binding => world.environments.modify binding.envId fun environment =>
+            {environment with slots := environment.slots.modify binding.slot fun c =>
+              {c with value:=value, history:=(c.history.push value).extract ((c.history.size+1).sub 256) (c.history.size+1), assignments:=c.assignments+1}}
+        | none => world.environments.modify current fun environment =>
+            {environment with slots := environment.slots.push {name:=name,value:=value,history:=#[value],assignments:=1}})
+      {world with environments:=environments, writerTrailing:=world.writerTrailing ++
+          [structuralA s!"0 {name}={tapeValue value}"]})
+  · intro world
+    unfold store
+    rw [evalRun_bind, evalRun_get]
+    rfl
+  · intro world
+    rfl
+
+/-- The anonymous stdout write used by both print forms is silent for tape
+pairing: it changes `stdout`, not completed writer chunks. -/
+theorem Paired_printModify (value : Value) :
+    Paired (modify fun world => {world with stdout := world.stdout ++ value.print ++ "\n"}) := by
+  apply Paired_of_silent _ (fun _ => .ok ())
+    (fun world => {world with stdout := world.stdout ++ value.print ++ "\n"})
+  · intro world
+    rw [evalRun_modify]
+  · intro world
+    rfl
+
+/-- The anonymous function-table write used by `define` is silent. -/
+theorem Paired_defineModify (definition : FunctionDef) :
+    Paired (modify fun world => {world with functions := world.functions.push definition}) := by
+  apply Paired_of_silent _ (fun _ => .ok ())
+    (fun world => {world with functions := world.functions.push definition})
+  · intro world
+    rw [evalRun_modify]
+  · intro world
+    rfl
+
+/-- Reading the pre-call world and installing its new environment and frame is
+one silent computation.  The update also advances `nextFrameSerial`, but does
+not touch completed writer chunks. -/
+theorem Paired_callFrameSetup (parent : Option Nat) : Paired (do
+    let before ← get
+    let environment := before.environments.size
+    let frame : Frame := {serial := before.nextFrameSerial, environment := environment}
+    set {before with
+      environments := before.environments.push
+        {id := environment, parent := parent}
+      frames := before.frames.push frame
+      nextFrameSerial := before.nextFrameSerial + 1}) := by
+  apply Paired_of_silent _ (fun _ => .ok ())
+    (fun before =>
+      let environment := before.environments.size
+      let frame : Frame := {serial := before.nextFrameSerial, environment := environment}
+      {before with
+        environments := before.environments.push {id := environment, parent := parent}
+        frames := before.frames.push frame
+        nextFrameSerial := before.nextFrameSerial + 1})
+  · intro world
+    rw [evalRun_bind, evalRun_get]
+    rfl
+  · intro world
+    rfl
+
 /-- One successful taped builtin call consumes one positioned answer and
 appends the one corresponding writer chunk.  All other leaves are errors and
 therefore cannot satisfy `Paired`'s successful-result premise. -/
@@ -1430,6 +1549,11 @@ theorem Paired_consumeAnswer (fn : String) : Paired (consumeAnswer fn) := by
                   rw [positionEq, writerAnswersFrom]
                   rw [roundtrip.1, roundtrip.2]
                   rfl
+
+/-- `tapedCall` is exactly the single-answer interaction boundary. -/
+theorem Paired_tapedCall (fn : String) : Paired (tapedCall fn) := by
+  unfold tapedCall
+  exact Paired_consumeAnswer fn
 
 /-- A pure computation neither changes writer chunks nor observes answers. -/
 theorem Paired_pure (value : α) : Paired (pure value : EvalM α) := by
@@ -1559,6 +1683,79 @@ theorem Paired_bind (m : EvalM α) (k : α → EvalM β) (pairedM : Paired m)
         have lengths := congrArg List.length firstWorld
         simp at lengths
         omega
+
+/-- Pairing follows either branch of a pure conditional. -/
+theorem Paired_ite (condition : Bool) (yes no : EvalM α)
+    (pairedYes : Paired yes) (pairedNo : Paired no) :
+    Paired (if condition then yes else no) := by
+  cases condition <;> assumption
+
+/-- `List.mapM` preserves pairing without requiring a `LawfulMonad` instance.
+The worker lemma follows the core accumulator implementation and is therefore
+generalised over that accumulator. -/
+theorem Paired_mapM (f : α → EvalM β) (items : List α)
+    (paired : ∀ item ∈ items, Paired (f item)) : Paired (items.mapM f) := by
+  have loop : ∀ remaining : List α,
+      (∀ item ∈ remaining, Paired (f item)) →
+      ∀ accumulator : List β, Paired (List.mapM.loop f remaining accumulator) := by
+    intro remaining
+    induction remaining with
+    | nil =>
+        intro paired accumulator
+        change Paired (pure accumulator.reverse : EvalM (List β))
+        exact Paired_pure accumulator.reverse
+    | cons item rest ih =>
+        intro paired accumulator
+        change Paired (f item >>= fun value => List.mapM.loop f rest (value :: accumulator))
+        apply Paired_bind
+        · exact paired item (by simp)
+        · intro value
+          apply ih
+          intro tail member
+          exact paired tail (by simp [member])
+  change Paired (List.mapM.loop f items [])
+  exact loop items paired []
+
+/-- A unit-state `for` loop over a list preserves pairing when every body
+step does.  This is the elaborated shape used for parameter binding in
+`callFunction`; the proof follows `List.forIn'` directly and needs no monad
+law assumptions. -/
+theorem Paired_forIn_unit (items : List α) (body : α → EvalM Unit)
+    (paired : ∀ item ∈ items, Paired (body item)) :
+    Paired (for item in items do body item) := by
+  have loop : ∀ remaining : List α,
+      (∀ item ∈ remaining, Paired (body item)) →
+      Paired (forIn' remaining PUnit.unit fun item _ _ => do
+        body item
+        pure (ForInStep.yield PUnit.unit)) := by
+    intro remaining
+    induction remaining with
+    | nil =>
+        intro paired
+        rw [List.forIn'_nil]
+        exact Paired_pure PUnit.unit
+    | cons item rest ih =>
+        intro paired
+        rw [List.forIn'_cons]
+        apply Paired_bind
+        · apply Paired_bind (body item) (fun _ => pure (ForInStep.yield PUnit.unit))
+          · exact paired item (by simp)
+          · intro
+            exact Paired_pure (ForInStep.yield PUnit.unit)
+        · intro step
+          cases step with
+          | done state => exact Paired_pure state
+          | yield state =>
+              apply ih
+              intro tail member
+              exact paired tail (by simp [member])
+  change Paired (forIn' items PUnit.unit (fun item _ _ => do
+    body item
+    pure (ForInStep.yield PUnit.unit)) >>= fun _ => pure ())
+  apply Paired_bind
+  · exact loop items paired
+  · intro
+    exact Paired_pure ()
 
 /-- Popping the active call frame does not alter completed writer chunks. -/
 theorem popFrame_writerChunks (world : World) :
