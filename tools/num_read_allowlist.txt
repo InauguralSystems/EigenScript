@@ -32,7 +32,7 @@ eigenscript.c|module_ns_project|1|mirror refresh: reads the binding slot after s
 eigenscript.c|observer_entropy_now|1|observer entropy of a slot after slot_is_num
 eigenscript.c|observer_slot_from_trajectory|6|trajectory snapshot fields each read right after its own type != VAL_NUM refusal
 eigenscript.c|observer_slot_sample_gated|1|observer sample after newval->type == VAL_NUM
-eigenscript.c|observer_slot_update|1|observer update after newval->type == VAL_NUM
+eigenscript.c|observer_slot_update_locked|1|observer update after newval->type == VAL_NUM (moved into the #1867 fold worker)
 eigenscript.c|slot_from_value|1|NaN-boxing boundary, inside its VAL_NUM branch
 eigenscript.c|slot_to_value|1|NaN-boxing boundary after slot_is_num
 eigenscript.c|values_equal_for_observation|2|observer-only non-raising equality, switch case VAL_NUM after equal type tags
