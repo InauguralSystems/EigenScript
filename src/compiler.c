@@ -4348,7 +4348,10 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src,
      * so SET_LOCAL slot indices don't collide with builtins/globals already there. */
     int slot_base = 0;
     if (env) {
-        slot_base = env->count;
+        /* A worker may compile a load_file/import unit while module code on
+         * another thread appends to this shared env.  Slot promotion needs a
+         * coherent structural snapshot, not a bare count read. */
+        slot_base = env_count_shared(env);
         compiler.local_count = slot_base;
     }
 

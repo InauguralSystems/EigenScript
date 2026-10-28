@@ -5494,6 +5494,11 @@ void gc_collect_at_exit(Env *global) {
  * non-root env this is the same plain load it always was. */
 int env_count_shared(Env *env) {
     if (!env) return 0;
+#ifdef EIGS_TSAN_TEST_SEAM
+    /* #2090 gate self-test: reproduce compile_ast's former bare read without
+     * putting the fault in any production build. */
+    if (getenv("EIGS_TSAN_COMPILER_ENV_COUNT_NO_HOLD")) return env->count;
+#endif
     env_shared_lock(env);
     int n = env->count;
     env_shared_unlock(env);
