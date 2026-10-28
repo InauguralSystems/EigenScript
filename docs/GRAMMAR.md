@@ -47,9 +47,9 @@ COMMENT     = '#' { any } '\n'
 
 letter      = 'a'..'z' | 'A'..'Z'
 digit       = '0'..'9'
-escape      = '\n' | '\t' | '\r' | '\\' | '\"' | '\' any
-              # only n t r \ " are special; any other '\x' yields literal x
-              # (so '\{' and '\}' give literal braces)
+escape      = '\n' | '\t' | '\r' | '\\' | '\"'
+fstring_escape = escape | '\{' | '\}'
+              # every other backslash sequence is a compile-time error
 ```
 
 ### Keywords

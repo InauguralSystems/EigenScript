@@ -615,7 +615,14 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                         case 'r': strbuf_append_char(&buf, '\r'); break;
                         case '\\': strbuf_append_char(&buf, '\\'); break;
                         case '"': strbuf_append_char(&buf, '"'); break;
-                        default: strbuf_append_char(&buf, *p); break;
+                        default: {
+                            char msg[64];
+                            snprintf(msg, sizeof(msg), "unknown escape '\\%c'", *p);
+                            fprintf(stderr, "Syntax error line %d:%d: %s\n",
+                                    line, col, msg);
+                            lexer_error_at(caret_source, line, col - 1, msg);
+                            break;
+                        }
                     }
                     LEX_STEP_IN_LITERAL();
                     continue;
@@ -748,7 +755,14 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                         case 'r': strbuf_append_char(&buf, '\r'); break;
                         case '\\': strbuf_append_char(&buf, '\\'); break;
                         case '"': strbuf_append_char(&buf, '"'); break;
-                        default: strbuf_append_char(&buf, *p); break;
+                        default: {
+                            char msg[64];
+                            snprintf(msg, sizeof(msg), "unknown escape '\\%c'", *p);
+                            fprintf(stderr, "Syntax error line %d:%d: %s\n",
+                                    line, col, msg);
+                            lexer_error_at(caret_source, line, col - 1, msg);
+                            break;
+                        }
                     }
                 } else {
                     strbuf_append_char(&buf, *p);

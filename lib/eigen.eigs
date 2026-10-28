@@ -336,9 +336,7 @@ define _eigen_tokenize_at(source, line, check_layout) as:
                                 elif esc == "}":
                                     buf is buf + "}"
                                 else:
-                                    buf is buf + esc
-                                    if esc == "\n":
-                                        line is line + 1
+                                    _eigen_throw of (f"parse error line {line}: unknown escape " + "\\" + esc)
                                 pos is pos + 1
                         elif fc == "{":
                             # Emit accumulated literal
@@ -423,9 +421,7 @@ define _eigen_tokenize_at(source, line, check_layout) as:
                         elif esc == "\"":
                             buf is buf + "\""
                         else:
-                            buf is buf + esc
-                            if esc == "\n":
-                                line is line + 1
+                            _eigen_throw of (f"parse error line {line}: unknown escape " + "\\" + esc)
                         pos is pos + 1
                     else:
                         buf is buf + ch

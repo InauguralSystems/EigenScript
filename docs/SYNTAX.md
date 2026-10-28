@@ -145,8 +145,8 @@ Expressions inside `{}` are evaluated and converted to strings. Use `\{` and
 `\}` for literal braces.
 
 Both plain and `f` strings recognize the escapes `\n`, `\t`, `\r`, `\\`, and
-`\"`. Any other `\x` yields the literal character `x` (the backslash is
-dropped) — which is exactly why `\{` and `\}` produce literal braces.
+`\"`. F-strings additionally recognize `\{` and `\}` for literal braces.
+Any other escape is a compile-time error.
 
 ## Interactive REPL
 
