@@ -50,3 +50,19 @@ pthread_self
 # halt root
 exit
 abort
+
+# Atomic fallback roots.  The kernel implements each imported width by masking
+# interrupts around the operation on its single CPU thread.  Targets with a
+# lock-free instruction (RV32IMA's 32-bit operations) do not import that row.
+__atomic_load_1
+__atomic_load_4
+__atomic_load_8
+__atomic_store_1
+__atomic_store_4
+__atomic_store_8
+__atomic_fetch_add_4
+__atomic_fetch_add_8
+__atomic_fetch_sub_4
+__atomic_exchange_4
+__atomic_compare_exchange_4
+__atomic_compare_exchange_8

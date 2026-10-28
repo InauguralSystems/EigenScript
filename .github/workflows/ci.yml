@@ -690,6 +690,10 @@ jobs:
         name: RISC-V FP-environment differential vs target musl oracle
         run: make freestanding-libc-diff-riscv
 
+      - if: needs.scope.outputs.code == 'true'
+        name: RV32 env versions cross the old 2^32 boundary
+        run: make freestanding-env-version-riscv32
+
       - name: Require compiler guard activity
         if: always() && needs.scope.outputs.code == 'true'
         run: bash tools/cc_guard.sh --report

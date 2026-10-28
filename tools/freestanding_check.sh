@@ -96,3 +96,56 @@ run_row gcc-O2 gcc -O2
 run_row gcc-Os gcc -Os
 run_row gcc-O0 gcc -O0
 run_row musl-O2 musl-gcc -O2
+
+run_riscv32_row() {
+    local label=$1 cpu=$2
+    local BUILD="$ROOT_BUILD/$label"
+    local ZIG=(python3 -m ziglang cc -target riscv32-linux-musl)
+    [ -z "$cpu" ] || ZIG+=("-mcpu=$cpu")
+    mkdir "$BUILD"
+    echo "freestanding row: $label (zig cc -target riscv32-linux-musl ${cpu:+-mcpu=$cpu})"
+    for f in $SRC; do
+        "${ZIG[@]}" -O2 -ffreestanding -fno-stack-protector -U_FORTIFY_SOURCE \
+            -Werror=implicit-function-declaration $WERROR_FLAGS \
+            -DEIGENSCRIPT_FREESTANDING=1 -DEIGENSCRIPT_EXT_HTTP=0 \
+            -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
+            -c "src/$f.c" -o "$BUILD/$f.o"
+    done
+    "${ZIG[@]}" -O2 -ffreestanding -fno-builtin -fno-stack-protector \
+        -U_FORTIFY_SOURCE -Werror=implicit-function-declaration $WERROR_FLAGS \
+        -DEIGENSCRIPT_FREESTANDING=1 -c tools/eigenos_consumer_check.c \
+        -o "$BUILD/eigenos_consumer_check.o"
+
+    "${ZIG[@]}" -nostdlib -r -o "$BUILD/all.o" "$BUILD"/*.o
+    nm -u "$BUILD/all.o" | awk '{print $2}' | sort -u > "$BUILD/undefined.txt"
+    grep -v '^#' tools/freestanding_allowlist.txt | grep -v '^$' | sort -u > "$BUILD/allow.txt"
+    local extra
+    extra=$(comm -23 "$BUILD/undefined.txt" "$BUILD/allow.txt")
+    [ -z "$extra" ] || { echo "FAIL [$label]: symbols imported outside the freestanding allowlist:"; echo "$extra" | sed 's/^/  /'; return 1; }
+    echo "OK stage 1 [$label]: freestanding import surface is within the ledger allowlist"
+
+    for f in mini_libc mini_libm mini_fmt mini_strtod; do
+        "${ZIG[@]}" -O2 -ffreestanding -fno-builtin -ffp-contract=off \
+            -fno-math-errno -fno-stack-protector -U_FORTIFY_SOURCE \
+            -Werror=implicit-function-declaration $WERROR_FLAGS \
+            -DEIGS_MINI_STANDARD_NAMES=1 -c "src/freestanding/$f.c" \
+            -o "$BUILD/$f.o"
+    done
+    # Compiler helpers are part of the freestanding link just as they are for
+    # any compiler-emitted operation; -rtlib=compiler-rt makes that explicit.
+    "${ZIG[@]}" -nostdlib -r -rtlib=compiler-rt -o "$BUILD/stage2.o" \
+        "$BUILD/all.o" "$BUILD/mini_libc.o" "$BUILD/mini_libm.o" \
+        "$BUILD/mini_fmt.o" "$BUILD/mini_strtod.o"
+    nm -u "$BUILD/stage2.o" | awk '{print $2}' | sort -u > "$BUILD/residue.txt"
+    grep -v '^#' tools/freestanding_hal_roots.txt | grep -v '^$' | sort -u > "$BUILD/roots.txt"
+    extra=$(comm -23 "$BUILD/residue.txt" "$BUILD/roots.txt")
+    [ -z "$extra" ] || { echo "FAIL [$label]: compiler runtime + mini-libc left non-HAL symbols unresolved:"; echo "$extra" | sed 's/^/  /'; return 1; }
+    echo "OK stage 2 [$label]: residue is exactly the kernel-owed HAL roots"
+}
+
+command -v python3 >/dev/null && python3 -m ziglang version >/dev/null 2>&1 || {
+    echo "FAIL: ziglang==0.17.0 is required for the riscv32 rows" >&2
+    exit 1
+}
+run_riscv32_row riscv32-rv32ima "generic_rv32+m+a"
+run_riscv32_row riscv32-rv32imc "generic_rv32+m+c"
