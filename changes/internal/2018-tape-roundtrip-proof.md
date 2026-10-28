@@ -1,1 +1,1 @@
-- Formalize admissible tape record assembly and its list composition (#2018).
+- Prove admissible tape records round-trip through the Lean model's serializer and parser, using a theorem-friendly line splitter (#2018).

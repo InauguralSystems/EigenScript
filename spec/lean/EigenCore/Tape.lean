@@ -131,6 +131,15 @@ theorem chunks_ne_nil_of_utf8ByteSize_pos (limit : Nat) (s : String)
   subst s
   simp at positive
 
+/-- Every character in every physical chunk came from the chunked string. -/
+theorem chunks_char_mem (limit : Nat) (s chunk : String) (inChunks : chunk ∈ chunks limit s) :
+    ∀ c ∈ chunk.toList, c ∈ s.toList := by
+  intro c inChunk
+  have joined := congrArg String.toList (chunks_join limit s)
+  simp only [String.toList_join] at joined
+  rw [← joined]
+  exact List.mem_flatMap.mpr ⟨chunk, inChunks, inChunk⟩
+
 private def splitFirst (separator : Char) : List Char → List Char × Option (List Char)
   | [] => ([], none)
   | c :: rest =>
@@ -165,6 +174,33 @@ theorem splitFirst_before_not_mem (separator : Char) (input : List Char) :
     · simp [splitFirst, h]
     · simp [splitFirst, h, Ne.symm h, ih]
 
+theorem splitFirst_before_subset (separator : Char) (input : List Char) :
+    ∀ c ∈ (splitFirst separator input).1, c ∈ input := by
+  intro c member
+  have joined := splitFirst_join separator input
+  generalize splitFirst separator input = result at joined member
+  rcases result with ⟨before, after⟩
+  cases after with
+  | none => simpa [joined] using member
+  | some after =>
+    rw [← joined]
+    simp [member]
+
+theorem splitFirst_after_subset (separator : Char) (input after : List Char)
+    (found : (splitFirst separator input).2 = some after) :
+    ∀ c ∈ after, c ∈ input := by
+  intro c member
+  have joined := splitFirst_join separator input
+  generalize splitFirst separator input = result at joined found
+  rcases result with ⟨before, tail⟩
+  cases tail with
+  | none => simp at found
+  | some tail =>
+    simp only [Prod.snd, Option.some.injEq] at found
+    subst tail
+    rw [← joined]
+    simp [member]
+
 /-- A separator-free leader is recovered exactly when an encoded value is
 split at the first equals sign. -/
 theorem splitFirst_leader_value (leader v : String) (noEquals : '=' ∉ leader.toList) :
@@ -195,6 +231,14 @@ theorem colon_not_mem_toString (n : Nat) : ':' ∉ (toString n).toList := by
   rw [Nat.toList_repr] at colon
   have digit := Nat.isDigit_of_mem_toDigits (n := n) (b := 10) (by omega) (by omega) colon
   have notDigit : ¬ ':'.isDigit := by decide
+  exact notDigit digit
+
+theorem newline_not_mem_toString (n : Nat) : '\n' ∉ (toString n).toList := by
+  intro newline
+  change '\n' ∈ (Nat.repr n).toList at newline
+  rw [Nat.toList_repr] at newline
+  have digit := Nat.isDigit_of_mem_toDigits (n := n) (b := 10) (by omega) (by omega) newline
+  have notDigit : ¬'\n'.isDigit := by decide
   exact notDigit digit
 
 /-- Dropping the framing marker and splitting the header recovers both the
@@ -432,6 +476,78 @@ def WriterRecords (records : List String) : Prop :=
         let encoded := String.ofList ((splitFirst '=' record.toList).2.getD [])
         encoded.utf8ByteSize ≤ 65536 ∧ encoded.startsWith "@")
 
+/-- Every physical row emitted for an admissible logical record is a
+nonempty line. -/
+theorem serializeRecord_rows_valid (record : String)
+    (valid : '\n' ∉ record.toList ∧ record ≠ "" ∧
+      ¬(record.startsWith "N " ∧
+        let encoded := String.ofList ((splitFirst '=' record.toList).2.getD [])
+        encoded.utf8ByteSize ≤ 65536 ∧ encoded.startsWith "@")) :
+    ∀ row ∈ serializeRecord record, '\n' ∉ row.toList ∧ row ≠ "" := by
+  rcases valid with ⟨recordClean, recordNonempty, validFrame⟩
+  intro row member
+  simp only [serializeRecord] at member
+  by_cases notN : (!record.startsWith "N ") = true
+  · simp [notN] at member
+    subst row
+    exact ⟨recordClean, recordNonempty⟩
+  · simp only [notN, ite_false] at member
+    generalize splitEq : splitFirst '=' record.toList = split at member
+    rcases split with ⟨leaderChars, encodedChars⟩
+    let encoded := String.ofList (encodedChars.getD [])
+    have leaderClean : '\n' ∉ leaderChars := by
+      intro bad
+      exact recordClean (splitFirst_before_subset '=' record.toList '\n' (by simpa [splitEq] using bad))
+    have encodedClean : '\n' ∉ encoded.toList := by
+      cases encodedChars with
+      | none => simp [encoded]
+      | some chars =>
+        intro bad
+        apply recordClean
+        apply splitFirst_after_subset '=' record.toList chars
+          (by simp [splitEq]) '\n'
+        simpa [encoded] using bad
+    by_cases short : encoded.utf8ByteSize ≤ 65536
+    · simp [encoded, short] at member
+      subst row
+      exact ⟨recordClean, recordNonempty⟩
+    · simp only [encoded, short, if_neg] at member
+      generalize chunksEq : chunks 65536 encoded = pieces at member
+      cases pieces with
+      | nil =>
+        simp [chunksEq] at member
+        subst row
+        exact ⟨recordClean, recordNonempty⟩
+      | cons first rest =>
+        simp only [chunksEq, List.mem_cons] at member
+        have pieceClean : ∀ piece ∈ first :: rest, '\n' ∉ piece.toList := by
+          intro piece inPieces bad
+          exact encodedClean (chunks_char_mem 65536 encoded piece (by simpa [chunksEq] using inPieces) '\n' bad)
+        rcases member with firstEq | member
+        · constructor
+          · have countClean := newline_not_mem_toString encoded.utf8ByteSize
+            have firstClean := pieceClean first (by simp)
+            intro bad
+            simp only [String.toList_append, String.toList_ofList,
+              List.mem_append] at bad
+            simp [leaderClean, countClean, firstClean] at bad
+            have digit := Nat.isDigit_of_mem_toDigits
+              (n := encoded.utf8ByteSize) (b := 10) (by omega) (by omega) bad
+            have notDigit : ¬'\n'.isDigit := by decide
+            exact notDigit digit
+          · intro empty
+            have equalsMem : '=' ∈
+                (String.ofList leaderChars ++ "=" ++ "@" ++
+                  toString encoded.utf8ByteSize ++ ":" ++ first).toList := by
+              simp
+            rw [empty] at equalsMem
+            simp at equalsMem
+        · rename_i continuationMember
+          obtain ⟨piece, inRest, rfl⟩ := List.mem_map.mp continuationMember
+          constructor
+          · simp [pieceClean piece (by simp [inRest])]
+          · simp
+
 /-- Reading the physical rows emitted for one admissible record reproduces
 that record, then continues with the supplied tail. -/
 theorem assembleRecordsFuel_serializeRecord (record : String) (tail : List String)
@@ -581,11 +697,134 @@ theorem assembleRecords_serializeRecords (records : List String)
 private def assembleRecords (rows : List String) : Except String (List String) :=
   assembleRecordsFuel rows.length rows
 
+private def splitLines : List Char → List String
+  | [] => [""]
+  | c :: rest =>
+    if c = '\n' then "" :: splitLines rest
+    else match splitLines rest with
+      | [] => [c.toString]
+      | line :: lines => (c.toString ++ line) :: lines
+
+/-- A newline-free prefix is the first line returned by the structural
+splitter. -/
+theorem splitLines_prefix (chars rest : List Char) (clean : '\n' ∉ chars) :
+    splitLines (chars ++ '\n' :: rest) = String.ofList chars :: splitLines rest := by
+  induction chars with
+  | nil => simp [splitLines]
+  | cons c chars ih =>
+    simp only [List.mem_cons, not_or] at clean
+    have hc : c ≠ '\n' := Ne.symm clean.1
+    rw [show (c :: chars) ++ '\n' :: rest = c :: (chars ++ '\n' :: rest) by rfl]
+    simp only [splitLines, hc, ↓reduceIte, ih clean.2]
+    congr 1
+    apply String.ext
+    simp
+
+/-- Intercalating admissible physical lines, adding the writer's final
+newline, splitting, and discarding empty rows recovers the lines exactly. -/
+theorem splitLines_intercalate_newline_filter (lines : List String)
+    (clean : ∀ line ∈ lines, '\n' ∉ line.toList)
+    (nonempty : ∀ line ∈ lines, line ≠ "") :
+    (splitLines (String.intercalate "\n" lines ++ "\n").toList).filter (· != "") =
+      lines := by
+  rw [String.toList_append, String.toList_intercalate]
+  have newlineChars : "\n".toList = ['\n'] := by decide
+  rw [newlineChars]
+  induction lines with
+  | nil => simp [splitLines]
+  | cons line lines ih =>
+    have lineClean := clean line (by simp)
+    have lineNonempty := nonempty line (by simp)
+    have tailClean : ∀ row ∈ lines, '\n' ∉ row.toList := by
+      intro row member
+      exact clean row (by simp [member])
+    have tailNonempty : ∀ row ∈ lines, row ≠ "" := by
+      intro row member
+      exact nonempty row (by simp [member])
+    cases lines with
+    | nil =>
+      simp only [List.map_cons, List.map_nil, List.intercalate_singleton]
+      rw [splitLines_prefix line.toList [] lineClean, String.ofList_toList]
+      simp [lineNonempty, splitLines]
+    | cons next more =>
+      simp only [List.map_cons, List.intercalate_cons_cons]
+      rw [show line.toList ++ ['\n'] ++
+          List.intercalate ['\n'] (next.toList :: more.map String.toList) ++ ['\n'] =
+          line.toList ++ '\n' ::
+            (List.intercalate ['\n'] (next.toList :: more.map String.toList) ++ ['\n']) by
+        simp]
+      rw [splitLines_prefix line.toList
+        (List.intercalate ['\n'] (next.toList :: more.map String.toList) ++ ['\n']) lineClean]
+      rw [String.ofList_toList]
+      simp only [List.filter_cons]
+      rw [show (line != "") = true by simp [lineNonempty]]
+      simp only [Bool.true_eq, ite_true]
+      have tailResult := ih tailClean tailNonempty
+      simp only [List.map_cons] at tailResult
+      rw [tailResult]
+
 def tapeParse (text : String) : Except String (List String) :=
-  match text.splitOn "\n" with
+  match splitLines text.toList with
   | header::rest => if header == "V 8 0.47.0" then
       assembleRecords (rest.filter (· != ""))
     else throw "invalid tape header"
   | _ => throw "empty tape"
+
+/-- Every admissible logical tape survives serialization and parsing.  The
+reader also returns the mandatory root record written by `tapeSerialize`. -/
+theorem tape_roundtrip (records : List String) (valid : WriterRecords records) :
+    tapeParse (tapeSerialize records) =
+      .ok ("B 0 1 1 0 root -" :: records) := by
+  let physical := records.flatMap serializeRecord
+  have physicalValid : ∀ row ∈ physical, '\n' ∉ row.toList ∧ row ≠ "" := by
+    intro row member
+    obtain ⟨record, inRecords, inRows⟩ := List.mem_flatMap.mp member
+    exact serializeRecord_rows_valid record (valid record inRecords) row inRows
+  let restLines := "B 0 1 1 0 root -" :: physical
+  have linesClean : ∀ line ∈ restLines, '\n' ∉ line.toList := by
+    intro line member
+    simp only [restLines, List.mem_cons] at member
+    rcases member with rfl | member
+    · decide
+    · exact (physicalValid line member).1
+  have linesNonempty : ∀ line ∈ restLines, line ≠ "" := by
+    intro line member
+    simp only [restLines, List.mem_cons] at member
+    rcases member with rfl | member
+    · decide
+    · exact (physicalValid line member).2
+  have serialized : tapeSerialize records =
+      "V 8 0.47.0" ++ "\n" ++ String.intercalate "\n" restLines ++ "\n" := by
+    apply String.ext
+    simp only [tapeSerialize, restLines, physical, String.toList_append,
+      String.toList_intercalate]
+    have newlineChars : "\n".toList = ['\n'] := by decide
+    rw [newlineChars]
+    cases empty : records.flatMap serializeRecord with
+    | nil => simp [List.intercalate]
+    | cons first rest => simp [List.intercalate, List.append_assoc]
+  have splitBack := splitLines_intercalate_newline_filter restLines linesClean linesNonempty
+  unfold tapeParse
+  rw [show (tapeSerialize records).toList =
+      "V 8 0.47.0".toList ++ '\n' ::
+        (String.intercalate "\n" restLines ++ "\n").toList by
+    rw [serialized]
+    simp [String.toList_append]]
+  rw [splitLines_prefix "V 8 0.47.0".toList
+    (String.intercalate "\n" restLines ++ "\n").toList (by decide)]
+  simp only [String.ofList_toList, beq_self_eq_true, if_true]
+  rw [splitBack]
+  simp only [restLines]
+  unfold assembleRecords
+  simp only [List.length_cons, assembleRecordsFuel]
+  have rootNotN : ¬"B 0 1 1 0 root -".startsWith "N " := by
+    intro begins
+    obtain ⟨suffix, equality⟩ := String.startsWith_string_iff.mp begins
+    simp at equality
+  rw [show (!"B 0 1 1 0 root -".startsWith "N ") = true by
+    simpa using rootNotN]
+  simp only [if_true]
+  rw [assembleRecords_serializeRecords records valid]
+  rfl
 
 end EigenCore
