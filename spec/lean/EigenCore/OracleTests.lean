@@ -36,6 +36,14 @@ private def escapedReplay : RunResult := run 100 escapedProgram (.replayStrict
 example : escapedRecord.tape.contains "N 0 env_get=\"\\x09\"" &&
     escapedReplay == escapedRecord := by native_decide
 
+-- Normalization skips structural records without shifting answer positions,
+-- and delays a malformed value until the evaluator reaches that answer.
+example : normalizeTape ["B 0 1 1 0 root -", "N 0 random_int=1",
+    "A 0 x=1", "N 0 random_int=not-a-number"] ==
+    [.value 0 "random_int" (.int 1),
+     .replayError 1 (.replay "tape kind mismatch for random_int: expected number")] := by
+  native_decide
+
 private def runSource (source : String) (oracle : List OracleValue) : RunResult :=
   match parse source with
   | .ok program => run 100 program (.record oracle)

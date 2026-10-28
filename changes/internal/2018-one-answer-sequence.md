@@ -1,0 +1,1 @@
+- Refactor the Lean evaluator to consume one explicit normalized taped-answer sequence without changing language behaviour (#2018).
