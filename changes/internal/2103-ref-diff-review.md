@@ -1,0 +1,1 @@
+- The C/Lean differential harness now preserves timeout findings and keeps hot native-tier probes separate from the registered population (#2103).
