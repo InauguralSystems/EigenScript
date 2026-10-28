@@ -1,2 +1,8 @@
 # label<TAB>classification<TAB>reason
 # This ledger is exact: the parity driver rejects both new and stale rows.
+# The VM does not re-record consumed N values (#1749), so reverse-direction
+# replay agrees on stdout/exit/A records but not the required A/N projection.
+spec/lean/parity_cases/taped_env_get.eigs	vm bug	#1749 drops N while replay tracing
+spec/lean/parity_cases/taped_random_int.eigs	vm bug	#1749 drops N while replay tracing
+spec/lean/parity_cases/taped_read_line.eigs	vm bug	#1749 drops N while replay tracing
+spec/lean/parity_cases/taped_two_random_ints.eigs	vm bug	#1749 drops N while replay tracing

@@ -55,6 +55,7 @@ private def execute (o : Options) : IO UInt32 := do
       | some (.unsupported construct) =>
           IO.eprintln s!"unsupported in EigenCore-0 step 2b-ii: {construct}"; pure 1
       | some (.refusal reason) => IO.eprintln s!"refused at runtime: {reason}"; pure 1
+      | some (.replay reason) => IO.eprintln s!"trace: {reason} (strict replay — aborting)"; pure 3
       | some (.runtime e) => IO.eprintln s!"runtime error: {e}"; pure 1
 
 def main (args : List String) : IO UInt32 :=

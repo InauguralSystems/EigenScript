@@ -1,0 +1,2 @@
+local x is read_line of []
+print of x

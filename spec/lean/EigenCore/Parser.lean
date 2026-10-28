@@ -285,6 +285,13 @@ private def unsupportedExpr (functions : List String) : Nat → Expr → Option 
   | fuel + 1, .not value => unsupportedExpr functions fuel value
   | _, .array _ => some "array literal"
   | fuel + 1, .call (.variable "print") [value] => unsupportedExpr functions fuel value
+  | fuel + 1, .call (.variable "random_int") arguments =>
+      if arguments.length == 2 then arguments.findSome? (unsupportedExpr functions fuel)
+      else some "random_int arity"
+  | _, .call (.variable "read_line") arguments =>
+      if arguments.isEmpty then none else some "read_line arity"
+  | fuel + 1, .call (.variable "env_get") [argument] => unsupportedExpr functions fuel argument
+  | _, .call (.variable "env_get") _ => some "env_get arity"
   | fuel + 1, .call (.variable name) arguments =>
       if ["converged", "loop_iterations", "loop_exit"].contains name then
         some s!"builtin {name}"

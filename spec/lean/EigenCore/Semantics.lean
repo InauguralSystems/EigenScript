@@ -2,7 +2,7 @@ import EigenCore.Parser
 import EigenCore.Value
 namespace EigenCore
 
-inductive Err where | runtime (message : String) | unsupported (construct : String) | refusal (reason : String) | fuel deriving Repr, BEq
+inductive Err where | runtime (message : String) | replay (message : String) | unsupported (construct : String) | refusal (reason : String) | fuel deriving Repr, BEq
 structure Binding where
   envId : Nat
   slot : Nat
@@ -38,6 +38,7 @@ structure World where
   stdout : String := ""
   tape : List String := []
   mode : Mode := .live []
+  oracleCursor : Nat := 0
 abbrev EvalM := ExceptT Err (StateM World)
 
 private def findCell (name : String) (cells : Array Cell) : Option Nat := cells.findIdx? (fun c => c.name == name)
@@ -74,6 +75,88 @@ private def tapeValue : Value → String
   | .bool true => "true" | .bool false => "false" | .null => "null"
   | .array values => s!"<list:{values.length}>"
   | .closure _ _ => "<fn>"
+
+private def nondetString (s : String) : String :=
+  "\"" ++ s.toList.foldl (fun out c => out ++
+    if c == '"' then "\\\"" else if c == '\\' then "\\\\"
+    else if c == '\n' then "\\n" else if c == '\r' then "\\r"
+    else if c == '\t' then "\\t" else c.toString) "" ++ "\""
+
+private def nondetValue : Value → String
+  | .int n => toString n | .string s => nondetString s | .null => "null"
+  | .bool true => "true" | .bool false => "false"
+  | .array values => s!"<list:{values.length}>" | .closure _ _ => "<fn>"
+
+/-- The C VM's return-kind table, restricted to EigenCore-0's taped calls. -/
+def k_tape_kinds : List (String × List String) :=
+  [("env_get", ["string"]), ("random_int", ["number"]),
+   ("read_line", ["string", "null"])]
+
+private def parseQuoted (s : String) : Option String :=
+  if !(s.startsWith "\"") || !(s.endsWith "\"") then none else
+    let body := ((s.drop 1).dropEnd 1).toString
+    let rec go : Nat → List Char → String → Option String
+      | 0, _, _ => none
+      | _, [], out => some out
+      | fuel + 1, '\\' :: c :: rest, out =>
+          let decoded := if c == 'n' then '\n' else if c == 'r' then '\r'
+            else if c == 't' then '\t' else c
+          go fuel rest (out.push decoded)
+      | fuel + 1, c :: rest, out => go fuel rest (out.push c)
+    go (body.length + 1) body.toList ""
+
+private def parseNValue (fn raw : String) : Except Err Value :=
+  if fn == "random_int" then
+    match raw.toInt? with
+    | some n => pure (.int n)
+    | none => throw (.replay s!"tape kind mismatch for {fn}: expected number")
+  else if fn == "env_get" then
+    match parseQuoted raw with
+    | some s => pure (.string s)
+    | none => throw (.replay s!"tape kind mismatch for {fn}: expected string")
+  else if fn == "read_line" then
+    if raw == "null" then pure .null else
+      match parseQuoted raw with
+      | some s => pure (.string s)
+      | none => throw (.replay s!"tape kind mismatch for {fn}: expected string or null")
+  else throw (.replay s!"tape name mismatch: program called {fn}")
+
+private def takeN (fn : String) : EvalM Value := do
+  let w ← get
+  let rec scan : List String → Except Err (Value × List String)
+    | [] => throw (.runtime s!"{fn}: replay stream 0 has no matching recorded N value")
+    | line :: rest =>
+      if line.startsWith "N " then
+        match (line.splitOn " ").drop 2 with
+        | payloadParts =>
+          let payload := String.intercalate " " payloadParts
+          match payload.splitOn "=" with
+          | name :: valueParts =>
+            let recorded := String.intercalate "=" valueParts
+            if name != fn then throw (.replay s!"replay name mismatch: tape has '{name}', program called '{fn}'")
+            else do pure (← parseNValue fn recorded, rest)
+          | _ => throw (.replay "malformed N record")
+      else scan rest
+  match scan (match w.mode with | .replayStrict tape => tape | _ => []) with
+  | .error e => throw e
+  | .ok (value, rest) =>
+      let record := "N 0 " ++ fn ++ "=" ++ nondetValue value
+      set {w with mode := .replayStrict rest, tape := w.tape ++ [record]}
+      pure value
+
+private def tapedCall (fn : String) (live : World → Value) : EvalM Value := do
+  let w ← get
+  match w.mode with
+  | .replayStrict _ => takeN fn
+  | .live _ =>
+      let value := live w
+      set {w with oracleCursor := w.oracleCursor + 1}
+      pure value
+  | .record _ =>
+      let value := live w
+      let record := "N 0 " ++ fn ++ "=" ++ nondetValue value
+      set {w with oracleCursor := w.oracleCursor + 1, tape := w.tape ++ [record]}
+      pure value
 private def store (name : String) (v : Value) (isLocal : Bool) : EvalM Unit := do
   let w ← get
   let current := currentEnvironment w
@@ -135,6 +218,19 @@ mutual
         modify fun w => {w with stdout:=w.stdout ++ value.print ++ "\n"}
         -- C's builtin_print returns null (src/builtins.c), not its argument.
         pure .null
+    | .call (.variable "random_int") [loExpr, hiExpr] => do
+        let lo ← evalExpr f loExpr; let hi ← evalExpr f hiExpr
+        let (.int low) := lo | throw (.runtime "random_int expects numeric bounds")
+        let (.int high) := hi | throw (.runtime "random_int expects numeric bounds")
+        tapedCall "random_int" fun w =>
+          if high < low then .int low else
+            let span := (high - low + 1).toNat
+            .int (low + Int.ofNat ((w.oracleCursor * 1103515245 + 12345) % span))
+    | .call (.variable "read_line") [] => tapedCall "read_line" fun _ => .null
+    | .call (.variable "env_get") [nameExpr] => do
+        let name ← evalExpr f nameExpr
+        let (.string _) := name | throw (.runtime "env_get expects a string name")
+        tapedCall "env_get" fun _ => .string ""
     | .call function arguments => do
       let callable ← evalExpr f function
       let values ← arguments.mapM (evalExpr f)

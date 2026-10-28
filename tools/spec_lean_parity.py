@@ -49,6 +49,23 @@ def validate_medium(ref,lean_root):
  for p in lean_root.rglob('*.lean'):
   if '.lake' not in p.parts and any(x in p.read_text() for x in forbidden):bad.append(f'no-delegation: {p.name}')
  return bad
+def replay_refusal_cases(ref):
+ with tempfile.TemporaryDirectory() as raw:
+  td=Path(raw); source=td/'replay_refusal.eigs'; source.write_text('local x is random_int of [1, 2]\nprint of x\n')
+  good=td/'refusal-good.tape'
+  subprocess.run([VM,source],capture_output=True,input=b'',check=True,env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_TRACE':str(good)})
+  lines=good.read_text().splitlines(); n=next(i for i,x in enumerate(lines) if x.startswith('N '))
+  wrong=td/'wrong-kind.tape'; wrong.write_text('\n'.join(lines[:n]+[lines[n].replace('random_int=','env_get=',1)]+lines[n+1:])+'\n')
+  short=td/'short.tape'; short.write_text('\n'.join(lines[:n])+'\n')
+  checked=0
+  for tape,want in ((wrong,'replay divergence'),(short,'runtime error')):
+   c=subprocess.run([VM,source],capture_output=True,input=b'',env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_REPLAY':str(tape),'EIGS_REPLAY_STRICT':'1'})
+   l=subprocess.run([ref,'--replay',tape,'--strict',source],capture_output=True,input=b'')
+   cclass='replay divergence' if c.returncode==3 else cls(c)
+   lclass='replay divergence' if l.returncode==3 else cls(l)
+   if cclass!=want or lclass!=want:raise RuntimeError(f'replay refusal parity: wanted {want}, C={cclass}, Lean={lclass}')
+   checked+=1
+  return checked
 def compare(ref,lean_root,enforce=True):
  if bad:=validate_medium(ref,lean_root):raise RuntimeError('; '.join(bad))
  pc=classifier_protocol_selfcheck()
@@ -62,8 +79,10 @@ def compare(ref,lean_root,enforce=True):
    if was!=now:moved.append((label,'in' if was else 'out','in' if now else 'out',a.stdout.strip()))
    if not now:continue
    examined+=1;ct=td/f'c{i}';lt=td/f'l{i}';rt=td/f'r{i}'
-   c=subprocess.run([VM,p],capture_output=True,env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_TRACE':str(ct)})
-   try:l=subprocess.run([ref,'--trace',lt,p],capture_output=True,timeout=None if enforce else 2)
+   c=subprocess.run([VM,p],capture_output=True,input=b'',env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_TRACE':str(ct)})
+   has_n=any(k=='N' for k,_ in projection(ct))
+   lean_command=[ref,'--replay',ct,'--strict','--trace',lt,p] if has_n else [ref,'--trace',lt,p]
+   try:l=subprocess.run(lean_command,capture_output=True,input=b'',timeout=None if enforce else 2)
    except subprocess.TimeoutExpired:
     actual[label]='Lean timeout';continue
    if l.stderr.startswith(b'refused at runtime:'):refusals.append((label,l.stderr.decode().strip().removeprefix('refused at runtime: ')));continue
@@ -76,22 +95,31 @@ def compare(ref,lean_root,enforce=True):
     actual[label]='Lean replay timeout';continue
    if replay.stdout==l.stdout and cls(replay)==cls(l) and projection(rt)==projection(lt):roundtrips+=1
    else:mismatch.append('Lean record/replay')
-   if any(k=='N' for k,_ in projection(ct)):cross+=1
+   if has_n:
+    # Reverse direction: the reference records from its seeded oracle and the
+    # VM must consume that tape without consulting a live source.
+    lean_own=td/f'lo{i}'; c_replay_tape=td/f'cr{i}'
+    own=subprocess.run([ref,'--trace',lean_own,p],capture_output=True,input=b'')
+    reverse=subprocess.run([VM,p],capture_output=True,input=b'',env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_REPLAY':str(lean_own),'EIGS_REPLAY_STRICT':'1','EIGS_TRACE':str(c_replay_tape)})
+    if reverse.stdout!=own.stdout or cls(reverse)!=cls(own) or projection(c_replay_tape)!=projection(lean_own):
+     mismatch.append('Lean->C strict replay')
+    cross+=1
    if mismatch:actual[label]=','.join(mismatch)
  ledger={}
  for x in (lean_root/'known_disagreements.txt').read_text().splitlines():
   if x and not x.startswith('#'):label,kind,reason=x.split('\t',2);ledger[label]=(kind,reason)
  if enforce and set(actual)!=set(ledger):raise RuntimeError(f'known-disagreement ledger mismatch\nnew={[(x,actual[x]) for x in sorted(set(actual)-set(ledger))]}\nstale={sorted(set(ledger)-set(actual))}')
  if enforce and any(k not in ('vm bug','model bug') or not r.strip() for k,r in ledger.values()):raise RuntimeError('invalid disagreement triage')
+ negative=replay_refusal_cases(ref) if enforce else 0
  lines=[f'population / step1-in / modeled-in / examined: {len(ps)} / {old_in} / {new_in} / {examined}',f'agreements / disagreements: {examined-len(actual)-len(refusals)} / {len(actual)}',f'refused at runtime: {len(refusals)}']
- lines += [f'\t{x}: {why}' for x,why in refusals]+[f'Lean record->strict-replay: {roundtrips}/{examined-len(refusals)}',f'cross-implementation N programs: {cross}',f'classifier protocol self-checks: {pc[0]}/{pc[1]}',f'classification moves: {len(moved)}']+['\t'.join(x) for x in moved]
+ lines += [f'\t{x}: {why}' for x,why in refusals]+[f'Lean record->strict-replay: {roundtrips}/{examined-len(refusals)}',f'cross-implementation N programs: {cross}',f'replay mismatch/short refusal parity: {negative}/2',f'classifier protocol self-checks: {pc[0]}/{pc[1]}',f'classification moves: {len(moved)}']+['\t'.join(x) for x in moved]
  return ('\n'.join(lines)+'\n').encode(),actual
 def replace_once(path,old,new):
  text=path.read_text()
  if text.count(old)!=1:raise RuntimeError(f'mutant anchor count {text.count(old)} in {path}')
  path.write_text(text.replace(old,new))
 def selftest():
- base=ROOT/'spec/lean'; mutants=[('swap-add-sub','| .add => match a,b with | .int x,.int y => safeInt (x+y)','| .add => match a,b with | .int x,.int y => safeInt (x-y)'),('string-eq-length','| .eq | .ne => match a, b with','| .eq | .ne => match a, b with\n      | .string x, .string y => pure (.bool (if op == .eq then x.length == y.length else x.length != y.length))'),('drop-assignment-tape','set {w with environments:=environments,tape:=w.tape ++ [s!"A 0 {name}={tapeValue v}"]}','set {w with environments:=environments}')]; killed=0
+ base=ROOT/'spec/lean'; mutants=[('swap-add-sub','| .add => match a,b with | .int x,.int y => safeInt (x+y)','| .add => match a,b with | .int x,.int y => safeInt (x-y)'),('string-eq-length','| .eq | .ne => match a, b with','| .eq | .ne => match a, b with\n      | .string x, .string y => pure (.bool (if op == .eq then x.length == y.length else x.length != y.length))'),('drop-assignment-tape','set {w with environments:=environments,tape:=w.tape ++ [s!"A 0 {name}={tapeValue v}"]}','set {w with environments:=environments}'),('consume-two-n','set {w with mode := .replayStrict rest, tape := w.tape ++ [record]}','set {w with mode := .replayStrict ((rest.dropWhile fun (line : String) => !(line.startsWith "N ")).drop 1), tape := w.tape ++ [record]}')]; killed=0
  standing={x.split('\t',1)[0] for x in (base/'known_disagreements.txt').read_text().splitlines() if x and not x.startswith('#')}
  with tempfile.TemporaryDirectory() as raw:
   for name,old,new in mutants:
@@ -101,7 +129,8 @@ def selftest():
    _,found=compare(copy/'.lake/build/bin/eigs-ref',copy,False)
    # A timeout keeps the full population bounded, but is not evidence that a
    # semantic fault was observed: require an actual parity difference.
-   found={k:v for k,v in found.items() if k not in standing and 'timeout' not in v}
+   found={k:v for k,v in found.items() if 'timeout' not in v and
+     (k not in standing or (name=='consume-two-n' and v!='Lean->C strict replay'))}
    if not found:raise RuntimeError(f'{name}: SURVIVED (coverage hole)')
    killed+=1;print(f'{name}: killed by '+', '.join(f'{k} ({v})' for k,v in sorted(found.items())))
  normal=base/'.lake/build/bin/eigs-ref';a,_=compare(normal,base);b,_=compare(normal,base)

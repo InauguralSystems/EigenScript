@@ -1,0 +1,2 @@
+local x is env_get of "EIGS_SPEC_LEAN_MISSING_VALUE"
+print of x

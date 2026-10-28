@@ -1,0 +1,2 @@
+local x is random_int of [1, 2]
+print of x
