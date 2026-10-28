@@ -53,8 +53,7 @@ is, and a wrong label is fixed through derive/certify, which re-measures the
 floor. The floor's anchor is the binary build_anchor.sh builds from tag
 v0.46.0 into ${XDG_CACHE_HOME:-~/.cache}/eigs-oracle-anchor/<sha256 of the
 recipe>/. Its identity is the recipe plus the verdict list, re-measured on
-it when the anchor binary or oracle inputs change and otherwise cached; the
-binary's sha256 is information only (another
+it every --floor run; the binary's sha256 is information only (another
 toolchain builds other bytes). --write-floor refuses any binary but the one
 the recipe stamped on this machine. Exit 2 on any harness error (a failing
 program, a bad output line, a value off the generator, a run whose listing
@@ -83,8 +82,7 @@ from schema import PREDS
 ROW_TIMEOUT = 120
 CLAMP = 1e308          # the default build saturates here (EIGS_NUM_MAX)
 HERE = os.path.dirname(os.path.abspath(__file__))
-ARMS = {
-    ("interp", "straight"): {"env": {"EIGS_JIT_OFF": "1"}, "warmup": 0},
+ARMS = {("interp", "straight"): {"env": {"EIGS_JIT_OFF": "1"}, "warmup": 0},
     ("interp", "loop"): {"env": {"EIGS_JIT_OFF": "1"}, "warmup": 0},
     ("jit", "loop"): {"env": {"EIGS_JIT_ENTRY_THRESHOLD": "1"}, "warmup": 1},
     ("osr", "loop"): {"env": {"EIGS_JIT_OSR_THRESHOLD": "1"}, "warmup": 0},
@@ -430,9 +428,8 @@ def measure(binary, corpus, caps):
             xs = generate(row["gen"], row["n"])
             ys = generate(row["second"], row["n"]) if "second" in row else None
             res["held"][rid] = xs          # the values the runtime holds, exactly (ints stay ints)
-            jobs = [(tier, form, row["checkpoints"] if form == "straight" else [c],
-                     emit_straight(row, xs, ys) if form == "straight" else
-                     emit_loop(row, xs, ys, c, arm["warmup"]))
+            jobs = [(tier, form, row["checkpoints"] if form == "straight" else [c], emit_straight(row, xs, ys)
+                     if form == "straight" else emit_loop(row, xs, ys, c, arm["warmup"]))
                     for (tier, form), arm in ARMS.items()
                     for c in ([row["checkpoints"][-1]] if form == "straight" else row["checkpoints"])]
             for tier, form, cks, text in jobs:
@@ -528,42 +525,6 @@ def anchor_lock():
         yield
 
 
-def oracle_hash(corpus_path):
-    """Hash every checked-in input that can change an anchor verdict."""
-    names = ["score.py", "derive.py", "gen.py", "reference.py", "schema.py",
-             os.path.basename(corpus_path), "certificate.json", "labels.json"]
-    h = hashlib.sha256()
-    for name in names:
-        path = name if os.path.isabs(name) else os.path.join(os.path.dirname(corpus_path), name)
-        h.update(name.encode() + b"\0")
-        with open(path, "rb") as f:
-            h.update(f.read())
-    return h.hexdigest()
-
-
-def anchor_verdicts(stamp, corpus, caps, labels, rows, corpus_path):
-    """Measure once per anchor binary and oracle revision, then reuse the verdict list."""
-    key = hashlib.sha256((stamp["binary_sha256"] + oracle_hash(corpus_path)).encode()).hexdigest()
-    path = os.path.join(anchor_dir(), f"verdicts-{key}.json")
-    try:
-        with open(path) as f:
-            cached = json.load(f)
-        if cached.get("key") == key and isinstance(cached.get("verdicts"), list):
-            return cached["verdicts"], "cached"
-    except (OSError, ValueError):
-        pass
-    want = right_set(verdicts(measure(stamp["binary"], corpus, caps), corpus, labels), rows)
-    fd, tmp = tempfile.mkstemp(prefix="verdicts-", dir=anchor_dir())
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump({"key": key, "verdicts": want}, f)
-        os.replace(tmp, path)
-    finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
-    return want, "measured"
-
-
 def floor_preflight(path):
     """Everything --floor can refuse before measuring anything: no waivers,
     the format, the recipe the floor was measured by, the local anchor."""
@@ -585,7 +546,7 @@ def floor_preflight(path):
     return floor, anchor()
 
 
-def check_floor(pre, path, cand_v, rows, corpus, labels, corpus_path):
+def check_floor(pre, path, cand_v, rows, corpus, labels):
     """1 when a floor verdict is now wrong, 0 otherwise; HarnessError when the
     floor is not the measurement of the recipe's anchor on this machine NOW
     (its identity: the recipe plus the verdict list; the binary's sha256 is
@@ -593,7 +554,7 @@ def check_floor(pre, path, cand_v, rows, corpus, labels, corpus_path):
     floor, stamp = pre
     with anchor_lock():
         _ieee, caps, _ = capabilities(stamp["binary"])
-        want, source = anchor_verdicts(stamp, corpus, caps, labels, rows, corpus_path)
+        want = right_set(verdicts(measure(stamp["binary"], corpus, caps), corpus, labels), rows)
     extra, missing = sorted(set(floor["verdicts"]) - set(want)), sorted(set(want) - set(floor["verdicts"]))
     if extra or missing or len(floor["verdicts"]) != len(want):
         built = stamp.get("toolchain") or "an unrecorded toolchain"
@@ -606,7 +567,7 @@ def check_floor(pre, path, cand_v, rows, corpus, labels, corpus_path):
                            f" (first {missing[:1]}). {cause}. Re-measure the floor where the check runs, in the"
                            f" CI image: make observer-anchor, then score.py {stamp['binary']} --write-floor {path}")
     same = floor["anchor"].get("binary_sha256") == stamp["binary_sha256"]
-    print(f"\nfloor: {len(want)} verdicts ({FLOOR_FORMAT}), {source} on the anchor {stamp['binary']}"
+    print(f"\nfloor: {len(want)} verdicts ({FLOOR_FORMAT}), re-measured on the anchor {stamp['binary']}"
           f" built by build_anchor.sh {stamp['recipe_sha256'][:12]}: the list matches; binary sha256"
           f" {stamp['binary_sha256'][:12]} " + ("as when the floor was measured" if same else
                                                f"differs from the floor's {floor['anchor'].get('binary_sha256', '?')[:12]}"
@@ -741,7 +702,7 @@ def main(argv):
         print(f"  CAPABILITY WRONG {arm} {rid}@{at} {p}: expected={str(v[(arm, rid, at, p)][1]).lower()}")
     fail = 1 if split or capwrong or missing else 0
     if pre:
-        fail |= check_floor(pre, opts["--floor"], v, rows, corpus, labels, corpus_path)
+        fail |= check_floor(pre, opts["--floor"], v, rows, corpus, labels)
     if stamp:
         with open(opts["--write-floor"], "w") as f:
             json.dump({"format": FLOOR_FORMAT, "note": opts.get("--note", ""), "numbers": "ieee" if ieee else "clamp",
