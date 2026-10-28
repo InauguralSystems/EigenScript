@@ -91,6 +91,19 @@ def replay_refusal_cases(ref):
       any(x.startswith('C 0 ') for x in lean_tape.read_text().splitlines())):
    raise RuntimeError(f'continuation parity: C={c_record.returncode}, Lean={l_replay.returncode}, reverse={c_reverse.returncode}')
   checked+=1
+
+  # A raw NUL is retained by C's line reader, then truncates the C-string
+  # view consumed by unescape_string.  The missing closing quote is a
+  # malformed taped value (strict-replay exit 3), not a shortened string.
+  raw_nul=td/'raw-nul.tape'
+  raw_nul.write_bytes(b'V 8 0.47.0\nB 0 1 1 0 root -\nN 0 read_line="before\0after"\n')
+  nul_source=td/'raw-nul.eigs';nul_source.write_text('print of (read_line of [])\n')
+  c=subprocess.run([VM,nul_source],capture_output=True,input=b'',env={**os.environ,
+   'EIGS_JIT_OFF':'1','EIGS_REPLAY':str(raw_nul),'EIGS_REPLAY_STRICT':'1'})
+  l=subprocess.run([ref,'--replay',raw_nul,'--strict',nul_source],capture_output=True,input=b'')
+  if c.returncode!=3 or l.returncode!=3 or b'malformed' not in c.stderr.lower() or b'kind mismatch' not in l.stderr.lower():
+   raise RuntimeError(f'raw-NUL parity: C={c.returncode}/{c.stderr!r}, Lean={l.returncode}/{l.stderr!r}')
+  checked+=1
   return checked
 def compare(ref,lean_root,enforce=True):
  if bad:=validate_medium(ref,lean_root):raise RuntimeError('; '.join(bad))
@@ -138,7 +151,7 @@ def compare(ref,lean_root,enforce=True):
  if enforce and any(k not in ('vm bug','model bug') or not r.strip() for k,r in ledger.values()):raise RuntimeError('invalid disagreement triage')
  negative=replay_refusal_cases(ref) if enforce else 0
  lines=[f'population / step1-in / modeled-in / examined: {len(ps)} / {old_in} / {new_in} / {examined}',f'agreements / disagreements: {examined-len(actual)-len(refusals)} / {len(actual)}',f'refused at runtime: {len(refusals)}']
- lines += [f'\t{x}: {why}' for x,why in refusals]+[f'Lean record->strict-replay: {roundtrips}/{examined-len(refusals)}',f'cross-implementation N programs: {cross}',f'replay edge-case parity: {negative}/4','seeded oracle: 2018',f'classifier protocol self-checks: {pc[0]}/{pc[1]}',f'classification moves: {len(moved)}']+['\t'.join(x) for x in moved]
+ lines += [f'\t{x}: {why}' for x,why in refusals]+[f'Lean record->strict-replay: {roundtrips}/{examined-len(refusals)}',f'cross-implementation N programs: {cross}',f'replay edge-case parity: {negative}/5','seeded oracle: 2018',f'classifier protocol self-checks: {pc[0]}/{pc[1]}',f'classification moves: {len(moved)}']+['\t'.join(x) for x in moved]
  return ('\n'.join(lines)+'\n').encode(),actual
 def replace_once(path,old,new):
  text=path.read_text()
