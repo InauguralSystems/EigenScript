@@ -873,30 +873,36 @@ static Value *sched_fatal_stop(TaskScheduler *s, Task *stopped, Value *r) {
     return make_null();
 }
 
-/* `exit` is not a task failure.  Its thread/state latch already carries the
- * requested status; stop scheduling immediately, retire the exiting task as
- * a normal completion, and consume the thread-local unwind flag at this
- * scheduler boundary.  The next REPL/embed evaluation must start catchable. */
-static Value *sched_exit_stop(TaskScheduler *s, Task *t, Value *r) {
+/* `exit` is not a task failure. Its thread/state latch already carries the
+ * requested status; stop scheduling immediately and retire every task owned
+ * by this evaluation. Keep the thread-local signal for the host boundary;
+ * the next outermost embedded evaluation clears it before executing. */
+static Value *sched_exit_stop(TaskScheduler *s, Value *r) {
     if (r) val_decref(r);
-    if (t->id != 0) {
-        t->state = TASK_DONE;
-        t->has_error = 0;
-        t->err_unobserved = 0;
-        s->live--;
-        if (t->run_env) { env_decref(t->run_env); t->run_env = NULL; }
-        if (t->detached) task_reap(t);
+    s->current = 0;   /* task_do_kill refuses to retire the current task. */
+    /* An exit stops the whole evaluation, not only its requesting slice.
+     * Retire every still-live task through the ordinary kill + reap paths:
+     * those paths already remove scheduler claims, drain mailboxes/slices,
+     * release environments and finally release the generation-checked
+     * handle. Completed tasks from earlier evaluations remain joinable. */
+    for (int id = 1; id < HANDLE_TABLE_SIZE; id++) {
+        Task *live = sched_lookup(s, id);
+        if (!live || live->state == TASK_DONE || live->state == TASK_DEAD)
+            continue;
+        if (!task_do_kill(id)) continue;
+        /* A detached victim is reaped by task_do_kill itself. */
+        Task *dead = sched_lookup(s, id);
+        if (dead) task_reap(dead);
     }
-    s->current = 0;
     sched_main_abandon(s);
     /* Exit unwinds TRY_BEGIN frames without executing TRY_END. All slices in
      * this evaluation are abandoned, so none of their aggregate counts may
      * leak into the next host unit. Later teardown subtracts defensively and
      * clamps at zero. */
     g_try_depth = 0;
-    g_exit_requested = 0;
-    /* Keep the ordinary unwind result for the host boundary.  eval_source
-     * and the REPL already clear it before their next unit. */
+    /* Keep the exit observable through the host boundary: repl_eval_buffer
+     * consumes it to stop prompting. eval_source clears it only when the
+     * embedder starts its next outermost evaluation. */
     g_has_error = 1;
     return make_null();
 }
@@ -1040,7 +1046,7 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
         /* #1806: exit from any cooperative task stops the evaluation at that
          * call.  Never feed its unwind through sched_finish as an uncaught
          * task error, and never run another ready slice. */
-        if (g_exit_requested) return sched_exit_stop(s, t, r);
+        if (g_exit_requested) return sched_exit_stop(s, r);
 
         if (t->state == TASK_SUSPENDED) {
             /* It suspended again. task_yield → re-enqueue; task_join → stay
