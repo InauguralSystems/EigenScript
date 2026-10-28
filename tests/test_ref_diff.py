@@ -45,19 +45,28 @@ def main():
         assert any("stdout" in x for x in data["programs"][0]["reasons"])
         print("PASS: one-byte reference-output plant is detected and names generated:4")
 
-        # The runtime has compilation counters, but no counter for entry into
-        # native code.  An interpreted-tier plant therefore must not turn the
-        # hot arm green: its honest verdict is "not witnessed".
+        # Clean native control: the shared thunk-exit predicate must witness
+        # the JIT arm, and must retain the OSR last-iteration qualification.
+        native_report = d / "native.json"
+        native = subprocess.run([ROOT / "tools/ref_diff.sh", "--generated", "0", "--hot", "1",
+                                 "--report", native_report], capture_output=True, text=True)
+        native_data = json.loads(native_report.read_text())
+        assert native.returncode == 0, native.stdout + native.stderr
+        assert native_data["programs"][0]["tiers"]["jit"]["native"] == "native"
+        assert native_data["programs"][0]["tiers"]["osr"]["native"] == "native (last iteration only, #1768)"
+        print("PASS: native twin witnesses jit and qualifies the OSR last iteration")
+
+        # The interpreted twin must not turn the hot arm green.
         fake_vm = d / "eigenscript-interpreted"
         fake_vm.write_text(f'#!/bin/sh\nEIGS_JIT_OFF=1; export EIGS_JIT_OFF\nexec "{vm}" "$@"\n')
         fake_vm.chmod(0o755)
-        native_report = d / "native.json"
-        native = subprocess.run([ROOT / "tools/ref_diff.sh", "--generated", "0", "--hot", "1",
-                                 "--vm", fake_vm, "--report", native_report], capture_output=True, text=True)
-        native_data = json.loads(native_report.read_text())
-        assert native.returncode == 1
+        interpreted_report = d / "interpreted.json"
+        interpreted = subprocess.run([ROOT / "tools/ref_diff.sh", "--generated", "0", "--hot", "1",
+                                      "--vm", fake_vm, "--report", interpreted_report], capture_output=True, text=True)
+        interpreted_data = json.loads(interpreted_report.read_text())
+        assert interpreted.returncode == 1
         assert all(any("native execution not witnessed" in reason for reason in row["reasons"])
-                   for row in native_data["programs"])
+                   for row in interpreted_data["programs"])
         print("PASS: interpreted-native plant is red as actual native execution is not witnessed")
 
         hanging_vm = d / "eigenscript-hang"

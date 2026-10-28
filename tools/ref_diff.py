@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import ref_program_gen as gen  # noqa: E402
 import spec_lean_parity as parity  # noqa: E402 -- reuse step 2's projection
+from native_witness import native_witness  # noqa: E402
 
 
 def corpus():
@@ -95,38 +96,42 @@ def compare_one(label, source, vm, ref, td, oracle_seed, timeout):
 
 
 def hot_programs(seed):
-    """Return independent bounded back-edge and hot-callee probes."""
-    loop = f"""# ref-diff hot loop seed: {seed}
-value is 0
-loop while value < {120 + seed % 7}:
-    value is value + 1
-print of value
-"""
-    calls = [f"# ref-diff hot call seed: {seed}", "define hot_call(value) as:",
-             "    return value + 1", "value is 0"]
-    calls.extend("value is hot_call of value" for _ in range(60 + seed % 7))
-    calls.append("print of value")
-    return ((f"hot-loop:{seed}", loop), (f"hot-call:{seed}", "\n".join(calls) + "\n"))
+    """Return a named, single-loop function called above the JIT threshold."""
+    lines = [f"# ref-diff hot seed: {seed}", "define hot_probe(limit) as:",
+             "    value is 0", "    loop while value < limit:",
+             "        value is value + 1", "    return value", "answer is 0"]
+    lines.extend("answer is hot_probe of 0" for _ in range(60 + seed % 7))
+    lines.append(f"answer is hot_probe of {3 + seed % 7}")
+    lines.append("print of answer")
+    return ((f"hot:{seed}", "\n".join(lines) + "\n"),)
 
 
 def compare_hot(label, source, vm, td, timeout):
-    """Compare hot C roads; current VM diagnostics do not count native entries."""
+    """Compare hot C roads and require the shared native-tier witness."""
     p = td / "program.eigs"; p.write_text(source)
     reasons, tiers = [], {}
     baseline, timed_out = run([vm, p], {**os.environ, "EIGS_JIT_OFF": "1"}, timeout=timeout)
     if timed_out: return True, [f"interpreter arm {timed_out}"], tiers
     tiers["interpreter"] = {"exit": parity.cls(baseline), "native": "interpreted"}
-    for tier, extra in (("jit", {}), ("osr", {"EIGS_JIT_OSR_THRESHOLD": "1"})):
-        got, timed_out = run([vm, p], {**os.environ, **extra, "EIGS_JIT_HOT": "1", "EIGS_JIT_STATS": "1"}, timeout=timeout)
+    for tier, extra in (("jit", {}), ("osr", {"EIGS_JIT_OSR_THRESHOLD": "1",
+                                               "EIGS_JIT_ENTRY_THRESHOLD": "1000000"})):
+        got, timed_out = run([vm, p], {**os.environ, **extra, "EIGS_JIT_HOT": "1", "EIGS_DUMP_BC": "1"}, timeout=timeout)
         if timed_out:
             reasons.append(f"{tier} arm {timed_out}"); tiers[tier] = {"exit": "timeout", "native": "not witnessed"}; continue
-        # EIGS_JIT_STATS counts compilations and EIGS_JIT_HOT estimates native
-        # coverage, but neither counts entry into emitted code.  Do not turn a
-        # compilation proxy into the execution witness requested by the gate.
-        tiers[tier] = {"exit": parity.cls(got), "native": "not witnessed"}
+        diagnostics = got.stderr.decode(errors="replace")
+        try:
+            proof = native_witness(tier, "hot_probe", diagnostics, diagnostics)
+        except ValueError as error:
+            native, detail = "not witnessed", str(error)
+        else:
+            qualified = "native" if tier == "jit" else "native (last iteration only, #1768)"
+            native = qualified if proof.witnessed else "not witnessed"
+            detail = proof.detail
+        tiers[tier] = {"exit": parity.cls(got), "native": native, "native_detail": detail}
         if got.stdout != baseline.stdout or parity.cls(got) != parity.cls(baseline):
             reasons.append(f"{tier} tier")
-        reasons.append(f"{tier} native execution not witnessed")
+        if native == "not witnessed":
+            reasons.append(f"{tier} native execution not witnessed: {detail}")
     return True, sorted(set(reasons)), tiers
 
 
@@ -159,7 +164,7 @@ def main():
         for i, (label, source, made) in enumerate(programs):
             if made: generated += 1
             d = root / str(i); d.mkdir()
-            if label.startswith("hot-"):
+            if label.startswith("hot:"):
                 in_subset, reasons, tiers = compare_hot(label, source, args.vm, d, args.timeout)
             else:
                 in_subset, reasons, tiers = compare_one(label, source, args.vm, args.ref, d, args.seed_start + i, args.timeout)

@@ -73,6 +73,9 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from native_witness import native_witness
+
 import derive
 import reference
 from derive import CAPABILITIES as CAPS, PREDS
@@ -357,23 +360,14 @@ def witness(tier, rid, err, hot, held, c):
     bailed leaves no trace until #1768. A stop INSIDE the computation of x
     (from the body's MUL to the next OBSERVE_ASSIGN) on a non-finite or
     clamped value is the JIT's designed bail (#1758 N12)."""
-    hrow = next((f for f in (ln.split() for ln in hot.splitlines()) if f[:1] == ["run_row"]), None)
-    sec = re.search(r"^=== [^\n]*\(run_row, [^\n]*\n((?:\d{4,} [^\n]*\n?)*)", err, re.M)
-    ops = {int(o): (op, arg) for o, op, arg in
-           re.findall(r"^(\d{4,}) \[L\d+\] (\S+) *(\S*)", sec.group(1), re.M)} if sec else {}
-    jbs = [o for o, (op, _a) in ops.items() if op == "JUMP_BACK"]
-    if hrow is None or len(hrow) != 12 or len(jbs) != 1:
+    try:
+        proof = native_witness(tier, "run_row", err, hot)
+    except ValueError:
         raise HarnessError(f"{rid}@{c}: {tier} tier: no EIGS_JIT_HOT row for run_row, or not exactly"
                            " one loop in its EIGS_DUMP_BC listing; cannot witness the tier")
-    jb, bked = jbs[0], int(hrow[7])
-    if tier == "jit":
-        adv = hrow[4] if hrow[2] == "yes" else "-1"
-        at = int(hrow[5]) if adv == "RET" else int(adv) if adv.isdigit() else -1
-        ok, k = at > jb and bked == 0, c - bked       # x_k is the value whose iteration bailed
-    else:
-        head = jb + 3 - int(ops[jb][1])
-        at = int(hrow[10]) + int(hrow[9]) if hrow[8] == "yes" and int(hrow[10]) == head else -1
-        ok, k = at > jb, c
+    ops, jb, bked, at, ok = (proof.ops, proof.back_edge, proof.back_edge_exits,
+                             proof.at, proof.witnessed)
+    k = c - bked if tier == "jit" else c       # x_k is the value whose iteration bailed
     stop = f"{ops[at][0]}@{at}" if at in ops else f"the end of run_row ({at})" if at >= 0 else "no thunk"
     if ok:
         return "native", f"exits at {stop}, past the back-edge at {jb}"

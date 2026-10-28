@@ -725,6 +725,7 @@ def run_plants(tag, ieee, only):
         with tempfile.TemporaryDirectory(prefix=f"plant_{name}_") as tmp:
             d = os.path.join(tmp, "oracle")
             shutil.copytree(HERE, d, ignore=shutil.ignore_patterns("__pycache__"))
+            shutil.copy(os.path.join(os.path.dirname(HERE), "native_witness.py"), tmp)
             saved = dict(os.environ)
             try:
                 if setup:
