@@ -122,6 +122,14 @@ private def deliveredAnswer (query : TapedQuery) : TapedAnswer → TapedAnswer
       .value position (if name.isEmpty then query.name else name) value
   | answer => answer
 
+/-- A record-mode answer carries an empty name; delivery fills it with the
+query name. -/
+theorem deliveredAnswer_wildcard (query : TapedQuery) (position : Nat)
+    (value : OracleValue) :
+    deliveredAnswer query (.value position "" value) =
+      .value position query.name value := by
+  simp [deliveredAnswer]
+
 /-- Completing the wildcard name at the effect boundary is idempotent. -/
 theorem deliveredAnswer_idem (query : TapedQuery) (answer : TapedAnswer) :
     deliveredAnswer query (deliveredAnswer query answer) = deliveredAnswer query answer := by
@@ -2559,6 +2567,48 @@ theorem interpret_delivered_congruence (tree : Interaction α) :
               (interpret (continuation (deliveredAnswer query answer)) rest).consumed < rest.length := by
             simpa using within
           rw [ih (deliveredAnswer query answer) rest others childWithin tails]
+
+/-- A replacement stream whose delivered answers agree with an interpretation's
+consumed answers produces the same interpretation.  Unlike
+`interpret_delivered_congruence`, the replacement entries need not literally
+contain the delivered query names (record-mode entries use empty wildcards). -/
+theorem interpret_delivered_congruence' (tree : Interaction α) :
+    ∀ (supplied replacement : List TapedAnswer),
+      (interpret tree supplied).consumed < supplied.length →
+      (interpret tree supplied).consumed < replacement.length →
+      (interpret tree replacement).answers.take
+          (interpret tree supplied).consumed =
+        (interpret tree supplied).answers →
+      interpret tree replacement = interpret tree supplied := by
+  induction tree with
+  | done value =>
+      intro supplied replacement within replacementWithin agree
+      simp [interpret]
+  | ask query continuation ih =>
+      intro supplied replacement within replacementWithin agree
+      cases supplied with
+      | nil => simp [interpret] at within
+      | cons answer rest =>
+        cases replacement with
+        | nil => simp at replacementWithin
+        | cons other others =>
+          simp only [interpret] at within replacementWithin agree ⊢
+          let child := interpret (continuation (deliveredAnswer query answer)) rest
+          let otherChild := interpret (continuation (deliveredAnswer query other)) others
+          have positive : 0 < child.consumed + 1 := by omega
+          have heads : deliveredAnswer query other = deliveredAnswer query answer := by
+            simpa [List.take_succ_cons, positive, child, otherChild] using
+              congrArg List.head? agree
+          have childWithin : child.consumed < rest.length := by
+            simpa [child] using within
+          have otherChildEq :
+              interpret (continuation (deliveredAnswer query other)) others = child := by
+            rw [heads]
+            apply ih (deliveredAnswer query answer) rest others childWithin
+            · simpa [child, otherChild, heads] using replacementWithin
+            · simpa [List.take_succ_cons, child, otherChild, heads] using
+                congrArg List.tail agree
+          simpa [child, otherChild, otherChildEq]
 
 /-- The two explicit exhaustion guards appended by `evaluateCore` continue the
 numbering of any already well-positioned supplied stream. -/
