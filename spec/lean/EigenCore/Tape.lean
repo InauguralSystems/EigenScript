@@ -265,6 +265,65 @@ private def gatherContinuations (count : Nat) : Nat → String → List String �
         gatherContinuations count (bytes + chunk.utf8ByteSize) (accumulated ++ chunk) more
       | [] => throw "malformed N continuation"
 
+set_option maxRecDepth 2000 in
+/-- A successful continuation gather leaves an actual suffix of the rows it
+was given.  In particular, it can never manufacture work for the recursive
+record assembler. -/
+theorem gatherContinuations_suffix (count bytes : Nat) (accumulated : String)
+    (rows : List String) (value : String) (more : List String)
+    (result : gatherContinuations count bytes accumulated rows = .ok (value, more)) :
+    more <:+ rows := by
+  induction rows generalizing bytes accumulated with
+  | nil =>
+    by_cases done : (bytes == count) = true
+    · simp only [gatherContinuations, done, if_true, Except.ok.injEq,
+        Prod.mk.injEq] at result
+      rcases result with ⟨_, rfl⟩
+      exact ⟨[], rfl⟩
+    · by_cases over : bytes > count
+      · simp [gatherContinuations, done, over] at result
+      · simp [gatherContinuations, done, over] at result
+  | cons row rows ih =>
+    by_cases done : (bytes == count) = true
+    · simp only [gatherContinuations, done, if_true, Except.ok.injEq,
+        Prod.mk.injEq] at result
+      rcases result with ⟨_, rfl⟩
+      exact ⟨[], rfl⟩
+    · by_cases over : bytes > count
+      · simp [gatherContinuations, done, over] at result
+      · by_cases badRow : (!row.startsWith "C ") = true
+        · simp only [gatherContinuations, done, ite_false, over, badRow,
+            ite_true] at result
+          change Except.error "malformed N continuation" = .ok (value, more) at result
+          contradiction
+        · by_cases found : afterSecondSpace row.toList = none
+          · simp [gatherContinuations, done, over, badRow, found] at result
+          · obtain ⟨chunkChars, chunkFound⟩ := Option.ne_none_iff_exists.mp found
+            have result' := result
+            simp only [gatherContinuations, done, ite_false, over, badRow] at result'
+            rw [chunkFound.symm] at result'
+            by_cases wrongStream :
+                (splitFirst ' ' row.toList).2.bind
+                    (fun rest => some (String.ofList (splitFirst ' ' rest).1)) !=
+                  some "0"
+            · simp only [wrongStream, ite_true] at result'
+              change Except.error "malformed N continuation" = .ok (value, more) at result'
+              contradiction
+            · by_cases empty : (String.ofList chunkChars).isEmpty
+              · simp only [wrongStream, ite_false, empty, ite_true] at result'
+                change Except.error "malformed N continuation" = .ok (value, more) at result'
+                contradiction
+              · have recursiveResult : gatherContinuations count
+                    (bytes + (String.ofList chunkChars).utf8ByteSize)
+                    (accumulated ++ String.ofList chunkChars) rows =
+                    .ok (value, more) := by
+                  simpa [wrongStream, empty] using result'
+                have suffix := ih (bytes :=
+                    bytes + (String.ofList chunkChars).utf8ByteSize)
+                  (accumulated := accumulated ++ String.ofList chunkChars)
+                  recursiveResult
+                exact suffix.trans ⟨[row], rfl⟩
+
 
 /-- Continuation rows written by the serializer are consumed completely and
 reconstruct their chunks in order. -/
@@ -321,6 +380,47 @@ private def assembleRecordsFuel : Nat → List String → Except String (List St
     let (value, more) ← gatherContinuations count first.utf8ByteSize first tail
     let leader := String.ofList leaderChars ++ "="
     return (leader ++ value) :: (← assembleRecordsFuel fuel more)
+
+/-- Once fuel covers every remaining physical row, its exact value is
+irrelevant.  The framed branch is safe because continuation gathering only
+removes a prefix of the tail. -/
+theorem assembleRecordsFuel_eq_length (rows : List String) (fuel : Nat)
+    (enough : rows.length ≤ fuel) :
+    assembleRecordsFuel fuel rows = assembleRecordsFuel rows.length rows := by
+  induction fuel using Nat.strongRecOn generalizing rows with
+  | ind fuel ih =>
+    cases fuel with
+    | zero =>
+      have : rows = [] := List.eq_nil_of_length_eq_zero (Nat.eq_zero_of_le_zero enough)
+      subst rows
+      rfl
+    | succ fuel =>
+    cases rows with
+    | nil => rfl
+    | cons line tail =>
+      have tailEnough : tail.length ≤ fuel := by simpa using enough
+      have tailEq := ih fuel (Nat.lt_succ_self fuel) tail tailEnough
+      simp only [List.length_cons, assembleRecordsFuel]
+      split
+      · rw [tailEq]
+      · split
+        · rw [tailEq]
+        · split <;> try rfl
+          split <;> try rfl
+          rename_i _ _ count _ _
+          generalize gatherResult : gatherContinuations count _ _ tail = result
+          cases result with
+          | error message =>
+            rfl
+          | ok pair =>
+            rcases pair with ⟨value, more⟩
+            have suffix := gatherContinuations_suffix _ _ _ _ _ _ gatherResult
+            have moreEnough : more.length ≤ fuel :=
+              Nat.le_trans suffix.length_le tailEnough
+            change (List.cons _ <$> assembleRecordsFuel fuel more) =
+              (List.cons _ <$> assembleRecordsFuel tail.length more)
+            rw [ih fuel (Nat.lt_succ_self fuel) more moreEnough,
+              ih tail.length (by omega) more suffix.length_le]
 
 private def assembleRecords (rows : List String) : Except String (List String) :=
   assembleRecordsFuel rows.length rows
