@@ -19,7 +19,33 @@
 # to it. The population it scans is printed so a drop to zero is visible.
 set -uo pipefail
 cd "$(cd "$(dirname "$0")/.." && pwd)"
-SRC=src/ext_gfx.c
+SRC="${GFX_GUARD_SRC:-src/ext_gfx.c}"
+
+if [ "${1:-}" = "--selftest" ]; then
+    work=$(mktemp -d "${TMPDIR:-/tmp}/gfx_guard_order.XXXXXX") || exit 2
+    trap 'rm -rf "$work"' EXIT
+    i=1
+    while [ "$i" -le 11 ]; do
+        printf 'Value* builtin_plant_%s(void) {\n' "$i" >> "$work/ext_gfx.c"
+        printf '    ARG_GUARD(x);\n    load_sdl2();\n' >> "$work/ext_gfx.c"
+        printf '}\n' >> "$work/ext_gfx.c"
+        i=$((i + 1))
+    done
+    if ! out=$(GFX_GUARD_SRC="$work/ext_gfx.c" bash "$0" 2>&1); then
+        echo "SELFTEST FAILED: clean guard-order control was rejected"; printf '%s\n' "$out"; exit 1
+    elif [ "$(printf '%s\n' "$out" | grep -cF 'guarded builtins scanned: 11')" -ne 1 ]; then
+        echo "SELFTEST FAILED: clean guard-order control did not examine exactly 11 guarded builtins"; printf '%s\n' "$out"; exit 1
+    fi
+    printf '%s\n' 'Value* builtin_plant_bad(void) {' '    load_sdl2();' '    ARG_GUARD(x);' '}' >> "$work/ext_gfx.c"
+    if out=$(GFX_GUARD_SRC="$work/ext_gfx.c" bash "$0" 2>&1); then
+        echo "SELFTEST FAILED: planted guard behind SDL load was accepted"; exit 1
+    elif [ "$(printf '%s\n' "$out" | grep -c '^    BAD builtin_plant_bad ')" -eq 1 ] &&
+         [ "$(printf '%s\n' "$out" | grep -cF 'guarded builtins scanned: 12')" -eq 1 ]; then
+        echo "SELFTEST OK: clean control passed; exactly one planted guard caught: BAD builtin_plant_bad"; exit 0
+    fi
+    echo "SELFTEST FAILED: plant did not produce exactly one BAD builtin_plant_bad violation"
+    printf '%s\n' "$out"; exit 1
+fi
 
 rc=0
 # STRIP COMMENTS AND STRING LITERALS FIRST. Without this the scanner reads
