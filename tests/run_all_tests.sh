@@ -47,7 +47,11 @@ SKIPPED=0
 # Validate a TAP-style child ledger.  The child owns the plan; every parent uses
 # this one predicate so missing, duplicate, malformed, short and failed plans
 # have identical verdicts (#2051).
-. "$(dirname "$0")/../tools/child_plan.sh"
+# Through TESTS_DIR like every helper above: the shard planner assembles this
+# runner into /tmp and points EIGS_PLAN_TESTS_DIR at the tree, so a
+# $(dirname "$0") path resolved to /tmp/../tools and every plan check failed
+# with "child_plan_ok: command not found" (#2088 ASan shards, 2026-10-28).
+. "$TESTS_DIR/../tools/child_plan.sh" || exit 1
 
 # ONE helper prints a section-level skip and counts it. Round 6 incremented
 # SKIPPED at exactly ONE site (the since-deleted ILP32 gate) while this file has ~40 lines
