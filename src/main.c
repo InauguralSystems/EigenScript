@@ -410,6 +410,12 @@ int main(int argc, char **argv) {
         MODE_EXIT(1);
     }
 
+    /* Private verdict-calibration side channel (#2059).  lib/test.eigs owns
+     * the ledger write; give that seam the actual program operand rather than
+     * making every suite invocation remember to repeat it. */
+    if (!source_string && getenv("EIGS_TEST_FORCE_SUMMARY_LEDGER"))
+        setenv("EIGS_TEST_SCRIPT_PATH", argv[1], 1);
+
     /* Extract script directory for load_file resolution. g_script_dir
      * is an EigsState bridge macro — state is already attached above. */
     {

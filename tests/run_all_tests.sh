@@ -123,6 +123,8 @@ echo() {
         \[*\]*)
             __eigs_section_close
             __EIGS_SEC_LABEL="${1%%]*}]"
+            EIGS_SUITE_SECTION="$__EIGS_SEC_LABEL"
+            export EIGS_SUITE_SECTION
             __EIGS_SEC_T0=$(__eigs_now_us)
             ;;
     esac

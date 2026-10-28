@@ -138,5 +138,5 @@ done <<< "$ASSERTING"
 [ "$assert_total" -gt 0 ] || { echo "test-enrolment: ABORTED: asserting-test population is empty"; exit 2; }
 echo "asserting-test invocation: population=$assert_total invoked=$assert_ok alternate-oracle-exempt=$assert_ex"
 [ "$total" -gt 0 ] || { echo "test-enrolment: ABORTED: candidate population is empty"; exit 2; }
-[ "$rc" -eq 0 ] && echo "PASS: test-enrolment: examined=$total enrolled=$ok exempt=$ex"
+[ "$rc" -eq 0 ] && echo "PASS: test-enrolment: examined=$total enrolled=$ok exempt=$ex invocation-violations=0"
 exit "$rc"

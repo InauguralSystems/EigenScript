@@ -75,6 +75,15 @@ define assert_false(cond, desc) as:
 
 # ---- test_summary: print results and exit with status ----
 define test_summary as:
+    # Silent, append-only attribution for the verdict-propagation calibration.
+    # One write keeps concurrent summaries from interleaving their records.
+    _summary_ledger is env_get of "EIGS_TEST_FORCE_SUMMARY_LEDGER"
+    if _summary_ledger != "":
+        _summary_line is (env_get of "EIGS_SUITE_SECTION") + "\t" + (env_get of "EIGS_TEST_SCRIPT_PATH") + "\n"
+        _summary_bytes is []
+        for _summary_i in range of (len of _summary_line):
+            append of [_summary_bytes, ord of _summary_line[_summary_i]]
+        write_bytes of [_summary_ledger, _summary_bytes, 1]
     # Test-only calibration seam: force every summary down its failure path so
     # the suite can audit that child verdicts propagate.  Not a product knob.
     if (env_get of "EIGS_TEST_FORCE_SUMMARY_FAILURE") == "1":
