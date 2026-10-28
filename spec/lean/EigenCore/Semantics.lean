@@ -35,6 +35,7 @@ the single supplied answer sequence, not byte offsets in a tape. -/
 inductive TapedAnswer where
   | value (position : Nat) (name : String) (value : OracleValue)
   | replayError (position : Nat) (error : Err)
+  | replayExhausted (position : Nat)
   deriving Repr, BEq
 
 /-- The evaluator sees only this cursor over one explicit answer sequence.
@@ -43,8 +44,6 @@ private structure AnswerSource where
   supplied : List TapedAnswer
   cursor : Nat := 0
   consumed : List TapedAnswer := []
-  record : Bool := false
-  replay : Bool := false
 structure World where
   environments : Array Environment := #[{id := 0, parent := none}]
   frames : Array Frame := #[{serial := 0, environment := 0}]
@@ -226,14 +225,13 @@ private def consumeAnswer (fn : String) : EvalM Value := do
   let w ← get
   let source := w.answers
   let some supplied := source.supplied[source.cursor]?
-    | throw (.runtime (if source.replay then
-        s!"{fn}: replay stream 0 has no matching recorded N value"
-      else s!"{fn}: oracle exhausted at value {source.cursor}"))
+    | throw (.runtime s!"{fn}: oracle exhausted at value {source.cursor}")
   let position := source.cursor
   let raw ← match supplied with
     | .replayError _ error => throw error
+    | .replayExhausted _ => throw (.runtime s!"{fn}: replay stream 0 has no matching recorded N value")
     | .value _ recordedName value =>
-      if source.replay && recordedName != fn then
+      if !recordedName.isEmpty && recordedName != fn then
         throw (.replay s!"replay name mismatch: tape has '{recordedName}', program called '{fn}'")
       else pure value
   let value ← match fn, raw with
@@ -243,8 +241,7 @@ private def consumeAnswer (fn : String) : EvalM Value := do
     | "read_line", .null => pure .null
     | _, _ => throw (.runtime s!"{fn}: oracle value has the wrong kind")
   let consumed := source.consumed ++ [.value position fn raw]
-  let tape := if source.record || source.replay then
-      w.tape ++ ["N 0 " ++ fn ++ "=" ++ nondetValue value] else w.tape
+  let tape := w.tape ++ ["N 0 " ++ fn ++ "=" ++ nondetValue value]
   set {w with answers := {source with cursor := position + 1, consumed := consumed}, tape := tape}
   pure value
 
@@ -436,18 +433,66 @@ structure RunResult where
   error : Option Err := none
   deriving Repr, BEq
 
-def run (fuel : Nat) (p : Program) (mode : Mode) : RunResult :=
+inductive CoreModeTag where | live | record | replayStrict deriving Repr, BEq
+structure CorePolicy where
+  modeTag : CoreModeTag
+  emitAnswers : Bool
+
+structure CoreResult where
+  stdout : String
+  assignments : List String
+  answersConsumed : List TapedAnswer
+  error : Option Err
+  deriving Repr, BEq
+
+private def isAnswerRecord (line : String) : Bool := line.startsWith "N "
+private def isAssignmentRecord (line : String) : Bool := line.startsWith "A "
+
+/-- Evaluate with the canonical event stream.  No mode metadata enters the
+mutually recursive evaluator. -/
+private def evaluateCore (fuel : Nat) (p : Program)
+    (supplied : List TapedAnswer) : RunResult :=
   if let some construct := unsupportedConstruct p then
-    {stdout:="", tape:=[], error:=some (.unsupported construct)}
+    {stdout := "", tape := [], error := some (.unsupported construct)}
   else
-    let root : Environment := {id:=0, parent:=none}
-    let answers : AnswerSource := match mode with
-      | .live oracle => {supplied := oracleAnswers oracle}
-      | .record oracle => {supplied := oracleAnswers oracle, record := true}
-      | .replayStrict tape => {supplied := normalizeTape tape, record := true, replay := true}
-    let initial : World := {answers:=answers, environments:=#[root]}
-    let action : EvalM (Option Value) := exec fuel p
-    let (result, w) := (action.run).run initial
+    let root : Environment := {id := 0, parent := none}
+    let initial : World := {answers := {supplied := supplied}, environments := #[root]}
+    let (result, w) := ((exec fuel p).run).run initial
     let error := match result with | .ok _ => none | .error e => some e
-    {stdout:=w.stdout, tape:=w.tape, answersConsumed:=w.answers.consumed, error:=error}
+    {stdout := w.stdout, tape := w.tape, answersConsumed := w.answers.consumed, error := error}
+
+/-- Entry point of the evaluator core.  The tag is carried so callers from
+different modes can be compared, but cannot affect evaluation. -/
+def runCore (fuel : Nat) (p : Program) (supplied : List TapedAnswer)
+    (policy : CorePolicy) : CoreResult :=
+  let result := evaluateCore fuel p supplied
+  match policy.modeTag with
+  | .live | .record | .replayStrict =>
+    { stdout := result.stdout
+      assignments := result.tape.filter isAssignmentRecord
+      answersConsumed := result.answersConsumed
+      error := result.error }
+
+/-- The core result is a function of program, fuel, and supplied answers only,
+even when its callers carry different mode tags. -/
+theorem runCore_deterministic (fuel : Nat) (p : Program)
+    (supplied : List TapedAnswer) (left right : CorePolicy) :
+    runCore fuel p supplied left = runCore fuel p supplied right := by
+  induction fuel with
+  | zero => cases left with | mk leftTag leftEmit => cases right with | mk rightTag rightEmit => cases leftTag <;> cases rightTag <;> rfl
+  | succ _ _ => cases left with | mk leftTag leftEmit => cases right with | mk rightTag rightEmit => cases leftTag <;> cases rightTag <;> rfl
+
+private def presentCore (fuel : Nat) (p : Program) (supplied : List TapedAnswer)
+    (policy : CorePolicy) : RunResult :=
+  let result := evaluateCore fuel p supplied
+  if policy.emitAnswers then result
+  else {result with tape := result.tape.filter (!isAnswerRecord ·)}
+
+def run (fuel : Nat) (p : Program) (mode : Mode) : RunResult :=
+  match mode with
+  | .live oracle => presentCore fuel p (oracleAnswers oracle) {modeTag := .live, emitAnswers := false}
+  | .record oracle => presentCore fuel p (oracleAnswers oracle) {modeTag := .record, emitAnswers := true}
+  | .replayStrict tape => let supplied := normalizeTape tape
+    presentCore fuel p (supplied ++ [.replayExhausted supplied.length]) {modeTag := .replayStrict, emitAnswers := true}
+
 end EigenCore
