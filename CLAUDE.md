@@ -47,7 +47,7 @@ make tsan-http  # TSan *with* ext_http+model+net (CI gate: EIGS_SUITE_SECTIONS='
 make http       # http+model variant — run tests/test_http_server.sh
 make zlib       # DEFLATE decompression (`inflate`) via system zlib (-lz)
 make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
-bash tools/jit_diff.sh  # JIT vs INTERPRETER differential over the corpus (tape-replayed; CI job)
+bash tools/jit_diff.sh  # JIT vs INTERPRETER differential over the corpus (CI job; a pair still unstable on a rerun is ledgered COULD_NOT_ADJUDICATE, never tape-replayed: #2122)
 make freestanding-check  # 2-stage symbol gate for the EigenOS profile (docs/FREESTANDING.md)
 make freestanding-libc-diff  # mini-libc/libm vs glibc oracle (src/freestanding/)
 make poison     # 0xAA uninit-read hunter build; run the suite with MALLOC_PERTURB_=170
