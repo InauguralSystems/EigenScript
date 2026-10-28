@@ -825,7 +825,7 @@ private def writerAnswerFor (fn : String) (raw : OracleValue) : Except Err Write
 /-- Per-`ask` record invariant. Whenever a delivered value is accepted, the
 writer chunk's N answer has exactly that call name and value; no independent
 "value to record" exists which could diverge from the continuation's value. -/
-theorem record_run_invariant (fn : String) (raw : OracleValue)
+theorem writerAnswerFor_roundtrip (fn : String) (raw : OracleValue)
     (answer : WriterAnswer) (accepted : writerAnswerFor fn raw = .ok answer) :
     answer.name = fn ∧ answer.value = raw := by
   unfold writerAnswerFor at accepted
@@ -836,7 +836,24 @@ theorem record_run_invariant (fn : String) (raw : OracleValue)
     subst answer
     simp [WriterAnswer.name, WriterAnswer.value]
 
-private def consumeAnswer (fn : String) : EvalM Value := do
+private def consumeRest (fn : String) (w : World) (supplied : TapedAnswer) : EvalM Value := do
+  let position := w.writerChunks.length
+  let raw ← match supplied with
+    | TapedAnswer.oracleExhausted _ => throw (.runtime s!"{fn}: oracle exhausted at value {position}")
+    | .replayError _ error => throw error
+    | .replayExhausted _ => throw (.runtime s!"{fn}: replay stream 0 has no matching recorded N value")
+    | .value _ recordedName value =>
+      if !recordedName.isEmpty && recordedName != fn then
+        throw (.replay s!"replay name mismatch: tape has '{recordedName}', program called '{fn}'")
+      else pure value
+  let answer ← writerAnswerFor fn raw
+  let value := answer.runtimeValue
+  let chunk : WriterChunk := {structural := w.writerTrailing, answer := answer}
+  set {w with writerChunks := w.writerChunks ++ [chunk], writerTrailing := []}
+  pure value
+
+/-- The pre-extraction spelling, retained as a definitional regression check. -/
+private def consumeAnswerReference (fn : String) : EvalM Value := do
   let w ← get
   let position := w.writerChunks.length
   let supplied : TapedAnswer ← liftM
@@ -854,6 +871,77 @@ private def consumeAnswer (fn : String) : EvalM Value := do
   let chunk : WriterChunk := {structural := w.writerTrailing, answer := answer}
   set {w with writerChunks := w.writerChunks ++ [chunk], writerTrailing := []}
   pure value
+
+
+private def consumeAnswer (fn : String) : EvalM Value := do
+  let w ← get
+  let supplied : TapedAnswer ← liftM
+    (Interaction.ask {name := fn} (fun answer => Interaction.done answer))
+  consumeRest fn w supplied
+
+/-- Extracting the post-ask tail is semantics-identical by reduction. -/
+theorem consumeAnswer_extraction (fn : String) :
+    consumeAnswer fn = consumeAnswerReference fn := by
+  rfl
+
+/-- The complete operation asks once and delegates its continuation to the extracted tail. -/
+theorem consumeAnswer_run (fn : String) (w : World) :
+    ((consumeAnswer fn).run).run w =
+      .ask {name := fn} (fun supplied => ((consumeRest fn w supplied).run).run w) := by
+  rfl
+
+/-- Oracle exhaustion is an error leaf and leaves the world unchanged. -/
+theorem consumeRest_oracleExhausted_run (fn : String) (w : World) (position : Nat) :
+    ((consumeRest fn w (.oracleExhausted position)).run).run w =
+      .done (.error (.runtime s!"{fn}: oracle exhausted at value {w.writerChunks.length}"), w) := by rfl
+
+/-- A stored replay parse error is propagated unchanged. -/
+theorem consumeRest_replayError_run (fn : String) (w : World) (position : Nat) (error : Err) :
+    ((consumeRest fn w (.replayError position error)).run).run w = .done (.error error, w) := by rfl
+
+/-- Replay-stream exhaustion is an error leaf and leaves the world unchanged. -/
+theorem consumeRest_replayExhausted_run (fn : String) (w : World) (position : Nat) :
+    ((consumeRest fn w (.replayExhausted position)).run).run w =
+      .done (.error (.runtime s!"{fn}: replay stream 0 has no matching recorded N value"), w) := by rfl
+
+/-- A nonempty recorded name different from the call is rejected. -/
+theorem consumeRest_nameMismatch_run (fn recordedName : String) (w : World)
+    (position : Nat) (raw : OracleValue) (nonempty : recordedName.isEmpty = false)
+    (different : recordedName ≠ fn) :
+    ((consumeRest fn w (.value position recordedName raw)).run).run w =
+      .done (.error (.replay s!"replay name mismatch: tape has '{recordedName}', program called '{fn}'"), w) := by
+  unfold consumeRest
+  simp only [nonempty, Bool.not_false, Bool.true_and, bne_iff_ne]
+  rw [if_pos different]
+  rfl
+
+/-- An empty record name is the live/record wildcard; accepted values append exactly one chunk. -/
+theorem consumeRest_emptyName_run (fn : String) (w : World) (position : Nat)
+    (raw : OracleValue) (answer : WriterAnswer) (accepted : writerAnswerFor fn raw = .ok answer) :
+    ((consumeRest fn w (.value position "" raw)).run).run w =
+      .done (.ok answer.runtimeValue, {w with writerChunks := w.writerChunks ++
+        [{structural := w.writerTrailing, answer := answer}], writerTrailing := []}) := by
+  unfold consumeRest
+  unfold writerAnswerFor at accepted
+  split at accepted <;> try contradiction
+  all_goals
+    injection accepted with same
+    subst answer
+    rfl
+
+/-- A matching record name is accepted and appends exactly one chunk. -/
+theorem consumeRest_matchingName_run (fn : String) (w : World) (position : Nat)
+    (raw : OracleValue) (answer : WriterAnswer) (accepted : writerAnswerFor fn raw = .ok answer) :
+    ((consumeRest fn w (.value position fn raw)).run).run w =
+      .done (.ok answer.runtimeValue, {w with writerChunks := w.writerChunks ++
+        [{structural := w.writerTrailing, answer := answer}], writerTrailing := []}) := by
+  unfold consumeRest
+  unfold writerAnswerFor at accepted
+  split at accepted <;> try contradiction
+  all_goals
+    injection accepted with same
+    subst answer
+    rfl
 
 /-- Live and record modes consume the supplied oracle exactly once per taped
 call.  Exhaustion is a runtime error, rather than a fabricated default: this
