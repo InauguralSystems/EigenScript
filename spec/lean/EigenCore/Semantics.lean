@@ -103,6 +103,80 @@ structure World where
   writerTrailing : List StructuralRow := []
 abbrev EvalM := ExceptT Err (StateT World Interaction)
 
+/-- Expose the concrete evaluator stack at its `Interaction` boundary. -/
+private def evalRun (m : EvalM α) (world : World) : Interaction (Except Err α × World) :=
+  (m.run).run world
+
+/-- Running `pure` immediately returns its value and preserves the world. -/
+theorem evalRun_pure (value : α) (world : World) :
+    evalRun (pure value) world = .done (.ok value, world) := by
+  rfl
+
+/-- Running `throw` immediately returns its error and preserves the world. -/
+theorem evalRun_throw (error : Err) (world : World) :
+    evalRun (throw error : EvalM α) world = .done (.error error, world) := by
+  rfl
+
+/-- Running `get` returns the current world without changing it. -/
+theorem evalRun_get (world : World) :
+    evalRun (get : EvalM World) world = .done (.ok world, world) := by
+  rfl
+
+/-- Running `set` replaces the world and returns unit. -/
+theorem evalRun_set (replacement world : World) :
+    evalRun (set replacement : EvalM Unit) world = .done (.ok (), replacement) := by
+  rfl
+
+/-- Running `modify` applies its update once and returns unit. -/
+theorem evalRun_modify (f : World → World) (world : World) :
+    evalRun (modify f : EvalM Unit) world = .done (.ok (), f world) := by
+  rfl
+
+/-- Lifting an interaction preserves the evaluator world at every leaf. -/
+theorem evalRun_liftM (tree : Interaction α) (world : World) :
+    evalRun (liftM tree : EvalM α) world =
+      Interaction.bind tree (fun value => .done (.ok value, world)) := by
+  change ((ExceptT.lift (StateT.lift tree)).run).run world = _
+  change (StateT.map Except.ok (StateT.lift tree)).run world = _
+  unfold StateT.map StateT.lift
+  change Interaction.bind
+      (Interaction.bind tree (fun value => Interaction.done (value, world)))
+      (fun pair => Interaction.done (Except.ok pair.1, pair.2)) = _
+  induction tree with
+  | done value => rfl
+  | ask query continuation ih =>
+      simp only [Interaction.bind]
+      congr 1
+      funext answer
+      exact ih answer
+
+/-- Concrete run equation for evaluator bind. -/
+theorem evalRun_bind (m : EvalM α) (k : α → EvalM β) (world : World) :
+    evalRun (m >>= k) world = Interaction.bind (evalRun m world) (fun (result, nextWorld) =>
+      match result with
+      | .ok value => evalRun (k value) nextWorld
+      | .error error => .done (.error error, nextWorld)) := by
+  change ((ExceptT.bind m k).run).run world = _
+  change Interaction.bind (evalRun m world) _ = Interaction.bind (evalRun m world) _
+  congr 1
+  funext pair
+  cases pair with
+  | mk result nextWorld => cases result <;> rfl
+
+/-- Concrete run equation for evaluator exception handling. -/
+theorem evalRun_tryCatch (m : EvalM α) (handler : Err → EvalM α) (world : World) :
+    evalRun (tryCatch m handler) world =
+      Interaction.bind (evalRun m world) (fun (result, nextWorld) =>
+        match result with
+        | .ok value => .done (.ok value, nextWorld)
+        | .error error => evalRun (handler error) nextWorld) := by
+  change ((ExceptT.tryCatch m handler).run).run world = _
+  change Interaction.bind (evalRun m world) _ = Interaction.bind (evalRun m world) _
+  congr 1
+  funext pair
+  cases pair with
+  | mk result nextWorld => cases result <;> rfl
+
 private def findCell (name : String) (cells : Array Cell) : Option Nat := cells.findIdx? (fun c => c.name == name)
 private def currentEnvironment (w : World) : Nat :=
   w.frames.back?.map (·.environment) |>.getD 0
