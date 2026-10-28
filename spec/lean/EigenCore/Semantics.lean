@@ -364,15 +364,31 @@ theorem parseNValue_string_encode (s : String) :
 records are skipped, and a later `V` header ends the current session.  Parsing
 errors are deliberately stored rather than raised, so evaluation observes one
 at precisely the corresponding answer position. -/
+private def afterSecondSpace : List Char → List Char
+  | [] => []
+  | ' ' :: rest =>
+    match rest.dropWhile (· != ' ') with
+    | [] => []
+    | _ :: payload => payload
+  | _ :: rest => afterSecondSpace rest
+
+private def splitFirstEquals : List Char → List Char × List Char
+  | [] => ([], [])
+  | '=' :: rest => ([], rest)
+  | c :: rest =>
+    let (name, value) := splitFirstEquals rest
+    (c :: name, value)
+
 private def normalizeTapeFrom (position : Nat) : List String → List TapedAnswer
   | [] => []
   | line :: rest =>
     if line.startsWith "V " then []
     else if line.startsWith "N " then
-      let payload := String.intercalate " " ((line.splitOn " ").drop 2)
-      match payload.splitOn "=" with
-      | name :: valueParts =>
-        let recorded := String.intercalate "=" valueParts
+      let payload := afterSecondSpace line.toList
+      match splitFirstEquals payload with
+      | (nameChars, recordedChars) =>
+        let name := String.ofList nameChars
+        let recorded := String.ofList recordedChars
         -- Unknown recorded names stay as values until the call supplies its
         -- expected name.  This preserves the C/previous-model rule that a
         -- wrong-name error takes precedence over parsing that record's value.
@@ -382,7 +398,6 @@ private def normalizeTapeFrom (position : Nat) : List String → List TapedAnswe
           | .ok value => TapedAnswer.value position name value
           | .error error => TapedAnswer.replayError position error
         answer :: normalizeTapeFrom (position + 1) rest
-      | _ => .replayError position (.replay "malformed N record") :: normalizeTapeFrom (position + 1) rest
     else normalizeTapeFrom position rest
 
 def normalizeTape (tape : List String) : List TapedAnswer :=
@@ -409,19 +424,12 @@ theorem normalizeTape_error_position {tape : List String} {i p : Nat} {e : Err}
       · simp at found
       · split at found
         · split at found
-          · split at found
-            · cases j with
-              | zero => simp at found
-              | succ j =>
-                simp only [List.getElem?_cons_succ] at found
-                have := ih (start + 1) j q error found
-                omega
-            · cases j with
-              | zero => simp at found; omega
-              | succ j =>
-                simp only [List.getElem?_cons_succ] at found
-                have := ih (start + 1) j q error found
-                omega
+          · cases j with
+            | zero => simp at found
+            | succ j =>
+              simp only [List.getElem?_cons_succ] at found
+              have := ih (start + 1) j q error found
+              omega
           · cases j with
             | zero => simp at found; omega
             | succ j =>

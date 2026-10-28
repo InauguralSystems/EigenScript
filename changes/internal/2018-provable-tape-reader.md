@@ -1,0 +1,1 @@
+- Refactor the Lean tape reader into total, proof-friendly recursive functions without changing tape behavior (#2018).
