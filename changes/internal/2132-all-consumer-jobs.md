@@ -1,0 +1,1 @@
+- Consumer acceptance now runs every devcontainer `runCmd` job in workflow order and names a failed job in its record (#2132).

@@ -417,7 +417,7 @@ consumer_skip_check() {
 }
 row() {
   local i="$1" name="${NAMES[i]}" pin="${PINS[i]}" cmd="${CMDS[i]}" kind="${KINDS[i]}" source_commit="${SOURCE_COMMITS[i]}" source_dirty="${SOURCE_DIRTY[i]}" source_intended="${SOURCE_INTENDED[i]}" source_selector="${SOURCE_SELECTORS[i]}"
-  local verdict=PASS rc=- dur=0 calls=0 ok=0 fail=0 skips=0 prereq="" v log start end missing_variant="" actual mutated="" skip_result="" skip_problem="" skip_rc=0
+  local verdict=PASS rc=- dur=0 calls=0 ok=0 fail=0 skips=0 prereq="" v log start end missing_variant="" actual mutated="" skip_result="" skip_problem="" skip_rc=0 failed_job=""
   local -a session=(setsid)
   if ! command -v setsid >/dev/null 2>&1; then
     session=(python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1],sys.argv[1:])')
@@ -458,7 +458,10 @@ row() {
     if replaced_runtime_slot; then verdict=FAIL; prereq=runtime-slot-replaced
     elif [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then verdict=HANG
     elif [ -n "$missing_variant" ]; then verdict=UNRUNNABLE; prereq="variant:$missing_variant"
-    elif [ "$rc" -ne 0 ]; then verdict=FAIL
+    elif [ "$rc" -ne 0 ]; then
+      verdict=FAIL
+      failed_job="$(sed -n 's/^CONSUMER_ACCEPTANCE_JOB_FAILED: //p' "$log" | tail -1)"
+      [ -z "$failed_job" ] || prereq="job:$failed_job"
     elif [ "$calls" -eq 0 ]; then verdict=FAIL; prereq=UNEXERCISED
     elif [ "$ok" -eq 0 ]; then verdict=FAIL; prereq=SWALLOWED
     elif [ -n "$skip_problem" ]; then verdict=FAIL; prereq="$skip_problem"
@@ -723,6 +726,11 @@ selftest() {
     printf 'ARG EIGS_REF=v0.43.0\n' > "$st_eco/$n/.devcontainer/Dockerfile"
     [ -z "$cmd" ] || printf '%s\n' "$cmd" > "$st_eco/$n/.ca_declared"
   }
+  st_workflow() {
+    local n="$1"
+    mkdir -p "$st_eco/$n/.github/workflows"
+    cat > "$st_eco/$n/.github/workflows/tests.yml"
+  }
   st_run() {
     : > "$st_out"; rm -f "$st_record"
     CA_ECO="$st_eco" CA_RECORD="$st_record" CA_TREE="$st_root" CA_TIMEOUT=1 \
@@ -748,6 +756,58 @@ selftest() {
   printf 'no_command\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
   st_check b missing-command 'row|no_command|v0.43.0|UNRUNNABLE' "$st_record"
+  # (b2) Every workflow runCmd runs in order and in its own shell.
+  st_reset; st_consumer multi
+  st_workflow multi <<'YAML'
+jobs:
+  first:
+    name: headless job
+    steps:
+      - with:
+          runCmd: export CA_LEAK=bad; cd /; eigenscript first.eigs
+  second:
+    name: gfx job
+    steps:
+      - with:
+          runCmd: test -z "${CA_LEAK:-}" && test "$PWD" = "$CA_EXPECT_PWD" && eigenscript second.eigs
+YAML
+  printf 'multi\n' > "$st_eco/.ca_expected"
+  export CA_EXPECT_PWD="$st_eco/multi"
+  st_rc=0; st_run || st_rc=$?
+  unset CA_EXPECT_PWD
+  if [ "$st_rc" -eq 0 ] && grep -Fq 'row|multi|v0.43.0|PASS|0|' "$st_record" && grep -Fq 'cand_calls=2|cand_ok=2' "$st_record"; then
+    echo 'plant b2 check=multi-job-order-isolation GREEN jobs=2 calls=2'
+  else echo 'plant b2 check=multi-job-order-isolation SILENT'; st_bad=1; fi
+  # (b3) A failing second job turns the row red and is named in its record.
+  st_reset; st_consumer multi_fail
+  st_workflow multi_fail <<'YAML'
+jobs:
+  first:
+    name: passing headless
+    steps:
+      - with:
+          runCmd: eigenscript first.eigs
+  second:
+    name: failing gfx oracle
+    steps:
+      - with:
+          runCmd: eigenscript second.eigs && false
+YAML
+  printf 'multi_fail\n' > "$st_eco/.ca_expected"
+  st_rc=0; st_run || st_rc=$?
+  if [ "$st_rc" -ne 0 ] && grep -Fq 'row|multi_fail|v0.43.0|FAIL|' "$st_record" && grep -Fq 'prereq=job:failing gfx oracle' "$st_record"; then
+    echo 'plant b3 check=second-job-failure RED job=failing-gfx-oracle'
+  else echo 'plant b3 check=second-job-failure SILENT'; st_bad=1; fi
+  # (b4) Multiple non-standard workflow candidates remain ambiguous.
+  st_reset; st_consumer ambiguous
+  mkdir -p "$st_eco/ambiguous/.github/workflows"
+  printf 'jobs:\n  a:\n    name: a\n    runCmd: true\n' > "$st_eco/ambiguous/.github/workflows/a.yml"
+  printf 'jobs:\n  b:\n    name: b\n    runCmd: true\n' > "$st_eco/ambiguous/.github/workflows/b.yml"
+  printf 'ambiguous\n' > "$st_eco/.ca_expected"
+  st_rc=0; CA_ECO="$st_eco" bash "$HERE/tools/consumer_acceptance.sh" plan > "$st_out" 2>&1 || st_rc=$?
+  if [ "$st_rc" -ne 0 ] && grep -Fq 'UNRUNNABLE ambiguous -- UNRUNNABLE:ambiguous-workflow' "$st_out"; then
+    echo 'plant b4 check=ambiguous-workflow RED candidates=2'
+  else echo 'plant b4 check=ambiguous-workflow SILENT'; st_bad=1; fi
   # (c) Exiting zero without calling the candidate is UNEXERCISED.
   st_reset; st_consumer no_call true
   printf 'no_call\n' > "$st_eco/.ca_expected"
