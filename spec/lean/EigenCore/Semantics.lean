@@ -1428,6 +1428,37 @@ theorem interpret_map (tree : Interaction α) (f : α → β)
           simp only [Interaction.bind, interpret]
           rw [ih (deliveredAnswer query answer) rest]
 
+/-- Every value answer on the path actually traversed by `interpret` carries
+the name of the query to which it was delivered.  Exhaustion and stored-error
+answers have no name to compare, but their continuation path is still
+checked. -/
+def NamesAligned : Interaction α → List TapedAnswer → Prop
+  | .done _, _ => True
+  | .ask query continuation, [] =>
+      let delivered := deliveredAnswer query (.oracleExhausted 0)
+      NamesAligned (continuation delivered) []
+  | .ask query continuation, answer :: rest =>
+      let delivered := deliveredAnswer query answer
+      (match delivered with
+        | .value _ name _ => name = query.name
+        | _ => True) ∧
+      NamesAligned (continuation delivered) rest
+
+/-- A computation is aligned when every successful interpretation follows a
+name-aligned interaction path. -/
+def Aligned (m : EvalM α) : Prop :=
+  ∀ (world : World) (supplied : List TapedAnswer) (value : α),
+    (interpret (evalRun m world) supplied).value.1 = .ok value →
+    NamesAligned (evalRun m world) supplied
+
+/-- A silent computation has no asks, hence is name-aligned. -/
+theorem NamesAligned_of_silent (m : EvalM α) (r : World → Except Err α)
+    (f : World → World)
+    (runs : ∀ world, evalRun m world = .done (r world, f world)) : Aligned m := by
+  intro world supplied value successful
+  rw [runs]
+  trivial
+
 /-- A computation is paired when every successful interpretation preserves
 the starting writer chunks as a prefix and its appended chunks encode exactly
 the interaction answers, numbered from that prefix length.
@@ -1548,6 +1579,18 @@ theorem Paired_valueAt (name : String) : Paired (valueAt name) := by
   · intro world
     rfl
 
+/-- Variable lookup performs no taped interaction. -/
+theorem NamesAligned_valueAt (name : String) : Aligned (valueAt name) := by
+  apply NamesAligned_of_silent (valueAt name)
+    (fun world => match resolve name world with
+      | some binding => .ok world.environments[binding.envId]!.slots[binding.slot]!.value
+      | none => .error (Err.runtime s!"undefined variable: {name}")) id
+  intro world
+  unfold valueAt
+  rw [evalRun_bind, evalRun_get]
+  simp only [Interaction.bind]
+  split <;> rfl
+
 /-- Creating a parameter is silent and changes only its environment slots. -/
 theorem Paired_bindParameter (environment : Nat) (name : String) (value : Value) :
     Paired (bindParameter environment name value) := by
@@ -1559,6 +1602,16 @@ theorem Paired_bindParameter (environment : Nat) (name : String) (value : Value)
     rw [evalRun_modify]
   · intro world
     rfl
+
+/-- Parameter binding performs no taped interaction. -/
+theorem NamesAligned_bindParameter (environment : Nat) (name : String) (value : Value) :
+    Aligned (bindParameter environment name value) := by
+  apply NamesAligned_of_silent (bindParameter environment name value) (fun _ => .ok ())
+    (fun world => {world with environments := world.environments.modify environment fun env =>
+      {env with slots := env.slots.push {name:=name, value:=value, history:=#[value], assignments:=1}}})
+  intro world
+  unfold bindParameter
+  rw [evalRun_modify]
 
 /-- Storing a variable appends a structural `A` row to `writerTrailing`, but
 never appends a completed `writerChunks` entry, so it is silent for pairing. -/
@@ -1586,6 +1639,14 @@ theorem Paired_store (name : String) (value : Value) (isLocal : Bool) :
   · intro world
     rfl
 
+/-- Variable storage is silent with respect to taped interactions. -/
+theorem NamesAligned_store (name : String) (value : Value) (isLocal : Bool) :
+    Aligned (store name value isLocal) := by
+  intro world supplied result successful
+  unfold store
+  rw [evalRun_bind, evalRun_get]
+  trivial
+
 /-- The anonymous stdout write used by both print forms is silent for tape
 pairing: it changes `stdout`, not completed writer chunks. -/
 theorem Paired_printModify (value : Value) :
@@ -1597,6 +1658,13 @@ theorem Paired_printModify (value : Value) :
   · intro world
     rfl
 
+/-- Printing performs no taped interaction. -/
+theorem NamesAligned_printModify (value : Value) :
+    Aligned (modify fun world => {world with stdout := world.stdout ++ value.print ++ "\n"}) := by
+  intro world supplied result successful
+  rw [evalRun_modify]
+  trivial
+
 /-- The anonymous function-table write used by `define` is silent. -/
 theorem Paired_defineModify (definition : FunctionDef) :
     Paired (modify fun world => {world with functions := world.functions.push definition}) := by
@@ -1606,6 +1674,13 @@ theorem Paired_defineModify (definition : FunctionDef) :
     rw [evalRun_modify]
   · intro world
     rfl
+
+/-- Installing a function definition performs no taped interaction. -/
+theorem NamesAligned_defineModify (definition : FunctionDef) :
+    Aligned (modify fun world => {world with functions := world.functions.push definition}) := by
+  intro world supplied result successful
+  rw [evalRun_modify]
+  trivial
 
 /-- Reading the pre-call world and installing its new environment and frame is
 one silent computation.  The update also advances `nextFrameSerial`, but does
@@ -1632,6 +1707,19 @@ theorem Paired_callFrameSetup (parent : Option Nat) : Paired (do
     rfl
   · intro world
     rfl
+
+/-- Entering a call frame performs no taped interaction. -/
+theorem NamesAligned_callFrameSetup (parent : Option Nat) : Aligned (do
+    let before ← get
+    let environment := before.environments.size
+    let frame : Frame := {serial := before.nextFrameSerial, environment := environment}
+    set {before with
+      environments := before.environments.push {id := environment, parent := parent}
+      frames := before.frames.push frame
+      nextFrameSerial := before.nextFrameSerial + 1}) := by
+  intro world supplied result successful
+  rw [evalRun_bind, evalRun_get]
+  trivial
 
 /-- One successful taped builtin call consumes one positioned answer and
 appends the one corresponding writer chunk.  All other leaves are errors and
@@ -1712,6 +1800,66 @@ theorem Paired_consumeAnswer (fn : String) : Paired (consumeAnswer fn) := by
                   rw [positionEq, writerAnswersFrom]
                   rw [roundtrip.1, roundtrip.2]
                   rfl
+
+/-- `consumeAnswer` is the semantic source of name alignment: wildcard names
+are filled by delivery, while a nonempty different name is an error leaf. -/
+theorem NamesAligned_consumeAnswer (fn : String) : Aligned (consumeAnswer fn) := by
+  intro world supplied value successful
+  rw [evalRun_eq, consumeAnswer_run]
+  cases supplied with
+  | nil =>
+      simp [NamesAligned, deliveredAnswer, evalRun_eq, consumeRest_oracleExhausted_run]
+  | cons answer rest =>
+      cases answer with
+      | oracleExhausted position =>
+          simp [NamesAligned, deliveredAnswer, consumeRest_oracleExhausted_run]
+      | replayError position error =>
+          simp [NamesAligned, deliveredAnswer, consumeRest_replayError_run]
+      | replayExhausted position =>
+          simp [NamesAligned, deliveredAnswer, consumeRest_replayExhausted_run]
+      | value position name raw =>
+          by_cases empty : name.isEmpty
+          · simp only [NamesAligned, deliveredAnswer, empty, if_true, true_and]
+            cases accepted : writerAnswerFor fn raw with
+            | error error =>
+                change NamesAligned (evalRun (consumeRest fn world (.value position fn raw)) world) rest
+                rw [consumeRest_rejected_run fn fn world position raw error
+                  (by simp) accepted]
+                trivial
+            | ok answer =>
+                change NamesAligned (evalRun (consumeRest fn world (.value position fn raw)) world) rest
+                rw [evalRun_eq, consumeRest_matchingName_run fn world position raw answer accepted]
+                trivial
+          · by_cases same : name = fn
+            · subst name
+              simp only [NamesAligned, deliveredAnswer, ite_self, true_and]
+              cases accepted : writerAnswerFor fn raw with
+              | error error =>
+                  change NamesAligned (evalRun (consumeRest fn world (.value position fn raw)) world) rest
+                  rw [consumeRest_rejected_run fn fn world position raw error
+                    (by simp) accepted]
+                  trivial
+              | ok answer =>
+                  change NamesAligned (evalRun (consumeRest fn world (.value position fn raw)) world) rest
+                  rw [evalRun_eq, consumeRest_matchingName_run fn world position raw answer accepted]
+                  trivial
+            · have nonempty : name.isEmpty = false := by
+                cases found : name.isEmpty with
+                | false => rfl
+                | true => exact False.elim (empty found)
+              have impossible :
+                Except.error (Err.replay s!"replay name mismatch: tape has '{name}', program called '{fn}'") =
+                    Except.ok value := calc
+                  Except.error (Err.replay s!"replay name mismatch: tape has '{name}', program called '{fn}'") =
+                    (interpret (evalRun (consumeAnswer fn) world)
+                      (.value position name raw :: rest)).value.1 := by
+                      rw [evalRun_eq, consumeAnswer_run]
+                      simp only [interpret, deliveredAnswer, empty, if_false]
+                      simp only [Bool.false_eq_true, if_false]
+                      rw [consumeRest_nameMismatch_run fn name world position raw nonempty same]
+                      rfl
+                  _ = .ok value := successful
+              contradiction
 
 /-- `tapedCall` is exactly the single-answer interaction boundary. -/
 theorem Paired_tapedCall (fn : String) : Paired (tapedCall fn) := by
