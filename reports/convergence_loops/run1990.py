@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Frozen harness for the experiment registered in EigenScript issue #1990."""
-import argparse, csv, hashlib, json, math, random, subprocess, sys
+import argparse, csv, json, math, random, subprocess, sys
 from pathlib import Path
 
 from scipy.optimize import fixed_point
@@ -75,7 +75,7 @@ def eig_expr(run):
     if name == "add_c": return "x + %s" % q(run["c"])
     if name == "mul_a": return "%s * x" % q(run["a"])
     if name == "add_recip_x": return "x + 1.0 / x"
-    if name == "add_recip_n": return "x + 1.0 / (it + 1.0)"
+    if name == "add_recip_n": return "x + 1.0 / it"
     if name == "logistic": return "%s * x * (1.0 - x)" % q(run["r"])
     raise AssertionError(name)
 

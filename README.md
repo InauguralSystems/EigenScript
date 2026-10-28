@@ -248,7 +248,7 @@ drop-in replacement for a caller-chosen epsilon and guard: the registered
 median iteration ratio to its matched Python loop; the named form still needs
 an explicit cap. These figures, and the decision-rule failure, are reproduced
 by `python3 reports/convergence_loops/report1990.py`. See
-[docs/COMPARISON.md → Convergence loops](docs/COMPARISON.md#convergence-loops-boilerplate-you-stop-writing).
+[docs/COMPARISON.md → Convergence loops](docs/COMPARISON.md#convergence-loops-a-built-in-fixed-tolerance).
 
 > **What `improving` and the rest actually mean.** For numbers the
 > trajectory words read the value's own motion (#861): `converged` is the
