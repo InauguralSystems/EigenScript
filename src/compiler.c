@@ -3906,14 +3906,28 @@ static int obs_ast_name_is_observer_builtin(const char *nm) {
  * tokens are data and are never searched for reader names. */
 static int obs_word_is_reader(const char *s, size_t n) {
     static const char *names[] = {
-        "what", "who", "when", "where", "why", "how", "prev", "at", "converged",
-        "stable", "improving", "oscillating", "diverging", "equilibrium",
+        "converged", "stable", "improving", "oscillating", "diverging", "equilibrium",
         "observe", "report", "report_value", "trajectory", "classify",
         "state_at", "get_observer_thresholds", "eval", "record_history", NULL
     };
     for (int i = 0; names[i]; i++)
         if (strlen(names[i]) == n && memcmp(s, names[i], n) == 0) return 1;
     return 0;
+}
+
+static int obs_word_is_interrogative(const char *s, size_t n) {
+    static const char *names[] = { "what", "who", "when", "where", "why", "how", NULL };
+    for (int i = 0; names[i]; i++)
+        if (strlen(names[i]) == n && memcmp(s, names[i], n) == 0) return 1;
+    return 0;
+}
+
+static const char *obs_skip_space(const char *p);
+static int obs_next_word_is(const char *p, const char *word) {
+    p = obs_skip_space(p);
+    size_t n = strlen(word);
+    return strncmp(p, word, n) == 0 &&
+           !(isalnum((unsigned char)p[n]) || p[n] == '_');
 }
 
 static const char *obs_skip_space(const char *p) {
@@ -4002,6 +4016,14 @@ static int obs_source_scan(const char *source, ObsLoadList *L) {
         while (isalnum((unsigned char)*p) || *p == '_') p++;
         size_t n = (size_t)(p - word);
         if (obs_word_is_reader(word, n)) return 1;
+        /* prev/at and the six question words are soft keywords.  The parser
+         * accepts them as ordinary binding names, so spelling alone is not an
+         * observer read: only `prev of` and `<question> is` begin the special
+         * forms.  `at` can only qualify an already-detected form. */
+        if (n == 4 && memcmp(word, "prev", 4) == 0 &&
+            obs_next_word_is(p, "of")) return 1;
+        if (obs_word_is_interrogative(word, n) &&
+            obs_next_word_is(p, "is")) return 1;
 
         if (n == 6 && memcmp(word, "import", 6) == 0) {
             const char *name = obs_skip_space(p), *end = name;

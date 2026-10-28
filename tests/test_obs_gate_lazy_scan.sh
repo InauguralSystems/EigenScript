@@ -52,6 +52,20 @@ printf '%s\n' "$plant" | grep -q 'obs-gate: observed' || fail "observer-reading 
 printf '%s\n' "$plant" | grep -q '^ok$' || fail "planted parent did not execute"
 ok "observer read in an uncalled function's literal module arms the gate"
 
+cat > "$TMP/soft_keywords.eigs" <<'EIGS'
+local at is 1
+local prev is 2
+EIGS
+cat > "$TMP/soft_host.eigs" <<EOF2
+define optional() as:
+    return load_file of "$TMP/soft_keywords.eigs"
+print of "ok"
+EOF2
+soft=$(EIGS_OBS_GATE_STATS=1 "$EIGS" "$TMP/soft_host.eigs" 2>&1)
+printf '%s\n' "$soft" | grep -q 'obs-gate: unobserved' || fail "soft-keyword bindings opened the gate"
+printf '%s\n' "$soft" | grep -q '^ok$' || fail "soft-keyword binding control did not execute"
+ok "observer soft keywords in binding positions leave the gate closed"
+
 gate_for() {
     module=$1
     cat > "$TMP/fstr_host.eigs" <<EOF2
