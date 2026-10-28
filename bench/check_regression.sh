@@ -13,7 +13,10 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 EIGS="${EIGENSCRIPT:-$DIR/../src/eigenscript}"
 BASELINE="${BASELINE_OVERRIDE:-$DIR/baseline.txt}"
 VALGRIND="${VALGRIND:-valgrind}"
-THRESHOLD_PCT=5
+THRESHOLD_PCT=0.5
+# Integer arithmetic keeps the boundary exact: 0.5 percent is 5 permille.
+# Keep this derived rather than maintaining a second threshold declaration.
+THRESHOLD_PERMILLE=$(awk -v pct="$THRESHOLD_PCT" 'BEGIN { printf "%.0f", pct * 10 }')
 
 ir_of() {  # ir_of <binary> <file> -> instruction count
     # Capture the producer before parsing it.  This is the standard portable
@@ -52,7 +55,7 @@ case "${1:-}" in
     printf 'total is 0\nfor i in range of 80000:\n    total is total + (i * 2) - 1\nprint of total\n' > "$tmp"
     doubled=$(ir_of "$EIGS" "$tmp") || { status=$?; rm -f "$tmp"; exit "$status"; }; rm -f "$tmp"
     inc=$(( (doubled - base) * 100 / base ))
-    if [ "$inc" -gt "$THRESHOLD_PCT" ]; then
+    if [ $(( (doubled - base) * 1000 )) -gt $(( THRESHOLD_PERMILLE * base )) ]; then
         echo "SELFTEST OK: a 2x-work pessimization is flagged (+${inc}% Ir > ${THRESHOLD_PCT}%)"
     else
         echo "SELFTEST FAILED: 2x pessimization not flagged (+${inc}%) — gate is vacuous"; exit 1
@@ -128,7 +131,7 @@ EOF
         a=$(ir_of "$EIGS" "$f") || exit $?
         b=$(ir_of "$ref" "$f") || exit $?
         inc=$(( (a - b) * 100 / b ))
-        if [ $(( (a - b) * 100 )) -gt $(( THRESHOLD_PCT * b )) ]; then
+        if [ $(( (a - b) * 1000 )) -gt $(( THRESHOLD_PERMILLE * b )) ]; then
             echo "  REGRESSION: $name  Ir ${b} -> ${a}  (+${inc}% > ${THRESHOLD_PCT}%)"; fail=1
         else
             echo "  ok: $name  Ir ${a}  (${inc}% vs ref)"
@@ -156,9 +159,9 @@ while read -r name base; do
     f="$DIR/$name.eigs"; [ -f "$f" ] || continue
     cur=$(ir_of "$EIGS" "$f") || exit $?
     inc=$(( (cur - base) * 100 / base ))
-    if [ $(( (cur - base) * 100 )) -gt $(( THRESHOLD_PCT * base )) ]; then
+    if [ $(( (cur - base) * 1000 )) -gt $(( THRESHOLD_PERMILLE * base )) ]; then
         echo "  REGRESSION: $name  Ir ${base} -> ${cur}  (+${inc}% > ${THRESHOLD_PCT}%)"; fail=1
-    elif [ $(( (cur - base) * 100 )) -lt $(( -THRESHOLD_PCT * base )) ]; then
+    elif [ $(( (cur - base) * 1000 )) -lt $(( -THRESHOLD_PERMILLE * base )) ]; then
         echo "  STALE BASELINE: $name  Ir ${base} -> ${cur}  (${inc}%, gate would be measuring less)"; stale=1
     else
         echo "  ok: $name  Ir ${cur}  (${inc}% vs baseline)"
