@@ -1,0 +1,5 @@
+define descend(n) as:
+    if n == 0:
+        return 0
+    return descend of [n - 1]
+descend of 100005

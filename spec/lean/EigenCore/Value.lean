@@ -5,7 +5,8 @@ inductive Value where
   | string (value : String)
   | bool (value : Bool)
   | null
-  | closure (name : String)
+  | array (values : List Value)
+  | closure (functionId : Nat) (name : String)
   deriving Repr, BEq, Inhabited
 
 /-- The byte representation used by the C VM's `print of`. -/
@@ -15,6 +16,7 @@ def Value.print : Value → String
   | .bool true => "true"
   | .bool false => "false"
   | .null => "null"
-  | .closure name => s!"<fn {name}>"
+  | .array values => "[" ++ String.intercalate ", " (values.map Value.print) ++ "]"
+  | .closure _ name => s!"<fn {name}>"
 
 end EigenCore

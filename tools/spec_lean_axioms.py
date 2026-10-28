@@ -1,30 +1,35 @@
 #!/usr/bin/env python3
-"""Check the declared theorem inventory against the allowed axiom set."""
+"""Derive EigenCore declarations and reject axioms outside the allowed set."""
 from pathlib import Path
-import re
-import subprocess
-import sys
-ROOT = Path(__file__).resolve().parents[1]
-TEST = ROOT / 'spec/lean/Tests/Axioms.lean'
-names = re.findall(r'^#print axioms\s+(\S+)', TEST.read_text(), re.M)
-if not names:
-    sys.exit('axiom gate: theorem list is empty')
-p = subprocess.run(['lake', 'env', 'lean', 'Tests/Axioms.lean'], cwd=ROOT/'spec/lean', text=True, capture_output=True)
-output = p.stdout + p.stderr
-if p.returncode:
-    print(output, end='', file=sys.stderr); sys.exit(p.returncode)
-allowed = {'propext', 'Classical.choice', 'Quot.sound'}
-reports = re.findall(r'(?:depends on )?axioms:\s*\[([^]]*)\]', output)
-seen = {
-    axiom.strip()
-    for report in reports
-    for axiom in report.split(',')
-    if axiom.strip()
-}
-unexpected = seen - allowed
-if unexpected:
-    sys.exit('axiom gate: unexpected axioms: ' + ', '.join(sorted(unexpected)))
-for name in names:
-    if name not in output:
-        sys.exit(f'axiom gate: no output for {name}')
-print(f'axiom gate: {len(names)} theorem(s), allowed axioms only')
+import re,subprocess,sys,tempfile
+ROOT=Path(__file__).resolve().parents[1]; LEAN=ROOT/'spec/lean'
+# Explicit theorem/lemma declarations are source-derived. Compiler-generated
+# implementation theorems are deliberately excluded from the public proof API.
+names=[]
+for path in sorted((LEAN/'EigenCore').glob('*.lean'))+[LEAN/'EigenCore.lean']:
+ text=re.sub(r'/-.*?-/','',path.read_text(),flags=re.S)
+ depth=[]
+ for line in text.splitlines():
+  if m:=re.match(r'\s*namespace\s+([\w.]+)',line):depth.append(m.group(1));continue
+  if re.match(r'\s*end(?:\s|$)',line):
+   if depth:depth.pop()
+   continue
+  if m:=re.match(r'\s*(?:private\s+)?(?:theorem|lemma)\s+([\w.]+)',line):
+   prefix='.'.join(depth); name=m.group(1); full=name if name.startswith('EigenCore.') else '.'.join(x for x in (prefix,name) if x)
+   if full.startswith('EigenCore.'):names.append(full)
+names=sorted(set(names))
+if not names:sys.exit('axiom gate: derived theorem population is empty')
+definitions=['EigenCore.evalExpr','EigenCore.run','EigenCore.tapeSerialize','EigenCore.tapeParse']
+with tempfile.NamedTemporaryFile('w',suffix='.lean',dir=LEAN/'Tests',delete=False) as f:
+ check=Path(f.name);f.write('import EigenCore\n'+''.join(f'#print axioms {x}\n' for x in names+definitions))
+try:p=subprocess.run(['lake','env','lean',str(check.relative_to(LEAN))],cwd=LEAN,text=True,capture_output=True)
+finally:check.unlink(missing_ok=True)
+out=p.stdout+p.stderr
+if p.returncode:print(out,end='',file=sys.stderr);sys.exit(p.returncode)
+allowed={'propext','Classical.choice','Quot.sound'}
+reports=re.findall(r'(?:depends on )?axioms:\s*\[([^]]*)\]',out)
+empty=len(re.findall(r'does not depend on any axioms',out))
+if len(reports)+empty!=len(names)+len(definitions):sys.exit(f'axiom gate: expected {len(names)+len(definitions)} reports, got {len(reports)+empty}')
+seen={a.strip() for report in reports for a in report.split(',') if a.strip()};unexpected=seen-allowed
+if unexpected:sys.exit('axiom gate: unexpected axioms: '+', '.join(sorted(unexpected)))
+print(f'axiom gate: {len(names)} derived theorem(s), {len(definitions)} evaluator/serializer definition(s), allowed axioms only')

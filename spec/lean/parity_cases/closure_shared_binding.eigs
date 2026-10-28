@@ -1,0 +1,10 @@
+define outer as:
+    local count is 0
+    define increment as:
+        count is count + 1
+        return count
+    define observe as:
+        return count
+    ignored is increment of null
+    return observe of null
+print of (outer of null)

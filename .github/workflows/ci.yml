@@ -202,6 +202,9 @@ jobs:
       - name: Compare eigs-ref with the C VM on the in-subset corpus
         if: needs.scope.outputs.spec == 'true'
         run: python3 tools/spec_lean_parity.py
+      - name: Prove the parity instrument detects planted faults
+        if: needs.scope.outputs.spec == 'true'
+        run: python3 tools/spec_lean_parity.py --selftest
 
   # Build the shared dev/CI image (.devcontainer/Dockerfile) and push it to
   # GHCR tagged to this commit. Every Linux leg below runs *inside* this image
