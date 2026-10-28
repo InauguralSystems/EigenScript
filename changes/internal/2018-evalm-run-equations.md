@@ -1,1 +1,0 @@
-- Document the concrete EvalM run equations used to audit answer/writer pairing proofs (#2018).

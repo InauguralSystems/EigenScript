@@ -1,1 +1,0 @@
-- Added the compositional `Paired` proof foundation for EigenCore tape-answer accounting (#2018).

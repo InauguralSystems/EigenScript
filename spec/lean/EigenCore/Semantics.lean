@@ -62,6 +62,53 @@ inductive TapedAnswer where
   | oracleExhausted (position : Nat)
   deriving Repr, BEq
 
+/-- The model position carried by every kind of supplied answer. -/
+def positionOf : TapedAnswer → Nat
+  | .value position _ _ | .replayError position _
+  | .replayExhausted position | .oracleExhausted position => position
+
+/-- Every answer is numbered consecutively from `start`. -/
+def WellPositioned : Nat → List TapedAnswer → Prop
+  | _, [] => True
+  | start, answer :: rest =>
+      positionOf answer = start ∧ WellPositioned (start + 1) rest
+
+@[simp] theorem wellPositioned_nil (start : Nat) : WellPositioned start [] := trivial
+
+@[simp] theorem wellPositioned_cons (start : Nat) (answer : TapedAnswer)
+    (rest : List TapedAnswer) :
+    WellPositioned start (answer :: rest) ↔
+      positionOf answer = start ∧ WellPositioned (start + 1) rest := Iff.rfl
+
+/-- Dropping `count` entries advances the required starting position. -/
+theorem WellPositioned.drop {start : Nat} {answers : List TapedAnswer}
+    (positioned : WellPositioned start answers) (count : Nat) :
+    WellPositioned (start + count) (answers.drop count) := by
+  induction count generalizing start answers with
+  | zero => simpa using positioned
+  | succ count ih =>
+      cases answers with
+      | nil => simp
+      | cons answer rest =>
+          have tail := ih positioned.2
+          simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using tail
+
+/-- Consecutively positioned lists compose exactly when the second list starts
+after the first list. -/
+theorem wellPositioned_append (start : Nat) (first second : List TapedAnswer) :
+    WellPositioned start (first ++ second) ↔
+      WellPositioned start first ∧ WellPositioned (start + first.length) second := by
+  induction first generalizing start with
+  | nil => simp
+  | cons answer rest ih =>
+      simp only [List.cons_append, wellPositioned_cons, List.length_cons]
+      rw [ih (start + 1)]
+      constructor
+      · rintro ⟨head, tail, secondPositioned⟩
+        exact ⟨⟨head, tail⟩, by simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using secondPositioned⟩
+      · rintro ⟨⟨head, tail⟩, secondPositioned⟩
+        exact ⟨head, tail, by simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using secondPositioned⟩
+
 /-- A taped operation is an explicit interaction, rather than an implicit read
 from evaluator state. -/
 structure TapedQuery where
@@ -590,6 +637,22 @@ private def normalizeTapeFrom (position : Nat) : List String → List TapedAnswe
         answer :: normalizeTapeFrom (position + 1) rest
     else normalizeTapeFrom position rest
 
+/-- Tape normalization numbers each emitted N record consecutively from its
+requested starting position. -/
+theorem wellPositioned_normalizeTapeFrom (start : Nat) (tape : List String) :
+    WellPositioned start (normalizeTapeFrom start tape) := by
+  induction tape generalizing start with
+  | nil => trivial
+  | cons line rest ih =>
+      simp only [normalizeTapeFrom]
+      split
+      · trivial
+      · split
+        · split
+          · simp [WellPositioned, positionOf, ih]
+          · simp [WellPositioned, positionOf, ih]
+        · exact ih start
+
 def normalizeTape (tape : List String) : List TapedAnswer :=
   normalizeTapeFrom 0 tape
 
@@ -735,6 +798,19 @@ theorem normalizeTape_error_position {tape : List String} {i p : Nat} {e : Err}
 
 private def oracleAnswers (oracle : List OracleValue) : List TapedAnswer :=
   oracle.zipIdx.map fun (value, position) => .value position "" value
+
+theorem wellPositioned_oracleZipIdx (start : Nat) (oracle : List OracleValue) :
+    WellPositioned start
+      (oracle.zipIdx start |>.map fun (value, position) => .value position "" value) := by
+  induction oracle generalizing start with
+  | nil => trivial
+  | cons value rest ih =>
+      simp [List.zipIdx, WellPositioned, positionOf, ih]
+
+/-- Oracle producers number their answers consecutively from zero. -/
+theorem wellPositioned_oracleAnswers (oracle : List OracleValue) :
+    WellPositioned 0 (oracleAnswers oracle) :=
+  wellPositioned_oracleZipIdx 0 oracle
 
 /-- Convert the value actually delivered to an `ask` continuation into the
 single writer-answer representation used both by execution and the N encoder. -/
@@ -1013,6 +1089,22 @@ theorem interpret_nil_consumed (tree : Interaction α) :
     (interpret tree []).consumed = 0 := by
   cases tree <;> rfl
 
+/-- Interpretation records exactly one delivered answer per consumed entry; an
+exhausted ask records and consumes nothing. -/
+theorem interpret_answers_length (tree : Interaction α) (supplied : List TapedAnswer) :
+    (interpret tree supplied).answers.length = (interpret tree supplied).consumed := by
+  induction tree generalizing supplied with
+  | done value => rfl
+  | ask query continuation ih =>
+      cases supplied with
+      | nil =>
+          simp only [interpret]
+          rw [ih (deliveredAnswer query (.oracleExhausted 0)) []]
+          exact interpret_nil_consumed _
+      | cons answer rest =>
+          simp only [interpret, List.length_cons]
+          rw [ih (deliveredAnswer query answer) rest]
+
 /-- Interpreting a bound interaction concatenates the answers observed by
 its two phases.  The second phase receives precisely the supplied suffix not
 consumed by the first. -/
@@ -1047,6 +1139,7 @@ pop, which re-throws the captured error; thus successful runs cannot discard an
 error path that consumed an answer. -/
 def Paired (m : EvalM α) : Prop :=
   ∀ (w0 : World) (supplied : List TapedAnswer),
+    WellPositioned w0.writerChunks.length supplied →
     let interpreted := interpret ((m.run).run w0) supplied
     ∀ value, interpreted.value.1 = .ok value →
       ∃ appended,
@@ -1056,6 +1149,7 @@ def Paired (m : EvalM α) : Prop :=
 /-- A pure computation neither changes writer chunks nor observes answers. -/
 theorem Paired_pure (value : α) : Paired (pure value : EvalM α) := by
   intro w0 supplied
+  intro positioned
   dsimp
   intro result successful
   change Except.ok value = Except.ok result at successful
@@ -1070,6 +1164,7 @@ theorem Paired_pure (value : α) : Paired (pure value : EvalM α) := by
 /-- A thrown error cannot have a successful interpretation. -/
 theorem Paired_throw (error : Err) : Paired (throw error : EvalM α) := by
   intro w0 supplied
+  intro positioned
   dsimp
   intro value successful
   change Except.error error = Except.ok value at successful
@@ -1078,6 +1173,7 @@ theorem Paired_throw (error : Err) : Paired (throw error : EvalM α) := by
 /-- Reading the world preserves chunks and performs no interaction. -/
 theorem Paired_get : Paired (get : EvalM World) := by
   intro w0 supplied
+  intro positioned
   dsimp
   intro value successful
   change Except.ok w0 = Except.ok value at successful
@@ -1088,6 +1184,14 @@ theorem Paired_get : Paired (get : EvalM World) := by
     simp
   · change [] = writerAnswersFrom w0.writerChunks.length []
     rfl
+
+/-- `writerAnswersFrom` emits one model answer for each writer chunk. -/
+theorem writerAnswersFrom_length (position : Nat) (chunks : List WriterChunk) :
+    (writerAnswersFrom position chunks).length = chunks.length := by
+  induction chunks generalizing position with
+  | nil => rfl
+  | cons chunk chunks ih =>
+      simp [writerAnswersFrom, ih]
 
 /-- Numbering writer answers across appended chunk lists advances by the
 length of the first list. -/
@@ -1108,6 +1212,7 @@ bind. -/
 theorem Paired_bind (m : EvalM α) (k : α → EvalM β) (pairedM : Paired m)
     (pairedK : ∀ value, Paired (k value)) : Paired (m >>= k) := by
   intro w0 supplied
+  intro positioned
   dsimp
   intro result successful
   let first := interpret ((m.run).run w0) supplied
@@ -1140,10 +1245,27 @@ theorem Paired_bind (m : EvalM α) (k : α → EvalM β) (pairedM : Paired m)
         first.answers ++ (interpret (((k value).run).run first.value.2)
           (supplied.drop first.consumed)).answers =
             writerAnswersFrom w0.writerChunks.length appended
-      have firstPaired := pairedM w0 supplied value firstValue
+      have firstPaired := pairedM w0 supplied positioned value firstValue
       obtain ⟨firstChunks, firstWorld, firstAnswers⟩ := firstPaired
       let remaining := supplied.drop first.consumed
-      have secondPaired := pairedK value first.value.2 remaining result successful
+      have remainingPositioned : WellPositioned first.value.2.writerChunks.length remaining := by
+        have dropped := positioned.drop first.consumed
+        have lengths := congrArg List.length firstWorld
+        have answerCount := interpret_answers_length ((m.run).run w0) supplied
+        change first.answers.length = first.consumed at answerCount
+        simp at lengths
+        have chunkCount : firstChunks.length = first.consumed := by
+          rw [firstAnswers, writerAnswersFrom_length] at answerCount
+          exact answerCount
+        have indexEqual : first.value.2.writerChunks.length =
+            w0.writerChunks.length + first.consumed := by
+          calc
+            _ = (w0.writerChunks ++ firstChunks).length := congrArg List.length firstWorld
+            _ = w0.writerChunks.length + firstChunks.length := by simp
+            _ = w0.writerChunks.length + first.consumed := by rw [chunkCount]
+        rw [indexEqual]
+        simpa [remaining] using dropped
+      have secondPaired := pairedK value first.value.2 remaining remainingPositioned result successful
       obtain ⟨secondChunks, secondWorld, secondAnswers⟩ := secondPaired
       refine ⟨firstChunks ++ secondChunks, ?_, ?_⟩
       · rw [secondWorld, firstWorld, List.append_assoc]
@@ -1158,6 +1280,7 @@ theorem Paired_modify (f : World → World)
     (preserves : ∀ world, (f world).writerChunks = world.writerChunks) :
     Paired (modify f : EvalM Unit) := by
   intro w0 supplied
+  intro positioned
   dsimp
   intro value successful
   change Except.ok () = Except.ok value at successful
@@ -1207,6 +1330,42 @@ theorem interpret_prefix_sufficient (tree : Interaction α) :
               (interpret (continuation (deliveredAnswer query answer)) rest).consumed < rest.length := by
             simpa using within
           rw [ih (deliveredAnswer query answer) rest others childWithin tails]
+
+/-- The two explicit exhaustion guards appended by `evaluateCore` continue the
+numbering of any already well-positioned supplied stream. -/
+theorem wellPositioned_withOracleExhaustion (answers : List TapedAnswer)
+    (positioned : WellPositioned 0 answers) :
+    WellPositioned 0 (answers ++
+      [.oracleExhausted answers.length, .oracleExhausted (answers.length + 1)]) := by
+  rw [wellPositioned_append]
+  exact ⟨positioned, by simp [WellPositioned, positionOf]
+    ⟩
+
+/-- The complete stream supplied by live and record modes, including core
+exhaustion guards, is positioned from zero. -/
+theorem wellPositioned_liveRecordSupplied (oracle : List OracleValue) :
+    WellPositioned 0 (oracleAnswers oracle ++
+      [.oracleExhausted (oracleAnswers oracle).length,
+       .oracleExhausted ((oracleAnswers oracle).length + 1)]) :=
+  wellPositioned_withOracleExhaustion _ (wellPositioned_oracleAnswers oracle)
+
+/-- Strict replay's replay-exhaustion entry and the two core guards all
+continue normalization's numbering. -/
+theorem wellPositioned_replaySupplied (tape : List String) :
+    let normalized := normalizeTape tape
+    WellPositioned 0
+      (normalized ++ [.replayExhausted normalized.length] ++
+        [.oracleExhausted (normalized.length + 1),
+         .oracleExhausted (normalized.length + 2)]) := by
+  dsimp
+  have normalized : WellPositioned 0 (normalizeTape tape) :=
+    wellPositioned_normalizeTapeFrom 0 tape
+  have replay : WellPositioned 0
+      (normalizeTape tape ++ [.replayExhausted (normalizeTape tape).length]) := by
+    rw [wellPositioned_append]
+    exact ⟨normalized, by simp [WellPositioned, positionOf]⟩
+  rw [wellPositioned_append]
+  exact ⟨replay, by simp [WellPositioned, positionOf]⟩
 
 /-- Evaluate with the canonical event stream.  No mode metadata enters the
 mutually recursive evaluator. -/
