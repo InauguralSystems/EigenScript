@@ -3906,7 +3906,7 @@ static int obs_ast_name_is_observer_builtin(const char *nm) {
  * tokens are data and are never searched for reader names. */
 static int obs_word_is_reader(const char *s, size_t n) {
     static const char *names[] = {
-        "what", "who", "when", "where", "why", "how", "converged",
+        "what", "who", "when", "where", "why", "how", "prev", "at", "converged",
         "stable", "improving", "oscillating", "diverging", "equilibrium",
         "observe", "report", "report_value", "trajectory", "classify",
         "state_at", "get_observer_thresholds", "eval", "record_history", NULL
@@ -3928,19 +3928,55 @@ static char *obs_copy_word(const char *s, size_t n) {
     return copy;
 }
 
-/* A no-allocation lexer for the few tokens the gate consumes.  It deliberately
- * rejects f-strings and escaped load paths instead of growing a second full
- * language lexer: rejection opens the gate, so it is always correctness-safe. */
+static int obs_source_scan(const char *source, ObsLoadList *L);
+
+/* Scan only f-string interpolations. The real lexer's one boundary predicate
+ * decides where each code segment ends; literal segments remain data. */
+static int obs_scan_fstring(const char **pp, ObsLoadList *L) {
+    const char *p = *pp + 2;
+    while (*p && *p != '"') {
+        if (*p == '\\') { if (p[1]) p += 2; else p++; continue; }
+        if (*p != '{') { p++; continue; }
+        int too_deep = 0;
+        const char *end = fstr_interp_end(p + 1, 0, &too_deep);
+        if (too_deep || *end != '}') return 1;
+        char *expr = obs_copy_word(p + 1, (size_t)(end - (p + 1)));
+        int opaque = obs_source_scan(expr, L);
+        free(expr);
+        if (opaque) return 1;
+        p = end + 1;
+    }
+    if (*p != '"') return 1;
+    *pp = p + 1;
+    return 0;
+}
+
+/* This byte class replaces strcspn: freestanding's libc contract deliberately
+ * does not include it. Designated entries keep the population reviewable. */
+static const unsigned char OBS_SCAN_BYTE[256] = {
+    ['#'] = 1, ['"'] = 1, ['f'] = 1, ['_'] = 1,
+    ['a'] = 1, ['b'] = 1, ['c'] = 1, ['d'] = 1, ['e'] = 1,
+    ['g'] = 1, ['h'] = 1, ['i'] = 1, ['j'] = 1, ['k'] = 1,
+    ['l'] = 1, ['m'] = 1, ['n'] = 1, ['o'] = 1, ['p'] = 1,
+    ['q'] = 1, ['r'] = 1, ['s'] = 1, ['t'] = 1, ['u'] = 1,
+    ['v'] = 1, ['w'] = 1, ['x'] = 1, ['y'] = 1, ['z'] = 1,
+    ['A'] = 1, ['B'] = 1, ['C'] = 1, ['D'] = 1, ['E'] = 1,
+    ['F'] = 1, ['G'] = 1, ['H'] = 1, ['I'] = 1, ['J'] = 1,
+    ['K'] = 1, ['L'] = 1, ['M'] = 1, ['N'] = 1, ['O'] = 1,
+    ['P'] = 1, ['Q'] = 1, ['R'] = 1, ['S'] = 1, ['T'] = 1,
+    ['U'] = 1, ['V'] = 1, ['W'] = 1, ['X'] = 1, ['Y'] = 1, ['Z'] = 1
+};
+
 static int obs_source_scan(const char *source, ObsLoadList *L) {
     const char *p = source;
     while (*p) {
-        /* Generated tables are overwhelmingly punctuation and digits.  Let the
-         * C library skip those runs in bulk rather than charging one branch per
-         * byte to an optional module's importer. */
-        p += strcspn(p, "#\"f_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ");
+        while (*p && !OBS_SCAN_BYTE[(unsigned char)*p]) p++;
         if (!*p) break;
         if (*p == '#') { while (*p && *p != '\n') p++; continue; }
-        if (*p == 'f' && p[1] == '"') return 1;
+        if (*p == 'f' && p[1] == '"') {
+            if (obs_scan_fstring(&p, L)) return 1;
+            continue;
+        }
         if (*p == '"') {
             p++;
             while (*p && *p != '"') {

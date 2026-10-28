@@ -743,8 +743,10 @@ function that is never called, since a `load_file` or `import` inside an
 uncalled function still contributes to the answer. Before #1873 each target
 was fully tokenized **and parsed** at import, so an optional module paid its
 complete parse cost even when its function was never called. It now costs one
-bounded, allocation-free lexical pass: strings and comments are skipped,
-observer-reading names arm the gate, and nested literal targets are followed;
+bounded lexical pass. Ordinary string and f-string literal segments are data;
+f-string interpolation boundaries come from the real lexer's boundary
+predicate, and their contents are scanned as code. Observer-reader names arm
+the gate, and nested literal targets are followed;
 the AST is built only if the load later executes. Measure the deterministic
 import cost with `valgrind --tool=cachegrind --cache-sim=no --branch-sim=no
 --cachegrind-out-file=out.cg src/eigenscript program.eigs`, then read the

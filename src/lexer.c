@@ -106,7 +106,7 @@ static int fstr_ident_char(char ch) {
            (ch >= '0' && ch <= '9') || ch == '_';
 }
 
-static const char *fstr_interp_end(const char *p, int nesting, int *too_deep);
+const char *fstr_interp_end(const char *p, int nesting, int *too_deep);
 
 /* p at the `f` of f"...": returns the position just past the closing quote. */
 static const char *fstr_skip_fstring(const char *p, int nesting, int *too_deep) {
@@ -130,7 +130,7 @@ static const char *fstr_skip_fstring(const char *p, int nesting, int *too_deep) 
 
 /* p just past an interpolation's `{`: returns the position of its matching
  * `}` (or the NUL terminator). */
-static const char *fstr_interp_end(const char *p, int nesting, int *too_deep) {
+const char *fstr_interp_end(const char *p, int nesting, int *too_deep) {
     const char *start = p;
     int depth = 1;
     while (*p) {
