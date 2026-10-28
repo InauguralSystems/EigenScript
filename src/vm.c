@@ -643,6 +643,14 @@ static inline void dict_cache_insert(Value *dict, uint32_t h, int idx) {
     ce[1].dict = dict; ce[1].hash = h; ce[1].index = idx;
 }
 
+/* #2146: a cached index may now name a removal TOMBSTONE (keys[idx] == NULL,
+ * #2020's compact-dict deletion). That is a cache miss, never a strcmp. */
+static inline __attribute__((always_inline)) int
+dict_cached_key_is(const Value *dict, int idx, const char *key) {
+    const char *stored = dict->data.dict.keys[idx];
+    return stored && (stored == key || strcmp(stored, key) == 0);
+}
+
 static inline __attribute__((always_inline)) EigsSlot
 vm_dict_slot_cached(Value *dict, const char *key, uint32_t h) {
     /* #1057: a module namespace is a LIVE VIEW of the module env, so its
@@ -655,11 +663,9 @@ vm_dict_slot_cached(Value *dict, const char *key, uint32_t h) {
         return dict_get_hashed_slot(dict, key, h, &found);  /* null when absent */
     }
     DictCacheEntry *ce = dict_cache_probe(dict, h);
-    if (ce && ce->index < dict->data.dict.used) {
-        const char *stored = dict->data.dict.keys[ce->index];
-        if (stored == key || strcmp(stored, key) == 0)
-            return dict_value_slot(dict, ce->index);
-    }
+    if (ce && ce->index < dict->data.dict.used &&
+        dict_cached_key_is(dict, ce->index, key))
+        return dict_value_slot(dict, ce->index);
     int idx = env_hash_find_dict(dict, key, h);
     if (idx >= 0) {
         dict_cache_insert(dict, h, idx);
@@ -674,14 +680,12 @@ static inline void dict_set_cached(Value *dict, const char *key, uint32_t h, Val
         return;
     }
     DictCacheEntry *ce = dict_cache_probe(dict, h);
-    if (ce && ce->index < dict->data.dict.used) {
-        const char *stored = dict->data.dict.keys[ce->index];
-        if (stored == key || strcmp(stored, key) == 0) {
-            /* Cache hit — update in place */
-            val_incref(val);
-            dict_value_set_slot_owned(dict, ce->index, slot_from_heap(val));
-            return;
-        }
+    if (ce && ce->index < dict->data.dict.used &&
+        dict_cached_key_is(dict, ce->index, key)) {
+        /* Cache hit — update in place */
+        val_incref(val);
+        dict_value_set_slot_owned(dict, ce->index, slot_from_heap(val));
+        return;
     }
     /* Cache miss — full set (populates hash table, cache stays stale until next get) */
     dict_set_hashed(dict, key, h, val);
@@ -697,14 +701,12 @@ dict_set_cached_immediate(Value *dict, const char *key, uint32_t h, double num) 
     if (__builtin_expect(dict->module_ns != 0, 0))
         return 0;                     /* #1057: never in-place on a mirror */
     DictCacheEntry *ce = dict_cache_probe(dict, h);
-    if (ce && ce->index < dict->data.dict.used) {
-        const char *stored = dict->data.dict.keys[ce->index];
-        if (stored == key || strcmp(stored, key) == 0) {
-            /* Slot storage (#1665 arm D B10): a cache hit is a plain
-             * slot store of the already-guarded immediate, whatever the
-             * field held before (the old occupant is released). */
-            return dict_value_rewrite_num(dict, ce->index, num);
-        }
+    if (ce && ce->index < dict->data.dict.used &&
+        dict_cached_key_is(dict, ce->index, key)) {
+        /* Slot storage (#1665 arm D B10): a cache hit is a plain
+         * slot store of the already-guarded immediate, whatever the
+         * field held before (the old occupant is released). */
+        return dict_value_rewrite_num(dict, ce->index, num);
     }
     return 0;
 }

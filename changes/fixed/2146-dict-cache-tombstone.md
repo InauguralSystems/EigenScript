@@ -1,0 +1,1 @@
+- Reading or writing a dict field after `dict_remove` of that key no longer crashes: the field cache treats a removal tombstone as a miss (#2146).
