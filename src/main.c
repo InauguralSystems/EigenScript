@@ -11,6 +11,7 @@
 #include "repl.h"
 
 #ifdef EIGS_TSAN_TEST_SEAM
+#include <errno.h>
 #include <pthread.h>
 #include <stdatomic.h>
 
@@ -78,6 +79,70 @@ static int tsan_seeded_race_control(void) {
         return 2;
     return 0;
 }
+
+/* #2129: deterministic positive/clean control for #2090's env-count read.
+ * The relaxed rendezvous guarantees that the reader has accessed count before
+ * the writer appends, but deliberately gives TSan no happens-before edge. */
+typedef struct {
+    EigsState *state;
+    Env *env;
+    atomic_int reader_started;
+    atomic_int writer_done;
+} TSanEnvCountControl;
+
+static void *tsan_env_count_reader(void *opaque) {
+    TSanEnvCountControl *control = opaque;
+    eigs_thread_attach(control->state);
+    (void)env_count_shared(control->env);
+    atomic_store_explicit(&control->reader_started, 1, memory_order_relaxed);
+    while (!atomic_load_explicit(&control->writer_done,
+                                 memory_order_relaxed))
+        (void)env_count_shared(control->env);
+    eigs_thread_detach();
+    return NULL;
+}
+
+static void *tsan_env_count_writer(void *opaque) {
+    TSanEnvCountControl *control = opaque;
+    eigs_thread_attach(control->state);
+    while (!atomic_load_explicit(&control->reader_started,
+                                 memory_order_relaxed)) { }
+    Value *value = make_num(2129);
+    env_set_local_hashed(control->env, "issue_2129", 0, value);
+    val_decref(value);
+    atomic_store_explicit(&control->writer_done, 1, memory_order_relaxed);
+    eigs_thread_detach();
+    return NULL;
+}
+
+static int tsan_compiler_env_count_control(void) {
+    EigsState *state = eigs_state_new();
+    eigs_thread_attach(state);
+    state->multithreaded = 1;
+    TSanEnvCountControl control = {
+        .state = state,
+        .env = env_new(NULL),
+        .reader_started = ATOMIC_VAR_INIT(0),
+        .writer_done = ATOMIC_VAR_INIT(0),
+    };
+    pthread_t reader, writer;
+    int rc = 0;
+    if (pthread_create(&reader, NULL, tsan_env_count_reader, &control) != 0) {
+        rc = 2;
+    } else if (pthread_create(&writer, NULL, tsan_env_count_writer,
+                              &control) != 0) {
+        atomic_store_explicit(&control.writer_done, 1, memory_order_relaxed);
+        (void)pthread_join(reader, NULL);
+        rc = 2;
+    } else if (pthread_join(reader, NULL) != 0 ||
+               pthread_join(writer, NULL) != 0) {
+        rc = 2;
+    }
+    env_decref(control.env);
+    eigs_thread_detach();
+    eigs_state_destroy(state);
+    return rc;
+}
 #endif
 
 #ifndef EIGENSCRIPT_VERSION
@@ -111,7 +176,27 @@ int main(int argc, char **argv) {
         return tsan_seeded_race_control();
     if (getenv("EIGS_TSAN_MISORDERED_PUBLISH_CONTROL"))
         return tsan_misordered_publish_control();
+    if (getenv("EIGS_TSAN_COMPILER_ENV_COUNT_CONTROL"))
+        return tsan_compiler_env_count_control();
 #endif
+    /* EIGS_SEED_RANDOM=<integer> (#2120): seed the shared random stream before
+     * any program code runs, through seed_random's own path, so every run with
+     * one value draws one sequence (differential testing, reproduction). A
+     * malformed value is a startup error here: never a silent fallback to the
+     * clock, and never an exit from inside the runtime, which embedders share. */
+    {
+        const char *seed_env = getenv("EIGS_SEED_RANDOM");
+        if (seed_env && *seed_env) {   /* empty means unset, as for EIGS_* flags */
+            char *end = NULL;
+            errno = 0;
+            long seed = strtol(seed_env, &end, 10);
+            if (errno == ERANGE || end == seed_env || *end != '\0') {
+                fprintf(stderr, "EIGS_SEED_RANDOM: invalid integer: %s\n", seed_env);
+                return 2;
+            }
+            eigs_seed_random(seed);
+        }
+    }
     /* #413: a bundled binary (appended archive, trailer magic) extracts
      * itself and rewrites argv to run the extracted script — before ANY
      * flag handling, because in bundle mode the arguments belong to the

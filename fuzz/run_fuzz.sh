@@ -2,16 +2,18 @@
 # EigenScript fuzz smoke: edge cases, adversarial inputs and the curated corpus,
 # each run once through the libFuzzer target's per-input body under ASan+UBSan
 # (fuzz/fuzz_stdin, built by `make fuzz`). Leak detection is on (#1734): an
-# input FAILS on any AddressSanitizer or LeakSanitizer report, or on an exit
-# other than 0/1. UBSan reports are not read (the program's stderr is dropped).
+# input FAILS on any AddressSanitizer, LeakSanitizer, or UBSan report, or on an
+# exit other than 0/1.
 #
 #   bash fuzz/run_fuzz.sh               the smoke
 #   bash fuzz/run_fuzz.sh --plant-leak  only the planted leak (#1734): one input
 #                                       that really leaks, which MUST fail
+#   bash fuzz/run_fuzz.sh --plant-ubsan only the planted UB (#2097): one input
+#                                      that overflows, which MUST fail
 
 case "${1:-}" in
-    ""|--plant-leak) ;;
-    *) echo "usage: bash fuzz/run_fuzz.sh [--plant-leak]"; exit 2 ;;
+    ""|--plant-leak|--plant-ubsan) ;;
+    *) echo "usage: bash fuzz/run_fuzz.sh [--plant-leak|--plant-ubsan]"; exit 2 ;;
 esac
 
 cd "$(dirname "$0")/.." || exit 1
@@ -35,6 +37,9 @@ fi
 WORK=$(mktemp -d /tmp/fuzz_XXXXXX) || exit 1
 trap 'rm -rf "$WORK"' EXIT
 export ASAN_OPTIONS="${ASAN_OPTIONS:+$ASAN_OPTIONS:}detect_leaks=1:log_path=$WORK/asan"
+# GCC's UBSan is a separate runtime and does not honor ASan's log_path. Its
+# recoverable diagnostics go to stderr, captured per input below and fed to
+# the existing classifier together with ASan's log; one policy decides both.
 
 PASS=0
 FAIL=0
@@ -43,9 +48,10 @@ FAIL=0
 run_case() {
     local name="$1" file="$2" rc report
     rm -f "$WORK"/asan.*
-    timeout 30 "$FUZZ" < "$file" >/dev/null 2>&1
+    : > "$WORK/ubsan.stderr"
+    timeout 30 "$FUZZ" < "$file" >/dev/null 2>"$WORK/ubsan.stderr"
     rc=$?
-    report=$(cat "$WORK"/asan.* 2>/dev/null)
+    report=$(cat "$WORK"/asan.* "$WORK/ubsan.stderr" 2>/dev/null)
     lsan_classify "$report"
     case $? in
         0) echo "  FAIL: $name (LeakSanitizer)" ;;
@@ -94,8 +100,17 @@ if [ "${1:-}" = --plant-leak ]; then
     fuzz_test "plant: orphaned make_dict" 'fuzz_leak_plant of null'
     finish
 fi
+if [ "${1:-}" = --plant-ubsan ]; then
+    # A recoverable signed overflow must still fail through the same report
+    # read-back and classifier as every ordinary fuzz input.
+    export EIGS_FUZZ_UBSAN_PLANT=1
+    echo "Plant:"
+    fuzz_test "plant: signed integer overflow" 'fuzz_ubsan_plant of null'
+    finish
+fi
 # A switch inherited from the caller must not bind the plant in the smoke.
 unset EIGS_FUZZ_LEAK_PLANT
+unset EIGS_FUZZ_UBSAN_PLANT
 
 echo "=== EigenScript Fuzz Tests ==="
 echo ""
