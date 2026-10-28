@@ -1,0 +1,6 @@
+define maker(value) as:
+    define read as:
+        return value
+    return read
+saved is maker of 23
+print of (saved of null)

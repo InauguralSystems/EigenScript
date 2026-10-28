@@ -1,0 +1,3 @@
+define identity(x) as:
+    return x
+print of (identity of ["a", "b"])

@@ -1,0 +1,1 @@
+- `exit of N` in a joinable or detached cooperative task now stops the evaluation immediately with status N without poisoning the next evaluation's error handling (#1806).

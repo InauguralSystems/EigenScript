@@ -1,0 +1,3 @@
+define identity(x) as:
+    return x
+packed is identity of [1, 2]

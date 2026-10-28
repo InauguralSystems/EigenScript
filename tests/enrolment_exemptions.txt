@@ -4,3 +4,5 @@ tests/test_gc_runner_controls.py | manual deferred control for the GC traversal 
 tools/builtin_usage.sh | maintainer-only source audit that reports builtin use sites; it is not an executable CI check
 tools/doc_coupling_hook.sh | optional local Git pre-commit hook installed by a contributor, not a CI entry point
 tools/mutants.sh | manual mutation-train driver documented in concurrency and trace guides; individual product tests run in CI
+tests/test_gfx_utf8_title.eigs | alternate oracle: test_gfx_utf8_title.sh checks WM_NAME and _NET_WM_NAME on the live X11 window, covering the fixture's sole "X11 window opens" assertion
+tests/test_variant_stdlib.eigs | alternate oracle: 18f-variant-stdlib-1679.sh runs a byte-for-byte temporary copy from outside the checkout and requires rc 0 plus its exact Tests: 1 | Pass: 1 | Fail: 0 summary, covering the fixture's stdlib-load assertion

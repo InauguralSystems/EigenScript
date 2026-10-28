@@ -870,6 +870,19 @@ freestanding-libc-diff-riscv:
 		src/freestanding/mini_fmt.c src/freestanding/mini_strtod.c -lm
 	qemu-riscv64 /tmp/eigs_libc_diff-riscv64 --fenv-only
 
+# #1984: run #1674's old-2^32-boundary row on the actual 32-bit target.  The
+# target is hosted musl solely so qemu can execute it; the symbol gate above
+# checks the freestanding link and its kernel/compiler-runtime disposition.
+freestanding-env-version-riscv32:
+	python3 -m ziglang cc -target riscv32-linux-musl -O2 -static \
+		-Wno-atomic-alignment -DEIGENSCRIPT_EXT_HTTP=0 \
+		-DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
+		-o /tmp/eigenscript-riscv32 $(SOURCES) -lm -lpthread
+	printf '%s\n' '#!/bin/sh' 'exec qemu-riscv32 /tmp/eigenscript-riscv32 "$$@"' > /tmp/eigenscript-riscv32-qemu
+	chmod +x /tmp/eigenscript-riscv32-qemu
+	BOOL_FUZZ_VCAP=unlimited EIGS_ENV_VERSION_SEED=4294967290 \
+		bash tests/test_bool_fuzz.sh /tmp/eigenscript-riscv32-qemu
+
 # Ordinary strict-shape descriptor producer; reuse the owning embed objects.
 # This file target does not relink the CLI alias.
 build/$(EMBED_OBSERVER_VARIANT)/strict_shape_descriptor: tests/strict_shape_descriptor.c $(EMBED_OBSERVER_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt

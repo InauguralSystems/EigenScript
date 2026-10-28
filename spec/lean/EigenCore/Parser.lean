@@ -56,6 +56,12 @@ private def splitTopLevel (source marker : String) : List String :=
         scan fuel rest (c :: current) parts nextParen nextBracket nextString nextEscaped
   scan (source.length + 1) source.toList [] [] 0 0 false false
 
+private def firstTopLevelOperation (source : String) (operations : List (String × BinOp)) :
+    Option (List String × BinOp) :=
+  operations.findSome? fun (marker, op) =>
+    let parts := splitTopLevel source marker
+    if parts.length > 1 then some (parts, op) else none
+
 private def atom (s : String) : Except String Expr :=
   let t := trim s
   if ["break", "continue", "return", "try", "catch", "for", "import"].contains t then
@@ -70,21 +76,38 @@ private def atom (s : String) : Except String Expr :=
     | some n => if n.natAbs < 9007199254740992 then pure (.literal (.int n)) else throw "integer literal outside |n| < 2^53"
     | none => if validIdent t then pure (.variable t) else throw "not yet modeled"
 
+private def matchingOuter (opener closer : Char) (source : String) : Bool :=
+  let chars := source.toList
+  let rec loop : List Char → Nat → Bool → Bool → Bool
+    | [], depth, _, _ => depth == 0
+    | c :: rest, depth, quoted, escaped =>
+      if quoted then loop rest depth (c != '"' || escaped) (c == '\\' && !escaped)
+      else if c == '"' then loop rest depth true false
+      else if c == opener then loop rest (depth + 1) false false
+      else if c == closer then
+        if depth == 1 then rest.isEmpty else depth > 1 && loop rest (depth - 1) false false
+      else loop rest depth false false
+  chars.head? == some opener && loop chars 0 false false
+
 private def expressionFuel : Nat → String → Except String Expr
   | 0, _ => throw "expression nesting limit"
   | fuel + 1, source =>
     let t := trim source
     if t.startsWith "what is " then throw "discarded interrogative"
-    else if t.startsWith "(" && t.endsWith ")" then expressionFuel fuel ((t.drop 1).dropEnd 1).toString
+    else if matchingOuter '(' ')' t then expressionFuel fuel ((t.drop 1).dropEnd 1).toString
+    else if matchingOuter '[' ']' t then do
+      let inside := trim ((t.drop 1).dropEnd 1).toString
+      let values ← if inside.isEmpty then pure [] else (splitTopLevel inside ",").mapM (expressionFuel fuel)
+      pure (.array values)
     else
       -- `or`, then `and`, then `not`, then comparisons (#1648).  Looking
       -- for the lower-precedence binary words before the prefix is what makes
       -- `not true and false` split as `(not true) and false`, while delaying
       -- every comparison until after the prefix makes `not 1 < 2` negate it.
       let logic : List (String × BinOp) := [(" or ", .or), (" and ", .and)]
-      match logic.find? (fun p => (splitTopLevel t p.1).length > 1) with
-      | some (marker, op) =>
-        match splitTopLevel t marker with
+      match firstTopLevelOperation t logic with
+      | some (parts, op) =>
+        match parts with
         | [a, b] => do pure (.binary op (← expressionFuel fuel a) (← expressionFuel fuel b))
         | _ => throw "not yet modeled"
       | none =>
@@ -103,9 +126,9 @@ private def expressionFuel : Nat → String → Except String Expr
           let operations : List (String × BinOp) :=
             [(" == ", .eq), (" != ", .ne), (" <= ", .le), (" >= ", .ge),
              (" < ", .lt), (" > ", .gt), (" + ", .add), (" - ", .sub), (" * ", .mul)]
-          match operations.find? (fun p => (splitTopLevel t p.1).length > 1) with
-          | some (marker, op) =>
-            match splitTopLevel t marker with
+          match firstTopLevelOperation t operations with
+          | some (parts, op) =>
+            match parts with
             | [a, b] => do pure (.binary op (← operand a) (← operand b))
             | _ => throw "not yet modeled"
           | none =>
@@ -113,7 +136,14 @@ private def expressionFuel : Nat → String → Except String Expr
             -- Since lower-precedence operators were split above, they apply
             -- to the result of this call rather than being swallowed by it.
             match splitTopLevel t " of " with
-            | [fn, arg] => do pure (.call (← operand fn) [← operand arg])
+            | [fn, arg] =>
+              let packed := trim arg
+              if matchingOuter '[' ']' packed then do
+                let inside := trim ((packed.drop 1).dropEnd 1).toString
+                let values ← if inside.isEmpty then pure [] else
+                  (splitTopLevel inside ",").mapM (expressionFuel fuel)
+                pure (.call (← operand fn) values)
+              else do pure (.call (← operand fn) [← operand arg])
             | _ => atom t
 
 private def expression (s : String) : Except String Expr := expressionFuel (s.length + 1) s
@@ -158,7 +188,7 @@ private def simple (line : SourceLine) : Except Outside Stmt :=
         let value ← expression line.contents
         -- `print of x` is ordinary expression-level `of` syntax.  Only a
         -- whole-line print call is represented by the statement node; a call
-        -- nested in `print of x and y` remains an expression and returns x.
+        -- nested in `print of x and y` remains an expression and returns null.
         match value with
         | .call (.variable "print") [argument] => pure (.print argument)
         | _ => pure (.expression value)
@@ -172,7 +202,7 @@ private def definitionSignature (signature : String) : Except String (String × 
   match signature.splitOn "(" with
   | [name] =>
     let name := trim name
-    if validIdent name then pure (name, []) else throw "function definition"
+    if validIdent name then pure (name, ["n"]) else throw "function definition"
   | [name, parameters] => do
     if !parameters.endsWith ")" then throw "function definition"
     let name := trim name
@@ -250,44 +280,115 @@ def parse (source : String) : Except Outside Program := do
     | some line => throw ⟨"unparsed input", line.number⟩
     | none => throw ⟨"unparsed input", 1⟩
 
-private def unsupportedExpr : Expr → Option String
-  | .literal _ | .when _ => none
-  | .variable name =>
+private def unsupportedExpr (functions : List String) : Nat → Expr → Option String
+  | 0, _ => some "support-check nesting limit"
+  | _, .literal _ | _, .when _ => none
+  | _, .variable name =>
       if name == "converged" || name == "__loop_exit__" || name == "__loop_iterations__" then
         some s!"builtin {name}"
       else none
-  | .binary _ left right => unsupportedExpr left |>.orElse (fun _ => unsupportedExpr right)
-  | .not value => unsupportedExpr value
-  | .call (.variable "print") [value] => unsupportedExpr value
-  | .call (.variable name) _ =>
+  | fuel + 1, .binary _ left right => unsupportedExpr functions fuel left |>.orElse (fun _ => unsupportedExpr functions fuel right)
+  | fuel + 1, .not value => unsupportedExpr functions fuel value
+  | _, .array _ => some "array literal"
+  | fuel + 1, .call (.variable "print") [value] => unsupportedExpr functions fuel value
+  | fuel + 1, .call (.variable name) arguments =>
       if ["converged", "loop_iterations", "loop_exit"].contains name then
         some s!"builtin {name}"
-      else
-        some "function call"
-  | .call _ _ => some "function call"
-  | .prev _ => some "prev"
-  | .whatWhen _ _ => some "what-when"
+      else if functions.contains name || name.startsWith "undefined_" then
+        arguments.findSome? (unsupportedExpr functions fuel)
+      else some s!"call to unmodeled function {name}"
+  | fuel + 1, .call function arguments =>
+      unsupportedExpr functions fuel function |>.orElse (fun _ => arguments.findSome? (unsupportedExpr functions fuel))
+  | _, .prev _ => some "prev"
+  | _, .whatWhen _ _ => some "what-when"
 
-private def unsupportedStmts : Nat → List Stmt → Option String
+private def unsupportedStmts (functions : List String) (insideFunction : Bool) : Nat → List Stmt → Option String
   | 0, _ => some "support-check nesting limit"
   | _, [] => none
   | fuel + 1, statement :: rest =>
       let here := match statement with
         | .assign _ value _ | .print value | .return_ value | .expression value =>
-            unsupportedExpr value
+            unsupportedExpr functions fuel value
         | .branch condition yes elifs otherwise =>
-            unsupportedExpr condition
-              |>.orElse (fun _ => unsupportedStmts fuel yes)
+            unsupportedExpr functions fuel condition
+              |>.orElse (fun _ => unsupportedStmts functions insideFunction fuel yes)
               |>.orElse (fun _ => elifs.findSome? fun (arm : Expr × List Stmt) =>
-                unsupportedExpr arm.1 |>.orElse (fun _ => unsupportedStmts fuel arm.2))
-              |>.orElse (fun _ => otherwise.bind (unsupportedStmts fuel))
+                unsupportedExpr functions fuel arm.1 |>.orElse (fun _ => unsupportedStmts functions insideFunction fuel arm.2))
+              |>.orElse (fun _ => otherwise.bind (unsupportedStmts functions insideFunction fuel))
         | .loop condition body =>
-            unsupportedExpr condition |>.orElse (fun _ => unsupportedStmts fuel body)
-        | .define _ _ _ => some "function definition"
-      here.orElse (fun _ => unsupportedStmts fuel rest)
+            unsupportedExpr functions fuel condition |>.orElse (fun _ => unsupportedStmts functions insideFunction fuel body)
+        | .define _ parameters body =>
+            if parameters.length > 16 then some "function exceeds 16 parameters"
+            else unsupportedStmts functions true fuel body
+      here.orElse (fun _ => unsupportedStmts functions insideFunction fuel rest)
+
+/-- A non-local assignment in a function is function-local in C when a nested
+function captures that name.  Until EigenCore models that compiler routing,
+keep this shape outside the modeled subset rather than writing through to an
+enclosing environment. -/
+private def hasCapturedAssignment (parameters : List String) : Nat → List Stmt → Bool
+  | 0, _ => false
+  | _, [] => false
+  | fuel + 1, statements =>
+    let rec exprNames : Expr → List String
+      | .variable name | .when name | .prev name => [name]
+      | .literal _ => []
+      | .binary _ left right => exprNames left ++ exprNames right
+      | .not value => exprNames value
+      | .array values => values.flatMap exprNames
+      | .call function arguments => exprNames function ++ arguments.flatMap exprNames
+      | .whatWhen name ordinal => name :: exprNames ordinal
+    let rec stmtNames : Nat → List Stmt → List String
+      | 0, _ | _, [] => []
+      | n + 1, statement :: rest =>
+        let here := match statement with
+          | .assign _ value _ | .print value | .return_ value | .expression value => exprNames value
+          | .branch condition yes elifs otherwise =>
+              exprNames condition ++ stmtNames n yes ++ elifs.flatMap (stmtNames n ∘ Prod.snd) ++
+                otherwise.toList.flatMap (stmtNames n)
+          | .loop condition body => exprNames condition ++ stmtNames n body
+          | .define _ _ body => stmtNames n body
+        here ++ stmtNames n rest
+    let nestedReferences := statements.flatMap fun statement => match statement with
+      | .define _ _ body => stmtNames fuel body
+      | _ => []
+    let localNames := parameters ++ statements.filterMap fun statement => match statement with
+      | .assign name _ true => some name
+      | _ => none
+    let directCapturedWrite := statements.any fun statement => match statement with
+      | .assign name _ false => nestedReferences.contains name && !localNames.contains name
+      | _ => false
+    directCapturedWrite || statements.any fun statement => match statement with
+      | .define _ nestedParameters body => hasCapturedAssignment nestedParameters fuel body
+      | .loop _ body => hasCapturedAssignment parameters fuel body
+      | .branch _ yes elifs otherwise =>
+          hasCapturedAssignment parameters fuel yes ||
+            elifs.any (hasCapturedAssignment parameters fuel ∘ Prod.snd) ||
+            otherwise.any (hasCapturedAssignment parameters fuel)
+      | _ => false
 
 /-- The single support predicate used by both classification and evaluation. -/
-def unsupportedConstruct (program : Program) : Option String := unsupportedStmts 100000 program
+def unsupportedConstruct (program : Program) : Option String :=
+  let rec callableNames : Nat → List Stmt → List String
+    | 0, _ => []
+    | _, [] => []
+    | fuel + 1, statement :: rest =>
+      let here := match statement with
+        | .define name _ body => name :: callableNames fuel body
+        -- A stored return value is the surface form used for returned closures.
+        | .assign name (.call _ _) _ => [name]
+        | .branch _ yes elifs otherwise =>
+            callableNames fuel yes ++ elifs.flatMap (callableNames fuel ∘ Prod.snd) ++
+              otherwise.toList.flatMap (callableNames fuel)
+        | .loop _ body => callableNames fuel body
+        | _ => []
+      here ++ callableNames fuel rest
+  let functions := callableNames 100000 program
+  if program.any fun statement => match statement with
+      | .define _ parameters body => hasCapturedAssignment parameters 100000 body
+      | _ => false then
+    some "assignment to a name captured by a nested function is not yet modeled"
+  else unsupportedStmts functions false 100000 program
 
 def classifyModeled (source : String) : Classification :=
   match parse source with
@@ -296,12 +397,34 @@ def classifyModeled (source : String) : Classification :=
       -- parity must execute it and compare the C/Lean error exit classes.
       if why.construct.startsWith "unexpected 'not' in expression" then .inSubset else .out why
   | .ok program => match unsupportedConstruct program with
-    | some construct => .out ⟨s!"unsupported in EigenCore-0 step 2a: {construct}", 1⟩
+    | some construct => .out ⟨s!"unsupported in EigenCore-0 step 2b-iii: {construct}", 1⟩
     | none => .inSubset
 
 def classify (source : String) : Classification :=
   match parse source with
-  | .ok _ => .inSubset
+  | .ok program =>
+    -- Array literals are recognized only so nested call argument packs can be
+    -- delimited.  They remain outside the step-1 language on their own.
+    let rec standaloneArrayExpr : Expr → Bool
+      | .array _ => true
+      | .binary _ left right => standaloneArrayExpr left || standaloneArrayExpr right
+      | .not value => standaloneArrayExpr value
+      | .call _ _ => false
+      | _ => false
+    let rec standaloneArrayStmts : Nat → List Stmt → Bool
+      | 0, _ => false
+      | _, [] => false
+      | fuel + 1, statement :: rest =>
+        let here := match statement with
+          | .assign _ value _ | .print value | .return_ value | .expression value => standaloneArrayExpr value
+          | .branch condition yes elifs otherwise =>
+            standaloneArrayExpr condition || standaloneArrayStmts fuel yes ||
+              elifs.any (fun arm => standaloneArrayExpr arm.1 || standaloneArrayStmts fuel arm.2) ||
+              otherwise.any (standaloneArrayStmts fuel)
+          | .loop condition body => standaloneArrayExpr condition || standaloneArrayStmts fuel body
+          | .define _ _ body => standaloneArrayStmts fuel body
+        here || standaloneArrayStmts fuel rest
+    if standaloneArrayStmts 100000 program then .out ⟨"not yet modeled", 1⟩ else .inSubset
   | .error why =>
       if why.construct.startsWith "unexpected 'not' in expression" then .inSubset else .out why
 

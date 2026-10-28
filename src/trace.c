@@ -920,6 +920,7 @@ static void tape_unlock(void) { pthread_mutex_unlock(&g_tape_mu); }
 static void replay_take_lock(void)   { tape_lock(); }
 static void replay_take_unlock(void) { tape_unlock(); }
 static int  trace_out_active(void);
+static int trace_nondet_value_locked(const char *fn, Value *v);
 
 /* ----- Record staging and the tape output buffer.
  *
@@ -1151,21 +1152,27 @@ static void out_reserve(size_t add) {
 /* Begin/end a record. tape_emit_begin takes the tape mutex and re-checks
  * activity under it, so a concurrent shutdown (which stores g_trace_fp /
  * g_trace_sink under the same lock) cannot tear a record. */
+static int tape_emit_begin_locked(void) {
+    if (!trace_out_active()) {
+        return 0;
+    }
+    g_emit_stream = recording_binding_locked();
+    if (!g_emit_stream) {
+        return 0;
+    }
+    g_rec_at = g_out_len;
+    return 1;
+}
+
 static int tape_emit_begin(void) {
     /* ACQUIRE load; pairs with trace_enabled_store under the lock. Cheap
      * gate so a program with no tape never touches the mutex. */
     if (!g_trace_enabled) return 0;
     tape_lock();
-    if (!trace_out_active()) {
+    if (!tape_emit_begin_locked()) {
         tape_unlock();
         return 0;
     }
-    g_emit_stream = recording_binding_locked();
-    if (!g_emit_stream) {
-        tape_unlock();
-        return 0;
-    }
-    g_rec_at = g_out_len;
     return 1;
 }
 
@@ -2750,6 +2757,18 @@ int trace_replay_take(const char *fn, Value **out) {
 #endif
         }
     }
+    /* A served value is this run's external input.  When recording and
+     * replaying together, copy it into the new tape while the shared tape
+     * lock still orders the take.  The recorded name, rather than a leniently
+     * mismatched caller name, preserves the input stream exactly. */
+    if (v && g_trace_enabled && tape_emit_begin_locked()) {
+        trace_nondet_value_locked(hit->name, v);
+        tape_emit_end();
+        /* tape_emit_end released the lock acquired by replay_take_lock. */
+        free(hit->name); free(hit->value); free(hit);
+        *out = v;
+        return 1;
+    }
     free(hit->name); free(hit->value); free(hit);
     if (!v) { replay_take_unlock(); return 0; }
     *out = v;
@@ -3182,6 +3201,16 @@ static int write_value_ptr_full(strbuf *buf, Value *v, int *budget,
 
 void trace_nondet_value(const char *fn, Value *v) {
     if (!tape_emit_begin()) return;
+    int recorded = trace_nondet_value_locked(fn, v);
+    tape_emit_end();
+    if (recorded < 0)
+        rt_error(EK_VALUE, 0, "trace record '%s' contains a container cycle; refusing to record",
+                 fn ? fn : "?");
+}
+
+/* Returns 1 when emitted, 0 for an unencodable marker, -1 for a cycle.
+ * The caller must release the tape lock before raising for -1. */
+static int trace_nondet_value_locked(const char *fn, Value *v) {
     obs_cfg_sync();
     if (!fn) fn = "?";
     strbuf buf;
@@ -3190,11 +3219,9 @@ void trace_nondet_value(const char *fn, Value *v) {
     int acyclic = write_value_ptr_full(&buf, v, &budget, NULL);
     if (!acyclic) {
         strbuf_free(&buf);
-        tape_emit_end();
-        rt_error(EK_VALUE, 0, "trace record '%s' contains a container cycle; refusing to record", fn);
-        return;
+        return -1;
     }
-    if (buf.refused) { strbuf_free(&buf); tape_emit_end(); return; }
+    if (buf.refused) { strbuf_free(&buf); return 0; }
     emit_scope_transition();
     size_t off = 0;
     emit_tag("N");
@@ -3210,5 +3237,5 @@ void trace_nondet_value(const char *fn, Value *v) {
     }
     strbuf_free(&buf);
     g_emit_stream->line_dirty = 1;
-    tape_emit_end();
+    return 1;
 }

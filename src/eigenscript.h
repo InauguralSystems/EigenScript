@@ -2366,6 +2366,7 @@ char* eigs_json_encode(Value *v);
  * above). The declarations below cover the not-yet-migrated globals. */
 void eigs_clear_error_value(void);
 void vm_print_stack_trace(FILE *out);  /* uncaught-error call stack (vm.c); no-ops without a VM */
+int vm_error_has_handler(void);        /* active VM slice has an open try */
 int vm_current_line(void);             /* live source line (vm.c); 0 without a VM */
 const char *vm_current_file(void);      /* stable source identity or <native> */
 void eigs_record_first_error(int line, const char *msg);
@@ -2576,7 +2577,7 @@ int eigs_api_dump(FILE *out, int json);
 /* Seed the shared drand48 stream from entropy unless seed_random already
  * pinned it. Exported so extension samplers (model_infer.c's eigen_generate)
  * draw from the SAME script-seedable stream as random/random_int -- the old
- * private rand() path was seeded by main's srand(time) and could not be
+ * private libc-rand path was seeded by main from the clock and could not be
  * pinned from script at all (found via iLambdaAi's eval-determinism probe,
  * 2026-08-17). */
 void eigs_ensure_random_seeded(void);
