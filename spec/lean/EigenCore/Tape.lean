@@ -476,6 +476,17 @@ def WriterRecords (records : List String) : Prop :=
         let encoded := String.ofList ((splitFirst '=' record.toList).2.getD [])
         encoded.utf8ByteSize ≤ 65536 ∧ encoded.startsWith "@")
 
+/-- Structural rows satisfying the evaluator invariant are admissible writer
+records: they are line-safe and nonempty, and cannot trigger N framing. -/
+theorem structuralRecords_writerRecords (records : List String)
+    (valid : ∀ record ∈ records, StructuralRecord record) :
+    WriterRecords records := by
+  intro record member
+  have structural := valid record member
+  refine ⟨structural.2.2.1, structural.2.2.2, ?_⟩
+  intro framed
+  exact structural.1 framed.1
+
 /-- Every physical row emitted for an admissible logical record is a
 nonempty line. -/
 theorem serializeRecord_rows_valid (record : String)

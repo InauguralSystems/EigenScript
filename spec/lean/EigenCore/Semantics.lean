@@ -131,6 +131,32 @@ private def tapeValue : Value → String
   | .array values => s!"<list:{values.length}>"
   | .closure _ _ => "<fn>"
 
+/-- Make a writer structural row line-safe without changing ordinary rows. -/
+private def structuralChars : List Char → List Char
+  | [] => []
+  | c :: rest =>
+      (if c == '\n' then ['\\', 'n'] else if c == '\r' then ['\\', 'r'] else [c]) ++
+        structuralChars rest
+
+private def structuralRecord (line : String) : String :=
+  String.ofList (structuralChars line.toList)
+
+theorem structuralChars_no_newline (chars : List Char) :
+    '\n' ∉ structuralChars chars := by
+  induction chars with
+  | nil => simp [structuralChars]
+  | cons c rest ih =>
+      simp only [structuralChars]
+      by_cases newline : c == '\n'
+      · simp [newline, ih]
+      · by_cases carriage : c == '\r'
+        · simp [newline, carriage, ih]
+        · simp only [newline, carriage, Bool.false_eq_true, if_false, List.singleton_append,
+            List.mem_cons, ih, or_false, not_false_eq_true]
+          intro same
+          subst c
+          simp at newline
+
 private def nondetChar (c : Char) : List Char :=
   if c == '"' then ['\\', '"'] else if c == '\\' then ['\\', '\\']
   else if c == '\n' then ['\\', 'n'] else if c == '\r' then ['\\', 'r']
@@ -487,7 +513,18 @@ def normalizeTape (tape : List String) : List TapedAnswer :=
   normalizeTapeFrom 0 tape
 
 def StructuralRecord (line : String) : Prop :=
-  ¬ line.startsWith "N " ∧ ¬ line.startsWith "V "
+  ¬ line.startsWith "N " ∧ ¬ line.startsWith "V " ∧
+    '\n' ∉ line.toList ∧ line ≠ ""
+
+theorem structuralRecord_A_valid (rest : String) :
+    StructuralRecord (structuralRecord ("A " ++ rest)) := by
+  constructor
+  · simp [structuralRecord, structuralChars]
+  constructor
+  · simp [structuralRecord, structuralChars]
+  constructor
+  · simpa [structuralRecord] using structuralChars_no_newline ("A " ++ rest).toList
+  · simp [structuralRecord, structuralChars]
 
 /-- Within a session, every non-N structural record (including the writer's
 `A` and `B` records) is skipped without advancing the answer position. -/
@@ -502,7 +539,7 @@ theorem normalizeTapeFrom_skips_structural (position : Nat) (records rest : List
         intro item member
         exact structural item (by simp [member])
       simp only [List.cons_append, normalizeTapeFrom]
-      rw [if_neg lineStructural.2, if_neg lineStructural.1]
+      rw [if_neg lineStructural.2.1, if_neg lineStructural.1]
       exact ih restStructural
 
 /-- A V header ends the current replay session: its payload and every record
@@ -678,7 +715,8 @@ private def store (name : String) (v : Value) (isLocal : Bool) : EvalM Unit := d
           {c with value:=v, history:=(c.history.push v).extract ((c.history.size+1).sub 256) (c.history.size+1), assignments:=c.assignments+1}}
     | none => w.environments.modify current fun environment =>
         {environment with slots := environment.slots.push {name:=name,value:=v,history:=#[v],assignments:=1}}
-  set {w with environments:=environments, writerTrailing:=w.writerTrailing ++ [s!"A 0 {name}={tapeValue v}"]}
+  set {w with environments:=environments, writerTrailing:=w.writerTrailing ++
+    [structuralRecord s!"A 0 {name}={tapeValue v}"]}
 
 /-- Parameter creation is its first observation, but is not an assignment tape event. -/
 private def bindParameter (environment : Nat) (name : String) (value : Value) : EvalM Unit := do
