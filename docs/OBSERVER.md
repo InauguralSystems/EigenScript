@@ -689,7 +689,7 @@ otherwise it does not, and nothing else does.
    same resolver the runtime uses (`resolve_eigenscript_file_from` and
    `eigs_import_resolve` respectively — project-first, then stdlib, anchored
    at the containing file's directory and the `eigs.json` project root), then
-   parsed and scanned by rules 1-3 transitively. The unit arms if any module
+   token-scanned by rules 1-3 transitively. The unit arms if any module
    it reaches would, or if a target cannot be resolved, cannot be read, is
    not a regular file, exceeds the speculative budget, or nests past the
    depth cap. Until v0.43.0 the *presence* of an `import` armed the unit
@@ -737,10 +737,20 @@ always safe — it restores the pre-gate behaviour exactly.
 
 ### When the gate declines to look
 
-To decide before the program runs, the gate parses and scans literally-loaded
-and literally-imported modules itself — including ones reached only from a
+To decide before the program runs, the gate token-scans literally-loaded and
+literally-imported modules itself — including ones reached only from a
 function that is never called, since a `load_file` or `import` inside an
-uncalled function still contributes to the answer. That
+uncalled function still contributes to the answer. Before #1873 each target
+was fully tokenized **and parsed** at import, so an optional module paid its
+complete parse cost even when its function was never called. It now costs one
+bounded, allocation-free lexical pass: strings and comments are skipped,
+observer-reading names arm the gate, and nested literal targets are followed;
+the AST is built only if the load later executes. Measure the deterministic
+import cost with `valgrind --tool=cachegrind --cache-sim=no --branch-sim=no
+--cachegrind-out-file=out.cg src/eigenscript program.eigs`, then read the
+`PROGRAM TOTALS` Ir row from `cg_annotate --auto=no out.cg`.
+
+That
 work is speculative, so it is bounded: a per-thread cumulative ceiling on how
 many bytes the pass may read on the program's behalf, plus a rejection of
 anything that is not a regular file (a FIFO target once hung the compiler
@@ -775,9 +785,9 @@ across calls; opted-in evals reject later observer-reading units conservatively
 when an earlier unit ran unobserved. `EIGS_OBS_FORCE=1` from the start avoids
 that gap. Retained compiled functions can keep the eval gate open.
 
-Separately, every literally-loaded or literally-imported module is **parsed
-twice** — once by the gate's pass (which since #1031 answers from the AST and
-compiles nothing), once for real by `load_file` (no module cache by design) or
-by the first `import` (cached thereafter). The pass hands nothing to the
-loader: the AST it scans is freed, and the runtime parse is the one that
-runs. The speculative budget above bounds the cost.
+Separately, every literally-loaded or literally-imported module is **read
+twice** when it later executes — once by the gate's token pass, once for real
+by `load_file` (no module cache by design) or by the first `import` (cached
+thereafter). It is no longer parsed twice: the gate retains only its observer
+verdict, and the runtime parse is the one that runs. The speculative budget
+above bounds the first read.
