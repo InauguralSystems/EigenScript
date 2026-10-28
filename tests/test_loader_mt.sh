@@ -1,4 +1,5 @@
 #!/bin/bash
+echo "PLAN: 15"
 # #1144: `load_file` / `import` from a spawned worker.
 #
 # Probe-gated. Cwd is src/ when the suite invokes this (tests/run_all_tests.sh

@@ -488,7 +488,8 @@ def selftest():
 
     shutil.rmtree(tmp, ignore_errors=True)
     n, ok = len(results), sum(results)
-    print("SELFTEST %s: %d/%d" % ("OK" if ok == n else "FAILED", ok, n))
+    print("PLAN: %d" % n)
+    print("SELFTEST %s: %d of %d" % ("OK" if ok == n else "FAILED", ok, n))
     return 0 if ok == n else 1
 
 

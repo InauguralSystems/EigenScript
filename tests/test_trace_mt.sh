@@ -1,4 +1,5 @@
 #!/bin/bash
+echo "PLAN: 23"
 # #1142/#1143: the trace tape under threads and states.
 #
 # Probe-gated. Cwd is src/ when the suite invokes this (tests/run_all_tests.sh
