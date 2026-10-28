@@ -3,7 +3,7 @@ import EigenCore.Value
 import Std.Data.String.ToInt
 namespace EigenCore
 
-inductive Err where | runtime (message : String) | replay (message : String) | unsupported (construct : String) | refusal (reason : String) | fuel deriving Repr, BEq
+inductive Err where | runtime (message : String) | replay (message : String) | unsupported (construct : String) | refusal (reason : String) | fuel deriving Repr, BEq, DecidableEq
 structure Binding where
   envId : Nat
   slot : Nat
@@ -29,7 +29,7 @@ structure FunctionDef where
   body : List Stmt
   definingEnvironment : Nat
   deriving Inhabited
-inductive OracleValue where | int (v : Int) | string (v : String) | null deriving Repr, BEq
+inductive OracleValue where | int (v : Int) | string (v : String) | null deriving Repr, BEq, DecidableEq
 inductive Mode where | live (oracle : List OracleValue) | record (oracle : List OracleValue) | replayStrict (tape : List String) deriving Repr, BEq
 
 /-- The answer kinds which a successful writer can record. -/
@@ -60,7 +60,7 @@ inductive TapedAnswer where
   | replayError (position : Nat) (error : Err)
   | replayExhausted (position : Nat)
   | oracleExhausted (position : Nat)
-  deriving Repr, BEq
+  deriving Repr, BEq, DecidableEq
 
 /-- The model position carried by every kind of supplied answer. -/
 def positionOf : TapedAnswer → Nat

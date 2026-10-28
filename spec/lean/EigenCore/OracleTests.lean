@@ -9,8 +9,11 @@ private def counterexample : Program :=
 
 private def recordOne : RunResult := run 100 counterexample (.record [.int 1])
 private def recordTwo : RunResult := run 100 counterexample (.record [.int 2])
-private def replayOne : RunResult := run 100 counterexample (.replayStrict
-  ["B 0 1 1 0 root -", "N 0 random_int=1"])
+private def replayOneTape : List String :=
+  ["B 0 1 1 0 root -", "N 0 random_int=1"]
+
+private def replayOne : RunResult :=
+  run 100 counterexample (.replayStrict replayOneTape)
 
 example : recordOne.stdout == "1\n" &&
     recordOne.tape.contains "N 0 random_int=1" := by native_decide
@@ -19,6 +22,22 @@ example : replayOne == recordOne := by native_decide
 
 example : replayOne.error = none := by
   native_decide
+
+/-- The strict-replay premise used by `replay_sound` is inhabited by a
+concrete kind-valid tape whose execution completes successfully. -/
+example : TapeKindValid replayOneTape ∧
+    (run 100 counterexample (.replayStrict replayOneTape)).error = none := by
+  constructor
+  · unfold TapeKindValid
+    have normalized : normalizeTape replayOneTape =
+        [TapedAnswer.value 0 "random_int" (.int 1)] := by native_decide
+    rw [normalized]
+    intro answer member
+    simp only [List.mem_singleton] at member
+    subst answer
+    exact ⟨0, "random_int", .int 1, rfl, ["number"], by
+      simp [k_tape_kinds]⟩
+  · native_decide
 
 private def replayAcrossSession : RunResult := run 100 counterexample (.replayStrict
   ["B 0 1 1 0 root -", "V 8 0.47.0", "B 0 1 1 0 root -", "N 0 random_int=1"])
