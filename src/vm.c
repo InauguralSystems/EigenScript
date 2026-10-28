@@ -3025,6 +3025,16 @@ void vm_print_stack_trace(FILE *out) {
     }
 }
 
+/* The frames in g_vm are exactly the cooperative task (or ordinary
+ * evaluation) that is running now.  g_try_depth is an aggregate across
+ * suspended task slices, so it cannot answer whether THIS raise is caught. */
+int vm_error_has_handler(void) {
+    if (!eigs_current || !eigs_current->vm) return 0;
+    for (int i = g_vm.frame_count - 1; i >= 0; i--)
+        if (g_vm.frames[i].try_count > 0) return 1;
+    return 0;
+}
+
 /* #407 residual: print a deferred uncaught-error report (message, source
  * excerpt + column caret, stack trace). rt_error/builtin_throw set
  * g_error_print_pending instead of printing while the VM is mid-dispatch;
