@@ -141,11 +141,13 @@ for f in tests/*.sh tests/*.py tools/*.sh tools/*.py \
     elif grep -q "^[[:space:]]*$f[[:space:]]*|" <<< "$EXEMPTED"; then ex=$((ex + 1))
     else echo "  FAIL: $f is invoked by nothing -- add a suite section in tests/sections/ (or a workflow step), or list it in $EXEMPT with a reason"; rc=1; fi
 done
-INSIDE_WORK_TREE=$(git rev-parse --is-inside-work-tree 2>/dev/null) || {
-    echo "test-enrolment: ABORTED: git work tree required for asserting-test population"; exit 2;
+# Keep git's own words: a refusal (dubious ownership, a missing safe.directory,
+# GIT_DIR in the environment) must say why, not just that it happened.
+INSIDE_WORK_TREE=$(git rev-parse --is-inside-work-tree 2>&1) || {
+    echo "test-enrolment: ABORTED: git work tree required for asserting-test population (git: $(printf '%s' "$INSIDE_WORK_TREE" | head -c 300); cwd: $PWD)"; exit 2;
 }
 [ "$INSIDE_WORK_TREE" = true ] || {
-    echo "test-enrolment: ABORTED: git work tree required for asserting-test population"; exit 2;
+    echo "test-enrolment: ABORTED: git work tree required for asserting-test population (git rev-parse said: $INSIDE_WORK_TREE; cwd: $PWD)"; exit 2;
 }
 ASSERTING=$(git ls-files 'tests/*.eigs' | while IFS= read -r f; do
     grep -q 'test_summary of' "$f" && printf '%s\n' "$f"
