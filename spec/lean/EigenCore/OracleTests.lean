@@ -18,7 +18,7 @@ example : recordTwo.stdout == "2\n" := by native_decide
 example : replayOne == recordOne := by native_decide
 
 private def replayAcrossSession : RunResult := run 100 counterexample (.replayStrict
-  ["B 0 1 1 0 root -", "V 8 0.47.0", "B 0 1 1 0 root -", "N 0 random_int=1"])
+  ["B 0 1 1 0 root -", "V 8 0.0.0-model", "B 0 1 1 0 root -", "N 0 random_int=1"])
 
 example : replayAcrossSession.error == some (.runtime
     "random_int: replay stream 0 has no matching recorded N value") &&

@@ -1,0 +1,1 @@
+- The Lean reference model now constructs every structural writer row with its validity evidence, preserving record/replay behavior (#2018).

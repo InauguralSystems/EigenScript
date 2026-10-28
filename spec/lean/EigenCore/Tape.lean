@@ -286,9 +286,14 @@ private def serializeRecord (record : String) : List String :=
         (leader ++ "@" ++ toString encoded.utf8ByteSize ++ ":" ++ first) ::
           rest.map ("C 0 " ++ ·)
 
-def tapeSerialize (records : List String) : String :=
+def tapeFormat : String := "8"
+
+def tapeHeader (runtimeVersion : String) : String :=
+  "V " ++ tapeFormat ++ " " ++ runtimeVersion
+
+def tapeSerialize (runtimeVersion : String) (records : List String) : String :=
   let physical := records.flatMap serializeRecord
-  "V 8 0.47.0\nB 0 1 1 0 root -\n" ++ String.intercalate "\n" physical ++
+  tapeHeader runtimeVersion ++ "\nB 0 1 1 0 root -\n" ++ String.intercalate "\n" physical ++
     (if physical.isEmpty then "" else "\n")
 
 private def gatherContinuations (count : Nat) : Nat → String → List String →
@@ -475,6 +480,17 @@ def WriterRecords (records : List String) : Prop :=
       ¬(record.startsWith "N " ∧
         let encoded := String.ofList ((splitFirst '=' record.toList).2.getD [])
         encoded.utf8ByteSize ≤ 65536 ∧ encoded.startsWith "@")
+
+/-- Structural rows satisfying the evaluator invariant are admissible writer
+records: they are line-safe and nonempty, and cannot trigger N framing. -/
+theorem structuralRecords_writerRecords (records : List String)
+    (valid : ∀ record ∈ records, StructuralRecord record) :
+    WriterRecords records := by
+  intro record member
+  have structural := valid record member
+  refine ⟨structural.2.2.1, structural.2.2.2, ?_⟩
+  intro framed
+  exact structural.1 framed.1
 
 /-- Every physical row emitted for an admissible logical record is a
 nonempty line. -/
@@ -798,17 +814,18 @@ theorem splitLines_intercalate_newline_filter (lines : List String)
       simp only [List.map_cons] at tailResult
       rw [tailResult]
 
-def tapeParse (text : String) : Except String (List String) :=
+def tapeParse (runtimeVersion : String) (text : String) : Except String (List String) :=
   match splitLines text.toList with
-  | header::rest => if header == "V 8 0.47.0" then
+  | header::rest => if header == tapeHeader runtimeVersion then
       assembleRecords (rest.filter (· != ""))
     else throw "invalid tape header"
   | _ => throw "empty tape"
 
 /-- Every admissible logical tape survives serialization and parsing.  The
 reader also returns the mandatory root record written by `tapeSerialize`. -/
-theorem tape_roundtrip (records : List String) (valid : WriterRecords records) :
-    tapeParse (tapeSerialize records) =
+theorem tape_roundtrip (runtimeVersion : String) (records : List String)
+    (versionClean : '\n' ∉ runtimeVersion.toList) (valid : WriterRecords records) :
+    tapeParse runtimeVersion (tapeSerialize runtimeVersion records) =
       .ok ("B 0 1 1 0 root -" :: records) := by
   let physical := records.flatMap serializeRecord
   have physicalValid : ∀ row ∈ physical, '\n' ∉ row.toList ∧ row ≠ "" := by
@@ -828,8 +845,8 @@ theorem tape_roundtrip (records : List String) (valid : WriterRecords records) :
     rcases member with rfl | member
     · decide
     · exact (physicalValid line member).2
-  have serialized : tapeSerialize records =
-      "V 8 0.47.0" ++ "\n" ++ String.intercalate "\n" restLines ++ "\n" := by
+  have serialized : tapeSerialize runtimeVersion records =
+      tapeHeader runtimeVersion ++ "\n" ++ String.intercalate "\n" restLines ++ "\n" := by
     apply String.ext
     simp only [tapeSerialize, restLines, physical, String.toList_append,
       String.toList_intercalate]
@@ -840,13 +857,14 @@ theorem tape_roundtrip (records : List String) (valid : WriterRecords records) :
     | cons first rest => simp [List.intercalate, List.append_assoc]
   have splitBack := splitLines_intercalate_newline_filter restLines linesClean linesNonempty
   unfold tapeParse
-  rw [show (tapeSerialize records).toList =
-      "V 8 0.47.0".toList ++ '\n' ::
+  rw [show (tapeSerialize runtimeVersion records).toList =
+      (tapeHeader runtimeVersion).toList ++ '\n' ::
         (String.intercalate "\n" restLines ++ "\n").toList by
     rw [serialized]
     simp [String.toList_append]]
-  rw [splitLines_prefix "V 8 0.47.0".toList
-    (String.intercalate "\n" restLines ++ "\n").toList (by decide)]
+  rw [splitLines_prefix (tapeHeader runtimeVersion).toList
+    (String.intercalate "\n" restLines ++ "\n").toList (by
+      simp [tapeHeader, tapeFormat, versionClean])]
   simp only [String.ofList_toList, beq_self_eq_true, if_true]
   rw [splitBack]
   simp only [restLines]
