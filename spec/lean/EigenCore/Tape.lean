@@ -60,6 +60,89 @@ private def splitFirst (separator : Char) : List Char → List Char × Option (L
       let (before, after) := splitFirst separator rest
       (c :: before, after)
 
+/-- The pieces returned by `splitFirst` reconstruct its input (putting the
+separator back when it was found). -/
+theorem splitFirst_join (separator : Char) (input : List Char) :
+    match splitFirst separator input with
+    | (before, none) => before = input
+    | (before, some after) => before ++ separator :: after = input := by
+  induction input with
+  | nil => rfl
+  | cons c rest ih =>
+    by_cases h : c = separator
+    · simp [splitFirst, h]
+    · simp only [splitFirst, h, Char.toString, beq_iff_eq, ↓reduceIte]
+      generalize splitFirst separator rest = result at ih ⊢
+      rcases result with ⟨before, after⟩
+      cases after <;> simp_all
+
+/-- `splitFirst` never leaves the searched-for separator in its prefix. -/
+theorem splitFirst_before_not_mem (separator : Char) (input : List Char) :
+    separator ∉ (splitFirst separator input).1 := by
+  induction input with
+  | nil => simp [splitFirst]
+  | cons c rest ih =>
+    by_cases h : c = separator
+    · simp [splitFirst, h]
+    · simp [splitFirst, h, Ne.symm h, ih]
+
+/-- A separator-free leader is recovered exactly when an encoded value is
+split at the first equals sign. -/
+theorem splitFirst_leader_value (leader v : String) (noEquals : '=' ∉ leader.toList) :
+    splitFirst '=' (leader ++ "=" ++ v).toList =
+      (leader.toList, some v.toList) := by
+  rw [String.toList_append, String.toList_append]
+  have equalsChars : "=".toList = ['='] := by decide
+  rw [equalsChars]
+  have listLemma : ∀ (xs : List Char), '=' ∉ xs →
+      splitFirst '=' (xs ++ '=' :: v.toList) = (xs, some v.toList) := by
+    intro xs clean
+    induction xs with
+    | nil => simp [splitFirst]
+    | cons c rest ih =>
+      simp only [List.mem_cons, not_or] at clean
+      have hc : c ≠ '=' := Ne.symm clean.1
+      simp [splitFirst, hc, ih clean.2]
+  simpa [List.append_assoc] using listLemma leader.toList noEquals
+
+/-- Decimal rendering is accepted by the standard-library natural parser. -/
+theorem toString_toNat_some (n : Nat) : (toString n).toNat? = some n := by
+  exact Nat.toNat?_repr n
+
+/-- A decimal rendering cannot contain the framing separator. -/
+theorem colon_not_mem_toString (n : Nat) : ':' ∉ (toString n).toList := by
+  intro colon
+  change ':' ∈ (Nat.repr n).toList at colon
+  rw [Nat.toList_repr] at colon
+  have digit := Nat.isDigit_of_mem_toDigits (n := n) (b := 10) (by omega) (by omega) colon
+  have notDigit : ¬ ':'.isDigit := by decide
+  exact notDigit digit
+
+/-- Dropping the framing marker and splitting the header recovers both the
+decimal byte count and the first physical chunk. -/
+theorem splitFirst_framed_header (n : Nat) (first : String) :
+    splitFirst ':' (("@" ++ toString n ++ ":" ++ first).drop 1).toString.toList =
+      ((toString n).toList, some first.toList) := by
+  have listLemma : ∀ (xs : List Char), ':' ∉ xs →
+      splitFirst ':' (xs ++ ':' :: first.toList) = (xs, some first.toList) := by
+    intro xs clean
+    induction xs with
+    | nil => simp [splitFirst]
+    | cons c rest ih =>
+      simp only [List.mem_cons, not_or] at clean
+      have hc : c ≠ ':' := Ne.symm clean.1
+      simp [splitFirst, hc, ih clean.2]
+  change splitFirst ':' (("@" ++ toString n ++ ":" ++ first).drop 1).copy.toList = _
+  have headerChars : ("@" ++ toString n ++ ":" ++ first).toList =
+      '@' :: (toString n).toList ++ ':' :: first.toList := by
+    simp only [String.toList_append]
+    have atChars : "@".toList = ['@'] := by decide
+    have colonChars : ":".toList = [':'] := by decide
+    rw [atChars, colonChars]
+    simp [List.append_assoc]
+  rw [String.toList_copy_drop, headerChars]
+  simpa [List.append_assoc] using listLemma (toString n).toList (colon_not_mem_toString n)
+
 private def afterSecondSpace : List Char → Option (List Char)
   | [] => none
   | ' ' :: rest =>

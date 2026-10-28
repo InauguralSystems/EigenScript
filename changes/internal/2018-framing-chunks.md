@@ -1,1 +1,1 @@
-- Prove that continuation chunking preserves every character of oversized taped values (#2018).
+- Prove lossless continuation chunking and the first three small framing round-trip lemmas (#2018).
