@@ -316,6 +316,51 @@ private def unsupportedStmts (functions : List String) (insideFunction : Bool) :
             else unsupportedStmts functions true fuel body
       here.orElse (fun _ => unsupportedStmts functions insideFunction fuel rest)
 
+/-- A non-local assignment in a function is function-local in C when a nested
+function captures that name.  Until EigenCore models that compiler routing,
+keep this shape outside the modeled subset rather than writing through to an
+enclosing environment. -/
+private def hasCapturedAssignment (parameters : List String) : Nat → List Stmt → Bool
+  | 0, _ => false
+  | _, [] => false
+  | fuel + 1, statements =>
+    let rec exprNames : Expr → List String
+      | .variable name | .when name | .prev name => [name]
+      | .literal _ => []
+      | .binary _ left right => exprNames left ++ exprNames right
+      | .not value => exprNames value
+      | .array values => values.flatMap exprNames
+      | .call function arguments => exprNames function ++ arguments.flatMap exprNames
+      | .whatWhen name ordinal => name :: exprNames ordinal
+    let rec stmtNames : Nat → List Stmt → List String
+      | 0, _ | _, [] => []
+      | n + 1, statement :: rest =>
+        let here := match statement with
+          | .assign _ value _ | .print value | .return_ value | .expression value => exprNames value
+          | .branch condition yes elifs otherwise =>
+              exprNames condition ++ stmtNames n yes ++ elifs.flatMap (stmtNames n ∘ Prod.snd) ++
+                otherwise.toList.flatMap (stmtNames n)
+          | .loop condition body => exprNames condition ++ stmtNames n body
+          | .define _ _ body => stmtNames n body
+        here ++ stmtNames n rest
+    let nestedReferences := statements.flatMap fun statement => match statement with
+      | .define _ _ body => stmtNames fuel body
+      | _ => []
+    let localNames := parameters ++ statements.filterMap fun statement => match statement with
+      | .assign name _ true => some name
+      | _ => none
+    let directCapturedWrite := statements.any fun statement => match statement with
+      | .assign name _ false => nestedReferences.contains name && !localNames.contains name
+      | _ => false
+    directCapturedWrite || statements.any fun statement => match statement with
+      | .define _ nestedParameters body => hasCapturedAssignment nestedParameters fuel body
+      | .loop _ body => hasCapturedAssignment parameters fuel body
+      | .branch _ yes elifs otherwise =>
+          hasCapturedAssignment parameters fuel yes ||
+            elifs.any (hasCapturedAssignment parameters fuel ∘ Prod.snd) ||
+            otherwise.any (hasCapturedAssignment parameters fuel)
+      | _ => false
+
 /-- The single support predicate used by both classification and evaluation. -/
 def unsupportedConstruct (program : Program) : Option String :=
   let rec callableNames : Nat → List Stmt → List String
@@ -333,7 +378,11 @@ def unsupportedConstruct (program : Program) : Option String :=
         | _ => []
       here ++ callableNames fuel rest
   let functions := callableNames 100000 program
-  unsupportedStmts functions false 100000 program
+  if program.any fun statement => match statement with
+      | .define _ parameters body => hasCapturedAssignment parameters 100000 body
+      | _ => false then
+    some "assignment to a name captured by a nested function is not yet modeled"
+  else unsupportedStmts functions false 100000 program
 
 def classifyModeled (source : String) : Classification :=
   match parse source with

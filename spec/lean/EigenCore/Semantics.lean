@@ -72,7 +72,7 @@ private def tapeString (s : String) : String :=
 private def tapeValue : Value → String
   | .int n => toString n | .string s => tapeString s
   | .bool true => "true" | .bool false => "false" | .null => "null"
-  | .array values => "[" ++ String.intercalate ", " (values.map tapeValue) ++ "]"
+  | .array values => s!"<list:{values.length}>"
   | .closure _ _ => "<fn>"
 private def store (name : String) (v : Value) (isLocal : Bool) : EvalM Unit := do
   let w ← get
@@ -92,7 +92,9 @@ private def store (name : String) (v : Value) (isLocal : Bool) : EvalM Unit := d
 private def bindParameter (environment : Nat) (name : String) (value : Value) : EvalM Unit := do
   modify fun w => {w with environments := w.environments.modify environment fun e =>
     {e with slots := e.slots.push {name:=name, value:=value, history:=#[value], assignments:=1}}}
-private def truthy : Value → Bool | .bool false | .null | .int 0 | .string "" => false | _ => true
+private def truthy : Value → Bool
+  | .bool false | .null | .int 0 | .string "" | .array [] => false
+  | _ => true
 private def asInt : Value → Except Err Int | .int n => pure n | _ => throw (Err.runtime "expected integer")
 private def safeInt (n : Int) : Except Err Value :=
   if n.natAbs < 9007199254740992 then pure (.int n)
@@ -204,7 +206,7 @@ mutual
         let w ← get
         let functionId := w.functions.size
         let definition : FunctionDef := {
-          name:=name, parameters:=parameters, body:=body,
+          name:=name, parameters:=(if parameters.isEmpty then ["n"] else parameters), body:=body,
           definingEnvironment:=currentEnvironment w}
         modify fun state => {state with functions:=state.functions.push definition}
         store name (.closure functionId name) true
