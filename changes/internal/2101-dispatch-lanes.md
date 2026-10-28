@@ -1,0 +1,1 @@
+- CI proof runs can select an ASan, TSan, fuzz, or Linux lane instead of consuming the full runner matrix (#2101).
