@@ -836,53 +836,75 @@ theorem writerAnswerFor_roundtrip (fn : String) (raw : OracleValue)
     subst answer
     simp [WriterAnswer.name, WriterAnswer.value]
 
+private def decodeSupplied (fn : String) (position : Nat) (supplied : TapedAnswer) : EvalM OracleValue :=
+  match supplied with
+  | TapedAnswer.oracleExhausted _ => throw (.runtime s!"{fn}: oracle exhausted at value {position}")
+  | .replayError _ error => throw error
+  | .replayExhausted _ => throw (.runtime s!"{fn}: replay stream 0 has no matching recorded N value")
+  | .value _ recordedName value =>
+    if !recordedName.isEmpty && recordedName != fn then
+      throw (.replay s!"replay name mismatch: tape has '{recordedName}', program called '{fn}'")
+    else pure value
+
+private def liftAnswer (fn : String) (raw : OracleValue) : EvalM WriterAnswer :=
+  writerAnswerFor fn raw
+
+private def appendChunk (w : World) (answer : WriterAnswer) : EvalM Value := do
+  let chunk : WriterChunk := {structural := w.writerTrailing, answer := answer}
+  set {w with writerChunks := w.writerChunks ++ [chunk], writerTrailing := []}
+  pure answer.runtimeValue
+
 private def consumeRest (fn : String) (w : World) (supplied : TapedAnswer) : EvalM Value := do
   let position := w.writerChunks.length
-  let raw ← match supplied with
-    | TapedAnswer.oracleExhausted _ => throw (.runtime s!"{fn}: oracle exhausted at value {position}")
-    | .replayError _ error => throw error
-    | .replayExhausted _ => throw (.runtime s!"{fn}: replay stream 0 has no matching recorded N value")
-    | .value _ recordedName value =>
-      if !recordedName.isEmpty && recordedName != fn then
-        throw (.replay s!"replay name mismatch: tape has '{recordedName}', program called '{fn}'")
-      else pure value
-  let answer ← writerAnswerFor fn raw
-  let value := answer.runtimeValue
-  let chunk : WriterChunk := {structural := w.writerTrailing, answer := answer}
-  set {w with writerChunks := w.writerChunks ++ [chunk], writerTrailing := []}
-  pure value
+  let raw ← decodeSupplied fn position supplied
+  let answer ← liftAnswer fn raw
+  appendChunk w answer
 
-/-- The pre-extraction spelling, retained as a definitional regression check. -/
-private def consumeAnswerReference (fn : String) : EvalM Value := do
-  let w ← get
-  let position := w.writerChunks.length
-  let supplied : TapedAnswer ← liftM
-    (Interaction.ask {name := fn} (fun answer => Interaction.done answer))
-  let raw ← match supplied with
-    | TapedAnswer.oracleExhausted _ => throw (.runtime s!"{fn}: oracle exhausted at value {position}")
-    | .replayError _ error => throw error
-    | .replayExhausted _ => throw (.runtime s!"{fn}: replay stream 0 has no matching recorded N value")
-    | .value _ recordedName value =>
-      if !recordedName.isEmpty && recordedName != fn then
-        throw (.replay s!"replay name mismatch: tape has '{recordedName}', program called '{fn}'")
-      else pure value
-  let answer ← writerAnswerFor fn raw
-  let value := answer.runtimeValue
-  let chunk : WriterChunk := {structural := w.writerTrailing, answer := answer}
-  set {w with writerChunks := w.writerChunks ++ [chunk], writerTrailing := []}
-  pure value
+theorem decodeSupplied_oracleExhausted_run (fn : String) (position suppliedPosition : Nat) (w : World) :
+    ((decodeSupplied fn position (.oracleExhausted suppliedPosition)).run).run w =
+      .done (.error (.runtime s!"{fn}: oracle exhausted at value {position}"), w) := by rfl
 
+theorem decodeSupplied_replayError_run (fn : String) (position suppliedPosition : Nat)
+    (error : Err) (w : World) :
+    ((decodeSupplied fn position (.replayError suppliedPosition error)).run).run w =
+      .done (.error error, w) := by rfl
+
+theorem decodeSupplied_replayExhausted_run (fn : String) (position suppliedPosition : Nat) (w : World) :
+    ((decodeSupplied fn position (.replayExhausted suppliedPosition)).run).run w =
+      .done (.error (.runtime s!"{fn}: replay stream 0 has no matching recorded N value"), w) := by rfl
+
+theorem decodeSupplied_value_run (fn recordedName : String) (position suppliedPosition : Nat)
+    (value : OracleValue) (w : World) :
+    ((decodeSupplied fn position (.value suppliedPosition recordedName value)).run).run w =
+      if !recordedName.isEmpty && recordedName != fn then
+        .done (.error (.replay s!"replay name mismatch: tape has '{recordedName}', program called '{fn}'"), w)
+      else .done (.ok value, w) := by
+  change ((if !recordedName.isEmpty && recordedName != fn then
+    throw (.replay s!"replay name mismatch: tape has '{recordedName}', program called '{fn}'")
+    else pure value : EvalM OracleValue).run).run w = _
+  split <;> rfl
+
+theorem liftAnswer_run (fn : String) (raw : OracleValue) (w : World) :
+    ((liftAnswer fn raw).run).run w =
+      .done (writerAnswerFor fn raw, w) := by rfl
+
+theorem appendChunk_run (w : World) (answer : WriterAnswer) (state : World) :
+    ((appendChunk w answer).run).run state = .done (.ok answer.runtimeValue,
+      {w with writerChunks := w.writerChunks ++
+        [{structural := w.writerTrailing, answer := answer}], writerTrailing := []}) := by rfl
+
+/-- The extracted post-ask tail is exactly the bind composition of its named stages. -/
+theorem consumeRest_extraction (fn : String) (w : World) (supplied : TapedAnswer) :
+    consumeRest fn w supplied = (do
+      let raw ← decodeSupplied fn w.writerChunks.length supplied
+      let answer ← liftAnswer fn raw
+      appendChunk w answer) := by rfl
 
 private def consumeAnswer (fn : String) : EvalM Value := do
   let w ← get
   let supplied : TapedAnswer ← liftM
     (Interaction.ask {name := fn} (fun answer => Interaction.done answer))
   consumeRest fn w supplied
-
-/-- Extracting the post-ask tail is semantics-identical by reduction. -/
-theorem consumeAnswer_extraction (fn : String) :
-    consumeAnswer fn = consumeAnswerReference fn := by
-  rfl
 
 /-- The complete operation asks once and delegates its continuation to the extracted tail. -/
 theorem consumeAnswer_run (fn : String) (w : World) :
@@ -911,7 +933,7 @@ theorem consumeRest_nameMismatch_run (fn recordedName : String) (w : World)
     ((consumeRest fn w (.value position recordedName raw)).run).run w =
       .done (.error (.replay s!"replay name mismatch: tape has '{recordedName}', program called '{fn}'"), w) := by
   unfold consumeRest
-  simp only [nonempty, Bool.not_false, Bool.true_and, bne_iff_ne]
+  simp only [decodeSupplied, nonempty, Bool.not_false, Bool.true_and, bne_iff_ne]
   rw [if_pos different]
   rfl
 
