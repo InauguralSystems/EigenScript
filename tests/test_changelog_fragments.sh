@@ -65,24 +65,38 @@ empty_fragment() {
 deleted_fragment() {
     mkdir -p changes/fixed
     printf '%s\n' '- existing entry' > changes/fixed/999-existing.md
-    git add changes/fixed/999-existing.md && git commit -qm 'add prior fragment'
+    git add changes/fixed/999-existing.md
+    git commit -qm 'add prior fragment'
     # The gate's base must include the fragment being deleted.
     base=$(git rev-parse HEAD)
-    git rm -q changes/fixed/999-existing.md && git commit -qm 'delete prior fragment'
+    git rm -q changes/fixed/999-existing.md
+    git commit -qm 'delete prior fragment'
 }
 cut_deletes_readme() {
     # The harness's own plant (see the end of this file): an intermediate command fails
     # and later ones succeed, so only per-command tracking can name it.
-    [ "${CHANGELOG_SELFTEST_PLANT:-}" != intermediate-setup-failure ] || bash -c 'echo planted-setup-failure >&2; exit 42'
+    if [ "${CHANGELOG_SELFTEST_PLANT:-}" = intermediate-setup-failure ]; then
+        bash -c 'echo planted-setup-failure >&2; exit 42'
+    fi
     find changes -mindepth 2 -type f -delete
     # --allow-empty: right after a release cut there are no fragments to remove.
-    git add -A && git commit -q --allow-empty -m 'remove pre-existing fragments'
+    git add -A
+    git commit -q --allow-empty -m 'remove pre-existing fragments'
     base=$(git rev-parse HEAD)
     bash tools/changelog_fragments.sh cut 99.99.99 2099-01-01 >/dev/null
     rm changes/README.md
-    git add -A && git commit -qm 'release cut plus README deletion'
+    git add -A
+    git commit -qm 'release cut plus README deletion'
 }
 
+# bash runs no ERR trap for a failing command left of && or ||, so a setup
+# function may use neither: that failure would be invisible (#2074 review).
+setup_lint() { declare -f "$@" | grep -nE '&&|[|][|]'; }
+if lint_hits=$(setup_lint symlink_fragment empty_fragment deleted_fragment cut_deletes_readme); then
+    echo "SELFTEST FAIL: a setup function uses && or ||, which hides a failing left operand from the ERR trap:"
+    printf '%s\n' "$lint_hits"
+    exit 1
+fi
 case_run symlink symlink_fragment 'FAIL changes/fixed/1420-link.md'
 case_run empty-bullet empty_fragment 'FAIL changes/fixed/1420-empty.md'
 case_run deleted deleted_fragment 'existing changelog fragment(s) deleted'
@@ -96,14 +110,24 @@ if [ -z "${CHANGELOG_SELFTEST_PLANT:-}" ]; then
     # and the planted run's expected rc 1 must not trip an inherited errexit.
     plant_rc=0
     plant_out=$(CHANGELOG_SELFTEST_PLANT=intermediate-setup-failure bash "$ROOT/tests/${0##*/}" --selftest 2>&1) || plant_rc=$?
-    if [ "$plant_rc" -eq 1 ] &&
-       grep -q "^  FAIL: cut-readme (setup failed: cut_deletes_readme: .*exit 42.*, rc=42)$" <<< "$plant_out" &&
-       grep -qx "planted-setup-failure" <<< "$plant_out" &&
-       grep -qx "SELFTEST: 4 case(s) run, 3 passed, 1 failed" <<< "$plant_out"; then
-        echo "PLANT OK: an intermediate setup failure is named with its rc and output"
-    else
+    plant_ok=1
+    if ! { [ "$plant_rc" -eq 1 ] &&
+           grep -q "^  FAIL: cut-readme (setup failed: cut_deletes_readme: .*exit 42.*, rc=42)$" <<< "$plant_out" &&
+           grep -qx "planted-setup-failure" <<< "$plant_out" &&
+           grep -qx "SELFTEST: 4 case(s) run, 3 passed, 1 failed" <<< "$plant_out"; }; then
         echo "PLANT FAIL: the planted intermediate setup failure was not reported (rc=$plant_rc)"
         printf '%s\n' "$plant_out" | sed 's/^/  | /'
+        plant_ok=0
+    fi
+    # The lint must catch an && chain, or a reintroduced one would hide again.
+    lint_plant() { git add -A && git commit -qm planted; }
+    if ! setup_lint lint_plant >/dev/null; then
+        echo "PLANT FAIL: the setup lint did not catch an && chain"
+        plant_ok=0
+    fi
+    if [ "$plant_ok" -eq 1 ]; then
+        echo "PLANT OK: an intermediate setup failure is named with its rc and output; the setup lint catches an && chain"
+    else
         failed=$((failed + 1))
     fi
 fi
