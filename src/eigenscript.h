@@ -2585,5 +2585,6 @@ void eigs_ensure_random_seeded(void);
  * entry points runtime code may use, so seeding and draws share one lock. */
 double eigs_random_double(void);
 long eigs_random_long(void);
+void eigs_seed_random(long seed);
 
 #endif /* EIGENSCRIPT_H */

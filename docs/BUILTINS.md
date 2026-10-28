@@ -382,7 +382,7 @@ stdlib roots. See [Modules](SPEC.md#modules) for import collision handling.
 |------|-----------|-------------|
 | `random` | `random of null` | Random float in [0, 1) |
 | `random_int` | `random_int of [lo, hi]` | Random integer in [lo, hi] inclusive; raises on non-finite or out-of-int64 bounds and on a span over 2^31. A malformed argument (not `[lo, hi]`, or non-numeric bounds) raises by default; under `EIGS_STRICT=0` it answers `0` (#971). |
-| `seed_random` | `seed_random of n` | Seed the RNG for deterministic sequences |
+| `seed_random` | `seed_random of n` | Seed the RNG for deterministic sequences. `random` is not cryptographic. The `eigenscript` CLI reads `EIGS_SEED_RANDOM=<integer>` at startup and seeds the shared stream with it before the program runs, which makes it predictable for the whole process (for differential testing and reproduction); a malformed value is a startup error (exit 2). Embedders call `seed_random`. Under `EIGS_TRACE` seeded draws are recorded; under `EIGS_REPLAY` recorded values are served and this knob is irrelevant. |
 
 ## Time
 

@@ -11,6 +11,7 @@
 #include "repl.h"
 
 #ifdef EIGS_TSAN_TEST_SEAM
+#include <errno.h>
 #include <pthread.h>
 #include <stdatomic.h>
 
@@ -112,6 +113,24 @@ int main(int argc, char **argv) {
     if (getenv("EIGS_TSAN_MISORDERED_PUBLISH_CONTROL"))
         return tsan_misordered_publish_control();
 #endif
+    /* EIGS_SEED_RANDOM=<integer> (#2120): seed the shared random stream before
+     * any program code runs, through seed_random's own path, so every run with
+     * one value draws one sequence (differential testing, reproduction). A
+     * malformed value is a startup error here: never a silent fallback to the
+     * clock, and never an exit from inside the runtime, which embedders share. */
+    {
+        const char *seed_env = getenv("EIGS_SEED_RANDOM");
+        if (seed_env && *seed_env) {   /* empty means unset, as for EIGS_* flags */
+            char *end = NULL;
+            errno = 0;
+            long seed = strtol(seed_env, &end, 10);
+            if (errno == ERANGE || end == seed_env || *end != '\0') {
+                fprintf(stderr, "EIGS_SEED_RANDOM: invalid integer: %s\n", seed_env);
+                return 2;
+            }
+            eigs_seed_random(seed);
+        }
+    }
     /* #413: a bundled binary (appended archive, trailer magic) extracts
      * itself and rewrites argv to run the extracted script — before ANY
      * flag handling, because in bundle mode the arguments belong to the
