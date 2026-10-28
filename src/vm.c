@@ -452,6 +452,9 @@ static inline void vm_bind_fresh_param(Env *env, int slot_idx,
  * also keeps every EnvIC aimed at the env valid across calls.
  *
  * Park requirements (vm_park_call_env):
+ *   - a call env exists: an exactly-fed `leaf_accessor` call is executed
+ *     frameless by vm_leaf_accessor_exec, before the generic call path, so it
+ *     allocates no Env and consequently has nothing to park;
  *   - single-threaded (chunks are shared across spawn threads);
  *   - frame->env == frame->fn_env (never park a loop-scope child);
  *   - not captured by a closure, env_refcount == 1 (exactly the
