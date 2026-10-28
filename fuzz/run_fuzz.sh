@@ -4,6 +4,15 @@
 # (fuzz/fuzz_stdin, built by `make fuzz`). Leak detection is on (#1734): an
 # input FAILS on any AddressSanitizer or LeakSanitizer report, or on an exit
 # other than 0/1. UBSan reports are not read (the program's stderr is dropped).
+#
+#   bash fuzz/run_fuzz.sh               the smoke
+#   bash fuzz/run_fuzz.sh --plant-leak  only the planted leak (#1734): one input
+#                                       that really leaks, which MUST fail
+
+case "${1:-}" in
+    ""|--plant-leak) ;;
+    *) echo "usage: bash fuzz/run_fuzz.sh [--plant-leak]"; exit 2 ;;
+esac
 
 cd "$(dirname "$0")/.." || exit 1
 
@@ -64,6 +73,29 @@ fuzz_test_raw() {
     printf '%s' "$2" > "$WORK/input.eigs"
     run_case "$1" "$WORK/input.eigs"
 }
+
+# The verdict line, and the exit status: 1 when any input failed.
+finish() {
+    echo ""
+    echo "============================================"
+    echo "  FUZZ: $PASS passed, $FAIL failed"
+    echo "============================================"
+    [ "$FAIL" -eq 0 ] || exit 1
+    exit 0
+}
+
+if [ "${1:-}" = --plant-leak ]; then
+    # The harness binds fuzz_leak_plant only under this switch. It allocates a
+    # dict and drops it, so the one input below must fail as a leak, through
+    # the same run_case as every other input. CI also checks the report names
+    # make_dict called from fuzz_leak_plant.
+    export EIGS_FUZZ_LEAK_PLANT=1
+    echo "Plant:"
+    fuzz_test "plant: orphaned make_dict" 'fuzz_leak_plant of null'
+    finish
+fi
+# A switch inherited from the caller must not bind the plant in the smoke.
+unset EIGS_FUZZ_LEAK_PLANT
 
 echo "=== EigenScript Fuzz Tests ==="
 echo ""
@@ -127,11 +159,4 @@ if [ "$SEEDS" -eq 0 ] || [ "$SPAWN_SEEDS" -eq 0 ]; then
     FAIL=$((FAIL + 1))
 fi
 
-echo ""
-echo "============================================"
-echo "  FUZZ: $PASS passed, $FAIL failed"
-echo "============================================"
-
-if [ "$FAIL" -gt 0 ]; then
-    exit 1
-fi
+finish
