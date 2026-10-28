@@ -228,6 +228,49 @@ theorem evalRun_tryCatch (m : EvalM α) (handler : Err → EvalM α) (world : Wo
   cases pair with
   | mk result nextWorld => cases result <;> rfl
 
+/-- Catching an evaluator error into an `Except` value maps every leaf of the
+inner computation, including its error leaves, into an outer success. -/
+theorem evalRun_catchToExcept (m : EvalM α) (g : α → β) (world : World) :
+    evalRun (tryCatch (m >>= fun value => pure (.ok (g value)))
+        (fun error => pure (.error error))) world =
+      (evalRun m world).bind (fun (result, nextWorld) =>
+        .done (.ok (result.map g), nextWorld)) := by
+  rw [evalRun_tryCatch, evalRun_bind]
+  generalize evalRun m world = tree
+  induction tree with
+  | done pair =>
+      cases pair with
+      | mk result nextWorld => cases result <;> rfl
+  | ask query continuation ih =>
+      simp only [Interaction.bind]
+      congr 1
+      funext answer
+      exact ih answer
+
+/-- The catch/pop/rethrow shell around a computation maps its successful
+values, preserves its error status, and pops one frame at every leaf. -/
+theorem evalRun_catchPopRethrow (m : EvalM α) (g : α → β) (world : World) :
+    evalRun (do
+      let outcome : Except Err β ← tryCatch (m >>= fun value => pure (Except.ok (g value)))
+        (fun error => pure (Except.error error))
+      modify fun w => {w with frames := w.frames.pop}
+      match outcome with
+      | .ok value => pure value
+      | .error error => throw error) world =
+    (evalRun m world).bind (fun (result, nextWorld) =>
+      .done (result.map g, {nextWorld with frames := nextWorld.frames.pop})) := by
+  rw [evalRun_bind, evalRun_catchToExcept]
+  generalize evalRun m world = tree
+  induction tree with
+  | done pair =>
+      cases pair with
+      | mk result nextWorld => cases result <;> rfl
+  | ask query continuation ih =>
+      simp only [Interaction.bind]
+      congr 1
+      funext answer
+      exact ih answer
+
 private def findCell (name : String) (cells : Array Cell) : Option Nat := cells.findIdx? (fun c => c.name == name)
 private def currentEnvironment (w : World) : Nat :=
   w.frames.back?.map (·.environment) |>.getD 0
@@ -1273,6 +1316,25 @@ theorem interpret_bind (tree : Interaction α) (next : α → Interaction β)
           simp [List.drop_succ_cons, Nat.add_assoc, List.cons_append]
           omega
 
+/-- Mapping the successful leaf of an interaction changes only its value;
+consumption and the delivered-answer trace are preserved. -/
+theorem interpret_map (tree : Interaction α) (f : α → β)
+    (supplied : List TapedAnswer) :
+    interpret (tree.bind (fun value => .done (f value))) supplied =
+      { value := f (interpret tree supplied).value
+        consumed := (interpret tree supplied).consumed
+        answers := (interpret tree supplied).answers } := by
+  induction tree generalizing supplied with
+  | done value => rfl
+  | ask query continuation ih =>
+      cases supplied with
+      | nil =>
+          simp only [Interaction.bind, interpret]
+          rw [ih (deliveredAnswer query (.oracleExhausted 0)) []]
+      | cons answer rest =>
+          simp only [Interaction.bind, interpret]
+          rw [ih (deliveredAnswer query answer) rest]
+
 /-- A computation is paired when every successful interpretation preserves
 the starting writer chunks as a prefix and its appended chunks encode exactly
 the interaction answers, numbered from that prefix length.
@@ -1497,6 +1559,50 @@ theorem Paired_bind (m : EvalM α) (k : α → EvalM β) (pairedM : Paired m)
         have lengths := congrArg List.length firstWorld
         simp at lengths
         omega
+
+/-- Popping the active call frame does not alter completed writer chunks. -/
+theorem popFrame_writerChunks (world : World) :
+    ({world with frames := world.frames.pop} : World).writerChunks = world.writerChunks := rfl
+
+/-- Catching a computation into an intermediate `Except`, popping its frame,
+and rethrowing the captured error preserves pairing.  The proof keeps the
+intermediate error leaf until overall success rules it out. -/
+theorem Paired_catchPopRethrow (m : EvalM α) (g : α → β) (paired : Paired m) :
+    Paired (do
+      let outcome : Except Err β ← tryCatch
+        (m >>= fun value => pure (Except.ok (g value)))
+        (fun error => pure (Except.error error))
+      modify fun w => {w with frames := w.frames.pop}
+      match outcome with
+      | .ok value => pure value
+      | .error error => throw error) := by
+  intro w0 supplied positioned
+  change let interpreted := interpret (evalRun (do
+      let outcome : Except Err β ← tryCatch
+        (m >>= fun value => pure (Except.ok (g value)))
+        (fun error => pure (Except.error error))
+      modify fun w => {w with frames := w.frames.pop}
+      match outcome with
+      | .ok value => pure value
+      | .error error => throw error) w0) supplied
+    ∀ value, interpreted.value.1 = .ok value → ∃ appended,
+      interpreted.value.2.writerChunks = w0.writerChunks ++ appended ∧
+      interpreted.answers = writerAnswersFrom w0.writerChunks.length appended
+  rw [evalRun_catchPopRethrow, interpret_map]
+  dsimp only
+  intro value successful
+  cases original : (interpret (evalRun m w0) supplied).value.1 with
+  | error error =>
+      rw [original] at successful
+      contradiction
+  | ok innerValue =>
+      rw [original] at successful
+      have innerSuccessful :
+          (interpret (evalRun m w0) supplied).value.1 = .ok innerValue := original
+      obtain ⟨appended, chunks, answers⟩ :=
+        paired w0 supplied positioned innerValue innerSuccessful
+      refine ⟨appended, ?_, answers⟩
+      exact chunks
 
 /-- A world update which preserves writer chunks is paired. -/
 theorem Paired_modify (f : World → World)
