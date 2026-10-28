@@ -1,0 +1,1 @@
+- Make the TSan gate for shared compiler environment-count reads deterministic (#2129).
