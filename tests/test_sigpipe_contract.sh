@@ -45,6 +45,10 @@ row() {
     lsan_classify "$output" || classification=$?
     if [ "$rc" -eq 0 ] && [ "$classification" -eq 2 ]; then
         pass=$((pass + 1)); echo "PASS: $name"
+    elif [ "$rc" -ne 0 ] && grep -q '^setup could not bind' <<< "$output"; then
+        # A port the test could not get is an environment fault, not a SIGPIPE
+        # result (#2099): still a failure, but labelled so it never reads as one.
+        fail=$((fail + 1)); echo "FAIL: $name: SETUP could not bind, not a SIGPIPE contract result (rc=$rc)"
     else
         fail=$((fail + 1)); echo "FAIL: $name (rc=$rc sanitizer=$classification)"
     fi

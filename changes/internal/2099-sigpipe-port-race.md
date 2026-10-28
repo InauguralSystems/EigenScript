@@ -1,1 +1,0 @@
-- Made the SIGPIPE HTTP contract test let the server claim an ephemeral port atomically, eliminating a probe-close race. (#2099).

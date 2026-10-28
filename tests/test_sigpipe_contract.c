@@ -87,12 +87,20 @@ static void *check_while_serving(void *unused) {
     FILE *server_output = fdopen(server_output_fd, "r");
     char line[160];
     unsigned port = 0;
-    if (!server_output) _exit(2);
+    if (!server_output) {
+        fprintf(stderr, "setup could not bind: cannot read the server's output\n");
+        _exit(2);
+    }
     while (fgets(line, sizeof(line), server_output)) {
         if (sscanf(line, "EigenScript HTTP server listening on 0.0.0.0:%u", &port) == 1)
             break;
     }
-    if (port == 0 || port > 65535) _exit(2);
+    /* No listening line: http_serve returned (a failed bind) or printed none.
+     * Say so here, because this _exit can win the race with main's message. */
+    if (port == 0 || port > 65535) {
+        fprintf(stderr, "setup could not bind: http_serve printed no listening port\n");
+        _exit(2);
+    }
     server_addr.sin_port = htons((unsigned short)port);
     /* A real response proves execution reached accept/handle_request, after
      * the old process-wide SIG_IGN site. A sleep alone could pass too early. */
