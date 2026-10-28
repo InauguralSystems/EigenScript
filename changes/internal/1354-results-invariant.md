@@ -1,0 +1,1 @@
+- The suite runner now rejects inconsistent result counters and any started section without an assertion or section-level skip (#1354).
