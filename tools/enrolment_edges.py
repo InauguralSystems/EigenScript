@@ -121,8 +121,15 @@ def shell_commands(text: str):
             for part in parts:
                 words = shlex.split(part, comments=True)
                 yield from _substitutions(words)
-                while words and (re.match(r"^[A-Za-z_]\w*=", words[0]) or words[0] in {"if", "then", "elif", "else", "do", "while", "until", "time", "!", "{", "env", "command", "exec", "nohup", "sudo", "xvfb-run"}):
+                while words and (re.match(r"^[A-Za-z_]\w*=", words[0]) or words[0] in {"if", "then", "elif", "else", "do", "while", "until", "time", "!", "{", "command", "exec", "nohup", "sudo", "xvfb-run"}):
                     words.pop(0)
+                if words and words[0] == "env":
+                    words.pop(0)
+                    while words and (words[0].startswith("-")
+                                     or re.match(r"^[A-Za-z_]\w*=", words[0])
+                                     or (re.match(r'^\$\{?[A-Za-z_]\w*(?:\[@\])?\}?$', words[0])
+                                         and words[0] not in {"$EIGS", "${EIGS}"})):
+                        words.pop(0)
                 if words and words[0] == "timeout":
                     words.pop(0)
                     while words and (words[0].startswith("-") or re.match(r"^\d+(?:\.\d+)?[smhd]?$", words[0])):
@@ -131,6 +138,40 @@ def shell_commands(text: str):
                     yield words
         except ValueError:
             continue
+
+
+def normalized_command_index(words: list[str]) -> int:
+    """Return the command position after the suite's recognized wrappers.
+
+    The suite has a small set of launch helpers whose leading operands are
+    metadata rather than commands.  Walk only those documented shapes; never
+    search arbitrary arguments, since diagnostics may mention both EIGS and a
+    test without executing either.
+    """
+    metadata = {
+        "suite_program_run": 1,
+        "suite_capture_diagnostic": 1,
+        "run_test": 1,
+        "run_clean": 2,
+        "run_bounded": 1,
+        "gfx_headless_run": 1,
+    }
+    i = 1 + metadata.get(words[0], -1)
+    while i < len(words) and re.match(r"^[A-Za-z_]\w*=", words[i]):
+        i += 1
+    if i < len(words) and words[i] == "$EIGS_TMO":
+        i += 1
+    if i < len(words) and words[i] == "env":
+        i += 1
+        while i < len(words) and (
+            words[i].startswith("-")
+            or re.match(r"^[A-Za-z_]\w*=", words[i])
+            or (words[i].startswith("$") and "[@]" in words[i])
+            or (re.match(r'^\$[A-Za-z_]\w*$', words[i])
+                and words[i] not in {"$EIGS", "${EIGS}"})
+        ):
+            i += 1
+    return i
 
 
 def shell_edges(source: Path, text: str, src_name: str | None = None) -> None:
@@ -143,16 +184,17 @@ def shell_edges(source: Path, text: str, src_name: str | None = None) -> None:
         # of EigenScript.  Globs and text passed to a differential are not
         # expanded here, deliberately.
         invocation = list(words)
-        eigs_at = next((i for i, word in enumerate(invocation)
-                        if word in {"$EIGS", "${EIGS}"} or word.rstrip("/").endswith("/eigenscript")), None)
-        if eigs_at is not None:
-            operands = [word for word in invocation[eigs_at + 1:] if not word.startswith("-")]
+        command_at = normalized_command_index(invocation)
+        command = invocation[command_at] if command_at < len(invocation) else ""
+        if command in {"$EIGS", "${EIGS}"} or command.rstrip("/").endswith("/eigenscript"):
+            operands = [word for word in invocation[command_at + 1:] if not word.startswith("-")]
             if operands:
                 dst = eigs_program_path(operands[0], source)
                 if dst:
                     emit(src, dst)
-        elif "check_eigs_suite" in invocation:
-            for word in invocation[invocation.index("check_eigs_suite") + 1:]:
+        elif command == "check_eigs_suite":
+            # The first operand is the human-readable check description.
+            for word in invocation[command_at + 2:]:
                 dst = eigs_program_path(word, source)
                 if dst:
                     emit(src, dst)

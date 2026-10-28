@@ -25,7 +25,8 @@ EXEMPT=tests/enrolment_exemptions.txt
 
 if [ "${1:-}" = "--selftest" ]; then
     ST=$(mktemp -d "${TMPDIR:-/tmp}/eigs_enrol_st.XXXXXX") || exit 2
-    trap 'rm -rf "$ST"' EXIT
+    WT="${ST}.worktree"; NR="${ST}.nonrepo"
+    trap 'git -C "$ST" worktree remove --force "$WT" >/dev/null 2>&1 || true; rm -rf "$ST" "$WT" "$NR"' EXIT
     mkdir -p "$ST/tests/sections" "$ST/tools" "$ST/.github" "$ST/bench"
     cp tests/*.sh tests/*.py "$EXEMPT" "$ST/tests/" && cp tests/sections/*.sh "$ST/tests/sections/" \
         && cp tools/*.sh tools/*.py tools/selftests.txt "$ST/tools/" && cp -R .github/. "$ST/.github/" \
@@ -45,6 +46,25 @@ if [ "${1:-}" = "--selftest" ]; then
         else echo "  SELFTEST FAIL: $1 (rc=$rc, want $2 + '$3')"; printf '%s\n' "$out" | sed 's/^/      /'; bad=1; fi
     }
     case_ "control: the unmodified tree passes" 0 "PASS: test-enrolment"
+    # A linked checkout has a .git file, not a directory.  It must be exactly
+    # as acceptable to the population derivation as the primary checkout.
+    (cd "$ST" && git -c user.name=selftest -c user.email=selftest@example.invalid commit -qm control)
+    primary=$(ENROL_ROOT="$ST" bash "$SELF" 2>&1); primary_rc=$?
+    git -C "$ST" worktree add -q --detach "$WT" HEAD || { echo "  SELFTEST BROKEN: could not create linked worktree"; bad=1; }
+    linked=$(ENROL_ROOT="$WT" bash "$SELF" 2>&1); linked_rc=$?
+    if [ "$linked_rc" -eq "$primary_rc" ] && [ "$linked" = "$primary" ]; then
+        echo "  selftest ok: linked worktree has the same population and verdict"
+    else
+        echo "  SELFTEST FAIL: linked worktree differs from primary (primary rc=$primary_rc, linked rc=$linked_rc)"
+        printf '%s\n' "$linked" | sed 's/^/      /'; bad=1
+    fi
+    cp -R "$ST" "$NR" && rm -rf "$NR/.git"
+    nonrepo=$(ENROL_ROOT="$NR" bash "$SELF" 2>&1); nonrepo_rc=$?
+    if [ "$nonrepo_rc" -eq 2 ] && grep -qF "ABORTED: git work tree required" <<< "$nonrepo"; then
+        echo "  selftest ok: non-repository directory is aborted"
+    else
+        echo "  SELFTEST FAIL: non-repository directory was not aborted (rc=$nonrepo_rc)"; bad=1
+    fi
     printf '#!/bin/bash\necho "PASS: x"\n' > "$ST/tests/test_zz_plant.sh"
     case_ "an uninvoked tests/test_zz_plant.sh is red and named" 1 "tests/test_zz_plant.sh is invoked by nothing"
     rm "$ST/tests/test_zz_plant.sh"
@@ -59,8 +79,14 @@ if [ "${1:-}" = "--selftest" ]; then
     printf 'test_summary of null\n' > "$ST/tests/test_zz_asserting.eigs"
     (cd "$ST" && git add tests/test_zz_asserting.eigs)
     case_ "an asserting .eigs named nowhere is red" 1 "tests/test_zz_asserting.eigs has no suite invocation"
+    printf '\necho "$EIGS" "$TESTS_DIR/test_zz_asserting.eigs"\n' >> "$ST/tests/sections/99ab-enrolment.sh"
+    case_ "mentioning EIGS and a test as echo operands does not enrol it" 1 "tests/test_zz_asserting.eigs has no suite invocation"
+    sed -i.bak '$d' "$ST/tests/sections/99ab-enrolment.sh" && rm "$ST/tests/sections/99ab-enrolment.sh.bak"
+    printf '\necho check_eigs_suite ignored "$TESTS_DIR/test_zz_asserting.eigs"\n' >> "$ST/tests/sections/99ab-enrolment.sh"
+    case_ "mentioning check_eigs_suite as an echo operand does not enrol it" 1 "tests/test_zz_asserting.eigs has no suite invocation"
+    sed -i.bak '$d' "$ST/tests/sections/99ab-enrolment.sh" && rm "$ST/tests/sections/99ab-enrolment.sh.bak"
     printf '\n"$EIGS" "$TESTS_DIR/test_zz_asserting.eigs"\n' >> "$ST/tests/sections/99ab-enrolment.sh"
-    case_ "the same file named by a section is green" 0 "asserting-test invocation:"
+    case_ "genuinely invoking the same file is green" 0 "asserting-test invocation:"
     sed -i.bak '$d' "$ST/tests/sections/99ab-enrolment.sh" && rm "$ST/tests/sections/99ab-enrolment.sh.bak"
     printf '#!/bin/bash\n"$EIGS" "$TESTS_DIR/test_zz_asserting.eigs"\n' > "$ST/tests/test_zz_runner.sh"
     printf '\nbash "$TESTS_DIR/test_zz_runner.sh"\n' >> "$ST/tests/sections/99ab-enrolment.sh"
@@ -115,7 +141,12 @@ for f in tests/*.sh tests/*.py tools/*.sh tools/*.py \
     elif grep -q "^[[:space:]]*$f[[:space:]]*|" <<< "$EXEMPTED"; then ex=$((ex + 1))
     else echo "  FAIL: $f is invoked by nothing -- add a suite section in tests/sections/ (or a workflow step), or list it in $EXEMPT with a reason"; rc=1; fi
 done
-[ -d .git ] || { echo "test-enrolment: ABORTED: git work tree required for asserting-test population"; exit 2; }
+INSIDE_WORK_TREE=$(git rev-parse --is-inside-work-tree 2>/dev/null) || {
+    echo "test-enrolment: ABORTED: git work tree required for asserting-test population"; exit 2;
+}
+[ "$INSIDE_WORK_TREE" = true ] || {
+    echo "test-enrolment: ABORTED: git work tree required for asserting-test population"; exit 2;
+}
 ASSERTING=$(git ls-files 'tests/*.eigs' | while IFS= read -r f; do
     grep -q 'test_summary of' "$f" && printf '%s\n' "$f"
 done)
