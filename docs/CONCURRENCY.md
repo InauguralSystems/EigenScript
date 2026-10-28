@@ -242,9 +242,9 @@ or dict the closure captured is the *same object* the parent still holds. Two
 threads mutating it concurrently is a data race — and the race is yours to
 avoid, exactly as in C. The safe pattern is to *communicate* results (return
 them, or `send` them through a channel) rather than to mutate shared state. The
-unsafe pattern — unsynchronized read-modify-write on a shared list from two
-workers — is caught by the ThreadSanitizer gate below
-(`tests/tsan_seeded_race.eigs`).
+unsafe pattern is an unsynchronized read-modify-write on a shared list from two
+workers. ThreadSanitizer can diagnose such races, but programs must not depend
+on a particular report from an undefined, scheduling-dependent race.
 
 ### A key written by a worker outlives the worker (#1141)
 
@@ -773,5 +773,8 @@ The claim that the spawn/channel machinery is data-race-free is not a comment �
 it is regression-gated. `make tsan` builds a ThreadSanitizer interpreter and
 `tests/test_tsan.sh` runs the concurrency test slice under it (`setarch -R`,
 since ThreadSanitizer needs ASLR off here). The same gate runs a **deliberately
-seeded race** and asserts ThreadSanitizer catches it, so the gate cannot rot
-into a vacuous pass. It runs as the `tsan` job in CI.
+seeded C race** (compiled only into TSan Make variants) and asserts
+ThreadSanitizer catches it, so the gate cannot rot into a vacuous pass. Its two
+writes have no synchronization edge between them, making the control
+independent of EigenScript runtime locking and scheduling. It runs as the
+`tsan` job in CI.

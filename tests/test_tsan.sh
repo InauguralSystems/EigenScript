@@ -30,11 +30,8 @@ if [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] && \
     exit 1
 fi
 
-# Every run is timeout-bounded. The seeded race is DELIBERATE UB (a lost
-# update on the slot double-decrefs the displaced element), and undefined
-# behavior may legally hang — on 4-core CI runners it did, at ~1/3 rate,
-# burning the 6h job timeout each time. TSan's warnings are emitted as they
-# happen, so a killed run still yields its warning count.
+# Every run is timeout-bounded. TSan's warnings are emitted as they happen,
+# so a killed run still yields its warning count.
 TSAN_RUN_TIMEOUT=${TSAN_RUN_TIMEOUT:-120}
 # Sets WARNINGS + LAST_RC as globals — deliberately NOT echo-and-capture:
 # `w=$(fn)` would run fn in a subshell and the parent would never see
@@ -56,15 +53,15 @@ tsan_warnings() {
 
 seeded_race_row() {
     echo "=== gate self-validation: a seeded race MUST be caught ==="
-    tsan_warnings "$TESTS_DIR/tsan_seeded_race.eigs"
-    local w=$WARNINGS
-    if [ "$LAST_RC" -eq 124 ]; then
-        echo "  note: seeded race killed after ${TSAN_RUN_TIMEOUT}s (UB may hang; detection is what's asserted)"
-    fi
+    local out rc w
+    out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R env \
+        EIGS_TSAN_SEEDED_RACE_CONTROL=1 "$EIGS" 2>&1)
+    rc=$?
+    w=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
     if [ "$w" -gt 0 ]; then
         echo "  PASS: seeded race detected ($w warnings) — the gate is live"; PASS=$((PASS + 1))
     else
-        echo "  FAIL: seeded race NOT detected — the TSan gate is vacuous!"; FAIL=$((FAIL + 1))
+        echo "  FAIL: seeded race NOT detected — the TSan gate is vacuous! (rc=$rc)"; FAIL=$((FAIL + 1))
     fi
 }
 

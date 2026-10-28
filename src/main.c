@@ -51,6 +51,33 @@ static int tsan_misordered_publish_control(void) {
         return 2;
     return (uintptr_t)observed == 2052 ? 0 : 1;
 }
+
+/* #2071: gate-liveness control. Both workers exist before either is joined,
+ * so pthread lifecycle edges do not order these writes. Unlike the former
+ * language-level control, captured-binding lookup cannot add a runtime lock
+ * (and an accidental happens-before edge) around this location. */
+static volatile int tsan_seeded_race_word;
+
+static void *tsan_seeded_race_write(void *value) {
+    tsan_seeded_race_word = (int)(uintptr_t)value;
+    return NULL;
+}
+
+static int tsan_seeded_race_control(void) {
+    pthread_t first, second;
+    tsan_seeded_race_word = 0;
+    if (pthread_create(&first, NULL, tsan_seeded_race_write,
+                       (void *)(uintptr_t)1) != 0)
+        return 2;
+    if (pthread_create(&second, NULL, tsan_seeded_race_write,
+                       (void *)(uintptr_t)2) != 0) {
+        (void)pthread_join(first, NULL);
+        return 2;
+    }
+    if (pthread_join(first, NULL) != 0 || pthread_join(second, NULL) != 0)
+        return 2;
+    return 0;
+}
 #endif
 
 #ifndef EIGENSCRIPT_VERSION
@@ -80,6 +107,8 @@ static void set_exe_dir(const char *argv0) {
 
 int main(int argc, char **argv) {
 #ifdef EIGS_TSAN_TEST_SEAM
+    if (getenv("EIGS_TSAN_SEEDED_RACE_CONTROL"))
+        return tsan_seeded_race_control();
     if (getenv("EIGS_TSAN_MISORDERED_PUBLISH_CONTROL"))
         return tsan_misordered_publish_control();
 #endif
