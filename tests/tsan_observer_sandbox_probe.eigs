@@ -1,0 +1,31 @@
+# #1867 / #1869 probe: spawned workers repeatedly rebind an allowlisted
+# global while main enters sandbox_run.  unobserved still records the total
+# value-channel measurement, so both workers fold abs's shared ObserverSlot.
+define make_abs(tag) as:
+    local payload is [tag]
+    define f(x) as:
+        if x < 0:
+            return 0 - x
+        return x + (len of payload) - 1
+    return f
+
+abs is make_abs of 0
+r0 is report of abs
+rebinds is 4000
+define rebinder(k) as:
+    local i is 0
+    unobserved:
+        loop while i < rebinds:
+            abs is make_abs of (i + k)
+            i is i + 1
+    return i
+
+w1 is spawn of [rebinder, 1]
+w2 is spawn of [rebinder, 2]
+i is 0
+loop while i < 400:
+    sandbox_run of [[1, [0,0,0, 40], [7]], 1000]
+    i is i + 1
+assert of [(thread_join of w1) == rebinds, "worker 1"]
+assert of [(thread_join of w2) == rebinds, "worker 2"]
+print of "observer sandbox probe: PASS"

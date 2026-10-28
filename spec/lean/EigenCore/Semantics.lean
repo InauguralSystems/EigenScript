@@ -30,12 +30,37 @@ structure FunctionDef where
   deriving Inhabited
 inductive OracleValue where | int (v : Int) | string (v : String) | null deriving Repr, BEq
 inductive Mode where | live (oracle : List OracleValue) | record (oracle : List OracleValue) | replayStrict (tape : List String) deriving Repr, BEq
-/-- The evaluator-facing effect interface.  `Mode` is a public request; this is
-the private, stateful handler selected once, before evaluation starts. -/
-private inductive TapedHandler where
-  | live (oracle : List OracleValue)
-  | record (oracle : List OracleValue)
-  | replayStrict (remaining : List String)
+/-- One answer actually consumed by the evaluator.  Positions are positions in
+the single supplied answer sequence, not byte offsets in a tape. -/
+inductive TapedAnswer where
+  | value (position : Nat) (name : String) (value : OracleValue)
+  | replayError (position : Nat) (error : Err)
+  | replayExhausted (position : Nat)
+  | oracleExhausted (position : Nat)
+  deriving Repr, BEq
+
+/-- A taped operation is an explicit interaction, rather than an implicit read
+from evaluator state. -/
+structure TapedQuery where
+  name : String
+  deriving Repr, BEq
+
+/-- The finite interaction tree produced by evaluation.  Its continuation is
+positive: an interpreter, and only an interpreter, supplies taped answers. -/
+inductive Interaction (α : Type) where
+  | done : α → Interaction α
+  | ask : TapedQuery → (TapedAnswer → Interaction α) → Interaction α
+
+namespace Interaction
+def bind : Interaction α → (α → Interaction β) → Interaction β
+  | .done value, next => next value
+  | .ask query continuation, next => .ask query fun answer => bind (continuation answer) next
+
+instance : Monad Interaction where
+  pure := .done
+  bind := bind
+end Interaction
+
 structure World where
   environments : Array Environment := #[{id := 0, parent := none}]
   frames : Array Frame := #[{serial := 0, environment := 0}]
@@ -43,9 +68,8 @@ structure World where
   functions : Array FunctionDef := #[]
   stdout : String := ""
   tape : List String := []
-  private mode : TapedHandler := .live []
-  oracleCursor : Nat := 0
-abbrev EvalM := ExceptT Err (StateM World)
+  answersConsumed : List TapedAnswer := []
+abbrev EvalM := ExceptT Err (StateT World Interaction)
 
 private def findCell (name : String) (cells : Array Cell) : Option Nat := cells.findIdx? (fun c => c.name == name)
 private def currentEnvironment (w : World) : Nat :=
@@ -124,7 +148,7 @@ private def parseQuoted (s : String) : Option String :=
       | fuel + 1, c :: rest, out => go fuel rest (out.push c)
     go (body.length + 1) body.toList ""
 
-private def parseNValue (fn raw : String) : Except Err Value :=
+private def parseNValue (fn raw : String) : Except Err OracleValue :=
   if fn == "random_int" then
     match raw.toInt? with
     | some n => pure (.int n)
@@ -140,67 +164,110 @@ private def parseNValue (fn raw : String) : Except Err Value :=
       | none => throw (.replay s!"tape kind mismatch for {fn}: expected string or null")
   else throw (.replay s!"tape name mismatch: program called {fn}")
 
-private def takeN (fn : String) : EvalM Value := do
-  let w ← get
-  let rec scan : List String → Except Err (Value × List String)
-    | [] => throw (.runtime s!"{fn}: replay stream 0 has no matching recorded N value")
-    | line :: rest =>
-      if line.startsWith "V " then
-        -- replay_scan_locked retains a subsequent version header as a session
-        -- boundary.  A TAKE may not borrow nondeterminism from that session.
-        throw (.runtime s!"{fn}: replay stream 0 has no matching recorded N value")
-      else if line.startsWith "N " then
-        match (line.splitOn " ").drop 2 with
-        | payloadParts =>
-          let payload := String.intercalate " " payloadParts
-          match payload.splitOn "=" with
-          | name :: valueParts =>
-            let recorded := String.intercalate "=" valueParts
-            if name != fn then throw (.replay s!"replay name mismatch: tape has '{name}', program called '{fn}'")
-            else do pure (← parseNValue fn recorded, rest)
-          | _ => throw (.replay "malformed N record")
-      else scan rest
-  match scan (match w.mode with | .replayStrict tape => tape | _ => []) with
-  | .error e => throw e
-  | .ok (value, rest) =>
-      let record := "N 0 " ++ fn ++ "=" ++ nondetValue value
-      set {w with mode := .replayStrict rest, tape := w.tape ++ [record]}
-      pure value
+/-- Normalize replay input once into the evaluator's answer type.  Non-answer
+records are skipped, and a later `V` header ends the current session.  Parsing
+errors are deliberately stored rather than raised, so evaluation observes one
+at precisely the corresponding answer position. -/
+private def normalizeTapeFrom (position : Nat) : List String → List TapedAnswer
+  | [] => []
+  | line :: rest =>
+    if line.startsWith "V " then []
+    else if line.startsWith "N " then
+      let payload := String.intercalate " " ((line.splitOn " ").drop 2)
+      match payload.splitOn "=" with
+      | name :: valueParts =>
+        let recorded := String.intercalate "=" valueParts
+        -- Unknown recorded names stay as values until the call supplies its
+        -- expected name.  This preserves the C/previous-model rule that a
+        -- wrong-name error takes precedence over parsing that record's value.
+        let parsed := if k_tape_kinds.any (fun entry => entry.1 == name) then
+            parseNValue name recorded else pure .null
+        let answer := match parsed with
+          | .ok value => TapedAnswer.value position name value
+          | .error error => TapedAnswer.replayError position error
+        answer :: normalizeTapeFrom (position + 1) rest
+      | _ => .replayError position (.replay "malformed N record") :: normalizeTapeFrom (position + 1) rest
+    else normalizeTapeFrom position rest
 
-private def oracleValue (fn : String) (oracle : List OracleValue) : EvalM Value := do
+def normalizeTape (tape : List String) : List TapedAnswer :=
+  normalizeTapeFrom 0 tape
+
+/-- Any delayed normalization error retains the exact answer-sequence position
+at which it will be raised.  In particular, skipped A/B records cannot move an
+error earlier or later among the N answers. -/
+theorem normalizeTape_error_position {tape : List String} {i p : Nat} {e : Err}
+    (h : (normalizeTape tape)[i]? = some (.replayError p e)) : p = i := by
+  -- `normalizeTapeFrom` increments its position exactly when it emits an
+  -- element; this stronger accumulator invariant avoids reasoning about the
+  -- irrelevant records which normalization skips.
+  have invariant : ∀ (xs : List String) (start j q : Nat) (error : Err),
+      (normalizeTapeFrom start xs)[j]? = some (.replayError q error) →
+      q = start + j := by
+    intro xs
+    induction xs with
+    | nil => simp [normalizeTapeFrom]
+    | cons line rest ih =>
+      intro start j q error found
+      simp only [normalizeTapeFrom] at found
+      split at found
+      · simp at found
+      · split at found
+        · split at found
+          · split at found
+            · cases j with
+              | zero => simp at found
+              | succ j =>
+                simp only [List.getElem?_cons_succ] at found
+                have := ih (start + 1) j q error found
+                omega
+            · cases j with
+              | zero => simp at found; omega
+              | succ j =>
+                simp only [List.getElem?_cons_succ] at found
+                have := ih (start + 1) j q error found
+                omega
+          · cases j with
+            | zero => simp at found; omega
+            | succ j =>
+              simp only [List.getElem?_cons_succ] at found
+              have := ih (start + 1) j q error found
+              omega
+        · exact ih start j q error found
+  simpa [normalizeTape] using invariant tape 0 i p e h
+
+private def oracleAnswers (oracle : List OracleValue) : List TapedAnswer :=
+  oracle.zipIdx.map fun (value, position) => .value position "" value
+
+private def consumeAnswer (fn : String) : EvalM Value := do
   let w ← get
-  let some raw := oracle[w.oracleCursor]?
-    | throw (.runtime s!"{fn}: oracle exhausted at value {w.oracleCursor}")
+  let position := w.answersConsumed.length
+  let supplied : TapedAnswer ← liftM
+    (Interaction.ask {name := fn} (fun answer => Interaction.done answer))
+  let raw ← match supplied with
+    | TapedAnswer.oracleExhausted _ => throw (.runtime s!"{fn}: oracle exhausted at value {position}")
+    | .replayError _ error => throw error
+    | .replayExhausted _ => throw (.runtime s!"{fn}: replay stream 0 has no matching recorded N value")
+    | .value _ recordedName value =>
+      if !recordedName.isEmpty && recordedName != fn then
+        throw (.replay s!"replay name mismatch: tape has '{recordedName}', program called '{fn}'")
+      else pure value
   let value ← match fn, raw with
     | "random_int", .int n => pure (.int n)
     | "env_get", .string s => pure (.string s)
     | "read_line", .string s => pure (.string s)
     | "read_line", .null => pure .null
     | _, _ => throw (.runtime s!"{fn}: oracle value has the wrong kind")
-  set {w with oracleCursor := w.oracleCursor + 1}
+  let consumed := w.answersConsumed ++ [.value position fn raw]
+  let tape := w.tape ++ ["N 0 " ++ fn ++ "=" ++ nondetValue value]
+  set {w with answersConsumed := consumed, tape := tape}
   pure value
-
-private def liveHandler (fn : String) (oracle : List OracleValue) : EvalM Value :=
-  oracleValue fn oracle
-
-private def recordHandler (fn : String) (oracle : List OracleValue) : EvalM Value := do
-  let value ← oracleValue fn oracle
-  modify fun w => {w with tape := w.tape ++ ["N 0 " ++ fn ++ "=" ++ nondetValue value]}
-  pure value
-
-private def replayStrictHandler (fn : String) : EvalM Value :=
-  takeN fn
 
 /-- Live and record modes consume the supplied oracle exactly once per taped
 call.  Exhaustion is a runtime error, rather than a fabricated default: this
 keeps completed record runs honest and lets the N values of any successful
 strict replay serve directly as the witness oracle for replay fidelity. -/
 private def tapedCall (fn : String) : EvalM Value := do
-  let w ← get
-  match w.mode with
-  | .replayStrict _ => replayStrictHandler fn
-  | .live oracle => liveHandler fn oracle
-  | .record oracle => recordHandler fn oracle
+  consumeAnswer fn
 private def store (name : String) (v : Value) (isLocal : Bool) : EvalM Unit := do
   let w ← get
   let current := currentEnvironment w
@@ -379,21 +446,129 @@ end
 structure RunResult where
   stdout : String
   tape : List String
+  answersConsumed : List TapedAnswer := []
   error : Option Err := none
   deriving Repr, BEq
 
-def run (fuel : Nat) (p : Program) (mode : Mode) : RunResult :=
+inductive CoreModeTag where | live | record | replayStrict deriving Repr, BEq
+structure CorePolicy where
+  modeTag : CoreModeTag
+  emitAnswers : Bool
+
+structure CoreResult where
+  stdout : String
+  assignments : List String
+  answersConsumed : List TapedAnswer
+  error : Option Err
+  deriving Repr, BEq
+
+private def isAnswerRecord (line : String) : Bool := line.startsWith "N "
+private def isAssignmentRecord (line : String) : Bool := line.startsWith "A "
+
+/-- Result of interpreting a finite interaction tree.  `consumed` counts the
+supplied entries selected by `ask` nodes, including an explicitly supplied
+error entry when that is what stops evaluation. -/
+structure Interpretation (α : Type) where
+  value : α
+  consumed : Nat
+  deriving Repr, BEq
+
+/-- Interpret explicit taped interactions against a supplied answer list. -/
+def interpret : Interaction α → List TapedAnswer → Interpretation α
+  | .done value, _ => {value := value, consumed := 0}
+  | .ask _ continuation, [] =>
+      let result := interpret (continuation (.oracleExhausted 0)) []
+      {result with consumed := 0}
+  | .ask _ continuation, answer :: rest =>
+      let result := interpret (continuation answer) rest
+      {result with consumed := result.consumed + 1}
+
+/-- Prefix sufficiency for the interaction interpreter.  The strict bound says
+the run stopped before exhausting its supplied stream (callers include an
+explicit error answer).  Thus answers after the exactly-consumed prefix cannot
+be observed. -/
+theorem interpret_prefix_sufficient (tree : Interaction α) :
+    ∀ (supplied alternative : List TapedAnswer),
+      (interpret tree supplied).consumed < supplied.length →
+      supplied.take (interpret tree supplied).consumed =
+        alternative.take (interpret tree supplied).consumed →
+      interpret tree supplied = interpret tree alternative := by
+  induction tree with
+  | done value =>
+      intro supplied alternative within agree
+      simp [interpret]
+  | ask query continuation ih =>
+      intro supplied alternative within agree
+      cases supplied with
+      | nil => simp [interpret] at within
+      | cons answer rest =>
+        cases alternative with
+        | nil =>
+          simp [interpret] at agree within
+        | cons other others =>
+          simp only [interpret] at within agree ⊢
+          have positive : 0 < (interpret (continuation answer) rest).consumed + 1 := by omega
+          have heads : answer = other := by
+            simpa [List.take_succ_cons, positive] using congrArg List.head? agree
+          subst other
+          have tails : rest.take (interpret (continuation answer) rest).consumed =
+              others.take (interpret (continuation answer) rest).consumed := by
+            simpa [List.take_succ_cons] using congrArg List.tail agree
+          have childWithin : (interpret (continuation answer) rest).consumed < rest.length := by
+            simpa using within
+          rw [ih answer rest others childWithin tails]
+
+/-- Evaluate with the canonical event stream.  No mode metadata enters the
+mutually recursive evaluator. -/
+private def evaluateCore (fuel : Nat) (p : Program)
+    (supplied : List TapedAnswer) : RunResult :=
   if let some construct := unsupportedConstruct p then
-    {stdout:="", tape:=[], error:=some (.unsupported construct)}
+    {stdout := "", tape := [], error := some (.unsupported construct)}
   else
-    let root : Environment := {id:=0, parent:=none}
-    let handler := match mode with
-      | .live oracle => TapedHandler.live oracle
-      | .record oracle => TapedHandler.record oracle
-      | .replayStrict tape => TapedHandler.replayStrict tape
-    let initial : World := {mode:=handler, environments:=#[root]}
-    let action : EvalM (Option Value) := exec fuel p
-    let (result, w) := (action.run).run initial
+    let root : Environment := {id := 0, parent := none}
+    let initial : World := {environments := #[root]}
+    -- Keep exhaustion explicit too.  The second marker is an unobservable
+    -- guard entry, ensuring every completed interpretation has a proper
+    -- suffix beyond the consumed prefix.
+    let suppliedWithError := supplied ++
+      [.oracleExhausted supplied.length, .oracleExhausted (supplied.length + 1)]
+    let interpreted := interpret (((exec fuel p).run).run initial) suppliedWithError
+    let (result, w) := interpreted.value
     let error := match result with | .ok _ => none | .error e => some e
-    {stdout:=w.stdout, tape:=w.tape, error:=error}
+    {stdout := w.stdout, tape := w.tape, answersConsumed := w.answersConsumed, error := error}
+
+/-- Entry point of the evaluator core.  The tag is carried so callers from
+different modes can be compared, but cannot affect evaluation. -/
+def runCore (fuel : Nat) (p : Program) (supplied : List TapedAnswer)
+    (policy : CorePolicy) : CoreResult :=
+  let result := evaluateCore fuel p supplied
+  match policy.modeTag with
+  | .live | .record | .replayStrict =>
+    { stdout := result.stdout
+      assignments := result.tape.filter isAssignmentRecord
+      answersConsumed := result.answersConsumed
+      error := result.error }
+
+/-- The core result is a function of program, fuel, and supplied answers only,
+even when its callers carry different mode tags. -/
+theorem runCore_deterministic (fuel : Nat) (p : Program)
+    (supplied : List TapedAnswer) (left right : CorePolicy) :
+    runCore fuel p supplied left = runCore fuel p supplied right := by
+  induction fuel with
+  | zero => cases left with | mk leftTag leftEmit => cases right with | mk rightTag rightEmit => cases leftTag <;> cases rightTag <;> rfl
+  | succ _ _ => cases left with | mk leftTag leftEmit => cases right with | mk rightTag rightEmit => cases leftTag <;> cases rightTag <;> rfl
+
+private def presentCore (fuel : Nat) (p : Program) (supplied : List TapedAnswer)
+    (policy : CorePolicy) : RunResult :=
+  let result := evaluateCore fuel p supplied
+  if policy.emitAnswers then result
+  else {result with tape := result.tape.filter (!isAnswerRecord ·)}
+
+def run (fuel : Nat) (p : Program) (mode : Mode) : RunResult :=
+  match mode with
+  | .live oracle => presentCore fuel p (oracleAnswers oracle) {modeTag := .live, emitAnswers := false}
+  | .record oracle => presentCore fuel p (oracleAnswers oracle) {modeTag := .record, emitAnswers := true}
+  | .replayStrict tape => let supplied := normalizeTape tape
+    presentCore fuel p (supplied ++ [.replayExhausted supplied.length]) {modeTag := .replayStrict, emitAnswers := true}
+
 end EigenCore

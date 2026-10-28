@@ -2287,7 +2287,7 @@ static int audio_noise_take(Value **out) {
  * shared drand48 stream behind `random` (eigs_random_double), so `seed_random`
  * pins them, and they are recorded on the tape (audio_noise_record), so
  * EIGS_REPLAY serves the recorded samples. They used to come from libc's rand,
- * seeded by main's srand(time(NULL)) and recorded nowhere, so a replay drew new
+ * seeded by main from the clock and recorded nowhere, so a replay drew new
  * samples at rc 0. #960 moved random_normal off libc's rand for the same reason. */
 Value* builtin_audio_noise(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "audio_noise");
