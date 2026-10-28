@@ -17,21 +17,27 @@ static void check(int ok, const char *name) {
 int main(void) {
     EigsState *st = eigs_open();
     if (!st) return 2;
-    Value *arg = make_list(5);
-    list_append_owned(arg, make_str("update t set a = $1, b = $2, c = $3, d = $4"));
+    Value *arg = make_list(8);
+    list_append_owned(arg, make_str("select $1, $2, $3, $4, $5, $6, $7"));
     list_append(arg, make_bool(1));
     list_append_owned(arg, make_num(3));
     list_append_owned(arg, make_str("s"));
     list_append(arg, make_bool(0));
+    list_append_owned(arg, make_num(1234567));
+    list_append_owned(arg, make_num(0.1 + 0.2));
+    list_append_owned(arg, make_num(9007199254740991.0));
     const char *sql = NULL; const char *params[DB_MAX_PARAMS];
     char numbuf[DB_MAX_PARAMS][64]; unsigned int types[DB_MAX_PARAMS];
     int n = -1;
     int ok = db_build_query(arg, &sql, &n, params, numbuf, types);
-    check(ok && n == 4, "four parameters built");
+    check(ok && n == 7, "seven parameters built");
     check(ok && strcmp(params[0], "true") == 0 && types[0] == 16, "true binds as SQL boolean 'true' (OID 16)");
     check(ok && strcmp(params[1], "3") == 0 && types[1] == 0, "a number keeps the inferred type");
     check(ok && strcmp(params[2], "s") == 0 && types[2] == 0, "a string keeps the inferred type");
     check(ok && strcmp(params[3], "false") == 0 && types[3] == 16, "false binds as SQL boolean 'false' (OID 16)");
+    check(ok && strcmp(params[4], "1234567") == 0, "1234567 binds without losing digits");
+    check(ok && strcmp(params[5], "0.30000000000000004") == 0, "0.1 + 0.2 binds in round-trip form");
+    check(ok && strcmp(params[6], "9007199254740991") == 0, "2^53-1 binds without losing digits");
     check(DB_PARAM_OID_BOOL == DB_OID_BOOL, "the parameter OID is the column classifier's boolean OID");
     val_decref(arg);
     Value *bad = make_list(2);
@@ -42,6 +48,6 @@ int main(void) {
     eigs_clear_error();
     val_decref(bad);
     eigs_close(st);
-    printf("db params: %d passed, %d failed (7 declared)\n", passed, failed);
-    return failed || passed != 7;
+    printf("db params: %d passed, %d failed (10 declared)\n", passed, failed);
+    return failed || passed != 10;
 }
