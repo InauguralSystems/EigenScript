@@ -33,7 +33,7 @@ if [ "${1:-}" = "--selftest" ]; then
     printf '%s\n' '#!/bin/bash' 'set -o pipefail' 'echo clean' > "$work/plant.sh"
     if ! out=$(PIPEFAIL_SCRIPT_LIST="$work/plant.sh" PIPEFAIL_MIN_SCRIPTS=1 PIPEFAIL_MIN_LINES=1 PIPEFAIL_MIN_MATCHERS=0 bash "$0" 2>&1); then
         echo "SELFTEST FAILED: clean pipefail control was rejected"; printf '%s\n' "$out"; exit 1
-    elif ! printf '%s\n' "$out" | grep -qF 'PASS: no pipeline decides a verdict in 1 pipefail script(s) (3 logical lines, 0 matcher copies pinned)'; then
+    elif ! str_has "$out" 'PASS: no pipeline decides a verdict in 1 pipefail script(s) (3 logical lines, 0 matcher copies pinned)'; then
         echo "SELFTEST FAILED: clean pipefail control did not examine the expected population"; printf '%s\n' "$out"; exit 1
     fi
     printf '%s\n' 'if printf '\''%s\n'\'' x | grep -q x; then echo x; fi' >> "$work/plant.sh"
