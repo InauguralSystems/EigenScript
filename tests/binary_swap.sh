@@ -24,12 +24,28 @@ eigs_binary_swap_selftest() (
     trap 'exit 130' INT
     trap 'exit 143' TERM
     record_binary_fingerprint
+    # Signal-path controls need an ordering stronger than a sleep: publish the
+    # restoration subshell only after its traps and baseline are in place.
+    # The external controller then waits for the replacement marker below
+    # before delivering its signal (#2133).
+    if [ -n "${EIGS_SWAP_ARMED_FILE:-}" ]; then
+        # BASHPID is bash 4+, and macOS ships bash 3.2 (#2144 review). A forked sh
+        # child's PPID is this restoration subshell in every bash.
+        sh -c 'echo "$PPID"' > "$EIGS_SWAP_ARMED_FILE.tmp" || exit 125
+        mv "$EIGS_SWAP_ARMED_FILE.tmp" "$EIGS_SWAP_ARMED_FILE" || exit 125
+    fi
     check_eigs_suite "binary-guard self-test block" "test_gen0_baseline.eigs" "T01" 1
     scratch=$(mktemp -d "${EIGS_BIN}.swap.XXXXXX") || exit 125
     cp -p "$EIGS_BIN" "$scratch/modified" || exit 125
     printf '\n' >> "$scratch/modified" || exit 125
     mv "$EIGS_BIN" "$scratch/original" || exit 125
     mv "$scratch/modified" "$EIGS_BIN" || exit 125
+    if [ -n "${EIGS_SWAP_REPLACED_FILE:-}" ]; then
+        : > "$EIGS_SWAP_REPLACED_FILE" || exit 125
+        # The controller creates SENT only after kill(2) has accepted the
+        # signal.  Thus reaching the fingerprint check cannot outrun it.
+        while [ ! -e "$EIGS_SWAP_SENT_FILE" ]; do sleep 0.01; done
+    fi
     # Replacement is deliberately synchronous: the guard observes the same
     # mid-run change without a sleeping background writer racing restoration.
     check_binary_fingerprint

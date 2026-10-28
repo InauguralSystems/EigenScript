@@ -14,14 +14,19 @@ ERROR='ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — res
 # A direct child sees the restoration subshell as its parent on Bash 3 too.
 # Verify that target differs from the enclosing shell before delivering the
 # signal; $$ alone would target that enclosing shell and never test restoration.
-SIGNAL_CODE='''import os, signal
-parent=os.getppid()
+SIGNAL_CODE='''import os, signal, time
+armed=os.environ["CONTROL_ARMED"]
+replaced=os.environ["CONTROL_REPLACED"]
+while not os.path.exists(armed): time.sleep(.001)
+parent=int(open(armed).read())
 outer=int(os.environ["CONTROL_OUTER_PID"])
 if parent<=1 or outer<=1 or parent==outer:
-    raise RuntimeError("signal helper did not enter restoration subshell")
+    raise RuntimeError("restoration handshake named an invalid subshell")
+while not os.path.exists(replaced): time.sleep(.001)
 name=os.environ["CONTROL_SIGNAL"]
-os.kill(parent,getattr(signal,"SIG"+name))
 print("binary-swap-signal: "+name+" parent="+str(parent)+" outer="+str(outer),flush=True)
+os.kill(parent,getattr(signal,"SIG"+name))
+open(os.environ["CONTROL_SENT"],"w").close()
 '''
 # Original [99d] preservation/restoration operations: deliberately retain this
 # broken copy+mv control so an inode-insensitive checker cannot turn green.
@@ -68,12 +73,21 @@ source "$RESTORE_HELPER"
                 else: alias.write_bytes(target.read_bytes())
                 before=identity(alias); target_before=identity(target)
                 command=OLD if mode=='old' else prelude
+                armed=root/'armed'; replaced=root/'replaced'; sent=root/'sent'
                 if mode in ['HUP','INT','TERM']:
-                    command+='\nexport CONTROL_OUTER_PID=$$\ncheck_binary_fingerprint() { "$CONTROL_PYTHON" -c "$CONTROL_SIGNAL_CODE"; }\n'
+                    command+='''
+export CONTROL_OUTER_PID=$$
+export EIGS_SWAP_ARMED_FILE="$CONTROL_ARMED"
+export EIGS_SWAP_REPLACED_FILE="$CONTROL_REPLACED"
+export EIGS_SWAP_SENT_FILE="$CONTROL_SENT"
+"$CONTROL_PYTHON" -c "$CONTROL_SIGNAL_CODE" &
+'''
                 if mode!='old': command+='\neigs_binary_swap_selftest\n'
                 env=dict(os.environ,EIGS_BIN=str(alias),RESTORE_HELPER=str(HERE/'binary_swap.sh'),
-                         CONTROL_SIGNAL=mode,CONTROL_PYTHON=sys.executable,CONTROL_SIGNAL_CODE=SIGNAL_CODE)
-                result=subprocess.run(['bash','-c',command],env=env,cwd=root,capture_output=True,text=True,timeout=5)
+                         CONTROL_SIGNAL=mode,CONTROL_PYTHON=sys.executable,CONTROL_SIGNAL_CODE=SIGNAL_CODE,
+                         CONTROL_ARMED=str(armed),CONTROL_REPLACED=str(replaced),
+                         CONTROL_SENT=str(sent))
+                result=subprocess.run(['bash','-c',command],env=env,cwd=root,capture_output=True,text=True,timeout=30)
                 unchanged=identity(alias)==before
                 detail=(layout,mode,result.returncode,result.stdout,result.stderr)
                 assert identity(target)==target_before,('target changed',detail)
@@ -89,8 +103,8 @@ source "$RESTORE_HELPER"
                     if mode=='guard':
                         assert ERROR in result.stdout and 'SELFTEST_REACHED_END' not in result.stdout
                     else:
-                        sent=re.findall(r'^binary-swap-signal: '+mode+r' parent=(\d+) outer=(\d+)$',result.stdout,re.M)
-                        assert len(sent)==1 and sent[0][0]!=sent[0][1],('signal not delivered to verified subshell',detail)
+                        delivered=re.findall(r'^binary-swap-signal: '+mode+r' parent=(\d+) outer=(\d+)$',result.stdout,re.M)
+                        assert len(delivered)==1 and delivered[0][0]!=delivered[0][1],('signal not delivered to verified subshell',detail)
                     positives+=1
     assert positives==12 and negatives==3
     print(f'binary-swap-controls: positives={positives} old-defect-rejections={negatives}')
