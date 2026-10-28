@@ -1,1 +1,0 @@
-- `channel of N` now honours non-negative integer capacities, including zero-capacity rendezvous channels, instead of always buffering 64 values (#1643).
