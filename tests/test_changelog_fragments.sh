@@ -92,7 +92,10 @@ if [ -z "${CHANGELOG_SELFTEST_PLANT:-}" ]; then
     # The harness's own plant (#2061 review): re-run with a failing INTERMEDIATE
     # setup command in cut-readme, followed by successful ones. It must be named
     # as a setup failure with its rc and output, and the summary must still print.
-    plant_out=$(CHANGELOG_SELFTEST_PLANT=intermediate-setup-failure bash "$0" --selftest 2>&1); plant_rc=$?
+    # Root-qualified: $0 may be relative to a directory this script has left,
+    # and the planted run's expected rc 1 must not trip an inherited errexit.
+    plant_rc=0
+    plant_out=$(CHANGELOG_SELFTEST_PLANT=intermediate-setup-failure bash "$ROOT/tests/${0##*/}" --selftest 2>&1) || plant_rc=$?
     if [ "$plant_rc" -eq 1 ] &&
        grep -q "^  FAIL: cut-readme (setup failed: cut_deletes_readme: .*exit 42.*, rc=42)$" <<< "$plant_out" &&
        grep -qx "planted-setup-failure" <<< "$plant_out" &&
