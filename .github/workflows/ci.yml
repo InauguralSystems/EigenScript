@@ -1024,12 +1024,32 @@ jobs:
         name: Compile-check DAP server
         run: make dap
 
-      # 44 deterministic adversarial inputs against the ASan-instrumented
-      # stdin harness (same compile->vm pipeline as main.c). Seconds to run;
-      # any exit other than 0/1 is a crash.
+      # Edge cases, adversarial inputs and the curated corpus (fuzz/corpus),
+      # each run once through the libFuzzer target's per-input body under
+      # ASan+UBSan (the gcc-built stdin driver). Leak detection is on: an
+      # input fails on any AddressSanitizer or LeakSanitizer report, or on an
+      # exit other than 0/1 (#1734).
       - if: needs.scope.outputs.code == 'true'
         name: Fuzz smoke (ASan harness, curated corpus)
         run: make fuzz && bash fuzz/run_fuzz.sh
+
+      # #1734: the smoke's positive control. `--plant-leak` runs one input that
+      # really leaks: fuzz_leak_plant, a builtin the harness binds only under
+      # EIGS_FUZZ_LEAK_PLANT, allocates a dict and drops it. The smoke must
+      # fail that input as a leak whose stack has make_dict called directly by
+      # fuzz_leak_plant. A pass here means the step above cannot see a leak.
+      - if: needs.scope.outputs.code == 'true'
+        name: Fuzz smoke leak plant (#1734)
+        shell: bash
+        run: |
+          result=$(mktemp)
+          rc=0
+          bash fuzz/run_fuzz.sh --plant-leak > "$result" 2>&1 || rc=$?
+          cat "$result"
+          [ "$rc" -eq 1 ]
+          grep -qxF '  FAIL: plant: orphaned make_dict (LeakSanitizer)' "$result"
+          awk 'BEGIN {m = -1} / in make_dict /{m = NR} (/ in fuzz_leak_plant / || / in fuzz_leak_plant$/) && NR == m + 1 {hit = 1} END {exit !hit}' "$result"
+          grep -qxF '  FUZZ: 0 passed, 1 failed' "$result"
 
       - name: Require compiler guard activity
         if: always() && needs.scope.outputs.code == 'true'
