@@ -13,6 +13,9 @@
  * OSS-Fuzz uses this entry point with $LIB_FUZZING_ENGINE substituted
  * for libFuzzer's main(). See projects/eigenscript/build.sh in the
  * OSS-Fuzz repo.
+ *
+ * `make fuzz` links this same file under fuzz/fuzz_stdin.c, a one-input
+ * stdin driver built with gcc, and the CI fuzz smoke runs that (#1734).
  */
 
 #include "../src/eigenscript.h"
@@ -33,15 +36,21 @@
  * first report, so the fuzzer never got past its seed corpus. Allocations
  * made while LSan is disabled are ignored forever; per-input allocations
  * (made with it re-enabled) are still checked, which is the leak class a
- * fuzzer exists to find. */
-#if defined(__has_feature)
+ * fuzzer exists to find. gcc (the `make fuzz` driver) names ASan with
+ * __SANITIZE_ADDRESS__, clang with __has_feature; either must reach the
+ * disable, or every input reports the builtin table (#1734). */
+#if defined(__SANITIZE_ADDRESS__)
+#  define FUZZ_HAVE_LSAN 1
+#elif defined(__has_feature)
 #  if __has_feature(address_sanitizer)
-#    include <sanitizer/lsan_interface.h>
-#    define FUZZ_LSAN_DISABLE() __lsan_disable()
-#    define FUZZ_LSAN_ENABLE()  __lsan_enable()
+#    define FUZZ_HAVE_LSAN 1
 #  endif
 #endif
-#ifndef FUZZ_LSAN_DISABLE
+#ifdef FUZZ_HAVE_LSAN
+#  include <sanitizer/lsan_interface.h>
+#  define FUZZ_LSAN_DISABLE() __lsan_disable()
+#  define FUZZ_LSAN_ENABLE()  __lsan_enable()
+#else
 #  define FUZZ_LSAN_DISABLE() ((void)0)
 #  define FUZZ_LSAN_ENABLE()  ((void)0)
 #endif

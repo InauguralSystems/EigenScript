@@ -964,9 +964,11 @@ jobs:
         name: Compile-check DAP server
         run: make dap
 
-      # 44 deterministic adversarial inputs against the ASan-instrumented
-      # stdin harness (same compile->vm pipeline as main.c). Seconds to run;
-      # any exit other than 0/1 is a crash.
+      # Edge cases, adversarial inputs and the curated corpus (fuzz/corpus),
+      # each run once through the libFuzzer target's per-input body under
+      # ASan+UBSan (the gcc-built stdin driver). Leak detection is on: an
+      # input fails on any AddressSanitizer or LeakSanitizer report, or on an
+      # exit other than 0/1 (#1734).
       - if: needs.scope.outputs.code == 'true'
         name: Fuzz smoke (ASan harness, curated corpus)
         run: make fuzz && bash fuzz/run_fuzz.sh
