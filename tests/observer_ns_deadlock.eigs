@@ -1,0 +1,10 @@
+import observer_ns_deadlock_data
+define worker(k) as:
+    return k
+h is spawn of [worker, 1]
+x is observer_ns_deadlock_data
+# Naming an observer predicate opens the gate at compile time; assigning the
+# imported data-only namespace after spawn used to recursively acquire #607.
+probe is converged of x
+assert of [(thread_join of h) == 1, "worker"]
+print of "observer namespace deadlock: PASS"

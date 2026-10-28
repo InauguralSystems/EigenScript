@@ -10,6 +10,19 @@ cd "$(dirname "$0")/.."
 ROOT_BUILD=$(mktemp -d)
 trap 'rm -rf "$ROOT_BUILD"' EXIT
 
+# A hosted rand/srand stream would sit outside both seed_random and the replay
+# tape.  Keep this source-level half of the symbol gate deliberately strict:
+# spelling a call in runtime code is forbidden, while the freestanding libc's
+# implementation remains available to EigenOS consumers (#1818).
+HOSTED_RNG_CALLS=$(git grep -n -E '\b(rand|srand)[[:space:]]*\(' -- \
+    'src/*.c' 'extensions/*.c' ':(exclude)src/freestanding/*' || true)
+if [ -n "$HOSTED_RNG_CALLS" ]; then
+    echo "FAIL: hosted runtime calls libc rand/srand outside the taped random stream:" >&2
+    echo "$HOSTED_RNG_CALLS" >&2
+    exit 1
+fi
+echo "OK hosted RNG: no libc rand/srand calls outside src/freestanding"
+
 # Anchor the population to the Makefile's source lists, as amalgamate does.
 SRC=$(make --no-print-directory print-SOURCES |
       tr ' ' '\n' | sed -n 's#^src/\(.*\)\.c$#\1#p')
