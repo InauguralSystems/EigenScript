@@ -10,18 +10,24 @@ loop while i < 1200:
     dict_remove of [d, "k" + (str of i)]
     i is i + 2
 
+# The workers return what they read and the MAIN thread prints it, so the
+# output does not depend on how two printing threads interleave (jit_diff's
+# OBS arm could not adjudicate the old interleaved prints, #2122).
 define read_shared(rounds) as:
     i is 0
+    ks is []
+    encoded is ""
     loop while i < rounds:
         ks is keys of d
         encoded is json_encode of d
         i is i + 1
-    print of ks
-    print of encoded
-    return rounds
+    return [ks, encoded]
 
 a is spawn of [read_shared, 20]
 b is spawn of [read_shared, 20]
-thread_join of a
-thread_join of b
+ra is thread_join of a
+rb is thread_join of b
+print of ra[0]
+print of ra[1]
+print of (ra == rb)
 print of "dict readers: PASS"
