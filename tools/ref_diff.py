@@ -78,9 +78,6 @@ def compare_one(label, source, vm, ref, td, oracle_seed):
 
 def triage(reasons):
     """Assign every red row to exactly one of #2017's three buckets."""
-    known_1749 = {"Lean-record/C-replay A/N projection", "interpreter tier", "jit tier", "osr tier"}
-    if set(reasons) == known_1749:
-        return {"category": "interpreter bug", "detail": "#1749: strict replay omits the served N record while re-recording"}
     # A novel mismatch is not silently waived as an implementation defect.
     # It remains a specification question until minimization assigns a side.
     return {"category": "specification question", "detail": "new mismatch; minimize and decide the owning implementation"}
