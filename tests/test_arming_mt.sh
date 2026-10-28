@@ -1,4 +1,5 @@
 #!/bin/bash
+echo "PLAN: 9"
 # #1145: the observer ARMING SETS under concurrency.
 #
 # Two shapes, and they need DIFFERENT coverage — which is the whole point of

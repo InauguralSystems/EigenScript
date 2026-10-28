@@ -12,6 +12,9 @@ git config user.email selftest@example.invalid
 git config user.name selftest
 mkdir -p tools docs .github/workflows
 cp "$root/tools/selftests.sh" tools/selftests.sh
+# selftests.sh sources the shared plan predicate; a fixture without it fails
+# every scenario at load time (exit 1), which is what #2088's CI showed.
+cp "$root/tools/child_plan.sh" tools/child_plan.sh
 for name in candidate staged untracked unrelated; do
     cat >"tools/$name.sh" <<EOF
 #!/usr/bin/env bash

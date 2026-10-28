@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+echo "PLAN: 5"
 set -eu
 EIGS=${EIGS:-${EIGENSCRIPT:-$(cd "$(dirname "$0")/.." && pwd)/src/eigenscript}}
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
