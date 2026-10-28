@@ -52,6 +52,85 @@ theorem chunks_join (limit : Nat) (s : String) :
   · rw [if_neg empty]
     simp [String.join_append, folded]
 
+
+/-- With a limit large enough for one Unicode scalar, `chunks` never emits an
+empty physical chunk. -/
+theorem chunks_all_nonempty (limit : Nat) (s : String) (limitAtLeastFour : 4 ≤ limit) :
+    ∀ chunk ∈ chunks limit s, chunk ≠ "" := by
+  have invariant : ∀ (input : List Char) (done : List String) (current : String),
+      (∀ chunk ∈ done, chunk ≠ "") →
+      let result := input.foldl (chunkStep limit) (done, current)
+      ∀ chunk ∈ result.1, chunk ≠ "" := by
+    intro input
+    induction input with
+    | nil => simpa
+    | cons c rest ih =>
+      intro done current doneNonempty
+      simp only [List.foldl_cons]
+      by_cases overflow : (current.push c).utf8ByteSize > limit
+      · rw [show chunkStep limit (done, current) c = (done ++ [current], c.toString) by
+          simp only [chunkStep]
+          rw [if_pos (by simpa [String.utf8ByteSize_push] using overflow)]]
+        apply ih
+        intro chunk member
+        simp only [List.mem_append, List.mem_singleton] at member
+        rcases member with member | rfl
+        · exact doneNonempty chunk member
+        · intro currentEmpty
+          simp [currentEmpty] at overflow
+          have charAtMostFour := Char.utf8Size_le_four c
+          omega
+      · rw [show chunkStep limit (done, current) c = (done, current.push c) by
+          simp only [chunkStep]
+          rw [if_neg (by simpa [String.utf8ByteSize_push] using overflow)]]
+        exact ih done (current.push c) doneNonempty
+  have folded := invariant s.toList [] "" (by simp)
+  simp only [chunks]
+  generalize hstate : s.toList.foldl (chunkStep limit) ([], "") = state at folded ⊢
+  rcases state with ⟨done, current⟩
+  simp only at folded
+  by_cases empty : current.isEmpty
+  · simpa [empty] using folded
+  · rw [if_neg empty]
+    intro chunk member
+    simp only [List.mem_append, List.mem_singleton] at member
+    rcases member with member | rfl
+    · exact folded chunk member
+    · exact fun currentEmpty => empty (String.isEmpty_iff.mpr currentEmpty)
+
+/-- The physical chunks account for exactly all UTF-8 bytes in the input. -/
+theorem chunks_utf8ByteSize_sum (limit : Nat) (s : String) :
+    ((chunks limit s).map String.utf8ByteSize).sum = s.utf8ByteSize := by
+  have foldSize : ∀ (pieces : List String) (acc : String),
+      (pieces.foldl (· ++ ·) acc).utf8ByteSize =
+        acc.utf8ByteSize + (pieces.map String.utf8ByteSize).sum := by
+    intro pieces
+    induction pieces with
+    | nil => simp
+    | cons piece rest ih =>
+      intro acc
+      simp only [List.foldl_cons]
+      rw [ih, String.utf8ByteSize_append]
+      simp only [List.map_cons, List.sum_cons]
+      omega
+  have joinSize (pieces : List String) :
+      (String.join pieces).utf8ByteSize = (pieces.map String.utf8ByteSize).sum := by
+    simpa [String.join] using foldSize pieces ""
+  calc
+    ((chunks limit s).map String.utf8ByteSize).sum =
+        (String.join (chunks limit s)).utf8ByteSize := (joinSize _).symm
+    _ = s.utf8ByteSize := congrArg String.utf8ByteSize (chunks_join limit s)
+
+/-- A value with positive byte size necessarily produces a first chunk. -/
+theorem chunks_ne_nil_of_utf8ByteSize_pos (limit : Nat) (s : String)
+    (positive : 0 < s.utf8ByteSize) : chunks limit s ≠ [] := by
+  intro empty
+  have joined := chunks_join limit s
+  rw [empty] at joined
+  simp only [String.join_nil] at joined
+  subst s
+  simp at positive
+
 private def splitFirst (separator : Char) : List Char → List Char × Option (List Char)
   | [] => ([], none)
   | c :: rest =>
@@ -185,6 +264,44 @@ private def gatherContinuations (count : Nat) : Nat → String → List String �
         if chunk.isEmpty then throw "malformed N continuation"
         gatherContinuations count (bytes + chunk.utf8ByteSize) (accumulated ++ chunk) more
       | [] => throw "malformed N continuation"
+
+
+/-- Continuation rows written by the serializer are consumed completely and
+reconstruct their chunks in order. -/
+theorem gatherContinuations_writer (rest tail : List String) (bytes : Nat)
+    (accumulated : String) (restNonempty : ∀ chunk ∈ rest, chunk ≠ "") :
+    gatherContinuations
+        (bytes + (rest.map String.utf8ByteSize).sum)
+        bytes accumulated (rest.map ("C 0 " ++ ·) ++ tail) =
+      .ok (accumulated ++ String.join rest, tail) := by
+  induction rest generalizing bytes accumulated with
+  | nil =>
+    unfold gatherContinuations
+    simp
+    rfl
+  | cons chunk rest ih =>
+    have chunkNonempty : chunk ≠ "" := restNonempty chunk (by simp)
+    have chunkBytesPositive : 0 < chunk.utf8ByteSize := by
+      rw [Nat.pos_iff_ne_zero, ne_eq, String.utf8ByteSize_eq_zero_iff]
+      exact chunkNonempty
+    have laterNonempty : ∀ piece ∈ rest, piece ≠ "" := by
+      intro piece member
+      exact restNonempty piece (by simp [member])
+    have notDone : bytes ≠
+        bytes + chunk.utf8ByteSize + (rest.map String.utf8ByteSize).sum := by omega
+    have notOver : ¬bytes >
+        bytes + chunk.utf8ByteSize + (rest.map String.utf8ByteSize).sum := by omega
+    have continuationChars : ("C 0 " ++ chunk).toList =
+        ['C', ' ', '0', ' '] ++ chunk.toList := by simp
+    simp only [List.map_cons, List.sum_cons, List.cons_append]
+    rw [show bytes + (chunk.utf8ByteSize + (rest.map String.utf8ByteSize).sum) =
+        bytes + chunk.utf8ByteSize + (rest.map String.utf8ByteSize).sum by omega]
+    simp [gatherContinuations, notDone, notOver, continuationChars,
+      afterSecondSpace, splitFirst, chunkNonempty]
+    simpa [String.join, String.append_assoc] using
+      ih (bytes := bytes + chunk.utf8ByteSize)
+        (accumulated := accumulated ++ chunk) laterNonempty
+
 
 private def assembleRecordsFuel : Nat → List String → Except String (List String)
   | _, [] => pure []
