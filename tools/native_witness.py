@@ -34,7 +34,11 @@ def native_witness(tier: str, function: str, dump: str, hot: str) -> NativeWitne
            if section else {})
     back_edges = [offset for offset, (opcode, _argument) in ops.items()
                   if opcode == "JUMP_BACK"]
-    if hrow is None or len(hrow) != 12 or len(back_edges) != 1:
+    # The final three aggregate OSR-slot columns were appended in #1606.
+    # Keep accepting historical 12-field captures: they remain useful as
+    # saved differential/oracle evidence and the fields used below retain
+    # their positions in both shapes.
+    if hrow is None or len(hrow) not in (12, 15) or len(back_edges) != 1:
         raise ValueError(f"no EIGS_JIT_HOT row for {function}, or not exactly one loop "
                          "in its EIGS_DUMP_BC listing; cannot witness the tier")
     back_edge = back_edges[0]

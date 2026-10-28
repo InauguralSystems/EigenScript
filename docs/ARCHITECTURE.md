@@ -174,9 +174,10 @@ unchanged, and `EIGS_JIT_OFF=1` disables it for bisection.
   compiled), preserving the native-byte estimate. Thus `cache_full_rejects`
   reconciles with entry rows whose `jit` state is `full` plus the sum of
   `ofull`; retained freed-chunk rows use the same snapshot semantics. The
-  dump retains at most 8,192 freed-chunk rows, reports dropped rows, and
-  prints only the 30 hottest rows while computing all-chunk totals over the
-  complete retained population.
+  freed-chunk retention is bounded by `JIT_HOT_ROWS_MAX` in `src/jit.c`, and
+  the dump reports dropped rows. Its `Hot chunks (top N of M)` header states
+  how many hottest rows are printed; all-chunk totals use the complete
+  retained population.
 
 ### Observer
 

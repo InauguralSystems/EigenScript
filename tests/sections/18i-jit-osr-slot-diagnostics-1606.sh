@@ -1,5 +1,8 @@
 echo "[18i] JIT hot diagnostics aggregate every OSR slot (#1606)"
 check_binary_fingerprint
+if [ "$(uname -m)" != "x86_64" ]; then
+    section_skip "JIT not built or not supported on this platform"
+fi
 TOTAL=$((TOTAL + 1))
 OSR_SLOT_OUT=$(EIGS="$EIGENSCRIPT" bash "$TESTS_DIR/test_jit_osr_slot_diagnostics.sh" 2>&1)
 OSR_SLOT_RC=$?
