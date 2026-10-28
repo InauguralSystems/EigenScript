@@ -4702,11 +4702,14 @@ Value* builtin_thread_join(Value *arg) {
 
 /* ---- Channels ---- */
 
-#define CHANNEL_BUF_SIZE 64
+#define CHANNEL_DEFAULT_CAPACITY 64
+#define CHANNEL_MAX_CAPACITY 1000000
 
 typedef struct {
-    Value *buffer[CHANNEL_BUF_SIZE];
+    Value **buffer;
+    int capacity;
     int head, tail, count;
+    int waiting_receivers;
     volatile int closed;
     pthread_mutex_t mutex;
     pthread_cond_t not_empty;
@@ -4784,8 +4787,28 @@ static Channel* channel_arg(Value *v, const char *who) {
 #endif
 
 Value* builtin_channel(Value *arg) {
-    (void)arg;
+    int capacity = CHANNEL_DEFAULT_CAPACITY;
+    if (arg && arg->type != VAL_NULL) {
+        if (arg->type != VAL_NUM) {
+            rt_error(EK_TYPE, 0, "channel: capacity must be a non-negative integer or null");
+            return make_null();
+        }
+        double requested = eigs_num_arg(arg, __func__);
+        if (!isfinite(requested) || requested < 0.0 ||
+            requested > CHANNEL_MAX_CAPACITY || floor(requested) != requested) {
+            rt_error(EK_VALUE, 0,
+                     "channel: capacity must be an integer from 0 to %d",
+                     CHANNEL_MAX_CAPACITY);
+            return make_null();
+        }
+        capacity = (int)requested;
+    }
     Channel *ch = xcalloc(1, sizeof(Channel));
+    ch->capacity = capacity;
+    /* A rendezvous needs one hand-off slot, but it is never buffered: send
+     * publishes into it only while a receiver is waiting, then waits for that
+     * receiver to consume it before returning. */
+    ch->buffer = xcalloc((size_t)(capacity ? capacity : 1), sizeof(Value *));
     pthread_mutex_init(&ch->mutex, NULL);
     pthread_condattr_t cattr;
     pthread_condattr_init(&cattr);
@@ -4802,6 +4825,7 @@ Value* builtin_channel(Value *arg) {
         pthread_mutex_destroy(&ch->mutex);
         pthread_cond_destroy(&ch->not_empty);
         pthread_cond_destroy(&ch->not_full);
+        free(ch->buffer);
         free(ch);
         /* #1146 (3): same raise as spawn. `channel` returned null silently,
          * and every send/recv on that null then raised "invalid channel"
@@ -4835,9 +4859,16 @@ Value* builtin_send(Value *arg) {
      * channel buffer; receiver adopts that ref. */
     Value *val = val_clone_for_send(BUILTIN_LIST_VIEW(arg, 1));
     pthread_mutex_lock(&ch->mutex);
-    while (ch->count >= CHANNEL_BUF_SIZE && !ch->closed &&
-           !eigs_state_exit_requested(eigs_current_state(), NULL))
-        pthread_cond_wait(&ch->not_full, &ch->mutex);
+    if (ch->capacity == 0) {
+        while ((ch->waiting_receivers == 0 || ch->count != 0) &&
+               !ch->closed &&
+               !eigs_state_exit_requested(eigs_current_state(), NULL))
+            pthread_cond_wait(&ch->not_full, &ch->mutex);
+    } else {
+        while (ch->count >= ch->capacity && !ch->closed &&
+               !eigs_state_exit_requested(eigs_current_state(), NULL))
+            pthread_cond_wait(&ch->not_full, &ch->mutex);
+    }
     if (eigs_state_exit_requested(eigs_current_state(), NULL)) {
         pthread_mutex_unlock(&ch->mutex);
         val_decref(val);
@@ -4845,9 +4876,14 @@ Value* builtin_send(Value *arg) {
     }
     if (!ch->closed) {
         ch->buffer[ch->tail] = val;
-        ch->tail = (ch->tail + 1) % CHANNEL_BUF_SIZE;
+        ch->tail = (ch->tail + 1) % (ch->capacity ? ch->capacity : 1);
         ch->count++;
         pthread_cond_signal(&ch->not_empty);
+        /* Zero capacity is a synchronous hand-off. The receiver signals
+         * not_full after taking this value. */
+        while (ch->capacity == 0 && ch->count != 0 && !ch->closed &&
+               !eigs_state_exit_requested(eigs_current_state(), NULL))
+            pthread_cond_wait(&ch->not_full, &ch->mutex);
         pthread_mutex_unlock(&ch->mutex);
     } else {
         /* #505: sending to a closed channel drops the value. Failing open
@@ -4870,13 +4906,18 @@ Value* builtin_recv(Value *arg) {
     if (!ch) return make_null();
     if (replay_blocks("recv", "subprocess/concurrency")) return make_null();
     pthread_mutex_lock(&ch->mutex);
+    if (ch->capacity == 0) {
+        ch->waiting_receivers++;
+        pthread_cond_broadcast(&ch->not_full);
+    }
     while (ch->count == 0 && !ch->closed &&
            !eigs_state_exit_requested(eigs_current_state(), NULL))
         pthread_cond_wait(&ch->not_empty, &ch->mutex);
+    if (ch->capacity == 0) ch->waiting_receivers--;
     Value *val = NULL;
     if (ch->count > 0) {
         val = ch->buffer[ch->head];
-        ch->head = (ch->head + 1) % CHANNEL_BUF_SIZE;
+        ch->head = (ch->head + 1) % (ch->capacity ? ch->capacity : 1);
         ch->count--;
         pthread_cond_signal(&ch->not_full);
     }
@@ -4893,7 +4934,7 @@ Value* builtin_try_recv(Value *arg) {
     Value *val = NULL;
     if (ch->count > 0) {
         val = ch->buffer[ch->head];
-        ch->head = (ch->head + 1) % CHANNEL_BUF_SIZE;
+        ch->head = (ch->head + 1) % (ch->capacity ? ch->capacity : 1);
         ch->count--;
         pthread_cond_signal(&ch->not_full);
     }
@@ -4943,14 +4984,19 @@ Value* builtin_recv_timeout(Value *arg) {
 
     pthread_mutex_lock(&ch->mutex);
     int rc = 0;
+    if (ch->capacity == 0) {
+        ch->waiting_receivers++;
+        pthread_cond_broadcast(&ch->not_full);
+    }
     while (ch->count == 0 && !ch->closed && rc == 0 &&
            !eigs_state_exit_requested(eigs_current_state(), NULL)) {
         rc = pthread_cond_timedwait(&ch->not_empty, &ch->mutex, &deadline);
     }
+    if (ch->capacity == 0) ch->waiting_receivers--;
     Value *val = NULL;
     if (ch->count > 0) {
         val = ch->buffer[ch->head];
-        ch->head = (ch->head + 1) % CHANNEL_BUF_SIZE;
+        ch->head = (ch->head + 1) % (ch->capacity ? ch->capacity : 1);
         ch->count--;
         pthread_cond_signal(&ch->not_full);
     }
@@ -5472,13 +5518,14 @@ void handle_table_drain(EigsState *st) {
         while (ch->count > 0) {
             Value *m = ch->buffer[ch->head];
             ch->buffer[ch->head] = NULL;
-            ch->head = (ch->head + 1) % CHANNEL_BUF_SIZE;
+            ch->head = (ch->head + 1) % (ch->capacity ? ch->capacity : 1);
             ch->count--;
             if (m) val_decref(m);
         }
         pthread_mutex_destroy(&ch->mutex);
         pthread_cond_destroy(&ch->not_empty);
         pthread_cond_destroy(&ch->not_full);
+        free(ch->buffer);
         free(ch);
         st->handle_table[i].ptr = NULL;
     }
