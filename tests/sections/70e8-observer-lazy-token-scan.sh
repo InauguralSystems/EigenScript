@@ -1,5 +1,5 @@
 # #1873: literal modules behind uncalled functions use a token-level observer scan.
-echo "[70e7] Observer lazy-module token scan (#1873)"
+echo "[70e8] Observer lazy-module token scan (#1873)"
 TOTAL=$((TOTAL + 1))
 LAZY_SCAN_OUT=$(EIGS="$EIGS" bash "$TESTS_DIR/test_obs_gate_lazy_scan.sh" 2>&1); LAZY_SCAN_RC=$?
 if [ "$LAZY_SCAN_RC" -eq 0 ] &&
