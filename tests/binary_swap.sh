@@ -29,7 +29,9 @@ eigs_binary_swap_selftest() (
     # The external controller then waits for the replacement marker below
     # before delivering its signal (#2133).
     if [ -n "${EIGS_SWAP_ARMED_FILE:-}" ]; then
-        printf '%s\n' "$BASHPID" > "$EIGS_SWAP_ARMED_FILE.tmp" || exit 125
+        # BASHPID is bash 4+, and macOS ships bash 3.2 (#2144 review). A forked sh
+        # child's PPID is this restoration subshell in every bash.
+        sh -c 'echo "$PPID"' > "$EIGS_SWAP_ARMED_FILE.tmp" || exit 125
         mv "$EIGS_SWAP_ARMED_FILE.tmp" "$EIGS_SWAP_ARMED_FILE" || exit 125
     fi
     check_eigs_suite "binary-guard self-test block" "test_gen0_baseline.eigs" "T01" 1
