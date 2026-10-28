@@ -212,6 +212,10 @@ define eigen_tokenize(source) as:
 # interpolation advances it (#1251). The splice drops layout tokens, so a
 # continuation line's indentation is inert there; ordinary source still has
 # its dedents checked against the indentation stack (#1378).
+define _eigen_hex_byte(n) as:
+    local digits is "0123456789abcdef"
+    return (substr of [digits, floor of (n / 16), 1]) + (substr of [digits, n % 16, 1])
+
 define _eigen_tokenize_at(source, line, check_layout) as:
     tokens is []
     pos is 0
@@ -336,7 +340,10 @@ define _eigen_tokenize_at(source, line, check_layout) as:
                                 elif esc == "}":
                                     buf is buf + "}"
                                 else:
-                                    _eigen_throw of (f"parse error line {line}: unknown escape " + "\\" + esc)
+                                    local shown is "\\" + esc
+                                    if (ord of esc) < 32 or (ord of esc) > 126:
+                                        shown is "\\x" + (_eigen_hex_byte of (ord of esc))
+                                    _eigen_throw of (f"parse error line {line}: unknown escape '" + shown + "'")
                                 pos is pos + 1
                         elif fc == "{":
                             # Emit accumulated literal
@@ -421,7 +428,10 @@ define _eigen_tokenize_at(source, line, check_layout) as:
                         elif esc == "\"":
                             buf is buf + "\""
                         else:
-                            _eigen_throw of (f"parse error line {line}: unknown escape " + "\\" + esc)
+                            local shown is "\\" + esc
+                            if (ord of esc) < 32 or (ord of esc) > 126:
+                                shown is "\\x" + (_eigen_hex_byte of (ord of esc))
+                            _eigen_throw of (f"parse error line {line}: unknown escape '" + shown + "'")
                         pos is pos + 1
                     else:
                         buf is buf + ch

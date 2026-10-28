@@ -19,6 +19,16 @@ define rejects_unknown_escape(source) as:
 check of ["meta plain string rejects unknown escape", rejects_unknown_escape of "print of \"x\\qy\"", true]
 check of ["meta f-string rejects unknown escape", rejects_unknown_escape of "print of f\"a\\0b\"", true]
 
+define unknown_escape_message(source) as:
+    try:
+        eigen.eigen_run of source
+    catch e:
+        return str of e
+    return ""
+
+check of ["meta renders a raw newline escape visibly",
+    contains of [unknown_escape_message of "print of \"a\\\nb\"", "unknown escape '\\x0a'"], true]
+
 if failed == 0:
     print of "All tests passed"
 else:

@@ -26,5 +26,20 @@ check_reject 'f-string \\0' 'f"a\0b"'
 check_reject 'lint plain \\q' '"x\qy"' lint
 check_reject 'lint f-string \\0' 'f"a\0b"' lint
 check_accept
+
+printf 's is "a\\\nb"\n' > "$T/raw-newline.eigs"
+out=$($EIGS "$T/raw-newline.eigs" 2>&1); rc=$?
+if [ "$rc" -ne 0 ] && printf '%s\n' "$out" | grep -Fq "Syntax error line 1:8: unknown escape '\\x0a'"; then
+    echo "PASS: raw newline escape is visible and reports its position"; pass=$((pass + 1))
+else
+    echo "FAIL: raw newline escape diagnostic (rc=$rc)"; printf '%s\n' "$out" | sed 's/^/  /'; fail=$((fail + 1))
+fi
+printf 's is "a\\\rb"\n' > "$T/raw-cr.eigs"
+out=$($EIGS --lint "$T/raw-cr.eigs" 2>&1); rc=$?
+if [ "$rc" -ne 0 ] && printf '%s\n' "$out" | grep -Fq "unknown escape '\\x0d'"; then
+    echo "PASS: lint renders a raw CR escape visibly"; pass=$((pass + 1))
+else
+    echo "FAIL: raw CR lint diagnostic (rc=$rc)"; printf '%s\n' "$out" | sed 's/^/  /'; fail=$((fail + 1))
+fi
 printf 'unknown escape checks: pass=%d fail=%d\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
