@@ -1,0 +1,1 @@
+- Function-local writes that share only slot-backed `for` binders retain fast frame-slot storage (#1979).

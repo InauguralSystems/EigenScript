@@ -1638,6 +1638,7 @@ static int ast_can_call(ASTNode *node) {
 }
 
 enum { BINDER_NO_SLOT = 1, BINDER_FUNCTION_LOCAL = 2 };
+static int name_in_enclosing(Compiler *c, const char *name);
 
 /* The single predicate/enumeration for binders whose emitters write an
  * environment by name.  The property bits keep the two questions separate:
@@ -1665,12 +1666,39 @@ static int by_name_binder(ASTNode *node, int in_loop_env, const char **name) {
     }
 }
 
-typedef struct { NameSet *no_slot; NameSet *function_local; } ByNameSets;
+/* One decision for the for binder's storage tier.  Both the no-slot prepass
+ * and the emitter call this predicate: if it says slot here, the emitter only
+ * has to allocate/reuse that slot. */
+static int for_binder_uses_slot(Compiler *c, ASTNode *node) {
+    if (!c || !c->enclosing || node->type != AST_FOR) return 0;
+    const char *name = node->data.forloop.var;
+    uint32_t hash = env_hash_name(name);
+    int has_slot = resolve_local(c, name, hash) >= 0;
+    if (name_set_has(&c->captured, name)) return 0;
+    if (!has_slot && (name_set_has(&c->interrogated, name) ||
+                     name_in_enclosing(c, name) ||
+                     (c->module_names && name_set_has(c->module_names, name))))
+        return 0;
+    NameSet captured_here = {0};
+    for (int i = 0; i < node->data.forloop.body_count; i++)
+        scan_for_captures(node->data.forloop.body[i], &captured_here);
+    int uses_slot = captured_here.count == 0;
+    name_set_free(&captured_here);
+    return uses_slot;
+}
+
+typedef struct {
+    NameSet *no_slot;
+    NameSet *function_local;
+    Compiler *compiler;
+} ByNameSets;
 static void collect_by_name_binder_node(ASTNode *node, NameSet *opaque,
                                         int in_loop_env) {
     ByNameSets *sets = (ByNameSets *)opaque;
     const char *name;
     int properties = by_name_binder(node, in_loop_env, &name);
+    if (node->type == AST_FOR && for_binder_uses_slot(sets->compiler, node))
+        properties &= ~BINDER_NO_SLOT;
     if (properties & BINDER_NO_SLOT) {
         if (node->type == AST_LOOP) {
             name_set_add(sets->no_slot, "__loop_exit__");
@@ -1692,9 +1720,8 @@ static void collect_by_name_binder_node(ASTNode *node, NameSet *opaque,
  * the mirror of collect_module_names_walk keeping forloop.var off the slot
  * path. Stops at nested function/lambda boundaries — those introduce their own
  * scope — by not recursing into AST_FUNC / AST_LAMBDA. */
-static void scan_for_env_bound(ASTNode *node, NameSet *no_slot,
-                               NameSet *function_local) {
-    ByNameSets sets = { no_slot, function_local };
+static void scan_for_env_bound_in(Compiler *compiler, ASTNode *node) {
+    ByNameSets sets = { &compiler->env_bound, &compiler->fn_env_bound, compiler };
     walk_scope_ast(node, (NameSet *)&sets, 0, collect_by_name_binder_node);
 }
 
@@ -1741,7 +1768,7 @@ static void collect_module_names_walk(ASTNode *node, NameSet *out) {
  * scan_for_env_bound, #633: a function picks slot or name per assignment in
  * compile order.) */
 static void collect_by_name_binders(ASTNode *node, NameSet *out, int in_loop_env) {
-    ByNameSets sets = { out, NULL };
+    ByNameSets sets = { out, NULL, NULL };
     walk_scope_ast(node, (NameSet *)&sets, in_loop_env, collect_by_name_binder_node);
 }
 
@@ -2451,11 +2478,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         int can_skip_env = 0;
         int loop_var_slot = -1;
         int prior_slot = -1, save_slot = -1;   /* #1064 */
-        if (c->enclosing) {
-            int captured     = name_set_has(&c->captured, loop_var);
-            int interrogated = name_set_has(&c->interrogated, loop_var);
-            int in_outer     = name_in_enclosing(c, loop_var);
-            int in_module    = c->module_names && name_set_has(c->module_names, loop_var);
+        if (for_binder_uses_slot(c, node)) {
             /* #1063: a name that ALREADY has a frame slot -- a parameter,
              * or a local slotted earlier in this body -- stays a slot for
              * its writes (the assignment path above resolves the slot
@@ -2467,41 +2490,33 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
              * argument twice. An interrogated name with NO slot is a
              * name-routed local (its assignments go SET_FN_NAME_LOCAL), so
              * the exclusion is still right for it. */
-            int has_slot = resolve_local(c, loop_var, loop_var_hash) >= 0;
-            if (!captured && (has_slot || (!interrogated && !in_outer && !in_module))) {
-                NameSet captured_here = {0};
-                for (int i = 0; i < node->data.forloop.body_count; i++)
-                    scan_for_captures(node->data.forloop.body[i], &captured_here);
-                if (captured_here.count == 0) {
-                    /* Reuse an existing slot for the loop var if there is one
-                     * (sequential `for i ...; for i ...` or nested `for i in:
-                     * for i in: ...`). Sharing the slot keeps body reads of
-                     * the loop var (which compile to GET_LOCAL of the existing
-                     * slot) consistent with the SET_LOCAL we emit per iter.
-                     * If we used LOOP_ENV_FRESH+SET_NAME_LOCAL here instead,
-                     * the body would still GET_LOCAL the stale outer slot. */
-                    loop_var_slot = resolve_local(c, loop_var, loop_var_hash);
-                    if (loop_var_slot >= 0) {
-                        /* #1064: the binder reuses a slot the name already
-                         * has (a parameter, a `local`, an earlier plain
-                         * assignment). LANGUAGE_CONTRACT promises a for
-                         * binder does not leak past its loop, and module
-                         * scope keeps that promise; the slot path made the
-                         * binder's last value the name's value after the
-                         * loop (`define f(p): for p in [7, 8]: ...` returned
-                         * 8 for p). Save the pre-loop value in a hidden slot
-                         * and restore it at the loop exit (both the exhausted
-                         * and the break paths converge there). A name with
-                         * NO prior binding gets a fresh slot that is
-                         * retired at the loop exit (#1105, below). */
-                        prior_slot = loop_var_slot;
-                        save_slot = add_hidden_local(c, "<for-save>");
-                    } else
-                        loop_var_slot = add_local(c, loop_var, loop_var_hash);
-                    if (loop_var_slot >= 0) can_skip_env = 1;
-                }
-                name_set_free(&captured_here);
+            /* Reuse an existing slot for the loop var if there is one
+             * (sequential `for i ...; for i ...` or nested `for i in:
+             * for i in: ...`). Sharing the slot keeps body reads of
+             * the loop var (which compile to GET_LOCAL of the existing
+             * slot) consistent with the SET_LOCAL we emit per iter.
+             * If we used LOOP_ENV_FRESH+SET_NAME_LOCAL here instead,
+             * the body would still GET_LOCAL the stale outer slot. */
+            loop_var_slot = resolve_local(c, loop_var, loop_var_hash);
+            if (loop_var_slot >= 0) {
+                /* #1064: the binder reuses a slot the name already
+                 * has (a parameter, a `local`, an earlier plain
+                 * assignment). LANGUAGE_CONTRACT promises a for
+                 * binder does not leak past its loop, and module
+                 * scope keeps that promise; the slot path made the
+                 * binder's last value the name's value after the
+                 * loop (`define f(p): for p in [7, 8]: ...` returned
+                 * 8 for p). Save the pre-loop value in a hidden slot
+                 * and restore it at the loop exit (both the exhausted
+                 * and the break paths converge there). A name with
+                 * NO prior binding gets a fresh slot that is
+                 * retired at the loop exit (#1105, below). */
+                prior_slot = loop_var_slot;
+                save_slot = add_hidden_local(c, "<for-save>");
+            } else {
+                loop_var_slot = add_local(c, loop_var, loop_var_hash);
             }
+            if (loop_var_slot >= 0) can_skip_env = 1;
         }
 
         if (can_skip_env && prior_slot >= 0 && save_slot >= 0) {   /* #1064: save */
@@ -2783,8 +2798,6 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         for (int i = 0; i < node->data.func.body_count; i++) {
             scan_for_captures(node->data.func.body[i], &fn_compiler.captured);
             scan_for_interrogated(node->data.func.body[i], &fn_compiler.interrogated);
-            scan_for_env_bound(node->data.func.body[i], &fn_compiler.env_bound,
-                               &fn_compiler.fn_env_bound);
         }
         /* Function's own params are never "captured by themselves" */
         for (int i = 0; i < node->data.func.param_count; i++)
@@ -2799,6 +2812,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             uint32_t h = env_hash_name(node->data.func.params[i]);
             add_local(&fn_compiler, node->data.func.params[i], h);
         }
+        for (int i = 0; i < node->data.func.body_count; i++)
+            scan_for_env_bound_in(&fn_compiler, node->data.func.body[i]);
 
         /* Default-param prologue: for each trailing param with a default,
          * emit OP_DEFAULT_PARAM <slot> <skip>; <default expr>; the store
@@ -2886,8 +2901,6 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         scan_for_captures(node->data.lambda.body, &fn_compiler.captured);
         scan_for_interrogated(node->data.lambda.body, &fn_compiler.interrogated);
-        scan_for_env_bound(node->data.lambda.body, &fn_compiler.env_bound,
-                           &fn_compiler.fn_env_bound);
         for (int i = 0; i < node->data.lambda.param_count; i++) {
             name_set_remove(&fn_compiler.captured, node->data.lambda.params[i]);
         }
@@ -2899,6 +2912,7 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             uint32_t h = env_hash_name(node->data.lambda.params[i]);
             add_local(&fn_compiler, node->data.lambda.params[i], h);
         }
+        scan_for_env_bound_in(&fn_compiler, node->data.lambda.body);
 
         /* Lambda body is a single expression — compile and return it */
         compile_node(&fn_compiler, node->data.lambda.body);
