@@ -51,7 +51,19 @@ jobs:
           set -eu
           rec="docs/release-reviews/$TAG.md"
           [ -f "$rec" ] || { echo "::error::$rec is missing: every release commits its documentation and configuration review first (docs/release-reviews/README.md)."; exit 1; }
-          grep -q '^Range: ' "$rec" || { echo "::error::$rec has no 'Range: <previous-tag>..<candidate>' line"; exit 1; }
+          previous=$(git tag --list 'v*' --sort=-version:refname | head -1)
+          [ -n "$previous" ] || { echo "::error::no previous release tag found"; exit 1; }
+          range=$(sed -n 's/^Range: //p' "$rec" | head -1)
+          case "$range" in
+            "$previous"..????????????????????????????????????????) ;;
+            *) echo "::error::$rec Range must be $previous..<40-hex SHA>"; exit 1 ;;
+          esac
+          sha=${range#"$previous"..}
+          case "$sha" in *[!0-9a-f]*) echo "::error::$rec Range candidate is not a 40-hex SHA"; exit 1 ;; esac
+          if grep -Eq 'CANDIDATE_SHA|CRITIC_PENDING|REVIEW_PR|TODO|TBD' "$rec"; then
+            echo "::error::$rec contains a release-review placeholder"
+            exit 1
+          fi
           grep -q '^Verdict: ' "$rec" || { echo "::error::$rec has no 'Verdict:' line"; exit 1; }
           echo "release review: $rec ($(grep '^Verdict: ' "$rec" | head -1))"
 

@@ -660,7 +660,7 @@ else
     fail "pre-v3 replay refusal" "rc=$OLD_REPLAY_RC $(cat "$TMPDIR/old-replay.err")"
 fi
 
-# O records remain part of v7 tapes and the stepper still folds them. Bound the
+# O records remain part of v8 tapes and the stepper still folds them. Bound the
 # multiplicative configuration-record x binding work even though programs can
 # no longer create those records through observer setter builtins.
 WORK_TAPE="$TMPDIR/observer-work-limit.tape"

@@ -48,7 +48,7 @@ else
     printf '%s\n' "$BOOL_NR_OUT"
 fi
 unset BOOL_NR_OUT BOOL_NR_RC
-# Tape (#1637, format v7): a recorded bool replays as a bool, from the tape —
+# Tape (#1637, format v8): a recorded bool replays as a bool, from the tape —
 # the probed file is deleted between record and replay, so a live re-probe
 # would answer false. A prior-format header is refused (exit 3).
 check_binary_fingerprint
