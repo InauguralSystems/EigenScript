@@ -1,0 +1,1 @@
+- Document that the fixed-tolerance convergence loop is not a drop-in replacement for an explicit epsilon and guard, based on the registered comparison (#1990).
