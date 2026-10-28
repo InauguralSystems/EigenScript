@@ -1,13 +1,56 @@
 import EigenCore.Semantics
 namespace EigenCore
 
+private def chunkStep (limit : Nat) (state : List String × String) (c : Char) :
+    List String × String :=
+  let (done, current) := state
+  let next := current.push c
+  if next.utf8ByteSize > limit then (done ++ [current], c.toString)
+  else (done, next)
+
 private def chunks (limit : Nat) (s : String) : List String :=
-  let (done, current) := s.toList.foldl (fun (state : List String × String) c =>
-    let (done, current) := state
-    let next := current.push c
-    if next.utf8ByteSize > limit then (done ++ [current], c.toString)
-    else (done, next)) ([], "")
+  let (done, current) := s.toList.foldl (chunkStep limit) ([], "")
   if current.isEmpty then done else done ++ [current]
+
+/-- Splitting an encoded value into physical continuation chunks loses no
+characters.  This is deliberately independent of the byte limit: the limit
+chooses boundaries, while this lemma establishes that every boundary choice
+made by `chunks` is lossless. -/
+theorem chunks_join (limit : Nat) (s : String) :
+    String.join (chunks limit s) = s := by
+  have invariant : ∀ (input : List Char) (done : List String) (current : String),
+      let result := input.foldl (chunkStep limit) (done, current)
+      String.join result.1 ++ result.2 =
+        String.join done ++ current ++ String.ofList input := by
+    intro input
+    induction input with
+    | nil => simp
+    | cons c rest ih =>
+      intro done current
+      simp only [List.foldl_cons]
+      rw [ih]
+      simp only [chunkStep]
+      split
+      · apply String.ext
+        simp only [String.toList_append, String.toList_join,
+          String.toList_ofList]
+        simp [List.flatMap_append, String.toList_singleton]
+      · apply String.ext
+        simp only [String.toList_append, String.toList_join,
+          String.toList_singleton, String.toList_ofList]
+        rw [String.toList_push]
+        simp
+  have folded := invariant s.toList [] ""
+  simp only [String.join_nil, String.empty_append, String.ofList_toList] at folded
+  simp only [chunks]
+  generalize hstate : s.toList.foldl (chunkStep limit) ([], "") = state at folded ⊢
+  rcases state with ⟨done, current⟩
+  simp only at folded
+  by_cases empty : current.isEmpty
+  · have currentEmpty : current = "" := String.isEmpty_iff.mp empty
+    simpa [currentEmpty] using folded
+  · rw [if_neg empty]
+    simp [String.join_append, folded]
 
 private def splitFirst (separator : Char) : List Char → List Char × Option (List Char)
   | [] => ([], none)
