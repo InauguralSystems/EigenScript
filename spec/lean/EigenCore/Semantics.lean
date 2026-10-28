@@ -2658,6 +2658,22 @@ def run (fuel : Nat) (p : Program) (mode : Mode) : RunResult :=
   | .replayStrict tape => let supplied := normalizeTape tape
     presentCore fuel p (supplied ++ [.replayExhausted supplied.length]) {modeTag := .replayStrict, emitAnswers := true}
 
+/-- Recording and live execution consume exactly the same supplied oracle
+answers.  Recording changes only whether answer rows are retained in the
+presented tape. -/
+theorem record_transparent_answersConsumed (fuel : Nat) (p : Program)
+    (o : List OracleValue) :
+    (run fuel p (.record o)).answersConsumed =
+      (run fuel p (.live o)).answersConsumed := by
+  rfl
+
+/-- Recording has no effect on the program's stdout or exit error relative to
+live execution with the same oracle. -/
+theorem record_transparent (fuel : Nat) (p : Program) (o : List OracleValue) :
+    (run fuel p (.record o)).stdout = (run fuel p (.live o)).stdout ∧
+    (run fuel p (.record o)).error = (run fuel p (.live o)).error := by
+  exact ⟨rfl, rfl⟩
+
 /-- A completed recording is a self-contained strict-replay certificate. -/
 theorem record_replay (fuel : Nat) (p : Program) (o : List OracleValue)
     (r : RunResult) (recorded : run fuel p (.record o) = r)
