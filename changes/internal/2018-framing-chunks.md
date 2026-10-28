@@ -1,1 +1,0 @@
-- Prove lossless continuation chunking and the first three small framing round-trip lemmas (#2018).

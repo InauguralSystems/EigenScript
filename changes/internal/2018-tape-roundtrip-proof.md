@@ -1,1 +1,1 @@
-- Prove admissible tape records round-trip through the Lean model's serializer and parser, using a theorem-friendly line splitter (#2018).
+- The EigenCore-0 Lean model now proves that every tape its writer produces reads back exactly (`tape_roundtrip`), through per-answer codec, framing and continuation lemmas. Its tape reader was made total and proof-friendly without changing behaviour, and the model now refuses a raw NUL in a quoted replay value, as the C runtime does (#2018).
