@@ -3,6 +3,12 @@
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 EIGS="$TESTS_DIR/../src/eigenscript"
 
+# Formatter round trips execute programs only to compare before/after
+# semantics; they are not suite assertion invocations.  Do not let the outer
+# verdict-propagation calibration turn those comparison operands into ledger
+# entries (or make two equally forced failures look like propagation).
+unset EIGS_TEST_FORCE_SUMMARY_FAILURE EIGS_TEST_FORCE_SUMMARY_LEDGER EIGS_TEST_SCRIPT_PATH
+
 PASS=0
 FAIL=0
 TOTAL=0
