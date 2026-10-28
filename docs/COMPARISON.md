@@ -449,12 +449,13 @@ the stop scope of its spawning eval, isolated from later outer evals.
 Cooperative task IDs are opaque numeric handles: their packed generation
 prevents a detached task's recycled slot from naming a later task.
 
-## Convergence loops: boilerplate you stop writing
+## Convergence loops: a built-in fixed tolerance
 
-Before the metaphysics, the everyday win. Every numeric fixed-point loop in
-Python or JavaScript hand-rolls the same three things — and beginners get them
-wrong: an **epsilon threshold**, a way to **remember** the previous value(s),
-and a **max-iteration guard** so a non-converging loop doesn't hang.
+Every numeric fixed-point loop needs a stopping rule. EigenScript remembers
+the trajectory and offers a fixed tolerance, but the registered #1990
+comparison shows that it does not remove every responsibility from the caller:
+the named form needs a cap, and a tighter or problem-specific answer still
+needs an explicit residual.
 
 ```python
 # Python: the epsilon, the remembering, and the guard are all yours
@@ -468,8 +469,8 @@ def newton_sqrt(n, eps=1e-12, max_iter=1000):
     return guess                         # ...and hope it converged
 ```
 
-EigenScript watches every value settle for you, so the loop *is* the
-convergence test — no epsilon, no remembered previous, no guard:
+EigenScript can watch a value settle, so for inputs where its fixed tolerance
+and bare-loop backstop are suitable the loop can be the convergence test:
 
 ```eigenscript
 define newton_sqrt as:
@@ -499,6 +500,16 @@ backstop with
 inside a function so it gets a fresh binding to watch — see
 `examples/observer_vs_boilerplate.eigs`.) The next section is *why* this
 works; you can reach for it long before you need the theory.
+
+The frozen v0.47.0 experiment (#1990) measured 425 runs per arm. The bare form
+had W=0.47%, including wrong convergence on M5, exhausted 13.43% of converging
+runs, and took a median 2.29x the matched `STD-py` iterations where both were
+correct. The named form had W=11.53% without its 10,000-iteration cap taking
+effect as an exhaustion, and its median ratio was 2.36x. Thus H3 failed and the
+original “no epsilon, no remembered previous, no guard” replacement claim does
+not stand. `python3 experiments/1990/report1990.py` derives every figure in
+this paragraph from the per-run experiment outputs; the full protocol and
+deviations are in issue #1990.
 
 ## What has no equivalent elsewhere: the observer
 

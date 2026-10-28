@@ -241,9 +241,13 @@ Trajectory states: `converged`, `stable`, `equilibrium`, `oscillating`,
 `improving`, `diverging` — handy for convergence detection, instability
 alerts, or debugging without writing logging code.
 
-The everyday payoff before any theory: `loop while not converged` deletes the
-epsilon / remembered-previous / max-iteration boilerplate every numeric loop in
-Python or JS hand-rolls — see
+The everyday payoff before any theory: `loop while not converged` supplies a
+fixed 0.1%-relative stopping test and remembers the trajectory. It is not a
+drop-in replacement for a caller-chosen epsilon and guard: the registered
+#1990 population found a 0.47% wrong-exit rate for the bare form and a 2.29x
+median iteration ratio to its matched Python loop; the named form still needs
+an explicit cap. These figures, and the decision-rule failure, are reproduced
+by `python3 experiments/1990/report1990.py`. See
 [docs/COMPARISON.md → Convergence loops](docs/COMPARISON.md#convergence-loops-boilerplate-you-stop-writing).
 
 > **What `improving` and the rest actually mean.** For numbers the

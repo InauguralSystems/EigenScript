@@ -1,0 +1,13 @@
+{
+  "negative_identical": {
+    "INC-bare": true,
+    "INC-named": true,
+    "STD-py": true,
+    "STD-py-default": true,
+    "STD-scipy": true
+  },
+  "passed": true,
+  "positive_W_STD_py": 0.54,
+  "positive_W_loose": 0.9,
+  "positive_delta": 0.36
+}
