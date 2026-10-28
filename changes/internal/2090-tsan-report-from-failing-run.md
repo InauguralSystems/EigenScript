@@ -1,0 +1,1 @@
+- tests/test_tsan.sh prints the failing run's own race report, whole, instead of re-running the fixture. A re-run of an intermittent race came back clean and printed nothing (#2090). The seeded control proves the print path on every run.
