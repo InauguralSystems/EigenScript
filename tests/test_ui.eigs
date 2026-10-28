@@ -3576,7 +3576,7 @@ assert_eq of [coverage_dock_center.w, 195, "layout stamps center width"]
 coverage_dock_panel.collapsed is 0
 _layout_dock of coverage_dock
 _gfx_rec is 1
-assert_ui_render of [_render_dock, coverage_dock, "rrect", [10, 20, 400, 1, 0, (_theme_color of ["dock_border", (_theme_color of ["panel_border", [60, 60, 80]])])[0], (_theme_color of ["dock_border", (_theme_color of ["panel_border", [60, 60, 80]])])[1], (_theme_color of ["dock_border", (_theme_color of ["panel_border", [60, 60, 80]])])[2]], "dock top border geometry"]
+assert_ui_render of [_render_dock, coverage_dock, "rrect", [10, 20, 400, 1, 0, (theme_color of ["dock_border", (theme_color of ["panel_border", [60, 60, 80]])])[0], (theme_color of ["dock_border", (theme_color of ["panel_border", [60, 60, 80]])])[1], (theme_color of ["dock_border", (theme_color of ["panel_border", [60, 60, 80]])])[2]], "dock top border geometry"]
 assert_eq of [_dock_in of [[10, 20, 200, 200], 11, 21], true, "dock rectangle contains point"]
 assert_eq of [_dock_in of [null, 11, 21], false, "absent region rejects point"]
 assert_eq of [_dock_in_handle of [[210, 20, 5, 200], 208, 21, 0], true, "vertical handle includes three-pixel slop"]
@@ -3634,7 +3634,7 @@ assert_ui_render of [_render_table, coverage_table, "rect", [10, 20, 100, 24, _t
 assert_ui_render of [_render_tree, coverage_tree, "text", [18, 24, "R", _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], _theme.font_scale], "tree actual primitive"]
 assert_ui_render of [_render_item_list, coverage_item_list, "text", [18, 24, "A", _theme.text_color[0], _theme.text_color[1], _theme.text_color[2], _theme.font_scale], "item_list actual primitive"]
 assert_ui_render of [_render_grid, coverage_grid, "rrect", [11, 21, 18, 20, 2, 40, 40, 55], "grid actual primitive"]
-assert_ui_render of [_render_hex_view, coverage_hex_view, "text", [50, 22, "41", (_theme_color of ["hex_text", _theme.text_color])[0], (_theme_color of ["hex_text", _theme.text_color])[1], (_theme_color of ["hex_text", _theme.text_color])[2], 1], "hex_view actual primitive"]
+assert_ui_render of [_render_hex_view, coverage_hex_view, "text", [50, 22, "41", (theme_color of ["hex_text", _theme.text_color])[0], (theme_color of ["hex_text", _theme.text_color])[1], (theme_color of ["hex_text", _theme.text_color])[2], 1], "hex_view actual primitive"]
 assert_eq of [_grid_gutter of coverage_grid, 0, "unlabeled grid has no gutter"]
 coverage_grid.row_labels is ["R"]
 assert_ui_transition1 of [_grid_measure, coverage_grid, {"w": 100}, "row label gutter widens grid"]
@@ -3750,7 +3750,7 @@ assert_ui_render of [_render_gauge, coverage_gauge, "text", [50 - (floor of ((6 
 coverage_meter.value is 0.5
 assert_ui_render of [_render_meter, coverage_meter, "rect", [11, 70, 18, 50, 40, 180, 80], "meter half fill green"]
 assert_ui_render of [_render_canvas, coverage_canvas, "rect", [10, 20, 3, 4, 11, 22, 33], "canvas invokes actual paint callback"]
-assert_ui_render of [_render_waveform_view, coverage_waveform_view, "line", [10, 60, 110, 60, (_theme_color of ["wave_center", [35, 35, 45]])[0], (_theme_color of ["wave_center", [35, 35, 45]])[1], (_theme_color of ["wave_center", [35, 35, 45]])[2]], "wave center line"]
+assert_ui_render of [_render_waveform_view, coverage_waveform_view, "line", [10, 60, 110, 60, (theme_color of ["wave_center", [35, 35, 45]])[0], (theme_color of ["wave_center", [35, 35, 45]])[1], (theme_color of ["wave_center", [35, 35, 45]])[2]], "wave center line"]
 assert_ui_render of [_render_code_view, coverage_code_view, "rect", [10, 20, 100, 80, 20, 20, 30], "code background"]
 assert_ui_transition4 of [_mousemove_chart, coverage_chart, coverage_chart, 74, 108, {"hover_series": 0, "hover_index": 0}, "chart hover nearest sample"]
 assert_ui_transition5 of [_mousedown_chart, coverage_chart, coverage_chart, 74, 108, {"type": "mousedown"}, {"zoom": 1}, "chart press starts pan"]
@@ -3796,7 +3796,7 @@ assert_true of [(timeline_pan_by of [coverage_tl, 10]) == null and coverage_tl.p
 assert_true of [(timeline_zoom_at of [coverage_tl, 2, 124]) == null and coverage_tl.zoom == 2, "time anchor zoom"]
 assert_ui_transition1 of [timeline_reset_view, coverage_tl, {"pan_t": 0, "zoom": 1}, "timeline identity reset"]
 assert_eq of [(_tl_kind_color of [coverage_tl, "event", null])[1], 22, "kind resolves explicit literal style"]
-assert_ui_render of [_render_timeline, coverage_tl, "rect", [74, 20, 100, 13, (_theme_color of ["tl_ruler_bg", (_theme_color of ["plot_grid", [40, 40, 55]])])[0], (_theme_color of ["tl_ruler_bg", (_theme_color of ["plot_grid", [40, 40, 55]])])[1], (_theme_color of ["tl_ruler_bg", (_theme_color of ["plot_grid", [40, 40, 55]])])[2]], "timeline ruler geometry"]
+assert_ui_render of [_render_timeline, coverage_tl, "rect", [74, 20, 100, 13, (theme_color of ["tl_ruler_bg", (theme_color of ["plot_grid", [40, 40, 55]])])[0], (theme_color of ["tl_ruler_bg", (theme_color of ["plot_grid", [40, 40, 55]])])[1], (theme_color of ["tl_ruler_bg", (theme_color of ["plot_grid", [40, 40, 55]])])[2]], "timeline ruler geometry"]
 assert_ui_transition2 of [_tl_scrub_to, coverage_tl, 124, {"cursor": 5}, "scrub sets actual midpoint"]
 assert_eq of [coverage_viz_log.scrubs, 1, "scrub callback"]
 assert_ui_transition5 of [_mousedown_timeline, coverage_tl, coverage_tl, 124, 21, {"type": "mousedown"}, {"_drag_mode": "scrub", "cursor": 5}, "ruler click begins scrub"]
@@ -3818,8 +3818,15 @@ assert_eq of [(theme_dark of null).bg[0], 25, "dark theme background"]
 assert_eq of [(theme_light of null).bg[0], 235, "light theme background"]
 assert_eq of [(theme_high_contrast of null).bg[0], 0, "high contrast background"]
 assert_true of [(set_theme of (theme_light of null)) == null and (theme of null).bg[0] == 235, "theme setter changes active palette"]
-assert_eq of [(_theme_color of ["missing-coverage-color", [11, 22, 33]])[1], 22, "missing theme color uses fallback"]
-assert_eq of [(_theme_color of ["bg", [11, 22, 33]])[0], 235, "present theme color wins"]
+coverage_theme_roles is ["highlight_bg", "highlight_alt_bg", "highlight_active_bg"]
+coverage_builtin_themes is [theme_dark of null, theme_light of null, theme_high_contrast of null]
+for ti in range of (len of coverage_builtin_themes):
+    for ri in range of (len of coverage_theme_roles):
+        assert_true of [coverage_builtin_themes[ti][coverage_theme_roles[ri]] != null, "built-in theme supplies generic highlight role"]
+coverage_legacy_theme is {"bg": [7, 8, 9]}
+set_theme of coverage_legacy_theme
+assert_eq of [(theme_color of ["highlight_bg", [11, 22, 33]])[1], 22, "legacy theme missing highlight role uses fallback"]
+assert_eq of [(theme_color of ["bg", [11, 22, 33]])[0], 7, "present custom theme color wins"]
 set_theme of coverage_core_theme
 
 coverage_opts is {"container": 1, "focusable": 1}

@@ -54,6 +54,10 @@ _theme_dark is {
     "hover_shade": [255, 255, 255, 22],
     "pressed_shade": [0, 0, 0, 70],
     "selection_bg": [80, 140, 220],
+    # Generic backgrounds for primary, alternate, and active highlights.
+    "highlight_bg": [40, 90, 60],
+    "highlight_alt_bg": [90, 70, 30],
+    "highlight_active_bg": [50, 70, 110],
     "plot_bg": [25, 25, 35],
     "plot_grid": [40, 40, 55],
     "plot_axis": [70, 70, 95],
@@ -132,6 +136,10 @@ _theme_light is {
     "hover_shade": [0, 0, 0, 14],
     "pressed_shade": [0, 0, 0, 36],
     "selection_bg": [40, 110, 200],
+    # Generic backgrounds for primary, alternate, and active highlights.
+    "highlight_bg": [190, 225, 200],
+    "highlight_alt_bg": [235, 215, 170],
+    "highlight_active_bg": [190, 210, 240],
     "plot_bg": [252, 252, 254],
     "plot_grid": [220, 220, 228],
     "plot_axis": [150, 150, 165],
@@ -210,6 +218,10 @@ _theme_high_contrast is {
     "hover_shade": [255, 255, 255, 50],
     "pressed_shade": [255, 255, 255, 80],
     "selection_bg": [255, 255, 0],
+    # Dark highlight backgrounds preserve this palette's bright-on-dark contrast.
+    "highlight_bg": [0, 70, 0],
+    "highlight_alt_bg": [80, 50, 0],
+    "highlight_active_bg": [0, 40, 90],
     "plot_bg": [0, 0, 0],
     "plot_grid": [70, 70, 70],
     "plot_axis": [255, 255, 255],
@@ -252,6 +264,15 @@ _theme is _theme_dark
 
 define theme() as:
     return _theme
+
+# Return an active-theme value when present, or the caller-provided fallback.
+# This keeps legacy and hand-built theme dictionaries compatible with roles
+# introduced after they were created.
+define theme_color(key, fallback) as:
+    local c is _theme[key]
+    if c == null:
+        return fallback
+    return c
 
 define set_theme(t) as:
     _theme is t

@@ -631,7 +631,13 @@ widget signatures.
 `push_modal`/`pop_modal`, `show_menu`, `show_dialog`, `claim_drag`/
 `release_drag`, `dispatch`, `handle_key`, `request_quit`, `app_loop`.
 Theme (`lib/ui_theme.eigs`):
-`theme`, `set_theme`, `theme_dark`/`theme_light`/`theme_high_contrast`.
+`theme`, `theme_color`, `set_theme`, `theme_dark`/`theme_light`/`theme_high_contrast`.
+`theme_color(key, fallback)` returns the active theme value, or `fallback` when
+the key is absent, so applications remain compatible with legacy and custom
+theme dictionaries. The built-ins provide generic `highlight_bg`,
+`highlight_alt_bg`, and `highlight_active_bg` background roles. The
+high-contrast palette keeps these backgrounds dark against its bright text,
+following that theme's bright-on-dark contrast convention.
 Animation (`lib/ui_anim.eigs`): `tween`, `cancel_tweens`. Text metrics
 (`lib/ui_draw.eigs`): `text_width`, `text_height`. Clip stack
 (`lib/ui_draw.eigs`, #823): `ui_clip_push of [x, y, w, h]` /
@@ -2237,7 +2243,6 @@ Internal names below are implementation contracts for maintainers, not a stable 
 | `_render_tooltip()` | Internal: paint a delayed tooltip near its pointer, clamped to window bounds. |
 | `_scroll_panels(widget, dx, dy)` | Internal: route scroll deltas to registered handlers or recurse through nested containers. |
 | `_sync_focus_to(widget)` | Internal: set the focused widget and locate its index in the current focus list. |
-| `_theme_color(key, fallback)` | Internal: return the active theme color or the supplied fallback for a missing key. |
 | `_tween_get(widget, field)` | Internal: read one supported numeric widget field for animation interpolation. |
 | `_tween_set(widget, field, val)` | Internal: write one supported numeric widget field during an animation update. |
 | `_unfocus_all(widget)` | Internal: clear text-input focus recursively through the supported widget tree. |
@@ -2265,6 +2270,7 @@ Internal names below are implementation contracts for maintainers, not a stable 
 | `stack_horizontal(widgets, x, y, gap)` | Position widgets left to right with the supplied origin and gap, returning the list. |
 | `stack_vertical(widgets, x, y, gap)` | Position widgets top to bottom with the supplied origin and gap, returning the list. |
 | `theme()` | Return the currently selected theme palette. |
+| `theme_color(key, fallback)` | Return an active-theme value, or the caller-provided fallback when its key is absent. |
 | `theme_dark()` | Return the built-in dark theme palette. |
 | `theme_high_contrast()` | Return the built-in high-contrast theme palette. |
 | `theme_light()` | Return the built-in light theme palette. |
