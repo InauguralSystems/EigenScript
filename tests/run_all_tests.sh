@@ -5433,6 +5433,7 @@ check_task_exit() {
 check_task_exit task_exit_unjoined_death.eigs 1 "MARK_END"         # #493 strict: main completes, rc 1
 check_task_exit task_exit_join_catch.eigs     0 "undefined_name"   # #493 caught: rc 0
 check_task_exit task_exit_killed.eigs         0 "MARK_END"         # #493 kill: rc 0
+check_task_exit task_exit_other_try.eigs       1 "at die"           # #1808: another task's try cannot suppress the trace
 # task_exit_detached_death.eigs moved to [104b] (tests/sections/104b-task-death-fail-fast-1736.sh):
 # #1736 flipped it — a DETACHED death now stops the program, so MARK_END must NOT print.
 check_task_exit task_deadlock.eigs            1 "deadlock"         # #483 leak-clean (main's suspended slice) + #509 uncaught loud

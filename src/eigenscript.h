@@ -2365,6 +2365,7 @@ char* eigs_json_encode(Value *v);
  * above). The declarations below cover the not-yet-migrated globals. */
 void eigs_clear_error_value(void);
 void vm_print_stack_trace(FILE *out);  /* uncaught-error call stack (vm.c); no-ops without a VM */
+int vm_error_has_handler(void);        /* active VM slice has an open try */
 int vm_current_line(void);             /* live source line (vm.c); 0 without a VM */
 const char *vm_current_file(void);      /* stable source identity or <native> */
 void eigs_record_first_error(int line, const char *msg);

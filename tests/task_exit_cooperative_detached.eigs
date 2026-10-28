@@ -1,0 +1,7 @@
+# #1806: detaching changes ownership, not exit semantics or status.
+define quitter() as:
+    exit of 7
+d is task_spawn of quitter
+task_detach of d
+task_yield of null
+print of "MAIN_AFTER_DETACHED_EXIT"

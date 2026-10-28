@@ -873,6 +873,34 @@ static Value *sched_fatal_stop(TaskScheduler *s, Task *stopped, Value *r) {
     return make_null();
 }
 
+/* `exit` is not a task failure.  Its thread/state latch already carries the
+ * requested status; stop scheduling immediately, retire the exiting task as
+ * a normal completion, and consume the thread-local unwind flag at this
+ * scheduler boundary.  The next REPL/embed evaluation must start catchable. */
+static Value *sched_exit_stop(TaskScheduler *s, Task *t, Value *r) {
+    if (r) val_decref(r);
+    if (t->id != 0) {
+        t->state = TASK_DONE;
+        t->has_error = 0;
+        t->err_unobserved = 0;
+        s->live--;
+        if (t->run_env) { env_decref(t->run_env); t->run_env = NULL; }
+        if (t->detached) task_reap(t);
+    }
+    s->current = 0;
+    sched_main_abandon(s);
+    /* Exit unwinds TRY_BEGIN frames without executing TRY_END. All slices in
+     * this evaluation are abandoned, so none of their aggregate counts may
+     * leak into the next host unit. Later teardown subtracts defensively and
+     * clamps at zero. */
+    g_try_depth = 0;
+    g_exit_requested = 0;
+    /* Keep the ordinary unwind result for the host boundary.  eval_source
+     * and the REPL already clear it before their next unit. */
+    g_has_error = 1;
+    return make_null();
+}
+
 /* On resuming a task that was blocked in task_join, replace the placeholder
  * null the builtin left on the stack top with the joinee's result — or, if
  * the joinee died, re-raise its error in the joiner. Called from the dispatch loop's
@@ -1008,6 +1036,11 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
          * Checked before the finish/suspend bookkeeping: the slice neither
          * finished nor yielded, it was stopped. */
         if (s->fatal_stop) return sched_fatal_stop(s, t, r);
+
+        /* #1806: exit from any cooperative task stops the evaluation at that
+         * call.  Never feed its unwind through sched_finish as an uncaught
+         * task error, and never run another ready slice. */
+        if (g_exit_requested) return sched_exit_stop(s, t, r);
 
         if (t->state == TASK_SUSPENDED) {
             /* It suspended again. task_yield → re-enqueue; task_join → stay

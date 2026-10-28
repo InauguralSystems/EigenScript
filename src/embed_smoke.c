@@ -1619,6 +1619,21 @@ int main(void) {
           "try/catch still works after a script called exit (#739)");
     if (r) eigs_value_release(r);
 
+    /* #1806: the cooperative scheduler must consume the task-local unwind,
+     * too. The first eval stops before AFTER and the following eval catches
+     * normally on the same state. */
+    r = eigs_eval_string("define q() as:\n    exit of 6\n"
+                         "d is task_spawn of q\n"
+                         "task_yield of null\n"
+                         "AFTER");
+    CHECK(r == NULL, "cooperative-task exit stops its embed evaluation (#1806)");
+    eigs_clear_error();
+    r = eigs_eval_string(catcher);
+    CHECK(r != NULL && eigs_value_as_string(r) &&
+          strcmp(eigs_value_as_string(r), "CAUGHT") == 0,
+          "try/catch works after cooperative-task exit (#1806)");
+    if (r) eigs_value_release(r);
+
     /* --- #797: the lint allow-list parses FRESH. ----------------------
      * eigs_json_lint_allow_for was the seventh lenient parse root missed
      * by #777's sweep: it read g_json_parse_err left set by an UNRELATED
