@@ -1,0 +1,2 @@
+# Regression plant for jit_diff: both oracle arms exceed its 25-second deadline.
+usleep of 30000000
