@@ -16,14 +16,19 @@
 # reason, not a row: both are stripped before the comparison and the count.
 #   bash tools/jit_diff.sh            # compare against the ledger
 #   bash tools/jit_diff.sh --record   # rewrite data rows; keep '#' lines
+# Test only: JIT_DIFF_OBS_ONLY=<repo-relative file> runs just that OBS case,
+# skipping the JIT and OSR arms and the normal OBS corpus.
 set -u
+if [ "${1:-}" = "--selftest" ] && [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
+  echo "jit_diff: FAIL: --selftest requires JIT_DIFF_OBS_ONLY" >&2; exit 1
+fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT/src"
 export EIGS_TEST_DIR="$ROOT/tests"
 . "$ROOT/tests/suite_program_env.sh" || exit 1
 EIG="${EIGS_BIN:-./eigenscript}"
 BASE="$ROOT/tests/jit_diff_expected.txt"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
-got="$T/got"; : > "$got"; n=0; n_obs=0; n_deny=0; n_suite_env=0; adjudicated=0
+got="$T/got"; : > "$got"; n=0; n_obs=0; n_deny=0; n_timeout=0; n_suite_env=0; adjudicated=0
 # Only address-shaped hex (8+ digits) is noise; a short 0x1 vs 0x0 is data.
 norm() { sed -E 's/0x[0-9a-f]{8,}/0xADDR/g' "$1"; }
 # Flags are on when non-empty and not "0". GNU env takes -u BEFORE assignments.
@@ -57,10 +62,12 @@ selfcheck() { # $1 arm name, $2.. env args
   [ -n "$st" ] || { echo "jit_diff: FAIL: the $arm arm did not run (no [jit] stats line)" >&2; exit 1; }
   echo "$st"
 }
-st=$(selfcheck REF "${REF[@]}") || exit 1; [ "$st" = compiled=0 ] || { echo "jit_diff: FAIL: the REF arm compiled ($st)"; exit 1; }
-st=$(selfcheck JIT "${JIT[@]}") || exit 1; [ "$st" != compiled=0 ] || { echo "jit_diff: FAIL: the JIT arm compiled nothing"; exit 1; }
-st=$(selfcheck OSR "${OSR[@]}") || exit 1; [ "$st" != compiled=0 ] || { echo "jit_diff: FAIL: the OSR arm compiled nothing"; exit 1; }
-st=$(selfcheck OBS "${OBS[@]}") || exit 1; [ "$st" = compiled=0 ] || { echo "jit_diff: FAIL: the OBS arm compiled ($st)"; exit 1; }
+if [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
+  st=$(selfcheck REF "${REF[@]}") || exit 1; [ "$st" = compiled=0 ] || { echo "jit_diff: FAIL: the REF arm compiled ($st)"; exit 1; }
+  st=$(selfcheck JIT "${JIT[@]}") || exit 1; [ "$st" != compiled=0 ] || { echo "jit_diff: FAIL: the JIT arm compiled nothing"; exit 1; }
+  st=$(selfcheck OSR "${OSR[@]}") || exit 1; [ "$st" != compiled=0 ] || { echo "jit_diff: FAIL: the OSR arm compiled nothing"; exit 1; }
+  st=$(selfcheck OBS "${OBS[@]}") || exit 1; [ "$st" = compiled=0 ] || { echo "jit_diff: FAIL: the OBS arm compiled ($st)"; exit 1; }
+fi
 # The arms must differ in mechanism: a program the gate elides is unobserved
 # on REF and observed when EIGS_OBS_FORCE is honoured.
 printf 'print of 1\n' > "$T/elide.eigs"
@@ -73,6 +80,10 @@ consider() {
   local arm="$1" sec="$2" tag rr ar
   tag=$(printf '%s' "$arm" | tr a-z A-Z)
   rr=$(tail -n 1 "$T/ref"); ar=$(tail -n 1 "$T/arm")
+  if [ "$rr" = "rc=124" ] && [ "$ar" = "rc=124" ]; then
+    echo "jit_diff: $row $tag: timeout on both sides"
+    return 2
+  fi
   if { [ "$rr" = "rc=124" ] && [ "$ar" != "rc=124" ]; } || { [ "$ar" = "rc=124" ] && [ "$rr" != "rc=124" ]; }; then
     echo "$row $tag" >> "$got"; return
   fi
@@ -89,6 +100,7 @@ consider() {
   diff -q <(norm "$T/rref") <(norm "$T/rarm") >/dev/null && return
   echo "$row $tag" >> "$got"
 }
+if [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
 for f in "$ROOT"/tests/test_*.eigs; do
   n=$((n + 1)); row=$(basename "$f"); prog="$f"
   run "$T/ref" 180 "${REF[@]}"
@@ -107,32 +119,56 @@ for f in "$ROOT"/tests/test_*.eigs; do
     consider "$arm" 180
   done
 done
-# Denied up front: *gfx*|*paint*|*_game* opens a window; *seeded_race* and
+fi
+# Denied up front: a source that uses gfx_open opens a window and cannot finish
+# unattended in the headless gate; *seeded_race* and
 # *userrace* (a user data race: undefined, can crash either side, #1171) are
 # nondeterministic on purpose; *state_at*|*statedump* prints hash-order output.
-if ! obs_files=$(git -c safe.directory="$ROOT" -C "$ROOT" ls-files '*.eigs' 2>/dev/null); then
+if [ -n "${JIT_DIFF_OBS_ONLY:-}" ]; then
+  case "$JIT_DIFF_OBS_ONLY" in /*|../*|*/../*) echo "jit_diff: FAIL: JIT_DIFF_OBS_ONLY must be repository-relative" >&2; exit 1 ;; esac
+  obs_files=$JIT_DIFF_OBS_ONLY
+  git -c safe.directory="$ROOT" -C "$ROOT" ls-files --error-unmatch "$obs_files" >/dev/null 2>&1 || {
+    echo "jit_diff: FAIL: JIT_DIFF_OBS_ONLY is not tracked: $obs_files" >&2; exit 1; }
+elif ! obs_files=$(git -c safe.directory="$ROOT" -C "$ROOT" ls-files '*.eigs' \
+    ':!tests/fixtures/jit_diff_timeout_both.eigs' 2>/dev/null); then
   echo "jit_diff: FAIL: cannot enumerate the tracked OBS corpus" >&2; exit 1
 fi
 [ -n "$obs_files" ] || { echo "jit_diff: FAIL: tracked OBS corpus is empty" >&2; exit 1; }
 while IFS= read -r rel; do
   [ -n "$rel" ] || continue
-  case "$rel" in
-    *gfx*|*paint*|*_game*|*seeded_race*|*userrace*|*state_at*|*statedump*) n_deny=$((n_deny + 1)); continue ;;
-  esac
   [ -f "$ROOT/$rel" ] || { echo "jit_diff: FAIL: OBS corpus entry missing: $rel" >&2; exit 1; }
-  n_obs=$((n_obs + 1)); row=$(row_of "$rel"); prog="$ROOT/$rel"
+  if grep -q 'gfx_open[[:space:]]*of' "$ROOT/$rel"; then
+    n_deny=$((n_deny + 1))
+    echo "jit_diff: $rel OBS: excluded (uses gfx_open; cannot finish unattended headless)"
+    continue
+  fi
+  case "$rel" in
+    *paint*|*_game*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (interactive example)"; continue ;;
+    *seeded_race*|*userrace*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (intentionally nondeterministic)"; continue ;;
+    *state_at*|*statedump*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (hash-order output)"; continue ;;
+  esac
+  row=$(row_of "$rel"); prog="$ROOT/$rel"
   run "$T/ref" 25 "${REF[@]}"
   arm_env obs
   run "$T/arm" 25 "${AE[@]}"
   consider obs 25
+  considered=$?
+  if [ "$considered" -eq 2 ]; then
+    n_timeout=$((n_timeout + 1))
+  else
+    n_obs=$((n_obs + 1))
+  fi
 done <<EOF
 $obs_files
 EOF
 sort -o "$got" "$got"
-[ "$n" -ge 100 ] || { echo "jit_diff: only $n JIT programs found -- the scan is vacuous"; exit 1; }
-[ "$n_suite_env" -eq 10 ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=10"; exit 1; }
-[ "$n_obs" -ge 500 ] || { echo "jit_diff: FAIL: OBS examined=$n_obs denied=$n_deny (floor 500)"; exit 1; }
-echo "jit_diff: OBS examined=$n_obs denied=$n_deny"
+if [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
+  [ "$n" -ge 100 ] || { echo "jit_diff: only $n JIT programs found -- the scan is vacuous"; exit 1; }
+  [ "$n_suite_env" -eq 10 ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=10"; exit 1; }
+  [ "$n_obs" -ge 500 ] || { echo "jit_diff: FAIL: OBS examined=$n_obs denied=$n_deny (floor 500)"; exit 1; }
+fi
+echo "jit_diff: OBS examined=$n_obs denied=$n_deny timeout-both=$n_timeout"
+[ -n "${JIT_DIFF_OBS_ONLY:-}" ] && exit 0
 if [ "${1:-}" = "--record" ]; then
   { awk '/^#/ { print }' "$BASE"; echo; cat "$got"; } > "$T/ledger"
   cp "$T/ledger" "$BASE"

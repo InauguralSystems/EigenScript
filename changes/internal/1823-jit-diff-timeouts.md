@@ -1,0 +1,1 @@
+- The JIT differential gate no longer counts programs that time out on both sides as examined comparisons (#1823).
