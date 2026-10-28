@@ -44,6 +44,7 @@ Exit: 0 verified, 1 UNIT DRIFT, 2 CANNOT VERIFY.
 import glob
 import json
 import os
+import pathlib
 import re
 import shutil
 import sys
@@ -235,7 +236,7 @@ def judge(row, header, ev, geometry=GEOMETRY, charges=CHARGES, hz=HZ, expected=E
     return {"value": cyc["value"], "cycles": cyc, "want": want, "events": ev, "value_over_ir": cyc["value"] / ev["Ir"]}
 
 
-def gate(env, read=lambda p: open(p).read(), events_fn=local_events, fetch=fetch_run, sleep=time.sleep, clock=time.monotonic):
+def gate(env, read=lambda p: pathlib.Path(p).read_text(), events_fn=local_events, fetch=fetch_run, sleep=time.sleep, clock=time.monotonic):
     run_id = (env.get("CODSPEED_RUN_ID") or "").strip()
     if not run_id:
         raise Blind("CODSPEED_RUN_ID is empty: the action's run-id output is missing (runner older than 5.4.0, or no upload)")
@@ -475,8 +476,8 @@ def selftest():
     real_gate = globals()["gate"]
     try:
         for name, exc, want in (("drift", Drift("x"), 1), ("blind", Blind("x"), 2), ("a crash", RuntimeError("x"), 2)):
-            def boom(*a, **k):
-                raise exc
+            def boom(*a, _exc=exc, **k):   # bound now, not looked up when called
+                raise _exc
             globals()["gate"] = boom
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
