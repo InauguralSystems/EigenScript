@@ -1277,8 +1277,8 @@ catch e:
 A successful binary operation restores the line attribution that preceded its
 operator stamp, so an enclosing unary operation, index or call keeps its prior
 attribution. Compound field/index assignments (`obj.key += rhs`, `xs[i] += rhs`)
-keep their prior attribution; their location policy awaits a separate owner
-decision. This rule covers binary operators only. Temporal filing is unchanged (the
+keep their prior attribution, as the owner decision on #1425 retained the
+current attribution. This rule covers binary operators only. Temporal filing is unchanged (the
 statement's first line). Other constructs that span lines (call arguments,
 indexing, and the concatenation an f-string is lowered to) are not decided by
 it; an operator written inside an f-string interpolation is a binary operator

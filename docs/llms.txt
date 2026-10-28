@@ -107,8 +107,26 @@ not any outer `n`.
   everywhere -- module scope AND inside a function -- and never writes an outer
   binding; reading it after the loop is `undefined variable` (a pre-existing
   parameter/local/module binding is restored instead). Plain `is` in its body
-  binds in the enclosing scope, including an imported module. Comprehension
-  variables DO leak.
+  binds in the enclosing scope, including an imported module. A comprehension
+  binder and a `catch` name are lexical locals; an outer binding with the same
+  name is unchanged.
+
+```eigenscript
+x is 10
+print of [x for x in [1, 2]]
+print of x
+try:
+    throw of "boom"
+catch x:
+    print of x
+print of x
+```
+```output
+[1, 2]
+10
+boom
+10
+```
 
 ## Reserved and soft keywords (cannot be plain variable names)
 

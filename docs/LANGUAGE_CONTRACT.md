@@ -431,18 +431,22 @@ From lowest (binds loosest) to highest (binds tightest):
 | 1 | `\|>` | pipe |
 | 2 | `or` | |
 | 3 | `and` | |
-| 4 | `==` `!=` `<` `>` `<=` `>=` | comparison |
-| 5 | `\|` | bitwise OR |
-| 6 | `^` | bitwise XOR |
-| 7 | `&` | bitwise AND |
-| 8 | `<<` `>>` | shift |
-| 9 | `+` `-` | |
-| 10 | `*` `/` `%` | |
-| 11 | `-` `not` `~` | unary (prefix) |
-| 12 | `of` | function application |
-| 13 | `[]` `.` `( )` | indexing, field access, grouping |
+| 4 | `not` | prefix logical negation; right-associative |
+| 5 | `==` `!=` `<` `>` `<=` `>=` | comparison |
+| 6 | `\|` | bitwise OR |
+| 7 | `^` | bitwise XOR |
+| 8 | `&` | bitwise AND |
+| 9 | `<<` `>>` | shift |
+| 10 | `+` `-` | |
+| 11 | `*` `/` `%` | |
+| 12 | `-` `~` | unary (prefix) |
+| 13 | `of` | function application |
+| 14 | `[]` `.` `( )` | indexing, field access, grouping |
 
-Two consequences worth knowing:
+Three consequences worth knowing:
+- **Comparisons bind tighter than `not`.** `not 1 < 2` is `not (1 < 2)`.
+  Arithmetic unary `-` and bitwise unary `~` bind tightly; `not` is below `of`,
+  so `f of not x` is a parse error and must be written `f of (not x)`.
 - **Bitwise binds tighter than comparison** (unlike C). `x & mask == 0`
   parses as `(x & mask) == 0` — the intended reading, avoiding C's classic
   footgun.

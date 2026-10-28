@@ -212,7 +212,10 @@ pipe_expr   = or_expr { '|>' or_expr }
 
 or_expr     = and_expr { 'or' and_expr }
 
-and_expr    = comparison { 'and' comparison }
+and_expr    = not_expr { 'and' not_expr }
+
+not_expr    = { 'not' } comparison
+            ; repeated 'not' associates right; 'not' binds below comparison
 
 comparison  = bitor_expr [ comp_op bitor_expr ]
 comp_op     = '==' | '!=' | '<' | '>' | '<=' | '>='
@@ -231,7 +234,6 @@ addition    = multiply { ( '+' | '-' ) multiply }
 multiply    = unary { ( '*' | '/' | '%' ) unary }
 
 unary       = '-' unary
-            | 'not' unary
             | '~' unary
             | call
 
@@ -316,17 +318,18 @@ From lowest to highest precedence:
 | 1 | `\|>` | Left | Pipe (desugars `a \|> b` to `b of a`) |
 | 2 | `or` | Left | Logical OR |
 | 3 | `and` | Left | Logical AND |
-| 4 | `==` `!=` `<` `>` `<=` `>=` | None | Comparison (non-chaining) |
-| 5 | `\|` | Left | Bitwise OR |
-| 6 | `^` | Left | Bitwise XOR |
-| 7 | `&` | Left | Bitwise AND |
-| 8 | `<<` `>>` | Left | Shifts |
-| 9 | `+` `-` | Left | Addition, subtraction |
-| 10 | `*` `/` `%` | Left | Multiplication, division, modulo |
-| 11 | `-` (unary) `not` `~` | Right | Negation, logical NOT, bitwise NOT |
-| 12 | `of` | Right | Function call / observation (`f of g of x` = `f of (g of x)`) |
-| 13 | `[i]` `[a:b]` `.key` | Left | Index, slice, dot access |
-| 14 | `=>` | — | Lambda (inside parenthesized param list) |
+| 4 | `not` | Right | Prefix logical NOT |
+| 5 | `==` `!=` `<` `>` `<=` `>=` | None | Comparison (non-chaining) |
+| 6 | `\|` | Left | Bitwise OR |
+| 7 | `^` | Left | Bitwise XOR |
+| 8 | `&` | Left | Bitwise AND |
+| 9 | `<<` `>>` | Left | Shifts |
+| 10 | `+` `-` | Left | Addition, subtraction |
+| 11 | `*` `/` `%` | Left | Multiplication, division, modulo |
+| 12 | `-` (unary) `~` | Right | Arithmetic negation, bitwise NOT |
+| 13 | `of` | Right | Function call / observation (`f of g of x` = `f of (g of x)`) |
+| 14 | `[i]` `[a:b]` `.key` | Left | Index, slice, dot access |
+| — | `=>` | — | Lambda (inside parenthesized param list) |
 
 ## Semantic Notes
 

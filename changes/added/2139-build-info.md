@@ -1,0 +1,1 @@
+- `--build-info` prints machine-readable build capabilities, including the version, enabled extensions, JIT support and platform (#2139).

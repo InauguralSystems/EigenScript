@@ -382,7 +382,7 @@ stdlib roots. See [Modules](SPEC.md#modules) for import collision handling.
 |------|-----------|-------------|
 | `random` | `random of null` | Random float in [0, 1) |
 | `random_int` | `random_int of [lo, hi]` | Random integer in [lo, hi] inclusive; raises on non-finite or out-of-int64 bounds and on a span over 2^31. A malformed argument (not `[lo, hi]`, or non-numeric bounds) raises by default; under `EIGS_STRICT=0` it answers `0` (#971). |
-| `seed_random` | `seed_random of n` | Seed the RNG for deterministic sequences. `random` is not cryptographic. The `eigenscript` CLI reads `EIGS_SEED_RANDOM=<integer>` at startup and seeds the shared stream with it before the program runs, which makes it predictable for the whole process (for differential testing and reproduction); a malformed value is a startup error (exit 2). Embedders call `seed_random`. Under `EIGS_TRACE` seeded draws are recorded; under `EIGS_REPLAY` recorded values are served and this knob is irrelevant. |
+| `seed_random` | `seed_random of n` | Seed the RNG for deterministic sequences. `random` is not cryptographic. The `eigenscript` CLI reads `EIGS_SEED_RANDOM=<integer>` at startup and seeds the shared stream with it before the program runs, which makes it predictable for the whole process (for differential testing and reproduction); an unset or empty value does nothing. A nonempty value is accepted when `strtol` parses the entire value as a representable decimal `long`; leading whitespace and a sign (such as `+7`) are accepted, but trailing characters and out-of-range values are startup errors (exit 2). This environment variable is CLI-only: embedders call `seed_random`. Under `EIGS_TRACE` seeded draws are recorded; under `EIGS_REPLAY` recorded values are served and this knob is irrelevant. |
 
 ## Time
 
@@ -510,8 +510,8 @@ either way, so the numbers are byte-identical.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `mean` | `mean of t` | Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its flattened index and type. |
-| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its flattened index and type. |
+| `mean` | `mean of t` | Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its zero-based flattened index and type (`mean: element 1 is str (expected a number)`). Called with several arguments (`mean of [a, b]` is an argument list), a non-number argument raises naming its 1-based position (`mean: argument 2 is a bool, which mean does not take there`). |
+| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its zero-based flattened index and type (`sum: element 1 is str (expected a number)`). Called with several arguments (`sum of [a, b]` is an argument list), a non-number argument raises naming its 1-based position (`sum: argument 2 is a bool, which sum does not take there`). |
 | `norm` | `norm of t` | Euclidean norm of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its flattened index and type. |
 
 ### Construction

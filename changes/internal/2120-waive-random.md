@@ -1,1 +1,1 @@
-- `jit_diff` temporarily excludes the two unseeded random-draw parity cases from the OBS arm until a shared seed lands (#2120).
+- `jit_diff` temporarily excluded two unseeded random-draw parity cases; the shared seed in #2121 replaced this waiver (#2120).

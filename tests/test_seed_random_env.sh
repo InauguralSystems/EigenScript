@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-echo "PLAN: 4"
+echo "PLAN: 5"
 set -eu
 EIGS=${EIGS:-$(cd "$(dirname "$0")/.." && pwd)/src/eigenscript}
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
@@ -25,3 +25,9 @@ rc=0; EIGS_SEED_RANDOM=not-an-integer "$EIGS" "$T/draw.eigs" > "$T/bad.out" 2> "
 grep -F 'EIGS_SEED_RANDOM: invalid integer: not-an-integer' "$T/bad.err" >/dev/null || fail "malformed seed lacked diagnostic"
 [ ! -s "$T/bad.out" ] || fail "malformed seed ran program code before failing"
 pass "malformed seed is a startup error before any program output"
+rc=0
+EIGS_SEED_RANDOM= "$EIGS" "$T/draw.eigs" > "$T/empty.out" 2> "$T/empty.err" || rc=$?
+[ "$rc" -eq 0 ] || fail "empty seed exited $rc, want 0 (unset semantics)"
+[ ! -s "$T/empty.err" ] || fail "empty seed wrote a startup diagnostic"
+[ "$(wc -l < "$T/empty.out" | tr -d ' ')" -eq 2 ] || fail "empty seed did not run both unseeded draws"
+pass "empty seed is treated as unset and permits unseeded draws"
