@@ -30,6 +30,12 @@ structure FunctionDef where
   deriving Inhabited
 inductive OracleValue where | int (v : Int) | string (v : String) | null deriving Repr, BEq
 inductive Mode where | live (oracle : List OracleValue) | record (oracle : List OracleValue) | replayStrict (tape : List String) deriving Repr, BEq
+/-- The evaluator-facing effect interface.  `Mode` is a public request; this is
+the private, stateful handler selected once, before evaluation starts. -/
+private inductive TapedHandler where
+  | live (oracle : List OracleValue)
+  | record (oracle : List OracleValue)
+  | replayStrict (remaining : List String)
 structure World where
   environments : Array Environment := #[{id := 0, parent := none}]
   frames : Array Frame := #[{serial := 0, environment := 0}]
@@ -37,7 +43,7 @@ structure World where
   functions : Array FunctionDef := #[]
   stdout : String := ""
   tape : List String := []
-  mode : Mode := .live []
+  private mode : TapedHandler := .live []
   oracleCursor : Nat := 0
 abbrev EvalM := ExceptT Err (StateM World)
 
@@ -174,6 +180,17 @@ private def oracleValue (fn : String) (oracle : List OracleValue) : EvalM Value 
   set {w with oracleCursor := w.oracleCursor + 1}
   pure value
 
+private def liveHandler (fn : String) (oracle : List OracleValue) : EvalM Value :=
+  oracleValue fn oracle
+
+private def recordHandler (fn : String) (oracle : List OracleValue) : EvalM Value := do
+  let value ← oracleValue fn oracle
+  modify fun w => {w with tape := w.tape ++ ["N 0 " ++ fn ++ "=" ++ nondetValue value]}
+  pure value
+
+private def replayStrictHandler (fn : String) : EvalM Value :=
+  takeN fn
+
 /-- Live and record modes consume the supplied oracle exactly once per taped
 call.  Exhaustion is a runtime error, rather than a fabricated default: this
 keeps completed record runs honest and lets the N values of any successful
@@ -181,14 +198,9 @@ strict replay serve directly as the witness oracle for replay fidelity. -/
 private def tapedCall (fn : String) : EvalM Value := do
   let w ← get
   match w.mode with
-  | .replayStrict _ => takeN fn
-  | .live oracle => oracleValue fn oracle
-  | .record oracle =>
-      let value ← oracleValue fn oracle
-      let w ← get
-      let record := "N 0 " ++ fn ++ "=" ++ nondetValue value
-      set {w with tape := w.tape ++ [record]}
-      pure value
+  | .replayStrict _ => replayStrictHandler fn
+  | .live oracle => liveHandler fn oracle
+  | .record oracle => recordHandler fn oracle
 private def store (name : String) (v : Value) (isLocal : Bool) : EvalM Unit := do
   let w ← get
   let current := currentEnvironment w
@@ -375,7 +387,11 @@ def run (fuel : Nat) (p : Program) (mode : Mode) : RunResult :=
     {stdout:="", tape:=[], error:=some (.unsupported construct)}
   else
     let root : Environment := {id:=0, parent:=none}
-    let initial : World := {mode:=mode, environments:=#[root]}
+    let handler := match mode with
+      | .live oracle => TapedHandler.live oracle
+      | .record oracle => TapedHandler.record oracle
+      | .replayStrict tape => TapedHandler.replayStrict tape
+    let initial : World := {mode:=handler, environments:=#[root]}
     let action : EvalM (Option Value) := exec fuel p
     let (result, w) := (action.run).run initial
     let error := match result with | .ok _ => none | .error e => some e
