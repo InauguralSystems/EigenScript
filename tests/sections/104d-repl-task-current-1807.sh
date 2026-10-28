@@ -1,12 +1,6 @@
 # [104d] #1807: each REPL line is a separate outermost evaluation.  A worker
 # that ended the preceding line must not remain the scheduler's current task.
 echo "[104d] REPL task identity resets between evaluations (#1807)"
-# REPL exit skips handle_table_drain, so every task spawned at the REPL leaks under
-# LeakSanitizer (#1811, open). This section tests #1807 (task identity), so ONLY leak
-# detection is off for its two REPL runs; every other ASan/UBSan diagnostic still fails
-# it (the Sanitizer grep below). #1811's fix deletes this override.
-repl1807_asan="${ASAN_OPTIONS:+$ASAN_OPTIONS:}detect_leaks=0"
-
 repl1807_out=$(printf '%s\n' \
     'w is task_spawn of (() => 7)' \
     'task_yield of null' \
@@ -18,7 +12,7 @@ repl1807_out=$(printf '%s\n' \
     'd is task_spawn of detached_worker' \
     'task_yield of null' \
     'print of f"detached_self={task_self of null}"' |
-    ASAN_OPTIONS="$repl1807_asan" $EIGS_TMO ./eigenscript 2>&1)
+    $EIGS_TMO ./eigenscript 2>&1)
 repl1807_rc=$?
 repl1807_results=$(sed 's/.*eigs> //' <<< "$repl1807_out")
 
@@ -32,7 +26,7 @@ repl1807_respawn_out=$(printf '%s\n' \
     'task_yield of null' \
     'print of f"j2={task_join of w2}"' \
     'print of f"self2={task_self of null}"' |
-    ASAN_OPTIONS="$repl1807_asan" $EIGS_TMO ./eigenscript 2>&1)
+    $EIGS_TMO ./eigenscript 2>&1)
 repl1807_respawn_rc=$?
 repl1807_respawn_results=$(sed 's/.*eigs> //' <<< "$repl1807_respawn_out")
 TOTAL=$((TOTAL + 1))
@@ -55,5 +49,5 @@ else
     printf '%s\n' "$repl1807_respawn_out" | sed 's/^/      /'
 fi
 unset repl1807_out repl1807_results repl1807_rc repl1807_respawn_out
-unset repl1807_respawn_results repl1807_respawn_rc repl1807_bad repl1807_asan
+unset repl1807_respawn_results repl1807_respawn_rc repl1807_bad
 echo ""
