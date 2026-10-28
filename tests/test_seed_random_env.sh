@@ -20,8 +20,8 @@ EIGS_SEED_RANDOM=2121 "$EIGS" "$T/draw.eigs" > "$T/actual2121"
 printf '0.14252471581949422\n26042\n' > "$T/want2121"
 cmp "$T/want2121" "$T/actual2121" >/dev/null || fail "seed 2121 first draws changed"
 pass "seed 2121 first draws are pinned"
-if EIGS_SEED_RANDOM=not-an-integer "$EIGS" "$T/draw.eigs" > "$T/bad.out" 2> "$T/bad.err"; then
-  fail "malformed seed succeeded"
-fi
+rc=0; EIGS_SEED_RANDOM=not-an-integer "$EIGS" "$T/draw.eigs" > "$T/bad.out" 2> "$T/bad.err" || rc=$?
+[ "$rc" -eq 2 ] || fail "malformed seed exited $rc, want 2 (a startup error)"
 grep -F 'EIGS_SEED_RANDOM: invalid integer: not-an-integer' "$T/bad.err" >/dev/null || fail "malformed seed lacked diagnostic"
-pass "malformed seed fails loud"
+[ ! -s "$T/bad.out" ] || fail "malformed seed ran program code before failing"
+pass "malformed seed is a startup error before any program output"

@@ -14,7 +14,6 @@
 #include "vm.h"
 #include "builtins_internal.h"
 #include "trace.h"
-#include <errno.h>
 #include <limits.h>
 
 /* Slot-native borrowed views for builtin arguments.  The compound-literal
@@ -2100,26 +2099,13 @@ static void random_seed_once(void) {
         pthread_mutex_unlock(&g_random_lock);
         return;
     }
-    const char *seed_env = getenv("EIGS_SEED_RANDOM");
-    long seed;
-    if (seed_env) {
-        char *end = NULL;
-        errno = 0;
-        seed = strtol(seed_env, &end, 10);
-        if (errno == ERANGE || end == seed_env || *end != '\0') {
-            fprintf(stderr, "EIGS_SEED_RANDOM: invalid integer: %s\n", seed_env);
-            exit(EXIT_FAILURE);
-        }
-    } else {
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
 #if EIGENSCRIPT_FREESTANDING
-        seed = ts.tv_sec ^ ts.tv_nsec;   /* no pids on bare metal */
+    srand48(ts.tv_sec ^ ts.tv_nsec);   /* no pids on bare metal */
 #else
-        seed = ts.tv_sec ^ ts.tv_nsec ^ getpid();
+    srand48(ts.tv_sec ^ ts.tv_nsec ^ getpid());
 #endif
-    }
-    srand48(seed);
     __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&g_random_lock);
 }
@@ -2194,13 +2180,19 @@ Value* builtin_random_int(Value *arg) {
     TRACE_NONDET_RET("random_int", make_num(lo_i + (eigs_random_long() % (int64_t)span)));
 }
 
+/* The one way to seed the shared stream: `seed_random` and the CLI's
+ * EIGS_SEED_RANDOM (#2120, src/main.c) both come through here. */
+void eigs_seed_random(long seed) {
+    pthread_mutex_lock(&g_random_lock);
+    srand48(seed);
+    __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&g_random_lock);
+}
+
 /* seed_random of n → seeds the RNG, returns true */
 Value* builtin_seed_random(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "seed_random", "a number", make_bool(0));
-    pthread_mutex_lock(&g_random_lock);
-    srand48((long)eigs_num_arg(arg, __func__));
-    __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
-    pthread_mutex_unlock(&g_random_lock);
+    eigs_seed_random((long)eigs_num_arg(arg, __func__));
     return make_bool(1);
 }
 
