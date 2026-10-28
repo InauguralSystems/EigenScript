@@ -718,6 +718,41 @@ static void observer_slot_record_equality(ObserverSlot *s,
     s->eq_identity_last = NULL;
 }
 
+/* The ordinary interpreter/JIT path does not need a detached value: no other
+ * thread can mutate the binding while this fold runs.  Keep the old direct
+ * fold there, including making the snapshot only when the equality channel
+ * actually accepts the value.  The shared path above must instead prepare
+ * before taking env_shared_fold_lock (module cloning can take its lock). */
+static void observer_slot_record_equality_local(ObserverSlot *s, Value *v) {
+    int n = obs_win(s);
+    s->eq_seen = 1;
+    if (v && (v->type == VAL_FN || v->type == VAL_BUILTIN)) {
+        if (s->eq_last || s->eq_identity_last)
+            observer_slot_record_eq_bit(s, n, !s->eq_last &&
+                                        s->eq_identity_last == v);
+        val_decref(s->eq_last);
+        s->eq_last = NULL;
+        s->eq_identity_last = v;
+        return;
+    }
+    size_t units = 0;
+    if (!observer_eq_within_budget(v, &units, 0)) {
+        val_decref(s->eq_last);
+        s->eq_last = NULL;
+        s->eq_identity_last = NULL;
+        s->eq_window_count = s->eq_window_head = 0;
+        return;
+    }
+    if (s->eq_last || s->eq_identity_last)
+        observer_slot_record_eq_bit(s, n, s->eq_last &&
+                                    values_equal_for_observation(s->eq_last,
+                                                                 v, 0));
+    Value *snapshot = val_clone_for_send(v);
+    val_decref(s->eq_last);
+    s->eq_last = snapshot;
+    s->eq_identity_last = NULL;
+}
+
 static int observer_slot_eq_settled(const ObserverSlot *s) {
     size_t n = (size_t)observer_slot_window(s);
     if (!s || obs_eq_count(s) < n) return 0;
@@ -961,8 +996,7 @@ static void observer_slot_update_e_locked(Env *e, int idx, double new_entropy) {
 }
 
 static inline void observer_slot_update_locked(Env *e, int idx, Value *newval,
-                                               double entropy,
-                                               ObserverEqualitySnapshot *eq) {
+                                               double entropy) {
     observer_slot_update_e_locked(e, idx, entropy);
     if (newval && newval->type == VAL_NUM) {
         ObserverSlot *s = env_obs_slot(e, idx);
@@ -971,7 +1005,7 @@ static inline void observer_slot_update_locked(Env *e, int idx, Value *newval,
         ObserverSlot *s = env_obs_slot(e, idx);
         if (s) {
             s->v_last = 0;
-            observer_slot_record_equality(s, eq);
+            observer_slot_record_equality_local(s, newval);
         }
     }
 }
@@ -1006,11 +1040,27 @@ static inline void observer_slot_sample_locked(Env *e, int idx) {
 /* Keep the lock-taking arms out of the single-threaded hot functions. Besides
  * making the dispatch explicit, this prevents their mutex temporaries from
  * increasing register saves on every private fold. */
-static __attribute__((noinline)) void observer_slot_update_shared(
-        Env *e, int idx, Value *newval, double entropy,
-        ObserverEqualitySnapshot *eq) {
+static void __attribute__((noinline)) observer_slot_update_shared(
+        Env *e, int idx, double entropy, ObserverEqualitySnapshot *eq) {
     env_shared_fold_lock();
-    observer_slot_update_locked(e, idx, newval, entropy, eq);
+    observer_slot_update_e_locked(e, idx, entropy);
+    ObserverSlot *s = env_obs_slot(e, idx);
+    if (s) {
+        s->v_last = 0;
+        observer_slot_record_equality(s, eq);
+    }
+    env_shared_fold_unlock();
+}
+
+static void observer_slot_update_value_num_shared(
+        Env *e, int idx, Value *newval, double entropy)
+        __attribute__((noinline));
+static void observer_slot_update_value_num_shared(
+        Env *e, int idx, Value *newval, double entropy) {
+    env_shared_fold_lock();
+    observer_slot_update_e_locked(e, idx, entropy);
+    ObserverSlot *s = env_obs_slot(e, idx);
+    if (s) observer_slot_record_value(s, VAL_NUM_RAW(newval));
     env_shared_fold_unlock();
 }
 
@@ -1082,15 +1132,17 @@ void observer_slot_update(Env *e, int idx, Value *newval) {
     double entropy = compute_entropy(newval); /* outside the #607 hold */
     if (!e || idx < 0) return;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
-    ObserverEqualitySnapshot eq = {0};
-    if (!newval || newval->type != VAL_NUM)
-        eq = observer_equality_snapshot(newval); /* may synchronize namespace */
     if (observer_fold_is_shared(e)) {
-        observer_slot_update_shared(e, idx, newval, entropy, &eq);
+        if (newval && newval->type == VAL_NUM) {
+            observer_slot_update_value_num_shared(e, idx, newval, entropy);
+        } else {
+            ObserverEqualitySnapshot eq = observer_equality_snapshot(newval);
+            observer_slot_update_shared(e, idx, entropy, &eq);
+            val_decref(eq.snapshot);
+        }
     } else {
-        observer_slot_update_locked(e, idx, newval, entropy, &eq);
+        observer_slot_update_locked(e, idx, newval, entropy);
     }
-    val_decref(eq.snapshot);
 }
 
 /* #262 Phase-3 D: update a binding's observer slot from a raw immediate
