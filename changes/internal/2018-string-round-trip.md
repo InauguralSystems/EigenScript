@@ -1,0 +1,1 @@
+- Proved that every taped string round-trips through the model's C-compatible encoder and decoder, making both string-valued codec results unconditional (#2018).
