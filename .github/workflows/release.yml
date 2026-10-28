@@ -52,8 +52,10 @@ jobs:
           rec="docs/release-reviews/$TAG.md"
           [ -f "$rec" ] || { echo "::error::$rec is missing: every release commits its documentation and configuration review first (docs/release-reviews/README.md)."; exit 1; }
           # The checkout is shallow and fetches no tags, and on a tag push the
-          # newest tag is this release itself: ask the remote, excluding $TAG.
-          previous=$(git ls-remote --tags --refs origin 'v*' | sed 's|.*refs/tags/||' | grep -vxF "$TAG" | sort -V | tail -1)
+          # newest tag is this release itself: ask the remote for $TAG's PREDECESSOR
+          # (re-releasing an older version must not pick a newer tag).
+          previous=$({ git ls-remote --tags --refs origin 'v*' | sed 's|.*refs/tags/||' | grep -vxF "$TAG"; echo "$TAG"; } \
+            | sort -V | awk -v t="$TAG" '$0 == t { print prev; exit } { prev = $0 }')
           [ -n "$previous" ] || { echo "::error::no previous release tag found on origin"; exit 1; }
           range=$(sed -n 's/^Range: //p' "$rec" | head -1)
           case "$range" in

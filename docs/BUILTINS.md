@@ -510,8 +510,8 @@ either way, so the numbers are byte-identical.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `mean` | `mean of t` | Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number raises an error naming its 1-based argument position and type; the message does not report a flattened index. |
-| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number raises an error naming its 1-based argument position and type; the message does not report a flattened index. |
+| `mean` | `mean of t` | Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its zero-based flattened index and type (`mean: element 1 is str (expected a number)`). Called with several arguments (`mean of [a, b]` is an argument list), a non-number argument raises naming its 1-based position (`mean: argument 2 is a bool, which mean does not take there`). |
+| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its zero-based flattened index and type (`sum: element 1 is str (expected a number)`). Called with several arguments (`sum of [a, b]` is an argument list), a non-number argument raises naming its 1-based position (`sum: argument 2 is a bool, which sum does not take there`). |
 | `norm` | `norm of t` | Euclidean norm of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its flattened index and type. |
 
 ### Construction
