@@ -41,7 +41,7 @@ def run(cmd, env=None, data=b"", timeout=30):
         return None, f"timeout after {timeout:g}s"
 
 
-def compare_one(label, source, vm, ref, td, oracle_seed, timeout):
+def compare_one(label, source, vm, ref, runtime_version, td, oracle_seed, timeout):
     p = td / "program.eigs"; p.write_text(source)
     verdict, timed_out = run([ref, "--classify-runtime", p], timeout=timeout)
     if timed_out:
@@ -58,14 +58,14 @@ def compare_one(label, source, vm, ref, td, oracle_seed, timeout):
     if not c_tape.exists():
         return True, ["C record tape missing"], {}
     l_tape = td / "lean-replay.tape"
-    l, timed_out = run([ref, "--replay", c_tape, "--strict", "--trace", l_tape, p], timeout=timeout)
+    l, timed_out = run([ref, "--version", runtime_version, "--replay", c_tape, "--strict", "--trace", l_tape, p], timeout=timeout)
     if timed_out: return True, [f"Lean-replay arm {timed_out}"], {}
     if c.stdout != l.stdout: reasons.append("C-record/Lean-replay stdout")
     if parity.cls(c) != parity.cls(l): reasons.append("C-record/Lean-replay exit class")
     if parity.projection(c_tape) != parity.projection(l_tape): reasons.append("C-record/Lean-replay A/N projection")
 
     own = td / "lean-record.tape"
-    lo, timed_out = run([ref, "--seed", str(oracle_seed), "--trace", own, p], timeout=timeout)
+    lo, timed_out = run([ref, "--version", runtime_version, "--seed", str(oracle_seed), "--trace", own, p], timeout=timeout)
     if timed_out: return True, [f"Lean-record arm {timed_out}"], {}
     cr_tape = td / "c-replay.tape"
     cr, timed_out = run([vm, p], {**os.environ, "EIGS_REPLAY": str(own), "EIGS_REPLAY_STRICT": "1", "EIGS_TRACE": str(cr_tape), "REF_DIFF_MISSING": ""}, timeout=timeout)
@@ -153,6 +153,7 @@ def main():
     ap.add_argument("--ref", type=Path, default=ROOT / "spec/lean/.lake/build/bin/eigs-ref")
     ap.add_argument("--report", type=Path, default=Path("ref-diff-report.json"))
     args = ap.parse_args()
+    runtime_version = subprocess.check_output([args.vm, "--version"], text=True).strip()
     programs = [(f"generated:{s}", gen.program(s), True) for s in range(args.seed_start, args.seed_start + args.generated)]
     if args.corpus: programs += [(n, s, False) for n, s in corpus()]
     programs += [(label, source, False) for s in range(1, args.hot + 1)
@@ -167,7 +168,7 @@ def main():
             if label.startswith("hot:"):
                 in_subset, reasons, tiers = compare_hot(label, source, args.vm, d, args.timeout)
             else:
-                in_subset, reasons, tiers = compare_one(label, source, args.vm, args.ref, d, args.seed_start + i, args.timeout)
+                in_subset, reasons, tiers = compare_one(label, source, args.vm, args.ref, runtime_version, d, args.seed_start + i, args.timeout)
             if in_subset:
                 inside += 1; compared += 1
                 for seam in gen.SEAMS:

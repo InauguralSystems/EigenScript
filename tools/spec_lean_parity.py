@@ -3,6 +3,10 @@
 from pathlib import Path
 import argparse,importlib.util,os,shutil,subprocess,sys,tempfile
 ROOT=Path(__file__).resolve().parents[1]; VM=ROOT/'src/eigenscript'
+def runtime_version():
+ return subprocess.check_output([VM,'--version'],text=True).strip()
+def ref_args(ref,*args):
+ return [ref,'--version',runtime_version(),*args]
 def population():
  s=importlib.util.spec_from_file_location('docs',ROOT/'tests/test_doc_examples.py'); d=importlib.util.module_from_spec(s); s.loader.exec_module(d); out=[]
  for rel in d.POPULATION:
@@ -60,7 +64,7 @@ def replay_refusal_cases(ref):
   checked=0
   for tape,want in ((wrong,'replay divergence'),(short,'runtime error')):
    c=subprocess.run([VM,source],capture_output=True,input=b'',env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_REPLAY':str(tape),'EIGS_REPLAY_STRICT':'1'})
-   l=subprocess.run([ref,'--replay',tape,'--strict',source],capture_output=True,input=b'')
+   l=subprocess.run(ref_args(ref,'--replay',tape,'--strict',source),capture_output=True,input=b'')
    cclass='replay divergence' if c.returncode==3 else cls(c)
    lclass='replay divergence' if l.returncode==3 else cls(l)
    if cclass!=want or lclass!=want:raise RuntimeError(f'replay refusal parity: wanted {want}, C={cclass}, Lean={lclass}')
@@ -68,9 +72,9 @@ def replay_refusal_cases(ref):
   # A V header is a hard session boundary.  Neither implementation may scan
   # into the following session for an otherwise matching N record.
   sessions=td/'sessions.tape';sessions.write_text(
-   'V 8 0.47.0\nB 0 1 1 0 root -\nV 8 0.47.0\nB 0 1 1 0 root -\nN 0 random_int=1\n')
+   f'V 8 {runtime_version()}\nB 0 1 1 0 root -\nV 8 {runtime_version()}\nB 0 1 1 0 root -\nN 0 random_int=1\n')
   c=subprocess.run([VM,source],capture_output=True,input=b'',env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_REPLAY':str(sessions),'EIGS_REPLAY_STRICT':'1'})
-  l=subprocess.run([ref,'--replay',sessions,'--strict',source],capture_output=True,input=b'')
+  l=subprocess.run(ref_args(ref,'--replay',sessions,'--strict',source),capture_output=True,input=b'')
   message=b'random_int: replay stream 0 has no matching recorded N value'
   if cls(c)!='runtime error' or cls(l)!='runtime error' or message not in c.stderr or message not in l.stderr:
    raise RuntimeError(f'session-boundary parity: C={c.returncode}/{c.stderr!r}, Lean={l.returncode}/{l.stderr!r}')
@@ -83,7 +87,7 @@ def replay_refusal_cases(ref):
   c_record=subprocess.run([VM,large_source],capture_output=True,input=large,
    env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_TRACE':str(large_tape)})
   lean_tape=td/'large-lean.tape'
-  l_replay=subprocess.run([ref,'--replay',large_tape,'--strict','--trace',lean_tape,large_source],capture_output=True,input=b'')
+  l_replay=subprocess.run(ref_args(ref,'--replay',large_tape,'--strict','--trace',lean_tape,large_source),capture_output=True,input=b'')
   c_reverse=subprocess.run([VM,large_source],capture_output=True,input=b'',
    env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_REPLAY':str(lean_tape),'EIGS_REPLAY_STRICT':'1'})
   if not (c_record.returncode==l_replay.returncode==c_reverse.returncode==0 and
@@ -96,11 +100,11 @@ def replay_refusal_cases(ref):
   # view consumed by unescape_string.  The missing closing quote is a
   # malformed taped value (strict-replay exit 3), not a shortened string.
   raw_nul=td/'raw-nul.tape'
-  raw_nul.write_bytes(b'V 8 0.47.0\nB 0 1 1 0 root -\nN 0 read_line="before\0after"\n')
+  raw_nul.write_bytes(f'V 8 {runtime_version()}\nB 0 1 1 0 root -\nN 0 read_line="before'.encode()+b'\0'+b'after"\n')
   nul_source=td/'raw-nul.eigs';nul_source.write_text('print of (read_line of [])\n')
   c=subprocess.run([VM,nul_source],capture_output=True,input=b'',env={**os.environ,
    'EIGS_JIT_OFF':'1','EIGS_REPLAY':str(raw_nul),'EIGS_REPLAY_STRICT':'1'})
-  l=subprocess.run([ref,'--replay',raw_nul,'--strict',nul_source],capture_output=True,input=b'')
+  l=subprocess.run(ref_args(ref,'--replay',raw_nul,'--strict',nul_source),capture_output=True,input=b'')
   if c.returncode!=3 or l.returncode!=3 or b'malformed' not in c.stderr.lower() or b'kind mismatch' not in l.stderr.lower():
    raise RuntimeError(f'raw-NUL parity: C={c.returncode}/{c.stderr!r}, Lean={l.returncode}/{l.stderr!r}')
   checked+=1
@@ -120,7 +124,7 @@ def compare(ref,lean_root,enforce=True):
    examined+=1;ct=td/f'c{i}';lt=td/f'l{i}';rt=td/f'r{i}'
    c=subprocess.run([VM,p],capture_output=True,input=b'',env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_TRACE':str(ct),'EIGS_PARITY_CONTROL':'\t'})
    has_n=any(k=='N' for k,_ in projection(ct))
-   lean_command=[ref,'--replay',ct,'--strict','--trace',lt,p] if has_n else [ref,'--trace',lt,p]
+   lean_command=ref_args(ref,'--replay',ct,'--strict','--trace',lt,p) if has_n else ref_args(ref,'--trace',lt,p)
    try:l=subprocess.run(lean_command,capture_output=True,input=b'',timeout=None if enforce else 2)
    except subprocess.TimeoutExpired:
     actual[label]='Lean timeout';continue
@@ -129,7 +133,7 @@ def compare(ref,lean_root,enforce=True):
    if c.stdout!=l.stdout:mismatch.append('stdout')
    if cls(c)!=cls(l):mismatch.append(f'exit({cls(c)}!={cls(l)})')
    if projection(ct)!=projection(lt):mismatch.append('A/N')
-   try:replay=subprocess.run([ref,'--replay',lt,'--strict','--trace',rt,p],capture_output=True,timeout=None if enforce else 2)
+   try:replay=subprocess.run(ref_args(ref,'--replay',lt,'--strict','--trace',rt,p),capture_output=True,timeout=None if enforce else 2)
    except subprocess.TimeoutExpired:
     actual[label]='Lean replay timeout';continue
    if replay.stdout==l.stdout and cls(replay)==cls(l) and projection(rt)==projection(lt):roundtrips+=1
@@ -138,7 +142,7 @@ def compare(ref,lean_root,enforce=True):
     # Reverse direction: the reference records from its seeded oracle and the
     # VM must consume that tape without consulting a live source.
     lean_own=td/f'lo{i}'; c_replay_tape=td/f'cr{i}'
-    own=subprocess.run([ref,'--seed','2018','--trace',lean_own,p],capture_output=True,input=b'')
+    own=subprocess.run(ref_args(ref,'--seed','2018','--trace',lean_own,p),capture_output=True,input=b'')
     reverse=subprocess.run([VM,p],capture_output=True,input=b'',env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_REPLAY':str(lean_own),'EIGS_REPLAY_STRICT':'1','EIGS_TRACE':str(c_replay_tape)})
     if reverse.stdout!=own.stdout or cls(reverse)!=cls(own) or projection(c_replay_tape)!=projection(lean_own):
      mismatch.append('Lean->C strict replay')
@@ -158,11 +162,32 @@ def replace_once(path,old,new):
  if text.count(old)!=1:raise RuntimeError(f'mutant anchor count {text.count(old)} in {path}')
  path.write_text(text.replace(old,new))
 def selftest():
- base=ROOT/'spec/lean'; mutants=[('swap-add-sub','| .add => match a,b with | .int x,.int y => safeInt (x+y)','| .add => match a,b with | .int x,.int y => safeInt (x-y)'),('string-eq-length','| .eq | .ne => match a, b with','| .eq | .ne => match a, b with\n      | .string x, .string y => pure (.bool (if op == .eq then x.length == y.length else x.length != y.length))'),('drop-assignment-tape','set {w with environments:=environments,tape:=w.tape ++ [s!"A 0 {name}={tapeValue v}"]}','set {w with environments:=environments}'),('consume-two-n','let supplied : TapedAnswer ← liftM\n    (Interaction.ask {name := fn} (fun answer => Interaction.done answer))','let supplied : TapedAnswer ← liftM\n    (Interaction.ask {name := fn} (fun answer => Interaction.done answer))\n  let _discarded : TapedAnswer ← liftM\n    (Interaction.ask {name := fn} (fun answer => Interaction.done answer))'),('ignore-oracle','| "random_int", .int n => pure (.int n)','| "random_int", .int _ => pure (.int 2)')]; killed=0
+ base=ROOT/'spec/lean'
+ mutants=[
+  ('swap-add-sub', [('| .add => match a,b with | .int x,.int y => safeInt (x+y)',
+    '| .add => match a,b with | .int x,.int y => safeInt (x-y)')]),
+  ('string-eq-length', [('| .eq | .ne => match a, b with',
+    '| .eq | .ne => match a, b with\n      | .string x, .string y => pure (.bool (if op == .eq then x.length == y.length else x.length != y.length))')]),
+  ('drop-assignment-tape', [
+    ('[structuralA s!"0 {name}={tapeValue v}"]', '[structuralA s!"0 {name}=null"]'),
+    ('[structuralA s!"0 {name}={tapeValue value}"]', '[structuralA s!"0 {name}=null"]')]),
+  ('consume-two-n', [('Main.lean',
+    '| .ok tape => pure (.replayStrict tape)',
+    '| .ok tape => pure (.replayStrict (tape.flatMap fun line => if line.startsWith "N " then [line, line] else [line]))')]),
+  ('ignore-oracle', [
+    ('private def oracleAnswers (oracle : List OracleValue) : List TapedAnswer :=\n  oracle.zipIdx.map fun (value, position) => .value position "" value',
+     'private def oracleAnswers (oracle : List OracleValue) : List TapedAnswer :=\n  (oracle.map fun _ => .int 2).zipIdx.map fun (value, position) => .value position "" value'),
+    ('wellPositioned_oracleZipIdx 0 oracle',
+     'wellPositioned_oracleZipIdx 0 (oracle.map fun _ => .int 2)')])]
+ killed=0
  standing={x.split('\t',1)[0] for x in (base/'known_disagreements.txt').read_text().splitlines() if x and not x.startswith('#')}
  with tempfile.TemporaryDirectory() as raw:
-  for name,old,new in mutants:
-   copy=Path(raw)/name;shutil.copytree(base,copy,symlinks=True,ignore=shutil.ignore_patterns('.lake'));replace_once(copy/'EigenCore/Semantics.lean',old,new)
+  for name,edits in mutants:
+   copy=Path(raw)/name;shutil.copytree(base,copy,symlinks=True,ignore=shutil.ignore_patterns('.lake'))
+   for edit in edits:
+    if len(edit)==3:relative,old,new=edit
+    else:relative=('EigenCore/Semantics.lean');old,new=edit
+    replace_once(copy/relative,old,new)
    p=subprocess.run(['lake','build'],cwd=copy,capture_output=True,text=True)
    if p.returncode:
     if name=='ignore-oracle' and 'OracleTests.lean' in p.stderr+p.stdout:

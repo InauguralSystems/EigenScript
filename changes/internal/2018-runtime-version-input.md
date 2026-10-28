@@ -1,0 +1,1 @@
+- Make the EigenCore tape runtime version an explicit input derived from the tested binary, so release cuts retain C/Lean parity (#2018).
