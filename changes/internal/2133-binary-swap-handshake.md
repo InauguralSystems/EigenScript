@@ -1,0 +1,1 @@
+- The binary-swap guard self-test now handshakes signal delivery after restoration is armed, removing a load-sensitive verdict race (#2133).
