@@ -158,11 +158,31 @@ def replace_once(path,old,new):
  if text.count(old)!=1:raise RuntimeError(f'mutant anchor count {text.count(old)} in {path}')
  path.write_text(text.replace(old,new))
 def selftest():
- base=ROOT/'spec/lean'; mutants=[('swap-add-sub','| .add => match a,b with | .int x,.int y => safeInt (x+y)','| .add => match a,b with | .int x,.int y => safeInt (x-y)'),('string-eq-length','| .eq | .ne => match a, b with','| .eq | .ne => match a, b with\n      | .string x, .string y => pure (.bool (if op == .eq then x.length == y.length else x.length != y.length))'),('drop-assignment-tape','set {w with environments:=environments,tape:=w.tape ++ [s!"A 0 {name}={tapeValue v}"]}','set {w with environments:=environments}'),('consume-two-n','let supplied : TapedAnswer ← liftM\n    (Interaction.ask {name := fn} (fun answer => Interaction.done answer))','let supplied : TapedAnswer ← liftM\n    (Interaction.ask {name := fn} (fun answer => Interaction.done answer))\n  let _discarded : TapedAnswer ← liftM\n    (Interaction.ask {name := fn} (fun answer => Interaction.done answer))'),('ignore-oracle','| "random_int", .int n => pure (.int n)','| "random_int", .int _ => pure (.int 2)')]; killed=0
+ base=ROOT/'spec/lean'
+ mutants=[
+  ('swap-add-sub', [('| .add => match a,b with | .int x,.int y => safeInt (x+y)',
+    '| .add => match a,b with | .int x,.int y => safeInt (x-y)')]),
+  ('string-eq-length', [('| .eq | .ne => match a, b with',
+    '| .eq | .ne => match a, b with\n      | .string x, .string y => pure (.bool (if op == .eq then x.length == y.length else x.length != y.length))')]),
+  ('drop-assignment-tape', [
+    ('[structuralA s!"0 {name}={tapeValue v}"]', '[structuralA s!"0 {name}=null"]'),
+    ('[structuralA s!"0 {name}={tapeValue value}"]', '[structuralA s!"0 {name}=null"]')]),
+  ('consume-two-n', [('Main.lean',
+    '| .ok tape => pure (.replayStrict tape)',
+    '| .ok tape => pure (.replayStrict (tape.flatMap fun line => if line.startsWith "N " then [line, line] else [line]))')]),
+  ('ignore-oracle', [
+    ('private def oracleAnswers (oracle : List OracleValue) : List TapedAnswer :=\n  oracle.zipIdx.map fun (value, position) => .value position "" value',
+     'private def oracleAnswers (oracle : List OracleValue) : List TapedAnswer :=\n  (oracle.map fun _ => .int 2).zipIdx.map fun (value, position) => .value position "" value'),
+    ('wellPositioned_oracleZipIdx 0 oracle',
+     'wellPositioned_oracleZipIdx 0 (oracle.map fun _ => .int 2)')])]
+ killed=0
  standing={x.split('\t',1)[0] for x in (base/'known_disagreements.txt').read_text().splitlines() if x and not x.startswith('#')}
  with tempfile.TemporaryDirectory() as raw:
-  for name,old,new in mutants:
-   copy=Path(raw)/name;shutil.copytree(base,copy,symlinks=True,ignore=shutil.ignore_patterns('.lake'));replace_once(copy/'EigenCore/Semantics.lean',old,new)
+  for name,edits in mutants:
+   copy=Path(raw)/name;shutil.copytree(base,copy,symlinks=True,ignore=shutil.ignore_patterns('.lake'))
+   for edit in edits:
+    relative,old,new=edit if len(edit)==3 else ('EigenCore/Semantics.lean',*edit)
+    replace_once(copy/relative,old,new)
    p=subprocess.run(['lake','build'],cwd=copy,capture_output=True,text=True)
    if p.returncode:
     if name=='ignore-oracle' and 'OracleTests.lean' in p.stderr+p.stdout:
