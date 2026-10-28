@@ -38,7 +38,7 @@ else TMO="env"; echo "BOOL_FUZZ: NOTE no timeout(1); programs run unbounded"; fi
 # failed ... ulimit -v") and each abort cost ~1.5 s -- the round-8 ASan shard
 # overran its 55-minute limit on exactly this. Under a sanitizer build the
 # cap is lifted; video and audio stay on SDL's dummy drivers.
-export VCAP=1500000
+export VCAP=${BOOL_FUZZ_VCAP:-1500000}
 if grep -qa -e __asan_init -e __tsan_init -e __msan_init "$BIN" 2>/dev/null; then
     VCAP=unlimited
     echo "  NOTE: sanitizer build: probes run without the ulimit -v cap"

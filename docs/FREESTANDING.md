@@ -35,6 +35,7 @@ build (those live in the optional HTTP extension).
 | **DROP** | compile out — not present in the freestanding profile |
 | **ELIM** | disappears under freestanding build flags / our own `_start` |
 | **HARDEN** | exists but is young; firm it up *before* it's load-bearing |
+| **CRT** | compiler-emitted arithmetic/conversion helper; link the target's libgcc or compiler-rt builtins archive |
 
 **The key distinction (and the correction to a flat reading of this ledger):**
 the 136 symbols are *not* 136 things to build. They reduce to ~10 **ROOT**
@@ -56,6 +57,7 @@ them.
 | entropy (`RDRAND`/TSC) | HAL/hardware | `rand` `srand` `drand48` `lrand48` `srand48` |
 | `halt` / `panic` | HAL | `exit` `_exit` `abort` `atexit` |
 | `memcpy` `memset` `memcmp` | compiler/hardware intrinsic (near-root) | the rest of `mem*`/`str*` byte ops |
+| atomic libcalls wider than the ISA | HAL (interrupt mask) | `__atomic_*` operations the compiler cannot emit lock-free |
 | libm kernels: `exp` `log` `sin`/`cos` core `atan` core | BUILD (~4 fns) | `pow`=exp(y·log x), `log2`=log/log2, `tan`, `atan2`, `sqrt`, `acos`/`asin` |
 
 Everything not in this table — `strlen`/`strcmp`/`strstr`/…, `strtod`/`strtol`
@@ -173,6 +175,26 @@ None of these are real work — they vanish in a freestanding build:
 - `__cxa_atexit`/`__cxa_finalize`/`__gmon_start__`/`_ITM_*` — toolchain/profiling
   glue, weak and eliminable.
 
+### Compiler runtime and narrow-target atomics — `CRT` + `HAL`
+
+A freestanding link includes the target compiler runtime: either libgcc or
+compiler-rt's builtins archive. It supplies compiler-emitted 64-bit division,
+modulus, and integer/double conversions; soft-float targets also take double
+arithmetic and comparison helpers from that archive. These helpers are neither
+libc nor kernel services.
+
+Atomic libcalls are different. An operation that the ISA can implement
+lock-free is emitted inline: RV32IMA's A extension therefore keeps the
+runtime's 32-bit refcounts and gates lock-free. RV32 has no 64-bit LR/SC, so
+the process-wide 64-bit environment birth counter still calls the `_8`
+helpers. EigenOS supplies every imported `__atomic_*` helper as a **HAL root**
+which masks interrupts around the operation on its single CPU thread. On an
+RV32IMC core without A, the 1/4-byte helpers are kernel-owed as well. Such a
+core is supported only with these interrupt-masking HAL roots; the mini-libc
+deliberately does not provide racy plain-operation substitutes. This preserves
+atomic semantics under preemption rather than silently assuming that the
+target is non-preemptive.
+
 ## Critical path (what's actually new code)
 
 The real per-platform work is the **~10 roots above**, not the 136 symbols. In
@@ -222,9 +244,9 @@ Three CI gates keep it honest:
   -U_FORTIFY_SOURCE`, links it relocatable, and fails if the undefined-symbol
   set contains anything outside `tools/freestanding_allowlist.txt` (~90
   symbols, all within). Stage 2 links the mini-libc/libm in and fails unless
-  the residue is EXACTLY the kernel-owed HAL roots
-  (`tools/freestanding_hal_roots.txt` — 30 symbols: heap 4, console 7,
-  clock 2, scheduler 15, halt 2).
+  the residue is EXACTLY the kernel-owed HAL roots, including any
+  target-emitted atomic fallback roots in `tools/freestanding_hal_roots.txt`.
+  RV32IMA and RV32IMC rows link compiler-rt and check that same invariant.
 - **`tools/freestanding_smoke.sh`** — builds a hosted binary of the profile
   behind an embed-API harness and proves the core language (functions, lists,
   dicts, f-strings, observer predicates) still runs while the carved surfaces
@@ -316,8 +338,11 @@ random are a different (SplitMix64) generator — rand48 is the reproducibility
 surface.
 
 What remains before it links on bare metal is exactly stage 2's residue: the
-30 HAL-root symbols the EigenOS kernel owes (M2 pages→heap, M1 serial→
-console_write, M4 PIT→clock, the scheduler, halt).
+HAL-root symbols the EigenOS kernel owes (M2 pages→heap, M1 serial→
+console_write, M4 PIT→clock, the scheduler, halt, and target-required atomic
+fallbacks). The checked architectures are x86-64, RV32IMA, and RV32IMC;
+RISC-V's FP environment supports both hardware F/D and soft-float as described
+above.
 
 ## Standout findings
 
