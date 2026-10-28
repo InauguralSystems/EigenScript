@@ -292,8 +292,9 @@ long eigs_strtol(const char *nptr, char **endptr, int base) {
     } else if (base == 0) {
         base = (s[0] == '0') ? 8 : 10;
     }
-    const unsigned long lmax = (unsigned long)(-(unsigned long)(-9223372036854775807L - 1));
-    unsigned long limit = neg ? lmax : 9223372036854775807UL;
+    const unsigned long long_max = ~0UL >> 1;
+    const unsigned long long_min_magnitude = long_max + 1UL;
+    unsigned long limit = neg ? long_min_magnitude : long_max;
     unsigned long acc = 0;
     int any = 0, overflow = 0;
     for (;; s++) {
@@ -306,10 +307,10 @@ long eigs_strtol(const char *nptr, char **endptr, int base) {
     if (endptr) *endptr = (char *)(any ? s : nptr);
     if (overflow) {
         *eigs_errno_location() = EIGS_ERANGE;
-        return neg ? (-9223372036854775807L - 1) : 9223372036854775807L;
+        return neg ? -(long)long_max - 1L : (long)long_max;
     }
     if (neg) {
-        if (acc >= 9223372036854775808UL) return -9223372036854775807L - 1;
+        if (acc >= long_min_magnitude) return -(long)long_max - 1L;
         return -(long)acc;
     }
     return (long)acc;
@@ -429,7 +430,45 @@ int eigs_atexit(void (*fn)(void)) { (void)fn; return 0; }
  * EigenScript's embedding boundary promises the IEEE default environment,
  * including on EigenOS (#1969). The system x86-64 <fenv.h> fenv_t is the
  * 28-byte image used by FNSTENV followed by the four-byte MXCSR image. */
-#if !defined(__x86_64__)
+#if defined(__riscv) && defined(__riscv_flen)
+int eigs_fegetenv(fenv_t *envp) {
+    unsigned int fcsr;
+    __asm__ volatile ("frcsr %0" : "=r" (fcsr));
+    *envp = fcsr;
+    return 0;
+}
+
+int eigs_fesetenv(const fenv_t *envp) {
+    unsigned int fcsr = (envp == FE_DFL_ENV) ? 0u : (unsigned int)*envp;
+    __asm__ volatile ("fscsr %0" : : "r" (fcsr));
+    return 0;
+}
+
+int eigs_feclearexcept(int excepts) {
+    unsigned int flags;
+    __asm__ volatile ("frflags %0" : "=r" (flags));
+    flags &= ~(unsigned int)(excepts & FE_ALL_EXCEPT);
+    __asm__ volatile ("fsflags %0" : : "r" (flags));
+    return 0;
+}
+#elif defined(__riscv)
+/* A soft-float target has no architectural FP state.  Its only environment
+ * is therefore the default environment, which all three calls preserve. */
+int eigs_fegetenv(fenv_t *envp) {
+    eigs_memset(envp, 0, sizeof(*envp));
+    return 0;
+}
+
+int eigs_fesetenv(const fenv_t *envp) {
+    (void)envp;
+    return 0;
+}
+
+int eigs_feclearexcept(int excepts) {
+    (void)excepts;
+    return 0;
+}
+#elif !defined(__x86_64__)
 #error "#1969: the freestanding floating-point environment needs an architecture implementation"
 #else
 typedef union {

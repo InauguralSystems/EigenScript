@@ -859,6 +859,17 @@ freestanding-libc-diff:
 		src/freestanding/mini_fmt.c src/freestanding/mini_strtod.c -lm
 	/tmp/eigs_libc_diff
 
+# RISC-V's fenv image is a single fcsr rather than x87 + MXCSR.  Build against
+# the target musl and execute only those architecture-specific rows in qemu;
+# the full differential above remains the native, glibc-oracle gate.
+freestanding-libc-diff-riscv:
+	python3 -m ziglang cc -target riscv64-linux-musl -O2 -fno-builtin \
+		-ffp-contract=off -Wall -Wextra $(WERROR_FLAGS) -static \
+		-o /tmp/eigs_libc_diff-riscv64 tests/freestanding_libc_diff.c \
+		src/freestanding/mini_libc.c src/freestanding/mini_libm.c \
+		src/freestanding/mini_fmt.c src/freestanding/mini_strtod.c -lm
+	qemu-riscv64 /tmp/eigs_libc_diff-riscv64 --fenv-only
+
 # Ordinary strict-shape descriptor producer; reuse the owning embed objects.
 # This file target does not relink the CLI alias.
 build/$(EMBED_OBSERVER_VARIANT)/strict_shape_descriptor: tests/strict_shape_descriptor.c $(EMBED_OBSERVER_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt

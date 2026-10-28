@@ -50,6 +50,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   musl-tools       -> musl-gcc, the second conforming libc header set the
 #                       freestanding gate compiles the profile against
 #                       (tools/freestanding_check.sh, #1985)
+#   qemu-user/ziglang-> execute the RISC-V mini-libc fenv differential against
+#                       zig's target musl (#1983)
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         build-essential \
@@ -60,12 +62,16 @@ RUN apt-get update \
         zlib1g-dev \
         postgresql-client \
         python3 \
+        python3-pip \
         python3-yaml \
         gdb \
         curl \
         procps \
         musl-tools \
+        qemu-user \
  && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --break-system-packages ziglang==0.17.0
 
 # Release-suite dependencies have one source for this CI image and native
 # release runners. COPY is relative to the repository-root build context.
