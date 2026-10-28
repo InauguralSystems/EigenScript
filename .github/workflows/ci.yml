@@ -353,7 +353,7 @@ jobs:
           # A workflow_dispatch carries no base: select what the dispatched ref
           # changes against main, as its PR would. An empty base selects nothing.
           [ -n "$base" ] || base=origin/main
-          bash tools/selftests.sh --changed "$base" --list > selection.txt
+          bash tools/selftests.sh --changed "$base" --list > selection.txt || { rc=$?; cat selection.txt; exit $rc; }
           cat selection.txt
           n=$(sed -n 's/^selftests: enrolment .*; \([0-9][0-9]*\) self-tests selected$/\1/p' selection.txt)
           [ -n "$n" ] || { echo "selftests: no selection line"; exit 2; }

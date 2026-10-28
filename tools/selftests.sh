@@ -66,6 +66,8 @@ def main():
     if len(product) < 100:
         error(f'product population examined={len(product)} is below 100 (git ls-files failed?)')
     rows, enrolled, product_rows = [], set(), 0
+    workflow = Path('.github/workflows/ci.yml').read_text()
+    jobs = {m.group(1): m.group(2) for m in re.finditer(r'^  ([A-Za-z0-9_-]+):\n(.*?)(?=^  [A-Za-z0-9_-]+:|\Z)', workflow, re.M | re.S)}
     for n, line in enumerate(Path('tools/selftests.txt').read_text().splitlines(), 1):
         if not line.strip() or line.startswith('#'):
             continue
@@ -74,15 +76,37 @@ def main():
             error(f'selftests.txt:{n}: expected triggers | command | optional JSON pin')
         triggers, command = fields[:2]
         argv = shlex.split(command)
-        if len(argv) < 4 or argv[0] != 'timeout' or not argv[1].isdigit() or int(argv[1]) < 1:
+        ci_job = None
+        if argv[:1] == ['ci-step']:
+            if len(argv) < 3:
+                error(f'selftests.txt:{n}: ci-step needs a job id and command')
+            ci_job, ci_command = argv[1], ' '.join(argv[2:])
+            target = triggers
+            if ' ' in target or target not in implemented:
+                error(f'selftests.txt:{n}: ci-step trigger must name its self-test script')
+            if ci_job not in jobs:
+                error(f'selftests.txt:{n}: ci-step CI job {ci_job!r} is missing')
+            if not re.search(r'^\s{6,}run:\s*' + re.escape(ci_command) + r'\s*$', jobs[ci_job], re.M):
+                error(f'selftests.txt:{n}: ci-step command is missing from CI job {ci_job!r}: {ci_command}')
+            gate = jobs.get('gate-selftests', '')
+            needs = re.search(r'^\s{4}needs:\s*\[([^]]*)\]', gate, re.M)
+            if not needs or ci_job not in [s.strip() for s in needs.group(1).split(',')]:
+                error(f'selftests.txt:{n}: gate-selftests does not need CI job {ci_job!r}')
+            require_steps = re.findall(r'^\s{6}- name: Require .*? success\n(.*?)(?=^\s{6}- |\Z)', gate, re.M | re.S)
+            if not any(f'needs.{ci_job}.result' in step and re.search(r'test\s+"\$[A-Z0-9_]+"\s*=\s*success', step) for step in require_steps):
+                error(f'selftests.txt:{n}: gate-selftests has no Require success check for CI job {ci_job!r}')
+            argv = []
+        else:
+            target = None
+        if ci_job is None and (len(argv) < 4 or argv[0] != 'timeout' or not argv[1].isdigit() or int(argv[1]) < 1):
             error(f'selftests.txt:{n}: command needs timeout SECONDS')
-        scripts = [s for s in argv[2:] if s.startswith(('tools/', 'tests/', 'bench/'))]
+        scripts = [s for s in argv[2:] if s.startswith(('tools/', 'tests/', 'bench/'))] if argv else [target]
         if not scripts or any(not Path(s).is_file() for s in scripts):
             error(f'selftests.txt:{n}: command does not name an existing script')
-        if not any(re.fullmatch(mode, a) for a in argv):
+        if ci_job is None and not any(re.fullmatch(mode, a) for a in argv):
             error(f'selftests.txt:{n}: command lacks a self-test mode')
         hit = next((f for g in triggers.split() for f in product if f not in scripts and fnmatch.fnmatchcase(f, g)), None)
-        if hit and int(argv[1]) > PRODUCT_TRIGGER_MAX_S:
+        if hit and ci_job is None and int(argv[1]) > PRODUCT_TRIGGER_MAX_S:
             error(f'selftests.txt:{n}: trigger matches product file {hit} but the row\'s bound is {argv[1]}s '
                   f'(> {PRODUCT_TRIGGER_MAX_S}s): it would run on most PRs; key it on the checker and its helpers (#1352)')
         product_rows += bool(hit)
@@ -90,12 +114,12 @@ def main():
         if target in enrolled or target not in implemented:
             error(f'selftests.txt:{n}: duplicate or non-self-test command: {target}')
         enrolled.add(target)
-        pins = json.loads(fields[2]) if len(fields) == 3 and fields[2] else []
+        pins = json.loads(fields[2]) if len(fields) == 3 and fields[2] not in ('', '-') else []
         if not isinstance(pins, list) or any(not isinstance(p, dict) or not isinstance(p.get('pattern'), str) or not isinstance(p.get('count'), int) for p in pins):
             error(f'selftests.txt:{n}: pins need pattern strings and integer counts')
         for pin in pins:
             re.compile(pin['pattern'])
-        rows.append((triggers.split(), command, target, pins))
+        rows.append((triggers.split(), command, target, pins, ci_job))
     if not rows or enrolled != implemented:
         error('enrolment mismatch: missing=' + repr(sorted(implemented - enrolled)) + ' stale=' + repr(sorted(enrolled - implemented)))
     changed = set()
@@ -115,12 +139,15 @@ def main():
     selected = [r for r in rows if all_rows or any(fnmatch.fnmatchcase(f, p) for f in changed for p in r[0])]
     print(f'selftests: enrolment {len(enrolled)}/{len(implemented)}; product-triggered rows {product_rows} (bound <= {PRODUCT_TRIGGER_MAX_S}s each); {len(selected)} self-tests selected', flush=True)
     if listing:
-        for _, cmd, _, _ in selected:
-            print(cmd)
+        for _, cmd, _, _, ci_job in selected:
+            print(f'{cmd} (covered by CI job {ci_job})' if ci_job else cmd)
         return 0
     failed, total, instrument = 0, 0.0, False
     with tempfile.TemporaryDirectory(prefix='eigs-selftests-') as scratch:
-        for _, command, target, pins in selected:
+        for _, command, target, pins, ci_job in selected:
+            if ci_job:
+                print(f'PASS: {target} covered by CI job {ci_job}', flush=True)
+                continue
             env = dict(os.environ)
             timeout = shutil.which('timeout') or shutil.which('gtimeout') or error('timeout/gtimeout missing')
             variant = {'tests/test_http_slowloris.sh': 'http'}.get(target)
