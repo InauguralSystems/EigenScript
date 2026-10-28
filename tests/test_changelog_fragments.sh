@@ -20,10 +20,21 @@ case_run() { # name setup-function expected diagnostic
     base=$(git rev-parse HEAD)
     set +e
     setup_out=$tree/.git/selftest-setup-output
-    "$setup" >"$setup_out" 2>&1; setup_rc=$?
+    # With errexit off a function returns only its LAST command's status, so a
+    # failed intermediate step would be overwritten by later successful ones
+    # (#2061 review). The ERR trap records the FIRST failing command; errtrace
+    # makes it fire inside the setup function. It runs in this shell, so a
+    # setup's `base` update survives, and bash does not fire ERR for a test
+    # in an if, a && / || list or a pipeline.
+    setup_rc=0 setup_cmd=
+    set -o errtrace
+    trap '__rc=$?; if [ "$setup_rc" -eq 0 ]; then setup_rc=$__rc; setup_cmd=$BASH_COMMAND; fi' ERR
+    "$setup" >"$setup_out" 2>&1
+    trap - ERR
+    set +o errtrace
     if [ "$setup_rc" -ne 0 ]; then
         cd "$ROOT" || exit 2
-        echo "  FAIL: $name (setup failed: $setup, rc=$setup_rc)"
+        echo "  FAIL: $name (setup failed: $setup: $setup_cmd, rc=$setup_rc)"
         cat "$setup_out"
         failed=$((failed + 1))
         [ "$caller_errexit" -eq 0 ] || set -e
@@ -60,8 +71,12 @@ deleted_fragment() {
     git rm -q changes/fixed/999-existing.md && git commit -qm 'delete prior fragment'
 }
 cut_deletes_readme() {
+    # The harness's own plant (see the end of this file): an intermediate command fails
+    # and later ones succeed, so only per-command tracking can name it.
+    [ "${CHANGELOG_SELFTEST_PLANT:-}" != intermediate-setup-failure ] || bash -c 'echo planted-setup-failure >&2; exit 42'
     find changes -mindepth 2 -type f -delete
-    git add -A && git commit -qm 'remove pre-existing fragments'
+    # --allow-empty: right after a release cut there are no fragments to remove.
+    git add -A && git commit -q --allow-empty -m 'remove pre-existing fragments'
     base=$(git rev-parse HEAD)
     bash tools/changelog_fragments.sh cut 99.99.99 2099-01-01 >/dev/null
     rm changes/README.md
@@ -73,4 +88,20 @@ case_run empty-bullet empty_fragment 'FAIL changes/fixed/1420-empty.md'
 case_run deleted deleted_fragment 'existing changelog fragment(s) deleted'
 case_run cut-readme cut_deletes_readme 'release cut PR carries only the cut'
 echo "SELFTEST: $((passed + failed)) case(s) run, $passed passed, $failed failed"
+if [ -z "${CHANGELOG_SELFTEST_PLANT:-}" ]; then
+    # The harness's own plant (#2061 review): re-run with a failing INTERMEDIATE
+    # setup command in cut-readme, followed by successful ones. It must be named
+    # as a setup failure with its rc and output, and the summary must still print.
+    plant_out=$(CHANGELOG_SELFTEST_PLANT=intermediate-setup-failure bash "$0" --selftest 2>&1); plant_rc=$?
+    if [ "$plant_rc" -eq 1 ] &&
+       grep -q "^  FAIL: cut-readme (setup failed: cut_deletes_readme: .*exit 42.*, rc=42)$" <<< "$plant_out" &&
+       grep -qx "planted-setup-failure" <<< "$plant_out" &&
+       grep -qx "SELFTEST: 4 case(s) run, 3 passed, 1 failed" <<< "$plant_out"; then
+        echo "PLANT OK: an intermediate setup failure is named with its rc and output"
+    else
+        echo "PLANT FAIL: the planted intermediate setup failure was not reported (rc=$plant_rc)"
+        printf '%s\n' "$plant_out" | sed 's/^/  | /'
+        failed=$((failed + 1))
+    fi
+fi
 [ "$failed" -eq 0 ]
