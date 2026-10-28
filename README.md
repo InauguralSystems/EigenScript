@@ -247,7 +247,7 @@ drop-in replacement for a caller-chosen epsilon and guard: the registered
 #1990 population found a 0.47% wrong-exit rate for the bare form and a 2.29x
 median iteration ratio to its matched Python loop; the named form still needs
 an explicit cap. These figures, and the decision-rule failure, are reproduced
-by `python3 experiments/1990/report1990.py`. See
+by `python3 reports/convergence_loops/report1990.py`. See
 [docs/COMPARISON.md → Convergence loops](docs/COMPARISON.md#convergence-loops-boilerplate-you-stop-writing).
 
 > **What `improving` and the rest actually mean.** For numbers the

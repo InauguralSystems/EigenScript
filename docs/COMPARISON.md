@@ -507,7 +507,7 @@ runs, and took a median 2.29x the matched `STD-py` iterations where both were
 correct. The named form had W=11.53% without its 10,000-iteration cap taking
 effect as an exhaustion, and its median ratio was 2.36x. Thus H3 failed and the
 original “no epsilon, no remembered previous, no guard” replacement claim does
-not stand. `python3 experiments/1990/report1990.py` derives every figure in
+not stand. `python3 reports/convergence_loops/report1990.py` derives every figure in
 this paragraph from the per-run experiment outputs; the full protocol and
 deviations are in issue #1990.
 
