@@ -61,6 +61,13 @@ structure TapedQuery where
   name : String
   deriving Repr, BEq
 
+/-- Record oracles do not carry call names. Complete that wildcard at the
+effect boundary, so continuations receive the same answer as strict replay. -/
+private def deliveredAnswer (query : TapedQuery) : TapedAnswer → TapedAnswer
+  | .value position name value =>
+      .value position (if name.isEmpty then query.name else name) value
+  | answer => answer
+
 /-- The finite interaction tree produced by evaluation.  Its continuation is
 positive: an interpreter, and only an interpreter, supplies taped answers. -/
 inductive Interaction (α : Type) where
@@ -610,6 +617,30 @@ theorem normalizeTape_error_position {tape : List String} {i p : Nat} {e : Err}
 private def oracleAnswers (oracle : List OracleValue) : List TapedAnswer :=
   oracle.zipIdx.map fun (value, position) => .value position "" value
 
+/-- Convert the value actually delivered to an `ask` continuation into the
+single writer-answer representation used both by execution and the N encoder. -/
+private def writerAnswerFor (fn : String) (raw : OracleValue) : Except Err WriterAnswer :=
+  match fn, raw with
+  | "random_int", .int n => pure (.randomInt n)
+  | "env_get", .string s => pure (.envGet s)
+  | "read_line", .string s => pure (.readLine s)
+  | "read_line", .null => pure .readLineNull
+  | _, _ => throw (.runtime s!"{fn}: oracle value has the wrong kind")
+
+/-- Per-`ask` record invariant. Whenever a delivered value is accepted, the
+writer chunk's N answer has exactly that call name and value; no independent
+"value to record" exists which could diverge from the continuation's value. -/
+theorem record_run_invariant (fn : String) (raw : OracleValue)
+    (answer : WriterAnswer) (accepted : writerAnswerFor fn raw = .ok answer) :
+    answer.name = fn ∧ answer.value = raw := by
+  unfold writerAnswerFor at accepted
+  split at accepted <;> try contradiction
+  all_goals
+    change Except.ok _ = Except.ok answer at accepted
+    injection accepted with same
+    subst answer
+    simp [WriterAnswer.name, WriterAnswer.value]
+
 private def consumeAnswer (fn : String) : EvalM Value := do
   let w ← get
   let position := w.writerChunks.length
@@ -623,18 +654,8 @@ private def consumeAnswer (fn : String) : EvalM Value := do
       if !recordedName.isEmpty && recordedName != fn then
         throw (.replay s!"replay name mismatch: tape has '{recordedName}', program called '{fn}'")
       else pure value
-  let value ← match fn, raw with
-    | "random_int", .int n => pure (.int n)
-    | "env_get", .string s => pure (.string s)
-    | "read_line", .string s => pure (.string s)
-    | "read_line", .null => pure .null
-    | _, _ => throw (.runtime s!"{fn}: oracle value has the wrong kind")
-  let answer ← match fn, value with
-    | "random_int", .int n => pure (.randomInt n)
-    | "env_get", .string s => pure (.envGet s)
-    | "read_line", .string s => pure (.readLine s)
-    | "read_line", .null => pure .readLineNull
-    | _, _ => throw (.runtime s!"{fn}: internal writer kind mismatch")
+  let answer ← writerAnswerFor fn raw
+  let value := answer.runtimeValue
   let chunk : WriterChunk := {structural := w.writerTrailing, answer := answer}
   set {w with writerChunks := w.writerChunks ++ [chunk], writerTrailing := []}
   pure value
@@ -848,17 +869,23 @@ error entry when that is what stops evaluation. -/
 structure Interpretation (α : Type) where
   value : α
   consumed : Nat
+  /-- The answers actually passed to `ask` continuations.  In particular,
+  record-oracle wildcards are completed with the query name here. -/
+  answers : List TapedAnswer
   deriving Repr, BEq
 
 /-- Interpret explicit taped interactions against a supplied answer list. -/
 def interpret : Interaction α → List TapedAnswer → Interpretation α
-  | .done value, _ => {value := value, consumed := 0}
-  | .ask _ continuation, [] =>
-      let result := interpret (continuation (.oracleExhausted 0)) []
+  | .done value, _ => {value := value, consumed := 0, answers := []}
+  | .ask query continuation, [] =>
+      let answer := deliveredAnswer query (.oracleExhausted 0)
+      let result := interpret (continuation answer) []
       {result with consumed := 0}
-  | .ask _ continuation, answer :: rest =>
+  | .ask query continuation, answer :: rest =>
+      let answer := deliveredAnswer query answer
       let result := interpret (continuation answer) rest
-      {result with consumed := result.consumed + 1}
+      {value := result.value, consumed := result.consumed + 1,
+        answers := answer :: result.answers}
 
 /-- Prefix sufficiency for the interaction interpreter.  The strict bound says
 the run stopped before exhausting its supplied stream (callers include an
@@ -884,16 +911,20 @@ theorem interpret_prefix_sufficient (tree : Interaction α) :
           simp [interpret] at agree within
         | cons other others =>
           simp only [interpret] at within agree ⊢
-          have positive : 0 < (interpret (continuation answer) rest).consumed + 1 := by omega
+          have positive : 0 <
+              (interpret (continuation (deliveredAnswer query answer)) rest).consumed + 1 := by omega
           have heads : answer = other := by
             simpa [List.take_succ_cons, positive] using congrArg List.head? agree
           subst other
-          have tails : rest.take (interpret (continuation answer) rest).consumed =
-              others.take (interpret (continuation answer) rest).consumed := by
+          have tails : rest.take
+                (interpret (continuation (deliveredAnswer query answer)) rest).consumed =
+              others.take
+                (interpret (continuation (deliveredAnswer query answer)) rest).consumed := by
             simpa [List.take_succ_cons] using congrArg List.tail agree
-          have childWithin : (interpret (continuation answer) rest).consumed < rest.length := by
+          have childWithin :
+              (interpret (continuation (deliveredAnswer query answer)) rest).consumed < rest.length := by
             simpa using within
-          rw [ih answer rest others childWithin tails]
+          rw [ih (deliveredAnswer query answer) rest others childWithin tails]
 
 /-- Evaluate with the canonical event stream.  No mode metadata enters the
 mutually recursive evaluator. -/
