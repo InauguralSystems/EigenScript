@@ -2017,7 +2017,8 @@ static void loop_iter_store(Env *env, double n) {
      * replacement and assignment count under the existing env lock. The
      * cache lookup and refill below also read shared arrays/version, so
      * return before either path; a thread-local cache is not a slot lock. */
-    if (__builtin_expect(g_vm_multithreaded, 0) && env->mt_shared) {
+    if (__builtin_expect(g_vm_multithreaded, 0) &&
+        __atomic_load_n(&env->mt_shared, __ATOMIC_RELAXED)) {
         Value *iter_val = make_num(n);
         env_set_local(env, "__loop_iterations__", iter_val);
         val_decref(iter_val);
