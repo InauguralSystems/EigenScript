@@ -36,14 +36,31 @@ inductive TapedAnswer where
   | value (position : Nat) (name : String) (value : OracleValue)
   | replayError (position : Nat) (error : Err)
   | replayExhausted (position : Nat)
+  | oracleExhausted (position : Nat)
   deriving Repr, BEq
 
-/-- The evaluator sees only this cursor over one explicit answer sequence.
-Mode-specific decoding and output policy are fixed before evaluation. -/
-private structure AnswerSource where
-  supplied : List TapedAnswer
-  cursor : Nat := 0
-  consumed : List TapedAnswer := []
+/-- A taped operation is an explicit interaction, rather than an implicit read
+from evaluator state. -/
+structure TapedQuery where
+  name : String
+  deriving Repr, BEq
+
+/-- The finite interaction tree produced by evaluation.  Its continuation is
+positive: an interpreter, and only an interpreter, supplies taped answers. -/
+inductive Interaction (α : Type) where
+  | done : α → Interaction α
+  | ask : TapedQuery → (TapedAnswer → Interaction α) → Interaction α
+
+namespace Interaction
+def bind : Interaction α → (α → Interaction β) → Interaction β
+  | .done value, next => next value
+  | .ask query continuation, next => .ask query fun answer => bind (continuation answer) next
+
+instance : Monad Interaction where
+  pure := .done
+  bind := bind
+end Interaction
+
 structure World where
   environments : Array Environment := #[{id := 0, parent := none}]
   frames : Array Frame := #[{serial := 0, environment := 0}]
@@ -51,8 +68,8 @@ structure World where
   functions : Array FunctionDef := #[]
   stdout : String := ""
   tape : List String := []
-  private answers : AnswerSource := {supplied := []}
-abbrev EvalM := ExceptT Err (StateM World)
+  answersConsumed : List TapedAnswer := []
+abbrev EvalM := ExceptT Err (StateT World Interaction)
 
 private def findCell (name : String) (cells : Array Cell) : Option Nat := cells.findIdx? (fun c => c.name == name)
 private def currentEnvironment (w : World) : Nat :=
@@ -223,11 +240,11 @@ private def oracleAnswers (oracle : List OracleValue) : List TapedAnswer :=
 
 private def consumeAnswer (fn : String) : EvalM Value := do
   let w ← get
-  let source := w.answers
-  let some supplied := source.supplied[source.cursor]?
-    | throw (.runtime s!"{fn}: oracle exhausted at value {source.cursor}")
-  let position := source.cursor
+  let position := w.answersConsumed.length
+  let supplied : TapedAnswer ← liftM
+    (Interaction.ask {name := fn} (fun answer => Interaction.done answer))
   let raw ← match supplied with
+    | TapedAnswer.oracleExhausted _ => throw (.runtime s!"{fn}: oracle exhausted at value {position}")
     | .replayError _ error => throw error
     | .replayExhausted _ => throw (.runtime s!"{fn}: replay stream 0 has no matching recorded N value")
     | .value _ recordedName value =>
@@ -240,9 +257,9 @@ private def consumeAnswer (fn : String) : EvalM Value := do
     | "read_line", .string s => pure (.string s)
     | "read_line", .null => pure .null
     | _, _ => throw (.runtime s!"{fn}: oracle value has the wrong kind")
-  let consumed := source.consumed ++ [.value position fn raw]
+  let consumed := w.answersConsumed ++ [.value position fn raw]
   let tape := w.tape ++ ["N 0 " ++ fn ++ "=" ++ nondetValue value]
-  set {w with answers := {source with cursor := position + 1, consumed := consumed}, tape := tape}
+  set {w with answersConsumed := consumed, tape := tape}
   pure value
 
 /-- Live and record modes consume the supplied oracle exactly once per taped
@@ -448,6 +465,59 @@ structure CoreResult where
 private def isAnswerRecord (line : String) : Bool := line.startsWith "N "
 private def isAssignmentRecord (line : String) : Bool := line.startsWith "A "
 
+/-- Result of interpreting a finite interaction tree.  `consumed` counts the
+supplied entries selected by `ask` nodes, including an explicitly supplied
+error entry when that is what stops evaluation. -/
+structure Interpretation (α : Type) where
+  value : α
+  consumed : Nat
+  deriving Repr, BEq
+
+/-- Interpret explicit taped interactions against a supplied answer list. -/
+def interpret : Interaction α → List TapedAnswer → Interpretation α
+  | .done value, _ => {value := value, consumed := 0}
+  | .ask _ continuation, [] =>
+      let result := interpret (continuation (.oracleExhausted 0)) []
+      {result with consumed := 0}
+  | .ask _ continuation, answer :: rest =>
+      let result := interpret (continuation answer) rest
+      {result with consumed := result.consumed + 1}
+
+/-- Prefix sufficiency for the interaction interpreter.  The strict bound says
+the run stopped before exhausting its supplied stream (callers include an
+explicit error answer).  Thus answers after the exactly-consumed prefix cannot
+be observed. -/
+theorem interpret_prefix_sufficient (tree : Interaction α) :
+    ∀ (supplied alternative : List TapedAnswer),
+      (interpret tree supplied).consumed < supplied.length →
+      supplied.take (interpret tree supplied).consumed =
+        alternative.take (interpret tree supplied).consumed →
+      interpret tree supplied = interpret tree alternative := by
+  induction tree with
+  | done value =>
+      intro supplied alternative within agree
+      simp [interpret]
+  | ask query continuation ih =>
+      intro supplied alternative within agree
+      cases supplied with
+      | nil => simp [interpret] at within
+      | cons answer rest =>
+        cases alternative with
+        | nil =>
+          simp [interpret] at agree within
+        | cons other others =>
+          simp only [interpret] at within agree ⊢
+          have positive : 0 < (interpret (continuation answer) rest).consumed + 1 := by omega
+          have heads : answer = other := by
+            simpa [List.take_succ_cons, positive] using congrArg List.head? agree
+          subst other
+          have tails : rest.take (interpret (continuation answer) rest).consumed =
+              others.take (interpret (continuation answer) rest).consumed := by
+            simpa [List.take_succ_cons] using congrArg List.tail agree
+          have childWithin : (interpret (continuation answer) rest).consumed < rest.length := by
+            simpa using within
+          rw [ih answer rest others childWithin tails]
+
 /-- Evaluate with the canonical event stream.  No mode metadata enters the
 mutually recursive evaluator. -/
 private def evaluateCore (fuel : Nat) (p : Program)
@@ -456,10 +526,16 @@ private def evaluateCore (fuel : Nat) (p : Program)
     {stdout := "", tape := [], error := some (.unsupported construct)}
   else
     let root : Environment := {id := 0, parent := none}
-    let initial : World := {answers := {supplied := supplied}, environments := #[root]}
-    let (result, w) := ((exec fuel p).run).run initial
+    let initial : World := {environments := #[root]}
+    -- Keep exhaustion explicit too.  The second marker is an unobservable
+    -- guard entry, ensuring every completed interpretation has a proper
+    -- suffix beyond the consumed prefix.
+    let suppliedWithError := supplied ++
+      [.oracleExhausted supplied.length, .oracleExhausted (supplied.length + 1)]
+    let interpreted := interpret (((exec fuel p).run).run initial) suppliedWithError
+    let (result, w) := interpreted.value
     let error := match result with | .ok _ => none | .error e => some e
-    {stdout := w.stdout, tape := w.tape, answersConsumed := w.answers.consumed, error := error}
+    {stdout := w.stdout, tape := w.tape, answersConsumed := w.answersConsumed, error := error}
 
 /-- Entry point of the evaluator core.  The tag is carried so callers from
 different modes can be compared, but cannot affect evaluation. -/
