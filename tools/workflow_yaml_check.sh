@@ -71,6 +71,7 @@ for name, command, docker, green, marker in cases:
     result = subprocess.run(["bash", checker], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if (result.returncode == 0) != green or marker not in result.stdout:
         print("FAIL: " + name + " (rc=%d)\n" % result.returncode + result.stdout); sys.exit(1)
+    print("  PASS: " + name)
 print("workflow-yaml selftest: all cases passed")
 
 # Scope contracts are tested separately so each declared population is
@@ -113,6 +114,7 @@ for name, workflow, expected_rc, markers in scope_cases:
     result = subprocess.run(["bash", checker], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if result.returncode != expected_rc or any(marker not in result.stdout for marker in markers):
         print("FAIL: " + name + " (expected rc=%d, observed rc=%d)\n" % (expected_rc, result.returncode) + result.stdout); sys.exit(1)
+    print("  PASS: " + name)
 print("PLAN: %d" % (len(cases) + len(scope_cases)))
 print("workflow-yaml scope selftest: all cases passed")
 PY_SELFTEST

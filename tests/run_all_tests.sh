@@ -47,22 +47,7 @@ SKIPPED=0
 # Validate a TAP-style child ledger.  The child owns the plan; every parent uses
 # this one predicate so missing, duplicate, malformed, short and failed plans
 # have identical verdicts (#2051).
-child_plan_ok() { # output rc pass-regexp fail-regexp
-    local _out="$1" _rc="$2" _pass_re="$3" _fail_re="$4" _lines
-    CHILD_PLAN=""; CHILD_PASS=0; CHILD_FAIL=0; CHILD_PLAN_ERROR=""
-    _lines=$(printf '%s\n' "$_out" | sed -n 's/^PLAN: \([0-9][0-9]*\)$/\1/p')
-    if [ -z "$_lines" ] || [ "$_lines" != "${_lines%%$'\n'*}" ]; then
-        CHILD_PLAN_ERROR="missing or duplicate PLAN: N"; return 1
-    fi
-    CHILD_PLAN=$_lines
-    CHILD_PASS=$(printf '%s\n' "$_out" | grep -cE "$_pass_re" || true)
-    CHILD_FAIL=$(printf '%s\n' "$_out" | grep -cE "$_fail_re" || true)
-    if [ "$_rc" -ne 0 ]; then CHILD_PLAN_ERROR="exit $_rc"
-    elif [ "$CHILD_FAIL" -ne 0 ]; then CHILD_PLAN_ERROR="$CHILD_FAIL failed"
-    elif [ "$CHILD_PASS" -ne "$CHILD_PLAN" ]; then CHILD_PLAN_ERROR="$CHILD_PASS/$CHILD_PLAN passed"
-    else return 0; fi
-    return 1
-}
+. "$(dirname "$0")/../tools/child_plan.sh"
 
 # ONE helper prints a section-level skip and counts it. Round 6 incremented
 # SKIPPED at exactly ONE site (the since-deleted ILP32 gate) while this file has ~40 lines
