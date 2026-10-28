@@ -62,3 +62,29 @@ def native_witness(tier: str, function: str, dump: str, hot: str) -> NativeWitne
     else:
         detail = f"stops at {stop} (bked={back_edge_exits}), before the back-edge at {back_edge}"
     return NativeWitness(witnessed, detail, at, back_edge, back_edge_exits, ops)
+
+
+def _selftest() -> None:
+    dump = """=== fixture (run_row, test)
+1000 [L1] CONSTANT 0
+1003 [L2] JUMP_BACK 3
+1020 [L3] RETURN
+"""
+    for row in (
+        # Current shape (#1606): the oslots/ocomp/ofull aggregates append three fields.
+        "run_row 1 yes 100.0% RET 1020 100.0% 0 no 0 0 RETURN 1 1 0",
+        # Saved pre-#1606 diagnostics remain valid evidence.
+        "run_row 1 yes 100.0% RET 1020 100.0% 0 no 0 0 RETURN",
+    ):
+        proof = native_witness("jit", "run_row", dump, row)
+        assert proof.witnessed, proof.detail
+        assert proof.at == 1020, proof.at
+    print("PASS: native witness accepts 15-field rows and legacy 12-field rows")
+
+
+if __name__ == "__main__":
+    import sys
+    if sys.argv[1:] == ["--selftest"]:
+        _selftest()
+    else:
+        sys.exit("usage: native_witness.py --selftest (otherwise import it)")
