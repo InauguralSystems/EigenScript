@@ -1,0 +1,1 @@
+- Readers honor `max_bytes` even when non-strict calls include surplus list elements (#2076).

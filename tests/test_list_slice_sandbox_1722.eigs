@@ -1,0 +1,110 @@
+# #1722: CASE(SLICE_GET)'s list arm does `result = make_list(n)` and then
+# writes n slots with list_set_slot_owned(result, i, ...). make_list charges
+# the sandbox allocation budget and, on refusal, raises a catchable EK_SANDBOX
+# and CAPS capacity at its 8-slot fallback — it never returns a list sized to a
+# refused n. So under an armed sandbox budget a slice longer than 8 elements
+# writes items[8..n-1] past the 8-slot buffer: a heap out-of-bounds write.
+# This file drives that mechanism and the sibling the 2026-10-11 comment named
+# (list_insert_at's non-append branch, guarded by #1710).
+#
+# RED CONTRACT (MEASURED, CI run 40627838598, base 9b4191e7 without the fix):
+# the OOB store is inside SLICE_GET, before sandbox_run returns, so the base
+# FAILS several lanes — it is NOT silent on release:
+#   - ASan shard 3/3: heap-buffer-overflow in list_set_slot_owned
+#     (src/container.h:234) <- vm_run_ex (src/vm.c:5881);
+#   - linux/clang release binary: crash rc=139 (core dump);
+#   - the replay differential: crash rc=139;
+#   - jit_diff: divergence.
+# On the fix the slice stops after the raise, sandbox_run returns
+# {ok:0, kind:"sandbox"}, every assertion holds, and the marker prints.
+
+load_file of "lib/test.eigs"
+
+# Bytecode opcodes (see test_vm_run_bytecode.eigs / test_sandbox_budget.eigs).
+# #704: every descriptor carries the bytecode ABI revision, else it is refused
+# before the budget is armed and every "must be denied" check passes for the
+# wrong reason.
+ABI is 1
+CONST is 0
+GET_NAME is 25
+CALL is 39
+RETURN is 40
+SLICE_GET is 80
+
+# --- the #1722 mechanism: a list slice whose make_list(n) the budget refuses --
+# 16 elements: longer than make_list's 8-slot fallback capacity. The descriptor
+# constant pool is built BEFORE sandbox_run arms the budget, so this 16-element
+# constant is uncharged; the first charged allocation of the run is the slice's
+# make_list(16). Chunk pushes [target, 0, 16] then SLICE_GET (pops end, start,
+# target), i.e. target[0:16].
+slice_target is [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+slice_desc is [ABI, [CONST,0,0, CONST,1,0, CONST,2,0, SLICE_GET, RETURN],
+               [slice_target, 0, 16]]
+
+# One byte cannot pay for the 16-slot result allocation: make_list(16) raises
+# EK_SANDBOX and caps capacity at 8. On the base the list arm then stores
+# items[8..15] past that 8-slot buffer (the OOB write this test exists for);
+# the fix stops after the raise.
+sr_slice is sandbox_run of [slice_desc, 100000, 1]
+assert_eq of [sr_slice["ok"], false,
+              "#1722 refused list-slice allocation raises a sandbox error"]
+assert_eq of [sr_slice["error"]["kind"], "sandbox",
+              "#1722 refused list-slice names the sandbox kind"]
+slice_mem is index_of of [sr_slice["error"]["message"], "memory budget"]
+assert_eq of [slice_mem >= 0, true,
+              "#1722 refused list-slice stops on the byte budget (the make_list refusal)"]
+
+# --- control: the canonical sandbox memory-budget refusal -------------------
+# NOTE: range is NOT a make_list-cap refusal. Every allowlisted list builtin
+# (range, concat, list_slice, fill, ...) charges the budget at its OWN site and
+# returns early BEFORE calling make_list, so none of them reach make_list's
+# internal 8-slot cap — which is precisely why the cap path (CASE(SLICE_GET)
+# and the numerical_grad builtins) was an untested hole: no script-reachable
+# builtin exercises it. range of 16 is kept as the canonical refusal: its
+# {ok:0, kind:"sandbox", "...memory budget..."} triple is the shape the slice
+# refusal must also produce (a normal refusal, not a crash or a different kind).
+range_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN],
+               ["range", 16]]
+sr_range is sandbox_run of [range_desc, 100000, 1]
+assert_eq of [sr_range["ok"], false,
+              "#1722 control: an allowlisted list allocator (range of 16) is refused"]
+assert_eq of [sr_range["error"]["kind"], "sandbox",
+              "#1722 control: the canonical sandbox refusal names the sandbox kind"]
+range_mem is index_of of [sr_range["error"]["message"], "memory budget"]
+assert_eq of [range_mem >= 0, true,
+              "#1722 control: the slice refusal is the same sandbox memory-budget refusal shape"]
+
+# --- control: within budget the same slice succeeds -------------------------
+# An ample budget charges the 16-slot allocation, so capacity is the real 16
+# and the slice is built in full. This proves the refusal above is specifically
+# the result allocation, not an incidental failure, and that the fix leaves the
+# normal slice path byte-for-byte unchanged.
+sr_slice_ok is sandbox_run of [slice_desc, 100000, 1000000]
+assert_eq of [sr_slice_ok["ok"], true,
+              "#1722 within-budget list slice succeeds"]
+assert_eq of [sr_slice_ok["result"],
+              [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+              "#1722 within-budget list slice returns the full 16 elements"]
+
+# --- the sibling mechanism #1722's 2026-10-11 comment named ------------------
+# list_insert_at's non-append branch (already guarded by #1710 on this base).
+# Kept here so the two mechanisms the issue names live under one regression.
+# One byte cannot pay the 8->16 growth, so #1710's guard drops the insert and
+# the sandbox's OWN list stays in bounds.
+#
+# IMPORTANT: a "host list unchanged" assertion here would be VACUOUS. Descriptor
+# list constants are deep-copied into the run (desc_isolate_const, builtins.c),
+# so the host `insert_target` is never touched with OR without the guard. The
+# real witnesses are the sandbox refusal asserted below and, for #1710's guard
+# itself, the ASan shards (no OOB shift past the dropped slot on the fix).
+insert_target is [10, 20, 30, 40, 50, 60, 70, 80]
+insert_args is [insert_target, 3, 99]
+insert_desc is [ABI, [GET_NAME,0,0, CONST,1,0, CALL,1,0, RETURN],
+                ["list_insert_at", insert_args]]
+sr_insert is sandbox_run of [insert_desc, 100000, 1]
+assert_eq of [sr_insert["ok"], false,
+              "#1722 sibling: refused list_insert_at growth raises a sandbox error"]
+assert_eq of [sr_insert["error"]["kind"], "sandbox",
+              "#1722 sibling: refused list_insert_at names the sandbox kind"]
+
+test_summary of null
