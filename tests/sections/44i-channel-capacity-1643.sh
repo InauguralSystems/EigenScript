@@ -1,4 +1,4 @@
-echo "[44g] Channel capacity and rendezvous (#1643)"
+echo "[44i] Channel capacity and rendezvous (#1643)"
 TOTAL=$((TOTAL + 1))
 CC1643_OUTPUT=$(bash "$TESTS_DIR/test_channel_capacity.sh" 2>&1); CC1643_RC=$?
 if [ "$CC1643_RC" -eq 0 ] &&
