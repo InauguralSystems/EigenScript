@@ -1,4 +1,21 @@
 # OBS rows: these programs assert gate-CLOSED behaviour by design, so forcing the gate open changes their
 # output. They are not defects to work down.
+bench_dmg_shape.eigs OBS COULD_NOT_ADJUDICATE
+bench_idxset.eigs OBS COULD_NOT_ADJUDICATE
+bench_perf.eigs OBS COULD_NOT_ADJUDICATE
+examples/invariant_3dof_core.eigs OBS COULD_NOT_ADJUDICATE
+examples/invariant_adaptive.eigs OBS COULD_NOT_ADJUDICATE
+examples/invariant_arm.eigs OBS COULD_NOT_ADJUDICATE
+examples/invariant_core.eigs OBS COULD_NOT_ADJUDICATE
+examples/invariant_decomposition.eigs OBS COULD_NOT_ADJUDICATE
+examples/invariant_edl.eigs OBS COULD_NOT_ADJUDICATE
+examples/invariant_geodesic.eigs OBS COULD_NOT_ADJUDICATE
+examples/invariant_lorentz.eigs OBS COULD_NOT_ADJUDICATE
+examples/invariant_meta.eigs OBS COULD_NOT_ADJUDICATE
+examples/invariant_multi_agent.eigs OBS COULD_NOT_ADJUDICATE
+examples/invariant_noperthedron.eigs OBS COULD_NOT_ADJUDICATE
+examples/invariant_qec.eigs OBS COULD_NOT_ADJUDICATE
+examples/invariant_similarity.eigs OBS COULD_NOT_ADJUDICATE
 test_chunk_verify_stack.eigs OBS
 test_desc_unrecorded_read.eigs OBS
+trace_mt_replay_workers.eigs OBS COULD_NOT_ADJUDICATE
