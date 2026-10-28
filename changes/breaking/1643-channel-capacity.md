@@ -1,0 +1,1 @@
+- `channel of N` now honours its capacity instead of always buffering 64 values: `N = 0` is a rendezvous, a send to a full channel blocks until a receive, and a negative, non-integer or non-number capacity raises. A program that sends more than N values before receiving now blocks where it used to run; give its channel the capacity it uses (#1643).

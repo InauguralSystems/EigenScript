@@ -111,7 +111,7 @@ assert_eq of [eval of "s is f\"a\nb\"\nx is 10\nx is 20\nwhat is x at 3", 10, "m
 assert_eq of [eval of "s is f\"a\\nb\"\n\nx is 10\nx is 20\nwhat is x at 3", 10, "control: escaped newline in f-string text"]
 assert_eq of [eval of "s is \"a\n\n\nb\"\nx is 10\nx is 20\nwhat is x at 5", 10, "several literal newlines each advance the line"]
 assert_eq of [eval of "s is f\"a\n{1}\nb{2}\n\"\nx is 10\nx is 20\nwhat is x at 5", 10, "f-string newlines around interpolations"]
-assert_eq of [eval of "s is \"a\\\nb\"\nx is 10\nx is 20\nwhat is x at 3", 10, "backslash before a physical newline still advances the line"]
+assert_eq of [try_parse of "s is \"a\\\nb\"", false, "backslash before a physical newline is rejected (position checked by escape diagnostics test)"]
 assert_eq of [ml_line_err of "s is \"a\nb\"\nq is 1 / 0", 3, "e.line after a multi-line string"]
 assert_eq of [ml_line_err of "s is f\"a\nb\"\nq is 1 / 0", 3, "e.line after a multi-line f-string"]
 assert_eq of [ml_line_err of "s is \"a\\nb\"\nq is 1 / 0", 2, "control: escapes do not advance the line"]
@@ -125,7 +125,7 @@ assert_eq of [ml_line_err of "x is f\"{1 +\n 2}\"\nq is 1 / 0", 3, "e.line after
 assert_eq of [ml_line_err of "x is f\"{1 +\n\n 2}\"\ny is 1\nq is 1 / 0", 5, "e.line after a two-newline interpolation"]
 assert_eq of [ml_line_err of "x is f\"{1 +\n (1 / 0)}\"", 2, "an error inside an interpolation reports its own line"]
 assert_eq of [eval of "x is f\"{1 +\n 2}\"\nx is 10\nx is 20\nwhat is x at 3", 10, "at N after a multi-line interpolation"]
-assert_eq of [eval of "s is f\"a\\\nb\"\nx is 10\nx is 20\nwhat is x at 3", 10, "backslash before a physical newline in f-string text advances the line"]
+assert_eq of [try_parse of "s is f\"a\\\nb\"", false, "backslash before a physical newline in f-string text is rejected"]
 # #1251 round 2: the multi-line literal's OWN statement is filed under its own
 # line, not the line the literal closes on (a node took the NEXT token's line)
 assert_eq of [eval of "x is 5\nx is \"a\nb\"\nwhat is x at 2", "a\nb", "multi-line string: its own statement at its first line"]

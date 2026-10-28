@@ -56,8 +56,6 @@ store_put|a2.d1.value|a stored record value may be any value
 store_update|a3.d1.value|a stored record value may be any value
 nearest_in_range|a0.d2.active|the entity's active flag is a bool (false skips it)
 nearest_in_range_all|a0.d2.active|the entity's active flag is a bool (false skips it)
-channel|e0.d2|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
-channel|e0.d3|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
 clock_unix|e0.d2|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
 clock_unix|e0.d3|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
 mktemp|e0.d2|nullary and nondeterministic: the argument is ignored and two calls differ, so the deep probe has no control to compare with
