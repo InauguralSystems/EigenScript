@@ -79,7 +79,7 @@ def compare(ref,lean_root,enforce=True):
    if was!=now:moved.append((label,'in' if was else 'out','in' if now else 'out',a.stdout.strip()))
    if not now:continue
    examined+=1;ct=td/f'c{i}';lt=td/f'l{i}';rt=td/f'r{i}'
-   c=subprocess.run([VM,p],capture_output=True,input=b'',env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_TRACE':str(ct)})
+   c=subprocess.run([VM,p],capture_output=True,input=b'',env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_TRACE':str(ct),'EIGS_PARITY_CONTROL':'\t'})
    has_n=any(k=='N' for k,_ in projection(ct))
    lean_command=[ref,'--replay',ct,'--strict','--trace',lt,p] if has_n else [ref,'--trace',lt,p]
    try:l=subprocess.run(lean_command,capture_output=True,input=b'',timeout=None if enforce else 2)

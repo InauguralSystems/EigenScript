@@ -17,4 +17,35 @@ example : recordOne.stdout == "1\n" &&
 example : recordTwo.stdout == "2\n" := by native_decide
 example : replayOne == recordOne := by native_decide
 
+private def escapedProgram : Program :=
+  match parse "local x is env_get of \"KEY\"\nprint of x\n" with
+  | .ok program => program
+  | .error _ => []
+
+private def escapedRecord : RunResult := run 100 escapedProgram (.record [.string "\t"])
+private def escapedReplay : RunResult := run 100 escapedProgram (.replayStrict
+  ["B 0 1 1 0 root -", "N 0 env_get=\"\\x09\""])
+
+example : escapedRecord.tape.contains "N 0 env_get=\"\\x09\"" &&
+    escapedReplay == escapedRecord := by native_decide
+
+private def runSource (source : String) (oracle : List OracleValue) : RunResult :=
+  match parse source with
+  | .ok program => run 100 program (.record oracle)
+  | .error _ => {stdout := "", tape := []}
+
+example : let result := runSource "define env_get(key) as:\n  return \"mock\"\nprint of (env_get of \"KEY\")\n" []
+  result.stdout == "mock\n" && !result.tape.any (·.startsWith "N ") := by native_decide
+
+example : let result := runSource "define read_line() as:\n  return \"mock\"\nprint of (read_line of [])\n" []
+  result.stdout == "mock\n" && !result.tape.any (·.startsWith "N ") := by native_decide
+
+example : let result := runSource "define random_int(bounds) as:\n  return 7\nprint of (random_int of [0, 10])\n" []
+  result.stdout == "7\n" && !result.tape.any (·.startsWith "N ") := by native_decide
+
+example : let result := runSource "print of (random_int of [0, 2147483648])\n" [.int 0]
+  result.error == some (.runtime
+    "random_int: range span 2147483649 exceeds 2^31 (lrand48 supplies 31 bits)") &&
+    !result.tape.any (·.startsWith "N ") := by native_decide
+
 end EigenCore

@@ -80,7 +80,9 @@ private def nondetString (s : String) : String :=
   "\"" ++ s.toList.foldl (fun out c => out ++
     if c == '"' then "\\\"" else if c == '\\' then "\\\\"
     else if c == '\n' then "\\n" else if c == '\r' then "\\r"
-    else if c == '\t' then "\\t" else c.toString) "" ++ "\""
+    else if c.toNat < 0x20 then
+      "\\x" ++ String.ofList [lowerHexDigit (c.toNat / 16), lowerHexDigit (c.toNat % 16)]
+    else c.toString) "" ++ "\""
 
 private def nondetValue : Value → String
   | .int n => toString n | .string s => nondetString s | .null => "null"
@@ -98,10 +100,21 @@ private def parseQuoted (s : String) : Option String :=
     let rec go : Nat → List Char → String → Option String
       | 0, _, _ => none
       | _, [], out => some out
+      | fuel + 1, '\\' :: 'x' :: hi :: lo :: rest, out =>
+          let nibble (c : Char) : Option Nat :=
+            if '0' ≤ c && c ≤ '9' then some (c.toNat - '0'.toNat)
+            else if 'a' ≤ c && c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
+            else if 'A' ≤ c && c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
+            else none
+          match nibble hi, nibble lo with
+          | some h, some l => go fuel rest (out.push (Char.ofNat (h * 16 + l)))
+          | _, _ => none
       | fuel + 1, '\\' :: c :: rest, out =>
-          let decoded := if c == 'n' then '\n' else if c == 'r' then '\r'
-            else if c == 't' then '\t' else c
-          go fuel rest (out.push decoded)
+          if c == '"' then go fuel rest (out.push '"')
+          else if c == '\\' then go fuel rest (out.push '\\')
+          else if c == 'n' then go fuel rest (out.push '\n')
+          else if c == 'r' then go fuel rest (out.push '\r')
+          else none
       | fuel + 1, c :: rest, out => go fuel rest (out.push c)
     go (body.length + 1) body.toList ""
 
