@@ -1,1 +1,0 @@
-- `jit_diff` now adjudicates programs that consume nondeterministic tape records by replay before declaring a regression (#2120).

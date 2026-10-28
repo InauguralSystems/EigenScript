@@ -25,9 +25,12 @@ set -u
 if [ "${1:-}" = "--selftest" ] && [ "${JIT_DIFF_SELFTEST_SUITE:-0}" = "1" ]; then
   ROOT="$(cd "$(dirname "$0")/.." && pwd)"
   cd "$ROOT" || exit 1
-  timeout 15 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_timeout_both.eigs bash tools/jit_diff.sh --selftest || exit 1
-  timeout 15 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_SELFTEST_PLANT=deterministic JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_taped_divergence.eigs bash tools/jit_diff.sh --selftest || exit 1
-  timeout 15 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_OBS_ONLY=tests/test_chunk_verify_stack.eigs bash tools/jit_diff.sh --selftest
+  # The timeout-both fixture outlives both 25 s OBS deadlines by design, so it
+  # needs > 50 s; the row is keyed on the checker and fixtures (not on the
+  # product test it replays), which keeps it off the 60 s product-row cap (#1352).
+  timeout 90 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_timeout_both.eigs bash tools/jit_diff.sh --selftest || exit 1
+  timeout 30 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_SELFTEST_PLANT=deterministic JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_taped_divergence.eigs bash tools/jit_diff.sh --selftest || exit 1
+  timeout 60 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_OBS_ONLY=tests/test_chunk_verify_stack.eigs bash tools/jit_diff.sh --selftest
   exit $?
 fi
 if [ "${1:-}" = "--selftest" ] && [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
@@ -162,11 +165,6 @@ while IFS= read -r rel; do
     *paint*|*_game*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (interactive example)"; continue ;;
     *seeded_race*|*userrace*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (intentionally nondeterministic)"; continue ;;
     *state_at*|*statedump*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (hash-order output)"; continue ;;
-    # Temporary waiver (#2120): each draws an unseeded random value, so ref and the OBS
-    # arm differ by chance, and about 1 run in 8 the two-run check calls it a row.
-    # #2121 seeds every arm with one EIGS_SEED_RANDOM and removes this case.
-    spec/lean/parity_cases/taped_random_int.eigs|spec/lean/parity_cases/taped_two_random_ints.eigs)
-      n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (unseeded random draw, #2120)"; continue ;;
   esac
   row=$(row_of "$rel"); prog="$ROOT/$rel"
   run "$T/ref" 25 "${REF[@]}"
