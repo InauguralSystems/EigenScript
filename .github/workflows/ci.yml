@@ -194,11 +194,79 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    outputs:
+      infrastructure-failure: ${{ steps.toolchain.outputs.infrastructure-failure }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         if: needs.scope.outputs.spec == 'true'
-      - name: Install pinned Lean toolchain and restore Lake cache
+      # Cache elan as well as the pinned Lean release.  On an exact hit the
+      # provisioning step below does not invoke elan, so it cannot contact the
+      # toolchain host.  lean-action still owns the normal Lean/Lake setup.
+      - name: Restore pinned Lean toolchain
         if: needs.scope.outputs.spec == 'true'
+        id: lean-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: ~/.elan
+          key: spec-lean-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('spec/lean/lean-toolchain') }}
+      - name: Provision pinned Lean toolchain (infrastructure, retried)
+        if: needs.scope.outputs.spec == 'true'
+        id: toolchain
+        env:
+          LEAN_CACHE_HIT: ${{ steps.lean-cache.outputs.cache-hit }}
+        run: |
+          set -u
+          echo 'infrastructure-failure=false' >> "$GITHUB_OUTPUT"
+          echo 'ready=false' >> "$GITHUB_OUTPUT"
+          if [ "$LEAN_CACHE_HIT" = true ]; then
+            echo 'exact toolchain cache hit; no toolchain download requested'
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Pin both the elan archive and its digest: lean-action is pinned
+          # below, but its installer follows elan's moving master script.
+          archive="$RUNNER_TEMP/elan.tar.gz"
+          if ! curl --fail --location --silent --show-error --retry 3 --retry-delay 2 \
+            https://github.com/leanprover/elan/releases/download/v4.2.4/elan-x86_64-unknown-linux-gnu.tar.gz \
+            --output "$archive"; then
+            echo '::error::INFRASTRUCTURE: could not download the pinned elan installer'
+            echo 'infrastructure-failure=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo '42b94d4244e8353142c456ec0e4ca6528fd898a6c604d4059f494e706e431f63  '"$archive" | sha256sum --check --status || {
+            echo '::error::INFRASTRUCTURE: pinned elan installer checksum mismatch'
+            echo 'infrastructure-failure=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          if ! tar -xzf "$archive" -C "$RUNNER_TEMP" ||
+             ! "$RUNNER_TEMP/elan-init" -y --default-toolchain none; then
+            echo '::error::INFRASTRUCTURE: could not install pinned elan'
+            echo 'infrastructure-failure=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          toolchain=$(cat spec/lean/lean-toolchain)
+          installed=false
+          for delay in 0 5 15 30; do
+            [ "$delay" -eq 0 ] || { echo "toolchain download failed; retrying in ${delay}s"; sleep "$delay"; }
+            if "$HOME/.elan/bin/elan" toolchain install "$toolchain"; then
+              installed=true
+              break
+            fi
+          done
+          if [ "$installed" != true ]; then
+            echo "::error::INFRASTRUCTURE: Lean toolchain download failed after 4 attempts ($toolchain)"
+            echo 'infrastructure-failure=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'ready=true' >> "$GITHUB_OUTPUT"
+      - name: Report Lean toolchain infrastructure failure
+        if: needs.scope.outputs.spec == 'true' && steps.toolchain.outputs.infrastructure-failure == 'true'
+        run: |
+          echo '::error::INFRASTRUCTURE failure: the pinned Lean toolchain could not be provisioned; the specification did not run'
+          exit 1
+      - name: Install pinned Lean toolchain and restore Lake cache
+        if: needs.scope.outputs.spec == 'true' && steps.toolchain.outputs.ready == 'true'
         uses: leanprover/lean-action@24581d74d674803a25a81b10b059c5c0cdd344c6  # v1.6.2
         with:
           lake-package-directory: spec/lean
@@ -369,7 +437,17 @@ jobs:
       - name: Require spec Lean worker success
         env:
           SPEC_LEAN_RESULT: ${{ needs.spec-lean.result }}
-        run: test "$SPEC_LEAN_RESULT" = success
+          SPEC_LEAN_INFRASTRUCTURE_FAILURE: ${{ needs.spec-lean.outputs.infrastructure-failure }}
+        run: |
+          if [ "$SPEC_LEAN_RESULT" = cancelled ] || [ "$SPEC_LEAN_INFRASTRUCTURE_FAILURE" = true ]; then
+            echo '::error::spec Lean did not run (infrastructure, or cancelled upstream); no specification verdict is available'
+            exit 1
+          fi
+          if ! test "$SPEC_LEAN_RESULT" = success; then
+            echo '::error::spec Lean failed'
+            exit 1
+          fi
+          echo 'spec Lean passed or was legitimately skipped by scope'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0

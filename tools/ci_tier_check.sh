@@ -65,7 +65,10 @@ def reads_event(t):
 IND = re.compile(r"\b(env|vars)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?|\b(needs|steps)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?"
                  r"\s*(?:\.\s*|\[\s*['\"])(outputs|result|outcome|conclusion)['\"]?\s*\]?(?:\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?)?", re.I)
 WAIVE = {("ci.yml", "scope", "detect"): "36ae9de471061c1f",
-         ("ci.yml", "gate-selftests", "select"): "d1e9f765e40d53d8"}
+         ("ci.yml", "gate-selftests", "select"): "d1e9f765e40d53d8",
+         # Reviewed for #2105: outputs only describe whether the exact cache
+         # hit or bounded, pinned provisioning made the toolchain available.
+         ("ci.yml", "spec-lean", "toolchain"): "53bd506680f07989"}
 used = set()
 def exprs(v): return re.findall(r"\$\{\{(.*?)\}\}", str(v), re.S)
 def bad_expr(e, wf, jid, pr_ok, depth=0):
