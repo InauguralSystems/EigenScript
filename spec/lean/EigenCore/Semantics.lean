@@ -154,6 +154,10 @@ abbrev EvalM := ExceptT Err (StateT World Interaction)
 private def evalRun (m : EvalM α) (world : World) : Interaction (Except Err α × World) :=
   (m.run).run world
 
+/-- `evalRun` is the single proof-level spelling of the concrete evaluator stack. -/
+theorem evalRun_eq (m : EvalM α) (w : World) :
+    evalRun m w = (m.run).run w := rfl
+
 /-- Running `pure` immediately returns its value and preserves the world. -/
 theorem evalRun_pure (value : α) (world : World) :
     evalRun (pure value) world = .done (.ok value, world) := by
@@ -965,6 +969,35 @@ theorem consumeRest_matchingName_run (fn : String) (w : World) (position : Nat)
     subst answer
     rfl
 
+/-- A value whose kind is rejected by the named taped builtin propagates that
+error without changing the world.  The calculation deliberately exposes both
+evaluator binds rather than simplifying the raw `do` block. -/
+theorem consumeRest_rejected_run (fn name : String) (w : World) (position : Nat)
+    (raw : OracleValue) (error : Err)
+    (nameOk : ¬ ((!name.isEmpty && name != fn) = true))
+    (rejected : writerAnswerFor fn raw = .error error) :
+    evalRun (consumeRest fn w (.value position name raw)) w =
+      .done (.error error, w) := by
+  have hdec : evalRun
+      (decodeSupplied fn w.writerChunks.length (.value position name raw)) w =
+      .done (.ok raw, w) := by
+    rw [evalRun_eq, decodeSupplied_value_run, if_neg nameOk]
+  calc
+    evalRun (consumeRest fn w (.value position name raw)) w =
+        evalRun (decodeSupplied fn w.writerChunks.length (.value position name raw) >>= fun r =>
+          (liftAnswer fn r >>= fun a => appendChunk w a)) w := by
+            exact congrArg (evalRun · w) (consumeRest_extraction _ _ _)
+    _ = Interaction.bind
+          (evalRun (decodeSupplied fn w.writerChunks.length (.value position name raw)) w) _ :=
+            evalRun_bind _ _ _
+    _ = evalRun (liftAnswer fn raw >>= fun a => appendChunk w a) w := by
+          rw [hdec]
+          rfl
+    _ = Interaction.bind (evalRun (liftAnswer fn raw) w) _ := evalRun_bind _ _ _
+    _ = .done (.error error, w) := by
+          rw [evalRun_eq, liftAnswer_run, rejected]
+          rfl
+
 /-- Live and record modes consume the supplied oracle exactly once per taped
 call.  Exhaustion is a runtime error, rather than a fabricated default: this
 keeps completed record runs honest and lets the N values of any successful
@@ -1255,6 +1288,86 @@ def Paired (m : EvalM α) : Prop :=
       ∃ appended,
         interpreted.value.2.writerChunks = w0.writerChunks ++ appended ∧
         interpreted.answers = writerAnswersFrom w0.writerChunks.length appended
+
+/-- One successful taped builtin call consumes one positioned answer and
+appends the one corresponding writer chunk.  All other leaves are errors and
+therefore cannot satisfy `Paired`'s successful-result premise. -/
+theorem Paired_consumeAnswer (fn : String) : Paired (consumeAnswer fn) := by
+  intro w0 supplied hwp
+  rw [consumeAnswer_run]
+  cases supplied with
+  | nil =>
+      dsimp only [interpret, deliveredAnswer]
+      intro value successful
+      rw [consumeRest_oracleExhausted_run] at successful
+      contradiction
+  | cons supplied rest =>
+      cases supplied with
+      | oracleExhausted position =>
+          dsimp only [interpret, deliveredAnswer]
+          intro value successful
+          rw [consumeRest_oracleExhausted_run] at successful
+          contradiction
+      | replayError position error =>
+          dsimp only [interpret, deliveredAnswer]
+          intro value successful
+          rw [consumeRest_replayError_run] at successful
+          contradiction
+      | replayExhausted position =>
+          dsimp only [interpret, deliveredAnswer]
+          intro value successful
+          rw [consumeRest_replayExhausted_run] at successful
+          contradiction
+      | value position name raw =>
+          dsimp only [interpret, deliveredAnswer]
+          intro value successful
+          let deliveredName := if name.isEmpty then fn else name
+          change (interpret
+            (evalRun (consumeRest fn w0 (.value position deliveredName raw)) w0) rest).value.1 =
+              .ok value at successful
+          change ∃ appended,
+            (interpret (evalRun (consumeRest fn w0 (.value position deliveredName raw)) w0)
+              rest).value.2.writerChunks = w0.writerChunks ++ appended ∧
+            .value position deliveredName raw ::
+              (interpret (evalRun (consumeRest fn w0 (.value position deliveredName raw)) w0)
+                rest).answers = writerAnswersFrom w0.writerChunks.length appended
+          by_cases mismatch : ((!deliveredName.isEmpty && deliveredName != fn) = true)
+          · have parts : deliveredName.isEmpty = false ∧ deliveredName ≠ fn := by
+              simpa using mismatch
+            rw [evalRun_eq, consumeRest_nameMismatch_run fn deliveredName w0 position raw
+              parts.1 parts.2] at successful
+            contradiction
+          · cases accepted : writerAnswerFor fn raw with
+            | error error =>
+                rw [consumeRest_rejected_run fn deliveredName w0 position raw error mismatch accepted]
+                  at successful
+                contradiction
+            | ok answer =>
+                have deliveredMatches : deliveredName = fn := by
+                  by_cases nameEmpty : name.isEmpty = true
+                  · simp [deliveredName, nameEmpty]
+                  · have deliveredDef : deliveredName = name := by
+                      simp [deliveredName, nameEmpty]
+                    rw [deliveredDef] at mismatch ⊢
+                    apply Classical.byContradiction
+                    intro different
+                    apply mismatch
+                    simp [nameEmpty, different]
+                rw [deliveredMatches] at successful ⊢
+                rw [evalRun_eq, consumeRest_matchingName_run fn w0 position raw answer accepted]
+                  at successful ⊢
+                change Except.ok answer.runtimeValue = Except.ok value at successful
+                injection successful with same
+                subst value
+                let chunk : WriterChunk :=
+                  {structural := w0.writerTrailing, answer := answer}
+                refine ⟨[chunk], ?_, ?_⟩
+                · rfl
+                · have positionEq : position = w0.writerChunks.length := hwp.1
+                  have roundtrip := writerAnswerFor_roundtrip fn raw answer accepted
+                  rw [positionEq, writerAnswersFrom]
+                  rw [roundtrip.1, roundtrip.2]
+                  rfl
 
 /-- A pure computation neither changes writer chunks nor observes answers. -/
 theorem Paired_pure (value : α) : Paired (pure value : EvalM α) := by
