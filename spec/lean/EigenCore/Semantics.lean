@@ -1089,6 +1089,19 @@ private def evalBin (op : BinOp) (a b : Value) : Except Err Value := match op wi
       | _, _ => throw (Err.runtime "cannot order operands of different types")
   | .and => pure (if truthy a then b else a) | .or => pure (if truthy a then a else b)
 
+/-- Restore the caller frame after a function body, preserving either its
+return value or its error.  Naming this non-recursive suffix keeps its
+structure available to proofs about the well-founded evaluator. -/
+def callSuffix (m : EvalM (Option Value)) : EvalM Value := do
+  let outcome : Except Err Value ← try
+    let returned ← m
+    pure (Except.ok (returned.getD .null))
+  catch error => pure (Except.error error)
+  modify fun w => {w with frames := w.frames.pop}
+  match outcome with
+  | .ok value => pure value
+  | .error error => throw error
+
 mutual
  def evalExpr (fuel : Nat) (e : Expr) : EvalM Value := match fuel with
   | 0 => throw .fuel
@@ -1172,12 +1185,7 @@ mutual
       [.array arguments] else arguments
     for (parameter, index) in definition.parameters.zipIdx do
       bindParameter environment parameter (supplied[index]?.getD .null)
-    let outcome : Except Err Value ← try
-      let returned ← exec f definition.body
-      pure (Except.ok (returned.getD .null))
-    catch error => pure (Except.error error)
-    modify fun w => {w with frames:=w.frames.pop}
-    match outcome with | .ok value => pure value | .error error => throw error
+    callSuffix (exec f definition.body)
  termination_by fuel
 
  def chooseBranch (fuel : Nat) (arms : List (Expr × List Stmt))
@@ -1906,6 +1914,56 @@ theorem Paired_catchPopRethrow (m : EvalM α) (g : α → β) (paired : Paired m
       refine ⟨appended, ?_, answers⟩
       exact chunks
 
+/-- The named suffix is definitionally the ordinary catch/pop/rethrow form. -/
+theorem callSuffix_eq (m : EvalM (Option Value)) : callSuffix m = (do
+      let outcome : Except Err Value ← tryCatch
+        (m >>= fun returned => pure (Except.ok (returned.getD .null)))
+        (fun error => pure (Except.error error))
+      modify fun w => {w with frames := w.frames.pop}
+      match outcome with
+      | .ok value => pure value
+      | .error error => throw error) := rfl
+
+/-- Running the named suffix maps every body leaf while popping its frame. -/
+theorem evalRun_callSuffix (m : EvalM (Option Value)) (world : World) :
+    evalRun (callSuffix m) world =
+      (evalRun m world).bind (fun (result, nextWorld) =>
+        .done (result.map (fun returned => returned.getD .null),
+          {nextWorld with frames := nextWorld.frames.pop})) := by
+  unfold callSuffix
+  rw [evalRun_bind, evalRun_catchToExcept]
+  generalize evalRun m world = tree
+  induction tree with
+  | done pair =>
+      cases pair with
+      | mk result nextWorld => cases result <;> rfl
+  | ask query continuation ih =>
+      simp only [Interaction.bind]
+      congr 1
+      funext answer
+      exact ih answer
+
+/-- The named function-call suffix preserves pairing structurally. -/
+theorem Paired_callSuffix (m : EvalM (Option Value)) (paired : Paired m) :
+    Paired (callSuffix m) := by
+  intro w0 supplied positioned
+  change let interpreted := interpret (evalRun (callSuffix m) w0) supplied
+    ∀ value, interpreted.value.1 = .ok value → ∃ appended,
+      interpreted.value.2.writerChunks = w0.writerChunks ++ appended ∧
+      interpreted.answers = writerAnswersFrom w0.writerChunks.length appended
+  rw [evalRun_callSuffix, interpret_map]
+  dsimp only
+  intro value successful
+  cases original : (interpret (evalRun m w0) supplied).value.1 with
+  | error error =>
+      rw [original] at successful
+      contradiction
+  | ok returned =>
+      rw [original] at successful
+      obtain ⟨appended, chunks, answers⟩ :=
+        paired w0 supplied positioned returned original
+      exact ⟨appended, chunks, answers⟩
+
 /-- The catch suffix written by `callFunction` is the generic
 catch/pop/rethrow combinator, up to the local binder name. -/
 theorem callFunction_catchPopRethrow_eq (m : EvalM (Option Value)) :
@@ -1975,6 +2033,49 @@ theorem PairedAll_zero : PairedAll 0 := by
   · intro statements
     rw [exec]
     exact Paired_throw .fuel
+
+set_option maxHeartbeats 1000000 in
+/-- Function calls preserve pairing at successor fuel.  The named suffix
+keeps the recursive body call visible as a structural subcomputation. -/
+theorem Paired_callFunction_succ (f : Nat) (ih : PairedAll f)
+    (functionId : Nat) (arguments : List Value) :
+    Paired (callFunction (f + 1) functionId arguments) := by
+  obtain ⟨exprIH, callIH, branchIH, loopIH, execIH⟩ := ih
+  rw [callFunction.eq_def]
+  intro before
+  apply PairedAt_get_bind
+  cases found : before.functions[functionId]? with
+  | none =>
+      simp only [found]
+      exact PairedAt_of_Paired
+        (Paired_throw (.runtime s!"undefined function id: {functionId}")) before
+  | some definition =>
+      simp only [found]
+      split
+      · exact PairedAt_of_Paired (Paired_throw (.runtime
+          s!"call passes {arguments.length} arguments but the callee takes {definition.parameters.length}")) before
+      · let environment := before.environments.size
+        let frame : Frame := {serial := before.nextFrameSerial, environment := environment}
+        let entered : World := {before with
+          environments := before.environments.push
+            {id := environment, parent := some definition.definingEnvironment}
+          frames := before.frames.push frame
+          nextFrameSerial := before.nextFrameSerial + 1}
+        let supplied := if definition.parameters.length == 0 then []
+          else if definition.parameters.length == 1 && arguments.length != 1 then
+            [.array arguments] else arguments
+        apply PairedAt_silent_bind before entered (set entered) () _ rfl rfl
+        apply PairedAt_of_Paired
+        apply Paired_bind
+        · apply Paired_forIn_unit_raw
+            (items := definition.parameters.zipIdx)
+            (body := fun parameter => bindParameter environment parameter.1
+              (supplied[parameter.2]?.getD .null))
+          intro parameter member
+          exact Paired_bindParameter environment parameter.1
+            (supplied[parameter.2]?.getD .null)
+        · intro _
+          exact Paired_callSuffix _ (execIH definition.body)
 
 /-- The statement-list evaluator preserves pairing at successor fuel. -/
 theorem Paired_exec_succ (f : Nat) (ih : PairedAll f) (statements : List Stmt) :
