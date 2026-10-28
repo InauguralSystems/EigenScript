@@ -1866,6 +1866,11 @@ theorem Paired_tapedCall (fn : String) : Paired (tapedCall fn) := by
   unfold tapedCall
   exact Paired_consumeAnswer fn
 
+/-- A taped call inherits alignment from `consumeAnswer`. -/
+theorem NamesAligned_tapedCall (fn : String) : Aligned (tapedCall fn) := by
+  unfold tapedCall
+  exact NamesAligned_consumeAnswer fn
+
 /-- A pure computation neither changes writer chunks nor observes answers. -/
 theorem Paired_pure (value : α) : Paired (pure value : EvalM α) := by
   intro w0 supplied
@@ -1881,6 +1886,11 @@ theorem Paired_pure (value : α) : Paired (pure value : EvalM α) := by
   · change [] = writerAnswersFrom w0.writerChunks.length []
     rfl
 
+/-- A pure computation traverses no asks. -/
+theorem NamesAligned_pure (value : α) : Aligned (pure value : EvalM α) := by
+  intro world supplied result successful
+  trivial
+
 /-- A thrown error cannot have a successful interpretation. -/
 theorem Paired_throw (error : Err) : Paired (throw error : EvalM α) := by
   intro w0 supplied
@@ -1888,6 +1898,11 @@ theorem Paired_throw (error : Err) : Paired (throw error : EvalM α) := by
   dsimp
   intro value successful
   change Except.error error = Except.ok value at successful
+  contradiction
+
+/-- A thrown error has no successful path requiring alignment. -/
+theorem NamesAligned_throw (error : Err) : Aligned (throw error : EvalM α) := by
+  intro world supplied value successful
   contradiction
 
 /-- Reading the world preserves chunks and performs no interaction. -/
@@ -1904,6 +1919,11 @@ theorem Paired_get : Paired (get : EvalM World) := by
     simp
   · change [] = writerAnswersFrom w0.writerChunks.length []
     rfl
+
+/-- Reading the world traverses no asks. -/
+theorem NamesAligned_get : Aligned (get : EvalM World) := by
+  intro world supplied value successful
+  trivial
 
 /-- `writerAnswersFrom` emits one model answer for each writer chunk. -/
 theorem writerAnswersFrom_length (position : Nat) (chunks : List WriterChunk) :
@@ -2008,10 +2028,65 @@ theorem Paired_bind (m : EvalM α) (k : α → EvalM β) (pairedM : Paired m)
         simp at lengths
         omega
 
+/-- Name alignment is compositional for evaluator bind. -/
+theorem NamesAligned_bind (m : EvalM α) (k : α → EvalM β) (alignedM : Aligned m)
+    (alignedK : ∀ value, Aligned (k value)) : Aligned (m >>= k) := by
+  have alignedInteractionBind : ∀ {γ δ : Type} (tree : Interaction γ) (next : γ → Interaction δ)
+      (supplied : List TapedAnswer),
+      NamesAligned tree supplied →
+      NamesAligned (next (interpret tree supplied).value)
+        (supplied.drop (interpret tree supplied).consumed) →
+      NamesAligned (tree.bind next) supplied := by
+    intro γ δ tree
+    induction tree with
+    | done value =>
+        intro next supplied first second
+        exact second
+    | ask query continuation ih =>
+        intro next supplied first second
+        cases supplied with
+        | nil =>
+            simp only [NamesAligned, Interaction.bind] at first ⊢
+            apply ih (deliveredAnswer query (.oracleExhausted 0)) next [] first
+            simpa [interpret, interpret_nil_consumed] using second
+        | cons answer rest =>
+            simp only [NamesAligned, Interaction.bind] at first ⊢
+            refine ⟨first.1, ih (deliveredAnswer query answer) next rest first.2 ?_⟩
+            simpa [interpret, List.drop_succ_cons] using second
+  intro world supplied result successful
+  let first := interpret (evalRun m world) supplied
+  let next := fun pair : Except Err α × World => (ExceptT.bindCont k pair.1).run pair.2
+  rw [evalRun_bind, interpret_bind] at successful
+  rw [evalRun_bind]
+  dsimp only [first, next] at successful
+  cases firstValue : (interpret (evalRun m world) supplied).value.1 with
+  | error error =>
+      rw [firstValue] at successful
+      contradiction
+  | ok value =>
+      rw [firstValue] at successful
+      have firstAligned := alignedM world supplied value firstValue
+      have secondAligned := alignedK value
+        (interpret (evalRun m world) supplied).value.2
+        (supplied.drop (interpret (evalRun m world) supplied).consumed)
+        result successful
+      apply alignedInteractionBind (evalRun m world)
+        (fun pair => match pair with
+          | (result, nextWorld) => match result with
+            | .ok value => evalRun (k value) nextWorld
+            | .error error => .done (.error error, nextWorld)) supplied firstAligned
+      simpa [firstValue] using secondAligned
+
 /-- Pairing follows either branch of a pure conditional. -/
 theorem Paired_ite (condition : Bool) (yes no : EvalM α)
     (pairedYes : Paired yes) (pairedNo : Paired no) :
     Paired (if condition then yes else no) := by
+  cases condition <;> assumption
+
+/-- Alignment follows the selected pure conditional branch. -/
+theorem NamesAligned_ite (condition : Bool) (yes no : EvalM α)
+    (alignedYes : Aligned yes) (alignedNo : Aligned no) :
+    Aligned (if condition then yes else no) := by
   cases condition <;> assumption
 
 /-- `List.mapM` preserves pairing without requiring a `LawfulMonad` instance.
@@ -2039,6 +2114,27 @@ theorem Paired_mapM (f : α → EvalM β) (items : List α)
           exact paired tail (by simp [member])
   change Paired (List.mapM.loop f items [])
   exact loop items paired []
+
+/-- `List.mapM` preserves name alignment. -/
+theorem NamesAligned_mapM (f : α → EvalM β) (items : List α)
+    (aligned : ∀ item ∈ items, Aligned (f item)) : Aligned (items.mapM f) := by
+  have loop : ∀ remaining : List α,
+      (∀ item ∈ remaining, Aligned (f item)) →
+      ∀ accumulator : List β, Aligned (List.mapM.loop f remaining accumulator) := by
+    intro remaining
+    induction remaining with
+    | nil =>
+        intro aligned accumulator
+        exact NamesAligned_pure accumulator.reverse
+    | cons item rest ih =>
+        intro aligned accumulator
+        apply NamesAligned_bind
+        · exact aligned item (by simp)
+        · intro value
+          apply ih
+          intro tail member
+          exact aligned tail (by simp [member])
+  exact loop items aligned []
 
 /-- A unit-state `for` loop over a list preserves pairing when every body
 step does.  This is the elaborated shape used for parameter binding in
@@ -2081,6 +2177,41 @@ theorem Paired_forIn_unit (items : List α) (body : α → EvalM Unit)
   · intro
     exact Paired_pure ()
 
+/-- A unit-state `for` loop preserves name alignment. -/
+theorem NamesAligned_forIn_unit (items : List α) (body : α → EvalM Unit)
+    (aligned : ∀ item ∈ items, Aligned (body item)) :
+    Aligned (for item in items do body item) := by
+  have loop : ∀ remaining : List α,
+      (∀ item ∈ remaining, Aligned (body item)) →
+      Aligned (forIn' remaining PUnit.unit fun item _ _ => do
+        body item
+        pure (ForInStep.yield PUnit.unit)) := by
+    intro remaining
+    induction remaining with
+    | nil =>
+        intro aligned
+        rw [List.forIn'_nil]
+        exact NamesAligned_pure PUnit.unit
+    | cons item rest ih =>
+        intro aligned
+        rw [List.forIn'_cons]
+        apply NamesAligned_bind
+        · apply NamesAligned_bind (body item)
+          · exact aligned item (by simp)
+          · intro
+            exact NamesAligned_pure (ForInStep.yield PUnit.unit)
+        · intro step
+          cases step with
+          | done state => exact NamesAligned_pure state
+          | yield state =>
+              apply ih
+              intro tail member
+              exact aligned tail (by simp [member])
+  apply NamesAligned_bind
+  · exact loop items aligned
+  · intro
+    exact NamesAligned_pure ()
+
 /-- The raw `forIn` worker before the elaborator's final `pure ()`.  This is
 the exact form retained inside the larger `callFunction` do-block. -/
 theorem Paired_forIn_unit_raw (items : List α) (body : α → EvalM Unit)
@@ -2112,6 +2243,37 @@ theorem Paired_forIn_unit_raw (items : List α) (body : α → EvalM Unit)
             apply ih
             intro tail member
             exact paired tail (by simp [member])
+
+/-- The raw `forIn` worker preserves name alignment. -/
+theorem NamesAligned_forIn_unit_raw (items : List α) (body : α → EvalM Unit)
+    (aligned : ∀ item ∈ items, Aligned (body item)) :
+    Aligned (forIn items PUnit.unit fun item _ => do
+      body item
+      pure (ForInStep.yield PUnit.unit)) := by
+  induction items with
+  | nil =>
+      change Aligned (forIn' [] PUnit.unit fun item _ _ => do
+        body item
+        pure (ForInStep.yield PUnit.unit))
+      rw [List.forIn'_nil]
+      exact NamesAligned_pure PUnit.unit
+  | cons item rest ih =>
+      change Aligned (forIn' (item :: rest) PUnit.unit fun item _ _ => do
+        body item
+        pure (ForInStep.yield PUnit.unit))
+      rw [List.forIn'_cons]
+      apply NamesAligned_bind
+      · apply NamesAligned_bind (body item)
+        · exact aligned item (by simp)
+        · intro
+          exact NamesAligned_pure (ForInStep.yield PUnit.unit)
+      · intro step
+        cases step with
+        | done state => exact NamesAligned_pure state
+        | yield state =>
+            apply ih
+            intro tail member
+            exact aligned tail (by simp [member])
 
 /-- Popping the active call frame does not alter completed writer chunks. -/
 theorem popFrame_writerChunks (world : World) :
@@ -2157,6 +2319,44 @@ theorem Paired_catchPopRethrow (m : EvalM α) (g : α → β) (paired : Paired m
         paired w0 supplied positioned innerValue innerSuccessful
       refine ⟨appended, ?_, answers⟩
       exact chunks
+
+/-- Catching, popping, and rethrowing preserves name alignment. -/
+theorem NamesAligned_catchPopRethrow (m : EvalM α) (g : α → β) (aligned : Aligned m) :
+    Aligned (do
+      let outcome : Except Err β ← try
+        let returned ← m
+        pure (Except.ok (g returned))
+      catch error => pure (Except.error error)
+      modify fun w => {w with frames := w.frames.pop}
+      match outcome with
+      | .ok value => pure value
+      | .error error => throw error) := by
+  have mappedAligned : ∀ (tree : Interaction (Except Err α × World)) supplied
+      (f : Except Err α × World → Except Err β × World),
+      NamesAligned tree supplied →
+      NamesAligned (tree.bind (fun value => .done (f value))) supplied := by
+    intro tree
+    induction tree with
+    | done value =>
+        intro supplied f names
+        trivial
+    | ask query continuation ih =>
+        intro supplied f names
+        cases supplied with
+        | nil =>
+            exact ih (deliveredAnswer query (.oracleExhausted 0)) [] f names
+        | cons answer rest =>
+            exact ⟨names.1, ih (deliveredAnswer query answer) rest f names.2⟩
+  intro world supplied value successful
+  rw [evalRun_catchPopRethrow, interpret_map] at successful
+  rw [evalRun_catchPopRethrow]
+  cases original : (interpret (evalRun m world) supplied).value.1 with
+  | error error =>
+      rw [original] at successful
+      contradiction
+  | ok innerValue =>
+      apply mappedAligned
+      exact aligned world supplied innerValue original
 
 /-- The named suffix is definitionally the ordinary catch/pop/rethrow form. -/
 theorem callSuffix_eq (m : EvalM (Option Value)) : callSuffix m = (do
@@ -2229,6 +2429,35 @@ theorem callFunction_catchPopRethrow_eq (m : EvalM (Option Value)) :
       | .ok value => pure value
       | .error error => throw error) := rfl
 
+/-- The named function-call suffix preserves name alignment. -/
+theorem NamesAligned_callSuffix (m : EvalM (Option Value)) (aligned : Aligned m) :
+    Aligned (callSuffix m) := by
+  have mappedAligned : ∀ (tree : Interaction (Except Err (Option Value) × World)) supplied
+      (f : Except Err (Option Value) × World → Except Err Value × World),
+      NamesAligned tree supplied →
+      NamesAligned (tree.bind (fun value => .done (f value))) supplied := by
+    intro tree
+    induction tree with
+    | done value =>
+        intro supplied f names
+        trivial
+    | ask query continuation ih =>
+        intro supplied f names
+        cases supplied with
+        | nil => exact ih (deliveredAnswer query (.oracleExhausted 0)) [] f names
+        | cons answer rest =>
+            exact ⟨names.1, ih (deliveredAnswer query answer) rest f names.2⟩
+  intro world supplied value successful
+  rw [evalRun_callSuffix, interpret_map] at successful
+  rw [evalRun_callSuffix]
+  cases original : (interpret (evalRun m world) supplied).value.1 with
+  | error error =>
+      rw [original] at successful
+      contradiction
+  | ok returned =>
+      apply mappedAligned
+      exact aligned world supplied returned original
+
 /-- A world update which preserves writer chunks is paired. -/
 theorem Paired_modify (f : World → World)
     (preserves : ∀ world, (f world).writerChunks = world.writerChunks) :
@@ -2245,6 +2474,20 @@ theorem Paired_modify (f : World → World)
     simpa using preserves w0
   · change [] = writerAnswersFrom w0.writerChunks.length []
     rfl
+
+/-- A direct world update traverses no asks. -/
+theorem NamesAligned_modify (f : World → World) :
+    Aligned (modify f : EvalM Unit) := by
+  intro world supplied value successful
+  trivial
+
+/-- The simultaneous name-alignment assertion for the five evaluator entry points. -/
+def AlignedAll (fuel : Nat) : Prop :=
+  (∀ e, Aligned (evalExpr fuel e)) ∧
+  (∀ id args, Aligned (callFunction fuel id args)) ∧
+  (∀ arms otherwise, Aligned (chooseBranch fuel arms otherwise)) ∧
+  (∀ condition body rest, Aligned (execLoop fuel condition body rest)) ∧
+  (∀ statements, Aligned (exec fuel statements))
 
 /-- The simultaneous fuel-induction assertion for the five evaluator entry
 points.  Keeping this as one proposition makes every recursive call at the
@@ -2320,6 +2563,48 @@ theorem Paired_callFunction_succ (f : Nat) (ih : PairedAll f)
             (supplied[parameter.2]?.getD .null)
         · intro _
           exact Paired_callSuffix _ (execIH definition.body)
+
+set_option maxHeartbeats 1000000 in
+/-- Function calls preserve name alignment at successor fuel. -/
+theorem NamesAligned_callFunction_succ (f : Nat) (ih : AlignedAll f)
+    (functionId : Nat) (arguments : List Value) :
+    Aligned (callFunction (f + 1) functionId arguments) := by
+  obtain ⟨exprIH, callIH, branchIH, loopIH, execIH⟩ := ih
+  rw [callFunction.eq_def]
+  apply NamesAligned_bind _ _ NamesAligned_get
+  intro before
+  cases found : before.functions[functionId]? with
+  | none =>
+      simp only [found]
+      exact NamesAligned_throw (.runtime s!"undefined function id: {functionId}")
+  | some definition =>
+      simp only [found]
+      split
+      · exact NamesAligned_throw (.runtime
+          s!"call passes {arguments.length} arguments but the callee takes {definition.parameters.length}")
+      · let environment := before.environments.size
+        let frame : Frame := {serial := before.nextFrameSerial, environment := environment}
+        let entered : World := {before with
+          environments := before.environments.push
+            {id := environment, parent := some definition.definingEnvironment}
+          frames := before.frames.push frame
+          nextFrameSerial := before.nextFrameSerial + 1}
+        let supplied := if definition.parameters.length == 0 then []
+          else if definition.parameters.length == 1 && arguments.length != 1 then
+            [.array arguments] else arguments
+        apply NamesAligned_bind
+        · exact NamesAligned_modify (fun _ => entered)
+        · intro _
+          apply NamesAligned_bind
+          · apply NamesAligned_forIn_unit_raw
+              (items := definition.parameters.zipIdx)
+              (body := fun parameter => bindParameter environment parameter.1
+                (supplied[parameter.2]?.getD .null))
+            intro parameter member
+            exact NamesAligned_bindParameter environment parameter.1
+              (supplied[parameter.2]?.getD .null)
+          · intro _
+            exact NamesAligned_callSuffix _ (execIH definition.body)
 
 /-- Literal and variable expressions preserve pairing at successor fuel. -/
 theorem Paired_evalExpr_succ_literal (f : Nat) (literal : Literal) :

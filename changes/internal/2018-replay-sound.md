@@ -1,1 +1,1 @@
-- Add kind-valid strict-replay tape groundwork and a successful replay fixture (#2018).
+- Lean's executable semantics now proves strict replay soundness against a corresponding recording oracle (#2018).
