@@ -1,4 +1,5 @@
 #!/bin/bash
+echo "PLAN: 17"
 # #988 — a child .sh test that exits nonzero, or that runs no checks at all,
 # must fail its section.
 #

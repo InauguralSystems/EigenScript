@@ -1250,9 +1250,9 @@ static void handle_hover(int id, const char *params) {
     /* Wrap in code block */
     strbuf code;
     strbuf_init(&code);
-    strbuf_append(&code, "```eigenscript\\n");
+    strbuf_append(&code, "```eigenscript\n");
     strbuf_append(&code, hover_text);
-    strbuf_append(&code, "\\n```");
+    strbuf_append(&code, "\n```");
     json_escape_to(&sb, code.data);
     strbuf_free(&code);
     strbuf_append(&sb, "}}");

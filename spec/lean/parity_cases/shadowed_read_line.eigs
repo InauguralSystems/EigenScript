@@ -1,0 +1,3 @@
+define read_line() as:
+  return "mock"
+print of (read_line of [])

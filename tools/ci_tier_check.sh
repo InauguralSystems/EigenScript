@@ -45,10 +45,15 @@ def triggers(on, ev):
 def cond(x):
     s = str(x).strip(); m = re.fullmatch(r"\$\{\{(.*)\}\}", s, re.S); return (m.group(1) if m else s).strip()
 def needs(j): n = j.get("needs") or []; return [n] if isinstance(n, str) else list(n)
-def always(j): return cond(j.get("if", "")) == "always()"
+def always(j):
+    c = cond(j.get("if", ""))
+    return c == "always()" or c.startswith("(always()) && (")
 G = r"github\s*(?:\.\s*{0}\b|\[\s*['\"]{0}['\"]\s*\])"
 PR_ATOM = re.compile(G.format("event_name") + r"\s*[=!]=\s*['\"]pull_request['\"]|['\"]pull_request['\"]\s*[=!]=\s*" + G.format("event_name"), re.I)
 PR_BODY = re.compile(G.format("event") + r"\s*(?:\.\s*pull_request\b|\[\s*['\"]pull_request['\"]\s*\])", re.I)
+DISPATCH_ATOM = re.compile(
+    G.format("event_name") + r"\s*[=!]=\s*['\"]workflow_dispatch['\"]|"
+    r"['\"]workflow_dispatch['\"]\s*[=!]=\s*" + G.format("event_name"), re.I)
 # An ALLOWLIST (#1787): a condition may read only github fields whose value does not depend
 # on the event (push, merge_group, pull_request or workflow_dispatch). Any other field
 # (ref_protected, workflow_ref, actor, sha, ...) or a bare `github` can select a lane.
@@ -67,7 +72,7 @@ WAIVE = {("ci.yml", "scope", "detect"): "a218536a4442faff",
 used = set()
 def exprs(v): return re.findall(r"\$\{\{(.*?)\}\}", str(v), re.S)
 def bad_expr(e, wf, jid, pr_ok, depth=0):
-    """Why expression `e` (in wf:jid) may differ between push and merge_group, or None."""; t = PR_BODY.sub("_", PR_ATOM.sub("_", e)) if pr_ok else e
+    """Why expression `e` (in wf:jid) may differ between push and merge_group, or None."""; t = DISPATCH_ATOM.sub("_", PR_BODY.sub("_", PR_ATOM.sub("_", e)) if pr_ok else e)
     hit = reads_event(t)
     if hit: return f"`{e.strip()}` reads `{hit}`, not one of the event-invariant github fields"
     if re.search(r"\b(env|vars|steps|needs)\b", IND.sub("_", t), re.I): return f"`{e.strip()}` reads a context this gate cannot resolve"
@@ -120,6 +125,37 @@ for r in req:
     if not triggers(W[wf][0], "merge_group"): V("not-in-queue", f"required {r!r}: {wf} does not trigger on merge_group — it never reports in the queue")
     closure(wf, jid, path)
 ci = W["ci.yml"][1]
+# Every job declares its dispatch population.  This makes the population
+# closed: a future job cannot silently join every proof run merely because its
+# author forgot that workflow_dispatch is a non-PR event.
+dispatch = W["ci.yml"][0].get("workflow_dispatch", {}).get("inputs", {}).get("lanes", {})
+LANES = ("all", "asan", "tsan", "fuzz", "linux")
+if dispatch.get("type") != "choice" or dispatch.get("default") != "all" or tuple(dispatch.get("options") or ()) != LANES:
+    V("dispatch-input", f"ci.yml: workflow_dispatch.inputs.lanes must be the choice {LANES!r} with default 'all'; got {dispatch!r}")
+dispatch_jobs = {lane: [] for lane in LANES}
+for jid, j in ci.items():
+    raw = (j.get("env") or {}).get("CI_DISPATCH_LANES")
+    declared = [] if raw is None else str(raw).split(",")
+    if raw is None or not declared or any(x not in LANES for x in declared) or len(set(declared)) != len(declared):
+        V("dispatch-declaration", f"ci.yml:{jid}: CI_DISPATCH_LANES must declare one or more unique lanes from {LANES!r}; got {raw!r}")
+        continue
+    if jid == "scope":
+        if tuple(declared) != LANES:
+            V("dispatch-scope", f"ci.yml:scope must run for every lane so validation cannot be skipped; got {declared!r}")
+    else:
+        expected = "github.event_name != 'workflow_dispatch' || inputs.lanes == 'all'" + \
+                   "".join(f" || inputs.lanes == '{x}'" for x in declared if x != "all")
+        if expected not in cond(j.get("if", "")):
+            V("dispatch-gate", f"ci.yml:{jid}: job if does not contain its declared selector `{expected}`")
+    for lane in LANES:
+        if lane == "all" or lane in declared: dispatch_jobs[lane].append(jid)
+for lane in LANES:
+    if not dispatch_jobs[lane]: V("dispatch-empty", f"ci.yml: lane {lane!r} selects no jobs")
+mac_jobs = [jid for jid, j in ci.items() if "macos" in str(j.get("runs-on", "")).lower() or
+            any("macos" in str(row.get("os", "")).lower() for row in ((j.get("strategy") or {}).get("matrix") or {}).get("include", []) if isinstance(row, dict))]
+for jid in mac_jobs:
+    if (ci[jid].get("env") or {}).get("CI_DISPATCH_LANES") != "all":
+        V("dispatch-macos", f"ci.yml:{jid}: macOS runners are dispatchable only in lane 'all'")
 # These are deliberately expensive main-lane checks.  Their required jobs must
 # report a real, successful check on a PR, but may do no more than print the
 # canonical deferral.  Workers behind aggregators are skipped before runner
@@ -143,7 +179,7 @@ for wf, jid in sorted(path):
     # Heavy workers are the one safe job-level exception: their sole required
     # consumer is an always() aggregator which prints the PR deferral and, on
     # merge_group/push, rejects any result other than worker success.
-    worker_defer = wf == "ci.yml" and jid in HEAVY_WORKERS and jc == "github.event_name != 'pull_request'"
+    worker_defer = wf == "ci.yml" and jid in HEAVY_WORKERS and jc.startswith("(github.event_name != 'pull_request') && (")
     why = None if worker_defer else bad_expr(jc, wf, jid, False)
     if why: V("event-condition", f"{wf}:{jid}: job-level `if:` — {why}; a job skipped in the queue or on a PR is a satisfied check")
     vals = [(k, v) for d in (j.get("env"), j.get("outputs"), W[wf][2]) if isinstance(d, dict) for k, v in d.items()]
@@ -183,7 +219,7 @@ for jid in sorted(HEAVY):
 for jid in sorted(HEAVY_WORKERS):
     if jid not in ci:
         V("heavy-missing", f"ci.yml:{jid}: declared heavy worker is missing")
-    elif cond(ci[jid].get("if", "")) != "github.event_name != 'pull_request'":
+    elif not cond(ci[jid].get("if", "")).startswith("(github.event_name != 'pull_request') && ("):
         V("heavy-worker", f"ci.yml:{jid}: worker must skip only pull_request (and therefore run on merge_group and push)")
 # workflow_dispatch runs every non-PR path of ci.yml from ANY ref (#1787), so the
 # writes are checked by what they do, not pinned by their text:
@@ -308,6 +344,44 @@ live() {
     [ -z "$d" ] && { echo "ci-tier --live: OK — the ruleset requires exactly the $(grep -c . <<<"$want") checks in the file"; return 0; }
     echo "$d"; echo "ci-tier --live: DRIFT — sync the ruleset from required-checks.txt"; return 1
 }
+dispatch_table() {
+    local file="${1:-$WF_DIR/ci.yml}" label="${2:-current}"
+    python3 - "$file" "$label" <<'PY'
+import sys, yaml
+path, label = sys.argv[1:]
+doc = yaml.safe_load(open(path, encoding="utf-8"))
+jobs = doc.get("jobs") or {}
+if not jobs:
+    raise SystemExit("dispatch-table: workflow has no jobs")
+on = doc.get("on", doc.get(True)) or {}
+dispatch = (on.get("workflow_dispatch") or {}) if isinstance(on, dict) else {}
+inputs = dispatch.get("inputs") or {}
+choices = ((inputs.get("lanes") or {}).get("options") or ["default"])
+def cond(job):
+    value = str(job.get("if", ""))
+    return value[3:-2].strip() if value.startswith("${{") and value.endswith("}}") else value
+def selected(event, lane=None):
+    out = []
+    for jid, job in jobs.items():
+        c = cond(job)
+        if event == "pull_request" and "github.event_name != 'pull_request'" in c:
+            continue
+        if event == "workflow_dispatch" and lane not in (None, "default", "all"):
+            declared = str((job.get("env") or {}).get("CI_DISPATCH_LANES", "")).split(",")
+            if lane not in declared:
+                continue
+        out.append(jid)
+    return out
+print(f"| workflow | event / lane | jobs selected | derived job ids |")
+print("|---|---|---:|---|")
+for event in ("push", "pull_request", "merge_group"):
+    picked = selected(event)
+    print(f"| {label} | {event} | {len(picked)} | {', '.join(picked)} |")
+for lane in choices:
+    picked = selected("workflow_dispatch", lane)
+    print(f"| {label} | workflow_dispatch / {lane} | {len(picked)} | {', '.join(picked)} |")
+PY
+}
 plant_merge_deferral() {
     local tmp out rc
     tmp=$(mktemp -d); out="$tmp/out"
@@ -336,8 +410,47 @@ PY
     fi
     echo "ci-tier: SELFTEST OK — a heavy suite deferred on merge_group/push-only work is rejected"
 }
+plant_dispatch_contracts() {
+    local tmp out rc
+    tmp=$(mktemp -d); out="$tmp/out"
+    trap 'rm -rf "$tmp"' RETURN
+    cp -R "$WF_DIR" "$tmp/workflows"
+
+    # A misspelled choice must be rejected specifically as an input contract
+    # violation, rather than producing a green run with no selected worker.
+    sed 's/options: \[all, asan, tsan, fuzz, linux\]/options: [all, asna, tsan, fuzz, linux]/' \
+        "$WF_DIR/ci.yml" > "$tmp/workflows/ci.yml"
+    rc=0
+    CI_TIER_PLANT=1 CI_TIER_WF_DIR="$tmp/workflows" bash "$0" >"$out" 2>&1 || rc=$?
+    if [ "$rc" -ne 1 ] || ! grep -q 'FAIL \[dispatch-input\]' "$out"; then
+        cat "$out"
+        echo "ci-tier: SELFTEST FAIL — misspelled dispatch lane was not rejected as dispatch-input"
+        return 1
+    fi
+    echo "ci-tier: SELFTEST OK — planted misspelled dispatch lane is rejected loudly"
+
+    # Every job, not a hand-maintained subset, owns a declaration.  This plant
+    # models a newly-added heavy job whose author omitted that declaration.
+    cp "$WF_DIR/ci.yml" "$tmp/workflows/ci.yml"
+    cat >> "$tmp/workflows/ci.yml" <<'YAML'
+  planted-heavy-worker:
+    name: planted undeclared heavy worker
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo should-not-run
+YAML
+    rc=0
+    CI_TIER_PLANT=1 CI_TIER_WF_DIR="$tmp/workflows" bash "$0" >"$out" 2>&1 || rc=$?
+    if [ "$rc" -ne 1 ] || ! grep -q 'FAIL \[dispatch-declaration\].*planted-heavy-worker' "$out"; then
+        cat "$out"
+        echo "ci-tier: SELFTEST FAIL — undeclared heavy job was not rejected as dispatch-declaration"
+        return 1
+    fi
+    echo "ci-tier: SELFTEST OK — planted undeclared heavy job is rejected"
+}
 case "${1:-}" in
-    "") check && { [ "${CI_TIER_PLANT:-0}" = 1 ] || plant_merge_deferral; } ;;
+    "") check && { [ "${CI_TIER_PLANT:-0}" = 1 ] || { plant_merge_deferral && plant_dispatch_contracts; }; } ;;
     --live) live ;;
-    *) echo "usage: $0 [--live]" >&2; exit 2 ;;
+    --dispatch-table) dispatch_table "${2:-}" "${3:-}" ;;
+    *) echo "usage: $0 [--live | --dispatch-table [workflow [label]]]" >&2; exit 2 ;;
 esac

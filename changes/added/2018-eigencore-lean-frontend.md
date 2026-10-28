@@ -1,1 +1,1 @@
-- Add the first EigenCore-0 specification step: a pinned Lean project with the surface-syntax classifier, value printer, proof-hygiene gates, corpus census, and path-filtered CI.
+- Add EigenCore-0's pinned Lean specification, including an explicit taped-interaction tree and an axiom-clean prefix-sufficiency proof (#2018).

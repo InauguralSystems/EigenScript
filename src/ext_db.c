@@ -57,7 +57,7 @@ static int db_build_query(Value *arg, const char **sql, int *nparams,
         } else if (v && v->type == VAL_STR) {
             params[i] = v->data.str;
         } else if (v && v->type == VAL_NUM) {
-            snprintf(numbuf[i], 64, "%g", eigs_num_arg(v, __func__));
+            eigs_num_text(numbuf[i], 64, eigs_num_arg(v, __func__));
             params[i] = numbuf[i];
         } else {
             rt_error(EK_TYPE, 0, "db: parameter %d is not a string, number or bool (got %s)",

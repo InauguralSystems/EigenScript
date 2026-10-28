@@ -101,7 +101,8 @@ selftest() {
     case_ "merge-group release diff" true false true 'mkdir -p .github/actions/release-build && echo x > .github/actions/release-build/action.yml'
     case_ "merge-group src-only diff" true false false 'echo "int queue;" >> src/foo.c'
     [ "$n" -eq 24 ] || { echo "ci_scope selftest: ran $n cases, want 24"; exit 1; }
-    echo "ci_scope selftest: $((n - fail))/$n passed"
+    echo "PLAN: $n"
+    echo "ci_scope selftest: $((n - fail)) of $n passed"
     [ "$fail" -eq 0 ]
 }
 

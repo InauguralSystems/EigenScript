@@ -152,8 +152,9 @@ if [ "${1:-}" = "--selftest" ]; then
   # control: the live files must pass, or every plant above is vacuous
   total=$((total+1))
   if "$0" >/dev/null 2>&1; then echo "  ok: live config passes (control)"; red=$((red+1)); else echo "  SELFTEST FAILED: live config is red"; fi
-  [ "$red" = "$total" ] && { echo "SELFTEST OK: $red/$total"; exit 0; }
-  echo "SELFTEST FAILED: $red/$total"; exit 1
+  echo "PLAN: $total"
+  [ "$red" = "$total" ] && { echo "SELFTEST OK: all declared plants red"; exit 0; }
+  echo "SELFTEST FAILED: $red of $total"; exit 1
 fi
 
 if check; then echo "codspeed targets: $TARGET_COUNT declared == found; consumer rows present; DMG pinned by SHA; runner pinned; unit guard wired"; exit 0; fi

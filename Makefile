@@ -809,9 +809,12 @@ coverage: coverage-clean
 # tree-walking evaluator (eval_node), leaving `make fuzz` unbuildable.
 FUZZ_SOURCES := $(filter-out $(CLI_ONLY),$(SOURCES))
 
-fuzz: fuzz/fuzz_stdin.c $(FUZZ_SOURCES)
+# fuzz/fuzz_stdin is the libFuzzer target's per-input body (fuzz_eigenscript.c)
+# under a one-input stdin driver, so the CI smoke (fuzz/run_fuzz.sh) checks the
+# contract the fuzzer runs, built with gcc and no libFuzzer (#1734).
+fuzz: fuzz/fuzz_stdin.c fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES)
 	$(CC) -g -fsanitize=address,undefined $(WERROR_FLAGS) -o fuzz/fuzz_stdin \
-		fuzz/fuzz_stdin.c $(FUZZ_SOURCES) \
+		fuzz/fuzz_stdin.c fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
 		-DEIGENSCRIPT_EXT_MODEL=0 \
 		-DEIGENSCRIPT_EXT_DB=0 \

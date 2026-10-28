@@ -292,7 +292,7 @@ check_roundtrip "ordinary four-space indentation" 'if 1:
 python3 - "$REG_DIR/crlf.eigs" <<'PY'
 import sys
 open(sys.argv[1], "wb").write(
-    b'value is "start\r\n\t# a+b  \r\nback\\\r\nslash"\r\nprint of value\r\n')
+    b'value is "start\r\n\t# a+b  \r\nback\\\\\r\nslash"\r\nprint of value\r\n')
 PY
 "$EIGS" "$REG_DIR/crlf.eigs" >"$REG_DIR/cr.before"
 "$EIGS" --fmt "$REG_DIR/crlf.eigs" >"$REG_DIR/cr.formatted"

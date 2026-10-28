@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+echo "PLAN: 3"
 set -eu
 
 EIGS=${EIGS:-${EIGENSCRIPT:-$(cd "$(dirname "$0")/.." && pwd)/src/eigenscript}}

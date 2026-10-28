@@ -157,7 +157,8 @@ static int store_nonfinite_sentinel(const char *s, double *out) {
 /* Buffer elements use the 17-significant-digit form, as trace.c's buffer tape
  * encoding does: %.17g is the shortest width that round-trips a double
  * bit-exactly, and a buffer holding samples or weights would otherwise come
- * back subtly altered. (VAL_NUM's own %d/%.15g encoding is untouched.) */
+ * back subtly altered. Scalar numbers use the shared round-trip formatter
+ * below as well. */
 static void store_json_encode_buf_elem(strbuf *out, double d) {
     if (isnan(d)) { strbuf_append(out, "\"nan\""); return; }
     if (isinf(d)) { strbuf_append(out, d < 0 ? "\"-inf\"" : "\"inf\""); return; }
@@ -168,15 +169,13 @@ static void store_json_encode(Value *v, strbuf *out);
 
 /* Recursive container walks consume slots directly.  In particular, do not
  * manufacture a stack-backed Value and pass it down the recursion for an
- * inline number; format it through the same branch and format strings used by
- * the historical boxed-number path so persisted bytes remain identical. */
+ * inline number. */
 static void store_json_encode_slot(EigsSlot slot, strbuf *out) {
     if (slot_is_num(slot)) {
         double n = eigs_slot_num(slot, __func__);
-        if (fabs(n) < 2147483648.0 && n == (int)n)
-            strbuf_append_fmt(out, "%d", (int)n);
-        else
-            strbuf_append_fmt(out, "%.15g", n);
+        char buf[32];
+        eigs_num_text(buf, sizeof(buf), n);
+        strbuf_append(out, buf);
         return;
     }
     store_json_encode(eigs_slot_ref(slot), out);
@@ -190,16 +189,9 @@ static void store_json_encode(Value *v, strbuf *out) {
     switch (v->type) {
         case VAL_NUM: {
             double n = eigs_num_arg(v, __func__);
-            /* #816: magnitude BEFORE the narrowing cast (same class as
-             * #695) — converting a double beyond int's range is UB, and
-             * the old `n == (int)n && fabs(n) < 1e15` order ran the cast
-             * first. The bound is int's own range: integral values beyond
-             * it never took the %d path anyway (the equality failed), so
-             * output is unchanged and the cast is now always defined. */
-            if (fabs(n) < 2147483648.0 && n == (int)n)
-                strbuf_append_fmt(out, "%d", (int)n);
-            else
-                strbuf_append_fmt(out, "%.15g", n);
+            char buf[32];
+            eigs_num_text(buf, sizeof(buf), n);
+            strbuf_append(out, buf);
             break;
         }
         case VAL_STR: {

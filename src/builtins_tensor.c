@@ -353,22 +353,28 @@ static Value* flat_to_like(Value *src, double *data, int rows, int cols) {
                        : flat_to_tensor_2d(data, rows, cols);
 }
 
-/* --- Tensor helper: count total elements recursively --- */
-static int tensor_total(Value *v) {
+/* --- Reduction helper: validate and count scalar elements recursively.
+ * `index` is the zero-based flattened element index, matching the order in
+ * which the reduction consumes nested tensors.  Validation belongs in this
+ * first pass so allocation and arithmetic never begin for a malformed input. */
+static int tensor_total(Value *v, const char *who, int *index) {
     if (!v) return 0;
-    if (v->type == VAL_NUM) return 1;
-    /* #1637: arithmetic on a bool raises. Other non-number elements keep
-     * their old (counted-as-absent) reading; a bool is the one that used to
-     * BE a number, so letting it vanish from `sum of [a < b, ...]` would turn
-     * a count into a silent 0. Raised in every strict mode (#1637). */
-    if (v->type == VAL_BOOL && !g_has_error)
-        rt_error(EK_TYPE, 0, "cannot use a bool as a number (branch on it: `if b:`)");
-    if (v->type == VAL_BUFFER) return v->data.buffer.count;   /* #1093 */
-    if (v->type != VAL_LIST) return 0;
+    if (v->type == VAL_NUM) { (*index)++; return 1; }
+    if (v->type == VAL_BUFFER) {
+        *index += v->data.buffer.count;
+        return v->data.buffer.count;                         /* #1093 */
+    }
+    if (v->type != VAL_LIST) {
+        if (!g_has_error)
+            rt_error(EK_TYPE, 0, "%s: element %d is %s (expected a number)",
+                     who, *index, val_type_name(v->type));
+        return 0;
+    }
     int total = 0;
     for (int i = 0; i < v->data.list.count; i++) {
         EIGS_VIEW(child_view);
-        total += tensor_total(list_get_view(v, i, &child_view));
+        total += tensor_total(list_get_view(v, i, &child_view), who, index);
+        if (g_has_error) break;
     }
     return total;
 }
@@ -1236,7 +1242,9 @@ Value* builtin_tensor_mean(Value *arg) {
     ARG_GUARD(arg && arg->type != VAL_NUM && arg->type != VAL_LIST
               && arg->type != VAL_BUFFER,   /* #1093 */
               "mean", "a number, a list of numbers or a buffer", make_num(0.0));
-    int total = tensor_total(arg);
+    int element_index = 0;
+    int total = tensor_total(arg, "mean", &element_index);
+    if (g_has_error) return make_null();
     /* fs:EMPTY nothing to average, and the division below would be 0/0. The
      * non-tensor case is gone (guarded above), so this line now carries one
      * verdict only: `mean of []` is the empty mean and strict must not raise. */
@@ -1279,7 +1287,9 @@ Value* builtin_tensor_sum(Value *arg) {
     ARG_GUARD(arg && arg->type != VAL_NUM && arg->type != VAL_LIST
               && arg->type != VAL_BUFFER,   /* #1093 */
               "sum", "a number, a list of numbers or a buffer", make_num(0.0));
-    int total = tensor_total(arg);
+    int element_index = 0;
+    int total = tensor_total(arg, "sum", &element_index);
+    if (g_has_error) return make_null();
     /* fs:EMPTY 0.0 is the additive identity this loop would accumulate over
      * zero elements. The non-tensor case is guarded above, so `sum of []` is
      * the only reading left here. */
@@ -1319,7 +1329,9 @@ Value* builtin_tensor_norm(Value *arg) {
     ARG_GUARD(arg && arg->type != VAL_NUM && arg->type != VAL_LIST
               && arg->type != VAL_BUFFER,   /* #1093 */
               "norm", "a number, a list of numbers or a buffer", make_num(0.0));
-    int total = tensor_total(arg);
+    int element_index = 0;
+    int total = tensor_total(arg, "norm", &element_index);
+    if (g_has_error) return make_null();
     /* fs:EMPTY the L2 norm over zero elements is sqrt(0) = 0, exactly what the
      * loop below would produce. The non-tensor case is guarded above. */
     if (total == 0) return make_num(0.0);
@@ -2158,6 +2170,13 @@ Value* builtin_numerical_grad_rows(Value *arg) {
             list_append_owned(grow, make_num(0.0));
         list_append_owned(grad, grow);
     }
+    /* #1722: make_list caps capacity at its 8-slot fallback when the sandbox
+     * refuses the allocation (and list_reserve_one then drops the appends),
+     * so a matrix wider or taller than 8 leaves grad/grad_row shorter than
+     * rows/cols. A raise does not unwind this direct C call, so stop after the
+     * refusal instead of indexing grad[r] / grad_row[c] past the real count
+     * (heap OOB). Matches list_reserve_one's drop and the SLICE_GET fix. */
+    if (g_has_error) goto rows_grad_failed;
 
     /* Only compute gradients for specified rows */
     for (int ri = 0; ri < nidx; ri++) {
@@ -2342,6 +2361,10 @@ Value* builtin_numerical_grad_cols(Value *arg) {
             list_append_owned(grow, make_num(0.0));
         list_append_owned(grad, grow);
     }
+    /* #1722: see numerical_grad_rows — a refused make_list caps grad/grad_row
+     * at 8 slots, so stop after the refusal instead of indexing grad[r] /
+     * grad_row[col] past the real count (heap OOB). */
+    if (g_has_error) goto cols_grad_failed;
 
     /* Only compute gradients for specified columns, across all rows */
     for (int ci = 0; ci < nidx; ci++) {

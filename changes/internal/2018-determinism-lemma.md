@@ -1,0 +1,1 @@
+- The formal evaluator core now proves that mode metadata cannot change semantic results for a fixed program, fuel, and supplied answer sequence (#2018).

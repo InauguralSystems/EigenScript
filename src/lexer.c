@@ -32,6 +32,16 @@ static void lexer_error_at(const char *caret_source, int line, int col,
     eigs_print_caret_src(stderr, caret_source, line, col);
 }
 
+/* Diagnostics must not put literal control bytes in a terminal or protocol
+ * message.  Keep ordinary printable escapes readable ("\\q"), and spell a
+ * raw byte as hex otherwise. */
+static void unknown_escape_message(char *out, size_t out_size, unsigned char c) {
+    if (c >= 0x20 && c <= 0x7e)
+        snprintf(out, out_size, "unknown escape '\\%c'", c);
+    else
+        snprintf(out, out_size, "unknown escape '\\x%02x'", c);
+}
+
 static void tok_add(TokenList *tl, TokType type, double num, const char *str, int line, int col) {
     if (tl->count >= tl->capacity) {
         tl->capacity *= 2;
@@ -106,7 +116,7 @@ static int fstr_ident_char(char ch) {
            (ch >= '0' && ch <= '9') || ch == '_';
 }
 
-static const char *fstr_interp_end(const char *p, int nesting, int *too_deep);
+const char *fstr_interp_end(const char *p, int nesting, int *too_deep);
 
 /* p at the `f` of f"...": returns the position just past the closing quote. */
 static const char *fstr_skip_fstring(const char *p, int nesting, int *too_deep) {
@@ -130,7 +140,7 @@ static const char *fstr_skip_fstring(const char *p, int nesting, int *too_deep) 
 
 /* p just past an interpolation's `{`: returns the position of its matching
  * `}` (or the NUL terminator). */
-static const char *fstr_interp_end(const char *p, int nesting, int *too_deep) {
+const char *fstr_interp_end(const char *p, int nesting, int *too_deep) {
     const char *start = p;
     int depth = 1;
     while (*p) {
@@ -615,7 +625,14 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                         case 'r': strbuf_append_char(&buf, '\r'); break;
                         case '\\': strbuf_append_char(&buf, '\\'); break;
                         case '"': strbuf_append_char(&buf, '"'); break;
-                        default: strbuf_append_char(&buf, *p); break;
+                        default: {
+                            char msg[64];
+                            unknown_escape_message(msg, sizeof(msg), (unsigned char)*p);
+                            fprintf(stderr, "Syntax error line %d:%d: %s\n",
+                                    line, col, msg);
+                            lexer_error_at(caret_source, line, col - 1, msg);
+                            break;
+                        }
                     }
                     LEX_STEP_IN_LITERAL();
                     continue;
@@ -748,7 +765,14 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                         case 'r': strbuf_append_char(&buf, '\r'); break;
                         case '\\': strbuf_append_char(&buf, '\\'); break;
                         case '"': strbuf_append_char(&buf, '"'); break;
-                        default: strbuf_append_char(&buf, *p); break;
+                        default: {
+                            char msg[64];
+                            unknown_escape_message(msg, sizeof(msg), (unsigned char)*p);
+                            fprintf(stderr, "Syntax error line %d:%d: %s\n",
+                                    line, col, msg);
+                            lexer_error_at(caret_source, line, col - 1, msg);
+                            break;
+                        }
                     }
                 } else {
                     strbuf_append_char(&buf, *p);

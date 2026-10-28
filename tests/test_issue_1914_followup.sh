@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+echo "PLAN: 5"
 # Focused regressions for the remaining side-effect-free replay follow-ups.
 set -u
 EIGS="${EIGS:-$(cd "$(dirname "$0")/.." && pwd)/src/eigenscript}"

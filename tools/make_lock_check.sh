@@ -241,4 +241,5 @@ kill "$probe_owner" 2>/dev/null; wait "$probe_owner" 2>/dev/null
 [ "$try_rc" -eq 0 ] || fail "--try answered $try_rc after suite exit (want free=0)"
 rm -rf "$SUITE_TREE"
 echo "  PASS: suite lock was busy across section seams and free after exit"
-echo "make-lock selftest: 9/9 passed"
+echo "PLAN: 9"
+echo "make-lock selftest: all declared checks passed"

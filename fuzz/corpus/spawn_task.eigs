@@ -1,0 +1,17 @@
+# Spawn/task/channel seed (#1734): a joined worker running a cooperative task,
+# then a channel and a worker still parked in recv on it when the input ends.
+# The first line turns the history recorder on. The recorder is process-wide,
+# so in a long fuzz run an earlier input turns it on, and it then holds this
+# input's top-level values after the input returns.
+record_history of 1
+define task_value(v) as:
+    task_yield of null
+    return v + 1
+define worker() as:
+    t is task_spawn of [task_value, 40]
+    return task_join of t
+h is spawn of worker
+if (thread_join of h) != 41:
+    throw of "worker task returned wrong value"
+ch is channel of 1
+w is spawn of [recv, ch]
