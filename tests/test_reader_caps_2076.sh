@@ -15,6 +15,30 @@ import pathlib, sys
 pathlib.Path(sys.argv[1]).write_bytes(b'x' * (10 * 1024 * 1024 + 1))
 pathlib.Path(sys.argv[2]).write_bytes(b'y' * (15 * 1024 * 1024))
 PY
+printf 'abc' >"$TMP/three.bin"
+
+# Non-strict mode permits surplus list elements, but readers must still honor
+# the supplied cap in the second slot.  Strict mode owns surplus rejection.
+for reader in read_text read_bytes read_bytes_buf; do
+    cat >"$TMP/surplus.eigs" <<EOF
+value is $reader of ["$TMP/three.bin", 1, 0]
+EOF
+    if EIGS_STRICT=0 "$EIGS" "$TMP/surplus.eigs" >"$TMP/out" 2>"$TMP/err"
+    then
+        fail "$reader ignored max_bytes when surplus arguments were present"
+    fi
+    grep -F "3 bytes, over the 1-byte cap" "$TMP/err" >/dev/null ||
+        fail "$reader surplus-list refusal did not enforce the supplied cap"
+    pass "$reader honors max_bytes with a non-strict surplus argument"
+
+    if EIGS_STRICT=1 "$EIGS" "$TMP/surplus.eigs" >"$TMP/out" 2>"$TMP/err"
+    then
+        fail "strict $reader accepted a surplus argument"
+    fi
+    grep -F "$reader: expected a fixed-shape list with at most 2 elements" "$TMP/err" >/dev/null ||
+        fail "strict $reader surplus rejection lacked reader attribution"
+    pass "strict $reader rejects the surplus argument at its shape guard"
+done
 
 for reader in read_text read_bytes read_bytes_buf; do
     cat >"$TMP/case.eigs" <<EOF

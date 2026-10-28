@@ -1193,7 +1193,7 @@ static const char *reader_cap_parse(const char *fn, Value *arg, Value **path,
             return NULL;
         }
         *path = list_get_ref(arg, 0);
-        if (arg->data.list.count == 2) {
+        if (arg->data.list.count >= 2) {
             EIGS_VIEW(mv_view);
             Value *mv = list_get_view(arg, 1, &mv_view);
             if (!mv || mv->type != VAL_NUM) {
