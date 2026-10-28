@@ -55,6 +55,7 @@ from sympy.calculus.util import maximum, minimum
 
 import derive
 import gen
+from schema import CERTIFICATE_KINDS
 
 N = sp.Symbol("n", integer=True, nonnegative=True)
 K = sp.Symbol("k", integer=True, nonnegative=True)
@@ -210,7 +211,7 @@ def in_program(row):
     xs = gen.generate(g, row["n"])
     nan_at = next((i for i, v in enumerate(xs) if math.isnan(v)), None)
     ps = gen.pieces(g)
-    s = sum((1 if "x0" in p else 0) + p["steps"] for p in ps[:-1])
+    s = derive.structural_regime(g)
     last = ps[-1]
     if nan_at is not None:
         if any(st[0] == "set" for st in gen.program(g, s)[nan_at:]):
@@ -228,7 +229,7 @@ def in_program(row):
                 " limit, not +-inf, not bounded")
     if "x0" not in last:                              # it starts from the value the earlier pieces leave
         s -= 1
-    x_s = gen.generate(g, s)[s]                       # the value the runtime holds there
+    x_s = xs[s]                                       # the value the runtime holds there
     if not math.isfinite(x_s):
         raise Undecided(f"x_{s} = {x_s!r} where the last piece starts: no exact closed form from a"
                         " non-finite value")
@@ -348,7 +349,7 @@ def _alarm(signum, frame):
 
 def certify(corpus):
     certs, refused, code = {}, [], derive.code_hash()
-    counts = {k: 0 for k in ("symbolic", "exact", "fixed-point", "ieee", "manual")}
+    counts = dict.fromkeys(CERTIFICATE_KINDS, 0)
     signal.signal(signal.SIGALRM, _alarm)
     for row in corpus["rows"]:
         rid, p = row["id"], row["props"]

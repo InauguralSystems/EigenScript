@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Score EigenScript's observer against a ground-truth corpus (#1746, #1758).
 
-usage: score.py BINARY [--corpus PATH] [--numbers ieee|clamp] [--expect CAP,...]
+usage: score.py BINARY [--corpus PATH] [--expect CAP,...]
                        [--floor FILE] [--write-floor FILE [--note TEXT]]
 
 labels.json must equal derive.py's derivation (the label gate). Each
@@ -73,17 +73,23 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from native_witness import native_witness
+
 import derive
 import reference
-from derive import CAPABILITIES as CAPS, PREDS
+from derive import CAPABILITIES as CAPS
 from gen import HarnessError, INT64_MIN, IN_PROGRAM, generate, program
+from schema import PREDS
 
 ROW_TIMEOUT = 120
 CLAMP = 1e308          # the default build saturates here (EIGS_NUM_MAX)
 HERE = os.path.dirname(os.path.abspath(__file__))
-TIERS = {"interp": {"EIGS_JIT_OFF": "1"}, "jit": {}, "osr": {"EIGS_JIT_OSR_THRESHOLD": "1"}}
-ARMS = (("interp", "straight"), ("interp", "loop"), ("jit", "loop"), ("osr", "loop"))
-WARMUP = {"interp": 0, "jit": 50, "osr": 0}       # src/jit.c: a function compiles at 50 calls
+ARMS = {("interp", "straight"): {"env": {"EIGS_JIT_OFF": "1"}, "warmup": 0},
+    ("interp", "loop"): {"env": {"EIGS_JIT_OFF": "1"}, "warmup": 0},
+    ("jit", "loop"): {"env": {"EIGS_JIT_ENTRY_THRESHOLD": "1"}, "warmup": 1},
+    ("osr", "loop"): {"env": {"EIGS_JIT_OSR_THRESHOLD": "1"}, "warmup": 0},
+}
 DUMP, HOT = {"EIGS_DUMP_BC": "1"}, {"EIGS_JIT_HOT": "1"}
 GRADES = {"straight": ("OBSERVE_ASSIGN", "PREDICATE_NAME"),       # x's observe op, its read op
           "loop": ("OBSERVE_ASSIGN_LOCAL", "PREDICATE_SLOT")}
@@ -357,23 +363,14 @@ def witness(tier, rid, err, hot, held, c):
     bailed leaves no trace until #1768. A stop INSIDE the computation of x
     (from the body's MUL to the next OBSERVE_ASSIGN) on a non-finite or
     clamped value is the JIT's designed bail (#1758 N12)."""
-    hrow = next((f for f in (ln.split() for ln in hot.splitlines()) if f[:1] == ["run_row"]), None)
-    sec = re.search(r"^=== [^\n]*\(run_row, [^\n]*\n((?:\d{4,} [^\n]*\n?)*)", err, re.M)
-    ops = {int(o): (op, arg) for o, op, arg in
-           re.findall(r"^(\d{4,}) \[L\d+\] (\S+) *(\S*)", sec.group(1), re.M)} if sec else {}
-    jbs = [o for o, (op, _a) in ops.items() if op == "JUMP_BACK"]
-    if hrow is None or len(hrow) != 12 or len(jbs) != 1:
+    try:
+        proof = native_witness(tier, "run_row", err, hot)
+    except ValueError:
         raise HarnessError(f"{rid}@{c}: {tier} tier: no EIGS_JIT_HOT row for run_row, or not exactly"
                            " one loop in its EIGS_DUMP_BC listing; cannot witness the tier")
-    jb, bked = jbs[0], int(hrow[7])
-    if tier == "jit":
-        adv = hrow[4] if hrow[2] == "yes" else "-1"
-        at = int(hrow[5]) if adv == "RET" else int(adv) if adv.isdigit() else -1
-        ok, k = at > jb and bked == 0, c - bked       # x_k is the value whose iteration bailed
-    else:
-        head = jb + 3 - int(ops[jb][1])
-        at = int(hrow[10]) + int(hrow[9]) if hrow[8] == "yes" and int(hrow[10]) == head else -1
-        ok, k = at > jb, c
+    ops, jb, bked, at, ok = (proof.ops, proof.back_edge, proof.back_edge_exits,
+                             proof.at, proof.witnessed)
+    k = c - bked if tier == "jit" else c       # x_k is the value whose iteration bailed
     stop = f"{ops[at][0]}@{at}" if at in ops else f"the end of run_row ({at})" if at >= 0 else "no thunk"
     if ok:
         return "native", f"exits at {stop}, past the back-edge at {jb}"
@@ -393,7 +390,7 @@ def probe(binary, code):
     return p.stdout.strip()
 
 
-def capabilities(binary, asked):
+def capabilities(binary):
     """(ieee numbers?, {capability: present}, probe outputs). ONE probe decides
     the ieee capability and the numbers mode: `1e308 * 10` is inf AND inf * 0
     is NaN, what the ieee rows need; the clamp build gives 1e+308 and no NaN."""
@@ -408,11 +405,8 @@ def capabilities(binary, asked):
                            f" {'overflows to inf' if seen[0] else 'clamps to 1e308'} but inf * 0"
                            f" {'is' if seen[1] else 'is not'} NaN. The ieee rows need both and the clamp"
                            " rows neither: this binary is neither instrument")
-    mode = "ieee" if seen[0] else "clamp"
-    if asked and asked != mode:
-        raise HarnessError(f"--numbers {asked} contradicts the binary: the probe printed {out['ieee']!r}")
     caps = {"ieee": seen[0], "int64": out["int64"] == "true" and out["int64_kind"] == "int"}
-    return mode == "ieee", caps, out
+    return seen[0], caps, out
 
 
 def measure(binary, corpus, caps):
@@ -428,14 +422,15 @@ def measure(binary, corpus, caps):
             xs = generate(row["gen"], row["n"])
             ys = generate(row["second"], row["n"]) if "second" in row else None
             res["held"][rid] = xs          # the values the runtime holds, exactly (ints stay ints)
-            jobs = [("interp", "straight", row["checkpoints"], emit_straight(row, xs, ys))]
-            jobs += [(t, "loop", [c], emit_loop(row, xs, ys, c, WARMUP[t]))
-                     for c in row["checkpoints"] for t in TIERS]
+            jobs = [(tier, form, row["checkpoints"] if form == "straight" else [c], emit_straight(row, xs, ys)
+                     if form == "straight" else emit_loop(row, xs, ys, c, arm["warmup"]))
+                    for (tier, form), arm in ARMS.items()
+                    for c in ([row["checkpoints"][-1]] if form == "straight" else row["checkpoints"])]
             for tier, form, cks, text in jobs:
                 prog = os.path.join(tmp, f"{rid}@{cks[-1]}.{tier}.{form}.eigs")
                 with open(prog, "w") as f:
                     f.write(text)
-                rc, lines, errors, err, hot = run(binary, prog, {**TIERS[tier], **DUMP,
+                rc, lines, errors, err, hot = run(binary, prog, {**ARMS[(tier, form)]["env"], **DUMP,
                                                                  **(HOT if tier != "interp" else {})})
                 got = parse_run(row, cks, form, rc, lines, errors, xs, ys)
                 grades(rid, tier, form, err, cks)
@@ -552,7 +547,7 @@ def check_floor(pre, path, cand_v, rows, corpus, labels):
     information only, since another toolchain builds other bytes)."""
     floor, stamp = pre
     with anchor_lock():
-        ieee, caps, _ = capabilities(stamp["binary"], None)
+        _ieee, caps, _ = capabilities(stamp["binary"])
         want = right_set(verdicts(measure(stamp["binary"], corpus, caps), corpus, labels), rows)
     extra, missing = sorted(set(floor["verdicts"]) - set(want)), sorted(set(want) - set(floor["verdicts"]))
     if extra or missing or len(floor["verdicts"]) != len(want):
@@ -613,7 +608,7 @@ def report(v, res, corpus, numbers, caps, probes, labels, reported, expect):
     print("  predicate reads run interpreted in every tier: the JIT compiles neither PREDICATE_SLOT nor PREDICATE_NAME")
     print("\nSCORED VERDICTS, one question per predicate: TP FP FN TN right/total")
     print(f"  {'predicate':12}{'class':11}" + "".join(f"{a:>24}" for a in arms))
-    for p in PREDS + ["all"]:
+    for p in (*PREDS, "all"):
         cells = []
         for a in arms:
             c = [0, 0, 0, 0]
@@ -633,9 +628,6 @@ def report(v, res, corpus, numbers, caps, probes, labels, reported, expect):
         false_score = sum(not x[1] for x in labelled)
         print(f"  {p:12}{cells[0]:>13}{cells[1]:>16}{cells[2]:>18}"
               f"{false_score:>10}/{len(labelled)}")
-    head = [[x[1] == x[2] for k, x in v.items() if k[0] == a] for a in arms]
-    print("HEADLINE, scored verdicts right/total (each verdict counted once): "
-          + ", ".join(f"{a} {sum(h)}/{len(h)}" for a, h in zip(arms, head)))
     for col in reported.values():
         agree = [[labels[f"{rid}@{at}"][col][1] == got for (arm, rid, at, q), (_c, _w, got) in v.items()
                   if arm == a and q == "converged"] for a in arms]
@@ -655,7 +647,7 @@ def report(v, res, corpus, numbers, caps, probes, labels, reported, expect):
 
 def main(argv):
     args, opts = argv[1:], {}
-    for flag in ("--corpus", "--numbers", "--expect", "--floor", "--write-floor", "--note"):
+    for flag in ("--corpus", "--expect", "--floor", "--write-floor", "--note"):
         if flag in args:
             i = args.index(flag)
             if i + 1 >= len(args):
@@ -663,8 +655,8 @@ def main(argv):
             opts[flag] = args[i + 1]
             del args[i:i + 2]
     expect = set(filter(None, opts.get("--expect", "").split(",")))
-    if len(args) != 1 or opts.get("--numbers", "clamp") not in ("ieee", "clamp") or expect - set(CAPS):
-        raise HarnessError("usage: score.py BINARY [--corpus PATH] [--numbers ieee|clamp] [--expect ieee,int64]"
+    if len(args) != 1 or expect - set(CAPS):
+        raise HarnessError("usage: score.py BINARY [--corpus PATH] [--expect ieee,int64]"
                            " [--floor FILE] [--write-floor FILE [--note TEXT]]")
     binary = os.path.abspath(args[0])
     if not (os.path.isfile(binary) and os.access(binary, os.X_OK)):
@@ -680,7 +672,7 @@ def main(argv):
     labels = load_labels(corpus, certs, os.path.join(cdir, "labels.json"))
     pre = floor_preflight(opts["--floor"]) if "--floor" in opts else None
     rows = {r["id"]: r for r in corpus["rows"]}
-    ieee, caps, probes = capabilities(binary, opts.get("--numbers"))
+    ieee, caps, probes = capabilities(binary)
     with anchor_lock() if stamp else contextlib.nullcontext():
         res = measure(binary, corpus, caps)
     v = verdicts(res, corpus, labels)

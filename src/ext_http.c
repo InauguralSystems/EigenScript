@@ -1814,6 +1814,14 @@ done:
     return NULL;
 }
 
+static int http_socket_port(int fd, int fallback) {
+    struct sockaddr_in addr;
+    socklen_t len = sizeof(addr);
+    if (getsockname(fd, (struct sockaddr *)&addr, &len) == 0)
+        return (int)ntohs(addr.sin_port);
+    return fallback;
+}
+
 void http_serve_blocking(int port) {
     int server_fd;
 
@@ -1822,6 +1830,7 @@ void http_serve_blocking(int port) {
     if (g_server.early_bind_fd >= 0) {
         stop_init_responder(eigs_http_active);
         server_fd = g_server.early_bind_fd;
+        port = http_socket_port(server_fd, port);
         printf("EigenScript HTTP server accepting on pre-bound 0.0.0.0:%d\n", port);
     } else {
         server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -1852,6 +1861,7 @@ void http_serve_blocking(int port) {
             return;
         }
 
+        port = http_socket_port(server_fd, port);
         printf("EigenScript HTTP server listening on 0.0.0.0:%d\n", port);
     }
     fflush(stdout);

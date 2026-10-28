@@ -81,8 +81,27 @@ static int io_contract(int use_send) {
 }
 
 static struct sockaddr_in server_addr;
+static int server_output_fd = -1;
 static void *check_while_serving(void *unused) {
     (void)unused;
+    FILE *server_output = fdopen(server_output_fd, "r");
+    char line[160];
+    unsigned port = 0;
+    if (!server_output) {
+        fprintf(stderr, "setup could not bind: cannot read the server's output\n");
+        _exit(2);
+    }
+    while (fgets(line, sizeof(line), server_output)) {
+        if (sscanf(line, "EigenScript HTTP server listening on 0.0.0.0:%u", &port) == 1)
+            break;
+    }
+    /* No listening line: http_serve returned (a failed bind) or printed none.
+     * Say so here, because this _exit can win the race with main's message. */
+    if (port == 0 || port > 65535) {
+        fprintf(stderr, "setup could not bind: http_serve printed no listening port\n");
+        _exit(2);
+    }
+    server_addr.sin_port = htons((unsigned short)port);
     /* A real response proves execution reached accept/handle_request, after
      * the old process-wide SIG_IGN site. A sleep alone could pass too early. */
     for (int attempt = 0; attempt < 100; attempt++) {
@@ -121,22 +140,24 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "early") == 0)
         return run_eval("http_early_bind of 0\n", "bound") ? 0 : 1;
     if (strcmp(argv[1], "serve") == 0) {
-        int probe = socket(AF_INET, SOCK_STREAM, 0);
-        if (probe < 0) return 2;
         memset(&server_addr, 0, sizeof(server_addr));
         server_addr.sin_family = AF_INET;
         server_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        if (bind(probe, (struct sockaddr *)&server_addr, sizeof(server_addr)) != 0) return 2;
-        socklen_t addrlen = sizeof(server_addr);
-        if (getsockname(probe, (struct sockaddr *)&server_addr, &addrlen) != 0) return 2;
-        close(probe);
-        char source[64];
-        snprintf(source, sizeof(source), "http_serve of %u\n", (unsigned)ntohs(server_addr.sin_port));
+        int output[2];
+        if (eigs_pipe_no_sigpipe(output) != 0) return 2;
+        int saved_stdout = dup(STDOUT_FILENO);
+        if (saved_stdout < 0 || dup2(output[1], STDOUT_FILENO) < 0) return 2;
+        close(output[1]);
+        server_output_fd = output[0];
         pthread_t checker;
         if (pthread_create(&checker, NULL, check_while_serving, NULL) != 0) return 2;
         EigsState *state = eigs_open();
         if (!state) return 2;
-        (void)eigs_eval_string(source);
+        (void)eigs_eval_string("http_serve of 0\n");
+        fflush(stdout);
+        (void)dup2(saved_stdout, STDOUT_FILENO);
+        close(saved_stdout);
+        fprintf(stderr, "setup could not bind: http_serve returned before accepting a response\n");
         return 2;
     }
     return 2;

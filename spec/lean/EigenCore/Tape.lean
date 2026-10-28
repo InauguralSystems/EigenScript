@@ -716,6 +716,41 @@ private def splitLines : List Char → List String
       | [] => [c.toString]
       | line :: lines => (c.toString ++ line) :: lines
 
+/-- The executable line splitter builds cheap character lists and converts
+each completed line to a `String` once.  Unlike `splitLines`, it therefore
+does not repeatedly copy the suffix of a long physical line. -/
+private def splitLineChars : List Char → List (List Char)
+  | [] => [[]]
+  | c :: rest =>
+    if c = '\n' then [] :: splitLineChars rest
+    else match splitLineChars rest with
+      | [] => [[c]]
+      | line :: lines => (c :: line) :: lines
+
+private def splitLinesLinear (chars : List Char) : List String :=
+  (splitLineChars chars).map String.ofList
+
+/-- Compilation replaces the proof-friendly splitter by its linear-time,
+proved-equal implementation. -/
+@[csimp] theorem splitLines_eq_splitLinesLinear : splitLines = splitLinesLinear := by
+  funext chars
+  induction chars with
+  | nil => rfl
+  | cons c rest ih =>
+    unfold splitLinesLinear at ih
+    simp only [splitLines, splitLinesLinear, splitLineChars]
+    by_cases newline : c = '\n'
+    · simp [newline, ih]
+    · simp only [newline, ↓reduceIte]
+      rw [ih]
+      cases splitLineChars rest with
+      | nil => rfl
+      | cons line lines =>
+        simp only [List.map_cons]
+        congr 1
+        apply String.ext
+        simp
+
 /-- A newline-free prefix is the first line returned by the structural
 splitter. -/
 theorem splitLines_prefix (chars rest : List Char) (clean : '\n' ∉ chars) :

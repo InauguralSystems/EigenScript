@@ -1,0 +1,1 @@
+- Measured the C/Lean differential harness after the served-record replay fix and retired its obsolete known-mismatch triage (#2017).

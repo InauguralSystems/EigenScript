@@ -11,6 +11,9 @@
 # A plain divergence is adjudicated. (1) Both sides run once more; if each
 # reproduces itself, it is a row. (2) Otherwise ref records a tape and the
 # other arm replays it; only a divergence that survives replay is a row.
+# Every arm receives the same process RNG seed, following V8's differential
+# fuzzer --random-seed precedent (and Go's process-level randautoseed knob), so
+# random output is comparable before trace/replay opens the observer gate.
 # A timeout on one side is a divergence, not a pass.
 # tests/jit_diff_expected.txt is the ledger. A '#' line or a blank line is a
 # reason, not a row: both are stripped before the comparison and the count.
@@ -19,6 +22,17 @@
 # Test only: JIT_DIFF_OBS_ONLY=<repo-relative file> runs just that OBS case,
 # skipping the JIT and OSR arms and the normal OBS corpus.
 set -u
+if [ "${1:-}" = "--selftest" ] && [ "${JIT_DIFF_SELFTEST_SUITE:-0}" = "1" ]; then
+  ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+  cd "$ROOT" || exit 1
+  # The timeout-both fixture outlives both 25 s OBS deadlines by design, so it
+  # needs > 50 s; the row is keyed on the checker and fixtures (not on the
+  # product test it replays), which keeps it off the 60 s product-row cap (#1352).
+  timeout 90 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_timeout_both.eigs bash tools/jit_diff.sh --selftest || exit 1
+  timeout 30 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_SELFTEST_PLANT=deterministic JIT_DIFF_OBS_ONLY=tests/fixtures/jit_diff_taped_divergence.eigs bash tools/jit_diff.sh --selftest || exit 1
+  timeout 60 env -u JIT_DIFF_SELFTEST_SUITE JIT_DIFF_OBS_ONLY=tests/test_chunk_verify_stack.eigs bash tools/jit_diff.sh --selftest
+  exit $?
+fi
 if [ "${1:-}" = "--selftest" ] && [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
   echo "jit_diff: FAIL: --selftest requires JIT_DIFF_OBS_ONLY" >&2; exit 1
 fi
@@ -32,12 +46,15 @@ got="$T/got"; : > "$got"; n=0; n_obs=0; n_deny=0; n_timeout=0; n_suite_env=0; ad
 # Only address-shaped hex (8+ digits) is noise; a short 0x1 vs 0x0 is data.
 norm() { sed -E 's/0x[0-9a-f]{8,}/0xADDR/g' "$1"; }
 # Flags are on when non-empty and not "0". GNU env takes -u BEFORE assignments.
-REF=(-u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_JIT_OFF=1)
-JIT=(-u EIGS_JIT_OFF -u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS)
-OSR=(-u EIGS_JIT_OFF -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_JIT_OSR_THRESHOLD=1)
-OBS=(-u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_GATE_STATS EIGS_JIT_OFF=1 EIGS_OBS_FORCE=1)
+REF=(-u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_SEED_RANDOM=2120 EIGS_JIT_OFF=1)
+JIT=(-u EIGS_JIT_OFF -u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_SEED_RANDOM=2120)
+OSR=(-u EIGS_JIT_OFF -u EIGS_OBS_FORCE -u EIGS_OBS_GATE_STATS EIGS_SEED_RANDOM=2120 EIGS_JIT_OSR_THRESHOLD=1)
+OBS=(-u EIGS_JIT_OSR_THRESHOLD -u EIGS_OBS_GATE_STATS EIGS_SEED_RANDOM=2120 EIGS_JIT_OFF=1 EIGS_OBS_FORCE=1)
+if [ "${1:-}" = "--selftest" ] && [ "${JIT_DIFF_SELFTEST_PLANT:-}" = "deterministic" ]; then
+  OBS+=(EIGS_JIT_DIFF_SELFTEST_ARM=arm)
+fi
 run() { # $1 out-file, $2 seconds, rest = env args (options first)
-  local out="$1" sec="$2"; shift 2
+  local out="$1" sec="$2" rc; shift 2
   local setting
   setting=$(suite_program_env "$prog") || { echo "jit_diff: FAIL: suite environment lookup failed for $prog" >&2; exit 1; }
   case "$setting" in
@@ -45,7 +62,9 @@ run() { # $1 out-file, $2 seconds, rest = env args (options first)
     EIGS_STRICT=0) env "$@" EIGS_STRICT=0 timeout "$sec" "$EIG" "$prog" </dev/null > "$out" 2>&1 ;;
     *) echo "jit_diff: FAIL: unsupported suite environment for $prog: $setting" >&2; exit 1 ;;
   esac
-  echo "rc=$?" >> "$out"
+  rc=$?
+  case " $* " in *' EIGS_JIT_DIFF_SELFTEST_ARM=arm '*) echo "jit-diff deterministic divergence plant" >> "$out" ;; esac
+  echo "rc=$rc" >> "$out"
 }
 arm_env() { case "$1" in
   jit) AE=("${JIT[@]}") ;; osr) AE=("${OSR[@]}") ;; obs) AE=("${OBS[@]}") ;; esac; }
@@ -168,7 +187,10 @@ if [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
   [ "$n_obs" -ge 500 ] || { echo "jit_diff: FAIL: OBS examined=$n_obs denied=$n_deny (floor 500)"; exit 1; }
 fi
 echo "jit_diff: OBS examined=$n_obs denied=$n_deny timeout-both=$n_timeout"
-[ -n "${JIT_DIFF_OBS_ONLY:-}" ] && exit 0
+if [ -n "${JIT_DIFF_OBS_ONLY:-}" ]; then
+  [ "${1:-}" = "--selftest" ] && cat "$got"
+  exit 0
+fi
 if [ "${1:-}" = "--record" ]; then
   { awk '/^#/ { print }' "$BASE"; echo; cat "$got"; } > "$T/ledger"
   cp "$T/ledger" "$BASE"

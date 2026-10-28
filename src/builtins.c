@@ -2048,8 +2048,8 @@ Value* builtin_abs(Value *arg) {
 /* #317: min/max are N-ary reductions over a flat list of numbers — the old
  * code silently read only items[0..1] (`max of [1,2,3]` was 2) and returned 0
  * for a 1-element list. A single bare number returns itself (mirrors `sum`);
- * an empty list or any non-number element keeps the old 0 fallback rather
- * than inventing a partial answer. */
+ * an empty list keeps the old 0 fallback, while a non-number element raises
+ * rather than inventing a partial answer (#1649). */
 static Value* minmax_reduce(Value *arg, int want_max) {
     if (arg && arg->type == VAL_NUM) return make_num(eigs_num_arg(arg, __func__));
     /* Split from the empty-list case below: #317 chose the 0 fallback for BOTH
@@ -2063,7 +2063,12 @@ static Value* minmax_reduce(Value *arg, int want_max) {
     double best = 0.0;
     for (int i = 0; i < arg->data.list.count; i++) {
         Value *v = BUILTIN_LIST_VIEW(arg, i);
-        ARG_GUARD(!v || v->type != VAL_NUM, want_max ? "max" : "min", "every element to be a number", make_num(0));
+        if (!v || v->type != VAL_NUM) {
+            rt_error(EK_TYPE, 0, "%s: element %d is %s (expected a number)",
+                     want_max ? "max" : "min", i,
+                     val_type_name(v ? v->type : VAL_NULL));
+            return make_null();
+        }
         if (i == 0 || (want_max ? eigs_num_arg(v, __func__) > best : eigs_num_arg(v, __func__) < best))
             best = eigs_num_arg(v, __func__);
     }
@@ -2175,13 +2180,19 @@ Value* builtin_random_int(Value *arg) {
     TRACE_NONDET_RET("random_int", make_num(lo_i + (eigs_random_long() % (int64_t)span)));
 }
 
+/* The one way to seed the shared stream: `seed_random` and the CLI's
+ * EIGS_SEED_RANDOM (#2120, src/main.c) both come through here. */
+void eigs_seed_random(long seed) {
+    pthread_mutex_lock(&g_random_lock);
+    srand48(seed);
+    __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&g_random_lock);
+}
+
 /* seed_random of n → seeds the RNG, returns true */
 Value* builtin_seed_random(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_NUM, "seed_random", "a number", make_bool(0));
-    pthread_mutex_lock(&g_random_lock);
-    srand48((long)eigs_num_arg(arg, __func__));
-    __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
-    pthread_mutex_unlock(&g_random_lock);
+    eigs_seed_random((long)eigs_num_arg(arg, __func__));
     return make_bool(1);
 }
 
@@ -4702,15 +4713,20 @@ Value* builtin_thread_join(Value *arg) {
 
 /* ---- Channels ---- */
 
-#define CHANNEL_BUF_SIZE 64
+#define CHANNEL_DEFAULT_CAPACITY 64
+#define CHANNEL_MAX_CAPACITY 1000000
 
 typedef struct {
-    Value *buffer[CHANNEL_BUF_SIZE];
+    Value **buffer;
+    int capacity;
     int head, tail, count;
+    uint64_t published_sequence;
+    uint64_t taken_sequence;
     volatile int closed;
     pthread_mutex_t mutex;
     pthread_cond_t not_empty;
     pthread_cond_t not_full;
+    pthread_cond_t completed;
 } Channel;
 
 /* Wake channel waiters after publishing a state-wide exit request. Channel
@@ -4726,6 +4742,7 @@ static void wake_channels_for_exit(EigsState *st) {
         pthread_mutex_lock(&ch->mutex);
         pthread_cond_broadcast(&ch->not_empty);
         pthread_cond_broadcast(&ch->not_full);
+        pthread_cond_broadcast(&ch->completed);
         pthread_mutex_unlock(&ch->mutex);
     }
     pthread_mutex_unlock(&st->handle_mutex);
@@ -4784,8 +4801,29 @@ static Channel* channel_arg(Value *v, const char *who) {
 #endif
 
 Value* builtin_channel(Value *arg) {
-    (void)arg;
+    int capacity = CHANNEL_DEFAULT_CAPACITY;
+    if (arg && arg->type != VAL_NULL) {
+        if (arg->type != VAL_NUM) {
+            rt_error(EK_TYPE, 0, "channel: capacity must be a non-negative integer or null");
+            return make_null();
+        }
+        double requested = eigs_num_arg(arg, __func__);
+        int64_t requested_integer = 0;
+        if (!num_to_i64_exact(requested, &requested_integer) ||
+            requested_integer < 0 || requested_integer > CHANNEL_MAX_CAPACITY) {
+            rt_error(EK_VALUE, 0,
+                     "channel: capacity must be an integer from 0 to %d",
+                     CHANNEL_MAX_CAPACITY);
+            return make_null();
+        }
+        capacity = (int)requested_integer;
+    }
     Channel *ch = xcalloc(1, sizeof(Channel));
+    ch->capacity = capacity;
+    /* A rendezvous needs one hand-off slot, but it is never asynchronous:
+     * send publishes into the empty cell, then waits for a receiver to consume
+     * its ticket before returning. */
+    ch->buffer = xcalloc((size_t)(capacity ? capacity : 1), sizeof(Value *));
     pthread_mutex_init(&ch->mutex, NULL);
     pthread_condattr_t cattr;
     pthread_condattr_init(&cattr);
@@ -4794,6 +4832,7 @@ Value* builtin_channel(Value *arg) {
 #endif
     pthread_cond_init(&ch->not_empty, &cattr);
     pthread_cond_init(&ch->not_full,  &cattr);
+    pthread_cond_init(&ch->completed, &cattr);
     pthread_condattr_destroy(&cattr);
     ch->closed = 0;
     uint32_t cgen = 0;
@@ -4802,6 +4841,8 @@ Value* builtin_channel(Value *arg) {
         pthread_mutex_destroy(&ch->mutex);
         pthread_cond_destroy(&ch->not_empty);
         pthread_cond_destroy(&ch->not_full);
+        pthread_cond_destroy(&ch->completed);
+        free(ch->buffer);
         free(ch);
         /* #1146 (3): same raise as spawn. `channel` returned null silently,
          * and every send/recv on that null then raised "invalid channel"
@@ -4835,7 +4876,8 @@ Value* builtin_send(Value *arg) {
      * channel buffer; receiver adopts that ref. */
     Value *val = val_clone_for_send(BUILTIN_LIST_VIEW(arg, 1));
     pthread_mutex_lock(&ch->mutex);
-    while (ch->count >= CHANNEL_BUF_SIZE && !ch->closed &&
+    int limit = ch->capacity ? ch->capacity : 1;
+    while (ch->count >= limit && !ch->closed &&
            !eigs_state_exit_requested(eigs_current_state(), NULL))
         pthread_cond_wait(&ch->not_full, &ch->mutex);
     if (eigs_state_exit_requested(eigs_current_state(), NULL)) {
@@ -4844,10 +4886,16 @@ Value* builtin_send(Value *arg) {
         return make_null();
     }
     if (!ch->closed) {
+        uint64_t ticket = ++ch->published_sequence;
         ch->buffer[ch->tail] = val;
-        ch->tail = (ch->tail + 1) % CHANNEL_BUF_SIZE;
+        ch->tail = (ch->tail + 1) % limit;
         ch->count++;
         pthread_cond_signal(&ch->not_empty);
+        /* Zero capacity is a synchronous hand-off. Wait for this ticket,
+         * rather than the shared cell, to be marked taken. */
+        while (ch->capacity == 0 && ch->taken_sequence < ticket && !ch->closed &&
+               !eigs_state_exit_requested(eigs_current_state(), NULL))
+            pthread_cond_wait(&ch->completed, &ch->mutex);
         pthread_mutex_unlock(&ch->mutex);
     } else {
         /* #505: sending to a closed channel drops the value. Failing open
@@ -4876,9 +4924,13 @@ Value* builtin_recv(Value *arg) {
     Value *val = NULL;
     if (ch->count > 0) {
         val = ch->buffer[ch->head];
-        ch->head = (ch->head + 1) % CHANNEL_BUF_SIZE;
+        ch->head = (ch->head + 1) % (ch->capacity ? ch->capacity : 1);
         ch->count--;
         pthread_cond_signal(&ch->not_full);
+        if (ch->capacity == 0) {
+            ch->taken_sequence++;
+            pthread_cond_broadcast(&ch->completed);
+        }
     }
     pthread_mutex_unlock(&ch->mutex);
     return val ? val : make_null();
@@ -4893,9 +4945,13 @@ Value* builtin_try_recv(Value *arg) {
     Value *val = NULL;
     if (ch->count > 0) {
         val = ch->buffer[ch->head];
-        ch->head = (ch->head + 1) % CHANNEL_BUF_SIZE;
+        ch->head = (ch->head + 1) % (ch->capacity ? ch->capacity : 1);
         ch->count--;
         pthread_cond_signal(&ch->not_full);
+        if (ch->capacity == 0) {
+            ch->taken_sequence++;
+            pthread_cond_broadcast(&ch->completed);
+        }
     }
     pthread_mutex_unlock(&ch->mutex);
     return val ? val : make_null();
@@ -4950,9 +5006,13 @@ Value* builtin_recv_timeout(Value *arg) {
     Value *val = NULL;
     if (ch->count > 0) {
         val = ch->buffer[ch->head];
-        ch->head = (ch->head + 1) % CHANNEL_BUF_SIZE;
+        ch->head = (ch->head + 1) % (ch->capacity ? ch->capacity : 1);
         ch->count--;
         pthread_cond_signal(&ch->not_full);
+        if (ch->capacity == 0) {
+            ch->taken_sequence++;
+            pthread_cond_broadcast(&ch->completed);
+        }
     }
     pthread_mutex_unlock(&ch->mutex);
     return val ? val : make_null();
@@ -4965,6 +5025,7 @@ Value* builtin_close_channel(Value *arg) {
     ch->closed = 1;
     pthread_cond_broadcast(&ch->not_empty);
     pthread_cond_broadcast(&ch->not_full);
+    pthread_cond_broadcast(&ch->completed);
     pthread_mutex_unlock(&ch->mutex);
     return make_null();
 }
@@ -5472,13 +5533,15 @@ void handle_table_drain(EigsState *st) {
         while (ch->count > 0) {
             Value *m = ch->buffer[ch->head];
             ch->buffer[ch->head] = NULL;
-            ch->head = (ch->head + 1) % CHANNEL_BUF_SIZE;
+            ch->head = (ch->head + 1) % (ch->capacity ? ch->capacity : 1);
             ch->count--;
             if (m) val_decref(m);
         }
         pthread_mutex_destroy(&ch->mutex);
         pthread_cond_destroy(&ch->not_empty);
         pthread_cond_destroy(&ch->not_full);
+        pthread_cond_destroy(&ch->completed);
+        free(ch->buffer);
         free(ch);
         st->handle_table[i].ptr = NULL;
     }

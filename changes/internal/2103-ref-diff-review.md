@@ -1,0 +1,1 @@
+- The C/Lean differential harness now preserves timeout findings, keeps hot probes separate, and witnesses JIT and qualified OSR execution from thunk exits (#2103).

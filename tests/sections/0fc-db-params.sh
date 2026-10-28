@@ -9,7 +9,7 @@ else
     DBP_BUILD=$(make --no-print-directory -C "$TESTS_DIR/.." build/server-db/test_db_params 2>&1); DBP_RC=$?
     DBP_OUT=""
     [ "$DBP_RC" = 0 ] && { DBP_OUT=$($EIGS_TMO "$TESTS_DIR/../build/server-db/test_db_params" 2>&1); DBP_RC=$?; }
-    if rc_ok "$DBP_RC" "$DBP_OUT" && grep -qx 'db params: 7 passed, 0 failed (7 declared)' <<< "$DBP_OUT"; then
+    if rc_ok "$DBP_RC" "$DBP_OUT" && grep -qx 'db params: 10 passed, 0 failed (10 declared)' <<< "$DBP_OUT"; then
         PASS=$((PASS + 1)); echo "  PASS: a bool db parameter binds as SQL boolean text with OID 16"
     else
         FAIL=$((FAIL + 1)); echo "  FAIL: db parameter binding (rc=$DBP_RC)"

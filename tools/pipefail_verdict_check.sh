@@ -8,9 +8,9 @@ cd "$(dirname "$0")/.."
 
 str_has() { case "$1" in *"$2"*) return 0 ;; esac; return 1 ; }
 
-MIN_PIPEFAIL_SCRIPTS=10
-MIN_LOGICAL_LINES=500
-MIN_MATCHER_DEFS=8
+MIN_PIPEFAIL_SCRIPTS="${PIPEFAIL_MIN_SCRIPTS:-10}"
+MIN_LOGICAL_LINES="${PIPEFAIL_MIN_LINES:-500}"
+MIN_MATCHER_DEFS="${PIPEFAIL_MIN_MATCHERS:-8}"
 
 READER_RE='^[[:space:]]*(!?[[:space:]]*)([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*((grep|egrep|fgrep)([[:space:]]|$)|head([[:space:]]|$)|sed([[:space:]]|$)|awk([[:space:]]|$)|read([[:space:]]|$))'
 GREP_EARLY_RE='(^|[[:space:]])(-[A-Za-z]*[qlLm][A-Za-z0-9]*|--quiet|--silent|--max-count|--files-with-matches|--files-without-match)([[:space:]=]|$)'
@@ -19,12 +19,32 @@ AWK_EARLY_RE='(^|[[:space:];{"'"'"'])exit([[:space:];})"'"'"']|$)'
 
 list_scripts() {
     local out
+    if [ -n "${PIPEFAIL_SCRIPT_LIST:-}" ]; then printf '%s\n' "$PIPEFAIL_SCRIPT_LIST"; return; fi
     out="$(git ls-files '*.sh' 2>/dev/null || true)"
     if [ -z "$out" ]; then
         out="$(find . -name '*.sh' -not -path './.git/*' 2>/dev/null | sed 's|^\./||' || true)"
     fi
     printf '%s\n' "$out"
 }
+
+if [ "${1:-}" = "--selftest" ]; then
+    work=$(mktemp -d "${TMPDIR:-/tmp}/pipefail_verdict.XXXXXX") || exit 2
+    trap 'rm -rf "$work"' EXIT
+    printf '%s\n' '#!/bin/bash' 'set -o pipefail' 'echo clean' > "$work/plant.sh"
+    if ! out=$(PIPEFAIL_SCRIPT_LIST="$work/plant.sh" PIPEFAIL_MIN_SCRIPTS=1 PIPEFAIL_MIN_LINES=1 PIPEFAIL_MIN_MATCHERS=0 bash "$0" 2>&1); then
+        echo "SELFTEST FAILED: clean pipefail control was rejected"; printf '%s\n' "$out"; exit 1
+    elif ! str_has "$out" 'PASS: no pipeline decides a verdict in 1 pipefail script(s) (3 logical lines, 0 matcher copies pinned)'; then
+        echo "SELFTEST FAILED: clean pipefail control did not examine the expected population"; printf '%s\n' "$out"; exit 1
+    fi
+    printf '%s\n' 'if printf '\''%s\n'\'' x | grep -q x; then echo x; fi' >> "$work/plant.sh"
+    if out=$(PIPEFAIL_SCRIPT_LIST="$work/plant.sh" PIPEFAIL_MIN_SCRIPTS=1 PIPEFAIL_MIN_LINES=1 PIPEFAIL_MIN_MATCHERS=0 bash "$0" 2>&1); then
+        echo "SELFTEST FAILED: planted verdict pipeline was accepted"; exit 1
+    elif [ "$(printf '%s\n' "$out" | grep -cF 'FAIL: 1 pipeline(s) decide a verdict under pipefail')" -eq 1 ] &&
+         [ "$(printf '%s\n' "$out" | grep -cF "$work/plant.sh:4 [cond]")" -eq 1 ]; then
+        echo "SELFTEST OK: clean control passed; exactly one planted early-reader pipeline caught"; exit 0
+    fi
+    echo "SELFTEST FAILED: plant did not produce exactly one line-4 pipeline violation"; printf '%s\n' "$out"; exit 1
+fi
 
 SCRIPTS_SCANNED=0
 LINES_SCANNED=0
