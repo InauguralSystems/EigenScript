@@ -68,16 +68,17 @@ seeded_race_row() {
     rc=$?
     w=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
     if [ "$w" -gt 0 ]; then
-        echo "  PASS: seeded race detected ($w warnings) — the gate is live"; PASS=$((PASS + 1))
-        # The failure print path, run on this real report, shows it whole:
-        # the opening WARNING, both access stacks, and the closing SUMMARY.
+        # One row, one verdict: --seeded-only and --row seeded require PASS == 1.
+        # The failure print path, run on this real report, must show it whole
+        # (the opening WARNING, both access stacks, the closing SUMMARY), or
+        # the row fails even though the race was detected.
         local rep
         rep=$(tsan_report <<< "$out")
         if grep -q "WARNING: ThreadSanitizer" <<< "$rep" && grep -q "SUMMARY: ThreadSanitizer" <<< "$rep" \
            && [ "$(grep -c '#[0-9]' <<< "$rep")" -ge 2 ]; then
-            echo "  PASS: a failing row prints the failing run's whole report ($(wc -l <<< "$rep") lines)"; PASS=$((PASS + 1))
+            echo "  PASS: seeded race detected ($w warnings) and its report prints whole ($(wc -l <<< "$rep") lines) — the gate is live"; PASS=$((PASS + 1))
         else
-            echo "  FAIL: tsan_report did not print the seeded race's whole report"; FAIL=$((FAIL + 1))
+            echo "  FAIL: seeded race detected, but tsan_report did not print its whole report"; FAIL=$((FAIL + 1))
             printf '%s\n' "$out" | head -20
         fi
     else
