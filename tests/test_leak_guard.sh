@@ -33,6 +33,27 @@ FAIL=0
 ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL: $1${2:+ ($2)}"; FAIL=$((FAIL+1)); }
 
+# Count LeakSanitizer allocation blocks that contain a matching stack frame.
+# The report header and frame are deliberately matched as separate lines.
+lsan_count_leak_blocks() { # $1 = combined output, $2 = frame-name ERE
+    printf '%s\n' "$1" | LC_ALL=C awk -v frame_re="$2" '
+        function finish_block() {
+            if (in_leak && matched) count++
+            in_leak = 0
+            matched = 0
+        }
+        /^(Direct|Indirect) leak of [0-9]+ byte\(s\) in [0-9]+ object\(s\) allocated from:[[:space:]]*$/ {
+            finish_block(); in_leak = 1; next
+        }
+        in_leak && /^[[:space:]]*#[0-9]+ / {
+            if ($0 ~ (" in (" frame_re ")([[:space:]]|$)")) matched = 1
+            next
+        }
+        in_leak && /^[[:space:]]*$/ { finish_block(); next }
+        END { finish_block(); print count + 0 }
+    '
+}
+
 # Probe ASan availability before the planted setup-failure checks.  Otherwise
 # each child takes the normal skip path when the configured compiler has no
 # sanitizer support, and the parent misreports that skip as a failed plant.
@@ -87,6 +108,41 @@ EOF
         fail "plant: failed ASan build was not a named failure" "rc=$BUILD_RC"
     fi
 
+    # #2096: a LeakSanitizer header and its allocation frame are separate
+    # lines.  Keep both a clean control (a frame name outside a leak block)
+    # and one recorded leak block for every guarded builtin shape.
+    CLEAN_REPORT='ordinary program output
+    #1 0x1 in make_list src/value.c:10
+    #2 0x2 in make_str src/value.c:20
+    #3 0x3 in builtin_keys src/builtins.c:30'
+    for SPEC in 'make_list,range' 'make_str,make_str' 'make_list|builtin_keys,keys'; do
+        FRAME_RE=${SPEC%%,*}
+        LABEL=${SPEC##*,}
+        PLANT_FRAME=$LABEL
+        [ "$LABEL" = range ] && PLANT_FRAME=make_list
+        [ "$LABEL" = keys ] && PLANT_FRAME=builtin_keys
+        CLEAN_COUNT=$(lsan_count_leak_blocks "$CLEAN_REPORT" "$FRAME_RE")
+        if [ "$CLEAN_COUNT" -eq 0 ]; then
+            ok "control: $LABEL frame without a leak header stays clean"
+        else
+            fail "control: $LABEL false leak" "$CLEAN_COUNT leak block(s)"
+        fi
+
+        PLANTED_REPORT="ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 80 byte(s) in 1 object(s) allocated from:
+    #0 0x0 in calloc sanitizer_common_interceptors.inc:1
+    #1 0x1 in $PLANT_FRAME src/builtins.c:10
+
+SUMMARY: AddressSanitizer: 80 byte(s) leaked in 1 allocation(s)."
+        PLANTED_COUNT=$(lsan_count_leak_blocks "$PLANTED_REPORT" "$FRAME_RE")
+        if [ "$PLANTED_COUNT" -gt 0 ]; then
+            ok "plant: $LABEL leak makes its guard fail"
+        else
+            fail "plant: $LABEL leak passed its guard" "matcher reported 0 leak blocks"
+        fi
+    done
+
     rm -rf "$SELFTEST_DIR"
     trap - EXIT HUP INT TERM
     if [ "${1:-}" = "--selftest" ]; then
@@ -139,7 +195,7 @@ for i in range of 10000:
     x is i
 EOF
 OUT=$(ASAN_OPTIONS="detect_leaks=1:print_summary=1" $ASAN_BIN $TMP 2>&1 || true)
-LEAKED=$(echo "$OUT" | grep -cE "(direct|indirect) leak.*make_list" || true)
+LEAKED=$(lsan_count_leak_blocks "$OUT" 'make_list')
 if [ "$LEAKED" -eq 0 ]; then
     ok "range of 10000 — no make_list leaks"
 else
@@ -152,7 +208,7 @@ for i in range of 5000:
     s is make_str of "x"
 EOF
 OUT=$(ASAN_OPTIONS="detect_leaks=1:print_summary=1" $ASAN_BIN $TMP 2>&1 || true)
-LEAKED=$(echo "$OUT" | grep -cE "(direct|indirect) leak.*make_str" || true)
+LEAKED=$(lsan_count_leak_blocks "$OUT" 'make_str')
 if [ "$LEAKED" -eq 0 ]; then
     ok "make_str x 5000 — no make_str leaks"
 else
@@ -166,7 +222,7 @@ for i in range of 5000:
     k is keys of d
 EOF
 OUT=$(ASAN_OPTIONS="detect_leaks=1:print_summary=1" $ASAN_BIN $TMP 2>&1 || true)
-LEAKED=$(echo "$OUT" | grep -cE "(direct|indirect) leak.*(make_list|builtin_keys)" || true)
+LEAKED=$(lsan_count_leak_blocks "$OUT" 'make_list|builtin_keys')
 if [ "$LEAKED" -eq 0 ]; then
     ok "keys x 5000 — no fresh-list leaks"
 else
