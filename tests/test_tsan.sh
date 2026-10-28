@@ -56,12 +56,13 @@ tsan_warnings() {
 
 observer_shared_fold_rows() {
     echo "=== #1867 shared ObserverSlot folds must hold #607 ==="
-    local fixtures="tsan_observer_shared_fold tsan_observer_sandbox_probe"
-    local declared=2 examined=0 t marker
+    local fixtures="tsan_observer_shared_fold tsan_observer_sandbox_probe observer_ns_deadlock"
+    local declared=3 examined=0 t marker
     for t in $fixtures; do
         examined=$((examined + 1))
         marker="observer fold repro: PASS"
         [ "$t" = tsan_observer_sandbox_probe ] && marker="observer sandbox probe: PASS"
+        [ "$t" = observer_ns_deadlock ] && marker="observer namespace deadlock: PASS"
         tsan_warnings "$TESTS_DIR/$t.eigs"
         if [ "$LAST_RC" -eq 0 ] && [ "$WARNINGS" -eq 0 ] && grep -Fxq "$marker" <<< "$RUN_OUTPUT"; then
             echo "  PASS: $t TSan-clean"; PASS=$((PASS + 1))
@@ -218,7 +219,7 @@ if [ "${1:-}" = "--row" ]; then
         scope-boundary) scope_boundary_row ;;
         dict-readers)   dict_readers_row ;;
         misordered-publish) misordered_publish_row ;;
-        observer-fold) ROW_EXPECTED=3; observer_shared_fold_rows ;;
+        observer-fold) ROW_EXPECTED=4; observer_shared_fold_rows ;;
         *) echo "usage: test_tsan.sh --row seeded|rebind-call|captured-rebind|scope-boundary|dict-readers|misordered-publish|observer-fold"; exit 2 ;;
     esac
     echo ""
