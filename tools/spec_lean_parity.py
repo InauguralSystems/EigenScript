@@ -65,6 +65,32 @@ def replay_refusal_cases(ref):
    lclass='replay divergence' if l.returncode==3 else cls(l)
    if cclass!=want or lclass!=want:raise RuntimeError(f'replay refusal parity: wanted {want}, C={cclass}, Lean={lclass}')
    checked+=1
+  # A V header is a hard session boundary.  Neither implementation may scan
+  # into the following session for an otherwise matching N record.
+  sessions=td/'sessions.tape';sessions.write_text(
+   'V 8 0.47.0\nB 0 1 1 0 root -\nV 8 0.47.0\nB 0 1 1 0 root -\nN 0 random_int=1\n')
+  c=subprocess.run([VM,source],capture_output=True,input=b'',env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_REPLAY':str(sessions),'EIGS_REPLAY_STRICT':'1'})
+  l=subprocess.run([ref,'--replay',sessions,'--strict',source],capture_output=True,input=b'')
+  message=b'random_int: replay stream 0 has no matching recorded N value'
+  if cls(c)!='runtime error' or cls(l)!='runtime error' or message not in c.stderr or message not in l.stderr:
+   raise RuntimeError(f'session-boundary parity: C={c.returncode}/{c.stderr!r}, Lean={l.returncode}/{l.stderr!r}')
+  checked+=1
+
+  # Exercise #1816's physical framing with a real VM-produced read_line tape,
+  # then require the model both to consume it and to emit replayable C rows.
+  large_source=td/'large-read-line.eigs';large_source.write_text('print of (read_line of [])\n')
+  large_tape=td/'large-c.tape';large=b'x'*70000+b'\n'
+  c_record=subprocess.run([VM,large_source],capture_output=True,input=large,
+   env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_TRACE':str(large_tape)})
+  lean_tape=td/'large-lean.tape'
+  l_replay=subprocess.run([ref,'--replay',large_tape,'--strict','--trace',lean_tape,large_source],capture_output=True,input=b'')
+  c_reverse=subprocess.run([VM,large_source],capture_output=True,input=b'',
+   env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_REPLAY':str(lean_tape),'EIGS_REPLAY_STRICT':'1'})
+  if not (c_record.returncode==l_replay.returncode==c_reverse.returncode==0 and
+      c_record.stdout==l_replay.stdout==c_reverse.stdout and
+      any(x.startswith('C 0 ') for x in lean_tape.read_text().splitlines())):
+   raise RuntimeError(f'continuation parity: C={c_record.returncode}, Lean={l_replay.returncode}, reverse={c_reverse.returncode}')
+  checked+=1
   return checked
 def compare(ref,lean_root,enforce=True):
  if bad:=validate_medium(ref,lean_root):raise RuntimeError('; '.join(bad))
@@ -112,7 +138,7 @@ def compare(ref,lean_root,enforce=True):
  if enforce and any(k not in ('vm bug','model bug') or not r.strip() for k,r in ledger.values()):raise RuntimeError('invalid disagreement triage')
  negative=replay_refusal_cases(ref) if enforce else 0
  lines=[f'population / step1-in / modeled-in / examined: {len(ps)} / {old_in} / {new_in} / {examined}',f'agreements / disagreements: {examined-len(actual)-len(refusals)} / {len(actual)}',f'refused at runtime: {len(refusals)}']
- lines += [f'\t{x}: {why}' for x,why in refusals]+[f'Lean record->strict-replay: {roundtrips}/{examined-len(refusals)}',f'cross-implementation N programs: {cross}',f'replay mismatch/short refusal parity: {negative}/2','seeded oracle: 2018',f'classifier protocol self-checks: {pc[0]}/{pc[1]}',f'classification moves: {len(moved)}']+['\t'.join(x) for x in moved]
+ lines += [f'\t{x}: {why}' for x,why in refusals]+[f'Lean record->strict-replay: {roundtrips}/{examined-len(refusals)}',f'cross-implementation N programs: {cross}',f'replay edge-case parity: {negative}/4','seeded oracle: 2018',f'classifier protocol self-checks: {pc[0]}/{pc[1]}',f'classification moves: {len(moved)}']+['\t'.join(x) for x in moved]
  return ('\n'.join(lines)+'\n').encode(),actual
 def replace_once(path,old,new):
  text=path.read_text()

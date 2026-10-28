@@ -139,7 +139,11 @@ private def takeN (fn : String) : EvalM Value := do
   let rec scan : List String → Except Err (Value × List String)
     | [] => throw (.runtime s!"{fn}: replay stream 0 has no matching recorded N value")
     | line :: rest =>
-      if line.startsWith "N " then
+      if line.startsWith "V " then
+        -- replay_scan_locked retains a subsequent version header as a session
+        -- boundary.  A TAKE may not borrow nondeterminism from that session.
+        throw (.runtime s!"{fn}: replay stream 0 has no matching recorded N value")
+      else if line.startsWith "N " then
         match (line.splitOn " ").drop 2 with
         | payloadParts =>
           let payload := String.intercalate " " payloadParts
