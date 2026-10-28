@@ -1,0 +1,1 @@
+- Recording while replaying now retains every served external-input record in the new tape, in order (#1749).
