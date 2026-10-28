@@ -89,6 +89,15 @@ ff1736_check "row 3: main continues past a joinable death; a later try: task_joi
     task_exit_join_later.eigs 0 \
     "+at die (" "+MAIN_CONTINUES" "+RECOVERED undefined_name" "+MARK_END"
 
+# #1806 — exit is neither row 1 nor row 3: ownership does not matter. It is
+# the uncatchable state stop requested by the task, with no synthesized death.
+ff1736_check "exit: a joinable task stops immediately with its requested status" \
+    task_exit_cooperative_joinable.eigs 3 \
+    "-MAIN_AFTER_TASK_EXIT" "-caught" "-end" "-joined task" "-uncaught error"
+ff1736_check "exit: a detached task stops immediately with its requested status" \
+    task_exit_cooperative_detached.eigs 7 \
+    "-MAIN_AFTER_DETACHED_EXIT" "-joined task" "-uncaught error"
+
 # Rows 4 and 5 — an OS thread dies. Thread timing is not on the tape (#148),
 # so a fail-fast stop here would land somewhere different on every run: the
 # death never stops main. Main's own program order decides what it sees. A

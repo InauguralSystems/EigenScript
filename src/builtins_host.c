@@ -1144,14 +1144,6 @@ static Value *file_io_error(const char *fn, const char *path, int err) {
     return file_io_error_message(fn, message);
 }
 
-static Value *file_stream_cap_error(const char *fn, const char *path,
-                                    size_t cap) {
-    char message[3900];
-    snprintf(message, sizeof(message), "%s: '%s' is more than %zu bytes",
-             fn, path, cap);
-    return file_io_error_message(fn, message);
-}
-
 /* Return zero only when replay is disabled.  Once replay is enabled every
  * result, including an unservable/corrupt record, short-circuits live I/O. */
 static int file_io_replay(const char *fn, Value **out) {
@@ -1184,7 +1176,62 @@ static int file_is_directory(FILE *f) {
     return fstat(fileno(f), &st) == 0 && S_ISDIR(st.st_mode);
 }
 
-#define FILE_READER_CAP (10L * 1024 * 1024)
+#define READ_BYTES_BUF_DEFAULT_CAP (10LL * 1024 * 1024)
+#define READ_BYTES_BUF_HARD_CAP    (512LL * 1024 * 1024)
+
+/* Parse the cap before the tape boundary so live and replay calls use the
+ * same policy. Guard failures are returned to each reader so its historical
+ * ARG_GUARD_PRETAKE fallback (and tape entry) remains reader-specific. */
+static const char *reader_cap_parse(const char *fn, Value *arg, Value **path,
+                                    long long *cap) {
+    *path = arg;
+    *cap = READ_BYTES_BUF_DEFAULT_CAP;
+    if (arg && arg->type == VAL_LIST) {
+        if (arg->data.list.count < 1) {
+            rt_error(EK_TYPE, 0, "%s requires a path: %s of path, or %s of [path, max_bytes]",
+                     fn, fn, fn);
+            return NULL;
+        }
+        *path = list_get_ref(arg, 0);
+        if (arg->data.list.count >= 2) {
+            EIGS_VIEW(mv_view);
+            Value *mv = list_get_view(arg, 1, &mv_view);
+            if (!mv || mv->type != VAL_NUM) {
+                return "max_bytes to be a number";
+            }
+            double n = eigs_num_arg(mv, __func__);
+            int64_t exact;
+            if (isfinite(n) && num_to_i64_exact(n, &exact) && exact < 1)
+                return "max_bytes to be a positive number";
+            if (!isfinite(n) || !num_to_i64_exact(n, &exact) ||
+                exact > READ_BYTES_BUF_HARD_CAP) {
+                rt_error(EK_VALUE, 0,
+                         "%s: max_bytes must be an exact integer in 1..%lld (got %g)",
+                         fn, READ_BYTES_BUF_HARD_CAP, n);
+                return NULL;
+            }
+            *cap = (long long)exact;
+        }
+    }
+    if (!*path || (*path)->type != VAL_STR) {
+        return "a string path";
+    }
+    return "";
+}
+
+/* One raise site shared by all readers and by live and replay paths. */
+static void reader_cap_raise(const char *fn, const char *path, long long len,
+                             long long cap) {
+    if (__builtin_expect(g_trace_enabled, 0)) {
+        Value *sz = make_num((double)len);
+        trace_nondet_value(fn, sz);
+        val_decref(sz);
+    }
+    rt_error(EK_IO, 0,
+             "%s: '%s' is %lld bytes, over the %lld-byte cap — pass %s of "
+             "[path, max_bytes] (hard ceiling %lld) to raise it",
+             fn, path, len, cap, fn, READ_BYTES_BUF_HARD_CAP);
+}
 
 /* A seekable regular file keeps the historical size-then-read path below.
  * When tell cannot supply a size, grow only as data arrives and stop after
@@ -1241,8 +1288,12 @@ static int replay_reader_size(const char *fn, Value *v, long long *out) {
 /* read_text of "path" → file contents as string; I/O failure raises EK_IO. */
 /* read_bytes of path — read binary file, return list of byte values (0-255) */
 Value* builtin_read_bytes(Value *arg) {
-    /* #1008: the type check sits BEFORE the tape take (see ARG_GUARD_PRETAKE). */
-    ARG_GUARD_PRETAKE(!arg || arg->type != VAL_STR, "read_bytes", "a string path", make_null());
+    STRICT_LIST_MAX(arg, 2, "read_bytes");
+    Value *path;
+    long long cap;
+    const char *guard = reader_cap_parse("read_bytes", arg, &path, &cap);
+    if (!guard) return make_null();
+    ARG_GUARD_PRETAKE(*guard, "read_bytes", guard, make_null());
     Value *replayed = NULL;
     if (file_io_replay("read_bytes", &replayed)) {
         if (replayed->type == VAL_NUM) {
@@ -1252,17 +1303,16 @@ Value* builtin_read_bytes(Value *arg) {
                 return make_null();
             }
             val_decref(replayed);
-            rt_error(EK_IO, 0, "read_bytes: '%s' is %lld bytes, over the %d-byte cap",
-                     arg->data.str, len, 10 * 1024 * 1024);
+            reader_cap_raise("read_bytes", path->data.str, len, cap);
             return make_null();
         }
         return replayed;
     }
-    FILE *f = fopen(arg->data.str, "rb");
-    if (!f) return file_io_error("read_bytes", arg->data.str, errno);
+    FILE *f = fopen(path->data.str, "rb");
+    if (!f) return file_io_error("read_bytes", path->data.str, errno);
     if (file_is_directory(f)) {
         fclose(f);
-        return file_io_error("read_bytes", arg->data.str, EISDIR);
+        return file_io_error("read_bytes", path->data.str, EISDIR);
     }
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
@@ -1272,15 +1322,15 @@ Value* builtin_read_bytes(Value *arg) {
         unsigned char *buf = NULL;
         size_t nread = 0;
         int read_err = 0;
-        if (!read_stream_bounded(f, FILE_READER_CAP, &buf, &nread, &read_err)) {
+        if (!read_stream_bounded(f, (size_t)cap, &buf, &nread, &read_err)) {
             fclose(f);
-            return file_io_error("read_bytes", arg->data.str, read_err);
+            return file_io_error("read_bytes", path->data.str, read_err);
         }
         fclose(f);
-        if (nread > FILE_READER_CAP) {
+        if (nread > (size_t)cap) {
             free(buf);
-            return file_stream_cap_error("read_bytes", arg->data.str,
-                                         FILE_READER_CAP);
+            reader_cap_raise("read_bytes", path->data.str, (long long)nread, cap);
+            return make_null();
         }
         Value *result = make_list((int)nread);
         for (size_t i = 0; i < nread; i++)
@@ -1288,15 +1338,9 @@ Value* builtin_read_bytes(Value *arg) {
         free(buf);
         TRACE_NONDET_RECORD("read_bytes", result);
     }
-    if (len > 10 * 1024 * 1024) {
+    if ((long long)len > cap) {
         fclose(f);
-        if (__builtin_expect(g_trace_enabled, 0)) {
-            Value *sz = make_num((double)len);
-            trace_nondet_value("read_bytes", sz);
-            val_decref(sz);
-        }
-        rt_error(EK_IO, 0, "read_bytes: '%s' is %ld bytes, over the %d-byte cap",
-                 arg->data.str, len, 10 * 1024 * 1024);
+        reader_cap_raise("read_bytes", path->data.str, (long long)len, cap);
         return make_null();
     }
     unsigned char *buf = xmalloc(len);
@@ -1325,52 +1369,16 @@ Value* builtin_read_bytes(Value *arg) {
  * ~4 GiB resident), so the ceiling keeps the opt-in from becoming an
  * unbounded fs->RAM amplifier while blocking no realistic asset.
  * Missing/unopenable files raise EK_IO, like the other file readers. */
-#define READ_BYTES_BUF_DEFAULT_CAP (10LL * 1024 * 1024)
-#define READ_BYTES_BUF_HARD_CAP    (512LL * 1024 * 1024)
-
-/* One raise site shared by the live and replay paths so the message
- * cannot drift between them. */
-static void read_bytes_buf_cap_raise(const char *path, long long len,
-                                     long long cap) {
-    rt_error(EK_IO, 0,
-             "read_bytes_buf: '%s' is %lld bytes, over the %lld-byte cap — "
-             "pass read_bytes_buf of [path, max_bytes] (hard ceiling %lld) "
-             "to raise it",
-             path, len, cap, READ_BYTES_BUF_HARD_CAP);
-}
-
 Value* builtin_read_bytes_buf(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "read_bytes_buf");
     /* Deterministic argument parse, BEFORE the tape boundary: a bad call
      * shape takes the same path live and under replay, consuming no N
      * record either way. */
-    Value *path = arg;
-    long long cap = READ_BYTES_BUF_DEFAULT_CAP;
-    if (arg && arg->type == VAL_LIST) {
-        if (arg->data.list.count < 1) {
-            rt_error(EK_TYPE, 0, "read_bytes_buf requires a path: "
-                     "read_bytes_buf of path, or read_bytes_buf of [path, max_bytes]");
-            return make_null();
-        }
-        path = list_get_ref(arg, 0);
-        if (arg->data.list.count >= 2) {
-            EIGS_VIEW(mv_view);
-            Value *mv = list_get_view(arg, 1, &mv_view);
-            if (!mv || mv->type != VAL_NUM) {
-                rt_error(EK_VALUE, 0, "read_bytes_buf: max_bytes must be a number");
-                return make_null();
-            }
-            if (!(eigs_num_arg(mv, __func__) >= 1 &&
-                  eigs_num_arg(mv, __func__) <= (double)READ_BYTES_BUF_HARD_CAP)) {
-                rt_error(EK_VALUE, 0,
-                         "read_bytes_buf: max_bytes must be in 1..%lld (got %g)",
-                         READ_BYTES_BUF_HARD_CAP, mv ? eigs_num_arg(mv, __func__) : 0.0);
-                return make_null();
-            }
-            cap = (long long)eigs_num_arg(mv, __func__);
-        }
-    }
-    if (!path || path->type != VAL_STR) return make_null();
+    Value *path;
+    long long cap;
+    const char *guard = reader_cap_parse("read_bytes_buf", arg, &path, &cap);
+    if (!guard) return make_null();
+    ARG_GUARD_PRETAKE(*guard, "read_bytes_buf", guard, make_null());
 
     /* Tape boundary. Success records the VAL_BUFFER; unopenable file
      * records an impossible-success error list. A regular-file over-cap
@@ -1386,7 +1394,7 @@ Value* builtin_read_bytes_buf(Value *arg) {
                     return make_null();
                 }
                 val_decref(tv);
-                read_bytes_buf_cap_raise(path->data.str, len, cap);
+                reader_cap_raise("read_bytes_buf", path->data.str, len, cap);
                 return make_null();
             }
             return tv;
@@ -1413,8 +1421,9 @@ Value* builtin_read_bytes_buf(Value *arg) {
         fclose(f);
         if (nread > (size_t)cap) {
             free(buf);
-            return file_stream_cap_error("read_bytes_buf", path->data.str,
-                                         (size_t)cap);
+            reader_cap_raise("read_bytes_buf", path->data.str,
+                             (long long)nread, cap);
+            return make_null();
         }
         Value *v = xcalloc(1, sizeof(Value));
         v->type = VAL_BUFFER; v->data.buffer.count = (int)nread;
@@ -1426,12 +1435,7 @@ Value* builtin_read_bytes_buf(Value *arg) {
     }
     if ((long long)len > cap) {
         fclose(f);
-        if (__builtin_expect(g_trace_enabled, 0)) {
-            Value *sz = make_num((double)len);
-            trace_nondet_value("read_bytes_buf", sz);
-            val_decref(sz);
-        }
-        read_bytes_buf_cap_raise(path->data.str, (long long)len, cap);
+        reader_cap_raise("read_bytes_buf", path->data.str, (long long)len, cap);
         return make_null();
     }
     unsigned char *buf = xmalloc(len);
@@ -1450,8 +1454,12 @@ Value* builtin_read_bytes_buf(Value *arg) {
 }
 
 Value* builtin_read_text(Value *arg) {
-    /* #1008: the type check sits BEFORE the tape take (see ARG_GUARD_PRETAKE). */
-    ARG_GUARD_PRETAKE(!arg || arg->type != VAL_STR, "read_text", "a string path", make_str(""));
+    STRICT_LIST_MAX(arg, 2, "read_text");
+    Value *path;
+    long long cap;
+    const char *guard = reader_cap_parse("read_text", arg, &path, &cap);
+    if (!guard) return make_null();
+    ARG_GUARD_PRETAKE(*guard, "read_text", guard, make_str(""));
     Value *replayed = NULL;
     if (file_io_replay("read_text", &replayed)) {
         if (replayed->type == VAL_NUM) {
@@ -1461,17 +1469,16 @@ Value* builtin_read_text(Value *arg) {
                 return make_null();
             }
             val_decref(replayed);
-            rt_error(EK_IO, 0, "read_text: '%s' is %lld bytes, over the %d-byte cap",
-                     arg->data.str, len, 10 * 1024 * 1024);
+            reader_cap_raise("read_text", path->data.str, len, cap);
             return make_null();
         }
         return replayed;
     }
-    FILE *f = fopen(arg->data.str, "r");
-    if (!f) return file_io_error("read_text", arg->data.str, errno);
+    FILE *f = fopen(path->data.str, "r");
+    if (!f) return file_io_error("read_text", path->data.str, errno);
     if (file_is_directory(f)) {
         fclose(f);
-        return file_io_error("read_text", arg->data.str, EISDIR);
+        return file_io_error("read_text", path->data.str, EISDIR);
     }
     fseek(f, 0, SEEK_END);
     long len = ftell(f);
@@ -1481,30 +1488,24 @@ Value* builtin_read_text(Value *arg) {
         unsigned char *stream = NULL;
         size_t nread = 0;
         int read_err = 0;
-        if (!read_stream_bounded(f, FILE_READER_CAP, &stream, &nread, &read_err)) {
+        if (!read_stream_bounded(f, (size_t)cap, &stream, &nread, &read_err)) {
             fclose(f);
-            return file_io_error("read_text", arg->data.str, read_err);
+            return file_io_error("read_text", path->data.str, read_err);
         }
         fclose(f);
-        if (nread > FILE_READER_CAP) {
+        if (nread > (size_t)cap) {
             free(stream);
-            return file_stream_cap_error("read_text", arg->data.str,
-                                         FILE_READER_CAP);
+            reader_cap_raise("read_text", path->data.str, (long long)nread, cap);
+            return make_null();
         }
         char *buf = xmalloc(nread + 1);
         memcpy(buf, stream, nread); buf[nread] = '\0'; free(stream);
         Value *result = make_str(buf); free(buf);
         TRACE_NONDET_RECORD("read_text", result);
     }
-    if (len > 10 * 1024 * 1024) {
+    if ((long long)len > cap) {
         fclose(f);
-        if (__builtin_expect(g_trace_enabled, 0)) {
-            Value *sz = make_num((double)len);
-            trace_nondet_value("read_text", sz);
-            val_decref(sz);
-        }
-        rt_error(EK_IO, 0, "read_text: '%s' is %ld bytes, over the %d-byte cap",
-                 arg->data.str, len, 10 * 1024 * 1024);
+        reader_cap_raise("read_text", path->data.str, (long long)len, cap);
         return make_null();
     }
     char *buf = xmalloc(len + 1);

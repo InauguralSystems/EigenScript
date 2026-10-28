@@ -202,7 +202,7 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
     if (eigs_current && g_sandbox_active) g_sandbox_error_latched = 1;
     g_has_error = 1;
     eigs_clear_error_value();   /* a new error supersedes any thrown value */
-    if (g_try_depth == 0 && !(eigs_current && g_sandbox_active)) {
+    if (!vm_error_has_handler() && !(eigs_current && g_sandbox_active)) {
         /* #407 residual: when the VM is mid-dispatch, defer the uncaught
          * print to CHECK_ERROR, which knows the failing instruction's
          * bytecode offset and can add a source excerpt + column caret.

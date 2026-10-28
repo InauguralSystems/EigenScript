@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+echo "PLAN: 14"
 # #1112: a replay-boundary refusal (`recv` & co. under EIGS_REPLAY, docs/TRACE.md
 # "Non-Replayable Builtins") raised on a spawn()ed worker that runs the builtin
 # DIRECTLY (`spawn of [recv, ch]`) died by SIGSEGV: rt_error printed the

@@ -1,0 +1,11 @@
+# #1806: exit is a state stop, not an uncaught task death.
+define quitter() as:
+    exit of 3
+d is task_spawn of quitter
+task_yield of null
+print of "MAIN_AFTER_TASK_EXIT"
+try:
+    x is nope
+catch e:
+    print of f"caught {e.kind}"
+print of "end"

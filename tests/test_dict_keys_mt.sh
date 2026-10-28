@@ -1,4 +1,5 @@
 #!/bin/bash
+echo "PLAN: 19"
 # #1141: a dict key written on ANY thread must stay valid for the DICT's
 # lifetime, whatever thread reads it and whether or not the writer has exited.
 #

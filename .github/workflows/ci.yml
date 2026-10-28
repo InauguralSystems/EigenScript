@@ -14,8 +14,9 @@ on:
     types: [checks_requested]
   # The full main lane on demand, for a long-lived branch before it enters the
   # queue: `gh workflow run ci.yml --ref <branch>` (docs/CI.md, #1787). A
-  # dispatch is not a pull request, so every heavy worker runs as on a push to
-  # main. It runs the DISPATCHED ref's own copy of this file, so what follows
+  # default (`lanes=all`) dispatch is not a pull request, so every heavy
+  # worker runs as on a push to main; focused proof lanes select less work. It
+  # runs the DISPATCHED ref's own copy of this file, so what follows
   # holds for main's text; a branch that edits it can change it, exactly as its
   # pull request run already could. In this text the one name main owns that is
   # written here, the rolling ci-main tag, moves only on a push to
@@ -23,6 +24,13 @@ on:
   # tools/ci_tier_check.sh checks those properties ([ci-main], [writer-actions],
   # [secrets]).
   workflow_dispatch:
+    inputs:
+      lanes:
+        description: CI lane to run (all preserves the full main-lane matrix)
+        required: true
+        type: choice
+        default: all
+        options: [all, asan, tsan, fuzz, linux]
 
 permissions:
   contents: read
@@ -78,6 +86,8 @@ jobs:
   # reports the success and requires the workers in the merge queue.
   scope:
     name: scope
+    env:
+      CI_DISPATCH_LANES: all,asan,tsan,fuzz,linux
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -88,6 +98,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+      - name: Reject an unknown or empty dispatch lane
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SELECTED_LANE: ${{ inputs.lanes }}
+        run: |
+          case "$SELECTED_LANE" in
+            all|asan|tsan|fuzz|linux) ;;
+            *) echo "::error::unknown CI dispatch lane '$SELECTED_LANE'"; exit 1 ;;
+          esac
       - id: detect
         name: Detect whether any non-docs file changed
         run: |
@@ -112,6 +131,9 @@ jobs:
   # merge-queue candidates run it because --all selects every scope.
   release-dry-run-worker:
     name: release dry-run / ${{ matrix.label }}
+    env:
+      CI_DISPATCH_LANES: all
+    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all'
     needs: scope
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -139,8 +161,10 @@ jobs:
 
   release-dry-run:
     name: release build/test dry-run (no tag or release)
+    env:
+      CI_DISPATCH_LANES: all
     needs: [scope, release-dry-run-worker]
-    if: always()
+    if: (always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -162,6 +186,9 @@ jobs:
   # EigenCore is deliberately independent of the all-platform C suite.
   spec-lean:
     name: spec Lean
+    env:
+      CI_DISPATCH_LANES: linux
+    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'
     needs: scope
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -216,6 +243,9 @@ jobs:
   # gha-cached, so an unchanged Dockerfile rebuilds in seconds.
   dev-image:
     name: build dev/ci image
+    env:
+      CI_DISPATCH_LANES: linux,asan,fuzz
+    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux' || inputs.lanes == 'asan' || inputs.lanes == 'fuzz'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -299,6 +329,9 @@ jobs:
   # The name remains fixed until the required-checks ruleset is renamed.
   werror-audit:
     name: werror flags ([99i])
+    env:
+      CI_DISPATCH_LANES: linux
+    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -321,8 +354,10 @@ jobs:
     # Full history below is required by the formatter incumbent self-test,
     # which resolves `git merge-base HEAD origin/main`.
     name: gate self-tests (changed rows)
+    env:
+      CI_DISPATCH_LANES: linux
     needs: [dev-image, scope, spec-lean]
-    if: always()
+    if: (always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -445,6 +480,9 @@ jobs:
   # gcc and clang shake out different warnings and codegen.
   build-and-test-linux:
     name: linux / ${{ matrix.cc }}
+    env:
+      CI_DISPATCH_LANES: linux
+    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'
     needs: dev-image
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -525,8 +563,10 @@ jobs:
   # ~3x the suite's interpreter time.
   jit-differential:
     name: jit differential (interpreter oracle, tape-replayed)
+    env:
+      CI_DISPATCH_LANES: linux
     needs: [dev-image, scope]
-    if: needs.scope.outputs.code == 'true'
+    if: (needs.scope.outputs.code == 'true') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -592,8 +632,10 @@ jobs:
   # replay their own recording and nothing gated it.
   replay-differential:
     name: replay differential (same-binary tape fidelity)
+    env:
+      CI_DISPATCH_LANES: linux
     needs: [dev-image, scope]
-    if: needs.scope.outputs.code == 'true'
+    if: (needs.scope.outputs.code == 'true') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -629,8 +671,10 @@ jobs:
   # runs when the oracle changes (docs/PRINCIPLES.md §5, #1777).
   observer-oracle:
     name: observer oracle (floor)
+    env:
+      CI_DISPATCH_LANES: linux
     needs: [dev-image, scope]
-    if: needs.scope.outputs.code == 'true'
+    if: (needs.scope.outputs.code == 'true') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
     runs-on: ubuntu-latest
     # About 2 minutes measured (84-115 s on PR #1777); this bounds a hang.
     timeout-minutes: 15
@@ -657,6 +701,9 @@ jobs:
   # hosted build of the profile to prove the core language still executes.
   freestanding:
     name: freestanding profile (symbol gate + smoke)
+    env:
+      CI_DISPATCH_LANES: linux
+    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -708,8 +755,10 @@ jobs:
   # fallback. Runs natively — a Linux container image can't host these.
   build-and-test-macos-worker:
     name: macos suite / ${{ matrix.os }}
+    env:
+      CI_DISPATCH_LANES: all
     needs: scope
-    if: github.event_name != 'pull_request'
+    if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all')
     runs-on: ${{ matrix.os }}
     # Intel completed the gfx gate and 540 compiler audit calls but reached
     # 30 minutes in the audit's fault controls (#1130). Keep the full suite.
@@ -820,8 +869,10 @@ jobs:
   # is skipped before runner allocation on PRs and is mandatory everywhere else.
   build-and-test-macos:
     name: macos / macos-latest
+    env:
+      CI_DISPATCH_LANES: all
     needs: [scope, build-and-test-macos-worker]
-    if: always()
+    if: (always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -845,8 +896,10 @@ jobs:
 
   extensions:
     name: extensions (http+model+gfx suite; embed/lsp/jit-smoke)
+    env:
+      CI_DISPATCH_LANES: fuzz
     needs: [scope, extensions-http, extensions-zlib]
-    if: always()
+    if: (always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'fuzz')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -864,19 +917,26 @@ jobs:
           CODE: ${{ needs.scope.outputs.code }}
           HTTP_RESULT: ${{ needs.extensions-http.result }}
           ZLIB_RESULT: ${{ needs.extensions-zlib.result }}
+          SELECTED_LANE: ${{ inputs.lanes }}
         run: |
           set -euo pipefail
           [ "$SCOPE_RESULT" = success ]
           case "$CODE" in true|false) ;; *) exit 1;; esac
-          for result in "$HTTP_RESULT" "$ZLIB_RESULT"; do
-            [ "$result" = success ] || exit 1
-          done
-          echo "Extension coverage complete (code=$CODE; server and zlib workers succeeded)"
+          [ "$HTTP_RESULT" = success ] || exit 1
+          if [ "${{ github.event_name }}" = workflow_dispatch ] && [ "$SELECTED_LANE" = fuzz ]; then
+            [ "$ZLIB_RESULT" = skipped ] || exit 1
+            echo "Fuzz proof lane complete (code=$CODE; server/fuzz worker succeeded; zlib deselected)"
+          else
+            [ "$ZLIB_RESULT" = success ] || exit 1
+            echo "Extension coverage complete (code=$CODE; server and zlib workers succeeded)"
+          fi
 
   extensions-http:
     name: extensions / server (http+net+model+gfx) and ancillary checks
+    env:
+      CI_DISPATCH_LANES: fuzz
     needs: [dev-image, scope]
-    if: github.event_name != 'pull_request'
+    if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'fuzz')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -979,8 +1039,10 @@ jobs:
         run: bash tools/cc_guard.sh --report
   extensions-zlib:
     name: extensions / zlib suite
+    env:
+      CI_DISPATCH_LANES: all
     needs: [dev-image, scope]
-    if: github.event_name != 'pull_request'
+    if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -1013,8 +1075,10 @@ jobs:
         run: bash tools/cc_guard.sh --report
   database-worker:
     name: db extension suite (postgres service)
+    env:
+      CI_DISPATCH_LANES: all
     needs: [dev-image, scope]
-    if: github.event_name != 'pull_request'
+    if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -1063,8 +1127,10 @@ jobs:
 
   database:
     name: db extension (postgres service)
+    env:
+      CI_DISPATCH_LANES: all
     needs: [scope, database-worker]
-    if: always()
+    if: (always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -1093,8 +1159,10 @@ jobs:
   # One HTTP+model ASan build per shard; docs-only workers skip code steps.
   sanitizers:
     name: asan + ubsan (full suite)
+    env:
+      CI_DISPATCH_LANES: asan
     needs: [scope, sanitizers-core]
-    if: always()
+    if: (always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'asan')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -1198,8 +1266,10 @@ jobs:
   # sees its actual object directory and hard-linked src/eigenscript alias.
   sanitizers-core:
     name: asan + ubsan / shard ${{ matrix.shard }}/3 (http+model build)
+    env:
+      CI_DISPATCH_LANES: asan
     needs: [dev-image, scope]
-    if: github.event_name != 'pull_request'
+    if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'asan')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -1343,6 +1413,9 @@ jobs:
   # full suite, to fit the runtime budget under Valgrind's ~20-30x slowdown.
   valgrind:
     name: valgrind (memcheck smoke, JIT off)
+    env:
+      CI_DISPATCH_LANES: linux
+    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'
     needs: scope
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1387,8 +1460,10 @@ jobs:
   # ThreadSanitizer needs here (see CLAUDE.md).
   tsan-core:
     name: tsan / ${{ matrix.arch }} (concurrency race gate)
+    env:
+      CI_DISPATCH_LANES: tsan
     needs: scope
-    if: github.event_name != 'pull_request'
+    if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'tsan')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -1428,8 +1503,10 @@ jobs:
   # every zero-report row passed on both architectures.
   tsan:
     name: tsan (concurrency race gate)
+    env:
+      CI_DISPATCH_LANES: tsan
     needs: [scope, tsan-core]
-    if: always()
+    if: (always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'tsan')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -1459,6 +1536,9 @@ jobs:
   # halt_on_error=1, so a race kills the server and its section goes red.
   tsan-http:
     name: tsan-http (race gate over ext_http)
+    env:
+      CI_DISPATCH_LANES: tsan
+    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'tsan'
     needs: scope
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1523,6 +1603,9 @@ jobs:
   # the LSP client, and a fresh install.sh leaves BOTH binaries on PATH.
   install-smoke:
     name: install.sh (interpreter + eigenlsp on PATH)
+    env:
+      CI_DISPATCH_LANES: linux
+    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'
     needs: scope
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1615,6 +1698,9 @@ jobs:
   # docs/PERFORMANCE.md, regenerated from bench/run_bench.sh.
   bench:
     name: bench (instruction-count regression gate)
+    env:
+      CI_DISPATCH_LANES: linux
+    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'
     needs: scope
     runs-on: ubuntu-latest
     timeout-minutes: 30

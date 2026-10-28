@@ -15,6 +15,7 @@ import tempfile
 
 binary = str(pathlib.Path(sys.argv[1]).resolve())
 passed = failed = 0
+print('PLAN: 223')
 
 def check(label, ok, result=None):
     global passed, failed

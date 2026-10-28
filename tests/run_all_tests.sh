@@ -44,6 +44,15 @@ LEAKED=0
 # absent is not reviewable.
 SKIPPED=0
 
+# Validate a TAP-style child ledger.  The child owns the plan; every parent uses
+# this one predicate so missing, duplicate, malformed, short and failed plans
+# have identical verdicts (#2051).
+# Through TESTS_DIR like every helper above: the shard planner assembles this
+# runner into /tmp and points EIGS_PLAN_TESTS_DIR at the tree, so a
+# $(dirname "$0") path resolved to /tmp/../tools and every plan check failed
+# with "child_plan_ok: command not found" (#2088 ASan shards, 2026-10-28).
+. "$TESTS_DIR/../tools/child_plan.sh" || exit 1
+
 # ONE helper prints a section-level skip and counts it. Round 6 incremented
 # SKIPPED at exactly ONE site (the since-deleted ILP32 gate) while this file has ~40 lines
 # that put a SKIP marker on a run's stdout — so the pushed head's own
@@ -2322,12 +2331,12 @@ REPORT_OUT=$(bash "$TESTS_DIR/test_report_reserved.sh" 2>&1); REPORT_RC=$?
 REPORT_PASS=$(echo "$REPORT_OUT" | grep -c "^PASS:" || true)
 REPORT_FAIL=$(echo "$REPORT_OUT" | grep -c "^FAIL:" || true)
 TOTAL=$((TOTAL + 1))
-if [ "$REPORT_RC" -eq 0 ] && [ "$REPORT_PASS" -eq 223 ] && [ "$REPORT_FAIL" -eq 0 ]; then
+if child_plan_ok "$REPORT_OUT" "$REPORT_RC" "^PASS:" "^FAIL:"; then
     PASS=$((PASS + 1))
     echo "  PASS: all $REPORT_PASS reserved observer checks"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: reserved observer forms (rc=$REPORT_RC, $REPORT_PASS/223 checks passed)"
+    echo "  FAIL: reserved observer forms (rc=$REPORT_RC, $REPORT_PASS/${CHILD_PLAN:-no-plan} checks passed)"
     echo "$REPORT_OUT" | tail -20
 fi
 echo ""
@@ -2508,11 +2517,10 @@ echo ""
 # [42h] #1142/#1143: the trace tape under threads and states. PINNED totals —
 # "at least one check passed" is satisfied by a gate reduced to a single echo.
 echo "[42h] Trace tape MT (#1142/#1143)"
-TMT_EXPECTED=23   # 21 + #1816's concurrent large-answer row and its v8 header check
 TMT_OUTPUT=$(bash "$TESTS_DIR/test_trace_mt.sh" 2>&1); TMT_RC=$?
 TMT_PASS=$(echo "$TMT_OUTPUT" | grep -c "  PASS:" || true)
 TMT_FAIL=$(echo "$TMT_OUTPUT" | grep -c "  FAIL:" || true)
-if [ "$TMT_RC" -eq 0 ] && [ "$TMT_FAIL" -eq 0 ] && [ "$TMT_PASS" -eq "$TMT_EXPECTED" ]; then
+if child_plan_ok "$TMT_OUTPUT" "$TMT_RC" "^  PASS:" "^  FAIL:"; then
     TOTAL=$((TOTAL + TMT_PASS))
     PASS=$((PASS + TMT_PASS))
     echo "  PASS: all $TMT_PASS tape-MT checks"
@@ -2520,7 +2528,7 @@ else
     TOTAL=$((TOTAL + TMT_PASS + TMT_FAIL + 1))
     PASS=$((PASS + TMT_PASS))
     FAIL=$((FAIL + TMT_FAIL + 1))
-    echo "  FAIL: tape-MT (live rc=$TMT_RC $TMT_PASS/$TMT_EXPECTED)"
+    echo "  FAIL: tape-MT (live rc=$TMT_RC $TMT_PASS/${CHILD_PLAN:-no-plan})"
     echo "$TMT_OUTPUT" | grep "FAIL:" | head -5
 fi
 echo ""
@@ -2529,11 +2537,10 @@ echo ""
 # totals for the same reason [42h] pins them — "at least one check passed" is
 # satisfied by a gate reduced to a single echo (mechanical-gates §37).
 echo "[42i] Dict keys across threads (#1141)"
-DKM_EXPECTED=19
 DKM_OUTPUT=$(bash "$TESTS_DIR/test_dict_keys_mt.sh" 2>&1); DKM_RC=$?
 DKM_PASS=$(echo "$DKM_OUTPUT" | grep -c "  PASS:" || true)
 DKM_FAIL=$(echo "$DKM_OUTPUT" | grep -c "  FAIL:" || true)
-if [ "$DKM_RC" -eq 0 ] && [ "$DKM_FAIL" -eq 0 ] && [ "$DKM_PASS" -eq "$DKM_EXPECTED" ]; then
+if child_plan_ok "$DKM_OUTPUT" "$DKM_RC" "^  PASS:" "^  FAIL:"; then
     TOTAL=$((TOTAL + DKM_PASS))
     PASS=$((PASS + DKM_PASS))
     echo "  PASS: all $DKM_PASS dict-key-MT checks"
@@ -2541,7 +2548,7 @@ else
     TOTAL=$((TOTAL + DKM_PASS + DKM_FAIL + 1))
     PASS=$((PASS + DKM_PASS))
     FAIL=$((FAIL + DKM_FAIL + 1))
-    echo "  FAIL: dict-key-MT (live rc=$DKM_RC $DKM_PASS/$DKM_EXPECTED)"
+    echo "  FAIL: dict-key-MT (live rc=$DKM_RC $DKM_PASS/${CHILD_PLAN:-no-plan})"
     echo "$DKM_OUTPUT" | grep "FAIL:" | head -5
 fi
 echo ""
@@ -2549,11 +2556,10 @@ echo ""
 # [42j] #1144: load_file/import from a spawned worker. PINNED totals, same
 # reason [42i] pins them.
 echo "[42j] Loader under concurrency (#1144)"
-LMT_EXPECTED=15
 LMT_OUTPUT=$(bash "$TESTS_DIR/test_loader_mt.sh" 2>&1); LMT_RC=$?
 LMT_PASS=$(echo "$LMT_OUTPUT" | grep -c "  PASS:" || true)
 LMT_FAIL=$(echo "$LMT_OUTPUT" | grep -c "  FAIL:" || true)
-if [ "$LMT_RC" -eq 0 ] && [ "$LMT_FAIL" -eq 0 ] && [ "$LMT_PASS" -eq "$LMT_EXPECTED" ]; then
+if child_plan_ok "$LMT_OUTPUT" "$LMT_RC" "^  PASS:" "^  FAIL:"; then
     TOTAL=$((TOTAL + LMT_PASS))
     PASS=$((PASS + LMT_PASS))
     echo "  PASS: all $LMT_PASS loader-MT checks"
@@ -2561,7 +2567,7 @@ else
     TOTAL=$((TOTAL + LMT_PASS + LMT_FAIL + 1))
     PASS=$((PASS + LMT_PASS))
     FAIL=$((FAIL + LMT_FAIL + 1))
-    echo "  FAIL: loader-MT (live rc=$LMT_RC $LMT_PASS/$LMT_EXPECTED)"
+    echo "  FAIL: loader-MT (live rc=$LMT_RC $LMT_PASS/${CHILD_PLAN:-no-plan})"
     echo "$LMT_OUTPUT" | grep "FAIL:" | head -5
 fi
 echo ""
@@ -2570,11 +2576,10 @@ echo ""
 # AND the two-embed-state shape (which has no spawn, so no spawn-time
 # widening can reach it). PINNED totals.
 echo "[42k] Observer arming sets under concurrency (#1145)"
-AMT_EXPECTED=9
 AMT_OUTPUT=$(bash "$TESTS_DIR/test_arming_mt.sh" 2>&1); AMT_RC=$?
 AMT_PASS=$(echo "$AMT_OUTPUT" | grep -c "  PASS:" || true)
 AMT_FAIL=$(echo "$AMT_OUTPUT" | grep -c "  FAIL:" || true)
-if [ "$AMT_RC" -eq 0 ] && [ "$AMT_FAIL" -eq 0 ] && [ "$AMT_PASS" -eq "$AMT_EXPECTED" ]; then
+if child_plan_ok "$AMT_OUTPUT" "$AMT_RC" "^  PASS:" "^  FAIL:"; then
     TOTAL=$((TOTAL + AMT_PASS))
     PASS=$((PASS + AMT_PASS))
     echo "  PASS: all $AMT_PASS arming-MT checks"
@@ -2582,7 +2587,7 @@ else
     TOTAL=$((TOTAL + AMT_PASS + AMT_FAIL + 1))
     PASS=$((PASS + AMT_PASS))
     FAIL=$((FAIL + AMT_FAIL + 1))
-    echo "  FAIL: arming-MT (live rc=$AMT_RC $AMT_PASS/$AMT_EXPECTED)"
+    echo "  FAIL: arming-MT (live rc=$AMT_RC $AMT_PASS/${CHILD_PLAN:-no-plan})"
     echo "$AMT_OUTPUT" | grep "FAIL:" | head -5
 fi
 echo ""
@@ -2591,11 +2596,10 @@ echo ""
 # module-env lock predicate. PINNED totals, same reason [42i]-[42k] pin them:
 # a silently shrunk row count reads as green.
 echo "[42l] Thread handles + module-env lock under concurrency (#1146, #1161)"
-HMT_EXPECTED=18
 HMT_OUTPUT=$(bash "$TESTS_DIR/test_handles_mt.sh" 2>&1); HMT_RC=$?
 HMT_PASS=$(echo "$HMT_OUTPUT" | grep -c "  PASS:" || true)
 HMT_FAIL=$(echo "$HMT_OUTPUT" | grep -c "  FAIL:" || true)
-if [ "$HMT_RC" -eq 0 ] && [ "$HMT_FAIL" -eq 0 ] && [ "$HMT_PASS" -eq "$HMT_EXPECTED" ]; then
+if child_plan_ok "$HMT_OUTPUT" "$HMT_RC" "^  PASS:" "^  FAIL:"; then
     TOTAL=$((TOTAL + HMT_PASS))
     PASS=$((PASS + HMT_PASS))
     echo "  PASS: all $HMT_PASS handle-MT checks"
@@ -2603,7 +2607,7 @@ else
     TOTAL=$((TOTAL + HMT_PASS + HMT_FAIL + 1))
     PASS=$((PASS + HMT_PASS))
     FAIL=$((FAIL + HMT_FAIL + 1))
-    echo "  FAIL: handle-MT (live rc=$HMT_RC $HMT_PASS/$HMT_EXPECTED)"
+    echo "  FAIL: handle-MT (live rc=$HMT_RC $HMT_PASS/${CHILD_PLAN:-no-plan})"
     echo "$HMT_OUTPUT" | grep "FAIL:" | head -5
 fi
 echo ""
@@ -4314,7 +4318,7 @@ TOTAL=$((TOTAL + 1))
 FBI_OUTPUT=$(bash "$TESTS_DIR/test_for_binder_internal_store.sh" 2>&1); FBI_RC=$?
 FBI_PASS=$(echo "$FBI_OUTPUT" | grep -c "  PASS:" || true)
 FBI_FAIL=$(echo "$FBI_OUTPUT" | grep -c "  FAIL:" || true)
-if [ "$FBI_RC" -eq 0 ] && [ "$FBI_PASS" -eq 4 ] && [ "$FBI_FAIL" -eq 0 ]; then
+if child_plan_ok "$FBI_OUTPUT" "$FBI_RC" "^  PASS:" "^  FAIL:"; then
     PASS=$((PASS + 1)); echo "  PASS: all $FBI_PASS internal-store checks"
 else
     FAIL=$((FAIL + 1)); echo "  FAIL: for-binder internal stores (rc=$FBI_RC, $FBI_PASS passed, $FBI_FAIL failed)"
@@ -5228,12 +5232,12 @@ OBSIMP_OUT=$(bash "$TESTS_DIR/test_obs_gate_import.sh" 2>&1); OBSIMP_RC=$?
 OBSIMP_PASS=$(echo "$OBSIMP_OUT" | grep -c "^PASS:" || true)
 OBSIMP_FAIL=$(echo "$OBSIMP_OUT" | grep -c "^FAIL:" || true)
 TOTAL=$((TOTAL + 1))
-if [ "$OBSIMP_RC" -eq 0 ] && [ "$OBSIMP_PASS" -eq 19 ] && [ "$OBSIMP_FAIL" -eq 0 ]; then
+if child_plan_ok "$OBSIMP_OUT" "$OBSIMP_RC" "^PASS:" "^FAIL:"; then
     PASS=$((PASS + 1))
     echo "  PASS: all $OBSIMP_PASS import-gate checks"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: observer gate import half (rc=$OBSIMP_RC, $OBSIMP_PASS/19 checks passed)"
+    echo "  FAIL: observer gate import half (rc=$OBSIMP_RC, $OBSIMP_PASS/${CHILD_PLAN:-no-plan} checks passed)"
     echo "$OBSIMP_OUT" | grep -E "^FAIL:|SUMMARY" | sed 's/^/    /'
 fi
 echo ""
@@ -5262,7 +5266,7 @@ SGR_OUTPUT=$(bash "$TESTS_DIR/test_spawn_gc_resume.sh" 2>&1); SGR_RC=$?
 SGR_PASS=$(echo "$SGR_OUTPUT" | grep -c "^  PASS:" || true)
 SGR_FAIL=$(echo "$SGR_OUTPUT" | grep -c "^  FAIL:" || true)
 [ "$SGR_RC" -ne 0 ] && [ "$SGR_FAIL" -eq 0 ] && SGR_FAIL=1
-[ "$SGR_RC" -eq 0 ] && [ "$SGR_PASS" -lt 3 ] && { SGR_FAIL=$((SGR_FAIL + 1)); echo "  FAIL: spawn-gc-resume child ran only $SGR_PASS of 3 checks"; }
+child_plan_ok "$SGR_OUTPUT" "$SGR_RC" "^  PASS:" "^  FAIL:" || { SGR_FAIL=$((SGR_FAIL + 1)); echo "  FAIL: spawn-gc-resume child plan: $CHILD_PLAN_ERROR"; }
 TOTAL=$((TOTAL + SGR_PASS + SGR_FAIL)); PASS=$((PASS + SGR_PASS)); FAIL=$((FAIL + SGR_FAIL))
 if [ "$SGR_FAIL" -gt 0 ]; then echo "  FAIL: collector resume after join"; echo "$SGR_OUTPUT" | grep -E "FAIL:|peak RSS|growth over" | head -5; else echo "  PASS: all $SGR_PASS collector-resume checks ($(echo "$SGR_OUTPUT" | grep 'growth over' | sed 's/^ *//'))"; fi
 echo ""
@@ -5305,9 +5309,7 @@ RBE_OUTPUT=$(bash "$TESTS_DIR/test_replay_boundary_exit.sh" 2>&1); RBE_RC=$?
 RBE_PASS=$(echo "$RBE_OUTPUT" | grep -c "^PASS:" || true)
 RBE_FAIL=$(echo "$RBE_OUTPUT" | grep -c "^FAIL:" || true)
 [ "$RBE_RC" -ne 0 ] && [ "$RBE_FAIL" -eq 0 ] && RBE_FAIL=1
-# The child prints 14 PASS lines on a green exit (15 before #1691 removed
-# proc_read_buf's boundary row); fewer is the child narrowing.
-[ "$RBE_RC" -eq 0 ] && [ "$RBE_PASS" -lt 14 ] && { RBE_FAIL=$((RBE_FAIL + 1)); echo "  FAIL: replay-boundary child ran only $RBE_PASS of 14 checks"; }
+child_plan_ok "$RBE_OUTPUT" "$RBE_RC" "^PASS:" "^FAIL:" || { RBE_FAIL=$((RBE_FAIL + 1)); echo "  FAIL: replay-boundary child plan: $CHILD_PLAN_ERROR"; }
 TOTAL=$((TOTAL + RBE_PASS + RBE_FAIL)); PASS=$((PASS + RBE_PASS)); FAIL=$((FAIL + RBE_FAIL))
 if [ "$RBE_FAIL" -gt 0 ]; then echo "  FAIL: replay boundary exit contract"; echo "$RBE_OUTPUT" | grep "^FAIL:" | head -5; else echo "  PASS: all $RBE_PASS replay-boundary exit checks (rc 1, no signal, both tiers)"; fi
 echo ""
@@ -5433,6 +5435,7 @@ check_task_exit() {
 check_task_exit task_exit_unjoined_death.eigs 1 "MARK_END"         # #493 strict: main completes, rc 1
 check_task_exit task_exit_join_catch.eigs     0 "undefined_name"   # #493 caught: rc 0
 check_task_exit task_exit_killed.eigs         0 "MARK_END"         # #493 kill: rc 0
+check_task_exit task_exit_other_try.eigs       1 "at die"           # #1808: another task's try cannot suppress the trace
 # task_exit_detached_death.eigs moved to [104b] (tests/sections/104b-task-death-fail-fast-1736.sh):
 # #1736 flipped it — a DETACHED death now stops the program, so MARK_END must NOT print.
 check_task_exit task_deadlock.eigs            1 "deadlock"         # #483 leak-clean (main's suspended slice) + #509 uncaught loud
@@ -7472,16 +7475,15 @@ echo ""
 # echo, and both halves here can shrink without a source edit.
 echo "[99o] child-script exit-status accounting (#988)"
 TOTAL=$((TOTAL + 1))
-CEXIT_EXPECTED=17
 CEXIT_OUT=$(bash "$TESTS_DIR/test_child_exit.sh" 2>&1); CEXIT_RC=$?
-CEXIT_COUNT=$(printf '%s\n' "$CEXIT_OUT" | sed -n 's/^RESULTS: \([0-9]*\)\/\([0-9]*\) passed.*/\2/p')
+CEXIT_COUNT=$(printf '%s\n' "$CEXIT_OUT" | grep -c "^  PASS:" || true)
 if bash "$TESTS_DIR/../tools/child_exit_check.sh" >/dev/null \
-   && [ "$CEXIT_RC" -eq 0 ] && [ "${CEXIT_COUNT:-0}" -eq "$CEXIT_EXPECTED" ]; then
+   && [ "$CEXIT_RC" -eq 0 ] && child_plan_ok "$CEXIT_OUT" "$CEXIT_RC" "^  PASS:" "^  FAIL:"; then
     PASS=$((PASS + 1))
     echo "  PASS: child .sh exit statuses are accounted for ($CEXIT_COUNT behavioural checks)"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: child-exit accounting is broken, bypassed, or shrank (rc=$CEXIT_RC, checks=${CEXIT_COUNT:-none}, expected $CEXIT_EXPECTED)"
+    echo "  FAIL: child-exit accounting is broken, bypassed, or shrank (rc=$CEXIT_RC, checks=${CEXIT_COUNT:-none}, plan ${CHILD_PLAN:-missing}: ${CHILD_PLAN_ERROR:-unknown})"
     printf '%s\n' "$CEXIT_OUT" | grep -E 'FAIL|BROKEN' | head -5 | sed 's/^/      /'
     bash "$TESTS_DIR/../tools/child_exit_check.sh" 2>&1 | head -5 | sed 's/^/      /'
 fi

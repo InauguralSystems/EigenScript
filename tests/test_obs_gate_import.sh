@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+echo "PLAN: 19"
 # #1046 / #915 (the `import` half): the observer write-path gate no longer arms
 # on the PRESENCE of an `import`, nor on string DATA that spells an observer
 # builtin's name. A literal `import NAME` is resolved at the importer's compile

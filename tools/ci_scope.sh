@@ -97,7 +97,8 @@ selftest() {
     case_ "release workflow" true false true 'mkdir -p .github/workflows && echo "name: release" > .github/workflows/release.yml'
     case_ "shared release dependencies" true false true 'mkdir -p tools && echo x > tools/install_release_test_dependencies.sh'
     [ "$n" -eq 22 ] || { echo "ci_scope selftest: ran $n cases, want 22"; exit 1; }
-    echo "ci_scope selftest: $((n - fail))/$n passed"
+    echo "PLAN: $n"
+    echo "ci_scope selftest: $((n - fail)) of $n passed"
     [ "$fail" -eq 0 ]
 }
 

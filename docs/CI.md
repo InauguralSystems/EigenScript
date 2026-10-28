@@ -200,10 +200,22 @@ review rounds, can run the full main lane before it enters the queue (#1787):
     gh run list --workflow ci.yml --event workflow_dispatch --branch <branch>
     gh run list --workflow ci.yml --commit <sha>
 
-- **What runs.** A dispatch is not a pull request, so every job runs as on a
-  push to `main`. That includes every heavy worker: the ASan shards, both TSan
-  variants, the native macOS suite, valgrind, the bench gate, the extension
-  suites and the db lane.
+For a RED/GREEN proof that needs only one expensive lane, select it explicitly:
+
+    gh workflow run ci.yml --ref <branch> -f lanes=asan
+
+The choices are `asan`, `tsan`, `fuzz`, `linux`, and `all`. `all` is the
+default and preserves the full run above. A focused dispatch runs its selected
+workers plus their scope, image, and required aggregator dependencies; all
+macOS jobs are reserved for `all`. Unknown choices are rejected by the
+dispatch API and the workflow validates the value again before doing work.
+
+- **What runs.** With the default `lanes=all`, a dispatch is not a pull request,
+  so every job runs as on a push to `main`. That includes every heavy worker:
+  the ASan shards, both TSan variants, the native macOS suite, valgrind, the
+  bench gate, the extension suites and the db lane. A focused lane runs only
+  the population declared for that choice; `fuzz` uses the server/extensions
+  worker containing the curated ASan fuzz smoke.
   - The bench gate measures the branch against its merge-base with `main`, so
     the branch is charged for its own changes, as the queue will measure them.
   - The changed-gate self-tests select what the branch changes against `main`.
