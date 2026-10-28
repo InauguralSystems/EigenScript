@@ -1,0 +1,22 @@
+# #1643 review round 2: a polling receive can take a published rendezvous.
+ch is channel of 0
+define send_one() as:
+    send of [ch, 1643]
+sender is spawn of send_one
+
+got is null
+for i in range of 100000:
+    if type of got == "none":
+        got is try_recv of ch
+
+if got == 1643:
+    thread_join of sender
+    print of "PASS: try_recv accepts a pending rendezvous send"
+else:
+    close_channel of ch
+    try:
+        thread_join of sender
+    catch ignored:
+        ignored is null
+    print of "FAIL: try_recv did not accept a pending rendezvous send"
+    exit of 1
