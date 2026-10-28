@@ -1,5 +1,6 @@
 import EigenCore.Parser
 import EigenCore.Value
+import Std.Data.String.ToInt
 namespace EigenCore
 
 inductive Err where | runtime (message : String) | replay (message : String) | unsupported (construct : String) | refusal (reason : String) | fuel deriving Repr, BEq
@@ -163,6 +164,38 @@ private def parseNValue (fn raw : String) : Except Err OracleValue :=
       | some s => pure (.string s)
       | none => throw (.replay s!"tape kind mismatch for {fn}: expected string or null")
   else throw (.replay s!"tape name mismatch: program called {fn}")
+
+/-- The numeric `N` encoder and decoder are a left inverse.  This is the
+first per-answer round-trip needed by replay fidelity; unlike strings it has
+neither escaping nor continuation framing to account for. -/
+theorem parseNValue_random_int_encode (n : Int) :
+    parseNValue "random_int" (nondetValue (.int n)) = .ok (.int n) := by
+  simp [parseNValue, nondetValue, Int.toInt?_repr]
+  change Except.ok (OracleValue.int n) = Except.ok (OracleValue.int n)
+  rfl
+
+/-- The null spelling used by `read_line` is decoded without ambiguity. -/
+theorem parseNValue_read_line_null_encode :
+    parseNValue "read_line" (nondetValue .null) = .ok .null := by
+  rfl
+
+/-- A quoted string round-trips through either string-valued taped builtin
+once the common quote/unquote pair has been established.  Keeping that single
+obligation explicit prevents the two answer kinds from acquiring subtly
+different escape rules. -/
+theorem parseNValue_string_encode (s : String)
+    (quoted : parseQuoted (nondetString s) = some s) :
+    parseNValue "env_get" (nondetValue (.string s)) = .ok (.string s) ∧
+    parseNValue "read_line" (nondetValue (.string s)) = .ok (.string s) := by
+  have notNull : nondetString s ≠ "null" := by
+    intro equal
+    rw [equal] at quoted
+    simp [parseQuoted] at quoted
+  constructor
+  · simp only [parseNValue, nondetValue, quoted]
+    rfl
+  · simp only [parseNValue, nondetValue, quoted]
+    rfl
 
 /-- Normalize replay input once into the evaluator's answer type.  Non-answer
 records are skipped, and a later `V` header ends the current session.  Parsing
