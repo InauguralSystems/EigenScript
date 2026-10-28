@@ -1384,6 +1384,38 @@ theorem interpret_consumed_before_oracleExhausted (tree : Interaction α)
           have bounded := ih (deliveredAnswer query answer) rest childValues
           omega
 
+/-- If every delivered answer is a value, interpretation stopped before the
+first explicit replay-exhaustion guard. -/
+theorem interpret_consumed_before_replayExhausted (tree : Interaction α)
+    (entries : List TapedAnswer) (position first second : Nat)
+    (onlyValues : ∀ answer ∈
+      (interpret tree (entries ++ [.replayExhausted position,
+        .oracleExhausted first, .oracleExhausted second])).answers,
+      ∃ p name value, answer = .value p name value) :
+    (interpret tree (entries ++ [.replayExhausted position,
+      .oracleExhausted first, .oracleExhausted second])).consumed ≤ entries.length := by
+  induction tree generalizing entries with
+  | done value => simp [interpret]
+  | ask query continuation ih =>
+      cases entries with
+      | nil =>
+          have impossible := onlyValues (.replayExhausted position)
+            (by simp [interpret, deliveredAnswer])
+          rcases impossible with ⟨p, name, value, contradiction⟩
+          cases contradiction
+      | cons answer rest =>
+          simp only [List.cons_append, interpret, List.length_cons]
+          have childValues : ∀ child ∈
+              (interpret (continuation (deliveredAnswer query answer))
+                (rest ++ [.replayExhausted position, .oracleExhausted first,
+                  .oracleExhausted second])).answers,
+              ∃ p name value, child = .value p name value := by
+            intro child member
+            apply onlyValues child
+            simp [interpret, member]
+          have bounded := ih (deliveredAnswer query answer) rest childValues
+          omega
+
 /-- Interpreting a bound interaction concatenates the answers observed by
 its two phases.  The second phase receives precisely the supplied suffix not
 consumed by the first. -/
@@ -2521,6 +2553,28 @@ theorem PairedAll_zero : PairedAll 0 := by
     rw [exec]
     exact Paired_throw .fuel
 
+/-- At zero fuel all five evaluator functions immediately raise `fuel`. -/
+theorem AlignedAll_zero : AlignedAll 0 := by
+  constructor
+  · intro expression
+    rw [evalExpr]
+    exact NamesAligned_throw .fuel
+  constructor
+  · intro functionId arguments
+    rw [callFunction]
+    exact NamesAligned_throw .fuel
+  constructor
+  · intro arms otherwise
+    rw [chooseBranch]
+    exact NamesAligned_throw .fuel
+  constructor
+  · intro condition body rest
+    rw [execLoop]
+    exact NamesAligned_throw .fuel
+  · intro statements
+    rw [exec]
+    exact NamesAligned_throw .fuel
+
 set_option maxHeartbeats 1000000 in
 /-- Function calls preserve pairing at successor fuel.  The named suffix
 keeps the recursive body call visible as a structural subcomputation. -/
@@ -2612,16 +2666,34 @@ theorem Paired_evalExpr_succ_literal (f : Nat) (literal : Literal) :
   rw [evalExpr.eq_def]
   cases literal <;> exact Paired_pure _
 
+/-- Literal expressions traverse no asks. -/
+theorem NamesAligned_evalExpr_succ_literal (f : Nat) (literal : Literal) :
+    Aligned (evalExpr (f + 1) (.literal literal)) := by
+  rw [evalExpr.eq_def]
+  cases literal <;> exact NamesAligned_pure _
+
 theorem Paired_evalExpr_succ_variable (f : Nat) (name : String) :
     Paired (evalExpr (f + 1) (.variable name)) := by
   rw [evalExpr.eq_def]
   exact Paired_valueAt name
+
+/-- Variable expressions inherit the silent lookup alignment. -/
+theorem NamesAligned_evalExpr_succ_variable (f : Nat) (name : String) :
+    Aligned (evalExpr (f + 1) (.variable name)) := by
+  rw [evalExpr.eq_def]
+  exact NamesAligned_valueAt name
 
 /-- Boolean and binary expressions preserve pairing when recursive expressions do. -/
 theorem Paired_evalExpr_succ_not (f : Nat) (ih : PairedAll f) (x : Expr) :
     Paired (evalExpr (f + 1) (.not x)) := by
   rw [evalExpr.eq_def]
   exact Paired_bind _ _ (ih.1 x) (fun value => Paired_pure (Value.bool (!truthy value)))
+
+theorem NamesAligned_evalExpr_succ_not (f : Nat) (ih : AlignedAll f) (x : Expr) :
+    Aligned (evalExpr (f + 1) (.not x)) := by
+  rw [evalExpr.eq_def]
+  exact NamesAligned_bind _ _ (ih.1 x)
+    (fun value => NamesAligned_pure (Value.bool (!truthy value)))
 
 theorem Paired_evalExpr_succ_binary (f : Nat) (ih : PairedAll f)
     (op : BinOp) (a b : Expr) : Paired (evalExpr (f + 1) (.binary op a b)) := by
@@ -2644,6 +2716,27 @@ theorem Paired_evalExpr_succ_binary (f : Nat) (ih : PairedAll f)
       | ok value => exact Paired_pure value
       | error error => exact Paired_throw error
 
+theorem NamesAligned_evalExpr_succ_binary (f : Nat) (ih : AlignedAll f)
+    (op : BinOp) (a b : Expr) : Aligned (evalExpr (f + 1) (.binary op a b)) := by
+  rw [evalExpr.eq_def]
+  cases op with
+  | and =>
+      apply NamesAligned_bind _ _ (ih.1 a)
+      intro value
+      exact NamesAligned_ite (truthy value) _ _ (ih.1 b) (NamesAligned_pure value)
+  | or =>
+      apply NamesAligned_bind _ _ (ih.1 a)
+      intro value
+      exact NamesAligned_ite (truthy value) _ _ (NamesAligned_pure value) (ih.1 b)
+  | add | sub | mul | eq | ne | lt | le | gt | ge =>
+      apply NamesAligned_bind _ _ (ih.1 a)
+      intro left
+      apply NamesAligned_bind _ _ (ih.1 b)
+      intro right
+      cases evalBin _ left right with
+      | ok value => exact NamesAligned_pure value
+      | error error => exact NamesAligned_throw error
+
 /-- Assignment-count observation and printing preserve pairing. -/
 theorem Paired_evalExpr_succ_when (f : Nat) (name : String) :
     Paired (evalExpr (f + 1) (.when name)) := by
@@ -2655,12 +2748,30 @@ theorem Paired_evalExpr_succ_when (f : Nat) (name : String) :
   | some binding => exact Paired_pure (Value.int
       world.environments[binding.envId]!.slots[binding.slot]!.assignments)
 
+theorem NamesAligned_evalExpr_succ_when (f : Nat) (name : String) :
+    Aligned (evalExpr (f + 1) (.when name)) := by
+  rw [evalExpr.eq_def]
+  apply NamesAligned_bind _ _ NamesAligned_get
+  intro world
+  cases resolve name world with
+  | none => exact NamesAligned_throw (.runtime s!"undefined variable: {name}")
+  | some binding => exact NamesAligned_pure (Value.int
+      world.environments[binding.envId]!.slots[binding.slot]!.assignments)
+
 theorem Paired_evalExpr_succ_print (f : Nat) (ih : PairedAll f) (argument : Expr) :
     Paired (evalExpr (f + 1) (.call (.variable "print") [argument])) := by
   rw [evalExpr.eq_def]
   apply Paired_bind _ _ (ih.1 argument)
   intro value
   exact Paired_bind _ _ (Paired_printModify value) (fun _ => Paired_pure Value.null)
+
+theorem NamesAligned_evalExpr_succ_print (f : Nat) (ih : AlignedAll f) (argument : Expr) :
+    Aligned (evalExpr (f + 1) (.call (.variable "print") [argument])) := by
+  rw [evalExpr.eq_def]
+  apply NamesAligned_bind _ _ (ih.1 argument)
+  intro value
+  exact NamesAligned_bind _ _ (NamesAligned_printModify value)
+    (fun _ => NamesAligned_pure Value.null)
 
 /-- The zero-argument taped builtin preserves pairing, including shadowing. -/
 theorem Paired_evalExpr_succ_readLine (f : Nat) (ih : PairedAll f) :
@@ -2676,6 +2787,19 @@ theorem Paired_evalExpr_succ_readLine (f : Nat) (ih : PairedAll f) :
     | closure functionId name => exact ih.2.1 functionId []
     | _ => exact Paired_throw (.runtime "value is not callable")
   · exact PairedAt_of_Paired (Paired_tapedCall "read_line") world
+
+theorem NamesAligned_evalExpr_succ_readLine (f : Nat) (ih : AlignedAll f) :
+    Aligned (evalExpr (f + 1) (.call (.variable "read_line") [])) := by
+  rw [evalExpr.eq_def]
+  apply NamesAligned_bind _ _ NamesAligned_get
+  intro world
+  split
+  · apply NamesAligned_bind _ _ (ih.1 (.variable "read_line"))
+    intro callable
+    cases callable with
+    | closure functionId name => exact ih.2.1 functionId []
+    | _ => exact NamesAligned_throw (.runtime "value is not callable")
+  · exact NamesAligned_tapedCall "read_line"
 
 theorem Paired_evalExpr_succ_randomInt (f : Nat) (ih : PairedAll f)
     (loExpr hiExpr : Expr) :
@@ -2710,6 +2834,38 @@ theorem Paired_evalExpr_succ_randomInt (f : Nat) (ih : PairedAll f)
         | _ => exact Paired_throw (.runtime "random_int expects numeric bounds")
     | _ => exact Paired_throw (.runtime "random_int expects numeric bounds")
 
+theorem NamesAligned_evalExpr_succ_randomInt (f : Nat) (ih : AlignedAll f)
+    (loExpr hiExpr : Expr) :
+    Aligned (evalExpr (f + 1) (.call (.variable "random_int") [loExpr, hiExpr])) := by
+  rw [evalExpr.eq_def]
+  apply NamesAligned_bind _ _ NamesAligned_get
+  intro world
+  split
+  · apply NamesAligned_bind _ _ (ih.1 (.variable "random_int"))
+    intro callable
+    apply NamesAligned_bind _ _
+      (NamesAligned_mapM (evalExpr f) [loExpr, hiExpr] (fun item _ => ih.1 item))
+    intro values
+    cases callable with
+    | closure functionId name => exact ih.2.1 functionId values
+    | _ => exact NamesAligned_throw (.runtime "value is not callable")
+  · apply NamesAligned_bind _ _ (ih.1 loExpr)
+    intro lo
+    apply NamesAligned_bind _ _ (ih.1 hiExpr)
+    intro hi
+    cases lo with
+    | int low =>
+        cases hi with
+        | int high =>
+            simp only
+            split
+            · exact NamesAligned_bind _ _ (NamesAligned_throw (.runtime
+                s!"random_int: range span {high - low + 1} exceeds 2^31 (lrand48 supplies 31 bits)"))
+                (fun _ => NamesAligned_tapedCall "random_int")
+            · exact NamesAligned_tapedCall "random_int"
+        | _ => exact NamesAligned_throw (.runtime "random_int expects numeric bounds")
+    | _ => exact NamesAligned_throw (.runtime "random_int expects numeric bounds")
+
 theorem Paired_evalExpr_succ_envGet (f : Nat) (ih : PairedAll f) (nameExpr : Expr) :
     Paired (evalExpr (f + 1) (.call (.variable "env_get") [nameExpr])) := by
   rw [evalExpr.eq_def]
@@ -2731,6 +2887,25 @@ theorem Paired_evalExpr_succ_envGet (f : Nat) (ih : PairedAll f) (nameExpr : Exp
     | string value => exact Paired_tapedCall "env_get"
     | _ => exact Paired_throw (.runtime "env_get expects a string name")
 
+theorem NamesAligned_evalExpr_succ_envGet (f : Nat) (ih : AlignedAll f) (nameExpr : Expr) :
+    Aligned (evalExpr (f + 1) (.call (.variable "env_get") [nameExpr])) := by
+  rw [evalExpr.eq_def]
+  apply NamesAligned_bind _ _ NamesAligned_get
+  intro world
+  split
+  · apply NamesAligned_bind _ _ (ih.1 (.variable "env_get"))
+    intro callable
+    apply NamesAligned_bind _ _ (ih.1 nameExpr)
+    intro value
+    cases callable with
+    | closure functionId name => exact ih.2.1 functionId [value]
+    | _ => exact NamesAligned_throw (.runtime "value is not callable")
+  · apply NamesAligned_bind _ _ (ih.1 nameExpr)
+    intro name
+    cases name with
+    | string value => exact NamesAligned_tapedCall "env_get"
+    | _ => exact NamesAligned_throw (.runtime "env_get expects a string name")
+
 /-- A general function-call body preserves pairing. -/
 theorem Paired_evalExpr_generalCall (f : Nat) (ih : PairedAll f)
     (function : Expr) (arguments : List Expr) : Paired (do
@@ -2746,6 +2921,23 @@ theorem Paired_evalExpr_generalCall (f : Nat) (ih : PairedAll f)
   cases callable with
   | closure functionId name => exact ih.2.1 functionId values
   | _ => exact Paired_throw (.runtime "value is not callable")
+
+/-- A general function-call body preserves name alignment. -/
+theorem NamesAligned_evalExpr_generalCall (f : Nat) (ih : AlignedAll f)
+    (function : Expr) (arguments : List Expr) : Aligned (do
+      let callable ← evalExpr f function
+      let values ← arguments.mapM (evalExpr f)
+      match callable with
+      | .closure functionId _ => callFunction f functionId values
+      | _ => throw (.runtime "value is not callable")) := by
+  apply NamesAligned_bind _ _ (ih.1 function)
+  intro callable
+  apply NamesAligned_bind _ _
+    (NamesAligned_mapM (evalExpr f) arguments (fun item _ => ih.1 item))
+  intro values
+  cases callable with
+  | closure functionId name => exact ih.2.1 functionId values
+  | _ => exact NamesAligned_throw (.runtime "value is not callable")
 
 set_option maxHeartbeats 1000000 in
 /-- Every expression preserves pairing at successor fuel. -/
@@ -2823,6 +3015,78 @@ theorem Paired_evalExpr_succ (f : Nat) (ih : PairedAll f) :
           | _ => exact Paired_throw _
       · exact Paired_evalExpr_generalCall f ih _ _
 
+
+set_option maxHeartbeats 1000000 in
+/-- Every expression preserves name alignment at successor fuel. -/
+theorem NamesAligned_evalExpr_succ (f : Nat) (ih : AlignedAll f) :
+    ∀ e, Aligned (evalExpr (f + 1) e) := by
+  intro e
+  cases e with
+  | literal literal => exact NamesAligned_evalExpr_succ_literal f literal
+  | «variable» name => exact NamesAligned_evalExpr_succ_variable f name
+  | not x => exact NamesAligned_evalExpr_succ_not f ih x
+  | array items => rw [evalExpr.eq_def]; exact NamesAligned_throw (.unsupported "array literal")
+  | binary op a b => exact NamesAligned_evalExpr_succ_binary f ih op a b
+  | when name => exact NamesAligned_evalExpr_succ_when f name
+  | prev x => rw [evalExpr.eq_def]; exact NamesAligned_throw (.unsupported "prev")
+  | whatWhen a b => rw [evalExpr.eq_def]; exact NamesAligned_throw (.unsupported "what-when")
+  | call function arguments =>
+      rw (occs := .pos [1]) [evalExpr.eq_def]
+      simp only
+      split <;> rename_i h <;> cases h
+      · apply NamesAligned_bind _ _ (ih.1 _)
+        intro value
+        exact NamesAligned_bind _ _ (NamesAligned_printModify value) (fun _ => NamesAligned_pure Value.null)
+      · apply NamesAligned_bind _ _ NamesAligned_get
+        intro world
+        split
+        · apply NamesAligned_bind _ _ (ih.1 _)
+          intro callable
+          apply NamesAligned_bind _ _ (NamesAligned_mapM _ _ (fun item _ => ih.1 item))
+          intro values
+          cases callable with
+          | closure functionId name => exact ih.2.1 functionId values
+          | _ => exact NamesAligned_throw (.runtime "value is not callable")
+        · apply NamesAligned_bind _ _ (ih.1 _)
+          intro lo
+          apply NamesAligned_bind _ _ (ih.1 _)
+          intro hi
+          cases lo with
+          | int low =>
+              cases hi with
+              | int high =>
+                  simp only
+                  split
+                  · exact NamesAligned_bind _ _ (NamesAligned_throw _) (fun _ => NamesAligned_tapedCall "random_int")
+                  · exact NamesAligned_tapedCall "random_int"
+              | _ => exact NamesAligned_throw _
+          | _ => exact NamesAligned_throw _
+      · apply NamesAligned_bind _ _ NamesAligned_get
+        intro world
+        split
+        · apply NamesAligned_bind _ _ (ih.1 _)
+          intro callable
+          cases callable with
+          | closure functionId name => exact ih.2.1 functionId []
+          | _ => exact NamesAligned_throw _
+        · exact NamesAligned_tapedCall "read_line"
+      · apply NamesAligned_bind _ _ NamesAligned_get
+        intro world
+        split
+        · apply NamesAligned_bind _ _ (ih.1 _)
+          intro callable
+          apply NamesAligned_bind _ _ (ih.1 _)
+          intro value
+          cases callable with
+          | closure functionId name => exact ih.2.1 functionId [value]
+          | _ => exact NamesAligned_throw _
+        · apply NamesAligned_bind _ _ (ih.1 _)
+          intro name
+          cases name with
+          | string value => exact NamesAligned_tapedCall "env_get"
+          | _ => exact NamesAligned_throw _
+      · exact NamesAligned_evalExpr_generalCall f ih _ _
+
 /-- The statement-list evaluator preserves pairing at successor fuel. -/
 theorem Paired_exec_succ (f : Nat) (ih : PairedAll f) (statements : List Stmt) :
     Paired (exec (f + 1) statements) := by
@@ -2876,6 +3140,60 @@ theorem Paired_exec_succ (f : Nat) (ih : PairedAll f) (statements : List Stmt) :
           · intro _
             exact execIH rest
 
+
+/-- The statement-list evaluator preserves name alignment at successor fuel. -/
+theorem NamesAligned_exec_succ (f : Nat) (ih : AlignedAll f) (statements : List Stmt) :
+    Aligned (exec (f + 1) statements) := by
+  obtain ⟨exprIH, callIH, branchIH, loopIH, execIH⟩ := ih
+  rw [exec.eq_def]
+  cases statements with
+  | nil => exact NamesAligned_pure none
+  | cons statement rest =>
+    cases statement with
+    | assign name expression isLocal =>
+        apply NamesAligned_bind (evalExpr f expression)
+          (fun value => store name value isLocal >>= fun _ => exec f rest) (exprIH expression)
+        intro value
+        exact NamesAligned_bind _ _ (NamesAligned_store name value isLocal) (fun _ => execIH rest)
+    | print expression =>
+        apply NamesAligned_bind (evalExpr f expression) _ (exprIH expression)
+        intro value
+        exact NamesAligned_bind _ _ (NamesAligned_printModify value) (fun _ => execIH rest)
+    | expression expression =>
+        exact NamesAligned_bind _ _ (exprIH expression) (fun _ => execIH rest)
+    | return_ expression =>
+        exact NamesAligned_bind _ _ (exprIH expression) (fun value => NamesAligned_pure (some value))
+    | branch condition yes elifs no =>
+        apply NamesAligned_bind (evalExpr f condition) _ (exprIH condition)
+        intro value
+        apply NamesAligned_ite (truthy value)
+        · apply NamesAligned_bind _ _ (execIH yes)
+          intro result
+          cases result with
+          | none => exact execIH rest
+          | some returned => exact NamesAligned_pure (some returned)
+        · apply NamesAligned_bind _ _ (branchIH elifs no)
+          intro result
+          cases result with
+          | none => exact execIH rest
+          | some returned => exact NamesAligned_pure (some returned)
+    | loop condition body => exact loopIH condition body rest
+    | define name parameters body =>
+        apply NamesAligned_bind (get : EvalM World) _ NamesAligned_get
+        intro world
+        let definition : FunctionDef := {
+          name := name
+          parameters := if parameters.isEmpty then ["n"] else parameters
+          body := body
+          definingEnvironment := currentEnvironment world }
+        apply NamesAligned_bind
+        · exact NamesAligned_defineModify definition
+        · intro _
+          apply NamesAligned_bind
+          · exact NamesAligned_store name (.closure world.functions.size name) true
+          · intro _
+            exact execIH rest
+
 /-- Branch selection preserves pairing at successor fuel. -/
 theorem Paired_chooseBranch_succ (f : Nat) (ih : PairedAll f)
     (arms : List (Expr × List Stmt)) (otherwise : Option (List Stmt)) :
@@ -2893,6 +3211,24 @@ theorem Paired_chooseBranch_succ (f : Nat) (ih : PairedAll f)
       intro value
       exact Paired_ite (truthy value) _ _ (execIH body) (branchIH rest otherwise)
 
+
+/-- Branch selection preserves name alignment at successor fuel. -/
+theorem NamesAligned_chooseBranch_succ (f : Nat) (ih : AlignedAll f)
+    (arms : List (Expr × List Stmt)) (otherwise : Option (List Stmt)) :
+    Aligned (chooseBranch (f + 1) arms otherwise) := by
+  obtain ⟨exprIH, callIH, branchIH, loopIH, execIH⟩ := ih
+  rw [chooseBranch.eq_def]
+  cases arms with
+  | nil =>
+      cases otherwise with
+      | none => exact NamesAligned_pure none
+      | some body => exact execIH body
+  | cons arm rest =>
+      rcases arm with ⟨condition, body⟩
+      apply NamesAligned_bind (evalExpr f condition) _ (exprIH condition)
+      intro value
+      exact NamesAligned_ite (truthy value) _ _ (execIH body) (branchIH rest otherwise)
+
 /-- Loop execution preserves pairing at successor fuel. -/
 theorem Paired_execLoop_succ (f : Nat) (ih : PairedAll f)
     (condition : Expr) (body rest : List Stmt) :
@@ -2909,6 +3245,45 @@ theorem Paired_execLoop_succ (f : Nat) (ih : PairedAll f)
     | some returned => exact Paired_pure (some returned)
   · exact Paired_bind _ _ (Paired_store "__loop_exit__" (.string "normal") false)
       (fun _ => execIH rest)
+
+
+/-- Loop execution preserves name alignment at successor fuel. -/
+theorem NamesAligned_execLoop_succ (f : Nat) (ih : AlignedAll f)
+    (condition : Expr) (body rest : List Stmt) :
+    Aligned (execLoop (f + 1) condition body rest) := by
+  obtain ⟨exprIH, callIH, branchIH, loopIH, execIH⟩ := ih
+  rw [execLoop]
+  apply NamesAligned_bind (evalExpr f condition) _ (exprIH condition)
+  intro value
+  apply NamesAligned_ite (truthy value)
+  · apply NamesAligned_bind (exec f body) _ (execIH body)
+    intro result
+    cases result with
+    | none => exact loopIH condition body rest
+    | some returned => exact NamesAligned_pure (some returned)
+  · exact NamesAligned_bind _ _ (NamesAligned_store "__loop_exit__" (.string "normal") false)
+      (fun _ => execIH rest)
+
+/-- Name alignment is preserved when evaluator fuel is increased. -/
+theorem AlignedAll_succ (f : Nat) (ih : AlignedAll f) : AlignedAll (f + 1) := by
+  exact ⟨NamesAligned_evalExpr_succ f ih, NamesAligned_callFunction_succ f ih,
+    NamesAligned_chooseBranch_succ f ih, NamesAligned_execLoop_succ f ih,
+    NamesAligned_exec_succ f ih⟩
+
+/-- All five evaluator entry points preserve name alignment. -/
+theorem Aligned_evaluator : ∀ fuel, AlignedAll fuel := by
+  intro fuel
+  induction fuel with
+  | zero => exact AlignedAll_zero
+  | succ f ih => exact AlignedAll_succ f ih
+
+/-- Every successful program evaluation traverses a name-aligned ask path. -/
+theorem NamesAligned_evaluator (fuel : Nat) (p : Program) (w : World)
+    (supplied : List TapedAnswer) (value : Option Value)
+    (successful :
+      (interpret (((exec fuel p).run).run w) supplied).value.1 = .ok value) :
+    NamesAligned (((exec fuel p).run).run w) supplied := by
+  exact (Aligned_evaluator fuel).2.2.2.2 p w supplied value successful
 
 /-- Pairing is preserved when evaluator fuel is increased. -/
 theorem PairedAll_succ (f : Nat) (ih : PairedAll f) : PairedAll (f + 1) := by
@@ -3131,6 +3506,92 @@ theorem normalizeTape_evaluateCore (fuel : Nat) (p : Program)
   · rfl
   · exact normalizeTape_writerProducedRecords _ _
 
+
+/-- Erase replay names while retaining positions and values, as record-mode
+oracle answers do before delivery fills the current query name. -/
+def wildcardAnswers : List TapedAnswer → List TapedAnswer
+  | [] => []
+  | .value position _ value :: rest =>
+      .value position "" value :: wildcardAnswers rest
+  | answer :: rest => answer :: wildcardAnswers rest
+
+@[simp] theorem wildcardAnswers_length (answers : List TapedAnswer) :
+    (wildcardAnswers answers).length = answers.length := by
+  induction answers with
+  | nil => rfl
+  | cons answer rest ih => cases answer <;> simp [wildcardAnswers, ih]
+
+@[simp] theorem wildcardAnswers_append (first second : List TapedAnswer) :
+    wildcardAnswers (first ++ second) =
+      wildcardAnswers first ++ wildcardAnswers second := by
+  induction first with
+  | nil => rfl
+  | cons answer rest ih => cases answer <;> simp [wildcardAnswers, ih]
+
+/-- Erasing names does not change an interpretation whose traversed names are
+aligned with their queries. -/
+theorem interpret_wildcard_of_aligned (tree : Interaction α) (supplied : List TapedAnswer)
+    (aligned : NamesAligned tree supplied) :
+    interpret tree (wildcardAnswers supplied) = interpret tree supplied := by
+  induction tree generalizing supplied with
+  | done value => rfl
+  | ask query continuation ih =>
+      cases supplied with
+      | nil =>
+          simp only [wildcardAnswers, interpret]
+      | cons answer rest =>
+          cases answer with
+          | value position name value =>
+              simp only [wildcardAnswers, interpret]
+              have deliveredEq :
+                  deliveredAnswer query (.value position "" value) =
+                    deliveredAnswer query (.value position name value) := by
+                rw [deliveredAnswer_wildcard]
+                simp only [deliveredAnswer]
+                exact congrArg (fun n => TapedAnswer.value position n value) (aligned.1).symm
+              rw [deliveredEq, ih _ rest aligned.2]
+          | replayError position error | replayExhausted position | oracleExhausted position =>
+              simp only [wildcardAnswers, interpret]
+              rw [ih _ rest aligned.2]
+
+
+/-- Extract the oracle payloads from a kind-valid replay stream. -/
+def answerValues : List TapedAnswer → List OracleValue
+  | [] => []
+  | .value _ _ value :: rest => value :: answerValues rest
+  | _ :: rest => answerValues rest
+
+/-- A positioned all-value stream becomes exactly its name-erased form when
+its payloads are presented through a record oracle. -/
+theorem oracleAnswers_answerValues (supplied : List TapedAnswer)
+    (positioned : WellPositioned 0 supplied)
+    (onlyValues : ∀ answer ∈ supplied,
+      ∃ position name value, answer = .value position name value) :
+    oracleAnswers (answerValues supplied) = wildcardAnswers supplied := by
+  have general : ∀ (answers : List TapedAnswer) (start : Nat),
+      WellPositioned start answers →
+      (∀ answer ∈ answers, ∃ position name value,
+        answer = .value position name value) →
+      ((answerValues answers).zipIdx start).map
+          (fun (value, position) => TapedAnswer.value position "" value) =
+        wildcardAnswers answers := by
+    intro answers start well values
+    induction answers generalizing start with
+    | nil => rfl
+    | cons answer rest ih =>
+        obtain ⟨position, name, value, rfl⟩ := values answer (by simp)
+        have tailValues : ∀ answer ∈ rest,
+            ∃ position name value, answer = .value position name value := by
+          intro answer member
+          exact values answer (by simp [member])
+        have positionEq : position = start := by simpa [positionOf] using well.1
+        subst position
+        simp only [answerValues, List.zipIdx, List.map_cons, wildcardAnswers]
+        congr 1
+        exact ih (start + 1) well.2 tailValues
+  unfold oracleAnswers
+  exact general supplied 0 positioned onlyValues
+
 /-- Entry point of the evaluator core.  The tag is carried so callers from
 different modes can be compared, but cannot affect evaluation. -/
 def runCore (fuel : Nat) (p : Program) (supplied : List TapedAnswer)
@@ -3268,6 +3729,124 @@ theorem record_replay (fuel : Nat) (p : Program) (o : List OracleValue)
         ((evaluateCore fuel p (oracleAnswers o)).answersConsumed ++
           [.replayExhausted (evaluateCore fuel p (oracleAnswers o)).answersConsumed.length]) =
       evaluateCore fuel p (oracleAnswers o)
+    simp [evaluateCore, unsupported]
+
+/-- Every completed, kind-valid strict replay is reproducible by recording the
+same oracle payloads. -/
+theorem replay_sound (fuel : Nat) (p : Program) (t : List String) (r : RunResult)
+    (kinds : TapeKindValid t)
+    (replayed : run fuel p (.replayStrict t) = r)
+    (completed : r.error = none) :
+    ∃ o : List OracleValue, run fuel p (.record o) = r := by
+  subst r
+  let normalized := normalizeTape t
+  let oracle := answerValues normalized
+  refine ⟨oracle, ?_⟩
+  simp only [run, presentCore, if_true] at completed ⊢
+  let root : Environment := {id := 0, parent := none}
+  let initial : World := {environments := #[root]}
+  let tree := (((exec fuel p).run).run initial)
+  let replayCore := normalized ++ [.replayExhausted normalized.length]
+  let replaySupplied := replayCore ++
+    [.oracleExhausted replayCore.length, .oracleExhausted (replayCore.length + 1)]
+  let recordSupplied := oracleAnswers oracle ++
+    [.oracleExhausted (oracleAnswers oracle).length,
+     .oracleExhausted ((oracleAnswers oracle).length + 1)]
+  by_cases supported : unsupportedConstruct p = none
+  · have successful : ∃ value, (interpret tree replaySupplied).value.1 = .ok value := by
+      have completedMatch :
+          (match (interpret tree replaySupplied).value.1 with
+            | .ok _ => none | .error e => some e) = none := by
+        simpa [evaluateCore, supported, tree, replaySupplied, replayCore,
+          normalized, initial, root] using completed
+      cases outcome : (interpret tree replaySupplied).value.1 with
+      | ok value => exact ⟨value, rfl⟩
+      | error error => simp [outcome] at completedMatch
+    obtain ⟨value, success⟩ := successful
+    have positioned : WellPositioned 0 replaySupplied := by
+      simpa [replaySupplied, replayCore, normalized] using wellPositioned_replaySupplied t
+    have paired := (Paired_evaluator fuel).2.2.2.2 p initial replaySupplied
+      (by simpa [initial] using positioned) value success
+    obtain ⟨chunks, chunksEq, answersEq⟩ := paired
+    have answerValuesOnly : ∀ answer ∈ (interpret tree replaySupplied).answers,
+        ∃ position name value, answer = .value position name value := by
+      intro answer member
+      rw [answersEq] at member
+      exact writerAnswersFrom_isValue 0 chunks answer member
+    have beforeReplay : (interpret tree replaySupplied).consumed ≤ normalized.length := by
+      have bounded := interpret_consumed_before_replayExhausted tree normalized normalized.length
+        replayCore.length (replayCore.length + 1) (by
+          simpa [replaySupplied, replayCore] using answerValuesOnly)
+      simpa [replaySupplied, replayCore] using bounded
+    have aligned : NamesAligned tree replaySupplied :=
+      NamesAligned_evaluator fuel p initial replaySupplied value success
+    have wildcardEqual :
+        interpret tree (wildcardAnswers replaySupplied) = interpret tree replaySupplied :=
+      interpret_wildcard_of_aligned tree replaySupplied aligned
+    have normalizedOnly : ∀ answer ∈ normalized,
+        ∃ position name value, answer = .value position name value := by
+      intro answer member
+      exact kinds.onlyValues (by simpa [normalized] using member)
+    have oracleEq : oracleAnswers oracle = wildcardAnswers normalized := by
+      apply oracleAnswers_answerValues normalized
+      · simpa [normalized, normalizeTape] using wellPositioned_normalizeTapeFrom 0 t
+      · exact normalizedOnly
+    have prefixAgree :
+        (wildcardAnswers replaySupplied).take
+            (interpret tree (wildcardAnswers replaySupplied)).consumed =
+          recordSupplied.take
+            (interpret tree (wildcardAnswers replaySupplied)).consumed := by
+      rw [wildcardEqual]
+      simp only [recordSupplied]
+      rw [oracleEq]
+      have bound := beforeReplay
+      simp only [replaySupplied, replayCore, List.append_assoc] at bound
+      simp only [replaySupplied, replayCore, wildcardAnswers_append,
+        wildcardAnswers, List.append_assoc]
+      calc
+        _ = (wildcardAnswers normalized).take
+            (interpret tree (normalized ++
+              ([TapedAnswer.replayExhausted normalized.length] ++
+                [TapedAnswer.oracleExhausted (normalized ++ [TapedAnswer.replayExhausted normalized.length]).length,
+                 TapedAnswer.oracleExhausted ((normalized ++ [TapedAnswer.replayExhausted normalized.length]).length + 1)]))).consumed :=
+          List.take_append_of_le_length (by simpa using bound)
+        _ = _ := (List.take_append_of_le_length (by simpa using bound)).symm
+    have wildcardWithin :
+        (interpret tree (wildcardAnswers replaySupplied)).consumed <
+          (wildcardAnswers replaySupplied).length := by
+      rw [wildcardEqual]
+      have lengths : (wildcardAnswers replaySupplied).length = replaySupplied.length := by
+        induction replaySupplied with
+        | nil => rfl
+        | cons answer rest ih => cases answer <;> simp [wildcardAnswers, ih]
+      rw [lengths]
+      calc
+        (interpret tree replaySupplied).consumed ≤ normalized.length := beforeReplay
+        _ < replaySupplied.length := by simp [replaySupplied, replayCore]
+    have recordEqual : interpret tree recordSupplied = interpret tree replaySupplied := by
+      have same := interpret_prefix_sufficient tree (wildcardAnswers replaySupplied)
+        recordSupplied wildcardWithin prefixAgree
+      rw [wildcardEqual] at same
+      exact same.symm
+    change evaluateCore fuel p (oracleAnswers oracle) =
+      evaluateCore fuel p (normalized ++ [.replayExhausted normalized.length])
+    rw [evaluateCore, evaluateCore, supported]
+    change (let interpreted := interpret tree recordSupplied
+      let (result, w) := interpreted.value
+      ({ stdout := w.stdout
+         tape := writerProducedRecords w.writerChunks w.writerTrailing
+         answersConsumed := writerAnswersFrom 0 w.writerChunks
+         error := match result with | .ok _ => none | .error e => some e } : RunResult)) =
+      (let interpreted := interpret tree replaySupplied
+      let (result, w) := interpreted.value
+      { stdout := w.stdout
+        tape := writerProducedRecords w.writerChunks w.writerTrailing
+        answersConsumed := writerAnswersFrom 0 w.writerChunks
+        error := match result with | .ok _ => none | .error e => some e })
+    rw [recordEqual]
+  · obtain ⟨construct, unsupported⟩ := Option.ne_none_iff_exists'.mp supported
+    change evaluateCore fuel p (oracleAnswers oracle) =
+      evaluateCore fuel p (normalized ++ [.replayExhausted normalized.length])
     simp [evaluateCore, unsupported]
 
 end EigenCore
