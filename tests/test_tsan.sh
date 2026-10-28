@@ -482,7 +482,9 @@ if [ -n "$TSAN_OBJS" ]; then
         grep 'FAIL' "$ROOT/build/tsan_first_use.bad.out" 2>/dev/null | head -5
     fi
 else
-    echo "  FAIL: tsan objects or $EC_SUPP missing"
+    # EC_SUPP named a suppressions file that #1599 removed; under set -u the
+    # stale reference crashed this branch before it could report (2026-10-28).
+    echo "  FAIL: no TSan objects in build/tsan (run make tsan first)"
     FAIL=$((FAIL + 1))
 fi
 
