@@ -1011,6 +1011,19 @@ theorem writer_projection_invariant (fuel : Nat) (p : Program)
   · exact ⟨[], [], rfl, rfl⟩
   · exact ⟨_, _, rfl, rfl⟩
 
+/-- The public answer projection of an evaluation is exactly the normalization
+of its writer-produced tape.  This lemma deliberately needs neither
+`WriterRecords` nor `tape_roundtrip`: `run` replays the record list itself, and
+writer row validity is carried by `StructuralRow` construction. -/
+theorem normalizeTape_evaluateCore (fuel : Nat) (p : Program)
+    (supplied : List TapedAnswer) :
+    normalizeTape (evaluateCore fuel p supplied).tape =
+      (evaluateCore fuel p supplied).answersConsumed := by
+  simp only [evaluateCore]
+  split
+  · rfl
+  · exact normalizeTape_writerProducedRecords _ _
+
 /-- Entry point of the evaluator core.  The tag is carried so callers from
 different modes can be compared, but cannot affect evaluation. -/
 def runCore (fuel : Nat) (p : Program) (supplied : List TapedAnswer)
