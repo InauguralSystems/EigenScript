@@ -59,7 +59,10 @@ def reads_event(t):
     return next((m.group(0).strip() for m in GH.finditer(t) if (m.group(1) or m.group(2) or "").lower() not in INVARIANT), None)
 IND = re.compile(r"\b(env|vars)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?|\b(needs|steps)\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?"
                  r"\s*(?:\.\s*|\[\s*['\"])(outputs|result|outcome|conclusion)['\"]?\s*\]?(?:\s*(?:\.\s*|\[\s*['\"])([\w-]+)['\"]?\s*\]?)?", re.I)
-WAIVE = {("ci.yml", "scope", "detect"): "36ae9de471061c1f",
+# scope/detect re-reviewed for #2114 (a218536a): merge_group AND push both take
+# code/spec from --all and `release` from their own candidate diff, so push and
+# merge_group select identical lanes (#1264); an unknown verdict exits 1.
+WAIVE = {("ci.yml", "scope", "detect"): "a218536a4442faff",
          ("ci.yml", "gate-selftests", "select"): "d1e9f765e40d53d8"}
 used = set()
 def exprs(v): return re.findall(r"\$\{\{(.*?)\}\}", str(v), re.S)

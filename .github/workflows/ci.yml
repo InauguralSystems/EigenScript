@@ -92,13 +92,23 @@ jobs:
         name: Detect whether any non-docs file changed
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "merge_group" ]; then
-            # Keep the full merge-queue lane for code/spec, but select the
-            # release dry-run from this candidate's actual diff (#2114).
+          if [ "${{ github.event_name }}" = "merge_group" ] || [ "${{ github.event_name }}" = "push" ]; then
+            # Keep the full lane for code/spec, but select the release dry-run
+            # from this candidate's actual diff (#2114). push uses the SAME rule
+            # as merge_group, so no required path does work only on push (#1264).
             verdict=$(bash tools/ci_scope.sh --all)
-            base="${{ github.event.merge_group.base_sha }}"
-            head="${{ github.event.merge_group.head_sha }}"
-            release=$(bash tools/ci_scope.sh "$base" "$head" | sed -n 's/^release=//p')
+            if [ "${{ github.event_name }}" = "merge_group" ]; then
+              base="${{ github.event.merge_group.base_sha }}"
+              head="${{ github.event.merge_group.head_sha }}"
+            else
+              base="${{ github.event.before }}"
+              head="${{ github.sha }}"
+            fi
+            case "$base" in
+              ""|0000000000000000000000000000000000000000) release=true ;;
+              *) release=$(bash tools/ci_scope.sh "$base" "$head" | sed -n 's/^release=//p') ;;
+            esac
+            case "$release" in true|false) ;; *) echo "scope: no release verdict for $base..$head"; exit 1 ;; esac
             verdict=$(printf '%s\n' "$verdict" | sed "s/^release=.*/release=$release/")
           elif [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "not a PR — treating as code"
@@ -117,7 +127,7 @@ jobs:
   # Exercise the exact action used by release.yml before a tag exists. The
   # scope classifier selects every PR changing the release workflow, its CI
   # dependency sources/action, ci.yml itself, or tests/run_all_tests.sh; merge
-  # groups use the same classifier on their base_sha..head_sha candidate diff.
+  # groups and pushes use the same classifier on their own candidate diff.
   release-dry-run-worker:
     name: release dry-run / ${{ matrix.label }}
     needs: scope
