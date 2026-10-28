@@ -143,13 +143,17 @@ for f in tests/*.sh tests/*.py tools/*.sh tools/*.py \
 done
 # Keep git's own words: a refusal (dubious ownership, a missing safe.directory,
 # GIT_DIR in the environment) must say why, not just that it happened.
-INSIDE_WORK_TREE=$(git rev-parse --is-inside-work-tree 2>&1) || {
+# CI's containerized suite jobs run git as a different user from the one that
+# checked the tree out, and only some jobs add safe.directory. git then refuses
+# the repository ("dubious ownership"). These two queries are read-only and
+# target this checkout alone, so trust exactly $PWD for them.
+INSIDE_WORK_TREE=$(git -c safe.directory="$PWD" rev-parse --is-inside-work-tree 2>&1) || {
     echo "test-enrolment: ABORTED: git work tree required for asserting-test population (git: $(printf '%s' "$INSIDE_WORK_TREE" | head -c 300); cwd: $PWD)"; exit 2;
 }
 [ "$INSIDE_WORK_TREE" = true ] || {
     echo "test-enrolment: ABORTED: git work tree required for asserting-test population (git rev-parse said: $INSIDE_WORK_TREE; cwd: $PWD)"; exit 2;
 }
-ASSERTING=$(git ls-files 'tests/*.eigs' | while IFS= read -r f; do
+ASSERTING=$(git -c safe.directory="$PWD" ls-files 'tests/*.eigs' | while IFS= read -r f; do
     grep -q 'test_summary of' "$f" && printf '%s\n' "$f"
 done)
 assert_total=0; assert_ok=0; assert_ex=0
