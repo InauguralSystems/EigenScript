@@ -288,11 +288,19 @@ slow path), `mini_fmt.c` (vsnprintf/snprintf whose float conversions ride an
 exact big-decimal digit engine — correct rounding at any precision), and
 `mini_libm.c` (4 kernels + derived forms, no borrowed coefficient tables).
 
-The x86-64 glue also supplies `fegetenv`/`fesetenv` with complete x87 and
-MXCSR round trips, plus `feclearexcept`. This keeps #1969's IEEE-default
-environment at every embedding boundary rather than compiling that contract
-out of the freestanding profile. Other architectures deliberately fail to
-compile until they provide the same contract.
+The FP-environment glue supports x86-64 and RISC-V. On x86-64,
+`fegetenv`/`fesetenv` round-trip the complete x87 and MXCSR images; on RISC-V
+with F or D they round-trip the architectural `fcsr` image. Both also provide
+`feclearexcept`, and `fesetenv(FE_DFL_ENV)` installs round-to-nearest-even with
+no sticky flags. Other architectures deliberately fail to compile until they
+provide the same contract.
+
+On soft-float RISC-V (`__riscv_flen` undefined), the three calls report and
+keep the default environment. This is preferable to rejecting the target:
+there is no architectural FP state or rounding mode to observe, save, clear,
+or restore, so the default environment is the only truthful environment the
+profile can expose. It does not pretend to restore state that software FP may
+keep elsewhere.
 
 Every function is `eigs_`-prefixed with standard-name aliases under
 `-DEIGS_MINI_STANDARD_NAMES=1`, so the same objects diff hosted against

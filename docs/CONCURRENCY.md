@@ -12,12 +12,12 @@ writing while another reads, is still your race**, as is concurrent access to
 a shared list or to a binding a closure captured from a function's scope when
 one access writes. This is not merely a lost-update rule: measured
 shared-list races have terminated in `realloc(): invalid old size` and
-`double free or corruption`, and a reader of a captured binding can still
-retain a value after a writer has freed it. A **module-level** binding (the
-global scope, or a module namespace) is different since #1171: reading or
-calling it while another thread rebinds it never touches a freed value, and
-which value the reader sees is the program's own race (see "Loading from
-workers" below). Transfer values through channels, or join the writer before
+`double free or corruption`. A **binding** is different: a module-level
+binding (the global scope, or a module namespace) since #1171, and a binding
+a closure captured from a function's scope since #1866. Reading or calling it
+while another thread rebinds it never touches a freed value; which value the
+reader sees is still the program's own race (see "Loading from workers"
+below). Transfer values through channels, or join the writer before
 reading them.
 
 ## The one rule: VALUES copy, HANDLES share
