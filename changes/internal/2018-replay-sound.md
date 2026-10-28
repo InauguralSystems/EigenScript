@@ -1,0 +1,1 @@
+- Add kind-valid strict-replay tape groundwork and a successful replay fixture (#2018).

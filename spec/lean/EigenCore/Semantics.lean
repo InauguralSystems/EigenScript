@@ -713,6 +713,30 @@ theorem wellPositioned_normalizeTapeFrom (start : Nat) (tape : List String) :
 def normalizeTape (tape : List String) : List TapedAnswer :=
   normalizeTapeFrom 0 tape
 
+/-- A strict-replay tape is kind-valid when every answer record recognized by
+its reader names one of the taped builtins and parses as a value of that
+builtin's declared return kind.  Structural rows are ignored exactly as they
+are by `normalizeTape`, and a `V` row ends the replay session. -/
+def TapeKindValid (tape : List String) : Prop :=
+  ∀ answer ∈ normalizeTape tape,
+    ∃ position name value,
+      answer = .value position name value ∧
+      ∃ kinds, (name, kinds) ∈ k_tape_kinds
+
+/-- Kind validity rules out every delayed parse error and unknown-name
+placeholder in the normalized replay stream. -/
+theorem TapeKindValid.onlyValues {tape : List String} (valid : TapeKindValid tape)
+    {answer : TapedAnswer} (member : answer ∈ normalizeTape tape) :
+    ∃ position name value, answer = .value position name value := by
+  obtain ⟨position, name, value, answerEq, _⟩ := valid answer member
+  exact ⟨position, name, value, answerEq⟩
+
+/-- Names admitted by the taped-builtin table are nonempty. -/
+theorem k_tape_kinds_name_nonempty {name : String} {kinds : List String}
+    (member : (name, kinds) ∈ k_tape_kinds) : name.isEmpty = false := by
+  simp [k_tape_kinds] at member
+  rcases member with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> decide
+
 theorem structuralRecord_A_valid (rest : String) :
     StructuralRecord (structuralRecord ("A " ++ rest)) := by
   constructor
