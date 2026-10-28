@@ -686,6 +686,10 @@ jobs:
         name: Mini-libc differential vs glibc oracle
         run: make freestanding-libc-diff
 
+      - if: needs.scope.outputs.code == 'true'
+        name: RISC-V FP-environment differential vs target musl oracle
+        run: make freestanding-libc-diff-riscv
+
       - name: Require compiler guard activity
         if: always() && needs.scope.outputs.code == 'true'
         run: bash tools/cc_guard.sh --report
