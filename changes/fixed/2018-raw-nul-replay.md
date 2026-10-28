@@ -1,0 +1,1 @@
+- Raw NUL bytes in quoted replay values are now refused consistently by the executable model and the C runtime (#2018).

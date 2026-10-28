@@ -153,7 +153,11 @@ private def parseQuotedGo : Nat → List Char → String → Option String
   | fuel + 1, c :: rest, out => parseQuotedGo fuel rest (out.push c)
 
 private def parseQuoted (s : String) : Option String :=
-  match s.toList with
+  -- C's line buffer retains a raw NUL, but its value parser is deliberately
+  -- NUL-terminated.  It therefore sees the quoted token as truncated and
+  -- reports a malformed taped value.  Only the encoder spelling (`\\x00`)
+  -- may carry NUL in a replayable string.
+  if s.toList.contains (Char.ofNat 0) then none else match s.toList with
   | '"' :: rest =>
       match rest.reverse with
       | '"' :: bodyReverse =>
@@ -282,10 +286,46 @@ theorem nondetChars_length (chars : List Char) :
           by_cases hc : c.toNat < 0x20 <;> simp [nondetChar, hq, hb, hn, hr, hc]
       omega
 
+theorem lowerHexDigit_ne_nul (n : Nat) (h : n < 16) :
+    lowerHexDigit n ≠ Char.ofNat 0 := by
+  have cases : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨
+      n = 6 ∨ n = 7 ∨ n = 8 ∨ n = 9 ∨ n = 10 ∨ n = 11 ∨ n = 12 ∨
+      n = 13 ∨ n = 14 ∨ n = 15 := by omega
+  rcases cases with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+
+theorem nondetChars_no_raw_nul (chars : List Char) :
+    (nondetChars chars).contains (Char.ofNat 0) = false := by
+  induction chars with
+  | nil => rfl
+  | cons c rest ih =>
+      simp only [nondetChars, List.contains_append, Bool.or_eq_false_iff, ih,
+        and_true]
+      by_cases hc : c.toNat < 0x20
+      · have hi := lowerHexDigit_ne_nul (c.toNat / 16) (by omega)
+        have lo := lowerHexDigit_ne_nul (c.toNat % 16) (Nat.mod_lt _ (by omega))
+        by_cases hq : c = '"' <;> by_cases hb : c = '\\' <;>
+          by_cases hn : c = '\n' <;> by_cases hr : c = '\r' <;>
+          simp [nondetChar, hq, hb, hn, hr, hc, hi.symm, lo.symm]
+      · have cnul : Char.ofNat 0 ≠ c := by
+          intro equal
+          have same := congrArg Char.toNat equal
+          simp at same
+          omega
+        by_cases hq : c = '"' <;> by_cases hb : c = '\\' <;>
+          by_cases hn : c = '\n' <;> by_cases hr : c = '\r' <;>
+          simp [nondetChar, hq, hb, hn, hr, hc, cnul]
+
 /-- The VM-compatible quoted-string decoder is a left inverse of its encoder. -/
 theorem parseQuoted_nondetString (s : String) :
     parseQuoted (nondetString s) = some s := by
-  simp [parseQuoted, nondetString]
+  have noNul : Char.ofNat 0 ∉ nondetChars s.toList := by
+    intro member
+    have : (nondetChars s.toList).contains (Char.ofNat 0) = true :=
+      List.contains_iff_mem.mpr member
+    rw [nondetChars_no_raw_nul] at this
+    contradiction
+  simp [parseQuoted, nondetString, noNul]
   rw [parseQuotedGo_nondetChars]
   · simp
   · have := nondetChars_length s.toList
