@@ -1,0 +1,1 @@
+- Cooperative-task exit now retires every task from the stopped evaluation and remains visible to the REPL boundary (#1808, #1806).

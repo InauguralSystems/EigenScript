@@ -1,0 +1,10 @@
+# #1808: main's suspended try cannot suppress a different task's uncaught
+# diagnostic. The worker is joinable, so main still resumes and finishes.
+define die() as:
+    missing
+d is task_spawn of die
+try:
+    task_yield of null
+catch e:
+    print of "never"
+print of "main done"

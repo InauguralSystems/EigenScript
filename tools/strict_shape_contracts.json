@@ -1746,6 +1746,30 @@
     "disposition": "guarded"
   },
   {
+    "function": "builtin_read_bytes",
+    "file": "src/builtins_host.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 2,
+    "reason": "Path scalar or [path, optional max_bytes]; preserve the null fallback and pre-tape validation.",
+    "public_names": [
+      "read_bytes"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_read_text",
+    "file": "src/builtins_host.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 2,
+    "reason": "Path scalar or [path, optional max_bytes]; preserve the empty-string fallback and pre-tape validation.",
+    "public_names": [
+      "read_text"
+    ],
+    "disposition": "guarded"
+  },
+  {
     "function": "builtin_read_bytes_buf",
     "file": "src/builtins_host.c",
     "category": "optional_or_scalar",
@@ -2751,11 +2775,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "a6fefaa345852f61175fe68444e52fcdafecee208cf2d61d259578d42468b056"
+      "01c2880d21271cbf77daa5f6fa0d35cfe5eeaa2ca51e46cb333f797dbba52581"
     ],
     "source_sha256": {
       "builtin_throw": [
-        "a6fefaa345852f61175fe68444e52fcdafecee208cf2d61d259578d42468b056"
+        "01c2880d21271cbf77daa5f6fa0d35cfe5eeaa2ca51e46cb333f797dbba52581"
       ],
       "value_to_string": [
         "269292118bde6226411ea5a201cc73ae9a5d81dc010f8caca57118e4b8257f70"

@@ -3,6 +3,8 @@
 # Each command is a separate process: never invoke a shell function under `||`.
 set -eu
 cd "$(dirname "$0")/.."
+. tools/child_plan.sh
+export EIGS_CHILD_PLAN_HELPER="$PWD/tools/child_plan.sh"
 command -v python3 >/dev/null 2>&1 || { echo 'selftests: INSTRUMENT ERROR: python3 missing'; exit 2; }
 exec python3 - "$@" <<'PY'
 import fnmatch, json, os, re, resource, shlex, shutil, subprocess, sys, tempfile, time
@@ -21,8 +23,24 @@ def git_ref_exists(ref):
 
 PRODUCT_TRIGGER_MAX_S = 60
 
+def child_plan_verdict(output, rc, pass_re, fail_re):
+    return subprocess.run(
+        ['bash', '-c', '. "$1"; child_plan_ok "$(cat "$2")" "$3" "$4" "$5"',
+         'child-plan', os.environ['EIGS_CHILD_PLAN_HELPER'], '/dev/stdin',
+         str(rc), pass_re, fail_re], input=output, text=True).returncode
+
 def main():
     args = sys.argv[1:]
+    if args == ['--calibrate-plan']:
+        plants = [('short', 'PLAN: 3\n  PASS: one\n  PASS: two\n'),
+                  ('plan-only', 'PLAN: 49\n')]
+        for name, output in plants:
+            if child_plan_verdict(output, 0, '^  PASS:', '^  FAIL:') == 0:
+                print(f'  FAIL: {name} plant passed selftests child-plan verdict')
+                return 1
+            print(f'  PASS: {name} plant failed selftests child-plan verdict')
+        print('PLAN: 2')
+        return 0
     listing = '--list' in args
     if listing:
         args.remove('--list')
@@ -119,6 +137,9 @@ def main():
             error(f'selftests.txt:{n}: pins need pattern strings and integer counts')
         for pin in pins:
             re.compile(pin['pattern'])
+        plan_pins = [p for p in pins if p['pattern'] == '^PLAN: [0-9]+$']
+        if plan_pins and (len(plan_pins) != 1 or not all(isinstance(plan_pins[0].get(k), str) for k in ('pass', 'fail'))):
+            error(f'selftests.txt:{n}: PLAN pin needs declared pass and fail marker regexps')
         rows.append((triggers.split(), command, target, pins, ci_job))
     if not rows or enrolled != implemented:
         error('enrolment mismatch: missing=' + repr(sorted(implemented - enrolled)) + ' stale=' + repr(sorted(enrolled - implemented)))
@@ -184,6 +205,10 @@ def main():
             result = subprocess.run(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, preexec_fn=cap)
             instrument |= result.returncode in (2, 126, 127)
             reasons = [] if result.returncode == 0 else [f'exit {result.returncode}' + (' (timeout)' if result.returncode == 124 else '')]
+            plan_pin = next((p for p in pins if p['pattern'] == '^PLAN: [0-9]+$'), None)
+            if plan_pin:
+                if child_plan_verdict(result.stdout, result.returncode, plan_pin['pass'], plan_pin['fail']) != 0:
+                    reasons.append('child plan contract failed')
             for pin in pins:
                 pattern, wanted = pin['pattern'], pin['count']
                 matches = re.findall(pattern, result.stdout, re.M)

@@ -1,4 +1,5 @@
 #!/bin/bash
+echo "PLAN: 18"
 # #1146 (thread handles: claim step, generation, full table) + #1161 (the
 # module-env lock predicate).
 #

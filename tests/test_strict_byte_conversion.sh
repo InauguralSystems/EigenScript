@@ -1,4 +1,5 @@
 #!/bin/bash
+echo "PLAN: $(awk '/^run "/ { n++ } END { print n+0 }' "$0")"
 # #1590: list-backed byte conversions reject nonnumeric elements by default,
 # retain the exact compatibility conversion with EIGS_STRICT=0, and preserve
 # str_from_bytes' terminating numeric NUL contract. Probe codec availability

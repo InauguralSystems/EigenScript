@@ -686,7 +686,7 @@ Value* builtin_throw(Value *arg) {
         val_incref(arg);
         g_error_value = arg;
     }
-    if (g_try_depth == 0) {
+    if (!vm_error_has_handler()) {
         /* #407 residual: defer to CHECK_ERROR for the caret excerpt when
          * the VM is live — mirrors rt_error. */
         if (eigs_current && eigs_current->vm && g_vm.frame_count > 0) {

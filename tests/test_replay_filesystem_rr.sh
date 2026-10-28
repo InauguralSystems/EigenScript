@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+echo "PLAN: 3"
 # #1885/#1890: replay is an rr-style, side-effect-free filesystem view.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

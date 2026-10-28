@@ -1,4 +1,5 @@
 #!/bin/bash
+echo "PLAN: 3"
 # #1147: the cycle collector resumes MID-RUN once every spawned worker is
 # joined. `multithreaded` used to be cleared only by the exit drain, so one
 # spawn+join turned collection off for the rest of the run: a closure-cycle

@@ -48,5 +48,6 @@ case_ "a missing receipt is refused" 1 "expected 3 shard receipts, found 2" miss
 case_ "an extra file is refused" 1 "expected 3 shard receipts, found 4" extra 1 126 122
 case_ "an extra hidden file is refused" 1 "expected 3 shard receipts, found 4" hidden 1 126 122
 [ "$n" -eq 6 ] || { echo "asan_receipts selftest: ran $n cases, want 6"; exit 1; }
-echo "asan_receipts selftest: $((n - fail))/$n passed"
+echo "PLAN: $n"
+echo "asan_receipts selftest: $((n - fail)) of $n passed"
 [ "$fail" -eq 0 ]
