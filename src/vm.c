@@ -1634,6 +1634,12 @@ static inline Value *obs_slot_value(EigsSlot s) {
 }
 
 static inline void jit_sample_num_gated(Env *e, int slot, double v) {
+    /* #1867: the inline ring writes are valid only for a private env.  A
+     * shared binding must enter the public helper, which folds under #607. */
+    if (__builtin_expect(g_vm_multithreaded, 0) && e->mt_shared) {
+        observer_slot_sample_num_gated(e, slot, v);
+        return;
+    }
     ObserverSlot *s = env_obs_slot(e, slot);
     int n = s && s->win_override ? s->win_override : g_obs_window;
     if (!s || (s->v_used && (!s->v_window || s->v_cap < n))) {
