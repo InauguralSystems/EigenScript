@@ -33,14 +33,19 @@ CONSUMER_DIR=".codspeed-consumers/DMG"            # what the fetch step populate
 
 # The guard step, verbatim (comments and blank lines aside). A step that can be skipped (`if: false`, a push-only `if:`),
 # neutered (`shell:`, `continue-on-error:`) or unwired (the run-id) is the same fault as no step at all.
-GUARD_STEP_PIN=$(cat <<'PIN'
+# A heredoc inside $( ) does not parse under bash 3.2 (macOS /bin/bash): it scans
+# the body for quotes, and the apostrophe in "lane's" never closes. Keep the
+# heredoc in a function body and capture the function's output instead.
+guard_step_pin() {
+  cat <<'PIN'
       - name: Guard the lane's unit (tools/codspeed_unit_guard.py)
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         env:
           CODSPEED_RUN_ID: ${{ steps.codspeed.outputs.run-id }}
         run: python3 tools/codspeed_unit_guard.py
 PIN
-)
+}
+GUARD_STEP_PIN=$(guard_step_pin)
 
 # The lines of the workflow step whose "- name:" line contains $2, comments and blank lines removed.
 step_block() {
