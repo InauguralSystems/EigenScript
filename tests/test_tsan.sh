@@ -126,6 +126,32 @@ misordered_publish_row() {
     fi
 }
 
+compiler_env_count_hold_row() {
+    echo "=== #2090 planted compiler env-count hold omission MUST be caught ==="
+    local out rc=0 w=0 attempt=0 burners="" pid
+    # The real race needed scheduler pressure to capture.  Give the planted
+    # old access several bounded attempts on a busy host so this oracle is not
+    # itself flaky.  `yes` is only scheduler pressure; its output is discarded.
+    for _ in 1 2 3 4; do yes > /dev/null & burners="$burners $!"; done
+    while [ "$attempt" -lt 20 ] && [ "$w" -eq 0 ]; do
+        attempt=$((attempt + 1))
+        out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R env \
+            EIGS_TSAN_COMPILER_ENV_COUNT_NO_HOLD=1 "$EIGS" \
+            "$TESTS_DIR/loader_mt_define_result.eigs" 2>&1)
+        rc=$?
+        w=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
+    done
+    for pid in $burners; do kill "$pid" 2>/dev/null || true; done
+    for pid in $burners; do wait "$pid" 2>/dev/null || true; done
+    if [ "$rc" -eq 124 ]; then
+        echo "  FAIL: compiler env-count hold omission control HUNG"; FAIL=$((FAIL + 1))
+    elif [ "$w" -gt 0 ]; then
+        echo "  PASS: compiler env-count hold omission detected ($w warnings, attempt $attempt)"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: compiler env-count hold omission NOT detected (rc=$rc)"; FAIL=$((FAIL + 1))
+    fi
+}
+
 rebind_call_row() {
     echo "=== #1171 call vs rebind of a shared binding must be race-free ==="
     # Threads call module-level functions while other threads rebind them to
@@ -773,6 +799,7 @@ fi
 
 seeded_race_row
 misordered_publish_row
+compiler_env_count_hold_row
 observer_shared_fold_rows
 captured_rebind_row
 
