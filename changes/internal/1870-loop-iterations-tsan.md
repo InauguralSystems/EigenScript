@@ -1,0 +1,1 @@
+- Added TSan coverage for concurrent module-level loop-counter publication and clarified the intentional user-race differential exclusion (#1870).
