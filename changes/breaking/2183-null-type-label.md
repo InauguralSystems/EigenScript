@@ -1,1 +1,1 @@
-Programs comparing `type of null` with `"none"` must compare with `"null"` instead (#2183).
+- `type of null` now returns `"null"`, the literal's own spelling, instead of `"none"`; programs comparing it with `"none"` should compare the value directly (`x == null`) (#2183).
