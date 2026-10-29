@@ -90,17 +90,115 @@ def commands(text):
             yield seg
 
 
+def logical_lines(text):
+    """Join shell backslash-newline continuations, retaining the first line."""
+    first = None
+    parts = []
+    for lineno, line in shell_lines(text):
+        if first is None:
+            first = lineno
+        # An odd trailing run escapes the newline.  shell_lines has already
+        # removed comments, so this is the physical line ending the shell sees.
+        trailing = len(line) - len(line.rstrip("\\"))
+        if trailing % 2:
+            parts.append(line[:-1])
+            continue
+        parts.append(line)
+        yield first, "".join(parts)
+        first = None
+        parts = []
+    if parts:
+        yield first, "".join(parts)
+
+
+def option_words(args, operands=(), attached_operands=()):
+    """Yield options, excluding `--` data and option operands.
+
+    attached_operands names short options whose operand may occupy the rest of
+    a bundle (for example grep's `-ePATTERN`).
+    """
+    i = 0
+    while i < len(args):
+        word = args[i]
+        if word == "--":
+            break
+        if not word.startswith("-") or word == "-":
+            i += 1
+            continue
+        yield word
+        if word in operands:
+            i += 2
+            continue
+        if word.startswith("--"):
+            i += 1
+            continue
+        chars = word[1:]
+        for pos, char in enumerate(chars):
+            if char in attached_operands:
+                if pos + 1 == len(chars):
+                    i += 1
+                break
+        i += 1
+
+
+def grep_has_perl(args):
+    for word in option_words(args, ("-e", "-f"), ("e", "f")):
+        if word.startswith("--"):
+            if word == "--perl-regexp":
+                return True
+            continue
+        for char in word[1:]:
+            if char in ("e", "f"):
+                break
+            if char == "P":
+                return True
+    return False
+
+
+def find_has_printf(args):
+    i = 0
+    one_operand = {"-name", "-path", "-regex", "-iname", "-ipath",
+                   "-iregex", "-type", "-user", "-group", "-perm",
+                   "-links", "-inum", "-size", "-mtime", "-mmin",
+                   "-atime", "-amin", "-ctime", "-cmin", "-newer"}
+    while i < len(args):
+        word = args[i]
+        if word == "--":
+            break
+        if word == "-printf":
+            return True
+        if word in one_operand:
+            i += 2
+            continue
+        if word in ("-exec", "-execdir", "-ok", "-okdir"):
+            i += 1
+            while i < len(args) and args[i] not in (";", "+"):
+                i += 1
+        i += 1
+    return False
+
+
 def violation(argv):
     cmd = os.path.basename(argv[0])
     args = argv[1:]
-    if cmd == "realpath" and any(x in ("-m", "-e") for x in args): return "realpath -m/-e"
-    if cmd == "readlink" and "-f" in args: return "readlink -f"
-    if cmd == "grep" and "-P" in args: return "grep -P"
-    if cmd == "date" and "-d" in args: return "date -d"
-    if cmd == "stat" and "-c" in args: return "stat -c"
-    if cmd == "find" and "-printf" in args: return "find -printf"
-    if cmd == "xargs" and "-r" in args: return "xargs -r"
-    if cmd == "sed" and "-i" in args:
+    operand_options = {
+        "date": ("-f", "--file", "-r", "--reference"),
+        "realpath": ("--relative-to", "--relative-base"),
+        "stat": ("--format", "--printf"),
+        "xargs": ("-a", "--arg-file", "-E", "--eof", "-I", "--replace",
+                  "-L", "--max-lines", "-n", "--max-args", "-P",
+                  "--max-procs", "-s", "--max-chars"),
+    }.get(cmd, ())
+    options = list(option_words(args, operand_options))
+    if cmd == "realpath" and any(x in ("-m", "-e") for x in options): return "realpath -m/-e"
+    if cmd == "readlink" and "-f" in options: return "readlink -f"
+    if cmd == "grep" and grep_has_perl(args): return "grep -P"
+    if cmd == "date" and "-d" in options: return "date -d"
+    if cmd == "stat" and "-c" in options: return "stat -c"
+    if cmd == "find" and find_has_printf(args): return "find -printf"
+    if cmd == "xargs" and "-r" in options: return "xargs -r"
+    sed_options = list(option_words(args, ("-e", "-f"), ("e", "f"))) if cmd == "sed" else []
+    if cmd == "sed" and "-i" in sed_options:
         i = args.index("-i")
         # BSD-safe sed supplies the backup suffix as the next argument.  An
         # empty quoted token arrives here as ""; an option or sed program does not.
@@ -111,7 +209,7 @@ def violation(argv):
 hits = []
 for name in sys.argv[1:]:
     text = Path(name).read_text(encoding="utf-8", errors="replace")
-    for lineno, line in shell_lines(text):
+    for lineno, line in logical_lines(text):
         for argv in commands(line):
             kind = violation(argv)
             if kind:
@@ -149,17 +247,24 @@ if [ "${1:-}" = "--selftest" ]; then
     # might accidentally avoid constructs used by the checked population.
     cp "$0" "$work/plant.sh" || exit 2
     printf '%s\n' '# realpath -m is prose' "sed -i '' 's/x/y/' file" \
-        "cat <<'DATA'" 'readlink -f /heredoc/data' 'DATA' 'echo clean' >> "$work/plant.sh"
+        "cat <<'DATA'" 'readlink -f /heredoc/data' 'DATA' 'echo clean' \
+        "grep -F -e '-P' f" 'grep -- -P f' "sed -e '-i' f" >> "$work/plant.sh"
     if ! out=$(PORTABILITY_BASH=/bin/bash PORTABILITY_MAX_MAJOR=99 PORTABILITY_FILES="$work/plant.sh" PORTABILITY_FILE_FLOOR=1 PORTABILITY_RUN_TARGETS= PORTABILITY_RUN_N=0 bash "$0" 2>&1); then
         echo "SELFTEST FAILED: clean portability control was rejected"; printf '%s\n' "$out"; exit 1
     elif ! printf '%s\n' "$out" | grep -qF 'portability-parse: OK: files=1 checked=1 failures=0'; then
         echo "SELFTEST FAILED: clean portability control did not parse exactly one file"; printf '%s\n' "$out"; exit 1
     fi
-    printf '%s\n' 'realpath -m /planted/path' >> "$work/plant.sh"
+    continued_line=$(($(wc -l < "$work/plant.sh") + 1))
+    printf '%s\n' 'find tools \' "-name '*.sh' -printf '%h\\n'" \
+        'grep -P x f' 'grep -FP x f' 'realpath -m /planted/path' >> "$work/plant.sh"
     if out=$(PORTABILITY_BASH=/bin/bash PORTABILITY_MAX_MAJOR=99 PORTABILITY_FILES="$work/plant.sh" PORTABILITY_FILE_FLOOR=1 PORTABILITY_RUN_TARGETS= PORTABILITY_RUN_N=0 bash "$0" 2>&1); then
         echo "SELFTEST FAILED: planted GNU-only flag was accepted"; exit 1
     elif ! printf '%s\n' "$out" | grep -F "gnu-flags: FAIL: $work/plant.sh:" | grep -qF 'GNU-only realpath -m/-e'; then
         echo "SELFTEST FAILED: GNU-only plant did not name file:line"; printf '%s\n' "$out"; exit 1
+    elif ! printf '%s\n' "$out" | grep -qF "gnu-flags: FAIL: $work/plant.sh:$continued_line: GNU-only find -printf"; then
+        echo "SELFTEST FAILED: continued find plant was not reported at its first line"; printf '%s\n' "$out"; exit 1
+    elif [ "$(printf '%s\n' "$out" | grep -cF 'GNU-only grep -P')" -ne 2 ]; then
+        echo "SELFTEST FAILED: separate and bundled grep -P plants were not both caught"; printf '%s\n' "$out"; exit 1
     fi
     printf '%s\n' '#!/bin/bash' 'if then' > "$work/plant.sh"
     if out=$(PORTABILITY_BASH=/bin/bash PORTABILITY_MAX_MAJOR=99 PORTABILITY_FILES="$work/plant.sh" PORTABILITY_FILE_FLOOR=1 PORTABILITY_RUN_TARGETS= PORTABILITY_RUN_N=0 bash "$0" 2>&1); then
