@@ -6174,7 +6174,9 @@ Value* builtin_dispatch(Value *arg) {
         return make_null();
     }
     if (key_d < (double)INT_MIN || key_d > (double)INT_MAX) {
-        rt_error(EK_INDEX, 0, "dispatch key %g out of range", key_d);
+        char key_text[32];
+        eigs_num_text(key_text, sizeof(key_text), key_d);
+        rt_error(EK_INDEX, 0, "dispatch key %s out of range", key_text);
         return make_null();
     }
 
