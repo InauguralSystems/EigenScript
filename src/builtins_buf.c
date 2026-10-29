@@ -119,8 +119,10 @@ Value* builtin_buf_get(Value *arg) {
         return make_num(0);
     }
     if (idx < 0 || idx >= buf->data.buffer.count) {
-        rt_error(EK_INDEX, 0, "buffer index %g out of range (length %d)",
-                 idx_d, buf->data.buffer.count);
+        char idx_text[32];
+        eigs_num_text(idx_text, sizeof(idx_text), idx_d);
+        rt_error(EK_INDEX, 0, "buffer index %s out of range (length %d)",
+                 idx_text, buf->data.buffer.count);
         /* fs:CHANNEL the EK_INDEX rt_error above already raised (#502) */
         return make_num(0);
     }

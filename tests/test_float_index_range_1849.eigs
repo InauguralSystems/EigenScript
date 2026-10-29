@@ -19,22 +19,33 @@ define expect_error(label, expected_kind, expected_message, thunk) as:
     assert_eq of [caught.kind, expected_kind, label + " kind"]
     assert_eq of [caught.message, expected_message, label + " message"]
 
-expect_error of ["positive list index", "index_range", "index 1e+10 out of range (list length 3)", (_) => xs[huge]]
-expect_error of ["negative list index", "index_range", "index -3e+09 out of range (list length 3)", (_) => xs[very_negative]]
-expect_error of ["positive string index", "index_range", "string index 1e+10 out of range (length 3)", (_) => s[huge]]
-expect_error of ["positive buffer index", "index_range", "buffer index 1e+10 out of range (length 3)", (_) => b[huge]]
-expect_error of ["negative buf_get index", "index_range", "buffer index -3e+09 out of range (length 3)", (_) => buf_get of [b, very_negative]]
-expect_error of ["positive dispatch key", "index_range", "dispatch key 1e+10 out of range", (_) => dispatch of [table, huge, null]]
-expect_error of ["negative dispatch key", "index_range", "dispatch key -3e+09 out of range", (_) => dispatch of [table, very_negative, null]]
-expect_error of ["positive slice bound", "index_range", "slice 0:1e+10 out of range (length 3)", (_) => xs[0:huge]]
-expect_error of ["negative slice bound", "index_range", "slice -3e+09:3 out of range (length 3)", (_) => xs[very_negative:]]
+expect_error of ["positive list index", "index_range", "index 10000000000 out of range (list length 3)", (_) => xs[huge]]
+expect_error of ["negative list index", "index_range", "index -3000000000 out of range (list length 3)", (_) => xs[very_negative]]
+expect_error of ["positive string index", "index_range", "string index 10000000000 out of range (length 3)", (_) => s[huge]]
+expect_error of ["positive buffer index", "index_range", "buffer index 10000000000 out of range (length 3)", (_) => b[huge]]
+expect_error of ["negative buf_get index", "index_range", "buffer index -3000000000 out of range (length 3)", (_) => buf_get of [b, very_negative]]
+expect_error of ["positive dispatch key", "index_range", "dispatch key 10000000000 out of range", (_) => dispatch of [table, huge, null]]
+expect_error of ["negative dispatch key", "index_range", "dispatch key -3000000000 out of range", (_) => dispatch of [table, very_negative, null]]
+expect_error of ["positive slice bound", "index_range", "slice 0:10000000000 out of range (length 3)", (_) => xs[0:huge]]
+expect_error of ["negative slice bound", "index_range", "slice -3000000000:3 out of range (length 3)", (_) => xs[very_negative:]]
+
+# Regression for printf %g's six-digit rounding: diagnostics use exactly the
+# same integral spelling as `print of`, for both signs and every indexable type.
+precise is 12345678
+negative_precise is -12345678
+expect_error of ["precise positive list index", "index_range", "index 12345678 out of range (list length 3)", (_) => xs[precise]]
+expect_error of ["precise negative list index", "index_range", "index -12345678 out of range (list length 3)", (_) => xs[negative_precise]]
+expect_error of ["precise positive string index", "index_range", "string index 12345678 out of range (length 3)", (_) => s[precise]]
+expect_error of ["precise negative string index", "index_range", "string index -12345678 out of range (length 3)", (_) => s[negative_precise]]
+expect_error of ["precise positive buffer index", "index_range", "buffer index 12345678 out of range (length 3)", (_) => b[precise]]
+expect_error of ["precise negative buffer index", "index_range", "buffer index -12345678 out of range (length 3)", (_) => b[negative_precise]]
 
 # Force the C builtin fallback as well as OP_DISPATCH by making the argument
 # list non-literal at the call site.
 positive_args is [table, huge, null]
 negative_args is [table, very_negative, null]
-expect_error of ["positive builtin dispatch key", "index_range", "dispatch key 1e+10 out of range", (_) => dispatch of positive_args]
-expect_error of ["negative builtin dispatch key", "index_range", "dispatch key -3e+09 out of range", (_) => dispatch of negative_args]
+expect_error of ["positive builtin dispatch key", "index_range", "dispatch key 10000000000 out of range", (_) => dispatch of positive_args]
+expect_error of ["negative builtin dispatch key", "index_range", "dispatch key -3000000000 out of range", (_) => dispatch of negative_args]
 
 expect_error of ["fractional list index", "value", "index must be an integer, got 1.5", (_) => xs[1.5]]
 expect_error of ["fractional dispatch key", "value", "dispatch key must be an integer, got 1.5", (_) => dispatch of [table, 1.5, null]]
