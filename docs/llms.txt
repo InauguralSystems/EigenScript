@@ -415,8 +415,10 @@ no "box module state in a container or importers go stale" rule. Names
 starting with `_` stay private to the module. Builtin names in module code
 are always the builtins (#1388): rebinding `len` in your program changes your
 code's `len`, never an imported module's, and a module's own `define len`
-stays in that module. Other names a module does not bind still resolve to the
-importer's globals.
+stays in that module. Other names a module does not bind or import are
+undefined: imports never read the importer's incidental globals. Pass
+configuration as a function parameter or through an exported setter.
+`load_file` remains shared-scope by design (#2180).
 
 `lib/eigen.eigs` snapshots the host values used by its tokenizer, parser, evaluator, import helpers, and fresh meta environments when it loads (#1386). Later host builtin rebinding does not change those dependencies, including entropy's `log`/`divide` calls. For `load_file`, the snapshots use values visible during initialization; loaded code still shares the host scope. String conversion still uses the pristine reserved f-string bridge. Explicit custom environments, debug hooks, and rebinding the interpreter's own helper names remain caller-controlled; captured caller-defined functions retain their own binding behavior.
 

@@ -5053,8 +5053,8 @@ check "verdict helper: exit-0 without the marker is never 'closed'" "$OBS_VH2" "
 #     machinery that keeps this answer right.
 OBS_IMP_DIR="$OBS_GATE_TMP/imp"
 mkdir -p "$OBS_IMP_DIR/lib"
-printf 'print of (report of x)\nverdict is 1.0\n' > "$OBS_IMP_DIR/lib/probe.eigs"
-printf 'x is 1.0\nfor i in range of 40:\n    x is x * 2.0\nimport probe\n' > "$OBS_IMP_DIR/host.eigs"
+printf 'x is 1.0\ndefine record(v) as:\n    x is v\ndefine finish() as:\n    print of (report of x)\n' > "$OBS_IMP_DIR/lib/probe.eigs"
+printf 'import probe\nx is 1.0\nfor i in range of 40:\n    x is x * 2.0\n    probe.record of x\nprobe.finish of null\n' > "$OBS_IMP_DIR/host.eigs"
 #     $EIGS_BIN is RELATIVE to the runner's cwd (src/), so it must be
 #     absolutized before the cd — a relative binary under cd was already a
 #     recorded probe trap this session, and it bit again right here on the
@@ -5062,7 +5062,7 @@ printf 'x is 1.0\nfor i in range of 40:\n    x is x * 2.0\nimport probe\n' > "$O
 OBS_EIGS_ABS=$(cd "$(dirname "$EIGS_BIN")" && pwd)/$(basename "$EIGS_BIN")
 OBS_G40_OUT=$(cd "$OBS_IMP_DIR" && obs_tmo 60 "$OBS_EIGS_ABS" host.eigs 2>&1); OBS_G40_RC=$?
 if [ "$OBS_G40_RC" -ne 0 ]; then OBS_G40="died-rc$OBS_G40_RC"; else OBS_G40=$(printf '%s\n' "$OBS_G40_OUT" | head -1); fi
-check "an imported module sees the host's pre-import history (diverging)" "$OBS_G40" "diverging"
+check "an imported module sees explicitly passed history (diverging)" "$OBS_G40" "diverging"
 # 41. Check 30's own control (its open-expectation was the vacuity sibling of
 #     the round-10 hole): the gate opened on a PARSE ERROR in a rotted fixture
 #     exactly as it opens on a genuine budget exhaustion, so garbage awk
@@ -5241,7 +5241,7 @@ echo ""
 # scanned like a literal load_file target, and the constant-pool string
 # match became a match on OP_GET_NAME operands, so string DATA never arms.
 # The fixture pins both halves AND the invariant #915's last comment names:
-# a host's pre-import history stays visible to an imported reader, asserted
+# explicitly passed history stays visible to an imported reader, asserted
 # on the VALUE (diverging), plus the import-time raise for a module rewritten
 # between scan and import. Count pinned like [42a]: a check added or deleted
 # without moving the number goes red here.

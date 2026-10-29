@@ -1399,6 +1399,11 @@ with code 1:
 that, `lib/name.eigs` (the standard library) — and binds the module's
 top-level definitions as a dict named `name`. Nothing leaks into the
 global scope; names starting with `_` stay private to the module.
+The module resolves names only in its own bindings, modules it imports, and
+the standard-library builtin layer. It never reads an incidental global from
+the importing program. Pass configuration as a function parameter or expose a
+module setter. An unresolved read names the module and suggests passing the
+value explicitly. `load_file` retains its shared-scope contract below.
 
 Resolution is **project-first** (#821): a `name.eigs` beside the
 importing file wins over a stdlib module of the same name. The stdlib
@@ -1581,9 +1586,8 @@ undefined variable 'z'
 5
 ```
 
-**Module write boundary.** A loaded (or imported) module's *functions*
-can read the loader's globals and call its functions, but they can
-never bind a write through to them — a bare `name is expr` inside a
+**Module boundary.** An imported module's *functions* cannot read or write the
+importer's globals. A bare `name is expr` inside a
 module function that doesn't refer to a local, a captured name, or the
 module's own top-level state creates a fresh local, regardless of what
 happens to exist in the loader's scope. The same boundary applies one
@@ -1604,8 +1608,9 @@ bindings: `len` in module code is the builtin unless the *module* rebinds
 it. A program that rebinds a builtin — `define len`, a top-level
 `len is ...` or `local len` — before or after the import changes it for its
 own code only, and a module's own `define len` stays inside that module.
-Names that are not builtins still resolve to the importer's globals, as
-above. The builtin set is sealed: no `is` anywhere writes into it — an
+Names that are neither module bindings nor builtins are undefined; pass such
+configuration explicitly as a function parameter or through an exported
+setter. The builtin set is sealed: no `is` anywhere writes into it — an
 assignment that would reach it (from module code, or an `eval` inside a
 module function) creates a binding in the writer's own scope instead.
 `load_file` is not isolated. While an import is running a module's top

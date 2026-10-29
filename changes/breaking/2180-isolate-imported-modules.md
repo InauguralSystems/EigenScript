@@ -1,0 +1,1 @@
+- Imported modules no longer read the importer's globals; pass configuration as a function parameter or through an exported setter (`load_file` remains shared-scope) (#2180).

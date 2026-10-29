@@ -107,9 +107,13 @@ static const char *omitted_capability_message(const char *name) {
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((noinline, cold))
 #endif
-void eigs_raise_missing_name(const char *name, int line) {
+void eigs_raise_missing_name(const char *name, int line, const char *module) {
     const char *message = omitted_capability_message(name);
     if (message) rt_error(EK_VALUE, line, "%s", message);
+    else if (module)
+        rt_error(EK_UNDEFINED_NAME, line,
+                 "undefined variable '%s' in imported module '%s'; pass the value explicitly",
+                 name, module);
     else rt_error(EK_UNDEFINED_NAME, line, "undefined variable '%s'", name);
 }
 
@@ -6675,17 +6679,17 @@ void register_builtins(Env *env) {
 
 }
 
-/* #1388: module code resolves builtin names against a PRISTINE layer, not the
- * importer's globals. The global env keeps its own copy of every builtin (so
+/* #1388/#2180: module code resolves names against a PRISTINE builtin layer,
+ * never the importer's globals. The global env keeps its own copy of every builtin (so
  * a host `define len`, top-level `len is 5` or `local len` rebinds the host's
  * copy and only the host's code sees it); the layer holds the same values,
  * and each module namespace env is created under it (vm.c, IMPORT). The
- * layer's parent is the global env, so a name that is NOT a builtin still
- * falls through to the importer's globals exactly as before. */
+ * layer is a sealed root: a name that is neither a module binding/import nor
+ * a builtin is undefined instead of falling through to the importer. */
 Env *eigs_global_env_create(void) {
     Env *global = env_new(NULL);
     register_builtins(global);   /* one seam: store/gfx ride inside (#742) */
-    Env *layer = env_new(global);
+    Env *layer = env_new(NULL);
     for (int i = 0; i < global->count; i++) {
         if (!global->names[i]) continue;
         Value *v = slot_to_value(global->values[i]);

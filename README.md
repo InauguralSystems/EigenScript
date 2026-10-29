@@ -443,6 +443,11 @@ so they have no row of their own. Inspect `lib/` for the current module set.
 An imported module's builtin names are the builtins: rebinding `len` or `str`
 in your program changes them for your code, never inside a module you import
 ([SPEC, Modules](docs/SPEC.md#modules), #1388).
+Imported modules are otherwise isolated too: they resolve only their own
+bindings, their own imports, and the standard library, never the importing
+program's incidental globals. Pass configuration as a function argument or
+through an exported setter; use `load_file` only when shared scope is intended
+([SPEC, Modules](docs/SPEC.md#modules), #2180).
 
 ```eigenscript fragment
 load_file of "lib/list.eigs"
