@@ -1,4 +1,5 @@
 load_file of "lib/test.eigs"
+load_file of "lib/audio.eigs"
 
 # #1007 — the argument-type guards in ext_gfx.c.
 #
@@ -341,6 +342,7 @@ else:
 dev is audio_open of [44100, 1]
 if dev >= 2:
     assert_eq of [audio_play of [0.1, 0.2, 0.3], 1, "#1007: a well-typed clip still plays"]
+    audio_wait of null
     if env_get of "EIGS_STRICT" == "1":
         assert_eq of [strict_kind of ((_) => audio_play of ["a", "b", "c"]), "type_mismatch", "#1007 strict: a wrong-typed sample list raises instead of playing silence"]
     else:
@@ -351,7 +353,7 @@ if dev >= 2:
         # the default build. That is the one thing the #971 reform promises not
         # to do, and lib/audio.eigs passes user data straight through to here.
         assert_eq of [audio_play of ["a", "b", "c"], 0, "#1007: non-strict answers 0 for a wrong-typed clip, and does not abort"]
-        assert_eq of [audio_play of [0.4, 0.5], 2, "#1007: the mixer still works after a rejected clip"]
+        assert_eq of [audio_play of [0.4, 0.5], 1, "#1007: the mixer reuses the completed channel after a rejected clip"]
     print of "audio-device: 1"
 else:
     print of "audio-device: 0"
