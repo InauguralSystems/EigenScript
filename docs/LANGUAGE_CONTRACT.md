@@ -94,8 +94,9 @@ own local/captured/module-top-level state creates a fresh local — it
 does not depend on what existed in the loader's scope at load time
 (it used to: a global declared before the load was silently
 write-through, one declared after was not). Reads and calls resolve
-only inside the module, its imports and the stdlib. Importer globals are not
-ambient: pass configuration through a parameter or exported setter. `load_file`
+only inside the module, its imports and the stdlib. Importer program globals
+are not ambient, but values injected through embedding host-registration APIs
+are visible in every module like builtins. `load_file`
 continues to share its caller's scope. A **parse error** in a loaded file (via `import`, `load_file`, or
 `eval`) raises a catchable runtime error rather than silently executing a
 partial AST — consistent with the **Errors** promise.

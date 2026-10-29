@@ -340,12 +340,11 @@ eigs_value_release(forty);          /* drop caller's ref; the global keeps its o
 `eigs_get_global` returns a counted ref the caller must release; `NULL`
 if the name isn't bound.
 
-**Globals and imported modules (#1388, #2180).** A value set with
-`eigs_set_global` is a host global, like a top-level binding in the host
-program. Imported module code never resolves through that host scope: it sees
-its own bindings and imports plus the state's sealed builtin layer. Provide
-configuration through a module function parameter or exported setter instead.
-Host evals and `load_file` retain access to host globals.
+**Globals and imported modules (#1388, #2180).** Values injected by the host
+with `eigs_set_global` and the host-registration
+APIs are visible in every module like builtins, while bindings made by program
+code are not visible to imported modules. A host assignment using a builtin
+name remains host-only, so modules retain the pristine builtin (#1388).
 
 A name containing `#` is reserved for the runtime (for example `_#fstr`, the
 binding f-strings convert through, #1322). No source can spell one, and the
