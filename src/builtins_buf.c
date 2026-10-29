@@ -111,11 +111,16 @@ Value* builtin_buf_get(Value *arg) {
         /* fs:CHANNEL the rt_error above already raised */
         return make_num(0);
     }
-    int idx = (int)eigs_list_num(arg, 1, __func__);
+    double idx_d = eigs_list_num(arg, 1, __func__);
+    int idx;
     if (g_has_error) return make_num(0);   /* fs:CHANNEL #1637: a non-number index raised */
+    if (!vm_index_is_int(idx_d, &idx)) {
+        rt_error(EK_VALUE, 0, "index must be an integer, got %g", idx_d);
+        return make_num(0);
+    }
     if (idx < 0 || idx >= buf->data.buffer.count) {
-        rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
-                 idx, buf->data.buffer.count);
+        rt_error(EK_INDEX, 0, "buffer index %g out of range (length %d)",
+                 idx_d, buf->data.buffer.count);
         /* fs:CHANNEL the EK_INDEX rt_error above already raised (#502) */
         return make_num(0);
     }

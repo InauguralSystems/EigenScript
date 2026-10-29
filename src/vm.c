@@ -2245,8 +2245,8 @@ void jit_helper_index_set(void) {
                 target->data.buffer.data[i] = SLOT_NUM_RAW(val_s);
             } else {
                 if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
-                else rt_error(EK_INDEX, g_vm.current_line, "buffer index %d out of range (length %d)",
-                              i, target->data.buffer.count);
+                else rt_error(EK_INDEX, g_vm.current_line, "buffer index %g out of range (length %d)",
+                              SLOT_NUM_RAW(idx_s), target->data.buffer.count);
             }
             g_vm.sp -= 2;  /* keep val on TOS */
             g_vm.stack[g_vm.sp - 1] = val_s;
@@ -2260,8 +2260,8 @@ void jit_helper_index_set(void) {
                 list_rewrite_num(target, i, n);
             } else {
                 if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
-                else rt_error(EK_INDEX, g_vm.current_line, "index %d out of range (list length %d)",
-                              i, target->data.list.count);
+                else rt_error(EK_INDEX, g_vm.current_line, "index %g out of range (list length %d)",
+                              SLOT_NUM_RAW(idx_s), target->data.list.count);
             }
             g_vm.sp -= 2;
             g_vm.stack[g_vm.sp - 1] = val_s;
@@ -2279,14 +2279,14 @@ void jit_helper_index_set(void) {
             val_incref(val);
             list_set_slot_owned(target, i, slot_from_heap(val));
         } else {
-            rt_error(EK_INDEX, g_vm.current_line, "index %d out of range (list length %d)", i, target->data.list.count);
+            rt_error(EK_INDEX, g_vm.current_line, "index %g out of range (list length %d)", VAL_NUM_RAW(idx), target->data.list.count);
         }
     } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
         int i;
         if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
             rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
         } else if (!vm_index_resolve(&i, target->data.buffer.count)) {
-            rt_error(EK_INDEX, g_vm.current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
+            rt_error(EK_INDEX, g_vm.current_line, "buffer index %g out of range (length %d)", VAL_NUM_RAW(idx), target->data.buffer.count);
         } else if (val->type == VAL_NUM) {
             target->data.buffer.data[i] = VAL_NUM_RAW(val);
         } else {
@@ -2319,8 +2319,8 @@ int jit_helper_index_get(void) {
             } else {
                 if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
                 else rt_error(EK_INDEX, g_vm.current_line,
-                    "index %d out of range (list length %d)",
-                    i, target->data.list.count);
+                    "index %g out of range (list length %d)",
+                    SLOT_NUM_RAW(idx_s), target->data.list.count);
                 slot_decref(tgt_s);
                 vm_push_slot(slot_null());
             }
@@ -2334,8 +2334,8 @@ int jit_helper_index_get(void) {
             } else {
                 if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
                 else rt_error(EK_INDEX, g_vm.current_line,
-                    "buffer index %d out of range (length %d)",
-                    i, target->data.buffer.count);
+                    "buffer index %g out of range (length %d)",
+                    SLOT_NUM_RAW(idx_s), target->data.buffer.count);
                 slot_decref(tgt_s);
                 vm_push_slot(slot_null());
             }
@@ -2356,8 +2356,8 @@ int jit_helper_index_get(void) {
             result = list_get_owned(target, i);
         } else {
             rt_error(EK_INDEX, g_vm.current_line,
-                "index %d out of range (list length %d)",
-                i, target->data.list.count);
+                "index %g out of range (list length %d)",
+                VAL_NUM_RAW(idx), target->data.list.count);
         }
     } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
         EigsSlot v = vm_dict_slot_cached(target, idx->data.str,
@@ -2372,8 +2372,8 @@ int jit_helper_index_get(void) {
             result = make_str_len(buf, 1);
         } else {
             rt_error(EK_INDEX, g_vm.current_line,
-                "string index %d out of range (length %d)",
-                i, (int)val_str_len(target));
+                "string index %g out of range (length %d)",
+                VAL_NUM_RAW(idx), (int)val_str_len(target));
         }
     } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
         int i;
@@ -2383,8 +2383,8 @@ int jit_helper_index_get(void) {
             result = make_num(buffer_read_num(target, i));
         else
             rt_error(EK_INDEX, g_vm.current_line,
-                "buffer index %d out of range (length %d)",
-                i, target->data.buffer.count);
+                "buffer index %g out of range (length %d)",
+                VAL_NUM_RAW(idx), target->data.buffer.count);
     } else {
         rt_error(EK_TYPE, g_vm.current_line,
             "cannot index %s", val_type_name(target->type));
@@ -4669,8 +4669,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     vm_push_slot(r);
                 } else {
                     if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
-                    else rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
-                                  i, target->data.list.count);
+                    else rt_error(EK_INDEX, current_line, "index %g out of range (list length %d)",
+                                  SLOT_NUM_RAW(idx_s), target->data.list.count);
                     slot_decref(tgt_s);
                     vm_push_slot(slot_null());
                 }
@@ -4683,8 +4683,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     vm_push_slot(slot_from_num(v));
                 } else {
                     if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
-                    else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",
-                                  i, target->data.buffer.count);
+                    else rt_error(EK_INDEX, current_line, "buffer index %g out of range (length %d)",
+                                  SLOT_NUM_RAW(idx_s), target->data.buffer.count);
                     slot_decref(tgt_s);
                     vm_push_slot(slot_null());
                 }
@@ -4704,7 +4704,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             } else if (vm_index_resolve(&i, target->data.list.count)) {
                 result = list_get_owned(target, i);
             } else {
-                rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)", i, target->data.list.count);
+                rt_error(EK_INDEX, current_line, "index %g out of range (list length %d)", VAL_NUM_RAW(idx), target->data.list.count);
             }
         } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
             EigsSlot v = vm_dict_slot_cached(target, idx->data.str,
@@ -4718,7 +4718,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 char buf[2] = { target->data.str[i], 0 };
                 result = make_str_len(buf, 1);
             } else {
-                rt_error(EK_INDEX, current_line, "string index %d out of range (length %d)", i, (int)val_str_len(target));
+                rt_error(EK_INDEX, current_line, "string index %g out of range (length %d)", VAL_NUM_RAW(idx), (int)val_str_len(target));
             }
         } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
             int i;
@@ -4727,7 +4727,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             else if (vm_index_resolve(&i, target->data.buffer.count))
                 result = make_num(buffer_read_num(target, i));
             else
-                rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
+                rt_error(EK_INDEX, current_line, "buffer index %g out of range (length %d)", VAL_NUM_RAW(idx), target->data.buffer.count);
         } else {
             rt_error(EK_TYPE, current_line, "cannot index %s", val_type_name(target->type));
         }
@@ -4750,8 +4750,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     target->data.buffer.data[i] = SLOT_NUM_RAW(val_s);
                 } else {
                     if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
-                    else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",
-                                  i, target->data.buffer.count);
+                    else rt_error(EK_INDEX, current_line, "buffer index %g out of range (length %d)",
+                                  SLOT_NUM_RAW(idx_s), target->data.buffer.count);
                 }
                 g_vm.sp -= 2;  /* keep val on TOS */
                 g_vm.stack[g_vm.sp - 1] = val_s;
@@ -4764,8 +4764,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     list_set_num(target, i, SLOT_NUM_RAW(val_s));
                 } else {
                     if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_NUM_RAW(idx_s));
-                    else rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
-                                  i, target->data.list.count);
+                    else rt_error(EK_INDEX, current_line, "index %g out of range (list length %d)",
+                                  SLOT_NUM_RAW(idx_s), target->data.list.count);
                 }
                 g_vm.sp -= 2;
                 g_vm.stack[g_vm.sp - 1] = val_s;
@@ -4783,14 +4783,14 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 val_incref(val);
                 list_set_slot_owned(target, i, slot_from_heap(val));
             } else {
-                rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)", i, target->data.list.count);
+                rt_error(EK_INDEX, current_line, "index %g out of range (list length %d)", VAL_NUM_RAW(idx), target->data.list.count);
             }
         } else if (target->type == VAL_BUFFER && idx->type == VAL_NUM) {
             int i;
             if (!vm_index_is_int(VAL_NUM_RAW(idx), &i)) {
                 rt_error(EK_VALUE, current_line, "index must be an integer, got %g", VAL_NUM_RAW(idx));
             } else if (!vm_index_resolve(&i, target->data.buffer.count)) {
-                rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
+                rt_error(EK_INDEX, current_line, "buffer index %g out of range (length %d)", VAL_NUM_RAW(idx), target->data.buffer.count);
             } else if (val->type == VAL_NUM) {
                 target->data.buffer.data[i] = VAL_NUM_RAW(val);
             } else {
@@ -5880,13 +5880,22 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
 
+        /* Keep the supplied numeric values for diagnostics; start/end may
+         * have been clamped to the internal int representation (#2136). */
+        double orig_start = (double)start, orig_end = (double)end;
+        if (slot_is_num(start_s)) orig_start = SLOT_NUM_RAW(start_s);
+        else if (slot_is_ptr(start_s) && slot_as_ptr(start_s)->type == VAL_NUM)
+            orig_start = VAL_NUM_RAW(slot_as_ptr(start_s));
+        if (slot_is_num(end_s)) orig_end = SLOT_NUM_RAW(end_s);
+        else if (slot_is_ptr(end_s) && slot_as_ptr(end_s)->type == VAL_NUM)
+            orig_end = VAL_NUM_RAW(slot_as_ptr(end_s));
+
         /* Resolve negatives against len, then bounds-check 0<=s<=e<=len. */
-        int orig_start = start, orig_end = end;
         if (start < 0) start += len;
         if (end   < 0) end   += len;
         if (start < 0 || start > len || end < 0 || end > len || start > end) {
             rt_error(EK_INDEX, g_vm.current_line,
-                "slice %d:%d out of range (length %d)",
+                "slice %g:%g out of range (length %d)",
                 orig_start, orig_end, len);
             slot_decref(start_s); slot_decref(end_s); slot_decref(tgt_s);
             vm_push_slot(slot_null());

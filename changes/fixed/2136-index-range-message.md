@@ -1,0 +1,1 @@
+- Fixed out-of-range index diagnostics to report the number supplied by the program instead of the runtime's clamped internal index (#2136).

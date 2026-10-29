@@ -3,45 +3,47 @@
 # every affected surface, plus fractional controls that must remain `value`.
 load_file of "lib/test.eigs"
 
-huge is 1099511627776.0
-very_negative is -9223372036854775808.0
+huge is 10000000000.0
+very_negative is -3000000000.0
 xs is [1.5, 2.5, 3.5]
+s is "abc"
+b is buffer of 3
 table is [null]
 
-define expect_error(label, expected_kind, thunk) as:
+define expect_error(label, expected_kind, expected_message, thunk) as:
     caught is null
     try:
         thunk of null
     catch e:
         caught is e
     assert_eq of [caught.kind, expected_kind, label + " kind"]
-    needle is "out of range"
-    if expected_kind == "value":
-        needle is "must be an integer"
-    assert_true of [contains of [caught.message, needle], label + " message"]
+    assert_eq of [caught.message, expected_message, label + " message"]
 
-expect_error of ["positive list index", "index_range", (_) => xs[huge]]
-expect_error of ["negative list index", "index_range", (_) => xs[very_negative]]
-expect_error of ["positive dispatch key", "index_range", (_) => dispatch of [table, huge, null]]
-expect_error of ["negative dispatch key", "index_range", (_) => dispatch of [table, very_negative, null]]
-expect_error of ["positive slice bound", "index_range", (_) => xs[huge:]]
-expect_error of ["negative slice bound", "index_range", (_) => xs[very_negative:]]
+expect_error of ["positive list index", "index_range", "index 1e+10 out of range (list length 3)", (_) => xs[huge]]
+expect_error of ["negative list index", "index_range", "index -3e+09 out of range (list length 3)", (_) => xs[very_negative]]
+expect_error of ["positive string index", "index_range", "string index 1e+10 out of range (length 3)", (_) => s[huge]]
+expect_error of ["positive buffer index", "index_range", "buffer index 1e+10 out of range (length 3)", (_) => b[huge]]
+expect_error of ["negative buf_get index", "index_range", "buffer index -3e+09 out of range (length 3)", (_) => buf_get of [b, very_negative]]
+expect_error of ["positive dispatch key", "index_range", "dispatch key 1e+10 out of range", (_) => dispatch of [table, huge, null]]
+expect_error of ["negative dispatch key", "index_range", "dispatch key -3e+09 out of range", (_) => dispatch of [table, very_negative, null]]
+expect_error of ["positive slice bound", "index_range", "slice 0:1e+10 out of range (length 3)", (_) => xs[0:huge]]
+expect_error of ["negative slice bound", "index_range", "slice -3e+09:3 out of range (length 3)", (_) => xs[very_negative:]]
 
 # Force the C builtin fallback as well as OP_DISPATCH by making the argument
 # list non-literal at the call site.
 positive_args is [table, huge, null]
 negative_args is [table, very_negative, null]
-expect_error of ["positive builtin dispatch key", "index_range", (_) => dispatch of positive_args]
-expect_error of ["negative builtin dispatch key", "index_range", (_) => dispatch of negative_args]
+expect_error of ["positive builtin dispatch key", "index_range", "dispatch key 1e+10 out of range", (_) => dispatch of positive_args]
+expect_error of ["negative builtin dispatch key", "index_range", "dispatch key -3e+09 out of range", (_) => dispatch of negative_args]
 
-expect_error of ["fractional list index", "value", (_) => xs[1.5]]
-expect_error of ["fractional dispatch key", "value", (_) => dispatch of [table, 1.5, null]]
+expect_error of ["fractional list index", "value", "index must be an integer, got 1.5", (_) => xs[1.5]]
+expect_error of ["fractional dispatch key", "value", "dispatch key must be an integer, got 1.5", (_) => dispatch of [table, 1.5, null]]
 # #1849 review: a fractional key outside int range is still a VALUE error, as
 # ordinary indexing reports it, through native OP_DISPATCH and the builtin.
-expect_error of ["fractional dispatch key above int range", "value", (_) => dispatch of [table, 2147483647.5, null]]
-expect_error of ["fractional dispatch key below int range", "value", (_) => dispatch of [table, -2147483648.5, null]]
+expect_error of ["fractional dispatch key above int range", "value", "dispatch key must be an integer, got 2.14748e+09", (_) => dispatch of [table, 2147483647.5, null]]
+expect_error of ["fractional dispatch key below int range", "value", "dispatch key must be an integer, got -2.14748e+09", (_) => dispatch of [table, -2147483648.5, null]]
 frac_args is [table, 2147483647.5, null]
-expect_error of ["fractional builtin dispatch key above int range", "value", (_) => dispatch of frac_args]
-expect_error of ["fractional slice bound", "value", (_) => xs[1.5:]]
+expect_error of ["fractional builtin dispatch key above int range", "value", "dispatch key must be an integer, got 2.14748e+09", (_) => dispatch of frac_args]
+expect_error of ["fractional slice bound", "value", "slice bound must be an integer, got 1.5", (_) => xs[1.5:]]
 
 test_summary of null
