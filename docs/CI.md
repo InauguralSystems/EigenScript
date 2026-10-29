@@ -383,6 +383,13 @@ An explicit `--gfx binary` preserves an older graphics layout, and
 the full name uses the supplied server-db binary. Records identify each
 supplied profile and its hash.
 
+A completed `CA_RECORD` is also a named inventory-floor witness: consumers in
+an older, larger inventory remain required on later runs, and a refusal carries
+their names forward. If inventory is deliberately retired, the operator must
+make that exceptional action explicit with `--reset-floor 'reason'`. This
+ignores only the target record's previous floor (not other completed records)
+and writes the reason as `floor_reset_reason=` in the replacement record.
+
 Each acceptance command runs in its consumer checkout.
 A tree argument selects `src/eigenscript`; a binary symlink is
 resolved before walking to its candidate tree. When a source tree is found,

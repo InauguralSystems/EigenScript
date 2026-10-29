@@ -135,13 +135,14 @@ record_floor() {
   if [ ! -f "$ECO/.ca_fixture" ]; then
     for f in "$HERE"/reports/consumer_acceptance/*.record; do
       [ -f "$f" ] || continue
+      [ -z "${FLOOR_RESET_REASON:-}" ] || [ "$f" != "$RECORD" ] || continue
       grep -q '^status=COMPLETE$' "$f" || continue
       n="$(sed -n 's/^inventory=\([0-9][0-9]*\).*$/\1/p' "$f" | tail -1)"
       [ -n "$n" ] && [ "$n" -gt "$FLOOR" ] && FLOOR="$n"
     done
   fi
   # CA_RECORD can live outside the standard reports directory.
-  if [ -n "${RECORD:-}" ] && [ -f "$RECORD" ] && grep -q '^status=COMPLETE$' "$RECORD"; then
+  if [ -z "${FLOOR_RESET_REASON:-}" ] && [ -n "${RECORD:-}" ] && [ -f "$RECORD" ] && grep -q '^status=COMPLETE$' "$RECORD"; then
     n="$(sed -n 's/^inventory=\([0-9][0-9]*\).*$/\1/p' "$RECORD" | tail -1)"
     [ -n "$n" ] && [ "$n" -gt "$FLOOR" ] && FLOOR="$n"
     while IFS= read -r name; do
@@ -559,8 +560,8 @@ PROBE
 }
 run() {
   local candidate="${1:-}" arg i examined=0 bad=0 rc version final_tmp gfx_checkout_lib gfx_prefix_lib gfx_user_lib
-  FULL=""; GFX=""; SERVER=""; SERVER_DB=""; GFX_ROUTE=missing
-  [ -n "$candidate" ] || { echo 'usage: run <tree-or-binary> [--server binary] [--server-db binary] [--full binary] [--gfx binary]'; return 2; }
+  FULL=""; GFX=""; SERVER=""; SERVER_DB=""; GFX_ROUTE=missing; FLOOR_RESET_REASON=""
+  [ -n "$candidate" ] || { echo 'usage: run <tree-or-binary> [--server binary] [--server-db binary] [--full binary] [--gfx binary] [--reset-floor reason]'; return 2; }
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -568,6 +569,9 @@ run() {
       --gfx) [ "$#" -ge 2 ] || return 2; GFX="$2"; GFX_ROUTE=explicit; shift 2 ;;
       --server) [ "$#" -ge 2 ] || return 2; SERVER="$2"; shift 2 ;;
       --server-db) [ "$#" -ge 2 ] || return 2; SERVER_DB="$2"; shift 2 ;;
+      --reset-floor)
+        [ "$#" -ge 2 ] && [ -n "$2" ] && [[ "$2" != *$'\n'* ]] || { echo '--reset-floor requires a non-empty, single-line reason'; return 2; }
+        FLOOR_RESET_REASON="$2"; shift 2 ;;
       *) echo "unknown argument: $1"; return 2 ;;
     esac
   done
@@ -627,6 +631,7 @@ run() {
     echo 'server_sha256=PENDING'
     echo 'server_db_sha256=PENDING'
     echo "record_floor=$FLOOR"
+    echo "floor_reset_reason=${FLOOR_RESET_REASON:-none}"
     echo "consumer_logs_root=$LOG_ROOT"
     echo "consumer_logs=$LOGS"
     echo 'consumer_logs_retention=run-owned; unrelated entries retained'
@@ -720,6 +725,7 @@ run() {
     echo "server_sha256=$SERVER_SHA"
     echo "server_db_sha256=$SERVER_DB_SHA"
     echo "record_floor=$FLOOR"
+    echo "floor_reset_reason=${FLOOR_RESET_REASON:-none}"
     echo "consumer_logs_root=$LOG_ROOT"
     echo "consumer_logs=$LOGS"
     echo 'consumer_logs_retention=run-owned; unrelated entries retained'
@@ -752,7 +758,7 @@ selftest() {
   printf '#!/bin/sh\nexit 0\n' > "$st_candidate"; chmod +x "$st_candidate"
   st_record="$st_root/record"; st_out="$st_root/output"
   st_reset() {
-    rm -rf "$st_eco"; mkdir -p "$st_eco"; : > "$st_eco/.ca_fixture"
+    rm -rf "$st_eco"; mkdir -p "$st_eco"; : > "$st_eco/.ca_fixture"; rm -f "$st_record"
   }
   st_consumer() {
     local n="$1" cmd="${2:-}"
@@ -991,11 +997,17 @@ YAML
   first_c="$(grep -c '^inventory_floor_name|c$' "$st_record" 2>/dev/null || true)"
   st_rc=0
   CA_ECO="$st_eco" CA_TREE="$st_root" CA_RECORD="$st_record" CA_TIMEOUT=2 timeout 60 bash "$st_root/runner/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 || st_rc=$?
-  if [ "$first_rc" -ne 0 ] && [ "$st_rc" -ne 0 ] && [ "${first_floor:-0}" -ge 3 ] &&
-     [ "$(sed -n 's/^inventory=\([0-9][0-9]*\).*$/\1/p' "$st_record" | tail -1)" -ge 3 ] &&
-     [ "$first_c" -gt 0 ] && grep -Fq 'declared consumer absent: c' "$st_record"; then
-    echo 'plant D1 check=same-path-floor-persistence RED runs=2 missing=c floor>=3'
-  else echo "plant D1 check=same-path-floor-persistence SILENT first_rc=$first_rc second_rc=$st_rc first_floor=${first_floor:-none}"; st_bad=1; fi
+  local second_rc="$st_rc" second_floor second_missing
+  second_floor="$(sed -n 's/^inventory=\([0-9][0-9]*\).*$/\1/p' "$st_record" | tail -1)"
+  second_missing=0; grep -Fq 'declared consumer absent: c' "$st_record" && second_missing=1
+  : > "$st_eco/.ca_fixture"
+  st_rc=0
+  CA_ECO="$st_eco" CA_TREE="$st_root" CA_RECORD="$st_record" CA_TIMEOUT=2 timeout 60 bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" --reset-floor 'inventory deliberately retired for self-test' > "$st_out" 2>&1 || st_rc=$?
+  if [ "$first_rc" -ne 0 ] && [ "$second_rc" -ne 0 ] && [ "$st_rc" -eq 0 ] && [ "${first_floor:-0}" -ge 3 ] &&
+     [ "${second_floor:-0}" -ge 3 ] && [ "$second_missing" -eq 1 ] && [ "$first_c" -gt 0 ] &&
+     grep -Fqx 'floor_reset_reason=inventory deliberately retired for self-test' "$st_record"; then
+    echo 'plant D1 check=same-path-floor-persistence RED runs=2 missing=c floor>=3 reset=GREEN(logged)'
+  else echo "plant D1 check=same-path-floor-persistence SILENT first_rc=$first_rc second_rc=$second_rc reset_rc=$st_rc first_floor=${first_floor:-none}"; tail -12 "$st_out"; tail -12 "$st_record"; st_bad=1; fi
   # (E) A named missing capability is UNRUNNABLE before the command runs.
   st_reset; st_consumer dynamics 'eigenscript smoke.eigs'
   printf 'dynamics\n' > "$st_eco/.ca_expected"
@@ -1265,5 +1277,5 @@ case "${1:-plan}" in
   --check-skips)
     [ "$#" -eq 3 ] || { echo 'usage: consumer_acceptance.sh --check-skips consumer logfile'; exit 2; }
     consumer_skip_check "$2" "$3" ;;
-  *) echo 'usage: consumer_acceptance.sh [plan [--cmd consumer]|run candidate [--server binary] [--server-db binary] [--full binary] [--gfx binary]|--self-test|--check-skips consumer logfile]'; exit 2 ;;
+  *) echo 'usage: consumer_acceptance.sh [plan [--cmd consumer]|run candidate [--server binary] [--server-db binary] [--full binary] [--gfx binary] [--reset-floor reason]|--self-test|--check-skips consumer logfile]'; exit 2 ;;
 esac

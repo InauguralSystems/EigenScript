@@ -1,1 +1,1 @@
-- Consumer acceptance refusals now preserve the historical inventory floor and its named consumers across same-path reruns (#1303).
+- Consumer acceptance refusals now preserve the historical inventory floor and its named consumers across same-path reruns, with deliberate resets explicit and recorded (#1303).
