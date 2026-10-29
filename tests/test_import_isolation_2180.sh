@@ -3,6 +3,9 @@ echo "PLAN: 5"
 set -u
 EIGS=${EIGS:-$(cd "$(dirname "$0")/.." && pwd)/src/eigenscript}
 W=$(mktemp -d)
+# The runtime reports a module by its resolved path; on macOS mktemp returns
+# /var/folders/... while the real path is /private/var/... (a symlink).
+W=$(cd "$W" && pwd -P)
 trap 'rm -rf "$W"' EXIT
 
 cat >"$W/dep.eigs" <<'EIG'
@@ -71,8 +74,8 @@ for tier in vm jit osr; do
         osr) out=$(EIGS_JIT_HOT=1 EIGS_JIT_OSR_THRESHOLD=1 "$EIGS" "$W/osr.eigs" 2>&1); rc=$? ;;
     esac
     if [ "$rc" -ne 0 ] \
-       && printf '%s\n' "$out" | grep -Fq "undefined variable 'importer_only' in imported module '$W/isolated.eigs'" \
-       && printf '%s\n' "$out" | grep -Fq "pass the value explicitly"; then
+       && grep -Fq "undefined variable 'importer_only' in imported module '$W/isolated.eigs'" <<< "$out" \
+       && grep -Fq "pass the value explicitly" <<< "$out"; then
         echo "PASS: $tier isolates importer globals and gives the module/pass-explicitly diagnostic"
     else
         echo "FAIL: $tier import isolation diagnostic (rc=$rc): $out"
