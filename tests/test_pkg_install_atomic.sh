@@ -27,8 +27,8 @@ cp eigs.lock.json "$TMP/lock.before"
 "$EIGS" --pkg install >/dev/null
 "$EIGS" --pkg verify >/dev/null
 printf 'PASS: uninterrupted staged install activates a verifiable tree\n'
-find eigs_modules -prune -perm 0755 -print | grep -q . || { echo 'FAIL: install changed existing eigs_modules mode'; exit 1; }
-find eigs_modules/atom -prune -perm 0750 -print | grep -q . || { echo 'FAIL: install changed existing package directory mode'; exit 1; }
+[ -n "$(find eigs_modules -prune -perm 0755 -print)" ] || { echo 'FAIL: install changed existing eigs_modules mode'; exit 1; }
+[ -n "$(find eigs_modules/atom -prune -perm 0750 -print)" ] || { echo 'FAIL: install changed existing package directory mode'; exit 1; }
 printf 'PASS: staged install preserves existing directory modes before activation\n'
 
 # With no prior tree, activation must publish the same permissions as mkdir
