@@ -89,7 +89,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx gfx-x11-regressions pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked jit-checked-plant
+.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent fsync-test-hooks asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx gfx-x11-regressions pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked jit-checked-plant
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -452,7 +452,7 @@ gfx: build
 
 # The label floor first (#1379): a runner overwritten by a generated plan has no
 # sections and no epilogue, so it ran nothing and exited 0.
-test: build sandbox-intern-test
+test: build sandbox-intern-test fsync-test-hooks
 	$(AUX_REFRESH)
 	bash tools/suite_label_check.sh
 	cd tests && bash run_all_tests.sh
@@ -583,6 +583,14 @@ dap: $(DAP_BINARY)
 jit-smoke:
 	$(CC) -Wall -Wextra $(WERROR_FLAGS) -O2 -o /tmp/jit_smoke $(SRC_DIR)/jit.c $(SRC_DIR)/jit_smoke.c -lm
 	/tmp/jit_smoke
+
+# Dedicated CLI used to observe that both sync builtins reach fsync(2).  The
+# hook implementation and define are absent from every shipping variant.
+build/test/eigenscript_fsync_hooks: $(SOURCES) tests/fsync_test_hook.c $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(DEFS_OFF) $(VERDEF) -DEIGS_TEST_HOOKS -o $@ $(SOURCES) tests/fsync_test_hook.c $(LDFLAGS) -ldl
+
+fsync-test-hooks: build/test/eigenscript_fsync_hooks
 
 # Deliberately invalid local operand used only as the jit-checked lane's
 # positive control. The scanner accepts it, then the emitted witness aborts.

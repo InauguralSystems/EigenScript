@@ -694,22 +694,19 @@ Value* builtin_remove_file(Value *arg) {
     TRACE_NONDET_RECORD("remove_file", make_bool(1));
 }
 
-/* The test seam is deliberately inside the wrapper rather than an interposer:
- * a normal test build exercises the exact descriptor and fsync call used in
- * production.  It is inert unless the test-only environment variable is set. */
+#ifdef EIGS_TEST_HOOKS
+/* Supplied only by the dedicated fsync test binary.  Production builds have
+ * neither the hook nor any runtime mechanism that can enable it. */
+extern int eigs_test_fsync_hook(int fd, const char *kind);
+#endif
+
 static int eigs_sync_fd(int fd, const char *kind) {
-    int result = fsync(fd);
-    int saved_errno = errno;
-    const char *log_path = getenv("EIGS_TEST_FSYNC_LOG");
-    if (log_path && *log_path) {
-        FILE *log = fopen(log_path, "a");
-        if (log) {
-            fprintf(log, "%s\n", kind);
-            fclose(log);
-        }
-    }
-    errno = saved_errno;
-    return result;
+#ifdef EIGS_TEST_HOOKS
+    return eigs_test_fsync_hook(fd, kind);
+#else
+    (void)kind;
+    return fsync(fd);
+#endif
 }
 
 static Value *sync_path(Value *arg, const char *fn, int want_directory) {
@@ -717,12 +714,13 @@ static Value *sync_path(Value *arg, const char *fn, int want_directory) {
     Value *replayed = NULL;
     if (file_io_replay(fn, &replayed)) return replayed;
 
-    int fd = open(arg->data.str, O_RDONLY);
+    int fd = open(arg->data.str, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (fd < 0) return file_io_error(fn, arg->data.str, errno);
     struct stat st;
     int ok = fstat(fd, &st) == 0;
     int err = ok ? 0 : errno;
-    if (ok && want_directory != !!S_ISDIR(st.st_mode)) {
+    if (ok && ((want_directory && !S_ISDIR(st.st_mode)) ||
+               (!want_directory && !S_ISREG(st.st_mode)))) {
         ok = 0;
         err = want_directory ? ENOTDIR : EISDIR;
     }
@@ -735,7 +733,8 @@ static Value *sync_path(Value *arg, const char *fn, int want_directory) {
         err = errno;
     }
     if (!ok) return file_io_error(fn, arg->data.str, err);
-    TRACE_NONDET_RECORD(fn, make_bool(1));
+    if (want_directory) TRACE_NONDET_RECORD("dir_sync", make_bool(1));
+    TRACE_NONDET_RECORD("file_sync", make_bool(1));
 }
 
 /* file_sync of path — flush a regular file's data and metadata to storage. */
