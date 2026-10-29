@@ -256,6 +256,15 @@ scheduler-trace/observer-configuration machinery is tracked by #1688.
 Every builtin whose return value is nondeterministic from the script's
 perspective lands on the tape as an `N` record:
 
+- **Tensor-file cap decision (#1393):** each valid `tensor_load` path call
+  records one compact observation: `[rows, cols]` for an over-cap header,
+  otherwise `null`. On replay, every structurally valid verdict raises the
+  same generic `io` file-read-boundary error before filesystem access; an
+  over-cap verdict does not reconstruct its recorded `limit` error. Tensor
+  payloads are untaped and are never read live during replay. Invalid path
+  argument types consume no observation. The following nondeterministic call
+  retains its own record.
+
 The hook is the `TRACE_NONDET_RET` macro in `src/trace.h`, used at
 every nondet return site — adding a new nondet builtin means wrapping
 its return in the same macro. A builtin that *builds* its return value

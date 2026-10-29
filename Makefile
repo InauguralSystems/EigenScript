@@ -423,11 +423,11 @@ embed-roads: build/$(ROAD_VARIANT)/embed_roads
 
 server-db: build/server-db/eigenscript
 	$(call RELINK,server-db)
-	@echo "EigenScript $(VERSION) (server: http+net+model+db) built. Binary: $$(du -sh build/server-db/eigenscript | cut -f1)"
+	@echo "EigenScript $(VERSION) (server: http+net+db) built. Binary: $$(du -sh build/server-db/eigenscript | cut -f1)"
 
 server: build/server/eigenscript
 	$(call RELINK,server)
-	@echo "EigenScript $(VERSION) (server: http+net+model) built. Binary: $$(du -sh build/server/eigenscript | cut -f1)"
+	@echo "EigenScript $(VERSION) (server: http+net) built. Binary: $$(du -sh build/server/eigenscript | cut -f1)"
 
 # Compatibility target names; release artifacts are now release/server/server-db.
 full: server-db

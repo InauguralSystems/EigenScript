@@ -763,27 +763,6 @@ else
     fail "tensor verdict replay contract" "null='$TENSOR_NULL' cap='$TENSOR_CAP'"
 fi
 
-# An explicitly empty dump path is disabled, exactly like an absent variable.
-# With no model loaded this call reaches its ordinary deterministic answer.
-cat > "$TMPDIR/p_empty_train_dump.eigs" <<'EOF'
-EOF
-echo "$VHDR" > "$TMPDIR/empty-train-dump.tape"
-MODEL_EIGS="${MODEL_EIGS:-$SRC_DIR/../build/server/eigenscript}"
-if [ ! -x "$MODEL_EIGS" ]; then
-    # Build the FILE target, never the phony `server` goal: the phony goal
-    # hard-links src/eigenscript to the server variant, which swaps the binary
-    # under the running suite ("src/eigenscript changed during the run").
-    make -s -C "$SRC_DIR/.." build/server/eigenscript >/dev/null
-fi
-EMPTY_DUMP=$(EIGS_TRAIN_DUMP= EIGS_REPLAY="$TMPDIR/empty-train-dump.tape" \
-    "$MODEL_EIGS" "$TMPDIR/p_empty_train_dump.eigs" 2>&1)
-if echo "$EMPTY_DUMP" | grep -q '"Model not loaded"' \
-   && ! echo "$EMPTY_DUMP" | grep -q 'replay refused'; then
-    ok "empty EIGS_TRAIN_DUMP is disabled during replay"
-else
-    fail "empty EIGS_TRAIN_DUMP predicate" "out='$EMPTY_DUMP'"
-fi
-
 echo
 echo "REPLAY: $PASS passed, $FAIL failed"
 [ "$FAIL" = "0" ] && exit 0 || exit 1
