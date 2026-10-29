@@ -20,5 +20,5 @@ loop while j < 1050000:
     d["k"] is b
     j is j + 1
 
-if t == "none" and u == "bool" and xs[0] == null and d["k"]:
+if t == "null" and u == "bool" and xs[0] == null and d["k"]:
     print of "All tests passed"
