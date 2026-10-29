@@ -1,0 +1,1 @@
+- Package installation now stages the complete dependency tree before replacing `eigs_modules/`, so an interrupted clone cannot expose a partial install (#2170).
