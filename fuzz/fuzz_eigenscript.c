@@ -116,6 +116,10 @@ static void fuzz_check_invariants(void) {
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+    /* Match the embedding boundary: an input is a new top-level evaluation,
+     * not a continuation of the previous input's exit scope (#2095). */
+    g_exit_requested = 0;
+    eigs_state_begin_eval(eigs_current_state());
     if (size == 0 || size > 65536) return 0;
 
     /* gc_collect_at_exit disables admission while it dismantles the prior
@@ -184,6 +188,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     }
     free_tokenlist(&tl);
     free(source);
+    /* An uncaught `throw` owns its payload until the top-level evaluator
+     * consumes or clears it.  This process has no CLI teardown between
+     * inputs, so perform that teardown explicitly. */
+    eigs_clear_error_value();
     /* Join workers before touching unguarded caches. Release temporal history
      * and the scheduler, then perform the CLI's exit collection for this
      * input's root. This also handles parse/compiler error paths. */
