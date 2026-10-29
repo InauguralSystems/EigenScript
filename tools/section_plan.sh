@@ -1101,7 +1101,7 @@ selftest() {
     expect_red 'check_chunk_count: vacuous chunk population falls below floor' 'chunk enumeration examined' \
         "$dir/bad-count.sh" --root "$SP_ROOT" --chunks --quiet
     expect_ok 'control: complete, disjoint shard assignment and count sync' "$0" --root "$SP_ROOT" --shards 3 --check --quiet
-    expect_red 'section groups: headerless body split from nearest header is refused' 'count=216; [114] header @1830 body @1831' \
+    expect_red 'section groups: headerless body split from nearest header is refused' 'count=216; [114] header @1834 body @1835' \
         env SP_SECTION_GROUP_MUTATE=split "$0" --root "$SP_ROOT" --shards 3 --check --quiet
     expect_red 'shard_check: missing chunk makes union != full' 'union != full' \
         env SP_SHARD_MUTATE=drop "$0" --root "$SP_ROOT" --shards 3 --check --quiet
