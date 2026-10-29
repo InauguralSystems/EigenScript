@@ -180,7 +180,7 @@ get `python3-yaml` from `.devcontainer/Dockerfile`; the macOS job installs
 PyYAML and fails the job if the import fails, so the load runs there too.
 The suite runs the live `tools/workflow_yaml_check.sh` as `[99zd]`.
 
-## Main lane (the merge queue, then push to `main`) — the full matrix
+## Main lane (the merge queue) — the full matrix
 
 Everything above runs in full: macOS (`macos-latest`), every variant job on the
 complete suite, `linux / clang` on the complete suite. [99i] is now cheap enough
@@ -226,14 +226,18 @@ dispatch API and the workflow validates the value again before doing work.
   `tools/ci_tier_check.sh`. What follows holds for `main`'s text. A branch that
   edits `ci.yml` can change it, exactly as its pull-request run already could,
   since a pull request also runs the branch's own workflow file.
-- **What it writes.** In `main`'s `ci.yml`, the only job that can write is
-  `build dev/ci image`:
+- **What it writes.** In `main`'s `ci.yml`, two jobs have narrowly scoped
+  package write permission:
   - Every non-fork run pushes the commit's own `ci-<sha>` image tag, a
     dispatch included.
-  - The rolling `ci-main` tag is the one name written here that `main` owns
-    (fork PRs run in it). It moves only on a push to `main` whose SHA is still
-    `main`'s tip, so neither a dispatch from any ref nor a re-run of an older
-    push moves it (`[ci-main]`, below).
+  - `build dev/ci image` writes only the immutable `ci-<sha>` tag.
+  - The short push-only `verify queue run and promote ci-main` job owns the
+    rolling `ci-main` tag that fork PRs run in. It first requires a successful
+    completed `merge_group` run of this workflow for the exact pushed SHA,
+    then confirms that SHA is still `main`'s tip, and retags the queue-built
+    `ci-<sha>` image with `docker buildx imagetools create`. It does not rebuild
+    the image. Thus neither a direct/unverified push, a dispatch, nor a rerun
+    of an older push can move `ci-main` (`[ci-main]`, below).
   - The build cache goes to the run's ref scope. A dispatch on a branch writes
     the branch's scope; a dispatch on `main` writes `main`'s, as a push does.
   - Artifacts stay in the run.
@@ -282,8 +286,8 @@ rebase or merge `main` into a long-lived branch before its first dispatch.
 
 - `observer oracle (floor)` is a required `ci.yml` check, gated like the
   differentials on `scope`'s `code` output. It runs on every pull request
-  that changes code, on every merge-queue candidate and on every push to
-  `main`. A docs-only pull request skips it, and the skip counts as a pass
+  that changes code and on every merge-queue candidate. It is not redundantly
+  rerun by the short push attestation. A docs-only pull request skips it, and the skip counts as a pass
   once `scope` and the dev image finish.
 - The job runs `tools/observer_oracle/ci_lane.sh`. The lane builds the
   v0.46.0 anchor with `make observer-anchor`, which runs
@@ -581,20 +585,22 @@ The fix copies Rust (tiers plus a merge queue), CPython and Go:
   there, so `main` is green by construction, and **contributors never rebase
   just to update a PR** — the queue tests the combination for them. Every
   workflow that produces a required check (`ci.yml`, `codeql.yml`,
-  `pages.yml`) triggers on `merge_group`, and every main-lane-only step is
-  gated `github.event_name != 'pull_request'` (true on push *and* in the
-  queue), never `== 'push'`.
+  `pages.yml`) triggers on `merge_group`.
 - **Heavy required lanes** — ASan/UBSan shards, both TSan variants, every
   extension suite (HTTP/model, gfx, zlib, net, and database), macOS, valgrind,
-  and the instruction-count benchmark run in the merge queue and on pushes to
-  `main`, not on PRs. Aggregated workers are skipped before runner allocation;
+  and the instruction-count benchmark run in the merge queue, not on pushes
+  to `main` and not on PRs. Aggregated workers are skipped before runner allocation;
   the always-running required aggregator prints the PR deferral and requires
   every worker to succeed in the queue. The macOS required name is reported
   by an Ubuntu aggregator on PRs, so deferral consumes no macOS runner.
-- **The post-merge push run** re-tests the commit the queue already tested. It
-  stays: the README badge reads it, it publishes the rolling `ci-main` dev
-  image that fork PRs run in, and `pages.yml` deploys the site only on push
-  (never from a queue candidate that may still be rejected).
+- **The post-merge push run** is now one short attestation/publication job.
+  The README badge reads this run. It is green only when the exact main SHA has
+  a successful completed `merge_group` run of `ci.yml`; a direct push without
+  that proof is honestly red and names the SHA. On success it retags the
+  already-built `ci-<sha>` image as `ci-main`, only while the SHA remains
+  main's tip. Its per-SHA concurrency group means a later merge cannot cancel
+  it. `pages.yml` separately deploys the site only on push (never from a queue
+  candidate that may still be rejected).
 - **Tier 2** — slow and port lanes, in `.github/workflows/nightly.yml`
   (today `macos-15-intel` and the full valgrind corpus). They never colour
   `main`; a failure opens or appends to one tracking issue.
@@ -620,10 +626,10 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
   `merge_group`. Either way the check never *reports* there, and a required
   check that never reports blocks every merge until someone overrides it.
 - `[event-condition]` — on a required path (a required job, the jobs it
-  transitively needs, and the `ci.yml` workers), a condition could run work on
-  push that the queue skips. A job-level `if:` may not mention the event at
-  all except on the enumerated heavy workers behind required aggregators;
-  those must use exactly `github.event_name != 'pull_request'`. A step `if:`
+  transitively needs, and the `ci.yml` workers), a condition could run work in
+  one testing event that another skips. Every `ci.yml` required-path job has
+  the reviewed common push exclusion; after removing it, job conditions obey
+  the same event rules as before. A step `if:`
   may mention the event only as `github.event_name ==/!= 'pull_request'`, or
   via the PR payload `github.event.pull_request.*` (empty on push and in the
   queue alike). Beyond those two forms, a condition may read only the `github`
@@ -644,7 +650,7 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
 - `[heavy-deferral]` / `[heavy-on-pr]` / `[heavy-no-merge-work]` — every
   enumerated heavy required job has exactly one PR step printing `deferred to
   merge queue`, every other step excludes PRs, and real work remains for the
-  merge queue and push. The self-test plants a push-only heavy suite which
+  merge queue. The self-test plants a push-only heavy suite which
   also defers in the queue and requires that mutation to go red.
 - `[continue-on-error]` — a job or step on a required path sets it, so its
   failure would not fail the check.
@@ -652,13 +658,14 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
   one required `if: always()` aggregator. A failing non-required job does not
   stop the queue, yet it colours the badge: the `macos-15-intel` shape.
 - `[ci-main]` — `ci-main` is the one name `ci.yml` writes that `main` owns.
-  The check finds the step that computes the image push's tags and runs it,
-  under `bash -e`, across every event (push, pull request, merge queue,
-  dispatch), ref (`main`, a branch, a pull request's merge ref, the queue's
-  ref) and tip state (this SHA is `main`'s tip, is not, or the tip cannot be
-  read), plus fork pull requests. It requires `ci-main` exactly on a push to
-  `refs/heads/main` at `main`'s tip. Every non-fork run pushing its own
-  `ci-<sha>` is by design.
+  The check runs the immutable-image tag computation across its event/ref/tip
+  matrix and requires that it never emits `ci-main`. It then requires the sole
+  push job, minimal `contents: read`, `actions: read`, `packages: write`
+  permissions, and an ordered script that verifies an exact-SHA successful
+  `merge_group` run of `ci.yml`, checks main's tip, and only then retags
+  `ci-<sha>` as `ci-main`. The reviewed writer script is hash-pinned, so other
+  commands cannot silently join it. Its self-test removes the successful-run condition
+  and requires that unsafe variant to be red.
   - `on.push` must be exactly `branches: [main]`.
   - Each image push must take its tags from that one step.
   - The matrix runs the step with the workflow, job and step env merged as the
@@ -682,7 +689,8 @@ self-tests` job. A missing PyYAML is exit 2, never a pass.
     registry cache is shared across refs.
   - A new input goes red until someone vets it and adds it to `INPUTS`.
   - No `./` or `docker://` action, and no reusable-workflow call.
-  - No script except the tag step that `[ci-main]` runs.
+  - No script except the immutable tag step and the promotion script that
+    `[ci-main]` validates.
 
   A job can write when it holds a write permission: its own, or the workflow's,
   where a missing block counts as the repository default, which may write.

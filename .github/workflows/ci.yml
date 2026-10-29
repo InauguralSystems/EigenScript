@@ -8,8 +8,8 @@ on:
   # The merge queue (#1264, Rust's model): the FULL main lane runs on the
   # queue's candidate (current main + the PRs queued ahead + this one) before
   # anything lands, so main is green by construction. Every step below that
-  # is main-lane-only is gated `github.event_name != 'pull_request'`, which is
-  # true on push AND on merge_group — never `== 'push'`.
+  # is main-lane-only runs on merge_group. A push to main runs only the short
+  # queue-verification/image-promotion job below.
   merge_group:
     types: [checks_requested]
   # The full main lane on demand, for a long-lived branch before it enters the
@@ -45,8 +45,9 @@ permissions:
 env:
   ASAN_SHARDS: 3
 
-# One run per concurrency group in flight: a new push to main (or a PR update)
-# cancels the older run in its group. Prevents superseded/hung runs from piling
+# One run per concurrency group in flight: a PR update cancels the older run
+# in its group. Main pushes use the SHA, so a later merge cannot cancel the
+# short attestation for an earlier SHA. Prevents superseded runs from piling
 # up (2026-08-18: three main-push runs — 214m/118m/81m — alive at once after
 # a valgrind flake, none superseding the others). Pairs with the per-job
 # timeout-minutes, which bounds a single hang; this bounds the *fan-out*.
@@ -59,17 +60,81 @@ env:
 # Nothing else stops a running dispatch either, a later push to its branch
 # included: cancel it with `gh run cancel <run-id>`.
 concurrency:
-  group: ci-${{ github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.ref) || github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event_name == 'push' && format('main-push-{0}', github.sha) || github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.ref) || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 # Pull requests run the release suite plus build, lint/LSP, self-test,
 # precheck, and docs gates. Heavy variants report their required names with a
-# quick deferral; merge queue candidates and main pushes run their full suites.
+# quick deferral; merge queue candidates run their full suites.
 # The HTTP+model ASan build runs in three shards there, and its aggregator
 # checks their union, receipts and leak tally. macos-15-intel stays nightly.
 # Every job here is required or a worker of a required aggregator (#1264).
 
 jobs:
+  # The merge queue already ran the full workflow for this exact SHA. The
+  # badge follows push runs, so verify that queue verdict and publish its
+  # immutable image under ci-main without repeating about 30 jobs.
+  promote-main-image:
+    name: verify queue run and promote ci-main
+    env:
+      CI_DISPATCH_LANES: all
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6  # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify queue run and retag its image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          api="$GITHUB_API_URL/repos/$REPOSITORY"
+          runs=$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$api/actions/workflows/ci.yml/runs?head_sha=$SHA&event=merge_group&status=completed&per_page=100")
+          if ! jq -e --arg sha "$SHA" \
+            'any(.workflow_runs[]; .head_sha == $sha and .event == "merge_group" and .conclusion == "success")' \
+            >/dev/null <<EOF
+          $runs
+          EOF
+          then
+            echo "::error::main SHA $SHA has no successful merge_group run for ci.yml"
+            exit 1
+          fi
+
+          # Keep the incumbent tip guard: a rerun for an older push must not
+          # move the rolling image backwards.
+          ref=$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$api/git/ref/heads/main")
+          tip=$(printf '%s' "$ref" | jq -r '.object.sha')
+          if [ "$tip" != "$SHA" ]; then
+            echo "main has moved to $tip: ci-main stays"
+            exit 0
+          fi
+
+          base="ghcr.io/$(printf %s "$OWNER" | tr '[:upper:]' '[:lower:]')/eigenscript-dev"
+          docker buildx imagetools create --tag "$base:ci-main" "$base:ci-$SHA"
+          echo "verified merge_group success for $SHA; promoted $base:ci-$SHA to $base:ci-main"
+
   # Is this PR docs-only? A change touching nothing but *.md cannot alter C or
   # .eigs behavior, so the legs below that build/run the runtime have nothing to
   # say about it — they burn ~10 min of a contributor's wall-clock proving that
@@ -85,6 +150,7 @@ jobs:
   # aggregators may skip before runner allocation; the required aggregator
   # reports the success and requires the workers in the merge queue.
   scope:
+    if: github.event_name != 'push'
     name: scope
     env:
       CI_DISPATCH_LANES: all,asan,tsan,fuzz,linux
@@ -152,7 +218,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: all
     needs: scope
-    if: (needs.scope.outputs.release == 'true') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all')
+    if: (github.event_name != 'push') && ((needs.scope.outputs.release == 'true') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all'))
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
@@ -180,7 +246,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: all
     needs: [scope, release-dry-run-worker]
-    if: (always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all')
+    if: (github.event_name != 'push') && ((always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -204,7 +270,7 @@ jobs:
     name: spec Lean
     env:
       CI_DISPATCH_LANES: linux
-    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'
+    if: (github.event_name != 'push') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
     needs: scope
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -362,7 +428,7 @@ jobs:
     name: build dev/ci image
     env:
       CI_DISPATCH_LANES: linux,asan,fuzz
-    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux' || inputs.lanes == 'asan' || inputs.lanes == 'fuzz'
+    if: (github.event_name != 'push') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux' || inputs.lanes == 'asan' || inputs.lanes == 'fuzz')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -395,22 +461,16 @@ jobs:
       # GHCR requires a lowercase owner; compute the ref once and hand it to
       # the downstream jobs through a job output. `image` is what the Linux
       # legs run in; `tags` is what this job pushes: empty on fork PRs, this
-      # commit's ci-<sha> on every other run, and the rolling ci-main tag on a
-      # push to main at main's tip only. tools/ci_tier_check.sh runs this step
-      # across event x ref x tip to check that ([ci-main]).
+      # commit's immutable ci-<sha> on every other run. The push-only job
+      # above owns the rolling ci-main tag. tools/ci_tier_check.sh runs this
+      # step across its event/ref/tip matrix and requires no ci-main output.
       - name: Compute image ref
         id: ref
         env:
           OWNER: ${{ github.repository_owner }}
           IS_FORK: ${{ github.event.pull_request.head.repo.fork == true }}
-        # The event and ref are read from the runner's GITHUB_EVENT_NAME and
-        # GITHUB_REF, not expressions: tools/ci_tier_check.sh reds
-        # event-derived expression values on a required path (#1264). Only a
-        # push to main whose SHA is main's tip moves ci-main: a dispatch from
-        # any ref, main included, and a re-run of an older push push only
-        # ci-<sha>. Do not gate on GITHUB_RUN_ATTEMPT: a re-run at the tip is
-        # legitimate. Keep it bash-3.2 clean (tr, not ${OWNER,,}): precheck runs
-        # it, and macOS ships bash 3.2.
+        # Keep it bash-3.2 clean (tr, not ${OWNER,,}): precheck runs it, and
+        # macOS ships bash 3.2.
         run: |
           BASE="ghcr.io/$(printf %s "$OWNER" | tr '[:upper:]' '[:lower:]')/eigenscript-dev"
           SHA="${{ github.sha }}"
@@ -419,16 +479,8 @@ jobs:
             echo "tags=" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          TAGS="$BASE:ci-$SHA"
-          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
-            # Move ci-main only while this SHA is main's tip, so re-running an
-            # older push run cannot point it back at an older image.
-            tip=$(git ls-remote origin refs/heads/main | cut -f1)
-            [ -n "$tip" ] || { echo "::error::cannot read main's tip; ci-main not moved"; exit 1; }
-            if [ "$tip" = "$SHA" ]; then TAGS="$TAGS,$BASE:ci-main"; else echo "main has moved to $tip: ci-main stays"; fi
-          fi
           echo "image=$BASE:ci-$SHA" >> "$GITHUB_OUTPUT"
-          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+          echo "tags=$BASE:ci-$SHA" >> "$GITHUB_OUTPUT"
 
       - name: Build and push dev image
         if: github.event.pull_request.head.repo.fork != true
@@ -448,7 +500,7 @@ jobs:
     name: werror flags ([99i])
     env:
       CI_DISPATCH_LANES: linux
-    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'
+    if: (github.event_name != 'push') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -474,7 +526,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: linux
     needs: [dev-image, scope, spec-lean]
-    if: (always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
+    if: (github.event_name != 'push') && ((always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'))
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -609,7 +661,7 @@ jobs:
     name: linux / ${{ matrix.cc }}
     env:
       CI_DISPATCH_LANES: linux
-    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'
+    if: (github.event_name != 'push') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
     needs: dev-image
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -693,7 +745,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: linux
     needs: [dev-image, scope]
-    if: (needs.scope.outputs.code == 'true') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
+    if: (github.event_name != 'push') && ((needs.scope.outputs.code == 'true') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -762,7 +814,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: linux
     needs: [dev-image, scope]
-    if: (needs.scope.outputs.code == 'true') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
+    if: (github.event_name != 'push') && ((needs.scope.outputs.code == 'true') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -801,7 +853,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: linux
     needs: [dev-image, scope]
-    if: (needs.scope.outputs.code == 'true') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
+    if: (github.event_name != 'push') && ((needs.scope.outputs.code == 'true') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'))
     runs-on: ubuntu-latest
     # About 2 minutes measured (84-115 s on PR #1777); this bounds a hang.
     timeout-minutes: 15
@@ -830,7 +882,7 @@ jobs:
     name: freestanding profile (symbol gate + smoke)
     env:
       CI_DISPATCH_LANES: linux
-    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'
+    if: (github.event_name != 'push') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
     needs: [dev-image, scope]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -885,7 +937,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: all
     needs: scope
-    if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all')
+    if: (github.event_name != 'push') && ((github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all'))
     runs-on: ${{ matrix.os }}
     # Intel completed the gfx gate and 540 compiler audit calls but reached
     # 30 minutes in the audit's fault controls (#1130). Keep the full suite.
@@ -999,7 +1051,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: all
     needs: [scope, build-and-test-macos-worker]
-    if: (always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all')
+    if: (github.event_name != 'push') && ((always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -1026,7 +1078,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: fuzz
     needs: [scope, extensions-http, extensions-zlib]
-    if: (always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'fuzz')
+    if: (github.event_name != 'push') && ((always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'fuzz'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -1063,7 +1115,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: fuzz
     needs: [dev-image, scope]
-    if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'fuzz')
+    if: (github.event_name != 'push') && ((github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'fuzz'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -1204,7 +1256,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: all
     needs: [dev-image, scope]
-    if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all')
+    if: (github.event_name != 'push') && ((github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -1240,7 +1292,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: all
     needs: [dev-image, scope]
-    if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all')
+    if: (github.event_name != 'push') && ((github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -1292,7 +1344,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: all
     needs: [scope, database-worker]
-    if: (always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all')
+    if: (github.event_name != 'push') && ((always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -1324,7 +1376,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: asan
     needs: [scope, sanitizers-core]
-    if: (always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'asan')
+    if: (github.event_name != 'push') && ((always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'asan'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -1431,7 +1483,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: asan
     needs: [dev-image, scope]
-    if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'asan')
+    if: (github.event_name != 'push') && ((github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'asan'))
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -1577,7 +1629,7 @@ jobs:
     name: valgrind (memcheck smoke, JIT off)
     env:
       CI_DISPATCH_LANES: linux
-    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'
+    if: (github.event_name != 'push') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
     needs: scope
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1625,7 +1677,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: tsan
     needs: scope
-    if: (github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'tsan')
+    if: (github.event_name != 'push') && ((github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'tsan'))
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -1668,7 +1720,7 @@ jobs:
     env:
       CI_DISPATCH_LANES: tsan
     needs: [scope, tsan-core]
-    if: (always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'tsan')
+    if: (github.event_name != 'push') && ((always()) && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'tsan'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -1700,7 +1752,7 @@ jobs:
     name: tsan-http (race gate over ext_http)
     env:
       CI_DISPATCH_LANES: tsan
-    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'tsan'
+    if: (github.event_name != 'push') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'tsan')
     needs: scope
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -1767,7 +1819,7 @@ jobs:
     name: install.sh (interpreter + eigenlsp on PATH)
     env:
       CI_DISPATCH_LANES: linux
-    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'
+    if: (github.event_name != 'push') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
     needs: scope
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1862,7 +1914,7 @@ jobs:
     name: bench (instruction-count regression gate)
     env:
       CI_DISPATCH_LANES: linux
-    if: github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'
+    if: (github.event_name != 'push') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
     needs: scope
     runs-on: ubuntu-latest
     timeout-minutes: 30

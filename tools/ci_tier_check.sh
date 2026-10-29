@@ -46,11 +46,12 @@ def cond(x):
     s = str(x).strip(); m = re.fullmatch(r"\$\{\{(.*)\}\}", s, re.S); return (m.group(1) if m else s).strip()
 def needs(j): n = j.get("needs") or []; return [n] if isinstance(n, str) else list(n)
 def always(j):
-    c = cond(j.get("if", ""))
-    return c == "always()" or c.startswith("(always()) && (")
+    c = PUSH_ATOM.sub("_", cond(j.get("if", "")))
+    return "always()" in c
 G = r"github\s*(?:\.\s*{0}\b|\[\s*['\"]{0}['\"]\s*\])"
 PR_ATOM = re.compile(G.format("event_name") + r"\s*[=!]=\s*['\"]pull_request['\"]|['\"]pull_request['\"]\s*[=!]=\s*" + G.format("event_name"), re.I)
 PR_BODY = re.compile(G.format("event") + r"\s*(?:\.\s*pull_request\b|\[\s*['\"]pull_request['\"]\s*\])", re.I)
+PUSH_ATOM = re.compile(G.format("event_name") + r"\s*[=!]=\s*['\"]push['\"]|['\"]push['\"]\s*[=!]=\s*" + G.format("event_name"), re.I)
 DISPATCH_ATOM = re.compile(
     G.format("event_name") + r"\s*[=!]=\s*['\"]workflow_dispatch['\"]|"
     r"['\"]workflow_dispatch['\"]\s*[=!]=\s*" + G.format("event_name"), re.I)
@@ -143,6 +144,8 @@ if dispatch.get("type") != "choice" or dispatch.get("default") != "all" or tuple
     V("dispatch-input", f"ci.yml: workflow_dispatch.inputs.lanes must be the choice {LANES!r} with default 'all'; got {dispatch!r}")
 dispatch_jobs = {lane: [] for lane in LANES}
 for jid, j in ci.items():
+    if jid == "promote-main-image":
+        continue                    # push-only badge/publication job, checked below
     raw = (j.get("env") or {}).get("CI_DISPATCH_LANES")
     declared = [] if raw is None else str(raw).split(",")
     if raw is None or not declared or any(x not in LANES for x in declared) or len(set(declared)) != len(declared):
@@ -177,6 +180,8 @@ if len(ci) != int(os.environ["CT_AWK"]) or not ci:
     V("vacuous", f"ci.yml: the loader sees {len(ci)} jobs, awk sees {os.environ['CT_AWK']}")
 counts = {"required": 0, "worker": 0}
 for jid, j in ci.items():
+    if jid == "promote-main-image":
+        continue                    # deliberately not a required merge check
     if all(n in REQ for n in NAMES[("ci.yml", jid)]): counts["required"] += 1; continue
     cons = [k for k, kj in ci.items() if jid in needs(kj)]
     if len(cons) == 1 and always(ci[cons[0]]) and all(n in REQ for n in NAMES[("ci.yml", cons[0])]):
@@ -187,9 +192,12 @@ for wf, jid in sorted(path):
     jc = cond(j.get("if", ""))
     # Heavy workers are the one safe job-level exception: their sole required
     # consumer is an always() aggregator which prints the PR deferral and, on
-    # merge_group/push, rejects any result other than worker success.
-    worker_defer = wf == "ci.yml" and jid in HEAVY_WORKERS and jc.startswith("(github.event_name != 'pull_request') && (")
-    why = None if worker_defer else bad_expr(jc, wf, jid, False)
+    # merge_group, rejects any result other than worker success.
+    worker_defer = wf == "ci.yml" and jid in HEAVY_WORKERS and "github.event_name != 'pull_request'" in jc
+    # ci.yml's required graph is queue/PR/dispatch-only.  Every incumbent job
+    # excludes push; the sole push job is validated separately below.
+    queue_condition = PUSH_ATOM.sub("_", jc) if wf == "ci.yml" else jc
+    why = None if worker_defer else bad_expr(queue_condition, wf, jid, False)
     if why: V("event-condition", f"{wf}:{jid}: job-level `if:` — {why}; a job skipped in the queue or on a PR is a satisfied check")
     vals = [(k, v) for d in (j.get("env"), j.get("outputs"), W[wf][2]) if isinstance(d, dict) for k, v in d.items()]
     vals += [("strategy", yaml.safe_dump(j.get("strategy") or {}))] + [(k, v) for st in j.get("steps") or []
@@ -224,21 +232,17 @@ for jid in sorted(HEAVY):
         else:
             merge_work += 1
     if merge_work == 0:
-        V("heavy-no-merge-work", f"ci.yml:{jid}: defers but has no work selected for merge_group/push")
+        V("heavy-no-merge-work", f"ci.yml:{jid}: defers but has no work selected for merge_group")
 for jid in sorted(HEAVY_WORKERS):
     if jid not in ci:
         V("heavy-missing", f"ci.yml:{jid}: declared heavy worker is missing")
-    elif not cond(ci[jid].get("if", "")).startswith("(github.event_name != 'pull_request') && ("):
-        V("heavy-worker", f"ci.yml:{jid}: worker must skip only pull_request (and therefore run on merge_group and push)")
+    elif "github.event_name != 'pull_request'" not in cond(ci[jid].get("if", "")):
+        V("heavy-worker", f"ci.yml:{jid}: worker must skip pull_request and run in merge_group")
 # workflow_dispatch runs every non-PR path of ci.yml from ANY ref (#1787), so the
 # writes are checked by what they do, not pinned by their text:
-# [ci-main]  the rolling ci-main tag is the one name ci.yml writes that main owns
-#   (fork PRs run in it). The step that computes the pushed tags is RUN across
-#   event x ref x "this SHA is main's tip"; ci-main must appear exactly on a push to
-#   refs/heads/main at main's tip (no dispatch, queue run or re-run of an older push).
-#   ci-<sha> tags go out from every non-fork ref by design. What the matrix cannot
-#   model (a custom shell or directory, env that redirects bash or git, an expression
-#   it cannot evaluate, tags it cannot read) is refused.
+# [ci-main]  dev-image may write only immutable ci-<sha> tags. The sole push job
+#   must verify a successful ci.yml merge_group run for the exact SHA, check that
+#   SHA is still main's tip, and only then retag ci-<sha> as ci-main.
 # [writer-actions]  a job that can write uses only allowlisted actions (compared
 #   without @ref) with the inputs vetted for each (no outputs:, cache-to: only type=gha),
 #   no ./ or docker:// actions, and no script but that tag step.
@@ -290,7 +294,7 @@ def ci_main(jid, j, tag):
             text = open(out).read()   # output names are case-insensitive; build-push-action strips quotes
             tags = [x.strip().strip("\"'") for line in text.split("\n") if line[:5].lower() == "tags=" for x in line[5:].split(",")]
             has = any(x.endswith(":ci-main") for x in tags)
-            want = ev == "push" and ref == "refs/heads/main" and tip is True and not fork
+            want = False             # ci-main is moved only by promote-main-image
             what = f"event={ev} ref={ref} tip={'?' if tip is None else tip}{' fork' if fork else ''}"
             if re.search(r"^tags<<", text, re.M | re.I):
                 V("ci-main", f"{where} writes tags as a multi-line output for {what}, which the matrix does not read; write one tags=<comma list> line")
@@ -301,6 +305,31 @@ def ci_main(jid, j, tag):
     return runs
 if W["ci.yml"][0].get("push") != {"branches": ["main"]}:
     V("ci-main", f"ci.yml: on.push is {W['ci.yml'][0].get('push')!r}, not exactly branches: [main]")
+
+promote = ci.get("promote-main-image") or {}
+promote_steps = [s for s in promote.get("steps") or [] if isinstance(s, dict)]
+promote_runs = [s for s in promote_steps if "run" in s]
+if cond(promote.get("if", "")) != "github.event_name == 'push'":
+    V("ci-main", "ci.yml:promote-main-image must run only on push")
+if promote.get("permissions") != {"contents": "read", "actions": "read", "packages": "write"}:
+    V("ci-main", f"ci.yml:promote-main-image permissions are {promote.get('permissions')!r}; expected contents/actions read and packages write")
+if len(promote_runs) != 1:
+    V("ci-main", f"ci.yml:promote-main-image must have exactly one reviewed script, found {len(promote_runs)}")
+else:
+    ps = str(promote_runs[0]["run"])
+    promote_pin = hashlib.sha256(yaml.safe_dump(promote_runs[0], sort_keys=True).encode()).hexdigest()[:16]
+    if promote_pin != "666a13a82bad109a":
+        V("writer-actions", f"ci.yml:promote-main-image reviewed script changed (now {promote_pin}); review and re-pin it")
+    required = [
+        "actions/workflows/ci.yml/runs?head_sha=$SHA&event=merge_group&status=completed",
+        '.head_sha == $sha and .event == "merge_group" and .conclusion == "success"',
+        "$api/git/ref/heads/main", '[ "$tip" != "$SHA" ]',
+        'docker buildx imagetools create --tag "$base:ci-main" "$base:ci-$SHA"',
+    ]
+    missing = [x for x in required if x not in ps]
+    positions = [ps.find(x) for x in required]
+    if missing or positions != sorted(positions):
+        V("ci-main", f"ci.yml:promote-main-image must verify exact-SHA merge_group success, then main tip, then retag ci-<sha>; missing/out-of-order {missing or positions}")
 writers, judged = [], 0
 for jid, j in ci.items():
     if not writes(j["permissions"] if "permissions" in j else PERMS["ci.yml"]): continue
@@ -319,10 +348,10 @@ for jid, j in ci.items():
         elif u and (set(map(str, w)) - INPUTS[ident] or any(not l.strip().startswith("type=gha") for l in str(w.get("cache-to", "type=gha")).splitlines() if l.strip())):
             V("writer-actions", f"ci.yml:{jid} step {i} gives {ident} {sorted(map(str, w))}: in a job that can write, an action takes only the inputs vetted for it "
                                 f"({sorted(INPUTS[ident])}, cache-to: only type=gha); outputs: or a registry cache can push any name")
-        elif "run" in st and st is not tag:
+        elif "run" in st and st is not tag and not (jid == "promote-main-image" and st in promote_runs):
             V("writer-actions", f"ci.yml:{jid} step {i} ({st.get('name', '?')}) runs a script in a job that can write; only the tag step may, because the matrix runs it")
     if tag is not None: judged += ci_main(jid, j, tag)
-if judged == 0: V("ci-main", "no image push in ci.yml took its tags from a step the matrix could run: the ci-main property was not checked")
+if judged == 0: V("ci-main", "no immutable image push in ci.yml took its tags from a step the matrix could run")
 def strings(x):
     if isinstance(x, str): yield x
     elif isinstance(x, dict):
@@ -340,7 +369,7 @@ if set(WAIVE) - used: V("event-condition", f"waiver(s) {sorted(set(WAIVE) - used
 if bad: print(f"ci-tier: FAIL — {len(bad)} violation(s): {' '.join(sorted(set(bad)))}"); sys.exit(1)
 print(f"ci-tier: OK — ci.yml jobs={len(ci)} (awk={os.environ['CT_AWK']}) required={counts['required']} worker={counts['worker']}; "
       f"{len(req)} required names, each produced once on pull_request+merge_group; {len(path)} jobs on required paths, no push-only condition, no continue-on-error; "
-      f"ci-main only on a push to main at its tip ({judged} event x ref x tip runs); {len(writers)} writing job(s), allowlisted actions and inputs only; no secret but GITHUB_TOKEN")
+      f"ci-main only after exact-SHA queue success and a main-tip check ({judged} immutable-tag matrix runs); {len(writers)} writing job(s), allowlisted actions and inputs only; no secret but GITHUB_TOKEN")
 PY
 }
 live() {
@@ -373,6 +402,10 @@ def selected(event, lane=None):
     out = []
     for jid, job in jobs.items():
         c = cond(job)
+        if event == "push" and "github.event_name != 'push'" in c:
+            continue
+        if event != "push" and "github.event_name == 'push'" in c:
+            continue
         if event == "pull_request" and "github.event_name != 'pull_request'" in c:
             continue
         if event == "workflow_dispatch" and lane not in (None, "default", "all"):
@@ -457,8 +490,26 @@ YAML
     fi
     echo "ci-tier: SELFTEST OK — planted undeclared heavy job is rejected"
 }
+plant_unverified_ci_main() {
+    local tmp out rc
+    tmp=$(mktemp -d); out="$tmp/out"
+    trap 'rm -rf "$tmp"' RETURN
+    cp -R "$WF_DIR" "$tmp/workflows"
+    # Clean control is the live check run before self-tests. Plant the exact
+    # dangerous variant: retag ci-main without requiring a successful queue
+    # conclusion. It must fail specifically as [ci-main].
+    sed 's/ and \.conclusion == "success"//' "$WF_DIR/ci.yml" > "$tmp/workflows/ci.yml"
+    rc=0
+    CI_TIER_PLANT=1 CI_TIER_WF_DIR="$tmp/workflows" bash "$0" >"$out" 2>&1 || rc=$?
+    if [ "$rc" -ne 1 ] || ! grep -q 'FAIL \[ci-main\].*verify exact-SHA merge_group success' "$out"; then
+        cat "$out"
+        echo "ci-tier: SELFTEST FAIL — unverified ci-main retag was not rejected as ci-main"
+        return 1
+    fi
+    echo "ci-tier: SELFTEST OK — planted ci-main retag without verified queue success is rejected"
+}
 case "${1:-}" in
-    "") check && { [ "${CI_TIER_PLANT:-0}" = 1 ] || { plant_merge_deferral && plant_dispatch_contracts; }; } ;;
+    "") check && { [ "${CI_TIER_PLANT:-0}" = 1 ] || { plant_merge_deferral && plant_dispatch_contracts && plant_unverified_ci_main; }; } ;;
     --live) live ;;
     --dispatch-table) dispatch_table "${2:-}" "${3:-}" ;;
     *) echo "usage: $0 [--live | --dispatch-table [workflow [label]]]" >&2; exit 2 ;;
