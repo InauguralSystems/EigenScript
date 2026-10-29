@@ -36,7 +36,6 @@ SKIP_WAIVERS='
 6ef6a1325edf0172|(a) the section_skip helper own print — this IS the counter the audit polices
 d8bbaacdbda76484|(b) the [99n] classifier-gate FAIL line, which QUOTES its own skipped tally; that section fails on any skip
 e52b3a5c670b2434|(b) prose inside that same FAIL, explaining why a skipped check there is coverage loss
-69614d3ef6dc2f30|(c) sub-check: [17] TR6/TR7 have no old model to reject; the rest of the transformer section still asserts
 86e12c645c5ad672|(c) sub-check: [119] Part B (the #548 borrow guard) is compiled out on a release build; Part A runs on every build and its PASS/FAIL lines are tallied
 459741ca98fe2fc5|(b) the [44] HTTP-readiness FAIL line, which quotes skipped= in its verdict; two skips are the expected witnesses and any other count is already a FAIL there
 23bf2806c94855bb|(b) a diagnostic inside that FAIL branch, printed only when the section is already red
@@ -1086,13 +1085,13 @@ selftest() {
     cp "$RUNNER" "$dir/no_anchor.sh"
     sed 's/^# Final guard (#681)/# Final guard/' "$dir/no_anchor.sh" > "$dir/t"; mv "$dir/t" "$dir/no_anchor.sh"
     expect_red 'derive_chunks: missing epilogue anchor' 'epilogue anchor' "$0" --root "$SP_ROOT" --chunks --runner "$dir/no_anchor.sh" --quiet
-    awk '/^echo / && index($0, "[17/17] Transformer Smoke") { print "if true; then"; print "    " $0; print "fi"; next } { print }' \
+    awk '/^echo / && index($0, "[18/18] File I/O Builtins") { print "if true; then"; print "    " $0; print "fi"; next } { print }' \
         "$RUNNER" > "$dir/conditional-header.sh"
     expect_red 'check_header_shape: indented-only section header is refused' 'conditional-only section header in chunk start line' \
         "$0" --root "$SP_ROOT" --runner "$dir/conditional-header.sh" --shards 3 --check --quiet
-    awk '/^echo / && index($0, "[17/17] Transformer Smoke") { print "if true; then"; print; print "fi"; next } { print }' "$RUNNER" > "$dir/column-zero-branch.sh"
+    awk '/^echo / && index($0, "[18/18] File I/O Builtins") { print "if true; then"; print; print "fi"; next } { print }' "$RUNNER" > "$dir/column-zero-branch.sh"
     expect_red 'check_header_shape: column-zero branch header is refused' 'conditional-only section header in chunk start line' "$0" --root "$SP_ROOT" --runner "$dir/column-zero-branch.sh" --shards 3 --check --quiet
-    awk '/^echo / && index($0, "[17/17] Transformer Smoke") { sub(/"$/, ""); print; print "wrapped\""; next } { print }' \
+    awk '/^echo / && index($0, "[18/18] File I/O Builtins") { sub(/"$/, ""); print; print "wrapped\""; next } { print }' \
         "$RUNNER" > "$dir/wrapped-header.sh"
     expect_red 'check_header_shape: wrapped section header is refused' 'incomplete section header in chunk start line' \
         "$0" --root "$SP_ROOT" --runner "$dir/wrapped-header.sh" --shards 3 --check --quiet
@@ -1161,8 +1160,8 @@ selftest() {
     expect_plan 'control: an empty diff selects the core floor alone' 'paths=0 unmatched=0 runtime=0 full=no '
     printf '\n' >> "$dir/cl/tests/test_trace_mt.sh"
     expect_plan 'changed: an edited test script selects its section' '[42h]'
-    sed -i.bak 's/^\(echo "\[17\/17\] Transformer Smoke.*\)"$/\1 edited"/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
-    expect_plan 'changed: a runner hunk selects the chunk it lands in' '[17/17]'
+    sed -i.bak 's|^\(echo "\[18/18\] File I/O Builtins.*\)"$|\1 edited"|' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
+    expect_plan 'changed: a runner hunk selects the chunk it lands in' '[18/18]'
     sed -i.bak 's/^\(echo "\[99p\] Child-script exit-status ledger.*\)"$/\1 edited"/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
     expect_plan 'changed: a runner hunk after the fragment seam keeps its expanded chunk' '[99p]'
     sed -i.bak '1s/$/ /' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
