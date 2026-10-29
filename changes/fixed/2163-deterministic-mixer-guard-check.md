@@ -1,0 +1,1 @@
+- The gfx argument-guard check now waits for mixer completion instead of racing channel reuse (#2163).
