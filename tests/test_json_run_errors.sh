@@ -79,3 +79,44 @@ if [ "$rc" -ne 23 ] || [ -s "$TMP/err" ]; then
     echo "  FAIL: exit of N emitted a diagnostic or wrong status ($rc)"; exit 1
 fi
 echo "  PASS: exit of N is not an error"
+
+# Runtime parsing used to restore fd 2 after the top-level parse, letting the
+# nested parser's human diagnostics precede the VM's JSON diagnostic.
+cat >"$TMP/eval-parse.eigs" <<'EIGS'
+eval of "if true"
+EIGS
+check_json "eval parse error JSON" "$TMP/eval-parse.eigs" || exit 1
+
+cat >"$TMP/nested-bad.eigs" <<'EIGS'
+if true
+EIGS
+cat >"$TMP/load-parse.eigs" <<EIGS
+load_file of "$TMP/nested-bad.eigs"
+EIGS
+check_json "load_file parse error JSON" "$TMP/load-parse.eigs" || exit 1
+
+cat >"$TMP/json_bad_module_2168.eigs" <<'EIGS'
+if true
+EIGS
+cat >"$TMP/import-parse.eigs" <<'EIGS'
+import json_bad_module_2168
+EIGS
+if (cd "$TMP" && "$EIGS" --json import-parse.eigs >"$TMP/out" 2>"$TMP/err"); then
+    echo "  FAIL: import parse error JSON (expected nonzero exit)"; exit 1
+fi
+if [ -s "$TMP/out" ] || ! python3 -m json.tool "$TMP/err" >/dev/null; then
+    echo "  FAIL: import parse error JSON (stderr is not one JSON object)"; exit 1
+fi
+echo "  PASS: import parse error JSON"
+
+cat >"$TMP/worker.eigs" <<'EIGS'
+define fail_worker() as:
+    throw of "worker boom"
+spawn of fail_worker
+EIGS
+check_json "spawned function error JSON" "$TMP/worker.eigs" || exit 1
+
+cat >"$TMP/worker-builtin.eigs" <<'EIGS'
+spawn of [assert, [false, "builtin worker boom"]]
+EIGS
+check_json "spawned builtin error JSON" "$TMP/worker-builtin.eigs" || exit 1

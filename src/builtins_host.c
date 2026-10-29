@@ -945,8 +945,11 @@ Value* builtin_load_file(Value *arg) {
     int saved_errors = g_parse_errors;
     g_parse_errors = 0;
 
+    EigsStderrSilence parse_guard;
+    eigs_json_parse_silence_begin(&parse_guard);
     TokenList tl = tokenize(source);
     ASTNode *ast = parse(&tl);
+    eigs_json_parse_silence_end(&parse_guard);
 
     if (g_parse_errors > 0 || !ast) {
         g_parse_errors = saved_errors;

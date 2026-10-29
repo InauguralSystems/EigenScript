@@ -692,8 +692,11 @@ Value* builtin_throw(Value *arg) {
         if (eigs_current && eigs_current->vm && g_vm.frame_count > 0) {
             g_error_print_pending = 1;
         } else {
-            fprintf(stderr, "%s\n", g_error_msg);
-            vm_print_stack_trace(stderr);
+            if (g_json_diagnostics) vm_print_json_error(stderr, 0, 0);
+            else {
+                fprintf(stderr, "%s\n", g_error_msg);
+                vm_print_stack_trace(stderr);
+            }
         }
     }
     free(msg);
@@ -2739,8 +2742,11 @@ Value* builtin_eval(Value *arg) {
     int saved_errors = g_parse_errors;
     g_parse_errors = 0;
 
+    EigsStderrSilence parse_guard;
+    eigs_json_parse_silence_begin(&parse_guard);
     TokenList tl = tokenize(src);
     ASTNode *ast = parse(&tl);
+    eigs_json_parse_silence_end(&parse_guard);
 
     if (g_parse_errors > 0 || !ast) {
         g_parse_errors = saved_errors;

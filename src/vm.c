@@ -3066,6 +3066,41 @@ int vm_error_has_handler(void) {
  * The lines[off] == g_error_line guard suppresses the caret whenever the
  * offset disagrees with the reported line (JIT-advanced ip, builtin line
  * restamps), so a caret only ever prints on the correct source line. */
+void vm_print_json_error(FILE *out, int error_col, int error_span) {
+    strbuf js;
+    strbuf_init(&js);
+    strbuf_append(&js, "{\"version\":1,\"code\":\"");
+    eigs_json_escape_append(&js, err_kind_name((ErrKind)g_error_kind), SIZE_MAX);
+    strbuf_append(&js, "\",\"kind\":\"runtime\",\"message\":\"");
+    eigs_json_escape_append(&js, g_error_raw, SIZE_MAX);
+    strbuf_append(&js, "\",\"file\":\"");
+    eigs_json_escape_append(&js, g_error_file, SIZE_MAX);
+    strbuf_append_fmt(&js, "\",\"line\":%d,\"column\":%d,\"span\":%d,\"frames\":[",
+                      g_error_line, error_col, error_span);
+    if (eigs_current && eigs_current->vm) for (int i = g_vm.frame_count - 1; i >= 0; i--) {
+        CallFrame *f = &g_vm.frames[i];
+        const char *name = (f->chunk && f->chunk->name) ? f->chunk->name : "?";
+        const char *file = (f->chunk && f->chunk->src && f->chunk->src->file)
+                         ? f->chunk->src->file : "<native>";
+        int line = 0;
+        if (i == g_vm.frame_count - 1) line = g_vm.current_line;
+        else if (f->chunk && f->ip) {
+            long off = f->ip - f->chunk->code;
+            if (off > 0) off--;
+            if (off >= 0 && off < f->chunk->lines_len) line = f->chunk->lines[off];
+        }
+        if (i != g_vm.frame_count - 1) strbuf_append_char(&js, ',');
+        strbuf_append(&js, "{\"file\":\"");
+        eigs_json_escape_append(&js, file, SIZE_MAX);
+        strbuf_append_fmt(&js, "\",\"line\":%d,\"function\":\"", line);
+        eigs_json_escape_append(&js, name, SIZE_MAX);
+        strbuf_append(&js, "\"}");
+    }
+    strbuf_append(&js, "]}\n");
+    fputs(js.data, out);
+    strbuf_free(&js);
+}
+
 static void vm_error_flush_pending(EigsChunk *chunk, const uint8_t *ip) {
     if (!g_error_print_pending) return;
     g_error_print_pending = 0;
@@ -3080,38 +3115,7 @@ static void vm_error_flush_pending(EigsChunk *chunk, const uint8_t *ip) {
         }
     }
     if (g_json_diagnostics) {
-        strbuf js;
-        strbuf_init(&js);
-        strbuf_append(&js, "{\"version\":1,\"code\":\"");
-        eigs_json_escape_append(&js, err_kind_name((ErrKind)g_error_kind), SIZE_MAX);
-        strbuf_append(&js, "\",\"kind\":\"runtime\",\"message\":\"");
-        eigs_json_escape_append(&js, g_error_raw, SIZE_MAX);
-        strbuf_append(&js, "\",\"file\":\"");
-        eigs_json_escape_append(&js, g_error_file, SIZE_MAX);
-        strbuf_append_fmt(&js, "\",\"line\":%d,\"column\":%d,\"span\":%d,\"frames\":[",
-                          g_error_line, error_col, error_span);
-        for (int i = g_vm.frame_count - 1; i >= 0; i--) {
-            CallFrame *f = &g_vm.frames[i];
-            const char *name = (f->chunk && f->chunk->name) ? f->chunk->name : "?";
-            const char *file = (f->chunk && f->chunk->src && f->chunk->src->file)
-                             ? f->chunk->src->file : "<native>";
-            int line = 0;
-            if (i == g_vm.frame_count - 1) line = g_vm.current_line;
-            else if (f->chunk && f->ip) {
-                long off = f->ip - f->chunk->code;
-                if (off > 0) off--;
-                if (off >= 0 && off < f->chunk->lines_len) line = f->chunk->lines[off];
-            }
-            if (i != g_vm.frame_count - 1) strbuf_append_char(&js, ',');
-            strbuf_append(&js, "{\"file\":\"");
-            eigs_json_escape_append(&js, file, SIZE_MAX);
-            strbuf_append_fmt(&js, "\",\"line\":%d,\"function\":\"", line);
-            eigs_json_escape_append(&js, name, SIZE_MAX);
-            strbuf_append(&js, "\"}");
-        }
-        strbuf_append(&js, "]}\n");
-        fputs(js.data, stderr);
-        strbuf_free(&js);
+        vm_print_json_error(stderr, error_col, error_span);
         return;
     }
     fprintf(stderr, "%s\n", g_error_msg);
@@ -6393,8 +6397,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Env *mod_env = env_new(g_builtin_env);
         int saved_errors = g_parse_errors;
         g_parse_errors = 0;
+        EigsStderrSilence parse_guard;
+        eigs_json_parse_silence_begin(&parse_guard);
         TokenList tl = tokenize(source);
         ASTNode *ast = parse(&tl);
+        eigs_json_parse_silence_end(&parse_guard);
         if (g_parse_errors > 0) {
             g_parse_errors = saved_errors;
             free_ast(ast);  /* partial tree from the failed module parse (cf. #214) */
