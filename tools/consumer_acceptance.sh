@@ -128,10 +128,10 @@ probe_prereq() {
   return 1
 }
 
-NAMES=(); PINS=(); CMDS=(); KINDS=(); WFS=(); SOURCE_COMMITS=(); SOURCE_DIRTY=(); SOURCE_INTENDED=(); SOURCE_SELECTORS=(); GAPS=0; SCANNED=0; FLOOR=0
+NAMES=(); PINS=(); CMDS=(); KINDS=(); WFS=(); SOURCE_COMMITS=(); SOURCE_DIRTY=(); SOURCE_INTENDED=(); SOURCE_SELECTORS=(); FLOOR_NAMES=(); GAPS=0; SCANNED=0; FLOOR=0
 record_floor() {
-  local f n
-  FLOOR=0
+  local f n name
+  FLOOR=0; FLOOR_NAMES=()
   if [ ! -f "$ECO/.ca_fixture" ]; then
     for f in "$HERE"/reports/consumer_acceptance/*.record; do
       [ -f "$f" ] || continue
@@ -144,6 +144,16 @@ record_floor() {
   if [ -n "${RECORD:-}" ] && [ -f "$RECORD" ] && grep -q '^status=COMPLETE$' "$RECORD"; then
     n="$(sed -n 's/^inventory=\([0-9][0-9]*\).*$/\1/p' "$RECORD" | tail -1)"
     [ -n "$n" ] && [ "$n" -gt "$FLOOR" ] && FLOOR="$n"
+    while IFS= read -r name; do
+      [ -z "$name" ] || contains "$name" "${FLOOR_NAMES[@]}" || FLOOR_NAMES+=("$name")
+    done < <(sed -n 's/^inventory_floor_name|//p' "$RECORD")
+    # Compatibility with records written before named floor witnesses existed:
+    # only a passing record establishes its scanned names as accepted inventory.
+    if grep -q '^VERDICT: PASS$' "$RECORD"; then
+      while IFS= read -r name; do
+        [ -z "$name" ] || contains "$name" "${FLOOR_NAMES[@]}" || FLOOR_NAMES+=("$name")
+      done < <(sed -n 's/^source|\([^|]*\)|.*$/\1/p' "$RECORD")
+    fi
   fi
 }
 load_expected() {
@@ -152,6 +162,7 @@ load_expected() {
     local line
     while IFS= read -r line || [ -n "$line" ]; do [ -z "$line" ] || WANT+=("$line"); done < "$ECO/.ca_expected"
   elif [ ! -f "$ECO/.ca_fixture" ]; then WANT=("${EXPECTED[@]}"); fi
+  for line in "${FLOOR_NAMES[@]}"; do contains "$line" "${WANT[@]}" || WANT+=("$line"); done
 }
 scan_inventory() {
   local d r pin cmd kind wf why e head dirty intended selector manifest="${CA_SOURCE_REFS:-}"
@@ -679,6 +690,7 @@ run() {
     return 2
   fi
   local inventory="${#NAMES[@]}"
+  [ "$inventory" -ge "$FLOOR" ] || inventory="$FLOOR"
   echo "inventory=$inventory" >> "$BODY"
   if [ "$SCANNED" -eq 0 ] || [ "$GAPS" -ne 0 ]; then bad=1; fi
   for ((i=0; i<${#NAMES[@]}; i++)); do
@@ -714,6 +726,7 @@ run() {
     echo "inventory=$inventory"
     echo "examined=$examined"
     echo 'status=COMPLETE'
+    for ((i=0; i<${#WANT[@]}; i++)); do echo "inventory_floor_name|${WANT[i]}"; done
     for ((i=0; i<${#NAMES[@]}; i++)); do
       echo "source|${NAMES[i]}|pin=${PINS[i]}|commit=${SOURCE_COMMITS[i]}|dirty=${SOURCE_DIRTY[i]}|intended=${SOURCE_INTENDED[i]}|selector=${SOURCE_SELECTORS[i]}"
     done
@@ -969,6 +982,20 @@ YAML
   if [ "$st_rc" -ne 0 ] && grep -Fqx 'record_floor=3' "$st_record" && grep -Fqx 'VERDICT: FAIL' "$st_record"; then
     echo 'plant D check=record-floor-before-replacement RED record_floor=3 VERDICT: FAIL'
   else echo "plant D check=record-floor-before-replacement SILENT rc=$st_rc"; tail -8 "$st_out"; tail -8 "$st_record"; st_bad=1; fi
+  # (D1) A same-path refusal must retain both the old floor and its names.
+  printf 'source|a|pin=v0.43.0\nsource|b|pin=v0.43.0\nsource|c|pin=v0.43.0\ninventory=3\nstatus=COMPLETE\nVERDICT: PASS\n' > "$st_record"
+  st_rc=0
+  CA_ECO="$st_eco" CA_TREE="$st_root" CA_RECORD="$st_record" CA_TIMEOUT=2 timeout 60 bash "$st_root/runner/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 || st_rc=$?
+  local first_rc="$st_rc" first_floor first_c
+  first_floor="$(sed -n 's/^inventory=\([0-9][0-9]*\).*$/\1/p' "$st_record" | tail -1)"
+  first_c="$(grep -c '^inventory_floor_name|c$' "$st_record" 2>/dev/null || true)"
+  st_rc=0
+  CA_ECO="$st_eco" CA_TREE="$st_root" CA_RECORD="$st_record" CA_TIMEOUT=2 timeout 60 bash "$st_root/runner/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 || st_rc=$?
+  if [ "$first_rc" -ne 0 ] && [ "$st_rc" -ne 0 ] && [ "${first_floor:-0}" -ge 3 ] &&
+     [ "$(sed -n 's/^inventory=\([0-9][0-9]*\).*$/\1/p' "$st_record" | tail -1)" -ge 3 ] &&
+     [ "$first_c" -gt 0 ] && grep -Fq 'declared consumer absent: c' "$st_record"; then
+    echo 'plant D1 check=same-path-floor-persistence RED runs=2 missing=c floor>=3'
+  else echo "plant D1 check=same-path-floor-persistence SILENT first_rc=$first_rc second_rc=$st_rc first_floor=${first_floor:-none}"; st_bad=1; fi
   # (E) A named missing capability is UNRUNNABLE before the command runs.
   st_reset; st_consumer dynamics 'eigenscript smoke.eigs'
   printf 'dynamics\n' > "$st_eco/.ca_expected"
@@ -1227,7 +1254,7 @@ CANDIDATE
     echo 'plant AC check=consumer-commit-provenance GREEN commits=distinct receipts=distinct'
   else echo 'plant AC check=consumer-commit-provenance SILENT'; st_bad=1; fi
   rm -rf "$st_root"
-  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 38/38 plants'; return 0; fi
+  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 39/39 plants'; return 0; fi
   echo 'SELF-TEST: FAIL'; return 1
 }
 
