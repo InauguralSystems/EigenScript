@@ -44,7 +44,7 @@ for strict in unset 0 1; do
         rm -f "$output"
         [[ "$rc" -eq 0 && "$classification" -eq 2 ]]
         [[ "$summary" =~ $summary_pattern ]]
-        [[ $((BASH_REMATCH[1] + BASH_REMATCH[2])) -eq 40 ]]
+        [[ $((BASH_REMATCH[1] + BASH_REMATCH[2])) -eq 30 ]]  # 40 before #1414 removed the 10 model capability names
         extra=0
         if [[ "$(uname -m)" == x86_64 && "$jit" != off && "${BASH_REMATCH[1]}" -gt 0 ]]; then extra=1; fi
         [[ "${BASH_REMATCH[3]}" -eq $((4 + 12 * BASH_REMATCH[1] + 2 * BASH_REMATCH[2] + (BASH_REMATCH[1] > 0) + extra)) ]]
