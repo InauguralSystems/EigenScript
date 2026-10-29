@@ -4056,4 +4056,20 @@ assert_true of [not (_ev_stop of true), "an on_key answer of true keeps running"
 assert_true of [not (_ev_stop of null), "an on_key answer of null keeps running"]
 unregister_hotkey of "ctrl+s"
 
+# #2185: every US printable key is driven through the shared mapper and widget.
+key_cases is [
+    ["a", 0, "a"], ["a", 1, "A"], ["z", 0, "z"], ["z", 1, "Z"],
+    ["0", 0, "0"], ["1", 0, "1"], ["2", 0, "2"], ["3", 0, "3"], ["4", 0, "4"],
+    ["5", 0, "5"], ["6", 0, "6"], ["7", 0, "7"], ["8", 0, "8"], ["9", 0, "9"],
+    ["1", 1, "!"], ["2", 1, "@"], ["3", 1, "#"], ["4", 1, "$"], ["5", 1, "%"],
+    ["6", 1, "^"], ["7", 1, "&"], ["8", 1, "*"], ["9", 1, "("], ["0", 1, ")"],
+    ["-", 1, "_"], ["=", 1, "+"], ["[", 1, "{"], ["]", 1, "}"], ["\\", 1, "|"],
+    [";", 1, ":"], ["'", 1, "\""], [",", 1, "<"], [".", 1, ">"], ["/", 1, "?"], ["`", 1, "~"]
+]
+for kc in key_cases:
+    assert_eq of [key_to_char of [kc[0], kc[1]], kc[2], "shared US key mapping"]
+    key_widget is text_input of ["key-widget", 0, 0, 100, "", null]
+    _handle_text_key of [key_widget, {"type": "keydown", "key": kc[0], "shift": kc[1], "ctrl": 0}]
+    assert_eq of [key_widget.text, kc[2], "widget uses shared US key mapping"]
+
 test_summary of null

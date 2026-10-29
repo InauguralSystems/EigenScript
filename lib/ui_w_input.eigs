@@ -389,48 +389,10 @@ define _handle_text_key(widget, ev) as:
         else:
             _ui.focused_input is null
             widget.focused is 0
-    elif k == "space":
-        _insert_char of [widget, " "]
-    elif (len of k) == 1:
-        ch is k
-        if shift:
-            ch is str_upper of k
-            # Shift+number -> symbol
-            if k == "1":
-                ch is "!"
-            elif k == "2":
-                ch is "@"
-            elif k == "3":
-                ch is "#"
-            elif k == "4":
-                ch is "$"
-            elif k == "5":
-                ch is "%"
-            elif k == "6":
-                ch is "^"
-            elif k == "7":
-                ch is "&"
-            elif k == "8":
-                ch is "*"
-            elif k == "9":
-                ch is "("
-            elif k == "0":
-                ch is ")"
-            elif k == "-":
-                ch is "_"
-            elif k == "=":
-                ch is "+"
-            elif k == ";":
-                ch is ":"
-            elif k == "'":
-                ch is "\""
-            elif k == ",":
-                ch is "<"
-            elif k == ".":
-                ch is ">"
-            elif k == "/":
-                ch is "?"
-        _insert_char of [widget, ch]
+    else:
+        ch is key_to_char of [k, shift]
+        if ch != "":
+            _insert_char of [widget, ch]
 
 define _insert_char(widget, ch) as:
     # Delete selection first if any

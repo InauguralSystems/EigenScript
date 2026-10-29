@@ -1,0 +1,1 @@
+- Text inputs now produce every US-layout shifted punctuation character correctly through the shared key mapper (#2185).
