@@ -5598,13 +5598,14 @@ LG_FAIL=$(echo "$LG_OUTPUT" | grep -c "FAIL:" || true)
 TOTAL=$((TOTAL + LG_PASS + LG_FAIL))
 PASS=$((PASS + LG_PASS))
 FAIL=$((FAIL + LG_FAIL))
-if echo "$LG_OUTPUT" | grep -q "skipped"; then
+if echo "$LG_OUTPUT" | grep -q "AddressSanitizer not available"; then
     section_skip "AddressSanitizer not available — leak guard skipped"
 elif [ "$LG_FAIL" -gt 0 ]; then
     echo "  FAIL: $LG_FAIL leak-guard check(s) failed"
     echo "$LG_OUTPUT" | grep "FAIL:" | head -5
 else
     echo "  PASS: all $LG_PASS leak-guard checks"
+    echo "$LG_OUTPUT" | grep '^  SKIP:' || true
 fi
 echo ""
 
@@ -7596,17 +7597,18 @@ fi
 rm -f "$CHILD_LEDGER"
 echo ""
 
+# Final guard (#681): if the binary changed during the last block, results are invalid.
+check_binary_fingerprint
+
 # A tolerated report is not merely counted: its section identity must match the
-# reviewed, justified baseline. An empty baseline is intentional (#1725).
+# reviewed, justified baseline. This belongs to the shared epilogue so every
+# section-plan run enforces the policy too (#1725).
 if ! "$TESTS_DIR/../tools/lsan_baseline_check.sh" "$TOLERATED_LSAN_REPORTS"; then
     FAIL=$((FAIL + 1)); TOTAL=$((TOTAL + 1))
 else
     PASS=$((PASS + 1)); TOTAL=$((TOTAL + 1))
 fi
 rm -f "$TOLERATED_LSAN_REPORTS"
-
-# Final guard (#681): if the binary changed during the last block, results are invalid.
-check_binary_fingerprint
 
 # Close the timer on the final section so the last row is not lost (#1160 r4).
 __eigs_section_close

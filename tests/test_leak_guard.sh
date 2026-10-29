@@ -65,6 +65,26 @@ if ! echo 'int main(void){return 0;}' | "$CC_CMD" $WERROR_FLAGS -fsanitize=addre
 fi
 rm -f /tmp/eigs_asan_probe
 
+# AddressSanitizer and LeakSanitizer are separate runtime capabilities.
+# compiler-rt on macOS arm64 accepts -fsanitize=address, but aborts when
+# detect_leaks=1 is requested. Probe LSan itself so the ASan half still runs.
+cat >/tmp/eigs_lsan_probe.c <<'EOF'
+#include <stdlib.h>
+int main(void) { volatile void *p = malloc(17); (void)p; return 0; }
+EOF
+LSAN_AVAILABLE=0
+if "$CC_CMD" $WERROR_FLAGS -fsanitize=address -fno-omit-frame-pointer \
+        /tmp/eigs_lsan_probe.c -o /tmp/eigs_lsan_probe 2>/dev/null; then
+    LSAN_PROBE_OUT=$(ASAN_OPTIONS="detect_leaks=1:print_summary=1" \
+        /tmp/eigs_lsan_probe 2>&1); LSAN_PROBE_RC=$?
+    if [ "$LSAN_PROBE_RC" -ne 0 ] && printf '%s\n' "$LSAN_PROBE_OUT" | \
+            grep -q 'LeakSanitizer: detected memory leaks'; then
+        LSAN_AVAILABLE=1
+    fi
+fi
+rm -f /tmp/eigs_lsan_probe /tmp/eigs_lsan_probe.c
+[ "${EIGS_LEAK_GUARD_FORCE_NO_LSAN:-0}" = 1 ] && LSAN_AVAILABLE=0
+
 # Prove that the two setup failures stay failures rather than being mistaken
 # for an unavailable sanitizer.  The children stop at the planted fault, so
 # these checks do not duplicate the expensive leak-guard build or loops.
@@ -194,26 +214,32 @@ cat > $TMP <<'EOF'
 for i in range of 10000:
     x is i
 EOF
-OUT=$(ASAN_OPTIONS="detect_leaks=1:print_summary=1" $ASAN_BIN $TMP 2>&1 || true)
-LEAKED=$(lsan_count_leak_blocks "$OUT" 'make_list')
-if [ "$LEAKED" -eq 0 ]; then
-    ok "range of 10000 — no make_list leaks"
+if [ "$LSAN_AVAILABLE" -eq 1 ]; then
+    OUT=$(ASAN_OPTIONS="detect_leaks=1:print_summary=1" $ASAN_BIN $TMP 2>&1 || true)
+    LEAKED=$(lsan_count_leak_blocks "$OUT" 'make_list')
+    if [ "$LEAKED" -eq 0 ]; then
+        ok "range of 10000 — no make_list leaks"
+    else
+        fail "range of 10000 leaked" "$LEAKED leak frame(s)"
+        echo "$OUT" | grep -E "leak|make_list" | head -10
+    fi
 else
-    fail "range of 10000 leaked" "$LEAKED leak frame(s)"
-    echo "$OUT" | grep -E "leak|make_list" | head -10
+    echo "  SKIP: LeakSanitizer unavailable — leak assertions skipped; ASan checks continue"
 fi
 
 cat > $TMP <<'EOF'
 for i in range of 5000:
     s is make_str of "x"
 EOF
-OUT=$(ASAN_OPTIONS="detect_leaks=1:print_summary=1" $ASAN_BIN $TMP 2>&1 || true)
-LEAKED=$(lsan_count_leak_blocks "$OUT" 'make_str')
-if [ "$LEAKED" -eq 0 ]; then
-    ok "make_str x 5000 — no make_str leaks"
-else
-    fail "make_str leaked" "$LEAKED leak frame(s)"
-    echo "$OUT" | grep -E "leak|make_str" | head -10
+if [ "$LSAN_AVAILABLE" -eq 1 ]; then
+    OUT=$(ASAN_OPTIONS="detect_leaks=1:print_summary=1" $ASAN_BIN $TMP 2>&1 || true)
+    LEAKED=$(lsan_count_leak_blocks "$OUT" 'make_str')
+    if [ "$LEAKED" -eq 0 ]; then
+        ok "make_str x 5000 — no make_str leaks"
+    else
+        fail "make_str leaked" "$LEAKED leak frame(s)"
+        echo "$OUT" | grep -E "leak|make_str" | head -10
+    fi
 fi
 
 cat > $TMP <<'EOF'
@@ -221,13 +247,15 @@ d is {a: 1, b: 2, c: 3}
 for i in range of 5000:
     k is keys of d
 EOF
-OUT=$(ASAN_OPTIONS="detect_leaks=1:print_summary=1" $ASAN_BIN $TMP 2>&1 || true)
-LEAKED=$(lsan_count_leak_blocks "$OUT" 'make_list|builtin_keys')
-if [ "$LEAKED" -eq 0 ]; then
-    ok "keys x 5000 — no fresh-list leaks"
-else
-    fail "keys leaked" "$LEAKED leak frame(s)"
-    echo "$OUT" | grep -E "leak|make_list|builtin_keys" | head -10
+if [ "$LSAN_AVAILABLE" -eq 1 ]; then
+    OUT=$(ASAN_OPTIONS="detect_leaks=1:print_summary=1" $ASAN_BIN $TMP 2>&1 || true)
+    LEAKED=$(lsan_count_leak_blocks "$OUT" 'make_list|builtin_keys')
+    if [ "$LEAKED" -eq 0 ]; then
+        ok "keys x 5000 — no fresh-list leaks"
+    else
+        fail "keys leaked" "$LEAKED leak frame(s)"
+        echo "$OUT" | grep -E "leak|make_list|builtin_keys" | head -10
+    fi
 fi
 
 # Borrow case must still work: append returns arg->items[0], which is then
@@ -238,7 +266,7 @@ lst is [1, 2, 3]
 for i in range of 5000:
     r is append of [lst, i]
 EOF
-OUT=$(ASAN_OPTIONS="detect_leaks=1:print_summary=1" $ASAN_BIN $TMP 2>&1 || true)
+OUT=$(ASAN_OPTIONS="detect_leaks=$LSAN_AVAILABLE:print_summary=1" $ASAN_BIN $TMP 2>&1 || true)
 UAF=$(echo "$OUT" | grep -cE "use-after-free|heap-use-after-free" || true)
 if [ "$UAF" -eq 0 ]; then
     ok "append (borrowed return) — no UAF"
@@ -264,7 +292,7 @@ loop while i < 2000:
     dict_remove of [d, "gone"]
     i is i + 1
 EOF_EIGS
-OUT=$(ASAN_OPTIONS="detect_leaks=1:print_summary=1" $ASAN_BIN $TMP 2>&1); RC=$?
+OUT=$(ASAN_OPTIONS="detect_leaks=$LSAN_AVAILABLE:print_summary=1" $ASAN_BIN $TMP 2>&1); RC=$?
 if [ "$RC" -eq 0 ] && ! printf '%s\n' "$OUT" | grep -qE 'AddressSanitizer|LeakSanitizer|runtime error:'; then
     ok "container stores — index/set_at/copy_into/dot/dict/insert/remove sanitizer-clean"
 else
