@@ -234,6 +234,24 @@ scope_boundary_row() {
     fi
 }
 
+loop_iterations_row() {
+    echo "=== #1870 concurrent module-level loop publication must be race-free ==="
+    local fixture="$TESTS_DIR/loader_mt_loop_iterations.eigs"
+    local marker='loop iterations overlap: main=20000 worker=20000 entered=1'
+    tsan_warnings "$fixture"
+    if [ "$LAST_RC" -eq 124 ]; then
+        echo "  FAIL: loader_mt_loop_iterations HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
+    elif [ "$WARNINGS" -ne 0 ]; then
+        echo "  FAIL: loader_mt_loop_iterations reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
+        tsan_report <<< "$RUN_OUTPUT"
+    elif [ "$LAST_RC" -ne 0 ] || ! grep -Fxq "$marker" <<< "$RUN_OUTPUT"; then
+        echo "  FAIL: loader_mt_loop_iterations rc=$LAST_RC without concurrent-loop count evidence"; FAIL=$((FAIL + 1))
+        tail -5 <<< "$RUN_OUTPUT"
+    else
+        echo "  PASS: loader_mt_loop_iterations TSan-clean; both overlapping loops completed 20000 iterations"; PASS=$((PASS + 1))
+    fi
+}
+
 dict_readers_row() {
     echo "=== #1697 shared dict readers must not mutate order storage ==="
     local fixture="$TESTS_DIR/tsan_dict_readers.eigs"
@@ -265,11 +283,12 @@ if [ "${1:-}" = "--row" ]; then
         rebind-call)    rebind_call_row ;;
         captured-rebind) captured_rebind_row ;;
         scope-boundary) scope_boundary_row ;;
+        loop-iterations) loop_iterations_row ;;
         dict-readers)   dict_readers_row ;;
         misordered-publish) misordered_publish_row ;;
         compiler-env-count) compiler_env_count_hold_row ;;
         observer-fold) ROW_EXPECTED=4; observer_shared_fold_rows ;;
-        *) echo "usage: test_tsan.sh --row seeded|rebind-call|captured-rebind|scope-boundary|dict-readers|misordered-publish|compiler-env-count|observer-fold"; exit 2 ;;
+        *) echo "usage: test_tsan.sh --row seeded|rebind-call|captured-rebind|scope-boundary|loop-iterations|dict-readers|misordered-publish|compiler-env-count|observer-fold"; exit 2 ;;
     esac
     echo ""
     echo "Results: $PASS passed, $FAIL failed"
@@ -672,6 +691,8 @@ rebind_call_row
 observer_shared_fold_rows
 
 scope_boundary_row
+
+loop_iterations_row
 
 echo "=== observer arming sets must be race-free (#1145) ==="
 # (a) the spawn shape, occurrence tier + the #827 history control.

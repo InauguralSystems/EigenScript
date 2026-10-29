@@ -1,0 +1,23 @@
+# #1870: both loops publish __loop_iterations__ into the shared root env.
+# The two channel handshakes prove that the worker is inside its module-level
+# loop when main enters its own module-level loop; exact completion counts
+# keep a quiet/truncated run from passing the TSan row.
+loop_worker_entered is channel of null
+loop_main_entered is channel of null
+loop_worker_done is channel of null
+
+define load_loop_module() as:
+    load_file of "loader_mt_modules/lm_loop_iterations.eigs"
+
+loop_worker is spawn of load_loop_module
+worker_enter is recv of loop_worker_entered
+
+main_count is 0
+loop while main_count < 20000:
+    main_count is main_count + 1
+    if main_count == 1:
+        send of [loop_main_entered, main_count]
+
+worker_count is recv of loop_worker_done
+thread_join of loop_worker
+print of f"loop iterations overlap: main={main_count} worker={worker_count} entered={worker_enter}"

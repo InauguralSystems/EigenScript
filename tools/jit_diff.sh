@@ -172,7 +172,7 @@ done
 fi
 # Denied up front: a source that uses gfx_open opens a window and cannot finish
 # unattended in the headless gate; *seeded_race* and
-# *userrace* (a user data race: undefined, can crash either side, #1171) are
+# *userrace* (the deliberate #1489 positive-control race) are
 # nondeterministic on purpose; *state_at*|*statedump* prints hash-order output.
 if [ -n "${JIT_DIFF_OBS_ONLY:-}" ]; then
   case "$JIT_DIFF_OBS_ONLY" in /*|../*|*/../*) echo "jit_diff: FAIL: JIT_DIFF_OBS_ONLY must be repository-relative" >&2; exit 1 ;; esac
@@ -194,7 +194,8 @@ while IFS= read -r rel; do
   fi
   case "$rel" in
     *paint*|*_game*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (interactive example)"; continue ;;
-    *seeded_race*|*userrace*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (intentionally nondeterministic)"; continue ;;
+    *seeded_race*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (intentionally nondeterministic)"; continue ;;
+    *userrace*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (deliberate #1489 positive-control race)"; continue ;;
     *state_at*|*statedump*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (hash-order output)"; continue ;;
   esac
   row=$(row_of "$rel"); prog="$ROOT/$rel"
