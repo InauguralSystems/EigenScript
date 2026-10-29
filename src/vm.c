@@ -3089,8 +3089,12 @@ static int vm_handler_in_range(int base) {
 /* Type name for a stack slot, for error diagnostics. Returns a static
  * string (safe to hold across a decref). */
 static const char *slot_type_name(EigsSlot s) {
-    if (slot_is_null(s)) return "none";
-    if (slot_is_ptr(s)) { Value *v = slot_as_ptr(s); return v ? val_type_name(v->type) : "none"; }
+    if (slot_is_null(s)) return "null";
+    if (slot_is_ptr(s)) {
+        Value *v = slot_as_ptr(s);
+        if (!v || v->type == VAL_NULL) return "null";
+        return val_type_name(v->type);
+    }
     if (slot_is_bool(s)) return "bool";   /* #1637 */
     return "num"; /* immediate double */
 }
@@ -5782,7 +5786,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (!slot_is_ptr(tgt_s) || slot_as_ptr(tgt_s)->type != VAL_LIST) {
             rt_error(EK_TYPE, current_line,
                 "destructuring requires a list, got %s",
-                slot_type_name(tgt_s));   /* #1637: names bool/none, not "number" */
+                slot_type_name(tgt_s));   /* #1637: names bool/null, not "number" */
             slot_decref(tgt_s);
             for (int i = 0; i < n; i++) vm_push_slot(slot_null());
             DISPATCH();
