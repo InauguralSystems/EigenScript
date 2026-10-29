@@ -261,7 +261,7 @@ derive_chunk_weights() {
 derive_chunk_groups() {
     local table="$1" out="$2"
     awk -v pre_end="$SP_PREAMBLE_END" '
-        FNR == NR { n++; cs[n] = $1; ce[n] = $2; next }
+        FNR == NR { n++; cs[n] = $1; ce[n] = $2; header[n] = (NF > 2); next }
         {
             line = FNR
             if (line <= pre_end) { scope = 0 }
@@ -319,6 +319,20 @@ derive_chunk_groups() {
         }
         END {
             for (i = 1; i <= n; i++) parent[i] = i
+            # A section is its header chunk and every following headerless
+            # chunk up to the next header.  Dependency merging alone cannot
+            # guarantee that: a body chunk may share no shell variable with
+            # its header.  Put that whole syntactic unit in one group first;
+            # dependency merges may then conservatively join whole sections.
+            section = 0
+            for (i = 1; i <= n; i++) {
+                if (header[i]) section = i
+                else if (section > 0) {
+                    unite(i, section)
+                    merges++
+                    printf "MERGE section %d %d\n", cs[section], cs[i] > "/dev/stderr"
+                }
+            }
             for (j = 1; j <= nr; j++) {
                 v = rv[j]; c = rc[j] + 0
                 if (v in pre) continue
@@ -329,7 +343,7 @@ derive_chunk_groups() {
                 if (best == 0) continue
                 ra = find(c); rb = find(best)
                 if (ra != rb) {
-                    if (ra < rb) parent[rb] = ra; else parent[ra] = rb
+                    unite(ra, rb)
                     merges++
                     printf "MERGE %s %d %d\n", v, cs[best], cs[c] > "/dev/stderr"
                 }
@@ -358,12 +372,44 @@ derive_chunk_groups() {
             if (minl[k] == ln && minc[k] < col) return 1
             return 0
         }
+        function unite(a, b,   ra, rb) {
+            ra = find(a); rb = find(b)
+            if (ra == rb) return
+            if (ra < rb) parent[rb] = ra; else parent[ra] = rb
+        }
         function find(x) { while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x] } return x }
     ' "$table" "$RUNNER" > "$out" 2> "$out.merges"
     SP_GROUP_MERGES=$(sed -n 's/^MERGES \([0-9]*\)$/\1/p' "$out.merges")
     : "${SP_GROUP_MERGES:=0}"
     SP_GROUP_MERGE_LIST=$(sed -n 's/^MERGE /  merged: /p' "$out.merges")
     SP_GROUPS=$(cut -d' ' -f2 "$out" | sort -u | grep -c .)
+}
+
+# Independently audit the section/group contract after grouping.  This is in
+# --check (rather than only the emitter) so a future grouping regression is a
+# planner failure before any shard can run a header without its body.
+check_section_groups() {
+    local table="$1" groups="$2" bad
+    bad=$(awk '
+        FNR == NR { n++; start[n]=$1; header[n]=(NF>2); label[n]=$3; next }
+        { group[$1]=$2 }
+        END {
+            h=0
+            for (i=1; i<=n; i++) {
+                if (header[i]) h=i
+                else if (h && group[start[i]] != group[start[h]]) {
+                    bad++
+                    witness = sprintf("%s header @%d body @%d", label[h], start[h], start[i])
+                    if (label[h] == "[114]" && named == "") named = witness
+                    else if (bad <= 8)
+                        witnesses = witnesses sprintf("%s%s", witnesses ? ", " : "", witness)
+                }
+            }
+            if (bad) { printf "count=%d; %s; %s\n", bad, named, witnesses; exit 1 }
+        }' "$table" "$groups") || {
+        die "section grouping split headerless chunks from their nearest preceding header: $bad"
+    }
+    echo "section groups: every headerless chunk shares the nearest preceding header group"
 }
 
 # Deterministic longest-processing-time greedy. Emits "<chunk-start> <shard>".
@@ -429,6 +475,11 @@ shard_check() {
     shard_count_sync "$CI_FILE" || die "ASan shard count is not synchronized"
     derive_chunk_weights "$W/chunks" "$W/weights" "$W/missing"
     derive_chunk_groups "$W/chunks" "$W/groups"
+    if [ "${SP_SECTION_GROUP_MUTATE:-}" = split ]; then
+        awk '{ print $1, $1 }' "$W/groups" > "$W/groups.mut"
+        mv "$W/groups.mut" "$W/groups"
+    fi
+    check_section_groups "$W/chunks" "$W/groups"
     derive_shard_assignment "$n" "$W/weights" "$W/assign" "$W/groups"
 
     # TEST-ONLY mutation seam, used by --selftest to prove this check fires.
@@ -1049,6 +1100,8 @@ selftest() {
     expect_red 'check_chunk_count: vacuous chunk population falls below floor' 'chunk enumeration examined' \
         "$dir/bad-count.sh" --root "$SP_ROOT" --chunks --quiet
     expect_ok 'control: complete, disjoint shard assignment and count sync' "$0" --root "$SP_ROOT" --shards 3 --check --quiet
+    expect_red 'section groups: headerless body split from nearest header is refused' 'count=216; [114] header @1830 body @1831' \
+        env SP_SECTION_GROUP_MUTATE=split "$0" --root "$SP_ROOT" --shards 3 --check --quiet
     expect_red 'shard_check: missing chunk makes union != full' 'union != full' \
         env SP_SHARD_MUTATE=drop "$0" --root "$SP_ROOT" --shards 3 --check --quiet
     expect_red 'shard_check: duplicate chunk makes shards OVERLAP' 'shards OVERLAP' \

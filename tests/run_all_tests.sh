@@ -44,6 +44,13 @@ LEAKED=0
 # absent is not reviewable.
 SKIPPED=0
 
+# Use the planner's one section-header grammar at runtime too.  The planner
+# validates that every selected header has this shape; asking it for the same
+# predicate keeps execution accounting from growing a second, drifting
+# matcher (#1354).
+EIGS_SECTION_HEADER_RE=$(bash "$TESTS_DIR/../tools/section_plan.sh" --header-regex) || exit 1
+SECTION_OUTCOME_VIOLATIONS=0
+
 # Validate a TAP-style child ledger.  The child owns the plan; every parent uses
 # this one predicate so missing, duplicate, malformed, short and failed plans
 # have identical verdicts (#2051).
@@ -108,13 +115,24 @@ __eigs_now_us() {
 }
 __EIGS_SEC_LABEL=""
 __EIGS_SEC_T0=""
+__EIGS_SEC_TOTAL0=0
+__EIGS_SEC_SKIPPED0=0
 __EIGS_LOCK_TEST_SEAM=0
 __eigs_section_close() {
     [ -n "$__EIGS_SEC_LABEL" ] || return 0
-    local now d
+    local now d section_total section_skipped
     now=$(__eigs_now_us)
     d=$(( now - __EIGS_SEC_T0 ))
     [ "$d" -ge 0 ] || d=0
+    section_total=$((TOTAL - __EIGS_SEC_TOTAL0))
+    section_skipped=$((SKIPPED - __EIGS_SEC_SKIPPED0))
+    # At least one assertion or at least one skip: a section may skip several
+    # sub-checks ([80b] skips two). Only "nothing at all" is the vanish class.
+    if [ "$section_total" -le 0 ] && [ "$section_skipped" -le 0 ]; then
+        builtin printf '  FAIL: section %s has no outcome (TOTAL delta=%d, SKIPPED delta=%d)\n' \
+            "$__EIGS_SEC_LABEL" "$section_total" "$section_skipped"
+        SECTION_OUTCOME_VIOLATIONS=$((SECTION_OUTCOME_VIOLATIONS + 1))
+    fi
     [ "$EIGS_SECTION_TIME" = "1" ] &&         builtin printf 'SECTION_TIME: %s %d.%02d\n' "$__EIGS_SEC_LABEL" "$(( d / 1000000 ))" "$(( (d % 1000000) / 10000 ))"
     __EIGS_SEC_LABEL=""
     # Test-only seam rendezvous for the tree-lock lifetime selftest.  The
@@ -128,15 +146,15 @@ __eigs_section_close() {
     return 0
 }
 echo() {
-    case "${1:-}" in
-        \[*\]*)
-            __eigs_section_close
-            __EIGS_SEC_LABEL="${1%%]*}]"
-            EIGS_SUITE_SECTION="$__EIGS_SEC_LABEL"
-            export EIGS_SUITE_SECTION
-            __EIGS_SEC_T0=$(__eigs_now_us)
-            ;;
-    esac
+    if [[ "${1:-}" =~ $EIGS_SECTION_HEADER_RE ]]; then
+        __eigs_section_close
+        __EIGS_SEC_LABEL="${1%%]*}]"
+        EIGS_SUITE_SECTION="$__EIGS_SEC_LABEL"
+        export EIGS_SUITE_SECTION
+        __EIGS_SEC_T0=$(__eigs_now_us)
+        __EIGS_SEC_TOTAL0=$TOTAL
+        __EIGS_SEC_SKIPPED0=$SKIPPED
+    fi
     builtin echo "$@"
 }
 
@@ -7579,6 +7597,11 @@ check_binary_fingerprint
 
 # Close the timer on the final section so the last row is not lost (#1160 r4).
 __eigs_section_close
+
+if [ "$SECTION_OUTCOME_VIOLATIONS" -ne 0 ]; then
+    echo "  FAIL: $SECTION_OUTCOME_VIOLATIONS started section(s) reported no assertion or section-level skip"
+    exit 1
+fi
 
 # #1430: each counted outcome owns a total slot. A mismatched denominator
 # must fail even when every test passed; it used to print PASS > TOTAL.
