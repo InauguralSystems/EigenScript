@@ -350,6 +350,15 @@ The scanned inventory must cover the recorded inventory floor, and every
 consumer needs a command. The commands returned by `plan` are compared
 byte for byte with the pre-change oracle when this gate changes.
 
+EigenLua is a private inventory member. Before a release wave, an operator
+with repository access must place a credentialed checkout at
+`$CA_ECO/EigenLua` (for example, with
+`gh repo clone InauguralSystems/EigenLua "$CA_ECO/EigenLua"`) and include its
+selected commit in `CA_SOURCE_REFS` as described below. The helper never treats
+an inaccessible private repository as a skip: a missing EigenLua checkout is
+an inventory gap and makes both `plan` and `run` fail. Its declared acceptance
+command runs both `bash tests/run.sh` and `bash tools/grade.sh`.
+
 Before `plan` or `run`, real consumer checkouts require an explicit local
 source-selection manifest. Set `CA_SOURCE_REFS` to a file containing one
 `consumer=commit-ish` line per consumer (for example,

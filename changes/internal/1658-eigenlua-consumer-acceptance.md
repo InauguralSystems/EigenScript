@@ -1,0 +1,1 @@
+- Release consumer acceptance now requires EigenLua's tests and grader instead of leaving the private consumer unchecked (#1658).

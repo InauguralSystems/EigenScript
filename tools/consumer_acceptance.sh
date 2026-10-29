@@ -10,11 +10,12 @@ WERROR_FLAGS_FILE="$HERE/tools/werror_flags.txt"
 EXPECTED=(DeslanStudio DMG dynamics eddy eigen-edit EigenGauntlet EigenLua EigenMiniSat EigenRegex eigen-sheet liferaft ouroboros phugoid polymethod tidelog Tidepool)
 # These repositories pin EigenScript but have no release acceptance command.
 EXCLUDED=(EigenAttention EigenAttic iLambdaAi tmp legibility-experiment awesome-eigenscript eigs-package-template homebrew-eigenscript EigenOS)
-# These four CI jobs have no devcontainer runCmd; their own test scripts are explicit.
+# These five CI jobs have no devcontainer runCmd; their own test scripts are explicit.
 declared_cmd() {
   case "$1" in
     eigen-edit|eigen-sheet) printf '%s' 'bash tests/test_smoke.sh' ;;
     EigenGauntlet) printf '%s' 'bash tests/run_smoke.sh' ;;
+    EigenLua) printf '%s' 'bash tests/run.sh && bash tools/grade.sh' ;;
     EigenMiniSat) printf '%s' "python3 -m unittest discover -s benchmarks -p 'test_*.py' && bash tests/run_smoke.sh && bash tests/run_proof_check.sh && eigenscript minisat.eigs --proof-bench --size 1 && bash tests/run_regime_c_check.sh" ;;
     *) return 1 ;;
   esac
@@ -184,9 +185,9 @@ scan_inventory() {
     if [ "$kind" != UNRUNNABLE ]; then
       if accept_cmd_of "$r"; then cmd="$ACCEPT_CMD"; wf="$ACCEPT_WF"
       elif [ -n "$ACCEPT_WHY" ]; then kind=UNRUNNABLE; why="$ACCEPT_WHY"
-      elif cmd="$(declared_cmd "$r")"; then kind=declared
       elif [ -f "$ECO/.ca_fixture" ] && [ -f "$d/.ca_declared" ]; then
         cmd="$(cat "$d/.ca_declared")"; kind=declared
+      elif cmd="$(declared_cmd "$r")"; then kind=declared
       else kind=UNRUNNABLE; why=no-acceptance-command
       fi
     fi
@@ -221,8 +222,8 @@ plan() {
     # Do not mix the inventory diagnostics with byte-exact command output.
     if [ -d "$ECO/$name" ] && { accept_cmd_of "$name" || [ -z "$ACCEPT_WHY" ]; }; then
       if [ -n "$ACCEPT_CMD" ]; then printf '%s\n' "$ACCEPT_CMD"; return 0; fi
-      if ACCEPT_CMD="$(declared_cmd "$name")"; then printf '%s\n' "$ACCEPT_CMD"; return 0; fi
       if [ -f "$ECO/.ca_fixture" ] && [ -f "$ECO/$name/.ca_declared" ]; then cat "$ECO/$name/.ca_declared"; return 0; fi
+      if ACCEPT_CMD="$(declared_cmd "$name")"; then printf '%s\n' "$ACCEPT_CMD"; return 0; fi
     fi
     echo "UNRUNNABLE: $name" >&2; return 1
   fi
@@ -776,6 +777,13 @@ selftest() {
   printf 'no_command\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
   st_check b missing-command 'row|no_command|v0.43.0|UNRUNNABLE' "$st_record"
+  # (b1) EigenLua is private and has no extractable runCmd, so its complete
+  # release command must remain in the explicit inventory.
+  st_reset; st_consumer EigenLua
+  st_rc=0; CA_ECO="$st_eco" bash "$HERE/tools/consumer_acceptance.sh" plan --cmd EigenLua > "$st_out" 2>&1 || st_rc=$?
+  if [ "$st_rc" -eq 0 ] && [ "$(cat "$st_out")" = 'bash tests/run.sh && bash tools/grade.sh' ]; then
+    echo 'plant b1 check=eigenlua-declared-command GREEN command=tests+grade'
+  else echo 'plant b1 check=eigenlua-declared-command SILENT'; st_bad=1; fi
   # (b2) Every workflow runCmd runs in order and in its own shell.
   st_reset; st_consumer multi
   st_workflow multi <<'YAML'
@@ -1219,7 +1227,7 @@ CANDIDATE
     echo 'plant AC check=consumer-commit-provenance GREEN commits=distinct receipts=distinct'
   else echo 'plant AC check=consumer-commit-provenance SILENT'; st_bad=1; fi
   rm -rf "$st_root"
-  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 37/37 plants'; return 0; fi
+  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 38/38 plants'; return 0; fi
   echo 'SELF-TEST: FAIL'; return 1
 }
 
