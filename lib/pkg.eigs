@@ -124,6 +124,24 @@ define git_worktree_clean(work_dir) as:
 define rmtree(path) as:
     exec_capture of ["rm", "-rf", path]
 
+# Give target the directory permission bits of reference without relying on
+# GNU stat/chmod extensions.  POSIX find's -perm predicate lets us assemble a
+# symbolic chmod mode that works on both the Linux and macOS package lanes.
+define copy_directory_mode(reference, target) as:
+    tests is ["-0400", "-0200", "-0100", "-0040", "-0020", "-0010",
+              "-0004", "-0002", "-0001", "-4000", "-2000", "-1000"]
+    grants is ["u+r", "u+w", "u+x", "g+r", "g+w", "g+x",
+               "o+r", "o+w", "o+x", "u+s", "g+s", "o+t"]
+    mode is "a="
+    for i in range of (len of tests):
+        probe is exec_capture of ["find", reference, "-prune", "-perm", tests[i], "-print"]
+        if probe[0] != 0:
+            return false
+        if probe[1] != "":
+            mode is mode + "," + grants[i]
+    changed is exec_capture of ["chmod", mode, target]
+    return changed[0] == 0
+
 # ---- Name validation -------------------------------------------------
 
 # Owner-or-name part: 1+ chars, no leading '-' or '.', only
@@ -395,6 +413,22 @@ define cmd_install() as:
     stage_dir is trim of stage_result[1]
     if stage_dir == "":
         throw of "install failed: staging directory path was empty"
+    # mktemp deliberately makes its directory private.  Activation must not
+    # publish that incidental mode: retain an existing modules directory's
+    # mode, or copy the mode that mkdir receives from the current umask.
+    mode_reference is MODULES_DIR
+    mode_template is stage_dir + ".mkdir-mode"
+    if not (is_dir of MODULES_DIR):
+        made_template is exec_capture of ["mkdir", mode_template]
+        if made_template[0] != 0:
+            rmtree of stage_dir
+            throw of "install failed: could not determine directory permissions"
+        mode_reference is mode_template
+    if not (copy_directory_mode of [mode_reference, stage_dir]):
+        rmtree of mode_template
+        rmtree of stage_dir
+        throw of "install failed: could not set staging directory permissions"
+    rmtree of mode_template
     installed is 0
     for i in range of n:
         name is names[i]
@@ -403,6 +437,7 @@ define cmd_install() as:
         tag is spec.tag
 
         target is stage_dir + "/" + (pkg_leaf of name)
+        old_target is MODULES_DIR + "/" + (pkg_leaf of name)
 
         # Clone with depth 1 at the tag, then if we have a locked
         # commit, fetch that specific commit and check it out.
@@ -428,6 +463,14 @@ define cmd_install() as:
             if not ok3:
                 rmtree of stage_dir
                 throw of f"install failed: checkout of locked commit for {name} failed"
+
+        # git clone already gives a new package directory plain-mkdir
+        # permissions.  A replacement keeps the mode administrators assigned
+        # to its previous directory; checkout-created file modes are untouched.
+        if is_dir of old_target:
+            if not (copy_directory_mode of [old_target, target]):
+                rmtree of stage_dir
+                throw of f"install failed: could not set directory permissions for {name}"
 
         current is git_head_commit of target
         current_tree is git_tree_hash of target

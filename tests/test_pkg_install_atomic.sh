@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # #2170: --pkg install builds a complete sibling tree before activation.
 set -euo pipefail
+umask 0027
 EIGS="${EIGENSCRIPT:-./eigenscript}"
 case "$EIGS" in /*) ;; *) EIGS="$(pwd)/$EIGS" ;; esac
 REAL_GIT=$(command -v git || true)
@@ -18,12 +19,32 @@ mkdir "$TMP/project"; cd "$TMP/project"
 printf '{"name":"app","version":"1","deps":{"tester/atom":{"git":"file://%s","tag":"main"}}}\n' "$TMP/source" > eigs.json
 printf '{"tester/atom":{"git":"file://%s","tag":"main","commit":"%s","tree":"%s"}}\n' "$TMP/source" "$COMMIT" "$TREE" > eigs.lock.json
 mkdir -p eigs_modules/atom; printf 'prior\n' > eigs_modules/atom/prior.txt
+chmod 0755 eigs_modules
+chmod 0750 eigs_modules/atom
 cp eigs.lock.json "$TMP/lock.before"
 
 # Clean control: without a planted interruption, install and verify succeed.
 "$EIGS" --pkg install >/dev/null
 "$EIGS" --pkg verify >/dev/null
 printf 'PASS: uninterrupted staged install activates a verifiable tree\n'
+find eigs_modules -prune -perm 0755 -print | grep -q . || { echo 'FAIL: install changed existing eigs_modules mode'; exit 1; }
+find eigs_modules/atom -prune -perm 0750 -print | grep -q . || { echo 'FAIL: install changed existing package directory mode'; exit 1; }
+printf 'PASS: staged install preserves existing directory modes before activation\n'
+
+# With no prior tree, activation must publish the same permissions as mkdir
+# under this test's explicit umask, rather than mktemp's owner-only mode.
+mkdir "$TMP/fresh"; cd "$TMP/fresh"
+cp "$TMP/project/eigs.json" "$TMP/project/eigs.lock.json" .
+mkdir expected-mkdir-mode
+"$EIGS" --pkg install >/dev/null
+expected_mode_matches=$(find expected-mkdir-mode -prune -perm 0750 -print)
+modules_mode_matches=$(find eigs_modules -prune -perm 0750 -print)
+package_mode_matches=$(find eigs_modules/atom -prune -perm 0750 -print)
+[ -n "$expected_mode_matches" ] && [ -n "$modules_mode_matches" ] && [ -n "$package_mode_matches" ] || {
+    echo 'FAIL: fresh staged directories do not match plain mkdir mode'; exit 1;
+}
+printf 'PASS: fresh staged directories use plain mkdir permissions under umask 0027\n'
+cd "$TMP/project"
 # Mark the clean installed tree; both fault plants must preserve it.
 printf 'prior\n' > eigs_modules/atom/prior.txt
 git -C eigs_modules/atom add prior.txt
