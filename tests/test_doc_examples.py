@@ -332,7 +332,7 @@ def is_asan_build():
 POPULATION = {
     # file                       fences paired fragment nocheck value-comments
     "README.md":                 (  7,    3,     4,      0,      0),
-    "docs/llms.txt":             ( 10,    7,     2,      1,      0),
+    "docs/llms.txt":             ( 12,    9,     2,      1,      0),
     "docs/SPEC.md":              ( 88,   84,     1,      3,      0),   # #1425: +1 paired (multi-line binary operator error line)
     "docs/COMPARISON.md":        ( 19,   18,     1,      0,      0),
     "docs/CONCURRENCY.md":       (  9,    9,     0,      0,      0),   # #1879: +1 paired (thread handle crosses a channel)

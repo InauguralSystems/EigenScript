@@ -10,19 +10,6 @@
 
 ## Calls use `of`, never `f(x)`
 
-Hosted release includes lazy graphics. The server profile adds HTTP, raw TCP,
-and models; server-db additionally includes PostgreSQL. Omitted HTTP, network,
-database, and model names follow the first-reference rule below.
-
-In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
-or model builtin name raises a catchable `value` error at its first reference,
-naming the unavailable capability and required profile. This occurs before
-call arguments are evaluated. Local, captured and host bindings take precedence,
-including a binding to null; other unknown names retain `undefined_name` errors.
-`--api`, lint and token-vocabulary discovery describe the language surface,
-not callable availability. Direct host global lookup returns actual absence.
-Direct AOT adoption, capability imports and host grants remain separate work.
-
 - Apply a function or builtin with `of`: `print of x`, `sqrt of n`, `len of xs`.
 - A **bare literal list** after `of` is an argument list at every element
   count: `f of []` zero arguments, `f of [x]` ONE argument (x itself, not a
@@ -90,7 +77,23 @@ print of (double of 21)    # 42
 ```
 
 Inside a no-arg `define ... as:`, a reference to `n` is that implicit parameter,
-not any outer `n`.
+not any outer `n`. The same holds for an EMPTY parameter list, `define f() as:`,
+and for a zero-parameter lambda `() => expr`: each gets the implicit `n`, so it
+shadows an outer `n` even when the caller passes nothing (`f of []` binds
+`n = []`). Name the parameter you mean, or avoid an outer variable called `n`.
+
+```eigenscript
+n is 2
+define f() as:
+    return n
+g is () => n
+print of (f of [])    # [] (the implicit n, not the outer 2)
+print of (g of 7)     # 7
+```
+```output
+[]
+7
+```
 
 ## Scope: assignment mutates OUTWARD; use `local` in helpers
 
@@ -130,7 +133,9 @@ boom
 
 ## Reserved and soft keywords (cannot be plain variable names)
 
-- **Reserved** (never identifiers): `in`, and the observer predicates
+- **Reserved** (never identifiers): `in` (it only appears in `for v in xs`
+  and comprehensions; there is NO `x in xs` membership operator, see the
+  habits list below), and the observer predicates
   `converged`, `stable`, `improving`, `diverging`, `oscillating`, `equilibrium`,
   plus `report` and `report_value`. Never bind either report name, even as a
   parameter or loop variable (`E005`). Use `report of x` / `report_value of x`
@@ -187,14 +192,40 @@ sqrt(2) = 1.414213562373095
 - `loop while not converged` uses the **bare** predicate reading the loop's
   last-assigned value. Put it **inside a function** so the loop gets a fresh
   binding to watch (a module-scope version can loop forever).
+- **Prefer the named form** `converged of x` (likewise `stable of x`,
+  `improving of x`, ...): it always reads `x`'s own trajectory. The bare form
+  reads whichever binding was assigned LAST, so a counter bumped at the end of
+  the loop body (`i is i + 1`) silently becomes the thing being judged:
+
+```eigenscript
+define f as:
+    local i is 0
+    x is 100.0
+    loop while i < 40:
+        x is x * 0.7
+        i is i + 1
+    print of (improving of x)   # true: x decays
+    print of improving          # false: the bare form judged i, which grows
+    return 0
+f of 0
+```
+```output
+true
+false
+```
 - `report of x` returns the routed state string (value channel for numeric
   bindings, entropy channel otherwise); `report_value of x` uses the value
   channel explicitly. Both read the named binding's trajectory.
-- Numeric verdicts are over the value's RELATIVE step, `Δv / max(|v|, |v_prev|,
-  default 1e-3), an absolute floor `dh_zero*scale` below it; a decay toward
-  zero reads `improving` until inside the scale. `improving` is directional:
-  lower is better, as for ML loss, so growth never qualifies even when its
-  steps contract toward a plateau. A mode slower than N samples
+- Numeric verdicts are over the value's RELATIVE step,
+  `Δv / max(|v|, |v_prev|, scale)`, read across a fixed window of the last 10
+  samples. Above the run's characteristic `scale` (`0.001` by default) a
+  verdict is unit-free; below it the deadband turns absolute
+  (`|Δv| < dh_zero*scale`), so a decay toward zero reads `improving` until it
+  is inside the scale. `improving` is directional: lower is better, as for ML
+  loss, so growth never qualifies even when its steps contract toward a
+  plateau. A mode slower than about ten samples of your assignment cadence
+  cannot show up inside the window (the window is not configurable), so
+  sample at least once per tenth of the slowest period you care about.
 - Trajectory is keyed to a binding's env slot, never to a value: a dict field,
   list element, parameter or `for` binder has none, and ONE binding rebound
   from `fleet[i][2]` in a loop carries the interleave of every entity (lint
@@ -230,8 +261,13 @@ sqrt(2) = 1.414213562373095
   compare with `== true`. Deep `==` on lists/dicts stops at the first
   unequal pair, so a bool/number pair raises only if the walk reaches it.
   `false`, `0`, `null`, `""`, `[]`, `{}` are falsy.
-- `+` concatenates **strings only**. List concatenation is `append of [xs, v]`
-  (in place) or a comprehension — `xs + ys` is a runtime error.
+- `+` concatenates **strings only**; `"n=" + 3` raises (use `str of 3` or an
+  f-string). Lists: `append of [xs, v]` adds one element in place, and
+  `concat of [a, b]` returns a new joined list — `xs + ys` is a runtime error.
+- A **missing dict key reads as `null`**, never an error: `d.nope`,
+  `d["nope"]`, and a misspelled module member `m.typo` all give `null` (so
+  `m.typo of x` fails later as `cannot call null`). A list index out of range
+  DOES raise. Test for a key with `has_key of [d, k]`.
 - Numbers are f64 and finite by construction: overflow saturates at ±1e308.
   Integer bit ops are `bit_and`/`&` etc. on int64; exactness ends at 2^53.
   A bit-op operand that is not an exact integer (`1.5 | 0`, `1e30 & 1`)
@@ -247,7 +283,8 @@ sqrt(2) = 1.414213562373095
   byte/sample/device conversions normalize their buffer inputs too and stop at
   the first raised read. Numeric bytes truncate and wrap modulo 256 afterward;
   raw copies, serialization and buffer-only work areas preserve representation.
-  `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
+  `str_from_bytes` and `inflate` (a `make zlib` build) reject a non-numeric
+  list element with a builtin-named `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
   substitution. `str_from_bytes` stops at numeric NUL without inspecting later
   elements; byte codecs consume the complete list.
 - Hex integer literals: `0xFF`, `0X10` (digits only). Hex-float forms
@@ -368,7 +405,10 @@ Sandbox execution does not update shared temporal history: assignment values, na
 
 **Division by zero RAISES** — it is a catchable `value`-kind error, not a
 warning and not `0` (that fossil died with the fail-soft reform, #975).
-A caught error is a dict with `kind`, `message` and `line`:
+A runtime error is caught as a dict with `kind`, `message`, `line` and `file`.
+A value you `throw of` is caught exactly as thrown: `throw of "boom"` binds the
+string `"boom"`, so `"caught: " + err` works for your own string throws and
+raises for a runtime error. Read `err.message` when the error may be either:
 
 ```eigenscript check
 try:
@@ -382,6 +422,42 @@ catch err:
 value
 division by zero
 ```
+
+## Python/JS habits that do not work
+
+Each left-hand form below is a parse error or a runtime error. Use the right side:
+
+- `while c:` -> `loop while c:` (bare `while` is a parse error)
+- `else if c:` -> `elif c:`
+- `x = 1` -> `x is 1` (`x += 1` works)
+- `a ** b` -> `pow of [a, b]`; `a // b` -> `floor of (a / b)`
+- `a && b`, `a || b`, `!a` -> `a and b`, `a or b`, `not a` (`!=` is fine)
+- `a if c else b` -> there is no conditional expression; use an `if`/`else`
+  statement
+- `x in xs` -> `list_contains of [xs, x]`; for a dict key `has_key of [d, k]`;
+  for a substring `contains of [s, sub]` (`contains` and `index_of` take
+  strings only)
+- `f"{x:.2f}"` -> no format specs in f-strings; `import format` then
+  `format.fmt_num of [x, 2]`
+- `True`, `False`, `None` -> `true`, `false`, `null`
+- `"ab" * 3` -> raises; strings do not repeat with `*`
+- `sorted(xs)` -> `sort of xs` sorts IN PLACE and returns the same list;
+  `sort_by of [xs, key_fn]` returns a new list and leaves `xs` alone
+
+## Build profiles: which builtins exist
+
+Hosted release includes lazy graphics. The server profile adds HTTP, raw TCP,
+and models; server-db additionally includes PostgreSQL. Omitted HTTP, network,
+database, and model names follow the first-reference rule below.
+
+In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
+or model builtin name raises a catchable `value` error at its first reference,
+naming the unavailable capability and required profile. This occurs before
+call arguments are evaluated. Local, captured and host bindings take precedence,
+including a binding to null; other unknown names retain `undefined_name` errors.
+`--api`, lint and token-vocabulary discovery describe the language surface,
+not callable availability. Direct host global lookup returns actual absence.
+Direct AOT adoption, capability imports and host grants remain separate work.
 
 ## Before hand-rolling a helper
 

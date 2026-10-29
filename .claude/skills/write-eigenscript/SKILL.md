@@ -17,14 +17,20 @@ The error-prone parts of the language. Most are not surfaced when working in a c
 
 ## Calls — `of`, never `f(x)`
 - Apply with `of`: `print of x`, `sqrt of x`, `len of xs`.
-- Multi-arg passes a list: `f of [a, b]` spreads to `f(a, b)`.
+- Multi-arg passes a list: `f of [a, b]` spreads to `f(a, b)` — on a callee
+  with 2+ parameters. **The receiving side is arity-sensitive:** a 1-parameter
+  callee re-collects a 2+-element list WHOLE (`define one(a)`: `one of [5, 6]`
+  binds `a = [5, 6]`; `one of []` binds `a = []`), which is what makes
+  `len of [1, 2]` return 2. On a 2+-parameter callee, over-arity RAISES
+  (`call passes 3 arguments but the callee takes 2`; lint W022) and
+  under-arity null-fills the missing parameters.
 - **A bare literal list after `of` is ALWAYS the argument list, at every count** — `f of [x]` is ONE argument (x itself, not a 1-element list), so `fib of [n - 1]` just works, defaulted params and all. To pass a literal 1-element list whole, parenthesize: `f of ([x])`. Lint W017 flags the bare 1-element form.
 - **Parentheses always mean one argument**: `f of ([a, b])` binds the literal list whole — the escape hatch for passing a literal 2+-element list to a multi-param function. `f of ([])` is a one-argument empty-list call; bare `f of []` is the zero-arg form.
 - `of` binds tighter than infix arithmetic: `sqrt of x + 1` is `(sqrt of x) + 1`; `len of xs - 1` is `(len of xs) - 1`. Parenthesize when you mean otherwise: `sqrt of (x + 1)`.
 
 ## Reserved and soft keywords
 - `in` is reserved — never a variable name.
-- `prev`, `at`, and the six question words (`what who when where why how`) are **soft**: usable as ordinary identifiers (assignment, `local`, params, loop vars, catch names, compound assign) — EXCEPT a bare `what is e` is the interrogative form, so you can NEVER bind a question word with plain `is` (`how is 7` is a silent interrogative no-op, not an assignment — question-word variables only come into existence as params/loop vars/catch names; `what += 1` on an existing one is fine). `prev of x` and `what is x [at line]` are the special forms. The identifier fallbacks take full postfix (`prev[0]`, `at.k`).
+- `prev`, `at`, and the six question words (`what who when where why how`) are **soft**: usable as ordinary identifiers (assignment, `local`, params, loop vars, catch names, compound assign) — EXCEPT a bare `what is e` is the interrogative form, so you can NEVER bind a question word with plain `is` (`how is 7` is an interrogative, not an assignment: as a statement anywhere but the last line of its block it is a compile error, E004, and `--lint` flags it as W019 everywhere — question-word variables only come into existence as params/loop vars/catch names; `what += 1` on an existing one is fine). `prev of x` and `what is x [at line]` are the special forms. The identifier fallbacks take full postfix (`prev[0]`, `at.k`).
 - Observer predicates (`converged stable improving diverging oscillating equilibrium`) are **reserved** bare keywords — not usable as identifiers.
 - Still: prefer not naming variables after any keyword.
 
@@ -33,7 +39,7 @@ The error-prone parts of the language. Most are not surfaced when working in a c
 - **Imported modules never read or write the importer's globals**: pass configuration as a parameter or through an exported setter. `load_file` deliberately shares its caller's scope. A module function's bare assignment to a non-local name creates a fresh local. Two `local` traps a mechanical pass misses: **sibling if-branches** (a `local x` in one branch never executes when a sibling branch runs — each branch's first assignment needs its own `local`), and first-assignments inside a `loop while` body.
 - `if`, `loop while`, `try` and `for` bodies do NOT create a scope for plain `is`: a name first assigned inside a `for` body is created in the enclosing scope and is readable after the loop. Only the `for` **binder** is loop-scoped (it never writes a same-named outer binding, and is undefined after the loop). Use `local` in the body for a loop-local name. A comprehension binder and a `catch` name are lexical locals; an outer binding of the same name is unchanged. The checked-out `docs/SPEC.md` `for`-scope paragraph is normative.
 - The outward mutation is also a deliberate **idiom**: a module-private helper `define` can update several of its caller's module bindings in one call by plain `name is expr` (no return-and-reassign needed) — e.g. a UI helper that sets its caller's focus/drag/offset state. Fine when the helper is module-private and the mutation is its documented job; use `local` for everything else in its body.
-- A no-argument `define f as:` has an implicit parameter `n` — a body reference to `n` is that param, not an outer `n`.
+- A no-argument `define f as:` has an implicit parameter `n` — a body reference to `n` is that param, not an outer `n`. So do `define f() as:` (empty parens) and a zero-parameter lambda `() => expr`.
 
 ## Observer & temporal idioms
 - Bare predicates read the **last-observed** binding; an intervening assignment repoints that alias, so `report`/a bare predicate after unrelated work may read the wrong variable — prefer the named form (`converged of x`). Observer state belongs to the **binding** (its env slot), not the value: a temp-built iterate (`t is f of x` then `x is t`) keeps its trajectory, but one binding rebound across several entities in a loop interleaves their trajectories and manufactures verdicts (lint W024). Give each tracked entity its own binding — a closure per entity is the recommended form (docs/PREDICATES.md, "What carries a trajectory").
@@ -46,12 +52,21 @@ The error-prone parts of the language. Most are not surfaced when working in a c
 - Numbers are finite by construction: overflow saturates at ±1e308. Strict mode is the DEFAULT (#1361): the domain clamps (`sqrt of -1`), a NaN result, wrong-typed builtin arguments (`abs of "x"`) and a malformed `json_path` document raise catchable errors. `EIGS_STRICT=0` is the per-run opt-out that restores the finite stand-ins (NaN collapses to `0`, `sqrt of -1` is `0`).
 - **Hex integer literals** (`0xFF`, `0X10`; digits only, ends at the first non-hex char) are a real lexed form; hex-FLOAT forms (`0x1p4`, `0xA.8`) are loud parse errors. No modulo keyword — the operator is `%` (`mod` is a parse error).
 
+## Python/JS habits that fail
+`while` (write `loop while`), `else if` (`elif`), `x = 1` (`x is 1`), `**`
+(`pow of [a, b]`), `//` (`floor of (a / b)`), `&&`/`||`/`!` (`and`/`or`/`not`),
+`a if c else b` (no conditional expression), `x in xs` (`list_contains of [xs, x]`,
+`has_key of [d, k]`), `{x:.2f}` format specs (`format.fmt_num of [x, 2]`),
+`True`/`None` (`true`/`null`). A missing dict key or module member reads as
+`null`, not an error. docs/llms.txt has the full list.
+
 ## Strings
 - f-strings interpolate: `f"step {i}: {report of x}"`. `\n`, `\t`, `\r`, `\\`, `\"`, `\{`, `\}` are escapes. Whitespace inside `{ ... }` and braces inside nested string literals are fine.
 
 ## Before hand-rolling a helper
-The runtime has ~255 builtins and `lib/` is ~75 modules — it covers more
-than you think. **Start at the task-oriented "I need X" index shipped with
+The runtime's builtins and `lib/` modules cover more than you think: list
+them with `eigenscript --api` (or `--api --json`), never from a remembered
+count. **Start at the task-oriented "I need X" index shipped with
 docs/STDLIB.md** (statistics -> lib/stats, tables/CSV/group-by -> lib/data,
 distributions -> lib/probability, matrices -> linalg/tensor, locks ->
 lib/sync, sorting/dedup -> sort/set...). Builtins:

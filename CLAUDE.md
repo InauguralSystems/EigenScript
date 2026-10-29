@@ -146,6 +146,11 @@ Always-on:
 
 ## Task-specific procedures (skills — invoked on demand, not always loaded)
 
+Only `write-eigenscript` and `release` ship in this repository
+(`.claude/skills/`). `eigenscript-jit`, `eigenscript-extend-vm` and
+`aot-differential` are not in this repo or in `ouroboros`; a fresh clone does
+not have them. Without them, read the source and docs/ARCHITECTURE.md directly.
+
 - **Touching the JIT** (`src/jit.c`/`jit.h`, OSR/thunks, JIT inline fast
   paths)? → the **`eigenscript-jit`** skill (emitter invariants, `last_imm`
   peephole, advance sentinels, the inline-vs-measure trap, platform split).
