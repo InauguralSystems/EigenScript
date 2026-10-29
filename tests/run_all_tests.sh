@@ -320,6 +320,9 @@ check_binary_fingerprint() {
 # #969 was — the fix for #969 does not cover it, because the masking happens
 # before the classifier is consulted rather than inside it.
 . "$TESTS_DIR/lsan_classify.sh"
+TOLERATED_LSAN_REPORTS=$(mktemp "${TMPDIR:-/tmp}/eigs-lsan-observed.XXXXXX") || exit 1
+: > "$TOLERATED_LSAN_REPORTS"
+export TOLERATED_LSAN_REPORTS
 
 rc_ok() {
     local _cls
@@ -342,6 +345,7 @@ rc_ok() {
     [ "$1" = "0" ] && return 0
     if [ "$_cls" -eq 0 ]; then
         LEAKED=$((LEAKED + 1))
+        printf '%s — leak-only nonzero exit (full report in section log)\n' "${EIGS_SUITE_SECTION:-unlabelled}" >> "$TOLERATED_LSAN_REPORTS"
         return 0
     fi
     return 1
@@ -7591,6 +7595,15 @@ else
 fi
 rm -f "$CHILD_LEDGER"
 echo ""
+
+# A tolerated report is not merely counted: its section identity must match the
+# reviewed, justified baseline. An empty baseline is intentional (#1725).
+if ! "$TESTS_DIR/../tools/lsan_baseline_check.sh" "$TOLERATED_LSAN_REPORTS"; then
+    FAIL=$((FAIL + 1)); TOTAL=$((TOTAL + 1))
+else
+    PASS=$((PASS + 1)); TOTAL=$((TOTAL + 1))
+fi
+rm -f "$TOLERATED_LSAN_REPORTS"
 
 # Final guard (#681): if the binary changed during the last block, results are invalid.
 check_binary_fingerprint

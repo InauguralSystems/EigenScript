@@ -247,6 +247,31 @@ else
     echo "$OUT" | grep -E "use-after-free" | head -5
 fi
 
+# Container-store coverage for #1725. Heap strings make a missed decref visible;
+# every mutation family named by the issue executes in this sanitizer process.
+cat > $TMP <<'EOF_EIGS'
+i is 0
+loop while i < 2000:
+    a is ["store-" + (str of i), "store-" + (str of i), "store-" + (str of i)]
+    a[0] is "store-" + (str of i)
+    set_at of [a, 1, "store-" + (str of i)]
+    copy_into of [a, 2, ["store-" + (str of i)]]
+    list_insert_at of [a, 1, "store-" + (str of i)]
+    list_remove_at of [a, 1]
+    d is {"field": "store-" + (str of i), "key": "store-" + (str of i), "gone": "store-" + (str of i)}
+    d.field is "store-" + (str of i)
+    dict_set of [d, "key", "store-" + (str of i)]
+    dict_remove of [d, "gone"]
+    i is i + 1
+EOF_EIGS
+OUT=$(ASAN_OPTIONS="detect_leaks=1:print_summary=1" $ASAN_BIN $TMP 2>&1); RC=$?
+if [ "$RC" -eq 0 ] && ! printf '%s\n' "$OUT" | grep -qE 'AddressSanitizer|LeakSanitizer|runtime error:'; then
+    ok "container stores — index/set_at/copy_into/dot/dict/insert/remove sanitizer-clean"
+else
+    fail "container stores reported a sanitizer violation" "rc=$RC"
+    printf '%s\n' "$OUT" | grep -E 'AddressSanitizer|LeakSanitizer|runtime error:|SUMMARY:' | head -10
+fi
+
 rm -f $TMP $ASAN_BIN $ASAN_LOG
 
 echo "Leak Guard: $PASS passed, $FAIL failed"
