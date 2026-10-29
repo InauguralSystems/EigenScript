@@ -3069,6 +3069,51 @@ int vm_error_has_handler(void) {
 static void vm_error_flush_pending(EigsChunk *chunk, const uint8_t *ip) {
     if (!g_error_print_pending) return;
     g_error_print_pending = 0;
+    long error_off = -1;
+    int error_col = 0, error_span = 0;
+    if (chunk && ip && chunk->cols) {
+        error_off = ip - chunk->code - 1;
+        if (error_off >= 0 && error_off < chunk->lines_len &&
+            chunk->lines[error_off] == g_error_line) {
+            error_col = chunk->cols[error_off] + 1;
+            error_span = 1;
+        }
+    }
+    if (g_json_diagnostics) {
+        strbuf js;
+        strbuf_init(&js);
+        strbuf_append(&js, "{\"version\":1,\"code\":\"");
+        eigs_json_escape_append(&js, err_kind_name((ErrKind)g_error_kind), SIZE_MAX);
+        strbuf_append(&js, "\",\"kind\":\"runtime\",\"message\":\"");
+        eigs_json_escape_append(&js, g_error_raw, SIZE_MAX);
+        strbuf_append(&js, "\",\"file\":\"");
+        eigs_json_escape_append(&js, g_error_file, SIZE_MAX);
+        strbuf_append_fmt(&js, "\",\"line\":%d,\"column\":%d,\"span\":%d,\"frames\":[",
+                          g_error_line, error_col, error_span);
+        for (int i = g_vm.frame_count - 1; i >= 0; i--) {
+            CallFrame *f = &g_vm.frames[i];
+            const char *name = (f->chunk && f->chunk->name) ? f->chunk->name : "?";
+            const char *file = (f->chunk && f->chunk->src && f->chunk->src->file)
+                             ? f->chunk->src->file : "<native>";
+            int line = 0;
+            if (i == g_vm.frame_count - 1) line = g_vm.current_line;
+            else if (f->chunk && f->ip) {
+                long off = f->ip - f->chunk->code;
+                if (off > 0) off--;
+                if (off >= 0 && off < f->chunk->lines_len) line = f->chunk->lines[off];
+            }
+            if (i != g_vm.frame_count - 1) strbuf_append_char(&js, ',');
+            strbuf_append(&js, "{\"file\":\"");
+            eigs_json_escape_append(&js, file, SIZE_MAX);
+            strbuf_append_fmt(&js, "\",\"line\":%d,\"function\":\"", line);
+            eigs_json_escape_append(&js, name, SIZE_MAX);
+            strbuf_append(&js, "\"}");
+        }
+        strbuf_append(&js, "]}\n");
+        fputs(js.data, stderr);
+        strbuf_free(&js);
+        return;
+    }
     fprintf(stderr, "%s\n", g_error_msg);
     if (chunk && ip && chunk->cols && chunk->src && chunk->src->text) {
         long off = ip - chunk->code - 1;

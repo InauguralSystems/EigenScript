@@ -1084,6 +1084,7 @@ struct EigsThread {
      * instruction's bytecode offset (→ column) — rt_error/builtin_throw
      * set this instead of printing when the VM is live. */
     int          error_print_pending;
+    int          json_diagnostics; /* CLI ordinary-run --json error channel */
     char         error_msg[4096];
     const char  *first_error_code; /* stable parse diagnostic, normally E002 */
     char         first_error_msg[256];
@@ -1357,6 +1358,7 @@ extern __thread EigsThread *eigs_current;
 #define g_first_error_col_known (eigs_current->first_error_col_known)
 #define g_first_error_from_lexer (eigs_current->first_error_from_lexer)
 #define g_error_print_pending (eigs_current->error_print_pending)
+#define g_json_diagnostics  (eigs_current->json_diagnostics)
 #define g_error_msg         (eigs_current->error_msg)
 #define g_first_error_code  (eigs_current->first_error_code)
 #define g_first_error_msg   (eigs_current->first_error_msg)
