@@ -1,0 +1,179 @@
+# Whole-language evaluation-order contract (#2165).
+load_file of "lib/test.eigs"
+
+log is []
+define mark(label, value) as:
+    append of [log, label]
+    return value
+
+define boom(label) as:
+    append of [log, label]
+    throw of label
+
+define reset as:
+    log is []
+
+define caught(thunk) as:
+    try:
+        thunk of null
+    catch e:
+        return null
+
+# Helpers used by hot probe functions are defined once so function creation is
+# not the first opcode that makes the default JIT return to the interpreter.
+define take3(a, b, c) as:
+    return a
+
+define make_adder(seed) as:
+    append of [log, "inner-callee"]
+    return (x) => seed + x
+
+# Shared target for the assignment probe; constructing it inside the hot chunk
+# would be an unsupported LIST before the default native entry.
+box is [10]
+boxes is [box]
+
+# Two trips put the probe body beyond a forced OSR entry. Sixty calls below
+# also cross the default entry threshold (50), making this function enter natively.
+define evaluation_order_probe_call as:
+    probe_trip is 0
+    loop while probe_trip < 2:
+        # Call arguments: callee first, then arguments from left to right.
+        reset of null
+        (mark of ["callee", take3]) of [mark of ["arg1", 1], mark of ["arg2", 2], mark of ["arg3", 3]]
+        assert_eq of [log, ["callee", "arg1", "arg2", "arg3"], "call evaluates callee then arguments left to right"]
+        reset of null
+        caught of ((_) => (mark of ["callee", take3]) of [mark of ["arg1", 1], boom of "arg2", mark of ["arg3", 3]])
+        assert_eq of [log, ["callee", "arg1", "arg2"], "call raise skips later arguments and invocation"]
+        probe_trip is probe_trip + 1
+
+# Two trips put the probe body beyond a forced OSR entry. Sixty calls below
+# also cross the default entry threshold (50), making this function enter natively.
+define evaluation_order_probe_index as:
+    probe_trip is 0
+    loop while probe_trip < 2:
+        # Index reads: target before index.
+        reset of null
+        v is (mark of ["target", box])[mark of ["index", 0]]
+        assert_eq of [log, ["target", "index"], "index evaluates target before index"]
+        reset of null
+        caught of ((_) => (mark of ["target", box])[boom of "index"])
+        assert_eq of [log, ["target", "index"], "index raise preserves target effect"]
+        probe_trip is probe_trip + 1
+
+# Two trips put the probe body beyond a forced OSR entry. Sixty calls below
+# also cross the default entry threshold (50), making this function enter natively.
+define evaluation_order_probe_assignment as:
+    probe_trip is 0
+    loop while probe_trip < 2:
+        # Indexed assignments: target, index, then value; mutation happens last.
+        reset of null
+        boxes[mark of ["target", 0]][mark of ["index", 0]] is mark of ["value", 11]
+        assert_eq of [log, ["target", "index", "value"], "assignment evaluates target, index, value"]
+        define raising_assignment as:
+            boxes[mark of ["target", 0]][mark of ["index", 0]] is boom of "value"
+        reset of null
+        caught of raising_assignment
+        assert_eq of [log, ["target", "index", "value"], "assignment raise skips mutation after value"]
+        assert_eq of [box[0], 11, "raising assignment leaves target unchanged"]
+        probe_trip is probe_trip + 1
+
+# Two trips put the probe body beyond a forced OSR entry. Sixty calls below
+# also cross the default entry threshold (50), making this function enter natively.
+define evaluation_order_probe_list as:
+    probe_trip is 0
+    loop while probe_trip < 2:
+        # List elements are evaluated left to right.
+        reset of null
+        items is [mark of ["item1", 1], mark of ["item2", 2], mark of ["item3", 3]]
+        assert_eq of [log, ["item1", "item2", "item3"], "list elements evaluate left to right"]
+        reset of null
+        caught of ((_) => [mark of ["item1", 1], boom of "item2", mark of ["item3", 3]])
+        assert_eq of [log, ["item1", "item2"], "list raise skips later elements and construction"]
+        probe_trip is probe_trip + 1
+
+# Two trips put the probe body beyond a forced OSR entry. Sixty calls below
+# also cross the default entry threshold (50), making this function enter natively.
+define evaluation_order_probe_dict as:
+    probe_trip is 0
+    loop while probe_trip < 2:
+        # Dict entries are evaluated in source order, key before value.
+        reset of null
+        d is {(mark of ["key1", "a"]): mark of ["value1", 1], (mark of ["key2", "b"]): mark of ["value2", 2]}
+        assert_eq of [log, ["key1", "value1", "key2", "value2"], "dict evaluates each key then value left to right"]
+        reset of null
+        caught of ((_) => {(mark of ["key1", "a"]): mark of ["value1", 1], (boom of "key2"): mark of ["value2", 2]})
+        assert_eq of [log, ["key1", "value1", "key2"], "dict raise skips later value and construction"]
+        probe_trip is probe_trip + 1
+
+# Two trips put the probe body beyond a forced OSR entry. Sixty calls below
+# also cross the default entry threshold (50), making this function enter natively.
+define evaluation_order_probe_fstring as:
+    probe_trip is 0
+    loop while probe_trip < 2:
+        # Interpolated expressions run from left to right.
+        reset of null
+        s is f"{mark of ["part1", 1]}:{mark of ["part2", 2]}:{mark of ["part3", 3]}"
+        assert_eq of [log, ["part1", "part2", "part3"], "f-string parts evaluate left to right"]
+        reset of null
+        caught of ((_) => f"{mark of ["part1", 1]}:{boom of "part2"}:{mark of ["part3", 3]}")
+        assert_eq of [log, ["part1", "part2"], "f-string raise skips later parts and construction"]
+        probe_trip is probe_trip + 1
+
+# Two trips put the probe body beyond a forced OSR entry. Sixty calls below
+# also cross the default entry threshold (50), making this function enter natively.
+define evaluation_order_probe_binary as:
+    probe_trip is 0
+    loop while probe_trip < 2:
+        # Ordinary binary operands evaluate left before right, then apply the operator.
+        reset of null
+        n is (mark of ["left", 1]) + (mark of ["right", 2])
+        assert_eq of [log, ["left", "right"], "binary operands evaluate left to right"]
+        reset of null
+        caught of ((_) => (mark of ["left", 1]) + (boom of "right"))
+        assert_eq of [log, ["left", "right"], "binary raise skips operator application"]
+        probe_trip is probe_trip + 1
+
+# Two trips put the probe body beyond a forced OSR entry. Sixty calls below
+# also cross the default entry threshold (50), making this function enter natively.
+define evaluation_order_probe_short_circuit as:
+    probe_trip is 0
+    loop while probe_trip < 2:
+        # and/or evaluate left first and conditionally skip right.
+        reset of null
+        x is (mark of ["and-left", false]) and (mark of ["and-right", true])
+        y is (mark of ["or-left", true]) or (mark of ["or-right", false])
+        assert_eq of [log, ["and-left", "or-left"], "short-circuit operators skip unneeded right operands"]
+        reset of null
+        caught of ((_) => (boom of "and-left") and (mark of ["and-right", true]))
+        assert_eq of [log, ["and-left"], "short-circuit raise in left skips right"]
+        probe_trip is probe_trip + 1
+
+# Two trips put the probe body beyond a forced OSR entry. Sixty calls below
+# also cross the default entry threshold (50), making this function enter natively.
+define evaluation_order_probe_chained_call as:
+    probe_trip is 0
+    loop while probe_trip < 2:
+        # Nested/chained calls finish the inner call before evaluating the outer argument.
+        reset of null
+        z is (make_adder of (mark of ["inner-arg", 4])) of (mark of ["outer-arg", 5])
+        assert_eq of [log, ["inner-arg", "inner-callee", "outer-arg"], "chained calls complete inside out"]
+        reset of null
+        caught of ((_) => (make_adder of (mark of ["inner-arg", 4])) of (boom of "outer-arg"))
+        assert_eq of [log, ["inner-arg", "inner-callee", "outer-arg"], "chained-call raise skips outer invocation"]
+        probe_trip is probe_trip + 1
+
+probe_call is 0
+loop while probe_call < 60:
+    evaluation_order_probe_call of null
+    evaluation_order_probe_index of null
+    evaluation_order_probe_assignment of null
+    evaluation_order_probe_list of null
+    evaluation_order_probe_dict of null
+    evaluation_order_probe_fstring of null
+    evaluation_order_probe_binary of null
+    evaluation_order_probe_short_circuit of null
+    evaluation_order_probe_chained_call of null
+    probe_call is probe_call + 1
+
+test_summary of null

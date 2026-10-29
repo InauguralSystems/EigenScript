@@ -46,6 +46,7 @@ entity (or `null`), excluding the entity at that input index. The scalar
 - [Temporal interrogatives](#temporal-interrogatives)
 - [Concurrency](#concurrency)
 - [Buffers](#buffers)
+- [Evaluation order](#evaluation-order)
 - [Evaluation model reference](#evaluation-model-reference)
 
 ## Program model
@@ -2611,6 +2612,61 @@ print of (shape of w)
 4
 6
 [2, 2]
+```
+
+## Evaluation order
+
+Expressions evaluate in a deterministic left-to-right order. Evaluation is
+strict except for the conditional right operand of `and` and `or`:
+
+- A call evaluates its callee first and then its arguments from left to right.
+  A chained call completes the inner call before evaluating the outer call's
+  arguments.
+- An index expression evaluates its target and then its index. An indexed
+  assignment evaluates its target, index, and value in that order, and only
+  then performs the mutation. A plain binding assignment evaluates its value
+  before changing the binding.
+- List elements evaluate from left to right. Dictionary entries evaluate in
+  source order, with each key immediately followed by its value.
+- Interpolated f-string expressions evaluate in their textual left-to-right
+  order before the completed string is available.
+- An ordinary binary operator evaluates its left operand, then its right
+  operand, and then applies the operator.
+- `and` evaluates its left operand and evaluates the right operand only when
+  the left is truthy. `or` evaluates its right operand only when the left is
+  falsy.
+
+If any evaluated callee, argument, target, index, assigned value, literal
+member, interpolation, or operand raises, its effects and all earlier effects
+remain. No later item in that construct is evaluated, and the call, lookup,
+assignment/mutation, literal or f-string construction, or operator application
+is not performed. For a chained call, a raise also prevents every enclosing
+call that has not yet occurred. A short-circuit operator similarly skips its
+right operand when its left operand raises.
+
+This executable example shows the same rule for successful and raising
+operands:
+
+```eigenscript
+log is []
+define note(label, value) as:
+    append of [log, label]
+    return value
+define stop(label) as:
+    append of [log, label]
+    throw of label
+
+a is [note of ["first", 1], note of ["second", 2]]
+print of log
+log is []
+try:
+    b is (note of ["left", 1]) + (stop of "right")
+catch e:
+    print of log
+```
+```output
+["first", "second"]
+["left", "right"]
 ```
 
 ## Evaluation model reference
