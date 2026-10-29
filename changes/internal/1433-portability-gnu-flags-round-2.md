@@ -1,0 +1,1 @@
+- The portability GNU-flag scan now joins continued commands and distinguishes flags from option operands (#1433).

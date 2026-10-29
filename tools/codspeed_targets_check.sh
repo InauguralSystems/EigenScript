@@ -119,6 +119,9 @@ if [ "${1:-}" = "--selftest" ]; then
   plant() {  # name, then a command that writes the planted files into $W
     local name="$1"; shift; total=$((total+1))
     cp "$CFG" "$W/codspeed.yml"; cp "$WF" "$W/codspeed-wf.yml"; "$@"
+    # A suffix is required by both GNU and BSD sed.  These are disposable
+    # self-test copies, but remove the backups so a plant cannot inspect one.
+    rm -f "$W/codspeed.yml.bak" "$W/codspeed-wf.yml.bak"
     if CODSPEED_CFG="$W/codspeed.yml" CODSPEED_WF="$W/codspeed-wf.yml" "$0" >"$W/out.txt" 2>&1; then
       echo "  SELFTEST FAILED: plant '$name' passed the gate"
     else
@@ -126,29 +129,29 @@ if [ "${1:-}" = "--selftest" ]; then
       echo "  ok: plant '$name' is red: $(grep -m1 'FAIL:' "$W/out.txt" | cut -c9-130)"; red=$((red+1))
     fi
   }
-  plant "consumer rows deleted"   sed -i '/id: dmg-cpu-instrs/d' "$W/codspeed.yml"
-  plant "one target dropped"      sed -i '0,/^\s*- name: "scalar_loop"$/{/^\s*- name: "scalar_loop"$/d}' "$W/codspeed.yml"
-  plant "pin is a branch name"    sed -i -E 's/DMG_REF:\s*[0-9a-f]{40}/DMG_REF: master/' "$W/codspeed-wf.yml"
-  plant "exec points elsewhere"   sed -i 's#\.codspeed-consumers/DMG/#../DMG/#g' "$W/codspeed.yml"
+  plant "consumer rows deleted"   sed -i.bak '/id: dmg-cpu-instrs/d' "$W/codspeed.yml"
+  plant "one target dropped"      sed -i.bak '0,/^\s*- name: "scalar_loop"$/{/^\s*- name: "scalar_loop"$/d}' "$W/codspeed.yml"
+  plant "pin is a branch name"    sed -i.bak -E 's/DMG_REF:\s*[0-9a-f]{40}/DMG_REF: master/' "$W/codspeed-wf.yml"
+  plant "exec points elsewhere"   sed -i.bak 's#\.codspeed-consumers/DMG/#../DMG/#g' "$W/codspeed.yml"
   # the weaker shape that actually slipped: only the SCRIPT path moved
-  plant "script path elsewhere"   sed -i 's#\.codspeed-consumers/DMG/dmg.eigs#../DMG/dmg.eigs#' "$W/codspeed.yml"
-  plant "consumer path traverses" sed -i 's#\.codspeed-consumers/DMG/dmg.eigs#.codspeed-consumers/DMG/../../tests/bench_dmg_shape.eigs#g' "$W/codspeed.yml"
+  plant "script path elsewhere"   sed -i.bak 's#\.codspeed-consumers/DMG/dmg.eigs#../DMG/dmg.eigs#' "$W/codspeed.yml"
+  plant "consumer path traverses" sed -i.bak 's#\.codspeed-consumers/DMG/dmg.eigs#.codspeed-consumers/DMG/../../tests/bench_dmg_shape.eigs#g' "$W/codspeed.yml"
   # the unit pin and its guard (#2002): each is a way for the unit to move and the lane to stay green
-  plant "runner pin removed"      sed -i '/^\s*runner-version:/d' "$W/codspeed-wf.yml"
-  plant "runner pin is latest"    sed -i -E 's/^(\s*runner-version:).*/\1 latest/' "$W/codspeed-wf.yml"
-  plant "runner pin moved to another step" sed -i -e '/^\s*runner-version:/d' -e 's/^\(\s*\)- uses: actions\/checkout\(.*\)$/&\n\1  env:\n\1    runner-version: 5.5.0/' "$W/codspeed-wf.yml"
-  plant "cycle estimation switched on" sed -i -E 's/^(\s*cycle-estimation:).*/\1 true/' "$W/codspeed-wf.yml"
-  plant "CodSpeed step id lost"   sed -i '/^\s*id: codspeed\s*$/d' "$W/codspeed-wf.yml"
-  plant "guard step removed"      sed -i '/codspeed_unit_guard/d' "$W/codspeed-wf.yml"
-  plant "guard cannot fail"       sed -i -E 's#^(\s*)(run: python3 tools/codspeed_unit_guard\.py)#\1continue-on-error: true\n\1\2#' "$W/codspeed-wf.yml"
-  plant "guard not given run-id"  sed -i 's/steps\.codspeed\.outputs\.run-id/steps.codspeed.outputs.nothing/' "$W/codspeed-wf.yml"
-  plant "guard skipped (if: false)" sed -i -E "s/^(\s*)if: github\.event_name != 'pull_request'.*/\1if: false/" "$W/codspeed-wf.yml"
-  plant "guard runs on push only" sed -i -E "s/^(\s*)if: github\.event_name != 'pull_request'.*/\1if: github.event_name == 'push'/" "$W/codspeed-wf.yml"
-  plant "guard shell neutered"    sed -i -E "s#^(\s*)(run: python3 tools/codspeed_unit_guard\.py)#\1shell: bash -c 'exit 0' {0}\n\1\2#" "$W/codspeed-wf.yml"
-  plant "guard row renamed"       sed -i -E 's/^(\s*-\s*name:\s*)"observed_loop"\s*$/\1"observed_loop_renamed"/' "$W/codspeed.yml"
-  plant "guard row env-wrapped"   sed -i -E '/name: "observed_loop"\s*$/,/exec:/{s#exec: \./#exec: env X=1 ./#}' "$W/codspeed.yml"
-  plant "guard row has a comment" sed -i -E '/name: "observed_loop"\s*$/,/exec:/{s#(exec: .*)$#\1  \# note#}' "$W/codspeed.yml"
-  plant "guard row has a twin"    sed -i 's#exec: env EIGS_JIT_OFF=1 ./src/eigenscript bench/scalar_loop.eigs#exec: env EIGS_JIT_OFF=1 ./src/eigenscript bench/observed_loop.eigs#' "$W/codspeed.yml"
+  plant "runner pin removed"      sed -i.bak '/^\s*runner-version:/d' "$W/codspeed-wf.yml"
+  plant "runner pin is latest"    sed -i.bak -E 's/^(\s*runner-version:).*/\1 latest/' "$W/codspeed-wf.yml"
+  plant "runner pin moved to another step" sed -i.bak -e '/^\s*runner-version:/d' -e 's/^\(\s*\)- uses: actions\/checkout\(.*\)$/&\n\1  env:\n\1    runner-version: 5.5.0/' "$W/codspeed-wf.yml"
+  plant "cycle estimation switched on" sed -i.bak -E 's/^(\s*cycle-estimation:).*/\1 true/' "$W/codspeed-wf.yml"
+  plant "CodSpeed step id lost"   sed -i.bak '/^\s*id: codspeed\s*$/d' "$W/codspeed-wf.yml"
+  plant "guard step removed"      sed -i.bak '/codspeed_unit_guard/d' "$W/codspeed-wf.yml"
+  plant "guard cannot fail"       sed -i.bak -E 's#^(\s*)(run: python3 tools/codspeed_unit_guard\.py)#\1continue-on-error: true\n\1\2#' "$W/codspeed-wf.yml"
+  plant "guard not given run-id"  sed -i.bak 's/steps\.codspeed\.outputs\.run-id/steps.codspeed.outputs.nothing/' "$W/codspeed-wf.yml"
+  plant "guard skipped (if: false)" sed -i.bak -E "s/^(\s*)if: github\.event_name != 'pull_request'.*/\1if: false/" "$W/codspeed-wf.yml"
+  plant "guard runs on push only" sed -i.bak -E "s/^(\s*)if: github\.event_name != 'pull_request'.*/\1if: github.event_name == 'push'/" "$W/codspeed-wf.yml"
+  plant "guard shell neutered"    sed -i.bak -E "s#^(\s*)(run: python3 tools/codspeed_unit_guard\.py)#\1shell: bash -c 'exit 0' {0}\n\1\2#" "$W/codspeed-wf.yml"
+  plant "guard row renamed"       sed -i.bak -E 's/^(\s*-\s*name:\s*)"observed_loop"\s*$/\1"observed_loop_renamed"/' "$W/codspeed.yml"
+  plant "guard row env-wrapped"   sed -i.bak -E '/name: "observed_loop"\s*$/,/exec:/{s#exec: \./#exec: env X=1 ./#}' "$W/codspeed.yml"
+  plant "guard row has a comment" sed -i.bak -E '/name: "observed_loop"\s*$/,/exec:/{s#(exec: .*)$#\1  \# note#}' "$W/codspeed.yml"
+  plant "guard row has a twin"    sed -i.bak 's#exec: env EIGS_JIT_OFF=1 ./src/eigenscript bench/scalar_loop.eigs#exec: env EIGS_JIT_OFF=1 ./src/eigenscript bench/observed_loop.eigs#' "$W/codspeed.yml"
   # control: the live files must pass, or every plant above is vacuous
   total=$((total+1))
   if "$0" >/dev/null 2>&1; then echo "  ok: live config passes (control)"; red=$((red+1)); else echo "  SELFTEST FAILED: live config is red"; fi

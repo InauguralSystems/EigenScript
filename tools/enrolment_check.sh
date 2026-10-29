@@ -135,7 +135,7 @@ while IFS= read -r row; do
     elif grep -qxF "$p" <<< "$REACHED" && [ "${p##*.}" != eigs ]; then echo "  FAIL: $EXEMPT exempts $p, which IS invoked -- stale, delete the row"; rc=1; fi
 done <<< "$EXEMPTED"
 for f in tests/*.sh tests/*.py tools/*.sh tools/*.py \
-    $(find tools -mindepth 2 -maxdepth 2 -type f \( -name '*.sh' -o -name '*.py' \) -printf '%h\n' | sort -u); do
+    $(find tools -mindepth 2 -maxdepth 2 -type f \( -name '*.sh' -o -name '*.py' \) -exec dirname {} \; | sort -u); do
     [ -e "$f" ] || continue; f=${f%/}; total=$((total + 1))
     if grep -qxF "$f" <<< "$REACHED"; then ok=$((ok + 1))
     elif grep -q "^[[:space:]]*$f[[:space:]]*|" <<< "$EXEMPTED"; then ex=$((ex + 1))
