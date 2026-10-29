@@ -50,6 +50,7 @@ a9f637bc88ca3e2c|(c) sub-check: the cache-full diagnostic gate needs an x86-64 J
 62be8333b50e395a|(b) the same PASS line on the no-gfx-build arm
 21d7909a4df0a664|(c) sub-check: [99s] on a non-gfx build, the gfx sweep and pixel halves; the core strict halves still assert
 27cfdaf9128456df|(b) the RESULTS line itself, which PRINTS the skipped count
+4d7d5f4fb99732cb|(c) sub-check: [69] relays test_leak_guard.sh own SKIP line when LeakSanitizer is unavailable (macOS arm64); the section still asserts its ASan checks (append UAF, container stores) and fails on any of them
 43af9bdd1c5e1f94|(c) sub-check: [99zb] relays the portability tool own population/oracle line (widened by #1226 to include NO OLD BASH and other arm wordings); the section fails unless the tool reports OK or one of those named arms — supersedes the pre-#1226 row for this same relay
 '
 # One scratch root and one EXIT cleanup trap.
