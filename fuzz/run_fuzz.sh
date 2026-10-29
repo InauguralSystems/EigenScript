@@ -149,6 +149,18 @@ fuzz_test_raw "f-string backslash at EOF" 'f"\'
 
 echo ""
 echo "Adversarial:"
+printf '%s\n' 'len is [1]' > "$WORK/rebind.eigs"
+printf '%s\n' 'print of (len of [1, 2])' > "$WORK/use-len.eigs"
+alone=$($FUZZ "$WORK/use-len.eigs" 2>"$WORK/rebind-alone.stderr")
+sequential=$($FUZZ "$WORK/rebind.eigs" "$WORK/use-len.eigs" 2>"$WORK/rebind-sequential.stderr")
+if [ "$alone" = 2 ] && [ "$sequential" = 2 ]; then
+    PASS=$((PASS + 1))
+    echo "  PASS: a root-name rebind does not contaminate the next input (#2094)"
+else
+    FAIL=$((FAIL + 1))
+    echo "  FAIL: root-name isolation (#2094; alone='$alone', sequential='$sequential')"
+    sed 's/^/    /' "$WORK/rebind-sequential.stderr"
+fi
 fuzz_test "huge string" "$(python3 -c "print('x is \"' + 'A' * 60000 + '\"')")"
 fuzz_test "many assignments" "$(python3 -c "print('\\n'.join(['x is ' + str(i) for i in range(1000)]))")"
 fuzz_test "deep nesting" "$(python3 -c "print('if 1 == 1:\\n' + '    if 1 == 1:\\n' * 30 + '        x is 1')")"

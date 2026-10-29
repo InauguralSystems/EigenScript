@@ -1,0 +1,1 @@
+- The fuzz harness now isolates every input's global bindings from later inputs (#2094).
