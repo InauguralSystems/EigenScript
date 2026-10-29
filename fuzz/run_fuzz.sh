@@ -194,4 +194,29 @@ if [ "$SEEDS" -eq 0 ] || [ "$SPAWN_SEEDS" -eq 0 ]; then
     FAIL=$((FAIL + 1))
 fi
 
+echo ""
+echo "Process reuse:"
+printf 'exit of 3\n' > "$WORK/exit.eigs"
+printf 'try:\n    x is nonexistent\ncatch e:\n    print of "caught"\n' > "$WORK/catch.eigs"
+printf 'define worker() as:\n    print of "worker-ran"\n    return 7\nh is spawn of worker\nprint of (thread_join of h)\n' > "$WORK/spawn.eigs"
+rm -f "$WORK"/asan.*
+: > "$WORK/reuse.stderr"
+timeout 30 "$FUZZ" "$WORK/exit.eigs" "$WORK/catch.eigs" "$WORK/spawn.eigs" \
+    > "$WORK/reuse.stdout" 2> "$WORK/reuse.stderr"
+rc=$?
+report=$(cat "$WORK"/asan.* "$WORK/reuse.stderr" 2>/dev/null)
+lsan_classify "$report"
+class=$?
+if [ "$rc" -eq 0 ] && [ "$class" -eq 2 ] &&
+   grep -qFx 'caught' "$WORK/reuse.stdout" &&
+   grep -qFx 'worker-ran' "$WORK/reuse.stdout" &&
+   grep -qFx '7' "$WORK/reuse.stdout"; then
+    echo "  PASS: exit scope reset preserves later catch and spawn"
+    PASS=$((PASS + 1))
+else
+    echo "  FAIL: exit scope reset (exit $rc, sanitizer class $class)"
+    sed 's/^/    /' "$WORK/reuse.stdout" "$WORK/reuse.stderr"
+    FAIL=$((FAIL + 1))
+fi
+
 finish
