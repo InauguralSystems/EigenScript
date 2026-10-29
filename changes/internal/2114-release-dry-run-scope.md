@@ -1,1 +1,0 @@
-- Release dry-runs now avoid unselected CI runners and run nightly on every release platform (#2114).

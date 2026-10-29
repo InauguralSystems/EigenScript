@@ -1,1 +1,0 @@
-- `--dump-tokens FILE` prints each lexer token's type, value and source line without executing the file (#2139).

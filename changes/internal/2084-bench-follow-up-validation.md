@@ -1,1 +1,0 @@
-- Document the nine-row follow-up validation of the bench gate's same-job 0.5% threshold and reconcile it with the one-row preregistered evidence (#2084).

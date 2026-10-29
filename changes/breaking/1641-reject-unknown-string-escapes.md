@@ -1,1 +1,0 @@
-- Unknown string escapes are now compile-time errors instead of silently dropping the backslash, so programs that relied on the old behavior will now fail to compile (#1641).

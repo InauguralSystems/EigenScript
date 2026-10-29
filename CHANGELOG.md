@@ -4,6 +4,200 @@ All notable changes to EigenScript are documented here.
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-10-29
+
+### Breaking changes
+
+- Unknown string escapes are now compile-time errors instead of silently dropping the backslash, so programs that relied on the old behavior will now fail to compile (#1641).
+
+- Dictionary mutation builtins `dict_set` and `dict_remove` now raise `type_mismatch` for a non-string key instead of silently doing nothing (#1642).
+
+- `channel of N` now honours its capacity instead of always buffering 64 values: `N = 0` is a rendezvous, a send to a full channel blocks until a receive, and a negative, non-integer or non-number capacity raises. A program that sends more than N values before receiving now blocks where it used to run; give its channel the capacity it uses (#1643).
+
+- `not` now binds below comparisons and above `and` and `or`, so `not 1 < 2` negates the comparison; `f of not x`, `a == not b`, and similar tighter operand positions are parse errors and must be written `f of (not x)` (#1648).
+
+- Numeric aggregates now raise with the offending element's index and type instead of silently skipping non-number list elements (#1649).
+
+- `proc_read_buf` is removed. Since `proc_spawn` was removed (#1677), no builtin hands out a descriptor it can read, and a census found zero callers, so it fell under the zero-consumer rule (#1691).
+
+- Comprehension binders and `catch` names are now LEXICAL: a comprehension binds its element in its own scope (its iterable is still evaluated in the enclosing scope), and a `catch` name is local to its handler. On success, empty input or any failure, a pre-existing outer binding is untouched, and a new binder name is undefined afterwards. This matches Python 3 comprehensions and JavaScript catch bindings. The old leakage is gone, with no compatibility switch (#1737).
+
+- Refuse every source binding of runtime-reserved `__name__` identifiers with parse error `E006`; reads remain legal (#1908).
+
+### Added
+
+- The freestanding mini-libc now preserves the RISC-V floating-point environment, including hard-float `fcsr` state and the state-free soft-float default environment (#1983).
+
+- Freestanding RV32 links compiler-runtime helpers and delegates non-lock-free atomics to interrupt-masking EigenOS HAL roots, with RV32IMA and RV32IMC coverage (#1984).
+
+- Add EigenCore-0's pinned Lean specification, including an explicit taped-interaction tree and an axiom-clean prefix-sufficiency proof (#2018).
+
+- EigenCore's Lean reference evaluator now records and strictly replays taped `random_int`, `read_line`, and `env_get` calls. (#2018)
+
+- Add `EIGS_SEED_RANDOM` to make the process-wide random stream reproducible for differential testing and reproduction (#2120).
+
+- `lib/ui` now provides fallback-aware `theme_color` lookup and generic highlight roles in every built-in theme (#2138).
+
+- `--build-info` prints machine-readable build capabilities, including the version, enabled extensions, JIT support and platform (#2139).
+
+- `--dump-tokens FILE` prints each lexer token's type, value and source line without executing the file (#2139).
+
+### Changed
+
+- A runtime error raised by a written binary operator whose operands span lines reports the operator's
+  physical line in `e.line`, the error header, excerpt/caret and traceback (#1425). This includes plain-name
+  compound assignment (`x += rhs`) and written operators inside f-string interpolations, in the interpreter,
+  JIT and OSR. After success the compiler's temporary operator stamp restores the previous runtime line,
+  preserving attribution for an enclosing unary operation, index or call, including conditional operands.
+  Single-line code compiles to identical bytecode. Interpreted execution adds a tape line record before
+  the operation and a restoring line record on success. Temporal filing remains the statement's first line. Dedicated compound
+  field/index assignments retain their prior attribution, the owner decision recorded on #1425.
+  Descriptor and native-JIT bytecode walkers now share operand widths, and native trace tapes preserve the restored line event (#1425).
+
+- Runtime error stderr headers and traceback frames now name their source file before the line number, and structured errors expose a `file` field; the caught `e.message` text is unchanged (#1651).
+
+- Literal `load_file` targets inside functions now use a lightweight observer-name scan, including code inside f-string interpolations, instead of paying their parse cost at import (#1873).
+
+- Enforce new suite sections as standalone fragments instead of inline runner additions (#1907).
+
+- Normalize strict-shape exemption hashes with C token boundaries, and add a
+  key-based surgical re-pin mode that handles closure-shape changes (#1962,
+  #1877).
+
+- `read_text`, `read_bytes`, and `read_bytes_buf` now share an optional `[path, max_bytes]` cap override, a 10 MiB default, and a 512 MiB hard ceiling while retaining their fail-soft argument guards (#2076).
+
+- `buf_get` raises `index must be an integer, got 1.5` on a fractional index, as `buf[i]` does, instead of silently truncating it (#2136, #2150).
+
+### Fixed
+
+- Tensor files now share the 10,000,000-element construction limit, and `tensor_load` raises a catchable error with the path, offending dimension, and cap instead of returning `null` above it (#1393).
+
+- Standalone JIT builds now share the canonical bytecode operand layout without linking the chunk implementation (#1425).
+
+- `sandbox_run` charges source preparation (lexing, parsing and compiling) to a deterministic compile-phase reservation of its `max_bytes` budget. Oversized or pathological source is refused with a `sandbox` error instead of an out-of-memory abort, and a depth-32 recursion test pins the existing `max_work` budget (#1619) against recursion (#1579, #1403).
+
+- Fixed formatter literal preservation and lexer-owned indentation handling (#1245, #1246, #1581).
+
+- JIT-tier evidence readers accept the aggregate OSR-slot columns in hot diagnostics, and the OSR diagnostic gate skips platforms without JIT support (#1606).
+
+- LSP references to a parameter now use the real declaration token span (ordinary, multiline and soft-keyword parameters), implicit parameters no longer get an invented declaration occurrence, and a default expression naming a later parameter is not mistaken for its declaration (#1614).
+
+- Fixed #1679 so binaries invoked directly from `build/<variant>/` find the repository standard library.
+
+- Fix #1681: publish SDL window titles as UTF-8 on X11 instead of double-encoding non-ASCII text.
+
+- Fixed #1697 so deleting dictionary entries uses amortized O(1) hash removal instead of shifting and rebuilding every survivor.
+
+- `list_insert_at` now leaves its target unchanged when a sandbox budget refuses the required list growth (#1710).
+
+- The `numerical_grad*` builtins now reject callback length changes without overwriting values shifted by that callback (#1719).
+
+- List slicing and the `numerical_grad_rows` / `numerical_grad_cols` builtins no longer read or write past their result allocation when a sandbox budget refuses (and caps) it, matching the other sandbox-refused allocators (#1722).
+
+- The ext_gfx sanitizer corpus now recognizes a successful SDL2 renderer probe and reports the precise failure stage when renderer coverage is unavailable (#1723).
+
+- Recording while replaying now retains every served external-input record in the new tape, in order (#1749).
+
+- Fixed #1750 so a recorded builtin argument refusal replays as the same raise rather than a recorded value.
+
+- EigenStore records and database numeric parameters now preserve every double digit when converted to text (#1762).
+
+- Preserve eventually-NaN observer labels and reject undefined NaN tails while supporting explicit NaN recovery (#1765).
+
+- `exit of N` in a joinable or detached cooperative task now stops the evaluation immediately with status N without poisoning the next evaluation's error handling (#1806).
+
+- Cooperative-task uncaught-error reporting now uses only that task's handlers, so another task's open `try` cannot suppress its trace (#1808).
+
+- Cooperative-task exit now retires every task from the stopped evaluation and remains visible to the REPL boundary (#1808, #1806).
+
+- REPL shutdown now reclaims spawned tasks and other open handles instead of leaking them under LeakSanitizer (#1811).
+
+- Traced answers larger than 64 KiB now replay byte-identically through length-framed continuation records, while cyclic containers are refused cleanly and shared acyclic containers remain supported; tape format v8 refuses stale v7 tapes (#1816).
+
+- Hosted runs no longer seed libc’s separate, untaped random stream, and the build gate prevents that stream from being used again (#1818).
+
+- Refuse `audio_open` rates above 71,582,788 Hz, ensuring every accepted
+  device rate can generate the full 30-second audio limit without overflowing
+  the runtime's integer sample count.
+
+- Fixed integral floating-point indexes, dispatch keys, and slice bounds outside the C `int` range being misreported as fractional values, and removed their undefined casts.
+
+- Keep captured bindings alive while closures read and rebind them concurrently (#1866).
+
+- Concurrent assignments now serialize the complete observer measurement for a shared binding without deadlocking when the value contains a module namespace (#1867).
+
+- Fixed a data race: the borrow check read a builtin result's reference count with a plain load while another thread could drop it. The read is now atomic, and the TSan suite loads a module ending in a `define` concurrently (#1868).
+
+- Environment lookups used by concurrent sandbox, compilation, embedding, and HTTP paths now retain bindings while inspecting or returning them, preventing rebinds from freeing borrowed values (#1869).
+
+- Make meta-interpreted plain strings and f-strings decode `\r` like the VM (#1878).
+
+- Fixed #1888: `nearest_in_range_all` now returns each entity's nearest other active entity instead of the entity itself.
+
+- Sparse tensor row/column selectors and model token ids now raise `index_range`
+  when outside their documented domains. Sparse SGD validates every selector
+  before updating, so an invalid later selector cannot leave a partial update.
+  This includes `eigen_eval_loss` targets; its `-1.0` sentinel is now reserved
+  for the no-model-loaded case. Recorded `eigen_generate` refusals preserve
+  their error kind and replay without consulting a missing or replaced model.
+
+- Keep `unobserved:` module bindings visible to dynamic name access through calls, fixing `eval` and `load_file` answer changes (#1902).
+
+- Fix #1903, #1904 and #1905 with one complete traversal and one shared, scope-aware classification of names bound through environments, while preserving the parent's dynamic write targets for nested definitions, imports, and loop-only binders.
+
+- Reset `__loop_iterations__` for every loop while preserving the cumulative sandbox loop budget, including interpreter, JIT, verifier, disassembler, leaf-scan, and three-tier regression coverage (#1906).
+
+- Refuse an embedding replay-tape install when the state already owns live
+  handles, naming each open handle kind; installation succeeds after they are
+  closed.
+
+- Embedding now runs EigenScript in the IEEE 754 default floating-point environment and restores every host mode and exception flag on return, including fast-path, re-entrant callback, and freestanding EigenOS calls (#1969).
+
+- Refuse the private-loop-counter opcodes (`OP_LOOP_{ENTER,EXIT,STALL,CAP}_NAMED`) in assembled bytecode: they are a compiler-only lowering whose frame-relative operand-stack slot the untrusted-bytecode verifier cannot model, and a hand-built `OP_LOOP_EXIT_NAMED` drained the caller's operand stack (double-free / host counter corruption). Descriptors must use the legacy no-slot loop opcodes; compiler output is unaffected (#1977, #1906).
+
+- `sort` and `sort_by` now preserve the input order of equal elements or keys on every platform (#1982).
+
+- Make the freestanding symbol gate independent of optimization level and conforming libc headers (#1985).
+
+- Non-numeric `converged` and `stable` predicates now use deep equality across the observer window, so unchanged containers converge and reorderings remain unsettled (#1992).
+
+- Observer equality windows now snapshot every bounded mutable container without raising or retaining closure cycles, detecting in-place mutations safely (#1992).
+
+- Fix #1995: keep slot-eligible `local` declarations inside `for` bodies from corrupting function parameters.
+
+- LSP builtin and symbol hovers now render fenced Markdown with real newlines instead of literal `\\n` text (#1998).
+
+- `loop while` now counts iterations that end in `continue`. `__loop_iterations__`, the iteration cap and
+  the observer stall guard see every completed iteration, so a loop that only ever `continue`s can no longer
+  run past the cap. Before, such a loop ran until an external timeout (#2003).
+
+- Fixed `when is parameter` to count the call-time binding and every later
+  reassignment in the activation, matching local bindings and the trace tape.
+
+- EigenCore record and live modes now consume their explicit oracle in order, making recorded nondeterminism reproducible by strict replay (#2018).
+
+- The executable Lean model now honors replay session boundaries and round-trips length-framed nondeterministic values with continuation records (#2018).
+
+- Correct array and empty-parameter function semantics in the Lean reference model, and refuse captured-name assignment shapes that are not yet modeled (#2018).
+
+- EigenCore now matches VM tape control escapes, shadowed taped builtins, and `random_int` span rejection (#2018).
+
+- Readers honor `max_bytes` even when non-strict calls include surplus list elements (#2076).
+
+- Concurrent worker module compilation now snapshots the shared environment under its lock, eliminating an intermittent loader data race (#2090).
+
+- `http_serve of 0` now prints the port the kernel bound ("listening on 0.0.0.0:<port>") instead of 0, and the SIGPIPE contract test serves on port 0 instead of probing a port and releasing it, which raced other processes; a setup failure there is labelled as setup, not a SIGPIPE result (#2099).
+
+- The `at` and `prev` observer soft keywords used as ordinary names no longer enable costly runtime observation for the whole program (#2128).
+
+- Fixed out-of-range index diagnostics to report the number supplied by the program instead of the runtime's clamped internal index (#2136).
+
+- Reading or writing a dict field after `dict_remove` of that key no longer crashes: the field cache treats a removal tombstone as a miss (#2146).
+
+### Documentation
+
+- Document that the fixed-tolerance convergence loop is not a drop-in replacement for an explicit epsilon and guard, based on the registered comparison (#1990).
+
 ## [0.47.0] - 2026-10-25
 
 ### Breaking changes

@@ -1,1 +1,0 @@
-- `read_text`, `read_bytes`, and `read_bytes_buf` now share an optional `[path, max_bytes]` cap override, a 10 MiB default, and a 512 MiB hard ceiling while retaining their fail-soft argument guards (#2076).

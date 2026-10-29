@@ -1,1 +1,0 @@
-- Gate every self-asserting EigenScript test on explicit suite invocation and mechanically calibrate suite verdict propagation (#2059).

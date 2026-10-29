@@ -1,1 +1,0 @@
-- The CI jit-checked lane now has a positive control: a plant built from the production emitter and diagnostic must abort with the checked-local message, so the lane can show it goes red (#1704).

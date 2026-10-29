@@ -1,1 +1,0 @@
-- JIT hot diagnostics now aggregate every OSR slot so cache rejection totals reconcile with displayed rows (#1606).

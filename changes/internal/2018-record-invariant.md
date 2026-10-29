@@ -1,1 +1,0 @@
-- Strengthen the Lean evaluator with a proved per-ask record invariant (#2018).

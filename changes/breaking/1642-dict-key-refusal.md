@@ -1,1 +1,0 @@
-- Dictionary mutation builtins `dict_set` and `dict_remove` now raise `type_mismatch` for a non-string key instead of silently doing nothing (#1642).

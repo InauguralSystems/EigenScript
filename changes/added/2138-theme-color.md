@@ -1,1 +1,0 @@
-- `lib/ui` now provides fallback-aware `theme_color` lookup and generic highlight roles in every built-in theme (#2138).

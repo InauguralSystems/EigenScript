@@ -1,1 +1,0 @@
-- The executable Lean model now honors replay session boundaries and round-trips length-framed nondeterministic values with continuation records (#2018).

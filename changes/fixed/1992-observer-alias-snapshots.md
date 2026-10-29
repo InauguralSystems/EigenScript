@@ -1,1 +1,0 @@
-- Observer equality windows now snapshot every bounded mutable container without raising or retaining closure cycles, detecting in-place mutations safely (#1992).

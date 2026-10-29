@@ -1,1 +1,0 @@
-- The Lean semantics now structurally prove that the complete evaluator preserves paired answer and writer-chunk projections (#2018).

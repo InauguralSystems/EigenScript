@@ -1,1 +1,0 @@
-- The CI fuzz smoke now reads UBSan reports and continuously proves detection with a planted finding (#2097).

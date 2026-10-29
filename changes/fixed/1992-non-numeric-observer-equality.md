@@ -1,1 +1,0 @@
-- Non-numeric `converged` and `stable` predicates now use deep equality across the observer window, so unchanged containers converge and reorderings remain unsettled (#1992).

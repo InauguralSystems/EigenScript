@@ -1,1 +1,0 @@
-- Fix and mechanically gate observer documentation drift reported in #1991.

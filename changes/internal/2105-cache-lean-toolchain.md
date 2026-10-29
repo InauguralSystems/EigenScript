@@ -1,1 +1,0 @@
-- CI now caches and retries the pinned Lean toolchain while distinguishing infrastructure outages from specification failures (#2105).

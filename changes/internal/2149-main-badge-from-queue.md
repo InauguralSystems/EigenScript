@@ -1,1 +1,0 @@
-- Main's CI badge now attests the merge queue result and promotes its dev image without rerunning the full CI matrix (#2149).

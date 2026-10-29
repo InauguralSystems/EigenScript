@@ -1,1 +1,0 @@
-- The merge-queue race gate now runs the same TSan controls and clean rows on ARM64 Linux as on x86-64 Linux (#2052).

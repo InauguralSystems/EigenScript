@@ -1,1 +1,0 @@
-- LSP builtin and symbol hovers now render fenced Markdown with real newlines instead of literal `\\n` text (#1998).

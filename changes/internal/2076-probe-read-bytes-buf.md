@@ -1,1 +1,0 @@
-- Strict argument differentials now cover `read_bytes_buf` argument guards and guard-before-take behavior (#2076).

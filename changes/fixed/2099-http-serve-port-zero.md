@@ -1,1 +1,0 @@
-- `http_serve of 0` now prints the port the kernel bound ("listening on 0.0.0.0:<port>") instead of 0, and the SIGPIPE contract test serves on port 0 instead of probing a port and releasing it, which raced other processes; a setup failure there is labelled as setup, not a SIGPIPE result (#2099).

@@ -1,1 +1,0 @@
-- Keep the Lean parity self-test's assignment-tape and oracle planted faults live as the proved model evolves. (#2018)

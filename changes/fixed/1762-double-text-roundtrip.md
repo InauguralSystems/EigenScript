@@ -1,1 +1,0 @@
-- EigenStore records and database numeric parameters now preserve every double digit when converted to text (#1762).

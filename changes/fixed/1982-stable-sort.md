@@ -1,1 +1,0 @@
-- `sort` and `sort_by` now preserve the input order of equal elements or keys on every platform (#1982).

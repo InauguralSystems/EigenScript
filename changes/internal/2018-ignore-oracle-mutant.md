@@ -1,1 +1,0 @@
-- The spec-Lean parity self-test now plants its oracle-ignoring fault at the command-line oracle producer so theorem proofs remain buildable and the live mutant is tested by parity (#2018).

@@ -1,1 +1,0 @@
-- The Lean tape model now proves pairing for silent evaluator leaves and list combinators needed by fuel induction (#2018).

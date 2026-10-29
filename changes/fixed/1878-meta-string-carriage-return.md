@@ -1,1 +1,0 @@
-- Make meta-interpreted plain strings and f-strings decode `\r` like the VM (#1878).
