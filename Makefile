@@ -341,6 +341,16 @@ build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer: tests/test_embed_observer.c
 embed-observer-test: build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer
 	@echo "Embed observer test built: $<"
 
+# #1162: two host threads attach sequentially to one state. Use the same
+# owning-variant compile/link recipe as the other embed API C contracts.
+EMBED_MULTIATTACH_VARIANT ?= release
+EMBED_MULTIATTACH_OBJ := $(filter-out build/$(EMBED_MULTIATTACH_VARIANT)/main.o,$(OBJ_$(EMBED_MULTIATTACH_VARIANT)))
+build/$(EMBED_MULTIATTACH_VARIANT)/test_embed_multiattach: tests/test_embed_multiattach.c $(EMBED_MULTIATTACH_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(EMBED_MULTIATTACH_VARIANT)) -I$(SRC_DIR) -o $@ $< $(EMBED_MULTIATTACH_OBJ) $(LIBS_$(EMBED_MULTIATTACH_VARIANT))
+.PHONY: embed-multiattach-test
+embed-multiattach-test: build/$(EMBED_MULTIATTACH_VARIANT)/test_embed_multiattach
+	@echo "Embed multi-attach test built: $<"
+
 # #1171: one-writer compatibility and real setter routing; reuse the owning
 # variant without changing the CLI alias. GNU-style --wrap is test-only and
 # confined to Linux linking; portable runtime objects are unchanged.

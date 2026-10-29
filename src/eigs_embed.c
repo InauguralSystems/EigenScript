@@ -14,6 +14,7 @@
 #include "trace.h"
 #include "eigs_embed.h"
 #include "ext_register.h"
+#include "builtins_internal.h"
 #include <stdarg.h>
 #include <fenv.h>
 #if defined(__x86_64__)
@@ -359,6 +360,11 @@ void eigs_set_global(const char *name, EigsValue *val) {
     /* env_set_local incref's its argument — caller's ref is undisturbed,
      * matching the documented contract. */
     env_set_local(g_global_env, name, val);
+    /* Host-injected configuration is ambient to imported modules, unlike a
+     * binding made by evaluated program text. Preserve #1388's ordering:
+     * builtin-name assignments change the host view only. */
+    if (g_builtin_env && !eigs_is_registered_builtin(name))
+        env_set_local(g_builtin_env, name, val);
 }
 
 EigsValue *eigs_get_global(const char *name) {
@@ -666,9 +672,8 @@ void eigs_register_function(const char *name, EigsHostFn fn) {
     Value *bv = make_builtin((BuiltinFn)fn);
     /* #1388: a registered function joins the builtin layer too, so module
      * code sees it (and the host's own rebinding of the name stays out of
-     * modules, as for any builtin). eigs_set_global values stay host
-     * globals: module code reaches them only through the layer's parent
-     * link, so they can never shadow a builtin there. */
+     * modules, as for any builtin). eigs_set_global publishes non-builtin
+     * host values into this layer as well, without replacing builtins. */
     if (g_builtin_env) env_set_local(g_builtin_env, name, bv);
     env_set_local_owned(g_global_env, name, bv);
 }

@@ -1,0 +1,1 @@
+- Slicing a null target now reports `cannot slice null`, consistently with other null diagnostics (#2162).

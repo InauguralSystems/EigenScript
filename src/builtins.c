@@ -107,9 +107,13 @@ static const char *omitted_capability_message(const char *name) {
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((noinline, cold))
 #endif
-void eigs_raise_missing_name(const char *name, int line) {
+void eigs_raise_missing_name(const char *name, int line, const char *module) {
     const char *message = omitted_capability_message(name);
     if (message) rt_error(EK_VALUE, line, "%s", message);
+    else if (module)
+        rt_error(EK_UNDEFINED_NAME, line,
+                 "undefined variable '%s' in imported module '%s'; pass the value explicitly",
+                 name, module);
     else rt_error(EK_UNDEFINED_NAME, line, "undefined variable '%s'", name);
 }
 
@@ -808,7 +812,7 @@ Value* builtin_classify(Value *arg) {
     if (!observer_slot_from_trajectory(&s, t)) {
         rt_error(EK_TYPE, 0, "classify: expected a trajectory snapshot "
                  "(from `trajectory of x`), got %s",
-                 t ? val_type_name(t->type) : "none");
+                 t ? val_type_name(t->type) : "null");
         return make_null();
     }
     /* #861: the explicit channels must not route — "entropy" answers from the
@@ -852,8 +856,9 @@ Value* builtin_math_flags(Value *arg) {
     return d;
 }
 
+/* type of value — return its runtime label; null is labeled `null`. */
 Value* builtin_type(Value *arg) {
-    if (!arg) return make_str("none");
+    if (!arg) return make_str("null");
     switch (arg->type) {
         case VAL_NUM: return make_str("num");
         case VAL_STR: return make_str("str");
@@ -861,13 +866,13 @@ Value* builtin_type(Value *arg) {
         case VAL_FN: return make_str("fn");
         case VAL_BUILTIN:   /* #1060: a named native function reports as a user fn */
             return make_str(eigs_native_fn_name(arg->data.builtin) ? "fn" : "builtin");
-        case VAL_NULL: return make_str("none");
+        case VAL_NULL: return make_str("null");
         case VAL_DICT: return make_str("dict");
         case VAL_BUFFER: return make_str("buffer");
         case VAL_TEXT_BUILDER: return make_str("text_builder");
         case VAL_BOOL: return make_str("bool");
     }
-    return make_str("none");
+    return make_str("null");
 }
 
 /* Bound JSON nesting depth: each array/object descent is a C recursion, so
@@ -6329,7 +6334,7 @@ static const struct { const char *name; unsigned mask; const char *why; } k_bool
     {"print",          BA_ANY,  "renders any value"},
     {"write",          BA_ANY,  "renders any value"},
     {"str",            BA_ANY,  "converts any value to text (\"true\"/\"false\")"},
-    {"type",           BA_ANY,  "names any value's type"},
+    {"type",           BA_ANY,  "names any value's type (null is named null)"},
     {"json_encode",    BA_ANY,  "JSON has true/false"},
     {"observe",        BA_ANY,  "the observer measures bools (entropy 0/1)"},
     {"classify",       BA_ANY,  "the observer classifies any value"},
@@ -6680,17 +6685,17 @@ void register_builtins(Env *env) {
 
 }
 
-/* #1388: module code resolves builtin names against a PRISTINE layer, not the
- * importer's globals. The global env keeps its own copy of every builtin (so
+/* #1388/#2180: module code resolves names against a PRISTINE builtin layer,
+ * never the importer's globals. The global env keeps its own copy of every builtin (so
  * a host `define len`, top-level `len is 5` or `local len` rebinds the host's
  * copy and only the host's code sees it); the layer holds the same values,
  * and each module namespace env is created under it (vm.c, IMPORT). The
- * layer's parent is the global env, so a name that is NOT a builtin still
- * falls through to the importer's globals exactly as before. */
+ * layer is a sealed root: a name that is neither a module binding/import nor
+ * a builtin is undefined instead of falling through to the importer. */
 Env *eigs_global_env_create(void) {
     Env *global = env_new(NULL);
     register_builtins(global);   /* one seam: store/gfx ride inside (#742) */
-    Env *layer = env_new(global);
+    Env *layer = env_new(NULL);
     for (int i = 0; i < global->count; i++) {
         if (!global->names[i]) continue;
         Value *v = slot_to_value(global->values[i]);

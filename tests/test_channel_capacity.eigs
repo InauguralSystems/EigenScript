@@ -18,7 +18,7 @@ define rendezvous_sender() as:
     send of [r0_done, 1]
 r0_worker is spawn of rendezvous_sender
 recv of r0_ready
-verdict of [(type of (recv_timeout of [r0_done, 50])) == "none", "capacity 0 send waits for a receiver"]
+verdict of [(type of (recv_timeout of [r0_done, 50])) == "null", "capacity 0 send waits for a receiver"]
 verdict of [(recv of rendezvous) == 10, "capacity 0 rendezvous transfers its value"]
 verdict of [(recv_timeout of [r0_done, 1000]) == 1, "capacity 0 sender resumes after receive"]
 thread_join of r0_worker
@@ -34,7 +34,7 @@ define one_sender() as:
     send of [c1_done, 1]
 c1_worker is spawn of one_sender
 recv of c1_ready
-verdict of [(type of (recv_timeout of [c1_done, 50])) == "none", "capacity 1 blocks the second send under timeout"]
+verdict of [(type of (recv_timeout of [c1_done, 50])) == "null", "capacity 1 blocks the second send under timeout"]
 verdict of [(recv of one) == 11, "capacity 1 preserves the first value"]
 verdict of [(recv_timeout of [c1_done, 1000]) == 1, "capacity 1 unblocks the second send after receive"]
 verdict of [(recv of one) == 12, "capacity 1 preserves the second value"]
@@ -53,7 +53,7 @@ define three_sender() as:
     send of [c3_done, 1]
 c3_worker is spawn of three_sender
 recv of c3_ready
-verdict of [(type of (recv_timeout of [c3_done, 50])) == "none", "capacity 3 blocks the fourth send under timeout"]
+verdict of [(type of (recv_timeout of [c3_done, 50])) == "null", "capacity 3 blocks the fourth send under timeout"]
 verdict of [(recv of three) == 21, "capacity 3 preserves FIFO order"]
 verdict of [(recv_timeout of [c3_done, 1000]) == 1, "capacity 3 unblocks after one receive"]
 verdict of [(recv of three) == 22 and (recv of three) == 23 and (recv of three) == 24, "capacity 3 drains all buffered values in FIFO order"]

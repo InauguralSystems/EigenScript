@@ -1085,6 +1085,17 @@ int sandbox_charge(size_t bytes) {
     return 1;
 }
 
+/* A module environment is the only environment chain rooted at the sealed
+ * builtin layer. Nested function/loop environments retain that ancestry, so
+ * this one predicate keeps VM, JIT and OSR diagnostics identical (#2180). */
+static const char *vm_missing_module(Env *env, EigsChunk *chunk) {
+    for (Env *e = env; e; e = e->parent) {
+        if (e == g_builtin_env)
+            return chunk->src ? chunk->src->file : chunk->name;
+    }
+    return NULL;
+}
+
 /* JIT Stage 4k: out-of-line helper for OP_GET_NAME.
  *
  * Mirrors CASE(GET_NAME) below exactly — IC fast path then chain-walk
@@ -1118,7 +1129,8 @@ void jit_helper_get_name(EigsChunk *chunk, int idx) {
     /* #1171: counted inside the hold, exactly as CASE(GET_NAME). */
     Env *target = env_resolve_chain_ref(start, name, h, &slot_idx, &depth, &s);
     if (!target) {
-        eigs_raise_missing_name(name, g_vm.current_line);
+        eigs_raise_missing_name(name, g_vm.current_line,
+                                vm_missing_module(frame->env, chunk));
         vm_push_slot(slot_null());
         return;
     }
@@ -3138,8 +3150,12 @@ static int vm_handler_in_range(int base) {
 /* Type name for a stack slot, for error diagnostics. Returns a static
  * string (safe to hold across a decref). */
 static const char *slot_type_name(EigsSlot s) {
-    if (slot_is_null(s)) return "none";
-    if (slot_is_ptr(s)) { Value *v = slot_as_ptr(s); return v ? val_type_name(v->type) : "none"; }
+    if (slot_is_null(s)) return "null";
+    if (slot_is_ptr(s)) {
+        Value *v = slot_as_ptr(s);
+        if (!v || v->type == VAL_NULL) return "null";
+        return val_type_name(v->type);
+    }
     if (slot_is_bool(s)) return "bool";   /* #1637 */
     return "num"; /* immediate double */
 }
@@ -3911,7 +3927,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * load and the incref, and this thread then called freed memory. */
         Env *target = env_resolve_chain_ref(start, name, h, &slot_idx, &depth, &s);
         if (!target) {
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5407,7 +5424,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5456,7 +5474,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5507,7 +5526,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5562,7 +5582,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * read of the same name in the same position dies here; so does
              * this one now. (The AOT carried a carve-out for this case --
              * ouroboros t124 -- which can be deleted at the next pin bump.) */
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5656,7 +5677,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 v->type == VAL_BUILTIN ? "builtin" :
                 v->type == VAL_BUFFER ? "buffer" :
                 v->type == VAL_BOOL ? "bool" :
-                v->type == VAL_NULL ? "none" : "unknown");
+                v->type == VAL_NULL ? "null" : "unknown");
             break;
         /* #262 Step E: when/where/why/how on a value-based operand have no
          * slot trajectory (observer state is binding-keyed). where/why/how on a
@@ -5736,7 +5757,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * other type) used to read as line 0 and answer null silently. */
         if (!line_v || line_v->type != VAL_NUM) {
             rt_error(EK_TYPE, current_line, "'at' line must be a number, got %s",
-                     line_v ? val_type_name(line_v->type) : "none");
+                     line_v ? val_type_name(line_v->type) : "null");
             val_decref(line_v);
             vm_push(make_null());
             DISPATCH();
@@ -5831,7 +5852,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (!slot_is_ptr(tgt_s) || slot_as_ptr(tgt_s)->type != VAL_LIST) {
             rt_error(EK_TYPE, current_line,
                 "destructuring requires a list, got %s",
-                slot_type_name(tgt_s));   /* #1637: names bool/none, not "number" */
+                slot_type_name(tgt_s));   /* #1637: names bool/null, not "number" */
             slot_decref(tgt_s);
             for (int i = 0; i < n; i++) vm_push_slot(slot_null());
             DISPATCH();
@@ -6087,7 +6108,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -6390,10 +6412,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
 
-        /* #1388: under the sealed builtin layer, not the importer's globals:
-         * a builtin name in module code means the builtin unless the MODULE
-         * rebinds it; other names still reach the importer through the
-         * layer's parent link. */
+        /* #1388/#2180: under the sealed builtin layer, not the importer's
+         * globals. A builtin name means the builtin unless the MODULE rebinds
+         * it; every other name must be local or explicitly imported. */
         Env *mod_env = env_new(g_builtin_env);
         int saved_errors = g_parse_errors;
         g_parse_errors = 0;

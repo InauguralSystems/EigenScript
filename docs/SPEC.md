@@ -46,6 +46,7 @@ entity (or `null`), excluding the entity at that input index. The scalar
 - [Temporal interrogatives](#temporal-interrogatives)
 - [Concurrency](#concurrency)
 - [Buffers](#buffers)
+- [Evaluation order](#evaluation-order)
 - [Evaluation model reference](#evaluation-model-reference)
 
 ## Program model
@@ -142,7 +143,7 @@ EigenScript is dynamically typed. The runtime types are:
 | `buffer` | flat mutable array of nums | `buffer of 8`, `zeros of 8` |
 | `fn` | user-defined function / closure | `define` / `(x) => x` |
 | `builtin` | native function | `print` |
-| `none` | the null value | `null` |
+| `null` | the null value | `null` |
 
 `type of v` returns the type label as a string.
 
@@ -159,7 +160,7 @@ num
 str
 list
 dict
-none
+null
 builtin
 ```
 
@@ -1398,6 +1399,11 @@ with code 1:
 that, `lib/name.eigs` (the standard library) — and binds the module's
 top-level definitions as a dict named `name`. Nothing leaks into the
 global scope; names starting with `_` stay private to the module.
+The module resolves names only in its own bindings, modules it imports, and
+the standard-library builtin layer. It never reads an incidental global from
+the importing program. Pass configuration as a function parameter or expose a
+module setter. An unresolved read names the module and suggests passing the
+value explicitly. `load_file` retains its shared-scope contract below.
 
 Resolution is **project-first** (#821): a `name.eigs` beside the
 importing file wins over a stdlib module of the same name. The stdlib
@@ -1580,9 +1586,8 @@ undefined variable 'z'
 5
 ```
 
-**Module write boundary.** A loaded (or imported) module's *functions*
-can read the loader's globals and call its functions, but they can
-never bind a write through to them — a bare `name is expr` inside a
+**Module boundary.** An imported module's *functions* cannot read or write the
+importer's globals. A bare `name is expr` inside a
 module function that doesn't refer to a local, a captured name, or the
 module's own top-level state creates a fresh local, regardless of what
 happens to exist in the loader's scope. The same boundary applies one
@@ -1603,8 +1608,9 @@ bindings: `len` in module code is the builtin unless the *module* rebinds
 it. A program that rebinds a builtin — `define len`, a top-level
 `len is ...` or `local len` — before or after the import changes it for its
 own code only, and a module's own `define len` stays inside that module.
-Names that are not builtins still resolve to the importer's globals, as
-above. The builtin set is sealed: no `is` anywhere writes into it — an
+Names that are neither module bindings nor builtins are undefined; pass such
+configuration explicitly as a function parameter or through an exported
+setter. The builtin set is sealed: no `is` anywhere writes into it — an
 assignment that would reach it (from module code, or an `eval` inside a
 module function) creates a binding in the writer's own scope instead.
 `load_file` is not isolated. While an import is running a module's top
@@ -2611,6 +2617,61 @@ print of (shape of w)
 4
 6
 [2, 2]
+```
+
+## Evaluation order
+
+Expressions evaluate in a deterministic left-to-right order. Evaluation is
+strict except for the conditional right operand of `and` and `or`:
+
+- A call evaluates its callee first and then its arguments from left to right.
+  A chained call completes the inner call before evaluating the outer call's
+  arguments.
+- An index expression evaluates its target and then its index. An indexed
+  assignment evaluates its target, index, and value in that order, and only
+  then performs the mutation. A plain binding assignment evaluates its value
+  before changing the binding.
+- List elements evaluate from left to right. Dictionary entries evaluate in
+  source order, with each key immediately followed by its value.
+- Interpolated f-string expressions evaluate in their textual left-to-right
+  order before the completed string is available.
+- An ordinary binary operator evaluates its left operand, then its right
+  operand, and then applies the operator.
+- `and` evaluates its left operand and evaluates the right operand only when
+  the left is truthy. `or` evaluates its right operand only when the left is
+  falsy.
+
+If any evaluated callee, argument, target, index, assigned value, literal
+member, interpolation, or operand raises, its effects and all earlier effects
+remain. No later item in that construct is evaluated, and the call, lookup,
+assignment/mutation, literal or f-string construction, or operator application
+is not performed. For a chained call, a raise also prevents every enclosing
+call that has not yet occurred. A short-circuit operator similarly skips its
+right operand when its left operand raises.
+
+This executable example shows the same rule for successful and raising
+operands:
+
+```eigenscript
+log is []
+define note(label, value) as:
+    append of [log, label]
+    return value
+define stop(label) as:
+    append of [log, label]
+    throw of label
+
+a is [note of ["first", 1], note of ["second", 2]]
+print of log
+log is []
+try:
+    b is (note of ["left", 1]) + (stop of "right")
+catch e:
+    print of log
+```
+```output
+["first", "second"]
+["left", "right"]
 ```
 
 ## Evaluation model reference

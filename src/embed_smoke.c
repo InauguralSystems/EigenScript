@@ -373,7 +373,8 @@ static const char *smoke_provider(const char *name, void *ud) {
         return "define m_len(xs) as:\n    return len of xs\n"
                "define m_add() as:\n    return host_add of [3, 4]\n"
                "define m_str() as:\n    return str of 5\n"
-               "define m_glob() as:\n    return iso_g\n";
+               "define m_glob() as:\n    return iso_g\n"
+               "define m_program() as:\n    return program_only\n";
     return 0;
 }
 
@@ -1474,9 +1475,9 @@ int main(void) {
      * is never written), rebinds the registered `host_add`, and sets a global
      * named `str`; module code still sees the builtins and the registered
      * function. A non-builtin eigs_set_global value stays readable from
-     * module code (the layer's parent is the global scope). */
+     * module code through the sealed host/runtime layer. */
     eigs_set_source_provider(smoke_provider, NULL);
-    r = eigs_eval_string("saved_len is len\nsaved_add is host_add\nsaved_str is str\nlen is 5\nhost_add is 0\n0");
+    r = eigs_eval_string("saved_len is len\nsaved_add is host_add\nsaved_str is str\nlen is 5\nhost_add is 0\nprogram_only is 10\n0");
     if (r) eigs_value_release(r);
     EigsValue *one = eigs_value_new_num(1.0);
     eigs_set_global("str", one);
@@ -1501,6 +1502,11 @@ int main(void) {
     CHECK(r != NULL && eigs_value_as_num(r) == 9.0,
           "#1388 non-builtin eigs_set_global value readable from module code");
     if (r) eigs_value_release(r);
+    r = eigs_eval_string("import isomod\nisomod.m_program of null");
+    CHECK(r == NULL && eigs_has_error(),
+          "#2180 program global remains invisible beside host-injected global");
+    if (r) eigs_value_release(r);
+    eigs_clear_error();
     r = eigs_eval_string("len");
     CHECK(r != NULL && eigs_value_as_num(r) == 5.0, "#1388 host keeps its own len");
     if (r) eigs_value_release(r);

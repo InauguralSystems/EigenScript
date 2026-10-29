@@ -1,0 +1,1 @@
+- Generated section plans now stop container-slot work after a skip or unresolved build variant failure (#1783).

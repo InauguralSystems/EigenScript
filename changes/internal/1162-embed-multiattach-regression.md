@@ -1,0 +1,1 @@
+- Added an embed-API regression for state intern names surviving host-thread detach and reattach (#1162).

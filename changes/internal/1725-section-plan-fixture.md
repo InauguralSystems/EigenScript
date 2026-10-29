@@ -1,0 +1,1 @@
+- Fixed the section-plan self-test fixture after the section 69 runner layout change (#1725).

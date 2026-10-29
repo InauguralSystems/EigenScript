@@ -1517,6 +1517,14 @@ jobs:
             echo "$extra: claimed by exactly one shard"
           done
           echo "summed LeakSanitizer tally across $n shards: $total"
+          # #1725: the numeric tally is not the baseline. Feed any growth to
+          # the checked reviewed-set comparator too, so the file is active in
+          # the sharded lane (not merely documentation in a full local run).
+          observed=$(mktemp)
+          : > "$observed"
+          [ "$total" -eq 0 ] || echo "asan-shards — $total unreviewed leak-only exits" > "$observed"
+          bash tools/lsan_baseline_check.sh "$observed"
+          rm -f "$observed"
           [ "$total" -eq 0 ] || { echo "::error::leak tally is $total, expected 0 (CLAUDE.md: a jump in the tally means a new leak)"; exit 1; }
           echo "Sanitizer coverage complete (code=${{ needs.scope.outputs.code }}; $n shards)"
 

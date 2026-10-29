@@ -1958,9 +1958,9 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
             int in_outer     = name_in_enclosing(c, name);
             int in_module    = c->module_names && name_set_has(c->module_names, name);
             /* #373: whether a pre-existing env binding is a write-through
-             * target must not depend on load order. Inside a module compile
-             * (load_file/import) the loader's globals are readable but never
-             * write-through — the function gets a fresh local instead. */
+             * target must not depend on load order. Inside a module compile,
+             * loader globals are never write-through; imported modules cannot
+             * read them either, while load_file keeps its shared read scope. */
             int in_globals   = !g_compile_module_boundary &&
                                c->env && env_get_hashed(c->env, name, h) != NULL;
             /* Decide WHERE the write goes exactly as if there were no by-name

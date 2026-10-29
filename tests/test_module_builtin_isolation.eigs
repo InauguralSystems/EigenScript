@@ -3,7 +3,7 @@
 # (define / top-level is / top-level local), before OR after the import, leaves
 # the module's use of it untouched; the host's own code keeps its rebinding; a
 # module's own rebinding stays in that module; and no `is` ever writes into the
-# builtin layer. Non-builtin host globals stay readable from module code.
+# builtin layer. Non-builtin importer globals are isolated too; configuration is explicit.
 #
 # lib/test.eigs is load_file'd into THIS scope, so its helpers call whatever
 # `len`/`str` the host has bound. The checks below therefore record into a
@@ -27,7 +27,7 @@ f_wc is (_module_test_dir + "/tmp_iso_wc.eigs")
 f_wd is (_module_test_dir + "/tmp_iso_wd.eigs")
 
 # Module functions call each builtin; they run AFTER the host rebinds them.
-write_text of [f_mod, "define m_len(xs) as:\n    return len of xs\ndefine m_append(xs, v) as:\n    append of [xs, v]\n    return xs\ndefine m_str(x) as:\n    return str of x\ndefine m_type(x) as:\n    return type of x\ndefine m_host() as:\n    return host_value\n"]
+write_text of [f_mod, "define m_len(xs) as:\n    return len of xs\ndefine m_append(xs, v) as:\n    append of [xs, v]\n    return xs\ndefine m_str(x) as:\n    return str of x\ndefine m_type(x) as:\n    return type of x\nhost_value is null\ndefine set_host(v) as:\n    host_value is v\ndefine m_host() as:\n    return host_value\n"]
 # A module that rebinds a builtin for itself.
 write_text of [f_own, "define len(x) as:\n    return \"own\"\ndefine own_len(xs) as:\n    return len of xs\n"]
 write_text of [f_other, "define other_len(xs) as:\n    return len of xs\n"]
@@ -77,7 +77,8 @@ rec of [(tmp_iso_mod.m_type of 5) == "num", "I4 module type is the builtin (host
 # lib/string.eigs:59 capitalize calls str_upper; :36/:38 pad_left calls len.
 rec of [(string.capitalize of "abc") == "Abc", "I5 lib/string capitalize's str_upper is the builtin"]
 rec of [(string.pad_left of ["7", 3, "0"]) == "007", "I6 lib/string pad_left's len is the builtin"]
-rec of [(tmp_iso_mod.m_host of null) == "host-global", "I7 non-builtin host globals still reach module code"]
+tmp_iso_mod.set_host of host_value
+rec of [(tmp_iso_mod.m_host of null) == "host-global", "I7 module configuration is passed explicitly through its setter"]
 
 # 2. the host's own rebinding stays in effect in the host's code
 rec of [len == 99, "H1 host len is its own latest binding"]

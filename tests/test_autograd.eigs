@@ -144,7 +144,7 @@ assert_true of [kink_clear, "relu: no pre-activation within 1e-3 of the kink (se
 assert_true of [(len of (shape of (autograd.ag_grad of n2_b))) == 1 and (len of (autograd.ag_grad of n2_b)) == 4, "bias gradient is 1-D [4] (reduced over the batch axis of 5)"]
 check_grad of ["bias(add) db", bb, loss_bias_relu, autograd.ag_grad of n2_b]
 check_grad of ["relu∘add dW", bW, loss_bias_relu, autograd.ag_grad of n2_w]
-assert_true of [(type of (autograd.ag_grad of n2_x)) == "none", "const input gets no gradient"]
+assert_true of [(type of (autograd.ag_grad of n2_x)) == "null", "const input gets no gradient"]
 
 # --- same-shape add, and sub (mean-squared error), both operands ---
 sA is rnd_buf of [3, 4, -1.0, 1.0]
@@ -324,7 +324,7 @@ for i in range of (len of sA):
     if g12[i] != want:
         ones_where_pos is 0
 assert_true of [ones_where_pos, "backward on a tensor node seeds ones; relu vjp masks them"]
-assert_true of [(type of (autograd.ag_grad of n12_off)) == "none", "a leaf the loss never reached keeps grad = null"]
+assert_true of [(type of (autograd.ag_grad of n12_off)) == "null", "a leaf the loss never reached keeps grad = null"]
 
 # ============================================================
 # 2. End-to-end: 2-layer MLP trained by the tape on a toy 3-class problem

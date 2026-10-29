@@ -20,6 +20,8 @@ EigenScript's batched `nearest_in_range_all` does not count each query entity
 as its own neighbour. Its scalar `nearest_in_range` takes an explicit position,
 so it has no query-entity identity to exclude.
 
+EigenScript names its absence value consistently: `type of null` returns `"null"`.
+
 ## At a glance
 
 | | Python | JavaScript | Rust | Lisp | EigenScript |
@@ -751,8 +753,11 @@ which has no runtime value at all.
 Builtin names inside a module are isolated the way Python's are: a Python
 module's `len` is unaffected by `__main__` rebinding `len`, and an
 EigenScript module's `len`, `str` or `append` is the builtin unless the
-module itself rebinds it (#1388). Unlike Python, a name the module does not
-bind and that is not a builtin still resolves to the importer's globals.
+module itself rebinds it (#1388). Like Python, Lua and ES modules, a name the
+module does not bind or import and that is not a builtin is undefined: an
+importer's incidental global is never ambient configuration. Pass the value
+as a function parameter or through an exported setter (#2180). `load_file`
+remains the explicit shared-scope mechanism.
 
 <!-- Embed contract: #1038/#1028; language-level observer semantics unchanged. -->
 The C embedding API starts observer recording open. Source evals retain

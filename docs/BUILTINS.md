@@ -63,7 +63,7 @@ audio (`audio_open`, `audio_close`, `audio_pause`, `audio_play`,
 | `len` | `len of value` | Length of string or list count |
 | `str` | `str of value` | Convert to string representation |
 | `num` | `num of value` | Convert to number (parse string or coerce). `num of "inf"` saturates to `1e308`; `num of "nan"` raises a `value` error naming `num` by default, while under `EIGS_STRICT=0` it is `0` and sets `math_flags.invalid` (#971). |
-| `type` | `type of value` | Return type name: "num", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "none" (the null value — SPEC.md is normative and its gated example prints `none`; the string `"null"` is never produced) |
+| `type` | `type of value` | Return type name: "num", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "null" (the null value; the type label matches the literal) |
 | `assert` | `assert of [cond, msg]` | Raise catchable error `"ASSERT FAIL: <msg>"` if condition is false |
 | `exit` | `exit of N` | Terminate the program with exit code `N` (default 0). **Uncatchable** — a `try`/`catch` does not intercept it — and unwinds through normal teardown, so it is leak-clean even with live closures. Code after it does not run. The request is scoped to the evaluating thread and cleared at each host eval entry, so under the embedding API a script that calls `exit` does not disable `try`/`catch` for the host's *next* eval (#739). |
 | `set_exit_code` | `set_exit_code of N` | Set the status (integer 0..255) used when the process ends gracefully, without ending it. The last call wins. Explicit `exit` and runtime failures retain their own status. |
