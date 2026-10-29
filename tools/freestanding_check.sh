@@ -43,7 +43,7 @@ run_row() {
         "$cc" "$opt" -ffreestanding -fno-stack-protector -U_FORTIFY_SOURCE \
             -Werror=implicit-function-declaration $WERROR_FLAGS \
             -DEIGENSCRIPT_FREESTANDING=1 \
-            -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
+            -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 \
             -c "src/$f.c" -o "$BUILD/$f.o"
     done
     "$cc" "$opt" -ffreestanding -fno-builtin -fno-stack-protector -U_FORTIFY_SOURCE \
@@ -121,7 +121,7 @@ run_riscv32_row() {
         "${ZIG[@]}" -O2 -ffreestanding -fno-stack-protector -U_FORTIFY_SOURCE \
             -Werror=implicit-function-declaration $WERROR_FLAGS \
             -DEIGENSCRIPT_FREESTANDING=1 -DEIGENSCRIPT_EXT_HTTP=0 \
-            -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
+            -DEIGENSCRIPT_EXT_DB=0 \
             -c "src/$f.c" -o "$BUILD/$f.o"
     done
     "${ZIG[@]}" -O2 -ffreestanding -fno-builtin -fno-stack-protector \

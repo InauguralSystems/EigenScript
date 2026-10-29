@@ -550,10 +550,6 @@ either way, so the numbers are byte-identical.
 
 ## Corpus Preparation
 
-| Name | Signature | Description |
-|------|-----------|-------------|
-| `build_corpus` | `build_corpus of [files, top_n, stream_path, vocab_path]` | Three-pass C-backed corpus builder: tokenise `files`, emit top-`n` vocabulary and stream-format token IDs. The token stream, including file separators, is capped at 10,000,000 elements; exceeding it raises a catchable `limit` error naming the stream path and cap, including under `EIGS_STRICT=0`, before opening the stream file |
-
 ## Optional: Network Extension (TCP sockets)
 
 Requires a `make server` build (`EIGENSCRIPT_EXT_NET=1`; not in the default
@@ -882,17 +878,6 @@ for a non-admin; NULL and `''` were both `""`; and `9 > 10` was true because
 ## Optional: Model Extension
 
 Requires full build. Transformer model inference and training.
-
-| Name | Signature | Description |
-|------|-----------|-------------|
-| `eigen_model_load` | `eigen_model_load of "path.json"` | Load model weights from JSON |
-| `eigen_model_loaded` | `eigen_model_loaded of null` | `true` if model loaded, `false` otherwise |
-| `eigen_model_info` | `eigen_model_info of null` | JSON with model config and stats |
-| `eigen_generate` | `eigen_generate of [prompt, temp, max_tokens]` | Generate text from prompt. Every prompt token id must be in `[0, vocab_size)` or it raises `index_range`. Raises when the prompt exceeds the model's `max_seq_len`. |
-| `eigen_eval_loss` | `eigen_eval_loss of [prompt, target]` | Return the target token's cross-entropy loss. Every prompt and target token id must be in `[0, vocab_size)` or it raises `index_range`. Raises when the prompt exceeds the model's `max_seq_len`. |
-| `native_train_step_builtin` | `native_train_step_builtin of [input, output, lr]` | Single training step. Every input and output token id must be in `[0, vocab_size)` or it raises `index_range` before training. Raises when the combined input and output length exceeds the model's `max_seq_len`. |
-| `model_save_weights` | `model_save_weights of "path.json"` | Save model weights to JSON |
-| `model_load_weights` | `model_load_weights of "path.json"` | Load model weights (alias) |
 
 ## Concurrency
 

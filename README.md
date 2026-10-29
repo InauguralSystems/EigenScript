@@ -325,15 +325,6 @@ Builtins: `matmul`, `add`, `subtract`, `multiply`, `divide`, `softmax`,
 `log_softmax`, `relu`, `leaky_relu`, `zeros`, `random_normal`, `shape`,
 `numerical_grad`, `sgd_update`, `tensor_save`, `tensor_load`.
 
-Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
-`tensor_save` raise catchable `limit` errors above it; `stream_open` requires
-an integral count from 1 through that cap, and `build_corpus` includes file
-separators in its capped token count. These limits also raise under
-`EIGS_STRICT=0`; see [BUILTINS.md](docs/BUILTINS.md) for the I/O contracts.
-`read_line of null` reads stdin one line at a time byte-exactly, including the
-line terminator, so pipes and redirected files preserve `\r` and expose whether
-the final line ended in `\n`.
-
 File reads follow Python's exception model: `read_text`, `read_bytes`, and
 `read_bytes_buf` raise a catchable `io` error naming the path and the operating
 system reason when a path is missing, unreadable, or a directory. Empty files
@@ -359,11 +350,6 @@ substitution. `str_from_bytes` stops at numeric NUL, without inspecting later
 elements; byte codecs consume the complete list.
 
 Fixed- or optional-shape builtin argument lists reject surplus outer elements in strict mode with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
-
-The optional model extension raises a catchable `value` error when
-`eigen_generate` or `eigen_eval_loss` receives a prompt longer than the loaded
-model's `max_seq_len`. Training applies the same limit to the combined input
-and output lengths; callers must choose their context window explicitly.
 
 ## Standard Library
 

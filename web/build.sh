@@ -43,7 +43,7 @@ EXPORTED_RUNTIME='["ccall","cwrap","UTF8ToString","stringToUTF8","lengthBytesUTF
 
 emcc $WERROR_FLAGS -O2 \
     -DEIGENSCRIPT_EXT_HTTP=0 \
-    -DEIGENSCRIPT_EXT_MODEL=0 \
+    \
     -DEIGENSCRIPT_EXT_DB=0 \
     -DEIGENSCRIPT_VERSION="\"${VERSION}\"" \
     -sMODULARIZE=1 \

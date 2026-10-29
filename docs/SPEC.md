@@ -2563,16 +2563,6 @@ buffer). Mixing a buffer with a list yields a list. The reductions
 reads as a 1-D tensor and a shaped buffer as its `rows x cols` 2-D tensor, so
 the numbers agree element for element with the equivalent list.
 
-Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
-`tensor_save` raise catchable `limit` errors above it; `stream_open` requires
-an integral count from 1 through that cap, and `build_corpus` includes file
-separators in its capped token count. These limits also raise under
-`EIGS_STRICT=0`; see [BUILTINS.md](BUILTINS.md) for the I/O contracts.
-`read_line of null` returns each stdin line byte-exactly, including its line
-terminator, and returns `null` only at EOF. Pipe and redirected-file input have
-the same semantics; in particular `\r` is preserved and a final `\n` is
-observable.
-
 `read_text`, `read_bytes`, and `read_bytes_buf` follow Python's exception
 model: a missing or unreadable path, or a directory in place of a file, raises
 a catchable `io` error whose message contains the path and the operating-system
@@ -2713,16 +2703,6 @@ conservatively instead of answering a rest value. See the
 [embedding observer contract](EMBEDDING.md#observer-contract-1038--1028).
 
 ### Model context limits
-
-With a model loaded, `eigen_generate` and `eigen_eval_loss` accept nonempty
-prompts up to and including the model's `max_seq_len`. Longer prompts raise
-a catchable `value` error; neither builtin truncates the supplied prompt.
-`native_train_step_builtin` applies the same refusal rule to the combined
-input and output lengths. These limits apply with `EIGS_STRICT=0` too.
-Generation records either its token list or its context refusal on the trace
-tape. Replay reproduces that outcome before consulting the model, even when
-the checkpoint is missing or has a different context limit, and preserves the
-following call's record.
 
 ### HTTP startup and response attribution
 

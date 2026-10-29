@@ -63,7 +63,6 @@ int eigs_lint_is_builtin_name(const char *name) {
         EIGS_HTTP_BUILTINS(X)
         EIGS_HTTP_REQUEST_BUILTINS(X)
         EIGS_DB_BUILTINS(X)
-        EIGS_MODEL_BUILTINS(X)
         EIGS_NET_BUILTINS(X)
 #undef X
         if (!env_get(e, "report_value"))
@@ -375,7 +374,6 @@ static int api_is_ext_name(const char *nm) {
     EIGS_HTTP_BUILTINS(API_ISX)
     EIGS_HTTP_REQUEST_BUILTINS(API_ISX)
     EIGS_DB_BUILTINS(API_ISX)
-    EIGS_MODEL_BUILTINS(API_ISX)
     EIGS_NET_BUILTINS(API_ISX)
 #undef API_ISX
     return 0;
@@ -442,7 +440,6 @@ int eigs_api_dump(FILE *out, int json) {
         API_GROUP("http",  EIGS_HTTP_BUILTINS);
         API_GROUP("http_request", EIGS_HTTP_REQUEST_BUILTINS);
         API_GROUP("db",    EIGS_DB_BUILTINS);
-        API_GROUP("model", EIGS_MODEL_BUILTINS);
         API_GROUP("net",   EIGS_NET_BUILTINS);
 #undef API_X
 #undef API_GROUP
@@ -473,7 +470,6 @@ int eigs_api_dump(FILE *out, int json) {
         API_GROUP("http",  EIGS_HTTP_BUILTINS);
         API_GROUP("http_request", EIGS_HTTP_REQUEST_BUILTINS);
         API_GROUP("db",    EIGS_DB_BUILTINS);
-        API_GROUP("model", EIGS_MODEL_BUILTINS);
         API_GROUP("net",   EIGS_NET_BUILTINS);
 #undef API_GROUP
 #undef API_X
@@ -1126,7 +1122,6 @@ void eigs_lint_check_undefined_names(ASTNode *ast, const char *path,
     EIGS_HTTP_BUILTINS(X)
     EIGS_HTTP_REQUEST_BUILTINS(X)
     EIGS_DB_BUILTINS(X)
-    EIGS_MODEL_BUILTINS(X)
     EIGS_NET_BUILTINS(X)
 #undef X
     /* Names the compiler resolves itself, so no registrar ever binds them:

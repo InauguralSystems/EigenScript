@@ -589,7 +589,6 @@ check_binary_fingerprint
 TOTAL=$((TOTAL + 1))
 OP_ABI_OUT=$(${CC:-gcc} -std=c11 $WERROR_FLAGS -I. \
     -DEIGENSCRIPT_EXT_HTTP=0 \
-    -DEIGENSCRIPT_EXT_MODEL=0 \
     -DEIGENSCRIPT_EXT_DB=0 \
     -c ../tests/test_opcode_abi.c -o /tmp/eigs_opcode_abi.o 2>&1)
 OP_ABI_RC=$?
@@ -1517,90 +1516,6 @@ check_stdout "EM30 assert failure is catchable with kind assert" 'try:
 catch e:
     print of e.kind' "assert"
 echo ""
-
-# [17] Transformer smoke test — only runs if model extension compiled in.
-# Detects by running a probe script and checking output.
-PROBE_FILE=$(mktemp /tmp/eigs_probe_XXXXXX.eigs)
-cat > "$PROBE_FILE" <<'PROBE'
-loaded is eigen_model_loaded of null
-print of "yes"
-PROBE
-PROBE_OUT=$(./eigenscript "$PROBE_FILE" 2>&1)
-rm -f "$PROBE_FILE"
-
-# Disabled extensions stay bound so direct calls can explain which profile is
-# required; probes treat that capability diagnostic as unavailable too.
-echo "[17/17] Transformer Smoke"
-if ! echo "$PROBE_OUT" | grep -Eq "undefined variable|capability unavailable"; then
-
-    # Generate tiny v1 model
-    ./eigenscript ../tests/gen_tiny_model.eigs > /tmp/eigs_tiny_v1.json 2>/dev/null
-
-    # Find a v0 model to test rejection.
-    # Set EIGS_V0_MODEL_DIR to a directory containing legacy-format *.json
-    # checkpoints to exercise TR6/TR7. If unset (the common case), those
-    # two checks skip gracefully.
-    if [ -n "$EIGS_V0_MODEL_DIR" ]; then
-        V0_MODEL=$(find "$EIGS_V0_MODEL_DIR" -maxdepth 1 -name '*.json' 2>/dev/null | head -1)
-    else
-        V0_MODEL=""
-    fi
-
-    SMOKE_FILE=$(mktemp /tmp/eigs_smoke_XXXXXX.eigs)
-    cat > "$SMOKE_FILE" <<SMOKE
-load_result is eigen_model_load of "/tmp/eigs_tiny_v1.json"
-print of "TR1:"
-print of (eigen_model_loaded of null)
-print of "TR2:"
-print of (type of (eigen_generate of [[1,2,3], 0.0, 4]))
-print of "TR3:"
-print of (len of (eigen_generate of [[1,2,3], 0.0, 4]))
-print of "TR4:"
-print of (type of (native_train_step_builtin of [[1,2,3], [4,5,6], 0.01]))
-print of "TR5:"
-print of (native_train_step_builtin of ["bad", "also bad", 0.01])
-SMOKE
-    SMOKE_OUTPUT=$(./eigenscript "$SMOKE_FILE" 2>&1)
-    rm -f "$SMOKE_FILE"
-
-    check "TR1 v2 model loads" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR1:' | tail -1)" "true"
-    check "TR2 generate returns list" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR2:' | tail -1)" "list"
-    check "TR3 generate length matches max_tokens" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR3:' | tail -1)" "4"
-    check "TR4 train returns string (JSON)" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR4:' | tail -1)" "str"
-    TR5_LINE=$(echo "$SMOKE_OUTPUT" | grep -A1 'TR5:' | tail -1)
-    if echo "$TR5_LINE" | grep -q "must be lists"; then
-        echo "  PASS: TR5 bad inputs rejected"; PASS=$((PASS + 1))
-    else
-        echo "  FAIL: TR5 bad inputs rejected (got '$TR5_LINE')"; FAIL=$((FAIL + 1))
-    fi
-    TOTAL=$((TOTAL + 1))
-
-    # TR6/TR7: v0 rejection
-    if [ -n "$V0_MODEL" ]; then
-        V0_FILE=$(mktemp /tmp/eigs_v0_XXXXXX.eigs)
-        cat > "$V0_FILE" <<V0TEST
-r is eigen_model_load of "$V0_MODEL"
-print of (eigen_model_loaded of null)
-V0TEST
-        V0_OUTPUT=$(./eigenscript "$V0_FILE" 2>&1)
-        rm -f "$V0_FILE"
-        V0_LOADED=$(echo "$V0_OUTPUT" | tail -1)
-        check "TR6 old model rejected" "$V0_LOADED" "false"
-        if echo "$V0_OUTPUT" | grep -q "format mismatch"; then
-            echo "  PASS: TR7 old rejection prints format mismatch"; PASS=$((PASS + 1))
-        else
-            echo "  FAIL: TR7 old rejection prints format mismatch"; FAIL=$((FAIL + 1))
-        fi
-        TOTAL=$((TOTAL + 1))
-    else
-        echo "  SKIP: TR6/TR7 no old model available"
-    fi
-
-    rm -f /tmp/eigs_tiny_v1.json
-    echo ""
-else
-    section_skip "binary built without model support"
-fi
 
 # [18] File I/O builtins: read_text, write_text, exec_capture
 echo "[18/18] File I/O Builtins"
@@ -2767,36 +2682,6 @@ check_eigs_suite "import top-level scope insulation vs load_file current-scope c
 check_eigs_suite "module namespace is a LIVE VIEW of the module env (#1057)" test_module_live_view.eigs "All tests passed"
 check_eigs_suite "module builtins isolated from the importer's rebinding; builtin layer sealed (#1388)" test_module_builtin_isolation.eigs "All tests passed"
 
-echo "[43a2b] build_corpus slot-mode identifier encoding"
-CS_OUTPUT=$(bash "$TESTS_DIR/test_corpus_slots.sh" 2>&1)
-CS_PASS=$(echo "$CS_OUTPUT" | grep -c "PASS:" || true)
-CS_FAIL=$(echo "$CS_OUTPUT" | grep -c "FAIL:" || true)
-TOTAL=$((TOTAL + CS_PASS + CS_FAIL))
-PASS=$((PASS + CS_PASS))
-FAIL=$((FAIL + CS_FAIL))
-if [ "$CS_FAIL" -gt 0 ]; then
-    echo "  FAIL: $CS_FAIL slot-encoding check(s) failed"
-    echo "$CS_OUTPUT" | grep "FAIL:" | head -4
-else
-    echo "  PASS: slot mode is lossless and preserves identifier identity"
-fi
-echo ""
-
-echo "[43a2c] build_corpus integer-literal encoding"
-CI_OUTPUT=$(bash "$TESTS_DIR/test_corpus_ints.sh" 2>&1)
-CI_PASS=$(echo "$CI_OUTPUT" | grep -c "PASS:" || true)
-CI_FAIL=$(echo "$CI_OUTPUT" | grep -c "FAIL:" || true)
-TOTAL=$((TOTAL + CI_PASS + CI_FAIL))
-PASS=$((PASS + CI_PASS))
-FAIL=$((FAIL + CI_FAIL))
-if [ "$CI_FAIL" -gt 0 ]; then
-    echo "  FAIL: $CI_FAIL integer-encoding check(s) failed"
-    echo "$CI_OUTPUT" | grep "FAIL:" | head -4
-else
-    echo "  PASS: integer literals get exact tokens; genuine repetition preserved"
-fi
-echo ""
-
 # [43a3] EigenStore header-validation / corruption error paths (ext_store.c)
 echo "[43a3] Store Corruption Errors"
 check_eigs_suite "store corruption errors" test_store_corruption.eigs "All store_corruption tests passed"
@@ -2989,160 +2874,6 @@ if ! echo "$DB_PROBE_OUT" | grep -Eq "undefined variable|capability unavailable"
     echo ""
 else
     section_skip "binary built without EIGENSCRIPT_EXT_DB"
-    echo ""
-fi
-
-# [47] Model save/load/infer roundtrip (probe-gated)
-MODEL_PROBE_FILE=$(mktemp /tmp/eigs_model_probe_XXXXXX.eigs)
-cat > "$MODEL_PROBE_FILE" <<'PROBE'
-print of (eigen_model_loaded of null)
-PROBE
-MODEL_PROBE_OUT=$(./eigenscript "$MODEL_PROBE_FILE" 2>&1)
-rm -f "$MODEL_PROBE_FILE"
-
-echo "[47/47] Model Save/Load Roundtrip"
-if ! echo "$MODEL_PROBE_OUT" | grep -Eq "undefined variable|capability unavailable"; then
-    MRT_OUTPUT=$(bash "$TESTS_DIR/test_model_roundtrip.sh" 2>&1)
-    MRT_PASS=$(echo "$MRT_OUTPUT" | grep -c "PASS:" || true)
-    MRT_FAIL=$(echo "$MRT_OUTPUT" | grep -c "FAIL:" || true)
-    TOTAL=$((TOTAL + MRT_PASS + MRT_FAIL))
-    PASS=$((PASS + MRT_PASS))
-    FAIL=$((FAIL + MRT_FAIL))
-    if [ "$MRT_FAIL" -gt 0 ]; then
-        echo "  FAIL: $MRT_FAIL model roundtrip check(s) failed"
-        echo "$MRT_OUTPUT" | grep "FAIL:" | head -5
-    else
-        echo "  PASS: all $MRT_PASS model roundtrip checks"
-    fi
-    echo ""
-
-    echo "[47b/47] Model Overflow Regression"
-    MO_OUTPUT=$(bash "$TESTS_DIR/test_model_overflow.sh" 2>&1)
-    MO_PASS=$(echo "$MO_OUTPUT" | grep -c "PASS:" || true)
-    MO_FAIL=$(echo "$MO_OUTPUT" | grep -c "FAIL:" || true)
-    TOTAL=$((TOTAL + MO_PASS + MO_FAIL))
-    PASS=$((PASS + MO_PASS))
-    FAIL=$((FAIL + MO_FAIL))
-    if [ "$MO_FAIL" -gt 0 ]; then
-        echo "  FAIL: $MO_FAIL model overflow check(s) failed"
-        echo "$MO_OUTPUT" | grep "FAIL:" | head -3
-    else
-        echo "  PASS: malicious model checkpoints rejected"
-    fi
-    echo ""
-
-    echo "[47d/47] Model Incomplete-Checkpoint Rejection (#727)"
-    MI_OUTPUT=$(bash "$TESTS_DIR/test_model_incomplete.sh" 2>&1)
-    if echo "$MI_OUTPUT" | grep -q "SKIP:"; then
-        mi_skip_line=$(echo "$MI_OUTPUT" | grep "SKIP:" | head -1)
-        section_skip "$mi_skip_line"
-    else
-        MI_PASS=$(echo "$MI_OUTPUT" | grep -c "PASS:" || true)
-        MI_FAIL=$(echo "$MI_OUTPUT" | grep -c "FAIL:" || true)
-        TOTAL=$((TOTAL + MI_PASS + MI_FAIL))
-        PASS=$((PASS + MI_PASS))
-        FAIL=$((FAIL + MI_FAIL))
-        if [ "$MI_FAIL" -gt 0 ]; then
-            echo "  FAIL: $MI_FAIL incomplete-checkpoint check(s) failed"
-            echo "$MI_OUTPUT" | grep "FAIL:" | head -3
-        else
-            echo "  PASS: incomplete/misordered JSON checkpoints rejected"
-        fi
-    fi
-    echo ""
-
-    echo "[47c/47] native_train_step finite-difference gradient check"
-    GC_OUTPUT=$(bash "$TESTS_DIR/test_native_train_gradcheck.sh" 2>&1)
-    GC_RC=$?
-    GC_PASS=$(echo "$GC_OUTPUT" | grep -c "PASS:" || true)
-    GC_FAIL=$(echo "$GC_OUTPUT" | grep -c "FAIL:" || true)
-    if [ "$GC_RC" -ne 0 ] && [ "$GC_FAIL" -eq 0 ]; then
-        GC_FAIL=1
-        GC_OUTPUT="$GC_OUTPUT
-  FAIL: gradient-check child exited $GC_RC without a verdict"
-    fi
-    TOTAL=$((TOTAL + GC_PASS + GC_FAIL))
-    PASS=$((PASS + GC_PASS))
-    FAIL=$((FAIL + GC_FAIL))
-    if [ "$GC_FAIL" -gt 0 ]; then
-        echo "  FAIL: $GC_FAIL native_train_step gradient-check(s) failed"
-        echo "$GC_OUTPUT" | grep "FAIL:" | head -4
-    else
-        echo "  PASS: native training gradients match an independent finite-difference oracle"
-    fi
-    echo ""
-
-    echo "[47g/47] native_train_step max-sequence refusal (#1401)"
-    MS_OUTPUT=$(bash "$TESTS_DIR/test_native_train_max_seq.sh" 2>&1); MS_RC=$?
-    MS_PASS=$(echo "$MS_OUTPUT" | grep -c "PASS:" || true)
-    MS_FAIL=$(echo "$MS_OUTPUT" | grep -c "FAIL:" || true)
-    if [ "$MS_RC" -ne 0 ] && [ "$MS_FAIL" -eq 0 ]; then
-        MS_FAIL=1
-        MS_OUTPUT="$MS_OUTPUT
-  FAIL: max-sequence child exited without a verdict (rc=$MS_RC)"
-    fi
-    TOTAL=$((TOTAL + MS_PASS + MS_FAIL))
-    PASS=$((PASS + MS_PASS))
-    FAIL=$((FAIL + MS_FAIL))
-    if [ "$MS_FAIL" -gt 0 ]; then
-        echo "  FAIL: $MS_FAIL native_train_step max-sequence check(s) failed"
-        echo "$MS_OUTPUT" | grep "FAIL:" | head -4
-    else
-        echo "  PASS: over-long training windows are refused before cache writes"
-    fi
-    echo ""
-
-    echo "[47h/47] Model vocabulary independence (#1406)"
-    MVC_OUTPUT=$(bash "$TESTS_DIR/test_model_vocab_coupling.sh" 2>&1); MVC_RC=$?
-    MVC_PASS=$(echo "$MVC_OUTPUT" | grep -c "PASS:" || true)
-    MVC_FAIL=$(echo "$MVC_OUTPUT" | grep -c "FAIL:" || true)
-    if [ "$MVC_RC" -ne 0 ] && [ "$MVC_FAIL" -eq 0 ]; then
-        MVC_FAIL=1
-        MVC_OUTPUT="$MVC_OUTPUT
-  FAIL: model vocabulary check exited without a verdict (rc=$MVC_RC)"
-    fi
-    TOTAL=$((TOTAL + MVC_PASS + MVC_FAIL))
-    PASS=$((PASS + MVC_PASS))
-    FAIL=$((FAIL + MVC_FAIL))
-    if [ "$MVC_FAIL" -gt 0 ]; then
-        echo "  FAIL: model runtime contains consumer-specific vocabulary diagnostics"
-        echo "$MVC_OUTPUT"
-    else
-        echo "  PASS: model training is independent of consumer vocabulary IDs"
-    fi
-    echo ""
-
-    echo "[47f/47] eigen_eval_loss held-out cross-entropy"
-    EL_OUTPUT=$(bash "$TESTS_DIR/test_eval_loss.sh" 2>&1)
-    EL_PASS=$(echo "$EL_OUTPUT" | grep -c "PASS:" || true)
-    EL_FAIL=$(echo "$EL_OUTPUT" | grep -c "FAIL:" || true)
-    TOTAL=$((TOTAL + EL_PASS + EL_FAIL))
-    PASS=$((PASS + EL_PASS))
-    FAIL=$((FAIL + EL_FAIL))
-    if [ "$EL_FAIL" -gt 0 ]; then
-        echo "  FAIL: $EL_FAIL eigen_eval_loss check(s) failed"
-        echo "$EL_OUTPUT" | grep "FAIL:" | head -4
-    else
-        echo "  PASS: untrained cross-entropy sits at ln(vocab)"
-    fi
-    echo ""
-
-    echo "[47e/47] eigen_generate top-p nucleus sampling"
-    TP_OUTPUT=$(bash "$TESTS_DIR/test_top_p.sh" 2>&1)
-    TP_PASS=$(echo "$TP_OUTPUT" | grep -c "PASS:" || true)
-    TP_FAIL=$(echo "$TP_OUTPUT" | grep -c "FAIL:" || true)
-    TOTAL=$((TOTAL + TP_PASS + TP_FAIL))
-    PASS=$((PASS + TP_PASS))
-    FAIL=$((FAIL + TP_FAIL))
-    if [ "$TP_FAIL" -gt 0 ]; then
-        echo "  FAIL: $TP_FAIL top-p check(s) failed"
-        echo "$TP_OUTPUT" | grep "FAIL:" | head -4
-    else
-        echo "  PASS: top-p narrows the candidate set; out-of-range falls back to top-k"
-    fi
-    echo ""
-else
-    section_skip "binary built without EIGENSCRIPT_EXT_MODEL"
     echo ""
 fi
 
@@ -6068,12 +5799,6 @@ else
     echo "  FAIL: closure-cycle checks (rc=$CC_OUTPUT_RC — must be leak-clean)"
     echo "$CC_OUTPUT" | grep -iE "FAIL|LeakSanitizer|assert|error" | head -5
 fi
-echo ""
-
-# [86] Corpus builder — build_corpus + the tok_base_string detokenizer
-# table (both 0% before: nothing in the suite ever built a corpus).
-echo "[86] Corpus Builder"
-check_eigs_suite "all corpus-builder checks" test_corpus.eigs "All tests passed"
 echo ""
 
 # [88] LSP behavioral tests — drive src/eigenlsp over real JSON-RPC and

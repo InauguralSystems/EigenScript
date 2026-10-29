@@ -1,0 +1,1 @@
+- The zero-consumer `build_corpus` builtin and model extension builtins are removed; archived iLambdaAi can pin v0.46.0 or recover the extension sources from that tag if revived (#1414).

@@ -348,7 +348,7 @@ shape_selftest() {
     shape_case 'implemented capability observation is valid' 0 "$(
         cap_observation_ok '' gfx implemented && printf '0\nshape-complete' || printf '1\nrejected')"
     shape_case 'documented unavailable observation remains valid' 0 "$(
-        cap_observation_ok '' model unavailable && printf '0\nshape-complete' || printf '1\nrejected')"
+        cap_observation_ok '' db unavailable && printf '0\nshape-complete' || printf '1\nrejected')"
     shape_case 'undefined observation remains explicit' 0 "$(
         cap_observation_ok 'BASELINE ' gfx undefined && printf '0\nshape-complete' || printf '1\nrejected')"
     shape_case 'invalid subject observation cannot reach absence derivation' 0 "$(
@@ -680,7 +680,6 @@ list_insert_at|print of (list_insert_at of [[1, 2], "i", 9])
 list_remove_at|print of (list_remove_at of [[1, 2], "i"])
 ord|print of (ord of 42)
 exec_capture|print of (exec_capture of 42)
-eigen_eval_loss|print of (eigen_eval_loss of ["x", 1])
 str_from_bytes|print of (str_from_bytes of 42)
 str_lower|print of (str_lower of 42)
 str_replace|print of (str_replace of [42, "a", "b"])
@@ -995,7 +994,6 @@ cap_message() {
         http) echo 'HTTP capability unavailable; use the server profile' ;;
         net) echo 'network capability unavailable; use the server profile' ;;
         db) echo 'database capability unavailable; use the server-db profile' ;;
-        model) echo 'model capability unavailable; use the server profile' ;;
         gfx) echo '' ;;
     esac
 }
@@ -1005,7 +1003,6 @@ cap_contract() {
         http) name=http_route; op='http_route of ["GET", "/strict-capability-probe", "ok"]'; answer='result == "route registered"' ;;
         net) name=net_close; op='net_close of -1'; answer='result == null' ;;
         db) name=db_connect; op='db_connect of null'; answer='(json_path of [result, "status"]) == "no_database"' ;;
-        model) name=eigen_model_loaded; op='eigen_model_loaded of null'; answer='result == false' ;;   # #1637: a bool
         gfx) name=gfx_text_width; op='gfx_text_width of ["m", 1]'; answer='(type of result) == "num" and result > 0' ;;
     esac
     message="$(cap_message "$cap")"
@@ -1080,7 +1077,7 @@ n_probe=0; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_unset_eq=0; unset_lis
 n_pin=0; n_pin_ok=0; n_pin_broke=0; n_misattr=0; n_unrun=0; n_skipped=0
 differ_list=""; silent_list=""; pin_list=""; misattr_list=""; unrun_list=""; skipped_list=""
 NEW_CAPS=""; BASE_CAPS=""; profile_transitions=""; n_profile_rows=0
-for cap in http net db model gfx; do
+for cap in http net db gfx; do
     ns="$(cap_state "$NEW" "$cap")"
     cap_observation_ok "" "$cap" "$ns" || exit 1
     NEW_CAPS="$NEW_CAPS
@@ -1107,7 +1104,7 @@ done
 
 release_srcs="$(make --no-print-directory print-SRC_V_release 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sort -u)"
 absent_here=""
-for cap in http net db model gfx; do
+for cap in http net db gfx; do
     [ "$(state_for subject "$cap")" = implemented ] && continue
     absent_here="$absent_here $(printf '%s\n' "$CAP_NAMES" | awk -F'|' -v c="$cap" '$1 == c {print $2}' | tr '\n' ' ')"
 done

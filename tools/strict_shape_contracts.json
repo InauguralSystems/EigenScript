@@ -533,18 +533,6 @@
     }
   },
   {
-    "function": "builtin_build_corpus",
-    "file": "src/builtins_host.c",
-    "category": "optional",
-    "minimum": 4,
-    "maximum": 7,
-    "reason": "Four required operands; identifiers path, slot count, integer count are optional slots 5..7.",
-    "public_names": [
-      "build_corpus"
-    ],
-    "disposition": "guarded"
-  },
-  {
     "function": "builtin_char_at",
     "file": "src/builtins.c",
     "category": "fixed",
@@ -739,30 +727,6 @@
     "reason": "Consumes the first two tuple operands; trailing operands have no role.",
     "public_names": [
       "dot"
-    ],
-    "disposition": "guarded"
-  },
-  {
-    "function": "builtin_eigen_eval_loss",
-    "file": "src/model_infer.c",
-    "category": "fixed",
-    "minimum": 2,
-    "maximum": 2,
-    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
-    "public_names": [
-      "eigen_eval_loss"
-    ],
-    "disposition": "guarded"
-  },
-  {
-    "function": "builtin_eigen_generate",
-    "file": "src/model_infer.c",
-    "category": "optional",
-    "minimum": 3,
-    "maximum": 4,
-    "reason": "Three required operands plus optional top_p; prompt is nested list data.",
-    "public_names": [
-      "eigen_generate"
     ],
     "disposition": "guarded"
   },
@@ -1485,18 +1449,6 @@
         "24720427e6a309464edc04905ac38f78d0ab9de6a6778910ec55c2f5ba108795"
       ]
     }
-  },
-  {
-    "function": "builtin_native_train_step",
-    "file": "src/model_train.c",
-    "category": "fixed",
-    "minimum": 3,
-    "maximum": 3,
-    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
-    "public_names": [
-      "native_train_step_builtin"
-    ],
-    "disposition": "guarded"
   },
   {
     "function": "builtin_nearest_in_range",

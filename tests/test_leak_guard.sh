@@ -197,7 +197,7 @@ for w in $SRCS; do case "$w" in *.c) ;; *)
     exit 1 ;; esac; done
 
 if ! "$CC_CMD" $WERROR_FLAGS -O1 -g -fsanitize=address -fno-omit-frame-pointer \
-        -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
+        -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 \
         '-DEIGENSCRIPT_VERSION="leak_guard"' \
         $SRCS -o $ASAN_BIN -lm -lpthread 2>$ASAN_LOG; then
     fail "ASan leak-guard build failed" "see $ASAN_LOG"

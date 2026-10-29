@@ -7,26 +7,6 @@ the same `monotonic_ns` timestamps, the same HTTP responses.
 
 ## Filesystem replay model (#1885)
 
-Replay is an **rr-style, side-effect-free execution**. Every filesystem read
-reachable from a running program is either served by the tape or refused
-before the read. Source read by `import` and `load_file`, ordinary file
-readers, hashes, directory queries, and process/network input are taped.
-Reads whose payload is not represented in the current tape format—tensor checkpoints,
-font and music assets, HTTP static serving, stores, and databases—are refused;
-replay never falls back to a live file. Model checkpoints are the exception:
-the verdict of `eigen_model_load` or `eigen_checkpoint_info` is taped, their
-payload is never opened or read during replay, and taped inference results are
-served before the model is consulted. Every replayable
-mutation (`mkdir`, `write_text`, `write_bytes`, `rename`, and
-`remove_file`) returns or raises its recorded outcome before any filesystem syscall.
-Operations whose durable result cannot be represented by the tape remain loud
-boundaries: `mktemp`, stream output, corpus generation, and store operations
-are refused rather than partially run. The embedding API's initial program
-read, CLI/bundle discovery, tape input, JIT/runtime-library loading,
-lint/LSP/DAP inspection, and `eigenscript fmt` are host, tool, or runtime input
-acquisition—not reads performed by a running EigenScript program—and therefore
-remain live. The audited per-site classification, every read and write site with its reason, is in PR #1901's discussion (#1885).
-
 The same boundary applies outside the filesystem: raw TCP and HTTP-client
 socket results (including sends) and the script-visible clocks (`clock_unix`,
 `monotonic_ns`, `monotonic_ms`, and `gfx_ticks`) are tape-served before their
@@ -276,28 +256,6 @@ scheduler-trace/observer-configuration machinery is tracked by #1688.
 Every builtin whose return value is nondeterministic from the script's
 perspective lands on the tape as an `N` record:
 
-- **Random:** `random`, `random_int`, `random_normal`, `random_hex`
-- **Time:** `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683)
-- **Environment / files:** `env_get`, `read_text`, `read_bytes`,
-  `read_line` (stdin, #558), `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585),
-  `write_text`, `write_bytes`, `rename`, `remove_file`, and `md5_file` (#1668).
-  Module acquisition adds `import_source` / `load_file_source` metadata and
-  bounded `_chunk` records, so source larger than one record remains replayable.
-  The filesystem replay rules are defined once in [Filesystem replay model](#filesystem-replay-model-1885).
-  An I/O
-  failure from either builtin or any file reader records the complete `io` message (builtin, path, and `strerror` reason)
-  in a one-string list. Because a successful `ls` can have that shape, its
-  error record adds a trailing `null` tag. Replay recognizes these
-  otherwise-impossible result shapes and re-raises the
-  identical error without live filesystem access. The fixed-cap readers
-  `read_text`, `read_bytes`, and `read_bytes_buf` instead record an over-cap
-  file's observed size as a `VAL_NUM` `N` record and reconstruct the error
-  containing both size and active cap. Empty files remain ordinary successful
-  empty string/list/buffer records.
-  Mutating file builtins return their taped success value or re-raise their
-  taped `io` message **before** making any live filesystem call. Mutations whose
-  payload is not represented on the tape (including `tensor_save`) are refused
-  loudly under replay, also before opening their path.
 - **Tensor-file cap decision (#1393):** each valid `tensor_load` path call
   records one compact observation: `[rows, cols]` for an over-cap header,
   otherwise `null`. On replay, every structurally valid verdict raises the
@@ -306,108 +264,6 @@ perspective lands on the tape as an `N` record:
   payloads are untaped and are never read live during replay. Invalid path
   argument types consume no observation. The following nondeterministic call
   retains its own record.
-- **Process:** `args` (command-line arguments — differ across
-  invocations, so the recorded list is served on replay regardless of
-  the live argv; #471)
-- **HTTP extension:** `http_post` (success and all error paths),
-  `http_request_body`, `http_session_id`, `http_request_headers`
-- **Network extension (#414):** `net_listen`, `net_port`, `net_accept`,
-  `net_dial`, `net_recv`, `net_send`. Every environment outcome is a
-  recorded *value* — `null` for failure/timeout, a number or buffer for
-  success — never a live-path-only raise, so a `catch` cannot desync
-  the record stream (the `read_bytes_buf` lesson). The whole family is
-  TAKE/RECORD-wrapped: under `EIGS_REPLAY` the tape is taken **before
-  any socket call** — the replay run creates, binds, connects, reads,
-  and writes **nothing** (verified by strace: zero socket-family
-  syscalls), which is what "replay last night's flaky network failure
-  with the network gone" means. `net_recv` caps at 8192 bytes per call
-  so every `N` record fits the 64 KiB budget, the same discipline as
-  `audio_capture_read`. `net_send` is a *recorded write*, like `mkdir`:
-  its observable effect on the program is its result (bytes sent), and
-  the peer's future responses are themselves on the tape — so under
-  replay the send is **suppressed** (recorded count served, nothing
-  written) and the replayed world stays consistent. That is the
-  deliberate contrast with the #148 subprocess family below: a
-  so suppressing it would be meaningless. (`net_close` is deterministic
-  and untraced — under replay no socket exists and it is a natural
-  no-op, the `audio_capture_close` shape.)
-- **Model extension (#960):** `eigen_model_load`, `eigen_checkpoint_info`, and
-  `eigen_generate`. A load or inspection call records its verdict; replay
-  returns that verdict before probing the path or reading any checkpoint
-  payload. A replayed successful load does re-emit `Loading model from:` using
-  the recording-resolved path in that verdict, preserving stdout; it does not
-  emit the live-weights diagnostic because no live probe occurred. Sampling at temperature
-  above 0 draws from the shared `drand48` stream, so the emitted token list
-  is a nondeterministic return — untaped, a generating program could not be
-  replayed at all. **One record per call carries the whole token list**, not
-  one per sampled position: the draws are an implementation detail of the
-  decoding policy (top-k and top-p consume different numbers of them), the
-  list is what the script observes. The early replay take means `EIGS_REPLAY`
-  serves the tokens *before the model is consulted* — a recorded generation
-  replays with no checkpoint on disk and without advancing the RNG. Every
-  return is recorded, argument errors and the no-model-loaded empty list
-  included, so a program that hits one cannot desync the stream. Greedy
-  (`temperature < 0.01`) calls ride the same path: the tape cannot show
-  which branch ran, and replay may not load a model to re-derive it.
-  A model-dependent refusal records one outcome dictionary with `kind` (the
-  runtime error-kind name) and `message`. This covers context-limit and token-id
-  refusals, so replay preserves both the catchable kind and the recorded limits
-  before consulting a missing or replaced model. Successful generations and
-  soft empty-list returns keep their list payloads. For compatibility, old
-  string refusal records still replay as `value` errors; existing generation
-  list records remain readable.
-- **Rendered pixels (gfx extension, #823):** `gfx_read`. Renderer output
-  depends on the font rasteriser, the driver and the backend, so the pixel
-  a render-decode oracle reads back is a device input and takes the
-  TAKE/RECORD pair.
-- **A REJECTED argument consumes no record** (#1007). `audio_capture_open`,
-  `audio_capture_read`'s siblings and `gfx_read` all place their
-  argument-type guard *above* `TRACE_NONDET_TAKE`, because an argument's
-  type is deterministic and so a rejected call is not a nondeterministic
-  input. Placed below the TAKE, the capture run returns before
-  `TRACE_NONDET_RECORD` and writes nothing while the replay run's TAKE still
-  consumes one — every later record for that name shifts by one and the
-  rejected call replays as a real device id or a real pixel, silently, even
-  under `EIGS_STRICT=1`. Measured on `audio_capture_open` before the guard
-  was hoisted: capture printed `0 2 null`, replay of that same tape printed
-  `2 2 null`. Suite section `[133]` pins it.
-- **Audio capture (gfx extension, #579):** `audio_capture_open`,
-  `audio_capture_read`. Captured audio is a device input, so the whole
-  capture chain is TAKE/RECORD-wrapped: under `EIGS_REPLAY` the tape is
-  taken *before any SDL call* — replay never opens or reads a real
-  microphone; the recorded device id and sample buffers (the `b[…]`
-  encoding) are served instead. `audio_capture_read` retains its 2048-sample
-  per-call device-read bound; those values fit one `N` record without needing
-  v8 continuation records. Drain loops
-  ("read until empty") replay faithfully: one record per call, empties
-  included. (`audio_capture_close` is deterministic — always `null` —
-  and untraced; under replay it is a no-op because no device was
-  opened.) The audio *output* device (`audio_open`) is deliberately
-  untraced: playback is a side effect that replay re-performs live,
-  like `print`. The residual gap — `audio_open`'s
-  environment-dependent return (`0` on a machine with no audio) can
-  steer a branch differently on replay — is accepted for now; closing
-  it would change how existing tapes replay.
-- **Audio noise (gfx extension, #1803):** `audio_noise`. Its samples are
-  drawn from the shared `drand48` stream behind `random`, so
-  `seed_random` pins them, and they are recorded. One call can return
-  far more samples than one record holds (about 3,000; a 30-second
-  burst is over a million), so a call writes consecutive
-  `N audio_noise=[…]` records of at most 2048 samples each. The first
-  record shorter than 2048 ends the call: a count that is a multiple of
-  2048 ends with an empty record, and an empty call records `[]`. Replay
-  serves the recorded samples, and the call's extent, off the tape
-  whatever sample rate the device gives (`audio_open` negotiates it). A
-  rejected argument consumes no record, as above, and neither does a
-  refused duration (#1767: more than 30 seconds, or a sample count that
-  does not fit an `int`, raises `value`). Both are refused before the
-  tape is read or written, so a replay refuses the call again instead of
-  taking the next call's records. `audio_open` refuses rates above
-  71,582,788 Hz (#1821), so the sample-count branch cannot reject at any
-  accepted device rate and the verdict does not depend on untaped device
-  state. Before #1803 the samples came from
-  libc `rand()`, seeded from the clock and recorded nowhere, so a replay
-  drew new ones at exit 0.
 
 The hook is the `TRACE_NONDET_RET` macro in `src/trace.h`, used at
 every nondet return site — adding a new nondet builtin means wrapping

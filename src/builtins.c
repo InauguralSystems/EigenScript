@@ -1,7 +1,7 @@
 /*
  * EigenScript built-in functions.
  * Core language builtins plus the registration table.
- * Extension builtins (HTTP, DB, model) live in ext_*.c and model_*.c.
+ * Extension builtins (HTTP and DB) live in ext_*.c.
  * Host-only builtins — everything needing a filesystem, subprocesses, a
  * terminal, POSIX regex, or /dev/urandom — live in builtins_host.c (#741),
  * whole-TU gated for the freestanding profile. A new builtin that touches
@@ -93,12 +93,7 @@ static const char *omitted_capability_message(const char *name) {
         EIGS_NET_BUILTINS(X)
     }
 #endif
-#if !EIGENSCRIPT_EXT_MODEL
-    {
-        const char *message = "model capability unavailable; use the server profile";
-        EIGS_MODEL_BUILTINS(X)
-    }
-#endif
+
 #undef X
     return NULL;
 }
@@ -2296,20 +2291,6 @@ Value* builtin_path_ext(Value *arg) {
 
 
 /* ================================================================
- * BUILTIN: build_corpus — 3-pass corpus builder in C
- * ================================================================
- * build_corpus of [file_list, top_n, stream_path, vocab_path]
- *
- * file_list:    list of strings (paths to .eigs files)
- * top_n:        number of identifier tokens to promote (e.g. 64)
- * stream_path:  output path for binary token stream
- * vocab_path:   output path for identifier vocab JSON
- *
- * Returns: [stream_length, distinct_identifiers, files_found]
- */
-
-
-/* ================================================================
  * GENERIC HTTP CLIENT — language-level, no product logic
  * ================================================================ */
 
@@ -2516,8 +2497,7 @@ void free_tokenlist(TokenList *tl) {
     tl->line_depth_count = 0;
 }
 
-/* #1322: user code that receives the lexer's tokens (tokenize_with_names,
- * build_corpus) sees the f-string lowering's conversion as `str`, its
+/* #1322: user code that receives the lexer's tokens (tokenize_with_names) sees the f-string lowering's conversion as `str`, its
  * round-trip-valid spelling, never the reserved `_#fstr`: a detokenized
  * `_#fstr` comments out the rest of its line. Mapped rather than dropped --
  * the rest of the lowering (parens, `+`, literal segments) is synthetic too,
@@ -6656,9 +6636,7 @@ void register_builtins(Env *env) {
     register_net_builtins(env);
 #endif
 
-#if EIGENSCRIPT_EXT_MODEL
-    register_model_builtins(env);
-#endif
+
 
 #if EIGENSCRIPT_EXT_GFX
     register_gfx_builtins(env);
