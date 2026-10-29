@@ -533,7 +533,9 @@ else
         hard=$(cat "$CORPUS/hard/real-asan-heap-use-after-free.txt")
         leak=$(cat "$CORPUS/leak/real-asan-leak-only.txt")
         export hard leak
-        bash -c '
+        # The leak below is an intentional classifier fixture, not an observed
+        # suite-program leak. Do not feed it to the reviewed-report ledger.
+        TOLERATED_LSAN_REPORTS=/dev/null bash -c '
             LEAKED=0
             if rc_ok 0 "$hard"; then echo "hard-at-rc0:TOLERATED"; else echo "hard-at-rc0:REJECTED"; fi
             if rc_ok 1 "$leak"; then echo "leak-at-rc1:TOLERATED"; else echo "leak-at-rc1:REJECTED"; fi
