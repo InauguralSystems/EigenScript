@@ -1,1 +1,0 @@
-- LSP references to a parameter now use the real declaration token span (ordinary, multiline and soft-keyword parameters), implicit parameters no longer get an invented declaration occurrence, and a default expression naming a later parameter is not mistaken for its declaration (#1614).

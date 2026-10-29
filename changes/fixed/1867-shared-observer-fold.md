@@ -1,1 +1,0 @@
-- Concurrent assignments now serialize the complete observer measurement for a shared binding without deadlocking when the value contains a module namespace (#1867).

@@ -1,1 +1,0 @@
-- Cooperative-task uncaught-error reporting now uses only that task's handlers, so another task's open `try` cannot suppress its trace (#1808).

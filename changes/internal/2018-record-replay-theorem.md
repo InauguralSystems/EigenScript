@@ -1,1 +1,0 @@
-- Proved that completed recorded runs replay strictly to the same result in the executable semantics specification (#2018).

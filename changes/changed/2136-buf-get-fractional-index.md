@@ -1,1 +1,0 @@
-- `buf_get` raises `index must be an integer, got 1.5` on a fractional index, as `buf[i]` does, instead of silently truncating it (#2136, #2150).

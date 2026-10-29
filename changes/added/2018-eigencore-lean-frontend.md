@@ -1,1 +1,0 @@
-- Add EigenCore-0's pinned Lean specification, including an explicit taped-interaction tree and an axiom-clean prefix-sufficiency proof (#2018).

@@ -1,1 +1,0 @@
-- JIT-tier evidence readers accept the aggregate OSR-slot columns in hot diagnostics, and the OSR diagnostic gate skips platforms without JIT support (#1606).

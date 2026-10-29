@@ -1,1 +1,0 @@
-- Fixed #1697 so deleting dictionary entries uses amortized O(1) hash removal instead of shifting and rebuilding every survivor.

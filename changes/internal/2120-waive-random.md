@@ -1,1 +1,0 @@
-- `jit_diff` temporarily excluded two unseeded random-draw parity cases; the shared seed in #2121 replaced this waiver (#2120).

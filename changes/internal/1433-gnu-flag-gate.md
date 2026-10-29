@@ -1,1 +1,0 @@
-- The portability gate now rejects GNU-only command flags in tracked shell scripts before they break macOS tooling (#1433).

@@ -1,1 +1,0 @@
-- Numeric aggregates now raise with the offending element's index and type instead of silently skipping non-number list elements (#1649).

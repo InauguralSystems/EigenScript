@@ -1,1 +1,0 @@
-- List slicing and the `numerical_grad_rows` / `numerical_grad_cols` builtins no longer read or write past their result allocation when a sandbox budget refuses (and caps) it, matching the other sandbox-refused allocators (#1722).

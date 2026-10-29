@@ -1,1 +1,0 @@
-- Calibrate every static merge checker with a planted violation of its own fault class (#2030).

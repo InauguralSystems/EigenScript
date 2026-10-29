@@ -1,1 +1,0 @@
-- EigenCore record and live modes now consume their explicit oracle in order, making recorded nondeterminism reproducible by strict replay (#2018).

@@ -1,1 +1,0 @@
-- Refuse every source binding of runtime-reserved `__name__` identifiers with parse error `E006`; reads remain legal (#1908).

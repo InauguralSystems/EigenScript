@@ -1,1 +1,0 @@
-- Fixed formatter literal preservation and lexer-owned indentation handling (#1245, #1246, #1581).

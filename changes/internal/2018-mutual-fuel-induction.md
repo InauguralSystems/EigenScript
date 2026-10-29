@@ -1,1 +1,0 @@
-- Started the mutual fuel-induction proof that evaluator execution preserves tape pairing (#2018).

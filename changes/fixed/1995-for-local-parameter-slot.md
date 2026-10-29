@@ -1,1 +1,0 @@
-- Fix #1995: keep slot-eligible `local` declarations inside `for` bodies from corrupting function parameters.

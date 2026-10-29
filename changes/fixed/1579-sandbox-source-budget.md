@@ -1,1 +1,0 @@
-- `sandbox_run` charges source preparation (lexing, parsing and compiling) to a deterministic compile-phase reservation of its `max_bytes` budget. Oversized or pathological source is refused with a `sandbox` error instead of an out-of-memory abort, and a depth-32 recursion test pins the existing `max_work` budget (#1619) against recursion (#1579, #1403).

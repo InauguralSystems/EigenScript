@@ -1,1 +1,0 @@
-- The freestanding mini-libc now preserves the RISC-V floating-point environment, including hard-float `fcsr` state and the state-free soft-float default environment (#1983).

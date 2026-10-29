@@ -1,1 +1,0 @@
-- Prove that recording preserves stdout, errors, and consumed oracle answers (#2018).

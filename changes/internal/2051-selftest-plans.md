@@ -1,1 +1,0 @@
-- Self-test plan rows now require every declared check to pass, rather than only requiring the plan to be printed (#2051).

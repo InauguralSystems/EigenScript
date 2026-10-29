@@ -1,1 +1,0 @@
-- CI now promotes the immutable image digest produced by the verified merge-queue run and rejects other push comparisons on required paths (#2149).

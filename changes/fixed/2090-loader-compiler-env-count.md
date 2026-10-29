@@ -1,1 +1,0 @@
-- Concurrent worker module compilation now snapshots the shared environment under its lock, eliminating an intermittent loader data race (#2090).
