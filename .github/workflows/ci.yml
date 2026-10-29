@@ -106,22 +106,22 @@ jobs:
           # The queue merges once the required checks pass, and the queue run
           # can still read as in progress for a moment after that. So a run
           # not yet completed is retried for up to 160 s before the verdict.
-          verified=
+          verified_run=
           for attempt in 1 2 3 4 5 6 7 8 9; do
             runs=$(curl --fail --silent --show-error \
               -H "Authorization: Bearer $GH_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
               "$api/actions/workflows/ci.yml/runs?head_sha=$SHA&event=merge_group&status=completed&per_page=100")
-            if jq -e --arg sha "$SHA" \
-              'any(.workflow_runs[]; .head_sha == $sha and .event == "merge_group" and .conclusion == "success")' \
-              >/dev/null <<<"$runs"; then
-              verified=1
+            verified_run=$(jq -r --arg sha "$SHA" \
+              '[.workflow_runs[] | select(.head_sha == $sha and .event == "merge_group" and .conclusion == "success")] | sort_by(.id) | last | .id // empty' \
+              <<<"$runs")
+            if [ -n "$verified_run" ]; then
               break
             fi
             if [ "$attempt" -lt 9 ]; then sleep 20; fi
           done
-          if [ -z "$verified" ]; then
+          if [ -z "$verified_run" ]; then
             echo "::error::main SHA $SHA has no successful merge_group run for ci.yml"
             exit 1
           fi
@@ -139,9 +139,28 @@ jobs:
             exit 0
           fi
 
+          artifacts=$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$api/actions/runs/$verified_run/artifacts?per_page=100")
+          artifact=$(jq -r '[.artifacts[] | select(.name == "dev-image-digest" and (.expired | not))] | if length == 1 then .[0].archive_download_url else empty end' <<<"$artifacts")
+          if [ -z "$artifact" ]; then
+            echo "::error::verified run $verified_run does not have exactly one live dev-image-digest artifact"
+            exit 1
+          fi
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer $GH_TOKEN" -o digest.zip "$artifact"
+          digest=$(unzip -p digest.zip dev-image-digest.txt)
+          hex=${digest#sha256:}
+          case "$digest:$hex" in
+            sha256:*:*[!0-9a-f]*) echo "::error::invalid image digest in verified run $verified_run"; exit 1 ;;
+          esac
+          [ "${#hex}" -eq 64 ] || { echo "::error::invalid image digest length"; exit 1; }
+
           base="ghcr.io/$(printf %s "$OWNER" | tr '[:upper:]' '[:lower:]')/eigenscript-dev"
-          docker buildx imagetools create --tag "$base:ci-main" "$base:ci-$SHA"
-          echo "verified merge_group success for $SHA; promoted $base:ci-$SHA to $base:ci-main"
+          docker buildx imagetools create --tag "$base:ci-main" "$base@$digest"
+          echo "verified merge_group run $verified_run for $SHA; promoted $base@$digest to $base:ci-main"
 
   # Is this PR docs-only? A change touching nothing but *.md cannot alter C or
   # .eigs behavior, so the legs below that build/run the runtime have nothing to
@@ -158,7 +177,7 @@ jobs:
   # aggregators may skip before runner allocation; the required aggregator
   # reports the success and requires the workers in the merge queue.
   scope:
-    if: github.event_name != 'push'
+    if: (github.event_name != 'push') && (true)
     name: scope
     env:
       CI_DISPATCH_LANES: all,asan,tsan,fuzz,linux
@@ -444,6 +463,7 @@ jobs:
       packages: write
     outputs:
       image: ${{ steps.ref.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -491,6 +511,7 @@ jobs:
           echo "tags=$BASE:ci-$SHA" >> "$GITHUB_OUTPUT"
 
       - name: Build and push dev image
+        id: build
         if: github.event.pull_request.head.repo.fork != true
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
@@ -501,6 +522,23 @@ jobs:
           tags: ${{ steps.ref.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # The push workflow retrieves this artifact from the exact successful
+      # merge_group run. Unlike ci-<sha>, the recorded registry digest cannot
+      # be replaced by a later dispatch rebuild of the same commit.
+      - name: Record dev image digest
+        if: github.event_name != 'pull_request' && github.event_name != 'workflow_dispatch'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: printf '%s\n' "$DIGEST" > dev-image-digest.txt
+      - name: Upload dev image digest
+        if: github.event_name != 'pull_request' && github.event_name != 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: dev-image-digest
+          path: dev-image-digest.txt
+          if-no-files-found: error
+          retention-days: 7
 
   # [99i] reads tracked source text and the shared warning flags directly.
   # The name remains fixed until the required-checks ruleset is renamed.

@@ -52,6 +52,11 @@ G = r"github\s*(?:\.\s*{0}\b|\[\s*['\"]{0}['\"]\s*\])"
 PR_ATOM = re.compile(G.format("event_name") + r"\s*[=!]=\s*['\"]pull_request['\"]|['\"]pull_request['\"]\s*[=!]=\s*" + G.format("event_name"), re.I)
 PR_BODY = re.compile(G.format("event") + r"\s*(?:\.\s*pull_request\b|\[\s*['\"]pull_request['\"]\s*\])", re.I)
 PUSH_ATOM = re.compile(G.format("event_name") + r"\s*[=!]=\s*['\"]push['\"]|['\"]push['\"]\s*[=!]=\s*" + G.format("event_name"), re.I)
+PUSH_EXCLUSION = re.compile(r"^\(\s*" + G.format("event_name") + r"\s*!=\s*['\"]push['\"]\s*\)\s*&&\s*\((.*)\)$", re.I | re.S)
+def without_push_exclusion(value):
+    """Remove only the reviewed top-level `(event != push) && (...)` wrapper."""
+    m = PUSH_EXCLUSION.fullmatch(value)
+    return m.group(1).strip() if m else value
 DISPATCH_ATOM = re.compile(
     G.format("event_name") + r"\s*[=!]=\s*['\"]workflow_dispatch['\"]|"
     r"['\"]workflow_dispatch['\"]\s*[=!]=\s*" + G.format("event_name"), re.I)
@@ -196,7 +201,7 @@ for wf, jid in sorted(path):
     worker_defer = wf == "ci.yml" and jid in HEAVY_WORKERS and "github.event_name != 'pull_request'" in jc
     # ci.yml's required graph is queue/PR/dispatch-only.  Every incumbent job
     # excludes push; the sole push job is validated separately below.
-    queue_condition = PUSH_ATOM.sub("_", jc) if wf == "ci.yml" else jc
+    queue_condition = without_push_exclusion(jc) if wf == "ci.yml" else jc
     why = None if worker_defer else bad_expr(queue_condition, wf, jid, False)
     if why: V("event-condition", f"{wf}:{jid}: job-level `if:` — {why}; a job skipped in the queue or on a PR is a satisfied check")
     vals = [(k, v) for d in (j.get("env"), j.get("outputs"), W[wf][2]) if isinstance(d, dict) for k, v in d.items()]
@@ -248,7 +253,7 @@ for jid in sorted(HEAVY_WORKERS):
 #   no ./ or docker:// actions, and no script but that tag step.
 # [secrets]  ci.yml reads no secret but GITHUB_TOKEN, so only permissions: can write.
 def writes(p): return p == "write-all" or (isinstance(p, dict) and "write" in p.values())
-INPUTS = {"actions/checkout": set(), "docker/setup-buildx-action": set(), "docker/login-action": {"registry", "username", "password"},
+INPUTS = {"actions/checkout": set(), "actions/upload-artifact": {"name", "path", "if-no-files-found", "retention-days"}, "docker/setup-buildx-action": set(), "docker/login-action": {"registry", "username", "password"},
           "docker/build-push-action": {"context", "file", "platforms", "push", "tags", "cache-from", "cache-to"}}
 EVENTS = ("push", "pull_request", "merge_group", "workflow_dispatch")
 REFS = ("refs/heads/main", "refs/heads/a-branch", "refs/pull/1/merge", "refs/heads/gh-readonly-queue/main/pr-1-0123abc")
@@ -318,18 +323,19 @@ if len(promote_runs) != 1:
 else:
     ps = str(promote_runs[0]["run"])
     promote_pin = hashlib.sha256(yaml.safe_dump(promote_runs[0], sort_keys=True).encode()).hexdigest()[:16]
-    if promote_pin != "32f47b5a1c91a8ff":
+    if promote_pin != "afefa0b39a7eaf78":
         V("writer-actions", f"ci.yml:promote-main-image reviewed script changed (now {promote_pin}); review and re-pin it")
     required = [
         "actions/workflows/ci.yml/runs?head_sha=$SHA&event=merge_group&status=completed",
         '.head_sha == $sha and .event == "merge_group" and .conclusion == "success"',
         "$api/git/ref/heads/main", '[ "$tip" != "$SHA" ]',
-        'docker buildx imagetools create --tag "$base:ci-main" "$base:ci-$SHA"',
+        'actions/runs/$verified_run/artifacts?per_page=100', 'select(.name == "dev-image-digest"',
+        'docker buildx imagetools create --tag "$base:ci-main" "$base@$digest"',
     ]
     missing = [x for x in required if x not in ps]
     positions = [ps.find(x) for x in required]
     if missing or positions != sorted(positions):
-        V("ci-main", f"ci.yml:promote-main-image must verify exact-SHA merge_group success, then main tip, then retag ci-<sha>; missing/out-of-order {missing or positions}")
+        V("ci-main", f"ci.yml:promote-main-image must verify exact-SHA merge_group success, then main tip, then read that run's digest artifact and promote base@digest; missing/out-of-order {missing or positions}")
 writers, judged = [], 0
 for jid, j in ci.items():
     if not writes(j["permissions"] if "permissions" in j else PERMS["ci.yml"]): continue
@@ -348,7 +354,9 @@ for jid, j in ci.items():
         elif u and (set(map(str, w)) - INPUTS[ident] or any(not l.strip().startswith("type=gha") for l in str(w.get("cache-to", "type=gha")).splitlines() if l.strip())):
             V("writer-actions", f"ci.yml:{jid} step {i} gives {ident} {sorted(map(str, w))}: in a job that can write, an action takes only the inputs vetted for it "
                                 f"({sorted(INPUTS[ident])}, cache-to: only type=gha); outputs: or a registry cache can push any name")
-        elif "run" in st and st is not tag and not (jid == "promote-main-image" and st in promote_runs):
+        elif "run" in st and st is not tag and not (jid == "promote-main-image" and st in promote_runs) and not (
+                jid == "dev-image" and st.get("name") == "Record dev image digest" and
+                str(st.get("run", "")).strip() == "printf '%s\\n' \"$DIGEST\" > dev-image-digest.txt"):
             V("writer-actions", f"ci.yml:{jid} step {i} ({st.get('name', '?')}) runs a script in a job that can write; only the tag step may, because the matrix runs it")
     if tag is not None: judged += ci_main(jid, j, tag)
 if judged == 0: V("ci-main", "no immutable image push in ci.yml took its tags from a step the matrix could run")
@@ -508,8 +516,48 @@ plant_unverified_ci_main() {
     fi
     echo "ci-tier: SELFTEST OK — planted ci-main retag without verified queue success is rejected"
 }
+plant_push_comparison() {
+    local tmp out rc
+    tmp=$(mktemp -d); out="$tmp/out"
+    trap 'rm -rf "$tmp"' RETURN
+    cp -R "$WF_DIR" "$tmp/workflows"
+    # Clean control is the live check above. This required job's positive push
+    # comparison is not the reviewed top-level `!= push` exclusion.
+    python3 - "$tmp/workflows/ci.yml" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+a = s.index("  scope:\n")
+b = s.index("\n  release-dry-run-worker:\n", a)
+job = s[a:b].replace("if: (github.event_name != 'push') && (true)", "if: github.event_name == 'push'", 1)
+open(p, "w", encoding="utf-8").write(s[:a] + job + s[b:])
+PY
+    rc=0
+    CI_TIER_PLANT=1 CI_TIER_WF_DIR="$tmp/workflows" bash "$0" >"$out" 2>&1 || rc=$?
+    if [ "$rc" -ne 1 ] || ! grep -q 'FAIL \[event-condition\].*ci.yml:scope' "$out"; then
+        cat "$out"
+        echo "ci-tier: SELFTEST FAIL — push-only scope plant was not rejected as event-condition"
+        return 1
+    fi
+    echo "ci-tier: SELFTEST OK — planted required scope push comparison is rejected"
+}
+plant_mutable_ci_main() {
+    local tmp out rc
+    tmp=$(mktemp -d); out="$tmp/out"
+    trap 'rm -rf "$tmp"' RETURN
+    cp -R "$WF_DIR" "$tmp/workflows"
+    sed 's/"$base@$digest"/"$base:ci-$SHA"/' "$WF_DIR/ci.yml" > "$tmp/workflows/ci.yml"
+    rc=0
+    CI_TIER_PLANT=1 CI_TIER_WF_DIR="$tmp/workflows" bash "$0" >"$out" 2>&1 || rc=$?
+    if [ "$rc" -ne 1 ] || ! grep -q 'FAIL \[ci-main\].*base@digest' "$out"; then
+        cat "$out"
+        echo "ci-tier: SELFTEST FAIL — mutable ci-<sha> promotion was not rejected as ci-main"
+        return 1
+    fi
+    echo "ci-tier: SELFTEST OK — planted mutable ci-<sha> promotion is rejected"
+}
 case "${1:-}" in
-    "") check && { [ "${CI_TIER_PLANT:-0}" = 1 ] || { plant_merge_deferral && plant_dispatch_contracts && plant_unverified_ci_main; }; } ;;
+    "") check && { [ "${CI_TIER_PLANT:-0}" = 1 ] || { plant_merge_deferral && plant_dispatch_contracts && plant_unverified_ci_main && plant_push_comparison && plant_mutable_ci_main; }; } ;;
     --live) live ;;
     --dispatch-table) dispatch_table "${2:-}" "${3:-}" ;;
     *) echo "usage: $0 [--live | --dispatch-table [workflow [label]]]" >&2; exit 2 ;;
