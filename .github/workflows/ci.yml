@@ -735,6 +735,13 @@ jobs:
       - name: Build
         run: CC=${{ matrix.cc }} ./build.sh
 
+      # The release suite's [70eb] section proves fsync reachability through a
+      # test-hook binary.  build.sh intentionally does not build test variants,
+      # so make that proof executable in the required PR-time gcc suite lane.
+      - name: Build fsync reachability hooks
+        if: matrix.cc == 'gcc'
+        run: make fsync-test-hooks CC=${{ matrix.cc }}
+
       - name: Verify binary
         run: ./src/eigenscript --version
 

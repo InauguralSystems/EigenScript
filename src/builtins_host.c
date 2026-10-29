@@ -710,7 +710,6 @@ static int eigs_sync_fd(int fd, const char *kind) {
 }
 
 static Value *sync_path(Value *arg, const char *fn, int want_directory) {
-    ARG_GUARD(!arg || arg->type != VAL_STR, fn, "a string path", make_bool(0));
     Value *replayed = NULL;
     if (file_io_replay(fn, &replayed)) return replayed;
 
@@ -738,10 +737,16 @@ static Value *sync_path(Value *arg, const char *fn, int want_directory) {
 }
 
 /* file_sync of path — flush a regular file's data and metadata to storage. */
-Value* builtin_file_sync(Value *arg) { return sync_path(arg, "file_sync", 0); }
+Value* builtin_file_sync(Value *arg) {
+    ARG_GUARD(!arg || arg->type != VAL_STR, "file_sync", "a string path", make_bool(0));
+    return sync_path(arg, "file_sync", 0);
+}
 
 /* dir_sync of path — flush directory-entry changes to storage. */
-Value* builtin_dir_sync(Value *arg) { return sync_path(arg, "dir_sync", 1); }
+Value* builtin_dir_sync(Value *arg) {
+    ARG_GUARD(!arg || arg->type != VAL_STR, "dir_sync", "a string path", make_bool(0));
+    return sync_path(arg, "dir_sync", 1);
+}
 
 /* ==== BUILTIN: read_text ==== */
 /* Taped filesystem errors use a result shape that cannot be successful: a

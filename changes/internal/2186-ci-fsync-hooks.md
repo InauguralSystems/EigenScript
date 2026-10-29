@@ -1,0 +1,1 @@
+- The required Linux CI suite now runs the fsync reachability proof instead of silently omitting its test-hook binary (#2186).
