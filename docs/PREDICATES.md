@@ -771,6 +771,53 @@ expression: `report of x` and `converged of x` read *x*; the bare
 `converged` reads the last-observed binding. Prefer the named form whenever
 more than one binding is observed in scope.
 
+### Probe expressions; do not probe by writing the subject
+
+The named form fixes *which binding* is classified, but the observer still
+records every assignment to that binding. For example, writing finite-
+difference probes into `w` and then restoring it pollutes `w`'s trajectory:
+
+```eigenscript fragment
+w is 0.0
+lr is 0.05
+h is 1e-4
+loss_at is (c) => (14.0 / 3.0) * (c - 2.0) * (c - 2.0)
+steps is 0
+loop while not converged of w:
+    w is w + h
+    loss_plus is loss_at of w
+    w is w - 2 * h
+    loss_minus is loss_at of w
+    w is w + h
+    grad is (loss_plus - loss_minus) / (2 * h)
+    w is w - lr * grad
+    steps is steps + 1
+assert of [steps == 13, f"probe-write trajectory took {steps} steps"]
+assert of [(when is w) == 53, f"probe-write trajectory recorded {when is w} observations"]
+```
+
+On this trajectory, the probed version stops after 13 updates with
+`when is w` equal to 53. Compute probe values through a helper instead, so
+only the real update writes `w`:
+
+```eigenscript fragment
+w is 0.0
+lr is 0.05
+h is 1e-4
+loss_at is (c) => (14.0 / 3.0) * (c - 2.0) * (c - 2.0)
+steps is 0
+loop while not converged of w:
+    grad is ((loss_at of (w + h)) - (loss_at of (w - h))) / (2 * h)
+    w is w - lr * grad
+    steps is steps + 1
+assert of [steps == 20, f"helper trajectory took {steps} steps"]
+assert of [(when is w) == 21, f"helper trajectory recorded {when is w} observations"]
+```
+
+The helper version takes 20 updates and `when is w` is 21: the initial
+assignment plus one assignment per update. The runnable full-batch example is
+[`examples/gradient_descent.eigs`](../examples/gradient_descent.eigs).
+
 ### Gentle, monotonic convergence
 
 `loop while not converged` reads as the obvious convergence idiom, and

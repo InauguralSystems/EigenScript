@@ -1,0 +1,33 @@
+# Fit y = 2x with a finite-difference gradient. The helper evaluates probes
+# without assigning to w, so the observer sees only optimization updates.
+xs is [1.0, 2.0, 3.0]
+ys is [2.0, 4.0, 6.0]
+lr is 0.05
+h is 1e-4
+
+define loss_at(c) as:
+    local total is 0.0
+    local i is 0
+    loop while i < 3:
+        local d is c * xs[i] - ys[i]
+        total is total + d * d
+        i is i + 1
+    return total / 3.0
+
+w is 0.0
+steps is 0
+loop while not converged of w:
+    grad is ((loss_at of (w + h)) - (loss_at of (w - h))) / (2 * h)
+    w is w - lr * grad
+    steps is steps + 1
+    if steps >= 1000:
+        break
+
+loss is loss_at of w
+settled is converged of w
+assert of [settled, "gradient descent must converge"]
+assert of [(abs of (w - 2.0)) < 1e-4, f"expected w near 2, got {w}"]
+assert of [steps < 1000, "gradient descent hit its safety cap"]
+
+print of f"final w={w} steps={steps} loss={loss}"
+print of f"converged={settled}"
