@@ -2212,6 +2212,9 @@ void gc_collect_cycles(void);
 /* Drain buffered LIST/DICT possible roots without seeding the traversal from
  * the unrelated captured-environment registry. */
 void gc_collect_value_candidates(void);
+/* Re-enable cycle-root admission after gc_collect_at_exit ended a runtime
+ * lifetime. Reusable hosts must call this before creating the next root. */
+void gc_begin_runtime_lifetime(void);
 /* Exit-time teardown of the global scope: drops every global binding,
  * then collects both env<->fn cycles and pure value cycles that were
  * rooted at global scope. Follow with env_decref(global). */

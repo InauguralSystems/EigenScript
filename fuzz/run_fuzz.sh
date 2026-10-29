@@ -46,10 +46,15 @@ FAIL=0
 
 # One input, one process. A failing input prints what the sanitizer said.
 run_case() {
-    local name="$1" file="$2" rc report
+    local name="$1" rc report
+    shift
     rm -f "$WORK"/asan.*
     : > "$WORK/ubsan.stderr"
-    timeout 30 "$FUZZ" < "$file" >/dev/null 2>"$WORK/ubsan.stderr"
+    if [ "$#" -eq 1 ]; then
+        timeout 30 "$FUZZ" < "$1" >/dev/null 2>"$WORK/ubsan.stderr"
+    else
+        timeout 30 "$FUZZ" "$@" >/dev/null 2>"$WORK/ubsan.stderr"
+    fi
     rc=$?
     report=$(cat "$WORK"/asan.* "$WORK/ubsan.stderr" 2>/dev/null)
     lsan_classify "$report"
@@ -149,6 +154,9 @@ fuzz_test_raw "f-string backslash at EOF" 'f"\'
 
 echo ""
 echo "Adversarial:"
+printf '%s\n' '1' > "$WORK/first.eigs"
+run_case "cycle collection survives process reuse (#2094)" \
+    "$WORK/first.eigs" fuzz/corpus/lambda.eigs
 printf '%s\n' 'len is [1]' > "$WORK/rebind.eigs"
 printf '%s\n' 'print of (len of [1, 2])' > "$WORK/use-len.eigs"
 alone=$($FUZZ "$WORK/use-len.eigs" 2>"$WORK/rebind-alone.stderr")

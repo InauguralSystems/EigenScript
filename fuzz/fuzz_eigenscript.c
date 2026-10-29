@@ -118,6 +118,12 @@ static void fuzz_check_invariants(void) {
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (size == 0 || size > 65536) return 0;
 
+    /* gc_collect_at_exit disables admission while it dismantles the prior
+     * root. A libFuzzer process has another runtime lifetime on every input,
+     * so re-arm through the collector API before that lifetime creates any
+     * environments or containers. */
+    gc_begin_runtime_lifetime();
+
     char *source = (char *)malloc(size + 1);
     if (!source) return 0;
     memcpy(source, data, size);
