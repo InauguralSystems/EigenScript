@@ -340,7 +340,7 @@ POPULATION = {
     "docs/SYNTAX.md":            ( 35,   15,    20,      0,      1),
     # #1991: these observer documents are part of the executable doc gate.
     "docs/PREDICATES.md":        ( 15,    2,    12,      1,      4),
-    "docs/DIAGNOSTICS.md":       (  4,    1,     3,      0,      0),
+    "docs/DIAGNOSTICS.md":       (  6,    1,     5,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
     "docs/BUILTINS.md":          (  2,    2,     0,      0,      0),   # #1888: nearest-other contract
     "docs/LANGUAGE_CONTRACT.md": (  1,    0,     1,      0,      0),

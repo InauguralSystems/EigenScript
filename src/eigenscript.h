@@ -899,6 +899,10 @@ struct EigsState {
      * argument-TYPE guards as well as arithmetic domains, and the env var
      * (EIGS_STRICT) was always the general name. */
     int             strict;
+    /* Ordinary CLI --json is a property of the whole run/state, not of an
+     * OS-thread attachment. Spawn workers have fresh EigsThread objects but
+     * share this state, like the other per-run CLI configuration. */
+    int             json_diagnostics;
     /* Global lexical scope for the script + REPL line bodies + sourced
      * modules (load_file). Owned by main/eigenlsp; set after env_new. */
     Env            *global_env;
@@ -1357,6 +1361,7 @@ extern __thread EigsThread *eigs_current;
 #define g_first_error_col_known (eigs_current->first_error_col_known)
 #define g_first_error_from_lexer (eigs_current->first_error_from_lexer)
 #define g_error_print_pending (eigs_current->error_print_pending)
+#define g_json_diagnostics  (eigs_current->state->json_diagnostics)
 #define g_error_msg         (eigs_current->error_msg)
 #define g_first_error_code  (eigs_current->first_error_code)
 #define g_first_error_msg   (eigs_current->first_error_msg)
@@ -2373,6 +2378,14 @@ char* eigs_json_encode(Value *v);
 void eigs_clear_error_value(void);
 void vm_print_stack_trace(FILE *out);  /* uncaught-error call stack (vm.c); no-ops without a VM */
 int vm_error_has_handler(void);        /* active VM slice has an open try */
+void vm_print_json_error(FILE *out, int column, int span);
+
+typedef struct {
+    int saved_fd;
+    FILE *sink;
+} EigsStderrSilence;
+void eigs_json_parse_silence_begin(EigsStderrSilence *guard);
+void eigs_json_parse_silence_end(EigsStderrSilence *guard);
 int vm_current_line(void);             /* live source line (vm.c); 0 without a VM */
 const char *vm_current_file(void);      /* stable source identity or <native> */
 void eigs_record_first_error(int line, const char *msg);

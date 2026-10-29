@@ -72,6 +72,72 @@ JIT-compiled loops or when the unit's source isn't available.
 
 Caught errors print nothing; the handler decides.
 
+## Machine-readable ordinary-run errors
+
+Ordinary file and `-e` runs opt into machine-readable errors with `--json`,
+the same flag spelling used by `--lint --json`. Place it before the program:
+`eigenscript --json app.eigs` or `eigenscript --json -e 'source'`. This mode
+changes only an uncaught parse or runtime error: stderr contains exactly one
+JSON object followed by a newline, and the process still exits 1. Without the
+flag, the human diagnostic is unchanged. Program output remains on stdout.
+
+Schema version 1 has these fields (the names shared with lint JSON retain the
+same meanings):
+
+| field | type | meaning |
+|---|---|---|
+| `version` | integer | Schema version; currently `1`. |
+| `code` | string | Stable diagnostic discriminator: a parse `E` code such as `E002`, or the closed runtime-error kind such as `index_range`. |
+| `kind` | string | Diagnostic phase: `parse` or `runtime`. |
+| `message` | string | Location-free error message. |
+| `file` | string | Source identity (`<eval>` for `-e`). |
+| `line` | integer | 1-based source line, or 0 when unavailable. |
+| `column` | integer | 1-based byte column, or 0 when unavailable. |
+| `span` | integer | Source span in bytes, or 0 when unavailable. |
+| `frames` | array | Runtime call frames, innermost first; each has `file`, 1-based `line` (or 0), and `function`. Parse errors use an empty array. |
+
+There is deliberately no cause-chain member; a later schema version can add
+one without reserving a placeholder. Every string is JSON-escaped through the
+same UTF-8-safe chokepoint as lint JSON: quotes and control characters are
+escaped, malformed bytes become U+FFFD, and the complete stderr object is
+accepted by `python3 -m json.tool`.
+
+For example, this source is an executable documentation fixture:
+
+```eigenscript fragment
+try:
+    items is [1]
+    print of items[9]
+catch documented_error:
+    documented_error is documented_error
+```
+
+Running it with `--json` produces an object of this shape (the path is
+illustrative):
+
+```json
+{"version":1,"code":"index_range","kind":"runtime","message":"index 9 out of range (list length 1)","file":"app.eigs","line":2,"column":15,"span":1,"frames":[{"file":"app.eigs","line":2,"function":"<module>"}]}
+```
+
+An error inside a function includes all live frames:
+
+```eigenscript fragment
+define fail() as:
+    throw of "bad\" input\nnow"
+try:
+    fail of null
+catch documented_error:
+    documented_error is documented_error
+```
+
+```json
+{"version":1,"code":"user","kind":"runtime","message":"bad\" input\nnow","file":"app.eigs","line":2,"column":11,"span":1,"frames":[{"file":"app.eigs","line":2,"function":"fail"},{"file":"app.eigs","line":3,"function":"<module>"}]}
+```
+
+`exit of N` is requested control flow, not an error. With `--json` it exits
+with status N and emits no diagnostic JSON (and no stderr output merely due to
+the exit).
+
 ## What `catch` binds
 
 - A **built-in runtime error** binds a `{kind, message, file, line}` dict
