@@ -436,7 +436,7 @@ shard_check() {
     # the worst it can do is turn the check red, and it announces itself.
     case "${SP_SHARD_MUTATE:-}" in
         drop) echo "section_plan: WARNING: SP_SHARD_MUTATE=drop — one chunk removed from every shard (selftest seam)" >&2
-              sed -i '1d' "$W/assign" ;;
+              sed -i.bak '1d' "$W/assign" && rm -f "$W/assign.bak" ;;
         dup)  echo "section_plan: WARNING: SP_SHARD_MUTATE=dup — one chunk placed in two shards (selftest seam)" >&2
               head -1 "$W/assign" | awk -v n="$n" '{ print $1, ($2 % n) + 1 }' >> "$W/assign"
               sort -n -o "$W/assign" "$W/assign" ;;

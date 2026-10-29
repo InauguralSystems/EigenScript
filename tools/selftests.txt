@@ -36,7 +36,7 @@ tools/core_ext_boundary_check.sh tools/core_ext_boundary_selftest.sh | timeout 1
 tools/gfx_guard_order_check.sh | timeout 30 bash tools/gfx_guard_order_check.sh --selftest | [{"pattern":"^SELFTEST OK: clean control passed; exactly one planted guard caught:","count":1}]
 tools/num_read_check.sh | timeout 30 bash tools/num_read_check.sh --selftest | [{"pattern":"^SELFTEST OK: clean control passed; exactly one raw-number bypass caught:","count":1}]
 tools/pipefail_verdict_check.sh | timeout 30 bash tools/pipefail_verdict_check.sh --selftest | [{"pattern":"^SELFTEST OK: clean control passed; exactly one planted early-reader pipeline caught$","count":1}]
-tools/portability_parse_check.sh | timeout 30 bash tools/portability_parse_check.sh --selftest | [{"pattern":"^SELFTEST OK: clean control passed; exactly one planted shell syntax fault caught$","count":1}]
+tools/portability_parse_check.sh tools/_derive_variants.py | timeout 30 bash tools/portability_parse_check.sh --selftest | [{"pattern":"^SELFTEST OK: clean BSD sed/comment/heredoc control passed; GNU flag and shell syntax plants caught$","count":1}]
 tools/tape_kinds_check.sh | timeout 30 bash tools/tape_kinds_check.sh --selftest | [{"pattern":"^SELFTEST OK: clean control passed; exactly one planted missing tape kind caught$","count":1}]
 tools/docs_claims_check.sh | timeout 30 bash tools/docs_claims_check.sh --selftest | [{"pattern":"^SELFTEST: 19 case\\(s\\) run, 19 passed, 0 failed$","count":1}]
 tools/enrolment_check.sh tests/enrolment_exemptions.txt tools/selftests.txt | timeout 420 bash tools/enrolment_check.sh --selftest | [{"pattern":"^  checks=11$","count":1}]
