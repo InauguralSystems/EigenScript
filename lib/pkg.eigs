@@ -374,8 +374,9 @@ define cmd_add(arg_list) as:
 #    sneak a different tree past the lockfile);
 #  - otherwise, fall back to the manifest tag and record the resolved
 #    commit so subsequent installs are reproducible.
-# Existing eigs_modules/<name> are wiped before re-clone — install is
-# idempotent and never leaves the tree in a half-state.
+# The complete replacement is built in a sibling staging directory.  Only
+# after every clone, checkout and hash succeeds do we rename it into place.
+# A killed clone therefore cannot expose a partial package tree.
 define cmd_install() as:
     manifest is read_manifest of null
     deps is manifest.deps
@@ -388,6 +389,12 @@ define cmd_install() as:
     validate_manifest_names of names
 
     lock is read_lockfile of null
+    stage_result is exec_capture of ["mktemp", "-d", ".eigs_modules.install.XXXXXX"]
+    if stage_result[0] != 0:
+        throw of "install failed: could not create staging directory"
+    stage_dir is trim of stage_result[1]
+    if stage_dir == "":
+        throw of "install failed: staging directory path was empty"
     installed is 0
     for i in range of n:
         name is names[i]
@@ -395,14 +402,13 @@ define cmd_install() as:
         git_url is spec.git
         tag is spec.tag
 
-        target is MODULES_DIR + "/" + (pkg_leaf of name)
-        rmtree of target
-        mkdir of MODULES_DIR
+        target is stage_dir + "/" + (pkg_leaf of name)
 
         # Clone with depth 1 at the tag, then if we have a locked
         # commit, fetch that specific commit and check it out.
         ok is run_git of (clone_args of [git_url, target, tag])   # #879
         if not ok:
+            rmtree of stage_dir
             throw of f"install failed: clone for {name} failed"
 
         locked_commit is ""
@@ -416,9 +422,11 @@ define cmd_install() as:
             # otherwise be invisible.
             ok2 is run_git of ["-C", target, "fetch", "--depth", "1", "origin", locked_commit]
             if not ok2:
+                rmtree of stage_dir
                 throw of f"install failed: fetch of locked commit for {name} failed"
             ok3 is run_git of ["-C", target, "checkout", locked_commit]
             if not ok3:
+                rmtree of stage_dir
                 throw of f"install failed: checkout of locked commit for {name} failed"
 
         current is git_head_commit of target
@@ -434,6 +442,28 @@ define cmd_install() as:
             lock[name] is entry
         installed is installed + 1
         print of f"  installed {name} @ {current[0:8]}"
+
+    # POSIX rename cannot replace a non-empty directory.  Preserve the old
+    # tree under a sibling name first, activate the fully-built tree, then
+    # remove the backup.  If the process is killed in the one-rename gap,
+    # verify reports the missing managed tree; it never accepts a mixture of
+    # old and partially-written packages.  A synchronous activation failure
+    # restores the old tree before reporting failure.
+    backup_dir is stage_dir + ".previous"
+    had_modules is file_exists of MODULES_DIR
+    if had_modules:
+        moved_old is exec_capture of ["mv", MODULES_DIR, backup_dir]
+        if moved_old[0] != 0:
+            rmtree of stage_dir
+            throw of "install failed: could not preserve existing eigs_modules"
+    activated is exec_capture of ["mv", stage_dir, MODULES_DIR]
+    if activated[0] != 0:
+        if had_modules:
+            exec_capture of ["mv", backup_dir, MODULES_DIR]
+        rmtree of stage_dir
+        throw of "install failed: could not activate staged eigs_modules"
+    if had_modules:
+        rmtree of backup_dir
 
     write_lockfile of lock
     print of f"Installed {installed} package(s)."
