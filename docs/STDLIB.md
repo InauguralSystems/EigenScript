@@ -2282,3 +2282,24 @@ Internal names below are implementation contracts for maintainers, not a stable 
 | `unregister_hotkey(combo)` | Remove registrations whose key combination exactly matches the supplied string. |
 
 <!-- ui-surface-contracts:end -->
+
+### lib/keys.eigs
+
+US-layout keyboard-event conversion shared by text-entry consumers.
+
+| Function | Signature | Description |
+|---|---|---|
+| `key_to_char` | `key_to_char of [key, shift]` | Return the printable character for a key name and shift flag, or an empty string for a non-character key. |
+
+This example is executable (and is checked by the documentation example suite):
+
+```eigenscript
+import keys
+
+print of (keys.key_to_char of ["[", 1])
+print of (keys.key_to_char of ["a", 1])
+```
+```output
+{
+A
+```

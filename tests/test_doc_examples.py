@@ -336,7 +336,7 @@ POPULATION = {
     "docs/SPEC.md":              ( 88,   84,     1,      3,      0),   # #1425: +1 paired (multi-line binary operator error line)
     "docs/COMPARISON.md":        ( 19,   18,     1,      0,      0),
     "docs/CONCURRENCY.md":       (  9,    9,     0,      0,      0),   # #1879: +1 paired (thread handle crosses a channel)
-    "docs/STDLIB.md":            ( 15,    7,     8,      0,      0),
+    "docs/STDLIB.md":            ( 16,    8,     8,      0,      0),
     "docs/SYNTAX.md":            ( 35,   15,    20,      0,      1),
     # #1991: these observer documents are part of the executable doc gate.
     "docs/PREDICATES.md":        ( 15,    2,    12,      1,      4),

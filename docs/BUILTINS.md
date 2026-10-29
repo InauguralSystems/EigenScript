@@ -973,3 +973,8 @@ print of [neighbors[0].index, neighbors[1].index, neighbors[2]]
 
 | Name | Signature | Description |
 |------|-----------|-------------|
+
+## Keyboard key conversion
+
+Keyboard names are converted to US-layout printable characters by the pure
+standard-library helper `keys.key_to_char`; see [STDLIB.md](STDLIB.md#libkeyseigs).

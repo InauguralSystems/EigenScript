@@ -4046,6 +4046,26 @@ handle_key of [bh_root, {"type": "keydown", "key": "s", "ctrl": true, "shift": f
 assert_eq of [bh_hits[0], 1, "a ctrl+s hotkey fires on a bool ctrl modifier"]
 _handle_text_key of [bh_inp, {"type": "keydown", "key": "x", "ctrl": false, "shift": true, "alt": false}]
 assert_eq of [bh_inp.text, "abX", "shift as a bool upper-cases typed text"]
+
+# #2185: Tab remains focus navigation for single-line editors even though the
+# shared key mapper represents it as spaces for consumers that accept Tab.
+tab_input is text_input of ["tab-input", 0, 0, 100, "ab", null]
+tab_input.cursor is 1
+_handle_text_key of [tab_input, {"type": "keydown", "key": "tab", "ctrl": false, "shift": false}]
+assert_eq of [tab_input.text, "ab", "Tab inserts nothing in a text input"]
+assert_eq of [tab_input.cursor, 1, "Tab leaves a text input cursor unchanged"]
+tab_label is editable_label of ["tab-label", 0, 0, "cd", null]
+tab_label.editing is 1
+tab_label.cursor is 1
+_handle_text_key of [tab_label, {"type": "keydown", "key": "tab", "ctrl": false, "shift": false}]
+assert_eq of [tab_label.text, "cd", "Tab inserts nothing in an editable label"]
+assert_eq of [tab_label.cursor, 1, "Tab leaves an editable label cursor unchanged"]
+
+mapped_input is text_input of ["mapped-input", 0, 0, 100, "ab", null]
+mapped_input.cursor is 1
+_insert_char of [mapped_input, "XYZ"]
+assert_eq of [mapped_input.text, "aXYZb", "multi-character insertion adds the full mapped text"]
+assert_eq of [mapped_input.cursor, 4, "multi-character insertion advances by its full length"]
 assert_eq of [_ev_flag of true, true, "a bool modifier reads as itself"]
 assert_eq of [_ev_flag of 1, true, "the older 1 modifier reads as true"]
 assert_eq of [_ev_flag of 0, false, "the older 0 modifier reads as false"]
@@ -4055,5 +4075,21 @@ assert_true of [_ev_stop of 0, "an on_key answer of 0 still stops the loop"]
 assert_true of [not (_ev_stop of true), "an on_key answer of true keeps running"]
 assert_true of [not (_ev_stop of null), "an on_key answer of null keeps running"]
 unregister_hotkey of "ctrl+s"
+
+# #2185: every US printable key is driven through the shared mapper and widget.
+key_cases is [
+    ["a", 0, "a"], ["a", 1, "A"], ["z", 0, "z"], ["z", 1, "Z"],
+    ["0", 0, "0"], ["1", 0, "1"], ["2", 0, "2"], ["3", 0, "3"], ["4", 0, "4"],
+    ["5", 0, "5"], ["6", 0, "6"], ["7", 0, "7"], ["8", 0, "8"], ["9", 0, "9"],
+    ["1", 1, "!"], ["2", 1, "@"], ["3", 1, "#"], ["4", 1, "$"], ["5", 1, "%"],
+    ["6", 1, "^"], ["7", 1, "&"], ["8", 1, "*"], ["9", 1, "("], ["0", 1, ")"],
+    ["-", 1, "_"], ["=", 1, "+"], ["[", 1, "{"], ["]", 1, "}"], ["\\", 1, "|"],
+    [";", 1, ":"], ["'", 1, "\""], [",", 1, "<"], [".", 1, ">"], ["/", 1, "?"], ["`", 1, "~"]
+]
+for kc in key_cases:
+    assert_eq of [key_to_char of [kc[0], kc[1]], kc[2], "shared US key mapping"]
+    key_widget is text_input of ["key-widget", 0, 0, 100, "", null]
+    _handle_text_key of [key_widget, {"type": "keydown", "key": kc[0], "shift": kc[1], "ctrl": 0}]
+    assert_eq of [key_widget.text, kc[2], "widget uses shared US key mapping"]
 
 test_summary of null
