@@ -318,7 +318,7 @@ if len(promote_runs) != 1:
 else:
     ps = str(promote_runs[0]["run"])
     promote_pin = hashlib.sha256(yaml.safe_dump(promote_runs[0], sort_keys=True).encode()).hexdigest()[:16]
-    if promote_pin != "666a13a82bad109a":
+    if promote_pin != "32f47b5a1c91a8ff":
         V("writer-actions", f"ci.yml:promote-main-image reviewed script changed (now {promote_pin}); review and re-pin it")
     required = [
         "actions/workflows/ci.yml/runs?head_sha=$SHA&event=merge_group&status=completed",

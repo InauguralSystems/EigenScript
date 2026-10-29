@@ -103,17 +103,25 @@ jobs:
         run: |
           set -euo pipefail
           api="$GITHUB_API_URL/repos/$REPOSITORY"
-          runs=$(curl --fail --silent --show-error \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "$api/actions/workflows/ci.yml/runs?head_sha=$SHA&event=merge_group&status=completed&per_page=100")
-          if ! jq -e --arg sha "$SHA" \
-            'any(.workflow_runs[]; .head_sha == $sha and .event == "merge_group" and .conclusion == "success")' \
-            >/dev/null <<EOF
-          $runs
-          EOF
-          then
+          # The queue merges once the required checks pass, and the queue run
+          # can still read as in progress for a moment after that. So a run
+          # not yet completed is retried for up to 160 s before the verdict.
+          verified=
+          for attempt in 1 2 3 4 5 6 7 8 9; do
+            runs=$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$api/actions/workflows/ci.yml/runs?head_sha=$SHA&event=merge_group&status=completed&per_page=100")
+            if jq -e --arg sha "$SHA" \
+              'any(.workflow_runs[]; .head_sha == $sha and .event == "merge_group" and .conclusion == "success")' \
+              >/dev/null <<<"$runs"; then
+              verified=1
+              break
+            fi
+            if [ "$attempt" -lt 9 ]; then sleep 20; fi
+          done
+          if [ -z "$verified" ]; then
             echo "::error::main SHA $SHA has no successful merge_group run for ci.yml"
             exit 1
           fi
