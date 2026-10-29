@@ -5432,6 +5432,10 @@ void eigs_loading_leave(const char *abs_path) {
  * pinning ref each), drop the global bindings, collect with the pins
  * accounted, then release the pins — a snapshot value kept alive only by
  * its own cycle dies here; anything else just loses our temporary ref. */
+void gc_begin_runtime_lifetime(void) {
+    g_gc_enabled = 1;
+}
+
 void gc_collect_at_exit(Env *global) {
     /* Drop module-cache refs first: a module's dict + env can hold
      * closures that close over global bindings, so releasing the cache
