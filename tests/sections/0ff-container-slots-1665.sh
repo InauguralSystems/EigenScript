@@ -1,9 +1,21 @@
 echo "[0ff] Container slot API (#1665 B0, slot storage B10)"
-TOTAL=$((TOTAL + 1))
-variant=release
-if [ -e ../build/asan/eigenscript ] && [ ./eigenscript -ef ../build/asan/eigenscript ]; then
-    variant=asan
+# #1783: find the variant the suite binary IS (asan or asan-server in CI)
+# through the shared build-system predicate; anything else is release.
+. "$TESTS_DIR/suite_variant.sh"
+variant=$(suite_binary_variant)
+if [ -z "$variant" ]; then
+    if [ "${EIGS_ACTIVE_VARIANT_RC:-unset}" = 1 ]; then
+        section_skip "container slot API needs a make-variant binary (linux/gcc and linux/clang use build.sh)"
+    else
+        TOTAL=$((TOTAL + 1)); FAIL=$((FAIL + 1))
+        echo "  FAIL: suite binary variant is missing or ambiguous; refusing a release fallback"
+    fi
+    echo ""
+    return
 fi
+suite_variant_is_asan "$variant" || variant=release
+echo "  test binary variant: $variant"
+TOTAL=$((TOTAL + 1))
 if make -s -C .. SLOT_TEST_VARIANT="$variant" container-slot-test && \
    ../build/$variant/test_container_slots; then
     # Planted fault: a builtin result that is a numeric view must abort in
