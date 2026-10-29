@@ -304,7 +304,7 @@ static const char *builtin_docs[][2] = {
     {"trim", "trim — builtin; see docs/BUILTINS.md"},
     {"try_parse", "try_parse of string → true if valid EigenScript syntax, false if not."},
     {"try_recv", "try_recv of channel — non-blocking receive, returns null if empty"},
-    {"type", "type — builtin; see docs/BUILTINS.md"},
+    {"type", "type of value — return its runtime label; null is labeled `null`."},
     {"usleep", "usleep of microseconds — pause execution"},
     {"values", "values — builtin; see docs/BUILTINS.md"},
     {"vm_run_bytecode", "vm_run_bytecode of <chunk-descriptor> — assemble a chunk (and its nested"},

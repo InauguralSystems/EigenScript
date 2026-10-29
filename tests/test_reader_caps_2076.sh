@@ -81,7 +81,7 @@ done
 # path is wrapped in the new capped form.  These guards execute before the
 # trace take, preserving the historical fallback records.
 for reader in read_text read_bytes read_bytes_buf; do
-    expected=none
+    expected=null
     [ "$reader" = read_text ] && expected=str
     for arg in '42' '[42, 1024]' '["unused", "bad-cap"]' '["unused", -1]'; do
         cat >"$TMP/guard.eigs" <<EOF

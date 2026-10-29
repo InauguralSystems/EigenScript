@@ -143,7 +143,7 @@ EigenScript is dynamically typed. The runtime types are:
 | `buffer` | flat mutable array of nums | `buffer of 8`, `zeros of 8` |
 | `fn` | user-defined function / closure | `define` / `(x) => x` |
 | `builtin` | native function | `print` |
-| `none` | the null value | `null` |
+| `null` | the null value | `null` |
 
 `type of v` returns the type label as a string.
 
@@ -160,7 +160,7 @@ num
 str
 list
 dict
-none
+null
 builtin
 ```
 

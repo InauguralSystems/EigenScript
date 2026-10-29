@@ -216,6 +216,8 @@ sqrt(2) = 1.414213562373095
 
 ## Values and strings
 
+`type of null` returns the string `"null"` (never `"none"`).
+
 - `bool` is its own type: `true`/`false`. Comparisons, `not`, the observer
   predicates and every predicate builtin/lib function return a bool; `and`/`or`
   return an operand. A bool is NOT a number: `true + 1`, `abs of true`,

@@ -1,0 +1,1 @@
+- `type of null` now returns `"null"`, the literal's own spelling, instead of `"none"`; programs comparing it with `"none"` should compare the value directly (`x == null`) (#2183).
