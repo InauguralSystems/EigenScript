@@ -162,9 +162,17 @@ makes the initiating fault visible before package-added context.
 Throws are deterministic control flow, not nondeterministic inputs, so there is
 no new tape event. The existing `L` identifies the throwing statement; handler
 entry and catch binding use the existing line/scope/assignment model described
-in `docs/TRACE.md`. If observed in an `A` record, normal value serialization
-includes `frames` and recursively includes `cause` like any dictionary/list;
-the existing container-cycle refusal applies.
+in `docs/TRACE.md`. **Caveat (review, PR #2179):** an `A` (assignment) record
+does NOT serialize container contents: `write_value_ptr` in `src/trace.c`
+writes only a size summary (`<dict:N>`, `<list:N>`). Full recursive
+serialization with container-cycle refusal exists only for `N` records
+(`trace_nondet_value_locked`). So binding a caught error records its size, not
+its `frames` or `cause`. Replay does not need them (it reconstructs both from
+the same compiled frame stack, below), but a tape READER that wants to show the
+chain must either be given an explicit encoding (a new assignment-record form,
+or an `N`-style payload for caught errors, with a tape-version bump and reader
+changes) or re-derive the chain by replaying. The implementation must pick one
+and state it; this note does not claim the current `A` record carries them.
 
 Record and replay reconstruct frames independently from the same compiled
 frame stack. Interpreter, JIT, and OSR must therefore yield byte-identical
