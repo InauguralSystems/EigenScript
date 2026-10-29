@@ -547,7 +547,6 @@ profile_probe() {
   cat > "$src" <<'PROBE'
 r is http_route of ["GET", "/consumer-profile-probe", "probe"]
 r is net_close of -1
-r is eigen_model_loaded of null
 PROBE
   if [ "$profile" = server-db ]; then printf '%s\n' 'r is db_connect of null' >> "$src"; fi
   printf '%s\n' 'print of "PROFILE_READY"' >> "$src"

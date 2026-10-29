@@ -30,9 +30,6 @@
 #ifndef EIGENSCRIPT_EXT_HTTP
 #define EIGENSCRIPT_EXT_HTTP 1
 #endif
-#ifndef EIGENSCRIPT_EXT_MODEL
-#define EIGENSCRIPT_EXT_MODEL 1
-#endif
 #ifndef EIGENSCRIPT_EXT_DB
 #define EIGENSCRIPT_EXT_DB 1
 #endif
@@ -2264,7 +2261,7 @@ void tokenlist_user_spelling(TokenList *tl);  /* #1322 */
 int lexer_operator_len(const char *s, TokType *ty);
 
 /* Number of distinct TokType values; equals the size of the base-token
- * vocabulary used by build_corpus. Identifier slot IDs start at this value. */
+ * token vocabulary. Identifier slot IDs start at this value. */
 int tok_base_string_id_count(void);
 
 /* Placeholder text for each base TokType, used by the corpus detokenizer.
@@ -2464,8 +2461,7 @@ void ne_matmul_buf(double *a, int64_t a_rows, int64_t a_cols,
                    double *b, int64_t b_cols, double *out);
 
 /* Model-only JSON helper. */
-#if EIGENSCRIPT_EXT_MODEL
-#endif
+
 
 /* ---- Handle table (opaque pointer indirection) ----
  * Table + lock + types declared up at the EigsState struct.
@@ -2580,12 +2576,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning);
  * in docs/BUILTINS.md / docs/STDLIB.md. Hosted-only (lint_host.c). */
 int eigs_api_dump(FILE *out, int json);
 
-/* Seed the shared drand48 stream from entropy unless seed_random already
- * pinned it. Exported so extension samplers (model_infer.c's eigen_generate)
- * draw from the SAME script-seedable stream as random/random_int -- the old
- * private libc-rand path was seeded by main from the clock and could not be
- * pinned from script at all (found via iLambdaAi's eval-determinism probe,
- * 2026-08-17). */
+/* Seed the shared drand48 stream from entropy unless seed_random already pinned it. */
 void eigs_ensure_random_seeded(void);
 /* The libc drand48 family owns one process-global state.  These are the only
  * entry points runtime code may use, so seeding and draws share one lock. */

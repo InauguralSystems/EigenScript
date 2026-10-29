@@ -268,15 +268,6 @@ sqrt(2) = 1.414213562373095
   `softmax`, `relu`, `sum`/`mean`/`norm`, `gather`, `zeros_like`) takes either
   container and returns a buffer iff every tensor operand was one.
 
-Binary tensor I/O: tensor_load and tensor_save cap files at 10,000,000
-elements and raise catchable limit errors above it. stream_open requires
-an integral count from 1 through that cap; build_corpus includes file
-separators in its capped token count. These limits also raise with
-EIGS_STRICT=0. See docs/BUILTINS.md for the I/O contracts.
-read_line of null returns stdin lines byte-exactly, including \r and the \n
-terminator; it returns null only at EOF. Pipes and redirected files behave the
-same, and the presence of a final newline is observable.
-
 read_text, read_bytes, and read_bytes_buf use Python-style failure semantics:
 missing, unreadable, and directory paths raise catchable io errors containing
 the path and OS reason. Empty files successfully return empty values.
@@ -429,12 +420,6 @@ extension (by group), and lib function with its parameter list in one call.
 Spatial-query trap: nearest_in_range_all returns the nearest OTHER active
 entity for every input entity (or null), excluding the same input index.
 nearest_in_range is a position query and excludes no candidate implicitly.
-
-The optional model builtins `eigen_generate` and `eigen_eval_loss` raise a
-catchable `value` error for prompts longer than the loaded model's
-`max_seq_len`, including with `EIGS_STRICT=0`. Choose any context truncation
-explicitly before calling them. `native_train_step_builtin` uses the same
-limit for the combined input and output lengths.
 
 ## The generation-validation ladder (always run what you generate)
 

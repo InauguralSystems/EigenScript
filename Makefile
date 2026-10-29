@@ -38,7 +38,6 @@ endif
 SRC_DIR := src
 SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_buf.c $(SRC_DIR)/builtins_host.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/fsutil.c $(SRC_DIR)/hash.c $(SRC_DIR)/alloc.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/lint_host.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/task.c $(SRC_DIR)/jit.c $(SRC_DIR)/jit_checked.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c $(SRC_DIR)/main.c
 HOSTED_SOURCES := $(SOURCES) $(SRC_DIR)/ext_gfx.c
-MODEL_SRC := $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
 BINARY  := $(SRC_DIR)/eigenscript
 
 # CLI-only translation units: linked into the binary, never into the
@@ -47,7 +46,7 @@ BINARY  := $(SRC_DIR)/eigenscript
 # --step tape-stepper, stdio+isatty, same footing).
 CLI_ONLY := $(SRC_DIR)/main.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c
 
-SERVER_SOURCES := $(HOSTED_SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c $(MODEL_SRC)
+SERVER_SOURCES := $(HOSTED_SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c
 SERVER_DB_SOURCES := $(SERVER_SOURCES) $(SRC_DIR)/ext_db.c
 
 PREFIX  := $(HOME)/.local
@@ -106,7 +105,7 @@ endef
 # re-pointing the alias or relinking the same variant mid-suite is caught
 # at the next section seam.
 VERDEF   := -DEIGENSCRIPT_VERSION='"$(VERSION)"'
-DEFS_OFF := -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0
+DEFS_OFF := -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0
 # EIGS_STR_LEN_CHECK (#1183): re-derive every cached VAL_STR length at every
 # read and abort on a mismatch. A wrong cached length is a silent
 # out-of-bounds read, strictly worse than the strlen it replaced, so the
@@ -120,11 +119,11 @@ FLAGS_release := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_release  := $(LDFLAGS) -ldl
 
 SRC_V_server := $(SERVER_SOURCES)
-FLAGS_server := $(CFLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+FLAGS_server := $(CFLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_server  := $(LDFLAGS) -ldl
 
 SRC_V_server-db := $(SERVER_DB_SOURCES)
-FLAGS_server-db := $(CFLAGS) -I/usr/include/postgresql -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+FLAGS_server-db := $(CFLAGS) -I/usr/include/postgresql -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_server-db  := $(LDFLAGS) -ldl -lpq
 
 SRC_V_zlib := $(HOSTED_SOURCES)
@@ -141,7 +140,7 @@ FLAGS_asan-gfx := $(FLAGS_asan)
 LIBS_asan-gfx := $(LIBS_asan)
 
 SRC_V_asan-server := $(SERVER_SOURCES)
-FLAGS_asan-server := $(ASAN_FLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+FLAGS_asan-server := $(ASAN_FLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_asan-server  := -lm -lpthread -ldl
 
 SRC_V_tsan := $(SOURCES)
@@ -149,7 +148,7 @@ FLAGS_tsan := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGS_TSAN_TEST_SEAM $(D
 LIBS_tsan  := -lm -lpthread
 
 SRC_V_tsan-server := $(SERVER_SOURCES)
-FLAGS_tsan-server := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGS_TSAN_TEST_SEAM -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+FLAGS_tsan-server := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGS_TSAN_TEST_SEAM -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_tsan-server  := -lm -lpthread -ldl
 
 SRC_V_valgrind := $(HOSTED_SOURCES)
@@ -536,7 +535,7 @@ $(SRC_DIR)/lsp_builtin_index.h: $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_host.c
 $(LSP_BINARY): $(LSP_SOURCES) $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
 	$(CC) $(CFLAGS) -o $(LSP_BINARY) $(LSP_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
+		\
 		-DEIGENSCRIPT_EXT_DB=0 \
 		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 		$(LDFLAGS)
@@ -573,7 +572,7 @@ lsp-arming-test: build/$(LSP_ARMING_VARIANT)/test_lsp_arming
 $(DAP_BINARY): $(DAP_SOURCES) $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
 	$(CC) $(CFLAGS) -o $(DAP_BINARY) $(DAP_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
+		\
 		-DEIGENSCRIPT_EXT_DB=0 \
 		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 		$(LDFLAGS)
@@ -604,7 +603,7 @@ amalgamation:
 lib:
 	@mkdir -p build/obj
 	@for f in $(EMBED_SOURCES); do \
-		$(CC) $(CFLAGS) -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 \
+		$(CC) $(CFLAGS) -DEIGENSCRIPT_EXT_HTTP=0 \
 			-DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 			-c $$f -o build/obj/$$(basename $$f .c).o || exit 1; \
 	done
@@ -768,7 +767,7 @@ pgo:
 	@rm -f $(BINARY)   # may be a variant symlink — never write through it
 	$(CC) $(CFLAGS) -fprofile-generate=$(PGO_DIR) -o $(BINARY) $(SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
+		\
 		-DEIGENSCRIPT_EXT_DB=0 \
 		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 		$(LDFLAGS)
@@ -776,7 +775,7 @@ pgo:
 	@sh -c '$(PGO_RUN)'
 	$(CC) $(CFLAGS) -fprofile-use=$(PGO_DIR) -fprofile-correction -o $(BINARY) $(SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
+		\
 		-DEIGENSCRIPT_EXT_DB=0 \
 		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 		$(LDFLAGS)
@@ -794,7 +793,7 @@ coverage: coverage-clean
 		obj=$${src%.c}.o; \
 		$(CC) -O0 -g --coverage -Wall -Wextra $(WERROR_FLAGS) -c $$src -o $$obj \
 			-DEIGENSCRIPT_EXT_HTTP=0 \
-			-DEIGENSCRIPT_EXT_MODEL=0 \
+			\
 			-DEIGENSCRIPT_EXT_DB=0 \
 			-DEIGENSCRIPT_VERSION='"$(VERSION)"' || exit 1; \
 	done
@@ -826,7 +825,7 @@ fuzz: fuzz/fuzz_stdin.c fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES)
 	$(CC) -g -fsanitize=address,undefined $(WERROR_FLAGS) -o fuzz/fuzz_stdin \
 		fuzz/fuzz_stdin.c fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
+		\
 		-DEIGENSCRIPT_EXT_DB=0 \
 		-DEIGENSCRIPT_VERSION='"fuzz"' \
 		-lm -lpthread
@@ -844,7 +843,7 @@ fuzz-libfuzzer: fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES)
 		-o fuzz/fuzz_eigenscript \
 		fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
+		\
 		-DEIGENSCRIPT_EXT_DB=0 \
 		-DEIGENSCRIPT_VERSION='"fuzz"' \
 		-lm -lpthread
@@ -889,7 +888,7 @@ freestanding-libc-diff-riscv:
 freestanding-env-version-riscv32:
 	python3 -m ziglang cc -target riscv32-linux-musl -O2 -static \
 		-Wno-atomic-alignment -DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
+		-DEIGENSCRIPT_EXT_DB=0 \
 		-o /tmp/eigenscript-riscv32 $(SOURCES) -lm -lpthread
 	printf '%s\n' '#!/bin/sh' 'exec qemu-riscv32 /tmp/eigenscript-riscv32 "$$@"' > /tmp/eigenscript-riscv32-qemu
 	chmod +x /tmp/eigenscript-riscv32-qemu

@@ -51,7 +51,7 @@ for u in $CLI_ONLY; do EMBED_SRC=$(printf '%s\n' $EMBED_SRC | grep -vx "$u"); do
 
 gcc -Werror=implicit-function-declaration $WERROR_FLAGS -O2 \
     -DEIGENSCRIPT_FREESTANDING=1 \
-    -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
+    -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 \
     -o "$BUILD/eigs_fs" \
     $EMBED_SRC \
     tools/freestanding_smoke_main.c \

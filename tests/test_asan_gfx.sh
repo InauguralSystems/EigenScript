@@ -236,7 +236,7 @@ else
         echo "ASan gfx: $PASS passed, $FAIL failed"
         exit 1 ;; esac; done
     if ! ( cd "$ROOT" && "$CC" $WERROR_FLAGS $ASAN_CFLAGS \
-        -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
+        -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 \
         -DEIGENSCRIPT_EXT_GFX=1 '-DEIGENSCRIPT_VERSION="asan_gfx_gate"' \
         $SRCS -o /tmp/eigs_asan_gfx -lm -lpthread -ldl ) 2>/tmp/eigs_asan_gfx.log; then
         cat /tmp/eigs_asan_gfx.log

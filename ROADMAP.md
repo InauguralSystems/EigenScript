@@ -334,8 +334,7 @@ report the past as roadmap items "done".
   exhaustiveness.
 - **0.40.0** — the sandbox-budget + verifier release (forced by iLambdaAi's
   grade ladder): `sandbox_run` now charges every amplifying allocator class at
-  its growth chokepoint and reports a cap-truncated run as NOT ok, `eigen_generate`
-  temperature sampling is script-seedable, and a cluster of bytecode-verifier
+  its growth chokepoint and reports a cap-truncated run as NOT ok, and a cluster of bytecode-verifier
   hardening fixes (stack-effect drift gate, `OP_LOOP_ENV_END` pairing, a bare
   back edge crossing the loop cap, and an assembled chunk that could pass the
   verifier and then corrupt the heap).

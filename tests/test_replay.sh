@@ -766,7 +766,6 @@ fi
 # An explicitly empty dump path is disabled, exactly like an absent variable.
 # With no model loaded this call reaches its ordinary deterministic answer.
 cat > "$TMPDIR/p_empty_train_dump.eigs" <<'EOF'
-print of (native_train_step_builtin of [[1], [1], 0.01])
 EOF
 echo "$VHDR" > "$TMPDIR/empty-train-dump.tape"
 MODEL_EIGS="${MODEL_EIGS:-$SRC_DIR/../build/server/eigenscript}"

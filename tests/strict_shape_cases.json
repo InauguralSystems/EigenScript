@@ -809,43 +809,6 @@
     "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
   },
   {
-    "args": [
-      "[\"@TMP@/input.eigs\"]",
-      "4",
-      "\"@TMP@/tokens\"",
-      "\"@TMP@/vocab\"",
-      "\"@TMP@/idents\"",
-      "0",
-      "0"
-    ],
-    "valid_assert": "(len of shape_result) == 3 and shape_result[0] > 0 and shape_result[2] == 1",
-    "setup": "write_text of [\"@TMP@/input.eigs\", \"x is 1\\n\"]",
-    "observe": "assert of [(file_exists of \"@TMP@/tokens\"), \"shape control\"]\nassert of [(file_exists of \"@TMP@/vocab\"), \"shape control\"]\nprint of \"observed\"",
-    "cleanup": "",
-    "unchanged": "assert of [(not (file_exists of \"@TMP@/tokens\")), \"shape control\"]\nassert of [(not (file_exists of \"@TMP@/vocab\")), \"shape control\"]",
-    "optional_args": [
-      [
-        "[\"@TMP@/input.eigs\"]",
-        "4",
-        "\"@TMP@/tokens\"",
-        "\"@TMP@/vocab\""
-      ]
-    ],
-    "requirements": [
-      "owned_temp"
-    ],
-    "resource_notes": "One tiny source file, top-N 4, no model.",
-    "source": {
-      "file": "src/builtins_host.c",
-      "line": 439,
-      "function": "builtin_build_corpus"
-    },
-    "maximum": 7,
-    "execution": "UNRUN",
-    "name": "build_corpus",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
-  },
-  {
     "name": "char_at",
     "args": [
       "\"abc\"",
@@ -1009,66 +972,6 @@
     "cleanup": "",
     "requirements": [],
     "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
-  },
-  {
-    "args": [
-      "[1]",
-      "1"
-    ],
-    "valid_assert": "shape_result == (0 - 1)",
-    "setup": "assert of [(not (eigen_model_loaded of null)), \"shape control\"]",
-    "observe": "print of shape_result",
-    "cleanup": "",
-    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
-    "optional_args": [],
-    "requirements": [
-      "model_compiled",
-      "fresh_unloaded_model"
-    ],
-    "semantic_scope": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim.",
-    "source": {
-      "file": "src/model_infer.c",
-      "line": 618,
-      "function": "builtin_eigen_eval_loss"
-    },
-    "maximum": 2,
-    "execution": "UNRUN",
-    "name": "eigen_eval_loss",
-    "claim": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim."
-  },
-  {
-    "args": [
-      "[1]",
-      "0.1",
-      "1",
-      "0"
-    ],
-    "valid_assert": "(len of shape_result) == 0",
-    "setup": "assert of [(not (eigen_model_loaded of null)), \"shape control\"]",
-    "observe": "print of shape_result",
-    "cleanup": "",
-    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
-    "optional_args": [
-      [
-        "[1]",
-        "0.1",
-        "1"
-      ]
-    ],
-    "requirements": [
-      "model_compiled",
-      "fresh_unloaded_model"
-    ],
-    "semantic_scope": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim.",
-    "source": {
-      "file": "src/model_infer.c",
-      "line": 525,
-      "function": "builtin_eigen_generate"
-    },
-    "maximum": 4,
-    "execution": "UNRUN",
-    "name": "eigen_generate",
-    "claim": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim."
   },
   {
     "name": "ends_with",
@@ -2032,33 +1935,6 @@
     "cleanup": "",
     "requirements": [],
     "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
-  },
-  {
-    "args": [
-      "[1]",
-      "[2]",
-      "0.001"
-    ],
-    "valid_assert": "shape_result == \"{\\\"status\\\": \\\"error\\\", \\\"error\\\": \\\"Model not loaded\\\"}\"",
-    "setup": "assert of [(not (eigen_model_loaded of null)), \"shape control\"]",
-    "observe": "print of shape_result",
-    "cleanup": "",
-    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
-    "optional_args": [],
-    "requirements": [
-      "model_compiled",
-      "fresh_unloaded_model"
-    ],
-    "semantic_scope": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim.",
-    "source": {
-      "file": "src/model_train.c",
-      "line": 1432,
-      "function": "builtin_native_train_step"
-    },
-    "maximum": 3,
-    "execution": "UNRUN",
-    "name": "native_train_step_builtin",
-    "claim": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim."
   },
   {
     "name": "nearest_in_range",
