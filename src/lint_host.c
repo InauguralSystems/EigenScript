@@ -415,7 +415,7 @@ int eigs_api_dump(FILE *out, int json) {
     }
 
     if (json) {
-        fprintf(out, "{\"version\": \"%s\",\n \"builtins\": [",
+        fprintf(out, "{\"version\": \"%s\",\n \"type_labels\": {\"null\": \"null\"},\n \"builtins\": [",
                 EIGENSCRIPT_VERSION);
         int b_first = 1;
         for (int i = 0; i < core->count; i++) {
@@ -458,6 +458,7 @@ int eigs_api_dump(FILE *out, int json) {
         }
         fprintf(out, "\n]}\n");
     } else {
+        fprintf(out, "type-label null null\n");
         for (int i = 0; i < core->count; i++)
             if (!api_skip_core_name(core->names[i]))
                 fprintf(out, "builtin %s\n", core->names[i]);

@@ -20,6 +20,8 @@ EigenScript's batched `nearest_in_range_all` does not count each query entity
 as its own neighbour. Its scalar `nearest_in_range` takes an explicit position,
 so it has no query-entity identity to exclude.
 
+EigenScript names its absence value consistently: `type of null` returns `"null"`.
+
 ## At a glance
 
 | | Python | JavaScript | Rust | Lisp | EigenScript |

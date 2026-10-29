@@ -81,6 +81,10 @@ docker run --rm -v "$PWD:/work" ghcr.io/inauguralsystems/eigenscript:latest prog
 
 Image tags: `:latest`, `:X.Y.Z`, `:X.Y`, `:X` for releases; `:edge` tracks `main`.
 
+## Runtime type labels
+
+`type of null` is `"null"`; the absence value and its type label use the same spelling.
+
 ## Run
 
 ```bash

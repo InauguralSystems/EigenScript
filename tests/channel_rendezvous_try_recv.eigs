@@ -6,7 +6,7 @@ sender is spawn of send_one
 
 got is null
 for i in range of 100000:
-    if type of got == "none":
+    if type of got == "null":
         got is try_recv of ch
 
 if got == 1643:

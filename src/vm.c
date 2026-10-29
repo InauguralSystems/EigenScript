@@ -5611,7 +5611,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 v->type == VAL_BUILTIN ? "builtin" :
                 v->type == VAL_BUFFER ? "buffer" :
                 v->type == VAL_BOOL ? "bool" :
-                v->type == VAL_NULL ? "none" : "unknown");
+                v->type == VAL_NULL ? "null" : "unknown");
             break;
         /* #262 Step E: when/where/why/how on a value-based operand have no
          * slot trajectory (observer state is binding-keyed). where/why/how on a
@@ -5691,7 +5691,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * other type) used to read as line 0 and answer null silently. */
         if (!line_v || line_v->type != VAL_NUM) {
             rt_error(EK_TYPE, current_line, "'at' line must be a number, got %s",
-                     line_v ? val_type_name(line_v->type) : "none");
+                     line_v ? val_type_name(line_v->type) : "null");
             val_decref(line_v);
             vm_push(make_null());
             DISPATCH();
