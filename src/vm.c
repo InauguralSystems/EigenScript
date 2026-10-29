@@ -1085,6 +1085,17 @@ int sandbox_charge(size_t bytes) {
     return 1;
 }
 
+/* A module environment is the only environment chain rooted at the sealed
+ * builtin layer. Nested function/loop environments retain that ancestry, so
+ * this one predicate keeps VM, JIT and OSR diagnostics identical (#2180). */
+static const char *vm_missing_module(Env *env, EigsChunk *chunk) {
+    for (Env *e = env; e; e = e->parent) {
+        if (e == g_builtin_env)
+            return chunk->src ? chunk->src->file : chunk->name;
+    }
+    return NULL;
+}
+
 /* JIT Stage 4k: out-of-line helper for OP_GET_NAME.
  *
  * Mirrors CASE(GET_NAME) below exactly — IC fast path then chain-walk
@@ -1118,7 +1129,8 @@ void jit_helper_get_name(EigsChunk *chunk, int idx) {
     /* #1171: counted inside the hold, exactly as CASE(GET_NAME). */
     Env *target = env_resolve_chain_ref(start, name, h, &slot_idx, &depth, &s);
     if (!target) {
-        eigs_raise_missing_name(name, g_vm.current_line);
+        eigs_raise_missing_name(name, g_vm.current_line,
+                                vm_missing_module(frame->env, chunk));
         vm_push_slot(slot_null());
         return;
     }
@@ -3866,7 +3878,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * load and the incref, and this thread then called freed memory. */
         Env *target = env_resolve_chain_ref(start, name, h, &slot_idx, &depth, &s);
         if (!target) {
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5362,7 +5375,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5411,7 +5425,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5462,7 +5477,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5517,7 +5533,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * read of the same name in the same position dies here; so does
              * this one now. (The AOT carried a carve-out for this case --
              * ouroboros t124 -- which can be deleted at the next pin bump.) */
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -6042,7 +6059,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -6345,10 +6363,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
 
-        /* #1388: under the sealed builtin layer, not the importer's globals:
-         * a builtin name in module code means the builtin unless the MODULE
-         * rebinds it; other names still reach the importer through the
-         * layer's parent link. */
+        /* #1388/#2180: under the sealed builtin layer, not the importer's
+         * globals. A builtin name means the builtin unless the MODULE rebinds
+         * it; every other name must be local or explicitly imported. */
         Env *mod_env = env_new(g_builtin_env);
         int saved_errors = g_parse_errors;
         g_parse_errors = 0;

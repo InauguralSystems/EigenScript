@@ -340,14 +340,12 @@ eigs_value_release(forty);          /* drop caller's ref; the global keeps its o
 `eigs_get_global` returns a counted ref the caller must release; `NULL`
 if the name isn't bound.
 
-**Globals and imported modules (#1388).** A value set with `eigs_set_global`
-is a host global, like a top-level binding in the host program. Imported
-module code reads it only under a name that is *not* a builtin: module code
-resolves builtin names against the state's sealed builtin layer first, so
-`eigs_set_global("str", v)` changes `str` for host evals and never inside a
-module. A non-builtin name falls through to the global scope, so a module can
-read a host-set `config` (EigenOS's hosted twins rely on this for the
-functions they define before importing a driver).
+**Globals and imported modules (#1388, #2180).** A value set with
+`eigs_set_global` is a host global, like a top-level binding in the host
+program. Imported module code never resolves through that host scope: it sees
+its own bindings and imports plus the state's sealed builtin layer. Provide
+configuration through a module function parameter or exported setter instead.
+Host evals and `load_file` retain access to host globals.
 
 A name containing `#` is reserved for the runtime (for example `_#fstr`, the
 binding f-strings convert through, #1322). No source can spell one, and the
