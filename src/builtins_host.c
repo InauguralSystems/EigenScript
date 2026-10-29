@@ -653,6 +653,8 @@ Value* builtin_is_file(Value *arg) {
         make_bool(stat(arg->data.str, &st) == 0 && S_ISREG(st.st_mode)));
 }
 
+static Value *file_io_error(const char *fn, const char *path, int err);
+
 /* rename of [old_path, new_path] — rename/replace a file. On POSIX rename(2) is
  * atomic: a crash leaves either the old file or the new file fully in place,
  * never a torn mix — the basis for crash-safe log compaction (write a new log to
@@ -691,6 +693,56 @@ Value* builtin_remove_file(Value *arg) {
     if (!ok) return file_io_error("remove_file", arg->data.str, err);
     TRACE_NONDET_RECORD("remove_file", make_bool(1));
 }
+
+/* The test seam is deliberately inside the wrapper rather than an interposer:
+ * a normal test build exercises the exact descriptor and fsync call used in
+ * production.  It is inert unless the test-only environment variable is set. */
+static int eigs_sync_fd(int fd, const char *kind) {
+    int result = fsync(fd);
+    int saved_errno = errno;
+    const char *log_path = getenv("EIGS_TEST_FSYNC_LOG");
+    if (log_path && *log_path) {
+        FILE *log = fopen(log_path, "a");
+        if (log) {
+            fprintf(log, "%s\n", kind);
+            fclose(log);
+        }
+    }
+    errno = saved_errno;
+    return result;
+}
+
+static Value *sync_path(Value *arg, const char *fn, int want_directory) {
+    ARG_GUARD(!arg || arg->type != VAL_STR, fn, "a string path", make_bool(0));
+    Value *replayed = NULL;
+    if (file_io_replay(fn, &replayed)) return replayed;
+
+    int fd = open(arg->data.str, O_RDONLY);
+    if (fd < 0) return file_io_error(fn, arg->data.str, errno);
+    struct stat st;
+    int ok = fstat(fd, &st) == 0;
+    int err = ok ? 0 : errno;
+    if (ok && want_directory != !!S_ISDIR(st.st_mode)) {
+        ok = 0;
+        err = want_directory ? ENOTDIR : EISDIR;
+    }
+    if (ok && eigs_sync_fd(fd, fn) != 0) {
+        ok = 0;
+        err = errno;
+    }
+    if (close(fd) != 0 && ok) {
+        ok = 0;
+        err = errno;
+    }
+    if (!ok) return file_io_error(fn, arg->data.str, err);
+    TRACE_NONDET_RECORD(fn, make_bool(1));
+}
+
+/* file_sync of path — flush a regular file's data and metadata to storage. */
+Value* builtin_file_sync(Value *arg) { return sync_path(arg, "file_sync", 0); }
+
+/* dir_sync of path — flush directory-entry changes to storage. */
+Value* builtin_dir_sync(Value *arg) { return sync_path(arg, "dir_sync", 1); }
 
 /* ==== BUILTIN: read_text ==== */
 /* Taped filesystem errors use a result shape that cannot be successful: a
@@ -1456,6 +1508,8 @@ void register_host_builtins(Env *env) {
     env_set_local_owned(env, "is_file", make_builtin(builtin_is_file));
     env_set_local_owned(env, "rename", make_builtin(builtin_rename));
     env_set_local_owned(env, "remove_file", make_builtin(builtin_remove_file));
+    env_set_local_owned(env, "file_sync", make_builtin(builtin_file_sync));
+    env_set_local_owned(env, "dir_sync", make_builtin(builtin_dir_sync));
     env_set_local_owned(env, "read_bytes", make_builtin(builtin_read_bytes));
     env_set_local_owned(env, "read_bytes_buf", make_builtin(builtin_read_bytes_buf));
     env_set_local_owned(env, "read_text", make_builtin(builtin_read_text));
