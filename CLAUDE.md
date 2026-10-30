@@ -36,15 +36,15 @@ ours onto the new main. Rebasing our own costs nothing; asking them does. (Only
 ## Build & test
 
 ```
-make            # release -> build/release/eigenscript; gfx on, HTTP/MODEL/DB off
+make            # release -> build/release/eigenscript; gfx on, HTTP/NET/DB off
 make test       # build + full suite (tests/run_all_tests.sh)
 make test-changed  # only the sections your diff vs origin/main touches (#1347; CI runs the rest)
-make asan       # ASan+UBSan -> build/asan/eigenscript; gfx on, HTTP/MODEL/DB off
+make asan       # ASan+UBSan -> build/asan/eigenscript; gfx on, HTTP/NET/DB off
 make gfx        # compatibility alias for make (no build/gfx/ artifact)
 make asan-gfx   # compatibility alias for make asan (no build/asan-gfx/ artifact)
-make asan-http  # ASan+UBSan *with* ext_http+model (CI gate; leaks still need RSS, see #731)
-make tsan-http  # TSan *with* ext_http+model+net (CI gate: EIGS_SUITE_SECTIONS='44 45a 45b', #1139)
-make http       # http+model variant — run tests/test_http_server.sh
+make asan-http  # alias for make asan-server: ASan+UBSan *with* ext_http+net (CI gate; leaks still need RSS, see #731)
+make tsan-http  # alias for make tsan-server: TSan *with* ext_http+net (CI gate: EIGS_SUITE_SECTIONS='44 45a 45b', #1139)
+make http       # alias for make server (http+net) — run tests/test_http_server.sh
 make zlib       # DEFLATE decompression (`inflate`) via system zlib (-lz)
 make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
 bash tools/jit_diff.sh  # JIT vs INTERPRETER differential over the corpus (CI job; a pair still unstable on a rerun is ledgered COULD_NOT_ADJUDICATE, never tape-replayed: #2122)

@@ -437,12 +437,12 @@ Each left-hand form below is a parse error or a runtime error. Use the right sid
 
 ## Build profiles: which builtins exist
 
-Hosted release includes lazy graphics. The server profile adds HTTP, raw TCP,
-and models; server-db additionally includes PostgreSQL. Omitted HTTP, network,
-database, and model names follow the first-reference rule below.
+Hosted release includes lazy graphics. The server profile adds HTTP and raw
+TCP; server-db additionally includes PostgreSQL. Omitted HTTP, network and
+database names follow the first-reference rule below.
 
-In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
-or model builtin name raises a catchable `value` error at its first reference,
+In VM/native-JIT evaluation, an unresolved omitted HTTP, network or database
+builtin name raises a catchable `value` error at its first reference,
 naming the unavailable capability and required profile. This occurs before
 call arguments are evaluated. Local, captured and host bindings take precedence,
 including a binding to null; other unknown names retain `undefined_name` errors.
