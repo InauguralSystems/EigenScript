@@ -66,7 +66,7 @@ concurrency:
 # Pull requests run the release suite plus build, lint/LSP, self-test,
 # precheck, and docs gates. Heavy variants report their required names with a
 # quick deferral; merge queue candidates run their full suites.
-# The HTTP+model ASan build runs in three shards there, and its aggregator
+# The HTTP+net ASan build runs in three shards there, and its aggregator
 # checks their union, receipts and leak tally. macos-15-intel stays nightly.
 # Every job here is required or a worker of a required aggregator (#1264).
 
@@ -1083,12 +1083,12 @@ jobs:
         if: always() && needs.scope.outputs.code == 'true'
         run: bash tools/cc_guard.sh --report
 
-  # Build the http+model variant and run the suite against it: the suite's
-  # probe-gated sections ([44]-[45] HTTP, [47] model roundtrip/overflow,
-  # transformer smoke) silently skip on the minimal build, so without this
-  # job ~5000 lines of extension C never execute in CI. Also build the gfx
-  # variant and run the suite against it (the audio-synthesis section [62] is
-  # pure DSP — no display needed — and only executes against a gfx build; the
+  # Build the server (http+net) variant and run the suite against it: the
+  # suite's probe-gated HTTP sections ([44]-[45]) silently skip on the
+  # minimal build, so without this job ~5000 lines of extension C never
+  # execute in CI. Also build the gfx variant and run the suite against it
+  # (the audio-synthesis section [62] is pure DSP — no display needed — and
+  # only executes against a gfx build; the
   # windowed gfx_* demos still auto-skip), exercise the embedding API
   # (eigs_embed.c is otherwise 0% — embed-smoke is the only thing that runs
   # it), compile-check the LSP (bitrots invisibly otherwise), and run the
@@ -1164,7 +1164,7 @@ jobs:
           fi
 
   extensions-http:
-    name: extensions / server (http+net+model+gfx) and ancillary checks
+    name: extensions / server (http+net+gfx) and ancillary checks
     env:
       CI_DISPATCH_LANES: fuzz
     needs: [dev-image, scope]
@@ -1379,7 +1379,7 @@ jobs:
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - if: needs.scope.outputs.code == 'true'
-        name: Build server-db variant (http+net+model+gfx+db)
+        name: Build server-db variant (http+net+gfx+db)
         run: make server-db
 
       - if: needs.scope.outputs.code == 'true'
@@ -1423,7 +1423,7 @@ jobs:
   # The net that catches use-after-free, buffer overflow, and UB the normal
   # -O2 build silently tolerates. Per-iteration leak regressions are covered
   # separately by tests/test_leak_guard.sh.
-  # One HTTP+model ASan build per shard; docs-only workers skip code steps.
+  # One HTTP+net ASan build per shard; docs-only workers skip code steps.
   sanitizers:
     name: asan + ubsan (full suite)
     env:
@@ -1535,12 +1535,12 @@ jobs:
           [ "$total" -eq 0 ] || { echo "::error::leak tally is $total, expected 0 (CLAUDE.md: a jump in the tally means a new leak)"; exit 1; }
           echo "Sanitizer coverage complete (code=${{ needs.scope.outputs.code }}; $n shards)"
 
-  # One HTTP+model ASan build per shard. The union covers the complete suite,
+  # One HTTP+net ASan build per shard. The union covers the complete suite,
   # including core and extension sections, with leak detection enabled. Each
   # checkout builds its own binary so the runner's make-based freshness check
   # sees its actual object directory and hard-linked src/eigenscript alias.
   sanitizers-core:
-    name: asan + ubsan / shard ${{ matrix.shard }}/3 (http+model build)
+    name: asan + ubsan / shard ${{ matrix.shard }}/3 (http+net+gfx build)
     env:
       CI_DISPATCH_LANES: asan
     needs: [dev-image, scope]
@@ -1835,7 +1835,7 @@ jobs:
           : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
 
       - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
-        name: ThreadSanitizer build (http+model+net)
+        name: ThreadSanitizer build (http+net+gfx)
         run: make tsan-http
 
       - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')

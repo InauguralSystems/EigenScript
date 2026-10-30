@@ -40,7 +40,7 @@ cc -O2 host.c eigenscript_all.c -lm -lpthread -o host
 ```
 
 `eigenscript_all.c` inlines every runtime source and header into one
-self-contained translation unit; the optional extensions (HTTP, model, DB, gfx)
+self-contained translation unit; the optional extensions (HTTP, net, DB, gfx)
 default **off**, so the drop-in is the minimal zero-dependency build. Everything
 below — multi-state, value handles, the abort flag, and the trace-sink /
 record-replay seam — is available through the same `eigs_embed.h`.

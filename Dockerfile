@@ -5,7 +5,7 @@
 # on debian:stable-slim. The image mirrors `make install PREFIX=/usr/local`
 # so paths line up with the Homebrew tap and the manual install path.
 #
-# Default build is the slim release (no HTTP / model / db extensions),
+# Default build is the slim release (no HTTP / net / db extensions),
 # matching the `eigenscript-linux-x86_64` release artifact.
 
 FROM debian:stable-slim AS builder

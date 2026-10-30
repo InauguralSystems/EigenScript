@@ -262,9 +262,9 @@ static void w021_build(const char *base) {
  *   - "builtins": the compiled-in core registry, enumerated from a scratch
  *     register_builtins env — never a hand list (#459: the old hand-copied
  *     array drifted ~120 names behind the binary);
- *   - "extensions": the ext_names.h surface BY GROUP (gfx/http/db/model/
- *     net) — the surface of the LANGUAGE, independent of this binary's
- *     build flags (a name here may need `make http`/`make gfx`);
+ *   - "extensions": the ext_names.h surface BY GROUP (gfx/http/db/net) —
+ *     the surface of the LANGUAGE, independent of this binary's build
+ *     flags (a name here may need `make http`/`make gfx`);
  *   - "lib": every public top-level define of each stdlib module WITH its
  *     parameter list as written (defaults included), scraped from the same
  *     directories the import resolver searches, first module wins.

@@ -2473,8 +2473,6 @@ void ne_softmax_buf(double *data, int64_t rows, int64_t cols);
 void ne_matmul_buf(double *a, int64_t a_rows, int64_t a_cols,
                    double *b, int64_t b_cols, double *out);
 
-/* Model-only JSON helper. */
-
 
 /* ---- Handle table (opaque pointer indirection) ----
  * Table + lock + types declared up at the EigsState struct.

@@ -581,7 +581,7 @@ print_weights() {
     distinct=$(grep -oE 'SECTION_TIME: \[[^]]*\]' "$log" | sed 's/^SECTION_TIME: //' | sort -u |
                grep -cxFf <(grep -oE 'echo "\[[^]]*\]' "$RUNNER" | sed 's/^echo "//' | sort -u))
     # 85%, not 100%: one binary prints only one side of extension branches
-    # (the asan-http build never prints the HTTP/model skip headings), so
+    # (the asan-http build never prints the HTTP skip headings), so
     # requiring every label would refuse a complete set of real logs.
     want=$(( labels * 85 / 100 ))
     [ "$n" -ge 50 ] || die "only $n SECTION_TIME lines in $log — that log is not a suite run at all"
@@ -597,7 +597,7 @@ print_weights() {
     echo "#"
     if [ -n "${WEIGHTS_RUN:-}" ] || [ -n "${WEIGHTS_HEAD:-}" ]; then
         echo "# MEASURED ON THE CI RUNNER, not on the dev box: run ${WEIGHTS_RUN:-unstated},"
-        echo "# head ${WEIGHTS_HEAD:-unstated}, the \`asan + ubsan / shard k/N (http+model build)\`"
+        echo "# head ${WEIGHTS_HEAD:-unstated}, the \`asan + ubsan / shard k/N (http+net+gfx build)\`"
         echo "# job logs, concatenated and fed to \`--print-weights\`."
     else
         echo "# PROVENANCE NOT STATED: this table was generated without --run/--head."

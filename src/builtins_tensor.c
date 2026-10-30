@@ -13,10 +13,8 @@
 
 /* Forward decls for helpers shared with the allocation/observer machinery. */
 
-/* Shared double-precision tensor kernels. These live in this always-compiled
- * translation unit so model-enabled and model-disabled builds execute the
- * same implementation. The tile size matches the model's float kernels but
- * stays local here so the core tensor builtins do not depend on model headers. */
+/* Shared double-precision tensor kernels for the core tensor builtins and the
+ * autograd rules. NE_TENSOR_TILE_SIZE is the cache tile of the tiled kernels. */
 #define NE_TENSOR_TILE_SIZE 32
 
 void ne_softmax_buf(double *data, int64_t rows, int64_t cols) {
@@ -91,8 +89,7 @@ void ne_matmul_buf(
  * transpose costs a copy per backward step. Same i-k-j tiling as
  * ne_matmul_buf, so out[i][j] accumulates over kk in the same ascending
  * order — byte-identical to `matmul` of the explicitly transposed operand
- * (pinned by tests/test_autograd.eigs). model_train.c carries the f32
- * twins of these for the transformer; these are the f64 buffer path. */
+ * (pinned by tests/test_autograd.eigs). */
 
 /* out(k x n) = a^T . b  where a is (m x k), b is (m x n) */
 void ne_matmul_at_buf(

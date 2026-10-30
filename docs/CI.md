@@ -48,9 +48,9 @@ PR #1158 (head `8cc1f2d`, 26 checks, all green):
   through the queue. The Protection ruleset lets an administrator bypass the
   queue; then only the PR-stage checks have run, and there a lane skips only
   a PR that is plainly docs.
-- Linux gcc and clang, HTTP+model, gfx, zlib, net, and the PostgreSQL full
+- Linux gcc and clang, server (HTTP+net), gfx, zlib, net, and the PostgreSQL full
   build each run the complete suite against their own binary.
-- The HTTP+model ASan binary runs the complete suite across weight-balanced
+- The HTTP+net ASan binary runs the complete suite across weight-balanced
   shards. The required aggregator verifies coverage and the leak tally.
 - `macos-latest` runs on the PR; `macos-15-intel` runs nightly.
 - Differential, compiler, doc, and gate self-tests continue on their existing
@@ -444,7 +444,7 @@ The whole critical path was one job:
 | `asan + ubsan / HTTP and model` | 7.8 |
 | everything else | ≤ 6.2 |
 
-The leak-tally gate must cover the **full** suite, so the current HTTP+model
+The leak-tally gate must cover the **full** suite, so the current HTTP+net
 ASan build runs it in parallel shards. In the original core-only measurement,
 with ~2 min of queue and a 4.7-min ASan build in front,
 `queue + build + 13.9/N` gives 20.6 / 13.7 / **11.3** / 10.2 for N = 1/2/3/4.
@@ -527,7 +527,7 @@ bootstrap for the very first split; the table itself comes from CI.
 Refresh it from the shard job logs of any green run:
 
 ```bash
-run=RUN_ID                           # a current HTTP+model shard run
+run=RUN_ID                           # a current HTTP+net shard run
 head=HEAD_SHA
 gh api repos/InauguralSystems/EigenScript/actions/runs/$run/jobs \
   --jq '.jobs[] | select(.name | startswith("asan + ubsan / shard ")) | .id' \
@@ -603,7 +603,7 @@ The fix copies Rust (tiers plus a merge queue), CPython and Go:
   workflow that produces a required check (`ci.yml`, `codeql.yml`,
   `pages.yml`) triggers on `merge_group`.
 - **Heavy required lanes** — ASan/UBSan shards, both TSan variants, every
-  extension suite (HTTP/model, gfx, zlib, net, and database), macOS, valgrind,
+  extension suite (HTTP server, gfx, zlib, net, and database), macOS, valgrind,
   and the instruction-count benchmark run in the merge queue, not on pushes
   to `main` and not on PRs. Aggregated workers are skipped before runner allocation;
   the always-running required aggregator prints the PR deferral and requires
@@ -735,9 +735,9 @@ triggers) are listed in #1278.
 | `linux / clang` | 1 | clang `-Werror` build and PR LSP compile check; full suite in the queue/main lane |
 | `macos / macos-latest` | 1 | required aggregator; PR deferral on Ubuntu, native full-suite worker in the queue/main lane |
 | `extensions (http+model+gfx suite; embed/lsp/jit-smoke)` | 1 | **aggregator** |
-| `extensions / http+model and ancillary checks`, `/ gfx suite`, `/ zlib suite`, `/ net suite` | 1, via the aggregator | workers |
+| `extensions / server (http+net+gfx) and ancillary checks`, `/ gfx suite`, `/ zlib suite`, `/ net suite` | 1, via the aggregator | workers |
 | `asan + ubsan (full suite)` | 1 | **aggregator**; also re-derives shard coverage and sums the leak tally |
-| `asan + ubsan / shard k/3 (http+model build)` | 1, via the aggregator | workers |
+| `asan + ubsan / shard k/3 (http+net+gfx build)` | 1, via the aggregator | workers |
 | `db extension (postgres service)` | 1 | gate |
 | `jit differential (…)`, `replay differential (…)` | 1 | gates |
 | `freestanding profile (symbol gate + smoke)` | 1 | gate |
@@ -774,7 +774,7 @@ file:
 
 ## Coverage on pull requests
 
-Every built variant runs the complete suite on the PR. The HTTP+model ASan
+Every built variant runs the complete suite on the PR. The HTTP+net ASan
 workers partition that complete suite, and the required aggregator checks
 their coverage and leak tally before the PR can merge.
 

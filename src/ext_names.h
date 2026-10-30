@@ -1,6 +1,6 @@
 /*
  * ext_names.h — zero-drift builtin-name registry for the conditionally
- * compiled extensions (gfx/audio, http, db, model).
+ * compiled extensions (gfx/audio, http, db, net).
  *
  * Each list is THE single source for both sides:
  *   - the extension's registrar expands X(name, fn) into
