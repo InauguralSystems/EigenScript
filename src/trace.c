@@ -1557,9 +1557,12 @@ static void emit_scope_transition(void) {
  * THIS STREAM last emitted and emits an `O cfg` record when they differ,
  * before the next L/A/N/O-win record. Sibling attachments share current
  * state knobs but each must announce them in its own stream. The per-binding
- * window override (`set_observer_window of ["x", n]`) lives on an Env slot,
- * not on the state, so it has no cheap diff and is emitted from its builtin
- * through trace_obs_window_binding.
+ * window override lives on an Env slot, not on the state, so it has no cheap
+ * diff and was emitted from its builtin through trace_obs_window_binding.
+ * The knob builtins were removed in v0.46.0 (#1687): a live run's knobs stay
+ * at their defaults, so it writes no `O cfg` record and no `O win` record,
+ * and these writers remain only for the format the reader still accepts
+ * (#2198).
  *
  * Cost when no tape is open: nothing (the recording entry points return on
  * g_trace_enabled). With a tape open: five compares per L/A/N/O-win record. */
@@ -1591,10 +1594,11 @@ static void obs_cfg_sync(void) {
     tp_printf("%.17g\n", binding->obs_scale);
 }
 
-/* `set_observer_window of ["x", n]` — the per-binding override, recorded at
- * the point of the call (n == 0 clears it back to the default). The name is
- * the one the call site resolved; a reader re-resolves it with the same
- * innermost-first scope walk it uses for every other binding. */
+/* The per-binding override, recorded at the point it was set (n == 0 clears
+ * it back to the default). The name is the one the setter resolved; a reader
+ * re-resolves it with the same innermost-first scope walk it uses for every
+ * other binding. No caller since the window builtin was removed in v0.46.0
+ * (#1687); see #2198. */
 void trace_obs_window_binding(const char *name, int n) {
     if (!name || !tape_emit_begin()) return;
     obs_cfg_sync();

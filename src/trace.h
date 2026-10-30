@@ -259,10 +259,12 @@ size_t trace_out_capacity(void);
 void trace_line(int line);
 
 /* #1044/#1045 follow-up: record a per-binding observer window override
- * (`set_observer_window of ["x", n]`; n == 0 clears it) as an `O win` record
- * at the point of the call. The state-level knobs need no hook — the tape
- * writer diffs them against the state before every L/A record — but this one
- * lives on an Env slot and has no cheap diff. No-op when no tape is open. */
+ * (n == 0 clears it) as an `O win` record. The state-level knobs need no
+ * hook — the tape writer diffs them against the state before every L/A
+ * record — but this one lives on an Env slot and has no cheap diff. Its only
+ * caller was the per-binding window builtin, removed in v0.46.0 (#1687), so
+ * nothing calls it now and a live run writes no `O win` record (#2198).
+ * No-op when no tape is open. */
 void trace_obs_window_binding(const char *name, int n);
 
 /* Record a name-keyed assignment. The slot is captured by value

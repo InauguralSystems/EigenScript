@@ -1,0 +1,1 @@
+- Source comments only: they no longer describe the removed `set_observer_window` builtin as live (#2198).

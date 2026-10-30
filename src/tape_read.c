@@ -193,8 +193,8 @@ static int obs_cfg_refuse(const char *why, const char *line) {
 static int obs_cfg_rec_ok(const ObsCfgRec *o, const char *line) {
     const char *why = NULL;
     /* `O win <name> 0` is the CLEAR form of the per-binding override and the
-     * one legal window outside the range (set_observer_window takes it the
-     * same way); the state default has no clear form. */
+     * one legal window outside the range, as the writer (trace_obs_window_
+     * binding) emits it; the state default has no clear form. */
     if ((o->window != 0 || o->binding == 0) &&
         (o->window < OBSERVER_WINDOW_MIN || o->window > OBSERVER_WINDOW_MAX))
         why = "window depth outside its [4, 64] range";
