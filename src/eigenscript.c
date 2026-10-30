@@ -116,6 +116,38 @@ void eigs_clear_error_value(void) {
 void vm_print_stack_trace(FILE *out);
 const char *vm_current_file(void);
 
+/* Parser diagnostics are legacy text writes spread across lexer/parser.  A
+ * runtime parse failure is subsequently raised through the normal structured
+ * error path, so hide those precursor writes for the duration of that parse.
+ * This is deliberately keyed to the state-wide run mode so spawned workers
+ * receive the same contract as the CLI attachment. */
+void eigs_json_parse_silence_begin(EigsStderrSilence *guard) {
+    guard->saved_fd = -1;
+    guard->sink = NULL;
+#if !EIGENSCRIPT_FREESTANDING
+    if (!g_json_diagnostics) return;
+    fflush(stderr);
+    guard->saved_fd = dup(STDERR_FILENO);
+    guard->sink = tmpfile();
+    if (guard->saved_fd >= 0 && guard->sink)
+        (void)dup2(fileno(guard->sink), STDERR_FILENO);
+#endif
+}
+
+void eigs_json_parse_silence_end(EigsStderrSilence *guard) {
+#if !EIGENSCRIPT_FREESTANDING
+    if (!g_json_diagnostics) return;
+    fflush(stderr);
+    if (guard->saved_fd >= 0) {
+        (void)dup2(guard->saved_fd, STDERR_FILENO);
+        close(guard->saved_fd);
+    }
+    if (guard->sink) fclose(guard->sink);
+#else
+    (void)guard;
+#endif
+}
+
 /* #406: kind → the string `catch` sees in the bound dict's "kind" field.
  * Table order tracks the ErrKind enum. */
 const char* err_kind_name(ErrKind k) {
@@ -216,8 +248,11 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
         if (eigs_current && eigs_current->vm && g_vm.frame_count > 0) {
             g_error_print_pending = 1;
         } else {
-            fprintf(stderr, "%s\n", g_error_msg);
-            vm_print_stack_trace(stderr);
+            if (g_json_diagnostics) vm_print_json_error(stderr, 0, 0);
+            else {
+                fprintf(stderr, "%s\n", g_error_msg);
+                vm_print_stack_trace(stderr);
+            }
         }
     }
 }

@@ -302,22 +302,6 @@ Requires: `env_get`, `random_hex`, `http_request_headers` builtins.
 
 ### lib/autograd.eigs — Reverse-Mode Autograd (tape)
 
-Reverse-mode automatic differentiation over the f64 tensor builtins on
-shaped buffers (#973). A **tape** (Wengert list) records every op as a
-node; `ag_backward` seeds the loss with 1 and sweeps the tape in reverse
-applying each op's vector-Jacobian product, so a training step is one
-forward plus one backward — not `numerical_grad`'s one forward per
-parameter. It can express dense networks and causal self-attention blocks,
-including transpose, causal-masked softmax, layer normalization and GELU.
-It is a library-level alternative for new EigenScript trainers, **not** a
-drop-in replacement for iLambdaAi's C trainer: `model_train.c` remains a
-separate native implementation and consumers must migrate explicitly.
-`numerical_grad` stays as the gradient-check **oracle**
-(`tests/test_autograd.eigs` pins every rule below against it to 1e-4
-relative). Leaf values are the caller's own buffers — `ag_sgd_step` updates
-them in place. Build a fresh tape per step. Names carry the `ag_` prefix so
-`load_file` never shadows the builtins they wrap.
-
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `ag_tape` | `ag_tape of []` | New empty tape |
@@ -2282,3 +2266,24 @@ Internal names below are implementation contracts for maintainers, not a stable 
 | `unregister_hotkey(combo)` | Remove registrations whose key combination exactly matches the supplied string. |
 
 <!-- ui-surface-contracts:end -->
+
+### lib/keys.eigs
+
+US-layout keyboard-event conversion shared by text-entry consumers.
+
+| Function | Signature | Description |
+|---|---|---|
+| `key_to_char` | `key_to_char of [key, shift]` | Return the printable character for a key name and shift flag, or an empty string for a non-character key. |
+
+This example is executable (and is checked by the documentation example suite):
+
+```eigenscript
+import keys
+
+print of (keys.key_to_char of ["[", 1])
+print of (keys.key_to_char of ["a", 1])
+```
+```output
+{
+A
+```

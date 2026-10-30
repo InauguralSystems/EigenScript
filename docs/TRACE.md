@@ -13,12 +13,11 @@ before the read. Source read by `import` and `load_file`, ordinary file
 readers, hashes, directory queries, and process/network input are taped.
 Reads whose payload is not represented in the current tape format—tensor checkpoints,
 font and music assets, HTTP static serving, stores, and databases—are refused;
-replay never falls back to a live file. Model checkpoints are the exception:
-the verdict of `eigen_model_load` or `eigen_checkpoint_info` is taped, their
-payload is never opened or read during replay, and taped inference results are
-served before the model is consulted. Every replayable
-mutation (`mkdir`, `write_text`, `write_bytes`, `rename`, and
-`remove_file`) returns or raises its recorded outcome before any filesystem syscall.
+replay never falls back to a live file. Every replayable
+mutation (`mkdir`, `write_text`, `write_bytes`, `rename`, `remove_file`,
+`file_sync`, and `dir_sync`) returns or raises its recorded outcome before any
+filesystem syscall. In particular, replay of either sync primitive does not
+open or sync the recorded path.
 Operations whose durable result cannot be represented by the tape remain loud
 boundaries: `mktemp`, stream output, corpus generation, and store operations
 are refused rather than partially run. The embedding API's initial program
@@ -280,7 +279,8 @@ perspective lands on the tape as an `N` record:
 - **Time:** `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683)
 - **Environment / files:** `env_get`, `read_text`, `read_bytes`,
   `read_line` (stdin, #558), `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585),
-  `write_text`, `write_bytes`, `rename`, `remove_file`, and `md5_file` (#1668).
+  `write_text`, `write_bytes`, `rename`, `remove_file`, `file_sync`, `dir_sync`,
+  and `md5_file` (#1668, #2186).
   Module acquisition adds `import_source` / `load_file_source` metadata and
   bounded `_chunk` records, so source larger than one record remains replayable.
   The filesystem replay rules are defined once in [Filesystem replay model](#filesystem-replay-model-1885).
@@ -331,31 +331,6 @@ perspective lands on the tape as an `N` record:
   so suppressing it would be meaningless. (`net_close` is deterministic
   and untraced — under replay no socket exists and it is a natural
   no-op, the `audio_capture_close` shape.)
-- **Model extension (#960):** `eigen_model_load`, `eigen_checkpoint_info`, and
-  `eigen_generate`. A load or inspection call records its verdict; replay
-  returns that verdict before probing the path or reading any checkpoint
-  payload. A replayed successful load does re-emit `Loading model from:` using
-  the recording-resolved path in that verdict, preserving stdout; it does not
-  emit the live-weights diagnostic because no live probe occurred. Sampling at temperature
-  above 0 draws from the shared `drand48` stream, so the emitted token list
-  is a nondeterministic return — untaped, a generating program could not be
-  replayed at all. **One record per call carries the whole token list**, not
-  one per sampled position: the draws are an implementation detail of the
-  decoding policy (top-k and top-p consume different numbers of them), the
-  list is what the script observes. The early replay take means `EIGS_REPLAY`
-  serves the tokens *before the model is consulted* — a recorded generation
-  replays with no checkpoint on disk and without advancing the RNG. Every
-  return is recorded, argument errors and the no-model-loaded empty list
-  included, so a program that hits one cannot desync the stream. Greedy
-  (`temperature < 0.01`) calls ride the same path: the tape cannot show
-  which branch ran, and replay may not load a model to re-derive it.
-  A model-dependent refusal records one outcome dictionary with `kind` (the
-  runtime error-kind name) and `message`. This covers context-limit and token-id
-  refusals, so replay preserves both the catchable kind and the recorded limits
-  before consulting a missing or replaced model. Successful generations and
-  soft empty-list returns keep their list payloads. For compatibility, old
-  string refusal records still replay as `value` errors; existing generation
-  list records remain readable.
 - **Rendered pixels (gfx extension, #823):** `gfx_read`. Renderer output
   depends on the font rasteriser, the driver and the backend, so the pixel
   a render-decode oracle reads back is a device input and takes the

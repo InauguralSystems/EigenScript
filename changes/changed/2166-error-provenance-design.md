@@ -1,0 +1,1 @@
+- Document the proposed caught-error frame preservation and explicit cause-chain contract (#2166).

@@ -116,19 +116,5 @@
     X(db_execute, builtin_db_execute) \
     X(db_query_json, builtin_db_query_json)
 
-/* ---- model_train.c: transformer bridge (EIGENSCRIPT_EXT_MODEL) ----
- * Two irregular entries: native_train_step_builtin's fn drops the suffix,
- * and model_load_weights is a registered alias of eigen_model_load. */
-#define EIGS_MODEL_BUILTINS(X) \
-    X(eigen_model_loaded, builtin_eigen_model_loaded) \
-    X(eigen_generate, builtin_eigen_generate) \
-    X(eigen_eval_loss, builtin_eigen_eval_loss) \
-    X(eigen_model_info, builtin_eigen_model_info) \
-    X(native_train_step_builtin, builtin_native_train_step) \
-    X(model_save_weights, builtin_model_save_weights) \
-    X(eigen_model_load, builtin_eigen_model_load) \
-    X(model_load_weights, builtin_eigen_model_load) \
-    X(eigen_model_save_binary, builtin_eigen_model_save_binary) \
-    X(eigen_checkpoint_info, builtin_eigen_checkpoint_info)
 
 #endif /* EIGENSCRIPT_EXT_NAMES_H */

@@ -117,24 +117,6 @@ silent no-op anymore.
 
 ## 7. Smaller gaps — PARTIALLY DONE
 
-- **Exit-code blindness — done.** Every `.eigs` section now requires
-  rc=0 via `rc_ok` (the 51 legacy marker-grep blocks were converted
-  mechanically). One tolerated exception, see below.
-- **`clone_ast` — resolved.** Not dead: it's the read-side clone in
-  compound dot-assign desugaring (`obj.f += e`), which had zero test
-  coverage. Compound `+= -= *= /= <<= >>= |= &= ^=` on dot targets —
-  including indexed (`items[i].f +=`) and nested (`a.b.c +=`) — are
-  now in `test_dot_assign.eigs` (15 → 26 checks). The fn-body cloning
-  half of its old job was dead (`make_fn` body params removed); the
-  clone helpers are parser-static now.
-- **Remaining**: `builtin_build_corpus` + the `tok_base_string`
-  detokenizer (~250 lines; model-adjacent, belongs with a corpus
-  test under `make http`), ext_store corrupt-header recovery
-  (`store_read_header` 51%) and JSON-array store fields
-  (`store_json_parse_array` 0%), JSON string-escape edges
-  (`eigs_json_parse_string` ~51%), `chunk_disassemble` (debug-only),
-  the lexer's REPL-continuation branches.
-
 ## The leak finding (came out of the exit-code hardening)
 
 Requiring rc=0 made ~26 test programs fail under
@@ -186,14 +168,6 @@ measured coverage where re-measured (minimal build, full suite):
 | eigenscript.c | 74.7% | 74.9% | 978 |
 
 ## Corpus builder — DONE
-
-New `tests/test_corpus.eigs` (section [86], 25 checks):
-`build_corpus` 3-pass builder end-to-end (return triple, stream file,
-vocab JSON structure incl. `base_names[]` — which walks
-`tok_base_string` for every base TokType, the lexer's big jump —
-structural ids, determinism, missing-file tolerance, top_n clamping,
-the optional identifier-histogram output with its descending sort, and
-bad-arg nulls).
 
 ## ext_store — DONE
 

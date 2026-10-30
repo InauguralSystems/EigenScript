@@ -1,4 +1,6 @@
 # UI Toolkit — orchestrator: globals, load chain, dispatch, app_loop
+
+load_file of "lib/keys.eigs"
 #
 # Usage:
 #   import ui

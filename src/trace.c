@@ -1945,9 +1945,6 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"audio_noise",          TK_LIST_},   /* one call = one or more sample chunks */
     {"audio_stream_queued",  TK_NUM_},
     {"clock_unix",           TK_NUM_},
-    {"eigen_checkpoint_info", TK_STR_},
-    {"eigen_generate",       TK_LIST_ | TK_STR_ | TK_DICT_}, /* dict: typed refusal; str: legacy refusal */
-    {"eigen_model_load",     TK_STR_},
     {"env_get",              TK_STR_},
     {"exe_path",             TK_STR_},
     {"file_exists",          TK_BOOL_},
@@ -1988,6 +1985,8 @@ static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
     {"read_text",            TK_STR_ | TK_LIST_ | TK_NUM_}, /* num: over-cap */
     {"remove_file",          TK_BOOL_ | TK_LIST_}, /* list: I/O error */
     {"rename",               TK_BOOL_ | TK_LIST_}, /* list: I/O error */
+    {"file_sync",            TK_BOOL_ | TK_LIST_}, /* list: I/O error */
+    {"dir_sync",             TK_BOOL_ | TK_LIST_}, /* list: I/O error */
     {"tensor_load",          TK_LIST_ | TK_NULL_},  /* structurally validated boundary verdict */
     {"write_bytes",          TK_NUM_ | TK_LIST_},  /* list: I/O error */
     {"write_text",           TK_BOOL_ | TK_LIST_}, /* list: I/O error */

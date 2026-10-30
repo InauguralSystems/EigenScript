@@ -1,0 +1,1 @@
+- Add traced `file_sync` and `dir_sync` builtins for power-loss-safe atomic saves (#2186).
