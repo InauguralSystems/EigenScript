@@ -653,6 +653,8 @@ Value* builtin_is_file(Value *arg) {
         make_bool(stat(arg->data.str, &st) == 0 && S_ISREG(st.st_mode)));
 }
 
+static Value *file_io_error(const char *fn, const char *path, int err);
+
 /* rename of [old_path, new_path] — rename/replace a file. On POSIX rename(2) is
  * atomic: a crash leaves either the old file or the new file fully in place,
  * never a torn mix — the basis for crash-safe log compaction (write a new log to
@@ -690,6 +692,60 @@ Value* builtin_remove_file(Value *arg) {
     int err = ok ? 0 : errno;
     if (!ok) return file_io_error("remove_file", arg->data.str, err);
     TRACE_NONDET_RECORD("remove_file", make_bool(1));
+}
+
+#ifdef EIGS_TEST_HOOKS
+/* Supplied only by the dedicated fsync test binary.  Production builds have
+ * neither the hook nor any runtime mechanism that can enable it. */
+extern int eigs_test_fsync_hook(int fd, const char *kind);
+#endif
+
+static int eigs_sync_fd(int fd, const char *kind) {
+#ifdef EIGS_TEST_HOOKS
+    return eigs_test_fsync_hook(fd, kind);
+#else
+    (void)kind;
+    return fsync(fd);
+#endif
+}
+
+static Value *sync_path(Value *arg, const char *fn, int want_directory) {
+    Value *replayed = NULL;
+    if (file_io_replay(fn, &replayed)) return replayed;
+
+    int fd = open(arg->data.str, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0) return file_io_error(fn, arg->data.str, errno);
+    struct stat st;
+    int ok = fstat(fd, &st) == 0;
+    int err = ok ? 0 : errno;
+    if (ok && ((want_directory && !S_ISDIR(st.st_mode)) ||
+               (!want_directory && !S_ISREG(st.st_mode)))) {
+        ok = 0;
+        err = want_directory ? ENOTDIR : EISDIR;
+    }
+    if (ok && eigs_sync_fd(fd, fn) != 0) {
+        ok = 0;
+        err = errno;
+    }
+    if (close(fd) != 0 && ok) {
+        ok = 0;
+        err = errno;
+    }
+    if (!ok) return file_io_error(fn, arg->data.str, err);
+    if (want_directory) TRACE_NONDET_RECORD("dir_sync", make_bool(1));
+    TRACE_NONDET_RECORD("file_sync", make_bool(1));
+}
+
+/* file_sync of path — flush a regular file's data and metadata to storage. */
+Value* builtin_file_sync(Value *arg) {
+    ARG_GUARD(!arg || arg->type != VAL_STR, "file_sync", "a string path", make_bool(0));
+    return sync_path(arg, "file_sync", 0);
+}
+
+/* dir_sync of path — flush directory-entry changes to storage. */
+Value* builtin_dir_sync(Value *arg) {
+    ARG_GUARD(!arg || arg->type != VAL_STR, "dir_sync", "a string path", make_bool(0));
+    return sync_path(arg, "dir_sync", 1);
 }
 
 /* ==== BUILTIN: read_text ==== */
@@ -1456,6 +1512,8 @@ void register_host_builtins(Env *env) {
     env_set_local_owned(env, "is_file", make_builtin(builtin_is_file));
     env_set_local_owned(env, "rename", make_builtin(builtin_rename));
     env_set_local_owned(env, "remove_file", make_builtin(builtin_remove_file));
+    env_set_local_owned(env, "file_sync", make_builtin(builtin_file_sync));
+    env_set_local_owned(env, "dir_sync", make_builtin(builtin_dir_sync));
     env_set_local_owned(env, "read_bytes", make_builtin(builtin_read_bytes));
     env_set_local_owned(env, "read_bytes_buf", make_builtin(builtin_read_bytes_buf));
     env_set_local_owned(env, "read_text", make_builtin(builtin_read_text));

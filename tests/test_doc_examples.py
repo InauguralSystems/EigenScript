@@ -342,7 +342,7 @@ POPULATION = {
     "docs/PREDICATES.md":        ( 15,    2,    12,      1,      4),
     "docs/DIAGNOSTICS.md":       (  6,    1,     5,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
-    "docs/BUILTINS.md":          (  2,    2,     0,      0,      0),   # #1888: nearest-other contract
+    "docs/BUILTINS.md":          (  3,    2,     1,      0,      0),   # #2186: durable atomic-save recipe
     "docs/LANGUAGE_CONTRACT.md": (  1,    0,     1,      0,      0),
 }
 

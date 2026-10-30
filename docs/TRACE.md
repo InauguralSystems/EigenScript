@@ -14,8 +14,10 @@ readers, hashes, directory queries, and process/network input are taped.
 Reads whose payload is not represented in the current tape format—tensor checkpoints,
 font and music assets, HTTP static serving, stores, and databases—are refused;
 replay never falls back to a live file. Every replayable
-mutation (`mkdir`, `write_text`, `write_bytes`, `rename`, and
-`remove_file`) returns or raises its recorded outcome before any filesystem syscall.
+mutation (`mkdir`, `write_text`, `write_bytes`, `rename`, `remove_file`,
+`file_sync`, and `dir_sync`) returns or raises its recorded outcome before any
+filesystem syscall. In particular, replay of either sync primitive does not
+open or sync the recorded path.
 Operations whose durable result cannot be represented by the tape remain loud
 boundaries: `mktemp`, stream output, corpus generation, and store operations
 are refused rather than partially run. The embedding API's initial program
@@ -277,7 +279,8 @@ perspective lands on the tape as an `N` record:
 - **Time:** `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683)
 - **Environment / files:** `env_get`, `read_text`, `read_bytes`,
   `read_line` (stdin, #558), `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585),
-  `write_text`, `write_bytes`, `rename`, `remove_file`, and `md5_file` (#1668).
+  `write_text`, `write_bytes`, `rename`, `remove_file`, `file_sync`, `dir_sync`,
+  and `md5_file` (#1668, #2186).
   Module acquisition adds `import_source` / `load_file_source` metadata and
   bounded `_chunk` records, so source larger than one record remains replayable.
   The filesystem replay rules are defined once in [Filesystem replay model](#filesystem-replay-model-1885).

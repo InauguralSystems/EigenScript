@@ -182,6 +182,25 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 | `write_bytes` | `write_bytes of [path, <list\|buffer> {, append}]` | Write raw bytes to a file. Binary-clean (NUL written verbatim, unlike `write_text`). `append` (default 0): 0 truncates, nonzero appends. Returns bytes written; I/O failure raises `io` with the path and OS reason. Trace-recorded result. |
 | `rename` | `rename of [old, new]` | Rename/replace a file. Atomic on POSIX (`rename(2)`) — a crash leaves either the old or the new file whole, never a mix; basis for crash-safe swaps. Returns `true`; I/O failure raises `io` with both paths and the OS reason. Trace-recorded result. |
 | `remove_file` | `remove_file of path` | Delete a file. Returns `true`; I/O failure raises `io` with the path and OS reason. Trace-recorded result. |
+| `file_sync` | `file_sync of path` | Flush a regular file's data and metadata with `fsync(2)`. A missing path or non-file raises `io`. Trace-recorded; replay returns the recorded result without opening or syncing the path. |
+| `dir_sync` | `dir_sync of path` | Flush directory-entry changes with `fsync(2)`. A missing path or non-directory raises `io`. Trace-recorded; replay returns the recorded result without opening or syncing the path. |
+
+The complete durable atomic-save recipe syncs both sides of the rename:
+
+```eigenscript fragment atomic_dir="/tmp"
+tmp is atomic_dir + "/eigenscript-atomic-save.tmp"
+target is atomic_dir + "/eigenscript-atomic-save.txt"
+write_text of [tmp, "complete contents\n"]
+file_sync of tmp
+rename of [tmp, target]
+dir_sync of atomic_dir
+remove_file of target
+```
+
+Hosted builds implement both primitives with `fsync(2)`. The freestanding /
+EigenOS profile registers no filesystem builtins, so these names are absent,
+like `write_text`, `rename`, and `remove_file`; a future filesystem HAL can
+provide them when that profile gains filesystem support.
 
 ### Self-hosting
 
@@ -330,6 +349,8 @@ Boolean keywords that check the most recently observed value:
 | `read_line` | `read_line of null` | Blocking byte-exact line read from **stdin**: the returned string includes its line terminator (`\n`, with a preceding `\r` preserved), or `null` at EOF. Thus a terminated final line differs from an unterminated one, and an empty line is `"\n"`. Pipes and redirected regular files have identical semantics. Trace-recorded, so replay is deterministic |
 | `read_bytes` | `read_bytes of path` / `read_bytes of [path, max_bytes]` | Read a file's or stream's raw bytes as a list of integers 0–255. The default cap is 10 MiB; `max_bytes` raises it up to the shared 512 MiB hard ceiling. Unseekable streams are read in chunks to EOF. Missing, unreadable, directory, and over-cap paths raise `io`; over-cap errors name the size, active cap, and `[path, max_bytes]` escape. An empty input returns `[]`. Trace-recorded, so replay is deterministic |
 | `write_text` | `write_text of ["path", text]` | Write string to file (`true` on success); I/O failure raises `io` with the path and OS reason. Trace-recorded result |
+| `file_sync` | `file_sync of path` | Flush a regular file with `fsync(2)`; trace replay does not sync |
+| `dir_sync` | `dir_sync of path` | Flush a directory with `fsync(2)`; trace replay does not sync |
 | `exec_capture` | `exec_capture of ["cmd", "arg1", ...]` | Run subprocess, return [exit_code, stdout_text]. No shell (direct exec). Child stdin is /dev/null. Returns [-1, ""] on failure, [-2, partial] on timeout. 10 MB output cap. Timeout form: `exec_capture of [["cmd", ...], seconds]` |
 | `env_get` | `env_get of "VAR_NAME"` | Get environment variable (empty string if unset) |
 | `random_hex` | `random_hex of n` | Generate n random hex characters from /dev/urandom (`""` for `n <= 0` or `n > 256`). A non-number `n` raises by default; under `EIGS_STRICT=0` it answers `""` (#971). |
