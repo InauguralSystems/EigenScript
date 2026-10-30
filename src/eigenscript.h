@@ -343,11 +343,14 @@ typedef struct ObserverSlot {
     /* #1044: ring CAPACITIES (what is allocated) and the per-binding window
      * OVERRIDE (what the classifiers read). The depth a slot classifies over
      * is observer_slot_window(s): win_override when nonzero, else the
-     * state's default (set_observer_window of n, OBSERVER_WINDOW_N at
-     * start). A ring is allocated at that depth on first push and re-grown
-     * (samples preserved, oldest first) when the depth in force exceeds the
-     * capacity; a depth SMALLER than the capacity simply reads the newest
-     * `depth` samples. So the common case — default depth, never touched —
+     * state's default (obs_window). Since v0.46.0 (#1687) no builtin sets
+     * either, so a live binding classifies at OBSERVER_WINDOW_N; only a
+     * replayed tape's `O cfg`/`O win` record (tape_read.c) or a trajectory
+     * snapshot handed to `classify` carries another depth (#2198). A ring
+     * is allocated at that depth on first push and re-grown (samples
+     * preserved, oldest first) when the depth in force exceeds the capacity;
+     * a depth SMALLER than the capacity simply reads the newest `depth`
+     * samples. So the common case — default depth, never touched —
      * allocates exactly what it did before #1044. */
     uint8_t v_cap, dh_cap;
     uint8_t win_override;       /* 0 = follow the state default */
@@ -631,10 +634,15 @@ static inline size_t val_str_len(const Value *v) {
  * a full window (count == OBSERVER_WINDOW_N) for "converged"-class
  * checks and a partial window (count >= 3) for trend-class checks. */
 #define OBSERVER_WINDOW_N 10
-/* #1044: the per-state default is set_observer_window of n; the per-binding
- * form set_observer_window of ["x", n] overrides one slot. Both are clamped
- * to [OBSERVER_WINDOW_MIN, OBSERVER_WINDOW_MAX]: the motion bands need two
- * samples per half-window (4), and the ring counters are 8-bit. */
+/* #1044: the bounds a non-default window must satisfy. A live run is fixed at
+ * OBSERVER_WINDOW_N: the builtins that set the per-state default and the
+ * per-binding override were removed in v0.46.0 (#1687). A depth can still
+ * arrive from a replayed tape's `O cfg`/`O win` record or a `classify`
+ * trajectory snapshot, and a depth outside
+ * [OBSERVER_WINDOW_MIN, OBSERVER_WINDOW_MAX] is refused: the motion bands
+ * need two samples per half-window (4), and the ring counters are 8-bit.
+ * `O win <name> 0` is not a depth: it clears the binding's override
+ * (tape_read.c, obs_cfg_rec_ok). */
 #define OBSERVER_WINDOW_MIN 4
 #define OBSERVER_WINDOW_MAX 64
 /* Start-of-state values of the four scalar observer knobs. Named because the
