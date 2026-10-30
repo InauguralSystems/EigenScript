@@ -224,8 +224,10 @@ false
   is inside the scale. `improving` is directional: lower is better, as for ML
   loss, so growth never qualifies even when its steps contract toward a
   plateau. A mode slower than about ten samples of your assignment cadence
-  cannot show up inside the window (the window is not configurable), so
-  sample at least once per tenth of the slowest period you care about.
+  cannot show up inside the window (the window is not configurable), so pick
+  a cadence that fits a full period of the slowest mode you care about inside
+  those ten samples (`10 ≥ T / Δt`), while still sampling fast enough to catch
+  the reversals of faster modes.
 - Trajectory is keyed to a binding's env slot, never to a value: a dict field,
   list element, parameter or `for` binder has none, and ONE binding rebound
   from `fleet[i][2]` in a loop carries the interleave of every entity (lint
@@ -399,7 +401,9 @@ warning and not `0` (that fossil died with the fail-soft reform, #975).
 A runtime error is caught as a dict with `kind`, `message`, `line` and `file`.
 A value you `throw of` is caught exactly as thrown: `throw of "boom"` binds the
 string `"boom"`, so `"caught: " + err` works for your own string throws and
-raises for a runtime error. Read `err.message` when the error may be either:
+raises for a runtime error. When the error may be either, check
+`type of err` first: a string throw is a `str`, a runtime error is a `dict`
+whose `message` you read (`err.message` on a string raises):
 
 ```eigenscript check
 try:
