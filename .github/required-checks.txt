@@ -24,7 +24,7 @@ linux / gcc
 # "Linux gcc/clang"). Core smoke on a PR, the full suite on main.
 linux / clang
 macos / macos-latest
-extensions (http+model+gfx suite; embed/lsp/jit-smoke)
+extensions (http+net+gfx suite; embed/lsp/jit-smoke)
 asan + ubsan (full suite)
 db extension (postgres service)
 jit differential (interpreter oracle, tape-replayed)
