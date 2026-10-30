@@ -48,8 +48,8 @@ Sandbox execution does not update shared temporal history: assignment values, na
 
 ## Variables and arithmetic
 
-In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
-or model builtin name raises a catchable `value` error at its first reference,
+In VM/native-JIT evaluation, an unresolved omitted HTTP, network or database
+builtin name raises a catchable `value` error at its first reference,
 naming the unavailable capability and required profile. This occurs before
 call arguments are evaluated. Local, captured and host bindings take precedence,
 including a binding to null; other unknown names retain `undefined_name` errors.

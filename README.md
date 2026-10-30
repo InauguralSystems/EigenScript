@@ -53,13 +53,13 @@ cd EigenScript
 This builds the hosted release (including lazily loaded graphics) and installs it to `~/.local/bin/eigenscript`.
 
 Requires only `gcc` — no external dependencies.
-Run `./install.sh server` to also build the HTTP + raw-TCP + model profile
+Run `./install.sh server` to also build the HTTP + raw-TCP profile
 (`eigenscript-server`), or `./install.sh server-db` to add PostgreSQL; the
 latter path requires PostgreSQL development headers. `full` remains a
 compatibility spelling for `server-db`.
 
-In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
-or model builtin name raises a catchable `value` error at its first reference,
+In VM/native-JIT evaluation, an unresolved omitted HTTP, network or database
+builtin name raises a catchable `value` error at its first reference,
 naming the unavailable capability and required profile. This occurs before
 call arguments are evaluated. Local, captured and host bindings take precedence,
 including a binding to null; other unknown names retain `undefined_name` errors.
@@ -553,7 +553,7 @@ eigenscript examples/stem/greenhouse_controller.eigs # closed-loop STEM controll
 
 ```bash
 cd tests
-./run_all_tests.sh    # the full suite (minimal build; full build adds HTTP/DB/model suites)
+./run_all_tests.sh    # the full suite (minimal build; full build adds HTTP/net/DB suites)
 ```
 
 ### Writing your own tests
@@ -632,7 +632,7 @@ same PR. Within the 0.x series, patch releases (0.x.**y**) never change
 documented behavior; minor releases (0.**x**) may, and any such break
 is listed in [CHANGELOG.md](CHANGELOG.md) under the release that made
 it. Anything *not* in the spec — observer internals, bytecode layout,
-JIT behavior, trace-tape format, extension builtins (`http`/`model`/
+JIT behavior, trace-tape format, extension builtins (`http`/`net`/
 `db`/`gfx`) — may change in any release. At 1.0 the documented surface
 freezes and semantic versioning applies from then on.
 
@@ -667,7 +667,7 @@ make gfx              # compatibility alias for make
 make asan             # ASan+UBSan with gfx -> build/asan/eigenscript
 make asan-gfx         # compatibility alias for make asan
 make test             # build and run the full suite
-make server           # build with HTTP + raw TCP sockets + model builtins
+make server           # build with HTTP + raw TCP sockets
 make server-db        # server profile plus PostgreSQL
 make zlib             # release profile plus DEFLATE codecs (links libz)
 make install          # install to ~/.local/bin

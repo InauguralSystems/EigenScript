@@ -1828,7 +1828,7 @@ Value* builtin_str_replace(Value *arg) {
     /* result_len = str_len + count*(new_len - old_len), computed in size_t.
      * The old int form overflowed count*(new_len-old_len) to a small positive
      * value, undersized the malloc, then overran it. Cap the expansion with a
-     * catchable error (as tensor/model ops cap their sizes) so a pathological
+     * catchable error (as tensor ops cap their sizes) so a pathological
      * blow-up neither overflows nor attempts a multi-gigabyte allocation. */
     size_t result_len;
     if (new_len > old_len) {

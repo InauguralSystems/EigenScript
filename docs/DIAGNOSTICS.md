@@ -568,7 +568,7 @@ two) — ROADMAP's sanctioned alternative to a type system. Its model:
 - **Builtins come from the runtime's own registry** — the linter calls
   `register_builtins()` on a scratch environment rather than keeping a name
   list that can drift. Extension builtins (`gfx_*`/`audio_*`, `http_*`,
-  `db_*`, model) bind by name regardless of the binary's build flags, from
+  `db_*`, `net_*`) bind by name regardless of the binary's build flags, from
   the same `ext_names.h` lists their registrars expand: the lint describes
   the language surface, not one build. `report_value` (a compiler special
   form) and the observed-loop bindings `__loop_exit__`/`__loop_iterations__`

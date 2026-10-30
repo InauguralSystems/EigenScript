@@ -52,8 +52,8 @@ entity (or `null`), excluding the entity at that input index. The scalar
 ## Program model
 
 Hosted build profiles determine which extension implementations are compiled
-in. In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
-or model builtin name raises a catchable `value` error at its first reference,
+in. In VM/native-JIT evaluation, an unresolved omitted HTTP, network or database
+builtin name raises a catchable `value` error at its first reference,
 naming the unavailable capability and required profile. This occurs before
 call arguments are evaluated. Local, captured and host bindings take precedence,
 including a binding to null; other unknown names retain `undefined_name` errors.
@@ -2701,8 +2701,6 @@ cross-unit history by default; hosts may explicitly promise isolated observer
 use with `eigs_set_eval_observer_isolated`. Missing history then raises
 conservatively instead of answering a rest value. See the
 [embedding observer contract](EMBEDDING.md#observer-contract-1038--1028).
-
-### Model context limits
 
 ### HTTP startup and response attribution
 

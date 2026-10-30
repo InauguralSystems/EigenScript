@@ -72,6 +72,6 @@ while [ "$i" -le "$n" ]; do
 done
 rm -rf "$poison"
 if [ "$n" -lt 10 ]; then echo "FAIL[B]: only $n core TUs probed (matcher broke)" >&2; brc=1; fi
-[ "$brc" = 0 ] && echo "leg B: $n core TUs compile with EXT_{HTTP,MODEL,DB,NET}=1 and <libpq-fe.h> poisoned"
+[ "$brc" = 0 ] && echo "leg B: $n core TUs compile with EXT_{HTTP,DB,NET}=1 and <libpq-fe.h> poisoned"
 if [ "$rc" = 0 ] && [ "$brc" = 0 ]; then echo "OK: no core -> extension-private include edge"; exit 0; fi
 exit 1

@@ -85,7 +85,7 @@ jobs:
           fi
 
   # One leg per released platform. Linux additionally ships the `full`
-  # variant (http+model+db); macOS ships the minimal build only — the
+  # variant (http+net+gfx+db); macOS ships the minimal build only — the
   # arm64 binary is interpreter-only until the ARM64 JIT exists. Every
   # leg runs the entire suite against the exact binary it uploads.
   # macos-15-intel is GitHub's hosted Intel runner (the macos-13

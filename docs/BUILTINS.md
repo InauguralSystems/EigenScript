@@ -1,7 +1,7 @@
 # EigenScript Builtin Reference
 
 Builtins are organized by module. `eigenscript --api` prints the live index.
-Core builtins are always available; extension builtins (HTTP, DB, model,
+Core builtins are always available; extension builtins (HTTP, net, DB,
 gfx, audio) require a full build or the `gfx` target.
 
 > **Builtins vs. library.** This file is the **compiled-in** surface —
@@ -895,10 +895,6 @@ Before this, every value was a string: SQL `false` arrived as `"f"`, which
 is a non-empty string and therefore **truthy**, so `if row.is_admin:` passed
 for a non-admin; NULL and `''` were both `""`; and `9 > 10` was true because
 `'9' > '1'`.
-
-## Optional: Model Extension
-
-Requires full build. Transformer model inference and training.
 
 ## Concurrency
 

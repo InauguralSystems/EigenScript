@@ -51,7 +51,7 @@ iteration, or a collector that quietly stops working).
   coverage in the repo.
 - The Makefile `asan` target compiles with `EIGENSCRIPT_EXT_HTTP=0`; if you
   touch `ext_http.c`, compile-check with `make http` — and **sanitize** it with
-  `make asan-http` (ext_http + model under ASan/UBSan; CI runs the suite that
+  `make asan-http` (ext_http + ext_net under ASan/UBSan; CI runs the suite that
   way, and the HTTP sections are probe-gated so they pull in automatically).
   `ext_gfx.c` is included in the hosted release (`make`) and ASan (`make asan`)
   profiles; SDL2 is lazy-loaded at runtime. `make gfx` aliases the release
