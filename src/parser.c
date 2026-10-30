@@ -1714,6 +1714,32 @@ static ASTNode* parse_statement_inner(Parser *p) {
         return n;
     }
 
+    if (t->type == TOK_WHILE) {
+        /* #2194: a bare Python/JS `while cond:` is the commonest habit in
+         * generated code. Name the fix once, then recover by parsing the rest
+         * exactly as `loop while`, so the indented body is consumed as a
+         * block (no "unexpected indent" cascade) and real errors inside the
+         * condition or body are still reported. Unlike the #732 hints, the
+         * recorded --lint --json message carries the hint too. */
+        const char *msg = "unexpected 'while'; loops are written 'loop while cond:'";
+        fprintf(stderr, "Parse error line %d:%d: unexpected 'while' — loops "
+                "are written 'loop while cond:'\n", t->line, t->col + 1);
+        p_record_tok_error(t, "E002", msg);
+        p_print_caret(t->line, t->col);
+        g_parse_errors++;
+        p_advance(p);
+        ASTNode *cond = parse_expression(p);
+        p_expect(p, TOK_COLON);
+        p_skip_newlines(p);
+        int body_count;
+        ASTNode **body = parse_block(p, &body_count);
+        ASTNode *n = make_node(AST_LOOP, t->line);
+        n->data.loop.cond = cond;
+        n->data.loop.body = body;
+        n->data.loop.body_count = body_count;
+        return n;
+    }
+
     if (t->type == TOK_UNOBSERVED) {
         p_advance(p);
         p_expect(p, TOK_COLON);
