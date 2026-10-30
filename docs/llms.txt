@@ -418,6 +418,30 @@ value
 division by zero
 ```
 
+One handler for both shapes, guarded by `type of err`:
+
+```eigenscript
+define show_error(err) as:
+    if type of err == "str":
+        print of ("thrown: " + err)
+    else:
+        print of ("runtime: " + err.message)
+
+try:
+    throw of "boom"
+catch err:
+    show_error of err
+
+try:
+    print of (1 / 0)
+catch err:
+    show_error of err
+```
+```output
+thrown: boom
+runtime: division by zero
+```
+
 ## Python/JS habits that do not work
 
 Each left-hand form below is a parse error or a runtime error. Use the right side:
