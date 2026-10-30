@@ -16,9 +16,14 @@ PASS=0; FAIL=0
 
 # This is a capability of the binary under test, not of the runner.  main.c
 # prints it from EIGS_JIT_ENABLED, the exact gate used by jit.c's emitter.
-JIT_BACKEND=$($EIGS --build-info 2>/dev/null | awk -F= '$1 == "jit-backend" { print $2; exit }')
+# setarch -R like every other run below: a TSan binary started with ASLR on can
+# die before main ("FATAL: ThreadSanitizer: unexpected memory mapping"); on the
+# dev box's kernel that was 19 of 20 bare runs and 0 of 20 under setarch -R.
+BUILD_INFO=$(setarch -R "$EIGS" --build-info 2>&1)
+JIT_BACKEND=$(printf '%s\n' "$BUILD_INFO" | awk -F= '$1 == "jit-backend" { print $2; exit }')
 if [ -z "$JIT_BACKEND" ]; then
     echo "FAIL: binary supplied no jit-backend build-info witness"
+    printf '%s\n' "$BUILD_INFO" | head -3 | sed 's/^/  /'
     exit 1
 fi
 # Anti-spread check: the established non-Apple Linux x86-64 lane must never
