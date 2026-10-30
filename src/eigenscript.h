@@ -638,9 +638,11 @@ static inline size_t val_str_len(const Value *v) {
  * OBSERVER_WINDOW_N: the builtins that set the per-state default and the
  * per-binding override were removed in v0.46.0 (#1687). A depth can still
  * arrive from a replayed tape's `O cfg`/`O win` record or a `classify`
- * trajectory snapshot, and both are refused outside
- * [OBSERVER_WINDOW_MIN, OBSERVER_WINDOW_MAX]: the motion bands need two
- * samples per half-window (4), and the ring counters are 8-bit. */
+ * trajectory snapshot, and a depth outside
+ * [OBSERVER_WINDOW_MIN, OBSERVER_WINDOW_MAX] is refused: the motion bands
+ * need two samples per half-window (4), and the ring counters are 8-bit.
+ * `O win <name> 0` is not a depth: it clears the binding's override
+ * (tape_read.c, obs_cfg_rec_ok). */
 #define OBSERVER_WINDOW_MIN 4
 #define OBSERVER_WINDOW_MAX 64
 /* Start-of-state values of the four scalar observer knobs. Named because the
