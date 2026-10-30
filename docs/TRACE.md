@@ -273,20 +273,49 @@ scheduler-trace/observer-configuration machinery is tracked by #1688.
 ## Recorded Builtins
 
 Every builtin whose return value is nondeterministic from the script's
-perspective lands on the tape as an `N` record:
+perspective lands on the tape as an `N` record. The table below is the
+complete catalogue of `N` record names, one per kind. Only the backticked
+names in its second column are entries; a name in the notes after it is
+not. `tools/tape_kinds_check.sh` (a `make precheck` row) fails when the
+source records a name this table leaves out, and when the table names
+something nothing records (#2200).
 
-- **Random:** `random`, `random_int`, `random_normal`, `random_hex`
-- **Time:** `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683)
-- **Environment / files:** `env_get`, `read_text`, `read_bytes`,
-  `read_line` (stdin, #558), `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585),
-  `write_text`, `write_bytes`, `rename`, `remove_file`, `file_sync`, `dir_sync`,
-  and `md5_file` (#1668, #2186).
-  Module acquisition adds `import_source` / `load_file_source` metadata and
-  bounded `_chunk` records, so source larger than one record remains replayable.
-  The filesystem replay rules are defined once in [Filesystem replay model](#filesystem-replay-model-1885).
-  An I/O
-  failure from either builtin or any file reader records the complete `io` message (builtin, path, and `strerror` reason)
-  in a one-string list. Because a successful `ls` can have that shape, its
+| Family | `N` record names |
+|---|---|
+| Random | `random`, `random_int`, `random_normal`, `random_hex` |
+| Time | `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683) |
+| Environment and process | `env_get`, `args` (#471) |
+| File reads | `read_text`, `read_bytes`, `read_bytes_buf`, `read_line` (stdin, #558), `md5_file` (#1668) |
+| File queries | `file_exists`, `is_dir` (#576), `is_file` (#1058), `ls`, `getcwd`, `exe_path` |
+| File writes | `mkdir` (#585), `write_text`, `write_bytes`, `rename`, `remove_file`, `file_sync`, `dir_sync` (#2186) |
+| Tensor files | `tensor_load` (#1393) |
+| Module sources | `import_source`, `import_source_chunk`, `load_file_source`, `load_file_source_chunk`, `import_warning` |
+| Observer gate sources | `observer_source`, `observer_source_chunk` (#915) |
+| HTTP extension | `http_post`, `http_request_body`, `http_session_id`, `http_request_headers` |
+| Network extension | `net_listen`, `net_port`, `net_accept`, `net_dial`, `net_recv`, `net_send` (#414) |
+| Graphics extension | `gfx_read` (#823), `gfx_ticks` |
+| Audio (graphics extension) | `audio_capture_open`, `audio_capture_read` (#579), `audio_stream_queued`, `audio_noise` (#1803) |
+
+Notes on the families:
+
+- **Files:** the filesystem replay rules are defined once in
+  [Filesystem replay model](#filesystem-replay-model-1885). `is_dir` and
+  `is_file` are taped like `file_exists`.
+- **Module sources:** module acquisition records `import_source` /
+  `load_file_source` metadata and bounded `_chunk` records, so source larger
+  than one record remains replayable. Each `import` also records
+  `import_warning`: the project-shadows-stdlib warning it printed, or an empty
+  string. Replay prints the recorded warning instead of resolving the paths
+  again.
+- **Observer gate sources:** the observer gate reads the modules a program
+  loads by literal path before it runs, to decide whether the observer can
+  stay off (docs/OBSERVER.md). Each module source it reads is recorded as
+  `observer_source` with bounded `observer_source_chunk` records, and so is
+  the reason it stopped reading, so a replayed compile takes the same
+  decision from the tape.
+- **File I/O failures:** an I/O failure from any file builtin records the
+  complete `io` message (builtin, path, and `strerror` reason) in a
+  one-string list. Because a successful `ls` can have that shape, its
   error record adds a trailing `null` tag. Replay recognizes these
   otherwise-impossible result shapes and re-raises the
   identical error without live filesystem access. The fixed-cap readers
@@ -309,8 +338,8 @@ perspective lands on the tape as an `N` record:
 - **Process:** `args` (command-line arguments — differ across
   invocations, so the recorded list is served on replay regardless of
   the live argv; #471)
-- **HTTP extension:** `http_post` (success and all error paths),
-  `http_request_body`, `http_session_id`, `http_request_headers`
+- **HTTP extension:** `http_post` records its success and all its error
+  paths.
 - **Network extension (#414):** `net_listen`, `net_port`, `net_accept`,
   `net_dial`, `net_recv`, `net_send`. Every environment outcome is a
   recorded *value* — `null` for failure/timeout, a number or buffer for
@@ -335,6 +364,13 @@ perspective lands on the tape as an `N` record:
   depends on the font rasteriser, the driver and the backend, so the pixel
   a render-decode oracle reads back is a device input and takes the
   TAKE/RECORD pair.
+- **Graphics clock (gfx extension):** `gfx_ticks` returns the milliseconds
+  since SDL started (`0` when SDL is not loaded), a clock reading like
+  `monotonic_ms`, so it takes the TAKE/RECORD pair too.
+- **Audio stream depth (gfx extension):** `audio_stream_queued` returns how
+  many samples are still queued on the live output stream (`0` with no
+  stream open). A refill pump steers on it, so the depth is recorded and
+  replay serves it, which keeps the pump deterministic under `EIGS_REPLAY`.
 - **A REJECTED argument consumes no record** (#1007). `audio_capture_open`,
   `audio_capture_read`'s siblings and `gfx_read` all place their
   argument-type guard *above* `TRACE_NONDET_TAKE`, because an argument's
