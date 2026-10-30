@@ -114,8 +114,7 @@ check of ["literal/variable forms agree", contains of [caught_var.message, "tabl
 # RETURN restored an unstamped value over the live counters and a
 # dispatch-per-iteration loop's __loop_iterations__ froze at 1.
 #
-# __loop_iterations__ is cumulative across loops, so the invariant is on the
-# DELTA a loop contributes: exactly its own iteration count. That is the
+# __loop_iterations__ is per loop, so the invariant is the absolute count.
 # property a plain loop already has, asserted here for both — pinning the
 # dispatch loop against its no-dispatch twin rather than against a constant
 # the convergence heuristic could retune (pre-fix the delta is 1 whatever
@@ -126,8 +125,7 @@ define d743(x) as:
 
 t743 is [d743]
 
-# Warm-up loop: __loop_iterations__ is undefined until a loop has run, so
-# this one exists to establish the baseline the two measured loops subtract.
+# Warm-up loop also checks that later loop entries replace this count.
 # #861: the three loops DECAY (x*0.5) so they exit normally via the routed
 # `converged` — the old doubling form only "terminated" through the entropy
 # defect, and under honest semantics it stalls, which RESETS the cumulative
@@ -147,7 +145,7 @@ p743 is 100
 loop while not converged:
     plain_n is plain_n + 1
     p743 is p743 * 0.5
-plain_delta is __loop_iterations__ - plain_before
+plain_delta is __loop_iterations__
 
 disp_before is __loop_iterations__
 disp_n is 0
@@ -157,7 +155,7 @@ loop while not converged:
     disp_n is disp_n + 1
     junk743 is dispatch of [t743, 0, v743]
     v743 is v743 * 0.5
-disp_delta is __loop_iterations__ - disp_before
+disp_delta is __loop_iterations__
 
 check of ["plain loop contributes its own iteration count", plain_delta == plain_n]
 check of ["dispatch loop contributes its own iteration count", disp_delta == disp_n]

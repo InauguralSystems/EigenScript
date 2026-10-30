@@ -433,6 +433,8 @@ void free_ast(ASTNode *node) {
             for (int i = 0; i < node->data.func.param_count; i++)
                 free(node->data.func.params[i]);
             free(node->data.func.params);
+            free(node->data.func.param_lines);
+            free(node->data.func.param_cols);
             if (node->data.func.param_defaults) {
                 for (int i = 0; i < node->data.func.param_count; i++)
                     if (node->data.func.param_defaults[i])
@@ -1096,11 +1098,17 @@ static ASTNode* parse_primary(Parser *p) {
         fprintf(stderr, "Parse error line %d: unexpected %s in expression",
                 t->line, tok_type_name(t->type));
         if (t->str_val) fprintf(stderr, " ('%s')", t->str_val);
+        if (t->type == TOK_NOT)
+            fprintf(stderr, "; `not` binds below comparisons and `of`; parenthesize it: (not x)");
         fprintf(stderr, "\n");
         {
             char m[160];
-            snprintf(m, sizeof(m), "unexpected %s in expression",
-                     tok_type_name(t->type));
+            if (t->type == TOK_NOT)
+                snprintf(m, sizeof(m),
+                         "unexpected not in expression; not binds below comparisons and of; parenthesize it: (not x)");
+            else
+                snprintf(m, sizeof(m), "unexpected %s in expression",
+                         tok_type_name(t->type));
             p_record_tok_error(t, "E002", m);
         }
         g_parse_errors++;
@@ -1154,7 +1162,7 @@ static ASTNode* parse_relation(Parser *p) {
     return left;
 }
 
-/* Depth-guard wrapper. parse_unary self-recurses on prefix `not`/`-`/`~`
+/* Depth-guard wrapper. parse_unary self-recurses on prefix `-`/`~`
  * and, via parse_relation's `of` RHS, on `f of g of ...` — neither path
  * touched the parse-depth guard before, so either could overflow the C
  * stack on a single malformed line (SIGSEGV). Bounding parse_unary bounds
@@ -1179,14 +1187,6 @@ static ASTNode* parse_unary_body(Parser *p) {
         ASTNode *operand = parse_unary(p);
         ASTNode *n = make_node_col(AST_UNARY, op_tok->line, op_tok->col);
         snprintf(n->data.unary.op, sizeof(n->data.unary.op), "-");
-        n->data.unary.operand = operand;
-        return n;
-    }
-    if (p_cur(p)->type == TOK_NOT) {
-        Token *op_tok = p_advance(p);
-        ASTNode *operand = parse_unary(p);
-        ASTNode *n = make_node_col(AST_UNARY, op_tok->line, op_tok->col);
-        snprintf(n->data.unary.op, sizeof(n->data.unary.op), "not");
         n->data.unary.operand = operand;
         return n;
     }
@@ -1232,6 +1232,7 @@ static ASTNode* parse_addition(Parser *p) {
         ASTNode *right = parse_multiply(p);
         ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
         snprintf(n->data.binop.op, sizeof(n->data.binop.op), "%s", op);
+        n->data.binop.synth = op_tok->synth;   /* f-string `+` (#1425) */
         n->data.binop.left = left;
         n->data.binop.right = right;
         left = n;
@@ -1328,16 +1329,45 @@ static ASTNode* parse_comparison(Parser *p) {
 }
 
 static ASTNode* parse_and(Parser *p) {
-    ASTNode *left = parse_comparison(p);
-    while (p_cur(p)->type == TOK_AND) {
-        if (chain_too_deep(p)) break;
-        Token *op_tok = p_advance(p);
+    ASTNode *left = NULL;
+    Token *and_tok = NULL;
+
+    for (;;) {
+        /* Word-form `not` sits between comparisons and `and`/`or` (#1648).
+         * Build its right-associated prefix chain from the outside in, then
+         * fill the final operand slot with the comparison. Keeping this in
+         * the iterative and-operand path is important: a separate parse_not
+         * call adds a C frame at EVERY parenthesized nesting level, and its
+         * former PARSE_MAX_DEPTH-sized token array made that frame large
+         * enough to overflow a 256 KiB freestanding stack before the shared
+         * depth guard fired. Each node is still charged through
+         * chain_too_deep, so huge flat `not` chains remain bounded too. */
+        ASTNode *not_head = NULL;
+        ASTNode **not_operand = &not_head;
+        while (p_cur(p)->type == TOK_NOT) {
+            if (chain_too_deep(p)) break;
+            Token *op_tok = p_advance(p);
+            ASTNode *n = make_node_col(AST_UNARY, op_tok->line, op_tok->col);
+            snprintf(n->data.unary.op, sizeof(n->data.unary.op), "not");
+            *not_operand = n;
+            not_operand = &n->data.unary.operand;
+        }
         ASTNode *right = parse_comparison(p);
-        ASTNode *n = make_node_col(AST_BINOP, op_tok->line, op_tok->col);
-        snprintf(n->data.binop.op, sizeof(n->data.binop.op), "and");
-        n->data.binop.left = left;
-        n->data.binop.right = right;
-        left = n;
+        *not_operand = right;
+        if (not_head) right = not_head;
+
+        if (!left) {
+            left = right;
+        } else {
+            ASTNode *n = make_node_col(AST_BINOP, and_tok->line, and_tok->col);
+            snprintf(n->data.binop.op, sizeof(n->data.binop.op), "and");
+            n->data.binop.left = left;
+            n->data.binop.right = right;
+            left = n;
+        }
+
+        if (p_cur(p)->type != TOK_AND || chain_too_deep(p)) break;
+        and_tok = p_advance(p);
     }
     return left;
 }
@@ -1422,12 +1452,16 @@ static ASTNode* parse_statement_inner(Parser *p) {
         /* Parse optional named parameters: define add(a, b) as:
          * Each param may carry a default: define f(a, b is 10): */
         char **params = NULL;
+        int *param_lines = NULL;
+        int *param_cols = NULL;
         ASTNode **defaults = NULL;
         int param_count = 0;
         int first_default = -1;
         if (p_cur(p)->type == TOK_LPAREN) {
             p_advance(p); /* skip ( */
             params = xmalloc_array(MAX_PARAMS, sizeof(char*));
+            param_lines = xcalloc(MAX_PARAMS, sizeof(int));
+            param_cols = xcalloc(MAX_PARAMS, sizeof(int));
             defaults = xcalloc(MAX_PARAMS, sizeof(ASTNode*));
             int param_cap_reported = 0;
             int sig_err_base = g_parse_errors;
@@ -1455,6 +1489,8 @@ static ASTNode* parse_statement_inner(Parser *p) {
                     continue;
                 }
                 int slot = param_count;
+                param_lines[slot] = p_cur(p)->line;
+                param_cols[slot] = p_cur(p)->col;
                 params[param_count++] = xstrdup(p_cur(p)->str_val);
                 p_advance(p);
                 if (p_cur(p)->type == TOK_IS) {
@@ -1474,8 +1510,12 @@ static ASTNode* parse_statement_inner(Parser *p) {
         if (param_count == 0) {
             /* No explicit params: default to single param "n" */
             free(params);
+            free(param_lines);
+            free(param_cols);
             free(defaults);
             params = xmalloc(sizeof(char*));
+            param_lines = xcalloc(1, sizeof(int));
+            param_cols = xcalloc(1, sizeof(int));
             params[0] = xstrdup("n");
             defaults = xcalloc(1, sizeof(ASTNode*));
             param_count = 1;
@@ -1495,6 +1535,8 @@ static ASTNode* parse_statement_inner(Parser *p) {
         n->data.func.name = xstrdup((name_tok && name_tok->str_val) ? name_tok->str_val : "");
         set_name_hash(n, n->data.func.name);
         n->data.func.params = params;
+        n->data.func.param_lines = param_lines;
+        n->data.func.param_cols = param_cols;
         n->data.func.param_defaults = defaults;
         n->data.func.param_count = param_count;
         n->data.func.first_default = first_default;

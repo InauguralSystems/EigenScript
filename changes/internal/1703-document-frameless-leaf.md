@@ -1,0 +1,1 @@
+- Document and pin that exactly-fed leaf accessors use a frameless call path with no call environment to recycle (#1703).

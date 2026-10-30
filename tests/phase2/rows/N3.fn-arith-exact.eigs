@@ -3,9 +3,10 @@
 # EXPECT-RC: 0
 # SHAPE: F
 # WITNESS: fn-stop f MUL
-# OPS: MUL
+# OPS: BINARY_LINE MUL
 define f(a, b) as:
-    t is a * b
+    t is a * (
+        b)
     u is t + a
     return u - b
 r is null

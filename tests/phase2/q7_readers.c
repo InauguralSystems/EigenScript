@@ -17,9 +17,9 @@ static EigsShape shape(EigsShapeKind kind, const double *v, int n) {
     check(eigs_geom_shape(args,0,kind,&area,&out,"q7-test"), "shape read");
     val_decref(args); return out;
 }
-int main(void) {
-    EigsState *st = eigs_open(); if (!st) return 1;
-    g_try_depth = 1;
+/* Expected reader raises run inside a real VM try (#1808/#2098). */
+static Value *phase2_reader_probe(Value *arg) {
+    (void)arg;
     EigsShape s = shape(EIGS_RECT, (double[]){-3e9,0,6e9,10},4);
     check(!s.empty && s.x==0 && s.y==0 && s.w==640 && s.h==10, "whole rect, not per-vertex saturation");
     s = shape(EIGS_LINE,(double[]){-640,-480,1280,960},4);
@@ -82,7 +82,21 @@ int main(void) {
     list_append(args,boxed);list_append_owned(args,make_int(0)); int refs=boxed->refcount;
     check(eigs_geom_shape(args,0,EIGS_POINT,&area,&s,"q7-test"),"boxed integer geometry");
     check(s.empty && boxed->refcount==refs,"boxed coordinate borrowed on clipped success");
-    val_decref(args);val_decref(boxed);g_try_depth=0;eigs_close(st);
+    val_decref(args);val_decref(boxed);clear_error();
+    return make_bool(1);
+}
+int main(void) {
+    EigsState *st = eigs_open(); if (!st) return 1;
+    Value *probe = make_builtin(phase2_reader_probe);
+    eigs_set_global("phase2_reader_probe", probe);
+    val_decref(probe);
+    Value *result = eigs_eval_string("try:\n    phase2_reader_probe of null\ncatch e:\n    false\n");
+    if (!result || result->type != VAL_BOOL || !result->data.boolean || g_has_error) {
+        puts("phase2-q7-test: FAIL VM probe execution");
+        failures++;
+    }
+    val_decref(result);
+    eigs_close(st);
     printf("phase2-q7-test: %s checks=%d failures=%d\n",failures?"FAIL":"PASS",checks,failures);
     return failures?1:0;
 }

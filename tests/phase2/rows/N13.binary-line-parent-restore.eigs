@@ -1,0 +1,27 @@
+# ROW: N13.binary-line-parent-restore
+# ITEMS: N13 N5
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn restored_index
+# OPS: BINARY_LINE ADD BINARY_LINE_END INDEX_GET
+# Sync10 #1425/#2035 + S9-K1: successful native float arithmetic restores
+# the operand line before a failing parent index; e.line remains an int.
+# LINE-NUMBER SENSITIVE: the parent keeps the right operand's physical line.
+define restored_index(items, a, b) as:
+    local answer is items[a + (
+        b)]
+    return answer
+
+local items is [0.5, 1.5]
+local i is 0.0
+loop while i < 60.0:
+    local answer is restored_index of [items, 0.0, 1.0]
+    i is i + 1.0
+local diagnostic is ["missing", false, "missing"]
+try:
+    local answer is restored_index of [null, 0.0, 1.0]
+catch e:
+    diagnostic is [e.kind, e.line == 12, num_type of e.line]
+print of diagnostic
+# Keep the witnessed call last: its native full return crosses both markers.
+print of (restored_index of [items, 0.0, 1.0])

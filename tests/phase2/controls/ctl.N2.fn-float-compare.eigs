@@ -3,9 +3,10 @@
 # EXPECT-RC: 0
 # SHAPE: F
 # WITNESS: fn ltf
-# OPS: LT
+# OPS: BINARY_LINE LT BINARY_LINE_END
 define ltf(a, b) as:
-    t is a < b
+    t is a < (
+        b)
     return t
 r is null
 i is 0.0

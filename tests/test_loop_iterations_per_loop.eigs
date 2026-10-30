@@ -1,0 +1,108 @@
+# #1906: nested loops own independent counters; unwinding cannot unbalance them.
+# example
+ex_o is 0
+loop while ex_o < 5:
+    ex_o is ex_o + 1
+    ex_i is 0
+    loop while ex_i < 2:
+        ex_i is ex_i + 1
+print of ["nested-two", __loop_iterations__]
+
+three_o is 0
+loop while three_o < 4:
+    three_o is three_o + 1
+    three_m is 0
+    loop while three_m < 2:
+        three_m is three_m + 1
+        three_i is 0
+        loop while three_i < 3:
+            three_i is three_i + 1
+print of ["nested-three", __loop_iterations__]
+
+break_o is 0
+loop while break_o < 4:
+    break_o is break_o + 1
+    break_i is 0
+    loop while break_i < 5:
+        break_i is break_i + 1
+        break
+print of ["break", __loop_iterations__]
+
+error_o is 0
+loop while error_o < 3:
+    error_o is error_o + 1
+    try:
+        error_i is 0
+        loop while error_i < 2:
+            error_i is error_i + 1
+            bad is sqrt of -1
+    catch error_value:
+        caught is true
+print of ["catch", __loop_iterations__]
+
+define nested_return() as:
+    ret_o is 0
+    loop while ret_o < 4:
+        ret_o is ret_o + 1
+        ret_i is 0
+        loop while ret_i < 2:
+            ret_i is ret_i + 1
+            return 1
+caller_o is 0
+loop while caller_o < 3:
+    caller_o is caller_o + 1
+    ignored is nested_return of []
+print of ["return", __loop_iterations__]
+
+# Both abnormal exits occur while an enclosing source loop is active.
+exit_o is 0
+loop while exit_o < 1:
+    exit_o is exit_o + 1
+    stall_x is 100.0
+    loop while not converged:
+        stall_x is stall_x * 2
+    stalled_reason is __loop_exit__
+    limit_code is [101, 63,3,0, 30,6,0, 25,0,0, 40]
+    limit_r is sandbox_run of [[1, limit_code, ["__loop_iterations__"]], 5]
+print of ["stall-limit", __loop_iterations__, stalled_reason, limit_r.ok, limit_r.result]
+
+# Two three-iteration loops under a five-iteration sandbox budget.  Neither
+# loop exceeds five alone; together they trip it on inner count 2 (total 5).
+budget_code is [2,27,0,0,35,101,25,0,0,0,3,0,19,31,15,0,25,0,0,3,4,26,0,0,35,63,3,0,30,25,0,2,27,1,0,35,101,25,1,0,0,3,0,19,31,15,0,25,1,0,3,4,26,1,0,35,63,3,0,30,25,0,25,2,0,40]
+budget_r is sandbox_run of [[1, budget_code,
+                            ["budget_a", "budget_b", "__loop_iterations__", 3]], 5]
+print of ["budget", budget_r.ok, budget_r.result,
+          index_of of [budget_r.error.message, "partial run"] >= 0]
+
+# A frame owns the compiler-loop cap count just as it owns the published loop
+# count.  Two checks in the caller must not charge the callee's first check.
+frame_fn is [[63,0,0, 41], [], [], 0, "frame_once", []]
+frame_code is [63,0,0, 63,0,0, 38,0,0, 27,0,0,
+              25,0,0, 39,0,0, 35, 41]
+frame_r is sandbox_run of [[1, frame_code, ["frame_once"], [frame_fn],
+                            0, "frame_review", []], 3]
+print of ["frame", frame_r.ok]
+
+# Recursive calls receive the same fresh per-frame budget.  At max=3 the
+# third frame would trip if it inherited the first two frames' single checks.
+recursive_fn is [[63,0,0, 23,0,0, 2, 20, 31,12,0,
+                  25,0,0, 23,0,0, 3, 5, 39,1,0, 40, 41],
+                 ["recursive"], [], 1, "recursive", ["n"]]
+recursive_code is [38,0,0, 27,0,0, 25,0,0, 0,1,0, 39,1,0, 41]
+recursive_r is sandbox_run of [[1, recursive_code, ["recursive", 3],
+                                [recursive_fn], 0, "recursive_review", []], 3]
+print of ["recursive", recursive_r.ok]
+
+# A separately compiled unit shares this module environment. Its first loop
+# must not reset the enclosing loop's private counter.
+eval_o is 0
+loop while eval_o < 5:
+    eval_o is eval_o + 1
+    eval of "eval_j is 0\nloop while eval_j < 2:\n    eval_j is eval_j + 1"
+print of ["eval", eval_o, __loop_iterations__]
+
+load_o is 0
+loop while load_o < 5:
+    load_o is load_o + 1
+    load_file of "loop_counter_loaded.eigs"
+print of ["load-file", load_o, __loop_iterations__]

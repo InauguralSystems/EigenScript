@@ -212,7 +212,9 @@ def main():
     shim = open(os.path.join(HERE, "..", "observation_hooks.c")).read()
     both_ways(set(re.findall(r'hook_is\("(\w+)"\)', shim)), {v[1] for v in cases.values()} - {"-"},
               "the shim's hooks", "the cases' hooks")
-    both_ways(set(os.listdir(os.path.join(BDIR, "_stdin"))), {v[2] for v in cases.values()} - {"-"},
+    # S10-D2 retires the only stdin fixture; an absent directory means no fixtures.
+    stdin_dir = os.path.join(BDIR, "_stdin")
+    both_ways(set(os.listdir(stdin_dir)) if os.path.isdir(stdin_dir) else set(), {v[2] for v in cases.values()} - {"-"},
               "builtins/_stdin", "the cases' stdin")
     both_ways({f[:-5] for f in os.listdir(os.path.join(BDIR, "_profiles")) if f.endswith(".eigs")},
               {p for _, p in meta.values()} - {"release"}, "builtins/_profiles", "the non-release profiles")
@@ -365,7 +367,7 @@ def main():
         for kind, v in (("pre", vs_pre), ("tag", vs_tag)):
             tally[(r, kind, v)] = tally.get((r, kind, v), 0) + 1
 
-    want = {"b": 46, "c": 77, "d": 53, "e": 38, "f": 19, "g": 77}  # R1.6a-D1 read_text; R1.6b-D3 http_post LOSS; R1.6-S2 set_exit_code
+    want = {"b": 46, "c": 76, "d": 53, "e": 38, "f": 19, "g": 77}  # S10-D2 retires proc_read_buf from c; all other round memberships stay fixed.
     if counts != want: fail.append("round counts %s, the plan says %s" % (counts, want))
     if not rows or len(rows) != len(sec6): fail.append("examined=%d table=%d" % (len(rows), len(sec6)))
     if guard["guarded"] != guard["yes"] + guard["closed_in"] + guard["pending-profile"] + guard["vacuous"]:

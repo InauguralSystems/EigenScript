@@ -1,0 +1,201 @@
+# A callback can leave the currently perturbed index valid while removing
+# later cells.  The callback runs once for +eps and once for -eps.
+p1 is [1, 2, 3]
+loss1_calls is 0
+define loss1(_) as:
+    loss1_calls is loss1_calls + 1
+    assert of [loss1_calls <= 2, "gradient touched another cell after callback mutation"]
+    if loss1_calls == 2:
+        list_remove_at of [p1, 2]
+        list_remove_at of [p1, 1]
+    return 0
+try:
+    numerical_grad of [loss1, p1, 0.01]
+    assert of [false, "numerical_grad 1-D accepted a shortened parameter"]
+catch e:
+    assert of [e.kind == "value", "numerical_grad 1-D error kind"]
+    assert of [e.message == "param mutated during gradient", "numerical_grad 1-D error message"]
+    assert of [p1 == [1], "numerical_grad 1-D restored the remaining cell"]
+    assert of [loss1_calls == 2, "numerical_grad 1-D stopped before another cell"]
+    print of "PASS numerical_grad 1-D later-cell shrink"
+
+p2 is [[1, 2, 3]]
+loss2_calls is 0
+define loss2(_) as:
+    loss2_calls is loss2_calls + 1
+    assert of [loss2_calls <= 2, "gradient touched another cell after callback mutation"]
+    if loss2_calls == 2:
+        list_remove_at of [p2[0], 2]
+        list_remove_at of [p2[0], 1]
+    return 0
+try:
+    numerical_grad of [loss2, p2, 0.01]
+    assert of [false, "numerical_grad 2-D accepted a shortened row"]
+catch e:
+    assert of [e.kind == "value", "numerical_grad 2-D error kind"]
+    assert of [e.message == "param mutated during gradient", "numerical_grad 2-D error message"]
+    assert of [p2 == [[1]], "numerical_grad 2-D restored the remaining cell"]
+    assert of [loss2_calls == 2, "numerical_grad 2-D stopped before another cell"]
+    print of "PASS numerical_grad 2-D later-cell shrink"
+
+pr is [[1, 2, 3]]
+rows_calls is 0
+define loss_rows(_) as:
+    rows_calls is rows_calls + 1
+    assert of [rows_calls <= 2, "gradient touched another cell after callback mutation"]
+    if rows_calls == 2:
+        list_remove_at of [pr[0], 2]
+        list_remove_at of [pr[0], 1]
+    return 0
+try:
+    numerical_grad_rows of [loss_rows, pr, [0], 0.01]
+    assert of [false, "numerical_grad_rows accepted a row shortened to c+1"]
+catch e:
+    assert of [e.kind == "value", "numerical_grad_rows error kind"]
+    assert of [e.message == "param mutated during gradient", "numerical_grad_rows error message"]
+    assert of [pr == [[1]], "numerical_grad_rows restored the remaining cell"]
+    assert of [rows_calls == 2, "numerical_grad_rows stopped on the mutated row"]
+    print of "PASS numerical_grad_rows c+1 shrink"
+
+pc is [[1, 2, 3]]
+cols_calls is 0
+define loss_cols(_) as:
+    cols_calls is cols_calls + 1
+    assert of [cols_calls <= 2, "gradient touched another cell after callback mutation"]
+    if cols_calls == 2:
+        list_remove_at of [pc[0], 2]
+        list_remove_at of [pc[0], 1]
+    return 0
+try:
+    numerical_grad_cols of [loss_cols, pc, [0, 1, 2], 0.01]
+    assert of [false, "numerical_grad_cols accepted a row shortened to c+1"]
+catch e:
+    assert of [e.kind == "value", "numerical_grad_cols error kind"]
+    assert of [e.message == "param mutated during gradient", "numerical_grad_cols error message"]
+    assert of [pc == [[1]], "numerical_grad_cols restored the remaining cell"]
+    assert of [cols_calls == 2, "numerical_grad_cols stopped on the mutated row"]
+    print of "PASS numerical_grad_cols c+1 shrink"
+
+pg is [1, 2, 3]
+growth_calls is 0
+define loss_growth(_) as:
+    growth_calls is growth_calls + 1
+    if growth_calls == 1:
+        append of [pg, 4]
+    return 0
+try:
+    numerical_grad of [loss_growth, pg, 0.01]
+    assert of [false, "numerical_grad accepted parameter growth"]
+catch e:
+    assert of [e.kind == "value", "numerical_grad growth error kind"]
+    assert of [e.message == "param mutated during gradient", "numerical_grad growth error message"]
+    assert of [pg == [1, 2, 3, 4], "numerical_grad growth restored the perturbed cell"]
+    print of "PASS numerical_grad growth"
+
+# A callback may replace a row with another, sufficiently long list.  The
+# replacement must not receive restoration writes, and the retained original
+# row must have its perturbed cell restored before the mutation error escapes.
+original is [1]
+replacement is [2]
+aliased is [original]
+alias_calls is 0
+define loss_alias(_) as:
+    alias_calls is alias_calls + 1
+    if alias_calls == 1:
+        aliased[0] is replacement
+    return 0
+try:
+    numerical_grad of [loss_alias, aliased, 0.01]
+    assert of [false, "numerical_grad accepted a replaced row"]
+catch e:
+    assert of [e.kind == "value", "row replacement error kind"]
+    assert of [e.message == "param mutated during gradient", "row replacement error message"]
+    assert of [original == [1], "numerical_grad restored the original row"]
+    assert of [replacement == [2], "numerical_grad left the replacement row untouched"]
+    print of "PASS numerical_grad row identity"
+
+# Exercise the failure cleanup repeatedly.  The ASan pool-off shard runs this
+# with leak detection, making an unfinished gradient-row leak deterministic.
+leak_iterations is 0
+loop while leak_iterations < 100:
+    leak_param is [[1]]
+    define leak_loss(_) as:
+        list_remove_at of [leak_param, 0]
+        return 0
+    try:
+        numerical_grad of [leak_loss, leak_param, 0.01]
+    catch e:
+        assert of [e.kind == "value", "caught-mutation loop error kind"]
+    leak_iterations is leak_iterations + 1
+assert of [leak_iterations == 100, "caught-mutation loop completed"]
+print of "PASS numerical_grad caught-mutation cleanup loop"
+
+# If a callback mutates before the currently perturbed cell, the old index now
+# names a neighbour.  Failure cleanup must not overwrite that shifted value.
+before_remove is [1, 2, 3]
+before_remove_calls is 0
+define loss_before_remove(_) as:
+    before_remove_calls is before_remove_calls + 1
+    if before_remove_calls == 3:
+        list_remove_at of [before_remove, 0]
+    return 0
+try:
+    numerical_grad of [loss_before_remove, before_remove, 0.01]
+    assert of [false, "numerical_grad accepted removal before perturbed cell"]
+catch e:
+    assert of [e.kind == "value", "removal-before 1-D error kind"]
+    assert of [e.message == "param mutated during gradient", "removal-before 1-D error message"]
+    assert of [before_remove[1] == 3, "removal-before 1-D preserved shifted neighbour"]
+    print of "PASS numerical_grad 1-D removal before perturbed cell"
+
+matrix_before_remove is [[1, 2, 3]]
+matrix_before_remove_calls is 0
+define loss_matrix_before_remove(_) as:
+    matrix_before_remove_calls is matrix_before_remove_calls + 1
+    if matrix_before_remove_calls == 3:
+        list_remove_at of [matrix_before_remove[0], 0]
+    return 0
+try:
+    numerical_grad of [loss_matrix_before_remove, matrix_before_remove, 0.01]
+    assert of [false, "numerical_grad accepted row removal before perturbed cell"]
+catch e:
+    assert of [e.kind == "value", "removal-before 2-D error kind"]
+    assert of [e.message == "param mutated during gradient", "removal-before 2-D error message"]
+    assert of [matrix_before_remove[0][1] == 3, "removal-before 2-D preserved shifted neighbour"]
+    print of "PASS numerical_grad 2-D removal before perturbed cell"
+
+before_insert is [1, 2, 3]
+before_insert_calls is 0
+define loss_before_insert(_) as:
+    before_insert_calls is before_insert_calls + 1
+    if before_insert_calls == 3:
+        list_insert_at of [before_insert, 0, 9]
+    return 0
+try:
+    numerical_grad of [loss_before_insert, before_insert, 0.01]
+    assert of [false, "numerical_grad accepted insertion before perturbed cell"]
+catch e:
+    assert of [e.kind == "value", "insertion-before error kind"]
+    assert of [e.message == "param mutated during gradient", "insertion-before error message"]
+    assert of [before_insert[1] == 1, "insertion-before preserved shifted neighbour"]
+    print of "PASS numerical_grad insertion before perturbed cell"
+
+# A perturbation beyond +-EIGS_NUM_MAX (1e308) is stored clamped by num_guard:
+# 9.9e307 + 5e306 is stored as 1e308.  The failure path must compare the cell
+# with the value actually stored, or it skips restoring the cell it wrote.
+pc_big is [9.9e307, 5]
+big_calls is 0
+define loss_big(_) as:
+    big_calls is big_calls + 1
+    if big_calls == 1:
+        list_remove_at of [pc_big, 1]
+    return 0
+try:
+    numerical_grad of [loss_big, pc_big, 5e306]
+    assert of [false, "numerical_grad accepted a shortened parameter after a clamped perturbation"]
+catch e:
+    assert of [e.message == "param mutated during gradient", "clamped perturbation error message"]
+    assert of [pc_big == [9.9e307], "clamped perturbation restored the cell it wrote"]
+    print of "PASS numerical_grad clamped perturbation restored"
+
+print of "NUMERICAL GRAD MUTATION ALL PASS"

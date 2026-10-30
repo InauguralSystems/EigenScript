@@ -41,7 +41,7 @@ Value* builtin_buffer(Value *arg) {
         if (r < 0) r = 0;
         if (c < 0) c = 0;
         long total = (long)r * (long)c;
-        if (total > 10000000) { r = 0; c = 0; total = 0; }
+        if (total > EIGS_TENSOR_MAX_ELEMENTS) { r = 0; c = 0; total = 0; }
         if (!sandbox_charge((size_t)total * sizeof(double))) return make_null();  /* #292 */
         Value *v = xcalloc(1, sizeof(Value));
         v->type = VAL_BUFFER;
@@ -62,7 +62,7 @@ Value* builtin_buffer(Value *arg) {
         count = (int)n;
     }
     if (count < 0) count = 0;
-    if (count > 10000000) count = 10000000;
+    if (count > EIGS_TENSOR_MAX_ELEMENTS) count = EIGS_TENSOR_MAX_ELEMENTS;
     if (!sandbox_charge((size_t)count * sizeof(double))) return make_null();  /* #292 */
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_BUFFER;

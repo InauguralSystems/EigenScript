@@ -503,11 +503,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "8edc97cf7b482539b87f23af15e897b62b9c1675bf8dd73ee2879d61ebf3c4a7"
+      "2edb03734cf4aac5f813ffbfc63811134f98840f6d3a998f2d1e1e4c5f2e669c"
     ],
     "source_sha256": {
       "builtin_buffer": [
-        "8edc97cf7b482539b87f23af15e897b62b9c1675bf8dd73ee2879d61ebf3c4a7"
+        "2edb03734cf4aac5f813ffbfc63811134f98840f6d3a998f2d1e1e4c5f2e669c"
       ],
       "eigs_int_arg_range": [
         "6c64833ddf01abc9ae34c664470f2f9bdb3d6196a4c240aea29df622cfdeb288"
@@ -1239,7 +1239,7 @@
         "3d31ab37b9f8ae841e1676582d4fd67faa2920584ca29fcb51d140bfa8b00e6f"
       ],
       "eigs_json_encode_value": [
-        "776fab5e1777bfd3d0f1f18b992c9c804fabbc5fac1d5bea7df1dcdffbc4fb4e"
+        "0b1e6bf310daa2f5866abed6569c3a3cd7e00706352cec39ecaa70d66a6f2c82"
       ]
     }
   },
@@ -1267,11 +1267,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "f5373796d80c123af44f229ecb9400facfe90fe43089c09b5065de20566c1987"
+      "b9e85732c41ae625cd669fa7606787ef0fb0dc618839be0f2d7de249c2c201db"
     ],
     "source_sha256": {
       "builtin_keys": [
-        "f5373796d80c123af44f229ecb9400facfe90fe43089c09b5065de20566c1987"
+        "b9e85732c41ae625cd669fa7606787ef0fb0dc618839be0f2d7de249c2c201db"
       ],
       "eigs_module_ns_sync": [
         "89a5440e7753fd7b8b20da8c57b1e135dbb89f726777035c3f0ebee65bf59fb7"
@@ -1497,7 +1497,7 @@
         "39c0eb8bb815d97985d265d5c7cfb2ddb74c009945a5f1e070978a46d6c411f0"
       ],
       "vm_borrow_scan": [
-        "1a8091779396865aec635f1b298002b0ac4062fa7e4d346064ac26b8351a4007"
+        "24720427e6a309464edc04905ac38f78d0ab9de6a6778910ec55c2f5ba108795"
       ]
     }
   },
@@ -1726,21 +1726,9 @@
         "f5dca9f11e0c4cee680a747e2a6af8f32baa59e2b15f8b305e546c74847e2cca"
       ],
       "value_to_string": [
-        "c9039c73e311c9651eade5203eeb37ac27c34194eb4b9645a12fe5453b6b35cd"
+        "541c34dfd1dbe93f2ca39b800321afb116be9c74d7d8e35b297502a157a2e1fd"
       ]
     }
-  },
-  {
-    "function": "builtin_proc_read_buf",
-    "file": "src/builtins_host.c",
-    "category": "exact_soft_rejection",
-    "minimum": 2,
-    "maximum": 2,
-    "reason": "count != 2 returns null, not a catchable shape error. Never prefix-consumes; full strict-shape policy should add surplus diagnostic without changing strict-off.",
-    "public_names": [
-      "proc_read_buf"
-    ],
-    "disposition": "guarded"
   },
   {
     "function": "builtin_random_int",
@@ -1775,6 +1763,30 @@
     "reason": "Scalar end or list start/end/step; existing empty/one/two forms retained, bounded finite controls only.",
     "public_names": [
       "range"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_read_bytes",
+    "file": "src/builtins_host.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 2,
+    "reason": "Path scalar or [path, optional max_bytes]; preserve the null fallback and pre-tape validation.",
+    "public_names": [
+      "read_bytes"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_read_text",
+    "file": "src/builtins_host.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 2,
+    "reason": "Path scalar or [path, optional max_bytes]; preserve the empty-string fallback and pre-tape validation.",
+    "public_names": [
+      "read_text"
     ],
     "disposition": "guarded"
   },
@@ -2169,7 +2181,7 @@
         "1f942006a4fdfa43f5447114d478b219bc60142b61f4585660944fc9a933ef61"
       ],
       "value_to_string": [
-        "c9039c73e311c9651eade5203eeb37ac27c34194eb4b9645a12fe5453b6b35cd"
+        "541c34dfd1dbe93f2ca39b800321afb116be9c74d7d8e35b297502a157a2e1fd"
       ]
     }
   },
@@ -2354,7 +2366,7 @@
         "65240f647516c2717f73e1df84f89fa46da785a5ff51062d545adca210986100"
       ],
       "tensor_to_flat": [
-        "f13f1a26b114751245a4c2e6eecaeadea640f0a4e1a724335c6af409cb1dbc11"
+        "c14f388b17b34c0e8b621ee59e0eb10f023a87cecf56d8a2770d6735e4fd7d5d"
       ]
     }
   },
@@ -2587,7 +2599,7 @@
         "244c127abae1a7bf7fa14097cf4c4930239ba42febae9d6d8f3264ea974d4dd1"
       ],
       "tensor_to_flat": [
-        "f13f1a26b114751245a4c2e6eecaeadea640f0a4e1a724335c6af409cb1dbc11"
+        "c14f388b17b34c0e8b621ee59e0eb10f023a87cecf56d8a2770d6735e4fd7d5d"
       ]
     }
   },
@@ -2663,7 +2675,7 @@
         "65240f647516c2717f73e1df84f89fa46da785a5ff51062d545adca210986100"
       ],
       "tensor_to_flat": [
-        "f13f1a26b114751245a4c2e6eecaeadea640f0a4e1a724335c6af409cb1dbc11"
+        "c14f388b17b34c0e8b621ee59e0eb10f023a87cecf56d8a2770d6735e4fd7d5d"
       ]
     }
   },
@@ -2799,14 +2811,14 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "7cf20f5fbfe3244c34c85c227263c80c479fa02533c0c8a54f2388385dba36a1"
+      "01c2880d21271cbf77daa5f6fa0d35cfe5eeaa2ca51e46cb333f797dbba52581"
     ],
     "source_sha256": {
       "builtin_throw": [
-        "7cf20f5fbfe3244c34c85c227263c80c479fa02533c0c8a54f2388385dba36a1"
+        "01c2880d21271cbf77daa5f6fa0d35cfe5eeaa2ca51e46cb333f797dbba52581"
       ],
       "value_to_string": [
-        "c9039c73e311c9651eade5203eeb37ac27c34194eb4b9645a12fe5453b6b35cd"
+        "541c34dfd1dbe93f2ca39b800321afb116be9c74d7d8e35b297502a157a2e1fd"
       ]
     }
   },
@@ -2842,11 +2854,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "2a3245012b1d29c46b4d68d5b62f352db349d1f3dbc9284887abf82964f2371c"
+      "7ea3926cc6c536b67a1f0ad1012141120aa12085b9071a60bd1ff6e81f8fa9ac"
     ],
     "source_sha256": {
       "builtin_values": [
-        "2a3245012b1d29c46b4d68d5b62f352db349d1f3dbc9284887abf82964f2371c"
+        "7ea3926cc6c536b67a1f0ad1012141120aa12085b9071a60bd1ff6e81f8fa9ac"
       ],
       "eigs_module_ns_sync": [
         "89a5440e7753fd7b8b20da8c57b1e135dbb89f726777035c3f0ebee65bf59fb7"
@@ -2898,7 +2910,7 @@
         "df9046f4cdc7e9431a3b4c81e7c9752d9bb7520af99660223fb3e9b6f586171b"
       ],
       "value_to_string": [
-        "c9039c73e311c9651eade5203eeb37ac27c34194eb4b9645a12fe5453b6b35cd"
+        "541c34dfd1dbe93f2ca39b800321afb116be9c74d7d8e35b297502a157a2e1fd"
       ]
     }
   },

@@ -15,9 +15,13 @@
 # Measured 2026-09-20 under cachegrind, bench_dmg_shape: JIT on 1.20 G Ir,
 # JIT off 2.22 G Ir — the JIT DOES engage under valgrind, both arms differ.
 #
-# The lane runs with cycle-estimation OFF (see the workflow): the headline
-# is instructions, not the runner's cache model, because perf stat on the
-# dev box refuted that model's 60% cache share (IPC 1.61, 1.6% LLC refs).
+# The lane runs with cycle-estimation OFF (see the workflow), because perf
+# stat on the dev box refuted the estimate's 60% cache share (IPC 1.61, 1.6%
+# LLC refs). The Value is then MODELED CYCLES at 3.6 GHz, not instructions
+# (#2002): 1 cycle per instruction fetch or data load/store, plus 5 per L1 miss
+# and 100 per last-level miss, roughly 1.4 to 1.6 times cachegrind Ir. The unit,
+# its measured resolution and the guard that re-derives it every run:
+# docs/INSTRUMENTS.md and tools/codspeed_unit_guard.py.
 # Locally, match it: codspeed run -m simulation --cycle-estimation=false
 #
 # Run locally (after `codspeed auth login`):

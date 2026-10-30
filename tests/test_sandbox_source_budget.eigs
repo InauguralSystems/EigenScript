@@ -1,0 +1,41 @@
+load_file of "lib/test.eigs"
+
+plain is sandbox_run of ["return 42", 1000, 2000000, 10000]
+assert_eq of [plain.ok, true, "source form uses the C compiler"]
+assert_eq of [plain.result, 42, "source form returns the compiled result"]
+
+bad is sandbox_run of ["x is (", 1000, 2000000, 10000]
+assert_eq of [bad.ok, false, "front-end failure is structured"]
+assert_eq of [bad.error.kind, "parse", "front-end failure has parse kind"]
+assert_eq of [bad.error.file, "<sandbox>", "front-end diagnostic names sandbox source"]
+
+blocked is sandbox_run of ["return read_text of \"/etc/passwd\"", 1000, 2000000, 10000]
+assert_eq of [blocked.ok, false, "source form shares the capability allowlist"]
+assert_eq of [blocked.error.kind, "sandbox", "blocked source capability is sandbox kind"]
+
+callable is sandbox_run of ["define f() as:\n    return 1\nreturn f", 1000, 2000000, 10000]
+assert_eq of [callable.ok, false, "source callable cannot cross the boundary"]
+assert_eq of [callable.error.kind, "sandbox", "callable refusal is sandbox kind"]
+
+compile_cap is sandbox_run of ["return 1", 1000, 1048576, 10000]
+assert_eq of [compile_cap.ok, false, "compile reservation obeys max_bytes"]
+assert_eq of [compile_cap.error.kind, "sandbox", "compile budget uses sandbox kind"]
+
+recursive is sandbox_run of ["define r(d) as:\n    if d < 32:\n        r of (d + 1)\n        r of (d + 1)\n    return 0\nr of 0", 1000000, 20000000, 10000]
+assert_eq of [recursive.ok, false, "depth-32 recursion exhausts deterministic work"]
+assert_eq of [recursive.error.kind, "sandbox", "recursive work refusal is sandbox kind"]
+has_budget is index_of of [recursive.error.message, "budget"] >= 0
+assert_eq of [has_budget, true, "recursive refusal names its budget"]
+
+# Temporal history belongs to the host thread: source form is refused like a
+# descriptor, and compiling it must not arm host history for the name.
+temporal is sandbox_run of ["return prev of read_text", 1000, 2000000, 10000]
+assert_eq of [temporal.ok, false, "source form cannot read temporal history"]
+assert_eq of [temporal.error.kind, "sandbox", "temporal refusal is sandbox kind"]
+has_temporal is index_of of [temporal.error.message, "temporal history"] >= 0
+assert_eq of [has_temporal, true, "temporal refusal names temporal history"]
+nested is sandbox_run of ["define f() as:\n    return prev of secret\nreturn 1", 1000, 2000000, 10000]
+assert_eq of [nested.ok, false, "a temporal read in an uncalled function is refused too"]
+assert_eq of [nested.error.kind, "sandbox", "nested temporal refusal is sandbox kind"]
+
+print of "sandbox source budgets passed"

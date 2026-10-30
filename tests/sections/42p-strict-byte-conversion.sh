@@ -6,7 +6,7 @@ TOTAL=$((TOTAL + SB_PASS + SB_FAIL))
 PASS=$((PASS + SB_PASS))
 FAIL=$((FAIL + SB_FAIL))
 printf '%s\n' "$SB_OUTPUT"
-if ! rc_ok "$SB_RC" "$SB_OUTPUT" || { [ "$SB_PASS" -ne 12 ] && [ "$SB_PASS" -ne 23 ]; } || [ "$SB_FAIL" -ne 0 ]; then
+if ! rc_ok "$SB_RC" "$SB_OUTPUT" || ! child_plan_ok "$SB_OUTPUT" "$SB_RC" "^  PASS:" "^  FAIL:"; then
     FAIL=$((FAIL + 1))
     TOTAL=$((TOTAL + 1))
     echo "  FAIL: strict byte-list conversion summary (rc=$SB_RC)"

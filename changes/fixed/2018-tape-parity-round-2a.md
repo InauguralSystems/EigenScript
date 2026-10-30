@@ -1,0 +1,1 @@
+- EigenCore now matches VM tape control escapes, shadowed taped builtins, and `random_int` span rejection (#2018).

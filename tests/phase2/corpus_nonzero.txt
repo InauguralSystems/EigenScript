@@ -1,6 +1,7 @@
-# tests/phase2/corpus_nonzero.txt -- the corpus files whose BASELINE exits
-# nonzero when run standalone under their run conditions, each with that exit
-# code and the reason (#1758; tools/phase2_corpus_diff.sh). One row per file:
+# tests/phase2/corpus_nonzero.txt -- expected standalone nonzero corpus exits:
+# the baseline code for unchanged files; for changed fixtures the exact
+# candidate code when the baseline cannot meet it (still reported as DIFF).
+# Every code has a reason (#1758; tools/phase2_corpus_diff.sh). One row per file:
 #   <path from the repo root> <exit code> <reason>
 # An exit nobody declared is UNDECLARED-NONZERO, and a row whose file now
 # exits otherwise is STALE: both fail the differential. A file with run
@@ -49,3 +50,10 @@ tests/task_exit_detached_try.eigs 1 deliberate uncaught worker/task error: the s
 tests/thread_exit_join_uncaught.eigs 1 deliberate uncaught worker/task error: the suite expects exit 1 (#1745)
 tests/thread_exit_unjoined_death.eigs 1 deliberate uncaught worker/task error: the suite expects exit 1 (#1745)
 tests/task_exit_worker_unjoined_task.eigs 1 deliberate unjoined worker-task error: tests/sections/104c-worker-task-exit-1810.sh requires process exit 1 (#1810)
+
+# Sync10: exactly the five intentional new-main child exits; never exclusions.
+tests/operator_line_fn.eigs 1 deliberate uncaught function-operator diagnostic introduced by main f200a54d (#1425/#2035); the program intentionally raises at its second + on line7
+tests/operator_line_module.eigs 1 deliberate uncaught module-operator diagnostic from main f200a54d (#1425/#2035); tests/sections/15l-binary-operator-line-1425.sh checks nonzero plus line8 header/excerpt/caret/traceback
+tests/task_exit_other_try.eigs 1 deliberate unjoined task error from main 8061e5a0 (#1808/#2098); tests/run_all_tests.sh check_task_exit requires1 and at die while another task holds a try
+tests/task_exit_cooperative_joinable.eigs 3 deliberate task exit3 from main 8061e5a0 (#1808/#2098); tests/sections/104b-task-death-fail-fast-1736.sh requires3 and forbids resumed/caught/end/synthesized-error markers
+tests/task_exit_cooperative_detached.eigs 7 deliberate detached task exit7 from main 8061e5a0 (#1808/#2098); tests/sections/104b-task-death-fail-fast-1736.sh requires7 and forbids resumed/synthesized-error markers

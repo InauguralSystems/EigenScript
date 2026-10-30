@@ -153,8 +153,6 @@ pi	pi	-	-
 pow	pow	-	-
 ppu_render_frame	ppu_render_frame	-	-
 print	print	-	-
-proc_read_buf	proc_read_buf	-	-
-proc_read_buf.hi	proc_read_buf	-	hi
 random	random	-	-
 random_hex	random_hex	-	-
 random_int	random_int	-	-

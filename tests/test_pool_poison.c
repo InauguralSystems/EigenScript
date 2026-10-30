@@ -3,6 +3,7 @@
  *   test_pool_poison num      read a NUM parked on the per-thread freelist
  *   test_pool_poison env      read values[0] of a call env parked on its chunk
  *   test_pool_poison envfield read a field (count) of that parked Env struct
+ *   test_pool_poison leaf     a frameless leaf accessor allocates no call env
  *   test_pool_poison control  the pools' own reuse paths (pop, take, a cycle
  *                             collection over a parked env) -- must stay clean
  *
@@ -25,6 +26,11 @@ static const char *PROGRAM =
     "    b is a + 1\n"
     "    return b\n"
     "pool_poison_r is pool_poison_fn of [41]\n";
+
+static const char *LEAF_PROGRAM =
+    "define pool_poison_leaf(a) as:\n"
+    "    return a\n"
+    "pool_poison_leaf_r is pool_poison_leaf of [41]\n";
 
 /* The function's chunk, whose env_cache holds the env parked on return. */
 static EigsChunk *fn_chunk(void) {
@@ -105,6 +111,34 @@ static int plant_envfield(void) {
     return 0;
 }
 
+/* #1703: an exactly-fed one-expression accessor takes the frameless CALL
+ * path. Pin both halves of that mechanism: the compiler classified the chunk
+ * as a leaf accessor, and repeated successful calls left no call env to park. */
+static int leaf_control(void) {
+    Value *r = eigs_eval_string(LEAF_PROGRAM);
+    if (!r) { puts("FAIL leaf: initial eval failed"); return 1; }
+    eigs_value_release(r);
+    Value *fn = eigs_get_global("pool_poison_leaf");
+    EigsChunk *c = (fn && fn->type == VAL_FN && fn->data.fn.body_count == -1)
+                 ? (EigsChunk *)fn->data.fn.body : NULL;
+    int classified = c && c->leaf_accessor;
+    int no_env = c && !c->env_cache;
+    if (fn) eigs_value_release(fn);
+    r = eigs_eval_string("pool_poison_leaf_r is pool_poison_leaf of [7]\n");
+    if (r) eigs_value_release(r);
+    Value *res = eigs_get_global("pool_poison_leaf_r");
+    int result_ok = res && res->type == VAL_INT && VAL_I64_RAW(res) == 7;
+    if (res) eigs_value_release(res);
+    no_env = no_env && c && !c->env_cache;
+    if (classified && no_env && result_ok) {
+        puts("PASS: leaf accessor is frameless and has no call env to park");
+        return 0;
+    }
+    printf("FAIL leaf: classified=%d no_call_env=%d result_ok=%d\n",
+           classified, no_env, result_ok);
+    return 1;
+}
+
 static int control(void) {
     int bad = 0;
     /* NUM pop: make_float hands the parked Value back, readable again. */
@@ -179,8 +213,9 @@ int main(int argc, char **argv) {
     if (!strcmp(mode, "num")) rc = plant_num();
     else if (!strcmp(mode, "env")) rc = plant_env();
     else if (!strcmp(mode, "envfield")) rc = plant_envfield();
+    else if (!strcmp(mode, "leaf")) rc = leaf_control();
     else if (!strcmp(mode, "control")) rc = control();
-    else { fprintf(stderr, "usage: %s num|env|envfield|control\n", argv[0]); rc = 2; }
+    else { fprintf(stderr, "usage: %s num|env|envfield|leaf|control\n", argv[0]); rc = 2; }
     eigs_close(st);
     return rc;
 }

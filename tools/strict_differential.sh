@@ -38,6 +38,42 @@
 set -uo pipefail
 cd "$(cd "$(dirname "$0")/.." && pwd)"
 
+# A boolean-valued capability probe has three states, not two: true, false,
+# and a broken/unexpected observation.  Keep the third state distinct so a
+# crashed or noisy probe cannot silently disable the pixel gate.
+renderer_probe_state() {
+    case "$1" in
+        true)  return 0 ;;
+        false) return 1 ;;
+        *)
+            printf 'FAIL: gfx renderer probe returned %q (expected true or false)\n' "$1" >&2
+            return 2
+            ;;
+    esac
+}
+
+if [ "${1:-}" = --renderer-probe-selftest ]; then
+    n=0; bad=0
+    probe_case() { # label, expected rc, observation
+        local got
+        n=$((n + 1))
+        renderer_probe_state "$3" >/dev/null 2>&1; got=$?
+        if [ "$got" -eq "$2" ]; then
+            echo "  PASS: $1"
+        else
+            echo "  FAIL: $1 (rc=$got, want $2)"
+            bad=$((bad + 1))
+        fi
+    }
+    probe_case 'true enables the pixel differential' 0 true
+    probe_case 'false alone reports no renderer' 1 false
+    for observation in 1 '' 'probe failed noisily'; do
+        probe_case "unexpected output '$observation' fails closed" 2 "$observation"
+    done
+    echo "RENDERER PROBE SELFTEST: $((n - bad)) passed, $bad failed, $n declared"
+    exit "$bad"
+fi
+
 SHAPES_ONLY=0
 if [ "${1:-}" = --shapes-only ]; then SHAPES_ONLY=1; shift; fi
 NEW="${EIGS_DIFF_NEW:-./src/eigenscript}"
@@ -59,8 +95,20 @@ SHAPE_BACKEND_PLATFORM=$(uname -s) || exit 1
 str_has()      { case "$1" in *"$2"*) return 0 ;; esac; return 1 ; }
 str_has_line() { case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) return 0 ;; esac; return 1 ; }
 str_has_word() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1 ; }
+sweep_classify_output() { # builtin name, captured stderr
+    case "$2" in
+        "Error "*":1: $1:"*|*"
+Error "*":1: $1:"*) echo RAISED-OWN; return ;;
+    esac
+    case "$2" in
+        "Error "*":"[0-9]*":"*|*"
+Error "*":"[0-9]*":"*) echo RAISED-OTHER; return ;;
+    esac
+    return 1
+}
 
 . tests/lsan_classify.sh
+. tools/gfx_address_space.sh
 shape_canonical() { # exact owned prefix only; call AFTER raw classification
     local prefix="$2/" marker='@OWNED@/'
     printf '%s' "${1//"$prefix"/$marker}"
@@ -69,42 +117,14 @@ shape_canonical() { # exact owned prefix only; call AFTER raw classification
 # ASan reserves a large virtual shadow mapping. The local ordinary GFX cap
 # must not become a portable sanitizer limit. Inspect the actual executable;
 # neither ASAN_OPTIONS nor a filename is evidence of instrumentation.
-shape_asan_symbols() {
-    printf '%s\n' "$1" | awk '$NF ~ /^_?__asan_init(@.*)?$/ { found=1 } END { exit !found }'
-}
-shape_binary_instrumentation() {
-    local symbols
-    if symbols=$(readelf --wide --syms "$1" 2>/dev/null) ||
-       symbols=$(nm "$1" 2>/dev/null); then
-        if shape_asan_symbols "$symbols"; then echo asan; else echo ordinary; fi
-    else
-        echo "FAIL: cannot inspect GFX executable instrumentation: $1" >&2
-        return 1
-    fi
-}
+shape_asan_symbols() { gfx_asan_symbols "$@"; }
+shape_binary_instrumentation() { gfx_binary_instrumentation "$@"; }
 shape_gfx_limit() { # called only in the individual GFX child subshell
     local instrumentation
     if [ "$1" = "$NEW" ]; then instrumentation=$NEW_SHAPE_INSTRUMENTATION
     elif [ -n "$BASE" ] && [ "$1" = "$BASE" ]; then instrumentation=$BASE_SHAPE_INSTRUMENTATION
     else echo 'FAIL: unrecognized GFX executable' >&2; return 125; fi
-    case "$SHAPE_BACKEND_PLATFORM" in
-        Linux|Darwin) ;;
-        *) echo 'FAIL: unsupported GFX address-space platform' >&2; return 125 ;;
-    esac
-    case "$instrumentation" in
-        ordinary)
-            # This machine's required Linux ceiling is not a Darwin limit:
-            # XNU rejects a ceiling below mappings already owned by the shell.
-            if [ "$SHAPE_BACKEND_PLATFORM" = Linux ]; then
-                ulimit -v 1500000 || return 125
-            fi ;;
-        asan)
-            [ "$(ulimit -v)" = unlimited ] || {
-                echo 'FAIL: instrumented GFX requires an uncapped parent virtual address space' >&2
-                return 125
-            } ;;
-        *) echo 'FAIL: unknown GFX executable instrumentation' >&2; return 125 ;;
-    esac
+    gfx_address_space_apply "$1" "$instrumentation" "$SHAPE_BACKEND_PLATFORM" 1500000
 }
 
 cap_observation_ok() { # diagnostic prefix, capability, exact observed state
@@ -559,6 +579,16 @@ _sd_exit() {
 }
 trap _sd_exit EXIT
 
+if [ "${EIGS_DIFF_SWEEP_SELFTEST:-0}" = 1 ]; then
+    printf 'ignore is str_lower of 42\n' > "$TMP/p.eigs"
+    out="$(EIGS_STRICT=1 "$NEW" "$TMP/p.eigs" 2>&1)"
+    verdict=$(sweep_classify_output str_lower "$out") || verdict=UNRUN
+    printf 'sweep-verdict-selftest: %s\n' "$verdict"
+    verdict_printed=1
+    [ "$verdict" = RAISED-OWN ]
+    exit $?
+fi
+
 # Cheap contract/enrollment check precedes every runtime probe.
 if ! python3 tools/strict_shape_contract.py --render "$TMP/shapes"; then
     verdict_printed=1
@@ -661,6 +691,7 @@ is_dir|print of (is_dir of 42)
 is_file|print of (is_file of 42)
 read_text|print of (read_text of 42)
 read_bytes|print of (read_bytes of 42)
+read_bytes_buf|print of (read_bytes_buf of 42)
 ls|print of (ls of 42)
 mkdir|print of (mkdir of 42)
 env_get|print of (env_get of 42)
@@ -819,6 +850,7 @@ print of (is_dir of ".")
 print of (is_file of ".")
 try:\n    print of (read_text of "/nonexistent/eigs_1008_probe")\ncatch e:\n    print of e.kind
 try:\n    print of (read_bytes of "/nonexistent/eigs_1008_probe")\ncatch e:\n    print of e.kind
+try:\n    print of (read_bytes_buf of "/nonexistent/eigs_1008_probe")\ncatch e:\n    print of e.kind
 print of (env_get of "EIGS_1008_UNSET_PROBE")
 print of (min of [1, 5, 3])
 print of (max of 9)
@@ -1500,14 +1532,7 @@ sweep_verdict() {   # $1 name, $2 argument text
         out="$(EIGS_STRICT=1 "$NEW" "$TMP/p.eigs" 2>&1)"; src=$?
         printf '%s\n' "$out" > "$TMP/last.out"
         if [ "$src" -eq 0 ]; then echo SILENT; return; fi
-        case "$out" in
-            "Error line 1: $1:"*|*"
-Error line 1: $1:"*) echo RAISED-OWN; return ;;
-        esac
-        case "$out" in
-            "Error line "*|*"
-Error line "*) echo RAISED-OTHER; return ;;
-        esac
+        verdict=$(sweep_classify_output "$1" "$out") && { echo "$verdict"; return; }
         echo "retry: $1 of $2 (exit $src, no runtime error printed)" >> "$TMP/retries"
     done
     echo UNRUN
@@ -1533,6 +1558,9 @@ for name in $NAMES; do
         PROBED_PAIRS="$PROBED_PAIRS
 $name|$sh"
         v="$(sweep_verdict "$name" "$txt")"
+        if [ -n "${EIGS_DIFF_SWEEP_TABLE:-}" ]; then
+            printf '%s|%s|%s\n' "$name" "$sh" "$v" >> "$EIGS_DIFF_SWEEP_TABLE"
+        fi
         allowed=""
         case "$ALLOW_NL" in
             *"
@@ -1597,10 +1625,17 @@ fi
 # ------------------------------------------------ pixel differential
 printf 'print of (gfx_open of [8, 8, "pixdiff-probe"])\n' > "$TMP/open.eigs"
 NO_RENDERER=0
-if [ "$("$NEW" "$TMP/open.eigs" 2>&1 | tail -1)" != "true" ]; then
-    NO_RENDERER=1
-    echo "  NOTE: no renderer — pixel identity is OFF; strict-raise and coverage still run."
-fi
+renderer_probe_output=$("$NEW" "$TMP/open.eigs" 2>&1 | tail -1)
+renderer_probe_state "$renderer_probe_output"
+renderer_probe_rc=$?
+case "$renderer_probe_rc" in
+    0) ;;
+    1)
+        NO_RENDERER=1
+        echo "  NOTE: no renderer — pixel identity is OFF; strict-raise and coverage still run."
+        ;;
+    *) exit 1 ;;
+esac
 HEAD='ignore is gfx_open of [32, 32, "pixdiff"]
 ignore is gfx_clear of [0, 0, 0]'
 TAIL='total is 0

@@ -56,33 +56,48 @@ static uint64_t ulp_dist(double a, double b) {
 /* ---------------- sections ---------------- */
 
 typedef struct {
+#if defined(__riscv)
+    unsigned int fcsr;
+#else
     unsigned short control;
     unsigned short status;
     unsigned int mxcsr;
+#endif
 } MachineFenv;
 
 static MachineFenv machine_fenv(void) {
     MachineFenv state;
+#if defined(__riscv)
+    __asm__ volatile ("frcsr %0" : "=r" (state.fcsr));
+#else
     __asm__ volatile ("fnstcw %0" : "=m" (state.control));
     __asm__ volatile ("fnstsw %0" : "=am" (state.status));
     __asm__ volatile ("stmxcsr %0" : "=m" (state.mxcsr));
+#endif
     return state;
 }
 
+#if !defined(__riscv)
 static void set_mxcsr_bits(unsigned int bits) {
     unsigned int mxcsr;
     __asm__ volatile ("stmxcsr %0" : "=m" (mxcsr));
     mxcsr |= bits;
     __asm__ volatile ("ldmxcsr %0" : : "m" (mxcsr));
 }
+#endif
 
 static void check_machine_fenv(const char *row, MachineFenv want,
                                MachineFenv got) {
+#if defined(__riscv)
+    CHECK(want.fcsr == got.fcsr, "%s: fcsr %08x/%08x", row,
+          want.fcsr, got.fcsr);
+#else
     CHECK(want.control == got.control && want.status == got.status &&
           want.mxcsr == got.mxcsr,
           "%s: cw %04x/%04x sw %04x/%04x mxcsr %08x/%08x", row,
           want.control, got.control, want.status, got.status,
           want.mxcsr, got.mxcsr);
+#endif
 }
 
 static void fenv_round_trip_row(const char *name, int rounding,
@@ -90,7 +105,11 @@ static void fenv_round_trip_row(const char *name, int rounding,
     fenv_t saved;
     fesetenv(FE_DFL_ENV);
     CHECK(fesetround(rounding) == 0, "%s: glibc fesetround", name);
+#if defined(__riscv)
+    (void)mxcsr_bits;
+#else
     set_mxcsr_bits(mxcsr_bits);
+#endif
     if (exceptions) CHECK(feraiseexcept(exceptions) == 0,
                           "%s: glibc feraiseexcept", name);
     MachineFenv want = machine_fenv();
@@ -99,42 +118,68 @@ static void fenv_round_trip_row(const char *name, int rounding,
     fesetenv(FE_DFL_ENV);
     CHECK(eigs_fesetenv(&saved) == 0, "%s: mini fesetenv", name);
     check_machine_fenv(name, want, machine_fenv());
+#if defined(__riscv)
+    printf("  %-13s fcsr=%08x\n", name, want.fcsr);
+#else
     printf("  %-13s cw=%04x sw=%04x mxcsr=%08x\n", name,
            want.control, want.status, want.mxcsr);
+#endif
 }
 
 static void t_fenv(void) {
+#if defined(__riscv)
+    printf("[fenv — exact RISC-V fcsr round trips]\n");
+#else
     printf("[fenv — exact x87/MXCSR round trips]\n");
+#endif
     fenv_round_trip_row("nearest", FE_TONEAREST, 0, 0);
     fenv_round_trip_row("downward", FE_DOWNWARD, 0, 0);
     fenv_round_trip_row("upward", FE_UPWARD, 0, 0);
     fenv_round_trip_row("toward-zero", FE_TOWARDZERO, 0, 0);
+#if !defined(__riscv)
     fenv_round_trip_row("FTZ", FE_TONEAREST, 1u << 15, 0);
     fenv_round_trip_row("DAZ", FE_TONEAREST, 1u << 6, 0);
+#endif
     fenv_round_trip_row("sticky-flags", FE_TONEAREST, 0, FE_ALL_EXCEPT);
 
     fesetenv(FE_DFL_ENV);
     MachineFenv default_want = machine_fenv();
     fesetround(FE_DOWNWARD);
+#if !defined(__riscv)
     set_mxcsr_bits((1u << 15) | (1u << 6));
+#endif
     feraiseexcept(FE_ALL_EXCEPT);
     CHECK(eigs_fesetenv(FE_DFL_ENV) == 0, "FE_DFL_ENV return");
     check_machine_fenv("FE_DFL_ENV", default_want, machine_fenv());
+#if defined(__riscv)
+    printf("  %-13s fcsr=%08x\n", "FE_DFL_ENV", default_want.fcsr);
+#else
     printf("  %-13s cw=%04x sw=%04x mxcsr=%08x\n", "FE_DFL_ENV",
            default_want.control, default_want.status, default_want.mxcsr);
+#endif
 
     fesetround(FE_UPWARD);
+#if !defined(__riscv)
     set_mxcsr_bits((1u << 15) | (1u << 6));
+#endif
     feraiseexcept(FE_ALL_EXCEPT);
     MachineFenv before = machine_fenv();
     CHECK(eigs_feclearexcept(FE_ALL_EXCEPT) == 0,
           "feclearexcept return");
     MachineFenv want = before;
+#if defined(__riscv)
+    want.fcsr &= ~(unsigned int)FE_ALL_EXCEPT;
+#else
     want.status &= (unsigned short)~FE_ALL_EXCEPT;
     want.mxcsr &= ~(unsigned int)FE_ALL_EXCEPT;
+#endif
     check_machine_fenv("clear-all", want, machine_fenv());
+#if defined(__riscv)
+    printf("  %-13s fcsr=%08x\n", "clear-all", want.fcsr);
+#else
     printf("  %-13s cw=%04x sw=%04x mxcsr=%08x\n", "clear-all",
            want.control, want.status, want.mxcsr);
+#endif
 
     /* A subset clear (Codex P2 on #1974): glibc raises FE_INVALID in MXCSR and
      * FE_OVERFLOW/FE_INEXACT in the x87 status word, so clearing FE_INEXACT
@@ -145,17 +190,29 @@ static void t_fenv(void) {
     MachineFenv subset_before = machine_fenv();
     CHECK(feclearexcept(FE_INEXACT) == 0, "clear-subset: glibc feclearexcept");
     MachineFenv subset_want = machine_fenv();
+#if defined(__riscv)
+    CHECK((subset_want.fcsr & FE_INVALID) &&
+          (subset_want.fcsr & FE_OVERFLOW) &&
+          !(subset_want.fcsr & FE_INEXACT),
+          "clear-subset: libc oracle keeps the other flags (fcsr %08x)",
+          subset_want.fcsr);
+#else
     CHECK((subset_want.status & FE_OVERFLOW) && !(subset_want.status & FE_INEXACT) &&
           (subset_want.mxcsr & FE_INVALID),
           "clear-subset: glibc oracle keeps the other flags (sw %04x mxcsr %08x)",
           subset_want.status, subset_want.mxcsr);
+#endif
     fesetenv(FE_DFL_ENV);
     feraiseexcept(subset_raise);
     check_machine_fenv("clear-subset start", subset_before, machine_fenv());
     CHECK(eigs_feclearexcept(FE_INEXACT) == 0, "clear-subset: mini return");
     check_machine_fenv("clear-subset", subset_want, machine_fenv());
+#if defined(__riscv)
+    printf("  %-13s fcsr=%08x\n", "clear-subset", subset_want.fcsr);
+#else
     printf("  %-13s cw=%04x sw=%04x mxcsr=%08x\n", "clear-subset",
            subset_want.control, subset_want.status, subset_want.mxcsr);
+#endif
     fesetenv(FE_DFL_ENV);
 }
 
@@ -211,7 +268,8 @@ static void t_mem_str(void) {
 }
 
 static void t_ctype(void) {
-    printf("[ctype tables]\n");
+    printf("[ctype tables and standard functions]\n");
+#if !defined(__riscv)
     const unsigned short *gb = *__ctype_b_loc(), *mb = *eigs_ctype_b_loc();
     const int *gl = *__ctype_tolower_loc(), *ml = *eigs_ctype_tolower_loc();
     const int *gu = *__ctype_toupper_loc(), *mu = *eigs_ctype_toupper_loc();
@@ -219,6 +277,13 @@ static void t_ctype(void) {
         CHECK(gb[i] == mb[i], "ctype_b[%d]: glibc %04x mini %04x", i, gb[i], mb[i]);
         CHECK(gl[i] == ml[i], "tolower[%d]", i);
         CHECK(gu[i] == mu[i], "toupper[%d]", i);
+    }
+#endif
+    for (int i = -1; i < 256; i++) {
+        CHECK(!!eigs_isalnum(i) == !!isalnum(i), "isalnum[%d]", i);
+        CHECK(!!eigs_isxdigit(i) == !!isxdigit(i), "isxdigit[%d]", i);
+        CHECK(eigs_tolower(i) == tolower(i), "tolower[%d]", i);
+        CHECK(eigs_toupper(i) == toupper(i), "toupper[%d]", i);
     }
 }
 
@@ -229,6 +294,11 @@ static void t_strtol(void) {
         "-9223372036854775808", "9223372036854775808", "99999999999999999999999",
         "-99999999999999999999999", "0x", "abc", "", "  -0x10", "z", "10",
     };
+    const char *atoi_cases[] = {"0", "-1", "+42", "  123abc", "017",
+                                "abc", "", "  -16"};
+    for (size_t i = 0; i < sizeof(atoi_cases)/sizeof(*atoi_cases); i++)
+        CHECK(eigs_atoi(atoi_cases[i]) == atoi(atoi_cases[i]),
+              "atoi('%s')", atoi_cases[i]);
     int bases[] = {0, 10, 16, 8, 2, 36};
     for (size_t i = 0; i < sizeof(cases)/sizeof(*cases); i++) {
         for (size_t b = 0; b < sizeof(bases)/sizeof(*bases); b++) {
@@ -521,8 +591,14 @@ static void t_libm_ulp(void) {
     }
 }
 
-int main(void) {
+int main(int argc, char **argv) {
     t_fenv();
+    if (argc == 2 && strcmp(argv[1], "--fenv-only") == 0) {
+        printf("----\n");
+        if (g_fail) { printf("FAIL: %d differential check(s)\n", g_fail); return 1; }
+        printf("mini-libc fenv differential: PASS (target libc oracle)\n");
+        return 0;
+    }
     t_mem_str();
     t_ctype();
     t_strtol();
@@ -534,6 +610,10 @@ int main(void) {
     t_libm_ulp();
     printf("----\n");
     if (g_fail) { printf("FAIL: %d differential check(s)\n", g_fail); return 1; }
+#if defined(__riscv)
+    printf("mini-libc differential: ALL SECTIONS PASS (target libc oracle)\n");
+#else
     printf("mini-libc differential: ALL SECTIONS PASS (glibc oracle)\n");
+#endif
     return 0;
 }

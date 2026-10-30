@@ -112,6 +112,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     g_sandbox_loop_max = 200000;
     g_sandbox_cap_hit = 0;
     g_loop_iterations = 0;
+    g_sandbox_loop_iterations = 0;   /* #1906: the budget's own counter */
     g_loop_backedge_count = 0;
 
     TokenList tl = tokenize(source);
@@ -121,7 +122,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             /* Execute in a fresh child env so global bindings from one
              * input don't shadow builtins on the next. */
             Env *eval_env = env_new(g_global_env);
-            EigsChunk *chunk = compile_ast(ast, eval_env, source);
+            EigsChunk *chunk = compile_ast(ast, eval_env, source, "<fuzz>");
             if (chunk) {
                 Value *result = vm_execute(chunk, eval_env);
                 if (result) val_decref(result);

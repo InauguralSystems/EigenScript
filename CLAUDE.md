@@ -47,7 +47,7 @@ make tsan-http  # TSan *with* ext_http+model+net (CI gate: EIGS_SUITE_SECTIONS='
 make http       # http+model variant — run tests/test_http_server.sh
 make zlib       # DEFLATE decompression (`inflate`) via system zlib (-lz)
 make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)
-bash tools/jit_diff.sh  # JIT vs INTERPRETER differential over the corpus (tape-replayed; CI job)
+bash tools/jit_diff.sh  # JIT vs INTERPRETER differential over the corpus (CI job; a pair still unstable on a rerun is ledgered COULD_NOT_ADJUDICATE, never tape-replayed: #2122)
 make freestanding-check  # 2-stage symbol gate for the EigenOS profile (docs/FREESTANDING.md)
 make freestanding-libc-diff  # mini-libc/libm vs glibc oracle (src/freestanding/)
 make poison     # 0xAA uninit-read hunter build; run the suite with MALLOC_PERTURB_=170
@@ -86,10 +86,11 @@ see [Build from Source](README.md#build-from-source).
   coexist; `src/eigenscript` is a hard link to the last `make` target
   (hard, not symbolic — `/proc/self/exe`-relative stdlib resolution must
   keep seeing `src/`), so switching variants is an instant relink (`make`
-  after `make asan` costs ~0.2s, not a rebuild). Don't run any `make`
-  variant target while a suite is in flight — it re-points the alias
-  under the suite (the #681 fingerprint guard catches it at the next
-  section seam).
+  after `make asan` costs ~0.2s, not a rebuild). A suite holds the per-tree
+  build lock for its whole run, so a concurrent `make` variant waits rather
+  than re-pointing the alias; the stop gate's non-blocking lock attempt instead
+  skips with its existing busy message. On systems without `flock` or
+  `setsid` (notably stock macOS), builds remain unlocked as before.
 - Benchmarks: `tests/bench_perf.eigs` (micro), `tests/bench_dmg_shape.eigs`
   (dispatch-table interpreter shape, the DMG/cpu_instrs stand-in),
   `tests/bench_idxset.eigs` (fn-local buffer/list write loop — one JIT thunk,

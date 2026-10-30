@@ -47,9 +47,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   gdb              -> the JIT debugging workflow (see CLAUDE.md)
 #   curl             -> exercising the http extension by hand
 #   procps           -> sysctl in CI setup steps
-# SDL headers anchor the input fixture to the real SDL ABI; Xvfb and
-# xdotool drive an isolated real-input window without touching a user display.
-# SDL_mixer supplies the ordinary music-positive strict-shape controls.
+#   musl-tools       -> musl-gcc, the second conforming libc header set the
+#                       freestanding gate compiles the profile against
+#                       (tools/freestanding_check.sh, #1985)
+#   qemu-user/ziglang-> execute the RISC-V mini-libc fenv differential against
+#                       zig's target musl (#1983)
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         build-essential \
@@ -60,16 +62,21 @@ RUN apt-get update \
         zlib1g-dev \
         postgresql-client \
         python3 \
+        python3-pip \
         python3-yaml \
         gdb \
         curl \
         procps \
-        libsdl2-dev \
-        libsdl2-mixer-2.0-0 \
-        xvfb \
-        xauth \
-        xdotool \
-        python3-pil \
+        musl-tools \
+        qemu-user \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --break-system-packages ziglang==0.17.0
+
+# Release-suite dependencies have one source for this CI image and native
+# release runners. COPY is relative to the repository-root build context.
+COPY tools/install_release_test_dependencies.sh /usr/local/bin/
+RUN bash /usr/local/bin/install_release_test_dependencies.sh linux \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspaces/EigenScript

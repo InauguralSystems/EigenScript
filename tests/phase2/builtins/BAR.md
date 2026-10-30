@@ -32,13 +32,13 @@ chooses; `net_port`'s port line and its siblings print a predicate instead.
 **Sync #5, R1.6-S1/S2.** Main's `rm` deletion removes no table row: the
 number-reading bar never included it. R1.6-S2 adds main's `set_exit_code`
 as an int-requiring release-profile row in round c, closed by main #1909.
-The current population is 310 rows and 312 cases, with round counts b 46,
-c 77, d 53, e 38, f 19 and g 77 (b/f include R1.6b-D3's `http_post` correction).
+After S10-D2, the current population is 309 rows and 310 cases, with round counts b 46,
+c 76, d 53, e 38, f 19 and g 77 (b/f include R1.6b-D3's `http_post` correction).
 The new `.branch` is an authorized addition recorded by SHA-256 under
 R1.6-S2 in `../builtins_changes.md`; existing frozen expectations stay fixed.
 
 ## Files
-- `builtins.tsv`, 310 rows: `builtin file class loss q7 round closed_in
+- `builtins.tsv`, 309 rows: `builtin file class loss q7 round closed_in
   profile hook stdin changes_vs_pre changes_vs_tag`. `make_table.py` writes
   it. Rows come from the §6 table, checked both ways against the inventory's
   `## Builtins` list, field by field. Both files and `src/` are extracted with
@@ -47,8 +47,8 @@ R1.6-S2 in `../builtins_changes.md`; existing frozen expectations stay fixed.
   `1fd4422c`), so the population is pinned to the ruled commit, not to a
   checkout's state; `EIGS_TREE` overrides it for the plants. `file` is the
   `src/*.c` file that defines the inventory's C function. `round` follows the
-  plan's rule, and the counts are checked against b 46, c 77, d 53, e 38,
-  f 19 and g 77 (R1.6b-D3, R1.6-S2 and R1.6g-D1). The other columns:
+  plan's rule, and the counts are checked against b 46, c 76, d 53, e 38,
+  f 19 and g 77 (R1.6b-D3, R1.6-S2, R1.6g-D1 and S10-D2). The other columns:
   - `closed_in` (ruling A2) and `profile` (A3) come from `rowmeta.tsv`;
   - `hook` (A4) and `stdin` (A5) list the hooks and the stdin fixtures of the
     row's cases, in case order. `-` means none, and stdin `-` is `/dev/null`;
@@ -60,16 +60,17 @@ R1.6-S2 in `../builtins_changes.md`; existing frozen expectations stay fixed.
     original one. It is recorded as an observation and never checked, because
     the tag has no `num_type`, and `set_exit_code` also postdates the tag.
 - `rowmeta.tsv`: `builtin closed_in profile`, one line per table row.
-- `cases.tsv`: `case builtin hook stdin`, 312 cases. A row's primary case is
-  `builtins/<b>`. A second case is `builtins/<b>.<label>`: `gfx_poll.empty`
-  (B3) and `proc_read_buf.hi` (A5).
+- `cases.tsv`: `case builtin hook stdin`, 310 cases. A row's primary case is
+  `builtins/<b>`. The surviving second case is `gfx_poll.empty` (B3).
+  S10-D2 explicitly retires both `proc_read_buf` cases (A5/C10).
 - `builtins/<case>.eigs` is the probe. `<case>.branch` is the pre-registered
   stdout after R1.6, then `rc=<N>`. `<case>.pre` and `<case>.tag` are the
   observed stdout plus `rc=<N>`, or `PENDING-PROFILE <profile>`.
 - `builtins/_hooks/observation_hooks.c`: the LD_PRELOAD shim (A4; its repo
   target is `tests/phase2/observation_hooks.c`). `run_probes.sh` compiles it
   with `gcc -shared -fPIC` into its scratch directory on every run.
-- `builtins/_stdin/hi`: the two bytes `Hi` (A5).
+- `builtins/_stdin/hi` and its only users were retired by S10-D2. No live case
+  declares a stdin fixture; the checker still compares fixtures and declarations both ways.
 - `builtins/_profiles/<profile>.eigs`: the profile witnesses (A3).
 - `run_probes.sh [case...]` records `.pre` and `.tag`, never `.branch`.
 - `make_table.py [--final]` writes `builtins.tsv` and runs every table check.
@@ -144,7 +145,7 @@ a binary built with the profile, derived from the design:
 | db | `make server-db`, plus `DATABASE_URL` naming a live PostgreSQL | `db_execute`, `db_query_json`, `db_query_value` (b) |
 | zlib | `make zlib` | `inflate` (d) |
 
-Current profile counts (R1.6g): release 285, server 21, db 3, zlib 1.
+Current profile counts (S10-D2): release 284, server 21, db 3, zlib 1.
 
 R1.6a records these rows on matched builds: the same profile built at
 `4ac31e67` and at v0.46.0, passed as `PRE_BIN_<P>` and `TAG_BIN_<P>` (`P` is
@@ -813,6 +814,9 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
   (itself included, at distance 0). BUILTINS.md says it "returns ALL active
   entities within range". Filed:
   https://github.com/InauguralSystems/EigenScript/issues/1888
+  Resolved by main #2010 and the orchestrator's comment 6402855103, expressly
+  assigned to the next main-to-phase2 sync: nearest OTHER active entity.
+  S10-D2 changes only the frozen result index 1 to 0; source/types stay fixed.
 - `numerical_grad_rows/_cols` and `sgd_update_rows/_cols` silently skip an
   out-of-range row or column index, and the model builtins clamp an
   out-of-range token id. Filed:
@@ -945,7 +949,7 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
   scratch script, so R1.6a can run the same check on its matched builds).
   Total 144 -> 634 -> 687. At that R1.6a import, `rowmeta.tsv` and
   `cases.tsv` were declarations of 232 and 234 lines plus headers;
-  R1.6g's current populations are 310 and 312.
+  R1.6g's populations were 310 and 312; S10-D2's current populations are 309 and 310.
 - `run_probes.sh`:
   - The first version wrote stdout through a relative path after its `cd`,
     so every `.pre` and `.tag` held only `rc=0`. It writes an absolute path,
@@ -968,7 +972,8 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
 - `plants.sh` runs every plant below in a fresh scratch copy of the bar (and
   of the tree's `docs/design` and `src`), and requires each check's named FAIL
   line. Both baselines are clean first: `make_table.py` with no FAIL, and the
-  runner on `abs audio_stream_push gfx_poll.empty proc_read_buf.hi inflate`.
+  runner on `abs audio_stream_push gfx_poll.empty read_bytes_buf inflate`
+  (S10-D2 replaces the retired stdin case with the unchanged host-byte probe).
   A mutation that does not apply counts as a failure: the first run caught
   two (an unanchored `hex` also matched `random_hex`, and `len` matched
   `buf_len`). Result after the R1.6a rulings: `plants examined=37 table=37
@@ -1059,10 +1064,29 @@ its derivation.
 
 R1.6g-D1 and #1758 comment 6304880619 add 77 release-profile rows, sourced
 from the N9 definitions in builtins_int.c: 76 int-requiring and fround
-float-producing. The live table has 310 rows and 312 cases (release 285,
-server 21, db 3, zlib 1). All new branches were captured from Rust std plus
+float-producing. That addition produced 310 rows and 312 cases (release 285,
+server 21, db 3, zlib 1); S10-D2 later retires one row and two cases,
+leaving 309 rows and 310 cases (release 284). All new branches were captured from Rust std plus
 the explicit operand/shape rulings BEFORE builtins_int.c existed; their exact
 SHA-256 amendments are in builtins_changes.md. Existing frozen branches remain
 unchanged. oracle/n9.rs, its input TSVs and verbatim stdout capture the Rust
 arithmetic; the supplemental test_n9_contract pins double rounding and exact
 zero-divisor messages. The one-time broader grid stays in the round artifacts.
+
+## S10-D2 retirement
+
+Main #1691's zero-consumer removal of `proc_read_buf` stands. S10-D2 explicitly
+retires its primary and `.hi` probes (all eight case files), the sole
+`_stdin/hi` fixture and dependent plants P23/R6. All other plant IDs and all
+other frozen `.branch` bytes stay fixed except the explicit #1888 index
+1-to-0 semantic amendment below. Exact prior hashes, `DELETED`
+amendments and the immutable bank anchor are in `../builtins_changes.md`;
+`RULINGS.md` records how this supersedes A5/C10. The surviving unchanged
+`read_bytes_buf` probe pins host-byte buffer elements as f64 using
+`[3, 1.0, "float"]` and `[3, "float"]`; no new case is required.
+
+S10-D2 also applies #1888's recorded nearest-OTHER decision, expressly assigned
+to this sync: the existing two-active-entity scenario keeps its numeric kind
+witnesses while `nearest_in_range_all.branch` changes only index 1 to 0.
+Its separate exact semantic amendment and hashes are recorded in
+`../builtins_changes.md`; it is not an N6 float-text re-render.

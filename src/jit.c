@@ -2,6 +2,7 @@
 #include "env_flag.h"
 #include "eigenscript.h"
 #include "vm.h"
+#include "opcode_operands.h"
 
 #include <inttypes.h>
 #include <math.h>
@@ -845,15 +846,28 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
             *extra_size += 192;
-        } else if (op == OP_LOOP_STALL_CHECK || op == OP_LOOP_CAP_CHECK) {
-            /* Stage 4w: 3-byte op [op][exit_offset:16]. Helper returns
+        } else if (op == OP_LOOP_STALL_NAMED || op == OP_LOOP_CAP_NAMED) {
+            /* Stage 4w: 5-byte op [op][exit_offset:16][counter_name:16]. Helper returns
              * 1 when the loop must exit (stall / iteration cap); the
              * emitter conditional-jumps to the exit target — exactly
              * the ITER_NEXT shape. Stack untouched. Both opcodes have the
              * same shape; only the helper differs (cap vs stall+cap). */
+            if (i + 5 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            i += 5; ops++; non_line_ops++;
+            *has_bail_op = 1;
+            *extra_size += 5; /* immediate counter-slot helper argument */
+        } else if (op == OP_LOOP_ENTER_NAMED) {
+            /* Three-byte loop-entry diagnostic reset.  The helper publishes
+             * zero through the same env/cache path as the interpreter. */
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             i += 3; ops++; non_line_ops++;
             *has_bail_op = 1;
+            *extra_size += 5; /* immediate counter-slot helper argument */
+        } else if (op == OP_LOOP_EXIT_NAMED) {
+            if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            i += 3; ops++; non_line_ops++;
+            *has_bail_op = 1;
+            *extra_size += 5;
         } else if (op == OP_CALL) {
             /* Stage 4r: 3-byte op [op][argc:16]. Helper handles the
              * VAL_BUILTIN case inline; for VAL_FN / VAL_CLOSURE / non-
@@ -956,10 +970,13 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * inline as 9-byte FS-prefixed inc/dec dword [disp32] — no
              * call, no bail, no sp/env interaction. */
             i += 1; ops++; non_line_ops++;
-        } else if (op == OP_LINE) {
+        } else if (op == OP_BINARY_LINE_END) {
+            i += 1; ops++;
+        } else if (op == OP_LINE || op == OP_BINARY_LINE) {
             /* #630: [op][line:32] = 5 bytes. */
-            if (i + 5 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
-            i += 5; ops++;
+            int width = opcode_operand_bytes(op);
+            if (i + 1 + width > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
+            i += 1 + width; ops++;
         } else {
             *stop_op = op; *stop_offset = i;
             break;
@@ -1136,6 +1153,17 @@ static uint8_t *emit_lock_addl_1_disp32_rdi(uint8_t *w, int32_t disp) {
 /* mov disp32(%rbx), %eax   — load 32-bit (6 bytes) */
 static uint8_t *emit_mov_disp32_rbx_to_eax(uint8_t *w, int32_t disp) {
     *w++ = 0x8B; *w++ = 0x83;
+    return emit_u32(w, (uint32_t)disp);
+}
+
+/* #1425: 32-bit stores for the scoped line caches. %eax/%rdx are scratch. */
+static uint8_t *emit_mov_eax_to_disp32_rbx(uint8_t *w, int32_t disp) {
+    *w++ = 0x89; *w++ = 0x83;
+    return emit_u32(w, (uint32_t)disp);
+}
+
+static uint8_t *emit_mov_disp32_rbx_to_edx(uint8_t *w, int32_t disp) {
+    *w++ = 0x8B; *w++ = 0x93;
     return emit_u32(w, (uint32_t)disp);
 }
 
@@ -4128,7 +4156,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
             patch_rel32(done_p, w);
             i += 1;
-        } else if (op == OP_LOOP_STALL_CHECK || op == OP_LOOP_CAP_CHECK) {
+        } else if (op == OP_LOOP_STALL_NAMED || op == OP_LOOP_CAP_NAMED) {
             /* Stage 4w: LOOP_STALL_CHECK / LOOP_CAP_CHECK via helper —
              * ITER_NEXT call shape: sync sp, aligned call, reload sp, test
              * eax, conditional jump to the exit target via pending patch.
@@ -4140,13 +4168,16 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             }
             uint16_t off = (uint16_t)(chunk->code[i + 1] |
                                       ((uint16_t)chunk->code[i + 2] << 8));
-            int target = i + 3 + (int)off;
-            void *loop_helper = (op == OP_LOOP_STALL_CHECK)
+            uint16_t counter_idx = (uint16_t)(chunk->code[i + 3] |
+                                              ((uint16_t)chunk->code[i + 4] << 8));
+            int target = i + 5 + (int)off;
+            void *loop_helper = (op == OP_LOOP_STALL_NAMED)
                                     ? (void *)&jit_helper_loop_stall_check
                                     : (void *)&jit_helper_loop_cap_check;
 
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_push_rcx(w);
+            w = emit_mov_imm32_edi(w, counter_idx);
             w = emit_movabs_rax(w, (uint64_t)(uintptr_t)loop_helper);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
@@ -4163,6 +4194,30 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             pending[pending_count].patch = jump_patch;
             pending_count++;
             patch_rel32(skip_patch, w);
+            i += 5;
+        } else if (op == OP_LOOP_ENTER_NAMED) {
+            /* Sync the VM stack around the ABI call, like the loop-check
+             * helpers.  The helper itself leaves the operand stack alone. */
+            w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
+            w = emit_push_rcx(w);
+            uint16_t counter_idx = (uint16_t)(chunk->code[i + 1] |
+                                              ((uint16_t)chunk->code[i + 2] << 8));
+            w = emit_mov_imm32_edi(w, counter_idx);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_loop_enter);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            i += 3;
+        } else if (op == OP_LOOP_EXIT_NAMED) {
+            w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
+            w = emit_push_rcx(w);
+            uint16_t counter_depth = (uint16_t)(chunk->code[i + 1] |
+                                                ((uint16_t)chunk->code[i + 2] << 8));
+            w = emit_mov_imm32_edi(w, counter_depth);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_loop_exit);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
             i += 3;
         } else if (op == OP_CALL) {
             /* Stage 4r/5f: OP_CALL via helper. The helper now also runs
@@ -4300,7 +4355,41 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                 }
             }
             i += 1;
-        } else { /* OP_LINE */
+        } else if (op == OP_BINARY_LINE_END) {
+            w = emit_mov_disp32_rbx_to_eax(w, g_layout.off_binary_prev_line);
+            w = emit_mov_eax_to_disp32_rbx(w, g_layout.off_current_line);
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&trace_current_line_addr);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            w = emit_mov_disp32_rbx_to_edx(w, g_layout.off_binary_prev_trace_line);
+            *w++ = 0x89; *w++ = 0x10; /* mov %edx,(%rax) */
+            /* The interpreter records the restored line too. Without this
+             * hook native execution loses the scope-exit L event and can
+             * incorrectly deduplicate the next stamp. */
+            uint8_t *no_tape;
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&g_trace_enabled_storage);
+            w = emit_cmpl_0_mem_rax(w);
+            w = emit_je_rel32(w, &no_tape);
+            w = emit_mov_disp32_rbx_to_eax(w, g_layout.off_current_line);
+            *w++ = 0x89; *w++ = 0xC7; /* mov %eax,%edi */
+            w = emit_push_rcx(w);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&trace_line);
+            w = emit_call_rax(w);
+            w = emit_pop_rcx(w);
+            patch_rel32(no_tape, w);
+            i += 1;
+        } else { /* OP_LINE / OP_BINARY_LINE */
+            if (op == OP_BINARY_LINE) {
+                w = emit_mov_disp32_rbx_to_eax(w, g_layout.off_current_line);
+                w = emit_mov_eax_to_disp32_rbx(w, g_layout.off_binary_prev_line);
+                w = emit_push_rcx(w);
+                w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&trace_current_line_addr);
+                w = emit_call_rax(w);
+                w = emit_pop_rcx(w);
+                *w++ = 0x8B; *w++ = 0x00; /* mov (%rax),%eax */
+                w = emit_mov_eax_to_disp32_rbx(w, g_layout.off_binary_prev_trace_line);
+            }
             /* #630: 32-bit operand. */
             uint32_t line = (uint32_t)chunk->code[i + 1] |
                             ((uint32_t)chunk->code[i + 2] << 8) |
@@ -4335,7 +4424,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             patch_rel32(no_tape, w);
-            i += 5;   /* #630: [op][line:32] */
+            i += 1 + opcode_operand_bytes(op);
         }
         /* Update last_imm in lockstep with the scanner's last_push_immediate.
          * Consumed by OP_POP to decide between the `dec %ecx` peephole and
@@ -4356,7 +4445,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             last_imm = (v && v->type == VAL_FLOAT);
             break;
         }
-        case OP_LINE:
+        case OP_LINE: case OP_BINARY_LINE: case OP_BINARY_LINE_END:
         case OP_JUMP_IF_FALSE_PEEK: case OP_JUMP_IF_TRUE_PEEK:
             /* Pass-through. LINE touches no stack; the PEEK ops read the
              * condition but leave the operand on the stack (they don't push),

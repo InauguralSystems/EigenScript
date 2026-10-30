@@ -24,6 +24,10 @@ BAR = 'tests/phase2/builtins/builtins/'
 PROFILES = ('release', 'server', 'server-db', 'zlib')
 NUMBER = re.compile(rb'(?<![A-Za-z_0-9.])[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?(?![A-Za-z_0-9.])')
 MARKER = b'R17-D2-KINDS-BEGIN\n'
+RETIREMENT_ANCHOR = 'ed09f908603a414f77ead78e241fa10aff7f2f38'
+RETIREMENTS = {BAR + name + '.branch' for name in ('proc_read_buf', 'proc_read_buf.hi')}
+NEAREST_PATH = BAR + 'nearest_in_range_all.branch'
+NEAREST_DECISION = 'https://github.com/InauguralSystems/EigenScript/issues/1888#issuecomment-6402855103'
 
 
 def require(ok, message):
@@ -55,6 +59,83 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def amendments_for(root, paths):
+    section = (root / 'tests/phase2/builtins_changes.md').read_text().split('## Frozen .branch amendments\n', 1)
+    require(len(section) == 2, 'missing frozen .branch amendment section')
+    amendments = {}
+    for line in section[1].split('\n## ', 1)[0].splitlines():
+        if not line.startswith('|'):
+            continue
+        fields = [v.strip().strip('`') for v in line.strip('|').split('|')]
+        if fields[0] in paths:
+            require(len(fields) == 4 and fields[0] not in amendments, 'malformed/duplicate frozen amendment')
+            amendments[fields[0]] = fields[1:]
+    return amendments
+
+
+def retired_paths(root, data):
+    """S10-D2 alone removes two paths; all other frozen bytes remain covered."""
+    retired = data.get('retirements', {})
+    require(set(retired) == RETIREMENTS, 'S10-D2 retirement population must be exactly proc_read_buf and proc_read_buf.hi')
+    amendments = amendments_for(root, retired)
+    for path, entry in retired.items():
+        require(entry.get('ruling') == 'S10-D2' and entry.get('anchor') == RETIREMENT_ANCHOR,
+                path + ': retirement needs S10-D2 and the immutable R1.8 bank anchor')
+        source = path.removesuffix('.branch') + '.eigs'
+        for frozen_path, key in ((path, 'branch_sha256'), (source, 'source_sha256')):
+            prior = git(root, 'show', RETIREMENT_ANCHOR + ':' + frozen_path)
+            require(sha(prior) == entry.get(key), frozen_path + ': retirement prior SHA-256 differs from bank anchor')
+            removed = root / frozen_path
+            require(not removed.exists() and not removed.is_symlink(), frozen_path + ': retired file still exists')
+        waiver = amendments.get(path, [])
+        require(len(waiver) == 3 and waiver[:2] == ['DELETED', 'S10-D2'] and bool(waiver[2]),
+                path + ': retirement requires an explicit DELETED S10-D2 amendment')
+    return set(retired)
+
+
+def apply_semantic_amendment(root, data, frozen):
+    """#1888 changes only the old self-neighbor index; this is not N6 text."""
+    entries = data.get('semantic_amendments', {})
+    require(set(entries) == {NEAREST_PATH}, 'S10-D2 semantic amendment population must be exactly nearest_in_range_all')
+    entry = entries[NEAREST_PATH]
+    require(entry.get('ruling') == 'S10-D2' and entry.get('anchor') == RETIREMENT_ANCHOR and
+            entry.get('decision') == NEAREST_DECISION, NEAREST_PATH + ': semantic amendment lacks its recorded decision/anchor')
+    before = b'[1, "int", "float", "float"]\nrc=0\n'
+    after = b'[0, "int", "float", "float"]\nrc=0\n'
+    source = NEAREST_PATH.removesuffix('.branch') + '.eigs'
+    prior = git(root, 'show', RETIREMENT_ANCHOR + ':' + NEAREST_PATH)
+    source_bytes = git(root, 'show', RETIREMENT_ANCHOR + ':' + source)
+    require(prior == before == frozen[NEAREST_PATH] and sha(prior) == entry.get('old_sha256') and
+            sha(after) == entry.get('new_sha256'), NEAREST_PATH + ': semantic amendment is not exactly the approved index 1 to 0 change')
+    require(sha(source_bytes) == entry.get('source_sha256') and (root / source).read_bytes() == source_bytes,
+            source + ': semantic amendment changed the frozen source/type witness')
+    waiver = amendments_for(root, entries).get(NEAREST_PATH, [])
+    require(len(waiver) == 3 and waiver[:2] == [sha(after), 'S10-D2'] and bool(waiver[2]),
+            NEAREST_PATH + ': semantic amendment requires its exact SHA-256 S10-D2 amendment')
+    require((root / NEAREST_PATH).read_bytes() == after, NEAREST_PATH + ': semantic amendment differs from approved bytes')
+    frozen[NEAREST_PATH] = after
+
+
+
+def apply_diagnostic_amendment(root, frozen):
+    """S10-D3 overlays one exact main diagnostic; float rules stay unchanged."""
+    path = BAR + 'read_text.branch'
+    source = path.removesuffix('.branch') + '.eigs'
+    before = git(root, 'show', RETIREMENT_ANCHOR + ':' + path)
+    old_line = b'["over-cap-tail", " is 10485761 bytes, over the 10485760-byte cap"]\n'
+    new_line = '["over-cap-tail", " is 10485761 bytes, over the 10485760-byte cap — pass read_text of [path, max_bytes] (hard ceiling 536870912) to raise it"]\n'.encode()
+    require(before.count(old_line) == 1, path + ': bank diagnostic anchor changed')
+    after = before.replace(old_line, new_line)
+    require(frozen[path] == before, path + ': pre-N6 diagnostic differs from bank')
+    require((root/path).read_bytes() == after, path + ': not exactly the S10-D3 diagnostic amendment')
+    require((root/source).read_bytes() == git(root, 'show', RETIREMENT_ANCHOR + ':' + source),
+            source + ': S10-D3 changed the frozen scenario')
+    waiver = amendments_for(root, [path]).get(path, [])
+    require(len(waiver) == 3 and waiver[:2] == [sha(after), 'S10-D3'] and bool(waiver[2]),
+            path + ': exact SHA-256 S10-D3 amendment required')
+    frozen[path] = after
+
+
 def derive(root, observations, output):
     """Compare every gate transcript, against current bytes and the D2 anchor.
 
@@ -68,8 +149,12 @@ def derive(root, observations, output):
         directories[profile] = Path(directory)
     require(set(directories) == set(PROFILES), 'derive needs all four gate profiles')
     paths = git(root, 'ls-tree', '-r', '--name-only', BASE, '--', BAR).decode().splitlines()
-    paths = [p for p in paths if p.endswith('.branch')]
+    metadata = json.loads((root / 'tests/phase2/r17_float_text.json').read_text())
+    retired = retired_paths(root, metadata)
+    paths = [p for p in paths if p.endswith('.branch') and p not in retired]
     frozen = anchor_files(root, paths)
+    apply_semantic_amendment(root, metadata, frozen)
+    apply_diagnostic_amendment(root, frozen)
     files, current_differences, runs = {}, {}, {}
     for profile in PROFILES:
         directory = directories[profile]
@@ -168,15 +253,20 @@ def load(root, metadata):
     population = data.get('population', {})
     require(bool(files) and set(files) == set(population), 'metadata file population differs from the derived gate population')
     require(set(data.get('profiles', [])) == set(PROFILES), 'population must cover all four profiles')
+    retired = retired_paths(root, data)
+    require(not (retired & (set(files) | set(population))), 'retired path remains in the active re-render population')
     for path, profiles in population.items():
         require(path.startswith(BAR) and path.endswith('.branch') and '/' not in path[len(BAR):], 'invalid population path: ' + path)
         require(bool(profiles) and set(profiles) <= set(PROFILES), path + ': invalid profile population')
     paths = git(root, 'ls-tree', '-r', '--name-only', BASE, '--', BAR).decode().splitlines()
-    branch_paths = [path for path in paths if path.endswith('.branch')]
+    require(retired <= set(paths), 'retirement path was not in the frozen pre-N6 population')
+    branch_paths = [path for path in paths if path.endswith('.branch') and path not in retired]
     source_paths = [path.removesuffix('.branch') + '.eigs' for path in files]
     anchored = anchor_files(root, branch_paths + source_paths)
     frozen = {path: anchored[path] for path in branch_paths}
     require(bool(frozen), 'anchor has no frozen files')
+    apply_semantic_amendment(root, data, frozen)
+    apply_diagnostic_amendment(root, frozen)
     for path, entry in files.items():
         old = frozen.get(path)
         require(old is not None and sha(old) == entry['old_sha256'], path + ': old bytes do not match pinned pre-N6 hash')

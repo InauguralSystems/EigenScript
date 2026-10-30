@@ -303,12 +303,6 @@
       "server-db",
       "zlib"
     ],
-    "tests/phase2/builtins/builtins/proc_read_buf.hi.branch": [
-      "release",
-      "server",
-      "server-db",
-      "zlib"
-    ],
     "tests/phase2/builtins/builtins/read_bytes_buf.branch": [
       "release",
       "server",
@@ -3271,48 +3265,6 @@
         }
       ]
     },
-    "tests/phase2/builtins/builtins/proc_read_buf.hi.branch": {
-      "old_sha256": "6a4eac6578eaf7ddde381600841f2c7f83ed104a443ead1da21ce8824ccf1c7a",
-      "source_sha256": "7af30b36bd60d04b0ff0e6bd5d690fa15db493dd25c88cd56813304d0be6cce3",
-      "witnesses": [
-        {
-          "line": 8,
-          "expression": "buf_len of b",
-          "kind": "int",
-          "positions": [
-            [
-              1,
-              1
-            ]
-          ],
-          "provenance": "Integer count of original stdin fixture buffer. run_witnesses must supply cases.tsv's Hi bytes."
-        },
-        {
-          "line": 8,
-          "expression": "b[0]",
-          "kind": "float",
-          "positions": [
-            [
-              1,
-              2
-            ]
-          ],
-          "provenance": "Read the original byte buffer retained from the Hi stdin fixture; never reread stdin."
-        },
-        {
-          "line": 8,
-          "expression": "b[1]",
-          "kind": "float",
-          "positions": [
-            [
-              1,
-              3
-            ]
-          ],
-          "provenance": "Read the original byte buffer retained from the Hi stdin fixture; never reread stdin."
-        }
-      ]
-    },
     "tests/phase2/builtins/builtins/read_bytes_buf.branch": {
       "old_sha256": "92cd179b023bfae64f3ac77dc15312982db17e17da8415916797aaa0b48d6abf",
       "source_sha256": "f315f8491954fadb590b6e8c523e68d9188a95bd2035991ad64af4a95d8cbe6d",
@@ -4275,6 +4227,31 @@
           "provenance": "Read this exact retained zeros_like result leaf after the marker."
         }
       ]
+    }
+  },
+  "population_sha256_scope": "Original four-profile R1.7-D6 derivation before the explicit S10-D2 retirements; active population excludes only the two retired paths.",
+  "retirements": {
+    "tests/phase2/builtins/builtins/proc_read_buf.branch": {
+      "ruling": "S10-D2",
+      "anchor": "ed09f908603a414f77ead78e241fa10aff7f2f38",
+      "branch_sha256": "76b9f9203919cf0f5b50c95f7ba849c0f66dc9f9d46910ecc966a1308ec409a9",
+      "source_sha256": "e14e9ac3f0a8421380d4f52db2778bd28c7567f8cb17358d386f94f65bd80221"
+    },
+    "tests/phase2/builtins/builtins/proc_read_buf.hi.branch": {
+      "ruling": "S10-D2",
+      "anchor": "ed09f908603a414f77ead78e241fa10aff7f2f38",
+      "branch_sha256": "f786f6b5395f54fa5f9c39c32f18ebc2d0fcda2099395156af684f37783cfe3b",
+      "source_sha256": "7af30b36bd60d04b0ff0e6bd5d690fa15db493dd25c88cd56813304d0be6cce3"
+    }
+  },
+  "semantic_amendments": {
+    "tests/phase2/builtins/builtins/nearest_in_range_all.branch": {
+      "ruling": "S10-D2",
+      "anchor": "ed09f908603a414f77ead78e241fa10aff7f2f38",
+      "decision": "https://github.com/InauguralSystems/EigenScript/issues/1888#issuecomment-6402855103",
+      "old_sha256": "b10fe4c4d96d69ca28c3216cb3b82b8db1232808558240afcd320eb943bee6d8",
+      "new_sha256": "fa6f30b2af6cebed9c244889683a356120916ba20cd5b364579b21010f50634e",
+      "source_sha256": "abf6d29d7dff1a56f1baed7c89dbf6e68025898c760ff598ce6da21626f5afa5"
     }
   }
 }

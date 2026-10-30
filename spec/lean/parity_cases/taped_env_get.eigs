@@ -1,0 +1,2 @@
+local x is env_get of "EIGS_PARITY_CONTROL"
+print of x

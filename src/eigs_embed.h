@@ -251,7 +251,15 @@ void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-
  * (bytes are copied; NULL restores a suspended file source, if any).
  * File and memory sources own separate cursors, pending values, parser state,
  * bindings and strictness; suspension does not rewind or discard any of them.
- * Returns 0 on OOM or when the tape is
+ * The replay source is process-wide, so installation is refused while ANY
+ * live EigsState in the process owns a live runtime/OS handle (stores,
+ * sockets, files, threads, channels, tasks, gfx, audio, database, or HTTP):
+ * it returns 0, leaves the prior source untouched, and reports an error
+ * naming every open handle kind and whether another state holds one. Close
+ * the handles first; closed channels and finished, joined or detached
+ * tasks and threads do not count. The check reads every state's resources,
+ * so call it only while no other state is evaluating (as for
+ * eigs_replay_advance_session). Returns 0 on OOM or when the tape is
  * REFUSED: a tape whose version headers are missing, torn, or don't
  * match this runtime (format and version both) is never installed —
  * version-and-reject, no migration (#411, docs/TRACE.md; reason goes to

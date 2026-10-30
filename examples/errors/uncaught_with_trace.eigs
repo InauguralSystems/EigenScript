@@ -1,7 +1,7 @@
 # ERROR DEMO — an uncaught error prints a stack trace.
 # Every frame between the failure and the top level is listed,
 # innermost first, with its function name and line.
-# expect-error: at middle (line
+# expect-error: at middle (
 define inner(items) as:
     return items[99]
 define middle(items) as:

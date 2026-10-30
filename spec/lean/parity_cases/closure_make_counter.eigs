@@ -1,0 +1,9 @@
+define make_counter as:
+    local count is 0
+    define step as:
+        count is count + 1
+        return count
+    return step
+counter is make_counter of null
+print of (counter of null)
+print of (counter of null)

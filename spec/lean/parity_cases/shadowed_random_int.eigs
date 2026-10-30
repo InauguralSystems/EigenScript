@@ -1,0 +1,3 @@
+define random_int(bounds) as:
+  return 7
+print of (random_int of [0, 10])

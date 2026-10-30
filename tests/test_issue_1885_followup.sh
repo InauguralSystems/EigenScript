@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+echo "PLAN: 5"
 # Review follow-up for #1885/#1890: hard tape failures, cache ordering, and write refusal.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

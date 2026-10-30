@@ -51,11 +51,16 @@ const char *eigs_strerror(int errnum);
 const unsigned short **eigs_ctype_b_loc(void);
 const int **eigs_ctype_tolower_loc(void);
 const int **eigs_ctype_toupper_loc(void);
+int eigs_isalnum(int c);
+int eigs_isxdigit(int c);
+int eigs_tolower(int c);
+int eigs_toupper(int c);
 
 /* ---- conversions ---- */
 long          eigs_strtol(const char *nptr, char **endptr, int base);
 unsigned long eigs_strtoul(const char *nptr, char **endptr, int base);
 double        eigs_strtod(const char *nptr, char **endptr);
+int           eigs_atoi(const char *nptr);
 
 /* ---- sort (stable mergesort — deterministic tie order) ---- */
 void eigs_qsort(void *base, size_t nmemb, size_t size,

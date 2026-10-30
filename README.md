@@ -198,8 +198,12 @@ print of (add5 of 10)    # 15
 try:
     result is risky_operation of data
 catch e:
-    print of f"Error: {e}"
+    print of {"kind": e.kind, "message": e.message, "line": e.line}
 ```
+
+Comprehension variables are lexical to the comprehension (after its iterable
+is evaluated), and `catch` names are lexical to their handlers. Neither binder
+overwrites or creates an enclosing name, including when evaluation raises.
 ```output
 7
 Hello hello, x is 42
@@ -217,7 +221,7 @@ Hello hello, x is 42
 positive
 Alice
 15
-Error: {"kind": "undefined_name", "message": "undefined variable 'risky_operation'", "line": 41}
+{"kind": "undefined_name", "message": "undefined variable 'risky_operation'", "line": 41}
 ```
 
 Comparisons, `not` and predicates return `true`/`false`, a `bool`. A bool is
@@ -339,10 +343,14 @@ Trajectory states: `converged`, `stable`, `equilibrium`, `oscillating`,
 `improving`, `diverging` — handy for convergence detection, instability
 alerts, or debugging without writing logging code.
 
-The everyday payoff before any theory: `loop while not converged` deletes the
-epsilon / remembered-previous / max-iteration boilerplate every numeric loop in
-Python or JS hand-rolls — see
-[docs/COMPARISON.md → Convergence loops](docs/COMPARISON.md#convergence-loops-boilerplate-you-stop-writing).
+The everyday payoff before any theory: `loop while not converged` supplies a
+fixed 0.1%-relative stopping test and remembers the trajectory. It is not a
+drop-in replacement for a caller-chosen epsilon and guard: the registered
+#1990 population found a 0.47% wrong-exit rate for the bare form and a 2.29x
+median iteration ratio to its matched Python loop; the named form still needs
+an explicit cap. These figures, and the decision-rule failure, are reproduced
+by `python3 reports/convergence_loops/report1990.py`. See
+[docs/COMPARISON.md → Convergence loops](docs/COMPARISON.md#convergence-loops-a-built-in-fixed-tolerance).
 
 > **What `improving` and the rest actually mean.** For numbers the
 > trajectory words read the value's own motion (#861): `converged` is the
@@ -350,8 +358,14 @@ Python or JS hand-rolls — see
 > `improving` uses the ML loss convention that lower is better: the value
 > must be decreasing, with steps contracting toward a limit. Growth is never
 > improving, even when it rises toward a plateau. For
-> non-numeric values the observer's entropy reading applies — a value
-> locating itself *from the inside*, with no external goal. The full
+> non-numeric values, `converged` and ordinarily `stable` compare bounded,
+> detached assignment snapshots; the other predicates and `report` read
+> entropy. A bounded snapshot containing a NaN buffer cannot converge;
+> `stable` instead uses the entropy-window rule after a full bounded
+> comparison window (S10-D1). Refusal clears that eligibility, preserving
+> `false` / `true` / `false` for the matmul scenario's equality, stability
+> and convergence. Finite mutation checks and oversized-snapshot refusals
+> remain. The full model is in
 > [docs/OBSERVER.md](docs/OBSERVER.md); the precise predicate semantics
 > (what `converged` requires, how it differs from `equilibrium`, the
 > N-step window) are in [docs/PREDICATES.md](docs/PREDICATES.md).
@@ -390,7 +404,7 @@ answer `false` forever, **an observer predicate raises inside an
 `unobserved:` block** (#871):
 
 ```
-Error line 4: converged: the observer is off inside an 'unobserved:'
+Error observer.eigs:4: converged: the observer is off inside an 'unobserved:'
 block, so this predicate has no trajectory to classify — the block's
 depth is dynamic, so it also covers functions called from inside it
 ```
@@ -593,6 +607,8 @@ Both are stable on every platform: equal elements or keys keep their input order
 
 ## Standard Library
 
+The machine-checkable EigenCore-0 reference frontend lives in [`spec/lean/`](spec/lean/).
+
 Pure EigenScript libraries under `lib/`:
 
 | Module | Description |
@@ -679,6 +695,8 @@ File loading is relative to the containing file, then the `eigs_modules` walk,
 then the nearest `eigs.json` project root, then stdlib locations; absolute paths
 are used as-is. There is no process cwd search. The REPL (including piped input)
 and the embed API without a file path use their working directory as the base.
+Source-tree binaries under `build/<variant>/` also find the repository `lib/`
+through their executable path, so they can be invoked directly from any directory.
 Add `eigs.json` at the root
 when subdirectory files use root-relative paths. See the exact
 [shared import/load_file resolution chain](docs/SPEC.md#modules).
@@ -833,6 +851,8 @@ Full map: **[docs/README.md](docs/README.md)**. Highlights:
 - [docs/BUILTINS.md](docs/BUILTINS.md) — builtin functions; `eigenscript --api` prints the live index
 - [docs/STDLIB.md](docs/STDLIB.md) — standard library guide
 - [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) — error format and exit codes
+  (runtime headers, caught errors, and every traceback frame identify the
+  compiled source as `file:line`)
 - [docs/TRACE.md](docs/TRACE.md) — execution trace, deterministic replay, temporal interrogatives
 - [docs/DEBUGGING.md](docs/DEBUGGING.md) — the debugging loop and the `--step` tape-stepper (time travel + trajectories)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — lexer → parser → bytecode VM → JIT internals
@@ -845,10 +865,14 @@ spawn occurrences to match workers. Tape associations carry state grouping;
 event order does not choose replay identity. Hosts explicitly advance replay
 sessions between evaluations; unread sibling outcomes prevent advance. See [docs/TRACE.md](docs/TRACE.md)
 and [docs/EMBEDDING.md](docs/EMBEDDING.md) for the binding and version contract.
-Tape format v8 preserves integer/float kinds and chunked module sources;
+Tape format v9 preserves integer/float kinds, chunked module sources, and
+length-framed oversized builtin answers;
 older formats are refused.
 Replay also refuses side-effecting boundaries the tape cannot reconstruct:
 in particular, `mktemp` raises before creating a temporary file.
+Recorded builtins validate arguments before their tape boundary, so a call
+that raises during recording raises identically during strict replay instead
+of returning a recorded stand-in.
 
 ## Stability
 
@@ -922,6 +946,10 @@ minimal, graphics-disabled `src/eigenlsp`. Sanitizer and zlib profiles are
 Make targets, not `build.sh` options.
 
 The minimal binary is a single C program with no runtime dependencies.
+
+For toroidal simulations, `nearest_in_range_all` returns one nearest other
+active entity per input entity and never selects that entity itself; the
+position-querying `nearest_in_range` does not implicitly exclude a candidate.
 
 ### Develop in a container
 

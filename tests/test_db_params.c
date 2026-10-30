@@ -14,9 +14,10 @@ static void check(int ok, const char *name) {
     printf("%s: %s\n", ok ? "PASS" : "FAIL", name);
 }
 
-int main(void) {
-    EigsState *st = eigs_open();
-    if (!st) return 2;
+/* #1808/#2098: intentional refusals need a handler on the active VM.
+ * Keep the existing fourteen assertions inside that real catch context. */
+static Value *db_params_probe(Value *probe_arg) {
+    (void)probe_arg;
     Value *arg = make_list(5);
     list_append_owned(arg, make_str("update t set a = $1, b = $2, c = $3, d = $4"));
     list_append(arg, make_bool(1));
@@ -37,10 +38,8 @@ int main(void) {
     Value *bad = make_list(2);
     list_append_owned(bad, make_str("select $1"));
     list_append_owned(bad, make_dict(1));
-    ++g_try_depth; /* catch the expected type error without a diagnostic */
     check(!db_build_query(bad, &sql, &n, params, numbuf, types) && eigs_has_error(),
           "a dict parameter still raises");
-    --g_try_depth;
     eigs_clear_error();
     val_decref(bad);
     /* R1.7 N6/N14: exact int digits and Python-repr float text. */
@@ -62,7 +61,20 @@ int main(void) {
         check(ok && n == 7 && strcmp(params[i], expected[i]) == 0 && types[i] == 0, label);
     }
     val_decref(numbers);
+    return make_bool(1);
+}
+
+int main(void) {
+    EigsState *st = eigs_open();
+    if (!st) return 2;
+    Value *probe = make_builtin(db_params_probe);
+    eigs_set_global("db_params_probe", probe);
+    val_decref(probe);
+    Value *result = eigs_eval_string("try:\n    db_params_probe of null\ncatch e:\n    false\n");
+    int probe_ok = result && result->type == VAL_BOOL && result->data.boolean && !eigs_has_error();
+    if (!probe_ok) fprintf(stderr, "db params: VM probe execution failed\n");
+    val_decref(result);
     eigs_close(st);
     printf("db params: %d passed, %d failed (14 declared)\n", passed, failed);
-    return failed || passed != 14;
+    return !probe_ok || failed || passed != 14;
 }

@@ -203,12 +203,13 @@ tree has:
 
 **Builtins.** The registration table is derived from the
 `env_set_local_owned(env, "name", make_builtin(fn))` lines plus the
-`ext_names.h` X-lists. It holds 389 names after R1.6g (312 after sync #5). The initial 311-name population was
+`ext_names.h` X-lists. It holds 388 names after S10-D2's `proc_read_buf`
+retirement (389 after R1.6g, 312 after sync #5). The initial 311-name population was
 calibrated against the runtime's own `eigenscript --api --json`
 (223 core + 88 extension = 311; equal in both directions). A builtin is numeric when a site is contained in
 its function, in a same-file function it calls or names as a value (a
 comparator, an op-table entry; closure depth 4), or in the shared formatter
-or equality it calls. The current population is 310 numeric builtins (R1.6g N9), and §6
+or equality it calls. The current population is 309 numeric builtins (R1.6g N9, minus S10-D2's explicit `proc_read_buf` retirement), and §6
 classifies every one. (The closure does not follow a call into another
 file, so a header helper that reads a number must itself be in the
 vocabulary for its callers to count: `buffer_read_byte` entered the
@@ -726,7 +727,7 @@ result).**
 | `jit_smoke.c:run_bool_cases` | not-a-classifier | test harness: expected bool bits (D3) |
 | `jit_smoke.c:run_index_bail_cases` | guarded | test harness: an exact null test of a result (D3) |
 | `trace.c:trace_source_replay` | guarded | source-size metadata requires `VAL_INT` before the exact int reader; a rejected float is read only for main's unchanged diagnostic (sync #5, #1885) (D1) |
-| `trace.c:write_slot` | smi-arm | v8 retains R1.3's exact int digits and float point/exponent markers; an unknown tag refuses (D1) |
+| `trace.c:write_slot` | smi-arm | v9 retains R1.3's exact int digits and float point/exponent markers; an unknown tag refuses (D1) |
 | `value_slot.h:#define slot_as_heap` | refuse | alias of `slot_as_ptr` (D2) |
 | `value_slot.h:slot_as_ptr` | refuse | the raw dereference: R1.1 refuses a non-heap slot in ASan builds and under `-DEIGS_SLOT_CHECKED` (the C slot test) (D2) |
 | `value_slot.h:slot_decref` | guarded | acts only on tag `0xFFFB`; an SMI has no refcount (D3) |
@@ -759,7 +760,9 @@ result).**
 | `vm.c:jit_helper_iter_next` | guarded | state must be a pointer; index and snapshot metadata use the exact checked iterator readers, matching CASE(ITER_NEXT) (R1.3) (D1) |
 | `vm.c:jit_helper_local_dot_set` | guarded | an int value skips the immediate store: `vm_slot_lift` boxes it (D1) |
 | `vm.c:jit_helper_local_idx_dot_get` | guarded | as `jit_helper_dot_get` (D3) |
-| `vm.c:loop_iter_store` | guarded | the loop counter is a float the VM makes; a non-float slot takes the `make_num` path (D1) |
+| `vm.c:loop_counter_load` | smi-arm | private stack counters use slot_int_value: an SMI or a boxed int is exact; any non-int is an internal error (sync 10 #1906) (D1) |
+| `vm.c:loop_counter_store` | smi-arm | exact int64 counter updates use slot_from_int; SMI writes need no ownership work, otherwise the prior slot is released and the new SMI or int box is owned (sync 10 #1906) (D1) |
+| `vm.c:loop_iter_store` | smi-arm | public loop counts are exact ints; a same-kind in-range SMI update avoids boxing, while other counts publish make_int through the environment setter, with shared writes locked (S9-K1/sync 10 #1906) (D1) |
 | `vm.c:obs_dump_scope` | smi-arm | an int's entropy, as its double (D1) |
 | `vm.c:obs_dump_value` | smi-arm | an int prints as its exact digits (D1) |
 | `vm.c:obs_slot_num` | smi-arm | the observer's numeric channel: a float, or an int as its exact double until round 3 (design 7) (D1) |
@@ -782,7 +785,7 @@ result).**
 | `vm.c:vm_local_lift` | guarded | a non-pointer, non-null slot goes through `slot_to_value` (compile-forced) and is boxed on purpose (D2) |
 | `vm.c:vm_run_ex/CASE(BNOT)` | smi-arm | an int64 operand is read exactly; R1.5 returns its exact complement as the int kind (D1) |
 | `vm.c:vm_run_ex/CASE(DESTRUCTURE_UNPACK)` | guarded | a non-pointer source takes the error path, which names the type through `slot_type_name` (D2) |
-| `vm.c:vm_run_ex/CASE(DISPATCH)` | smi-arm | an int key is its value when a C `int` holds it, else a value error; the result returns through `slot_bridge_unwrap` (D1) |
+| `vm.c:vm_run_ex/CASE(DISPATCH)` | smi-arm | an int key is its exact value; a key outside C `int` raises `index_range` under main #1849/#2032, after N5's exact int64 check; the result returns through `slot_bridge_unwrap` (D1) |
 | `vm.c:vm_run_ex/CASE(DOT_GET)` | guarded | exact null test of a field (D3) |
 | `vm.c:vm_run_ex/CASE(DOT_SET)` | guarded | an int value skips the immediate store: the slow path pops it (D1) |
 | `vm.c:vm_run_ex/CASE(EQ)` | guarded | an int is not a float: the slow path (`values_equal_op` on the lifted Values); R1.3 adds N2 (D1) |
@@ -1395,8 +1398,9 @@ column against the note both ways: a row's note says "continuous" exactly
 when its `q7` column is not `-`. Counts: geometry 9, bounded 13, magnitude 13.
 
 **Counts** (from the table below, checked by `tools/phase2_inventory.py`,
-which prints them): 310 numeric builtins (including N9, R1.6g). By class: 37
-int-preserving, 58 float-producing, 162 int-requiring, 53 other. The decided Q1 moved 16 rows
+which prints them): 309 numeric builtins (including N9, R1.6g; S10-D2 retires
+`proc_read_buf`). By class: 37 int-preserving, 58 float-producing,
+161 int-requiring, 53 other. The decided Q1 moved 16 rows
 from other to int-requiring (counts, byte values, handles, flags and
 selectors); `ppu_render_frame` is a new int-requiring row; design round 3
 moved `buf_from_pcm16le` from float-producing to int-requiring (its inputs are
@@ -1586,7 +1590,6 @@ current state behind several rows:
 | `pow` | float-producing | - | - | mirrors `^` (Lua §3.4.1: exponentiation is always float) |
 | `ppu_render_frame` | int-requiring | - | - | reads the emulated memory buffer through `buffer_read_byte`: byte values by N5, then 0..255 (Q1; the modulo-256 wrap is gone) |
 | `print` | other | - | - | N6 printing via value_to_string |
-| `proc_read_buf` | int-requiring | - | - | fd and max bytes; bytes stored as floats |
 | `random` | float-producing | - | - | Lua math.random() in [0,1) |
 | `random_hex` | int-requiring | - | - | digit count |
 | `random_int` | int-requiring | LOSS | - | Lua math.random(m, n) is an integer; bounds read as doubles today |
@@ -2221,7 +2224,11 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    | R1.6g | N9's 77 new width-family builtins in `builtins_int.c`, Rust std oracle | +77 | `N9.wrapping`, `N9.checked-raises`, `N9.saturating`, `N9.unsigned-ops`, `N9.fround` |
    | R1.6z | Remaining bridge sites in runtime, containers, embed, trace, compiler and task; delete all 21 tokens and all helpers left without callers | none | mechanical: deletion compile and final full table |
 
-   The pre-N9 rows sum to 233; R1.6g adds 77 for a total of 310. Ruling R1.6a-D1 added `read_text`, already
+   The pre-N9 rows summed to 233; R1.6g added 77 for a total of 310.
+   S10-D2 later retires `proc_read_buf` from round c: current c=76, total=309.
+   Its two frozen cases and dependent plants are explicitly retired in
+   `tests/phase2/builtins/RULINGS.md` and `builtins_changes.md`; the unchanged
+   `read_bytes_buf` case preserves the host-byte buffer f64 witness. Ruling R1.6a-D1 added `read_text`, already
    present in the R1.6a start (`1fd4422c`) through main's #1841/#1668, to
    round c: the original plan's c=75 and total=231 became c=76 and total=232
    at that import. Sync #5's R1.6-S2 adds main's `set_exit_code` to round c,

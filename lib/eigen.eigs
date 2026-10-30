@@ -1527,7 +1527,7 @@ define eigen_eval(node, env) as:
         # null), and a name bound to null is distinct from an unbound one — so
         # test existence with _env_has rather than treating a null result as
         # "missing". Message is best-effort: eval-time AST nodes carry no line
-        # number, so unlike the C VM's "Error line N: undefined variable ..." we
+        # number, so unlike the C VM's "Error path:N: undefined variable ..." we
         # can't prefix the source line.
         if (_env_has of [env, node[1]]) == 0:
             _eigen_throw of f"undefined variable '{node[1]}'"
@@ -1902,8 +1902,10 @@ define eigen_eval(node, env) as:
         iter is eigen_eval of [node[3], env]
         filter_node is node[4]
         result is []
+        # A comprehension owns one lexical binder scope. The iterable is
+        # deliberately evaluated above in the enclosing environment.
+        comp_env is _env_new of env
         for i in _eigen_range of (_eigen_len of iter):
-            comp_env is _env_new of env
             _env_set_local of [comp_env, var_name, iter[i]]
             if filter_node != null:
                 cond is eigen_eval of [filter_node, comp_env]

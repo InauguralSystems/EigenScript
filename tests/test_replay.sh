@@ -71,6 +71,106 @@ else
     fail "buffer replay" "rec='$REC_B' rep='$REP_B'"
 fi
 
+# ---- #1816: every unbounded core answer crosses the old 64 KiB limit ----
+# These are deliberately real traced calls, rather than handcrafted tapes.
+# Besides byte-identical stdout, each case requires a C continuation record.
+large_replay() {
+    name=$1; program=$2; tape="$TMPDIR/large-$name.tape"
+    EIGS_TRACE="$tape" "$EIGS" "$program" >"$TMPDIR/large-$name.rec" 2>"$TMPDIR/large-$name.rec.err"
+    rec_rc=$?
+    EIGS_REPLAY="$tape" "$EIGS" "$program" >"$TMPDIR/large-$name.rep" 2>"$TMPDIR/large-$name.rep.err"
+    rep_rc=$?
+    if [ "$rec_rc" -eq 0 ] && [ "$rep_rc" -eq 0 ] \
+       && cmp -s "$TMPDIR/large-$name.rec" "$TMPDIR/large-$name.rep" \
+       && grep -q '^C [0-9][0-9]* ' "$tape"; then
+        ok "$name: answer over 64 KiB replays byte-identically"
+    else
+        fail "$name large replay" "record=$rec_rc replay=$rep_rc"
+    fi
+}
+
+dd if=/dev/zero bs=20000 count=1 2>/dev/null | tr '\000' '\377' >"$TMPDIR/large.bin"
+dd if=/dev/zero bs=70000 count=1 2>/dev/null | tr '\000' 'x' >"$TMPDIR/large.txt"
+cat >"$TMPDIR/large-read_bytes.eigs" <<EOF
+print of (read_bytes of "$TMPDIR/large.bin")
+EOF
+large_replay read_bytes "$TMPDIR/large-read_bytes.eigs"
+cat >"$TMPDIR/large-read_bytes_buf.eigs" <<EOF
+print of (read_bytes_buf of "$TMPDIR/large.bin")
+EOF
+large_replay read_bytes_buf "$TMPDIR/large-read_bytes_buf.eigs"
+cat >"$TMPDIR/large-read_text.eigs" <<EOF
+print of (read_text of "$TMPDIR/large.txt")
+EOF
+large_replay read_text "$TMPDIR/large-read_text.eigs"
+cat >"$TMPDIR/large-random_normal.eigs" <<'EOF'
+print of (random_normal of [4410, 1.0])
+EOF
+large_replay random_normal "$TMPDIR/large-random_normal.eigs"
+
+# Losing any continuation must be a loud refusal, not a parseable prefix or a
+# fallback to fresh randomness.  Remove the final C while retaining later
+# ordinary records, so the reader encounters the wrong next record.
+awk 'BEGIN { dropped=0 } /^C / && !dropped { dropped=1; next } { print }' \
+    "$TMPDIR/large-random_normal.tape" >"$TMPDIR/large-truncated.tape"
+EIGS_REPLAY="$TMPDIR/large-truncated.tape" "$EIGS" \
+    "$TMPDIR/large-random_normal.eigs" >/dev/null 2>"$TMPDIR/large-truncated.err"
+truncated_rc=$?
+if [ "$truncated_rc" -eq 3 ] && grep -q 'refusing to replay' "$TMPDIR/large-truncated.err"; then
+    ok "truncated continuation: malformed tape refuses loudly with exit 3"
+else
+    fail "truncated continuation refusal" "rc=$truncated_rc"
+fi
+
+cat >"$TMPDIR/large-read_line.eigs" <<'EOF'
+print of (read_line of null)
+EOF
+EIGS_TRACE="$TMPDIR/large-read_line.tape" "$EIGS" "$TMPDIR/large-read_line.eigs" \
+    <"$TMPDIR/large.txt" >"$TMPDIR/large-read_line.rec"
+printf 'changed\n' | EIGS_REPLAY="$TMPDIR/large-read_line.tape" \
+    "$EIGS" "$TMPDIR/large-read_line.eigs" >"$TMPDIR/large-read_line.rep"
+if cmp -s "$TMPDIR/large-read_line.rec" "$TMPDIR/large-read_line.rep" \
+   && grep -q '^C [0-9][0-9]* ' "$TMPDIR/large-read_line.tape"; then
+    ok "read_line: answer over 64 KiB replays byte-identically"
+else
+    fail "read_line large replay"
+fi
+
+cat >"$TMPDIR/large-env_get.eigs" <<'EOF'
+print of (env_get of "EIGS_LARGE_VALUE")
+EOF
+EIGS_LARGE_VALUE=$(cat "$TMPDIR/large.txt"); export EIGS_LARGE_VALUE
+large_replay env_get "$TMPDIR/large-env_get.eigs"
+unset EIGS_LARGE_VALUE
+
+mkdir "$TMPDIR/large-dir"
+i=0
+while [ "$i" -lt 400 ]; do
+    leaf=$(printf '%04d_%0175d' "$i" 0)
+    : >"$TMPDIR/large-dir/$leaf"
+    i=$((i+1))
+done
+cat >"$TMPDIR/large-ls.eigs" <<EOF
+print of (ls of "$TMPDIR/large-dir")
+EOF
+large_replay ls "$TMPDIR/large-ls.eigs"
+
+cat >"$TMPDIR/large-args.eigs" <<'EOF'
+print of (args of null)
+EOF
+set --
+i=0
+arg=$(printf '%0100d' 0)
+while [ "$i" -lt 800 ]; do set -- "$@" "$arg"; i=$((i+1)); done
+EIGS_TRACE="$TMPDIR/large-args.tape" "$EIGS" "$TMPDIR/large-args.eigs" "$@" >"$TMPDIR/large-args.rec"
+EIGS_REPLAY="$TMPDIR/large-args.tape" "$EIGS" "$TMPDIR/large-args.eigs" changed >"$TMPDIR/large-args.rep"
+if cmp -s "$TMPDIR/large-args.rec" "$TMPDIR/large-args.rep" \
+   && grep -q '^C [0-9][0-9]* ' "$TMPDIR/large-args.tape"; then
+    ok "args: answer over 64 KiB replays byte-identically"
+else
+    fail "args large replay"
+fi
+
 # ---- #411: every tape opens with a version header ----
 # Handcrafted tapes below reuse the real header off the recorded tape, so
 # they stay valid when the format or runtime version bumps.
@@ -244,11 +344,11 @@ removed is remove_file of p
 EOF
 MKT_REPLAY=$(EIGS_REPLAY_STRICT=1 EIGS_REPLAY="$TMPDIR/block.tape" \
     "$EIGS" "$TMPDIR/p_mktemp_replay.eigs" 2>&1); MKT_REPLAY_RC=$?
-MKT_EXPECT=$(cat <<'EOF'
-Error line 1: mktemp: not replayable under EIGS_REPLAY (filesystem boundary; see docs/TRACE.md)
+MKT_EXPECT=$(cat <<EOF
+Error $TMPDIR/p_mktemp_replay.eigs:1: mktemp: not replayable under EIGS_REPLAY (filesystem boundary; see docs/TRACE.md)
      1 | p is mktemp of null
        |             ^
-  at <module> (line 1)
+  at <module> ($TMPDIR/p_mktemp_replay.eigs:1)
 EOF
 )
 if [ "$MKT_REPLAY_RC" -eq 1 ] && [ "$MKT_REPLAY" = "$MKT_EXPECT" ]; then
@@ -534,8 +634,8 @@ print of x
 EOF
 CONTRACT_TAPE="$TMPDIR/contract.tape"
 EIGS_TRACE="$CONTRACT_TAPE" "$EIGS" "$TMPDIR/p_tape_contract.eigs" >/dev/null 2>&1
-if head -1 "$CONTRACT_TAPE" | grep -q '^V 8 '; then
-    ok "tapes written by this build stamp format v8"
+if head -1 "$CONTRACT_TAPE" | grep -q '^V 9 '; then
+    ok "tapes written by this build stamp format v9"
 else
     fail "format stamp" "$(head -1 "$CONTRACT_TAPE")"
 fi
@@ -560,7 +660,7 @@ else
     fail "pre-v3 replay refusal" "rc=$OLD_REPLAY_RC $(cat "$TMPDIR/old-replay.err")"
 fi
 
-# O records remain part of v8 tapes and the stepper still folds them. Bound the
+# O records remain part of v9 tapes and the stepper still folds them. Bound the
 # multiplicative configuration-record x binding work even though programs can
 # no longer create those records through observer setter builtins.
 WORK_TAPE="$TMPDIR/observer-work-limit.tape"

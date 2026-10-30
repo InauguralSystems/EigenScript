@@ -153,9 +153,9 @@ check of ["nearest_in_range skips inactive", nr2.index == 1]
 
 nall is nearest_in_range_all of [ents, 100, 1000, 1000]
 check of ["nearest_in_range_all length", (len of nall) == 3]
-# per docs each entity's nearest (including itself) — self at dist 0
+# each entity's nearest other active entity
 first is nall[0]
-check of ["nearest_in_range_all self", first.dist == 0]
+check of ["nearest_in_range_all excludes self", first.index == 2]
 
 nirf is nearest_in_range
 nr3 is nirf of [ents, 11, 11, 100, 1000, 1000]

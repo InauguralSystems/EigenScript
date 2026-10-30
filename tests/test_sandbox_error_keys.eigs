@@ -37,7 +37,7 @@ caught_budget_code is [TRY_BEGIN,11,0,
 caught_budget_desc is [ABI, caught_budget_code,
                        ["str_lower", big, "caught-budget-survived"]]
 
-expected_error_keys is ["ki" + "nd", "mes" + "sage", "li" + "ne"]
+expected_error_keys is ["ki" + "nd", "mes" + "sage", "li" + "ne", "fi" + "le"]
 late_keys is []
 budget_keys is []
 for i in range of 100:

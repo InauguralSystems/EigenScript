@@ -706,6 +706,17 @@ def report(v, res, corpus, numbers, caps, probes, labels, reported, expect):
                     c[{(True, True): 0, (False, True): 1, (True, False): 2, (False, False): 3}[(want, got)]] += 1
             cells.append(f"{c[0]:3} {c[1]:3} {c[2]:3} {c[3]:3} {c[0] + c[3]:4}/{sum(c):<4}")
         print(f"  {p:12}{scored.get(p, '-'):11}" + "".join(f"{x:>24}" for x in cells))
+    print("\nDOCUMENTATION TABLE, per-predicate right/total (derived; incumbent is interp/straight)")
+    print("  predicate        incumbent       REFERENCE REFERENCE_ENTROPY   constant-false")
+    for p in PREDS:
+        cells = []
+        for a in ("interp/straight", "REFERENCE", "REFERENCE_ENTROPY"):
+            judged = [x for k, x in v.items() if k[0] == a and k[3] == p]
+            cells.append(f"{sum(x[1] == x[2] for x in judged)}/{len(judged)}")
+        labelled = [x for k, x in v.items() if k[0] == "interp/straight" and k[3] == p]
+        false_score = sum(not x[1] for x in labelled)
+        print(f"  {p:12}{cells[0]:>13}{cells[1]:>16}{cells[2]:>18}"
+              f"{false_score:>10}/{len(labelled)}")
     head = [[x[1] == x[2] for k, x in v.items() if k[0] == a] for a in arms]
     print("HEADLINE, scored verdicts right/total (each verdict counted once): "
           + ", ".join(f"{a} {sum(h)}/{len(h)}" for a, h in zip(arms, head)))

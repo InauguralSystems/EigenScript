@@ -1,0 +1,8 @@
+total is 10
+define outer(n) as:
+    total is 20
+    define read(n) as:
+        return total
+    return read of null
+print of (outer of null)
+print of total

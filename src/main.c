@@ -10,6 +10,76 @@
 #include "trace.h"
 #include "repl.h"
 
+#ifdef EIGS_TSAN_TEST_SEAM
+#include <pthread.h>
+#include <stdatomic.h>
+
+/* #2052: planted weak-memory positive control.  This intentionally omits the
+ * release/acquire edge that must publish tsan_probe_payload.  It exists only
+ * in TSan variants and is reachable only through the private test switch. */
+static atomic_int tsan_probe_published;
+static int tsan_probe_payload;
+
+static void *tsan_probe_publish(void *unused) {
+    (void)unused;
+    tsan_probe_payload = 2052;
+    atomic_store_explicit(&tsan_probe_published, 1, memory_order_relaxed);
+    return NULL;
+}
+
+static void *tsan_probe_consume(void *unused) {
+    (void)unused;
+    while (!atomic_load_explicit(&tsan_probe_published,
+                                 memory_order_relaxed)) { }
+    return (void *)(uintptr_t)tsan_probe_payload;
+}
+
+static int tsan_misordered_publish_control(void) {
+    pthread_t publisher, consumer;
+    void *observed = NULL;
+    atomic_store_explicit(&tsan_probe_published, 0, memory_order_relaxed);
+    tsan_probe_payload = 0;
+    if (pthread_create(&consumer, NULL, tsan_probe_consume, NULL) != 0)
+        return 2;
+    if (pthread_create(&publisher, NULL, tsan_probe_publish, NULL) != 0) {
+        atomic_store_explicit(&tsan_probe_published, 1, memory_order_relaxed);
+        (void)pthread_join(consumer, NULL);
+        return 2;
+    }
+    if (pthread_join(publisher, NULL) != 0 ||
+        pthread_join(consumer, &observed) != 0)
+        return 2;
+    return (uintptr_t)observed == 2052 ? 0 : 1;
+}
+
+/* #2071: gate-liveness control. Both workers exist before either is joined,
+ * so pthread lifecycle edges do not order these writes. Unlike the former
+ * language-level control, captured-binding lookup cannot add a runtime lock
+ * (and an accidental happens-before edge) around this location. */
+static volatile int tsan_seeded_race_word;
+
+static void *tsan_seeded_race_write(void *value) {
+    tsan_seeded_race_word = (int)(uintptr_t)value;
+    return NULL;
+}
+
+static int tsan_seeded_race_control(void) {
+    pthread_t first, second;
+    tsan_seeded_race_word = 0;
+    if (pthread_create(&first, NULL, tsan_seeded_race_write,
+                       (void *)(uintptr_t)1) != 0)
+        return 2;
+    if (pthread_create(&second, NULL, tsan_seeded_race_write,
+                       (void *)(uintptr_t)2) != 0) {
+        (void)pthread_join(first, NULL);
+        return 2;
+    }
+    if (pthread_join(first, NULL) != 0 || pthread_join(second, NULL) != 0)
+        return 2;
+    return 0;
+}
+#endif
+
 #ifndef EIGENSCRIPT_VERSION
 #define EIGENSCRIPT_VERSION "dev"
 #endif
@@ -36,6 +106,30 @@ static void set_exe_dir(const char *argv0) {
 }
 
 int main(int argc, char **argv) {
+#ifdef EIGS_TSAN_TEST_SEAM
+    if (getenv("EIGS_TSAN_SEEDED_RACE_CONTROL"))
+        return tsan_seeded_race_control();
+    if (getenv("EIGS_TSAN_MISORDERED_PUBLISH_CONTROL"))
+        return tsan_misordered_publish_control();
+#endif
+    /* EIGS_SEED_RANDOM=<integer> (#2120): seed the shared random stream before
+     * any program code runs, through seed_random's own path, so every run with
+     * one value draws one sequence (differential testing, reproduction). A
+     * malformed value is a startup error here: never a silent fallback to the
+     * clock, and never an exit from inside the runtime, which embedders share. */
+    {
+        const char *seed_env = getenv("EIGS_SEED_RANDOM");
+        if (seed_env && *seed_env) {   /* empty means unset, as for EIGS_* flags */
+            char *end = NULL;
+            errno = 0;
+            long seed = strtol(seed_env, &end, 10);
+            if (errno == ERANGE || end == seed_env || *end != '\0') {
+                fprintf(stderr, "EIGS_SEED_RANDOM: invalid integer: %s\n", seed_env);
+                return 2;
+            }
+            eigs_seed_random(seed);
+        }
+    }
     /* #413: a bundled binary (appended archive, trailer magic) extracts
      * itself and rewrites argv to run the extracted script — before ANY
      * flag handling, because in bundle mode the arguments belong to the
@@ -62,6 +156,18 @@ int main(int argc, char **argv) {
         return 0;
     }
 
+    /* Machine-readable build capabilities.  Keep the JIT value on the same
+     * compile-time gate as jit.c's emitter; callers must not infer a binary's
+     * capabilities from the machine on which it happens to run. */
+    if (argc >= 2 && strcmp(argv[1], "--build-info") == 0) {
+#if EIGS_JIT_ENABLED
+        printf("jit-backend=x86-64\n");
+#else
+        printf("jit-backend=none\n");
+#endif
+        return 0;
+    }
+
     /* --help is likewise pure; print usage and exit before touching state.
      * Without this, `--help` falls through to the file path below and the
      * runtime tries to read a file literally named "--help". */
@@ -74,6 +180,7 @@ int main(int argc, char **argv) {
             "  eigenscript -e <source> [args...]   run a source string\n"
             "  eigenscript                         start the REPL\n"
             "  eigenscript --fmt [--write] <file>  format a source file (stdout, or rewrite with --write)\n"
+            "  eigenscript --dump-tokens <file>    dump lexer type, value and source line (no execution)\n"
             "  eigenscript --lint [--json] [--lint-level error|warning] <file>\n"
             "                                      lint a source file (--json machine-readable; --lint-level error = warnings advisory;\n"
             "                                      '# lint: allow W001' suppresses a code inline)\n"
@@ -89,6 +196,7 @@ int main(int argc, char **argv) {
             "                                      single-file executable: runtime + script + eigs_modules +\n"
             "                                      stdlib (+ optional tape: `out --replay` re-runs it exactly)\n"
             "  eigenscript --version, -v           print the version and exit\n"
+            "  eigenscript --build-info            print machine-readable build capabilities\n"
             "  eigenscript --help, -h              print this help and exit\n"
             "\n"
             "Docs: https://github.com/InauguralSystems/EigenScript\n",
@@ -146,6 +254,46 @@ int main(int argc, char **argv) {
             path = argv[2];
         }
         return eigenscript_fmt(path, write_mode);
+    }
+
+    /* Machine-readable lexer fingerprint used by the formatter safety gate.
+     * String values are hex bytes; numbers carry an i/f kind prefix followed
+     * by exact decimal int digits or an exact hexadecimal float. */
+    if (argc >= 2 && strcmp(argv[1], "--dump-tokens") == 0) {
+        if (argc != 3) {
+            fprintf(stderr, "Usage: eigenscript --dump-tokens file.eigs\n");
+            return 1;
+        }
+        long size = 0;
+        char *source = read_file_util(argv[2], &size);
+        if (!source) {
+            fprintf(stderr, "Error: cannot read file '%s'\n", argv[2]);
+            return 1;
+        }
+        EigsState *dump_st = eigs_state_new();
+        eigs_thread_attach(dump_st);
+        g_parse_errors = 0;
+        TokenList tl = tokenize(source);
+        int rc = g_parse_errors ? 1 : 0;
+        if (!rc) for (int i = 0; i < tl.count; i++) {
+            Token *t = &tl.tokens[i];
+            printf("%d\t", (int)t->type);
+            if (t->type == TOK_NUM) {
+                if (t->number.is_int)
+                    printf("i%lld", (long long)t->number.value.i64);
+                else
+                    printf("f%a", t->number.value.f64);
+            } else if (t->str_val) {
+                const unsigned char *p = (const unsigned char *)t->str_val;
+                while (*p) printf("%02x", *p++);
+            }
+            printf("\t%d\n", t->line);
+        }
+        free_tokenlist(&tl);
+        free(source);
+        eigs_thread_detach();
+        eigs_state_destroy(dump_st);
+        return rc;
     }
 
     /* #972: EIGS_OBS_GATE_STATS=1 also tallies observe-helper entries (the
@@ -276,14 +424,16 @@ int main(int argc, char **argv) {
 
     /* No arguments: enter REPL */
     if (argc < 2) {
-        srand(time(NULL));
         eigenscript_set_args(argc, argv);
 
         Env *global = eigs_global_env_create();   /* + builtin layer (#1388) */
 
         eigenscript_repl(global);
-        /* Match file execution: workers may still publish an exit code after
-         * stdin closes, so join them before sampling the state latch. */
+        /* #1811: every way out of eigenscript_repl (plain/editor EOF,
+         * `exit`/`quit`, requested `exit of N`, including an eventual exit
+         * after a recoverable evaluation error) joins here. Match file
+         * execution while the value world is still alive; workers may also
+         * publish an exit code before the join completes. */
         handle_table_drain(eigs_st);
         /* #739: take the exit code BEFORE teardown. It is a bridge macro now
          * (state latch, reached through eigs_current), so eigs_thread_detach
@@ -314,6 +464,12 @@ int main(int argc, char **argv) {
         MODE_EXIT(1);
     }
 
+    /* Private verdict-calibration side channel (#2059).  lib/test.eigs owns
+     * the ledger write; give that seam the actual program operand rather than
+     * making every suite invocation remember to repeat it. */
+    if (!source_string && getenv("EIGS_TEST_FORCE_SUMMARY_LEDGER"))
+        setenv("EIGS_TEST_SCRIPT_PATH", argv[1], 1);
+
     /* Extract script directory for load_file resolution. g_script_dir
      * is an EigsState bridge macro — state is already attached above. */
     {
@@ -340,7 +496,6 @@ int main(int argc, char **argv) {
         for (int i = 2; i + 1 < argc; i++) argv[i] = argv[i + 1];
         argv[--argc] = NULL;
     }
-    srand(time(NULL));
     eigenscript_set_args(argc, argv);
 
     Env *global = eigs_global_env_create();   /* + builtin layer (#1388) */
@@ -366,7 +521,7 @@ int main(int argc, char **argv) {
         return 1;
     }
     g_compile_module_slots = 1;
-    EigsChunk *script_chunk = compile_ast(ast, global, source);
+    EigsChunk *script_chunk = compile_ast(ast, global, source, source_string ? "<eval>" : argv[1]);
     g_compile_module_slots = 0;
     if (g_parse_errors > 0) {   /* compile-stage error, e.g. un-encodable jump */
         fprintf(stderr, "%d compile error(s) — aborting\n", g_parse_errors);

@@ -142,8 +142,8 @@ typedef enum {
     OP_PREDICATE,       /*obs:READS*/ /* [kind:16] push predicate result */
     OP_UNOBSERVED_BEGIN,/*obs:WRITES*/ /* increment g_unobserved_depth */
     OP_UNOBSERVED_END,  /*obs:WRITES*/ /* decrement g_unobserved_depth */
-    OP_LOOP_STALL_CHECK,/*obs:READS*/ /* [exit_offset:16] observer-stall + iteration cap (observer-based loops) */
-    OP_LOOP_CAP_CHECK,  /*obs:DIAG*/ /* [exit_offset:16] iteration cap ONLY (plain loops; no observer-stall) */
+    OP_LOOP_STALL_CHECK,/*obs:READS*/ /* [exit_offset:16] legacy shared counter guard */
+    OP_LOOP_CAP_CHECK,  /*obs:DIAG*/ /* [exit_offset:16] legacy shared counter guard */
 
     /* Miscellaneous */
     OP_IMPORT,          /*obs:NONE*/ /* [name_idx:16] import module, push dict */
@@ -228,6 +228,14 @@ typedef enum {
     OP_INT_ONE,         /*obs:NONE*/ /* push int 1 */
     OP_INT_CONST,       /*obs:NONE*/ /* [idx:16] push int constant pool entry */
     OP_IDIV,            /*obs:NONE*/ /* #1758 N4: floor division, appended */
+    OP_LOOP_ENTER,      /*obs:DIAG*/ /* legacy shared counter reset */
+    OP_LOOP_STALL_NAMED,/*obs:READS*/ /* [exit:16][stack_depth:16] per-loop stall/cap guard */
+    OP_LOOP_CAP_NAMED,  /*obs:DIAG*/ /* [exit:16][stack_depth:16] per-loop cap guard */
+    OP_LOOP_ENTER_NAMED,/*obs:DIAG*/ /* [stack_depth:16] push private counter, publish zero */
+    OP_LOOP_EXIT_NAMED, /*obs:DIAG*/ /* [stack_depth:16] publish and pop private counter */
+    OP_BINARY_LINE,     /*obs:WRITES*/ /* [line:32] save line caches and stamp one binary op */
+    OP_BINARY_LINE_END, /*obs:WRITES*/ /* restore line caches after a successful binary op */
+
     OP_COUNT            /* sentinel — number of opcodes */
 } OpCode;
 
@@ -285,11 +293,12 @@ typedef struct {
 typedef struct EigsSrcBuf {
     int   refcount;
     char *text;
+    char *file;                /* compiler-supplied source identity (#1651) */
     char *resolve_dir;         /* owned canonical containing-file directory;
                                * shared with nested functions, not a GC edge */
 } EigsSrcBuf;
 
-EigsSrcBuf *srcbuf_new(const char *text);
+EigsSrcBuf *srcbuf_new(const char *text, const char *file);
 void        srcbuf_incref(EigsSrcBuf *sb);
 void        srcbuf_decref(EigsSrcBuf *sb);
 
@@ -507,12 +516,18 @@ typedef struct {
      * OP_UNOBSERVED_END between the raise and here, so without restoring it
      * the runtime depth stays elevated and the observer silently stops
      * recording for the rest of the process. */
-    struct { uint8_t *catch_ip; int catch_bp; int unobs_depth; } try_handlers[MAX_TRY_HANDLERS];
+    struct {
+        uint8_t *catch_ip;
+        int catch_bp;
+        int unobs_depth;
+        Env *env;  /* lexical environment active when TRY_BEGIN ran */
+    } try_handlers[MAX_TRY_HANDLERS];
     int        try_count;       /* number of active try handlers */
     /* Saved loop-stall globals (so a callee's loops don't inherit caller's
      * accumulated stall count / iteration count). Scoped per call frame. */
     int        saved_stall_count;
     long long  saved_loop_iter;   /* #772: matches EigsState.loop_iterations */
+    long long  saved_sandbox_loop_iter; /* #1906: old compiler-loop budget scope */
     int        call_argc;        /* args actually passed to this call; <= chunk->param_count.
                                   * Used by OP_DEFAULT_PARAM to decide if a slot was bound
                                   * by the caller or needs its default expression run. */
@@ -548,6 +563,10 @@ typedef struct VM {
      * (for example a builtin task entry invoking a user callback). */
     int        execute_depth;
     int        current_line;
+    /* #1425: scratch for adjacent BINARY_LINE / binop / BINARY_LINE_END.
+     * No call, jump or suspension lies inside a compiler-emitted scope. */
+    int        binary_prev_line;
+    int        binary_prev_trace_line;
     /* Back-pointer to the owning EigsThread, set in vm_init. Lets the
      * JIT reach EigsThread fields (e.g. unobserved_depth) via a single
      * `mov off_vm_owner(%rbx), %rax` instead of a TLS read at every
@@ -732,6 +751,8 @@ int        chunk_scan_static_loads(const EigsChunk *chunk,
                                                  void *ud),
                                    void *ud);
 const char *op_name(uint8_t op);
+/* Operand bytes following an opcode. This is the single bytecode-walker
+ * width table; returns -1 for an unknown opcode. */
 /* Verify an assembled (untrusted) chunk's bytecode is in-bounds before the VM
  * runs it. Returns 1 if safe to execute, 0 if it must be rejected. */
 int        chunk_verify(EigsChunk *chunk);
@@ -751,7 +772,8 @@ void       chunk_arm_temporal(const EigsChunk *chunk);
 int        chunk_reads_shared_temporal(const EigsChunk *chunk);
 
 /* Compiler */
-EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src);
+EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src,
+                       const char *file);
 
 /* Sandbox loop-iteration cap (0 = default 100M). Set by builtin_sandbox_run.
  * Per-thread bridge macro in eigenscript.h (#739). */
@@ -794,5 +816,33 @@ void       vm_thread_destroy(struct EigsThread *th);
 /* Phase 9: zero the hot dict/loop-iter caches that stay __thread on
  * this OS thread, so a state attach on a recycled thread starts clean. */
 void       vm_thread_reset_caches(void);
+
+#include <limits.h>
+#include <math.h>
+
+/* Shared by the VM's subscript paths, native OP_DISPATCH and the dispatch
+ * builtin (#1849): one integrality-and-range predicate, not one per site. */
+/* Integer-valued test for a subscript index: an exact integer (2.0) returns 1
+ * and is written to *out; a fractional value (2.5) — or one from float drift
+ * (2.9999998) — returns 0 so the caller can raise "index must be an integer"
+ * instead of silently truncating. Pure predicate, no side effects: the raise
+ * lives at the handling site so a target the fast path doesn't own (string,
+ * dict) falls through to the slow path and is diagnosed exactly once. An
+ * integral double outside the C int range is clamped to the nearest endpoint.
+ * That preserves the predicate's compact
+ * interface while sending it through the caller's ordinary out-of-range path;
+ * critically, Phase2's exact signed-int64 check happens before either cast.
+ * A fractional, non-finite or out-of-int64 float is a value refusal (N5);
+ * an exact int64 outside the C index domain takes main's range-error path.
+ * num_to_i64_exact is pure inline and needs no freestanding libm helper.
+ * Negatives pass here and fail the usual range check downstream, unchanged. */
+static inline int vm_index_is_int(double d, int *out) {
+    int64_t i;
+    if (!num_to_i64_exact(d, &i)) return 0;
+    if (i < INT_MIN) *out = INT_MIN;
+    else if (i > INT_MAX) *out = INT_MAX;
+    else *out = (int)i;
+    return 1;
+}
 
 #endif /* EIGENSCRIPT_VM_H */

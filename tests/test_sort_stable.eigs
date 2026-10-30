@@ -1,4 +1,5 @@
 # #1758 sort ruling: tie order is observable in numeric kinds and signed zero.
+# #1982 sort ruling: sort_by tie order is observable through record identity.
 load_file of "lib/test.eigs"
 xs is []
 want is []

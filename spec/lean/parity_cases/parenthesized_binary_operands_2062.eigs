@@ -1,0 +1,19 @@
+print of (1 < 2) + 1
+print of (1) == 1
+print of 1 == (1)
+print of (1) != 2
+print of 1 != (2)
+print of (1) <= 2
+print of 1 <= (2)
+print of (2) >= 1
+print of 2 >= (1)
+print of (1) < 2
+print of 1 < (2)
+print of (2) > 1
+print of 2 > (1)
+print of (1) + 2
+print of 1 + (2)
+print of (3) - 2
+print of 3 - (2)
+print of (2) * 3
+print of 2 * (3)

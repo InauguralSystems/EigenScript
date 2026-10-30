@@ -363,7 +363,9 @@ Historical import records above are already included in the pin.
 | `tests/phase2/builtins/builtins/pow.branch` | `68ab07f20b3ee61e305f67fa87230fd2c8a7730bbd4954642fd45136b37b9081` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
 | `tests/phase2/builtins/builtins/ppu_render_frame.branch` | `79f74efe5a437cbb3097669f3da297fb55c36d5682be19c74ba615679d486a47` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
 | `tests/phase2/builtins/builtins/print.branch` | `d2eaac663b00862a70c3ecd6d5f29aaaf9b793021e433025fb403ac65d6d6f01` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
-| `tests/phase2/builtins/builtins/proc_read_buf.hi.branch` | `f786f6b5395f54fa5f9c39c32f18ebc2d0fcda2099395156af684f37783cfe3b` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/nearest_in_range_all.branch` | `fa6f30b2af6cebed9c244889683a356120916ba20cd5b364579b21010f50634e` | S10-D2 | Issue #1888 comment 6402855103 expressly assigns next main-to-phase2 sync: nearest OTHER active entity, only first index 1 to 0; source and type witnesses frozen |
+| `tests/phase2/builtins/builtins/proc_read_buf.branch` | `DELETED` | S10-D2 | Main #1691 retires the zero-consumer builtin; explicit frozen-case retirement, prior bank hashes recorded below |
+| `tests/phase2/builtins/builtins/proc_read_buf.hi.branch` | `DELETED` | S10-D2 | Main #1691 retires the zero-consumer builtin; supersedes this path's R1.7-D6 text amendment, prior bank hashes recorded below |
 | `tests/phase2/builtins/builtins/read_bytes_buf.branch` | `0b52c1d8294591447cc198a3e8eb027ff8990555c52bf12fbdf93c912428ca84` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
 | `tests/phase2/builtins/builtins/relu.branch` | `24ae0c94c3ef3adf70443d1c90ab71b51e6212e09a7794c2dfc6d44c1a934601` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
 | `tests/phase2/builtins/builtins/scatter_add.branch` | `6efe02323a3891ed6ea11712c44546913ea92f4d0a064f1c5ec8daaaedc8a92d` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
@@ -381,6 +383,8 @@ Historical import records above are already included in the pin.
 | `tests/phase2/builtins/builtins/write.branch` | `d646570e76559c96769f89afa8d1160cde5e12bed99a3b36f2fb7d6bb7ca7b7b` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
 | `tests/phase2/builtins/builtins/zeros.branch` | `2530cd624a068d1882816dec67cdb9848c1011f5307c0c27fb514cc108b18160` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
 | `tests/phase2/builtins/builtins/zeros_like.branch` | `8d3e0cdb2aee733291b724abd3f038bd9cdf2a90288d24072b87838c538a130c` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+
+| `tests/phase2/builtins/builtins/read_text.branch` | `fd9b265f1a9a5e33c8f9d225b8c0befc1f78a536c43a28cf3cb0ccfbde996cd9` | S10-D3 | Main e0d49159 closes2076: same raise message naming the escape; only over-cap diagnostic text, original sizes/kinds/result/status unchanged |
 
 ## R1.6b bar amendments
 
@@ -631,3 +635,81 @@ Prior accepted-amendment records (preserved provenance):
 - | `tests/phase2/builtins/builtins/str.branch` | `0c399d98c18da266dc150e39e78e616faadc324cca6e7c6c62ceb270e867913f` | R1.7-D2 | N6 Python repr float text only |
 
 One-time public-entry plants: json_build.pre a -> z must fail the D5 non-float comparator; abs.pre integer -> float spelling (with derived flag synchronized) must fail A2; acos' derived candidate digit 0.0 -> 1.0 must fail D2's double-bit comparator naming acos. The last plant is checked through phase2_builtins.sh's population-proof preflight, rather than a stale frozen hash. This follows principle 5, Checks are anchored outside the system, narrow, and few.
+
+## S10-D2 — explicit frozen retirement of `proc_read_buf` (2026-10-28)
+
+Main #1691 (`5029856a`) removes `proc_read_buf` under #1677's zero-consumer
+rule after removal of `proc_spawn`. The orchestrator's direct PR #1776 ruling
+S10-D2 authorizes these retirements under R1.7-D2 and supersedes A5/C10's
+retired-builtin witnesses. The prior accepted bank is
+`ed09f908603a414f77ead78e241fa10aff7f2f38`; each path below is removed,
+with its exact last accepted bytes identified by SHA-256.
+
+| Retired path | Prior accepted SHA-256 | Authority |
+| --- | --- | --- |
+| `tests/phase2/builtins/builtins/_stdin/hi` | `3639efcd08abb273b1619e82e78c29a7df02c1051b1820e99fc395dcaa3326b8` | S10-D2 retirement |
+| `tests/phase2/builtins/builtins/proc_read_buf.branch` | `76b9f9203919cf0f5b50c95f7ba849c0f66dc9f9d46910ecc966a1308ec409a9` | S10-D2 retirement |
+| `tests/phase2/builtins/builtins/proc_read_buf.eigs` | `e14e9ac3f0a8421380d4f52db2778bd28c7567f8cb17358d386f94f65bd80221` | S10-D2 retirement |
+| `tests/phase2/builtins/builtins/proc_read_buf.hi.branch` | `f786f6b5395f54fa5f9c39c32f18ebc2d0fcda2099395156af684f37783cfe3b` | S10-D2 retirement |
+| `tests/phase2/builtins/builtins/proc_read_buf.hi.eigs` | `7af30b36bd60d04b0ff0e6bd5d690fa15db493dd25c88cd56813304d0be6cce3` | S10-D2 retirement |
+| `tests/phase2/builtins/builtins/proc_read_buf.hi.pre` | `6a4eac6578eaf7ddde381600841f2c7f83ed104a443ead1da21ce8824ccf1c7a` | S10-D2 retirement |
+| `tests/phase2/builtins/builtins/proc_read_buf.hi.tag` | `320688535eda1817e2f08d56e868a37f4c3b1e7c41430b87a61b151f55a6f1d4` | S10-D2 retirement |
+| `tests/phase2/builtins/builtins/proc_read_buf.pre` | `6f490d81a564a89f7ba09b44f3f218c14edbd4997d5d8855603739e96a0e5e42` | S10-D2 retirement |
+| `tests/phase2/builtins/builtins/proc_read_buf.tag` | `6f490d81a564a89f7ba09b44f3f218c14edbd4997d5d8855603739e96a0e5e42` | S10-D2 retirement |
+
+The two `.branch` amendment rows above now read `DELETED | S10-D2`.
+The `proc_read_buf.hi.branch` deletion supersedes its R1.7-D6 amendment
+(`f786f6b5395f54fa5f9c39c32f18ebc2d0fcda2099395156af684f37783cfe3b`),
+whose historical derivation table remains intact. `r17_float_text.json`
+removes only that retired path from the active re-render population (68 to
+67) and records both retirements with their exact bank anchor and prior
+source/branch hashes. The original four-profile derivation digest remains
+historical provenance; its scope is explicit. The float amendment checker
+accepts only these two missing paths after checking the bank hashes,
+absence of both source/branch files, and the matching `DELETED` amendments.
+Every other frozen path and byte retains the previous checks.
+
+The table/case metadata removes the `proc_read_buf` row and both cases:
+309 builtin rows, 310 cases, round c=76; other round memberships stay fixed.
+P23 (stdin-fixture membership) and R6 (missing stdin fixture) are retired
+because the removed `proc_read_buf.hi` case was the only stdin-fixture user.
+The fixture membership predicate still compares both directions and treats
+an absent fixture directory as the empty set. Remaining plant IDs are fixed.
+
+Existing `builtins/read_bytes_buf.eigs` and `.branch` preserve A5/C10's
+host-byte-source f64 intent without any frozen-byte edit: the buffer read
+pins `[3, 1.0, "float"]`, then `[3, "float"]` observes `d[2]` after an
+integral-float cap. This distinguishes a runtime int-kind fault even when
+numeric values agree. Its `.branch` SHA-256 remains
+`0b52c1d8294591447cc198a3e8eb027ff8990555c52bf12fbdf93c912428ca84`.
+No new case or changelog fragment is added for this pure merge. Checker
+calibrations and the one-time real typing fault are scheduled in the
+sync10 drivers; this amendment note does not claim they ran.
+
+### S10-D2 sibling sweep: recorded #1888 nearest-other decision
+
+[Issue #1888 comment 6402855103](https://github.com/InauguralSystems/EigenScript/issues/1888#issuecomment-6402855103)
+expressly rules that each entity receives its nearest OTHER active entity,
+that the entity itself is never a candidate, and that the next main-to-phase2
+sync takes it. Main's #1888/#2010 implements that decision. BAR.md had already
+filed the old self-neighbor behavior under #1888; no numeric ruling required
+that incidental self index. S10-D2 step 3 applies the recorded-decision rule.
+
+Only `builtins/nearest_in_range_all.branch` changes: `[1, "int", "float", "float"]`
+becomes `[0, "int", "float", "float"]`; `rc=0`, source, scenario and all kind
+witnesses remain byte-identical. Bank source SHA-256 is
+`abf6d29d7dff1a56f1baed7c89dbf6e68025898c760ff598ce6da21626f5afa5`;
+prior branch SHA-256 is
+`b10fe4c4d96d69ca28c3216cb3b82b8db1232808558240afcd320eb943bee6d8`;
+approved replacement SHA-256 is
+`fa6f30b2af6cebed9c244889683a356120916ba20cd5b364579b21010f50634e`.
+The exact SHA amendment above is separate from the N6 population. The checker
+validates this single path, source hash and exact one-field transformation
+against the same immutable R1.8 bank before installing its approved baseline;
+it does not treat arbitrary numeric differences as float re-renders.
+
+## S10-D3 — explicit read_text diagnostic amendment (2026-10-29)
+
+Main `e0d491598ee19108802bf25c99c5b59d23039117` closes [#2076](https://github.com/InauguralSystems/EigenScript/issues/2076). Its Done-when requires "the same raise message naming the escape" for all three capped readers, from one shared helper. The orchestrator explicitly authorizes only the over-cap diagnostic line in `builtins/read_text.branch`; the case source, .pre/.tag, sizes, kinds, result rows and rc stay unchanged. This is a builtin self-test diagnostic, with no Phase2 number rule of its own.
+
+Prior bank SHA-256 `460914ed8657b39b51c90f6401e02e920a30b85ff4c97587884650006193e2ae`; approved S10-D3 SHA-256 `fd9b265f1a9a5e33c8f9d225b8c0befc1f78a536c43a28cf3cb0ccfbde996cd9`. The existing exact frozen-amendment mechanism pins the new bytes.

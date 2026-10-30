@@ -36,7 +36,7 @@ LDFLAGS := -pie -Wl,-z,relro,-z,now -lm -lpthread
 endif
 
 SRC_DIR := src
-SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_int.c $(SRC_DIR)/builtins_buf.c $(SRC_DIR)/builtins_host.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/fsutil.c $(SRC_DIR)/hash.c $(SRC_DIR)/alloc.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/lint_host.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/task.c $(SRC_DIR)/jit.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c $(SRC_DIR)/main.c
+SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_int.c $(SRC_DIR)/builtins_buf.c $(SRC_DIR)/builtins_host.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/fsutil.c $(SRC_DIR)/hash.c $(SRC_DIR)/alloc.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/lint_host.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/task.c $(SRC_DIR)/jit.c $(SRC_DIR)/jit_checked.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c $(SRC_DIR)/main.c
 HOSTED_SOURCES := $(SOURCES) $(SRC_DIR)/ext_gfx.c
 MODEL_SRC := $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
 BINARY  := $(SRC_DIR)/eigenscript
@@ -90,7 +90,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked smi-trap
+.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx gfx-x11-regressions pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked jit-checked-plant smi-trap
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -145,11 +145,11 @@ FLAGS_asan-server := $(ASAN_FLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MO
 LIBS_asan-server  := -lm -lpthread -ldl
 
 SRC_V_tsan := $(SOURCES)
-FLAGS_tsan := -fsanitize=thread $(WERROR_FLAGS) -g -O1 $(DEFS_OFF) $(VERDEF)
+FLAGS_tsan := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGS_TSAN_TEST_SEAM $(DEFS_OFF) $(VERDEF)
 LIBS_tsan  := -lm -lpthread
 
 SRC_V_tsan-server := $(SERVER_SOURCES)
-FLAGS_tsan-server := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+FLAGS_tsan-server := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGS_TSAN_TEST_SEAM -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_tsan-server  := -lm -lpthread -ldl
 
 SRC_V_valgrind := $(HOSTED_SOURCES)
@@ -296,6 +296,16 @@ build/phase2/const_dedup_bits_%: tests/phase2/const_dedup_bits.c build/phase2/ei
 .PHONY: phase2-readers-test
 phase2-readers-test: build/phase2/$(PHASE2_READERS_FIXTURE)_$(PHASE2_READERS_VARIANT)
 	@echo "phase2 reader test built: $<"
+# #1992: side-effect-free observer normalization must stay bit-identical to
+# num_guard's non-strict VALUE mapping.  Link the selected suite variant so
+# the test exercises the real thread-local flags and strict-mode state.
+NUM_GUARD_VALUE_VARIANT ?= release
+NUM_GUARD_VALUE_OBJ := $(filter-out build/$(NUM_GUARD_VALUE_VARIANT)/main.o,$(OBJ_$(NUM_GUARD_VALUE_VARIANT)))
+build/$(NUM_GUARD_VALUE_VARIANT)/test_num_guard_value: tests/test_num_guard_value.c $(NUM_GUARD_VALUE_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(NUM_GUARD_VALUE_VARIANT)) -I$(SRC_DIR) -o $@ $< $(NUM_GUARD_VALUE_OBJ) $(LIBS_$(NUM_GUARD_VALUE_VARIANT))
+.PHONY: num-guard-value-test
+num-guard-value-test: build/$(NUM_GUARD_VALUE_VARIANT)/test_num_guard_value
+	@echo "num_guard_value mapping test built: $<"
 
 # Focused lifetime regression for sandbox descriptor interns (#964). Link the
 # public embedding/runtime surface without CLI-only translation units so the
@@ -620,6 +630,12 @@ jit-smoke:
 	$(CC) -Wall -Wextra $(WERROR_FLAGS) -O2 -o /tmp/jit_smoke $(SRC_DIR)/jit.c $(SRC_DIR)/jit_smoke.c -lm
 	/tmp/jit_smoke
 
+# Deliberately invalid local operand used only as the jit-checked lane's
+# positive control. The scanner accepts it, then the emitted witness aborts.
+jit-checked-plant:
+	$(CC) -Wall -Wextra $(WERROR_FLAGS) -O2 -DEIGS_JIT_CHECKED -o /tmp/jit_checked_plant \
+		$(SRC_DIR)/jit.c $(SRC_DIR)/jit_checked.c $(SRC_DIR)/jit_smoke.c -lm
+
 EMBED_SOURCES := $(filter-out $(CLI_ONLY),$(SOURCES))
 
 # Single-file amalgamation (#397): "copy two files, call eigs_open".
@@ -686,6 +702,18 @@ build/$(UI_INPUT_VARIANT)/ui_sdl_input: tests/ui_sdl_input.c $(UI_INPUT_OBJ) $(w
 	$(CC) $(FLAGS_$(UI_INPUT_VARIANT)) -I$(SRC_DIR) $$(sdl2-config --cflags) -o $@ $< $(UI_INPUT_OBJ) $(LIBS_$(UI_INPUT_VARIANT)) $$(sdl2-config --libs)
 ui-sdl-input-gfx: build/$(UI_INPUT_VARIANT)/ui_sdl_input
 	SDL_VIDEODRIVER=dummy build/$(UI_INPUT_VARIANT)/ui_sdl_input
+
+# Real-X11 regressions belong in the Linux extensions lane, not the portable
+# suite. Require both scripts' success and their promised positive evidence.
+gfx-x11-regressions: build
+	@set -eu; output=$$(mktemp); trap 'rm -f "$$output"' EXIT HUP INT TERM; \
+	status=0; bash tests/test_gfx_utf8_title.sh >"$$output" 2>&1 || status=$$?; \
+	cat "$$output"; [ "$$status" -eq 0 ]; \
+	grep -q '^  PASS: all four ICCCM/EWMH title transitions$$' "$$output"; \
+	status=0; bash tests/test_gfx_ctype_locale.sh >"$$output" 2>&1 || status=$$?; \
+	cat "$$output"; [ "$$status" -eq 0 ]; \
+	grep -q '^  PASS: gfx leaves byte-oriented ctype answers replay-deterministic$$' "$$output"; \
+	grep -q '^  PASS: LC_CTYPE after SDL loading is C.UTF-8$$' "$$output"
 
 # AddressSanitizer + UndefinedBehaviorSanitizer build. Catches
 # use-after-free, buffer overflow, leaks, and undefined behavior that
@@ -891,6 +919,30 @@ freestanding-libc-diff:
 		src/freestanding/mini_libc.c src/freestanding/mini_libm.c \
 		src/freestanding/mini_fmt.c src/freestanding/mini_strtod.c -lm
 	/tmp/eigs_libc_diff
+
+# RISC-V's fenv image is a single fcsr rather than x87 + MXCSR.  Build against
+# the target musl and execute only those architecture-specific rows in qemu;
+# the full differential above remains the native, glibc-oracle gate.
+freestanding-libc-diff-riscv:
+	python3 -m ziglang cc -target riscv64-linux-musl -O2 -fno-builtin \
+		-ffp-contract=off -Wall -Wextra $(WERROR_FLAGS) -static \
+		-o /tmp/eigs_libc_diff-riscv64 tests/freestanding_libc_diff.c \
+		src/freestanding/mini_libc.c src/freestanding/mini_libm.c \
+		src/freestanding/mini_fmt.c src/freestanding/mini_strtod.c -lm
+	qemu-riscv64 /tmp/eigs_libc_diff-riscv64 --fenv-only
+
+# #1984: run #1674's old-2^32-boundary row on the actual 32-bit target.  The
+# target is hosted musl solely so qemu can execute it; the symbol gate above
+# checks the freestanding link and its kernel/compiler-runtime disposition.
+freestanding-env-version-riscv32:
+	python3 -m ziglang cc -target riscv32-linux-musl -O2 -static \
+		-Wno-atomic-alignment -DEIGENSCRIPT_EXT_HTTP=0 \
+		-DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
+		-o /tmp/eigenscript-riscv32 $(SOURCES) -lm -lpthread
+	printf '%s\n' '#!/bin/sh' 'exec qemu-riscv32 /tmp/eigenscript-riscv32 "$$@"' > /tmp/eigenscript-riscv32-qemu
+	chmod +x /tmp/eigenscript-riscv32-qemu
+	BOOL_FUZZ_VCAP=unlimited EIGS_ENV_VERSION_SEED=4294967290 \
+		bash tests/test_bool_fuzz.sh /tmp/eigenscript-riscv32-qemu
 
 # Ordinary strict-shape descriptor producer; reuse the owning embed objects.
 # This file target does not relink the CLI alias.

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Test-enrolment gate (#1264): a test script nothing runs must FAIL.
+# Executable-enrolment gate (#1264, #1880): an entry point nothing runs must FAIL.
 #
 # PR #1260's tests/test_args_import.sh was run by nothing until a maintainer
-# noticed by hand. Every tests/*.sh and tests/*.py must be INVOKED — by
+# noticed by hand. Every tests/*.sh, tests/*.py, top-level tools entry point,
+# tools package, and every self-asserting tests/*.eigs program must be INVOKED — by
 # tests/run_all_tests.sh, by a .github/workflows/*.yml step, or by a script
 # that is itself invoked (test_dap.py through test_dap.sh) — or be listed in
 # tests/enrolment_exemptions.txt as `path | reason`. An exemption for a file
@@ -11,9 +12,9 @@
 # "Invoked" means the script is what a shell segment RUNS (the argument of
 # bash/sh/python3/source/., or the command word, after keywords, VAR=value
 # prefixes and launchers): a failure message that names the file is not an
-# invocation. tests/*.eigs are out of scope — they are consumed through
-# imports, globbed directories, mutant harnesses and python drivers, so
-# "invoked" has no single syntactic meaning for them.
+# invocation.  For an asserting .eigs file, invocation specifically means the
+# program operand of an "$EIGS"/eigenscript run; a glob in a differential is
+# not invocation enrolment.
 #
 # The same scan enrols tools/ (mechanical-gates section 151, #1758 R1.3: Phase
 # 2's two gate tools had run only on builders' machines). Every top-level
@@ -21,9 +22,9 @@
 # package holding a script, by the directory listing, never a hand-kept list.
 # Each must be reached from a .github/workflows/*.yml step through invocations
 # (the suite, a top-level tests/, tools/ or bench/ shell script, a script beside it
-# called as "$(dirname "$0")/x"), or be listed in the same exemptions file as
-# local-only with its reason. Not seen: a tool run only through make, a Python
-# subprocess or an import; a package counts as reached when CI runs any of its
+# called as "$(dirname "$0")/x"), Make recipe dependencies, and Python imports
+# or execution calls, or be listed in the same exemptions file as local-only
+# with its reason. A package counts as reached when CI runs any of its
 # scripts. Static local uses: ./... steps also reach composite action manifests
 # (action.yml or action.yaml), including nested local actions. Action manifests
 # are graph sources, never roots: an unused action cannot enrol a tool.
@@ -39,11 +40,20 @@ EXEMPT=tests/enrolment_exemptions.txt
 
 if [ "${1:-}" = "--selftest" ]; then
     ST=$(mktemp -d "${TMPDIR:-/tmp}/eigs_enrol_st.XXXXXX") || exit 2
-    trap 'rm -rf "$ST"' EXIT
-    mkdir -p "$ST/tests/sections" "$ST/tools" "$ST/.github"
+    WT="${ST}.worktree"; NR="${ST}.nonrepo"
+    trap 'git -C "$ST" worktree remove --force "$WT" >/dev/null 2>&1 || true; rm -rf "$ST" "$WT" "$NR"' EXIT
+    mkdir -p "$ST/tests/sections" "$ST/tools" "$ST/.github" "$ST/bench"
     cp tests/*.sh tests/*.py "$EXEMPT" "$ST/tests/" && cp tests/sections/*.sh "$ST/tests/sections/" \
-        && cp tools/*.sh tools/*.py tools/selftests.txt "$ST/tools/" && cp -R .github bench "$ST/" \
-        && for d in tools/*/; do cp -R "${d%/}" "$ST/tools/"; done
+        && cp tools/*.sh tools/*.py tools/selftests.txt "$ST/tools/" && cp -R .github/. "$ST/.github/" \
+        && cp Makefile "$ST/" && cp -R bench/. "$ST/bench/"
+    for d in tools/*/; do cp -R "${d%/}" "$ST/tools/"; done
+    cp tests/*.eigs "$ST/tests/"
+    (cd "$ST" && git init -q && git add .)
+    # #2060 is not present on every base branch; keep that known integration
+    # gap out of this check's isolated control tree.
+    if [ -f "$ST/tests/test_operator_line_parent.eigs" ]; then
+        printf '\n"$EIGS" "$TESTS_DIR/test_operator_line_parent.eigs"\n' >> "$ST/tests/sections/15l-binary-operator-line-1425.sh"
+    fi
     n=0; bad=0
     case_() {   # case_ <name> <want-rc> <want-substring>
         local out rc; n=$((n + 1))
@@ -51,6 +61,30 @@ if [ "${1:-}" = "--selftest" ]; then
         if [ "$rc" -eq "$2" ] && grep -qF -- "$3" <<< "$out"; then echo "  selftest ok: $1"
         else echo "  SELFTEST FAIL: $1 (rc=$rc, want $2 + '$3')"; printf '%s\n' "$out" | sed 's/^/      /'; bad=1; fi
     }
+    case_ "control: the unmodified tree passes" 0 "PASS: test-enrolment"
+    cp "$ST/tools/enrolment_edges.py" "$ST/tools/enrolment_edges.py.good"
+    printf 'raise SystemExit(7)\n' > "$ST/tools/enrolment_edges.py"
+    case_ "a failed edge extractor aborts instead of passing an empty graph" 2 "edge derivation failed"
+    mv "$ST/tools/enrolment_edges.py.good" "$ST/tools/enrolment_edges.py"
+    # A linked checkout has a .git file, not a directory.  It must be exactly
+    # as acceptable to the population derivation as the primary checkout.
+    (cd "$ST" && git -c user.name=selftest -c user.email=selftest@example.invalid commit -qm control)
+    primary=$(ENROL_ROOT="$ST" bash "$SELF" 2>&1); primary_rc=$?
+    git -C "$ST" worktree add -q --detach "$WT" HEAD || { echo "  SELFTEST BROKEN: could not create linked worktree"; bad=1; }
+    linked=$(ENROL_ROOT="$WT" bash "$SELF" 2>&1); linked_rc=$?
+    if [ "$linked_rc" -eq "$primary_rc" ] && [ "$linked" = "$primary" ]; then
+        echo "  selftest ok: linked worktree has the same population and verdict"
+    else
+        echo "  SELFTEST FAIL: linked worktree differs from primary (primary rc=$primary_rc, linked rc=$linked_rc)"
+        printf '%s\n' "$linked" | sed 's/^/      /'; bad=1
+    fi
+    cp -R "$ST" "$NR" && rm -rf "$NR/.git"
+    nonrepo=$(ENROL_ROOT="$NR" bash "$SELF" 2>&1); nonrepo_rc=$?
+    if [ "$nonrepo_rc" -eq 2 ] && grep -qF "ABORTED: git work tree required" <<< "$nonrepo"; then
+        echo "  selftest ok: non-repository directory is aborted"
+    else
+        echo "  SELFTEST FAIL: non-repository directory was not aborted (rc=$nonrepo_rc)"; bad=1
+    fi
     mkdir -p "$ST/.github/actions/zz_enrol_leaf" "$ST/.github/actions/zz_enrol_parent"
     printf 'raise SystemExit(0)\n' > "$ST/tools/zz_plant_gate.py"
     # Keep fixture commands in printf arguments: literal run: lines in this
@@ -76,7 +110,7 @@ if [ "${1:-}" = "--selftest" ]; then
         > "$ST/.github/workflows/zz_enrol_bench.yaml"
     case_ "workflow reaches a helper through its bench script" 0 "PASS: test-enrolment"
     rm "$ST/.github/workflows/zz_enrol_bench.yaml"
-    case_ "an orphan bench script cannot enrol its helper" 1 "tools/zz_bench_gate.py is invoked by no workflow"
+    case_ "an orphan bench script cannot enrol its helper" 1 "tools/zz_bench_gate.py is invoked by nothing"
     rm "$ST/bench/zz_enrol.sh" "$ST/tools/zz_bench_gate.py"
     printf '#!/bin/bash\necho "PASS: x"\n' > "$ST/tests/test_zz_plant.sh"
     case_ "an uninvoked tests/test_zz_plant.sh is red and named" 1 "tests/test_zz_plant.sh is invoked by nothing"
@@ -105,123 +139,56 @@ if [ "${1:-}" = "--selftest" ]; then
         '    - uses: ./.github/actions/zz_enrol_orphan' 'on: push' 'jobs:' \
         '  noop:' '    runs-on: ubuntu-latest' '    steps:' '      - run: true' \
         > "$ST/.github/workflows/zz_enrol_scalar.yml"
-    case_ "env and scalar text do not invoke an orphan action" 1 "tools/zz_plant_gate.sh is invoked by no workflow"
+    case_ "env and scalar text do not invoke an orphan action" 1 "tools/zz_plant_gate.sh is invoked by nothing"
     rm "$ST/tools/zz_plant_gate.sh"
     sed -i.bak 's#uses: "./.github/actions/zz_enrol_parent"#run: true#' "$ST/.github/workflows/zz_enrol.yaml"
     rm -f "$ST/.github/workflows/zz_enrol.yaml.bak"
-    case_ "removing workflow uses leaves tools/zz_plant_gate.py unenrolled" 1 "tools/zz_plant_gate.py is invoked by no workflow"
+    case_ "removing workflow uses leaves tools/zz_plant_gate.py unenrolled" 1 "tools/zz_plant_gate.py is invoked by nothing"
     rm "$ST/tools/zz_plant_gate.py"; mkdir "$ST/tools/zz_pkg"; printf 'raise SystemExit(1)\n' > "$ST/tools/zz_pkg/gate.py"
-    case_ "an uninvoked package tools/zz_pkg/ is red and named" 1 "tools/zz_pkg/ is invoked by no workflow"
+    case_ "an uninvoked package tools/zz_pkg/ is red and named" 1 "tools/zz_pkg is invoked by nothing"
+    rm -rf "$ST/tools/zz_pkg"
+    sed -i.bak '/tests\/test_cli.sh | planted/d' "$ST/$EXEMPT" && rm "$ST/$EXEMPT.bak"
+    printf 'test_summary of null\n' > "$ST/tests/test_zz_asserting.eigs"
+    (cd "$ST" && git add tests/test_zz_asserting.eigs)
+    case_ "an asserting .eigs named nowhere is red" 1 "tests/test_zz_asserting.eigs has no suite invocation"
+    printf '\necho "$EIGS" "$TESTS_DIR/test_zz_asserting.eigs"\n' >> "$ST/tests/sections/99ab-enrolment.sh"
+    case_ "mentioning EIGS and a test as echo operands does not enrol it" 1 "tests/test_zz_asserting.eigs has no suite invocation"
+    sed -i.bak '$d' "$ST/tests/sections/99ab-enrolment.sh" && rm "$ST/tests/sections/99ab-enrolment.sh.bak"
+    printf '\necho check_eigs_suite ignored "$TESTS_DIR/test_zz_asserting.eigs"\n' >> "$ST/tests/sections/99ab-enrolment.sh"
+    case_ "mentioning check_eigs_suite as an echo operand does not enrol it" 1 "tests/test_zz_asserting.eigs has no suite invocation"
+    sed -i.bak '$d' "$ST/tests/sections/99ab-enrolment.sh" && rm "$ST/tests/sections/99ab-enrolment.sh.bak"
+    printf '\n"$EIGS" "$TESTS_DIR/test_zz_asserting.eigs"\n' >> "$ST/tests/sections/99ab-enrolment.sh"
+    case_ "genuinely invoking the same file is green" 0 "asserting-test invocation:"
+    sed -i.bak '$d' "$ST/tests/sections/99ab-enrolment.sh" && rm "$ST/tests/sections/99ab-enrolment.sh.bak"
+    printf '#!/bin/bash\n"$EIGS" "$TESTS_DIR/test_zz_asserting.eigs"\n' > "$ST/tests/test_zz_runner.sh"
+    printf '\nbash "$TESTS_DIR/test_zz_runner.sh"\n' >> "$ST/tests/sections/99ab-enrolment.sh"
+    (cd "$ST" && git add tests/test_zz_runner.sh)
+    case_ "reach through a suite-run runner script counts" 0 "asserting-test invocation:"
+    sed -i.bak '$d' "$ST/tests/sections/99ab-enrolment.sh" && rm "$ST/tests/sections/99ab-enrolment.sh.bak"
+    rm "$ST/tests/test_zz_runner.sh"; (cd "$ST" && git add -u)
+    printf '\nbash tools/jit_diff.sh tests/test_zz_asserting.eigs\n' >> "$ST/tests/sections/99ab-enrolment.sh"
+    case_ "differential-only reach is red" 1 "tests/test_zz_asserting.eigs has no suite invocation"
+    echo 'tests/test_zz_asserting.eigs | fixture is special' >> "$ST/$EXEMPT"
+    case_ "an asserting exemption naming no oracle is red" 1 "must name 'alternate oracle:"
     echo "  checks=$n"
     exit "$bad"
 fi
 
 [ -f tests/run_all_tests.sh ] || { echo "test-enrolment: ABORTED: no tests/run_all_tests.sh"; exit 2; }
-KNOWN=" $(cd tests && ls | tr '\n' ' ') "
 EDGES=$(mktemp "${TMPDIR:-/tmp}/eigs_enrol.XXXXXX") || exit 2
-trap 'rm -f "$EDGES"' EXIT
-# Every edge "src<TAB>target" out of the roots and all tests/tools/bench shell
-# scripts. Local uses steps add action manifests to awk input once; the
-# closure below keeps only sources reached from workflows or the suite.
-set -- tests/run_all_tests.sh tests/sections/*.sh tests/*.sh tools/*.sh bench/*.sh
-for f in .github/workflows/*.yml .github/workflows/*.yaml; do
-    [ ! -f "$f" ] || set -- "$@" "$f"
-done
-awk -v known="$KNOWN" '
-function local_action(dir,   ext, path, probe, rc) {
-    sub(/^\.\//, "", dir); sub(/\/+$/, "", dir)
-    if (dir == "") dir = "."
-    for (ext = 1; ext <= 2; ext++) {
-        path = dir (ext == 1 ? "/action.yml" : "/action.yaml")
-        rc = (getline probe < path); close(path)
-        if (rc < 0) continue
-        print FILENAME "\t" path
-        if (!(path in actions)) { actions[path] = 1; ARGV[ARGC++] = path }
-        return
-    }
+trap 'rm -f "$EDGES" "$EDGES.raw"' EXIT
+# Derive the graph before taking its transitive closure. Keep the extractor's
+# exit status: a successful sort cannot stand in for a failed Python process.
+python3 tools/enrolment_edges.py . > "$EDGES.raw" || {
+    echo "test-enrolment: ABORTED: edge derivation failed"; exit 2;
 }
-function strip(s,   c) {
-    for (c = 1; c; ) {
-        c = sub(/^[[:space:]]+/, "", s) + sub(/^(-[[:space:]]+)?run:[[:space:]]*/, "", s) \
-          + sub(/^(if|then|elif|else|do|while|until|time|!|\{)[[:space:]]+/, "", s) \
-          + sub(/^[A-Za-z_][A-Za-z0-9_]*=("[^"]*"|\047[^\047]*\047|[^[:space:]]*)[[:space:]]+/, "", s) \
-          + sub(/^(env|command|exec|nohup|sudo|xvfb-run)([[:space:]]+-[A-Za-z-]+)*[[:space:]]+/, "", s) \
-          + sub(/^timeout([[:space:]]+-[^[:space:]]+)*[[:space:]]+[0-9.]+[smhd]?[[:space:]]+/, "", s)
-        if (s ~ /^"?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?"?[[:space:]]+(bash|sh|python3?)[[:space:]]/)
-            c += sub(/^[^[:space:]]+[[:space:]]+/, "", s)   # $EIGS_TMO bash x.sh
-    }
-    return s
+sort -u "$EDGES.raw" > "$EDGES" || {
+    echo "test-enrolment: ABORTED: edge sorting failed"; exit 2;
 }
-FNR == 1 { scalar_indent = steps_indent = step_indent = -1 }
-{
-    line = $0
-    sub(/(^|[[:space:]])#.*$/, "", line)                  # a comment starts a word
-    yaml = (FILENAME ~ /^\.github\/workflows\/[^\/]+\.ya?ml$|(^|\/)action\.ya?ml$/)
-    in_scalar = step_use = 0
-    if (yaml) {
-        text = line; sub(/^[[:space:]]*/, "", text)
-        indent = length(line) - length(text)
-        if (text != "" && scalar_indent >= 0 && indent <= scalar_indent) scalar_indent = -1
-        in_scalar = (scalar_indent >= 0)
-        # Scalar contents are shell input, never YAML uses edges. A sequence
-        # dash precedes the key, so measure the key column after that dash.
-        if (!in_scalar && line ~ /:[[:space:]]*[|>]([+-][1-9]?|[1-9][+-]?)?[[:space:]]*$/) {
-            keytext = text; sub(/^-[[:space:]]+/, "", keytext)
-            scalar_indent = length(line) - length(keytext)
-        }
-        if (!in_scalar && text != "") {
-            dash = (text ~ /^-([[:space:]]|$)/)
-            # A steps sequence may start at its header column. Other keys at
-            # that column end it; nested env/with keys are not step properties.
-            if (steps_indent >= 0 && ((step_indent >= 0 && indent < step_indent) ||
-                (indent <= steps_indent && !(dash && indent == steps_indent))))
-                steps_indent = step_indent = -1
-            if (steps_indent < 0 && text ~ /^steps:[[:space:]]*$/) {
-                steps_indent = indent; step_indent = -1
-            } else if (steps_indent >= 0) {
-                if (step_indent < 0 && dash) step_indent = indent
-                step_use = (step_indent >= 0 &&
-                    ((indent == step_indent && text ~ /^-[[:space:]]+uses:[[:space:]]*/) ||
-                     (indent == step_indent + 2 && text ~ /^uses:[[:space:]]*/)))
-            }
-        }
-    }
-    if (step_use) {
-        dir = line; sub(/^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*/, "", dir)
-        gsub(/["\047]/, "", dir); sub(/[[:space:]]+$/, "", dir)
-        # Static paths stay inside the checkout; expressions are not edges.
-        if (dir ~ /^\.\/[A-Za-z0-9_.\/-]*$/ && dir !~ /(^|\/)\.\.(\/|$)/) local_action(dir)
-        next
-    }
-    gsub(/\$\((dirname|cd) [^)]*\)/, "$DIR", line)        # a directory, not a command
-    gsub(/\$\(/, "\n", line); gsub(/\)/, "\001\n", line)  # \001 marks a segment cut by ")"
-    gsub(/[(;`]|&&|\|\||\|/, "\n", line)
-    n = split(line, seg, "\n")
-    for (i = 1; i <= n; i++) {
-        s = strip(seg[i]); closed = (s ~ /\001/); gsub(/\001/, "", s)
-        if (s !~ /\.(sh|py)/) continue
-        w = s; sub(/[[:space:]].*/, "", w); gsub(/["\047]/, "", w)
-        if (w ~ /^(bash|sh|dash|python3?|source|\.)$/) {
-            s = substr(s, length(w) + 1); sub(/^[[:space:]]+/, "", s)
-            while (s ~ /^-[A-Za-z]+[[:space:]]/)   # python3 -W error x.py: -W and -X take a word
-                if (w ~ /^python/ && s ~ /^-[WX][[:space:]]/) sub(/^-[WX][[:space:]]+[^[:space:]]+[[:space:]]*/, "", s)
-                else sub(/^-[A-Za-z]+[[:space:]]+/, "", s)
-            w = s; sub(/[[:space:]].*/, "", w); gsub(/["\047]/, "", w)
-        } else if (closed && s !~ /[[:space:]]/) continue   # `x.sh)` is a case pattern
-        b = w; sub(/.*\//, "", b); d = w; sub(/\/?[^\/]*$/, "", d)
-        # Only a path that RESOLVES under tests/ counts: tests/x, ../tests/x, $TESTS_DIR/x,
-        # the dir of a tests/ script, or a bare name after `cd tests` — never $WORK/x (#1264 r2).
-        intests = (d ~ /(^|\/)tests$|TESTS_DIR\}?$/) || (d == "$DIR" && FILENAME ~ /^tests\//) || (d == "" && FILENAME !~ /^tools\//)
-        if (w !~ /tools\// && w ~ /\.(sh|py)$/ && intests && index(known, " " b " ")) print FILENAME "\ttests/" b
-        else if (w ~ /tools\/([^\/]+\/)?[^\/]+\.(sh|py)$/) { t = w; sub(/^.*tools\//, "tools/", t); print FILENAME "\t" t }
-        else if (w ~ /bench\/[^\/]+\.sh$/) { t = w; sub(/^.*bench\//, "bench/", t); print FILENAME "\t" t }
-        else if (d == "$DIR" && FILENAME ~ /^tools\// && w ~ /\.(sh|py)$/) { t = FILENAME; sub(/[^\/]*$/, b, t); print FILENAME "\t" t }
-    }
-}' "$@" | sort -u > "$EDGES"
 # Commands in the self-test table are reachable through its driver.
 awk -F '[|]' '$0 !~ /^#/ {
     n = split($2, a, /[[:space:]]+/)
-    for (i = 1; i <= n; i++) if (a[i] ~ /^tests\/.*\.(sh|py)$/) print "tools/selftests.sh\t" a[i]
+    for (i = 1; i <= n; i++) if (a[i] ~ /^(tests|tools)\/.*\.(sh|py)$/) print "tools/selftests.sh\t" a[i]
 }' tools/selftests.txt >> "$EDGES"
 REACHED=$(awk -F'\t' '{ adj[$1] = adj[$1] " " $2 }
     END { q[1] = "tests/run_all_tests.sh"; n = 1
@@ -231,34 +198,62 @@ REACHED=$(awk -F'\t' '{ adj[$1] = adj[$1] " " $2 }
               for (j = 1; j <= m; j++) if (!(t[j] in seen)) { seen[t[j]] = 1; q[++n] = t[j]; print t[j] } } }' \
     "$EDGES") || { echo "test-enrolment: ABORTED: reachability scan failed"; exit 2; }
 
+if [ "${1:-}" = "--dump-edges" ]; then cat "$EDGES"; exit 0; fi
+
 rc=0; ok=0; ex=0; total=0
 EXEMPTED=$(grep -v '^[[:space:]]*\(#\|$\)' "$EXEMPT" 2>/dev/null || true)
 while IFS= read -r row; do
     [ -n "$row" ] || continue
     p=$(printf '%s' "${row%%|*}" | tr -d '[:space:]'); why=$(printf '%s' "${row#*|}" | tr -d '[:space:]')
     if [ "$row" = "${row%%|*}" ] || [ -z "$why" ]; then echo "  FAIL: $EXEMPT exempts '$p' with no reason (path | reason)"; rc=1
-    elif [ ! -f "$p" ]; then echo "  FAIL: $EXEMPT exempts $p, which does not exist -- stale, delete the row"; rc=1
-    elif grep -qxF "$p" <<< "$REACHED"; then echo "  FAIL: $EXEMPT exempts $p, which IS invoked -- stale, delete the row"; rc=1; fi
+    elif [ ! -e "$p" ]; then echo "  FAIL: $EXEMPT exempts $p, which does not exist -- stale, delete the row"; rc=1
+    elif grep -qxF "$p" <<< "$REACHED" && [ "${p##*.}" != eigs ]; then echo "  FAIL: $EXEMPT exempts $p, which IS invoked -- stale, delete the row"; rc=1; fi
 done <<< "$EXEMPTED"
-for f in tests/*.sh tests/*.py; do
-    [ -f "$f" ] || continue; total=$((total + 1))
+for f in tests/*.sh tests/*.py tools/*.sh tools/*.py \
+    $(find tools -mindepth 2 -maxdepth 2 -type f \( -name '*.sh' -o -name '*.py' \) -printf '%h\n' | sort -u); do
+    [ -e "$f" ] || continue; f=${f%/}; total=$((total + 1))
     if grep -qxF "$f" <<< "$REACHED"; then ok=$((ok + 1))
     elif grep -q "^[[:space:]]*$f[[:space:]]*|" <<< "$EXEMPTED"; then ex=$((ex + 1))
     else echo "  FAIL: $f is invoked by nothing -- add a suite section in tests/sections/ (or a workflow step), or list it in $EXEMPT with a reason"; rc=1; fi
 done
-[ "$total" -gt 0 ] || { echo "test-enrolment: ABORTED: tests/*.sh + tests/*.py is empty"; exit 2; }
-tt=0; tok=0; tex=0
-for f in tools/*.sh tools/*.py tools/*/; do
-    case "$f" in
-        */) pkg=0; for g in "$f"*.sh "$f"*.py; do [ -f "$g" ] && pkg=1; done; [ "$pkg" = 1 ] || continue
-            grep -q "^$f" <<< "$REACHED" && hit=1 || hit=0 ;;
-        *) [ -f "$f" ] || continue; grep -qxF "$f" <<< "$REACHED" && hit=1 || hit=0 ;;
-    esac
-    tt=$((tt + 1))
-    if [ "$hit" = 1 ]; then tok=$((tok + 1))
-    elif grep -q "^[[:space:]]*$f[[:space:]]*|" <<< "$EXEMPTED"; then tex=$((tex + 1))
-    else echo "  FAIL: $f is invoked by no workflow -- run it from a .github/workflows/ step (or a script one runs), or list it in $EXEMPT as local-only with a reason"; rc=1; fi
-done
-[ "$tt" -gt 0 ] || { echo "tool-enrolment: ABORTED: tools/*.sh + tools/*.py is empty"; exit 2; }
-[ "$rc" -eq 0 ] && echo "PASS: test-enrolment: examined=$total enrolled=$ok exempt=$ex; tools examined=$tt enrolled=$tok exempt=$tex"
+# Keep git's own words: a refusal (dubious ownership, a missing safe.directory,
+# GIT_DIR in the environment) must say why, not just that it happened.
+# CI's containerized suite jobs run git as a different user from the one that
+# checked the tree out, and only some jobs add safe.directory. git then refuses
+# the repository ("dubious ownership"). These two queries are read-only and
+# target this checkout alone, so trust exactly $PWD for them.
+INSIDE_WORK_TREE=$(git -c safe.directory="$PWD" rev-parse --is-inside-work-tree 2>&1) || {
+    echo "test-enrolment: ABORTED: git work tree required for asserting-test population (git: $(printf '%s' "$INSIDE_WORK_TREE" | head -c 300); cwd: $PWD)"; exit 2;
+}
+[ "$INSIDE_WORK_TREE" = true ] || {
+    echo "test-enrolment: ABORTED: git work tree required for asserting-test population (git rev-parse said: $INSIDE_WORK_TREE; cwd: $PWD)"; exit 2;
+}
+ASSERT_FILES=$(git -c safe.directory="$PWD" ls-files 'tests/*.eigs') || {
+    echo "test-enrolment: ABORTED: asserting-test path enumeration failed"; exit 2;
+}
+# During an unresolved merge git lists one pathname per index stage. Count
+# test programs once, exactly as the same tree will be counted after staging.
+ASSERTING=$(printf '%s\n' "$ASSERT_FILES" | sort -u | while IFS= read -r f; do
+    grep -q 'test_summary of' "$f" && printf '%s\n' "$f"
+done)
+assert_total=0; assert_ok=0; assert_ex=0
+while IFS= read -r f; do
+    [ -n "$f" ] || continue; assert_total=$((assert_total + 1))
+    row=$(printf '%s\n' "$EXEMPTED" | grep "^[[:space:]]*$f[[:space:]]*|" || true)
+    if [ -n "$row" ]; then
+        case "$row" in
+            *'| alternate oracle: '?*) assert_ex=$((assert_ex + 1)) ;;
+            *) echo "  FAIL: $EXEMPT exemption for $f must name 'alternate oracle: <what judges it>'"; rc=1 ;;
+        esac
+    elif grep -qxF "$f" <<< "$REACHED"; then
+        assert_ok=$((assert_ok + 1))
+    else
+        echo "  FAIL: $f has no suite invocation -- run it as the program argument of \"\$EIGS\" in a section or suite-run script"
+        rc=1
+    fi
+done <<< "$ASSERTING"
+[ "$assert_total" -gt 0 ] || { echo "test-enrolment: ABORTED: asserting-test population is empty"; exit 2; }
+echo "asserting-test invocation: population=$assert_total invoked=$assert_ok alternate-oracle-exempt=$assert_ex"
+[ "$total" -gt 0 ] || { echo "test-enrolment: ABORTED: candidate population is empty"; exit 2; }
+[ "$rc" -eq 0 ] && echo "PASS: test-enrolment: examined=$total enrolled=$ok exempt=$ex invocation-violations=0"
 exit "$rc"

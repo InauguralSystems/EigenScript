@@ -527,6 +527,15 @@ def plants(tag, ieee):
                               " for q in PREDS}"),
                     subprocess.run(["python3", f"{d}/derive.py", "--write"], capture_output=True)),
          sc(tag), 2, r"converged: \['MATH', (True|False)\] is not one CONVENTION verdict.*"),
+        ("nan-all-false", "restore the old all-false override at a recoverable NaN checkpoint",
+         lambda d: edit_text(d, "derive.py", "elif math.isnan(xs[n]) and not nan_recovery:",
+                             "elif math.isnan(xs[n]):"),
+         sc(tag), 2, r"ieee_nan_recover@3.oscillating: \['CONVENTION', False\] is not one REPORTED verdict.*"),
+        ("nan-window-dropped", "drop the NaN observer-window rejection",
+         lambda d: edit_text(d, "derive.py",
+             '    if any(math.isnan(v) for v in window):\n'
+             '        return False, f"NaN lies in the observer window [{max(0, n - PATIENCE + 1)}, {n}]"\n', ""),
+         sc(tag), 2, r"labels.json differs from derive.py at 1 checkpoint.*"),
         ("G1", "geo_decay_0.5 stated as tending to +inf, certificate forged, labels regenerated",
          lambda d: (edit_json(d, "corpus.json", lambda c: row(c, "geo_decay_0.5")["props"].update(
              limit=None, tends_to="+inf", bounded=False)), forge(d)), sc(tag, *F), 2,
@@ -621,6 +630,12 @@ def plants(tag, ieee):
              gen={"kind": "closed", "expr": "(1.0 + 1e-17) ** n"},
              props={"limit": None, "tends_to": "+inf", "bounded": False, "deterministic": True}))),
          cf, 1, r"REFUSED one_plus_tiny: float-degenerate.*"),
+        ("cert-nan-divergent", "a closed form that simplifies to n but becomes NaN in floating point",
+         lambda d: edit_json(d, "corpus.json", keep_rows(extra=extra_row(d, "const_5", id="nan_divergent",
+             gen={"kind": "closed", "expr": "n + ((1e150*n*n)*(1e150*n*n) - (1e150*n*n)*(1e150*n*n))"},
+             n=150, checkpoints=[150], capability="ieee",
+             props={"limit": None, "tends_to": "+inf", "bounded": False, "deterministic": True}))),
+         cf, 1, r"REFUSED nan_divergent: float-degenerate: a value fed to the runtime is NaN.*"),
         ("cert-repelling-affine", "x <- 3x - 0.2 from 0.1 (exact decimal fixed point 1/10) stated -> 0.1: the"
          " floats the runtime is fed run away (x_60 = 3.9e11, inf from x_682)",
          lambda d: edit_json(d, "corpus.json", keep_rows(extra=extra_row(d, "halving_to_5", id="repel_fp_0.1",

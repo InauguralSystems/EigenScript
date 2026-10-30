@@ -873,6 +873,40 @@ static Value *sched_fatal_stop(TaskScheduler *s, Task *stopped, Value *r) {
     return make_null();
 }
 
+/* `exit` is not a task failure. Its thread/state latch already carries the
+ * requested status; stop scheduling immediately and retire every task owned
+ * by this evaluation. Keep the thread-local signal for the host boundary;
+ * the next outermost embedded evaluation clears it before executing. */
+static Value *sched_exit_stop(TaskScheduler *s, Value *r) {
+    if (r) val_decref(r);
+    s->current = 0;   /* task_do_kill refuses to retire the current task. */
+    /* An exit stops the whole evaluation, not only its requesting slice.
+     * Retire every still-live task through the ordinary kill + reap paths:
+     * those paths already remove scheduler claims, drain mailboxes/slices,
+     * release environments and finally release the generation-checked
+     * handle. Completed tasks from earlier evaluations remain joinable. */
+    for (int id = 1; id < HANDLE_TABLE_SIZE; id++) {
+        Task *live = sched_lookup(s, id);
+        if (!live || live->state == TASK_DONE || live->state == TASK_DEAD)
+            continue;
+        if (!task_do_kill(id)) continue;
+        /* A detached victim is reaped by task_do_kill itself. */
+        Task *dead = sched_lookup(s, id);
+        if (dead) task_reap(dead);
+    }
+    sched_main_abandon(s);
+    /* Exit unwinds TRY_BEGIN frames without executing TRY_END. All slices in
+     * this evaluation are abandoned, so none of their aggregate counts may
+     * leak into the next host unit. Later teardown subtracts defensively and
+     * clamps at zero. */
+    g_try_depth = 0;
+    /* Keep the exit observable through the host boundary: repl_eval_buffer
+     * consumes it to stop prompting. eval_source clears it only when the
+     * embedder starts its next outermost evaluation. */
+    g_has_error = 1;
+    return make_null();
+}
+
 /* On resuming a task that was blocked in task_join, replace the placeholder
  * null the builtin left on the stack top with the joinee's result — or, if
  * the joinee died, re-raise its error in the joiner. Called from the dispatch loop's
@@ -957,10 +991,18 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
                 if (m->saved_frames[i].try_count > 0) { catchable = 1; break; }
             g_error_kind = (int)EK_DEADLOCK;
             g_error_line = m->saved_current_line;
+            const char *error_file = "<native>";
+            if (m->saved_frame_count > 0) {
+                CallFrame *f = &m->saved_frames[m->saved_frame_count - 1];
+                if (f->chunk && f->chunk->src && f->chunk->src->file)
+                    error_file = f->chunk->src->file;
+            }
+            snprintf(g_error_file, sizeof(g_error_file), "%s", error_file);
             snprintf(g_error_raw, sizeof(g_error_raw),
                      "all tasks are blocked — deadlock");
             snprintf(g_error_msg, sizeof(g_error_msg),
-                     "Error line %d: all tasks are blocked — deadlock", g_error_line);
+                     "Error %s:%d: all tasks are blocked — deadlock",
+                     g_error_file, g_error_line);
             g_has_error = 1;
             eigs_clear_error_value();
             if (catchable) {
@@ -1000,6 +1042,11 @@ static Value *scheduler_trampoline(TaskScheduler *s) {
          * Checked before the finish/suspend bookkeeping: the slice neither
          * finished nor yielded, it was stopped. */
         if (s->fatal_stop) return sched_fatal_stop(s, t, r);
+
+        /* #1806: exit from any cooperative task stops the evaluation at that
+         * call.  Never feed its unwind through sched_finish as an uncaught
+         * task error, and never run another ready slice. */
+        if (g_exit_requested) return sched_exit_stop(s, r);
 
         if (t->state == TASK_SUSPENDED) {
             /* It suspended again. task_yield → re-enqueue; task_join → stay

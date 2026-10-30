@@ -244,10 +244,10 @@ for item in items:
 try:
     x is items[100]
 catch err:
-    print of f"Caught: {err}"
+    print of {"kind": err.kind, "message": err.message, "line": err.line}
 ```
 ```output
-Caught: {"kind": "undefined_name", "message": "undefined variable 'items'", "line": 2}
+{"kind": "undefined_name", "message": "undefined variable 'items'", "line": 2}
 ```
 
 Errors inside a `try` block are caught and bound to the variable after
@@ -313,6 +313,11 @@ This works for factory patterns, callbacks, and higher-order programming.
 **Comparison:** `==`, `!=`, `<`, `>`, `<=`, `>=`
 **Logical:** `and`, `or`, `not`
 **String:** `+` (concatenation when *both* sides are strings)
+
+From tighter to looser, comparisons bind before `not`, which binds before
+`and`, then `or`. Arithmetic unary `-` and bitwise unary `~` retain their
+tighter unary precedence. Therefore `not 1 < 2` is `not (1 < 2)`; write
+`(not 1) < 2` only when the bool/number ordering error is intentional.
 
 ### Type rules
 

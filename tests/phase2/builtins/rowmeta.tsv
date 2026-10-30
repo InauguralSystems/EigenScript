@@ -152,7 +152,6 @@ pi	-	release
 pow	-	release
 ppu_render_frame	-	release
 print	-	release
-proc_read_buf	-	release
 random	-	release
 random_hex	-	release
 random_int	-	release

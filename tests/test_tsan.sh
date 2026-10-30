@@ -14,11 +14,24 @@ EIGS="$TESTS_DIR/../src/eigenscript"
 export TSAN_OPTIONS="halt_on_error=0 exitcode=0"
 PASS=0; FAIL=0
 
-# Every run is timeout-bounded. The seeded race is DELIBERATE UB (a lost
-# update on the slot double-decrefs the displaced element), and undefined
-# behavior may legally hang — on 4-core CI runners it did, at ~1/3 rate,
-# burning the 6h job timeout each time. TSan's warnings are emitted as they
-# happen, so a killed run still yields its warning count.
+# This is a capability of the binary under test, not of the runner.  main.c
+# prints it from EIGS_JIT_ENABLED, the exact gate used by jit.c's emitter.
+JIT_BACKEND=$($EIGS --build-info 2>/dev/null | awk -F= '$1 == "jit-backend" { print $2; exit }')
+if [ -z "$JIT_BACKEND" ]; then
+    echo "FAIL: binary supplied no jit-backend build-info witness"
+    exit 1
+fi
+# Anti-spread check: the established non-Apple Linux x86-64 lane must never
+# turn loss of its backend into a skip.  uname identifies that required lane;
+# it does not decide whether emitted-code assertions apply to this binary.
+if [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] && \
+   [ "$JIT_BACKEND" = none ]; then
+    echo "FAIL: non-Apple Linux x86-64 binary has no JIT backend ($JIT_BACKEND)"
+    exit 1
+fi
+
+# Every run is timeout-bounded. TSan's warnings are emitted as they happen,
+# so a killed run still yields its warning count.
 TSAN_RUN_TIMEOUT=${TSAN_RUN_TIMEOUT:-120}
 # Sets WARNINGS + LAST_RC as globals — deliberately NOT echo-and-capture:
 # `w=$(fn)` would run fn in a subshell and the parent would never see
@@ -38,17 +51,78 @@ tsan_warnings() {
     WARNINGS=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
 }
 
+# A failing row prints the report of the run that FAILED, whole: from its first
+# WARNING through that report's SUMMARY line. Re-running a racy fixture to show
+# its report usually comes back clean, so an intermittent race printed nothing:
+# ARM64's loader_mt_define_result failed in merge group fb394e5e (2026-10-28)
+# with "reported 1 ThreadSanitizer warning(s)" and no report at all.
+tsan_report() {
+    awk '/WARNING: ThreadSanitizer/ {f=1} f {print "      " $0} f && /^SUMMARY: ThreadSanitizer/ {exit}' | head -80
+}
+
+observer_shared_fold_rows() {
+    echo "=== #1867 shared ObserverSlot folds must hold #607 ==="
+    local fixtures="tsan_observer_shared_fold tsan_observer_sandbox_probe observer_ns_deadlock"
+    local declared=3 examined=0 t marker
+    for t in $fixtures; do
+        examined=$((examined + 1))
+        marker="observer fold repro: PASS"
+        [ "$t" = tsan_observer_sandbox_probe ] && marker="observer sandbox probe: PASS"
+        [ "$t" = observer_ns_deadlock ] && marker="observer namespace deadlock: PASS"
+        tsan_warnings "$TESTS_DIR/$t.eigs"
+        if [ "$LAST_RC" -eq 0 ] && [ "$WARNINGS" -eq 0 ] && grep -Fxq "$marker" <<< "$RUN_OUTPUT"; then
+            echo "  PASS: $t TSan-clean"; PASS=$((PASS + 1))
+        else
+            echo "  FAIL: $t warnings=$WARNINGS rc=$LAST_RC"; FAIL=$((FAIL + 1))
+            tsan_report <<< "$RUN_OUTPUT"
+        fi
+    done
+    if [ "$examined" -eq "$declared" ]; then
+        echo "  PASS: observer-fold fixtures examined == declared ($examined)"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: observer-fold fixtures examined == declared (examined=$examined declared=$declared)"; FAIL=$((FAIL + 1))
+    fi
+}
+
 seeded_race_row() {
     echo "=== gate self-validation: a seeded race MUST be caught ==="
-    tsan_warnings "$TESTS_DIR/tsan_seeded_race.eigs"
-    local w=$WARNINGS
-    if [ "$LAST_RC" -eq 124 ]; then
-        echo "  note: seeded race killed after ${TSAN_RUN_TIMEOUT}s (UB may hang; detection is what's asserted)"
-    fi
+    local out rc w
+    out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R env \
+        EIGS_TSAN_SEEDED_RACE_CONTROL=1 "$EIGS" 2>&1)
+    rc=$?
+    w=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
     if [ "$w" -gt 0 ]; then
-        echo "  PASS: seeded race detected ($w warnings) — the gate is live"; PASS=$((PASS + 1))
+        # One row, one verdict: --seeded-only and --row seeded require PASS == 1.
+        # The failure print path, run on this real report, must show it whole
+        # (the opening WARNING, both access stacks, the closing SUMMARY), or
+        # the row fails even though the race was detected.
+        local rep
+        rep=$(tsan_report <<< "$out")
+        if grep -q "WARNING: ThreadSanitizer" <<< "$rep" && grep -q "SUMMARY: ThreadSanitizer" <<< "$rep" \
+           && [ "$(grep -c '#[0-9]' <<< "$rep")" -ge 2 ]; then
+            echo "  PASS: seeded race detected ($w warnings) and its report prints whole ($(wc -l <<< "$rep") lines) — the gate is live"; PASS=$((PASS + 1))
+        else
+            echo "  FAIL: seeded race detected, but tsan_report did not print its whole report"; FAIL=$((FAIL + 1))
+            printf '%s\n' "$out" | head -20
+        fi
     else
-        echo "  FAIL: seeded race NOT detected — the TSan gate is vacuous!"; FAIL=$((FAIL + 1))
+        echo "  FAIL: seeded race NOT detected — the TSan gate is vacuous! (rc=$rc)"; FAIL=$((FAIL + 1))
+    fi
+}
+
+misordered_publish_row() {
+    echo "=== #2052 planted relaxed publish/consume race MUST be caught ==="
+    local out rc w
+    out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R env \
+        EIGS_TSAN_MISORDERED_PUBLISH_CONTROL=1 "$EIGS" 2>&1)
+    rc=$?
+    w=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
+    if [ "$rc" -eq 124 ]; then
+        echo "  FAIL: misordered publish/consume control HUNG"; FAIL=$((FAIL + 1))
+    elif [ "$w" -gt 0 ]; then
+        echo "  PASS: misordered relaxed publish/consume detected ($w warnings)"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: misordered relaxed publish/consume NOT detected (rc=$rc)"; FAIL=$((FAIL + 1))
     fi
 }
 
@@ -69,13 +143,58 @@ rebind_call_row() {
         echo "  FAIL: rebind_call_race HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
     elif [ "$WARNINGS" -ne 0 ]; then
         echo "  FAIL: rebind_call_race reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
-        grep -A2 "WARNING: ThreadSanitizer" <<< "$RUN_OUTPUT" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
     elif [ "$LAST_RC" -ne 0 ] || ! grep -Fxq 'rebind call race: PASS' <<< "$RUN_OUTPUT"; then
         echo "  FAIL: rebind_call_race exited $LAST_RC without its PASS line"; FAIL=$((FAIL + 1))
         tail -5 <<< "$RUN_OUTPUT"
     else
         echo "  PASS: rebind_call_race TSan-clean, totals conserved"; PASS=$((PASS + 1))
     fi
+}
+
+captured_rebind_row() {
+    echo "=== #1866 call vs rebind of a captured binding must be race-free ==="
+    local fixture="$TESTS_DIR/tsan_captured_rebind.eigs"
+    tsan_warnings "$fixture"
+    if [ "$LAST_RC" -eq 0 ] && [ "$WARNINGS" -eq 0 ] && \
+       grep -Fxq 'W5 total=40000 rebinds=20000' <<< "$RUN_OUTPUT"; then
+        echo "  PASS: captured binding call/rebind TSan-clean"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: captured binding call/rebind warnings=$WARNINGS rc=$LAST_RC"; FAIL=$((FAIL + 1))
+        grep -A2 'WARNING: ThreadSanitizer' <<< "$RUN_OUTPUT" | head -6
+    fi
+}
+
+# The control owns one one-double buffer. Count complete report blocks that
+# actually witness its two payload stores; an unrelated shared-env race must
+# not make the control look live. Keep every field inside the SAME report.
+scope_payload_reports() {
+    awk '
+    /^WARNING: ThreadSanitizer:/ {
+        active=1; race=($0 ~ /^WARNING: ThreadSanitizer: data race/)
+        writes=0; first=""; same=1; location=0; allocation=0; buffer=0
+    }
+    active && /^  (Previous )?[Ww]rite of size 8 at 0x[0-9a-fA-F]+ / {
+        address=$0
+        sub(/^.*[Ww]rite of size 8 at /, "", address)
+        sub(/ .*/, "", address)
+        if (writes == 0) first=address
+        else if (address != first) same=0
+        writes++
+    }
+    active && /^  Location is heap block of size 8 at 0x[0-9a-fA-F]+ allocated by / {
+        address=$0
+        sub(/^.*Location is heap block of size 8 at /, "", address)
+        sub(/ .*/, "", address)
+        location=(address == first); allocation=1; next
+    }
+    active && allocation && /^[[:space:]]*#[0-9]+[[:space:]]+builtin_buffer[[:space:]]/ { buffer=1 }
+    active && allocation && /^  (Mutex|Thread|SUMMARY)/ { allocation=0 }
+    active && /^SUMMARY: ThreadSanitizer:/ {
+        if (race && writes == 2 && same && location && buffer) found++
+        active=0
+    }
+    END { print found+0 }'
 }
 
 scope_boundary_row() {
@@ -95,15 +214,18 @@ scope_boundary_row() {
     # with none (§121: a check that examined nothing is vacuous). The race is
     # deterministic now: a ready/release barrier rendezvous workers before
     # their one-shot accesses to a separate race word, so one run suffices and
-    # no retry can hide a control that stopped racing.
+    # no retry can hide a control that stopped racing. Require the actual
+    # shared-buffer payload report: another permitted user/env race cannot
+    # substitute for the positive control.
     local fixture="$TESTS_DIR/loader_mt_userrace.eigs"
     local forbidden='loading_stack|eigs_loading_|module_cache|module_lock|g_module_ns|module_ns_'
-    local loader
+    local loader payload
     if [ ! -f "$fixture" ]; then
         echo "  FAIL: scope-boundary fixture missing ($fixture)"; FAIL=$((FAIL + 1)); return
     fi
     tsan_warnings "$fixture"
     loader=$(grep -cE "$forbidden" <<< "$RUN_OUTPUT" || true)
+    payload=$(scope_payload_reports <<< "$RUN_OUTPUT")
     if [ "$WARNINGS" -eq 0 ]; then
         echo "  FAIL (vacuous): the probe captured NO ThreadSanitizer report (rc=$LAST_RC): its"
         echo "        deliberate race did not run, so the boundary check examined nothing"
@@ -112,9 +234,25 @@ scope_boundary_row() {
         echo "  FAIL (boundary): a LOADER STRUCTURE appears in the user-race reports ($loader line(s)) — #1144 regressed"
         grep -E "$forbidden" <<< "$RUN_OUTPUT" | head -6
         FAIL=$((FAIL + 1))
+    elif [ "$payload" -eq 0 ]; then
+        echo "  FAIL (vacuous): $WARNINGS report(s) contain no intentional shared-buffer two-write race (rc=$LAST_RC)"
+        FAIL=$((FAIL + 1))
+        tsan_report <<< "$RUN_OUTPUT"
     else
         echo "  PASS: $WARNINGS report(s) examined, 0 loader frames (probe rc=$LAST_RC: racy by design, not a verdict)"
         PASS=$((PASS + 1))
+    fi
+}
+
+dict_readers_row() {
+    echo "=== #1697 shared dict readers must not mutate order storage ==="
+    local fixture="$TESTS_DIR/tsan_dict_readers.eigs"
+    tsan_warnings "$fixture"
+    if [ "$LAST_RC" -eq 0 ] && [ "$WARNINGS" -eq 0 ] && \
+       grep -q 'dict readers: PASS' <<< "$RUN_OUTPUT"; then
+        echo "  PASS: shared dict traversal is TSan-clean"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: shared dict readers warnings=$WARNINGS rc=$LAST_RC"; FAIL=$((FAIL + 1))
     fi
 }
 
@@ -131,15 +269,20 @@ fi
 # so a row can be proven under load (taskset -c 0 nice -n 19) or against a
 # planted binary without running the whole lane.
 if [ "${1:-}" = "--row" ]; then
+    ROW_EXPECTED=1
     case "${2:-}" in
         seeded)         seeded_race_row ;;
         rebind-call)    rebind_call_row ;;
+        captured-rebind) captured_rebind_row ;;
         scope-boundary) scope_boundary_row ;;
-        *) echo "usage: test_tsan.sh --row seeded|rebind-call|scope-boundary"; exit 2 ;;
+        dict-readers)   dict_readers_row ;;
+        misordered-publish) misordered_publish_row ;;
+        observer-fold) ROW_EXPECTED=4; observer_shared_fold_rows ;;
+        *) echo "usage: test_tsan.sh --row seeded|rebind-call|captured-rebind|scope-boundary|dict-readers|misordered-publish|observer-fold"; exit 2 ;;
     esac
     echo ""
     echo "Results: $PASS passed, $FAIL failed"
-    [ "$FAIL" -eq 0 ] && [ "$PASS" -eq 1 ]; exit
+    [ "$FAIL" -eq 0 ] && [ "$PASS" -eq "$ROW_EXPECTED" ]; exit
 fi
 
 echo "=== concurrency slice must be race-free ==="
@@ -147,7 +290,7 @@ SLICE="test_concurrent test_spawn_parallel test_chan_dict_xthread test_spawn_gc 
        test_channel_nb test_spawn_channel_exit test_spawn_args \
        test_spawn_jit test_spawn_jit_warm test_obs_mt_race \
        tsan_no_yield_race tsan_sandbox_snapshot_race tsan_mt_clear_respawn \
-       tsan_transfer_buffer_race tsan_message_buffer_copy"
+       tsan_transfer_buffer_race tsan_message_buffer_copy tsan_dict_readers"
 for t in $SLICE; do
     f="$TESTS_DIR/$t.eigs"
     [ -f "$f" ] || continue
@@ -162,7 +305,7 @@ for t in $SLICE; do
         echo "  PASS: $t race-free"; PASS=$((PASS + 1))
     else
         echo "  FAIL: $t reported $w ThreadSanitizer warning(s)"
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
         FAIL=$((FAIL + 1))
     fi
 done
@@ -224,16 +367,19 @@ for t in $SHAPE_FIXTURES; do
         echo "  FAIL: $t exited $LAST_RC (want $expected_rc)"; FAIL=$((FAIL + 1))
     elif [ "$t" = tsan_worker_exit ] && [ "$RUN_OUTPUT" != WORKER_EXIT_REQUEST ]; then
         echo "  FAIL: $t requires only the pre-exit marker; output='$RUN_OUTPUT'"; FAIL=$((FAIL + 1))
-    elif [ "$t" = tsan_spawn_emitted_jit ] &&
+    elif [ "$t" = tsan_spawn_emitted_jit ] && [ "$JIT_BACKEND" != none ] &&
          ! grep -Eq '\[jit\].*compiled=[1-9][0-9]*' <<< "$RUN_OUTPUT"; then
         echo "  FAIL: $t did not compile emitted JIT code"; FAIL=$((FAIL + 1))
-    elif [ "$t" = tsan_spawn_emitted_jit ] &&
+    elif [ "$t" = tsan_spawn_emitted_jit ] && [ "$JIT_BACKEND" != none ] &&
          ! grep -Eq '^hot[[:space:]]+80[[:space:]]+yes[[:space:]]+[0-9.]+%[[:space:]]+RET[[:space:]]' <<< "$RUN_OUTPUT"; then
         # The named hot row's RET is the native-return sentinel, written by
         # execution; compilation initializes advance to a byte count. The 80
         # entries precede spawn; MT calls do not increment this counter.
         echo "  FAIL: $t missing hot native-return witness after 80 warm calls"; FAIL=$((FAIL + 1))
     else
+        if [ "$t" = tsan_spawn_emitted_jit ] && [ "$JIT_BACKEND" = none ]; then
+            echo "  SKIP: $t emitted-code checks: this build has no JIT backend (jit-backend=$JIT_BACKEND)"
+        fi
         echo "  PASS: $t TSan-clean and exited $expected_rc"; PASS=$((PASS + 1))
     fi
 done
@@ -263,7 +409,7 @@ if [ -f "$TAPE_MT" ]; then
     if [ "$LAST_RC" -eq 66 ]; then
         echo "  FAIL: worker-tape ThreadSanitizer race (exit 66)"
         FAIL=$((FAIL + 1))
-        grep -A2 "ThreadSanitizer" "$TESTS_DIR/../build/tsan_trace_mt.err" | head -8
+        tsan_report < "$TESTS_DIR/../build/tsan_trace_mt.err"
     elif [ "$LAST_RC" -eq 124 ]; then
         echo "  FAIL: worker-tape HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"
         FAIL=$((FAIL + 1))
@@ -289,7 +435,10 @@ if [ -f "$RP_EIGS" ]; then
     EIGS_TRACE="$RP_HDR" timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" \
         "$TESTS_DIR/../build/tsan_one.eigs" >/dev/null 2>&1 || header_rc=$?
     vline=$(head -1 "$RP_HDR" 2>/dev/null || true)
-    if [ "$header_rc" -ne 0 ] || ! printf '%s\n' "$vline" | grep -q '^V 8 '; then
+    trace_format=$(awk '/^#define TRACE_FORMAT_VERSION / { print $3; exit }' \
+        "$TESTS_DIR/../src/trace.h")
+    if [ "$header_rc" -ne 0 ] || [ "${vline%% *}" != V ] || \
+       [ "$(printf '%s\n' "$vline" | awk '{print $2}')" != "$trace_format" ]; then
         echo "  FAIL: replay-workers header setup rc=$header_rc"
         FAIL=$((FAIL + 1))
     else
@@ -399,7 +548,9 @@ if [ -n "$TSAN_OBJS" ]; then
         grep 'FAIL' "$ROOT/build/tsan_first_use.bad.out" 2>/dev/null | head -5
     fi
 else
-    echo "  FAIL: tsan objects or $EC_SUPP missing"
+    # EC_SUPP named a suppressions file that #1599 removed; under set -u the
+    # stale reference crashed this branch before it could report (2026-10-28).
+    echo "  FAIL: no TSan objects in build/tsan (run make tsan first)"
     FAIL=$((FAIL + 1))
 fi
 
@@ -442,7 +593,7 @@ for t in $DKM_FIXTURES; do
     elif [ "$w" -ne 0 ]; then
         echo "  FAIL: $t reported $w ThreadSanitizer warning(s)"
         FAIL=$((FAIL + 1))
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
     elif [ "$LAST_RC" -ne 0 ]; then
         # A probe that DIED has not shown that the keys survive; a quiet
         # sanitizer on a truncated run is absence of evidence.
@@ -476,8 +627,8 @@ echo "=== loader from workers must be race-free (#1144) ==="
 # loader_mt_userrace.eigs on the Phase 2 branch), which would make a
 # zero-report row flaky. It is a release-binary correctness row in
 # tests/test_loader_mt.sh instead.
-LDR_FIXTURES="loader_mt_import loader_mt_cycle"
-LDR_DECLARED=2
+LDR_FIXTURES="loader_mt_import loader_mt_cycle loader_mt_define_result"
+LDR_DECLARED=3
 LDR_EXAMINED=0
 for t in $LDR_FIXTURES; do
     LDR_EXAMINED=$((LDR_EXAMINED + 1))
@@ -491,7 +642,7 @@ for t in $LDR_FIXTURES; do
         echo "  FAIL: $t HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
     elif [ "$w" -ne 0 ]; then
         echo "  FAIL: $t reported $w ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
     elif [ "$LAST_RC" -ne 0 ]; then
         echo "  FAIL: $t exited $LAST_RC (want 0) — a quiet sanitizer on a truncated run is absence of evidence"
         FAIL=$((FAIL + 1))
@@ -515,7 +666,7 @@ for t in $LDR_DIR_FIXTURES; do
         echo "  PASS: $t TSan-clean and exited 0"; PASS=$((PASS + 1))
     else
         echo "  FAIL: $t reported $WARNINGS warning(s), rc=$LAST_RC"; FAIL=$((FAIL + 1))
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
     fi
 done
 LDR_TOTAL=$((LDR_DECLARED + LDR_DIR_DECLARED))
@@ -527,6 +678,8 @@ else
 fi
 
 rebind_call_row
+
+observer_shared_fold_rows
 
 scope_boundary_row
 
@@ -546,7 +699,7 @@ for t in $ARM_FIXTURES; do
         echo "  FAIL: $t HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
     elif [ "$WARNINGS" -ne 0 ]; then
         echo "  FAIL: $t reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
     elif [ "$LAST_RC" -ne 0 ]; then
         echo "  FAIL: $t exited $LAST_RC (want 0)"; FAIL=$((FAIL + 1))
     else
@@ -625,7 +778,7 @@ for t in $HMT_FIXTURES; do
         FAIL=$((FAIL + 1))
     elif [ "$WARNINGS" -ne 0 ]; then
         echo "  FAIL: $t reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$f" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
     elif [ "$LAST_RC" -ne 0 ]; then
         echo "  FAIL: $t exited $LAST_RC (want 0) — a quiet sanitizer on a truncated run is absence of evidence"
         FAIL=$((FAIL + 1))
@@ -645,7 +798,7 @@ if [ -f "$MODENV_F" ]; then
         echo "  PASS: hm_modenv TSan-clean and exited 0"; PASS=$((PASS + 1))
     else
         echo "  FAIL: hm_modenv reported $WARNINGS warning(s), rc=$LAST_RC"; FAIL=$((FAIL + 1))
-        timeout "$TSAN_RUN_TIMEOUT" setarch -R "$EIGS" "$MODENV_F" 2>&1 | grep -A2 "ThreadSanitizer" | head -6
+        tsan_report <<< "$RUN_OUTPUT"
     fi
 else
     echo "  FAIL: hm_modenv fixture missing ($MODENV_F)"; FAIL=$((FAIL + 1))
@@ -659,6 +812,9 @@ else
 fi
 
 seeded_race_row
+misordered_publish_row
+observer_shared_fold_rows
+captured_rebind_row
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

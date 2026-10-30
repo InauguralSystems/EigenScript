@@ -413,12 +413,23 @@ static int vm_slot_value_opaque(Env *e, int idx) {
  * source line, and a binding assigned inside the block has no `used` slot at
  * all, so a classifier-level check is never reached on the path that hangs. */
 int observer_predicate_at(Env *e, int idx, int kind, int require_used) {
-    if (vm_slot_value_opaque(e, idx)) return 0;
+    if (!e || idx < 0 || vm_slot_value_opaque(e, idx)) return 0;
+    /* The entropy walk can synchronize a live namespace and take #607;
+     * prepare it before the fold hold. The classification below may inspect
+     * eq_last's detached snapshot (S10-D1), whose ownership and window arrays
+     * must remain protected against a concurrent shared-binding update. */
+    double entropy;
+    int have_entropy = observer_entropy_now(e, idx, &entropy);
+    env_dump_lock(e);
     const ObserverSlot *s = env_obs_slot(e, idx);
-    if (!s) return 0;
-    if (require_used && !s->used) return 0;
-    ObserverSlot q = vm_slot_query_view(e, idx, s);
-    return vm_slot_predicate(&q, (uint16_t)kind);
+    int result = 0;
+    if (s && (!require_used || s->used)) {
+        ObserverSlot q = *s;
+        if (have_entropy) q.entropy = entropy;
+        result = vm_slot_predicate(&q, (uint16_t)kind);
+    }
+    env_dump_unlock(e);
+    return result;
 }
 
 /* Phase 5: VM execution state (g_vm), loop-stall accounting
@@ -466,6 +477,9 @@ static inline void vm_bind_fresh_param(Env *env, int slot_idx,
  * also keeps every EnvIC aimed at the env valid across calls.
  *
  * Park requirements (vm_park_call_env):
+ *   - a call env exists: an exactly-fed `leaf_accessor` call is executed
+ *     frameless by vm_leaf_accessor_exec, before the generic call path, so it
+ *     allocates no Env and consequently has nothing to park;
  *   - single-threaded (chunks are shared across spawn threads);
  *   - frame->env == frame->fn_env (never park a loop-scope child);
  *   - not captured by a closure, env_refcount == 1 (exactly the
@@ -593,6 +607,7 @@ static void callframe_init(CallFrame *f, EigsChunk *chunk, Env *env,
      * returns; the base frame and OP_DISPATCH keep the incoming values. */
     f->saved_stall_count = g_loop_stall_count;
     f->saved_loop_iter   = g_loop_iterations;
+    f->saved_sandbox_loop_iter = g_sandbox_loop_iterations;
     f->call_argc = call_argc;
     f->ret_line = g_vm.current_line;   /* #1424: restored on return */
 }
@@ -665,7 +680,7 @@ vm_dict_slot_cached(Value *dict, const char *key, uint32_t h) {
         return dict_get_hashed_slot(dict, key, h, &found);  /* null when absent */
     }
     DictCacheEntry *ce = dict_cache_probe(dict, h);
-    if (ce && ce->index < dict->data.dict.count) {
+    if (ce && ce->index < dict->data.dict.used) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0)
             return dict_value_slot(dict, ce->index);
@@ -684,7 +699,7 @@ static inline void dict_set_cached(Value *dict, const char *key, uint32_t h, Val
         return;
     }
     DictCacheEntry *ce = dict_cache_probe(dict, h);
-    if (ce && ce->index < dict->data.dict.count) {
+    if (ce && ce->index < dict->data.dict.used) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0) {
             /* Cache hit — update in place */
@@ -707,7 +722,7 @@ dict_set_cached_immediate(Value *dict, const char *key, uint32_t h, double num) 
     if (__builtin_expect(dict->module_ns != 0, 0))
         return 0;                     /* #1057: never in-place on a mirror */
     DictCacheEntry *ce = dict_cache_probe(dict, h);
-    if (ce && ce->index < dict->data.dict.count) {
+    if (ce && ce->index < dict->data.dict.used) {
         const char *stored = dict->data.dict.keys[ce->index];
         if (stored == key || strcmp(stored, key) == 0) {
             /* Slot storage (#1665 arm D B10): a cache hit is a plain
@@ -887,7 +902,7 @@ static inline int slot_truthy(EigsSlot s) {
 
 /* #1758 R1.3: floats keep the existing fast paths. Integer and mixed
  * arithmetic is computed here, outside the JIT/leaf float executors. */
-static EigsSlot vm_int_arith(int64_t a, int64_t b, char op, int line) {
+static inline __attribute__((always_inline)) EigsSlot vm_int_arith(int64_t a, int64_t b, char op, int line) {
     int64_t r;
     int overflow;
     if (op == '+') overflow = __builtin_add_overflow(a, b, &r);
@@ -1223,12 +1238,15 @@ static inline Env *env_resolve_store(Env *start, const char *name, uint32_t h,
     return (t && t == g_builtin_env) ? NULL : t;
 }
 
-/* #1063: the ONE implementation of "store TOS into fn-local slot", shared by
+/* #1063/#2016: the ONE implementation of "store TOS into fn-local slot", shared by
  * CASE(SET_LOCAL) and the JIT's out-of-line path (jit_helper_set_local), so
  * the two can never disagree. The in-place branch is load-bearing beyond
  * speed: g_last_observer may alias the exclusive VAL_FLOAT being overwritten,
- * and a swap+decref would free it under the observer. */
-static inline void vm_store_local_slot(Env *e, int slot, EigsSlot tos) {
+ * and a swap+decref would free it under the observer. A parameter arrives
+ * with assign_counts=1; every user SET_LOCAL advances that same counter, just
+ * as a name store does. Runtime bookkeeping stores pass count_assignment=0. */
+static inline __attribute__((always_inline)) void vm_store_local_slot(Env *e, int slot, EigsSlot tos,
+                                       int count_assignment) {
     if (slot_is_f64(tos)) {
         EigsSlot ex_s = e->values[slot];
         if (slot_is_heap(ex_s)) {
@@ -1236,6 +1254,8 @@ static inline void vm_store_local_slot(Env *e, int slot, EigsSlot tos) {
             if (existing && existing->type == VAL_FLOAT &&
                 existing->refcount == 1) {
                 VAL_F64_RAW(existing) = SLOT_F64_RAW(tos);
+                if (count_assignment && e->assign_counts)
+                    e->assign_counts[slot]++;
                 return;
             }
         }
@@ -1243,6 +1263,7 @@ static inline void vm_store_local_slot(Env *e, int slot, EigsSlot tos) {
     slot_incref(tos);
     slot_decref(e->values[slot]);
     e->values[slot] = tos;
+    if (count_assignment && e->assign_counts) e->assign_counts[slot]++;
 }
 
 /* #1063: record a slot write on the prev/history tape. The table is keyed by
@@ -1275,7 +1296,7 @@ void jit_helper_set_local(EigsChunk *chunk, int slot) {
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     Env *e = frame->fn_env;
     if ((int)slot < e->count)
-        vm_store_local_slot(e, slot, g_vm.stack[g_vm.sp - 1]);
+        vm_store_local_slot(e, slot, g_vm.stack[g_vm.sp - 1], 1);
 }
 
 void jit_helper_set_name(EigsChunk *chunk, int idx) {
@@ -1721,6 +1742,12 @@ static inline Value *obs_slot_value(EigsSlot s) {
 }
 
 static inline void jit_sample_num_gated(Env *e, int slot, double v) {
+    /* #1867: the inline ring writes are valid only for a private env.  A
+     * shared binding must enter the public helper, which folds under #607. */
+    if (__builtin_expect(g_vm_multithreaded, 0) && e->mt_shared) {
+        observer_slot_sample_num_gated(e, slot, v);
+        return;
+    }
     ObserverSlot *s = env_obs_slot(e, slot);
     int n = s && s->win_override ? s->win_override : g_obs_window;
     if (!s || (s->v_used && (!s->v_window || s->v_cap < n))) {
@@ -1890,23 +1917,6 @@ int jit_helper_iter_next(void) {
     return g_has_error ? 2 : 0;
 }
 
-/* Integer-valued test for a subscript index: an exact integer (2.0) returns 1
- * and is written to *out; a fractional value (2.5) — or one from float drift
- * (2.9999998) — returns 0 so the caller can raise "index must be an integer"
- * instead of silently truncating. Pure predicate, no side effects: the raise
- * lives at the handling site so a target the fast path doesn't own (string,
- * dict) falls through to the slow path and is diagnosed exactly once. The
- * (double)(int) round-trip is the test — it reuses the cast every index site
- * already performs and is pure SSE2, deliberately avoiding floor()/roundsd
- * (SSE4.1, absent on the Merom target). Negatives pass here and fail the usual
- * >= 0 range check downstream, unchanged. */
-static inline int vm_index_is_int(double d, int *out) {
-    int i = (int)d;
-    if ((double)i != d) return 0;
-    *out = i;
-    return 1;
-}
-
 /* 0.13.0: resolve negative index against len, then bounds-check.
  * On success, *i is rewritten to the absolute position; on failure
  * *i is left at the original value so error messages report what
@@ -1949,7 +1959,9 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
     uint8_t *ip = c->code;
     for (;;) {
         switch (*ip++) {
-        case OP_LINE:
+        case OP_BINARY_LINE_END:
+            break;
+        case OP_LINE: case OP_BINARY_LINE:
             ip += 4;   /* #630: 32-bit operand */
             break;
         case OP_CONST: {
@@ -2126,7 +2138,8 @@ static void loop_iter_store(Env *env, int64_t n) {
      * replacement and assignment count under the existing env lock. The
      * cache lookup and refill below also read shared arrays/version, so
      * return before either path; a thread-local cache is not a slot lock. */
-    if (__builtin_expect(g_vm_multithreaded, 0) && env->mt_shared) {
+    if (__builtin_expect(g_vm_multithreaded, 0) &&
+        __atomic_load_n(&env->mt_shared, __ATOMIC_RELAXED)) {
         Value *iter_val = make_int(n);
         env_set_local(env, "__loop_iterations__", iter_val);
         val_decref(iter_val);
@@ -2155,6 +2168,53 @@ static void loop_iter_store(Env *env, int64_t n) {
     }
 }
 
+/* OP_LOOP_ENTER's shared interpreter/JIT implementation.  Keeping the
+ * publication here prevents the native emitter from growing a second copy of
+ * the environment-slot/cache rules above. */
+static EigsSlot *loop_counter_slot(CallFrame *frame, uint16_t depth) {
+    int slot = frame->bp + (int)depth;
+    if (slot >= frame->bp && slot < g_vm.sp) return &g_vm.stack[slot];
+    rt_error(EK_INTERNAL, g_vm.current_line,
+             "loop counter depth %u out of range (frame depth %d)",
+             (unsigned)depth, g_vm.sp - frame->bp);
+    return NULL;
+}
+
+static int64_t loop_counter_load(EigsSlot *slot) {
+    int64_t n;
+    if (slot && slot_int_value(*slot, &n)) return n;
+    rt_error(EK_INTERNAL, g_vm.current_line, "private loop counter is not an int");
+    return 0;
+}
+
+static void loop_counter_store(EigsSlot *slot, int64_t n) {
+    /* S9-K1/R1.8: counters remain exact ints; common SMI updates need no
+     * generic slot normalization or ownership work. */
+    if (slot_is_smi(*slot) && n >= SLOT_SMI_MIN && n <= SLOT_SMI_MAX) {
+        *slot = slot_from_int(n);
+        return;
+    }
+    slot_decref(*slot);
+    *slot = slot_from_int(n);
+}
+
+static void eigs_loop_enter_named(Env *env, CallFrame *frame, uint16_t counter_depth) {
+    if (g_vm.sp != frame->bp + (int)counter_depth) {
+        rt_error(EK_INTERNAL, g_vm.current_line,
+                 "loop counter enter depth %u disagrees with frame depth %d",
+                 (unsigned)counter_depth, g_vm.sp - frame->bp);
+        return;
+    }
+    vm_push_slot(slot_from_int(0));
+    g_loop_iterations = 0;
+    loop_iter_store(env, 0);
+}
+
+void eigs_loop_enter(Env *env) {
+    g_loop_iterations = 0;
+    loop_iter_store(env, 0);
+}
+
 /* Stage 4w: out-of-line helper for OP_LOOP_STALL_CHECK. Mirrors the
  * interpreter case minus the jump: returns 1 when the loop should exit
  * (observer stalled 100 iterations, or the absolute iteration cap) so
@@ -2166,9 +2226,16 @@ static void loop_iter_store(Env *env, int64_t n) {
  * the exact same observer-loop halting as the interpreter and JIT. Exported via
  * eigenscript.h. The jit_helper_* wrappers below feed them the current frame's
  * env, so interpreter, JIT, and AOT share one implementation (no drift). */
-int eigs_loop_stall_step(Env *e) {
+static int eigs_loop_stall_step_named(Env *e, CallFrame *frame, uint16_t counter_depth) {
+    EigsSlot *counter = frame ? loop_counter_slot(frame, counter_depth) : NULL;
+    if (frame && !counter) return 1;
     eigs_observe_safepoint(e);   /* #660 */
-    g_loop_iterations++;
+    if (frame) {
+        g_loop_iterations = loop_counter_load(counter) + 1;
+        loop_counter_store(counter, g_loop_iterations);
+    } else {
+        g_loop_iterations++;
+    }
     int should_exit = 0;
     if (g_unobserved_depth == 0) {
         double dH, ent;
@@ -2203,7 +2270,7 @@ int eigs_loop_stall_step(Env *e) {
      * budget (sandbox_run's max_iter). The old unconditional 100M default
      * silently broke the running loop every 1e8 cumulative in-frame
      * iterations of ANY long program — wrong results with exit 0. */
-    if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {
+    if (g_sandbox_loop_max && ++g_sandbox_loop_iterations >= g_sandbox_loop_max) {
         g_loop_exit_reason = "limit";
         g_sandbox_cap_hit = 1;   /* a capped run must not report ok (#960-adjacent) */
         should_exit = 1;
@@ -2214,18 +2281,24 @@ int eigs_loop_stall_step(Env *e) {
         env_set_local(e, "__loop_exit__", exit_val);
         val_decref(exit_val);
         g_loop_stall_count = 0;
-        g_loop_iterations = 0;
         g_loop_exit_reason = "normal";
         return 1;
     }
     return 0;
 }
 
-int eigs_loop_cap_step(Env *e) {
+static int eigs_loop_cap_step_named(Env *e, CallFrame *frame, uint16_t counter_depth) {
+    EigsSlot *counter = frame ? loop_counter_slot(frame, counter_depth) : NULL;
+    if (frame && !counter) return 1;
     eigs_observe_safepoint(e);   /* #660 */
-    g_loop_iterations++;
+    if (frame) {
+        g_loop_iterations = loop_counter_load(counter) + 1;
+        loop_counter_store(counter, g_loop_iterations);
+    } else {
+        g_loop_iterations++;
+    }
     int should_exit = 0;
-    if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {
+    if (g_sandbox_loop_max && ++g_sandbox_loop_iterations >= g_sandbox_loop_max) {
         g_loop_exit_reason = "limit";
         g_sandbox_cap_hit = 1;
         should_exit = 1;
@@ -2236,21 +2309,42 @@ int eigs_loop_cap_step(Env *e) {
         env_set_local(e, "__loop_exit__", exit_val);
         val_decref(exit_val);
         g_loop_stall_count = 0;
-        g_loop_iterations = 0;
         g_loop_exit_reason = "normal";
         return 1;
     }
     return 0;
 }
 
+int eigs_loop_stall_step(Env *e) {
+    return eigs_loop_stall_step_named(e, NULL, 0);
+}
+
+int eigs_loop_cap_step(Env *e) {
+    return eigs_loop_cap_step_named(e, NULL, 0);
+}
+
 /* Stage 4w out-of-line helpers for OP_LOOP_STALL_CHECK / OP_LOOP_CAP_CHECK:
  * the current frame's env fed to the shared cores above (the JIT emits a call
  * to one of these per observed-loop iteration). */
-int jit_helper_loop_stall_check(void) {
-    return eigs_loop_stall_step(g_vm.frames[g_vm.frame_count - 1].env);
+int jit_helper_loop_stall_check(uint16_t counter_depth) {
+    CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
+    return eigs_loop_stall_step_named(f->env, f, counter_depth);
 }
-int jit_helper_loop_cap_check(void) {
-    return eigs_loop_cap_step(g_vm.frames[g_vm.frame_count - 1].env);
+int jit_helper_loop_cap_check(uint16_t counter_depth) {
+    CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
+    return eigs_loop_cap_step_named(f->env, f, counter_depth);
+}
+void jit_helper_loop_enter(uint16_t counter_depth) {
+    CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
+    eigs_loop_enter_named(f->env, f, counter_depth);
+}
+void jit_helper_loop_exit(uint16_t counter_depth) {
+    CallFrame *f = &g_vm.frames[g_vm.frame_count - 1];
+    EigsSlot *counter = loop_counter_slot(f, counter_depth);
+    if (!counter) return;
+    loop_iter_store(f->env, loop_counter_load(counter));
+    while (g_vm.sp > f->bp + (int)counter_depth)
+        slot_decref(g_vm.stack[--g_vm.sp]);
 }
 
 /* #1758 R1.2: an int subscript is its exact value in the VM's C-index
@@ -2260,6 +2354,21 @@ static inline int vm_value_index_is_int(const Value *v, int *out) {
         int64_t i = VAL_I64_RAW(v);
         if (i < INT_MIN || i > INT_MAX) return 0;
         *out = (int)i;
+        return 1;
+    }
+    return vm_index_is_int(VAL_F64_RAW(v), out);
+}
+
+/* #1849 / Phase2: an exact int subscript outside the C index domain is a
+ * range error, just like an exact float. Clamp only the diagnostic-route
+ * endpoint; every container's bounds check refuses it before a read/write.
+ * Keep vm_value_index_is_int's separate AT/slice C-domain refusal unchanged. */
+static inline int vm_subscript_index_is_int(const Value *v, int *out) {
+    if (v->type == VAL_INT) {
+        int64_t i = VAL_I64_RAW(v);
+        if (i < INT_MIN) *out = INT_MIN;
+        else if (i > INT_MAX) *out = INT_MAX;
+        else *out = (int)i;
         return 1;
     }
     return vm_index_is_int(VAL_F64_RAW(v), out);
@@ -2314,7 +2423,7 @@ void jit_helper_index_set(void) {
     Value *val = vm_pop(); Value *idx = vm_pop(); Value *target = vm_pop();
     if (target->type == VAL_LIST && val_is_number(idx)) {
         int i;
-        if (!vm_value_index_is_int(idx, &i)) {
+        if (!vm_subscript_index_is_int(idx, &i)) {
             rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", eigs_float_arg(idx, "index"));
         } else if (vm_index_resolve(&i, target->data.list.count)) {
             val_incref(val);
@@ -2324,7 +2433,7 @@ void jit_helper_index_set(void) {
         }
     } else if (target->type == VAL_BUFFER && val_is_number(idx)) {
         int i;
-        if (!vm_value_index_is_int(idx, &i)) {
+        if (!vm_subscript_index_is_int(idx, &i)) {
             rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", eigs_float_arg(idx, "index"));
         } else if (!vm_index_resolve(&i, target->data.buffer.count)) {
             rt_error(EK_INDEX, g_vm.current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
@@ -2335,8 +2444,9 @@ void jit_helper_index_set(void) {
             rt_error(EK_TYPE, g_vm.current_line, "cannot store %s in a buffer (buffers hold numbers)",
                      val_type_name(val->type));
         }
-    } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
-        dict_set(target, idx->data.str, val);
+    } else if (target->type == VAL_DICT) {
+        const char *key = dict_assignment_key(target, idx, g_vm.current_line);
+        if (key) dict_set(target, key, val);
     } else {
         rt_error(EK_TYPE, g_vm.current_line, "cannot index %s for assignment", val_type_name(target->type));
     }
@@ -2390,7 +2500,7 @@ int jit_helper_index_get(void) {
     Value *result = make_null();
     if (target->type == VAL_LIST && val_is_number(idx)) {
         int i;
-        if (!vm_value_index_is_int(idx, &i)) {
+        if (!vm_subscript_index_is_int(idx, &i)) {
             rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", eigs_float_arg(idx, "index"));
         } else if (vm_index_resolve(&i, target->data.list.count)) {
             result = list_get_owned(target, i);
@@ -2405,7 +2515,7 @@ int jit_helper_index_get(void) {
         if (!slot_is_null(v)) result = eigs_slot_box(v);
     } else if (target->type == VAL_STR && val_is_number(idx)) {
         int i;
-        if (!vm_value_index_is_int(idx, &i)) {
+        if (!vm_subscript_index_is_int(idx, &i)) {
             rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", eigs_float_arg(idx, "index"));
         } else if (vm_index_resolve(&i, (int)val_str_len(target))) {
             char buf[2] = { target->data.str[i], 0 };
@@ -2417,7 +2527,7 @@ int jit_helper_index_get(void) {
         }
     } else if (target->type == VAL_BUFFER && val_is_number(idx)) {
         int i;
-        if (!vm_value_index_is_int(idx, &i))
+        if (!vm_subscript_index_is_int(idx, &i))
             rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", eigs_float_arg(idx, "index"));
         else if (vm_index_resolve(&i, target->data.buffer.count))
             result = make_float(buffer_read_f64(target, i));
@@ -2482,7 +2592,8 @@ static inline void vm_borrow_scan(Value *arg, Value *result,
     /* #1665 arm D: a numeric view is caller stack storage; returning one
      * would hand the VM a dangling Value. Views carry EIGS_VIEW_RC, which no
      * counted Value reaches (the immortal singletons sit at 1e6). */
-    if (__builtin_expect(result && result->refcount >= EIGS_VIEW_RC, 0)) {
+    if (__builtin_expect(result &&
+            __atomic_load_n(&result->refcount, __ATOMIC_RELAXED) >= EIGS_VIEW_RC, 0)) {
         fprintf(stderr, "EigenScript FATAL: builtin returned an escaped numeric view\n");
         abort();
     }
@@ -2731,6 +2842,7 @@ int jit_helper_call(EigsChunk *caller_chunk, int argc, int resume_off) {
         if (--fn_val->refcount <= 0) free_value(fn_val);
         g_loop_stall_count = 0;
         g_loop_iterations  = 0;
+        g_sandbox_loop_iterations = 0;
         fn_chunk->exec_count++;
 
         g_native_call_depth++;
@@ -2856,6 +2968,7 @@ void jit_helper_return(void) {
     }
     g_loop_stall_count = frame->saved_stall_count;
     g_loop_iterations  = frame->saved_loop_iter;
+    g_sandbox_loop_iterations = frame->saved_sandbox_loop_iter;
     g_vm.current_line  = frame->ret_line;   /* #1424: as CASE(RETURN) */
     /* The frame's chunk ref is NOT dropped here: the thunk epilogue still
      * writes chunk->jit_advance after we return. vm_run's -1 sentinel
@@ -2886,45 +2999,12 @@ void jit_helper_return_null(void) {
     }
     g_loop_stall_count = frame->saved_stall_count;
     g_loop_iterations  = frame->saved_loop_iter;
+    g_sandbox_loop_iterations = frame->saved_sandbox_loop_iter;
     g_vm.current_line  = frame->ret_line;   /* #1424: as CASE(RETURN_NULL) */
     /* Chunk ref deferred to vm_run's -1 handler (see jit_helper_return). */
     g_vm.frame_count--;
     g_vm.stack[g_vm.sp++] = slot_null();
 }
-
-#ifdef EIGS_JIT_CHECKED
-/* `make jit-checked` slot witnesses (jit.h). Print the read site, abort. */
-static void jit_checked_fail(EigsChunk *chunk, uint32_t site,
-                             const char *what, long a, long b) {
-    uint32_t off = site & 0xFFFFFFu;
-    int line = (chunk && chunk->lines && (int)off < chunk->lines_len)
-             ? chunk->lines[off] : 0;
-    fprintf(stderr,
-            "EIGS_JIT_CHECKED: %s (%ld vs %ld) at %s offset %u in chunk '%s' line %d\n",
-            what, a, b, op_name((uint8_t)(site >> 24)), off,
-            (chunk && chunk->name) ? chunk->name : "<anon>", line);
-    fflush(stderr);
-    abort();
-}
-
-void jit_checked_local(uint64_t *cached_values, uint32_t slot,
-                       uint32_t site, EigsChunk *chunk) {
-    Env *e = g_vm.frames[g_vm.frame_count - 1].fn_env;
-    if ((void *)cached_values != (void *)e->values)
-        jit_checked_fail(chunk, site, "stale %r12 values base (cached != fn_env->values)",
-                         (long)(intptr_t)cached_values, (long)(intptr_t)e->values);
-    if ((int)slot >= e->count)
-        jit_checked_fail(chunk, site, "local slot out of range (slot vs fn_env->count)",
-                         (long)slot, (long)e->count);
-}
-
-void jit_checked_env_slot(Env *target, uint32_t slot, uint32_t site,
-                          EigsChunk *chunk) {
-    if ((int)slot >= target->count)
-        jit_checked_fail(chunk, site, "IC slot out of range (slot_idx vs target->count)",
-                         (long)slot, (long)target->count);
-}
-#endif
 
 /* Helper called by the JIT prologue on platforms where the JIT can't
  * encode TLS access directly — Darwin/Mach-O uses TLV descriptors
@@ -2952,6 +3032,8 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
     out->off_frame_count     = (int)offsetof(VM, frame_count);
     out->off_frames          = (int)offsetof(VM, frames);
     out->off_current_line    = (int)offsetof(VM, current_line);
+    out->off_binary_prev_line = (int)offsetof(VM, binary_prev_line);
+    out->off_binary_prev_trace_line = (int)offsetof(VM, binary_prev_trace_line);
     out->off_callframe_ip    = (int)offsetof(CallFrame, ip);
     out->off_callframe_fn_env= (int)offsetof(CallFrame, fn_env);
     out->sizeof_callframe    = (int)sizeof(CallFrame);
@@ -3002,19 +3084,20 @@ void eigs_jit_get_layout(EigsJitLayout *out) {
 /* Catch-binding: if `throw` stashed a structured error value (dict,
  * list, string, ...), the catch variable binds that value — ownership
  * of the stash's ref transfers to the stack. Built-in runtime errors
- * bind a {kind, message, line} dict (#406): kind from the closed
- * ErrKind vocabulary, message without the "Error line N:" frame, line
- * 1-based. Built lazily here so the uncaught path never allocates. */
+ * bind a {kind, message, file, line} dict (#406): kind from the closed
+ * ErrKind vocabulary, the unchanged location-free message, and line 1-based.
+ * Built lazily here so the uncaught path never allocates. */
 static Value *vm_take_error_value(void) {
     if (g_error_value) {
         Value *v = g_error_value;
         g_error_value = NULL;
         return v;
     }
-    Value *d = make_dict(3);
+    Value *d = make_dict(4);
     dict_set_owned(d, "kind", make_str(err_kind_name((ErrKind)g_error_kind)));
     dict_set_owned(d, "message", make_str(g_error_raw));
     dict_set_owned(d, "line", make_int(g_error_line));
+    dict_set_owned(d, "file", make_str(g_error_file));
     return d;
 }
 
@@ -3030,6 +3113,14 @@ int vm_current_line(void) {
     if (!eigs_current || !eigs_current->vm || g_vm.frame_count <= 0)
         return trace_current_line_load();
     return g_vm.current_line;
+}
+
+const char *vm_current_file(void) {
+    if (!eigs_current || !eigs_current->vm || g_vm.frame_count <= 0)
+        return "<native>";
+    EigsChunk *chunk = g_vm.frames[g_vm.frame_count - 1].chunk;
+    return (chunk && chunk->src && chunk->src->file) ? chunk->src->file
+                                                     : "<native>";
 }
 
 /* Print the live call stack, innermost frame first. Called by
@@ -3079,8 +3170,21 @@ void vm_print_stack_trace(FILE *out) {
             if (off >= 0 && off < f->chunk->lines_len)
                 line = f->chunk->lines[off];
         }
-        fprintf(out, "  at %s (line %d)\n", fname, line);
+        const char *file = (f->chunk && f->chunk->src && f->chunk->src->file)
+                         ? f->chunk->src->file : "<native>";
+        if (line > 0) fprintf(out, "  at %s (%s:%d)\n", fname, file, line);
+        else fprintf(out, "  at %s (%s)\n", fname, file);
     }
+}
+
+/* The frames in g_vm are exactly the cooperative task (or ordinary
+ * evaluation) that is running now.  g_try_depth is an aggregate across
+ * suspended task slices, so it cannot answer whether THIS raise is caught. */
+int vm_error_has_handler(void) {
+    if (!eigs_current || !eigs_current->vm) return 0;
+    for (int i = g_vm.frame_count - 1; i >= 0; i--)
+        if (g_vm.frames[i].try_count > 0) return 1;
+    return 0;
 }
 
 /* #407 residual: print a deferred uncaught-error report (message, source
@@ -3262,9 +3366,16 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
         [OP_UNOBSERVED_END] = &&lbl_UNOBSERVED_END,
         [OP_LOOP_STALL_CHECK] = &&lbl_LOOP_STALL_CHECK,
         [OP_LOOP_CAP_CHECK] = &&lbl_LOOP_CAP_CHECK,
+        [OP_LOOP_ENTER] = &&lbl_LOOP_ENTER,
+        [OP_LOOP_STALL_NAMED] = &&lbl_LOOP_STALL_NAMED,
+        [OP_LOOP_CAP_NAMED] = &&lbl_LOOP_CAP_NAMED,
+        [OP_LOOP_ENTER_NAMED] = &&lbl_LOOP_ENTER_NAMED,
+        [OP_LOOP_EXIT_NAMED] = &&lbl_LOOP_EXIT_NAMED,
         [OP_IMPORT] = &&lbl_IMPORT, [OP_MATCH] = &&lbl_MATCH,
         [OP_LISTCOMP_BEGIN] = &&lbl_LISTCOMP_BEGIN,
         [OP_LISTCOMP_APPEND] = &&lbl_LISTCOMP_APPEND,
+        [OP_BINARY_LINE] = &&lbl_BINARY_LINE,
+        [OP_BINARY_LINE_END] = &&lbl_BINARY_LINE_END,
         [OP_LINE] = &&lbl_LINE, [OP_WIDE] = &&lbl_WIDE,
         [OP_DISPATCH] = &&lbl_DISPATCH,
         [OP_LOCAL_DOT_GET] = &&lbl_LOCAL_DOT_GET,
@@ -3288,10 +3399,21 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
                 frame->try_count--; \
                 uint8_t *_catch_ip = frame->try_handlers[frame->try_count].catch_ip; \
                 int _catch_bp = frame->try_handlers[frame->try_count].catch_bp; \
+                Env *_catch_env = frame->try_handlers[frame->try_count].env; \
                 g_unobserved_depth = \
                     frame->try_handlers[frame->try_count].unobs_depth;  /* #871 */ \
                 frame->is_try = (frame->try_count > 0); \
                 while (g_vm.sp > _catch_bp) val_decref(vm_pop()); \
+                /* An exception can cross a comprehension, catch, or loop \
+                 * lexical environment. Restore the handler's environment \
+                 * before its body runs; captured children remain alive. */ \
+                while (frame->env != _catch_env) { \
+                    Env *_inner = frame->env; \
+                    Env *_parent = _inner->parent; \
+                    env_incref(_parent); \
+                    frame->env = _parent; \
+                    env_decref(_inner); \
+                } \
                 vm_push(vm_take_error_value()); \
                 ip = _catch_ip; \
             } else if (g_exit_requested || !vm_handler_in_range(base_frame)) { \
@@ -3314,6 +3436,7 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
                 if (frame->owns_env) env_decref(frame->env); \
                 g_loop_stall_count = frame->saved_stall_count; \
                 g_loop_iterations  = frame->saved_loop_iter; \
+                g_sandbox_loop_iterations = frame->saved_sandbox_loop_iter; \
                 chunk_decref(frame->chunk); \
                 g_vm.frame_count--; \
                 frame = &g_vm.frames[g_vm.frame_count - 1]; \
@@ -3905,7 +4028,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (__builtin_expect(g_trace_hist, 0)) vm_trace_local_slot(chunk, slot);
         Env *e = frame->fn_env;
         if ((int)slot < e->count) {
-            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1]);
+            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1], 1);
         } else {
             /* #348: an out-of-range slot used to DROP the write silently
              * (the assigned variable simply never existed). Compiler-emitted
@@ -3926,7 +4049,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
         if ((int)slot < e->count) {
-            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1]);
+            vm_store_local_slot(e, (int)slot, g_vm.stack[g_vm.sp - 1], 0);
         } else {
             rt_error(EK_INTERNAL, current_line,
                      "SET_LOCAL_INTERNAL slot %d out of range (env has %d slots)",
@@ -4565,6 +4688,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             slot_decref(callee_s);
             g_loop_stall_count = 0;
             g_loop_iterations  = 0;
+            g_sandbox_loop_iterations = 0;
             if (!g_vm_multithreaded) fn_chunk->exec_count++;   /* #297: shared, JIT-only */
 
             /* JIT hook: compile lazily, run native prefix if available.
@@ -4677,6 +4801,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         /* Restore loop-stall globals saved on entry (scoped per call frame). */
         g_loop_stall_count = frame->saved_stall_count;
         g_loop_iterations  = frame->saved_loop_iter;
+        g_sandbox_loop_iterations = frame->saved_sandbox_loop_iter;
         /* #1424: the caller resumes on ITS line. The callee's OP_LINE stream
          * moved current_line, and the compiler emits no OP_LINE between a
          * CALL and the caller's next op in the same expression (the `/` in
@@ -4714,6 +4839,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         g_loop_stall_count = frame->saved_stall_count;
         g_loop_iterations  = frame->saved_loop_iter;
+        g_sandbox_loop_iterations = frame->saved_sandbox_loop_iter;
         current_line = g_vm.current_line = frame->ret_line;   /* #1424: as CASE(RETURN) */
         chunk_decref(frame->chunk);   /* frame's ref */
         g_vm.frame_count--;
@@ -4854,7 +4980,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Value *val = vm_pop(); Value *idx = vm_pop(); Value *target = vm_pop();
         if (target->type == VAL_LIST && val_is_number(idx)) {
             int i;
-            if (!vm_value_index_is_int(idx, &i)) {
+            if (!vm_subscript_index_is_int(idx, &i)) {
                 rt_error(EK_VALUE, current_line, "index must be an integer, got %g", eigs_float_arg(idx, "index"));
             } else if (vm_index_resolve(&i, target->data.list.count)) {
                 val_incref(val);
@@ -4864,7 +4990,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             }
         } else if (target->type == VAL_BUFFER && val_is_number(idx)) {
             int i;
-            if (!vm_value_index_is_int(idx, &i)) {
+            if (!vm_subscript_index_is_int(idx, &i)) {
                 rt_error(EK_VALUE, current_line, "index must be an integer, got %g", eigs_float_arg(idx, "index"));
             } else if (!vm_index_resolve(&i, target->data.buffer.count)) {
                 rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
@@ -4879,8 +5005,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 rt_error(EK_TYPE, current_line, "cannot store %s in a buffer (buffers hold numbers)",
                          val_type_name(val->type));
             }
-        } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
-            dict_set(target, idx->data.str, val);
+        } else if (target->type == VAL_DICT) {
+            const char *key = dict_assignment_key(target, idx, current_line);
+            if (key) dict_set(target, key, val);
         } else {
             rt_error(EK_TYPE, current_line, "cannot index %s for assignment", val_type_name(target->type));
         }
@@ -5310,6 +5437,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         frame->try_handlers[frame->try_count].catch_ip = ip + catch_offset;
         frame->try_handlers[frame->try_count].catch_bp = g_vm.sp;
         frame->try_handlers[frame->try_count].unobs_depth = g_unobserved_depth;  /* #871 */
+        frame->try_handlers[frame->try_count].env = frame->env;
         frame->try_count++;
         frame->is_try = 1;
         DISPATCH();
@@ -6008,11 +6136,23 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         Value *result;
         if (target->type == VAL_LIST) {
             result = make_list(n);
-            for (int i = 0; i < n; i++) {
+            /* #1722: make_list charges the sandbox allocation budget and, on
+             * refusal, raises a catchable EK_SANDBOX and CAPS capacity at its
+             * 8-slot fallback — it never returns a list sized to a refused n.
+             * Writing n slots then overflows the heap. Match the other
+             * sandbox-refused list allocators (list_reserve_one drops a
+             * refused append; builtin_list_insert_at bails after the raise,
+             * #1710): when the real capacity is short of n, make no stores.
+             * The raise is already latched, so the next DISPATCH's CHECK_ERROR
+             * halts the run and the empty result is discarded by sandbox_run's
+             * {ok:0}. (For n <= 8 capacity is always >= n, so the common path
+             * is unchanged; a successful charge gives capacity == n.) */
+            int fill = result->data.list.capacity < n ? 0 : n;
+            for (int i = 0; i < fill; i++) {
                 EigsSlot e = slot_read_owned(list_slot(target, start + i));
                 list_set_slot_owned(result, i, e);
             }
-            result->data.list.count = n;
+            result->data.list.count = fill;
         } else if (target->type == VAL_STR) {
             /* This raw copy becomes a retained program value. Charge its
              * payload before allocation; make_str_owned then transfers the
@@ -6131,73 +6271,50 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     CASE(LOOP_STALL_CHECK): {
         uint16_t exit_offset = read_u16(ip); ip += 2;
-        eigs_observe_safepoint(frame->env);   /* #660: SIGUSR1 dump at the per-iteration safepoint */
-        g_loop_iterations++;
-        int should_exit = 0;
-        if (g_unobserved_depth == 0) {
-            double dH, ent;
-            /* #861: quiet at ANY entropy — mirrors eigs_loop_stall_step
-             * (see the rationale there). The routed `converged` now owns
-             * every genuine settle; the stall is the catch-all for quiet
-             * trajectories the predicate refuses (saturated runaways,
-             * sub-deadband drift), which live at LOW entropy. */
-            if (obs_stall_trajectory(&dH, &ent)
-                && fabs(dH) < g_obs_dh_zero) {
-                (void)ent;
-                g_loop_stall_count++;
-                if (g_loop_stall_count >= 100) {
-                    g_loop_exit_reason = "stalled";
-                    should_exit = 1;
-                }
-            } else {
-                g_loop_stall_count = 0;
-            }
-        }
-        if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {   /* #772 */
-            g_loop_exit_reason = "limit";
-            g_sandbox_cap_hit = 1;
-            should_exit = 1;
-        }
-        /* Always expose iteration count */
-        loop_iter_store(frame->env, g_loop_iterations);
-        if (should_exit) {
-            Value *exit_val = make_str(g_loop_exit_reason);
-            env_set_local(frame->env, "__loop_exit__", exit_val);
-            val_decref(exit_val);
-            g_loop_stall_count = 0;
-            g_loop_iterations = 0;
-            g_loop_exit_reason = "normal";
-            ip += exit_offset;
-        }
+        if (eigs_loop_stall_step(frame->env)) ip += exit_offset;
         DISPATCH();
     }
 
     CASE(LOOP_CAP_CHECK): {
-        /* Plain-loop variant: the absolute iteration cap ONLY — NO observer
-         * stall. The compiler emits this for loops whose condition is not
-         * observer-based (no predicate), so a plain `loop while c:` terminates
-         * on its own condition and is never auto-halted by the global observer.
-         * Must stay byte-identical to LOOP_STALL_CHECK except the convergence
-         * block; both engines key off the opcode, set at compile time, so the
-         * interpreter and JIT can never disagree on the classification. */
         uint16_t exit_offset = read_u16(ip); ip += 2;
-        eigs_observe_safepoint(frame->env);   /* #660: SIGUSR1 dump at the per-iteration safepoint */
-        g_loop_iterations++;
-        int should_exit = 0;
-        if (g_sandbox_loop_max && g_loop_iterations >= g_sandbox_loop_max) {   /* #772 */
-            g_loop_exit_reason = "limit";
-            g_sandbox_cap_hit = 1;
-            should_exit = 1;
-        }
-        loop_iter_store(frame->env, g_loop_iterations);
-        if (should_exit) {
-            Value *exit_val = make_str(g_loop_exit_reason);
-            env_set_local(frame->env, "__loop_exit__", exit_val);
-            val_decref(exit_val);
-            g_loop_stall_count = 0;
-            g_loop_iterations = 0;
-            g_loop_exit_reason = "normal";
+        if (eigs_loop_cap_step(frame->env)) ip += exit_offset;
+        DISPATCH();
+    }
+
+    CASE(LOOP_ENTER): {
+        eigs_loop_enter(frame->env);
+        DISPATCH();
+    }
+
+    CASE(LOOP_STALL_NAMED): {
+        uint16_t exit_offset = read_u16(ip); ip += 2;
+        uint16_t counter_idx = read_u16(ip); ip += 2;
+        if (eigs_loop_stall_step_named(frame->env, frame, counter_idx))
             ip += exit_offset;
+        DISPATCH();
+    }
+
+    CASE(LOOP_CAP_NAMED): {
+        uint16_t exit_offset = read_u16(ip); ip += 2;
+        uint16_t counter_idx = read_u16(ip); ip += 2;
+        if (eigs_loop_cap_step_named(frame->env, frame, counter_idx))
+            ip += exit_offset;
+        DISPATCH();
+    }
+
+    CASE(LOOP_ENTER_NAMED): {
+        uint16_t counter_idx = read_u16(ip); ip += 2;
+        eigs_loop_enter_named(frame->env, frame, counter_idx);
+        DISPATCH();
+    }
+
+    CASE(LOOP_EXIT_NAMED): {
+        uint16_t counter_depth = read_u16(ip); ip += 2;
+        EigsSlot *counter = loop_counter_slot(frame, counter_depth);
+        if (counter) {
+            loop_iter_store(frame->env, loop_counter_load(counter));
+            while (g_vm.sp > frame->bp + (int)counter_depth)
+                slot_decref(g_vm.stack[--g_vm.sp]);
         }
         DISPATCH();
     }
@@ -6495,7 +6612,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * than a one-shot bit transition. ACQUIRE pairs with
          * eigs_obs_enable's store order. */
         int obs_before_module = obs_flag_load_acquire(obs_needed);
-        EigsChunk *mod_chunk = compile_ast(ast, mod_env, source);
+        EigsChunk *mod_chunk = compile_ast(ast, mod_env, source, abs_path);
         g_compile_module_boundary = saved_boundary;
         g_compile_import_toplevel = saved_import_toplevel;
         /* The override belongs to compilation, not module execution. Runtime
@@ -6623,7 +6740,26 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         DISPATCH();
     }
 
-    CASE(LINE): {
+    CASE(BINARY_LINE): {
+        g_vm.binary_prev_line = current_line;
+        g_vm.binary_prev_trace_line = g_vm_multithreaded
+            ? current_line : trace_current_line_load();
+        /* Same stamp/tape behavior as LINE; only its lifetime differs. */
+        goto vm_stamp_line;
+    }
+
+    CASE(BINARY_LINE_END): {
+        current_line = g_vm.binary_prev_line;
+        g_vm.current_line = current_line;
+        if (!g_vm_multithreaded)
+            trace_current_line_store(g_vm.binary_prev_trace_line);
+        if (__builtin_expect(g_trace_enabled, 0))
+            trace_line(g_vm.binary_prev_trace_line);
+        DISPATCH();
+    }
+
+    CASE(LINE):
+    vm_stamp_line: {
         uint32_t line = read_u32(ip); ip += 4;   /* #630: 32-bit operand */
         current_line = (int)line;
         g_vm.current_line = (int)line;
@@ -6642,51 +6778,41 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     CASE(DISPATCH): {
         /* Native dispatch: stack [table, key, arg] -> table[key](arg).
-         * Key may be an immediate-num slot (literal key) or a boxed
-         * VAL_FLOAT (key sourced from a fn return, arithmetic, variable
-         * read — DMG's per-instruction `op` path). Table and arg are
-         * heap pointers in practice (list + ctx). */
+         * Exact number extraction matches builtin_dispatch: ints retain all
+         * bits, floats satisfy N5 before the C index-range check (#1849).
+         * Table and arg are heap pointers in practice (list + ctx). */
         EigsSlot arg_s   = g_vm.stack[g_vm.sp - 1];
         EigsSlot key_s   = g_vm.stack[g_vm.sp - 2];
         EigsSlot table_s = g_vm.stack[g_vm.sp - 3];
         g_vm.sp -= 3;
 
-        double key_d;
-        if (slot_is_f64(key_s)) {
-            key_d = SLOT_F64_RAW(key_s);
-        } else if (slot_is_smi(key_s)) {
-            /* #1758: an int key is its value, when an int (the C type) holds
-             * it; the double is then exact and the index rule below takes it. */
-            int64_t kv = slot_smi_val(key_s);
-            if (kv < INT_MIN || kv > INT_MAX) {
-                slot_decref(arg_s); slot_decref(key_s); slot_decref(table_s);
-                rt_error(EK_VALUE, current_line, "dispatch key %lld is out of range",
-                         (long long)kv);
-                vm_push_slot(slot_null());
-                DISPATCH();
-            }
-            key_d = (double)kv;
-        } else if (slot_is_ptr(key_s) && slot_as_ptr(key_s)
-                   && slot_as_ptr(key_s)->type == VAL_FLOAT) {
-            key_d = VAL_F64_RAW(slot_as_ptr(key_s));
-        } else if (slot_is_ptr(key_s) && slot_as_ptr(key_s)
-                   && slot_as_ptr(key_s)->type == VAL_INT) {
-            int kv;
-            if (!vm_value_index_is_int(slot_as_ptr(key_s), &kv)) {
-                rt_error(EK_VALUE, current_line, "dispatch key %lld is out of range",
-                         (long long)VAL_I64_RAW(slot_as_ptr(key_s)));
-                slot_decref(arg_s); slot_decref(key_s); slot_decref(table_s);
-                vm_push_slot(slot_null());
-                DISPATCH();
-            }
-            key_d = (double)kv;
-        } else {
+        ValType key_type = slot_type(key_s);
+        if (key_type != VAL_FLOAT && key_type != VAL_INT) {
             slot_decref(arg_s); slot_decref(key_s); slot_decref(table_s);
             rt_error(EK_TYPE, current_line, "dispatch: key must be a number");
             vm_push_slot(slot_null());
             DISPATCH();
         }
+        EigsNum key_n = eigs_slot_number(key_s, "dispatch");
         slot_decref(key_s);
+        int64_t key_i;
+        if (key_n.is_int) {
+            key_i = key_n.value.i64;
+        } else if (!num_to_i64_exact(key_n.value.f64, &key_i)) {
+            slot_decref(arg_s); slot_decref(table_s);
+            rt_error(EK_VALUE, current_line,
+                "dispatch key must be an integer, got %g", key_n.value.f64);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
+        if (key_i < INT_MIN || key_i > INT_MAX) {
+            slot_decref(arg_s); slot_decref(table_s);
+            rt_error(EK_INDEX, current_line,
+                "dispatch key %lld out of range", (long long)key_i);
+            vm_push_slot(slot_null());
+            DISPATCH();
+        }
+        int key = (int)key_i;
 
         if (!slot_is_ptr(table_s)) {
             slot_decref(arg_s); slot_decref(table_s);
@@ -6696,15 +6822,6 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
 
         Value *table = slot_as_ptr(table_s);
-        int key;
-        if (!vm_index_is_int(key_d, &key)) {
-            slot_decref(arg_s); slot_decref(table_s);
-            rt_error(EK_VALUE, current_line,
-                "dispatch key must be an integer, got %g", key_d);
-            vm_push_slot(slot_null());
-            DISPATCH();
-        }
-
         if (table->type != VAL_LIST) {
             slot_decref(arg_s); slot_decref(table_s);
             rt_error(EK_TYPE, current_line, "dispatch: table must be a list");
@@ -6907,6 +7024,7 @@ vm_error_halt:
         if (f->owns_env) env_decref(f->env);
         g_loop_stall_count = f->saved_stall_count;
         g_loop_iterations  = f->saved_loop_iter;
+        g_sandbox_loop_iterations = f->saved_sandbox_loop_iter;
         chunk_decref(f->chunk);   /* frame's ref */
         g_vm.frame_count--;
     }

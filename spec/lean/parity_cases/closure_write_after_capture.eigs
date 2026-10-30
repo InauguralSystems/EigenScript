@@ -1,0 +1,7 @@
+define outer as:
+    local value is 1
+    define read as:
+        return value
+    value is 2
+    return read of null
+print of (outer of null)

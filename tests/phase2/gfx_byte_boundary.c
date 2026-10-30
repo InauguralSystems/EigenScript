@@ -134,11 +134,10 @@ static void gfx_byte_exercise(int ppu, int strict, const GfxByteCase *c,
     gfx_byte_clear_error();
 }
 
-int main(void) {
-    EigsState *st = eigs_open();
-    gfx_byte_check(st != NULL, "setup", 1, "state", "eigs_open");
-    if (!st) goto summary;
-    g_try_depth = 1;
+/* Expected data-boundary raises run inside a real VM try (#1808/#2098).
+ * Cleanup finishes inside the callback; the state outlives VM execution. */
+static Value *phase2_reader_probe(Value *arg) {
+    (void)arg;
     g_strict = 1;
     Value *pixels = NULL, *memory = NULL, *frame = NULL;
     Value *gfx_args = NULL, *ppu_args = NULL;
@@ -196,7 +195,22 @@ cleanup:
     val_decref(memory);
     val_decref(frame);
     gfx_byte_clear_error();
-    g_try_depth = 0;
+    return make_bool(1);
+}
+
+int main(void) {
+    EigsState *st = eigs_open();
+    gfx_byte_check(st != NULL, "setup", 1, "state", "eigs_open");
+    if (!st) goto summary;
+    Value *probe = make_builtin(phase2_reader_probe);
+    eigs_set_global("phase2_reader_probe", probe);
+    val_decref(probe);
+    Value *result = eigs_eval_string("try:\n    phase2_reader_probe of null\ncatch e:\n    false\n");
+    if (!result || result->type != VAL_BOOL || !result->data.boolean || g_has_error) {
+        fputs("phase2-gfx-byte-test: FAIL VM probe execution\n", stderr);
+        gfx_byte_failures++;
+    }
+    val_decref(result);
     eigs_close(st);
 summary:
     printf("phase2-gfx-byte-test: %s checks=%d failures=%d\n",

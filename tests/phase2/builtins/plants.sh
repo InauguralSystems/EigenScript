@@ -71,7 +71,6 @@ mutate() {
     P20) sub "$B/rowmeta.tsv" 'abs\tR1.2/R1.3\trelease' 'abs\tR1.2/R1.3\tgpu' ;;
     P21) sub "$B/cases.tsv" 'gfx_poll\tgfx_poll\tevents' 'gfx_poll\tgfx_poll\tbogus' ;;
     P22) sub "$B/../observation_hooks.c" 'hook_is("events")' 'hook_is("evnts")' ;;
-    P23) rm "$B/builtins/_stdin/hi" ;;
     P24) : > "$B/builtins/notes.txt" ;;
     P25) sub "$B/rowmeta.tsv" '\nlen\t-\trelease' '\nlen\tmain\trelease' ;;
     P26) rm "$B/builtins/_profiles/zlib.eigs" ;;
@@ -87,9 +86,10 @@ mutate() {
 import sys
 p = sys.argv[1]
 s = open(p).read()
-old = 'f45bde7acd9b053b3379e15b35c9e06f2ba11243437f5a5926b62aad588d2118'
+pin = 'eee02d9e7cd24809addb54e3c2df45f401134d5c279a7971a87fea26848781bc'
+old = '| `tests/phase2/builtins/builtins/min.branch` | `' + pin + '` | R1.7-D6 |'
 assert s.count(old) == 1
-open(p, 'w').write(s.replace(old, '0' * 64))
+open(p, 'w').write(s.replace(old, old.replace(pin, '0' * 64)))
 EOF
         ;;
     F3) git -C "$T" show 0a73adb0612f8612d75393891ae2ba2e1c803663:tests/phase2/builtins/builtins/min.branch > "$B/builtins/min.branch" ;;
@@ -98,7 +98,6 @@ EOF
     R2|R3) sub "$B/run_probes.sh" '(LD_PRELOAD="$SHIM" ' '(' ;;
     R4) sub "$B/builtins/recv_timeout.eigs" 'send of [c, 7]\n' '' ;;
     R5) : ;;
-    R6) rm "$B/builtins/_stdin/hi" ;;
     R7|R8) sub "$B/run_probes.sh" 'R16_HOOK="$hook"' 'R16_HOOK="$hook" R16_PLANT=silence' ;;
     *) return 1 ;;
     esac
@@ -114,12 +113,12 @@ check() {
     R3) runner audio_stream_push >/dev/null; table ;;
     R4) runner recv_timeout ;;
     R5) (cd "$B" && PRE_BIN="$PRE" PRE_BIN_ZLIB="$PRE" TAG_BIN_ZLIB="$PRE" TMPDIR="$WORK" timeout 120 bash run_probes.sh inflate 2>&1) ;;
-    R6) runner proc_read_buf.hi ;;
     R7|R8) c=audio_stream_push; [ "$1" = R8 ] && c=audio_play
         runner "$c" >/dev/null
         cmp -s "$B/builtins/$c.pre" "$HERE/builtins/$c.pre" || echo "FAIL: $c.pre differs from the recorded .pre: $(grep -E 'SDL_QueueAudio|mixed' "$B/builtins/$c.pre" | tr '\n' ' ')" ;;
     esac
 }
+# S10-D2 retired P23/R6 with the sole stdin case; remaining IDs stay fixed.
 # id | the check that must go red | the FAIL line it must print (regex)
 PLANTS='P1|section-6 vs inventory membership|in the inventory, not in section 6: abs$
 P2|section-6 vs inventory fields|vs inventory .* for len$
@@ -143,7 +142,6 @@ P19|rowmeta vs table membership|in section 6, not in rowmeta\.tsv: abs$
 P20|profile vocabulary|rowmeta\.tsv: abs has profile .gpu.
 P21|cases hooks vs shim hooks|in the cases. hooks, not in the shim.s hooks: bogus$
 P22|shim hooks vs cases hooks|in the cases. hooks, not in the shim.s hooks: events$
-P23|stdin fixtures vs cases|in the cases. stdin, not in builtins/_stdin: hi$
 P24|stray file in builtins/|builtins/notes\.txt is neither a case file nor a fixture dir
 P25|closed_in only on guarded rows|len: closed_in .main. on a row the vacuity guard does not cover
 P26|profile witnesses vs profiles|in the non-release profiles, not in builtins/_profiles: zlib$
@@ -155,15 +153,14 @@ G2|builtins.tsv stale row|in builtins\.tsv, not in section 6: p2stale$
 G3|builtins.tsv class edit|len: builtins\.tsv class .other. != derived .int-preserving.
 G4|integral-float success must be a result|random_hex: integral-float success stdout line 2 is an error or non-result
 F1|frozen bar rejects an unlisted edit|len\.branch: unlisted frozen bar difference
-F2|frozen bar rejects a stale SHA|min\.branch: stale amendment R1\.6b-D2: SHA-256=0000
-F3|frozen bar rejects a restored pin|min\.branch: stale amendment R1\.6b-D2:
+F2|frozen bar rejects a stale SHA|min\.branch: stale amendment R1\.7-D6: SHA-256=0000
+F3|frozen bar rejects a restored pin|min\.branch: stale amendment R1\.7-D6:
 F4|frozen bar rejects an edited amended line|sign_extend\.branch: stale amendment R1\.6b-D1:
 R1|runner: empty stdout with rc 0|FAIL: abs\.pre printed nothing with rc 0
 R2|runner: hook case without the shim|FAIL: audio_stream_push\.pre ran without its hook pcm
 R3|table: hook case recorded without the shim|audio_stream_push\.pre holds \[\], not one .hook-loaded pcm. line
 R4|runner: a probe that blocks (rc 124)|FAIL: recv_timeout\.pre timed out \(rc 124\)
 R5|runner: profile witness refuses a release binary|FAIL: .* is not a zlib build
-R6|runner: missing stdin fixture|FAIL: proc_read_buf\.hi: no stdin fixture
 R7|pcm hook observes the delivered PCM (silence)|FAIL: audio_stream_push\.pre differs from the recorded \.pre: SDL_QueueAudio 3: 0 0 0
 R8|mix hook observes the mixed PCM (silence)|FAIL: audio_play\.pre differs from the recorded \.pre: \["mixed", false\]'
 fresh() {
@@ -181,7 +178,7 @@ fresh() {
 bad=0
 fresh || exit 2; out=$(table); rc=$?
 if [ $rc -ne 0 ] || grep -q '^FAIL' <<<"$out"; then echo "BASELINE make_table not clean (rc $rc): $out"; bad=1; else echo "BASELINE make_table clean: $(grep '^guard:' <<<"$out")"; fi
-fresh || exit 2; out=$(runner abs audio_stream_push gfx_poll.empty proc_read_buf.hi inflate); rc=$?
+fresh || exit 2; out=$(runner abs audio_stream_push gfx_poll.empty read_bytes_buf inflate); rc=$?
 if [ $rc -ne 0 ] || grep -q '^FAIL' <<<"$out"; then echo "BASELINE runner not clean (rc $rc): $out"; bad=1; else echo "BASELINE runner clean: $(tail -1 <<<"$out")"; fi
 n=0; red=0
 while IFS='|' read -r id what want; do

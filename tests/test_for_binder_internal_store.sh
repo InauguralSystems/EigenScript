@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+echo "PLAN: 4"
 # #1384: compiler-only for-binder save/restore stores are invisible to users.
 
 PASS=0

@@ -25,9 +25,10 @@ static Value* model_load_status_json(const char *path) {
     strbuf_init(&sb);
     strbuf_append_fmt(&sb,
         "{\"status\": \"loaded\", \"vocab_size\": %d, \"n_layers\": %d, "
-        "\"d_model\": %d, \"d_ff\": %d, \"path\": ",
+        "\"d_model\": %d, \"d_ff\": %d, \"max_seq_len\": %d, \"path\": ",
         g_model.config.vocab_size, g_model.config.n_layers,
-        g_model.config.d_model, g_model.config.d_ff);
+        g_model.config.d_model, g_model.config.d_ff,
+        g_model.config.max_seq_len);
     eigs_json_escape_string(&sb, path);
     strbuf_append_char(&sb, '}');
     Value *result = make_str(sb.data);
@@ -50,6 +51,45 @@ static void replay_model_load_banner(Value *status) {
     if (path && path->type == VAL_STR) {
         printf("Loading model from: %s\n", path->data.str);
         fflush(stdout);
+    }
+    /* Keep the recorded configuration available for argument validation.
+     * Replay still does not read weights or run inference, but model builtins
+     * must reject the same bad token/context arguments before taking their
+     * own tape records. */
+    EIGS_VIEW(vocab_view);
+    EIGS_VIEW(layers_view);
+    EIGS_VIEW(d_model_view);
+    EIGS_VIEW(d_ff_view);
+    Value *vocab = dict_get_view(root, "vocab_size", &vocab_view);
+    Value *layers = dict_get_view(root, "n_layers", &layers_view);
+    Value *d_model = dict_get_view(root, "d_model", &d_model_view);
+    Value *d_ff = dict_get_view(root, "d_ff", &d_ff_view);
+    if (vocab && val_is_number(vocab) && layers && val_is_number(layers) &&
+        d_model && val_is_number(d_model) && d_ff && val_is_number(d_ff)) {
+        int64_t vs, nl, dm, df, ms = INT_MAX;
+        /* The status carries dimensions, not continuous values. Apply N5
+         * before the C conversion, with the loader's supported bounds. Do
+         * not install a partially decoded configuration after a refusal. */
+        int valid = eigs_int_arg_range(vocab, 1, VOCAB_SIZE, &vs,
+                                      "eigen_model_load replay vocab_size") &&
+                    eigs_int_arg_range(layers, 1, MAX_LAYERS, &nl,
+                                      "eigen_model_load replay n_layers") &&
+                    eigs_int_arg_range(d_model, 1, MAX_D_MODEL, &dm,
+                                      "eigen_model_load replay d_model") &&
+                    eigs_int_arg_range(d_ff, 1, MAX_D_FF, &df,
+                                      "eigen_model_load replay d_ff");
+        /* max_seq_len is added to statuses below. Older statuses still carry
+         * the vocabulary; defer their context decision to the taped outcome. */
+        EIGS_VIEW(max_seq_view);
+        Value *max_seq = dict_get_view(root, "max_seq_len", &max_seq_view);
+        if (valid && max_seq && val_is_number(max_seq))
+            valid = eigs_int_arg_range(max_seq, 1, MAX_SEQ_LEN, &ms,
+                                      "eigen_model_load replay max_seq_len");
+        if (valid) {
+            ModelConfig cfg = { (int)vs, (int)dm, (int)nl, (int)df, (int)ms };
+            g_model.config = cfg;
+            g_model.loaded = 1;
+        }
     }
     val_decref(root);
 }

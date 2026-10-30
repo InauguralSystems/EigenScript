@@ -192,6 +192,7 @@ WRAPPERS = {
     'observer_entropy_now': 'observer: writes an entropy, not the number; its payload read is the site',
     'obs_slot_num': 'observer: the numeric channel of a slot (R1.1); its payload read is the site',
     'numerical_loss': 'tensor: reads the loss callback result once; that read is the site',
+    'gradient_perturb': 'tensor: returns the normalized float actually stored by list_set_f64; list_get_f64 is the counted payload read',
     'tensor_flatten_recursive': 'tensor: bulk element flattener into a double array; the per-element read is the site',
     'tensor_to_flat': 'tensor: bulk element flattener into a double array; the per-element read is the site',
 }
@@ -254,7 +255,9 @@ def source_files(src):
         if ls.returncode != 0:
             raise SystemExit('phase2-inventory: FAIL: git ls-files in %s: %s'
                              % (src, ls.stderr.decode('utf-8', 'replace').strip()))
-        names = [n for n in ls.stdout.decode('utf-8').split('\0') if n and '/' not in n]
+        # An in-progress merge can list one path for each unmerged index
+        # stage. The population is source paths, not index entries.
+        names = {n for n in ls.stdout.decode('utf-8').split('\0') if n and '/' not in n}
         return sorted(os.path.join(src, n) for n in names if os.path.isfile(os.path.join(src, n)))
     return sorted(glob.glob(os.path.join(src, '*.c')) + glob.glob(os.path.join(src, '*.h')))
 
@@ -614,6 +617,28 @@ def executor_arms(stripped_by_file, scope_by_file):
     """opcode -> set of roles that have an arm for it; and each dispatcher
     arm's opcode chain, keyed by its scope (`fn/sub`)."""
     arms, chains = {}, {}
+    # A named case that only returns from the void scanner is an explicit
+    # refusal, not an admitted opcode. Derive this narrow shape from its body:
+    # loops now have named refusal arms after operand widths moved to the
+    # shared table (#1425/#1906). Any nontrivial arm stays in the comparison,
+    # so an unreviewed implementation cannot disappear behind a broad filter.
+    refused_leaf_ops = set()
+    for rel, stripped in stripped_by_file.items():
+        scope = scope_by_file[rel]
+        bodies = {}
+        before_default = True
+        for ln, line in enumerate(stripped.split('\n'), 1):
+            fn, _, sub = scope[ln].partition('/')
+            if fn != 'chunk_scan_leaf_accessor':
+                continue
+            if re.match(r'\s*default\s*:', line):
+                before_default = False
+            if sub and before_default:
+                bodies.setdefault(sub, []).append(line)
+        for sub, lines in bodies.items():
+            body = re.sub(r'\bcase\s+OP_\w+\s*:', '', '\n'.join(lines))
+            if body.strip() == 'return;':
+                refused_leaf_ops.update(sub.split('|'))
     # a macro whose body spells CASE(<its first parameter>) generates an
     # interpreter arm at each invocation (NUM_BINOP(SUB, ...), NUM_CMP(LT, ...))
     defs = []
@@ -639,6 +664,8 @@ def executor_arms(stripped_by_file, scope_by_file):
                 if mg:
                     arms.setdefault('OP_' + mg.group(2), set()).add('interp')
             if fn not in DISPATCHERS:
+                continue
+            if fn == 'chunk_scan_leaf_accessor' and sub and set(sub.split('|')) <= refused_leaf_ops:
                 continue
             if DISPATCHERS[fn] == 'IF':
                 ops = re.findall(r'\bop\s*==\s*(OP_\w+)', line)

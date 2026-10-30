@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #if !EIGENSCRIPT_FREESTANDING
 /* NB: EIGENSCRIPT_FREESTANDING is always DEFINED (eigenscript.h defaults it to
  * 0), so this must test its VALUE. `#ifndef` here silently excluded both
@@ -54,6 +55,7 @@ typedef struct {
     int  try_depth_at_entry; /* c->try_depth when the loop opened — break/continue
                               * must emit one OP_TRY_END per try block they jump
                               * out of, or the handler stays registered (#726) */
+    int  lexical_depth_at_entry;
 } LoopCtx;
 
 /* Dynamic set of name pointers used for escape analysis & module-name tracking.
@@ -112,6 +114,11 @@ typedef struct Compiler {
     const char      **lev_names;
     int               lev_count;
     int               lev_cap;
+    const char      **lex_names;   /* active comprehension/catch binders */
+    int              *lex_depths;  /* child-environment depth each opened */
+    int               lex_count;
+    int               lex_cap;
+    int               lexical_depth;
     NameSet          *module_names; /* root-compiler-owned: names defined at module scope */
     NameSet           module_slot_names; /* root-compiler-owned: names promoted to module slots */
     ASTNode          *root_ast;     /* root-compiler-owned: full AST for escape analysis */
@@ -119,6 +126,9 @@ typedef struct Compiler {
                                      * stamp the line". Reset at every basic-block boundary
                                      * (patch_jump targets, emit_loop, loop_start capture,
                                      * after CALL/DISPATCH/RETURN, fn entry). */
+    int               req_lo, req_hi; /* #1425: min/max line passed to emit_line (requested,
+                                     * deduped or not) since compile_operand_then_op opened
+                                     * its window; meaningful only inside that window. */
     int               dispatch_rebound; /* #459, root-computed and copied to fn
                                      * compilers: the unit binds `dispatch`
                                      * somewhere (any scope) or references
@@ -230,6 +240,25 @@ static void lev_push(Compiler *c, const char *name) {
     c->lev_names[c->lev_count++] = name;
 }
 
+static int lexical_has(const Compiler *c, const char *name) {
+    for (int i = c->lex_count - 1; i >= 0; i--)
+        if (strcmp(c->lex_names[i], name) == 0) return 1;
+    return 0;
+}
+
+static void lexical_push(Compiler *c, const char *name) {
+    if (c->lex_count == c->lex_cap) {
+        c->lex_cap = c->lex_cap ? c->lex_cap * 2 : 4;
+        c->lex_names = xrealloc(c->lex_names,
+                                (size_t)c->lex_cap * sizeof(const char *));
+        c->lex_depths = xrealloc(c->lex_depths,
+                                 (size_t)c->lex_cap * sizeof(int));
+    }
+    c->lex_names[c->lex_count] = name;
+    c->lex_depths[c->lex_count] = c->lexical_depth;
+    c->lex_count++;
+}
+
 /* ---- Forward declarations ---- */
 static int for_loop_reads_observer(ASTNode *node);   /* #1062, defined after obs_ast_scan */
 static void compile_node(Compiler *c, ASTNode *node);
@@ -249,6 +278,7 @@ static LoopCtx *loop_push(Compiler *c) {
     LoopCtx *lp = xcalloc(1, sizeof(LoopCtx));
     lp->try_depth_at_entry = c->try_depth;
     lp->unobs_depth_at_entry = c->unobs_depth;
+    lp->lexical_depth_at_entry = c->lexical_depth;
     c->loops[c->loop_depth++] = lp;
     return lp;
 }
@@ -391,13 +421,18 @@ static int op_stack_effect(uint8_t op8) {
         return 0;
     /* Loop guards: exit-jump only, no stack change. (#737: these two fell
      * through the old default arm — right answer, by accident.) */
-    case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK:
+    case OP_LOOP_STALL_CHECK: case OP_LOOP_CAP_CHECK: case OP_LOOP_ENTER:
+    case OP_LOOP_STALL_NAMED: case OP_LOOP_CAP_NAMED:
         return 0;
+    case OP_LOOP_ENTER_NAMED:
+        return 1;
+    case OP_LOOP_EXIT_NAMED:
+        return -1;
     /* Observer blocks: no stack change */
     case OP_UNOBSERVED_BEGIN: case OP_UNOBSERVED_END:
         return 0;
     /* Line: no stack change */
-    case OP_LINE:
+    case OP_LINE: case OP_BINARY_LINE: case OP_BINARY_LINE_END:
         return 0;
     /* Break/continue: no stack change (compiler emits as jumps) */
     case OP_BREAK: case OP_CONTINUE:
@@ -536,6 +571,8 @@ static int capture_loop_start(Compiler *c) {
  * parent's line). Emit only when the line changes; reset at every
  * basic-block boundary so we never *skip* a stamp the runtime needs. */
 static void emit_line(Compiler *c, int line) {
+    if (line < c->req_lo) c->req_lo = line;   /* #1425: see compile_operand_then_op */
+    if (line > c->req_hi) c->req_hi = line;
     if (c->last_line == line) return;
     emit_op_u32(c, OP_LINE, (uint32_t)line, line);   /* #630: 32-bit — was (uint16_t), wrapped past line 65535 */
     c->last_line = line;
@@ -549,6 +586,27 @@ static void emit_line(Compiler *c, int line) {
  * known, so a one-line call-valued assignment gains one OP_LINE. */
 static void restamp_line(Compiler *c, int line) {
     emit_line(c, line);   /* emit_line's own dedup is exactly the test */
+}
+
+/* #1425: scope the operator line to the binary instruction. Saving the
+ * runtime line, rather than guessing from last_line, preserves whichever
+ * short-circuit/conditional operand path executed. Calls also invalidate
+ * last_line. Only a differing stamp needs the scope; one-line bytecode stays
+ * identical. The markers surround one non-calling instruction, so scopes
+ * cannot nest or suspend. An error unwinds before BINARY_LINE_END and keeps
+ * the operator line for its diagnostic; success restores both line caches. */
+static void compile_operand_then_op(Compiler *c, ASTNode *rhs, uint8_t opc, int op_line) {
+    int lo = c->req_lo, hi = c->req_hi;
+    c->req_lo = INT_MAX; c->req_hi = INT_MIN;
+    compile_node(c, rhs);
+    int spans = c->req_lo != op_line || c->req_hi != op_line;
+    if (c->req_lo > lo) c->req_lo = lo;
+    if (c->req_hi < hi) c->req_hi = hi;
+    if (!opc) return;
+    int scope = spans && c->last_line != op_line;
+    if (scope) emit_op_u32(c, OP_BINARY_LINE, (uint32_t)op_line, op_line);
+    emit(c, opc, op_line);
+    if (scope) emit(c, OP_BINARY_LINE_END, op_line);
 }
 
 /* ---- Constant helpers ---- */
@@ -613,6 +671,7 @@ static int literal_index_u16(const ASTNode *node, int *out) {
 /* ---- Local variable tracking ---- */
 
 static int resolve_local(Compiler *c, const char *name, uint32_t hash) {
+    if (lexical_has(c, name)) return -1;
     for (int i = c->local_count - 1; i >= 0; i--) {
         if (c->locals[i].retired || c->locals[i].hidden) continue;
         if (c->locals[i].hash == hash && strcmp(c->locals[i].name, name) == 0)
@@ -1225,8 +1284,8 @@ static int ast_has_closure(ASTNode *node) {
  * body creates NO binding that lives in the loop env, because such a binding
  * would persist across iterations instead of being fresh each pass. A binding
  * lands in the loop env when the body assigns a name not already bound in an
- * enclosing scope (a loop-local), or via `local`, comprehension-var leakage,
- * a catch error name, a list-pattern, an import, or a closure. This routine
+ * enclosing scope (a loop-local), or via `local`, a lexical comprehension or
+ * catch binder, a list-pattern, an import, or a closure. This routine
  * returns 1 only when it can PROVE the subtree creates none of those: every
  * plain assignment targets a name in `bound` (unconditionally bound before the
  * loop) or an existing global/builtin, and no hard-to-prove binder appears.
@@ -1621,10 +1680,10 @@ static int by_name_binder(ASTNode *node, int in_loop_env, const char **name) {
          * them directly after using this return value as their classification. */
         return BINDER_NO_SLOT;
     case AST_ASSIGN:
-        if (node->data.assign.local_only && in_loop_env) {
-            *name = node->data.assign.name;
-            return BINDER_NO_SLOT;
-        }
+        /* A local declaration in a for body is not itself a by-name binder.
+         * The emitter routes it through an active loop environment when one
+         * exists; otherwise it remains an ordinary function slot. */
+        (void)in_loop_env;
         return 0;
     default: return 0;
     }
@@ -1673,13 +1732,11 @@ static void collect_module_name_node(ASTNode *node, NameSet *out,
                                      int in_loop_env) {
     (void)in_loop_env;
     /* Preserve the established module-name inventory.  A function definition
-     * and catch binder are module-visible names; import/comprehension binders
-     * are merely no-slot storage constraints and must not change the target of
-     * a write in a nested function. */
+     * is module-visible; lexical catch/comprehension binders are merely
+     * no-slot storage constraints and must not change a nested function's
+     * write target. */
     if (node->type == AST_FUNC)
         name_set_add(out, node->data.func.name);
-    else if (node->type == AST_TRY && node->data.trycatch.err_name)
-        name_set_add(out, node->data.trycatch.err_name);
     if (node->type == AST_ASSIGN)
         name_set_add(out, node->data.assign.name);
     else if (node->type == AST_LIST_PATTERN_ASSIGN)
@@ -1857,6 +1914,35 @@ static int name_in_enclosing(Compiler *c, const char *name) {
     return 0;
 }
 
+typedef struct {
+    uint8_t set_op;
+    uint16_t set_arg;
+    uint8_t obs_op;
+    uint16_t obs_arg;
+} UserLocalStore;
+
+/* Choose the ONE bytecode route for a user-visible write to a function/module
+ * slot.  Interrogated bindings live on the name path because that store owns
+ * their assignment counter; ordinary bindings retain the slot fast path.
+ * Compiler bookkeeping uses OP_SET_LOCAL_INTERNAL directly and deliberately
+ * does not come through here. */
+static UserLocalStore user_local_store(Compiler *c, const char *name, int slot) {
+    UserLocalStore route;
+    if (name_set_has(&c->interrogated, name)) {
+        int idx = add_string_constant(c, name);
+        route.set_op = OP_SET_FN_NAME_LOCAL;
+        route.set_arg = (uint16_t)idx;
+        route.obs_op = OP_OBSERVE_ASSIGN;
+        route.obs_arg = (uint16_t)idx;
+    } else {
+        route.set_op = OP_SET_LOCAL;
+        route.set_arg = (uint16_t)slot;
+        route.obs_op = OP_OBSERVE_ASSIGN_LOCAL;
+        route.obs_arg = (uint16_t)slot;
+    }
+    return route;
+}
+
 /* Emit OBSERVE + SET ops for an assignment whose value is already on TOS.
  * Mirrors the AST_ASSIGN body so list-pattern destructuring (which leaves
  * each element on TOS via OP_DESTRUCTURE_UNPACK) can reuse the same
@@ -1873,8 +1959,15 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
     if (c->enclosing) {
         int slot = resolve_local(c, name, h);
         if (slot >= 0) {
-            set_op = OP_SET_LOCAL; set_arg = (uint16_t)slot;
-            obs_op = OP_OBSERVE_ASSIGN_LOCAL; obs_arg = (uint16_t)slot;
+            UserLocalStore route = user_local_store(c, name, slot);
+            set_op = route.set_op; set_arg = route.set_arg;
+            obs_op = route.obs_op; obs_arg = route.obs_arg;
+        } else if (lexical_has(c, name)) {
+            /* An active lexical binder shadows slots and function-env names.
+             * Update (and observe) the nearest child-env binding. */
+            int idx = add_string_constant(c, name);
+            set_op = OP_SET_NAME; set_arg = (uint16_t)idx;
+            obs_op = OP_OBSERVE_ASSIGN; obs_arg = (uint16_t)idx;
         } else if (lev_has(c, name)) {
             /* #1074: the name is this function's active `for` binder in a
              * loop env -- write where the body reads. */
@@ -1903,8 +1996,9 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
             if (local_eligible) {
                 int new_slot = env_bound ? -1 : add_local(c, name, h);
                 if (!env_bound && new_slot >= 0) {
-                    set_op = OP_SET_LOCAL; set_arg = (uint16_t)new_slot;
-                    obs_op = OP_OBSERVE_ASSIGN_LOCAL; obs_arg = (uint16_t)new_slot;
+                    UserLocalStore route = user_local_store(c, name, new_slot);
+                    set_op = route.set_op; set_arg = route.set_arg;
+                    obs_op = route.obs_op; obs_arg = route.obs_arg;
                 } else {
                     int idx = add_string_constant(c, name);
                     set_op = OP_SET_FN_NAME_LOCAL; set_arg = (uint16_t)idx;
@@ -1925,8 +2019,9 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
         if (name_set_has(&c->module_slot_names, name)) {
             int slot = resolve_local(c, name, h);
             if (slot >= 0) {
-                set_op = OP_SET_LOCAL; set_arg = (uint16_t)slot;
-                obs_op = OP_OBSERVE_ASSIGN_LOCAL; obs_arg = (uint16_t)slot;
+                UserLocalStore route = user_local_store(c, name, slot);
+                set_op = route.set_op; set_arg = route.set_arg;
+                obs_op = route.obs_op; obs_arg = route.obs_arg;
                 picked = 1;
             }
         }
@@ -1939,7 +2034,9 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
              * doesn't set g_compile_import_toplevel, so its top-level
              * writes keep walking the chain into the caller's scope,
              * per its documented "current scope" contract. */
-            if (local_only) {
+            if (lexical_has(c, name)) {
+                set_op = OP_SET_NAME; set_arg = (uint16_t)idx;
+            } else if (local_only) {
                 set_op = OP_SET_NAME_LOCAL; set_arg = (uint16_t)idx;
             } else if (lev_has(c, name)) {
                 /* An outer loop's binder may be written inside an inner
@@ -2221,11 +2318,16 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             patch_jump(c, jump);
             break;
         }
-        /* Normal binary op */
+        /* Normal binary op. An f-string's `+` (lexer-synthesized) keeps
+         * the old stamping: #1425 decided written operators only. */
         compile_node(c, node->data.binop.left);
-        compile_node(c, node->data.binop.right);
         uint8_t opc = binop_to_opcode(op);
-        if (opc) emit(c, opc, node->line);
+        if (node->data.binop.synth) {
+            compile_node(c, node->data.binop.right);
+            if (opc) emit(c, opc, node->line);
+        } else {
+            compile_operand_then_op(c, node->data.binop.right, opc, node->line);
+        }
         break;
     }
 
@@ -2286,10 +2388,34 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         lp->scope_depth = c->scope_depth;
         lp->has_fresh_env = 0; /* while-loops don't allocate per-iter envs */
 
-        int loop_start = capture_loop_start(c);
-        lp->continue_target = loop_start;
+        /* Entry, rather than exit, also covers zero-iteration loops.  If an
+         * inner loop completes, its count remains the most recently completed
+         * loop visible inside the outer body (#1906). */
+        /* Keep the counter in this activation's operand-stack window.  Unlike
+         * an environment hidden local this cannot collide with an eval'd
+         * chunk, consume MAX_LOCALS, or accumulate bindings in a shared env. */
+        int counter_depth = c->stack_depth;
+        emit_op_u16(c, OP_LOOP_ENTER_NAMED, (uint16_t)counter_depth, node->line);
 
         int depth_at_loop = c->stack_depth;
+
+        /* Every path which completes an iteration meets at this one guard:
+         * body fallthrough reaches the back edge below, `continue` emits the
+         * same back edge, and JIT/OSR execute that bytecode edge rather than
+         * manufacturing a second counter update.  Jump over the guard on
+         * entry: no iteration has completed before the first condition. */
+        int first_condition = emit_jump(c, OP_JUMP, node->line);
+        int iteration_end = capture_loop_start(c);
+        lp->continue_target = iteration_end;
+
+        /* Observer stall+cap for observer-based conditions, cap-only for
+         * plain loops (opt-in halting; see cond_is_observer_based). */
+        int stall_op = cond_is_observer_based(node->data.loop.cond)
+                           ? OP_LOOP_STALL_NAMED : OP_LOOP_CAP_NAMED;
+        int stall_jump = emit_jump(c, stall_op, node->line);
+        chunk_emit_u16(c->chunk, (uint16_t)counter_depth, node->line);
+
+        patch_jump(c, first_condition);
         compile_node(c, node->data.loop.cond);
         int exit_jump = emit_jump(c, OP_JUMP_IF_FALSE, node->line);
         /* condition popped by JUMP_IF_FALSE */
@@ -2297,15 +2423,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         compile_block(c, node->data.loop.body, node->data.loop.body_count);
         emit(c, OP_POP, node->line); /* discard body result before next iteration */
 
-        /* Loop check — observer stall+cap for observer-based conditions,
-         * cap-only for plain loops (opt-in halting; see cond_is_observer_based). */
-        int stall_op = cond_is_observer_based(node->data.loop.cond)
-                           ? OP_LOOP_STALL_CHECK : OP_LOOP_CAP_CHECK;
-        int stall_jump = emit_jump(c, stall_op, node->line);
-
-        /* Reset depth to loop start for back-edge */
+        /* Reset depth for the shared iteration-end back edge. */
         c->stack_depth = depth_at_loop;
-        emit_loop(c, loop_start, node->line);
+        emit_loop(c, iteration_end, node->line);
 
         /* Exit path: condition was false or stall detected.
          * Set __loop_exit__ and __loop_iterations__ env vars.
@@ -2321,7 +2441,18 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             emit_op_u16(c, OP_SET_NAME_LOCAL, (uint16_t)exit_idx, node->line);
             emit(c, OP_POP, node->line);
         }
-        patch_jump(c, stall_jump);
+        /* The counter operand extends the guard two bytes past emit_jump's
+         * ordinary shape, so its forward offset is based on five bytes. */
+        {
+            int jump = c->chunk->code_len - stall_jump - 4;
+            if (jump > 0xFFFF) {
+                fprintf(stderr, "Bytecode jump too large at offset %d\n", stall_jump);
+                g_parse_errors++;
+                jump = 0;
+            }
+            c->chunk->code[stall_jump] = (uint8_t)(jump & 0xff);
+            c->chunk->code[stall_jump + 1] = (uint8_t)((jump >> 8) & 0xff);
+        }
         c->stack_depth = depth_at_loop;
 
         /* Patch break jumps to land BEFORE OP_NULL so the break path also
@@ -2330,6 +2461,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         for (int i = 0; i < lp->break_count; i++)
             patch_jump(c, lp->break_jumps[i]);
         loop_pop(c);
+
+        emit_op_u16(c, OP_LOOP_EXIT_NAMED, (uint16_t)counter_depth, node->line);
 
         emit(c, OP_NULL, node->line); /* loop result */
         break;
@@ -2488,7 +2621,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             /* Bind loop var to a function-env slot. SET_LOCAL leaves the
              * value on the stack (matching SET_NAME_LOCAL's convention),
              * so the POP below still applies. */
-            emit_op_u16(c, OP_SET_LOCAL, (uint16_t)loop_var_slot, node->line);
+            UserLocalStore route = user_local_store(c, loop_var, loop_var_slot);
+            emit_op_u16(c, route.set_op, route.set_arg, node->line);
             emit(c, OP_POP, node->line);
         } else if (can_persist_env) {
             /* Reuse the loop env created once above. Clear tier: reset its
@@ -2583,6 +2717,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
              * predicate answered about a frozen trajectory. */
             for (int u = c->unobs_depth; u > lp->unobs_depth_at_entry; u--)
                 emit(c, OP_UNOBSERVED_END, node->line);
+            for (int l = c->lexical_depth; l > lp->lexical_depth_at_entry; l--)
+                emit(c, OP_LOOP_ENV_END, node->line);
             /* Clean up loop env before jumping out, but ONLY if the loop allocated
              * a per-iteration env. While-loops don't — emitting OP_LOOP_ENV_END
              * there would free the surrounding env (often the global one). */
@@ -2624,6 +2760,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
              * predicate answered about a frozen trajectory. */
             for (int u = c->unobs_depth; u > lp->unobs_depth_at_entry; u--)
                 emit(c, OP_UNOBSERVED_END, node->line);
+            for (int l = c->lexical_depth; l > lp->lexical_depth_at_entry; l--)
+                emit(c, OP_LOOP_ENV_END, node->line);
             /* End this iteration's env before jumping back, exactly as break
              * does below — the back-edge target sits BEFORE the per-iteration
              * OP_LOOP_ENV_FRESH, so without this the env is never torn down:
@@ -2697,8 +2835,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         }
 
         /* Default-param prologue: for each trailing param with a default,
-         * emit OP_DEFAULT_PARAM <slot> <skip>; <default expr>; OP_SET_LOCAL;
-         * OP_POP. Skip target is just past OP_POP. The opcode reads
+         * emit OP_DEFAULT_PARAM <slot> <skip>; <default expr>; the store
+         * selected by user_local_store; OP_POP. Skip target is just past
+         * OP_POP. The opcode reads
          * frame->call_argc — if argc > slot, jump skip (default already
          * supplied by caller). Else fall through (run the default). */
         if (node->data.func.param_defaults) {
@@ -2714,7 +2853,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
                 compile_node(&fn_compiler, dflt);
                 /* #1381: a default spanning lines is filed under its first */
                 restamp_line(&fn_compiler, line);
-                emit_op_u16(&fn_compiler, OP_SET_LOCAL, (uint16_t)i, line);
+                UserLocalStore route = user_local_store(
+                    &fn_compiler, node->data.func.params[i], i);
+                emit_op_u16(&fn_compiler, route.set_op, route.set_arg, line);
                 chunk_emit(fn_chunk, OP_POP, line);
                 adjust_stack(&fn_compiler, -1);
                 chunk_patch_jump(fn_chunk, skip_patch);
@@ -2739,6 +2880,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         stamp_local_traced(fn_chunk, &fn_compiler.interrogated);
         free(fn_compiler.lev_names);
+        free(fn_compiler.lex_names);
+        free(fn_compiler.lex_depths);
         name_set_free(&fn_compiler.captured);
         name_set_free(&fn_compiler.interrogated);
         name_set_free(&fn_compiler.env_bound);
@@ -2805,6 +2948,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         stamp_local_traced(fn_chunk, &fn_compiler.interrogated);
         free(fn_compiler.lev_names);
+        free(fn_compiler.lex_names);
+        free(fn_compiler.lex_depths);
         name_set_free(&fn_compiler.captured);
         name_set_free(&fn_compiler.interrogated);
         name_set_free(&fn_compiler.env_bound);
@@ -2832,6 +2977,8 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
          * runtime depth permanently and killed the observer process-wide. */
         for (int u = c->unobs_depth; u > 0; u--)
             emit(c, OP_UNOBSERVED_END, node->line);
+        for (int l = c->lexical_depth; l > 0; l--)
+            emit(c, OP_LOOP_ENV_END, node->line);
         emit(c, node->data.ret.expr ? OP_RETURN : OP_RETURN_NULL, node->line);
         break;
     }
@@ -3131,6 +3278,11 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
         emit(c, OP_LISTCOMP_BEGIN, node->line);
         compile_node(c, node->data.listcomp.iter);
         emit(c, OP_ITER_SETUP, node->line);
+        /* The iterable belongs to the enclosing scope; the binder, filter,
+         * and body belong to one comprehension-local lexical scope. */
+        emit(c, OP_LOOP_ENV_FRESH, node->line);
+        c->lexical_depth++;
+        lexical_push(c, node->data.listcomp.var);
 
         int loop_start = capture_loop_start(c);
         /* #1381: the comprehension variable is filed under the
@@ -3172,6 +3324,9 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         patch_jump(c, exit_jump);
         emit(c, OP_POP, node->line); /* pop iterator state */
+        emit(c, OP_LOOP_ENV_END, node->line);
+        c->lex_count--;
+        c->lexical_depth--;
         /* listcomp accumulator is now TOS */
         break;
     }
@@ -3202,6 +3357,10 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
 
         patch_jump(c, catch_jump);
         /* Error message string is on stack, pushed by VM error handler */
+        /* A catch binder is local to its handler, just like a comprehension
+         * binder. TRY unwinding restores this parent on a handler error. */
+        emit(c, OP_LOOP_ENV_FRESH, node->line);
+        c->lexical_depth++;
         if (node->data.trycatch.err_name) {
             /* #1381: the catch binding is filed under the `catch` line, not
              * the faulting line inside the try body. */
@@ -3210,8 +3369,12 @@ static void compile_node_inner(Compiler *c, ASTNode *node) {
             int idx = add_string_constant(c, node->data.trycatch.err_name);
             emit_op_u16(c, OP_SET_NAME_LOCAL, (uint16_t)idx, node->line);
             emit(c, OP_POP, node->line);
+            lexical_push(c, node->data.trycatch.err_name);
         }
         compile_block(c, node->data.trycatch.catch_body, node->data.trycatch.catch_count);
+        if (node->data.trycatch.err_name) c->lex_count--;
+        c->lexical_depth--;
+        emit(c, OP_LOOP_ENV_END, node->line);
         patch_jump(c, end_jump);
         break;
     }
@@ -4160,7 +4323,8 @@ done:
     free(L.kinds);
 }
 
-EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
+EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src,
+                       const char *file) {
     EigsChunk *chunk = chunk_new("<module>");
     chunk->module_scope_writes = g_compile_import_toplevel != 0;
     /* #830: the arming below is compile-time evidence about THIS chunk, so
@@ -4170,7 +4334,7 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
     /* #407: retain the unit's source for runtime-error caret excerpts.
      * Owned copy — callers free their buffers while closures can keep
      * chunks alive indefinitely. Nested fn chunks share the blob. */
-    chunk->src = srcbuf_new(src);
+    chunk->src = srcbuf_new(src, file);
     if (chunk->src) {
         /* Compile context wins over the still-running loader's frame.
          * Nested functions share this owned blob after the loader returns. */
@@ -4202,9 +4366,10 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
      * it — visible at compile time as a non-builtin_dispatch binding. */
     compiler.dispatch_rebound = ast ? scan_dispatch_rebind(ast) : 0;
     if (!compiler.dispatch_rebound && env) {
-        Value *dv = env_get(env, "dispatch");
+        Value *dv = env_get_counted(env, "dispatch");
         if (dv && !(dv->type == VAL_BUILTIN && dv->data.builtin == builtin_dispatch))
             compiler.dispatch_rebound = 1;
+        if (dv) val_decref(dv);
     }
 
     g_parse_depth = 0;  /* reuse the parse-depth counter as the compile-depth guard */
@@ -4213,7 +4378,7 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
     /* For module-level slot promotion: seed local_count past existing env entries
      * so SET_LOCAL slot indices don't collide with builtins/globals already there. */
     int slot_base = 0;
-    if (g_compile_module_slots && env) {
+    if (env) {
         slot_base = env->count;
         compiler.local_count = slot_base;
     }
@@ -4231,6 +4396,8 @@ EigsChunk *compile_ast(ASTNode *ast, Env *env, const char *src) {
     name_set_free(&compiler.module_slot_names);
     free(compiler.locals);
     free(compiler.lev_names);
+    free(compiler.lex_names);
+    free(compiler.lex_depths);
 
     /* Opt-in self-check: every chunk this compiler emits must satisfy the
      * verifier that gates untrusted chunks. Off unless EIGS_VERIFY_SELF=1 (the

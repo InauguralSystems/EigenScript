@@ -1,0 +1,1 @@
+- Preserve the selected EigenScript build variant when the stop gate rebuilds dirty source (#1676).

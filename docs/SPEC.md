@@ -32,6 +32,11 @@ Companion documents: [SYNTAX.md](SYNTAX.md) (tutorial-style guide),
 [OBSERVER.md](OBSERVER.md) (observer semantics in depth),
 [COMPARISON.md](COMPARISON.md) (EigenScript next to Python/JS/Rust/Lisp).
 
+Spatial batch queries follow the usual nearest-neighbour convention:
+`nearest_in_range_all` returns one nearest **other** active entity per input
+entity (or `null`), excluding the entity at that input index. The scalar
+`nearest_in_range` is instead a position query and excludes nothing implicitly.
+
 ## Table of contents
 
 - [Program model](#program-model)
@@ -108,7 +113,22 @@ still running
 - Comments run from `#` to end of line.
 - Blocks open with a `:` at the end of the introducing line and contain
   the following indented lines. Indentation must be consistent within a
-  block.
+  block; any increase opens one nesting level, so different nested blocks do
+  not need to use equal-width increases. The formatter normalizes block
+  indentation to four spaces per lexer nesting level. It preserves the
+  original leading whitespace on continuation lines inside `()`, `[]`, or
+  `{}`, while still normalizing operator spacing outside literals. String and
+  f-string literal bytes are emitted verbatim, including physical newlines,
+  indentation, trailing spaces, escapes, and interpolation text. Standalone
+  comments are placed as Black and Ruff place them. A comment directly after
+  a block opener takes the indentation of that block's first statement.
+  Otherwise it keeps the deepest still-open block whose indentation does not
+  exceed the comment's own column, unless the next statement is deeper, in
+  which case it takes the next statement's depth. A comment at end of file
+  takes depth zero. The formatter never adds or removes lines, because line
+  numbers are part of a program's meaning: temporal queries such as
+  `at <line>` address source lines, so every statement keeps its original
+  line.
 - Identifiers are `[a-zA-Z_][a-zA-Z0-9_]*`.
 - Keywords include: `is of define as if elif else loop while for in
   return and or not null try catch break continue import match case
@@ -606,6 +626,13 @@ and `not` always returns a bool.
 Truthiness is unchanged: `0`, `0.0`, `null`, `""`, `[]`, `{}` and `false` are
 falsy; every other value, including `true`, is truthy.
 
+Operator precedence from tighter to looser is: calls/postfix operations;
+arithmetic unary `-` and bitwise unary `~`; multiplicative, additive, shift
+and bitwise operators; comparisons (`< <= > >= == !=`); `not`; `and`; `or`;
+and the pipe operator. Thus `not 1 < 2` means `not (1 < 2)`, while
+`(not 1) < 2` explicitly compares a bool and raises. Repeated `not` associates
+to the right.
+
 ```eigenscript
 print of (3 > 2)
 print of (3 < 2)
@@ -893,6 +920,17 @@ print of [v for v in xs if v % 2 == 0]
 [2, 4]
 ```
 
+The iterable is evaluated in the enclosing scope, but the comprehension
+variable has a lexical scope covering only the filter and result expression.
+It never creates or overwrites an enclosing binding. This is true for success,
+empty input, and every error path (including iterator, filter, and result
+errors); explicit side effects performed by the filter or result expression
+are not rolled back. A closure made there keeps the local binding alive.
+
+The name after `catch` is likewise local to its handler. Entering or leaving a
+handler, normally or by another error, neither creates nor overwrites that name
+in the enclosing scope.
+
 Destructuring assignment unpacks a list into names:
 
 ```eigenscript
@@ -904,7 +942,7 @@ print of (a + b + c)
 ```
 
 Out-of-range indexing is a runtime error (catchable with `try`; the
-caught value is a `{kind, message, line}` dict — see
+caught value is a `{kind, message, file, line}` dict — see
 [Error handling](#error-handling)):
 
 ```eigenscript
@@ -1416,14 +1454,14 @@ Runtime-published counts and indices are exact ints (S9-K1): `__loop_iterations_
 Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
 
 `try:` / `catch name:` captures runtime errors. A **built-in** runtime
-error binds a small dict `{kind, message, line}`: `kind` is drawn from
-a closed vocabulary (below), `message` is the error text without the
-`Error line N:` frame, `line` is the 1-based source line. `throw of
+error binds a small dict `{kind, message, file, line}`: `kind` is drawn from
+a closed vocabulary (below), `message` remains the location-free error text,
+`file` is the compiled source identity, and `line` is the 1-based source line. `throw of
 value` raises a user error and the catch variable binds the thrown
 value itself, unchanged — a thrown string stays a string. An *uncaught*
 runtime error stops the program with a nonzero exit.
 
-`line` (and the `Error line N:` header) is the 1-based **physical** line of
+`line` (and the `Error file:line:` header) is the 1-based **physical** line of
 the sub-expression that faulted, even when its statement spans several lines
 (#1381). The division below sits on the statement's second line:
 
@@ -1459,6 +1497,35 @@ catch e:
 ```output
 5
 ```
+
+When the faulting sub-expression is a binary operator (`+`, `-`, `*`, `/`,
+`%`, a comparison, a bitwise operator, or a plain-name compound
+assignment such as `x += rhs`) whose operands span lines, the reported line is the
+**operator's** line, not the line its right operand ends on (#1425). The `/`
+below is on line 3; its operand ends on line 4. The excerpt and caret point at
+the operator too, and so does the traceback:
+
+```eigenscript
+x is 0
+try:
+    z is 1 / (
+        x)
+catch e:
+    print of e.line
+```
+```output
+3
+```
+
+A successful binary operation restores the line attribution that preceded its
+operator stamp, so an enclosing unary operation, index or call keeps its prior
+attribution. Compound field/index assignments (`obj.key += rhs`, `xs[i] += rhs`)
+keep their prior attribution; their location policy awaits a separate owner
+decision. This rule covers binary operators only. Temporal filing is unchanged (the
+statement's first line). Other constructs that span lines (call arguments,
+indexing, and the concatenation an f-string is lowered to) are not decided by
+it; an operator written inside an f-string interpolation is a binary operator
+and follows it.
 
 ```eigenscript
 try:
@@ -1559,12 +1626,12 @@ with code 1:
 
 ```eigenscript nocheck the program deliberately raises UNCAUGHT; the block quotes the resulting stderr trace, which is not stdout
 # uncaught: stderr shows
-#   Error line 6: index 99 out of range (list length 2)
+#   Error app.eigs:6: index 99 out of range (list length 2)
 #        6 | v is items[99]
 #          |           ^
-#     at inner (line 6)
-#     at middle (line 8)
-#     at <module> (line 9)
+#     at inner (app.eigs:6)
+#     at middle (app.eigs:8)
+#     at <module> (app.eigs:9)
 ```
 
 ## Modules
@@ -1635,7 +1702,8 @@ and uses the project file. For each request, the order is:
 4. Relative to the **project root**: the nearest ancestor of that containing
    directory with an `eigs.json`, including the containing directory itself.
    If none exists, this step is skipped.
-5. The existing stdlib locations, in order: `<exe>/../<path>`,
+5. The existing stdlib locations, in order: `<exe>/../<path>`; for a source-tree
+   `<repo>/build/<variant>/eigenscript`, `<exe>/../../<path>`; then
    `<exe>/../lib/eigenscript/<path>`, the latter again with a leading `lib/`
    stripped, then `$HOME/.local/lib/eigenscript/<path>` and its `lib/`-stripped
    form. Here `<exe>` is the executable's directory.
@@ -1859,10 +1927,12 @@ reference**: a list or dict computes over its own elements, and an element
 that is itself a container contributes only its size term `log2(count+1)`
 rather than being entered. This is the rule buffers and text builders
 have always followed, so a dict holding a 5-element list measures exactly
-as one holding a 5-element buffer. The cost of an observed assignment is
+as one holding a 5-element buffer. The cost of the entropy walk is
 therefore proportional to the value's own size, never to everything it can
-reach, and cyclic or shared object graphs are well-defined because they are
-never traversed (see [OBSERVER.md](OBSERVER.md)). Six bare-keyword predicates query
+reach. Cyclic or shared graphs are well-defined for that measurement because
+the entropy walk never enters them. Non-numeric assignment snapshots add the
+bounded recursive comparison work described below (see
+[OBSERVER.md](OBSERVER.md)). Six bare-keyword predicates query
 the most recently observed variable: `converged`, `stable`,
 `improving`, `oscillating`, `diverging`, `equilibrium`. The canonical
 use is a self-terminating loop:
@@ -1887,9 +1957,21 @@ and `dh_zero · scale` as the absolute floor. The runtime computes `scale`
 as the floor in `max(|v|, |v_prev|, scale)`; above that floor, the
 limit's magnitude and the **unit** the value is stored in do not matter.
 A loop converging to `5`, `5000` or `0.005` certifies identically, and a
-bank angle reads the same in radians and degrees. Non-numeric bindings (strings,
-containers) classify their entropy trajectory as before; the entropy
-MEASUREMENT (`where is x`) is unchanged for everything.
+bank angle reads the same in radians and degrees. For non-numeric bindings
+(strings, containers), `converged` and ordinarily `stable` compare detached
+assignment snapshots across a full window, bounded to 4,096 content units per
+assignment. Finite in-place mutations remain visible when the binding is
+assigned again. A refused or oversized snapshot leaves both predicates false.
+For an accepted snapshot containing a NaN buffer, directly or nested,
+`converged` stays false because raw IEEE equality is non-reflexive, while
+`stable` uses the entropy-window criterion only after a full bounded comparison
+window (S10-D1). Refusal clears that eligibility, so a fresh full bounded
+window is required even if the entropy window is already complete.
+The real matmul scenario
+in `tests/test_observer_snapshot_fix2.sh` gives `false`, `true`, `false` for
+`x == x`, `stable of x`, and `converged of x`, without equality changing data
+or math flags. The other four predicates and non-numeric `report` use entropy;
+the entropy MEASUREMENT (`where is x`) is unchanged for everything.
 
 **Convergence-halting is opt-in.** A `loop while` is auto-halted on a
 quiet observer trajectory (~100 iterations without motion, at any
@@ -1936,9 +2018,11 @@ trajectory the predicates read (value channel for numerics, entropy
 otherwise — #861), resolving `oscillating` → `diverging` → `improving` →
 `converged` → `equilibrium` → `stable`. This arrow is report priority, not
 an implication lattice: a converged one-direction tail is not `equilibrium`.
-At a full window it agrees with the
+For a numeric binding, at a full window it agrees with the
 bare predicates by construction: it either names a band whose predicate is
-true, or — when a full window matches none of them — returns `moving`. The
+true, or — when a full window matches none of them — returns `moving`.
+For a non-numeric binding it reports the entropy classification and need not
+agree with the snapshot-based `converged` or `stable` test. The
 bands are not exhaustive, and `moving` is the honest answer for the gap
 (#735); only while the window is still filling may `report` fall back to an
 instantaneous label the predicates don't yet confirm. See
@@ -2107,8 +2191,9 @@ entropy (the query-time read is unaffected), `dH` and its window
 the tape's observer snapshot, and the bare-predicate alias (a bare
 `converged` keeps reading the last **observed** binding, so scratch work
 inside the block cannot hijack it). Those entropy-channel readers — and
-`report`/the predicates on a **non-numeric** binding, which route
-through the entropy channel — therefore remain sensitive to elision;
+`report` plus the four entropy predicates on a **non-numeric** binding —
+therefore remain sensitive to elision. The non-numeric `converged`/`stable`
+equality window also omits elided assignments;
 [PREDICATES.md](PREDICATES.md#inputs) lists them. (It follows that the
 block is not a way to declare a numeric binding without a sample; seed
 with `null`, which is never sampled.)
@@ -2186,6 +2271,13 @@ moving
 ```
 
 ## Temporal interrogatives
+
+**A binding's creation is its first observation: the `local`/first assignment
+for a local, and the call-time binding for a parameter. Every later assignment
+in the same activation adds one.** Thus, for every binding in an activation,
+`when` = (1 if it is a parameter) + the number of tape `A` records for it in
+that activation. The parameter creation event is #1048's “one observation per
+call”; it is not an `A` assignment record.
 
 With temporal queries the runtime records assignment history. `prev of
 x` is the value x held before its latest assignment. `what is x at
@@ -2293,6 +2385,10 @@ advance. Replacing memory replay preserves a suspended file's complete context.
 Host effects that the tape cannot reconstruct are replay boundaries. In
 particular, `mktemp` raises a catchable filesystem-boundary error before it
 creates a file; outside replay it creates a file and returns its fresh path.
+Recorded builtins validate deterministic argument refusals before consulting
+the tape. A call that raises during recording therefore raises with the same
+kind and message during strict replay; it is never replaced by a recorded
+return value.
 
 Values crossing a channel, `thread_join`, or cooperative-task boundary are
 copied recursively. This includes buffers (payload and shape) and text builders

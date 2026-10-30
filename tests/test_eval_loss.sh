@@ -16,7 +16,7 @@
 
 set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
-EIGS="$TESTS_DIR/../src/eigenscript"
+EIGS="${EIGS_BIN:-$TESTS_DIR/../src/eigenscript}"
 
 PASS=0
 FAIL=0
@@ -41,10 +41,12 @@ prompt is [1, 2, 3, 4]
 for t in range of 8:
     l is eigen_eval_loss of [prompt, t]
     print of ("L " + (str of l))
-# Out-of-range target must be rejected with the -1 sentinel, not a garbage
-# read past the logits array.
-print of ("OOR " + (str of (eigen_eval_loss of [prompt, 999])))
-print of ("NEG " + (str of (eigen_eval_loss of [prompt, 0 - 1])))
+for bad in [999, 0 - 1]:
+    try:
+        eigen_eval_loss of [prompt, bad]
+        print of f"BAD accepted {bad}"
+    catch e:
+        print of f"BAD {bad} {e.kind} {e.message}"
 EIGS
 
 OUT=$("$EIGS" "$HARNESS" 2>/dev/null)
@@ -78,12 +80,23 @@ else
     fail "EL03 negative cross-entropy returned" "$NONNEG value(s) < 0"
 fi
 
-OOR=$(printf '%s\n' "$OUT" | sed -n 's/^OOR //p')
-NEG=$(printf '%s\n' "$OUT" | sed -n 's/^NEG //p')
-if [ "${OOR%%.*}" = "-1" ] && [ "${NEG%%.*}" = "-1" ]; then
-    ok "EL04 out-of-range targets rejected with the -1 sentinel"
+if printf '%s\n' "$OUT" | grep -q '^BAD 999 index_range eigen_eval_loss: target_id 999 out of range \[0,8)$' &&
+   printf '%s\n' "$OUT" | grep -q '^BAD -1 index_range eigen_eval_loss: target_id -1 out of range \[0,8)$' &&
+   ! printf '%s\n' "$OUT" | grep -q '^BAD accepted '; then
+    ok "EL04 out-of-range targets raise index_range with id and range"
 else
-    fail "EL04 out-of-range target not rejected" "target=999 -> '$OOR', target=-1 -> '$NEG'"
+    fail "EL04 out-of-range targets did not raise the documented error" "$(printf '%s' "$OUT" | sed -n '/^BAD /p')"
+fi
+
+# -1.0 is reserved for the absence of a loaded model, not an invalid token.
+cat > "$HARNESS" <<'EIGS'
+print of (eigen_eval_loss of [[1], 0])
+EIGS
+NO_MODEL=$("$EIGS" "$HARNESS" 2>/dev/null)
+if [ "${NO_MODEL%%.*}" = "-1" ]; then
+    ok "EL05 no-model case retains the -1 sentinel"
+else
+    fail "EL05 no-model sentinel" "got '$NO_MODEL'"
 fi
 
 echo "EVALLOSS: $PASS passed, $FAIL failed"

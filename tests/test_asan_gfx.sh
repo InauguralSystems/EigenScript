@@ -313,7 +313,7 @@ for f in "$CORPUS"/*.eigs; do
         [ "$LAST_RC" -eq 0 ] && RC_OK=1
         if [ "$base" = 06_rejected.eigs ] && [ "$mode" = strict ] \
              && [ "$LAST_RC" -eq 1 ] \
-             && printf '%s\n' "$LAST_OUT" | grep -Eq '^Error line [0-9]+: gfx_rect: expected \[number x, number y, number w, number h, number r, number g, number b\] and an optional number alpha$'; then RC_OK=1; fi
+             && printf '%s\n' "$LAST_OUT" | grep -Eq '^Error [^:]+:[0-9]+: gfx_rect: expected \[number x, number y, number w, number h, number r, number g, number b\] and an optional number alpha$'; then RC_OK=1; fi
         if [ "$LEAK" = 0 ] && [ "$CLASS" = 2 ] && [ "$RC_OK" = 1 ]; then
             ok "$base [$mode] clean under ASan+UBSan+LSan"
         else
@@ -343,9 +343,17 @@ if [ "$SDL_RC" -ne 0 ] || [ "$SDL_CLASS" -ne 2 ]; then
     echo "ASan gfx: $PASS passed, $FAIL failed"
     exit 1
 fi
-printf '%s' "$SDL_OUT" | grep -q '^sdl-present: true$' \
-    || echo "  NOTE: SDL renderer unavailable — the corpus exercised the argument and"\
-            "allocation paths without real rendering."
+if printf '%s\n' "$SDL_OUT" | grep -q '^sdl-present: true$'; then
+    ok "SDL2 real renderer opened under ASan"
+else
+    # gfx_open reports the precise failing stage on stderr (dlopen, SDL_Init,
+    # window creation, or renderer creation). Preserve that diagnostic: a
+    # false result alone cannot distinguish a missing library from a broken
+    # display and must never read as renderer coverage.
+    SDL_REASON=$(printf '%s\n' "$SDL_OUT" | sed -n '/^gfx_open:/p' | tail -1)
+    [ -n "$SDL_REASON" ] || SDL_REASON="gfx_open returned false without a diagnostic"
+    echo "  NOTE: no SDL2 renderer coverage — $SDL_REASON; the corpus exercised the argument and allocation paths only."
+fi
 
 echo "ASan gfx: $PASS passed, $FAIL failed"
 [ "$FAIL" = 0 ] || exit 1

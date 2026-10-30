@@ -36,7 +36,7 @@ static void missing(const char *name, const char *message) {
         snprintf(expression, sizeof(expression), forms[i], name);
         snprintf(source, sizeof(source), "# line control\n%s\n", expression);
         v = eigs_eval_string(source);
-        snprintf(expected, sizeof(expected), "Error line 2: %s", message);
+        snprintf(expected, sizeof(expected), "Error <embed>:2: %s", message);
         check(!v && eigs_has_error() && eigs_last_error_kind() &&
             strcmp(eigs_last_error_kind(), "value") == 0 &&
             eigs_last_error_line() == 2 &&
@@ -133,7 +133,7 @@ int main(void) {
     check(!v && eigs_has_error() && eigs_last_error_kind() &&
         strcmp(eigs_last_error_kind(), "undefined_name") == 0 &&
         eigs_last_error_line() == 2 &&
-        strcmp(eigs_last_error_message(), "Error line 2: undefined variable 'cold_unknown_name'") == 0,
+        strcmp(eigs_last_error_message(), "Error <embed>:2: undefined variable 'cold_unknown_name'") == 0,
         "ordinary unknown retains exact kind/message/line");
     if (v) eigs_value_release(v);
     eigs_clear_error();

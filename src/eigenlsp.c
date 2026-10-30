@@ -377,11 +377,10 @@ static void walk_ast_symbols(ASTNode *node, const TokenList *tokens,
                 snprintf(ps->name, sizeof(ps->name), "%s",
                          node->data.func.params[i] ? node->data.func.params[i] : "");
                 ps->kind = SYM_PARAM;
-                ps->line = node->line;
-                /* Preserve the existing parameter location until declaration
-                 * spans come from parser/binding metadata (#1614). Searching
-                 * the first line cannot locate multiline or implicit params. */
-                ps->name_col = node->col;
+                /* Zero is the parser's marker for its implicit `n`: it is a
+                 * binding, but has no declaration occurrence in the source. */
+                ps->line = node->data.func.param_lines[i];
+                ps->name_col = node->data.func.param_cols[i];
                 ps->param_count = 0;
                 ps->scope_depth = depth + 1;
             }
@@ -561,6 +560,10 @@ static void collect_references(ASTNode *node, const char *name, Location *locs, 
                 collect_references(node->data.loop.body[i], name, locs, count, max);
             break;
         case AST_FUNC:
+            for (int i = 0; i < node->data.func.param_count; i++)
+                if (node->data.func.param_defaults && node->data.func.param_defaults[i])
+                    collect_references(node->data.func.param_defaults[i], name,
+                                       locs, count, max);
             for (int i = 0; i < node->data.func.body_count; i++)
                 collect_references(node->data.func.body[i], name, locs, count, max);
             break;
@@ -872,7 +875,8 @@ static void send_diagnostics(Document *doc) {
          * the host's temporal arming state so merely editing a document that
          * mentions state_at/prev cannot affect later in-process execution. */
         trace_arm_suppress_begin();
-        EigsChunk *chunk = compile_ast(doc->ast, cenv, doc->text);
+        EigsChunk *chunk = compile_ast(doc->ast, cenv, doc->text,
+                                       doc->uri[0] ? doc->uri : "<embed>");
         trace_arm_suppress_end();
         g_obs_gate_scan_enabled = obs_saved;
             g_compile_module_slots = 0;
@@ -1349,7 +1353,7 @@ static void handle_references(int id, const char *params) {
     /* Also add definition locations from symbol table */
     for (int i = 0; i < doc->symbol_count; i++) {
         Symbol *s = &doc->symbols[i];
-        if (strcmp(tok->str_val, s->name) == 0) {
+        if (s->line > 0 && strcmp(tok->str_val, s->name) == 0) {
             /* Check if already in list */
             int found = 0;
             for (int j = 0; j < loc_count; j++) {

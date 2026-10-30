@@ -1,0 +1,30 @@
+# #2003: every completed while-loop iteration, including continue, crosses
+# the same counter/guard site.
+i is 0
+loop while i < 5:
+    i is i + 1
+    if i == 3:
+        continue
+print of ["mixed", __loop_iterations__]
+
+only is 0
+loop while only < 5:
+    only is only + 1
+    continue
+print of ["only-continue", __loop_iterations__]
+
+# The observer stall guard must also be on continue's path.  This loop has no
+# body fallthrough at all; without the shared iteration-end edge it never
+# reaches the guard and runs forever.
+x is 100.0
+loop while not converged:
+    x is x * 2
+    continue
+print of ["continue-stall", __loop_iterations__, __loop_exit__]
+
+# A compiler-shaped cap/check edge whose body is only a continue must return
+# through the cap, rather than relying on eventual body fallthrough.  Opcode
+# values are ABI literals just like the descriptor tests elsewhere.
+cap is sandbox_run of [[1, [63,3,0, 30,6,0, 41], []], 5]
+print of ["continue-cap", cap.ok,
+          index_of of [cap.error.message, "partial run"] >= 0]

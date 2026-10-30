@@ -87,6 +87,49 @@ getenv
 # --- C runtime glue that survives freestanding flags ---
 __errno_location
 
+# --- compiler runtime (linked from compiler-rt/libgcc, not the kernel) ---
+__divdi3
+__moddi3
+__udivdi3
+__umoddi3
+__fixdfdi
+__fixunsdfdi
+__fixdfsi
+__fixunsdfsi
+__floatdidf
+__floatundidf
+__floatsidf
+__floatunsidf
+__adddf3
+__subdf3
+__muldf3
+__divdf3
+__eqdf2
+__nedf2
+__ltdf2
+__ledf2
+__gtdf2
+__gedf2
+__unorddf2
+# Phase 2 N9 fround (c57a2720): f64 -> f32 -> f64 soft-float casts.
+# The existing stage-2 compiler-rt link supplies both; these are not HAL roots.
+__extendsfdf2
+__truncdfsf2
+
+# --- atomic HAL roots on targets which cannot implement the width ---
+__atomic_load_1
+__atomic_load_4
+__atomic_load_8
+__atomic_store_1
+__atomic_store_4
+__atomic_store_8
+__atomic_fetch_add_4
+__atomic_fetch_add_8
+__atomic_fetch_sub_4
+__atomic_exchange_4
+__atomic_compare_exchange_4
+__atomic_compare_exchange_8
+
 # --- mini-libc: x86-64 floating-point environment (#1969) ---
 feclearexcept
 fegetenv
@@ -115,6 +158,11 @@ strerror
 __ctype_b_loc
 __ctype_tolower_loc
 __ctype_toupper_loc
+atoi
+isalnum
+isxdigit
+tolower
+toupper
 qsort
 
 # --- mini-libm (4 kernels + derived) ---

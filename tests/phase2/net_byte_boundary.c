@@ -12,15 +12,14 @@ static void clear_error(void) {
     g_error_msg[0] = g_error_raw[0] = 0;
     g_math_flags = 0;
 }
-int main(void) {
-    EigsState *st = eigs_open();
-    if (!st) return 2;
-    g_try_depth = 1;
+/* Expected data-boundary raises run inside a real VM try (#1808/#2098). */
+static Value *phase2_reader_probe(Value *arg) {
+    (void)arg;
     const double bad[] = { NAN, INFINITY, -INFINITY, NAN, 1.5, 256.0, 255.0 };
     for (int strict = 0; strict <= 1; strict++) {
         for (int i = 0; i < 7; i++) {
             int fd[2];
-            if (socketpair(AF_UNIX, SOCK_STREAM, 0, fd) != 0) return 2;
+            if (socketpair(AF_UNIX, SOCK_STREAM, 0, fd) != 0) return make_bool(0);
             Value *handle = make_int((int64_t)net_register_sock(fd[0], NET_SOCK_CONN));
             Value *size = make_int(3);
             Value *buffer = builtin_buffer(size);
@@ -62,9 +61,23 @@ int main(void) {
             val_decref(handle);
         }
     }
-    g_try_depth = 0;
     clear_error();
+    return make_bool(1);
+}
+int main(void) {
+    EigsState *st = eigs_open();
+    if (!st) return 2;
+    Value *probe = make_builtin(phase2_reader_probe);
+    eigs_set_global("phase2_reader_probe", probe);
+    val_decref(probe);
+    Value *result = eigs_eval_string("try:\n    phase2_reader_probe of null\ncatch e:\n    false\n");
+    int ran = result && result->type == VAL_BOOL && result->data.boolean && !g_has_error;
+    val_decref(result);
     eigs_close(st);
+    if (!ran) {
+        fputs("phase2-net-byte: FAIL VM probe execution\n", stderr);
+        return 2;
+    }
     printf("phase2-net-byte: %s checks=%d failures=%d\n", failures ? "FAIL" : "PASS", checks, failures);
     return failures ? 1 : 0;
 }

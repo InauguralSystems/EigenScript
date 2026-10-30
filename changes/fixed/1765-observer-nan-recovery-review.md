@@ -1,0 +1,1 @@
+- Preserve eventually-NaN observer labels and reject undefined NaN tails while supporting explicit NaN recovery (#1765).

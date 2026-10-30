@@ -50,6 +50,45 @@ static void tok_add(TokenList *tl, TokType type, EigsNum number, const char *str
     t->synth = 0;
 }
 
+static void literal_span_add(TokenList *tl, size_t start, size_t end) {
+    if (tl->literal_count >= tl->literal_capacity) {
+        tl->literal_capacity = tl->literal_capacity ? tl->literal_capacity * 2 : 8;
+        tl->literal_spans = xrealloc_array(tl->literal_spans,
+                                           tl->literal_capacity,
+                                           sizeof(*tl->literal_spans));
+    }
+    tl->literal_spans[tl->literal_count++] = (LexLiteralSpan){start, end};
+}
+
+static void line_depth_set(TokenList *tl, int line, int depth) {
+    if (line > tl->line_depth_count) {
+        int old = tl->line_depth_count;
+        tl->line_depths = xrealloc_array(tl->line_depths, line, sizeof(*tl->line_depths));
+        for (int i = old; i < line; i++) tl->line_depths[i] = -1;
+        tl->line_depth_count = line;
+    }
+    tl->line_depths[line - 1] = depth;
+}
+
+/* Standalone comments do not participate in indentation parsing, but the
+ * formatter still needs a stable depth for them.  A value below -1 encodes
+ * the deepest block that was still open at the preceding statement and whose
+ * body indentation is no wider than the comment's original indentation:
+ * -(depth + 2).  Once tokenization has seen the following statement, retain
+ * the deeper of that open block and the following statement.  This is Black's
+ * rule: a comment before the first statement in a new block follows that
+ * statement, while a trailing in-block comment survives a following dedent. */
+static void resolve_comment_depths(TokenList *tl) {
+    int next_depth = 0;
+    for (int i = tl->line_depth_count - 1; i >= 0; i--) {
+        if (tl->line_depths[i] >= 0) next_depth = tl->line_depths[i];
+        else if (tl->line_depths[i] < -1) {
+            int open_depth = -tl->line_depths[i] - 2;
+            tl->line_depths[i] = next_depth > open_depth ? next_depth : open_depth;
+        }
+    }
+}
+
 /* Nested f-string boundary scanning (#1253). An interpolation's extent is
  * found before its text is re-tokenized, so the scanner must know every
  * lexical state that can hide a brace: a string literal, a comment, and a
@@ -418,6 +457,11 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
     tl.capacity = MAX_TOKENS;
     tl.tokens = xmalloc_array(tl.capacity, sizeof(Token));
     tl.count = 0;
+    tl.literal_spans = NULL;
+    tl.literal_count = 0;
+    tl.literal_capacity = 0;
+    tl.line_depths = NULL;
+    tl.line_depth_count = 0;
 
     /* Start of a fresh tokenize+parse pass (tokenize always runs first):
      * clear the captured first error so a consumer like the LSP sees only
@@ -463,6 +507,10 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             p += indent_bytes;
             col += indent_bytes;
             if (*p == '#') {
+                int open_depth = indent_top;
+                while (open_depth > 0 && indent_stack[open_depth] > spaces)
+                    open_depth--;
+                line_depth_set(&tl, line, -(open_depth + 2));
                 while (*p && *p != '\n') { p++; col++; }
                 if (*p == '\n') { p++; line++; col = 0; }
                 continue;
@@ -501,6 +549,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                 }
             }
             at_line_start = 0;
+            line_depth_set(&tl, line, indent_top);
         }
 
         /* #880: EigenScript could not read a CRLF source file at all —
@@ -539,6 +588,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
 
         /* f-string: f"hello {expr}" expands to ("hello " + (str of (expr))) */
         if (*p == 'f' && *(p+1) == '"') {
+            const char *literal_start = p;
             p += 2; col += 2; /* skip f" */
             strbuf buf;
             strbuf_init(&buf);
@@ -677,6 +727,8 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
                 lexer_error_at(caret_source, tok_line, tok_col, "unterminated f-string");
             }
             strbuf_free(&buf);
+            if (layout) literal_span_add(&tl, (size_t)(literal_start - source),
+                                         (size_t)(p - source));
             continue;
         }
 
@@ -714,6 +766,8 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
             }
             tok_add(&tl, TOK_STR, (EigsNum){0}, buf.data, tok_line, tok_col);
             tl.tokens[tl.count - 1].len = (int)(p - str_start);  /* true source span */
+            if (layout) literal_span_add(&tl, (size_t)(str_start - source),
+                                         (size_t)(p - source));
             strbuf_free(&buf);
             continue;
         }
@@ -869,6 +923,7 @@ static TokenList tokenize_at_line(const char *source, int initial_line, int init
     tok_add(&tl, TOK_EOF, (EigsNum){0}, NULL, line, col);
 
     g_tokenize_depth--;
+    if (layout) resolve_comment_depths(&tl);
     return tl;
 }
 

@@ -2,17 +2,16 @@
 # Bounded regression test for the per-tree make lock and the stop gate's
 # non-blocking use of it (#1940). Each case fails if its mechanism is removed.
 set -u
-[ "${1:-}" = "--selftest" ] || {
+[ "${1:-}" = "--selftest" ] && [ "$#" -eq 1 ] || {
     echo "usage: tools/make_lock_check.sh --selftest" >&2
     exit 2
 }
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 # This test controls the tree lock itself. Run from inside a make recipe (for
-# example `make precheck`, whose selftests reach this row), it would inherit
-# EIGS_TREE_LOCK_HELD=1, which the Makefile exports so that recursive makes
-# skip the lock; every make it starts would then run unlocked and case 1 would
-# fail. Case 3 sets the flag explicitly for the one make that needs it.
+# example `make precheck`, whose selftests reach this row), it inherits the
+# Makefile's flag; clear it so the independent fixture makes exercise locking.
+# Case 3 sets the flag explicitly for the one make that needs it.
 unset EIGS_TREE_LOCK_HELD
 if ! command -v flock >/dev/null 2>&1; then
     echo "make-lock selftest: SKIP: flock is unavailable"
@@ -21,10 +20,12 @@ fi
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/eigs-make-lock.XXXXXX") || exit 1
 HOLDERS=()
+SUITE_TREE=
 cleanup() {
     rm -f "$WORK"/hold-* 2>/dev/null
     rm -f "$WORK"/hold-* 2>/dev/null
     for p in "${HOLDERS[@]}"; do wait "$p" 2>/dev/null; done
+    [ -z "$SUITE_TREE" ] || rm -rf "$SUITE_TREE"
     rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -35,6 +36,7 @@ LOCK=.make.lock
 # A full Makefile parse takes about a second on a loaded box, so waits are
 # bounded at 10 s rather than tuned to an idle machine.
 wait_for() { local _; for _ in $(seq 100); do [ -e "$1" ] && return 0; sleep 0.1; done; return 1; }
+wait_for_suite() { local _; for _ in $(seq 300); do [ -e "$1" ] && return 0; sleep 0.1; done; return 1; }
 # hold_lock TREE NAME: hold TREE's lock independently of tools/tree_lock.sh
 # (an oracle must not borrow the implementation it checks) until release NAME,
 # at most 20 s. The holder is the process that owns the lock, so releasing it
@@ -173,4 +175,71 @@ for round in 1 2 3 4 5; do
     [ "$try_rc" -eq 0 ] || fail "round $round: a try right after the owner exited answered $try_rc (want 0): the trailing poll read as a build"
 done
 echo "  PASS: a try just after a make exits takes the lock"
-echo "make-lock selftest: 8/8 passed"
+
+# 9. Cases 1--8 already prove that a held lock makes plain make wait and makes
+# --try answer busy.  This case proves only the missing lifetime property: the
+# suite keeps its lock across section seams, then releases it when it exits.
+# Use a sibling copy with its own lock inode so this runs even when an enclosing
+# `make precheck` owns ROOT's lock.  Hard links make the copy cheap; the printed
+# fallback is deliberately visible rather than turning a failed copy into skip.
+COPY_PARENT=$(dirname "$ROOT")
+SUITE_TREE=$(mktemp -d "$COPY_PARENT/eigs-lock-suite.XXXXXX") \
+    || fail "could not create sibling suite tree"
+rm -rf "$SUITE_TREE"
+mkdir "$SUITE_TREE" || fail "could not initialize sibling suite tree"
+# These are all the roots used by the runner preamble and inert sections.
+# Naming them avoids copying unrelated untracked directories (for example an
+# editor's node_modules).
+SUITE_COPY_ITEMS='Makefile VERSION src tests tools'
+# shellcheck disable=SC2086
+if ! (cd "$ROOT" && cp -al $SUITE_COPY_ITEMS "$SUITE_TREE/") 2>/dev/null; then
+    echo "    NOTE: hard-link scratch copy failed; falling back to cp -a"
+    rm -rf "$SUITE_TREE"
+    mkdir "$SUITE_TREE" || fail "could not reinitialize sibling suite tree"
+    # shellcheck disable=SC2086
+    (cd "$ROOT" && cp -a $SUITE_COPY_ITEMS "$SUITE_TREE/") || fail "could not copy suite fixture"
+fi
+# Never share the source tree's lock inode (cp -al copied it if it existed).
+rm -f "$SUITE_TREE/$LOCK"
+# Make an inert runner from the production preamble: lock acquisition and the
+# real section-seam implementation are preserved, while product tests and the
+# section planner are irrelevant to this lifetime-only assertion.  Write then
+# rename so a hard-linked source runner is never modified.
+awk '/^# Runaway guard/{exit} {print}' "$SUITE_TREE/tests/run_all_tests.sh" >"$SUITE_TREE/tests/runner.new"
+cat >>"$SUITE_TREE/tests/runner.new" <<'SUITE_FIXTURE'
+echo "[lock-a] lifetime fixture"
+:
+echo "[lock-b] lifetime fixture"
+:
+echo "[lock-c] lifetime fixture"
+__eigs_section_close
+exit 0
+SUITE_FIXTURE
+mv "$SUITE_TREE/tests/runner.new" "$SUITE_TREE/tests/run_all_tests.sh"
+SEAMS="$WORK/seams"
+mkdir -p "$SEAMS"
+: >"$SEAMS/hold-2"
+(
+    cd "$SUITE_TREE/tests" || exit 1
+    EIGS_LOCK_TEST_SEAMS="$SEAMS" bash run_all_tests.sh
+) >"$WORK/suite.log" 2>&1 &
+suite=$!
+HOLDERS+=("$suite")
+wait_for_suite "$SEAMS/seam-1" || fail "suite did not reach its first section seam: $(tail -20 "$WORK/suite.log")"
+wait_for_suite "$SEAMS/seam-2" || fail "suite did not reach its second section seam: $(tail -20 "$WORK/suite.log")"
+sleep 5 & probe_owner=$!
+sh "$SUITE_TREE/tools/tree_lock.sh" --try "$SUITE_TREE" "$probe_owner" >/dev/null 2>&1
+try_rc=$?
+kill "$probe_owner" 2>/dev/null; wait "$probe_owner" 2>/dev/null
+rm -f "$SEAMS/hold-2"
+[ "$try_rc" -eq 75 ] || fail "--try answered $try_rc between suite section seams (want busy=75)"
+wait "$suite" || fail "locked suite failed: $(tail -20 "$WORK/suite.log")"
+sleep 5 & probe_owner=$!
+sh "$SUITE_TREE/tools/tree_lock.sh" --try "$SUITE_TREE" "$probe_owner" >/dev/null 2>&1
+try_rc=$?
+kill "$probe_owner" 2>/dev/null; wait "$probe_owner" 2>/dev/null
+[ "$try_rc" -eq 0 ] || fail "--try answered $try_rc after suite exit (want free=0)"
+rm -rf "$SUITE_TREE"
+echo "  PASS: suite lock was busy across section seams and free after exit"
+echo "PLAN: 9"
+echo "make-lock selftest: all declared checks passed"

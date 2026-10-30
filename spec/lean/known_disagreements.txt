@@ -1,0 +1,5 @@
+# label<TAB>classification<TAB>reason
+# This ledger is exact: the parity driver rejects both new and stale rows.
+# #1749 (the VM dropped consumed N values while replay-tracing) was fixed by
+# PR #2092; its four taped_* rows were removed when that fix reached this branch,
+# so those cases must now AGREE in both directions.

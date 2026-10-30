@@ -82,23 +82,57 @@ The predicate words and `report` are **routed**: a binding whose most
 recent observed assignment is **numeric** answers from the **value
 channel** — the classifier below, over relative steps
 `rel = Δv / max(|v|, |v_prev|, scale)` (#1045); every
-other binding (strings, containers) answers from the **entropy channel**,
-the windowed formulas in "The six predicates". `report_value of x` is the
+other binding (strings, containers) uses deep equality of successive
+assignment snapshots for **`converged`** and ordinarily **`stable`**: every
+successive pair in the full window must be equal. Numeric cells compare
+exactly across int/float kinds; a bool/number pair is simply unequal, without
+raising. This makes finite content changes visible and lets an unchanged
+non-empty value converge. The bounded NaN-buffer exception below routes
+`stable` to its entropy rule after a full bounded comparison window. The other
+four predicates, and `report`, answer
+from the **entropy channel**, the
+windowed formulas in "The six predicates". `report_value of x` is the
 value-channel classifier by name (identical to the routed words on a
 numeric binding — the two surfaces cannot disagree); `classify of
 [t, "entropy"]` reaches the entropy classifier by name. The entropy
 MEASUREMENT — `where`, `why`, `how`, trajectory snapshots, container
 folds, the tape — is unchanged everywhere.
 
+Each equality entry compares against a private content snapshot, not a
+reference that can be changed through an alias.  Snapshotting is bounded to
+4,096 content units per assignment (value nodes plus string/key bytes, buffer
+elements, and text-builder bytes). A larger value is **not sampled**: both
+predicates refuse to judge (return false) and reset the equality run. Both
+remain ineligible until a new full window of bounded comparisons is available.
+
+An accepted snapshot containing a NaN buffer, directly or inside a list or
+dict, is unequal to itself: buffer cells use raw IEEE equality without
+normalizing data, raising or writing math flags. `converged` remains false.
+For that bounded, non-reflexive snapshot only, after a full bounded comparison
+window, `stable` uses the entropy-window formula below (S10-D1); it can be true
+even though equality is false. This
+preserves the bank's `false` / `true` / `false` result for the real matmul
+scenario's `x == x`, `stable of x`, and `converged of x`. A current refused or
+oversized snapshot gets no entropy fallback and clears its eligibility, even
+when the entropy window is already complete. Finite snapshots keep the
+comparison against detached contents, so mutating an aliased container before
+assigning it again cannot manufacture equality.
+
+The observer's additional comparison work is bounded independently of
+container size; the pre-existing entropy calculation remains size-dependent.
+
 Why: entropy is a function of `|x|` alone, so any clause on it is a
-clause on magnitude. Measured against 27 analytically-known sequences
-(`tests/test_convergence_oracle.eigs`), the entropy channel scored 19/27
-— `converged` fired across the whole region `|x| ∈ [77, 1e307]` (a
-geometric runaway certified at `x ≈ 2.9e5`), could never fire for limits
-in `[~0.013, 76]` (Newton's method to `sqrt(2)` was uncertifiable), and
-gave the same computation targeting 5000, 5 and 0.005 three different
-verdicts. The value channel scores 25/27; the two misses are the
-irreducible tolerance floor, not defects (see the honesty bound below).
+clause on magnitude. The current CI corpus compares every predicate, not
+just `converged`, against its labelled question. Run
+`python3 tools/observer_oracle/score.py src/eigenscript` and read its
+**DOCUMENTATION TABLE** for the per-predicate incumbent, `REFERENCE`,
+`REFERENCE_ENTROPY`, and constant-false scores. The command derives every
+cell from the corpus and the selected binary; no score is copied into this
+document. The explicit entropy channel can certify a geometric runaway and
+can fail to certify a finite nonzero limit because magnitude is a lossy proxy
+for motion. Entropy and dH are still computed and exposed for non-numeric
+bindings. They do not decide equality-routed convergence or finite-snapshot
+stability; they do decide stability for the bounded NaN-buffer exception.
 
 **The numeric definitions** (a fixed window of `N = 10` relative steps — see
 [The window](#the-window-1044) — `rel = Δv / max(|v|, |v_prev|, scale)`, raw
@@ -211,7 +245,8 @@ and everything built on it, so these remain **elision-sensitive**:
 | `observe of x` | its `dH`/`prev_dH` elements; the band is routed like `report` |
 | `trajectory of x` | the `dh` list, `dH`, `last_entropy` (`rel`/`raw`/`last_value` are complete) |
 | `classify of [t, "entropy"]` | the explicit entropy channel |
-| `report` / the six predicates on a **non-numeric** binding | the entropy route — its `dh_window` is missing the elided steps |
+| `report` / the four entropy predicates on a **non-numeric** binding | the entropy route — its `dh_window` is missing the elided steps |
+| `converged` / `stable` on a **non-numeric** binding | the equality window is missing the elided comparisons; NaN-buffer snapshot stability also lacks the elided entropy samples |
 | the loop stall backstop | reads the last observed slot's `dH` |
 | a **bare** predicate | reads the last **observed** binding — the alias is deliberately not moved by an elided assignment, so scratch work inside the block cannot hijack a `loop while not converged` |
 
@@ -380,7 +415,9 @@ single-step rule that the windowed version superseded.
 Since #861 the kinds dispatch by route: a numeric binding answers from
 the value-channel definitions in "Which channel answers" above; the
 windowed-entropy formulas in the next section serve non-numeric bindings
-and the explicit `classify of [t, "entropy"]` channel. `report_value of
+except for equality-routed `converged` and ordinary `stable`; the bounded
+NaN-buffer stability exception does use them. They also serve the explicit
+`classify of [t, "entropy"]` channel. `report_value of
 x` (#294) is the value-channel classifier by name — on a numeric binding
 it and the predicate words are one classifier and cannot disagree.
 
@@ -388,9 +425,11 @@ it and the predicate words are one classifier and cannot disagree.
 ## The six predicates — the ENTROPY route
 
 **These formulas classify the trajectory of `entropy(value)`. Since #861
-they answer only for non-numeric bindings (strings, containers) and the
-explicit entropy channel; numeric bindings use the value-channel
-definitions above.** The traces and design notes are kept because the
+they answer the four entropy-routed predicates and `report` for non-numeric
+bindings (strings, containers), plus all six predicates on the explicit
+entropy channel; numeric bindings use the value-channel definitions above,
+and routed non-numeric `converged`/`stable` use deep equality except for the
+bounded NaN-buffer stability case described above.** The traces and design notes are kept because the
 mechanics still run — on the signal they were always sound for.
 
 ### `converged` (kind 0)
@@ -778,7 +817,9 @@ report of x               # "converged"  — settled AT THE DEADBAND; x is ~98, 
 
 This is the tolerance semantics, not a defect: `converged` means every
 recent step is below the tolerance, and per-step motion of 0.1% at the
-default `dh_zero = 0.001` is exactly the boundary. Tighten the deadband
+fixed `dh_zero = 0.001` is exactly the boundary. This tolerance is not a
+runtime setting; read its authoritative value at
+`OBSERVER_DH_ZERO_DEFAULT` in `src/eigenscript.h`.
 
 The lesson is about **observation cadence**: observe at a rate matched to
 the dynamics, not once per micro-step. The robust pattern is to advance the
@@ -858,8 +899,11 @@ loop while not (converged of x):
         throw of "did not settle"
 ```
 
-- **Tolerance tighter than the default.** `converged` fires at the
-  deadband (`dh_zero`, default 0.1% relative). For a tighter answer,
+- **Tolerance tighter than the fixed value.** `converged` fires at the
+  deadband (`dh_zero`, fixed at 0.1% relative). It is not configurable;
+  read the authoritative value at `OBSERVER_DH_ZERO_DEFAULT` in
+  `src/eigenscript.h`. For a tighter answer, calculate and test the desired
+  residual explicitly.
 
 ## What carries a trajectory
 
@@ -870,6 +914,13 @@ state. So every predicate, `report`, `report_value`, `observe` and
 across the observations has a history to classify (#1048). Every case
 follows from that one rule:
 
+**A binding's creation is its first observation: the `local`/first assignment
+for a local, and the call-time binding for a parameter. Every later assignment
+in the same activation adds one.** Thus, for every binding in an activation,
+`when` = (1 if it is a parameter) + the number of tape `A` records for it in
+that activation. The parameter creation event is #1048's “one observation per
+call”; it is not an `A` assignment record.
+
 | form | persistent env slot? | trajectory |
 |---|---|---|
 | a named local (`q is v`, `local q is v`) | yes | **carries** |
@@ -877,7 +928,7 @@ follows from that one rule:
 | an `eval`-generated name | yes | carries, N chosen at runtime (loses lint and the AOT — prefer the closure) |
 | a dict field `ch.a` | no — a Value in a container | none: `equilibrium`, no history |
 | a list element `xs[0]` | no — a Value in a container | none |
-| a function parameter | the frame dies each call | none: one observation per call |
+| a function parameter | the frame dies each call | carries within that call; creation is observation one (#1048) |
 | a `for` binder `for x in xs:` | fresh each iteration (#1062) | none |
 | a `for`-body `local` **at module level** | the loop env is cleared each iteration | none: one observation, every read answers `equilibrium` |
 | a `for`-body `local` **inside a function** | a frame slot that persists for the loop | carries — and **interleaves** if fed several entities |

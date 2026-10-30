@@ -1,0 +1,22 @@
+# #1977: a sandbox descriptor that abuses a private-loop-counter opcode must not
+# corrupt the HOST frame. OP_LOOP_EXIT_NAMED (105) drains every operand-stack
+# slot above its depth operand; the verifier modelled it as a fixed one-pop, so
+# a depth-0 EXIT_NAMED verified clean and then drained past the frame. Standalone
+# it double-freed the host's value (SIGABRT); nested inside a host `loop while`
+# it removed the host loop's own private counter, so the host failed with
+# "loop counter depth 0 out of range". The verifier now refuses the opcode in
+# assembled bytecode. This runs under all three execution tiers because the host
+# loop (whose counter is the target) is JIT/OSR-compilable.
+bad is [1, [2, 2, 105, 0, 0, 35, 41], []]
+
+# Standalone: refused, ok=false, no crash.
+r is sandbox_run of [bad, 5]
+print of ["standalone", r["ok"]]
+
+# Nested inside a host loop whose own private counter is live on the stack: the
+# host loop must run to completion and publish its own (uncorrupted) count.
+i is 0
+loop while i < 3:
+    i is i + 1
+    inner is sandbox_run of [bad, 5]
+print of ["host", i, __loop_iterations__, inner["ok"]]

@@ -1,0 +1,14 @@
+# #1425 fix2: native BINARY_LINE_END must emit the restored-line event just
+# like the interpreter. A stamp after the expression also exercises trace-line
+# deduplication against the restored cache.
+define warmed(k) as:
+    local r is (1 +
+        k)
+    local stamp is k
+    return r + stamp
+
+local i is 6001
+loop while i > 0:
+    local value is warmed of i
+    i is i - 1
+print of value

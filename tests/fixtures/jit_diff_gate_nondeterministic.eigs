@@ -1,0 +1,3 @@
+# Clean control: the harness's common seed makes this stable. The self-test
+# plant varies that process seed between runs; trace/replay then stabilizes it.
+print of (random_int of [1, 1000000])

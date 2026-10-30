@@ -423,12 +423,13 @@ static inline EigsSlot dict_value_take_slot(Value *dict, int i) {
 static inline void list_move(Value *list, int dst, int src, int n) {
     memmove(&list->data.list.items[dst], &list->data.list.items[src], (size_t)n * sizeof(EigsSlot));
 }
+__attribute__((unused))
 static inline void dict_value_move(Value *dict, int dst, int src, int n) {
     memmove(&dict->data.dict.vals[dst], &dict->data.dict.vals[src], (size_t)n * sizeof(EigsSlot));
 }
 /* Stable bottom-up mergesort: libc qsort has no tie-order guarantee.
  * The comparator receives `const EigsSlot *` element pointers. Scratch
- * slots borrow the list's references; only their order changes. #1758. */
+ * slots borrow the list's references; only their order changes. #1758/#1982. */
 static inline void list_sort(Value *list, int (*cmp)(const void *, const void *)) {
     size_t n = (size_t)list->data.list.count;
     if (n < 2) return;
@@ -453,6 +454,19 @@ static inline void list_sort(Value *list, int (*cmp)(const void *, const void *)
         memcpy(list->data.list.items, src, n * sizeof(EigsSlot));
     free(scratch);
 }
+
+__attribute__((unused))
+static inline int list_iter_count(const Value *list) { return list->data.list.count; }
+__attribute__((unused))
+/* Ordered readers walk the insertion-order array without changing it.  A
+ * removed key is a tombstone; only writers compact the array. */
+static inline int dict_iter_next(const Value *dict, int index) {
+    while (index < dict->data.dict.used && !dict->data.dict.keys[index]) index++;
+    return index < dict->data.dict.used ? index : -1;
+}
+#define DICT_FOR_EACH(dict, index) \
+    for (int index = dict_iter_next((dict), 0); index >= 0; \
+         index = dict_iter_next((dict), index + 1))
 
 /* Raw storage is confined to bulk allocation/movement/destruction code. */
 __attribute__((unused))

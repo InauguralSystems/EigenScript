@@ -51,6 +51,13 @@ history — never from an external reference:
 | `why is x`  | change in that content | how fast that is changing |
 | `how is x`  | settledness in `[0, 1]` | how settled the last step left it |
 
+**A binding's creation is its first observation: the `local`/first assignment
+for a local, and the call-time binding for a parameter. Every later assignment
+in the same activation adds one.** Thus, for every binding in an activation,
+`when` = (1 if it is a parameter) + the number of tape `A` records for it in
+that activation. The parameter creation event is #1048's “one observation per
+call”; it is not an `A` assignment record.
+
 Two of these are the load-bearing pair:
 
 - **`where` — information content (the engine calls it entropy).** It is
@@ -129,8 +136,11 @@ a built-in goal precisely so it does not choose the user's frame.
 `report of x` and the bare predicates (`converged`, `improving`, …) route
 by the binding's current type. **Numeric bindings use the value channel**: it
 classifies relative steps `Δv / max(|v|, |v_prev|, scale)` and retained raw
-steps. **Non-numeric bindings use the entropy channel**: it classifies changes
-in `entropy(value)` against the entropy thresholds. The resulting vocabulary
+steps. **Non-numeric `report` and four predicates use the entropy channel**:
+it classifies changes in `entropy(value)` against the entropy thresholds.
+`converged` and ordinarily `stable` compare bounded assignment snapshots;
+the non-reflexive buffer exception below gives `stable` its entropy rule.
+The resulting vocabulary
 is `converged`, `equilibrium`, `stable`, `oscillating`, `improving`, and
 `diverging`; `report` can additionally answer `moving` when no band matches.
 See [PREDICATES](PREDICATES.md#which-channel-answers-861) for the precise
@@ -156,14 +166,49 @@ variable first so there is a binding history to inspect. Dict fields such as
 ### Two signals: entropy vs. value (`report` vs. `report_value`)
 
 **Since #861 the predicate words and `report` ROUTE: numeric bindings
-answer from the value channel described below; non-numeric bindings (and
-the explicit `classify of [t, "entropy"]`) answer from the entropy
-channel.** The routing exists because of everything this section
-documents — the entropy signal's lossiness for "has the value settled"
-was measured at 19/27 against an analytic convergence corpus, vs 25/27
-for the value channel (`tests/test_convergence_oracle.eigs`). The
-paragraphs below describe the two signals themselves; where they say
-`report` reads entropy, that is now true only for non-numeric bindings.
+answer from the value channel described below. For non-numeric bindings,
+`converged` uses deep equality across the full window (#1992). `stable`
+uses the same test for snapshots that equal themselves; an accepted snapshot
+containing a NaN buffer instead uses the entropy stability rule, after a full
+bounded comparison window is available (S10-D1).
+The other predicates and `report` answer from entropy. The explicit
+`classify of [t, "entropy"]` always answers from entropy.** The routing exists because of everything this section
+documents. The CI oracle now reports a per-predicate comparison: run
+`python3 tools/observer_oracle/score.py src/eigenscript` and read its
+**DOCUMENTATION TABLE** for the incumbent, `REFERENCE`,
+`REFERENCE_ENTROPY`, and constant-false columns. Those cells are derived
+from the current labelled corpus and selected binary rather than copied
+into this document. The
+paragraphs below describe the two signals themselves; `report` reads entropy
+only for non-numeric bindings, and does not adopt their equality route.
+
+The equality route snapshots each bounded value at assignment, so mutating a
+container in place and then assigning that same object is still observed as a
+change; the window never retains aliases to the program's mutable object.  To
+bound observer overhead, the snapshot walk stops after **4,096 content units**
+(value nodes plus string/key bytes, buffer elements, and text-builder bytes).
+An assignment above that bound is a refusal to judge: it clears the equality
+run and leaves both predicates false until a new full window of bounded
+comparisons has been observed. Entropy diagnostics are
+still recorded normally.
+
+Stored buffer cells compare with raw IEEE equality, including inside list or
+dict snapshots: NaN is unequal to itself, with no normalization, mutation,
+error or math-flag write. Such an accepted, bounded snapshot therefore cannot
+converge. Once a full bounded comparison window is available, its `stable`
+predicate uses the entropy-window stability criterion instead. A refused or
+oversized snapshot clears that eligibility; a fresh full bounded window is
+required even if the entropy window was already complete.
+The real `matmul` scenario in `tests/test_observer_snapshot_fix2.sh` consequently
+prints `false`, `true`, `false` for `x == x`, `stable of x`, and
+`converged of x`. Finite snapshots retain the equality test and its protection
+against in-place mutation through aliases.
+
+Observer equality is non-raising: unlike the `==`
+operator, a number and boolean at corresponding positions are simply unequal.
+Functions compare by identity through a non-owning token; a function nested in
+a container is refused, because retaining a closure would add an invisible
+owning edge to the cycle collector.
 
 `report`/the bare predicates historically classified the trajectory of
 **`entropy(value)`** — the information content, not the number. That is the right signal for "how

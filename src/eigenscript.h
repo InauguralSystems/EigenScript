@@ -206,7 +206,19 @@ typedef struct {
     Token *tokens;
     int count;
     int capacity;
+    /* Exact source byte ranges occupied by literals.  The formatter consumes
+     * these instead of maintaining a second string/f-string scanner. */
+    struct LexLiteralSpan *literal_spans;
+    int literal_count;
+    int literal_capacity;
+    int *line_depths;            /* -1: blank/literal/continuation; <-1: comment */
+    int line_depth_count;
 } TokenList;
+
+typedef struct LexLiteralSpan {
+    size_t start;
+    size_t end;                 /* exclusive */
+} LexLiteralSpan;
 
 /* ---- AST ---- */
 
@@ -241,13 +253,13 @@ struct ASTNode {
         int boolean;
         char *str;
         struct { char *name; } ident;
-        struct { char op[4]; ASTNode *left; ASTNode *right; } binop;
+        struct { char op[4]; ASTNode *left; ASTNode *right; uint8_t synth; } binop; /* synth: f-string `+` (#1425) */
         struct { char op[4]; ASTNode *operand; } unary;
         struct { char *name; ASTNode *expr; int local_only; } assign;
         struct { ASTNode *left; ASTNode *right; } relation;
         struct { ASTNode *cond; ASTNode **if_body; int if_count; ASTNode **else_body; int else_count; } cond;
         struct { ASTNode *cond; ASTNode **body; int body_count; } loop;
-        struct { char *name; char **params; ASTNode **param_defaults; int param_count; int first_default; ASTNode **body; int body_count; } func;
+        struct { char *name; char **params; int *param_lines; int *param_cols; ASTNode **param_defaults; int param_count; int first_default; ASTNode **body; int body_count; } func;
         struct { ASTNode *expr; } ret;
         struct { ASTNode **stmts; int count; } block;
         struct { ASTNode **elems; int count; } list;
@@ -383,6 +395,15 @@ typedef struct ObserverSlot {
                                  * number to string falls back to the entropy
                                  * channel instead of answering from a stale
                                  * numeric trajectory. */
+    /* #1992 equality route for non-numeric convergence predicates. The
+     * retained value is the preceding assignment snapshot; eq_window records
+     * whether each successive pair compared equal with the language's `==`.
+     * Entropy remains recorded above for report/trajectory diagnostics. */
+    Value   *eq_last;
+    const Value *eq_identity_last; /* non-owning identity token for fn/builtin */
+    uint8_t *eq_window;
+    uint8_t  eq_window_head, eq_window_count, eq_cap;
+    uint8_t  eq_seen;             /* non-numeric route active, even if refused */
 } ObserverSlot;
 
 struct Env {
@@ -482,7 +503,8 @@ struct Value {
         struct { EigsSlot *items; int count; int capacity; } list;   /* #1665 arm D: slot storage, src/container.h */
         struct { char *name; char **params; uint32_t *param_hashes; int param_count; ASTNode **body; int body_count; Env *closure; EnvInternTable *param_intern_tbl; } fn;
         BuiltinFn builtin;
-        struct { char **keys; EigsSlot *vals; int count; int capacity; EnvHash hash; EnvInternRef *intern_refs; } dict;
+        /* count is live entries; used includes order-array tombstones. */
+        struct { char **keys; EigsSlot *vals; int count; int used; int capacity; EnvHash hash; EnvInternRef *intern_refs; } dict;
         struct { double *data; int count; int rows, cols; } buffer;  /* rows==0 => unshaped 1-D (count is length); rows>0 => 2-D, rows*cols==count */
         struct { char *data; size_t len; size_t cap; int parts; } text_builder;
     } data;
@@ -689,6 +711,7 @@ void observer_slot_reset_bounded(struct Env *e, int max_retain_cap);
  * run the same halting as the interpreter/JIT. (vm.c) */
 int eigs_loop_stall_step(struct Env *e);
 int eigs_loop_cap_step(struct Env *e);
+void eigs_loop_enter(struct Env *e);
 /* #660 SIGUSR1 live observer dump: `kill -USR1 <pid>` prints one row per
  * live binding (module scope + the dumping thread's live frame) to stderr at
  * the next loop safepoint. The handler (installed by the CLI, SA_RESTART)
@@ -784,6 +807,20 @@ typedef enum {
     HANDLE_NET       /* #414 ext_net socket (listener or connection) */
 } HandleType;
 
+/* Live resources which make a mid-state replay install unsafe (#1913). */
+enum {
+    EIGS_LIVE_STORE   = 1u << 0,
+    EIGS_LIVE_THREAD  = 1u << 1,
+    EIGS_LIVE_CHANNEL = 1u << 2,
+    EIGS_LIVE_TASK    = 1u << 3,
+    EIGS_LIVE_SOCKET  = 1u << 4,
+    EIGS_LIVE_FILE    = 1u << 5,
+    EIGS_LIVE_GFX     = 1u << 6,
+    EIGS_LIVE_AUDIO   = 1u << 7,
+    EIGS_LIVE_DATABASE = 1u << 8,
+    EIGS_LIVE_HTTP    = 1u << 9
+};
+
 /* #1146: `gen` is bumped every time the slot is handed out, so a handle
  * VALUE that still names a recycled slot is detectable. Ids recycle
  * round-robin over the 255 usable slots, so after 255 spawn/join cycles a
@@ -836,6 +873,9 @@ void            env_intern_table_unref(EnvInternTable *t);
 /* Per-interpreter-instance config + shared registry. Transparent for
  * internal TUs (Phase 10's embed.h wraps it behind accessors). */
 struct EigsState {
+    /* Intrusive process registry, guarded by state.c's attached lock. */
+    EigsState      *process_next;
+    int             process_registered;
     uint64_t trace_state_token;   /* association metadata; never an address */
     pthread_mutex_t threads_lock;
     EigsThread     *threads;
@@ -1080,11 +1120,12 @@ struct EigsThread {
     char         first_error_msg[256];
     struct Value *error_value;      /* thrown payload for structured catch */
     /* #406: structured runtime errors. Kind (ErrKind), 1-based line, and
-     * the bare message (no "Error line N:" frame) of the live error —
+     * the bare message (no "Error path:N:" frame) of the live error —
      * catch binds {kind, message, line} from these when error_value is
      * NULL (i.e. for built-in errors; thrown values bind untouched). */
     int          error_kind;
     int          error_line;
+    char         error_file[1024];
     char         error_raw[3900];
     /* Observer execution state — current observer and "unobserved {}"
      * scope depth (incremented on entry, decremented on exit; non-zero
@@ -1112,6 +1153,8 @@ struct EigsThread {
     /* Loop-stall accounting (scoped per call frame via CallFrame.saved_*). */
     int                  loop_stall_count;
     long long            loop_iterations;   /* #772: uncapped frames exceed int range */
+    /* #1906: cumulative compiler-loop charge for the armed sandbox. */
+    long long            sandbox_loop_iterations;
     const char          *loop_exit_reason;
     /* #940: the sandbox loop budget's SECOND counter, crossed at every
      * OP_JUMP_BACK while a sandbox budget is armed (g_sandbox_loop_max != 0).
@@ -1308,6 +1351,7 @@ struct EigsThread {
     int                  sandbox_refusal;
     int                  sandbox_refusal_kind;
     int                  sandbox_refusal_line;
+    char                 sandbox_refusal_file[1024];
     char                 sandbox_refusal_msg[3900];
     /* #739: stream_open/stream_write/stream_close target. Per-OS-thread: it
      * was one FILE* per process and stream_open unconditionally closes
@@ -1352,6 +1396,7 @@ extern __thread EigsThread *eigs_current;
 #define g_exit_requested    (eigs_current->exit_requested)
 #define g_exit_code         (eigs_current->exit_code)
 #define g_error_line        (eigs_current->error_line)
+#define g_error_file        (eigs_current->error_file)
 #define g_error_raw         (eigs_current->error_raw)
 #define g_last_obs_slot_env (eigs_current->last_obs_slot_env)
 #define g_last_obs_slot_idx (eigs_current->last_obs_slot_idx)
@@ -1558,6 +1603,7 @@ void eigs_bool_gate_exempt(BuiltinFn fn);   /* a host function: never gated */
 #define g_vm                  (*eigs_current->vm)
 #define g_loop_stall_count    (eigs_current->loop_stall_count)
 #define g_loop_iterations     (eigs_current->loop_iterations)
+#define g_sandbox_loop_iterations (eigs_current->sandbox_loop_iterations)
 #define g_loop_backedge_count (eigs_current->loop_backedge_count)
 #define g_loop_exit_reason    (eigs_current->loop_exit_reason)
 #define g_call_serial_next    (eigs_current->call_serial_next)
@@ -1698,7 +1744,8 @@ int  eigs_process_state_count(void);
  * closed by construction and gated structurally —
  * tests/test_trace_mt.sh's `close-count-toctou` check fails any close path
  * that reads a count separately, and pins the count reader's one caller. */
-int  eigs_process_state_release(void);
+int  eigs_process_state_release(EigsState *st);
+void eigs_process_states_visit(void (*visit)(EigsState *, void *), void *ctx);
 /* Tear down a state whose live-count was already released by
  * eigs_process_state_release (eigs_close). Other callers use
  * eigs_state_destroy, which releases. */
@@ -1724,6 +1771,7 @@ void eigs_obs_unmute_for_fatal(void);
 #define g_sandbox_refusal      (eigs_current->sandbox_refusal)
 #define g_sandbox_refusal_kind (eigs_current->sandbox_refusal_kind)
 #define g_sandbox_refusal_line (eigs_current->sandbox_refusal_line)
+#define g_sandbox_refusal_file (eigs_current->sandbox_refusal_file)
 #define g_sandbox_refusal_msg  (eigs_current->sandbox_refusal_msg)
 #define g_stream_file         (*(FILE **)&eigs_current->stream_file)
 #define g_entry_threshold     (eigs_current->state->jit_entry_threshold)
@@ -1829,6 +1877,8 @@ const char* eigs_native_fn_name(BuiltinFn fn);   /* NULL for a plain builtin */
 Value* make_dict(int capacity);
 void dict_set(Value *dict, const char *key, Value *val);
 void dict_set_owned(Value *dict, const char *key, Value *val);
+/* Shared by indexed assignment and builtins which accept dictionary keys. */
+const char *dict_assignment_key(Value *dict, Value *key, int line);
 /* Deep-copy a value for cross-thread channel transfer (#293): re-homes dict
  * keys into a process-global intern table so they survive the sender thread's
  * detach. Returns a heap value (refcount 1). */
@@ -1906,6 +1956,18 @@ void free_value(Value *v);
  * num_guard itself for a source nobody enumerated. Out of line so the NaN
  * branch stays one call on a path a finite program never takes. */
 void eigs_strict_nan_raise(const char *who);
+
+/* Legacy scalar VALUE mapping of num_guard, retained for the bit-level
+ * tests/test_num_guard_value.c fixture. Phase2 buffer/container equality uses
+ * the stored IEEE doubles directly (S10-D1), so runtime builds may not call
+ * this helper. Keep its mapping in sync with num_guard. */
+__attribute__((unused))
+static inline double num_guard_value(double x) {
+    if (x != x) return 0.0;
+    if (x > EIGS_NUM_MAX) return EIGS_NUM_MAX;
+    if (x < -EIGS_NUM_MAX) return -EIGS_NUM_MAX;
+    return x;
+}
 
 static inline double num_guard(double x) {
     /* Fast path unchanged: the flag writes live only on the clamp branches,
@@ -2111,6 +2173,11 @@ void env_global_shared_unlock(void);
 void env_mark_shared(Env *e);
 void env_set(Env *env, const char *name, Value *val);
 Value* env_get(Env *env, const char *name);
+/* #1869: a COUNTED read for paths reachable while multithreaded. The value is
+ * resolved and counted inside the #607 hold (env_resolve_chain_ref), then
+ * the held slot's reference is handed over: the caller owns exactly one
+ * reference and must val_decref it. NULL when the name is unbound. */
+Value* env_get_counted(Env *env, const char *name);
 void env_set_local(Env *env, const char *name, Value *val);
 uint32_t env_name_hash(const char *name);
 void env_set_hashed(Env *env, const char *name, uint32_t h, Value *val);
@@ -2326,6 +2393,8 @@ typedef enum {
     EK_USER,              /* `throw` — catch binds the thrown value, not a dict */
 } ErrKind;
 const char* err_kind_name(ErrKind k);
+/* Reverse lookup through the same closed vocabulary; false for unknown names. */
+int err_kind_from_name(const char *name, ErrKind *out);
 /* #871: predicate word for a kind (parser/VM/lint share this table). */
 const char* eigs_predicate_name(unsigned kind);
 void rt_error(ErrKind kind, int line, const char *fmt, ...)
@@ -2352,7 +2421,9 @@ char* eigs_json_encode(Value *v);
  * above). The declarations below cover the not-yet-migrated globals. */
 void eigs_clear_error_value(void);
 void vm_print_stack_trace(FILE *out);  /* uncaught-error call stack (vm.c); no-ops without a VM */
+int vm_error_has_handler(void);        /* active VM slice has an open try */
 int vm_current_line(void);             /* live source line (vm.c); 0 without a VM */
+const char *vm_current_file(void);      /* stable source identity or <native> */
 void eigs_record_first_error(int line, const char *msg);
 void eigs_record_first_error_at(int line, int col, int len, const char *msg);
 void eigs_record_lexer_error_at(int line, int col, int len, const char *msg);
@@ -2493,6 +2564,7 @@ Value *builtin_thread_join(Value *arg);
  * Call once execution is done and the value world is still alive (before
  * env/thread teardown). */
 void   handle_table_drain(struct EigsState *st);
+unsigned handle_table_live_kinds(struct EigsState *st);
 void   handle_release(int id, uint32_t gen);
 
 /* `exit`: first request wins within the caller's evaluation scope. Workers
@@ -2560,7 +2632,7 @@ int eigs_api_dump(FILE *out, int json);
 /* Seed the shared drand48 stream from entropy unless seed_random already
  * pinned it. Exported so extension samplers (model_infer.c's eigen_generate)
  * draw from the SAME script-seedable stream as random/random_int -- the old
- * private rand() path was seeded by main's srand(time) and could not be
+ * private libc-rand path was seeded by main from the clock and could not be
  * pinned from script at all (found via iLambdaAi's eval-determinism probe,
  * 2026-08-17). */
 void eigs_ensure_random_seeded(void);
@@ -2568,5 +2640,6 @@ void eigs_ensure_random_seeded(void);
  * entry points runtime code may use, so seeding and draws share one lock. */
 double eigs_random_double(void);
 long eigs_random_long(void);
+void eigs_seed_random(long seed);
 
 #endif /* EIGENSCRIPT_H */

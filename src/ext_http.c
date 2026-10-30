@@ -787,7 +787,8 @@ Value* builtin_http_post(Value *arg) {
      * (what already worked). Anything else that PARSED is a caller mistake, not
      * a no-header request — it says so instead of dropping the headers. */
     if (hdr_obj && hdr_obj->type == VAL_DICT) {
-        for (int i = 0; i < hdr_obj->data.dict.count && hdr_count < 32 && argc < 90; i++) {
+        DICT_FOR_EACH(hdr_obj, i) {
+            if (hdr_count >= 32 || argc >= 90) break;
             char *hk = xstrdup(hdr_obj->data.dict.keys[i]);
             char *hv = value_to_string(dict_value_get_view(hdr_obj, i, &(EigsView){{0}}));
             http_strip_crlf(hk);
@@ -1704,18 +1705,20 @@ static void handle_request(int fd) {
                         pthread_mutex_unlock(&srv->shared_mu);
                     }
                     if (!auth_src) {
-                        Value *auth_fn = env_get(g_global_env, "require_auth");
+                        Value *auth_fn = env_get_counted(g_global_env, "require_auth");
                         if (!auth_fn || (auth_fn->type != VAL_FN && auth_fn->type != VAL_BUILTIN)) {
+                            if (auth_fn) val_decref(auth_fn);
                             send_response(fd, 500, "Internal Server Error", "application/json",
                                 "{\"error\": \"require_auth not defined or not callable\"}", 53);
                             goto done;
                         }
+                        val_decref(auth_fn);
                         auth_src = xstrdup("require_auth of null");
                     }
                     TokenList auth_tl = tokenize(auth_src);
                     ASTNode *auth_ast = parse(&auth_tl);
                     Env *auth_env = env_new(g_global_env);
-                    EigsChunk *auth_chunk = compile_ast(auth_ast, auth_env, auth_src);
+                    EigsChunk *auth_chunk = compile_ast(auth_ast, auth_env, auth_src, "<embed>");
                     Value *auth_result = vm_execute(auth_chunk, auth_env);
                     chunk_free(auth_chunk);
                     env_decref(auth_env);
@@ -1735,7 +1738,7 @@ static void handle_request(int fd) {
                 TokenList tl = tokenize(r->payload);
                 ASTNode *ast = parse(&tl);
                 Env *req_env = env_new(g_global_env);
-                EigsChunk *req_chunk = compile_ast(ast, req_env, r->payload);
+                EigsChunk *req_chunk = compile_ast(ast, req_env, r->payload, "<embed>");
                 Value *result = vm_execute(req_chunk, req_env);
                 chunk_free(req_chunk);
                 if ((g_has_error && !g_exit_requested) || g_parse_errors) {
@@ -2056,4 +2059,10 @@ void ext_http_state_destroy(EigsState *st) {
      * threads die before the state does (http_serve returns or process
      * exits), so theirs is already gone. */
     if (eigs_http_active == s) eigs_http_active = NULL;
+}
+
+unsigned ext_http_live_handles(EigsState *st) {
+    Server *s = st ? st->ext_http_server : NULL;
+    return s && (s->early_bind_fd >= 0 || s->init_thread_active || s->serving)
+        ? EIGS_LIVE_HTTP : 0;
 }

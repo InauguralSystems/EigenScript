@@ -195,9 +195,9 @@ gates (design §9.2).
   -> `[false, true, true, false, true]` (N2's exact cross-kind compare)
   tag: `[true, false, false, true, true]` (probed main)
   shape: F  witness: fn-stop cmp EQ (a boxed int fails the first comparison's guard)  ops: EQ
-- `ctl.N2.fn-float-compare` (control) `define ltf(a, b) as: t is a < b / return t`, called 60 times with `[0.5, 0.75]`
+- `ctl.N2.fn-float-compare` (control) `define ltf(a, b) as: t is a < ( / b) / return t`, called 60 times with `[0.5, 0.75]`; the written comparison spans physical lines (#1425)
   -> `true` on both
-  shape: F  witness: fn ltf (witness probed main: `ltf 60 yes ... RET`)  ops: LT
+  shape: F  witness: fn ltf (the native full return must cross both operator-line markers)  ops: BINARY_LINE LT BINARY_LINE_END
 - `ctl.N2.float-eq` (control) `print of [0.5 + 0.25 == 0.75, 1 == 1.0, 3 < 3.5]`
   -> `[true, true, true]`, both binaries
 
@@ -221,10 +221,10 @@ gates (design §9.2).
 - `ctl.N3.leaf-float` (control) `define sqf(x) as: return x * x / print of (sqf of 1.5)`
   -> `2.25` on both
   shape: L  witness: leaf sqf (witness probed main: no entries normally, 1 under trace)  ops: MUL
-- `N3.fn-arith-exact` [R1.3] `define f(a, b) as: t is a * b / u is t + a / return u - b`, called 60 times with `[94906267, 94906267]`; print the last result
+- `N3.fn-arith-exact` [R1.3] `define f(a, b) as: t is a * ( / b) / u is t + a / return u - b`, called 60 times with `[94906267, 94906267]`; print the last result; the operator-line stamp precedes the int guard fallback
   -> `9007199515875289`
   tag: `9007199515875288` (probed main)
-  shape: F  witness: fn-stop f MUL  ops: MUL
+  shape: F  witness: fn-stop f MUL  ops: BINARY_LINE MUL
 - `N3.osr-sum-exact` [R1.3] `define total(n, step) as: acc is 9007199254740000 / i is 0.0 / loop while true: (acc is acc + step / i is i + 1.0 / if i >= n: return acc)`; `print of (total of [1000.0, 1])`
   -> `9007199254741000`
   tag: `9007199254740992`: the double sum stalls at 2^53 (probed main)
@@ -233,9 +233,9 @@ gates (design §9.2).
   -> `9007199254741000`
   tag: `9007199254740992` (probed main)
   shape: O  witness: osr-stop <module> ADD (module-level OSR; a boxed int fails ADD's operand guard)  ops: ADD
-- `ctl.N3.osr-float` (control) `define totalf(n) as: acc is 0.5 / i is 0.0 / loop while true: (acc is acc + 1.5 / i is i + 1.0 / if i >= n: return acc)`; `print of (totalf of 100.0)`
+- `ctl.N3.osr-float` (control) `define totalf(n) as: acc is 0.5 / i is 0.0 / loop while true: (acc is acc + ( / 1.5) / i is i + 1.0 / if i >= n: return acc)`; `print of (totalf of 100.0)`; the addition spans physical lines (#1425)
   -> `150.5` on both
-  shape: O  witness: osr totalf (witness probed main: `osr yes`, `oadv 122` = `len 122`, the return sentinel)  ops: ADD CONST NUM_ONE GE JUMP_IF_FALSE SET_LOCAL POP
+  shape: O  witness: osr totalf (the sole in-body return must follow both operator-line markers)  ops: BINARY_LINE ADD BINARY_LINE_END CONST NUM_ONE GE JUMP_IF_FALSE SET_LOCAL POP
 
 ### A
 - `A.add-overflow-raises` [R1.3] `{try print of (9223372036854775807 + 1) catch}`, printing `[e.kind, (index_of of [e.message, "+"]) >= 0]`
@@ -554,6 +554,14 @@ Names, operands and operations follow the decided [#1758 comment 6304880619](htt
   shape: L  witness: leaf dif  ops: SUB
 
 ### N13
+- `N13.binary-line-int-errors` [R1.8] warm a two-int addition helper 60 times, then exact int64 overflow and floor-division overflow/zero through written multiline operators; catch the physical operator line and inspect its numeric kind; a negative integer quotient stays exact
+  -> `["value", true, "int"]` three times, then `[-4, "int"]`
+  tag: floor-division syntax and num_type are absent; int overflow is a double operation (read). Existing Phase2 contracts plus main #1425.
+  shape: F  witness: fn-stop binary_add ADD  ops: BINARY_LINE ADD
+- `N13.binary-line-parent-restore` [R1.8, invariant] warm a float sum used as a parent index; a null target raises at the right operand line restored after the successful sum; inspect exact int e.line; the final finite call crosses both markers and returns
+  -> `["type_mismatch", true, "int"]` then `1.5`
+  tag: num_type is absent; the v0.46 anchor predates the landed exact-line contract. Bank ed09f908 and merged probes both produce the exact output with fn RET; classify as an invariant under R1.7-D3.
+  shape: F  witness: fn restored_index  ops: BINARY_LINE ADD BINARY_LINE_END INDEX_GET
 - `gate.N13.audio-buffer-boundary` [R1.6e] `tests/phase2/gfx_audio_boundary.c` through `tools/phase2_readers.sh`: R1.6d-D1 pre-registration for audio_convert_samples (audio_play, audio_play_loop, audio_stream_push). Stored lenient NaN and every infinity raise `value`; strict NaN retains INVALID and the first diagnostic before a later infinity. Continuous finite samples clamp to [-1,1], then round PCM half away from zero. The fixture drives the actual helper with raw payloads because strict scalar constructors refuse first; no SDL dependency is exercised.
 - `N13.json-refuses-inf` [R2.3] `x is 1e308 * 10 / {try print of (json_encode of [x]) catch}`, printing `e.kind`
   -> `value`
@@ -595,11 +603,11 @@ Names, operands and operations follow the decided [#1758 comment 6304880619](htt
   tag: n/a (a C test, not a program); today's `"%g"` binds `1.23457e+06` (#1762). It needs no PostgreSQL server, so it runs in CI as a gate.
 
 ### T1
-- `T1.float-kind-token` [R1.3] (sh row) record `x is 3.0 / z is -0.0`, assert the v8 assignment tokens mark both as floats, replay and compare stdout
+- `T1.float-kind-token` [R1.3] (sh row) record `x is 3.0 / z is -0.0`, assert the v9 assignment tokens mark both as floats, replay and compare stdout
   -> `float tokens marked`, `float replay identical`
   tag: v6 emits `x=3` and `z=-0`, losing kind. A planted v6-format float writer makes this row fail.
 - `T1.v7-header` [R1.3] (sh row) `EIGS_TRACE=t.tape eigenscript p.eigs; head -1 t.tape | cut -d' ' -f1-2`
-  -> `V 8`
+  -> `V 9` (sync #10 combines the phase2 and main v8 schemas; the row also refuses a v8-stamped tape before parsing it)
   tag: `V 6`
 - `T1.twice-int` [R1.3] (sh row) the Done-when's "record twice": record `define sq(x) as: return x * x / x is 9007199254740993 / y is sq of 94906267 / print of [x, y]` twice (`EIGS_TRACE=t1.tape`, then `t2.tape`); print whether `cmp t1.tape t2.tape` finds them identical; replay `t1.tape` with `EIGS_REPLAY_STRICT=1` and print whether its stdout byte-equals the live run's (the live run computes `sq` in the leaf, the recording on the generic path); print the A records for `x` and `y`
   -> `tapes identical`, `replay identical`, `A 0 x=9007199254740993`, `A 0 y=9007199515875289`
@@ -608,7 +616,7 @@ Names, operands and operations follow the decided [#1758 comment 6304880619](htt
   -> `tapes identical`, `replay identical`, `A 0 x=3.0`, `A 0 y=0.30000000000000004`, `A 0 z=-0.0`, `A 0 w=0.1` (R1.7-D3; the kind on the tape; the exact text is N6's, R1.7)
   tag: `A 0 x=3` and `A 0 z=-0` (read: `%.17g`)
 - `T1.int-replay-kind` [R1.3] (sh row) record a replayed `random_int` draw selecting an int literal; print its exact value and `num_type`, then replay and compare bytes
-  -> `int replay identical`, `int assignment exact` (the int is carried by the v8 assignment record; `random_int` retains the float bridge until R1.6)
+  -> `int replay identical`, `int assignment exact` (the int is carried by the v9 assignment record; `random_int` retains the float bridge until R1.6)
   tag: `num_type` undefined
 - `T1.v6-refused` [R1.3] (sh row) `EIGS_REPLAY=tests/phase2/fixtures/v6.tape eigenscript p.eigs`; print the rc and whether stderr names version 6
   -> `rc!=0 names-6`
@@ -620,7 +628,7 @@ Names, operands and operations follow the decided [#1758 comment 6304880619](htt
   -> `tapes identical`, `replay identical`, `A 0 x=nan`
   tag: `A 0 x=0` (the clamp, then `inf - inf` collapses to 0)
 
-The `O cfg` record's v8 shape is pinned by `O3.ocfg-no-hlow` (its file lists
+The `O cfg` record's v9 shape is pinned by `O3.ocfg-no-hlow` (its file lists
 `# ITEMS: O3 T1`).
 
 ### O1

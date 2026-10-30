@@ -1,9 +1,0 @@
-# R1.6 behaviour-table probe: proc_read_buf.hi (int-requiring; fd and max bytes; bytes stored as floats; case hi: STDIN fixture hi = the bytes "Hi" (rulings A5, C10))
-define nt(x) as:
-    try:
-        return num_type of x
-    catch e:
-        return e.kind
-b is proc_read_buf of [0, 16]
-print of [buf_len of b, b[0], b[1], nt of b[0], nt of b[1]]
-print of ["eof-after", proc_read_buf of [0, 16]]

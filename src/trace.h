@@ -29,7 +29,7 @@ typedef union { double d_; uint64_t u; } EigsSlot;   /* d_: read via SLOT_F64_RA
  * value serialization, escaping, truncation markers, the header itself.
  * Replay refuses a tape whose format or runtime version differs from the
  * running binary: version-and-reject, never migrate (docs/TRACE.md). */
-#define TRACE_FORMAT_VERSION 8   /* v8: int digits/float kinds (#1758) + chunked module-source records (#1885) */
+#define TRACE_FORMAT_VERSION 9   /* v9: combine phase2 v8 int/float kinds with main v8 continued N records; reject either older schema */
 #define TRACE_STREAM_KEY_MAX 1024
 
 /* B payload parser shared with the non-executing tape reader. key_hex points

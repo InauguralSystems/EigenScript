@@ -1,0 +1,3 @@
+define env_get(key) as:
+  return "mock"
+print of (env_get of "KEY")

@@ -16,7 +16,7 @@ static Value *ordinary_descriptor(void) {
     const char *source = "return 42\n";
     TokenList tokens = tokenize(source);
     ASTNode *ast = parse(&tokens);
-    EigsChunk *chunk = ast ? compile_ast(ast, g_global_env, source) : NULL;
+    EigsChunk *chunk = ast ? compile_ast(ast, g_global_env, source, "<embed>") : NULL;
     Value *descriptor = NULL;
     if (chunk && !g_has_error && !g_parse_errors && chunk->code_len > 0 &&
         chunk->code_len <= 64 && !chunk->fn_count && !chunk->local_count &&

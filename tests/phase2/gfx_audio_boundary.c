@@ -16,9 +16,9 @@ static void reset_error(void) {
 static Value *buffer(int n) {
     Value *count=make_int(n);Value *b=builtin_buffer(count);val_decref(count);return b;
 }
-int main(void) {
-    EigsState *st=eigs_open();if (!st) return 1;
-    g_try_depth=1;
+/* Expected data-boundary raises run inside a real VM try (#1808/#2098). */
+static Value *phase2_reader_probe(Value *arg) {
+    (void)arg;
     for (int strict=0;strict<=1;++strict) {
         g_strict=strict;
         for (int k=0;k<4;++k) {
@@ -41,7 +41,21 @@ int main(void) {
         check(pcm && pcm[0]==32767 && pcm[1]==-32767 && pcm[2]==16384 && pcm[3]==-16384,"PCM Q7 clamp then Q4 rounding");
         free(pcm);reset_error();val_decref(b);
     }
-    g_try_depth=0;eigs_close(st);
+    reset_error();
+    return make_bool(1);
+}
+int main(void) {
+    EigsState *st=eigs_open();if (!st) return 1;
+    Value *probe=make_builtin(phase2_reader_probe);
+    eigs_set_global("phase2_reader_probe",probe);
+    val_decref(probe);
+    Value *result=eigs_eval_string("try:\n    phase2_reader_probe of null\ncatch e:\n    false\n");
+    if (!result || result->type!=VAL_BOOL || !result->data.boolean || g_has_error) {
+        puts("phase2-gfx-audio-test: FAIL VM probe execution");
+        boundary_failures++;
+    }
+    val_decref(result);
+    eigs_close(st);
     printf("phase2-gfx-audio-test: %s checks=%d failures=%d\n",boundary_failures?"FAIL":"PASS",boundary_checks,boundary_failures);
     return boundary_failures ? 1 : 0;
 }

@@ -205,6 +205,61 @@ assert_bad_descriptor of [[ABI, [DICT,255,255, RETURN], []], "needs", "verify: O
 dr_ok is vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, DICT,1,0, RETURN], ["k", 7]]
 assert_eq of [dr_ok["k"], 7, "verify: OP_DICT with the pairs present still runs"]
 
+# --- #1977: the private-loop-counter opcodes are compiler-only --------------
+# #1906 gave each compiled `loop while` a private iteration counter in a slot
+# on its frame's operand stack, driven by four opcodes that take a frame-
+# relative slot DEPTH: OP_LOOP_ENTER_NAMED (push counter), _STALL_NAMED /
+# _CAP_NAMED (increment it), and _EXIT_NAMED (publish it and pop).
+# OP_LOOP_EXIT_NAMED's handler DRAINS every operand-stack slot above the given
+# depth — a pop count the verifier's pass-4 abstract model (which tracks only
+# the stack HEIGHT) cannot bound. Modelled as a fixed one-pop, a depth-0
+# EXIT_NAMED verified clean but drained the whole frame and then the caller's
+# operands: `[NUM_ZERO, NUM_ZERO, EXIT_NAMED 0, POP, RETURN_NULL]` double-freed
+# the host's value (SIGABRT), and nested inside a host `loop while` it removed
+# the host loop's own private counter ("loop counter depth 0 out of range").
+# The blind sweep in test_chunk_verify_stack.eigs misses this: it never pairs an
+# over-draining opcode with a following direct-index POP, and ends every chunk
+# in height-guarded RETURN. The verifier now refuses all four in any chunk the
+# trusted compiler did not produce; descriptors must use the legacy no-slot
+# loop opcodes below. (The compiler emits the *_NAMED forms into chunks it
+# marks compiler_scanned, which EIGS_VERIFY_SELF exempts.)
+NUM_ZERO is 2
+NUM_ONE is 3
+JUMP_BACK is 30
+RETURN_NULL is 41
+LOOP_STALL_CHECK is 62
+LOOP_CAP_CHECK is 63
+LOOP_ENTER is 101
+LOOP_STALL_NAMED is 102
+LOOP_CAP_NAMED is 103
+LOOP_ENTER_NAMED is 104
+LOOP_EXIT_NAMED is 105
+
+# Each of the four *_NAMED opcodes is refused with a reason that names it.
+assert_bad_descriptor of [[ABI, [LOOP_ENTER_NAMED,0,0, RETURN_NULL], []], "compiler-only", "verify: LOOP_ENTER_NAMED is compiler-only"]
+assert_bad_descriptor of [[ABI, [NUM_ZERO, LOOP_STALL_NAMED,0,0,0,0, RETURN_NULL], []], "compiler-only", "verify: LOOP_STALL_NAMED is compiler-only"]
+assert_bad_descriptor of [[ABI, [NUM_ZERO, LOOP_CAP_NAMED,0,0,0,0, RETURN_NULL], []], "compiler-only", "verify: LOOP_CAP_NAMED is compiler-only"]
+# The exact reported reproducer: EXIT_NAMED drains more than it verifies, so a
+# following POP underflows the frame.  Refused before it runs.
+assert_bad_descriptor of [[ABI, [NUM_ZERO, NUM_ZERO, LOOP_EXIT_NAMED,0,0, POP, RETURN_NULL], []], "compiler-only", "verify: LOOP_EXIT_NAMED is compiler-only (the #1977 reproducer)"]
+
+# Through the sandbox the same descriptor returns ok=0 and does not crash.
+sr_exit_named is sandbox_run of [[ABI, [NUM_ZERO, NUM_ZERO, LOOP_EXIT_NAMED,0,0, POP, RETURN_NULL], []], 5]
+assert_eq of [sr_exit_named["ok"], false, "sandbox: LOOP_EXIT_NAMED descriptor refused (ok=0, no crash)"]
+
+# Legacy no-slot loop opcodes (62/63/101) are NOT compiler-only and still run.
+# OP_LOOP_ENTER (101) resets the shared counter and publishes zero; a bounded
+# loop guarded by OP_LOOP_CAP_CHECK (63) / OP_LOOP_STALL_CHECK (62) still runs.
+le_ok is vm_run_bytecode of [ABI, [LOOP_ENTER, NUM_ONE, RETURN], []]
+assert_eq of [le_ok, 1, "legacy LOOP_ENTER (101) still runs in assembled bytecode"]
+# NUM_ONE; JUMP_IF_FALSE +6; LOOP_CAP_CHECK +3; JUMP_BACK 10; RETURN_NULL —
+# a runaway bounded by the sandbox cap: still accepted (ok reported capped).
+cap_legacy is sandbox_run of [[ABI, [NUM_ONE, JUMP_IF_FALSE,6,0, LOOP_CAP_CHECK,3,0, JUMP_BACK,10,0, RETURN_NULL], []], 50]
+assert_eq of [cap_legacy["ok"], false, "legacy LOOP_CAP_CHECK (63) still accepted and bounded"]
+# Same shape with LOOP_STALL_CHECK (62): accepted, bounded by the cap.
+stall_legacy is sandbox_run of [[ABI, [NUM_ONE, JUMP_IF_FALSE,6,0, LOOP_STALL_CHECK,3,0, JUMP_BACK,10,0, RETURN_NULL], []], 50]
+assert_eq of [stall_legacy["ok"], false, "legacy LOOP_STALL_CHECK (62) still accepted and bounded"]
+
 # --- #348: an out-of-range SET_LOCAL raises instead of silently dropping ---
 # (Slot indices are absolute env positions for module-level chunks, so use
 # 65535 — beyond any real env. GET_LOCAL out-of-range deliberately stays a
@@ -239,6 +294,12 @@ assert_bad_descriptor of [[ABI, [LINE,7,0, CONST,0,0, CONST,1,0, ADD, RETURN], [
 assert_eq of [vm_run_bytecode of [ABI, [LINE,161,134,1,0, CONST,0,0, RETURN], [99]], 99, "OP_LINE carries a line past 65535 (#630)"]
 # truncated 32-bit operand is rejected by the verifier, not read off the end.
 assert_bad_descriptor of [[ABI, [LINE,7,0,0], []], "truncated LINE operand", "verify: truncated OP_LINE raises with its reason"]
+
+# #1425 fix2: the shared-temporal sandbox walker must use the verifier's
+# operand width. Before the fix it decoded BINARY_LINE's line bytes as opcodes
+# and dereferenced constant index 65535, crashing the whole process.
+binary_line_walk is sandbox_run of [[ABI, [0,0,0, 0,1,0, 106,25,255,255,0, 4,107,40], [2,3]], 1000]
+assert_eq of [binary_line_walk["ok"], false, "sandbox refuses malformed BINARY_LINE descriptor without crashing (#1425 fix2)"]
 
 # --- #704: the ABI revision stamp itself ---
 # The canary above catches an operand-width change only for the ONE opcode it

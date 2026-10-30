@@ -69,6 +69,11 @@ print of [1.0 // 0.1, 1 // 0.1, 1e-300 // -1e300, y, num_type of y]
 [9.0, 9.0, -1.0, 9.0, "float"]
 ```
 
+Like indexed nearest-neighbour APIs in Python's scientific ecosystem,
+EigenScript's batched `nearest_in_range_all` does not count each query entity
+as its own neighbour. Its scalar `nearest_in_range` takes an explicit position,
+so it has no query-entity identity to exclude.
+
 ## At a glance
 
 | | Python | JavaScript | Rust | Lisp | EigenScript |
@@ -415,6 +420,17 @@ print of (map of [xs, (v) => v * 10])
 [10, 20, 30, 40, 50]
 ```
 
+As in Python 3, a comprehension binder is local: its iterable can read a
+same-named outer value, while its filter and result read the local element.
+No binder leaks after success, empty input, or an exception. EigenScript catch
+binders are also handler-local (unlike Python's post-handler name deletion),
+so a same-named outer binding remains untouched.
+
+Like Python's executable-relative prefix lookup, EigenScript's source-tree
+runtime finds its standard library from the executable: both `src/eigenscript`
+and a directly invoked `build/<variant>/eigenscript` resolve the repository's
+`lib/`, independent of the process working directory.
+
 ## Numeric arrays: the list is not the fast container
 
 Python separates a `list` of boxed objects from a NumPy array of raw doubles,
@@ -563,7 +579,9 @@ except Exception as e:
 
 EigenScript — `throw of` raises, `catch name:` binds. A thrown value
 binds unchanged; a built-in runtime error binds a `{kind, message,
-line}` dict with `kind` from a closed vocabulary (no exception
+file, line}` dict with `kind` from a closed vocabulary. Like Python's
+`co_filename`, each compiled unit retains its source identity, so the header
+and every traceback frame identify `file:line` (no exception
 hierarchy — discriminate on the kind string):
 
 ```eigenscript
@@ -620,6 +638,10 @@ file source's cursor, pending outcomes, correspondence and strictness together.
 Replay refuses host effects it cannot reconstruct: `mktemp`, for example,
 raises at the filesystem boundary before creating a file, while ordinary calls
 retain their create-and-return-path behavior.
+Like fail-fast validation in Go and Rust APIs, recorded EigenScript builtins
+reject deterministic argument errors before entering the effect boundary.
+Strict replay consequently preserves the original error kind and message
+rather than turning a raising call into a recorded value.
 
 Python (threads + queue):
 
@@ -667,12 +689,13 @@ the stop scope of its spawning eval, isolated from later outer evals.
 Cooperative task IDs are opaque numeric handles: their packed generation
 prevents a detached task's recycled slot from naming a later task.
 
-## Convergence loops: boilerplate you stop writing
+## Convergence loops: a built-in fixed tolerance
 
-Before the metaphysics, the everyday win. Every numeric fixed-point loop in
-Python or JavaScript hand-rolls the same three things — and beginners get them
-wrong: an **epsilon threshold**, a way to **remember** the previous value(s),
-and a **max-iteration guard** so a non-converging loop doesn't hang.
+Every numeric fixed-point loop needs a stopping rule. EigenScript remembers
+the trajectory and offers a fixed tolerance, but the registered #1990
+comparison shows that it does not remove every responsibility from the caller:
+the named form needs a cap, and a tighter or problem-specific answer still
+needs an explicit residual.
 
 ```python
 # Python: the epsilon, the remembering, and the guard are all yours
@@ -686,8 +709,8 @@ def newton_sqrt(n, eps=1e-12, max_iter=1000):
     return guess                         # ...and hope it converged
 ```
 
-EigenScript watches every value settle for you, so the loop *is* the
-convergence test — no epsilon, no remembered previous, no guard:
+EigenScript can watch a value settle, so for inputs where its fixed tolerance
+and bare-loop backstop are suitable the loop can be the convergence test:
 
 ```eigenscript
 define newton_sqrt as:
@@ -709,14 +732,37 @@ window of its relative steps (`Δv` over the step's own scale, #1045 — so
 the unit the value is stored in does not matter) sits under the settle
 deadband — the standard mixed-tolerance stopping criterion, built in
 (#861). This run exits
-through the predicate itself in 13 iterations; the deadband is the
-diverges ends via the observer's stall backstop with
+through the predicate itself in 13 iterations. The tolerance is fixed, not
+configurable; its authoritative value is `OBSERVER_DH_ZERO_DEFAULT` in
+`src/eigenscript.h`. A run that diverges ends via the observer's stall
+backstop with
 `__loop_exit__ == "stalled"` instead of hanging or lying. (Use the loop
 inside a function so it gets a fresh binding to watch — see
 `examples/observer_vs_boilerplate.eigs`.) The next section is *why* this
 works; you can reach for it long before you need the theory.
 
+The frozen v0.47.0 experiment (#1990) measured 425 runs per arm. The bare form
+had W=0.47%, including wrong convergence on M5, exhausted 13.43% of converging
+runs, and took a median 2.29x the matched `STD-py` iterations where both were
+correct. The named form had W=11.53% without its 10,000-iteration cap taking
+effect as an exhaustion, and its median ratio was 2.36x. Thus H3 failed and the
+original “no epsilon, no remembered previous, no guard” replacement claim does
+not stand. `python3 reports/convergence_loops/report1990.py` derives every figure in
+this paragraph from the per-run experiment outputs; the full protocol and
+deviations are in issue #1990.
+
 ## What has no equivalent elsewhere: the observer
+
+For non-numeric bindings, `converged` and ordinarily `stable` compare
+bounded, detached assignment snapshots; finite in-place mutations are visible
+on reassignment. A refused or oversized snapshot leaves both predicates false.
+An accepted snapshot containing a NaN buffer is unequal to itself under raw
+IEEE comparison, so it cannot converge; its `stable` predicate instead uses
+the entropy-window rule after a full bounded comparison window (S10-D1).
+Refusal clears that eligibility even if the entropy window is already complete.
+The matmul scenario's equality / stability /
+convergence remains `false` / `true` / `false`, with no equality-driven data
+or math-flag changes. The other predicates and non-numeric `report` use entropy.
 
 Every assignment (outside `unobserved` blocks) updates an observer
 tracking the value's entropy and trend (for containers, one pass over the

@@ -1,0 +1,6 @@
+define outer as:
+    local message is "captured"
+    define read as:
+        return message
+    return read of null
+print of (outer of null)

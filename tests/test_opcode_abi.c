@@ -58,3 +58,14 @@ _Static_assert(EIGS_BYTECODE_ABI == 1,
 int main(void) {
     return 0;
 }
+
+/* #1425: appended scope markers, also assembled by the parent-line test. */
+ABI_ASSERT(OP_BINARY_LINE, 106);
+ABI_ASSERT(OP_BINARY_LINE_END, 107);
+
+/* Sync #10: main loop opcodes follow Phase2 append-only opcodes. */
+ABI_ASSERT(OP_LOOP_ENTER, 101);
+ABI_ASSERT(OP_LOOP_STALL_NAMED, 102);
+ABI_ASSERT(OP_LOOP_CAP_NAMED, 103);
+ABI_ASSERT(OP_LOOP_ENTER_NAMED, 104);
+ABI_ASSERT(OP_LOOP_EXIT_NAMED, 105);

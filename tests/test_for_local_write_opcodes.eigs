@@ -1,0 +1,27 @@
+# #1995 compiler witness. Runtime assertions belong to test_by_name_binders;
+# this input gives 47j small, independently extractable bytecode functions.
+define opcode_slot_plain(seed) as:
+    for item in [seed]:
+        local slot_plain is item
+    return slot_plain
+
+define opcode_slot_nested(seed) as:
+    for item in [seed]:
+        if item > 0:
+            if seed > 0:
+                local slot_nested is item
+    return slot_nested
+
+# Capturing the body local makes this for create a loop environment. The local
+# must consequently retain the by-name write used to reach that environment.
+define opcode_loop_environment(seed) as:
+    for item in [seed]:
+        local loop_named is item
+        define read_loop_named() as:
+            return loop_named
+        answer is read_loop_named of []
+    return answer
+
+opcode_slot_plain of 1
+opcode_slot_nested of 1
+opcode_loop_environment of 1

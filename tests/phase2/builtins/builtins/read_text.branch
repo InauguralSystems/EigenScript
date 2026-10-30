@@ -1,6 +1,6 @@
 ["missing", "io"]
 ["written", 10485761]
 ["over-cap", "io", true]
-["over-cap-tail", " is 10485761 bytes, over the 10485760-byte cap"]
+["over-cap-tail", " is 10485761 bytes, over the 10485760-byte cap — pass read_text of [path, max_bytes] (hard ceiling 536870912) to raise it"]
 ["hi", "str"]
 rc=0

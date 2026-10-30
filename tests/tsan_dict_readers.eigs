@@ -1,0 +1,27 @@
+# A dict with exactly as many holes as survivors is intentionally left
+# uncompacted by removal.  Shared read-only traversal must not mutate it.
+d is {}
+i is 0
+loop while i < 1200:
+    d["k" + (str of i)] is i
+    i is i + 1
+i is 0
+loop while i < 1200:
+    dict_remove of [d, "k" + (str of i)]
+    i is i + 2
+
+define read_shared(rounds) as:
+    i is 0
+    loop while i < rounds:
+        ks is keys of d
+        encoded is json_encode of d
+        i is i + 1
+    print of ks
+    print of encoded
+    return rounds
+
+a is spawn of [read_shared, 20]
+b is spawn of [read_shared, 20]
+thread_join of a
+thread_join of b
+print of "dict readers: PASS"

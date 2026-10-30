@@ -16,6 +16,7 @@
 #if EIGENSCRIPT_EXT_GFX
 
 #include <dlfcn.h>
+#include <locale.h>
 
 /* ---- SDL2 types (minimal, no headers needed) ---- */
 
@@ -43,6 +44,33 @@ typedef union {
 
 typedef void SDL_Window;
 typedef void SDL_Renderer;
+
+#if defined(__linux__)
+/* Minimal copies of the stable SDL/Xlib ABI used below.  The extension keeps
+ * loading both libraries dynamically, so building EigenScript does not gain
+ * an SDL or X11 development-header dependency. */
+typedef struct { Uint8 major, minor, patch; } SDL_version;
+typedef struct _XDisplay Display;
+typedef unsigned long XID;
+typedef XID Window;
+typedef unsigned long Atom;
+typedef struct {
+    unsigned char *value;
+    Atom encoding;
+    int format;
+    unsigned long nitems;
+} XTextProperty;
+typedef struct {
+    SDL_version version;
+    int subsystem;
+    union {
+        struct { Display *display; Window window; } x11;
+        void *alignment_and_space[16];
+    } info;
+} SDL_SysWMinfo;
+#define MY_SDL_SYSWM_X11 2
+#define MY_X_STD_ICC_TEXT_STYLE 3
+#endif
 
 typedef struct {
     int freq;
@@ -77,6 +105,9 @@ typedef struct {
 /* ---- Function pointers ---- */
 
 static void *g_sdl_lib = NULL;
+#if defined(__linux__)
+static int g_ctype_locale_warned = 0;
+#endif
 static SDL_Window *g_window = NULL;
 static SDL_Renderer *g_renderer = NULL;
 static int (*p_SDL_GetRendererOutputSize)(SDL_Renderer*, int*, int*);
@@ -87,6 +118,10 @@ static const char* (*p_SDL_GetError)(void);
 static SDL_Window* (*p_SDL_CreateWindow)(const char*, int, int, int, int, Uint32);
 static void (*p_SDL_DestroyWindow)(SDL_Window*);
 static void (*p_SDL_SetWindowTitle)(SDL_Window*, const char*);
+#if defined(__linux__)
+static void (*p_SDL_GetVersion)(SDL_version*);
+static int (*p_SDL_GetWindowWMInfo)(SDL_Window*, SDL_SysWMinfo*);
+#endif
 static SDL_Renderer* (*p_SDL_CreateRenderer)(SDL_Window*, int, Uint32);
 static void (*p_SDL_DestroyRenderer)(SDL_Renderer*);
 static int (*p_SDL_SetRenderDrawColor)(SDL_Renderer*, Uint8, Uint8, Uint8, Uint8);
@@ -132,6 +167,8 @@ static void (*p_SDL_ClearQueuedAudio)(int);
 static Uint32 (*p_SDL_DequeueAudio)(int, void*, Uint32);
 
 /* Audio state */
+#define AUDIO_GENERATOR_MAX_SECONDS 30.0
+#define AUDIO_MAX_DEVICE_RATE ((int)((double)INT_MAX / AUDIO_GENERATOR_MAX_SECONDS))
 static int g_audio_device = 0;
 static int g_audio_freq = 44100;
 static int g_audio_channels = 1;
@@ -142,6 +179,7 @@ static int g_stream_channels = 1;
 
 static int load_sdl2(void) {
     if (g_sdl_lib) return 1;
+
     g_sdl_lib = dlopen("libSDL2-2.0.so.0", RTLD_LAZY);
     if (!g_sdl_lib) g_sdl_lib = dlopen("libSDL2.so", RTLD_LAZY);
     if (!g_sdl_lib) return 0;
@@ -182,12 +220,65 @@ static int load_sdl2(void) {
     p_SDL_GetQueuedAudioSize = dlsym(g_sdl_lib, "SDL_GetQueuedAudioSize");
     p_SDL_ClearQueuedAudio = dlsym(g_sdl_lib, "SDL_ClearQueuedAudio");
     p_SDL_DequeueAudio = dlsym(g_sdl_lib, "SDL_DequeueAudio");
+#if defined(__linux__)
+    p_SDL_GetVersion = dlsym(g_sdl_lib, "SDL_GetVersion");
+    p_SDL_GetWindowWMInfo = dlsym(g_sdl_lib, "SDL_GetWindowWMInfo");
+#endif
     if (!ok) {
         dlclose(g_sdl_lib);
         g_sdl_lib = NULL;
         return 0;
     }
     return 1;
+}
+
+/* SDL selects its X11 text mode when video starts.  Always select UTF-8 so it
+ * publishes a correct EWMH _NET_WM_NAME, regardless of later retitles. */
+static void gfx_select_title_locale(void) {
+#if defined(__linux__)
+    if (!setlocale(LC_CTYPE, "C.UTF-8") && !g_ctype_locale_warned) {
+        fprintf(stderr, "note: C.UTF-8 locale unavailable; non-ASCII window titles may be mis-encoded on this system\n");
+        g_ctype_locale_warned = 1;
+    }
+#endif
+}
+
+/* Set both title forms: SDL owns the UTF-8 EWMH property; Xlib converts the
+ * legacy ICCCM property to STRING when possible and COMPOUND_TEXT otherwise.
+ * On Wayland/non-X11, or if SDL/Xlib lacks any optional entry point, SDL's own
+ * behavior is retained.  Title changes must never fail for this compatibility
+ * enhancement. */
+static void gfx_set_window_title(const char *title) {
+    p_SDL_SetWindowTitle(g_window, title);
+#if defined(__linux__)
+    if (!p_SDL_GetVersion || !p_SDL_GetWindowWMInfo) return;
+
+    SDL_SysWMinfo info;
+    memset(&info, 0, sizeof(info));
+    p_SDL_GetVersion(&info.version);
+    if (!p_SDL_GetWindowWMInfo(g_window, &info) ||
+        info.subsystem != MY_SDL_SYSWM_X11 || !info.info.x11.display) return;
+
+    void *x11 = dlopen("libX11.so.6", RTLD_NOW | RTLD_NOLOAD);
+    if (!x11) return;
+    int (*to_property)(Display *, char **, int, int, XTextProperty *) =
+        dlsym(x11, "Xutf8TextListToTextProperty");
+    void (*set_name)(Display *, Window, XTextProperty *) = dlsym(x11, "XSetWMName");
+    int (*free_property)(void *) = dlsym(x11, "XFree");
+    int (*flush)(Display *) = dlsym(x11, "XFlush");
+    if (to_property && set_name && free_property && flush) {
+        char *titles[1] = {(char *)title};
+        XTextProperty property;
+        memset(&property, 0, sizeof(property));
+        if (to_property(info.info.x11.display, titles, 1,
+                        MY_X_STD_ICC_TEXT_STYLE, &property) == 0) {
+            set_name(info.info.x11.display, info.info.x11.window, &property);
+            flush(info.info.x11.display);
+            if (property.value) free_property(property.value);
+        }
+    }
+    dlclose(x11);
+#endif
 }
 
 /* ---- SDL_mixer (streaming background music) ----
@@ -211,6 +302,16 @@ static void  (*p_Mix_FreeMusic)(void*);
 static int   (*p_Mix_PlayMusic)(void*, int);
 static int   (*p_Mix_VolumeMusic)(int);
 static int   (*p_Mix_HaltMusic)(void);
+
+unsigned ext_gfx_live_handles(void) {
+    unsigned live = 0;
+    if (g_sdl_lib || g_window || g_renderer || g_fb_texture)
+        live |= EIGS_LIVE_GFX;
+    if (g_audio_device || g_capture_device || g_stream_device ||
+        g_mixer_lib || g_mixer_open || g_music)
+        live |= EIGS_LIVE_AUDIO;
+    return live;
+}
 
 static int load_sdl_mixer(void) {
     if (g_mixer_lib) return 1;
@@ -466,6 +567,7 @@ Value* builtin_gfx_open(Value *arg) {
     int w = (int)width, h = (int)height;
     const char *title = list_elem_type(arg, 2) == VAL_STR ? list_get_ref(arg, 2)->data.str : "EigenScript";
 
+    gfx_select_title_locale();
     if (!load_sdl2()) {
         fprintf(stderr, "gfx_open: cannot load libSDL2\n");
         return make_bool(0);  /* fs:ANSWER 0 is gfx_open's open-failed result -- line 422 returns 1 only after a renderer exists; libSDL2 absent is environment state, not a bad argument */
@@ -490,6 +592,7 @@ Value* builtin_gfx_open(Value *arg) {
         return make_bool(0);  /* fs:ANSWER SDL_CreateRenderer failed on both attempts -- 0 open result; the window is destroyed and g_window NULLed first */
     }
     p_SDL_SetRenderDrawBlendMode(g_renderer, MY_SDL_BLENDMODE_BLEND);
+    gfx_set_window_title(title);
     return make_bool(1);
 }
 
@@ -497,6 +600,13 @@ Value* builtin_gfx_open(Value *arg) {
 Value* builtin_gfx_close(Value *arg) {
     (void)arg;
     ttf_teardown();
+    if (g_music && p_Mix_FreeMusic) { p_Mix_HaltMusic(); p_Mix_FreeMusic(g_music); g_music = NULL; }
+    if (g_mixer_open && p_Mix_CloseAudio) { p_Mix_CloseAudio(); g_mixer_open = 0; }
+    if (g_mixer_lib) {
+        if (p_Mix_Quit) p_Mix_Quit();
+        dlclose(g_mixer_lib);
+        g_mixer_lib = NULL;
+    }
     if (g_fb_texture && p_SDL_DestroyTexture) { p_SDL_DestroyTexture(g_fb_texture); g_fb_texture = NULL; g_fb_w = 0; g_fb_h = 0; }
     if (g_audio_device) { p_SDL_CloseAudioDevice(g_audio_device); g_audio_device = 0; }
     if (g_capture_device) { p_SDL_CloseAudioDevice(g_capture_device); g_capture_device = 0; }
@@ -908,7 +1018,7 @@ Value* builtin_gfx_title(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_STR, "gfx_title", "string title",
               make_null());
     if (!g_window) return make_null();  /* fs:VOID no window open: gfx_title answers null on every path -- the return value, not a rejected-argument stand-in */
-    p_SDL_SetWindowTitle(g_window, arg->data.str);
+    gfx_set_window_title(arg->data.str);
     return make_null(); /* fs:VOID gfx_title answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
@@ -1381,6 +1491,14 @@ Value* builtin_audio_open(Value *arg) {
         if (!eigs_list_int_range(arg, 0, INT_MIN, INT_MAX, &freq, "audio_open")
             || !eigs_list_int_range(arg, 1, 1, 255, &channels, "audio_open"))
             return make_int(0);
+        /* #1821: generator refusal must not depend on an untaped device
+         * rate. N5 checked the rate exactly before this domain bound. */
+        if (freq > AUDIO_MAX_DEVICE_RATE) {
+            rt_error(EK_VALUE, 0,
+                     "audio_open: rate exceeds %d Hz (30-second generator limit)",
+                     AUDIO_MAX_DEVICE_RATE);
+            return make_null();
+        }
     }
     if (!g_sdl_lib) { if (!load_sdl2()) return make_int(0); }  /* fs:ANSWER 0 is not a device id -- line 1095 returns the real one; libSDL2 unavailable is environment state, not an argument */
     if (!p_SDL_OpenAudioDevice) {
@@ -1451,12 +1569,9 @@ Value* builtin_audio_pause(Value *arg) {
  * device id and sample buffers are served off the tape. The b[…]
  * buffer encoding round-trips through N records natively.
  *
- * AUDIO_CAPTURE_READ_MAX bounds one read at 2048 samples so a single
- * N record always fits the tape's TRACE_NONDET_MAX (64 KiB) budget:
- * worst-case %.17g is ~24 bytes/sample + ", " → ~53 KiB. An over-
- * budget record would be …<truncated> and replay would silently fall
- * back to the LIVE microphone — the exact divergence the tape exists
- * to prevent. Callers drain by looping until the read comes back
+ * AUDIO_CAPTURE_READ_MAX bounds one device read at 2048 samples. Its encoded
+ * value fits one tape record; larger values are also supported by the tape's
+ * generic continuation framing. Callers drain by looping until the read comes back
  * empty; the loop replays faithfully (one N record per call). */
 #define AUDIO_CAPTURE_READ_MAX 2048
 
@@ -1975,8 +2090,6 @@ Value* builtin_audio_clear(Value *arg) {
     return make_null(); /* fs:VOID audio_clear answers null on every path -- this is the return value, not a stand-in for a rejected argument */
 }
 
-#define AUDIO_GENERATOR_MAX_SECONDS 30.0
-
 /* Validate the allocation size while it is still a double.  In particular,
  * never cast an out-of-range (or NaN) sample count to int: that conversion is
  * undefined in C. */
@@ -2169,13 +2282,9 @@ Value* builtin_audio_sweep(Value *arg) {
     return list;
 }
 
-/* audio_noise's samples ride the tape in records of at most this many (#1803).
- * One N record is capped at 64 KiB (TRACE_NONDET_MAX in trace.c) and replay
- * refuses a truncated one, so a single record holds only about 3,000 samples
- * -- lib/audio.eigs's snare asks for 4,410 and a 30-second burst for over a
- * million. A sample is a finite number (the runtime saturates at 1e308), at
- * most 24 bytes of %.17g plus ", ", so 2048 fit with room to spare: the same
- * arithmetic as AUDIO_CAPTURE_READ_MAX. */
+/* audio_noise retains #1803's semantic protocol of sample lists of at most
+ * this many values. Each list fits one physical N record, although v8's
+ * generic continuation framing can also carry larger encoded values. */
 #define AUDIO_NOISE_TAPE_CHUNK 2048
 
 /* Record half: the samples as consecutive N records of at most
@@ -2236,7 +2345,7 @@ static int audio_noise_take(Value **out) {
  * shared drand48 stream behind `random` (eigs_random_double), so `seed_random`
  * pins them, and they are recorded on the tape (audio_noise_record), so
  * EIGS_REPLAY serves the recorded samples. They used to come from libc's rand,
- * seeded by main's srand(time(NULL)) and recorded nowhere, so a replay drew new
+ * seeded by main from the clock and recorded nowhere, so a replay drew new
  * samples at rc 0. #960 moved random_normal off libc's rand for the same reason. */
 Value* builtin_audio_noise(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "audio_noise");

@@ -15,7 +15,7 @@ declared_cmd() {
   case "$1" in
     eigen-edit|eigen-sheet) printf '%s' 'bash tests/test_smoke.sh' ;;
     EigenGauntlet) printf '%s' 'bash tests/run_smoke.sh' ;;
-    EigenMiniSat) printf '%s' "python3 -m unittest discover -s benchmarks -p 'test_*.py' && bash tests/run_smoke.sh && bash tests/run_proof_check.sh && eigenscript minisat.eigs --proof-bench --size 1" ;;
+    EigenMiniSat) printf '%s' "python3 -m unittest discover -s benchmarks -p 'test_*.py' && bash tests/run_smoke.sh && bash tests/run_proof_check.sh && eigenscript minisat.eigs --proof-bench --size 1 && bash tests/run_regime_c_check.sh" ;;
     *) return 1 ;;
   esac
 }
@@ -111,7 +111,7 @@ probe_prereq() {
   return 1
 }
 
-NAMES=(); PINS=(); CMDS=(); KINDS=(); WFS=(); GAPS=0; SCANNED=0; FLOOR=0
+NAMES=(); PINS=(); CMDS=(); KINDS=(); WFS=(); SOURCE_COMMITS=(); SOURCE_DIRTY=(); SOURCE_INTENDED=(); SOURCE_SELECTORS=(); GAPS=0; SCANNED=0; FLOOR=0
 record_floor() {
   local f n
   FLOOR=0
@@ -137,8 +137,8 @@ load_expected() {
   elif [ ! -f "$ECO/.ca_fixture" ]; then WANT=("${EXPECTED[@]}"); fi
 }
 scan_inventory() {
-  local d r pin cmd kind wf why e
-  NAMES=(); PINS=(); CMDS=(); KINDS=(); WFS=(); GAPS=0; SCANNED=0
+  local d r pin cmd kind wf why e head dirty intended selector manifest="${CA_SOURCE_REFS:-}"
+  NAMES=(); PINS=(); CMDS=(); KINDS=(); WFS=(); SOURCE_COMMITS=(); SOURCE_DIRTY=(); SOURCE_INTENDED=(); SOURCE_SELECTORS=(); GAPS=0; SCANNED=0
   load_expected
   for d in "$ECO"/*/; do
     [ -d "$d" ] || continue
@@ -147,28 +147,42 @@ scan_inventory() {
     pin="$(pin_of "$r")"
     [ -n "$pin" ] || continue
     if contains "$r" "${EXCLUDED[@]}"; then continue; fi
-    kind=derived; wf=""; cmd=""; why=""
-    # A checkout off its default branch tests some other commit's pin and
-    # code. The 0.46.0 sweep ran three clones parked on old feature branches
-    # and reported DeslanStudio FAIL against a v0.43.0 pin it had already
-    # left; on main it passed.
-    if git -C "$d" rev-parse -q --verify refs/remotes/origin/HEAD >/dev/null 2>&1 &&
-       [ "$(git -C "$d" rev-parse HEAD)" != "$(git -C "$d" rev-parse refs/remotes/origin/HEAD)" ]; then
-      kind=UNRUNNABLE; why=stale-checkout
-    elif accept_cmd_of "$r"; then cmd="$ACCEPT_CMD"; wf="$ACCEPT_WF"
-    elif [ -n "$ACCEPT_WHY" ]; then kind=UNRUNNABLE; why="$ACCEPT_WHY"
-    elif cmd="$(declared_cmd "$r")"; then kind=declared
-    elif [ -f "$ECO/.ca_fixture" ] && [ -f "$d/.ca_declared" ]; then
-      cmd="$(cat "$d/.ca_declared")"; kind=declared
-    else kind=UNRUNNABLE; why=no-acceptance-command
+    kind=derived; wf=""; cmd=""; why=""; head=none; dirty=unknown; intended=none; selector=none
+    if [ -f "$ECO/.ca_fixture" ] && ! git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      selector="fixture:$r"; intended="$selector"; head="$selector"; dirty=not-applicable
+    elif ! git -C "$d" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      kind=UNRUNNABLE; why=source-not-git
+    elif [ -z "$manifest" ] || [ ! -f "$manifest" ]; then
+      head="$(git -C "$d" rev-parse HEAD 2>/dev/null || printf none)"
+      [ -z "$(git -C "$d" status --porcelain --untracked-files=normal 2>/dev/null)" ] && dirty=false || dirty=true
+      kind=UNRUNNABLE; why=source-selection-missing
+    else
+      selector="$(awk -F= -v n="$r" '$1 == n { sub(/^[^=]*=/, ""); print; exit }' "$manifest")"
+      head="$(git -C "$d" rev-parse HEAD 2>/dev/null || printf none)"
+      [ -z "$(git -C "$d" status --porcelain --untracked-files=normal 2>/dev/null)" ] && dirty=false || dirty=true
+      if [ -z "$selector" ]; then kind=UNRUNNABLE; why=source-selection-missing
+      elif ! intended="$(git -C "$d" rev-parse --verify "$selector^{commit}" 2>/dev/null)"; then kind=UNRUNNABLE; why=source-selection-invalid
+      elif [ "$head" != "$intended" ]; then kind=UNRUNNABLE; why=source-mismatch
+      fi
+    fi
+    if [ "$kind" != UNRUNNABLE ]; then
+      if accept_cmd_of "$r"; then cmd="$ACCEPT_CMD"; wf="$ACCEPT_WF"
+      elif [ -n "$ACCEPT_WHY" ]; then kind=UNRUNNABLE; why="$ACCEPT_WHY"
+      elif cmd="$(declared_cmd "$r")"; then kind=declared
+      elif [ -f "$ECO/.ca_fixture" ] && [ -f "$d/.ca_declared" ]; then
+        cmd="$(cat "$d/.ca_declared")"; kind=declared
+      else kind=UNRUNNABLE; why=no-acceptance-command
+      fi
     fi
     if [ "$kind" = UNRUNNABLE ]; then GAPS=$((GAPS+1)); fi
     NAMES+=("$r"); PINS+=("$pin"); CMDS+=("$cmd"); KINDS+=("$kind${why:+:$why}"); WFS+=("$wf")
+    SOURCE_COMMITS+=("$head"); SOURCE_DIRTY+=("$dirty"); SOURCE_INTENDED+=("$intended"); SOURCE_SELECTORS+=("$selector")
     SCANNED=$((SCANNED+1))
   done
   for e in "${WANT[@]}"; do
     if ! contains "$e" "${NAMES[@]}"; then
       NAMES+=("$e"); PINS+=(absent); CMDS+=(""); KINDS+=(missing-inventory); WFS+=("")
+      SOURCE_COMMITS+=(absent); SOURCE_DIRTY+=(unknown); SOURCE_INTENDED+=(absent); SOURCE_SELECTORS+=(none)
       GAPS=$((GAPS+1)); echo "inventory floor: declared consumer absent: $e"
     fi
   done
@@ -205,6 +219,7 @@ plan() {
       echo "  gate   ${NAMES[i]}  (${PINS[i]})"
       [ -z "${WFS[i]}" ] || echo "  workflow|${NAMES[i]}|${WFS[i]}"
     fi
+    echo "  source|${NAMES[i]}|commit=${SOURCE_COMMITS[i]}|dirty=${SOURCE_DIRTY[i]}|intended=${SOURCE_INTENDED[i]}|selector=${SOURCE_SELECTORS[i]}"
     local p=""
     p="$(probe_prereq "${NAMES[i]}" "${CMDS[i]}" "$HERE/src/eigenscript")" || p=none
     echo "  prereq|${NAMES[i]}|${p:-none}"
@@ -401,7 +416,7 @@ consumer_skip_check() {
   ' "$log"
 }
 row() {
-  local i="$1" name="${NAMES[i]}" pin="${PINS[i]}" cmd="${CMDS[i]}" kind="${KINDS[i]}"
+  local i="$1" name="${NAMES[i]}" pin="${PINS[i]}" cmd="${CMDS[i]}" kind="${KINDS[i]}" source_commit="${SOURCE_COMMITS[i]}" source_dirty="${SOURCE_DIRTY[i]}" source_intended="${SOURCE_INTENDED[i]}" source_selector="${SOURCE_SELECTORS[i]}"
   local verdict=PASS rc=- dur=0 calls=0 ok=0 fail=0 skips=0 prereq="" v log start end missing_variant="" actual mutated="" skip_result="" skip_problem="" skip_rc=0
   local -a session=(setsid)
   if ! command -v setsid >/dev/null 2>&1; then
@@ -477,6 +492,7 @@ row() {
   if [ -n "$mutated" ]; then verdict=FAIL; prereq="candidate-mutated:$mutated"; fi
   local line="row|$name|$pin|$verdict|$rc|$dur|cand_calls=$calls|cand_ok=$ok|cand_fail=$fail|consumer_skips=$skips|selectors_overridden=${SELECTORS:-none}"
   [ -z "$prereq" ] || line="$line|prereq=$prereq"
+  line="$line|source_commit=$source_commit|source_dirty=$source_dirty|source_intended=$source_intended|source_selector=$source_selector"
   echo "$line" | tee -a "$BODY"
   if [ -f "$LOGS/$name.log" ]; then
     printf 'consumer_log|%s|%s\n' "$name" "$LOGS/$name.log" >> "$BODY"
@@ -586,6 +602,14 @@ run() {
   } > "$RECORD" || { echo "cannot initialise record: $RECORD"; return 2; }
   trap 'interrupted' INT TERM HUP
   trap 'cleanup' EXIT
+  # Resolve every intended source to an immutable commit before candidate probes
+  # or consumer execution. This reads local refs only; it never fetches or moves a checkout.
+  scan_inventory > "$LOGS/inventory.snapshot"
+  {
+    for ((i=0; i<${#NAMES[@]}; i++)); do
+      echo "source|${NAMES[i]}|pin=${PINS[i]}|commit=${SOURCE_COMMITS[i]}|dirty=${SOURCE_DIRTY[i]}|intended=${SOURCE_INTENDED[i]}|selector=${SOURCE_SELECTORS[i]}"
+    done
+  } >> "$RECORD"
   CAND_SHA="$(sha256sum "$candidate" | awk '{print $1}')" || { echo 'cannot hash candidate'; return 2; }
   [ "${#CAND_SHA}" -eq 64 ] || { echo 'invalid candidate SHA256'; return 2; }
   if [ -n "${CA_TREE:-}" ]; then
@@ -624,7 +648,7 @@ run() {
   make_shim eigenscript-server-db "${SERVER_DB:-missing}"
   derive_runtime_selectors
   BODY="$WORK/record-body"; : > "$BODY"
-  scan_inventory > "$WORK/inventory"
+  cp "$LOGS/inventory.snapshot" "$WORK/inventory"
   cat "$WORK/inventory" | tee -a "$BODY"
   if [ "$SCANNED" -eq 0 ]; then
     echo 'consumer_acceptance: inventory examined ZERO consumers'
@@ -666,6 +690,9 @@ run() {
     echo "inventory=$inventory"
     echo "examined=$examined"
     echo 'status=COMPLETE'
+    for ((i=0; i<${#NAMES[@]}; i++)); do
+      echo "source|${NAMES[i]}|pin=${PINS[i]}|commit=${SOURCE_COMMITS[i]}|dirty=${SOURCE_DIRTY[i]}|intended=${SOURCE_INTENDED[i]}|selector=${SOURCE_SELECTORS[i]}"
+    done
     cat "$BODY"
     if [ "$bad" -eq 0 ]; then echo 'VERDICT: PASS'; else echo 'VERDICT: FAIL'; fi
   } > "$final_tmp" || { rm -f "$final_tmp"; echo 'cannot write final record'; return 2; }
@@ -921,7 +948,7 @@ selftest() {
   printf 'overwrite_a\noverwrite_b\noverwrite_c\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
   if [ "$st_rc" -ne 0 ] \
-     && grep -Eq '^row\|overwrite_a\|v0[.]43[.]0\|FAIL\|0\|.*\|prereq=runtime-slot-replaced$' "$st_record" \
+     && grep -Eq '^row\|overwrite_a\|v0[.]43[.]0\|FAIL\|0\|.*\|prereq=runtime-slot-replaced\|source_commit=.*$' "$st_record" \
      && grep -Fq 'row|overwrite_b|v0.43.0|FAIL|42|' "$st_record" \
      && grep -Eq '^row\|overwrite_c\|v0[.]43[.]0\|PASS\|0\|[0-9]+\|cand_calls=2\|cand_ok=2\|cand_fail=0\|' "$st_record"; then
     echo 'plant M check=cross-row-overlay RED overwrite_a=FAIL(runtime-slot-replaced) overwrite_b=FAIL(rc=42) overwrite_c=PASS(calls=2,residue=absent)'
@@ -1068,17 +1095,35 @@ CANDIDATE
   if [ "$st_rc" -ne 0 ] && grep -Fq 'row|archive_fail|v0.43.0|FAIL|0|' "$st_record" && grep -Fq 'prereq=log-archive' "$st_record" && grep -Fqx 'consumer_log|archive_fail|MISSING' "$st_record" && grep -Fqx 'status=COMPLETE' "$st_record"; then
     echo 'plant AA check=archive-failure RED row=FAIL log=MISSING record=COMPLETE'
   else echo 'plant AA check=archive-failure SILENT'; st_bad=1; fi
-  # (AB) A checkout whose HEAD is not origin/HEAD is UNRUNNABLE: stale-checkout.
+  # (AB) A checkout differing from its explicit selection is UNRUNNABLE.
   st_reset; st_consumer parked 'eigenscript work.eigs'
   printf 'parked\n' > "$st_eco/.ca_expected"
   ( cd "$st_eco/parked" && git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -qm one &&
     git update-ref refs/remotes/origin/main HEAD && git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main &&
     git -c user.name=t -c user.email=t@t commit -q --allow-empty -m two ) >/dev/null 2>&1
-  st_rc=0; st_run || st_rc=$?
-  st_check AB stale-checkout 'row|parked|v0.43.0|UNRUNNABLE' "$st_record"
-  if ! grep -Fq 'stale-checkout' "$st_record" 2>/dev/null; then echo 'plant AB check=stale-checkout SILENT reason'; st_bad=1; fi
+  printf 'parked=refs/remotes/origin/main\n' > "$st_root/source-refs"
+  st_rc=0; CA_SOURCE_REFS="$st_root/source-refs" st_run || st_rc=$?
+  st_check AB source-mismatch 'row|parked|v0.43.0|UNRUNNABLE' "$st_record"
+  if ! grep -Fq 'source-mismatch' "$st_record" 2>/dev/null; then echo 'plant AB check=source-mismatch SILENT reason'; st_bad=1; fi
+  # (AC) Two commits of an ordinary git consumer produce distinct receipts.
+  st_reset; st_consumer provenance 'eigenscript good.eigs'
+  printf 'provenance\n' > "$st_eco/.ca_expected"
+  ( cd "$st_eco/provenance" && git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -qm one )
+  local commit_one commit_two receipt_one receipt_two
+  commit_one="$(git -C "$st_eco/provenance" rev-parse HEAD)"
+  printf 'provenance=%s\n' "$commit_one" > "$st_root/source-refs"
+  st_rc=0; CA_SOURCE_REFS="$st_root/source-refs" st_run || st_rc=$?
+  receipt_one="$(grep '^source|provenance|' "$st_record" | head -1)"
+  ( cd "$st_eco/provenance" && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m two )
+  commit_two="$(git -C "$st_eco/provenance" rev-parse HEAD)"
+  printf 'provenance=%s\n' "$commit_two" > "$st_root/source-refs"
+  st_rc=0; CA_SOURCE_REFS="$st_root/source-refs" st_run || st_rc=$?
+  receipt_two="$(grep '^source|provenance|' "$st_record" | head -1)"
+  if [ "$st_rc" -eq 0 ] && [ "$commit_one" != "$commit_two" ] && [ "$receipt_one" != "$receipt_two" ] && [[ "$receipt_one" == *"commit=$commit_one"* ]] && [[ "$receipt_two" == *"commit=$commit_two"* ]]; then
+    echo 'plant AC check=consumer-commit-provenance GREEN commits=distinct receipts=distinct'
+  else echo 'plant AC check=consumer-commit-provenance SILENT'; st_bad=1; fi
   rm -rf "$st_root"
-  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 36/36 plants'; return 0; fi
+  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 37/37 plants'; return 0; fi
   echo 'SELF-TEST: FAIL'; return 1
 }
 

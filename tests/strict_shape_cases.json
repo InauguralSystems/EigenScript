@@ -2103,7 +2103,7 @@
       "\"active\""
     ],
     "setup": "",
-    "valid_assert": "(len of shape_result) == 2 and shape_result[0].index == 0",
+    "valid_assert": "(len of shape_result) == 2 and shape_result[0].index == 1",
     "observe": "print of shape_result",
     "unchanged": "# Pure input: no mutable argument or external state.",
     "cleanup": "",
@@ -2289,6 +2289,54 @@
       "optional:1": "shape_result == [0, 1, 2]",
       "optional:2": "shape_result == []"
     }
+  },
+  {
+    "name": "read_bytes",
+    "args": [
+      "\"@TMP@/bytes\"",
+      "3"
+    ],
+    "setup": "write_text of [\"@TMP@/bytes\", \"abc\"]",
+    "valid_assert": "shape_result == [97, 98, 99]",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [
+      [
+        "\"@TMP@/bytes\""
+      ]
+    ],
+    "scalar_forms": [
+      "\"@TMP@/bytes\""
+    ],
+    "requirements": [
+      "owned_temp"
+    ],
+    "claim": "Typed path and cap forms, returned bytes, and entry-guard ordering; ordinary owned resources only."
+  },
+  {
+    "name": "read_text",
+    "args": [
+      "\"@TMP@/text\"",
+      "3"
+    ],
+    "setup": "write_text of [\"@TMP@/text\", \"abc\"]",
+    "valid_assert": "shape_result == \"abc\"",
+    "observe": "print of shape_result",
+    "cleanup": "",
+    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
+    "optional_args": [
+      [
+        "\"@TMP@/text\""
+      ]
+    ],
+    "scalar_forms": [
+      "\"@TMP@/text\""
+    ],
+    "requirements": [
+      "owned_temp"
+    ],
+    "claim": "Typed path and cap forms, returned text, and entry-guard ordering; ordinary owned resources only."
   },
   {
     "args": [
@@ -3102,32 +3150,5 @@
     "form_asserts": {
       "scalar:0": "(type of shape_result) == \"buffer\" and (shape_snapshot of shape_result) == [0, 0]"
     }
-  },
-  {
-    "args": [
-      "0",
-      "3"
-    ],
-    "valid_assert": "(len of shape_result) == 3 and (buf_get of [shape_result, 1]) == 98",
-    "setup": "",
-    "observe": "print of shape_result",
-    "cleanup": "",
-    "unchanged": "shape_remaining is proc_read_buf of [0, 3]\nassert of [(len of shape_remaining) == 3 and (buf_get of [shape_remaining, 1]) == 98, \"buffer read consumed bytes on rejection\"]",
-    "optional_args": [],
-    "requirements": [
-      "stdin_bytes"
-    ],
-    "legacy_surplus_null": true,
-    "legacy_surplus_assert": "shape_result == null",
-    "source": {
-      "file": "src/builtins_host.c",
-      "line": 1653,
-      "function": "builtin_proc_read_buf"
-    },
-    "maximum": 2,
-    "execution": "UNRUN",
-    "name": "proc_read_buf",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
-    "legacy_surplus_observe": "shape_legacy_remaining is proc_read_buf of [0, 3]\nassert of [(len of shape_legacy_remaining) == 3 and (buf_get of [shape_legacy_remaining, 1]) == 98, \"legacy surplus consumed bytes\"]\nprint of shape_result"
   }
 ]

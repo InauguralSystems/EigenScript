@@ -804,16 +804,62 @@ static void container_and_buffer(void) {
     val_decref(normal); val_decref(permanent);
 }
 
-int main(void) {
-    EigsState *st = eigs_open();
-    if (!st) { puts("phase2-readers-test: FAIL eigs_open"); return 1; }
-    g_try_depth = 1;             /* raises are assertions, never uncaught stderr */
+/* Sync #10: #1697's tombstones must not hide a non-reflexive descendant
+ * from Phase2's R1.6z-D2 structural self-equality traversal. */
+static void tombstoned_dict_equality(void) {
+    int saved_strict = g_strict;
+    unsigned saved_flags = g_math_flags;
+    Value *nanbuf = eigs_value_new_buffer(1);
+    eigs_value_buffer_set(nanbuf, 0, NAN); /* public raw setter preserves bits */
+    Value *dict = make_dict(3);
+    dict_set_owned(dict, "removed", make_int(1));
+    dict_set_owned(dict, "finite", make_int(2));
+    dict_set(dict, "nan-buffer", nanbuf);
+    dict_remove(dict, "removed");
+    check(dict->data.dict.count == 2 && dict->data.dict.used == 3,
+          "tombstone leaves NaN buffer beyond live count");
+    for (int strict = 0; strict <= 1; strict++) {
+        g_strict = strict;
+        g_math_flags = EIGS_MATH_UNDERFLOW;
+        reset_error();
+        check(!values_equal(dict, dict),
+              "tombstoned dict self-equality reaches NaN buffer");
+        check(!g_has_error && g_math_flags == EIGS_MATH_UNDERFLOW,
+              "tombstoned dict equality never raises or writes math flags");
+    }
+    val_decref(dict);
+    val_decref(nanbuf);
+    g_strict = saved_strict;
+    g_math_flags = saved_flags;
+    reset_error();
+}
+
+/* #1808/#2098: expected raises need a handler on the active VM frame.
+ * A suspended task's aggregate try depth is not a catch context. */
+static Value *phase2_reader_probe(Value *arg) {
+    (void)arg;
     for (unsigned k = 0; k < sizeof reader_cases / sizeof reader_cases[0]; k++)
         exercise_case(&reader_cases[k]);
     check(reader_calls == 49 * (int)(sizeof reader_cases / sizeof reader_cases[0]),
           "all 49 declared reader forms executed for every fixture");
     boundaries(); optional_and_types(); container_and_buffer();
-    reset_error(); g_try_depth = 0;
+    tombstoned_dict_equality();
+    reset_error();
+    return make_bool(1);
+}
+
+int main(void) {
+    EigsState *st = eigs_open();
+    if (!st) { puts("phase2-readers-test: FAIL eigs_open"); return 1; }
+    Value *probe = make_builtin(phase2_reader_probe);
+    eigs_set_global("phase2_reader_probe", probe);
+    val_decref(probe);
+    Value *result = eigs_eval_string("try:\n    phase2_reader_probe of null\ncatch e:\n    false\n");
+    if (!result || result->type != VAL_BOOL || !result->data.boolean || g_has_error) {
+        puts("phase2-readers-test: FAIL VM probe execution");
+        reader_failures++;
+    }
+    val_decref(result);
     eigs_close(st);
     printf("phase2-readers-test: %s cases=%zu forms=%d checks=%d failures=%d\n",
            reader_failures ? "FAIL" : "PASS", sizeof reader_cases / sizeof reader_cases[0],

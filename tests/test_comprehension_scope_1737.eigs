@@ -1,0 +1,172 @@
+# #1737: comprehension and catch binders have lexical, non-leaking scope.
+outer1737 is 40
+outer1737 is 41
+outer_report1737 is report of outer1737
+empty1737 is [outer1737 for outer1737 in []]
+assert of [outer1737 == 41, "empty comprehension preserves outer binding"]
+assert of [report of outer1737 == outer_report1737, "empty comprehension preserves outer observer"]
+
+success1737 is [outer1737 * 2 for outer1737 in [1, 2]]
+assert of [success1737 == [2, 4] and outer1737 == 41,
+           "successful comprehension has a local binder"]
+assert of [report of outer1737 == outer_report1737, "successful comprehension preserves outer observer"]
+
+# The iterable is evaluated before the same-named local binder is introduced.
+iterable1737 is [outer1737 for outer1737 in [outer1737, outer1737 + 1]]
+assert of [iterable1737 == [41, 42] and outer1737 == 41,
+           "iterable reads the enclosing binding"]
+
+# Nested comprehensions restore the outer comprehension binding.
+nested1737 is [[nested_v1737 for nested_v1737 in [nested_v1737 + 1]]
+                  for nested_v1737 in [10, 20]]
+assert of [nested1737 == [[11], [21]], "nested binders shadow lexically"]
+
+# One comprehension scope is retained by closures after normal cleanup.
+closures1737 is [() => closure_v1737 for closure_v1737 in [1, 2, 3]]
+assert of [(closures1737[0] of null) == 3 and (closures1737[2] of null) == 3,
+           "captured comprehension binding remains alive"]
+
+side1737 is 0
+define body_effect1737(v) as:
+    side1737 is v
+    return 10 / (v - 2)
+
+try:
+    body_result1737 is [body_effect1737 of body_v1737 for body_v1737 in [1, 2, 3]]
+catch body_error1737:
+    body_kind1737 is body_error1737.kind
+assert of [body_kind1737 == "value" and side1737 == 2,
+           "body error cleans binder but retains explicit effects"]
+assert of [outer1737 == 41 and report of outer1737 == outer_report1737,
+           "body error preserves outer value and observer"]
+
+try:
+    filter_result1737 is [filter_v1737 for filter_v1737 in [1, 2, 3]
+                          if 10 / (filter_v1737 - 2)]
+catch filter_error1737:
+    filter_kind1737 is filter_error1737.kind
+assert of [filter_kind1737 == "value", "filter error is caught"]
+
+# ITER_SETUP itself can fail, before entering the binder scope.
+iterator_outer1737 is 77
+try:
+    iterator_result1737 is [iterator_outer1737 for iterator_outer1737 in 1]
+catch iterator_error1737:
+    iterator_kind1737 is iterator_error1737.kind
+assert of [iterator_outer1737 == 77 and iterator_kind1737 == "type_mismatch",
+           "iterator error preserves the enclosing binding"]
+
+# Fresh binder names from every exit path remain undefined outside.
+fresh_missing1737 is 0
+try:
+    fresh_read1737 is filter_v1737
+catch fresh_error1737:
+    fresh_missing1737 is fresh_missing1737 + 1
+try:
+    fresh_read1737 is nested_v1737
+catch fresh_error2_1737:
+    fresh_missing1737 is fresh_missing1737 + 1
+assert of [fresh_missing1737 == 2, "fresh comprehension binders do not leak"]
+
+# Catch binders obey the same rule, including when the handler itself raises.
+catch_outer1737 is "outer"
+try:
+    catch_trigger1737 is missing_for_catch_1737
+catch catch_outer1737:
+    caught_kind1737 is catch_outer1737.kind
+assert of [catch_outer1737 == "outer" and caught_kind1737 == "undefined_name",
+           "catch binder does not overwrite an outer binding"]
+
+catch_nested1737 is 0
+try:
+    try:
+        catch_trigger2_1737 is missing_for_nested_catch_1737
+    catch new_catch1737:
+        catch_nested_boom1737 is missing_from_handler_1737
+catch outer_catch1737:
+    catch_nested1737 is 1
+assert of [catch_nested1737 == 1, "handler error cleans its catch scope"]
+try:
+    catch_fresh_read1737 is new_catch1737
+catch catch_probe1737:
+    catch_fresh_missing1737 is 1
+assert of [catch_fresh_missing1737 == 1, "fresh catch binder does not leak"]
+
+# Function-local shadowing follows the same rules as module shadowing.
+define function_scope1737() as:
+    fn_v1737 is 90
+    fn_result1737 is [fn_v1737 for fn_v1737 in [4, 5]]
+    return [fn_v1737, fn_result1737]
+assert of [function_scope1737 of null == [90, [4, 5]],
+           "function outer binding is untouched"]
+
+# Review round 1: active lexical binders take precedence over parameter and
+# slot resolution on both reads and writes.
+define parameter_comp1737(x) as:
+    return [x for x in [1, 2]]
+assert of [parameter_comp1737 of 90 == [1, 2],
+           "comprehension binder shadows a parameter read"]
+
+define parameter_catch_read1737(err) as:
+    local seen1737 is "missing"
+    try:
+        fault1737 is 1 / 0
+    catch err:
+        seen1737 is err.kind
+    return [seen1737, err]
+assert of [parameter_catch_read1737 of "parameter" == ["value", "parameter"],
+           "catch binder shadows a parameter read"]
+
+define parameter_catch_write1737(err) as:
+    local seen1737 is "missing"
+    try:
+        fault1737 is 1 / 0
+    catch err:
+        err is "updated"
+        seen1737 is err
+    return [seen1737, err]
+assert of [parameter_catch_write1737 of "outer" == ["updated", "outer"],
+           "catch binder assignment does not overwrite a parameter"]
+
+# The enclosing name is slot-promoted, not only a parameter.  The lexical
+# assignment must retain its own observer identity and source lines (141/142),
+# while the enclosing slot keeps its independent one-event history.
+define slot_catch_write1737() as:
+    local err is "outer"
+    local observed1737 is null
+    unobserved:
+        local promoted1737 is 1
+    try:
+        fault1737 is 1 / 0
+    catch err:
+        err is "updated"
+        observed1737 is [err, who is err, when is err,
+                        (what is err at 141).kind, what is err at 142]
+    return [observed1737, err, when is err]
+assert of [slot_catch_write1737 of null == [["updated", "err", 2, "value", "updated"], "outer", 1],
+           "catch write keeps lexical observer identity and source line"]
+
+# A handler can leave an enclosing loop by either jump.  Each jump must end
+# the catch child environment before reaching its target.
+jump_err1737 is "outer"
+jump_count1737 is 0
+loop while jump_count1737 < 2:
+    jump_count1737 is jump_count1737 + 1
+    try:
+        fault1737 is 1 / 0
+    catch jump_err1737:
+        if jump_count1737 == 1:
+            continue
+        break
+assert of [jump_err1737 == "outer" and jump_count1737 == 2,
+           "break and continue unwind catch environments"]
+
+define return_catch1737(err) as:
+    try:
+        fault1737 is 1 / 0
+    catch err:
+        return err.kind
+assert of [return_catch1737 of "parameter" == "value",
+           "return reads and unwinds the catch binder"]
+
+print of "All tests passed"

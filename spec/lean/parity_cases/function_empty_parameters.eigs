@@ -1,0 +1,3 @@
+define identity() as:
+    return n
+print of (identity of 7)

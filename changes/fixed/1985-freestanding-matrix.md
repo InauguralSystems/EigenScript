@@ -1,0 +1,1 @@
+- Make the freestanding symbol gate independent of optimization level and conforming libc headers (#1985).

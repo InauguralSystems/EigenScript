@@ -39,6 +39,22 @@ trap 'rm -f "$TMP" "$TMP.b" "$TMP.c"' EXIT
 for f in "$SRC_DIR"/*.c "$SRC_DIR"/*.h; do
     [ -f "$f" ] || continue
     awk -v FILE="$(basename "$f")" -v BYPASS="$TMP.b" '
+    # Attributes may precede the function name. Skip their balanced argument
+    # lists for attribution only; raw-token and bypass scanning stay intact.
+    function without_attributes(s, start, open, depth, i, c, end) {
+        while (match(s, /__attribute__[ \t]*\(/)) {
+            start = RSTART; open = RSTART + RLENGTH - 1; depth = 1; end = 0
+            for (i = open + 1; i <= length(s); i++) {
+                c = substr(s, i, 1)
+                if (c == "(") depth++
+                else if (c == ")") depth--
+                if (depth == 0) { end = i; break }
+            }
+            if (!end) return s
+            s = substr(s, 1, start - 1) " " substr(s, end + 1)
+        }
+        return s
+    }
     {
         line = $0
         # strip comments (block comments carry state across lines) and
@@ -48,13 +64,14 @@ for f in "$SRC_DIR"/*.c "$SRC_DIR"/*.h; do
         while (match(line, /\/\*([^*]|\*[^\/])*\*\//)) line = substr(line, 1, RSTART - 1) " " substr(line, RSTART + RLENGTH)
         if (index(line, "/*")) { line = substr(line, 1, index(line, "/*") - 1); incmt = 1 }
         sub(/\/\/.*/, "", line)
+        attribution = without_attributes(line)
     }
     # attribution: a #define names its macro (continuations stay with it);
     # a column-0 line with a parameter list that is not a declaration starts
     # a function; a column-0 "}" ends it
     !incont && /^#[ \t]*define[ \t]/ { m = $0; sub(/^#[ \t]*define[ \t]+/, "", m); sub(/[^A-Za-z0-9_].*/, "", m); scope = "#define " m; inmac = 1 }
-    !incont && !/^#/ && /^[A-Za-z_][^;]*\(/ && $0 !~ /;[ \t]*$/ && $0 !~ /^(typedef|return|extern)/ {
-        fn = $0; sub(/\(.*/, "", fn); n = split(fn, w, /[ *]+/); scope = w[n]; inmac = 0
+    !incont && !/^#/ && attribution ~ /^[A-Za-z_][^;]*\(/ && attribution !~ /;[ \t]*$/ && attribution !~ /^(typedef|return|extern)/ {
+        fn = attribution; sub(/\(.*/, "", fn); n = split(fn, w, /[ *]+/); scope = w[n]; inmac = 0
     }
     { linemac = inmac }
     {

@@ -60,9 +60,10 @@ unrecovered error or report success on failure. Warnings (e.g.
 division by zero, which yields 0) are not errors and do not stop execution.
 
 **What `catch` binds (#406):** a **built-in** runtime error binds a small
-dict `{kind, message, line}` — `kind` is drawn from a closed vocabulary
+dict `{kind, message, file, line}` — `kind` is drawn from a closed vocabulary
 (see `docs/DIAGNOSTICS.md`), `message` is the error text without the
-`Error line N:` frame, and `line` is the 1-based source line. A `throw`n
+`Error path:N:` frame, `file` is the source identity, and `line` is the
+1-based source line. A `throw`n
 value binds **unchanged** — `throw of {"kind": ...}` gives the handler that
 dict, and a thrown string stays a string. Re-throwing a structured value
 preserves it; a built-in error raised while a structured value is in flight
@@ -144,7 +145,8 @@ examples (executed by the suite).
   Int `+ - *` raise `value` on overflow; unary minus and `abs` raise at
   INT64_MIN. Mixed arithmetic converts to float; cross-kind comparison is exact.
   Float integer exactness ends at 2^53.
-- No NaN, no Infinity reaches a program. By default a NaN-producing
+- Scalar numbers exposed to a program are finite; buffer kernels may retain
+  non-finite work data as described below. By default a NaN-producing
   operation, an out-of-domain argument or a wrong-typed argument raises a
   catchable error (strict is the default, #1361); division by zero raises
   in every mode. Float overflow saturates at ±1e308. Under the per-run opt-out
@@ -173,13 +175,17 @@ examples (executed by the suite).
   `1e308`, so a data column containing either used to parse to a
   plausible number with nothing to check; `pow` of a negative base with
   a fractional exponent, `f64_from_bytes` of a NaN bit pattern,
-  `matmul` reaching `inf - inf`, and `tensor_load` of a file carrying
-  NaN bytes collapse the same way. A buffer may retain the raw kernel value
-  internally, but every scalar read applies this same collapse (or raises in
-  strict mode), including structural equality and scalar reductions. Both bits are sticky until
-  FPU. In strict mode, the default, every one of those out-of-domain
-  calls and NaN sources raises a catchable `value` error naming the
-  builtin instead of substituting (SPEC.md, *Strict mode*).
+  and `tensor_load` of a file carrying NaN bytes collapse the same way.
+  A buffer kernel such as `matmul` reaching `inf - inf` may retain raw
+  non-finite data internally. Scalar buffer extraction and reductions refuse
+  stored non-finite cells with `value` in every strict mode (R1.6z-D1).
+  Structural equality, including observer snapshot equality, instead compares
+  the stored IEEE values: NaN is unequal to itself, without normalization,
+  mutation, an error or math-flag writes. The flags are sticky for the state's
+  lifetime. In strict mode, the default, those scalar NaN sources and
+  out-of-domain calls raise a catchable `value` error naming the builtin
+  instead of substituting (SPEC.md, *Strict mode*); the stored-buffer
+  boundary above applies in every mode.
 - **Saturation is not associative, and that is not detectable from the
   value alone.** `(1e300 * 1e300) / 1e300` is `1e8`; `1e300 * (1e300 /
   1e300)` is `1e300`. The first overflowed and came back down, and
@@ -479,6 +485,12 @@ unary and `of` are right-associative.
   programmer's hands. A value that is fractional only through float drift
   (`2.9999998`) also raises, surfacing the sloppy arithmetic rather than
   mis-indexing.
+- An exact int64 subscript or dispatch key outside the runtime's C `int`
+  index representation raises `index_range`, like other out-of-bounds indices;
+  it is not misdiagnosed as fractional. A float must first satisfy Phase 2's
+  exact int64 conversion rule. Slice-bound and trace-line readers retain their
+  explicit representability checks: an int outside their C `int` domain raises
+  `value` before any narrowing.
 
 **Status:** Enforced — `tests/test_trycatch.eigs`; `vm_index_is_int` guards
 every dynamic index site in `OP_INDEX_GET`/`OP_INDEX_SET` and

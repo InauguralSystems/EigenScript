@@ -26,11 +26,11 @@ regression_back is tensor_load of "$tmp/regression.tensor"
 assert_eq of [len of regression_back, 1000001, "load dimension above old cap"]
 
 # Pin writer/reader symmetry at the shared construction/file limit.
-at_limit is zeros of 10000000
+at_limit is fill of [10000000, 0]
 assert_eq of [tensor_save of [at_limit, "$tmp/limit.tensor"], true, "save tensor at limit"]
 limit_back is tensor_load of "$tmp/limit.tensor"
 assert_eq of [len of limit_back, 10000000, "load tensor at limit"]
-assert_eq of [limit_back[9999999], 0, "last element survives limit round trip"]
+assert_eq of [limit_back, at_limit, "tensor at limit round-trips exactly"]
 
 caught is null
 try:
@@ -60,7 +60,7 @@ else
     exit "$rc"
 fi
 
-# Format v8 records only a tensor header verdict, not payload bytes.  Replay
+# Format v9 records only a tensor header verdict, not payload bytes.  Replay
 # consumes that verdict for tape alignment and then refuses before fopen; the
 # following env_get proves the next observation remains aligned.
 cat >"$tmp/replay.eigs" <<EOF

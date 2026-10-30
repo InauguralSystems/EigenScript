@@ -1,0 +1,104 @@
+{
+  "arms": {
+    "INC-bare": {
+      "W": 0.004705882352941176,
+      "W_family": {
+        "M1": 0.0,
+        "M2": 0.0,
+        "M3": 0.0,
+        "M4": 0.0,
+        "M5": 0.08,
+        "M6": 0.0,
+        "M7": 0.0,
+        "M8": 0.0
+      },
+      "W_ignored": 0.2635294117647059,
+      "exhausted_converging": 0.13428571428571429,
+      "median_iteration_ratio_to_STD-py": 2.2857142857142856
+    },
+    "INC-named": {
+      "W": 0.11529411764705882,
+      "W_family": {
+        "M1": 0.08,
+        "M2": 0.0,
+        "M3": 1.0,
+        "M4": 0.0,
+        "M5": 0.48,
+        "M6": 0.0,
+        "M7": 0.0,
+        "M8": 0.04
+      },
+      "W_ignored": 0.2635294117647059,
+      "exhausted_converging": 0.0,
+      "median_iteration_ratio_to_STD-py": 2.36
+    },
+    "STD-py": {
+      "W": 0.19294117647058823,
+      "W_family": {
+        "M1": 0.08,
+        "M2": 0.0,
+        "M3": 1.0,
+        "M4": 0.0,
+        "M5": 0.96,
+        "M6": 0.0,
+        "M7": 0.84,
+        "M8": 0.04
+      },
+      "W_ignored": 0.2635294117647059,
+      "exhausted_converging": 0.0
+    },
+    "STD-py-default": {
+      "W": 0.05176470588235294,
+      "W_family": {
+        "M1": 0.0,
+        "M2": 0.0,
+        "M3": 0.48,
+        "M4": 0.0,
+        "M5": 0.32,
+        "M6": 0.0,
+        "M7": 0.08,
+        "M8": 0.0
+      },
+      "W_ignored": 0.23529411764705882,
+      "exhausted_converging": 0.037142857142857144
+    },
+    "STD-scipy": {
+      "W": 0.1811764705882353,
+      "W_family": {
+        "M1": 0.08,
+        "M2": 0.0,
+        "M3": 1.0,
+        "M4": 0.0,
+        "M5": 0.76,
+        "M6": 0.0,
+        "M7": 0.84,
+        "M8": 0.04
+      },
+      "W_ignored": 0.2635294117647059,
+      "exhausted_converging": 0.0
+    }
+  },
+  "binary_version": "0.47.0",
+  "controls": {
+    "negative_identical": {
+      "INC-bare": true,
+      "INC-named": true,
+      "STD-py": true,
+      "STD-py-default": true,
+      "STD-scipy": true
+    },
+    "passed": true,
+    "positive_W_STD_py": 0.54,
+    "positive_W_loose": 0.9,
+    "positive_delta": 0.36
+  },
+  "decision_conditions": {
+    "bare_W_ignored_parity": true,
+    "bare_W_parity": true,
+    "bare_zero_wrong_M5_M7": false,
+    "iteration_ratio_at_most_1_5": false,
+    "named_W_parity": true
+  },
+  "shuffle_seed": "1990_2026_10_28_shuffle",
+  "verdict": "CLAIM-REWRITE"
+}

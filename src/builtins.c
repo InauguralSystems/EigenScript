@@ -706,6 +706,7 @@ Value* builtin_throw(Value *arg) {
     snprintf(g_error_raw, sizeof(g_error_raw), "%s", msg);
     g_error_kind = (int)EK_USER;
     g_error_line = vm_current_line();
+    snprintf(g_error_file, sizeof(g_error_file), "%s", vm_current_file());
     if (g_sandbox_active) g_sandbox_error_latched = 1;
     g_has_error = 1;
     eigs_clear_error_value();
@@ -713,7 +714,7 @@ Value* builtin_throw(Value *arg) {
         val_incref(arg);
         g_error_value = arg;
     }
-    if (g_try_depth == 0) {
+    if (!vm_error_has_handler()) {
         /* #407 residual: defer to CHECK_ERROR for the caret excerpt when
          * the VM is live — mirrors rt_error. */
         if (eigs_current && eigs_current->vm && g_vm.frame_count > 0) {
@@ -733,7 +734,7 @@ Value* builtin_keys(Value *arg) {
     if (arg->type == VAL_DICT) {
         eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
         Value *list = make_list(arg->data.dict.count);
-        for (int i = 0; i < arg->data.dict.count; i++)
+        DICT_FOR_EACH(arg, i)
             list_append_owned(list, make_str(arg->data.dict.keys[i]));
         return list;
     }
@@ -744,7 +745,7 @@ Value* builtin_values(Value *arg) {
     if (arg->type == VAL_DICT) {
         eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
         Value *list = make_list(arg->data.dict.count);
-        for (int i = 0; i < arg->data.dict.count; i++)
+        DICT_FOR_EACH(arg, i)
             list_append_slot(list, dict_value_slot(arg, i));
         return list;
     }
@@ -766,9 +767,11 @@ Value* builtin_dict_set(Value *arg) {
               "dict_set", "[dict, key, value]", make_null());
     Value *d = list_get_ref(arg, 0);
     Value *key = BUILTIN_LIST_VIEW(arg, 1);
-    if (!d || d->type != VAL_DICT || key->type != VAL_STR) return make_null();
+    if (!d || d->type != VAL_DICT) return make_null();
+    const char *dict_key = dict_assignment_key(d, key, 0);
+    if (!dict_key) return make_null();
     Value *val = list_get_owned(arg, 2);
-    dict_set(d, key->data.str, val);
+    dict_set(d, dict_key, val);
     val_decref(val);
     return d;
 }
@@ -779,8 +782,10 @@ Value* builtin_dict_remove(Value *arg) {
               "dict_remove", "[dict, key]", make_null());
     Value *d = list_get_ref(arg, 0);
     Value *key = BUILTIN_LIST_VIEW(arg, 1);
-    if (!d || d->type != VAL_DICT || key->type != VAL_STR) return make_null();
-    dict_remove(d, key->data.str);
+    if (!d || d->type != VAL_DICT) return make_null();
+    const char *dict_key = dict_assignment_key(d, key, 0);
+    if (!dict_key) return make_null();
+    dict_remove(d, dict_key);
     return d;
 }
 
@@ -988,8 +993,10 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
         case VAL_DICT: {
             eigs_module_ns_sync(v);      /* #1057 whole-dict reader */
             strbuf_append_char(out, '{');
-            for (int i = 0; i < v->data.dict.count; i++) {
-                if (i > 0) strbuf_append_char(out, ',');
+            int first = 1;
+            DICT_FOR_EACH(v, i) {
+                if (!first) strbuf_append_char(out, ',');
+                first = 0;
                 strbuf_append_char(out, '"');
                 for (const char *c = v->data.dict.keys[i]; *c; c++) {
                     switch (*c) {
@@ -2225,15 +2232,21 @@ Value* builtin_random_int(Value *arg) {
     TRACE_NONDET_RET("random_int", make_int(lo_i + (eigs_random_long() % (int64_t)span)));
 }
 
+/* The one way to seed the shared stream: `seed_random` and the CLI's
+ * EIGS_SEED_RANDOM (#2120, src/main.c) both come through here. */
+void eigs_seed_random(long seed) {
+    pthread_mutex_lock(&g_random_lock);
+    srand48(seed);
+    __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
+    pthread_mutex_unlock(&g_random_lock);
+}
+
 /* seed_random of n → seeds the RNG, returns true */
 Value* builtin_seed_random(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "seed_random", "a number", make_bool(0));
     int64_t seed = eigs_int_arg(arg, "seed_random");
     if (g_has_error) return make_null();
-    pthread_mutex_lock(&g_random_lock);
-    srand48((long)seed);
-    __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
-    pthread_mutex_unlock(&g_random_lock);
+    eigs_seed_random((long)seed);
     return make_bool(1);
 }
 
@@ -2533,16 +2546,21 @@ int replay_blocks(const char *fn, const char *boundary) {
 
 /* Free a TokenList's malloc'd storage (token array and str_vals) */
 void free_tokenlist(TokenList *tl) {
-    if (!tl->tokens) return;
-    for (int i = 0; i < tl->count; i++) {
+    for (int i = 0; tl->tokens && i < tl->count; i++) {
         if (tl->tokens[i].str_val) {
             free(tl->tokens[i].str_val);
             tl->tokens[i].str_val = NULL;
         }
     }
     free(tl->tokens);
+    free(tl->literal_spans);
+    free(tl->line_depths);
     tl->tokens = NULL;
+    tl->literal_spans = NULL;
+    tl->line_depths = NULL;
     tl->count = 0;
+    tl->literal_count = tl->literal_capacity = 0;
+    tl->line_depth_count = 0;
 }
 
 /* #1322: user code that receives the lexer's tokens (tokenize_with_names,
@@ -2794,7 +2812,7 @@ Value* builtin_eval(Value *arg) {
      * diagnostics ('break' outside a loop #337, un-encodable jumps) must
      * fail the eval instead of executing a placeholder chunk. */
     Env *target = g_builtin_call_env ? g_builtin_call_env : g_global_env;
-    EigsChunk *ev_chunk = compile_ast(ast, target, src);
+    EigsChunk *ev_chunk = compile_ast(ast, target, src, "<eval>");
     if (g_parse_errors > 0) {
         g_parse_errors = saved_errors;
         chunk_free(ev_chunk);
@@ -2985,7 +3003,7 @@ static Value *desc_isolate_const(DescVerify *ctx, Value *v) {
     case VAL_DICT: {
         if (!desc_enter(ctx, v)) return NULL;
         Value *c = make_dict(v->data.dict.count);
-        for (int i = 0; i < v->data.dict.count; i++) {
+        DICT_FOR_EACH(v, i) {
             Value *input = dict_value_get_owned(v, i);
             Value *e = desc_isolate_const(ctx, input);
             val_decref(input);
@@ -3482,7 +3500,7 @@ static int sandbox_value_has_callable(Value *v, int depth, long *budget,
                                            budget, unverified))
                 return 1;
     } else if (v->type == VAL_DICT) {
-        for (int i = 0; i < v->data.dict.count; i++) {
+        DICT_FOR_EACH(v, i) {
             /* #1014: this walk once re-homed escaping dict keys as well
              * (a promote_keys arm, run as a second pass at the result
              * boundary). Measured: dict_set_hashed promotes at INSERTION
@@ -3505,8 +3523,8 @@ static Value *sandbox_finish_run(Value *out) {
     return out;
 }
 
-/* sandbox_run of [descriptor, max_iterations?, max_bytes?, max_work?] — run an EigenScript-assembled
- * chunk (same descriptor as vm_run_bytecode) under safety bounds: dangerous
+/* sandbox_run of [descriptor_or_source, max_iterations?, max_bytes?, max_work?] — compile source
+ * or run an EigenScript-assembled chunk under safety bounds: dangerous
  * builtins are shadowed by a blocked stub, and loops are capped at
  * max_iterations (default 1,000,000). A separate cumulative instruction
  * limit bounds VM work, but does not bound time inside a native builtin. Runtime errors
@@ -3521,6 +3539,8 @@ Value* builtin_sandbox_run(Value *arg) {
      * below, once the chunk exists. */
     Value *desc = (arg && arg->type == VAL_LIST && arg->data.list.count >= 1)
                   ? BUILTIN_LIST_VIEW(arg, 0) : arg;
+    int source_form = desc && desc->type == VAL_STR;
+    const char *source = source_form ? desc->data.str : NULL;
     int max_iter = 1000000;
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 2 &&
         BUILTIN_LIST_VIEW(arg, 1) && val_is_number(BUILTIN_LIST_VIEW(arg, 1)))
@@ -3575,8 +3595,10 @@ Value* builtin_sandbox_run(Value *arg) {
     int validation_latched = g_sandbox_error_latched;
     int validation_pending = g_error_print_pending;
     g_try_depth++;
-    const char *abi_err = vm_desc_abi_error(desc, abibuf, sizeof abibuf);
-    EigsChunk *chunk = abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1, NULL, 0);
+    const char *abi_err = source_form ? NULL :
+                          vm_desc_abi_error(desc, abibuf, sizeof abibuf);
+    EigsChunk *chunk = source_form ? NULL :
+                       (abi_err ? NULL : vm_build_chunk_desc(desc, 1, 1, NULL, 0));
     g_try_depth = validation_try_depth;
     if (g_has_error && g_error_kind == EK_VALUE) {
         snprintf(abibuf, sizeof abibuf, "%.255s", g_error_raw);
@@ -3593,7 +3615,7 @@ Value* builtin_sandbox_run(Value *arg) {
     }
     if (chunk) eigs_obs_enable_runtime();     /* #915: see vm_run_bytecode */
     Value *out = make_dict(2);
-    if (!chunk) {
+    if (!chunk && !source_form) {
         /* Descriptor verification may already have interned constants before
          * rejecting the graph. Restore the caller's scope before constructing
          * the host-owned diagnostic dictionary, then release this run's names. */
@@ -3602,11 +3624,12 @@ Value* builtin_sandbox_run(Value *arg) {
         /* #406: surface the build failure structurally — a descriptor
          * that doesn't verify is a bad argument value, same shape as a
          * runtime failure's error field. */
-        Value *ev = make_dict(3);
+        Value *ev = make_dict(4);
         dict_set_owned(ev, "kind", make_str(err_kind_name(EK_VALUE)));
         dict_set_owned(ev, "message",
                        make_str(abi_err ? abi_err : "invalid chunk descriptor"));
         dict_set_owned(ev, "line", make_int(0));
+        dict_set_owned(ev, "file", make_str("<sandbox>"));
         dict_set_owned(out, "error", ev);
         return sandbox_finish_run(out);
     }
@@ -3637,7 +3660,7 @@ Value* builtin_sandbox_run(Value *arg) {
     Env *sbox = env_new(NULL);
     Value *stub = make_builtin(builtin_sandbox_blocked);
     for (int i = 0; SANDBOX_ALLOW[i]; i++) {
-        Value *v = env_get(g_global_env, SANDBOX_ALLOW[i]);
+        Value *v = env_get_counted(g_global_env, SANDBOX_ALLOW[i]);
         if (!v) continue;               /* extension absent from this build */
         /* Only the pure C BUILTIN the allowlist names may cross. A host that
          * rebound the name holds an arbitrary value there — often a mutable
@@ -3650,6 +3673,7 @@ Value* builtin_sandbox_run(Value *arg) {
          * better diagnostic. */
         env_set_local(sbox, SANDBOX_ALLOW[i],
                       v->type == VAL_BUILTIN ? v : stub);
+        val_decref(v);
     }
     /* #1035: the walk reads g_global_env's count/names while pthread
      * workers may be binding new module names under g_module_env_lock
@@ -3676,6 +3700,7 @@ Value* builtin_sandbox_run(Value *arg) {
     int saved_max = g_sandbox_loop_max;
     int saved_cap_hit = g_sandbox_cap_hit;
     long long saved_iters = g_loop_iterations;
+    long long saved_sandbox_iters = g_sandbox_loop_iterations;
     /* #940: the back-edge counter is the sandbox budget's second half — it
      * is saved/restored HERE, at the sandbox boundary only, never per call
      * frame (a budget on untrusted code must not reset because the chunk
@@ -3684,6 +3709,7 @@ Value* builtin_sandbox_run(Value *arg) {
     g_sandbox_loop_max = max_iter > 0 ? max_iter : 1000000;
     g_sandbox_cap_hit = 0;
     g_loop_iterations = 0;
+    g_sandbox_loop_iterations = 0;
     g_loop_backedge_count = 0;
     /* #292: arm the allocation budget. Save/restore so nested sandbox_run (or a
      * sandbox_run invoked from already-budgeted code) composes correctly. */
@@ -3694,6 +3720,9 @@ Value* builtin_sandbox_run(Value *arg) {
     int    saved_sb_refusal = g_sandbox_refusal;
     int    saved_sb_refusal_kind = g_sandbox_refusal_kind;
     int    saved_sb_refusal_line = g_sandbox_refusal_line;
+    char   saved_sb_refusal_file[sizeof g_sandbox_refusal_file];
+    memcpy(saved_sb_refusal_file, g_sandbox_refusal_file,
+           sizeof saved_sb_refusal_file);
     char   saved_sb_refusal_msg[sizeof g_sandbox_refusal_msg];
     memcpy(saved_sb_refusal_msg, g_sandbox_refusal_msg,
            sizeof saved_sb_refusal_msg);
@@ -3736,7 +3765,81 @@ Value* builtin_sandbox_run(Value *arg) {
      * after the VM has released the run's frames and operands. */
     int saved_try_depth = g_try_depth;
     int saved_unobserved_depth = g_unobserved_depth;
-    Value *result = vm_execute(chunk, sbox);
+    /* Source compilation is part of the sandbox boundary, not host setup.
+     * Reserve a deterministic compile-phase sub-budget before the lexer sees
+     * the text.  The front end's allocations are bounded by 128 bytes per
+     * input byte plus 1 MiB of fixed working space (tokens, AST nodes, chunk
+     * arrays and compiler tables).  This deliberately conservative bound
+     * makes refusal independent of allocator rounding and replay timing, and
+     * prevents a hostile token stream from reaching x_oom.  Execution still
+     * receives the full cumulative max_bytes allowance.
+     *
+     * Keep this after the sealed root and all three budgets are armed: source
+     * is compiled against exactly the environment it will execute in. */
+    if (source_form) {
+        size_t source_len = source ? strlen(source) : 0;
+        size_t fixed = (size_t)1024 * 1024;
+        int compile_fits = source_len <= (SIZE_MAX - fixed) / 128 &&
+                           source_len * 128 + fixed <= max_bytes;
+        if (!compile_fits) {
+            rt_error(EK_SANDBOX, 0,
+                     "source compile budget exceeded (source_bytes=%zu, max_bytes=%zu)",
+                     source_len, max_bytes);
+        } else {
+            int saved_errors = g_parse_errors;
+            g_parse_errors = 0;
+            g_first_error_line = 0;
+            g_first_error_col = 0;
+            g_first_error_msg[0] = '\0';
+#if !EIGENSCRIPT_FREESTANDING
+            int saved_stderr = dup(STDERR_FILENO);
+            int devnull = open("/dev/null", O_WRONLY);
+            if (devnull >= 0) { dup2(devnull, STDERR_FILENO); close(devnull); }
+#endif
+            /* Compiling sandboxed source must not arm process-wide temporal
+             * history: a `prev of x` compiled here would make later HOST
+             * assignments to x record history that a later sandbox could
+             * read. Suppression is per-thread and nestable (trace.h). */
+            trace_arm_suppress_begin();
+            TokenList tl = tokenize(source ? source : "");
+            ASTNode *ast = parse(&tl);
+            if (g_parse_errors == 0 && ast)
+                chunk = compile_ast(ast, sbox, source ? source : "", "<sandbox>");
+            trace_arm_suppress_end();
+            int front_errors = g_parse_errors;
+#if !EIGENSCRIPT_FREESTANDING
+            if (saved_stderr >= 0) { dup2(saved_stderr, STDERR_FILENO); close(saved_stderr); }
+#endif
+            free_tokenlist(&tl);
+            free_ast(ast);
+            g_parse_errors = saved_errors;
+            if (front_errors || !chunk) {
+                int line = g_first_error_line > 0 ? g_first_error_line : 1;
+                int col = g_first_error_col_known ? g_first_error_col + 1 : 0;
+                char diagnostic[512];
+                if (col > 0)
+                    snprintf(diagnostic, sizeof diagnostic, "%s (line %d, column %d)",
+                             g_first_error_msg[0] ? g_first_error_msg : "compile error",
+                             line, col);
+                else
+                    snprintf(diagnostic, sizeof diagnostic, "%s (line %d)",
+                             g_first_error_msg[0] ? g_first_error_msg : "compile error", line);
+                rt_error(EK_PARSE, line, "%s", diagnostic);
+                snprintf(g_error_file, sizeof g_error_file, "%s", "<sandbox>");
+            } else if (chunk_reads_shared_temporal(chunk)) {
+                /* The descriptor path rejects this before building; source
+                 * only has a chunk now, so the same rule applies here.
+                 * Temporal history belongs to the host thread, not the sealed
+                 * Env: `prev` could otherwise recover a host builtin or closure
+                 * the allowlist never sees. */
+                chunk_free(chunk);
+                chunk = NULL;
+                rt_error(EK_SANDBOX, 0, "sandbox source cannot access temporal history");
+            }
+        }
+    }
+    if (source_form && chunk) eigs_obs_enable_runtime();
+    Value *result = chunk ? vm_execute(chunk, sbox) : NULL;
     g_try_depth = saved_try_depth;
     g_unobserved_depth = saved_unobserved_depth;
 
@@ -3762,6 +3865,7 @@ Value* builtin_sandbox_run(Value *arg) {
     g_sandbox_loop_max = saved_max;
     g_sandbox_cap_hit = saved_cap_hit;
     g_loop_iterations = saved_iters;
+    g_sandbox_loop_iterations = saved_sandbox_iters;
     g_loop_backedge_count = saved_backedge_iters;   /* #940 */
     g_sandbox_active     = saved_sb_active;
     g_sandbox_bytes_used = saved_sb_used;
@@ -3780,7 +3884,7 @@ Value* builtin_sandbox_run(Value *arg) {
      * 2026-08-17). Surface it as a structured sandbox error instead. */
     if (ok && cap_hit) {
         ok = 0;
-        Value *ev = make_dict(3);
+        Value *ev = make_dict(4);
         dict_set_owned(ev, "kind", make_str("sandbox"));
         char capmsg[96];
         snprintf(capmsg, sizeof(capmsg),
@@ -3788,6 +3892,7 @@ Value* builtin_sandbox_run(Value *arg) {
                  loop_max);
         dict_set_owned(ev, "message", make_str(capmsg));
         dict_set_owned(ev, "line", make_int(0));
+        dict_set_owned(ev, "file", make_str("<sandbox>"));
         dict_set_owned(out, "error", ev);
     }
     if (!ok && g_sandbox_refusal) {
@@ -3795,11 +3900,12 @@ Value* builtin_sandbox_run(Value *arg) {
          * report the FIRST refusal's own triple. Not the latched g_error_*,
          * which an earlier caught ordinary error (e.g. throw("sentinel")) may
          * occupy without being a refusal; and not a later error. */
-        Value *ev = make_dict(3);
+        Value *ev = make_dict(4);
         dict_set_owned(ev, "kind",
                        make_str(err_kind_name((ErrKind)g_sandbox_refusal_kind)));
         dict_set_owned(ev, "message", make_str(g_sandbox_refusal_msg));
         dict_set_owned(ev, "line", make_int(g_sandbox_refusal_line));
+        dict_set_owned(ev, "file", make_str(g_sandbox_refusal_file));
         dict_set_owned(out, "error", ev);
         if (g_has_error) {
             g_has_error = 0;
@@ -3810,10 +3916,11 @@ Value* builtin_sandbox_run(Value *arg) {
          * graded ladder can discriminate (sandbox denial vs type error vs
          * parse) without re-running outside the sandbox. Same shape as a
          * catch binding: {kind, message, line}. */
-        Value *ev = make_dict(3);
+        Value *ev = make_dict(4);
         dict_set_owned(ev, "kind", make_str(err_kind_name((ErrKind)g_error_kind)));
         dict_set_owned(ev, "message", make_str(g_error_raw));
         dict_set_owned(ev, "line", make_int(g_error_line));
+        dict_set_owned(ev, "file", make_str(g_error_file));
         dict_set_owned(out, "error", ev);
         g_has_error = 0;
         eigs_clear_error_value();
@@ -3838,7 +3945,7 @@ Value* builtin_sandbox_run(Value *arg) {
     }
     if (scan_hit && ok) {
         ok = 0;
-        Value *ev = make_dict(3);
+        Value *ev = make_dict(4);
         dict_set_owned(ev, "kind", make_str(err_kind_name(EK_SANDBOX)));
         dict_set_owned(ev, "message",
                        make_str(scan_unverified
@@ -3848,6 +3955,7 @@ Value* builtin_sandbox_run(Value *arg) {
                                 : "sandbox result contains a callable; "
                                   "functions cannot cross the sandbox boundary"));
         dict_set_owned(ev, "line", make_int(0));
+        dict_set_owned(ev, "file", make_str("<sandbox>"));
         dict_set_owned(out, "error", ev);
     }
 
@@ -3860,6 +3968,8 @@ Value* builtin_sandbox_run(Value *arg) {
     g_sandbox_refusal      = saved_sb_refusal;
     g_sandbox_refusal_kind = saved_sb_refusal_kind;
     g_sandbox_refusal_line = saved_sb_refusal_line;
+    memcpy(g_sandbox_refusal_file, saved_sb_refusal_file,
+           sizeof saved_sb_refusal_file);
     memcpy(g_sandbox_refusal_msg, saved_sb_refusal_msg,
            sizeof saved_sb_refusal_msg);
     return sandbox_finish_run(out);
@@ -4134,7 +4244,7 @@ Value* builtin_fill(Value *arg) {
     if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     EigsSlot val = list_slot(arg, 1);
     if (count < 0) count = 0;
-    if (count > 10000000) count = 10000000; /* 10M cap */
+    if (count > EIGS_TENSOR_MAX_ELEMENTS) count = EIGS_TENSOR_MAX_ELEMENTS; /* shared tensor/list cap */
     /* #292: charge the sandbox budget — fill stores `count` slots pointing at the
      * shared value (the per-iteration aggregate that defeats the loop cap). */
     if (!sandbox_charge((size_t)count * sizeof(Value *))) return make_null();
@@ -4377,6 +4487,7 @@ static void *thread_entry(void *arg) {
     g_sandbox_loop_max = h->sandbox_loop_max;
     g_sandbox_cap_hit = 0;
     g_loop_iterations = 0;
+    g_sandbox_loop_iterations = 0;
     g_loop_backedge_count = 0;
     Value *fn = h->fn;
     /* A worker may first get CPU after its eval has already exited and a
@@ -5042,6 +5153,50 @@ Value* builtin_close_channel(Value *arg) {
     return make_null();
 }
 
+/* A retained slot is not necessarily a live resource: channels remain
+ * queryable after close and cooperative tasks remain queryable after they
+ * finish.  Keep these predicates beside the resource implementations. */
+unsigned handle_table_live_kinds(EigsState *st) {
+    unsigned live = 0;
+    if (!st) return 0;
+    pthread_mutex_lock(&st->handle_mutex);
+    for (int i = 1; i < HANDLE_TABLE_SIZE; i++) {
+        EigsHandleSlot *slot = &st->handle_table[i];
+        if (!slot->ptr) continue;
+        switch (slot->type) {
+        case HANDLE_STORE:
+            live |= EIGS_LIVE_STORE; /* store_close releases its slot */
+            break;
+        case HANDLE_THREAD:
+            live |= EIGS_LIVE_THREAD; /* thread_join claims its slot */
+            break;
+        case HANDLE_CHANNEL: {
+            Channel *ch = (Channel *)slot->ptr;
+            pthread_mutex_lock(&ch->mutex);
+            int open = !ch->closed;
+            pthread_mutex_unlock(&ch->mutex);
+            if (open) live |= EIGS_LIVE_CHANNEL;
+            break;
+        }
+        case HANDLE_TASK: {
+            Task *t = (Task *)slot->ptr;
+            if (!t->detached && (t->state == TASK_READY ||
+                t->state == TASK_RUNNING || t->state == TASK_SUSPENDED))
+                live |= EIGS_LIVE_TASK;
+            break;
+        }
+        case HANDLE_NET:
+            live |= EIGS_LIVE_SOCKET; /* net_close releases its slot */
+            break;
+        }
+    }
+    if (st->deferred_threads ||
+        __atomic_load_n(&st->live_workers, __ATOMIC_ACQUIRE) != 0)
+        live |= EIGS_LIVE_THREAD;
+    pthread_mutex_unlock(&st->handle_mutex);
+    return live;
+}
+
 Value* builtin_channel_closed(Value *arg) {
     /* #971 Phase D: get_channel folds "not a channel handle" into "no such
      * channel". The second is the documented answer (a reclaimed channel is
@@ -5629,7 +5784,7 @@ Value* builtin_nearest_in_range(Value *arg) {
         Value *e = BUILTIN_LIST_VIEW(entities, i);
         if (!e || e->type != VAL_DICT) continue;
         char **keys = e->data.dict.keys;
-        int kcount = e->data.dict.count;
+        int kcount = e->data.dict.used;
 
         Value *av;
         if (hint_active >= 0 && hint_active < kcount && keys[hint_active] == iactive) {
@@ -5694,8 +5849,8 @@ Value* builtin_nearest_in_range(Value *arg) {
 }
 
 /* nearest_in_range_all of [entities, range, world_w, world_h, px_key?, py_key?, active_key?]
-   Batched form: for every entity i in entities, return the nearest active
-   entity (including i itself, mirroring single-call semantics) within range.
+   Batched form: for every entity i in entities, return the nearest other
+   active entity (never i itself) within range.
    Returns a list of len(entities) results; each is {index,dist,dx,dy} or null.
 
    Why this exists: the per-entity nearest_in_range pattern walks the list of
@@ -5759,7 +5914,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
             continue;
         }
         char **keys = e->data.dict.keys;
-        int kcount = e->data.dict.count;
+        int kcount = e->data.dict.used;
 
         Value *av;
         if (hint_active >= 0 && hint_active < kcount && keys[hint_active] == iactive) {
@@ -5824,7 +5979,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
         /* Tight SoA inner loop — pure double arithmetic, no pointer chasing.
          * At n=768 the three input arrays total ~14KB, comfortably in L1. */
         for (int j = 0; j < n; j++) {
-            if (!valid_arr[j] || !active_arr[j]) continue;
+            if (j == i || !valid_arr[j] || !active_arr[j]) continue;
             double dx = px_arr[j] - pi_x;
             double dy = py_arr[j] - pi_y;
             if (dx > hw) dx -= ww; else if (dx < -hw) dx += ww;
@@ -5966,6 +6121,10 @@ Value* builtin_list_insert_at(Value *arg) {
      * copy, then move the tail and install an independently owned value (an
      * immediate number is never retained as a Value view). */
     list_append_slot(list, list_slot(list, count - 1));
+    /* list_append_slot can refuse a capacity growth after raising the
+     * sandbox budget error.  A raise does not unwind this direct C call, so
+     * do not shift into the slot that was never reserved. */
+    if (list->data.list.count != count + 1) return list;
     slot_decref(list_slot(list, count - 1));
     list_move(list, idx + 1, idx, count - idx);
     Value *val = list_get_owned(arg, 2);
@@ -6161,8 +6320,21 @@ Value* builtin_dispatch(Value *arg) {
         rt_error(EK_TYPE, 0, "dispatch: key must be a number");
         return make_null();
     }
-    int key = builtin_c_int(key_v, "dispatch");
+    EigsNum key_n = eigs_number_arg(key_v, "dispatch");
     if (g_has_error) return make_null();
+    int64_t key_i;
+    if (key_n.is_int) key_i = key_n.value.i64;
+    else if (!num_to_i64_exact(key_n.value.f64, &key_i)) {
+        rt_error(EK_VALUE, 0, "dispatch key must be an integer, got %g",
+                 key_n.value.f64);
+        return make_null();
+    }
+    /* #1849: preserve the index-range diagnostic after N5's exact read. */
+    if (key_i < INT_MIN || key_i > INT_MAX) {
+        rt_error(EK_INDEX, 0, "dispatch key %lld out of range", (long long)key_i);
+        return make_null();
+    }
+    int key = (int)key_i;
 
     if (!table || table->type != VAL_LIST) {
         rt_error(EK_TYPE, 0, "dispatch: table must be a list");
@@ -6397,8 +6569,9 @@ int eigs_bool_gate_slow(BuiltinFn fn, const Value *arg) {
         pthread_mutex_lock(&g_bool_gate_mu);
         if (!g_bool_policy_ready) {
             for (size_t k = 0; k < BOOL_POLICY_N; k++) {
-                Value *v = env_get(env, k_bool_policy[k].name);
+                Value *v = env_get_counted(env, k_bool_policy[k].name);
                 g_bool_policy_fn[k] = (v && v->type == VAL_BUILTIN) ? v->data.builtin : NULL;
+                if (v) val_decref(v);
             }
             __atomic_store_n(&g_bool_policy_ready, 1, __ATOMIC_RELEASE);
         }

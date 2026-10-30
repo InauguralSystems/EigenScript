@@ -1,0 +1,8 @@
+define outer as:
+    local value is 1
+    define write as:
+        value is 7
+        return value
+    ignored is write of null
+    return value
+print of (outer of null)

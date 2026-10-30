@@ -154,6 +154,8 @@ typedef struct {
     int  off_frame_count;
     int  off_frames;
     int  off_current_line;
+    int  off_binary_prev_line;
+    int  off_binary_prev_trace_line;
     int  off_callframe_ip;
     int  off_callframe_fn_env;
     int  sizeof_callframe;
@@ -246,8 +248,10 @@ int jit_helper_iter_next(void);
  * post-op advance so CHECK_ERROR runs before another opcode. */
 int jit_helper_index_get(void);
 void jit_helper_index_set(void);
-int  jit_helper_loop_stall_check(void);
-int  jit_helper_loop_cap_check(void);
+int  jit_helper_loop_stall_check(uint16_t counter_depth);
+int  jit_helper_loop_cap_check(uint16_t counter_depth);
+void jit_helper_loop_enter(uint16_t counter_depth);
+void jit_helper_loop_exit(uint16_t counter_depth);
 void jit_helper_set_name(struct EigsChunk *chunk, int idx);
 void jit_helper_set_name_local(struct EigsChunk *chunk, int idx);
 void jit_helper_set_fn_name_local(struct EigsChunk *chunk, int idx);
