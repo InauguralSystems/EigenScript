@@ -1479,7 +1479,7 @@ Computational geometry: 2D/3D points and vectors, line/segment intersection, tri
 | `point_to_segment_distance` | `point_to_segment_distance of [point, seg_p1, seg_p2]` | Distance from point to finite line segment |
 | `closest_point_on_segment` | `closest_point_on_segment of [point, seg_p1, seg_p2]` | Project point onto segment, clamp to endpoints |
 | `segment_length` | `segment_length of [p1, p2]` | Length of line segment |
-| `orientation` | `orientation of [p, q, r]` | Returns: 1 = counter-clockwise, -1 = clockwise, 0 = collinear |
+| `orientation` | `orientation of [p, q, r]` | Returns 1 = counter-clockwise, -1 = clockwise, 0 = exactly collinear; the sign test is independent of coordinate scale |
 | `collinear` | `collinear of [p, q, r]` | Are three points collinear? |
 | `on_segment` | `on_segment of [p, q, r]` | Is q on segment pr? (assuming collinear) |
 | `segments_intersect` | `segments_intersect of [a1, a2, b1, b2]` | Do two line segments intersect? |
@@ -1488,7 +1488,7 @@ Computational geometry: 2D/3D points and vectors, line/segment intersection, tri
 | `triangle_centroid` | `triangle_centroid of [a, b, c]` | Average of vertices |
 | `triangle_circumcenter` | `triangle_circumcenter of [a, b, c]` | Center of circumscribed circle |
 | `triangle_incenter` | `triangle_incenter of [a, b, c]` | Center of inscribed circle |
-| `point_in_triangle` | `point_in_triangle of [p, a, b, c]` | Is point inside triangle? (barycentric coordinates method) |
+| `point_in_triangle` | `point_in_triangle of [p, a, b, c]` | Is point inside a non-degenerate triangle? Edge and vertex points return true; degenerate triangles return false |
 | `barycentric_coords` | `barycentric_coords of [p, a, b, c]` | Returns [u, v, w] barycentric coordinates |
 | `triangle_circumradius` | `triangle_circumradius of [a, b, c]` | Radius of circumscribed circle |
 | `triangle_inradius` | `triangle_inradius of [a, b, c]` | Radius of inscribed circle |

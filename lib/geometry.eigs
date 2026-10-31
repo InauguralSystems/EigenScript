@@ -162,12 +162,15 @@ define segment_length(p1, p2) as:
 # Geometric Predicates
 # ============================================================
 
-# Returns: 1 = counter-clockwise, -1 = clockwise, 0 = collinear
+# Returns: 1 = counter-clockwise, -1 = clockwise, 0 = exactly collinear.
+# The cross product's sign is tested exactly so the result is independent of
+# the coordinate units; an absolute epsilon is invalid because it scales as
+# distance squared.
 define orientation(p, q, r) as:
     val is (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
-    if val > _EPS:
+    if val > 0:
         return 1
-    if val < (0 - _EPS):
+    if val < 0:
         return -1
     return 0
 
@@ -280,15 +283,17 @@ define triangle_incenter(a, b, c) as:
     iy is (side_a * a[1] + side_b * b[1] + side_c * c[1]) / perimeter
     return [ix, iy]
 
-# Is point inside triangle? (barycentric coordinates method)
+# Is point inside a non-degenerate triangle? Points on the boundary are inside.
 define point_in_triangle(p, a, b, c) as:
-    bc is barycentric_coords of [p, a, b, c]
-    u is bc[0]
-    v is bc[1]
-    w is bc[2]
-    if u >= 0 and v >= 0 and w >= 0:
-        return true
-    return false
+    local winding is orientation of [a, b, c]
+    if winding == 0:
+        return false
+    local ab_sign is orientation of [a, b, p]
+    local bc_sign is orientation of [b, c, p]
+    local ca_sign is orientation of [c, a, p]
+    if winding > 0:
+        return ab_sign >= 0 and bc_sign >= 0 and ca_sign >= 0
+    return ab_sign <= 0 and bc_sign <= 0 and ca_sign <= 0
 
 # Returns [u, v, w] barycentric coordinates
 define barycentric_coords(p, a, b, c) as:
@@ -304,7 +309,7 @@ define barycentric_coords(p, a, b, c) as:
     dot11 is v1x * v1x + v1y * v1y
     dot12 is v1x * v2x + v1y * v2y
     inv_denom is dot00 * dot11 - dot01 * dot01
-    if inv_denom < _EPS and inv_denom > (0 - _EPS):
+    if inv_denom == 0:
         return [0, 0, 0]
     inv_denom is 1.0 / inv_denom
     u is (dot11 * dot02 - dot01 * dot12) * inv_denom
