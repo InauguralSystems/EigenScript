@@ -1,0 +1,1 @@
+- `lib/template.eigs` renames its single-value helper `fill` to `template_fill`, so `load_file of "lib/template.eigs"` no longer replaces the builtin `fill`. Callers of `template.fill` must switch to `template.template_fill`. Rendering also no longer stops after 100,000 placeholders (#2237).

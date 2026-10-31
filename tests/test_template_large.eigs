@@ -1,0 +1,14 @@
+# Regression for template.render's former 100,000-placeholder work cap.
+load_file of "lib/test.eigs"
+load_file of "lib/template.eigs"
+
+template_parts is []
+for i in range of 100001:
+    append of [template_parts, "{{x}}"]
+rendered is render of [(join of [template_parts, ""]), [["x", "a"]]]
+
+# Checking the final byte proves that render completed the 100,001st
+# substitution; a capped result would still contain the longer placeholder.
+assert of [(len of rendered) == 100001 and rendered[100000] == "a", "template renders beyond 100,000 placeholders"]
+
+test_summary of null
