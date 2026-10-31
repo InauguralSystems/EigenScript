@@ -24,7 +24,10 @@ run_gate() {   # run_gate <index> <class> <command...>
         echo "SKIP|0|no eigenscript binary (run make to include this gate)" > "$OUT/$i.st"; return
     fi
     s=$(date +%s)
-    bash "$@" > "$OUT/$i.log" 2>&1; rc=$?
+    case "$1" in
+        *.py) python3 "$@" > "$OUT/$i.log" 2>&1; rc=$? ;;
+        *) bash "$@" > "$OUT/$i.log" 2>&1; rc=$? ;;
+    esac
     if [ "$class" = portability ]; then
         portability_verdict "$rc" "$(cat "$OUT/$i.log")" "${PRECHECK_KERNEL:-$(uname -s)}"
         echo "$PORT_VERDICT|$(( $(date +%s) - s ))|$PORT_VERDICT_REASON" > "$OUT/$i.st"
@@ -84,6 +87,7 @@ run|tools/pipefail_verdict_check.sh
 bin|tools/docs_claims_check.sh
 run|tools/section_plan.sh --shards $SHARDS --check
 run|tools/workflow_yaml_check.sh
+run|tools/workflow_injection_check.py
 run|tools/ci_tier_check.sh
 run|tools/child_exit_check.sh
 run|tools/enrolment_check.sh

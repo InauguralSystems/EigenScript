@@ -153,8 +153,10 @@ jobs:
 
       - name: Smoke-test the image
         if: github.event_name != 'pull_request'
+        env:
+          IMAGE_TAGS: ${{ steps.build-meta.outputs.tags }}
         run: |
-          IMAGE="$(echo '${{ steps.build-meta.outputs.tags }}' | head -1)"
+          IMAGE="$(printf '%s\n' "$IMAGE_TAGS" | head -1)"
           echo 'print of "docker-ok"' > /tmp/hello.eigs
           for plat in linux/amd64 linux/arm64; do
             echo "=== Testing $IMAGE ($plat) ==="
