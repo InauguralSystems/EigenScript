@@ -3,7 +3,7 @@ name: Docker
 # Publish container images of the EigenScript runtime to GitHub Container
 # Registry. Two triggers:
 #   - push to main → tag `:edge` (rolling pre-release)
-#   - tag v*       → tags `:X.Y.Z`, `:X.Y`, and `:latest`
+#   - tag v*       → immutable `:X.Y.Z` plus eligible rolling release tags
 #
 # Multi-arch: linux/amd64 (JIT) and linux/arm64 (interpreter-only;
 # src/jit.c is __x86_64__-gated). arm64 builds via QEMU emulation, so
@@ -40,33 +40,121 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract image metadata
-        id: meta
+      - name: Extract immutable image metadata
+        id: build-meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/eigenscript
           tags: |
-            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,enable=${{ github.ref == 'refs/heads/main' }}
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.build-meta.outputs.tags }}
+          labels: ${{ steps.build-meta.outputs.labels }}
           provenance: true
           sbom: true
+
+      # Decide only after the slow multi-arch build. Each release rolling tag
+      # advances independently: X.Y within its minor line, X within its major
+      # line, and latest across all releases.
+      - name: Check rolling tag eligibility
+        id: rolling-tags
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          edge=false
+          minor=false
+          major=false
+          latest=false
+          case "$GITHUB_REF" in
+            refs/heads/main)
+              tip=$(git ls-remote origin refs/heads/main | awk 'NR == 1 { print $1 }')
+              [ -n "$tip" ] || { echo "::error::could not read the main tip from origin"; exit 1; }
+              if [ "$tip" = "$SHA" ]; then
+                edge=true
+                echo "main tip $SHA: edge enabled"
+              else
+                echo "main has moved to $tip: edge omitted"
+              fi
+              ;;
+            refs/tags/v*)
+              tag=${GITHUB_REF#refs/tags/}
+              version=${tag#v}
+              major_version=${version%%.*}
+              remainder=${version#*.}
+              minor_version=${remainder%%.*}
+              releases=$(git ls-remote --tags --refs origin 'v*' \
+                | sed 's|.*refs/tags/||')
+              highest=$(printf '%s\n' "$releases" | sort -V | tail -1)
+              [ -n "$highest" ] || { echo "::error::could not read release tags from origin"; exit 1; }
+              highest_minor=$(printf '%s\n' "$releases" \
+                | sed -n "/^v${major_version}\\.${minor_version}\\.[0-9][0-9]*$/p" \
+                | sort -V | tail -1)
+              highest_major=$(printf '%s\n' "$releases" \
+                | sed -n "/^v${major_version}\\.[0-9][0-9]*\\.[0-9][0-9]*$/p" \
+                | sort -V | tail -1)
+              [ "$tag" = "$highest_minor" ] && minor=true
+              [ "$tag" = "$highest_major" ] && major=true
+              if [ "$tag" = "$highest" ]; then
+                latest=true
+              fi
+              enabled=
+              [ "$minor" = false ] || enabled="$enabled $major_version.$minor_version"
+              [ "$major" = false ] || enabled="$enabled $major_version"
+              [ "$latest" = false ] || enabled="$enabled latest"
+              if [ -n "$enabled" ]; then
+                echo "rolling tags enabled:${enabled}"
+              else
+                echo "newer releases exist: rolling tags omitted"
+              fi
+              ;;
+          esac
+          echo "edge=$edge" >> "$GITHUB_OUTPUT"
+          echo "minor=$minor" >> "$GITHUB_OUTPUT"
+          echo "major=$major" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Extract rolling image metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/eigenscript
+          tags: |
+            type=raw,value=edge,enable=${{ steps.rolling-tags.outputs.edge == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ steps.rolling-tags.outputs.minor == 'true' }}
+            type=semver,pattern={{major}},enable=${{ steps.rolling-tags.outputs.major == 'true' }}
+            type=raw,value=latest,enable=${{ steps.rolling-tags.outputs.latest == 'true' }}
+
+      - name: Promote rolling image tag
+        if: steps.rolling-tags.outputs.edge == 'true' || steps.rolling-tags.outputs.minor == 'true' || steps.rolling-tags.outputs.major == 'true' || steps.rolling-tags.outputs.latest == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/eigenscript
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -eu
+          args=
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && args="$args --tag $tag"
+          done <<EOF
+          $TAGS
+          EOF
+          # TAGS is generated by docker/metadata-action, so word splitting is
+          # deliberate: each value becomes one buildx --tag argument.
+          docker buildx imagetools create $args "$IMAGE@$DIGEST"
 
       - name: Smoke-test the image
         if: github.event_name != 'pull_request'
         run: |
-          IMAGE="$(echo '${{ steps.meta.outputs.tags }}' | head -1)"
+          IMAGE="$(echo '${{ steps.build-meta.outputs.tags }}' | head -1)"
           echo 'print of "docker-ok"' > /tmp/hello.eigs
           for plat in linux/amd64 linux/arm64; do
             echo "=== Testing $IMAGE ($plat) ==="

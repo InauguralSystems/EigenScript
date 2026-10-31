@@ -1,0 +1,1 @@
+- Container publishing now prevents overlapping or re-run workflows from moving `edge` or `latest` backwards (#2219).
