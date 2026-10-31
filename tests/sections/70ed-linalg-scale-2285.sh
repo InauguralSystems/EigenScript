@@ -2,7 +2,7 @@ echo "[70ed] Scale-aware linear algebra singularity (#2285)"
 TOTAL=$((TOTAL + 1))
 LINALG_2285_OUTPUT=$($EIGS_TMO "$EIGS" "$TESTS_DIR/test_issue_2285.eigs" 2>&1); LINALG_2285_RC=$?
 if rc_ok "$LINALG_2285_RC" "$LINALG_2285_OUTPUT" &&
-   printf '%s\n' "$LINALG_2285_OUTPUT" | grep -q '^Tests: 9 | Pass: 9 | Fail: 0$'; then
+   grep -q '^Tests: 15 | Pass: 15 | Fail: 0$' <<< "$LINALG_2285_OUTPUT"; then
     PASS=$((PASS + 1))
     echo "  PASS: scaled nonsingular and roundoff-singular matrices are distinguished"
 else
