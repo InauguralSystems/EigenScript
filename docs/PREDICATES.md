@@ -868,18 +868,24 @@ entropy route this made a value shrinking toward 1 read `diverging`
 both artifacts of the signal, not the motion. The value route reads the
 motion:
 
-```eigenscript fragment
+```eigenscript
 x is 100.0
 for i in range of 13:
     x is x * 0.7          # 100 → ~1: steps contracting toward a limit
-report of x
+print of (report of x)    # "improving"
+```
+```output
+improving
 ```
 
-```eigenscript fragment
+```eigenscript
 x is 1.0
 for i in range of 13:
     x is x * 1.43         # 1 → ~105: non-vanishing same-sign steps
-report of x
+print of (report of x)    # "diverging"
+```
+```output
+diverging
 ```
 
 The formula and its horizon property are unchanged in the MEASUREMENT

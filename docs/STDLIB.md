@@ -186,7 +186,7 @@ signature comment above each function (e.g., `# clamp of [value, lo, hi]`).
 
 Higher-order functions take EigenScript functions as arguments:
 
-```eigenscript fragment
+```eigenscript
 load_file of "lib/list.eigs"
 
 define double as:
@@ -198,9 +198,17 @@ define is_even as:
 define add_fn as:
     return n[0] + n[1]
 
-doubled is map of [[1,2,3], double]
-evens is filter of [[1,2,3,4], is_even]
-total is reduce of [[1,2,3], add_fn, 0]
+doubled is map of [[1,2,3], double]      # [2, 4, 6]
+evens is filter of [[1,2,3,4], is_even]  # [2, 4]
+total is reduce of [[1,2,3], add_fn, 0]  # 6
+print of doubled
+print of evens
+print of total
+```
+```output
+[2, 4, 6]
+[2, 4]
+6
 ```
 
 ### lib/string.eigs — String Utilities
@@ -582,7 +590,7 @@ EigenScript
 | `times` | `times of [count, fn]` | Call fn(i) for i in 0..count-1 |
 | `iterate` | `iterate of [fn, value, count]` | Apply fn n times |
 
-```eigenscript fragment
+```eigenscript
 load_file of "lib/functional.eigs"
 
 define double as:
@@ -595,7 +603,11 @@ define square as:
 result is chain of [[double, square], 3]   # square(double(3)) = 36
 
 # Apply multiple functions to same value
-results is apply_all of [[double, square], 5]
+results is apply_all of [[double, square], 5]  # [10, 25]
+print of results
+```
+```output
+[10, 25]
 ```
 
 ### The UI Toolkit — lib/ui*.eigs
@@ -957,14 +969,19 @@ per-file and total tallies.
 | `has_flag` | `has_flag of [parsed, "--flag"]` | Alias for get_flag |
 | `require_opt` | `require_opt of [parsed, "--key", usage]` | Get option or exit |
 
-```eigenscript fragment
+```eigenscript
 load_file of "lib/args.eigs"
-# eigenscript myscript.eigs --verbose --output=result.txt input.csv
-parsed is parse_args of null
+# Equivalent to: eigenscript myscript.eigs --verbose --output=result.txt input.csv
+parsed is [["positional", ["input.csv"]], ["--verbose", "true"], ["--output", "result.txt"]]
 if get_flag of [parsed, "--verbose"]:
     print of "Verbose mode on"
 outfile is get_opt of [parsed, "--output", "out.txt"]
-files is get_positional of parsed
+files is get_positional of parsed    # ["input.csv"]
+print of files
+```
+```output
+Verbose mode on
+["input.csv"]
 ```
 
 ### lib/config.eigs — Configuration File Loading

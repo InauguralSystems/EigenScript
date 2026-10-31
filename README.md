@@ -231,14 +231,17 @@ converged
 1.4551915228366852e-09
 ```
 
-```eigenscript fragment
+```eigenscript
 reading is 5.0
 reading is 2.0
 reading is 5.0
 reading is 2.0
 reading is 5.0
 reading is 2.0
-report of reading
+print of (report of reading)  # "oscillating"  (needs a few periods to classify)
+```
+```output
+oscillating
 ```
 
 Trajectory states: `converged`, `stable`, `equilibrium`, `oscillating`,
@@ -435,11 +438,15 @@ program's incidental globals. Pass configuration as a function argument or
 through an exported setter; use `load_file` only when shared scope is intended
 ([SPEC, Modules](docs/SPEC.md#modules), #2180).
 
-```eigenscript fragment
+```eigenscript
 load_file of "lib/list.eigs"
 define double as:                        # functions take one argument, n
     return n * 2
-doubled is map of [[1, 2, 3], double]
+doubled is map of [[1, 2, 3], double]    # [2, 4, 6]
+print of doubled
+```
+```output
+[2, 4, 6]
 ```
 
 File loading is relative to the containing file, then the `eigs_modules` walk,

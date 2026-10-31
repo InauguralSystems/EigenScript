@@ -39,6 +39,10 @@ def main():
     paired = run_doc("```eigenscript\nprint of 1  # 1\n```\n```output\n1\n```\n")
     check(paired.returncode == 0 and "1 claim(s) examined" in paired.stdout,
           "a real output block checks the claim")
+    fake_pair = run_doc("```eigenscript fragment\nx is 1  # 1\n```\n"
+                        "```output\n1\n```\n")
+    check(fake_pair.returncode != 0 and "states a VALUE" in fake_pair.stdout,
+          "an output block cannot pretend to check a fragment")
     empty = run_doc("```eigenscript fragment\nx is 1\n```\n")
     check(empty.returncode != 0 and "examined 0 value comments" in empty.stdout,
           "zero examined claims is red")

@@ -331,15 +331,15 @@ def is_asan_build():
 # ---------------------------------------------------------------------------
 POPULATION = {
     # file                       fences paired fragment nocheck value-comments
-    "README.md":                 (  7,    3,     4,      0,      1),
+    "README.md":                 (  7,    5,     2,      0,      3),
     "docs/llms.txt":             ( 13,   10,     2,      1,      6),   # #2203: +1 paired (catch-type guard, string throw + runtime error)
     "docs/SPEC.md":              ( 88,   84,     1,      3,      5),   # #1425: +1 paired (multi-line binary operator error line)
     "docs/COMPARISON.md":        ( 19,   18,     1,      0,      0),
     "docs/CONCURRENCY.md":       (  9,    9,     0,      0,      0),   # #1879: +1 paired (thread handle crosses a channel)
-    "docs/STDLIB.md":            ( 16,    8,     8,      0,      7),
-    "docs/SYNTAX.md":            ( 35,   15,    20,      0,     15),
+    "docs/STDLIB.md":            ( 16,   11,     5,      0,     12),
+    "docs/SYNTAX.md":            ( 35,   24,    11,      0,     28),
     # #1991: these observer documents are part of the executable doc gate.
-    "docs/PREDICATES.md":        ( 15,    3,    11,      1,      3),
+    "docs/PREDICATES.md":        ( 15,    5,     9,      1,      5),
     "docs/DIAGNOSTICS.md":       (  6,    1,     5,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
     "docs/BUILTINS.md":          (  3,    2,     1,      0,      0),   # #2186: durable atomic-save recipe
@@ -387,12 +387,6 @@ VALUE_COMMENT = re.compile(
 # waived here by its EXACT stripped line with a reason (§125). Keyed by
 # (basename, stripped line).
 VALUE_COMMENT_WAIVERS = {
-    ("PREDICATES.md", "x is x * 0.7          # 100 → ~1: steps contracting toward a limit"):
-        "an order-of-magnitude illustration of the contraction, not a claimed "
-        "final value",
-    ("PREDICATES.md", "x is x * 1.43         # 1 → ~105: non-vanishing same-sign steps"):
-        "an order-of-magnitude illustration of the growth, not a claimed final "
-        "value",
 }
 VALUE_COMMENT_WAIVERS_USED = set()
 
@@ -775,7 +769,8 @@ def main():
                               % (os.path.basename(path), lineno, payload))
                     continue
                 if kind in ("", "check", "fragment"):
-                    paired_output = (block_index + 1 < len(doc_blocks) and
+                    paired_output = (kind in ("", "check") and
+                                     block_index + 1 < len(doc_blocks) and
                                      doc_blocks[block_index + 1][1] == "output")
                     n_valuecomment += check_value_comments(
                         path, lineno, text, paired_output)

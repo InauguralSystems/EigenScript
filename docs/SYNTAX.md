@@ -17,14 +17,19 @@ the current evaluator scope, even if a parent scope already has a name with
 the same identifier. It does not create a new block scope for `if` or `loop`;
 it binds whichever environment is active for that statement.
 
-```eigenscript fragment
+```eigenscript
 name is "outer"
 define example as:
     local name is "inner"
     return name
 
-result is example of null
-name                         # still "outer"
+result is example of null   # "inner"
+print of result
+print of name               # still "outer"
+```
+```output
+inner
+outer
 ```
 
 ### Numeric Semantics
@@ -32,9 +37,15 @@ name                         # still "outer"
 Numbers are finite by construction. EigenScript does not expose `NaN` or
 `Inf` values to user code:
 
-```eigenscript fragment
-1 / 1e-320
-exp of 999999
+```eigenscript
+small_divisor is 1 / 1e-320       # 1e+308
+large_exp is exp of 999999        # 1e+308
+print of small_divisor
+print of large_exp
+```
+```output
+1e+308
+1e+308
 ```
 
 In strict mode, the default, an out-of-domain call or a `NaN` result raises:
@@ -76,11 +87,15 @@ Available: `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`
 
 Define functions with named parameters in parentheses:
 
-```eigenscript fragment
+```eigenscript
 define add(a, b) as:
     return a + b
 
-result is add of [3, 4]
+result is add of [3, 4]    # 7
+print of result
+```
+```output
+7
 ```
 
 ```eigenscript
@@ -101,19 +116,27 @@ The argument list is unpacked into the named parameters automatically.
 
 Functions can also be defined without named parameters. The argument is `n`:
 
-```eigenscript fragment
+```eigenscript
 define square as:
     return n * n
 
-result is square of 5
+result is square of 5    # 25
+print of result
+```
+```output
+25
 ```
 
 For multiple arguments in classic style, pass a list and unpack manually:
-```eigenscript fragment
+```eigenscript
 define add_three as:
     return n[0] + n[1] + n[2]
 
-result is add_three of [10, 20, 30]
+result is add_three of [10, 20, 30]    # 60
+print of result
+```
+```output
+60
 ```
 
 ### No arguments
@@ -374,9 +397,14 @@ config is {"host": "localhost", "port": 8080, "debug": 1}
 ```
 
 **Dot access:**
-```eigenscript fragment config={"host":"localhost","port":8080,"debug":1}
-print of config.host
-print of config.port
+```eigenscript
+config is {"host": "localhost", "port": 8080, "debug": 1}
+print of config.host       # "localhost"
+print of config.port       # 8080
+```
+```output
+localhost
+8080
 ```
 
 Any word can follow the dot, including keywords — `d.loop`, `d.in`,
@@ -385,10 +413,15 @@ keyword-named keys (e.g. from `json_decode` of external data) are
 reachable by dot as well as by bracket.
 
 **Bracket access:**
-```eigenscript fragment config={"host":"localhost","port":8080,"debug":1}
+```eigenscript
+config is {"host": "localhost", "port": 8080, "debug": 1}
 key is "host"
-print of config["host"]
-print of config[key]
+print of config["host"]    # "localhost"
+print of config[key]       # "localhost"
+```
+```output
+localhost
+localhost
 ```
 
 **Nested dictionaries:**
@@ -401,12 +434,18 @@ localhost
 ```
 
 **Builtins:**
-```eigenscript fragment config={"host":"localhost","port":8080,"debug":1}
-print of (keys of config)
-print of (values of config)
+```eigenscript
+config is {"host": "localhost", "port": 8080, "debug": 1}
+print of (keys of config)          # ["host", "port", "debug"]
+print of (values of config)        # ["localhost", 8080, 1]
 print of (has_key of [config, "host"])
 dict_set of [config, "timeout", 30]      # mutates config
 dict_remove of [config, "debug"]         # mutates config
+```
+```output
+["host", "port", "debug"]
+["localhost", 8080, 1]
+true
 ```
 
 `has_key` returns the boolean `true` here, not the number `1`. Booleans are
@@ -623,9 +662,14 @@ runs deterministically, see [TRACE.md](TRACE.md).
 
 The observer system classifies value trajectories automatically:
 
-```eigenscript fragment loss=1.0
+```eigenscript
+loss is 1.0
 status is report of loss
-state is observe of loss
+state is observe of loss   # [status, entropy, dH, prev_dH]
+print of state
+```
+```output
+["equilibrium", 1, 0, 0]
 ```
 
 With the fragment's single initial `loss` assignment, `status` is
