@@ -14,10 +14,17 @@ trap 'rm -rf "$scratch"' EXIT
 # already been resolved into env by Actions at this boundary; bash must see the
 # value only as data, reject it, and emit neither a tag nor payload output.
 python3 - "$ROOT/.github/workflows/release.yml" > "$scratch/determine-tag.sh" <<'PY'
-import sys, yaml
-doc = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
-print(next(step for step in doc["jobs"]["tag"]["steps"]
-           if step.get("name") == "Determine release tag")["run"])
+from pathlib import Path
+import re
+import sys
+lines = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+name = next(i for i, line in enumerate(lines) if line.strip() == "- name: Determine release tag")
+run = next(i for i in range(name + 1, len(lines)) if re.match(r"^\s+run:\s*[|>]", lines[i]))
+indent = len(lines[run]) - len(lines[run].lstrip())
+for line in lines[run + 1:]:
+    if line.strip() and len(line) - len(line.lstrip()) <= indent:
+        break
+    print(line[indent + 2:])
 PY
 payload='0.99.0"; echo INJECTED-as-$(id -un) >&2; VER="0.99.0'
 GITHUB_OUTPUT="$scratch/payload.output" EVENT_NAME=workflow_dispatch VERSION_INPUT="$payload" \
