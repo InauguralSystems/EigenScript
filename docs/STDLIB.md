@@ -260,7 +260,7 @@ iteration.
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `auth_login` | `auth_login of password` | Verify password, set session token |
-| `auth_check` | `auth_check of token` | 1 if token is valid |
+| `auth_check` | `auth_check of null` | Read the bearer token from the request headers; return JSON with `status: "ok"`, or `status: "error"` and an error message |
 | `auth_logout` | `auth_logout of null` | Clear session |
 | `auth_get_token` | `auth_get_token of null` | Return current token |
 | `require_auth` | `require_auth of null` | Check auth from HTTP headers |
