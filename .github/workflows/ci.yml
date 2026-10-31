@@ -1359,7 +1359,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     services:
       db:
-        image: postgres:16
+        image: postgres:16@sha256:1beaa3084eee2676f20a9cd9928f0bf2c5bf674f8e49f81017912183d377c61c
         env:
           POSTGRES_USER: eigs
           POSTGRES_PASSWORD: eigs_test
