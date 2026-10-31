@@ -157,7 +157,8 @@ define expect_monotone(n) as:
 # non-vanishing same-sign drift — additive runaway — is caught even when each
 # relative step sits below the deadband). A drift that VANISHES (decaying
 # steps) still reads "stable"/"converged"; bound the absolute target with
-# `ensure of [(abs of x) < LIMIT]` when the destination matters.
+# `ensure of [(abs of x) < LIMIT, "target is bounded"]` when the destination
+# matters.
 define invariant_stable(n) as:
     a is n[0]
     step_fn is n[1]

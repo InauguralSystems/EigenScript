@@ -32,6 +32,11 @@ print of "=== Contracts (lib/contract.eigs) ==="
 # ---- require / ensure: plain predicates ----
 check of ["require truthy passes", require of [1, "n/a"], true]
 check of ["ensure truthy passes", ensure of [5 > 2, "n/a"], true]
+# The exact two-element shape recommended by invariant_stable's header must
+# remain executable; a one-element bare list passes a bool rather than a list.
+x is 3
+bounded is ensure of [(abs of x) < 10, "target is bounded"]
+check of ["documented bounded-target ensure passes", bounded, true]
 
 caught is 0
 try:
