@@ -37,11 +37,27 @@ check of ["round-trip 150 days across Y2K leap window", rt_ok, 1]
 
 check of ["weekday of epoch day 0 is Thursday", weekday_from_days of 0, 4]
 check of ["weekday of 2026-07-04 is Saturday", weekday_from_days of 20638, 6]
+check of ["weekday before epoch stays normalized", weekday_from_days of (-7), 4]
+
+check of ["year zero leap day to days", days_from_civil of [0, 2, 29], -719469]
+check of ["year zero leap day from days", civil_from_days of (-719469), [0, 2, 29]]
+
+# round-trip a range wholly before the Unix epoch, including year zero
+negative_rt_ok is 1
+d is -720000
+loop while d < 0:
+    c is civil_from_days of (d)
+    if (days_from_civil of [c[0], c[1], c[2]]) != d:
+        negative_rt_ok is 0
+    d is d + 137
+check of ["negative-day round-trip through year zero", negative_rt_ok, 1]
 
 check of ["epoch seconds compose", epoch_from_civil of [2026, 7, 4, 5, 30, 2], (20638 * 86400) + (5 * 3600) + (30 * 60) + 2]
 t is civil_from_epoch of ((20638 * 86400) + (5 * 3600) + (30 * 60) + 2)
 check of ["epoch inverse y", t[0], 2026]
 check of ["epoch inverse hms", (t[3] * 10000) + (t[4] * 100) + t[5], 53002]
+check of ["second before epoch", civil_from_epoch of (-1), [1969, 12, 31, 23, 59, 59]]
+check of ["day and second before epoch", civil_from_epoch of (-86401), [1969, 12, 30, 23, 59, 59]]
 
 if fails == 0:
     print of "DATETIME_CIVIL_ALL_PASS"
