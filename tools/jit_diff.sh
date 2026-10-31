@@ -197,6 +197,7 @@ while IFS= read -r rel; do
     *seeded_race*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (intentionally nondeterministic)"; continue ;;
     *userrace*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (deliberate #1489 positive-control race)"; continue ;;
     *state_at*|*statedump*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (hash-order output)"; continue ;;
+    tests/test_template_large.eigs) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (workload outlives the OBS deadline by design)"; continue ;;
   esac
   row=$(row_of "$rel"); prog="$ROOT/$rel"
   run "$T/ref" 25 "${REF[@]}"
