@@ -550,9 +550,34 @@ def check_value_comments(path, fence_line, text, paired_output=None):
             continue
         found += 1
         claim = stated_value(line)
-        output_lines = norm(paired_output).splitlines() if paired_output is not None else []
-        if claim is not None and claim in output_lines:
-            continue
+        if claim is not None and paired_output is not None:
+            # A claim belongs to the source line carrying it, not to an
+            # arbitrary equal-looking line elsewhere in the example output.
+            # Instrument that one line and capture only the value it produces.
+            source = raw.split("#", 1)[0].rstrip()
+            indent = source[:len(source) - len(source.lstrip())]
+            statement = source.strip()
+            probe = None
+            if statement.startswith("print of ") or statement.startswith("eval of "):
+                probe = source
+            elif " is " in statement:
+                lhs = statement.split(" is ", 1)[0].strip()
+                if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", lhs):
+                    probe = source + "\n" + indent + "print of " + lhs
+            if probe is not None:
+                before = text.split("\n")[:k]
+                after = text.split("\n")[k + 1:]
+                marker_a = "__EIGS_VALUE_CLAIM_BEGIN_%d__" % k
+                marker_b = "__EIGS_VALUE_CLAIM_END_%d__" % k
+                instrumented = before + [indent + 'print of "%s"' % marker_a,
+                                         probe,
+                                         indent + 'print of "%s"' % marker_b] + after
+                rc, stdout, _stderr = run_program("\n".join(instrumented))
+                match = re.search(re.escape(marker_a) + r"\n(.*?)\n" +
+                                  re.escape(marker_b), norm(stdout), re.S)
+                produced = match.group(1).splitlines() if rc == 0 and match else []
+                if produced == [claim]:
+                    continue
         key = (base, line)
         if key in VALUE_COMMENT_WAIVERS:
             reason = VALUE_COMMENT_WAIVERS[key]
