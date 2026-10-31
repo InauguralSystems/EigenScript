@@ -1,8 +1,8 @@
-# Regression coverage for scale-independent geometry degeneracy checks (#2284).
+# Regression coverage for relative geometry degeneracy checks (#2284).
 load_file of "lib/test.eigs"
 load_file of "lib/geometry.eigs"
 
-for scale in [1, 1e-7, 1e+7]:
+for scale in [1e-9, 1, 1e9]:
     crossing is line_intersection of [[0, 0], [scale, scale], [0, scale], [scale, 0]]
     assert_true of [crossing != null, "crossing lines are not parallel"]
     assert_near of [crossing[0], 0.5 * scale, 1e-9 * scale, "intersection x scales"]
@@ -16,4 +16,39 @@ for scale in [1, 1e-7, 1e+7]:
     radius is triangle_circumradius of [[0, 0], [scale, 0], [0, scale]]
     assert_near of [radius, 0.7071067811865476 * scale, 1e-9 * scale, "circumradius scales"]
 
-print of "All tests passed."
+    bary is barycentric_coords of [[0.25 * scale, 0.25 * scale], [0, 0], [scale, 0], [0, scale]]
+    assert_near of [bary[0], 0.5, 1e-9, "barycentric coordinate scales"]
+
+    poly_center is polygon_centroid of [[0, 0], [scale, 0], [scale, scale], [0, scale]]
+    assert_near of [poly_center[0], 0.5 * scale, 1e-9 * scale, "polygon centroid x scales"]
+    assert_near of [poly_center[1], 0.5 * scale, 1e-9 * scale, "polygon centroid y scales"]
+
+    assert_true of [circles_intersect of [0, 0, scale, 2 * scale, 0, scale], "tangent circles intersect at every scale"]
+    circle_points is circle_intersection_points of [0, 0, scale, 2 * scale, 0, scale]
+    assert_eq of [len of circle_points, 1, "tangent circles have one point at every scale"]
+
+    # Arithmetic produces directions whose cross product is roundoff rather
+    # than exact zero. The answer must remain parallel in every unit system.
+    parallel is line_intersection of [[0, 0], [0.1 * scale, 0.3 * scale], [scale, scale], [(1 + 0.1 + 0.1) * scale, (1 + 0.1 + 0.2 + 0.3) * scale]]
+    assert_eq of [parallel, null, "roundoff-parallel lines stay parallel"]
+
+    near_center is triangle_circumcenter of [[0, 0], [0.1 * scale, 0.2 * scale], [0.3 * scale, 0.6 * scale]]
+    assert_eq of [orientation of [[0, 0], [0.1 * scale, 0.2 * scale], [0.3 * scale, 0.6 * scale]], 0, "roundoff-collinear orientation is zero"]
+    assert_eq of [near_center, null, "roundoff-collinear triangle has no circumcenter"]
+    assert_eq of [circle_from_three_points of [[0, 0], [0.1 * scale, 0.2 * scale], [0.3 * scale, 0.6 * scale]], null, "roundoff-collinear points define no circle"]
+    assert_eq of [triangle_circumradius of [[0, 0], [0.1 * scale, 0.2 * scale], [0.3 * scale, 0.6 * scale]], 0, "roundoff-collinear triangle has zero circumradius"]
+    near_bary is barycentric_coords of [[0, 0], [0, 0], [0.1 * scale, 0.2 * scale], [0.3 * scale, 0.6 * scale]]
+    assert_eq of [near_bary, [0, 0, 0], "roundoff-collinear barycentric coordinates are rejected"]
+    flat_center is polygon_centroid of [[0, 0], [scale, scale], [2 * scale, (2 + 1e-13) * scale], [scale, scale]]
+    assert_near of [flat_center[0], scale, 1e-9 * scale, "near-zero-area polygon uses vertex average"]
+
+    # The center distance and radius sum are mathematically equal, but their
+    # different arithmetic paths can differ by a last bit.
+    tangent_d is sqrt of ((0.1 * scale) * (0.1 * scale) + (0.2 * scale) * (0.2 * scale))
+    tangent_r1 is tangent_d / 7
+    tangent_r2 is tangent_d * 6 / 7
+    assert_true of [circles_intersect of [0, 0, tangent_r1, 0.1 * scale, 0.2 * scale, tangent_r2], "roundoff-tangent circles intersect"]
+    tangent_points is circle_intersection_points of [0, 0, tangent_r1, 0.1 * scale, 0.2 * scale, tangent_r2]
+    assert_eq of [len of tangent_points, 1, "roundoff-tangent circles have one point"]
+
+test_summary of null

@@ -1,1 +1,1 @@
-- Geometry intersections and centers now preserve their results across coordinate scales instead of treating small valid figures as degenerate (#2284).
+- Geometry predicates, intersections, and centers now use relative tolerances, preserving results across coordinate scales while rejecting roundoff-degenerate inputs (#2284).
