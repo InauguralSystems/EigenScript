@@ -157,7 +157,7 @@ define mat_mul(A, B) as:
 # ============================================================
 
 # mat_det: determinant via cofactor expansion (2x2, 3x3) or LU for general;
-# the LU path reports singularity only when its pivot column is exactly zero
+# the LU path uses a scale-relative pivot tolerance
 define mat_det(A) as:
     n is len of A
     if n == 1:
@@ -169,10 +169,14 @@ define mat_det(A) as:
     # General case: LU decomposition with partial pivoting
     # Copy matrix to avoid mutation
     M is []
+    matrix_scale is 0.0
     for i in range of n:
         row is []
         for j in range of n:
             append of [row, A[i][j] * 1.0]
+            entry_scale is abs of A[i][j]
+            if entry_scale > matrix_scale:
+                matrix_scale is entry_scale
         append of [M, row]
     sign is 1
     for col in range of n:
@@ -186,7 +190,7 @@ define mat_det(A) as:
                 max_val is v
                 max_row is r
             r is r + 1
-        if max_val == 0:
+        if max_val <= matrix_scale * 1e-12:
             return 0
         if max_row != col:
             # Swap rows
@@ -215,10 +219,14 @@ define mat_inverse(A) as:
     n is len of A
     # Build augmented matrix [A | I]
     aug is []
+    matrix_scale is 0.0
     for i in range of n:
         row is []
         for j in range of n:
             append of [row, A[i][j] * 1.0]
+            entry_scale is abs of A[i][j]
+            if entry_scale > matrix_scale:
+                matrix_scale is entry_scale
         for j in range of n:
             if i == j:
                 append of [row, 1.0]
@@ -237,9 +245,9 @@ define mat_inverse(A) as:
                 max_val is v
                 max_row is r
             r is r + 1
-        if max_val < 1e-12:
+        if max_val <= matrix_scale * 1e-12:
             # #1047 twin: same pivot test, same silent null, same distant crash.
-            throw of f"mat_inverse: singular matrix -- pivot |{max_val}| < 1e-12 at column {col} (no inverse)"
+            throw of f"mat_inverse: singular matrix -- pivot |{max_val}| is negligible relative to matrix scale {matrix_scale} at column {col} (no inverse)"
         if max_row != col:
             tmp is aug[col]
             set_at of [aug, col, aug[max_row]]
@@ -357,10 +365,14 @@ define solve_linear(A, b) as:
     n is len of b
     # Build augmented matrix [A | b]
     aug is []
+    matrix_scale is 0.0
     for i in range of n:
         row is []
         for j in range of n:
             append of [row, A[i][j] * 1.0]
+            entry_scale is abs of A[i][j]
+            if entry_scale > matrix_scale:
+                matrix_scale is entry_scale
         append of [row, b[i] * 1.0]
         append of [aug, row]
     # Forward elimination with partial pivoting
@@ -375,11 +387,11 @@ define solve_linear(A, b) as:
                 max_val is v
                 max_row is r
             r is r + 1
-        if max_val < 1e-12:
+        if max_val <= matrix_scale * 1e-12:
             # #1047: a null return carried no information and the caller
             # died "cannot index null" frames away from the cause (phugoid's
             # trim solver, a plant that zeroed the control derivatives).
-            throw of f"solve_linear: singular system -- pivot |{max_val}| < 1e-12 at column {col} (no unique solution)"
+            throw of f"solve_linear: singular system -- pivot |{max_val}| is negligible relative to matrix scale {matrix_scale} at column {col} (no unique solution)"
         if max_row != col:
             tmp is aug[col]
             set_at of [aug, col, aug[max_row]]
@@ -459,16 +471,16 @@ define eigenvectors_2x2(A) as:
         a22 is A[1][1] - lam
         # Use the row with larger absolute values for numerical stability
         if (abs of a11) + (abs of a12) >= (abs of a21) + (abs of a22):
-            if (abs of a12) > 1e-12:
+            if a12 != 0:
                 append of [vecs, [0 - a12, a11]]
-            elif (abs of a11) > 1e-12:
+            elif a11 != 0:
                 append of [vecs, [0, 1]]
             else:
                 append of [vecs, [1, 0]]
         else:
-            if (abs of a22) > 1e-12:
+            if a22 != 0:
                 append of [vecs, [0 - a22, a21]]
-            elif (abs of a21) > 1e-12:
+            elif a21 != 0:
                 append of [vecs, [0, 1]]
             else:
                 append of [vecs, [1, 0]]

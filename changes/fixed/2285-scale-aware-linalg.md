@@ -1,0 +1,1 @@
+- Linear algebra singularity checks now distinguish small well-conditioned matrices from rank-deficient matrices using a scale-relative tolerance (#2285).
