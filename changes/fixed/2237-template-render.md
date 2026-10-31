@@ -1,1 +1,0 @@
-- Template rendering now substitutes more than 100,000 placeholders, and its single-value helper is named `template_fill` so loading the module does not replace the builtin `fill` (#2237).
