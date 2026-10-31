@@ -44,7 +44,7 @@ define _csv_rows(text) as:
             local value is field
             if not quoted:
                 value is trim of value
-            append of [row, value]
+            append of [row, [value, quoted]]
             field is ""
             quoted is false
         elif (ch == "\n") or (ch == "\r"):
@@ -54,7 +54,7 @@ define _csv_rows(text) as:
             # Preserve comma-delimited empty fields, but keep the historical
             # behavior of ignoring a physically blank line.
             if ((len of row) > 0) or ((len of value) > 0) or quoted:
-                append of [row, value]
+                append of [row, [value, quoted]]
                 append of [rows, row]
             row is []
             field is ""
@@ -70,7 +70,7 @@ define _csv_rows(text) as:
         local value is field
         if not quoted:
             value is trim of value
-        append of [row, value]
+        append of [row, [value, quoted]]
         append of [rows, row]
     return rows
 
@@ -87,7 +87,10 @@ define df_from_csv(path) as:
     csv_rows is _csv_rows of text
     if (len of csv_rows) == 0:
         return []
-    headers is csv_rows[0]
+    header_cells is csv_rows[0]
+    headers is []
+    for h in range of (len of header_cells):
+        append of [headers, header_cells[h][0]]
     result is []
     for r in range of ((len of csv_rows) - 1):
         vals is csv_rows[r + 1]
@@ -96,7 +99,10 @@ define df_from_csv(path) as:
             for c in range of (len of headers):
                 val is ""
                 if c < (len of vals):
-                    val is trim of vals[c]
+                    cell is vals[c]
+                    val is cell[0]
+                    if not cell[1]:
+                        val is trim of val
                 # A cell is a number only if the WHOLE cell is one, under
                 # validate.is_number's rule (optional '-', digits, at most
                 # one '.'). `num of` alone cannot decide this: it maps text
@@ -407,10 +413,11 @@ define df_left_join(left, right, on) as:
 
 # ---- Export ----
 
-# Quote one RFC 4180 field when it contains a comma, quote, CR, or LF.
+# Quote one RFC 4180 field when it contains a comma, quote, CR, LF, or
+# leading/trailing whitespace.
 define _csv_field(value) as:
     local cell is str of value
-    local needs_quotes is (contains of [cell, ","]) or (contains of [cell, "\""]) or (contains of [cell, "\r"]) or (contains of [cell, "\n"])
+    local needs_quotes is (contains of [cell, ","]) or (contains of [cell, "\""]) or (contains of [cell, "\r"]) or (contains of [cell, "\n"]) or ((trim of cell) != cell)
     if not needs_quotes:
         return cell
     local escaped is ""
