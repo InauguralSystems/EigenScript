@@ -51,4 +51,23 @@ for scale in [1e-9, 1, 1e9]:
     tangent_points is circle_intersection_points of [0, 0, tangent_r1, 0.1 * scale, 0.2 * scale, tangent_r2]
     assert_eq of [len of tangent_points, 1, "roundoff-tangent circles have one point"]
 
+# These long parallel segments have endpoint orientations that straddle the
+# relative tolerance.  A zero orientation must not be treated as an opposite
+# sign in the proper-crossing case.
+assert_false of [segments_intersect of [[0, 0], [1e13, 0], [0, 1], [1e13, 1]], "long separated parallel segments do not intersect"]
+
+# The dot-product denominator cancels to zero at binary64 precision although
+# the cross-product predicate alone regards this thin triangle as nonzero.
+thin_bary is barycentric_coords of [[0.5, 0], [0, 0], [1, 0], [1, 1e-9]]
+assert_eq of [thin_bary, [0, 0, 0], "thin triangle avoids barycentric division by zero"]
+
+# Exactly collinear inputs can leave a nonzero residue in the three-term
+# circumcenter determinant.
+det_e is 0.000000007450580596923828125
+det_a is [0.75 + det_e, 1.75 + det_e]
+det_b is [1 + 2 * det_e, 2 + 2 * det_e]
+det_c is [0.125 + 3 * det_e, 1.125 + 3 * det_e]
+assert_eq of [triangle_circumcenter of [det_a, det_b, det_c], null, "exact collinearity survives determinant roundoff"]
+assert_eq of [circle_from_three_points of [det_a, det_b, det_c], null, "collinear determinant residue defines no circle"]
+
 test_summary of null

@@ -43,6 +43,24 @@ define _lengths_near(a, b) as:
         scale is b
     return delta <= _EPS * scale
 
+# A three-term determinant can retain a small cancellation residue even when
+# its mathematical value is zero.  Bound that residue by the magnitudes of
+# the terms that were actually summed, rather than by an absolute epsilon.
+define _sum3_near_zero(a, b, c) as:
+    local value is a + b + c
+    if value < 0:
+        value is 0 - value
+    local aa is a
+    if aa < 0:
+        aa is 0 - aa
+    local ab is b
+    if ab < 0:
+        ab is 0 - ab
+    local ac is c
+    if ac < 0:
+        ac is 0 - ac
+    return value <= _EPS * (aa + ab + ac)
+
 # ============================================================
 # 2D Point Operations
 # ============================================================
@@ -228,7 +246,7 @@ define segments_intersect(a1, a2, b1, b2) as:
     o3 is orientation of [b1, b2, a1]
     o4 is orientation of [b1, b2, a2]
     # General case
-    if o1 != o2 and o3 != o4:
+    if o1 != 0 and o2 != 0 and o3 != 0 and o4 != 0 and o1 != o2 and o3 != o4:
         return true
     # Collinear special cases
     if o1 == 0 and (on_segment of [a1, b1, a2]):
@@ -291,8 +309,11 @@ define triangle_circumcenter(a, b, c) as:
     by is b[1]
     cx is c[0]
     cy is c[1]
-    d is 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
-    if _cross_near_zero of [bx - ax, by - ay, cx - ax, cy - ay]:
+    local det_a is ax * (by - cy)
+    local det_b is bx * (cy - ay)
+    local det_c is cx * (ay - by)
+    d is 2 * (det_a + det_b + det_c)
+    if (_sum3_near_zero of [det_a, det_b, det_c]) or (_cross_near_zero of [bx - ax, by - ay, cx - ax, cy - ay]):
         return null
     ux is ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d
     uy is ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d
@@ -336,7 +357,7 @@ define barycentric_coords(p, a, b, c) as:
     dot11 is v1x * v1x + v1y * v1y
     dot12 is v1x * v2x + v1y * v2y
     inv_denom is dot00 * dot11 - dot01 * dot01
-    if _cross_near_zero of [v0x, v0y, v1x, v1y]:
+    if (_cross_near_zero of [v0x, v0y, v1x, v1y]) or inv_denom == 0:
         return [0, 0, 0]
     inv_denom is 1.0 / inv_denom
     u is (dot11 * dot02 - dot01 * dot12) * inv_denom
