@@ -1,0 +1,1 @@
+- Programs that treated the synthetic empty element from `read_lines` as a real line must stop expecting it when a file ends with a newline (#2248).

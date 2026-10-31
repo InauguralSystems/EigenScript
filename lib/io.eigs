@@ -12,14 +12,17 @@
 #   file_copy of ["src", "dst"]             # copy file contents
 #   slurp of "path"                         # read_text alias with error check
 
-# ---- read_lines: read file into list of lines ----
+# ---- read_lines: read file into lines (without a final-newline artifact) ----
 define read_lines(path) as:
     if not (file_exists of path):
         return []
-    text is read_text of path
+    local text is read_text of path
     if text == "":
         return []
-    return split of [text, "\n"]
+    local lines is split of [text, "\n"]
+    if lines[(len of lines) - 1] == "":
+        list_remove_at of [lines, (len of lines) - 1]
+    return lines
 
 # ---- write_lines: write list of lines to file ----
 # write_lines of [path, lines]

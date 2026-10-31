@@ -457,7 +457,7 @@ registers into epoch seconds with these and no host clock.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `read_lines` | `read_lines of "path"` | File to list of lines |
+| `read_lines` | `read_lines of "path"` | File to list of lines; a final newline does not add a trailing empty line |
 | `write_lines` | `write_lines of ["path", lines]` | List of lines to file |
 | `read_csv` | `read_csv of "path.csv"` | CSV to list of lists |
 | `write_csv` | `write_csv of ["path.csv", rows]` | List of lists to CSV |
