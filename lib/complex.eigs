@@ -47,7 +47,9 @@ define sub(a, b) as:
 define mul(a, b) as:
     return [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]]
 
-# div: (a / b), by multiplying through by the conjugate of b.
+# div: (a / b), using Smith's scaled complex-division algorithm. Scaling
+# avoids forming br^2 + bi^2, which can overflow or underflow even when the
+# quotient is finite.
 #
 # Returns null when b is zero. Division by zero RAISES in EigenScript
 # (measured: "Error path:N: division by zero"), so without this guard a
@@ -58,10 +60,17 @@ define mul(a, b) as:
 # the step must be skipped rather than raised on. An unguarded `div` makes
 # every polynomial with a repeated root a crash.
 define div(a, b) as:
-    local d is b[0] * b[0] + b[1] * b[1]
-    if d == 0:
+    local br is b[0]
+    local bi is b[1]
+    if br == 0 and bi == 0:
         return null
-    return [(a[0] * b[0] + a[1] * b[1]) / d, (a[1] * b[0] - a[0] * b[1]) / d]
+    if (abs of br) >= (abs of bi):
+        local r is bi / br
+        local d is 1 + r * r
+        return [(a[0] / br + (a[1] / br) * r) / d, (a[1] / br - (a[0] / br) * r) / d]
+    local r is br / bi
+    local d is 1 + r * r
+    return [((a[0] / bi) * r + a[1] / bi) / d, ((a[1] / bi) * r - a[0] / bi) / d]
 
 # neg: -a
 define neg(a) as:
@@ -75,9 +84,19 @@ define conj(a) as:
 define scale(a, s) as:
     return [a[0] * s, a[1] * s]
 
-# mag: |a|, the modulus
+# mag: |a|, the modulus. Scale by the larger absolute component before
+# squaring, like hypot, so finite components do not spuriously overflow or
+# underflow.
 define mag(a) as:
-    return sqrt of (a[0] * a[0] + a[1] * a[1])
+    local ar is abs of a[0]
+    local ai is abs of a[1]
+    if ar == 0:
+        return ai
+    if ar >= ai:
+        local r is ai / ar
+        return ar * (sqrt of (1 + r * r))
+    local r is ar / ai
+    return ai * (sqrt of (1 + r * r))
 
 # mag2: |a|^2, without the square root — cheaper, and exact for integer
 # inputs where `mag` would round.

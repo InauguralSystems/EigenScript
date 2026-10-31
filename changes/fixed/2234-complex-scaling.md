@@ -1,0 +1,1 @@
+- Complex division and magnitude now scale finite components to avoid intermediate overflow and underflow (#2234).
