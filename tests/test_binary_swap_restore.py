@@ -17,16 +17,23 @@ ERROR='ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — res
 SIGNAL_CODE='''import os, signal, time
 armed=os.environ["CONTROL_ARMED"]
 replaced=os.environ["CONTROL_REPLACED"]
-while not os.path.exists(armed): time.sleep(.001)
-parent=int(open(armed).read())
 outer=int(os.environ["CONTROL_OUTER_PID"])
+def wait_for(path, owner, description):
+    while not os.path.exists(path):
+        try:
+            os.kill(owner, 0)
+        except ProcessLookupError:
+            raise RuntimeError(description+" owner exited before publishing the event")
+        time.sleep(.001)
+wait_for(armed,outer,"armed")
+parent=int(open(armed).read())
 if parent<=1 or outer<=1 or parent==outer:
     raise RuntimeError("restoration handshake named an invalid subshell")
-while not os.path.exists(replaced): time.sleep(.001)
+wait_for(replaced,parent,"replacement")
 name=os.environ["CONTROL_SIGNAL"]
 print("binary-swap-signal: "+name+" parent="+str(parent)+" outer="+str(outer),flush=True)
 os.kill(parent,getattr(signal,"SIG"+name))
-open(os.environ["CONTROL_SENT"],"w").close()
+wait_for(os.environ["CONTROL_SENT"],parent,"signal acknowledgement")
 '''
 # Original [99d] preservation/restoration operations: deliberately retain this
 # broken copy+mv control so an inode-insensitive checker cannot turn green.
@@ -64,7 +71,7 @@ source "$RESTORE_HELPER"
     positives=negatives=0
     with tempfile.TemporaryDirectory(prefix='binary-swap-control-') as tmp:
         for layout in ['hardlink','symlink','standalone']:
-            for mode in ['guard','HUP','INT','TERM','old']:
+            for mode in ['guard','HUP','INT','TERM','disabled','old']:
                 root=Path(tmp)/(layout+'-'+mode); root.mkdir()
                 target=root/'target'; target.write_text('harmless original bytes\n')
                 alias=root/'alias'
@@ -81,13 +88,22 @@ export EIGS_SWAP_ARMED_FILE="$CONTROL_ARMED"
 export EIGS_SWAP_REPLACED_FILE="$CONTROL_REPLACED"
 export EIGS_SWAP_SENT_FILE="$CONTROL_SENT"
 "$CONTROL_PYTHON" -c "$CONTROL_SIGNAL_CODE" &
+export EIGS_SWAP_SIGNALER_PID=$!
 '''
+                if mode=='disabled':
+                    command+='\ncheck_binary_fingerprint() { :; }\n'
+                if mode=='guard' and os.environ.get('EIGS_TEST_DISABLE_BINARY_GUARD')=='1':
+                    command+='\ncheck_binary_fingerprint() { :; }\n'
                 if mode!='old': command+='\neigs_binary_swap_selftest\n'
                 env=dict(os.environ,EIGS_BIN=str(alias),RESTORE_HELPER=str(HERE/'binary_swap.sh'),
                          CONTROL_SIGNAL=mode,CONTROL_PYTHON=sys.executable,CONTROL_SIGNAL_CODE=SIGNAL_CODE,
                          CONTROL_ARMED=str(armed),CONTROL_REPLACED=str(replaced),
                          CONTROL_SENT=str(sent))
-                result=subprocess.run(['bash','-c',command],env=env,cwd=root,capture_output=True,text=True,timeout=30)
+                # Signal cases are joined by observable marker/liveness events,
+                # not a wall-clock deadline.  Under CPU contention a healthy
+                # child may take arbitrarily long to be scheduled (#2133).
+                result=subprocess.run(['bash','-c',command],env=env,cwd=root,
+                                      capture_output=True,text=True)
                 unchanged=identity(alias)==before
                 detail=(layout,mode,result.returncode,result.stdout,result.stderr)
                 assert identity(target)==target_before,('target changed',detail)
@@ -95,6 +111,10 @@ export EIGS_SWAP_SENT_FILE="$CONTROL_SENT"
                 assert not leftovers,('scratch not cleaned',[str(p) for p in leftovers],detail)
                 if mode=='old':
                     assert result.returncode==0 and not unchanged,(layout,'old defect did not turn red')
+                    negatives+=1
+                elif mode=='disabled':
+                    assert result.returncode==0 and unchanged,(layout,'disabled guard control failed',detail)
+                    assert 'SELFTEST_REACHED_END' in result.stdout and ERROR not in result.stdout,detail
                     negatives+=1
                 else:
                     expected=1 if mode=='guard' else 128+getattr(signal,'SIG'+mode)
@@ -106,6 +126,6 @@ export EIGS_SWAP_SENT_FILE="$CONTROL_SENT"
                         delivered=re.findall(r'^binary-swap-signal: '+mode+r' parent=(\d+) outer=(\d+)$',result.stdout,re.M)
                         assert len(delivered)==1 and delivered[0][0]!=delivered[0][1],('signal not delivered to verified subshell',detail)
                     positives+=1
-    assert positives==12 and negatives==3
-    print(f'binary-swap-controls: positives={positives} old-defect-rejections={negatives}')
+    assert positives==12 and negatives==6
+    print(f'binary-swap-controls: positives={positives} negative-controls={negatives}')
 if __name__=='__main__': main()
