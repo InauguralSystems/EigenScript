@@ -138,17 +138,37 @@ define argmin(items) as:
 
 # ---- log2: base-2 logarithm ----
 # log2 of value -> number, or element-wise over a list/tensor
-# Domain follows the log builtin: positive input is exact; x <= 0 raises in strict mode (the default, #1361)
+# Exact powers of two return their integer exponent exactly.
+# Domain follows the log builtin: x <= 0 raises in strict mode (the default, #1361)
 # and takes the ln(1e-10) stand-in under EIGS_STRICT=0 (#865/#1041).
-# `divide` rather than `/`: log is element-wise, so a wrapper around it
-# has to be too, or `log2 of [8, 4]` fails where `log of [8, 4]` works.
-# Scalars are identical either way.
+# Correct scalar results recursively so lists retain log's element-wise contract,
+# and correct buffers in place so they retain log's buffer shape and type.
+define _math_log_base_exact(x, base, divisor) as:
+    if (type of x) == "list":
+        local result is []
+        for i in range of (len of x):
+            append of [result, _math_log_base_exact of [x[i], base, divisor]]
+        return result
+    if (type of x) == "buffer":
+        local result is divide of [(log of x), divisor]
+        for i in range of (len of x):
+            local exponent is round of result[i]
+            if (pow of [base, exponent]) == x[i]:
+                result[i] is exponent
+        return result
+    local raw is (log of x) / divisor
+    local exponent is round of raw
+    if (pow of [base, exponent]) == x:
+        return exponent
+    return raw
+
 define log2(x) as:
-    return divide of [log of x, 0.6931471805599453]
+    return _math_log_base_exact of [x, 2, 0.6931471805599453]
 
 # ---- log10: base-10 logarithm ----
 # log10 of value -> number, or element-wise over a list/tensor
-# Domain follows the log builtin: positive input is exact; x <= 0 raises in strict mode (the default, #1361)
+# Exact powers of ten return their integer exponent exactly.
+# Domain follows the log builtin: x <= 0 raises in strict mode (the default, #1361)
 # and takes the ln(1e-10) stand-in under EIGS_STRICT=0 (#865/#1041).
 define log10(x) as:
-    return divide of [log of x, 2.302585092994046]
+    return _math_log_base_exact of [x, 10, 2.302585092994046]

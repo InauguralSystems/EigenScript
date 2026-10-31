@@ -217,9 +217,28 @@ assert of [lg2[1] == 2, "SF105 log2 element-wise [1]"]
 assert of [lg2[2] == 0, "SF106 log2 element-wise [2]"]
 lg10 is log10 of [1, 100]
 assert of [lg10[0] == 0, "SF107 log10 element-wise [0]"]
-assert of [(abs of (lg10[1] - 2)) < 0.0000001, "SF108 log10 element-wise [1]"]
-# The scalar path is unchanged by divide — same value as the log it wraps.
-assert of [(log2 of 8) == ((log of 8) / 0.6931471805599453), "SF109 log2 scalar unchanged by divide"]
-assert of [(log10 of 1000) == ((log of 1000) / 2.302585092994046), "SF110 log10 scalar unchanged by divide"]
+assert of [lg10[1] == 2, "SF108 log10 element-wise [1]"]
+
+# #2226: exact powers must produce exact integer logarithms. Check the full
+# finite exponent ranges named in the contract, rather than selected examples.
+log10_exact is 0
+for k in range of [-300, 301]:
+    if (log10 of (pow of [10, k])) == k:
+        log10_exact is log10_exact + 1
+assert of [log10_exact == 601, "SF109 log10 exact for 10^k, -300 <= k <= 300"]
+
+log2_exact is 0
+for k in range of [-1000, 1001]:
+    if (log2 of (pow of [2, k])) == k:
+        log2_exact is log2_exact + 1
+assert of [log2_exact == 2001, "SF110 log2 exact for 2^k, -1000 <= k <= 1000"]
+
+log_buffer is buffer of 2
+log_buffer[0] is 8
+log_buffer[1] is 4
+log_buffer_result is log2 of log_buffer
+assert of [(type of log_buffer_result) == "buffer", "SF111 log2 buffer keeps its container type"]
+assert of [(len of log_buffer_result) == 2, "SF112 log2 buffer keeps its shape"]
+assert of [log_buffer_result[0] == 3 and log_buffer_result[1] == 2, "SF113 log2 buffer exact powers corrected element-wise"]
 
 print of "All stdlib-fix tests passed"
