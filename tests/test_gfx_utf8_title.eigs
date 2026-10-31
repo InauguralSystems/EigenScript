@@ -7,7 +7,14 @@ assert_true of [opened, "X11 window opens"]
 if updated != "":
     gfx_delay of 500
     gfx_title of updated
-gfx_delay of 2000
+# #2204: hold the window until the harness has read its properties and
+# creates the release file. A fixed lifetime let a loaded box outlast it
+# (SDL turns SIGTERM into a quit event, so the harness cannot end it early
+# either). Capped so a harness that never releases cannot hang the run.
+release is env_get of "EIGS_RELEASE_FILE"
+started is monotonic_ms of null
+loop while opened and release != "" and not (file_exists of release) and (monotonic_ms of null) - started < 60000:
+    gfx_delay of 50
 gfx_close of null
 
 test_summary of null
