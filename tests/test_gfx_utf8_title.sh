@@ -40,6 +40,17 @@ fi
 STEP_DEADLINE=${EIGS_TITLE_STEP_DEADLINE:-30}
 
 case_number=0
+passed_cases=0
+print_summary() {
+    failed_cases=$1
+    echo "Tests: $case_number | Pass: $passed_cases | Fail: $failed_cases"
+    if [ "$failed_cases" -eq 0 ]; then
+        echo "All tests passed."
+    else
+        echo "Tests failed."
+    fi
+}
+
 run_case() {
     initial=$1 updated=$2 expected=$3 legacy_type=$4 require_xdotool=$5
     case_number=$((case_number + 1))
@@ -56,7 +67,12 @@ run_case() {
     window_id=
     deadline=$((SECONDS + STEP_DEADLINE))
     while :; do
-        window_id=$(DISPLAY="$DISPLAY_NUM" xdotool search --pid "$PROGRAM_PID" 2>/dev/null | sed -n '1p')
+        # SDL may create an unmapped helper window for the process before its
+        # mapped application window.  Taking xdotool's first result can pin
+        # every later xprop poll to that property-less helper.  Restrict the
+        # search to mapped/visible windows; there is no window manager here,
+        # so this is the SDL top-level window rather than a frame window.
+        window_id=$(DISPLAY="$DISPLAY_NUM" xdotool search --onlyvisible --pid "$PROGRAM_PID" 2>/dev/null | sed -n '1p')
         [ -n "$window_id" ] && break
         if ! kill -0 "$PROGRAM_PID" 2>/dev/null; then
             timed_out="window: the program exited before its window appeared"
@@ -70,9 +86,13 @@ run_case() {
     done
 
     properties=
+    xprop_rc=not-run
+    xprop_err="$TMP/xprop-$case_number.err"
+    : >"$xprop_err"
     deadline=$((SECONDS + STEP_DEADLINE))
     while [ -n "$window_id" ]; do
-        properties=$(xprop -display "$DISPLAY_NUM" -id "$window_id" 2>/dev/null)
+        xprop_rc=0
+        properties=$(xprop -display "$DISPLAY_NUM" -id "$window_id" 2>"$xprop_err") || xprop_rc=$?
         printf '%s\n' "$properties" | grep -Fq "WM_NAME($legacy_type) = \"$expected\"" &&
             printf '%s\n' "$properties" | grep -Fq "_NET_WM_NAME(UTF8_STRING) = \"$expected\"" && break
         if [ "$SECONDS" -ge "$deadline" ]; then
@@ -99,11 +119,24 @@ run_case() {
     wait "$PROGRAM_PID" 2>/dev/null || true
     PROGRAM_PID=
     if [ "$failed" -ne 0 ]; then
-        [ -n "$timed_out" ] && echo "  TIMEOUT: $timed_out"
+        if [ -n "$timed_out" ]; then
+            echo "  TIMEOUT: $timed_out"
+            echo "  xprop rc: $xprop_rc"
+            if [ -s "$xprop_err" ]; then
+                sed 's/^/  xprop stderr: /' "$xprop_err"
+            else
+                echo "  xprop stderr: <empty>"
+            fi
+        fi
         echo "  FAIL: title properties for case $case_number"
-        cat "$log"
+        # The EigenScript fixture only checks that gfx_open succeeded.  Do
+        # not repeat its independent green test_summary after this harness
+        # has found a title failure: that made the final summary lie.
+        sed '/^Tests: /d; /^All tests passed\.$/d' "$log"
+        print_summary 1
         exit 1
     fi
+    passed_cases=$((passed_cases + 1))
     echo "  PASS: title properties for case $case_number"
 }
 
@@ -113,3 +146,4 @@ run_case 'DMG' 'DMG — 48 MHz — frame 7' 'DMG — 48 MHz — frame 7' COMPOUN
 run_case 'eigs-1681 — initial' 'eigs-1681 ASCII retitle' 'eigs-1681 ASCII retitle' STRING 1
 
 echo "  PASS: all four ICCCM/EWMH title transitions"
+print_summary 0
