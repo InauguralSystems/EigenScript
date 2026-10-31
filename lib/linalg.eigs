@@ -253,6 +253,12 @@ define mat_inverse(A) as:
                 max_val is v
                 max_row is r
                 max_ratio is ratio
+            elif ratio == max_ratio and v > max_val:
+                # Equal scaled ratios are equally safe by the row-scale
+                # metric; prefer the larger absolute pivot to reduce loss
+                # when eliminating a much larger row.
+                max_val is v
+                max_row is r
             r is r + 1
         if row_scales[max_row] == 0 or max_val <= row_scales[max_row] * 1e-12:
             # #1047 twin: same pivot test, same silent null, same distant crash.
@@ -409,6 +415,11 @@ define solve_linear(A, b) as:
                 max_val is v
                 max_row is r
                 max_ratio is ratio
+            elif ratio == max_ratio and v > max_val:
+                # Preserve small RHS contributions when equally scaled rows
+                # have very different absolute magnitudes.
+                max_val is v
+                max_row is r
             r is r + 1
         if row_scales[max_row] == 0 or max_val <= row_scales[max_row] * 1e-12:
             # #1047: a null return carried no information and the caller
