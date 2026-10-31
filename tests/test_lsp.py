@@ -478,7 +478,7 @@ def main():
     # modules' functions are offered; the detail is the rule-2 signature
     # comment, or the `define name(params) as:` shape when a module never
     # wrote one (stats has none for median; list.zip has one).
-    std_doc = "import stats\nimport list\nresult is stats.mean of [1, 2, 3]\n"
+    std_doc = "import stats\nimport list\nresult is stats.stats_mean of [1, 2, 3]\n"
     comp_std = {"jsonrpc": "2.0", "id": 26, "method": "textDocument/completion",
                 "params": {"textDocument": {"uri": URI}, "position": {"line": 2, "character": 12}}}
     r = converse([INIT, did_open(std_doc), comp_std, SHUTDOWN, EXIT])
@@ -548,7 +548,7 @@ def main():
     res = (by_id(r, 29) or {}).get("result")
     value = ((res or {}).get("contents") or {}).get("value", "") if isinstance(res, dict) else ""
     check("hover over a stdlib call without a signature shows the define shape",
-          "define mean(vals) as:" in value)
+          "define stats_mean(vals) as:" in value)
 
     # A function from a module the document never imported gets no hover.
     hover_noimp = {"jsonrpc": "2.0", "id": 30, "method": "textDocument/hover",

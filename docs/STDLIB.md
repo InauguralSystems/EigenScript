@@ -19,7 +19,7 @@ mode is re-inventing what already ships (see "Before you hand-roll" below).
 
 | I need to... | Use | Where |
 |---|---|---|
-| average / median / stddev / quantiles / correlation | `stats.mean`, `stats.median`, `stats.std_dev`, `stats.quantile`, `stats.correlation`, `stats.describe` | `lib/stats.eigs` |
+| average / median / stddev / quantiles / correlation | `stats.stats_mean`, `stats.median`, `stats.std_dev`, `stats.quantile`, `stats.correlation`, `stats.describe` | `lib/stats.eigs` |
 | tables, CSV, group-by, join, select/where | `data.df_from_csv`, `df_where`, `df_group_by`, `df_join`, `df_select` | `lib/data.eigs` |
 | probability distributions, combinatorics, Bayes | `probability.normal_pdf`, `binomial_pmf`, `combinations`, `bayes` | `lib/probability.eigs` |
 | matrices / vectors / solve Ax=b / eigenvalues | `linalg.mat_mul`, `mat_inverse`, `solve_linear`, `charpoly`, `eigenvalues` | `lib/linalg.eigs` |
@@ -37,7 +37,7 @@ mode is re-inventing what already ships (see "Before you hand-roll" below).
 | finite state machine | `state.sm_new`, `sm_add_transition`, `sm_send` | `lib/state.eigs` |
 | parse a number / hex / codepoint | `num`, `hex`, `ord`, `chr`, `utf8_encode` (**builtins** / `lib/utf8.eigs`) | BUILTINS.md, `lib/utf8.eigs` |
 | pad / format numbers / aligned tables / progress bars | `format.fmt_num`, `fmt_padded`, `fmt_table`, `fmt_bar`, `hexdump` | `lib/format.eigs` |
-| join / repeat / capitalize / replace-all strings | `string.join`, `repeat`, `capitalize`, `replace_all` | `lib/string.eigs` |
+| join / repeat / capitalize / replace-all strings | `string.string_join`, `repeat`, `capitalize`, `replace_all` | `lib/string.eigs` |
 | build a big string efficiently | `text_builder_new`, `text_builder_append` (**builtins**) | `lib/text_builder.eigs` |
 | Unicode codepoints over byte strings | `utf8.utf8_len`, `utf8_at`, `utf8_encode` | `lib/utf8.eigs` |
 | checksums (CRC-32, Adler-32) | `checksum.crc32`, `adler32`, `sum8` | `lib/checksum.eigs` |
@@ -78,7 +78,7 @@ They already ship — reach for them first:
 
 | You were about to write... | It already exists as |
 |---|---|
-| `_pr_median` / your own mean | `stats.median`, `stats.mean` (`lib/stats.eigs`) |
+| `_pr_median` / your own mean | `stats.median`, `stats.stats_mean` (`lib/stats.eigs`) |
 | `hex4` / `pad2` (fixed-width hex) | `hex of [n, nibbles]` (**builtin** — zero-padded, never truncates) |
 | a byte-to-int / char-code helper | `ord` (read), `chr` / `str_from_bytes` (write) — **builtins** |
 | `_log10` / a log-base helper | `math.log2`, `math.log10` (`lib/math.eigs`) — `load_file of "lib/math.eigs"`, then `log2 of x` / `log10 of x` instead of a hand-rolled `(log of x) / (log of base)`. Element-wise, like the `log` builtin they wrap. |
@@ -149,13 +149,13 @@ signature comment above each function (e.g., `# clamp of [value, lo, hi]`).
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `abs` | `abs of value` | Absolute value |
+| `math_abs` | `math_abs of value` | Absolute value |
 | `sign` | `sign of value` | Returns -1, 0, or 1 |
 | `max_val` | `max_val of list` | Maximum element |
 | `min_val` | `min_val of list` | Minimum element |
 | `clamp` | `clamp of [value, lo, hi]` | Restrict to range |
 | `lerp` | `lerp of [a, b, t]` | Linear interpolation |
-| `dot` | `dot of [list_a, list_b]` | Dot product |
+| `math_dot` | `math_dot of [list_a, list_b]` | Dot product |
 | `gcd` | `gcd of [a, b]` | Greatest common divisor |
 | `lcm` | `lcm of [a, b]` | Least common multiple |
 | `argmax` | `argmax of list` | Index of the largest element (first on ties, -1 if empty) |
@@ -207,7 +207,7 @@ total is reduce of [[1,2,3], add_fn, 0]  # 6
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `join` | `join of [list, separator]` | Join elements with separator |
+| `string_join` | `string_join of [list, separator]` | Join elements with separator |
 | `repeat` | `repeat of [string, count]` | Repeat string n times |
 | `pad_left` | `pad_left of [string, width, pad_string]` | Left-pad to width by repeating the pad string and truncating it on the right to fit exactly. Fractional widths are floored; widths above the maximum string length raise. An empty pad string returns the input unchanged |
 | `pad_right` | `pad_right of [string, width, pad_string]` | Right-pad to width by repeating the pad string and truncating it on the right to fit exactly. Fractional widths are floored; widths above the maximum string length raise. An empty pad string returns the input unchanged |
@@ -616,7 +616,7 @@ widget signatures.
 **Core (`lib/ui.eigs`):** `panel`, `add_child`, `find_by_id`,
 `stack_vertical`, `stack_horizontal`, `show_toast`, `register_hotkey`,
 `push_modal`/`pop_modal`, `show_menu`, `show_dialog`, `claim_drag`/
-`release_drag`, `dispatch`, `handle_key`, `request_quit`, `app_loop`.
+`release_drag`, `ui_dispatch`, `handle_key`, `request_quit`, `app_loop`.
 Theme (`lib/ui_theme.eigs`):
 `theme`, `theme_color`, `set_theme`, `theme_dark`/`theme_light`/`theme_high_contrast`.
 `theme_color(key, fallback)` returns the active theme value, or `fallback` when
@@ -667,7 +667,7 @@ module header for the full argument list):
 **`dialog` is a container** (#575): `add_child of [dlg, w]` mounts any
 widget inside it, positioned relative to the dialog's own top-left. The
 modal machinery carries it — `show_dialog`/`push_modal` centres and lays
-it out, `app_loop` renders it above everything, and `dispatch` treats the
+it out, `app_loop` renders it above everything, and `ui_dispatch` treats the
 top modal as the root for each event, so children hit-test, hover, drag
 and take keyboard focus exactly as they do anywhere else, while clicks
 outside the dialog reach nothing behind it.
@@ -866,14 +866,14 @@ drag mousemove plus the terminating mouseup (branch on `ev.type`;
 wheel input under the cursor before the `scroll_panel` walk sees it.
 Wheel events from `gfx_poll` also carry the pointer position as
 `ev.mx`/`ev.my` (#822), so a widget can zoom about the cursor without
-shadowing `mousemove`; `dispatch` prefers them for its own hit test and
+shadowing `mousemove`; `ui_dispatch` prefers them for its own hit test and
 falls back to the last tracked position when a synthesized event omits
 them.
 Drag handling for the built-in draggable types goes through the widget
 registry's `on_drag` entry, so a registered custom type can supply its
 own.
 
-Keyboard goes through the same door: `dispatch of [root, ev]` routes a
+Keyboard goes through the same door: `ui_dispatch of [root, ev]` routes a
 `keydown`/`keyup` event dict to `handle_key of [root, ev]`, the toolkit's
 public key handler that `app_loop` itself calls. It applies hotkeys >
 escape-pops-modal > open combobox > focused text input > focus
@@ -1220,9 +1220,9 @@ Descriptive statistics over flat lists of numbers. Population and sample variant
 
 | Function | Signature | Description |
 |---|---|---|
-| `sum` | `sum of vals` | sum of all values |
+| `stats_sum` | `stats_sum of vals` | sum of all values |
 | `count` | `count of vals` | number of values |
-| `mean` | `mean of vals` | arithmetic mean |
+| `stats_mean` | `stats_mean of vals` | arithmetic mean |
 | `median` | `median of vals` | middle value (sort + pick middle) |
 | `mode` | `mode of vals` | most common value |
 | `variance` | `variance of vals` | POPULATION variance (divides by N); use `variance_sample` for a sample |
@@ -1240,7 +1240,7 @@ Descriptive statistics over flat lists of numbers. Population and sample variant
 | `correlation` | `correlation of [xs, ys]` | Pearson correlation coefficient |
 | `describe` | `describe of vals` | return dict with count, mean, median, std_dev, min, max, q25, q75 |
 
-`stats.mean` and `stats.median` already exist — reach for them instead of
+`stats.stats_mean` and `stats.median` already exist — reach for them instead of
 re-deriving a `_pr_mean`/`_pr_median`. This example is executed and checked
 byte-for-byte by the suite (`tests/test_doc_examples.py`, section [89]):
 
@@ -1249,7 +1249,7 @@ import stats
 import data
 
 scores is [88, 92, 79, 95, 73]
-print of (stats.mean of scores)
+print of (stats.stats_mean of scores)
 print of (stats.median of scores)
 
 rows is data.df_from_rows of [["name", "score"], [["Ada", 90], ["Bo", 70]]]
@@ -1361,7 +1361,7 @@ Complex numbers as two-element `[re, im]` lists — the shape
 
 | Function | Signature | Notes |
 |---|---|---|
-| `add` / `sub` / `mul` | `mul of [a, b]` | complex arithmetic |
+| `complex_add` / `sub` / `mul` | `mul of [a, b]` | complex arithmetic |
 | `div` | `div of [a, b]` | scaled division; returns `null` only when both parts of b are zero |
 | `neg` / `conj` | `conj of a` | negation flips both components, conjugation only the imaginary one |
 | `scale` | `scale of [a, s]` | multiply by a REAL scalar |
@@ -1766,7 +1766,7 @@ Experiment management composing EigenStore, observer semantics, stats, and the e
 | `is_stable` | `is_stable of [exp, variable]` | `true` if the variable's measurements are stable |
 | `wait_for_stable` | `wait_for_stable of [exp, variable, collect_fn, interval, timeout]` | Poll collect_fn until the variable stabilizes or times out |
 | `measurements` | `measurements of [exp, variable]` | All measurement records for a variable |
-| `values` | `values of [exp, variable]` | Flat list of a variable's values |
+| `lab_values` | `lab_values of [exp, variable]` | Flat list of a variable's values |
 | `to_dataframe` | `to_dataframe of [exp, variable]` | Measurements as a data.eigs DataFrame |
 | `to_csv` | `to_csv of [exp, variable, path]` | Export a variable's measurements to CSV |
 | `summary` | `summary of [exp, variable]` | Descriptive-stats summary for a variable |
@@ -2241,7 +2241,7 @@ Internal names below are implementation contracts for maintainers, not a stable 
 | `cancel_tweens(widget)` | Cancel every active animation targeting the supplied widget id. |
 | `checkbox(id, x, y, text, value, on_change)` | Create a checkbox whose width includes its measured label and whose value is supplied by the caller. |
 | `claim_drag(widget)` | Capture subsequent pointer motion and release events for the specified widget. |
-| `dispatch(root, ev)` | Route keyboard, pointer, drag and wheel events through the active modal and widget registry. |
+| `ui_dispatch(root, ev)` | Route keyboard, pointer, drag and wheel events through the active modal and widget registry. |
 | `find_by_id(widget, id)` | Search the widget and supported descendants for the requested id, returning null when absent. |
 | `handle_key(root, ev)` | Apply hotkey, modal, text-input and focus priorities and report whether a key was consumed. |
 | `pop_modal()` | Hide and return the top dialog, remove it from the modal stack and rebuild focus. |

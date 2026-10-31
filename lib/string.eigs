@@ -5,14 +5,14 @@
 # How to use:
 #   load_file of "lib/string.eigs"
 #
-#   join of [["a","b","c"], ","]    # "a,b,c"
+#   string_join of [["a","b","c"], ","]    # "a,b,c"
 #   repeat of ["ab", 3]            # "ababab"
 #   pad_left of ["42", 6, "0"]     # "000042"
 #   pad_right of ["42", 6, "0"]    # "420000"
 
-# ---- join: join list elements with separator ----
-# join of [list, separator] -> string
-define join(items, sep) as:
+# ---- string_join: string_join list elements with separator ----
+# string_join of [list, separator] -> string
+define string_join(items, sep) as:
     result is ""
     for i in range of (len of items):
         if i > 0:

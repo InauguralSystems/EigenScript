@@ -6,12 +6,12 @@ load_file of "lib/list.eigs"
 load_file of "lib/string.eigs"
 
 # ---- Math library ----
-print of ("abs(-7): " + (str of (abs of -7)))
+print of ("abs(-7): " + (str of (math_abs of -7)))
 print of ("max_val: " + (str of (max_val of [3, 1, 4, 1, 5, 9])))
 print of ("min_val: " + (str of (min_val of [3, 1, 4, 1, 5, 9])))
 print of ("clamp(15, 0, 10): " + (str of (clamp of [15, 0, 10])))
 print of ("lerp(0, 100, 0.25): " + (str of (lerp of [0, 100, 0.25])))
-print of ("dot([1,2,3],[4,5,6]): " + (str of (dot of [[1,2,3],[4,5,6]])))
+print of ("dot([1,2,3],[4,5,6]): " + (str of (math_dot of [[1,2,3],[4,5,6]])))
 
 # ---- List library ----
 nums is [1, 2, 3, 4, 5]
@@ -39,6 +39,6 @@ print of ("zip: " + (str of (zip of [["a","b","c"], [1,2,3]])))
 print of ("flatten: " + (str of (flatten of [[1,2],[3],[4,5,6]])))
 
 # ---- String library ----
-print of ("join: " + (join of [["hello", "world", "!"], " "]))
+print of ("join: " + (string_join of [["hello", "world", "!"], " "]))
 print of ("repeat: " + (repeat of ["ab", 4]))
 print of ("pad_left: " + (pad_left of ["42", 6, "0"]))

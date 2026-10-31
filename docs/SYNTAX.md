@@ -686,9 +686,9 @@ Libraries live in `lib/` and are loaded with `load_file`:
 
 | Module | Functions |
 |--------|-----------|
-| `lib/math.eigs` | `abs`, `max_val`, `min_val`, `clamp`, `lerp`, `dot` |
+| `lib/math.eigs` | `math_abs`, `max_val`, `min_val`, `clamp`, `lerp`, `math_dot` |
 | `lib/list.eigs` | `map`, `filter`, `reduce`, `reverse`, `zip`, `flatten` |
-| `lib/string.eigs` | `join`, `repeat`, `pad_left` |
+| `lib/string.eigs` | `string_join`, `repeat`, `pad_left` |
 | `lib/sanitize.eigs` | `sanitize_text`, `is_garble`, `clean_response` |
 | `lib/auth.eigs` | `auth_login`, `auth_check`, `auth_logout` |
 

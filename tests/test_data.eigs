@@ -212,10 +212,10 @@ assert_true of [(len of tbl) > 0, "df_to_table produces output"]
 vals is [2, 4, 4, 4, 5, 5, 7, 9]
 
 # mean
-assert_eq of [stats.mean of vals, 5, "stats.mean"]
+assert_eq of [stats.stats_mean of vals, 5, "stats.stats_mean"]
 
 # sum
-assert_eq of [stats.sum of vals, 40, "stats.sum"]
+assert_eq of [stats.stats_sum of vals, 40, "stats.stats_sum"]
 
 # count
 assert_eq of [stats.count of vals, 8, "stats.count"]
@@ -258,7 +258,7 @@ assert_near of [normed[2], 1, 0.001, "stats.normalize max"]
 
 # z_scores
 zs is stats.z_scores of [2, 4, 4, 4, 5, 5, 7, 9]
-assert_near of [stats.mean of zs, 0, 0.001, "z_scores mean ~0"]
+assert_near of [stats.stats_mean of zs, 0, 0.001, "z_scores mean ~0"]
 assert_near of [stats.std_dev of zs, 1, 0.001, "z_scores std_dev ~1"]
 
 # correlation

@@ -28,7 +28,7 @@ define read_lines(path) as:
 # write_lines of [path, lines]
 define write_lines(path, lines) as:
     load_file of "lib/string.eigs"
-    text is join of [lines, "\n"]
+    text is string_join of [lines, "\n"]
     return write_text of [path, text]
 
 # ---- read_csv: parse CSV file into list of lists ----

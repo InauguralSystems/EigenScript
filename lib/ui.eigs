@@ -1,4 +1,4 @@
-# UI Toolkit — orchestrator: globals, load chain, dispatch, app_loop
+# UI Toolkit — orchestrator: globals, load chain, ui_dispatch, app_loop
 
 load_file of "lib/keys.eigs"
 #
@@ -200,7 +200,7 @@ define _render_toasts() as:
             gfx_text of [tx + 8, ty + 6, t.text, 120, 120, 140, _theme.font_scale]
         ty is ty + th + 4
 
-# Rendering — registry-driven dispatch
+# Rendering — registry-driven ui_dispatch
 
 define render(widget, ox, oy) as:
     if widget.visible == 0:
@@ -281,7 +281,7 @@ define _render_tooltip() as:
     # Text
     gfx_text of [tx + 4, ty + 4, _ui.tooltip_widget.tooltip, ttc[0], ttc[1], ttc[2], 1]
 
-# Hit testing — registry-driven dispatch
+# Hit testing — registry-driven ui_dispatch
 
 define _hit_test(widget, ox, oy, mx, my) as:
     if widget.visible == 0:
@@ -523,7 +523,7 @@ define push_modal(dlg, parent_w, parent_h) as:
     # Scope keyboard focus to the dialog too (#631): rebuild the focus list
     # from the dialog's own children and drop any background focus, so Tab
     # cycles inside the modal and a stray Enter cannot fire a widget behind
-    # it before the user has Tabbed. Mouse modality already scopes via dispatch.
+    # it before the user has Tabbed. Mouse modality already scopes via ui_dispatch.
     _ui.focus_list is []
     _build_focus_list of dlg
     _ui.focus_index is 0 - 1
@@ -626,9 +626,9 @@ define handle_key(root, ev) as:
         return _handle_focus_key of [root, ev]
     return false
 
-# Event dispatch — registry-driven
+# Event ui_dispatch — registry-driven
 
-define dispatch(root, ev) as:
+define ui_dispatch(root, ev) as:
     # A modal owns ALL input — pointer AND keyboard (#631). Rebind the root to
     # the top of the stack BEFORE routing anything, so hit-testing, the
     # registry walk, hover, drag AND keyboard focus navigation/activation all
@@ -641,7 +641,7 @@ define dispatch(root, ev) as:
     if (len of _ui.modal_stack) > 0:
         root is _ui.modal_stack[(len of _ui.modal_stack) - 1]
     # Keys route through the same public handler app_loop uses (#563), so
-    # dispatch is the single event door for mouse, wheel and keyboard.
+    # ui_dispatch is the single event door for mouse, wheel and keyboard.
     if ev.type == "keydown" or ev.type == "keyup":
         return handle_key of [root, ev]
     mx is 0
@@ -758,7 +758,7 @@ define dispatch(root, ev) as:
         _ui.tooltip_widget is null
         _ui.tooltip_start_time is gfx_ticks of null
         # (a modal, if any, is already this event's root — see the top of
-        # dispatch; its buttons are handled by the dialog's registry
+        # ui_dispatch; its buttons are handled by the dialog's registry
         # on_mousedown like any other widget's, #575)
         # Hit-test BEFORE closing dropdowns (#577). An open dropdown
         # extends its widget's bounds; closing first dropped the click
@@ -928,7 +928,7 @@ define app_loop(root, on_key, on_tick) as:
                     if _ev_stop of result:
                         _running is 0
             else:
-                dispatch of [root, ev]
+                ui_dispatch of [root, ev]
             ev is gfx_poll of null
         if on_tick != null:
             on_tick of root

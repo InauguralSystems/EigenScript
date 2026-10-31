@@ -277,7 +277,7 @@ assert_eq of [len of e4, 4, "4x4 returns 4 eigenvalues"]
 s4 is [0, 0]
 p4 is [1, 0]
 for k in range of 4:
-    s4 is complex.add of [s4, e4[k]]
+    s4 is complex.complex_add of [s4, e4[k]]
     p4 is complex.mul of [p4, e4[k]]
 assert_near of [s4[0], linalg.mat_trace of B4, 1e-8, "sum of eigenvalues = trace"]
 assert_near of [s4[1], 0, 1e-8, "the spectrum is closed under conjugation (imag sum 0)"]

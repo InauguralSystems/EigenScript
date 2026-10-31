@@ -14,9 +14,9 @@ define sdf_sphere as:
 
 define sdf_box as:
     # n = [px, py, pz, cx, cy, cz, half_w, half_h, half_d]
-    bx_dx is abs of (n[0] - n[3])
-    bx_dy is abs of (n[1] - n[4])
-    bx_dz is abs of (n[2] - n[5])
+    bx_dx is math_abs of (n[0] - n[3])
+    bx_dy is math_abs of (n[1] - n[4])
+    bx_dz is math_abs of (n[2] - n[5])
     bx_qx is bx_dx - n[6]
     bx_qy is bx_dy - n[7]
     bx_qz is bx_dz - n[8]
