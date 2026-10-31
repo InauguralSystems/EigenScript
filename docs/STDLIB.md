@@ -1485,7 +1485,7 @@ Computational geometry: 2D/3D points and vectors, line/segment intersection, tri
 | `triangle_centroid` | `triangle_centroid of [a, b, c]` | Average of vertices |
 | `triangle_circumcenter` | `triangle_circumcenter of [a, b, c]` | Center of circumscribed circle |
 | `triangle_incenter` | `triangle_incenter of [a, b, c]` | Center of inscribed circle |
-| `point_in_triangle` | `point_in_triangle of [p, a, b, c]` | Is point inside a non-degenerate triangle? Degenerate triangles return false |
+| `point_in_triangle` | `point_in_triangle of [p, a, b, c]` | Is point inside a non-degenerate triangle? Edge and vertex points return true; degenerate triangles return false |
 | `barycentric_coords` | `barycentric_coords of [p, a, b, c]` | Returns [u, v, w] barycentric coordinates |
 | `triangle_circumradius` | `triangle_circumradius of [a, b, c]` | Radius of circumscribed circle |
 | `triangle_inradius` | `triangle_inradius of [a, b, c]` | Radius of inscribed circle |

@@ -283,17 +283,17 @@ define triangle_incenter(a, b, c) as:
     iy is (side_a * a[1] + side_b * b[1] + side_c * c[1]) / perimeter
     return [ix, iy]
 
-# Is point inside a non-degenerate triangle? (barycentric coordinates method)
+# Is point inside a non-degenerate triangle? Points on the boundary are inside.
 define point_in_triangle(p, a, b, c) as:
-    if (orientation of [a, b, c]) == 0:
+    local winding is orientation of [a, b, c]
+    if winding == 0:
         return false
-    bc is barycentric_coords of [p, a, b, c]
-    u is bc[0]
-    v is bc[1]
-    w is bc[2]
-    if u >= 0 and v >= 0 and w >= 0:
-        return true
-    return false
+    local ab_sign is orientation of [a, b, p]
+    local bc_sign is orientation of [b, c, p]
+    local ca_sign is orientation of [c, a, p]
+    if winding > 0:
+        return ab_sign >= 0 and bc_sign >= 0 and ca_sign >= 0
+    return ab_sign <= 0 and bc_sign <= 0 and ca_sign <= 0
 
 # Returns [u, v, w] barycentric coordinates
 define barycentric_coords(p, a, b, c) as:
