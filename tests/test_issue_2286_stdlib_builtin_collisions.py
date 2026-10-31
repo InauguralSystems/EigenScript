@@ -20,7 +20,7 @@ def run_program(binary, source):
 def main():
     parser = argparse.ArgumentParser(); parser.add_argument("--selftest", action="store_true"); args = parser.parse_args()
     binary = ROOT / "src" / "eigenscript"
-    print(f"PLAN: {2 if args.selftest else 9}")
+    print(f"PLAN: {2 if args.selftest else 11}")
     clean = collisions(ROOT, binary)
     if clean:
         print("FAIL: stdlib collision gate: " + ", ".join(clean)); return 1
@@ -48,5 +48,15 @@ def main():
         if result.returncode or result.stdout.strip() != "true":
             print(f"FAIL: {label} changed builtin (rc={result.returncode}, out={result.stdout!r}, err={result.stderr!r})"); return 1
         print(f"PASS: loading {module} preserves builtin for {label}")
+    import_cases = {
+        "complex.add": ("complex", "add of [[1,2,3],[4,5,6]]"),
+        "ui.dispatch": ("ui", "dispatch of [[identity], 0, 42]"),
+    }
+    for label, (module, expression) in import_cases.items():
+        helper = "define identity(x) as:\n    return x\n" if module == "ui" else ""
+        result = run_program(binary, f"{helper}before is {expression}\nimport {module}\nafter is {expression}\nprint of (before == after)\n")
+        if result.returncode or result.stdout.strip() != "true":
+            print(f"FAIL: import {module} changed global builtin for {label} (rc={result.returncode}, out={result.stdout!r}, err={result.stderr!r})"); return 1
+        print(f"PASS: namespaced import {module} preserves global builtin for {label}")
     return 0
 if __name__ == "__main__": raise SystemExit(main())
