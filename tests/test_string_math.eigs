@@ -35,6 +35,8 @@ assert of [(pad_left of ["hello", 3, "."]) == "hello", "PL2 already wide enough"
 assert of [(pad_left of ["", 3, "x"]) == "xxx", "PL3 empty string"]
 # Empty pad char can never reach width — must return the source unchanged, not spin (#637).
 assert of [(pad_left of ["x", 5, ""]) == "x", "PL4 empty pad char returns source unchanged"]
+assert of [(pad_left of ["42", 5, "ab"]) == "aba42", "PL5 truncates repeated multi-character pad to width (#2241)"]
+assert of [(len of (pad_left of ["42", 5, "ab"])) == 5, "PL6 multi-character pad length is exactly width (#2241)"]
 
 # ---- pad_right (lib/string.eigs) ----
 assert of [(pad_right of ["42", 6, "."]) == "42....", "PR1 pads on the right"]
@@ -43,6 +45,21 @@ assert of [(pad_right of ["", 3, "x"]) == "xxx", "PR3 empty string"]
 assert of [(pad_right of ["7", 4, "0"]) == "7000", "PR4 zero pad"]
 # Empty pad char can never reach width — must return the source unchanged, not spin (#637).
 assert of [(pad_right of ["x", 5, ""]) == "x", "PR5 empty pad char returns source unchanged"]
+assert of [(pad_right of ["42", 5, "ab"]) == "42aba", "PR6 truncates repeated multi-character pad to width (#2241)"]
+assert of [(len of (pad_right of ["42", 5, "ab"])) == 5, "PR7 multi-character pad length is exactly width (#2241)"]
+
+# Preserve the non-string no-op inputs accepted by the library before #2241.
+pad_flat is [1, 2]
+pad_nested is [[1], [2]]
+pad_buffer is buffer of 2
+assert of [(pad_left of [pad_flat, 2, "x"]) == pad_flat, "PL7 no-op preserves list input"]
+assert of [(pad_left of [pad_nested, 1, "x"]) == pad_nested, "PL8 no-op preserves nested-list input"]
+assert of [(len of (pad_left of [pad_buffer, 2, "x"])) == 2, "PL9 no-op preserves buffer input"]
+assert of [(pad_left of [null, 5, ""]) == null, "PL10 empty pad preserves null input"]
+assert of [(pad_right of [pad_flat, 2, "x"]) == pad_flat, "PR8 no-op preserves list input"]
+assert of [(pad_right of [pad_nested, 1, "x"]) == pad_nested, "PR9 no-op preserves nested-list input"]
+assert of [(len of (pad_right of [pad_buffer, 2, "x"])) == 2, "PR10 no-op preserves buffer input"]
+assert of [(pad_right of [null, 5, ""]) == null, "PR11 empty pad preserves null input"]
 
 # ---- scan_ints ----
 ints is scan_ints of "p cnf 3 4\n1 -2 0\nbad +7 -x 8.5 9\n"

@@ -28,27 +28,37 @@ define repeat(s, count) as:
         result is result + s
     return result
 
-# ---- pad_left: left-pad string to width with character ----
-# pad_left of [string, width, pad_char] -> string
-# An empty pad char returns s unchanged (it can never reach width, so the
-# loop would otherwise spin forever).
+# ---- pad_left: left-pad string to width with a repeated pad string ----
+# pad_left of [string, width, pad_string] -> string
+# The repeated pad is truncated on the right to make the result exactly width.
+# An empty pad string returns s unchanged (it can never reach width).
 define pad_left(s, width, ch) as:
     if (len of ch) == 0:
         return s
-    loop while (len of s) < width:
-        s is ch + s
-    return s
+    if (len of s) >= width:
+        return s
+    local padding is ""
+    local needed is width - (len of s)
+    loop while (len of padding) < needed:
+        local remaining is needed - (len of padding)
+        padding is padding + (substr of [ch, 0, remaining])
+    return padding + s
 
-# ---- pad_right: right-pad string to width with character ----
-# pad_right of [string, width, pad_char] -> string
-# An empty pad char returns s unchanged (it can never reach width, so the
-# loop would otherwise spin forever).
+# ---- pad_right: right-pad string to width with a repeated pad string ----
+# pad_right of [string, width, pad_string] -> string
+# The repeated pad is truncated on the right to make the result exactly width.
+# An empty pad string returns s unchanged (it can never reach width).
 define pad_right(s, width, ch) as:
     if (len of ch) == 0:
         return s
-    loop while (len of s) < width:
-        s is s + ch
-    return s
+    if (len of s) >= width:
+        return s
+    local padding is ""
+    local needed is width - (len of s)
+    loop while (len of padding) < needed:
+        local remaining is needed - (len of padding)
+        padding is padding + (substr of [ch, 0, remaining])
+    return s + padding
 
 # ---- capitalize: uppercase the first character, leave the rest ----
 # capitalize of string -> string
