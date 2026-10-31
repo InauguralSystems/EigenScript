@@ -1,0 +1,1 @@
+- `probability.factorial` now raises on fractional arguments instead of returning the factorial of their floor; callers must pass an integer (#2240).

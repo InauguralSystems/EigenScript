@@ -1298,7 +1298,7 @@ Combinatorics, distributions (binomial, Poisson, normal, exponential, uniform â€
 
 | Function | Signature | Description |
 |---|---|---|
-| `factorial` | `factorial of n` | n! |
+| `factorial` | `factorial of n` | n! for integral n; raises on a non-integer argument |
 | `combinations` | `combinations of [n, k]` | C(n, k) = n! / (k! * (n-k)!) |
 | `permutations` | `permutations of [n, k]` | P(n, k) = n! / (n-k)! |
 | `binomial_pmf` | `binomial_pmf of [n, k, p]` | P(X=k) = C(n,k) * p^k * (1-p)^(n-k) |
