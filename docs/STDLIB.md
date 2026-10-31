@@ -48,7 +48,7 @@ mode is re-inventing what already ships (see "Before you hand-roll" below).
 | parse CLI args / flags / options | `args.parse_args`, `get_flag`, `get_opt` | `lib/args.eigs` |
 | structured logging with levels | `log.log_info`, `log_warn`, `log_level` | `lib/log.eigs` |
 | validate input (email, number, range) | `validate.is_email`, `is_number`, `in_range` | `lib/validate.eigs` |
-| render a `{{template}}` string | `template.render`, `render_file`, `fill` | `lib/template.eigs` |
+| render a `{{template}}` string | `template.render`, `render_file`, `template_fill` | `lib/template.eigs` |
 | manipulate JSON (get path, merge, pretty) | `json.json_get_path`, `json_merge`, `json_pretty` | `lib/json.eigs` |
 | an embedded document store / DB | `store.open`, `put`, `find`, `upsert` | `lib/store.eigs` |
 | a lock across cooperative tasks | `sync.lock_new`, `with_lock` | `lib/sync.eigs` |
@@ -1102,7 +1102,7 @@ true
 | `render_lines` | `render_lines of [template, vars]` | Render to line list |
 | `render_each` | `render_each of [template, items, key]` | Render per item |
 | `render_block` | `render_block of [template, vars, cond]` | Conditional render |
-| `fill` | `fill of [template, key, value]` | Single-variable shorthand |
+| `template_fill` | `template_fill of [template, key, value]` | Single-variable shorthand |
 
 ```eigenscript
 load_file of "lib/template.eigs"

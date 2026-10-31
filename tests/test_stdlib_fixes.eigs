@@ -63,6 +63,30 @@ assert of [r3 == "{{missing}} remains", "SF10 template unknown placeholder"]
 r4 is render of ["prefix {{forever", [["forever", "nope"]]]
 assert of [r4 == "prefix {{forever", "SF11 template unterminated placeholder"]
 
+# More than 100,000 placeholders must not cause render to return a partially
+# substituted string.
+template_parts is []
+for i in range of 100005:
+    append of [template_parts, "{{x}}"]
+large_rendered is render of [(join of [template_parts, ""]), [["x", "a"]]]
+assert of [(len of large_rendered) == 100005, "SF12 template renders more than 100,000 placeholders"]
+assert of [(index_of of [large_rendered, "{{x}}"] == (0 - 1)), "SF14 template leaves no placeholders past 100,000"]
+
+# Loading template.eigs into the global namespace must not shadow builtin fill.
+builtin_fill_after_template_load is fill of [3, 7]
+assert of [builtin_fill_after_template_load == [7, 7, 7], "SF15 template load preserves builtin fill"]
+
+# The renamed helper retains the old helper's value coercion for every value
+# shape accepted by str.
+template_buffer_value is buffer of 2
+template_buffer_value[0] is 4
+template_buffer_value[1] is 5
+assert of [(template_fill of ["v={{x}}", "x", [1, 2]]) == "v=[1, 2]", "SF15a template_fill list value"]
+assert of [(template_fill of ["v={{x}}", "x", [[1], [2, 3]]]) == "v=[[1], [2, 3]]", "SF15b template_fill nested-list value"]
+assert of [(template_fill of ["v={{x}}", "x", template_buffer_value]) == ("v=" + (str of template_buffer_value)), "SF15c template_fill buffer value"]
+assert of [(template_fill of ["v={{x}}", "x", "text"]) == "v=text", "SF15d template_fill string value"]
+assert of [(template_fill of ["v={{x}}", "x", null]) == "v=null", "SF15e template_fill null value"]
+
 builder is text_builder_new of null
 assert of [(type of builder) == "text_builder", "SF13 text_builder native type"]
 assert of [(len of builder) == 0, "SF14 text_builder starts empty length"]
