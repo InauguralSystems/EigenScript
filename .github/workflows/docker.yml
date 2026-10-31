@@ -27,6 +27,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
+      # This must precede registry login and every build/promotion push: a v*
+      # tag is publishable only when its commit passed through main.
+      - name: Require commit on main
+        env:
+          RELEASE_EVENT_NAME: ${{ github.event_name }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: sh tools/release_main_guard.sh
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
 

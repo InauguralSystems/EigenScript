@@ -89,6 +89,7 @@ run|tools/section_plan.sh --shards $SHARDS --check
 run|tools/workflow_yaml_check.sh
 run|tools/workflow_injection_check.py
 run|tools/workflow_image_digest_check.py
+run|tools/release_main_guard_2217_test.py --selftest
 run|tools/ci_tier_check.sh
 run|tools/child_exit_check.sh
 run|tools/enrolment_check.sh
