@@ -546,7 +546,7 @@ Maps are lists of `[key, value]` pairs. Keys are compared with `==`.
 | `map_keys` | `map_keys of map` | List all keys |
 | `map_values` | `map_values of map` | List all values |
 | `map_size` | `map_size of map` | Number of entries |
-| `map_from_lists` | `map_from_lists of [keys, values]` | Build from parallel lists |
+| `map_from_lists` | `map_from_lists of [keys, values]` | Build from parallel lists; last value wins for duplicate keys |
 | `map_merge` | `map_merge of [map_a, map_b]` | Merge (second wins) |
 | `map_entries` | `map_entries of map` | List of [key, value] pairs |
 

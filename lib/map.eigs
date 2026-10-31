@@ -8,7 +8,7 @@
 #   m is map_new of null                    # create empty map
 #   m is map_set of [m, "name", "eigen"]    # set key
 #   map_get of [m, "name"]                  # "eigen"
-#   map_has of [m, "name"]                  # 1
+#   map_has of [m, "name"]                  # true
 #   map_keys of m                           # ["name"]
 #   map_values of m                         # ["eigen"]
 #   map_remove of [m, "name"]              # map without "name"
@@ -43,7 +43,7 @@ define map_get_default(m, key, default) as:
     return default
 
 # ---- map_has: check if key exists ----
-# map_has of [map, key] -> 1 or 0
+# map_has of [map, key] -> true or false
 define map_has(m, key) as:
     for i in range of (len of m):
         if m[i][0] == key:
@@ -97,7 +97,7 @@ define map_size(m) as:
 define map_from_lists(keys, values) as:
     result is []
     for i in range of (len of keys):
-        append of [result, [keys[i], values[i]]]
+        result is map_set of [result, keys[i], values[i]]
     return result
 
 # ---- map_merge: merge two maps (second wins on conflict) ----

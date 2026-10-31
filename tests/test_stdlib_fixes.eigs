@@ -12,6 +12,7 @@ load_file of "lib/template.eigs"
 load_file of "lib/text_builder.eigs"
 load_file of "lib/int_vector.eigs"
 load_file of "lib/list.eigs"
+load_file of "lib/map.eigs"
 
 # --- math.dot bounds ---
 assert of [(dot of [[1, 2, 3], [4, 5, 6]]) == 32, "SF1 dot normal"]
@@ -240,5 +241,27 @@ log_buffer_result is log2 of log_buffer
 assert of [(type of log_buffer_result) == "buffer", "SF111 log2 buffer keeps its container type"]
 assert of [(len of log_buffer_result) == 2, "SF112 log2 buffer keeps its shape"]
 assert of [log_buffer_result[0] == 3 and log_buffer_result[1] == 2, "SF113 log2 buffer exact powers corrected element-wise"]
+
+# --- map.map_from_lists duplicate keys (#2242) ---
+duplicate_map is map_from_lists of [["a", "b", "a"], [1, 2, 3]]
+assert of [(map_size of duplicate_map) == 2, "SF114 map_from_lists deduplicates keys"]
+assert of [(map_get of [duplicate_map, "a"]) == 3, "SF115 map_from_lists last value wins"]
+assert of [(map_keys of duplicate_map) == ["a", "b"], "SF116 map_from_lists keeps first key position"]
+
+# Preserve all collection shapes accepted by map_from_lists before #2242.
+nested_key_map is map_from_lists of [[[1], [2], [1]], ["first", "middle", "last"]]
+assert of [(map_size of nested_key_map) == 2 and (map_get of [nested_key_map, [1]]) == "last", "SF117 map_from_lists nested-list keys"]
+string_map is map_from_lists of ["aba", "123"]
+assert of [(map_size of string_map) == 2 and (map_get of [string_map, "a"]) == "3", "SF118 map_from_lists string inputs"]
+map_keys_buffer is buffer of 3
+map_keys_buffer[0] is 7
+map_keys_buffer[1] is 8
+map_keys_buffer[2] is 7
+map_values_buffer is buffer of 3
+map_values_buffer[0] is 10
+map_values_buffer[1] is 20
+map_values_buffer[2] is 30
+buffer_map is map_from_lists of [map_keys_buffer, map_values_buffer]
+assert of [(map_size of buffer_map) == 2 and (map_get of [buffer_map, 7]) == 30, "SF119 map_from_lists buffer inputs"]
 
 print of "All stdlib-fix tests passed"

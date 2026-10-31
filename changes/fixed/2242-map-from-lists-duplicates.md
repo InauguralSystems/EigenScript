@@ -1,0 +1,1 @@
+- `map_from_lists` now keeps one entry per key, with the last value winning as documented (#2242).
