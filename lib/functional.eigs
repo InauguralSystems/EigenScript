@@ -6,29 +6,28 @@
 #   load_file of "lib/functional.eigs"
 #
 #   composed is compose of [f, g]           # f(g(x))
-#   piped is pipe of [f, g]                 # g(f(x))
 #   chain of [[f, g, h], value]             # h(g(f(value)))
 #   applied is apply_all of [[f, g, h], x]  # [f(x), g(x), h(x)]
 #   identity of x                           # x
-#   constantly of 42                        # fn that always returns 42
-#   complement of pred                      # fn that negates pred
+#   constantly of 42                        # 42 (sentinel/default pattern)
+#   complement of [pred, value]             # boolean negation of pred(value)
 #   times of [5, fn]                        # call fn(i) for i in 0..4
 
 # ---- identity: return argument unchanged ----
 define identity(x) as:
     return x
 
-# ---- constantly: return a function that always returns the given value ----
-# Note: EigenScript doesn't have closures, so this returns the value itself.
-# Use it as a sentinel or default value pattern.
+# ---- constantly: return the given value unchanged ----
+# Use this as a sentinel or default value pattern.
 define constantly(x) as:
     return x
 
 # ---- compose: create composed function f(g(x)) ----
-# compose of [f, g] returns a list [f, g] — use apply_compose to call
-# For immediate use, see chain.
+# compose of [f, g] -> a callable closure that computes f(g(x))
 define compose(f, g) as:
-    return [f, g]
+    define composed(x) as:
+        return f of (g of x)
+    return composed
 
 # ---- chain: apply a pipeline of functions to a value ----
 # chain of [fn_list, value] -> result
@@ -47,7 +46,6 @@ define apply_all(fns, val) as:
     return result
 
 # ---- complement: negate a predicate function ----
-# Since EigenScript lacks closures, this takes [pred, value] at call time.
 # complement of [pred, value] -> true if pred returns falsy, else false
 define complement(pred, val) as:
     if pred of val:
@@ -98,8 +96,8 @@ define iterate(fn, val, count) as:
     return val
 
 # ---- wait_until: bounded retry on a predicate ----
-# wait_until of [pred, tries, sleep_fn] -> 1 the first time `pred of []`
-# is truthy, 0 after `tries` attempts. `sleep_fn` runs between attempts
+# wait_until of [pred, tries, sleep_fn] -> true the first time `pred of []`
+# is truthy, false after `tries` attempts. `sleep_fn` runs between attempts
 # only — never after the final failed one, so a timeout costs tries-1
 # delays, not tries (#1237). Pass null for a busy retry — the delay primitive is the caller's
 # because it differs by host: sleep_ms hosted, gfx_delay on EigenOS.

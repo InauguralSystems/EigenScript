@@ -570,6 +570,7 @@ EigenScript
 |----------|-----------|-------------|
 | `identity` | `identity of x` | Return argument unchanged |
 | `constantly` | `constantly of x` | Return value (sentinel pattern) |
+| `compose` | `compose of [f, g]` | Return a callable computing `f(g(x))` |
 | `chain` | `chain of [fn_list, value]` | Pipeline: apply left to right |
 | `apply_all` | `apply_all of [fn_list, value]` | Apply each fn, collect results |
 | `juxt` | `juxt of [fn_list, value]` | Alias for apply_all |

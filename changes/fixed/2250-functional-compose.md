@@ -1,0 +1,1 @@
+- `functional.compose` now returns a callable closure that computes `f(g(x))`, and its documentation accurately describes the module's functions (#2250).
