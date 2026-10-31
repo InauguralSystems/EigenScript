@@ -470,7 +470,7 @@ registers into epoch seconds with these and no host clock.
 |----------|-----------|-------------|
 | `json_get` | `json_get of [json, "key"]` | Extract top-level value |
 | `json_get_path` | `json_get_path of [json, "a.b"]` | Extract nested value |
-| `json_has` | `json_has of [json, "key"]` | `true` if the key or dotted path exists, including when its value is JSON `null`; `false` only when the key is absent |
+| `json_has` | `json_has of [json, "key"]` | `true` if the key or dotted path exists, including through decimal list indices and when its value is JSON `null`; `false` when a key is absent or a list index is invalid/out of range |
 | `json_from_pairs` | `json_from_pairs of pairs` | [[k,v],...] to JSON |
 | `json_merge` | `json_merge of [json_a, json_b]` | Flat-merge two objects (keys of `json_b` win; nested values replace whole); raises if either is not an object |
 | `json_pretty` | `json_pretty of json_str` | Indented output; layout is added only outside string tokens, so string values come through byte-for-byte |
