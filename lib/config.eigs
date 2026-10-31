@@ -46,7 +46,8 @@ define load_env_file(path) as:
     return result
 
 # ---- load_ini: parse INI-style config ----
-# Supports [section] headers. Keys become "section.key".
+# Supports [section] headers. Section names are trimmed; empty or unterminated
+# headers raise with their line number. Keys become "section.key".
 # No section = top-level key.
 define load_ini(path) as:
     if not (file_exists of path):
@@ -68,8 +69,9 @@ define load_ini(path) as:
         elif (starts_with of [line, "["]):
             # Section header
             end is index_of of [line, "]"]
-            if end > 1:
-                section is substr of [line, 1, end - 1]
+            assert of [end >= 1, "Malformed INI section header at line " + (str of (i + 1))]
+            section is trim of (substr of [line, 1, end - 1])
+            assert of [(len of section) > 0, "Malformed INI section header at line " + (str of (i + 1))]
         else:
             eq_pos is index_of of [line, "="]
             if eq_pos > 0:
