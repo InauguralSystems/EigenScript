@@ -18,12 +18,12 @@ load_file of "lib/functional.eigs"
 load_file of "lib/io.eigs"
 
 # --- math.math_dot bounds ---
-assert of [(dot of [[1, 2, 3], [4, 5, 6]]) == 32, "SF1 dot normal"]
+assert of [(math_dot of [[1, 2, 3], [4, 5, 6]]) == 32, "SF1 dot normal"]
 # Mismatched lengths must not crash; iterate over the shorter list.
-assert of [(dot of [[1, 2, 3], [4, 5]]) == 14, "SF2 dot shorter b"]
-assert of [(dot of [[1, 2], [4, 5, 6]]) == 14, "SF3 dot shorter a"]
-assert of [(dot of [[], [1, 2, 3]]) == 0, "SF4 dot empty a"]
-assert of [(dot of [[1, 2, 3], []]) == 0, "SF5 dot empty b"]
+assert of [(math_dot of [[1, 2, 3], [4, 5]]) == 14, "SF2 dot shorter b"]
+assert of [(math_dot of [[1, 2], [4, 5, 6]]) == 14, "SF3 dot shorter a"]
+assert of [(math_dot of [[], [1, 2, 3]]) == 0, "SF4 dot empty a"]
+assert of [(math_dot of [[1, 2, 3], []]) == 0, "SF5 dot empty b"]
 
 # --- test.assert_near type guard ---
 # These must not silently pass on non-numeric input. Use the library's
@@ -221,12 +221,12 @@ assert of [(log2 of 8) == 3, "SF94 log2 of 8"]
 assert of [(log2 of 1) == 0, "SF95 log2 of 1"]
 assert of [(log2 of 0.5) == -1, "SF96 log2 of one half"]
 assert of [(log10 of 1) == 0, "SF97 log10 of 1"]
-assert of [(abs of ((log10 of 1000) - 3)) < 0.0000001, "SF98 log10 of 1000"]
+assert of [(math_abs of ((log10 of 1000) - 3)) < 0.0000001, "SF98 log10 of 1000"]
 assert of [(pow of [2, log2 of 8]) == 8, "SF99 log2/pow round trip"]
-assert of [(abs of ((pow of [10, log10 of 1000]) - 1000)) < 0.0000001, "SF100 log10/pow round trip"]
+assert of [(math_abs of ((pow of [10, log10 of 1000]) - 1000)) < 0.0000001, "SF100 log10/pow round trip"]
 # x <= 0 inherits the log builtin's input floor at 1e-10 — no error.
 assert of [(log10 of 0) == -10, "SF101 log10 floored at 0"]
-assert of [(abs of ((log2 of -1) + 33.219280948873624)) < 0.0000001, "SF102 log2 floored below 0"]
+assert of [(math_abs of ((log2 of -1) + 33.219280948873624)) < 0.0000001, "SF102 log2 floored below 0"]
 # Element-wise, like the log they wrap: log of [8, 4] works, so these
 # must too. Built on `divide`, not `/`, which is scalar-only.
 lg2 is log2 of [8, 4, 1]

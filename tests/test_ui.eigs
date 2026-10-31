@@ -438,17 +438,17 @@ add_child of [cvroot, cv]
 _layout of [cvroot, 0, 0]
 
 # Hover mousemove (no button) reaches on_mouse
-dispatch of [cvroot, {"type": "mousemove", "x": 60, "y": 60}]
+ui_dispatch of [cvroot, {"type": "mousemove", "x": 60, "y": 60}]
 assert_eq of [len of cv_seen, 1, "hover mousemove delivered to canvas on_mouse"]
 assert_eq of [cv_seen[0], "mousemove", "hover event type is mousemove"]
 
 # Full press-move-release gesture with capture (the #567 repro)
 cv_seen is []
-dispatch of [cvroot, {"type": "mousedown", "x": 50, "y": 50, "button": 1}]
+ui_dispatch of [cvroot, {"type": "mousedown", "x": 50, "y": 50, "button": 1}]
 assert_true of [_ui.drag_widget != null, "canvas claimed the pointer via claim_drag"]
-dispatch of [cvroot, {"type": "mousemove", "x": 80, "y": 60}]
-dispatch of [cvroot, {"type": "mousemove", "x": 120, "y": 70}]
-dispatch of [cvroot, {"type": "mouseup", "x": 120, "y": 70, "button": 1}]
+ui_dispatch of [cvroot, {"type": "mousemove", "x": 80, "y": 60}]
+ui_dispatch of [cvroot, {"type": "mousemove", "x": 120, "y": 70}]
+ui_dispatch of [cvroot, {"type": "mouseup", "x": 120, "y": 70, "button": 1}]
 assert_eq of [len of cv_seen, 4, "canvas saw all 4 gesture events"]
 assert_eq of [cv_seen[0], "mousedown", "gesture event 0 = mousedown"]
 assert_eq of [cv_seen[1], "mousemove", "drag mousemove delivered while captured"]
@@ -462,7 +462,7 @@ define cv_mod_mouse(w, ev) as:
     append of [cv_mods, ev.ctrl]
 cv.on_mouse is cv_mod_mouse
 _ui.last_click_id is ""
-dispatch of [cvroot, {"type": "mousedown", "x": 50, "y": 50, "button": 1, "shift": 1, "ctrl": 0}]
+ui_dispatch of [cvroot, {"type": "mousedown", "x": 50, "y": 50, "button": 1, "shift": 1, "ctrl": 0}]
 assert_eq of [cv_mods[0], 1, "ev.shift passes through dispatch to on_mouse"]
 assert_eq of [cv_mods[1], 0, "ev.ctrl passes through dispatch to on_mouse"]
 _ui.drag_widget is null
@@ -471,7 +471,7 @@ _ui.drag_widget is null
 # a silent no-op — this used to throw type_mismatch in the slider updater.
 cv0 is canvas of ["cv0", 10, 10, 100, 100, null, null]
 claim_drag of cv0
-dispatch of [cvroot, {"type": "mousemove", "x": 100, "y": 60}]
+ui_dispatch of [cvroot, {"type": "mousemove", "x": 100, "y": 60}]
 assert_true of [_ui.drag_widget != null, "handler-less claimant keeps capture, no throw"]
 release_drag of null
 assert_true of [_ui.drag_widget == null, "release_drag clears capture"]
@@ -503,46 +503,46 @@ add_child of [dr, dcp]
 _layout of [dr, 0, 0]
 
 # slider: press, drag, release
-dispatch of [dr, {"type": "mousedown", "x": 60, "y": 18, "button": 1}]
+ui_dispatch of [dr, {"type": "mousedown", "x": 60, "y": 18, "button": 1}]
 assert_eq of [dsl.value, 25, "slider mousedown sets value"]
-dispatch of [dr, {"type": "mousemove", "x": 110, "y": 18}]
+ui_dispatch of [dr, {"type": "mousemove", "x": 110, "y": 18}]
 assert_eq of [dsl.value, 50, "slider drag updates value via registry on_drag"]
-dispatch of [dr, {"type": "mouseup", "x": 110, "y": 18, "button": 1}]
+ui_dispatch of [dr, {"type": "mouseup", "x": 110, "y": 18, "button": 1}]
 assert_eq of [dsl.dragging, 0, "slider dragging cleared on release"]
 assert_true of [_ui.drag_widget == null, "slider capture released"]
 assert_eq of [sl_changes, 3, "slider on_change fired on press+drag+release"]
 
 # vslider
-dispatch of [dr, {"type": "mousedown", "x": 18, "y": 100, "button": 1}]
-dispatch of [dr, {"type": "mousemove", "x": 18, "y": 75}]
+ui_dispatch of [dr, {"type": "mousedown", "x": 18, "y": 100, "button": 1}]
+ui_dispatch of [dr, {"type": "mousemove", "x": 18, "y": 75}]
 assert_eq of [dvs.value, 75, "vslider drag updates value"]
-dispatch of [dr, {"type": "mouseup", "x": 18, "y": 75, "button": 1}]
+ui_dispatch of [dr, {"type": "mouseup", "x": 18, "y": 75, "button": 1}]
 
 # knob (vertical relative drag)
-dispatch of [dr, {"type": "mousedown", "x": 260, "y": 30, "button": 1}]
-dispatch of [dr, {"type": "mousemove", "x": 260, "y": 10}]
+ui_dispatch of [dr, {"type": "mousedown", "x": 260, "y": 30, "button": 1}]
+ui_dispatch of [dr, {"type": "mousemove", "x": 260, "y": 10}]
 assert_near of [dkn.value, 60, 0.0001, "knob drag updates value"]
-dispatch of [dr, {"type": "mouseup", "x": 260, "y": 10, "button": 1}]
+ui_dispatch of [dr, {"type": "mouseup", "x": 260, "y": 10, "button": 1}]
 
 # scrollbar (horizontal)
-dispatch of [dr, {"type": "mousedown", "x": 60, "y": 206, "button": 1}]
-dispatch of [dr, {"type": "mousemove", "x": 100, "y": 206}]
+ui_dispatch of [dr, {"type": "mousedown", "x": 60, "y": 206, "button": 1}]
+ui_dispatch of [dr, {"type": "mousemove", "x": 100, "y": 206}]
 assert_eq of [dsb.value, 0.4375, "scrollbar drag updates value"]
-dispatch of [dr, {"type": "mouseup", "x": 100, "y": 206, "button": 1}]
+ui_dispatch of [dr, {"type": "mouseup", "x": 100, "y": 206, "button": 1}]
 
 # waveform_view (sample-space selection)
-dispatch of [dr, {"type": "mousedown", "x": 60, "y": 240, "button": 1}]
+ui_dispatch of [dr, {"type": "mousedown", "x": 60, "y": 240, "button": 1}]
 assert_eq of [dwv.sel_start, 200, "waveform mousedown sets sel_start"]
-dispatch of [dr, {"type": "mousemove", "x": 110, "y": 240}]
+ui_dispatch of [dr, {"type": "mousemove", "x": 110, "y": 240}]
 assert_eq of [dwv.sel_end, 300, "waveform drag extends sel_end"]
-dispatch of [dr, {"type": "mouseup", "x": 110, "y": 240, "button": 1}]
+ui_dispatch of [dr, {"type": "mouseup", "x": 110, "y": 240, "button": 1}]
 
 # color_picker (SV square)
-dispatch of [dr, {"type": "mousedown", "x": 270, "y": 90, "button": 1}]
-dispatch of [dr, {"type": "mousemove", "x": 295, "y": 120}]
+ui_dispatch of [dr, {"type": "mousedown", "x": 270, "y": 90, "button": 1}]
+ui_dispatch of [dr, {"type": "mousemove", "x": 295, "y": 120}]
 assert_eq of [dcp.sat, 0.5, "color_picker drag updates sat"]
 assert_eq of [dcp.val, 0.5, "color_picker drag updates val"]
-dispatch of [dr, {"type": "mouseup", "x": 295, "y": 120, "button": 1}]
+ui_dispatch of [dr, {"type": "mouseup", "x": 295, "y": 120, "button": 1}]
 
 # splitter (own root; hit is the divider bar)
 spl_resizes is 0
@@ -552,11 +552,11 @@ sroot is panel of ["sroot", 0, 0, 400, 100]
 spl is splitter of ["spl", 0, 0, 400, 100, 100, on_spl_resize]
 add_child of [sroot, spl]
 _layout of [sroot, 0, 0]
-dispatch of [sroot, {"type": "mousedown", "x": 102, "y": 50, "button": 1}]
-dispatch of [sroot, {"type": "mousemove", "x": 150, "y": 50}]
+ui_dispatch of [sroot, {"type": "mousedown", "x": 102, "y": 50, "button": 1}]
+ui_dispatch of [sroot, {"type": "mousemove", "x": 150, "y": 50}]
 assert_eq of [spl.split_pos, 150, "splitter drag moves split_pos"]
 assert_eq of [spl_resizes, 1, "splitter on_resize fired during drag"]
-dispatch of [sroot, {"type": "mouseup", "x": 150, "y": 50, "button": 1}]
+ui_dispatch of [sroot, {"type": "mouseup", "x": 150, "y": 50, "button": 1}]
 
 # ============================================================
 # 10. Wheel seam (#569)
@@ -579,8 +579,8 @@ add_child of [wroot, wsp]
 _layout of [wroot, 0, 0]
 
 # Position the cursor over the canvas, then wheel: on_wheel consumes it
-dispatch of [wroot, {"type": "mousemove", "x": 50, "y": 50}]
-dispatch of [wroot, {"type": "wheel", "x": 0, "y": -3, "ctrl": 1}]
+ui_dispatch of [wroot, {"type": "mousemove", "x": 50, "y": 50}]
+ui_dispatch of [wroot, {"type": "wheel", "x": 0, "y": -3, "ctrl": 1}]
 assert_eq of [len of wheel_seen, 2, "canvas on_wheel received the event"]
 assert_eq of [wheel_seen[0], -3, "on_wheel sees the y delta"]
 assert_eq of [wheel_seen[1], 1, "on_wheel sees ctrl modifier (#568 pairing)"]
@@ -588,7 +588,7 @@ assert_eq of [wsp.scroll_y, 0, "consumed wheel does not scroll the enclosing pan
 
 # Without on_wheel the scrollable walk handles it as before
 wcv.on_wheel is null
-dispatch of [wroot, {"type": "wheel", "x": 0, "y": -3}]
+ui_dispatch of [wroot, {"type": "wheel", "x": 0, "y": -3}]
 assert_eq of [wsp.scroll_y, 60, "wheel falls through to scroll_panel when unconsumed"]
 
 # ev.mx/ev.my carry the pointer on the wheel event itself (#822): the
@@ -596,15 +596,15 @@ assert_eq of [wsp.scroll_y, 60, "wheel falls through to scroll_panel when uncons
 # park the tracked pointer OFF the canvas, then wheel with mx/my ON it.
 wcv.on_wheel is cv_on_wheel
 wheel_seen is []
-dispatch of [wroot, {"type": "mousemove", "x": 380, "y": 280}]
-dispatch of [wroot, {"type": "wheel", "x": 0, "y": -2, "mx": 50, "my": 50, "ctrl": 0}]
+ui_dispatch of [wroot, {"type": "mousemove", "x": 380, "y": 280}]
+ui_dispatch of [wroot, {"type": "wheel", "x": 0, "y": -2, "mx": 50, "my": 50, "ctrl": 0}]
 assert_eq of [len of wheel_seen, 2, "wheel with mx/my hits the widget under mx/my, not the stale pointer"]
 assert_eq of [wheel_seen[0], -2, "ev.x/ev.y stay the scroll deltas when mx/my present"]
 
 # A following wheel WITHOUT mx/my uses the position the last carrying
 # event refreshed — the fallback path stays coherent after #822.
 wheel_seen is []
-dispatch of [wroot, {"type": "wheel", "x": 0, "y": -1}]
+ui_dispatch of [wroot, {"type": "wheel", "x": 0, "y": -1}]
 assert_eq of [len of wheel_seen, 2, "wheel without mx/my falls back to the refreshed tracked position"]
 
 # ============================================================
@@ -643,14 +643,14 @@ define hk_cb() as:
     hk_fired[0] is hk_fired[0] + 1
 
 register_hotkey of ["ctrl+s", hk_cb]
-consumed is dispatch of [kroot, {"type": "keydown", "key": "s", "ctrl": 1, "shift": 0, "alt": 0}]
+consumed is ui_dispatch of [kroot, {"type": "keydown", "key": "s", "ctrl": 1, "shift": 0, "alt": 0}]
 assert_eq of [hk_fired[0], 1, "hotkey fires through the public dispatch door"]
 assert_eq of [consumed, true, "dispatch reports the hotkey as consumed"]
 
 # A key the toolkit does not claim is reported free for the app. Focus
 # navigation reports its own consumption, so an unbound letter is free
 # even while a widget holds focus.
-free is dispatch of [kroot, {"type": "keydown", "key": "j", "ctrl": 0, "shift": 0, "alt": 0}]
+free is ui_dispatch of [kroot, {"type": "keydown", "key": "j", "ctrl": 0, "shift": 0, "alt": 0}]
 assert_eq of [free, false, "unclaimed key reported unconsumed"]
 
 # handle_key is the same door app_loop uses — priority is pinned here
@@ -661,21 +661,21 @@ assert_eq of [hk_fired[0], 2, "handle_key fired the hotkey callback"]
 unregister_hotkey of "ctrl+s"
 
 # keyup is not a toolkit key event — it stays free for the app
-ku is dispatch of [kroot, {"type": "keyup", "key": "s", "ctrl": 1, "shift": 0, "alt": 0}]
+ku is ui_dispatch of [kroot, {"type": "keyup", "key": "s", "ctrl": 1, "shift": 0, "alt": 0}]
 assert_eq of [ku, false, "keyup reported unconsumed"]
 
 # Escape pops the modal stack through dispatch
 mdlg is dialog of ["mdlg", 200, 100, "T", "M", ["OK"], null]
 push_modal of [mdlg, 800, 600]
 assert_eq of [len of _ui.modal_stack, 1, "modal pushed"]
-esc is dispatch of [kroot, {"type": "keydown", "key": "escape", "ctrl": 0, "shift": 0, "alt": 0}]
+esc is ui_dispatch of [kroot, {"type": "keydown", "key": "escape", "ctrl": 0, "shift": 0, "alt": 0}]
 assert_eq of [len of _ui.modal_stack, 0, "escape pops modal through dispatch"]
 assert_eq of [esc, true, "escape-pops-modal reported consumed"]
 
 # Focused text input takes keys ahead of focus navigation
 ti is text_input of ["ti", 0, 0, 100, "", null]
 _ui.focused_input is ti
-dispatch of [kroot, {"type": "keydown", "key": "a", "ctrl": 0, "shift": 0, "alt": 0}]
+ui_dispatch of [kroot, {"type": "keydown", "key": "a", "ctrl": 0, "shift": 0, "alt": 0}]
 assert_eq of [ti.text, "a", "focused text input receives keys through dispatch"]
 _ui.focused_input is null
 
@@ -707,13 +707,13 @@ add_child of [cbroot, cbx]
 _layout of [cbroot, 0, 0]
 
 # Click the closed box — opens the dropdown
-dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 20, "button": 1}]
+ui_dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 20, "button": 1}]
 assert_eq of [cbx.open, 1, "mousedown opens the dropdown"]
 
 # Click item 1 ("beta"): items start at _ay + h + 2 = 36, each 24 tall,
 # so item 1 spans y 60..83. This is the #577 repro — before the fix the
 # dropdown closed before the hit test and selected stayed -1.
-dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 62, "button": 1}]
+ui_dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 62, "button": 1}]
 assert_eq of [cbx.selected, 1, "dropdown item selected by mouse (#577)"]
 assert_eq of [cbx.open, 0, "selecting an item closes the dropdown"]
 assert_eq of [cb_changed[0], 1, "on_change fired once for the selection"]
@@ -721,16 +721,16 @@ assert_eq of [cb_changed[0], 1, "on_change fired once for the selection"]
 # Item 0 is reachable too — selection follows the click's own y, not a
 # stale hover_index (no mousemove precedes these clicks).
 _ui.last_click_id is ""
-dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 20, "button": 1}]
+ui_dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 20, "button": 1}]
 assert_eq of [cbx.open, 1, "dropdown reopens"]
-dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 40, "button": 1}]
+ui_dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 40, "button": 1}]
 assert_eq of [cbx.selected, 0, "item 0 selected by its own click position"]
 
 # A click OUTSIDE an open dropdown still closes it and does not select
 _ui.last_click_id is ""
-dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 20, "button": 1}]
+ui_dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 20, "button": 1}]
 assert_eq of [cbx.open, 1, "dropdown reopens for the outside-click case"]
-dispatch of [cbroot, {"type": "mousedown", "x": 300, "y": 300, "button": 1}]
+ui_dispatch of [cbroot, {"type": "mousedown", "x": 300, "y": 300, "button": 1}]
 assert_eq of [cbx.open, 0, "click outside closes the dropdown"]
 assert_eq of [cbx.selected, 0, "click outside leaves selection untouched"]
 assert_eq of [cb_changed[0], 2, "click outside fired no extra on_change"]
@@ -741,10 +741,10 @@ cby is combobox of ["cby", 200, 10, 120, ["x", "y"], null]
 add_child of [cbroot, cby]
 _layout of [cbroot, 0, 0]
 _ui.last_click_id is ""
-dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 20, "button": 1}]
+ui_dispatch of [cbroot, {"type": "mousedown", "x": 20, "y": 20, "button": 1}]
 assert_eq of [cbx.open, 1, "first combobox open"]
 _ui.last_click_id is ""
-dispatch of [cbroot, {"type": "mousedown", "x": 210, "y": 20, "button": 1}]
+ui_dispatch of [cbroot, {"type": "mousedown", "x": 210, "y": 20, "button": 1}]
 assert_eq of [cbx.open, 0, "clicking a sibling closes the first dropdown"]
 assert_eq of [cby.open, 1, "the clicked sibling opens"]
 
@@ -825,7 +825,7 @@ _layout of [groot, 0, 0]
 
 # Default: the widget owns the pattern and flips before reporting
 assert_eq of [gd.owns_cells, 1, "grid owns its cells by default"]
-dispatch of [groot, {"type": "mousedown", "x": 90, "y": 20, "button": 1}]
+ui_dispatch of [groot, {"type": "mousedown", "x": 90, "y": 20, "button": 1}]
 assert_eq of [gd.cells[0][0], 1, "owning grid flips the cell itself"]
 assert_eq of [seen_val[0], 1, "on_cell sees the flipped value"]
 
@@ -834,7 +834,7 @@ assert_eq of [seen_val[0], 1, "on_cell sees the flipped value"]
 gd.owns_cells is 0
 gd.cells[1][1] is 0
 _ui.last_click_id is ""
-dispatch of [groot, {"type": "mousedown", "x": 110, "y": 40, "button": 1}]
+ui_dispatch of [groot, {"type": "mousedown", "x": 110, "y": 40, "button": 1}]
 assert_eq of [gd.cells[1][1], 0, "non-owning grid leaves the cell untouched"]
 assert_eq of [seen_val[0], 0, "on_cell still reports the hit"]
 
@@ -870,9 +870,9 @@ add_child of [proot, pk]
 _layout of [proot, 0, 0]
 
 # Press and release on the key: note-on then note-off
-dispatch of [proot, {"type": "mousedown", "x": 5, "y": 110, "button": 1}]
+ui_dispatch of [proot, {"type": "mousedown", "x": 5, "y": 110, "button": 1}]
 assert_eq of [pk.pressed_note, 0, "mousedown presses the key"]
-dispatch of [proot, {"type": "mouseup", "x": 5, "y": 110, "button": 1}]
+ui_dispatch of [proot, {"type": "mouseup", "x": 5, "y": 110, "button": 1}]
 assert_eq of [pk.pressed_note, 0 - 1, "mouseup releases the key"]
 assert_eq of [len of pnotes, 2, "press+release produced two events"]
 assert_eq of [pnotes[1][1], 0, "release fired note-off"]
@@ -883,9 +883,9 @@ assert_eq of [pnotes[1][1], 0, "release fired note-off"]
 # stuck on forever.
 pnotes is []
 _ui.last_click_id is ""
-dispatch of [proot, {"type": "mousedown", "x": 5, "y": 110, "button": 1}]
+ui_dispatch of [proot, {"type": "mousedown", "x": 5, "y": 110, "button": 1}]
 assert_eq of [pk.pressed_note, 0, "key pressed before dragging off"]
-dispatch of [proot, {"type": "mouseup", "x": 350, "y": 350, "button": 1}]
+ui_dispatch of [proot, {"type": "mouseup", "x": 350, "y": 350, "button": 1}]
 assert_eq of [pk.pressed_note, 0 - 1, "key released even though mouseup missed it"]
 assert_eq of [pnotes[1][1], 0, "note-off fired on release-off-widget (#570)"]
 
@@ -896,8 +896,8 @@ add_child of [proot, pbtn]
 _layout of [proot, 0, 0]
 pnotes is []
 _ui.last_click_id is ""
-dispatch of [proot, {"type": "mousedown", "x": 5, "y": 110, "button": 1}]
-dispatch of [proot, {"type": "mouseup", "x": 210, "y": 210, "button": 1}]
+ui_dispatch of [proot, {"type": "mousedown", "x": 5, "y": 110, "button": 1}]
+ui_dispatch of [proot, {"type": "mouseup", "x": 210, "y": 210, "button": 1}]
 assert_eq of [pk.pressed_note, 0 - 1, "key released when mouseup landed on a button"]
 assert_eq of [pnotes[1][1], 0, "note-off fired when releasing over a button"]
 
@@ -998,13 +998,13 @@ assert_eq of [mbar.title_x[1], 72, "second title advanced by the first's width"]
 assert_eq of [mbar.open_index, 0 - 1, "bar starts closed"]
 
 # Clicking a title opens its pull-down
-dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
+ui_dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
 assert_eq of [mbar.open_index, 0, "clicking File opens its menu"]
 
 # Picking an item: NOTE no last_click_id reset and no preceding mousemove
 # — this is the real user flow (open, then click an item inside 400ms, on
 # the same widget id). Both traps that bit #577 are asserted here.
-dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": mbar.h + 24 + 5, "button": 1}]
+ui_dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": mbar.h + 24 + 5, "button": 1}]
 assert_eq of [len of mb_picked, 1, "item selected on the click that landed on it"]
 assert_eq of [mb_picked[0][1], 1, "the item under the click was chosen (Save)"]
 assert_eq of [mbar.open_index, 0 - 1, "selecting an item closes the bar"]
@@ -1012,31 +1012,31 @@ assert_eq of [mbar.open_index, 0 - 1, "selecting an item closes the bar"]
 # A separator is not selectable
 mb_picked is []
 _ui.last_click_id is ""
-dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
-dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": mbar.h + 2 * 24 + 5, "button": 1}]
+ui_dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
+ui_dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": mbar.h + 2 * 24 + 5, "button": 1}]
 assert_eq of [len of mb_picked, 0, "clicking a separator selects nothing"]
 assert_eq of [mbar.open_index, 0, "clicking a separator leaves the menu open"]
 
 # Clicking the open title again toggles it closed. (No reset needed: the
 # bar is open, so the popup exemption already spares this from the
 # double-click check.)
-dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
+ui_dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
 assert_eq of [mbar.open_index, 0 - 1, "clicking the open title closes it"]
 
 # Clicking away closes the bar. Reopening a CLOSED bar is a genuine
 # repeat click on the same id, so it needs the section-8 reset — the
 # gfx_ticks stub makes every click look simultaneous.
 _ui.last_click_id is ""
-dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
+ui_dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
 assert_eq of [mbar.open_index, 0, "menu reopened for the click-away case"]
-dispatch of [mbroot, {"type": "mousedown", "x": 400, "y": 400, "button": 1}]
+ui_dispatch of [mbroot, {"type": "mousedown", "x": 400, "y": 400, "button": 1}]
 assert_eq of [mbar.open_index, 0 - 1, "clicking outside closes the bar"]
 
 # Hovering another title while open slides the menu across
 _ui.last_click_id is ""
-dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
+ui_dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
 assert_eq of [mbar.open_index, 0, "File open before the slide"]
-dispatch of [mbroot, {"type": "mousemove", "x": 80, "y": 5}]
+ui_dispatch of [mbroot, {"type": "mousemove", "x": 80, "y": 5}]
 assert_eq of [mbar.open_index, 1, "hovering Help while open slides the menu to it"]
 _menu_bar_close of mbar
 
@@ -1055,19 +1055,19 @@ _layout of [mbroot, 0, 0]
 
 mb_picked is []
 _ui.last_click_id is ""
-dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
+ui_dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 5, "button": 1}]
 # y=96 is inside BOTH the open File menu's item 3 ("Exit", spanning
 # 94..117) and the button beneath it (60..100).
-dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 96, "button": 1}]
-dispatch of [mbroot, {"type": "mouseup", "x": 10, "y": 96, "button": 1}]
+ui_dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 96, "button": 1}]
+ui_dispatch of [mbroot, {"type": "mouseup", "x": 10, "y": 96, "button": 1}]
 assert_eq of [under_hits[0], 0, "the covered button did not receive the click"]
 assert_eq of [len of mb_picked, 1, "the open menu took the click instead"]
 assert_eq of [mb_picked[0][1], 3, "the item under the click was chosen (Exit)"]
 
 # With the bar closed, the same point reaches the button normally
 _ui.last_click_id is ""
-dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 96, "button": 1}]
-dispatch of [mbroot, {"type": "mouseup", "x": 10, "y": 96, "button": 1}]
+ui_dispatch of [mbroot, {"type": "mousedown", "x": 10, "y": 96, "button": 1}]
+ui_dispatch of [mbroot, {"type": "mouseup", "x": 10, "y": 96, "button": 1}]
 assert_eq of [under_hits[0], 1, "closed bar leaves the widget beneath clickable"]
 
 # A pull-down near the right edge opens inward instead of off-window
@@ -1121,38 +1121,38 @@ assert_eq of [dti._ax, 216, "child laid out relative to the dialog"]
 # A click on a CHILD reaches the child — not the dialog, not the tree
 # behind it. Before #575 the modal path called _handle_dialog_click
 # directly, so a dialog child could never be clicked at all.
-dispatch of [droot, {"type": "mousedown", "x": dti._ax + 5, "y": dti._ay + 5, "button": 1}]
+ui_dispatch of [droot, {"type": "mousedown", "x": dti._ax + 5, "y": dti._ay + 5, "button": 1}]
 assert_true of [_ui.focused_input != null, "clicking a dialog child focuses it"]
 assert_eq of [_ui.focused_input.id, "dti", "the child itself took the click"]
 
 # ...so keyboard reaches it too (#563's handle_key + this)
-dispatch of [droot, {"type": "keydown", "key": "h", "ctrl": 0, "shift": 0, "alt": 0}]
-dispatch of [droot, {"type": "keydown", "key": "i", "ctrl": 0, "shift": 0, "alt": 0}]
+ui_dispatch of [droot, {"type": "keydown", "key": "h", "ctrl": 0, "shift": 0, "alt": 0}]
+ui_dispatch of [droot, {"type": "keydown", "key": "i", "ctrl": 0, "shift": 0, "alt": 0}]
 assert_eq of [dti.text, "hi", "typing reaches a text_input inside a modal"]
 
 # a second child type, to show it is the general widget path
 _ui.last_click_id is ""
-dispatch of [droot, {"type": "mousedown", "x": dil._ax + 5, "y": dil._ay + 5, "button": 1}]
+ui_dispatch of [droot, {"type": "mousedown", "x": dil._ax + 5, "y": dil._ay + 5, "button": 1}]
 assert_eq of [dil.selected, 0, "an item_list inside a modal selects"]
 
 # The dialog's buttons show hover. hover_btn was only ever set to -1 and
 # read by the renderer — nothing assigned it, because no mousemove could
 # reach a modal at all.
 dr0 is _dialog_btn_rect of [ddlg, 0, ddlg._ax, ddlg._ay]
-dispatch of [droot, {"type": "mousemove", "x": dr0[0] + 2, "y": dr0[1] + 2}]
+ui_dispatch of [droot, {"type": "mousemove", "x": dr0[0] + 2, "y": dr0[1] + 2}]
 assert_eq of [ddlg.hover_btn, 0, "dialog button hover tracks the pointer (#575)"]
-dispatch of [droot, {"type": "mousemove", "x": ddlg._ax + 5, "y": ddlg._ay + 5}]
+ui_dispatch of [droot, {"type": "mousemove", "x": ddlg._ax + 5, "y": ddlg._ay + 5}]
 assert_eq of [ddlg.hover_btn, 0 - 1, "hover clears off the buttons"]
 
 # Modality: a click outside the dialog reaches nothing behind it
 _ui.last_click_id is ""
-dispatch of [droot, {"type": "mousedown", "x": 5, "y": 5, "button": 1}]
-dispatch of [droot, {"type": "mouseup", "x": 5, "y": 5, "button": 1}]
+ui_dispatch of [droot, {"type": "mousedown", "x": 5, "y": 5, "button": 1}]
+ui_dispatch of [droot, {"type": "mouseup", "x": 5, "y": 5, "button": 1}]
 assert_eq of [behind_hits[0], 0, "a modal swallows clicks meant for the tree behind"]
 
 # The dialog's own buttons still fire and close it
 _ui.last_click_id is ""
-dispatch of [droot, {"type": "mousedown", "x": dr0[0] + 2, "y": dr0[1] + 2, "button": 1}]
+ui_dispatch of [droot, {"type": "mousedown", "x": dr0[0] + 2, "y": dr0[1] + 2, "button": 1}]
 assert_eq of [len of dbtn, 1, "dialog button fired"]
 assert_eq of [dbtn[0], 0, "the button under the click fired (OK)"]
 assert_eq of [ddlg.visible, 0, "the dialog closed itself"]
@@ -1191,7 +1191,7 @@ push_modal of [fd, 800, 600]
 
 define fd_click(idx) as:
     _ui.last_click_id is ""
-    dispatch of [froot, {"type": "mousedown", "x": fd.listing._ax + 5, "y": fd.listing._ay + idx * fd.listing.item_h + 2, "button": 1}]
+    ui_dispatch of [froot, {"type": "mousedown", "x": fd.listing._ax + 5, "y": fd.listing._ay + idx * fd.listing.item_h + 2, "button": 1}]
 
 # clicking a directory navigates into it
 fd_click of 1
@@ -1212,7 +1212,7 @@ assert_eq of [fd.dir, FD_ROOT, "clicking a file does not navigate"]
 # Open fires on_ok with the path; Cancel does not
 fr0 is _dialog_btn_rect of [fd, 0, fd._ax, fd._ay]
 _ui.last_click_id is ""
-dispatch of [froot, {"type": "mousedown", "x": fr0[0] + 2, "y": fr0[1] + 2, "button": 1}]
+ui_dispatch of [froot, {"type": "mousedown", "x": fr0[0] + 2, "y": fr0[1] + 2, "button": 1}]
 assert_eq of [len of fchosen, 1, "Open fired on_ok"]
 assert_eq of [fchosen[0], "/tmp/eigs_fd_probe/a.wav", "on_ok got the chosen path"]
 assert_eq of [fd.visible, 0, "Open closed the dialog"]
@@ -1221,7 +1221,7 @@ fd2 is file_dialog of ["fd2", 460, 340, "Open", FD_ROOT, fd_ok]
 push_modal of [fd2, 800, 600]
 fr1 is _dialog_btn_rect of [fd2, 1, fd2._ax, fd2._ay]
 _ui.last_click_id is ""
-dispatch of [froot, {"type": "mousedown", "x": fr1[0] + 2, "y": fr1[1] + 2, "button": 1}]
+ui_dispatch of [froot, {"type": "mousedown", "x": fr1[0] + 2, "y": fr1[1] + 2, "button": 1}]
 assert_eq of [len of fchosen, 1, "Cancel does not call on_ok"]
 assert_eq of [fd2.visible, 0, "Cancel closed the dialog"]
 
@@ -1276,22 +1276,22 @@ add_child of [m631_dlg, m631_c2]
 push_modal of [m631_dlg, 800, 600]
 
 # Tab scopes to the dialog, never the background.
-dispatch of [m631_root, {"type": "keydown", "key": "tab", "shift": 0, "ctrl": 0, "alt": 0}]
+ui_dispatch of [m631_root, {"type": "keydown", "key": "tab", "shift": 0, "ctrl": 0, "alt": 0}]
 assert_true of [_ui.focused_widget != null, "#631 Tab under a modal focuses a dialog child, not nothing"]
 assert_eq of [_ui.focused_widget.id, "M631_C1", "#631 Tab lands on the dialog's first child"]
 
 # Enter fires the DIALOG child, never the button behind the modal.
-dispatch of [m631_root, {"type": "keydown", "key": "return", "shift": 0, "ctrl": 0, "alt": 0}]
+ui_dispatch of [m631_root, {"type": "keydown", "key": "return", "shift": 0, "ctrl": 0, "alt": 0}]
 assert_eq of [m631_fired[0], 0, "#631 Enter does not fire the button behind the modal"]
 assert_eq of [m631_hit[0], 1, "#631 Enter fires the focused dialog child"]
 
 # Tab again cycles within the dialog (C1 -> C2), still not the background.
-dispatch of [m631_root, {"type": "keydown", "key": "tab", "shift": 0, "ctrl": 0, "alt": 0}]
+ui_dispatch of [m631_root, {"type": "keydown", "key": "tab", "shift": 0, "ctrl": 0, "alt": 0}]
 assert_eq of [_ui.focused_widget.id, "M631_C2", "#631 Tab cycles between the dialog's own children"]
 
 # After pop, focus returns to the background list.
 pop_modal of null
-dispatch of [m631_root, {"type": "keydown", "key": "tab", "shift": 0, "ctrl": 0, "alt": 0}]
+ui_dispatch of [m631_root, {"type": "keydown", "key": "tab", "shift": 0, "ctrl": 0, "alt": 0}]
 assert_eq of [_ui.focused_widget.id, "M631_BEHIND", "#631 after pop_modal, Tab returns to the background widget"]
 assert_eq of [m631_fired[0], 0, "#631 the background button never fired via keyboard"]
 
@@ -1566,35 +1566,35 @@ wpl.pad_frac is 0
 chart_add_series of [wpl, chart_series of ["d", [0, 100], [0, 100], null]]
 add_child of [wroot, wpl]
 _layout of [wroot, 0, 0]
-dispatch of [wroot, {"type": "mousemove", "x": 120, "y": 60}]
+ui_dispatch of [wroot, {"type": "mousemove", "x": 120, "y": 60}]
 assert_eq of [_ui.last_mouse_x, 120, "dispatch caches the pointer for the wheel path"]
 w_before is chart_from_pixel of [wpl, 120, 60]
-dispatch of [wroot, {"type": "wheel", "x": 0, "y": 1}]
+ui_dispatch of [wroot, {"type": "wheel", "x": 0, "y": 1}]
 assert_true of [wpl.zoom > 1.0, "a wheel over the chart zooms in"]
 w_after is chart_from_pixel of [wpl, 120, 60]
 assert_near of [w_after[0], w_before[0], 0.000001, "wheel zoom is anchored on the cached cursor position, not the widget centre"]
 assert_near of [w_after[1], w_before[1], 0.000001, "wheel zoom anchor holds in y"]
-dispatch of [wroot, {"type": "wheel", "x": 0, "y": 0 - 1}]
+ui_dispatch of [wroot, {"type": "wheel", "x": 0, "y": 0 - 1}]
 assert_near of [wpl.zoom, 1.0, 0.000001, "an opposite wheel step returns to the original zoom"]
 chart_reset_view of wpl
 
 # ---- Drag to pan, through the real dispatch path ----
-dispatch of [wroot, {"type": "mousedown", "x": 120, "y": 60, "button": 1}]
+ui_dispatch of [wroot, {"type": "mousedown", "x": 120, "y": 60, "button": 1}]
 assert_true of [_ui.drag_widget != null, "mousedown on a chart claims the pointer"]
 assert_eq of [_ui.drag_widget.id, "wpl", "the chart itself is the claimant"]
 p_before is chart_from_pixel of [wpl, 120, 60]
-dispatch of [wroot, {"type": "mousemove", "x": 150, "y": 60}]
+ui_dispatch of [wroot, {"type": "mousemove", "x": 150, "y": 60}]
 p_after is chart_from_pixel of [wpl, 150, 60]
 assert_near of [p_after[0], p_before[0], 0.000001, "a drag through dispatch pans the chart with the cursor"]
-dispatch of [wroot, {"type": "mouseup", "x": 150, "y": 60, "button": 1}]
+ui_dispatch of [wroot, {"type": "mouseup", "x": 150, "y": 60, "button": 1}]
 assert_eq of [_ui.drag_widget, null, "mouseup releases the chart's pointer capture"]
 chart_reset_view of wpl
 # interactive 0 opts out of both.
 wpl.interactive is 0
-dispatch of [wroot, {"type": "mousemove", "x": 120, "y": 60}]
-dispatch of [wroot, {"type": "wheel", "x": 0, "y": 1}]
+ui_dispatch of [wroot, {"type": "mousemove", "x": 120, "y": 60}]
+ui_dispatch of [wroot, {"type": "wheel", "x": 0, "y": 1}]
 assert_eq of [wpl.zoom, 1.0, "interactive 0 disables wheel zoom"]
-dispatch of [wroot, {"type": "mousedown", "x": 120, "y": 60, "button": 1}]
+ui_dispatch of [wroot, {"type": "mousedown", "x": 120, "y": 60, "button": 1}]
 assert_eq of [_ui.drag_widget, null, "interactive 0 disables drag-pan"]
 wpl.interactive is 1
 
@@ -1968,18 +1968,18 @@ define _on_scrub_probe(w, t) as:
     append of [scrub_log, t]
 tld.on_scrub is _on_scrub_probe
 # Ruler press scrubs: cursor lands on the pressed time, on_scrub fires.
-dispatch of [tlroot, {"type": "mousedown", "x": 229, "y": 5, "button": 1}]
+ui_dispatch of [tlroot, {"type": "mousedown", "x": 229, "y": 5, "button": 1}]
 assert_true of [_ui.drag_widget != null, "a ruler press claims the pointer"]
 assert_eq of [tld._drag_mode, "scrub", "a ruler press starts a scrub gesture"]
 assert_near of [tld.cursor, 50, 0.000001, "the scrub press puts the cursor at the pressed time"]
 assert_eq of [len of scrub_log, 1, "on_scrub fired on the press"]
 assert_near of [scrub_log[0], 50, 0.000001, "on_scrub receives the scrubbed time"]
-dispatch of [tlroot, {"type": "mousemove", "x": 262, "y": 5}]
+ui_dispatch of [tlroot, {"type": "mousemove", "x": 262, "y": 5}]
 assert_near of [tld.cursor, 60, 0.000001, "dragging in scrub mode follows the pointer"]
 assert_eq of [len of scrub_log, 2, "on_scrub fires per scrub move"]
-dispatch of [tlroot, {"type": "mousemove", "x": 5000, "y": 5}]
+ui_dispatch of [tlroot, {"type": "mousemove", "x": 5000, "y": 5}]
 assert_near of [tld.cursor, 100, 0.000001, "a scrub past the edge clamps to the visible window"]
-dispatch of [tlroot, {"type": "mouseup", "x": 262, "y": 5, "button": 1}]
+ui_dispatch of [tlroot, {"type": "mouseup", "x": 262, "y": 5, "button": 1}]
 assert_eq of [_ui.drag_widget, null, "mouseup releases the scrub capture"]
 # Body press pans; the cursor and on_scrub are untouched. (The stubbed
 # gfx_ticks never advances, so consecutive presses on one widget would
@@ -1987,28 +1987,28 @@ assert_eq of [_ui.drag_widget, null, "mouseup releases the scrub capture"]
 _ui.last_click_id is ""
 n_scrubs is len of scrub_log
 p_before is timeline_from_pixel of [tld, 100]
-dispatch of [tlroot, {"type": "mousedown", "x": 100, "y": 100, "button": 1}]
+ui_dispatch of [tlroot, {"type": "mousedown", "x": 100, "y": 100, "button": 1}]
 assert_eq of [tld._drag_mode, "pan", "a body press starts a pan gesture"]
-dispatch of [tlroot, {"type": "mousemove", "x": 130, "y": 100}]
+ui_dispatch of [tlroot, {"type": "mousemove", "x": 130, "y": 100}]
 assert_near of [(timeline_from_pixel of [tld, 130]), p_before, 0.000001, "a body drag pans the window with the cursor"]
-dispatch of [tlroot, {"type": "mouseup", "x": 130, "y": 100, "button": 1}]
+ui_dispatch of [tlroot, {"type": "mouseup", "x": 130, "y": 100, "button": 1}]
 assert_eq of [len of scrub_log, n_scrubs, "a pan gesture never fires on_scrub"]
 timeline_reset_view of tld
 # Wheel zooms about the cached pointer (#822).
-dispatch of [tlroot, {"type": "mousemove", "x": 150, "y": 100}]
+ui_dispatch of [tlroot, {"type": "mousemove", "x": 150, "y": 100}]
 tw_before is timeline_from_pixel of [tld, 150]
-dispatch of [tlroot, {"type": "wheel", "x": 0, "y": 1}]
+ui_dispatch of [tlroot, {"type": "wheel", "x": 0, "y": 1}]
 assert_true of [tld.zoom > 1.0, "a wheel over the timeline zooms in"]
 assert_near of [(timeline_from_pixel of [tld, 150]), tw_before, 0.000001, "wheel zoom is anchored on the pointer"]
-dispatch of [tlroot, {"type": "wheel", "x": 0, "y": 0 - 1}]
+ui_dispatch of [tlroot, {"type": "wheel", "x": 0, "y": 0 - 1}]
 assert_near of [tld.zoom, 1.0, 0.000001, "an opposite wheel step returns to the original zoom"]
 timeline_reset_view of tld
 # interactive 0 opts out of all three gestures.
 tld.interactive is 0
 _ui.last_click_id is ""
-dispatch of [tlroot, {"type": "wheel", "x": 0, "y": 1}]
+ui_dispatch of [tlroot, {"type": "wheel", "x": 0, "y": 1}]
 assert_eq of [tld.zoom, 1.0, "interactive 0 disables wheel zoom"]
-dispatch of [tlroot, {"type": "mousedown", "x": 229, "y": 5, "button": 1}]
+ui_dispatch of [tlroot, {"type": "mousedown", "x": 229, "y": 5, "button": 1}]
 assert_eq of [_ui.drag_widget, null, "interactive 0 disables scrub and pan"]
 tld.interactive is 1
 
@@ -2315,13 +2315,13 @@ define _dk_on_layout(w) as:
     dk_layouts.n is dk_layouts.n + 1
 dk.on_layout is _dk_on_layout
 
-dispatch of [dk, {"type": "mousedown", "button": 1, "x": 202, "y": 100}]
-dispatch of [dk, {"type": "mousemove", "x": 260, "y": 100}]
+ui_dispatch of [dk, {"type": "mousedown", "button": 1, "x": 202, "y": 100}]
+ui_dispatch of [dk, {"type": "mousemove", "x": 260, "y": 100}]
 assert_eq of [dk.west_w, 260, "dragging the west handle resizes the region"]
 assert_eq of [dk_layouts.n, 1, "the drag fired on_layout"]
-dispatch of [dk, {"type": "mousemove", "x": 10, "y": 100}]
+ui_dispatch of [dk, {"type": "mousemove", "x": 10, "y": 100}]
 assert_eq of [dk.west_w, 60, "the resize clamps at min_size"]
-dispatch of [dk, {"type": "mouseup", "button": 1, "x": 10, "y": 100}]
+ui_dispatch of [dk, {"type": "mouseup", "button": 1, "x": 10, "y": 100}]
 dk_n_after_drag is dk_layouts.n
 
 # Programmatic layout changes are silent.
@@ -2334,7 +2334,7 @@ dock_set_collapsed of [dk, dk_p_oam, 0]
 _layout of [dk, 0, 0]
 dkv2 is dock_view of dk
 wp1t is dkv2.panels.west[1].title
-dispatch of [dk, {"type": "mousedown", "button": 1, "x": wp1t[0] + 4, "y": wp1t[1] + 4}]
+ui_dispatch of [dk, {"type": "mousedown", "button": 1, "x": wp1t[0] + 4, "y": wp1t[1] + 4}]
 assert_eq of [dk_p_oam.collapsed, 1, "a title click collapses the panel"]
 assert_eq of [dk_layouts.n, dk_n_after_drag + 1, "and fires on_layout (a gesture)"]
 _layout of [dk, 0, 0]
@@ -2345,7 +2345,7 @@ assert_true of [dkv3.panels.west[0].body[3] > wp0.body[3], "the expanded sibling
 # The collapsed panel's title MOVED (the sibling grew) — click where the
 # view says it is now, not where it was.
 wp1t2 is dkv3.panels.west[1].title
-dispatch of [dk, {"type": "mousedown", "button": 1, "x": wp1t2[0] + 4, "y": wp1t2[1] + 4}]
+ui_dispatch of [dk, {"type": "mousedown", "button": 1, "x": wp1t2[0] + 4, "y": wp1t2[1] + 4}]
 assert_eq of [dk_p_oam.collapsed, 0, "a second click expands it again"]
 _layout of [dk, 0, 0]
 
@@ -2356,7 +2356,7 @@ define _dk_on_mouse(w, ev) as:
     if ev.type == "mousedown":
         dk_center_hits.n is dk_center_hits.n + 1
 dk_lcd.on_mouse is _dk_on_mouse
-dispatch of [dk, {"type": "mousedown", "button": 1, "x": 300, "y": 100}]
+ui_dispatch of [dk, {"type": "mousedown", "button": 1, "x": 300, "y": 100}]
 assert_eq of [dk_center_hits.n, 1, "a center click routes to the hosted widget"]
 
 # ---- Containment: the rendered dock stays inside its rect ----
@@ -2451,7 +2451,7 @@ define _hx_on_select(w, addr) as:
     hx_sel.n is hx_sel.n + 1
     hx_sel.addr is addr
 hx.on_select is _hx_on_select
-dispatch of [hx, {"type": "mousedown", "button": 1, "x": hxm.gutter + 2, "y": 4}]
+ui_dispatch of [hx, {"type": "mousedown", "button": 1, "x": hxm.gutter + 2, "y": 4}]
 assert_eq of [hx_sel.n, 1, "a cell click fires on_select"]
 assert_eq of [hx_sel.addr, 0, "with the clicked addr"]
 assert_eq of [hx.cursor, 0, "and moves the cursor"]
@@ -2533,22 +2533,22 @@ add_child of [dcroot, dccb2]
 _layout of [dcroot, 0, 0]
 _ui.last_click_id is ""
 
-dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 15, "button": 1}]
-dispatch of [dcroot, {"type": "mouseup", "x": 15, "y": 15, "button": 1}]
+ui_dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 15, "button": 1}]
+ui_dispatch of [dcroot, {"type": "mouseup", "x": 15, "y": 15, "button": 1}]
 assert_eq of [dccb.value, 1, "#847 first click toggles the checkbox on"]
-dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 15, "button": 1}]
-dispatch of [dcroot, {"type": "mouseup", "x": 15, "y": 15, "button": 1}]
+ui_dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 15, "button": 1}]
+ui_dispatch of [dcroot, {"type": "mouseup", "x": 15, "y": 15, "button": 1}]
 assert_eq of [dccb.value, 0, "#847 rapid second click toggles it back (was swallowed)"]
 
-dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 110, "button": 1}]
-dispatch of [dcroot, {"type": "mouseup", "x": 15, "y": 110, "button": 1}]
-dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 110, "button": 1}]
-dispatch of [dcroot, {"type": "mouseup", "x": 15, "y": 110, "button": 1}]
+ui_dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 110, "button": 1}]
+ui_dispatch of [dcroot, {"type": "mouseup", "x": 15, "y": 110, "button": 1}]
+ui_dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 110, "button": 1}]
+ui_dispatch of [dcroot, {"type": "mouseup", "x": 15, "y": 110, "button": 1}]
 assert_eq of [len of dcnotes, 4, "#847 rapid double-tap retriggers the note (2 on + 2 off)"]
 
-dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 305, "button": 1}]
+ui_dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 305, "button": 1}]
 assert_eq of [dccb2.value, 1, "#847 declared-dblclick widget: first click still toggles"]
-dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 305, "button": 1}]
+ui_dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 305, "button": 1}]
 assert_eq of [dcdbl[0], 1, "#847 declared-dblclick widget: second click fires on_dblclick"]
 assert_eq of [dccb2.value, 1, "#847 declared-dblclick widget: second click consumed, no re-toggle"]
 
@@ -2557,8 +2557,8 @@ dcel is editable_label of ["dcel", 10, 350, "txt", null]
 add_child of [dcroot, dcel]
 _layout of [dcroot, 0, 0]
 _ui.last_click_id is ""
-dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 352, "button": 1}]
-dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 352, "button": 1}]
+ui_dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 352, "button": 1}]
+ui_dispatch of [dcroot, {"type": "mousedown", "x": 15, "y": 352, "button": 1}]
 assert_eq of [dcel.editing, 1, "#847 editable_label double-click still starts editing"]
 
 # ============================================================
@@ -2956,20 +2956,20 @@ _layout of [i859, 0, 0]
 # Control first: with the list CLOSED the very same click DOES reach the
 # button — otherwise the assertion below would pass over an empty scene.
 _ui.last_click_id is ""
-dispatch of [i859, {"type": "mousedown", "x": 40, "y": 90, "button": 1}]
+ui_dispatch of [i859, {"type": "mousedown", "x": 40, "y": 90, "button": 1}]
 assert_eq of [ibtn859.pressed, 1, "#859 control: with the list closed the click reaches the button underneath"]
-dispatch of [i859, {"type": "mouseup", "x": 40, "y": 90, "button": 1}]
+ui_dispatch of [i859, {"type": "mouseup", "x": 40, "y": 90, "button": 1}]
 assert_eq of [ibtn_clicks[0], 1, "#859 control: and the button fires"]
 
 _ui.last_click_id is ""
-dispatch of [i859, {"type": "mousedown", "x": 40, "y": 20, "button": 1}]
+ui_dispatch of [i859, {"type": "mousedown", "x": 40, "y": 20, "button": 1}]
 assert_eq of [idd859.open, 1, "#859 clicking the closed box opens the list"]
 # Hover follows the overlay too: item 2 spans y 89..112.
-dispatch of [i859, {"type": "mousemove", "x": 40, "y": 90}]
+ui_dispatch of [i859, {"type": "mousemove", "x": 40, "y": 90}]
 assert_eq of [idd859.hover_index, 2, "#859 mousemove over the overlaid list hovers the dropdown item"]
 assert_eq of [ibtn859.hover, 0, "#859 the sibling under the list gets no hover"]
 _ui.last_click_id is ""
-dispatch of [i859, {"type": "mousedown", "x": 40, "y": 90, "button": 1}]
+ui_dispatch of [i859, {"type": "mousedown", "x": 40, "y": 90, "button": 1}]
 assert_eq of [idd859.selected, 2, "#859 the click selects on the DROPDOWN, not the sibling"]
 assert_eq of [idd859.open, 0, "#859 selecting closes the list"]
 assert_eq of [ibtn859.pressed, 0, "#859 the sibling under the open list never saw the click"]
@@ -2978,24 +2978,24 @@ assert_eq of [ibtn_clicks[0], 1, "#859 the sibling's on_click did not fire"]
 # Selection by the click's own y, with no mousemove first (the #577 rule,
 # which dropdown never had): reopen and click item 0 directly.
 _ui.last_click_id is ""
-dispatch of [i859, {"type": "mousedown", "x": 40, "y": 20, "button": 1}]
+ui_dispatch of [i859, {"type": "mousedown", "x": 40, "y": 20, "button": 1}]
 idd859.hover_index is 0 - 1
 _ui.last_click_id is ""
-dispatch of [i859, {"type": "mousedown", "x": 40, "y": 45, "button": 1}]
+ui_dispatch of [i859, {"type": "mousedown", "x": 40, "y": 45, "button": 1}]
 assert_eq of [idd859.selected, 0, "#859 a mouse-only click selects the item it landed on"]
 
 # Outside-click still closes without selecting.
 _ui.last_click_id is ""
-dispatch of [i859, {"type": "mousedown", "x": 40, "y": 20, "button": 1}]
+ui_dispatch of [i859, {"type": "mousedown", "x": 40, "y": 20, "button": 1}]
 assert_eq of [idd859.open, 1, "#859 the list reopens"]
 _ui.last_click_id is ""
-dispatch of [i859, {"type": "mousedown", "x": 350, "y": 260, "button": 1}]
+ui_dispatch of [i859, {"type": "mousedown", "x": 350, "y": 260, "button": 1}]
 assert_eq of [idd859.open, 0, "#859 a click outside the overlay closes the list"]
 assert_eq of [idd859.selected, 0, "#859 the outside click changed no selection"]
 
 # Escape closes it through the keyboard route.
 _ui.last_click_id is ""
-dispatch of [i859, {"type": "mousedown", "x": 40, "y": 20, "button": 1}]
+ui_dispatch of [i859, {"type": "mousedown", "x": 40, "y": 20, "button": 1}]
 assert_eq of [idd859.open, 1, "#859 the list reopens for the keyboard case"]
 handle_key of [i859, {"type": "keydown", "key": "escape", "shift": 0, "ctrl": 0, "alt": 0}]
 assert_eq of [idd859.open, 0, "#859 escape closes the open list"]
@@ -3044,10 +3044,10 @@ gm859.row_labels is ["a", "b", "c"]
 add_child of [groot859, gm859]
 _layout of [groot859, 0, 0]
 _ui.last_click_id is ""
-dispatch of [groot859, {"type": "mousedown", "x": 40, "y": 25, "button": 1}]
+ui_dispatch of [groot859, {"type": "mousedown", "x": 40, "y": 25, "button": 1}]
 assert_eq of [gm859.cells[0][0], 0, "#859 a click in the row-label gutter toggles no cell"]
 _ui.last_click_id is ""
-dispatch of [groot859, {"type": "mousedown", "x": 95, "y": 25, "button": 1}]
+ui_dispatch of [groot859, {"type": "mousedown", "x": 95, "y": 25, "button": 1}]
 assert_eq of [gm859.cells[0][0], 1, "#859 a click at x + row_label_w toggles cell (0,0)"]
 
 # The public accessor an app maps pixels through, so nothing has to
@@ -3991,7 +3991,7 @@ assert_eq of [(_find_visible_dialog of coverage_main_dialog).id, "coverage-main-
 assert_true of [(register_hotkey of ["ctrl+q", coverage_main_hotkey]) == null and _ui.hotkeys[0].combo == "ctrl+q", "hotkey registration records requested combo"]
 assert_true of [(_match_hotkey of {"type": "keydown", "key": "q", "ctrl": 1, "shift": 0, "alt": 0}) and coverage_main_log.hotkeys == 1, "matching hotkey invokes callback"]
 assert_true of [(handle_key of [coverage_main_root, {"type": "keydown", "key": "q", "ctrl": 1, "shift": 0, "alt": 0}]) and coverage_main_log.hotkeys == 2, "public key handler preserves hotkey priority"]
-assert_true of [(dispatch of [coverage_main_root, {"type": "keydown", "key": "q", "ctrl": 1, "shift": 0, "alt": 0}]) and coverage_main_log.hotkeys == 3, "public dispatch routes keyboard callback"]
+assert_true of [(ui_dispatch of [coverage_main_root, {"type": "keydown", "key": "q", "ctrl": 1, "shift": 0, "alt": 0}]) and coverage_main_log.hotkeys == 3, "public dispatch routes keyboard callback"]
 assert_true of [(unregister_hotkey of "ctrl+q") == null and (len of _ui.hotkeys) == 0, "unregister removes exact combo"]
 assert_true of [(push_modal of [coverage_main_dialog, 200, 100]) == null and _ui.modal_stack[0].id == "coverage-main-dialog" and coverage_main_dialog.x == 60 and coverage_main_dialog.y == 30, "modal push centers and mounts dialog"]
 assert_true of [(pop_modal of null).id == "coverage-main-dialog" and coverage_main_dialog.visible == 0 and (len of _ui.modal_stack) == 0, "modal pop hides and returns same dialog"]

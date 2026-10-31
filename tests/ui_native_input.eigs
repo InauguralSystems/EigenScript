@@ -14,7 +14,7 @@ native_frames is 0
 loop while native_running == 1 and native_frames < 5000:
     native_event is gfx_poll of null
     if native_event != null:
-        dispatch of [native_root, native_event]
+        ui_dispatch of [native_root, native_event]
         if native_event.type == "resize":
             native_root.w is native_event.w
             native_root.h is native_event.h

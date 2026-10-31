@@ -86,7 +86,7 @@ print of ""
 print of ("Orbit closure error after ~1 period: " + (str of (closure_err/1000)) + " km")
 
 # Radius statistics — should be nearly constant for circular orbit
-r_mean is mean of radii
+r_mean is stats_mean of radii
 r_std is std_dev of radii
 print of ("Mean radius: " + (str of (r_mean/1000)) + " km")
 print of ("Radius std dev: " + (str of (r_std/1000)) + " km (should be ~0 for circular)")

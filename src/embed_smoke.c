@@ -1410,7 +1410,7 @@ int main(void) {
           "provider-served module: cache hit + fn call");
     if (r) eigs_value_release(r);
     /* Provider miss falls back to the filesystem chain (hosted). */
-    r = eigs_eval_string("import math\nmath.abs of -7");
+    r = eigs_eval_string("import math\nmath.math_abs of -7");
     CHECK(r != NULL && eigs_value_as_num(r) == 7.0,
           "provider miss falls back to filesystem import");
     if (r) eigs_value_release(r);

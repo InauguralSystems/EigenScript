@@ -159,9 +159,9 @@ assert of [(round of 3.5) == 4, "RN1 round up"]
 assert of [(round of 3.4) == 3, "RN2 round down"]
 
 # ---- abs ----
-assert of [(abs of -42) == 42, "AB1 negative"]
-assert of [(abs of 42) == 42, "AB2 positive"]
-assert of [(abs of 0) == 0, "AB3 zero"]
+assert of [(math_abs of -42) == 42, "AB1 negative"]
+assert of [(math_abs of 42) == 42, "AB2 positive"]
+assert of [(math_abs of 0) == 0, "AB3 zero"]
 
 # ---- min/max ----
 assert of [(min of [3, 7]) == 3, "MN1 min"]

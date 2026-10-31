@@ -548,7 +548,7 @@ def main():
     res = (by_id(r, 29) or {}).get("result")
     value = ((res or {}).get("contents") or {}).get("value", "") if isinstance(res, dict) else ""
     check("hover over a stdlib call without a signature shows the define shape",
-          "define mean(vals) as:" in value)
+          "define stats_mean(vals) as:" in value)
 
     # A function from a module the document never imported gets no hover.
     hover_noimp = {"jsonrpc": "2.0", "id": 30, "method": "textDocument/hover",

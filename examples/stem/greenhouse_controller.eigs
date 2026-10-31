@@ -92,10 +92,10 @@ define step_chamber(state, config, recipe) as:
     next_temp is state.temp_c + dT
     next_temp is clamp of [next_temp, config.ambient_c - 2.0, config.target_temp_c + 5.0]
 
-    temp_penalty is (abs of (next_temp - config.target_temp_c)) / 10.0
+    temp_penalty is (math_abs of (next_temp - config.target_temp_c)) / 10.0
     temp_factor is clamp of [1.0 - temp_penalty, 0.15, 1.0]
     nitrate_factor is michaelis_menten of [1.0, config.nitrate_km_mM, state.nitrate_mM]
-    ph_penalty is (abs of (state.ph - config.target_ph)) / 2.5
+    ph_penalty is (math_abs of (state.ph - config.target_ph)) / 2.5
     ph_factor is clamp of [1.0 - ph_penalty, 0.25, 1.0]
     growth_rate is config.base_growth_per_day * temp_factor * nitrate_factor * ph_factor
 
@@ -142,8 +142,8 @@ define recent_window(values, window) as:
     return result
 
 define choose_decision(final_state, temp_window, temp_spikes, config) as:
-    temp_ok is (abs of (final_state.temp_c - config.target_temp_c)) <= 0.85
-    ph_ok is (abs of (final_state.ph - config.target_ph)) <= 0.45
+    temp_ok is (math_abs of (final_state.temp_c - config.target_temp_c)) <= 0.85
+    ph_ok is (math_abs of (final_state.ph - config.target_ph)) <= 0.45
     nutrient_ok is final_state.nitrate_mM >= 8.0
     biomass_ok is final_state.biomass_g >= config.minimum_harvest_g
     stable_ok is is_measurement_stable of [temp_window, 5]
@@ -209,7 +209,7 @@ define run_controller() as:
         "temp_convergence": temp_convergence,
         "biomass_track": biomass_track,
         "decision": decision,
-        "temp_mean": mean of temp_window,
+        "temp_mean": stats_mean of temp_window,
         "temp_std": std_dev of temp_window
     }
 

@@ -28,7 +28,7 @@ root is expect_converging of [2.0, newton_sqrt2, 50, "Newton sqrt(2) must conver
 root is expect_monotone of [2.0, newton_sqrt2, 50, "Newton sqrt(2) is monotone"]
 # Convergence is not correctness: ensure pins the actual target.
 resid is (root * root) - 2.0
-resid is abs of resid
+resid is math_abs of resid
 ensure of [resid < 0.000000001, "residual must vanish"]
 print of ("  root  = " + (str of root))
 print of ("  resid = " + (str of resid) + "  (contract: converging + monotone + residual)")
@@ -44,7 +44,7 @@ define cos_fixed(x) as:
 # that scale (Newton reached machine-eps above only because it is quadratic).
 print of "Fixed point x = cos(x):"
 dottie is expect_converging of [1.0, cos_fixed, 80, "cos iteration must converge"]
-fp_resid is abs of ((cos of dottie) - dottie)
+fp_resid is math_abs of ((cos of dottie) - dottie)
 ensure of [fp_resid < 0.001, "must rest at the fixed point (deadband scale)"]
 print of ("  x     = " + (str of dottie))
 print of ("  resid = " + (str of fp_resid) + "  (contract: converging + fixed-point residual)")
