@@ -1,0 +1,1 @@
+- Geometry predicates now remain correct at small coordinate scales and reject points outside degenerate triangles (#2235).
