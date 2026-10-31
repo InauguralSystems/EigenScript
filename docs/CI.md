@@ -734,7 +734,7 @@ triggers) are listed in #1278.
 | `linux / gcc` | 1 | release suite on every code event |
 | `linux / clang` | 1 | clang `-Werror` build and PR LSP compile check; full suite in the queue/main lane |
 | `macos / macos-latest` | 1 | required aggregator; PR deferral on Ubuntu, native full-suite worker in the queue/main lane |
-| `extensions (http+model+gfx suite; embed/lsp/jit-smoke)` | 1 | **aggregator** |
+| `extensions (http+net+gfx suite; embed/lsp/jit-smoke)` | 1 | **aggregator** |
 | `extensions / server (http+net+gfx) and ancillary checks`, `/ gfx suite`, `/ zlib suite`, `/ net suite` | 1, via the aggregator | workers |
 | `asan + ubsan (full suite)` | 1 | **aggregator**; also re-derives shard coverage and sums the leak tally |
 | `asan + ubsan / shard k/3 (http+net+gfx build)` | 1, via the aggregator | workers |
