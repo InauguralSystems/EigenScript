@@ -12,14 +12,15 @@
 #   log_error of "connection refused"
 #   log_msg of ["info", "custom message"]
 #
-# Levels (lowest to highest): debug, info, warn, error, silent
-# Default level: info (debug messages are hidden)
+# Message levels (lowest to highest): debug, info, warn, error
+# The silent threshold suppresses every message.
+# Default threshold: info (debug messages are hidden)
 
 # ---- State ----
 _log_min_level is 1
 
 # ---- Level numbers ----
-# debug=0, info=1, warn=2, error=3, silent=4
+# debug=0, info=1, warn=2, error=3; silent threshold=4
 
 define _log_level_num(name) as:
     if name == "debug":
@@ -32,7 +33,7 @@ define _log_level_num(name) as:
         return 3
     if name == "silent":
         return 4
-    return 1
+    throw of ("unknown log level: " + (str of name))
 
 define _log_level_tag(level) as:
     if level == 0:
@@ -51,7 +52,7 @@ define log_level(name) as:
 
 # ---- _log_emit: internal log printer ----
 define _log_emit(level, msg) as:
-    if level >= _log_min_level:
+    if level < 4 and level >= _log_min_level:
         tag is _log_level_tag of level
         ts is exec_capture of ["date", "+%H:%M:%S"]
         time_str is trim of ts[1]

@@ -1,0 +1,3 @@
+load_file of "lib/log.eigs"
+log_level of "silent"
+log_msg of ["silent", "should not print"]

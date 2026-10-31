@@ -1002,14 +1002,14 @@ Sets are sorted lists with no duplicates.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `log_level` | `log_level of "debug"` | Set minimum level |
+| `log_level` | `log_level of "debug"` | Set minimum threshold; unknown names raise |
 | `log_debug` | `log_debug of msg` | Debug message |
 | `log_info` | `log_info of msg` | Info message |
 | `log_warn` | `log_warn of msg` | Warning message |
 | `log_error` | `log_error of msg` | Error message |
-| `log_msg` | `log_msg of ["level", msg]` | Log with named level |
+| `log_msg` | `log_msg of ["level", msg]` | Log with a named level; unknown names raise |
 
-Levels: debug < info < warn < error < silent. Default: info.
+Message levels: debug < info < warn < error. The `silent` threshold suppresses every message, including a `log_msg` whose level is `"silent"`. Unknown level names raise. Default threshold: info.
 
 ### lib/validate.eigs — Input Validation
 
