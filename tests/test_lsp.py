@@ -478,7 +478,7 @@ def main():
     # modules' functions are offered; the detail is the rule-2 signature
     # comment, or the `define name(params) as:` shape when a module never
     # wrote one (stats has none for median; list.zip has one).
-    std_doc = "import stats\nimport list\nresult is stats.mean of [1, 2, 3]\n"
+    std_doc = "import stats\nimport list\nresult is stats.stats_mean of [1, 2, 3]\n"
     comp_std = {"jsonrpc": "2.0", "id": 26, "method": "textDocument/completion",
                 "params": {"textDocument": {"uri": URI}, "position": {"line": 2, "character": 12}}}
     r = converse([INIT, did_open(std_doc), comp_std, SHUTDOWN, EXIT])

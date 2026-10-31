@@ -19,7 +19,7 @@ mode is re-inventing what already ships (see "Before you hand-roll" below).
 
 | I need to... | Use | Where |
 |---|---|---|
-| average / median / stddev / quantiles / correlation | `stats.mean`, `stats.median`, `stats.std_dev`, `stats.quantile`, `stats.correlation`, `stats.describe` | `lib/stats.eigs` |
+| average / median / stddev / quantiles / correlation | `stats.stats_mean`, `stats.median`, `stats.std_dev`, `stats.quantile`, `stats.correlation`, `stats.describe` | `lib/stats.eigs` |
 | tables, CSV, group-by, join, select/where | `data.df_from_csv`, `df_where`, `df_group_by`, `df_join`, `df_select` | `lib/data.eigs` |
 | probability distributions, combinatorics, Bayes | `probability.normal_pdf`, `binomial_pmf`, `combinations`, `bayes` | `lib/probability.eigs` |
 | matrices / vectors / solve Ax=b / eigenvalues | `linalg.mat_mul`, `mat_inverse`, `solve_linear`, `charpoly`, `eigenvalues` | `lib/linalg.eigs` |
@@ -37,7 +37,7 @@ mode is re-inventing what already ships (see "Before you hand-roll" below).
 | finite state machine | `state.sm_new`, `sm_add_transition`, `sm_send` | `lib/state.eigs` |
 | parse a number / hex / codepoint | `num`, `hex`, `ord`, `chr`, `utf8_encode` (**builtins** / `lib/utf8.eigs`) | BUILTINS.md, `lib/utf8.eigs` |
 | pad / format numbers / aligned tables / progress bars | `format.fmt_num`, `fmt_padded`, `fmt_table`, `fmt_bar`, `hexdump` | `lib/format.eigs` |
-| join / repeat / capitalize / replace-all strings | `string.join`, `repeat`, `capitalize`, `replace_all` | `lib/string.eigs` |
+| join / repeat / capitalize / replace-all strings | `string.string_join`, `repeat`, `capitalize`, `replace_all` | `lib/string.eigs` |
 | build a big string efficiently | `text_builder_new`, `text_builder_append` (**builtins**) | `lib/text_builder.eigs` |
 | Unicode codepoints over byte strings | `utf8.utf8_len`, `utf8_at`, `utf8_encode` | `lib/utf8.eigs` |
 | checksums (CRC-32, Adler-32) | `checksum.crc32`, `adler32`, `sum8` | `lib/checksum.eigs` |
@@ -78,7 +78,7 @@ They already ship — reach for them first:
 
 | You were about to write... | It already exists as |
 |---|---|
-| `_pr_median` / your own mean | `stats.median`, `stats.mean` (`lib/stats.eigs`) |
+| `_pr_median` / your own mean | `stats.median`, `stats.stats_mean` (`lib/stats.eigs`) |
 | `hex4` / `pad2` (fixed-width hex) | `hex of [n, nibbles]` (**builtin** — zero-padded, never truncates) |
 | a byte-to-int / char-code helper | `ord` (read), `chr` / `str_from_bytes` (write) — **builtins** |
 | `_log10` / a log-base helper | `math.log2`, `math.log10` (`lib/math.eigs`) — `load_file of "lib/math.eigs"`, then `log2 of x` / `log10 of x` instead of a hand-rolled `(log of x) / (log of base)`. Element-wise, like the `log` builtin they wrap. |
@@ -1240,7 +1240,7 @@ Descriptive statistics over flat lists of numbers. Population and sample variant
 | `correlation` | `correlation of [xs, ys]` | Pearson correlation coefficient |
 | `describe` | `describe of vals` | return dict with count, mean, median, std_dev, min, max, q25, q75 |
 
-`stats.mean` and `stats.median` already exist — reach for them instead of
+`stats.stats_mean` and `stats.median` already exist — reach for them instead of
 re-deriving a `_pr_mean`/`_pr_median`. This example is executed and checked
 byte-for-byte by the suite (`tests/test_doc_examples.py`, section [89]):
 
@@ -1249,7 +1249,7 @@ import stats
 import data
 
 scores is [88, 92, 79, 95, 73]
-print of (stats.mean of scores)
+print of (stats.stats_mean of scores)
 print of (stats.median of scores)
 
 rows is data.df_from_rows of [["name", "score"], [["Ada", 90], ["Bo", 70]]]

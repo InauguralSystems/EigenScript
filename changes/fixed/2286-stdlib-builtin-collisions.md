@@ -1,0 +1,1 @@
+- Standard-library module helpers no longer replace same-named builtins when loaded into the caller's scope (#2286).

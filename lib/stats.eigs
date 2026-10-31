@@ -6,15 +6,15 @@
 # How to use:
 #   import stats
 #
-#   stats.mean of [1, 2, 3, 4, 5]         # 3
+#   stats.stats_mean of [1, 2, 3, 4, 5]         # 3
 #   stats.median of [1, 2, 3, 4, 5]       # 3
 #   stats.std_dev of [2, 4, 4, 4, 5, 5, 7, 9]  # 2
-#   stats.describe of [1, 2, 3, 4, 5]     # {count, mean, median, ...}
+#   stats.describe of [1, 2, 3, 4, 5]     # {count, stats_mean, median, ...}
 
 # ---- Descriptive Statistics ----
 
-# sum: sum of all values
-define sum(vals) as:
+# stats_sum: stats_sum of all values
+define stats_sum(vals) as:
     total is 0
     for i in range of (len of vals):
         total is total + vals[i]
@@ -24,12 +24,12 @@ define sum(vals) as:
 define count(vals) as:
     return len of vals
 
-# mean: arithmetic mean
-define mean(vals) as:
+# stats_mean: arithmetic stats_mean
+define stats_mean(vals) as:
     n is len of vals
     if n == 0:
         return 0
-    return (sum of vals) / n
+    return (stats_sum of vals) / n
 
 # median: middle value (sort + pick middle)
 define median(vals) as:
@@ -86,7 +86,7 @@ define variance(vals) as:
     n is len of vals
     if n == 0:
         return 0
-    m is mean of vals
+    m is stats_mean of vals
     total is 0
     for i in range of n:
         diff is vals[i] - m
@@ -99,7 +99,7 @@ define variance_sample(vals) as:
     n is len of vals
     if n < 2:
         return 0
-    m is mean of vals
+    m is stats_mean of vals
     total is 0
     for i in range of n:
         diff is vals[i] - m
@@ -225,12 +225,12 @@ define normalize(vals) as:
         append of [result, (vals[i] - lo) / spread]
     return result
 
-# z_scores: standardize (subtract mean, divide by std_dev)
+# z_scores: standardize (subtract stats_mean, divide by std_dev)
 define z_scores(vals) as:
     n is len of vals
     if n == 0:
         return []
-    m is mean of vals
+    m is stats_mean of vals
     sd is std_dev of vals
     if sd == 0:
         sd is 1
@@ -249,8 +249,8 @@ define covariance(xs, ys) as:
         n is ny
     if n == 0:
         return 0
-    mx is mean of xs
-    my is mean of ys
+    mx is stats_mean of xs
+    my is stats_mean of ys
     total is 0
     for i in range of n:
         total is total + (xs[i] - mx) * (ys[i] - my)
@@ -265,7 +265,7 @@ define correlation(xs, ys) as:
     if n == 0:
         return 0
     # Center on the PAIRED prefix, not the full lists. With mismatched
-    # lengths, mean of the whole series includes elements that were never
+    # lengths, stats_mean of the whole series includes elements that were never
     # paired, so the covariance is centered on the wrong point (#638).
     mx is 0
     my is 0
@@ -290,11 +290,11 @@ define correlation(xs, ys) as:
 
 # ---- Summary ----
 
-# describe: return dict with count, mean, median, std_dev, min, max, q25, q75
+# describe: return dict with count, stats_mean, median, std_dev, min, max, q25, q75
 define describe(vals) as:
     n is len of vals
     if n == 0:
-        return {"count": 0, "mean": 0, "median": 0, "std_dev": 0, "min": 0, "max": 0, "q25": 0, "q75": 0}
+        return {"count": 0, "stats_mean": 0, "median": 0, "std_dev": 0, "min": 0, "max": 0, "q25": 0, "q75": 0}
     lo is vals[0]
     hi is vals[0]
     for i in range of n:
@@ -304,7 +304,7 @@ define describe(vals) as:
             hi is vals[i]
     return {
         "count": n,
-        "mean": mean of vals,
+        "stats_mean": stats_mean of vals,
         "median": median of vals,
         "std_dev": std_dev of vals,
         "min": lo,

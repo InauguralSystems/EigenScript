@@ -2145,7 +2145,7 @@ SH821_DIR=$(mktemp -d)
 SH821_BIN="$PWD/eigenscript"
 printf 'MARKER is 42\n' > "$SH821_DIR/physics.eigs"
 printf 'import physics\nimport physics\nprint of physics.MARKER\n' > "$SH821_DIR/shadow.eigs"
-printf 'import math\nprint of (math.abs of -5)\n' > "$SH821_DIR/clean.eigs"
+printf 'import math\nprint of (math.math_abs of -5)\n' > "$SH821_DIR/clean.eigs"
 SH821_ERR=$(cd "$SH821_DIR" && "$SH821_BIN" shadow.eigs 2>&1 >/dev/null)
 SH821_WARNS=$(printf '%s\n' "$SH821_ERR" | grep -c "Warning: import 'physics'")
 SH821_CLEAN=$(cd "$SH821_DIR" && "$SH821_BIN" clean.eigs 2>&1 >/dev/null | grep -c "Warning: import")
@@ -2177,7 +2177,7 @@ SH904_DIR=$(mktemp -d)
 SH904_BIN="$PWD/eigenscript"
 mkdir -p "$SH904_DIR/home/.local/lib/eigenscript"
 printf 'INSTALLED_COPY is 1\n' > "$SH904_DIR/home/.local/lib/eigenscript/math.eigs"
-printf 'import math\nprint of (math.abs of -5)\n' > "$SH904_DIR/clean.eigs"
+printf 'import math\nprint of (math.math_abs of -5)\n' > "$SH904_DIR/clean.eigs"
 printf 'MARKER is 42\n' > "$SH904_DIR/physics.eigs"
 printf 'import physics\nprint of physics.MARKER\n' > "$SH904_DIR/shadow.eigs"
 SH904_OUT=$(cd "$SH904_DIR" && HOME="$SH904_DIR/home" "$SH904_BIN" clean.eigs 2>/dev/null)
@@ -2191,7 +2191,7 @@ if [ "$SH904_WARNS" = "0" ] && [ "$SH904_OUT" = "5" ] && [ "$SH904_SHADOW" = "1"
     echo "  PASS: installed stdlib is not a project file (#904)"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: installed stdlib is not a project file (#904) — warnings=$SH904_WARNS (want 0), math.abs of -5 = '$SH904_OUT' (want 5), real-shadow warnings=$SH904_SHADOW (want 1)"
+    echo "  FAIL: installed stdlib is not a project file (#904) — warnings=$SH904_WARNS (want 0), math.math_abs of -5 = '$SH904_OUT' (want 5), real-shadow warnings=$SH904_SHADOW (want 1)"
 fi
 rm -rf "$SH904_DIR"
 echo ""
@@ -2616,7 +2616,7 @@ else
 fi
 echo ""
 
-# [42c] Stdlib fixes (math.dot bounds, test.assert_near types, template no-reinterpretation, text/int-vector builders)
+# [42c] Stdlib fixes (math.math_dot bounds, test.assert_near types, template no-reinterpretation, text/int-vector builders)
 echo "[42d/47] Stdlib Fixes"
 # #1361 EIGS_STRICT=0: pins math.log10/log2 of x <= 0 taking the log floor stand-in (SF101/SF102).
 SF_OUTPUT=$(suite_program_run test_stdlib_fixes.eigs ./eigenscript ../tests/test_stdlib_fixes.eigs 2>&1); SF_OUTPUT_RC=$?

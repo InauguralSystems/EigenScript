@@ -24,7 +24,7 @@ load_file of "lib/data.eigs"
 
 # ---- Module State ----
 
-# In-memory cache of values per variable per experiment
+# In-memory cache of lab_values per variable per experiment
 _variable_data is {}
 
 # Per-variable units
@@ -202,7 +202,7 @@ define status(exp, variable) as:
             hi is vals[i]
     last is vals[n - 1]
 
-    # Run observer over all values to get current state
+    # Run observer over all lab_values to get current state
     tracked is track_measurements of vals
     last_obs is tracked[n - 1]
     obs_status is last_obs.status
@@ -275,7 +275,7 @@ define measurements(exp, variable) as:
         append of [result, {"value": r.value, "time": r.time, "unit": r.unit, "tag": r.tag}]
     return result
 
-define values(exp, variable) as:
+define lab_values(exp, variable) as:
     key is _tracker_key of [exp, variable]
     vals is _cache_get of key
     if vals != null:
@@ -306,7 +306,7 @@ define to_csv(exp, variable, path) as:
     return null
 
 define summary(exp, variable) as:
-    vals is values of [exp, variable]
+    vals is lab_values of [exp, variable]
     if (len of vals) == 0:
         return {"count": 0, "mean": 0, "median": 0, "std_dev": 0, "min": 0, "max": 0}
     desc is describe of vals
@@ -318,8 +318,8 @@ define summary(exp, variable) as:
     return desc
 
 define compare(exp, var1, var2) as:
-    v1 is values of [exp, var1]
-    v2 is values of [exp, var2]
+    v1 is lab_values of [exp, var1]
+    v2 is lab_values of [exp, var2]
     # Align to shorter length
     n is len of v1
     n2 is len of v2
@@ -431,7 +431,7 @@ define delete_experiment(name) as:
 # ---- Analysis Helpers ----
 
 define find_outliers(exp, variable, threshold) as:
-    vals is values of [exp, variable]
+    vals is lab_values of [exp, variable]
     spikes is detect_entropy_spikes of [vals, threshold]
     result is []
     for i in range of (len of spikes):
@@ -439,9 +439,9 @@ define find_outliers(exp, variable, threshold) as:
     return result
 
 define detect_phases(exp, variable) as:
-    vals is values of [exp, variable]
+    vals is lab_values of [exp, variable]
     return detect_regimes of vals
 
 define convergence_info(exp, variable) as:
-    vals is values of [exp, variable]
+    vals is lab_values of [exp, variable]
     return convergence_rate of vals

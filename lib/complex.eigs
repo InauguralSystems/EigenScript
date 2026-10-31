@@ -35,8 +35,8 @@
 # ARITHMETIC
 # ============================================================
 
-# add: (a + b)
-define add(a, b) as:
+# complex_add: (a + b)
+define complex_add(a, b) as:
     return [a[0] + b[0], a[1] + b[1]]
 
 # sub: (a - b)
@@ -161,7 +161,7 @@ define poly_eval(coeffs, z) as:
     local p is [1.0, 0.0]
     local k is 0
     loop while k < n:
-        p is add of [mul of [p, z], [coeffs[k], 0.0]]
+        p is complex_add of [mul of [p, z], [coeffs[k], 0.0]]
         k is k + 1
     return p
 

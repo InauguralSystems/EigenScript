@@ -17,7 +17,7 @@ load_file of "lib/map.eigs"
 load_file of "lib/functional.eigs"
 load_file of "lib/io.eigs"
 
-# --- math.dot bounds ---
+# --- math.math_dot bounds ---
 assert of [(dot of [[1, 2, 3], [4, 5, 6]]) == 32, "SF1 dot normal"]
 # Mismatched lengths must not crash; iterate over the shorter list.
 assert of [(dot of [[1, 2, 3], [4, 5]]) == 14, "SF2 dot shorter b"]

@@ -61,7 +61,7 @@ print of ("  final_status: " + cr.final_status)
 print of ("  is_converging: " + (str of cr.is_converging))
 
 avg_after_convergence is mean of [2, 4, 6]
-assert_eq of [avg_after_convergence, 4, "convergence_rate preserves stats.sum"]
+assert_eq of [avg_after_convergence, 4, "convergence_rate preserves stats.stats_sum"]
 
 # ---- convergence_rate on diverging sequence ----
 print of "--- convergence_rate (diverging) ---"

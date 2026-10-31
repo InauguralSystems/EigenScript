@@ -23,7 +23,7 @@ print of "=== COMPLEX NUMBER TESTS ==="
 print of "--- Arithmetic ---"
 
 # (3+4i) + (1-2i) = 4+2i
-s is complex.add of [[3, 4], [1, -2]]
+s is complex.complex_add of [[3, 4], [1, -2]]
 assert_eq of [s[0], 4, "add re"]
 assert_eq of [s[1], 2, "add im"]
 
@@ -164,7 +164,7 @@ assert_eq of [len of rr, 2, "poly_roots returns n roots"]
 sum is [0, 0]
 prod is [1, 0]
 for k in range of (len of rr):
-    sum is complex.add of [sum, rr[k]]
+    sum is complex.complex_add of [sum, rr[k]]
     prod is complex.mul of [prod, rr[k]]
 assert_near of [sum[0], -3, 1e-9, "Vieta: sum of roots = -c1"]
 assert_near of [prod[0], 2, 1e-9, "Vieta: product of roots = (-1)^n cn"]
@@ -179,7 +179,7 @@ for k in range of (len of rr):
 ci is complex.poly_roots of [0, 1]
 assert_near of [complex.mag of ci[0], 1, 1e-9, "z^2+1 root has modulus 1"]
 assert_near of [ci[0][0], 0, 1e-9, "z^2+1 root is purely imaginary"]
-assert_near of [(complex.add of [ci[0], ci[1]])[1], 0, 1e-9, "the two roots are conjugates"]
+assert_near of [(complex.complex_add of [ci[0], ci[1]])[1], 0, 1e-9, "the two roots are conjugates"]
 
 # A REPEATED root: (z-1)^2 = z^2 - 2z + 1. The Durand-Kerner denominator
 # goes to zero here, and an unguarded division would fling an iterate to
@@ -194,7 +194,7 @@ cub is complex.poly_roots of [-6, 11, -6]
 assert_eq of [len of cub, 3, "cubic returns 3 roots"]
 csum is [0, 0]
 for k in range of 3:
-    csum is complex.add of [csum, cub[k]]
+    csum is complex.complex_add of [csum, cub[k]]
 assert_near of [csum[0], 6, 1e-8, "cubic Vieta: roots sum to 6"]
 
 # THE ITERATION MUST BE DOING THE WORK. With iters = 0 the starting

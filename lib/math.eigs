@@ -5,19 +5,19 @@
 # How to use:
 #   load_file of "lib/math.eigs"
 #
-#   abs of -5                       # 5
+#   math_abs of -5                       # 5
 #   sign of -5                      # -1
 #   max_val of [3, 1, 4, 1, 5]     # 5
 #   min_val of [3, 1, 4, 1, 5]     # 1
 #   clamp of [15, 0, 10]           # 10
 #   lerp of [0, 100, 0.25]         # 25
-#   dot of [[1,2,3], [4,5,6]]      # 32
+#   math_dot of [[1,2,3], [4,5,6]]      # 32
 #   gcd of [12, 18]                 # 6
 #   lcm of [4, 6]                   # 12
 
-# ---- abs: absolute value ----
-# abs of value -> number
-define abs(x) as:
+# ---- math_abs: absolute value ----
+# math_abs of value -> number
+define math_abs(x) as:
     if x < 0:
         return 0 - x
     return x
@@ -67,11 +67,11 @@ define clamp(val, lo, hi) as:
 define lerp(a, b, t) as:
     return a + (b - a) * t
 
-# ---- dot: dot product of two 1D lists ----
-# dot of [list_a, list_b] -> number
+# ---- math_dot: math_dot product of two 1D lists ----
+# math_dot of [list_a, list_b] -> number
 # Iterates over min(len a, len b) to match zip's shorter-wins behavior
 # and avoid out-of-bounds access when the lists have different lengths.
-define dot(a, b) as:
+define math_dot(a, b) as:
     la is len of a
     lb is len of b
     n is la
