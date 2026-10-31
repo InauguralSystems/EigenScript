@@ -58,9 +58,7 @@ define _fmt_increment(digits) as:
         out is "1" + out
     return out
 
-define fmt_num(value, decimals) as:
-    if value < 0:
-        return "-" + (fmt_num of [0 - value, decimals])
+define _fmt_num_exact(value, decimals) as:
     if value == 0:
         result is "0"
         if decimals > 0:
@@ -107,6 +105,32 @@ define fmt_num(value, decimals) as:
         return whole
     fraction is substr of [kept, whole_len, decimals]
     return whole + "." + fraction
+
+define fmt_num(value, decimals) as:
+    if value < 0:
+        return "-" + (fmt_num of [0 - value, decimals])
+
+    # Preserve the original constant-time path for ordinary values.  A scaled
+    # half is the one case where the multiplication can erase the binary
+    # rounding direction (2.675 * 100 becomes exactly 267.5), so resolve that
+    # uncommon boundary with the exact path as well.
+    if value < 10000000000000000:
+        if decimals == 0:
+            return str of (round of value)
+        factor is 1
+        for i in range of decimals:
+            factor is factor * 10
+        scaled is value * factor
+        if (scaled % 1) != 0.5:
+            rounded is round of scaled
+            int_part is floor of (rounded / factor)
+            frac_part is rounded - (int_part * factor)
+            frac_str is str of frac_part
+            loop while (len of frac_str) < decimals:
+                frac_str is "0" + frac_str
+            return (str of int_part) + "." + frac_str
+
+    return _fmt_num_exact of [value, decimals]
 
 # ---- fmt_percent: format as percentage ----
 # fmt_percent of [value, decimals] -> string

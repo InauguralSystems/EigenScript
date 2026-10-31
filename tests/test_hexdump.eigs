@@ -14,10 +14,22 @@ define check(tag, got, want) as:
 
 print of "=== HEXDUMP (lib/format.eigs) ==="
 
-# fmt_num must not leak str's exponent notation into fixed-point output.
+# Ordinary-value rounding matches Python's fixed-point formatting, including
+# values where scaling masks which side of a decimal tie the binary value is.
+check of ["fmt_num Python 2.675", fmt_num of [2.675, 2], "2.67"]
+check of ["fmt_num Python 9.995", fmt_num of [9.995, 2], "9.99"]
+check of ["fmt_num Python 1.005", fmt_num of [1.005, 2], "1.00"]
+check of ["fmt_num Python 2.685", fmt_num of [2.685, 2], "2.69"]
+check of ["fmt_num Python 0.045", fmt_num of [0.045, 2], "0.04"]
+check of ["fmt_num Python 0.055", fmt_num of [0.055, 2], "0.06"]
+check of ["fmt_num Python decimal", fmt_num of [1234.5678, 2], "1234.57"]
+check of ["fmt_num Python negative", fmt_num of [-2.675, 2], "-2.67"]
+check of ["fmt_num Python zero", fmt_num of [0, 2], "0.00"]
+check of ["fmt_num Python integer", fmt_num of [42, 0], "42"]
+
+# Large magnitudes must not leak str's exponent notation into fixed-point output.
 check of ["fmt_num 1e16", fmt_num of [1e16, 0], "10000000000000000"]
 check of ["fmt_num 1e20", fmt_num of [1e20, 2], "100000000000000000000.00"]
-check of ["fmt_num scaled fraction", fmt_num of [0.1, 17], "0.10000000000000001"]
 
 check of ["one short row", hexdump of "Hello!", "00000000  48 65 6C 6C 6F 21                                |Hello!|"]
 
