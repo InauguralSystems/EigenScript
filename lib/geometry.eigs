@@ -34,6 +34,25 @@ define _cross_near_zero(ax, ay, bx, by) as:
     local b_len is sqrt of (bx * bx + by * by)
     return cross <= _EPS * a_len * b_len
 
+# A triangle construction must make the same degeneracy decision at every
+# vertex.  Use the best-conditioned (smallest) pair of its three edge-length
+# products rather than privileging the two edges incident to the first point.
+define _triangle_cross_near_zero(a, b, c) as:
+    local ab is distance2d of [a, b]
+    local bc is distance2d of [b, c]
+    local ca is distance2d of [c, a]
+    local scale is ab * bc
+    local candidate is bc * ca
+    if candidate < scale:
+        scale is candidate
+    candidate is ca * ab
+    if candidate < scale:
+        scale is candidate
+    local cross is (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+    if cross < 0:
+        cross is 0 - cross
+    return cross <= _EPS * scale
+
 define _lengths_near(a, b) as:
     local delta is a - b
     if delta < 0:
@@ -284,21 +303,45 @@ define triangle_centroid(a, b, c) as:
 
 # Center of circumscribed circle
 define triangle_circumcenter(a, b, c) as:
-    # Translate to a before both the degeneracy test and construction.  This
-    # keeps the roundoff bound independent of the coordinate origin.
-    local abx is b[0] - a[0]
-    local aby is b[1] - a[1]
-    local acx is c[0] - a[0]
-    local acy is c[1] - a[1]
+    # Construct from the best-conditioned vertex as well as using its scale
+    # for the guard.  Selecting the smallest incident edge product is
+    # symmetric, so reordering a long, thin triangle cannot change either the
+    # degeneracy decision or which subtraction/division path is used.
+    local ab is distance2d of [a, b]
+    local bc is distance2d of [b, c]
+    local ca is distance2d of [c, a]
+    local p is a
+    local q is b
+    local r is c
+    local scale is ab * ca
+    if ab * bc < scale or (ab * bc == scale and (b[0] < p[0] or (b[0] == p[0] and b[1] < p[1]))):
+        p is b
+        q is c
+        r is a
+        scale is ab * bc
+    if bc * ca < scale or (bc * ca == scale and (c[0] < p[0] or (c[0] == p[0] and c[1] < p[1]))):
+        p is c
+        q is a
+        r is b
+    # Give the remaining two vertices a canonical order as well, so the
+    # arithmetic expression is byte-for-byte the same after any permutation.
+    if q[0] > r[0] or (q[0] == r[0] and q[1] > r[1]):
+        local swap is q
+        q is r
+        r is swap
+    local abx is q[0] - p[0]
+    local aby is q[1] - p[1]
+    local acx is r[0] - p[0]
+    local acy is r[1] - p[1]
     local cross is abx * acy - aby * acx
-    if _cross_near_zero of [abx, aby, acx, acy]:
+    if _triangle_cross_near_zero of [a, b, c]:
         return null
     local d is 2 * cross
     local ab_sq is abx * abx + aby * aby
     local ac_sq is acx * acx + acy * acy
     local ux is (ab_sq * acy - ac_sq * aby) / d
     local uy is (abx * ac_sq - acx * ab_sq) / d
-    return [a[0] + ux, a[1] + uy]
+    return [p[0] + ux, p[1] + uy]
 
 # Center of inscribed circle
 define triangle_incenter(a, b, c) as:
@@ -352,7 +395,7 @@ define triangle_circumradius(a, b, c) as:
     side_b is distance2d of [a, c]
     side_c is distance2d of [a, b]
     area is triangle_area of [a, b, c]
-    if _cross_near_zero of [b[0] - a[0], b[1] - a[1], c[0] - a[0], c[1] - a[1]]:
+    if _triangle_cross_near_zero of [a, b, c]:
         return 0
     return (side_a * side_b * side_c) / (4 * area)
 
@@ -376,9 +419,15 @@ define triangle_inradius(a, b, c) as:
 define polygon_area(vertices) as:
     n is len of vertices
     area is 0
+    local origin_x is vertices[0][0]
+    local origin_y is vertices[0][1]
     j is n - 1
     for i in range of n:
-        area is area + (vertices[j][0] * vertices[i][1]) - (vertices[i][0] * vertices[j][1])
+        local jx is vertices[j][0] - origin_x
+        local jy is vertices[j][1] - origin_y
+        local ix is vertices[i][0] - origin_x
+        local iy is vertices[i][1] - origin_y
+        area is area + jx * iy - ix * jy
         j is i
     return area / 2
 
@@ -387,6 +436,8 @@ define polygon_centroid(vertices) as:
     n is len of vertices
     cx is 0
     cy is 0
+    local origin_x is vertices[0][0]
+    local origin_y is vertices[0][1]
     a is polygon_area of vertices
     min_x is vertices[0][0]
     max_x is min_x
@@ -415,12 +466,16 @@ define polygon_centroid(vertices) as:
         return [cx / n, cy / n]
     j is n - 1
     for i in range of n:
-        cross is vertices[j][0] * vertices[i][1] - vertices[i][0] * vertices[j][1]
-        cx is cx + (vertices[j][0] + vertices[i][0]) * cross
-        cy is cy + (vertices[j][1] + vertices[i][1]) * cross
+        local jx is vertices[j][0] - origin_x
+        local jy is vertices[j][1] - origin_y
+        local ix is vertices[i][0] - origin_x
+        local iy is vertices[i][1] - origin_y
+        cross is jx * iy - ix * jy
+        cx is cx + (jx + ix) * cross
+        cy is cy + (jy + iy) * cross
         j is i
     factor is 1.0 / (6 * a)
-    return [cx * factor, cy * factor]
+    return [origin_x + cx * factor, origin_y + cy * factor]
 
 # Sum of edge lengths
 define polygon_perimeter(vertices) as:

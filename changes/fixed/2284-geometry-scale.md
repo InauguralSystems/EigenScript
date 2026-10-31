@@ -1,1 +1,1 @@
-- Geometry predicates now use exact translated signs, while intersection and center constructions use translated relative divisor guards, preserving results across coordinate scales without conflating boolean and division tolerances (#2284).
+- Geometry predicates now use exact translated signs, while polygon and triangle constructions use translated, order-independent relative guards, preserving results across coordinate scales, coordinate offsets, and vertex permutations (#2284).
