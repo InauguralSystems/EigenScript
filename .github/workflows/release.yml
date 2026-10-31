@@ -48,6 +48,14 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Require commit on main
+        env:
+          RELEASE_EVENT_NAME: ${{ github.event_name }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: sh tools/release_main_guard.sh
+
       # Every release first reviews docs and config since the previous release
       # (docs/release-reviews/README.md). No record, no tag. Read the tag from
       # env, never by inline interpolation into the script.
@@ -71,6 +79,8 @@ jobs:
           esac
           sha=${range#"$previous"..}
           case "$sha" in *[!0-9a-f]*) echo "::error::$rec Range candidate is not a 40-hex SHA"; exit 1 ;; esac
+          candidate=$(git rev-parse --verify 'HEAD^{commit}')
+          [ "$sha" = "$candidate" ] || { echo "::error::$rec Range candidate $sha does not match release commit $candidate"; exit 1; }
           if grep -Eq 'CANDIDATE_SHA|CRITIC_PENDING|REVIEW_PR' "$rec"; then
             echo "::error::$rec contains a release-review placeholder"
             exit 1
