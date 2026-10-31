@@ -5,6 +5,7 @@ set -euo pipefail
 EIGS="${EIGENSCRIPT:-./eigenscript}"
 EIGS=$(realpath "$EIGS")
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+. "$ROOT/tests/lsan_classify.sh" || exit 1
 cd "$ROOT"
 
 pass=0
@@ -38,7 +39,9 @@ print of (args.get_opt of [p, "--output", "default"])
 print of (args.get_positional of p)' --output=a input.csv 2>&1)
 RC=$?
 set -e
-if [ "$RC" -eq 0 ] && str_has_line "$OUT" 'a' && str_has_line "$OUT" '["input.csv"]'; then
+CLASS=0
+lsan_classify "$OUT" || CLASS=$?
+if [ "$RC" -eq 0 ] && [ "$CLASS" -eq 2 ] && str_has_line "$OUT" 'a' && str_has_line "$OUT" '["input.csv"]'; then
   ok "import args: --key=value + positional"
 else
   bad "import args: --key=value + positional" "rc=$RC out=$OUT"
@@ -53,7 +56,9 @@ print of (args.get_flag of [p, "--verbose"])
 print of (args.get_positional of p)' --output b --verbose 2>&1)
 RC=$?
 set -e
-if [ "$RC" -eq 0 ] && str_has_line "$OUT" 'b' && str_has_line "$OUT" 'true' && str_has_line "$OUT" '[]'; then
+CLASS=0
+lsan_classify "$OUT" || CLASS=$?
+if [ "$RC" -eq 0 ] && [ "$CLASS" -eq 2 ] && str_has_line "$OUT" 'b' && str_has_line "$OUT" 'true' && str_has_line "$OUT" '[]'; then
   ok "import args: --key value + boolean flag"
 else
   bad "import args: --key value + boolean flag" "rc=$RC out=$OUT"
@@ -66,7 +71,9 @@ p is args.parse_args of null
 print of (args.get_positional of p)' 2>&1)
 RC=$?
 set -e
-if [ "$RC" -eq 0 ] && str_has_line "$OUT" '[]'; then
+CLASS=0
+lsan_classify "$OUT" || CLASS=$?
+if [ "$RC" -eq 0 ] && [ "$CLASS" -eq 2 ] && str_has_line "$OUT" '[]'; then
   ok "import args: empty arguments"
 else
   bad "import args: empty arguments" "rc=$RC out=$OUT"
@@ -80,7 +87,9 @@ print of (get_opt of [p, "--output", "default"])
 print of (get_positional of p)' --output=a input.csv 2>&1)
 RC=$?
 set -e
-if [ "$RC" -eq 0 ] && str_has_line "$OUT" 'a' && str_has_line "$OUT" '["input.csv"]'; then
+CLASS=0
+lsan_classify "$OUT" || CLASS=$?
+if [ "$RC" -eq 0 ] && [ "$CLASS" -eq 2 ] && str_has_line "$OUT" 'a' && str_has_line "$OUT" '["input.csv"]'; then
   ok "load_file args: --key=value + positional"
 else
   bad "load_file args: --key=value + positional" "rc=$RC out=$OUT"
@@ -92,7 +101,9 @@ OUT=$("$EIGS" -e 'import args
 print of (keys of args)' 2>&1)
 RC=$?
 set -e
-if [ "$RC" -eq 0 ] && ! str_has "$OUT" '_args_cli'; then
+CLASS=0
+lsan_classify "$OUT" || CLASS=$?
+if [ "$RC" -eq 0 ] && [ "$CLASS" -eq 2 ] && ! str_has "$OUT" '_args_cli'; then
   ok "import args: _args_cli stays private"
 else
   bad "import args: _args_cli stays private" "rc=$RC out=$OUT"
@@ -109,7 +120,9 @@ for spelling in spaced equals; do
   OUT=$("$EIGS" "$PROBE" "$@" 2>&1)
   RC=$?
   set -e
-  if [ "$RC" -eq 0 ] && str_has_line "$OUT" 'b' && str_has_line "$OUT" '[["positional", []], ["--out", "b"]]'; then
+  CLASS=0
+  lsan_classify "$OUT" || CLASS=$?
+  if [ "$RC" -eq 0 ] && [ "$CLASS" -eq 2 ] && str_has_line "$OUT" 'b' && str_has_line "$OUT" '[["positional", []], ["--out", "b"]]'; then
     ok "repeated option ($spelling): last value and one entry"
   else
     bad "repeated option ($spelling): last value and one entry" "rc=$RC out=$OUT"
@@ -121,7 +134,9 @@ set +e
 OUT=$("$EIGS" "$PROBE" -- --notaflag file 2>&1)
 RC=$?
 set -e
-if [ "$RC" -eq 0 ] && str_has_line "$OUT" '["--notaflag", "file"]' && str_has_line "$OUT" '[["positional", ["--notaflag", "file"]]]'; then
+CLASS=0
+lsan_classify "$OUT" || CLASS=$?
+if [ "$RC" -eq 0 ] && [ "$CLASS" -eq 2 ] && str_has_line "$OUT" '["--notaflag", "file"]' && str_has_line "$OUT" '[["positional", ["--notaflag", "file"]]]'; then
   ok "double dash: remaining arguments are positional"
 else
   bad "double dash: remaining arguments are positional" "rc=$RC out=$OUT"
@@ -132,7 +147,9 @@ set +e
 OUT=$("$EIGS" "$PROBE" - x 2>&1)
 RC=$?
 set -e
-if [ "$RC" -eq 0 ] && str_has_line "$OUT" '["-", "x"]' && str_has_line "$OUT" '[["positional", ["-", "x"]]]'; then
+CLASS=0
+lsan_classify "$OUT" || CLASS=$?
+if [ "$RC" -eq 0 ] && [ "$CLASS" -eq 2 ] && str_has_line "$OUT" '["-", "x"]' && str_has_line "$OUT" '[["positional", ["-", "x"]]]'; then
   ok "lone dash: positional"
 else
   bad "lone dash: positional" "rc=$RC out=$OUT"
