@@ -1,0 +1,1 @@
+- `utf8_validate` now rejects UTF-8 sequences that encode values above Unicode's `U+10FFFF` ceiling, including `0xF4 0x90..0xBF` and lead bytes `0xF5`–`0xF7`; callers relying on the previous structural acceptance must treat those byte strings as invalid (#2246).

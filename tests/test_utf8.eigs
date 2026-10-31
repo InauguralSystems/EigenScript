@@ -32,6 +32,15 @@ check of ["empty is valid", utf8_validate of "", true]
 check of ["lone lead byte (truncated)", utf8_validate of (substr of ["€", 0, 1]), false]
 check of ["lone continuation byte", utf8_validate of (substr of ["€", 1, 1]), false]
 check of ["truncated 2-of-3", utf8_validate of (substr of ["€", 0, 2]), false]
+check of ["lead 0xF5 above Unicode ceiling", utf8_validate of (str_from_bytes of ([245, 128, 128, 128])), false]
+above_unicode is str_from_bytes of ([244, 144, 128, 128])
+check of ["U+110000 is invalid", utf8_validate of above_unicode, false]
+check of ["U+110000 bytes pass through codepoints", utf8_codepoints of above_unicode, [244, 144, 128, 128]]
+check of ["U+110000 bytes count separately", utf8_len of above_unicode, 4]
+check of ["U+110000 first byte passes through at", utf8_at of [above_unicode, 0], 244]
+check of ["U+110000 first byte passes through char_at", utf8_char_at of [above_unicode, 0], str_from_bytes of ([244])]
+check of ["U+10000 four-byte boundary", utf8_validate of (str_from_bytes of ([240, 144, 128, 128])), true]
+check of ["U+10FFFF ceiling is valid", utf8_validate of (str_from_bytes of ([244, 143, 191, 191])), true]
 
 # encoding — the same published vectors, driven backwards (#435)
 check of ["encode ascii", utf8_encode of 65, "A"]
