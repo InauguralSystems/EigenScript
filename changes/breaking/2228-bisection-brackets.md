@@ -1,0 +1,1 @@
+- `calculus.bisection` now accepts reversed bounds and raises when the endpoints do not bracket a root; callers must provide a sign-changing bracket or an endpoint root (#2228).
