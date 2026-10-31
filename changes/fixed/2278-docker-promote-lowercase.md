@@ -1,0 +1,1 @@
+- `docker.yml`: the rolling-tag promote step lowercases the image reference before `docker buildx imagetools create`; the mixed-case `repository_owner` made every eligible promote fail since #2271, so `:edge` stopped moving and the smoke test was skipped (#2278).
