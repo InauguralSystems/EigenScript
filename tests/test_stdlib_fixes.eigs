@@ -13,6 +13,7 @@ load_file of "lib/text_builder.eigs"
 load_file of "lib/int_vector.eigs"
 load_file of "lib/list.eigs"
 load_file of "lib/map.eigs"
+load_file of "lib/functional.eigs"
 
 # --- math.dot bounds ---
 assert of [(dot of [[1, 2, 3], [4, 5, 6]]) == 32, "SF1 dot normal"]
@@ -297,5 +298,25 @@ assert of [unterminated_header_raised, "SF121 load_ini rejects unterminated sect
 
 trimmed_ini is load_ini of "../tests/fixtures/config/issue_2243_whitespace.ini"
 assert of [trimmed_ini == [["ws.m", "4"]], "SF122 load_ini trims section names"]
+
+# --- functional.compose returns a callable closure (#2250) ---
+composed_abs is compose of [abs, abs]
+assert of [(type of composed_abs) == "fn", "SF123 compose returns a function"]
+assert of [(composed_abs of -3) == 3, "SF124 compose calls f(g(x))"]
+
+# The closure must pass every previously-supported value shape through to its
+# functions without substituting a scalar-only operation.
+composed_identity is compose of [identity, identity]
+compose_list is composed_identity of ([1, 2])
+assert of [compose_list == [1, 2], "SF125 compose accepts a list value"]
+compose_nested is composed_identity of ([[1], [2, 3]])
+assert of [compose_nested == [[1], [2, 3]], "SF126 compose accepts a nested-list value"]
+compose_buffer_input is buffer of 2
+compose_buffer_input[0] is 7
+compose_buffer_input[1] is 8
+compose_buffer_result is composed_identity of compose_buffer_input
+assert of [(type of compose_buffer_result) == "buffer" and compose_buffer_result[0] == 7 and compose_buffer_result[1] == 8, "SF127 compose accepts a buffer value"]
+assert of [(composed_identity of "text") == "text", "SF128 compose accepts a string value"]
+assert of [(composed_identity of null) == null, "SF129 compose accepts null"]
 
 print of "All stdlib-fix tests passed"
