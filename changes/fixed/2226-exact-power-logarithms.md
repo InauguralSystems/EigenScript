@@ -1,0 +1,1 @@
+- `math.log2` and `math.log10` now return exact integer exponents for exact powers of their bases (#2226).
