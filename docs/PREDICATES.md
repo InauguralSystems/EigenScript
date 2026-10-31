@@ -871,7 +871,7 @@ motion:
 ```eigenscript
 x is 100.0
 for i in range of 13:
-    x is x * 0.7          # 100 → ~1: steps contracting toward a limit
+    x is x * 0.7          # contracts toward a limit
 print of (report of x)    # "improving"
 ```
 ```output
@@ -881,7 +881,7 @@ improving
 ```eigenscript
 x is 1.0
 for i in range of 13:
-    x is x * 1.43         # 1 → ~105: non-vanishing same-sign steps
+    x is x * 1.43         # non-vanishing same-sign steps
 print of (report of x)    # "diverging"
 ```
 ```output

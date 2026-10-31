@@ -457,11 +457,13 @@ The `eval` builtin executes a string as EigenScript code and returns the result:
 
 ```eigenscript
 result is eval of "1 + 2"          # 3
+print of result
 eval of "print of 42"              # prints 42
 code is "x is 10\nprint of x"
 eval of code
 ```
 ```output
+3
 42
 10
 ```
@@ -665,7 +667,7 @@ The observer system classifies value trajectories automatically:
 ```eigenscript
 loss is 1.0
 status is report of loss
-state is observe of loss   # [status, entropy, dH, prev_dH]
+state is observe of loss   # ["equilibrium", 1, 0, 0]
 print of state
 ```
 ```output

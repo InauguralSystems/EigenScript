@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Regression plants for issue #2290's widened executable-doc claim gate."""
-import contextlib
 import importlib.util
-import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -39,6 +38,10 @@ def main():
     paired = run_doc("```eigenscript\nprint of 1  # 1\n```\n```output\n1\n```\n")
     check(paired.returncode == 0 and "1 claim(s) examined" in paired.stdout,
           "a real output block checks the claim")
+    lying_pair = run_doc(
+        "```eigenscript\nprint of 1  # 999\n```\n```output\n1\n```\n")
+    check(lying_pair.returncode != 0 and "states a VALUE" in lying_pair.stdout,
+          "a paired output block does not excuse a false comment")
     fake_pair = run_doc("```eigenscript fragment\nx is 1  # 1\n```\n"
                         "```output\n1\n```\n")
     check(fake_pair.returncode != 0 and "states a VALUE" in fake_pair.stdout,
@@ -50,9 +53,24 @@ def main():
     spec = importlib.util.spec_from_file_location("docgate", CHECKER)
     gate = importlib.util.module_from_spec(spec); spec.loader.exec_module(gate)
     probes = ['x # 1', 'x # "improving"', 'x # true', 'x # [1, 2]',
-              'x # {"a": 1}', 'x # null', 'x # gives 2']
+              'x # {"a": 1}', 'x # null', 'x # gives 2',
+              'x # result gives 999', '# settles after 25 steps']
     check(all(gate.VALUE_COMMENT.search(x) for x in probes),
           "matcher retains legacy claims and recognizes bare value forms")
+
+    legacy = re.compile(r"#.*(after|gives|prints|≈|~) *[0-9]")
+    old_count = new_count = 0
+    for relative in gate.POPULATION:
+        for _line, info, _args, text in gate.blocks(os.path.join(ROOT, relative)):
+            if info != "eigenscript":
+                continue
+            for source_line in text.splitlines():
+                old_count += bool(legacy.search(source_line))
+                new_count += bool(gate.VALUE_COMMENT.search(source_line))
+    print("examined counts on pinned docs: old=%d new=%d" %
+          (old_count, new_count))
+    check(new_count >= old_count,
+          "widened matcher examines at least every legacy match on the same docs")
     return 1 if failures else 0
 
 if __name__ == "__main__":

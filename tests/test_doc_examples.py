@@ -339,7 +339,7 @@ POPULATION = {
     "docs/STDLIB.md":            ( 16,   11,     5,      0,     12),
     "docs/SYNTAX.md":            ( 35,   24,    11,      0,     28),
     # #1991: these observer documents are part of the executable doc gate.
-    "docs/PREDICATES.md":        ( 15,    5,     9,      1,      5),
+    "docs/PREDICATES.md":        ( 15,    5,     9,      1,      3),
     "docs/DIAGNOSTICS.md":       (  6,    1,     5,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
     "docs/BUILTINS.md":          (  3,    2,     1,      0,      0),   # #2186: durable atomic-save recipe
@@ -375,12 +375,11 @@ TAG_KINDS = ("", "check", "fragment", "nocheck")
 # enumerate the class, so the gate's population and a hand `grep -nE` cannot
 # disagree about what the class IS.
 VALUE_COMMENT = re.compile(
-    r"#\s*(?:"
-    r"(?:after|gives|prints|≈|~)\s*[0-9]|"
+    r"#(?:.*(?:after|gives|prints|≈|~)\s*[0-9]|\s*(?:"
     r"[-+]?(?:[0-9](?:[0-9.eE+-]*))\b|"
     r"[\"']|\[|\{|"
     r"(?:true|false|null|improving|diverging|stable|equilibrium|"
-    r"oscillating|converged)\b)"
+    r"oscillating|converged)\b))"
 )
 
 # Each site is either rewritten so the paired output carries the value, or
@@ -510,7 +509,31 @@ def undeclared_names(code):
         os.unlink(tmp)
 
 
-def check_value_comments(path, fence_line, text, paired_output=False):
+def stated_value(line):
+    """Return the value asserted at the start of a result comment."""
+    comment = line.split("#", 1)[1].strip()
+    triggered = re.search(r"(?:after|gives|prints|≈|~)\s*([^\s,;:)]+)",
+                          comment)
+    if triggered:
+        return triggered.group(1).strip('"\'')
+    quoted = re.match(r"([\"'])(.*?)\1", comment)
+    if quoted:
+        return quoted.group(2)
+    collection = re.match(r"(\[[^\n]*?\]|\{[^\n]*?\})", comment)
+    if collection:
+        return collection.group(1)
+    statuses = re.match(
+        r"((?:(?:improving|diverging|stable|equilibrium|oscillating|"
+        r"converged)(?:\s+|$))+)", comment)
+    if statuses:
+        return statuses.group(1).strip()
+    bare = re.match(
+        r"([-+]?[0-9][0-9.eE+-]*|true|false|null|improving|diverging|"
+        r"stable|equilibrium|oscillating|converged)\b", comment)
+    return bare.group(1) if bare else None
+
+
+def check_value_comments(path, fence_line, text, paired_output=None):
     """Count value-bearing comments in one executed fence; FAIL the unwaived.
 
     Returns how many were found (waived or not) so the per-file population can
@@ -526,15 +549,14 @@ def check_value_comments(path, fence_line, text, paired_output=False):
         if not VALUE_COMMENT.search(line):
             continue
         found += 1
-        # A real adjacent output block compares the program's stdout.  This
-        # is the only circumstance in which "checked by paired output" is
-        # true; fragments can never take this path.
-        if paired_output:
+        claim = stated_value(line)
+        output_lines = norm(paired_output).splitlines() if paired_output is not None else []
+        if claim is not None and claim in output_lines:
             continue
         key = (base, line)
         if key in VALUE_COMMENT_WAIVERS:
             reason = VALUE_COMMENT_WAIVERS[key]
-            if "paired output" in reason and not paired_output:
+            if "paired output" in reason and paired_output is None:
                 FAIL += 1
                 print("  FAIL: %s:%d waiver claims a paired output block, but "
                       "this example has none: %s"
@@ -769,9 +791,11 @@ def main():
                               % (os.path.basename(path), lineno, payload))
                     continue
                 if kind in ("", "check", "fragment"):
-                    paired_output = (kind in ("", "check") and
-                                     block_index + 1 < len(doc_blocks) and
-                                     doc_blocks[block_index + 1][1] == "output")
+                    paired_output = None
+                    if (kind in ("", "check") and
+                            block_index + 1 < len(doc_blocks) and
+                            doc_blocks[block_index + 1][1] == "output"):
+                        paired_output = doc_blocks[block_index + 1][3]
                     n_valuecomment += check_value_comments(
                         path, lineno, text, paired_output)
                 if kind == "fragment":
