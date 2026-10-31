@@ -209,8 +209,8 @@ total is reduce of [[1,2,3], add_fn, 0]  # 6
 |----------|-----------|-------------|
 | `join` | `join of [list, separator]` | Join elements with separator |
 | `repeat` | `repeat of [string, count]` | Repeat string n times |
-| `pad_left` | `pad_left of [string, width, pad_string]` | Left-pad to width by repeating the pad string and truncating it on the right to fit exactly. An empty pad string returns the input unchanged |
-| `pad_right` | `pad_right of [string, width, pad_string]` | Right-pad to width by repeating the pad string and truncating it on the right to fit exactly. An empty pad string returns the input unchanged |
+| `pad_left` | `pad_left of [string, width, pad_string]` | Left-pad to width by repeating the pad string and truncating it on the right to fit exactly. Fractional widths are floored; widths above the maximum string length raise. An empty pad string returns the input unchanged |
+| `pad_right` | `pad_right of [string, width, pad_string]` | Right-pad to width by repeating the pad string and truncating it on the right to fit exactly. Fractional widths are floored; widths above the maximum string length raise. An empty pad string returns the input unchanged |
 | `capitalize` | `capitalize of string` | Uppercase the first character, leave the rest |
 | `replace_all` | `replace_all of [string, find, replacement]` | Replace every occurrence of `find` |
 

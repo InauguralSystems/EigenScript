@@ -1,1 +1,1 @@
-- Fixed `string.pad_left` and `string.pad_right` to truncate repeated multi-character padding at the requested width (#2241).
+- Fixed `string.pad_left` and `string.pad_right` to truncate repeated multi-character padding at the requested width, floor fractional widths, and reject widths above the maximum string length instead of hanging (#2241).

@@ -30,9 +30,14 @@ define repeat(s, count) as:
 
 # ---- pad_left: left-pad string to width with a repeated pad string ----
 # pad_left of [string, width, pad_string] -> string
+# Width is a character count: fractional widths are floored once at entry.
+# Widths above the runtime's maximum string length raise an error.
 # The repeated pad is truncated on the right to make the result exactly width.
 # An empty pad string returns s unchanged (it can never reach width).
 define pad_left(s, width, ch) as:
+    width is floor of width
+    if width > 2147483647:
+        throw of "pad_left width exceeds the maximum string length"
     if (len of ch) == 0:
         return s
     if (len of s) >= width:
@@ -46,9 +51,14 @@ define pad_left(s, width, ch) as:
 
 # ---- pad_right: right-pad string to width with a repeated pad string ----
 # pad_right of [string, width, pad_string] -> string
+# Width is a character count: fractional widths are floored once at entry.
+# Widths above the runtime's maximum string length raise an error.
 # The repeated pad is truncated on the right to make the result exactly width.
 # An empty pad string returns s unchanged (it can never reach width).
 define pad_right(s, width, ch) as:
+    width is floor of width
+    if width > 2147483647:
+        throw of "pad_right width exceeds the maximum string length"
     if (len of ch) == 0:
         return s
     if (len of s) >= width:
