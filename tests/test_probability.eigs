@@ -13,6 +13,28 @@ assert_eq of [probability.factorial of 1, 1, "1! = 1"]
 assert_eq of [probability.factorial of 5, 120, "5! = 120"]
 assert_eq of [probability.factorial of 10, 3628800, "10! = 3628800"]
 
+# Factorial is defined only for integral inputs; fractions must not be
+# silently rounded down (#2240).
+fractional_factorial_raised is false
+try:
+    probability.factorial of 2.5
+catch _fractional_factorial_error:
+    fractional_factorial_raised is true
+assert_eq of [fractional_factorial_raised, true, "factorial(2.5) raises"]
+fractional_factorial_raised is false
+try:
+    probability.factorial of 3.9
+catch _fractional_factorial_error:
+    fractional_factorial_raised is true
+assert_eq of [fractional_factorial_raised, true, "factorial(3.9) raises"]
+fractional_factorial_raised is false
+try:
+    probability.factorial of (0 - 2.5)
+catch _fractional_factorial_error:
+    fractional_factorial_raised is true
+assert_eq of [fractional_factorial_raised, true, "factorial(-2.5) raises"]
+assert_eq of [probability.factorial of 5, 120, "factorial(5) remains 120 after integral validation"]
+
 assert_eq of [probability.combinations of [10, 3], 120, "C(10,3) = 120"]
 assert_eq of [probability.combinations of [5, 0], 1, "C(5,0) = 1"]
 assert_eq of [probability.combinations of [5, 5], 1, "C(5,5) = 1"]
