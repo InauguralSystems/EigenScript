@@ -85,6 +85,14 @@ assert_eq of [linalg.mat_det of ([[5]]), 5, "det 1x1"]
 C is [[1, 0, 2, -1], [3, 0, 0, 5], [2, 1, 4, -3], [1, 0, 5, 0]]
 assert_near of [linalg.mat_det of C, 30, 0.01, "det 4x4"]
 
+# Small nonzero pivots are not singular merely because their absolute scale is
+# below a fixed cutoff.  The genuinely singular case must still return zero.
+small_diag4 is [[1e-13, 0, 0, 0], [0, 1e-13, 0, 0], [0, 0, 1e-13, 0], [0, 0, 0, 1e-13]]
+assert_near of [linalg.mat_det of small_diag4, 1e-52, 1e-60, "det 4x4 preserves small nonzero pivots"]
+
+singular4 is [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 0]]
+assert_eq of [linalg.mat_det of singular4, 0, "det singular 4x4 is zero"]
+
 # ---- Matrix Inverse ----
 print of "--- Matrix Inverse ---"
 A is [[1, 2], [3, 4]]

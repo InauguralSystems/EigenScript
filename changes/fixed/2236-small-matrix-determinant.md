@@ -1,0 +1,1 @@
+- `linalg.mat_det` now preserves nonzero pivots below `1e-12` instead of reporting small nonsingular matrices as singular (#2236).

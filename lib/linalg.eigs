@@ -156,7 +156,8 @@ define mat_mul(A, B) as:
 # Determinant
 # ============================================================
 
-# mat_det: determinant via cofactor expansion (2x2, 3x3) or LU for general
+# mat_det: determinant via cofactor expansion (2x2, 3x3) or LU for general;
+# the LU path reports singularity only when its pivot column is exactly zero
 define mat_det(A) as:
     n is len of A
     if n == 1:
@@ -185,7 +186,7 @@ define mat_det(A) as:
                 max_val is v
                 max_row is r
             r is r + 1
-        if max_val < 1e-12:
+        if max_val == 0:
             return 0
         if max_row != col:
             # Swap rows
