@@ -70,6 +70,18 @@ if q_small == null:
 else:
     assert_near of [q_small[0], 1e170, 1e156, "div scales a small nonzero divisor"]
 
+# Python's complex division is the oracle for these four representative
+# cases: the two scaling boundaries above, an ordinary result, and a large
+# numerator divided by sub-unit components. The latter catches an attempted
+# Smith rearrangement that divides the numerator by br before the final scale:
+# EigenScript saturates that intermediate and silently halves the answer.
+q_ordinary is complex.div of [[1, 2], [3, 4]]
+assert_near of [q_ordinary[0], 0.44, 1e-15, "div matches Python ordinary re"]
+assert_near of [q_ordinary[1], 0.08, 1e-15, "div matches Python ordinary im"]
+q_large_num is complex.div of [[1e308, 0], [0.5, 0.5]]
+assert_eq of [q_large_num[0], 1e308, "div matches Python large numerator re"]
+assert_eq of [q_large_num[1], 0 - 1e308, "div matches Python large numerator im"]
+
 # -a and conj(a) differ: negation flips BOTH components, conjugation only
 # the imaginary one. Confusing them survives any magnitude-only check.
 n is complex.neg of [3, 4]

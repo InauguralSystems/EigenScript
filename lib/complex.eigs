@@ -66,11 +66,11 @@ define div(a, b) as:
         return null
     if (abs of br) >= (abs of bi):
         local r is bi / br
-        local d is 1 + r * r
-        return [(a[0] / br + (a[1] / br) * r) / d, (a[1] / br - (a[0] / br) * r) / d]
+        local den is br + bi * r
+        return [(a[0] + a[1] * r) / den, (a[1] - a[0] * r) / den]
     local r is br / bi
-    local d is 1 + r * r
-    return [((a[0] / bi) * r + a[1] / bi) / d, ((a[1] / bi) * r - a[0] / bi) / d]
+    local den is br * r + bi
+    return [(a[0] * r + a[1]) / den, (a[1] * r - a[0]) / den]
 
 # neg: -a
 define neg(a) as:
