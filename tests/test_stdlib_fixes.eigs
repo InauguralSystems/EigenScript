@@ -233,4 +233,12 @@ for k in range of [-1000, 1001]:
         log2_exact is log2_exact + 1
 assert of [log2_exact == 2001, "SF110 log2 exact for 2^k, -1000 <= k <= 1000"]
 
+log_buffer is buffer of 2
+log_buffer[0] is 8
+log_buffer[1] is 4
+log_buffer_result is log2 of log_buffer
+assert of [(type of log_buffer_result) == "buffer", "SF111 log2 buffer keeps its container type"]
+assert of [(len of log_buffer_result) == 2, "SF112 log2 buffer keeps its shape"]
+assert of [log_buffer_result[0] == 3 and log_buffer_result[1] == 2, "SF113 log2 buffer exact powers corrected element-wise"]
+
 print of "All stdlib-fix tests passed"
