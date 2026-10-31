@@ -98,4 +98,63 @@ fi
         if values != expected or marker not in result.stdout:
             fail(f"{name}: outputs={values!r}, log={result.stdout!r}")
         print(f"PASS: {name}")
-print(f"PLAN: {len(cases)}")
+
+
+def named_step_run(name):
+    """The run: script of the step whose name is `name` (no id needed)."""
+    start = next((i for i, line in enumerate(lines)
+                  if line.strip() == f"- name: {name}"), None)
+    if start is None:
+        return None
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    end = start + 1
+    while end < len(lines):
+        stripped = lines[end].lstrip()
+        if stripped.startswith("- ") and len(lines[end]) - len(stripped) == indent:
+            break
+        end += 1
+    step = lines[start:end]
+    run_at = next((i for i, line in enumerate(step) if line.strip() == "run: |"), None)
+    if run_at is None:
+        return None
+    body = [line for line in step[run_at + 1:]]
+    pad = min(len(l) - len(l.lstrip()) for l in body if l.strip())
+    return "\n".join(l[pad:] for l in body) + "\n"
+
+
+# #2278: the promote step hands a raw image reference to `docker buildx
+# imagetools create`, which rejects uppercase (repository_owner is
+# "InauguralSystems"). A fake docker enforces that rule like the real one.
+promote = named_step_run("Promote rolling image tag")
+if promote is None:
+    fail("promote-image-case: could not find the 'Promote rolling image tag' run script")
+with tempfile.TemporaryDirectory() as raw_case:
+    case_tmp = pathlib.Path(raw_case)
+    case_bin = case_tmp / "bin"
+    case_bin.mkdir()
+    fake_docker = case_bin / "docker"
+    fake_docker.write_text("""#!/bin/sh
+for arg in "$@"; do
+  case "$arg" in
+    *@sha256:*)
+      repo=${arg%%@*}
+      lower=$(printf '%s' "$repo" | tr '[:upper:]' '[:lower:]')
+      if [ "$repo" != "$lower" ]; then
+        echo "ERROR: invalid reference format: repository name ($repo) must be lowercase" >&2
+        exit 1
+      fi
+      echo "promoted $arg" ;;
+  esac
+done
+""", encoding="utf-8")
+    fake_docker.chmod(0o755)
+    env = dict(os.environ, PATH=f"{case_bin}:{os.environ['PATH']}",
+               DIGEST="sha256:" + "0" * 64,
+               IMAGE="ghcr.io/InauguralSystems/eigenscript",
+               TAGS="ghcr.io/inauguralsystems/eigenscript:edge")
+    result = subprocess.run(["bash", "-c", promote], env=env, text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if result.returncode or "promoted ghcr.io/inauguralsystems/eigenscript@sha256:" not in result.stdout:
+        fail(f"promote-image-case: promote failed for a mixed-case owner:\n{result.stdout}")
+    print("PASS: promote-image-case")
+print(f"PLAN: {len(cases) + 1}")

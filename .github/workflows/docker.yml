@@ -141,6 +141,10 @@ jobs:
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -eu
+          # OCI references must be lowercase; repository_owner is
+          # "InauguralSystems". metadata-action lowercases its own tags, but
+          # this raw source reference is ours to normalize (#2278).
+          IMAGE=$(printf '%s' "$IMAGE" | tr '[:upper:]' '[:lower:]')
           args=
           while IFS= read -r tag; do
             [ -n "$tag" ] && args="$args --tag $tag"
