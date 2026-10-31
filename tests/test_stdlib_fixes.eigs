@@ -5,6 +5,7 @@
 # - text_builder.eigs: shared buffered text assembly
 # - int_vector.eigs: fixed-size integer vectors over buffers
 # - list.eigs take/drop: first-n / rest-of-n list slicing
+# - io.eigs read_lines: no synthetic line after a final newline
 
 load_file of "lib/math.eigs"
 load_file of "lib/test.eigs"
@@ -14,6 +15,7 @@ load_file of "lib/int_vector.eigs"
 load_file of "lib/list.eigs"
 load_file of "lib/map.eigs"
 load_file of "lib/functional.eigs"
+load_file of "lib/io.eigs"
 
 # --- math.dot bounds ---
 assert of [(dot of [[1, 2, 3], [4, 5, 6]]) == 32, "SF1 dot normal"]
@@ -318,5 +320,17 @@ compose_buffer_result is composed_identity of compose_buffer_input
 assert of [(type of compose_buffer_result) == "buffer" and compose_buffer_result[0] == 7 and compose_buffer_result[1] == 8, "SF127 compose accepts a buffer value"]
 assert of [(composed_identity of "text") == "text", "SF128 compose accepts a string value"]
 assert of [(composed_identity of null) == null, "SF129 compose accepts null"]
+
+# --- io.read_lines ---
+io_trailing_path is "/tmp/eigenscript_issue_2248_trailing.txt"
+io_unterminated_path is "/tmp/eigenscript_issue_2248_unterminated.txt"
+io_roundtrip_path is "/tmp/eigenscript_issue_2248_roundtrip.txt"
+write_text of [io_trailing_path, "a\nb\n"]
+write_text of [io_unterminated_path, "a\nb"]
+assert of [(read_lines of io_trailing_path) == ["a", "b"], "SF130 read_lines drops final-newline artifact"]
+assert of [(read_lines of io_unterminated_path) == ["a", "b"], "SF131 read_lines keeps unterminated final line"]
+io_roundtrip_lines is ["first", "second"]
+write_lines of [io_roundtrip_path, io_roundtrip_lines]
+assert of [(read_lines of io_roundtrip_path) == io_roundtrip_lines, "SF132 write_lines/read_lines round trip"]
 
 print of "All stdlib-fix tests passed"
