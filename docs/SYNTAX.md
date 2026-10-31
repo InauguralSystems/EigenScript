@@ -23,7 +23,7 @@ define example as:
     local name is "inner"
     return name
 
-result is example of null   # "inner"
+result is example of null
 name                         # still "outer"
 ```
 
@@ -33,8 +33,8 @@ Numbers are finite by construction. EigenScript does not expose `NaN` or
 `Inf` values to user code:
 
 ```eigenscript fragment
-1 / 1e-320       # 1e+308
-exp of 999999    # 1e+308
+1 / 1e-320
+exp of 999999
 ```
 
 In strict mode, the default, an out-of-domain call or a `NaN` result raises:
@@ -80,7 +80,7 @@ Define functions with named parameters in parentheses:
 define add(a, b) as:
     return a + b
 
-result is add of [3, 4]    # 7
+result is add of [3, 4]
 ```
 
 ```eigenscript
@@ -105,7 +105,7 @@ Functions can also be defined without named parameters. The argument is `n`:
 define square as:
     return n * n
 
-result is square of 5    # 25
+result is square of 5
 ```
 
 For multiple arguments in classic style, pass a list and unpack manually:
@@ -113,7 +113,7 @@ For multiple arguments in classic style, pass a list and unpack manually:
 define add_three as:
     return n[0] + n[1] + n[2]
 
-result is add_three of [10, 20, 30]    # 60
+result is add_three of [10, 20, 30]
 ```
 
 ### No arguments
@@ -375,8 +375,8 @@ config is {"host": "localhost", "port": 8080, "debug": 1}
 
 **Dot access:**
 ```eigenscript fragment config={"host":"localhost","port":8080,"debug":1}
-print of config.host       # "localhost"
-print of config.port       # 8080
+print of config.host
+print of config.port
 ```
 
 Any word can follow the dot, including keywords — `d.loop`, `d.in`,
@@ -387,8 +387,8 @@ reachable by dot as well as by bracket.
 **Bracket access:**
 ```eigenscript fragment config={"host":"localhost","port":8080,"debug":1}
 key is "host"
-print of config["host"]    # "localhost"
-print of config[key]       # "localhost"
+print of config["host"]
+print of config[key]
 ```
 
 **Nested dictionaries:**
@@ -402,12 +402,15 @@ localhost
 
 **Builtins:**
 ```eigenscript fragment config={"host":"localhost","port":8080,"debug":1}
-print of (keys of config)          # ["host", "port", "debug"]
-print of (values of config)        # ["localhost", 8080, 1]
-print of (has_key of [config, "host"])   # 1
+print of (keys of config)
+print of (values of config)
+print of (has_key of [config, "host"])
 dict_set of [config, "timeout", 30]      # mutates config
 dict_remove of [config, "debug"]         # mutates config
 ```
+
+`has_key` returns the boolean `true` here, not the number `1`. Booleans are
+not numbers, so `(has_key of [config, "host"]) == 1` raises a type error.
 
 ## eval
 
@@ -621,9 +624,12 @@ runs deterministically, see [TRACE.md](TRACE.md).
 The observer system classifies value trajectories automatically:
 
 ```eigenscript fragment loss=1.0
-status is report of loss   # "improving"
-state is observe of loss   # [status, entropy, dH, prev_dH]
+status is report of loss
+state is observe of loss
 ```
+
+With the fragment's single initial `loss` assignment, `status` is
+`"equilibrium"`; an `improving` verdict requires a falling trajectory.
 
 Six trajectory states: `improving`, `diverging`, `stable`, `equilibrium`,
 `oscillating`, `converged`.

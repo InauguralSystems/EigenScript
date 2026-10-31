@@ -198,9 +198,9 @@ define is_even as:
 define add_fn as:
     return n[0] + n[1]
 
-doubled is map of [[1,2,3], double]      # [2, 4, 6]
-evens is filter of [[1,2,3,4], is_even]  # [2, 4]
-total is reduce of [[1,2,3], add_fn, 0]  # 6
+doubled is map of [[1,2,3], double]
+evens is filter of [[1,2,3,4], is_even]
+total is reduce of [[1,2,3], add_fn, 0]
 ```
 
 ### lib/string.eigs — String Utilities
@@ -595,7 +595,7 @@ define square as:
 result is chain of [[double, square], 3]   # square(double(3)) = 36
 
 # Apply multiple functions to same value
-results is apply_all of [[double, square], 5]  # [10, 25]
+results is apply_all of [[double, square], 5]
 ```
 
 ### The UI Toolkit — lib/ui*.eigs
@@ -877,7 +877,7 @@ Keyboard goes through the same door: `dispatch of [root, ev]` routes a
 `keydown`/`keyup` event dict to `handle_key of [root, ev]`, the toolkit's
 public key handler that `app_loop` itself calls. It applies hotkeys >
 escape-pops-modal > open combobox > focused text input > focus
-navigation, and returns 1 when the toolkit consumed the key, 0 when it is
+navigation, and returns `true` when the toolkit consumed the key, `false` when it is
 free for the app — so a headless test drives keys exactly like mouse
 instead of reaching for the private handlers.
 
@@ -964,7 +964,7 @@ parsed is parse_args of null
 if get_flag of [parsed, "--verbose"]:
     print of "Verbose mode on"
 outfile is get_opt of [parsed, "--output", "out.txt"]
-files is get_positional of parsed    # ["input.csv"]
+files is get_positional of parsed
 ```
 
 ### lib/config.eigs — Configuration File Loading

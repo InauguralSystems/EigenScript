@@ -834,16 +834,20 @@ deadband. A quantity that is still moving but observed in tiny per-step
 increments has every relative step under `dh_zero` and reads settled —
 while still far from its limit:
 
-```eigenscript fragment
+```eigenscript
 x is 100.0
 for i in range of 20:
-    x is x * 0.999        # genuine motion, but each step is ~0.1%
-report of x               # "converged"  — settled AT THE DEADBAND; x is ~98, not ~0
+    x is x * 0.9995
+print of (report of x)
+```
+```output
+converged
 ```
 
 This is the tolerance semantics, not a defect: `converged` means every
-recent step is below the tolerance, and per-step motion of 0.1% at the
-fixed `dh_zero = 0.001` is exactly the boundary. This tolerance is not a
+recent step is below the tolerance, and per-step motion of 0.05% is strictly below the
+fixed `dh_zero = 0.001`. (A 0.1% step is exactly the boundary and is not
+`converged`.) This tolerance is not a
 runtime setting; read its authoritative value at
 `OBSERVER_DH_ZERO_DEFAULT` in `src/eigenscript.h`.
 
@@ -868,14 +872,14 @@ motion:
 x is 100.0
 for i in range of 13:
     x is x * 0.7          # 100 → ~1: steps contracting toward a limit
-report of x               # "improving"
+report of x
 ```
 
 ```eigenscript fragment
 x is 1.0
 for i in range of 13:
     x is x * 1.43         # 1 → ~105: non-vanishing same-sign steps
-report of x               # "diverging"
+report of x
 ```
 
 The formula and its horizon property are unchanged in the MEASUREMENT

@@ -238,7 +238,7 @@ reading is 5.0
 reading is 2.0
 reading is 5.0
 reading is 2.0
-report of reading             # "oscillating"  (needs a few periods to classify)
+report of reading
 ```
 
 Trajectory states: `converged`, `stable`, `equilibrium`, `oscillating`,
@@ -439,7 +439,7 @@ through an exported setter; use `load_file` only when shared scope is intended
 load_file of "lib/list.eigs"
 define double as:                        # functions take one argument, n
     return n * 2
-doubled is map of [[1, 2, 3], double]    # [2, 4, 6]
+doubled is map of [[1, 2, 3], double]
 ```
 
 File loading is relative to the containing file, then the `eigs_modules` walk,

@@ -331,15 +331,15 @@ def is_asan_build():
 # ---------------------------------------------------------------------------
 POPULATION = {
     # file                       fences paired fragment nocheck value-comments
-    "README.md":                 (  7,    3,     4,      0,      0),
-    "docs/llms.txt":             ( 13,   10,     2,      1,      0),   # #2203: +1 paired (catch-type guard, string throw + runtime error)
-    "docs/SPEC.md":              ( 88,   84,     1,      3,      0),   # #1425: +1 paired (multi-line binary operator error line)
+    "README.md":                 (  7,    3,     4,      0,      1),
+    "docs/llms.txt":             ( 13,   10,     2,      1,      6),   # #2203: +1 paired (catch-type guard, string throw + runtime error)
+    "docs/SPEC.md":              ( 88,   84,     1,      3,      5),   # #1425: +1 paired (multi-line binary operator error line)
     "docs/COMPARISON.md":        ( 19,   18,     1,      0,      0),
     "docs/CONCURRENCY.md":       (  9,    9,     0,      0,      0),   # #1879: +1 paired (thread handle crosses a channel)
-    "docs/STDLIB.md":            ( 16,    8,     8,      0,      0),
-    "docs/SYNTAX.md":            ( 35,   15,    20,      0,      1),
+    "docs/STDLIB.md":            ( 16,    8,     8,      0,      7),
+    "docs/SYNTAX.md":            ( 35,   15,    20,      0,     15),
     # #1991: these observer documents are part of the executable doc gate.
-    "docs/PREDICATES.md":        ( 15,    2,    12,      1,      4),
+    "docs/PREDICATES.md":        ( 15,    3,    11,      1,      3),
     "docs/DIAGNOSTICS.md":       (  6,    1,     5,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
     "docs/BUILTINS.md":          (  3,    2,     1,      0,      0),   # #2186: durable atomic-save recipe
@@ -374,21 +374,19 @@ TAG_KINDS = ("", "check", "fragment", "nocheck")
 # The detector is deliberately the SAME expression the round-2 brief used to
 # enumerate the class, so the gate's population and a hand `grep -nE` cannot
 # disagree about what the class IS.
-VALUE_COMMENT = re.compile(r"#.*(after|gives|prints|≈|~) *[0-9]")
+VALUE_COMMENT = re.compile(
+    r"#\s*(?:"
+    r"(?:after|gives|prints|≈|~)\s*[0-9]|"
+    r"[-+]?(?:[0-9](?:[0-9.eE+-]*))\b|"
+    r"[\"']|\[|\{|"
+    r"(?:true|false|null|improving|diverging|stable|equilibrium|"
+    r"oscillating|converged)\b)"
+)
 
 # Each site is either rewritten so the paired output carries the value, or
 # waived here by its EXACT stripped line with a reason (§125). Keyed by
 # (basename, stripped line).
 VALUE_COMMENT_WAIVERS = {
-    ("SYNTAX.md", 'eval of "print of 42"              # prints 42'):
-        "the paired output block below prints 42; the comment restates a value "
-        "the gate already compares byte-for-byte",
-    ("PREDICATES.md", "x is x * 0.999        # genuine motion, but each step is ~0.1%"):
-        "0.1% is the multiplier 0.999 restated in words, not a measured result",
-    ("PREDICATES.md",
-     'report of x               # "converged"  — settled AT THE DEADBAND; x is ~98, not ~0'):
-        "the teaching point is WHICH verdict, not the exact x; the verdict "
-        "itself is checked by the paired output",
     ("PREDICATES.md", "x is x * 0.7          # 100 → ~1: steps contracting toward a limit"):
         "an order-of-magnitude illustration of the contraction, not a claimed "
         "final value",
@@ -518,7 +516,7 @@ def undeclared_names(code):
         os.unlink(tmp)
 
 
-def check_value_comments(path, fence_line, text):
+def check_value_comments(path, fence_line, text, paired_output=False):
     """Count value-bearing comments in one executed fence; FAIL the unwaived.
 
     Returns how many were found (waived or not) so the per-file population can
@@ -534,8 +532,20 @@ def check_value_comments(path, fence_line, text):
         if not VALUE_COMMENT.search(line):
             continue
         found += 1
+        # A real adjacent output block compares the program's stdout.  This
+        # is the only circumstance in which "checked by paired output" is
+        # true; fragments can never take this path.
+        if paired_output:
+            continue
         key = (base, line)
         if key in VALUE_COMMENT_WAIVERS:
+            reason = VALUE_COMMENT_WAIVERS[key]
+            if "paired output" in reason and not paired_output:
+                FAIL += 1
+                print("  FAIL: %s:%d waiver claims a paired output block, but "
+                      "this example has none: %s"
+                      % (path, fence_line + 1 + k, line))
+                continue
             VALUE_COMMENT_WAIVERS_USED.add(key)
             continue
         FAIL += 1
@@ -696,6 +706,8 @@ def main():
                  EIGS, "present" if os.path.exists(EIGS) else "ABSENT"))
     coverage_failed = False
     population_failed = False
+    total_claims = 0
+    total_fragments = 0
     asan_build = is_asan_build()
 
     for path in args:
@@ -743,7 +755,8 @@ def main():
         pending = None  # (lineno, code) awaiting an output block
         readme_checked = 0
         n_fence = n_paired = n_fragment = n_nocheck = n_valuecomment = 0
-        for lineno, info, arg, text in blocks(path):
+        doc_blocks = list(blocks(path))
+        for block_index, (lineno, info, arg, text) in enumerate(doc_blocks):
             if info == "eigenscript":
                 if pending is not None:
                     report_orphan(path, pending)
@@ -762,7 +775,10 @@ def main():
                               % (os.path.basename(path), lineno, payload))
                     continue
                 if kind in ("", "check", "fragment"):
-                    n_valuecomment += check_value_comments(path, lineno, text)
+                    paired_output = (block_index + 1 < len(doc_blocks) and
+                                     doc_blocks[block_index + 1][1] == "output")
+                    n_valuecomment += check_value_comments(
+                        path, lineno, text, paired_output)
                 if kind == "fragment":
                     n_fragment += 1
                     if listing:
@@ -882,6 +898,8 @@ def main():
                 population_failed = True
                 print("  FAIL: %s is enrolled but examined 0 fences "
                       "(mechanical-gates §121)" % rel)
+        total_claims += n_valuecomment
+        total_fragments += n_fragment
 
     # #946: a fence the parser could not read is COVERAGE LOSS, and the whole
     # point of that issue is that it used to happen in silence. Report every
@@ -930,6 +948,10 @@ def main():
                   "nothing (mechanical-gates §121)"
                   % (applied, len(POPULATION)))
     checked = PASS + FAIL
+    print("Value comments: %d claim(s) examined" % total_claims)
+    if total_claims == 0 and total_fragments:
+        population_failed = True
+        print("  FAIL: examined 0 value comments (mechanical-gates §121)")
     print("Doc examples: %d checked, %d passed, %d failed, %d skipped, "
           "%d unreadable fence(s)" %
           (checked, PASS, FAIL, SKIP, len(UNSEEN_FENCES)))
@@ -1097,7 +1119,7 @@ def selftest():
     # off a neighbouring guard — measured: a mutant that reported the fence
     # but no longer FAILED on it survived exactly that way
     # (mechanical-gates §41).
-    GOOD = ("```eigenscript" + NL + "print of 1" + NL + "```" + NL +
+    GOOD = ("```eigenscript" + NL + "print of 1  # 1" + NL + "```" + NL +
             "```output" + NL + "1" + NL + "```" + NL)
 
     main_case("main() FAILS on an unreadable fence, and says which line",
@@ -1156,9 +1178,8 @@ def selftest():
     # ROUND 2 (Astra, G4): a value stated in a comment beside a green example.
     main_case("a value-bearing comment in an executed example is RED",
               GOOD +
-              "```eigenscript" + NL + "print of 1" + NL +
-              "# converged after 25 steps" + NL + "```" + NL +
-              "```output" + NL + "1" + NL + "```" + NL,
+              "```eigenscript fragment" + NL + "x is 1" + NL +
+              "x  # 2" + NL + "```" + NL,
               1, "states a VALUE in a comment inside an executed example")
     main_case("a fragment binding that is not name=value is RED",
               GOOD +
@@ -1194,7 +1215,7 @@ def selftest():
     # Control: a clean document must still pass through main() unharmed, or a
     # main() that always failed would score full marks on the row above.
     main_case("main() passes a clean document",
-              "```eigenscript" + NL + "print of 1" + NL + "```" + NL +
+              "```eigenscript" + NL + "print of 1  # 1" + NL + "```" + NL +
               "```output" + NL + "1" + NL + "```" + NL,
               0, "1 checked")
 
