@@ -43,24 +43,6 @@ define _lengths_near(a, b) as:
         scale is b
     return delta <= _EPS * scale
 
-# A three-term determinant can retain a small cancellation residue even when
-# its mathematical value is zero.  Bound that residue by the magnitudes of
-# the terms that were actually summed, rather than by an absolute epsilon.
-define _sum3_near_zero(a, b, c) as:
-    local value is a + b + c
-    if value < 0:
-        value is 0 - value
-    local aa is a
-    if aa < 0:
-        aa is 0 - aa
-    local ab is b
-    if ab < 0:
-        ab is 0 - ab
-    local ac is c
-    if ac < 0:
-        ac is 0 - ac
-    return value <= _EPS * (aa + ab + ac)
-
 # ============================================================
 # 2D Point Operations
 # ============================================================
@@ -199,16 +181,15 @@ define segment_length(p1, p2) as:
 # Geometric Predicates
 # ============================================================
 
-# Returns: 1 = counter-clockwise, -1 = clockwise, 0 = collinear within a
-# relative roundoff tolerance.
+# Returns: 1 = counter-clockwise, -1 = clockwise, 0 = exactly collinear.
+# Predicates use translated differences and exact signs.  Tolerances belong
+# only to constructions that must guard a division.
 define orientation(p, q, r) as:
     local pqx is q[0] - p[0]
     local pqy is q[1] - p[1]
     local prx is r[0] - p[0]
     local pry is r[1] - p[1]
     local val is pqx * pry - pqy * prx
-    if _cross_near_zero of [pqx, pqy, prx, pry]:
-        return 0
     if val > 0:
         return 1
     if val < 0:
@@ -303,21 +284,21 @@ define triangle_centroid(a, b, c) as:
 
 # Center of circumscribed circle
 define triangle_circumcenter(a, b, c) as:
-    ax is a[0]
-    ay is a[1]
-    bx is b[0]
-    by is b[1]
-    cx is c[0]
-    cy is c[1]
-    local det_a is ax * (by - cy)
-    local det_b is bx * (cy - ay)
-    local det_c is cx * (ay - by)
-    d is 2 * (det_a + det_b + det_c)
-    if (_sum3_near_zero of [det_a, det_b, det_c]) or (_cross_near_zero of [bx - ax, by - ay, cx - ax, cy - ay]):
+    # Translate to a before both the degeneracy test and construction.  This
+    # keeps the roundoff bound independent of the coordinate origin.
+    local abx is b[0] - a[0]
+    local aby is b[1] - a[1]
+    local acx is c[0] - a[0]
+    local acy is c[1] - a[1]
+    local cross is abx * acy - aby * acx
+    if _cross_near_zero of [abx, aby, acx, acy]:
         return null
-    ux is ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d
-    uy is ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d
-    return [ux, uy]
+    local d is 2 * cross
+    local ab_sq is abx * abx + aby * aby
+    local ac_sq is acx * acx + acy * acy
+    local ux is (ab_sq * acy - ac_sq * aby) / d
+    local uy is (abx * ac_sq - acx * ab_sq) / d
+    return [a[0] + ux, a[1] + uy]
 
 # Center of inscribed circle
 define triangle_incenter(a, b, c) as:

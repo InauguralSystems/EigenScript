@@ -1,1 +1,1 @@
-- Geometry predicates, intersections, and centers now use relative tolerances, preserving results across coordinate scales while rejecting roundoff-degenerate inputs (#2284).
+- Geometry predicates now use exact translated signs, while intersection and center constructions use translated relative divisor guards, preserving results across coordinate scales without conflating boolean and division tolerances (#2284).
