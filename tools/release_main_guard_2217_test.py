@@ -8,6 +8,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 GUARD = ROOT / "tools/release_main_guard.sh"
+REVIEW_GUARD = ROOT / "tools/release_review_guard.sh"
 failures = 0
 checks = 0
 
@@ -39,6 +40,13 @@ def guard(repo: Path, event: str, ref: str, sha: str, marker: Path | None = None
     return subprocess.run(command, cwd=repo, env=env, text=True, capture_output=True)
 
 
+def review_guard(repo: Path, tag: str):
+    env = os.environ.copy()
+    env["TAG"] = tag
+    return subprocess.run(["sh", str(REVIEW_GUARD)], cwd=repo, env=env,
+                          text=True, capture_output=True)
+
+
 def workflow_checks() -> None:
     release = (ROOT / ".github/workflows/release.yml").read_text()
     docker = (ROOT / ".github/workflows/docker.yml").read_text()
@@ -56,8 +64,14 @@ def workflow_checks() -> None:
               "RELEASE_REF: ${{ github.ref }}" in text and
               "RELEASE_EVENT_NAME: ${{ github.event_name }}" in text,
               f"{name} guard binds expressions through env")
-    check("Range candidate $sha does not match release commit $candidate" in release,
-          "release review Range SHA must match the released commit")
+    check("run: sh tools/release_review_guard.sh" in release,
+          "release workflow runs the review ancestry guard")
+    review = REVIEW_GUARD.read_text()
+    check("git merge-base --is-ancestor \"$reviewed\" \"$release\"" in review,
+          "release review Range candidate must precede the release commit")
+    check(all(path in review for path in ("docs/release-reviews/**", "VERSION",
+                                          "CHANGELOG.md")),
+          "post-review allowlist is limited to documented release bookkeeping")
 
 
 def main() -> int:
@@ -80,7 +94,26 @@ def main() -> int:
         git(work, "remote", "add", "origin", str(remote))
         git(work, "push", "-q", "-u", "origin", "main")
 
-        clean = guard(work, "workflow_dispatch", "refs/heads/main", main_sha)
+        # Plant an older on-main tag, then advance main.  Actions checks out the
+        # tip at depth one before an idempotent dispatch resolves that old tag.
+        git(work, "tag", "-a", "v9.9.7", "-m", "older on-main tag", main_sha)
+        git(work, "push", "-q", "origin", "refs/tags/v9.9.7")
+        (work / "tip").write_text("newer main tip\n")
+        git(work, "add", "tip")
+        git(work, "commit", "-qm", "advance main")
+        tip_sha = git(work, "rev-parse", "HEAD")
+        git(work, "push", "-q", "origin", "main")
+        shallow = root / "shallow"
+        subprocess.run(["git", "clone", "-q", "--depth=1", "--branch", "main",
+                        remote.as_uri(), str(shallow)], check=True)
+        check((shallow / ".git/shallow").is_file(),
+              "existing-tag plant really uses a depth-one main checkout")
+        old_on_main = guard(shallow, "workflow_dispatch", "refs/heads/main",
+                            tip_sha, tag="v9.9.7")
+        check(old_on_main.returncode == 0,
+              "depth-one dispatch accepts an older existing on-main tag")
+
+        clean = guard(work, "workflow_dispatch", "refs/heads/main", tip_sha)
         check(clean.returncode == 0,
               "clean control accepts main tip with exit 0")
 
@@ -107,6 +140,48 @@ def main() -> int:
         dispatched = guard(work, "workflow_dispatch", "refs/heads/plant", main_sha)
         check(dispatched.returncode == 1 and "::error::" in dispatched.stderr,
               "dispatch from a non-main ref exits 1 with ::error")
+
+        # A review describes the candidate before its own record is committed.
+        # Only the release procedure's documented bookkeeping may follow it.
+        review_remote = root / "review-remote.git"
+        review_work = root / "review-work"
+        subprocess.run(["git", "init", "--bare", "-q", str(review_remote)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(review_work)], check=True)
+        git(review_work, "config", "user.email", "review@example.invalid")
+        git(review_work, "config", "user.name", "Review plant")
+        (review_work / "candidate").write_text("reviewed candidate\n")
+        git(review_work, "add", "candidate")
+        git(review_work, "commit", "-qm", "reviewed candidate")
+        reviewed = git(review_work, "rev-parse", "HEAD")
+        git(review_work, "tag", "-a", "v9.9.9", "-m", "previous release")
+        git(review_work, "remote", "add", "origin", str(review_remote))
+        git(review_work, "push", "-q", "origin", "main", "refs/tags/v9.9.9")
+        record = review_work / "docs/release-reviews/v10.0.0.md"
+        record.parent.mkdir(parents=True)
+        record.write_text(f"Range: v9.9.9..{reviewed}\nVerdict: clean\n")
+        git(review_work, "add", str(record.relative_to(review_work)))
+        git(review_work, "commit", "-qm", "commit release review")
+        review_commit = git(review_work, "rev-parse", "HEAD")
+        recorded = review_guard(review_work, "v10.0.0")
+        check(recorded.returncode == 0,
+              "review record committed after its candidate passes")
+
+        (review_work / "unreviewed-code.c").write_text("unreviewed\n")
+        git(review_work, "add", "unreviewed-code.c")
+        git(review_work, "commit", "-qm", "unreviewed code plant")
+        unreviewed = review_guard(review_work, "v10.0.0")
+        check(unreviewed.returncode == 1 and
+              "unreviewed-code.c" in unreviewed.stderr,
+              "unreviewed code after Range candidate fails by path name")
+
+        git(review_work, "reset", "--hard", review_commit)
+        (review_work / "VERSION").write_text("10.0.0\n")
+        (review_work / "CHANGELOG.md").write_text("# v10.0.0\n")
+        git(review_work, "add", "VERSION", "CHANGELOG.md")
+        git(review_work, "commit", "-qm", "release bookkeeping")
+        bookkeeping = review_guard(review_work, "v10.0.0")
+        check(bookkeeping.returncode == 0,
+              "documented VERSION and CHANGELOG bookkeeping passes")
 
     print(f"PLAN: {checks}")
     return 1 if failures else 0

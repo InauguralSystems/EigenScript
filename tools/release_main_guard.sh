@@ -11,6 +11,14 @@ if [ "$RELEASE_EVENT_NAME" = workflow_dispatch ] && [ "$RELEASE_REF" != refs/hea
     exit 1
 fi
 
+# An existing tag can be older than the depth-one checkout used by Actions.
+# Remove the shallow boundary before asking whether it belongs to main.
+shallow=$(git rev-parse --git-path shallow)
+if [ -f "$shallow" ] && ! git fetch --quiet --unshallow origin; then
+    echo "::error::could not unshallow the release checkout" >&2
+    exit 1
+fi
+
 # Use an explicit destination so the ancestry check never trusts a stale local
 # remote-tracking ref.  ^{commit} also peels an annotated tag push to its commit.
 if ! git fetch --quiet --no-tags origin \
