@@ -14,8 +14,8 @@
 #
 #   days_from_civil of [2026, 7, 4]         # 20638 (days since 1970-01-01)
 #   civil_from_days of 20638                # [2026, 7, 4]
-#   epoch_from_civil of [2026, 7, 4, 5, 30, 2]   # 1783229402
-#   civil_from_epoch of 1783229402          # [2026, 7, 4, 5, 30, 2]
+#   epoch_from_civil of [2026, 7, 4, 5, 30, 2]   # 1783143002
+#   civil_from_epoch of 1783143002          # [2026, 7, 4, 5, 30, 2]
 #   weekday_from_days of 20638              # 6 (0=Sunday .. 6=Saturday)
 #
 # Note: the CLOCK functions (now/today/timestamp/format_date/sleep_ms)
@@ -115,7 +115,7 @@ define timer_elapsed(start_ts) as:
 # 1970-01-01. All arithmetic is exact integer math in doubles.
 
 define _fdiv(a, b) as:
-    return (a - (a % b)) / b
+    return floor of (a / b)
 
 define days_from_civil(y, m, d) as:
     local yy is y
@@ -145,7 +145,8 @@ define civil_from_days(days) as:
     return [y, m, d]
 
 define weekday_from_days(days) as:
-    return (days + 4) % 7
+    local shifted is days + 4
+    return shifted - ((_fdiv of [shifted, 7]) * 7)
 
 define epoch_from_civil(y, m, d, hh, mm, ss) as:
     return ((days_from_civil of [y, m, d]) * 86400) + (hh * 3600) + (mm * 60) + ss

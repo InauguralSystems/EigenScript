@@ -1,0 +1,1 @@
+- Civil-date conversions and weekday calculations now handle dates before the Unix epoch correctly. (#2224).
