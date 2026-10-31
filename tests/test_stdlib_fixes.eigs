@@ -279,4 +279,23 @@ map_values_buffer[2] is 30
 buffer_map is map_from_lists of [map_keys_buffer, map_values_buffer]
 assert of [(map_size of buffer_map) == 2 and (map_get of [buffer_map, 7]) == 30, "SF119 map_from_lists buffer inputs"]
 
+# --- config.load_ini malformed and whitespace-padded section headers (#2243) ---
+load_file of "lib/config.eigs"
+empty_header_raised is 0
+try:
+    load_ini of "../tests/fixtures/config/issue_2243.ini"
+catch empty_header_error:
+    empty_header_raised is contains of [str of empty_header_error, "line 4"]
+assert of [empty_header_raised, "SF120 load_ini rejects empty section header and names line 4"]
+
+unterminated_header_raised is 0
+try:
+    load_ini of "../tests/fixtures/config/issue_2243_unterminated.ini"
+catch unterminated_header_error:
+    unterminated_header_raised is contains of [str of unterminated_header_error, "line 4"]
+assert of [unterminated_header_raised, "SF121 load_ini rejects unterminated section header and names line 4"]
+
+trimmed_ini is load_ini of "../tests/fixtures/config/issue_2243_whitespace.ini"
+assert of [trimmed_ini == [["ws.m", "4"]], "SF122 load_ini trims section names"]
+
 print of "All stdlib-fix tests passed"

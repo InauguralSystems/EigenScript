@@ -969,7 +969,7 @@ files is get_positional of parsed    # ["input.csv"]
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `load_env_file` | `load_env_file of ".env"` | Parse KEY=VALUE file |
-| `load_ini` | `load_ini of "config.ini"` | Parse INI config |
+| `load_ini` | `load_ini of "config.ini"` | Parse INI config; trims section names and raises on empty or unterminated headers |
 | `config_get` | `config_get of [cfg, key, default]` | Get with default |
 | `config_require` | `config_require of [cfg, key]` | Get or exit |
 | `env_or` | `env_or of ["VAR", default]` | Env var with fallback |
