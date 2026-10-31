@@ -1359,10 +1359,10 @@ Complex numbers as two-element `[re, im]` lists — the shape
 | Function | Signature | Notes |
 |---|---|---|
 | `add` / `sub` / `mul` | `mul of [a, b]` | complex arithmetic |
-| `div` | `div of [a, b]` | returns `null` when b is zero (division by zero raises in EigenScript) |
+| `div` | `div of [a, b]` | scaled division; returns `null` only when both parts of b are zero |
 | `neg` / `conj` | `conj of a` | negation flips both components, conjugation only the imaginary one |
 | `scale` | `scale of [a, s]` | multiply by a REAL scalar |
-| `mag` / `mag2` | `mag of a` | modulus, and its square without the `sqrt` |
+| `mag` / `mag2` | `mag of a` | scaled, overflow-safe modulus; and its unscaled square without the `sqrt` |
 | `arg` | `arg of a` | argument in radians, `(-pi, pi]`, via `atan2` |
 | `to_polar` / `from_polar` | `to_polar of a` | `[re, im]` <-> `[modulus, argument]` |
 | `eq_near` | `eq_near of [a, b, tol]` | compares BOTH components — not a modulus test |
