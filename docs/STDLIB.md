@@ -1333,7 +1333,7 @@ Pure-EigenScript matrices (lists of lists) and vectors: transpose/multiply/deter
 | `mat_sub` | `mat_sub of [A, B]` | element-wise subtraction |
 | `mat_scale` | `mat_scale of [A, scalar]` | multiply all elements by scalar |
 | `mat_mul` | `mat_mul of [A, B]` | matrix multiplication (nested loops, not tensor builtin) |
-| `mat_det` | `mat_det of A` | determinant via cofactor expansion (2x2, 3x3) or LU for general |
+| `mat_det` | `mat_det of A` | determinant via cofactor expansion (2x2, 3x3) or LU for general; the LU path treats only an exactly zero pivot column as singular |
 | `mat_inverse` | `mat_inverse of A` | Matrix inverse via Gauss-Jordan elimination |
 | `vec_add` | `vec_add of [a, b]` | element-wise addition |
 | `vec_sub` | `vec_sub of [a, b]` | element-wise subtraction |
