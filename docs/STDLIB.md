@@ -489,7 +489,7 @@ registers into epoch seconds with these and no host clock.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `fmt_num` | `fmt_num of [value, decimals]` | Fixed decimal places |
+| `fmt_num` | `fmt_num of [value, decimals]` | Fixed decimal places, always using plain digits (never exponent notation) |
 | `fmt_percent` | `fmt_percent of [value, decimals]` | Format as percentage |
 | `fmt_bar` | `fmt_bar of [val, max, width]` | Text progress bar |
 | `fmt_padded` | `fmt_padded of [value, width]` | Right-aligned field |

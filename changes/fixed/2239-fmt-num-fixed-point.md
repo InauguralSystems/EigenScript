@@ -1,0 +1,1 @@
+- `fmt_num` now keeps large values and highly scaled fractions in plain fixed-point notation instead of emitting malformed exponent notation (#2239).
