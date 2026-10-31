@@ -1,0 +1,1 @@
+- `json_has` now recognizes in-range list indices in dotted paths, matching `json_get_path` (#2245).
