@@ -3,7 +3,7 @@ name: Docker
 # Publish container images of the EigenScript runtime to GitHub Container
 # Registry. Two triggers:
 #   - push to main → tag `:edge` (rolling pre-release)
-#   - tag v*       → tags `:X.Y.Z`, `:X.Y`, and `:latest`
+#   - tag v*       → immutable `:X.Y.Z` plus eligible rolling release tags
 #
 # Multi-arch: linux/amd64 (JIT) and linux/arm64 (interpreter-only;
 # src/jit.c is __x86_64__-gated). arm64 builds via QEMU emulation, so
@@ -61,8 +61,9 @@ jobs:
           provenance: true
           sbom: true
 
-      # Decide only after the slow multi-arch build. An older run must never
-      # overwrite either rolling tag after a newer push or release finishes.
+      # Decide only after the slow multi-arch build. Each release rolling tag
+      # advances independently: X.Y within its minor line, X within its major
+      # line, and latest across all releases.
       - name: Check rolling tag eligibility
         id: rolling-tags
         env:
@@ -70,6 +71,8 @@ jobs:
         run: |
           set -eu
           edge=false
+          minor=false
+          major=false
           latest=false
           case "$GITHUB_REF" in
             refs/heads/main)
@@ -84,18 +87,39 @@ jobs:
               ;;
             refs/tags/v*)
               tag=${GITHUB_REF#refs/tags/}
-              highest=$(git ls-remote --tags --refs origin 'v*' \
-                | sed 's|.*refs/tags/||' | sort -V | tail -1)
+              version=${tag#v}
+              major_version=${version%%.*}
+              remainder=${version#*.}
+              minor_version=${remainder%%.*}
+              releases=$(git ls-remote --tags --refs origin 'v*' \
+                | sed 's|.*refs/tags/||')
+              highest=$(printf '%s\n' "$releases" | sort -V | tail -1)
               [ -n "$highest" ] || { echo "::error::could not read release tags from origin"; exit 1; }
+              highest_minor=$(printf '%s\n' "$releases" \
+                | sed -n "/^v${major_version}\\.${minor_version}\\.[0-9][0-9]*$/p" \
+                | sort -V | tail -1)
+              highest_major=$(printf '%s\n' "$releases" \
+                | sed -n "/^v${major_version}\\.[0-9][0-9]*\\.[0-9][0-9]*$/p" \
+                | sort -V | tail -1)
+              [ "$tag" = "$highest_minor" ] && minor=true
+              [ "$tag" = "$highest_major" ] && major=true
               if [ "$tag" = "$highest" ]; then
                 latest=true
-                echo "highest release $tag: latest enabled"
+              fi
+              enabled=
+              [ "$minor" = false ] || enabled="$enabled $major_version.$minor_version"
+              [ "$major" = false ] || enabled="$enabled $major_version"
+              [ "$latest" = false ] || enabled="$enabled latest"
+              if [ -n "$enabled" ]; then
+                echo "rolling tags enabled:${enabled}"
               else
-                echo "newer release $highest exists: latest omitted"
+                echo "newer releases exist: rolling tags omitted"
               fi
               ;;
           esac
           echo "edge=$edge" >> "$GITHUB_OUTPUT"
+          echo "minor=$minor" >> "$GITHUB_OUTPUT"
+          echo "major=$major" >> "$GITHUB_OUTPUT"
           echo "latest=$latest" >> "$GITHUB_OUTPUT"
 
       - name: Extract rolling image metadata
@@ -105,12 +129,12 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/eigenscript
           tags: |
             type=raw,value=edge,enable=${{ steps.rolling-tags.outputs.edge == 'true' }}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ steps.rolling-tags.outputs.latest == 'true' }}
-            type=semver,pattern={{major}},enable=${{ steps.rolling-tags.outputs.latest == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ steps.rolling-tags.outputs.minor == 'true' }}
+            type=semver,pattern={{major}},enable=${{ steps.rolling-tags.outputs.major == 'true' }}
             type=raw,value=latest,enable=${{ steps.rolling-tags.outputs.latest == 'true' }}
 
       - name: Promote rolling image tag
-        if: steps.rolling-tags.outputs.edge == 'true' || steps.rolling-tags.outputs.latest == 'true'
+        if: steps.rolling-tags.outputs.edge == 'true' || steps.rolling-tags.outputs.minor == 'true' || steps.rolling-tags.outputs.major == 'true' || steps.rolling-tags.outputs.latest == 'true'
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           IMAGE: ghcr.io/${{ github.repository_owner }}/eigenscript
