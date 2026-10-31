@@ -32,7 +32,8 @@ define _u8_lead_len(b) as:
         return 2
     if b < 240:
         return 3
-    if b < 248:
+    # RFC 3629 caps Unicode at U+10FFFF, so 0xF4 is the final valid lead.
+    if b < 245:
         return 4
     return 0
 
