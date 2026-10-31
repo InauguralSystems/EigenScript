@@ -1,0 +1,1 @@
+- Geometry intersections and centers now preserve their results across coordinate scales instead of treating small valid figures as degenerate (#2284).

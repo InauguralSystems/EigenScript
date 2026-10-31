@@ -1,0 +1,19 @@
+# Regression coverage for scale-independent geometry degeneracy checks (#2284).
+load_file of "lib/test.eigs"
+load_file of "lib/geometry.eigs"
+
+for scale in [1, 1e-7, 1e+7]:
+    crossing is line_intersection of [[0, 0], [scale, scale], [0, scale], [scale, 0]]
+    assert_true of [crossing != null, "crossing lines are not parallel"]
+    assert_near of [crossing[0], 0.5 * scale, 1e-9 * scale, "intersection x scales"]
+    assert_near of [crossing[1], 0.5 * scale, 1e-9 * scale, "intersection y scales"]
+
+    center is triangle_circumcenter of [[0, 0], [scale, 0], [0, scale]]
+    assert_true of [center != null, "scaled right triangle is nondegenerate"]
+    assert_near of [center[0], 0.5 * scale, 1e-9 * scale, "circumcenter x scales"]
+    assert_near of [center[1], 0.5 * scale, 1e-9 * scale, "circumcenter y scales"]
+
+    radius is triangle_circumradius of [[0, 0], [scale, 0], [0, scale]]
+    assert_near of [radius, 0.7071067811865476 * scale, 1e-9 * scale, "circumradius scales"]
+
+print of "All tests passed."

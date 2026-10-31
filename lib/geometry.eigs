@@ -22,7 +22,6 @@
 # ============================================================
 
 _PI is 3.14159265358979323846
-_EPS is 1e-12
 
 # ============================================================
 # 2D Point Operations
@@ -67,7 +66,7 @@ define vec2_norm(a) as:
 
 define vec2_normalize(a) as:
     n is vec2_norm of a
-    if n < _EPS:
+    if n == 0:
         return a
     return [a[0] / n, a[1] / n]
 
@@ -83,7 +82,7 @@ define vec2_angle(a, b) as:
     d is vec2_dot of [a, b]
     na is vec2_norm of a
     nb is vec2_norm of b
-    if na < _EPS or nb < _EPS:
+    if na == 0 or nb == 0:
         return 0
     cos_theta is d / (na * nb)
     if cos_theta > 1:
@@ -131,7 +130,7 @@ define point_to_line_distance(point, line_p1, line_p2) as:
     if cross < 0:
         cross is 0 - cross
     line_len is sqrt of (dx * dx + dy * dy)
-    if line_len < _EPS:
+    if line_len == 0:
         return distance2d of [point, line_p1]
     return cross / line_len
 
@@ -145,7 +144,7 @@ define closest_point_on_segment(point, seg_p1, seg_p2) as:
     dx is seg_p2[0] - seg_p1[0]
     dy is seg_p2[1] - seg_p1[1]
     len_sq is dx * dx + dy * dy
-    if len_sq < _EPS:
+    if len_sq == 0:
         return [seg_p1[0], seg_p1[1]]
     t is ((point[0] - seg_p1[0]) * dx + (point[1] - seg_p1[1]) * dy) / len_sq
     if t < 0:
@@ -230,7 +229,9 @@ define line_intersection(a1, a2, b1, b2) as:
     x4 is b2[0]
     y4 is b2[1]
     denom is (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
-    if denom < _EPS and denom > (0 - _EPS):
+    # A cross product scales with the square of the input units, so only an
+    # exact zero is a scale-independent parallel-lines test.
+    if denom == 0:
         return null
     t is ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
     px is x1 + t * (x2 - x1)
@@ -265,7 +266,8 @@ define triangle_circumcenter(a, b, c) as:
     cx is c[0]
     cy is c[1]
     d is 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
-    if d < _EPS and d > (0 - _EPS):
+    # d is an area-like determinant; an absolute tolerance is unit-dependent.
+    if d == 0:
         return null
     ux is ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d
     uy is ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d
@@ -277,7 +279,7 @@ define triangle_incenter(a, b, c) as:
     side_b is distance2d of [a, c]
     side_c is distance2d of [a, b]
     perimeter is side_a + side_b + side_c
-    if perimeter < _EPS:
+    if perimeter == 0:
         return null
     ix is (side_a * a[0] + side_b * b[0] + side_c * c[0]) / perimeter
     iy is (side_a * a[1] + side_b * b[1] + side_c * c[1]) / perimeter
@@ -323,7 +325,7 @@ define triangle_circumradius(a, b, c) as:
     side_b is distance2d of [a, c]
     side_c is distance2d of [a, b]
     area is triangle_area of [a, b, c]
-    if area < _EPS:
+    if area == 0:
         return 0
     return (side_a * side_b * side_c) / (4 * area)
 
@@ -334,7 +336,7 @@ define triangle_inradius(a, b, c) as:
     side_c is distance2d of [a, b]
     s is (side_a + side_b + side_c) / 2
     area is triangle_area of [a, b, c]
-    if s < _EPS:
+    if s == 0:
         return 0
     return area / s
 
@@ -359,7 +361,8 @@ define polygon_centroid(vertices) as:
     cx is 0
     cy is 0
     a is polygon_area of vertices
-    if a < _EPS and a > (0 - _EPS):
+    # Polygon area scales quadratically with coordinate units.
+    if a == 0:
         # Degenerate: average vertices
         for i in range of n:
             cx is cx + vertices[i][0]
@@ -545,14 +548,14 @@ define circle_intersection_points(c1x, c1y, c1r, c2x, c2y, c2r) as:
     dx is c2x - c1x
     dy is c2y - c1y
     d is sqrt of (dx * dx + dy * dy)
-    if d < _EPS:
+    if d == 0:
         return []
-    if d > c1r + c2r + _EPS:
+    if d > c1r + c2r:
         return []
     diff is c1r - c2r
     if diff < 0:
         diff is 0 - diff
-    if d + _EPS < diff:
+    if d < diff:
         return []
     a is (c1r * c1r - c2r * c2r + d * d) / (2 * d)
     h_sq is c1r * c1r - a * a
@@ -561,7 +564,7 @@ define circle_intersection_points(c1x, c1y, c1r, c2x, c2y, c2r) as:
     h is sqrt of h_sq
     mx is c1x + a * dx / d
     my is c1y + a * dy / d
-    if h < _EPS:
+    if h == 0:
         return [[mx, my]]
     ox is h * dy / d
     oy is h * dx / d
@@ -619,7 +622,7 @@ define reflect2d(points, line_p1, line_p2) as:
     dx is line_p2[0] - line_p1[0]
     dy is line_p2[1] - line_p1[1]
     len_sq is dx * dx + dy * dy
-    if len_sq < _EPS:
+    if len_sq == 0:
         return points
     result is []
     for i in range of (len of points):
