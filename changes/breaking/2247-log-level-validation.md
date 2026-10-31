@@ -1,0 +1,1 @@
+- `log_level` and `log_msg` now raise for unknown level names instead of treating them as `info`; fix misspelled names, and use `silent` only when intentionally suppressing output (#2247).

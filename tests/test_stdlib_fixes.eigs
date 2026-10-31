@@ -333,4 +333,23 @@ io_roundtrip_lines is ["first", "second"]
 write_lines of [io_roundtrip_path, io_roundtrip_lines]
 assert of [(read_lines of io_roundtrip_path) == io_roundtrip_lines, "SF132 write_lines/read_lines round trip"]
 
+# --- log levels (#2247) ---
+load_file of "lib/log.eigs"
+silent_probe is exec_capture of ["./eigenscript", "../tests/fixtures/log_2247_silent.eigs"]
+assert of [silent_probe[0] == 0 and silent_probe[1] == "", "SF133 log silent threshold suppresses named silent messages"]
+
+unknown_threshold_raised is 0
+try:
+    log_level of "eror"
+catch unknown_threshold_error:
+    unknown_threshold_raised is contains of [str of unknown_threshold_error, "eror"]
+assert of [unknown_threshold_raised, "SF134 log_level rejects and names unknown levels"]
+
+unknown_message_raised is 0
+try:
+    log_msg of ["wrn", "should not print"]
+catch unknown_message_error:
+    unknown_message_raised is contains of [str of unknown_message_error, "wrn"]
+assert of [unknown_message_raised, "SF135 log_msg rejects and names unknown levels"]
+
 print of "All stdlib-fix tests passed"
