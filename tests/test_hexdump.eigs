@@ -14,6 +14,11 @@ define check(tag, got, want) as:
 
 print of "=== HEXDUMP (lib/format.eigs) ==="
 
+# fmt_num must not leak str's exponent notation into fixed-point output.
+check of ["fmt_num 1e16", fmt_num of [1e16, 0], "10000000000000000"]
+check of ["fmt_num 1e20", fmt_num of [1e20, 2], "100000000000000000000.00"]
+check of ["fmt_num scaled fraction", fmt_num of [0.1, 17], "0.10000000000000001"]
+
 check of ["one short row", hexdump of "Hello!", "00000000  48 65 6C 6C 6F 21                                |Hello!|"]
 
 # non-printables become dots

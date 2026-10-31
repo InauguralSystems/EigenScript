@@ -11,23 +11,102 @@
 #   fmt_bar of [6, 10, 10]                  # "[######....] 60.0%"
 #   fmt_padded of [value, width]            # right-aligned in field
 
-# ---- fmt_num: format number to fixed decimal places ----
+# ---- fmt_num: format number to fixed decimal places (never exponent notation) ----
 # fmt_num of [value, decimals] -> string
+define _fmt_uint(value) as:
+    if value == 0:
+        return "0"
+    digits is ""
+    rest is value
+    loop while rest >= 1:
+        digit is rest % 10
+        digits is (str of digit) + digits
+        rest is (rest - digit) / 10
+    return digits
+
+define _fmt_mul_small(digits, multiplier) as:
+    out is ""
+    carry is 0
+    i is (len of digits) - 1
+    loop while i >= 0:
+        product is ((num of (char_at of [digits, i])) * multiplier) + carry
+        digit is product % 10
+        out is (str of digit) + out
+        carry is (product - digit) / 10
+        i is i - 1
+    loop while carry > 0:
+        digit is carry % 10
+        out is (str of digit) + out
+        carry is (carry - digit) / 10
+    return out
+
+define _fmt_increment(digits) as:
+    out is ""
+    carry is 1
+    i is (len of digits) - 1
+    loop while i >= 0:
+        digit is num of (char_at of [digits, i])
+        if carry == 1:
+            digit is digit + 1
+            if digit == 10:
+                digit is 0
+            else:
+                carry is 0
+        out is (str of digit) + out
+        i is i - 1
+    if carry == 1:
+        out is "1" + out
+    return out
+
 define fmt_num(value, decimals) as:
     if value < 0:
         return "-" + (fmt_num of [0 - value, decimals])
+    if value == 0:
+        result is "0"
+        if decimals > 0:
+            result is result + "."
+            for i in range of decimals:
+                result is result + "0"
+        return result
+
+    # Recover the exact binary value as mantissa / 2^shift.  Building its
+    # decimal integer with string arithmetic avoids both str's exponent form
+    # and floating-point loss when value is scaled by a large power of ten.
+    mantissa is value
+    shift is 0
+    min_mantissa is 4503599627370496
+    loop while mantissa < min_mantissa:
+        mantissa is mantissa * 2
+        shift is shift + 1
+    loop while mantissa >= (min_mantissa * 2):
+        mantissa is mantissa / 2
+        shift is shift - 1
+    digits is _fmt_uint of (round of mantissa)
+    if shift >= 0:
+        for i in range of shift:
+            digits is _fmt_mul_small of [digits, 5]
+    if shift < 0:
+        for i in range of (0 - shift):
+            digits is _fmt_mul_small of [digits, 2]
+        shift is 0
+    loop while (len of digits) <= shift:
+        digits is "0" + digits
+
+    whole_len is (len of digits) - shift
+    keep_len is whole_len + decimals
+    loop while (len of digits) <= keep_len:
+        digits is digits + "0"
+    kept is substr of [digits, 0, keep_len]
+    if (num of (char_at of [digits, keep_len])) >= 5:
+        kept is _fmt_increment of kept
+    loop while (len of kept) < (decimals + 1):
+        kept is "0" + kept
+    whole_len is (len of kept) - decimals
+    whole is substr of [kept, 0, whole_len]
     if decimals == 0:
-        return str of (round of value)
-    factor is 1
-    for i in range of decimals:
-        factor is factor * 10
-    rounded is round of (value * factor)
-    int_part is floor of (rounded / factor)
-    frac_part is rounded - (int_part * factor)
-    frac_str is str of frac_part
-    loop while (len of frac_str) < decimals:
-        frac_str is "0" + frac_str
-    return (str of int_part) + "." + frac_str
+        return whole
+    fraction is substr of [kept, whole_len, decimals]
+    return whole + "." + fraction
 
 # ---- fmt_percent: format as percentage ----
 # fmt_percent of [value, decimals] -> string
