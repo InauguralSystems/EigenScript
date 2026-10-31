@@ -14,7 +14,7 @@
 #   get_flag of [parsed, "--verbose"]       # true if present, else false
 #   get_opt of [parsed, "--output", ""]     # value or default
 #   get_positional of parsed                # list of positional args
-#   has_flag of [parsed, "--help"]          # 1 or 0
+#   has_flag of [parsed, "--help"]          # true or false
 
 # Capture the CLI-args builtin before `import args` installs this module's
 # public namespace (which would otherwise shadow the builtin named `args`).
@@ -25,9 +25,16 @@ define parse_args as:
     raw is _args_cli of null
     result is [["positional", []]]
     i is 0
+    options_done is false
     loop while i < (len of raw):
         arg is raw[i]
-        if (starts_with of [arg, "--"]):
+        if options_done:
+            for j in range of (len of result):
+                if result[j][0] == "positional":
+                    append of [result[j][1], arg]
+        elif arg == "--":
+            options_done is true
+        elif (starts_with of [arg, "--"]):
             # Check for --key=value
             eq_pos is index_of of [arg, "="]
             if eq_pos >= 0:
@@ -49,12 +56,18 @@ define parse_args as:
                         append of [result, [arg, "true"]]
                     else:
                         # It's --key value
-                        append of [result, [arg, next]]
+                        found is 0
+                        for j in range of (len of result):
+                            if result[j][0] == arg:
+                                set_at of [result, j, [arg, next]]
+                                found is 1
+                        if found == 0:
+                            append of [result, [arg, next]]
                         i is i + 1
                 else:
                     # Last arg, must be a flag
                     append of [result, [arg, "true"]]
-        elif (starts_with of [arg, "-"]):
+        elif arg != "-" and (starts_with of [arg, "-"]):
             # Short flag: -v, -n etc. Treat as boolean
             append of [result, [arg, "true"]]
         else:
@@ -66,7 +79,7 @@ define parse_args as:
     return result
 
 # ---- get_flag: check if a flag is present ----
-# get_flag of [parsed, "--verbose"] -> 1 or 0
+# get_flag of [parsed, "--verbose"] -> true or false
 define get_flag(parsed, flag) as:
     for i in range of (len of parsed):
         if parsed[i][0] == flag:

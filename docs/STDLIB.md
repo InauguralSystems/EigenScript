@@ -947,7 +947,7 @@ per-file and total tallies.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `parse_args` | `parse_args of null` | Parse CLI args into map |
+| `parse_args` | `parse_args of null` | Parse CLI args into map; repeated options keep the last value, `--` ends option parsing, and `-` is positional |
 | `get_flag` | `get_flag of [parsed, "--flag"]` | `true` if flag present |
 | `get_opt` | `get_opt of [parsed, "--key", default]` | Get option or default |
 | `get_positional` | `get_positional of parsed` | List of positional args |

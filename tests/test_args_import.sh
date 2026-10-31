@@ -17,6 +17,19 @@ bad() { echo "  FAIL: $1 ($2)"; fail=$((fail+1)); }
 str_has() { case "$1" in *"$2"*) return 0 ;; esac; return 1 ; }
 str_has_line() { case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) return 0 ;; esac; return 1 ; }
 
+# Keep the argv regression's program outside the checkout: tests must not
+# create developer-visible files in the source tree.
+TMP=$(mktemp -d "${TMPDIR:-/tmp}/eigs-args-test.XXXXXX")
+trap 'rm -rf "$TMP"' EXIT
+PROBE="$TMP/args_probe.eigs"
+cat > "$PROBE" <<'EOF'
+import args
+p is args.parse_args of null
+print of (args.get_opt of [p, "--out", ""])
+print of (args.get_positional of p)
+print of p
+EOF
+
 # --- import path: positional + --key=value ---
 set +e
 OUT=$("$EIGS" -e 'import args
@@ -83,6 +96,46 @@ if [ "$RC" -eq 0 ] && ! str_has "$OUT" '_args_cli'; then
   ok "import args: _args_cli stays private"
 else
   bad "import args: _args_cli stays private" "rc=$RC out=$OUT"
+fi
+
+# --- #2244: repeated options use last-value-wins for both spellings ---
+for spelling in spaced equals; do
+  if [ "$spelling" = spaced ]; then
+    set -- --out a --out b
+  else
+    set -- --out=a --out=b
+  fi
+  set +e
+  OUT=$("$EIGS" "$PROBE" "$@" 2>&1)
+  RC=$?
+  set -e
+  if [ "$RC" -eq 0 ] && str_has_line "$OUT" 'b' && str_has_line "$OUT" '[["positional", []], ["--out", "b"]]'; then
+    ok "repeated option ($spelling): last value and one entry"
+  else
+    bad "repeated option ($spelling): last value and one entry" "rc=$RC out=$OUT"
+  fi
+done
+
+# --- #2244: -- ends option parsing ---
+set +e
+OUT=$("$EIGS" "$PROBE" -- --notaflag file 2>&1)
+RC=$?
+set -e
+if [ "$RC" -eq 0 ] && str_has_line "$OUT" '["--notaflag", "file"]' && str_has_line "$OUT" '[["positional", ["--notaflag", "file"]]]'; then
+  ok "double dash: remaining arguments are positional"
+else
+  bad "double dash: remaining arguments are positional" "rc=$RC out=$OUT"
+fi
+
+# --- #2244: lone - is positional ---
+set +e
+OUT=$("$EIGS" "$PROBE" - x 2>&1)
+RC=$?
+set -e
+if [ "$RC" -eq 0 ] && str_has_line "$OUT" '["-", "x"]' && str_has_line "$OUT" '[["positional", ["-", "x"]]]'; then
+  ok "lone dash: positional"
+else
+  bad "lone dash: positional" "rc=$RC out=$OUT"
 fi
 
 echo "ARGS_IMPORT_PASS=$pass FAIL=$fail"
