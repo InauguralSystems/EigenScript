@@ -17,7 +17,64 @@ import validate
 
 # ---- Construction ----
 
-# df_from_csv: read CSV file, first row is headers, returns list of dicts.
+# Parse RFC 4180 fields, including doubled quotes and embedded CR/LF.
+define _csv_rows(text) as:
+    local rows is []
+    local row is []
+    local field is ""
+    local quoted is false
+    local in_quotes is false
+    local i is 0
+    local n is len of text
+    loop while i < n:
+        local ch is char_at of [text, i]
+        if in_quotes:
+            if ch == "\"":
+                if ((i + 1) < n) and ((char_at of [text, i + 1]) == "\""):
+                    field is field + "\""
+                    i is i + 1
+                else:
+                    in_quotes is false
+            else:
+                field is field + ch
+        elif (ch == "\"") and ((len of field) == 0):
+            quoted is true
+            in_quotes is true
+        elif ch == ",":
+            local value is field
+            if not quoted:
+                value is trim of value
+            append of [row, value]
+            field is ""
+            quoted is false
+        elif (ch == "\n") or (ch == "\r"):
+            local value is field
+            if not quoted:
+                value is trim of value
+            # Preserve comma-delimited empty fields, but keep the historical
+            # behavior of ignoring a physically blank line.
+            if ((len of row) > 0) or ((len of value) > 0) or quoted:
+                append of [row, value]
+                append of [rows, row]
+            row is []
+            field is ""
+            quoted is false
+            if (ch == "\r") and ((i + 1) < n) and ((char_at of [text, i + 1]) == "\n"):
+                i is i + 1
+        else:
+            field is field + ch
+        i is i + 1
+    if in_quotes:
+        throw of "df_from_csv: unterminated quoted field"
+    if ((len of row) > 0) or ((len of field) > 0) or quoted:
+        local value is field
+        if not quoted:
+            value is trim of value
+        append of [row, value]
+        append of [rows, row]
+    return rows
+
+# df_from_csv: read RFC 4180 CSV, first row is headers, returns list of dicts.
 # A cell converts to a number only when the whole trimmed cell is numeric
 # (validate.is_number: optional '-', digits, at most one '.'); everything
 # else, including "" and numeric-prefix text like "12abc", stays a string.
@@ -27,18 +84,14 @@ define df_from_csv(path) as:
     text is read_text of path
     if text == "":
         return []
-    lines is split of [text, "\n"]
-    if (len of lines) == 0:
+    csv_rows is _csv_rows of text
+    if (len of csv_rows) == 0:
         return []
-    # First line is headers
-    headers is split of [trim of lines[0], ","]
-    for i in range of (len of headers):
-        set_at of [headers, i, trim of headers[i]]
+    headers is csv_rows[0]
     result is []
-    for r in range of ((len of lines) - 1):
-        line is trim of lines[r + 1]
-        if (len of line) > 0:
-            vals is split of [line, ","]
+    for r in range of ((len of csv_rows) - 1):
+        vals is csv_rows[r + 1]
+        if (len of vals) > 0:
             row is {}
             for c in range of (len of headers):
                 val is ""
@@ -119,6 +172,8 @@ define df_tail(df, n) as:
 
 # df_slice: rows from start index, count rows
 define df_slice(df, start, cnt) as:
+    if start < 0:
+        throw of "df_slice: start must be non-negative"
     result is []
     total is len of df
     for i in range of cnt:
@@ -352,7 +407,22 @@ define df_left_join(left, right, on) as:
 
 # ---- Export ----
 
-# df_to_csv: write dataframe to CSV file
+# Quote one RFC 4180 field when it contains a comma, quote, CR, or LF.
+define _csv_field(value) as:
+    local cell is str of value
+    local needs_quotes is (contains of [cell, ","]) or (contains of [cell, "\""]) or (contains of [cell, "\r"]) or (contains of [cell, "\n"])
+    if not needs_quotes:
+        return cell
+    local escaped is ""
+    for i in range of (len of cell):
+        local ch is char_at of [cell, i]
+        if ch == "\"":
+            escaped is escaped + "\"\""
+        else:
+            escaped is escaped + ch
+    return "\"" + escaped + "\""
+
+# df_to_csv: write dataframe as RFC 4180 CSV
 define df_to_csv(df, path) as:
     if (len of df) == 0:
         write_text of [path, ""]
@@ -363,7 +433,7 @@ define df_to_csv(df, path) as:
     for i in range of (len of headers):
         if i > 0:
             line is line + ","
-        line is line + headers[i]
+        line is line + (_csv_field of headers[i])
     text is line
     # Data rows
     for r in range of (len of df):
@@ -371,7 +441,7 @@ define df_to_csv(df, path) as:
         for c in range of (len of headers):
             if c > 0:
                 line is line + ","
-            line is line + (str of df[r][headers[c]])
+            line is line + (_csv_field of df[r][headers[c]])
         text is text + "\n" + line
     write_text of [path, text]
     return null
