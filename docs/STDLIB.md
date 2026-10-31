@@ -1264,14 +1264,14 @@ DataFrame operations on lists of dicts (each dict is a row with the same keys).
 
 | Function | Signature | Description |
 |---|---|---|
-| `df_from_csv` | `df_from_csv of path` | read CSV file, first row is headers, returns list of dicts. A cell becomes a number only when the whole cell is numeric (`validate.is_number`: optional `-`, digits, at most one `.`); text, empty cells and numeric-prefix text like `12abc` stay strings |
+| `df_from_csv` | `df_from_csv of path` | read an RFC 4180 CSV file (including quoted commas, doubled quotes, and embedded CR/LF); first row is headers, returns list of dicts. A cell becomes a number only when the whole cell is numeric (`validate.is_number`: optional `-`, digits, at most one `.`); text, empty cells and numeric-prefix text like `12abc` stay strings |
 | `df_from_rows` | `df_from_rows of [headers, rows]` | headers is list of strings, rows is list of lists |
 | `df_new` | `df_new of _headers` | empty dataframe (returns empty list) |
 | `df_select` | `df_select of [df, columns]` | returns new df with only specified columns |
 | `df_where` | `df_where of [df, pred]` | filter rows where pred(row) is truthy |
 | `df_head` | `df_head of [df, n]` | first n rows |
 | `df_tail` | `df_tail of [df, n]` | last n rows |
-| `df_slice` | `df_slice of [df, start, cnt]` | rows from start index, count rows |
+| `df_slice` | `df_slice of [df, start, cnt]` | rows from non-negative start index, count rows; raises when start is negative |
 | `df_sort_by` | `df_sort_by of [df, column, asc]` | sort by column value. asc=1 ascending, asc=0 descending. |
 | `df_map` | `df_map of [df, column, fn]` | apply fn to each value in column, return new df |
 | `df_add_column` | `df_add_column of [df, name, fn]` | add computed column where fn(row) returns value |
@@ -1286,7 +1286,7 @@ DataFrame operations on lists of dicts (each dict is a row with the same keys).
 | `df_unique` | `df_unique of [df, column]` | unique values in column |
 | `df_join` | `df_join of [left, right, on]` | inner join on column name |
 | `df_left_join` | `df_left_join of [left, right, on]` | left join, keep all left rows |
-| `df_to_csv` | `df_to_csv of [df, path]` | write dataframe to CSV file |
+| `df_to_csv` | `df_to_csv of [df, path]` | write dataframe as RFC 4180 CSV, quoting commas, quotes, CR/LF, and boundary whitespace |
 | `df_to_table` | `df_to_table of df` | format as aligned text table (returns string) |
 | `df_column` | `df_column of [df, name]` | extract single column as flat list |
 | `df_columns` | `df_columns of df` | return list of column names (keys of first row) |

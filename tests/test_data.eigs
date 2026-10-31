@@ -22,7 +22,7 @@ assert_eq of [cols[0], "name", "df_columns first"]
 # df_from_csv (#1247): text, empty cells and numeric-prefix text stay
 # strings; only a wholly numeric cell becomes a number. Assert type AND value.
 csv_path is "/tmp/eigs_test_data_1247.csv"
-write_text of [csv_path, "name,age,note\nAlice,30,\nBob,0,x12\nCarol,-4,12abc\nDan,2.5,7\n"]
+write_text of [csv_path, "name,age,note\nAlice,30,\n\nBob,0,x12\nCarol,-4,12abc\nDan,2.5,7\n"]
 cdf is data.df_from_csv of csv_path
 remove_file of csv_path
 assert_eq of [len of cdf, 4, "df_from_csv row count"]
@@ -43,6 +43,36 @@ assert_eq of [cdf[2]["age"], -4, "df_from_csv negative number"]
 assert_eq of [cdf[3]["age"], 2.5, "df_from_csv decimal number"]
 assert_eq of [type of cdf[3]["note"], "num", "df_from_csv digit-only cell is num"]
 assert_eq of [cdf[3]["note"], 7, "df_from_csv digit-only cell value"]
+
+# #2225: CSV metacharacters are quoted on write and parsed on read.
+csv_roundtrip_path is "/tmp/eigs_test_data_2225.csv"
+csv_roundtrip_rows is [{"comma": "x,y", "quote": "say \"hi\"", "lf": "line1\nline2", "cr": "left\rright", "boundary_lf": "\ntext\n", "spaces": "  pad  ", "v": 1}]
+data.df_to_csv of [csv_roundtrip_rows, csv_roundtrip_path]
+csv_serialized is read_text of csv_roundtrip_path
+csv_roundtrip is data.df_from_csv of csv_roundtrip_path
+remove_file of csv_roundtrip_path
+assert_true of [contains of [csv_serialized, "\"x,y\""], "df_to_csv quotes comma"]
+assert_true of [contains of [csv_serialized, "\"say \"\"hi\"\"\""], "df_to_csv doubles embedded quote"]
+assert_true of [contains of [csv_serialized, "\"line1\nline2\""], "df_to_csv quotes LF"]
+assert_true of [contains of [csv_serialized, "\"left\rright\""], "df_to_csv quotes CR"]
+assert_true of [contains of [csv_serialized, "\"\ntext\n\""], "df_to_csv quotes boundary LF"]
+assert_true of [contains of [csv_serialized, "\"  pad  \""], "df_to_csv quotes boundary spaces"]
+assert_eq of [len of csv_roundtrip, 1, "CSV metacharacter round trip row count"]
+assert_eq of [csv_roundtrip[0]["comma"], "x,y", "CSV comma round trip"]
+assert_eq of [csv_roundtrip[0]["quote"], "say \"hi\"", "CSV quote round trip"]
+assert_eq of [csv_roundtrip[0]["lf"], "line1\nline2", "CSV LF round trip"]
+assert_eq of [csv_roundtrip[0]["cr"], "left\rright", "CSV CR round trip"]
+assert_eq of [csv_roundtrip[0]["boundary_lf"], "\ntext\n", "CSV boundary LF round trip"]
+assert_eq of [csv_roundtrip[0]["spaces"], "  pad  ", "CSV boundary spaces round trip"]
+assert_eq of [csv_roundtrip[0]["v"], 1, "CSV trailing value is not lost"]
+
+# Quoted boundary whitespace is data; historical unquoted trimming remains.
+csv_whitespace_path is "/tmp/eigs_test_data_2225_whitespace.csv"
+write_text of [csv_whitespace_path, "quoted,unquoted\n\"  kept  \",  trimmed  "]
+csv_whitespace is data.df_from_csv of csv_whitespace_path
+remove_file of csv_whitespace_path
+assert_eq of [csv_whitespace[0]["quoted"], "  kept  ", "df_from_csv preserves quoted boundary spaces"]
+assert_eq of [csv_whitespace[0]["unquoted"], "trimmed", "df_from_csv trims unquoted boundary spaces"]
 
 # df_column
 ages is data.df_column of [df, "age"]
@@ -76,6 +106,13 @@ assert_eq of [t[0]["name"], "Bob", "df_tail first"]
 sl is data.df_slice of [df, 1, 2]
 assert_eq of [len of sl, 2, "df_slice length"]
 assert_eq of [sl[0]["name"], "Bob", "df_slice first"]
+
+slice_negative_raised is false
+try:
+    data.df_slice of [df, -1, 2]
+catch slice_error:
+    slice_negative_raised is contains of [str of slice_error, "start must be non-negative"]
+assert_true of [slice_negative_raised, "df_slice rejects a negative start"]
 
 # df_sort_by ascending
 sorted_asc is data.df_sort_by of [df, "age", 1]

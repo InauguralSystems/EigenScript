@@ -1,0 +1,1 @@
+- `data.df_to_csv` now quotes CSV metacharacters for lossless round trips, `df_from_csv` parses quoted fields, and callers must pass a non-negative start to `df_slice` (#2225).
