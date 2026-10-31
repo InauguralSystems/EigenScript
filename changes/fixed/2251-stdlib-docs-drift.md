@@ -1,0 +1,1 @@
+- Correct standard-library documentation for the builtin `sort_by`, contract `ensure` arguments, and boolean results (#2251).

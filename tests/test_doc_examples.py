@@ -700,6 +700,43 @@ def main():
 
     for path in args:
         rel = os.path.relpath(os.path.realpath(path), os.path.realpath(ROOT))
+        if rel == "docs/STDLIB.md":
+            # #2251: prose/API tables are contracts too, even when they are
+            # not executable fences.  Keep the builtin out of sort's module
+            # surface and keep the library examples aligned with bool values
+            # and ensure's two-element argument shape.
+            claims = {
+                "docs/STDLIB.md": [
+                    ("`sort_by` (**builtin**)", "sort_by is identified as a builtin"),
+                    ("`sort_by of [list, key_fn]` is a builtin, not a member "
+                     "of the `sort` module.",
+                     "sort section identifies sort_by as a builtin"),
+                    ("print of (sm_can_send of [sm, \"stop\"]) # true", "state example labels its boolean as true"),
+                ],
+                "lib/contract.eigs": [
+                    ("`ensure of [(abs of x) < LIMIT, \"target is bounded\"]`",
+                     "contract recommends a valid two-element ensure call"),
+                ],
+                "lib/state.eigs": [
+                    ("#   sm_can_send of [sm, \"stop\"]             # true", "state overview labels sm_can_send as true"),
+                    ("# sm_can_send of [sm, event] -> true or false", "sm_can_send signature documents booleans"),
+                    ("# sm_is of [sm, \"running\"] -> true or false", "sm_is signature documents booleans"),
+                ],
+                "lib/list.eigs": [
+                    ("# Empty list -> false.", "any documents false for an empty list"),
+                    ("# Empty list -> true (vacuous truth).", "all documents true for an empty list"),
+                ],
+            }
+            for claim_path, required in claims.items():
+                with open(os.path.join(ROOT, claim_path)) as claim_file:
+                    claim_text = claim_file.read()
+                for needle, label in required:
+                    if needle in claim_text:
+                        PASS += 1
+                        print("  PASS: %s" % label)
+                    else:
+                        FAIL += 1
+                        print("  FAIL: %s (missing in %s)" % (label, claim_path))
         pinned = POPULATION.get(rel) if IN_REAL_TREE else None
         is_readme = (os.path.realpath(path) ==
                      os.path.realpath(os.path.join(ROOT, "README.md")))

@@ -28,7 +28,7 @@ mode is re-inventing what already ships (see "Before you hand-roll" below).
 | derivatives / integrals / root-finding / ODEs | `calculus.derivative`, `integrate_simpson`, `newton_raphson`, `rk4_method` | `lib/calculus.eigs` |
 | minimize a function (gradient descent, annealing, GA) | `optimize.gradient_descent`, `simulated_annealing`, `genetic_optimize` | `lib/optimize.eigs` |
 | iterative linear solvers / power iteration | `numerics.jacobi_solve`, `gauss_seidel_solve`, `power_iteration` | `lib/numerics.eigs` |
-| sort / dedup / sort-by-key / argsort | `sort.sort_asc`, `unique`, `sort_by`, `sorted_indices` | `lib/sort.eigs` |
+| sort / dedup / sort-by-key / argsort | `sort.sort_asc`, `unique`, `sorted_indices`; `sort_by` (**builtin**) | `lib/sort.eigs`; BUILTINS.md |
 | set operations (union, intersect, membership) | `set.set_from`, `union`, `intersect`, `set_has` | `lib/set.eigs` |
 | map / filter / reduce / zip / group_by / frequencies | `list.map`, `filter`, `reduce`, `group_by`, `frequencies` | `lib/list.eigs` |
 | function composition / pipelines / retry | `functional.chain`, `compose`, `complement`, `wait_until` | `lib/functional.eigs` |
@@ -522,11 +522,13 @@ success on the first attempt costs none.
 
 ### lib/sort.eigs — Sorting Utilities
 
+`sort_by of [list, key_fn]` is a builtin, not a member of the `sort` module.
+After `import sort`, call it as `sort_by`, not `sort.sort_by`.
+
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `sort_asc` | `sort_asc of list` | Sort ascending |
 | `sort_desc` | `sort_desc of list` | Sort descending |
-| `sort_by` | `sort_by of [list, key_fn]` | Sort by key function |
 | `sorted_indices` | `sorted_indices of list` | Indices that would sort the list |
 | `is_sorted` | `is_sorted of list` | `true` if ascending order |
 | `unique` | `unique of list` | Sorted, deduplicated list |
@@ -1086,7 +1088,7 @@ sm is sm_add_transition of [sm, "running", "stop", "idle"]
 sm is sm_add_transition of [sm, "running", "error", "failed"]
 sm is sm_send of [sm, "start"]
 print of (sm_state of sm)              # "running"
-print of (sm_can_send of [sm, "stop"]) # 1
+print of (sm_can_send of [sm, "stop"]) # true
 ```
 ```output
 running
