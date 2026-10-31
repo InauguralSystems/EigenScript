@@ -20,9 +20,14 @@ eigs_binary_swap_selftest() (
         fi
     }
     trap 'status=$?; trap - EXIT; restore_binary || status=125; exit "$status"' EXIT
-    trap 'exit 129' HUP
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
+    acknowledge_swap_signal() {
+        if [ -n "${EIGS_SWAP_SENT_FILE:-}" ]; then
+            : > "$EIGS_SWAP_SENT_FILE" || exit 125
+        fi
+    }
+    trap 'acknowledge_swap_signal; exit 129' HUP
+    trap 'acknowledge_swap_signal; exit 130' INT
+    trap 'acknowledge_swap_signal; exit 143' TERM
     record_binary_fingerprint
     # Signal-path controls need an ordering stronger than a sleep: publish the
     # restoration subshell only after its traps and baseline are in place.
@@ -42,9 +47,15 @@ eigs_binary_swap_selftest() (
     mv "$scratch/modified" "$EIGS_BIN" || exit 125
     if [ -n "${EIGS_SWAP_REPLACED_FILE:-}" ]; then
         : > "$EIGS_SWAP_REPLACED_FILE" || exit 125
-        # The controller creates SENT only after kill(2) has accepted the
-        # signal.  Thus reaching the fingerprint check cannot outrun it.
-        while [ ! -e "$EIGS_SWAP_SENT_FILE" ]; do sleep 0.01; done
+        # The signal trap creates SENT, so reaching the fingerprint check
+        # cannot outrun actual shell delivery (kill(2) acceptance is too weak).
+        while [ ! -e "$EIGS_SWAP_SENT_FILE" ]; do
+            # Join on the event producer rather than imposing a wall-clock
+            # deadline: a saturated runner can delay a live producer, while a
+            # dead producer can never publish SENT and must fail immediately.
+            kill -0 "$EIGS_SWAP_SIGNALER_PID" 2>/dev/null || exit 125
+            sleep 0.01
+        done
     fi
     # Replacement is deliberately synchronous: the guard observes the same
     # mid-run change without a sleeping background writer racing restoration.
