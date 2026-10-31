@@ -38,9 +38,10 @@ define _u8_lead_len(b) as:
     return 0
 
 # ---- _u8_decode_at of [s, i]: [codepoint, seq_len] at byte index i ----
-# Lenient: a malformed sequence still advances by the lead-implied length (>=1)
-# so iteration always terminates; masks continuation bytes with 0x3F. Reject
-# with utf8_validate.
+# Lenient: invalid leads and sequences above U+10FFFF pass through one raw byte
+# at a time; other malformed sequences still advance by the lead-implied length
+# (>=1), so iteration always terminates. Reject malformed input with
+# utf8_validate.
 define _u8_decode_at(n) as:
     local s is n[0]
     local i is n[1]
@@ -63,6 +64,8 @@ define _u8_decode_at(n) as:
         local cb is bit_and of [(ord of (char_at of [s, i + k])), 63]
         cp is (bit_shl of [cp, 6]) + cb
         k is k + 1
+    if cp > 1114111:
+        return [b0, 1]
     return [cp, nb]
 
 # ---- utf8_len: number of codepoints ----
@@ -130,6 +133,8 @@ define utf8_validate(s) as:
         if nb == 0:
             return false
         if (i + nb) > slen:
+            return false
+        if (b0 == 244) and ((ord of (char_at of [s, i + 1])) > 143):
             return false
         local k is 1
         loop while k < nb:
