@@ -423,8 +423,11 @@ define polygon_area(vertices) as:
         local jy is vertices[j][1] - origin_y
         local ix is vertices[i][0] - origin_x
         local iy is vertices[i][1] - origin_y
-        # A difference at the numeric cap has lost its value; flag it.
-        if (abs of jx) >= 1e308 or (abs of jy) >= 1e308 or (abs of ix) >= 1e308 or (abs of iy) >= 1e308:
+        # The translated sum is only trustworthy when every subtraction was
+        # exact (round-trips back to the input); otherwise translation itself
+        # erased information (saturation at the cap, or a far vertex). Then
+        # main's raw sum is used (#2297 review).
+        if (ix + origin_x) != vertices[i][0] or (iy + origin_y) != vertices[i][1]:
             translated_saturated is 1
         local translated_left is jx * iy
         local translated_right is ix * jy

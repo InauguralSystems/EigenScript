@@ -318,4 +318,10 @@ assert of [(polygon_area of thin_big) == (_polygon_area_raw of thin_big), "raw f
 cap_tri is [[-1e308, 0], [1e308, 0], [0, 1e-308]]
 assert of [(polygon_area of cap_tri) == (_polygon_area_raw of cap_tri), "saturated translated difference falls back to main's raw area"]
 
+# #2297 review: translation that is not exact (a far vertex) falls back to raw.
+big_l is 100000000000000000
+far_thin is [[big_l, big_l], [big_l + 16, big_l + 16], [big_l + 32, big_l + 32], [1, 0], [0, 0]]
+assert of [(polygon_area of far_thin) == (_polygon_area_raw of far_thin), "inexact translation falls back to main's raw area"]
+assert of [polygon_is_clockwise of far_thin, "far thin polygon keeps main's winding"]
+
 test_summary of null
