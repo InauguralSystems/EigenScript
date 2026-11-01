@@ -39,7 +39,6 @@ e52b3a5c670b2434|(b) prose inside that same FAIL, explaining why a skipped check
 86e12c645c5ad672|(c) sub-check: [119] Part B (the #548 borrow guard) is compiled out on a release build; Part A runs on every build and its PASS/FAIL lines are tallied
 459741ca98fe2fc5|(b) the [44] HTTP-readiness FAIL line, which quotes skipped= in its verdict; two skips are the expected witnesses and any other count is already a FAIL there
 23bf2806c94855bb|(b) a diagnostic inside that FAIL branch, printed only when the section is already red
-2b1cec4b6df93886|(c) sub-check: [70d] relays the child rows verbatim, one of which SKIPs when GNU time -f is absent; the section still asserts its other two checks
 cc548685179a777b|(c) sub-check: the JIT thunk gate on a non-x86_64 host; the JIT section asserts its fast-path checks on every host
 00fd233b835a1ddb|(c) sub-check: the EIGS_JIT_HOT gate on a non-x86_64 host; same section, same reason
 4158c9982233a440|(c) sub-check: the EIGS_JIT_HOT OSR weighting gate on a non-x86_64 host; the JIT section still asserts all portable fast-path checks
@@ -1105,7 +1104,7 @@ selftest() {
     # plant into a "wrong red" for every PR that added preamble lines (hq#58).
     sp_114=$(grep -n '^echo "\[114\] ' "$RUNNER" | head -1 | cut -d: -f1)
     [ -n "$sp_114" ] || { echo "  FAIL: section groups: [114] header not found in $RUNNER"; fail=$((fail + 1)); }
-    expect_red 'section groups: headerless body split from nearest header is refused' "count=211; [114] header @${sp_114:-none} body @$(( ${sp_114:-0} + 1 ))" \
+    expect_red 'section groups: headerless body split from nearest header is refused' "count=212; [114] header @${sp_114:-none} body @$(( ${sp_114:-0} + 1 ))" \
         env SP_SECTION_GROUP_MUTATE=split "$0" --root "$SP_ROOT" --shards 3 --check --quiet
     expect_red 'shard_check: missing chunk makes union != full' 'union != full' \
         env SP_SHARD_MUTATE=drop "$0" --root "$SP_ROOT" --shards 3 --check --quiet

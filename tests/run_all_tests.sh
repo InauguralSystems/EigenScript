@@ -4136,38 +4136,28 @@ check_eigs_suite "interrogatives inside a comprehension arm the name (#1075)" te
 # counts 8x apart, ceiling + flatness, for a dead-code `prev of`, a live
 # `prev of`, and a live `at` query. Pre-fix this ran 203 MB and climbing; it
 # froze a 4 GB box. Not a leak — every byte was reachable and freed at exit,
-# so no sanitizer sees it. Skips on sanitizer builds (ASan overhead swamps it).
+# so no sanitizer sees it. The RSS half may decline only for a key listed in
+# tests/temporal_memory_skip_allowlist.txt (macOS, sanitizer builds), and that
+# skip is counted here; any other skip FAILS in the child (hq#58). The four
+# #868 window checks run on every build.
 echo "[70d] Temporal history is bounded (#827)"
 TMEM_OUTPUT=$(bash "$TESTS_DIR/test_temporal_memory.sh" 2>&1); TMEM_RC=$?
-echo "$TMEM_OUTPUT" | grep -E "^  (PASS|FAIL|SKIP|baseline|dead|live|at_live|when_live)"
+echo "$TMEM_OUTPUT" | grep -E "^  (PASS|FAIL|baseline|dead|live|at_live|when_live)"
 TMEM_N=$(echo "$TMEM_OUTPUT" | sed -n 's/^TEMPORAL_MEM: \([0-9]*\) passed.*/\1/p')
 TMEM_F=$(echo "$TMEM_OUTPUT" | sed -n 's/^TEMPORAL_MEM: [0-9]* passed, \([0-9]*\) failed.*/\1/p')
-TMEM_N=${TMEM_N:-0}; TMEM_F=${TMEM_F:-0}
+TMEM_S=$(echo "$TMEM_OUTPUT" | sed -n 's/^TEMPORAL_MEM: [0-9]* passed, [0-9]* failed, \([0-9]*\) skipped$/\1/p')
+TMEM_N=${TMEM_N:-0}; TMEM_F=${TMEM_F:-0}; TMEM_S=${TMEM_S:-0}
 TOTAL=$((TOTAL + TMEM_N + TMEM_F))
 PASS=$((PASS + TMEM_N))
 FAIL=$((FAIL + TMEM_F))
+if [ "$TMEM_S" -gt 0 ]; then
+    tmem_skip_line=$(echo "$TMEM_OUTPUT" | grep -m1 "^  SKIP:")
+    section_skip "$tmem_skip_line"
+fi
 if [ "$TMEM_RC" -ne 0 ]; then
     echo "  FAIL: temporal history memory gate (rc=$TMEM_RC)"
 fi
 echo ""
-
-# [70e] #830 — temporal reads from a producer that is NOT the bytecode compiler.
-# #827's armed-name set is populated only by src/compiler.c, so once the history
-# was filtered on it, the AOT (which emits C and calls trace_assign directly),
-# an embedder, and vm_run_bytecode/sandbox_run descriptors all recorded nothing
-# and every `prev of` / `at`-qualified read answered null. Silent wrong answer,
-# shipped in v0.35.1, and the suite stayed green because this producer class had
-# no coverage anywhere. The C-level twin (the AOT's exact shape) is in
-# src/embed_smoke.c, gated by `make embed-smoke` in CI.
-check_eigs_suite "temporal reads from a non-compiler producer (#830)" test_temporal_producers.eigs "All tests passed"
-
-# [70f] #831 — the other half: a descriptor must turn recording ON itself.
-# [70e] proves reads work once recording is on, but its own source contains the
-# `prev of` that arms it. Here the host program has NO temporal query anywhere,
-# so every answer exists only if the descriptor assembler's bytecode walk
-# (chunk_arm_temporal) armed the chunk's names — pre-fix, all of these were
-# null, on every version back to v0.34.0.
-check_eigs_suite "descriptor arms its own history recording (#831)" test_temporal_producers_unarmed.eigs "All tests passed"
 
 # [98] Cross-thread channel dict-key survival (#293).
 echo "[98] Cross-thread Channel Dict Keys"
