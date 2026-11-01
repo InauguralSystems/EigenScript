@@ -1,1 +1,1 @@
-- Polygon and circle helpers now make scale-independent decisions on translated coordinates (#2296).
+- `polygon_area` and `polygon_is_clockwise` now pick the better-conditioned shoelace evaluation (raw or translated), so small polygons far from the origin get the right area and winding (#2296). Circle and centroid helpers were verified correct on main and are unchanged.

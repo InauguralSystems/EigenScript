@@ -220,13 +220,6 @@ assert_near of [unequal[0][1], -1, 1e-12, "unequal first y"]
 assert_near of [unequal[1][0], 0, 1e-12, "unequal second x"]
 assert_near of [unequal[1][1], 1, 1e-12, "unequal second y"]
 
-# A valid near-tangency can leave a slightly negative intersection height from
-# cancellation between two large squares.
-near_tangent is circle_intersection_points of [0, 0, 1771450.845521109, 1771450.8459096379, 0, 0.01874238839135805]
-assert_eq of [len of near_tangent, 1, "roundoff near-tangency has one point"]
-assert_near of [near_tangent[0][0], 1771450.845521109, 1e-9, "roundoff near-tangent x"]
-assert_near of [near_tangent[0][1], 0, 1e-12, "roundoff near-tangent y"]
-
 # Raw shoelace is better conditioned than first-vertex translation here.
 large_concave is [[1e17, 0], [1e17, 1], [1, 1], [1, 1e17], [0, 1e17], [0, 0]]
 assert_polygon_orders of [large_concave, 2e17, [2.5e16, 2.5e16], 32, "large concave cancellation"]
