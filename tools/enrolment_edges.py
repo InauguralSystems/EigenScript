@@ -140,7 +140,7 @@ def shell_commands(text: str):
             continue
 
 
-def normalized_command_index(words: list[str]) -> int:
+def normalized_command_index(words: list[str], defined: frozenset[str]) -> int:
     """Return the command position after the suite's recognized wrappers.
 
     The suite has a small set of launch helpers whose leading operands are
@@ -151,11 +151,14 @@ def normalized_command_index(words: list[str]) -> int:
     metadata = {
         "suite_program_run": 1,
         "suite_capture_diagnostic": 1,
-        "run_test": 1,
-        "run_clean": 2,
         "run_bounded": 1,
         "gfx_headless_run": 1,
     }
+    # A helper is a launcher only where it is DEFINED (hq#58): [1a7] called
+    # `run_test`, a name on this table that nothing defines, so the edge was
+    # emitted while bash printed "command not found" and the program never ran.
+    if words[0] in metadata and words[0] not in defined:
+        return 0
     i = 1 + metadata.get(words[0], -1)
     while i < len(words) and re.match(r"^[A-Za-z_]\w*=", words[i]):
         i += 1
@@ -174,8 +177,73 @@ def normalized_command_index(words: list[str]) -> int:
     return i
 
 
+_FUNCTION_DEFINITION = re.compile(
+    r"^[ \t]*(?:function[ \t]+([A-Za-z_][A-Za-z0-9_]*)\b|([A-Za-z_][A-Za-z0-9_]*)[ \t]*\([ \t]*\))", re.M)
+_SOURCING_LINE = re.compile(r"(?:^|[\s;&|{(])(?:\.|source)[ \t]+\S")
+_file_info: dict[Path, tuple[frozenset[str], tuple[Path, ...]]] = {}
+_sourced_by: dict[Path, set[Path]] | None = None
+_scope: dict[Path, frozenset[str]] = {}
+
+
+def _info(path: Path) -> tuple[frozenset[str], tuple[Path, ...]]:
+    """(functions PATH defines, files PATH sources), each file parsed once."""
+    if path not in _file_info:
+        defs: set[str] = set()
+        sourced: list[Path] = []
+        if (ROOT / path).is_file():
+            text = (ROOT / path).read_text(errors="replace")
+            defs.update(a or b for a, b in _FUNCTION_DEFINITION.findall(text))
+            lines = "\n".join(line for line in text.splitlines() if _SOURCING_LINE.search(line))
+            for words in shell_commands(lines):
+                if len(words) > 1 and words[0] in {".", "source"}:
+                    target = executable_path(words[1], path)
+                    if target:
+                        sourced.append(Path(target))
+        # tests/run_all_tests.sh sources every section fragment by glob.
+        if path == Path("tests/run_all_tests.sh"):
+            sourced.extend(p.relative_to(ROOT) for p in sorted((ROOT / "tests/sections").glob("*.sh")))
+        _file_info[path] = (frozenset(defs), tuple(sourced))
+    return _file_info[path]
+
+
+def defined_functions(source: Path) -> frozenset[str]:
+    """Shell functions callable from SOURCE (hq#58).  A sourced file runs in its
+    sourcer's shell, so definitions flow both ways along `.`/`source`: down
+    into everything SOURCE sources, and up into whatever sources SOURCE (a
+    section fragment sees the runner and the runner's helpers)."""
+    global _sourced_by
+    if source in _scope:
+        return _scope[source]
+    if _sourced_by is None:
+        _sourced_by = {}
+        shells = [p for p in sources if p.suffix == ".sh"] + [Path("tests/run_all_tests.sh")]
+        for parent in shells:
+            for child in _info(parent)[1]:
+                _sourced_by.setdefault(child, set()).add(parent)
+    names: set[str] = set()
+    up, seen_up, seen_down = [source], set(), set()
+    while up:
+        top = up.pop()
+        if top in seen_up:
+            continue
+        seen_up.add(top)
+        up.extend(_sourced_by.get(top, ()))
+        down = [top]
+        while down:
+            path = down.pop()
+            if path in seen_down:
+                continue
+            seen_down.add(path)
+            defs, sourced = _info(path)
+            names.update(defs)
+            down.extend(sourced)
+    _scope[source] = frozenset(names)
+    return _scope[source]
+
+
 def shell_edges(source: Path, text: str, src_name: str | None = None) -> None:
     src = src_name or source.as_posix()
+    defined = defined_functions(source)
     # Newlines and shell control operators delimit commands.  This is a
     # conservative command-word parser, not a claim that comments mentioning a
     # script execute it.
@@ -184,7 +252,7 @@ def shell_edges(source: Path, text: str, src_name: str | None = None) -> None:
         # of EigenScript.  Globs and text passed to a differential are not
         # expanded here, deliberately.
         invocation = list(words)
-        command_at = normalized_command_index(invocation)
+        command_at = normalized_command_index(invocation, defined)
         command = invocation[command_at] if command_at < len(invocation) else ""
         if command in {"$EIGS", "${EIGS}"} or command.rstrip("/").endswith("/eigenscript"):
             operands = [word for word in invocation[command_at + 1:] if not word.startswith("-")]
@@ -192,7 +260,7 @@ def shell_edges(source: Path, text: str, src_name: str | None = None) -> None:
                 dst = eigs_program_path(operands[0], source)
                 if dst:
                     emit(src, dst)
-        elif command == "check_eigs_suite":
+        elif command == "check_eigs_suite" and command in defined:
             # The first operand is the human-readable check description.
             for word in invocation[command_at + 2:]:
                 dst = eigs_program_path(word, source)

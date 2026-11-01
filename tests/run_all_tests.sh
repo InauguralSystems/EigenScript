@@ -121,6 +121,9 @@ __EIGS_LOCK_TEST_SEAM=0
 __eigs_section_close() {
     [ -n "$__EIGS_SEC_LABEL" ] || return 0
     local now d section_total section_skipped
+    # Before the outcome rule: a section whose only statement was an undefined
+    # command has an outcome now, and it is FAIL (defined further down, hq#58).
+    __eigs_undefined_commands_tally
     now=$(__eigs_now_us)
     d=$(( now - __EIGS_SEC_T0 ))
     [ "$d" -ge 0 ] || d=0
@@ -412,7 +415,41 @@ export CHILD_LEDGER
 # among them) and can be interrupted; without this the ledger leaks one file
 # per aborted run. The runner has no other trap — `trap ... EXIT` REPLACES
 # rather than accumulates, so if one is ever added it must call this too.
-trap 'rm -f "${CHILD_LEDGER:-}"; suite_diagnostic_cleanup' EXIT
+trap 'rm -f "${CHILD_LEDGER:-}" "${UNDEFINED_COMMAND_LEDGER:-}"; suite_diagnostic_cleanup' EXIT
+# A command that does not exist fails its section (hq#58). In statement
+# position bash only prints "x: command not found", sets $? = 127 and runs the
+# next line, so [1a7]'s `run_test ...` (a helper defined nowhere) skipped its
+# 19 sandbox asserts in every lane while the section printed PASS. bash runs
+# this hook in a subshell, so it cannot bump FAIL; it appends to a per-run file
+# (never inherited: this run's rows only) and __eigs_section_close fails the
+# section that left a row there. Only bare names bash looks up on PATH reach
+# it. A launcher (`timeout`, `env`, `$EIGS_TMO`) execs the name and never asks,
+# and a name with a slash (`./x.sh`, `"$TESTS_DIR/x.sh"`) that does not exist
+# is "No such file or directory", rc 127, with no hook call: both still fail
+# open unless their rc is checked (#2303). The hook needs bash >= 4: on the
+# macOS lane's bash 3.2 it never fires (#2304), and the cross-platform guard
+# is that tools/enrolment_edges.py trusts a launch helper only where it is
+# defined (tests/test_fragment_undefined_helper_hq58.sh).
+UNDEFINED_COMMAND_LEDGER=$(mktemp "${TMPDIR:-/tmp}/eigs_undefined_cmds.XXXXXX") || exit 1
+UNDEFINED_COMMAND_SEEN=0
+command_not_found_handle() {
+    builtin printf '%s\t%s\n' "${__EIGS_SEC_LABEL:-(no section)}" "$1" >> "$UNDEFINED_COMMAND_LEDGER"
+    builtin printf '%s: command not found (in section %s)\n' "$1" "${__EIGS_SEC_LABEL:-(none)}" >&2
+    return 127
+}
+__eigs_undefined_commands_tally() {
+    local rows
+    [ -s "$UNDEFINED_COMMAND_LEDGER" ] || return 0
+    rows=$(wc -l < "$UNDEFINED_COMMAND_LEDGER" | tr -d ' ')
+    [ "$rows" -gt "$UNDEFINED_COMMAND_SEEN" ] || return 0
+    sed -n "$((UNDEFINED_COMMAND_SEEN + 1)),\$p" "$UNDEFINED_COMMAND_LEDGER" |
+        while IFS=$'\t' read -r __uc_section __uc_name; do
+            builtin printf '  FAIL: %s ran a command that does not exist: %s (exit 127; its checks did not run)\n' \
+                "$__uc_section" "$__uc_name"
+        done
+    FAIL=$((FAIL + rows - UNDEFINED_COMMAND_SEEN)); TOTAL=$((TOTAL + rows - UNDEFINED_COMMAND_SEEN))
+    UNDEFINED_COMMAND_SEEN=$rows
+}
 # Children that legitimately emit no PASS:/FAIL: markers, so the vacuity rule
 # must not fire on them. Each is a waiver and states why; an entry that stops
 # being needed is a review event, and tools/child_exit_check.sh pins the list

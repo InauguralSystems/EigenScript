@@ -38,4 +38,4 @@ nested is sandbox_run of ["define f() as:\n    return prev of secret\nreturn 1",
 assert_eq of [nested.ok, false, "a temporal read in an uncalled function is refused too"]
 assert_eq of [nested.error.kind, "sandbox", "nested temporal refusal is sandbox kind"]
 
-print of "sandbox source budgets passed"
+test_summary of null
