@@ -509,28 +509,57 @@ def undeclared_names(code):
         os.unlink(tmp)
 
 
-def stated_value(line):
-    """Return the value asserted at the start of a result comment."""
-    comment = line.split("#", 1)[1].strip()
-    triggered = re.search(r"(?:after|gives|prints|≈|~)\s*([^\s,;:)]+)",
-                          comment)
-    if triggered:
-        return triggered.group(1).strip('"\'')
+def split_code_comment(line):
+    """Split at the first comment marker outside an EigenScript string."""
+    quote = None
+    escaped = False
+    for index, char in enumerate(line):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif char in ('"', "'"):
+            quote = char
+        elif char == "#":
+            return line[:index], line[index + 1:]
+    return line, None
+
+
+def value_comment(line):
+    """Return the real comment when it contains a documented value."""
+    _code, comment = split_code_comment(line)
+    if comment is None:
+        return None
+    marked = "#" + comment
+    return comment if VALUE_COMMENT.search(marked) else None
+
+
+def stated_values(comment):
+    """Return every value asserted by a result comment, leading value first."""
+    comment = comment.strip()
+    values = []
     quoted = re.match(r"([\"'])(.*?)\1", comment)
     if quoted:
-        return quoted.group(2)
+        values.append(quoted.group(2))
     collection = re.match(r"(\[[^\n]*?\]|\{[^\n]*?\})", comment)
-    if collection:
-        return collection.group(1)
+    if collection and not values:
+        values.append(collection.group(1))
     statuses = re.match(
         r"((?:(?:improving|diverging|stable|equilibrium|oscillating|"
         r"converged)(?:\s+|$))+)", comment)
-    if statuses:
-        return statuses.group(1).strip()
+    if statuses and not values:
+        values.append(statuses.group(1).strip())
     bare = re.match(
         r"([-+]?[0-9][0-9.eE+-]*|true|false|null|improving|diverging|"
         r"stable|equilibrium|oscillating|converged)\b", comment)
-    return bare.group(1) if bare else None
+    if bare and not values:
+        values.append(bare.group(1))
+    values.extend(match.group(1).strip('"\'') for match in re.finditer(
+        r"(?:after|gives|prints|≈|~)\s*([^\s,;:)]+)", comment))
+    return values
 
 
 def check_value_comments(path, fence_line, text, paired_output=None,
@@ -547,19 +576,20 @@ def check_value_comments(path, fence_line, text, paired_output=None,
         line = raw.strip()
         if not line or "#" not in line:
             continue
-        if not VALUE_COMMENT.search(line):
+        source, comment = split_code_comment(raw)
+        if comment is None or not VALUE_COMMENT.search("#" + comment):
             continue
         found += 1
         # --list is an inventory operation: count claims, but never run the
         # instrumented program (or require a runtime to exist).
         if not validate:
             continue
-        claim = stated_value(line)
-        if claim is not None and paired_output is not None:
+        claims = stated_values(comment)
+        if claims and paired_output is not None:
             # A claim belongs to the source line carrying it, not to an
             # arbitrary equal-looking line elsewhere in the example output.
             # Instrument that one line and capture only the value it produces.
-            source = raw.split("#", 1)[0].rstrip()
+            source = source.rstrip()
             indent = source[:len(source) - len(source.lstrip())]
             statement = source.strip()
             probe = None
@@ -585,8 +615,9 @@ def check_value_comments(path, fence_line, text, paired_output=None,
                 # must agree with its claim; accepting only the first pair
                 # silently missed iteration-dependent values.
                 produced = [value.splitlines() for value in matches]
-                if rc == 0 and produced and all(value == [claim]
-                                                for value in produced):
+                if rc == 0 and produced and all(
+                        value == [claim]
+                        for value in produced for claim in claims):
                     continue
         key = (base, line)
         if key in VALUE_COMMENT_WAIVERS:

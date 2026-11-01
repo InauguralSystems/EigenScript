@@ -48,6 +48,15 @@ def main():
         "    print of i  # 0\n```\n```output\n0\n1\n2\n```\n")
     check(repeated.returncode != 0 and "states a VALUE" in repeated.stdout,
           "a claim must hold on every execution of its source line")
+    leading = run_doc(
+        "```eigenscript\nprint of 1  # 999 (after 1 step)\n```\n"
+        "```output\n1\n```\n")
+    check(leading.returncode != 0 and "states a VALUE" in leading.stdout,
+          "a leading value is checked in addition to a later trigger value")
+    string_hash = run_doc(
+        '```eigenscript\nprint of "#1"\n```\n```output\n#1\n```\n')
+    check(string_hash.returncode == 0 and "0 claim(s) examined" in string_hash.stdout,
+          "a hash inside a string is not treated as a comment boundary")
     fake_pair = run_doc("```eigenscript fragment\nx is 1  # 1\n```\n"
                         "```output\n1\n```\n")
     check(fake_pair.returncode != 0 and "states a VALUE" in fake_pair.stdout,
@@ -61,7 +70,7 @@ def main():
     probes = ['x # 1', 'x # "improving"', 'x # true', 'x # [1, 2]',
               'x # {"a": 1}', 'x # null', 'x # gives 2',
               'x # result gives 999', '# settles after 25 steps']
-    check(all(gate.VALUE_COMMENT.search(x) for x in probes),
+    check(all(gate.value_comment(x) is not None for x in probes),
           "matcher retains legacy claims and recognizes bare value forms")
 
     legacy = re.compile(r"#.*(after|gives|prints|≈|~) *[0-9]")
@@ -72,7 +81,7 @@ def main():
                 continue
             for source_line in text.splitlines():
                 old_count += bool(legacy.search(source_line))
-                new_count += bool(gate.VALUE_COMMENT.search(source_line))
+                new_count += gate.value_comment(source_line) is not None
     print("examined counts on pinned docs: old=%d new=%d" %
           (old_count, new_count))
     check(new_count >= old_count,
