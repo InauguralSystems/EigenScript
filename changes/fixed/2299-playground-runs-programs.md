@@ -1,0 +1,1 @@
+- The browser playground runs programs again: the WASM build no longer compiles out the C stdio filesystem layer, which made every program abort; CI now runs real programs through the built playground before it can deploy (#2299, hq#58).

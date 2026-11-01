@@ -101,6 +101,11 @@ jobs:
         run: bash web/build.sh
       - name: Require compiler guard activity
         run: bash tools/cc_guard.sh --report
+      # Linking is not running: run real programs through the built runtime and
+      # require their exact output BEFORE the receipt, so a playground that
+      # cannot execute code can't pass or deploy (hq#58 ES-OWF-1).
+      - name: Smoke-run programs in the built playground
+        run: node tools/playground_smoke.cjs web/dist
       # The receipt. Written only when the build step above ran and left its
       # output; the aggregator requires it, so a build step that was skipped or
       # never reached cannot read as a passing build.

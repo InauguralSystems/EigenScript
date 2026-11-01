@@ -41,6 +41,11 @@ VERSION=$(cat VERSION)
 EXPORTED_FUNCTIONS='["_eigs_run_source","_eigs_version","_malloc","_free"]'
 EXPORTED_RUNTIME='["ccall","cwrap","UTF8ToString","stringToUTF8","lengthBytesUTF8"]'
 
+# No -sNO_FILESYSTEM: the runtime writes output through C stdio streams, and
+# with the filesystem compiled out every program aborted ("it should not be
+# possible to operate on streams when !SYSCALLS_REQUIRE_FILESYSTEM"); the
+# deployed v0.48.0 playground could not run print of "hello" (hq#58
+# ES-OWF-1). tools/playground_smoke.cjs now runs real programs in CI.
 emcc $WERROR_FLAGS -O2 \
     -DEIGENSCRIPT_EXT_HTTP=0 \
     \
@@ -54,7 +59,6 @@ emcc $WERROR_FLAGS -O2 \
     -sSTACK_SIZE=4194304 \
     -sEXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS}" \
     -sEXPORTED_RUNTIME_METHODS="${EXPORTED_RUNTIME}" \
-    -sNO_FILESYSTEM=1 \
     -sASSERTIONS=1 \
     -sERROR_ON_UNDEFINED_SYMBOLS=0 \
     --no-entry \
