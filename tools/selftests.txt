@@ -21,6 +21,7 @@ tests/test_issue_2290_doc_value_comments.py | timeout 30 python3 tests/test_issu
 src/fmt.c src/lexer.c tests/fmt_parent_differential.py tests/run_fmt_parent_differential.sh | timeout 60 bash tests/run_fmt_parent_differential.sh --selftest | [{"pattern":"^formatter differential selftest: live comparison passed; normalization plant caught$","count":1},{"pattern":"REGRESSION","count":0}]
 tests/fmt_parent_differential.py | timeout 30 python3 tests/fmt_parent_differential.py --selftest | [{"pattern":"^classifier selftest: list-item fence is semantic-line preservation$","count":1}]
 tests/test_doc_examples_markers.py tests/test_doc_examples.py tests/lsan_classify.sh | timeout 30 python3 tests/test_doc_examples_markers.py --selftest
+tests/test_freestanding_rng_2308.sh tools/freestanding_check.sh tools/read_werror_flags.sh tools/werror_flags.txt | timeout 30 bash tests/test_freestanding_rng_2308.sh --selftest | [{"pattern":"^PLAN: [0-9]+$","count":1,"pass":"^  PASS:","fail":"^  FAIL:"},{"pattern":"^  PASS:","count":9},{"pattern":"^  FAIL:","count":0}]
 tests/test_handles_mt.sh tests/handles_mt_fixtures/* | timeout 30 bash tests/test_handles_mt.sh --selftest | [{"pattern":"  PASS:","count":11},{"pattern":"  FAIL:","count":0}]
 tests/test_http_rss_growth.sh | timeout 30 bash tests/test_http_rss_growth.sh --selftest
 tests/test_http_slowloris.sh | timeout 90 bash tests/test_http_slowloris.sh --self-test | [{"pattern":"^  PASS: plant ","count":4},{"pattern":"^  FAIL: plant ","count":0}]

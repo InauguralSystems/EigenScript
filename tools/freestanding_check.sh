@@ -14,14 +14,45 @@ trap 'rm -rf "$ROOT_BUILD"' EXIT
 # tape.  Keep this source-level half of the symbol gate deliberately strict:
 # spelling a call in runtime code is forbidden, while the freestanding libc's
 # implementation remains available to EigenOS consumers (#1818).
-HOSTED_RNG_CALLS=$(git grep -n -E '\b(rand|srand)[[:space:]]*\(' -- \
-    'src/*.c' 'extensions/*.c' ':(exclude)src/freestanding/*' || true)
-if [ -n "$HOSTED_RNG_CALLS" ]; then
+#
+# Fail closed: git grep exits 1 for "no match" and >=2 for an error. CI runs
+# this in a container as a different user from the one that checked the tree
+# out, so git refused the repository ("dubious ownership", rc 128) and the old
+# `|| true` turned that refusal into an empty result and an OK (#2308, hq#58
+# ES-CIB-1). Trust exactly this checkout, as tools/enrolment_check.sh does, and
+# treat any other git failure, or an empty population, as FAIL. The population
+# floor is "non-empty", not a pinned count. Headers, macro aliases and function
+# pointers are not covered by this textual check (#2309).
+#
+# `--rng-only` stops after this check (tests/test_freestanding_rng_2308.sh uses
+# it to drive the real check cheaply); `make freestanding-check` and CI pass no
+# argument and run the whole gate.
+RNG_PATHSPEC=('src/*.c' 'extensions/*.c' ':(exclude)src/freestanding/*')
+RNG_GIT=(git -c safe.directory="$(pwd -P)")
+RNG_ERR="$ROOT_BUILD/rng_ls_files.err"
+rng_rc=0
+# stderr kept apart so a git warning is never counted as an examined file.
+RNG_FILES=$("${RNG_GIT[@]}" ls-files -- "${RNG_PATHSPEC[@]}" 2>"$RNG_ERR") || rng_rc=$?
+if [ "$rng_rc" -ne 0 ] || [ -z "$RNG_FILES" ]; then
+    echo "FAIL: hosted RNG check examined no runtime sources (git ls-files rc=$rng_rc):" >&2
+    cat "$RNG_ERR" >&2
+    exit 1
+fi
+RNG_EXAMINED=$(printf '%s\n' "$RNG_FILES" | wc -l | tr -d ' ')
+rng_rc=0
+HOSTED_RNG_CALLS=$("${RNG_GIT[@]}" grep -n -E '\b(rand|srand)[[:space:]]*\(' -- \
+    "${RNG_PATHSPEC[@]}" 2>&1) || rng_rc=$?
+if [ "$rng_rc" -eq 0 ]; then
     echo "FAIL: hosted runtime calls libc rand/srand outside the taped random stream:" >&2
     echo "$HOSTED_RNG_CALLS" >&2
     exit 1
+elif [ "$rng_rc" -ne 1 ]; then
+    echo "FAIL: hosted RNG check could not search the runtime sources (git grep rc=$rng_rc):" >&2
+    echo "$HOSTED_RNG_CALLS" >&2
+    exit 1
 fi
-echo "OK hosted RNG: no libc rand/srand calls outside src/freestanding"
+echo "OK hosted RNG: no libc rand/srand calls in $RNG_EXAMINED tracked runtime source file(s) outside src/freestanding"
+[ "${1:-}" != "--rng-only" ] || exit 0
 
 # Anchor the population to the Makefile's source lists, as amalgamate does.
 SRC=$(make --no-print-directory print-SOURCES |
