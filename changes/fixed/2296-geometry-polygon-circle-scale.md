@@ -1,0 +1,1 @@
+- Polygon and circle helpers now make scale-independent decisions on translated coordinates (#2296).

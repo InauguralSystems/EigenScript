@@ -393,34 +393,59 @@ define triangle_inradius(a, b, c) as:
 # Signed area via shoelace formula
 # Positive = counter-clockwise, negative = clockwise
 define polygon_area(vertices) as:
-    n is len of vertices
-    area is 0
-    j is n - 1
+    local n is len of vertices
+    if n == 0:
+        return 0
+    local origin_x is vertices[0][0]
+    local origin_y is vertices[0][1]
+    local area is 0
+    local j is n - 1
     for i in range of n:
-        area is area + (vertices[j][0] * vertices[i][1]) - (vertices[i][0] * vertices[j][1])
+        local jx is vertices[j][0] - origin_x
+        local jy is vertices[j][1] - origin_y
+        local ix is vertices[i][0] - origin_x
+        local iy is vertices[i][1] - origin_y
+        area is area + jx * iy - ix * jy
         j is i
     return area / 2
 
 # Centroid of simple polygon
 define polygon_centroid(vertices) as:
-    n is len of vertices
-    cx is 0
-    cy is 0
-    a is polygon_area of vertices
-    if a < _EPS and a > (0 - _EPS):
-        # Degenerate: average vertices
-        for i in range of n:
-            cx is cx + vertices[i][0]
-            cy is cy + vertices[i][1]
-        return [cx / n, cy / n]
-    j is n - 1
+    local n is len of vertices
+    local origin_x is vertices[0][0]
+    local origin_y is vertices[0][1]
+    local cx is 0
+    local cy is 0
+    local area_twice is 0
+    local cross_scale is 0
+    local j is n - 1
     for i in range of n:
-        cross is vertices[j][0] * vertices[i][1] - vertices[i][0] * vertices[j][1]
-        cx is cx + (vertices[j][0] + vertices[i][0]) * cross
-        cy is cy + (vertices[j][1] + vertices[i][1]) * cross
+        local jx is vertices[j][0] - origin_x
+        local jy is vertices[j][1] - origin_y
+        local ix is vertices[i][0] - origin_x
+        local iy is vertices[i][1] - origin_y
+        local cross is jx * iy - ix * jy
+        local cross_magnitude is cross
+        if cross_magnitude < 0:
+            cross_magnitude is 0 - cross_magnitude
+        area_twice is area_twice + cross
+        cross_scale is cross_scale + cross_magnitude
+        cx is cx + (jx + ix) * cross
+        cy is cy + (jy + iy) * cross
         j is i
-    factor is 1.0 / (6 * a)
-    return [cx * factor, cy * factor]
+    local abs_area_twice is area_twice
+    if abs_area_twice < 0:
+        abs_area_twice is 0 - abs_area_twice
+    if abs_area_twice <= _EPS * cross_scale:
+        # Degenerate: average vertices
+        cx is 0
+        cy is 0
+        for i in range of n:
+            cx is cx + (vertices[i][0] - origin_x)
+            cy is cy + (vertices[i][1] - origin_y)
+        return [origin_x + cx / n, origin_y + cy / n]
+    local factor is 1.0 / (3 * area_twice)
+    return [origin_x + cx * factor, origin_y + cy * factor]
 
 # Sum of edge lengths
 define polygon_perimeter(vertices) as:
@@ -475,7 +500,7 @@ define polygon_is_convex(vertices) as:
 
 # Check winding order via signed area
 define polygon_is_clockwise(vertices) as:
-    a is polygon_area of vertices
+    local a is polygon_area of vertices
     if a < 0:
         return true
     return false
@@ -590,29 +615,34 @@ define circles_intersect(c1x, c1y, c1r, c2x, c2y, c2r) as:
 
 # Returns list of intersection points (0, 1, or 2 points)
 define circle_intersection_points(c1x, c1y, c1r, c2x, c2y, c2r) as:
-    dx is c2x - c1x
-    dy is c2y - c1y
-    d is sqrt of (dx * dx + dy * dy)
-    if d < _EPS:
+    local dx is c2x - c1x
+    local dy is c2y - c1y
+    local d_sq is dx * dx + dy * dy
+    if d_sq == 0:
         return []
-    if d > c1r + c2r + _EPS:
+    local radius_sum is c1r + c2r
+    if d_sq > radius_sum * radius_sum:
         return []
-    diff is c1r - c2r
+    local diff is c1r - c2r
     if diff < 0:
         diff is 0 - diff
-    if d + _EPS < diff:
+    if d_sq < diff * diff:
         return []
-    a is (c1r * c1r - c2r * c2r + d * d) / (2 * d)
-    h_sq is c1r * c1r - a * a
-    if h_sq < 0:
+    local d is sqrt of d_sq
+    local a is (d_sq + (c1r - c2r) * radius_sum) / (2 * d)
+    local h_sq is c1r * c1r - a * a
+    local smaller_radius is c1r
+    if c2r < smaller_radius:
+        smaller_radius is c2r
+    if h_sq < 0 and h_sq >= (0 - _EPS * smaller_radius * smaller_radius):
         h_sq is 0
-    h is sqrt of h_sq
-    mx is c1x + a * dx / d
-    my is c1y + a * dy / d
-    if h < _EPS:
+    local h is sqrt of h_sq
+    local mx is c1x + a * dx / d
+    local my is c1y + a * dy / d
+    if h_sq == 0:
         return [[mx, my]]
-    ox is h * dy / d
-    oy is h * dx / d
+    local ox is h * dy / d
+    local oy is h * dx / d
     return [[mx + ox, my - oy], [mx - ox, my + oy]]
 
 # Is point inside circle?

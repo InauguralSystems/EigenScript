@@ -1,0 +1,95 @@
+load_file of "lib/test.eigs"
+load_file of "lib/geometry.eigs"
+
+define assert_polygon_orders(vertices, expected_area, expected_centroid, tol, desc) as:
+    local n_vertices is len of vertices
+    for start in range of n_vertices:
+        local forward is []
+        local reverse is []
+        for offset in range of n_vertices:
+            local index is start + offset
+            if index >= n_vertices:
+                index is index - n_vertices
+            append of [forward, vertices[index]]
+            index is start - offset
+            if index < 0:
+                index is index + n_vertices
+            append of [reverse, vertices[index]]
+        assert_near of [polygon_area of forward, expected_area, tol, desc + " forward area"]
+        assert_near of [polygon_area of reverse, 0 - expected_area, tol, desc + " reverse area"]
+        assert_eq of [polygon_is_clockwise of forward, expected_area < 0, desc + " forward winding"]
+        assert_eq of [polygon_is_clockwise of reverse, expected_area > 0, desc + " reverse winding"]
+        local forward_centroid is polygon_centroid of forward
+        local reverse_centroid is polygon_centroid of reverse
+        assert_near of [forward_centroid[0], expected_centroid[0], tol, desc + " forward centroid x"]
+        assert_near of [forward_centroid[1], expected_centroid[1], tol, desc + " forward centroid y"]
+        assert_near of [reverse_centroid[0], expected_centroid[0], tol, desc + " reverse centroid x"]
+        assert_near of [reverse_centroid[1], expected_centroid[1], tol, desc + " reverse centroid y"]
+
+define assert_circle_pair(scale, desc) as:
+    local points is circle_intersection_points of [0, 0, scale, scale, 0, scale]
+    assert_eq of [len of points, 2, desc + " has two intersections"]
+    assert_near of [points[0][0], 0.5 * scale, 1e-9 * scale, desc + " first x"]
+    assert_near of [points[0][1], -0.8660254037844386 * scale, 1e-9 * scale, desc + " first y"]
+    assert_near of [points[1][0], 0.5 * scale, 1e-9 * scale, desc + " second x"]
+    assert_near of [points[1][1], 0.8660254037844386 * scale, 1e-9 * scale, desc + " second y"]
+
+define assert_circle_boundaries(scale, desc) as:
+    local external is circle_intersection_points of [0, 0, scale, 2 * scale, 0, scale]
+    assert_eq of [len of external, 1, desc + " external tangency has one point"]
+    assert_near of [external[0][0], scale, 1e-9 * scale, desc + " external tangent x"]
+    assert_near of [external[0][1], 0, 1e-9 * scale, desc + " external tangent y"]
+    local internal is circle_intersection_points of [0, 0, 2 * scale, scale, 0, scale]
+    assert_eq of [len of internal, 1, desc + " internal tangency has one point"]
+    assert_near of [internal[0][0], 2 * scale, 1e-9 * scale, desc + " internal tangent x"]
+    assert_near of [internal[0][1], 0, 1e-9 * scale, desc + " internal tangent y"]
+    assert_eq of [circle_intersection_points of [0, 0, scale, 3 * scale, 0, scale], [], desc + " separated circles"]
+    assert_eq of [circle_intersection_points of [0, 0, 3 * scale, scale, 0, scale], [], desc + " contained circles"]
+    assert_eq of [circle_intersection_points of [0, 0, scale, 0, 0, scale], [], desc + " coincident circles"]
+
+for scale in [1e-9, 1, 1e9]:
+    local square is [[0, 0], [scale, 0], [scale, scale], [0, scale]]
+    assert_polygon_orders of [square, scale * scale, [0.5 * scale, 0.5 * scale], 1e-9 * scale, "scaled square"]
+    assert_circle_pair of [scale, "scaled circle pair"]
+    assert_circle_boundaries of [scale, "scaled circle boundaries"]
+
+# Translation used to dominate the shoelace products for this tiny square.
+tiny_delta is 1e-9
+tiny_square is [[10, 10], [10 + tiny_delta, 10], [10 + tiny_delta, 10 + tiny_delta], [10, 10 + tiny_delta]]
+tiny_side is (10 + tiny_delta) - 10
+assert_polygon_orders of [tiny_square, tiny_side * tiny_side, [10 + tiny_side / 2, 10 + tiny_side / 2], 1e-25, "translated tiny square"]
+
+# A large aspect ratio is not degeneracy: retain the area-weighted centroid.
+thin is [[0, 0], [1e13, 0], [1e13, 1], [0, 2]]
+assert_polygon_orders of [thin, 1.5e13, [4.444444444444444e12, 0.7777777777777777], 0.001, "thin polygon"]
+
+# Exact collinearity after subtraction can carry origin-based determinant residue.
+det_e is 0.000000007450580596923828125
+degenerate is [[0.75 + det_e, 1.75 + det_e], [1 + 2 * det_e, 2 + 2 * det_e], [0.125 + 3 * det_e, 1.125 + 3 * det_e]]
+degenerate_average is [(degenerate[0][0] + degenerate[1][0] + degenerate[2][0]) / 3, (degenerate[0][1] + degenerate[1][1] + degenerate[2][1]) / 3]
+for start in range of 3:
+    local order is [degenerate[start], degenerate[(start + 1) % 3], degenerate[(start + 2) % 3]]
+    local reverse_order is [degenerate[start], degenerate[(start + 2) % 3], degenerate[(start + 1) % 3]]
+    local order_centroid is polygon_centroid of order
+    local reverse_centroid is polygon_centroid of reverse_order
+    assert_near of [polygon_area of order, 0, 1e-15, "roundoff-degenerate forward area"]
+    assert_near of [polygon_area of reverse_order, 0, 1e-15, "roundoff-degenerate reverse area"]
+    assert_eq of [polygon_is_clockwise of order, (polygon_area of order) < 0, "roundoff-degenerate forward exact sign"]
+    assert_eq of [polygon_is_clockwise of reverse_order, (polygon_area of reverse_order) < 0, "roundoff-degenerate reverse exact sign"]
+    assert_near of [order_centroid[0], degenerate_average[0], 1e-15, "roundoff-degenerate forward centroid x"]
+    assert_near of [order_centroid[1], degenerate_average[1], 1e-15, "roundoff-degenerate forward centroid y"]
+    assert_near of [reverse_centroid[0], degenerate_average[0], 1e-15, "roundoff-degenerate reverse centroid x"]
+    assert_near of [reverse_centroid[1], degenerate_average[1], 1e-15, "roundoff-degenerate reverse centroid y"]
+
+assert_eq of [polygon_area of [], 0, "empty polygon area"]
+assert_false of [polygon_is_clockwise of (convex_hull of []), "empty hull is not clockwise"]
+
+# The tangency/square-root scale is bounded by the smaller radius, not 1e13.
+unequal is circle_intersection_points of [0, 0, 1, 1e13, 0, 1e13]
+assert_eq of [len of unequal, 2, "unequal circles have two intersections"]
+assert_near of [unequal[0][0], 0, 1e-12, "unequal first x"]
+assert_near of [unequal[0][1], -1, 1e-12, "unequal first y"]
+assert_near of [unequal[1][0], 0, 1e-12, "unequal second x"]
+assert_near of [unequal[1][1], 1, 1e-12, "unequal second y"]
+
+test_summary of null
