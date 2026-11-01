@@ -93,7 +93,8 @@ What is true now:
     Linking is not running, so before the receipt it also executes the module:
     `tools/playground_smoke.cjs` runs programs for exact output (#2299), and
     `tests/test_playground_wasm_2301.sh` requires no `missing function:` abort
-    stub in `eigs.js` and an `import` that errors instead of aborting (#2301).
+    stub in `eigs.js`, an `import` that errors instead of aborting, and a plain
+    run that still works after an error or `exit of N` in the same module (#2301).
     `web/build.sh` takes its C sources from the Makefile (`print-EMBED_SOURCES`)
     and links with `-sERROR_ON_UNDEFINED_SYMBOLS=1`; a hand-written list there
     had lost `src/eigs_embed.c`, and the `=0` flag let that link green.

@@ -16,7 +16,10 @@
 #               even if the link flag is flipped back to =0.
 #   2. dynamic: import programs return rc 1 with the import error on stderr
 #               and no Aborted(, and the SAME module then still runs a plain
-#               program with exact output (the module was not killed).
+#               program with exact output (the module was not killed, and
+#               the error did not latch). Same for `exit of N`: web/eigs_wasm.c
+#               reset no per-run state, so after one runtime error every later
+#               run in the page returned 1 with no output until a reload.
 #
 # Usage: bash tests/test_playground_wasm_2301.sh [dist-dir]  (default web/dist)
 # Needs node. Exit 0 pass, 1 fail.
@@ -48,11 +51,16 @@ cat > "$WORK/run.cjs" <<'EOF'
 const path = require('path');
 const [, , work, dist] = process.argv;
 const EigsModule = require(path.join(work, 'eigs.cjs'));
-// [source, want rc, want stdout, want first stderr line prefix (null: no stderr)]
+// [source, want rc (null: any), want stdout, want first stderr line prefix (null: no stderr)]
+// Each state-setting run is followed by a plain run in the SAME module: a run
+// is a fresh session, so an error or an `exit of N` must not carry over.
 const cases = [
   ['import math\nprint of 1', 1, '', "Error <playground>:1: import: cannot read 'math.eigs"],
-  ['import no_such_module_2301\nprint of 1', 1, '', "Error <playground>:1: import: cannot read 'no_such_module_2301.eigs"],
   ['print of (6 * 7)', 0, '42', null],
+  ['import no_such_module_2301\nprint of 1', 1, '', "Error <playground>:1: import: cannot read 'no_such_module_2301.eigs"],
+  ['print of "after an error"', 0, 'after an error', null],
+  ['exit of 3', null, '', null],
+  ['print of "after exit"', 0, 'after exit', null],
 ];
 let out = [], err = [];
 EigsModule({
@@ -70,7 +78,7 @@ EigsModule({
     const aborted = err.some((l) => l.includes('Aborted('));
     const errOk = wantErr === null ? err.length === 0 : (first !== null && first.startsWith(wantErr));
     const tag = JSON.stringify(src);
-    if (rc === wantRc && got === wantOut && errOk && !aborted) {
+    if ((wantRc === null ? typeof rc === 'number' : rc === wantRc) && got === wantOut && errOk && !aborted) {
       console.log(`PASS: ${tag} -> rc=${rc} out=${JSON.stringify(got)}${first ? ' err=' + JSON.stringify(first.slice(0, 90)) : ''}`);
     } else {
       console.log(`FAIL: ${tag}: rc=${rc} out=${JSON.stringify(got)} err=${JSON.stringify(err.slice(0, 3))} ` +
@@ -90,8 +98,8 @@ while IFS= read -r line; do
     esac
 done <<< "$dyn"
 
-# 1 static + 3 dynamic. A driver that died early prints fewer rows: red.
-PLAN=4
+# 1 static + 6 dynamic. A driver that died early prints fewer rows: red.
+PLAN=7
 echo "PLAN: $PLAN"
 echo "test_playground_wasm_2301: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && [ "$PASS" -eq "$PLAN" ] || exit 1
