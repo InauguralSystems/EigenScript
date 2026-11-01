@@ -399,53 +399,111 @@ define polygon_area(vertices) as:
         return 0
     local origin_x is vertices[0][0]
     local origin_y is vertices[0][1]
-    local area is 0
+    local raw_area is 0
+    local raw_scale is 0
+    local translated_area is 0
+    local translated_scale is 0
     local j is n - 1
     for i in range of n:
+        local raw_left is vertices[j][0] * vertices[i][1]
+        local raw_right is vertices[i][0] * vertices[j][1]
+        local raw_cross is raw_left - raw_right
+        local raw_magnitude is raw_left
+        if raw_magnitude < 0:
+            raw_magnitude is 0 - raw_magnitude
+        local raw_right_magnitude is raw_right
+        if raw_right_magnitude < 0:
+            raw_right_magnitude is 0 - raw_right_magnitude
+        raw_magnitude is raw_magnitude + raw_right_magnitude
+        raw_area is raw_area + raw_cross
+        raw_scale is raw_scale + raw_magnitude
         local jx is vertices[j][0] - origin_x
         local jy is vertices[j][1] - origin_y
         local ix is vertices[i][0] - origin_x
         local iy is vertices[i][1] - origin_y
-        area is area + jx * iy - ix * jy
+        local translated_left is jx * iy
+        local translated_right is ix * jy
+        local translated_cross is translated_left - translated_right
+        local translated_magnitude is translated_left
+        if translated_magnitude < 0:
+            translated_magnitude is 0 - translated_magnitude
+        local translated_right_magnitude is translated_right
+        if translated_right_magnitude < 0:
+            translated_right_magnitude is 0 - translated_right_magnitude
+        translated_magnitude is translated_magnitude + translated_right_magnitude
+        translated_area is translated_area + translated_cross
+        translated_scale is translated_scale + translated_magnitude
         j is i
-    return area / 2
+    local raw_bound is 8 * n * _FLOAT_EPS * raw_scale
+    local translated_bound is 8 * n * _FLOAT_EPS * translated_scale
+    if raw_bound < translated_bound:
+        return raw_area / 2
+    return translated_area / 2
 
 # Centroid of simple polygon
 define polygon_centroid(vertices) as:
     local n is len of vertices
     local origin_x is vertices[0][0]
     local origin_y is vertices[0][1]
-    for i in range of n:
-        if vertices[i][0] < origin_x:
-            origin_x is vertices[i][0]
-        if vertices[i][1] < origin_y:
-            origin_y is vertices[i][1]
-    local cx is 0
-    local cy is 0
-    local area_twice is 0
-    local cross_scale is 0
+    local raw_cx is 0
+    local raw_cy is 0
+    local raw_area is 0
+    local raw_scale is 0
+    local translated_cx is 0
+    local translated_cy is 0
+    local translated_area is 0
+    local translated_scale is 0
     local j is n - 1
     for i in range of n:
+        local raw_left is vertices[j][0] * vertices[i][1]
+        local raw_right is vertices[i][0] * vertices[j][1]
+        local raw_cross is raw_left - raw_right
+        local raw_magnitude is raw_left
+        if raw_magnitude < 0:
+            raw_magnitude is 0 - raw_magnitude
+        local raw_right_magnitude is raw_right
+        if raw_right_magnitude < 0:
+            raw_right_magnitude is 0 - raw_right_magnitude
+        raw_magnitude is raw_magnitude + raw_right_magnitude
+        raw_area is raw_area + raw_cross
+        raw_scale is raw_scale + raw_magnitude
+        raw_cx is raw_cx + (vertices[j][0] + vertices[i][0]) * raw_cross
+        raw_cy is raw_cy + (vertices[j][1] + vertices[i][1]) * raw_cross
         local jx is vertices[j][0] - origin_x
         local jy is vertices[j][1] - origin_y
         local ix is vertices[i][0] - origin_x
         local iy is vertices[i][1] - origin_y
-        local cross is jx * iy - ix * jy
-        local cross_magnitude is cross
-        if cross_magnitude < 0:
-            cross_magnitude is 0 - cross_magnitude
-        area_twice is area_twice + cross
-        cross_scale is cross_scale + cross_magnitude
-        cx is cx + (jx + ix) * cross
-        cy is cy + (jy + iy) * cross
+        local translated_left is jx * iy
+        local translated_right is ix * jy
+        local translated_cross is translated_left - translated_right
+        local translated_magnitude is translated_left
+        if translated_magnitude < 0:
+            translated_magnitude is 0 - translated_magnitude
+        local translated_right_magnitude is translated_right
+        if translated_right_magnitude < 0:
+            translated_right_magnitude is 0 - translated_right_magnitude
+        translated_magnitude is translated_magnitude + translated_right_magnitude
+        translated_area is translated_area + translated_cross
+        translated_scale is translated_scale + translated_magnitude
+        translated_cx is translated_cx + (jx + ix) * translated_cross
+        translated_cy is translated_cy + (jy + iy) * translated_cross
         j is i
+    local raw_bound is 8 * n * _FLOAT_EPS * raw_scale
+    local translated_bound is 8 * n * _FLOAT_EPS * translated_scale
+    local area_twice is translated_area
+    local area_roundoff is translated_bound
+    local cx is translated_cx
+    local cy is translated_cy
+    local add_origin is true
+    if raw_bound < translated_bound:
+        area_twice is raw_area
+        area_roundoff is raw_bound
+        cx is raw_cx
+        cy is raw_cy
+        add_origin is false
     local abs_area_twice is area_twice
     if abs_area_twice < 0:
         abs_area_twice is 0 - abs_area_twice
-    # Each translated cross term has two products, and the sum has n terms.
-    # Use their floating-point roundoff bound rather than treating a fixed
-    # fraction of the cancellation scale as geometrically degenerate.
-    local area_roundoff is 8 * n * _FLOAT_EPS * cross_scale
     if abs_area_twice <= area_roundoff:
         # Degenerate: average vertices
         cx is 0
@@ -455,6 +513,8 @@ define polygon_centroid(vertices) as:
             cy is cy + (vertices[i][1] - origin_y)
         return [origin_x + cx / n, origin_y + cy / n]
     local factor is 1.0 / (3 * area_twice)
+    if add_origin == false:
+        return [cx * factor, cy * factor]
     return [origin_x + cx * factor, origin_y + cy * factor]
 
 # Sum of edge lengths
@@ -631,12 +691,18 @@ define circle_intersection_points(c1x, c1y, c1r, c2x, c2y, c2r) as:
     if d_sq == 0:
         return []
     local radius_sum is c1r + c2r
-    if d_sq > radius_sum * radius_sum:
+    local radius_sum_sq is radius_sum * radius_sum
+    local decision_scale is d_sq
+    if radius_sum_sq > decision_scale:
+        decision_scale is radius_sum_sq
+    local decision_roundoff is 8 * _FLOAT_EPS * decision_scale
+    if d_sq > radius_sum_sq + decision_roundoff:
         return []
     local diff is c1r - c2r
     if diff < 0:
         diff is 0 - diff
-    if d_sq < diff * diff:
+    local diff_sq is diff * diff
+    if d_sq < diff_sq - decision_roundoff:
         return []
     local d is sqrt of d_sq
     local a is (d_sq + (c1r - c2r) * radius_sum) / (2 * d)
