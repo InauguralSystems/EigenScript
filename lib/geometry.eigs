@@ -436,16 +436,31 @@ define polygon_area(vertices) as:
         j is i
     local raw_bound is 8 * n * _FLOAT_EPS * raw_scale
     local translated_bound is 8 * n * _FLOAT_EPS * translated_scale
+    # A non-finite or saturated translated sum carries no information; keep
+    # main's raw result there (#2297 review).
+    if translated_scale >= 1e308 or translated_area != translated_area:
+        return raw_area / 2
     if raw_bound < translated_bound:
         return raw_area / 2
     return translated_area / 2
+
+# main's raw shoelace area: polygon_centroid's moments are raw, so its
+# denominator must be too (#2297 review).
+define _polygon_area_raw(vertices) as:
+    n is len of vertices
+    area is 0
+    j is n - 1
+    for i in range of n:
+        area is area + (vertices[j][0] * vertices[i][1]) - (vertices[i][0] * vertices[j][1])
+        j is i
+    return area / 2
 
 # Centroid of simple polygon
 define polygon_centroid(vertices) as:
     n is len of vertices
     cx is 0
     cy is 0
-    a is polygon_area of vertices
+    a is _polygon_area_raw of vertices
     if a < _EPS and a > (0 - _EPS):
         # Degenerate: average vertices
         for i in range of n:

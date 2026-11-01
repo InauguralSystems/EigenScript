@@ -298,4 +298,16 @@ for batch_index in range of 48:
     local center_distance is (0.25 + random of null) * (r1 + r2)
     assert_main_circle of [[0, 0, r1, center_distance, 0, r2], "seeded random circle"]
 
+# #2297 review: centroid moments are raw, so its denominator must be main's raw
+# area (a translated area shifted this centroid to ~3.3e8).
+far_centroid is polygon_centroid of [[1000000000, 1000000000], [1000000001, 1000000000], [1000000001, 1000000001], [1000000000, 1000000001]]
+assert_near of [far_centroid[0], 1000000000.5, 1e-6, "far square centroid x"]
+assert_near of [far_centroid[1], 1000000000.5, 1e-6, "far square centroid y"]
+
+# #2297 review: a saturated translated sum must not replace main's raw area.
+big_a is 8e153
+big_w is 1e140
+sat_area is polygon_area of [[big_a, big_a], [0 - big_a, 0 - big_a], [0 - big_a, (0 - big_a) + big_w], [big_a, big_a + big_w]]
+assert of [sat_area < -1.5e294 and sat_area > -1.7e294, "saturated translated sum falls back to the raw area"]
+
 test_summary of null
