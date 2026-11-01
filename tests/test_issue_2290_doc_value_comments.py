@@ -57,6 +57,23 @@ def main():
         '```eigenscript\nprint of "#1"\n```\n```output\n#1\n```\n')
     check(string_hash.returncode == 0 and "0 claim(s) examined" in string_hash.stdout,
           "a hash inside a string is not treated as a comment boundary")
+    nested_list = run_doc(
+        "```eigenscript\nprint of [[1, 2], [3, 4]]  # [[1, 2], [3, 4]]\n"
+        "```\n```output\n[[1, 2], [3, 4]]\n```\n")
+    check(nested_list.returncode == 0,
+          "a complete nested-list claim is extracted and accepted")
+    wrong_nested_list = run_doc(
+        "```eigenscript\nprint of [[1, 2], [3, 4]]  # [[1, 2], [3, 5]]\n"
+        "```\n```output\n[[1, 2], [3, 4]]\n```\n")
+    check(wrong_nested_list.returncode != 0 and
+          "states a VALUE" in wrong_nested_list.stdout,
+          "a wrong nested-list claim is rejected")
+    nested_dict = run_doc(
+        '```eigenscript\nprint of {"outer": {"items": [1, 2]}}  '
+        '# {"outer": {"items": [1, 2]}}\n```\n'
+        '```output\n{"outer": {"items": [1, 2]}}\n```\n')
+    check(nested_dict.returncode == 0,
+          "a complete nested-dictionary claim is extracted and accepted")
     fake_pair = run_doc("```eigenscript fragment\nx is 1  # 1\n```\n"
                         "```output\n1\n```\n")
     check(fake_pair.returncode != 0 and "states a VALUE" in fake_pair.stdout,

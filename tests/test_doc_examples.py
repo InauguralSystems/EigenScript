@@ -533,8 +533,36 @@ def value_comment(line):
     _code, comment = split_code_comment(line)
     if comment is None:
         return None
-    marked = "#" + comment
-    return comment if VALUE_COMMENT.search(marked) else None
+    return comment if VALUE_COMMENT.search("#" + comment) else None
+
+
+def leading_collection(comment):
+    """Return a complete leading list/dict literal, including nesting."""
+    if not comment or comment[0] not in "[{":
+        return None
+    pairs = {"[": "]", "{": "}"}
+    stack = []
+    quote = None
+    escaped = False
+    for index, char in enumerate(comment):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in ('"', "'"):
+            quote = char
+        elif char in pairs:
+            stack.append(pairs[char])
+        elif char in "]}":
+            if not stack or char != stack.pop():
+                return None
+            if not stack:
+                return comment[:index + 1]
+    return None
 
 
 def stated_values(comment):
@@ -544,9 +572,9 @@ def stated_values(comment):
     quoted = re.match(r"([\"'])(.*?)\1", comment)
     if quoted:
         values.append(quoted.group(2))
-    collection = re.match(r"(\[[^\n]*?\]|\{[^\n]*?\})", comment)
+    collection = leading_collection(comment)
     if collection and not values:
-        values.append(collection.group(1))
+        values.append(collection)
     statuses = re.match(
         r"((?:(?:improving|diverging|stable|equilibrium|oscillating|"
         r"converged)(?:\s+|$))+)", comment)
@@ -576,9 +604,10 @@ def check_value_comments(path, fence_line, text, paired_output=None,
         line = raw.strip()
         if not line or "#" not in line:
             continue
-        source, comment = split_code_comment(raw)
-        if comment is None or not VALUE_COMMENT.search("#" + comment):
+        comment = value_comment(raw)
+        if comment is None:
             continue
+        source, _comment = split_code_comment(raw)
         found += 1
         # --list is an inventory operation: count claims, but never run the
         # instrumented program (or require a runtime to exist).
