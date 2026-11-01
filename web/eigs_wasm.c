@@ -44,17 +44,6 @@ int eigs_run_source(const char *source) {
     if (!source) return 1;
     ensure_init();
 
-    /* A run is a fresh session, so no state from the previous run may carry
-     * into it (#2301). Nothing reset the error latch: after one runtime error
-     * every later run in the page returned 1 with no output until a reload.
-     * Same per-unit reset as repl.c; the `exit of N` latch and its stop
-     * scope reset the way eigs_embed.c's eval_source opens each eval. */
-    g_has_error = 0;
-    g_returning = 0;
-    g_return_val = NULL;
-    g_exit_requested = 0;
-    eigs_state_begin_eval(eigs_current->state);
-
     /* Fresh global env per run — the playground treats each execution as
      * a clean session. The previous run's closures, globals, and trace
      * tape are reclaimed below. */
