@@ -122,8 +122,8 @@ static int tsan_compiler_env_count_control(void) {
     TSanEnvCountControl control = {
         .state = state,
         .env = env_new(NULL),
-        .reader_started = ATOMIC_VAR_INIT(0),
-        .writer_done = ATOMIC_VAR_INIT(0),
+        .reader_started = 0,
+        .writer_done = 0,
     };
     pthread_t reader, writer;
     int rc = 0;
