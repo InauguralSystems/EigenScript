@@ -78,6 +78,11 @@ SECTION_OUTCOME_VIOLATIONS=0
 # on its other checks. Ten of those remain, by design, and they are pinned by
 # NAME in tools/section_plan.sh --skip-audit (suite section [99w]), which fails
 # when a new bare `SKIP:` line appears in this file without a reviewed reason.
+# ONE deliberate exception: [70d]'s peak-RSS half is a sub-check skip (the
+# section still PASSes its four #868 window checks) that goes through here
+# anyway. Its skip keys are allowlisted with reasons in
+# tests/temporal_memory_skip_allowlist.txt and the skip is COUNTED, not waived
+# by name, because the gate it skips is the only one that sees #827 (hq#58).
 # A relay hands this helper the child's own line; the prefix is normalised so
 # exactly one `  SKIP: ` is printed however the child spelled it.
 section_skip() {
@@ -516,10 +521,13 @@ bash() {
             # prints `SKIP:` has honestly declined to measure, which is
             # visible to the reader and is the suite's established
             # convention for an unavailable tool. Bought in CI (PR #996):
-            # test_temporal_memory.sh skips without GNU `time -f`, without
-            # /proc, and on sanitizer builds — all three exist on the dev
-            # box, so the local run never took those paths and four lanes
-            # went red on a child doing exactly what it was designed to do.
+            # test_temporal_memory.sh then skipped without GNU `time -f`,
+            # without /proc, and on sanitizer builds — none of which the dev
+            # box took, so four lanes went red on a child doing exactly what
+            # it was designed to do. (Since hq#58 that child FAILS a skip
+            # whose key is not in tests/temporal_memory_skip_allowlist.txt,
+            # and missing GNU time on Linux is not listed. This generic rule
+            # still accepts any child that prints only SKIP: and exits 0.)
             if ! printf '%s\n' "$__out" | grep -q -E '(PASS|FAIL|SKIP):'; then
                 echo "  FAIL: $__base exited 0 but reported no checks at all — a section cannot pass on zero checks (#988)"
                 printf '%s\t%s\n' "vacuous" "$__what" >> "$CHILD_LEDGER"
