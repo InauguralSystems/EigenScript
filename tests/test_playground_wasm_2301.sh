@@ -43,12 +43,23 @@ bad() { echo "FAIL: $1"; FAIL=$((FAIL + 1)); }
 # below remain; update KNOWN_STUB from a planted =0 build.)
 STUB_RE='missing function: [A-Za-z0-9_$]*'
 KNOWN_STUB='function _eigs_source_lookup(){abort("missing function: eigs_source_lookup")}'
-if [ "$(printf '%s\n' "$KNOWN_STUB" | grep -o "$STUB_RE")" = "missing function: eigs_source_lookup" ]; then
+# grep FINDS, POSIX awk EXTRACTS (.claude/rules/test-suite.md: no grep -o).
+# The pattern travels through the environment, never awk -v (escape processing).
+stub_names() {
+    STUB_RE="$STUB_RE" awk '{ s = $0; while (match(s, ENVIRON["STUB_RE"])) { print substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH) } }' "$@"
+}
+if [ "$(printf '%s\n' "$KNOWN_STUB" | stub_names)" = "missing function: eigs_source_lookup" ]; then
     ok "static witness pattern matches emcc's known abort stub (positive control)"
 else
     bad "static witness pattern '$STUB_RE' does not match emcc's known abort stub"
 fi
-stubs=$(grep -o "$STUB_RE" "$DIST/eigs.js" | sort -u)
+# "Found nothing" passes below; "could not look" must not: awk's own failure is red.
+if stubs_raw=$(stub_names "$DIST/eigs.js"); then
+    stubs=$(printf '%s\n' "$stubs_raw" | sed '/^$/d' | sort -u)
+else
+    bad "static witness: awk failed reading $DIST/eigs.js (rc=$?)"
+    stubs="(unreadable)"
+fi
 if [ -z "$stubs" ]; then
     ok "eigs.js has no 'missing function:' stub (every reachable C symbol is linked)"
 else
