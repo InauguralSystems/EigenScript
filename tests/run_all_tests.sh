@@ -354,6 +354,36 @@ rc_ok() {
     return 1
 }
 
+# rc_expect WANT RC OUTPUT — rc_ok for a row that expects a SPECIFIC exit code,
+# usually the language's error exit, 1 (#2306). Those rows used to compare the
+# code alone (`[ "$rc" -eq 1 ]`, `-ne 0`, or check_exit with the output sent to
+# /dev/null), and 1 is also ASan's and UBSan's halt exit code: a
+# heap-use-after-free on the error path, reported AFTER the expected
+# diagnostic, gave rc=1 plus the marker, and the row passed. The classifier
+# decides first, the exit code second:
+#   hard  -> fail at ANY exit code (a recoverable UBSan report keeps rc 0/1)
+#   leak  -> the sanitizer's exit code replaced the program's, so the code
+#            proves nothing; tolerated exactly as rc_ok does, through the
+#            ledger that the reviewed-baseline gate (lsan_baseline_check)
+#            refuses to grow
+#   none  -> the exit code must equal WANT exactly
+rc_expect() {
+    local _cls
+    if ! declare -F lsan_classify >/dev/null 2>&1; then
+        echo "  FAIL: rc_expect called without lsan_classify in scope — harness bug" >&2
+        return 1
+    fi
+    lsan_classify "$3"
+    _cls=$?
+    [ "$_cls" -eq 1 ] && return 1
+    if [ "$_cls" -eq 0 ]; then
+        LEAKED=$((LEAKED + 1))
+        printf '%s — leak-only nonzero exit (full report in section log)\n' "${EIGS_SUITE_SECTION:-unlabelled}" >> "$TOLERATED_LSAN_REPORTS"
+        return 0
+    fi
+    [ "$2" = "$1" ]
+}
+
 # ---- #988: child `.sh` tests gate on exit status, not just markers ----------
 # rc_ok (above) fixed exactly this disease for `.eigs` programs: "marker-grep
 # alone used to let a crash *after* correct output pass". The ~45 child `.sh`
@@ -786,7 +816,7 @@ for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
         LAR_JIT=$(lar_jit_witness "$LAR_TIER" "$LAR_OUT")
         if [ "$LAR_JIT" != ok ]; then
             FAIL=$((FAIL + 1)); echo "  FAIL: $LAR_FILE ($LAR_TIER): compiled nothing, so it measured the interpreter"
-        elif [ "$LAR_RC" -eq 1 ] && [ -z "$LAR_MISS" ]; then
+        elif rc_expect 1 "$LAR_RC" "$LAR_OUT" && [ -z "$LAR_MISS" ]; then
             PASS=$((PASS + 1)); echo "  PASS: uncaught header + traceback lines, $LAR_FILE ($LAR_TIER)"
         else
             FAIL=$((FAIL + 1)); echo "  FAIL: $LAR_FILE ($LAR_TIER, rc=$LAR_RC) missing:$LAR_MISS"
@@ -802,7 +832,7 @@ for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
     TOTAL=$((TOTAL + 1))
     if [ "$(lar_jit_witness "$LAR_TIER" "$LAR_OUT")" != ok ]; then
         FAIL=$((FAIL + 1)); echo "  FAIL: line_after_callback_tape.eigs ($LAR_TIER): compiled nothing, so it measured the interpreter"
-    elif [ "$LAR_RC" -eq 0 ] && grep -qx 2 <<< "$LAR_OUT" && [ "$LAR_STEP" = 15 ]; then
+    elif rc_expect 0 "$LAR_RC" "$LAR_OUT" && grep -qx 2 <<< "$LAR_OUT" && [ "$LAR_STEP" = 15 ]; then
         PASS=$((PASS + 1)); echo "  PASS: tape stop after the callbacks is the statement's line 15 ($LAR_TIER)"
     else
         FAIL=$((FAIL + 1)); echo "  FAIL: line_after_callback_tape.eigs ($LAR_TIER, rc=$LAR_RC): tape stop '$LAR_STEP', want 15"
@@ -1193,12 +1223,14 @@ check "AS1 assert true passes" "$(echo "$AS_OUTPUT" | grep 'pass1')" "pass1"
 check "AS2 assert list passes" "$(echo "$AS_OUTPUT" | grep 'pass2')" "pass2"
 
 TOTAL=$((TOTAL + 1))
-if ./eigenscript ../tests/test_assert_fail.eigs >/dev/null 2>&1; then
-    echo "  FAIL: AS3 assert false should exit non-zero"
-    FAIL=$((FAIL + 1))
-else
+AS3_OUT=$(./eigenscript ../tests/test_assert_fail.eigs </dev/null 2>&1); AS3_RC=$?
+if rc_expect 1 "$AS3_RC" "$AS3_OUT"; then
     echo "  PASS: AS3 assert false exits non-zero"
     PASS=$((PASS + 1))
+else
+    echo "  FAIL: AS3 assert false should exit 1 with no sanitizer report (rc=$AS3_RC)"
+    printf '%s\n' "$AS3_OUT" | eigs_failure_output
+    FAIL=$((FAIL + 1))
 fi
 echo ""
 
@@ -1387,22 +1419,30 @@ echo ""
 echo "[16/16] Error Messages"
 check_binary_fingerprint
 
+# The three direct-run helpers below decide on the program's exit code AND
+# its sanitizer output through rc_expect (#2306). Each used to look at one
+# thing only: check_exit sent all output to /dev/null, check_stderr ran
+# `./eigenscript ... || true`, and check_stdout dropped stderr. A sanitizer
+# report on the error path then passed, because ASan's halt exit code is the
+# language's error exit code, 1.
+# check_stderr NAME SCRIPT SUBSTR [WANT_RC=1] — every row is an error program.
 check_stderr() {
     TOTAL=$((TOTAL + 1))
     local test_name="$1"
     local script="$2"
     local expected_substr="$3"
+    local cs_want="${4:-1}"
     local tmpfile
     tmpfile=$(mktemp /tmp/eigs_test_XXXXXX.eigs)
     printf '%s\n' "$script" > "$tmpfile"
-    local errfile
+    local errfile cs_rc
     errfile=$(mktemp /tmp/eigs_err_XXXXXX.txt)
-    ./eigenscript "$tmpfile" >"$errfile" 2>&1 || true
-    if grep -q "$expected_substr" "$errfile"; then
+    ./eigenscript "$tmpfile" >"$errfile" 2>&1; cs_rc=$?
+    if rc_expect "$cs_want" "$cs_rc" "$(cat "$errfile")" && grep -q "$expected_substr" "$errfile"; then
         echo "  PASS: $test_name"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: $test_name (output: '$(cat "$errfile")', expected to contain '$expected_substr')"
+        echo "  FAIL: $test_name (rc=$cs_rc, want $cs_want and no sanitizer report; output: '$(cat "$errfile")', expected to contain '$expected_substr')"
         FAIL=$((FAIL + 1))
     fi
     rm -f "$tmpfile" "$errfile"
@@ -1413,17 +1453,18 @@ check_exit() {
     local test_name="$1"
     local script="$2"
     local expected_exit="$3"
-    local tmpfile
+    local tmpfile ce_out
     tmpfile=$(mktemp /tmp/eigs_test_XXXXXX.eigs)
     printf '%s\n' "$script" > "$tmpfile"
     local actual_exit=0
-    ./eigenscript "$tmpfile" >/dev/null 2>&1 || actual_exit=$?
+    ce_out=$(./eigenscript "$tmpfile" 2>&1) || actual_exit=$?
     rm -f "$tmpfile"
-    if [ "$actual_exit" = "$expected_exit" ]; then
+    if rc_expect "$expected_exit" "$actual_exit" "$ce_out"; then
         echo "  PASS: $test_name"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: $test_name (exit $actual_exit, expected $expected_exit)"
+        echo "  FAIL: $test_name (exit $actual_exit, expected $expected_exit and no sanitizer report)"
+        printf '%s\n' "$ce_out" | eigs_failure_output
         FAIL=$((FAIL + 1))
     fi
 }
@@ -1477,13 +1518,17 @@ check_exit "EM14 uncaught runtime error exits non-zero" 'x is [1] - 5' "1"
 check_exit "EM15 division by zero exits non-zero" 'x is 10 / 0' "1"
 
 # Regression: uncaught error halts execution (statement after must not run)
-EM16_OUT=$(printf '%s\n' 'x is undefined_thing' 'print of "AFTER"' > /tmp/eigs_em16.eigs; ./eigenscript /tmp/eigs_em16.eigs 2>/dev/null; rm -f /tmp/eigs_em16.eigs)
+EM16_SRC=$(mktemp /tmp/eigs_em16_XXXXXX.eigs); EM16_ERR=$(mktemp /tmp/eigs_em16_err_XXXXXX.txt)
+printf '%s\n' 'x is undefined_thing' 'print of "AFTER"' > "$EM16_SRC"
+EM16_OUT=$(./eigenscript "$EM16_SRC" 2>"$EM16_ERR"); EM16_RC=$?
+EM16_ERRTXT=$(cat "$EM16_ERR"); rm -f "$EM16_SRC" "$EM16_ERR"
 TOTAL=$((TOTAL + 1))
-if [ -z "$EM16_OUT" ]; then
+if [ -z "$EM16_OUT" ] && rc_expect 1 "$EM16_RC" "$EM16_ERRTXT"; then
     echo "  PASS: EM16 uncaught error halts (no output after)"
     PASS=$((PASS + 1))
 else
-    echo "  FAIL: EM16 statement ran after uncaught error (got '$EM16_OUT')"
+    echo "  FAIL: EM16 statement ran after uncaught error, or rc/sanitizer (rc=$EM16_RC, want 1; got '$EM16_OUT')"
+    printf '%s\n' "$EM16_ERRTXT" | eigs_failure_output
     FAIL=$((FAIL + 1))
 fi
 
@@ -1510,25 +1555,30 @@ catch e:
 
 # #406: catch binds {kind, message, line} for built-in runtime errors.
 # check() compares stdout exactly; these run the program and grep stdout.
+# check_stdout NAME SCRIPT SUBSTR [WANT_RC=0] — stdout is matched; stderr is
+# kept apart (so it cannot satisfy the match) and classified (#2306).
 check_stdout() {
     TOTAL=$((TOTAL + 1))
     local test_name="$1"
     local script="$2"
     local expected_substr="$3"
+    local cs_want="${4:-0}"
     local tmpfile
     tmpfile=$(mktemp /tmp/eigs_test_XXXXXX.eigs)
     printf '%s\n' "$script" > "$tmpfile"
-    local outfile
+    local outfile errfile cs_rc
     outfile=$(mktemp /tmp/eigs_out_XXXXXX.txt)
-    ./eigenscript "$tmpfile" >"$outfile" 2>/dev/null || true
-    if grep -qF "$expected_substr" "$outfile"; then
+    errfile=$(mktemp /tmp/eigs_err_XXXXXX.txt)
+    ./eigenscript "$tmpfile" >"$outfile" 2>"$errfile"; cs_rc=$?
+    if rc_expect "$cs_want" "$cs_rc" "$(cat "$errfile")" && grep -qF "$expected_substr" "$outfile"; then
         echo "  PASS: $test_name"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: $test_name (output: '$(cat "$outfile")', expected to contain '$expected_substr')"
+        echo "  FAIL: $test_name (rc=$cs_rc, want $cs_want and no sanitizer report; output: '$(cat "$outfile")', expected to contain '$expected_substr')"
+        eigs_failure_output < "$errfile"
         FAIL=$((FAIL + 1))
     fi
-    rm -f "$tmpfile" "$outfile"
+    rm -f "$tmpfile" "$outfile" "$errfile"
 }
 
 check_stdout "EM26 catch binds kind from the closed set" 'try:
@@ -1792,7 +1842,7 @@ print('print of \"should-not-run\"')" > "$CPG_FILE"
 CPG_OUTPUT=$(./eigenscript "$CPG_FILE" </dev/null 2>&1); CPG_RC=$?
 CPG_MSGS=$(echo "$CPG_OUTPUT" | grep -c "constant pool exceeds 65536" || true)
 TOTAL=$((TOTAL + 1))
-if [ "$CPG_RC" -ne 0 ] && [ "$CPG_MSGS" = "1" ] \
+if rc_expect 1 "$CPG_RC" "$CPG_OUTPUT" && [ "$CPG_MSGS" = "1" ] \
    && ! echo "$CPG_OUTPUT" | grep -q "should-not-run"; then
     PASS=$((PASS + 1))
     echo "  PASS: >65536-constant chunk fails cleanly (one diagnostic, no run)"
@@ -1834,7 +1884,7 @@ print('print of f\"%s\"' % parts)" > "$CDG_TWO"
 CDG_OUT=$(./eigenscript "$CDG_DEEP" </dev/null 2>&1); CDG_RC=$?
 CDG_MSGS=$(echo "$CDG_OUT" | grep -c "expression nesting too deep" || true)
 TOTAL=$((TOTAL + 1))
-if [ "$CDG_RC" -ne 0 ] && [ "$CDG_MSGS" = "1" ] \
+if rc_expect 1 "$CDG_RC" "$CDG_OUT" && [ "$CDG_MSGS" = "1" ] \
    && echo "$CDG_OUT" | grep -q "Compile error line 2:" \
    && ! echo "$CDG_OUT" | grep -q "should-not-run"; then
     PASS=$((PASS + 1))
@@ -1847,7 +1897,7 @@ fi
 
 CDG_OK_OUT=$(./eigenscript "$CDG_OK" </dev/null 2>&1); CDG_OK_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$CDG_OK_RC" -eq 0 ] && echo "$CDG_OK_OUT" | grep -q "a61=1"; then
+if rc_expect 0 "$CDG_OK_RC" "$CDG_OK_OUT" && echo "$CDG_OK_OUT" | grep -q "a61=1"; then
     PASS=$((PASS + 1))
     echo "  PASS: an f-string just under the limit still compiles and runs"
 else
@@ -1856,14 +1906,15 @@ else
     echo "$CDG_OK_OUT" | head -3
 fi
 
-CDG_TWO_MSGS=$(./eigenscript "$CDG_TWO" </dev/null 2>&1 | grep -c "expression nesting too deep" || true)
+CDG_TWO_OUT=$(./eigenscript "$CDG_TWO" </dev/null 2>&1); CDG_TWO_RC=$?
+CDG_TWO_MSGS=$(echo "$CDG_TWO_OUT" | grep -c "expression nesting too deep" || true)
 TOTAL=$((TOTAL + 1))
-if [ "$CDG_TWO_MSGS" = "1" ]; then
+if rc_expect 1 "$CDG_TWO_RC" "$CDG_TWO_OUT" && [ "$CDG_TWO_MSGS" = "1" ]; then
     PASS=$((PASS + 1))
     echo "  PASS: two too-deep expressions still report once per compile"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: depth diagnostic not deduped (msgs=$CDG_TWO_MSGS)"
+    echo "  FAIL: depth diagnostic not deduped, or rc/sanitizer (rc=$CDG_TWO_RC msgs=$CDG_TWO_MSGS)"
 fi
 rm -f "$CDG_DEEP" "$CDG_OK" "$CDG_TWO"
 
@@ -1888,10 +1939,17 @@ print('\n'.join(L + body))" > "$LW_FILE"
 TOTAL=$((TOTAL + 1))
 LW_OK=1
 # Interpreter tier
-LW_INT=$(EIGS_JIT_OFF=1 ./eigenscript "$LW_FILE" </dev/null 2>&1)
+LW_INT=$(EIGS_JIT_OFF=1 ./eigenscript "$LW_FILE" </dev/null 2>&1); LW_INT_RC=$?
 # JIT tier (thresholds forced low so any hot region compiles)
 LW_JIT=$(EIGS_JIT_ENTRY_THRESHOLD=1 EIGS_JIT_ITER_THRESHOLD=10 EIGS_JIT_OSR_THRESHOLD=50 \
-         ./eigenscript "$LW_FILE" </dev/null 2>&1)
+         ./eigenscript "$LW_FILE" </dev/null 2>&1); LW_JIT_RC=$?
+# Both tiers end on the uncaught `boom` error: exit 1, no sanitizer report (#2306).
+if rc_expect 1 "$LW_INT_RC" "$LW_INT" && rc_expect 1 "$LW_JIT_RC" "$LW_JIT"; then
+    echo "  PASS: both tiers exit 1 on the uncaught error past line 65535"
+else
+    LW_OK=0; echo "  FAIL: exit status/sanitizer (interpreter rc=$LW_INT_RC, JIT rc=$LW_JIT_RC, want 1 and no report)"
+    printf '%s\n' "$LW_INT" "$LW_JIT" | eigs_failure_output
+fi
 # 'what is x at 4464' must be 111 (not 222, the value that wrapped onto it).
 LW_R1=$(printf '%s\n' "$LW_INT" | sed -n '1p')
 LW_R2=$(printf '%s\n' "$LW_INT" | sed -n '2p')
@@ -5109,12 +5167,12 @@ check_thread_exit() {
     TOTAL=$((TOTAL + 1))
     local file="$1" want_rc="$2" marker="$3" out rc
     out=$(./eigenscript "../tests/$file" </dev/null 2>&1); rc=$?
-    if [ "$rc" -eq "$want_rc" ] && echo "$out" | grep -q "$marker"; then
+    if rc_expect "$want_rc" "$rc" "$out" && echo "$out" | grep -q "$marker"; then
         echo "  PASS: thread exit contract — $file (rc=$rc)"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: thread exit contract — $file (rc=$rc, want=$want_rc)"
-        echo "$out" | head -5
+        echo "  FAIL: thread exit contract — $file (rc=$rc, want=$want_rc, no sanitizer report)"
+        printf '%s\n' "$out" | eigs_failure_output
         FAIL=$((FAIL + 1))
     fi
 }
@@ -5206,19 +5264,21 @@ fi
 # unjoined uncaught task death fails the process; joining+catching recovers; a
 # deliberate task_kill does not fail; a mutual-join deadlock is loud. Every case
 # must also be leak-clean under the ASan build (the exact paths #483 covers) —
-# any LeakSanitizer report here fails, stricter than the tolerated global tally.
+# any sanitizer report here, a leak as well as a hard one, fails: stricter than
+# the tolerated global tally. It used to reject only the literal string
+# LeakSanitizer, so an AddressSanitizer report at rc 1 passed (#2306).
 # args: file  expected_rc  marker
 check_task_exit() {
     TOTAL=$((TOTAL + 1))
-    local file="$1" want_rc="$2" marker="$3" out rc
+    local file="$1" want_rc="$2" marker="$3" out rc cte_cls
     out=$(./eigenscript "../tests/$file" </dev/null 2>&1); rc=$?
-    if [ "$rc" -eq "$want_rc" ] && echo "$out" | grep -q "$marker" \
-       && ! echo "$out" | grep -q "LeakSanitizer"; then
+    lsan_classify "$out"; cte_cls=$?
+    if [ "$cte_cls" -eq 2 ] && [ "$rc" -eq "$want_rc" ] && echo "$out" | grep -q "$marker"; then
         echo "  PASS: task exit contract — $file (rc=$rc)"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: task exit contract — $file (rc=$rc, want=$want_rc)"
-        echo "$out" | grep -iE "LeakSanitizer|error|assert" | head -3
+        echo "  FAIL: task exit contract — $file (rc=$rc, want=$want_rc, sanitizer=$(lsan_classify_name "$out"), want none)"
+        printf '%s\n' "$out" | eigs_failure_output
         FAIL=$((FAIL + 1))
     fi
 }
@@ -5240,7 +5300,7 @@ echo "[105b] Builtin Contracts (#312/#314/#316/#317)"
 suite_program_run test_builtin_contracts.eigs check_eigs_suite "negative indices, predicate rejection, min/max reduction" test_builtin_contracts.eigs "All tests passed"
 TOTAL=$((TOTAL + 1))
 DIR_OUT=$(./eigenscript ../tests 2>&1); DIR_RC=$?
-if [ "$DIR_RC" -eq 1 ] && echo "$DIR_OUT" | grep -q "cannot read file"; then
+if rc_expect 1 "$DIR_RC" "$DIR_OUT" && echo "$DIR_OUT" | grep -q "cannot read file"; then
     PASS=$((PASS + 1))
     echo "  PASS: directory script arg exits 1 with a clean error"
 else
@@ -5825,16 +5885,19 @@ echo ""
 echo "[87] Closure Cycle Shapes"
 # STRICT exit gate (no rc_ok leak tolerance): the cycle collector must
 # keep every shape in this file ASan-clean. A LeakSanitizer exit here is
-# a collector regression, not a tolerated known leak.
+# a collector regression, not a tolerated known leak. rc 0 alone did not
+# prove "clean": a recoverable UBSan report exits 0 (#2306), so the output
+# must also classify as carrying no sanitizer report at all.
 TOTAL=$((TOTAL + 1))
 CC_OUTPUT=$(./eigenscript ../tests/test_closure_cycles.eigs </dev/null 2>&1); CC_OUTPUT_RC=$?
-if [ "$CC_OUTPUT_RC" = "0" ] && echo "$CC_OUTPUT" | grep -q "All tests passed"; then
+lsan_classify "$CC_OUTPUT"; CC_SAN=$?
+if [ "$CC_SAN" -eq 2 ] && [ "$CC_OUTPUT_RC" = "0" ] && echo "$CC_OUTPUT" | grep -q "All tests passed"; then
     PASS=$((PASS + 1))
     echo "  PASS: all closure-cycle checks (leak-clean)"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: closure-cycle checks (rc=$CC_OUTPUT_RC — must be leak-clean)"
-    echo "$CC_OUTPUT" | grep -iE "FAIL|LeakSanitizer|assert|error" | head -5
+    echo "  FAIL: closure-cycle checks (rc=$CC_OUTPUT_RC, sanitizer=$(lsan_classify_name "$CC_OUTPUT") — must be leak-clean and report-free)"
+    echo "$CC_OUTPUT" | grep -iE "FAIL|LeakSanitizer|runtime error|assert|error" | head -5
 fi
 echo ""
 
@@ -6141,22 +6204,25 @@ CI_CAT=$( cd "$CIRC_DIR" && "$BIN_ABS" catch.eigs </dev/null 2>&1 ); CI_CAT_RC=$
 # Capture rc directly off the substitution (a trailing `| grep` would make
 # $? grep's exit, not eigenscript's); strip the [load_file] debug lines after.
 CI_LF=$( cd "$CIRC_DIR" && "$BIN_ABS" la.eigs </dev/null 2>&1 ); CI_LF_RC=$?
+# Classify the raw capture before the debug lines are stripped (#2306).
+rc_expect 1 "$CI_LF_RC" "$CI_LF"; CI_LF_OK=$?
 CI_LF=$(echo "$CI_LF" | grep -v '^\[load_file\]')
 rm -rf "$CIRC_DIR"
 TOTAL=$((TOTAL + 1))
 CI_OK=1
 # rc=1 (raised, uncaught) and NOT 139 (segfault); message present.
-if [ "$CI_IMP_RC" = "1" ] && echo "$CI_IMP" | grep -q "circular dependency"; then
+# Exit codes are exact and the output must carry no sanitizer report (#2306).
+if rc_expect 1 "$CI_IMP_RC" "$CI_IMP" && echo "$CI_IMP" | grep -q "circular dependency"; then
     echo "  PASS: mutual import raises (no SIGSEGV)"
 else
     echo "  FAIL: mutual import (rc=$CI_IMP_RC out='$CI_IMP')"; CI_OK=0
 fi
-if [ "$CI_CAT_RC" = "0" ] && echo "$CI_CAT" | grep -q "^CAUGHT$"; then
+if rc_expect 0 "$CI_CAT_RC" "$CI_CAT" && echo "$CI_CAT" | grep -q "^CAUGHT$"; then
     echo "  PASS: circular import is try/catch-able"
 else
     echo "  FAIL: circular import not catchable (rc=$CI_CAT_RC out='$CI_CAT')"; CI_OK=0
 fi
-if [ "$CI_LF_RC" = "1" ] && echo "$CI_LF" | grep -q "circular dependency"; then
+if [ "$CI_LF_OK" -eq 0 ] && echo "$CI_LF" | grep -q "circular dependency"; then
     echo "  PASS: mutual load_file raises (no SIGSEGV)"
 else
     echo "  FAIL: mutual load_file (rc=$CI_LF_RC out='$CI_LF')"; CI_OK=0
@@ -6904,7 +6970,7 @@ print('\n'.join(L))" > "$TRY_DIR/deep.eigs"
 
 T9_OUTPUT=$(./eigenscript "$TRY_DIR/deep.eigs" </dev/null 2>&1); T9_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$T9_RC" -ne 0 ] \
+if rc_expect 1 "$T9_RC" "$T9_OUTPUT" \
    && echo "$T9_OUTPUT" | grep -q "nested more than 8 deep" \
    && ! echo "$T9_OUTPUT" | grep -q "CAUGHT-AT-DEPTH"; then
     PASS=$((PASS + 1))
@@ -6927,7 +6993,7 @@ x is no_such_variable_at_all
 RETEOF
 TR_OUTPUT=$(./eigenscript "$TRY_DIR/ret.eigs" </dev/null 2>&1); TR_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$TR_RC" -ne 0 ] && echo "$TR_OUTPUT" | grep -q "undefined variable"; then
+if rc_expect 1 "$TR_RC" "$TR_OUTPUT" && echo "$TR_OUTPUT" | grep -q "undefined variable"; then
     PASS=$((PASS + 1))
     echo "  PASS: uncaught error after a return-from-try still reports (was silent)"
 else
@@ -6953,7 +7019,7 @@ x is no_such_variable_at_all
 KILLEOF
 TK_OUTPUT=$(./eigenscript "$TRY_DIR/kill.eigs" </dev/null 2>&1); TK_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$TK_RC" -ne 0 ] && echo "$TK_OUTPUT" | grep -q "undefined variable"; then
+if rc_expect 1 "$TK_RC" "$TK_OUTPUT" && echo "$TK_OUTPUT" | grep -q "undefined variable"; then
     PASS=$((PASS + 1))
     echo "  PASS: uncaught error after killing a task suspended in a try still reports"
 else
@@ -6988,7 +7054,7 @@ print of i
 ESCEOF
 CE_OUTPUT=$(./eigenscript "$CONT_DIR/escape.eigs" </dev/null 2>&1); CE_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$CE_RC" -ne 0 ] && echo "$CE_OUTPUT" | grep -q "undefined variable 'i'"; then
+if rc_expect 1 "$CE_RC" "$CE_OUTPUT" && echo "$CE_OUTPUT" | grep -q "undefined variable 'i'"; then
     PASS=$((PASS + 1))
     echo "  PASS: loop var does not outlive a loop containing continue"
 else
@@ -7013,7 +7079,7 @@ print of (mymod.exported_after of [])
 USEEOF
 CM_OUTPUT=$(./eigenscript "$CONT_DIR/usemod.eigs" </dev/null 2>&1); CM_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$CM_RC" -eq 0 ] && echo "$CM_OUTPUT" | grep -q "^42$"; then
+if rc_expect 0 "$CM_RC" "$CM_OUTPUT" && echo "$CM_OUTPUT" | grep -q "^42$"; then
     PASS=$((PASS + 1))
     echo "  PASS: module exports after a continue-loop survive (was: silently dropped)"
 else
@@ -7037,7 +7103,7 @@ print of total
 WHEOF
 CW_OUTPUT=$(./eigenscript "$CONT_DIR/whileloop.eigs" </dev/null 2>&1); CW_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$CW_RC" -eq 0 ] && echo "$CW_OUTPUT" | grep -q "^12$"; then
+if rc_expect 0 "$CW_RC" "$CW_OUTPUT" && echo "$CW_OUTPUT" | grep -q "^12$"; then
     PASS=$((PASS + 1))
     echo "  PASS: continue in a while-loop leaves the surrounding env intact"
 else
@@ -7059,7 +7125,7 @@ SK_DIR=$(mktemp -d /tmp/eigs_sk869_XXXX)
 printf 'what is 42\nprint of "still alive"\ncount is 1\nwhere is count\nprint of (str of count)\n' > "$SK_DIR/discard.eigs"
 SK_OUT=$(./eigenscript "$SK_DIR/discard.eigs" 2>&1); SK_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$SK_RC" -ne 0 ] && echo "$SK_OUT" | grep -q "'what is ...' is an interrogative" \
+if rc_expect 1 "$SK_RC" "$SK_OUT" && echo "$SK_OUT" | grep -q "'what is ...' is an interrogative" \
    && echo "$SK_OUT" | grep -q "'where is ...' is an interrogative" \
    && ! echo "$SK_OUT" | grep -q "still alive"; then
     PASS=$((PASS + 1))
@@ -7071,9 +7137,9 @@ else
 fi
 
 # The REPL's last statement IS the result, so an interrogative there answers.
-SK_REPL=$(printf 'x is 5\nwhat is x\n' | ./eigenscript 2>&1)
+SK_REPL=$(printf 'x is 5\nwhat is x\n' | ./eigenscript 2>&1); SK_REPL_RC=$?
 TOTAL=$((TOTAL + 1))
-if echo "$SK_REPL" | grep -q "=> 5" && ! echo "$SK_REPL" | grep -q "Compile error"; then
+if rc_expect 0 "$SK_REPL_RC" "$SK_REPL" && echo "$SK_REPL" | grep -q "=> 5" && ! echo "$SK_REPL" | grep -q "Compile error"; then
     PASS=$((PASS + 1))
     echo "  PASS: the REPL still answers 'what is x'"
 else
@@ -7086,7 +7152,7 @@ fi
 printf 'z is 3\nprint of (str of (eval of "what is z"))\nprint of (str of (what is z))\n' > "$SK_DIR/live.eigs"
 SK_LIVE=$(./eigenscript "$SK_DIR/live.eigs" 2>&1); SK_LIVE_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$SK_LIVE_RC" -eq 0 ] && [ "$(echo "$SK_LIVE" | head -1)" = "3" ]; then
+if rc_expect 0 "$SK_LIVE_RC" "$SK_LIVE" && [ "$(echo "$SK_LIVE" | head -1)" = "3" ]; then
     PASS=$((PASS + 1))
     echo "  PASS: eval and expression-position interrogatives are untouched"
 else

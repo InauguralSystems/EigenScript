@@ -29,9 +29,25 @@ paths:
     missing the classifier took `$? = 127` and inverted both verdicts silently.
     The classifier keeps every pattern *inside* the function for this reason —
     do not hoist them back to file scope.
-  - Sites that reject *every* sanitizer marker (`check_task_exit`, `test_lsp.py`,
-    `test_dap.py`, sigusr1 subtest 1) are deliberately stricter and do not use
-    the classifier's tolerance.
+  - Sites that reject *every* sanitizer report (`check_task_exit`, `[87]`,
+    `tests/test_error_examples.sh`, `test_lsp.py`, `test_dap.py`, sigusr1
+    subtest 1) are deliberately stricter and do not use the classifier's
+    tolerance. `check_task_exit`, `[87]` and `test_error_examples.sh` call
+    `lsan_classify` and require `none`. Until #2306, `check_task_exit` rejected
+    only the literal string `LeakSanitizer`, so an AddressSanitizer report at
+    the expected exit code passed.
+  - **A row that expects a nonzero exit uses `rc_expect WANT RC OUTPUT`, not
+    `[ "$rc" -eq 1 ]` or `-ne 0` (#2306).** 1 is the language's error exit and
+    also ASan's and UBSan's halt exit code, so an exit-code compare alone
+    passes a sanitizer report printed after the expected diagnostic.
+    `rc_expect` classifies first: hard fails at any code, leak-only goes to the
+    tolerated ledger as in `rc_ok`, and otherwise the code must equal WANT.
+    Never discard the output of a program whose row decides on its exit code
+    (`>/dev/null 2>&1`, `2>/dev/null`, `|| true`).
+    `tests/test_san_report_sweep_2306.sh --selftest` (a `tools/selftests.txt`
+    row) runs these sections through the real runner with a fake-sanitizer
+    binary and turns red if a row passes a planted report. A row that cannot
+    be fixed yet goes in `tests/san_report_sweep_2306.allow` with a reason.
 - **Never edit `run_all_tests.sh` (or any child `.sh`) while the suite is
   running.** bash reads a script INCREMENTALLY as it executes — it seeks by
   byte offset — so an edit that shifts line lengths under a running shell can
