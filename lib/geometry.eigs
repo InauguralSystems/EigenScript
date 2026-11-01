@@ -393,6 +393,18 @@ define triangle_inradius(a, b, c) as:
 
 # Signed area via shoelace formula
 # Positive = counter-clockwise, negative = clockwise
+# Exact rounding error of a - b (Knuth TwoDiff): 0 iff a - b is exact.
+# A non-finite intermediate also counts as inexact.
+define _sub_error(a, b) as:
+    local d is a - b
+    local bb is a - d
+    local err is (a - (d + bb)) + (bb - b)
+    if err != err or d != d:
+        return 1
+    if (abs of d) >= 1e308:
+        return 1
+    return err
+
 define polygon_area(vertices) as:
     local n is len of vertices
     if n == 0:
@@ -424,10 +436,12 @@ define polygon_area(vertices) as:
         local ix is vertices[i][0] - origin_x
         local iy is vertices[i][1] - origin_y
         # The translated sum is only trustworthy when every subtraction was
-        # exact (round-trips back to the input); otherwise translation itself
-        # erased information (saturation at the cap, or a far vertex). Then
-        # main's raw sum is used (#2297 review).
-        if (ix + origin_x) != vertices[i][0] or (iy + origin_y) != vertices[i][1]:
+        # exact. TwoDiff (Knuth) gives the exact rounding error of a - b; it is
+        # zero iff the difference is exact. Otherwise translation itself lost
+        # information (a far vertex, or the 1e308 cap), and main's raw sum is
+        # used (#2297 review). A round-trip test is not enough: x - x0 can be
+        # inexact and still round back to x.
+        if (_sub_error of [vertices[i][0], origin_x]) != 0 or (_sub_error of [vertices[i][1], origin_y]) != 0:
             translated_saturated is 1
         local translated_left is jx * iy
         local translated_right is ix * jy

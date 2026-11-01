@@ -324,4 +324,10 @@ far_thin is [[big_l, big_l], [big_l + 16, big_l + 16], [big_l + 32, big_l + 32],
 assert of [(polygon_area of far_thin) == (_polygon_area_raw of far_thin), "inexact translation falls back to main's raw area"]
 assert of [polygon_is_clockwise of far_thin, "far thin polygon keeps main's winding"]
 
+# #2297 review: an inexact subtraction that still round-trips must fall back.
+mixed is [[-13, 13], [1000000000000000000, 1000000000000000000], [-16, 10], [-16, 16]]
+assert of [(polygon_area of mixed) == (_polygon_area_raw of mixed), "round-trip-but-inexact translation falls back to main's raw area"]
+assert of [(_sub_error of [10.000000001, 10]) == 0, "Sterbenz-exact subtraction is detected as exact"]
+assert of [(_sub_error of [1, 100000000000000000]) != 0, "far subtraction is detected as inexact"]
+
 test_summary of null
