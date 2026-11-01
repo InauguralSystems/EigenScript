@@ -393,78 +393,45 @@ define triangle_inradius(a, b, c) as:
 
 # Signed area via shoelace formula
 # Positive = counter-clockwise, negative = clockwise
-# Exact rounding error of a - b (Knuth TwoDiff): 0 iff a - b is exact.
-# A non-finite intermediate also counts as inexact.
-define _sub_error(a, b) as:
-    local d is a - b
-    local bb is a - d
-    local err is (a - (d + bb)) + (bb - b)
-    if err != err or d != d:
-        return 1
-    if (abs of d) >= 1e308:
-        return 1
-    return err
+# Error-free product (Dekker): returns [p, e] with p + e == a * b exactly.
+define _two_product(a, b) as:
+    local p is a * b
+    local ca is 134217729 * a
+    local ah is ca - (ca - a)
+    local al is a - ah
+    local cb is 134217729 * b
+    local bh is cb - (cb - b)
+    local bl is b - bh
+    local e is ((ah * bh - p) + ah * bl + al * bh) + al * bl
+    return [p, e]
 
+# Signed area by the shoelace formula, evaluated with error-free products and
+# Neumaier compensated summation, so the result is accurate to about one
+# rounding unit of the true area for any coordinates (no translation or
+# tolerance heuristics; #2296/#2297). Coordinates too large for Dekker's split
+# (or non-finite) use main's plain shoelace sum unchanged.
 define polygon_area(vertices) as:
     local n is len of vertices
     if n == 0:
         return 0
-    local origin_x is vertices[0][0]
-    local origin_y is vertices[0][1]
-    local raw_area is 0
-    local raw_scale is 0
-    local translated_area is 0
-    local translated_scale is 0
-    local translated_saturated is 0
+    for v in vertices:
+        if (abs of v[0]) > 1e290 or (abs of v[1]) > 1e290 or v[0] != v[0] or v[1] != v[1]:
+            return _polygon_area_raw of vertices
+    local total is 0
+    local comp is 0
     local j is n - 1
     for i in range of n:
-        local raw_left is vertices[j][0] * vertices[i][1]
-        local raw_right is vertices[i][0] * vertices[j][1]
-        local raw_cross is raw_left - raw_right
-        local raw_magnitude is raw_left
-        if raw_magnitude < 0:
-            raw_magnitude is 0 - raw_magnitude
-        local raw_right_magnitude is raw_right
-        if raw_right_magnitude < 0:
-            raw_right_magnitude is 0 - raw_right_magnitude
-        raw_magnitude is raw_magnitude + raw_right_magnitude
-        # Same left-associated order as main, so the raw fallback is main's sum.
-        raw_area is raw_area + raw_left - raw_right
-        raw_scale is raw_scale + raw_magnitude
-        local jx is vertices[j][0] - origin_x
-        local jy is vertices[j][1] - origin_y
-        local ix is vertices[i][0] - origin_x
-        local iy is vertices[i][1] - origin_y
-        # The translated sum is only trustworthy when every subtraction was
-        # exact. TwoDiff (Knuth) gives the exact rounding error of a - b; it is
-        # zero iff the difference is exact. Otherwise translation itself lost
-        # information (a far vertex, or the 1e308 cap), and main's raw sum is
-        # used (#2297 review). A round-trip test is not enough: x - x0 can be
-        # inexact and still round back to x.
-        if (_sub_error of [vertices[i][0], origin_x]) != 0 or (_sub_error of [vertices[i][1], origin_y]) != 0:
-            translated_saturated is 1
-        local translated_left is jx * iy
-        local translated_right is ix * jy
-        local translated_cross is translated_left - translated_right
-        local translated_magnitude is translated_left
-        if translated_magnitude < 0:
-            translated_magnitude is 0 - translated_magnitude
-        local translated_right_magnitude is translated_right
-        if translated_right_magnitude < 0:
-            translated_right_magnitude is 0 - translated_right_magnitude
-        translated_magnitude is translated_magnitude + translated_right_magnitude
-        translated_area is translated_area + translated_cross
-        translated_scale is translated_scale + translated_magnitude
+        local left is _two_product of [vertices[j][0], vertices[i][1]]
+        local right is _two_product of [vertices[i][0], vertices[j][1]]
+        for term in [left[0], left[1], 0 - right[0], 0 - right[1]]:
+            local t is total + term
+            if (abs of total) >= (abs of term):
+                comp is comp + ((total - t) + term)
+            else:
+                comp is comp + ((term - t) + total)
+            total is t
         j is i
-    local raw_bound is 8 * n * _FLOAT_EPS * raw_scale
-    local translated_bound is 8 * n * _FLOAT_EPS * translated_scale
-    # A non-finite or saturated translated sum carries no information; keep
-    # main's raw result there (#2297 review).
-    if translated_saturated == 1 or translated_scale >= 1e308 or translated_area != translated_area:
-        return raw_area / 2
-    if raw_bound < translated_bound:
-        return raw_area / 2
-    return translated_area / 2
+    return (total + comp) / 2
 
 # main's raw shoelace area: polygon_centroid's moments are raw, so its
 # denominator must be too (#2297 review).

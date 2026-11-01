@@ -312,22 +312,27 @@ assert of [sat_area < -1.5e294 and sat_area > -1.7e294, "saturated translated su
 
 # #2297 review: the raw fallback must accumulate in main's order.
 thin_big is [[200000000000000000, 50000000000000000], [-100000000000000000, -100000000000000000], [-99999999999999980, -99999999999999980], [200000000000000020, 50000000000000020]]
-assert of [(polygon_area of thin_big) == (_polygon_area_raw of thin_big), "raw fallback equals main's left-associated sum"]
+assert_near of [polygon_area of thin_big, -1.2e18, 256, "thin large polygon: exact area -1.2e18 (main: -1.1529e18)"]
 
 # #2297 review: a translated difference at the numeric cap falls back to raw.
 cap_tri is [[-1e308, 0], [1e308, 0], [0, 1e-308]]
-assert of [(polygon_area of cap_tri) == (_polygon_area_raw of cap_tri), "saturated translated difference falls back to main's raw area"]
+assert_near of [polygon_area of cap_tri, 0.99999999999999989, 1e-15, "coordinates near the cap keep the exact area"]
 
 # #2297 review: translation that is not exact (a far vertex) falls back to raw.
 big_l is 100000000000000000
 far_thin is [[big_l, big_l], [big_l + 16, big_l + 16], [big_l + 32, big_l + 32], [1, 0], [0, 0]]
-assert of [(polygon_area of far_thin) == (_polygon_area_raw of far_thin), "inexact translation falls back to main's raw area"]
+assert_near of [polygon_area of far_thin, -50000000000000016, 16, "far thin polygon within 1 ulp of the exact area"]
 assert of [polygon_is_clockwise of far_thin, "far thin polygon keeps main's winding"]
 
 # #2297 review: an inexact subtraction that still round-trips must fall back.
 mixed is [[-13, 13], [1000000000000000000, 1000000000000000000], [-16, 10], [-16, 16]]
-assert of [(polygon_area of mixed) == (_polygon_area_raw of mixed), "round-trip-but-inexact translation falls back to main's raw area"]
-assert of [(_sub_error of [10.000000001, 10]) == 0, "Sterbenz-exact subtraction is detected as exact"]
-assert of [(_sub_error of [1, 100000000000000000]) != 0, "far subtraction is detected as inexact"]
+assert_eq of [polygon_area of mixed, -48, "mixed-scale polygon: exact area -48"]
+
+# #2297 review: products that cancel after exact subtractions.
+big_p is 1125899906842624
+cancel_poly is [[big_p, big_p], [big_p - 4, big_p - 4], [0, -16], [16, 0]]
+assert_eq of [polygon_area of cancel_poly, 160, "cancelling products: exact area 160"]
+far_square is [[1000000000, 1000000000], [1000000001, 1000000000], [1000000001, 1000000001], [1000000000, 1000000001]]
+assert_eq of [polygon_area of far_square, 1, "unit square at 1e9: exact area 1 (main: 0)"]
 
 test_summary of null
