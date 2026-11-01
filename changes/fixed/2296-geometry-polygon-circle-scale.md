@@ -1,1 +1,1 @@
-- `polygon_area` and `polygon_is_clockwise` now pick the better-conditioned shoelace evaluation (raw or translated), so small polygons far from the origin get the right area and winding (#2296). Circle and centroid helpers were verified correct on main and are unchanged.
+- `polygon_area` (and so `polygon_is_clockwise`) now evaluates the shoelace sum with error-free products and compensated summation, so small or thin polygons far from the origin get the correct area and winding (#2296). Circle and centroid helpers were verified correct on main and are unchanged.
