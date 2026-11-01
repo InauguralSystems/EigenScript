@@ -9,7 +9,8 @@
 # Checks (each reads the REAL file: ci.yml via PyYAML, the Makefile via make,
 # tests/test_lsp_asan.sh by running it against a stub `make`):
 #   C1 ci.yml: the LSP step's LSP_ASAN_VARIANT is the variant the job's
-#      "Build with AddressSanitizer + UBSan" step builds.
+#      "Build with AddressSanitizer + UBSan" step builds, and the step's run:
+#      body does not override it inline (which would bypass the env: value).
 #   C2 Makefile: `make -n -B lsp-asan lsp-arming-test` for that variant writes
 #      only build/<variant>/ outputs (no second variant's objects).
 #   C3 Makefile: a non-ASan LSP_ASAN_VARIANT is refused.
@@ -18,6 +19,10 @@
 #   C6 test_lsp_asan.sh FAILS (never skips) without python3.
 #   C7 a shard whose LSP step did not run writes lsp_asan=no in its receipt.
 #   C8 the aggregator fails when no shard claims lsp_asan (and passes on one).
+#   C9 Makefile: an invalid LSP_ASAN_VARIANT does not break unrelated targets
+#      (the refusal is in the lsp-asan recipe, not at parse time).
+#   C10 test_lsp_asan.sh refuses an uninstrumented eigenlsp AND an
+#      uninstrumented arming witness (__asan_init check on both binaries).
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 command -v python3 >/dev/null 2>&1 || { echo "lsp_asan_reuse: INSTRUMENT ERROR: python3 missing"; exit 2; }
@@ -59,6 +64,24 @@ EOF
 chmod +x "$W/stub/make"
 cp "$W/stub/make" "$W/nopy/make"
 ln -s "$(command -v dirname)" "$W/nopy/dirname"
+# C10's stubs: make succeeds, nm reports __asan_init except for the binary
+# whose path matches $STUB_NM_BARE, python3 records that the harness ran.
+mkdir -p "$W/nmstub"
+cat > "$W/nmstub/make" <<EOF
+#!$BASH_BIN
+exit 0
+EOF
+cat > "$W/nmstub/nm" <<EOF
+#!$BASH_BIN
+case "\$1" in *"\$STUB_NM_BARE") exit 0 ;; esac
+echo "                 U __asan_init"
+EOF
+cat > "$W/nmstub/python3" <<EOF
+#!$BASH_BIN
+echo "python3 \$*" >> "\$STUB_MAKE_LOG"
+exit 0
+EOF
+chmod +x "$W/nmstub/make" "$W/nmstub/nm" "$W/nmstub/python3"
 
 # run_checks CI MAKEFILE SCRIPT -> one "ok Cn" / "bad Cn: why" line per check.
 run_checks() {
@@ -72,6 +95,8 @@ run_checks() {
     if [ -z "$v" ]; then echo "bad C1: cannot read the shard build variant from '$run'"
     elif [ "$lspv" != "$v" ]; then echo "bad C1: LSP step LSP_ASAN_VARIANT='$lspv', shard builds '$v'"
     elif [[ $lsprun != *"test_lsp_asan.sh"* ]]; then echo "bad C1: LSP step does not run test_lsp_asan.sh"
+    elif printf '%s\n' "$lsprun" | grep -qE 'LSP_ASAN_VARIANT[[:space:]]*='; then
+        echo "bad C1: LSP step's run: body overrides LSP_ASAN_VARIANT inline: $(printf '%s\n' "$lsprun" | grep -E 'LSP_ASAN_VARIANT[[:space:]]*=' | head -1)"
     else echo "ok C1 (shard builds $v; LSP step links $lspv)"; fi
     [ -n "$v" ] || v=asan-server
     # C2
@@ -127,10 +152,28 @@ run_checks() {
     if [ "$aggr0" -ne 0 ] && [[ $out0 == *"lsp_asan was claimed by 0 shard(s)"* ]] && [ "$aggr1" -eq 0 ]; then
         echo "ok C8 (0 claimants -> rc=$aggr0; 1 claimant -> rc=0)"
     else echo "bad C8: 0 claimants rc=$aggr0, 1 claimant rc=$aggr1: $(printf '%s' "$out0" | tail -1)"; fi
+    # C9
+    out=$(make -n -f "$mk" -C "$ROOT" clean LSP_ASAN_VARIANT=release 2>&1); rc=$?
+    if [ "$rc" -eq 0 ]; then echo "ok C9 (make -n clean with LSP_ASAN_VARIANT=release rc=0)"
+    else echo "bad C9: an invalid LSP_ASAN_VARIANT breaks 'make clean' rc=$rc: $(printf '%s' "$out" | tail -1)"; fi
+    # C10: each binary uninstrumented in turn must fail before the harness runs.
+    local bare why=""
+    for bare in /lsp/eigenlsp /test_lsp_arming; do
+        : > "$log"
+        out=$(STUB_MAKE_LOG="$log" STUB_NM_BARE="$bare" LSP_ASAN_VARIANT="$v" PATH="$W/nmstub:$PATH" "$BASH_BIN" "$script" 2>&1); rc=$?
+        if [ "$rc" -eq 0 ] || [[ $out != *"$bare is not AddressSanitizer-instrumented"* ]] || grep -q '^python3 ' "$log"; then
+            why="$why uninstrumented ...$bare -> rc=$rc, harness ran=$(grep -c '^python3 ' "$log");"
+        fi
+    done
+    : > "$log"
+    out=$(STUB_MAKE_LOG="$log" STUB_NM_BARE=/no-such-binary LSP_ASAN_VARIANT="$v" PATH="$W/nmstub:$PATH" "$BASH_BIN" "$script" 2>&1); rc=$?
+    if [ "$rc" -ne 0 ] || ! grep -q '^python3 ' "$log"; then why="$why both instrumented -> rc=$rc, harness ran=$(grep -c '^python3 ' "$log");"; fi
+    if [ -z "$why" ]; then echo "ok C10 (uninstrumented eigenlsp or arming witness refused; both instrumented -> harness runs)"
+    else echo "bad C10:$why"; fi
 }
 
 CI="$ROOT/.github/workflows/ci.yml" MK="$ROOT/Makefile" SCRIPT="$ROOT/tests/test_lsp_asan.sh"
-NCHECKS=8
+NCHECKS=10
 
 case "${1:-}" in
     "")
@@ -190,8 +233,17 @@ plant "receipt defaults lsp_asan to yes" ci C7 \
     'echo "lsp_asan=${lsp_asan:-no}"' 'echo "lsp_asan=${lsp_asan:-yes}"'
 plant "aggregator stops counting lsp_asan claimants" ci C8 \
     "for extra in gc_traversal lsp_asan; do" "for extra in gc_traversal; do"
+plant "LSP step overrides the variant inline in run:" ci C1 \
+    "cd tests && bash test_lsp_asan.sh" "cd tests && LSP_ASAN_VARIANT=asan bash test_lsp_asan.sh"
+plant "parse-time variant refusal (breaks every make call)" mk C9 \
+    "lsp-asan:
+	\$(error LSP_ASAN_VARIANT=" "\$(error LSP_ASAN_VARIANT="
+plant "__asan_init checked on eigenlsp only" script C10 \
+    'for bin in "$LSP" "$ARMING"; do' 'for bin in "$LSP"; do'
+plant "__asan_init checked on the arming witness only" script C10 \
+    'for bin in "$LSP" "$ARMING"; do' 'for bin in "$ARMING"; do'
 
-[ "$n" -eq 10 ] || { echo "lsp_asan_reuse selftest: ran $n cases, want 10"; exit 1; }
+[ "$n" -eq 14 ] || { echo "lsp_asan_reuse selftest: ran $n cases, want 14"; exit 1; }
 echo "PLAN: $n"
 echo "lsp_asan_reuse selftest: $((n - fail)) of $n passed"
 [ "$fail" -eq 0 ]
