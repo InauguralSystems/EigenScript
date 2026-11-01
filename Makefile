@@ -56,7 +56,14 @@ PREFIX  := $(HOME)/.local
 # the runtime grows (it had, silently — nothing built this target in CI).
 LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(filter-out $(CLI_ONLY),$(SOURCES))
 LSP_BINARY  := $(SRC_DIR)/eigenlsp
-LSP_ASAN_BINARY := build/asan/lsp/eigenlsp
+# The sanitizer LSP links against one ASan runtime variant's objects (#2277).
+# Default `asan`; CI's ASan shards pass `asan-server`, the variant they have
+# already built, so the LSP step reuses those objects instead of compiling a
+# second sanitizer variant. Only ASan variants are accepted: anything else
+# would produce an uninstrumented "sanitizer" LSP.
+LSP_ASAN_VARIANT ?= asan
+LSP_ASAN_VARIANTS_OK := asan asan-server
+LSP_ASAN_BINARY := build/$(LSP_ASAN_VARIANT)/lsp/eigenlsp
 
 # The DAP server (#539 v3): the tape model TU plus the runtime it needs
 # (observer_slot classification, trace_name_is_internal). Same link
@@ -547,18 +554,33 @@ lsp: $(LSP_BINARY)
 # dependency, so rebuilding that shared path with an override can silently run
 # a newer release binary instead (#1365), and a real rebuild leaves local
 # release tests pointing at the instrumented executable.
-LSP_ASAN_RUNTIME_OBJ := $(filter-out $(patsubst $(SRC_DIR)/%.c,build/asan/%.o,$(CLI_ONLY)),$(OBJ_asan))
-build/asan/lsp/eigenlsp.o: $(SRC_DIR)/eigenlsp.c $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt | build/asan/lsp
-	$(CC) $(FLAGS_asan) -MMD -MP -c $< -o $@
-build/asan/lsp:
+#
+# eigenlsp.o is compiled with the SAME variant's flags as the runtime objects
+# it links, so the LSP TU and the runtime agree on every EIGENSCRIPT_EXT_*
+# define. Under `asan-server` that means ext_http/ext_net are linked in; the
+# sanitizer flags (ASAN_FLAGS) are identical across both variants.
+#
+# An invalid LSP_ASAN_VARIANT is refused only when lsp-asan is actually built
+# (the $(error) sits in that recipe, which make expands even under -n), so a
+# stray value in the environment does not break `make clean`, `make test`, etc.
+ifeq ($(filter $(LSP_ASAN_VARIANT),$(LSP_ASAN_VARIANTS_OK)),)
+lsp-asan:
+	$(error LSP_ASAN_VARIANT='$(LSP_ASAN_VARIANT)' is not an ASan variant (allowed: $(LSP_ASAN_VARIANTS_OK)))
+else
+LSP_ASAN_DIR := build/$(LSP_ASAN_VARIANT)/lsp
+LSP_ASAN_RUNTIME_OBJ := $(filter-out $(patsubst $(SRC_DIR)/%.c,build/$(LSP_ASAN_VARIANT)/%.o,$(CLI_ONLY)),$(OBJ_$(LSP_ASAN_VARIANT)))
+$(LSP_ASAN_DIR)/eigenlsp.o: $(SRC_DIR)/eigenlsp.c $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt | $(LSP_ASAN_DIR)
+	$(CC) $(FLAGS_$(LSP_ASAN_VARIANT)) -MMD -MP -c $< -o $@
+$(LSP_ASAN_DIR):
 	@mkdir -p $@
--include build/asan/lsp/eigenlsp.d
+-include $(LSP_ASAN_DIR)/eigenlsp.d
 
-$(LSP_ASAN_BINARY): build/asan/lsp/eigenlsp.o $(LSP_ASAN_RUNTIME_OBJ)
-	$(CC) $(FLAGS_asan) -o $@ $^ $(LIBS_asan)
-	@echo "EigenScript LSP $(VERSION) (ASan+UBSan) built. Binary: $$(du -sh $@ | cut -f1)"
+$(LSP_ASAN_BINARY): $(LSP_ASAN_DIR)/eigenlsp.o $(LSP_ASAN_RUNTIME_OBJ)
+	$(CC) $(FLAGS_$(LSP_ASAN_VARIANT)) -o $@ $^ $(LIBS_$(LSP_ASAN_VARIANT))
+	@echo "EigenScript LSP $(VERSION) (ASan+UBSan, $(LSP_ASAN_VARIANT) runtime) built. Binary: $$(du -sh $@ | cut -f1)"
 
 lsp-asan: $(LSP_ASAN_BINARY)
+endif
 
 # Bounded diagnostic-state witness: compile the actual LSP/trace sources in
 # the test TU, against the requested runtime variant, without production hooks.
