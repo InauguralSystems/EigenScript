@@ -335,4 +335,10 @@ assert_eq of [polygon_area of cancel_poly, 160, "cancelling products: exact area
 far_square is [[1000000000, 1000000000], [1000000001, 1000000000], [1000000001, 1000000001], [1000000000, 1000000001]]
 assert_eq of [polygon_area of far_square, 1, "unit square at 1e9: exact area 1 (main: 0)"]
 
+# #2297 review: coordinates whose products would pass the numeric cap keep
+# main's sum (exactly collinear -> 0).
+huge_l is 1.3407808079786528e154
+huge_tri is [[huge_l, huge_l], [2 * huge_l, 4 * huge_l], [3 * huge_l, 7 * huge_l]]
+assert_eq of [polygon_area of huge_tri, 0, "products past the cap fall back to main's sum (collinear -> 0)"]
+
 test_summary of null

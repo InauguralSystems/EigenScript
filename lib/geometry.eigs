@@ -407,16 +407,20 @@ define _two_product(a, b) as:
 
 # Signed area by the shoelace formula, evaluated with error-free products and
 # Neumaier compensated summation, so the result is accurate to about one
-# rounding unit of the true area for any coordinates (no translation or
-# tolerance heuristics; #2296/#2297). Coordinates too large for Dekker's split
-# (or non-finite) use main's plain shoelace sum unchanged.
+# rounding unit of the true area (no translation or tolerance heuristics;
+# #2296/#2297). Outside Dekker's exact range main's plain sum is used.
 define polygon_area(vertices) as:
     local n is len of vertices
     if n == 0:
         return 0
+    # Dekker's products are exact only while every product and partial product
+    # stays finite and normal: |coordinate| in [1e-140, 1e150] (or exactly 0).
+    # Outside that range (or non-finite), use main's plain sum unchanged.
     for v in vertices:
-        if (abs of v[0]) > 1e290 or (abs of v[1]) > 1e290 or v[0] != v[0] or v[1] != v[1]:
-            return _polygon_area_raw of vertices
+        for c in v:
+            local m is abs of c
+            if c != c or m > 1e150 or (m != 0 and m < 1e-140):
+                return _polygon_area_raw of vertices
     local total is 0
     local comp is 0
     local j is n - 1
