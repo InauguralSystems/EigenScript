@@ -415,7 +415,8 @@ define polygon_area(vertices) as:
         if raw_right_magnitude < 0:
             raw_right_magnitude is 0 - raw_right_magnitude
         raw_magnitude is raw_magnitude + raw_right_magnitude
-        raw_area is raw_area + raw_cross
+        # Same left-associated order as main, so the raw fallback is main's sum.
+        raw_area is raw_area + raw_left - raw_right
         raw_scale is raw_scale + raw_magnitude
         local jx is vertices[j][0] - origin_x
         local jy is vertices[j][1] - origin_y
