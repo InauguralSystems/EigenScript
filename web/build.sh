@@ -19,19 +19,28 @@ cd "$(dirname "$0")/.."
 
 mkdir -p web/dist
 
-# Core sources — same set as the Makefile's `build` target minus main.c
-# (replaced by web/eigs_wasm.c) and minus the optional ext_* / model_*
-# units, which depend on HTTP/sockets/threads not available in WASM.
-SOURCES=(
-    src/eigenscript.c src/lexer.c src/parser.c
-    src/builtins.c src/builtins_buf.c src/builtins_host.c src/builtins_tensor.c
-    src/fsutil.c
-    src/hash.c src/alloc.c src/state.c src/strbuf.c
-    src/ext_store.c src/fmt.c src/lint.c src/lint_host.c
-    src/chunk.c src/compiler.c src/vm.c src/task.c
-    src/jit.c src/trace.c
-    web/eigs_wasm.c
-)
+# Core sources: the Makefile's EMBED_SOURCES (SOURCES minus CLI_ONLY, the
+# runtime without main.c and the CLI-only units), plus web/eigs_wasm.c in
+# place of main.c. The optional ext_* / model_* units are not in SOURCES.
+# Derived, never copied (#2301): a hand-written list here drifted and lost
+# src/eigs_embed.c, so eigs_source_lookup was undefined and every `import`
+# aborted the deployed playground; tools/embed_stack_soak.sh and
+# tools/freestanding_check.sh anchor to the Makefile for the same reason.
+#
+# `make` takes the tree lock (tools/tree_lock.sh), so a local run started while
+# a suite holds it waits and prints "make: waiting for the build lock".
+# No mapfile, so stock macOS bash 3.2 can run this; a failing make stops the
+# script here (set -e on the assignment).
+EMBED=$(make --no-print-directory print-EMBED_SOURCES)
+SOURCES=()
+for f in $EMBED; do
+    case "$f" in *.c) SOURCES+=("$f") ;; esac
+done
+case " ${SOURCES[*]-} " in
+    *" src/vm.c "*) ;;
+    *) echo "FAIL: could not derive the runtime source list from the Makefile (print-EMBED_SOURCES)" >&2; exit 1 ;;
+esac
+SOURCES+=(web/eigs_wasm.c)
 
 VERSION=$(cat VERSION)
 
@@ -46,6 +55,11 @@ EXPORTED_RUNTIME='["ccall","cwrap","UTF8ToString","stringToUTF8","lengthBytesUTF
 # possible to operate on streams when !SYSCALLS_REQUIRE_FILESYSTEM"); the
 # deployed v0.48.0 playground could not run print of "hello" (hq#58
 # ES-OWF-1). tools/playground_smoke.cjs now runs real programs in CI.
+#
+# -sERROR_ON_UNDEFINED_SYMBOLS=1: an undefined C symbol fails the link. With
+# =0, emcc linked anyway and planted abort("missing function: <name>"), so the
+# build was green while any program that reached the symbol killed the module
+# (#2301: eigs_source_lookup, reached by every `import`).
 emcc $WERROR_FLAGS -O2 \
     -DEIGENSCRIPT_EXT_HTTP=0 \
     \
@@ -60,7 +74,7 @@ emcc $WERROR_FLAGS -O2 \
     -sEXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS}" \
     -sEXPORTED_RUNTIME_METHODS="${EXPORTED_RUNTIME}" \
     -sASSERTIONS=1 \
-    -sERROR_ON_UNDEFINED_SYMBOLS=0 \
+    -sERROR_ON_UNDEFINED_SYMBOLS=1 \
     --no-entry \
     "${SOURCES[@]}" \
     -lm \

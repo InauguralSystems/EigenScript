@@ -106,6 +106,10 @@ jobs:
       # cannot execute code can't pass or deploy (hq#58 ES-OWF-1).
       - name: Smoke-run programs in the built playground
         run: node tools/playground_smoke.cjs web/dist
+      # No undefined-symbol abort stubs in eigs.js, and `import` reports an
+      # EigenScript error instead of killing the module (#2301).
+      - name: Playground links every symbol; import errors cleanly
+        run: bash tests/test_playground_wasm_2301.sh web/dist
       # The receipt. Written only when the build step above ran and left its
       # output; the aggregator requires it, so a build step that was skipped or
       # never reached cannot read as a passing build.
