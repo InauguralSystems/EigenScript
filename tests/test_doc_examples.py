@@ -325,21 +325,21 @@ def is_asan_build():
 # and is NOT in this table fails the ENROLMENT check below, so a new doc
 # cannot join the tree unexamined (§119).
 #
-# Each row is (fences, paired, fragment, nocheck). Changing one is a
+# Each row is (fences, paired, fragment, nocheck, value-comments). Changing one is a
 # deliberate edit with a visible diff; a silent shrink — the failure mode a
 # "more than zero" floor cannot see — is impossible.
 # ---------------------------------------------------------------------------
 POPULATION = {
     # file                       fences paired fragment nocheck value-comments
-    "README.md":                 (  7,    5,     2,      0,      3),
-    "docs/llms.txt":             ( 13,   10,     2,      1,      6),   # #2203: +1 paired (catch-type guard, string throw + runtime error)
-    "docs/SPEC.md":              ( 88,   84,     1,      3,      5),   # #1425: +1 paired (multi-line binary operator error line)
+    "README.md":                 (  7,    5,     2,      0,      0),
+    "docs/llms.txt":             ( 13,   10,     2,      1,      0),   # #2203: +1 paired (catch-type guard, string throw + runtime error)
+    "docs/SPEC.md":              ( 88,   84,     1,      3,      0),   # #1425: +1 paired (multi-line binary operator error line)
     "docs/COMPARISON.md":        ( 19,   18,     1,      0,      0),
     "docs/CONCURRENCY.md":       (  9,    9,     0,      0,      0),   # #1879: +1 paired (thread handle crosses a channel)
-    "docs/STDLIB.md":            ( 16,   11,     5,      0,     12),
-    "docs/SYNTAX.md":            ( 35,   24,    11,      0,     28),
+    "docs/STDLIB.md":            ( 16,   11,     5,      0,      0),
+    "docs/SYNTAX.md":            ( 35,   24,    11,      0,      0),
     # #1991: these observer documents are part of the executable doc gate.
-    "docs/PREDICATES.md":        ( 15,    5,     9,      1,      3),
+    "docs/PREDICATES.md":        ( 15,    5,     9,      1,      0),
     "docs/DIAGNOSTICS.md":       (  6,    1,     5,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
     "docs/BUILTINS.md":          (  3,    2,     1,      0,      0),   # #2186: durable atomic-save recipe
@@ -381,13 +381,6 @@ VALUE_COMMENT = re.compile(
     r"(?:true|false|null|improving|diverging|stable|equilibrium|"
     r"oscillating|converged)\b))"
 )
-
-# Each site is either rewritten so the paired output carries the value, or
-# waived here by its EXACT stripped line with a reason (§125). Keyed by
-# (basename, stripped line).
-VALUE_COMMENT_WAIVERS = {
-}
-VALUE_COMMENT_WAIVERS_USED = set()
 
 # The pins above describe THIS repository. tests/test_doc_examples_markers.py
 # copies this checker into a throwaway workspace and drives it over synthetic
@@ -536,90 +529,14 @@ def value_comment(line):
     return comment if VALUE_COMMENT.search("#" + comment) else None
 
 
-def leading_collection(comment):
-    """Return a complete leading list/dict literal, including nesting."""
-    if not comment or comment[0] not in "[{":
-        return None
-    pairs = {"[": "]", "{": "}"}
-    stack = []
-    quote = None
-    escaped = False
-    for index, char in enumerate(comment):
-        if quote is not None:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == quote:
-                quote = None
-            continue
-        if char in ('"', "'"):
-            quote = char
-        elif char in pairs:
-            stack.append(pairs[char])
-        elif char in "]}":
-            if not stack or char != stack.pop():
-                return None
-            if not stack:
-                return comment[:index + 1]
-    return None
+def check_value_comments(path, fence_line, text, validate=True):
+    """Count value-bearing comments in one executed fence; fail every one.
 
-
-def stated_values(comment):
-    """Return every value asserted by a result comment, leading value first."""
-    comment = comment.strip()
-    values = []
-    quoted = re.match(r"([\"'])(.*?)\1", comment)
-    if quoted:
-        values.append(quoted.group(2))
-    collection = leading_collection(comment)
-    if collection and not values:
-        values.append(collection)
-    statuses = re.match(
-        r"((?:(?:improving|diverging|stable|equilibrium|oscillating|"
-        r"converged)(?:\s+|$))+)", comment)
-    if statuses and not values:
-        values.append(statuses.group(1).strip())
-    bare = re.match(
-        r"([-+]?[0-9][0-9.eE+-]*|true|false|null|improving|diverging|"
-        r"stable|equilibrium|oscillating|converged)\b", comment)
-    if bare and not values:
-        values.append(bare.group(1))
-    # Trigger words are explanatory syntax only when they occur outside a
-    # literal.  A documented string such as "after 25 steps" is one value;
-    # its contents must not manufacture a second, numeric assertion.  Blank
-    # quoted regions while preserving offsets and search the remaining prose.
-    prose = list(comment)
-    quote = None
-    escaped = False
-    for index, char in enumerate(comment):
-        if quote is not None:
-            prose[index] = " "
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == quote:
-                quote = None
-        elif char in ('"', "'"):
-            quote = char
-            prose[index] = " "
-    prose = "".join(prose)
-    values.extend(match.group(1).strip('"\'') for match in re.finditer(
-        r"(?:after|gives|prints|≈|~)\s*([^\s,;:)]+)", prose))
-    return values
-
-
-def check_value_comments(path, fence_line, text, paired_output=None,
-                         validate=True):
-    """Count value-bearing comments in one executed fence; FAIL the unwaived.
-
-    Returns how many were found (waived or not) so the per-file population can
-    be pinned: a NEW value comment is red until somebody decides what it is.
+    Returns how many were found so the per-file population can be pinned: a
+    new value comment is red until it is rewritten as checked output.
     """
     global FAIL
     found = 0
-    base = os.path.basename(path)
     for k, raw in enumerate(text.split("\n")):
         line = raw.strip()
         if not line or "#" not in line:
@@ -627,90 +544,17 @@ def check_value_comments(path, fence_line, text, paired_output=None,
         comment = value_comment(raw)
         if comment is None:
             continue
-        source, _comment = split_code_comment(raw)
         found += 1
-        # --list is an inventory operation: count claims, but never run the
-        # instrumented program (or require a runtime to exist).
+        # --list is an inventory operation: count claims, but never apply the
+        # validation gate (or require a runtime to exist).
         if not validate:
-            continue
-        claims = stated_values(comment)
-        if claims and paired_output is not None:
-            # Instrumentation normally brackets the claimed statement with
-            # marker prints.  That necessarily inserts physical source lines,
-            # so it changes the meaning of absolute temporal queries (`at N`
-            # and `what is ... at N`).  Do not execute a modified version of
-            # such an example.  Its claim is supported only when the
-            # corresponding line of paired output is exactly that value;
-            # otherwise it stays red.
-            absolute_temporal = re.search(
-                r"\b(?:what\s+is\b[^\n]*\s+at|at)\s+\d+\b", text,
-                re.IGNORECASE)
-            output_lines = norm(paired_output).splitlines()
-            if absolute_temporal and len(claims) == 1:
-                # Paired output is ordered like the example's print/eval
-                # statements.  Select this statement's own output rather than
-                # accepting a matching value from some unrelated line.
-                output_index = sum(
-                    split_code_comment(previous)[0].strip().startswith(
-                        ("print of ", "eval of "))
-                    for previous in text.split("\n")[:k])
-                if (output_index < len(output_lines) and
-                        output_lines[output_index] == claims[0]):
-                    continue
-            probe = None
-            # A claim belongs to the source line carrying it, not to an
-            # arbitrary equal-looking line elsewhere in the example output.
-            # Instrument that one line and capture only the value it produces.
-            source = source.rstrip()
-            indent = source[:len(source) - len(source.lstrip())]
-            statement = source.strip()
-            if not absolute_temporal:
-                if statement.startswith("print of ") or statement.startswith("eval of "):
-                    probe = source
-                elif " is " in statement:
-                    lhs = statement.split(" is ", 1)[0].strip()
-                    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", lhs):
-                        probe = source + "\n" + indent + "print of " + lhs
-            if probe is not None:
-                before = text.split("\n")[:k]
-                after = text.split("\n")[k + 1:]
-                marker_a = "__EIGS_VALUE_CLAIM_BEGIN_%d__" % k
-                marker_b = "__EIGS_VALUE_CLAIM_END_%d__" % k
-                instrumented = before + [indent + 'print of "%s"' % marker_a,
-                                         probe,
-                                         indent + 'print of "%s"' % marker_b] + after
-                rc, stdout, _stderr = run_program("\n".join(instrumented))
-                matches = re.findall(re.escape(marker_a) + r"\n(.*?)\n" +
-                                     re.escape(marker_b), norm(stdout), re.S)
-                # A statement in a loop can execute more than once.  Every
-                # marker pair belongs to that source line and every execution
-                # must agree with its claim; accepting only the first pair
-                # silently missed iteration-dependent values.
-                produced = [value.splitlines() for value in matches]
-                if rc == 0 and produced and all(
-                        value == [claim]
-                        for value in produced for claim in claims):
-                    continue
-        key = (base, line)
-        if key in VALUE_COMMENT_WAIVERS:
-            reason = VALUE_COMMENT_WAIVERS[key]
-            if "paired output" in reason and paired_output is None:
-                FAIL += 1
-                print("  FAIL: %s:%d waiver claims a paired output block, but "
-                      "this example has none: %s"
-                      % (path, fence_line + 1 + k, line))
-                continue
-            VALUE_COMMENT_WAIVERS_USED.add(key)
             continue
         FAIL += 1
         print("  FAIL: %s:%d states a VALUE in a comment inside an executed "
-              "example, and nothing checks it: %s"
-              % (path, fence_line + 1 + k, line))
-        print("    fix: print the value so the paired ```output block compares "
-              "it, or add this exact line to VALUE_COMMENT_WAIVERS with a "
-              "reason")
+              "example: %s" % (path, fence_line + 1 + k, line))
+        print("    fix: remove the value comment, print the value, and put the "
+              "expected value in the paired ```output block")
     return found
-
 
 def run_program(code, timeout=20):
     """Run one snippet and return (returncode, stdout, stderr)."""
@@ -877,7 +721,9 @@ def main():
                     ("`sort_by of [list, key_fn]` is a builtin, not a member "
                      "of the `sort` module.",
                      "sort section identifies sort_by as a builtin"),
-                    ("print of (sm_can_send of [sm, \"stop\"]) # true", "state example labels its boolean as true"),
+                    ("print of (sm_can_send of [sm, \"stop\"])\n```\n"
+                     "```output\nrunning\ntrue",
+                     "state example checks its boolean as true"),
                 ],
                 "lib/contract.eigs": [
                     ("`ensure of [(abs of x) < LIMIT, \"target is bounded\"]`",
@@ -929,14 +775,8 @@ def main():
                               % (os.path.basename(path), lineno, payload))
                     continue
                 if kind in ("", "check", "fragment"):
-                    paired_output = None
-                    if (kind in ("", "check") and
-                            block_index + 1 < len(doc_blocks) and
-                            doc_blocks[block_index + 1][1] == "output"):
-                        paired_output = doc_blocks[block_index + 1][3]
                     n_valuecomment += check_value_comments(
-                        path, lineno, text, paired_output,
-                        validate=not listing)
+                        path, lineno, text, validate=not listing)
                 if kind == "fragment":
                     n_fragment += 1
                     if listing:
@@ -1073,18 +913,6 @@ def main():
             print("  FAIL: %s:%d fence %s, so its block is UNCHECKED: %s"
                   % (upath, ulineno, uwhy, uraw.strip()))
 
-    # A value-comment waiver that matches nothing is a review that no longer
-    # corresponds to a line — same rule as the claims tool's waiver audit.
-    if IN_REAL_TREE and not listing:
-        stale = set(VALUE_COMMENT_WAIVERS) - VALUE_COMMENT_WAIVERS_USED
-        covered = {f for f, _ in VALUE_COMMENT_WAIVERS} & {
-            os.path.basename(a) for a in args}
-        stale = {k for k in stale if k[0] in covered}
-        for f, line in sorted(stale):
-            population_failed = True
-            print("  FAIL: a VALUE_COMMENT_WAIVERS entry matched nothing in %s "
-                  "— the reviewed line is gone or edited: %s" % (f, line))
-
     print("")
     if IN_REAL_TREE:
         applied = sum(1 for a in args
@@ -1107,9 +935,6 @@ def main():
                   % (applied, len(POPULATION)))
     checked = PASS + FAIL
     print("Value comments: %d claim(s) examined" % total_claims)
-    if total_claims == 0 and total_fragments:
-        population_failed = True
-        print("  FAIL: examined 0 value comments (mechanical-gates §121)")
     print("Doc examples: %d checked, %d passed, %d failed, %d skipped, "
           "%d unreadable fence(s)" %
           (checked, PASS, FAIL, SKIP, len(UNSEEN_FENCES)))
@@ -1277,7 +1102,7 @@ def selftest():
     # off a neighbouring guard — measured: a mutant that reported the fence
     # but no longer FAILED on it survived exactly that way
     # (mechanical-gates §41).
-    GOOD = ("```eigenscript" + NL + "print of 1  # 1" + NL + "```" + NL +
+    GOOD = ("```eigenscript" + NL + "print of 1" + NL + "```" + NL +
             "```output" + NL + "1" + NL + "```" + NL)
 
     main_case("main() FAILS on an unreadable fence, and says which line",
@@ -1373,7 +1198,7 @@ def selftest():
     # Control: a clean document must still pass through main() unharmed, or a
     # main() that always failed would score full marks on the row above.
     main_case("main() passes a clean document",
-              "```eigenscript" + NL + "print of 1  # 1" + NL + "```" + NL +
+              "```eigenscript" + NL + "print of 1" + NL + "```" + NL +
               "```output" + NL + "1" + NL + "```" + NL,
               0, "1 checked")
 

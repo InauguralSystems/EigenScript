@@ -23,7 +23,7 @@ define example as:
     local name is "inner"
     return name
 
-result is example of null   # "inner"
+result is example of null
 print of result
 print of name               # still "outer"
 ```
@@ -38,8 +38,8 @@ Numbers are finite by construction. EigenScript does not expose `NaN` or
 `Inf` values to user code:
 
 ```eigenscript
-small_divisor is 1 / 1e-320       # 1e+308
-large_exp is exp of 999999        # 1e+308
+small_divisor is 1 / 1e-320
+large_exp is exp of 999999
 print of small_divisor
 print of large_exp
 ```
@@ -91,7 +91,7 @@ Define functions with named parameters in parentheses:
 define add(a, b) as:
     return a + b
 
-result is add of [3, 4]    # 7
+result is add of [3, 4]
 print of result
 ```
 ```output
@@ -120,7 +120,7 @@ Functions can also be defined without named parameters. The argument is `n`:
 define square as:
     return n * n
 
-result is square of 5    # 25
+result is square of 5
 print of result
 ```
 ```output
@@ -132,7 +132,7 @@ For multiple arguments in classic style, pass a list and unpack manually:
 define add_three as:
     return n[0] + n[1] + n[2]
 
-result is add_three of [10, 20, 30]    # 60
+result is add_three of [10, 20, 30]
 print of result
 ```
 ```output
@@ -281,7 +281,7 @@ binds **unchanged**, so errors can carry data:
 try:
     throw of {"kind": "validation", "field": "age"}
 catch e:
-    print of e.kind    # "validation"
+    print of e.kind
 ```
 ```output
 validation
@@ -322,7 +322,7 @@ define make_adder(x) as:
     return adder
 
 add5 is make_adder of 5
-print of (add5 of 10)    # 15
+print of (add5 of 10)
 ```
 ```output
 15
@@ -378,8 +378,8 @@ print of (total + tax)    # not  print of total + tax  (would print total, then 
 
 ```eigenscript
 items is [1, 2, 3, 4, 5]
-print of items[0]         # 1
-print of (len of items)   # 5
+print of items[0]
+print of (len of items)
 append of [items, 6]      # mutates items
 ```
 ```output
@@ -399,8 +399,8 @@ config is {"host": "localhost", "port": 8080, "debug": 1}
 **Dot access:**
 ```eigenscript
 config is {"host": "localhost", "port": 8080, "debug": 1}
-print of config.host       # "localhost"
-print of config.port       # 8080
+print of config.host
+print of config.port
 ```
 ```output
 localhost
@@ -416,8 +416,8 @@ reachable by dot as well as by bracket.
 ```eigenscript
 config is {"host": "localhost", "port": 8080, "debug": 1}
 key is "host"
-print of config["host"]    # "localhost"
-print of config[key]       # "localhost"
+print of config["host"]
+print of config[key]
 ```
 ```output
 localhost
@@ -427,7 +427,7 @@ localhost
 **Nested dictionaries:**
 ```eigenscript
 app is {"db": {"host": "localhost", "port": 5432}, "name": "myapp"}
-print of app.db.host       # "localhost"
+print of app.db.host
 ```
 ```output
 localhost
@@ -436,8 +436,8 @@ localhost
 **Builtins:**
 ```eigenscript
 config is {"host": "localhost", "port": 8080, "debug": 1}
-print of (keys of config)          # ["host", "port", "debug"]
-print of (values of config)        # ["localhost", 8080, 1]
+print of (keys of config)
+print of (values of config)
 print of (has_key of [config, "host"])
 dict_set of [config, "timeout", 30]      # mutates config
 dict_remove of [config, "debug"]         # mutates config
@@ -456,9 +456,9 @@ not numbers, so `(has_key of [config, "host"]) == 1` raises a type error.
 The `eval` builtin executes a string as EigenScript code and returns the result:
 
 ```eigenscript
-result is eval of "1 + 2"          # 3
+result is eval of "1 + 2"
 print of result
-eval of "print of 42"              # prints 42
+eval of "print of 42"
 code is "x is 10\nprint of x"
 eval of code
 ```
@@ -548,10 +548,10 @@ loss is 0.9
 loss is 0.5
 loss is 0.2
 
-print of (what is loss)    # 0.2
+print of (what is loss)
 print of (why is loss)     # negative — descending into a basin (entropy falling)
-print of (how is loss)     # 0 — the last step is far outside the deadband
-print of (when is loss)    # 3 — three assignments
+print of (how is loss)
+print of (when is loss)
 ```
 ```output
 0.2
@@ -581,7 +581,7 @@ recent assignment:
 ```eigenscript
 loss is 100.0
 loss is 80.0
-print of (prev of loss)    # 100 — the value before the latest assign
+print of (prev of loss)
 ```
 ```output
 100
@@ -600,10 +600,10 @@ x is 1        # line 1
 x is 2        # line 2
 x is 3        # line 3
 
-print of (what is x at 2)    # 2
+print of (what is x at 2)
 print of (prev of x at 3)    # value before the assign at/before line 3
 print of (when is x at 2)    # assignment count up to line 2
-print of (who is x at 2)     # "x"
+print of (who is x at 2)
 print of (where is x at 2)   # entropy as of the line-2 assign
 print of (why is x at 2)     # dH as of the line-2 assign
 ```
@@ -625,8 +625,8 @@ not the first (#736). This is where the rule stops matching intuition:
 total is 0
 for i in range of 4:
     total is total + i     # line 3, runs four times
-print of (what is total at 3)   # 6 — the LAST pass (0+1+2+3), not the first
-print of (when is total at 3)   # 5 — all five assignments, seed included
+print of (what is total at 3)
+print of (when is total at 3)
 ```
 ```output
 6
@@ -667,7 +667,7 @@ The observer system classifies value trajectories automatically:
 ```eigenscript
 loss is 1.0
 status is report of loss
-state is observe of loss   # ["equilibrium", 1, 0, 0]
+state is observe of loss
 print of state
 ```
 ```output

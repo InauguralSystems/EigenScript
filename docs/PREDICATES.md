@@ -872,7 +872,7 @@ motion:
 x is 100.0
 for i in range of 13:
     x is x * 0.7          # contracts toward a limit
-print of (report of x)    # "improving"
+print of (report of x)
 ```
 ```output
 improving
@@ -882,7 +882,7 @@ improving
 x is 1.0
 for i in range of 13:
     x is x * 1.43         # non-vanishing same-sign steps
-print of (report of x)    # "diverging"
+print of (report of x)
 ```
 ```output
 diverging
@@ -1010,7 +1010,7 @@ loop while t < 40:
     a is (chans[0]) of fleet[0][2]
     b is (chans[1]) of fleet[1][2]
     t is t + 1
-print of (a + " " + b)                    # improving oscillating
+print of (a + " " + b)
 ```
 ```output
 improving oscillating

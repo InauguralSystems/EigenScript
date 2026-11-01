@@ -1,1 +1,1 @@
-- Executable documentation now gates bare value comments and corrects observer and boolean result claims. (#2290, #2287, #2288, #2289).
+- Executable documentation now rejects every value-stating comment; examples must print values for paired output checking. (#2290, #2287, #2288, #2289).
