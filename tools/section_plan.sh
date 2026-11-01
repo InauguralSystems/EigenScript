@@ -1100,7 +1100,12 @@ selftest() {
     expect_red 'check_chunk_count: vacuous chunk population falls below floor' 'chunk enumeration examined' \
         "$dir/bad-count.sh" --root "$SP_ROOT" --chunks --quiet
     expect_ok 'control: complete, disjoint shard assignment and count sync' "$0" --root "$SP_ROOT" --shards 3 --check --quiet
-    expect_red 'section groups: headerless body split from nearest header is refused' 'count=211; [114] header @1749 body @1750' \
+    # The first split pair is [114]'s header and the line after it. Derive the
+    # line from the runner rather than pinning it: a fixed '@1749' turned this
+    # plant into a "wrong red" for every PR that added preamble lines (hq#58).
+    sp_114=$(grep -n '^echo "\[114\] ' "$RUNNER" | head -1 | cut -d: -f1)
+    [ -n "$sp_114" ] || { echo "  FAIL: section groups: [114] header not found in $RUNNER"; fail=$((fail + 1)); }
+    expect_red 'section groups: headerless body split from nearest header is refused' "count=211; [114] header @${sp_114:-none} body @$(( ${sp_114:-0} + 1 ))" \
         env SP_SECTION_GROUP_MUTATE=split "$0" --root "$SP_ROOT" --shards 3 --check --quiet
     expect_red 'shard_check: missing chunk makes union != full' 'union != full' \
         env SP_SHARD_MUTATE=drop "$0" --root "$SP_ROOT" --shards 3 --check --quiet
