@@ -1,0 +1,1 @@
+- Circle intersection points now classify tangency symmetrically when the computed squared height is within its floating-point roundoff bound (#2296).

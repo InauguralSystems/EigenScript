@@ -711,7 +711,7 @@ define circle_intersection_points(c1x, c1y, c1r, c2x, c2y, c2r) as:
     if a * a > height_scale:
         height_scale is a * a
     local height_roundoff is 8 * _FLOAT_EPS * height_scale
-    if h_sq < 0 and h_sq >= (0 - height_roundoff):
+    if h_sq <= height_roundoff and h_sq >= (0 - height_roundoff):
         h_sq is 0
     local h is sqrt of h_sq
     local mx is c1x + a * dx / d
