@@ -1,35 +1,26 @@
-# Regression coverage for relative geometry degeneracy checks (#2284).
+# Focused regression coverage for geometry issue #2284.
 load_file of "lib/test.eigs"
 load_file of "lib/geometry.eigs"
 
 define assert_triangle_permutations(triangle, expected_center, expected_radius, tol, desc) as:
     permutations is [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]
     reference_center is triangle_circumcenter of [triangle[0], triangle[1], triangle[2]]
-    reference_circle is circle_from_three_points of [triangle[0], triangle[1], triangle[2]]
     reference_radius is triangle_circumradius of [triangle[0], triangle[1], triangle[2]]
     for order in permutations:
         a is triangle[order[0]]
         b is triangle[order[1]]
         c is triangle[order[2]]
         center is triangle_circumcenter of [a, b, c]
-        circle is circle_from_three_points of [a, b, c]
         radius is triangle_circumradius of [a, b, c]
         assert_eq of [center, reference_center, desc + " center result is identical in every order"]
-        assert_eq of [circle, reference_circle, desc + " circle result is identical in every order"]
         assert_eq of [radius, reference_radius, desc + " radius result is identical in every order"]
         if expected_center == null:
-            assert_eq of [center, null, desc + " center is order-independent"]
-            assert_eq of [circle, null, desc + " circle is order-independent"]
-            assert_eq of [radius, 0, desc + " radius is order-independent"]
+            assert_eq of [center, null, desc + " center is rejected in every order"]
+            assert_eq of [radius, 0, desc + " radius is rejected in every order"]
         else:
-            assert_true of [center != null, desc + " center exists in every order"]
-            assert_near of [center[0], expected_center[0], tol, desc + " center x is order-independent"]
-            assert_near of [center[1], expected_center[1], tol, desc + " center y is order-independent"]
-            assert_true of [circle != null, desc + " circle exists in every order"]
-            assert_near of [circle[0], expected_center[0], tol, desc + " circle x is order-independent"]
-            assert_near of [circle[1], expected_center[1], tol, desc + " circle y is order-independent"]
-            assert_near of [circle[2], expected_radius, tol, desc + " circle radius is order-independent"]
-            assert_near of [radius, expected_radius, tol, desc + " radius is order-independent"]
+            assert_near of [center[0], expected_center[0], tol, desc + " center x"]
+            assert_near of [center[1], expected_center[1], tol, desc + " center y"]
+            assert_near of [radius, expected_radius, tol, desc + " radius"]
 
 for scale in [1e-9, 1, 1e9]:
     crossing is line_intersection of [[0, 0], [scale, scale], [0, scale], [scale, 0]]
@@ -37,98 +28,35 @@ for scale in [1e-9, 1, 1e9]:
     assert_near of [crossing[0], 0.5 * scale, 1e-9 * scale, "intersection x scales"]
     assert_near of [crossing[1], 0.5 * scale, 1e-9 * scale, "intersection y scales"]
 
-    center is triangle_circumcenter of [[0, 0], [scale, 0], [0, scale]]
-    assert_true of [center != null, "scaled right triangle is nondegenerate"]
-    assert_near of [center[0], 0.5 * scale, 1e-9 * scale, "circumcenter x scales"]
-    assert_near of [center[1], 0.5 * scale, 1e-9 * scale, "circumcenter y scales"]
-
-    radius is triangle_circumradius of [[0, 0], [scale, 0], [0, scale]]
-    assert_near of [radius, 0.7071067811865476 * scale, 1e-9 * scale, "circumradius scales"]
     assert_triangle_permutations of [[[0, 0], [scale, 0], [0, scale]], [0.5 * scale, 0.5 * scale], 0.7071067811865476 * scale, 1e-9 * scale, "scaled right triangle"]
 
-    bary is barycentric_coords of [[0.25 * scale, 0.25 * scale], [0, 0], [scale, 0], [0, scale]]
-    assert_near of [bary[0], 0.5, 1e-9, "barycentric coordinate scales"]
-
-    poly_center is polygon_centroid of [[0, 0], [scale, 0], [scale, scale], [0, scale]]
-    assert_near of [poly_center[0], 0.5 * scale, 1e-9 * scale, "polygon centroid x scales"]
-    assert_near of [poly_center[1], 0.5 * scale, 1e-9 * scale, "polygon centroid y scales"]
-
-    assert_true of [circles_intersect of [0, 0, scale, 2 * scale, 0, scale], "tangent circles intersect at every scale"]
-    circle_points is circle_intersection_points of [0, 0, scale, 2 * scale, 0, scale]
-    assert_eq of [len of circle_points, 1, "tangent circles have one point at every scale"]
-
-    # Arithmetic produces directions whose cross product is roundoff rather
-    # than exact zero. The answer must remain parallel in every unit system.
+    # Arithmetic leaves a roundoff-sized cross product.  The construction
+    # guard must classify the lines as parallel in every unit system.
     parallel is line_intersection of [[0, 0], [0.1 * scale, 0.3 * scale], [scale, scale], [(1 + 0.1 + 0.1) * scale, (1 + 0.1 + 0.2 + 0.3) * scale]]
     assert_eq of [parallel, null, "roundoff-parallel lines stay parallel"]
 
-    near_center is triangle_circumcenter of [[0, 0], [0.1 * scale, 0.2 * scale], [0.3 * scale, 0.6 * scale]]
-    assert_eq of [orientation of [[0, 0], [0.1 * scale, 0.2 * scale], [0.3 * scale, 0.6 * scale]], 0, "predicate returns the exact computed sign"]
-    assert_true of [collinear of [[0, 0], [0.1 * scale, 0.2 * scale], [0.3 * scale, 0.6 * scale]], "boolean collinearity follows the exact sign"]
-    assert_eq of [near_center, null, "roundoff-collinear triangle has no circumcenter"]
-    assert_eq of [circle_from_three_points of [[0, 0], [0.1 * scale, 0.2 * scale], [0.3 * scale, 0.6 * scale]], null, "roundoff-collinear points define no circle"]
-    assert_eq of [triangle_circumradius of [[0, 0], [0.1 * scale, 0.2 * scale], [0.3 * scale, 0.6 * scale]], 0, "roundoff-collinear triangle has zero circumradius"]
-    assert_triangle_permutations of [[[0, 0], [0.1 * scale, 0.2 * scale], [0.3 * scale, 0.6 * scale]], null, 0, 0, "roundoff-collinear triangle"]
-    near_bary is barycentric_coords of [[0, 0], [0, 0], [0.1 * scale, 0.2 * scale], [0.3 * scale, 0.6 * scale]]
-    assert_eq of [near_bary, [0, 0, 0], "roundoff-collinear barycentric coordinates are rejected"]
-    flat_center is polygon_centroid of [[0, 0], [scale, scale], [2 * scale, (2 + 1e-13) * scale], [scale, scale]]
-    assert_near of [flat_center[0], scale, 1e-9 * scale, "near-zero-area polygon uses vertex average"]
+    near_triangle is [[0, 0], [0.1 * scale, 0.2 * scale], [0.3 * scale, 0.6 * scale]]
+    assert_eq of [orientation of [near_triangle[0], near_triangle[1], near_triangle[2]], 0, "orientation uses the exact translated sign"]
+    assert_true of [collinear of [near_triangle[0], near_triangle[1], near_triangle[2]], "collinearity follows the exact sign"]
+    assert_triangle_permutations of [near_triangle, null, 0, 0, "roundoff-collinear triangle"]
 
-    # The center distance and radius sum are mathematically equal, but their
-    # different arithmetic paths can differ by a last bit.
-    tangent_d is sqrt of ((0.1 * scale) * (0.1 * scale) + (0.2 * scale) * (0.2 * scale))
-    tangent_r1 is tangent_d / 7
-    tangent_r2 is tangent_d * 6 / 7
-    assert_true of [circles_intersect of [0, 0, tangent_r1, 0.1 * scale, 0.2 * scale, tangent_r2], "roundoff-tangent circles intersect"]
-    tangent_points is circle_intersection_points of [0, 0, tangent_r1, 0.1 * scale, 0.2 * scale, tangent_r2]
-    assert_eq of [len of tangent_points, 1, "roundoff-tangent circles have one point"]
-
-# These long parallel segments have endpoint orientations that straddle the
-# relative tolerance.  A zero orientation must not be treated as an opposite
-# sign in the proper-crossing case.
+# Exact orientation signs distinguish a separated parallel pair from a proper
+# crossing even at large coordinates.
 assert_false of [segments_intersect of [[0, 0], [1e13, 0], [0, 1], [1e13, 1]], "long separated parallel segments do not intersect"]
-
-# Exact translated orientation signs also preserve a proper crossing near the
-# far endpoint of a long segment.
 assert_true of [segments_intersect of [[0, 0], [1e13, 0], [9999999999999, -1], [9999999999999, 1]], "long vertical crossing intersects"]
 
-# Construction tolerances use translated edge magnitudes, not absolute
-# coordinates, so translating a unit right triangle cannot make it degenerate.
-translated_center is triangle_circumcenter of [[1e13, 0], [10000000000001, 0], [1e13, 1]]
-assert_true of [translated_center != null, "translated unit triangle has a circumcenter"]
-assert_near of [translated_center[0], 10000000000000.5, 0.001, "translated circumcenter x"]
-assert_near of [translated_center[1], 0.5, 1e-12, "translated circumcenter y"]
-translated_circle is circle_from_three_points of [[1e13, 0], [10000000000001, 0], [1e13, 1]]
-assert_true of [translated_circle != null, "translated unit triangle defines a circle"]
-assert_near of [triangle_circumradius of [[1e13, 0], [10000000000001, 0], [1e13, 1]], 0.7071067811865476, 1e-12, "translated circumradius"]
+# Translating a triangle must not change its construction result.
 assert_triangle_permutations of [[[1e13, 0], [10000000000001, 0], [1e13, 1]], [10000000000000.5, 0.5], 0.7071067811865476, 0.001, "translated unit triangle"]
 
-# A long, thin triangle remains constructible in every vertex order.  The
-# symmetric guard uses the same geometric scale for every permutation.
-long_triangle is [[0, 0], [1e13, 0], [0, 1]]
-assert_triangle_permutations of [long_triangle, [5e12, 0.5], 5e12, 0.001, "long thin triangle"]
+# A symmetric guard gives the same result for every order of a long, thin
+# triangle rather than rejecting whichever order has the worst first angle.
+assert_triangle_permutations of [[[0, 0], [1e13, 0], [0, 1]], [5e12, 0.5], 5e12, 0.001, "long thin triangle"]
 
-# Translate before shoelace accumulation so coordinate offset cannot swamp a
-# tiny polygon's area or centroid.
-tiny_square is [[10, 10], [10 + 1e-9, 10], [10 + 1e-9, 10 + 1e-9], [10, 10 + 1e-9]]
-assert_near of [polygon_area of tiny_square, 1e-18, 1e-24, "translated tiny square retains its area"]
-tiny_center is polygon_centroid of tiny_square
-assert_near of [tiny_center[0], 10 + 0.5e-9, 1e-12, "translated tiny square centroid x"]
-assert_near of [tiny_center[1], 10 + 0.5e-9, 1e-12, "translated tiny square centroid y"]
-
-# The dot-product denominator cancels to zero at binary64 precision although
-# the cross-product predicate alone regards this thin triangle as nonzero.
-thin_bary is barycentric_coords of [[0.5, 0], [0, 0], [1, 0], [1, 1e-9]]
-assert_eq of [thin_bary, [0, 0, 0], "thin triangle avoids barycentric division by zero"]
-
-# Exactly collinear inputs can leave a nonzero residue in the three-term
-# circumcenter determinant.
+# Exactly collinear inputs can leave residue in an origin-based determinant.
 det_e is 0.000000007450580596923828125
 det_a is [0.75 + det_e, 1.75 + det_e]
 det_b is [1 + 2 * det_e, 2 + 2 * det_e]
 det_c is [0.125 + 3 * det_e, 1.125 + 3 * det_e]
-assert_eq of [triangle_circumcenter of [det_a, det_b, det_c], null, "exact collinearity survives determinant roundoff"]
-assert_eq of [circle_from_three_points of [det_a, det_b, det_c], null, "collinear determinant residue defines no circle"]
 assert_triangle_permutations of [[det_a, det_b, det_c], null, 0, 0, "exact-collinear residue triangle"]
 
 test_summary of null

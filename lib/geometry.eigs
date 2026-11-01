@@ -24,44 +24,6 @@
 _PI is 3.14159265358979323846
 _EPS is 1e-12
 
-# Cross products and areas have squared distance units.  Compare them with a
-# scale made from the same inputs rather than with an absolute epsilon.
-define _cross_near_zero(ax, ay, bx, by) as:
-    local cross is ax * by - ay * bx
-    if cross < 0:
-        cross is 0 - cross
-    local a_len is sqrt of (ax * ax + ay * ay)
-    local b_len is sqrt of (bx * bx + by * by)
-    return cross <= _EPS * a_len * b_len
-
-# A triangle construction must make the same degeneracy decision at every
-# vertex.  Use the best-conditioned (smallest) pair of its three edge-length
-# products rather than privileging the two edges incident to the first point.
-define _triangle_cross_near_zero(a, b, c) as:
-    local ab is distance2d of [a, b]
-    local bc is distance2d of [b, c]
-    local ca is distance2d of [c, a]
-    local scale is ab * bc
-    local candidate is bc * ca
-    if candidate < scale:
-        scale is candidate
-    candidate is ca * ab
-    if candidate < scale:
-        scale is candidate
-    local cross is (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
-    if cross < 0:
-        cross is 0 - cross
-    return cross <= _EPS * scale
-
-define _lengths_near(a, b) as:
-    local delta is a - b
-    if delta < 0:
-        delta is 0 - delta
-    local scale is a
-    if b > scale:
-        scale is b
-    return delta <= _EPS * scale
-
 # ============================================================
 # 2D Point Operations
 # ============================================================
@@ -105,7 +67,7 @@ define vec2_norm(a) as:
 
 define vec2_normalize(a) as:
     n is vec2_norm of a
-    if n == 0:
+    if n < _EPS:
         return a
     return [a[0] / n, a[1] / n]
 
@@ -121,7 +83,7 @@ define vec2_angle(a, b) as:
     d is vec2_dot of [a, b]
     na is vec2_norm of a
     nb is vec2_norm of b
-    if na == 0 or nb == 0:
+    if na < _EPS or nb < _EPS:
         return 0
     cos_theta is d / (na * nb)
     if cos_theta > 1:
@@ -169,7 +131,7 @@ define point_to_line_distance(point, line_p1, line_p2) as:
     if cross < 0:
         cross is 0 - cross
     line_len is sqrt of (dx * dx + dy * dy)
-    if line_len == 0:
+    if line_len < _EPS:
         return distance2d of [point, line_p1]
     return cross / line_len
 
@@ -183,7 +145,7 @@ define closest_point_on_segment(point, seg_p1, seg_p2) as:
     dx is seg_p2[0] - seg_p1[0]
     dy is seg_p2[1] - seg_p1[1]
     len_sq is dx * dx + dy * dy
-    if len_sq == 0:
+    if len_sq < _EPS:
         return [seg_p1[0], seg_p1[1]]
     t is ((point[0] - seg_p1[0]) * dx + (point[1] - seg_p1[1]) * dy) / len_sq
     if t < 0:
@@ -201,8 +163,9 @@ define segment_length(p1, p2) as:
 # ============================================================
 
 # Returns: 1 = counter-clockwise, -1 = clockwise, 0 = exactly collinear.
-# Predicates use translated differences and exact signs.  Tolerances belong
-# only to constructions that must guard a division.
+# The cross product's sign is tested exactly so the result is independent of
+# the coordinate units; an absolute epsilon is invalid because it scales as
+# distance squared.
 define orientation(p, q, r) as:
     local pqx is q[0] - p[0]
     local pqy is q[1] - p[1]
@@ -245,10 +208,10 @@ define segments_intersect(a1, a2, b1, b2) as:
     o2 is orientation of [a1, a2, b2]
     o3 is orientation of [b1, b2, a1]
     o4 is orientation of [b1, b2, a2]
-    # General case
+    # A proper crossing needs four non-collinear orientations.  Exact
+    # collinearity is handled by the bounded special cases below.
     if o1 != 0 and o2 != 0 and o3 != 0 and o4 != 0 and o1 != o2 and o3 != o4:
         return true
-    # Collinear special cases
     if o1 == 0 and (on_segment of [a1, b1, a2]):
         return true
     if o2 == 0 and (on_segment of [a1, b2, a2]):
@@ -275,7 +238,12 @@ define line_intersection(a1, a2, b1, b2) as:
     bdx is x4 - x3
     bdy is y4 - y3
     denom is adx * bdy - ady * bdx
-    if _cross_near_zero of [adx, ady, bdx, bdy]:
+    abs_denom is denom
+    if abs_denom < 0:
+        abs_denom is 0 - abs_denom
+    a_len is sqrt of (adx * adx + ady * ady)
+    b_len is sqrt of (bdx * bdx + bdy * bdy)
+    if abs_denom <= _EPS * a_len * b_len:
         return null
     t is ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
     px is x1 + t * (x2 - x1)
@@ -303,10 +271,8 @@ define triangle_centroid(a, b, c) as:
 
 # Center of circumscribed circle
 define triangle_circumcenter(a, b, c) as:
-    # Construct from the best-conditioned vertex as well as using its scale
-    # for the guard.  Selecting the smallest incident edge product is
-    # symmetric, so reordering a long, thin triangle cannot change either the
-    # degeneracy decision or which subtraction/division path is used.
+    # Pick the vertex with the smallest incident edge product, breaking ties
+    # by coordinates, so every vertex order uses the same arithmetic path.
     local ab is distance2d of [a, b]
     local bc is distance2d of [b, c]
     local ca is distance2d of [c, a]
@@ -323,8 +289,7 @@ define triangle_circumcenter(a, b, c) as:
         p is c
         q is a
         r is b
-    # Give the remaining two vertices a canonical order as well, so the
-    # arithmetic expression is byte-for-byte the same after any permutation.
+        scale is bc * ca
     if q[0] > r[0] or (q[0] == r[0] and q[1] > r[1]):
         local swap is q
         q is r
@@ -334,7 +299,10 @@ define triangle_circumcenter(a, b, c) as:
     local acx is r[0] - p[0]
     local acy is r[1] - p[1]
     local cross is abx * acy - aby * acx
-    if _triangle_cross_near_zero of [a, b, c]:
+    local abs_cross is cross
+    if abs_cross < 0:
+        abs_cross is 0 - abs_cross
+    if abs_cross <= _EPS * scale:
         return null
     local d is 2 * cross
     local ab_sq is abx * abx + aby * aby
@@ -349,7 +317,7 @@ define triangle_incenter(a, b, c) as:
     side_b is distance2d of [a, c]
     side_c is distance2d of [a, b]
     perimeter is side_a + side_b + side_c
-    if perimeter == 0:
+    if perimeter < _EPS:
         return null
     ix is (side_a * a[0] + side_b * b[0] + side_c * c[0]) / perimeter
     iy is (side_a * a[1] + side_b * b[1] + side_c * c[1]) / perimeter
@@ -381,7 +349,7 @@ define barycentric_coords(p, a, b, c) as:
     dot11 is v1x * v1x + v1y * v1y
     dot12 is v1x * v2x + v1y * v2y
     inv_denom is dot00 * dot11 - dot01 * dot01
-    if (_cross_near_zero of [v0x, v0y, v1x, v1y]) or inv_denom == 0:
+    if inv_denom == 0:
         return [0, 0, 0]
     inv_denom is 1.0 / inv_denom
     u is (dot11 * dot02 - dot01 * dot12) * inv_denom
@@ -395,7 +363,15 @@ define triangle_circumradius(a, b, c) as:
     side_b is distance2d of [a, c]
     side_c is distance2d of [a, b]
     area is triangle_area of [a, b, c]
-    if _triangle_cross_near_zero of [a, b, c]:
+    scale is side_a * side_b
+    candidate is side_b * side_c
+    if candidate < scale:
+        scale is candidate
+    candidate is side_c * side_a
+    if candidate < scale:
+        scale is candidate
+    cross is 2 * area
+    if cross <= _EPS * scale:
         return 0
     return (side_a * side_b * side_c) / (4 * area)
 
@@ -406,7 +382,7 @@ define triangle_inradius(a, b, c) as:
     side_c is distance2d of [a, b]
     s is (side_a + side_b + side_c) / 2
     area is triangle_area of [a, b, c]
-    if s == 0:
+    if s < _EPS:
         return 0
     return area / s
 
@@ -419,15 +395,9 @@ define triangle_inradius(a, b, c) as:
 define polygon_area(vertices) as:
     n is len of vertices
     area is 0
-    local origin_x is vertices[0][0]
-    local origin_y is vertices[0][1]
     j is n - 1
     for i in range of n:
-        local jx is vertices[j][0] - origin_x
-        local jy is vertices[j][1] - origin_y
-        local ix is vertices[i][0] - origin_x
-        local iy is vertices[i][1] - origin_y
-        area is area + jx * iy - ix * jy
+        area is area + (vertices[j][0] * vertices[i][1]) - (vertices[i][0] * vertices[j][1])
         j is i
     return area / 2
 
@@ -436,29 +406,8 @@ define polygon_centroid(vertices) as:
     n is len of vertices
     cx is 0
     cy is 0
-    local origin_x is vertices[0][0]
-    local origin_y is vertices[0][1]
     a is polygon_area of vertices
-    min_x is vertices[0][0]
-    max_x is min_x
-    min_y is vertices[0][1]
-    max_y is min_y
-    for i in range of n:
-        if vertices[i][0] < min_x:
-            min_x is vertices[i][0]
-        if vertices[i][0] > max_x:
-            max_x is vertices[i][0]
-        if vertices[i][1] < min_y:
-            min_y is vertices[i][1]
-        if vertices[i][1] > max_y:
-            max_y is vertices[i][1]
-    span_x is max_x - min_x
-    span_y is max_y - min_y
-    area_scale is span_x * span_x + span_y * span_y
-    abs_a is a
-    if abs_a < 0:
-        abs_a is 0 - abs_a
-    if abs_a <= _EPS * area_scale:
+    if a < _EPS and a > (0 - _EPS):
         # Degenerate: average vertices
         for i in range of n:
             cx is cx + vertices[i][0]
@@ -466,16 +415,12 @@ define polygon_centroid(vertices) as:
         return [cx / n, cy / n]
     j is n - 1
     for i in range of n:
-        local jx is vertices[j][0] - origin_x
-        local jy is vertices[j][1] - origin_y
-        local ix is vertices[i][0] - origin_x
-        local iy is vertices[i][1] - origin_y
-        cross is jx * iy - ix * jy
-        cx is cx + (jx + ix) * cross
-        cy is cy + (jy + iy) * cross
+        cross is vertices[j][0] * vertices[i][1] - vertices[i][0] * vertices[j][1]
+        cx is cx + (vertices[j][0] + vertices[i][0]) * cross
+        cy is cy + (vertices[j][1] + vertices[i][1]) * cross
         j is i
     factor is 1.0 / (6 * a)
-    return [origin_x + cx * factor, origin_y + cy * factor]
+    return [cx * factor, cy * factor]
 
 # Sum of edge lengths
 define polygon_perimeter(vertices) as:
@@ -634,13 +579,12 @@ define circles_intersect(c1x, c1y, c1r, c2x, c2y, c2r) as:
     dx is c2x - c1x
     dy is c2y - c1y
     d is sqrt of (dx * dx + dy * dy)
-    radius_sum is c1r + c2r
-    if d > radius_sum and not (_lengths_near of [d, radius_sum]):
+    if d > c1r + c2r:
         return false
     diff is c1r - c2r
     if diff < 0:
         diff is 0 - diff
-    if d < diff and not (_lengths_near of [d, diff]):
+    if d < diff:
         return false
     return true
 
@@ -649,27 +593,23 @@ define circle_intersection_points(c1x, c1y, c1r, c2x, c2y, c2r) as:
     dx is c2x - c1x
     dy is c2y - c1y
     d is sqrt of (dx * dx + dy * dy)
-    if d == 0:
+    if d < _EPS:
         return []
-    radius_sum is c1r + c2r
-    if d > radius_sum and not (_lengths_near of [d, radius_sum]):
+    if d > c1r + c2r + _EPS:
         return []
     diff is c1r - c2r
     if diff < 0:
         diff is 0 - diff
-    if d < diff and not (_lengths_near of [d, diff]):
+    if d + _EPS < diff:
         return []
     a is (c1r * c1r - c2r * c2r + d * d) / (2 * d)
     h_sq is c1r * c1r - a * a
-    tangent is _lengths_near of [d, radius_sum]
-    if _lengths_near of [d, diff]:
-        tangent is true
-    if h_sq < 0 or tangent:
+    if h_sq < 0:
         h_sq is 0
     h is sqrt of h_sq
     mx is c1x + a * dx / d
     my is c1y + a * dy / d
-    if tangent or h == 0:
+    if h < _EPS:
         return [[mx, my]]
     ox is h * dy / d
     oy is h * dx / d
@@ -727,7 +667,7 @@ define reflect2d(points, line_p1, line_p2) as:
     dx is line_p2[0] - line_p1[0]
     dy is line_p2[1] - line_p1[1]
     len_sq is dx * dx + dy * dy
-    if len_sq == 0:
+    if len_sq < _EPS:
         return points
     result is []
     for i in range of (len of points):
