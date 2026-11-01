@@ -1624,23 +1624,30 @@ jobs:
           set -o pipefail
           cd tests && bash run_all_tests.sh 2>&1 | tee "$GITHUB_WORKSPACE/shard.log"
 
-      # The LSP behaviour test goes to whichever shard runs section [88], and
-      # that is not a preference — it is the difference between 1.5 s and 267 s.
-      # [88] builds eigenlsp under ASan through tests/aux_binary.sh, so the
-      # shard that ran it has already paid for the build and this step is a
-      # no-op rebuild. On run 35020270020 shard 1 happened to carry [88] and
-      # this step took 1.5 s; when the CI-measured weights moved [88] to shard
-      # 3, the same step on shard 1 cost 267 s building eigenlsp from scratch.
+      # The LSP behaviour test under ASan/UBSan. Section [88] does NOT cover
+      # this: it builds and drives the RELEASE src/eigenlsp (tests/test_lsp.sh
+      # via tests/aux_binary.sh). This step links the sanitizer LSP from the
+      # build/asan-server objects the "Build with AddressSanitizer + UBSan"
+      # step above already produced (LSP_ASAN_VARIANT must name that step's
+      # variant; tests/test_lsp_asan_reuse_2277.sh checks they agree), so it
+      # compiles only eigenlsp.c and the arming witness. Before #2277 it linked
+      # against build/asan, a variant no shard builds, and recompiled a whole
+      # second sanitizer runtime (median ~7 min) on the shard that set the
+      # queue's wall time. The owner is still derived from [88]'s shard; with
+      # the rebuild gone, which shard owns it no longer changes its cost.
       - if: needs.scope.outputs.code == 'true'
         name: Behavior-test the LSP under sanitizers (the shard running [88] owns it)
         # `make asan-server` builds the interpreter, not eigenlsp — so the LSP would
-        # otherwise never run under a sanitizer in CI. This builds it with
+        # otherwise never run under a sanitizer in CI. This links it with
         # ASan/UBSan and drives the JSON-RPC harness; test_lsp.py fails on any
-        # sanitizer report from the LSP process (leaks, UB).
+        # sanitizer report from the LSP process (leaks, UB), and
+        # test_lsp_asan.sh fails (never skips) when it cannot run.
+        env:
+          LSP_ASAN_VARIANT: asan-server
         run: |
           set -euo pipefail
           owner=$(bash tools/section_plan.sh --shard-owner ${{ env.ASAN_SHARDS }} --section '[88]' --quiet)
-          echo "LSP behaviour test: shard $owner owns it (it runs section [88], which already builds eigenlsp)"
+          echo "LSP behaviour test: shard $owner owns it (the shard running section [88])"
           if [ "$owner" != "${{ matrix.shard }}" ]; then
             echo "lsp_asan=no" >> "$GITHUB_ENV"
             exit 0
