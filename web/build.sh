@@ -26,7 +26,7 @@ mkdir -p web/dist
 # src/eigs_embed.c, so eigs_source_lookup was undefined and every `import`
 # aborted the deployed playground; tools/embed_stack_soak.sh and
 # tools/freestanding_check.sh anchor to the Makefile for the same reason.
-mapfile -t SOURCES < <(make --no-print-directory print-EMBED_SOURCES | tr ' ' '\n' | grep '\.c$' | grep -vx src/eigs_embed.c)  # PLANT A (revert me): drop the TU defining eigs_source_lookup
+mapfile -t SOURCES < <(make --no-print-directory print-EMBED_SOURCES | tr ' ' '\n' | grep '\.c$')
 case " ${SOURCES[*]} " in
     *" src/vm.c "*) ;;
     *) echo "FAIL: could not derive the runtime source list from the Makefile (print-EMBED_SOURCES)" >&2; exit 1 ;;
@@ -65,7 +65,7 @@ emcc $WERROR_FLAGS -O2 \
     -sEXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS}" \
     -sEXPORTED_RUNTIME_METHODS="${EXPORTED_RUNTIME}" \
     -sASSERTIONS=1 \
-    -sERROR_ON_UNDEFINED_SYMBOLS=0 \
+    -sERROR_ON_UNDEFINED_SYMBOLS=1 \
     --no-entry \
     "${SOURCES[@]}" \
     -lm \
