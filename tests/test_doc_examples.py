@@ -585,8 +585,28 @@ def stated_values(comment):
         r"stable|equilibrium|oscillating|converged)\b", comment)
     if bare and not values:
         values.append(bare.group(1))
+    # Trigger words are explanatory syntax only when they occur outside a
+    # literal.  A documented string such as "after 25 steps" is one value;
+    # its contents must not manufacture a second, numeric assertion.  Blank
+    # quoted regions while preserving offsets and search the remaining prose.
+    prose = list(comment)
+    quote = None
+    escaped = False
+    for index, char in enumerate(comment):
+        if quote is not None:
+            prose[index] = " "
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif char in ('"', "'"):
+            quote = char
+            prose[index] = " "
+    prose = "".join(prose)
     values.extend(match.group(1).strip('"\'') for match in re.finditer(
-        r"(?:after|gives|prints|≈|~)\s*([^\s,;:)]+)", comment))
+        r"(?:after|gives|prints|≈|~)\s*([^\s,;:)]+)", prose))
     return values
 
 
@@ -615,19 +635,42 @@ def check_value_comments(path, fence_line, text, paired_output=None,
             continue
         claims = stated_values(comment)
         if claims and paired_output is not None:
+            # Instrumentation normally brackets the claimed statement with
+            # marker prints.  That necessarily inserts physical source lines,
+            # so it changes the meaning of absolute temporal queries (`at N`
+            # and `what is ... at N`).  Do not execute a modified version of
+            # such an example.  Its claim is supported only when the
+            # corresponding line of paired output is exactly that value;
+            # otherwise it stays red.
+            absolute_temporal = re.search(
+                r"\b(?:what\s+is\b[^\n]*\s+at|at)\s+\d+\b", text,
+                re.IGNORECASE)
+            output_lines = norm(paired_output).splitlines()
+            if absolute_temporal and len(claims) == 1:
+                # Paired output is ordered like the example's print/eval
+                # statements.  Select this statement's own output rather than
+                # accepting a matching value from some unrelated line.
+                output_index = sum(
+                    split_code_comment(previous)[0].strip().startswith(
+                        ("print of ", "eval of "))
+                    for previous in text.split("\n")[:k])
+                if (output_index < len(output_lines) and
+                        output_lines[output_index] == claims[0]):
+                    continue
+            probe = None
             # A claim belongs to the source line carrying it, not to an
             # arbitrary equal-looking line elsewhere in the example output.
             # Instrument that one line and capture only the value it produces.
             source = source.rstrip()
             indent = source[:len(source) - len(source.lstrip())]
             statement = source.strip()
-            probe = None
-            if statement.startswith("print of ") or statement.startswith("eval of "):
-                probe = source
-            elif " is " in statement:
-                lhs = statement.split(" is ", 1)[0].strip()
-                if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", lhs):
-                    probe = source + "\n" + indent + "print of " + lhs
+            if not absolute_temporal:
+                if statement.startswith("print of ") or statement.startswith("eval of "):
+                    probe = source
+                elif " is " in statement:
+                    lhs = statement.split(" is ", 1)[0].strip()
+                    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", lhs):
+                        probe = source + "\n" + indent + "print of " + lhs
             if probe is not None:
                 before = text.split("\n")[:k]
                 after = text.split("\n")[k + 1:]

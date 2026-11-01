@@ -74,6 +74,17 @@ def main():
         '```output\n{"outer": {"items": [1, 2]}}\n```\n')
     check(nested_dict.returncode == 0,
           "a complete nested-dictionary claim is extracted and accepted")
+    quoted_trigger = run_doc(
+        '```eigenscript\nprint of "after 25 steps"  # "after 25 steps"\n'
+        '```\n```output\nafter 25 steps\n```\n')
+    check(quoted_trigger.returncode == 0,
+          "trigger numbers inside a quoted literal are not extra claims")
+    temporal = run_doc(
+        "```eigenscript\ndefine show as:\n"
+        "    print of (what is x at 5)  # 1\n"
+        "x is 1\nx is 2\nshow of null\n```\n```output\n2\n```\n")
+    check(temporal.returncode != 0 and "states a VALUE" in temporal.stdout,
+          "absolute temporal claims are rejected without matching output")
     fake_pair = run_doc("```eigenscript fragment\nx is 1  # 1\n```\n"
                         "```output\n1\n```\n")
     check(fake_pair.returncode != 0 and "states a VALUE" in fake_pair.stdout,
