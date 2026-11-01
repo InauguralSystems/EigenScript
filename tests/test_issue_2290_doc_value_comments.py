@@ -43,6 +43,11 @@ def main():
         "```output\n1\n2\n```\n")
     check(swapped.returncode != 0 and swapped.stdout.count("states a VALUE") == 2,
           "each swapped claim fails against the value from its own line")
+    repeated = run_doc(
+        "```eigenscript\nfor i in range of 3:\n"
+        "    print of i  # 0\n```\n```output\n0\n1\n2\n```\n")
+    check(repeated.returncode != 0 and "states a VALUE" in repeated.stdout,
+          "a claim must hold on every execution of its source line")
     fake_pair = run_doc("```eigenscript fragment\nx is 1  # 1\n```\n"
                         "```output\n1\n```\n")
     check(fake_pair.returncode != 0 and "states a VALUE" in fake_pair.stdout,
@@ -72,6 +77,13 @@ def main():
           (old_count, new_count))
     check(new_count >= old_count,
           "widened matcher examines at least every legacy match on the same docs")
+
+    listed = subprocess.run(
+        [sys.executable, CHECKER, "--list", "README.md"], text=True,
+        capture_output=True, cwd=ROOT,
+        env={**os.environ, "EIGENSCRIPT": "/does/not/exist"})
+    check(listed.returncode == 0,
+          "list mode counts claims without executing examples")
     return 1 if failures else 0
 
 if __name__ == "__main__":

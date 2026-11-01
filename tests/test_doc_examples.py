@@ -533,7 +533,8 @@ def stated_value(line):
     return bare.group(1) if bare else None
 
 
-def check_value_comments(path, fence_line, text, paired_output=None):
+def check_value_comments(path, fence_line, text, paired_output=None,
+                         validate=True):
     """Count value-bearing comments in one executed fence; FAIL the unwaived.
 
     Returns how many were found (waived or not) so the per-file population can
@@ -549,6 +550,10 @@ def check_value_comments(path, fence_line, text, paired_output=None):
         if not VALUE_COMMENT.search(line):
             continue
         found += 1
+        # --list is an inventory operation: count claims, but never run the
+        # instrumented program (or require a runtime to exist).
+        if not validate:
+            continue
         claim = stated_value(line)
         if claim is not None and paired_output is not None:
             # A claim belongs to the source line carrying it, not to an
@@ -573,10 +578,15 @@ def check_value_comments(path, fence_line, text, paired_output=None):
                                          probe,
                                          indent + 'print of "%s"' % marker_b] + after
                 rc, stdout, _stderr = run_program("\n".join(instrumented))
-                match = re.search(re.escape(marker_a) + r"\n(.*?)\n" +
-                                  re.escape(marker_b), norm(stdout), re.S)
-                produced = match.group(1).splitlines() if rc == 0 and match else []
-                if produced == [claim]:
+                matches = re.findall(re.escape(marker_a) + r"\n(.*?)\n" +
+                                     re.escape(marker_b), norm(stdout), re.S)
+                # A statement in a loop can execute more than once.  Every
+                # marker pair belongs to that source line and every execution
+                # must agree with its claim; accepting only the first pair
+                # silently missed iteration-dependent values.
+                produced = [value.splitlines() for value in matches]
+                if rc == 0 and produced and all(value == [claim]
+                                                for value in produced):
                     continue
         key = (base, line)
         if key in VALUE_COMMENT_WAIVERS:
@@ -822,7 +832,8 @@ def main():
                             doc_blocks[block_index + 1][1] == "output"):
                         paired_output = doc_blocks[block_index + 1][3]
                     n_valuecomment += check_value_comments(
-                        path, lineno, text, paired_output)
+                        path, lineno, text, paired_output,
+                        validate=not listing)
                 if kind == "fragment":
                     n_fragment += 1
                     if listing:
