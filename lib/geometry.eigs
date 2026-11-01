@@ -167,7 +167,11 @@ define segment_length(p1, p2) as:
 # the coordinate units; an absolute epsilon is invalid because it scales as
 # distance squared.
 define orientation(p, q, r) as:
-    val is (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+    local pqx is q[0] - p[0]
+    local pqy is q[1] - p[1]
+    local prx is r[0] - p[0]
+    local pry is r[1] - p[1]
+    local val is pqx * pry - pqy * prx
     if val > 0:
         return 1
     if val < 0:
@@ -204,10 +208,10 @@ define segments_intersect(a1, a2, b1, b2) as:
     o2 is orientation of [a1, a2, b2]
     o3 is orientation of [b1, b2, a1]
     o4 is orientation of [b1, b2, a2]
-    # General case
-    if o1 != o2 and o3 != o4:
+    # A proper crossing needs four non-collinear orientations.  Exact
+    # collinearity is handled by the bounded special cases below.
+    if o1 != 0 and o2 != 0 and o3 != 0 and o4 != 0 and o1 != o2 and o3 != o4:
         return true
-    # Collinear special cases
     if o1 == 0 and (on_segment of [a1, b1, a2]):
         return true
     if o2 == 0 and (on_segment of [a1, b2, a2]):
@@ -229,8 +233,17 @@ define line_intersection(a1, a2, b1, b2) as:
     y3 is b1[1]
     x4 is b2[0]
     y4 is b2[1]
-    denom is (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
-    if denom < _EPS and denom > (0 - _EPS):
+    adx is x2 - x1
+    ady is y2 - y1
+    bdx is x4 - x3
+    bdy is y4 - y3
+    denom is adx * bdy - ady * bdx
+    abs_denom is denom
+    if abs_denom < 0:
+        abs_denom is 0 - abs_denom
+    a_len is sqrt of (adx * adx + ady * ady)
+    b_len is sqrt of (bdx * bdx + bdy * bdy)
+    if abs_denom <= _EPS * a_len * b_len:
         return null
     t is ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
     px is x1 + t * (x2 - x1)
@@ -258,18 +271,45 @@ define triangle_centroid(a, b, c) as:
 
 # Center of circumscribed circle
 define triangle_circumcenter(a, b, c) as:
-    ax is a[0]
-    ay is a[1]
-    bx is b[0]
-    by is b[1]
-    cx is c[0]
-    cy is c[1]
-    d is 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
-    if d < _EPS and d > (0 - _EPS):
+    # Pick the vertex with the smallest incident edge product, breaking ties
+    # by coordinates, so every vertex order uses the same arithmetic path.
+    local ab is distance2d of [a, b]
+    local bc is distance2d of [b, c]
+    local ca is distance2d of [c, a]
+    local p is a
+    local q is b
+    local r is c
+    local scale is ab * ca
+    if ab * bc < scale or (ab * bc == scale and (b[0] < p[0] or (b[0] == p[0] and b[1] < p[1]))):
+        p is b
+        q is c
+        r is a
+        scale is ab * bc
+    if bc * ca < scale or (bc * ca == scale and (c[0] < p[0] or (c[0] == p[0] and c[1] < p[1]))):
+        p is c
+        q is a
+        r is b
+        scale is bc * ca
+    if q[0] > r[0] or (q[0] == r[0] and q[1] > r[1]):
+        local swap is q
+        q is r
+        r is swap
+    local abx is q[0] - p[0]
+    local aby is q[1] - p[1]
+    local acx is r[0] - p[0]
+    local acy is r[1] - p[1]
+    local cross is abx * acy - aby * acx
+    local abs_cross is cross
+    if abs_cross < 0:
+        abs_cross is 0 - abs_cross
+    if abs_cross <= _EPS * scale:
         return null
-    ux is ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d
-    uy is ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d
-    return [ux, uy]
+    local d is 2 * cross
+    local ab_sq is abx * abx + aby * aby
+    local ac_sq is acx * acx + acy * acy
+    local ux is (ab_sq * acy - ac_sq * aby) / d
+    local uy is (abx * ac_sq - acx * ab_sq) / d
+    return [p[0] + ux, p[1] + uy]
 
 # Center of inscribed circle
 define triangle_incenter(a, b, c) as:
@@ -323,7 +363,15 @@ define triangle_circumradius(a, b, c) as:
     side_b is distance2d of [a, c]
     side_c is distance2d of [a, b]
     area is triangle_area of [a, b, c]
-    if area < _EPS:
+    scale is side_a * side_b
+    candidate is side_b * side_c
+    if candidate < scale:
+        scale is candidate
+    candidate is side_c * side_a
+    if candidate < scale:
+        scale is candidate
+    cross is 2 * area
+    if cross <= _EPS * scale:
         return 0
     return (side_a * side_b * side_c) / (4 * area)
 

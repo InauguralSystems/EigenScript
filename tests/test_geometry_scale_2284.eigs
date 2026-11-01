@@ -1,0 +1,62 @@
+# Focused regression coverage for geometry issue #2284.
+load_file of "lib/test.eigs"
+load_file of "lib/geometry.eigs"
+
+define assert_triangle_permutations(triangle, expected_center, expected_radius, tol, desc) as:
+    permutations is [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]
+    reference_center is triangle_circumcenter of [triangle[0], triangle[1], triangle[2]]
+    reference_radius is triangle_circumradius of [triangle[0], triangle[1], triangle[2]]
+    for order in permutations:
+        a is triangle[order[0]]
+        b is triangle[order[1]]
+        c is triangle[order[2]]
+        center is triangle_circumcenter of [a, b, c]
+        radius is triangle_circumradius of [a, b, c]
+        assert_eq of [center, reference_center, desc + " center result is identical in every order"]
+        assert_eq of [radius, reference_radius, desc + " radius result is identical in every order"]
+        if expected_center == null:
+            assert_eq of [center, null, desc + " center is rejected in every order"]
+            assert_eq of [radius, 0, desc + " radius is rejected in every order"]
+        else:
+            assert_near of [center[0], expected_center[0], tol, desc + " center x"]
+            assert_near of [center[1], expected_center[1], tol, desc + " center y"]
+            assert_near of [radius, expected_radius, tol, desc + " radius"]
+
+for scale in [1e-9, 1, 1e9]:
+    crossing is line_intersection of [[0, 0], [scale, scale], [0, scale], [scale, 0]]
+    assert_true of [crossing != null, "crossing lines are not parallel"]
+    assert_near of [crossing[0], 0.5 * scale, 1e-9 * scale, "intersection x scales"]
+    assert_near of [crossing[1], 0.5 * scale, 1e-9 * scale, "intersection y scales"]
+
+    assert_triangle_permutations of [[[0, 0], [scale, 0], [0, scale]], [0.5 * scale, 0.5 * scale], 0.7071067811865476 * scale, 1e-9 * scale, "scaled right triangle"]
+
+    # Arithmetic leaves a roundoff-sized cross product.  The construction
+    # guard must classify the lines as parallel in every unit system.
+    parallel is line_intersection of [[0, 0], [0.1 * scale, 0.3 * scale], [scale, scale], [(1 + 0.1 + 0.1) * scale, (1 + 0.1 + 0.2 + 0.3) * scale]]
+    assert_eq of [parallel, null, "roundoff-parallel lines stay parallel"]
+
+    near_triangle is [[0, 0], [0.1 * scale, 0.2 * scale], [0.3 * scale, 0.6 * scale]]
+    assert_eq of [orientation of [near_triangle[0], near_triangle[1], near_triangle[2]], 0, "orientation uses the exact translated sign"]
+    assert_true of [collinear of [near_triangle[0], near_triangle[1], near_triangle[2]], "collinearity follows the exact sign"]
+    assert_triangle_permutations of [near_triangle, null, 0, 0, "roundoff-collinear triangle"]
+
+# Exact orientation signs distinguish a separated parallel pair from a proper
+# crossing even at large coordinates.
+assert_false of [segments_intersect of [[0, 0], [1e13, 0], [0, 1], [1e13, 1]], "long separated parallel segments do not intersect"]
+assert_true of [segments_intersect of [[0, 0], [1e13, 0], [9999999999999, -1], [9999999999999, 1]], "long vertical crossing intersects"]
+
+# Translating a triangle must not change its construction result.
+assert_triangle_permutations of [[[1e13, 0], [10000000000001, 0], [1e13, 1]], [10000000000000.5, 0.5], 0.7071067811865476, 0.001, "translated unit triangle"]
+
+# A symmetric guard gives the same result for every order of a long, thin
+# triangle rather than rejecting whichever order has the worst first angle.
+assert_triangle_permutations of [[[0, 0], [1e13, 0], [0, 1]], [5e12, 0.5], 5e12, 0.001, "long thin triangle"]
+
+# Exactly collinear inputs can leave residue in an origin-based determinant.
+det_e is 0.000000007450580596923828125
+det_a is [0.75 + det_e, 1.75 + det_e]
+det_b is [1 + 2 * det_e, 2 + 2 * det_e]
+det_c is [0.125 + 3 * det_e, 1.125 + 3 * det_e]
+assert_triangle_permutations of [[det_a, det_b, det_c], null, 0, 0, "exact-collinear residue triangle"]
+
+test_summary of null
