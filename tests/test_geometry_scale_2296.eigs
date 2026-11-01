@@ -341,4 +341,13 @@ huge_l is 1.3407808079786528e154
 huge_tri is [[huge_l, huge_l], [2 * huge_l, 4 * huge_l], [3 * huge_l, 7 * huge_l]]
 assert_eq of [polygon_area of huge_tri, 0, "products past the cap fall back to main's sum (collinear -> 0)"]
 
+# #2297 review: corrections that cancel among themselves (exactly collinear
+# across scales) must still give the exact area 0.
+cx is -67108865 * 1073741824 * 1073741824
+cy is -67108871 * 1073741824
+cz is 67108871
+colin is [[cx, 3 * cx], [cy, 3 * cy], [cz, 3 * cz]]
+assert_eq of [polygon_area of colin, 0, "collinear across scales: exact area 0"]
+assert of [(polygon_is_clockwise of colin) == false, "collinear across scales: not clockwise"]
+
 test_summary of null
