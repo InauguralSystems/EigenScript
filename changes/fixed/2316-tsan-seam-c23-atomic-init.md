@@ -1,0 +1,1 @@
+- The TSan test seam initializes its two `atomic_int` members with plain `0` instead of the C23-removed `ATOMIC_VAR_INIT`, so the ThreadSanitizer CI lanes build on ubuntu-26.04 (gcc 15, `-std=gnu23` by default) again (#2316).
