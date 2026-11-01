@@ -24,6 +24,7 @@ def run_doc(body, env=None):
 
 def main():
     failures = 0
+    print("PLAN: 8")
 
     def check(ok, label):
         nonlocal failures
@@ -83,4 +84,7 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    if sys.argv[1:] == ["--selftest"]:
+        sys.exit(main())
+    print("usage: %s --selftest" % sys.argv[0], file=sys.stderr)
+    sys.exit(2)
