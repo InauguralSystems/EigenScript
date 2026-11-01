@@ -81,9 +81,10 @@ WAIVE = {("ci.yml", "scope", "detect"): "a218536a4442faff",
          # Reviewed for #2105 fix round: this combines provisioning and the
          # pinned Lake-cache action outcomes, and can only suppress Lean work.
          ("ci.yml", "spec-lean", "prebuild"): "114fa7e323c3f11d",
-         # Reviewed for #2105 fix round: cache-hit only avoids a redundant
+         # Reviewed for #2105 fix round, re-pinned for #2275 (actions/cache/restore
+         # v6.1.0 keeps the cache-hit output): cache-hit only avoids a redundant
          # save; it cannot select whether the specification runs.
-         ("ci.yml", "spec-lean", "lake-cache"): "4cf2ab867685020a"}
+         ("ci.yml", "spec-lean", "lake-cache"): "24fc7d1f0082b92e"}
 used = set()
 def exprs(v): return re.findall(r"\$\{\{(.*?)\}\}", str(v), re.S)
 def bad_expr(e, wf, jid, pr_ok, depth=0):
