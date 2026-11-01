@@ -403,6 +403,7 @@ define polygon_area(vertices) as:
     local raw_scale is 0
     local translated_area is 0
     local translated_scale is 0
+    local translated_saturated is 0
     local j is n - 1
     for i in range of n:
         local raw_left is vertices[j][0] * vertices[i][1]
@@ -422,6 +423,9 @@ define polygon_area(vertices) as:
         local jy is vertices[j][1] - origin_y
         local ix is vertices[i][0] - origin_x
         local iy is vertices[i][1] - origin_y
+        # A difference at the numeric cap has lost its value; flag it.
+        if (abs of jx) >= 1e308 or (abs of jy) >= 1e308 or (abs of ix) >= 1e308 or (abs of iy) >= 1e308:
+            translated_saturated is 1
         local translated_left is jx * iy
         local translated_right is ix * jy
         local translated_cross is translated_left - translated_right
@@ -439,7 +443,7 @@ define polygon_area(vertices) as:
     local translated_bound is 8 * n * _FLOAT_EPS * translated_scale
     # A non-finite or saturated translated sum carries no information; keep
     # main's raw result there (#2297 review).
-    if translated_scale >= 1e308 or translated_area != translated_area:
+    if translated_saturated == 1 or translated_scale >= 1e308 or translated_area != translated_area:
         return raw_area / 2
     if raw_bound < translated_bound:
         return raw_area / 2

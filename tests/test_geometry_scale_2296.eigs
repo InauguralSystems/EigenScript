@@ -314,4 +314,8 @@ assert of [sat_area < -1.5e294 and sat_area > -1.7e294, "saturated translated su
 thin_big is [[200000000000000000, 50000000000000000], [-100000000000000000, -100000000000000000], [-99999999999999980, -99999999999999980], [200000000000000020, 50000000000000020]]
 assert of [(polygon_area of thin_big) == (_polygon_area_raw of thin_big), "raw fallback equals main's left-associated sum"]
 
+# #2297 review: a translated difference at the numeric cap falls back to raw.
+cap_tri is [[-1e308, 0], [1e308, 0], [0, 1e-308]]
+assert of [(polygon_area of cap_tri) == (_polygon_area_raw of cap_tri), "saturated translated difference falls back to main's raw area"]
+
 test_summary of null
