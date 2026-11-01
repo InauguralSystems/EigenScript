@@ -1,0 +1,1 @@
+- The browser playground no longer dies on `import`: the WASM build now takes its C sources from the Makefile (it had lost `src/eigs_embed.c`) and fails to link on an undefined symbol, so an `import` reports an error instead of aborting the page's runtime (#2301).
