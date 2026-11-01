@@ -186,7 +186,7 @@ signature comment above each function (e.g., `# clamp of [value, lo, hi]`).
 
 Higher-order functions take EigenScript functions as arguments:
 
-```eigenscript fragment
+```eigenscript
 load_file of "lib/list.eigs"
 
 define double as:
@@ -198,9 +198,17 @@ define is_even as:
 define add_fn as:
     return n[0] + n[1]
 
-doubled is map of [[1,2,3], double]      # [2, 4, 6]
-evens is filter of [[1,2,3,4], is_even]  # [2, 4]
-total is reduce of [[1,2,3], add_fn, 0]  # 6
+doubled is map of [[1,2,3], double]
+evens is filter of [[1,2,3,4], is_even]
+total is reduce of [[1,2,3], add_fn, 0]
+print of doubled
+print of evens
+print of total
+```
+```output
+[2, 4, 6]
+[2, 4]
+6
 ```
 
 ### lib/string.eigs — String Utilities
@@ -505,8 +513,8 @@ frames stop hand-rolling integrity math.
 
 ```eigenscript
 load_file of "lib/checksum.eigs"
-print of (crc32 of "123456789")      # 3421780262
-print of (adler32 of "Wikipedia")    # 300286872
+print of (crc32 of "123456789")
+print of (adler32 of "Wikipedia")
 ```
 ```output
 3421780262
@@ -558,8 +566,8 @@ load_file of "lib/map.eigs"
 m is map_new of null
 m is map_set of [m, "lang", "EigenScript"]
 m is map_set of [m, "version", "0.5"]
-print of (map_get of [m, "lang"])       # "EigenScript"
-print of (map_keys of m)                # ["lang", "version"]
+print of (map_get of [m, "lang"])
+print of (map_keys of m)
 ```
 ```output
 EigenScript
@@ -582,7 +590,7 @@ EigenScript
 | `times` | `times of [count, fn]` | Call fn(i) for i in 0..count-1 |
 | `iterate` | `iterate of [fn, value, count]` | Apply fn n times |
 
-```eigenscript fragment
+```eigenscript
 load_file of "lib/functional.eigs"
 
 define double as:
@@ -595,7 +603,11 @@ define square as:
 result is chain of [[double, square], 3]   # square(double(3)) = 36
 
 # Apply multiple functions to same value
-results is apply_all of [[double, square], 5]  # [10, 25]
+results is apply_all of [[double, square], 5]
+print of results
+```
+```output
+[10, 25]
 ```
 
 ### The UI Toolkit — lib/ui*.eigs
@@ -877,7 +889,7 @@ Keyboard goes through the same door: `ui_dispatch of [root, ev]` routes a
 `keydown`/`keyup` event dict to `handle_key of [root, ev]`, the toolkit's
 public key handler that `app_loop` itself calls. It applies hotkeys >
 escape-pops-modal > open combobox > focused text input > focus
-navigation, and returns 1 when the toolkit consumed the key, 0 when it is
+navigation, and returns `true` when the toolkit consumed the key, `false` when it is
 free for the app — so a headless test drives keys exactly like mouse
 instead of reaching for the private handlers.
 
@@ -957,14 +969,19 @@ per-file and total tallies.
 | `has_flag` | `has_flag of [parsed, "--flag"]` | Alias for get_flag |
 | `require_opt` | `require_opt of [parsed, "--key", usage]` | Get option or exit |
 
-```eigenscript fragment
+```eigenscript
 load_file of "lib/args.eigs"
-# eigenscript myscript.eigs --verbose --output=result.txt input.csv
-parsed is parse_args of null
+# Equivalent to: eigenscript myscript.eigs --verbose --output=result.txt input.csv
+parsed is [["positional", ["input.csv"]], ["--verbose", "true"], ["--output", "result.txt"]]
 if get_flag of [parsed, "--verbose"]:
     print of "Verbose mode on"
 outfile is get_opt of [parsed, "--output", "out.txt"]
-files is get_positional of parsed    # ["input.csv"]
+files is get_positional of parsed
+print of files
+```
+```output
+Verbose mode on
+["input.csv"]
 ```
 
 ### lib/config.eigs — Configuration File Loading
@@ -1087,8 +1104,8 @@ sm is sm_add_transition of [sm, "idle", "start", "running"]
 sm is sm_add_transition of [sm, "running", "stop", "idle"]
 sm is sm_add_transition of [sm, "running", "error", "failed"]
 sm is sm_send of [sm, "start"]
-print of (sm_state of sm)              # "running"
-print of (sm_can_send of [sm, "stop"]) # true
+print of (sm_state of sm)
+print of (sm_can_send of [sm, "stop"])
 ```
 ```output
 running
@@ -1111,7 +1128,7 @@ true
 load_file of "lib/template.eigs"
 vars is [["name", "World"], ["version", "0.5"]]
 msg is render of ["{{name}} is running v{{version}}", vars]
-print of msg   # "World is running v0.5"
+print of msg
 ```
 ```output
 World is running v0.5

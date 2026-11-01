@@ -381,7 +381,7 @@ The IEEE 754 default floating-point environment is part of number semantics.
   seam for checksums, hashing, and byte protocols (see docs/BUILTINS.md).
 
 ```eigenscript
-print of (9007199254740992 + 1)              # +1 is invisible past 2^53
+print of (9007199254740992 + 1)
 print of (9007199254740993 == 9007199254740992)
 print of (1e308 * 10)                        # saturates, never Infinity
 print of (bit_and of [0xFFFFFFFF, 0xFF])     # int64 bitwise
@@ -483,11 +483,11 @@ its UTF-8 bytes and round-trips exactly through concatenation, f-strings, and
 printing — you just don't get character indexing for free.
 
 ```eigenscript
-print of (len of "hello")     # 5 — all ASCII, 1 byte each
-print of (len of "héllo")     # 6 — é is 2 UTF-8 bytes
+print of (len of "hello")
+print of (len of "héllo")
 euro is "€"
-print of (len of euro)        # 3 — one character, three bytes
-print of (euro == "€")        # true — bytes round-trip exactly
+print of (len of euro)
+print of (euro == "€")
 print of ("price: " + euro)   # f-strings / concat are byte-wise, multibyte-safe
 ```
 ```output

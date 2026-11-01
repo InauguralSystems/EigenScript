@@ -68,8 +68,8 @@ define add(a, b) as:
 define double as:      # no parameter list => ONE implicit parameter named `n`
     return n * 2
 
-print of (add of [2, 3])   # 5
-print of (double of 21)    # 42
+print of (add of [2, 3])
+print of (double of 21)
 ```
 ```output
 5
@@ -87,8 +87,8 @@ n is 2
 define f() as:
     return n
 g is () => n
-print of (f of [])    # [] (the implicit n, not the outer 2)
-print of (g of 7)     # 7
+print of (f of [])
+print of (g of 7)
 ```
 ```output
 []
@@ -204,8 +204,8 @@ define f as:
     loop while i < 40:
         x is x * 0.7
         i is i + 1
-    print of (improving of x)   # true: x decays
-    print of improving          # false: the bare form judged i, which grows
+    print of (improving of x)
+    print of improving
     return 0
 f of 0
 ```

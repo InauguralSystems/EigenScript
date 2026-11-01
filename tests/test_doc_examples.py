@@ -325,21 +325,21 @@ def is_asan_build():
 # and is NOT in this table fails the ENROLMENT check below, so a new doc
 # cannot join the tree unexamined (§119).
 #
-# Each row is (fences, paired, fragment, nocheck). Changing one is a
+# Each row is (fences, paired, fragment, nocheck, value-comments). Changing one is a
 # deliberate edit with a visible diff; a silent shrink — the failure mode a
 # "more than zero" floor cannot see — is impossible.
 # ---------------------------------------------------------------------------
 POPULATION = {
     # file                       fences paired fragment nocheck value-comments
-    "README.md":                 (  7,    3,     4,      0,      0),
+    "README.md":                 (  7,    5,     2,      0,      0),
     "docs/llms.txt":             ( 13,   10,     2,      1,      0),   # #2203: +1 paired (catch-type guard, string throw + runtime error)
     "docs/SPEC.md":              ( 88,   84,     1,      3,      0),   # #1425: +1 paired (multi-line binary operator error line)
     "docs/COMPARISON.md":        ( 19,   18,     1,      0,      0),
     "docs/CONCURRENCY.md":       (  9,    9,     0,      0,      0),   # #1879: +1 paired (thread handle crosses a channel)
-    "docs/STDLIB.md":            ( 16,    8,     8,      0,      0),
-    "docs/SYNTAX.md":            ( 35,   15,    20,      0,      1),
+    "docs/STDLIB.md":            ( 16,   11,     5,      0,      0),
+    "docs/SYNTAX.md":            ( 35,   24,    11,      0,      0),
     # #1991: these observer documents are part of the executable doc gate.
-    "docs/PREDICATES.md":        ( 15,    2,    12,      1,      4),
+    "docs/PREDICATES.md":        ( 15,    5,     9,      1,      0),
     "docs/DIAGNOSTICS.md":       (  6,    1,     5,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
     "docs/BUILTINS.md":          (  3,    2,     1,      0,      0),   # #2186: durable atomic-save recipe
@@ -374,29 +374,13 @@ TAG_KINDS = ("", "check", "fragment", "nocheck")
 # The detector is deliberately the SAME expression the round-2 brief used to
 # enumerate the class, so the gate's population and a hand `grep -nE` cannot
 # disagree about what the class IS.
-VALUE_COMMENT = re.compile(r"#.*(after|gives|prints|≈|~) *[0-9]")
-
-# Each site is either rewritten so the paired output carries the value, or
-# waived here by its EXACT stripped line with a reason (§125). Keyed by
-# (basename, stripped line).
-VALUE_COMMENT_WAIVERS = {
-    ("SYNTAX.md", 'eval of "print of 42"              # prints 42'):
-        "the paired output block below prints 42; the comment restates a value "
-        "the gate already compares byte-for-byte",
-    ("PREDICATES.md", "x is x * 0.999        # genuine motion, but each step is ~0.1%"):
-        "0.1% is the multiplier 0.999 restated in words, not a measured result",
-    ("PREDICATES.md",
-     'report of x               # "converged"  — settled AT THE DEADBAND; x is ~98, not ~0'):
-        "the teaching point is WHICH verdict, not the exact x; the verdict "
-        "itself is checked by the paired output",
-    ("PREDICATES.md", "x is x * 0.7          # 100 → ~1: steps contracting toward a limit"):
-        "an order-of-magnitude illustration of the contraction, not a claimed "
-        "final value",
-    ("PREDICATES.md", "x is x * 1.43         # 1 → ~105: non-vanishing same-sign steps"):
-        "an order-of-magnitude illustration of the growth, not a claimed final "
-        "value",
-}
-VALUE_COMMENT_WAIVERS_USED = set()
+VALUE_COMMENT = re.compile(
+    r"#(?:.*(?:after|gives|prints|≈|~)\s*[0-9]|\s*(?:"
+    r"[-+]?(?:[0-9](?:[0-9.eE+-]*))\b|"
+    r"[\"']|\[|\{|"
+    r"(?:true|false|null|improving|diverging|stable|equilibrium|"
+    r"oscillating|converged)\b))"
+)
 
 # The pins above describe THIS repository. tests/test_doc_examples_markers.py
 # copies this checker into a throwaway workspace and drives it over synthetic
@@ -518,35 +502,59 @@ def undeclared_names(code):
         os.unlink(tmp)
 
 
-def check_value_comments(path, fence_line, text):
-    """Count value-bearing comments in one executed fence; FAIL the unwaived.
+def split_code_comment(line):
+    """Split at the first comment marker outside an EigenScript string."""
+    quote = None
+    escaped = False
+    for index, char in enumerate(line):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif char in ('"', "'"):
+            quote = char
+        elif char == "#":
+            return line[:index], line[index + 1:]
+    return line, None
 
-    Returns how many were found (waived or not) so the per-file population can
-    be pinned: a NEW value comment is red until somebody decides what it is.
+
+def value_comment(line):
+    """Return the real comment when it contains a documented value."""
+    _code, comment = split_code_comment(line)
+    if comment is None:
+        return None
+    return comment if VALUE_COMMENT.search("#" + comment) else None
+
+
+def check_value_comments(path, fence_line, text, validate=True):
+    """Count value-bearing comments in one executed fence; fail every one.
+
+    Returns how many were found so the per-file population can be pinned: a
+    new value comment is red until it is rewritten as checked output.
     """
     global FAIL
     found = 0
-    base = os.path.basename(path)
     for k, raw in enumerate(text.split("\n")):
         line = raw.strip()
         if not line or "#" not in line:
             continue
-        if not VALUE_COMMENT.search(line):
+        comment = value_comment(raw)
+        if comment is None:
             continue
         found += 1
-        key = (base, line)
-        if key in VALUE_COMMENT_WAIVERS:
-            VALUE_COMMENT_WAIVERS_USED.add(key)
+        # --list is an inventory operation: count claims, but never apply the
+        # validation gate (or require a runtime to exist).
+        if not validate:
             continue
         FAIL += 1
         print("  FAIL: %s:%d states a VALUE in a comment inside an executed "
-              "example, and nothing checks it: %s"
-              % (path, fence_line + 1 + k, line))
-        print("    fix: print the value so the paired ```output block compares "
-              "it, or add this exact line to VALUE_COMMENT_WAIVERS with a "
-              "reason")
+              "example: %s" % (path, fence_line + 1 + k, line))
+        print("    fix: remove the value comment, print the value, and put the "
+              "expected value in the paired ```output block")
     return found
-
 
 def run_program(code, timeout=20):
     """Run one snippet and return (returncode, stdout, stderr)."""
@@ -696,6 +704,8 @@ def main():
                  EIGS, "present" if os.path.exists(EIGS) else "ABSENT"))
     coverage_failed = False
     population_failed = False
+    total_claims = 0
+    total_fragments = 0
     asan_build = is_asan_build()
 
     for path in args:
@@ -711,7 +721,9 @@ def main():
                     ("`sort_by of [list, key_fn]` is a builtin, not a member "
                      "of the `sort` module.",
                      "sort section identifies sort_by as a builtin"),
-                    ("print of (sm_can_send of [sm, \"stop\"]) # true", "state example labels its boolean as true"),
+                    ("print of (sm_can_send of [sm, \"stop\"])\n```\n"
+                     "```output\nrunning\ntrue",
+                     "state example checks its boolean as true"),
                 ],
                 "lib/contract.eigs": [
                     ("`ensure of [(abs of x) < LIMIT, \"target is bounded\"]`",
@@ -743,7 +755,8 @@ def main():
         pending = None  # (lineno, code) awaiting an output block
         readme_checked = 0
         n_fence = n_paired = n_fragment = n_nocheck = n_valuecomment = 0
-        for lineno, info, arg, text in blocks(path):
+        doc_blocks = list(blocks(path))
+        for block_index, (lineno, info, arg, text) in enumerate(doc_blocks):
             if info == "eigenscript":
                 if pending is not None:
                     report_orphan(path, pending)
@@ -762,7 +775,8 @@ def main():
                               % (os.path.basename(path), lineno, payload))
                     continue
                 if kind in ("", "check", "fragment"):
-                    n_valuecomment += check_value_comments(path, lineno, text)
+                    n_valuecomment += check_value_comments(
+                        path, lineno, text, validate=not listing)
                 if kind == "fragment":
                     n_fragment += 1
                     if listing:
@@ -882,6 +896,8 @@ def main():
                 population_failed = True
                 print("  FAIL: %s is enrolled but examined 0 fences "
                       "(mechanical-gates §121)" % rel)
+        total_claims += n_valuecomment
+        total_fragments += n_fragment
 
     # #946: a fence the parser could not read is COVERAGE LOSS, and the whole
     # point of that issue is that it used to happen in silence. Report every
@@ -896,18 +912,6 @@ def main():
         for upath, ulineno, uraw, uwhy in UNSEEN_FENCES:
             print("  FAIL: %s:%d fence %s, so its block is UNCHECKED: %s"
                   % (upath, ulineno, uwhy, uraw.strip()))
-
-    # A value-comment waiver that matches nothing is a review that no longer
-    # corresponds to a line — same rule as the claims tool's waiver audit.
-    if IN_REAL_TREE and not listing:
-        stale = set(VALUE_COMMENT_WAIVERS) - VALUE_COMMENT_WAIVERS_USED
-        covered = {f for f, _ in VALUE_COMMENT_WAIVERS} & {
-            os.path.basename(a) for a in args}
-        stale = {k for k in stale if k[0] in covered}
-        for f, line in sorted(stale):
-            population_failed = True
-            print("  FAIL: a VALUE_COMMENT_WAIVERS entry matched nothing in %s "
-                  "— the reviewed line is gone or edited: %s" % (f, line))
 
     print("")
     if IN_REAL_TREE:
@@ -930,6 +934,7 @@ def main():
                   "nothing (mechanical-gates §121)"
                   % (applied, len(POPULATION)))
     checked = PASS + FAIL
+    print("Value comments: %d claim(s) examined" % total_claims)
     print("Doc examples: %d checked, %d passed, %d failed, %d skipped, "
           "%d unreadable fence(s)" %
           (checked, PASS, FAIL, SKIP, len(UNSEEN_FENCES)))
@@ -1156,9 +1161,8 @@ def selftest():
     # ROUND 2 (Astra, G4): a value stated in a comment beside a green example.
     main_case("a value-bearing comment in an executed example is RED",
               GOOD +
-              "```eigenscript" + NL + "print of 1" + NL +
-              "# converged after 25 steps" + NL + "```" + NL +
-              "```output" + NL + "1" + NL + "```" + NL,
+              "```eigenscript fragment" + NL + "x is 1" + NL +
+              "x  # 2" + NL + "```" + NL,
               1, "states a VALUE in a comment inside an executed example")
     main_case("a fragment binding that is not name=value is RED",
               GOOD +
