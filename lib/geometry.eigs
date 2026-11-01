@@ -23,6 +23,7 @@
 
 _PI is 3.14159265358979323846
 _EPS is 1e-12
+_FLOAT_EPS is 2.220446049250313e-16
 
 # ============================================================
 # 2D Point Operations
@@ -392,7 +393,67 @@ define triangle_inradius(a, b, c) as:
 
 # Signed area via shoelace formula
 # Positive = counter-clockwise, negative = clockwise
+# Error-free product (Dekker): returns [p, e] with p + e == a * b exactly.
+define _two_product(a, b) as:
+    local p is a * b
+    local ca is 134217729 * a
+    local ah is ca - (ca - a)
+    local al is a - ah
+    local cb is 134217729 * b
+    local bh is cb - (cb - b)
+    local bl is b - bh
+    local e is ((ah * bh - p) + ah * bl + al * bh) + al * bl
+    return [p, e]
+
+# Signed area by the shoelace formula, evaluated exactly with error-free
+# products and a Shewchuk expansion sum, so the sign is exact and the value is
+# within about one rounding unit of the true area (no translation or tolerance heuristics;
+# #2296/#2297). Outside Dekker's exact range main's plain sum is used.
 define polygon_area(vertices) as:
+    local n is len of vertices
+    if n == 0:
+        return 0
+    # Dekker's products are exact only while every product and partial product
+    # stays finite and normal: |coordinate| in [1e-140, 1e150] (or exactly 0).
+    # Outside that range (or non-finite), use main's plain sum unchanged.
+    for v in vertices:
+        for c in v:
+            local m is abs of c
+            if c != c or m > 1e150 or (m != 0 and m < 1e-140):
+                return _polygon_area_raw of vertices
+    # Shewchuk expansion: the running sum is kept exactly as a list of
+    # non-overlapping components (TwoSum never drops an error term), so the
+    # final rounding of the exact area is the only rounding.
+    local expansion is []
+    local j is n - 1
+    for i in range of n:
+        local left is _two_product of [vertices[j][0], vertices[i][1]]
+        local right is _two_product of [vertices[i][0], vertices[j][1]]
+        for term in [left[1], 0 - right[1], left[0], 0 - right[0]]:
+            local q is term
+            local kept is []
+            for h in expansion:
+                local s is q + h
+                local bv is s - q
+                local err is (q - (s - bv)) + (h - bv)
+                if err != 0:
+                    append of [kept, err]
+                q is s
+            if q != 0:
+                append of [kept, q]
+            expansion is kept
+        j is i
+    # Components are non-overlapping and increasing in magnitude; summing from
+    # the smallest gives the area to within about one rounding unit, with the
+    # exact sign.
+    local total is 0
+    for c in expansion:
+        total is total + c
+    return total / 2
+
+# main's raw shoelace area: polygon_centroid's moments are raw, so its
+# denominator must be too (#2297 review).
+define _polygon_area_raw(vertices) as:
     n is len of vertices
     area is 0
     j is n - 1
@@ -406,7 +467,7 @@ define polygon_centroid(vertices) as:
     n is len of vertices
     cx is 0
     cy is 0
-    a is polygon_area of vertices
+    a is _polygon_area_raw of vertices
     if a < _EPS and a > (0 - _EPS):
         # Degenerate: average vertices
         for i in range of n:
@@ -475,7 +536,7 @@ define polygon_is_convex(vertices) as:
 
 # Check winding order via signed area
 define polygon_is_clockwise(vertices) as:
-    a is polygon_area of vertices
+    local a is polygon_area of vertices
     if a < 0:
         return true
     return false

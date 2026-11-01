@@ -1,0 +1,353 @@
+load_file of "lib/test.eigs"
+load_file of "lib/geometry.eigs"
+
+# Frozen implementations from main (183811c).  These are the regression
+# oracle whenever their finite result satisfies the same geometry residual.
+define _main_polygon_area(vertices) as:
+    local n is len of vertices
+    local area is 0
+    local j is n - 1
+    for i in range of n:
+        area is area + vertices[j][0] * vertices[i][1] - vertices[i][0] * vertices[j][1]
+        j is i
+    return area / 2
+
+define _main_polygon_centroid(vertices) as:
+    local n is len of vertices
+    local cx is 0
+    local cy is 0
+    local a is _main_polygon_area of vertices
+    if a < 1e-12 and a > -1e-12:
+        for i in range of n:
+            cx is cx + vertices[i][0]
+            cy is cy + vertices[i][1]
+        return [cx / n, cy / n]
+    local j is n - 1
+    for i in range of n:
+        local cross is vertices[j][0] * vertices[i][1] - vertices[i][0] * vertices[j][1]
+        cx is cx + (vertices[j][0] + vertices[i][0]) * cross
+        cy is cy + (vertices[j][1] + vertices[i][1]) * cross
+        j is i
+    local factor is 1.0 / (6 * a)
+    return [cx * factor, cy * factor]
+
+define _main_circles_intersect(c1x, c1y, c1r, c2x, c2y, c2r) as:
+    local dx is c2x - c1x
+    local dy is c2y - c1y
+    local d is sqrt of (dx * dx + dy * dy)
+    if d > c1r + c2r:
+        return false
+    local diff is c1r - c2r
+    if diff < 0:
+        diff is 0 - diff
+    return d >= diff
+
+define _main_circle_intersection_points(c1x, c1y, c1r, c2x, c2y, c2r) as:
+    local dx is c2x - c1x
+    local dy is c2y - c1y
+    local d is sqrt of (dx * dx + dy * dy)
+    if d < 1e-12:
+        return []
+    if d > c1r + c2r + 1e-12:
+        return []
+    local diff is c1r - c2r
+    if diff < 0:
+        diff is 0 - diff
+    if d + 1e-12 < diff:
+        return []
+    local a is (c1r * c1r - c2r * c2r + d * d) / (2 * d)
+    local h_sq is c1r * c1r - a * a
+    if h_sq < 0:
+        h_sq is 0
+    local h is sqrt of h_sq
+    local mx is c1x + a * dx / d
+    local my is c1y + a * dy / d
+    if h < 1e-12:
+        return [[mx, my]]
+    local ox is h * dy / d
+    local oy is h * dx / d
+    return [[mx + ox, my - oy], [mx - ox, my + oy]]
+
+define abs_2296(value) as:
+    if value < 0:
+        return 0 - value
+    return value
+
+define assert_main_polygon(vertices, desc) as:
+    local main_area is _main_polygon_area of vertices
+    local branch_area is polygon_area of vertices
+    local coordinate_scale is 1
+    for point in vertices:
+        local magnitude is abs_2296 of point[0]
+        if (abs_2296 of point[1]) > magnitude:
+            magnitude is abs_2296 of point[1]
+        if magnitude > coordinate_scale:
+            coordinate_scale is magnitude
+    local tolerance is 64 * 2.220446049250313e-16 * coordinate_scale * coordinate_scale * (len of vertices)
+    if main_area == main_area and (abs_2296 of main_area) > tolerance:
+        assert_near of [branch_area, main_area, tolerance, desc + " area agrees with main"]
+        local main_centroid is _main_polygon_centroid of vertices
+        if main_centroid[0] == main_centroid[0] and main_centroid[1] == main_centroid[1]:
+            local branch_centroid is polygon_centroid of vertices
+            local centroid_tolerance is 256 * 2.220446049250313e-16 * coordinate_scale * coordinate_scale * coordinate_scale / (abs_2296 of main_area)
+            assert_near of [branch_centroid[0], main_centroid[0], centroid_tolerance, desc + " centroid x agrees with main"]
+            assert_near of [branch_centroid[1], main_centroid[1], centroid_tolerance, desc + " centroid y agrees with main"]
+
+define assert_main_circle(circle, desc) as:
+    local main_points is _main_circle_intersection_points of [circle[0], circle[1], circle[2], circle[3], circle[4], circle[5]]
+    local branch_points is circle_intersection_points of [circle[0], circle[1], circle[2], circle[3], circle[4], circle[5]]
+    if (len of main_points) > 0:
+        local residual_bound is 128 * 2.220446049250313e-16 * (circle[2] + circle[5] + 1)
+        local p is main_points[0]
+        local r1_residual is abs_2296 of ((sqrt of ((p[0] - circle[0]) * (p[0] - circle[0]) + (p[1] - circle[1]) * (p[1] - circle[1]))) - circle[2])
+        local r2_residual is abs_2296 of ((sqrt of ((p[0] - circle[3]) * (p[0] - circle[3]) + (p[1] - circle[4]) * (p[1] - circle[4]))) - circle[5])
+        if r1_residual <= residual_bound and r2_residual <= residual_bound:
+            assert_eq of [len of branch_points, len of main_points, desc + " point count agrees with main"]
+            assert_near of [branch_points[0][0], main_points[0][0], residual_bound, desc + " first x agrees with main"]
+            assert_near of [branch_points[0][1], main_points[0][1], residual_bound, desc + " first y agrees with main"]
+    local branch_intersects is circles_intersect of [circle[0], circle[1], circle[2], circle[3], circle[4], circle[5]]
+    local main_intersects is _main_circles_intersect of [circle[0], circle[1], circle[2], circle[3], circle[4], circle[5]]
+    assert_eq of [branch_intersects, main_intersects, desc + " predicate agrees with main"]
+
+define assert_polygon_orders(vertices, expected_area, expected_centroid, tol, desc) as:
+    local n_vertices is len of vertices
+    for start in range of n_vertices:
+        local forward is []
+        local reverse is []
+        for offset in range of n_vertices:
+            local index is start + offset
+            if index >= n_vertices:
+                index is index - n_vertices
+            append of [forward, vertices[index]]
+            index is start - offset
+            if index < 0:
+                index is index + n_vertices
+            append of [reverse, vertices[index]]
+        assert_near of [polygon_area of forward, expected_area, tol, desc + " forward area"]
+        assert_near of [polygon_area of reverse, 0 - expected_area, tol, desc + " reverse area"]
+        assert_eq of [polygon_is_clockwise of forward, expected_area < 0, desc + " forward winding"]
+        assert_eq of [polygon_is_clockwise of reverse, expected_area > 0, desc + " reverse winding"]
+        local forward_centroid is polygon_centroid of forward
+        local reverse_centroid is polygon_centroid of reverse
+        assert_near of [forward_centroid[0], expected_centroid[0], tol, desc + " forward centroid x"]
+        assert_near of [forward_centroid[1], expected_centroid[1], tol, desc + " forward centroid y"]
+        assert_near of [reverse_centroid[0], expected_centroid[0], tol, desc + " reverse centroid x"]
+        assert_near of [reverse_centroid[1], expected_centroid[1], tol, desc + " reverse centroid y"]
+
+define assert_circle_pair(scale, desc) as:
+    local points is circle_intersection_points of [0, 0, scale, scale, 0, scale]
+    assert_eq of [len of points, 2, desc + " has two intersections"]
+    assert_near of [points[0][0], 0.5 * scale, 1e-9 * scale, desc + " first x"]
+    assert_near of [points[0][1], -0.8660254037844386 * scale, 1e-9 * scale, desc + " first y"]
+    assert_near of [points[1][0], 0.5 * scale, 1e-9 * scale, desc + " second x"]
+    assert_near of [points[1][1], 0.8660254037844386 * scale, 1e-9 * scale, desc + " second y"]
+
+define assert_circle_boundaries(scale, desc) as:
+    local external is circle_intersection_points of [0, 0, scale, 2 * scale, 0, scale]
+    assert_eq of [len of external, 1, desc + " external tangency has one point"]
+    assert_near of [external[0][0], scale, 1e-9 * scale, desc + " external tangent x"]
+    assert_near of [external[0][1], 0, 1e-9 * scale, desc + " external tangent y"]
+    local internal is circle_intersection_points of [0, 0, 2 * scale, scale, 0, scale]
+    assert_eq of [len of internal, 1, desc + " internal tangency has one point"]
+    assert_near of [internal[0][0], 2 * scale, 1e-9 * scale, desc + " internal tangent x"]
+    assert_near of [internal[0][1], 0, 1e-9 * scale, desc + " internal tangent y"]
+    assert_eq of [circle_intersection_points of [0, 0, scale, 3 * scale, 0, scale], [], desc + " separated circles"]
+    assert_eq of [circle_intersection_points of [0, 0, 3 * scale, scale, 0, scale], [], desc + " contained circles"]
+    assert_eq of [circle_intersection_points of [0, 0, scale, 0, 0, scale], [], desc + " coincident circles"]
+
+for scale in [1e-9, 1, 1e9]:
+    local square is [[0, 0], [scale, 0], [scale, scale], [0, scale]]
+    assert_polygon_orders of [square, scale * scale, [0.5 * scale, 0.5 * scale], 1e-9 * scale, "scaled square"]
+    assert_circle_pair of [scale, "scaled circle pair"]
+    assert_circle_boundaries of [scale, "scaled circle boundaries"]
+
+# Translation used to dominate the shoelace products for this tiny square.
+tiny_delta is 1e-9
+tiny_square is [[10, 10], [10 + tiny_delta, 10], [10 + tiny_delta, 10 + tiny_delta], [10, 10 + tiny_delta]]
+tiny_side is (10 + tiny_delta) - 10
+assert_polygon_orders of [tiny_square, tiny_side * tiny_side, [10 + tiny_side / 2, 10 + tiny_side / 2], 1e-25, "translated tiny square"]
+
+# A large aspect ratio is not degeneracy: retain the area-weighted centroid.
+thin is [[0, 0], [1e13, 0], [1e13, 1], [0, 2]]
+assert_polygon_orders of [thin, 1.5e13, [4.444444444444444e12, 0.7777777777777777], 0.001, "thin polygon"]
+
+# Cancellation in a concave polygon is not degeneracy. Check every cyclic start
+# and both winding directions without coupling this centroid regression to the
+# separately tested polygon-area accumulator.
+concave is [[1e13, 0], [1e13, 1], [1, 1], [1, 1e13], [0, 1e13], [0, 0]]
+for start in range of 6:
+    local concave_forward is []
+    local concave_reverse is []
+    for offset in range of 6:
+        append of [concave_forward, concave[(start + offset) % 6]]
+        local reverse_index is start - offset
+        if reverse_index < 0:
+            reverse_index is reverse_index + 6
+        append of [concave_reverse, concave[reverse_index]]
+    local concave_forward_centroid is polygon_centroid of concave_forward
+    local concave_reverse_centroid is polygon_centroid of concave_reverse
+    assert_near of [concave_forward_centroid[0], 2.5e12, 1, "concave cancellation forward centroid x"]
+    assert_near of [concave_forward_centroid[1], 2.5e12, 1, "concave cancellation forward centroid y"]
+    assert_near of [concave_reverse_centroid[0], 2.5e12, 1, "concave cancellation reverse centroid x"]
+    assert_near of [concave_reverse_centroid[1], 2.5e12, 1, "concave cancellation reverse centroid y"]
+
+# Exact collinearity after subtraction can carry origin-based determinant residue.
+det_e is 0.000000007450580596923828125
+degenerate is [[0.75 + det_e, 1.75 + det_e], [1 + 2 * det_e, 2 + 2 * det_e], [0.125 + 3 * det_e, 1.125 + 3 * det_e]]
+degenerate_average is [(degenerate[0][0] + degenerate[1][0] + degenerate[2][0]) / 3, (degenerate[0][1] + degenerate[1][1] + degenerate[2][1]) / 3]
+for start in range of 3:
+    local order is [degenerate[start], degenerate[(start + 1) % 3], degenerate[(start + 2) % 3]]
+    local reverse_order is [degenerate[start], degenerate[(start + 2) % 3], degenerate[(start + 1) % 3]]
+    local order_centroid is polygon_centroid of order
+    local reverse_centroid is polygon_centroid of reverse_order
+    assert_near of [polygon_area of order, 0, 1e-15, "roundoff-degenerate forward area"]
+    assert_near of [polygon_area of reverse_order, 0, 1e-15, "roundoff-degenerate reverse area"]
+    assert_eq of [polygon_is_clockwise of order, (polygon_area of order) < 0, "roundoff-degenerate forward exact sign"]
+    assert_eq of [polygon_is_clockwise of reverse_order, (polygon_area of reverse_order) < 0, "roundoff-degenerate reverse exact sign"]
+    assert_near of [order_centroid[0], degenerate_average[0], 1e-15, "roundoff-degenerate forward centroid x"]
+    assert_near of [order_centroid[1], degenerate_average[1], 1e-15, "roundoff-degenerate forward centroid y"]
+    assert_near of [reverse_centroid[0], degenerate_average[0], 1e-15, "roundoff-degenerate reverse centroid x"]
+    assert_near of [reverse_centroid[1], degenerate_average[1], 1e-15, "roundoff-degenerate reverse centroid y"]
+
+assert_eq of [polygon_area of [], 0, "empty polygon area"]
+assert_false of [polygon_is_clockwise of (convex_hull of []), "empty hull is not clockwise"]
+
+# The tangency/square-root scale is bounded by the smaller radius, not 1e13.
+unequal is circle_intersection_points of [0, 0, 1, 1e13, 0, 1e13]
+assert_eq of [len of unequal, 2, "unequal circles have two intersections"]
+assert_near of [unequal[0][0], 0, 1e-12, "unequal first x"]
+assert_near of [unequal[0][1], -1, 1e-12, "unequal first y"]
+assert_near of [unequal[1][0], 0, 1e-12, "unequal second x"]
+assert_near of [unequal[1][1], 1, 1e-12, "unequal second y"]
+
+# Raw shoelace is better conditioned than first-vertex translation here.
+large_concave is [[1e17, 0], [1e17, 1], [1, 1], [1, 1e17], [0, 1e17], [0, 0]]
+assert_polygon_orders of [large_concave, 2e17, [2.5e16, 2.5e16], 32, "large concave cancellation"]
+
+# Squared separation rounds above the exactly equal squared radius sum.
+exact_tangent_circle is [0, 0, 211357958.5, 282736005, 314243692, 211357958.5]
+exact_tangent_points is circle_intersection_points of [exact_tangent_circle[0], exact_tangent_circle[1], exact_tangent_circle[2], exact_tangent_circle[3], exact_tangent_circle[4], exact_tangent_circle[5]]
+assert_eq of [len of exact_tangent_points, 1, "rounded squared tangency has one point"]
+assert_near of [exact_tangent_points[0][0], 141368002.5, 1e-7, "rounded squared tangent x"]
+assert_near of [exact_tangent_points[0][1], 157121846, 1e-7, "rounded squared tangent y"]
+
+# An exact Pythagorean tangency can leave a small positive height squared.
+pythagorean_scale is 8.881784197001252e-16
+pythagorean_tangent_circle is [0, 0, 470847044 * pythagorean_scale, 737754880 * pythagorean_scale, 585239688 * pythagorean_scale, 470847044 * pythagorean_scale]
+pythagorean_tangent_points is circle_intersection_points of [pythagorean_tangent_circle[0], pythagorean_tangent_circle[1], pythagorean_tangent_circle[2], pythagorean_tangent_circle[3], pythagorean_tangent_circle[4], pythagorean_tangent_circle[5]]
+assert_eq of [len of pythagorean_tangent_points, 1, "positive height roundoff tangency has one point"]
+assert_main_circle of [pythagorean_tangent_circle, "positive height roundoff tangency"]
+
+# Differential guard: preserve every trustworthy result from main across the
+# fixed table and deterministic random scales/orderings.
+polygon_cases is [
+    [[0, 0], [1, 0], [1, 1], [0, 1]],
+    thin,
+    concave,
+    large_concave
+]
+for case_index in range of (len of polygon_cases):
+    local polygon_case is polygon_cases[case_index]
+    for start in range of (len of polygon_case):
+        local ordered is []
+        local reversed is []
+        for offset in range of (len of polygon_case):
+            append of [ordered, polygon_case[(start + offset) % (len of polygon_case)]]
+            local reverse_index is start - offset
+            if reverse_index < 0:
+                reverse_index is reverse_index + (len of polygon_case)
+            append of [reversed, polygon_case[reverse_index]]
+        assert_main_polygon of [ordered, "table polygon forward"]
+        assert_main_polygon of [reversed, "table polygon reverse"]
+
+circle_cases is [
+    [0, 0, 1, 1, 0, 1],
+    [0, 0, 1, 2, 0, 1],
+    [0, 0, 1, 3, 0, 1],
+    [0, 0, 1, 1e13, 0, 1e13],
+    [0, 0, 1771450.845521109, 1771450.8459096379, 0, 0.01874238839135805],
+    exact_tangent_circle,
+    pythagorean_tangent_circle
+]
+for circle_index in range of (len of circle_cases):
+    assert_main_circle of [circle_cases[circle_index], "table circle"]
+
+seed_random of 2296
+random_scales is [1e-9, 1e-3, 1, 1e6, 1e12, 1e17]
+for batch_index in range of 48:
+    local random_scale is random_scales[batch_index % (len of random_scales)]
+    local tx is ((random of null) - 0.5) * random_scale
+    local ty is ((random of null) - 0.5) * random_scale
+    local width is (0.25 + random of null) * random_scale
+    local height is (0.25 + random of null) * random_scale
+    local random_polygon is [[tx, ty], [tx + width, ty], [tx + width, ty + height], [tx, ty + height]]
+    local random_start is batch_index % 4
+    local random_order is []
+    for random_offset in range of 4:
+        local random_index is random_start + random_offset
+        if random_index >= 4:
+            random_index is random_index - 4
+        if batch_index % 2 == 1:
+            random_index is random_start - random_offset
+            if random_index < 0:
+                random_index is random_index + 4
+        append of [random_order, random_polygon[random_index]]
+    assert_main_polygon of [random_order, "seeded random polygon"]
+    local r1 is (0.5 + random of null) * random_scale
+    local r2 is (0.5 + random of null) * random_scale
+    local center_distance is (0.25 + random of null) * (r1 + r2)
+    assert_main_circle of [[0, 0, r1, center_distance, 0, r2], "seeded random circle"]
+
+# #2297 review: centroid moments are raw, so its denominator must be main's raw
+# area (a translated area shifted this centroid to ~3.3e8).
+far_centroid is polygon_centroid of [[1000000000, 1000000000], [1000000001, 1000000000], [1000000001, 1000000001], [1000000000, 1000000001]]
+assert_near of [far_centroid[0], 1000000000.5, 1e-6, "far square centroid x"]
+assert_near of [far_centroid[1], 1000000000.5, 1e-6, "far square centroid y"]
+
+# #2297 review: a saturated translated sum must not replace main's raw area.
+big_a is 8e153
+big_w is 1e140
+sat_area is polygon_area of [[big_a, big_a], [0 - big_a, 0 - big_a], [0 - big_a, (0 - big_a) + big_w], [big_a, big_a + big_w]]
+assert of [sat_area < -1.5e294 and sat_area > -1.7e294, "saturated translated sum falls back to the raw area"]
+
+# #2297 review: the raw fallback must accumulate in main's order.
+thin_big is [[200000000000000000, 50000000000000000], [-100000000000000000, -100000000000000000], [-99999999999999980, -99999999999999980], [200000000000000020, 50000000000000020]]
+assert_near of [polygon_area of thin_big, -1.2e18, 256, "thin large polygon: exact area -1.2e18 (main: -1.1529e18)"]
+
+# #2297 review: a translated difference at the numeric cap falls back to raw.
+cap_tri is [[-1e308, 0], [1e308, 0], [0, 1e-308]]
+assert_near of [polygon_area of cap_tri, 0.99999999999999989, 1e-15, "coordinates near the cap keep the exact area"]
+
+# #2297 review: translation that is not exact (a far vertex) falls back to raw.
+big_l is 100000000000000000
+far_thin is [[big_l, big_l], [big_l + 16, big_l + 16], [big_l + 32, big_l + 32], [1, 0], [0, 0]]
+assert_near of [polygon_area of far_thin, -50000000000000016, 16, "far thin polygon within 1 ulp of the exact area"]
+assert of [polygon_is_clockwise of far_thin, "far thin polygon keeps main's winding"]
+
+# #2297 review: an inexact subtraction that still round-trips must fall back.
+mixed is [[-13, 13], [1000000000000000000, 1000000000000000000], [-16, 10], [-16, 16]]
+assert_eq of [polygon_area of mixed, -48, "mixed-scale polygon: exact area -48"]
+
+# #2297 review: products that cancel after exact subtractions.
+big_p is 1125899906842624
+cancel_poly is [[big_p, big_p], [big_p - 4, big_p - 4], [0, -16], [16, 0]]
+assert_eq of [polygon_area of cancel_poly, 160, "cancelling products: exact area 160"]
+far_square is [[1000000000, 1000000000], [1000000001, 1000000000], [1000000001, 1000000001], [1000000000, 1000000001]]
+assert_eq of [polygon_area of far_square, 1, "unit square at 1e9: exact area 1 (main: 0)"]
+
+# #2297 review: coordinates whose products would pass the numeric cap keep
+# main's sum (exactly collinear -> 0).
+huge_l is 1.3407808079786528e154
+huge_tri is [[huge_l, huge_l], [2 * huge_l, 4 * huge_l], [3 * huge_l, 7 * huge_l]]
+assert_eq of [polygon_area of huge_tri, 0, "products past the cap fall back to main's sum (collinear -> 0)"]
+
+# #2297 review: corrections that cancel among themselves (exactly collinear
+# across scales) must still give the exact area 0.
+cx is -67108865 * 1073741824 * 1073741824
+cy is -67108871 * 1073741824
+cz is 67108871
+colin is [[cx, 3 * cx], [cy, 3 * cy], [cz, 3 * cz]]
+assert_eq of [polygon_area of colin, 0, "collinear across scales: exact area 0"]
+assert of [(polygon_is_clockwise of colin) == false, "collinear across scales: not clockwise"]
+
+test_summary of null
