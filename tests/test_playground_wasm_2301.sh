@@ -5,9 +5,10 @@
 # The deployed playground (web/build.sh with -sERROR_ON_UNDEFINED_SYMBOLS=0 and
 # a hand-written source list that had lost src/eigs_embed.c) linked with
 # eigs_source_lookup undefined; emcc planted abort("missing function: ...")
-# and every program containing `import` threw RuntimeError: Aborted(...),
-# leaving the page's runtime dead. tools/playground_smoke.cjs runs no import,
-# so it stayed green. This runs in pages.yml after the build, before the
+# and every program containing `import` aborted mid-VM: the call threw
+# RuntimeError: Aborted(missing function: eigs_source_lookup) instead of
+# reporting an error. tools/playground_smoke.cjs runs no import, so it stayed
+# green. This runs in pages.yml after the build, before the
 # receipt, so the required `playground` check needs it.
 #
 # Two witnesses, independent of each other:
@@ -16,8 +17,8 @@
 #               even if the link flag is flipped back to =0.
 #   2. dynamic: import programs return rc 1 with the import error on stderr
 #               and no Aborted(, and the SAME module then still runs a plain
-#               program with exact output (the module was not killed, and
-#               the error did not latch). Same for `exit of N`: web/eigs_wasm.c
+#               program with exact output (the error did not latch). Same
+#               for `exit of N`: web/eigs_wasm.c
 #               reset no per-run state, so after one runtime error every later
 #               run in the page returned 1 with no output until a reload.
 #
@@ -34,8 +35,20 @@ PASS=0; FAIL=0
 ok()  { echo "PASS: $1"; PASS=$((PASS + 1)); }
 bad() { echo "FAIL: $1"; FAIL=$((FAIL + 1)); }
 
-# 1. static witness
-stubs=$(grep -o 'missing function: [A-Za-z0-9_$]*' "$DIST/eigs.js" | sort -u)
+# 1. static witness. Its positive control first: the pattern must match the
+# stub emcc 3.1.74 wrote into the deployed (broken) eigs.js, verbatim, so a
+# pattern edit that can no longer match a stub goes red here instead of the
+# witness passing on everything. (If an emsdk pin bump changes emcc's stub
+# text, the link flag -sERROR_ON_UNDEFINED_SYMBOLS=1 and the dynamic rows
+# below remain; update KNOWN_STUB from a planted =0 build.)
+STUB_RE='missing function: [A-Za-z0-9_$]*'
+KNOWN_STUB='function _eigs_source_lookup(){abort("missing function: eigs_source_lookup")}'
+if [ "$(printf '%s\n' "$KNOWN_STUB" | grep -o "$STUB_RE")" = "missing function: eigs_source_lookup" ]; then
+    ok "static witness pattern matches emcc's known abort stub (positive control)"
+else
+    bad "static witness pattern '$STUB_RE' does not match emcc's known abort stub"
+fi
+stubs=$(grep -o "$STUB_RE" "$DIST/eigs.js" | sort -u)
 if [ -z "$stubs" ]; then
     ok "eigs.js has no 'missing function:' stub (every reachable C symbol is linked)"
 else
@@ -98,8 +111,9 @@ while IFS= read -r line; do
     esac
 done <<< "$dyn"
 
-# 1 static + 6 dynamic. A driver that died early prints fewer rows: red.
-PLAN=7
+# 1 positive control + 1 static + 6 dynamic. A driver that died early prints
+# fewer rows: red.
+PLAN=8
 echo "PLAN: $PLAN"
 echo "test_playground_wasm_2301: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && [ "$PASS" -eq "$PLAN" ] || exit 1

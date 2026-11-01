@@ -26,8 +26,17 @@ mkdir -p web/dist
 # src/eigs_embed.c, so eigs_source_lookup was undefined and every `import`
 # aborted the deployed playground; tools/embed_stack_soak.sh and
 # tools/freestanding_check.sh anchor to the Makefile for the same reason.
-mapfile -t SOURCES < <(make --no-print-directory print-EMBED_SOURCES | tr ' ' '\n' | grep '\.c$')
-case " ${SOURCES[*]} " in
+#
+# `make` takes the tree lock (tools/tree_lock.sh), so a local run started while
+# a suite holds it waits and prints "make: waiting for the build lock".
+# No mapfile, so stock macOS bash 3.2 can run this; a failing make stops the
+# script here (set -e on the assignment).
+EMBED=$(make --no-print-directory print-EMBED_SOURCES)
+SOURCES=()
+for f in $EMBED; do
+    case "$f" in *.c) SOURCES+=("$f") ;; esac
+done
+case " ${SOURCES[*]-} " in
     *" src/vm.c "*) ;;
     *) echo "FAIL: could not derive the runtime source list from the Makefile (print-EMBED_SOURCES)" >&2; exit 1 ;;
 esac
