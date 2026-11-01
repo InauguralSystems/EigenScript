@@ -63,6 +63,26 @@ assert_polygon_orders of [tiny_square, tiny_side * tiny_side, [10 + tiny_side / 
 thin is [[0, 0], [1e13, 0], [1e13, 1], [0, 2]]
 assert_polygon_orders of [thin, 1.5e13, [4.444444444444444e12, 0.7777777777777777], 0.001, "thin polygon"]
 
+# Cancellation in a concave polygon is not degeneracy. Check every cyclic start
+# and both winding directions without coupling this centroid regression to the
+# separately tested polygon-area accumulator.
+concave is [[1e13, 0], [1e13, 1], [1, 1], [1, 1e13], [0, 1e13], [0, 0]]
+for start in range of 6:
+    local concave_forward is []
+    local concave_reverse is []
+    for offset in range of 6:
+        append of [concave_forward, concave[(start + offset) % 6]]
+        local reverse_index is start - offset
+        if reverse_index < 0:
+            reverse_index is reverse_index + 6
+        append of [concave_reverse, concave[reverse_index]]
+    local concave_forward_centroid is polygon_centroid of concave_forward
+    local concave_reverse_centroid is polygon_centroid of concave_reverse
+    assert_near of [concave_forward_centroid[0], 2.5e12, 1, "concave cancellation forward centroid x"]
+    assert_near of [concave_forward_centroid[1], 2.5e12, 1, "concave cancellation forward centroid y"]
+    assert_near of [concave_reverse_centroid[0], 2.5e12, 1, "concave cancellation reverse centroid x"]
+    assert_near of [concave_reverse_centroid[1], 2.5e12, 1, "concave cancellation reverse centroid y"]
+
 # Exact collinearity after subtraction can carry origin-based determinant residue.
 det_e is 0.000000007450580596923828125
 degenerate is [[0.75 + det_e, 1.75 + det_e], [1 + 2 * det_e, 2 + 2 * det_e], [0.125 + 3 * det_e, 1.125 + 3 * det_e]]
@@ -91,5 +111,12 @@ assert_near of [unequal[0][0], 0, 1e-12, "unequal first x"]
 assert_near of [unequal[0][1], -1, 1e-12, "unequal first y"]
 assert_near of [unequal[1][0], 0, 1e-12, "unequal second x"]
 assert_near of [unequal[1][1], 1, 1e-12, "unequal second y"]
+
+# A valid near-tangency can leave a slightly negative intersection height from
+# cancellation between two large squares.
+near_tangent is circle_intersection_points of [0, 0, 1771450.845521109, 1771450.8459096379, 0, 0.01874238839135805]
+assert_eq of [len of near_tangent, 1, "roundoff near-tangency has one point"]
+assert_near of [near_tangent[0][0], 1771450.845521109, 1e-9, "roundoff near-tangent x"]
+assert_near of [near_tangent[0][1], 0, 1e-12, "roundoff near-tangent y"]
 
 test_summary of null
