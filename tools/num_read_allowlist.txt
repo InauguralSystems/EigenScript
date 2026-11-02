@@ -48,6 +48,7 @@ ext_store.c|store_json_encode|2|store record encoder: case VAL_INT writes exact 
 ext_store.c|store_json_encode_slot|1|store record encoder: slot_is_f64 proves the float payload, preserving historical non-finite formatting until N13 (R2.3)
 jit.c|emit_load_numeric_operand|2|emits the load of data.f64_ after the emitted type == VAL_FLOAT / refcount guard
 jit.c|jit_compile_to_thunk|2|emits loads/stores of data.f64_ behind emitted immediate-number checks; reads a VAL_FLOAT constant
+jit_smoke.c|nan_smoke_row|1|R2.1 CONST fixture: deliberate raw payload write into a synthetic Value just typed VAL_FLOAT; tag-spelling/signaling NaNs must reach the production emitter unchanged (make_float guards them and slot_from_f64 canonicalizes them before the code under test)
 jit_smoke.c|jit_helper_index_get|2|JIT smoke test program (stubbed helpers over slots it built as numbers)
 jit_smoke.c|jit_helper_iter_next|1|JIT smoke test program (stubbed helpers over slots it built as numbers)
 jit_smoke.c|jit_helper_set_name|4|JIT smoke test program (stubbed helpers over slots it built as numbers)
