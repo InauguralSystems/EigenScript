@@ -140,13 +140,15 @@ the state is destroyed or the thread exits.
 
 ### Per-state strict mode
 
-Strict errors are enabled by default. At creation, each state independently
-snapshots `EIGS_STRICT`; exactly `EIGS_STRICT=0` selects the legacy finite
-stand-ins. An embedder can supersede that creation-time value for one state:
+Strict mode is opt-in. At creation, each state independently snapshots
+`EIGS_STRICT`; unset, empty or `0` keeps default IEEE arithmetic and the
+legacy argument-type stand-ins. `EIGS_STRICT=1` traps non-finite arithmetic
+and enables strict argument guards. An embedder can supersede that
+creation-time value for one state:
 
 ```c
 EigsState *st = eigs_open();
-eigs_state_set_strict(st, 0); /* stand-in mode; nonzero enables strict mode */
+eigs_state_set_strict(st, 0); /* IEEE arithmetic; nonzero enables strict traps and argument guards */
 ```
 
 `eigs_state_set_strict` is valid after either `eigs_state_new` or `eigs_open`,

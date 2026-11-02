@@ -35,7 +35,7 @@ loop while error_o < 3:
         error_i is 0
         loop while error_i < 2:
             error_i is error_i + 1
-            bad is sqrt of -1
+            bad is 1 // 0
     catch error_value:
         caught is true
 print of ["catch", __loop_iterations__]

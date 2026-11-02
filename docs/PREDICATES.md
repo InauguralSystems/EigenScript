@@ -87,7 +87,7 @@ assignment snapshots for **`converged`** and ordinarily **`stable`**: every
 successive pair in the full window must be equal. Numeric cells compare
 exactly across int/float kinds; a bool/number pair is simply unequal, without
 raising. This makes finite content changes visible and lets an unchanged
-non-empty value converge. The bounded NaN-buffer exception below routes
+non-empty value converge. The bounded NaN-containing snapshot exception below routes
 `stable` to its entropy rule after a full bounded comparison window. The other
 four predicates, and `report`, answer
 from the **entropy channel**, the
@@ -105,7 +105,7 @@ elements, and text-builder bytes). A larger value is **not sampled**: both
 predicates refuse to judge (return false) and reset the equality run. Both
 remain ineligible until a new full window of bounded comparisons is available.
 
-An accepted snapshot containing a NaN buffer, directly or inside a list or
+An accepted snapshot containing a NaN float or buffer, directly or inside a list or
 dict, is unequal to itself: buffer cells use raw IEEE equality without
 normalizing data, raising or writing math flags. `converged` remains false.
 For that bounded, non-reflexive snapshot only, after a full bounded comparison
@@ -132,7 +132,7 @@ document. The explicit entropy channel can certify a geometric runaway and
 can fail to certify a finite nonzero limit because magnitude is a lossy proxy
 for motion. Entropy and dH are still computed and exposed for non-numeric
 bindings. They do not decide equality-routed convergence or finite-snapshot
-stability; they do decide stability for the bounded NaN-buffer exception.
+stability; they do decide stability for the bounded NaN-containing snapshot exception.
 
 **The numeric definitions** (a fixed window of `N = 10` relative steps — see
 [The window](#the-window-1044) — `rel = Δv / max(|v|, |v_prev|, scale)`, raw
@@ -144,7 +144,7 @@ steps `Δv` kept alongside — #422):
 | `stable` | full window, every `\|rel\| < dh_small`, no strong consecutive sign flips |
 | `equilibrium` | full window, `\|mean(rel)\| < dh_zero`, `variance(rel) < dh_zero²` |
 | `improving` | ≥ 4 samples, **decreasing** raw steps whose mean *and* max contract to ≤ 0.7× the older half — lower is better; a summable (geometric-class) tail genuinely closing on a limit |
-| `diverging` | value at the saturation ceiling (any window fill), or non-vanishing same-sign raw steps (a linear/polynomial runaway whose `Δv/\|v\| → 0` is still unbounded) |
+| `diverging` | an infinite current value (any window fill), or non-vanishing same-sign raw steps (a linear/polynomial runaway whose `Δv/\|v\| → 0` is still unbounded) |
 | `oscillating` | ≥ 4 deadband sign-flips of `rel`; or non-vanishing raw alternation (a perpetual oscillation below the deadband is still an oscillation); or **window-scale folding** — ≥ 2 direction reversals with net travel ≤ 0.3× path length and motion above the deadband (a sinusoid sampled slower than its half-period) |
 
 **Modulated raw steps (#1891).** The historical half-window mean rule is
@@ -333,8 +333,9 @@ routes, `4` for the value route's motion bands (the half-split needs two
 samples per half) and `3` for the entropy route's. A two-write program can
 never report any predicate true; this is the single most important
 difference from the old pointwise rule, which fired on the first step.
-**One exception**: `diverging` fires at the numeric ceiling regardless of
-window fill — see the saturation rule below.
+**One exception**: `diverging` fires at infinity regardless of window fill
+— see the non-finite rule below. The NaN convention above still makes every
+predicate false at NaN.
 
 ## Opaque rule (#708): function-valued bindings
 
@@ -351,49 +352,28 @@ differently. The check reads the binding's current value at ask time —
 rebind `f` to a number and its numeric trajectory (which was recorded
 all along) answers normally again.
 
-## Saturation rule (#861): bindings at the numeric ceiling
+## Non-finite rule (#861, R2.2)
 
-Overflow saturates at `±1e308` (`num_guard`, the "finite by construction"
-rule), which turns an unbounded trajectory into a **fixed point**. Once a
-runaway pins there, `dH` is exactly 0 in the entropy channel and the
-relative step is exactly 0 in the value channel, and `H(1e308)` sits far
-under `h_low` — so every clause of `converged` is *legitimately* satisfied.
-The window really is quiet. The quiet is an artifact of the clamp, formed
-after the evidence of divergence was already destroyed.
+Float overflow produces signed infinity. There is no `±1e308` clamp and no
+special ceiling classification for finite numbers: a constant `1e308` can
+converge just like any other finite constant.
 
-So a binding whose last observed number has `|value| >= 1e308` is treated
-as **diverging, and in no rest band**:
+An infinite current value is **diverging, and in no rest band**:
 
-| predicate | at the ceiling |
+| predicate | at infinity |
 |---|---|
-| `converged`, `equilibrium`, `stable`, `improving` | forced `false` — a value at the clamp is not resting or approaching |
-| `diverging` | forced `true`, **including on a partial window** |
-| `oscillating` | evaluated normally — a value flipping `±1e308` reads as the oscillation it is, and `report`'s priority resolves it to `oscillating` |
+| `converged`, `equilibrium`, `stable`, `improving` | `false` |
+| `diverging` | `true`, including on a partial window |
+| `oscillating` | evaluated from the window's sign changes |
 
-Since #861 both `report` and `report_value` run the same classifier, so
-they agree here by construction. (The `H(x) ≡ H(−x)` blindness that once
-made them disagree at the ceiling — #862 — still exists in the entropy
-SIGNAL, but no numeric classification reads it anymore; it is visible
-only through `classify of [t, "entropy"]` and for non-numeric bindings,
-whose values have no ceiling.)
+`report` and `report_value` use the same numeric classifier. The entropy
+measurement itself is unchanged. The NaN convention is separate: every
+predicate is false when the current numeric value is NaN.
 
-`diverging` is claimed before the partial-window guard because the
-evidence is the value's *position*, not the shape of the (flattened)
-window — this is the one place a predicate fires on fewer than 4 samples.
-
-**A literal `±1e308` that never overflowed reads `diverging` too.** The
-runtime cannot distinguish a saturated value from one deliberately
-assigned the ceiling (#865: the saturated value compares equal to itself
-under further growth, so no in-language predicate separates them). Of the
-two possible errors this is the loud one: a diverging solver that reports
-`converged` returns `1e308` *as an answer*, while a deliberate ceiling
-constant reported as `diverging` is a visible false alarm. Below the
-ceiling nothing changes — `1e307` held constant still converges.
-
-As with the opaque rule, the entropy *constants* are untouched: this is a
-classification gate, not a change to what entropy measures. It lives with
-the predicates rather than in the VM (contrast #708, which must read the
-binding), so the tape, DAP, and step surfaces inherit it.
+The original #861 runaway and finite-constant scenarios remain in
+`tests/test_observer_saturation.eigs`: overflow must never become an
+apparently settled finite value, and the former `1e308` boundary must now
+certify an ordinary constant.
 
 ## Implementation status
 
@@ -621,12 +601,10 @@ the most specific via its priority order.
 - `improving` and `diverging` require opposite net trends, so at most one
   fires.
 - `oscillating` requires ≥ `FLIPS` sign changes, which a window with a
-  monotone net trend (improving/diverging) cannot have. (At the numeric
-  ceiling `diverging` is forced true from the value's *position* rather
-  than the window's trend, so it is the one case where both can hold at
-  once: a trajectory that moves in and out of the ceiling and lands on it
-  has real `dH` sign changes AND a saturated last value. `report`'s
-  priority order resolves that to `oscillating`, the more specific claim.)
+  monotone net trend (improving/diverging) cannot have. At infinity,
+  `diverging` is claimed from the current value rather than the window's
+  trend; if the window also certifies oscillation, `report`'s priority
+  order resolves that to `oscillating`, the more specific claim.
 - `stable` requires every `|dH| < dh_small`; `improving`/`diverging`
   require ≥ 60% of steps to *clear* `dh_small` in one direction, so a
   uniformly small-motion (gray-band) window is `stable` with a

@@ -804,7 +804,7 @@ check_binary_fingerprint
 # matched only from its header line onward.
 for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
     LAR_ENV="EIGS_JIT_STATS=1"; [ "$LAR_TIER" = JIT ] || LAR_ENV="$LAR_ENV $LAR_TIER"
-    LAR_OUT=$($EIGS_TMO env $LAR_ENV ./eigenscript ../tests/test_line_after_return.eigs </dev/null 2>&1); LAR_RC=$?
+    LAR_OUT=$(suite_program_run test_line_after_return.eigs $EIGS_TMO env $LAR_ENV ./eigenscript ../tests/test_line_after_return.eigs </dev/null 2>&1); LAR_RC=$?
     TOTAL=$((TOTAL + 1))
     LAR_JIT=$(lar_jit_witness "$LAR_TIER" "$LAR_OUT")
     if [ "$LAR_JIT" != ok ]; then
@@ -1505,7 +1505,7 @@ print of items[10]' "|               \^"
 check_stderr "EM4 type error on bad subtraction" 'x is [1,2] - 5' "Error .*:1: cannot apply"
 check_stderr "EM5 index out of bounds" 'items is [1,2,3]
 print of items[10]' "Error .*:2: index 10 out of range"
-check_stderr "EM6 division by zero raises" 'print of (10 / 0)' "Error .*:1: division by zero"
+EIGS_STRICT=1 check_stderr "EM6 strict division by zero raises" 'print of (10 / 0)' "Error .*:1: arithmetic: non-finite arithmetic result (infinity)"
 check_stderr "EM7 undefined variable includes line" 'x is 1
 y is 2
 print of z' "Error .*:3: undefined variable"
@@ -1531,9 +1531,9 @@ if x == 1:
 elif x == 5:
     y is x[0]' "Error .*:5: cannot index"
 # An *uncaught* runtime error must fail loudly: non-zero exit, and no further
-# statements run. Division by zero is now such an error (see EM15).
+# statements run. Strict float division by zero is such an error (see EM15).
 check_exit "EM14 uncaught runtime error exits non-zero" 'x is [1] - 5' "1"
-check_exit "EM15 division by zero exits non-zero" 'x is 10 / 0' "1"
+EIGS_STRICT=1 check_exit "EM15 strict division by zero exits non-zero" 'x is 10 / 0' "1"
 
 # Regression: uncaught error halts execution (statement after must not run)
 EM16_SRC=$(mktemp /tmp/eigs_em16_XXXXXX.eigs); EM16_ERR=$(mktemp /tmp/eigs_em16_err_XXXXXX.txt)
@@ -2391,7 +2391,7 @@ else
 fi
 echo ""
 
-# #971: strict math mode (EIGS_STRICT) — domain ops raise instead of clamping.
+# #971 / R2.2: explicit strict math traps domain results; default is IEEE.
 echo "Strict math mode (EIGS_STRICT domain-op raises)"
 SM_OUTPUT=$(bash "$TESTS_DIR/test_strict_math.sh" 2>&1)
 SM_PASS=$(echo "$SM_OUTPUT" | grep -c "PASS:" || true)
@@ -2708,9 +2708,9 @@ else
 fi
 echo ""
 
-# [42c] General finite-number guard (scalar, tensor, literals, conversions)
+# [42c] IEEE arithmetic and the independent finite data-reader boundaries
 echo "[42c/47] Numeric Guard"
-# #1361 EIGS_STRICT=0: pins the finite-by-construction domain stand-ins (sqrt/asin/acos/log clamps, num "nan" -> 0 + math_flags.invalid).
+# R2.2: default arithmetic keeps IEEE results and status; N10 text and N13 data refusals remain.
 NG_OUTPUT=$(suite_program_run test_numeric_guard.eigs ./eigenscript ../tests/test_numeric_guard.eigs 2>&1); NG_OUTPUT_RC=$?
 NGF_OUTPUT=$(bash "$TESTS_DIR/test_numeric_guard_flags.sh" 2>&1); NGF_OUTPUT_RC=$?
 NGF_PASS=$(echo "$NGF_OUTPUT" | grep -c "PASS:" || true)
@@ -2731,7 +2731,7 @@ echo ""
 
 # [42c] Stdlib fixes (math.math_dot bounds, test.assert_near types, template no-reinterpretation, text/int-vector builders)
 echo "[42d/47] Stdlib Fixes"
-# #1361 EIGS_STRICT=0: pins math.log10/log2 of x <= 0 taking the log floor stand-in (SF101/SF102).
+# R2.2: log10/log2 retain IEEE domain results (SF101/SF102).
 SF_OUTPUT=$(suite_program_run test_stdlib_fixes.eigs ./eigenscript ../tests/test_stdlib_fixes.eigs 2>&1); SF_OUTPUT_RC=$?
 if rc_ok "$SF_OUTPUT_RC" "$SF_OUTPUT" && echo "$SF_OUTPUT" | grep -q "All stdlib-fix tests passed"; then
     TOTAL=$((TOTAL + 1))
@@ -3553,7 +3553,7 @@ READPROG
     rm -rf "$GA_RDIR"
 
     # FIFTH PASS (#1361): the passes above run under EIGS_STRICT=0, but the
-    # DEFAULT path is strict: the rejected call RAISES, inside try/catch here.
+    # explicit strict path makes the rejected call RAISE, inside try/catch here.
     # The tape contract must hold on that path too: the rejection consumes no
     # record, and capture == replay. One program per builtin (pinned BY NAME).
     GA_DDIR=$(mktemp -d /tmp/eigs_ga_dflt_XXXXXX)
@@ -3566,7 +3566,7 @@ print of (audio_capture_open of [44100, 1])
 print of (audio_capture_close of null)
 DFLTCAP
     cat > "$GA_DDIR/read.eigs" <<'DFLTREAD'
-o is gfx_open of [32, 32, "eigs #1361 default-mode tape"]
+o is gfx_open of [32, 32, "eigs #1361 strict-mode tape"]
 ignore is gfx_clear of [1, 2, 3]
 try:
     print of (gfx_read of ["1", 1])
@@ -3577,10 +3577,10 @@ ignore is gfx_close of null
 DFLTREAD
     GA_DFLT_OK=1
     for __ga_p in cap read; do
-        gfx_headless_run 30 env -u EIGS_STRICT SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_DDIR/$__ga_p.tape" ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.1" 2>&1
-        gfx_headless_run 30 env -u EIGS_STRICT SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_DDIR/$__ga_p.tape" ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.2" 2>&1
+        gfx_headless_run 30 env EIGS_STRICT=1 SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_DDIR/$__ga_p.tape" ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.1" 2>&1
+        gfx_headless_run 30 env EIGS_STRICT=1 SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_DDIR/$__ga_p.tape" ./eigenscript "$GA_DDIR/$__ga_p.eigs" > "$GA_DDIR/$__ga_p.2" 2>&1
         cmp -s "$GA_DDIR/$__ga_p.1" "$GA_DDIR/$__ga_p.2" || GA_DFLT_OK=0
-        grep -qx rejected "$GA_DDIR/$__ga_p.1" || GA_DFLT_OK=0   # the default really raised
+        grep -qx rejected "$GA_DDIR/$__ga_p.1" || GA_DFLT_OK=0   # the strict path really raised
     done
     GA_DFLT_CAP_N=$(grep -c '^N [0-9][0-9]* audio_capture_open=' "$GA_DDIR/cap.tape" 2>/dev/null); GA_DFLT_CAP_N=${GA_DFLT_CAP_N:-0}
     GA_DFLT_READ_N=$(grep -c '^N [0-9][0-9]* gfx_read=' "$GA_DDIR/read.tape" 2>/dev/null); GA_DFLT_READ_N=${GA_DFLT_READ_N:-0}
@@ -3615,7 +3615,7 @@ DFLTREAD
         echo "  PASS: wrong-typed w/h and freq/channels are refused in both modes ($GA_GOT_PLAIN + $GA_GOT_STRICT checks)"
         echo "  PASS: a rejected audio_capture_open consumes no tape record; capture == replay"
         echo "  PASS: a rejected gfx_read consumes no tape record; capture == replay"
-        echo "  PASS: default (strict) mode: a rejected call raises into catch, consumes no record; capture == replay"
+        echo "  PASS: explicit strict mode: a rejected call raises into catch, consumes no record; capture == replay"
         # Say out loud what this environment could NOT exercise, rather than
         # letting a green line imply full coverage.
         echo "$GA_PLAIN" | grep -q "pixel-proof: 1" \
@@ -3629,7 +3629,7 @@ DFLTREAD
         echo "    counts: plain $GA_GOT_PLAIN/$GA_WANT_PLAIN, strict $GA_GOT_STRICT/$GA_WANT_STRICT"
         echo "    tape: capture==replay $GA_TAPE_OK (want 1), N records $GA_TAPE_N (want 1)"
         echo "    gfx_read tape: capture==replay $GA_READ_OK (want 1), N gfx_read records $GA_READ_N (want 1)"
-        echo "    default-mode tape: capture==replay+raised $GA_DFLT_OK (want 1), N audio_capture_open $GA_DFLT_CAP_N, N gfx_read $GA_DFLT_READ_N (want 1 each)"
+        echo "    strict-mode tape: capture==replay+raised $GA_DFLT_OK (want 1), N audio_capture_open $GA_DFLT_CAP_N, N gfx_read $GA_DFLT_READ_N (want 1 each)"
         echo "$GA_PLAIN"  | grep -iE "assert|error|FAIL" | head -3
         echo "$GA_STRICT" | grep -iE "assert|error|FAIL" | head -3
     fi
@@ -5819,7 +5819,7 @@ check_eigs_suite "tiled tensor kernels (#745, #932)" test_tensor_kernel_tiling.e
 # byte-identical to matmul of the transposed list operand, scatter_add vs the
 # list loop (and gather's dual), the buffer elementwise/softmax/leaky_relu/mean
 # paths vs the list path, numerical_grad on a buffer parameter; loud raises.
-# #1361 EIGS_STRICT=0: pins elementwise divide-by-zero folding to 0 and multiply(buf,"x") answering 0.0.
+# R2.2: elementwise divide-by-zero is IEEE; N13 buffer scalar reads still refuse non-finite cells.
 suite_program_run test_tensor_buffer_ops.eigs check_eigs_suite "flat-buffer tensor ops for autograd: matmul_at/bt, scatter_add, buffer paths (#973)" \
     test_tensor_buffer_ops.eigs "All tests passed."
 # #973/#1408: every vjp rule vs numerical_grad (1e-4 relative + 1e-6
@@ -5870,10 +5870,8 @@ check_eigs_suite "observer park-env reset" test_observer_park.eigs "OBS_PARK_OK"
 # deadband-normalized settledness gradient.
 check_eigs_suite "observer coherence (#412)" test_observer_coherence.eigs "All tests passed"
 
-# #861: the saturation ceiling is not a rest state. A runaway clamped to
-# +/-1e308 used to satisfy every clause of `converged` in BOTH channels —
-# the canonical instability reported as maximal stability. Pins the refusal
-# AND that everything below the ceiling classifies exactly as before.
+# #861 / R2.2: infinite runaway values cannot certify rest, while a finite
+# 1e308 constant converges. Keep the original runaway/decay/control scenarios.
 check_eigs_suite "observer saturation ceiling (#861)" test_observer_saturation.eigs "OBSERVER_SATURATION_ALL_PASS"
 check_eigs_suite "sandbox: bare predicate cannot read the host tracker (#1026)" test_sandbox_predicate_isolation.eigs "SANDBOX_PRED_ISOLATION_ALL_PASS"
 check_eigs_suite "worker-compiled chunk escaping through a channel outlives the worker intern table (#1065)" test_worker_intern_escape.eigs "WORKER_INTERN_ESCAPE_ALL_PASS"

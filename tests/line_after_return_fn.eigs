@@ -1,5 +1,5 @@
 # #1424 uncaught, inside a function frame, hot: `outer` and `dec` are
-# JIT-compiled after 6001 calls from a module loop, and `/` on line 11 raises
+# JIT-compiled after 6001 calls from a module loop, and `/` with a bad operand on line 11 raises
 # on the last call; the module frame is the call on line 15.
 # Pre-fix: "Error line 8" and "at outer (line 8)".
 # LINE-NUMBER SENSITIVE (the [0g] runner section greps these numbers).
@@ -8,7 +8,7 @@ define dec(x) as:
     return y
 define outer(x) as:
     q is x + 1.0
-    r is 1.0 / (dec of x)
+    r is 1.0 / (((dec of x) == 0.0) and "bad" or 1.0)
     return r
 k is 6001.0
 loop while k > 0.0:

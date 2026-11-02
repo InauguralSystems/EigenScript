@@ -140,61 +140,39 @@ examples (executed by the suite).
 ## Numbers
 
 **Promise:**
-- One surface type, `num`, with exact signed int64 and finite IEEE-754 double
+- One surface type, `num`, with exact signed int64 and IEEE-754 double
   kinds. `num_type of` gives `"int"` or `"float"`, or null for a non-number.
   Decimal integer literals within int64 and wrapping hexadecimal literals are
   ints; a point or exponent produces a float, as does decimal overflow.
   Int `+ - *` raise `value` on overflow; unary minus and `abs` raise at
   INT64_MIN. Mixed arithmetic converts to float; cross-kind comparison is exact.
   Float integer exactness ends at 2^53.
-- Scalar numbers exposed to a program are finite; buffer kernels may retain
-  non-finite work data as described below. By default a NaN-producing
-  operation, an out-of-domain argument or a wrong-typed argument raises a
-  catchable error (strict is the default, #1361); division by zero raises
-  in every mode. Float overflow saturates at ±1e308. Under the per-run opt-out
-  `EIGS_STRICT=0` the arithmetic is finite by construction instead: a NaN
-  collapses to 0 and domain functions substitute a stand-in.
-- **Every clamp is recorded.** The finite invariant keeps a program
-  running, but it keeps it running with a plausible number, so the
-  clamps are readable as sticky status flags — IEEE-754's own model
-  (`fetestexcept`) — rather than being undetectable (#865):
+- Float results follow IEEE 754 by default: overflow gives infinity;
+  `1 / 0` gives `inf`, `0.0 / 0` and float `% 0` give NaN, `sqrt of -1`
+  and out-of-domain `asin`/`acos` give NaN, and `log of 0` gives `-inf`.
+  There is no `1e308` clamp. Int `// 0` and `% 0` still raise `value`.
+  `EIGS_STRICT=1` opts into catchable errors for non-finite arithmetic and
+  invalid argument types; it is off by default.
+- **Arithmetic status is sticky.** `math_flags of null` reports `overflow`
+  when an arithmetic result is infinite and `invalid` when it is NaN.
+  These flags remain set for the state's lifetime; later finite arithmetic
+  does not clear them.
 
   ```eigenscript fragment risky='(vs) => vs[0]' xs=[1,2]
   result is risky of xs
   if (math_flags of null).overflow:
-      print of "a value saturated; this result is contaminated"
+      print of "an infinite arithmetic result occurred"
   ```
 
-  `overflow` is set by the ±1e308 clamp. Under `EIGS_STRICT=0` (strict
-  mode is the default since #1361) `invalid` is set by the
-  out-of-domain substitutions: `log of x` for `x <= 0` (which
-  returns `log(1e-10)`, i.e. `-23.025850929940457`), `sqrt of x` for
-  negative `x` (returns 0, otherwise indistinguishable from
-  `sqrt of 0`), and `asin`/`acos` outside [-1, 1] (argument clamped).
-  `invalid` is also set when a NaN is collapsed, which the arithmetic
-  operators cannot produce (there is no way to obtain an Inf to combine)
-  but a few builtins can: `num of "nan"` is `0` and `num of "inf"` is
-  `1e308`, so a data column containing either used to parse to a
-  plausible number with nothing to check; `pow` of a negative base with
-  a fractional exponent, `f64_from_bytes` of a NaN bit pattern,
-  and `tensor_load` of a file carrying NaN bytes collapse the same way.
-  A buffer kernel such as `matmul` reaching `inf - inf` may retain raw
-  non-finite data internally. Scalar buffer extraction and reductions refuse
-  stored non-finite cells with `value` in every strict mode (R1.6z-D1).
-  Structural equality, including observer snapshot equality, instead compares
-  the stored IEEE values: NaN is unequal to itself, without normalization,
-  mutation, an error or math-flag writes. The flags are sticky for the state's
-  lifetime. In strict mode, the default, those scalar NaN sources and
-  out-of-domain calls raise a catchable `value` error naming the builtin
-  instead of substituting (SPEC.md, *Strict mode*); the stored-buffer
-  boundary above applies in every mode.
-- **Saturation is not associative, and that is not detectable from the
-  value alone.** `(1e300 * 1e300) / 1e300` is `1e8`; `1e300 * (1e300 /
-  1e300)` is `1e300`. The first overflowed and came back down, and
-  `1e8` will pass any plausibility check a caller applies. The results
-  are what the finite invariant requires — the `overflow` flag is how
-  you tell. Stated here because the trade should be visible rather than
-  discovered.
+  Buffer kernels such as `matmul` may retain raw non-finite work data.
+  Scalar buffer extraction and reductions keep their declared finite-only
+  readers and refuse stored non-finite cells with `value` in every strict
+  mode (R1.6z-D1). Structural equality, including observer snapshots,
+  compares stored IEEE values: NaN is unequal to itself, also through
+  container structure, without mutation, errors or math-flag writes.
+- **Floating arithmetic is not associative.** `(1e300 * 1e300) / 1e300`
+  gives `inf`; `1e300 * (1e300 / 1e300)` gives `1e300`. The first overflow
+  remains visible in both the result and the sticky `overflow` flag.
 - Ints print exact decimal digits. For floats, `str of` produces the shortest
   round-trip representation, including `.0` for integral floats and signed
   zero. `num of` and JSON decoders preserve integer text within int64 exactly;

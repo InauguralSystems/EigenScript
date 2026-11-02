@@ -836,6 +836,10 @@ def every_mode(through, out):
 def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
     res = {}
     gates = list(MECHANICAL.get(through, ()))
+    # R2.1 writer safety and the preceding-round corpus remain live when
+    # R2.2 makes non-finite results reachable; use the explicit round baseline.
+    if ROUNDS.index(through) > ROUNDS.index('R2.1'):
+        gates.extend(('slot-test', 'corpus-diff'))
     # A landed gate stays live for every subsequent --through, including
     # rounds with ordinary MAP rows and no other mechanical dispatch.
     if ROUNDS.index(through) >= ROUNDS.index('R1.6e'):

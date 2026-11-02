@@ -19,3 +19,7 @@ test_gfx_text.eigs EIGS_STRICT=0 SDL_VIDEODRIVER=dummy
 test_gfx_argtypes.eigs EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
 test_ui_containment_gfx.eigs SDL_VIDEODRIVER=dummy
 test_phase2_gfx_q7.eigs SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
+
+# R2.2: this successful line-cache regression deliberately catches strict
+# arithmetic/domain errors; the IEEE default has independent MAP coverage.
+test_line_after_return.eigs EIGS_STRICT=1

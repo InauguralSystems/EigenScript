@@ -102,6 +102,10 @@ VOCAB = {
     'dict_value_set_num': 'PRODUCE',
     'list_rewrite_num': 'PRODUCE',
     'dict_value_rewrite_num': 'PRODUCE',
+    'eigs_math_result': 'GUARD', # R2.2 status/trap only, no value substitution
+    'eigs_math_result_named': 'GUARD',
+    'eigs_number_read': 'READ', # exact kind + IEEE payload for numeric consumers
+    'vm_number_f64': 'READ', # R2.2 arithmetic-only Q2 int promotion / unchanged IEEE float
     'num_guard': 'GUARD',
     'num_guard_named': 'GUARD',
     'EIGS_NUM_MAX': 'GUARD',
@@ -133,6 +137,9 @@ for producer in ('make_float', 'make_float_permanent'):
 # Keep the spelling in the population: absence is required and reintroduction
 # is an error, rather than silently ceasing to recognize an old byte reader.
 RETIRED_VOCAB = {
+    'num_guard': 'R2.2: clamp retired; IEEE results preserved',
+    'num_guard_named': 'R2.2: clamp retired; named result checks never substitute a value',
+    'EIGS_NUM_MAX': 'R2.2: every finite f64 and IEEE infinity are representable',
     'atof': 'SYNC11 #2178: last unchecked parser site retired with model_train.c; keep reintroduction loud',
     'buffer_read_byte': 'R1.6e: gfx_fb and ppu_render_frame use buffer_byte_at',
 }

@@ -176,9 +176,9 @@ int main(void) {
     check(strncmp(g_error_msg, "Error <native>:90: probe 5", 22) == 0,
           "#1434 a raise after eigs_eval_string reports the stamp it entered with (90)");
     /* A callback that ERROR-HALTS: sandbox_run's chunk stamps line 77, then
-     * 1 / 0; sandbox_run swallows the error. Opcodes: LINE 68, NUM_ONE 3,
-     * NUM_ZERO 2, DIV 7, RETURN 40 (src/vm.h enum order). */
-    static const int HALT77[] = {68, 77, 0, 0, 0, 3, 2, 7, 40};
+     * 1.0 / null; sandbox_run swallows the type error even with IEEE math.
+     * Keep the callback ERROR-HALT path distinct from an ordinary return. */
+    static const int HALT77[] = {OP_LINE, 77, 0, 0, 0, OP_NUM_ONE, OP_NULL, OP_DIV, OP_RETURN};
     Value *code = make_list(9), *desc = make_list(3), *sb_args = make_list(2);
     for (int i = 0; i < 9; i++) list_append_owned(code, make_float(HALT77[i]));
     list_append_owned(desc, make_float(1));

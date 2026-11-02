@@ -1588,16 +1588,10 @@ define eigen_eval(node, env) as:
         if op == "*":
             return left * right
         if op == "/":
-            # Parity with the C VM: division by zero has no defined value, so
-            # both raise rather than inventing one. The C VM raises a `value`
-            # error; here the meta-interpreter throws (the parity suite checks
-            # only that both raise, not that the error objects are identical).
-            if right == 0:
-                _eigen_throw of "division by zero"
+            # R2.2: the VM supplies IEEE float zero-division results.
             return left / right
         if op == "%":
-            if right == 0:
-                _eigen_throw of "modulo by zero"
+            # The VM keeps int zero-divisor errors and float IEEE results.
             return left % right
         # #1637: the host's own comparison — a bool result, and the same
         # raise on bool-vs-number equality the C VM performs.

@@ -25,7 +25,12 @@ print of (fround of 0.1)
 > the end.
 
 Builtin `sort` sorts a list in place; `sort_by` returns a new list using numeric keys.
-Both are stable on every platform: equal elements or keys keep their input order.
+Both are stable on every platform: ordering-equivalent elements or keys keep
+their input order. Float values and float keys use IEEE 754 `totalOrder`:
+`-0.0` precedes the equivalent class `{0, 0.0}`, and the canonical NaN comes
+after `inf` (R22-1). Nonzero mixed int/float comparisons remain exact.
+Equality still treats every signed or integer zero as equal. `min` and `max`
+propagate a NaN in any argument position and use the same order for zeros.
 
 ## Calls use `of`, never `f(x)`
 
@@ -257,7 +262,8 @@ false
   and ordinarily `stable` compare bounded, detached assignment snapshots;
   finite alias mutations remain visible on reassignment, and refused or
   oversized snapshots leave both false. For an accepted snapshot containing
-  a NaN buffer, raw IEEE equality keeps `converged` false while `stable` uses
+  a NaN float or buffer, raw IEEE equality keeps `converged` false while
+  `stable` uses
   its entropy-window rule after a full bounded comparison window (S10-D1).
   Refusal clears that eligibility even if entropy has a full window already.
   The real matmul scenario's equality /
@@ -297,7 +303,7 @@ false
   `d["nope"]`, and a misspelled module member `m.typo` all give `null` (so
   `m.typo of x` fails later as `cannot call null`). A list index out of range
   DOES raise. Test for a key with `has_key of [d, k]`.
-- Numbers are signed int64 or finite f64. Decimal integer literals within
+- Numbers are signed int64 or IEEE-754 f64. Decimal integer literals within
   int64 are exact; a point/exponent or out-of-range decimal literal gives
   float. Hex literals wrap modulo 2^64. `type of` says "num" for both;
   `num_type of` says "int"/"float", or null for a non-number. Int +, -, *
@@ -305,17 +311,23 @@ false
   arithmetic converts to float, while cross-kind comparison is exact.
   True division `/` produces a float. Counts and indices produce ints;
   other builtin result kinds are documented individually. Float overflow
-  saturates at ±1e308.
+  gives signed infinity, without a `1e308` clamp. `1 / 0` gives `inf`,
+  `-1.0 / 0` gives `-inf`, and `0.0 / 0` and float `% 0` give NaN.
+  Float or mixed `// 0` follows `floor(x / 0)`; int `// 0` and `% 0` raise
+  `value`. `sqrt of -1` and `asin`/`acos` outside `[-1, 1]` give NaN;
+  `log of 0` gives `-inf`. NaN is unequal to everything, including itself
+  and through list/dict/buffer structure; comparing NaN never raises or
+  changes math flags.
   Integer bit ops and bit_* builtins accept exact int64 operands and return ints.
   Right shifts zero-fill, negative counts reverse direction, and counts outside
   (-64,64) give zero (Lua 5.4).
   A bit-op operand that is not an exact integer (`1.5 | 0`, `1e30 & 1`)
   raises a `value` error; it is never truncated.
-  Strict mode is the DEFAULT: out-of-domain math (`sqrt of -1`), a NaN
-  result, a wrong-typed builtin argument (`abs of "x"`) and a malformed
-  `json_path` document raise catchable errors. `EIGS_STRICT=0` is the per-run
-  opt-out that brings the finite stand-ins back (`NaN` collapses to float `0.0`,
-  `sqrt of -1` is `0.0`, `abs of "x"` is `0.0`).
+  Strict mode is opt-in: `EIGS_STRICT=1` traps non-finite arithmetic
+  results, wrong-typed builtin arguments (`abs of "x"`) and malformed
+  `json_path` documents with catchable errors. With the variable unset or
+  set to `0`, arithmetic keeps its IEEE results and the legacy argument
+  stand-ins remain (`abs of "x"` is `0.0`).
   Indexing and iteration refuse stored NaN and infinity with `value` in
   every strict mode, matching `get_at` (N13). Strict NaN keeps its first
   diagnostic and sets `math_flags.invalid`; every execution tier agrees on
@@ -326,7 +338,7 @@ false
   (N5/Q1); other byte converters retain truncation and wrapping at this stage;
   raw copies, serialization and buffer-only work areas preserve representation.
   `str_from_bytes` and `inflate` (a `make zlib` build) reject a non-numeric
-  list element with a builtin-named `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
+  list element with a builtin-named `type_mismatch` error in strict mode; `EIGS_STRICT=0` retains numeric-zero
   substitution. `str_from_bytes` stops at numeric NUL without inspecting later
   elements; byte codecs consume the complete list.
 
@@ -381,8 +393,9 @@ raises `value` if its existing subtraction underflows (R1.6b-D1).
 
 Counts and indices are ints. `floor`, `ceil` and half-away-from-zero `round`
 return an int when the result fits int64. `min`/`max` return the winning
-argument with its kind; the first argument wins a tie. `num` requires a
-complete numeric-literal string (N10). JSON integer text fitting int64
+argument with its kind; the first ordering-equivalent argument wins a tie
+(R22-1). Any NaN argument
+propagates as NaN. `num` requires a complete numeric-literal string (N10). JSON integer text fitting int64
 decodes exactly (N14).
 
 The [C embedding API](EMBEDDING.md#value-handles) follows Lua’s numeric
@@ -601,8 +614,9 @@ Runtime-published counts and indices are exact ints (S9-K1): `__loop_iterations_
 
 Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
 
-**Division by zero RAISES** — it is a catchable `value`-kind error, not a
-warning and not `0` (that fossil died with the fail-soft reform, #975).
+**Integer floor division and integer modulo by zero raise** a catchable
+`value` error. Float arithmetic instead produces IEEE infinity or NaN by
+default; `EIGS_STRICT=1` opts into trapping non-finite arithmetic results.
 A runtime error is caught as a dict with `kind`, `message`, `line` and `file`.
 A value you `throw of` is caught exactly as thrown: `throw of "boom"` binds the
 string `"boom"`, so `"caught: " + err` works for your own string throws and
@@ -612,7 +626,7 @@ whose `message` you read (`err.message` on a string raises):
 
 ```eigenscript check
 try:
-    x is 1 / 0
+    x is 1 // 0
     print of "not reached"
 catch err:
     print of err.kind
@@ -638,7 +652,7 @@ catch err:
     show_error of err
 
 try:
-    print of (1 / 0)
+    print of (1 // 0)
 catch err:
     show_error of err
 ```

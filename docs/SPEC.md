@@ -247,8 +247,10 @@ converts the int to float; comparison across kinds is exact, including
 above 2^53. `/` returns float; `//` floors (an int for two ints, a float otherwise).
 `%` is floor modulo for both kinds, with the sign of the divisor. Both int
 operators are exact, and `INT64_MIN // -1` raises `value` while
-`INT64_MIN % -1` is the int 0. Division, floor division and modulo by zero
-raise `value`, including float and mixed operands. Builtin result kinds
+`INT64_MIN % -1` is the int 0. Int floor division and int modulo by zero
+raise `value`. `/` always uses float arithmetic: a nonzero number divided
+by zero gives a signed infinity, and `0 / 0` gives NaN. Float or mixed `% 0`
+gives NaN; float or mixed `// 0` follows `floor(x / 0)`. Builtin result kinds
 are documented individually; int-preserving
 arithmetic and reductions use checked int64 operations.
 
@@ -261,7 +263,7 @@ this number writer. There is no exponent operator; use
 
 `//` floors the quotient; `%` has the divisor's sign. `//=` applies the same
 operation to its assignment target, like `/=`. Zero divisors raise `value`
-for int, float and mixed operands. Two ints produce an int for
+for int `//` and `%`; float forms follow IEEE arithmetic. Two ints produce an int for
 `//` and `%`; a float operand produces a float. `/` always produces a float.
 Float and mixed `//` use Python’s `divmod` quotient correction: `1.0 // 0.1`
 is `9.0`, and `1e-300 // -1e300` is `-1.0`. `//=` uses the same rule.
@@ -309,14 +311,12 @@ print of (abs of -5)
 5
 ```
 
-Division by zero is a runtime error, not a silent result: it has no
-defined value, so — like an out-of-range index — it raises rather than
-inventing one. Uncaught it halts with exit 1; caught, the bound error's
-`kind` is `"value"`. (Modulo by zero raises the same way.)
+Integer floor division and integer modulo by zero raise a runtime error.
+Uncaught it halts with exit 1; caught, the bound error's `kind` is `"value"`.
 
 ```eigenscript
 try:
-    x is 10 / 0
+    x is 10 // 0
 catch e:
     print of e.kind
     print of "still running"
@@ -339,20 +339,16 @@ The IEEE 754 default floating-point environment is part of number semantics.
   `+ 1` can be invisible. For exact identifiers, counters, and money-in-cents, keep values in
   the int kind rather than converting them to float. Bitwise operations preserve all int64 bits and return ints; integral float
   operands convert only when they are exactly representable as int64.
-- **Finite by construction — no `NaN`, no `Infinity` ever reach your program.**
-  Overflow saturates at `±1e308` instead of becoming `Infinity`. Every
-  *defined* operation returns a usable finite number; an *undefined* one —
-  division or modulo by zero, and (in strict mode, the default) `sqrt` of a
-  negative or a `NaN` result — raises a `value` error rather than inventing a
-  result. With strict mode turned off a `NaN` result collapses to `0` instead
-  (`sqrt of -1` is `0`).
-- **Strict mode is the default; `EIGS_STRICT=0` is the per-run opt-out
-  (#1361).** With the environment variable unset, empty, or set to anything
-  other than `0`, an out-of-domain operation — `sqrt` of a negative, `log` of
-  `≤0`, `asin`/`acos` outside `[-1, 1]` — raises a catchable `value` error
-  instead of substituting a finite stand-in. Set `EIGS_STRICT=0` for a run and
-  the substitutions come back (a kernel or grader that wants the finite
-  stand-in). The same switch governs **argument-type guards**: builtins that
+- **Float arithmetic follows IEEE 754.** Overflow gives signed infinity;
+  there is no `±1e308` clamp. `1.0 / 0` is `inf`, `-1.0 / 0` is `-inf`,
+  and `0.0 / 0` and float modulo by zero are NaN. `sqrt of -1` and
+  `asin`/`acos` outside `[-1, 1]` return NaN; `log of 0` returns `-inf`.
+  NaN is unequal to every value, including itself, even inside a list, dict
+  or buffer. Comparing NaN never raises or changes math flags.
+- **Strict mode is opt-in with `EIGS_STRICT=1`.** It raises a catchable
+  `value` error when arithmetic produces a non-finite result. With the
+  environment variable unset or set to `0`, these IEEE results remain
+  values. The same switch governs **argument-type guards**: builtins that
   would answer a wrong-typed argument with a stand-in — `cos of "hello"` as
   `0`, `str_upper of 42` as `""`, a type mistake read as a plausible value —
   raise a catchable `type_mismatch` error naming the builtin, across the
@@ -369,21 +365,18 @@ The IEEE 754 default floating-point environment is part of number semantics.
   was told it got 48000.
 
   ```eigenscript
-  try:
-      print of (abs of "x")
-  catch e:
-      print of f"{e.kind}: {e.message}"
-  try:
-      print of (sqrt of -1)
-  catch e:
-      print of f"{e.kind}: {e.message}"
+  not_a_number is sqrt of -1
+  print of [not_a_number == not_a_number, num_type of not_a_number]
+  print of (log of 0)
+  print of [(asin of 2) == (asin of 2), (acos of 2) == (acos of 2)]
   ```
   ```output
-  type_mismatch: abs: expected a number
-  value: sqrt: argument out of domain (negative)
+  [false, "float"]
+  -inf
+  [false, false]
   ```
 
-  Under `EIGS_STRICT=0` the same program prints `0.0` twice.
+  With `EIGS_STRICT=1`, each out-of-domain call above instead raises `value`.
   A `false`, `0`, `""` or `null` that is a genuine *answer* is untouched
   in both modes: `try_parse` of invalid syntax still returns `false`, `task_alive`
   of an unknown id still returns `false`, `char_at` past the end is still `""`,
@@ -391,28 +384,17 @@ The IEEE 754 default floating-point environment is part of number semantics.
   contract, not a guard).
   A return expression alone does not distinguish a type guard from a
   documented answer. `tools/strict_differential.sh` checks the distinction
-  that can be executed: a guard probe must raise in strict mode, the default
-  (with the variable unset or set to `1`), and a pinned documented answer must not.
+  that can be executed: a guard probe must raise with `EIGS_STRICT=1`,
+  and a pinned documented answer must not.
   Fixed- or optional-shape builtin argument lists reject surplus outer elements in strict mode with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
 
-  Three further classes are loud in strict mode and unchanged under `EIGS_STRICT=0`:
-  - **The `NaN`→`0` collapse.** Under `EIGS_STRICT=0` a `NaN` still collapses to
-    `0` and sets `math_flags.invalid`. In strict mode every reachable `NaN`
-    source raises a catchable `value` error naming the builtin: `pow` of a
-    negative base with a fractional exponent,
-    `f64_from_bytes` of a `NaN` bit pattern, `matmul` when its accumulation
-    reaches `inf - inf`, `tensor_load` of a file carrying `NaN` bytes — and
-    the elementwise `divide` by zero, which answers `0` under `EIGS_STRICT=0` where the
-    `/` operator raises. The arithmetic operators themselves cannot reach a
-    `NaN` from finite operands (`0 / 0` and `x % 0` raise first, and no
-    operand can hold an infinity), so any other source hits a backstop that
-    raises as `arithmetic`. The JIT bails to the interpreter on a non-finite
-    result, so both tiers raise from the same guard. Buffer storage may retain
-    a raw non-finite kernel result internally. Indexing and iteration, like
-    `get_at`, refuse a stored NaN or infinity with `value` in every strict
-    mode (N13). Strict NaN preserves the first-NaN diagnostic and sets
-    `math_flags.invalid`; other non-finite data refusals leave flags alone.
-    The interpreter, JIT and leaf fallback agree on kind, message and line.
+  Buffer storage may retain a raw non-finite kernel result. Indexing and
+  iteration, like `get_at`, still refuse a stored NaN or infinity with `value`
+  in every strict mode (N13). Strict NaN preserves the first-NaN diagnostic
+  and sets `math_flags.invalid`; other non-finite data refusals leave flags
+  alone. The interpreter, JIT and leaf fallback agree on kind, message and line.
+
+  Two further classes are loud in strict mode and unchanged under `EIGS_STRICT=0`:
   - **JSON parse failure in `json_path`.** Under `EIGS_STRICT=0` a malformed
     document is walked leniently and a parse failure answers the same `""`
     an absent key does. Under strict `json_path` applies `json_decode`'s
@@ -422,13 +404,13 @@ The IEEE 754 default floating-point environment is part of number semantics.
     (`-1`), `file_exists`/`is_dir`/`is_file`/`read_text`/`read_bytes`/`ls`/
     `mkdir`/`env_get` (`0`/`""`), and the wrong-type launderers the sweep
     found (`split`, `scan_ints`, `buffer`, `channel_closed`, `f64_to_bytes`,
-    `json_build`, `sort`, `random_int`, `random_hex`, `token_name`,
+    `json_build`, `sort`, `random_int`, `random_hex`, `token_name`, and
+    `zlib_*`) raise for wrong-typed arguments in strict mode. A
     sentinel for a valid-but-absent input — `index_of` miss `-1`,
     `file_exists` of a missing path `0` — is unchanged in both modes.
-  Float overflow saturation is the same in both modes; int overflow raises. (Division and modulo by zero
-  raise in *both* modes — no defined value.)
-  `zlib_*` forms) likewise reject a nonnumeric list element with a
-  builtin-named `type_mismatch` error by default; `EIGS_STRICT=0` retains the
+  Int overflow and int `// 0`/`% 0` raise in both modes.
+  Byte consumers such as `str_from_bytes` and the `zlib_*` forms likewise
+  reject a nonnumeric list element with a builtin-named `type_mismatch` error in strict mode; `EIGS_STRICT=0` retains the
   numeric-zero substitution. `str_from_bytes` ends at a numeric byte that
   converts to NUL, so elements after that terminator are not inspected.
 - **Integer bitwise ops act on int64, exact past 2^32.** `&` `|` `^` `~` `<<`
@@ -441,19 +423,19 @@ The IEEE 754 default floating-point environment is part of number semantics.
 ```eigenscript
 print of (9007199254740992 + 1)
 print of (9007199254740993 == 9007199254740992)
-print of (1e308 * 10)                        # saturates, never Infinity
+print of (1e308 * 10)
 print of (bit_and of [0xFFFFFFFF, 0xFF])     # int64 bitwise
 print of (bit_shl of [1, 40])                # exact past 2^32
 ```
 ```output
 9007199254740993
 false
-1e+308
+inf
 255
 1099511627776
 ```
 
-Ints are exact throughout int64; floats retain the finite model above. Bigint
+Ints are exact throughout int64; floats follow IEEE arithmetic. Bigint
 and decimal arithmetic remain library needs rather than additional core kinds.
 
 ## Strings
@@ -541,8 +523,9 @@ raises `value` if its existing subtraction underflows (R1.6b-D1).
 
 Counts and indices are ints. `floor`, `ceil` and half-away-from-zero `round`
 return an int when the result fits int64. `min`/`max` return the winning
-argument with its kind; the first argument wins a tie. `num` requires a
-complete numeric-literal string (N10). JSON integer text fitting int64
+argument with its kind; the first ordering-equivalent argument wins a tie
+(R22-1). Any NaN argument
+propagates as NaN. `num` requires a complete numeric-literal string (N10). JSON integer text fitting int64
 decodes exactly (N14).
 
 The [C embedding API](EMBEDDING.md#value-handles) follows Lua’s numeric
@@ -716,7 +699,20 @@ false
 1
 ```
 
-Equality on lists and dicts is structural (deep):
+Equality on lists and dicts is structural (deep). A NaN float is unequal
+to itself, including inside a list or dict compared with itself:
+
+```eigenscript
+not_a_number is 0.0 / 0
+xs is [not_a_number]
+d is {"value": not_a_number}
+print of [not_a_number == not_a_number, xs == xs, d == d]
+```
+```output
+[false, false, false]
+```
+
+Finite values compare by content:
 
 ```eigenscript
 print of ([1, [2, 3]] == [1, [2, 3]])
@@ -1340,7 +1336,25 @@ print of (apply of [add5, 10])
 ```
 
 `sort` sorts a list in place; `sort_by` returns a new list using numeric keys.
-Both are stable on every platform: equal elements or keys keep their input order.
+Both are stable on every platform: ordering-equivalent elements or keys keep
+their input order. Float values and float keys use IEEE 754 `totalOrder`:
+`-0.0` precedes the equivalent class `{0, 0.0}`, and the canonical NaN comes
+after `inf` (R22-1). Nonzero mixed int/float comparisons remain exact.
+Equality still treats every signed or integer zero as equal. `min` and `max`
+propagate a NaN in any argument position and use the same order for zeros.
+
+```eigenscript
+not_a_number is 0.0 / 0
+xs is [not_a_number, 0.0, -0.0, 1.0 / 0, -1.0 / 0]
+print of (sort of xs)
+a is min of [1, not_a_number]
+b is max of [not_a_number, 1]
+print of [a == a, b == b]
+```
+```output
+[-inf, -0.0, 0.0, inf, nan]
+[false, false]
+```
 
 `sort_by` is a builtin; `map` and `filter` come from the standard
 library (`lib/list.eigs`):
@@ -1470,7 +1484,7 @@ the sub-expression that faulted, even when its statement spans several lines
 total is 0
 try:
     total is [1,
-        2 / 0]
+        2 // 0]
 catch e:
     print of e.line
 ```
@@ -1483,7 +1497,7 @@ assignment is recorded under its **first** line (see "Temporal
 interrogatives"): an error points at where the fault is, and history points
 at where the statement starts.
 
-A call's own lines never become the caller's: once `zero` returns, the `/`
+A call's own lines never become the caller's: once `zero` returns, the `//`
 that faults is on the caller's line 5, not `zero`'s line 3 (#1424):
 
 ```eigenscript
@@ -1491,7 +1505,7 @@ define zero(x) as:
     y is x - x
     return y
 try:
-    z is 1 / (zero of 4)
+    z is 1 // (zero of 4)
 catch e:
     print of e.line
 ```
@@ -1499,17 +1513,17 @@ catch e:
 5
 ```
 
-When the faulting sub-expression is a binary operator (`+`, `-`, `*`, `/`,
+When the faulting sub-expression is a binary operator (`+`, `-`, `*`, `/`, `//`,
 `%`, a comparison, a bitwise operator, or a plain-name compound
 assignment such as `x += rhs`) whose operands span lines, the reported line is the
-**operator's** line, not the line its right operand ends on (#1425). The `/`
+**operator's** line, not the line its right operand ends on (#1425). The `//`
 below is on line 3; its operand ends on line 4. The excerpt and caret point at
 the operator too, and so does the traceback:
 
 ```eigenscript
 x is 0
 try:
-    z is 1 / (
+    z is 1 // (
         x)
 catch e:
     print of e.line
@@ -1968,7 +1982,7 @@ bank angle reads the same in radians and degrees. For non-numeric bindings
 assignment snapshots across a full window, bounded to 4,096 content units per
 assignment. Finite in-place mutations remain visible when the binding is
 assigned again. A refused or oversized snapshot leaves both predicates false.
-For an accepted snapshot containing a NaN buffer, directly or nested,
+For an accepted snapshot containing a NaN float or buffer, directly or nested,
 `converged` stays false because raw IEEE equality is non-reflexive, while
 `stable` uses the entropy-window criterion only after a full bounded comparison
 window (S10-D1). Refusal clears that eligibility, so a fresh full bounded
@@ -1992,8 +2006,8 @@ compositional: a plain loop can't be cut short by what its body — or a
 function it calls — happens to assign to the global observer.
 The division of labour (#861): `converged` ends an observer loop when the
 value settles at the deadband; `stalled` ends it when 100 quiet
-iterations pass without certification (a runaway pinned at the
-saturation ceiling, sub-deadband drift); `__loop_exit__` records which
+iterations pass without certification (a non-finite runaway,
+sub-deadband drift); `__loop_exit__` records which
 one happened.
 
 `report` and `report_value` are **reserved observer forms**, like the
@@ -2083,17 +2097,10 @@ opaque
 false
 ```
 
-**The saturation ceiling is not a rest state** (#861). Overflow saturates
-at `±1e308` (*Numbers*, above), which turns an unbounded trajectory into a
-fixed point: the dH window fills with zeros and the entropy of `1e308`
-falls under the low-entropy threshold, so a runaway satisfies every clause
-of `converged`. The window really is quiet — the quiet is an artifact of
-the clamp, produced *after* the evidence of divergence was destroyed. So a
-binding sitting at `±1e308` is `diverging` in both channels and in no rest
-band: `converged`, `equilibrium`, `stable`, and `improving` are all false.
-A binding assigned a literal `±1e308` that never overflowed reads
-`diverging` too — the runtime cannot distinguish the two, and this is the
-direction that fails loudly. Below the ceiling nothing changes:
+**Non-finite values are not rest states.** Float overflow produces infinity
+rather than a clamped fixed point. A non-finite trajectory cannot certify
+`converged`; a finite constant can, including `1e308`. There is no special
+ceiling at `±1e308`. The runaway below still does not converge:
 
 ```eigenscript
 z is 2.0
@@ -2121,7 +2128,7 @@ steps contracting geometrically (the ML loss convention: lower is better;
 growth is never improving; a summable tail genuinely closing on a limit);
 `diverging` the #422 raw rule (non-vanishing same-sign steps —
 an additive runaway whose relative step vanishes is still unbounded) or
-a value at the saturation ceiling; `oscillating` deadband sign-flips,
+an infinite value; `oscillating` deadband sign-flips,
 non-vanishing alternation (a perpetual oscillation below the deadband is
 still an oscillation), or window-scale folding (net travel small against
 path length — a sinusoid sampled slower than its half-period).
@@ -2774,7 +2781,7 @@ the exact low-bit rounding of the result. This is a deliberate opt-in — it lic
 optimizing backend (such as the AOT native compiler) to reassociate the sum
 across SIMD lanes, which a strict left-to-right `loop while` accumulation
 forbids. Integer `sum` checks int64 overflow and never silently rounds or
-wraps. The no-NaN/no-Inf invariant still holds. Write the explicit loop when
+wraps. Floating results may be NaN or infinity. Write the explicit loop when
 you need a fixed reduction order.
 
 ### Shaped buffers (tensors)
@@ -2785,12 +2792,11 @@ A buffer can carry a 2-D shape, making it a flat-backed matrix. `buffer of
 match). `shape of buf` returns `[rows, cols]` for a shaped buffer, or `[count]`
 when unshaped. Indexing stays flat (`buf[r*cols + c]`).
 At the buffer/scalar boundary, `sum`, `get_at`, indexing, iteration, `dot` and `write_bytes` refuse
-non-finite elements in every strict mode (N13). Other consumers use the numeric guard: infinity saturates
-at ±`1e308`, while a `NaN` raises in strict mode or becomes `0` and sets
-`math_flags.invalid` under `EIGS_STRICT=0`. Structural buffer equality compares
+non-finite elements in every strict mode (N13). Structural buffer equality compares
 stored doubles directly with IEEE equality; list/dict self-equality follows
-that rule through nested and cyclic containers. The other scalar reductions
-normalize each input before arithmetic. A strict read that raises inside a function retains that
+that rule through nested and cyclic containers, including NaN float elements.
+The other scalar reductions retain their declared data boundaries.
+A strict read that raises inside a function retains that
 function's source location and call frame. Buffer-to-list tensor materialization
 and numeric byte/sample/device conversions apply the same read rule, stopping
 at the first raised read. `write_bytes` requires exact bytes in 0..255 (N5/Q1);
@@ -2845,7 +2851,7 @@ Changed in this release (#973/#1093): the list form used to answer `0.0` for
 an out-of-range index and the buffer form was added folding the same way. A
 tensor that is not a matrix in the per-row form still answers `0.0` for that
 row — that is the shape reading, not the index one — and a wrong-typed
-argument raises in strict mode, the default, and answers `0.0` only under
+argument raises in strict mode and answers `0.0` under
 `EIGS_STRICT=0`.
 
 Every tensor builtin that accepts a flat numeric list accepts a buffer in the
@@ -2986,8 +2992,8 @@ The facts that govern every program, in one place:
 6. **Truthiness**: `0`, `null`, `""`, `[]`, `{}` are falsy; everything
    else is truthy. Comparisons yield `1`/`0`.
 7. **Errors**: runtime errors unwind to the nearest `try`; uncaught
-   they halt the program with exit code 1. Division and modulo by zero
-   raise a `value` error (they have no defined result).
+   they halt the program with exit code 1. Integer floor division and integer
+   modulo by zero raise a `value` error; float arithmetic follows IEEE 754.
 8. **Observation**: every assignment outside `unobserved` updates the
    observer; predicates and interrogatives read it. Temporal queries
    additionally record history.

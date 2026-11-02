@@ -44,13 +44,13 @@ check of ["or short-circuits to left", eigen_run of "7 or 9", 7]
 check of ["null-bound var", eigen_run of "x is null\nx", null]
 check of ["normal var", eigen_run of "y is 42\ny", 42]
 
-# --- div / mod by zero must RAISE in both (C VM raises; meta throws) ---
+# --- R2.2: float division gives infinity; int modulo still raises ---
 div0_caught is 0
 try:
     r is eigen_run of "5 / 0"
 catch e:
     div0_caught is 1
-check of ["5 / 0 raises", div0_caught, 1]
+check of ["5 / 0 returns infinity", div0_caught == 0 and r == (5 / 0), true]
 mod0_caught is 0
 try:
     r is eigen_run of "5 % 0"

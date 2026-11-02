@@ -1507,7 +1507,7 @@
       ]
     },
     "tests/phase2/builtins/builtins/fround.branch": {
-      "old_sha256": "12ca1750befb2a38111ec77d9ff236e9dada8e5c7d297aa5cf4f489c2c1f22fa",
+      "old_sha256": "9f37003ae6d0e9b1d102db8db580ac7f2a59b5bf0886ec6278e780bfa2822452",
       "source_sha256": "8195efefa3df62764addec397a097371ca255236efed4149b395116ecdfeeb1f",
       "witnesses": [
         {
@@ -1517,28 +1517,6 @@
           "positions": [
             [
               1,
-              1
-            ]
-          ]
-        },
-        {
-          "line": 8,
-          "expression": "fround of 1e39",
-          "kind": "float",
-          "positions": [
-            [
-              2,
-              1
-            ]
-          ]
-        },
-        {
-          "line": 13,
-          "expression": "fround of -1e39",
-          "kind": "float",
-          "positions": [
-            [
-              3,
               1
             ]
           ]
@@ -4288,6 +4266,15 @@
       "old_sha256": "b10fe4c4d96d69ca28c3216cb3b82b8db1232808558240afcd320eb943bee6d8",
       "new_sha256": "fa6f30b2af6cebed9c244889683a356120916ba20cd5b364579b21010f50634e",
       "source_sha256": "abf6d29d7dff1a56f1baed7c89dbf6e68025898c760ff598ce6da21626f5afa5"
+    },
+    "tests/phase2/builtins/builtins/fround.branch": {
+      "ruling": "R2.2-N11",
+      "anchor": "3a1c5e84dfb3f705f6c9033fe59606f2689a8011",
+      "decision": "docs/design/phase2-numbers.md: fround result guard until R2.2; Round 2 item 2",
+      "old_sha256": "0eef9c22f27663cb7b9cffcc4704039adacba202777e3b4eb254c5462d851118",
+      "new_sha256": "20db5e6318722fdac7343675baf2bed0dc8afb4131f995a195c396a3c46bdcc9",
+      "pre_n6_sha256": "12ca1750befb2a38111ec77d9ff236e9dada8e5c7d297aa5cf4f489c2c1f22fa",
+      "source_sha256": "8195efefa3df62764addec397a097371ca255236efed4149b395116ecdfeeb1f"
     }
   }
 }

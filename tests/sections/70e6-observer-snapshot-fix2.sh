@@ -19,8 +19,8 @@ fi
 if make -s -C .. NUM_GUARD_VALUE_VARIANT="$variant" num-guard-value-test && \
    ../build/$variant/test_num_guard_value; then
     PASS=$((PASS + 1))
-    echo "  PASS: pure scalar guard matches num_guard values without changing math flags"
+    echo "  PASS: IEEE results preserve payloads and strict VM arithmetic traps"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: pure scalar guard diverges from num_guard values"
+    echo "  FAIL: IEEE result/status or strict VM arithmetic regression"
 fi

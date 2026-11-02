@@ -32,6 +32,9 @@ SYNC11_RETIREMENTS = {BAR + name + '.branch' for name in (
     'model_load_weights', 'native_train_step_builtin')}
 NEAREST_PATH = BAR + 'nearest_in_range_all.branch'
 NEAREST_DECISION = 'https://github.com/InauguralSystems/EigenScript/issues/1888#issuecomment-6402855103'
+FROUND_PATH = BAR + 'fround.branch'
+R22_ANCHOR = '3a1c5e84dfb3f705f6c9033fe59606f2689a8011'
+FROUND_DECISION = 'docs/design/phase2-numbers.md: fround result guard until R2.2; Round 2 item 2'
 
 
 def require(ok, message):
@@ -105,7 +108,8 @@ def retired_paths(root, data):
 def apply_semantic_amendment(root, data, frozen):
     """#1888 changes only the old self-neighbor index; this is not N6 text."""
     entries = data.get('semantic_amendments', {})
-    require(set(entries) == {NEAREST_PATH}, 'S10-D2 semantic amendment population must be exactly nearest_in_range_all')
+    require(set(entries) == {NEAREST_PATH, FROUND_PATH},
+            'semantic amendment population must be exactly nearest_in_range_all and R2.2 fround')
     entry = entries[NEAREST_PATH]
     require(entry.get('ruling') == 'S10-D2' and entry.get('anchor') == RETIREMENT_ANCHOR and
             entry.get('decision') == NEAREST_DECISION, NEAREST_PATH + ': semantic amendment lacks its recorded decision/anchor')
@@ -124,6 +128,34 @@ def apply_semantic_amendment(root, data, frozen):
     require((root / NEAREST_PATH).read_bytes() == after, NEAREST_PATH + ': semantic amendment differs from approved bytes')
     frozen[NEAREST_PATH] = after
 
+
+
+def apply_fround_semantic_amendment(root, data, frozen):
+    """R2.2-N11's two explicitly scheduled values; no file is waived."""
+    entry = data['semantic_amendments'][FROUND_PATH]
+    require(entry.get('ruling') == 'R2.2-N11' and
+            entry.get('anchor') == R22_ANCHOR and entry.get('decision') == FROUND_DECISION,
+            FROUND_PATH + ': missing R2.2 fround authority')
+    before = git(root, 'show', R22_ANCHOR + ':' + FROUND_PATH)
+    positive, negative = b'[1e+308, "float"]\n', b'[-1e+308, "float"]\n'
+    require(before.count(positive) == 1 and before.count(negative) == 1,
+            FROUND_PATH + ': R2.1 transcript no longer has exactly two clamps')
+    after = before.replace(positive, b'[inf, "float"]\n').replace(negative, b'[-inf, "float"]\n')
+    require(sha(before) == entry.get('old_sha256') and sha(after) == entry.get('new_sha256') and
+            (root / FROUND_PATH).read_bytes() == after,
+            FROUND_PATH + ': not exactly the approved two-value IEEE amendment')
+    source = FROUND_PATH.removesuffix('.branch') + '.eigs'
+    original = git(root, 'show', R22_ANCHOR + ':' + source)
+    require(sha(original) == entry.get('source_sha256') and (root / source).read_bytes() == original,
+            source + ': frozen fround scenario changed')
+    waiver = amendments_for(root, [FROUND_PATH]).get(FROUND_PATH, [])
+    require(len(waiver) == 3 and waiver[:2] == [sha(after), 'R2.2-N11'] and bool(waiver[2]),
+            FROUND_PATH + ': exact SHA-256 R2.2-N11 amendment required')
+    prior = frozen[FROUND_PATH]
+    require(sha(prior) == entry.get('pre_n6_sha256') and
+            prior.count(positive) == 1 and prior.count(negative) == 1,
+            FROUND_PATH + ': pre-N6 provenance changed')
+    frozen[FROUND_PATH] = prior.replace(positive, b'[inf, "float"]\n').replace(negative, b'[-inf, "float"]\n')
 
 
 def apply_diagnostic_amendment(root, frozen):
@@ -275,6 +307,7 @@ def load(root, metadata):
     frozen = {path: anchored[path] for path in branch_paths}
     require(bool(frozen), 'anchor has no frozen files')
     apply_semantic_amendment(root, data, frozen)
+    apply_fround_semantic_amendment(root, data, frozen)
     apply_diagnostic_amendment(root, frozen)
     for path, entry in files.items():
         old = frozen.get(path)
@@ -358,7 +391,9 @@ def check(root, metadata, candidate_dir=None, baseline_binary=None, binary=None)
             print('float-amend: R1.7-D6 path=%s SHA-256=%s' % (path, sha(actual[path])))
     require(len(changed) == len(data['files']), 'derived population contains an unchanged row')
     if baseline_binary:
-        run_witnesses(root, baseline_binary, data, frozen)
+        baseline_expected = dict(frozen)
+        baseline_expected[FROUND_PATH] = git(root, 'show', BASE + ':' + FROUND_PATH)
+        run_witnesses(root, baseline_binary, data, baseline_expected)
     if binary:
         run_witnesses(root, binary, data, actual)
     print('float-amend: examined=%d amended=%d floats=%d PASS' % (len(data['files']), len(changed), tokens))
@@ -382,6 +417,7 @@ def self_test(root, metadata):
         require(invoke().returncode == 0, 'self-test positive complete Python-repr amendment failed')
         plants = {
             'value': ('fround.branch', lambda b: b.replace(b'0.10000000149011612', b'0.2')),
+            'restored-clamp': ('fround.branch', lambda b: b.replace(b'[inf,', b'[1e+308,', 1)),
             'kind': ('str.branch', lambda b: b.replace(b'"3.0"', b'"3"')),
             'integer': ('json_encode.branch', lambda b: b.replace(b'9007199254740993', b'9007199254740992', 1)),
             'integer-kind': ('json_encode.branch', lambda b: b.replace(b'[3,', b'[3.0,', 1)),

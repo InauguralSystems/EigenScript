@@ -1,8 +1,8 @@
 echo "[0fb] Boolean type (#1637)"
 check_eigs_suite "bool type: semantics 1-7, default tier" test_bool.eigs "All tests passed"
 EIGS_JIT_OFF=1 check_eigs_suite "bool type: semantics 1-7, interpreter tier" test_bool.eigs "All tests passed"
-# A bool never takes a builtin's EIGS_STRICT=0 soft path (#1637).
-EIGS_STRICT=0 check_eigs_suite "bool type: semantics 1-7, EIGS_STRICT=0" test_bool.eigs "All tests passed"
+# R2.2: default is 0; explicit strict must retain the same bool refusals.
+EIGS_STRICT=1 check_eigs_suite "bool type: semantics 1-7, EIGS_STRICT=1" test_bool.eigs "All tests passed"
 # true and false in every argument slot of every builtin `--api --json` lists,
 # and in the VM operand positions, raise in both strict modes unless the slot
 # is on the reviewed any-value list (tests/test_bool_fuzz.sh; it prints its

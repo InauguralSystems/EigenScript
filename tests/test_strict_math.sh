@@ -1,10 +1,8 @@
 #!/bin/bash
-# #971/#1361: strict mode (EIGS_STRICT). Strict is the DEFAULT (#1361): with
-# the variable unset or empty an out-of-domain op or a wrong-typed argument
-# RAISES. EIGS_STRICT=0 is the per-run opt-out, where the arithmetic is
-# finite-by-construction again (domain ops substitute a stand-in + set the
-# invalid flag). Rows marked `unset` run with EIGS_STRICT removed from the
-# environment; rows marked `0` pin the opt-out's stand-ins.
+# #971/#1361 and R2.2 / N11: EIGS_STRICT is an opt-in trap.
+# Unset, empty and 0 keep IEEE NaN/infinity results; explicit nonzero values
+# retain strict arithmetic/domain and argument-type errors. The argument
+# guards and finite data-reader policies are otherwise unchanged.
 # Run directly or from run_all_tests.sh. Prints: STRICT: N passed, M failed
 # Exit code: 0 if all pass, 1 if any fail.
 
@@ -94,20 +92,19 @@ run_jitoff() {
     fi
 }
 
-# --- #1361: the DEFAULT is strict; EIGS_STRICT=0 is the opt-out ---
-# Unset, empty and any value other than "0" all raise; only "0" substitutes.
-run "SM01 opt-out sqrt(-1) -> 0"      0     0 "0"                      'print of (sqrt of -1)'
-run "SM02 opt-out asin(5) clamps"     0     0 "1.57"                   'print of (asin of 5)'
-run "SM03 default (unset) sqrt(-1) raises" unset 1 "sqrt: argument out of domain" 'print of (sqrt of -1)'
-run "SM03a default (unset) asin(5) raises" unset 1 "asin: argument out of domain" 'print of (asin of 5)'
-run "SM03b EIGS_STRICT= (empty) is strict" "" 1 "sqrt: argument out of domain" 'print of (sqrt of -1)'
-run "SM03c EIGS_STRICT=yes is strict" yes 1 "sqrt: argument out of domain"   'print of (sqrt of -1)'
+# --- R2.2 / N11: IEEE default, with an explicit strict opt-in ---
+run "SM01 non-strict sqrt(-1) -> NaN" 0 0 "nan" 'print of (sqrt of -1)'
+run "SM02 non-strict asin(5) -> NaN" 0 0 "nan" 'print of (asin of 5)'
+run "SM03 default (unset) sqrt(-1) -> NaN" unset 0 "nan" 'print of (sqrt of -1)'
+run "SM03a default (unset) asin(5) -> NaN" unset 0 "nan" 'print of (asin of 5)'
+run "SM03b EIGS_STRICT= (empty) keeps IEEE result" "" 0 "nan" 'print of (sqrt of -1)'
+run "SM03c EIGS_STRICT=yes is strict" yes 1 "sqrt: argument out of domain" 'print of (sqrt of -1)'
 run "SM03h EIGS_STRICT=01 is strict (only exactly 0 is off)" 01 1 "sqrt: argument out of domain" 'print of (sqrt of -1)'
 run "SM03i EIGS_STRICT=00 is strict (only exactly 0 is off)" 00 1 "sqrt: argument out of domain" 'print of (sqrt of -1)'
-run "SM03d default (unset) abs(str) raises"   unset 1 "abs: expected a number" 'print of (abs of "x")'
-run "SM03e default (unset) abs(list) raises"  unset 1 "abs: expected a number" 'print of (abs of ([-3, 7]))'
-run "SM03f default (unset) floor(list) raises" unset 1 "floor: expected a number" 'print of (floor of [1.5, 2.5])'
-run "SM03g opt-out abs(str) -> 0"             0 0 "0"                      'print of (abs of "x")'
+run "SM03d strict abs(str) raises" 1 1 "abs: expected a number" 'print of (abs of "x")'
+run "SM03e strict abs(list) raises" 1 1 "abs: expected a number" 'print of (abs of ([-3, 7]))'
+run "SM03f strict floor(list) raises" 1 1 "floor: expected a number" 'print of (floor of [1.5, 2.5])'
+run "SM03g non-strict abs(str) -> 0" 0 0 "0" 'print of (abs of "x")'
 
 # --- Strict on: out-of-domain raises EK_VALUE ---
 run "SM04 strict sqrt(-1) raises"     1 1 "sqrt: argument out of domain"  'print of (sqrt of -1)'
@@ -132,7 +129,7 @@ run "SM10 strict tensor sqrt raises"  1 1 "out of domain"              'print of
 # ~34 builtins answered a wrong-typed argument with a soft stand-in, so a type
 # mistake became a plausible value: `cos of "hello"` was 0, `str_upper of 42`
 # was "". Under EIGS_STRICT=0 that is unchanged (SM11/SM12 pin it); strict
-# (the default since #1361) raises a catchable `type` error naming the builtin.
+# raises a catchable `type` error naming the builtin.
 run "SM11 opt-out cos(str) still 0"    0 0 "0"    'print of (cos of "hello")'
 run "SM12 opt-out str_upper(num) is empty" 0 0 "[]" 'print of f"[{str_upper of 42}]"'
 run "SM13 strict cos(str) raises"      1 1 "cos: expected a number"        'print of (cos of "hello")'
@@ -227,23 +224,18 @@ run "SM44 strict: absent key is still empty"            1 0 "[]" 'print of f"[{j
 run "SM45 strict: JSON null still renders empty"        1 0 "[]" 'print of f"[{json_path of ["{\"a\": null}", "a"]}]"'
 run "SM46 strict: valid nested path still resolves"     1 0 "x"  'print of (json_path of ["{\"a\": [1, {\"b\": \"x\"}]}", "a.1.b"])'
 
-# --- #971 NaN-collapse: the reachable NaN sources raise under strict ------------
-# Enumerated on the tree (the VM's own + - * / % cannot reach NaN from finite
-# operands — 0/0 and x%0 raise first, and no operand can hold an inf): `pow`
-# of a negative base with a fractional exponent,
-# `f64_from_bytes` of a NaN bit pattern, `matmul`'s inf-inf accumulation (list
-# and buffer paths), `tensor_load` of a file carrying NaN bytes, and the
-# elementwise `divide` by zero (pre-collapsed to 0 where `/` raises). EIGS_STRICT=0
-# collapses to 0 + math_flags.invalid exactly as before (SM47-SM49 pin it).
-run "SM47 opt-out pow(-8, 0.5) still 0"            0 0 "0.0"  'print of (pow of [0 - 8, 0.5])'
+# --- R2.2 / N11: IEEE NaN sources stay NaN unless strict is opted in ---
+# Keep every pre-existing scalar, list and buffer scenario. Arithmetic sets
+# INVALID on NaN; finite-only buffer readers still refuse without flag writes.
+run "SM47 non-strict pow(-8, 0.5) is NaN" 0 0 "nan" 'print of (pow of [0 - 8, 0.5])'
 # N10: invalid literal text raises even under EIGS_STRICT=0.
 run "SM48 N10 opt-out num nan refuses grammar" 0 1 "num: expected complete numeric-literal text" 'num of "nan"'
-run "SM49a opt-out matmul(inf-inf) LIST path still collapses to 0 + invalid" 0 0 "[0.0] true" \
+run "SM49a non-strict matmul(inf-inf) LIST path keeps NaN + invalid" 0 0 "[nan] true" \
 'local r is matmul of [[[1e200, 1e200]], [[1e200], [0 - 1e200]]]
 print of f"{r} {(math_flags of null).invalid}"'
 # #1417 applies the same scalar-read rule to buffer and list results. The
 # kernel may retain a raw NaN internally; indexed data reads refuse it in
-# every strict mode (R1.6d-D1/N13), without a lenient INVALID flag write.
+# every strict mode (R1.6d-D1/N13), without adding a reader-side flag write.
 run "SM49b opt-out matmul(inf-inf) BUFFER read refuses" 0 1 "buffer_read_f64: expected a finite number" \
 'local m1 is buffer of [1, 2]
 m1[0] is 1e200
@@ -255,7 +247,7 @@ local r is matmul of [m1, m2]
 print of f"{r[0]} {(math_flags of null).invalid}"'
 # #1131: canonicalization must visit every NaN and preserve intervening
 # finite results. On ARM the kernel's invalid-operation NaNs are positive.
-run "SM49c opt-out matmul buffer refuses each NaN and preserves finite neighbor" 0 0 "value 2e+200 value false" \
+run "SM49c opt-out matmul buffer refuses each NaN and preserves finite neighbor" 0 0 "value 2e+200 value true" \
 'local a is buffer of [1, 2]
 a[0] is 1e200
 a[1] is 1e200

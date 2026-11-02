@@ -1,5 +1,5 @@
 # #1424 uncaught, module frame, hot: a 6001-iteration module loop (past the
-# 5000 OSR threshold) calls the native `dec`, and `/` on line 10 raises on the
+# 5000 OSR threshold) calls the native `dec`, and `/` with a bad operand on line 10 raises on the
 # last iteration. Pre-fix: "Error line 7" and "at <module> (line 7)".
 # LINE-NUMBER SENSITIVE (the [0g] runner section greps these numbers).
 define dec(x) as:
@@ -7,5 +7,5 @@ define dec(x) as:
     return y
 k is 6001.0
 loop while k > 0.0:
-    r is 1.0 / (dec of k)
+    r is 1.0 / (((dec of k) == 0.0) and "bad" or 1.0)
     k is k - 1.0

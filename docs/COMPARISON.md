@@ -169,13 +169,33 @@ print(7 / 2)        # 3.5
 print(7 // 2)       # 3   (floor division operator)
 ```
 
-EigenScript — signed int64 and finite float64 share the `num` type;
+EigenScript — signed int64 and IEEE-754 float64 share the `num` type;
 `num_type of` distinguishes their kind. Decimal integer literals fitting
 int64 are exact; a point, exponent or out-of-range decimal literal gives
 a float. Hex integer literals wrap modulo 2^64. Int `+ - *` raise `value`
 on overflow; unary minus and `abs` raise at INT64_MIN. Mixed arithmetic
 converts ints to floats, while mixed-kind comparison is exact, including
-beyond 2^53. `/` returns a float; `//` floors the quotient:
+beyond 2^53. `/` returns a float; `//` floors the quotient.
+Float arithmetic produces IEEE results by default: overflow gives infinity,
+`1 / 0` gives `inf`, `0.0 / 0` and float `% 0` give NaN, `sqrt of -1` and
+out-of-domain `asin`/`acos` give NaN, and `log of 0` gives `-inf`. There is
+no `1e308` clamp. Int `// 0` and `% 0` still raise `value`.
+`EIGS_STRICT=1` opts into catchable errors for non-finite arithmetic and
+wrong-typed builtin arguments; strict mode is off by default. NaN compares
+unequal to everything, including itself and through container structure,
+without raising or changing math flags.
+
+```eigenscript
+not_a_number is sqrt of -1
+print of [1 / 0, 1e308 * 10, log of 0]
+print of [not_a_number == not_a_number, num_type of not_a_number]
+```
+```output
+[inf, inf, -inf]
+[false, "float"]
+```
+
+The ordinary finite arithmetic has the familiar results:
 
 ```eigenscript
 x is 42
@@ -197,8 +217,9 @@ raises `value` if its existing subtraction underflows (R1.6b-D1).
 
 Counts and indices are ints. `floor`, `ceil` and half-away-from-zero `round`
 return an int when the result fits int64. `min`/`max` return the winning
-argument with its kind; the first argument wins a tie. `num` requires a
-complete numeric-literal string (N10). JSON integer text fitting int64
+argument with its kind; the first ordering-equivalent argument wins a tie
+(R22-1). Any NaN argument
+propagates as NaN. `num` requires a complete numeric-literal string (N10). JSON integer text fitting int64
 decodes exactly (N14).
 
 The [C embedding API](EMBEDDING.md#value-handles) follows Lua’s numeric
@@ -383,7 +404,12 @@ print of (c of null)
 ```
 
 Builtin `sort` sorts a list in place; `sort_by` returns a new list using numeric keys.
-Both are stable on every platform: equal elements or keys keep their input order.
+Both are stable on every platform: ordering-equivalent elements or keys keep
+their input order. Float values and float keys use IEEE 754 `totalOrder`:
+`-0.0` precedes the equivalent class `{0, 0.0}`, and the canonical NaN comes
+after `inf` (R22-1). Nonzero mixed int/float comparisons remain exact.
+Equality still treats every signed or integer zero as equal. `min` and `max`
+propagate a NaN in any argument position and use the same order for zeros.
 
 ## Lists: map / filter / comprehension
 
@@ -480,7 +506,7 @@ numeric byte/sample/device conversions also normalize reads and stop on the
 first error. `write_bytes` requires exact bytes in 0..255 (N5/Q1); other byte
 converters retain truncation and wrapping at this stage.
 Raw copies, typed serialization and buffer-only work areas preserve their data.
-`type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
+`type_mismatch` error in strict mode; `EIGS_STRICT=0` retains numeric-zero
 substitution. `str_from_bytes` stops at numeric NUL and does not inspect later
 elements, while compression codecs consume and validate the complete list.
 
@@ -742,7 +768,7 @@ deviations are in issue #1990.
 For non-numeric bindings, `converged` and ordinarily `stable` compare
 bounded, detached assignment snapshots; finite in-place mutations are visible
 on reassignment. A refused or oversized snapshot leaves both predicates false.
-An accepted snapshot containing a NaN buffer is unequal to itself under raw
+An accepted snapshot containing a NaN float or buffer is unequal to itself under raw
 IEEE comparison, so it cannot converge; its `stable` predicate instead uses
 the entropy-window rule after a full bounded comparison window (S10-D1).
 Refusal clears that eligibility even if the entropy window is already complete.
@@ -846,12 +872,10 @@ print of (diagnose of (trajectory of r))
 diverging
 ```
 
-One difference to carry across when you port numeric code: EigenScript has
-no `Infinity`, so an overflow that Python would show you as `inf` saturates
-at `±1e308` instead (see [SPEC.md](SPEC.md), *Numbers*). A clamped value
-stops moving, which would make a runaway look like the calmest possible
-trajectory — so the observer treats the ceiling as evidence of divergence,
-not of rest (#861). Keep the runaway above going and the verdict holds:
+EigenScript float overflow produces `inf`, and a non-finite trajectory
+cannot certify convergence. A finite constant can converge at any magnitude,
+including `1e308`; there is no saturation ceiling. Keep the runaway above
+going and the verdict holds:
 
 `report` and `report_value` are reserved observer forms: unlike ordinary
 functions in Python or JavaScript, they cannot be rebound or passed as values.

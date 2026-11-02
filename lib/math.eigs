@@ -139,8 +139,8 @@ define argmin(items) as:
 # ---- log2: base-2 logarithm ----
 # log2 of value -> number, or element-wise over a list/tensor
 # Exact powers of two return their integer exponent exactly.
-# Domain follows the log builtin: x <= 0 raises in strict mode (the default, #1361)
-# and takes the ln(1e-10) stand-in under EIGS_STRICT=0 (#865/#1041).
+# Domain follows the log builtin: zero gives -inf and negative input gives
+# NaN by default; EIGS_STRICT=1 traps those results (R2.2 / N11).
 # Correct scalar results recursively so lists retain log's element-wise contract,
 # and correct buffers in place so they retain log's buffer shape and type.
 define _math_log_base_exact(x, base, divisor) as:
@@ -157,6 +157,10 @@ define _math_log_base_exact(x, base, divisor) as:
                 result[i] is exponent
         return result
     local raw is (log of x) / divisor
+    # R2.2: domain results are already final IEEE values. The exact-power
+    # correction uses finite-only round/pow readers and must not consume them.
+    if raw != raw or x == 0:
+        return raw
     local exponent is round of raw
     if (pow of [base, exponent]) == x:
         return exponent
@@ -168,7 +172,7 @@ define log2(x) as:
 # ---- log10: base-10 logarithm ----
 # log10 of value -> number, or element-wise over a list/tensor
 # Exact powers of ten return their integer exponent exactly.
-# Domain follows the log builtin: x <= 0 raises in strict mode (the default, #1361)
-# and takes the ln(1e-10) stand-in under EIGS_STRICT=0 (#865/#1041).
+# Domain follows the log builtin: zero gives -inf and negative input gives
+# NaN by default; EIGS_STRICT=1 traps those results (R2.2 / N11).
 define log10(x) as:
     return _math_log_base_exact of [x, 10, 2.302585092994046]

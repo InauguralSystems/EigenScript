@@ -14,7 +14,7 @@ here are enforced by the suite (`run_all_tests.sh` EM1–EM30 and
 | Compile error | `Compile error line N: ...` | 1 | Bytecode-generation problem — a construct that parses but cannot be compiled. Accumulates, aborts before execution (see below). |
 | Runtime error (uncaught) | `Error file:N: ...` + stack trace | 1 | Type mismatch, undefined variable, index out of bounds, non-callable, uncaught `throw`. Prints to stderr and **halts** — no statement after the error runs. |
 | Runtime error (caught) | `{kind, message, file, line}` dict bound to the `catch` variable | — | Recoverable with `try`/`catch`; execution continues in the handler. `kind` is from the closed set below. |
-| Warning | `Warning line N: ...` | 0 | Recoverable issue (division by zero yields `0`). Prints to stderr, continues execution. |
+| Warning | `Warning line N: ...` | 0 | Recoverable diagnostic. Prints to stderr and continues execution; IEEE float results are values, not warnings. |
 | Assertion | `Error file:N: ASSERT FAIL: ...` | 1 | `assert` failure — an ordinary runtime error with kind `assert` (catchable). |
 
 Parse errors prevent execution entirely — the program never runs if
@@ -252,15 +252,14 @@ $ echo $?
 0
 ```
 
-### Warning — returns a fallback value and continues
+### IEEE float result — continues without a warning
 ```
 $ cat div_zero.eigs
 result is 10 / 0
 print of result
 
 $ eigenscript div_zero.eigs
-Warning line 1: division by zero
-0
+inf
 $ echo $?
 0
 ```
@@ -278,11 +277,11 @@ $ echo $?
 | `cannot negate T` | Unary minus on non-number | `-"hello"` |
 | `cannot index T` | Indexing a non-list/non-string | `42[0]` |
 | `import: module 'M' not found (tried lib/M.eigs and M.eigs)` | Missing stdlib/user module | `import nope` |
-| `division by zero` | Dividing or modulo by zero | `10 / 0` (warning, returns 0) |
+| `division by zero` | Integer floor division by zero | `10 // 0` (catchable `value` error) |
 
-Numeric overflow and invalid math domains are not diagnostics. They are
-handled by the finite-number invariant: `NaN` -> `0`, overflow/Inf ->
-`+/-1e308`, and selected functions clamp their domains.
+Float overflow and invalid math domains produce IEEE infinity or NaN by
+default. `EIGS_STRICT=1` makes non-finite arithmetic results catchable `value`
+errors. Integer overflow and integer `// 0`/`% 0` still raise in every mode.
 
 ## Builtin Errors
 

@@ -26,7 +26,7 @@ assert_eq of [binder_comprehension of [], [1, 2, 3], "binder: comprehension"]
 define binder_catch() as:
     error_name is 5
     try:
-        value is 1 / 0
+        value is 1 // 0
     catch error_name:
         return error_name.kind
     return "missed"
@@ -64,7 +64,7 @@ assert_eq of [write_comp, 1, "function-local write: comprehension module"]
 write_catch is 1
 define write_catch_fn() as:
     try:
-        ignored is 1 / 0
+        ignored is 1 // 0
     catch write_catch:
         ignored is write_catch.kind
     write_catch is 2
@@ -173,7 +173,7 @@ module_defined_status is module_defined_rebind of []
 assert_eq of [module_defined_name, 42, "module function binder is a module name"]
 
 try:
-    module_error_value is 1 / 0
+    module_error_value is 1 // 0
 catch module_error_name:
     module_error_kind is module_error_name.kind
 define module_error_rebind() as:

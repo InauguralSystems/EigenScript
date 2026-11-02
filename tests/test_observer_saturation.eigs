@@ -1,15 +1,7 @@
-# #861 — the observer refuses to certify rest at the saturation ceiling.
-#
-# num_guard clamps everything escaping the finite number line to +/-1e308, so a
-# geometric runaway becomes a fixed point: the dH window fills with zeros and
-# H(1e308) falls under h_low. Every clause of `converged` is then legitimately
-# satisfied — while the evidence of divergence was destroyed before the
-# observer sampled it. Both channels used to answer with the STRONGEST rest
-# band on the canonical instability; #422 had recorded that case as caught.
-#
-# The contract pinned here: a binding sitting at +/-1e308 is `diverging` in
-# both channels and in NO rest band, and everything below the ceiling is
-# classified exactly as before.
+# #861 / R2.2 N11: overflow is infinity, never a clamped rest state.
+# Keep the original runaway, negative runaway, geometric-decay and finite
+# constant scenarios. IEEE non-finite trajectories cannot certify rest;
+# a finite 1e308 constant now converges just like the 1e307 control.
 
 pass is 1
 
@@ -18,8 +10,7 @@ define fail(msg) as:
     print of ("FAIL: " + msg)
     return 0
 
-# The issue's repro: z = z*z from 2.0 reaches the ceiling in ~6 steps and is
-# pinned for the remaining 14.
+# The issue's repro: z = z*z from 2.0 overflows, then stays infinite.
 define run_runaway() as:
     local z is 2.0
     local k is 0
@@ -29,7 +20,7 @@ define run_runaway() as:
     return [report of z, report_value of z, converged of z, diverging of z,
             stable of z, equilibrium of z, improving of z, z]
 
-# Same runaway with the sign flipped every step — pins at -1e308.
+# Same runaway with the sign flipped every step — reaches negative infinity.
 define run_negative() as:
     local z is 0 - 2.0
     local k is 0
@@ -47,9 +38,7 @@ define run_converge() as:
         k is k + 1                     # it was still `improving` at x = 9e-8
     return [report of x, converged of x]
 
-# One decade below the ceiling, held constant: unsaturated, so the SATURATION
-# gate must not fire. This pins the gate tight to the boundary rather than to
-# "large" — and nothing more than that. See the note at case 4.
+# The 1e307 constant is a finite non-divergence control.
 define run_below_ceiling() as:
     local b is 1e307
     local k is 0
@@ -58,9 +47,7 @@ define run_below_ceiling() as:
         k is k + 1
     return [report of b, converged of b, diverging of b]
 
-# A literal at the ceiling that never overflowed. The runtime cannot tell this
-# apart from a saturated value (that indistinguishability is #865), so it reads
-# `diverging` too — deliberately the loud direction.
+# R2.2: 1e308 is an ordinary finite constant, with no ceiling special case.
 define run_literal_ceiling() as:
     local c is 1e308
     local k is 0
@@ -72,32 +59,32 @@ define run_literal_ceiling() as:
 # --- Case 1: the runaway is diverging in both channels, and in no rest band.
 r is run_runaway of null
 print of ("runaway: report=" + r[0] + " report_value=" + r[1] + " value=" + (str of r[7]))
-if not (r[7] == 1e308):
-    fail of "runaway did not reach the saturation ceiling — repro no longer valid"
+if not (r[7] == (1.0 / 0)):
+    fail of "runaway did not reach infinity — repro no longer valid"
 if not (r[0] == "diverging"):
     fail of ("entropy channel: expected 'diverging', got " + r[0])
 if not (r[1] == "diverging"):
     fail of ("value channel: expected 'diverging', got " + r[1])
 if not (r[2] == false):
-    fail of "converged certified a saturated value"
+    fail of "converged certified an infinite value"
 if not (r[3] == true):
-    fail of "diverging did not claim a saturated value"
+    fail of "diverging did not claim an infinite value"
 if not (r[4] == false):
-    fail of "stable certified a saturated value"
+    fail of "stable certified an infinite value"
 if not (r[5] == false):
-    fail of "equilibrium certified a saturated value"
+    fail of "equilibrium certified an infinite value"
 if not (r[6] == false):
-    fail of "improving claimed a saturated value"
+    fail of "improving claimed an infinite value"
 
-# --- Case 2: the negative ceiling behaves identically.
+# --- Case 2: the negative infinity behaves identically.
 n is run_negative of null
 print of ("negative: report=" + n[0] + " value=" + (str of n[2]))
-if not (n[2] == (0 - 1e308)):
-    fail of "negative runaway did not reach -1e308"
+if not (n[2] == (-1.0 / 0)):
+    fail of "negative runaway did not reach negative infinity"
 if not (n[0] == "diverging"):
-    fail of ("negative ceiling: expected 'diverging', got " + n[0])
+    fail of ("negative infinity: expected 'diverging', got " + n[0])
 if not (n[1] == true):
-    fail of "diverging did not claim the negative ceiling"
+    fail of "diverging did not claim the negative infinity"
 
 # --- Case 3: genuine convergence is untouched (the non-regression half).
 c is run_converge of null
@@ -107,34 +94,21 @@ if not (c[0] == "converged"):
 if not (c[1] == true):
     fail of "converged predicate lost a genuine convergence"
 
-# --- Case 4: the gate is tight to the ceiling and does not fire below it.
-#
-# This case asserts ONE thing: the saturation gate did not claim 1e307. It
-# deliberately does NOT assert that `converged` is the right verdict there.
-#
-# An earlier version of this file did assert exactly that ("1e307 constant
-# should still converge"), which reads as an endorsement of the whole region
-# below the ceiling. It is not defensible. `h_low = 0.1` against
-# H(x) = H_b(1/(1+|x|)) puts every |x| > ~76 under the entropy floor, so
-# `converged` fires across [77, 1e307] — a geometric runaway certifies at
-# x ~= 2.9e5 — and the entropy channel cannot distinguish this constant from
-# a runaway that flattened here. #861 fixed that region by routing numeric
-# trajectories through the value classifier; the saturation gate still closes
-# the distinct point at the top. This case pins only that gate, not the
-# constant's verdict. See tests/test_convergence_oracle.eigs for the scored
-# measurement.
+# --- Case 4: the 1e307 constant is not diverging.
+# Preserve the original single assertion for this control; case 5 pins the
+# newly reachable convergence verdict at the former clamp boundary.
 b is run_below_ceiling of null
 print of ("below-ceiling: report=" + b[0] + " (verdict not asserted — #861)")
 if not (b[2] == false):
-    fail of "the saturation gate fired below the ceiling — it must be tight to 1e308"
+    fail of "a finite 1e307 constant was classified as diverging"
 
-# --- Case 5: a literal at the ceiling reads diverging, by design.
+# --- Case 5: the finite 1e308 constant converges under R2.2.
 l is run_literal_ceiling of null
 print of ("literal-ceiling: report=" + l[0])
-if not (l[0] == "diverging"):
-    fail of ("literal at the ceiling: expected 'diverging', got " + l[0])
-if not (l[1] == false):
-    fail of "converged certified a literal at the ceiling"
+if not (l[0] == "converged"):
+    fail of ("finite 1e308 constant: expected 'converged', got " + l[0])
+if not (l[1] == true):
+    fail of "converged did not certify the finite 1e308 constant"
 
 if pass == 1:
     print of "OBSERVER_SATURATION_ALL_PASS"

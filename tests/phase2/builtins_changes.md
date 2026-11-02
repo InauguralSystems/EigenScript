@@ -239,7 +239,7 @@ Historical import records above are already included in the pin.
 | `tests/phase2/builtins/builtins/sign_extend.branch` | `bfc48781e0e0ab7eb480899c9975ccdbb810c36cbd2b297fd62231b41ee03bdf` | R1.6b-D1 | the subtraction is checked int64 arithmetic under rule (A): `sign_extend of [-9223372036854775553, 8]` raises `value` (#1894) |
 | `tests/phase2/builtins/builtins/set_exit_code.branch` | `6e6f540c7b879ca35185d74c3840327c3f14ef37c5eb74c5d60531aef340620b` | R1.6-S2 | new int-requiring round-c builtin; main already rejects fractions and values outside 0..255; matched main and merged output agree |
 
-| `tests/phase2/builtins/builtins/fround.branch` | `0eef9c22f27663cb7b9cffcc4704039adacba202777e3b4eb254c5462d851118` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
+| `tests/phase2/builtins/builtins/fround.branch` | `20db5e6318722fdac7343675baf2bed0dc8afb4131f995a195c396a3c46bdcc9` | R2.2-N11 | Explicit fround result guard retirement (design §6 until R2.2, §8.2); only ±1e308 results become ±inf. Kinds, source, flags and rc unchanged. |
 | `tests/phase2/builtins/builtins/i16_checked_add.branch` | `0d1db8055bba756521c06186282a8e52dea9a69497170c24307c4963f642c52d` | R1.6g-D1 | new N9 builtin; Rust std plus the brief operand/shape rules |
 | `tests/phase2/builtins/builtins/i16_checked_mul.branch` | `e3364392ccc01620ab16d1f686af6e6b32c23fff34c307e87953f9e3ed9752c1` | R1.6g-D1 | new N9 builtin; Rust std plus the brief operand/shape rules |
 | `tests/phase2/builtins/builtins/i16_checked_sub.branch` | `83430b1d05a7910f3cb358019d96be745ae4ecff96738583cb1098c11c21fb2c` | R1.6g-D1 | new N9 builtin; Rust std plus the brief operand/shape rules |
@@ -784,3 +784,29 @@ The two earlier S10-D2 entries retain their original ruling, anchor and hashes.
 No additional missing path, alternate anchor or changed prior hash is accepted.
 Historical import and amendment tables earlier in this log remain provenance,
 not declarations of current model capabilities.
+
+## R2.2-N11: fround result guard retirement
+
+The binding R2.2 brief names the per-builtin table's `fround` rule: "current
+result guard until R2.2". The numeric model now retains IEEE results.
+Only frozen fround output lines 2 and 3 change, from ±1e308 to ±inf. Both
+retain kind float; the other results, wrong-type diagnostic, overflow flag and
+rc remain byte-identical. The unchanged source was executed once with the
+release candidate (rc 0); hosted all-profile runs remain the verdict.
+
+The existing explicit semantic-amendment overlay in the N6 proof checker
+handles these two approved values before checking historical finite N6 text.
+It pins the accepted R2.1 transcript, original pre-N6 transcript, unchanged
+source and exact current transcript; it removes no file or case from the
+population. Non-finite kind text is fixed as `[inf, "float"]` / `[-inf, "float"]`.
+The finite kind witnesses and all prior D2/D6 proof rules remain in force.
+
+## R2.2 / N11 — temporary float floor-division zero expectation ends
+
+`N4.float-floordiv-zero-raises` retains its id, program, all four inputs,
+result kind and rc=0. Its four transcript lines become `inf`, `nan`, `inf`,
+`-inf`. MAP's R1.4 contract explicitly said the error rule lasted “until N11”
+(#1758 comment 6294926822). R2.2 removes that temporary float clamp/error
+boundary; exact integer `// 0` still raises. This is a MAP expectation
+amendment under the recorded round boundary, not a new frozen builtin case.
+Hosted MAP tier runs provide the tip verdict.

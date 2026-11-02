@@ -14,16 +14,16 @@ run() {
 }
 run "NG20-NG21 initial/ordinary flags clean" 'x is (2.5 * 4.0) + (1.0 / 8.0)
 assert of [not ((math_flags of null).overflow or (math_flags of null).invalid), "ordinary clean"]'
-run "NG22 saturation and NG25 stickiness" 'x is 1e200 * 1e200
-assert of [(math_flags of null).overflow, "saturation sets overflow"]
+run "NG22 infinity and NG25 stickiness" 'x is 1e200 * 1e200
+assert of [(math_flags of null).overflow, "infinity sets overflow"]
 y is 1 + 2
 assert of [(math_flags of null).overflow, "overflow sticky"]'
 run "NG23 reassociation overflow" 'x is (1e200 * 1e200) / 1e200
 assert of [(math_flags of null).overflow, "reassociation sets overflow"]'
 run "NG24 other association clean" 'x is 1e200 * (1e200 / 1e200)
 assert of [not (math_flags of null).overflow, "other order clean"]'
-run "NG26 capped literal stays valid" 'x is 0.0 * 1e400
-assert of [x == 0 and not (math_flags of null).invalid, "capped literal is valid"]'
+run "NG26 infinite literal times zero is invalid" 'x is 0.0 * 1e400
+assert of [x != x and (math_flags of null).invalid, "zero times infinity sets invalid"]'
 # N10: grammar refusal is unconditional and does not touch arithmetic flags.
 for invalid in nan inf abc; do
 run "NG30 N10 num $invalid refused" "caught is false
@@ -41,7 +41,7 @@ assert of [a == (0 - 34.538776394910684), "tiny log exact"]
 assert of [b == (0 - 23.025850929940457), "boundary log exact"]
 assert of [not (math_flags of null).invalid, "positive logs clean"]
 c is log of 0
-assert of [(math_flags of null).invalid, "log zero invalid"]'
+assert of [c < 0 and (math_flags of null).overflow and not (math_flags of null).invalid, "log zero returns negative infinity and sets overflow"]'
 run "NG28 sqrt control/negative" 'a is sqrt of 4
 assert of [not (math_flags of null).invalid, "sqrt control clean"]
 b is sqrt of -1
@@ -98,12 +98,13 @@ for spec in \
  'NG58 PCM encode|x is buf_to_pcm16le of [raw, 0, 1]'; do
  name=${spec%%|*}; op=${spec#*|}; op=$(printf '%s' "$op" | sed 's/; */\n    /g; s/^/    /')
  run "$name N13 refusal" "$nan_setup
+before is math_flags of null
 caught is false
 try:
 $op
 catch e:
     caught is e.kind == \"value\"
-assert of [caught and not (math_flags of null).invalid, \"N13 refuses without normalizing NaN\"]"
+assert of [caught and ((math_flags of null) == before), \"N13 refusal leaves arithmetic flags unchanged\"]"
 done
 
 # N13 / R1.6c: get_at's final reader refuses NaN in both strict modes.
@@ -133,7 +134,8 @@ right is buffer of [2, 1]
 right[0] is 1e200
 right[1] is 0 - 1e200
 raw is matmul of [left, right]
-assert of [not (math_flags of null).invalid, "NaN setup leaves invalid clear"]
+assert of [(math_flags of null).invalid, "NaN arithmetic setup sets invalid"]
+before is math_flags of null
 caught is false
 length_error is false
 try:
@@ -141,10 +143,17 @@ try:
 catch e:
     caught is e.kind == "value"
     length_error is (index_of of [e.message, "needs 8 bytes"]) >= 0
-assert of [caught and not length_error and not (math_flags of null).invalid, "N13 refuses without normalizing NaN, not length"]'
-run "NG61 mixed materialization invalid" "$nan_setup
-x is add of [raw, [2]]
-assert of [x == [[2]] and (math_flags of null).invalid, \"mixed materialization observes invalid\"]"
+assert of [caught and not length_error and ((math_flags of null) == before), "N13 refuses without normalizing NaN, not length"]'
+# R2.2 transport retains NaN; the existing N13 math-argument reader refuses
+# it rather than receiving the old constructor's zero substitution.
+run "NG61 mixed materialization refusal" "$nan_setup
+before is math_flags of null
+caught is false
+try:
+    add of [raw, [2]]
+catch e:
+    caught is e.kind == \"value\"
+assert of [caught and ((math_flags of null) == before), \"mixed materialization keeps N13 refusal without changing flags\"]"
 inf_setup='a is buffer of [1, 2]
 a[0] is 1e200
 a[1] is 1e200
@@ -169,12 +178,13 @@ for spec in \
  'NG59 PCM encoder|x is buf_to_pcm16le of [raw, 0, 2]'; do
  name=${spec%%|*}; op=${spec#*|}; op=$(printf '%s' "$op" | sed 's/; */\n    /g; s/^/    /')
  run "$name N13 refusal" "$inf_setup
+before is math_flags of null
 caught is false
 try:
 $op
 catch e:
     caught is e.kind == \"value\"
-assert of [caught and not ((math_flags of null).invalid or (math_flags of null).overflow), \"N13 infinity refusal\"]"
+assert of [caught and ((math_flags of null) == before), \"N13 infinity refusal\"]"
 done
 echo "NUMERIC_FLAGS: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

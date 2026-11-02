@@ -201,3 +201,14 @@ accepted-bank anchor `5b3b64db40cdd50c42c8ad3e9c913bb5d36a9e1a`, per-path hashes
 and the matching `DELETED` amendments. Earlier S10-D2 entries and all surviving
 kind/float provenance stay unchanged. The remaining profile
 witness checks HTTP and NET; their capability guards remain required.
+
+## R2.2-N11 — fround IEEE overflow result
+
+Authority: binding R2.2 brief and design §6 fround ("current result guard until
+R2.2"), with §8 R2.2 clamp retirement. The frozen fround program stays unchanged.
+Its +1e39/-1e39 float32 conversions now give +inf/-inf, each a float; all other
+rows, wrong-type error, overflow status and exit 0 are unchanged. This is an
+explicit numeric-round amendment, not a float-text waiver. See the exact
+SHA-256 row in builtins_changes.md and r17_float_text.json's narrow semantic
+overlay. R22-1 governs ordering separately; it is not the authority for this
+fround amendment.

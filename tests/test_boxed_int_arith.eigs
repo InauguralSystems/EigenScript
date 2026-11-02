@@ -160,7 +160,7 @@ define ov_divmod(n) as:
     local k is 0
     loop while k < n:
         try:
-            local q is (P47 + k) / 0
+            local q is (P47 + k) // 0
         catch err:
             caught is caught + 1
         try:

@@ -319,7 +319,7 @@ gates (design §9.2).
   -> `[-4, -4, [-4, -4], "int", "float"]`
   tag: parse error
 - `N4.float-floordiv-zero-raises` [R1.4] float/mixed `// 0`, including `0.0 // 0.0` and negative zero
-  -> `["value", "division by zero"]` four times (same as `/`, until N11; #1758 comment 6294926822)
+  -> `inf`, `nan`, `inf`, `-inf` (R2.2 / N11: the original temporary error rule explicitly lasted only until N11; #1758 comment 6294926822; row id and four inputs retained)
   tag: parse error
 
 - `N4.float-floordiv-rounding` [R1.4] Python float-divmod quotient at decimal boundaries: `1.0 // 0.1`, mixed `1 // 0.1`, negative pairs, `7.5 // 0.1`, opposite signs, `3.0 // -0.1` quotient snapping and result kind

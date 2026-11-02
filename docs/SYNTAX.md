@@ -34,8 +34,8 @@ outer
 
 ### Numeric Semantics
 
-Numbers are finite by construction. EigenScript does not expose `NaN` or
-`Inf` values to user code:
+Numbers have exact signed int64 and IEEE-754 float64 kinds. Float overflow
+produces infinity, without a `1e308` clamp:
 
 ```eigenscript
 small_divisor is 1 / 1e-320
@@ -44,19 +44,21 @@ print of small_divisor
 print of large_exp
 ```
 ```output
-1e+308
-1e+308
+inf
+inf
 ```
 
-In strict mode, the default, an out-of-domain call or a `NaN` result raises:
-`sqrt of -1`, `asin of 5` and `num of "nan"` are catchable `value` errors
-(docs/SPEC.md, *Strict mode*). Under `EIGS_STRICT=0` they give the finite
-stand-ins `0`, `1.5708` and `0` instead.
+Float division by zero produces signed infinity for a nonzero numerator,
+and NaN for a zero numerator. Float or mixed `% 0` produces NaN; float or
+mixed `// 0` follows `floor(x / 0)`. Integer `// 0` and `% 0` still raise
+`value` (`division by zero` or `modulo by zero`).
 
-Division or modulo by zero raises (`division by zero`, `modulo by zero`) in every mode. Results
-that would overflow to infinity saturate at `+/-1e308`; under `EIGS_STRICT=0`,
-`NaN` collapses to `0` and domain-limited functions clamp inputs where
-appropriate.
+`sqrt of -1` and `asin`/`acos` outside `[-1, 1]` produce NaN; `log of 0`
+produces `-inf`. NaN is unequal to itself, including through container
+structure. `EIGS_STRICT=1` opts into catchable errors for non-finite
+arithmetic and invalid argument types; by default IEEE arithmetic results
+remain values. `num of "nan"` and `num of "inf"` still raise `value` in
+every mode because they are not numeric-literal text.
 
 ### Compound Assignment
 
@@ -757,6 +759,7 @@ a literal list whole. (`f of x` for a bare value is fine.)
 a multibyte character has length > 1. Use `lib/utf8.eigs` for codepoint
 semantics. See [SPEC.md → Text and Unicode](SPEC.md).
 
-**Numbers are finite.** No `NaN`/`Inf` reach your code — they collapse to `0` /
-saturate at `±1e308` (see *Numeric Semantics* above). Integer exactness ends at
-2^53; integer bitwise ops act on int64.
+**Floats follow IEEE 754.** NaN and infinities are values by default;
+`EIGS_STRICT=1` traps non-finite arithmetic results (see *Numeric Semantics*
+above). Ints are exact throughout int64; float integer exactness ends at
+2^53. Integer bitwise ops act on int64.

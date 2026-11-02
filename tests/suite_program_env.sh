@@ -14,7 +14,7 @@
 # standalone, and the corpus differential's ledger declares it
 # (tests/phase2/corpus_nonzero.txt).
 
-SUITE_PROGRAM_FORMS=" EIGS_STRICT=0 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "
+SUITE_PROGRAM_FORMS=" EIGS_STRICT=0 EIGS_STRICT=1 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "
 
 # suite_program_env NAME: print NAME's row (its conditions, possibly empty).
 suite_program_env() {

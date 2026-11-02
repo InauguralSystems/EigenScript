@@ -1,7 +1,8 @@
-# Regression: EigenScript numeric values must stay finite.
-# NaN collapses to 0; overflow and infinity saturate to +/-1e308.
+# R2.2 / N11: arithmetic preserves IEEE NaN and infinity.
+# Numeric data readers keep their separate finite-input refusal contracts.
 
 CAP is 1e308
+POS_INF is 1.0 / 0
 
 # N13 / R1.6d: final data/byte/index readers refuse raw nonfinite cells.
 define ng_final_refuses(operation, argument, label) as:
@@ -17,11 +18,11 @@ define ng_final_refuses(operation, argument, label) as:
 
 # Values themselves are not sticky and belong in this shared program.
 reassoc is (1e300 * 1e300) / 1e300
-assert of [reassoc == 100000000, "NG23 reassociated result is unchanged"]
+assert of [reassoc == POS_INF, "NG23 overflowing association remains infinite"]
 other is 1e300 * (1e300 / 1e300)
 assert of [other == 1e300, "NG24 the other order is exact"]
 capped_operand is 0.0 * 1e400
-assert of [capped_operand == 0, "NG26 an over-range literal is capped before use"]
+assert of [capped_operand != capped_operand, "NG26 zero times an infinite literal is NaN"]
 lt is log of 1e-15
 assert of [lt == (0 - 34.538776394910684), "NG27a log of 1e-15 is exact, not floored"]
 l10 is log of 1e-10
@@ -32,41 +33,41 @@ try:
     zdiv is 10 / 0
 catch e:
     caught_zdiv is 1
-assert of [caught_zdiv == 1, "NG1 10/0 raises"]
+assert of [caught_zdiv == 0 and zdiv == POS_INF, "NG1 10/0 is positive infinity"]
 
 tiny_div is 1 / 1e-320
-assert of [tiny_div == CAP, "NG2 near-zero division caps"]
+assert of [tiny_div == POS_INF, "NG2 near-zero division overflows to infinity"]
 
 root_neg is sqrt of -1
-assert of [root_neg == 0, "NG3 sqrt negative returns 0"]
+assert of [root_neg != root_neg, "NG3 sqrt negative returns NaN"]
 
 pow_inf is pow of [0, -1]
-assert of [pow_inf == CAP, "NG4 pow singular caps"]
+assert of [pow_inf == POS_INF, "NG4 pow singular returns infinity"]
 
 exp_inf is exp of 999999
-assert of [exp_inf == CAP, "NG5 exp overflow caps"]
+assert of [exp_inf == POS_INF, "NG5 exp overflow returns infinity"]
 
 asin_hi is asin of 5
-assert of [(asin_hi > 1.5707) and (asin_hi < 1.5709), "NG6 asin clamps high domain"]
+assert of [asin_hi != asin_hi, "NG6 asin outside its domain returns NaN"]
 
 acos_lo is acos of -2
-assert of [(acos_lo > 3.1415) and (acos_lo < 3.1417), "NG7 acos clamps low domain"]
+assert of [acos_lo != acos_lo, "NG7 acos outside its domain returns NaN"]
 
 mul_inf is 1e308 * 2
-assert of [mul_inf == CAP, "NG8 multiply overflow caps"]
+assert of [mul_inf == POS_INF, "NG8 multiply overflow returns infinity"]
 
 caught_zz is 0
 try:
     zero_zero is 0 / 0
 catch e:
     caught_zz is 1
-assert of [caught_zz == 1, "NG9 0/0 raises"]
+assert of [caught_zz == 0 and zero_zero != zero_zero, "NG9 0/0 is NaN"]
 
 tensor_tiny_div is divide of [1, 1e-320]
-assert of [tensor_tiny_div == CAP, "NG10 tensor near-zero division caps"]
+assert of [tensor_tiny_div == POS_INF, "NG10 tensor near-zero division returns infinity"]
 
 literal_inf is 1e309
-assert of [literal_inf == CAP, "NG11 overflowing literal caps"]
+assert of [literal_inf == POS_INF, "NG11 overflowing literal is infinity"]
 
 # N10: these are invalid grammar in both strict modes, not float sources.
 for invalid_text in ["nan", "inf"]:
@@ -78,26 +79,26 @@ for invalid_text in ["nan", "inf"]:
     assert of [refused, "N10 non-literal numeric text raises"]
 
 neg_mul_inf is -1e308 * 2
-assert of [neg_mul_inf == (0 - CAP), "NG14 negative overflow caps"]
+assert of [neg_mul_inf == (0 - POS_INF), "NG14 negative overflow returns negative infinity"]
 
 reassign_inf is 0
 reassign_inf is 1e309
-assert of [reassign_inf == CAP, "NG15 reassignment literal caps"]
+assert of [reassign_inf == POS_INF, "NG15 reassignment preserves infinite literal"]
 
 reassign_inf is -1e309
-assert of [reassign_inf == (0 - CAP), "NG16 reassignment negative literal caps"]
+assert of [reassign_inf == (0 - POS_INF), "NG16 reassignment preserves negative infinite literal"]
 
 box is {"x": 0}
 box.x is 1e309
-assert of [box.x == CAP, "NG17 dot reassignment literal caps"]
+assert of [box.x == POS_INF, "NG17 dot reassignment preserves infinite literal"]
 
 box.x is -1e309
-assert of [box.x == (0 - CAP), "NG18 dot reassignment negative literal caps"]
+assert of [box.x == (0 - POS_INF), "NG18 dot reassignment preserves negative infinite literal"]
 
 unobserved_inf is 0
 unobserved:
     unobserved_inf is 1e309
-assert of [unobserved_inf == CAP, "NG19 unobserved reassignment literal caps"]
+assert of [unobserved_inf == POS_INF, "NG19 unobserved reassignment preserves infinite literal"]
 
 
 # #1417: tensor kernels may hold an intermediate IEEE infinity in their
@@ -282,7 +283,9 @@ assert of [(add of [finite_mixed_row, [0, 0]]) == [[3, 0 - 3]], "NG60 shaped mix
 assert of [(add of [finite, [1, 2]]) == [4, 6], "NG60 finite mixed tensor left"]
 assert of [(add of [[1, 2], finite]) == [4, 6], "NG60 finite mixed tensor right"]
 assert of [(add of [empty, []]) == [], "NG60 empty mixed tensor"]
-assert of [(add of [raw_nan_product, [2]]) == [[2]], "NG61 non-strict mixed NaN is zero"]
-assert of [(add of [raw_pair, [0, 0]]) == [[CAP, 0 - CAP]], "NG62 mixed materialization clamps both infinity signs"]
+# Constructors preserve IEEE values; these arithmetic-builtin argument
+# readers retain their separate N13 finite-input boundary in this round.
+ng_final_refuses of [add, [raw_nan_product, [2]], "NG61 mixed materialization keeps N13 NaN refusal"]
+ng_final_refuses of [add, [raw_pair, [0, 0]], "NG62 mixed materialization keeps N13 infinity refusal"]
 
 print of "All numeric-guard tests passed"

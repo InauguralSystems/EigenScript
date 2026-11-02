@@ -127,25 +127,30 @@ loop while k < 80:
         assert_eq of [caught, true, "boxed % type error owns both operands"]
     k is k + 1
 
-# #1758 comment 6294926822: all zero divisors raise in R1.4, including
-# float/mixed // and //=; / and % retain their existing errors until N11.
-for pair in [[1.0, 0], [0.0, 0.0], [7, 0.0], [1.0, -0.0]]:
+# R2.2 / N11: the original float/mixed zero-divisor scenarios produce
+# IEEE results. The int-only error/refcount scenarios above are unchanged.
+positive_inf is 1.0 / 0
+negative_inf is -1.0 / 0
+for pair in [[1.0, 0, positive_inf], [0.0, 0.0, null], [7, 0.0, positive_inf], [1.0, -0.0, negative_inf]]:
     for op in ["//", "/", "%", "//="]:
         caught is false
+        zero_result is null
         try:
             if op == "//":
-                unused is pair[0] // pair[1]
+                zero_result is pair[0] // pair[1]
             elif op == "/":
-                unused is pair[0] / pair[1]
+                zero_result is pair[0] / pair[1]
             elif op == "%":
-                unused is pair[0] % pair[1]
+                zero_result is pair[0] % pair[1]
             else:
                 local zz is pair[0]
                 zz //= pair[1]
+                zero_result is zz
         catch e:
-            caught is e.kind == "value" and e.message == "division by zero"
-            if op == "%":
-                caught is e.kind == "value" and e.message == "modulo by zero"
-        assert_eq of [caught, true, "zero-divisor error compatibility"]
+            caught is true
+        if op == "%" or pair[0] == 0:
+            assert_eq of [not caught and zero_result != zero_result, true, "float zero-divisor returns NaN"]
+        else:
+            assert_eq of [not caught and zero_result == pair[2], true, "float zero-divisor returns signed infinity"]
 
 test_summary of null

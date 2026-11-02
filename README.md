@@ -367,7 +367,7 @@ by `python3 reports/convergence_loops/report1990.py`. See
 > improving, even when it rises toward a plateau. For
 > non-numeric values, `converged` and ordinarily `stable` compare bounded,
 > detached assignment snapshots; the other predicates and `report` read
-> entropy. A bounded snapshot containing a NaN buffer cannot converge;
+> entropy. A bounded snapshot containing a NaN float or buffer cannot converge;
 > `stable` instead uses the entropy-window rule after a full bounded
 > comparison window (S10-D1). Refusal clears that eligibility, preserving
 > `false` / `true` / `false` for the matmul scenario's equality, stability
@@ -446,29 +446,43 @@ and returns a buffer when every tensor operand was one. `zeros of n` returns a
 buffer (`zeros of [rows, cols]` still returns the nested list) — numeric work
 wants the flat container, and that is the name it reaches for.
 
-EigenScript has exact signed int64 values and finite float64 numbers.
+EigenScript has exact signed int64 values and IEEE-754 float64 numbers.
 Decimal integer literals fitting int64 are exact; a point, exponent or
 out-of-range decimal literal gives a float. Hex integer literals wrap
 modulo 2^64. `type of` returns `"num"` for both, and `num_type of` distinguishes `"int"`
 from `"float"` (null for a non-number). Int `+ - *` raise `value` on
 overflow; unary minus and `abs` raise on INT64_MIN. Comparisons between
 ints and floats are exact, including beyond 2^53; mixed arithmetic converts
-ints to floats. Float operations that would overflow
-to infinity saturate at `+/-1e308`. Strict mode is the default: an
-out-of-domain call (`sqrt of -1`), a `NaN` result or a wrong-typed builtin
-argument (`abs of "x"`) raises a catchable error. Run with `EIGS_STRICT=0` to
-get the finite stand-ins instead: `NaN` becomes float `0.0`, `sqrt of -1` is `0.0`, and
-`asin`/`acos` clamp their inputs. Buffer consumers apply the same normalization,
-except `sum`, `get_at`, indexing, iteration, `dot` and `write_bytes`, which refuse non-finite
-buffer elements in every strict mode (N13).
-Structural buffer equality compares stored doubles directly with IEEE equality;
-list/dict self-equality follows that rule through nested and cyclic containers.
-The other scalar reductions normalize each input, as do mixed buffer/list materialization
-and the remaining numeric byte or sample conversions. `write_bytes` instead
-requires exact bytes in 0..255 (N5/Q1). A raised read stops subsequent work.
-`type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
-substitution. `str_from_bytes` stops at numeric NUL, without inspecting later
-elements; byte codecs consume the complete list.
+ints to floats. Float overflow gives infinity, without a `1e308` clamp.
+`/` returns float: a nonzero number divided by zero gives signed infinity;
+`0 / 0` and float `% 0` give NaN. `sqrt of -1` and `asin`/`acos` outside
+`[-1, 1]` give NaN; `log of 0` gives `-inf`. Int `// 0` and `% 0` still
+raise `value`. Set `EIGS_STRICT=1` to opt into catchable errors for
+non-finite arithmetic results and wrong-typed builtin arguments; it is off
+by default.
+
+```eigenscript
+not_a_number is 0.0 / 0
+print of [1 / 0, -1.0 / 0, 1e308 * 10]
+print of [not_a_number == not_a_number, num_type of not_a_number]
+print of (log of 0)
+```
+```output
+[inf, -inf, inf]
+[false, "float"]
+-inf
+```
+
+NaN is unequal to everything, including itself and through lists, dicts and
+buffers; comparing it never raises or changes math flags. `sum`, `get_at`,
+indexing, iteration, `dot` and `write_bytes` still refuse non-finite buffer
+elements in every strict mode (N13). The other scalar reductions, mixed
+buffer/list materialization and numeric byte or sample conversions retain
+their declared data boundaries. `write_bytes` requires exact bytes in 0..255
+(N5/Q1). A raised read stops subsequent work. In strict mode, byte consumers
+raise `type_mismatch` for a nonnumeric element; `EIGS_STRICT=0` retains
+numeric-zero substitution. `str_from_bytes` stops at numeric NUL, without
+inspecting later elements; byte codecs consume the complete list.
 
 Fixed- or optional-shape builtin argument lists reject surplus outer elements in strict mode with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
 
@@ -478,8 +492,9 @@ raises `value` if its existing subtraction underflows (R1.6b-D1).
 
 Counts and indices are ints. `floor`, `ceil` and half-away-from-zero `round`
 return an int when the result fits int64. `min`/`max` return the winning
-argument with its kind; the first argument wins a tie. `num` requires a
-complete numeric-literal string (N10). JSON integer text fitting int64
+argument with its kind; the first ordering-equivalent argument wins a tie
+(R22-1). Any NaN argument
+propagates as NaN. `num` requires a complete numeric-literal string (N10). JSON integer text fitting int64
 decodes exactly (N14).
 
 The [C embedding API](docs/EMBEDDING.md#value-handles) follows Lua’s numeric
@@ -596,7 +611,12 @@ int64 before sending them as text (N14, B6). The executed loopback example
 is `tests/phase2/builtins/builtins/http_post.eigs`.
 
 Builtin `sort` sorts a list in place; `sort_by` returns a new list using numeric keys.
-Both are stable on every platform: equal elements or keys keep their input order.
+Both are stable on every platform: ordering-equivalent elements or keys keep
+their input order. Float values and float keys use IEEE 754 `totalOrder`:
+`-0.0` precedes the equivalent class `{0, 0.0}`, and the canonical NaN comes
+after `inf` (R22-1). Nonzero mixed int/float comparisons remain exact.
+Equality still treats every signed or integer zero as equal. `min` and `max`
+propagate a NaN in any argument position and use the same order for zeros.
 
 ## Standard Library
 

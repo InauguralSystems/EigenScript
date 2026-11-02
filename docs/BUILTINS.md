@@ -20,9 +20,9 @@ gfx, audio) require a full build or the `gfx` target.
 > dumps the full surface — every builtin, extension (by group), and lib
 > function with its parameter list — in one call.
 
-> **Strict mode is the default (#1361).** In rows that explicitly describe a
-> strict-mode stand-in, wrong-typed or out-of-domain arguments raise unless the
-> run sets `EIGS_STRICT=0`; those rows state the non-strict stand-in (`0`, `""`,
+> **Strict mode is opt-in (`EIGS_STRICT=1`).** It traps non-finite arithmetic
+> results and enables strict argument guards. By default arithmetic preserves
+> IEEE values; rows with argument-type stand-ins state those results (`0`, `""`,
 > `[]`, `-1`, or another value) explicitly.
 > Documented answers for valid-but-absent input (`index_of` miss `-1`,
 > `file_exists` of a missing path `0`) are the same in both modes
@@ -80,10 +80,12 @@ examples are `tests/phase2/rows/N6.float-repr.eigs` and
 | `eval` | `eval of code_string` | Execute EigenScript code, return result |
 | `throw` | `throw of message` | Raise catchable error |
 
-Numeric values are finite by construction. `NaN` collapses to `0`, and
-overflow or infinity saturates at `+/-1e308`. This applies to float-producing numeric
-literals, scalar arithmetic, tensor arithmetic, and the
-numeric fast paths used by reassignment and `unobserved` blocks.
+Float arithmetic preserves IEEE NaN and infinity by default, without a
+`1e308` clamp. `/` returns float: nonzero divided by zero gives signed
+infinity; `0 / 0` and float `% 0` give NaN. Int `// 0` and `% 0` still
+raise `value`. Reassignment and `unobserved` use the same arithmetic.
+`EIGS_STRICT=1` traps non-finite arithmetic results. Non-finite buffer data
+readers and exact integer/byte conversion rules retain their own refusals.
 
 Counts, byte codes and indices (`len`, `ord`, `index_of`, `list_index_of`),
 `range` elements, channel/thread handle id and generation fields, `spawn`'s
@@ -188,8 +190,8 @@ and remainder by zero raise `value` with `division by zero`.
 
 `u64_to_string` and `fround` are unary and accept the usual one-element list
 form. `fround` converts an int to double first, then through float32 and back
-to double. Until R2.2, float32 overflow follows the current float-result guard
-(clamp at ±1e308 and set `math_flags.overflow`). Rust std is the numeric oracle.
+to double. Float32 overflow produces signed infinity and sets
+`math_flags.overflow`; `EIGS_STRICT=1` traps it. Rust std is the numeric oracle.
 
 | Function | Usage | Description |
 |---|---|---|
@@ -288,7 +290,7 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 | `buf_scale_range` | `buf_scale_range of [b, off, count, gain]` | Offsets/counts follow N5; fractions raise `value`. In-place multiply over a window: `b[off+i] *= gain` (fades, normalize). Bad windows raise |
 | `buf_fill` | `buf_fill of [b, off, count, value]` | Offsets/counts follow N5; fractions raise `value`. Bulk store over a window: `b[off+i] = value`. Bad windows raise |
 | `buf_peak` | `buf_peak of [b, off, count]` | Offsets/counts follow N5; fractions raise `value`. Max absolute value over a window (normalize/meter scans); 0 for an empty window. Bad windows raise |
-| `buf_dot` | `buf_dot of [a, b, a_off, b_off, count]` | Offsets/counts follow N5; fractions raise `value`. Windowed dot product: sum of `a[a_off+i] * b[b_off+i]` (YIN autocorrelation). Like `dot`, summation order/association is **unspecified** (backends may reassociate); no-NaN/Inf preserved. Bad windows raise |
+| `buf_dot` | `buf_dot of [a, b, a_off, b_off, count]` | Offsets/counts follow N5; fractions raise `value`. Windowed dot product: sum of `a[a_off+i] * b[b_off+i]` (YIN autocorrelation). Like `dot`, summation order/association is **unspecified** (backends may reassociate); non-finite input cells raise `value` in both strict modes (N13). Bad windows raise |
 | `buf_from_pcm16le` | `buf_from_pcm16le of [bytes, byte_off, count]` | Input bytes follow N5, then 0..255. Offsets/counts follow N5. Decode `count` little-endian signed 16-bit PCM samples starting at `byte_off` into a NEW float buffer: `v = b0 + 256*b1`, two's-complement fold at 32768, `v / 32767` — bit-identical to the interpreted per-sample loop it replaces (#602, the WAV-import kernel). Bad windows raise |
 | `buf_to_pcm16le` | `buf_to_pcm16le of [floats, off, count]` | Offsets/counts follow N5. Encode `count` samples into a NEW byte buffer (2 bytes/sample, LE): clamp to [-1, 1], `round(x*32767)`, two's complement via +65536 — bit-identical to the interpreted write loop (#602). Bad windows raise |
 | `buf_deinterleave` | `buf_deinterleave of [src, channel, nch, count?]` | Channel/count arguments follow N5. Every `nch`-th sample starting at index `channel` into a NEW buffer (interleaved channel split). `count` defaults to the full available tail; bad `channel`/`nch` raise `value`, count overrun raises `index_range` (#602) |
@@ -335,7 +337,7 @@ For serialization: reconstruct strings/floats from raw bytes (the inverse of an
 |------|-----------|-------------|
 | `str_from_bytes` | `str_from_bytes of <list\|buffer>` | Input bytes follow N5, then 0..255; fractions/out-of-range bytes raise `value`. Build a string from raw byte values (0–255) — the list form of `chr` (`chr of n` == `str_from_bytes of [n]` for 1–255), inverting an `ord`-over-bytes loop. Nonnumeric list elements raise `type_mismatch` by default and convert to numeric zero under `EIGS_STRICT=0`. Strings are NUL-terminated: a numeric byte that converts to `0` ends conversion, and later elements are not inspected — keep NUL-bearing binary in a buffer. |
 | `f64_to_bytes` | `f64_to_bytes of x` | An integer input first converts to nearest f64 (Q2). List of 8 ints: the big-endian IEEE-754 encoding of double `x` (network byte order, portable across host endianness). A non-number raises by default; under `EIGS_STRICT=0` it encodes as `0.0` (#971). |
-| `f64_from_bytes` | `f64_from_bytes of <list\|buffer>` | Input bytes follow N5, then 0..255; fractions/out-of-range bytes raise `value`. Decode a double from the first 8 big-endian IEEE-754 bytes; the input must contain at least 8 bytes. Inverse of `f64_to_bytes`. A `NaN` bit pattern raises a `value` error by default; under `EIGS_STRICT=0` it collapses to `0` and sets `math_flags.invalid` (#971). |
+| `f64_from_bytes` | `f64_from_bytes of <list\|buffer>` | Input bytes follow N5, then 0..255; fractions/out-of-range bytes raise `value`. Decode a double from the first 8 big-endian IEEE-754 bytes; the input must contain at least 8 bytes. Inverse of `f64_to_bytes`. A `NaN` bit pattern produces canonical NaN and sets `math_flags.invalid`; `EIGS_STRICT=1` raises a `value` error (#971, R2.2). |
 
 Buffers also support direct indexing (`buf[i]`, `buf[i] is val`) and
 compound assignment (`buf[i] += val`).
@@ -558,16 +560,16 @@ automatically at exit.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `abs` | `abs of x` | Absolute value, preserving int or float kind. `abs` of INT64_MIN raises `value` because its positive magnitude does not fit in int64 (#1758 N4b). |
-| `min` | `min of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. First argument wins ties. A non-number element raises an error naming its index and type. Empty input raises `value`, naming the builtin, in both call forms and both strict modes (R1.6b-D2). |
-| `max` | `max of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. First argument wins ties. A non-number element raises an error naming its index and type. Empty input raises `value`, naming the builtin, in both call forms and both strict modes (R1.6b-D2). |
+| `min` | `min of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. NaN propagates in any position. For zero ties, `-0.0` precedes the equivalent class `{0, 0.0}`; the first ordering-equivalent argument wins (R22-1). A non-number element raises an error naming its index and type. Empty input raises `value`, naming the builtin, in both call forms and both strict modes (R1.6b-D2). |
+| `max` | `max of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. NaN propagates in any position. For zero ties, `-0.0` precedes the equivalent class `{0, 0.0}`; the first ordering-equivalent argument wins (R22-1). A non-number element raises an error naming its index and type. Empty input raises `value`, naming the builtin, in both call forms and both strict modes (R1.6b-D2). |
 | `floor` | `floor of x` | Round down; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
 | `ceil` | `ceil of x` | Round up; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
 | `round` | `round of x` | Round half away from zero; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
 | `sin` | `sin of x` | Sine (radians). Numeric inputs convert to float; numeric results are floats. |
 | `cos` | `cos of x` | Cosine (radians). Numeric inputs convert to float; numeric results are floats. |
 | `tan` | `tan of x` | Tangent (radians). Numeric inputs convert to float; numeric results are floats. |
-| `asin` | `asin of x` | Inverse sine; input is clamped to [-1, 1]. Numeric inputs convert to float; numeric results are floats. |
-| `acos` | `acos of x` | Inverse cosine; input is clamped to [-1, 1]. Numeric inputs convert to float; numeric results are floats. |
+| `asin` | `asin of x` | Inverse sine; input outside [-1, 1] gives NaN by default and raises `value` under `EIGS_STRICT=1`. Numeric inputs convert to float; numeric results are floats. |
+| `acos` | `acos of x` | Inverse cosine; input outside [-1, 1] gives NaN by default and raises `value` under `EIGS_STRICT=1`. Numeric inputs convert to float; numeric results are floats. |
 | `atan` | `atan of x` | Inverse tangent. Numeric inputs convert to float; numeric results are floats. |
 | `atan2` | `atan2 of [y, x]` | Two-argument inverse tangent. Numeric inputs convert to float; numeric results are floats. |
 | `pi` | `pi of null` | The constant &pi; (3.14159265...). Numeric inputs convert to float; numeric results are floats. |
@@ -601,8 +603,8 @@ heterogeneous or nested data.
 | `add` | `add of [a, b]` | Element-wise addition; two int scalar or list elements produce an exact int, raising `value` on int64 overflow. Buffer arithmetic stays float. |
 | `subtract` | `subtract of [a, b]` | Element-wise subtraction; two int scalar or list elements produce an exact int, raising `value` on int64 overflow. Buffer arithmetic stays float. |
 | `multiply` | `multiply of [a, b]` | Element-wise multiplication; two int scalar or list elements produce an exact int, raising `value` on int64 overflow. Buffer arithmetic stays float. |
-| `divide` | `divide of [a, b]` | Element-wise division; a zero denominator raises `divide: division by zero` by default (as the `/` operator does), while under `EIGS_STRICT=0` it returns 0; overflow saturates (#971). |
-| `pow` | `pow of [base, exp]` | Element-wise exponentiation; overflow saturates. A negative base with a fractional exponent raises a `value` error naming `pow` by default; under `EIGS_STRICT=0` its `NaN` collapses to `0` and sets `math_flags.invalid` (#971). |
+| `divide` | `divide of [a, b]` | Element-wise IEEE division; a zero denominator gives signed infinity for a nonzero numerator and NaN for zero. `EIGS_STRICT=1` raises `divide: division by zero`; overflow gives infinity by default (#971, R2.2). |
+| `pow` | `pow of [base, exp]` | Element-wise exponentiation; overflow gives infinity. A negative base with a fractional exponent gives NaN and sets `math_flags.invalid`; `EIGS_STRICT=1` raises a `value` error naming `pow` (#971, R2.2). |
 | `negative` | `negative of t` | Element-wise negation; scalar and list ints remain exact ints, raising `value` at INT64_MIN. Float and buffer elements remain floats. |
 
 The arithmetic builtins listed above take shaped **buffers** wherever they take a flat
@@ -628,8 +630,8 @@ in a buffer first converts it to float and can round it.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `sqrt` | `sqrt of t` | Element-wise square root; negative input returns 0 |
-| `exp` | `exp of t` | Element-wise e^x; overflow saturates |
-| `log` | `log of t` | Element-wise natural log. Positive input, however small, is exact (`log of 1e-15` = -34.538…); a non-positive or NaN element sets the `invalid` math flag and stands in for ln(1e-10) = -23.025… (#865, #1041) — never -inf |
+| `exp` | `exp of t` | Element-wise e^x; overflow gives infinity by default and raises `value` under `EIGS_STRICT=1` |
+| `log` | `log of t` | Element-wise natural log. Positive input, however small, is exact (`log of 1e-15` = -34.538…); zero gives `-inf` and sets `overflow`; negative input gives NaN and sets `invalid`. `EIGS_STRICT=1` traps non-finite results (#865, #1041, R2.2) |
 | `softmax` | `softmax of t` | Row-wise softmax normalization (a scalar is the one-element case → `1.0`). A shaped buffer computes row-wise on its shape and returns a buffer of the same shape (a 1-D buffer is one row) — #973 |
 | `log_softmax` | `log_softmax of t` | Row-wise log(softmax) (a scalar → `log(1)` = `0.0`); buffers as for `softmax`. The `[tensor, dim]` form is recognised only as exactly `[list, number]` — it used to fire on every 2-D list and answer for row 0 alone (#973) |
 | `relu` | `relu of t` | Element-wise max(0, x) (accepts a scalar; buffers keep their shape) |
@@ -639,7 +641,7 @@ in a buffer first converts it to float and can round it.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `matmul` | `matmul of [a, b]` | Matrix multiplication. Two shaped buffers multiply on the flat data and give a buffer; a 1-D left operand gives a 1-D result. Mixed list/buffer operands give a list. An accumulation that reaches `inf - inf` is `NaN`; by default that raises a catchable `value` error naming `matmul` (#971). Kernels may retain raw non-finite values in buffer storage. Indexing and iteration, like `get_at`, refuse stored NaN and infinity with `value` in every strict mode (N13). Strict NaN keeps the first-NaN diagnostic and INVALID flag; the interpreter, JIT and leaf fallback agree on the error source line. |
+| `matmul` | `matmul of [a, b]` | Matrix multiplication. Two shaped buffers multiply on the flat data and give a buffer; a 1-D left operand gives a 1-D result. Mixed list/buffer operands give a list. An accumulation that reaches `inf - inf` is `NaN`; that sets `invalid` and remains NaN by default; `EIGS_STRICT=1` raises a catchable `value` error naming `matmul` (#971, R2.2). Kernels may retain raw non-finite values in buffer storage. Indexing and iteration, like `get_at`, refuse stored NaN and infinity with `value` in every strict mode (N13). Strict NaN keeps the first-NaN diagnostic and INVALID flag; the interpreter, JIT and leaf fallback agree on the error source line. |
 | `matmul_at` | `matmul_at of [a, b]` | `aᵀ·b` without materialising the transpose: `a` is `(m × k)`, `b` is `(m × n)`, result `(k × n)` — the weight gradient `dW = Xᵀ·dY` of a linear layer. Buffers and nested lists; byte-identical to `matmul` of the explicitly transposed operand (same tiled kernel order). Two 1-D operands give their `(k × n)` outer product. Shape/type/size errors raise like `matmul` (#973) |
 | `matmul_bt` | `matmul_bt of [a, b]` | `a·bᵀ`: `a` is `(m × k)`, `b` is `(n × k)`, result `(m × n)` — the input gradient `dX = dY·Wᵀ`. A 1-D left operand is a row vector and yields a 1-D result, as for `matmul` (#973) |
 | `gather` | `gather of [matrix, indices, dim]` | N5 exact indices (integral floats accepted; fractions raise `value`). Selected list cells retain their numeric kind; buffer elements are floats. Gather one element per row: `out[i] = matrix[i][indices[i]]`. `matrix` may be a shaped buffer and `indices` a list or a buffer; a shaped-buffer `matrix` gives a buffer. `gather of [vec, i]` on a 1-D tensor returns element `i`. An **out-of-range index raises `index_range`** — in every form, list or buffer (#973/#1093, settled at integration: there is no element there, and `scatter_add` raises on the same index). A row that is not a row (a 1-D tensor in the per-row form) still answers `0.0` for that row |
@@ -670,7 +672,7 @@ Buffer arithmetic stops at its first raised kernel result and releases its parti
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `tensor_save` | `tensor_save of [tensor, "path"]` | Save a list or buffer tensor of at most 10,000,000 elements to a binary file (preserves observer state). An over-cap tensor raises a catchable `limit` error before opening the file, including under `EIGS_STRICT=0` |
-| `tensor_load` | `tensor_load of "path"` | Load a tensor of at most 10,000,000 elements from a binary file (restores observer state). An over-cap header never returns `null`: it raises a catchable `limit` error naming the path, offending dimension, and cap, including under `EIGS_STRICT=0`. `NaN` bytes in the file raise a `value` error naming `tensor_load` by default; under `EIGS_STRICT=0` they collapse to `0` and set `math_flags.invalid` (#971). |
+| `tensor_load` | `tensor_load of "path"` | Load a tensor of at most 10,000,000 elements from a binary file (restores observer state). An over-cap header never returns `null`: it raises a catchable `limit` error naming the path, offending dimension, and cap, including under `EIGS_STRICT=0`. `NaN` bytes in the file remain NaN and set `math_flags.invalid`; `EIGS_STRICT=1` raises a `value` error naming `tensor_load` (#971, R2.2). |
 
 ### Gradients & SGD
 
@@ -916,11 +918,11 @@ text builtins differ on purpose.** `gfx_text_width` and `gfx_text_height`
 type-checked their scale slot before this change, so a wrong-typed scale there
 is a *coercion*: under `EIGS_STRICT=0` they still measure at scale 1.
 `gfx_text` did not — its scale slot was one of the unchecked reads — so a
-wrong-typed scale refuses the call and draws nothing. By default,
+wrong-typed scale refuses the call and draws nothing. With `EIGS_STRICT=1`,
 all three raise. Layout code that sizes a box with `gfx_text_width` and then
 draws with `gfx_text` therefore sees a box with no text in it if it passes a
 stringy scale, which is the loudest signal available under `EIGS_STRICT=0`; leave
-strict mode at its default to get the error.
+set `EIGS_STRICT=1` to get the error.
 
 A few values are deliberately left quiet because they are the *answer*, not a
 rejected argument: a drawing call with no window open answers `null` (that is
