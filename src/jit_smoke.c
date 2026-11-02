@@ -733,6 +733,135 @@ static int run_bool_cases(void) {
     return rc;
 }
 
+
+/* R2.1: execute production-emitted entry and OSR code with raw IEEE inputs
+ * unavailable to ordinary programs until R2.2/R2.4. A guard must leave the
+ * operand slots and sp untouched and resume AT the opcode, so the interpreter
+ * (the oracle) re-executes it. Finite controls must complete natively. */
+#if EIGS_JIT_ENABLED
+static int nan_smoke_rows;
+static int nan_smoke_row(const char *name, uint8_t op, int arity,
+                         EigsSlot a, EigsSlot b, uint64_t constant_bits,
+                         int bail, EigsSlot result) {
+    int rc = 0;
+    uint8_t code[] = {OP_NULL, OP_POP, OP_NUM_ZERO, OP_POP, op, 0, 0, 0};
+    int end = op == OP_CONST ? 7 : 5;
+    code[end++] = OP_TRUE; /* completion witness after the tested opcode */
+    Value constant = {.type = VAL_FLOAT};
+    memcpy(&VAL_F64_RAW(&constant), &constant_bits, sizeof constant_bits);
+    Value *constants[] = {&constant};
+    for (int osr = 0; osr < 2; osr++) {
+        EigsChunk chunk = {0};
+        chunk.code = code;
+        chunk.code_len = end;
+        chunk.constants = constants;
+        chunk.const_count = 1;
+        chunk.exec_count = 1;
+        int entry = osr ? 2 : 0;
+        if (osr) jit_try_compile_chunk_osr(&chunk, entry, 0);
+        else jit_try_compile_chunk(&chunk);
+        void *thunk = osr ? chunk.jit_osr[0].code : chunk.jit_code;
+        if (!thunk || (osr ? chunk.jit_osr[0].state : chunk.jit_state) != 2) {
+            fprintf(stderr, "FAIL nan_%s %s did not compile\n", name, osr ? "osr" : "entry");
+            rc = 1;
+        } else {
+            VM *vm = eigs_current->vm;
+            vm->sp = 1 + arity;
+            vm->frame_count = 1;
+            vm->stack[0] = slot_from_f64(42);
+            vm->stack[1] = a;
+            vm->stack[2] = b;
+            EigsSlot before[3];
+            memcpy(before, vm->stack, sizeof before);
+            vm->frames[0].chunk = &chunk;
+            vm->frames[0].ip = code + entry;
+            /* A CONST-only prefix has no fallible opcode: its advance is
+             * initialized at compile time, not written by the thunk. Preserve
+             * that ABI; the pushed constant/TRUE slots witness execution. */
+            if (op != OP_CONST)
+                chunk.jit_advance = chunk.jit_osr[0].advance = -99;
+            else if (osr) chunk.jit_advance = -99;
+            else chunk.jit_osr[0].advance = -99;
+            jit_call(thunk);
+            int advance = osr ? chunk.jit_osr[0].advance : chunk.jit_advance;
+            int other = osr ? chunk.jit_advance : chunk.jit_osr[0].advance;
+            int ok = other == -99 && vm->frames[0].ip == code + entry;
+            if (bail) {
+                ok &= advance == 4 - entry && vm->sp == 1 + arity;
+                for (int k = 0; k <= arity; k++) ok &= vm->stack[k].u == before[k].u;
+            } else {
+                ok &= advance == end - entry && vm->sp == 3 &&
+                      vm->stack[0].u == before[0].u &&
+                      vm->stack[1].u == result.u && vm->stack[2].u == SLOT_TRUE_BITS;
+            }
+            if (!ok) {
+                fprintf(stderr, "FAIL nan_%s %s bail=%d advance=%d sp=%d value=%016llx\n",
+                        name, osr ? "osr" : "entry", bail, advance, vm->sp,
+                        (unsigned long long)vm->stack[1].u);
+                rc = 1;
+            }
+        }
+        nan_smoke_rows++;
+        jit_unregister_chunk(&chunk);
+    }
+    return rc;
+}
+#endif
+static int run_nan_cases(void) {
+#if EIGS_JIT_ENABLED
+    int rc = 0;
+    EigsState *state = calloc(1, sizeof *state);
+    EigsThread *thread = calloc(1, sizeof *thread);
+    VM *vm = calloc(1, sizeof *vm);
+    if (!state || !thread || !vm) {
+        free(state); free(thread); free(vm);
+        fprintf(stderr, "FAIL nan allocation\n"); return 1;
+    }
+    thread->state = state; thread->vm = vm; vm->owner = thread;
+    eigs_current = thread;
+    state->jit_entry_threshold = state->jit_iter_threshold = 1;
+    EigsSlot zero = slot_from_f64(0), one = slot_from_f64(1.5), two = slot_from_f64(2);
+    EigsSlot nan = {.u = 0x7FF8000000000000ULL};
+    EigsSlot inf = {.u = 0x7FF0000000000000ULL};
+    EigsSlot ninf = {.u = 0xFFF0000000000000ULL};
+    uint8_t arith[] = {OP_ADD, OP_SUB, OP_MUL, OP_DIV};
+    EigsSlot lhs[] = {inf, inf, zero, zero};
+    EigsSlot rhs[] = {ninf, inf, inf, zero};
+    double finite[] = {3.5, -0.5, 3.0, 0.75};
+    for (int i = 0; i < 4; i++) {
+        rc |= nan_smoke_row("arithmetic", arith[i], 2, lhs[i], rhs[i], 0, 1, zero);
+        rc |= nan_smoke_row("arithmetic_control", arith[i], 2, one, two, 0, 0, slot_from_f64(finite[i]));
+    }
+    rc |= nan_smoke_row("neg", OP_NEG, 1, nan, zero, 0, 1, zero);
+    rc |= nan_smoke_row("neg_control", OP_NEG, 1, one, zero, 0, 0, slot_from_f64(-1.5));
+    uint8_t compare[] = {OP_EQ, OP_NE, OP_LT, OP_GT, OP_LE, OP_GE};
+    int truth[] = {0, 1, 1, 0, 1, 0};
+    for (int i = 0; i < 6; i++) {
+        rc |= nan_smoke_row("compare", compare[i], 2, nan, two, 0, 1, zero);
+        rc |= nan_smoke_row("compare", compare[i], 2, one, nan, 0, 1, zero);
+        rc |= nan_smoke_row("compare_control", compare[i], 2, one, two, 0, 0, slot_from_bool(truth[i]));
+    }
+    static const uint64_t constants[] = {
+        0xFFF8000000000000ULL, 0xFFF9000000000001ULL, 0xFFFA000000000005ULL,
+        0xFFFB000000001000ULL, 0xFFFC000000000000ULL, 0xFFFD000000000000ULL,
+        0xFFFE000000000000ULL, 0xFFFF000000000000ULL,
+        0x7FF0000000000001ULL, 0xFFF0000000000001ULL, 0x7FF8000000000000ULL
+    };
+    for (unsigned i = 0; i < sizeof constants / sizeof constants[0]; i++)
+        rc |= nan_smoke_row("const", OP_CONST, 0, zero, zero, constants[i], 0, nan);
+    rc |= nan_smoke_row("const_control", OP_CONST, 0, zero, zero, 0x8000000000000000ULL, 0, slot_from_f64(-0.0));
+    rc |= nan_smoke_row("const_control", OP_CONST, 0, zero, zero, inf.u, 0, inf);
+    if (nan_smoke_rows != 82) rc = 1;
+    printf("JIT NaN: rows=%d arithmetic=16 neg=4 compare=36 const=26 status=%s\n",
+           nan_smoke_rows, rc ? "FAIL" : "PASS");
+    jit_thread_destroy(thread); eigs_current = NULL;
+    free(vm); free(thread); free(state);
+    return rc;
+#else
+    printf("JIT NaN: SKIP (native JIT unavailable).\n"); return 0;
+#endif
+}
+
 #ifdef EIGS_JIT_CHECKED
 /* Deterministic positive control: the bytecode scanner accepts local slot 1,
  * while the executing frame deliberately has only slot 0. If the emitter's
@@ -799,6 +928,7 @@ int main(int argc, char **argv) {
     rc |= run_reader_bail_cases();
     rc |= run_exit_cases();
     rc |= run_bool_cases();
+    rc |= run_nan_cases();
     if (rc == 0) printf("\nJIT smoke: all cases passed.\n");
     return rc;
 }

@@ -781,6 +781,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
         } else if (op == OP_NEG || op == OP_NOT) {
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
+            if (op == OP_NEG) *extra_size += 32; /* R2.1 NaN guard */
         } else if (op == OP_JUMP || op == OP_JUMP_BACK) {
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             /* #267: an OSR thunk (entry_offset > 0) is invoked at a hot loop
@@ -2656,7 +2657,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
 
     /* Bit pattern of EIGS_NUM_MAX — the maximum finite value num_guard
      * allows. Any addsd/subsd result whose magnitude bits exceed this
-     * (incl. ±Inf / NaN) bails to the slow interpreter path. */
+     * (incl. ±Inf / NaN) bails to the slow interpreter path. RULING R21-1:
+     * retain this bound until R2.2 retires the clamp in the same commit. */
     uint64_t max_normal_bits;
     { double d = EIGS_NUM_MAX; memcpy(&max_normal_bits, &d, 8); }
 
@@ -2849,7 +2851,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             if (v->type == VAL_FLOAT) {
                 /* Immediate-num: same shape as NUM_ZERO. (#262 Step E: a
                  * constant num never carries observer state.) */
-                memcpy(&bits, &VAL_F64_RAW(v), 8);
+                /* R2.1: a host-provided constant may contain any NaN payload.
+                 * The single writer prevents emitted tag-spelling doubles. */
+                bits = slot_from_f64(VAL_F64_RAW(v)).u;
             } else {
                 /* Heap slot: TAG_HEAP | payload. */
                 bits = 0xFFFB000000000000ULL |
@@ -3681,10 +3685,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             /* Stage 5e: tracked/heap VAL_FLOAT operands accepted via the
              * shared loader (rc==1 bails — NUM_CMP/EQ/NE all have the
              * same NUM_REUSE branch as ARITH_FAST). One trampoline
-             * slot. NaN inputs would give incorrect comparison results
-             * (PF=1 makes setcc paths fire), but num_guard prevents
-             * NaN from reaching a stack slot in normal operation — so
-             * we accept the same input-NaN imprecision as ADD/SUB do. */
+             * slot. An unordered comparison must bail with its operands
+             * untouched so the interpreter decides the IEEE result. */
             if (bail_count + 1 > (int)(sizeof bail_patches /
                                        sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
@@ -3715,6 +3717,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_movabs_rax(w, SLOT_FALSE_BITS);  /* rax = false */
             w = emit_movabs_rdx(w, SLOT_TRUE_BITS);   /* rdx = true */
             w = emit_ucomisd_xmm0_xmm1(w);
+            w = emit_jp_rel32(w, &lp[lp_n++]); /* R2.1 unordered: interpret */
             /* cmovcc %rdx → %rax when condition holds. */
             uint8_t cc_byte;
             switch (op) {
@@ -3796,9 +3799,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             i += 1;
         } else if (op == OP_NEG || op == OP_NOT || op == OP_BNOT) {
             /* Unary: load TOS, type-check, compute in place, store
-             * back at TOS. One bail slot (BNOT: three, #1740), sp
+             * back at TOS. One bail slot (NEG: two; BNOT: three), sp
              * unchanged. */
-            if (bail_count + (op == OP_BNOT ? 3 : 1) > (int)(sizeof bail_patches /
+            if (bail_count + (op == OP_BNOT ? 3 : op == OP_NEG ? 2 : 1) > (int)(sizeof bail_patches /
                                        sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
             }
@@ -3822,6 +3825,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_immediate_num_check_rax(w, &p_t);
             bail_patches[bail_count++] = p_t;
             if (op == OP_NEG) {
+                /* R2.1: sign-flipping canonical NaN would spell NULL.
+                 * Reject only NaNs before mutation; the arithmetic clamp
+                 * bound above stays EIGS_NUM_MAX until R2.2 (R21-1). */
+                w = emit_overflow_check_rax(w, 0x7FF0000000000000ULL,
+                                            &bail_patches[bail_count++]);
                 /* Flip the IEEE-754 sign bit: rax ^= 0x8000…0. */
                 w = emit_movabs_rdx(w, 0x8000000000000000ULL);
                 w = emit_xor_rdx_rax(w);
