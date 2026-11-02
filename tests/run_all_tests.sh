@@ -3771,31 +3771,53 @@ echo ""
 # renderer was absent. Its own positive/negative leak controls run BEFORE any
 # corpus verdict is believed.
 echo "[137] ext_gfx ASan/LSan corpus (#1007)"
-AG_OUTPUT=$(bash "$TESTS_DIR/test_asan_gfx.sh" 2>&1); AG_RC=$?
-AG_PASSED=$(echo "$AG_OUTPUT" | sed -n 's/^ASan gfx: \([0-9]*\) passed.*/\1/p' | tail -1)
-AG_FAILED=$(echo "$AG_OUTPUT" | sed -n 's/^ASan gfx: [0-9]* passed, \([0-9]*\) failed.*/\1/p' | tail -1)
-TOTAL=$((TOTAL + 1))
-if [ "$AG_RC" = "0" ] && [ "${AG_FAILED:-1}" = "0" ]; then
-    if echo "$AG_OUTPUT" | grep -q "(skipped)"; then
-        # Round 6 printed this as `PASS: SKIP: ...` and banked the assertion.
-        TOTAL=$((TOTAL - 1))
-        ag_skip_line=$(echo "$AG_OUTPUT" | grep -m1 'SKIP:' | sed 's/^ *//')
-        section_skip "$ag_skip_line"
+# #2320: [137] runs ONCE per CI run. Its binary is never the lane's own (see
+# above), so every Linux container lane compiled the same gcc build and judged
+# the same corpus. linux / gcc owns it; another lane sets EIGS_GFX137_DEFER to
+# its lane id and gets a counted skip naming the owner -- but only for an id on
+# the reviewed allowlist (tests/gfx137_defer_allowlist.txt). Any other id is a
+# FAIL, never a skip. tests/test_gfx137_once_2320.sh checks ci.yml leaves
+# exactly one runner in the queue; the owner's job checks the receipt below.
+if [ -n "${EIGS_GFX137_DEFER:-}" ]; then
+    AG_DEFER=$(bash "$TESTS_DIR/../tools/gfx137_once.sh" defer "$EIGS_GFX137_DEFER" 2>&1); AG_DEFER_RC=$?
+    if [ "$AG_DEFER_RC" = "0" ]; then
+        section_skip "$AG_DEFER"
+        echo "  GFX137: deferred lane=$EIGS_GFX137_DEFER"
     else
-        PASS=$((PASS + 1))
-        echo "  PASS: ext_gfx.c is leak- and UB-clean over the gfx corpus" \
-             "(${AG_PASSED:-?} checks, controls included)"
-        echo "$AG_OUTPUT" | grep -m1 "NOTE:" || true
-        # #1916: the controls' process-start timing, printed on every pass so
-        # each CI host (macOS included) records the distribution its budget
-        # is sized from.
-        echo "$AG_OUTPUT" | grep -m1 "gfx-timeout controls: completion wall" | sed 's/^/  /' || true
+        TOTAL=$((TOTAL + 1))
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: EIGS_GFX137_DEFER='$EIGS_GFX137_DEFER' may not skip [137] (rc=$AG_DEFER_RC)"
+        printf '%s\n' "$AG_DEFER" | sed 's/^/    /'
     fi
 else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: a leak or sanitizer error in the gfx corpus, or the gate's own"
-    echo "        leak controls did not fire"
-    echo "$AG_OUTPUT" | grep -E "FAIL:|SUMMARY|runtime error:" | head -8 | sed 's/^/    /'
+    AG_OUTPUT=$(bash "$TESTS_DIR/test_asan_gfx.sh" 2>&1); AG_RC=$?
+    AG_PASSED=$(echo "$AG_OUTPUT" | sed -n 's/^ASan gfx: \([0-9]*\) passed.*/\1/p' | tail -1)
+    AG_FAILED=$(echo "$AG_OUTPUT" | sed -n 's/^ASan gfx: [0-9]* passed, \([0-9]*\) failed.*/\1/p' | tail -1)
+    TOTAL=$((TOTAL + 1))
+    if [ "$AG_RC" = "0" ] && [ "${AG_FAILED:-1}" = "0" ]; then
+        if echo "$AG_OUTPUT" | grep -q "(skipped)"; then
+            # Round 6 printed this as `PASS: SKIP: ...` and banked the assertion.
+            TOTAL=$((TOTAL - 1))
+            ag_skip_line=$(echo "$AG_OUTPUT" | grep -m1 'SKIP:' | sed 's/^ *//')
+            section_skip "$ag_skip_line"
+        else
+            PASS=$((PASS + 1))
+            echo "  PASS: ext_gfx.c is leak- and UB-clean over the gfx corpus" \
+                 "(${AG_PASSED:-?} checks, controls included)"
+            # #2320: the owner lane's receipt (tools/gfx137_once.sh receipt).
+            echo "  GFX137: ran"
+            echo "$AG_OUTPUT" | grep -m1 "NOTE:" || true
+            # #1916: the controls' process-start timing, printed on every pass so
+            # each CI host (macOS included) records the distribution its budget
+            # is sized from.
+            echo "$AG_OUTPUT" | grep -m1 "gfx-timeout controls: completion wall" | sed 's/^/  /' || true
+        fi
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: a leak or sanitizer error in the gfx corpus, or the gate's own"
+        echo "        leak controls did not fire"
+        echo "$AG_OUTPUT" | grep -E "FAIL:|SUMMARY|runtime error:" | head -8 | sed 's/^/    /'
+    fi
 fi
 echo ""
 

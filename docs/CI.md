@@ -474,6 +474,24 @@ the runner — 37% — and a section is indivisible, so no N can put the slowest
 shard below 319 s. N=4 would not help. Splitting `[137]` itself is the next
 lever if this lane ever needs to be faster.
 
+**`[137]` now runs once per CI run, in `linux / gcc` (#2320).** It never ran
+the lane's own binary. `tests/test_asan_gfx.sh` compiles its own gcc ASan+UBSan
+gfx binary, so the shards, the server, zlib and db suites and the clang leg
+each compiled and judged the same thing linux / gcc does. Those lanes set
+`EIGS_GFX137_DEFER` to an id on the reviewed allowlist
+`tests/gfx137_defer_allowlist.txt`, and the runner prints a counted skip that
+names the owner. An id not on the list is a FAIL. The owner job requires the
+`GFX137: ran` receipt in its own suite log (`tools/gfx137_once.sh receipt`).
+On a pull request the owner runs `[137]` only when the diff touches one of its
+inputs (`tools/gfx137_once.sh scope`, the `scope` job's `gfx137` output),
+which include the dev image's `.devcontainer/Dockerfile` and the compiler
+guard `tools/cc-guard-bin/`. A change to any other hosted source is first
+judged by `[137]` in the merge queue, where the owner runs it unscoped. A
+missing verdict runs it. `[137b]` (`tests/test_gfx137_once_2320.sh`) reads this
+workflow and fails on zero or two queue runners, a native lane that defers, or
+a stale or unlisted id. macOS and the release dry-runs keep their own copies:
+they use other toolchains.
+
 **A shard is a subset of the chunk list**, so "the shards cover the suite" is a
 set identity rather than a belief:
 

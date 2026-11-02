@@ -1104,7 +1104,7 @@ selftest() {
     # plant into a "wrong red" for every PR that added preamble lines (hq#58).
     sp_114=$(grep -n '^echo "\[114\] ' "$RUNNER" | head -1 | cut -d: -f1)
     [ -n "$sp_114" ] || { echo "  FAIL: section groups: [114] header not found in $RUNNER"; fail=$((fail + 1)); }
-    expect_red 'section groups: headerless body split from nearest header is refused' "count=212; [114] header @${sp_114:-none} body @$(( ${sp_114:-0} + 1 ))" \
+    expect_red 'section groups: headerless body split from nearest header is refused' "count=213; [114] header @${sp_114:-none} body @$(( ${sp_114:-0} + 1 ))" \
         env SP_SECTION_GROUP_MUTATE=split "$0" --root "$SP_ROOT" --shards 3 --check --quiet
     expect_red 'shard_check: missing chunk makes union != full' 'union != full' \
         env SP_SHARD_MUTATE=drop "$0" --root "$SP_ROOT" --shards 3 --check --quiet

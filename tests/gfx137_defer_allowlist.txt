@@ -1,0 +1,26 @@
+# Reviewed allowlist (#2320): the ONLY lanes that may skip section [137] (the
+# ext_gfx.c ASan+UBSan+LSan corpus, #1007), each with the owner that runs it
+# instead and why that copy is redundant. A lane sets EIGS_GFX137_DEFER=<id>;
+# the runner FAILS [137] for an id that is not listed here
+# (tools/gfx137_once.sh defer), and tests/test_gfx137_once_2320.sh fails on an
+# id that ci.yml never sets, an id ci.yml sets but this file does not list, or
+# a merge-queue run in which the number of Linux lanes running [137] is not
+# exactly one.
+#
+# Why these copies are redundant: [137] never runs the lane's own binary.
+# tests/test_asan_gfx.sh compiles its own -- CC=${EIGS_ASAN_GFX_CC:-gcc},
+# sources from the Makefile's SRC_V_asan-gfx, fixed -DEIGENSCRIPT_EXT_HTTP=0
+# -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1, -fsanitize=address,undefined
+# -O1 -g -- unless EIGS_ASAN_GFX is set or a fresh build/asan/eigenscript
+# exists. No Linux lane sets either. Every lane below runs in the same dev
+# image, so each one compiled the identical gcc binary that linux / gcc compiles,
+# and judged the same corpus. macOS and the release dry-runs use other toolchains
+# (LLVM LSan, gcc-11): they are NOT listed and keep their copies.
+#
+# Format: lane-id | owner (the check that runs [137] instead) | reason
+linux-clang | linux / gcc | ci.yml sets CC=clang only for build.sh, so this lane's [137] compiled with the dev image's default gcc; it built the same binary linux / gcc builds in the same merge-queue run (ES-CI-A-11).
+extensions-server | linux / gcc | [137] never runs the http+net+gfx server binary this lane builds; it compiles the same gcc HTTP=0 GFX=1 ASan binary linux / gcc compiles in the same run.
+extensions-zlib | linux / gcc | [137] never runs the zlib binary this lane builds; it compiles the same gcc HTTP=0 GFX=1 ASan binary linux / gcc compiles in the same run.
+database | linux / gcc | [137] never runs the server-db binary this lane builds, and DATABASE_URL does not reach a DB=0 build; it compiles the same gcc ASan binary linux / gcc compiles in the same run.
+asan-shards | linux / gcc | test_asan_gfx.sh does not reuse build/asan-server (only EIGS_ASAN_GFX or a fresh build/asan), so the shard that owns [137] compiled the same gcc binary linux / gcc compiles. The shard's UBSAN_OPTIONS=halt_on_error=1 changes no verdict: lsan_classify counts any "runtime error:" as hard. A dispatch of the asan lane alone does not defer.
+linux-gcc-pr | linux / gcc | Pull request whose diff touches no [137] input (tools/gfx137_once.sh scope): the merge queue's linux / gcc runs [137] on every candidate before it lands. A scope verdict that is missing or unknown runs it.
