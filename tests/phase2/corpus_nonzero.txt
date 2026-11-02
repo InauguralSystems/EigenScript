@@ -20,6 +20,7 @@ tests/line_after_return_module.eigs 1 a deliberate error: the suite's line-after
 tests/line_after_return_null.eigs 1 a deliberate error: the suite's line-after-return rows check its trace
 tests/loader_mt_modules/lm_cyc_a.eigs 1 a circular-load fixture of tests/test_loader_mt.sh: loaded alone, it reports the cycle
 tests/loader_mt_modules/lm_cyc_b.eigs 1 a circular-load fixture of tests/test_loader_mt.sh: loaded alone, it reports the cycle
+tests/loader_mt_modules/lm_loop_iterations.eigs 1 worker module of tests/loader_mt_loop_iterations.eigs (#1870/#2157, da6e7f48): standalone has no loop_worker_entered channel; the parent supplies all three handshake channels and tests/test_tsan.sh requires both overlapping 20000-iteration loops to complete
 tests/roads/assets/eval_loaded/caller.eigs 1 a fixture of tools/road_diff.py: it runs inside a generated project tree
 tests/roads/assets/hardlinks/b/child.eigs 1 a fixture of tools/road_diff.py: it runs inside a generated project tree
 tests/roads/assets/hardlinks/b/entry.eigs 1 a fixture of tools/road_diff.py: it runs inside a generated project tree
