@@ -3,8 +3,10 @@
  *
  * An EigsSlot is a 64-bit union aliasing a double. Floats live as
  * immediate doubles. Pointers and other immediates encode into the
- * unused QNaN-with-sign-set bit pattern, which num_guard() makes
- * unreachable from user numbers (NaN -> 0, +/-Inf -> +/-1e308).
+ * unused QNaN-with-sign-set bit pattern. The single double writer
+ * canonicalizes every NaN to positive 0x7FF8000000000000, so a double
+ * cannot spell a tag even at a raw host boundary. num_guard() still maps
+ * user NaN -> 0 and +/-Inf -> +/-1e308 until R2.2.
  *
  * Tag layout (high 16 bits):
  *   < 0xFFF8     : a double          (slot_is_f64)
@@ -117,8 +119,17 @@ static inline int64_t  slot_smi_val(EigsSlot s) {
 
 /* Constructors */
 
-/* #1758: the ONE double writer. Round 2 canonicalizes a NaN here. */
-static inline EigsSlot slot_from_f64(double d)       { EigsSlot s; SLOT_F64_RAW(s) = d;                                              return s; }
+/* #1758 R2.1: the ONE double writer. IEEE binary64 magnitude bits above
+ * infinity are precisely all NaNs, including signaling/payload/tag patterns.
+ * Inspect the bits, not a floating comparison (which can quiet an sNaN).
+ * Every non-NaN bit, including -0.0 and infinities, is preserved. */
+static inline EigsSlot slot_from_f64(double d) {
+    EigsSlot s;
+    SLOT_F64_RAW(s) = d;
+    if ((s.u & 0x7FFFFFFFFFFFFFFFULL) > 0x7FF0000000000000ULL)
+        s.u = 0x7FF8000000000000ULL;
+    return s;
+}
 static inline EigsSlot slot_from_heap(Value *v);
 /* #1758: the ONE int writer: an SMI inside [-2^47, 2^47), otherwise an
  * owned VAL_INT heap box. */

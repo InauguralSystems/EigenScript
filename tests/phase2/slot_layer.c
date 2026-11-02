@@ -25,6 +25,8 @@
  *      inside a `try` too; the same program with a double is the control.
  *   E  ITER_NEXT index and snapshot metadata in both executors, with float,
  *      SMI and boxed-int metadata, including range and malformed controls.
+ *   F  R2.1/N12.nan-payload-tags: double-writer canonicalization for every
+ *      tag family, with payload/sign controls and actual refcount calls.
  *
  * Output, every line in one grammar (tests/phase2/slot_layer.sh refuses any
  * other line): `ENTRY <file>:<function> <kind> values=<n> ok|FAIL` per Part A
@@ -874,6 +876,58 @@ static int part_e(void) {
     return rows;
 }
 
+/* R2.1 tests the writer, not a language producer (those land in R2.2/R2.4).
+ * Expected bits are independent literals, never derived from the writer.
+ * Run the RC operations before rendering: a raw HEAP-spelling NaN must
+ * reproduce #1746 in the child, not be hidden by a predicate-only test. */
+static uint64_t nan_writer_input;
+static void c_nan_writer(EigsSlot unused, char *b, size_t n) {
+    (void)unused;
+    EigsSlot s = slot_from_f64(f64_of(nan_writer_input));
+    slot_incref(s);
+    slot_decref(s);
+    snprintf(b, n, "f64:%d bits:%016llx", slot_is_f64(s), (unsigned long long)s.u);
+}
+static int part_f(void) {
+    /* Every negative quiet-NaN high-word tag, not just HEAP: NULL, BOOL,
+     * SMI, HEAP, all reserved tags and SENTINEL. Low-word representatives
+     * cover zero, the MAP's five exact payloads, high bit and all bits. */
+    static const uint64_t payloads[] = {
+        0, 1, 5, 0x1000, 0x800000000000ULL, 0xFFFFFFFFFFFFULL
+    };
+    static const uint64_t other_nans[] = {
+        0x7FF8000000000000ULL, 0x7FF9000000000001ULL,
+        0x7FFFFFFFFFFFFFFFULL, 0x7FF0000000000001ULL,
+        0x7FF7FFFFFFFFFFFFULL, 0xFFF0000000000001ULL,
+        0xFFF7FFFFFFFFFFFFULL
+    };
+    static const uint64_t controls[] = {
+        0, 0x8000000000000000ULL, 0x3FF0000000000000ULL,
+        0xBFF8000000000000ULL, 1, 0x7FEFFFFFFFFFFFFFULL,
+        0x7FF0000000000000ULL, 0xFFF0000000000000ULL
+    };
+    int rows = 0;
+    const int tag_rows = 8 * (int)(sizeof payloads / sizeof payloads[0]);
+    const int other_rows = (int)(sizeof other_nans / sizeof other_nans[0]);
+    const int control_rows = (int)(sizeof controls / sizeof controls[0]);
+    for (int i = 0; i < tag_rows + other_rows + control_rows; i++) {
+        int nan = i < tag_rows + other_rows;
+        if (i < tag_rows)
+            nan_writer_input = ((0xFFF8ULL + (unsigned)i / 6) << 48) | payloads[i % 6];
+        else if (nan) nan_writer_input = other_nans[i - tag_rows];
+        else nan_writer_input = controls[i - tag_rows - other_rows];
+        uint64_t want_bits = nan ? 0x7FF8000000000000ULL : nan_writer_input;
+        char got[512], want[96];
+        run_cell(c_nan_writer, slot_null(), got, sizeof got, NULL, 0);
+        snprintf(want, sizeof want, "f64:1 bits:%016llx", (unsigned long long)want_bits);
+        if (strcmp(got, want) != 0)
+            FAILF("N12.nan-payload-tags slot_from_f64(%016llx): got %s, want %s",
+                  (unsigned long long)nan_writer_input, got, want);
+        rows++;
+    }
+    return rows;
+}
+
 int main(void) {
     EigsState *st = eigs_open();
     if (!st) { printf("slot-layer-test: FAIL eigs_open\n"); return 1; }
@@ -897,13 +951,14 @@ int main(void) {
     int from_int_rows = part_c();
     int arm_rows = part_d();
     int iter_rows = part_e();
+    int nan_rows = part_f();
     printf("slot-layer-test: examined=%d smi_values=%d calls=%d matrix=%d kinds=%d matrix_cells=%d "
-           "from_int_rows=%d arm_rows=%d iter_rows=%d failures=%d\n", N_ENTRIES, N_SMI, calls, N_MATRIX, N_KINDS,
-           matrix_cells, from_int_rows, arm_rows, iter_rows, failures);
+           "from_int_rows=%d arm_rows=%d iter_rows=%d nan_rows=%d failures=%d\n", N_ENTRIES, N_SMI, calls, N_MATRIX, N_KINDS,
+           matrix_cells, from_int_rows, arm_rows, iter_rows, nan_rows, failures);
     val_decref(g_str);
     eigs_close(st);
     int ok = failures == 0 && N_ENTRIES > 0 && calls > 0 && N_MATRIX == N_ENTRIES &&
-             matrix_cells == N_MATRIX * N_KINDS && from_int_rows > 0 && arm_rows == 2 * N_ARMS && iter_rows == 2 * N_ITER_CASES;
+             matrix_cells == N_MATRIX * N_KINDS && from_int_rows > 0 && arm_rows == 2 * N_ARMS && iter_rows == 2 * N_ITER_CASES && nan_rows == 63;
     printf("slot-layer-test: %s\n", ok ? "PASS" : "FAIL");
     return ok ? 0 : 1;
 }
