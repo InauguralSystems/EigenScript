@@ -1,7 +1,10 @@
 # bench_buf_resample.eigs — the #603 linear-resample micro-bench.
 #
-# Workload: resampling 1,102,500 samples (25 s @ 44.1 kHz) to 1,200,000
-# (25 s @ 48 kHz) — half the 50 s import whose resample leg measured
+# CodSpeed sizing (SYNC11 cont4): n 1,102,500 -> 110,250; target 1,200,000 ->
+# 120,000. The original took 214 s in hosted CPU simulation. One tenth of
+# the samples keeps the same 44.1->48 kHz interpolation path below ~60 s.
+# Workload: resampling 110,250 samples (2.5 s @ 44.1 kHz) to 120,000
+# (2.5 s @ 48 kHz), from the import whose 50 s resample leg measured
 # 3.9 s on the N3350.
 #
 # Modes (first CLI arg; time each externally, n=5 medians):
@@ -14,8 +17,8 @@ a is args of null
 if (len of a) > 0:
     mode is a[0]
 
-n is 1102500
-target is 1200000
+n is 110250
+target is 120000
 
 src is buffer of n
 unobserved:
