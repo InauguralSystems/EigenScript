@@ -2,7 +2,8 @@ name: phase2
 
 # #1758: landed MAP rows, the pre-registered builtin table on matched
 # capability profiles, the C readers and the stdlib differential. The shared
-# phase2_check.py helper derives the complete declared MAP prefix.
+# phase2_check.py helper derives the complete declared MAP prefix by default.
+# R2.1 is rowless, so this lane selects it with the exact R1.8 baseline.
 on:
   push:
     branches: [phase2-numbers]
@@ -33,7 +34,7 @@ jobs:
     env:
       DATABASE_URL: postgres://eigs:eigs_test@127.0.0.1:5432/eigs_test
     steps:
-      # Every branch and tag is needed: origin/main and v0.46.0.
+      # Every branch and tag is needed: origin/main, v0.46.0 and the R1.8 baseline.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
@@ -51,11 +52,14 @@ jobs:
           export XDG_CACHE_HOME="$RUNNER_TEMP/cache"
           make --no-print-directory observer-anchor
           anchor="$XDG_CACHE_HOME/eigs-oracle-anchor/$(sha256sum tools/observer_oracle/build_anchor.sh | cut -d' ' -f1)/src/eigenscript"
-          mkdir -p "$RUNNER_TEMP/main" "$RUNNER_TEMP/tag-profiles"
+          mkdir -p "$RUNNER_TEMP/main" "$RUNNER_TEMP/tag-profiles" "$RUNNER_TEMP/r21-baseline"
           git archive origin/main | tar -x -C "$RUNNER_TEMP/main"
           git archive v0.46.0 | tar -x -C "$RUNNER_TEMP/tag-profiles"
+          git archive 80939c5f68a27bc889dfd37739c06b4894354e46 | tar -x -C "$RUNNER_TEMP/r21-baseline"
           make -C "$RUNNER_TEMP/main" > "$RUNNER_TEMP/main-build.log" 2>&1 \
             || { tail -n 50 "$RUNNER_TEMP/main-build.log"; echo "::error::the origin/main build failed"; exit 1; }
+          make -C "$RUNNER_TEMP/r21-baseline" > "$RUNNER_TEMP/r21-baseline-build.log" 2>&1 \
+            || { tail -n 50 "$RUNNER_TEMP/r21-baseline-build.log"; echo "::error::the R1.8 baseline build failed"; exit 1; }
           # The table uses matching capability builds; a capability-unavailable
           # transcript is a failure, including on the tag (ruling A3).
           for profile in server zlib db; do
@@ -78,4 +82,5 @@ jobs:
           # Restore the release alias before the MAP and library checks.
           PATH="$PWD/tools/cc-guard-bin:$PATH" make build
           bash tools/cc_guard.sh --report
-          bash tools/phase2_ci.sh "$anchor" "$RUNNER_TEMP/main/src/eigenscript" src/eigenscript
+          bash tools/phase2_ci.sh --through R2.1 --baseline "$RUNNER_TEMP/r21-baseline/src/eigenscript" \
+            "$anchor" "$RUNNER_TEMP/main/src/eigenscript" src/eigenscript

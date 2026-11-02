@@ -22,11 +22,22 @@
 #   bash tools/jit_diff.sh --record   # rewrite data rows; keep '#' lines
 # Test only: JIT_DIFF_OBS_ONLY=<repo-relative file> runs just that OBS case,
 # skipping the JIT and OSR arms and the normal OBS corpus.
+# Diagnostic only: JIT_DIFF_FILES=<list file> selects tracked tests/**/*.eigs
+# for ALL arms. Paths in the list are repository-relative;
+# the list itself may be absolute or relative to ROOT. A clean restricted
+# run exits 3 with RESTRICTED, never a full-corpus PASS; --record is refused.
 set -u
 # Phase 2 R1.3: every arm is headless, independent of the caller's display.
 # A program requiring dummy drivers names them in the shared suite policy.
 unset DISPLAY WAYLAND_DISPLAY XAUTHORITY
 export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
+restricted=0
+if [ "${JIT_DIFF_FILES+x}" = x ]; then
+  restricted=1
+  [ "${1:-}" != "--record" ] || { echo "jit_diff: FAIL: --record is forbidden with JIT_DIFF_FILES" >&2; exit 1; }
+  [ "${1:-}" != "--selftest" ] && [ -z "${JIT_DIFF_OBS_ONLY:-}" ] || {
+    echo "jit_diff: FAIL: JIT_DIFF_FILES cannot be combined with OBS-only self-tests" >&2; exit 1; }
+fi
 if [ "${1:-}" = "--selftest" ] && [ "${JIT_DIFF_SELFTEST_SUITE:-0}" = "1" ]; then
   ROOT="$(cd "$(dirname "$0")/.." && pwd)"
   cd "$ROOT" || exit 1
@@ -65,6 +76,8 @@ EIG="${EIGS_BIN:-./eigenscript}"
 BASE="${JIT_DIFF_BASE:-$ROOT/tests/jit_diff_expected.txt}"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 got="$T/got"; : > "$got"; n=0; n_obs=0; n_deny=0; n_timeout=0; n_suite_env=0; adjudicated=0; could_not_adjudicate=0; run_seq=0
+n_jit=0; n_osr=0
+: > "$T/native-seen"; : > "$T/obs-seen"
 # Only address-shaped hex (8+ digits) is noise; a short 0x1 vs 0x0 is data.
 norm() { sed -E 's/0x[0-9a-f]{8,}/0xADDR/g' "$1"; }
 # Flags are on when non-empty and not "0". GNU env takes -u BEFORE assignments.
@@ -112,9 +125,76 @@ row_of() { case "$1" in tests/*/*) printf '%s' "$1" ;; tests/*) basename "$1" ;;
 obs_deadline() {
   case "$1" in tests/test_loop_cap_772.eigs) printf '180\n' ;; *) printf '25\n' ;; esac
 }
+# The same denial predicate governs the ordinary OBS corpus and a diagnostic
+# selection. A selected file must run every arm, so a denied choice fails
+# before any application execution instead of silently shrinking the subset.
+obs_denial() {
+  if grep -q 'gfx_open[[:space:]]*of' "$ROOT/$1"; then
+    printf 'uses gfx_open; cannot finish unattended headless\n'; return
+  fi
+  case "$1" in
+    *paint*|*_game*) printf 'interactive example\n' ;;
+    *seeded_race*) printf 'intentionally nondeterministic\n' ;;
+    *userrace*) printf 'deliberate #1489 positive-control race\n' ;;
+    *state_at*|*statedump*) printf 'hash-order output\n' ;;
+    tests/test_template_large.eigs) printf 'workload outlives the OBS deadline by design\n' ;;
+  esac
+}
 # '#' lines and blank lines are reasons. Data rows are what the diff sees.
 ledger_data() { awk 'NF && substr($0,1,1) != "#" { print }' "$1" | sort; }
 ledger_count() { ledger_data "$1" | wc -l | tr -d ' '; }
+# Check ownership on the broad population before narrowing or executing any
+# diagnostic selection. Owned harness fixtures may require stdin or a profile
+# that this differential cannot supply. Keep the existing declaration and
+# census, including owned untracked bank files in an unresolved merge.
+if ! owned_tracked=$(git -c safe.directory="$ROOT" -C "$ROOT" ls-files '*.eigs' 2>/dev/null); then
+  echo "jit_diff: FAIL: cannot enumerate the ownership corpus" >&2; exit 1
+fi
+printf '%s\n' "$owned_tracked" > "$T/owned-tracked"
+(cd "$ROOT" && find tests -type f -name '*.eigs') > "$T/owned-tests"
+LC_ALL=C sort -u "$T/owned-tracked" "$T/owned-tests" > "$T/ownership-corpus"
+python3 "$ROOT/tools/phase2_corpus_exclude.py" "$ROOT" "$T/ownership-corpus" || exit 1
+if [ "$restricted" -eq 1 ]; then
+  selector="$JIT_DIFF_FILES"
+  case "$selector" in /*) ;; *) selector="$ROOT/$selector" ;; esac
+  python3 - "$ROOT" "$selector" "$T/selected" <<'PY' || exit 1
+from pathlib import Path
+import os
+import re
+import subprocess
+import sys
+try:
+    root, source, target = map(Path, sys.argv[1:])
+    files = source.read_text().splitlines()
+    if not files or any(not f for f in files):
+        raise ValueError('selection must be nonempty, without blank rows')
+    if len(set(files)) != len(files):
+        raise ValueError('selection contains duplicate rows')
+    tracked = set(subprocess.check_output(
+        ['git', '-c', 'safe.directory=' + str(root), '-C', str(root),
+         'ls-files', '-z', '--', 'tests/*.eigs']).decode().split('\0'))
+    for rel in files:
+        if not re.fullmatch(r'tests/[^\x00-\x1f\x7f]+\.eigs', rel) or any(
+                part in ('', '.', '..') for part in rel.split('/')):
+            raise ValueError('not a safe tests/**/*.eigs path: ' + rel)
+        path = root / rel
+        if rel not in tracked or not path.is_file():
+            raise ValueError('selection is missing or untracked: ' + rel)
+        if os.path.commonpath((str(root), str(path.resolve()))) != str(root):
+            raise ValueError('selection escapes the repository: ' + rel)
+    target.write_text(''.join(rel + '\n' for rel in sorted(files)))
+except (OSError, UnicodeError, ValueError, subprocess.CalledProcessError) as error:
+    print('jit_diff: FAIL: invalid JIT_DIFF_FILES: ' + str(error), file=sys.stderr)
+    sys.exit(1)
+PY
+  selected_count=$(awk 'END { print NR }' "$T/selected")
+  while IFS= read -r rel; do
+    grep -qxF -- "$rel" "$T/ownership-corpus" || {
+      echo "jit_diff: FAIL: selected $rel is outside the unowned OBS corpus" >&2; exit 1; }
+    denial=$(obs_denial "$rel")
+    [ -z "$denial" ] || { echo "jit_diff: FAIL: selected $rel is OBS-excluded ($denial)" >&2; exit 1; }
+  done < "$T/selected"
+fi
 b=jit_env_flags_float.eigs
 selfcheck() { # $1 arm name, $2.. env args
   local arm="$1"; shift
@@ -162,40 +242,37 @@ consider() {
   echo "$row $tag COULD_NOT_ADJUDICATE" >> "$got"
 }
 if [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
-for f in "$ROOT"/tests/test_*.eigs; do
+if [ "$restricted" -eq 1 ]; then
+  while IFS= read -r rel; do printf '%s/%s\n' "$ROOT" "$rel"; done < "$T/selected" > "$T/native-files"
+else
+  printf '%s\n' "$ROOT"/tests/test_*.eigs > "$T/native-files"
+fi
+while IFS= read -r f; do
   n=$((n + 1)); row=$(basename "$f"); prog="$f"
+  [ "$restricted" -eq 0 ] || row=$(row_of "${f#"$ROOT"/}")
   run "$T/ref" 180 "${REF[@]}"
   suite_setting=$(suite_program_env "$prog") || { echo "jit_diff: FAIL: suite environment lookup failed for $prog"; exit 1; }
-  if [ -n "$suite_setting" ]; then
-    n_suite_env=$((n_suite_env + 1))
+  [ -z "$suite_setting" ] || n_suite_env=$((n_suite_env + 1))
+  if [ -n "$suite_setting" ] || [ "$restricted" -eq 1 ]; then
     [ "$(tail -n 1 "$T/ref")" = "rc=0" ] || {
       echo "jit_diff: FAIL: $row did not complete in REF under its suite environment"; tail -n 8 "$T/ref"; exit 1; }
   fi
   for arm in jit osr; do
     arm_env "$arm"
     run "$T/arm" 180 "${AE[@]}"
-    if [ -n "$suite_setting" ] && [ "$(tail -n 1 "$T/arm")" != "rc=0" ]; then
+    if { [ -n "$suite_setting" ] || [ "$restricted" -eq 1 ]; } && [ "$(tail -n 1 "$T/arm")" != "rc=0" ]; then
       echo "jit_diff: FAIL: $row did not complete in $arm under its suite environment"; tail -n 8 "$T/arm"; exit 1
     fi
+    case "$arm" in jit) n_jit=$((n_jit + 1)) ;; osr) n_osr=$((n_osr + 1)) ;; esac
     consider "$arm" 180
   done
-done
+  printf '%s\n' "${f#"$ROOT"/}" >> "$T/native-seen"
+done < "$T/native-files"
 fi
-# Denied up front: a source that uses gfx_open opens a window and cannot finish
-# unattended in the headless gate; *seeded_race* and
-# *userrace* (the deliberate #1489 positive-control race) are
-# nondeterministic on purpose; *state_at*|*statedump* prints hash-order output.
-# Phase 2's sole ownership declaration is checked on the broad population,
-# before selecting a singleton self-test. Include owned untracked bank files
-# in an unresolved merge, while main's OBS execution stays tracked-only.
-if ! owned_tracked=$(git -c safe.directory="$ROOT" -C "$ROOT" ls-files '*.eigs' 2>/dev/null); then
-  echo "jit_diff: FAIL: cannot enumerate the ownership corpus" >&2; exit 1
-fi
-printf '%s\n' "$owned_tracked" > "$T/owned-tracked"
-(cd "$ROOT" && find tests -type f -name '*.eigs') > "$T/owned-tests"
-LC_ALL=C sort -u "$T/owned-tracked" "$T/owned-tests" > "$T/ownership-corpus"
-python3 "$ROOT/tools/phase2_corpus_exclude.py" "$ROOT" "$T/ownership-corpus" || exit 1
-if [ -n "${JIT_DIFF_OBS_ONLY:-}" ]; then
+# Ordinary OBS discovery stays tracked-only; ownership was checked once above.
+if [ "$restricted" -eq 1 ]; then
+  obs_files=$(cat "$T/selected")
+elif [ -n "${JIT_DIFF_OBS_ONLY:-}" ]; then
   case "$JIT_DIFF_OBS_ONLY" in /*|../*|*/../*) echo "jit_diff: FAIL: JIT_DIFF_OBS_ONLY must be repository-relative" >&2; exit 1 ;; esac
   obs_files=$JIT_DIFF_OBS_ONLY
   git -c safe.directory="$ROOT" -C "$ROOT" ls-files --error-unmatch "$obs_files" >/dev/null 2>&1 || {
@@ -212,18 +289,10 @@ while IFS= read -r rel; do
   [ -n "$rel" ] || continue
   grep -qxF -- "$rel" "$T/ownership-corpus" || continue
   [ -f "$ROOT/$rel" ] || { echo "jit_diff: FAIL: OBS corpus entry missing: $rel" >&2; exit 1; }
-  if grep -q 'gfx_open[[:space:]]*of' "$ROOT/$rel"; then
-    n_deny=$((n_deny + 1))
-    echo "jit_diff: $rel OBS: excluded (uses gfx_open; cannot finish unattended headless)"
-    continue
+  denial=$(obs_denial "$rel")
+  if [ -n "$denial" ]; then
+    n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded ($denial)"; continue
   fi
-  case "$rel" in
-    *paint*|*_game*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (interactive example)"; continue ;;
-    *seeded_race*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (intentionally nondeterministic)"; continue ;;
-    *userrace*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (deliberate #1489 positive-control race)"; continue ;;
-    *state_at*|*statedump*) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (hash-order output)"; continue ;;
-    tests/test_template_large.eigs) n_deny=$((n_deny + 1)); echo "jit_diff: $rel OBS: excluded (workload outlives the OBS deadline by design)"; continue ;;
-  esac
   row=$(row_of "$rel"); prog="$ROOT/$rel"
   obs_seconds=$(obs_deadline "$rel")
   if [ "$obs_seconds" != 25 ]; then
@@ -232,6 +301,9 @@ while IFS= read -r rel; do
   run "$T/ref" "$obs_seconds" "${REF[@]}"
   arm_env obs
   run "$T/arm" "$obs_seconds" "${AE[@]}"
+  if [ "$restricted" -eq 1 ] && { [ "$(tail -n 1 "$T/ref")" != "rc=0" ] || [ "$(tail -n 1 "$T/arm")" != "rc=0" ]; }; then
+    echo "jit_diff: FAIL: selected $row did not complete in OBS/REF"; tail -n 8 "$T/ref"; tail -n 8 "$T/arm"; exit 1
+  fi
   consider obs "$obs_seconds"
   considered=$?
   if [ "$considered" -eq 2 ]; then
@@ -239,11 +311,18 @@ while IFS= read -r rel; do
   else
     n_obs=$((n_obs + 1))
   fi
+  printf '%s\n' "$rel" >> "$T/obs-seen"
 done <<EOF
 $obs_files
 EOF
 sort -o "$got" "$got"
-if [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
+if [ "$restricted" -eq 1 ]; then
+  if [ "$n" -ne "$selected_count" ] || [ "$n_jit" -ne "$selected_count" ] || [ "$n_osr" -ne "$selected_count" ] ||
+     [ "$n_obs" -ne "$selected_count" ] || [ "$n_deny" -ne 0 ] || [ "$n_timeout" -ne 0 ] ||
+     ! cmp -s "$T/selected" "$T/native-seen" || ! cmp -s "$T/selected" "$T/obs-seen"; then
+    echo "jit_diff: FAIL: restricted population selected=$selected_count native=$n jit=$n_jit osr=$n_osr OBS=$n_obs denied=$n_deny timeout-both=$n_timeout"; exit 1
+  fi
+elif [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
   [ "$n" -ge 100 ] || { echo "jit_diff: only $n JIT programs found -- the scan is vacuous"; exit 1; }
   [ "$n_suite_env" -eq 16 ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=16"; exit 1; }
   [ "$n_obs" -ge 500 ] || { echo "jit_diff: FAIL: OBS examined=$n_obs denied=$n_deny (floor 500)"; exit 1; }
@@ -273,6 +352,9 @@ if [ ! -s "$T/absent_required" ] && [ ! -s "$T/unexpected" ]; then
   while IFS= read -r absent; do
     [ -n "$absent" ] && echo "jit_diff: NOTE: ledgered COULD_NOT_ADJUDICATE row absent (pair agreed): $absent"
   done < "$T/absent_optional"
+  if [ "$restricted" -eq 1 ]; then
+    echo "jit_diff: RESTRICTED selected=$selected_count jit=$n_jit osr=$n_osr OBS=$n_obs; $nled ledgered; full corpus not checked"; exit 3
+  fi
   echo "jit_diff: OK ($n programs x {jit, osr} vs the interpreter; suite-env completed=$n_suite_env; OBS examined=$n_obs denied=$n_deny; $adjudicated arms adjudicated; $could_not_adjudicate could not adjudicate; $nled ledgered)"; exit 0
 fi
 diff <(ledger_data "$BASE") "$got" > "$T/d" || true
