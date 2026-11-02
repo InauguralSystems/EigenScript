@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tools/phase2_plants.sh [--ref REF] [--selftest] -- #1758: Phase 2's planted
+# tools/phase2_plants.sh [--ref REF] [--selftest] [--only ID] -- #1758: Phase 2's planted
 # faults (docs/design/phase2-numbers.md 9.3). A check proves it fires when it
 # is written or changed (docs/PRINCIPLES.md 5), so this runs as a
 # tools/selftests.txt row keyed on the checks the plants name, never on every
@@ -16,22 +16,37 @@
 # check's assertion removed must NOT print that line -> the plant survives
 # exactly the deletion of the assertion that names it.
 #
-# Plants land with their named checks: plant 1 with R1.1 (the C slot test);
-# 2-7 name MAP rows that land in R1.3-R2.2 and join this table then. The R1.1
+# Plants land with their named checks: plant 1 with R1.1 (the C slot test),
+# plant 2 with R2.1 (the C NaN-writer rows; the program half is R2.4).
+# Other MAP-row plants join as their named checks land. The R1.1
 # fix round added three instrument plants on the slot test: an integer overflow
 # that wraps instead of raising (Part D), and a population scan that writes noise
 # to stderr or an unparsed line to stdout (the critic's class); and #1775's
 # plant, the missing return that makes the -O0 amalgamation warn.
 # Prints one line per plant and `plants=N killed=N survived=0 broken=0
-# transverse=N`; exit 0 only for exactly that, with N > 0. About 3 minutes
+# transverse=N`; exit 0 only for exactly that, with N > 0. --only ID runs
+# one named plant and its transverse control; a successful restricted run
+# prints RESTRICTED and exits 3, never PASS for the full population.
+# About 3 minutes
 # per plant on the 4 GB box (two -O0 compiles of the amalgamated slot test).
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REF=HEAD
+ONLY=""
 while [ $# -gt 0 ]; do
     case "$1" in
-        --ref) REF="$2"; shift 2 ;;
+        --ref)
+            [ $# -gt 1 ] || { echo "phase2-plants: FAIL: --ref needs a value"; exit 2; }
+            REF="$2"; shift 2 ;;
         --selftest) shift ;;
+        --only)
+            [ $# -gt 1 ] || { echo "phase2-plants: FAIL: --only needs a plant id"; exit 2; }
+            [ -z "$ONLY" ] || { echo "phase2-plants: FAIL: --only may be given once"; exit 2; }
+            case "$2" in
+                1|2|overflow-wrap|stderr-noise|stdout-noise|return-type) ONLY="$2" ;;
+                *) echo "phase2-plants: FAIL: unknown plant id $2"; exit 2 ;;
+            esac
+            shift 2 ;;
         *) echo "phase2-plants: FAIL: unknown argument $1"; exit 2 ;;
     esac
 done
@@ -64,12 +79,14 @@ with open(path, 'w', encoding='utf-8') as f:
 PY
 }
 
-plants=0; killed=0; survived=0; broken=0; transverse=0
+plants=0; killed=0; survived=0; broken=0; transverse=0; available=0
 
 # run_plant ID FILE OLD NEW CHECK_FILE CHECK_OLD CHECK_NEW FAIL_RE CHECK_CMD...
 run_plant() {
     local id="$1" file="$2" old="$3" new="$4" cfile="$5" cold="$6" cnew="$7" re="$8"
     shift 8
+    available=$((available + 1))
+    [ -z "$ONLY" ] || [ "$ONLY" = "$id" ] || return 0
     plants=$((plants + 1))
     local verdict="" trans=""
     for mode in plant transverse; do
@@ -119,6 +136,22 @@ run_plant 1 src/value_slot.h \
     '        if (s.u != smi(v).u)' \
     '        if (0)' \
     '^slot-layer-test: FAIL slot_from_int\(0\): bits 0x' \
+    bash tests/phase2/slot_layer.sh release
+
+# Plant 2 (R2.1, design 9.3): preserve the incoming double bits, bypassing
+# the single writer's canonical branch. Part F must report the HEAP-spelling
+# payload's SIGSEGV from slot_incref, reproducing #1746. The transverse run
+# deletes only the NaN assertion: all RC children and non-NaN controls remain.
+run_plant 2 src/value_slot.h \
+    '    if ((s.u & 0x7FFFFFFFFFFFFFFFULL) > 0x7FF0000000000000ULL)
+        s.u = 0x7FF8000000000000ULL;' \
+    '    /* PLANT 2: raw NaN bits bypass canonicalization. */' \
+    tests/phase2/slot_layer.c \
+    '        if (strcmp(got, want) != 0)
+            FAILF("N12.nan-payload-tags' \
+    '        if (!nan && strcmp(got, want) != 0)
+            FAILF("N12.nan-payload-tags' \
+    '^slot-layer-test: FAIL N12.nan-payload-tags slot_from_f64\(fffb000000001000\): got X:signal 11:' \
     bash tests/phase2/slot_layer.sh release
 
 # R1.3 N3/(A): overflow must raise, never return the wrapped int64 result.
@@ -175,6 +208,14 @@ run_plant return-type src/builtins_tensor.c \
 
 echo "plants=$plants killed=$killed survived=$survived broken=$broken transverse=$transverse"
 VERDICT_DONE=1
+if [ -n "$ONLY" ]; then
+    if [ "$plants" -eq 1 ] && [ "$killed" -eq 1 ] && [ "$transverse" -eq 1 ]; then
+        echo "phase2-plants: RESTRICTED selected=$ONLY examined=$plants available=$available; full population not checked"
+        exit 3
+    fi
+    echo "phase2-plants: FAIL: restricted plant $ONLY did not complete its named check and transverse control"
+    exit 1
+fi
 if [ "$plants" -gt 0 ] && [ "$killed" -eq "$plants" ] && [ "$transverse" -eq "$plants" ]; then
     echo "phase2-plants: PASS"; exit 0
 fi
