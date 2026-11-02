@@ -157,7 +157,7 @@ void ne_matmul_bt_buf(
  * A VAL_BUFFER carries an optional 2-D shape (rows/cols; rows==0 => 1-D, length
  * = count). The tensor builtins gain a fast path that computes directly on the
  * flat double[] — no flatten/rebuild — eliminating F-OURO-15's flatten tax.
- * Same kernels (ne_matmul_buf i-k-j, num_guard elementwise) so the result is
+ * Same kernels (ne_matmul_buf i-k-j, IEEE elementwise operations) so the result is
  * byte-identical to the nested-list path. */
 static void buf_dims(Value *v, int *r, int *c) {
     if (v->data.buffer.rows > 0) { *r = v->data.buffer.rows; *c = v->data.buffer.cols; }
@@ -403,20 +403,17 @@ static int tensor_flatten_recursive(Value *v, double *out, int *idx) {
 
 /* ---- Element-wise binary op on two tensors (or scalar broadcast) ---- */
 typedef double (*BinOpFn)(double, double);
-static double op_add(double a, double b) { return num_guard(a + b); }
-static double op_sub(double a, double b) { return num_guard(a - b); }
-static double op_mul(double a, double b) { return num_guard(a * b); }
-/* #971: the elementwise zero-denominator stand-in. The `/` operator raises
- * on a zero divisor in both modes; this helper answered 0 instead (the
- * IEEE result would be inf or NaN, so the 0 is a pre-collapse). Default
- * unchanged; under strict it is the same undefined operation and raises. */
+static double op_add(double a, double b) { return eigs_math_result(a + b); }
+static double op_sub(double a, double b) { return eigs_math_result(a - b); }
+static double op_mul(double a, double b) { return eigs_math_result(a * b); }
+/* IEEE arithmetic has the same result for scalar and tensor forms. */
 static double op_div(double a, double b) {
-    if (b == 0.0) { STRICT_DOMAIN(1, "divide", "division by zero"); return 0.0; }
-    return num_guard(a / b);
+    STRICT_DOMAIN(b == 0.0, "divide", "division by zero");
+    return eigs_math_result_named(a / b, "divide");
 }
-/* #971: pow(negative, non-integer) is NaN — the one arithmetic builtin whose
- * finite inputs reach a NaN. Named so the strict raise says `pow`. */
-static double op_pow(double a, double b) { return num_guard_named(pow(a, b), "pow"); }
+static double op_pow(double a, double b) {
+    return eigs_math_result_named(pow(a, b), "pow");
+}
 
 /* #1093: materialise a buffer as the nested-list tensor of the same shape, so
  * a MIXED buffer/list pair falls back to the list path (and yields a list). */
@@ -771,35 +768,16 @@ static Value* tensor_unary(Value *v, UnaryOpFn fn) {
               make_float(0.0));
 }
 
-/* #865: `sqrt of -1` returns 0, which is indistinguishable from `sqrt of 0`.
- * Like the log clamp below, the substituted value stays and the invalid bit
- * records that the argument was out of domain. */
 static double op_sqrt(double x) {
-    if (x < 0) {
-        if (g_strict) { rt_error(EK_VALUE, 0, "sqrt: argument out of domain (negative)"); return 0.0; }
-        g_math_flags |= EIGS_MATH_INVALID; return 0.0;
-    }
-    return sqrt(x);
+    STRICT_DOMAIN(x < 0.0, "sqrt", "argument out of domain (negative)");
+    return eigs_math_result_named(sqrt(x), "sqrt");
 }
-static double op_exp(double x) { return num_guard(exp(x)); }
-/* #865: `log of 0` returns log(1e-10) = -23.025850929940457, an undocumented
- * substitution that is neither of the two clamps the Numbers promise covers.
- * The value stays (kernels depend on it), but the invalid bit now says the
- * argument was out of domain and the answer is a stand-in.
- * #1041: the stand-in applies ONLY to non-positive (or NaN) input. The old
- * test `!(x > 1e-10)` also swallowed every POSITIVE input below 1e-10 --
- * log of 1e-15 answered ln(1e-10) with no flag, a silent plateau that a
- * log-domain decay fit rode to a confidently wrong answer (phugoid G3).
- * ln of any positive double is finite (ln(5e-324) = -744.44), so there is
- * nothing to guard there. */
+static double op_exp(double x) { return eigs_math_result_named(exp(x), "exp"); }
 static double op_log_safe(double x) {
-    if (!(x > 0.0)) {
-        if (g_strict) { rt_error(EK_VALUE, 0, "log: argument out of domain (must be > 0)"); return 0.0; }
-        g_math_flags |= EIGS_MATH_INVALID; return num_guard(log(1e-10));
-    }
-    return num_guard(log(x));
+    STRICT_DOMAIN(!(x > 0.0), "log", "argument out of domain (must be > 0)");
+    return eigs_math_result_named(log(x), "log");
 }
-static double op_neg(double x) { return -x; }
+static double op_neg(double x) { return eigs_math_result_named(-x, "negative"); }
 
 /* ==== BUILTIN: sqrt ==== */
 Value* builtin_tensor_sqrt(Value *arg) { return tensor_unary(arg, op_sqrt); }
@@ -848,20 +826,11 @@ Value* builtin_tensor_matmul(Value *arg) {
                                                 : make_shaped_buffer(ar, bc);
         if (!res) return make_null();
         ne_matmul_buf(a->data.buffer.data, ar, ac, b->data.buffer.data, bc, res->data.buffer.data);
-        /* #971/#1131: inf - inf leaves a raw NaN. Strict mode raises here;
-         * non-strict mode keeps a canonical NaN in the backing work area on
-         * both x86 and ARM. #1417 guards every scalar read separately, so
-         * this stored sentinel reads as 0 and sets invalid, not as null.
-         * Finite results and infinities remain untouched in storage. */
+        /* Retain every work-area IEEE payload. Arithmetic status and the
+         * opt-in trap are reported without rewriting the kernel's output. */
         for (int i = 0; i < res->data.buffer.count; i++) {
-            if (res->data.buffer.data[i] != res->data.buffer.data[i]) {
-                if (g_strict) {
-                    STRICT_DOMAIN(1, "matmul",
-                                  "result is not a number (NaN has no defined value)");
-                    break;
-                }
-                res->data.buffer.data[i] = SLOT_F64_RAW(slot_null());
-            }
+            (void)eigs_math_result_named(res->data.buffer.data[i], "matmul");
+            if (g_has_error) break;
         }
         return res;
     }
@@ -888,10 +857,10 @@ Value* builtin_tensor_matmul(Value *arg) {
     }
     double *out = xcalloc((size_t)ar * bc, sizeof(double));
     ne_matmul_buf(af, ar, ac, bf, bc, out);
-    /* #971: same NaN collapse as the buffer path, so the strict raise names
-     * matmul instead of the bare num_guard backstop inside make_float. */
+    /* #971: same IEEE result handling as the buffer path, so the strict raise names
+     * matmul instead of the generic result check inside make_float. */
     for (int64_t i = 0; i < (int64_t)ar * bc; i++) {
-        if (out[i] != out[i]) out[i] = num_guard_named(out[i], "matmul");
+        out[i] = eigs_math_result_named(out[i], "matmul");
         if (g_has_error) { free(af); free(bf); free(out); return make_null(); }
     }
     Value *result;
@@ -939,6 +908,10 @@ Value* builtin_tensor_matmul_at(Value *arg) {
         Value *res = make_shaped_buffer(ac, bc);
         if (!res) return make_null();
         ne_matmul_at_buf(a->data.buffer.data, ar, ac, b->data.buffer.data, bc, res->data.buffer.data);
+        for (int i = 0; i < res->data.buffer.count; i++) {
+            (void)eigs_math_result(res->data.buffer.data[i]);
+            if (g_has_error) { val_decref(res); return make_null(); }
+        }
         return res;
     }
     int ar, ac, br, bc;
@@ -964,6 +937,10 @@ Value* builtin_tensor_matmul_at(Value *arg) {
     }
     double *out = xcalloc((size_t)ac * bc, sizeof(double));
     ne_matmul_at_buf(af, ar, ac, bf, bc, out);
+    for (int64_t i = 0; i < (int64_t)ac * bc; i++) {
+        (void)eigs_math_result(out[i]);
+        if (g_has_error) { free(af); free(bf); free(out); return make_null(); }
+    }
     Value *result = flat_to_tensor_2d(out, ac, bc);
     free(af); free(bf); free(out);
     return result;
@@ -998,6 +975,10 @@ Value* builtin_tensor_matmul_bt(Value *arg) {
                                                 : make_shaped_buffer(ar, br);
         if (!res) return make_null();
         ne_matmul_bt_buf(a->data.buffer.data, ar, ac, b->data.buffer.data, br, res->data.buffer.data);
+        for (int i = 0; i < res->data.buffer.count; i++) {
+            (void)eigs_math_result(res->data.buffer.data[i]);
+            if (g_has_error) { val_decref(res); return make_null(); }
+        }
         return res;
     }
     int ar, ac, br, bc;
@@ -1023,6 +1004,10 @@ Value* builtin_tensor_matmul_bt(Value *arg) {
     }
     double *out = xcalloc((size_t)ar * br, sizeof(double));
     ne_matmul_bt_buf(af, ar, ac, bf, br, out);
+    for (int64_t i = 0; i < (int64_t)ar * br; i++) {
+        (void)eigs_math_result(out[i]);
+        if (g_has_error) { free(af); free(bf); free(out); return make_null(); }
+    }
     Value *result = (ar == 1) ? flat_to_tensor_1d(out, br) : flat_to_tensor_2d(out, ar, br);
     free(af); free(bf); free(out);
     return result;
@@ -1137,10 +1122,10 @@ Value* builtin_tensor_scatter_add(Value *arg) {
             if (per_row) {
                 if (pass) {
                     int64_t at = (int64_t)i * cols + idx;
-                    d[at] = num_guard(d[at] + v);
+                    d[at] = eigs_math_result(d[at] + v);
                 }
             } else {
-                if (pass) d[idx] = num_guard(d[idx] + v);
+                if (pass) d[idx] = eigs_math_result(d[idx] + v);
             }
         }
     }
@@ -1192,7 +1177,7 @@ Value* builtin_tensor_log_softmax(Value *arg) {
      * the arithmetic result for a scalar argument — a NUMBER is a valid
      * argument here, which is what makes this not a type guard (#632). */
     if (tensor && val_is_number(tensor)) return make_float(0.0);
-    /* flat-buffer fast path (#973): same kernel + the same #865 clamp. */
+    /* Flat-buffer fast path: same kernel and probability-floor algorithm. */
     if (tensor && tensor->type == VAL_BUFFER) {
         Value *res = make_buffer_like(tensor);
         if (!res) return make_null();
@@ -1284,9 +1269,9 @@ Value* builtin_tensor_mean(Value *arg) {
         for (int i = 0; i < n; i++) {
             double x = buffer_read_f64(arg, i);
             if (g_has_error) return make_null();
-            s = num_guard(s + x);
+            s = eigs_math_result(s + x);
         }
-        return make_float(s / n);
+        return make_float(eigs_math_result(s / n));
     }
     /* Split from the empty case below. `tensor_total` answers 0 for an empty
      * list AND for any non-tensor — a string, a dict, a function — so one
@@ -1315,7 +1300,7 @@ Value* builtin_tensor_mean(Value *arg) {
     double sum = 0.0;
     for (int i = 0; i < total; i++) sum += flat[i];
     free(flat);
-    return make_float(sum / total);
+    return make_float(eigs_math_result(sum / total));
 }
 
 /* ==== BUILTIN: sum ==== */
@@ -1350,14 +1335,14 @@ static int tensor_sum_into(Value *v, EigsNum *sum) {
             sum->value.i64 = result;
         } else {
             double d = n.is_int ? (double)n.value.i64 : n.value.f64;
-            sum->value.f64 = num_guard(sum->value.f64 + d);
+            sum->value.f64 = eigs_math_result(sum->value.f64 + d);
             if (g_has_error) return 0;
         }
     } else if (v->type == VAL_BUFFER) {
         for (int i = 0; i < v->data.buffer.count; i++) {
             double d = buffer_read_f64(v, i);
             if (g_has_error) return 0;
-            sum->value.f64 = num_guard(sum->value.f64 + d);
+            sum->value.f64 = eigs_math_result(sum->value.f64 + d);
             if (g_has_error) return 0;
         }
     } else if (v->type == VAL_LIST) {
@@ -1394,9 +1379,9 @@ Value* builtin_tensor_norm(Value *arg) {
         for (int i = 0; i < n; i++) {
             double x = buffer_read_f64(arg, i);
             if (g_has_error) return make_null();
-            s = num_guard(s + num_guard(x * x));
+            s = eigs_math_result(s + eigs_math_result(x * x));
         }
-        return make_float(num_guard(sqrt(s)));
+        return make_float(eigs_math_result(sqrt(s)));
     }
     /* Split from the empty case below. `tensor_total` answers 0 for an empty
      * list AND for any non-tensor — a string, a dict, a function — so one
@@ -1422,9 +1407,9 @@ Value* builtin_tensor_norm(Value *arg) {
         return make_null();
     }
     double s = 0.0;
-    for (int i = 0; i < total; i++) s = num_guard(s + num_guard(flat[i] * flat[i]));
+    for (int i = 0; i < total; i++) s = eigs_math_result(s + eigs_math_result(flat[i] * flat[i]));
     free(flat);
-    return make_float(num_guard(sqrt(s)));
+    return make_float(eigs_math_result(sqrt(s)));
 }
 
 /* #292: bytes a list-of-fresh-numbers tensor of `n` elements costs — one Value
@@ -1842,7 +1827,7 @@ Value* builtin_random_normal(Value *arg) {
                 double u1 = 1.0 - eigs_random_double();
                 double u2 = eigs_random_double();
                 double z = sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
-                list_append_owned(row, make_float(z * scale));
+                list_append_owned(row, make_float(eigs_math_result(z * scale)));
             }
             list_append_owned(outer, row);
         }
@@ -1854,7 +1839,7 @@ Value* builtin_random_normal(Value *arg) {
             double u1 = 1.0 - eigs_random_double();
             double u2 = eigs_random_double();
             double z = sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
-            list_append_owned(out, make_float(z * scale));
+            list_append_owned(out, make_float(eigs_math_result(z * scale)));
         }
         TRACE_NONDET_RECORD("random_normal", out);
     }
@@ -1926,9 +1911,8 @@ static double numerical_loss(Value *loss_fn, Value *arg, const char *who,
  * was just perturbed.  For matrix rows, also validate the parent shape and
  * identity.  The caller retains container so restoration never targets a
  * callback's replacement row. */
-/* Perturb one cell and return the value actually STORED there.  list_set_f64
- * normalizes through num_guard (it clamps beyond +-EIGS_NUM_MAX), so the failure
- * path must compare the cell with what was stored, not with old_val +- eps. */
+/* Store a checked arithmetic perturbation and return its exact IEEE value
+ * for restoration checks after an arbitrary callback. Transport is pure. */
 static double gradient_perturb(Value *container, int index, double value) {
     list_set_f64(container, index, value);
     double stored = value;
@@ -2043,17 +2027,17 @@ Value* builtin_numerical_grad(Value *arg) {
         Value *grad = make_list(len);
         for (int i = 0; i < len; i++) {
             double old_val = eigs_slot_float(list_slot(param, i), __func__);
-            double written = gradient_perturb(param, i, old_val + eps);
+            double written = gradient_perturb(param, i, eigs_math_result(old_val + eps));
             double lp = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
             if (!gradient_container_unchanged(param, len, NULL, 0, -1, i, old_val, written))
                 goto list_grad_failed;
-            written = gradient_perturb(param, i, old_val - eps);
+            written = gradient_perturb(param, i, eigs_math_result(old_val - eps));
             double lm = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
             if (!gradient_container_unchanged(param, len, NULL, 0, -1, i, old_val, written))
                 goto list_grad_failed;
             list_set_f64(param, i, old_val);
             /* Central difference */
-            list_append_owned(grad, make_float((lp - lm) / (2.0 * eps)));
+            list_append_owned(grad, make_float(eigs_math_result((lp - lm) / (2.0 * eps))));
         }
         val_decref(nul);
         if (!loss_valid) { val_decref(grad); return make_null(); }
@@ -2077,19 +2061,19 @@ list_grad_failed:
         for (int c = 0; c < cols; c++) {
             double old_val = eigs_slot_float(list_slot(row, c), __func__);
             val_incref(row);
-            double written = gradient_perturb(row, c, old_val + eps);
+            double written = gradient_perturb(row, c, eigs_math_result(old_val + eps));
             double lp = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
             if (!gradient_container_unchanged(row, cols, param, rows, r, c, old_val, written)) {
                 val_decref(row); goto matrix_grad_failed;
             }
-            written = gradient_perturb(row, c, old_val - eps);
+            written = gradient_perturb(row, c, eigs_math_result(old_val - eps));
             double lm = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
             if (!gradient_container_unchanged(row, cols, param, rows, r, c, old_val, written)) {
                 val_decref(row); goto matrix_grad_failed;
             }
             list_set_f64(row, c, old_val);
             val_decref(row);
-            list_append_owned(grad_row, make_float((lp - lm) / (2.0 * eps)));
+            list_append_owned(grad_row, make_float(eigs_math_result((lp - lm) / (2.0 * eps))));
         }
         list_append_owned(grad, grad_row);
         unfinished_grad_row = NULL;
@@ -2139,7 +2123,7 @@ Value* builtin_sgd_update(Value *arg) {
         for (int i = 0; i < len; i++) {
             double pv = eigs_slot_float(list_slot(param, i), __func__);
             double gv = eigs_slot_float(list_slot(grad, i), __func__);
-            list_set_f64(param, i, pv - lr * gv);
+            list_set_f64(param, i, eigs_math_result(pv - lr * gv));
         }
     } else {
         /* 2D */
@@ -2154,7 +2138,7 @@ Value* builtin_sgd_update(Value *arg) {
             for (int c = 0; c < cols; c++) {
                 double pv = eigs_slot_float(list_slot(pr, c), __func__);
                 double gv = eigs_slot_float(list_slot(gr, c), __func__);
-                list_set_f64(pr, c, pv - lr * gv);
+                list_set_f64(pr, c, eigs_math_result(pv - lr * gv));
             }
         }
     }
@@ -2254,12 +2238,12 @@ Value* builtin_numerical_grad_rows(Value *arg) {
         for (int c = 0; c < cols && c < row->data.list.count; c++) {
             double old_val = eigs_slot_float(list_slot(row, c), __func__);
             val_incref(row);
-            double written = gradient_perturb(row, c, old_val + eps);
+            double written = gradient_perturb(row, c, eigs_math_result(old_val + eps));
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
             if (!gradient_container_unchanged(row, row_len, matrix, rows, r, c, old_val, written)) {
                 val_decref(row); goto rows_grad_failed;
             }
-            written = gradient_perturb(row, c, old_val - eps);
+            written = gradient_perturb(row, c, eigs_math_result(old_val - eps));
             double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
             if (!gradient_container_unchanged(row, row_len, matrix, rows, r, c, old_val, written)) {
                 val_decref(row); goto rows_grad_failed;
@@ -2267,7 +2251,7 @@ Value* builtin_numerical_grad_rows(Value *arg) {
             list_set_f64(row, c, old_val);
             val_decref(row);
             /* gradient — release the zero placeholder this slot held */
-            list_set_f64(grad_row, c, (loss_plus - loss_minus) / (2.0 * eps));
+            list_set_f64(grad_row, c, eigs_math_result((loss_plus - loss_minus) / (2.0 * eps)));
         }
     }
     free(row_snapshot);
@@ -2342,7 +2326,7 @@ Value* builtin_sgd_update_rows(Value *arg) {
         for (int c = 0; c < cols; c++) {
             double pv = eigs_slot_float(list_slot(mrow, c), __func__);
             double gv = eigs_slot_float(list_slot(grow, c), __func__);
-            list_set_f64(mrow, c, pv - lr * gv);
+            list_set_f64(mrow, c, eigs_math_result(pv - lr * gv));
         }
     }
     free(row_snapshot);
@@ -2442,13 +2426,13 @@ Value* builtin_numerical_grad_cols(Value *arg) {
             double old_val = eigs_slot_float(list_slot(row, col), __func__);
             val_incref(row);
             /* +eps */
-            double written = gradient_perturb(row, col, old_val + eps);
+            double written = gradient_perturb(row, col, eigs_math_result(old_val + eps));
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
             if (!gradient_container_unchanged(row, row_len, matrix, rows, r, col, old_val, written)) {
                 val_decref(row); goto cols_grad_failed;
             }
             /* -eps */
-            written = gradient_perturb(row, col, old_val - eps);
+            written = gradient_perturb(row, col, eigs_math_result(old_val - eps));
             double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
             if (!gradient_container_unchanged(row, row_len, matrix, rows, r, col, old_val, written)) {
                 val_decref(row); goto cols_grad_failed;
@@ -2458,7 +2442,7 @@ Value* builtin_numerical_grad_cols(Value *arg) {
             val_decref(row);
             /* gradient — release the zero placeholder this slot held */
             Value *grad_row = list_get_ref(grad, r);
-            list_set_f64(grad_row, col, (loss_plus - loss_minus) / (2.0 * eps));
+            list_set_f64(grad_row, col, eigs_math_result((loss_plus - loss_minus) / (2.0 * eps)));
         }
     }
     free(col_snapshot);
@@ -2545,7 +2529,7 @@ Value* builtin_sgd_update_cols(Value *arg) {
 
             double pv = eigs_slot_float(list_slot(mrow, col), __func__);
             double gv = eigs_slot_float(list_slot(grow, col), __func__);
-            list_set_f64(mrow, col, pv - lr * gv);
+            list_set_f64(mrow, col, eigs_math_result(pv - lr * gv));
         }
     }
     free(col_snapshot);
@@ -2757,11 +2741,10 @@ Value* builtin_tensor_load(Value *arg) {
         free(data); fclose(f); tensor_load_record_verdict(0, 0); return make_null();
     }
     /* #971: the file is untrusted bytes, so a NaN pattern is reachable
-     * here. flat_to_tensor_* would collapse it through make_float anyway
-     * (same 0 + EIGS_MATH_INVALID); guarding first lets the strict raise
+     * here. flat_to_tensor_* retains it through make_float; checking first lets the strict raise
      * name tensor_load. */
     for (int i = 0; i < total; i++) {
-        if (data[i] != data[i]) data[i] = num_guard_named(data[i], "tensor_load");
+        data[i] = eigs_math_result_named(data[i], "tensor_load");
         if (g_has_error) {
             free(data); fclose(f); tensor_load_record_verdict(0, 0);
             return make_null();

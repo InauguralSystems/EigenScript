@@ -257,16 +257,18 @@ void rt_error(ErrKind kind, int line, const char *fmt, ...) {
     }
 }
 
-/* #971: the strict half of the NaN collapse. Off, num_guard folds a NaN to
- * 0 and sets EIGS_MATH_INVALID — a plausible number nothing downstream can
- * tell from a real zero. On, the operation has no honest value, so it joins
- * div0/mod0 and the domain raises: a catchable EK_VALUE. `who` is NULL when
- * the backstop in num_guard fired for a source the enumerated callers of
- * num_guard_named do not cover; the message then names the arithmetic
- * rather than a builtin, which is still louder than a silent 0. */
+/* Keep the established first-NaN diagnostic for strict arithmetic and
+ * existing finite data readers. Default arithmetic retains the IEEE result. */
 void eigs_strict_nan_raise(const char *who) {
     rt_error(EK_VALUE, 0, "%s: result is not a number (NaN has no defined value)",
              who ? who : "arithmetic");
+}
+void eigs_math_nonfinite(double x, const char *who) {
+    g_math_flags |= isnan(x) ? EIGS_MATH_INVALID : EIGS_MATH_OVERFLOW;
+    if (!g_strict || g_has_error) return;
+    if (isnan(x)) eigs_strict_nan_raise(who);
+    else rt_error(EK_VALUE, 0, "%s: non-finite arithmetic result (infinity)",
+                  who ? who : "arithmetic");
 }
 
 const char* tok_type_name(TokType t) {
@@ -646,7 +648,7 @@ static int equal_structure_reflexive(Value *root);
  * synchronize module namespaces.  Observer snapshots are ordinary detached
  * values, and unsupported/deep values are refused before reaching here. */
 static int values_equal_for_observation(Value *a, Value *b, int depth) {
-    if (a == b) {
+    if (a == b && (!a || a->type != VAL_FLOAT)) {
         if (a && (a->type == VAL_LIST || a->type == VAL_DICT || a->type == VAL_BUFFER))
             return equal_structure_reflexive(a);
         return 1;
@@ -1337,32 +1339,11 @@ void observer_slot_reset(Env *e) {
     observer_slot_reset_bounded(e, -1);
 }
 
-/* #861: a numeric binding pinned at the saturation ceiling (±EIGS_NUM_MAX,
- * where num_guard clamps everything that escapes the finite number line) is
- * not evidence of rest — it is the ABSENCE of evidence. A geometric runaway
- * reaches the ceiling and stays there, so the dH window fills with zeros and
- * H(EIGS_NUM_MAX) falls under h_low: every clause of `converged` is
- * legitimately satisfied while the trajectory it describes was destroyed
- * before the observer sampled it. The window really is quiet; the quiet is an
- * artifact of the clamp.
- *
- * So the rest bands (converged/equilibrium/stable) and `improving` refuse a
- * saturated binding, and `diverging` claims it: under the "finite by
- * construction" rule this value has, by the contract's own definition,
- * escaped the finite number line. A binding assigned a literal ±EIGS_NUM_MAX
- * that never overflowed reads `diverging` too — the runtime genuinely cannot
- * tell the two apart (that indistinguishability is #865), and this is the
- * direction that fails loudly. A diverging solver reporting `converged` hands
- * back EIGS_NUM_MAX as an answer; the reverse is a visible false alarm.
- *
- * Keyed on the slot's own last observed number, not the env's current value:
- * that keeps the check at the same layer as the windows it guards, so the
- * tape/DAP/step surfaces (which build an ObserverSlot without an Env) get it
- * for free. Contrast #708's opaque band, which must sit in vm.c because
- * value-is-a-function is only answerable from the binding. The entropy
- * constants are deliberately untouched — same discipline as #708. */
-static int observer_slot_saturated(const ObserverSlot *s) {
-    return (s && s->v_used && fabs(s->last_value) >= EIGS_NUM_MAX) ? 1 : 0;
+/* Finite values, including 1e308 and every larger finite f64, can be rest
+ * states. Non-finite observations cannot establish rest; the observer never
+ * changes the stored value or arithmetic flags when classifying it. */
+static int observer_slot_nonfinite(const ObserverSlot *s) {
+    return s && s->v_used && !isfinite(s->last_value);
 }
 
 /* ==== #861: the numeric predicate family — the value channel as the ====
@@ -1471,12 +1452,10 @@ static int obs_num_oscillating(const ObserverSlot *s) {
         || obs_num_bounded_oscillating(s);
 }
 
-/* Divergence: position at the saturation ceiling (claimed before the window
- * guard — the evidence is where the value IS, and the clamp has already
- * flattened the window), or the #422 raw test: non-vanishing same-sign
- * steps sum without bound no matter how small Δv/|v| looks. */
+/* Divergence: a non-finite position, or the #422 raw test: non-vanishing
+ * same-sign steps sum without bound no matter how small delta/value looks. */
 static int obs_num_diverging(const ObserverSlot *s) {
-    if (observer_slot_saturated(s)) return 1;
+    if (observer_slot_nonfinite(s)) return 1;
     return observer_slot_raw_diverging(s);
 }
 
@@ -1490,7 +1469,7 @@ static int obs_num_diverging(const ObserverSlot *s) {
  * window ratio at n=60 is ~0.91 and rising toward 1, so it stays outside
  * the band instead of being promised a limit it does not have. */
 static int obs_num_improving(const ObserverSlot *s) {
-    if (observer_slot_saturated(s)) return 0;
+    if (observer_slot_nonfinite(s)) return 0;
     size_t cnt = obs_v_count(s);
     if (cnt < 4) return 0;                       /* early-warning band: same
                                                   * 4-sample floor as the raw
@@ -1547,7 +1526,7 @@ static int obs_num_improving(const ObserverSlot *s) {
  * structure tests as guards (a linear runaway's Δv/(1+|v|) vanishes while
  * its raw steps do not). */
 static int obs_num_converged(const ObserverSlot *s) {
-    if (observer_slot_saturated(s)) return 0;
+    if (observer_slot_nonfinite(s)) return 0;
     if (obs_v_count(s) < (size_t)observer_slot_window(s)) return 0;
     int all_zero, all_small;
     obs_num_flags(s, &all_zero, &all_small);
@@ -1578,7 +1557,7 @@ static int observer_slot_raw_one_direction(const ObserverSlot *s, size_t n) {
  * is a trend, not an equilibrium, even after its steps enter the converged
  * deadband (#1891 makes this distinction observable for damped tails). */
 static int obs_num_equilibrium(const ObserverSlot *s) {
-    if (observer_slot_saturated(s)) return 0;
+    if (observer_slot_nonfinite(s)) return 0;
     size_t N = (size_t)observer_slot_window(s);
     if (obs_v_count(s) < N) return 0;
     if (observer_slot_raw_one_direction(s, N) || observer_slot_raw_oscillating(s)) return 0;
@@ -1599,7 +1578,7 @@ static int obs_num_equilibrium(const ObserverSlot *s) {
  * consecutive sign flips. May carry steady drift (harmonic-class vanishing
  * steps live here: real motion, no certified limit). converged => stable. */
 static int obs_num_stable(const ObserverSlot *s) {
-    if (observer_slot_saturated(s)) return 0;
+    if (observer_slot_nonfinite(s)) return 0;
     size_t N = (size_t)observer_slot_window(s);
     if (obs_v_count(s) < N) return 0;
     if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
@@ -1645,9 +1624,8 @@ static int obs_route_num(const ObserverSlot *s) {
 
 /* Public predicates: dispatch numeric bindings to the value-channel family
  * above (#861); everything else keeps the entropy classifiers below. The
- * saturation gates that #889 put on the entropy bodies are gone — a live
- * numeric binding always routes to the value channel, where the family
- * handles saturation itself, so the entropy route can no longer see one. */
+ * numeric route handles non-finite positions itself, so the entropy route
+ * does not substitute a result for those observations. */
 static int obs_entropy_converged(const ObserverSlot *s) {
     if (!s) return 0;
     size_t N = (size_t)observer_slot_window(s);
@@ -2204,7 +2182,6 @@ void free_value(Value *v) {
 
 static inline Value *make_float_pooled(double n) __attribute__((always_inline));
 static inline Value *make_float_pooled(double n) {
-    n = num_guard(n);
     Value *v;
 #ifndef EIGS_POOL_OFF_NUM
     if (g_num_freelist) {
@@ -2226,7 +2203,8 @@ static inline Value *make_float_pooled(double n) {
     return v;
 }
 
-/* Float construction retains the existing pooling and normalization path. */
+/* Construction/copying retains IEEE bits and never raises or writes status.
+ * Arithmetic producers report their result before constructing the value. */
 Value *make_float(double n) { return make_float_pooled(n); }
 
 /* #1758 R1.3: large int slots and Value API boundaries own ordinary heap
@@ -2263,7 +2241,6 @@ void recycle_intermediate(Value *v) {
 /* Unpooled make_float: never touches the per-thread NUM freelist, so it is
  * safe without a current VM thread (C-level fixtures, tests/test_intern_owners.c). */
 Value* make_float_permanent(double n) {
-    n = num_guard(n);
     Value *v = xcalloc(1, sizeof(Value));
     v->type = VAL_FLOAT;
     VAL_F64_RAW(v) = n;
@@ -2298,7 +2275,7 @@ static const char *num_who(const char *who) {
 
 /* The final readers never own their argument. Keep the payload/type
  * predicate here so all forms share it, including every refusal path. */
-static int eigs_number_read(const Value *v, EigsNum *out, const char *who) {
+int eigs_number_read(const Value *v, EigsNum *out, const char *who) {
     if (v && v->type == VAL_INT) {
         out->is_int = 1; out->value.i64 = VAL_I64_RAW(v); return 1;
     }
@@ -2724,13 +2701,17 @@ double buffer_read_f64(const Value *buffer, int64_t index) {
      * INVALID flag. Do this before the generic nonfinite refusal; callers
      * must stop before reading a later infinity. The finite-only refusal in
      * non-strict mode and the infinity refusal remain unchanged. */
-    if (g_strict && x != x && !g_has_error) return num_guard(x);
+    if (g_strict && x != x && !g_has_error) {
+        g_math_flags |= EIGS_MATH_INVALID;
+        eigs_strict_nan_raise(NULL);
+        return 0.0;
+    }
     if (!isfinite(x)) {
         if (!g_has_error)
             rt_error(EK_VALUE, 0, "buffer_read_f64: expected a finite number");
         return 0.0;
     }
-    return num_guard(x);
+    return x;
 }
 int buffer_index_at(const Value *buffer, int64_t index, int64_t *out, const char *who) {
     if (!buffer || buffer->type != VAL_BUFFER || index < 0 || index >= buffer->data.buffer.count) {
@@ -3812,9 +3793,9 @@ int is_truthy(Value *v) {
     return 0;
 }
 
-/* R1.6z-D2: identity is sound only if every reachable element is reflexive.
- * Before R2.2 only a NaN-holding buffer is non-reflexive; R2.2 must extend
- * this predicate to NaN floats (including immediate container slots).
+/* R1.6z-D2 / R2.2: identity is sound only if every reachable element is
+ * reflexive. Both NaN-holding buffers and NaN floats (including immediate
+ * container slots) are non-reflexive.
  * The work stack avoids C recursion and the pointer set visits shared
  * containers/buffers once, so DAGs stay linear and cycles terminate.
  * All pointers are borrowed for this call. No scalar boundary, raise or
@@ -3855,20 +3836,27 @@ static int equal_scan_seen(EqualScan *scan, Value *v) {
     return 0;
 }
 
-static void equal_scan_push(EqualScan *scan, Value *v) {
+static int equal_scan_push(EqualScan *scan, Value *v) {
+    if (v && v->type == VAL_FLOAT) {
+        /* The proven kind makes this raw numeric reader non-raising. Unlike
+         * an arithmetic boundary, equality never normalizes or writes flags. */
+        EigsNum n;
+        (void)eigs_number_read(v, &n, "equality");
+        return !isnan(n.value.f64);
+    }
     if (!v || (v->type != VAL_LIST && v->type != VAL_DICT && v->type != VAL_BUFFER))
-        return;
+        return 1;
     if (scan->count == scan->capacity) {
         scan->capacity = scan->capacity ? scan->capacity * 2 : 32;
         scan->todo = xrealloc_array(scan->todo, scan->capacity, sizeof(*scan->todo));
     }
     scan->todo[scan->count++] = v;
+    return 1;
 }
 
 static int equal_structure_reflexive(Value *root) {
     EqualScan scan = {0};
-    int reflexive = 1;
-    equal_scan_push(&scan, root);
+    int reflexive = equal_scan_push(&scan, root);
     while (scan.count && reflexive) {
         Value *v = scan.todo[--scan.count];
         if (equal_scan_seen(&scan, v)) continue;
@@ -3877,12 +3865,22 @@ static int equal_structure_reflexive(Value *root) {
                 if (isnan(v->data.buffer.data[i])) { reflexive = 0; break; }
             }
         } else if (v->type == VAL_LIST) {
-            for (int i = 0; i < v->data.list.count; i++)
-                equal_scan_push(&scan, list_get_ref(v, i));
+            for (int i = 0; i < v->data.list.count; i++) {
+                EIGS_VIEW(view);
+                if (!equal_scan_push(&scan, list_get_view(v, i, &view))) {
+                    reflexive = 0;
+                    break;
+                }
+            }
         } else {
             eigs_module_ns_sync(v);      /* #1057 whole-dict reader */
-            DICT_FOR_EACH(v, i)
-                equal_scan_push(&scan, dict_value_get_ref(v, i));
+            DICT_FOR_EACH(v, i) {
+                EIGS_VIEW(view);
+                if (!equal_scan_push(&scan, dict_value_get_view(v, i, &view))) {
+                    reflexive = 0;
+                    break;
+                }
+            }
         }
     }
     free(scan.todo);
@@ -3908,8 +3906,8 @@ static int equal_structure_reflexive(Value *root) {
  * the operator (`==`, `!=`) or the builtin, for the message. Every other
  * mixed-type pair stays unequal. */
 static int values_equal_impl(Value *a, Value *b, int depth, const char *op) {
-    /* #1417 / R1.6z-D2: identity cannot hide a reachable NaN buffer. */
-    if (a == b && (!a || a->type != VAL_BUFFER)) {
+    /* #1417 / R1.6z-D2 / R2.2: identity cannot hide a NaN float/buffer. */
+    if (a == b && (!a || (a->type != VAL_BUFFER && a->type != VAL_FLOAT))) {
         if (a && (a->type == VAL_LIST || a->type == VAL_DICT))
             return equal_structure_reflexive(a);
         return 1;

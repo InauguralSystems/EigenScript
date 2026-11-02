@@ -2153,7 +2153,7 @@ Value* builtin_audio_sine(Value *arg) {
     for (int i = 0; i < n; i++) {
         double t = (double)i / rate;
         double s = sin(2.0 * M_PI * freq * t) * amp;
-        list_append_owned(list, make_float(s));
+        list_append_owned(list, make_float(eigs_math_result(s)));
     }
     return list;
 }
@@ -2190,7 +2190,7 @@ Value* builtin_audio_saw(Value *arg) {
     for (int i = 0; i < n; i++) {
         double t = (double)i / rate;
         double s = 2.0 * (t * freq - floor(t * freq + 0.5)) * amp;
-        list_append_owned(list, make_float(s));
+        list_append_owned(list, make_float(eigs_math_result(s)));
     }
     return list;
 }
@@ -2277,7 +2277,7 @@ Value* builtin_audio_sweep(Value *arg) {
             s = sin(2.0 * M_PI * phase) * amp;
         else
             s = (2.0 * phase - 1.0) * amp;
-        list_append_owned(list, make_float(s));
+        list_append_owned(list, make_float(eigs_math_result(s)));
     }
     return list;
 }
@@ -2550,7 +2550,7 @@ Value* builtin_audio_envelope(Value *arg) {
         double s = ((list_elem_type(samples, i) == VAL_FLOAT || list_elem_type(samples, i) == VAL_INT)) ? eigs_list_float(samples, i, __func__) : 0;
         if (g_has_error) { val_decref(out); return make_null(); }
         s *= env;
-        list_append_owned(out, make_float(s));
+        list_append_owned(out, make_float(eigs_math_result(s)));
     }
     return out;
 }

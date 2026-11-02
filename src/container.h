@@ -3,9 +3,9 @@
 
 /* Container slot boundary (#1665 arm D).  List items and dict values are
  * EigsSlot storage (B10, the flip).  Every stored slot is one of:
- *   - an immediate number: a double, always num_guard'ed (the default x86
- *     NaN 0xFFF8... is SLOT_NULL_BITS, so an unguarded double could read
- *     back as null), or an SMI, an int in [-2^47, 2^47) (#1758 design 2.1);
+ *   - an immediate number: a double canonicalized by slot_from_f64 (all NaN
+ *     payloads become the one number NaN, never a slot tag), or an SMI,
+ *     an int in [-2^47, 2^47) (#1758 design 2.1);
  *   - SLOT_NULL_BITS or a bool encoding (the immortal singletons are never
  *     stored as heap pointers);
  *   - a TAG_HEAP pointer owning one counted reference to a Value whose type
@@ -24,7 +24,7 @@ typedef struct { Value v; } EigsView;
  * encodings, everything else is a heap pointer.  C NULL encodes as null. */
 static inline EigsSlot eigs_container_slot(Value *v) {
     if (!v || v->type == VAL_NULL) return slot_null();
-    if (v->type == VAL_FLOAT) return slot_from_f64(num_guard(VAL_F64_RAW(v)));
+    if (v->type == VAL_FLOAT) return slot_from_f64(VAL_F64_RAW(v));
     /* #1758 (design 2.1): container storage is canonical -- a small int is
      * an SMI, and only an int outside [-2^47, 2^47) stays its box. */
     if (__builtin_expect(v->type == VAL_INT, 0)) {
@@ -41,13 +41,13 @@ static inline EigsSlot eigs_slot_adopt(Value *v) {
     if (!slot_is_heap(s)) val_decref(v);
     return s;
 }
-/* Normalise a slot for storage.  Immediates are guarded; a heap slot that
- * points at a NUM / NULL / BOOL Value (a VM-internal box or a singleton) is
- * re-encoded as an immediate.  _owned consumes the slot's reference, _borrow
+/* Normalise a slot for storage. Float NaNs are canonicalized; a heap slot
+ * that points at a FLOAT / NULL / BOOL Value (a VM-internal box or singleton)
+ * is re-encoded as an immediate.  _owned consumes the slot's reference, _borrow
  * takes a new one for the container.  #1758: an SMI is already canonical
  * storage and is returned as it is (it owns no reference). */
 static inline EigsSlot eigs_slot_store_owned(EigsSlot s) {
-    if (slot_is_f64(s)) return slot_from_f64(num_guard(SLOT_F64_RAW(s)));
+    if (slot_is_f64(s)) return slot_from_f64(SLOT_F64_RAW(s));
     if (slot_is_heap(s)) {
         Value *v = slot_as_ptr(s);
         if (v->type == VAL_FLOAT || v->type == VAL_INT || v->type == VAL_NULL || v->type == VAL_BOOL)
@@ -56,7 +56,7 @@ static inline EigsSlot eigs_slot_store_owned(EigsSlot s) {
     return s;
 }
 static inline EigsSlot eigs_slot_store_borrow(EigsSlot s) {
-    if (slot_is_f64(s)) return slot_from_f64(num_guard(SLOT_F64_RAW(s)));
+    if (slot_is_f64(s)) return slot_from_f64(SLOT_F64_RAW(s));
     if (slot_is_heap(s)) {
         EigsSlot e = eigs_container_slot(slot_as_ptr(s));
         slot_incref(e);
@@ -301,11 +301,11 @@ static inline void dict_value_set_owned(Value *dict, int i, Value *v) {
     dict->data.dict.vals[i] = eigs_slot_adopt(v);
 }
 
-/* Slot writes own exactly one container reference.  Owned consumes the slot;
- * append borrows it and therefore increfs.  Every double path applies
- * num_guard. */
+/* Slot writes own exactly one container reference. Owned consumes the slot;
+ * append borrows it and therefore increfs. Value transport preserves IEEE
+ * doubles; slot_from_f64 alone canonicalizes NaN payloads for storage. */
 static inline Value *eigs_slot_box(EigsSlot s) {
-    if (slot_is_f64(s)) return make_float(num_guard(SLOT_F64_RAW(s)));
+    if (slot_is_f64(s)) return make_float(SLOT_F64_RAW(s));
     if (slot_is_smi(s)) return slot_to_value(s);   /* #1758: kind-preserving */
     Value *v = eigs_slot_ref(s); val_incref(v); return v;
 }
@@ -327,9 +327,9 @@ static inline void list_append_slot(Value *list, EigsSlot s) {
     if (!list_reserve_one(list)) return;
     list->data.list.items[list->data.list.count++] = eigs_slot_store_borrow(s);
 }
-/* Typed container writers own exactly one stored reference. _rewrite_f64
- * receives an already-normalised double, matching the existing fast store.
- * An int outside the SMI range owns the box slot_from_int creates. */
+/* Typed container writers own exactly one stored reference. All double
+ * stores pass through slot_from_f64 to canonicalize NaN payloads. An int
+ * outside the SMI range owns the box slot_from_int creates. */
 __attribute__((unused))
 static inline int list_rewrite_f64(const Value *v, int i, double n) {
     EigsSlot old = list_slot(v, i);
@@ -338,7 +338,7 @@ static inline int list_rewrite_f64(const Value *v, int i, double n) {
 }
 __attribute__((unused))
 static inline void list_set_f64(Value *v, int i, double n) {
-    list_rewrite_f64(v, i, num_guard(n));
+    list_rewrite_f64(v, i, n);
 }
 __attribute__((unused))
 static inline int list_get_f64(const Value *v, int i, double *out) {
@@ -352,7 +352,7 @@ static inline int dict_value_rewrite_f64(const Value *v, int i, double n) {
 }
 __attribute__((unused))
 static inline void dict_value_set_f64(Value *v, int i, double n) {
-    dict_value_rewrite_f64(v, i, num_guard(n));
+    dict_value_rewrite_f64(v, i, n);
 }
 __attribute__((unused))
 static inline int dict_value_get_f64(const Value *v, int i, double *out) {
@@ -360,7 +360,6 @@ static inline int dict_value_get_f64(const Value *v, int i, double *out) {
 }
 __attribute__((unused))
 static inline void list_append_f64(Value *v, double n) {
-    n = num_guard(n);
     if (!list_reserve_one(v)) return;
     v->data.list.items[v->data.list.count++] = slot_from_f64(n);
 }

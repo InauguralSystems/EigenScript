@@ -834,11 +834,11 @@ static int run_nan_cases(void) {
     }
     rc |= nan_smoke_row("neg", OP_NEG, 1, nan, zero, 0, 1, zero);
     rc |= nan_smoke_row("neg_control", OP_NEG, 1, one, zero, 0, 0, slot_from_f64(-1.5));
-    /* R21-1: NEG shares the still-live arithmetic bound. Above-rail raw
-     * inputs must interpret; R2.2 updates these controls with guard retirement. */
+    /* R2.2: non-finites still bail for status/strict handling, while the
+     * complete finite f64 range is native after clamp retirement (R21-1). */
     rc |= nan_smoke_row("neg", OP_NEG, 1, inf, zero, 0, 1, zero);
     rc |= nan_smoke_row("neg", OP_NEG, 1, ninf, zero, 0, 1, zero);
-    rc |= nan_smoke_row("neg", OP_NEG, 1, slot_from_f64(1.5e308), zero, 0, 1, zero);
+    rc |= nan_smoke_row("neg_control", OP_NEG, 1, slot_from_f64(1.5e308), zero, 0, 0, slot_from_f64(-1.5e308));
     rc |= nan_smoke_row("neg_control", OP_NEG, 1, zero, zero, 0, 0, slot_from_f64(-0.0));
     rc |= nan_smoke_row("neg_control", OP_NEG, 1, slot_from_f64(-0.0), zero, 0, 0, zero);
     uint8_t compare[] = {OP_EQ, OP_NE, OP_LT, OP_GT, OP_LE, OP_GE};

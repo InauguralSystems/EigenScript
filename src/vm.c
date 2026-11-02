@@ -64,6 +64,14 @@ int vm_sandbox_work_charge(uint64_t amount) {
     return 1;
 }
 
+/* Arithmetic is defined on IEEE float payloads, unlike finite-required
+ * host arguments. Callers prove both values are numeric before promoting. */
+static inline double vm_number_f64(const Value *v, const char *who) {
+    EigsNum n = { .is_int = 0, .value = { .f64 = 0.0 } };
+    if (!eigs_number_read(v, &n, who)) return 0.0;
+    return n.is_int ? (double)n.value.i64 : n.value.f64;
+}
+
 /* #1758 N4: floor modulo. Avoid a - floor(a/b)*b: a/b can overflow or
  * round across an integer boundary. As in Lua's luai_nummod, correct fmod's
  * truncating remainder to have the divisor's sign. The executor uses only
@@ -472,7 +480,7 @@ int observer_predicate_at(Env *e, int idx, int kind, int require_used) {
  * dict constructors and accessors it calls are declared in eigenscript.h; the
  * copies that used to sit here were free to drift from it. Definitions are
  * now checked against the declarations their callers see. The refcount
- * helpers and num_guard are static inline in the header.
+ * helpers are static inline in the header.
  * Do not add a new extern here; give the symbol a header. */
 
 /* Inline fast-path for binding a single param into a fresh call env.
@@ -1942,7 +1950,7 @@ int jit_helper_iter_next(void) {
     if ((unsigned)idx >= (unsigned)len) return 1;
     EigsSlot elem;
     if (iterable->type == VAL_BUFFER) {
-        elem = slot_from_f64(num_guard(buffer_read_f64(iterable, idx)));
+        elem = slot_from_f64(buffer_read_f64(iterable, idx));
     } else {
         elem = slot_read_owned(list_slot(iterable, idx));
     }
@@ -1996,6 +2004,7 @@ static inline int vm_index_resolve(int *i, int len) {
 static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
     EigsSlot mini[8];
     int msp = 0;
+    unsigned math_flags = 0;
     const EigsSlot *args = &g_vm.stack[g_vm.sp - argc];
     uint8_t *ip = c->code;
     for (;;) {
@@ -2093,16 +2102,21 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
                  * -- this path ran `return x * y` for a leaf callee and
                  * never set the flag (`local p is x * y` in the callee took
                  * the generic path and did). Zero from two nonzero
-                 * operands is underflow; num_guard below is identity on 0. */
+                 * operands is underflow. Defer status until speculation
+                 * succeeds, since a later opcode can still bail. */
                 if (r == 0.0 && a != 0.0 && b != 0.0)
-                    g_math_flags |= EIGS_MATH_UNDERFLOW;
+                    math_flags |= EIGS_MATH_UNDERFLOW;
                 break;
             }
+            /* A speculative failure must not publish flags or errors.
+             * Re-execute non-finite arithmetic in the generic callee. */
+            if (!isfinite(r)) return 0;
             msp--;
-            mini[msp - 1] = slot_from_f64(num_guard(r));
+            mini[msp - 1] = slot_from_f64(r);
             break;
         }
         case OP_RETURN: {
+            g_math_flags |= math_flags;
             EigsSlot res = mini[--msp];
             slot_incref(res);
             for (int i = 0; i < argc; i++)
@@ -3645,7 +3659,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
     double _ad, _bd; \
     if (__builtin_expect(slot_f64_value(_as, &_ad) & slot_f64_value(_bs, &_bd), 1)) { \
-        double _r = num_guard(_ad OP _bd); \
+        double _r = eigs_math_result(_ad OP _bd); \
         if ((UF) && _r == 0.0 && _ad != 0.0 && _bd != 0.0) \
             g_math_flags |= EIGS_MATH_UNDERFLOW; \
         if (slot_is_ptr(_as)) { \
@@ -3695,12 +3709,12 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         /* Slow path: handles string concat etc */
         Value *b = vm_pop(); Value *a = vm_pop();
         if (a->type == VAL_FLOAT && b->type == VAL_FLOAT) {
-            double r = num_guard(VAL_F64_RAW(a) + VAL_F64_RAW(b));
+            double r = eigs_math_result(VAL_F64_RAW(a) + VAL_F64_RAW(b));
             if (NUM_REUSE(a)) { VAL_F64_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); }
             if (NUM_REUSE(b)) { VAL_F64_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); }
             vm_push(make_float(r));
         } else if (val_is_number(a) && val_is_number(b)) {
-            vm_push(make_float(num_guard(eigs_float_arg(a, "addition") + eigs_float_arg(b, "addition"))));
+            vm_push(make_float(eigs_math_result(vm_number_f64(a, "addition") + vm_number_f64(b, "addition"))));
         } else if (a->type == VAL_STR && b->type == VAL_STR) {
             int la = val_str_len(a), lb = val_str_len(b);
             /* #292's byte budget charged only the size-controlled builtins;
@@ -3751,15 +3765,15 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         INT_ARITH(OPNAME); \
         Value *b = vm_pop(); Value *a = vm_pop(); \
         if (a->type == VAL_FLOAT && b->type == VAL_FLOAT) { \
-            double r = num_guard(VAL_F64_RAW(a) OP VAL_F64_RAW(b)); \
+            double r = eigs_math_result(VAL_F64_RAW(a) OP VAL_F64_RAW(b)); \
             if ((UF) && r == 0.0 && VAL_F64_RAW(a) != 0.0 && VAL_F64_RAW(b) != 0.0) \
                 g_math_flags |= EIGS_MATH_UNDERFLOW; \
             if (NUM_REUSE(a)) { VAL_F64_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); } \
             if (NUM_REUSE(b)) { VAL_F64_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); } \
             vm_push(make_float(r)); \
         } else if (val_is_number(a) && val_is_number(b)) { \
-            double ad = eigs_float_arg(a, OPNAME), bd = eigs_float_arg(b, OPNAME); \
-            double r = num_guard(ad OP bd); \
+            double ad = vm_number_f64(a, OPNAME), bd = vm_number_f64(b, OPNAME); \
+            double r = eigs_math_result(ad OP bd); \
             if ((UF) && r == 0.0 && ad != 0.0 && bd != 0.0) \
                 g_math_flags |= EIGS_MATH_UNDERFLOW; \
             vm_push(make_float(r)); \
@@ -3785,19 +3799,15 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     CASE(DIV): {
         Value *b = vm_pop(); Value *a = vm_pop();
         if (val_is_number(a) && val_is_number(b)) {
-            if (eigs_float_arg(b, "division") == 0.0) {
-                rt_error(EK_VALUE, current_line, "division by zero");
-                vm_push(make_float(0));
-            } else {
-                double r = num_guard(eigs_float_arg(a, "division") / eigs_float_arg(b, "division"));
-                /* divisor already known nonzero (the raise above), so a zero
-                 * quotient from a nonzero dividend is underflow. */
-                if (r == 0.0 && eigs_float_arg(a, "division") != 0.0)
-                    g_math_flags |= EIGS_MATH_UNDERFLOW;
-                if (NUM_REUSE(a)) { VAL_F64_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); }
-                if (NUM_REUSE(b)) { VAL_F64_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); }
-                vm_push(make_float(r));
-            }
+            double ad = vm_number_f64(a, "division"), bd = vm_number_f64(b, "division");
+            double r = eigs_math_result(ad / bd);
+            /* A finite nonzero quotient rounded to zero is underflow;
+             * dividing by infinity instead produces an exact zero. */
+            if (r == 0.0 && ad != 0.0 && isfinite(ad) && isfinite(bd))
+                g_math_flags |= EIGS_MATH_UNDERFLOW;
+            if (NUM_REUSE(a)) { VAL_F64_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); }
+            if (NUM_REUSE(b)) { VAL_F64_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); }
+            vm_push(make_float(r));
         } else {
             rt_error(EK_TYPE, current_line, "cannot apply '/' to %s and %s",
                 val_type_name(a->type), val_type_name(b->type));
@@ -3826,30 +3836,29 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     vm_push(make_int(q));
                 }
             } else {
-                double divisor = eigs_float_arg(b, "floor division");
-                /* #1758 comment 6294926822: exactly DIV's error through R1.4.
-                 * N11 changes this float arm with DIV/MOD to IEEE floor(x/0). */
-                if (divisor == 0.0) {
-                    rt_error(EK_VALUE, current_line, "division by zero");
-                    vm_push(make_float(0));
+                double divisor = vm_number_f64(b, "floor division");
+                double dividend = vm_number_f64(a, "floor division");
+                double floordiv;
+                if (divisor == 0.0 || !isfinite(dividend) || !isfinite(divisor)) {
+                    /* R2.2: float // zero and non-finite operands retain
+                     * the IEEE quotient; integer // zero still raises. */
+                    floordiv = floor(dividend / divisor);
                 } else {
                     /* #1882: Python float_divmod's quotient, not floor(a/b).
                      * Derive it from fmod so decimal boundaries and an
                      * underflowed opposite-sign ratio agree with floor %. */
-                    double dividend = eigs_float_arg(a, "floor division");
                     double rem = fmod(dividend, divisor);
                     double div = (dividend - rem) / divisor;
                     if (rem != 0.0 && ((rem < 0.0) != (divisor < 0.0)))
                         div -= 1.0;
-                    double floordiv;
                     if (div != 0.0) {
                         floordiv = floor(div);
                         if (div - floordiv > 0.5) floordiv += 1.0;
                     } else {
                         floordiv = signbit(dividend / divisor) ? -0.0 : 0.0;
                     }
-                    vm_push(make_float(num_guard(floordiv)));
                 }
+                vm_push(make_float(eigs_math_result(floordiv)));
             }
         } else {
             rt_error(EK_TYPE, current_line, "cannot apply '//' to %s and %s",
@@ -3878,13 +3887,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     vm_push(make_int(rem));
                 }
             } else {
-                double divisor = eigs_float_arg(b, "modulo");
-                if (divisor == 0.0) {
-                    rt_error(EK_VALUE, current_line, "modulo by zero");
-                    vm_push(make_float(0));
-                } else {
-                    vm_push(make_float(num_guard(vm_floor_mod(eigs_float_arg(a, "modulo"), divisor))));
-                }
+                double divisor = vm_number_f64(b, "modulo");
+                double dividend = vm_number_f64(a, "modulo");
+                vm_push(make_float(eigs_math_result(vm_floor_mod(dividend, divisor))));
             }
         } else {
             rt_error(EK_TYPE, current_line, "cannot apply '%%' to %s and %s",
@@ -3932,12 +3937,13 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         EigsSlot s = g_vm.stack[g_vm.sp - 1];
         double d;
         if (__builtin_expect(slot_f64_value(s, &d), 1)) {
+            d = eigs_math_result(-d);
             if (slot_is_ptr(s)) {
                 Value *v = slot_as_ptr(s);
-                if (NUM_REUSE(v)) { VAL_F64_RAW(v) = -d; DISPATCH(); }
+                if (NUM_REUSE(v)) { VAL_F64_RAW(v) = d; DISPATCH(); }
             }
             slot_decref(s);
-            g_vm.stack[g_vm.sp - 1] = slot_from_f64(-d);
+            g_vm.stack[g_vm.sp - 1] = slot_from_f64(d);
             DISPATCH();
         }
         int64_t i;

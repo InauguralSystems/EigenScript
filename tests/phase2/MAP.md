@@ -187,6 +187,11 @@ gates (design §9.2).
   -> `[-1, 9007199254740992, 9007199254740993]`
   tag: the literal rounds, so `[-1, 9007199254740992, 9007199254740992]` (probed main, same shape)
   round: R1.2 wrote the exact int comparator; the first int literals make it live in R1.3.
+  R2.2 / RULING R22-1: exact nonzero mixed comparisons remain unchanged;
+  ordering puts `-0.0` before the equivalent stable class `{int 0, +0.0}`.
+  Equality still equates every zero. The ordinary `[0fv]` regression
+  `tests/test_ieee_order_1758.eigs` covers `[0.0, 0, -0.0]` and all its
+  permutations in interpreter, default JIT and OSR modes.
 - `N2.fn-exact-compare` [R1.3] `define lt(a, b) as: t is a < b / return t`, called 60 times with `[9007199254740992, 9007199254740993]`; print the last result
   -> `true`
   tag: `false` (probed main)
@@ -530,6 +535,11 @@ Names, operands and operations follow the decided [#1758 comment 6304880619](htt
 - `N11.sort-total-order` [R2.5] `x is (1e308 * 10) - (1e308 * 10) / inf is 1e308 * 10 / print of (sort of [3, x, 1, inf, 2])`
   -> `[1, 2, 3, inf, nan]` (Q8: IEEE `totalOrder`, NaN after +inf)
   tag: `[0, 1, 2, 3, 1e+308]` (probed main)
+  R2.2 / RULING R22-1 orders mixed zero as `-0.0` before `{int 0, +0.0}`;
+  only equivalent ties keep input order. The ordinary `[0fv]` regression
+  also checks min/max's zero choices, first equivalent winners, NaN in
+  every reduction position and stable NaN keys; this text-output MAP row
+  remains R2.5 and its frozen expected output is unchanged.
 
 ### N12
 R2.1 proves the single-writer payload contract with the C slot test's 63

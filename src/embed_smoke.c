@@ -780,8 +780,7 @@ int main(void) {
     eigs_value_release(r);
 
     /* --- Error retrieval. -------------------------------------------- *
-     * Reading an undefined name is a real runtime error (divide-by-zero
-     * is num_guard'd to 0, so it doesn't qualify). */
+     * Reading an undefined name remains an error under the IEEE default. */
     eigs_clear_error();
     r = eigs_eval_string("definitely_not_defined");
     CHECK(r == NULL, "undefined name returns NULL");

@@ -566,7 +566,7 @@ static void ensure_layout(void) {
  *   OP_ADD / OP_SUB /
  *   OP_MUL / OP_DIV          — load both, type-check (immediate-num),
  *                              addsd/subsd/mulsd/divsd, NaN/overflow
- *                              check via abs-bits >|1e308|; bail on any
+ *                              check via abs-bits >= infinity; bail on any
  *                              check fail. Div-by-zero produces ±Inf
  *                              or NaN, both caught by the overflow
  *                              check — no separate divisor guard.
@@ -1592,12 +1592,6 @@ static uint8_t *emit_jae_rel32(uint8_t *w, uint8_t **patch) {
     *w++ = 0; *w++ = 0; *w++ = 0; *w++ = 0;
     return w;
 }
-/* ja rel32  (6 bytes): 0F 87 disp32 */
-static uint8_t *emit_ja_rel32(uint8_t *w, uint8_t **patch) {
-    *w++ = 0x0F; *w++ = 0x87; *patch = w;
-    *w++ = 0; *w++ = 0; *w++ = 0; *w++ = 0;
-    return w;
-}
 /* jmp rel32  (5 bytes): E9 disp32 — unconditional. */
 static uint8_t *emit_jmp_rel32(uint8_t *w, uint8_t **patch) {
     *w++ = 0xE9; *patch = w;
@@ -1675,15 +1669,16 @@ static uint8_t *emit_immediate_num_check_rdx(uint8_t *w, uint8_t **patch) {
     return emit_jae_rel32(w, patch);
 }
 
-/* Emit overflow/NaN check on result in %rax: copy to %rdx, clear sign
- * bit, compare to bits-of-1e308; ja rel32 → bail. (3+5+10+3+6 = 27 b.) */
+/* Emit non-finite result check in %rax: clear sign in a copy and compare
+ * magnitude to infinity bits; jae bails so the interpreter publishes math
+ * status and opt-in strict errors. Every finite f64 remains native. */
 static uint8_t *emit_overflow_check_rax(uint8_t *w, uint64_t max_bits,
                                         uint8_t **patch) {
     w = emit_mov_rax_rdx(w);
     w = emit_btr_63_rdx(w);
     w = emit_movabs_rsi(w, max_bits);
     w = emit_cmp_rsi_rdx(w);
-    return emit_ja_rel32(w, patch);
+    return emit_jae_rel32(w, patch);
 }
 
 /* emit_conditional_decref_rsi / emit_decref_tail_rdi live after the
@@ -2655,12 +2650,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
 
     uint8_t *w = code;
 
-    /* Bit pattern of EIGS_NUM_MAX — the maximum finite value num_guard
-     * allows. Any addsd/subsd result whose magnitude bits exceed this
-     * (incl. ±Inf / NaN) bails to the slow interpreter path. RULING R21-1:
-     * retain this bound until R2.2 retires the clamp in the same commit. */
-    uint64_t max_normal_bits;
-    { double d = EIGS_NUM_MAX; memcpy(&max_normal_bits, &d, 8); }
+    /* R21-1: raise the bound with R2.2's clamp retirement. Infinity and
+     * NaN still bail for interpreter status/strict handling, not clamping. */
+    const uint64_t max_normal_bits = UINT64_C(0x7ff0000000000000);
 
     /* Bail-jump rel32 patch sites collected during body emission and
      * resolved against the epilogue once we know its address. */
@@ -3659,8 +3651,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             }
             /* Result -> %rax for storage + overflow check. */
             w = emit_movq_xmm1_rax(w);
-            /* |result| > 1e308 → bail (catches NaN, ±Inf, num_guard
-             * clamp boundary). Stack is still untouched here, so bail
+            /* Non-finite result → status/strict fallback. Finite values above
+             * the former 1e308 rail stay native. Stack is untouched, so bail
              * leaves the operands in place for the slow path. */
             w = emit_overflow_check_rax(w, max_normal_bits, &lp[lp_n]);
             lp_n++;
@@ -3825,10 +3817,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_immediate_num_check_rax(w, &p_t);
             bail_patches[bail_count++] = p_t;
             if (op == OP_NEG) {
-                /* R2.1: sign-flipping canonical NaN would spell NULL.
-                 * Reuse the arithmetic result guard conservatively; raw
-                 * out-of-bound operands also defer to the interpreter.
-                 * R2.2 advances that bound with clamp retirement (R21-1). */
+                /* Sign-flipping canonical NaN would spell NULL. NaN and
+                 * infinity defer to interpreter status/strict handling;
+                 * every finite operand, including >1e308, stays native. */
                 w = emit_overflow_check_rax(w, max_normal_bits,
                                             &bail_patches[bail_count++]);
                 /* Flip the IEEE-754 sign bit: rax ^= 0x8000…0. */

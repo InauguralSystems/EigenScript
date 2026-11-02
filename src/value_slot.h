@@ -5,8 +5,8 @@
  * immediate doubles. Pointers and other immediates encode into the
  * unused QNaN-with-sign-set bit pattern. The single double writer
  * canonicalizes every NaN to positive 0x7FF8000000000000, so a double
- * cannot spell a tag even at a raw host boundary. num_guard() still maps
- * user NaN -> 0 and +/-Inf -> +/-1e308 until R2.2.
+ * cannot spell a tag even at a raw host boundary. R2.2 arithmetic retains
+ * IEEE NaNs and infinities; copying a value never clamps it.
  *
  * Tag layout (high 16 bits):
  *   < 0xFFF8     : a double          (slot_is_f64)

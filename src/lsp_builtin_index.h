@@ -191,7 +191,7 @@ static const char *builtin_docs[][2] = {
     {"list_slice", "list_slice of [list, start, end] → new list with the elements of [start, end)."},
     {"list_truncate", "list_truncate of [list, new_len] — shrink list in-place to new_len items."},
     {"load_file", "load_file — builtin; see docs/BUILTINS.md"},
-    {"log", "log of 1e-15 answered ln(1e-10) with no flag, a silent plateau that a"},
+    {"log", "log — builtin; see docs/BUILTINS.md"},
     {"log_softmax", "log_softmax — builtin; see docs/BUILTINS.md"},
     {"ls", "ls of \"path\" → bytewise-sorted filenames; I/O failure raises EK_IO."},
     {"math_flags", "math_flags — builtin; see docs/BUILTINS.md"},

@@ -560,7 +560,7 @@ Value* builtin_num(Value *arg) {
     text[len] = '\0';
     double d = strtod(text, NULL);
     free(text);
-    d = num_guard_named(d, "num");
+    d = eigs_math_result_named(d, "num");
     return g_has_error ? make_null() : make_float(d);
 invalid:
     rt_error(EK_VALUE, 0, "num: expected complete numeric-literal text");
@@ -2014,29 +2014,25 @@ Value* builtin_tan(Value *arg) {
 Value* builtin_asin(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "asin", "a number", make_float(0));
     double x = eigs_float_arg(arg, __func__);
-    /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
-     * unless strict math is on, in which case it raises. */
+    /* R2.2: IEEE NaN outside the domain; strict retains its named error. */
     if (x < -1.0 || x > 1.0) {
-        /* fs:STRICT already loud under strict (#977); the soft 0 is the flag-off path */
+        /* Keep the established strict diagnostic. */
         if (g_strict) { rt_error(EK_VALUE, 0, "asin: argument out of domain [-1, 1]"); return make_float(0); }
         g_math_flags |= EIGS_MATH_INVALID;
-        x = (x < -1.0) ? -1.0 : 1.0;
     }
-    return make_float(asin(x));
+    return make_float(eigs_math_result_named(asin(x), "asin"));
 }
 
 Value* builtin_acos(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "acos", "a number", make_float(0));
     double x = eigs_float_arg(arg, __func__);
-    /* #865/#971: an out-of-domain argument is clamped (invalid bit records it),
-     * unless strict math is on, in which case it raises. */
+    /* R2.2: IEEE NaN outside the domain; strict retains its named error. */
     if (x < -1.0 || x > 1.0) {
-        /* fs:STRICT already loud under strict (#977); the soft 0 is the flag-off path */
+        /* Keep the established strict diagnostic. */
         if (g_strict) { rt_error(EK_VALUE, 0, "acos: argument out of domain [-1, 1]"); return make_float(0); }
         g_math_flags |= EIGS_MATH_INVALID;
-        x = (x < -1.0) ? -1.0 : 1.0;
     }
-    return make_float(acos(x));
+    return make_float(eigs_math_result_named(acos(x), "acos"));
 }
 
 Value* builtin_atan(Value *arg) {
@@ -2097,6 +2093,26 @@ Value* builtin_abs(Value *arg) {
     return make_float(fabs(n.value.f64));
 }
 
+/* Q8 / RULING R22-1: exact numeric order, with -0.0 before the equivalent
+ * class {int 0, +0.0}, and canonical NaN after +inf. Ordering equivalence
+ * differs from == only for signed zero and NaN; callers keep equivalent
+ * ties stable (sort) or retain the first winning argument (min/max). */
+static int builtin_numeric_order(EigsNum a, EigsNum b) {
+    if (a.is_int && b.is_int)
+        return (a.value.i64 > b.value.i64) - (a.value.i64 < b.value.i64);
+    if (!a.is_int && isnan(a.value.f64))
+        return b.is_int || !isnan(b.value.f64);
+    if (!b.is_int && isnan(b.value.f64)) return -1;
+    int cmp;
+    if (a.is_int) cmp = eigs_cmp_int_float(a.value.i64, b.value.f64);
+    else if (b.is_int) cmp = -eigs_cmp_int_float(b.value.i64, a.value.f64);
+    else cmp = (a.value.f64 > b.value.f64) - (a.value.f64 < b.value.f64);
+    if (cmp != 0) return cmp;
+    int a_negative_zero = !a.is_int && a.value.f64 == 0.0 && signbit(a.value.f64);
+    int b_negative_zero = !b.is_int && b.value.f64 == 0.0 && signbit(b.value.f64);
+    return b_negative_zero - a_negative_zero;
+}
+
 /* #317: min/max are N-ary reductions over a flat list of numbers — the old
  * code silently read only items[0..1] (`max of [1,2,3]` was 2) and returned 0
  * for a 1-element list. A single bare number returns itself (mirrors `sum`);
@@ -2105,7 +2121,8 @@ Value* builtin_abs(Value *arg) {
 static Value* minmax_reduce(Value *arg, int want_max) {
     const char *who = want_max ? "max" : "min";
     if (arg && val_is_number(arg)) {
-        EigsNum n = eigs_number_arg(arg, who);
+        EigsNum n;
+        if (!eigs_number_read(arg, &n, who)) return make_null();
         return g_has_error ? make_null() : builtin_number_value(n);
     }
     /* Keep the public guard names literal for the source/probe census. */
@@ -2128,16 +2145,14 @@ static Value* minmax_reduce(Value *arg, int want_max) {
                      who, i, val_type_name(v ? v->type : VAL_NULL));
             return make_null();
         }
-        EigsNum n = eigs_number_arg(v, who);
+        EigsNum n;
+        if (!eigs_number_read(v, &n, who)) return make_null();
         if (g_has_error) return make_null();
-        int cmp = 0;
-        if (i) {
-            if (n.is_int && best.is_int)
-                cmp = (n.value.i64 > best.value.i64) - (n.value.i64 < best.value.i64);
-            else if (n.is_int) cmp = eigs_cmp_int_float(n.value.i64, best.value.f64);
-            else if (best.is_int) cmp = -eigs_cmp_int_float(best.value.i64, n.value.f64);
-            else cmp = (n.value.f64 > best.value.f64) - (n.value.f64 < best.value.f64);
-        }
+        /* Q8: NaN propagates from any position, but every later element must
+         * still be validated so a NaN cannot hide a non-number argument. */
+        if (!n.is_int && isnan(n.value.f64)) { best = n; continue; }
+        if (i && !best.is_int && isnan(best.value.f64)) continue;
+        int cmp = i ? builtin_numeric_order(n, best) : 0;
         if (!i || (want_max ? cmp > 0 : cmp < 0)) best = n;
     }
     return builtin_number_value(best);
@@ -6232,17 +6247,13 @@ typedef struct { union { double key; int64_t int_key; }; int is_int; int index; 
 
 static int sort_by_pair_cmp(const void *a, const void *b) {
     const SortByPair *pa = a, *pb = b;
-    int cmp;
-    if (pa->is_int && pb->is_int)
-        cmp = (pa->int_key > pb->int_key) - (pa->int_key < pb->int_key);
-    else if (pa->is_int)
-        cmp = eigs_cmp_int_float(pa->int_key, pb->key);
-    else if (pb->is_int) {
-        cmp = eigs_cmp_int_float(pb->int_key, pa->key);
-        if (cmp != 2) cmp = -cmp;
-    } else
-        cmp = (pa->key > pb->key) - (pa->key < pb->key);
-    if (cmp != 0 && cmp != 2) return cmp;
+    EigsNum ka = {.is_int = pa->is_int}, kb = {.is_int = pb->is_int};
+    if (pa->is_int) ka.value.i64 = pa->int_key;
+    else ka.value.f64 = pa->key;
+    if (pb->is_int) kb.value.i64 = pb->int_key;
+    else kb.value.f64 = pb->key;
+    int cmp = builtin_numeric_order(ka, kb);
+    if (cmp != 0) return cmp;
     return pa->index - pb->index;
 }
 
@@ -6281,9 +6292,11 @@ Value* builtin_sort_by(Value *arg) {
                 "gave %s)", i, kt);
             return make_null();
         }
-        pairs[i].is_int = kv->type == VAL_INT;
-        if (pairs[i].is_int) pairs[i].int_key = VAL_I64_RAW(kv);
-        else pairs[i].key = eigs_float_arg(kv, __func__);
+        EigsNum key;
+        (void)eigs_number_read(kv, &key, __func__); /* numeric kind proven above */
+        pairs[i].is_int = key.is_int;
+        if (key.is_int) pairs[i].int_key = key.value.i64;
+        else pairs[i].key = key.value.f64;
         pairs[i].index = i;
         val_decref(kv);
     }
@@ -6304,20 +6317,11 @@ Value* builtin_sort_by(Value *arg) {
 static int sort_cmp_num(const void *a, const void *b) {
     /* builtin_sort has validated every element. Read through the typed slot
      * accessors rather than dereferencing possibly-null borrowed views. */
-    EigsNum va = eigs_slot_number(*(const EigsSlot *)a, __func__);
-    EigsNum vb = eigs_slot_number(*(const EigsSlot *)b, __func__);
-    if (va.is_int && vb.is_int)
-        return (va.value.i64 > vb.value.i64) - (va.value.i64 < vb.value.i64);
-    if (va.is_int) {
-        int cmp = eigs_cmp_int_float(va.value.i64, vb.value.f64);
-        return cmp == 2 ? 0 : cmp;
-    }
-    if (vb.is_int) {
-        int cmp = eigs_cmp_int_float(vb.value.i64, va.value.f64);
-        return cmp == 2 ? 0 : -cmp;
-    }
-    double da = va.value.f64, db = vb.value.f64;
-    return (da > db) - (da < db);
+    EIGS_VIEW(av); EIGS_VIEW(bv);
+    EigsNum va, vb;
+    (void)eigs_number_read(slot_view(*(const EigsSlot *)a, &av), &va, __func__);
+    (void)eigs_number_read(slot_view(*(const EigsSlot *)b, &bv), &vb, __func__);
+    return builtin_numeric_order(va, vb);
 }
 
 static int sort_cmp_str(const void *a, const void *b) {
@@ -6484,8 +6488,8 @@ Value* builtin_dispatch(Value *arg) {
  * result. This is the deliberate opt-in that licenses a backend (e.g. the AOT
  * native compiler) to REASSOCIATE the sum across SIMD lanes; programs that
  * need a strict left-to-right reduction write the explicit `loop while`
- * accumulation instead. no-NaN/Inf is preserved (num_guard at each step), so
- * the result still respects EigenScript's no-NaN/Inf invariant. */
+ * accumulation instead. Each operation retains its IEEE result and reports
+ * arithmetic status/the opt-in strict trap. */
 static Value* builtin_dot(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "dot");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "dot", "[a, b]", make_float(0));
@@ -6500,7 +6504,7 @@ static Value* builtin_dot(Value *arg) {
         if (g_has_error) return make_null();
         double bv = buffer_read_f64(b, i);
         if (g_has_error) return make_null();
-        s = num_guard(s + num_guard(av * bv));
+        s = eigs_math_result(s + eigs_math_result(av * bv));
     }
     return make_float(s);
 }

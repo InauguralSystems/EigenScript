@@ -1021,7 +1021,7 @@ Value* builtin_shared_incr(Value *arg) {
     } else {
         double cur_f = cur.is_int ? (double)cur.value.i64 : cur.value.f64;
         double delta_f = delta.is_int ? (double)delta.value.i64 : delta.value.f64;
-        new_v = make_float(cur_f + delta_f);
+        new_v = make_float(eigs_math_result(cur_f + delta_f));
     }
     if (g_has_error) {
         val_decref(new_v);

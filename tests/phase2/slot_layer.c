@@ -27,6 +27,8 @@
  *      SMI and boxed-int metadata, including range and malformed controls.
  *   F  R2.1/N12.nan-payload-tags: double-writer canonicalization for every
  *      tag family, with payload/sign controls and actual refcount calls.
+ *   G  R2.2: actual language/observer equality on one NaN Value facade and
+ *      shared/cyclic containers with immediate NaN floats; finite controls.
  *
  * Output, every line in one grammar (tests/phase2/slot_layer.sh refuses any
  * other line): `ENTRY <file>:<function> <kind> values=<n> ok|FAIL` per Part A
@@ -928,6 +930,88 @@ static int part_f(void) {
     return rows;
 }
 
+/* R2.2 extends R1.6z-D2's non-reflexivity to floats. The facade constructor
+ * preserves a NaN even on the pre-R2.2 bank; the existing rewrite writers put
+ * it in actual production container slots without a raw test-only store.
+ * All comparisons below call the production language and observer functions. */
+typedef struct { const char *name; int shape; uint64_t payload; int want; } EqualityCase;
+static const EqualityCase EQUALITY_CASES[] = {
+    {"nan_box", 0, 0x7FF8000000000000ULL, 0},
+    {"positive_inf", 0, 0x7FF0000000000000ULL, 1},
+    {"negative_inf", 0, 0xFFF0000000000000ULL, 1},
+    {"negative_zero", 0, 0x8000000000000000ULL, 1},
+    {"nan_list", 1, 0x7FF8000000000000ULL, 0},
+    {"nan_dict", 2, 0x7FF8000000000000ULL, 0},
+    {"nan_nested", 3, 0x7FF8000000000000ULL, 0},
+    {"nan_cycle", 4, 0x7FF8000000000000ULL, 0},
+    {"finite_cycle", 4, 0x3FF0000000000000ULL, 1},
+    {"nan_dag", 5, 0x7FF8000000000000ULL, 0},
+    {"finite_dag", 5, 0x3FF0000000000000ULL, 1},
+};
+#define N_EQUALITY_CASES ((int)(sizeof EQUALITY_CASES / sizeof EQUALITY_CASES[0]))
+static const EqualityCase *g_equality_case;
+static void c_equality(EigsSlot unused, char *b, size_t n) {
+    (void)unused;
+    const EqualityCase *c = g_equality_case;
+    EIGS_VIEW(view);
+    Value *root = slot_view(slot_from_f64(f64_of(c->payload)), &view);
+    if (c->shape == 2) {
+        root = make_dict(1);
+        dict_set_owned(root, "leaf", make_int(0));
+        DICT_FOR_EACH(root, i) dict_value_rewrite_f64(root, i, f64_of(c->payload));
+    } else if (c->shape) {
+        root = make_list_heap(2);
+        list_append_slot(root, slot_from_f64(0.0));
+        list_rewrite_f64(root, 0, f64_of(c->payload));
+        if (c->shape == 3) {
+            Value *outer = make_list_heap(1);
+            list_append_owned(outer, root);
+            root = outer;
+        } else if (c->shape == 4) {
+            list_append(root, root);
+        } else if (c->shape == 5) {
+            /* Forty distinct parents, not 2^40 traversal paths. */
+            for (int i = 0; i < 40; i++) {
+                Value *outer = make_list_heap(2);
+                list_append(outer, root);
+                list_append(outer, root);
+                val_decref(root);
+                root = outer;
+            }
+        }
+    }
+    unsigned saved_flags = g_math_flags;
+    g_math_flags = EIGS_MATH_UNDERFLOW;
+    int language = values_equal(root, root);
+    int observer = values_equal_for_observation(root, root, 0);
+    int unchanged = g_math_flags == EIGS_MATH_UNDERFLOW;
+    g_math_flags = saved_flags;
+    snprintf(b, n, "language:%d observer:%d unchanged:%d", language, observer, unchanged);
+    if (c->shape == 4) list_set_slot_owned(root, 1, slot_null());
+    if (c->shape) val_decref(root);
+}
+static int part_g(EigsState *st) {
+    int rows = 0;
+    for (int strict = 0; strict <= 1; strict++) {
+        eigs_state_set_strict(st, strict);
+        for (int i = 0; i < N_EQUALITY_CASES; i++) {
+            g_equality_case = &EQUALITY_CASES[i];
+            char got[512], want[96];
+            run_cell(c_equality, slot_null(), got, sizeof got, NULL, 0);
+            snprintf(want, sizeof want, "language:%d observer:%d unchanged:1",
+                     g_equality_case->want, g_equality_case->want);
+            int bad = strcmp(got, want) != 0;
+            if (bad) FAILF("R2.2 equality %s strict=%d: got %s, want %s",
+                           g_equality_case->name, strict, got, want);
+            printf("ARM equality_%s_%s %s\n", g_equality_case->name,
+                   strict ? "strict" : "soft", bad ? "FAIL" : "ok");
+            rows++;
+        }
+    }
+    eigs_state_set_strict(st, 0);
+    return rows;
+}
+
 int main(void) {
     EigsState *st = eigs_open();
     if (!st) { printf("slot-layer-test: FAIL eigs_open\n"); return 1; }
@@ -952,13 +1036,14 @@ int main(void) {
     int arm_rows = part_d();
     int iter_rows = part_e();
     int nan_rows = part_f();
+    int equality_rows = part_g(st);
     printf("slot-layer-test: examined=%d smi_values=%d calls=%d matrix=%d kinds=%d matrix_cells=%d "
-           "from_int_rows=%d arm_rows=%d iter_rows=%d nan_rows=%d failures=%d\n", N_ENTRIES, N_SMI, calls, N_MATRIX, N_KINDS,
-           matrix_cells, from_int_rows, arm_rows, iter_rows, nan_rows, failures);
+           "from_int_rows=%d arm_rows=%d iter_rows=%d nan_rows=%d equality_rows=%d failures=%d\n", N_ENTRIES, N_SMI, calls, N_MATRIX, N_KINDS,
+           matrix_cells, from_int_rows, arm_rows, iter_rows, nan_rows, equality_rows, failures);
     val_decref(g_str);
     eigs_close(st);
     int ok = failures == 0 && N_ENTRIES > 0 && calls > 0 && N_MATRIX == N_ENTRIES &&
-             matrix_cells == N_MATRIX * N_KINDS && from_int_rows > 0 && arm_rows == 2 * N_ARMS && iter_rows == 2 * N_ITER_CASES && nan_rows == 63;
+             matrix_cells == N_MATRIX * N_KINDS && from_int_rows > 0 && arm_rows == 2 * N_ARMS && iter_rows == 2 * N_ITER_CASES && nan_rows == 63 && equality_rows == 2 * N_EQUALITY_CASES;
     printf("slot-layer-test: %s\n", ok ? "PASS" : "FAIL");
     return ok ? 0 : 1;
 }

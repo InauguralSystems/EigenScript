@@ -286,10 +286,9 @@ Value* builtin_db_query_value(Value *arg) {
             result = make_int((int64_t)strtoll(text, NULL, 10));
             break;
         case DBT_FLOAT:
-            /* Same rule as the JSON emitter: float4/float8 can be NaN /
-             * Infinity / -Infinity, and make_float's num_guard would turn
-             * those into 0 and 1e308 — a silently wrong number. Hand back
-             * the text so the caller sees what the column holds. */
+            /* Preserve the existing DB boundary: non-finite float4/float8
+             * columns are returned as text. R2.2 arithmetic does not change
+             * this interface or the finite query-parameter policy. */
             if (text[0] == 'N' || text[0] == 'I' ||
                 (text[0] == '-' && text[1] == 'I')) {
                 result = make_str(text);

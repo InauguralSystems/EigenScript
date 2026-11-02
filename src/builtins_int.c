@@ -571,7 +571,7 @@ Value* builtin_fround(Value *arg) {
         arg = list_get_view(arg, 0, &view);
     double value = eigs_float_arg(arg, "fround");
     if (g_has_error) return make_null();
-    /* Preserve int -> f64 -> f32 -> f64 double rounding. make_float keeps
-     * today's overflow guard and math flag until the IEEE round R2.2. */
-    return make_float((double)(float)value);
+    /* Preserve int -> f64 -> f32 -> f64 double rounding, including an IEEE
+     * infinity result. Strict arithmetic remains an opt-in trap. */
+    return make_float(eigs_math_result_named((double)(float)value, "fround"));
 }

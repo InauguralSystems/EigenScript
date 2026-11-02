@@ -328,9 +328,9 @@ Value* builtin_f64_from_bytes(Value *arg) {
         bits = (bits << 8) | (uint64_t)bytes_in[i];
     double d;
     memcpy(&d, &bits, sizeof(d));
-    /* #971: eight arbitrary bytes can spell a NaN; collapse (default) or
-     * raise (strict) under this builtin's own name. */
-    return make_float(num_guard_named(d, "f64_from_bytes"));
+    /* Eight arbitrary bytes can spell a NaN or infinity. Preserve the IEEE
+     * result by default; opt-in strict mode traps under this builtin's name. */
+    return make_float(eigs_math_result_named(d, "f64_from_bytes"));
 }
 
 /* ---- DEFLATE codec implementation (#684) ----
@@ -606,7 +606,7 @@ Value* builtin_buf_copy(Value *arg) {
  * dst[dst_off+i] += src[src_off+i] * gain, in place. The audio mix-down
  * kernel (DeslanStudio's ab_mix_into): one C loop instead of ~441k
  * dispatched VM iterations per stem pass. Arithmetic mirrors the VM
- * (num_guard per step) so the result is byte-identical to the
+ * (IEEE result checks per step) so the result is byte-identical to the
  * equivalent interpreted loop. dst and src may be the same buffer with
  * overlapping windows; the loop runs forward in index order (documented,
  * deterministic). Returns null. */
@@ -630,12 +630,12 @@ Value* builtin_buf_mix(Value *arg) {
     double *dd = &dst->data.buffer.data[dst_off];
     double *sd = &src->data.buffer.data[src_off];
     for (long long i = 0; i < count; i++)
-        dd[i] = num_guard(dd[i] + num_guard(sd[i] * gain));
+        dd[i] = eigs_math_result(dd[i] + eigs_math_result(sd[i] * gain));
     return make_null();
 }
 
 /* buf_scale_range of [b, off, count, gain] — in-place multiply over a
- * window: b[off+i] *= gain (num_guard per element, VM-identical).
+ * window: b[off+i] *= gain (IEEE result checks, VM-identical).
  * Fades/normalize. Returns null. */
 Value* builtin_buf_scale_range(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "buf_scale_range");
@@ -653,7 +653,7 @@ Value* builtin_buf_scale_range(Value *arg) {
         return make_null();
     double *d = &buf->data.buffer.data[off];
     for (long long i = 0; i < count; i++)
-        d[i] = num_guard(d[i] * gain);
+        d[i] = eigs_math_result(d[i] * gain);
     return make_null();
 }
 
@@ -711,7 +711,7 @@ Value* builtin_buf_peak(Value *arg) {
  * kernel. Same contract as `dot`: the summation ORDER / ASSOCIATION is
  * UNSPECIFIED (a backend may reassociate across SIMD lanes) — programs
  * needing a strict left-to-right reduction write the explicit loop.
- * no-NaN/Inf is preserved (num_guard at each step). */
+ * IEEE results and opt-in strict traps match VM arithmetic. */
 Value* builtin_buf_dot(Value *arg) {
     STRICT_LIST_MAX(arg, 5, "buf_dot");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) {
@@ -735,7 +735,7 @@ Value* builtin_buf_dot(Value *arg) {
         if (g_has_error) return make_null();
         double bv = buffer_read_f64(b, b_off + i);
         if (g_has_error) return make_null();
-        s = num_guard(s + num_guard(av * bv));
+        s = eigs_math_result(s + eigs_math_result(av * bv));
     }
     return make_float(s);
 }
@@ -744,9 +744,8 @@ Value* builtin_buf_dot(Value *arg) {
  * The byte-decode siblings of the #597 window kernels: DeslanStudio's
  * WAV import spent 10.8 s decoding a 50 s stereo file sample-by-sample
  * in the interpreter (src/tools/wavio.eigs). Each kernel mirrors the
- * consumer's interpreted arithmetic step-for-step (num_guard per VM
- * operation, same evaluation order), so the result is bit-identical to
- * the loop it replaces — pinned by the differential leg in
+ * consumer's interpreted arithmetic step-for-step (same evaluation order),
+ * so the result is bit-identical to the loop it replaces — pinned by the differential leg in
  * tests/test_pcm_codec.eigs. Pure compute over arguments: sandbox
  * pure-compute allowlist (allocation charged per #292),
  * freestanding-safe, tape-neutral. */
@@ -794,10 +793,11 @@ Value* builtin_buf_from_pcm16le(Value *arg) {
             !buffer_byte_at(src, off + 2*i + 1, &hi, "buf_from_pcm16le")) {
             val_decref(out); return make_null();
         }
-        double v = num_guard(lo + num_guard(256.0 * hi));
-        if (g_has_error) { val_decref(out); return make_null(); }
-        if (v >= 32768.0) v = num_guard(v - 65536.0);
-        od[i] = num_guard(v / 32767.0);
+        /* Checked bytes bound v to [0, 65535]; each decode operation
+         * remains finite, including the signed sample division. */
+        double v = lo + 256.0 * hi;
+        if (v >= 32768.0) v = v - 65536.0;
+        od[i] = v / 32767.0;
     }
     return out;
 }
@@ -834,10 +834,12 @@ Value* builtin_buf_to_pcm16le(Value *arg) {
         if (g_has_error) { val_decref(out); return make_null(); }
         if (x < -1.0) x = -1.0;
         if (x > 1.0) x = 1.0;
-        double v = round(num_guard(x * 32767.0));
-        if (v < 0.0) v = num_guard(v + 65536.0);
-        double q = floor(num_guard(v / 256.0));
-        od[2*i]     = num_guard(v - num_guard(q * 256.0));
+        /* The final reader refused non-finite x before the clamp; all
+         * quantizer operations are bounded by the 16-bit sample range. */
+        double v = round(x * 32767.0);
+        if (v < 0.0) v = v + 65536.0;
+        double q = floor(v / 256.0);
+        od[2*i]     = v - q * 256.0;
         od[2*i + 1] = q;
     }
     return out;
@@ -909,7 +911,7 @@ Value* builtin_buf_deinterleave(Value *arg) {
  *   pos  = i * (n - 1) / (dst_len - 1)      (0 when dst_len == 1)
  *   lo   = floor(pos); hi = min(lo + 1, n - 1); frac = pos - lo
  *   out[i] = src[lo] * (1 - frac) + src[hi] * frac
- * num_guard per step in VM evaluation order — bit-identical to the
+ * IEEE result checks in VM evaluation order — bit-identical to the
  * interpreted loop (differential-pinned in tests/test_buf_resample.eigs).
  * The kernel is LINEAR interpolation, not Fourier/sinc resampling (the
  * consumer-documented divergence from scipy.signal.resample — see
@@ -946,8 +948,9 @@ Value* builtin_buf_resample_linear(Value *arg) {
     for (long long i = 0; i < dst_len; i++) {
         double pos = 0.0;
         if (dst_len > 1)
-            pos = num_guard(num_guard((double)i * (double)(n - 1)) /
-                            (double)(dst_len - 1));
+            /* Counts are at most INT_MAX, so this product and quotient
+             * are finite and pos stays in [0, n-1]. */
+            pos = ((double)i * (double)(n - 1)) / (double)(dst_len - 1);
         double lo_f = floor(pos);
         long long lo = (long long)lo_f;
         long long hi = lo + 1;
@@ -960,9 +963,9 @@ Value* builtin_buf_resample_linear(Value *arg) {
         if (lo < 0) lo = 0;
         if (lo > n - 1) lo = n - 1;
         if (hi < 0) hi = 0;
-        double frac = num_guard(pos - lo_f);
-        od[i] = num_guard(num_guard(sd[lo] * num_guard(1.0 - frac)) +
-                          num_guard(sd[hi] * frac));
+        double frac = pos - lo_f;
+        od[i] = eigs_math_result(eigs_math_result(sd[lo] * (1.0 - frac)) +
+                                 eigs_math_result(sd[hi] * frac));
     }
     return out;
 }

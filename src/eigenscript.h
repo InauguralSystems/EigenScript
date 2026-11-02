@@ -1444,6 +1444,10 @@ int eigs_arg_has_bool(const Value *arg);
 /* #1637/#1758: required, element and optional checked readers are split
  * by numeric contract below. Raw payload macros require a reviewed kind
  * proof in tools/num_read_allowlist.txt. Callers stop on g_has_error. */
+/* Read numeric kind and IEEE payload without a finite-only conversion.
+ * Used by arithmetic, equality and ordering after their numeric kind check.
+ * It neither owns nor normalizes the value. Non-numbers raise type. */
+int eigs_number_read(const Value *v, EigsNum *out, const char *who);
 /* #1758 R1.6a: final numeric readers. All inputs are BORROWED, including
  * on a raise: no reader allocates, retains, or releases its argument. Every
  * floating input must be finite. Required/list reads reject non-numbers;
@@ -1923,76 +1927,23 @@ void free_value(Value *v);
  * Acquire-release decrement: release ensures writes are visible before the
  * refcount store; acquire ensures the thread that sees 0 observes all prior
  * writes before calling free_value. */
-/* The saturation ceiling: the largest magnitude a user number can hold.
- * #861: three sites must agree on this or the observer goes blind to the
- * boundary the arithmetic clamps to — num_guard below, the JIT's bail
- * comparison (jit.c), and observer_slot_saturated (eigenscript.c). It was
- * a bare literal in all three; one macro so they cannot drift apart. */
-#define EIGS_NUM_MAX 1e308
-
-/* Binary tensor files share the same aggregate element ceiling as tensor
- * construction.  Keep readers and every writer on this one policy. */
+/* Tensor construction and its binary readers share one element ceiling. */
 #define EIGS_TENSOR_MAX_ELEMENTS 10000000
 
-/* Numeric invariant: EigenScript has no NaN or Infinity.
- * All numeric operations route through this guard.
- * NaN -> 0; values escaping the finite number line saturate at
- * +/-EIGS_NUM_MAX instead of becoming Infinity. */
-/* #865: sticky status bits for the two clamps below. The finite invariant
- * keeps a program running past an overflow with a plausible-looking number,
- * and nothing in the language could tell that apart from a real result:
- * (1e300 * 1e300) / 1e300 is 1e8, which passes any sanity check a caller
- * applies, and a NaN collapses to 0, which is indistinguishable from a real
- * zero. IEEE-754 solved exactly this with sticky exception flags, so these
- * are those: set on the clamp and readable with `math_flags`. They remain
- * sticky for the lifetime of the interpreter state. */
-#define EIGS_MATH_OVERFLOW 1u   /* a value saturated at +/-EIGS_NUM_MAX */
-#define EIGS_MATH_INVALID  2u   /* a NaN was collapsed, or a domain clamp fired */
-#define EIGS_MATH_UNDERFLOW 4u  /* #971: a product/quotient of two NONZERO operands
-                                 * came back exactly 0. The result is a real IEEE
-                                 * zero, so nothing downstream can tell it from an
-                                 * exact one — 1e-300 * 1e-300 and 5 - 5 are the
-                                 * same bits. Only * and / raise it: reaching 0 by
-                                 * + or - is exact cancellation, not underflow, and
-                                 * flagging that would fire on ordinary arithmetic.
-                                 *
-                                 * NOTE it cannot live in num_guard(): by the time
-                                 * num_guard sees the result the operands are gone
-                                 * and the value is already 0.0, so the obvious
-                                 * `x != 0 && result == 0` test can never fire
-                                 * there. Detection has to sit where the operands
-                                 * are still live — the arithmetic dispatch. */
-
-/* #971: in strict mode (the default, #1361) a NaN does not collapse — it RAISES a catchable
- * `value` error. `who` names the builtin whose result was undefined (the
- * enumerated sources call num_guard_named); NULL is the backstop from
- * num_guard itself for a source nobody enumerated. Out of line so the NaN
- * branch stays one call on a path a finite program never takes. */
+/* Sticky arithmetic status is independent of the IEEE result. R2.2 never
+ * substitutes a value: NaN stays NaN and infinities stay infinities. */
+#define EIGS_MATH_OVERFLOW 1u
+#define EIGS_MATH_INVALID  2u
+#define EIGS_MATH_UNDERFLOW 4u /* nonzero product/quotient rounded to zero;
+                               * detected where its operands are still live */
 void eigs_strict_nan_raise(const char *who);
-
-/* Legacy scalar VALUE mapping of num_guard, retained for the bit-level
- * tests/test_num_guard_value.c fixture. Phase2 buffer/container equality uses
- * the stored IEEE doubles directly (S10-D1), so runtime builds may not call
- * this helper. Keep its mapping in sync with num_guard. */
-__attribute__((unused))
-static inline double num_guard_value(double x) {
-    if (x != x) return 0.0;
-    if (x > EIGS_NUM_MAX) return EIGS_NUM_MAX;
-    if (x < -EIGS_NUM_MAX) return -EIGS_NUM_MAX;
+void eigs_math_nonfinite(double x, const char *who);
+static inline double eigs_math_result_named(double x, const char *who) {
+    if (__builtin_expect(!isfinite(x), 0)) eigs_math_nonfinite(x, who);
     return x;
 }
-
-static inline double num_guard(double x) {
-    /* Fast path unchanged: the flag writes live only on the clamp branches,
-     * which a program that does not overflow never takes. */
-    if (x != x) {                                                            /* NaN */
-        g_math_flags |= EIGS_MATH_INVALID;
-        if (g_strict) eigs_strict_nan_raise(NULL);
-        return 0.0;
-    }
-    if (x > EIGS_NUM_MAX)  { g_math_flags |= EIGS_MATH_OVERFLOW; return EIGS_NUM_MAX; }
-    if (x < -EIGS_NUM_MAX) { g_math_flags |= EIGS_MATH_OVERFLOW; return -EIGS_NUM_MAX; }
-    return x;
+static inline double eigs_math_result(double x) {
+    return eigs_math_result_named(x, NULL);
 }
 
 /* #1740: a bitwise operand converts to int64 only if it is an EXACT integer
@@ -2017,36 +1968,17 @@ static inline int64_t eigs_bit_shift(int64_t a, int64_t count, int right) {
     return bits <= INT64_MAX ? (int64_t)bits : -1 - (int64_t)(UINT64_MAX - bits);
 }
 
-/* Final buffer readers refuse non-finite payloads. A finite data read
- * retains the current scalar guard; byte/index reads also require exactness. */
+/* Final buffer readers refuse non-finite payloads; byte/index reads also
+ * require exactness. IEEE arithmetic does not relax these data boundaries. */
 double buffer_read_f64(const Value *buffer, int64_t index);
 int buffer_byte_at(const Value *buffer, int64_t index, uint8_t *out, const char *who);
 int buffer_index_at(const Value *buffer, int64_t index, int64_t *out, const char *who);
 
 #define EIGS_NO_INT_REP_FMT "'%s': number %.17g has no integer representation"
 
-/* #971: num_guard for a builtin whose result CAN be NaN on the current tree
- * (`pow` of a negative base with a fractional exponent, `num of "nan"`,
- * `f64_from_bytes` of a NaN bit pattern, `matmul`'s inf-inf accumulation,
- * `tensor_load` of a file carrying NaN bytes). Default path identical to
- * num_guard — collapse to 0, set EIGS_MATH_INVALID — but under strict the
- * raise NAMES the builtin, which the bare backstop cannot. The string is the
- * cross-check key tools/strict_differential.sh derives its probe set from,
- * so a new caller here without a probe row goes red there. */
-static inline double num_guard_named(double x, const char *who) {
-    if (x != x) {
-        g_math_flags |= EIGS_MATH_INVALID;
-        if (g_strict) eigs_strict_nan_raise(who);
-        return 0.0;
-    }
-    return num_guard(x);
-}
-
-/* #971: a value-domain raise inside a double-returning helper, where
- * ARG_GUARD's `return make_null()` does not fit. Raises under strict and
- * does nothing otherwise, so the soft path is byte-identical by
- * construction (the caller keeps returning its stand-in). `who` is the
- * cross-check key, like ARG_GUARD's. */
+/* Named opt-in domain error inside a double-returning helper. The caller
+ * still computes its IEEE result; strict changes the error state, not bits.
+ * `who` is the source-derived strict-differential probe key. */
 #define STRICT_DOMAIN(cond, who, what)                                       \
     do {                                                                      \
         if (g_strict && (cond))                                               \

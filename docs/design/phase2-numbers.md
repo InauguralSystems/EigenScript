@@ -1759,7 +1759,7 @@ current state behind several rows:
 | `u64_div` | int-requiring | - | - | N9: N5 int64 bit patterns; unsigned quotient as int64 bits; zero raises value (Rust std) |
 | `u64_rem` | int-requiring | - | - | N9: N5 int64 bit patterns; unsigned remainder as int64 bits; zero raises value (Rust std) |
 | `u64_to_string` | int-requiring | - | - | N9: N5 int64 bit pattern to unsigned decimal string (Rust std) |
-| `fround` | float-producing | - | - | N9: int converts to f64 first; f64 to f32 to f64, float result; current result guard until R2.2 |
+| `fround` | float-producing | - | - | N9: int converts to f64 first; f64 to f32 to f64, float result; R2.2 retires the prior result guard, so float32 overflow gives ±inf (strict opt-in traps) |
 <!-- builtin-table:end -->
 
 **Builtins to add**, outside the checked table until they exist:
@@ -1837,6 +1837,14 @@ numbers are at `0740af03`.
       `f != floor(f)`.
     - Lua's `LTintfloat`/`EQintfloat` (lvm.c) reach the same answers by
       converting whichever side converts exactly.
+  - **Ordering exception, RULING R22-1 (2026-11-02, #1758):** `sort`,
+    `sort_by` and `min`/`max` first use this exact numeric comparison, then
+    order `-0.0` before the equivalent class `{int 0, +0.0}`. An integer
+    has no signed zero (Julia's mixed-type `isless` precedent). Equivalent
+    elements retain input order; `min`/`max` retain the first equivalent
+    winner. Thus `[0.0, 0, -0.0]` sorts as `[-0.0, 0.0, 0]`. The R1.7
+    stability contract now applies to ordering equivalence, which excludes
+    the negative-zero pair. Numeric `==` still equates all three zeros.
 - **N3 (`+ - *` on ints give an int; overflow raises):**
   - vm.c:3290 `ARITH_FAST`, 3324 `CASE(ADD)` and 3377 `NUM_BINOP`
     (SUB, MUL);
@@ -2326,6 +2334,12 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    `min`/`max` propagate NaN. `values_equal_impl`'s identity shortcut
    excludes floats and extends the container reflexivity predicate to NaN
    floats, following §2.6a (R1.6z-D1/D2).
+   Result/status checks preserve every IEEE bit; constructors and container
+   transport do not raise or write status. Arithmetic producers retain sticky
+   INVALID/OVERFLOW and the explicit strict trap. Native arithmetic bails at
+   magnitude >= inf to let the interpreter publish that status/trap; this is
+   an IEEE result fallback, not a finite numeric rail. All finite f64 values
+   above 1e308 remain representable and eligible for native execution.
 3. **R2.3, N13 refusal inside the writers:** the JSON encoder, the store
    encoder (delete the pre-walk `store_nonfinite_scalar`), the byte
    encoders and the int conversion. This removes the class #1746 chased for
@@ -3101,6 +3115,15 @@ The owner may overrule any of them; until then this design follows them.
   order here (probed for #1758: Lua's `table.sort` left a list holding NaNs
   unsorted without an error). Applied: R2.2, when NaN first becomes
   reachable; rows `N11.sort-total-order` and `N11.min-max-nan`.
+  **RULING R22-1** extends that order to mixed kinds: `-0.0` precedes
+  `{int 0, +0.0}`, whose members are equivalent and stable in input order.
+  Canonical NaNs are equivalent and stable after +inf. `min`/`max` follow
+  the same signed-zero order, keep the first equivalent winner and
+  propagate NaN. Exact nonzero mixed comparisons and numeric equality are
+  unchanged. This replaces R1.7's signed-zero tie expectation without
+  weakening stability among equivalent elements. Ordinary regression
+  `tests/test_ieee_order_1758.eigs` exercises the STOP witness, all six
+  mixed-zero permutations, the reductions and stable NaN keys in three tiers.
 
 
 ## 12. R1.2 verification notes

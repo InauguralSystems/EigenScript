@@ -2363,9 +2363,8 @@ static Value *parse_value_p(const char **p) {
                 skip_ws(p);
                 char *end = NULL;
                 double d = strtod(*p, &end);
-                /* Numbers on a tape are untrusted.  The language's numeric
-                 * constructor never permits a non-finite value, so accepting
-                 * one here would bypass num_guard for buffer elements too. */
+                /* This legacy tape grammar refuses non-finite buffer cells.
+                 * R2.5 owns the explicit non-finite tape tokens. */
                 if (end == *p || !isfinite(d)) { free(data); return NULL; }
                 if (count >= cap) {
                     int nc = cap ? cap * 2 : 8;
@@ -2472,13 +2471,8 @@ static Value *parse_value_p(const char **p) {
     }
     char *end = NULL;
     double d = strtod(*p, &end);
-    /* A genuine recording cannot contain NaN or infinity: num_guard rejects
-     * or clamps them before a Value reaches the recorder.  Treat either as a
-     * corrupt token at the common tape parser boundary, rather than exposing
-     * it to consumers (some of which legitimately convert numbers to C
-     * integer types).  Returning NULL selects replay_malformed_value(), whose
-     * diagnostic names the offending serialized value. Phase 2's non-finite
-     * tape tokens are scheduled in docs/design/phase2-numbers.md §8, R2.5. */
+    /* Retain the legacy finite tape grammar until R2.5. R2.2 makes IEEE
+     * arithmetic reachable but does not introduce new replay tokens. */
     if (end == *p || !at_token_boundary(*end) || !isfinite(d)) return NULL;
     *p = end;
     return make_float(d);
