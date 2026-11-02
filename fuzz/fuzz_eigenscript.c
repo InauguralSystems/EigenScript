@@ -75,7 +75,7 @@ static Value *fuzz_ubsan_plant(Value *arg) {
     volatile int value = INT_MAX;
     (void)arg;
     value += 1;
-    return make_num((double)value);
+    return make_float((double)value);
 }
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
