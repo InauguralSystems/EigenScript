@@ -111,6 +111,12 @@ define fmt_num(value, decimals) as:
     # Inspect the existing rendering so this library also runs on the main
     # double-only reference runtime (which has no num_type builtin).
     value_text is str of value
+    # Fixed decimals format an integral float's digits just like an integer's.
+    # Strip N6's kind suffix before choosing the exact digit/padding path.
+    if ends_with of [value_text, ".0"]:
+        value_text is substr of [value_text, 0, (len of value_text) - 2]
+        if value_text == "-0":
+            value_text is "0"
     if (type of value) == "num" and (index_of of [value_text, "."]) < 0 and (index_of of [value_text, "e"]) < 0 and (index_of of [value_text, "E"]) < 0:
         result is value_text
         if decimals > 0:

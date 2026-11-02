@@ -638,6 +638,7 @@ jobs:
           echo "base=$base" >> "$GITHUB_OUTPUT"
       - if: needs.scope.outputs.code == 'true' || steps.select.outputs.n != '0'
         name: Build
+        id: build
         run: ./build.sh
       # The contributor precheck's gate list is the only copy (#1264): CI runs
       # the same script, so `make precheck` cannot drift from CI.
@@ -712,7 +713,7 @@ jobs:
           grep -q 'expected=[1-9]' "$fx/plan.out"
 
       - name: Require compiler guard activity
-        if: always() && (needs.scope.outputs.code == 'true' || steps.select.outputs.n != '0')
+        if: always() && (steps.build.outcome == 'success' || steps.build.outcome == 'failure')
         run: bash tools/cc_guard.sh --report
 
   # Linux build + full suite, inside the shared image, for gcc and clang.

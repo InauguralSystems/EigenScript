@@ -335,7 +335,8 @@ assert of [(read_lines of io_roundtrip_path) == io_roundtrip_lines, "SF132 write
 
 # --- log levels (#2247) ---
 load_file of "lib/log.eigs"
-silent_probe is exec_capture of ["./eigenscript", "../tests/fixtures/log_2247_silent.eigs"]
+# This independent child must not truncate or consume its parent's trace tape.
+silent_probe is exec_capture of ["env", "-u", "EIGS_TRACE", "-u", "EIGS_REPLAY", "./eigenscript", "../tests/fixtures/log_2247_silent.eigs"]
 assert of [silent_probe[0] == 0 and silent_probe[1] == "", "SF133 log silent threshold suppresses named silent messages"]
 
 unknown_threshold_raised is 0

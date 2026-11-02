@@ -409,6 +409,8 @@ def witness(tier, rid, err, hot, held, c, integer=False, int64=False):
     stop = f"{ops[at][0]}@{at}" if at in ops else f"the end of run_row ({at})" if at >= 0 else "no thunk"
     if ok:
         return "native", f"exits at {stop}, past the back-edge at {jb}"
+    # native_witness validated this same run_row diagnostic (12 or 15 fields).
+    hrow = next(f for f in (ln.split() for ln in hot.splitlines()) if f[:1] == ["run_row"])
     # R1.3 through R5: exact int capability rows intentionally contain int
     # opcodes which both JIT scanners refuse by default. Keep all their
     # JIT-enabled verdicts scored, but name the actual interpreted tier.

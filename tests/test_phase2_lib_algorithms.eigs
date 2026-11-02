@@ -11,6 +11,12 @@ assert_eq of [fmt_num of [-9223372036854775808, 2], "-9223372036854775808.00", "
 assert_eq of [fmt_num of [2.675, 2], "2.67", "fmt exact binary64 decimal tie"]
 assert_eq of [fmt_num of [1e20, 2], "100000000000000000000.00", "fmt large binary64 without exponent"]
 assert_eq of [fmt_num of [3.25, 2], "3.25", "fmt fast path has no float suffix"]
+assert_eq of [fmt_num of [3.0, 2], "3.00", "fmt integral float uses exact decimal padding"]
+assert_eq of [fmt_num of [-0.0, 2], "0.00", "fixed decimals retain unsigned zero"]
+assert_eq of [fmt_percent of [-1, -1], "-100%", "percent keeps main text with negative decimals"]
+assert_eq of [fmt_percent of [1, 30], "100.000000000000000000000000000000%", "percent padding does not scale integral floats"]
+assert_eq of [str of 3.0, "3.0", "fixed decimals do not change N6 str suffix"]
+assert_eq of [str of -0.0, "-0.0", "fixed decimals do not change N6 signed zero"]
 
 # Main's real-valued geometry algorithms also accept integer coordinates.
 assert_eq of [orientation of [[0, 0], [10000000000, 0], [0, 10000000000]], 1, "integer orientation uses the float determinant"]

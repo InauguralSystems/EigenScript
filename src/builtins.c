@@ -6302,20 +6302,21 @@ Value* builtin_sort_by(Value *arg) {
  * with libc-dependent element order on top (qsort gives no stability
  * guarantee for all-equal elements). Record sorting is sort_by's job. */
 static int sort_cmp_num(const void *a, const void *b) {
-    EIGS_VIEW(av); EIGS_VIEW(bv);
-    Value *va = slot_view(*(const EigsSlot *)a, &av);
-    Value *vb = slot_view(*(const EigsSlot *)b, &bv);
-    if (va->type == VAL_INT && vb->type == VAL_INT)
-        return (VAL_I64_RAW(va) > VAL_I64_RAW(vb)) - (VAL_I64_RAW(va) < VAL_I64_RAW(vb));
-    if (va->type == VAL_INT) {
-        int cmp = eigs_cmp_int_float(VAL_I64_RAW(va), eigs_float_arg(vb, __func__));
+    /* builtin_sort has validated every element. Read through the typed slot
+     * accessors rather than dereferencing possibly-null borrowed views. */
+    EigsNum va = eigs_slot_number(*(const EigsSlot *)a, __func__);
+    EigsNum vb = eigs_slot_number(*(const EigsSlot *)b, __func__);
+    if (va.is_int && vb.is_int)
+        return (va.value.i64 > vb.value.i64) - (va.value.i64 < vb.value.i64);
+    if (va.is_int) {
+        int cmp = eigs_cmp_int_float(va.value.i64, vb.value.f64);
         return cmp == 2 ? 0 : cmp;
     }
-    if (vb->type == VAL_INT) {
-        int cmp = eigs_cmp_int_float(VAL_I64_RAW(vb), eigs_float_arg(va, __func__));
+    if (vb.is_int) {
+        int cmp = eigs_cmp_int_float(vb.value.i64, va.value.f64);
         return cmp == 2 ? 0 : -cmp;
     }
-    double da = eigs_float_arg(va, __func__), db = eigs_float_arg(vb, __func__);
+    double da = va.value.f64, db = vb.value.f64;
     return (da > db) - (da < db);
 }
 

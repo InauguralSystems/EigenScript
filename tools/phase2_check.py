@@ -902,7 +902,7 @@ def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
             res[g] = embed_int_gate(out)
         elif g == 'db-param-exact':
             res[g], text = tool(['bash', '-c', 'make db-params-test && build/server-db/test_db_params'], out, r'.*')
-            res[g] = res[g] and len(re.findall(r'^db params: 14 passed, 0 failed \(14 declared\)$', text, re.M)) == 1
+            res[g] = res[g] and len(re.findall(r'^db params: 17 passed, 0 failed \(17 declared\)$', text, re.M)) == 1
         elif g == 'builtins-table':
             if not tag:
                 out('  builtins-table: needs the tag binary')
