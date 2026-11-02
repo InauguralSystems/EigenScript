@@ -1,0 +1,7 @@
+# ROW: N4.float-div-zero-inf
+# ITEMS: N4
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+print of [1.0 / 0, -1.0 / 0, 1 / 0]
