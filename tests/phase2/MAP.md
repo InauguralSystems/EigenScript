@@ -532,6 +532,12 @@ Names, operands and operations follow the decided [#1758 comment 6304880619](htt
   tag: `[0, 1, 2, 3, 1e+308]` (probed main)
 
 ### N12
+R2.1 proves the single-writer payload contract with the C slot test's 63
+NaN-payload rows (`tests/phase2/slot_layer.c`) and plant 2. The program row
+`N12.nan-payload-tags` remains pending until R2.4 supplies `f64_from_bits`;
+its `[R2.1/R2.4]` tag selects that later round, without changing its expected
+output below.
+
 - `N12.f64-bits` [R2.4] `print of [f64_bits of 1.0, f64_bits of -0.0, f64_from_bits of 4607182418800017408]`
   -> `[4607182418800017408, -9223372036854775808, 1.0]`
   tag: undefined

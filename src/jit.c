@@ -574,8 +574,8 @@ static void ensure_layout(void) {
  *   OP_GT / OP_LE / OP_GE    — load both, type-check (immediate-num),
  *                              ucomisd + cmovcc to materialize the
  *                              false/true bool slot bits (#1637). No output
- *                              overflow check needed (bounded). Type-
- *                              check is the only bail.
+ *                              overflow check needed (bounded). Type and
+ *                              unordered checks bail to the interpreter.
  *   OP_POP                   — peephole `dec %ecx`, valid only when the
  *                              most recent push was an immediate whose
  *                              slot_decref is a no-op. GET_LOCAL/DUP/
@@ -1566,8 +1566,8 @@ static uint8_t *emit_store_rdx_at_disp_stack(uint8_t *w, int32_t disp) {
 
 /* ucomisd %xmm0, %xmm1  (4 bytes: 66 0F 2E C8) — AT&T order: compares
  * %xmm1 (= a) with %xmm0 (= b). Sets ZF/PF/CF per IEEE-754 ordered
- * comparison (PF=1 if either is NaN — accepted imprecision: num_guard
- * prevents NaN from reaching the stack in normal operation). */
+ * comparison. PF=1 if either is NaN; the comparison emitter bails on
+ * that flag before materializing or committing a bool result. */
 static uint8_t *emit_ucomisd_xmm0_xmm1(uint8_t *w) {
     *w++ = 0x66; *w++ = 0x0F; *w++ = 0x2E; *w++ = 0xC8; return w;
 }
@@ -3826,9 +3826,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             bail_patches[bail_count++] = p_t;
             if (op == OP_NEG) {
                 /* R2.1: sign-flipping canonical NaN would spell NULL.
-                 * Reject only NaNs before mutation; the arithmetic clamp
-                 * bound above stays EIGS_NUM_MAX until R2.2 (R21-1). */
-                w = emit_overflow_check_rax(w, 0x7FF0000000000000ULL,
+                 * Reuse the arithmetic result guard conservatively; raw
+                 * out-of-bound operands also defer to the interpreter.
+                 * R2.2 advances that bound with clamp retirement (R21-1). */
+                w = emit_overflow_check_rax(w, max_normal_bits,
                                             &bail_patches[bail_count++]);
                 /* Flip the IEEE-754 sign bit: rax ^= 0x8000…0. */
                 w = emit_movabs_rdx(w, 0x8000000000000000ULL);

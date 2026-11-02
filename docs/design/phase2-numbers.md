@@ -1183,12 +1183,30 @@ missed (§2.7):
 
 ### 4.3 For round 2 (N11/N12)
 
-The experiment already did each of these and the branch carries the code:
-- `max_normal_bits` (2634) becomes inf's bits, so a NaN result bails;
+R2.1 keeps `max_normal_bits = EIGS_NUM_MAX`: the existing result check clears
+the sign bit and bails when the magnitude bits exceed `bits(1e308)`, which
+already includes every NaN. Raising this bound to inf's bits belongs to R2.2,
+in the same commit that retires the clamp. **RULING R21-1 (2026-11-02)**
+supersedes the original R2.1 sequencing on **STOP-R21-1**'s evidence: the bound
+alone lets a native `1e308 * 2.0` compare greater than `1e308`, while the
+still-guarded interpreter compares false. The experiment changed the bound
+and guard together under `EIGS_IEEE`; it did not establish the bound alone.
+This sequencing preserves **Determinism is a guarantee with a stated
+boundary** (PRINCIPLES §3) and the interpreter as oracle.
+
+The other three experiment changes stay in R2.1:
+
 - NEG gains a NaN bail, because a flipped canonical NaN spells
   `SLOT_NULL_BITS`;
 - comparisons gain a `jp` bail;
 - CONST canonicalizes a NaN constant.
+
+R2.1 pins the existing result check with a NaN-producing arithmetic fixture
+that fails if the check is removed; it remains required when R2.2 raises the
+bound. STOP-R21-1's 80-call reproducer is also an ordinary tier-agreement test
+(`tests/test_phase2_r21_threshold.sh`): interpreter, default JIT and OSR
+threshold 1 must all print `false` in R2.1. R2.2 re-declares all three as
+`true` in the same commit as the bound and clamp changes (RULING R21-1).
 
 ### 4.4 For round 5 (recorded so it is not rediscovered)
 
@@ -2291,9 +2309,16 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    **and the JIT NaN bails** (§4.3), while `num_guard` still keeps NaN out:
    memory safety first. A mechanical round (no program can make a NaN yet):
    the C slot test writes every tag-spelling NaN payload, and the #1746
-   plant (a raw store) segfaults in `slot_incref`.
+   plant (a raw store) segfaults in `slot_incref`. Keep
+   `max_normal_bits = EIGS_NUM_MAX`; its existing magnitude check already
+   bails on NaN. NEG, comparison and CONST changes proceed with their
+   removed-check plants. The ordinary 80-call STOP-R21-1 threshold fixture
+   prints `false` in all three tiers (RULING R21-1; §4.3).
 2. **R2.2, retire `num_guard`, `num_guard_named`, `EIGS_NUM_MAX` and the
    1e308 clamp** (74 sites, the leaf's included; 47 first forced here).
+   Raise `max_normal_bits` to inf's bits with the clamp's retirement
+   (RULING R21-1 / STOP-R21-1), and re-declare the ordinary threshold fixture
+   as `true` in all three tiers in that same commit.
    `EIGS_STRICT` becomes an opt-in trap (state.c:62). `sqrt of -1` is NaN,
    `log of 0` is -inf, `x/0` is ±inf, `0/0` and float `x%0` are NaN. Q8:
    `sort`/`sort_by` order floats by IEEE `totalOrder` (NaN after +inf), and
@@ -2528,7 +2553,7 @@ failing on zero rows:
 | R1.6z | 0 | mechanical: bridge-token deletion compile and final full table |
 | R1.7 | 13 (11 change rows, 2 invariant controls) | `gate.N14.db-param-exact`, `gate.N6.const-dedup-bits` (R1.7-D3/D4) |
 | R1.8 | 0 | `gate.N7.embed-int` (the embed smoke test), the executed doc fences (suite [89]/[90]), the LSP and lint suite sections |
-| R2.1 | 0 | mechanical: the C slot test's NaN-payload rows and plant 2 (no program can make a NaN before R2.2) |
+| R2.1 | 0 | mechanical: the C slot test's NaN-payload rows, plant 2 and the JIT NaN fixtures; ordinary three-tier STOP-R21-1 threshold agreement is `false` (no program can make a NaN before R2.2; RULING R21-1) |
 | R2.2 | 9 | |
 | R2.3 | 3 | |
 | R2.4 | 6 | |

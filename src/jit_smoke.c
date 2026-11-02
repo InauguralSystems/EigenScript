@@ -834,6 +834,13 @@ static int run_nan_cases(void) {
     }
     rc |= nan_smoke_row("neg", OP_NEG, 1, nan, zero, 0, 1, zero);
     rc |= nan_smoke_row("neg_control", OP_NEG, 1, one, zero, 0, 0, slot_from_f64(-1.5));
+    /* R21-1: NEG shares the still-live arithmetic bound. Above-rail raw
+     * inputs must interpret; R2.2 updates these controls with guard retirement. */
+    rc |= nan_smoke_row("neg", OP_NEG, 1, inf, zero, 0, 1, zero);
+    rc |= nan_smoke_row("neg", OP_NEG, 1, ninf, zero, 0, 1, zero);
+    rc |= nan_smoke_row("neg", OP_NEG, 1, slot_from_f64(1.5e308), zero, 0, 1, zero);
+    rc |= nan_smoke_row("neg_control", OP_NEG, 1, zero, zero, 0, 0, slot_from_f64(-0.0));
+    rc |= nan_smoke_row("neg_control", OP_NEG, 1, slot_from_f64(-0.0), zero, 0, 0, zero);
     uint8_t compare[] = {OP_EQ, OP_NE, OP_LT, OP_GT, OP_LE, OP_GE};
     int truth[] = {0, 1, 1, 0, 1, 0};
     for (int i = 0; i < 6; i++) {
@@ -851,8 +858,8 @@ static int run_nan_cases(void) {
         rc |= nan_smoke_row("const", OP_CONST, 0, zero, zero, constants[i], 0, nan);
     rc |= nan_smoke_row("const_control", OP_CONST, 0, zero, zero, 0x8000000000000000ULL, 0, slot_from_f64(-0.0));
     rc |= nan_smoke_row("const_control", OP_CONST, 0, zero, zero, inf.u, 0, inf);
-    if (nan_smoke_rows != 82) rc = 1;
-    printf("JIT NaN: rows=%d arithmetic=16 neg=4 compare=36 const=26 status=%s\n",
+    if (nan_smoke_rows != 92) rc = 1;
+    printf("JIT NaN: rows=%d arithmetic=16 neg=14 compare=36 const=26 status=%s\n",
            nan_smoke_rows, rc ? "FAIL" : "PASS");
     jit_thread_destroy(thread); eigs_current = NULL;
     free(vm); free(thread); free(state);

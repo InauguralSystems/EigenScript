@@ -1,0 +1,10 @@
+# STOP-R21-1 / RULING R21-1: preserve the finite clamp in every R2.1 tier.
+# R2.2 re-declares this fixture's result with the clamp and bound changes.
+define exceeds_guard(a) as:
+    unobserved:
+        local x is a * 2.0
+        return x > 1e308
+result is false
+for i in range of 80:
+    result is exceeds_guard of 1e308
+print of result
