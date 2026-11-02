@@ -132,10 +132,12 @@ esac
 # --- case 5b: an explicit SKIP is NOT vacuous -----------------------------
 # The disease is silence, not skipping. A child that prints SKIP: has
 # honestly declined to measure and said so where a reader can see it.
-# Bought in CI (PR #996): test_temporal_memory.sh skips without GNU
+# Bought in CI (PR #996): test_temporal_memory.sh then skipped without GNU
 # `time -f`, without /proc, and on sanitizer builds — none of which is true
 # on the dev box, so the local run never took those paths and four lanes went
-# red on a child behaving exactly as designed. A guard whose failures are not
+# red on a child behaving exactly as designed. (Since hq#58 that child fails a
+# skip whose key is not in tests/temporal_memory_skip_allowlist.txt; the
+# fixture below keeps the old line as a generic SKIP-only child.) A guard whose failures are not
 # believed is worse than no guard.
 cat > "$WORK/test_skipper.sh" <<'EOF'
 #!/bin/bash
