@@ -187,6 +187,7 @@ jobs:
       code: ${{ steps.detect.outputs.code }}
       spec: ${{ steps.detect.outputs.spec }}
       release: ${{ steps.detect.outputs.release }}
+      gfx137: ${{ steps.gfx137.outputs.gfx137 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -235,6 +236,19 @@ jobs:
           echo "-> scope verdicts (code=false: runtime legs report green without building)"
           echo "$verdict"
           echo "$verdict" >> "$GITHUB_OUTPUT"
+      # #2320: linux / gcc owns section [137] and runs it in every queue run;
+      # on a PR it runs it only when the diff touches a [137] input. No output
+      # (not a PR, or this step never ran) means run it: the gcc leg defers
+      # only on an explicit gfx137=false.
+      - id: gfx137
+        name: Does the PR touch a [137] input (#2320)
+        if: github.event_name == 'pull_request'
+        env:
+          GFX137_BASE: ${{ github.event.pull_request.base.sha }}
+          GFX137_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -o pipefail
+          bash tools/gfx137_once.sh scope "$GFX137_BASE" "$GFX137_HEAD" | tee -a "$GITHUB_OUTPUT"
 
   # Exercise the exact action used by release.yml before a tag exists. The
   # scope classifier selects every PR changing the release workflow, its CI
@@ -707,8 +721,12 @@ jobs:
     name: linux / ${{ matrix.cc }}
     env:
       CI_DISPATCH_LANES: linux
+      # #2320: the gcc leg OWNS section [137] (tests/gfx137_defer_allowlist.txt):
+      # it runs it in every queue run, and on a PR when the diff touches a [137]
+      # input. The clang leg's copy compiled the same gcc binary, so it defers.
+      EIGS_GFX137_DEFER: ${{ matrix.cc == 'clang' && 'linux-clang' || github.event_name == 'pull_request' && needs.scope.outputs.gfx137 == 'false' && 'linux-gcc-pr' || '' }}
     if: (github.event_name != 'push') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux')
-    needs: dev-image
+    needs: [dev-image, scope]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -747,7 +765,16 @@ jobs:
 
       - name: Run release suite on gcc
         if: github.event_name != 'pull_request' || matrix.cc == 'gcc'
-        run: cd tests && bash run_all_tests.sh
+        run: |
+          set -o pipefail
+          cd tests && bash run_all_tests.sh 2>&1 | tee "$RUNNER_TEMP/suite.log"
+
+      # #2320: absence is red. The owner's log must show [137] RAN (a skip, a
+      # failure or a missing section has no `GFX137: ran` line); a deferring
+      # leg's log must show exactly its own allowlisted deferral.
+      - name: Require the [137] receipt (linux / gcc owns it, #2320)
+        if: github.event_name != 'pull_request' || matrix.cc == 'gcc'
+        run: bash tools/gfx137_once.sh receipt "$RUNNER_TEMP/suite.log"
 
       - name: Compile-check LSP on the PR clang lane
         if: github.event_name != 'pull_request' || matrix.cc == 'clang'
@@ -1168,6 +1195,8 @@ jobs:
     name: extensions / server (http+net+gfx) and ancillary checks
     env:
       CI_DISPATCH_LANES: fuzz
+      # #2320: linux / gcc runs [137] in the same run, except in a fuzz-only dispatch.
+      EIGS_GFX137_DEFER: ${{ inputs.lanes != 'fuzz' && 'extensions-server' || '' }}
     needs: [dev-image, scope]
     if: (github.event_name != 'push') && ((github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'fuzz'))
     runs-on: ubuntu-latest
@@ -1309,6 +1338,8 @@ jobs:
     name: extensions / zlib suite
     env:
       CI_DISPATCH_LANES: all
+      # #2320: linux / gcc runs [137] in every run this job runs in.
+      EIGS_GFX137_DEFER: extensions-zlib
     needs: [dev-image, scope]
     if: (github.event_name != 'push') && ((github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all'))
     runs-on: ubuntu-latest
@@ -1345,6 +1376,8 @@ jobs:
     name: db extension suite (postgres service)
     env:
       CI_DISPATCH_LANES: all
+      # #2320: linux / gcc runs [137] in every run this job runs in.
+      EIGS_GFX137_DEFER: database
     needs: [dev-image, scope]
     if: (github.event_name != 'push') && ((github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all'))
     runs-on: ubuntu-latest
@@ -1544,6 +1577,10 @@ jobs:
     name: asan + ubsan / shard ${{ matrix.shard }}/3 (http+net+gfx build)
     env:
       CI_DISPATCH_LANES: asan
+      # #2320: linux / gcc runs [137] in the same run, except in an asan-only
+      # dispatch. [137] reuses no shard binary, so its shard copy was the same
+      # gcc build linux / gcc compiles.
+      EIGS_GFX137_DEFER: ${{ inputs.lanes != 'asan' && 'asan-shards' || '' }}
     needs: [dev-image, scope]
     if: (github.event_name != 'push') && ((github.event_name != 'pull_request') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'asan'))
     runs-on: ubuntu-latest
