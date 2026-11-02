@@ -1,0 +1,12 @@
+# Reviewed allowlist for tests/test_san_report_sweep_2306.sh (#2306).
+# Format: SECTION|PASS|row text|reason
+# A row listed here still PASSES when the fake-sanitizer wrapper appends a
+# UBSan "runtime error:" line to every program. Each entry needs a reason.
+# The sweep fails if an entry goes stale, so remove it once its row is fixed.
+[104]|PASS|cooperative tasks replay byte-identically (#408 determinism)|Compares two runs' 2>&1 captures and never reads the exit code. A planted report prints the same line in both runs. Out of scope for #2306: the follow-up lint for $(./eigenscript ...) captures whose exit code is never read.
+[104]|PASS|virtual time is deterministic, replays, records zero nondet (#408 inc3)|Same shape as the determinism row: three captures compared to each other, no exit code read. Same follow-up as above.
+[120]|PASS|'what is x at L' correct past line 65535 (111, 222)|A display sub-line of [120]'s single counted row (LW_OK). That row fails through its exit-status sub-line, which the sweep requires separately.
+[120]|PASS|JIT tier agrees with interpreter past line 65535|A display sub-line of [120]'s single counted row. Same as above.
+[120]|PASS|error line reported as 70005 (> 65535, not wrapped)|A display sub-line of [120]'s single counted row. Same as above.
+[9/15]|PASS|AS1 assert true passes|Greps one line of a test_assert.eigs capture and never reads its exit code. Out of scope for #2306: the follow-up lint for $(./eigenscript ...) captures whose exit code is never read.
+[9/15]|PASS|AS2 assert list passes|Same capture and shape as AS1. Same follow-up.
