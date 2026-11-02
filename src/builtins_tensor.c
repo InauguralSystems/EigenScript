@@ -13,10 +13,8 @@
 
 /* Forward decls for helpers shared with the allocation/observer machinery. */
 
-/* Shared double-precision tensor kernels. These live in this always-compiled
- * translation unit so model-enabled and model-disabled builds execute the
- * same implementation. The tile size matches the model's float kernels but
- * stays local here so the core tensor builtins do not depend on model headers. */
+/* Shared double-precision tensor kernels for the core tensor builtins and the
+ * autograd rules. NE_TENSOR_TILE_SIZE is the cache tile of the tiled kernels. */
 #define NE_TENSOR_TILE_SIZE 32
 
 void ne_softmax_buf(double *data, int64_t rows, int64_t cols) {
@@ -91,8 +89,7 @@ void ne_matmul_buf(
  * transpose costs a copy per backward step. Same i-k-j tiling as
  * ne_matmul_buf, so out[i][j] accumulates over kk in the same ascending
  * order — byte-identical to `matmul` of the explicitly transposed operand
- * (pinned by tests/test_autograd.eigs). model_train.c carries the f32
- * twins of these for the transformer; these are the f64 buffer path. */
+ * (pinned by tests/test_autograd.eigs). */
 
 /* out(k x n) = a^T . b  where a is (m x k), b is (m x n) */
 void ne_matmul_at_buf(
@@ -357,22 +354,28 @@ static Value* flat_to_like(Value *src, double *data, int rows, int cols) {
                        : flat_to_tensor_2d(data, rows, cols);
 }
 
-/* --- Tensor helper: count total elements recursively --- */
-static int tensor_total(Value *v) {
+/* --- Reduction helper: validate and count scalar elements recursively.
+ * `index` is the zero-based flattened element index, matching the order in
+ * which the reduction consumes nested tensors.  Validation belongs in this
+ * first pass so allocation and arithmetic never begin for a malformed input. */
+static int tensor_total(Value *v, const char *who, int *index) {
     if (!v) return 0;
-    if (val_is_number(v)) return 1;
-    /* #1637: arithmetic on a bool raises. Other non-number elements keep
-     * their old (counted-as-absent) reading; a bool is the one that used to
-     * BE a number, so letting it vanish from `sum of [a < b, ...]` would turn
-     * a count into a silent 0. Raised in every strict mode (#1637). */
-    if (v->type == VAL_BOOL && !g_has_error)
-        rt_error(EK_TYPE, 0, "cannot use a bool as a number (branch on it: `if b:`)");
-    if (v->type == VAL_BUFFER) return v->data.buffer.count;   /* #1093 */
-    if (v->type != VAL_LIST) return 0;
+    if (val_is_number(v)) { (*index)++; return 1; }
+    if (v->type == VAL_BUFFER) {
+        *index += v->data.buffer.count;
+        return v->data.buffer.count;                         /* #1093 */
+    }
+    if (v->type != VAL_LIST) {
+        if (!g_has_error)
+            rt_error(EK_TYPE, 0, "%s: element %d is %s (expected a number)",
+                     who, *index, val_type_name(v->type));
+        return 0;
+    }
     int total = 0;
     for (int i = 0; i < v->data.list.count; i++) {
         EIGS_VIEW(child_view);
-        total += tensor_total(list_get_view(v, i, &child_view));
+        total += tensor_total(list_get_view(v, i, &child_view), who, index);
+        if (g_has_error) break;
     }
     return total;
 }
@@ -1296,7 +1299,9 @@ Value* builtin_tensor_mean(Value *arg) {
     ARG_GUARD(arg && !val_is_number(arg) && arg->type != VAL_LIST
               && arg->type != VAL_BUFFER,   /* #1093 */
               "mean", "a number, a list of numbers or a buffer", make_float(0.0));
-    int total = tensor_total(arg);
+    int element_index = 0;
+    int total = tensor_total(arg, "mean", &element_index);
+    if (g_has_error) return make_null();
     /* fs:EMPTY nothing to average, and the division below would be 0/0. The
      * non-tensor case is gone (guarded above), so this line now carries one
      * verdict only: `mean of []` is the empty mean and strict must not raise. */
@@ -1321,10 +1326,6 @@ Value* builtin_tensor_mean(Value *arg) {
  * makes the whole reduction floating, so an int prefix must not overflow. */
 static int tensor_sum_has_float(Value *v) {
     if (!v) return 0;
-    /* tensor_total previously checked every bool before any accumulation.
-     * Preserve that validation order while deciding the numeric kind. */
-    if (v->type == VAL_BOOL && !g_has_error)
-        rt_error(EK_TYPE, 0, "cannot use a bool as a number (branch on it: `if b:`)");
     if (v->type == VAL_FLOAT || v->type == VAL_BUFFER) return 1;
     if (v->type != VAL_LIST) return 0;
     int has_float = 0;
@@ -1371,6 +1372,11 @@ static int tensor_sum_into(Value *v, EigsNum *sum) {
 Value* builtin_tensor_sum(Value *arg) {
     ARG_GUARD(arg && !val_is_number(arg) && arg->type != VAL_LIST && arg->type != VAL_BUFFER,
               "sum", "a number, a list of numbers or a buffer", make_float(0.0));
+    /* #1649: validate every leaf before either kind selection or arithmetic,
+     * so a malformed tail cannot be hidden by an overflowing int prefix. */
+    int element_index = 0;
+    (void)tensor_total(arg, "sum", &element_index);
+    if (g_has_error) return make_null();
     EigsNum sum = { .is_int = !tensor_sum_has_float(arg), .value = { .i64 = 0 } };
     if (g_has_error) return make_null();
     /* Explicitly initialize the active union arm rather than assuming all-bits
@@ -1403,7 +1409,9 @@ Value* builtin_tensor_norm(Value *arg) {
     ARG_GUARD(arg && !val_is_number(arg) && arg->type != VAL_LIST
               && arg->type != VAL_BUFFER,   /* #1093 */
               "norm", "a number, a list of numbers or a buffer", make_float(0.0));
-    int total = tensor_total(arg);
+    int element_index = 0;
+    int total = tensor_total(arg, "norm", &element_index);
+    if (g_has_error) return make_null();
     /* fs:EMPTY the L2 norm over zero elements is sqrt(0) = 0, exactly what the
      * loop below would produce. The non-tensor case is guarded above. */
     if (total == 0) return make_float(0.0);

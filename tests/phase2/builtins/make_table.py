@@ -167,7 +167,7 @@ def main():
     def round_of(file, cls, loss):
         if loss == "LOSS" or (file == "builtins.c" and cls == "int-preserving"): return "b"
         if file in ("builtins.c", "builtins_host.c", "vm.c"): return "c"
-        if file in ("builtins_tensor.c", "builtins_buf.c") or file.startswith("model_"): return "d"
+        if file in ("builtins_tensor.c", "builtins_buf.c"): return "d"
         if file == "builtins_int.c": return "g"
         if file == "ext_gfx.c": return "e"
         if file in ("ext_store.c", "ext_db.c", "ext_http.c", "ext_net.c"): return "f"
@@ -367,7 +367,7 @@ def main():
         for kind, v in (("pre", vs_pre), ("tag", vs_tag)):
             tally[(r, kind, v)] = tally.get((r, kind, v), 0) + 1
 
-    want = {"b": 46, "c": 76, "d": 53, "e": 38, "f": 19, "g": 77}  # S10-D2 retires proc_read_buf from c; all other round memberships stay fixed.
+    want = {"b": 46, "c": 75, "d": 48, "e": 38, "f": 19, "g": 77}  # S10-D2 retires proc_read_buf; sync11 retires build_corpus (c) and five model rows (d).
     if counts != want: fail.append("round counts %s, the plan says %s" % (counts, want))
     if not rows or len(rows) != len(sec6): fail.append("examined=%d table=%d" % (len(rows), len(sec6)))
     if guard["guarded"] != guard["yes"] + guard["closed_in"] + guard["pending-profile"] + guard["vacuous"]:

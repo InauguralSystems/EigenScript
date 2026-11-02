@@ -9,6 +9,26 @@ define check(label, got, want) as:
 check of ["meta plain string decodes the r escape like the VM", eigen.eigen_run of "\"a\\rb\" == \"arb\"", "a\rb" == "arb"]
 check of ["meta f-string decodes the r escape like the VM", eigen.eigen_run of "f\"a\\rb\" == \"arb\"", f"a\rb" == "arb"]
 
+define rejects_unknown_escape(source) as:
+    try:
+        eigen.eigen_run of source
+    catch e:
+        return contains of [str of e, "unknown escape"]
+    return 0
+
+check of ["meta plain string rejects unknown escape", rejects_unknown_escape of "print of \"x\\qy\"", true]
+check of ["meta f-string rejects unknown escape", rejects_unknown_escape of "print of f\"a\\0b\"", true]
+
+define unknown_escape_message(source) as:
+    try:
+        eigen.eigen_run of source
+    catch e:
+        return str of e
+    return ""
+
+check of ["meta renders a raw newline escape visibly",
+    contains of [unknown_escape_message of "print of \"a\\\nb\"", "unknown escape '\\x0a'"], true]
+
 if failed == 0:
     print of "All tests passed"
 else:

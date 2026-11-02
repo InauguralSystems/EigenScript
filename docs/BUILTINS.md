@@ -1,7 +1,7 @@
 # EigenScript Builtin Reference
 
 Builtins are organized by module. `eigenscript --api` prints the live index.
-Core builtins are always available; extension builtins (HTTP, DB, model,
+Core builtins are always available; extension builtins (HTTP, net, DB,
 gfx, audio) require a full build or the `gfx` target.
 
 > **Builtins vs. library.** This file is the **compiled-in** surface —
@@ -71,7 +71,7 @@ examples are `tests/phase2/rows/N6.float-repr.eigs` and
 | `len` | `len of value` | Exact int length of string, list, dict, buffer or text builder |
 | `str` | `str of value` | Convert to string representation |
 | `num` | `num of value` | Parse complete numeric-literal text (N10): decimal integer text fitting int64 and wrapped hex integers give ints; a point/exponent or decimal overflow gives a float. Optional sign and surrounding ASCII whitespace are accepted. Partial/empty text, separators, 0b/0o, hex floats, inf and nan raise `value` in every strict mode. Numbers retain their kind; existing non-text coercions remain. |
-| `type` | `type of value` | Return type name: "num", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "none" (the null value — SPEC.md is normative and its gated example prints `none`; the string `"null"` is never produced) |
+| `type` | `type of value` | Return type name: "num", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "null" (the null value; the type label matches the literal) |
 | `num_type` | `num_type of value` | Return "int" for an int64, "float" for a binary64, or `null` for any other value. Both numeric kinds still have `type of` "num" (#1758 N7). |
 | `assert` | `assert of [cond, msg]` | Raise catchable error `"ASSERT FAIL: <msg>"` if condition is false |
 | `exit` | `exit of N` | Terminate the program with exit code `N` (default 0). **Uncatchable** — a `try`/`catch` does not intercept it — and unwinds through normal teardown, so it is leak-clean even with live closures. Code after it does not run. The request is scoped to the evaluating thread and cleared at each host eval entry, so under the embedding API a script that calls `exit` does not disable `try`/`catch` for the host's *next* eval (#739). A supplied numeric code follows N5, then the C int range; invalid codes raise catchably before requesting exit. |
@@ -298,6 +298,25 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 | `rename` | `rename of [old, new]` | Rename/replace a file. Atomic on POSIX (`rename(2)`) — a crash leaves either the old or the new file whole, never a mix; basis for crash-safe swaps. Returns `true`; I/O failure raises `io` with both paths and the OS reason. Trace-recorded result. |
 | `remove_file` | `remove_file of path` | Delete a file. Returns `true`; I/O failure raises `io` with the path and OS reason. Trace-recorded result. |
 | `dot` | `dot of [a, b]` | Dot product of float buffers, returning a float; summation association is unspecified. Non-finite input cells raise `value` in every strict mode (N13). |
+| `file_sync` | `file_sync of path` | Flush a regular file's data and metadata with `fsync(2)`. A missing path or non-file raises `io`. Trace-recorded; replay returns the recorded result without opening or syncing the path. |
+| `dir_sync` | `dir_sync of path` | Flush directory-entry changes with `fsync(2)`. A missing path or non-directory raises `io`. Trace-recorded; replay returns the recorded result without opening or syncing the path. |
+
+The complete durable atomic-save recipe syncs both sides of the rename:
+
+```eigenscript fragment atomic_dir="/tmp"
+tmp is atomic_dir + "/eigenscript-atomic-save.tmp"
+target is atomic_dir + "/eigenscript-atomic-save.txt"
+write_text of [tmp, "complete contents\n"]
+file_sync of tmp
+rename of [tmp, target]
+dir_sync of atomic_dir
+remove_file of target
+```
+
+Hosted builds implement both primitives with `fsync(2)`. The freestanding /
+EigenOS profile registers no filesystem builtins, so these names are absent,
+like `write_text`, `rename`, and `remove_file`; a future filesystem HAL can
+provide them when that profile gains filesystem support.
 
 ### Self-hosting
 
@@ -446,6 +465,8 @@ Boolean keywords that check the most recently observed value:
 | `read_line` | `read_line of null` | Blocking byte-exact line read from **stdin**: the returned string includes its line terminator (`\n`, with a preceding `\r` preserved), or `null` at EOF. Thus a terminated final line differs from an unterminated one, and an empty line is `"\n"`. Pipes and redirected regular files have identical semantics. Trace-recorded, so replay is deterministic |
 | `read_bytes` | `read_bytes of path` / `read_bytes of [path, max_bytes]` | Read a file's or stream's raw bytes as a list of integers 0–255. The default cap is 10 MiB; `max_bytes` raises it up to the shared 512 MiB hard ceiling. Unseekable streams are read in chunks to EOF. Missing, unreadable, directory, and over-cap paths raise `io`; over-cap errors name the size, active cap, and `[path, max_bytes]` escape. An empty input returns `[]`. Trace-recorded, so replay is deterministic. The cap follows N5: integral floats convert; fractions raise `value`. Returned byte values are ints (N1/Q1). |
 | `write_text` | `write_text of ["path", text]` | Write string to file (`true` on success); I/O failure raises `io` with the path and OS reason. Trace-recorded result |
+| `file_sync` | `file_sync of path` | Flush a regular file with `fsync(2)`; trace replay does not sync |
+| `dir_sync` | `dir_sync of path` | Flush a directory with `fsync(2)`; trace replay does not sync |
 | `exec_capture` | `exec_capture of ["cmd", "arg1", ...]` | Run subprocess, return [exit_code, stdout_text]. No shell (direct exec). Child stdin is /dev/null. Returns [-1, ""] on failure, [-2, partial] on timeout. 10 MB output cap. Timeout form: `exec_capture of [["cmd", ...], seconds]`. Exit statuses are ints. Seconds convert to milliseconds rounded half away from zero; an interval outside the poll API C int range raises `value` before starting the child (Q7 magnitude). |
 | `env_get` | `env_get of "VAR_NAME"` | Get environment variable (empty string if unset) |
 | `random_hex` | `random_hex of n` | Generate n random hex characters from /dev/urandom (`""` for `n <= 0` or `n > 256`). A non-number `n` raises by default; under `EIGS_STRICT=0` it answers `""` (#971). The count follows N5, then the C int range: integral floats convert; fractions raise `value` before replay or randomness. |
@@ -497,7 +518,7 @@ stdlib roots. See [Modules](SPEC.md#modules) for import collision handling.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `random` | `random of null` | Random float in [0, 1). Numeric inputs convert to float; numeric results are floats. |
-| `random_int` | `random_int of [lo, hi]` | Random int in [lo, hi] inclusive. Bounds follow N5: integral floats convert; fractions and out-of-int64 values raise `value`. The existing span limit is 2^31. Malformed arguments raise by default and return int 0 under `EIGS_STRICT=0`. |
+| `random_int` | `random_int of [lo, hi]` | Random int in [lo, hi] inclusive. Bounds follow N5: integral floats convert; fractions and out-of-int64 values raise `value`. The existing span limit is 2^31; a larger span raises `value`. Malformed arguments raise by default and return int 0 under `EIGS_STRICT=0`. |
 | `seed_random` | `seed_random of n` | Seed the RNG from an exact int64 (N5); fractional floats raise. The existing srand48 generator uses the low 32 seed bits. `random` is not cryptographic. The `eigenscript` CLI reads `EIGS_SEED_RANDOM=<integer>` at startup and seeds the shared stream with it before the program runs, which makes it predictable for the whole process (for differential testing and reproduction); an unset or empty value does nothing. A nonempty value is accepted when `strtol` parses the entire value as a representable decimal `long`; leading whitespace and a sign (such as `+7`) are accepted, but trailing characters and out-of-range values are startup errors (exit 2). This environment variable is CLI-only: embedders call `seed_random`. Under `EIGS_TRACE` seeded draws are recorded; under `EIGS_REPLAY` recorded values are served and this knob is irrelevant. |
 
 ## Time
@@ -537,8 +558,8 @@ automatically at exit.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `abs` | `abs of x` | Absolute value, preserving int or float kind. `abs` of INT64_MIN raises `value` because its positive magnitude does not fit in int64 (#1758 N4b). |
-| `min` | `min of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. First argument wins ties.  Empty input raises `value`, naming the builtin, in both call forms and both strict modes (R1.6b-D2). |
-| `max` | `max of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. First argument wins ties.  Empty input raises `value`, naming the builtin, in both call forms and both strict modes (R1.6b-D2). |
+| `min` | `min of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. First argument wins ties. A non-number element raises an error naming its index and type. Empty input raises `value`, naming the builtin, in both call forms and both strict modes (R1.6b-D2). |
+| `max` | `max of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. First argument wins ties. A non-number element raises an error naming its index and type. Empty input raises `value`, naming the builtin, in both call forms and both strict modes (R1.6b-D2). |
 | `floor` | `floor of x` | Round down; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
 | `ceil` | `ceil of x` | Round up; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
 | `round` | `round of x` | Round half away from zero; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
@@ -630,8 +651,9 @@ Buffer arithmetic stops at its first raised kernel result and releases its parti
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `mean` | `mean of t` | Non-finite buffer cells raise `value` in both strict modes (N13). Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`) |
-| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer). An all-int input returns an exact int and raises `value` on int64 overflow. A float anywhere in a nested input makes the reduction float from the start; buffers produce floats and refuse non-finite elements with `value` in every strict mode (N13). In strict mode the first NaN sets `math_flags.invalid` and raises "not a number" before reading later elements (#1417). An empty list returns int `0`. |
+| `mean` | `mean of t` | Non-finite buffer cells raise `value` in both strict modes (N13). Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`) A non-number list element raises an error naming its zero-based flattened index and type; a non-number in the argument-list form raises naming its 1-based argument position (#1649/#2112). |
+| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer). An all-int input returns an exact int and raises `value` on int64 overflow. A float anywhere in a nested input makes the reduction float from the start; buffers produce floats and refuse non-finite elements with `value` in every strict mode (N13). In strict mode the first NaN sets `math_flags.invalid` and raises "not a number" before reading later elements (#1417). An empty list returns int `0`. A non-number list element raises an error naming its zero-based flattened index and type; a non-number in the argument-list form raises naming its 1-based argument position (#1649/#2112). |
+| `norm` | `norm of t` | Euclidean norm of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its flattened index and type. |
 
 ### Construction
 
@@ -666,12 +688,6 @@ Buffer arithmetic stops at its first raised kernel result and releases its parti
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `token_name` | `token_name of id` | Return token type name by ID (`"?"` for an unknown id). A non-number raises by default; under `EIGS_STRICT=0` it answers `"?"` too (#971). Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-
-## Corpus Preparation
-
-| Name | Signature | Description |
-|------|-----------|-------------|
-| `build_corpus` | `build_corpus of [files, top_n, stream_path, vocab_path]` | Three-pass C-backed corpus builder: tokenise `files`, emit top-`n` vocabulary and stream-format token IDs. The token stream, including file separators, is capped at 10,000,000 elements; exceeding it raises a catchable `limit` error naming the stream path and cap, including under `EIGS_STRICT=0`, before opening the stream file. Vocabulary, slot and integer-literal counts follow N5 and the C int range; fractions raise `value`. Returned stream/identifier/file counts are ints. |
 
 ## Optional: Network Extension (TCP sockets)
 
@@ -1042,28 +1058,13 @@ is a non-empty string and therefore **truthy**, so `if row.is_admin:` passed
 for a non-admin; NULL and `''` were both `""`; and `9 > 10` was true because
 `'9' > '1'`.
 
-## Optional: Model Extension
-
-Requires full build. Transformer model inference and training.
-
-| Name | Signature | Description |
-|------|-----------|-------------|
-| `eigen_model_load` | `eigen_model_load of "path.json"` | Load model weights from JSON |
-| `eigen_model_loaded` | `eigen_model_loaded of null` | `true` if model loaded, `false` otherwise |
-| `eigen_model_info` | `eigen_model_info of null` | JSON with model config and stats |
-| `eigen_generate` | `eigen_generate of [prompt, temp, max_tokens]` | Token ids and max_tokens follow N5 then C int range; output token ids are ints. Generate text from prompt. Every prompt token id must be in `[0, vocab_size)` or it raises `index_range`. Raises when the prompt exceeds the model's `max_seq_len`. |
-| `eigen_eval_loss` | `eigen_eval_loss of [prompt, target]` | Token ids follow N5 then C int range; loss is float. Return the target token's cross-entropy loss. Every prompt and target token id must be in `[0, vocab_size)` or it raises `index_range`. Raises when the prompt exceeds the model's `max_seq_len`. |
-| `native_train_step_builtin` | `native_train_step_builtin of [input, output, lr]` | Token ids follow N5 then C int range; learning rate remains float. Single training step. Every input and output token id must be in `[0, vocab_size)` or it raises `index_range` before training. Raises when the combined input and output length exceeds the model's `max_seq_len`. |
-| `model_save_weights` | `model_save_weights of "path.json"` | Save model weights to JSON |
-| `model_load_weights` | `model_load_weights of "path.json"` | Load model weights (alias) |
-
 ## Concurrency
 
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `spawn` | `spawn of fn` or `spawn of [fn, arg1, ...]` | Spawn a thread running `fn`. Bare-fn form passes no args; list form passes `arg1...` positionally. Missing trailing params bind to `null`. Extra args follow the direct-call rule (docs/SPEC.md, Functions): a callee of 2+ parameters raises `call passes 3 arguments but the callee takes 2` at the spawn site (`spawn of [two, 1, 2, 99]`), and a 1-parameter callee receives the whole list (`spawn of [one, 5, 6]` binds `[5, 6]`). Args are shared by reference (unlike channel sends, which copy) — see thread-safety note below. Returns a thread handle dict. |
 | `thread_join` | `thread_join of handle` | Block until the thread completes. Returns the thread function's copied return value, or re-raises a worker's uncaught error with the same kind and message. Catching that raise observes the worker failure, matching `task_join`. Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
-| `channel` | `channel of null` | Create a bounded FIFO channel (capacity 64). Returns a channel handle dict. |
+| `channel` | `channel of capacity` | Create a bounded FIFO channel. A non-negative integer selects the exact capacity, with `0` making a synchronous rendezvous channel; `null` selects the default capacity 64. Returns a channel handle dict. Numeric capacity follows N5 and the C int range; fractional or out-of-range values raise `value`. |
 | `send` | `send of [channel, value]` | Send a value to the channel. Blocks if full. Sending to a **closed** channel raises a catchable `value` error (rather than silently dropping the value); `recv` on a closed empty channel returns `null` (EOF-like). Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
 | `recv` | `recv of channel` | Receive a value from the channel. **Blocks** until a value is available or the channel is closed. Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
 | `try_recv` | `try_recv of channel` | Non-blocking receive. Returns the value if available, `null` if the channel is empty. Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
@@ -1160,12 +1161,6 @@ Buffer construction and `reshape` check dimensions before narrowing to C integer
 `buf_set`, `buf_fill` and `buf_from_list` convert stored integers to float (Q2).
 `buf_to_pcm16le` retains its clamp and half-away-from-zero rounding.
 
-Model token ids and generation limits follow N5 and the C int range;
-fractional ids or token counts raise `value`. `eigen_generate` returns int
-token ids, while `eigen_eval_loss` returns a float. Temperature, top_p and
-training learning rates remain float quantities. Model JSON weights stay
-float data; the loader status strings are unchanged.
-
 `mean`, `norm`, `buf_get`, `buf_peak`, `buf_dot` and byte/PCM codec input
 readers refuse non-finite buffer cells with `value` in both strict modes (N13).
 
@@ -1216,3 +1211,8 @@ false
 N14 record and SQL writers use the same N6 float text and exact int64 digits.
 The executed cases are `tests/phase2/rows/N14.store-exact-digits.sh` and
 `tests/test_db_params.c` (#1762).
+
+## Keyboard key conversion
+
+Keyboard names are converted to US-layout printable characters by the pure
+standard-library helper `keys.key_to_char`; see [STDLIB.md](STDLIB.md#libkeyseigs).

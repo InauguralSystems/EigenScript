@@ -1,0 +1,75 @@
+load_file of "lib/test.eigs"
+load_file of "lib/format.eigs"
+load_file of "lib/geometry.eigs"
+import linalg
+import probability
+
+# Fixed-point formatting keeps main's binary64 rounding and Phase2's exact ints.
+assert_eq of [fmt_num of [9007199254740993, 2], "9007199254740993.00", "fmt exact integer above 2^53"]
+assert_eq of [fmt_num of [9223372036854775807, 0], "9223372036854775807", "fmt int64 max"]
+assert_eq of [fmt_num of [-9223372036854775808, 2], "-9223372036854775808.00", "fmt int64 min"]
+assert_eq of [fmt_num of [2.675, 2], "2.67", "fmt exact binary64 decimal tie"]
+assert_eq of [fmt_num of [1e20, 2], "100000000000000000000.00", "fmt large binary64 without exponent"]
+assert_eq of [fmt_num of [3.25, 2], "3.25", "fmt fast path has no float suffix"]
+
+# Main's real-valued geometry algorithms also accept integer coordinates.
+assert_eq of [orientation of [[0, 0], [10000000000, 0], [0, 10000000000]], 1, "integer orientation uses the float determinant"]
+assert_eq of [distance2d of [[0, 0], [3000000000, 4000000000]], 5000000000.0, "integer distance squares stay float"]
+crossing is line_intersection of [[0, 0], [10000000000, 10000000000], [0, 10000000000], [10000000000, 0]]
+assert_eq of [crossing, [5000000000.0, 5000000000.0], "integer scale-aware line intersection"]
+center is triangle_circumcenter of [[0, 0], [10000000000, 0], [0, 10000000000]]
+assert_eq of [center, [5000000000.0, 5000000000.0], "integer scale-aware circumcenter"]
+assert_near of [triangle_circumradius of [[0, 0], [10000000000, 0], [0, 10000000000]], 7071067811.865476, 0.00001, "integer scale-aware circumradius"]
+weights is barycentric_coords of [[2500000000, 2500000000], [0, 0], [10000000000, 0], [0, 10000000000]]
+assert_near of [weights[0], 0.5, 1e-15, "integer barycentric first weight"]
+assert_near of [weights[1], 0.25, 1e-15, "integer barycentric second weight"]
+assert_near of [weights[2], 0.25, 1e-15, "integer barycentric third weight"]
+product is _two_product of [1000000001, 1000000001]
+assert_eq of [num_type of product[0], "float", "Dekker high product has float kind"]
+assert_eq of [product[1], 1.0, "Dekker retains the integer-coordinate low product"]
+far_square is [[6000000000, 6000000000], [6000000001, 6000000000], [6000000001, 6000000001], [6000000000, 6000000001]]
+assert_eq of [polygon_area of far_square, 1.0, "integer polygon expansion avoids overflow and cancellation"]
+assert_false of [polygon_is_clockwise of far_square, "integer polygon exact winding"]
+# A power-of-two square has an exactly representable centroid. Its squared
+# side still exceeds int64, so this exercises the float work arithmetic.
+centroid is polygon_centroid of [[0, 0], [8589934592, 0], [8589934592, 8589934592], [0, 8589934592]]
+assert_eq of [centroid, [4294967296.0, 4294967296.0], "integer polygon raw moments stay float"]
+assert_eq of [num_type of centroid[0], "float", "integer polygon centroid has float kind"]
+
+# LU and scaled partial pivoting copy integer inputs into float work arrays.
+int_matrix is [[10000000000, 0, 0, 0], [0, 10000000000, 0, 0], [0, 0, 10000000000, 0], [0, 0, 0, 10000000000]]
+assert_near of [linalg.mat_det of int_matrix, 1e40, 1e25, "integer LU determinant remains float"]
+tie_matrix is [[1, 1], [10000000000, 0]]
+solution is linalg.solve_linear of [tie_matrix, [1, 1]]
+assert_near of [solution[0], 1e-10, 1e-24, "integer scaled-pivot tie x"]
+assert_near of [solution[1], 0.9999999999, 1e-15, "integer scaled-pivot tie y"]
+inverse is linalg.mat_inverse of tie_matrix
+assert_near of [inverse[0][1], 1e-10, 1e-24, "integer scaled-pivot inverse"]
+int_min_matrix is [[-9223372036854775808, 0], [0, 1]]
+min_solution is linalg.solve_linear of [int_min_matrix, [-9223372036854775808, 1]]
+assert_eq of [min_solution, [1.0, 1.0], "row scales read float work values before abs"]
+evals is linalg.eigenvalues_2x2 of [[10000000000, 0], [0, 20000000000]]
+assert_eq of [evals, [20000000000.0, 10000000000.0], "integer eigenvalue products stay float"]
+vecs is linalg.eigenvectors_2x2 of [[10000000000, 0], [0, 20000000000]]
+assert_eq of [len of vecs, 2, "integer scale-aware eigenvector count"]
+for k in range of 2:
+    v is vecs[k]
+    r0 is 10000000000.0 * v[0] - evals[k] * v[0]
+    r1 is 20000000000.0 * v[1] - evals[k] * v[1]
+    assert_eq of [r0 + r1, 0.0, "integer scale-aware eigenvector residual"]
+
+# Main's fractional validation does not change the Phase2 integer-domain rule.
+fraction_rejected is false
+try:
+    probability.factorial of 2.5
+catch e:
+    fraction_rejected is (e == "factorial: input must be an integer")
+assert_true of [fraction_rejected, "factorial rejects fractions"]
+overflow_rejected is false
+try:
+    probability.factorial of 21
+catch e:
+    overflow_rejected is (e.kind == "value")
+assert_true of [overflow_rejected, "factorial integer product overflow still raises"]
+
+test_summary of null

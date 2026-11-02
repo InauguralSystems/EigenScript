@@ -71,7 +71,7 @@ for BOOL_TP_OLD in 5 6 7 8; do
     sed "1s/^V 9 /V $BOOL_TP_OLD /" "$BOOL_TP_DIR/p.tape" > "$BOOL_TP_DIR/old.tape"
     BOOL_TP_OUT=$(EIGS_REPLAY="$BOOL_TP_DIR/old.tape" $EIGS_TMO ./eigenscript "$BOOL_TP_DIR/p.eigs" </dev/null 2>&1); BOOL_TP_RC=$?
     TOTAL=$((TOTAL + 1))
-    if [ "$BOOL_TP_RC" = 3 ] && grep -q "tape format v$BOOL_TP_OLD, this binary reads v9" <<< "$BOOL_TP_OUT"; then
+    if rc_expect 3 "$BOOL_TP_RC" "$BOOL_TP_OUT" && grep -q "tape format v$BOOL_TP_OLD, this binary reads v9" <<< "$BOOL_TP_OUT"; then
         PASS=$((PASS + 1)); echo "  PASS: a v$BOOL_TP_OLD tape is refused with exit 3"
     else
         FAIL=$((FAIL + 1)); echo "  FAIL: a v$BOOL_TP_OLD tape is refused with exit 3 (rc=$BOOL_TP_RC)"
@@ -92,7 +92,7 @@ for BOOL_TP_CASE in "t1:file_exists returns a bool, the tape holds a num" "t2:ra
     TOTAL=$((TOTAL + 1))
     BOOL_TP_T=${BOOL_TP_CASE%%:*}; BOOL_TP_WANT=${BOOL_TP_CASE#*:}
     BOOL_TP_OUT=$(EIGS_REPLAY="$BOOL_TP_DIR/$BOOL_TP_T.tape" $EIGS_TMO ./eigenscript "$BOOL_TP_DIR/t.eigs" </dev/null 2>&1); BOOL_TP_RC=$?
-    if ! cmp -s "$BOOL_TP_DIR/t.tape" "$BOOL_TP_DIR/$BOOL_TP_T.tape" && [ "$BOOL_TP_RC" = 3 ] &&
+    if ! cmp -s "$BOOL_TP_DIR/t.tape" "$BOOL_TP_DIR/$BOOL_TP_T.tape" && rc_expect 3 "$BOOL_TP_RC" "$BOOL_TP_OUT" &&
        grep -q "tape format v9 record 'N [0-9]* .*': $BOOL_TP_WANT; refusing to replay" <<< "$BOOL_TP_OUT"; then
         PASS=$((PASS + 1)); echo "  PASS: a tampered tape is refused: $BOOL_TP_WANT"
     else

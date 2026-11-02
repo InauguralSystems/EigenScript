@@ -162,7 +162,7 @@ run "SM20 strict contains(list, num) raises"  1 1 "contains: expected two string
 run "SM21 strict char_at(num, i) raises"      1 1 "char_at: expected"    'print of (char_at of [42, 0])'
 run "SM22 strict substr element type raises"  1 1 "substr: expected"     'print of (substr of [42, 0, 1])'
 run "SM23 strict has_key(num, k) raises"      1 1 "has_key: expected"    'print of (has_key of [42, "k"])'
-run "SM24 strict max over a non-number raises" 1 1 "max: expected"       'print of (max of [1, "x", 3])'
+run "SM24 strict max over a non-number raises" 1 1 "max: element 1 is str" 'print of (max of [1, "x", 3])'
 run "SM25 strict path_join element type raises" 1 1 "path_join: expected" 'print of (path_join of [42, "b"])'
 # NB: the builtin is `add`, not `tensor_add` — the first version of this row
 # named a builtin that does not exist, and "undefined variable" is also rc=1.

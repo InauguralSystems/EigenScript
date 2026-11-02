@@ -1,1 +1,0 @@
-- Reset `__loop_iterations__` for every loop while preserving the cumulative sandbox loop budget, including interpreter, JIT, verifier, disassembler, leaf-scan, and three-tier regression coverage (#1906).

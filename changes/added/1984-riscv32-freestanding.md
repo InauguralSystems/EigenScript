@@ -1,1 +1,0 @@
-- Freestanding RV32 links compiler-runtime helpers and delegates non-lock-free atomics to interrupt-masking EigenOS HAL roots, with RV32IMA and RV32IMC coverage (#1984).

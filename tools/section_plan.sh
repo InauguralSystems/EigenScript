@@ -36,11 +36,9 @@ SKIP_WAIVERS='
 6ef6a1325edf0172|(a) the section_skip helper own print — this IS the counter the audit polices
 d8bbaacdbda76484|(b) the [99n] classifier-gate FAIL line, which QUOTES its own skipped tally; that section fails on any skip
 e52b3a5c670b2434|(b) prose inside that same FAIL, explaining why a skipped check there is coverage loss
-69614d3ef6dc2f30|(c) sub-check: [17] TR6/TR7 have no old model to reject; the rest of the transformer section still asserts
 86e12c645c5ad672|(c) sub-check: [119] Part B (the #548 borrow guard) is compiled out on a release build; Part A runs on every build and its PASS/FAIL lines are tallied
 459741ca98fe2fc5|(b) the [44] HTTP-readiness FAIL line, which quotes skipped= in its verdict; two skips are the expected witnesses and any other count is already a FAIL there
 23bf2806c94855bb|(b) a diagnostic inside that FAIL branch, printed only when the section is already red
-2b1cec4b6df93886|(c) sub-check: [70d] relays the child rows verbatim, one of which SKIPs when GNU time -f is absent; the section still asserts its other two checks
 cc548685179a777b|(c) sub-check: the JIT thunk gate on a non-x86_64 host; the JIT section asserts its fast-path checks on every host
 00fd233b835a1ddb|(c) sub-check: the EIGS_JIT_HOT gate on a non-x86_64 host; same section, same reason
 4158c9982233a440|(c) sub-check: the EIGS_JIT_HOT OSR weighting gate on a non-x86_64 host; the JIT section still asserts all portable fast-path checks
@@ -50,6 +48,7 @@ a9f637bc88ca3e2c|(c) sub-check: the cache-full diagnostic gate needs an x86-64 J
 62be8333b50e395a|(b) the same PASS line on the no-gfx-build arm
 21d7909a4df0a664|(c) sub-check: [99s] on a non-gfx build, the gfx sweep and pixel halves; the core strict halves still assert
 27cfdaf9128456df|(b) the RESULTS line itself, which PRINTS the skipped count
+4d7d5f4fb99732cb|(c) sub-check: [69] relays test_leak_guard.sh own SKIP line when LeakSanitizer is unavailable (macOS arm64); the section still asserts its ASan checks (append UAF, container stores) and fails on any of them
 43af9bdd1c5e1f94|(c) sub-check: [99zb] relays the portability tool own population/oracle line (widened by #1226 to include NO OLD BASH and other arm wordings); the section fails unless the tool reports OK or one of those named arms — supersedes the pre-#1226 row for this same relay
 '
 # One scratch root and one EXIT cleanup trap.
@@ -261,7 +260,7 @@ derive_chunk_weights() {
 derive_chunk_groups() {
     local table="$1" out="$2"
     awk -v pre_end="$SP_PREAMBLE_END" '
-        FNR == NR { n++; cs[n] = $1; ce[n] = $2; next }
+        FNR == NR { n++; cs[n] = $1; ce[n] = $2; header[n] = (NF > 2); next }
         {
             line = FNR
             if (line <= pre_end) { scope = 0 }
@@ -319,6 +318,20 @@ derive_chunk_groups() {
         }
         END {
             for (i = 1; i <= n; i++) parent[i] = i
+            # A section is its header chunk and every following headerless
+            # chunk up to the next header.  Dependency merging alone cannot
+            # guarantee that: a body chunk may share no shell variable with
+            # its header.  Put that whole syntactic unit in one group first;
+            # dependency merges may then conservatively join whole sections.
+            section = 0
+            for (i = 1; i <= n; i++) {
+                if (header[i]) section = i
+                else if (section > 0) {
+                    unite(i, section)
+                    merges++
+                    printf "MERGE section %d %d\n", cs[section], cs[i] > "/dev/stderr"
+                }
+            }
             for (j = 1; j <= nr; j++) {
                 v = rv[j]; c = rc[j] + 0
                 if (v in pre) continue
@@ -329,7 +342,7 @@ derive_chunk_groups() {
                 if (best == 0) continue
                 ra = find(c); rb = find(best)
                 if (ra != rb) {
-                    if (ra < rb) parent[rb] = ra; else parent[ra] = rb
+                    unite(ra, rb)
                     merges++
                     printf "MERGE %s %d %d\n", v, cs[best], cs[c] > "/dev/stderr"
                 }
@@ -358,12 +371,44 @@ derive_chunk_groups() {
             if (minl[k] == ln && minc[k] < col) return 1
             return 0
         }
+        function unite(a, b,   ra, rb) {
+            ra = find(a); rb = find(b)
+            if (ra == rb) return
+            if (ra < rb) parent[rb] = ra; else parent[ra] = rb
+        }
         function find(x) { while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x] } return x }
     ' "$table" "$RUNNER" > "$out" 2> "$out.merges"
     SP_GROUP_MERGES=$(sed -n 's/^MERGES \([0-9]*\)$/\1/p' "$out.merges")
     : "${SP_GROUP_MERGES:=0}"
     SP_GROUP_MERGE_LIST=$(sed -n 's/^MERGE /  merged: /p' "$out.merges")
     SP_GROUPS=$(cut -d' ' -f2 "$out" | sort -u | grep -c .)
+}
+
+# Independently audit the section/group contract after grouping.  This is in
+# --check (rather than only the emitter) so a future grouping regression is a
+# planner failure before any shard can run a header without its body.
+check_section_groups() {
+    local table="$1" groups="$2" bad
+    bad=$(awk '
+        FNR == NR { n++; start[n]=$1; header[n]=(NF>2); label[n]=$3; next }
+        { group[$1]=$2 }
+        END {
+            h=0
+            for (i=1; i<=n; i++) {
+                if (header[i]) h=i
+                else if (h && group[start[i]] != group[start[h]]) {
+                    bad++
+                    witness = sprintf("%s header @%d body @%d", label[h], start[h], start[i])
+                    if (label[h] == "[114]" && named == "") named = witness
+                    else if (bad <= 8)
+                        witnesses = witnesses sprintf("%s%s", witnesses ? ", " : "", witness)
+                }
+            }
+            if (bad) { printf "count=%d; %s; %s\n", bad, named, witnesses; exit 1 }
+        }' "$table" "$groups") || {
+        die "section grouping split headerless chunks from their nearest preceding header: $bad"
+    }
+    echo "section groups: every headerless chunk shares the nearest preceding header group"
 }
 
 # Deterministic longest-processing-time greedy. Emits "<chunk-start> <shard>".
@@ -429,6 +474,11 @@ shard_check() {
     shard_count_sync "$CI_FILE" || die "ASan shard count is not synchronized"
     derive_chunk_weights "$W/chunks" "$W/weights" "$W/missing"
     derive_chunk_groups "$W/chunks" "$W/groups"
+    if [ "${SP_SECTION_GROUP_MUTATE:-}" = split ]; then
+        awk '{ print $1, $1 }' "$W/groups" > "$W/groups.mut"
+        mv "$W/groups.mut" "$W/groups"
+    fi
+    check_section_groups "$W/chunks" "$W/groups"
     derive_shard_assignment "$n" "$W/weights" "$W/assign" "$W/groups"
 
     # TEST-ONLY mutation seam, used by --selftest to prove this check fires.
@@ -436,7 +486,7 @@ shard_check() {
     # the worst it can do is turn the check red, and it announces itself.
     case "${SP_SHARD_MUTATE:-}" in
         drop) echo "section_plan: WARNING: SP_SHARD_MUTATE=drop — one chunk removed from every shard (selftest seam)" >&2
-              sed -i '1d' "$W/assign" ;;
+              sed -i.bak '1d' "$W/assign" && rm -f "$W/assign.bak" ;;
         dup)  echo "section_plan: WARNING: SP_SHARD_MUTATE=dup — one chunk placed in two shards (selftest seam)" >&2
               head -1 "$W/assign" | awk -v n="$n" '{ print $1, ($2 % n) + 1 }' >> "$W/assign"
               sort -n -o "$W/assign" "$W/assign" ;;
@@ -530,7 +580,7 @@ print_weights() {
     distinct=$(grep -oE 'SECTION_TIME: \[[^]]*\]' "$log" | sed 's/^SECTION_TIME: //' | sort -u |
                grep -cxFf <(grep -oE 'echo "\[[^]]*\]' "$RUNNER" | sed 's/^echo "//' | sort -u))
     # 85%, not 100%: one binary prints only one side of extension branches
-    # (the asan-http build never prints the HTTP/model skip headings), so
+    # (the asan-http build never prints the HTTP skip headings), so
     # requiring every label would refuse a complete set of real logs.
     want=$(( labels * 85 / 100 ))
     [ "$n" -ge 50 ] || die "only $n SECTION_TIME lines in $log — that log is not a suite run at all"
@@ -546,7 +596,7 @@ print_weights() {
     echo "#"
     if [ -n "${WEIGHTS_RUN:-}" ] || [ -n "${WEIGHTS_HEAD:-}" ]; then
         echo "# MEASURED ON THE CI RUNNER, not on the dev box: run ${WEIGHTS_RUN:-unstated},"
-        echo "# head ${WEIGHTS_HEAD:-unstated}, the \`asan + ubsan / shard k/N (http+model build)\`"
+        echo "# head ${WEIGHTS_HEAD:-unstated}, the \`asan + ubsan / shard k/N (http+net+gfx build)\`"
         echo "# job logs, concatenated and fed to \`--print-weights\`."
     else
         echo "# PROVENANCE NOT STATED: this table was generated without --run/--head."
@@ -1034,13 +1084,13 @@ selftest() {
     cp "$RUNNER" "$dir/no_anchor.sh"
     sed 's/^# Final guard (#681)/# Final guard/' "$dir/no_anchor.sh" > "$dir/t"; mv "$dir/t" "$dir/no_anchor.sh"
     expect_red 'derive_chunks: missing epilogue anchor' 'epilogue anchor' "$0" --root "$SP_ROOT" --chunks --runner "$dir/no_anchor.sh" --quiet
-    awk '/^echo / && index($0, "[17/17] Transformer Smoke") { print "if true; then"; print "    " $0; print "fi"; next } { print }' \
+    awk '/^echo / && index($0, "[18/18] File I/O Builtins") { print "if true; then"; print "    " $0; print "fi"; next } { print }' \
         "$RUNNER" > "$dir/conditional-header.sh"
     expect_red 'check_header_shape: indented-only section header is refused' 'conditional-only section header in chunk start line' \
         "$0" --root "$SP_ROOT" --runner "$dir/conditional-header.sh" --shards 3 --check --quiet
-    awk '/^echo / && index($0, "[17/17] Transformer Smoke") { print "if true; then"; print; print "fi"; next } { print }' "$RUNNER" > "$dir/column-zero-branch.sh"
+    awk '/^echo / && index($0, "[18/18] File I/O Builtins") { print "if true; then"; print; print "fi"; next } { print }' "$RUNNER" > "$dir/column-zero-branch.sh"
     expect_red 'check_header_shape: column-zero branch header is refused' 'conditional-only section header in chunk start line' "$0" --root "$SP_ROOT" --runner "$dir/column-zero-branch.sh" --shards 3 --check --quiet
-    awk '/^echo / && index($0, "[17/17] Transformer Smoke") { sub(/"$/, ""); print; print "wrapped\""; next } { print }' \
+    awk '/^echo / && index($0, "[18/18] File I/O Builtins") { sub(/"$/, ""); print; print "wrapped\""; next } { print }' \
         "$RUNNER" > "$dir/wrapped-header.sh"
     expect_red 'check_header_shape: wrapped section header is refused' 'incomplete section header in chunk start line' \
         "$0" --root "$SP_ROOT" --runner "$dir/wrapped-header.sh" --shards 3 --check --quiet
@@ -1049,6 +1099,13 @@ selftest() {
     expect_red 'check_chunk_count: vacuous chunk population falls below floor' 'chunk enumeration examined' \
         "$dir/bad-count.sh" --root "$SP_ROOT" --chunks --quiet
     expect_ok 'control: complete, disjoint shard assignment and count sync' "$0" --root "$SP_ROOT" --shards 3 --check --quiet
+    # The first split pair is [114]'s header and the line after it. Derive the
+    # line from the runner rather than pinning it: a fixed '@1749' turned this
+    # plant into a "wrong red" for every PR that added preamble lines (hq#58).
+    sp_114=$(grep -n '^echo "\[114\] ' "$RUNNER" | head -1 | cut -d: -f1)
+    [ -n "$sp_114" ] || { echo "  FAIL: section groups: [114] header not found in $RUNNER"; fail=$((fail + 1)); }
+    expect_red 'section groups: headerless body split from nearest header is refused' "count=213; [114] header @${sp_114:-none} body @$(( ${sp_114:-0} + 1 ))" \
+        env SP_SECTION_GROUP_MUTATE=split "$0" --root "$SP_ROOT" --shards 3 --check --quiet
     expect_red 'shard_check: missing chunk makes union != full' 'union != full' \
         env SP_SHARD_MUTATE=drop "$0" --root "$SP_ROOT" --shards 3 --check --quiet
     expect_red 'shard_check: duplicate chunk makes shards OVERLAP' 'shards OVERLAP' \
@@ -1107,8 +1164,8 @@ selftest() {
     expect_plan 'control: an empty diff selects the core floor alone' 'paths=0 unmatched=0 runtime=0 full=no '
     printf '\n' >> "$dir/cl/tests/test_trace_mt.sh"
     expect_plan 'changed: an edited test script selects its section' '[42h]'
-    sed -i.bak 's/^\(echo "\[17\/17\] Transformer Smoke.*\)"$/\1 edited"/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
-    expect_plan 'changed: a runner hunk selects the chunk it lands in' '[17/17]'
+    sed -i.bak 's|^\(echo "\[18/18\] File I/O Builtins.*\)"$|\1 edited"|' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
+    expect_plan 'changed: a runner hunk selects the chunk it lands in' '[18/18]'
     sed -i.bak 's/^\(echo "\[99p\] Child-script exit-status ledger.*\)"$/\1 edited"/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
     expect_plan 'changed: a runner hunk after the fragment seam keeps its expanded chunk' '[99p]'
     sed -i.bak '1s/$/ /' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"

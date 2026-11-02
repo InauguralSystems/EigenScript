@@ -6,6 +6,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 EXE = ROOT / 'spec/lean/.lake/build/bin/eigs-ref'
+MODEL_VERSION = '0.0.0-model'
 
 # These cases intentionally use the command-line boundary: the step-2 parser
 # must retain the same verdicts when it replaces the step-1 classifier.
@@ -46,7 +47,7 @@ print(f'classification table: {len(CASES)} cases passed')
 # Nested definitions are closures in step 2b-iii.
 with tempfile.NamedTemporaryFile('w', suffix='.eigs') as source:
     source.write('define f as:\n    define inner as:\n        return 1\n    return inner of 1\n'); source.flush()
-    result = subprocess.run([EXE, source.name], text=True, capture_output=True)
+    result = subprocess.run([EXE, '--version', MODEL_VERSION, source.name], text=True, capture_output=True)
     if result.returncode != 0:
         raise SystemExit(f'evaluator refused nested function definition: {result.stderr}')
 print('modeled evaluator closure: nested function definition passed')

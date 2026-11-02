@@ -11,6 +11,7 @@
 #include "repl.h"
 
 #ifdef EIGS_TSAN_TEST_SEAM
+#include <errno.h>
 #include <pthread.h>
 #include <stdatomic.h>
 
@@ -78,6 +79,70 @@ static int tsan_seeded_race_control(void) {
         return 2;
     return 0;
 }
+
+/* #2129: deterministic positive/clean control for #2090's env-count read.
+ * The relaxed rendezvous guarantees that the reader has accessed count before
+ * the writer appends, but deliberately gives TSan no happens-before edge. */
+typedef struct {
+    EigsState *state;
+    Env *env;
+    atomic_int reader_started;
+    atomic_int writer_done;
+} TSanEnvCountControl;
+
+static void *tsan_env_count_reader(void *opaque) {
+    TSanEnvCountControl *control = opaque;
+    eigs_thread_attach(control->state);
+    (void)env_count_shared(control->env);
+    atomic_store_explicit(&control->reader_started, 1, memory_order_relaxed);
+    while (!atomic_load_explicit(&control->writer_done,
+                                 memory_order_relaxed))
+        (void)env_count_shared(control->env);
+    eigs_thread_detach();
+    return NULL;
+}
+
+static void *tsan_env_count_writer(void *opaque) {
+    TSanEnvCountControl *control = opaque;
+    eigs_thread_attach(control->state);
+    while (!atomic_load_explicit(&control->reader_started,
+                                 memory_order_relaxed)) { }
+    Value *value = make_int(2129);
+    env_set_local_hashed(control->env, "issue_2129", 0, value);
+    val_decref(value);
+    atomic_store_explicit(&control->writer_done, 1, memory_order_relaxed);
+    eigs_thread_detach();
+    return NULL;
+}
+
+static int tsan_compiler_env_count_control(void) {
+    EigsState *state = eigs_state_new();
+    eigs_thread_attach(state);
+    state->multithreaded = 1;
+    TSanEnvCountControl control = {
+        .state = state,
+        .env = env_new(NULL),
+        .reader_started = 0,
+        .writer_done = 0,
+    };
+    pthread_t reader, writer;
+    int rc = 0;
+    if (pthread_create(&reader, NULL, tsan_env_count_reader, &control) != 0) {
+        rc = 2;
+    } else if (pthread_create(&writer, NULL, tsan_env_count_writer,
+                              &control) != 0) {
+        atomic_store_explicit(&control.writer_done, 1, memory_order_relaxed);
+        (void)pthread_join(reader, NULL);
+        rc = 2;
+    } else if (pthread_join(reader, NULL) != 0 ||
+               pthread_join(writer, NULL) != 0) {
+        rc = 2;
+    }
+    env_decref(control.env);
+    eigs_thread_detach();
+    eigs_state_destroy(state);
+    return rc;
+}
 #endif
 
 #ifndef EIGENSCRIPT_VERSION
@@ -111,6 +176,8 @@ int main(int argc, char **argv) {
         return tsan_seeded_race_control();
     if (getenv("EIGS_TSAN_MISORDERED_PUBLISH_CONTROL"))
         return tsan_misordered_publish_control();
+    if (getenv("EIGS_TSAN_COMPILER_ENV_COUNT_CONTROL"))
+        return tsan_compiler_env_count_control();
 #endif
     /* EIGS_SEED_RANDOM=<integer> (#2120): seed the shared random stream before
      * any program code runs, through seed_random's own path, so every run with
@@ -177,6 +244,7 @@ int main(int argc, char **argv) {
             "\n"
             "Usage:\n"
             "  eigenscript <file.eigs> [args...]   run a script (args readable via `args of null`)\n"
+            "  eigenscript --json <file.eigs>      run with one JSON object on stderr for an uncaught error\n"
             "  eigenscript -e <source> [args...]   run a source string\n"
             "  eigenscript                         start the REPL\n"
             "  eigenscript --fmt [--write] <file>  format a source file (stdout, or rewrite with --write)\n"
@@ -308,6 +376,16 @@ int main(int argc, char **argv) {
      * which are EigsState bridge macros — attach before computing. */
     EigsState *eigs_st = eigs_state_new();
     eigs_thread_attach(eigs_st);
+
+    /* Ordinary runs follow `--lint --json`: opt in with the same flag and
+     * remove it before script argument handling. Modes above own their own
+     * --json contracts and have already returned. */
+    if (argc >= 2 && strcmp(argv[1], "--json") == 0) {
+        g_json_diagnostics = 1;
+        for (int i = 1; i + 1 < argc; i++) argv[i] = argv[i + 1];
+        argc--;
+        argv[argc] = NULL;
+    }
     /* The CLI's main attachment is the tape opener. Native embedders that
      * deliberately open a tape before attaching retain their separate zero. */
     trace_init();
@@ -501,12 +579,49 @@ int main(int argc, char **argv) {
     Env *global = eigs_global_env_create();   /* + builtin layer (#1388) */
 
     g_parse_errors = 0;
+    /* Parser diagnostics predate the structured recorder and are emitted at
+     * their discovery sites. In JSON mode mute only this parse pass; the
+     * recorder below supplies its single canonical diagnostic. */
+    int parse_stderr = -1;
+    FILE *parse_sink = NULL;
+    if (g_json_diagnostics) {
+        fflush(stderr);
+        parse_stderr = dup(STDERR_FILENO);
+        parse_sink = tmpfile();
+        if (parse_stderr >= 0 && parse_sink)
+            (void)dup2(fileno(parse_sink), STDERR_FILENO);
+    }
     TokenList tl = tokenize(source);
     parser_set_caret_source(source);   /* #407: excerpt+caret on col errors */
     ASTNode *ast = parse(&tl);
     parser_set_caret_source(NULL);
+    if (g_json_diagnostics) {
+        fflush(stderr);
+        if (parse_stderr >= 0) {
+            (void)dup2(parse_stderr, STDERR_FILENO);
+            close(parse_stderr);
+        }
+        if (parse_sink) fclose(parse_sink);
+    }
     if (g_parse_errors > 0) {
-        fprintf(stderr, "%d parse error(s) — aborting\n", g_parse_errors);
+        if (g_json_diagnostics) {
+            strbuf js;
+            strbuf_init(&js);
+            strbuf_append(&js, "{\"version\":1,\"code\":\"");
+            eigs_json_escape_append(&js, g_first_error_code ? g_first_error_code : "E002", SIZE_MAX);
+            strbuf_append(&js, "\",\"kind\":\"parse\",\"message\":\"");
+            eigs_json_escape_append(&js, g_first_error_msg[0] ? g_first_error_msg : "parse error", SIZE_MAX);
+            strbuf_append(&js, "\",\"file\":\"");
+            eigs_json_escape_append(&js, source_string ? "<eval>" : argv[1], SIZE_MAX);
+            strbuf_append_fmt(&js, "\",\"line\":%d,\"column\":%d,\"span\":%d,\"frames\":[]}\n",
+                              g_first_error_line,
+                              g_first_error_col_known ? g_first_error_col + 1 : 0,
+                              g_first_error_col_known ? g_first_error_len : 0);
+            fputs(js.data, stderr);
+            strbuf_free(&js);
+        } else {
+            fprintf(stderr, "%d parse error(s) — aborting\n", g_parse_errors);
+        }
         free_ast(ast);  /* parse returns a partial tree on error; free it (cf. #214) */
         free(source);
         free_tokenlist(&tl);

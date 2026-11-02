@@ -30,7 +30,6 @@
 void register_http_builtins(Env *env);   /* ext_http.c  */
 void register_db_builtins(Env *env);     /* ext_db.c    */
 void register_net_builtins(Env *env);    /* ext_net.c   */
-void register_model_builtins(Env *env);  /* model_train.c */
 void register_gfx_builtins(Env *env);    /* ext_gfx.c   */
 unsigned ext_gfx_live_handles(void);     /* gfx/audio resources (#1913) */
 unsigned ext_http_live_handles(EigsState *st); /* listener/thread (#1913) */

@@ -9,8 +9,24 @@ define http_request_headers(_x) as:
 
 _auth_token is "eigen_test"
 
+# Instrument the comparison primitive so this test guards the secure path, not
+# merely the comparison's observable result.
+_secure_equals_calls is 0
+define secure_equals(values) as:
+    _secure_equals_calls is _secure_equals_calls + 1
+    return values[0] == values[1]
+
 _test_headers is (exec_capture of ["printf", "Authorization: Bearer eigen_test\\r\\n"])[1]
 assert of [(require_auth of null) == "", "AUTH01 require_auth accepts CRLF bearer header"]
+assert of [_secure_equals_calls == 1, "AUTH05 require_auth compares bearer tokens with secure_equals"]
+
+# Both public checks historically ignore their argument. Keep every accepted
+# input shape working while the comparison implementation changes.
+accepted_inputs is [null, "ignored", [1, 2], [[1], [2]], buffer of 2]
+for i in range of (len of accepted_inputs):
+    assert of [(require_auth of accepted_inputs[i]) == "", "AUTH06 require_auth preserves accepted input types"]
+    input_json is auth_check of accepted_inputs[i]
+    assert of [(contains of [input_json, "\"status\": \"ok\""]), "AUTH07 auth_check preserves accepted input types"]
 
 _test_headers is (exec_capture of ["printf", "authorization: bearer eigen_test\\r\\n"])[1]
 ok_json is auth_check of null

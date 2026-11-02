@@ -1,0 +1,1 @@
+- `require_auth` now compares bearer tokens with `secure_equals`, and the standard-library reference accurately describes `auth_check`'s header input and JSON result (#2249).

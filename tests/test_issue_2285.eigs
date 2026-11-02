@@ -1,0 +1,84 @@
+load_file of "lib/test.eigs"
+import linalg
+
+# The issue's uniformly small matrix is nonsingular.
+small is [[1e-13, 0.0], [0.0, 1e-13]]
+assert_near of [linalg.mat_det of small, 1e-26, 1e-38, "small scaled identity determinant"]
+small_inv is linalg.mat_inverse of small
+assert_near of [small_inv[0][0], 1e13, 1.0, "small scaled identity inverse x"]
+small_x is linalg.solve_linear of [small, [1.0, 2.0]]
+assert_near of [small_x[1], 2e13, 2.0, "small scaled system y"]
+
+# A matrix-wide scale must not make the unit rows look singular.
+mixed is [[1e13, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]]
+assert_eq of [linalg.mat_det of mixed, 1e13, "mixed-scale diagonal determinant"]
+mixed_inv is linalg.mat_inverse of mixed
+assert_eq of [mixed_inv[0][0], 1e-13, "mixed-scale inverse large row"]
+assert_eq of [mixed_inv[1][1], 1.0, "mixed-scale inverse unit row"]
+mixed_x is linalg.solve_linear of [mixed, [1e13, 2.0, 3.0, 4.0]]
+assert_eq of [mixed_x, [1.0, 2.0, 3.0, 4.0], "mixed-scale solve"]
+
+# Equal scaled ratios prefer the larger absolute pivot so elimination does not
+# discard a small right-hand-side contribution.
+tie_A is [[1.0, 1.0], [1e20, 0.0]]
+tie_b is [1.0, 1.0]
+tie_x is linalg.solve_linear of [tie_A, tie_b]
+assert_near of [tie_x[0], 1e-20, 1e-32, "scaled-pivot tie solution x"]
+assert_near of [tie_x[1], 1.0, 1e-12, "scaled-pivot tie solution y"]
+tie_r0 is tie_A[0][0] * tie_x[0] + tie_A[0][1] * tie_x[1] - tie_b[0]
+tie_r1 is tie_A[1][0] * tie_x[0] + tie_A[1][1] * tie_x[1] - tie_b[1]
+tie_residual is (abs of tie_r0) + (abs of tie_r1)
+tie_A_scale is 1e20
+tie_x_scale is (abs of tie_x[0]) + (abs of tie_x[1])
+assert_true of [tie_residual <= 1e-12 * tie_A_scale * tie_x_scale, "scaled-pivot tie residual"]
+
+# Exact singularity is still recognized by all three operations.
+singular is [[1.0, 2.0, 0.0, 0.0], [1.0, 2.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]]
+assert_eq of [linalg.mat_det of singular, 0, "exact singular determinant"]
+inv_msg is ""
+try:
+    linalg.mat_inverse of singular
+catch e:
+    inv_msg is str of e
+assert_true of [(index_of of [inv_msg, "mat_inverse: singular matrix"]) >= 0, "exact singular inverse raises"]
+solve_msg is ""
+try:
+    linalg.solve_linear of [singular, [1.0, 1.0, 2.0, 3.0]]
+catch e:
+    solve_msg is str of e
+assert_true of [(index_of of [solve_msg, "solve_linear: singular system"]) >= 0, "exact singular solve raises"]
+
+# Elimination exposes this rank deficiency through floating-point roundoff.
+roundoff_singular is [[1.0,2.0,3.0,4.0], [5.0,6.0,7.0,8.0], [9.0,10.0,11.0,12.0], [13.0,14.0,15.0,16.0]]
+roundoff_msg is ""
+try:
+    linalg.solve_linear of [roundoff_singular, [1.0, 2.0, 3.0, 4.0]]
+catch e:
+    roundoff_msg is str of e
+assert_true of [(index_of of [roundoff_msg, "solve_linear: singular system"]) >= 0, "roundoff singular solve is rejected"]
+
+# Eigenvectors selected from roundoff-sized A-lambda*I rows must satisfy a
+# scale-relative residual, including repeated and near-repeated eigenvalues.
+triangular is [[1.0, 1e-17], [0.0, 1.0]]
+tri_evals is linalg.eigenvalues_2x2 of triangular
+tri_vecs is linalg.eigenvectors_2x2 of triangular
+for k in range of 2:
+    v is tri_vecs[k]
+    r0 is triangular[0][0] * v[0] + triangular[0][1] * v[1] - tri_evals[k] * v[0]
+    r1 is triangular[1][0] * v[0] + triangular[1][1] * v[1] - tri_evals[k] * v[1]
+    residual is (abs of r0) + (abs of r1)
+    v_scale is (abs of v[0]) + (abs of v[1])
+    assert_true of [residual <= 1e-12 * v_scale, "repeated triangular eigenvector residual"]
+
+symmetric is [[1.0, 1e-14], [1e-14, 1.0]]
+sym_evals is linalg.eigenvalues_2x2 of symmetric
+sym_vecs is linalg.eigenvectors_2x2 of symmetric
+for k in range of 2:
+    v is sym_vecs[k]
+    r0 is symmetric[0][0] * v[0] + symmetric[0][1] * v[1] - sym_evals[k] * v[0]
+    r1 is symmetric[1][0] * v[0] + symmetric[1][1] * v[1] - sym_evals[k] * v[1]
+    residual is (abs of r0) + (abs of r1)
+    v_scale is (abs of v[0]) + (abs of v[1])
+    assert_true of [residual <= 1e-12 * v_scale, "near-repeated symmetric eigenvector residual"]
+
+test_summary of null

@@ -169,8 +169,7 @@ static void store_json_encode(Value *v, strbuf *out);
 
 /* Recursive container walks consume slots directly.  In particular, do not
  * manufacture a stack-backed Value and pass it down the recursion for an
- * inline number; format it through the same branch and format strings used by
- * the historical boxed-number path so persisted bytes remain identical. */
+ * inline number. */
 static void store_json_encode_slot(EigsSlot slot, strbuf *out) {
     if (slot_is_f64(slot)) {
         /* This is persisted float data, not a finite builtin argument.

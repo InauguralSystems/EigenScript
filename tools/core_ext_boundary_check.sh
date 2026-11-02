@@ -9,7 +9,7 @@ WERROR_FLAGS_FILE="$(dirname "$0")/werror_flags.txt"
 . "$(dirname "$0")/read_werror_flags.sh" || exit 1
 cd "$(dirname "$0")/.." || exit 1
 EXEMPT="builtins.c:ext_net_internal.h"
-hdrs=$(ls src/ext_*_internal.h src/model_internal.h 2>/dev/null | sed 's#^src/##' | sort -u)
+hdrs=$(ls src/ext_*_internal.h 2>/dev/null | sed 's#^src/##' | sort -u)
 tus=$(make --no-print-directory print-SOURCES 2>/dev/null | tr ' ' '\n' | sed -n 's#^src/##p' | grep '\.c$' | sort -u)
 if [ -z "$hdrs" ] || [ -z "$tus" ]; then echo "FAIL[A]: enumerated 0 headers or 0 core TUs (matcher broke)" >&2; exit 1; fi
 n_scanned=0; n_hits=0; seen=""; rc=0
@@ -42,7 +42,7 @@ cc=${CC:-gcc}
 compile_tu() {
     _n=$1 _tu=$2
     "$cc" -c -o /dev/null -I"$poison" -Isrc -Wall $WERROR_FLAGS -Werror=implicit-function-declaration \
-        -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1 \
+        -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1 \
         -DEIGENSCRIPT_VERSION='"gate"' "src/$_tu" > "$work/$_n.out" 2>&1
     echo "$?" > "$work/$_n.status"
 }
@@ -72,6 +72,6 @@ while [ "$i" -le "$n" ]; do
 done
 rm -rf "$poison"
 if [ "$n" -lt 10 ]; then echo "FAIL[B]: only $n core TUs probed (matcher broke)" >&2; brc=1; fi
-[ "$brc" = 0 ] && echo "leg B: $n core TUs compile with EXT_{HTTP,MODEL,DB,NET}=1 and <libpq-fe.h> poisoned"
+[ "$brc" = 0 ] && echo "leg B: $n core TUs compile with EXT_{HTTP,DB,NET}=1 and <libpq-fe.h> poisoned"
 if [ "$rc" = 0 ] && [ "$brc" = 0 ]; then echo "OK: no core -> extension-private include edge"; exit 0; fi
 exit 1

@@ -38,7 +38,7 @@ outliers is find_outliers of [exp, "temperature", 0.01]
 assert_true of [(len of outliers) > 0, "outlier detected"]
 
 # Get values
-vals is values of [exp, "temperature"]
+vals is lab_values of [exp, "temperature"]
 assert_eq of [len of vals, 6, "6 values total"]
 
 # Summary
@@ -63,7 +63,7 @@ assert_true of [file_exists of "/tmp/test_lab_temp.csv", "CSV exported"]
 # Save and reload
 save of exp
 exp2 is load of "test_thermal"
-vals2 is values of [exp2, "temperature"]
+vals2 is lab_values of [exp2, "temperature"]
 assert_eq of [len of vals2, 6, "data persists after reload"]
 
 # Close both experiment store handles (new_experiment + load each opened one)

@@ -1,1 +1,0 @@
-- REPL shutdown now reclaims spawned tasks and other open handles instead of leaking them under LeakSanitizer (#1811).

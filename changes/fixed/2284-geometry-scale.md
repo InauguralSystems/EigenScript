@@ -1,0 +1,1 @@
+- Geometry line intersections and triangle circumcircle constructions now use translated, scale-relative divisor guards with vertex-order-invariant triangle results; segment orientation predicates use exact translated signs (#2284).

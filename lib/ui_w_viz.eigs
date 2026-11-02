@@ -548,7 +548,7 @@ define _chart_series_color(ch, si) as:
     local s is ch.series[si]
     if s.color != null:
         return s.color
-    local pal is _theme_color of ["plot_series", [[80, 140, 220]]]
+    local pal is theme_color of ["plot_series", [[80, 140, 220]]]
     return pal[si % (len of pal)]
 
 define bar_chart(id, x, y, w, h, labels, values, on_click) as:
@@ -643,10 +643,10 @@ define _render_chart(widget, ax, ay) as:
     widget._ay is ay
     local bg is widget.bg
     if bg == null:
-        bg is _theme_color of ["plot_bg", [25, 25, 35]]
-    local gcol is _theme_color of ["plot_grid", [40, 40, 55]]
-    local acol is _theme_color of ["plot_axis", [70, 70, 95]]
-    local bcol is _theme_color of ["plot_border", [40, 40, 55]]
+        bg is theme_color of ["plot_bg", [25, 25, 35]]
+    local gcol is theme_color of ["plot_grid", [40, 40, 55]]
+    local acol is theme_color of ["plot_axis", [70, 70, 95]]
+    local bcol is theme_color of ["plot_border", [40, 40, 55]]
     local dim is _theme.text_dim
     local txt is _theme.text_color
     # The widget rect — everything below stays inside it.
@@ -786,8 +786,8 @@ define _render_chart(widget, ax, ay) as:
 
 define _render_bar_chart(widget, ax, ay) as:
     # Background — theme-keyed (#820), current values as the defaults
-    bar_bg is _theme_color of ["plot_bg", [25, 25, 35]]
-    bar_border is _theme_color of ["plot_border", [40, 40, 55]]
+    bar_bg is theme_color of ["plot_bg", [25, 25, 35]]
+    bar_border is theme_color of ["plot_border", [40, 40, 55]]
     gfx_rect of [ax, ay, widget.w, widget.h, bar_bg[0], bar_bg[1], bar_bg[2]]
     n is len of widget.values
     if n > 0:
@@ -901,9 +901,9 @@ define _render_canvas(widget, ax, ay) as:
 
 define _render_waveform_view(widget, ax, ay) as:
     # Background — theme-keyed (#820), current values as the defaults
-    wv_bg is _theme_color of ["wave_bg", [18, 18, 26]]
-    wv_center is _theme_color of ["wave_center", [35, 35, 45]]
-    wv_border is _theme_color of ["wave_border", [35, 35, 45]]
+    wv_bg is theme_color of ["wave_bg", [18, 18, 26]]
+    wv_center is theme_color of ["wave_center", [35, 35, 45]]
+    wv_border is theme_color of ["wave_border", [35, 35, 45]]
     gfx_rect of [ax, ay, widget.w, widget.h, wv_bg[0], wv_bg[1], wv_bg[2]]
     mid_y is ay + floor of (widget.h / 2)
     # Center line
@@ -1520,9 +1520,9 @@ define _tl_kind_color(tl, kind, explicit) as:
     local st is tl.kind_style[kind]
     if st != null:
         if (type of st) == "str":
-            return _theme_color of [st, _theme.accent]
+            return theme_color of [st, _theme.accent]
         return st
-    local pal is _theme_color of ["tl_kinds", (_theme_color of ["plot_series", [[80, 140, 220]]])]
+    local pal is theme_color of ["tl_kinds", (theme_color of ["plot_series", [[80, 140, 220]]])]
     local hsum is 0
     local ks is f"{kind}"
     for ci in range of (len of ks):
@@ -1532,13 +1532,13 @@ define _tl_kind_color(tl, kind, explicit) as:
 define _render_timeline(widget, ax, ay) as:
     widget._ax is ax
     widget._ay is ay
-    local bg is _theme_color of ["tl_bg", (_theme_color of ["plot_bg", [25, 25, 35]])]
-    local rbg is _theme_color of ["tl_ruler_bg", (_theme_color of ["plot_grid", [40, 40, 55]])]
-    local altc is _theme_color of ["tl_lane_alt", (_theme_color of ["plot_grid", [40, 40, 55]])]
-    local linec is _theme_color of ["tl_lane_line", (_theme_color of ["plot_border", [40, 40, 55]])]
-    local labc is _theme_color of ["tl_label", _theme.text_dim]
-    local curc is _theme_color of ["tl_cursor", _theme.accent]
-    local bcol is _theme_color of ["tl_border", (_theme_color of ["plot_border", [40, 40, 55]])]
+    local bg is theme_color of ["tl_bg", (theme_color of ["plot_bg", [25, 25, 35]])]
+    local rbg is theme_color of ["tl_ruler_bg", (theme_color of ["plot_grid", [40, 40, 55]])]
+    local altc is theme_color of ["tl_lane_alt", (theme_color of ["plot_grid", [40, 40, 55]])]
+    local linec is theme_color of ["tl_lane_line", (theme_color of ["plot_border", [40, 40, 55]])]
+    local labc is theme_color of ["tl_label", _theme.text_dim]
+    local curc is theme_color of ["tl_cursor", _theme.accent]
+    local bcol is theme_color of ["tl_border", (theme_color of ["plot_border", [40, 40, 55]])]
     local dim is _theme.text_dim
     local wr is [ax, ay, widget.w, widget.h]
     gfx_rect of [ax, ay, widget.w, widget.h, bg[0], bg[1], bg[2]]

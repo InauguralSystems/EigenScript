@@ -32,13 +32,13 @@ chooses; `net_port`'s port line and its siblings print a predicate instead.
 **Sync #5, R1.6-S1/S2.** Main's `rm` deletion removes no table row: the
 number-reading bar never included it. R1.6-S2 adds main's `set_exit_code`
 as an int-requiring release-profile row in round c, closed by main #1909.
-After S10-D2, the current population is 309 rows and 310 cases, with round counts b 46,
-c 76, d 53, e 38, f 19 and g 77 (b/f include R1.6b-D3's `http_post` correction).
+After sync11's explicit model/corpus retirement, the current population is 303 rows and 304 cases, with round counts b 46,
+c 75, d 48, e 38, f 19 and g 77 (b/f include R1.6b-D3's `http_post` correction).
 The new `.branch` is an authorized addition recorded by SHA-256 under
 R1.6-S2 in `../builtins_changes.md`; existing frozen expectations stay fixed.
 
 ## Files
-- `builtins.tsv`, 309 rows: `builtin file class loss q7 round closed_in
+- `builtins.tsv`, 303 rows: `builtin file class loss q7 round closed_in
   profile hook stdin changes_vs_pre changes_vs_tag`. `make_table.py` writes
   it. Rows come from the §6 table, checked both ways against the inventory's
   `## Builtins` list, field by field. Both files and `src/` are extracted with
@@ -47,8 +47,8 @@ R1.6-S2 in `../builtins_changes.md`; existing frozen expectations stay fixed.
   `1fd4422c`), so the population is pinned to the ruled commit, not to a
   checkout's state; `EIGS_TREE` overrides it for the plants. `file` is the
   `src/*.c` file that defines the inventory's C function. `round` follows the
-  plan's rule, and the counts are checked against b 46, c 76, d 53, e 38,
-  f 19 and g 77 (R1.6b-D3, R1.6-S2, R1.6g-D1 and S10-D2). The other columns:
+  plan's rule, and the counts are checked against b 46, c 75, d 48, e 38,
+  f 19 and g 77 (R1.6b-D3, R1.6-S2, R1.6g-D1, S10-D2 and sync11 retirement). The other columns:
   - `closed_in` (ruling A2) and `profile` (A3) come from `rowmeta.tsv`;
   - `hook` (A4) and `stdin` (A5) list the hooks and the stdin fixtures of the
     row's cases, in case order. `-` means none, and stdin `-` is `/dev/null`;
@@ -60,7 +60,7 @@ R1.6-S2 in `../builtins_changes.md`; existing frozen expectations stay fixed.
     original one. It is recorded as an observation and never checked, because
     the tag has no `num_type`, and `set_exit_code` also postdates the tag.
 - `rowmeta.tsv`: `builtin closed_in profile`, one line per table row.
-- `cases.tsv`: `case builtin hook stdin`, 310 cases. A row's primary case is
+- `cases.tsv`: `case builtin hook stdin`, 304 cases. A row's primary case is
   `builtins/<b>`. The surviving second case is `gfx_poll.empty` (B3).
   S10-D2 explicitly retires both `proc_read_buf` cases (A5/C10).
 - `builtins/<case>.eigs` is the probe. `<case>.branch` is the pre-registered
@@ -141,11 +141,11 @@ a binary built with the profile, derived from the design:
 
 | profile | build (Makefile) | rows |
 |---|---|---|
-| server (HTTP, MODEL, NET) | `make server` (`FLAGS_server`) | `shared_incr` (b); `shared_delete`, `shared_size`, `http_*` (f); `net_*` (f); `eigen_eval_loss`, `eigen_generate`, `eigen_model_load`, `model_load_weights`, `native_train_step_builtin` (d) |
+| server (HTTP, NET) | `make server` (`FLAGS_server`) | `shared_incr` (b); `shared_delete`, `shared_size`, `http_*` (f); `net_*` (f) |
 | db | `make server-db`, plus `DATABASE_URL` naming a live PostgreSQL | `db_execute`, `db_query_json`, `db_query_value` (b) |
 | zlib | `make zlib` | `inflate` (d) |
 
-Current profile counts (S10-D2): release 284, server 21, db 3, zlib 1.
+Current profile counts (sync11): release 283, server 16, db 3, zlib 1.
 
 R1.6a records these rows on matched builds: the same profile built at
 `4ac31e67` and at v0.46.0, passed as `PRE_BIN_<P>` and `TAG_BIN_<P>` (`P` is
@@ -154,11 +154,11 @@ of that profile. Three guards keep a capability transcript from counting as a
 change:
 - Before recording, `run_probes.sh` runs `builtins/_profiles/<profile>.eigs`
   on each given binary, and stops with exit 2 unless it prints `profile-ok`.
-  For server, none of `shared_size`, `net_listen` and `eigen_model_load` may
+  For server, neither `shared_size` nor `net_listen` may
   answer "capability unavailable". For db, `db_connect of null` and then
   `SELECT 1` must answer 1. For zlib, `inflate of [203, 200, 4, 0]` must
   decode to `hi`. On the release binary the three witnesses print
-  `["capabilities-unavailable", 3]`, the db error and the zlib error.
+  `["capabilities-unavailable", 2]`, the db error and the zlib error.
 - `make_table.py` FAILs a non-release record that contains `capability
   unavailable` or `compiled without`. (`http_serve` and `http_early_bind`
   print a capability flag, not the message, so for those two rows the profile
@@ -414,13 +414,13 @@ agreed).
   and graceful completion uses rc 3. Its `.pre` equals `.branch`, with
   `closed_in` R1.6-S2; the tag has no such builtin. This row stays in round c
   with `exit` until their bridge migration.
-- Host (`random_hex read_bytes_buf proc_read_buf build_corpus token_name
+- Host (`random_hex read_bytes_buf token_name
   state_at sandbox_run vm_run_bytecode write_bytes stream_open`): counts, caps,
   fds, ids, line numbers, limits, ABI numbers and opcode bytes follow N5. Byte
   values follow Q1: N5, then 0..255, so `write_bytes` 300 raises (today it
   wraps to 44) and 65.5 raises (today 65). `vm_run_bytecode` code byte 256
   raises (today it wraps to 0, `OP_CONST`), and ABI `1.5` raises (today
-  `(int)1.5` == 1 passes). Counts returned (`write_bytes`, `build_corpus`) and
+  `(int)1.5` == 1 passes). Counts returned (`write_bytes`) and
   `sandbox_run`'s error `line` are ints (§6 notes). `read_bytes` returns byte
   values as ints (int-preserving).
 - `proc_read_buf` (A5, C10): a second case, `proc_read_buf.hi`, reads stdin
@@ -465,7 +465,7 @@ agreed).
   read from the source or from exploratory runs on `pre`. No numeric
   expectation came from a binary.
 
-## Per-row derivation, round d (53 rows; R1.6d)
+## Per-row derivation, round d (48 surviving rows; R1.6d, after sync11 retirement)
 - Float tensor math (`divide pow sqrt exp log mean norm relu leaky_relu softmax
   log_softmax matmul matmul_at matmul_bt zeros_like numerical_grad sgd_update
   tensor_save tensor_load buf_from_list`): ints convert and results are floats.
@@ -508,16 +508,9 @@ agreed).
   are ints (§6 notes), so N5 applies. The gradients and updates are floats.
   Hand-derived: d(q[1][0]^2)/dq[1][0] at 3 with eps 0.5 is exactly
   (12.25 - 6.25) / 1 = 6.
-- Model rows (`eigen_model_load model_load_weights eigen_generate
-  eigen_eval_loss native_train_step_builtin`, server profile): each probe writes
-  a constant-weight v2 model (the shape of `tests/gen_tiny_model.eigs`) and a
-  child script, runs the child with `exec_capture of [exe_path of null, child]`,
-  and prints only the child's `R16|` lines. The loader prints its file path on
-  stdout, and the path differs each run. Token ids and `max_tokens` follow N5,
-  and generated ids are ints (indices). `generate_response` has no stop token,
-  so `max_tokens` 4 yields exactly 4 ids. The loss is a float, and the training
-  status is JSON text. `eigen_model_load`'s own numbers are internal, so its
-  row only pins the loaded config.
+- The five former model rows were explicitly retired by sync11 with main's
+  archived extension. Their old four-file cases remain identified by prior-bank
+  SHA-256 in `../builtins_changes.md`; they are not active table coverage.
 
 ## Per-row derivation, round f (20 rows; R1.6f)
 - Store handles (`store_open store_close store_collections store_count
@@ -818,8 +811,7 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
   assigned to the next main-to-phase2 sync: nearest OTHER active entity.
   S10-D2 changes only the frozen result index 1 to 0; source/types stay fixed.
 - `numerical_grad_rows/_cols` and `sgd_update_rows/_cols` silently skip an
-  out-of-range row or column index, and the model builtins clamp an
-  out-of-range token id. Filed:
+  out-of-range row or column index. Filed:
   https://github.com/InauguralSystems/EigenScript/issues/1889
 - Out-of-range gfx arguments are silently wrong today: colours wrap modulo
   256, `gfx_open of [3e9, 48]` answers `true`, and an off-window `gfx_read`
@@ -949,7 +941,7 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
   scratch script, so R1.6a can run the same check on its matched builds).
   Total 144 -> 634 -> 687. At that R1.6a import, `rowmeta.tsv` and
   `cases.tsv` were declarations of 232 and 234 lines plus headers;
-  R1.6g's populations were 310 and 312; S10-D2's current populations are 309 and 310.
+  R1.6g's populations were 310 and 312; S10-D2's populations were 309 and 310; sync11's are 303 and 304.
 - `run_probes.sh`:
   - The first version wrote stdout through a relative path after its `cd`,
     so every `.pre` and `.tag` held only `rc=0`. It writes an absolute path,
@@ -1066,7 +1058,8 @@ R1.6g-D1 and #1758 comment 6304880619 add 77 release-profile rows, sourced
 from the N9 definitions in builtins_int.c: 76 int-requiring and fround
 float-producing. That addition produced 310 rows and 312 cases (release 285,
 server 21, db 3, zlib 1); S10-D2 later retires one row and two cases,
-leaving 309 rows and 310 cases (release 284). All new branches were captured from Rust std plus
+leaving 309 rows and 310 cases (release 284); sync11 then retires six rows
+and six cases, leaving 303 rows and 304 cases (release 283). All new branches were captured from Rust std plus
 the explicit operand/shape rulings BEFORE builtins_int.c existed; their exact
 SHA-256 amendments are in builtins_changes.md. Existing frozen branches remain
 unchanged. oracle/n9.rs, its input TSVs and verbatim stdout capture the Rust
@@ -1090,3 +1083,15 @@ to this sync: the existing two-active-entity scenario keeps its numeric kind
 witnesses while `nearest_in_range_all.branch` changes only index 1 to 0.
 Its separate exact semantic amendment and hashes are recorded in
 `../builtins_changes.md`; it is not an N6 float-text re-render.
+
+## Sync11 model/corpus retirement
+
+The builder brief explicitly retires main's archived extension under #2178,
+#2201 and #2202, including its six numeric table rows. All 24 probe/record
+files are deleted with six `DELETED` frozen amendments in
+`../builtins_changes.md`; surviving cases and expected bytes are unchanged.
+The table now has 303 rows and 304 cases (b 46, c 75, d 48, e 38, f 19, g 77), with
+release 283, server 16, db 3, zlib 1 profiles. The server witness drops its removed
+capability arm and still requires HTTP and NET. The existing plant set has no
+model/corpus dependent plant, so its IDs and population remain unchanged.
+Earlier import/coverage tables remain explicitly historical observations.

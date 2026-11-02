@@ -39,9 +39,9 @@ import re
 import sys
 
 from gen import HarnessError, RANDOM_KINDS, generate
+from schema import CERTIFICATE_KINDS, PREDS, RULES
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PREDS = ["converged", "stable", "improving", "oscillating", "diverging", "equilibrium"]
 RTOL = 1e-3          # the observer's dh_zero: settle tolerance and min_delta
 BAND = 1e-2          # the observer's dh_small: OUR choice of settling band
 SCALE = 1e-3         # the observer's scale: below it tolerances turn absolute
@@ -203,9 +203,10 @@ def load_corpus(path):
             raise HarnessError(f"{rid}: properties need a reason and known sources")
         if r.get("capability", "ieee") not in CAPABILITIES:
             raise HarnessError(f"{rid}: unknown capability {r['capability']!r}")
-        if r.get("capability") != capability(r):
+        needed = capability(r)
+        if r.get("capability") != needed:
             raise HarnessError(f"{rid}: capability {r.get('capability')!r} declared, but the values it feeds"
-                               f" the runtime need {capability(r)!r} (ieee: an inf or NaN value; int64: an"
+                               f" the runtime need {needed!r} (ieee: an inf or NaN value; int64: an"
                                " int a double cannot hold exactly)")
         if p["limit"] is not None and not (isinstance(p["limit"], (int, float)) and math.isfinite(p["limit"])):
             raise HarnessError(f"{rid}: limit {p['limit']!r}: a limit is a finite number or null")
@@ -249,7 +250,7 @@ def load_certificates(corpus, path):
         if c.get("hash") != row_hash(r, code):
             raise HarnessError(f"{r['id']}: stale certificate (the row, gen.py, certify.py or derive's"
                                " RTOL/SCALE changed since it was certified); re-run certify.py")
-        if c.get("kind") not in ("symbolic", "exact", "fixed-point", "ieee", "manual"):
+        if c.get("kind") not in CERTIFICATE_KINDS:
             raise HarnessError(f"{r['id']}: certificate kind {c.get('kind')!r}")
         if r["props"]["deterministic"] and not isinstance(c.get("constant"), bool):
             raise HarnessError(f"{r['id']}: certificate does not decide constancy")
@@ -324,11 +325,6 @@ def _rules(row, cert, xs, far, n):
     }
 
 
-RULES = {("converged", "MATH"), ("converged", "CONVENTION"), ("stable", "CONVENTION"),
-         ("improving", "CONVENTION"), ("oscillating", "MATH"), ("diverging", "MATH"),
-         ("equilibrium", "MATH")}           # the keys _rules answers
-
-
 def derive_row(row, cert, defs, scored, reported):
     """defs: (predicate, class) -> cite, the NaN convention under predicate "*"."""
     p = row["props"]
@@ -392,10 +388,10 @@ def postconditions(labels, scored, reported, rows, nans, nan_cls):
         rid, n = key.rsplit("@", 1)
         if set(preds) != keys:
             raise HarnessError(f"{key}: label columns {sorted(preds)}, expected {sorted(keys)}")
+        values = generate(rows[rid]["gen"], rows[rid]["n"])
+        recovers = any(math.isnan(x) for x in values) and not math.isnan(values[-1])
         for q in PREDS:
             e = preds[q]
-            recovers = any(math.isnan(x) for x in generate(rows[rid]["gen"], rows[rid]["n"])) \
-                and not math.isnan(generate(rows[rid]["gen"], rows[rid]["n"])[-1])
             is_nan_convention = key in nans and (not recovers or scored[q] == "CONVENTION")
             early = scored[q] == "MATH" and int(n) < rows[rid]["regime"] and not is_nan_convention
             want = nan_cls if is_nan_convention else ("REPORTED" if early else scored[q])

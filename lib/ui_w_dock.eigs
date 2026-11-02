@@ -230,11 +230,11 @@ define _layout_dock(dk) as:
 define _render_dock(widget, ax, ay) as:
     widget._ax is ax
     widget._ay is ay
-    local bg is _theme_color of ["dock_bg", (_theme_color of ["panel_bg", [30, 30, 42]])]
-    local tbg is _theme_color of ["dock_title_bg", (_theme_color of ["tl_ruler_bg", [40, 40, 55]])]
-    local tfg is _theme_color of ["dock_title_fg", _theme.text_color]
-    local hcol is _theme_color of ["dock_handle", (_theme_color of ["panel_border", [60, 60, 80]])]
-    local bcol is _theme_color of ["dock_border", (_theme_color of ["panel_border", [60, 60, 80]])]
+    local bg is theme_color of ["dock_bg", (theme_color of ["panel_bg", [30, 30, 42]])]
+    local tbg is theme_color of ["dock_title_bg", (theme_color of ["tl_ruler_bg", [40, 40, 55]])]
+    local tfg is theme_color of ["dock_title_fg", _theme.text_color]
+    local hcol is theme_color of ["dock_handle", (theme_color of ["panel_border", [60, 60, 80]])]
+    local bcol is theme_color of ["dock_border", (theme_color of ["panel_border", [60, 60, 80]])]
     gfx_rect of [ax, ay, widget.w, widget.h, bg[0], bg[1], bg[2]]
     local v is dock_view of widget
     # Center

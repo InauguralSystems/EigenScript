@@ -3,7 +3,7 @@ import EigenCore
 open EigenCore
 
 private def usage : IO UInt32 := do
-  IO.eprintln "usage: eigs-ref --classify FILE | [--trace TAPE] [--replay TAPE] [--strict] [--seed N] FILE"
+  IO.eprintln "usage: eigs-ref --classify FILE | [--version VERSION] [--trace TAPE] [--replay TAPE] [--strict] [--seed N] FILE"
   pure 2
 
 private def mainClassify (path : String) : IO UInt32 := do
@@ -24,6 +24,7 @@ structure Options where
   replay : Option String := none
   strict : Bool := false
   seed : Nat := 2018
+  runtimeVersion : Option String := none
 
 private def options : List String → Except String Options
   | [] => throw "missing source"
@@ -31,6 +32,7 @@ private def options : List String → Except String Options
   | "--trace"::path::rest => do let o ← options rest; pure {o with trace:=some path}
   | "--replay"::path::rest => do let o ← options rest; pure {o with replay:=some path}
   | "--strict"::rest => do let o ← options rest; pure {o with strict:=true}
+  | "--version"::value::rest => do let o ← options rest; pure {o with runtimeVersion:=some value}
   | "--seed"::value::rest => do
       let some seed := value.toNat? | throw "invalid seed"
       let o ← options rest
@@ -52,24 +54,26 @@ private def generatedOracle (source : String) (seed : Nat) : List OracleValue :=
   values
 
 private def execute (o : Options) : IO UInt32 := do
+  let some runtimeVersion := o.runtimeVersion
+    | IO.eprintln "missing --version VERSION"; return 2
   let source ← IO.FS.readFile o.source
   let mode ← match o.replay with
     | none =>
       let oracle := generatedOracle source o.seed
       pure (if o.trace.isSome then .record oracle else .live oracle)
-    | some path => match tapeParse (← IO.FS.readFile path) with
+    | some path => match tapeParse runtimeVersion (← IO.FS.readFile path) with
       | .ok tape => pure (.replayStrict tape)
       | .error e => IO.eprintln s!"runtime error: {e}"; return 1
   match parse source with
   | .error e =>
       -- Modeled parse errors still participate in record/replay parity.  A
       -- header-only trace is complete for a program rejected before run.
-      match o.trace with | some path => IO.FS.writeFile path (tapeSerialize []) | none => pure ()
+      match o.trace with | some path => IO.FS.writeFile path (tapeSerialize runtimeVersion []) | none => pure ()
       IO.eprintln s!"parse error at line {e.line}: {e.construct}"; pure 2
   | .ok program =>
       let result := run 100000 program mode
       IO.print result.stdout
-      match o.trace with | some path => IO.FS.writeFile path (tapeSerialize result.tape) | none => pure ()
+      match o.trace with | some path => IO.FS.writeFile path (tapeSerialize runtimeVersion result.tape) | none => pure ()
       match result.error with
       | none => pure 0
       | some .fuel => IO.eprintln "refused at runtime: evaluator fuel exhausted"; pure 1

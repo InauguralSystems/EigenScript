@@ -19,7 +19,7 @@ mode is re-inventing what already ships (see "Before you hand-roll" below).
 
 | I need to... | Use | Where |
 |---|---|---|
-| average / median / stddev / quantiles / correlation | `stats.mean`, `stats.median`, `stats.std_dev`, `stats.quantile`, `stats.correlation`, `stats.describe` | `lib/stats.eigs` |
+| average / median / stddev / quantiles / correlation | `stats.stats_mean`, `stats.median`, `stats.std_dev`, `stats.quantile`, `stats.correlation`, `stats.describe` | `lib/stats.eigs` |
 | tables, CSV, group-by, join, select/where | `data.df_from_csv`, `df_where`, `df_group_by`, `df_join`, `df_select` | `lib/data.eigs` |
 | probability distributions, combinatorics, Bayes | `probability.normal_pdf`, `binomial_pmf`, `combinations`, `bayes` | `lib/probability.eigs` |
 | matrices / vectors / solve Ax=b / eigenvalues | `linalg.mat_mul`, `mat_inverse`, `solve_linear`, `charpoly`, `eigenvalues` | `lib/linalg.eigs` |
@@ -28,7 +28,7 @@ mode is re-inventing what already ships (see "Before you hand-roll" below).
 | derivatives / integrals / root-finding / ODEs | `calculus.derivative`, `integrate_simpson`, `newton_raphson`, `rk4_method` | `lib/calculus.eigs` |
 | minimize a function (gradient descent, annealing, GA) | `optimize.gradient_descent`, `simulated_annealing`, `genetic_optimize` | `lib/optimize.eigs` |
 | iterative linear solvers / power iteration | `numerics.jacobi_solve`, `gauss_seidel_solve`, `power_iteration` | `lib/numerics.eigs` |
-| sort / dedup / sort-by-key / argsort | `sort.sort_asc`, `unique`, `sort_by`, `sorted_indices` | `lib/sort.eigs` |
+| sort / dedup / sort-by-key / argsort | `sort.sort_asc`, `unique`, `sorted_indices`; `sort_by` (**builtin**) | `lib/sort.eigs`; BUILTINS.md |
 | set operations (union, intersect, membership) | `set.set_from`, `union`, `intersect`, `set_has` | `lib/set.eigs` |
 | map / filter / reduce / zip / group_by / frequencies | `list.map`, `filter`, `reduce`, `group_by`, `frequencies` | `lib/list.eigs` |
 | function composition / pipelines / retry | `functional.chain`, `compose`, `complement`, `wait_until` | `lib/functional.eigs` |
@@ -37,7 +37,7 @@ mode is re-inventing what already ships (see "Before you hand-roll" below).
 | finite state machine | `state.sm_new`, `sm_add_transition`, `sm_send` | `lib/state.eigs` |
 | parse a number / hex / codepoint | `num`, `hex`, `ord`, `chr`, `utf8_encode` (**builtins** / `lib/utf8.eigs`) | BUILTINS.md, `lib/utf8.eigs` |
 | pad / format numbers / aligned tables / progress bars | `format.fmt_num`, `fmt_padded`, `fmt_table`, `fmt_bar`, `hexdump` | `lib/format.eigs` |
-| join / repeat / capitalize / replace-all strings | `string.join`, `repeat`, `capitalize`, `replace_all` | `lib/string.eigs` |
+| join / repeat / capitalize / replace-all strings | `string.string_join`, `repeat`, `capitalize`, `replace_all` | `lib/string.eigs` |
 | build a big string efficiently | `text_builder_new`, `text_builder_append` (**builtins**) | `lib/text_builder.eigs` |
 | Unicode codepoints over byte strings | `utf8.utf8_len`, `utf8_at`, `utf8_encode` | `lib/utf8.eigs` |
 | checksums (CRC-32, Adler-32) | `checksum.crc32`, `adler32`, `sum8` | `lib/checksum.eigs` |
@@ -48,7 +48,7 @@ mode is re-inventing what already ships (see "Before you hand-roll" below).
 | parse CLI args / flags / options | `args.parse_args`, `get_flag`, `get_opt` | `lib/args.eigs` |
 | structured logging with levels | `log.log_info`, `log_warn`, `log_level` | `lib/log.eigs` |
 | validate input (email, number, range) | `validate.is_email`, `is_number`, `in_range` | `lib/validate.eigs` |
-| render a `{{template}}` string | `template.render`, `render_file`, `fill` | `lib/template.eigs` |
+| render a `{{template}}` string | `template.render`, `render_file`, `template_fill` | `lib/template.eigs` |
 | manipulate JSON (get path, merge, pretty) | `json.json_get_path`, `json_merge`, `json_pretty` | `lib/json.eigs` |
 | an embedded document store / DB | `store.open`, `put`, `find`, `upsert` | `lib/store.eigs` |
 | a lock across cooperative tasks | `sync.lock_new`, `with_lock` | `lib/sync.eigs` |
@@ -78,7 +78,7 @@ They already ship — reach for them first:
 
 | You were about to write... | It already exists as |
 |---|---|
-| `_pr_median` / your own mean | `stats.median`, `stats.mean` (`lib/stats.eigs`) |
+| `_pr_median` / your own mean | `stats.median`, `stats.stats_mean` (`lib/stats.eigs`) |
 | `hex4` / `pad2` (fixed-width hex) | `hex of [n, nibbles]` (**builtin** — zero-padded, never truncates) |
 | a byte-to-int / char-code helper | `ord` (read), `chr` / `str_from_bytes` (write) — **builtins** |
 | `_log10` / a log-base helper | `math.log2`, `math.log10` (`lib/math.eigs`) — `load_file of "lib/math.eigs"`, then `log2 of x` / `log10 of x` instead of a hand-rolled `(log of x) / (log of base)`. Element-wise, like the `log` builtin they wrap. |
@@ -149,19 +149,19 @@ signature comment above each function (e.g., `# clamp of [value, lo, hi]`).
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `abs` | `abs of value` | Absolute value |
+| `math_abs` | `math_abs of value` | Absolute value |
 | `sign` | `sign of value` | Returns -1, 0, or 1 |
 | `max_val` | `max_val of list` | Maximum element |
 | `min_val` | `min_val of list` | Minimum element |
 | `clamp` | `clamp of [value, lo, hi]` | Restrict to range |
 | `lerp` | `lerp of [a, b, t]` | Linear interpolation |
-| `dot` | `dot of [list_a, list_b]` | Dot product |
+| `math_dot` | `math_dot of [list_a, list_b]` | Dot product |
 | `gcd` | `gcd of [a, b]` | Greatest common divisor |
 | `lcm` | `lcm of [a, b]` | Least common multiple |
 | `argmax` | `argmax of list` | Index of the largest element (first on ties, -1 if empty) |
 | `argmin` | `argmin of list` | Index of the smallest element (first on ties, -1 if empty) |
-| `log2` | `log2 of value` | Base-2 logarithm; element-wise over a list (non-positive input raises like `log`; under `EIGS_STRICT=0` it takes the `log` stand-in, #1041) |
-| `log10` | `log10 of value` | Base-10 logarithm; element-wise over a list (non-positive input raises like `log`; under `EIGS_STRICT=0` it takes the `log` stand-in, #1041) |
+| `log2` | `log2 of value` | Base-2 logarithm; exact powers of two return their integer exponent exactly; element-wise over a list (non-positive input raises like `log`; under `EIGS_STRICT=0` it takes the `log` stand-in, #1041) |
+| `log10` | `log10 of value` | Base-10 logarithm; exact powers of ten return their integer exponent exactly; element-wise over a list (non-positive input raises like `log`; under `EIGS_STRICT=0` it takes the `log` stand-in, #1041) |
 
 ### lib/list.eigs — Functional List Operations
 
@@ -186,7 +186,7 @@ signature comment above each function (e.g., `# clamp of [value, lo, hi]`).
 
 Higher-order functions take EigenScript functions as arguments:
 
-```eigenscript fragment
+```eigenscript
 load_file of "lib/list.eigs"
 
 define double as:
@@ -198,19 +198,27 @@ define is_even as:
 define add_fn as:
     return n[0] + n[1]
 
-doubled is map of [[1,2,3], double]      # [2, 4, 6]
-evens is filter of [[1,2,3,4], is_even]  # [2, 4]
-total is reduce of [[1,2,3], add_fn, 0]  # 6
+doubled is map of [[1,2,3], double]
+evens is filter of [[1,2,3,4], is_even]
+total is reduce of [[1,2,3], add_fn, 0]
+print of doubled
+print of evens
+print of total
+```
+```output
+[2, 4, 6]
+[2, 4]
+6
 ```
 
 ### lib/string.eigs — String Utilities
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `join` | `join of [list, separator]` | Join elements with separator |
+| `string_join` | `string_join of [list, separator]` | Join elements with separator |
 | `repeat` | `repeat of [string, count]` | Repeat string n times |
-| `pad_left` | `pad_left of [string, width, char]` | Left-pad to width. An empty pad char returns the string unchanged |
-| `pad_right` | `pad_right of [string, width, char]` | Right-pad to width. An empty pad char returns the string unchanged |
+| `pad_left` | `pad_left of [string, width, pad_string]` | Left-pad to width by repeating the pad string and truncating it on the right to fit exactly. Fractional widths are floored; widths above the maximum string length raise. An empty pad string returns the input unchanged |
+| `pad_right` | `pad_right of [string, width, pad_string]` | Right-pad to width by repeating the pad string and truncating it on the right to fit exactly. Fractional widths are floored; widths above the maximum string length raise. An empty pad string returns the input unchanged |
 | `capitalize` | `capitalize of string` | Uppercase the first character, leave the rest |
 | `replace_all` | `replace_all of [string, find, replacement]` | Replace every occurrence of `find` |
 
@@ -260,7 +268,7 @@ iteration.
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `auth_login` | `auth_login of password` | Verify password, set session token |
-| `auth_check` | `auth_check of token` | 1 if token is valid |
+| `auth_check` | `auth_check of null` | Read the bearer token from the request headers; return JSON with `status: "ok"`, or `status: "error"` and an error message |
 | `auth_logout` | `auth_logout of null` | Clear session |
 | `auth_get_token` | `auth_get_token of null` | Return current token |
 | `require_auth` | `require_auth of null` | Check auth from HTTP headers |
@@ -301,22 +309,6 @@ Requires: `env_get`, `random_hex`, `http_request_headers` builtins.
 | `scale` | `scale of [tensor, scalar]` | Scalar multiplication |
 
 ### lib/autograd.eigs — Reverse-Mode Autograd (tape)
-
-Reverse-mode automatic differentiation over the f64 tensor builtins on
-shaped buffers (#973). A **tape** (Wengert list) records every op as a
-node; `ag_backward` seeds the loss with 1 and sweeps the tape in reverse
-applying each op's vector-Jacobian product, so a training step is one
-forward plus one backward — not `numerical_grad`'s one forward per
-parameter. It can express dense networks and causal self-attention blocks,
-including transpose, causal-masked softmax, layer normalization and GELU.
-It is a library-level alternative for new EigenScript trainers, **not** a
-drop-in replacement for iLambdaAi's C trainer: `model_train.c` remains a
-separate native implementation and consumers must migrate explicitly.
-`numerical_grad` stays as the gradient-check **oracle**
-(`tests/test_autograd.eigs` pins every rule below against it to 1e-4
-relative). Leaf values are the caller's own buffers — `ag_sgd_step` updates
-them in place. Build a fresh tape per step. Names carry the `ag_` prefix so
-`load_file` never shadows the builtins they wrap.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
@@ -473,7 +465,7 @@ registers into epoch seconds with these and no host clock.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `read_lines` | `read_lines of "path"` | File to list of lines |
+| `read_lines` | `read_lines of "path"` | File to list of lines; a final newline does not add a trailing empty line |
 | `write_lines` | `write_lines of ["path", lines]` | List of lines to file |
 | `read_csv` | `read_csv of "path.csv"` | CSV to list of lists |
 | `write_csv` | `write_csv of ["path.csv", rows]` | List of lists to CSV |
@@ -486,7 +478,7 @@ registers into epoch seconds with these and no host clock.
 |----------|-----------|-------------|
 | `json_get` | `json_get of [json, "key"]` | Extract top-level value |
 | `json_get_path` | `json_get_path of [json, "a.b"]` | Extract nested value |
-| `json_has` | `json_has of [json, "key"]` | `true` if the key or dotted path exists, including when its value is JSON `null`; `false` only when the key is absent |
+| `json_has` | `json_has of [json, "key"]` | `true` if the key or dotted path exists, including through decimal list indices and when its value is JSON `null`; `false` when a key is absent or a list index is invalid/out of range |
 | `json_from_pairs` | `json_from_pairs of pairs` | [[k,v],...] to JSON |
 | `json_merge` | `json_merge of [json_a, json_b]` | Flat-merge two objects (keys of `json_b` win; nested values replace whole); raises if either is not an object |
 | `json_pretty` | `json_pretty of json_str` | Indented output; layout is added only outside string tokens, so string values come through byte-for-byte |
@@ -505,7 +497,7 @@ registers into epoch seconds with these and no host clock.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `fmt_num` | `fmt_num of [value, decimals]` | Fixed decimal places |
+| `fmt_num` | `fmt_num of [value, decimals]` | Fixed decimal places, always using plain digits (never exponent notation) |
 | `fmt_percent` | `fmt_percent of [value, decimals]` | Format as percentage |
 | `fmt_bar` | `fmt_bar of [val, max, width]` | Text progress bar |
 | `fmt_padded` | `fmt_padded of [value, width]` | Right-aligned field |
@@ -521,8 +513,8 @@ frames stop hand-rolling integrity math.
 
 ```eigenscript
 load_file of "lib/checksum.eigs"
-print of (crc32 of "123456789")      # 3421780262
-print of (adler32 of "Wikipedia")    # 300286872
+print of (crc32 of "123456789")
+print of (adler32 of "Wikipedia")
 ```
 ```output
 3421780262
@@ -538,11 +530,13 @@ success on the first attempt costs none.
 
 ### lib/sort.eigs — Sorting Utilities
 
+`sort_by of [list, key_fn]` is a builtin, not a member of the `sort` module.
+After `import sort`, call it as `sort_by`, not `sort.sort_by`.
+
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `sort_asc` | `sort_asc of list` | Sort ascending |
 | `sort_desc` | `sort_desc of list` | Sort descending |
-| `sort_by` | `sort_by of [list, key_fn]` | Sort by key function |
 | `sorted_indices` | `sorted_indices of list` | Indices that would sort the list |
 | `is_sorted` | `is_sorted of list` | `true` if ascending order |
 | `unique` | `unique of list` | Sorted, deduplicated list |
@@ -562,7 +556,7 @@ Maps are lists of `[key, value]` pairs. Keys are compared with `==`.
 | `map_keys` | `map_keys of map` | List all keys |
 | `map_values` | `map_values of map` | List all values |
 | `map_size` | `map_size of map` | Number of entries |
-| `map_from_lists` | `map_from_lists of [keys, values]` | Build from parallel lists |
+| `map_from_lists` | `map_from_lists of [keys, values]` | Build from parallel lists; last value wins for duplicate keys |
 | `map_merge` | `map_merge of [map_a, map_b]` | Merge (second wins) |
 | `map_entries` | `map_entries of map` | List of [key, value] pairs |
 
@@ -572,8 +566,8 @@ load_file of "lib/map.eigs"
 m is map_new of null
 m is map_set of [m, "lang", "EigenScript"]
 m is map_set of [m, "version", "0.5"]
-print of (map_get of [m, "lang"])       # "EigenScript"
-print of (map_keys of m)                # ["lang", "version"]
+print of (map_get of [m, "lang"])
+print of (map_keys of m)
 ```
 ```output
 EigenScript
@@ -586,6 +580,7 @@ EigenScript
 |----------|-----------|-------------|
 | `identity` | `identity of x` | Return argument unchanged |
 | `constantly` | `constantly of x` | Return value (sentinel pattern) |
+| `compose` | `compose of [f, g]` | Return a callable computing `f(g(x))` |
 | `chain` | `chain of [fn_list, value]` | Pipeline: apply left to right |
 | `apply_all` | `apply_all of [fn_list, value]` | Apply each fn, collect results |
 | `juxt` | `juxt of [fn_list, value]` | Alias for apply_all |
@@ -595,7 +590,7 @@ EigenScript
 | `times` | `times of [count, fn]` | Call fn(i) for i in 0..count-1 |
 | `iterate` | `iterate of [fn, value, count]` | Apply fn n times |
 
-```eigenscript fragment
+```eigenscript
 load_file of "lib/functional.eigs"
 
 define double as:
@@ -608,7 +603,11 @@ define square as:
 result is chain of [[double, square], 3]   # square(double(3)) = 36
 
 # Apply multiple functions to same value
-results is apply_all of [[double, square], 5]  # [10, 25]
+results is apply_all of [[double, square], 5]
+print of results
+```
+```output
+[10, 25]
 ```
 
 ### The UI Toolkit — lib/ui*.eigs
@@ -629,9 +628,15 @@ widget signatures.
 **Core (`lib/ui.eigs`):** `panel`, `add_child`, `find_by_id`,
 `stack_vertical`, `stack_horizontal`, `show_toast`, `register_hotkey`,
 `push_modal`/`pop_modal`, `show_menu`, `show_dialog`, `claim_drag`/
-`release_drag`, `dispatch`, `handle_key`, `request_quit`, `app_loop`.
+`release_drag`, `ui_dispatch`, `handle_key`, `request_quit`, `app_loop`.
 Theme (`lib/ui_theme.eigs`):
-`theme`, `set_theme`, `theme_dark`/`theme_light`/`theme_high_contrast`.
+`theme`, `theme_color`, `set_theme`, `theme_dark`/`theme_light`/`theme_high_contrast`.
+`theme_color(key, fallback)` returns the active theme value, or `fallback` when
+the key is absent, so applications remain compatible with legacy and custom
+theme dictionaries. The built-ins provide generic `highlight_bg`,
+`highlight_alt_bg`, and `highlight_active_bg` background roles. The
+high-contrast palette keeps these backgrounds dark against its bright text,
+following that theme's bright-on-dark contrast convention.
 Animation (`lib/ui_anim.eigs`): `tween`, `cancel_tweens`. Text metrics
 (`lib/ui_draw.eigs`): `text_width`, `text_height`. Clip stack
 (`lib/ui_draw.eigs`, #823): `ui_clip_push of [x, y, w, h]` /
@@ -674,7 +679,7 @@ module header for the full argument list):
 **`dialog` is a container** (#575): `add_child of [dlg, w]` mounts any
 widget inside it, positioned relative to the dialog's own top-left. The
 modal machinery carries it — `show_dialog`/`push_modal` centres and lays
-it out, `app_loop` renders it above everything, and `dispatch` treats the
+it out, `app_loop` renders it above everything, and `ui_dispatch` treats the
 top modal as the root for each event, so children hit-test, hover, drag
 and take keyboard focus exactly as they do anywhere else, while clicks
 outside the dialog reach nothing behind it.
@@ -873,18 +878,18 @@ drag mousemove plus the terminating mouseup (branch on `ev.type`;
 wheel input under the cursor before the `scroll_panel` walk sees it.
 Wheel events from `gfx_poll` also carry the pointer position as
 `ev.mx`/`ev.my` (#822), so a widget can zoom about the cursor without
-shadowing `mousemove`; `dispatch` prefers them for its own hit test and
+shadowing `mousemove`; `ui_dispatch` prefers them for its own hit test and
 falls back to the last tracked position when a synthesized event omits
 them.
 Drag handling for the built-in draggable types goes through the widget
 registry's `on_drag` entry, so a registered custom type can supply its
 own.
 
-Keyboard goes through the same door: `dispatch of [root, ev]` routes a
+Keyboard goes through the same door: `ui_dispatch of [root, ev]` routes a
 `keydown`/`keyup` event dict to `handle_key of [root, ev]`, the toolkit's
 public key handler that `app_loop` itself calls. It applies hotkeys >
 escape-pops-modal > open combobox > focused text input > focus
-navigation, and returns 1 when the toolkit consumed the key, 0 when it is
+navigation, and returns `true` when the toolkit consumed the key, `false` when it is
 free for the app — so a headless test drives keys exactly like mouse
 instead of reaching for the private handlers.
 
@@ -939,7 +944,7 @@ semantics when you need them, decoding UTF-8 over the byte primitives.
 | `utf8_codepoints` | `utf8_codepoints of s` | List of codepoint numbers |
 | `utf8_at` | `utf8_at of [s, i]` | i-th codepoint (0-indexed), or -1 |
 | `utf8_char_at` | `utf8_char_at of [s, i]` | i-th character as a (multi-byte) string, or "" |
-| `utf8_validate` | `utf8_validate of s` | `true` if structurally valid UTF-8, else `false` |
+| `utf8_validate` | `utf8_validate of s` | `true` if structurally valid UTF-8, else `false`; rejects codepoints above U+10FFFF, while remaining structural (overlong encodings and surrogate codepoints are accepted) |
 | `utf8_encode` | `utf8_encode of cp` | Codepoint → UTF-8 byte string ("" if unencodable) |
 | `utf8_from_codepoints` | `utf8_from_codepoints of cps` | List of codepoints → UTF-8 string (inverse of `utf8_codepoints`) |
 
@@ -957,21 +962,26 @@ per-file and total tallies.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `parse_args` | `parse_args of null` | Parse CLI args into map |
+| `parse_args` | `parse_args of null` | Parse CLI args into map; repeated options keep the last value, `--` ends option parsing, and `-` is positional |
 | `get_flag` | `get_flag of [parsed, "--flag"]` | `true` if flag present |
 | `get_opt` | `get_opt of [parsed, "--key", default]` | Get option or default |
 | `get_positional` | `get_positional of parsed` | List of positional args |
 | `has_flag` | `has_flag of [parsed, "--flag"]` | Alias for get_flag |
 | `require_opt` | `require_opt of [parsed, "--key", usage]` | Get option or exit |
 
-```eigenscript fragment
+```eigenscript
 load_file of "lib/args.eigs"
-# eigenscript myscript.eigs --verbose --output=result.txt input.csv
-parsed is parse_args of null
+# Equivalent to: eigenscript myscript.eigs --verbose --output=result.txt input.csv
+parsed is [["positional", ["input.csv"]], ["--verbose", "true"], ["--output", "result.txt"]]
 if get_flag of [parsed, "--verbose"]:
     print of "Verbose mode on"
 outfile is get_opt of [parsed, "--output", "out.txt"]
-files is get_positional of parsed    # ["input.csv"]
+files is get_positional of parsed
+print of files
+```
+```output
+Verbose mode on
+["input.csv"]
 ```
 
 ### lib/config.eigs — Configuration File Loading
@@ -979,7 +989,7 @@ files is get_positional of parsed    # ["input.csv"]
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `load_env_file` | `load_env_file of ".env"` | Parse KEY=VALUE file |
-| `load_ini` | `load_ini of "config.ini"` | Parse INI config |
+| `load_ini` | `load_ini of "config.ini"` | Parse INI config; trims section names and raises on empty or unterminated headers |
 | `config_get` | `config_get of [cfg, key, default]` | Get with default |
 | `config_require` | `config_require of [cfg, key]` | Get or exit |
 | `env_or` | `env_or of ["VAR", default]` | Env var with fallback |
@@ -1009,14 +1019,14 @@ Sets are sorted lists with no duplicates.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `log_level` | `log_level of "debug"` | Set minimum level |
+| `log_level` | `log_level of "debug"` | Set minimum threshold; unknown names raise |
 | `log_debug` | `log_debug of msg` | Debug message |
 | `log_info` | `log_info of msg` | Info message |
 | `log_warn` | `log_warn of msg` | Warning message |
 | `log_error` | `log_error of msg` | Error message |
-| `log_msg` | `log_msg of ["level", msg]` | Log with named level |
+| `log_msg` | `log_msg of ["level", msg]` | Log with a named level; unknown names raise |
 
-Levels: debug < info < warn < error < silent. Default: info.
+Message levels: debug < info < warn < error. The `silent` threshold suppresses every message, including a `log_msg` whose level is `"silent"`. Unknown level names raise. Default threshold: info.
 
 ### lib/validate.eigs — Input Validation
 
@@ -1094,8 +1104,8 @@ sm is sm_add_transition of [sm, "idle", "start", "running"]
 sm is sm_add_transition of [sm, "running", "stop", "idle"]
 sm is sm_add_transition of [sm, "running", "error", "failed"]
 sm is sm_send of [sm, "start"]
-print of (sm_state of sm)              # "running"
-print of (sm_can_send of [sm, "stop"]) # 1
+print of (sm_state of sm)
+print of (sm_can_send of [sm, "stop"])
 ```
 ```output
 running
@@ -1112,13 +1122,13 @@ true
 | `render_lines` | `render_lines of [template, vars]` | Render to line list |
 | `render_each` | `render_each of [template, items, key]` | Render per item |
 | `render_block` | `render_block of [template, vars, cond]` | Conditional render |
-| `fill` | `fill of [template, key, value]` | Single-variable shorthand |
+| `template_fill` | `template_fill of [template, key, value]` | Single-variable shorthand |
 
 ```eigenscript
 load_file of "lib/template.eigs"
 vars is [["name", "World"], ["version", "0.5"]]
 msg is render of ["{{name}} is running v{{version}}", vars]
-print of msg   # "World is running v0.5"
+print of msg
 ```
 ```output
 World is running v0.5
@@ -1227,9 +1237,9 @@ Descriptive statistics over flat lists of numbers. Population and sample variant
 
 | Function | Signature | Description |
 |---|---|---|
-| `sum` | `sum of vals` | sum of all values |
+| `stats_sum` | `stats_sum of vals` | sum of all values |
 | `count` | `count of vals` | number of values |
-| `mean` | `mean of vals` | arithmetic mean |
+| `stats_mean` | `stats_mean of vals` | arithmetic mean |
 | `median` | `median of vals` | middle value (sort + pick middle) |
 | `mode` | `mode of vals` | most common value |
 | `variance` | `variance of vals` | POPULATION variance (divides by N); use `variance_sample` for a sample |
@@ -1247,7 +1257,7 @@ Descriptive statistics over flat lists of numbers. Population and sample variant
 | `correlation` | `correlation of [xs, ys]` | Pearson correlation coefficient |
 | `describe` | `describe of vals` | return dict with count, mean, median, std_dev, min, max, q25, q75 |
 
-`stats.mean` and `stats.median` already exist — reach for them instead of
+`stats.stats_mean` and `stats.median` already exist — reach for them instead of
 re-deriving a `_pr_mean`/`_pr_median`. This example is executed and checked
 byte-for-byte by the suite (`tests/test_doc_examples.py`, section [89]):
 
@@ -1256,7 +1266,7 @@ import stats
 import data
 
 scores is [88, 92, 79, 95, 73]
-print of (stats.mean of scores)
+print of (stats.stats_mean of scores)
 print of (stats.median of scores)
 
 rows is data.df_from_rows of [["name", "score"], [["Ada", 90], ["Bo", 70]]]
@@ -1274,14 +1284,14 @@ DataFrame operations on lists of dicts (each dict is a row with the same keys).
 
 | Function | Signature | Description |
 |---|---|---|
-| `df_from_csv` | `df_from_csv of path` | read CSV file, first row is headers, returns list of dicts. A cell becomes a number only when the whole cell is numeric (`validate.is_number`: optional `-`, digits, at most one `.`); text, empty cells and numeric-prefix text like `12abc` stay strings |
+| `df_from_csv` | `df_from_csv of path` | read an RFC 4180 CSV file (including quoted commas, doubled quotes, and embedded CR/LF); first row is headers, returns list of dicts. A cell becomes a number only when the whole cell is numeric (`validate.is_number`: optional `-`, digits, at most one `.`); text, empty cells and numeric-prefix text like `12abc` stay strings |
 | `df_from_rows` | `df_from_rows of [headers, rows]` | headers is list of strings, rows is list of lists |
 | `df_new` | `df_new of _headers` | empty dataframe (returns empty list) |
 | `df_select` | `df_select of [df, columns]` | returns new df with only specified columns |
 | `df_where` | `df_where of [df, pred]` | filter rows where pred(row) is truthy |
 | `df_head` | `df_head of [df, n]` | first n rows |
 | `df_tail` | `df_tail of [df, n]` | last n rows |
-| `df_slice` | `df_slice of [df, start, cnt]` | rows from start index, count rows |
+| `df_slice` | `df_slice of [df, start, cnt]` | rows from non-negative start index, count rows; raises when start is negative |
 | `df_sort_by` | `df_sort_by of [df, column, asc]` | sort by column value. asc=1 ascending, asc=0 descending. |
 | `df_map` | `df_map of [df, column, fn]` | apply fn to each value in column, return new df |
 | `df_add_column` | `df_add_column of [df, name, fn]` | add computed column where fn(row) returns value |
@@ -1296,7 +1306,7 @@ DataFrame operations on lists of dicts (each dict is a row with the same keys).
 | `df_unique` | `df_unique of [df, column]` | unique values in column |
 | `df_join` | `df_join of [left, right, on]` | inner join on column name |
 | `df_left_join` | `df_left_join of [left, right, on]` | left join, keep all left rows |
-| `df_to_csv` | `df_to_csv of [df, path]` | write dataframe to CSV file |
+| `df_to_csv` | `df_to_csv of [df, path]` | write dataframe as RFC 4180 CSV, quoting commas, quotes, CR/LF, and boundary whitespace |
 | `df_to_table` | `df_to_table of df` | format as aligned text table (returns string) |
 | `df_column` | `df_column of [df, name]` | extract single column as flat list |
 | `df_columns` | `df_columns of df` | return list of column names (keys of first row) |
@@ -1308,7 +1318,7 @@ Combinatorics, distributions (binomial, Poisson, normal, exponential, uniform �
 
 | Function | Signature | Description |
 |---|---|---|
-| `factorial` | `factorial of n` | n! |
+| `factorial` | `factorial of n` | n! for integral n; raises on a non-integer argument |
 | `combinations` | `combinations of [n, k]` | C(n, k) = n! / (k! * (n-k)!) |
 | `permutations` | `permutations of [n, k]` | P(n, k) = n! / (n-k)! |
 | `binomial_pmf` | `binomial_pmf of [n, k, p]` | P(X=k) = C(n,k) * p^k * (1-p)^(n-k) |
@@ -1343,7 +1353,7 @@ Pure-EigenScript matrices (lists of lists) and vectors: transpose/multiply/deter
 | `mat_sub` | `mat_sub of [A, B]` | element-wise subtraction |
 | `mat_scale` | `mat_scale of [A, scalar]` | multiply all elements by scalar |
 | `mat_mul` | `mat_mul of [A, B]` | matrix multiplication (nested loops, not tensor builtin) |
-| `mat_det` | `mat_det of A` | determinant via cofactor expansion (2x2, 3x3) or LU for general |
+| `mat_det` | `mat_det of A` | determinant via cofactor expansion (2x2, 3x3) or LU for general; the LU path treats only an exactly zero pivot column as singular |
 | `mat_inverse` | `mat_inverse of A` | Matrix inverse via Gauss-Jordan elimination |
 | `vec_add` | `vec_add of [a, b]` | element-wise addition |
 | `vec_sub` | `vec_sub of [a, b]` | element-wise subtraction |
@@ -1368,11 +1378,11 @@ Complex numbers as two-element `[re, im]` lists — the shape
 
 | Function | Signature | Notes |
 |---|---|---|
-| `add` / `sub` / `mul` | `mul of [a, b]` | complex arithmetic |
-| `div` | `div of [a, b]` | returns `null` when b is zero (division by zero raises in EigenScript) |
+| `complex_add` / `sub` / `mul` | `mul of [a, b]` | complex arithmetic |
+| `div` | `div of [a, b]` | scaled division; returns `null` only when both parts of b are zero |
 | `neg` / `conj` | `conj of a` | negation flips both components, conjugation only the imaginary one |
 | `scale` | `scale of [a, s]` | multiply by a REAL scalar |
-| `mag` / `mag2` | `mag of a` | modulus, and its square without the `sqrt` |
+| `mag` / `mag2` | `mag of a` | scaled, overflow-safe modulus; and its unscaled square without the `sqrt` |
 | `arg` | `arg of a` | argument in radians, `(-pi, pi]`, via `atan2` |
 | `to_polar` / `from_polar` | `to_polar of a` | `[re, im]` <-> `[modulus, argument]` |
 | `eq_near` | `eq_near of [a, b, tol]` | compares BOTH components — not a modulus test |
@@ -1486,7 +1496,7 @@ Computational geometry: 2D/3D points and vectors, line/segment intersection, tri
 | `point_to_segment_distance` | `point_to_segment_distance of [point, seg_p1, seg_p2]` | Distance from point to finite line segment |
 | `closest_point_on_segment` | `closest_point_on_segment of [point, seg_p1, seg_p2]` | Project point onto segment, clamp to endpoints |
 | `segment_length` | `segment_length of [p1, p2]` | Length of line segment |
-| `orientation` | `orientation of [p, q, r]` | Returns: 1 = counter-clockwise, -1 = clockwise, 0 = collinear |
+| `orientation` | `orientation of [p, q, r]` | Returns 1 = counter-clockwise, -1 = clockwise, 0 = exactly collinear; the sign test is independent of coordinate scale |
 | `collinear` | `collinear of [p, q, r]` | Are three points collinear? |
 | `on_segment` | `on_segment of [p, q, r]` | Is q on segment pr? (assuming collinear) |
 | `segments_intersect` | `segments_intersect of [a1, a2, b1, b2]` | Do two line segments intersect? |
@@ -1495,7 +1505,7 @@ Computational geometry: 2D/3D points and vectors, line/segment intersection, tri
 | `triangle_centroid` | `triangle_centroid of [a, b, c]` | Average of vertices |
 | `triangle_circumcenter` | `triangle_circumcenter of [a, b, c]` | Center of circumscribed circle |
 | `triangle_incenter` | `triangle_incenter of [a, b, c]` | Center of inscribed circle |
-| `point_in_triangle` | `point_in_triangle of [p, a, b, c]` | Is point inside triangle? (barycentric coordinates method) |
+| `point_in_triangle` | `point_in_triangle of [p, a, b, c]` | Is point inside a non-degenerate triangle? Edge and vertex points return true; degenerate triangles return false |
 | `barycentric_coords` | `barycentric_coords of [p, a, b, c]` | Returns [u, v, w] barycentric coordinates |
 | `triangle_circumradius` | `triangle_circumradius of [a, b, c]` | Radius of circumscribed circle |
 | `triangle_inradius` | `triangle_inradius of [a, b, c]` | Radius of inscribed circle |
@@ -1773,7 +1783,7 @@ Experiment management composing EigenStore, observer semantics, stats, and the e
 | `is_stable` | `is_stable of [exp, variable]` | `true` if the variable's measurements are stable |
 | `wait_for_stable` | `wait_for_stable of [exp, variable, collect_fn, interval, timeout]` | Poll collect_fn until the variable stabilizes or times out |
 | `measurements` | `measurements of [exp, variable]` | All measurement records for a variable |
-| `values` | `values of [exp, variable]` | Flat list of a variable's values |
+| `lab_values` | `lab_values of [exp, variable]` | Flat list of a variable's values |
 | `to_dataframe` | `to_dataframe of [exp, variable]` | Measurements as a data.eigs DataFrame |
 | `to_csv` | `to_csv of [exp, variable, path]` | Export a variable's measurements to CSV |
 | `summary` | `summary of [exp, variable]` | Descriptive-stats summary for a variable |
@@ -2237,7 +2247,6 @@ Internal names below are implementation contracts for maintainers, not a stable 
 | `_render_tooltip()` | Internal: paint a delayed tooltip near its pointer, clamped to window bounds. |
 | `_scroll_panels(widget, dx, dy)` | Internal: route scroll deltas to registered handlers or recurse through nested containers. |
 | `_sync_focus_to(widget)` | Internal: set the focused widget and locate its index in the current focus list. |
-| `_theme_color(key, fallback)` | Internal: return the active theme color or the supplied fallback for a missing key. |
 | `_tween_get(widget, field)` | Internal: read one supported numeric widget field for animation interpolation. |
 | `_tween_set(widget, field, val)` | Internal: write one supported numeric widget field during an animation update. |
 | `_unfocus_all(widget)` | Internal: clear text-input focus recursively through the supported widget tree. |
@@ -2249,7 +2258,7 @@ Internal names below are implementation contracts for maintainers, not a stable 
 | `cancel_tweens(widget)` | Cancel every active animation targeting the supplied widget id. |
 | `checkbox(id, x, y, text, value, on_change)` | Create a checkbox whose width includes its measured label and whose value is supplied by the caller. |
 | `claim_drag(widget)` | Capture subsequent pointer motion and release events for the specified widget. |
-| `dispatch(root, ev)` | Route keyboard, pointer, drag and wheel events through the active modal and widget registry. |
+| `ui_dispatch(root, ev)` | Route keyboard, pointer, drag and wheel events through the active modal and widget registry. |
 | `find_by_id(widget, id)` | Search the widget and supported descendants for the requested id, returning null when absent. |
 | `handle_key(root, ev)` | Apply hotkey, modal, text-input and focus priorities and report whether a key was consumed. |
 | `pop_modal()` | Hide and return the top dialog, remove it from the modal stack and rebuild focus. |
@@ -2265,6 +2274,7 @@ Internal names below are implementation contracts for maintainers, not a stable 
 | `stack_horizontal(widgets, x, y, gap)` | Position widgets left to right with the supplied origin and gap, returning the list. |
 | `stack_vertical(widgets, x, y, gap)` | Position widgets top to bottom with the supplied origin and gap, returning the list. |
 | `theme()` | Return the currently selected theme palette. |
+| `theme_color(key, fallback)` | Return an active-theme value, or the caller-provided fallback when its key is absent. |
 | `theme_dark()` | Return the built-in dark theme palette. |
 | `theme_high_contrast()` | Return the built-in high-contrast theme palette. |
 | `theme_light()` | Return the built-in light theme palette. |
@@ -2276,3 +2286,24 @@ Internal names below are implementation contracts for maintainers, not a stable 
 | `unregister_hotkey(combo)` | Remove registrations whose key combination exactly matches the supplied string. |
 
 <!-- ui-surface-contracts:end -->
+
+### lib/keys.eigs
+
+US-layout keyboard-event conversion shared by text-entry consumers.
+
+| Function | Signature | Description |
+|---|---|---|
+| `key_to_char` | `key_to_char of [key, shift]` | Return the printable character for a key name and shift flag, or an empty string for a non-character key. |
+
+This example is executable (and is checked by the documentation example suite):
+
+```eigenscript
+import keys
+
+print of (keys.key_to_char of ["[", 1])
+print of (keys.key_to_char of ["a", 1])
+```
+```output
+{
+A
+```

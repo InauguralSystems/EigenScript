@@ -1,7 +1,7 @@
 /*
  * EigenScript Language Runtime — public header.
  * Core types, parser, evaluator, and value constructors.
- * Extension types live in private headers (model_internal.h, ext_http_internal.h, ext_db_internal.h).
+ * Extension types live in private headers (ext_http_internal.h, ext_db_internal.h).
  */
 
 #ifndef EIGENSCRIPT_H
@@ -29,9 +29,6 @@
  * Override at compile time: gcc -DEIGENSCRIPT_EXT_HTTP=0 ... */
 #ifndef EIGENSCRIPT_EXT_HTTP
 #define EIGENSCRIPT_EXT_HTTP 1
-#endif
-#ifndef EIGENSCRIPT_EXT_MODEL
-#define EIGENSCRIPT_EXT_MODEL 1
 #endif
 #ifndef EIGENSCRIPT_EXT_DB
 #define EIGENSCRIPT_EXT_DB 1
@@ -379,11 +376,14 @@ typedef struct ObserverSlot {
     /* #1044: ring CAPACITIES (what is allocated) and the per-binding window
      * OVERRIDE (what the classifiers read). The depth a slot classifies over
      * is observer_slot_window(s): win_override when nonzero, else the
-     * state's default (set_observer_window of n, OBSERVER_WINDOW_N at
-     * start). A ring is allocated at that depth on first push and re-grown
-     * (samples preserved, oldest first) when the depth in force exceeds the
-     * capacity; a depth SMALLER than the capacity simply reads the newest
-     * `depth` samples. So the common case — default depth, never touched —
+     * state's default (obs_window). Since v0.46.0 (#1687) no builtin sets
+     * either, so a live binding classifies at OBSERVER_WINDOW_N; only a
+     * replayed tape's `O cfg`/`O win` record (tape_read.c) or a trajectory
+     * snapshot handed to `classify` carries another depth (#2198). A ring
+     * is allocated at that depth on first push and re-grown (samples
+     * preserved, oldest first) when the depth in force exceeds the capacity;
+     * a depth SMALLER than the capacity simply reads the newest `depth`
+     * samples. So the common case — default depth, never touched —
      * allocates exactly what it did before #1044. */
     uint8_t v_cap, dh_cap;
     uint8_t win_override;       /* 0 = follow the state default */
@@ -668,10 +668,15 @@ static inline size_t val_str_len(const Value *v) {
  * a full window (count == OBSERVER_WINDOW_N) for "converged"-class
  * checks and a partial window (count >= 3) for trend-class checks. */
 #define OBSERVER_WINDOW_N 10
-/* #1044: the per-state default is set_observer_window of n; the per-binding
- * form set_observer_window of ["x", n] overrides one slot. Both are clamped
- * to [OBSERVER_WINDOW_MIN, OBSERVER_WINDOW_MAX]: the motion bands need two
- * samples per half-window (4), and the ring counters are 8-bit. */
+/* #1044: the bounds a non-default window must satisfy. A live run is fixed at
+ * OBSERVER_WINDOW_N: the builtins that set the per-state default and the
+ * per-binding override were removed in v0.46.0 (#1687). A depth can still
+ * arrive from a replayed tape's `O cfg`/`O win` record or a `classify`
+ * trajectory snapshot, and a depth outside
+ * [OBSERVER_WINDOW_MIN, OBSERVER_WINDOW_MAX] is refused: the motion bands
+ * need two samples per half-window (4), and the ring counters are 8-bit.
+ * `O win <name> 0` is not a depth: it clears the binding's override
+ * (tape_read.c, obs_cfg_rec_ok). */
 #define OBSERVER_WINDOW_MIN 4
 #define OBSERVER_WINDOW_MAX 64
 /* Start-of-state values of the four scalar observer knobs. Named because the
@@ -933,15 +938,19 @@ struct EigsState {
      * argument-TYPE guards as well as arithmetic domains, and the env var
      * (EIGS_STRICT) was always the general name. */
     int             strict;
+    /* Ordinary CLI --json is a property of the whole run/state, not of an
+     * OS-thread attachment. Spawn workers have fresh EigsThread objects but
+     * share this state, like the other per-run CLI configuration. */
+    int             json_diagnostics;
     /* Global lexical scope for the script + REPL line bodies + sourced
      * modules (load_file). Owned by main/eigenlsp; set after env_new. */
     Env            *global_env;
     /* #1388: the builtin layer -- a pristine copy of the runtime's registered
-     * builtins (plus eigs_register_function callbacks), parent = global_env.
+     * builtins, eigs_register_function callbacks, and non-builtin values
+     * injected by eigs_set_global. It is isolated from program globals.
      * Every imported module's namespace env is a child of THIS, so a builtin
      * name in module code resolves to the builtin before any importer
-     * binding, and non-builtin names still fall through to the importer's
-     * globals. Sealed: an outward `is` never stores into it (vm.c,
+     * binding. Sealed: an outward `is` never stores into it (vm.c,
      * env_resolve_store). Owned by the state (one creator ref, taken by
      * eigs_global_env_create, dropped by gc_collect_at_exit). */
     Env            *builtin_env;
@@ -1060,6 +1069,9 @@ typedef struct EigsJitHotRow {
     int      raw_advance;   /* -1 == the OP_RETURN sentinel */
     int      osr_advance;
     int      osr_entry;
+    uint8_t  osr_slots;      /* attempted slots (state != 0) */
+    uint8_t  osr_compiled;   /* slots with state == 2 */
+    uint8_t  osr_cache_full; /* slots with state == 3 */
     uint8_t  jit_state;
     uint8_t  osr_state;
     uint8_t  stop_op;
@@ -1388,6 +1400,7 @@ extern __thread EigsThread *eigs_current;
 #define g_first_error_col_known (eigs_current->first_error_col_known)
 #define g_first_error_from_lexer (eigs_current->first_error_from_lexer)
 #define g_error_print_pending (eigs_current->error_print_pending)
+#define g_json_diagnostics  (eigs_current->state->json_diagnostics)
 #define g_error_msg         (eigs_current->error_msg)
 #define g_first_error_code  (eigs_current->first_error_code)
 #define g_first_error_msg   (eigs_current->first_error_msg)
@@ -2264,6 +2277,9 @@ void gc_collect_cycles(void);
 /* Drain buffered LIST/DICT possible roots without seeding the traversal from
  * the unrelated captured-environment registry. */
 void gc_collect_value_candidates(void);
+/* Re-enable cycle-root admission after gc_collect_at_exit ended a runtime
+ * lifetime. Reusable hosts must call this before creating the next root. */
+void gc_begin_runtime_lifetime(void);
 /* Exit-time teardown of the global scope: drops every global binding,
  * then collects both env<->fn cycles and pure value cycles that were
  * rooted at global scope. Follow with env_decref(global). */
@@ -2298,6 +2314,7 @@ extern int g_compile_module_slots;
 /* ---- Parser / Evaluator ---- */
 
 TokenList tokenize(const char *source);
+const char *fstr_interp_end(const char *p, int nesting, int *too_deep);
 /* Measure leading spaces/tabs using the language's four-column tab stops.
  * byte_count, when non-NULL, receives the number of source bytes consumed. */
 int eigs_measure_indent(const char *line, int *byte_count);
@@ -2312,7 +2329,7 @@ void tokenlist_user_spelling(TokenList *tl);  /* #1322 */
 int lexer_operator_len(const char *s, TokType *ty);
 
 /* Number of distinct TokType values; equals the size of the base-token
- * vocabulary used by build_corpus. Identifier slot IDs start at this value. */
+ * token vocabulary. Identifier slot IDs start at this value. */
 int tok_base_string_id_count(void);
 
 /* Placeholder text for each base TokType, used by the corpus detokenizer.
@@ -2422,6 +2439,14 @@ char* eigs_json_encode(Value *v);
 void eigs_clear_error_value(void);
 void vm_print_stack_trace(FILE *out);  /* uncaught-error call stack (vm.c); no-ops without a VM */
 int vm_error_has_handler(void);        /* active VM slice has an open try */
+void vm_print_json_error(FILE *out, int column, int span);
+
+typedef struct {
+    int saved_fd;
+    FILE *sink;
+} EigsStderrSilence;
+void eigs_json_parse_silence_begin(EigsStderrSilence *guard);
+void eigs_json_parse_silence_end(EigsStderrSilence *guard);
 int vm_current_line(void);             /* live source line (vm.c); 0 without a VM */
 const char *vm_current_file(void);      /* stable source identity or <native> */
 void eigs_record_first_error(int line, const char *msg);
@@ -2512,9 +2537,6 @@ void ne_softmax_buf(double *data, int64_t rows, int64_t cols);
 void ne_matmul_buf(double *a, int64_t a_rows, int64_t a_cols,
                    double *b, int64_t b_cols, double *out);
 
-/* Model-only JSON helper. */
-#if EIGENSCRIPT_EXT_MODEL
-#endif
 
 /* ---- Handle table (opaque pointer indirection) ----
  * Table + lock + types declared up at the EigsState struct.
@@ -2629,12 +2651,7 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning);
  * in docs/BUILTINS.md / docs/STDLIB.md. Hosted-only (lint_host.c). */
 int eigs_api_dump(FILE *out, int json);
 
-/* Seed the shared drand48 stream from entropy unless seed_random already
- * pinned it. Exported so extension samplers (model_infer.c's eigen_generate)
- * draw from the SAME script-seedable stream as random/random_int -- the old
- * private libc-rand path was seeded by main from the clock and could not be
- * pinned from script at all (found via iLambdaAi's eval-determinism probe,
- * 2026-08-17). */
+/* Seed the shared drand48 stream from entropy unless seed_random already pinned it. */
 void eigs_ensure_random_seeded(void);
 /* The libc drand48 family owns one process-global state.  These are the only
  * entry points runtime code may use, so seeding and draws share one lock. */

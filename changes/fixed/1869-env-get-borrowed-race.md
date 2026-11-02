@@ -1,1 +1,0 @@
-- Environment lookups used by concurrent sandbox, compilation, embedding, and HTTP paths now retain bindings while inspecting or returning them, preventing rebinds from freeing borrowed values (#1869).

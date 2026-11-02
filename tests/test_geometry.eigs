@@ -150,6 +150,31 @@ assert_eq of [collinear of [[0,0], [1,0], [0,1]], false, "non-collinear points"]
 assert_eq of [on_segment of [[0,0], [1,1], [2,2]], true, "on segment middle"]
 assert_eq of [on_segment of [[0,0], [3,3], [2,2]], false, "off segment"]
 
+# Scale-invariant predicate regressions (#2235). These five cases and their
+# copies scaled by 1e6 must have identical answers.
+assert_eq of [orientation of [[0,0], [1e-6,0], [0,1e-6]], 1, "small-scale CCW orientation"]
+assert_eq of [segments_intersect of [[0,0], [1e-6,1e-6], [0,1e-7], [1e-6,1.1e-6]], false, "small parallel segments don't intersect"]
+small_hull is convex_hull of [[0,0], [1e-6,0], [1e-6,1e-6], [0,1e-6]]
+assert_eq of [len of small_hull, 4, "small square hull keeps all corners"]
+assert_eq of [point_in_triangle of [[100,100], [0,0], [1,1], [2,2]], false, "outside degenerate triangle"]
+assert_eq of [point_in_triangle of [[50,50], [0,0], [1e-4,0], [0,1e-4]], false, "outside small triangle"]
+
+assert_eq of [orientation of [[0,0], [1,0], [0,1]], 1, "scaled CCW orientation"]
+assert_eq of [segments_intersect of [[0,0], [1,1], [0,0.1], [1,1.1]], false, "scaled parallel segments don't intersect"]
+scaled_hull is convex_hull of [[0,0], [1,0], [1,1], [0,1]]
+assert_eq of [len of scaled_hull, 4, "scaled square hull keeps all corners"]
+assert_eq of [point_in_triangle of [[1e8,1e8], [0,0], [1e6,1e6], [2e6,2e6]], false, "outside scaled degenerate triangle"]
+assert_eq of [point_in_triangle of [[5e7,5e7], [0,0], [100,0], [0,100]], false, "outside scaled small triangle"]
+
+# Boundary and near-boundary containment must use orientation directly rather
+# than rounded barycentric coordinates. Points on an edge or vertex are inside.
+assert_eq of [point_in_triangle of [[0.00005,0.00025], [0,0], [0,0.0001], [0.0001,0.0004]], true, "small edge midpoint is inside"]
+assert_eq of [point_in_triangle of [[50,250], [0,0], [0,100], [100,400]], true, "scaled edge midpoint is inside"]
+assert_eq of [point_in_triangle of [[0,0.0001], [0,0], [0,0.0001], [0.0001,0.0004]], true, "triangle vertex is inside"]
+assert_eq of [point_in_triangle of [[-1e-12,0.00005], [0,0], [0,0.0001], [0.0001,0.0004]], false, "point just outside first edge"]
+assert_eq of [point_in_triangle of [[0.000049999997,0.000250000001], [0,0], [0,0.0001], [0.0001,0.0004]], false, "point just outside second edge"]
+assert_eq of [point_in_triangle of [[0.000050000004,0.000199999999], [0,0], [0,0.0001], [0.0001,0.0004]], false, "point just outside third edge"]
+
 # ============================================================
 # Triangle Operations
 # ============================================================

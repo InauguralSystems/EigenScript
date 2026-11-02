@@ -1,6 +1,13 @@
 checks is 0
 passed is 0
 
+# sort_by is a builtin, not an export of lib/sort.eigs.  Importing sort must
+# leave the namespaced lookup null while the global builtin stays callable.
+import sort
+checks += 1
+if (sort.sort_by == null) and (sort.sort_asc != null):
+    passed += 1
+
 # T1: sort by identity function (ascending numeric)
 define identity(x) as:
     return x

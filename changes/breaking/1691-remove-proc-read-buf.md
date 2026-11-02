@@ -1,1 +1,0 @@
-- `proc_read_buf` is removed. Since `proc_spawn` was removed (#1677), no builtin hands out a descriptor it can read, and a census found zero callers, so it fell under the zero-consumer rule (#1691).

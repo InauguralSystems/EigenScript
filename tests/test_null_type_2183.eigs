@@ -1,0 +1,7 @@
+# #2183: keep a loop so forced OSR executes the type operation in compiled code.
+i is 0
+loop while i < 4:
+    label is type of null
+    i is i + 1
+assert of [label == "null", "type of null uses the literal's spelling"]
+print of "null type label passed"

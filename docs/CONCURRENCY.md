@@ -6,6 +6,12 @@ waits for a worker and returns its result, or re-raises its error. This
 document is the contract for what is shared, what is copied, and what that
 costs — the questions a static type cannot answer for you.
 
+`channel of N` creates a bounded FIFO with exactly `N` buffered slots. Capacity
+`0` is a rendezvous: `send` blocks until a receiver accepts the value, and the
+receiver blocks until a sender offers one. `channel of null` retains the
+default capacity of 64. Other arguments must be non-negative integers (up to
+the implementation limit of 1,000,000) and raise instead of being ignored.
+
 Closures may capture bindings and containers by reference. Concurrent reads
 of a shared container are safe. **Two threads writing the same dict, or one
 writing while another reads, is still your race**, as is concurrent access to

@@ -385,6 +385,12 @@ Historical import records above are already included in the pin.
 | `tests/phase2/builtins/builtins/zeros_like.branch` | `8d3e0cdb2aee733291b724abd3f038bd9cdf2a90288d24072b87838c538a130c` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
 
 | `tests/phase2/builtins/builtins/read_text.branch` | `fd9b265f1a9a5e33c8f9d225b8c0befc1f78a536c43a28cf3cb0ccfbde996cd9` | S10-D3 | Main e0d49159 closes2076: same raise message naming the escape; only over-cap diagnostic text, original sizes/kinds/result/status unchanged |
+| `tests/phase2/builtins/builtins/build_corpus.branch` | `DELETED` | SYNC11-model-retirement | Explicit main #2178/#2201/#2202 retirement authorized by sync11 brief; prior bank SHA-256 `dd89206e0a2bc395645ad9f5ff98d39a85f4ade1d5b7d0f7f4fe9ae1c57885ef`. |
+| `tests/phase2/builtins/builtins/eigen_eval_loss.branch` | `DELETED` | SYNC11-model-retirement | Explicit main #2178/#2201/#2202 retirement authorized by sync11 brief; prior bank SHA-256 `f8da2b65efa5a74e64dcac16a01919ab078118af3c7ee2c4b2cec64f8f0c8d9a`. |
+| `tests/phase2/builtins/builtins/eigen_generate.branch` | `DELETED` | SYNC11-model-retirement | Explicit main #2178/#2201/#2202 retirement authorized by sync11 brief; prior bank SHA-256 `8bccea0bf76906ac45185a5f022de9b56fbbb5f52f183638e94fc1962af1de90`. |
+| `tests/phase2/builtins/builtins/eigen_model_load.branch` | `DELETED` | SYNC11-model-retirement | Explicit main #2178/#2201/#2202 retirement authorized by sync11 brief; prior bank SHA-256 `af5bda3ccb7070cadf2f84dd304a31808d461d92603b4b2e247f0234c06fc2d6`. |
+| `tests/phase2/builtins/builtins/model_load_weights.branch` | `DELETED` | SYNC11-model-retirement | Explicit main #2178/#2201/#2202 retirement authorized by sync11 brief; prior bank SHA-256 `af5bda3ccb7070cadf2f84dd304a31808d461d92603b4b2e247f0234c06fc2d6`. |
+| `tests/phase2/builtins/builtins/native_train_step_builtin.branch` | `DELETED` | SYNC11-model-retirement | Explicit main #2178/#2201/#2202 retirement authorized by sync11 brief; prior bank SHA-256 `3c8484817b38a96f35a6b27281ecc30637f4ad1db2dd887c81abcc0b8b031733`. |
 
 ## R1.6b bar amendments
 
@@ -393,6 +399,18 @@ The orchestrator ruled on R1.6b's two stops (issues #1894 and #1895):
 > R1.6b-D1: sign_extend's subtraction is checked int64 arithmetic, under #1758's rule (A), "overflow raises, no wraparound". So sign_extend of [-9223372036854775553, 8] raises value, naming sign_extend.
 
 > R1.6b-D2: an empty min/max raises value, in both call forms (min of [] with zero arguments, and min of ([]) with one empty list), and likewise for max.
+
+### S11-STOP-1 — empty extrema ruling retained through sync11
+
+The orchestrator ruled on #1776: **Empty `min`/`max` raise a value error;
+R1.6b-D2 stands.** Main `7776a68b` (#1649/#2112) added a non-number
+regression with incidental empty min/max zero expectations. Sync11 retains
+all its non-number scenarios and empty sum/mean/norm zero identities, and
+restates only the two extrema expectations as `value` errors in both call
+forms. `tests/test_builtin_contracts.eigs`, the runtime comment and numeric
+documentation retain the Phase2 empty-input rule. The frozen min/max probes
+and their expectations are unchanged; the updated main regression plus
+those probes prove the merged behavior. No frozen amendment is made here.
 
 Each new case is appended after its probe's last line, so every existing
 executable line number and stdout line number is unchanged (sign_extend's
@@ -713,3 +731,56 @@ it does not treat arbitrary numeric differences as float re-renders.
 Main `e0d491598ee19108802bf25c99c5b59d23039117` closes [#2076](https://github.com/InauguralSystems/EigenScript/issues/2076). Its Done-when requires "the same raise message naming the escape" for all three capped readers, from one shared helper. The orchestrator explicitly authorizes only the over-cap diagnostic line in `builtins/read_text.branch`; the case source, .pre/.tag, sizes, kinds, result rows and rc stay unchanged. This is a builtin self-test diagnostic, with no Phase2 number rule of its own.
 
 Prior bank SHA-256 `460914ed8657b39b51c90f6401e02e920a30b85ff4c97587884650006193e2ae`; approved S10-D3 SHA-256 `fd9b265f1a9a5e33c8f9d225b8c0befc1f78a536c43a28cf3cb0ccfbde996cd9`. The existing exact frozen-amendment mechanism pins the new bytes.
+
+## SYNC11-model-retirement — explicit model/corpus retirement (2026-11-01)
+
+The sync11 builder brief explicitly directs main #2178 (`6ce48dad`), #2201
+and #2202 to stand: remove the archived model extension and every dependent
+Phase2 reference; do not resurrect model code. This applies the same explicit
+retirement protocol as S10-D2 under R1.7-D2. Six primary builtin cases and
+all four files per case are retired, together with their six metadata rows.
+No surviving frozen case or expectation is changed by this retirement.
+
+| Retired path | Prior accepted bank SHA-256 | Authority |
+| --- | --- | --- |
+| `tests/phase2/builtins/builtins/build_corpus.eigs` | `f17f07905396631d7144b09fac8143f319fd8ecaff61a8b88ef6e451112962cb` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/build_corpus.branch` | `dd89206e0a2bc395645ad9f5ff98d39a85f4ade1d5b7d0f7f4fe9ae1c57885ef` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/build_corpus.pre` | `a90a04db15d9779518efeaf0e6763404c2d4f360f56f9b4ab5d8d239fc72f94b` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/build_corpus.tag` | `64fbee2e24d860f4eea43ea887edc73f8ac443bcc3847eb0450eeb19786a1c60` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/eigen_eval_loss.eigs` | `1a65135ab5a66a356288cb12acff5bbd0d68368e759489e7433f477adfdfdbe0` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/eigen_eval_loss.branch` | `f8da2b65efa5a74e64dcac16a01919ab078118af3c7ee2c4b2cec64f8f0c8d9a` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/eigen_eval_loss.pre` | `3b0535c681d0e73494c89e9839e041bbe0a5e35c0b05266fb8ab4af023e5debe` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/eigen_eval_loss.tag` | `da1d0dc616c1db1d3c06550d874b411e5b62437cb8c8832bf6333b8872014b08` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/eigen_generate.eigs` | `afabf50356247bea351e889c2494c424b0161434f4df852f2327a02254fb819a` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/eigen_generate.branch` | `8bccea0bf76906ac45185a5f022de9b56fbbb5f52f183638e94fc1962af1de90` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/eigen_generate.pre` | `5f3927e3c78357f82b03b80181659760ae74ffa7d729ce42b68f9e7b2c5340e1` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/eigen_generate.tag` | `ff692fc12977a17ca9ed05bcefbe4fddc553732b00c570291a7bbc2bb7199fdd` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/eigen_model_load.eigs` | `248bf39f3272d2ff3900309184f12244ea9681db2602a80cbccb101e32f1726a` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/eigen_model_load.branch` | `af5bda3ccb7070cadf2f84dd304a31808d461d92603b4b2e247f0234c06fc2d6` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/eigen_model_load.pre` | `af5bda3ccb7070cadf2f84dd304a31808d461d92603b4b2e247f0234c06fc2d6` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/eigen_model_load.tag` | `af5bda3ccb7070cadf2f84dd304a31808d461d92603b4b2e247f0234c06fc2d6` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/model_load_weights.eigs` | `03aeb11bd40bdd14001be0711d6251c70178a3599b3e9feb1ca644a3cf63f8ae` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/model_load_weights.branch` | `af5bda3ccb7070cadf2f84dd304a31808d461d92603b4b2e247f0234c06fc2d6` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/model_load_weights.pre` | `af5bda3ccb7070cadf2f84dd304a31808d461d92603b4b2e247f0234c06fc2d6` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/model_load_weights.tag` | `af5bda3ccb7070cadf2f84dd304a31808d461d92603b4b2e247f0234c06fc2d6` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/native_train_step_builtin.eigs` | `931ab975eb3397d3449112d36c2e858d417a8c5546f08306604df0d4e472e1d5` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/native_train_step_builtin.branch` | `3c8484817b38a96f35a6b27281ecc30637f4ad1db2dd887c81abcc0b8b031733` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/native_train_step_builtin.pre` | `4a3db585103dcc53f38415d24a68a0283c9dbf9cb788fec37138a14866024485` | SYNC11-model-retirement |
+| `tests/phase2/builtins/builtins/native_train_step_builtin.tag` | `4a3db585103dcc53f38415d24a68a0283c9dbf9cb788fec37138a14866024485` | SYNC11-model-retirement |
+
+The accepted bank anchor is `5b3b64db40cdd50c42c8ad3e9c913bb5d36a9e1a`.
+The six `.branch` entries in the frozen amendment table read `DELETED`.
+The remaining population is 303 builtin rows and 304 cases: b46, c75, d48,
+e38, f19, g77; profiles release283, server16, db3, zlib1. Server capability
+witnessing now covers its surviving HTTP and NET capabilities. The existing
+plant set names none of these retired functions or cases; no plant is deleted.
+The active N6 re-render population contains none of the six retired paths;
+its 67 active rows, source-bound kind witnesses, original derivation digest and
+all surviving frozen bytes stay unchanged. The existing narrow retirement
+protocol in `tools/phase2_float_amend.py` and `tests/phase2/r17_float_text.json`
+now explicitly includes these six paths under SYNC11-model-retirement, anchored
+to the immutable accepted bank above, with both source and branch SHA-256.
+The two earlier S10-D2 entries retain their original ruling, anchor and hashes.
+No additional missing path, alternate anchor or changed prior hash is accepted.
+Historical import and amendment tables earlier in this log remain provenance,
+not declarations of current model capabilities.

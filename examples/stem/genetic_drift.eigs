@@ -87,7 +87,7 @@ print of ("Still polymorphic: " + (str of (n_trials - fixations - losses)) + "/"
 print of ""
 
 # Statistics on final frequencies
-avg_freq is mean of final_freqs
+avg_freq is stats_mean of final_freqs
 sd_freq is std_dev of final_freqs
 print of ("Mean final frequency: " + (str of avg_freq) + "  (expected: 0.5)")
 print of ("Std dev of final frequency: " + (str of sd_freq))

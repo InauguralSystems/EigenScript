@@ -1,1 +1,0 @@
-- Enforce new suite sections as standalone fragments instead of inline runner additions (#1907).

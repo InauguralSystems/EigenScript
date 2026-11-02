@@ -119,11 +119,22 @@ Value* builtin_buf_get(Value *arg) {
         /* fs:CHANNEL the rt_error above already raised */
         return make_float(0);
     }
-    int64_t idx = eigs_list_int(arg, 1, "buf_get");
+    EigsNum idx_n = eigs_list_number(arg, 1, "buf_get");
     if (g_has_error) return make_float(0);   /* fs:CHANNEL #1637: a non-number index raised */
+    int64_t idx;
+    if (idx_n.is_int) idx = idx_n.value.i64;
+    else if (!num_to_i64_exact(idx_n.value.f64, &idx)) {
+        rt_error(EK_VALUE, 0, EIGS_NO_INT_REP_FMT, "buf_get", idx_n.value.f64);
+        return make_float(0);
+    }
     if (idx < 0 || idx >= buf->data.buffer.count) {
-        rt_error(EK_INDEX, 0, "buffer index %lld out of range (length %d)",
-                 (long long)idx, buf->data.buffer.count);
+        /* Report the supplied kind as well as its value: N5 conversion does
+         * not turn a float argument into an int for N6 diagnostic text. */
+        char idx_text[32];
+        if (idx_n.is_int) eigs_int_text(idx_text, sizeof(idx_text), idx_n.value.i64);
+        else eigs_num_text(idx_text, sizeof(idx_text), idx_n.value.f64);
+        rt_error(EK_INDEX, 0, "buffer index %s out of range (length %d)",
+                 idx_text, buf->data.buffer.count);
         /* fs:CHANNEL the EK_INDEX rt_error above already raised (#502) */
         return make_float(0);
     }

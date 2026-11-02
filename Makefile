@@ -38,7 +38,6 @@ endif
 SRC_DIR := src
 SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_int.c $(SRC_DIR)/builtins_buf.c $(SRC_DIR)/builtins_host.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/fsutil.c $(SRC_DIR)/hash.c $(SRC_DIR)/alloc.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/lint_host.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/task.c $(SRC_DIR)/jit.c $(SRC_DIR)/jit_checked.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c $(SRC_DIR)/main.c
 HOSTED_SOURCES := $(SOURCES) $(SRC_DIR)/ext_gfx.c
-MODEL_SRC := $(SRC_DIR)/model_io.c $(SRC_DIR)/model_infer.c $(SRC_DIR)/model_train.c
 BINARY  := $(SRC_DIR)/eigenscript
 
 # CLI-only translation units: linked into the binary, never into the
@@ -47,7 +46,7 @@ BINARY  := $(SRC_DIR)/eigenscript
 # --step tape-stepper, stdio+isatty, same footing).
 CLI_ONLY := $(SRC_DIR)/main.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c
 
-SERVER_SOURCES := $(HOSTED_SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c $(MODEL_SRC)
+SERVER_SOURCES := $(HOSTED_SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c
 SERVER_DB_SOURCES := $(SERVER_SOURCES) $(SRC_DIR)/ext_db.c
 
 PREFIX  := $(HOME)/.local
@@ -57,7 +56,14 @@ PREFIX  := $(HOME)/.local
 # the runtime grows (it had, silently — nothing built this target in CI).
 LSP_SOURCES := $(SRC_DIR)/eigenlsp.c $(filter-out $(CLI_ONLY),$(SOURCES))
 LSP_BINARY  := $(SRC_DIR)/eigenlsp
-LSP_ASAN_BINARY := build/asan/lsp/eigenlsp
+# The sanitizer LSP links against one ASan runtime variant's objects (#2277).
+# Default `asan`; CI's ASan shards pass `asan-server`, the variant they have
+# already built, so the LSP step reuses those objects instead of compiling a
+# second sanitizer variant. Only ASan variants are accepted: anything else
+# would produce an uninstrumented "sanitizer" LSP.
+LSP_ASAN_VARIANT ?= asan
+LSP_ASAN_VARIANTS_OK := asan asan-server
+LSP_ASAN_BINARY := build/$(LSP_ASAN_VARIANT)/lsp/eigenlsp
 
 # The DAP server (#539 v3): the tape model TU plus the runtime it needs
 # (observer_slot classification, trace_name_is_internal). Same link
@@ -90,7 +96,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx gfx-x11-regressions pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked jit-checked-plant smi-trap
+.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx gfx-x11-regressions pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked jit-checked-plant smi-trap fsync-test-hooks
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -106,7 +112,7 @@ endef
 # re-pointing the alias or relinking the same variant mid-suite is caught
 # at the next section seam.
 VERDEF   := -DEIGENSCRIPT_VERSION='"$(VERSION)"'
-DEFS_OFF := -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0
+DEFS_OFF := -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0
 # EIGS_STR_LEN_CHECK (#1183): re-derive every cached VAL_STR length at every
 # read and abort on a mismatch. A wrong cached length is a silent
 # out-of-bounds read, strictly worse than the strlen it replaced, so the
@@ -120,11 +126,11 @@ FLAGS_release := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_release  := $(LDFLAGS) -ldl
 
 SRC_V_server := $(SERVER_SOURCES)
-FLAGS_server := $(CFLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+FLAGS_server := $(CFLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_server  := $(LDFLAGS) -ldl
 
 SRC_V_server-db := $(SERVER_DB_SOURCES)
-FLAGS_server-db := $(CFLAGS) -I/usr/include/postgresql -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+FLAGS_server-db := $(CFLAGS) -I/usr/include/postgresql -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_server-db  := $(LDFLAGS) -ldl -lpq
 
 SRC_V_zlib := $(HOSTED_SOURCES)
@@ -141,7 +147,7 @@ FLAGS_asan-gfx := $(FLAGS_asan)
 LIBS_asan-gfx := $(LIBS_asan)
 
 SRC_V_asan-server := $(SERVER_SOURCES)
-FLAGS_asan-server := $(ASAN_FLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+FLAGS_asan-server := $(ASAN_FLAGS) -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_asan-server  := -lm -lpthread -ldl
 
 SRC_V_tsan := $(SOURCES)
@@ -149,7 +155,7 @@ FLAGS_tsan := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGS_TSAN_TEST_SEAM $(D
 LIBS_tsan  := -lm -lpthread
 
 SRC_V_tsan-server := $(SERVER_SOURCES)
-FLAGS_tsan-server := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGS_TSAN_TEST_SEAM -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
+FLAGS_tsan-server := -fsanitize=thread $(WERROR_FLAGS) -g -O1 -DEIGS_TSAN_TEST_SEAM -DEIGENSCRIPT_EXT_HTTP=1 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_NET=1 -DEIGENSCRIPT_EXT_GFX=1 $(VERDEF)
 LIBS_tsan-server  := -lm -lpthread -ldl
 
 SRC_V_valgrind := $(HOSTED_SOURCES)
@@ -393,6 +399,16 @@ build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer: tests/test_embed_observer.c
 embed-observer-test: build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer
 	@echo "Embed observer test built: $<"
 
+# #1162: two host threads attach sequentially to one state. Use the same
+# owning-variant compile/link recipe as the other embed API C contracts.
+EMBED_MULTIATTACH_VARIANT ?= release
+EMBED_MULTIATTACH_OBJ := $(filter-out build/$(EMBED_MULTIATTACH_VARIANT)/main.o,$(OBJ_$(EMBED_MULTIATTACH_VARIANT)))
+build/$(EMBED_MULTIATTACH_VARIANT)/test_embed_multiattach: tests/test_embed_multiattach.c $(EMBED_MULTIATTACH_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(EMBED_MULTIATTACH_VARIANT)) -I$(SRC_DIR) -o $@ $< $(EMBED_MULTIATTACH_OBJ) $(LIBS_$(EMBED_MULTIATTACH_VARIANT))
+.PHONY: embed-multiattach-test
+embed-multiattach-test: build/$(EMBED_MULTIATTACH_VARIANT)/test_embed_multiattach
+	@echo "Embed multi-attach test built: $<"
+
 # #1171: one-writer compatibility and real setter routing; reuse the owning
 # variant without changing the CLI alias. GNU-style --wrap is test-only and
 # confined to Linux linking; portable runtime objects are unchanged.
@@ -466,11 +482,11 @@ embed-roads: build/$(ROAD_VARIANT)/embed_roads
 
 server-db: build/server-db/eigenscript
 	$(call RELINK,server-db)
-	@echo "EigenScript $(VERSION) (server: http+net+model+db) built. Binary: $$(du -sh build/server-db/eigenscript | cut -f1)"
+	@echo "EigenScript $(VERSION) (server: http+net+db) built. Binary: $$(du -sh build/server-db/eigenscript | cut -f1)"
 
 server: build/server/eigenscript
 	$(call RELINK,server)
-	@echo "EigenScript $(VERSION) (server: http+net+model) built. Binary: $$(du -sh build/server/eigenscript | cut -f1)"
+	@echo "EigenScript $(VERSION) (server: http+net) built. Binary: $$(du -sh build/server/eigenscript | cut -f1)"
 
 # Compatibility target names; release artifacts are now release/server/server-db.
 full: server-db
@@ -495,7 +511,7 @@ gfx: build
 
 # The label floor first (#1379): a runner overwritten by a generated plan has no
 # sections and no epilogue, so it ran nothing and exited 0.
-test: build sandbox-intern-test
+test: build sandbox-intern-test fsync-test-hooks
 	$(AUX_REFRESH)
 	bash tools/suite_label_check.sh
 	cd tests && bash run_all_tests.sh
@@ -581,7 +597,7 @@ $(SRC_DIR)/lsp_builtin_index.h: $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_int.c 
 $(LSP_BINARY): $(LSP_SOURCES) $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
 	$(CC) $(CFLAGS) -o $(LSP_BINARY) $(LSP_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
+		\
 		-DEIGENSCRIPT_EXT_DB=0 \
 		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 		$(LDFLAGS)
@@ -593,18 +609,33 @@ lsp: $(LSP_BINARY)
 # dependency, so rebuilding that shared path with an override can silently run
 # a newer release binary instead (#1365), and a real rebuild leaves local
 # release tests pointing at the instrumented executable.
-LSP_ASAN_RUNTIME_OBJ := $(filter-out $(patsubst $(SRC_DIR)/%.c,build/asan/%.o,$(CLI_ONLY)),$(OBJ_asan))
-build/asan/lsp/eigenlsp.o: $(SRC_DIR)/eigenlsp.c $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt | build/asan/lsp
-	$(CC) $(FLAGS_asan) -MMD -MP -c $< -o $@
-build/asan/lsp:
+#
+# eigenlsp.o is compiled with the SAME variant's flags as the runtime objects
+# it links, so the LSP TU and the runtime agree on every EIGENSCRIPT_EXT_*
+# define. Under `asan-server` that means ext_http/ext_net are linked in; the
+# sanitizer flags (ASAN_FLAGS) are identical across both variants.
+#
+# An invalid LSP_ASAN_VARIANT is refused only when lsp-asan is actually built
+# (the $(error) sits in that recipe, which make expands even under -n), so a
+# stray value in the environment does not break `make clean`, `make test`, etc.
+ifeq ($(filter $(LSP_ASAN_VARIANT),$(LSP_ASAN_VARIANTS_OK)),)
+lsp-asan:
+	$(error LSP_ASAN_VARIANT='$(LSP_ASAN_VARIANT)' is not an ASan variant (allowed: $(LSP_ASAN_VARIANTS_OK)))
+else
+LSP_ASAN_DIR := build/$(LSP_ASAN_VARIANT)/lsp
+LSP_ASAN_RUNTIME_OBJ := $(filter-out $(patsubst $(SRC_DIR)/%.c,build/$(LSP_ASAN_VARIANT)/%.o,$(CLI_ONLY)),$(OBJ_$(LSP_ASAN_VARIANT)))
+$(LSP_ASAN_DIR)/eigenlsp.o: $(SRC_DIR)/eigenlsp.c $(SRC_DIR)/lsp_stdlib_index.h $(SRC_DIR)/lsp_builtin_index.h $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt | $(LSP_ASAN_DIR)
+	$(CC) $(FLAGS_$(LSP_ASAN_VARIANT)) -MMD -MP -c $< -o $@
+$(LSP_ASAN_DIR):
 	@mkdir -p $@
--include build/asan/lsp/eigenlsp.d
+-include $(LSP_ASAN_DIR)/eigenlsp.d
 
-$(LSP_ASAN_BINARY): build/asan/lsp/eigenlsp.o $(LSP_ASAN_RUNTIME_OBJ)
-	$(CC) $(FLAGS_asan) -o $@ $^ $(LIBS_asan)
-	@echo "EigenScript LSP $(VERSION) (ASan+UBSan) built. Binary: $$(du -sh $@ | cut -f1)"
+$(LSP_ASAN_BINARY): $(LSP_ASAN_DIR)/eigenlsp.o $(LSP_ASAN_RUNTIME_OBJ)
+	$(CC) $(FLAGS_$(LSP_ASAN_VARIANT)) -o $@ $^ $(LIBS_$(LSP_ASAN_VARIANT))
+	@echo "EigenScript LSP $(VERSION) (ASan+UBSan, $(LSP_ASAN_VARIANT) runtime) built. Binary: $$(du -sh $@ | cut -f1)"
 
 lsp-asan: $(LSP_ASAN_BINARY)
+endif
 
 # Bounded diagnostic-state witness: compile the actual LSP/trace sources in
 # the test TU, against the requested runtime variant, without production hooks.
@@ -618,7 +649,7 @@ lsp-arming-test: build/$(LSP_ARMING_VARIANT)/test_lsp_arming
 $(DAP_BINARY): $(DAP_SOURCES) $(wildcard $(SRC_DIR)/*.h) Makefile VERSION tools/werror_flags.txt
 	$(CC) $(CFLAGS) -o $(DAP_BINARY) $(DAP_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
+		\
 		-DEIGENSCRIPT_EXT_DB=0 \
 		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 		$(LDFLAGS)
@@ -629,6 +660,14 @@ dap: $(DAP_BINARY)
 jit-smoke:
 	$(CC) -Wall -Wextra $(WERROR_FLAGS) -O2 -o /tmp/jit_smoke $(SRC_DIR)/jit.c $(SRC_DIR)/jit_smoke.c -lm
 	/tmp/jit_smoke
+
+# Dedicated CLI used to observe that both sync builtins reach fsync(2).  The
+# hook implementation and define are absent from every shipping variant.
+build/test/eigenscript_fsync_hooks: $(SOURCES) tests/fsync_test_hook.c $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(DEFS_OFF) $(VERDEF) -DEIGS_TEST_HOOKS -o $@ $(SOURCES) tests/fsync_test_hook.c $(LDFLAGS) -ldl
+
+fsync-test-hooks: build/test/eigenscript_fsync_hooks
 
 # Deliberately invalid local operand used only as the jit-checked lane's
 # positive control. The scanner accepts it, then the emitted witness aborts.
@@ -649,7 +688,7 @@ amalgamation:
 lib:
 	@mkdir -p build/obj
 	@for f in $(EMBED_SOURCES); do \
-		$(CC) $(CFLAGS) -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 \
+		$(CC) $(CFLAGS) -DEIGENSCRIPT_EXT_HTTP=0 \
 			-DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 			-c $$f -o build/obj/$$(basename $$f .c).o || exit 1; \
 	done
@@ -819,7 +858,7 @@ pgo:
 	@rm -f $(BINARY)   # may be a variant symlink — never write through it
 	$(CC) $(CFLAGS) -fprofile-generate=$(PGO_DIR) -o $(BINARY) $(SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
+		\
 		-DEIGENSCRIPT_EXT_DB=0 \
 		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 		$(LDFLAGS)
@@ -827,7 +866,7 @@ pgo:
 	@sh -c '$(PGO_RUN)'
 	$(CC) $(CFLAGS) -fprofile-use=$(PGO_DIR) -fprofile-correction -o $(BINARY) $(SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
+		\
 		-DEIGENSCRIPT_EXT_DB=0 \
 		-DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 		$(LDFLAGS)
@@ -845,7 +884,7 @@ coverage: coverage-clean
 		obj=$${src%.c}.o; \
 		$(CC) -O0 -g --coverage -Wall -Wextra $(WERROR_FLAGS) -c $$src -o $$obj \
 			-DEIGENSCRIPT_EXT_HTTP=0 \
-			-DEIGENSCRIPT_EXT_MODEL=0 \
+			\
 			-DEIGENSCRIPT_EXT_DB=0 \
 			-DEIGENSCRIPT_VERSION='"$(VERSION)"' || exit 1; \
 	done
@@ -870,11 +909,14 @@ coverage: coverage-clean
 # tree-walking evaluator (eval_node), leaving `make fuzz` unbuildable.
 FUZZ_SOURCES := $(filter-out $(CLI_ONLY),$(SOURCES))
 
-fuzz: fuzz/fuzz_stdin.c $(FUZZ_SOURCES)
+# fuzz/fuzz_stdin is the libFuzzer target's per-input body (fuzz_eigenscript.c)
+# under a one-input stdin driver, so the CI smoke (fuzz/run_fuzz.sh) checks the
+# contract the fuzzer runs, built with gcc and no libFuzzer (#1734).
+fuzz: fuzz/fuzz_stdin.c fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES)
 	$(CC) -g -fsanitize=address,undefined $(WERROR_FLAGS) -o fuzz/fuzz_stdin \
-		fuzz/fuzz_stdin.c $(FUZZ_SOURCES) \
+		fuzz/fuzz_stdin.c fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
+		\
 		-DEIGENSCRIPT_EXT_DB=0 \
 		-DEIGENSCRIPT_VERSION='"fuzz"' \
 		-lm -lpthread
@@ -892,7 +934,7 @@ fuzz-libfuzzer: fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES)
 		-o fuzz/fuzz_eigenscript \
 		fuzz/fuzz_eigenscript.c $(FUZZ_SOURCES) \
 		-DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 \
+		\
 		-DEIGENSCRIPT_EXT_DB=0 \
 		-DEIGENSCRIPT_VERSION='"fuzz"' \
 		-lm -lpthread
@@ -937,7 +979,7 @@ freestanding-libc-diff-riscv:
 freestanding-env-version-riscv32:
 	python3 -m ziglang cc -target riscv32-linux-musl -O2 -static \
 		-Wno-atomic-alignment -DEIGENSCRIPT_EXT_HTTP=0 \
-		-DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
+		-DEIGENSCRIPT_EXT_DB=0 \
 		-o /tmp/eigenscript-riscv32 $(SOURCES) -lm -lpthread
 	printf '%s\n' '#!/bin/sh' 'exec qemu-riscv32 /tmp/eigenscript-riscv32 "$$@"' > /tmp/eigenscript-riscv32-qemu
 	chmod +x /tmp/eigenscript-riscv32-qemu

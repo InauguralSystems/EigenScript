@@ -126,7 +126,7 @@ define _debug_hook(info) as:
                 elif pev.type == "keydown":
                     _handle_key of pev
                 else:
-                    ui.dispatch of [_root, pev]
+                    ui.ui_dispatch of [_root, pev]
                 pev is gfx_poll of null
             _dbg_full_render of null
             gfx_delay of 16
@@ -559,9 +559,9 @@ loop while _dbg_quit == 0:
             if ev.type == "mousedown" and ev.x < 70 and ev.y >= TOOLBAR_H and ev.y < (TOOLBAR_H + MAIN_H):
                 _on_source_mouse of [_source_canvas, ev]
             else:
-                ui.dispatch of [_root, ev]
+                ui.ui_dispatch of [_root, ev]
         else:
-            ui.dispatch of [_root, ev]
+            ui.ui_dispatch of [_root, ev]
         ev is gfx_poll of null
     if _dbg_quit == 0:
         _dbg_full_render of null

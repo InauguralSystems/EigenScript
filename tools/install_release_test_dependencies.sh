@@ -6,10 +6,13 @@ set -euo pipefail
 
 case "${1:-}" in
     linux)
+        # time: GNU time, which suite section [70d] (#827 peak-RSS gate) needs.
+        # Without it [70d] fails rather than skipping (hq#58); the dev image
+        # lacked it, so that gate measured nothing in every container lane.
         apt-get update
         apt-get install -y --no-install-recommends \
             libsdl2-dev libsdl2-mixer-2.0-0 xvfb xauth x11-utils xdotool \
-            python3-pil zlib1g-dev
+            python3-pil zlib1g-dev time
         ;;
     macos)
         runner="${2:-}"

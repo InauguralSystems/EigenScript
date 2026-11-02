@@ -26,18 +26,22 @@ runs:
       run: sudo apt-get update && sudo apt-get install -y gcc
     - name: Build minimal binary
       shell: bash
+      env:
+        ARTIFACT_LABEL: ${{ inputs.label }}
       run: |
         ./build.sh
-        cp src/eigenscript eigenscript-${{ inputs.label }}
-        chmod +x eigenscript-${{ inputs.label }}
+        cp src/eigenscript "eigenscript-$ARTIFACT_LABEL"
+        chmod +x "eigenscript-$ARTIFACT_LABEL"
     - name: Build full binary (Linux)
       if: runner.os == 'Linux'
       shell: bash
+      env:
+        ARTIFACT_LABEL: ${{ inputs.label }}
       run: |
         sudo apt-get install -y libpq-dev
         ./build.sh full
-        mv src/eigenscript eigenscript-full-${{ inputs.label }}
-        chmod +x eigenscript-full-${{ inputs.label }}
+        mv src/eigenscript "eigenscript-full-$ARTIFACT_LABEL"
+        chmod +x "eigenscript-full-$ARTIFACT_LABEL"
     - name: Install shared release test dependencies (Linux)
       if: runner.os == 'Linux'
       shell: bash
@@ -45,13 +49,16 @@ runs:
     - name: Install shared release test dependencies (macOS)
       if: runner.os == 'macOS'
       shell: bash
-      run: bash tools/install_release_test_dependencies.sh macos '${{ inputs.runner }}'
+      env:
+        RUNNER_LABEL: ${{ inputs.runner }}
+      run: bash tools/install_release_test_dependencies.sh macos "$RUNNER_LABEL"
     - name: Run tests against the release binary
       shell: bash
       env:
         TMPDIR: ${{ runner.temp }}
+        ARTIFACT_LABEL: ${{ inputs.label }}
       run: |
-        cp eigenscript-${{ inputs.label }} src/eigenscript
+        cp "eigenscript-$ARTIFACT_LABEL" src/eigenscript
         cd tests && bash run_all_tests.sh
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
       with:

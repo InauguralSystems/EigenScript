@@ -1,1 +1,0 @@
-- Fixed #1750 so a recorded builtin argument refusal replays as the same raise rather than a recorded value.

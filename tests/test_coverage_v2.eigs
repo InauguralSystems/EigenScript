@@ -31,7 +31,7 @@ assert of [evens[1] == 4, "CV2-06 listcomp filter second"]
 
 # --- Match/case with null ---
 val is null
-match_result is "none"
+match_result is "null"
 match val:
     case null:
         match_result is "got_null"
@@ -40,7 +40,7 @@ match val:
 assert of [match_result == "got_null", "CV2-07 match null case"]
 
 val2 is 42
-match_result2 is "none"
+match_result2 is "null"
 match val2:
     case 99:
         match_result2 is "wrong"
@@ -116,7 +116,7 @@ jd_bool_f is json_decode of "false"
 assert of [(not jd_bool_f), "CV2-27 json_decode false"]
 
 jd_null is json_decode of "null"
-assert of [(type of jd_null) == "none", "CV2-28 json_decode null"]
+assert of [(type of jd_null) == "null", "CV2-28 json_decode null"]
 
 # --- json_decode: escape sequences ---
 jd_esc is json_decode of "\"hello\\nworld\""
@@ -233,7 +233,7 @@ expect_error of [() => store_get of null, "CV2-66 store_get null arg raises"]
 
 # store_get with a valid handle but a missing key is NOT an error: returns null
 sg_nk is store_get of [tmp_store, "coll", 999]
-assert of [(type of sg_nk) == "none", "CV2-67 store_get numeric key miss"]
+assert of [(type of sg_nk) == "null", "CV2-67 store_get numeric key miss"]
 
 expect_error of [() => store_delete of null, "CV2-68 store_delete null arg raises"]
 
@@ -276,7 +276,7 @@ del is store_delete of [tmp_store, "items", key]
 assert of [del, "CV2-82 store_delete success"]
 
 got3 is store_get of [tmp_store, "items", key]
-assert of [(type of got3) == "none", "CV2-83 store_delete verified"]
+assert of [(type of got3) == "null", "CV2-83 store_delete verified"]
 
 # --- Store: collections ---
 cols is store_collections of tmp_store

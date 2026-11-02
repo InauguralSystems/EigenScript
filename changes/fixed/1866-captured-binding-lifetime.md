@@ -1,1 +1,0 @@
-- Keep captured bindings alive while closures read and rebind them concurrently (#1866).

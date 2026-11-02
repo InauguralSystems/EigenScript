@@ -35,34 +35,105 @@
 # leaves every temporal answer correct and takes `live` from 2944 kB flat to
 # 13952 kB / 90496 kB — this gate goes red, the semantic tests do not. That is
 # the whole reason this file exists separately from test_temporal_pruning.eigs.
+#
+# SKIP POLICY (hq#58). The peak-RSS half needs GNU time, Linux /proc
+# accounting, and an uninstrumented binary. The dev/CI image had no GNU time,
+# so this half printed SKIP and exited 0 in every container lane and on macOS
+# (only the release dry-run measured it), and the runner counted no skip. The
+# same silent skip hid #1709's slot-rehearsal growth from its builder. Now a
+# skip of the RSS half is allowed only when its key is listed, with a reason,
+# in tests/temporal_memory_skip_allowlist.txt; any other skip is a FAIL. The
+# four #868 window checks need none of the three and run first, everywhere.
 set -u
 
 EIGS="${EIGS:-./eigenscript}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# TMEM_GNU_TIME and TMEM_SKIP_ALLOWLIST exist for the skip-policy test
+# (tests/sections/70d1-temporal-memory-skips-hq58.sh); nothing else sets them.
+GNU_TIME="${TMEM_GNU_TIME:-/usr/bin/time}"
+ALLOWLIST="${TMEM_SKIP_ALLOWLIST:-$(cd "$(dirname "$0")" && pwd)/temporal_memory_skip_allowlist.txt}"
+
 PASS=0
 FAIL=0
+SKIPPED=0
 ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
 bad()  { echo "  FAIL: $1${2:+ ($2)}"; FAIL=$((FAIL+1)); }
+summary() { echo "TEMPORAL_MEM: $PASS passed, $FAIL failed, $SKIPPED skipped"; }
 
-# GNU time only. BSD/macOS `/usr/bin/time` has no `-f` and no `%M`, and its
-# maxrss units differ, so probe the exact invocation rather than the platform
-# name — a Linux box without GNU time skips for the same reason.
-if ! /usr/bin/time -f "PEAK_KB %M" true >/dev/null 2>&1; then
-    echo "  SKIP: GNU /usr/bin/time -f not available (peak RSS unmeasurable)"
-    echo "TEMPORAL_MEM: 0 passed, 0 failed (skipped)"
-    exit 0
+# ---- #868: the window boundary. No GNU time, /proc or uninstrumented binary
+# needed, so these run before the RSS probes, on every platform and build.
+#
+# The ring is bounded, so an old-enough ordinal is genuinely gone. It must NOT
+# come back as null: null already means "that assignment has not happened",
+# and answering an evicted ordinal the same way turns a dropped fact into a
+# confident wrong answer. Evicted raises; past-the-end stays null.
+cat > "$TMP/evict.eigs" <<'EOF'
+x is 0
+i is 0
+loop while i < 1000:
+    x is i
+    i is i + 1
+print of ("newest " + (str of (what is x when 1001)))
+print of ("oldest-retained-ok " + (str of (what is x when 900)))
+print of ("past-end " + (str of (what is x when 5000)))
+print of ("evicted " + (str of (what is x when 5)))
+EOF
+
+EV_OUT=$("$EIGS" "$TMP/evict.eigs" 2>&1); EV_RC=$?
+if [ "$EV_RC" -ne 0 ] && echo "$EV_OUT" | grep -q "outside the retained window"; then
+    ok "an evicted ordinal raises instead of answering null"
+else
+    bad "evicted ordinal did not raise" "rc=$EV_RC"
 fi
+if echo "$EV_OUT" | grep -q "^past-end null"; then
+    ok "an ordinal past the end is null (has not happened yet)"
+else
+    bad "past-the-end ordinal was not null" "$(echo "$EV_OUT" | grep past-end)"
+fi
+if echo "$EV_OUT" | grep -q "^newest 999"; then
+    ok "the newest ordinal is retained"
+else
+    bad "newest ordinal wrong" "$(echo "$EV_OUT" | grep newest)"
+fi
+
+# The window is configurable, and widening it makes the same ordinal readable —
+# which is what proves the raise above was the BOUND and not a lookup bug.
+EV2_OUT=$(EIGS_OCC_WINDOW=2000 "$EIGS" "$TMP/evict.eigs" 2>&1); EV2_RC=$?
+if [ "$EV2_RC" -eq 0 ] && echo "$EV2_OUT" | grep -q "^evicted 3"; then
+    ok "EIGS_OCC_WINDOW widens the retained window (same ordinal now reads 3)"
+else
+    bad "EIGS_OCC_WINDOW did not widen the window" "rc=$EV2_RC"
+fi
+
+# ---- the peak-RSS half: decline only with an allowlisted key.
+# rss_unmeasurable <key> <reason>: an allowlisted key is a counted SKIP; any
+# other key is a FAIL, because a skip nobody reviewed is the gate measuring
+# nothing while the run stays green.
+rss_unmeasurable() {
+    local key="$1" why="$2" reason
+    reason=$(awk -F '\t' -v k="$key" '$1 == k && NF >= 2 && $2 ~ /[^[:space:]]/ { print $2; exit }' \
+        "$ALLOWLIST" 2>/dev/null)
+    if [ -n "$reason" ]; then
+        echo "  SKIP: peak-RSS half not measured: $why [allowlisted: $key]"
+        SKIPPED=$((SKIPPED+1))
+        summary
+        [ "$FAIL" -eq 0 ]
+        exit $?
+    fi
+    bad "peak-RSS half not measured: $why" "skip '$key' is not in $(basename "$ALLOWLIST"); a skip there needs a reviewed reason"
+    summary
+    exit 1
+}
 
 # Linux only: the thresholds below are calibrated against Linux VmRSS
 # accounting, and `ulimit -v` (the safety belt that turns a regression into a
 # failed test instead of a dead box) is a no-op on macOS. Same platform
-# reasoning as test_http_rss_growth.sh.
+# reasoning as test_http_rss_growth.sh. Probed first so that macOS reports the
+# platform, not its BSD `time`.
 if [ ! -r /proc/self/status ]; then
-    echo "  SKIP: /proc not available (RSS accounting differs on this platform)"
-    echo "TEMPORAL_MEM: 0 passed, 0 failed (skipped)"
-    exit 0
+    rss_unmeasurable no-procfs "/proc not available (RSS accounting differs on this platform)"
 fi
 
 # MUST NOT run against a sanitizer build: ASan's redzones and quarantine grow
@@ -70,9 +141,15 @@ fi
 # manufacture growth between the two iteration counts. Same rationale as
 # test_http_rss_growth.sh.
 if grep -qa "__asan_init" "$EIGS" 2>/dev/null; then
-    echo "  SKIP: sanitizer build — peak RSS is dominated by ASan overhead"
-    echo "TEMPORAL_MEM: 0 passed, 0 failed (skipped)"
-    exit 0
+    rss_unmeasurable sanitizer "sanitizer build — peak RSS is dominated by ASan overhead"
+fi
+
+# GNU time only. BSD/macOS `/usr/bin/time` has no `-f` and no `%M`, and its
+# maxrss units differ, so probe the exact invocation rather than the platform
+# name. On Linux this is a FAIL, not an allowlisted skip: the dev/CI image
+# installs `time` (tools/install_release_test_dependencies.sh linux).
+if ! "$GNU_TIME" -f "PEAK_KB %M" true >/dev/null 2>&1; then
+    rss_unmeasurable no-gnu-time "GNU $GNU_TIME -f not available (peak RSS unmeasurable; install the 'time' package)"
 fi
 
 cat > "$TMP/base.eigs" <<'EOF'
@@ -148,7 +225,7 @@ N_BIG=1600000
 peak_kb() {
     local prog="$1" n="$2" out rc
     out=$( ulimit -v 1500000 2>/dev/null || true
-           N="$n" /usr/bin/time -f "PEAK_KB %M" "$EIGS" "$prog" 2>&1 >/dev/null )
+           N="$n" "$GNU_TIME" -f "PEAK_KB %M" "$EIGS" "$prog" 2>&1 >/dev/null )
     rc=$?
     if [ $rc -ne 0 ]; then
         echo "" ; return 1
@@ -159,7 +236,7 @@ peak_kb() {
 BASE_BIG=$(peak_kb "$TMP/base.eigs" "$N_BIG")
 if [ -z "$BASE_BIG" ]; then
     bad "baseline program did not run" "check $EIGS"
-    echo "TEMPORAL_MEM: $PASS passed, $FAIL failed"
+    summary
     exit 1
 fi
 echo "  baseline (no temporal query) at N=$N_BIG: ${BASE_BIG} kB"
@@ -194,49 +271,5 @@ for prog in dead live at_live when_live; do
     fi
 done
 
-# ---- #868: the window boundary.
-#
-# The ring is bounded, so an old-enough ordinal is genuinely gone. It must NOT
-# come back as null: null already means "that assignment has not happened",
-# and answering an evicted ordinal the same way turns a dropped fact into a
-# confident wrong answer. Evicted raises; past-the-end stays null.
-cat > "$TMP/evict.eigs" <<'EOF'
-x is 0
-i is 0
-loop while i < 1000:
-    x is i
-    i is i + 1
-print of ("newest " + (str of (what is x when 1001)))
-print of ("oldest-retained-ok " + (str of (what is x when 900)))
-print of ("past-end " + (str of (what is x when 5000)))
-print of ("evicted " + (str of (what is x when 5)))
-EOF
-
-EV_OUT=$("$EIGS" "$TMP/evict.eigs" 2>&1); EV_RC=$?
-if [ "$EV_RC" -ne 0 ] && echo "$EV_OUT" | grep -q "outside the retained window"; then
-    ok "an evicted ordinal raises instead of answering null"
-else
-    bad "evicted ordinal did not raise" "rc=$EV_RC"
-fi
-if echo "$EV_OUT" | grep -q "^past-end null"; then
-    ok "an ordinal past the end is null (has not happened yet)"
-else
-    bad "past-the-end ordinal was not null" "$(echo "$EV_OUT" | grep past-end)"
-fi
-if echo "$EV_OUT" | grep -q "^newest 999"; then
-    ok "the newest ordinal is retained"
-else
-    bad "newest ordinal wrong" "$(echo "$EV_OUT" | grep newest)"
-fi
-
-# The window is configurable, and widening it makes the same ordinal readable —
-# which is what proves the raise above was the BOUND and not a lookup bug.
-EV2_OUT=$(EIGS_OCC_WINDOW=2000 "$EIGS" "$TMP/evict.eigs" 2>&1); EV2_RC=$?
-if [ "$EV2_RC" -eq 0 ] && echo "$EV2_OUT" | grep -q "^evicted 3"; then
-    ok "EIGS_OCC_WINDOW widens the retained window (same ordinal now reads 3)"
-else
-    bad "EIGS_OCC_WINDOW did not widen the window" "rc=$EV2_RC"
-fi
-
-echo "TEMPORAL_MEM: $PASS passed, $FAIL failed"
+summary
 [ "$FAIL" -eq 0 ]

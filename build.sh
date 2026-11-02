@@ -51,7 +51,7 @@ if [ "$1" = "lsp" ]; then
     LSP_SOURCES="$LSP_SOURCES eigenlsp.c"
     $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenlsp $LSP_SOURCES \
         -DEIGENSCRIPT_EXT_HTTP=0 \
-        -DEIGENSCRIPT_EXT_MODEL=0 \
+        \
         -DEIGENSCRIPT_EXT_DB=0 \
         -DEIGENSCRIPT_VERSION="\"$VERSION\"" \
         $JIT_FLAGS \
@@ -59,10 +59,10 @@ if [ "$1" = "lsp" ]; then
     echo "EigenScript LSP $VERSION built. Binary: $(du -sh eigenlsp | cut -f1)"
 elif [ "$1" = "server-db" ] || [ "$1" = "full" ]; then
     # Server + PostgreSQL profile. "full" is the compatibility spelling.
-    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c ext_http.c ext_net.c ext_db.c model_io.c model_infer.c model_train.c \
+    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c ext_http.c ext_net.c ext_db.c \
         -I/usr/include/postgresql \
         -DEIGENSCRIPT_EXT_HTTP=1 \
-        -DEIGENSCRIPT_EXT_MODEL=1 \
+        \
         -DEIGENSCRIPT_EXT_DB=1 \
         -DEIGENSCRIPT_EXT_NET=1 \
         -DEIGENSCRIPT_EXT_GFX=1 \
@@ -72,9 +72,9 @@ elif [ "$1" = "server-db" ] || [ "$1" = "full" ]; then
     echo "EigenScript $VERSION (server-db) built. Binary: $(du -sh eigenscript | cut -f1)"
 elif [ "$1" = "server" ] || [ "$1" = "http" ] || [ "$1" = "net" ]; then
     # Network server profile. "http" and "net" are compatibility spellings.
-    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c ext_http.c ext_net.c model_io.c model_infer.c model_train.c \
+    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c ext_http.c ext_net.c \
         -DEIGENSCRIPT_EXT_HTTP=1 \
-        -DEIGENSCRIPT_EXT_MODEL=1 \
+        \
         -DEIGENSCRIPT_EXT_DB=0 \
         -DEIGENSCRIPT_EXT_NET=1 \
         -DEIGENSCRIPT_EXT_GFX=1 \
@@ -86,7 +86,7 @@ else
     # Hosted release: gfx is compiled in; SDL remains lazy-loaded via dlopen.
     $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c \
         -DEIGENSCRIPT_EXT_HTTP=0 \
-        -DEIGENSCRIPT_EXT_MODEL=0 \
+        \
         -DEIGENSCRIPT_EXT_DB=0 \
         -DEIGENSCRIPT_EXT_GFX=1 \
         -DEIGENSCRIPT_VERSION="\"$VERSION\"" \

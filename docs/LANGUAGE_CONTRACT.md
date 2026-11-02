@@ -94,8 +94,10 @@ own local/captured/module-top-level state creates a fresh local — it
 does not depend on what existed in the loader's scope at load time
 (it used to: a global declared before the load was silently
 write-through, one declared after was not). Reads and calls resolve
-dynamically across the boundary; share mutable state via dict/list
-fields. A **parse error** in a loaded file (via `import`, `load_file`, or
+only inside the module, its imports and the stdlib. Importer program globals
+are not ambient, but values injected through embedding host-registration APIs
+are visible in every module like builtins. `load_file`
+continues to share its caller's scope. A **parse error** in a loaded file (via `import`, `load_file`, or
 `eval`) raises a catchable runtime error rather than silently executing a
 partial AST — consistent with the **Errors** promise.
 
@@ -194,15 +196,16 @@ examples (executed by the suite).
   you tell. Stated here because the trade should be visible rather than
   discovered.
 - Ints print exact decimal digits. For floats, `str of` produces the shortest
-  representation that round-trips back to the same double. During the builtin
-  transition, `num of` and JSON decoders still produce floats; an integer above
-  2^53 must not be round-tripped through those readers yet.
+  round-trip representation, including `.0` for integral floats and signed
+  zero. `num of` and JSON decoders preserve integer text within int64 exactly;
+  a decimal point or exponent selects a float (N10, N14).
 - **Every producer of number text obeys that same rule** — `str of`,
   `json_encode`, `json_build`, `json_path`, and the SIGUSR1 observer dump
   all share one implementation (`eigs_num_text`), so a JSON round-trip
   returns the same double and `json_encode of x` equals `str of x` for
   every float (#875).
-- `%` follows the dividend's sign (C semantics): `-7 % 3 == -1`.
+- `%` uses floor modulo: a nonzero remainder follows the divisor's sign
+  (`-7 % 3 == 2`). `//` is floor division; `/` always returns a float (N4).
 
 **Status:** Enforced — `tests/test_number_format.eigs`,
 `tests/test_numeric_guard.eigs` (NG20–NG30 cover the flags),
@@ -218,9 +221,9 @@ examples (executed by the suite).
   byte-offset operations — this is the documented consequence of the byte
   model, not a bug.
 - Strings are immutable; comparison (`==`, `<`) is bytewise.
-- String literals recognize the escapes `\n \t \r \\ \"`; any other `\x`
-  yields the literal character `x` (the backslash is dropped) — this is how
-  `\{` and `\}` produce literal braces in f-strings. There is no `\0`,
+- String literals recognize the escapes `\n \t \r \\ \"`; f-strings also
+  recognize `\{` and `\}` for literal braces. Any other escape is a
+  compile-time error. There is no `\0`,
   `\xNN`, or `\u{…}` escape, so a string cannot embed a NUL or an arbitrary
   byte from source (only the raw bytes present in the source file flow
   through). An embedded NUL, if one ever arrived from file/buffer input,
@@ -447,18 +450,22 @@ From lowest (binds loosest) to highest (binds tightest):
 | 1 | `\|>` | pipe |
 | 2 | `or` | |
 | 3 | `and` | |
-| 4 | `==` `!=` `<` `>` `<=` `>=` | comparison |
-| 5 | `\|` | bitwise OR |
-| 6 | `^` | bitwise XOR |
-| 7 | `&` | bitwise AND |
-| 8 | `<<` `>>` | shift |
-| 9 | `+` `-` | |
-| 10 | `*` `/` `%` | |
-| 11 | `-` `not` `~` | unary (prefix) |
-| 12 | `of` | function application |
-| 13 | `[]` `.` `( )` | indexing, field access, grouping |
+| 4 | `not` | prefix logical negation; right-associative |
+| 5 | `==` `!=` `<` `>` `<=` `>=` | comparison |
+| 6 | `\|` | bitwise OR |
+| 7 | `^` | bitwise XOR |
+| 8 | `&` | bitwise AND |
+| 9 | `<<` `>>` | shift |
+| 10 | `+` `-` | |
+| 11 | `*` `/` `%` | |
+| 12 | `-` `~` | unary (prefix) |
+| 13 | `of` | function application |
+| 14 | `[]` `.` `( )` | indexing, field access, grouping |
 
-Two consequences worth knowing:
+Three consequences worth knowing:
+- **Comparisons bind tighter than `not`.** `not 1 < 2` is `not (1 < 2)`.
+  Arithmetic unary `-` and bitwise unary `~` bind tightly; `not` is below `of`,
+  so `f of not x` is a parse error and must be written `f of (not x)`.
 - **Bitwise binds tighter than comparison** (unlike C). `x & mask == 0`
   parses as `(x & mask) == 0` — the intended reading, avoiding C's classic
   footgun.

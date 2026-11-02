@@ -1,0 +1,1 @@
+- Harden privileged GitHub Actions scripts against untrusted expression interpolation and validate dispatched release versions (#2218).

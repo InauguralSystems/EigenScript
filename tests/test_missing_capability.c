@@ -105,7 +105,6 @@ int main(void) {
 #define M_HTTP(name, fn) missing(#name, "HTTP capability unavailable; use the server profile");
 #define M_DB(name, fn) missing(#name, "database capability unavailable; use the server-db profile");
 #define M_NET(name, fn) missing(#name, "network capability unavailable; use the server profile");
-#define M_MODEL(name, fn) missing(#name, "model capability unavailable; use the server profile");
 #define P(name, fn) available(#name);
 #if EIGENSCRIPT_EXT_HTTP
     EIGS_HTTP_BUILTINS(P) EIGS_HTTP_REQUEST_BUILTINS(P)
@@ -122,12 +121,8 @@ int main(void) {
 #else
     EIGS_NET_BUILTINS(M_NET)
 #endif
-#if EIGENSCRIPT_EXT_MODEL
-    EIGS_MODEL_BUILTINS(P)
-#else
-    EIGS_MODEL_BUILTINS(M_MODEL)
-#endif
-    check(omitted + present == 40, "independent extension population pin");
+
+    check(omitted + present == 30, "independent extension population pin");
     check(!eigs_is_registered_builtin("cold_unknown_name"), "ordinary unknown discovery control");
     EigsValue *v = eigs_eval_string("# line control\ncold_unknown_name\n");
     check(!v && eigs_has_error() && eigs_last_error_kind() &&

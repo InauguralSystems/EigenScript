@@ -182,7 +182,7 @@ approx of [uniform_cdf of [0.5, 0, 1], 0.5, "uniform_cdf"]
 approx of [expected_value of [[1, 2, 3], [0.2, 0.3, 0.5]], 2.3, "expected_value"]
 
 # ---------------- STATISTICS ----------------
-approx of [mean of [1, 2, 3, 4], 2.5, "mean"]
+approx of [stats_mean of [1, 2, 3, 4], 2.5, "mean"]
 approx of [median of [1, 2, 3, 4, 5], 3, "median odd"]
 approx of [median of [1, 2, 3, 4], 2.5, "median even"]
 exact of [mode of [1, 2, 2, 3], 2, "mode"]

@@ -439,16 +439,16 @@ deleted in R2.2), and it measures under the Makefile's exact flags.
   ```
   release      (29 TUs) -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment
                -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
-               -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0
+               -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0
                -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION="0.46.0"
   server-db    (35 TUs) the same CFLAGS, -I/usr/include/postgresql -DEIGENSCRIPT_EXT_HTTP=1
-               -DEIGENSCRIPT_EXT_MODEL=1 -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1
+               -DEIGENSCRIPT_EXT_DB=1 -DEIGENSCRIPT_EXT_NET=1
                -DEIGENSCRIPT_EXT_GFX=1 (no ZLIB: the Makefile's FLAGS_server-db omits it)
   zlib         (29 TUs) release's flags plus -DEIGENSCRIPT_EXT_ZLIB=1
   freestanding (23 TUs) -O2 -ffreestanding -fno-stack-protector -U_FORTIFY_SOURCE
                -Werror=implicit-function-declaration -Werror=switch -Werror=comment
                -Werror=misleading-indentation -DEIGENSCRIPT_FREESTANDING=1
-               -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0
+               -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0
   all          (41 TUs) CFLAGS plus every extension, -DEIGENSCRIPT_EXT_ZLIB=1 included
   ```
 - The generated `lsp_stdlib_index.h` is produced into the copy
@@ -493,7 +493,7 @@ first commit.
 | `AST_NUM` | 52 | Under (B) the node kind still means "number literal". Its payload `num` is renamed in R1.3, so all 7 reads of the literal's value are flagged; a site that only tests the kind is right for both kinds. The critic made the same call. |
 | `eigs_value_as_num` | 48 | The embed accessor: 40 call sites in `embed_smoke.c` and 6 in `embed_concurrent.c` (the embed test harnesses), plus its definition (`eigs_embed.c`) and declaration (`eigs_embed.h`). Q3 decided it converts an int as `lua_tonumber` does, so "this value as a double" is unchanged; exact ints get `eigs_value_as_int`/`eigs_value_is_int` (R1.8). |
 | definitions | 44 | Declarations and bodies of the renamed and deleted names themselves. |
-| `strtod` 14, `atof` 1 | 15 | The libc parsers. The lexer's result reaches the renamed `num_val` through `tok_add`, whose store is flagged; the literal's kind changes `tok_add`'s parameter, which forces the call. The JSON, store and trace scalar parsers return `make_num(d)` a few lines on (flagged, R1.6); trace.c:2324 fills a buffer's f64 storage (Q2). The rest parse model hyperparameters (float), the tape's observer config, and `tape_read.c:368`, which feeds the observer replay a double (`tape_read.c:635`); round 1 observes ints as doubles live and on replay alike (§8 risks), and round 3's change to `observer_slot_record_value`'s parameter forces this line. |
+| `strtod` 14, `atof` 1 | 15 | The libc parsers. The lexer's result reaches the renamed `num_val` through `tok_add`, whose store is flagged; the literal's kind changes `tok_add`'s parameter, which forces the call. The JSON, store and trace scalar parsers return `make_num(d)` a few lines on (flagged, R1.6); trace.c:2324 fills a buffer's f64 storage (Q2). After sync11 retires the archived extension readers, the surviving remainder parses the tape's observer config, and `tape_read.c:368`, which feeds the observer replay a double (`tape_read.c:635`); round 1 observes ints as doubles live and on replay alike (§8 risks), and round 3's change to `observer_slot_record_value`'s parameter forces this line. |
 | `num_to_i64_exact` 6, `eigs_num_text` 3 | 9 | Pure helpers over a double, unchanged in meaning; every input reaches them through a renamed reader. N6 changes the formatter's output on purpose in R1.7, a token-less change listed in §2.7 with its rows. |
 | `VAL_NUM_OFFSET` in jit.c | 3 | `offsetof` uses, which the attribute does not reach. A real rename does: renaming `num_` to `f64_` (and the macro) in a further scratch copy gives exactly 3 errors, jit.c:2367, 2368 and 3471. |
 | **total** | **257** | |
@@ -1398,9 +1398,9 @@ column against the note both ways: a row's note says "continuous" exactly
 when its `q7` column is not `-`. Counts: geometry 9, bounded 13, magnitude 13.
 
 **Counts** (from the table below, checked by `tools/phase2_inventory.py`,
-which prints them): 309 numeric builtins (including N9, R1.6g; S10-D2 retires
-`proc_read_buf`). By class: 37 int-preserving, 58 float-producing,
-161 int-requiring, 53 other. The decided Q1 moved 16 rows
+which prints them): 303 numeric builtins (including N9, R1.6g; S10-D2 and
+sync11 explicitly retire the obsolete process/model/corpus rows). By class:
+37 int-preserving, 57 float-producing, 158 int-requiring, 51 other. The decided Q1 moved 16 rows
 from other to int-requiring (counts, byte values, handles, flags and
 selectors); `ppu_render_frame` is a new int-requiring row; design round 3
 moved `buf_from_pcm16le` from float-producing to int-requiring (its inputs are
@@ -1488,7 +1488,6 @@ current state behind several rows:
 | `buf_set` | int-requiring | - | - | index; the value converts to float storage (Q2) |
 | `buf_to_pcm16le` | other | - | bounded | the samples are continuous: clamped to [-1, 1] and rounded (Q7 bounded, today's behaviour); the result is byte values |
 | `buffer` | int-requiring | - | - | size or [rows, cols] |
-| `build_corpus` | int-requiring | - | - | counts; returns counts |
 | `ceil` | int-preserving | LOSS | - | Lua math.ceil: an int when the result fits int64, else a float |
 | `channel` | int-preserving | - | - | handle dict with int id/gen fields |
 | `channel_closed` | int-requiring | - | - | channel handle ids |
@@ -1504,9 +1503,6 @@ current state behind several rows:
 | `dispatch` | int-requiring | - | - | integer table key, already exactness-checked |
 | `divide` | float-producing | - | - | mirrors `/` (Lua §3.4.1: always float) |
 | `dot` | float-producing | - | - | buffer dot product |
-| `eigen_eval_loss` | float-producing | - | - | token ids are indices; the loss is a float |
-| `eigen_generate` | int-requiring | - | - | token ids and max_tokens are integer-valued (N5, Q1); temperature and top_p are floats |
-| `eigen_model_load` | other | - | - | parses model JSON numbers with strtod |
 | `exec_capture` | other | - | magnitude | the timeout is a continuous duration in seconds: a poll interval the C int cannot hold raises (Q7 magnitude); returns exit status ints |
 | `exit` | int-requiring | - | - | exit code: N5, then the C int range (Q1) |
 | `exp` | float-producing | - | - | Lua math.exp |
@@ -1563,11 +1559,9 @@ current state behind several rows:
 | `max` | int-preserving | LOSS | - | Lua math.max returns the winning argument with its own subtype; empty input raises `value` in both call forms and strict modes (R1.6b-D2, #1895); a NaN argument makes the result NaN (Q8: IEEE 754-2019 maximum) |
 | `mean` | float-producing | - | - | arithmetic mean |
 | `min` | int-preserving | LOSS | - | Lua math.min; empty input raises `value` in both call forms and strict modes (R1.6b-D2, #1895); a NaN argument makes the result NaN (Q8: IEEE 754-2019 minimum) |
-| `model_load_weights` | other | - | - | alias of eigen_model_load |
 | `monotonic_ms` | float-producing | - | - | fractional milliseconds |
 | `monotonic_ns` | int-preserving | LOSS | - | exact below 2^53 ns (104 days of uptime), a rounded double after; an exact int under N1 |
 | `multiply` | int-preserving | LOSS | - | scalar arm mirrors `*` (overflow raises, (A)); buffer arms float |
-| `native_train_step_builtin` | int-requiring | - | - | token ids are integer-valued (N5, Q1); lr is a float (a numeric string is accepted through strtod) |
 | `nearest_in_range` | float-producing | - | - | geometry floats; the `index` field is an int |
 | `nearest_in_range_all` | float-producing | - | - | geometry floats; the `index` field is an int |
 | `negative` | int-preserving | LOSS | - | mirrors unary `-`; negating INT64_MIN raises (N4b) |
@@ -1967,8 +1961,7 @@ numbers are at `0740af03`.
   - builtins.c:907 encode and 1406 `builtin_json_decode`, plus
     `eigs_json_parse_value`, `json_path` and `json_build`;
   - the ext_store.c record codec;
-  - ext_http.c request/response JSON;
-  - model_io.c `json_*` (model files).
+  - ext_http.c request/response JSON.
 - **(A) (overflow raises, no wraparound):** the N3 and N4b sites; `sum`,
   `shared_incr`, `sign_extend`'s subtraction (R1.6b-D1), the `add`/`subtract`/`multiply` scalar arms; the N9
   builtins provide explicit wrapping.
@@ -2217,15 +2210,17 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    |---|---|---:|---|
    | R1.6a | No behaviour change: §2.6 readers except `eigs_geom_shape`; bounded and magnitude included; opt-in meter; pre-registered table and tool; round order and records | none migrate | mechanical: C reader test and table calibration |
    | R1.6b | Every LOSS row in any file, plus `builtins.c`'s other int-preserving rows | 46 | `A.sum-overflow-raises`, `A.tensor-scalar-overflow-raises`, `N5.range-fraction-raises`, `N5.store-key-fraction-raises`, `N10.partial-refused`, `N10.radix`, `N10.int-or-float`, `N14.json-path-int-exact`, `N14.decode-kinds` |
-   | R1.6c | Remaining `builtins.c` (including `set_exit_code`); `builtins_host.c` (including `read_text`); `vm.c`'s builtin | 77 | `N5.substr-fraction-raises` |
-   | R1.6d | Non-LOSS `builtins_tensor.c`, `builtins_buf.c`, `model_io.c`, `model_infer.c`, `model_train.c`; re-decide `buffer_read_num` sites as f64, byte or index reads | 53 | `N5.gather-index-fraction-raises`, `N5.pcm16-byte-raises` |
+   | R1.6c | Remaining `builtins.c` (including `set_exit_code`); `builtins_host.c` (including `read_text`); `vm.c`'s builtin | 75 | `N5.substr-fraction-raises` |
+   | R1.6d | Non-LOSS `builtins_tensor.c`, `builtins_buf.c`; re-decide `buffer_read_num` sites as f64, byte or index reads | 48 | `N5.gather-index-fraction-raises`, `N5.pcm16-byte-raises` |
    | R1.6e | `ext_gfx.c`, the Q7 readers and whole-shape `eigs_geom_shape` clipping (Liang-Barsky for lines) | 38 | `gate.N5.q7-readers`; table run |
    | R1.6f | Non-LOSS `ext_store.c`, `ext_db.c`, `ext_http.c`, `ext_net.c` | 19 | mechanical: table run |
    | R1.6g | N9's 77 new width-family builtins in `builtins_int.c`, Rust std oracle | +77 | `N9.wrapping`, `N9.checked-raises`, `N9.saturating`, `N9.unsigned-ops`, `N9.fround` |
    | R1.6z | Remaining bridge sites in runtime, containers, embed, trace, compiler and task; delete all 21 tokens and all helpers left without callers | none | mechanical: deletion compile and final full table |
 
    The pre-N9 rows summed to 233; R1.6g added 77 for a total of 310.
-   S10-D2 later retires `proc_read_buf` from round c: current c=76, total=309.
+   S10-D2 later retires `proc_read_buf` from round c (c=76,total=309);
+   sync11 retires one corpus row from c and five archived extension rows
+   from d: current c=75,d=48,total=303.
    Its two frozen cases and dependent plants are explicitly retired in
    `tests/phase2/builtins/RULINGS.md` and `builtins_changes.md`; the unchanged
    `read_bytes_buf` case preserves the host-byte buffer f64 witness. Ruling R1.6a-D1 added `read_text`, already
@@ -2266,12 +2261,10 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    | `src/ext_http.c` | 11 | 0 | 11 |
    | `src/ext_net.c` | 14 | 0 | 14 |
    | `src/ext_store.c` | 34 | 34 | 33 |
-   | `src/model_infer.c` | 15 | 0 | 15 |
-   | `src/model_train.c` | 4 | 0 | 4 |
    | `src/task.c` | 5 | 5 | 5 |
    | `src/trace.c` | 1 | 1 | 1 |
    | `src/vm.c` | 80 | 80 | 67 |
-   | **Total** | **1337** | **1205** | **793** |
+   | **Total** | **1318** | **1205** | **774** |
 
 7. **R1.7, the float text (N6) and N14's writers.**
    - Python-repr floats; ints as exact digits.
@@ -2317,7 +2310,7 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    N14 `1e400` raises.**
 6. **R2.6, the #1746 residue:**
    - the internal `(int)` casts the Q7 readers do not cover (the audio
-     generators' `dur * rate`, the model builtins);
+     generators' `dur * rate`);
    - `net_send` continuing after a raise (ext_net.c:364);
    - `buf_to_pcm16le` with a NaN sample;
    - the `numerical_grad` waiver.

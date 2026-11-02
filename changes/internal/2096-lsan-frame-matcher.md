@@ -1,1 +1,0 @@
-- Leak guards now match builtin frames within multiline LeakSanitizer allocation reports (#2096).

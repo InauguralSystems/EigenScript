@@ -1,0 +1,1 @@
+- docs/TRACE.md's Recorded Builtins section is now a table of every `N` record name, and now includes `is_dir`, `is_file`, `gfx_ticks`, `audio_stream_queued`, `import_warning` and the observer gate's `observer_source` records. `tools/tape_kinds_check.sh`, now a `make precheck` row, fails when that table leaves out a name the source records or names one nothing records (#2200).

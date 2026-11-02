@@ -26,12 +26,7 @@
 define render(tmpl, vars) as:
     result is ""
     remaining is tmpl
-    guard is 0
     loop while (len of remaining) > 0:
-        guard is guard + 1
-        if guard > 100000:
-            # Hard stop — paranoid defence; normal templates never hit this.
-            return result + remaining
         open_pos is index_of of [remaining, "{{"]
         if open_pos < 0:
             result is result + remaining
@@ -85,9 +80,9 @@ define render_block(tmpl, vars, cond) as:
         return render of [tmpl, vars]
     return ""
 
-# ---- fill: shorthand for single-variable render ----
-# fill of [template, key, value] -> string
-define fill(tmpl, key, val) as:
+# ---- template_fill: shorthand for single-variable render ----
+# template_fill of [template, key, value] -> string
+define template_fill(tmpl, key, val) as:
     val is str of val
     placeholder is "{{" + key + "}}"
     return str_replace of [tmpl, placeholder, val]

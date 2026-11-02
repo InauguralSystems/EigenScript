@@ -1,0 +1,1 @@
+- Programs relying on duplicate space-separated options, or treating `--` and `-` as flags, must adapt to consistent last-value-wins and POSIX positional parsing (#2244).

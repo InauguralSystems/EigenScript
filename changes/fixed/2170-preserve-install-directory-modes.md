@@ -1,0 +1,1 @@
+- Package installation now preserves replaced directory permissions and gives new staged directories the current umask's normal `mkdir` permissions before atomic activation (#2170).

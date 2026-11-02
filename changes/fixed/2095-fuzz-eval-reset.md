@@ -1,0 +1,1 @@
+- The libFuzzer harness now gives every input a fresh exit scope and error payload, so an earlier `exit` or uncaught `throw` cannot disable later catch, spawn, or JIT paths (#2095).

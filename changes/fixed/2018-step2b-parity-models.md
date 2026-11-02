@@ -1,1 +1,0 @@
-- Correct array and empty-parameter function semantics in the Lean reference model, and refuse captured-name assignment shapes that are not yet modeled (#2018).

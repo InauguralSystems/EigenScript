@@ -1,1 +1,0 @@
-- The Lean spec frontend selects comparison and arithmetic operators through the same depth-0 selector as the logical split, and parity now covers a parenthesized operand on each side of every modeled operator (#2062). The depth bug itself was fixed by #2056.

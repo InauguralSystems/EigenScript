@@ -1,0 +1,6 @@
+# Tolerated LeakSanitizer reports in the ASan suite.
+#
+# NONE. Leak-only nonzero exits remain classified separately so their complete
+# diagnostics are visible, but every such report is a regression. Additions to
+# this file require a report identity and a specific root-cause justification;
+# the gate deliberately rejects an unreviewed increase.

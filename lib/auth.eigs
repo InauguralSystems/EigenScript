@@ -73,6 +73,6 @@ define require_auth(_x) as:
         return json_build of ["error", "not authenticated"]
     headers is http_request_headers of null
     bearer is _extract_bearer of headers
-    if bearer == _auth_token:
+    if secure_equals of [bearer, _auth_token]:
         return ""
     return json_build of ["error", "invalid or missing token"]

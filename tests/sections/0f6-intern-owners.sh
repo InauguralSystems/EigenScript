@@ -8,4 +8,15 @@ else
     FAIL=$((FAIL + 1)); echo "  FAIL: intern ownership (rc=$INTERN_RC)"
     printf '%s\n' "$INTERN_OUT" | sed 's/^/      /'
 fi
+echo "  embed multi-attach intern lifetime (#1162)"
+check_binary_fingerprint
+TOTAL=$((TOTAL + 1))
+MULTIATTACH_OUT=$(bash "$TESTS_DIR/test_embed_multiattach.sh" 2>&1); MULTIATTACH_RC=$?
+if [[ "$MULTIATTACH_RC" -eq 0 ]] &&
+   [[ $(grep -c '^PASS: embed multi-attach preserves dict keys, global bindings, and builtins$' <<< "$MULTIATTACH_OUT") -eq 1 ]]; then
+    PASS=$((PASS + 1)); echo "  PASS: attachment-owned names survive for the next host thread"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: embed multi-attach intern lifetime (rc=$MULTIATTACH_RC)"
+    printf '%s\n' "$MULTIATTACH_OUT" | sed 's/^/      /'
+fi
 echo ""

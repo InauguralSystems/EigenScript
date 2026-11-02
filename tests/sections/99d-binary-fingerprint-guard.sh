@@ -33,13 +33,22 @@ else
     SELFTEST_RC=$?
     RESTORE_OUT=$(python3 "$TESTS_DIR/test_binary_swap_restore.py" 2>&1)
     RESTORE_RC=$?
-    if [ "$SELFTEST_RC" -eq 1 ] && [ "$RESTORE_RC" -eq 0 ] && printf '%s\n' "$SELFTEST_OUT" | grep -qF "ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — results are invalid."; then
+    if [ "$SELFTEST_RC" -eq 1 ] && printf '%s\n' "$SELFTEST_OUT" | grep -qF "ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — results are invalid."; then
         PASS=$((PASS + 1))
         echo "  PASS: binary-fingerprint guard detected mid-run swap and aborted with the expected error"
     else
         FAIL=$((FAIL + 1))
-        echo "  FAIL: binary-fingerprint guard did not detect mid-run swap (rc=$SELFTEST_RC)"
-        printf '%s\n' "$SELFTEST_OUT" "$RESTORE_OUT" | head -12 | sed 's/^/      /'
+        echo "  FAIL: binary-fingerprint guard detection failed (selftest_rc=$SELFTEST_RC; expected_rc=1; error_match=$(printf '%s\n' "$SELFTEST_OUT" | grep -qF "ERROR: src/eigenscript changed during the run (rebuilt mid-suite) — results are invalid." && echo yes || echo no))"
+        printf '%s\n' "$SELFTEST_OUT" | sed 's/^/      /'
+    fi
+    TOTAL=$((TOTAL + 1))
+    if [ "$RESTORE_RC" -eq 0 ]; then
+        PASS=$((PASS + 1))
+        echo "  PASS: binary-swap restoration and signal controls"
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: binary-swap restoration controls failed (restore_rc=$RESTORE_RC)"
+        printf '%s\n' "$RESTORE_OUT" | sed 's/^/      /'
     fi
 fi
 echo ""

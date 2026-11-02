@@ -1,0 +1,1 @@
+- Text inputs now produce every US-layout shifted punctuation character correctly, keep Tab for focus navigation, and place the cursor after multi-character mapped text (#2185).

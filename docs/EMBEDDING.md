@@ -40,7 +40,7 @@ cc -O2 host.c eigenscript_all.c -lm -lpthread -o host
 ```
 
 `eigenscript_all.c` inlines every runtime source and header into one
-self-contained translation unit; the optional extensions (HTTP, model, DB, gfx)
+self-contained translation unit; the optional extensions (HTTP, net, DB, gfx)
 default **off**, so the drop-in is the minimal zero-dependency build. Everything
 below — multi-state, value handles, the abort flag, and the trace-sink /
 record-replay seam — is available through the same `eigs_embed.h`.
@@ -347,14 +347,11 @@ eigs_value_release(forty);          /* drop caller's ref; the global keeps its o
 `eigs_get_global` returns a counted ref the caller must release; `NULL`
 if the name isn't bound.
 
-**Globals and imported modules (#1388).** A value set with `eigs_set_global`
-is a host global, like a top-level binding in the host program. Imported
-module code reads it only under a name that is *not* a builtin: module code
-resolves builtin names against the state's sealed builtin layer first, so
-`eigs_set_global("str", v)` changes `str` for host evals and never inside a
-module. A non-builtin name falls through to the global scope, so a module can
-read a host-set `config` (EigenOS's hosted twins rely on this for the
-functions they define before importing a driver).
+**Globals and imported modules (#1388, #2180).** Values injected by the host
+with `eigs_set_global` and the host-registration
+APIs are visible in every module like builtins, while bindings made by program
+code are not visible to imported modules. A host assignment using a builtin
+name remains host-only, so modules retain the pristine builtin (#1388).
 
 A name containing `#` is reserved for the runtime (for example `_#fstr`, the
 binding f-strings convert through, #1322). No source can spell one, and the
@@ -691,7 +688,7 @@ same set `make lsp` and `make fuzz` use). The Makefile target
 EMBED_SOURCES := $(filter-out $(SRC_DIR)/main.c,$(SOURCES))
 embed-smoke:
 	$(CC) $(CFLAGS) -o /tmp/embed_smoke $(SRC_DIR)/embed_smoke.c $(EMBED_SOURCES) \
-	    -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_MODEL=0 -DEIGENSCRIPT_EXT_DB=0 \
+	    -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 \
 	    -DEIGENSCRIPT_VERSION='"$(VERSION)"' \
 	    -lm -lpthread
 	/tmp/embed_smoke
@@ -704,39 +701,6 @@ includes `src/eigs_embed.h`. Public headers needed at build time:
 between minor releases.
 
 ## Threading and re-entrancy
-
-- Inside a single `EigsState`, the VM is not internally re-entrant.
-  Don't call `eigs_eval_string` from a host function that was called by
-  the VM — return to the VM first.
-- Multiple `EigsState` instances have independent VM heaps and execution
-  state. A host running states concurrently must observe the thread or process
-  scope of these runtime surfaces:
-  - Trace tape, sink, and replay state — **shared: the host must serialize**
-    tape/replay use across states (#1142).
-  - Observer history and occurrence arming sets — **locked** across states
-    (#1145).
-  - `g_trace_current_line` — **per attached `EigsThread`**: workers and
-    independent attached states keep their own diagnostic line (#1435).
-    Unattached tooling uses a process-global fallback.
-  - `g_source_provider` and its userdata — **shared: the host must serialize**
-    registration against evaluation, and install one provider for the process.
-  - The module-namespace table — **writer-locked**, with atomic entry publication
-    and tombstones; rebuild retires backing tables while multithreaded (#1144).
-  - `g_random_seeded` and the PRNG used by `random`, `random_int`,
-    `random_normal`, `audio_noise`, `eigen_generate`'s sampling and
-    `seed_random` are **locked** across states (#1150). Seed and draw
-    operations share one process-wide stream; thread scheduling determines
-    draw order.
-  - The process's SIGPIPE disposition — **shared: the host must serialize**
-    around its own write without changing that disposition; spawned child
-    setup resets only the child's disposition.
-  - The pointer installed by `eigs_set_abort_flag` — **shared: the host must
-    serialize** registration; it is one process-global abort source (#410).
-- One `EigsState` accessed by multiple OS threads: each thread must
-  `eigs_thread_attach`, and the host must serialize eval calls (a
-  mutex around `eigs_eval_string` per state is sufficient). The shared
-  global env, JIT cache, and module cache are visible to all attached
-  threads.
 
 ## Stability
 

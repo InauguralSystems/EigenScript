@@ -176,7 +176,7 @@ dd859.open is 1
 dd859.hover_index is 0 - 1
 _scene859 of 1
 # item 2 ("c") spans y 99..122 — inside the sibling canvas (y 80..180).
-dispatch of [root859, {"type": "mousedown", "x": 100, "y": 105, "button": 1}]
+ui_dispatch of [root859, {"type": "mousedown", "x": 100, "y": 105, "button": 1}]
 assert_eq of [dd859.selected, 2, "#859 the click on the overlaid list selects on the DROPDOWN"]
 assert_eq of [sib_clicks859[0], 0, "#859 the canvas under the open list never saw the click"]
 assert_eq of [dd859.open, 0, "#859 selecting closes the list"]
@@ -185,8 +185,8 @@ assert_true of [(_is_col of [(gfx_read of [100, 105]), _sib_col]) == 1, "#859 wi
 # Control: the canvas really is under that point and really does take a
 # click when nothing is drawn over it.
 _ui.last_click_id is ""
-dispatch of [root859, {"type": "mousedown", "x": 100, "y": 105, "button": 1}]
-dispatch of [root859, {"type": "mouseup", "x": 100, "y": 105, "button": 1}]
+ui_dispatch of [root859, {"type": "mousedown", "x": 100, "y": 105, "button": 1}]
+ui_dispatch of [root859, {"type": "mouseup", "x": 100, "y": 105, "button": 1}]
 assert_true of [sib_clicks859[0] > 0, "#859 control: with no list over it the canvas DOES see the click"]
 sib859.on_mouse is null
 

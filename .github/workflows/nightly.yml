@@ -122,9 +122,31 @@ jobs:
       - name: Calibrate all gates
         run: bash tools/selftests.sh --all
 
+  release-dry-run:
+    name: nightly / release dry-run / ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            label: linux-x86_64
+          - os: macos-15-intel
+            label: macos-x86_64
+          - os: macos-latest
+            label: macos-arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Build and test without creating a tag or release
+        uses: ./.github/actions/release-build
+        with:
+          label: ${{ matrix.label }}
+          runner: ${{ matrix.os }}
+
   report:
     name: nightly / tracking issue on failure
-    needs: [macos-intel, valgrind-full, gate-selftests]
+    needs: [macos-intel, valgrind-full, gate-selftests, release-dry-run]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -145,6 +167,7 @@ jobs:
           MAC_RESULT: ${{ needs.macos-intel.result }}
           VG_RESULT: ${{ needs.valgrind-full.result }}
           ST_RESULT: ${{ needs.gate-selftests.result }}
+          RELEASE_RESULT: ${{ needs.release-dry-run.result }}
         run: |
           set -euo pipefail
           TITLE="nightly lane: macos-15-intel / valgrind-full failures"
@@ -152,6 +175,7 @@ jobs:
           [ "$MAC_RESULT" = success ] || failed="$failed macos-15-intel($MAC_RESULT)"
           [ "$VG_RESULT" = success ] || failed="$failed valgrind-full($VG_RESULT)"
           [ "$ST_RESULT" = success ] || failed="$failed gate-selftests($ST_RESULT)"
+          [ "$RELEASE_RESULT" = success ] || failed="$failed release-dry-run($RELEASE_RESULT)"
 
           # Find the tracking issue by TITLE, across open AND closed, and not
           # only in the newest 50 open issues: a thread that was closed last
@@ -165,10 +189,10 @@ jobs:
                   --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")
 
           if [ -z "$failed" ]; then
-            echo "nightly green (macos-15-intel=$MAC_RESULT valgrind-full=$VG_RESULT gate-selftests=$ST_RESULT)"
+            echo "nightly green (macos-15-intel=$MAC_RESULT valgrind-full=$VG_RESULT gate-selftests=$ST_RESULT release-dry-run=$RELEASE_RESULT)"
             if [ -n "$num" ]; then
               gh issue comment "$num" --repo "$REPO" \
-                --body "Nightly GREEN again: macos-15-intel=$MAC_RESULT, valgrind-full=$VG_RESULT, gate-selftests=$ST_RESULT. Run: $RUN_URL"
+                --body "Nightly GREEN again: macos-15-intel=$MAC_RESULT, valgrind-full=$VG_RESULT, gate-selftests=$ST_RESULT, release-dry-run=$RELEASE_RESULT. Run: $RUN_URL"
             fi
             exit 0
           fi
@@ -178,6 +202,7 @@ jobs:
           macos-15-intel: \`$MAC_RESULT\`
           valgrind-full: \`$VG_RESULT\`
           gate-selftests: \`$ST_RESULT\`
+          release-dry-run: \`$RELEASE_RESULT\`
 
           Run: $RUN_URL
 
@@ -212,7 +237,7 @@ jobs:
 
       # The report step must not be the thing that turns a red nightly green.
       - name: Fail the run when a nightly lane failed
-        if: needs.macos-intel.result != 'success' || needs.valgrind-full.result != 'success' || needs.gate-selftests.result != 'success'
+        if: needs.macos-intel.result != 'success' || needs.valgrind-full.result != 'success' || needs.gate-selftests.result != 'success' || needs.release-dry-run.result != 'success'
         run: |
-          echo "macos-intel=${{ needs.macos-intel.result }} valgrind-full=${{ needs.valgrind-full.result }} gate-selftests=${{ needs.gate-selftests.result }}"
+          echo "macos-intel=${{ needs.macos-intel.result }} valgrind-full=${{ needs.valgrind-full.result }} gate-selftests=${{ needs.gate-selftests.result }} release-dry-run=${{ needs.release-dry-run.result }}"
           exit 1

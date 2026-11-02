@@ -1,1 +1,0 @@
-- Tensor files now share the 10,000,000-element construction limit, and `tensor_load` raises a catchable error with the path, offending dimension, and cap instead of returning `null` above it (#1393).

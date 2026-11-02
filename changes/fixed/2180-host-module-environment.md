@@ -1,0 +1,1 @@
+- Host-injected values are visible to imported modules without exposing program globals (#2180).

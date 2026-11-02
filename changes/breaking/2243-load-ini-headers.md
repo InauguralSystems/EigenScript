@@ -1,0 +1,1 @@
+- `load_ini` now raises on empty or unterminated section headers instead of retaining the previous section; fix malformed headers before loading the file (#2243).

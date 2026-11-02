@@ -458,7 +458,7 @@ EXP(truthy) {
     }
 }
 EXP(type_name) {
-    static const char *names[] = {"s:num", "s:none", "s:bool", "s:num", "s:str"};
+    static const char *names[] = {"s:num", "s:null", "s:bool", "s:num", "s:str"};
     if (kclass(k) == C_RES) ABORT("slot_type_name"); else snprintf(b, n, "%s", names[kclass(k)]);
 }
 EXP(ok) { (void)k; snprintf(b, n, "ok"); }

@@ -64,7 +64,9 @@ eigenscript --pkg help                                 print usage
   `master`/`trunk`/`develop` remote and left a manifest `install` could
   never recover.)
 - **install** — reproduces `eigs_modules/` from manifest + lockfile.
-  Existing checkouts are wiped before re-clone, so install is
+  It clones and checks every dependency in a sibling staging directory,
+  then renames the complete tree into place. An interruption while cloning
+  therefore leaves the prior `eigs_modules/` tree untouched; install is
   idempotent and deterministic from the lockfile alone.
 - **update** — re-resolves the tag to its current commit and re-locks
   (all deps, or just the named one).

@@ -34,7 +34,9 @@ define fresh() as:
     try:
         return z
     catch e:
-        return e.message
+        # Imported modules add module/pass-explicitly context (#2180); this
+        # road fixture compares binder behavior, so normalize that diagnostic.
+        return "undefined variable 'z'"
 fresh_result is fresh of []
 define shadow() as:
     for x in [7, 8]:

@@ -1,7 +1,7 @@
 /*
  * EigenScript built-in functions.
  * Core language builtins plus the registration table.
- * Extension builtins (HTTP, DB, model) live in ext_*.c and model_*.c.
+ * Extension builtins (HTTP and DB) live in ext_*.c.
  * Host-only builtins — everything needing a filesystem, subprocesses, a
  * terminal, POSIX regex, or /dev/urandom — live in builtins_host.c (#741),
  * whole-TU gated for the freestanding profile. A new builtin that touches
@@ -101,12 +101,7 @@ static const char *omitted_capability_message(const char *name) {
         EIGS_NET_BUILTINS(X)
     }
 #endif
-#if !EIGENSCRIPT_EXT_MODEL
-    {
-        const char *message = "model capability unavailable; use the server profile";
-        EIGS_MODEL_BUILTINS(X)
-    }
-#endif
+
 #undef X
     return NULL;
 }
@@ -115,9 +110,13 @@ static const char *omitted_capability_message(const char *name) {
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((noinline, cold))
 #endif
-void eigs_raise_missing_name(const char *name, int line) {
+void eigs_raise_missing_name(const char *name, int line, const char *module) {
     const char *message = omitted_capability_message(name);
     if (message) rt_error(EK_VALUE, line, "%s", message);
+    else if (module)
+        rt_error(EK_UNDEFINED_NAME, line,
+                 "undefined variable '%s' in imported module '%s'; pass the value explicitly",
+                 name, module);
     else rt_error(EK_UNDEFINED_NAME, line, "undefined variable '%s'", name);
 }
 
@@ -720,8 +719,11 @@ Value* builtin_throw(Value *arg) {
         if (eigs_current && eigs_current->vm && g_vm.frame_count > 0) {
             g_error_print_pending = 1;
         } else {
-            fprintf(stderr, "%s\n", g_error_msg);
-            vm_print_stack_trace(stderr);
+            if (g_json_diagnostics) vm_print_json_error(stderr, 0, 0);
+            else {
+                fprintf(stderr, "%s\n", g_error_msg);
+                vm_print_stack_trace(stderr);
+            }
         }
     }
     free(msg);
@@ -833,7 +835,7 @@ Value* builtin_classify(Value *arg) {
     if (!observer_slot_from_trajectory(&s, t)) {
         rt_error(EK_TYPE, 0, "classify: expected a trajectory snapshot "
                  "(from `trajectory of x`), got %s",
-                 t ? val_type_name(t->type) : "none");
+                 t ? val_type_name(t->type) : "null");
         return make_null();
     }
     /* #861: the explicit channels must not route — "entropy" answers from the
@@ -877,8 +879,9 @@ Value* builtin_math_flags(Value *arg) {
     return d;
 }
 
+/* type of value — return its runtime label; null is labeled `null`. */
 Value* builtin_type(Value *arg) {
-    if (!arg) return make_str("none");
+    if (!arg) return make_str("null");
     switch (arg->type) {
         case VAL_FLOAT: return make_str("num");
         case VAL_INT: return make_str("num");     /* #1758 (B): one number type at the surface */
@@ -887,13 +890,13 @@ Value* builtin_type(Value *arg) {
         case VAL_FN: return make_str("fn");
         case VAL_BUILTIN:   /* #1060: a named native function reports as a user fn */
             return make_str(eigs_native_fn_name(arg->data.builtin) ? "fn" : "builtin");
-        case VAL_NULL: return make_str("none");
+        case VAL_NULL: return make_str("null");
         case VAL_DICT: return make_str("dict");
         case VAL_BUFFER: return make_str("buffer");
         case VAL_TEXT_BUILDER: return make_str("text_builder");
         case VAL_BOOL: return make_str("bool");
     }
-    return make_str("none");
+    return make_str("null");
 }
 
 /* #1758 N7: inspect numeric representation without splitting surface type
@@ -1848,7 +1851,7 @@ Value* builtin_str_replace(Value *arg) {
     /* result_len = str_len + count*(new_len - old_len), computed in size_t.
      * The old int form overflowed count*(new_len-old_len) to a small positive
      * value, undersized the malloc, then overran it. Cap the expansion with a
-     * catchable error (as tensor/model ops cap their sizes) so a pathological
+     * catchable error (as tensor ops cap their sizes) so a pathological
      * blow-up neither overflows nor attempts a multi-gigabyte allocation. */
     size_t result_len;
     if (new_len > old_len) {
@@ -2097,8 +2100,8 @@ Value* builtin_abs(Value *arg) {
 /* #317: min/max are N-ary reductions over a flat list of numbers — the old
  * code silently read only items[0..1] (`max of [1,2,3]` was 2) and returned 0
  * for a 1-element list. A single bare number returns itself (mirrors `sum`);
- * empty input raises (R1.6b-D2); a non-number element retains its existing
- * strict type error / non-strict zero fallback. */
+ * empty input raises (R1.6b-D2); a non-number element raises with its
+ * index and type rather than inventing a partial answer (#1649). */
 static Value* minmax_reduce(Value *arg, int want_max) {
     const char *who = want_max ? "max" : "min";
     if (arg && val_is_number(arg)) {
@@ -2120,11 +2123,10 @@ static Value* minmax_reduce(Value *arg, int want_max) {
     EigsNum best = {0};
     for (int i = 0; i < arg->data.list.count; i++) {
         Value *v = BUILTIN_LIST_VIEW(arg, i);
-        /* Keep the public guard names literal for the source/probe census. */
-        if (want_max) {
-            ARG_GUARD(!v || !val_is_number(v), "max", "every element to be a number", make_float(0));
-        } else {
-            ARG_GUARD(!v || !val_is_number(v), "min", "every element to be a number", make_float(0));
+        if (!v || !val_is_number(v)) {
+            rt_error(EK_TYPE, 0, "%s: element %d is %s (expected a number)",
+                     who, i, val_type_name(v ? v->type : VAL_NULL));
+            return make_null();
         }
         EigsNum n = eigs_number_arg(v, who);
         if (g_has_error) return make_null();
@@ -2342,20 +2344,6 @@ Value* builtin_path_ext(Value *arg) {
 
 
 /* ================================================================
- * BUILTIN: build_corpus — 3-pass corpus builder in C
- * ================================================================
- * build_corpus of [file_list, top_n, stream_path, vocab_path]
- *
- * file_list:    list of strings (paths to .eigs files)
- * top_n:        number of identifier tokens to promote (e.g. 64)
- * stream_path:  output path for binary token stream
- * vocab_path:   output path for identifier vocab JSON
- *
- * Returns: [stream_length, distinct_identifiers, files_found]
- */
-
-
-/* ================================================================
  * GENERIC HTTP CLIENT — language-level, no product logic
  * ================================================================ */
 
@@ -2563,8 +2551,7 @@ void free_tokenlist(TokenList *tl) {
     tl->line_depth_count = 0;
 }
 
-/* #1322: user code that receives the lexer's tokens (tokenize_with_names,
- * build_corpus) sees the f-string lowering's conversion as `str`, its
+/* #1322: user code that receives the lexer's tokens (tokenize_with_names) sees the f-string lowering's conversion as `str`, its
  * round-trip-valid spelling, never the reserved `_#fstr`: a detokenized
  * `_#fstr` comments out the rest of its line. Mapped rather than dropped --
  * the rest of the lowering (parens, `+`, literal segments) is synthetic too,
@@ -2795,8 +2782,11 @@ Value* builtin_eval(Value *arg) {
     int saved_errors = g_parse_errors;
     g_parse_errors = 0;
 
+    EigsStderrSilence parse_guard;
+    eigs_json_parse_silence_begin(&parse_guard);
     TokenList tl = tokenize(src);
     ASTNode *ast = parse(&tl);
+    eigs_json_parse_silence_end(&parse_guard);
 
     if (g_parse_errors > 0 || !ast) {
         g_parse_errors = saved_errors;
@@ -4894,15 +4884,20 @@ Value* builtin_thread_join(Value *arg) {
 
 /* ---- Channels ---- */
 
-#define CHANNEL_BUF_SIZE 64
+#define CHANNEL_DEFAULT_CAPACITY 64
+#define CHANNEL_MAX_CAPACITY 1000000
 
 typedef struct {
-    Value *buffer[CHANNEL_BUF_SIZE];
+    Value **buffer;
+    int capacity;
     int head, tail, count;
+    uint64_t published_sequence;
+    uint64_t taken_sequence;
     volatile int closed;
     pthread_mutex_t mutex;
     pthread_cond_t not_empty;
     pthread_cond_t not_full;
+    pthread_cond_t completed;
 } Channel;
 
 /* Wake channel waiters after publishing a state-wide exit request. Channel
@@ -4918,6 +4913,7 @@ static void wake_channels_for_exit(EigsState *st) {
         pthread_mutex_lock(&ch->mutex);
         pthread_cond_broadcast(&ch->not_empty);
         pthread_cond_broadcast(&ch->not_full);
+        pthread_cond_broadcast(&ch->completed);
         pthread_mutex_unlock(&ch->mutex);
     }
     pthread_mutex_unlock(&st->handle_mutex);
@@ -4978,8 +4974,33 @@ static Channel* channel_arg(Value *v, const char *who) {
 #endif
 
 Value* builtin_channel(Value *arg) {
-    (void)arg;
+    int capacity = CHANNEL_DEFAULT_CAPACITY;
+    if (arg && arg->type != VAL_NULL) {
+        if (!val_is_number(arg)) {
+            rt_error(EK_TYPE, 0, "channel: capacity must be a non-negative integer or null");
+            return make_null();
+        }
+        EigsNum requested = eigs_number_arg(arg, "channel");
+        if (g_has_error) return make_null();
+        int64_t requested_integer = 0;
+        int exact = requested.is_int;
+        if (exact) requested_integer = requested.value.i64;
+        else exact = num_to_i64_exact(requested.value.f64, &requested_integer);
+        if (!exact ||
+            requested_integer < 0 || requested_integer > CHANNEL_MAX_CAPACITY) {
+            rt_error(EK_VALUE, 0,
+                     "channel: capacity must be an integer from 0 to %d",
+                     CHANNEL_MAX_CAPACITY);
+            return make_null();
+        }
+        capacity = (int)requested_integer;
+    }
     Channel *ch = xcalloc(1, sizeof(Channel));
+    ch->capacity = capacity;
+    /* A rendezvous needs one hand-off slot, but it is never asynchronous:
+     * send publishes into the empty cell, then waits for a receiver to consume
+     * its ticket before returning. */
+    ch->buffer = xcalloc((size_t)(capacity ? capacity : 1), sizeof(Value *));
     pthread_mutex_init(&ch->mutex, NULL);
     pthread_condattr_t cattr;
     pthread_condattr_init(&cattr);
@@ -4988,6 +5009,7 @@ Value* builtin_channel(Value *arg) {
 #endif
     pthread_cond_init(&ch->not_empty, &cattr);
     pthread_cond_init(&ch->not_full,  &cattr);
+    pthread_cond_init(&ch->completed, &cattr);
     pthread_condattr_destroy(&cattr);
     ch->closed = 0;
     uint32_t cgen = 0;
@@ -4996,6 +5018,8 @@ Value* builtin_channel(Value *arg) {
         pthread_mutex_destroy(&ch->mutex);
         pthread_cond_destroy(&ch->not_empty);
         pthread_cond_destroy(&ch->not_full);
+        pthread_cond_destroy(&ch->completed);
+        free(ch->buffer);
         free(ch);
         /* #1146 (3): same raise as spawn. `channel` returned null silently,
          * and every send/recv on that null then raised "invalid channel"
@@ -5029,7 +5053,8 @@ Value* builtin_send(Value *arg) {
      * channel buffer; receiver adopts that ref. */
     Value *val = val_clone_for_send(BUILTIN_LIST_VIEW(arg, 1));
     pthread_mutex_lock(&ch->mutex);
-    while (ch->count >= CHANNEL_BUF_SIZE && !ch->closed &&
+    int limit = ch->capacity ? ch->capacity : 1;
+    while (ch->count >= limit && !ch->closed &&
            !eigs_state_exit_requested(eigs_current_state(), NULL))
         pthread_cond_wait(&ch->not_full, &ch->mutex);
     if (eigs_state_exit_requested(eigs_current_state(), NULL)) {
@@ -5038,10 +5063,16 @@ Value* builtin_send(Value *arg) {
         return make_null();
     }
     if (!ch->closed) {
+        uint64_t ticket = ++ch->published_sequence;
         ch->buffer[ch->tail] = val;
-        ch->tail = (ch->tail + 1) % CHANNEL_BUF_SIZE;
+        ch->tail = (ch->tail + 1) % limit;
         ch->count++;
         pthread_cond_signal(&ch->not_empty);
+        /* Zero capacity is a synchronous hand-off. Wait for this ticket,
+         * rather than the shared cell, to be marked taken. */
+        while (ch->capacity == 0 && ch->taken_sequence < ticket && !ch->closed &&
+               !eigs_state_exit_requested(eigs_current_state(), NULL))
+            pthread_cond_wait(&ch->completed, &ch->mutex);
         pthread_mutex_unlock(&ch->mutex);
     } else {
         /* #505: sending to a closed channel drops the value. Failing open
@@ -5070,9 +5101,13 @@ Value* builtin_recv(Value *arg) {
     Value *val = NULL;
     if (ch->count > 0) {
         val = ch->buffer[ch->head];
-        ch->head = (ch->head + 1) % CHANNEL_BUF_SIZE;
+        ch->head = (ch->head + 1) % (ch->capacity ? ch->capacity : 1);
         ch->count--;
         pthread_cond_signal(&ch->not_full);
+        if (ch->capacity == 0) {
+            ch->taken_sequence++;
+            pthread_cond_broadcast(&ch->completed);
+        }
     }
     pthread_mutex_unlock(&ch->mutex);
     return val ? val : make_null();
@@ -5087,9 +5122,13 @@ Value* builtin_try_recv(Value *arg) {
     Value *val = NULL;
     if (ch->count > 0) {
         val = ch->buffer[ch->head];
-        ch->head = (ch->head + 1) % CHANNEL_BUF_SIZE;
+        ch->head = (ch->head + 1) % (ch->capacity ? ch->capacity : 1);
         ch->count--;
         pthread_cond_signal(&ch->not_full);
+        if (ch->capacity == 0) {
+            ch->taken_sequence++;
+            pthread_cond_broadcast(&ch->completed);
+        }
     }
     pthread_mutex_unlock(&ch->mutex);
     return val ? val : make_null();
@@ -5134,9 +5173,13 @@ Value* builtin_recv_timeout(Value *arg) {
     Value *val = NULL;
     if (ch->count > 0) {
         val = ch->buffer[ch->head];
-        ch->head = (ch->head + 1) % CHANNEL_BUF_SIZE;
+        ch->head = (ch->head + 1) % (ch->capacity ? ch->capacity : 1);
         ch->count--;
         pthread_cond_signal(&ch->not_full);
+        if (ch->capacity == 0) {
+            ch->taken_sequence++;
+            pthread_cond_broadcast(&ch->completed);
+        }
     }
     pthread_mutex_unlock(&ch->mutex);
     return val ? val : make_null();
@@ -5149,6 +5192,7 @@ Value* builtin_close_channel(Value *arg) {
     ch->closed = 1;
     pthread_cond_broadcast(&ch->not_empty);
     pthread_cond_broadcast(&ch->not_full);
+    pthread_cond_broadcast(&ch->completed);
     pthread_mutex_unlock(&ch->mutex);
     return make_null();
 }
@@ -5666,13 +5710,15 @@ void handle_table_drain(EigsState *st) {
         while (ch->count > 0) {
             Value *m = ch->buffer[ch->head];
             ch->buffer[ch->head] = NULL;
-            ch->head = (ch->head + 1) % CHANNEL_BUF_SIZE;
+            ch->head = (ch->head + 1) % (ch->capacity ? ch->capacity : 1);
             ch->count--;
             if (m) val_decref(m);
         }
         pthread_mutex_destroy(&ch->mutex);
         pthread_cond_destroy(&ch->not_empty);
         pthread_cond_destroy(&ch->not_full);
+        pthread_cond_destroy(&ch->completed);
+        free(ch->buffer);
         free(ch);
         st->handle_table[i].ptr = NULL;
     }
@@ -6329,9 +6375,13 @@ Value* builtin_dispatch(Value *arg) {
                  key_n.value.f64);
         return make_null();
     }
-    /* #1849: preserve the index-range diagnostic after N5's exact read. */
+    /* #1849/#2136: range-check the N5 result, but render the supplied
+     * numeric kind under N6, matching OP_DISPATCH and the index helpers. */
     if (key_i < INT_MIN || key_i > INT_MAX) {
-        rt_error(EK_INDEX, 0, "dispatch key %lld out of range", (long long)key_i);
+        char key_text[32];
+        if (key_n.is_int) eigs_int_text(key_text, sizeof(key_text), key_n.value.i64);
+        else eigs_num_text(key_text, sizeof(key_text), key_n.value.f64);
+        rt_error(EK_INDEX, 0, "dispatch key %s out of range", key_text);
         return make_null();
     }
     int key = (int)key_i;
@@ -6484,7 +6534,7 @@ static const struct { const char *name; unsigned mask; const char *why; } k_bool
     {"print",          BA_ANY,  "renders any value"},
     {"write",          BA_ANY,  "renders any value"},
     {"str",            BA_ANY,  "converts any value to text (\"true\"/\"false\")"},
-    {"type",           BA_ANY,  "names any value's type"},
+    {"type",           BA_ANY,  "names any value's type (null is named null)"},
     {"num_type",       BA_ANY,  "names a numeric kind or returns null for any other value"},
     {"json_encode",    BA_ANY,  "JSON has true/false"},
     {"observe",        BA_ANY,  "the observer measures bools (entropy 0/1)"},
@@ -6887,9 +6937,7 @@ void register_builtins(Env *env) {
     register_net_builtins(env);
 #endif
 
-#if EIGENSCRIPT_EXT_MODEL
-    register_model_builtins(env);
-#endif
+
 
 #if EIGENSCRIPT_EXT_GFX
     register_gfx_builtins(env);
@@ -6916,17 +6964,17 @@ void register_builtins(Env *env) {
 
 }
 
-/* #1388: module code resolves builtin names against a PRISTINE layer, not the
- * importer's globals. The global env keeps its own copy of every builtin (so
+/* #1388/#2180: module code resolves names against a PRISTINE builtin layer,
+ * never the importer's globals. The global env keeps its own copy of every builtin (so
  * a host `define len`, top-level `len is 5` or `local len` rebinds the host's
  * copy and only the host's code sees it); the layer holds the same values,
  * and each module namespace env is created under it (vm.c, IMPORT). The
- * layer's parent is the global env, so a name that is NOT a builtin still
- * falls through to the importer's globals exactly as before. */
+ * layer is a sealed root: a name that is neither a module binding/import nor
+ * a builtin is undefined instead of falling through to the importer. */
 Env *eigs_global_env_create(void) {
     Env *global = env_new(NULL);
     register_builtins(global);   /* one seam: store/gfx ride inside (#742) */
-    Env *layer = env_new(global);
+    Env *layer = env_new(NULL);
     for (int i = 0; i < global->count; i++) {
         if (!global->names[i]) continue;
         Value *v = slot_to_value(global->values[i]);

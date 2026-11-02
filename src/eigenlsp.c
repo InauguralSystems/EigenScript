@@ -1165,7 +1165,7 @@ static void handle_hover(int id, const char *params) {
      * keyword, or document symbol, so those lookups are skipped for it and
      * only the module-qualified stdlib branch below may claim it. Became
      * load-bearing with the generated builtin table (#742): every builtin
-     * is in builtin_docs now, so `stats.mean` would otherwise hover as the
+     * is in builtin_docs now, so a colliding module member would otherwise hover as the
      * tensor builtin `mean` — the exact builtin/stdlib name collision the
      * old 29%-complete hand table hid by omission. */
     ptrdiff_t ti = tok - doc->tokens.tokens;
@@ -1259,9 +1259,9 @@ static void handle_hover(int id, const char *params) {
     /* Wrap in code block */
     strbuf code;
     strbuf_init(&code);
-    strbuf_append(&code, "```eigenscript\\n");
+    strbuf_append(&code, "```eigenscript\n");
     strbuf_append(&code, hover_text);
-    strbuf_append(&code, "\\n```");
+    strbuf_append(&code, "\n```");
     json_escape_to(&sb, code.data);
     strbuf_free(&code);
     strbuf_append(&sb, "}}");

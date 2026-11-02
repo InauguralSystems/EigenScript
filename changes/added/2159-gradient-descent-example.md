@@ -1,0 +1,1 @@
+- Added a runnable gradient-descent convergence example and documented why finite-difference probes should not write the observed parameter (#2159).

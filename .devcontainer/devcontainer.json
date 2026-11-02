@@ -6,7 +6,7 @@
   "remoteUser": "root",
 
   // Warm the build so the Codespace opens to a working binary, and prove the
-  // db sidecar is wired by running the full (http+model+db) variant's version.
+  // db sidecar is wired by running the full (http+net+gfx+db) variant's version.
   "postCreateCommand": "CC=gcc ./build.sh && ./src/eigenscript --version",
 
   "customizations": {

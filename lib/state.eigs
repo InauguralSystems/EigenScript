@@ -11,7 +11,7 @@
 #   sm is sm_add_transition of [sm, "running", "error", "failed"]
 #   sm is sm_send of [sm, "start"]          # state -> "running"
 #   sm_state of sm                          # "running"
-#   sm_can_send of [sm, "stop"]             # 1
+#   sm_can_send of [sm, "stop"]             # true
 #   sm_history of sm                        # ["idle", "running"]
 #
 # Structure: [current_state, transitions, history]
@@ -74,7 +74,7 @@ define sm_try_send(sm, event) as:
     return sm
 
 # ---- sm_can_send: check if event is valid from current state ----
-# sm_can_send of [sm, event] -> 1 or 0
+# sm_can_send of [sm, event] -> true or false
 define sm_can_send(sm, event) as:
     current is sm[0]
     transitions is sm[1]
@@ -102,7 +102,7 @@ define sm_reset(sm) as:
     return [initial, sm[1], [initial]]
 
 # ---- sm_is: check if current state matches ----
-# sm_is of [sm, "running"] -> 1 or 0
+# sm_is of [sm, "running"] -> true or false
 define sm_is(sm, state) as:
     return sm[0] == state
 

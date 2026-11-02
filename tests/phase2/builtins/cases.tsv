@@ -49,7 +49,6 @@ buf_scale_range	buf_scale_range	-	-
 buf_set	buf_set	-	-
 buf_to_pcm16le	buf_to_pcm16le	-	-
 buffer	buffer	-	-
-build_corpus	build_corpus	-	-
 ceil	ceil	-	-
 channel	channel	-	-
 channel_closed	channel_closed	-	-
@@ -65,9 +64,6 @@ db_query_value	db_query_value	-	-
 dispatch	dispatch	-	-
 divide	divide	-	-
 dot	dot	-	-
-eigen_eval_loss	eigen_eval_loss	-	-
-eigen_generate	eigen_generate	-	-
-eigen_model_load	eigen_model_load	-	-
 exec_capture	exec_capture	-	-
 exit	exit	-	-
 exp	exp	-	-
@@ -125,11 +121,9 @@ matmul_bt	matmul_bt	-	-
 max	max	-	-
 mean	mean	-	-
 min	min	-	-
-model_load_weights	model_load_weights	-	-
 monotonic_ms	monotonic_ms	-	-
 monotonic_ns	monotonic_ns	clock	-
 multiply	multiply	-	-
-native_train_step_builtin	native_train_step_builtin	-	-
 nearest_in_range	nearest_in_range	-	-
 nearest_in_range_all	nearest_in_range_all	-	-
 negative	negative	-	-

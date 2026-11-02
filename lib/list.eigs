@@ -101,7 +101,7 @@ define drop(items, n) as:
 
 # ---- any: does any element satisfy the predicate? (short-circuit) ----
 # any of [list, fn] -> true if fn is truthy for some element, else false
-# Empty list -> 0.
+# Empty list -> false.
 define any(items, fn) as:
     for i in range of (len of items):
         if fn of items[i]:
@@ -110,7 +110,7 @@ define any(items, fn) as:
 
 # ---- all: do all elements satisfy the predicate? (short-circuit) ----
 # all of [list, fn] -> true if fn is truthy for every element, else false
-# Empty list -> 1 (vacuous truth).
+# Empty list -> true (vacuous truth).
 define all(items, fn) as:
     for i in range of (len of items):
         if not (fn of items[i]):

@@ -117,13 +117,13 @@ cd EigenScript
 This builds the hosted release (including lazily loaded graphics) and installs it to `~/.local/bin/eigenscript`.
 
 Requires only `gcc` — no external dependencies.
-Run `./install.sh server` to also build the HTTP + raw-TCP + model profile
+Run `./install.sh server` to also build the HTTP + raw-TCP profile
 (`eigenscript-server`), or `./install.sh server-db` to add PostgreSQL; the
 latter path requires PostgreSQL development headers. `full` remains a
 compatibility spelling for `server-db`.
 
-In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
-or model builtin name raises a catchable `value` error at its first reference,
+In VM/native-JIT evaluation, an unresolved omitted HTTP, network or database
+builtin name raises a catchable `value` error at its first reference,
 naming the unavailable capability and required profile. This occurs before
 call arguments are evaluated. Local, captured and host bindings take precedence,
 including a binding to null; other unknown names retain `undefined_name` errors.
@@ -144,6 +144,10 @@ docker run --rm -v "$PWD:/work" ghcr.io/inauguralsystems/eigenscript:latest prog
 ```
 
 Image tags: `:latest`, `:X.Y.Z`, `:X.Y`, `:X` for releases; `:edge` tracks `main`.
+
+## Runtime type labels
+
+`type of null` is `"null"`; the absence value and its type label use the same spelling.
 
 ## Run
 
@@ -192,7 +196,7 @@ define make_adder(n) as:
     return inner
 
 add5 is make_adder of 5
-print of (add5 of 10)    # 15
+print of (add5 of 10)
 
 # Error handling
 try:
@@ -329,14 +333,17 @@ converged
 1.4551915228366852e-09
 ```
 
-```eigenscript fragment
+```eigenscript
 reading is 5.0
 reading is 2.0
 reading is 5.0
 reading is 2.0
 reading is 5.0
 reading is 2.0
-report of reading             # "oscillating"  (needs a few periods to classify)
+print of (report of reading)
+```
+```output
+oscillating
 ```
 
 Trajectory states: `converged`, `stable`, `equilibrium`, `oscillating`,
@@ -429,15 +436,6 @@ Builtins: `matmul`, `add`, `subtract`, `multiply`, `divide`, `softmax`,
 `log_softmax`, `relu`, `leaky_relu`, `zeros`, `random_normal`, `shape`,
 `numerical_grad`, `sgd_update`, `tensor_save`, `tensor_load`.
 
-Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
-`tensor_save` raise catchable `limit` errors above it; `stream_open` requires
-an integral count from 1 through that cap, and `build_corpus` includes file
-separators in its capped token count. These limits also raise under
-`EIGS_STRICT=0`; see [BUILTINS.md](docs/BUILTINS.md) for the I/O contracts.
-`read_line of null` reads stdin one line at a time byte-exactly, including the
-line terminator, so pipes and redirected files preserve `\r` and expose whether
-the final line ended in `\n`.
-
 File reads follow Python's exception model: `read_text`, `read_bytes`, and
 `read_bytes_buf` raise a catchable `io` error naming the path and the operating
 system reason when a path is missing, unreadable, or a directory. Empty files
@@ -473,11 +471,6 @@ substitution. `str_from_bytes` stops at numeric NUL, without inspecting later
 elements; byte codecs consume the complete list.
 
 Fixed- or optional-shape builtin argument lists reject surplus outer elements in strict mode with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
-
-The optional model extension raises a catchable `value` error when
-`eigen_generate` or `eigen_eval_loss` receives a prompt longer than the loaded
-model's `max_seq_len`. Training applies the same limit to the combined input
-and output lengths; callers must choose their context window explicitly.
 
 Empty `min`/`max` raises `value` in both call forms (R1.6b-D2); empty
 `sum` remains int zero (C2). `sign_extend` reads exact int64 arguments and
@@ -683,12 +676,21 @@ so they have no row of their own. Inspect `lib/` for the current module set.
 An imported module's builtin names are the builtins: rebinding `len` or `str`
 in your program changes them for your code, never inside a module you import
 ([SPEC, Modules](docs/SPEC.md#modules), #1388).
+Imported modules are otherwise isolated too: they resolve only their own
+bindings, their own imports, and the standard library, never the importing
+program's incidental globals. Pass configuration as a function argument or
+through an exported setter; use `load_file` only when shared scope is intended
+([SPEC, Modules](docs/SPEC.md#modules), #2180).
 
-```eigenscript fragment
+```eigenscript
 load_file of "lib/list.eigs"
 define double as:                        # functions take one argument, n
     return n * 2
-doubled is map of [[1, 2, 3], double]    # [2, 4, 6]
+doubled is map of [[1, 2, 3], double]
+print of doubled
+```
+```output
+[2, 4, 6]
 ```
 
 File loading is relative to the containing file, then the `eigs_modules` walk,
@@ -802,7 +804,7 @@ eigenscript examples/stem/greenhouse_controller.eigs # closed-loop STEM controll
 
 ```bash
 cd tests
-./run_all_tests.sh    # the full suite (minimal build; full build adds HTTP/DB/model suites)
+./run_all_tests.sh    # the full suite (minimal build; full build adds HTTP/net/DB suites)
 ```
 
 ### Writing your own tests
@@ -884,7 +886,7 @@ same PR. Within the 0.x series, patch releases (0.x.**y**) never change
 documented behavior; minor releases (0.**x**) may, and any such break
 is listed in [CHANGELOG.md](CHANGELOG.md) under the release that made
 it. Anything *not* in the spec — observer internals, bytecode layout,
-JIT behavior, trace-tape format, extension builtins (`http`/`model`/
+JIT behavior, trace-tape format, extension builtins (`http`/`net`/
 `db`/`gfx`) — may change in any release. At 1.0 the documented surface
 freezes and semantic versioning applies from then on.
 
@@ -919,7 +921,7 @@ make gfx              # compatibility alias for make
 make asan             # ASan+UBSan with gfx -> build/asan/eigenscript
 make asan-gfx         # compatibility alias for make asan
 make test             # build and run the full suite
-make server           # build with HTTP + raw TCP sockets + model builtins
+make server           # build with HTTP + raw TCP sockets
 make server-db        # server profile plus PostgreSQL
 make zlib             # release profile plus DEFLATE codecs (links libz)
 make install          # install to ~/.local/bin
@@ -988,12 +990,6 @@ exact integers in 0..255; fractions and out-of-range bytes raise `value`.
 `buf_len`, `f64_to_bytes` and `inflate` return integer counts or bytes;
 buffer storage and scalar buffer reads are floats. `buf_get`, `buf_peak`,
 `buf_dot` and the byte/PCM codecs refuse non-finite input cells with `value`.
-
-Model token ids and generation limits follow N5 and the C int range;
-fractional ids or token counts raise `value`. `eigen_generate` returns int
-token ids, while `eigen_eval_loss` returns a float. Temperature, top_p and
-training learning rates remain float quantities. Model JSON weights stay
-float data; the loader status strings are unchanged.
 
 Graphics and audio magnitudes round half away from zero and raise `value`
 when the result exceeds the C call's range. This refusal happens even before

@@ -1,0 +1,1 @@
+- Sanitizer gates now cover container-store leaks, heap overwrites, and reviewed tolerated-report growth (#1725).

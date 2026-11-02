@@ -1,0 +1,1 @@
+- Release and container publishing now reject commits that have not passed through `main` (#2217).

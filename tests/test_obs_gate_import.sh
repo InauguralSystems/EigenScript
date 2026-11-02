@@ -11,8 +11,8 @@ echo "PLAN: 19"
 # AND an `unobserved` stats line (the round-10 vacuity rule from [99u]); every
 # answer-shaped verdict carries rc discipline (a crash is died-rcN, never a
 # PASS). The invariant that must not break — #915's last comment, suite check
-# 40 — is asserted on the VALUE: a host's pre-import history must stay
-# visible to an imported reader (`diverging`, never `equilibrium`).
+# 40 — is asserted on the VALUE: history explicitly passed into an imported
+# reader must stay visible (`diverging`, never `equilibrium`).
 #
 # Runs with cwd src/ (the runner's convention); every path below is absolute.
 set -u
@@ -101,39 +101,39 @@ if [ "$FORCE_RC" -ne 0 ]; then FORCE_V="died-rc$FORCE_RC"
 elif printf '%s' "$FORCE_OUT" | grep -q 'obs-gate: observed'; then FORCE_V=observed; else FORCE_V=other; fi
 check "EIGS_OBS_FORCE=1 reopens the gate on the import program" observed "$FORCE_V"
 
-# ---- the invariant: a host's pre-import history stays visible ----------
+# ---- the invariant: explicitly passed history stays visible ------------
 HOST='x is 1.0
 for i in range of 40:
     x is x * 2.0
 '
 # 10. The check-40 shape: the imported module READS. Asserted on the VALUE.
-printf 'print of (report of x)\nverdict is 1.0\n' > "$T/p/lib/probe.eigs"
-{ printf '%s' "$HOST"; printf 'import probe\n'; } > "$T/p/host.eigs"
-check "an imported reader sees the host's pre-import history (diverging)" diverging "$(answer "$T/p" host.eigs)"
+printf 'x is 1.0\ndefine record(v) as:\n    x is v\ndefine finish() as:\n    print of (report of x)\n' > "$T/p/lib/probe.eigs"
+{ printf 'import probe\nx is 1.0\n'; printf 'for i in range of 40:\n    x is x * 2.0\n    probe.record of x\nprobe.finish of null\n'; } > "$T/p/host.eigs"
+check "an imported reader sees explicitly passed history (diverging)" diverging "$(answer "$T/p" host.eigs)"
 # 11. ...and the gate's own verdict for that host is OPEN before line 1 ran
 #     (the eager scan, not a late runtime flip — a late flip would have RAISED
 #     through the import guard and check 10 would read died-rc1).
-check "the host importing a reader compiles observed" open "$(verdict "$T/p" host.eigs diverging)"
+check "the host importing an explicitly configured reader compiles observed" open "$(verdict "$T/p" host.eigs diverging)"
 # 12. TRANSITIVE: host -> mid (clean) -> inner (reads), through nested imports
 #     anchored at the module's own directory.
-printf 'print of (report of x)\n' > "$T/p/mid/inner.eigs"
-printf 'import inner\n' > "$T/p/mid/mid.eigs"
-{ printf '%s' "$HOST"; printf 'import mid\n'; } > "$T/p/host_deep.eigs"
+printf 'x is 1.0\ndefine record(v) as:\n    x is v\ndefine finish() as:\n    print of (report of x)\n' > "$T/p/mid/inner.eigs"
+printf 'import inner\ndefine record(v) as:\n    inner.record of v\ndefine finish() as:\n    inner.finish of null\n' > "$T/p/mid/mid.eigs"
+printf 'import mid\nx is 1.0\nfor i in range of 40:\n    x is x * 2.0\n    mid.record of x\nmid.finish of null\n' > "$T/p/host_deep.eigs"
 # mid.eigs must resolve from host's dir: put a copy where `import mid` finds it.
 cp "$T/p/mid/mid.eigs" "$T/p/mid.eigs"; cp "$T/p/mid/inner.eigs" "$T/p/inner.eigs"
-check "a reader TWO imports down still sees the host's history" diverging "$(answer "$T/p" host_deep.eigs)"
+check "a reader TWO imports down sees explicitly passed history" diverging "$(answer "$T/p" host_deep.eigs)"
 # 13. RESOLVER PARITY, project-first: a project file named like a stdlib module
 #     (`linalg.eigs`, which READS) must be the one the eager pass scans. A
 #     stdlib-first pass would scan lib/linalg.eigs (read-free), close the gate,
 #     and the import guard would raise (died-rc1) — never `diverging`.
-printf 'print of (report of x)\n' > "$T/p/sub/linalg.eigs"
-{ printf '%s' "$HOST"; printf 'import linalg\n'; } > "$T/p/sub/host_shadow.eigs"
+printf 'x is 1.0\ndefine record(v) as:\n    x is v\ndefine finish() as:\n    print of (report of x)\n' > "$T/p/sub/linalg.eigs"
+printf 'import linalg\nx is 1.0\nfor i in range of 40:\n    x is x * 2.0\n    linalg.record of x\nlinalg.finish of null\n' > "$T/p/sub/host_shadow.eigs"
 check "project-first: a shadowing project module is what the pass scans" diverging "$(answer "$T/p/sub" host_shadow.eigs)"
 # 14. RESOLVER PARITY, project root: eigs.json marks $T/p as the root, so a
 #     host in a subdirectory resolves `import rootmod` to $T/p/rootmod.eigs.
 printf '{"name": "obs-gate-import-fixture"}\n' > "$T/p/eigs.json"
-printf 'print of (report of x)\n' > "$T/p/rootmod.eigs"
-{ printf '%s' "$HOST"; printf 'import rootmod\n'; } > "$T/p/sub/host_root.eigs"
+printf 'x is 1.0\ndefine record(v) as:\n    x is v\ndefine finish() as:\n    print of (report of x)\n' > "$T/p/rootmod.eigs"
+printf 'import rootmod\nx is 1.0\nfor i in range of 40:\n    x is x * 2.0\n    rootmod.record of x\nrootmod.finish of null\n' > "$T/p/sub/host_root.eigs"
 check "project-root (eigs.json) resolution: the pass finds the root module" diverging "$(answer "$T/p/sub" host_root.eigs)"
 # 15. UNREACHABLE code still counts: an import inside a function nobody calls
 #     is scanned (the pass walks chunk->functions), so the host arms.

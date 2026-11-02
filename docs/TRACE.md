@@ -13,12 +13,11 @@ before the read. Source read by `import` and `load_file`, ordinary file
 readers, hashes, directory queries, and process/network input are taped.
 Reads whose payload is not represented in the current tape format—tensor checkpoints,
 font and music assets, HTTP static serving, stores, and databases—are refused;
-replay never falls back to a live file. Model checkpoints are the exception:
-the verdict of `eigen_model_load` or `eigen_checkpoint_info` is taped, their
-payload is never opened or read during replay, and taped inference results are
-served before the model is consulted. Every replayable
-mutation (`mkdir`, `write_text`, `write_bytes`, `rename`, and
-`remove_file`) returns or raises its recorded outcome before any filesystem syscall.
+replay never falls back to a live file. Every replayable
+mutation (`mkdir`, `write_text`, `write_bytes`, `rename`, `remove_file`,
+`file_sync`, and `dir_sync`) returns or raises its recorded outcome before any
+filesystem syscall. In particular, replay of either sync primitive does not
+open or sync the recorded path.
 Operations whose durable result cannot be represented by the tape remain loud
 boundaries: `mktemp`, stream output, corpus generation, and store operations
 are refused rather than partially run. The embedding API's initial program
@@ -89,7 +88,7 @@ The tape is plain text, one record per line:
 
 | Record | Meaning |
 |--------|---------|
-| `V <format> <runtime>` | Version header — always the first record (e.g. `V 9 0.47.0`). Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
+| `V <format> <runtime>` | Version header — always the first record (e.g. `V 9 <version>`). Here `<version>` is the version of the binary writing the tape. Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
 | `B <stream_id> <lifetime> <state> <spawn_base> <origin>` | Stream association, before that stream's events. Describes state grouping and host/causal correspondence; folded as metadata by stepping, never a source-line stop. See below. |
 | `L <stream_id> <line>` | Source-line event (from `OP_LINE`, and when native code that ran EigenScript — a builtin's callback, an embedder's eval — gets control back: the line it entered with, so an assignment it makes next is filed under the same line on the tape as in live history, #1434; v5 carries the stream ID shown here). Duplicate lines within the same stream with no intervening `A`/`N` in that stream are deduped — the compiler emits per-statement LINEs and bare repeats are noise. |
 | `S <stream_id> <fn> <depth> <serial>` | Scope transition (#539 v2): the `A` records that follow belong to this frame instance — `<fn>` is the chunk name (`<module>`, `<lambda>`, or the function name), `<depth>` the 0-based frame depth, `<serial>` a per-thread monotonically increasing frame-instance id stamped at frame push. Emitted lazily with the same dedup discipline as `L`: only when the frame owning the next assignment differs from the last `S`, so the byte cost lands at call boundaries that actually assign. Two invocations of the same function carry different serials — their local streams never merge. Skipped on replay; folded by `--step`. |
@@ -278,19 +277,49 @@ scheduler-trace/observer-configuration machinery is tracked by #1688.
 ## Recorded Builtins
 
 Every builtin whose return value is nondeterministic from the script's
-perspective lands on the tape as an `N` record:
+perspective lands on the tape as an `N` record. The table below is the
+complete catalogue of `N` record names, one per kind. Only the backticked
+names in its second column are entries; a name in the notes after it is
+not. `tools/tape_kinds_check.sh` (a `make precheck` row) fails when the
+source records a name this table leaves out, and when the table names
+something nothing records (#2200).
 
-- **Random:** `random`, `random_int`, `random_normal`, `random_hex`
-- **Time:** `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683)
-- **Environment / files:** `env_get`, `read_text`, `read_bytes`,
-  `read_line` (stdin, #558), `file_exists`, `ls`, `getcwd`, `exe_path`, `mkdir` (#585),
-  `write_text`, `write_bytes`, `rename`, `remove_file`, and `md5_file` (#1668).
-  Module acquisition adds `import_source` / `load_file_source` metadata and
-  bounded `_chunk` records, so source larger than one record remains replayable.
-  The filesystem replay rules are defined once in [Filesystem replay model](#filesystem-replay-model-1885).
-  An I/O
-  failure from either builtin or any file reader records the complete `io` message (builtin, path, and `strerror` reason)
-  in a one-string list. Because a successful `ls` can have that shape, its
+| Family | `N` record names |
+|---|---|
+| Random | `random`, `random_int`, `random_normal`, `random_hex` |
+| Time | `monotonic_ns`, `monotonic_ms`, `clock_unix` (#683) |
+| Environment and process | `env_get`, `args` (#471) |
+| File reads | `read_text`, `read_bytes`, `read_bytes_buf`, `read_line` (stdin, #558), `md5_file` (#1668) |
+| File queries | `file_exists`, `is_dir` (#576), `is_file` (#1058), `ls`, `getcwd`, `exe_path` |
+| File writes | `mkdir` (#585), `write_text`, `write_bytes`, `rename`, `remove_file`, `file_sync`, `dir_sync` (#2186) |
+| Tensor files | `tensor_load` (#1393) |
+| Module sources | `import_source`, `import_source_chunk`, `load_file_source`, `load_file_source_chunk`, `import_warning` |
+| Observer gate sources | `observer_source`, `observer_source_chunk` (#915) |
+| HTTP extension | `http_post`, `http_request_body`, `http_session_id`, `http_request_headers` |
+| Network extension | `net_listen`, `net_port`, `net_accept`, `net_dial`, `net_recv`, `net_send` (#414) |
+| Graphics extension | `gfx_read` (#823), `gfx_ticks` |
+| Audio (graphics extension) | `audio_capture_open`, `audio_capture_read` (#579), `audio_stream_queued`, `audio_noise` (#1803) |
+
+Notes on the families:
+
+- **Files:** the filesystem replay rules are defined once in
+  [Filesystem replay model](#filesystem-replay-model-1885). `is_dir` and
+  `is_file` are taped like `file_exists`.
+- **Module sources:** module acquisition records `import_source` /
+  `load_file_source` metadata and bounded `_chunk` records, so source larger
+  than one record remains replayable. Each `import` also records
+  `import_warning`: the project-shadows-stdlib warning it printed, or an empty
+  string. Replay prints the recorded warning instead of resolving the paths
+  again.
+- **Observer gate sources:** the observer gate reads the modules a program
+  loads by literal path before it runs, to decide whether the observer can
+  stay off (docs/OBSERVER.md). Each module source it reads is recorded as
+  `observer_source` with bounded `observer_source_chunk` records, and so is
+  the reason it stopped reading, so a replayed compile takes the same
+  decision from the tape.
+- **File I/O failures:** an I/O failure from any file builtin records the
+  complete `io` message (builtin, path, and `strerror` reason) in a
+  one-string list. Because a successful `ls` can have that shape, its
   error record adds a trailing `null` tag. Replay recognizes these
   otherwise-impossible result shapes and re-raises the
   identical error without live filesystem access. The fixed-cap readers
@@ -313,8 +342,8 @@ perspective lands on the tape as an `N` record:
 - **Process:** `args` (command-line arguments — differ across
   invocations, so the recorded list is served on replay regardless of
   the live argv; #471)
-- **HTTP extension:** `http_post` (success and all error paths),
-  `http_request_body`, `http_session_id`, `http_request_headers`
+- **HTTP extension:** `http_post` records its success and all its error
+  paths.
 - **Network extension (#414):** `net_listen`, `net_port`, `net_accept`,
   `net_dial`, `net_recv`, `net_send`. Every environment outcome is a
   recorded *value* — `null` for failure/timeout, a number or buffer for
@@ -335,35 +364,17 @@ perspective lands on the tape as an `N` record:
   so suppressing it would be meaningless. (`net_close` is deterministic
   and untraced — under replay no socket exists and it is a natural
   no-op, the `audio_capture_close` shape.)
-- **Model extension (#960):** `eigen_model_load`, `eigen_checkpoint_info`, and
-  `eigen_generate`. A load or inspection call records its verdict; replay
-  returns that verdict before probing the path or reading any checkpoint
-  payload. A replayed successful load does re-emit `Loading model from:` using
-  the recording-resolved path in that verdict, preserving stdout; it does not
-  emit the live-weights diagnostic because no live probe occurred. Sampling at temperature
-  above 0 draws from the shared `drand48` stream, so the emitted token list
-  is a nondeterministic return — untaped, a generating program could not be
-  replayed at all. **One record per call carries the whole token list**, not
-  one per sampled position: the draws are an implementation detail of the
-  decoding policy (top-k and top-p consume different numbers of them), the
-  list is what the script observes. The early replay take means `EIGS_REPLAY`
-  serves the tokens *before the model is consulted* — a recorded generation
-  replays with no checkpoint on disk and without advancing the RNG. Every
-  return is recorded, argument errors and the no-model-loaded empty list
-  included, so a program that hits one cannot desync the stream. Greedy
-  (`temperature < 0.01`) calls ride the same path: the tape cannot show
-  which branch ran, and replay may not load a model to re-derive it.
-  A model-dependent refusal records one outcome dictionary with `kind` (the
-  runtime error-kind name) and `message`. This covers context-limit and token-id
-  refusals, so replay preserves both the catchable kind and the recorded limits
-  before consulting a missing or replaced model. Successful generations and
-  soft empty-list returns keep their list payloads. For compatibility, old
-  string refusal records still replay as `value` errors; existing generation
-  list records remain readable.
 - **Rendered pixels (gfx extension, #823):** `gfx_read`. Renderer output
   depends on the font rasteriser, the driver and the backend, so the pixel
   a render-decode oracle reads back is a device input and takes the
   TAKE/RECORD pair.
+- **Graphics clock (gfx extension):** `gfx_ticks` returns the milliseconds
+  since SDL started (`0` when SDL is not loaded), a clock reading like
+  `monotonic_ms`, so it takes the TAKE/RECORD pair too.
+- **Audio stream depth (gfx extension):** `audio_stream_queued` returns how
+  many samples are still queued on the live output stream (`0` with no
+  stream open). A refill pump steers on it, so the depth is recorded and
+  replay serves it, which keeps the pump deterministic under `EIGS_REPLAY`.
 - **A REJECTED argument consumes no record** (#1007). `audio_capture_open`,
   `audio_capture_read`'s siblings and `gfx_read` all place their
   argument-type guard *above* `TRACE_NONDET_TAKE`, because an argument's

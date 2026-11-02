@@ -53,6 +53,9 @@ benchmarks:
   - name: "unobserved armed loop"
     id: unobserved-armed-loop
     exec: ./src/eigenscript bench/unobserved_armed_loop.eigs
+  - name: "observer gate soft keyword"
+    id: observer-gate-soft-keyword
+    exec: ./src/eigenscript bench/observer_gate_soft_keyword.eigs
 
   - name: "alloc_heavy"
     id: alloc-heavy

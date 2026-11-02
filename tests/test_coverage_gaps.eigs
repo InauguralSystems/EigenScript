@@ -213,7 +213,7 @@ assert of [(type of obs[1]) == "num", "CG69 observe entropy is number"]
 assert of [(type of 42) == "num", "CG71 type num"]
 assert of [(type of "hi") == "str", "CG72 type str"]
 assert of [(type of [1,2]) == "list", "CG73 type list"]
-assert of [(type of null) == "none", "CG74 type null"]
+assert of [(type of null) == "null", "CG74 type null"]
 define nop as:
     return null
 assert of [(type of nop) == "fn", "CG75 type fn"]

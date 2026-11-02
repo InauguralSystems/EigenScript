@@ -1,0 +1,1 @@
+- Ordinary program runs can opt into one machine-readable JSON diagnostic with `--json` for uncaught parse and runtime errors (#2168).

@@ -6,7 +6,7 @@ define lm_iw(k) as:
     import sort
     local xs is [3, 1, 2, k]
     local s is sort.sort_asc of xs
-    return [stats.mean of xs, len of s]
+    return [stats.stats_mean of xs, len of s]
 h1 is spawn of [lm_iw, 4]
 h2 is spawn of [lm_iw, 8]
 import string

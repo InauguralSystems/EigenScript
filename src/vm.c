@@ -111,6 +111,33 @@ void eigs_sigusr1_handler(int sig) {
     g_eigs_sigusr1_pending = 1;
 }
 
+/* Render supplied indices with the language's number-to-text contract. */
+static void raise_index_range(int line, const char *kind, EigsNum index,
+                              const char *length_kind, int length) {
+    char text[32];
+    if (index.is_int) eigs_int_text(text, sizeof(text), index.value.i64);
+    else eigs_num_text(text, sizeof(text), index.value.f64);
+    rt_error(EK_INDEX, line, "%s %s out of range (%s %d)",
+             kind, text, length_kind, length);
+}
+
+static void raise_dispatch_range(int line, EigsNum index) {
+    char text[32];
+    if (index.is_int) eigs_int_text(text, sizeof(text), index.value.i64);
+    else eigs_num_text(text, sizeof(text), index.value.f64);
+    rt_error(EK_INDEX, line, "dispatch key %s out of range", text);
+}
+
+static void raise_slice_range(int line, EigsNum start, EigsNum end, int length) {
+    char start_text[32], end_text[32];
+    if (start.is_int) eigs_int_text(start_text, sizeof(start_text), start.value.i64);
+    else eigs_num_text(start_text, sizeof(start_text), start.value.f64);
+    if (end.is_int) eigs_int_text(end_text, sizeof(end_text), end.value.i64);
+    else eigs_num_text(end_text, sizeof(end_text), end.value.f64);
+    rt_error(EK_INDEX, line, "slice %s:%s out of range (length %d)",
+             start_text, end_text, length);
+}
+
 /* #875: the shared number->text rule (eigs_num_text) — this was a fourth
  * hand-copy of it. Allocation-free, as this path requires. */
 static void obs_dump_num(double n, char *buf, size_t nbuf) {
@@ -668,6 +695,14 @@ static inline void dict_cache_insert(Value *dict, uint32_t h, int idx) {
     ce[1].dict = dict; ce[1].hash = h; ce[1].index = idx;
 }
 
+/* #2146: a cached index may now name a removal TOMBSTONE (keys[idx] == NULL,
+ * #2020's compact-dict deletion). That is a cache miss, never a strcmp. */
+static inline __attribute__((always_inline)) int
+dict_cached_key_is(const Value *dict, int idx, const char *key) {
+    const char *stored = dict->data.dict.keys[idx];
+    return stored && (stored == key || strcmp(stored, key) == 0);
+}
+
 static inline __attribute__((always_inline)) EigsSlot
 vm_dict_slot_cached(Value *dict, const char *key, uint32_t h) {
     /* #1057: a module namespace is a LIVE VIEW of the module env, so its
@@ -680,11 +715,9 @@ vm_dict_slot_cached(Value *dict, const char *key, uint32_t h) {
         return dict_get_hashed_slot(dict, key, h, &found);  /* null when absent */
     }
     DictCacheEntry *ce = dict_cache_probe(dict, h);
-    if (ce && ce->index < dict->data.dict.used) {
-        const char *stored = dict->data.dict.keys[ce->index];
-        if (stored == key || strcmp(stored, key) == 0)
-            return dict_value_slot(dict, ce->index);
-    }
+    if (ce && ce->index < dict->data.dict.used &&
+        dict_cached_key_is(dict, ce->index, key))
+        return dict_value_slot(dict, ce->index);
     int idx = env_hash_find_dict(dict, key, h);
     if (idx >= 0) {
         dict_cache_insert(dict, h, idx);
@@ -699,14 +732,12 @@ static inline void dict_set_cached(Value *dict, const char *key, uint32_t h, Val
         return;
     }
     DictCacheEntry *ce = dict_cache_probe(dict, h);
-    if (ce && ce->index < dict->data.dict.used) {
-        const char *stored = dict->data.dict.keys[ce->index];
-        if (stored == key || strcmp(stored, key) == 0) {
-            /* Cache hit — update in place */
-            val_incref(val);
-            dict_value_set_slot_owned(dict, ce->index, slot_from_heap(val));
-            return;
-        }
+    if (ce && ce->index < dict->data.dict.used &&
+        dict_cached_key_is(dict, ce->index, key)) {
+        /* Cache hit — update in place */
+        val_incref(val);
+        dict_value_set_slot_owned(dict, ce->index, slot_from_heap(val));
+        return;
     }
     /* Cache miss — full set (populates hash table, cache stays stale until next get) */
     dict_set_hashed(dict, key, h, val);
@@ -722,14 +753,12 @@ dict_set_cached_immediate(Value *dict, const char *key, uint32_t h, double num) 
     if (__builtin_expect(dict->module_ns != 0, 0))
         return 0;                     /* #1057: never in-place on a mirror */
     DictCacheEntry *ce = dict_cache_probe(dict, h);
-    if (ce && ce->index < dict->data.dict.used) {
-        const char *stored = dict->data.dict.keys[ce->index];
-        if (stored == key || strcmp(stored, key) == 0) {
-            /* Slot storage (#1665 arm D B10): a cache hit is a plain
-             * slot store of the already-guarded immediate, whatever the
-             * field held before (the old occupant is released). */
-            return dict_value_rewrite_f64(dict, ce->index, num);
-        }
+    if (ce && ce->index < dict->data.dict.used &&
+        dict_cached_key_is(dict, ce->index, key)) {
+        /* Slot storage (#1665 arm D B10): a cache hit is a plain
+         * slot store of the already-guarded immediate, whatever the
+         * field held before (the old occupant is released). */
+        return dict_value_rewrite_f64(dict, ce->index, num);
     }
     return 0;
 }
@@ -1146,6 +1175,17 @@ int sandbox_charge(size_t bytes) {
     return 1;
 }
 
+/* A module environment is the only environment chain rooted at the sealed
+ * builtin layer. Nested function/loop environments retain that ancestry, so
+ * this one predicate keeps VM, JIT and OSR diagnostics identical (#2180). */
+static const char *vm_missing_module(Env *env, EigsChunk *chunk) {
+    for (Env *e = env; e; e = e->parent) {
+        if (e == g_builtin_env)
+            return chunk->src ? chunk->src->file : chunk->name;
+    }
+    return NULL;
+}
+
 /* JIT Stage 4k: out-of-line helper for OP_GET_NAME.
  *
  * Mirrors CASE(GET_NAME) below exactly — IC fast path then chain-walk
@@ -1179,7 +1219,8 @@ void jit_helper_get_name(EigsChunk *chunk, int idx) {
     /* #1171: counted inside the hold, exactly as CASE(GET_NAME). */
     Env *target = env_resolve_chain_ref(start, name, h, &slot_idx, &depth, &s);
     if (!target) {
-        eigs_raise_missing_name(name, g_vm.current_line);
+        eigs_raise_missing_name(name, g_vm.current_line,
+                                vm_missing_module(frame->env, chunk));
         vm_push_slot(slot_null());
         return;
     }
@@ -2395,8 +2436,8 @@ void jit_helper_index_set(void) {
                 target->data.buffer.data[i] = SLOT_F64_RAW(val_s);
             } else {
                 if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));
-                else rt_error(EK_INDEX, g_vm.current_line, "buffer index %d out of range (length %d)",
-                              i, target->data.buffer.count);
+                else raise_index_range(g_vm.current_line, "buffer index",
+                        eigs_slot_number(idx_s, __func__), "length", target->data.buffer.count);
             }
             g_vm.sp -= 2;  /* keep val on TOS */
             g_vm.stack[g_vm.sp - 1] = val_s;
@@ -2410,8 +2451,8 @@ void jit_helper_index_set(void) {
                 list_rewrite_f64(target, i, n);
             } else {
                 if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));
-                else rt_error(EK_INDEX, g_vm.current_line, "index %d out of range (list length %d)",
-                              i, target->data.list.count);
+                else raise_index_range(g_vm.current_line, "index",
+                        eigs_slot_number(idx_s, __func__), "list length", target->data.list.count);
             }
             g_vm.sp -= 2;
             g_vm.stack[g_vm.sp - 1] = val_s;
@@ -2429,14 +2470,16 @@ void jit_helper_index_set(void) {
             val_incref(val);
             list_set_slot_owned(target, i, slot_from_heap(val));
         } else {
-            rt_error(EK_INDEX, g_vm.current_line, "index %d out of range (list length %d)", i, target->data.list.count);
+            raise_index_range(g_vm.current_line, "index", eigs_number_arg(idx, __func__),
+                              "list length", target->data.list.count);
         }
     } else if (target->type == VAL_BUFFER && val_is_number(idx)) {
         int i;
         if (!vm_subscript_index_is_int(idx, &i)) {
             rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", eigs_float_arg(idx, "index"));
         } else if (!vm_index_resolve(&i, target->data.buffer.count)) {
-            rt_error(EK_INDEX, g_vm.current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
+            raise_index_range(g_vm.current_line, "buffer index", eigs_number_arg(idx, __func__),
+                              "length", target->data.buffer.count);
         } else if (val_is_number(val)) {
             target->data.buffer.data[i] = eigs_float_arg(val, "buffer store");
         } else {
@@ -2468,9 +2511,8 @@ int jit_helper_index_get(void) {
                 vm_push_slot(r);
             } else {
                 if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));
-                else rt_error(EK_INDEX, g_vm.current_line,
-                    "index %d out of range (list length %d)",
-                    i, target->data.list.count);
+                else raise_index_range(g_vm.current_line, "index",
+                        eigs_slot_number(idx_s, __func__), "list length", target->data.list.count);
                 slot_decref(tgt_s);
                 vm_push_slot(slot_null());
             }
@@ -2483,9 +2525,8 @@ int jit_helper_index_get(void) {
                 vm_push_slot(slot_from_f64(v));
             } else {
                 if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));
-                else rt_error(EK_INDEX, g_vm.current_line,
-                    "buffer index %d out of range (length %d)",
-                    i, target->data.buffer.count);
+                else raise_index_range(g_vm.current_line, "buffer index",
+                        eigs_slot_number(idx_s, __func__), "length", target->data.buffer.count);
                 slot_decref(tgt_s);
                 vm_push_slot(slot_null());
             }
@@ -2505,9 +2546,8 @@ int jit_helper_index_get(void) {
         } else if (vm_index_resolve(&i, target->data.list.count)) {
             result = list_get_owned(target, i);
         } else {
-            rt_error(EK_INDEX, g_vm.current_line,
-                "index %d out of range (list length %d)",
-                i, target->data.list.count);
+            raise_index_range(g_vm.current_line, "index", eigs_number_arg(idx, __func__),
+                              "list length", target->data.list.count);
         }
     } else if (target->type == VAL_DICT && idx->type == VAL_STR) {
         EigsSlot v = vm_dict_slot_cached(target, idx->data.str,
@@ -2521,9 +2561,8 @@ int jit_helper_index_get(void) {
             char buf[2] = { target->data.str[i], 0 };
             result = make_str_len(buf, 1);
         } else {
-            rt_error(EK_INDEX, g_vm.current_line,
-                "string index %d out of range (length %d)",
-                i, (int)val_str_len(target));
+            raise_index_range(g_vm.current_line, "string index", eigs_number_arg(idx, __func__),
+                              "length", (int)val_str_len(target));
         }
     } else if (target->type == VAL_BUFFER && val_is_number(idx)) {
         int i;
@@ -2532,9 +2571,8 @@ int jit_helper_index_get(void) {
         else if (vm_index_resolve(&i, target->data.buffer.count))
             result = make_float(buffer_read_f64(target, i));
         else
-            rt_error(EK_INDEX, g_vm.current_line,
-                "buffer index %d out of range (length %d)",
-                i, target->data.buffer.count);
+            raise_index_range(g_vm.current_line, "buffer index", eigs_number_arg(idx, __func__),
+                              "length", target->data.buffer.count);
     } else {
         rt_error(EK_TYPE, g_vm.current_line,
             "cannot index %s", val_type_name(target->type));
@@ -3196,9 +3234,58 @@ int vm_error_has_handler(void) {
  * The lines[off] == g_error_line guard suppresses the caret whenever the
  * offset disagrees with the reported line (JIT-advanced ip, builtin line
  * restamps), so a caret only ever prints on the correct source line. */
+void vm_print_json_error(FILE *out, int error_col, int error_span) {
+    strbuf js;
+    strbuf_init(&js);
+    strbuf_append(&js, "{\"version\":1,\"code\":\"");
+    eigs_json_escape_append(&js, err_kind_name((ErrKind)g_error_kind), SIZE_MAX);
+    strbuf_append(&js, "\",\"kind\":\"runtime\",\"message\":\"");
+    eigs_json_escape_append(&js, g_error_raw, SIZE_MAX);
+    strbuf_append(&js, "\",\"file\":\"");
+    eigs_json_escape_append(&js, g_error_file, SIZE_MAX);
+    strbuf_append_fmt(&js, "\",\"line\":%d,\"column\":%d,\"span\":%d,\"frames\":[",
+                      g_error_line, error_col, error_span);
+    if (eigs_current && eigs_current->vm) for (int i = g_vm.frame_count - 1; i >= 0; i--) {
+        CallFrame *f = &g_vm.frames[i];
+        const char *name = (f->chunk && f->chunk->name) ? f->chunk->name : "?";
+        const char *file = (f->chunk && f->chunk->src && f->chunk->src->file)
+                         ? f->chunk->src->file : "<native>";
+        int line = 0;
+        if (i == g_vm.frame_count - 1) line = g_vm.current_line;
+        else if (f->chunk && f->ip) {
+            long off = f->ip - f->chunk->code;
+            if (off > 0) off--;
+            if (off >= 0 && off < f->chunk->lines_len) line = f->chunk->lines[off];
+        }
+        if (i != g_vm.frame_count - 1) strbuf_append_char(&js, ',');
+        strbuf_append(&js, "{\"file\":\"");
+        eigs_json_escape_append(&js, file, SIZE_MAX);
+        strbuf_append_fmt(&js, "\",\"line\":%d,\"function\":\"", line);
+        eigs_json_escape_append(&js, name, SIZE_MAX);
+        strbuf_append(&js, "\"}");
+    }
+    strbuf_append(&js, "]}\n");
+    fputs(js.data, out);
+    strbuf_free(&js);
+}
+
 static void vm_error_flush_pending(EigsChunk *chunk, const uint8_t *ip) {
     if (!g_error_print_pending) return;
     g_error_print_pending = 0;
+    long error_off = -1;
+    int error_col = 0, error_span = 0;
+    if (chunk && ip && chunk->cols) {
+        error_off = ip - chunk->code - 1;
+        if (error_off >= 0 && error_off < chunk->lines_len &&
+            chunk->lines[error_off] == g_error_line) {
+            error_col = chunk->cols[error_off] + 1;
+            error_span = 1;
+        }
+    }
+    if (g_json_diagnostics) {
+        vm_print_json_error(stderr, error_col, error_span);
+        return;
+    }
     fprintf(stderr, "%s\n", g_error_msg);
     if (chunk && ip && chunk->cols && chunk->src && chunk->src->text) {
         long off = ip - chunk->code - 1;
@@ -3219,8 +3306,12 @@ static int vm_handler_in_range(int base) {
 /* Type name for a stack slot, for error diagnostics. Returns a static
  * string (safe to hold across a decref). */
 static const char *slot_type_name(EigsSlot s) {
-    if (slot_is_null(s)) return "none";
-    if (slot_is_ptr(s)) { Value *v = slot_as_ptr(s); return v ? val_type_name(v->type) : "none"; }
+    if (slot_is_null(s)) return "null";
+    if (slot_is_ptr(s)) {
+        Value *v = slot_as_ptr(s);
+        if (!v || v->type == VAL_NULL) return "null";
+        return val_type_name(v->type);
+    }
     if (slot_is_bool(s)) return "bool";   /* #1637 */
     if (slot_is_f64(s)) return "num";     /* immediate double */
     if (slot_is_smi(s)) return "num";     /* #1758 (B): an int's type is "num" too */
@@ -4086,7 +4177,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * load and the incref, and this thread then called freed memory. */
         Env *target = env_resolve_chain_ref(start, name, h, &slot_idx, &depth, &s);
         if (!target) {
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -4910,8 +5002,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     vm_push_slot(r);
                 } else {
                     if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));
-                    else rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
-                                  i, target->data.list.count);
+                    else raise_index_range(current_line, "index", eigs_slot_number(idx_s, __func__),
+                                           "list length", target->data.list.count);
                     slot_decref(tgt_s);
                     vm_push_slot(slot_null());
                 }
@@ -4924,8 +5016,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     vm_push_slot(slot_from_f64(v));
                 } else {
                     if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));
-                    else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",
-                                  i, target->data.buffer.count);
+                    else raise_index_range(current_line, "buffer index", eigs_slot_number(idx_s, __func__),
+                                           "length", target->data.buffer.count);
                     slot_decref(tgt_s);
                     vm_push_slot(slot_null());
                 }
@@ -4953,8 +5045,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     target->data.buffer.data[i] = SLOT_F64_RAW(val_s);
                 } else {
                     if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));
-                    else rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)",
-                                  i, target->data.buffer.count);
+                    else raise_index_range(current_line, "buffer index", eigs_slot_number(idx_s, __func__),
+                                           "length", target->data.buffer.count);
                 }
                 g_vm.sp -= 2;  /* keep val on TOS */
                 g_vm.stack[g_vm.sp - 1] = val_s;
@@ -4967,8 +5059,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     list_set_f64(target, i, SLOT_F64_RAW(val_s));
                 } else {
                     if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));
-                    else rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)",
-                                  i, target->data.list.count);
+                    else raise_index_range(current_line, "index", eigs_slot_number(idx_s, __func__),
+                                           "list length", target->data.list.count);
                 }
                 g_vm.sp -= 2;
                 g_vm.stack[g_vm.sp - 1] = val_s;
@@ -4986,14 +5078,16 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 val_incref(val);
                 list_set_slot_owned(target, i, slot_from_heap(val));
             } else {
-                rt_error(EK_INDEX, current_line, "index %d out of range (list length %d)", i, target->data.list.count);
+                raise_index_range(current_line, "index", eigs_number_arg(idx, __func__),
+                                  "list length", target->data.list.count);
             }
         } else if (target->type == VAL_BUFFER && val_is_number(idx)) {
             int i;
             if (!vm_subscript_index_is_int(idx, &i)) {
                 rt_error(EK_VALUE, current_line, "index must be an integer, got %g", eigs_float_arg(idx, "index"));
             } else if (!vm_index_resolve(&i, target->data.buffer.count)) {
-                rt_error(EK_INDEX, current_line, "buffer index %d out of range (length %d)", i, target->data.buffer.count);
+                raise_index_range(current_line, "buffer index", eigs_number_arg(idx, __func__),
+                                  "length", target->data.buffer.count);
             } else if (val_is_number(val)) {
                 target->data.buffer.data[i] = eigs_float_arg(val, "buffer store");
             } else {
@@ -5539,7 +5633,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5588,7 +5683,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5639,7 +5735,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5694,7 +5791,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * read of the same name in the same position dies here; so does
              * this one now. (The AOT carried a carve-out for this case --
              * ouroboros t124 -- which can be deleted at the next pin bump.) */
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -5791,7 +5889,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 v->type == VAL_BUILTIN ? "builtin" :
                 v->type == VAL_BUFFER ? "buffer" :
                 v->type == VAL_BOOL ? "bool" :
-                v->type == VAL_NULL ? "none" : "unknown");
+                v->type == VAL_NULL ? "null" : "unknown");
             break;
         /* #262 Step E: when/where/why/how on a value-based operand have no
          * slot trajectory (observer state is binding-keyed). where/why/how on a
@@ -5871,7 +5969,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * other type) used to read as line 0 and answer null silently. */
         if (!line_v || !val_is_number(line_v)) {
             rt_error(EK_TYPE, current_line, "'at' line must be a number, got %s",
-                     line_v ? val_type_name(line_v->type) : "none");
+                     line_v ? val_type_name(line_v->type) : "null");
             val_decref(line_v);
             vm_push(make_null());
             DISPATCH();
@@ -5977,7 +6075,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (!slot_is_ptr(tgt_s) || slot_as_ptr(tgt_s)->type != VAL_LIST) {
             rt_error(EK_TYPE, current_line,
                 "destructuring requires a list, got %s",
-                slot_type_name(tgt_s));   /* #1637: names bool/none, not "number" */
+                slot_type_name(tgt_s));   /* #1637: names bool/null, not "number" */
             slot_decref(tgt_s);
             for (int i = 0; i < n; i++) vm_push_slot(slot_null());
             DISPATCH();
@@ -6119,14 +6217,18 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
 
+        /* #2136: retain the supplied kind and exact integer digits; omitted
+         * bounds use their resolved integer defaults. */
+        EigsNum orig_start = { .is_int = 1, .value.i64 = start };
+        EigsNum orig_end = { .is_int = 1, .value.i64 = end };
+        if (slot_type(start_s) == VAL_INT || slot_type(start_s) == VAL_FLOAT) orig_start = eigs_slot_number(start_s, __func__);
+        if (slot_type(end_s) == VAL_INT || slot_type(end_s) == VAL_FLOAT) orig_end = eigs_slot_number(end_s, __func__);
+
         /* Resolve negatives against len, then bounds-check 0<=s<=e<=len. */
-        int orig_start = start, orig_end = end;
         if (start < 0) start += len;
         if (end   < 0) end   += len;
         if (start < 0 || start > len || end < 0 || end > len || start > end) {
-            rt_error(EK_INDEX, g_vm.current_line,
-                "slice %d:%d out of range (length %d)",
-                orig_start, orig_end, len);
+            raise_slice_range(g_vm.current_line, orig_start, orig_end, len);
             slot_decref(start_s); slot_decref(end_s); slot_decref(tgt_s);
             vm_push_slot(slot_null());
             DISPATCH();
@@ -6245,7 +6347,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         int oidx = -1, odepth = 0;
         Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
         if (!oe) {
-            eigs_raise_missing_name(name, current_line);
+            eigs_raise_missing_name(name, current_line,
+                                    vm_missing_module(frame->env, chunk));
             vm_push_slot(slot_null());
             DISPATCH();
         }
@@ -6548,15 +6651,17 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
 
-        /* #1388: under the sealed builtin layer, not the importer's globals:
-         * a builtin name in module code means the builtin unless the MODULE
-         * rebinds it; other names still reach the importer through the
-         * layer's parent link. */
+        /* #1388/#2180: under the sealed builtin layer, not the importer's
+         * globals. A builtin name means the builtin unless the MODULE rebinds
+         * it; every other name must be local or explicitly imported. */
         Env *mod_env = env_new(g_builtin_env);
         int saved_errors = g_parse_errors;
         g_parse_errors = 0;
+        EigsStderrSilence parse_guard;
+        eigs_json_parse_silence_begin(&parse_guard);
         TokenList tl = tokenize(source);
         ASTNode *ast = parse(&tl);
+        eigs_json_parse_silence_end(&parse_guard);
         if (g_parse_errors > 0) {
             g_parse_errors = saved_errors;
             free_ast(ast);  /* partial tree from the failed module parse (cf. #214) */
@@ -6807,8 +6912,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         }
         if (key_i < INT_MIN || key_i > INT_MAX) {
             slot_decref(arg_s); slot_decref(table_s);
-            rt_error(EK_INDEX, current_line,
-                "dispatch key %lld out of range", (long long)key_i);
+            raise_dispatch_range(current_line, key_n);
             vm_push_slot(slot_null());
             DISPATCH();
         }

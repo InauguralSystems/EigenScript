@@ -1,0 +1,25 @@
+# #1643 review round 2: every zero-capacity send has its own completion.
+rounds is 20
+workers is 50
+
+define send_one(ch, value) as:
+    send of [ch, value]
+    return 1
+
+define recv_one(ch) as:
+    return recv of ch
+
+for round in range of rounds:
+    ch is channel of 0
+    senders is []
+    receivers is []
+    for i in range of workers:
+        append of [senders, spawn of [send_one, ch, i]]
+    for i in range of workers:
+        append of [receivers, spawn of [recv_one, ch]]
+    for h in senders:
+        thread_join of h
+    for h in receivers:
+        thread_join of h
+
+print of "PASS: rendezvous stress joins every sender and receiver"

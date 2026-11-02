@@ -68,6 +68,24 @@ define f_sqrt2(x) as:
 root_b is calculus.bisection of [f_sqrt2, 1, 2, 1e-10]
 assert_near of [root_b, 1.41421356, 1e-6, "bisection sqrt(2)"]
 
+# Reversed bounds describe the same bracket and must converge to the same root.
+root_b_reversed is calculus.bisection of [f_sqrt2, 2, 1, 1e-12]
+assert_near of [root_b_reversed, 1.4142135623730951, 1e-9, "bisection reversed bracket"]
+
+# A bracket with same-sign endpoint values contains no guaranteed root.
+bisection_same_sign_raised is false
+try:
+    calculus.bisection of [f_sqrt2, 0, 1, 1e-12]
+catch _bisection_error:
+    bisection_same_sign_raised is true
+assert of [bisection_same_sign_raised, "bisection rejects same-sign endpoints"]
+
+# An endpoint that is itself a root is valid even without a strict sign change.
+root_b_left_endpoint is calculus.bisection of [f_sqrt2, 1.4142135623730951, 2, 1e-12]
+assert_near of [root_b_left_endpoint, 1.4142135623730951, 1e-12, "bisection left endpoint root"]
+root_b_right_endpoint is calculus.bisection of [f_sqrt2, 1, 1.4142135623730951, 1e-12]
+assert_near of [root_b_right_endpoint, 1.4142135623730951, 1e-12, "bisection right endpoint root"]
+
 # Newton-Raphson for same
 define df_sqrt2(x) as:
     return 2 * x

@@ -1,1 +1,0 @@
-- Extend the EigenMiniSat consumer-acceptance row with its conflict-heavy regime-C fixture check for #1995.

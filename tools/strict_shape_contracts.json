@@ -536,18 +536,6 @@
     }
   },
   {
-    "function": "builtin_build_corpus",
-    "file": "src/builtins_host.c",
-    "category": "optional",
-    "minimum": 4,
-    "maximum": 7,
-    "reason": "Four required operands; identifiers path, slot count, integer count are optional slots 5..7.",
-    "public_names": [
-      "build_corpus"
-    ],
-    "disposition": "guarded"
-  },
-  {
     "function": "builtin_char_at",
     "file": "src/builtins.c",
     "category": "fixed",
@@ -742,30 +730,6 @@
     "reason": "Consumes the first two tuple operands; trailing operands have no role.",
     "public_names": [
       "dot"
-    ],
-    "disposition": "guarded"
-  },
-  {
-    "function": "builtin_eigen_eval_loss",
-    "file": "src/model_infer.c",
-    "category": "fixed",
-    "minimum": 2,
-    "maximum": 2,
-    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
-    "public_names": [
-      "eigen_eval_loss"
-    ],
-    "disposition": "guarded"
-  },
-  {
-    "function": "builtin_eigen_generate",
-    "file": "src/model_infer.c",
-    "category": "optional",
-    "minimum": 3,
-    "maximum": 4,
-    "reason": "Three required operands plus optional top_p; prompt is nested list data.",
-    "public_names": [
-      "eigen_generate"
     ],
     "disposition": "guarded"
   },
@@ -1439,7 +1403,7 @@
         "2ae593a62bd4ef4535573650992442d5e920307ca1b2a1ff23c8306d755eb6de"
       ],
       "minmax_reduce": [
-        "542146c9ec341089bb259e26efddf501dd14d2345959a30b33865095a0730b95"
+        "44b27c9f587559df0e7890a90ab38b12483ed5da7f2e21e8a8fa6ecbc8ba4608"
       ]
     }
   },
@@ -1465,7 +1429,7 @@
         "2ae593a62bd4ef4535573650992442d5e920307ca1b2a1ff23c8306d755eb6de"
       ],
       "minmax_reduce": [
-        "542146c9ec341089bb259e26efddf501dd14d2345959a30b33865095a0730b95"
+        "44b27c9f587559df0e7890a90ab38b12483ed5da7f2e21e8a8fa6ecbc8ba4608"
       ]
     }
   },
@@ -1500,18 +1464,6 @@
         "24720427e6a309464edc04905ac38f78d0ab9de6a6778910ec55c2f5ba108795"
       ]
     }
-  },
-  {
-    "function": "builtin_native_train_step",
-    "file": "src/model_train.c",
-    "category": "fixed",
-    "minimum": 3,
-    "maximum": 3,
-    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
-    "public_names": [
-      "native_train_step_builtin"
-    ],
-    "disposition": "guarded"
   },
   {
     "function": "builtin_nearest_in_range",
@@ -2481,20 +2433,20 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "181db3e52db3b60d3c4d6677594eec9a3da469251f3fba4d669764abc6bed160"
+      "0475d5384dd7f23a0df2d8af787ba64675d770e744e34e837fb43a491c6fbcce"
     ],
     "source_sha256": {
       "buffer_read_f64": [
         "5487758ab896c3c4ea075c722c1c845fff991a8c424c675a729cc7f90dbc1817"
       ],
       "builtin_tensor_mean": [
-        "181db3e52db3b60d3c4d6677594eec9a3da469251f3fba4d669764abc6bed160"
+        "0475d5384dd7f23a0df2d8af787ba64675d770e744e34e837fb43a491c6fbcce"
       ],
       "tensor_flatten_recursive": [
         "fa55a91461d8a3791b0c4520b063faa164cd50b8c4da1c4e20cbccd2ab929c91"
       ],
       "tensor_total": [
-        "c1020e7360055af91e01f98dc2514242d88d79bb61ecbddaf3a098d85d4c1604"
+        "309b8235701347551651091820df50ed8b7afa8f64598b94f2aaaa5b65d1a2cd"
       ]
     }
   },
@@ -2545,20 +2497,20 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "1850ecba8d1024bd32221bde30be71fa974b07304a194b866399eab4977828d6"
+      "93a141fe152b44bdb22bd86184fd8a8ecae9e7666130c7d036ad958845a28d16"
     ],
     "source_sha256": {
       "buffer_read_f64": [
         "5487758ab896c3c4ea075c722c1c845fff991a8c424c675a729cc7f90dbc1817"
       ],
       "builtin_tensor_norm": [
-        "1850ecba8d1024bd32221bde30be71fa974b07304a194b866399eab4977828d6"
+        "93a141fe152b44bdb22bd86184fd8a8ecae9e7666130c7d036ad958845a28d16"
       ],
       "tensor_flatten_recursive": [
         "fa55a91461d8a3791b0c4520b063faa164cd50b8c4da1c4e20cbccd2ab929c91"
       ],
       "tensor_total": [
-        "c1020e7360055af91e01f98dc2514242d88d79bb61ecbddaf3a098d85d4c1604"
+        "309b8235701347551651091820df50ed8b7afa8f64598b94f2aaaa5b65d1a2cd"
       ]
     }
   },
@@ -2726,17 +2678,20 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "41b64a353f2123573793d87f6eed683726aade487c1dbf4b5b6cb66e5153c09c"
+      "5d90e26e48acfff3de1efe35ec59018a7405281cf1373ab204b1c27299f93dfe"
     ],
     "source_sha256": {
       "builtin_tensor_sum": [
-        "41b64a353f2123573793d87f6eed683726aade487c1dbf4b5b6cb66e5153c09c"
+        "5d90e26e48acfff3de1efe35ec59018a7405281cf1373ab204b1c27299f93dfe"
       ],
       "tensor_sum_has_float": [
-        "9f9236fba6d64f1a3058a0860ac8f14cfa6a8d2d70b598c2892c7c216e62d653"
+        "7b754441747db5227a2f92136d335123a055ea229472ff6ed660d88051e4f3c9"
       ],
       "tensor_sum_into": [
         "9b5f0271eff4ac61fc7af2b3a97b562f5c47404512d5f3a5c5511a842539498b"
+      ],
+      "tensor_total": [
+        "309b8235701347551651091820df50ed8b7afa8f64598b94f2aaaa5b65d1a2cd"
       ]
     }
   },
@@ -2811,11 +2766,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "01c2880d21271cbf77daa5f6fa0d35cfe5eeaa2ca51e46cb333f797dbba52581"
+      "58643ba82f7389f7db40c267f5d9a1da317dcea2994a74da4617006eb112153b"
     ],
     "source_sha256": {
       "builtin_throw": [
-        "01c2880d21271cbf77daa5f6fa0d35cfe5eeaa2ca51e46cb333f797dbba52581"
+        "58643ba82f7389f7db40c267f5d9a1da317dcea2994a74da4617006eb112153b"
       ],
       "value_to_string": [
         "541c34dfd1dbe93f2ca39b800321afb116be9c74d7d8e35b297502a157a2e1fd"
@@ -2834,11 +2789,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "c2053861356373745d56a7459af55d70c066b89a513e06c910c2e83b33c9ff13"
+      "8822d10dee00d55b95f816a9627c0cc9fcbac6f63762bfc9477d041bbcbfe09d"
     ],
     "source_sha256": {
       "builtin_type": [
-        "c2053861356373745d56a7459af55d70c066b89a513e06c910c2e83b33c9ff13"
+        "8822d10dee00d55b95f816a9627c0cc9fcbac6f63762bfc9477d041bbcbfe09d"
       ]
     }
   },

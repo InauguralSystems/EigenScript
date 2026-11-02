@@ -17,42 +17,6 @@ applications.
 
 ## Source Layout
 
-```
-src/
-├── eigenscript.h          # Public header: types, parser, VM API
-├── eigenscript.c          # Globals, value constructors, refcount GC, environment, observer
-├── lexer.c                # Tokenizer
-├── parser.c               # Recursive-descent parser → AST
-├── compiler.c             # AST → bytecode compiler
-├── vm.h                   # Opcode enum, chunk/frame/VM structs
-├── vm.c                   # Bytecode VM execution loop (computed-goto dispatch) + JIT helpers
-├── jit.h                  # JIT public API, layout descriptor, helper prototypes
-├── jit.c                  # x86-64 template JIT: scanner, emitter, code cache
-├── jit_smoke.c            # Standalone emitter smoke test (make jit-smoke)
-├── state.h / state.c      # EigsState (per-interpreter) + EigsThread (per-OS-thread)
-├── eigs_embed.h / eigs_embed.c  # Public embedding API: opaque handles, eval, FFI
-├── embed_smoke.c          # Standalone embedding smoke test (make embed-smoke)
-├── chunk.c                # Bytecode container, constant pool, disassembler
-├── trace.h / trace.c      # Execution trace tape, deterministic replay
-├── hash.c                 # Hashing builtins (SHA-256, MD5, HMAC)
-├── fmt.c                  # Code formatter
-├── lint.c                 # Linter
-├── eigenlsp.c             # Language server (standalone binary)
-├── builtins.c             # Core builtins (I/O, collections, string, bitwise, ...)
-├── builtins_tensor.c      # Tensor math, gradients, SGD
-├── builtins_internal.h    # Cross-TU prototypes for tensor builtins
-├── alloc.c                # Checked allocation helpers
-├── strbuf.c               # Growable string buffer helper
-├── main.c                 # Entry point, CLI argument handling
-├── ext_http.c             # HTTP server extension (optional)
-├── ext_db.c               # PostgreSQL extension (optional)
-├── ext_store.c            # EigenStore key-value database
-├── ext_gfx.c              # SDL2 graphics extension (optional, dlopen'd)
-├── model_io.c             # Model weight loading/saving (optional)
-├── model_infer.c          # Transformer forward pass (optional)
-└── model_train.c          # Training loop and gradient computation (optional)
-```
-
 ## Pipeline
 
 ```
@@ -167,6 +131,17 @@ unchanged, and `EIGS_JIT_OFF=1` disables it for bisection.
   (+`EIGS_JIT_DUMP_NATIVE=1` for hex dumps). History and design
   records live in CHANGELOG.md (Stages 4–5h) and
   `docs/JIT_STAGE5_INLINE_IC.md`.
+  Each `EIGS_JIT_HOT` row aggregates all OSR slots: `oslots`, `ocomp`, and
+  `ofull` are respectively the attempted, compiled, and code-cache-rejected
+  slot counts. The legacy `osr`/`oadv`/`oent` fields describe the compiled
+  slot with the widest native coverage (or one attempted slot when none
+  compiled), preserving the native-byte estimate. Thus `cache_full_rejects`
+  reconciles with entry rows whose `jit` state is `full` plus the sum of
+  `ofull`; retained freed-chunk rows use the same snapshot semantics. The
+  freed-chunk retention is bounded by `JIT_HOT_ROWS_MAX` in `src/jit.c`, and
+  the dump reports dropped rows. Its `Hot chunks (top N of M)` header states
+  how many hottest rows are printed; all-chunk totals use the complete
+  retained population.
 
 ### Observer
 
@@ -256,15 +231,8 @@ only attached thread (#1147), else by the exit sweep (#297). See
 
 Extensions are conditionally compiled via flags:
 
-| Flag | Extension | Dependency |
-|------|-----------|------------|
-| `EIGENSCRIPT_EXT_HTTP` | HTTP server | none (uses raw sockets) |
-| `EIGENSCRIPT_EXT_DB` | PostgreSQL | libpq |
-| `EIGENSCRIPT_EXT_MODEL` | Transformer | none |
-| `EIGENSCRIPT_EXT_GFX` | SDL2 graphics | libSDL2 (loaded at runtime via `dlopen`) |
-
 The hosted release (`make build`) compiles graphics in while keeping SDL
-lazy-loaded. `make server` adds HTTP, raw TCP, and models; `make server-db` adds
+lazy-loaded. `make server` adds HTTP and raw TCP; `make server-db` adds
 PostgreSQL, and `make zlib` separately adds the libz-backed codecs. The old
 `gfx`, `http`, `net`, and `full` targets remain compatibility aliases.
 

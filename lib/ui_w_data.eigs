@@ -626,18 +626,18 @@ define hex_view_addr_at(hv, mx, my) as:
 
 define _hex_style_color(st) as:
     if (type of st) == "str":
-        return _theme_color of [st, _theme.accent]
+        return theme_color of [st, _theme.accent]
     return st
 
 define _render_hex_view(widget, ax, ay) as:
     widget._ax is ax
     widget._ay is ay
-    local bg is _theme_color of ["hex_bg", (_theme_color of ["plot_bg", [22, 22, 32]])]
-    local acol is _theme_color of ["hex_addr", _theme.text_dim]
-    local tcol is _theme_color of ["hex_text", _theme.text_color]
-    local ascol is _theme_color of ["hex_ascii", _theme.text_dim]
-    local ccol is _theme_color of ["hex_cursor", _theme.accent]
-    local bcol is _theme_color of ["dock_border", (_theme_color of ["panel_border", [60, 60, 80]])]
+    local bg is theme_color of ["hex_bg", (theme_color of ["plot_bg", [22, 22, 32]])]
+    local acol is theme_color of ["hex_addr", _theme.text_dim]
+    local tcol is theme_color of ["hex_text", _theme.text_color]
+    local ascol is theme_color of ["hex_ascii", _theme.text_dim]
+    local ccol is theme_color of ["hex_cursor", _theme.accent]
+    local bcol is theme_color of ["dock_border", (theme_color of ["panel_border", [60, 60, 80]])]
     gfx_rect of [ax, ay, widget.w, widget.h, bg[0], bg[1], bg[2]]
     ui_clip_push of [ax + 1, ay + 1, widget.w - 2, widget.h - 2]
     local m is hex_view_metrics of widget

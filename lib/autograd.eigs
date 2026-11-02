@@ -204,7 +204,7 @@ define _ag_accum(t, id, delta) as:
     local node is t.nodes[id]
     if not node.track:
         return null
-    if (type of node.grad) == "none":
+    if (type of node.grad) == "null":
         if (type of delta) == "num":
             node.grad is delta
         else:
@@ -539,7 +539,7 @@ define ag_backward(t, node) as:
     local i is node.id
     loop while i >= 0:
         local n is t.nodes[i]
-        if n.track and (type of n.grad) != "none" and (len of n.parents) > 0:
+        if n.track and (type of n.grad) != "null" and (len of n.parents) > 0:
             _ag_vjp of [t, n, n.grad]
         i is i - 1
     return null
@@ -547,7 +547,7 @@ define ag_backward(t, node) as:
 # ag_sgd_step of [node, lr]: node.value -= lr * node.grad, in place on the
 # caller's buffer. A leaf backward never reached (grad null) is left alone.
 define ag_sgd_step(node, lr) as:
-    if (type of node.grad) == "none":
+    if (type of node.grad) == "null":
         return null
     local v is node.value
     local g is node.grad
@@ -562,7 +562,7 @@ define ag_sgd_step(node, lr) as:
 # ag_sgd_step_clipped of [node, lr, clip]: as ag_sgd_step, with each
 # gradient element clipped to [-clip, clip] first (the DQN's update rule).
 define ag_sgd_step_clipped(node, lr, clip) as:
-    if (type of node.grad) == "none":
+    if (type of node.grad) == "null":
         return null
     local v is node.value
     local g is node.grad

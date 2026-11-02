@@ -24,3 +24,9 @@ updates:
     directory: "/.devcontainer"
     schedule:
       interval: "weekly"
+
+  # Published runtime image base in the root Dockerfile (#2220).
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"

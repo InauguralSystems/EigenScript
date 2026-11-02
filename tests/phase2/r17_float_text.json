@@ -4229,7 +4229,7 @@
       ]
     }
   },
-  "population_sha256_scope": "Original four-profile R1.7-D6 derivation before the explicit S10-D2 retirements; active population excludes only the two retired paths.",
+  "population_sha256_scope": "Original four-profile R1.7-D6 derivation before explicit retirements; active population excludes exactly the two S10-D2 paths and six SYNC11-model-retirement paths. The original derivation digest is unchanged.",
   "retirements": {
     "tests/phase2/builtins/builtins/proc_read_buf.branch": {
       "ruling": "S10-D2",
@@ -4242,6 +4242,42 @@
       "anchor": "ed09f908603a414f77ead78e241fa10aff7f2f38",
       "branch_sha256": "f786f6b5395f54fa5f9c39c32f18ebc2d0fcda2099395156af684f37783cfe3b",
       "source_sha256": "7af30b36bd60d04b0ff0e6bd5d690fa15db493dd25c88cd56813304d0be6cce3"
+    },
+    "tests/phase2/builtins/builtins/build_corpus.branch": {
+      "ruling": "SYNC11-model-retirement",
+      "anchor": "5b3b64db40cdd50c42c8ad3e9c913bb5d36a9e1a",
+      "branch_sha256": "dd89206e0a2bc395645ad9f5ff98d39a85f4ade1d5b7d0f7f4fe9ae1c57885ef",
+      "source_sha256": "f17f07905396631d7144b09fac8143f319fd8ecaff61a8b88ef6e451112962cb"
+    },
+    "tests/phase2/builtins/builtins/eigen_eval_loss.branch": {
+      "ruling": "SYNC11-model-retirement",
+      "anchor": "5b3b64db40cdd50c42c8ad3e9c913bb5d36a9e1a",
+      "branch_sha256": "f8da2b65efa5a74e64dcac16a01919ab078118af3c7ee2c4b2cec64f8f0c8d9a",
+      "source_sha256": "1a65135ab5a66a356288cb12acff5bbd0d68368e759489e7433f477adfdfdbe0"
+    },
+    "tests/phase2/builtins/builtins/eigen_generate.branch": {
+      "ruling": "SYNC11-model-retirement",
+      "anchor": "5b3b64db40cdd50c42c8ad3e9c913bb5d36a9e1a",
+      "branch_sha256": "8bccea0bf76906ac45185a5f022de9b56fbbb5f52f183638e94fc1962af1de90",
+      "source_sha256": "afabf50356247bea351e889c2494c424b0161434f4df852f2327a02254fb819a"
+    },
+    "tests/phase2/builtins/builtins/eigen_model_load.branch": {
+      "ruling": "SYNC11-model-retirement",
+      "anchor": "5b3b64db40cdd50c42c8ad3e9c913bb5d36a9e1a",
+      "branch_sha256": "af5bda3ccb7070cadf2f84dd304a31808d461d92603b4b2e247f0234c06fc2d6",
+      "source_sha256": "248bf39f3272d2ff3900309184f12244ea9681db2602a80cbccb101e32f1726a"
+    },
+    "tests/phase2/builtins/builtins/model_load_weights.branch": {
+      "ruling": "SYNC11-model-retirement",
+      "anchor": "5b3b64db40cdd50c42c8ad3e9c913bb5d36a9e1a",
+      "branch_sha256": "af5bda3ccb7070cadf2f84dd304a31808d461d92603b4b2e247f0234c06fc2d6",
+      "source_sha256": "03aeb11bd40bdd14001be0711d6251c70178a3599b3e9feb1ca644a3cf63f8ae"
+    },
+    "tests/phase2/builtins/builtins/native_train_step_builtin.branch": {
+      "ruling": "SYNC11-model-retirement",
+      "anchor": "5b3b64db40cdd50c42c8ad3e9c913bb5d36a9e1a",
+      "branch_sha256": "3c8484817b38a96f35a6b27281ecc30637f4ad1db2dd887c81abcc0b8b031733",
+      "source_sha256": "931ab975eb3397d3449112d36c2e858d417a8c5546f08306604df0d4e472e1d5"
     }
   },
   "semantic_amendments": {

@@ -49,7 +49,6 @@ buf_scale_range	builtins_buf.c	float-producing	-	-	d	-	release	-	-	yes	yes
 buf_set	builtins_buf.c	int-requiring	-	-	d	-	release	-	-	yes	yes
 buf_to_pcm16le	builtins_buf.c	other	-	bounded	d	-	release	-	-	yes	yes
 buffer	builtins_buf.c	int-requiring	-	-	d	-	release	-	-	yes	yes
-build_corpus	builtins_host.c	int-requiring	-	-	c	-	release	-	-	yes	yes
 ceil	builtins.c	int-preserving	LOSS	-	b	-	release	-	-	yes	yes
 channel	builtins.c	int-preserving	-	-	b	-	release	-	-	yes	yes
 channel_closed	builtins.c	int-requiring	-	-	c	-	release	-	-	yes	yes
@@ -65,9 +64,6 @@ db_query_value	ext_db.c	other	LOSS	-	b	-	db	-	-	yes	yes
 dispatch	builtins.c	int-requiring	-	-	c	main	release	-	-	no	no
 divide	builtins_tensor.c	float-producing	-	-	d	-	release	-	-	yes	yes
 dot	builtins.c	float-producing	-	-	c	-	release	-	-	yes	yes
-eigen_eval_loss	model_infer.c	float-producing	-	-	d	-	server	-	-	yes	yes
-eigen_generate	model_infer.c	int-requiring	-	-	d	-	server	-	-	yes	yes
-eigen_model_load	model_io.c	other	-	-	d	-	server	-	-	no	no
 exec_capture	builtins_host.c	other	-	magnitude	c	-	release	-	-	yes	yes
 exit	builtins.c	int-requiring	-	-	c	-	release	-	-	yes	yes
 exp	builtins_tensor.c	float-producing	-	-	d	-	release	-	-	yes	yes
@@ -161,11 +157,9 @@ matmul_bt	builtins_tensor.c	float-producing	-	-	d	-	release	-	-	yes	yes
 max	builtins.c	int-preserving	LOSS	-	b	-	release	-	-	yes	yes
 mean	builtins_tensor.c	float-producing	-	-	d	-	release	-	-	yes	yes
 min	builtins.c	int-preserving	LOSS	-	b	-	release	-	-	yes	yes
-model_load_weights	model_io.c	other	-	-	d	-	server	-	-	no	no
 monotonic_ms	builtins.c	float-producing	-	-	c	-	release	-	-	no	yes
 monotonic_ns	builtins.c	int-preserving	LOSS	-	b	-	release	clock	-	yes	yes
 multiply	builtins_tensor.c	int-preserving	LOSS	-	b	-	release	-	-	yes	yes
-native_train_step_builtin	model_train.c	int-requiring	-	-	d	-	server	-	-	yes	yes
 nearest_in_range	builtins.c	float-producing	-	-	c	-	release	-	-	yes	yes
 nearest_in_range_all	builtins.c	float-producing	-	-	c	-	release	-	-	yes	yes
 negative	builtins_tensor.c	int-preserving	LOSS	-	b	-	release	-	-	yes	yes

@@ -16,13 +16,17 @@
 # Combinatorics
 # ============================================================
 
-# factorial: n!
+# factorial: n! for integral n; fractional inputs raise
 define factorial(n) as:
     # Factorial is undefined for negatives (gamma has poles there). Return 0
     # as the domain sentinel — matching combinations' return-0-on-invalid, and
     # impossible for a real factorial (always >= 1), rather than a silent 1 (#641).
     if n < 0:
+        if n != (floor of n):
+            throw of "factorial: input must be an integer"
         return 0
+    if n != (floor of n):
+        throw of "factorial: input must be an integer"
     if n <= 1:
         return 1
     result is 1

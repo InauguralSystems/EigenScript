@@ -33,7 +33,7 @@ Each ruling settles one of BAR.md's QUESTIONS. A ruling that changes a row (its 
 - **The store float round trip between R1.6 and R1.7** (`3.0` written as `3`, read back as an int) is a known TRANSITIONAL state inside the unreleased branch. The R1.6f commit says so, and R1.7's `N14.store-exact-digits` row closes it.
 
 ## Witnesses
-- **Q-CAP:** capability rows carry a `cap` column (`http`, `net`, `model`, `zlib` or `db`). The tool runs a capability row only against a binary built with that capability, and CI checks them in the lanes that have it: the server lane (`make server`: http, net, model), the zlib lane, and the db lane with its postgres:16 service.
+- **Q-CAP:** capability rows carry a `cap` column (`http`, `net`, `zlib` or `db`; sync11 retires the former model capability). The tool runs a capability row only against a binary built with that capability, and CI checks them in the lanes that have it: the server lane (`make server`: http, net), the zlib lane, and the db lane with its postgres:16 service.
   - Their `.pre`/`.tag` are re-recorded on capability builds of the same commits (`make server` and `make zlib` locally). The db rows are recorded where PostgreSQL exists; the R1.6a builder reports the mechanism.
 - **Q-CLOCK:** agreed. `monotonic_ns` changes through its kind (float to int). The digit loss above 2^53 ns (104 days of uptime) is a stated residual.
 - **Q-AUDIO-HIDDEN:** `audio_stream_push` and `audio_music_volume` get `witness: none (mixer-internal)`, a VISIBLE exemption from the changes rule. Their wiring is reviewed by reading in R1.6e, and the reader itself is covered by `gate.N5.q7-readers`.

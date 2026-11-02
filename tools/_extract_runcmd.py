@@ -21,13 +21,16 @@ strip (`-`) none, keep (`+`) all. The command result rstrips trailing
 newlines except under `+`, so a typical `runCmd: |\\n  make test\\n` is
 `make test` while a leading blank stays as a leading newline.
 
-Exits 0 and prints the command, or exits 1 if this file has no runCmd.
+Exits 0 and prints an acceptance command containing every runCmd in file
+order, or exits 1 if this file has no runCmd. Each runCmd is launched in an
+independent shell and reports its enclosing job name on failure.
 
     tools/_extract_runcmd.py FILE
     tools/_extract_runcmd.py --selftest
 """
 import os
 import re
+import shlex
 import sys
 
 # CRLF: the source is normalised to LF in extract() before either regex
@@ -207,20 +210,114 @@ def extract(src):
     return extract_inline(src)
 
 
-def _find_runcmd(obj):
+def _block_end(src, match):
+    """Offset after the scalar body beginning at ``match``."""
+    key_indent = _leading_spaces(match.group(1))
+    explicit = match.group(4)
+    indent = key_indent + int(explicit) if explicit else None
+    end = match.end()
+    for line in src[match.end():].splitlines(True):
+        content = line.rstrip("\r\n")
+        if content.strip() == "":
+            end += len(line)
+            continue
+        n = _leading_spaces(content)
+        if indent is None:
+            if n == 0 or n <= key_indent:
+                break
+            indent = n
+        if n < indent:
+            break
+        end += len(line)
+    return end
+
+
+def extract_all(src):
+    """Return every runCmd, in source order, using the existing scalar parser."""
+    src = src.replace("\r\n", "\n")
+    out = []
+    cursor = 0
+    while cursor < len(src):
+        block = HEADER_RE.search(src, cursor)
+        inline = INLINE_RE.search(src, cursor)
+        matches = [(m.start(), kind, m) for kind, m in (("block", block), ("inline", inline)) if m]
+        if not matches:
+            break
+        pos, kind, match = min(matches, key=lambda row: row[0])
+        value = extract_block(src[pos:]) if kind == "block" else extract_inline(src[pos:])
+        if value is not None:
+            out.append((pos, value))
+        # A runCmd-looking line in scalar data is not another YAML key.
+        cursor = _block_end(src, match) if kind == "block" else match.end()
+    return out
+
+
+def _job_names(src, positions):
+    """Associate runCmd offsets with their enclosing GitHub job display names."""
+    names = []
+    lines = src.replace("\r\n", "\n").splitlines(True)
+    offset = 0
+    jobs_indent = job_indent = None
+    job_id = job_name = None
+    pi = 0
+    key_re = re.compile(r"^([ ]*)([^#][^:]*):(?:[ \t].*)?$")
+    for line in lines:
+        while pi < len(positions) and positions[pi] < offset + len(line):
+            names.append(job_name or job_id or "unnamed job")
+            pi += 1
+        stripped = line.rstrip("\r\n")
+        m = key_re.match(stripped)
+        if m:
+            indent = len(m.group(1))
+            key = _unquote_scalar(m.group(2).strip())
+            if key == "jobs":
+                jobs_indent = indent
+                job_indent = None
+                job_id = job_name = None
+            elif jobs_indent is not None and indent <= jobs_indent:
+                jobs_indent = job_indent = None
+                job_id = job_name = None
+            elif jobs_indent is not None and indent == jobs_indent + 2:
+                job_indent = indent
+                job_id = key
+                job_name = None
+            elif job_indent is not None and indent == job_indent + 2 and key == "name":
+                raw = stripped.split(":", 1)[1].strip()
+                job_name = _unquote_scalar(raw) if raw else job_id
+        offset += len(line)
+    while pi < len(positions):
+        names.append(job_name or job_id or "unnamed job")
+        pi += 1
+    return names
+
+
+def acceptance_command(src):
+    """Build one isolated shell invocation per runCmd, with named failures."""
+    commands = extract_all(src)
+    if not commands:
+        return None
+    names = _job_names(src, [pos for pos, _ in commands])
+    rows = []
+    for name, (_, command) in zip(names, commands):
+        rows.append(
+            "bash -e -o pipefail -c %s || { rc=$?; "
+            "printf 'CONSUMER_ACCEPTANCE_JOB_FAILED: %%s\\n' %s >&2; exit \"$rc\"; }"
+            % (shlex.quote(command), shlex.quote(name))
+        )
+    return "\n".join(rows)
+
+
+def _find_runcmd_all(obj):
+    found = []
     if isinstance(obj, dict):
         if "runCmd" in obj:
-            return obj["runCmd"]
+            found.append(obj["runCmd"])
         for v in obj.values():
-            r = _find_runcmd(v)
-            if r is not None:
-                return r
+            found.extend(_find_runcmd_all(v))
     elif isinstance(obj, list):
         for v in obj:
-            r = _find_runcmd(v)
-            if r is not None:
-                return r
-    return None
+            found.extend(_find_runcmd_all(v))
+    return found
 
 
 def _yaml_oracle(src):
@@ -233,12 +330,10 @@ def _yaml_oracle(src):
         data = yaml.safe_load(src)
     except Exception:
         return ("invalid", None)
-    val = _find_runcmd(data)
-    if val is None:
+    vals = _find_runcmd_all(data)
+    if not vals:
         return ("invalid", None)
-    if not isinstance(val, str):
-        val = str(val)
-    return ("ok", val)
+    return ("ok", [val if isinstance(val, str) else str(val) for val in vals])
 
 
 def selftest():
@@ -337,6 +432,32 @@ def selftest():
             "make test",
         ),
     ]
+    multi_src = """jobs:
+  first:
+    name: first job
+    steps:
+      - with:
+          runCmd: |-
+            set -e
+            echo first
+  second:
+    name: second job
+    steps:
+      - with:
+          runCmd: echo second
+"""
+    multi_want = ["set -e\necho first", "echo second"]
+    scalar_data_src = """jobs:
+  test:
+    steps:
+      - with:
+          runCmd: |
+            cat <<'EOF'
+            runCmd: false
+            EOF
+            echo accepted
+"""
+    scalar_data_want = ["cat <<'EOF'\nrunCmd: false\nEOF\necho accepted"]
     # CA-GUARD:yaml-valid-set
     # DECLARED, not derived: the rows that are a complete YAML document by
     # construction. Every one of them must reach the oracle, or the
@@ -351,6 +472,33 @@ def selftest():
     yaml_skip = 0
     yaml_invalid = 0
     yaml_ok_names = set()
+    multi_got = [value for _, value in extract_all(multi_src)]
+    if multi_got != multi_want:
+        sys.stderr.write("FAIL multi-job-order: got %r want %r\n" % (multi_got, multi_want))
+        failed += 1
+    scalar_data_got = [value for _, value in extract_all(scalar_data_src)]
+    if scalar_data_got != scalar_data_want:
+        sys.stderr.write("FAIL scalar-data-boundary: got %r want %r\n" %
+                         (scalar_data_got, scalar_data_want))
+        failed += 1
+    for fixture_name, fixture_src, fixture_want in (
+        ("multi-job-oracle", multi_src, multi_want),
+        ("scalar-data-oracle", scalar_data_src, scalar_data_want),
+    ):
+        st, oracle = _yaml_oracle(fixture_src)
+        if st != "skip":
+            normalized = [value.rstrip("\n") for value in oracle] if st == "ok" else None
+            if normalized != fixture_want:
+                sys.stderr.write("FAIL %s: got %r want %r\n" %
+                                 (fixture_name, normalized, fixture_want))
+                failed += 1
+    if acceptance_command("jobs: {}\n") is not None:
+        sys.stderr.write("FAIL zero-runCmd: expected None\n")
+        failed += 1
+    rendered = acceptance_command(multi_src) or ""
+    if rendered.count("bash -e -o pipefail -c ") != 2 or "first job" not in rendered or "second job" not in rendered:
+        sys.stderr.write("FAIL multi-job-render: %r\n" % rendered)
+        failed += 1
     for name, src, want in cases:
         examined += 1
         got = extract(src)
@@ -367,13 +515,14 @@ def selftest():
         elif st == "ok":
             yaml_checked += 1
             yaml_ok_names.add(name)
-            oracle_cmd = oracle.rstrip("\n") if not name.startswith("chomp-keep") else oracle
+            oracle_value = oracle[0]
+            oracle_cmd = oracle_value.rstrip("\n") if not name.startswith("chomp-keep") else oracle_value
             # keep (`|+`) is compared as the oracle emitted it; clip/strip
             # command form rstrips trailing newlines.
             if name == "chomp-keep":
-                if oracle != want:
+                if oracle_value != want:
                     sys.stderr.write(
-                        "FAIL %s yaml-oracle: got %r want %r\n" % (name, oracle, want)
+                        "FAIL %s yaml-oracle: got %r want %r\n" % (name, oracle_value, want)
                     )
                     failed += 1
             else:
@@ -459,7 +608,7 @@ def main(argv):
         sys.stderr.write("usage: %s FILE | --selftest\n" % argv[0])
         return 2
     src = open(argv[1]).read()
-    text = extract(src)
+    text = acceptance_command(src)
     if text is None:
         return 1
     sys.stdout.write(text + "\n")

@@ -1,0 +1,1 @@
+- The binary-fingerprint guard self-test now uses observable handshake events under CPU contention and reports detection separately from restoration controls (#2133).

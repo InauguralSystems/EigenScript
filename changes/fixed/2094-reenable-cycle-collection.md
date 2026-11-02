@@ -1,0 +1,1 @@
+- Fuzzing process reuse now re-enables cycle collection for every input, preventing closure-cycle leaks after the first input (#2094).

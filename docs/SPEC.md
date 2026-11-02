@@ -62,13 +62,14 @@ entity (or `null`), excluding the entity at that input index. The scalar
 - [Temporal interrogatives](#temporal-interrogatives)
 - [Concurrency](#concurrency)
 - [Buffers](#buffers)
+- [Evaluation order](#evaluation-order)
 - [Evaluation model reference](#evaluation-model-reference)
 
 ## Program model
 
 Hosted build profiles determine which extension implementations are compiled
-in. In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
-or model builtin name raises a catchable `value` error at its first reference,
+in. In VM/native-JIT evaluation, an unresolved omitted HTTP, network or database
+builtin name raises a catchable `value` error at its first reference,
 naming the unavailable capability and required profile. This occurs before
 call arguments are evaluated. Local, captured and host bindings take precedence,
 including a binding to null; other unknown names retain `undefined_name` errors.
@@ -158,7 +159,7 @@ EigenScript is dynamically typed. The runtime types are:
 | `buffer` | flat mutable array of nums | `buffer of 8`, `zeros of 8` |
 | `fn` | user-defined function / closure | `define` / `(x) => x` |
 | `builtin` | native function | `print` |
-| `none` | the null value | `null` |
+| `null` | the null value | `null` |
 
 `type of v` returns the type label as a string.
 
@@ -175,7 +176,7 @@ num
 str
 list
 dict
-none
+null
 builtin
 ```
 
@@ -438,7 +439,7 @@ The IEEE 754 default floating-point environment is part of number semantics.
   seam for checksums, hashing, and byte protocols (see docs/BUILTINS.md).
 
 ```eigenscript
-print of (9007199254740992 + 1)              # exact int64 addition
+print of (9007199254740992 + 1)
 print of (9007199254740993 == 9007199254740992)
 print of (1e308 * 10)                        # saturates, never Infinity
 print of (bit_and of [0xFFFFFFFF, 0xFF])     # int64 bitwise
@@ -590,11 +591,11 @@ its UTF-8 bytes and round-trips exactly through concatenation, f-strings, and
 printing — you just don't get character indexing for free.
 
 ```eigenscript
-print of (len of "hello")     # 5 — all ASCII, 1 byte each
-print of (len of "héllo")     # 6 — é is 2 UTF-8 bytes
+print of (len of "hello")
+print of (len of "héllo")
 euro is "€"
-print of (len of euro)        # 3 — one character, three bytes
-print of (euro == "€")        # true — bytes round-trip exactly
+print of (len of euro)
+print of (euro == "€")
 print of ("price: " + euro)   # f-strings / concat are byte-wise, multibyte-safe
 ```
 ```output
@@ -1520,8 +1521,8 @@ catch e:
 A successful binary operation restores the line attribution that preceded its
 operator stamp, so an enclosing unary operation, index or call keeps its prior
 attribution. Compound field/index assignments (`obj.key += rhs`, `xs[i] += rhs`)
-keep their prior attribution; their location policy awaits a separate owner
-decision. This rule covers binary operators only. Temporal filing is unchanged (the
+keep their prior attribution, as the owner decision on #1425 retained the
+current attribution. This rule covers binary operators only. Temporal filing is unchanged (the
 statement's first line). Other constructs that span lines (call arguments,
 indexing, and the concatenation an f-string is lowered to) are not decided by
 it; an operator written inside an f-string interpolation is a binary operator
@@ -1641,6 +1642,11 @@ with code 1:
 that, `lib/name.eigs` (the standard library) — and binds the module's
 top-level definitions as a dict named `name`. Nothing leaks into the
 global scope; names starting with `_` stay private to the module.
+The module resolves names only in its own bindings, modules it imports, and
+the standard-library builtin layer. It never reads an incidental global from
+the importing program. Pass configuration as a function parameter or expose a
+module setter. An unresolved read names the module and suggests passing the
+value explicitly. `load_file` retains its shared-scope contract below.
 
 Resolution is **project-first** (#821): a `name.eigs` beside the
 importing file wins over a stdlib module of the same name. The stdlib
@@ -1823,9 +1829,8 @@ undefined variable 'z'
 5
 ```
 
-**Module write boundary.** A loaded (or imported) module's *functions*
-can read the loader's globals and call its functions, but they can
-never bind a write through to them — a bare `name is expr` inside a
+**Module boundary.** An imported module's *functions* cannot read or write the
+importer's globals. A bare `name is expr` inside a
 module function that doesn't refer to a local, a captured name, or the
 module's own top-level state creates a fresh local, regardless of what
 happens to exist in the loader's scope. The same boundary applies one
@@ -1846,8 +1851,9 @@ bindings: `len` in module code is the builtin unless the *module* rebinds
 it. A program that rebinds a builtin — `define len`, a top-level
 `len is ...` or `local len` — before or after the import changes it for its
 own code only, and a module's own `define len` stays inside that module.
-Names that are not builtins still resolve to the importer's globals, as
-above. The builtin set is sealed: no `is` anywhere writes into it — an
+Names that are neither module bindings nor builtins are undefined; pass such
+configuration explicitly as a function parameter or through an exported
+setter. The builtin set is sealed: no `is` anywhere writes into it — an
 assignment that would reach it (from module code, or an `eval` inside a
 module function) creates a binding in the writer's own scope instead.
 `load_file` is not isolated. While an import is running a module's top
@@ -2853,16 +2859,6 @@ buffer). Mixing a buffer with a list yields a list. The reductions
 reads as a 1-D tensor and a shaped buffer as its `rows x cols` 2-D tensor, so
 the numbers agree element for element with the equivalent list.
 
-Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
-`tensor_save` raise catchable `limit` errors above it; `stream_open` requires
-an integral count from 1 through that cap, and `build_corpus` includes file
-separators in its capped token count. These limits also raise under
-`EIGS_STRICT=0`; see [BUILTINS.md](BUILTINS.md) for the I/O contracts.
-`read_line of null` returns each stdin line byte-exactly, including its line
-terminator, and returns `null` only at EOF. Pipe and redirected-file input have
-the same semantics; in particular `\r` is preserved and a final `\n` is
-observable.
-
 `read_text`, `read_bytes`, and `read_bytes_buf` follow Python's exception
 model: a missing or unreadable path, or a directory in place of a file, raises
 a catchable `io` error whose message contains the path and the operating-system
@@ -2909,6 +2905,61 @@ print of (shape of w)
 [2, 2]
 ```
 
+## Evaluation order
+
+Expressions evaluate in a deterministic left-to-right order. Evaluation is
+strict except for the conditional right operand of `and` and `or`:
+
+- A call evaluates its callee first and then its arguments from left to right.
+  A chained call completes the inner call before evaluating the outer call's
+  arguments.
+- An index expression evaluates its target and then its index. An indexed
+  assignment evaluates its target, index, and value in that order, and only
+  then performs the mutation. A plain binding assignment evaluates its value
+  before changing the binding.
+- List elements evaluate from left to right. Dictionary entries evaluate in
+  source order, with each key immediately followed by its value.
+- Interpolated f-string expressions evaluate in their textual left-to-right
+  order before the completed string is available.
+- An ordinary binary operator evaluates its left operand, then its right
+  operand, and then applies the operator.
+- `and` evaluates its left operand and evaluates the right operand only when
+  the left is truthy. `or` evaluates its right operand only when the left is
+  falsy.
+
+If any evaluated callee, argument, target, index, assigned value, literal
+member, interpolation, or operand raises, its effects and all earlier effects
+remain. No later item in that construct is evaluated, and the call, lookup,
+assignment/mutation, literal or f-string construction, or operator application
+is not performed. For a chained call, a raise also prevents every enclosing
+call that has not yet occurred. A short-circuit operator similarly skips its
+right operand when its left operand raises.
+
+This executable example shows the same rule for successful and raising
+operands:
+
+```eigenscript
+log is []
+define note(label, value) as:
+    append of [log, label]
+    return value
+define stop(label) as:
+    append of [log, label]
+    throw of label
+
+a is [note of ["first", 1], note of ["second", 2]]
+print of log
+log is []
+try:
+    b is (note of ["left", 1]) + (stop of "right")
+catch e:
+    print of log
+```
+```output
+["first", "second"]
+["left", "right"]
+```
+
 ## Evaluation model reference
 
 The facts that govern every program, in one place:
@@ -2947,18 +2998,6 @@ cross-unit history by default; hosts may explicitly promise isolated observer
 use with `eigs_set_eval_observer_isolated`. Missing history then raises
 conservatively instead of answering a rest value. See the
 [embedding observer contract](EMBEDDING.md#observer-contract-1038--1028).
-
-### Model context limits
-
-With a model loaded, `eigen_generate` and `eigen_eval_loss` accept nonempty
-prompts up to and including the model's `max_seq_len`. Longer prompts raise
-a catchable `value` error; neither builtin truncates the supplied prompt.
-`native_train_step_builtin` applies the same refusal rule to the combined
-input and output lengths. These limits apply with `EIGS_STRICT=0` too.
-Generation records either its token list or its context refusal on the trace
-tape. Replay reproduces that outcome before consulting the model, even when
-the checkpoint is missing or has a different context limit, and preserves the
-following call's record.
 
 ### HTTP startup and response attribution
 
@@ -3002,12 +3041,6 @@ exact integers in 0..255; fractions and out-of-range bytes raise `value`.
 `buf_len`, `f64_to_bytes` and `inflate` return integer counts or bytes;
 buffer storage and scalar buffer reads are floats. `buf_get`, `buf_peak`,
 `buf_dot` and the byte/PCM codecs refuse non-finite input cells with `value`.
-
-Model token ids and generation limits follow N5 and the C int range;
-fractional ids or token counts raise `value`. `eigen_generate` returns int
-token ids, while `eigen_eval_loss` returns a float. Temperature, top_p and
-training learning rates remain float quantities. Model JSON weights stay
-float data; the loader status strings are unchanged.
 
 Audio playback (`audio_play`, `audio_play_loop`, `audio_stream_push`) refuses
 stored non-finite buffer samples at the scalar boundary in both strict modes

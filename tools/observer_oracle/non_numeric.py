@@ -2,7 +2,6 @@
 """Generate and grade the pre-registered #1992 non-numeric observer corpus."""
 
 import argparse
-import json
 import random
 import subprocess
 import tempfile
@@ -92,11 +91,16 @@ def rows():
 
 def eigs(v):
     if isinstance(v, str):
-        return json.dumps(v)
+        # EigenScript deliberately has no JSON-style \u escape.  Preserve
+        # UTF-8 characters and quote exactly the five language escapes.
+        escaped = (v.replace("\\", "\\\\").replace('"', '\\"')
+                   .replace("\n", "\\n").replace("\t", "\\t")
+                   .replace("\r", "\\r"))
+        return '"' + escaped + '"'
     if isinstance(v, list):
         return "[" + ", ".join(eigs(x) for x in v) + "]"
     if isinstance(v, dict):
-        return "{" + ", ".join(f"{json.dumps(k)}: {eigs(x)}" for k, x in v.items()) + "}"
+        return "{" + ", ".join(f"{eigs(k)}: {eigs(x)}" for k, x in v.items()) + "}"
     return str(v)
 
 

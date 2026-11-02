@@ -16,9 +16,14 @@ PASS=0; FAIL=0
 
 # This is a capability of the binary under test, not of the runner.  main.c
 # prints it from EIGS_JIT_ENABLED, the exact gate used by jit.c's emitter.
-JIT_BACKEND=$($EIGS --build-info 2>/dev/null | awk -F= '$1 == "jit-backend" { print $2; exit }')
+# setarch -R like every other run below: a TSan binary started with ASLR on can
+# die before main ("FATAL: ThreadSanitizer: unexpected memory mapping"); on the
+# dev box's kernel that was 19 of 20 bare runs and 0 of 20 under setarch -R.
+BUILD_INFO=$(setarch -R "$EIGS" --build-info 2>&1)
+JIT_BACKEND=$(printf '%s\n' "$BUILD_INFO" | awk -F= '$1 == "jit-backend" { print $2; exit }')
 if [ -z "$JIT_BACKEND" ]; then
     echo "FAIL: binary supplied no jit-backend build-info witness"
+    printf '%s\n' "$BUILD_INFO" | head -3 | sed 's/^/  /'
     exit 1
 fi
 # Anti-spread check: the established non-Apple Linux x86-64 lane must never
@@ -124,6 +129,35 @@ misordered_publish_row() {
     else
         echo "  FAIL: misordered relaxed publish/consume NOT detected (rc=$rc)"; FAIL=$((FAIL + 1))
     fi
+}
+
+compiler_env_count_hold_row() {
+    echo "=== #2090 planted compiler env-count hold omission MUST be caught ==="
+    local out rc w witness witness_rc witness_w
+    # Verdict: the C control guarantees a real env append and count read are
+    # unordered. Relaxed atomics rendezvous the workers without hiding the
+    # planted access from TSan behind a synchronization edge.
+    out=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R env \
+        EIGS_TSAN_COMPILER_ENV_COUNT_CONTROL=1 \
+        EIGS_TSAN_COMPILER_ENV_COUNT_NO_HOLD=1 "$EIGS" 2>&1)
+    rc=$?
+    w=$(printf '%s\n' "$out" | grep -c "WARNING: ThreadSanitizer" || true)
+    if [ "$rc" -eq 124 ]; then
+        echo "  FAIL: compiler env-count hold omission control HUNG"; FAIL=$((FAIL + 1))
+    elif [ "$w" -gt 0 ]; then
+        echo "  PASS: deterministic compiler env-count hold omission detected ($w warnings)"; PASS=$((PASS + 1))
+    else
+        echo "  FAIL: compiler env-count hold omission NOT detected (rc=$rc)"; FAIL=$((FAIL + 1))
+    fi
+
+    # Second witness only: preserve the real-program reproduction, but never
+    # let its scheduler-dependent result decide this row.
+    witness=$(timeout "$TSAN_RUN_TIMEOUT" setarch -R env \
+        EIGS_TSAN_COMPILER_ENV_COUNT_NO_HOLD=1 "$EIGS" \
+        "$TESTS_DIR/loader_mt_define_result.eigs" 2>&1)
+    witness_rc=$?
+    witness_w=$(printf '%s\n' "$witness" | grep -c "WARNING: ThreadSanitizer" || true)
+    echo "  INFO: real-program witness warnings=$witness_w rc=$witness_rc (non-verdict)"
 }
 
 rebind_call_row() {
@@ -244,6 +278,24 @@ scope_boundary_row() {
     fi
 }
 
+loop_iterations_row() {
+    echo "=== #1870 concurrent module-level loop publication must be race-free ==="
+    local fixture="$TESTS_DIR/loader_mt_loop_iterations.eigs"
+    local marker='loop iterations overlap: main=20000 worker=20000 entered=1'
+    tsan_warnings "$fixture"
+    if [ "$LAST_RC" -eq 124 ]; then
+        echo "  FAIL: loader_mt_loop_iterations HUNG (killed after ${TSAN_RUN_TIMEOUT}s)"; FAIL=$((FAIL + 1))
+    elif [ "$WARNINGS" -ne 0 ]; then
+        echo "  FAIL: loader_mt_loop_iterations reported $WARNINGS ThreadSanitizer warning(s)"; FAIL=$((FAIL + 1))
+        tsan_report <<< "$RUN_OUTPUT"
+    elif [ "$LAST_RC" -ne 0 ] || ! grep -Fxq "$marker" <<< "$RUN_OUTPUT"; then
+        echo "  FAIL: loader_mt_loop_iterations rc=$LAST_RC without concurrent-loop count evidence"; FAIL=$((FAIL + 1))
+        tail -5 <<< "$RUN_OUTPUT"
+    else
+        echo "  PASS: loader_mt_loop_iterations TSan-clean; both overlapping loops completed 20000 iterations"; PASS=$((PASS + 1))
+    fi
+}
+
 dict_readers_row() {
     echo "=== #1697 shared dict readers must not mutate order storage ==="
     local fixture="$TESTS_DIR/tsan_dict_readers.eigs"
@@ -275,10 +327,12 @@ if [ "${1:-}" = "--row" ]; then
         rebind-call)    rebind_call_row ;;
         captured-rebind) captured_rebind_row ;;
         scope-boundary) scope_boundary_row ;;
+        loop-iterations) loop_iterations_row ;;
         dict-readers)   dict_readers_row ;;
         misordered-publish) misordered_publish_row ;;
+        compiler-env-count) compiler_env_count_hold_row ;;
         observer-fold) ROW_EXPECTED=4; observer_shared_fold_rows ;;
-        *) echo "usage: test_tsan.sh --row seeded|rebind-call|captured-rebind|scope-boundary|dict-readers|misordered-publish|observer-fold"; exit 2 ;;
+        *) echo "usage: test_tsan.sh --row seeded|rebind-call|captured-rebind|scope-boundary|loop-iterations|dict-readers|misordered-publish|compiler-env-count|observer-fold"; exit 2 ;;
     esac
     echo ""
     echo "Results: $PASS passed, $FAIL failed"
@@ -683,6 +737,8 @@ observer_shared_fold_rows
 
 scope_boundary_row
 
+loop_iterations_row
+
 echo "=== observer arming sets must be race-free (#1145) ==="
 # (a) the spawn shape, occurrence tier + the #827 history control.
 ARM_FIXTURES="arming_mt_occ arming_mt_hist"
@@ -813,6 +869,7 @@ fi
 
 seeded_race_row
 misordered_publish_row
+compiler_env_count_hold_row
 observer_shared_fold_rows
 captured_rebind_row
 

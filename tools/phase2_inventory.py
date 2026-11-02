@@ -133,6 +133,7 @@ for producer in ('make_float', 'make_float_permanent'):
 # Keep the spelling in the population: absence is required and reintroduction
 # is an error, rather than silently ceasing to recognize an old byte reader.
 RETIRED_VOCAB = {
+    'atof': 'SYNC11 #2178: last unchecked parser site retired with model_train.c; keep reintroduction loud',
     'buffer_read_byte': 'R1.6e: gfx_fb and ppu_render_frame use buffer_byte_at',
 }
 

@@ -44,6 +44,13 @@ LEAKED=0
 # absent is not reviewable.
 SKIPPED=0
 
+# Use the planner's one section-header grammar at runtime too.  The planner
+# validates that every selected header has this shape; asking it for the same
+# predicate keeps execution accounting from growing a second, drifting
+# matcher (#1354).
+EIGS_SECTION_HEADER_RE=$(bash "$TESTS_DIR/../tools/section_plan.sh" --header-regex) || exit 1
+SECTION_OUTCOME_VIOLATIONS=0
+
 # Validate a TAP-style child ledger.  The child owns the plan; every parent uses
 # this one predicate so missing, duplicate, malformed, short and failed plans
 # have identical verdicts (#2051).
@@ -71,6 +78,11 @@ SKIPPED=0
 # on its other checks. Ten of those remain, by design, and they are pinned by
 # NAME in tools/section_plan.sh --skip-audit (suite section [99w]), which fails
 # when a new bare `SKIP:` line appears in this file without a reviewed reason.
+# ONE deliberate exception: [70d]'s peak-RSS half is a sub-check skip (the
+# section still PASSes its four #868 window checks) that goes through here
+# anyway. Its skip keys are allowlisted with reasons in
+# tests/temporal_memory_skip_allowlist.txt and the skip is COUNTED, not waived
+# by name, because the gate it skips is the only one that sees #827 (hq#58).
 # A relay hands this helper the child's own line; the prefix is normalised so
 # exactly one `  SKIP: ` is printed however the child spelled it.
 section_skip() {
@@ -108,13 +120,27 @@ __eigs_now_us() {
 }
 __EIGS_SEC_LABEL=""
 __EIGS_SEC_T0=""
+__EIGS_SEC_TOTAL0=0
+__EIGS_SEC_SKIPPED0=0
 __EIGS_LOCK_TEST_SEAM=0
 __eigs_section_close() {
     [ -n "$__EIGS_SEC_LABEL" ] || return 0
-    local now d
+    local now d section_total section_skipped
+    # Before the outcome rule: a section whose only statement was an undefined
+    # command has an outcome now, and it is FAIL (defined further down, hq#58).
+    __eigs_undefined_commands_tally
     now=$(__eigs_now_us)
     d=$(( now - __EIGS_SEC_T0 ))
     [ "$d" -ge 0 ] || d=0
+    section_total=$((TOTAL - __EIGS_SEC_TOTAL0))
+    section_skipped=$((SKIPPED - __EIGS_SEC_SKIPPED0))
+    # At least one assertion or at least one skip: a section may skip several
+    # sub-checks ([80b] skips two). Only "nothing at all" is the vanish class.
+    if [ "$section_total" -le 0 ] && [ "$section_skipped" -le 0 ]; then
+        builtin printf '  FAIL: section %s has no outcome (TOTAL delta=%d, SKIPPED delta=%d)\n' \
+            "$__EIGS_SEC_LABEL" "$section_total" "$section_skipped"
+        SECTION_OUTCOME_VIOLATIONS=$((SECTION_OUTCOME_VIOLATIONS + 1))
+    fi
     [ "$EIGS_SECTION_TIME" = "1" ] &&         builtin printf 'SECTION_TIME: %s %d.%02d\n' "$__EIGS_SEC_LABEL" "$(( d / 1000000 ))" "$(( (d % 1000000) / 10000 ))"
     __EIGS_SEC_LABEL=""
     # Test-only seam rendezvous for the tree-lock lifetime selftest.  The
@@ -128,23 +154,23 @@ __eigs_section_close() {
     return 0
 }
 echo() {
-    case "${1:-}" in
-        \[*\]*)
-            __eigs_section_close
-            __EIGS_SEC_LABEL="${1%%]*}]"
-            EIGS_SUITE_SECTION="$__EIGS_SEC_LABEL"
-            export EIGS_SUITE_SECTION
-            __EIGS_SEC_T0=$(__eigs_now_us)
-            if [ "${EIGS_BINARY_TRACE:-0}" = 1 ]; then
-                # Diagnostic only: retain alias identity at every section seam.
-                # The #681 checksum guard below remains the verdict.
-                local identity
-                identity=$(stat -L -c '%d:%i size=%s mtime=%y' ./eigenscript 2>/dev/null) ||
-                    identity=$(stat -L -f '%d:%i size=%z mtime=%m' ./eigenscript 2>/dev/null) || identity=missing
-                builtin printf 'BINARY_SEAM: time_us=%s section=%s %s\n' "$__EIGS_SEC_T0" "$__EIGS_SEC_LABEL" "$identity"
-            fi
-            ;;
-    esac
+    if [[ "${1:-}" =~ $EIGS_SECTION_HEADER_RE ]]; then
+        __eigs_section_close
+        __EIGS_SEC_LABEL="${1%%]*}]"
+        EIGS_SUITE_SECTION="$__EIGS_SEC_LABEL"
+        export EIGS_SUITE_SECTION
+        __EIGS_SEC_T0=$(__eigs_now_us)
+        __EIGS_SEC_TOTAL0=$TOTAL
+        __EIGS_SEC_SKIPPED0=$SKIPPED
+        if [ "${EIGS_BINARY_TRACE:-0}" = 1 ]; then
+            # Diagnostic only: retain alias identity at every section seam.
+            # The #681 checksum guard below remains the verdict.
+            local identity
+            identity=$(stat -L -c '%d:%i size=%s mtime=%y' ./eigenscript 2>/dev/null) ||
+                identity=$(stat -L -f '%d:%i size=%z mtime=%m' ./eigenscript 2>/dev/null) || identity=missing
+            builtin printf 'BINARY_SEAM: time_us=%s section=%s %s\n' "$__EIGS_SEC_T0" "$__EIGS_SEC_LABEL" "$identity"
+        fi
+    fi
     builtin echo "$@"
 }
 
@@ -310,6 +336,9 @@ check_binary_fingerprint() {
 # #969 was — the fix for #969 does not cover it, because the masking happens
 # before the classifier is consulted rather than inside it.
 . "$TESTS_DIR/lsan_classify.sh"
+TOLERATED_LSAN_REPORTS=$(mktemp "${TMPDIR:-/tmp}/eigs-lsan-observed.XXXXXX") || exit 1
+: > "$TOLERATED_LSAN_REPORTS"
+export TOLERATED_LSAN_REPORTS
 
 rc_ok() {
     local _cls
@@ -332,9 +361,40 @@ rc_ok() {
     [ "$1" = "0" ] && return 0
     if [ "$_cls" -eq 0 ]; then
         LEAKED=$((LEAKED + 1))
+        printf '%s — leak-only nonzero exit (full report in section log)\n' "${EIGS_SUITE_SECTION:-unlabelled}" >> "$TOLERATED_LSAN_REPORTS"
         return 0
     fi
     return 1
+}
+
+# rc_expect WANT RC OUTPUT — rc_ok for a row that expects a SPECIFIC exit code,
+# usually the language's error exit, 1 (#2306). Those rows used to compare the
+# code alone (`[ "$rc" -eq 1 ]`, `-ne 0`, or check_exit with the output sent to
+# /dev/null), and 1 is also ASan's and UBSan's halt exit code: a
+# heap-use-after-free on the error path, reported AFTER the expected
+# diagnostic, gave rc=1 plus the marker, and the row passed. The classifier
+# decides first, the exit code second:
+#   hard  -> fail at ANY exit code (a recoverable UBSan report keeps rc 0/1)
+#   leak  -> the sanitizer's exit code replaced the program's, so the code
+#            proves nothing; tolerated exactly as rc_ok does, through the
+#            ledger that the reviewed-baseline gate (lsan_baseline_check)
+#            refuses to grow
+#   none  -> the exit code must equal WANT exactly
+rc_expect() {
+    local _cls
+    if ! declare -F lsan_classify >/dev/null 2>&1; then
+        echo "  FAIL: rc_expect called without lsan_classify in scope — harness bug" >&2
+        return 1
+    fi
+    lsan_classify "$3"
+    _cls=$?
+    [ "$_cls" -eq 1 ] && return 1
+    if [ "$_cls" -eq 0 ]; then
+        LEAKED=$((LEAKED + 1))
+        printf '%s — leak-only nonzero exit (full report in section log)\n' "${EIGS_SUITE_SECTION:-unlabelled}" >> "$TOLERATED_LSAN_REPORTS"
+        return 0
+    fi
+    [ "$2" = "$1" ]
 }
 
 # ---- #988: child `.sh` tests gate on exit status, not just markers ----------
@@ -398,7 +458,41 @@ export CHILD_LEDGER
 # among them) and can be interrupted; without this the ledger leaks one file
 # per aborted run. The runner has no other trap — `trap ... EXIT` REPLACES
 # rather than accumulates, so if one is ever added it must call this too.
-trap 'rm -f "${CHILD_LEDGER:-}"; suite_diagnostic_cleanup' EXIT
+trap 'rm -f "${CHILD_LEDGER:-}" "${UNDEFINED_COMMAND_LEDGER:-}"; suite_diagnostic_cleanup' EXIT
+# A command that does not exist fails its section (hq#58). In statement
+# position bash only prints "x: command not found", sets $? = 127 and runs the
+# next line, so [1a7]'s `run_test ...` (a helper defined nowhere) skipped its
+# 19 sandbox asserts in every lane while the section printed PASS. bash runs
+# this hook in a subshell, so it cannot bump FAIL; it appends to a per-run file
+# (never inherited: this run's rows only) and __eigs_section_close fails the
+# section that left a row there. Only bare names bash looks up on PATH reach
+# it. A launcher (`timeout`, `env`, `$EIGS_TMO`) execs the name and never asks,
+# and a name with a slash (`./x.sh`, `"$TESTS_DIR/x.sh"`) that does not exist
+# is "No such file or directory", rc 127, with no hook call: both still fail
+# open unless their rc is checked (#2303). The hook needs bash >= 4: on the
+# macOS lane's bash 3.2 it never fires (#2304), and the cross-platform guard
+# is that tools/enrolment_edges.py trusts a launch helper only where it is
+# defined (tests/test_fragment_undefined_helper_hq58.sh).
+UNDEFINED_COMMAND_LEDGER=$(mktemp "${TMPDIR:-/tmp}/eigs_undefined_cmds.XXXXXX") || exit 1
+UNDEFINED_COMMAND_SEEN=0
+command_not_found_handle() {
+    builtin printf '%s\t%s\n' "${__EIGS_SEC_LABEL:-(no section)}" "$1" >> "$UNDEFINED_COMMAND_LEDGER"
+    builtin printf '%s: command not found (in section %s)\n' "$1" "${__EIGS_SEC_LABEL:-(none)}" >&2
+    return 127
+}
+__eigs_undefined_commands_tally() {
+    local rows
+    [ -s "$UNDEFINED_COMMAND_LEDGER" ] || return 0
+    rows=$(wc -l < "$UNDEFINED_COMMAND_LEDGER" | tr -d ' ')
+    [ "$rows" -gt "$UNDEFINED_COMMAND_SEEN" ] || return 0
+    sed -n "$((UNDEFINED_COMMAND_SEEN + 1)),\$p" "$UNDEFINED_COMMAND_LEDGER" |
+        while IFS=$'\t' read -r __uc_section __uc_name; do
+            builtin printf '  FAIL: %s ran a command that does not exist: %s (exit 127; its checks did not run)\n' \
+                "$__uc_section" "$__uc_name"
+        done
+    FAIL=$((FAIL + rows - UNDEFINED_COMMAND_SEEN)); TOTAL=$((TOTAL + rows - UNDEFINED_COMMAND_SEEN))
+    UNDEFINED_COMMAND_SEEN=$rows
+}
 # Children that legitimately emit no PASS:/FAIL: markers, so the vacuity rule
 # must not fire on them. Each is a waiver and states why; an entry that stops
 # being needed is a review event, and tools/child_exit_check.sh pins the list
@@ -465,10 +559,13 @@ bash() {
             # prints `SKIP:` has honestly declined to measure, which is
             # visible to the reader and is the suite's established
             # convention for an unavailable tool. Bought in CI (PR #996):
-            # test_temporal_memory.sh skips without GNU `time -f`, without
-            # /proc, and on sanitizer builds — all three exist on the dev
-            # box, so the local run never took those paths and four lanes
-            # went red on a child doing exactly what it was designed to do.
+            # test_temporal_memory.sh then skipped without GNU `time -f`,
+            # without /proc, and on sanitizer builds — none of which the dev
+            # box took, so four lanes went red on a child doing exactly what
+            # it was designed to do. (Since hq#58 that child FAILS a skip
+            # whose key is not in tests/temporal_memory_skip_allowlist.txt,
+            # and missing GNU time on Linux is not listed. This generic rule
+            # still accepts any child that prints only SKIP: and exits 0.)
             if ! printf '%s\n' "$__out" | grep -q -E '(PASS|FAIL|SKIP):'; then
                 echo "  FAIL: $__base exited 0 but reported no checks at all — a section cannot pass on zero checks (#988)"
                 printf '%s\t%s\n' "vacuous" "$__what" >> "$CHILD_LEDGER"
@@ -575,7 +672,6 @@ check_binary_fingerprint
 TOTAL=$((TOTAL + 1))
 OP_ABI_OUT=$(${CC:-gcc} -std=c11 $WERROR_FLAGS -I. \
     -DEIGENSCRIPT_EXT_HTTP=0 \
-    -DEIGENSCRIPT_EXT_MODEL=0 \
     -DEIGENSCRIPT_EXT_DB=0 \
     -c ../tests/test_opcode_abi.c -o /tmp/eigs_opcode_abi.o 2>&1)
 OP_ABI_RC=$?
@@ -736,7 +832,7 @@ for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
         LAR_JIT=$(lar_jit_witness "$LAR_TIER" "$LAR_OUT")
         if [ "$LAR_JIT" != ok ]; then
             FAIL=$((FAIL + 1)); echo "  FAIL: $LAR_FILE ($LAR_TIER): compiled nothing, so it measured the interpreter"
-        elif [ "$LAR_RC" -eq 1 ] && [ -z "$LAR_MISS" ]; then
+        elif rc_expect 1 "$LAR_RC" "$LAR_OUT" && [ -z "$LAR_MISS" ]; then
             PASS=$((PASS + 1)); echo "  PASS: uncaught header + traceback lines, $LAR_FILE ($LAR_TIER)"
         else
             FAIL=$((FAIL + 1)); echo "  FAIL: $LAR_FILE ($LAR_TIER, rc=$LAR_RC) missing:$LAR_MISS"
@@ -752,7 +848,7 @@ for LAR_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
     TOTAL=$((TOTAL + 1))
     if [ "$(lar_jit_witness "$LAR_TIER" "$LAR_OUT")" != ok ]; then
         FAIL=$((FAIL + 1)); echo "  FAIL: line_after_callback_tape.eigs ($LAR_TIER): compiled nothing, so it measured the interpreter"
-    elif [ "$LAR_RC" -eq 0 ] && grep -qx 2 <<< "$LAR_OUT" && [ "$LAR_STEP" = 15 ]; then
+    elif rc_expect 0 "$LAR_RC" "$LAR_OUT" && grep -qx 2 <<< "$LAR_OUT" && [ "$LAR_STEP" = 15 ]; then
         PASS=$((PASS + 1)); echo "  PASS: tape stop after the callbacks is the statement's line 15 ($LAR_TIER)"
     else
         FAIL=$((FAIL + 1)); echo "  FAIL: line_after_callback_tape.eigs ($LAR_TIER, rc=$LAR_RC): tape stop '$LAR_STEP', want 15"
@@ -1143,12 +1239,14 @@ check "AS1 assert true passes" "$(echo "$AS_OUTPUT" | grep 'pass1')" "pass1"
 check "AS2 assert list passes" "$(echo "$AS_OUTPUT" | grep 'pass2')" "pass2"
 
 TOTAL=$((TOTAL + 1))
-if ./eigenscript ../tests/test_assert_fail.eigs >/dev/null 2>&1; then
-    echo "  FAIL: AS3 assert false should exit non-zero"
-    FAIL=$((FAIL + 1))
-else
+AS3_OUT=$(./eigenscript ../tests/test_assert_fail.eigs </dev/null 2>&1); AS3_RC=$?
+if rc_expect 1 "$AS3_RC" "$AS3_OUT"; then
     echo "  PASS: AS3 assert false exits non-zero"
     PASS=$((PASS + 1))
+else
+    echo "  FAIL: AS3 assert false should exit 1 with no sanitizer report (rc=$AS3_RC)"
+    printf '%s\n' "$AS3_OUT" | eigs_failure_output
+    FAIL=$((FAIL + 1))
 fi
 echo ""
 
@@ -1339,22 +1437,30 @@ echo ""
 echo "[16/16] Error Messages"
 check_binary_fingerprint
 
+# The three direct-run helpers below decide on the program's exit code AND
+# its sanitizer output through rc_expect (#2306). Each used to look at one
+# thing only: check_exit sent all output to /dev/null, check_stderr ran
+# `./eigenscript ... || true`, and check_stdout dropped stderr. A sanitizer
+# report on the error path then passed, because ASan's halt exit code is the
+# language's error exit code, 1.
+# check_stderr NAME SCRIPT SUBSTR [WANT_RC=1] — every row is an error program.
 check_stderr() {
     TOTAL=$((TOTAL + 1))
     local test_name="$1"
     local script="$2"
     local expected_substr="$3"
+    local cs_want="${4:-1}"
     local tmpfile
     tmpfile=$(mktemp /tmp/eigs_test_XXXXXX.eigs)
     printf '%s\n' "$script" > "$tmpfile"
-    local errfile
+    local errfile cs_rc
     errfile=$(mktemp /tmp/eigs_err_XXXXXX.txt)
-    ./eigenscript "$tmpfile" >"$errfile" 2>&1 || true
-    if grep -q "$expected_substr" "$errfile"; then
+    ./eigenscript "$tmpfile" >"$errfile" 2>&1; cs_rc=$?
+    if rc_expect "$cs_want" "$cs_rc" "$(cat "$errfile")" && grep -q "$expected_substr" "$errfile"; then
         echo "  PASS: $test_name"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: $test_name (output: '$(cat "$errfile")', expected to contain '$expected_substr')"
+        echo "  FAIL: $test_name (rc=$cs_rc, want $cs_want and no sanitizer report; output: '$(cat "$errfile")', expected to contain '$expected_substr')"
         FAIL=$((FAIL + 1))
     fi
     rm -f "$tmpfile" "$errfile"
@@ -1365,17 +1471,18 @@ check_exit() {
     local test_name="$1"
     local script="$2"
     local expected_exit="$3"
-    local tmpfile
+    local tmpfile ce_out
     tmpfile=$(mktemp /tmp/eigs_test_XXXXXX.eigs)
     printf '%s\n' "$script" > "$tmpfile"
     local actual_exit=0
-    ./eigenscript "$tmpfile" >/dev/null 2>&1 || actual_exit=$?
+    ce_out=$(./eigenscript "$tmpfile" 2>&1) || actual_exit=$?
     rm -f "$tmpfile"
-    if [ "$actual_exit" = "$expected_exit" ]; then
+    if rc_expect "$expected_exit" "$actual_exit" "$ce_out"; then
         echo "  PASS: $test_name"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: $test_name (exit $actual_exit, expected $expected_exit)"
+        echo "  FAIL: $test_name (exit $actual_exit, expected $expected_exit and no sanitizer report)"
+        printf '%s\n' "$ce_out" | eigs_failure_output
         FAIL=$((FAIL + 1))
     fi
 }
@@ -1429,13 +1536,17 @@ check_exit "EM14 uncaught runtime error exits non-zero" 'x is [1] - 5' "1"
 check_exit "EM15 division by zero exits non-zero" 'x is 10 / 0' "1"
 
 # Regression: uncaught error halts execution (statement after must not run)
-EM16_OUT=$(printf '%s\n' 'x is undefined_thing' 'print of "AFTER"' > /tmp/eigs_em16.eigs; ./eigenscript /tmp/eigs_em16.eigs 2>/dev/null; rm -f /tmp/eigs_em16.eigs)
+EM16_SRC=$(mktemp /tmp/eigs_em16_XXXXXX.eigs); EM16_ERR=$(mktemp /tmp/eigs_em16_err_XXXXXX.txt)
+printf '%s\n' 'x is undefined_thing' 'print of "AFTER"' > "$EM16_SRC"
+EM16_OUT=$(./eigenscript "$EM16_SRC" 2>"$EM16_ERR"); EM16_RC=$?
+EM16_ERRTXT=$(cat "$EM16_ERR"); rm -f "$EM16_SRC" "$EM16_ERR"
 TOTAL=$((TOTAL + 1))
-if [ -z "$EM16_OUT" ]; then
+if [ -z "$EM16_OUT" ] && rc_expect 1 "$EM16_RC" "$EM16_ERRTXT"; then
     echo "  PASS: EM16 uncaught error halts (no output after)"
     PASS=$((PASS + 1))
 else
-    echo "  FAIL: EM16 statement ran after uncaught error (got '$EM16_OUT')"
+    echo "  FAIL: EM16 statement ran after uncaught error, or rc/sanitizer (rc=$EM16_RC, want 1; got '$EM16_OUT')"
+    printf '%s\n' "$EM16_ERRTXT" | eigs_failure_output
     FAIL=$((FAIL + 1))
 fi
 
@@ -1462,25 +1573,30 @@ catch e:
 
 # #406: catch binds {kind, message, line} for built-in runtime errors.
 # check() compares stdout exactly; these run the program and grep stdout.
+# check_stdout NAME SCRIPT SUBSTR [WANT_RC=0] — stdout is matched; stderr is
+# kept apart (so it cannot satisfy the match) and classified (#2306).
 check_stdout() {
     TOTAL=$((TOTAL + 1))
     local test_name="$1"
     local script="$2"
     local expected_substr="$3"
+    local cs_want="${4:-0}"
     local tmpfile
     tmpfile=$(mktemp /tmp/eigs_test_XXXXXX.eigs)
     printf '%s\n' "$script" > "$tmpfile"
-    local outfile
+    local outfile errfile cs_rc
     outfile=$(mktemp /tmp/eigs_out_XXXXXX.txt)
-    ./eigenscript "$tmpfile" >"$outfile" 2>/dev/null || true
-    if grep -qF "$expected_substr" "$outfile"; then
+    errfile=$(mktemp /tmp/eigs_err_XXXXXX.txt)
+    ./eigenscript "$tmpfile" >"$outfile" 2>"$errfile"; cs_rc=$?
+    if rc_expect "$cs_want" "$cs_rc" "$(cat "$errfile")" && grep -qF "$expected_substr" "$outfile"; then
         echo "  PASS: $test_name"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: $test_name (output: '$(cat "$outfile")', expected to contain '$expected_substr')"
+        echo "  FAIL: $test_name (rc=$cs_rc, want $cs_want and no sanitizer report; output: '$(cat "$outfile")', expected to contain '$expected_substr')"
+        eigs_failure_output < "$errfile"
         FAIL=$((FAIL + 1))
     fi
-    rm -f "$tmpfile" "$outfile"
+    rm -f "$tmpfile" "$outfile" "$errfile"
 }
 
 check_stdout "EM26 catch binds kind from the closed set" 'try:
@@ -1505,90 +1621,6 @@ check_stdout "EM30 assert failure is catchable with kind assert" 'try:
 catch e:
     print of e.kind' "assert"
 echo ""
-
-# [17] Transformer smoke test — only runs if model extension compiled in.
-# Detects by running a probe script and checking output.
-PROBE_FILE=$(mktemp /tmp/eigs_probe_XXXXXX.eigs)
-cat > "$PROBE_FILE" <<'PROBE'
-loaded is eigen_model_loaded of null
-print of "yes"
-PROBE
-PROBE_OUT=$(./eigenscript "$PROBE_FILE" 2>&1)
-rm -f "$PROBE_FILE"
-
-# Disabled extensions stay bound so direct calls can explain which profile is
-# required; probes treat that capability diagnostic as unavailable too.
-echo "[17/17] Transformer Smoke"
-if ! echo "$PROBE_OUT" | grep -Eq "undefined variable|capability unavailable"; then
-
-    # Generate tiny v1 model
-    ./eigenscript ../tests/gen_tiny_model.eigs > /tmp/eigs_tiny_v1.json 2>/dev/null
-
-    # Find a v0 model to test rejection.
-    # Set EIGS_V0_MODEL_DIR to a directory containing legacy-format *.json
-    # checkpoints to exercise TR6/TR7. If unset (the common case), those
-    # two checks skip gracefully.
-    if [ -n "$EIGS_V0_MODEL_DIR" ]; then
-        V0_MODEL=$(find "$EIGS_V0_MODEL_DIR" -maxdepth 1 -name '*.json' 2>/dev/null | head -1)
-    else
-        V0_MODEL=""
-    fi
-
-    SMOKE_FILE=$(mktemp /tmp/eigs_smoke_XXXXXX.eigs)
-    cat > "$SMOKE_FILE" <<SMOKE
-load_result is eigen_model_load of "/tmp/eigs_tiny_v1.json"
-print of "TR1:"
-print of (eigen_model_loaded of null)
-print of "TR2:"
-print of (type of (eigen_generate of [[1,2,3], 0.0, 4]))
-print of "TR3:"
-print of (len of (eigen_generate of [[1,2,3], 0.0, 4]))
-print of "TR4:"
-print of (type of (native_train_step_builtin of [[1,2,3], [4,5,6], 0.01]))
-print of "TR5:"
-print of (native_train_step_builtin of ["bad", "also bad", 0.01])
-SMOKE
-    SMOKE_OUTPUT=$(./eigenscript "$SMOKE_FILE" 2>&1)
-    rm -f "$SMOKE_FILE"
-
-    check "TR1 v2 model loads" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR1:' | tail -1)" "true"
-    check "TR2 generate returns list" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR2:' | tail -1)" "list"
-    check "TR3 generate length matches max_tokens" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR3:' | tail -1)" "4"
-    check "TR4 train returns string (JSON)" "$(echo "$SMOKE_OUTPUT" | grep -A1 'TR4:' | tail -1)" "str"
-    TR5_LINE=$(echo "$SMOKE_OUTPUT" | grep -A1 'TR5:' | tail -1)
-    if echo "$TR5_LINE" | grep -q "must be lists"; then
-        echo "  PASS: TR5 bad inputs rejected"; PASS=$((PASS + 1))
-    else
-        echo "  FAIL: TR5 bad inputs rejected (got '$TR5_LINE')"; FAIL=$((FAIL + 1))
-    fi
-    TOTAL=$((TOTAL + 1))
-
-    # TR6/TR7: v0 rejection
-    if [ -n "$V0_MODEL" ]; then
-        V0_FILE=$(mktemp /tmp/eigs_v0_XXXXXX.eigs)
-        cat > "$V0_FILE" <<V0TEST
-r is eigen_model_load of "$V0_MODEL"
-print of (eigen_model_loaded of null)
-V0TEST
-        V0_OUTPUT=$(./eigenscript "$V0_FILE" 2>&1)
-        rm -f "$V0_FILE"
-        V0_LOADED=$(echo "$V0_OUTPUT" | tail -1)
-        check "TR6 old model rejected" "$V0_LOADED" "false"
-        if echo "$V0_OUTPUT" | grep -q "format mismatch"; then
-            echo "  PASS: TR7 old rejection prints format mismatch"; PASS=$((PASS + 1))
-        else
-            echo "  FAIL: TR7 old rejection prints format mismatch"; FAIL=$((FAIL + 1))
-        fi
-        TOTAL=$((TOTAL + 1))
-    else
-        echo "  SKIP: TR6/TR7 no old model available"
-    fi
-
-    rm -f /tmp/eigs_tiny_v1.json
-    echo ""
-else
-    section_skip "binary built without model support"
-fi
 
 # [18] File I/O builtins: read_text, write_text, exec_capture
 echo "[18/18] File I/O Builtins"
@@ -1828,7 +1860,7 @@ print('print of \"should-not-run\"')" > "$CPG_FILE"
 CPG_OUTPUT=$(./eigenscript "$CPG_FILE" </dev/null 2>&1); CPG_RC=$?
 CPG_MSGS=$(echo "$CPG_OUTPUT" | grep -c "constant pool exceeds 65536" || true)
 TOTAL=$((TOTAL + 1))
-if [ "$CPG_RC" -ne 0 ] && [ "$CPG_MSGS" = "1" ] \
+if rc_expect 1 "$CPG_RC" "$CPG_OUTPUT" && [ "$CPG_MSGS" = "1" ] \
    && ! echo "$CPG_OUTPUT" | grep -q "should-not-run"; then
     PASS=$((PASS + 1))
     echo "  PASS: >65536-constant chunk fails cleanly (one diagnostic, no run)"
@@ -1870,7 +1902,7 @@ print('print of f\"%s\"' % parts)" > "$CDG_TWO"
 CDG_OUT=$(./eigenscript "$CDG_DEEP" </dev/null 2>&1); CDG_RC=$?
 CDG_MSGS=$(echo "$CDG_OUT" | grep -c "expression nesting too deep" || true)
 TOTAL=$((TOTAL + 1))
-if [ "$CDG_RC" -ne 0 ] && [ "$CDG_MSGS" = "1" ] \
+if rc_expect 1 "$CDG_RC" "$CDG_OUT" && [ "$CDG_MSGS" = "1" ] \
    && echo "$CDG_OUT" | grep -q "Compile error line 2:" \
    && ! echo "$CDG_OUT" | grep -q "should-not-run"; then
     PASS=$((PASS + 1))
@@ -1883,7 +1915,7 @@ fi
 
 CDG_OK_OUT=$(./eigenscript "$CDG_OK" </dev/null 2>&1); CDG_OK_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$CDG_OK_RC" -eq 0 ] && echo "$CDG_OK_OUT" | grep -q "a61=1"; then
+if rc_expect 0 "$CDG_OK_RC" "$CDG_OK_OUT" && echo "$CDG_OK_OUT" | grep -q "a61=1"; then
     PASS=$((PASS + 1))
     echo "  PASS: an f-string just under the limit still compiles and runs"
 else
@@ -1892,14 +1924,15 @@ else
     echo "$CDG_OK_OUT" | head -3
 fi
 
-CDG_TWO_MSGS=$(./eigenscript "$CDG_TWO" </dev/null 2>&1 | grep -c "expression nesting too deep" || true)
+CDG_TWO_OUT=$(./eigenscript "$CDG_TWO" </dev/null 2>&1); CDG_TWO_RC=$?
+CDG_TWO_MSGS=$(echo "$CDG_TWO_OUT" | grep -c "expression nesting too deep" || true)
 TOTAL=$((TOTAL + 1))
-if [ "$CDG_TWO_MSGS" = "1" ]; then
+if rc_expect 1 "$CDG_TWO_RC" "$CDG_TWO_OUT" && [ "$CDG_TWO_MSGS" = "1" ]; then
     PASS=$((PASS + 1))
     echo "  PASS: two too-deep expressions still report once per compile"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: depth diagnostic not deduped (msgs=$CDG_TWO_MSGS)"
+    echo "  FAIL: depth diagnostic not deduped, or rc/sanitizer (rc=$CDG_TWO_RC msgs=$CDG_TWO_MSGS)"
 fi
 rm -f "$CDG_DEEP" "$CDG_OK" "$CDG_TWO"
 
@@ -1924,10 +1957,17 @@ print('\n'.join(L + body))" > "$LW_FILE"
 TOTAL=$((TOTAL + 1))
 LW_OK=1
 # Interpreter tier
-LW_INT=$(EIGS_JIT_OFF=1 ./eigenscript "$LW_FILE" </dev/null 2>&1)
+LW_INT=$(EIGS_JIT_OFF=1 ./eigenscript "$LW_FILE" </dev/null 2>&1); LW_INT_RC=$?
 # JIT tier (thresholds forced low so any hot region compiles)
 LW_JIT=$(EIGS_JIT_ENTRY_THRESHOLD=1 EIGS_JIT_ITER_THRESHOLD=10 EIGS_JIT_OSR_THRESHOLD=50 \
-         ./eigenscript "$LW_FILE" </dev/null 2>&1)
+         ./eigenscript "$LW_FILE" </dev/null 2>&1); LW_JIT_RC=$?
+# Both tiers end on the uncaught `boom` error: exit 1, no sanitizer report (#2306).
+if rc_expect 1 "$LW_INT_RC" "$LW_INT" && rc_expect 1 "$LW_JIT_RC" "$LW_JIT"; then
+    echo "  PASS: both tiers exit 1 on the uncaught error past line 65535"
+else
+    LW_OK=0; echo "  FAIL: exit status/sanitizer (interpreter rc=$LW_INT_RC, JIT rc=$LW_JIT_RC, want 1 and no report)"
+    printf '%s\n' "$LW_INT" "$LW_JIT" | eigs_failure_output
+fi
 # 'what is x at 4464' must be 111 (not 222, the value that wrapped onto it).
 LW_R1=$(printf '%s\n' "$LW_INT" | sed -n '1p')
 LW_R2=$(printf '%s\n' "$LW_INT" | sed -n '2p')
@@ -2218,7 +2258,7 @@ SH821_DIR=$(mktemp -d)
 SH821_BIN="$PWD/eigenscript"
 printf 'MARKER is 42\n' > "$SH821_DIR/physics.eigs"
 printf 'import physics\nimport physics\nprint of physics.MARKER\n' > "$SH821_DIR/shadow.eigs"
-printf 'import math\nprint of (math.abs of -5)\n' > "$SH821_DIR/clean.eigs"
+printf 'import math\nprint of (math.math_abs of -5)\n' > "$SH821_DIR/clean.eigs"
 SH821_ERR=$(cd "$SH821_DIR" && "$SH821_BIN" shadow.eigs 2>&1 >/dev/null)
 SH821_WARNS=$(printf '%s\n' "$SH821_ERR" | grep -c "Warning: import 'physics'")
 SH821_CLEAN=$(cd "$SH821_DIR" && "$SH821_BIN" clean.eigs 2>&1 >/dev/null | grep -c "Warning: import")
@@ -2250,7 +2290,7 @@ SH904_DIR=$(mktemp -d)
 SH904_BIN="$PWD/eigenscript"
 mkdir -p "$SH904_DIR/home/.local/lib/eigenscript"
 printf 'INSTALLED_COPY is 1\n' > "$SH904_DIR/home/.local/lib/eigenscript/math.eigs"
-printf 'import math\nprint of (math.abs of -5)\n' > "$SH904_DIR/clean.eigs"
+printf 'import math\nprint of (math.math_abs of -5)\n' > "$SH904_DIR/clean.eigs"
 printf 'MARKER is 42\n' > "$SH904_DIR/physics.eigs"
 printf 'import physics\nprint of physics.MARKER\n' > "$SH904_DIR/shadow.eigs"
 SH904_OUT=$(cd "$SH904_DIR" && HOME="$SH904_DIR/home" "$SH904_BIN" clean.eigs 2>/dev/null)
@@ -2264,7 +2304,7 @@ if [ "$SH904_WARNS" = "0" ] && [ "$SH904_OUT" = "5" ] && [ "$SH904_SHADOW" = "1"
     echo "  PASS: installed stdlib is not a project file (#904)"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: installed stdlib is not a project file (#904) — warnings=$SH904_WARNS (want 0), math.abs of -5 = '$SH904_OUT' (want 5), real-shadow warnings=$SH904_SHADOW (want 1)"
+    echo "  FAIL: installed stdlib is not a project file (#904) — warnings=$SH904_WARNS (want 0), math.math_abs of -5 = '$SH904_OUT' (want 5), real-shadow warnings=$SH904_SHADOW (want 1)"
 fi
 rm -rf "$SH904_DIR"
 echo ""
@@ -2689,7 +2729,7 @@ else
 fi
 echo ""
 
-# [42c] Stdlib fixes (math.dot bounds, test.assert_near types, template no-reinterpretation, text/int-vector builders)
+# [42c] Stdlib fixes (math.math_dot bounds, test.assert_near types, template no-reinterpretation, text/int-vector builders)
 echo "[42d/47] Stdlib Fixes"
 # #1361 EIGS_STRICT=0: pins math.log10/log2 of x <= 0 taking the log floor stand-in (SF101/SF102).
 SF_OUTPUT=$(suite_program_run test_stdlib_fixes.eigs ./eigenscript ../tests/test_stdlib_fixes.eigs 2>&1); SF_OUTPUT_RC=$?
@@ -2754,36 +2794,6 @@ check_eigs_suite "module-boundary write insulation (#373)" test_module_scope.eig
 check_eigs_suite "import top-level scope insulation vs load_file current-scope contract (#589)" test_import_toplevel_scope.eigs "All import top-level scope tests passed"
 check_eigs_suite "module namespace is a LIVE VIEW of the module env (#1057)" test_module_live_view.eigs "All tests passed"
 check_eigs_suite "module builtins isolated from the importer's rebinding; builtin layer sealed (#1388)" test_module_builtin_isolation.eigs "All tests passed"
-
-echo "[43a2b] build_corpus slot-mode identifier encoding"
-CS_OUTPUT=$(bash "$TESTS_DIR/test_corpus_slots.sh" 2>&1)
-CS_PASS=$(echo "$CS_OUTPUT" | grep -c "PASS:" || true)
-CS_FAIL=$(echo "$CS_OUTPUT" | grep -c "FAIL:" || true)
-TOTAL=$((TOTAL + CS_PASS + CS_FAIL))
-PASS=$((PASS + CS_PASS))
-FAIL=$((FAIL + CS_FAIL))
-if [ "$CS_FAIL" -gt 0 ]; then
-    echo "  FAIL: $CS_FAIL slot-encoding check(s) failed"
-    echo "$CS_OUTPUT" | grep "FAIL:" | head -4
-else
-    echo "  PASS: slot mode is lossless and preserves identifier identity"
-fi
-echo ""
-
-echo "[43a2c] build_corpus integer-literal encoding"
-CI_OUTPUT=$(bash "$TESTS_DIR/test_corpus_ints.sh" 2>&1)
-CI_PASS=$(echo "$CI_OUTPUT" | grep -c "PASS:" || true)
-CI_FAIL=$(echo "$CI_OUTPUT" | grep -c "FAIL:" || true)
-TOTAL=$((TOTAL + CI_PASS + CI_FAIL))
-PASS=$((PASS + CI_PASS))
-FAIL=$((FAIL + CI_FAIL))
-if [ "$CI_FAIL" -gt 0 ]; then
-    echo "  FAIL: $CI_FAIL integer-encoding check(s) failed"
-    echo "$CI_OUTPUT" | grep "FAIL:" | head -4
-else
-    echo "  PASS: integer literals get exact tokens; genuine repetition preserved"
-fi
-echo ""
 
 # [43a3] EigenStore header-validation / corruption error paths (ext_store.c)
 echo "[43a3] Store Corruption Errors"
@@ -2977,160 +2987,6 @@ if ! echo "$DB_PROBE_OUT" | grep -Eq "undefined variable|capability unavailable"
     echo ""
 else
     section_skip "binary built without EIGENSCRIPT_EXT_DB"
-    echo ""
-fi
-
-# [47] Model save/load/infer roundtrip (probe-gated)
-MODEL_PROBE_FILE=$(mktemp /tmp/eigs_model_probe_XXXXXX.eigs)
-cat > "$MODEL_PROBE_FILE" <<'PROBE'
-print of (eigen_model_loaded of null)
-PROBE
-MODEL_PROBE_OUT=$(./eigenscript "$MODEL_PROBE_FILE" 2>&1)
-rm -f "$MODEL_PROBE_FILE"
-
-echo "[47/47] Model Save/Load Roundtrip"
-if ! echo "$MODEL_PROBE_OUT" | grep -Eq "undefined variable|capability unavailable"; then
-    MRT_OUTPUT=$(bash "$TESTS_DIR/test_model_roundtrip.sh" 2>&1)
-    MRT_PASS=$(echo "$MRT_OUTPUT" | grep -c "PASS:" || true)
-    MRT_FAIL=$(echo "$MRT_OUTPUT" | grep -c "FAIL:" || true)
-    TOTAL=$((TOTAL + MRT_PASS + MRT_FAIL))
-    PASS=$((PASS + MRT_PASS))
-    FAIL=$((FAIL + MRT_FAIL))
-    if [ "$MRT_FAIL" -gt 0 ]; then
-        echo "  FAIL: $MRT_FAIL model roundtrip check(s) failed"
-        echo "$MRT_OUTPUT" | grep "FAIL:" | head -5
-    else
-        echo "  PASS: all $MRT_PASS model roundtrip checks"
-    fi
-    echo ""
-
-    echo "[47b/47] Model Overflow Regression"
-    MO_OUTPUT=$(bash "$TESTS_DIR/test_model_overflow.sh" 2>&1)
-    MO_PASS=$(echo "$MO_OUTPUT" | grep -c "PASS:" || true)
-    MO_FAIL=$(echo "$MO_OUTPUT" | grep -c "FAIL:" || true)
-    TOTAL=$((TOTAL + MO_PASS + MO_FAIL))
-    PASS=$((PASS + MO_PASS))
-    FAIL=$((FAIL + MO_FAIL))
-    if [ "$MO_FAIL" -gt 0 ]; then
-        echo "  FAIL: $MO_FAIL model overflow check(s) failed"
-        echo "$MO_OUTPUT" | grep "FAIL:" | head -3
-    else
-        echo "  PASS: malicious model checkpoints rejected"
-    fi
-    echo ""
-
-    echo "[47d/47] Model Incomplete-Checkpoint Rejection (#727)"
-    MI_OUTPUT=$(bash "$TESTS_DIR/test_model_incomplete.sh" 2>&1)
-    if echo "$MI_OUTPUT" | grep -q "SKIP:"; then
-        mi_skip_line=$(echo "$MI_OUTPUT" | grep "SKIP:" | head -1)
-        section_skip "$mi_skip_line"
-    else
-        MI_PASS=$(echo "$MI_OUTPUT" | grep -c "PASS:" || true)
-        MI_FAIL=$(echo "$MI_OUTPUT" | grep -c "FAIL:" || true)
-        TOTAL=$((TOTAL + MI_PASS + MI_FAIL))
-        PASS=$((PASS + MI_PASS))
-        FAIL=$((FAIL + MI_FAIL))
-        if [ "$MI_FAIL" -gt 0 ]; then
-            echo "  FAIL: $MI_FAIL incomplete-checkpoint check(s) failed"
-            echo "$MI_OUTPUT" | grep "FAIL:" | head -3
-        else
-            echo "  PASS: incomplete/misordered JSON checkpoints rejected"
-        fi
-    fi
-    echo ""
-
-    echo "[47c/47] native_train_step finite-difference gradient check"
-    GC_OUTPUT=$(bash "$TESTS_DIR/test_native_train_gradcheck.sh" 2>&1)
-    GC_RC=$?
-    GC_PASS=$(echo "$GC_OUTPUT" | grep -c "PASS:" || true)
-    GC_FAIL=$(echo "$GC_OUTPUT" | grep -c "FAIL:" || true)
-    if [ "$GC_RC" -ne 0 ] && [ "$GC_FAIL" -eq 0 ]; then
-        GC_FAIL=1
-        GC_OUTPUT="$GC_OUTPUT
-  FAIL: gradient-check child exited $GC_RC without a verdict"
-    fi
-    TOTAL=$((TOTAL + GC_PASS + GC_FAIL))
-    PASS=$((PASS + GC_PASS))
-    FAIL=$((FAIL + GC_FAIL))
-    if [ "$GC_FAIL" -gt 0 ]; then
-        echo "  FAIL: $GC_FAIL native_train_step gradient-check(s) failed"
-        echo "$GC_OUTPUT" | grep "FAIL:" | head -4
-    else
-        echo "  PASS: native training gradients match an independent finite-difference oracle"
-    fi
-    echo ""
-
-    echo "[47g/47] native_train_step max-sequence refusal (#1401)"
-    MS_OUTPUT=$(bash "$TESTS_DIR/test_native_train_max_seq.sh" 2>&1); MS_RC=$?
-    MS_PASS=$(echo "$MS_OUTPUT" | grep -c "PASS:" || true)
-    MS_FAIL=$(echo "$MS_OUTPUT" | grep -c "FAIL:" || true)
-    if [ "$MS_RC" -ne 0 ] && [ "$MS_FAIL" -eq 0 ]; then
-        MS_FAIL=1
-        MS_OUTPUT="$MS_OUTPUT
-  FAIL: max-sequence child exited without a verdict (rc=$MS_RC)"
-    fi
-    TOTAL=$((TOTAL + MS_PASS + MS_FAIL))
-    PASS=$((PASS + MS_PASS))
-    FAIL=$((FAIL + MS_FAIL))
-    if [ "$MS_FAIL" -gt 0 ]; then
-        echo "  FAIL: $MS_FAIL native_train_step max-sequence check(s) failed"
-        echo "$MS_OUTPUT" | grep "FAIL:" | head -4
-    else
-        echo "  PASS: over-long training windows are refused before cache writes"
-    fi
-    echo ""
-
-    echo "[47h/47] Model vocabulary independence (#1406)"
-    MVC_OUTPUT=$(bash "$TESTS_DIR/test_model_vocab_coupling.sh" 2>&1); MVC_RC=$?
-    MVC_PASS=$(echo "$MVC_OUTPUT" | grep -c "PASS:" || true)
-    MVC_FAIL=$(echo "$MVC_OUTPUT" | grep -c "FAIL:" || true)
-    if [ "$MVC_RC" -ne 0 ] && [ "$MVC_FAIL" -eq 0 ]; then
-        MVC_FAIL=1
-        MVC_OUTPUT="$MVC_OUTPUT
-  FAIL: model vocabulary check exited without a verdict (rc=$MVC_RC)"
-    fi
-    TOTAL=$((TOTAL + MVC_PASS + MVC_FAIL))
-    PASS=$((PASS + MVC_PASS))
-    FAIL=$((FAIL + MVC_FAIL))
-    if [ "$MVC_FAIL" -gt 0 ]; then
-        echo "  FAIL: model runtime contains consumer-specific vocabulary diagnostics"
-        echo "$MVC_OUTPUT"
-    else
-        echo "  PASS: model training is independent of consumer vocabulary IDs"
-    fi
-    echo ""
-
-    echo "[47f/47] eigen_eval_loss held-out cross-entropy"
-    EL_OUTPUT=$(bash "$TESTS_DIR/test_eval_loss.sh" 2>&1)
-    EL_PASS=$(echo "$EL_OUTPUT" | grep -c "PASS:" || true)
-    EL_FAIL=$(echo "$EL_OUTPUT" | grep -c "FAIL:" || true)
-    TOTAL=$((TOTAL + EL_PASS + EL_FAIL))
-    PASS=$((PASS + EL_PASS))
-    FAIL=$((FAIL + EL_FAIL))
-    if [ "$EL_FAIL" -gt 0 ]; then
-        echo "  FAIL: $EL_FAIL eigen_eval_loss check(s) failed"
-        echo "$EL_OUTPUT" | grep "FAIL:" | head -4
-    else
-        echo "  PASS: untrained cross-entropy sits at ln(vocab)"
-    fi
-    echo ""
-
-    echo "[47e/47] eigen_generate top-p nucleus sampling"
-    TP_OUTPUT=$(bash "$TESTS_DIR/test_top_p.sh" 2>&1)
-    TP_PASS=$(echo "$TP_OUTPUT" | grep -c "PASS:" || true)
-    TP_FAIL=$(echo "$TP_OUTPUT" | grep -c "FAIL:" || true)
-    TOTAL=$((TOTAL + TP_PASS + TP_FAIL))
-    PASS=$((PASS + TP_PASS))
-    FAIL=$((FAIL + TP_FAIL))
-    if [ "$TP_FAIL" -gt 0 ]; then
-        echo "  FAIL: $TP_FAIL top-p check(s) failed"
-        echo "$TP_OUTPUT" | grep "FAIL:" | head -4
-    else
-        echo "  PASS: top-p narrows the candidate set; out-of-range falls back to top-k"
-    fi
-    echo ""
-else
-    section_skip "binary built without EIGENSCRIPT_EXT_MODEL"
     echo ""
 fi
 
@@ -3925,31 +3781,53 @@ echo ""
 # renderer was absent. Its own positive/negative leak controls run BEFORE any
 # corpus verdict is believed.
 echo "[137] ext_gfx ASan/LSan corpus (#1007)"
-AG_OUTPUT=$(bash "$TESTS_DIR/test_asan_gfx.sh" 2>&1); AG_RC=$?
-AG_PASSED=$(echo "$AG_OUTPUT" | sed -n 's/^ASan gfx: \([0-9]*\) passed.*/\1/p' | tail -1)
-AG_FAILED=$(echo "$AG_OUTPUT" | sed -n 's/^ASan gfx: [0-9]* passed, \([0-9]*\) failed.*/\1/p' | tail -1)
-TOTAL=$((TOTAL + 1))
-if [ "$AG_RC" = "0" ] && [ "${AG_FAILED:-1}" = "0" ]; then
-    if echo "$AG_OUTPUT" | grep -q "(skipped)"; then
-        # Round 6 printed this as `PASS: SKIP: ...` and banked the assertion.
-        TOTAL=$((TOTAL - 1))
-        ag_skip_line=$(echo "$AG_OUTPUT" | grep -m1 'SKIP:' | sed 's/^ *//')
-        section_skip "$ag_skip_line"
+# #2320: [137] runs ONCE per CI run. Its binary is never the lane's own (see
+# above), so every Linux container lane compiled the same gcc build and judged
+# the same corpus. linux / gcc owns it; another lane sets EIGS_GFX137_DEFER to
+# its lane id and gets a counted skip naming the owner -- but only for an id on
+# the reviewed allowlist (tests/gfx137_defer_allowlist.txt). Any other id is a
+# FAIL, never a skip. tests/test_gfx137_once_2320.sh checks ci.yml leaves
+# exactly one runner in the queue; the owner's job checks the receipt below.
+if [ -n "${EIGS_GFX137_DEFER:-}" ]; then
+    AG_DEFER=$(bash "$TESTS_DIR/../tools/gfx137_once.sh" defer "$EIGS_GFX137_DEFER" 2>&1); AG_DEFER_RC=$?
+    if [ "$AG_DEFER_RC" = "0" ]; then
+        section_skip "$AG_DEFER"
+        echo "  GFX137: deferred lane=$EIGS_GFX137_DEFER"
     else
-        PASS=$((PASS + 1))
-        echo "  PASS: ext_gfx.c is leak- and UB-clean over the gfx corpus" \
-             "(${AG_PASSED:-?} checks, controls included)"
-        echo "$AG_OUTPUT" | grep -m1 "NOTE:" || true
-        # #1916: the controls' process-start timing, printed on every pass so
-        # each CI host (macOS included) records the distribution its budget
-        # is sized from.
-        echo "$AG_OUTPUT" | grep -m1 "gfx-timeout controls: completion wall" | sed 's/^/  /' || true
+        TOTAL=$((TOTAL + 1))
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: EIGS_GFX137_DEFER='$EIGS_GFX137_DEFER' may not skip [137] (rc=$AG_DEFER_RC)"
+        printf '%s\n' "$AG_DEFER" | sed 's/^/    /'
     fi
 else
-    FAIL=$((FAIL + 1))
-    echo "  FAIL: a leak or sanitizer error in the gfx corpus, or the gate's own"
-    echo "        leak controls did not fire"
-    echo "$AG_OUTPUT" | grep -E "FAIL:|SUMMARY|runtime error:" | head -8 | sed 's/^/    /'
+    AG_OUTPUT=$(bash "$TESTS_DIR/test_asan_gfx.sh" 2>&1); AG_RC=$?
+    AG_PASSED=$(echo "$AG_OUTPUT" | sed -n 's/^ASan gfx: \([0-9]*\) passed.*/\1/p' | tail -1)
+    AG_FAILED=$(echo "$AG_OUTPUT" | sed -n 's/^ASan gfx: [0-9]* passed, \([0-9]*\) failed.*/\1/p' | tail -1)
+    TOTAL=$((TOTAL + 1))
+    if [ "$AG_RC" = "0" ] && [ "${AG_FAILED:-1}" = "0" ]; then
+        if echo "$AG_OUTPUT" | grep -q "(skipped)"; then
+            # Round 6 printed this as `PASS: SKIP: ...` and banked the assertion.
+            TOTAL=$((TOTAL - 1))
+            ag_skip_line=$(echo "$AG_OUTPUT" | grep -m1 'SKIP:' | sed 's/^ *//')
+            section_skip "$ag_skip_line"
+        else
+            PASS=$((PASS + 1))
+            echo "  PASS: ext_gfx.c is leak- and UB-clean over the gfx corpus" \
+                 "(${AG_PASSED:-?} checks, controls included)"
+            # #2320: the owner lane's receipt (tools/gfx137_once.sh receipt).
+            echo "  GFX137: ran"
+            echo "$AG_OUTPUT" | grep -m1 "NOTE:" || true
+            # #1916: the controls' process-start timing, printed on every pass so
+            # each CI host (macOS included) records the distribution its budget
+            # is sized from.
+            echo "$AG_OUTPUT" | grep -m1 "gfx-timeout controls: completion wall" | sed 's/^/  /' || true
+        fi
+    else
+        FAIL=$((FAIL + 1))
+        echo "  FAIL: a leak or sanitizer error in the gfx corpus, or the gate's own"
+        echo "        leak controls did not fire"
+        echo "$AG_OUTPUT" | grep -E "FAIL:|SUMMARY|runtime error:" | head -8 | sed 's/^/    /'
+    fi
 fi
 echo ""
 
@@ -4356,38 +4234,28 @@ check_eigs_suite "interrogatives inside a comprehension arm the name (#1075)" te
 # counts 8x apart, ceiling + flatness, for a dead-code `prev of`, a live
 # `prev of`, and a live `at` query. Pre-fix this ran 203 MB and climbing; it
 # froze a 4 GB box. Not a leak — every byte was reachable and freed at exit,
-# so no sanitizer sees it. Skips on sanitizer builds (ASan overhead swamps it).
+# so no sanitizer sees it. The RSS half may decline only for a key listed in
+# tests/temporal_memory_skip_allowlist.txt (macOS, sanitizer builds), and that
+# skip is counted here; any other skip FAILS in the child (hq#58). The four
+# #868 window checks run on every build.
 echo "[70d] Temporal history is bounded (#827)"
 TMEM_OUTPUT=$(bash "$TESTS_DIR/test_temporal_memory.sh" 2>&1); TMEM_RC=$?
-echo "$TMEM_OUTPUT" | grep -E "^  (PASS|FAIL|SKIP|baseline|dead|live|at_live|when_live)"
+echo "$TMEM_OUTPUT" | grep -E "^  (PASS|FAIL|baseline|dead|live|at_live|when_live)"
 TMEM_N=$(echo "$TMEM_OUTPUT" | sed -n 's/^TEMPORAL_MEM: \([0-9]*\) passed.*/\1/p')
 TMEM_F=$(echo "$TMEM_OUTPUT" | sed -n 's/^TEMPORAL_MEM: [0-9]* passed, \([0-9]*\) failed.*/\1/p')
-TMEM_N=${TMEM_N:-0}; TMEM_F=${TMEM_F:-0}
+TMEM_S=$(echo "$TMEM_OUTPUT" | sed -n 's/^TEMPORAL_MEM: [0-9]* passed, [0-9]* failed, \([0-9]*\) skipped$/\1/p')
+TMEM_N=${TMEM_N:-0}; TMEM_F=${TMEM_F:-0}; TMEM_S=${TMEM_S:-0}
 TOTAL=$((TOTAL + TMEM_N + TMEM_F))
 PASS=$((PASS + TMEM_N))
 FAIL=$((FAIL + TMEM_F))
+if [ "$TMEM_S" -gt 0 ]; then
+    tmem_skip_line=$(echo "$TMEM_OUTPUT" | grep -m1 "^  SKIP:")
+    section_skip "$tmem_skip_line"
+fi
 if [ "$TMEM_RC" -ne 0 ]; then
     echo "  FAIL: temporal history memory gate (rc=$TMEM_RC)"
 fi
 echo ""
-
-# [70e] #830 — temporal reads from a producer that is NOT the bytecode compiler.
-# #827's armed-name set is populated only by src/compiler.c, so once the history
-# was filtered on it, the AOT (which emits C and calls trace_assign directly),
-# an embedder, and vm_run_bytecode/sandbox_run descriptors all recorded nothing
-# and every `prev of` / `at`-qualified read answered null. Silent wrong answer,
-# shipped in v0.35.1, and the suite stayed green because this producer class had
-# no coverage anywhere. The C-level twin (the AOT's exact shape) is in
-# src/embed_smoke.c, gated by `make embed-smoke` in CI.
-check_eigs_suite "temporal reads from a non-compiler producer (#830)" test_temporal_producers.eigs "All tests passed"
-
-# [70f] #831 — the other half: a descriptor must turn recording ON itself.
-# [70e] proves reads work once recording is on, but its own source contains the
-# `prev of` that arms it. Here the host program has NO temporal query anywhere,
-# so every answer exists only if the descriptor assembler's bytecode walk
-# (chunk_arm_temporal) armed the chunk's names — pre-fix, all of these were
-# null, on every version back to v0.34.0.
-check_eigs_suite "descriptor arms its own history recording (#831)" test_temporal_producers_unarmed.eigs "All tests passed"
 
 # [98] Cross-thread channel dict-key survival (#293).
 echo "[98] Cross-thread Channel Dict Keys"
@@ -5045,8 +4913,8 @@ check "verdict helper: exit-0 without the marker is never 'closed'" "$OBS_VH2" "
 #     machinery that keeps this answer right.
 OBS_IMP_DIR="$OBS_GATE_TMP/imp"
 mkdir -p "$OBS_IMP_DIR/lib"
-printf 'print of (report of x)\nverdict is 1.0\n' > "$OBS_IMP_DIR/lib/probe.eigs"
-printf 'x is 1.0\nfor i in range of 40:\n    x is x * 2.0\nimport probe\n' > "$OBS_IMP_DIR/host.eigs"
+printf 'x is 1.0\ndefine record(v) as:\n    x is v\ndefine finish() as:\n    print of (report of x)\n' > "$OBS_IMP_DIR/lib/probe.eigs"
+printf 'import probe\nx is 1.0\nfor i in range of 40:\n    x is x * 2.0\n    probe.record of x\nprobe.finish of null\n' > "$OBS_IMP_DIR/host.eigs"
 #     $EIGS_BIN is RELATIVE to the runner's cwd (src/), so it must be
 #     absolutized before the cd — a relative binary under cd was already a
 #     recorded probe trap this session, and it bit again right here on the
@@ -5054,7 +4922,7 @@ printf 'x is 1.0\nfor i in range of 40:\n    x is x * 2.0\nimport probe\n' > "$O
 OBS_EIGS_ABS=$(cd "$(dirname "$EIGS_BIN")" && pwd)/$(basename "$EIGS_BIN")
 OBS_G40_OUT=$(cd "$OBS_IMP_DIR" && obs_tmo 60 "$OBS_EIGS_ABS" host.eigs 2>&1); OBS_G40_RC=$?
 if [ "$OBS_G40_RC" -ne 0 ]; then OBS_G40="died-rc$OBS_G40_RC"; else OBS_G40=$(printf '%s\n' "$OBS_G40_OUT" | head -1); fi
-check "an imported module sees the host's pre-import history (diverging)" "$OBS_G40" "diverging"
+check "an imported module sees explicitly passed history (diverging)" "$OBS_G40" "diverging"
 # 41. Check 30's own control (its open-expectation was the vacuity sibling of
 #     the round-10 hole): the gate opened on a PARSE ERROR in a rotted fixture
 #     exactly as it opens on a genuine budget exhaustion, so garbage awk
@@ -5233,7 +5101,7 @@ echo ""
 # scanned like a literal load_file target, and the constant-pool string
 # match became a match on OP_GET_NAME operands, so string DATA never arms.
 # The fixture pins both halves AND the invariant #915's last comment names:
-# a host's pre-import history stays visible to an imported reader, asserted
+# explicitly passed history stays visible to an imported reader, asserted
 # on the VALUE (diverging), plus the import-time raise for a module rewritten
 # between scan and import. Count pinned like [42a]: a check added or deleted
 # without moving the number goes red here.
@@ -5329,12 +5197,12 @@ check_thread_exit() {
     TOTAL=$((TOTAL + 1))
     local file="$1" want_rc="$2" marker="$3" out rc
     out=$(./eigenscript "../tests/$file" </dev/null 2>&1); rc=$?
-    if [ "$rc" -eq "$want_rc" ] && echo "$out" | grep -q "$marker"; then
+    if rc_expect "$want_rc" "$rc" "$out" && echo "$out" | grep -q "$marker"; then
         echo "  PASS: thread exit contract — $file (rc=$rc)"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: thread exit contract — $file (rc=$rc, want=$want_rc)"
-        echo "$out" | head -5
+        echo "  FAIL: thread exit contract — $file (rc=$rc, want=$want_rc, no sanitizer report)"
+        printf '%s\n' "$out" | eigs_failure_output
         FAIL=$((FAIL + 1))
     fi
 }
@@ -5426,19 +5294,21 @@ fi
 # unjoined uncaught task death fails the process; joining+catching recovers; a
 # deliberate task_kill does not fail; a mutual-join deadlock is loud. Every case
 # must also be leak-clean under the ASan build (the exact paths #483 covers) —
-# any LeakSanitizer report here fails, stricter than the tolerated global tally.
+# any sanitizer report here, a leak as well as a hard one, fails: stricter than
+# the tolerated global tally. It used to reject only the literal string
+# LeakSanitizer, so an AddressSanitizer report at rc 1 passed (#2306).
 # args: file  expected_rc  marker
 check_task_exit() {
     TOTAL=$((TOTAL + 1))
-    local file="$1" want_rc="$2" marker="$3" out rc
+    local file="$1" want_rc="$2" marker="$3" out rc cte_cls
     out=$(./eigenscript "../tests/$file" </dev/null 2>&1); rc=$?
-    if [ "$rc" -eq "$want_rc" ] && echo "$out" | grep -q "$marker" \
-       && ! echo "$out" | grep -q "LeakSanitizer"; then
+    lsan_classify "$out"; cte_cls=$?
+    if [ "$cte_cls" -eq 2 ] && [ "$rc" -eq "$want_rc" ] && echo "$out" | grep -q "$marker"; then
         echo "  PASS: task exit contract — $file (rc=$rc)"
         PASS=$((PASS + 1))
     else
-        echo "  FAIL: task exit contract — $file (rc=$rc, want=$want_rc)"
-        echo "$out" | grep -iE "LeakSanitizer|error|assert" | head -3
+        echo "  FAIL: task exit contract — $file (rc=$rc, want=$want_rc, sanitizer=$(lsan_classify_name "$out"), want none)"
+        printf '%s\n' "$out" | eigs_failure_output
         FAIL=$((FAIL + 1))
     fi
 }
@@ -5460,7 +5330,7 @@ echo "[105b] Builtin Contracts (#312/#314/#316/#317)"
 suite_program_run test_builtin_contracts.eigs check_eigs_suite "negative indices, predicate rejection, min/max reduction" test_builtin_contracts.eigs "All tests passed"
 TOTAL=$((TOTAL + 1))
 DIR_OUT=$(./eigenscript ../tests 2>&1); DIR_RC=$?
-if [ "$DIR_RC" -eq 1 ] && echo "$DIR_OUT" | grep -q "cannot read file"; then
+if rc_expect 1 "$DIR_RC" "$DIR_OUT" && echo "$DIR_OUT" | grep -q "cannot read file"; then
     PASS=$((PASS + 1))
     echo "  PASS: directory script arg exits 1 with a clean error"
 else
@@ -5586,13 +5456,14 @@ LG_FAIL=$(echo "$LG_OUTPUT" | grep -c "FAIL:" || true)
 TOTAL=$((TOTAL + LG_PASS + LG_FAIL))
 PASS=$((PASS + LG_PASS))
 FAIL=$((FAIL + LG_FAIL))
-if echo "$LG_OUTPUT" | grep -q "skipped"; then
+if echo "$LG_OUTPUT" | grep -q "AddressSanitizer not available"; then
     section_skip "AddressSanitizer not available — leak guard skipped"
 elif [ "$LG_FAIL" -gt 0 ]; then
     echo "  FAIL: $LG_FAIL leak-guard check(s) failed"
     echo "$LG_OUTPUT" | grep "FAIL:" | head -5
 else
     echo "  PASS: all $LG_PASS leak-guard checks"
+    echo "$LG_OUTPUT" | grep '^  SKIP:' || true
 fi
 echo ""
 
@@ -5843,7 +5714,7 @@ if [ "$(uname -m)" = "x86_64" ]; then
     JFULL_BAILOUTS=$(sed -n 's/^total bailouts: *\([0-9][0-9]*\).*/\1/p' <<< "$JFULL_OUTPUT")
     JFULL_ROWS=$(awk '
         $3 == "full" { n++ }
-        $9 == "full" { n++ }
+        $2 ~ /^[0-9]+$/ { n += $15 + 0 }
         END { print n + 0 }
     ' <<< "$JFULL_OUTPUT")
     if [ -n "$JFULL_SCANNED" ] && [ -n "$JFULL_REJECTS" ] &&
@@ -6044,23 +5915,20 @@ echo ""
 echo "[87] Closure Cycle Shapes"
 # STRICT exit gate (no rc_ok leak tolerance): the cycle collector must
 # keep every shape in this file ASan-clean. A LeakSanitizer exit here is
-# a collector regression, not a tolerated known leak.
+# a collector regression, not a tolerated known leak. rc 0 alone did not
+# prove "clean": a recoverable UBSan report exits 0 (#2306), so the output
+# must also classify as carrying no sanitizer report at all.
 TOTAL=$((TOTAL + 1))
 CC_OUTPUT=$(./eigenscript ../tests/test_closure_cycles.eigs </dev/null 2>&1); CC_OUTPUT_RC=$?
-if [ "$CC_OUTPUT_RC" = "0" ] && echo "$CC_OUTPUT" | grep -q "All tests passed"; then
+lsan_classify "$CC_OUTPUT"; CC_SAN=$?
+if [ "$CC_SAN" -eq 2 ] && [ "$CC_OUTPUT_RC" = "0" ] && echo "$CC_OUTPUT" | grep -q "All tests passed"; then
     PASS=$((PASS + 1))
     echo "  PASS: all closure-cycle checks (leak-clean)"
 else
     FAIL=$((FAIL + 1))
-    echo "  FAIL: closure-cycle checks (rc=$CC_OUTPUT_RC — must be leak-clean)"
-    echo "$CC_OUTPUT" | grep -iE "FAIL|LeakSanitizer|assert|error" | head -5
+    echo "  FAIL: closure-cycle checks (rc=$CC_OUTPUT_RC, sanitizer=$(lsan_classify_name "$CC_OUTPUT") — must be leak-clean and report-free)"
+    echo "$CC_OUTPUT" | grep -iE "FAIL|LeakSanitizer|runtime error|assert|error" | head -5
 fi
-echo ""
-
-# [86] Corpus builder — build_corpus + the tok_base_string detokenizer
-# table (both 0% before: nothing in the suite ever built a corpus).
-echo "[86] Corpus Builder"
-check_eigs_suite "all corpus-builder checks" test_corpus.eigs "All tests passed"
 echo ""
 
 # [88] LSP behavioral tests — drive src/eigenlsp over real JSON-RPC and
@@ -6366,22 +6234,25 @@ CI_CAT=$( cd "$CIRC_DIR" && "$BIN_ABS" catch.eigs </dev/null 2>&1 ); CI_CAT_RC=$
 # Capture rc directly off the substitution (a trailing `| grep` would make
 # $? grep's exit, not eigenscript's); strip the [load_file] debug lines after.
 CI_LF=$( cd "$CIRC_DIR" && "$BIN_ABS" la.eigs </dev/null 2>&1 ); CI_LF_RC=$?
+# Classify the raw capture before the debug lines are stripped (#2306).
+rc_expect 1 "$CI_LF_RC" "$CI_LF"; CI_LF_OK=$?
 CI_LF=$(echo "$CI_LF" | grep -v '^\[load_file\]')
 rm -rf "$CIRC_DIR"
 TOTAL=$((TOTAL + 1))
 CI_OK=1
 # rc=1 (raised, uncaught) and NOT 139 (segfault); message present.
-if [ "$CI_IMP_RC" = "1" ] && echo "$CI_IMP" | grep -q "circular dependency"; then
+# Exit codes are exact and the output must carry no sanitizer report (#2306).
+if rc_expect 1 "$CI_IMP_RC" "$CI_IMP" && echo "$CI_IMP" | grep -q "circular dependency"; then
     echo "  PASS: mutual import raises (no SIGSEGV)"
 else
     echo "  FAIL: mutual import (rc=$CI_IMP_RC out='$CI_IMP')"; CI_OK=0
 fi
-if [ "$CI_CAT_RC" = "0" ] && echo "$CI_CAT" | grep -q "^CAUGHT$"; then
+if rc_expect 0 "$CI_CAT_RC" "$CI_CAT" && echo "$CI_CAT" | grep -q "^CAUGHT$"; then
     echo "  PASS: circular import is try/catch-able"
 else
     echo "  FAIL: circular import not catchable (rc=$CI_CAT_RC out='$CI_CAT')"; CI_OK=0
 fi
-if [ "$CI_LF_RC" = "1" ] && echo "$CI_LF" | grep -q "circular dependency"; then
+if [ "$CI_LF_OK" -eq 0 ] && echo "$CI_LF" | grep -q "circular dependency"; then
     echo "  PASS: mutual load_file raises (no SIGSEGV)"
 else
     echo "  FAIL: mutual load_file (rc=$CI_LF_RC out='$CI_LF')"; CI_OK=0
@@ -7129,7 +7000,7 @@ print('\n'.join(L))" > "$TRY_DIR/deep.eigs"
 
 T9_OUTPUT=$(./eigenscript "$TRY_DIR/deep.eigs" </dev/null 2>&1); T9_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$T9_RC" -ne 0 ] \
+if rc_expect 1 "$T9_RC" "$T9_OUTPUT" \
    && echo "$T9_OUTPUT" | grep -q "nested more than 8 deep" \
    && ! echo "$T9_OUTPUT" | grep -q "CAUGHT-AT-DEPTH"; then
     PASS=$((PASS + 1))
@@ -7152,7 +7023,7 @@ x is no_such_variable_at_all
 RETEOF
 TR_OUTPUT=$(./eigenscript "$TRY_DIR/ret.eigs" </dev/null 2>&1); TR_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$TR_RC" -ne 0 ] && echo "$TR_OUTPUT" | grep -q "undefined variable"; then
+if rc_expect 1 "$TR_RC" "$TR_OUTPUT" && echo "$TR_OUTPUT" | grep -q "undefined variable"; then
     PASS=$((PASS + 1))
     echo "  PASS: uncaught error after a return-from-try still reports (was silent)"
 else
@@ -7178,7 +7049,7 @@ x is no_such_variable_at_all
 KILLEOF
 TK_OUTPUT=$(./eigenscript "$TRY_DIR/kill.eigs" </dev/null 2>&1); TK_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$TK_RC" -ne 0 ] && echo "$TK_OUTPUT" | grep -q "undefined variable"; then
+if rc_expect 1 "$TK_RC" "$TK_OUTPUT" && echo "$TK_OUTPUT" | grep -q "undefined variable"; then
     PASS=$((PASS + 1))
     echo "  PASS: uncaught error after killing a task suspended in a try still reports"
 else
@@ -7213,7 +7084,7 @@ print of i
 ESCEOF
 CE_OUTPUT=$(./eigenscript "$CONT_DIR/escape.eigs" </dev/null 2>&1); CE_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$CE_RC" -ne 0 ] && echo "$CE_OUTPUT" | grep -q "undefined variable 'i'"; then
+if rc_expect 1 "$CE_RC" "$CE_OUTPUT" && echo "$CE_OUTPUT" | grep -q "undefined variable 'i'"; then
     PASS=$((PASS + 1))
     echo "  PASS: loop var does not outlive a loop containing continue"
 else
@@ -7238,7 +7109,7 @@ print of (mymod.exported_after of [])
 USEEOF
 CM_OUTPUT=$(./eigenscript "$CONT_DIR/usemod.eigs" </dev/null 2>&1); CM_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$CM_RC" -eq 0 ] && echo "$CM_OUTPUT" | grep -q "^42$"; then
+if rc_expect 0 "$CM_RC" "$CM_OUTPUT" && echo "$CM_OUTPUT" | grep -q "^42$"; then
     PASS=$((PASS + 1))
     echo "  PASS: module exports after a continue-loop survive (was: silently dropped)"
 else
@@ -7262,7 +7133,7 @@ print of total
 WHEOF
 CW_OUTPUT=$(./eigenscript "$CONT_DIR/whileloop.eigs" </dev/null 2>&1); CW_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$CW_RC" -eq 0 ] && echo "$CW_OUTPUT" | grep -q "^12$"; then
+if rc_expect 0 "$CW_RC" "$CW_OUTPUT" && echo "$CW_OUTPUT" | grep -q "^12$"; then
     PASS=$((PASS + 1))
     echo "  PASS: continue in a while-loop leaves the surrounding env intact"
 else
@@ -7284,7 +7155,7 @@ SK_DIR=$(mktemp -d /tmp/eigs_sk869_XXXX)
 printf 'what is 42\nprint of "still alive"\ncount is 1\nwhere is count\nprint of (str of count)\n' > "$SK_DIR/discard.eigs"
 SK_OUT=$(./eigenscript "$SK_DIR/discard.eigs" 2>&1); SK_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$SK_RC" -ne 0 ] && echo "$SK_OUT" | grep -q "'what is ...' is an interrogative" \
+if rc_expect 1 "$SK_RC" "$SK_OUT" && echo "$SK_OUT" | grep -q "'what is ...' is an interrogative" \
    && echo "$SK_OUT" | grep -q "'where is ...' is an interrogative" \
    && ! echo "$SK_OUT" | grep -q "still alive"; then
     PASS=$((PASS + 1))
@@ -7296,9 +7167,9 @@ else
 fi
 
 # The REPL's last statement IS the result, so an interrogative there answers.
-SK_REPL=$(printf 'x is 5\nwhat is x\n' | ./eigenscript 2>&1)
+SK_REPL=$(printf 'x is 5\nwhat is x\n' | ./eigenscript 2>&1); SK_REPL_RC=$?
 TOTAL=$((TOTAL + 1))
-if echo "$SK_REPL" | grep -q "=> 5" && ! echo "$SK_REPL" | grep -q "Compile error"; then
+if rc_expect 0 "$SK_REPL_RC" "$SK_REPL" && echo "$SK_REPL" | grep -q "=> 5" && ! echo "$SK_REPL" | grep -q "Compile error"; then
     PASS=$((PASS + 1))
     echo "  PASS: the REPL still answers 'what is x'"
 else
@@ -7311,7 +7182,7 @@ fi
 printf 'z is 3\nprint of (str of (eval of "what is z"))\nprint of (str of (what is z))\n' > "$SK_DIR/live.eigs"
 SK_LIVE=$(./eigenscript "$SK_DIR/live.eigs" 2>&1); SK_LIVE_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$SK_LIVE_RC" -eq 0 ] && [ "$(echo "$SK_LIVE" | head -1)" = "3" ]; then
+if rc_expect 0 "$SK_LIVE_RC" "$SK_LIVE" && [ "$(echo "$SK_LIVE" | head -1)" = "3" ]; then
     PASS=$((PASS + 1))
     echo "  PASS: eval and expression-position interrogatives are untouched"
 else
@@ -7587,8 +7458,23 @@ echo ""
 # Final guard (#681): if the binary changed during the last block, results are invalid.
 check_binary_fingerprint
 
+# A tolerated report is not merely counted: its section identity must match the
+# reviewed, justified baseline. This belongs to the shared epilogue so every
+# section-plan run enforces the policy too (#1725).
+if ! "$TESTS_DIR/../tools/lsan_baseline_check.sh" "$TOLERATED_LSAN_REPORTS"; then
+    FAIL=$((FAIL + 1)); TOTAL=$((TOTAL + 1))
+else
+    PASS=$((PASS + 1)); TOTAL=$((TOTAL + 1))
+fi
+rm -f "$TOLERATED_LSAN_REPORTS"
+
 # Close the timer on the final section so the last row is not lost (#1160 r4).
 __eigs_section_close
+
+if [ "$SECTION_OUTCOME_VIOLATIONS" -ne 0 ]; then
+    echo "  FAIL: $SECTION_OUTCOME_VIOLATIONS started section(s) reported no assertion or section-level skip"
+    exit 1
+fi
 
 # #1430: each counted outcome owns a total slot. A mismatched denominator
 # must fail even when every test passed; it used to print PASS > TOTAL.

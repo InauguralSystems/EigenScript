@@ -22,6 +22,8 @@ assert of [(json.json_has of ["{\"present\":1}", "present"]) == true, "json_has 
 assert of [(json.json_has of ["{\"present\":null}", "present"]) == true, "json_has finds a null value"]
 assert of [(json.json_has of ["{\"outer\":{\"present\":1}}", "outer.present"]) == true, "json_has finds a nested key"]
 assert of [(json.json_has of ["{\"outer\":{\"present\":1}}", "outer.missing"]) == false, "json_has rejects a missing nested key"]
+assert of [(json.json_has of ["{\"a\":{\"b\":[10,20]}}", "a.b.1"]) == true, "json_has follows an in-range list index"]
+assert of [(json.json_has of ["{\"a\":{\"b\":[10,20]}}", "a.b.5"]) == false, "json_has rejects an out-of-range list index"]
 print of "JS5 presence checks passed"
 
 print of ""

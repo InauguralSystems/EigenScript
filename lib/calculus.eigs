@@ -116,11 +116,23 @@ define integrate_monte_carlo(f, a, b, n) as:
 # ============================================================
 
 # bisection: find x where f(x)=0 in [a,b]
+# Bounds may be supplied in either order. Raises when neither endpoint is a
+# root and the endpoint values have the same sign.
 define bisection(f, a, b, tol) as:
     if tol == null or tol == 0:
         tol is 1e-10
+    if a > b:
+        lower is b
+        b is a
+        a is lower
     fa is f of a
     fb is f of b
+    if (abs of fa) < tol:
+        return a
+    if (abs of fb) < tol:
+        return b
+    if fa * fb > 0:
+        throw of "bisection: f(a) and f(b) must have different signs"
     max_iter is 100
     for i in range of max_iter:
         mid is (a + b) / 2

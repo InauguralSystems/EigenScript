@@ -130,7 +130,7 @@ SMI_TAG_HOMES = {('value_slot.h', '#define TAG_SMI'), ('value_slot.h', '#define 
 SMI_BITS_RE = re.compile(r'\bTAG_SMI\b|\b0[xX][fF]{3}[aA](?:[0-9a-fA-F]{12})?[uUlL]*\b')
 WITNESS_KINDS = {'none', 'leaf', 'leaf-gen', 'fn', 'fn-stop', 'osr', 'osr-stop'}
 TIERS = ['off', 'default', 'osr', 'trace']
-HOT_HDR = re.compile(r'^chunk\s+exec\s+jit\s+pct\s+adv\s+len\s+nat%\s+bked\s+osr\s+oadv\s+oent\s+stop$')
+HOT_HDR = re.compile(r'^chunk\s+exec\s+jit\s+pct\s+adv\s+len\s+nat%\s+bked\s+osr\s+oadv\s+oent\s+stop(?P<slots>\s+oslots\s+ocomp\s+ofull)?$')
 
 
 def rindex(r):
@@ -332,22 +332,27 @@ HOT_TITLE = re.compile(r'^=== Hot chunks \(top (\d+) of (\d+)\) ===$')
 
 def hot_rows(err):
     """The EIGS_JIT_HOT table, read against its own shape: the title declares
-    N rows; the column header, exactly N twelve-column rows and the
+    N rows; the column header, exactly N rows of that header's width and the
     `native-byte share` line follow. Anything else is an instrument failure
-    (None), never a shorter table."""
+    (None), never a shorter table. #1606 appended three OSR-slot aggregates;
+    historical twelve-column captures retain the same witness fields."""
     lines = [l.strip() for l in err.split('\n')]
     titles = [k for k, l in enumerate(lines) if HOT_TITLE.match(l)]
     if len(titles) != 1:
         return None
     t = titles[0]
     want = int(HOT_TITLE.match(lines[t]).group(1))
-    if t + 3 + want >= len(lines) or not lines[t + 1].startswith('total chunk entries:') \
-            or not HOT_HDR.match(lines[t + 2]):
+    if t + 3 + want >= len(lines) or not lines[t + 1].startswith('total chunk entries:'):
         return None
+    header = HOT_HDR.fullmatch(lines[t + 2])
+    if header is None:
+        return None
+    width = 15 if header.group('slots') else 12
     rows = {}
     for l in lines[t + 3:t + 3 + want]:
         w = l.split()
-        if len(w) != 12 or not w[1].isdigit() or w[0] in rows:
+        if len(w) != width or not w[1].isdigit() or w[0] in rows \
+                or any(not v.isdigit() for v in w[12:]):
             return None
         rows[w[0]] = dict(exec=int(w[1]), jit=w[2], adv=w[4], len=int(w[5]), osr=w[8],
                           oadv=int(w[9]), oent=int(w[10]), stop=w[11])

@@ -182,7 +182,7 @@ def entropy_of_num(x):
     src/eigenscript.c:356-368 (entropy_of_num): binary entropy h(p) of
     p = 1 / (1 + |x|), 0 at x == 0 and where p rounds to 0 or 1. The
     runtime's dH is the difference of consecutive values of this
-    (src/eigenscript.c:731, observer_slot_update_e), so a window of H
+    (observer_slot_update_e_locked), so a window of H
     values carries exactly the dH steps the entropy channel classifies."""
     x = abs(x)
     if x == 0.0:

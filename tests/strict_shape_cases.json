@@ -91,7 +91,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "audio_capture_open",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Requires actual dummy device open; return zero is unavailable, not positive.",
     "backend": "sdl",
     "backend_absent": {
@@ -128,7 +128,7 @@
     "maximum": 5,
     "execution": "UNRUN",
     "name": "audio_envelope",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -150,7 +150,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "audio_gain",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -172,7 +172,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "audio_mix",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -205,7 +205,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "audio_music_play",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Driver must supply tiny valid WAV and verify mixer availability; no missing-file positive.",
     "backend": "mixer",
     "backend_absent": {
@@ -249,7 +249,7 @@
     "maximum": 1,
     "execution": "UNRUN",
     "name": "audio_music_volume",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Successful music setup required; volume answers null even with no mixer, which alone proves nothing.",
     "backend": "mixer",
     "backend_absent": {
@@ -285,7 +285,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "audio_noise",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -315,7 +315,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "audio_open",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Requires actual dummy device open; return zero is unavailable, not positive.",
     "backend": "sdl",
     "backend_absent": {
@@ -354,7 +354,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "audio_play_loop",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Requires successful real dummy device setup.",
     "backend": "sdl",
     "backend_absent": {
@@ -389,7 +389,7 @@
     "maximum": 3,
     "execution": "UNRUN",
     "name": "audio_saw",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -412,7 +412,7 @@
     "maximum": 3,
     "execution": "UNRUN",
     "name": "audio_sine",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -435,7 +435,7 @@
     "maximum": 3,
     "execution": "UNRUN",
     "name": "audio_square",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -465,7 +465,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "audio_stream_open",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Requires actual dummy device open; return zero is unavailable, not positive.",
     "backend": "sdl",
     "backend_absent": {
@@ -502,7 +502,7 @@
     "maximum": 5,
     "execution": "UNRUN",
     "name": "audio_sweep",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -529,7 +529,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "audio_volume",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Requires successful dummy device; documented -1 loop keeps channel live until explicit close.",
     "backend": "sdl",
     "backend_absent": {
@@ -809,43 +809,6 @@
     "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
   },
   {
-    "args": [
-      "[\"@TMP@/input.eigs\"]",
-      "4",
-      "\"@TMP@/tokens\"",
-      "\"@TMP@/vocab\"",
-      "\"@TMP@/idents\"",
-      "0",
-      "0"
-    ],
-    "valid_assert": "(len of shape_result) == 3 and shape_result[0] > 0 and shape_result[2] == 1",
-    "setup": "write_text of [\"@TMP@/input.eigs\", \"x is 1\\n\"]",
-    "observe": "assert of [(file_exists of \"@TMP@/tokens\"), \"shape control\"]\nassert of [(file_exists of \"@TMP@/vocab\"), \"shape control\"]\nprint of \"observed\"",
-    "cleanup": "",
-    "unchanged": "assert of [(not (file_exists of \"@TMP@/tokens\")), \"shape control\"]\nassert of [(not (file_exists of \"@TMP@/vocab\")), \"shape control\"]",
-    "optional_args": [
-      [
-        "[\"@TMP@/input.eigs\"]",
-        "4",
-        "\"@TMP@/tokens\"",
-        "\"@TMP@/vocab\""
-      ]
-    ],
-    "requirements": [
-      "owned_temp"
-    ],
-    "resource_notes": "One tiny source file, top-N 4, no model.",
-    "source": {
-      "file": "src/builtins_host.c",
-      "line": 439,
-      "function": "builtin_build_corpus"
-    },
-    "maximum": 7,
-    "execution": "UNRUN",
-    "name": "build_corpus",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
-  },
-  {
     "name": "char_at",
     "args": [
       "\"abc\"",
@@ -1011,66 +974,6 @@
     "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
   },
   {
-    "args": [
-      "[1]",
-      "1"
-    ],
-    "valid_assert": "shape_result == (0 - 1)",
-    "setup": "assert of [(not (eigen_model_loaded of null)), \"shape control\"]",
-    "observe": "print of shape_result",
-    "cleanup": "",
-    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
-    "optional_args": [],
-    "requirements": [
-      "model_compiled",
-      "fresh_unloaded_model"
-    ],
-    "semantic_scope": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim.",
-    "source": {
-      "file": "src/model_infer.c",
-      "line": 618,
-      "function": "builtin_eigen_eval_loss"
-    },
-    "maximum": 2,
-    "execution": "UNRUN",
-    "name": "eigen_eval_loss",
-    "claim": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim."
-  },
-  {
-    "args": [
-      "[1]",
-      "0.1",
-      "1",
-      "0"
-    ],
-    "valid_assert": "(len of shape_result) == 0",
-    "setup": "assert of [(not (eigen_model_loaded of null)), \"shape control\"]",
-    "observe": "print of shape_result",
-    "cleanup": "",
-    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
-    "optional_args": [
-      [
-        "[1]",
-        "0.1",
-        "1"
-      ]
-    ],
-    "requirements": [
-      "model_compiled",
-      "fresh_unloaded_model"
-    ],
-    "semantic_scope": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim.",
-    "source": {
-      "file": "src/model_infer.c",
-      "line": 525,
-      "function": "builtin_eigen_generate"
-    },
-    "maximum": 4,
-    "execution": "UNRUN",
-    "name": "eigen_generate",
-    "claim": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim."
-  },
-  {
     "name": "ends_with",
     "args": [
       "\"abc\"",
@@ -1168,7 +1071,7 @@
     "maximum": 7,
     "execution": "UNRUN",
     "name": "gfx_circle",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
     "backend": "sdl",
     "backend_absent": {
@@ -1211,7 +1114,7 @@
     "maximum": 3,
     "execution": "UNRUN",
     "name": "gfx_clear",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
     "backend": "sdl",
     "backend_absent": {
@@ -1255,7 +1158,7 @@
     "maximum": 4,
     "execution": "UNRUN",
     "name": "gfx_clip",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
     "backend": "sdl",
     "backend_absent": {
@@ -1298,7 +1201,7 @@
     "maximum": 6,
     "execution": "UNRUN",
     "name": "gfx_fb",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
     "backend": "sdl",
     "backend_absent": {
@@ -1342,7 +1245,7 @@
     "maximum": 7,
     "execution": "UNRUN",
     "name": "gfx_line",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
     "backend": "sdl",
     "backend_absent": {
@@ -1382,7 +1285,7 @@
     "maximum": 3,
     "execution": "UNRUN",
     "name": "gfx_open",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Driver must establish actual SDL dummy availability; a zero open result cannot count as positive.",
     "backend": "sdl",
     "backend_absent": {
@@ -1424,7 +1327,7 @@
     "maximum": 5,
     "execution": "UNRUN",
     "name": "gfx_point",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
     "backend": "sdl",
     "backend_absent": {
@@ -1463,7 +1366,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "gfx_read",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
     "backend": "sdl",
     "backend_absent": {
@@ -1518,7 +1421,7 @@
     "maximum": 8,
     "execution": "UNRUN",
     "name": "gfx_rect",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
     "backend": "sdl",
     "backend_absent": {
@@ -1575,7 +1478,7 @@
     "maximum": 9,
     "execution": "UNRUN",
     "name": "gfx_rrect",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
     "backend": "sdl",
     "backend_absent": {
@@ -1628,7 +1531,7 @@
     "maximum": 7,
     "execution": "UNRUN",
     "name": "gfx_text",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "resource_precondition": "Requires actual successful window setup; do not replace with no-window return.",
     "backend": "sdl",
     "backend_absent": {
@@ -1665,7 +1568,7 @@
     "maximum": 1,
     "execution": "UNRUN",
     "name": "gfx_text_height",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -1694,7 +1597,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "gfx_text_width",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "name": "has_key",
@@ -1755,7 +1658,7 @@
     "maximum": 3,
     "execution": "UNRUN",
     "name": "http_post",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "http_context": "client"
   },
   {
@@ -1789,7 +1692,7 @@
     "maximum": 4,
     "execution": "UNRUN",
     "name": "http_route",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -1822,7 +1725,7 @@
     "maximum": 4,
     "execution": "UNRUN",
     "name": "http_route_authed",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -1847,7 +1750,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "http_static",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "name": "index_of",
@@ -2034,33 +1937,6 @@
     "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
   },
   {
-    "args": [
-      "[1]",
-      "[2]",
-      "0.001"
-    ],
-    "valid_assert": "shape_result == \"{\\\"status\\\": \\\"error\\\", \\\"error\\\": \\\"Model not loaded\\\"}\"",
-    "setup": "assert of [(not (eigen_model_loaded of null)), \"shape control\"]",
-    "observe": "print of shape_result",
-    "cleanup": "",
-    "unchanged": "# No observable mutable argument; entry-guard ordering is independently checked from source.",
-    "optional_args": [],
-    "requirements": [
-      "model_compiled",
-      "fresh_unloaded_model"
-    ],
-    "semantic_scope": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim.",
-    "source": {
-      "file": "src/model_train.c",
-      "line": 1432,
-      "function": "builtin_native_train_step"
-    },
-    "maximum": 3,
-    "execution": "UNRUN",
-    "name": "native_train_step_builtin",
-    "claim": "Only fixed-list guard before documented unloaded-model return. No inference, training, weights, or loaded-model success claim."
-  },
-  {
     "name": "nearest_in_range",
     "args": [
       "[{\"px\": 1, \"py\": 0, \"active\": 1}, {\"px\": 2, \"py\": 0, \"active\": 1}]",
@@ -2217,7 +2093,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "ppu_render_frame",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "name": "random_int",
@@ -2367,7 +2243,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "read_bytes_buf",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "name": "recv_timeout",
@@ -2403,7 +2279,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "regex_find",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -2425,7 +2301,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "regex_match",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -2448,7 +2324,7 @@
     "maximum": 3,
     "execution": "UNRUN",
     "name": "regex_replace",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -2472,7 +2348,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "rename",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "name": "reshape",
@@ -2680,7 +2556,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "shared_incr",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "http_context": "handler"
   },
   {
@@ -2706,7 +2582,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "shared_set",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim.",
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim.",
     "http_context": "handler"
   },
   {
@@ -2794,7 +2670,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "store_count",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -2820,7 +2696,7 @@
     "maximum": 3,
     "execution": "UNRUN",
     "name": "store_delete",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -2845,7 +2721,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "store_drop",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -2871,7 +2747,7 @@
     "maximum": 3,
     "execution": "UNRUN",
     "name": "store_get",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -2897,7 +2773,7 @@
     "maximum": 3,
     "execution": "UNRUN",
     "name": "store_put",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -2922,7 +2798,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "store_query",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -2949,7 +2825,7 @@
     "maximum": 4,
     "execution": "UNRUN",
     "name": "store_update",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "name": "str_replace",
@@ -2988,7 +2864,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "stream_open",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "name": "substr",
@@ -3105,7 +2981,7 @@
     "maximum": 3,
     "execution": "UNRUN",
     "name": "write_bytes",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "args": [
@@ -3129,7 +3005,7 @@
     "maximum": 2,
     "execution": "UNRUN",
     "name": "write_text",
-    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no loaded-model or full raster-equivalence claim."
+    "claim": "Typed finite operands, valid accepted result and ordinary owned resources; no full raster-equivalence claim."
   },
   {
     "name": "zeros",

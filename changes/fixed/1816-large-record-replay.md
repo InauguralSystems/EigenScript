@@ -1,1 +1,0 @@
-- Traced answers larger than 64 KiB now replay byte-identically through length-framed continuation records, while cyclic containers are refused cleanly and shared acyclic containers remain supported; tape format v8 refuses stale v7 tapes (#1816).

@@ -5,6 +5,7 @@
 # - text_builder.eigs: shared buffered text assembly
 # - int_vector.eigs: fixed-size integer vectors over buffers
 # - list.eigs take/drop: first-n / rest-of-n list slicing
+# - io.eigs read_lines: no synthetic line after a final newline
 
 load_file of "lib/math.eigs"
 load_file of "lib/test.eigs"
@@ -12,14 +13,17 @@ load_file of "lib/template.eigs"
 load_file of "lib/text_builder.eigs"
 load_file of "lib/int_vector.eigs"
 load_file of "lib/list.eigs"
+load_file of "lib/map.eigs"
+load_file of "lib/functional.eigs"
+load_file of "lib/io.eigs"
 
-# --- math.dot bounds ---
-assert of [(dot of [[1, 2, 3], [4, 5, 6]]) == 32, "SF1 dot normal"]
+# --- math.math_dot bounds ---
+assert of [(math_dot of [[1, 2, 3], [4, 5, 6]]) == 32, "SF1 dot normal"]
 # Mismatched lengths must not crash; iterate over the shorter list.
-assert of [(dot of [[1, 2, 3], [4, 5]]) == 14, "SF2 dot shorter b"]
-assert of [(dot of [[1, 2], [4, 5, 6]]) == 14, "SF3 dot shorter a"]
-assert of [(dot of [[], [1, 2, 3]]) == 0, "SF4 dot empty a"]
-assert of [(dot of [[1, 2, 3], []]) == 0, "SF5 dot empty b"]
+assert of [(math_dot of [[1, 2, 3], [4, 5]]) == 14, "SF2 dot shorter b"]
+assert of [(math_dot of [[1, 2], [4, 5, 6]]) == 14, "SF3 dot shorter a"]
+assert of [(math_dot of [[], [1, 2, 3]]) == 0, "SF4 dot empty a"]
+assert of [(math_dot of [[1, 2, 3], []]) == 0, "SF5 dot empty b"]
 
 # --- test.assert_near type guard ---
 # These must not silently pass on non-numeric input. Use the library's
@@ -62,6 +66,21 @@ assert of [r3 == "{{missing}} remains", "SF10 template unknown placeholder"]
 # Unterminated placeholder is emitted verbatim.
 r4 is render of ["prefix {{forever", [["forever", "nope"]]]
 assert of [r4 == "prefix {{forever", "SF11 template unterminated placeholder"]
+
+# Loading template.eigs into the global namespace must not shadow builtin fill.
+builtin_fill_after_template_load is fill of [3, 7]
+assert of [builtin_fill_after_template_load == [7, 7, 7], "SF15 template load preserves builtin fill"]
+
+# The renamed helper retains the old helper's value coercion for every value
+# shape accepted by str.
+template_buffer_value is buffer of 2
+template_buffer_value[0] is 4
+template_buffer_value[1] is 5
+assert of [(template_fill of ["v={{x}}", "x", [1, 2]]) == "v=[1, 2]", "SF15a template_fill list value"]
+assert of [(template_fill of ["v={{x}}", "x", [[1], [2, 3]]]) == "v=[[1], [2, 3]]", "SF15b template_fill nested-list value"]
+assert of [(template_fill of ["v={{x}}", "x", template_buffer_value]) == ("v=" + (str of template_buffer_value)), "SF15c template_fill buffer value"]
+assert of [(template_fill of ["v={{x}}", "x", "text"]) == "v=text", "SF15d template_fill string value"]
+assert of [(template_fill of ["v={{x}}", "x", null]) == "v=null", "SF15e template_fill null value"]
 
 builder is text_builder_new of null
 assert of [(type of builder) == "text_builder", "SF13 text_builder native type"]
@@ -202,12 +221,12 @@ assert of [(log2 of 8) == 3, "SF94 log2 of 8"]
 assert of [(log2 of 1) == 0, "SF95 log2 of 1"]
 assert of [(log2 of 0.5) == -1, "SF96 log2 of one half"]
 assert of [(log10 of 1) == 0, "SF97 log10 of 1"]
-assert of [(abs of ((log10 of 1000) - 3)) < 0.0000001, "SF98 log10 of 1000"]
+assert of [(math_abs of ((log10 of 1000) - 3)) < 0.0000001, "SF98 log10 of 1000"]
 assert of [(pow of [2, log2 of 8]) == 8, "SF99 log2/pow round trip"]
-assert of [(abs of ((pow of [10, log10 of 1000]) - 1000)) < 0.0000001, "SF100 log10/pow round trip"]
+assert of [(math_abs of ((pow of [10, log10 of 1000]) - 1000)) < 0.0000001, "SF100 log10/pow round trip"]
 # x <= 0 inherits the log builtin's input floor at 1e-10 — no error.
 assert of [(log10 of 0) == -10, "SF101 log10 floored at 0"]
-assert of [(abs of ((log2 of -1) + 33.219280948873624)) < 0.0000001, "SF102 log2 floored below 0"]
+assert of [(math_abs of ((log2 of -1) + 33.219280948873624)) < 0.0000001, "SF102 log2 floored below 0"]
 # Element-wise, like the log they wrap: log of [8, 4] works, so these
 # must too. Built on `divide`, not `/`, which is scalar-only.
 lg2 is log2 of [8, 4, 1]
@@ -217,9 +236,120 @@ assert of [lg2[1] == 2, "SF105 log2 element-wise [1]"]
 assert of [lg2[2] == 0, "SF106 log2 element-wise [2]"]
 lg10 is log10 of [1, 100]
 assert of [lg10[0] == 0, "SF107 log10 element-wise [0]"]
-assert of [(abs of (lg10[1] - 2)) < 0.0000001, "SF108 log10 element-wise [1]"]
-# The scalar path is unchanged by divide — same value as the log it wraps.
-assert of [(log2 of 8) == ((log of 8) / 0.6931471805599453), "SF109 log2 scalar unchanged by divide"]
-assert of [(log10 of 1000) == ((log of 1000) / 2.302585092994046), "SF110 log10 scalar unchanged by divide"]
+assert of [lg10[1] == 2, "SF108 log10 element-wise [1]"]
+
+# #2226: exact powers must produce exact integer logarithms. Check the full
+# finite exponent ranges named in the contract, rather than selected examples.
+log10_exact is 0
+for k in range of [-300, 301]:
+    if (log10 of (pow of [10, k])) == k:
+        log10_exact is log10_exact + 1
+assert of [log10_exact == 601, "SF109 log10 exact for 10^k, -300 <= k <= 300"]
+
+log2_exact is 0
+for k in range of [-1000, 1001]:
+    if (log2 of (pow of [2, k])) == k:
+        log2_exact is log2_exact + 1
+assert of [log2_exact == 2001, "SF110 log2 exact for 2^k, -1000 <= k <= 1000"]
+
+log_buffer is buffer of 2
+log_buffer[0] is 8
+log_buffer[1] is 4
+log_buffer_result is log2 of log_buffer
+assert of [(type of log_buffer_result) == "buffer", "SF111 log2 buffer keeps its container type"]
+assert of [(len of log_buffer_result) == 2, "SF112 log2 buffer keeps its shape"]
+assert of [log_buffer_result[0] == 3 and log_buffer_result[1] == 2, "SF113 log2 buffer exact powers corrected element-wise"]
+
+# --- map.map_from_lists duplicate keys (#2242) ---
+duplicate_map is map_from_lists of [["a", "b", "a"], [1, 2, 3]]
+assert of [(map_size of duplicate_map) == 2, "SF114 map_from_lists deduplicates keys"]
+assert of [(map_get of [duplicate_map, "a"]) == 3, "SF115 map_from_lists last value wins"]
+assert of [(map_keys of duplicate_map) == ["a", "b"], "SF116 map_from_lists keeps first key position"]
+
+# Preserve all collection shapes accepted by map_from_lists before #2242.
+nested_key_map is map_from_lists of [[[1], [2], [1]], ["first", "middle", "last"]]
+assert of [(map_size of nested_key_map) == 2 and (map_get of [nested_key_map, [1]]) == "last", "SF117 map_from_lists nested-list keys"]
+string_map is map_from_lists of ["aba", "123"]
+assert of [(map_size of string_map) == 2 and (map_get of [string_map, "a"]) == "3", "SF118 map_from_lists string inputs"]
+map_keys_buffer is buffer of 3
+map_keys_buffer[0] is 7
+map_keys_buffer[1] is 8
+map_keys_buffer[2] is 7
+map_values_buffer is buffer of 3
+map_values_buffer[0] is 10
+map_values_buffer[1] is 20
+map_values_buffer[2] is 30
+buffer_map is map_from_lists of [map_keys_buffer, map_values_buffer]
+assert of [(map_size of buffer_map) == 2 and (map_get of [buffer_map, 7]) == 30, "SF119 map_from_lists buffer inputs"]
+
+# --- config.load_ini malformed and whitespace-padded section headers (#2243) ---
+load_file of "lib/config.eigs"
+empty_header_raised is 0
+try:
+    load_ini of "../tests/fixtures/config/issue_2243.ini"
+catch empty_header_error:
+    empty_header_raised is contains of [str of empty_header_error, "line 4"]
+assert of [empty_header_raised, "SF120 load_ini rejects empty section header and names line 4"]
+
+unterminated_header_raised is 0
+try:
+    load_ini of "../tests/fixtures/config/issue_2243_unterminated.ini"
+catch unterminated_header_error:
+    unterminated_header_raised is contains of [str of unterminated_header_error, "line 4"]
+assert of [unterminated_header_raised, "SF121 load_ini rejects unterminated section header and names line 4"]
+
+trimmed_ini is load_ini of "../tests/fixtures/config/issue_2243_whitespace.ini"
+assert of [trimmed_ini == [["ws.m", "4"]], "SF122 load_ini trims section names"]
+
+# --- functional.compose returns a callable closure (#2250) ---
+composed_abs is compose of [abs, abs]
+assert of [(type of composed_abs) == "fn", "SF123 compose returns a function"]
+assert of [(composed_abs of -3) == 3, "SF124 compose calls f(g(x))"]
+
+# The closure must pass every previously-supported value shape through to its
+# functions without substituting a scalar-only operation.
+composed_identity is compose of [identity, identity]
+compose_list is composed_identity of ([1, 2])
+assert of [compose_list == [1, 2], "SF125 compose accepts a list value"]
+compose_nested is composed_identity of ([[1], [2, 3]])
+assert of [compose_nested == [[1], [2, 3]], "SF126 compose accepts a nested-list value"]
+compose_buffer_input is buffer of 2
+compose_buffer_input[0] is 7
+compose_buffer_input[1] is 8
+compose_buffer_result is composed_identity of compose_buffer_input
+assert of [(type of compose_buffer_result) == "buffer" and compose_buffer_result[0] == 7 and compose_buffer_result[1] == 8, "SF127 compose accepts a buffer value"]
+assert of [(composed_identity of "text") == "text", "SF128 compose accepts a string value"]
+assert of [(composed_identity of null) == null, "SF129 compose accepts null"]
+
+# --- io.read_lines ---
+io_trailing_path is "/tmp/eigenscript_issue_2248_trailing.txt"
+io_unterminated_path is "/tmp/eigenscript_issue_2248_unterminated.txt"
+io_roundtrip_path is "/tmp/eigenscript_issue_2248_roundtrip.txt"
+write_text of [io_trailing_path, "a\nb\n"]
+write_text of [io_unterminated_path, "a\nb"]
+assert of [(read_lines of io_trailing_path) == ["a", "b"], "SF130 read_lines drops final-newline artifact"]
+assert of [(read_lines of io_unterminated_path) == ["a", "b"], "SF131 read_lines keeps unterminated final line"]
+io_roundtrip_lines is ["first", "second"]
+write_lines of [io_roundtrip_path, io_roundtrip_lines]
+assert of [(read_lines of io_roundtrip_path) == io_roundtrip_lines, "SF132 write_lines/read_lines round trip"]
+
+# --- log levels (#2247) ---
+load_file of "lib/log.eigs"
+silent_probe is exec_capture of ["./eigenscript", "../tests/fixtures/log_2247_silent.eigs"]
+assert of [silent_probe[0] == 0 and silent_probe[1] == "", "SF133 log silent threshold suppresses named silent messages"]
+
+unknown_threshold_raised is 0
+try:
+    log_level of "eror"
+catch unknown_threshold_error:
+    unknown_threshold_raised is contains of [str of unknown_threshold_error, "eror"]
+assert of [unknown_threshold_raised, "SF134 log_level rejects and names unknown levels"]
+
+unknown_message_raised is 0
+try:
+    log_msg of ["wrn", "should not print"]
+catch unknown_message_error:
+    unknown_message_raised is contains of [str of unknown_message_error, "wrn"]
+assert of [unknown_message_raised, "SF135 log_msg rejects and names unknown levels"]
 
 print of "All stdlib-fix tests passed"

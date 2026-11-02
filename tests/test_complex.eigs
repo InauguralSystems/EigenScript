@@ -23,7 +23,7 @@ print of "=== COMPLEX NUMBER TESTS ==="
 print of "--- Arithmetic ---"
 
 # (3+4i) + (1-2i) = 4+2i
-s is complex.add of [[3, 4], [1, -2]]
+s is complex.complex_add of [[3, 4], [1, -2]]
 assert_eq of [s[0], 4, "add re"]
 assert_eq of [s[1], 2, "add im"]
 
@@ -59,6 +59,29 @@ assert_near of [h[1], 0.5, 1e-12, "div magnitude im (halved-div discriminator)"]
 # Division by zero returns null rather than saturating at 1e308.
 assert_true of [(complex.div of [[1, 1], [0, 0]]) == null, "div by zero is null"]
 
+# Scaling regressions: these are hand-computed real-axis divisions. Squaring
+# either divisor first overflows or underflows even though the quotient is
+# finite and the divisor is nonzero.
+q_large is complex.div of [[1, 0], [1e155, 0]]
+assert_near of [q_large[0], 1e-155, 1e-169, "div scales a large nonzero divisor"]
+q_small is complex.div of [[1, 0], [1e-170, 0]]
+if q_small == null:
+    assert_true of [false, "div scales a small nonzero divisor"]
+else:
+    assert_near of [q_small[0], 1e170, 1e156, "div scales a small nonzero divisor"]
+
+# Python's complex division is the oracle for these four representative
+# cases: the two scaling boundaries above, an ordinary result, and a large
+# numerator divided by sub-unit components. The latter catches an attempted
+# Smith rearrangement that divides the numerator by br before the final scale:
+# EigenScript saturates that intermediate and silently halves the answer.
+q_ordinary is complex.div of [[1, 2], [3, 4]]
+assert_near of [q_ordinary[0], 0.44, 1e-15, "div matches Python ordinary re"]
+assert_near of [q_ordinary[1], 0.08, 1e-15, "div matches Python ordinary im"]
+q_large_num is complex.div of [[1e308, 0], [0.5, 0.5]]
+assert_eq of [q_large_num[0], 1e308, "div matches Python large numerator re"]
+assert_eq of [q_large_num[1], 0 - 1e308, "div matches Python large numerator im"]
+
 # -a and conj(a) differ: negation flips BOTH components, conjugation only
 # the imaginary one. Confusing them survives any magnitude-only check.
 n is complex.neg of [3, 4]
@@ -79,6 +102,23 @@ print of "--- Modulus and argument ---"
 assert_eq of [complex.mag of [3, 4], 5, "mag 3-4-5"]
 assert_eq of [complex.mag2 of [3, 4], 25, "mag2 is the square, no sqrt"]
 assert_eq of [complex.mag of [0, 0], 0, "mag of zero"]
+
+# Hypotenuse-style scaling must keep both ends of the finite range usable.
+# Both expected values are the hand-computed 3-4-5 triangle, scaled.
+assert_near of [complex.mag of [3e160, 4e160], 5e160, 1e147, "mag scales large finite parts"]
+assert_near of [complex.mag of [3e-170, 4e-170], 5e-170, 1e-183, "mag scales small finite parts"]
+
+# Preserve the existing indexable buffer input accepted by these functions.
+buf_complex is buffer of 2
+buf_complex[0] is 3
+buf_complex[1] is 4
+assert_eq of [complex.mag of buf_complex, 5, "mag accepts a buffer"]
+buf_divisor is buffer of 2
+buf_divisor[0] is 1
+buf_divisor[1] is -2
+buf_q is complex.div of [buf_complex, buf_divisor]
+assert_near of [buf_q[0], -1, 1e-12, "div accepts buffer operands re"]
+assert_near of [buf_q[1], 2, 1e-12, "div accepts buffer operands im"]
 
 # arg(i) = pi/2, arg(-1) = pi, arg(1) = 0 — the quadrants atan alone
 # gets wrong and atan2 gets right.
@@ -124,7 +164,7 @@ assert_eq of [len of rr, 2, "poly_roots returns n roots"]
 sum is [0, 0]
 prod is [1, 0]
 for k in range of (len of rr):
-    sum is complex.add of [sum, rr[k]]
+    sum is complex.complex_add of [sum, rr[k]]
     prod is complex.mul of [prod, rr[k]]
 assert_near of [sum[0], -3, 1e-9, "Vieta: sum of roots = -c1"]
 assert_near of [prod[0], 2, 1e-9, "Vieta: product of roots = (-1)^n cn"]
@@ -139,7 +179,7 @@ for k in range of (len of rr):
 ci is complex.poly_roots of [0, 1]
 assert_near of [complex.mag of ci[0], 1, 1e-9, "z^2+1 root has modulus 1"]
 assert_near of [ci[0][0], 0, 1e-9, "z^2+1 root is purely imaginary"]
-assert_near of [(complex.add of [ci[0], ci[1]])[1], 0, 1e-9, "the two roots are conjugates"]
+assert_near of [(complex.complex_add of [ci[0], ci[1]])[1], 0, 1e-9, "the two roots are conjugates"]
 
 # A REPEATED root: (z-1)^2 = z^2 - 2z + 1. The Durand-Kerner denominator
 # goes to zero here, and an unguarded division would fling an iterate to
@@ -154,7 +194,7 @@ cub is complex.poly_roots of [-6, 11, -6]
 assert_eq of [len of cub, 3, "cubic returns 3 roots"]
 csum is [0, 0]
 for k in range of 3:
-    csum is complex.add of [csum, cub[k]]
+    csum is complex.complex_add of [csum, cub[k]]
 assert_near of [csum[0], 6, 1e-8, "cubic Vieta: roots sum to 6"]
 
 # THE ITERATION MUST BE DOING THE WORK. With iters = 0 the starting

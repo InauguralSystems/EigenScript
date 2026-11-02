@@ -1,0 +1,1 @@
+- Linear algebra now preserves nonzero determinants without a numerical-rank cutoff, uses original-row scales with absolute-pivot tie-breaking for inverse and solve pivot checks, and avoids deriving 2x2 eigenvectors from roundoff-sized rows (#2285).

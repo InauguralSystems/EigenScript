@@ -26,6 +26,10 @@ NUMBER = re.compile(rb'(?<![A-Za-z_0-9.])[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?
 MARKER = b'R17-D2-KINDS-BEGIN\n'
 RETIREMENT_ANCHOR = 'ed09f908603a414f77ead78e241fa10aff7f2f38'
 RETIREMENTS = {BAR + name + '.branch' for name in ('proc_read_buf', 'proc_read_buf.hi')}
+SYNC11_RETIREMENT_ANCHOR = '5b3b64db40cdd50c42c8ad3e9c913bb5d36a9e1a'
+SYNC11_RETIREMENTS = {BAR + name + '.branch' for name in (
+    'build_corpus', 'eigen_eval_loss', 'eigen_generate', 'eigen_model_load',
+    'model_load_weights', 'native_train_step_builtin')}
 NEAREST_PATH = BAR + 'nearest_in_range_all.branch'
 NEAREST_DECISION = 'https://github.com/InauguralSystems/EigenScript/issues/1888#issuecomment-6402855103'
 
@@ -74,22 +78,27 @@ def amendments_for(root, paths):
 
 
 def retired_paths(root, data):
-    """S10-D2 alone removes two paths; all other frozen bytes remain covered."""
+    """Only the two S10-D2 and six explicit sync11 retirements may be absent."""
     retired = data.get('retirements', {})
-    require(set(retired) == RETIREMENTS, 'S10-D2 retirement population must be exactly proc_read_buf and proc_read_buf.hi')
+    require(set(retired) == RETIREMENTS | SYNC11_RETIREMENTS,
+            'retirement population must be exactly the two S10-D2 and six sync11 paths')
     amendments = amendments_for(root, retired)
     for path, entry in retired.items():
-        require(entry.get('ruling') == 'S10-D2' and entry.get('anchor') == RETIREMENT_ANCHOR,
-                path + ': retirement needs S10-D2 and the immutable R1.8 bank anchor')
+        if path in RETIREMENTS:
+            ruling, anchor = 'S10-D2', RETIREMENT_ANCHOR
+        else:
+            ruling, anchor = 'SYNC11-model-retirement', SYNC11_RETIREMENT_ANCHOR
+        require(entry.get('ruling') == ruling and entry.get('anchor') == anchor,
+                path + ': retirement needs ' + ruling + ' and its immutable accepted bank anchor')
         source = path.removesuffix('.branch') + '.eigs'
         for frozen_path, key in ((path, 'branch_sha256'), (source, 'source_sha256')):
-            prior = git(root, 'show', RETIREMENT_ANCHOR + ':' + frozen_path)
+            prior = git(root, 'show', anchor + ':' + frozen_path)
             require(sha(prior) == entry.get(key), frozen_path + ': retirement prior SHA-256 differs from bank anchor')
             removed = root / frozen_path
             require(not removed.exists() and not removed.is_symlink(), frozen_path + ': retired file still exists')
         waiver = amendments.get(path, [])
-        require(len(waiver) == 3 and waiver[:2] == ['DELETED', 'S10-D2'] and bool(waiver[2]),
-                path + ': retirement requires an explicit DELETED S10-D2 amendment')
+        require(len(waiver) == 3 and waiver[:2] == ['DELETED', ruling] and bool(waiver[2]),
+                path + ': retirement requires an explicit DELETED ' + ruling + ' amendment')
     return set(retired)
 
 

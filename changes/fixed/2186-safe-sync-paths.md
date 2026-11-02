@@ -1,0 +1,1 @@
+- `file_sync` and `dir_sync` now promptly reject special files such as FIFOs without opening a blocking path (#2186).

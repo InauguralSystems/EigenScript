@@ -482,7 +482,7 @@ def main():
     # modules' functions are offered; the detail is the rule-2 signature
     # comment, or the `define name(params) as:` shape when a module never
     # wrote one (stats has none for median; list.zip has one).
-    std_doc = "import stats\nimport list\nresult is stats.mean of [1, 2, 3]\n"
+    std_doc = "import stats\nimport list\nresult is stats.stats_mean of [1, 2, 3]\n"
     comp_std = {"jsonrpc": "2.0", "id": 26, "method": "textDocument/completion",
                 "params": {"textDocument": {"uri": URI}, "position": {"line": 2, "character": 12}}}
     r = converse([INIT, did_open(std_doc), comp_std, SHUTDOWN, EXIT])
@@ -552,7 +552,7 @@ def main():
     res = (by_id(r, 29) or {}).get("result")
     value = ((res or {}).get("contents") or {}).get("value", "") if isinstance(res, dict) else ""
     check("hover over a stdlib call without a signature shows the define shape",
-          "define mean(vals) as:" in value)
+          "define stats_mean(vals) as:" in value)
 
     # A function from a module the document never imported gets no hover.
     hover_noimp = {"jsonrpc": "2.0", "id": 30, "method": "textDocument/hover",
@@ -569,6 +569,26 @@ def main():
     res = (by_id(r, 3) or {}).get("result")
     check("hover returns contents",
           isinstance(res, dict) and "contents" in res)
+    value = ((res or {}).get("contents") or {}).get("value", "") if isinstance(res, dict) else ""
+    symbol_expected = "```eigenscript\nvariable myvar — defined at line 1\n```"
+    check("symbol hover is a Markdown fence with real newlines (#1998)",
+          value == symbol_expected and "\\n" not in value)
+    if value != symbol_expected or "\\n" in value:
+        print("    decoded contents.value: %r" % value)
+
+    # Builtins use the same Markdown response formatter as document symbols;
+    # exercise both real hover sources so neither can regress independently.
+    builtin_hover = {"jsonrpc": "2.0", "id": 31, "method": "textDocument/hover",
+                     "params": {"textDocument": {"uri": URI},
+                                "position": {"line": 0, "character": 1}}}
+    r = converse([INIT, did_open("print of 1\n"), builtin_hover, SHUTDOWN, EXIT])
+    res = (by_id(r, 31) or {}).get("result")
+    value = ((res or {}).get("contents") or {}).get("value", "") if isinstance(res, dict) else ""
+    builtin_expected = "```eigenscript\nprint — builtin; see docs/BUILTINS.md\n```"
+    check("builtin hover is a Markdown fence with real newlines (#1998)",
+          value == builtin_expected and "\\n" not in value)
+    if value != builtin_expected or "\\n" in value:
+        print("    decoded contents.value: %r" % value)
 
     # #1758 R1.8: the lexer already records the literal kind exactly. Hover
     # must report that kind, including integer-looking floats and decimal
@@ -600,7 +620,7 @@ def main():
         result = (by_id(r, 8000 + i) or {}).get("result") or {}
         check("numeric literal hover: " + literal + " is " + kind,
               result.get("contents", {}).get("value") ==
-              "```eigenscript\\n" + kind + "\\n```")
+              "```eigenscript\n" + kind + "\n```")
 
     # --- definition of a used symbol returns a location ---
     define_doc = "define helper(a) as:\n    return a\nr is helper of 5\n"
@@ -798,13 +818,13 @@ def main():
     check("formatting uses lexer literal and block boundaries (#1245/#1246/#1581)",
           isinstance(literal_res, list) and len(literal_res) == 1
           and literal_res[0].get("newText") == literal_want)
-    cr_doc = 'value is "start\r\n\t# a+b  \r\nback\\\r\nslash"\r\nprint of value\r\n'
+    cr_doc = 'value is "start\r\n\t# a+b  \r\nback\\\\\r\nslash"\r\nprint of value\r\n'
     r = converse([INIT, did_open(cr_doc), fmt, SHUTDOWN, EXIT])
     cr_res = (by_id(r, 8) or {}).get("result")
     check("formatting preserves CR bytes inside multiline literals",
           isinstance(cr_res, list) and len(cr_res) == 1
           and cr_res[0].get("newText") ==
-              'value is "start\r\n\t# a+b  \r\nback\\\r\nslash"\nprint of value\n')
+              'value is "start\r\n\t# a+b  \r\nback\\\\\r\nslash"\nprint of value\n')
     boundary_doc = ('print of "a"+"b"\n["a","b"]\n'
                     'x is f"{y}"+"z"\nvalue is "a\nb"+x\n'
                     'values is ["a\nb",2]\n')

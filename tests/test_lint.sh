@@ -2102,24 +2102,33 @@ rm -f "$TMPFILE"
 # correct verdicts for the two entities, and lint clean.
 PREDOC="$TESTS_DIR/../docs/PREDICATES.md"
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
+OUTFILE=$(mktemp /tmp/lint_test_XXXXXX.output)
 awk '
     /^\*\*The recommended per-entity form is a closure per entity\*\*/ { armed = 1; next }
     armed && /^```eigenscript$/ { infence = 1; armed = 0; next }
     infence && /^```$/ { exit }
     infence { print }
 ' "$PREDOC" > "$TMPFILE"
+awk '
+    /^\*\*The recommended per-entity form is a closure per entity\*\*/ { armed = 1; next }
+    armed && /^```eigenscript$/ { eigs = 1; next }
+    eigs && /^```$/ { after_eigs = 1; eigs = 0; next }
+    after_eigs && /^```output$/ { output = 1; next }
+    output && /^```$/ { exit }
+    output { print }
+' "$PREDOC" > "$OUTFILE"
 # Vacuity guard: an extraction that silently yields nothing would make every
 # assertion below pass on an empty file.
 check_contains "#1048 PREDICATES.md closure recipe extracts (non-vacuous)" "$(cat "$TMPFILE")" "define make_ch as:"
 check_contains "#1048 PREDICATES.md closure recipe extracts the whole block" "$(cat "$TMPFILE")" "print of (a + \" \" + b)"
-# The doc's own printed claim is pinned too, so the block and its comment
-# cannot drift apart.
-check_contains "#1048 PREDICATES.md states the recipe's output" "$(cat "$TMPFILE")" "# improving oscillating"
+# Pin the paired output block rather than an unchecked value comment in the
+# executable source. This is the documentation gate's checked-value form.
+check_contains "#1048 PREDICATES.md paired output states the recipe's output" "$(cat "$OUTFILE")" "^improving oscillating$"
 RUN=$($EIGS "$TMPFILE" 2>&1 || true)
 check_contains "#1048 PREDICATES.md closure recipe prints one verdict per entity" "$RUN" "^improving oscillating$"
 OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "#1048 PREDICATES.md closure recipe lints clean" "$OUTPUT" "W024"
-rm -f "$TMPFILE"
+rm -f "$TMPFILE" "$OUTFILE"
 
 # Working form 1: one named binding per entity — silent.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)

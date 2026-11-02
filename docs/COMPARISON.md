@@ -74,6 +74,8 @@ EigenScript's batched `nearest_in_range_all` does not count each query entity
 as its own neighbour. Its scalar `nearest_in_range` takes an explicit position,
 so it has no query-entity identity to exclude.
 
+EigenScript names its absence value consistently: `type of null` returns `"null"`.
+
 ## At a glance
 
 | | Python | JavaScript | Rust | Lisp | EigenScript |
@@ -87,16 +89,6 @@ so it has no query-entity identity to exclude.
 | null | `None` | `null/undefined` | `Option` | `nil` | `null` |
 | errors | exceptions | exceptions | `Result` | conditions | `try`/`catch` |
 | self-inspection | none | none | none | macros | interrogatives + observer |
-
-Binary tensor files use a shared 10,000,000-element cap. `tensor_load` and
-`tensor_save` raise catchable `limit` errors above it; `stream_open` requires
-an integral count from 1 through that cap, and `build_corpus` includes file
-separators in its capped token count. These limits also raise under
-`EIGS_STRICT=0`; see [BUILTINS.md](BUILTINS.md) for the I/O contracts.
-Unlike Python text mode, `read_line of null` does not translate line endings:
-it returns each stdin line with its terminator. This follows Lua's preservation
-of the `\r` in CRLF input while additionally retaining `\n`, making the final
-newline observable and making pipes match redirected regular files byte for byte.
 
 Like Python, EigenScript's `read_text`, `read_bytes`, and `read_bytes_buf`
 raise a catchable `io` error carrying the path and operating-system reason for
@@ -158,8 +150,8 @@ Sandbox execution does not update shared temporal history: assignment values, na
 
 ## Variables and arithmetic
 
-In VM/native-JIT evaluation, an unresolved omitted HTTP, network, database,
-or model builtin name raises a catchable `value` error at its first reference,
+In VM/native-JIT evaluation, an unresolved omitted HTTP, network or database
+builtin name raises a catchable `value` error at its first reference,
 naming the unavailable capability and required profile. This occurs before
 call arguments are evaluated. Local, captured and host bindings take precedence,
 including a binding to null; other unknown names retain `undefined_name` errors.
@@ -600,12 +592,6 @@ caught: boom
 caught: type_mismatch at line 7
 ```
 
-The optional model extension also uses catchable `value` errors for context
-limits: `eigen_generate` and `eigen_eval_loss` reject prompts longer than the
-loaded model's `max_seq_len`, while `native_train_step_builtin` checks the
-combined input and output length. This refusal applies even with
-`EIGS_STRICT=0`; context truncation is the caller's explicit choice.
-
 ## Pipes (vs Lisp threading / shell pipes)
 
 Clojure:
@@ -1002,8 +988,11 @@ which has no runtime value at all.
 Builtin names inside a module are isolated the way Python's are: a Python
 module's `len` is unaffected by `__main__` rebinding `len`, and an
 EigenScript module's `len`, `str` or `append` is the builtin unless the
-module itself rebinds it (#1388). Unlike Python, a name the module does not
-bind and that is not a builtin still resolves to the importer's globals.
+module itself rebinds it (#1388). Like Python, Lua and ES modules, a name the
+module does not bind or import and that is not a builtin is undefined: an
+importer's incidental global is never ambient configuration. Pass the value
+as a function parameter or through an exported setter (#2180). `load_file`
+remains the explicit shared-scope mechanism.
 
 <!-- Embed contract: #1038/#1028; language-level observer semantics unchanged. -->
 The C embedding API starts observer recording open. Source evals retain
@@ -1054,12 +1043,6 @@ exact integers in 0..255; fractions and out-of-range bytes raise `value`.
 `buf_len`, `f64_to_bytes` and `inflate` return integer counts or bytes;
 buffer storage and scalar buffer reads are floats. `buf_get`, `buf_peak`,
 `buf_dot` and the byte/PCM codecs refuse non-finite input cells with `value`.
-
-Model token ids and generation limits follow N5 and the C int range;
-fractional ids or token counts raise `value`. `eigen_generate` returns int
-token ids, while `eigen_eval_loss` returns a float. Temperature, top_p and
-training learning rates remain float quantities. Model JSON weights stay
-float data; the loader status strings are unchanged.
 
 Graphics and audio magnitudes round half away from zero and raise `value`
 when the result exceeds the C call's range. This refusal happens even before

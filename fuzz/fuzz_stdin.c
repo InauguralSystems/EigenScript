@@ -1,74 +1,46 @@
 /*
- * EigenScript fuzz harness — stdin-based.
- * Reads EigenScript source from stdin, runs tokenize → parse →
- * compile → vm_execute (the same pipeline as main.c).
- * Use with AFL, honggfuzz, or manual crash testing.
+ * EigenScript fuzz harness, stdin driver.
  *
- * Build: make fuzz
+ * Feeds one input from stdin, or each file argument in order, to the
+ * libFuzzer target's own entry points
+ * (LLVMFuzzerInitialize and LLVMFuzzerTestOneInput in fuzz/fuzz_eigenscript.c),
+ * so the CI fuzz smoke (fuzz/run_fuzz.sh) checks the per-input contract the
+ * fuzzer runs: the LeakSanitizer-ignored init, the loop budget, the per-input
+ * teardown and the invariant check. This file used to repeat the pipeline with
+ * none of those. Its init was not LSan-ignored and it tore nothing down, so
+ * under leak detection every input reported the builtin table, while a leak
+ * the per-input teardown misses was never examined at all (#1734).
  *
- * Run manually:
- *   echo 'x is 1 / 0' | ./fuzz/fuzz_stdin
- *
- * Run with AFL:
- *   afl-fuzz -i fuzz/corpus -o fuzz/findings -- ./fuzz/fuzz_stdin
+ * Build: make fuzz          (gcc, ASan + UBSan; libFuzzer is not needed)
+ * Run:   echo 'x is 1 / 0' | ./fuzz/fuzz_stdin
+ * AFL:   afl-fuzz -i fuzz/corpus -o fuzz/findings -- ./fuzz/fuzz_stdin
  */
 
-#include "../src/eigenscript.h"
-#include "../src/state.h"
-#include "../src/vm.h"
-#include <string.h>
-#include <stdlib.h>
+#include <stdint.h>
+#include <stdio.h>
 
-int main(void) {
-    /* Read all of stdin */
-    char buf[65536];
-    size_t total = 0;
-    size_t n;
-    while ((n = fread(buf + total, 1, sizeof(buf) - total - 1, stdin)) > 0) {
+int LLVMFuzzerInitialize(int *argc, char ***argv);
+int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
+
+static int run_input(FILE *input) {
+    /* The target takes at most 64 KiB. */
+    static uint8_t buf[65536];
+    size_t total = 0, n;
+    while (total < sizeof buf &&
+           (n = fread(buf + total, 1, sizeof buf - total, input)) > 0)
         total += n;
-        if (total >= sizeof(buf) - 1) break;
+    LLVMFuzzerTestOneInput(buf, total);
+    return ferror(input) ? 1 : 0;
+}
+
+int main(int argc, char **argv) {
+    LLVMFuzzerInitialize(&argc, &argv);
+    if (argc == 1) return run_input(stdin);
+    for (int i = 1; i < argc; i++) {
+        FILE *input = fopen(argv[i], "rb");
+        if (!input) { perror(argv[i]); return 1; }
+        int failed = run_input(input);
+        if (fclose(input) != 0 || failed) return 1;
     }
-    buf[total] = '\0';
-    if (total == 0) return 0;
-
-    /* Init runtime — process is single-shot, no detach/destroy. */
-    srand(0);
-    eigs_thread_attach(eigs_state_new());
-    Env *global = eigs_global_env_create();   /* + builtin layer (#1388) */
-
-    /* Suppress output */
-    int devnull = open("/dev/null", O_WRONLY);
-    if (devnull >= 0) {
-        dup2(devnull, STDOUT_FILENO);
-        dup2(devnull, STDERR_FILENO);
-        close(devnull);
-    }
-
-    /* Reset state */
-    g_parse_errors = 0;
-    g_has_error = 0;
-    g_returning = 0;
-    g_breaking = 0;
-    g_continuing = 0;
-
-    /* Run pipeline — the same one main.c uses: tokenize → parse →
-     * compile_ast → vm_execute. The old harness called the tree-walking
-     * eval_node, which no longer exists; the VM/compiler/JIT layers it
-     * skipped are exactly where memory bugs live now. */
-    TokenList tl = tokenize(buf);
-    if (g_parse_errors == 0) {
-        ASTNode *ast = parse(&tl);
-        if (g_parse_errors == 0 && ast) {
-            EigsChunk *chunk = compile_ast(ast, global, buf, "<fuzz>");
-            if (chunk) {
-                Value *result = vm_execute(chunk, global);
-                if (result) val_decref(result);
-                chunk_free(chunk);
-            }
-        }
-        if (ast) free_ast(ast);
-    }
-    free_tokenlist(&tl);
-
     return 0;
 }

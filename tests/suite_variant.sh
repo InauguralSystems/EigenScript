@@ -2,7 +2,7 @@
 # src/, as for every section).
 #
 # One predicate for the sections that build a C test against the suite
-# binary's own variant ([0ff] test_container_slots, [0fk] the C slot test).
+# binary's own variant ([0ff] test_container_slots, [0fka] the C slot test).
 # Each used to look only for build/asan, so in the CI ASan shards, which
 # build `asan-server`, both compiled their RELEASE variant: no ASan, no LSan,
 # no UBSan (#1783, found by the #1758 R1.1 critic).

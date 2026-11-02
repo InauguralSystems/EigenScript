@@ -10,12 +10,29 @@ WERROR_FLAGS_FILE="$HERE/tools/werror_flags.txt"
 EXPECTED=(DeslanStudio DMG dynamics eddy eigen-edit EigenGauntlet EigenLua EigenMiniSat EigenRegex eigen-sheet liferaft ouroboros phugoid polymethod tidelog Tidepool)
 # These repositories pin EigenScript but have no release acceptance command.
 EXCLUDED=(EigenAttention EigenAttic iLambdaAi tmp legibility-experiment awesome-eigenscript eigs-package-template homebrew-eigenscript EigenOS)
-# These four CI jobs have no devcontainer runCmd; their own test scripts are explicit.
+# These five CI jobs have no devcontainer runCmd; their own test scripts are explicit.
 declared_cmd() {
   case "$1" in
     eigen-edit|eigen-sheet) printf '%s' 'bash tests/test_smoke.sh' ;;
     EigenGauntlet) printf '%s' 'bash tests/run_smoke.sh' ;;
+    EigenLua) printf '%s' 'bash tests/run.sh && bash tools/grade.sh' ;;
     EigenMiniSat) printf '%s' "python3 -m unittest discover -s benchmarks -p 'test_*.py' && bash tests/run_smoke.sh && bash tests/run_proof_check.sh && eigenscript minisat.eigs --proof-bench --size 1 && bash tests/run_regime_c_check.sh" ;;
+    *) return 1 ;;
+  esac
+}
+# Row budgets are release policy, not consumer input.  Keep every exception
+# here so an unrecognised consumer always receives DEFAULT_ROW_BUDGET.  The
+# EigenLua allowance is based on the 2026-10-28 pinned-checkout measurement:
+# 1,800 s reached the warmup-pairs stage. The remaining stage caps put
+# the conservative bound at 7,200 s; the 7,800 s allowance adds 10 minutes
+# of release-box headroom.
+declared_row_budget() {
+  if [ -f "$ECO/.ca_fixture" ] && [ -f "$ECO/$1/.ca_budget" ]; then
+    cat "$ECO/$1/.ca_budget"
+    return 0
+  fi
+  case "$1" in
+    EigenLua) printf '%s' 7800 ;;
     *) return 1 ;;
   esac
 }
@@ -111,22 +128,33 @@ probe_prereq() {
   return 1
 }
 
-NAMES=(); PINS=(); CMDS=(); KINDS=(); WFS=(); SOURCE_COMMITS=(); SOURCE_DIRTY=(); SOURCE_INTENDED=(); SOURCE_SELECTORS=(); GAPS=0; SCANNED=0; FLOOR=0
+NAMES=(); PINS=(); CMDS=(); KINDS=(); WFS=(); SOURCE_COMMITS=(); SOURCE_DIRTY=(); SOURCE_INTENDED=(); SOURCE_SELECTORS=(); FLOOR_NAMES=(); GAPS=0; SCANNED=0; FLOOR=0
 record_floor() {
-  local f n
-  FLOOR=0
+  local f n name
+  FLOOR=0; FLOOR_NAMES=()
   if [ ! -f "$ECO/.ca_fixture" ]; then
     for f in "$HERE"/reports/consumer_acceptance/*.record; do
       [ -f "$f" ] || continue
+      [ -z "${FLOOR_RESET_REASON:-}" ] || [ "$f" != "$RECORD" ] || continue
       grep -q '^status=COMPLETE$' "$f" || continue
       n="$(sed -n 's/^inventory=\([0-9][0-9]*\).*$/\1/p' "$f" | tail -1)"
       [ -n "$n" ] && [ "$n" -gt "$FLOOR" ] && FLOOR="$n"
     done
   fi
   # CA_RECORD can live outside the standard reports directory.
-  if [ -n "${RECORD:-}" ] && [ -f "$RECORD" ] && grep -q '^status=COMPLETE$' "$RECORD"; then
+  if [ -z "${FLOOR_RESET_REASON:-}" ] && [ -n "${RECORD:-}" ] && [ -f "$RECORD" ] && grep -q '^status=COMPLETE$' "$RECORD"; then
     n="$(sed -n 's/^inventory=\([0-9][0-9]*\).*$/\1/p' "$RECORD" | tail -1)"
     [ -n "$n" ] && [ "$n" -gt "$FLOOR" ] && FLOOR="$n"
+    while IFS= read -r name; do
+      [ -z "$name" ] || contains "$name" "${FLOOR_NAMES[@]}" || FLOOR_NAMES+=("$name")
+    done < <(sed -n 's/^inventory_floor_name|//p' "$RECORD")
+    # Compatibility with records written before named floor witnesses existed:
+    # only a passing record establishes its scanned names as accepted inventory.
+    if grep -q '^VERDICT: PASS$' "$RECORD"; then
+      while IFS= read -r name; do
+        [ -z "$name" ] || contains "$name" "${FLOOR_NAMES[@]}" || FLOOR_NAMES+=("$name")
+      done < <(sed -n 's/^source|\([^|]*\)|.*$/\1/p' "$RECORD")
+    fi
   fi
 }
 load_expected() {
@@ -135,6 +163,7 @@ load_expected() {
     local line
     while IFS= read -r line || [ -n "$line" ]; do [ -z "$line" ] || WANT+=("$line"); done < "$ECO/.ca_expected"
   elif [ ! -f "$ECO/.ca_fixture" ]; then WANT=("${EXPECTED[@]}"); fi
+  for line in "${FLOOR_NAMES[@]}"; do contains "$line" "${WANT[@]}" || WANT+=("$line"); done
 }
 scan_inventory() {
   local d r pin cmd kind wf why e head dirty intended selector manifest="${CA_SOURCE_REFS:-}"
@@ -168,9 +197,9 @@ scan_inventory() {
     if [ "$kind" != UNRUNNABLE ]; then
       if accept_cmd_of "$r"; then cmd="$ACCEPT_CMD"; wf="$ACCEPT_WF"
       elif [ -n "$ACCEPT_WHY" ]; then kind=UNRUNNABLE; why="$ACCEPT_WHY"
-      elif cmd="$(declared_cmd "$r")"; then kind=declared
       elif [ -f "$ECO/.ca_fixture" ] && [ -f "$d/.ca_declared" ]; then
         cmd="$(cat "$d/.ca_declared")"; kind=declared
+      elif cmd="$(declared_cmd "$r")"; then kind=declared
       else kind=UNRUNNABLE; why=no-acceptance-command
       fi
     fi
@@ -205,8 +234,8 @@ plan() {
     # Do not mix the inventory diagnostics with byte-exact command output.
     if [ -d "$ECO/$name" ] && { accept_cmd_of "$name" || [ -z "$ACCEPT_WHY" ]; }; then
       if [ -n "$ACCEPT_CMD" ]; then printf '%s\n' "$ACCEPT_CMD"; return 0; fi
-      if ACCEPT_CMD="$(declared_cmd "$name")"; then printf '%s\n' "$ACCEPT_CMD"; return 0; fi
       if [ -f "$ECO/.ca_fixture" ] && [ -f "$ECO/$name/.ca_declared" ]; then cat "$ECO/$name/.ca_declared"; return 0; fi
+      if ACCEPT_CMD="$(declared_cmd "$name")"; then printf '%s\n' "$ACCEPT_CMD"; return 0; fi
     fi
     echo "UNRUNNABLE: $name" >&2; return 1
   fi
@@ -417,7 +446,11 @@ consumer_skip_check() {
 }
 row() {
   local i="$1" name="${NAMES[i]}" pin="${PINS[i]}" cmd="${CMDS[i]}" kind="${KINDS[i]}" source_commit="${SOURCE_COMMITS[i]}" source_dirty="${SOURCE_DIRTY[i]}" source_intended="${SOURCE_INTENDED[i]}" source_selector="${SOURCE_SELECTORS[i]}"
-  local verdict=PASS rc=- dur=0 calls=0 ok=0 fail=0 skips=0 prereq="" v log start end missing_variant="" actual mutated="" skip_result="" skip_problem="" skip_rc=0
+  local verdict=PASS rc=- dur=0 calls=0 ok=0 fail=0 skips=0 prereq="" v log start end missing_variant="" actual mutated="" skip_result="" skip_problem="" skip_rc=0 failed_job=""
+  local row_budget="$DEFAULT_ROW_BUDGET" budget_kind=default declared_budget=""
+  if declared_budget="$(declared_row_budget "$name")"; then
+    row_budget="$declared_budget"; budget_kind=declared
+  fi
   local -a session=(setsid)
   if ! command -v setsid >/dev/null 2>&1; then
     session=(python3 -c 'import os,sys; os.setsid(); os.execvp(sys.argv[1],sys.argv[1:])')
@@ -433,7 +466,7 @@ row() {
     start="$(date +%s)"
     ( cd "$ECO/$name" && exec "${session[@]}" env PATH="$SHIM:$PATH" \
         "${SELECTOR_ENV[@]}" EIGS_DIR="$OVERLAY" EIGENSCRIPT_DIR="$OVERLAY" \
-        timeout --kill-after=2s "$BUDGET" bash -e -o pipefail -c "$cmd" ) < /dev/null > "$log" 2>&1 &
+        timeout --kill-after=2s "$row_budget" bash -e -o pipefail -c "$cmd" ) < /dev/null > "$log" 2>&1 &
     ACTIVE=$!
     wait "$ACTIVE" && rc=0 || rc=$?
     stop_row_group
@@ -458,7 +491,10 @@ row() {
     if replaced_runtime_slot; then verdict=FAIL; prereq=runtime-slot-replaced
     elif [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then verdict=HANG
     elif [ -n "$missing_variant" ]; then verdict=UNRUNNABLE; prereq="variant:$missing_variant"
-    elif [ "$rc" -ne 0 ]; then verdict=FAIL
+    elif [ "$rc" -ne 0 ]; then
+      verdict=FAIL
+      failed_job="$(sed -n 's/^CONSUMER_ACCEPTANCE_JOB_FAILED: //p' "$log" | tail -1)"
+      [ -z "$failed_job" ] || prereq="job:$failed_job"
     elif [ "$calls" -eq 0 ]; then verdict=FAIL; prereq=UNEXERCISED
     elif [ "$ok" -eq 0 ]; then verdict=FAIL; prereq=SWALLOWED
     elif [ -n "$skip_problem" ]; then verdict=FAIL; prereq="$skip_problem"
@@ -492,7 +528,7 @@ row() {
   if [ -n "$mutated" ]; then verdict=FAIL; prereq="candidate-mutated:$mutated"; fi
   local line="row|$name|$pin|$verdict|$rc|$dur|cand_calls=$calls|cand_ok=$ok|cand_fail=$fail|consumer_skips=$skips|selectors_overridden=${SELECTORS:-none}"
   [ -z "$prereq" ] || line="$line|prereq=$prereq"
-  line="$line|source_commit=$source_commit|source_dirty=$source_dirty|source_intended=$source_intended|source_selector=$source_selector"
+  line="$line|source_commit=$source_commit|source_dirty=$source_dirty|source_intended=$source_intended|source_selector=$source_selector|row_budget_s=$row_budget|row_budget_kind=$budget_kind"
   echo "$line" | tee -a "$BODY"
   if [ -f "$LOGS/$name.log" ]; then
     printf 'consumer_log|%s|%s\n' "$name" "$LOGS/$name.log" >> "$BODY"
@@ -511,7 +547,6 @@ profile_probe() {
   cat > "$src" <<'PROBE'
 r is http_route of ["GET", "/consumer-profile-probe", "probe"]
 r is net_close of -1
-r is eigen_model_loaded of null
 PROBE
   if [ "$profile" = server-db ]; then printf '%s\n' 'r is db_connect of null' >> "$src"; fi
   printf '%s\n' 'print of "PROFILE_READY"' >> "$src"
@@ -524,8 +559,8 @@ PROBE
 }
 run() {
   local candidate="${1:-}" arg i examined=0 bad=0 rc version final_tmp gfx_checkout_lib gfx_prefix_lib gfx_user_lib
-  FULL=""; GFX=""; SERVER=""; SERVER_DB=""; GFX_ROUTE=missing
-  [ -n "$candidate" ] || { echo 'usage: run <tree-or-binary> [--server binary] [--server-db binary] [--full binary] [--gfx binary]'; return 2; }
+  FULL=""; GFX=""; SERVER=""; SERVER_DB=""; GFX_ROUTE=missing; FLOOR_RESET_REASON=""
+  [ -n "$candidate" ] || { echo 'usage: run <tree-or-binary> [--server binary] [--server-db binary] [--full binary] [--gfx binary] [--reset-floor reason]'; return 2; }
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -533,6 +568,9 @@ run() {
       --gfx) [ "$#" -ge 2 ] || return 2; GFX="$2"; GFX_ROUTE=explicit; shift 2 ;;
       --server) [ "$#" -ge 2 ] || return 2; SERVER="$2"; shift 2 ;;
       --server-db) [ "$#" -ge 2 ] || return 2; SERVER_DB="$2"; shift 2 ;;
+      --reset-floor)
+        [ "$#" -ge 2 ] && [ -n "$2" ] && [[ "$2" != *$'\n'* ]] || { echo '--reset-floor requires a non-empty, single-line reason'; return 2; }
+        FLOOR_RESET_REASON="$2"; shift 2 ;;
       *) echo "unknown argument: $1"; return 2 ;;
     esac
   done
@@ -558,8 +596,8 @@ run() {
       return 2
     fi
   fi
-  BUDGET="${CA_TIMEOUT:-1800}"
-  case "$BUDGET" in ''|*[!0-9]*|0) echo 'CA_TIMEOUT must be positive'; return 2 ;; esac
+  DEFAULT_ROW_BUDGET="${CA_TIMEOUT:-1800}"
+  case "$DEFAULT_ROW_BUDGET" in ''|*[!0-9]*|0) echo 'CA_TIMEOUT must be positive'; return 2 ;; esac
   command -v timeout >/dev/null || { echo 'timeout missing'; return 2; }
   # Output-path selection completes argument validation. Read the old floor,
   # invalidate that exact path, and install traps before any candidate hash.
@@ -592,6 +630,7 @@ run() {
     echo 'server_sha256=PENDING'
     echo 'server_db_sha256=PENDING'
     echo "record_floor=$FLOOR"
+    echo "floor_reset_reason=${FLOOR_RESET_REASON:-none}"
     echo "consumer_logs_root=$LOG_ROOT"
     echo "consumer_logs=$LOGS"
     echo 'consumer_logs_retention=run-owned; unrelated entries retained'
@@ -629,7 +668,7 @@ run() {
   if [ -n "$SERVER_DB" ]; then SERVER_DB_SHA="$(sha256sum "$SERVER_DB" | awk '{print $1}')" || { echo 'cannot hash server-db variant'; return 2; }; [ "${#SERVER_DB_SHA}" -eq 64 ] || return 2; fi
   CAND_GIT_SHA="$(git -C "$TREE" rev-parse --short HEAD 2>/dev/null)" || CAND_GIT_SHA=none
   WORK="$(mktemp -d "${TMPDIR:-/tmp}/ca-run.XXXXXX")" || { echo 'cannot create scratch'; return 2; }
-  version="$(timeout "$BUDGET" "$candidate" --version 2>/dev/null)" || version=unknown
+  version="$(timeout "$DEFAULT_ROW_BUDGET" "$candidate" --version 2>/dev/null)" || version=unknown
   version="${version%%$'\n'*}"
   [ -n "$version" ] || version=unknown
   # Route former gfx invocations to release only after its binding probe.
@@ -655,6 +694,7 @@ run() {
     return 2
   fi
   local inventory="${#NAMES[@]}"
+  [ "$inventory" -ge "$FLOOR" ] || inventory="$FLOOR"
   echo "inventory=$inventory" >> "$BODY"
   if [ "$SCANNED" -eq 0 ] || [ "$GAPS" -ne 0 ]; then bad=1; fi
   for ((i=0; i<${#NAMES[@]}; i++)); do
@@ -684,12 +724,14 @@ run() {
     echo "server_sha256=$SERVER_SHA"
     echo "server_db_sha256=$SERVER_DB_SHA"
     echo "record_floor=$FLOOR"
+    echo "floor_reset_reason=${FLOOR_RESET_REASON:-none}"
     echo "consumer_logs_root=$LOG_ROOT"
     echo "consumer_logs=$LOGS"
     echo 'consumer_logs_retention=run-owned; unrelated entries retained'
     echo "inventory=$inventory"
     echo "examined=$examined"
     echo 'status=COMPLETE'
+    for ((i=0; i<${#WANT[@]}; i++)); do echo "inventory_floor_name|${WANT[i]}"; done
     for ((i=0; i<${#NAMES[@]}; i++)); do
       echo "source|${NAMES[i]}|pin=${PINS[i]}|commit=${SOURCE_COMMITS[i]}|dirty=${SOURCE_DIRTY[i]}|intended=${SOURCE_INTENDED[i]}|selector=${SOURCE_SELECTORS[i]}"
     done
@@ -715,13 +757,18 @@ selftest() {
   printf '#!/bin/sh\nexit 0\n' > "$st_candidate"; chmod +x "$st_candidate"
   st_record="$st_root/record"; st_out="$st_root/output"
   st_reset() {
-    rm -rf "$st_eco"; mkdir -p "$st_eco"; : > "$st_eco/.ca_fixture"
+    rm -rf "$st_eco"; mkdir -p "$st_eco"; : > "$st_eco/.ca_fixture"; rm -f "$st_record"
   }
   st_consumer() {
     local n="$1" cmd="${2:-}"
     mkdir -p "$st_eco/$n/.devcontainer"
     printf 'ARG EIGS_REF=v0.43.0\n' > "$st_eco/$n/.devcontainer/Dockerfile"
     [ -z "$cmd" ] || printf '%s\n' "$cmd" > "$st_eco/$n/.ca_declared"
+  }
+  st_workflow() {
+    local n="$1"
+    mkdir -p "$st_eco/$n/.github/workflows"
+    cat > "$st_eco/$n/.github/workflows/tests.yml"
   }
   st_run() {
     : > "$st_out"; rm -f "$st_record"
@@ -748,6 +795,65 @@ selftest() {
   printf 'no_command\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
   st_check b missing-command 'row|no_command|v0.43.0|UNRUNNABLE' "$st_record"
+  # (b1) EigenLua is private and has no extractable runCmd, so its complete
+  # release command must remain in the explicit inventory.
+  st_reset; st_consumer EigenLua
+  st_rc=0; CA_ECO="$st_eco" bash "$HERE/tools/consumer_acceptance.sh" plan --cmd EigenLua > "$st_out" 2>&1 || st_rc=$?
+  if [ "$st_rc" -eq 0 ] && [ "$(cat "$st_out")" = 'bash tests/run.sh && bash tools/grade.sh' ]; then
+    echo 'plant b1 check=eigenlua-declared-command GREEN command=tests+grade'
+  else echo 'plant b1 check=eigenlua-declared-command SILENT'; st_bad=1; fi
+  # (b2) Every workflow runCmd runs in order and in its own shell.
+  st_reset; st_consumer multi
+  st_workflow multi <<'YAML'
+jobs:
+  first:
+    name: headless job
+    steps:
+      - with:
+          runCmd: export CA_LEAK=bad; cd /; eigenscript first.eigs
+  second:
+    name: gfx job
+    steps:
+      - with:
+          runCmd: test -z "${CA_LEAK:-}" && test "$PWD" = "$CA_EXPECT_PWD" && eigenscript second.eigs
+YAML
+  printf 'multi\n' > "$st_eco/.ca_expected"
+  export CA_EXPECT_PWD="$st_eco/multi"
+  st_rc=0; st_run || st_rc=$?
+  unset CA_EXPECT_PWD
+  if [ "$st_rc" -eq 0 ] && grep -Fq 'row|multi|v0.43.0|PASS|0|' "$st_record" && grep -Fq 'cand_calls=2|cand_ok=2' "$st_record"; then
+    echo 'plant b2 check=multi-job-order-isolation GREEN jobs=2 calls=2'
+  else echo 'plant b2 check=multi-job-order-isolation SILENT'; st_bad=1; fi
+  # (b3) A failing second job turns the row red and is named in its record.
+  st_reset; st_consumer multi_fail
+  st_workflow multi_fail <<'YAML'
+jobs:
+  first:
+    name: passing headless
+    steps:
+      - with:
+          runCmd: eigenscript first.eigs
+  second:
+    name: failing gfx oracle
+    steps:
+      - with:
+          runCmd: eigenscript second.eigs && false
+YAML
+  printf 'multi_fail\n' > "$st_eco/.ca_expected"
+  st_rc=0; st_run || st_rc=$?
+  if [ "$st_rc" -ne 0 ] && grep -Fq 'row|multi_fail|v0.43.0|FAIL|' "$st_record" && grep -Fq 'prereq=job:failing gfx oracle' "$st_record"; then
+    echo 'plant b3 check=second-job-failure RED job=failing-gfx-oracle'
+  else echo 'plant b3 check=second-job-failure SILENT'; st_bad=1; fi
+  # (b4) Multiple non-standard workflow candidates remain ambiguous.
+  st_reset; st_consumer ambiguous
+  mkdir -p "$st_eco/ambiguous/.github/workflows"
+  printf 'jobs:\n  a:\n    name: a\n    runCmd: true\n' > "$st_eco/ambiguous/.github/workflows/a.yml"
+  printf 'jobs:\n  b:\n    name: b\n    runCmd: true\n' > "$st_eco/ambiguous/.github/workflows/b.yml"
+  printf 'ambiguous\n' > "$st_eco/.ca_expected"
+  st_rc=0; CA_ECO="$st_eco" bash "$HERE/tools/consumer_acceptance.sh" plan > "$st_out" 2>&1 || st_rc=$?
+  if [ "$st_rc" -ne 0 ] && grep -Fq 'UNRUNNABLE ambiguous -- UNRUNNABLE:ambiguous-workflow' "$st_out"; then
+    echo 'plant b4 check=ambiguous-workflow RED candidates=2'
+  else echo 'plant b4 check=ambiguous-workflow SILENT'; st_bad=1; fi
   # (c) Exiting zero without calling the candidate is UNEXERCISED.
   st_reset; st_consumer no_call true
   printf 'no_call\n' > "$st_eco/.ca_expected"
@@ -758,6 +864,22 @@ selftest() {
   printf 'hanging\n' > "$st_eco/.ca_expected"
   st_rc=0; st_run || st_rc=$?
   st_check d timeout-hang 'row|hanging|v0.43.0|HANG|124|' "$st_record"
+  # (d1) A declared exception, and only that exception, gets its larger cap.
+  st_reset; st_consumer EigenLua 'sleep 2; eigenscript pass.eigs'
+  printf 'EigenLua\n' > "$st_eco/.ca_expected"
+  st_rc=0; st_run || st_rc=$?
+  if [ "$st_rc" -eq 0 ] && grep -Eq '^row\|EigenLua\|v0[.]43[.]0\|PASS\|0\|[23]\|.*\|row_budget_s=7800\|row_budget_kind=declared$' "$st_record"; then
+    echo 'plant d1 check=declared-row-budget GREEN EigenLua=7800 default=1'
+  else echo 'plant d1 check=declared-row-budget SILENT'; st_bad=1; fi
+  # Do not wait for the real allowance to prove its edge: execute row() with a
+  # private self-test declaration while retaining the same selection path.
+  st_reset; st_consumer EigenLua 'sleep 8; eigenscript late.eigs'
+  printf '1\n' > "$st_eco/EigenLua/.ca_budget"
+  printf 'EigenLua\n' > "$st_eco/.ca_expected"
+  st_rc=0; st_run || st_rc=$?
+  if [ "$st_rc" -ne 0 ] && grep -Eq '^row\|EigenLua\|v0[.]43[.]0\|HANG\|124\|.*\|row_budget_s=1\|row_budget_kind=declared$' "$st_record"; then
+    echo 'plant d2 check=declared-budget-exceeded RED EigenLua=HANG'
+  else echo 'plant d2 check=declared-budget-exceeded SILENT'; st_bad=1; fi
   # (e) A signal must stop the timeout and the consumer's own child.
   st_reset; st_consumer interrupted 'printf "%s\n" "$PPID" > "$CA_TIMEOUT_PID_FILE"; sleep 31 & child=$!; printf "%s\n" "$child" > "$CA_SLEEP_PID_FILE"; wait "$child"'
   printf 'interrupted\n' > "$st_eco/.ca_expected"
@@ -865,6 +987,26 @@ selftest() {
   if [ "$st_rc" -ne 0 ] && grep -Fqx 'record_floor=3' "$st_record" && grep -Fqx 'VERDICT: FAIL' "$st_record"; then
     echo 'plant D check=record-floor-before-replacement RED record_floor=3 VERDICT: FAIL'
   else echo "plant D check=record-floor-before-replacement SILENT rc=$st_rc"; tail -8 "$st_out"; tail -8 "$st_record"; st_bad=1; fi
+  # (D1) A same-path refusal must retain both the old floor and its names.
+  printf 'source|a|pin=v0.43.0\nsource|b|pin=v0.43.0\nsource|c|pin=v0.43.0\ninventory=3\nstatus=COMPLETE\nVERDICT: PASS\n' > "$st_record"
+  st_rc=0
+  CA_ECO="$st_eco" CA_TREE="$st_root" CA_RECORD="$st_record" CA_TIMEOUT=2 timeout 60 bash "$st_root/runner/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 || st_rc=$?
+  local first_rc="$st_rc" first_floor first_c
+  first_floor="$(sed -n 's/^inventory=\([0-9][0-9]*\).*$/\1/p' "$st_record" | tail -1)"
+  first_c="$(grep -c '^inventory_floor_name|c$' "$st_record" 2>/dev/null || true)"
+  st_rc=0
+  CA_ECO="$st_eco" CA_TREE="$st_root" CA_RECORD="$st_record" CA_TIMEOUT=2 timeout 60 bash "$st_root/runner/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 || st_rc=$?
+  local second_rc="$st_rc" second_floor second_missing
+  second_floor="$(sed -n 's/^inventory=\([0-9][0-9]*\).*$/\1/p' "$st_record" | tail -1)"
+  second_missing=0; grep -Fq 'declared consumer absent: c' "$st_record" && second_missing=1
+  : > "$st_eco/.ca_fixture"
+  st_rc=0
+  CA_ECO="$st_eco" CA_TREE="$st_root" CA_RECORD="$st_record" CA_TIMEOUT=2 timeout 60 bash "$HERE/tools/consumer_acceptance.sh" run "$st_candidate" --reset-floor 'inventory deliberately retired for self-test' > "$st_out" 2>&1 || st_rc=$?
+  if [ "$first_rc" -ne 0 ] && [ "$second_rc" -ne 0 ] && [ "$st_rc" -eq 0 ] && [ "${first_floor:-0}" -ge 3 ] &&
+     [ "${second_floor:-0}" -ge 3 ] && [ "$second_missing" -eq 1 ] && [ "$first_c" -gt 0 ] &&
+     grep -Fqx 'floor_reset_reason=inventory deliberately retired for self-test' "$st_record"; then
+    echo 'plant D1 check=same-path-floor-persistence RED runs=2 missing=c floor>=3 reset=GREEN(logged)'
+  else echo "plant D1 check=same-path-floor-persistence SILENT first_rc=$first_rc second_rc=$second_rc reset_rc=$st_rc first_floor=${first_floor:-none}"; tail -12 "$st_out"; tail -12 "$st_record"; st_bad=1; fi
   # (E) A named missing capability is UNRUNNABLE before the command runs.
   st_reset; st_consumer dynamics 'eigenscript smoke.eigs'
   printf 'dynamics\n' > "$st_eco/.ca_expected"
@@ -1123,7 +1265,7 @@ CANDIDATE
     echo 'plant AC check=consumer-commit-provenance GREEN commits=distinct receipts=distinct'
   else echo 'plant AC check=consumer-commit-provenance SILENT'; st_bad=1; fi
   rm -rf "$st_root"
-  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 37/37 plants'; return 0; fi
+  if [ "$st_bad" -eq 0 ]; then echo 'SELF-TEST: PASS -- 39/39 plants'; return 0; fi
   echo 'SELF-TEST: FAIL'; return 1
 }
 
@@ -1134,5 +1276,5 @@ case "${1:-plan}" in
   --check-skips)
     [ "$#" -eq 3 ] || { echo 'usage: consumer_acceptance.sh --check-skips consumer logfile'; exit 2; }
     consumer_skip_check "$2" "$3" ;;
-  *) echo 'usage: consumer_acceptance.sh [plan [--cmd consumer]|run candidate [--server binary] [--server-db binary] [--full binary] [--gfx binary]|--self-test|--check-skips consumer logfile]'; exit 2 ;;
+  *) echo 'usage: consumer_acceptance.sh [plan [--cmd consumer]|run candidate [--server binary] [--server-db binary] [--full binary] [--gfx binary] [--reset-floor reason]|--self-test|--check-skips consumer logfile]'; exit 2 ;;
 esac

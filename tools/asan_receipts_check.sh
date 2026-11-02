@@ -21,6 +21,12 @@ body = st[0]["run"].replace("${{ env.ASAN_SHARDS }}", "3").replace("${{ needs.sc
 assert "${{" not in body, "unsubstituted expression"
 print(body)
 PY
+# The step calls the reviewed-baseline comparator by its repo-relative path
+# (#1725), and the step runs here with cwd "$d": give it the same layout.
+mkdir -p "$d/tools" "$d/tests"
+cp "$ROOT/tools/lsan_baseline_check.sh" "$d/tools/" &&
+cp "$ROOT/tests/lsan_tolerated_reports.txt" "$d/tests/" ||
+    { echo "asan_receipts selftest: INSTRUMENT ERROR, baseline comparator not staged"; exit 2; }
 fail=0 n=0
 case_() {   # case_ NAME WANT_RC WANT_TEXT FAULT BEARING... (shard 1 claims the extras)
     local name=$1 want=$2 text=$3 fault=$4 k=1 b out rc; shift 4

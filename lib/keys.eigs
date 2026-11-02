@@ -1,0 +1,28 @@
+# ============================================================
+# Keyboard key names to printable characters (US layout)
+# ============================================================
+
+_SHIFT_DIGIT is {"1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^", "7": "&", "8": "*", "9": "(", "0": ")"}
+_SHIFT_PUNCT is {"-": "_", "=": "+", "[": "{", "]": "}", "\\": "|", ";": ":", "'": "\"", ",": "<", ".": ">", "/": "?", "`": "~"}
+
+# key_to_char of [key, shift] -> str
+# Return the printable character for a US-layout key event, or "" for a
+# non-character key. Tab follows the established editor convention of 4 spaces.
+define key_to_char(key, shift) as:
+    if key == "space":
+        return " "
+    if key == "tab":
+        return "    "
+    if (len of key) != 1:
+        return ""
+    local code is ord of key
+    if code >= 97 and code <= 122:
+        if shift:
+            return chr of (code - 32)
+        return key
+    if shift:
+        if (has_key of [_SHIFT_DIGIT, key]):
+            return _SHIFT_DIGIT[key]
+        if (has_key of [_SHIFT_PUNCT, key]):
+            return _SHIFT_PUNCT[key]
+    return key

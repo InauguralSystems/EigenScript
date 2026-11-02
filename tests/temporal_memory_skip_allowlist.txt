@@ -1,0 +1,15 @@
+# Reviewed skips of the peak-RSS half of suite section [70d]
+# (tests/test_temporal_memory.sh, the #827 bounded-history gate). hq#58.
+#
+# Format: <key><TAB><reason>. A key with no reason is not allowlisted.
+# A skip whose key is NOT listed here FAILS [70d]. An allowlisted skip is
+# printed and counted in the suite's RESULTS line ("N skipped"), and the
+# section's four #868 window checks still run and assert.
+#
+# Deliberately absent: no-gnu-time. On Linux, GNU time is a declared test
+# dependency (tools/install_release_test_dependencies.sh linux, which the
+# dev/CI image runs), so a Linux box without it is a broken environment, and
+# skipping there is how this gate measured nothing in every container lane.
+# Install the `time` package instead of adding the key here.
+no-procfs	macOS lanes (build-and-test-macos, release dry-run macos-*, nightly macos-intel): no /proc, so VmRSS accounting differs and ulimit -v, the safety belt that turns unbounded retention into a failed test instead of a frozen box, is a no-op. The Linux lanes measure the same code.
+sanitizer	ASan+UBSan builds (asan + ubsan shards, make asan): redzones and quarantine grow peak RSS on their own, raising the floor past the ceiling and manufacturing growth between the two iteration counts. The uninstrumented Linux lanes (linux / gcc, server, zlib, db) measure the same code.

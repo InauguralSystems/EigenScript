@@ -1,0 +1,11 @@
+# Loaded on a worker by loader_mt_loop_iterations.eigs. This must remain a
+# module-level loop: that is the shared-root __loop_iterations__ publication
+# path whose lock is under test.
+worker_count is 0
+loop while worker_count < 20000:
+    worker_count is worker_count + 1
+    if worker_count == 1:
+        send of [loop_worker_entered, worker_count]
+        recv of loop_main_entered
+send of [loop_worker_done, worker_count]
+worker_count

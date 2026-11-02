@@ -1,0 +1,1 @@
+- Fixed tensor `ones`, `normalize`, and `scale` to broadcast scalars without truncating results (#2227).

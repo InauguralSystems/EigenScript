@@ -2,7 +2,7 @@
 # produces an int before R1.3, so this is the only witness of what every slot
 # classifier does with one; tests/phase2/slot_layer.sh also checks that it
 # examined exactly the population tools/phase2_inventory.py derives.
-echo "[0fk] Phase 2 slot layer: every slot classifier against an SMI (#1758)"
+echo "[0fka] Phase 2 slot layer: every slot classifier against an SMI (#1758)"
 TOTAL=$((TOTAL + 1))
 # #1783: an ASan suite binary (asan, or asan-server in the CI shards) runs
 # the slot test under ASan/UBSan; anything else runs the release flavour.

@@ -87,7 +87,7 @@ touched `*.md`). Full detail, and the reasoning, is in [docs/CI.md](docs/CI.md);
 the short version:
 
 - **Your PR** runs the complete suite on gcc, clang, and each extension
-  variant. The HTTP+model ASan build runs the complete suite in shards, with
+  variant. The HTTP+net ASan build runs the complete suite in shards, with
   leak detection on and an aggregator that checks their coverage.
 - **Merging to `main`** reruns the same complete variant matrix in the merge
   queue, then on the main push.

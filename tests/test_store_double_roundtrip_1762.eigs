@@ -1,0 +1,28 @@
+load_file of "lib/test.eigs"
+
+path is "/tmp/eigs1762_double_roundtrip.db"
+if file_exists of path:
+    remove_file of path
+
+db is store_open of path
+values is {"large": 1234567890123456, "max_exact": 9007199254740991, "sum": 0.1 + 0.2, "tiny": -2.5e-300, "huge": 1e300}
+key is store_put of [db, "numbers", values]
+got is store_get of [db, "numbers", key]
+assert_eq of [got.large, values.large, "store_put preserves 1234567890123456 (#1762)"]
+assert_eq of [got.max_exact, values.max_exact, "store_put preserves 2^53-1 (#1762)"]
+assert_eq of [got.sum, values.sum, "store_put preserves 0.1 + 0.2 (#1762)"]
+assert_eq of [got.tiny, values.tiny, "store_put preserves -2.5e-300 (#1762)"]
+assert_eq of [got.huge, values.huge, "store_put preserves 1e300 (#1762)"]
+
+updated is {"large": values.large, "max_exact": values.max_exact, "sum": values.sum, "tiny": values.tiny, "huge": values.huge}
+assert_eq of [store_update of [db, "numbers", key, updated], true, "store_update succeeds (#1762)"]
+got is store_get of [db, "numbers", key]
+assert_eq of [got.large, values.large, "store_update preserves 1234567890123456 (#1762)"]
+assert_eq of [got.max_exact, values.max_exact, "store_update preserves 2^53-1 (#1762)"]
+assert_eq of [got.sum, values.sum, "store_update preserves 0.1 + 0.2 (#1762)"]
+assert_eq of [got.tiny, values.tiny, "store_update preserves -2.5e-300 (#1762)"]
+assert_eq of [got.huge, values.huge, "store_update preserves 1e300 (#1762)"]
+
+store_close of db
+remove_file of path
+test_summary of null

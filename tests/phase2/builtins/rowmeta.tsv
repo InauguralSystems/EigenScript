@@ -49,7 +49,6 @@ buf_scale_range	-	release
 buf_set	-	release
 buf_to_pcm16le	-	release
 buffer	-	release
-build_corpus	-	release
 ceil	-	release
 channel	-	release
 channel_closed	-	release
@@ -65,9 +64,6 @@ db_query_value	-	db
 dispatch	main	release
 divide	-	release
 dot	-	release
-eigen_eval_loss	-	server
-eigen_generate	-	server
-eigen_model_load	-	server
 exec_capture	-	release
 exit	-	release
 exp	-	release
@@ -124,11 +120,9 @@ matmul_bt	-	release
 max	-	release
 mean	-	release
 min	-	release
-model_load_weights	-	server
 monotonic_ms	-	release
 monotonic_ns	-	release
 multiply	-	release
-native_train_step_builtin	-	server
 nearest_in_range	-	release
 nearest_in_range_all	-	release
 negative	-	release

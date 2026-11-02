@@ -179,3 +179,25 @@ The following four rows add a worker diagnostic that the bank incorrectly suppre
 | `tests/task_exit_other_try.eigs` | rc1 and `main done` stdout unchanged; only the previously suppressed worker diagnostic at its actual line4 is added |
 
 For `task_exit_other_try.eigs` specifically, closed #1808 Done-when also states: "The program above prints the worker’s error (message and trace) on stderr." Main `8061e5a0e455f269e6dd0ce9a1185bdd47025f1a` implements it. Both repeated statuses/stdout match, no value, kind, existing line number or numeric rendering changes, and Phase2 has no rule of its own about that worker text. This S10-D3 class record is a one-time corpus observation; it changes no frozen expectation. Exact per-arm evidence is in sync10/analysis/cont5-corpus/second-pass-85rows.json.
+
+## SYNC11-model-retirement — main model/corpus removal stands (2026-11-01)
+
+The sync11 brief explicitly authorizes main #2178 (`6ce48dad`), #2201 and
+#2202: retire the archived model extension and its dependent Phase2 assets;
+never restore model code. This retires the `build_corpus`, `eigen_eval_loss`,
+`eigen_generate`, `eigen_model_load`, `model_load_weights` and
+`native_train_step_builtin` cases (24 files), their table/case/rowmeta rows,
+and the model arm of the server profile witness. The six frozen `.branch`
+retirements are `DELETED` amendments in `../builtins_changes.md`, each with
+its prior accepted bank SHA-256. Surviving numeric rules and frozen bytes
+remain unchanged. Current counts: 303 builtin rows, 304 cases; rounds b 46,
+c 75, d 48, e 38, f 19, g 77; profiles release 283, server 16, db 3, zlib 1.
+
+A sweep of the current plant definitions finds no plant dependent on a
+retired model/corpus case, so this retirement deletes no plant. The 67 active N6
+re-render rows name none of these cases. Its existing narrow retirement protocol
+now also records exactly these six absent source/branch pairs with immutable
+accepted-bank anchor `5b3b64db40cdd50c42c8ad3e9c913bb5d36a9e1a`, per-path hashes
+and the matching `DELETED` amendments. Earlier S10-D2 entries and all surviving
+kind/float provenance stay unchanged. The remaining profile
+witness checks HTTP and NET; their capability guards remain required.

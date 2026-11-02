@@ -33,8 +33,7 @@ bugs in the interpreter itself and from malicious **external** input.
 
 In-scope security issues:
 - Buffer overflows or memory corruption in the C runtime, triggerable by
-  attacker-controlled input (malformed source, crafted HTTP requests, malicious
-  model files, etc.).
+  attacker-controlled input (malformed source, crafted HTTP requests, etc.).
 - Command injection where untrusted data reaches a shell via a runtime
   builtin. (`exec_capture` uses `execvp` with an argv list and does not invoke
   a shell; injection there would be a bug.)

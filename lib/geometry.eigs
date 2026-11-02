@@ -23,6 +23,7 @@
 
 _PI is 3.14159265358979323846
 _EPS is 1e-12
+_FLOAT_EPS is 2.220446049250313e-16
 
 # ============================================================
 # 2D Point Operations
@@ -32,8 +33,8 @@ define point2(x, y) as:
     return [x, y]
 
 define distance2d(a, b) as:
-    dx is b[0] - a[0]
-    dy is b[1] - a[1]
+    dx is b[0] * 1.0 - a[0]
+    dy is b[1] * 1.0 - a[1]
     return sqrt of (dx * dx + dy * dy)
 
 define midpoint2d(a, b) as:
@@ -162,12 +163,19 @@ define segment_length(p1, p2) as:
 # Geometric Predicates
 # ============================================================
 
-# Returns: 1 = counter-clockwise, -1 = clockwise, 0 = collinear
+# Returns: 1 = counter-clockwise, -1 = clockwise, 0 = exactly collinear.
+# The cross product's sign is tested exactly so the result is independent of
+# the coordinate units; an absolute epsilon is invalid because it scales as
+# distance squared.
 define orientation(p, q, r) as:
-    val is (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
-    if val > _EPS:
+    local pqx is q[0] * 1.0 - p[0]
+    local pqy is q[1] * 1.0 - p[1]
+    local prx is r[0] * 1.0 - p[0]
+    local pry is r[1] * 1.0 - p[1]
+    local val is pqx * pry - pqy * prx
+    if val > 0:
         return 1
-    if val < (0 - _EPS):
+    if val < 0:
         return -1
     return 0
 
@@ -201,10 +209,10 @@ define segments_intersect(a1, a2, b1, b2) as:
     o2 is orientation of [a1, a2, b2]
     o3 is orientation of [b1, b2, a1]
     o4 is orientation of [b1, b2, a2]
-    # General case
-    if o1 != o2 and o3 != o4:
+    # A proper crossing needs four non-collinear orientations.  Exact
+    # collinearity is handled by the bounded special cases below.
+    if o1 != 0 and o2 != 0 and o3 != 0 and o4 != 0 and o1 != o2 and o3 != o4:
         return true
-    # Collinear special cases
     if o1 == 0 and (on_segment of [a1, b1, a2]):
         return true
     if o2 == 0 and (on_segment of [a1, b2, a2]):
@@ -218,16 +226,25 @@ define segments_intersect(a1, a2, b1, b2) as:
 # Find intersection point of two lines (defined by point pairs)
 # Returns point or null if parallel
 define line_intersection(a1, a2, b1, b2) as:
-    x1 is a1[0]
-    y1 is a1[1]
-    x2 is a2[0]
-    y2 is a2[1]
-    x3 is b1[0]
-    y3 is b1[1]
-    x4 is b2[0]
-    y4 is b2[1]
-    denom is (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
-    if denom < _EPS and denom > (0 - _EPS):
+    x1 is a1[0] * 1.0
+    y1 is a1[1] * 1.0
+    x2 is a2[0] * 1.0
+    y2 is a2[1] * 1.0
+    x3 is b1[0] * 1.0
+    y3 is b1[1] * 1.0
+    x4 is b2[0] * 1.0
+    y4 is b2[1] * 1.0
+    adx is x2 - x1
+    ady is y2 - y1
+    bdx is x4 - x3
+    bdy is y4 - y3
+    denom is adx * bdy - ady * bdx
+    abs_denom is denom
+    if abs_denom < 0:
+        abs_denom is 0 - abs_denom
+    a_len is sqrt of (adx * adx + ady * ady)
+    b_len is sqrt of (bdx * bdx + bdy * bdy)
+    if abs_denom <= _EPS * a_len * b_len:
         return null
     t is ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
     px is x1 + t * (x2 - x1)
@@ -240,10 +257,10 @@ define line_intersection(a1, a2, b1, b2) as:
 
 # Area via cross product: 0.5 * |AB x AC|
 define triangle_area(a, b, c) as:
-    abx is b[0] - a[0]
-    aby is b[1] - a[1]
-    acx is c[0] - a[0]
-    acy is c[1] - a[1]
+    abx is b[0] * 1.0 - a[0]
+    aby is b[1] * 1.0 - a[1]
+    acx is c[0] * 1.0 - a[0]
+    acy is c[1] * 1.0 - a[1]
     cross is abx * acy - aby * acx
     if cross < 0:
         cross is 0 - cross
@@ -255,18 +272,45 @@ define triangle_centroid(a, b, c) as:
 
 # Center of circumscribed circle
 define triangle_circumcenter(a, b, c) as:
-    ax is a[0]
-    ay is a[1]
-    bx is b[0]
-    by is b[1]
-    cx is c[0]
-    cy is c[1]
-    d is 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
-    if d < _EPS and d > (0 - _EPS):
+    # Pick the vertex with the smallest incident edge product, breaking ties
+    # by coordinates, so every vertex order uses the same arithmetic path.
+    local ab is distance2d of [a, b]
+    local bc is distance2d of [b, c]
+    local ca is distance2d of [c, a]
+    local p is a
+    local q is b
+    local r is c
+    local scale is ab * ca
+    if ab * bc < scale or (ab * bc == scale and (b[0] < p[0] or (b[0] == p[0] and b[1] < p[1]))):
+        p is b
+        q is c
+        r is a
+        scale is ab * bc
+    if bc * ca < scale or (bc * ca == scale and (c[0] < p[0] or (c[0] == p[0] and c[1] < p[1]))):
+        p is c
+        q is a
+        r is b
+        scale is bc * ca
+    if q[0] > r[0] or (q[0] == r[0] and q[1] > r[1]):
+        local swap is q
+        q is r
+        r is swap
+    local abx is q[0] * 1.0 - p[0]
+    local aby is q[1] * 1.0 - p[1]
+    local acx is r[0] * 1.0 - p[0]
+    local acy is r[1] * 1.0 - p[1]
+    local cross is abx * acy - aby * acx
+    local abs_cross is cross
+    if abs_cross < 0:
+        abs_cross is 0 - abs_cross
+    if abs_cross <= _EPS * scale:
         return null
-    ux is ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d
-    uy is ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d
-    return [ux, uy]
+    local d is 2 * cross
+    local ab_sq is abx * abx + aby * aby
+    local ac_sq is acx * acx + acy * acy
+    local ux is (ab_sq * acy - ac_sq * aby) / d
+    local uy is (abx * ac_sq - acx * ab_sq) / d
+    return [p[0] + ux, p[1] + uy]
 
 # Center of inscribed circle
 define triangle_incenter(a, b, c) as:
@@ -280,31 +324,33 @@ define triangle_incenter(a, b, c) as:
     iy is (side_a * a[1] + side_b * b[1] + side_c * c[1]) / perimeter
     return [ix, iy]
 
-# Is point inside triangle? (barycentric coordinates method)
+# Is point inside a non-degenerate triangle? Points on the boundary are inside.
 define point_in_triangle(p, a, b, c) as:
-    bc is barycentric_coords of [p, a, b, c]
-    u is bc[0]
-    v is bc[1]
-    w is bc[2]
-    if u >= 0 and v >= 0 and w >= 0:
-        return true
-    return false
+    local winding is orientation of [a, b, c]
+    if winding == 0:
+        return false
+    local ab_sign is orientation of [a, b, p]
+    local bc_sign is orientation of [b, c, p]
+    local ca_sign is orientation of [c, a, p]
+    if winding > 0:
+        return ab_sign >= 0 and bc_sign >= 0 and ca_sign >= 0
+    return ab_sign <= 0 and bc_sign <= 0 and ca_sign <= 0
 
 # Returns [u, v, w] barycentric coordinates
 define barycentric_coords(p, a, b, c) as:
-    v0x is c[0] - a[0]
-    v0y is c[1] - a[1]
-    v1x is b[0] - a[0]
-    v1y is b[1] - a[1]
-    v2x is p[0] - a[0]
-    v2y is p[1] - a[1]
+    v0x is c[0] * 1.0 - a[0]
+    v0y is c[1] * 1.0 - a[1]
+    v1x is b[0] * 1.0 - a[0]
+    v1y is b[1] * 1.0 - a[1]
+    v2x is p[0] * 1.0 - a[0]
+    v2y is p[1] * 1.0 - a[1]
     dot00 is v0x * v0x + v0y * v0y
     dot01 is v0x * v1x + v0y * v1y
     dot02 is v0x * v2x + v0y * v2y
     dot11 is v1x * v1x + v1y * v1y
     dot12 is v1x * v2x + v1y * v2y
     inv_denom is dot00 * dot11 - dot01 * dot01
-    if inv_denom < _EPS and inv_denom > (0 - _EPS):
+    if inv_denom == 0:
         return [0, 0, 0]
     inv_denom is 1.0 / inv_denom
     u is (dot11 * dot02 - dot01 * dot12) * inv_denom
@@ -318,7 +364,15 @@ define triangle_circumradius(a, b, c) as:
     side_b is distance2d of [a, c]
     side_c is distance2d of [a, b]
     area is triangle_area of [a, b, c]
-    if area < _EPS:
+    scale is side_a * side_b
+    candidate is side_b * side_c
+    if candidate < scale:
+        scale is candidate
+    candidate is side_c * side_a
+    if candidate < scale:
+        scale is candidate
+    cross is 2 * area
+    if cross <= _EPS * scale:
         return 0
     return (side_a * side_b * side_c) / (4 * area)
 
@@ -339,21 +393,84 @@ define triangle_inradius(a, b, c) as:
 
 # Signed area via shoelace formula
 # Positive = counter-clockwise, negative = clockwise
+# Error-free product (Dekker): returns [p, e] with p + e == a * b exactly.
+define _two_product(a, b) as:
+    # Dekker splitting is a binary64 algorithm, including for int coordinates.
+    a is a * 1.0
+    b is b * 1.0
+    local p is a * b
+    local ca is 134217729 * a
+    local ah is ca - (ca - a)
+    local al is a - ah
+    local cb is 134217729 * b
+    local bh is cb - (cb - b)
+    local bl is b - bh
+    local e is ((ah * bh - p) + ah * bl + al * bh) + al * bl
+    return [p, e]
+
+# Signed area by the shoelace formula, evaluated exactly with error-free
+# products and a Shewchuk expansion sum, so the sign is exact and the value is
+# within about one rounding unit of the true area (no translation or tolerance heuristics;
+# #2296/#2297). Outside Dekker's exact range main's plain sum is used.
 define polygon_area(vertices) as:
+    local n is len of vertices
+    if n == 0:
+        return 0
+    # Dekker's products are exact only while every product and partial product
+    # stays finite and normal: |coordinate| in [1e-140, 1e150] (or exactly 0).
+    # Outside that range (or non-finite), use main's plain sum unchanged.
+    for v in vertices:
+        for c in v:
+            local m is abs of (c * 1.0)
+            if c != c or m > 1e150 or (m != 0 and m < 1e-140):
+                return _polygon_area_raw of vertices
+    # Shewchuk expansion: the running sum is kept exactly as a list of
+    # non-overlapping components (TwoSum never drops an error term), so the
+    # final rounding of the exact area is the only rounding.
+    local expansion is []
+    local j is n - 1
+    for i in range of n:
+        local left is _two_product of [vertices[j][0], vertices[i][1]]
+        local right is _two_product of [vertices[i][0], vertices[j][1]]
+        for term in [left[1], 0 - right[1], left[0], 0 - right[0]]:
+            local q is term
+            local kept is []
+            for h in expansion:
+                local s is q + h
+                local bv is s - q
+                local err is (q - (s - bv)) + (h - bv)
+                if err != 0:
+                    append of [kept, err]
+                q is s
+            if q != 0:
+                append of [kept, q]
+            expansion is kept
+        j is i
+    # Components are non-overlapping and increasing in magnitude; summing from
+    # the smallest gives the area to within about one rounding unit, with the
+    # exact sign.
+    local total is 0.0
+    for c in expansion:
+        total is total + c
+    return total / 2
+
+# main's raw shoelace area: polygon_centroid's moments are raw, so its
+# denominator must be too (#2297 review).
+define _polygon_area_raw(vertices) as:
     n is len of vertices
     area is 0
     j is n - 1
     for i in range of n:
-        area is area + (vertices[j][0] * vertices[i][1]) - (vertices[i][0] * vertices[j][1])
+        area is area + (vertices[j][0] * 1.0 * vertices[i][1]) - (vertices[i][0] * 1.0 * vertices[j][1])
         j is i
     return area / 2
 
 # Centroid of simple polygon
 define polygon_centroid(vertices) as:
     n is len of vertices
-    cx is 0
-    cy is 0
-    a is polygon_area of vertices
+    cx is 0.0
+    cy is 0.0
+    a is _polygon_area_raw of vertices
     if a < _EPS and a > (0 - _EPS):
         # Degenerate: average vertices
         for i in range of n:
@@ -362,9 +479,9 @@ define polygon_centroid(vertices) as:
         return [cx / n, cy / n]
     j is n - 1
     for i in range of n:
-        cross is vertices[j][0] * vertices[i][1] - vertices[i][0] * vertices[j][1]
-        cx is cx + (vertices[j][0] + vertices[i][0]) * cross
-        cy is cy + (vertices[j][1] + vertices[i][1]) * cross
+        cross is vertices[j][0] * 1.0 * vertices[i][1] - vertices[i][0] * 1.0 * vertices[j][1]
+        cx is cx + (vertices[j][0] * 1.0 + vertices[i][0]) * cross
+        cy is cy + (vertices[j][1] * 1.0 + vertices[i][1]) * cross
         j is i
     factor is 1.0 / (6 * a)
     return [cx * factor, cy * factor]
@@ -422,7 +539,7 @@ define polygon_is_convex(vertices) as:
 
 # Check winding order via signed area
 define polygon_is_clockwise(vertices) as:
-    a is polygon_area of vertices
+    local a is polygon_area of vertices
     if a < 0:
         return true
     return false

@@ -32,14 +32,29 @@ jobs:
 
       - name: Determine release tag
         id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VER="${{ inputs.version }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            VER="$VERSION_INPUT"
             [ -z "$VER" ] && VER="$(cat VERSION)"
+            if [[ ! "$VER" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::release version must match ^v?[0-9]+\.[0-9]+\.[0-9]+$"
+              exit 1
+            fi
             echo "tag=v${VER#v}" >> "$GITHUB_OUTPUT"
           else
             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Require commit on main
+        env:
+          RELEASE_EVENT_NAME: ${{ github.event_name }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: sh tools/release_main_guard.sh
 
       # Every release first reviews docs and config since the previous release
       # (docs/release-reviews/README.md). No record, no tag. Read the tag from
@@ -47,18 +62,13 @@ jobs:
       - name: Require the release legibility review record
         env:
           TAG: ${{ steps.tag.outputs.tag }}
-        run: |
-          set -eu
-          rec="docs/release-reviews/$TAG.md"
-          [ -f "$rec" ] || { echo "::error::$rec is missing: every release commits its documentation and configuration review first (docs/release-reviews/README.md)."; exit 1; }
-          grep -q '^Range: ' "$rec" || { echo "::error::$rec has no 'Range: <previous-tag>..<candidate>' line"; exit 1; }
-          grep -q '^Verdict: ' "$rec" || { echo "::error::$rec has no 'Verdict:' line"; exit 1; }
-          echo "release review: $rec ($(grep '^Verdict: ' "$rec" | head -1))"
+        run: sh tools/release_review_guard.sh
 
       - name: Create tag (dispatch only, idempotent)
         if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           if git ls-remote --exit-code origin "refs/tags/$TAG" >/dev/null 2>&1; then
@@ -69,7 +79,7 @@ jobs:
           fi
 
   # One leg per released platform. Linux additionally ships the `full`
-  # variant (http+model+db); macOS ships the minimal build only — the
+  # variant (http+net+gfx+db); macOS ships the minimal build only — the
   # arm64 binary is interpreter-only until the ARM64 JIT exists. Every
   # leg runs the entire suite against the exact binary it uploads.
   # macos-15-intel is GitHub's hosted Intel runner (the macos-13
@@ -138,7 +148,9 @@ jobs:
           subject-path: 'eigenscript-*'
 
       - name: Stage attestation bundle for release
-        run: cp "${{ steps.attest.outputs.bundle-path }}" attestation.sigstore.json
+        env:
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: cp "$BUNDLE_PATH" attestation.sigstore.json
 
       - name: Upload binaries to release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3

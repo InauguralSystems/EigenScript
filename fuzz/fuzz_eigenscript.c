@@ -13,45 +13,76 @@
  * OSS-Fuzz uses this entry point with $LIB_FUZZING_ENGINE substituted
  * for libFuzzer's main(). See projects/eigenscript/build.sh in the
  * OSS-Fuzz repo.
+ *
+ * `make fuzz` links this same file under fuzz/fuzz_stdin.c, a one-input
+ * stdin driver built with gcc, and the CI fuzz smoke runs that (#1734).
  */
 
 #include "../src/eigenscript.h"
 #include "../src/state.h"
 #include "../src/vm.h"
+#include "../src/trace.h"
 #include <fcntl.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-/* The state, thread and builtin table are created once and live for the
- * process lifetime (libFuzzer never exits cleanly between inputs, so there
- * is no teardown). LeakSanitizer must not count them: measured 2026-09-16
- * on a clean build, LSan reported the SAME 27,501 bytes / 282 allocations
- * (every stack = make_builtin <- register_builtins <- here) after 10 inputs
- * and after 10 seconds — a constant, not growth — and libFuzzer stops at the
- * first report, so the fuzzer never got past its seed corpus. Allocations
- * made while LSan is disabled are ignored forever; per-input allocations
- * (made with it re-enabled) are still checked, which is the leak class a
- * fuzzer exists to find. */
-#if defined(__has_feature)
+/* The state and thread are created once and live for the process lifetime.
+ * Each input gets a new global/builtin environment: a top-level assignment
+ * resolves outward from its evaluation environment, so sharing the root
+ * would let any root name rebound by one input contaminate later inputs
+ * (#2094). LeakSanitizer must not count the process-lifetime state.
+ * Allocations made while LSan is disabled are ignored forever; the global
+ * environments and all other per-input allocations are made after it is
+ * re-enabled and remain checked, which is the leak class a fuzzer exists to
+ * find. gcc (the `make fuzz` driver) names ASan with
+ * __SANITIZE_ADDRESS__, clang with __has_feature; either must reach the
+ * disable, or every input reports the builtin table (#1734). */
+#if defined(__SANITIZE_ADDRESS__)
+#  define FUZZ_HAVE_LSAN 1
+#elif defined(__has_feature)
 #  if __has_feature(address_sanitizer)
-#    include <sanitizer/lsan_interface.h>
-#    define FUZZ_LSAN_DISABLE() __lsan_disable()
-#    define FUZZ_LSAN_ENABLE()  __lsan_enable()
+#    define FUZZ_HAVE_LSAN 1
 #  endif
 #endif
-#ifndef FUZZ_LSAN_DISABLE
+#ifdef FUZZ_HAVE_LSAN
+#  include <sanitizer/lsan_interface.h>
+#  define FUZZ_LSAN_DISABLE() __lsan_disable()
+#  define FUZZ_LSAN_ENABLE()  __lsan_enable()
+#else
 #  define FUZZ_LSAN_DISABLE() ((void)0)
 #  define FUZZ_LSAN_ENABLE()  ((void)0)
 #endif
+
+/* #1734 positive control for the CI smoke. `fuzz/run_fuzz.sh --plant-leak`
+ * sets EIGS_FUZZ_LEAK_PLANT, and only then is this builtin bound. It allocates
+ * a dict and drops the only pointer to it: a real per-input leak, which
+ * LeakSanitizer must still report after the per-input teardown, from a stack
+ * where make_dict is called by fuzz_leak_plant. A fuzzing run never binds it,
+ * so no mutated input can reach it. */
+static Value *fuzz_leak_plant(Value *arg) {
+    (void)arg;
+    (void)make_dict(4);
+    return make_null();
+}
+
+/* #2097 positive control for the fuzz smoke's UBSan read-back. Volatile keeps
+ * the recoverable signed overflow in the instrumented runtime. Like the leak
+ * plant, this builtin is absent unless the dedicated plant switch is set. */
+static Value *fuzz_ubsan_plant(Value *arg) {
+    volatile int value = INT_MAX;
+    (void)arg;
+    value += 1;
+    return make_num((double)value);
+}
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
     (void)argc; (void)argv;
     srand(0);
     FUZZ_LSAN_DISABLE();
     eigs_thread_attach(eigs_state_new());
-    eigs_global_env_create();   /* + builtin layer (#1388) */
     FUZZ_LSAN_ENABLE();
 
     /* libFuzzer itself writes stats to stderr, so let it through.
@@ -85,12 +116,35 @@ static void fuzz_check_invariants(void) {
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+    /* Match the embedding boundary: an input is a new top-level evaluation,
+     * not a continuation of the previous input's exit scope (#2095). */
+    g_exit_requested = 0;
+    eigs_state_begin_eval(eigs_current_state());
     if (size == 0 || size > 65536) return 0;
+
+    /* gc_collect_at_exit disables admission while it dismantles the prior
+     * root. A libFuzzer process has another runtime lifetime on every input,
+     * so re-arm through the collector API before that lifetime creates any
+     * environments or containers. */
+    gc_begin_runtime_lifetime();
 
     char *source = (char *)malloc(size + 1);
     if (!source) return 0;
     memcpy(source, data, size);
     source[size] = '\0';
+
+    /* The whole root is per-input rather than a saved list of builtin slots.
+     * Besides avoiding a hand-maintained population, this isolates EVERY
+     * root binding (including runtime-registered host/extension names).
+     * gc_collect_at_exit clears the root and builtin layer, releasing a value
+     * which replaced a NaN-boxed slot before LSan performs its leak check. */
+    Env *global = eigs_global_env_create();   /* + builtin layer (#1388) */
+    if (getenv("EIGS_FUZZ_LEAK_PLANT"))
+        env_set_local_owned(global, "fuzz_leak_plant",
+                            make_builtin(fuzz_leak_plant));
+    if (getenv("EIGS_FUZZ_UBSAN_PLANT"))
+        env_set_local_owned(global, "fuzz_ubsan_plant",
+                            make_builtin(fuzz_ubsan_plant));
 
     /* Reset per-invocation state. libFuzzer reuses the process across
      * inputs, so any flag a prior input toggled must be cleared here. */
@@ -121,7 +175,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         if (g_parse_errors == 0 && ast) {
             /* Execute in a fresh child env so global bindings from one
              * input don't shadow builtins on the next. */
-            Env *eval_env = env_new(g_global_env);
+            Env *eval_env = env_new(global);
             EigsChunk *chunk = compile_ast(ast, eval_env, source, "<fuzz>");
             if (chunk) {
                 Value *result = vm_execute(chunk, eval_env);
@@ -129,30 +183,25 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 chunk_free(chunk);
             }
             env_decref(eval_env);
-            /* A fuzz input can spawn workers that outlive vm_execute(). Join
-             * them before touching the unguarded module cache, and restore
-             * single-threaded mode so the cycle collector can run. */
-            handle_table_drain(eigs_current_state());
-            /* The process stays attached across inputs, unlike the CLI.  Drop
-             * the cooperative scheduler here just as thread detach would;
-             * otherwise its current task id can refer to a task the handle
-             * drain above has reclaimed. */
-            task_sched_thread_free();
-            /* The CLI frees env<->closure CYCLES only at exit
-             * (gc_collect_at_exit in main.c); a fuzzer never exits, so
-             * without a per-input collection every input that builds a
-             * closure leaves one cycle behind and LeakSanitizer stops the
-             * run on the first such input (measured 2026-09-16: 8,709 B /
-             * 21 allocations for `f is (x) => x * 2`, rooted at vm_run).
-             * Collect after each input; a module the input imported is
-             * dropped too so a pinned module env cannot mask a leak. */
-            eigs_module_cache_clear();
-            gc_collect_cycles();
         }
         if (ast) free_ast(ast);
     }
     free_tokenlist(&tl);
     free(source);
+    /* An uncaught `throw` owns its payload until the top-level evaluator
+     * consumes or clears it.  This process has no CLI teardown between
+     * inputs, so perform that teardown explicitly. */
+    eigs_clear_error_value();
+    /* Join workers before touching unguarded caches. Release temporal history
+     * and the scheduler, then perform the CLI's exit collection for this
+     * input's root. This also handles parse/compiler error paths. */
+    handle_table_drain(eigs_current_state());
+    trace_thread_release();
+    task_sched_thread_free();
+    eigs_module_cache_clear();
+    gc_collect_at_exit(global);
+    env_decref(global);
+    g_global_env = NULL;
     fuzz_check_invariants();
     return 0;
 }

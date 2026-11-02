@@ -15,6 +15,7 @@
 #   normalize of tensor                     # Zero-mean, unit-variance
 #   clip of [tensor, lo, hi]               # Clamp elements
 #   l2_norm of tensor                       # L2 norm
+#   scale of [tensor, scalar]               # Scalar multiplication
 
 # ---- xavier_init: Xavier/Glorot initialization ----
 # xavier_init of [rows, cols] -> tensor
@@ -32,7 +33,7 @@ define he_init(rows, cols) as:
 # ones of [rows, cols] -> tensor
 define ones(rows, cols) as:
     z is zeros of [rows, cols]
-    return add of [z, [1.0]]
+    return add of [z, 1.0]
 
 # ---- linear: affine transform y = x @ W + b ----
 # linear of [input, weights, bias] -> tensor
@@ -81,11 +82,11 @@ define accuracy(logits_list, labels) as:
 # normalize of tensor -> tensor
 define normalize(t) as:
     m is mean of t
-    centered is subtract of [t, [m]]
+    centered is subtract of [t, m]
     sq is multiply of [centered, centered]
     variance is mean of sq
     std is sqrt of (variance + 0.00001)
-    return divide of [centered, [std]]
+    return divide of [centered, std]
 
 # ---- clip: clamp elements to [lo, hi] ----
 # clip of [tensor, lo, hi] -> tensor
@@ -124,4 +125,4 @@ define l2_norm(t) as:
 # ---- scale: multiply tensor by scalar ----
 # scale of [tensor, scalar] -> tensor
 define scale(t, s) as:
-    return multiply of [t, [s]]
+    return multiply of [t, s]

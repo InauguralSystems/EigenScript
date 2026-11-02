@@ -26,11 +26,27 @@ define make_back_edge() as:
     append of [head, node]       # head -> node -> head
     return null
 
+# #1725: exercise every heap container overwrite family in this strict-LSan
+# section too; heap strings ensure a missing old-slot decref is observable.
+define churn_container_stores(i) as:
+    a is ["store-" + (str of i), "store-" + (str of i), "store-" + (str of i)]
+    a[0] is "store-" + (str of i)
+    set_at of [a, 1, "store-" + (str of i)]
+    copy_into of [a, 2, ["store-" + (str of i)]]
+    list_insert_at of [a, 1, "store-" + (str of i)]
+    list_remove_at of [a, 1]
+    d is {"field": "store-" + (str of i), "key": "store-" + (str of i), "gone": "store-" + (str of i)}
+    d.field is "store-" + (str of i)
+    dict_set of [d, "key", "store-" + (str of i)]
+    dict_remove of [d, "gone"]
+    return null
+
 i is 0
 loop while i < 3000:
     make_self_list of []
     make_mutual_dicts of []
     make_back_edge of []
+    churn_container_stores of i
     i is i + 1
 
 # A live cycle must SURVIVE (not be wrongly freed mid-run): build one, keep it

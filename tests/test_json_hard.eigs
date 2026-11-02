@@ -46,7 +46,7 @@ assert of [len of empty_a == 0, "JH18 empty array length 0"]
 bools is json_decode of "{\"t\": true, \"f\": false, \"n\": null}"
 assert of [bools.t == true, "JH19 true decodes to the bool true (#1637)"]
 assert of [bools.f == false, "JH20 false decodes to the bool false (#1637)"]
-assert of [type of bools.n == "none", "JH21 null decodes to none"]
+assert of [type of bools.n == "null", "JH21 null decodes to none"]
 
 # --- Unicode escape \uXXXX ---
 esc is json_decode of "{\"amp\": \"a \\u0026 b\"}"

@@ -63,7 +63,6 @@ int eigs_lint_is_builtin_name(const char *name) {
         EIGS_HTTP_BUILTINS(X)
         EIGS_HTTP_REQUEST_BUILTINS(X)
         EIGS_DB_BUILTINS(X)
-        EIGS_MODEL_BUILTINS(X)
         EIGS_NET_BUILTINS(X)
 #undef X
         if (!env_get(e, "report_value"))
@@ -263,9 +262,9 @@ static void w021_build(const char *base) {
  *   - "builtins": the compiled-in core registry, enumerated from a scratch
  *     register_builtins env — never a hand list (#459: the old hand-copied
  *     array drifted ~120 names behind the binary);
- *   - "extensions": the ext_names.h surface BY GROUP (gfx/http/db/model/
- *     net) — the surface of the LANGUAGE, independent of this binary's
- *     build flags (a name here may need `make http`/`make gfx`);
+ *   - "extensions": the ext_names.h surface BY GROUP (gfx/http/db/net) —
+ *     the surface of the LANGUAGE, independent of this binary's build
+ *     flags (a name here may need `make http`/`make gfx`);
  *   - "lib": every public top-level define of each stdlib module WITH its
  *     parameter list as written (defaults included), scraped from the same
  *     directories the import resolver searches, first module wins.
@@ -375,7 +374,6 @@ static int api_is_ext_name(const char *nm) {
     EIGS_HTTP_BUILTINS(API_ISX)
     EIGS_HTTP_REQUEST_BUILTINS(API_ISX)
     EIGS_DB_BUILTINS(API_ISX)
-    EIGS_MODEL_BUILTINS(API_ISX)
     EIGS_NET_BUILTINS(API_ISX)
 #undef API_ISX
     return 0;
@@ -415,7 +413,7 @@ int eigs_api_dump(FILE *out, int json) {
     }
 
     if (json) {
-        fprintf(out, "{\"version\": \"%s\",\n \"builtins\": [",
+        fprintf(out, "{\"version\": \"%s\",\n \"type_labels\": {\"null\": \"null\"},\n \"builtins\": [",
                 EIGENSCRIPT_VERSION);
         int b_first = 1;
         for (int i = 0; i < core->count; i++) {
@@ -442,7 +440,6 @@ int eigs_api_dump(FILE *out, int json) {
         API_GROUP("http",  EIGS_HTTP_BUILTINS);
         API_GROUP("http_request", EIGS_HTTP_REQUEST_BUILTINS);
         API_GROUP("db",    EIGS_DB_BUILTINS);
-        API_GROUP("model", EIGS_MODEL_BUILTINS);
         API_GROUP("net",   EIGS_NET_BUILTINS);
 #undef API_X
 #undef API_GROUP
@@ -458,6 +455,7 @@ int eigs_api_dump(FILE *out, int json) {
         }
         fprintf(out, "\n]}\n");
     } else {
+        fprintf(out, "type-label null null\n");
         for (int i = 0; i < core->count; i++)
             if (!api_skip_core_name(core->names[i]))
                 fprintf(out, "builtin %s\n", core->names[i]);
@@ -472,7 +470,6 @@ int eigs_api_dump(FILE *out, int json) {
         API_GROUP("http",  EIGS_HTTP_BUILTINS);
         API_GROUP("http_request", EIGS_HTTP_REQUEST_BUILTINS);
         API_GROUP("db",    EIGS_DB_BUILTINS);
-        API_GROUP("model", EIGS_MODEL_BUILTINS);
         API_GROUP("net",   EIGS_NET_BUILTINS);
 #undef API_GROUP
 #undef API_X
@@ -1125,7 +1122,6 @@ void eigs_lint_check_undefined_names(ASTNode *ast, const char *path,
     EIGS_HTTP_BUILTINS(X)
     EIGS_HTTP_REQUEST_BUILTINS(X)
     EIGS_DB_BUILTINS(X)
-    EIGS_MODEL_BUILTINS(X)
     EIGS_NET_BUILTINS(X)
 #undef X
     /* Names the compiler resolves itself, so no registrar ever binds them:

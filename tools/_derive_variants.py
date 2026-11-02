@@ -690,18 +690,12 @@ def scan_yaml_path_edits(text, edits, path):
     if here not in sys.path:
         sys.path.insert(0, here)
     try:
-        from _extract_runcmd import extract
+        from _extract_runcmd import extract_all
     except Exception:
         return
-    cmd = extract(text)
-    if not cmd:
-        return
-    lineno = 1
-    for i, line in enumerate(text.split("\n")):
-        if "runCmd" in line:
-            lineno = i + 1
-            break
-    scan_path_edits(cmd, edits, path, line_offset=lineno - 1)
+    for pos, cmd in extract_all(text):
+        lineno = text.count("\n", 0, pos) + 1
+        scan_path_edits(cmd, edits, path, line_offset=lineno - 1)
 
 
 def scan_python(text, hits, path):
@@ -779,18 +773,12 @@ def scan_yaml(text, hits, path):
     if here not in sys.path:
         sys.path.insert(0, here)
     try:
-        from _extract_runcmd import extract
+        from _extract_runcmd import extract_all
     except Exception:
         return
-    cmd = extract(text)
-    if not cmd:
-        return
-    lineno = 1
-    for i, line in enumerate(text.split("\n")):
-        if "runCmd" in line:
-            lineno = i + 1
-            break
-    scan_shell(cmd, hits, path, line_offset=lineno - 1)
+    for pos, cmd in extract_all(text):
+        lineno = text.count("\n", 0, pos) + 1
+        scan_shell(cmd, hits, path, line_offset=lineno - 1)
 
 
 def kind_of(path, head):
@@ -1016,6 +1004,17 @@ def selftest():
             "          push: never\n"
             "          image: ghcr.io/x/eigenscript-image\n"
         )}, {"eigenscript-y1"}),
+        ("yaml-every-runcmd", {".github/workflows/ci.yml": (
+            "jobs:\n"
+            "  first:\n"
+            "    steps:\n"
+            "      - with:\n"
+            "          runCmd: eigenscript work.eigs\n"
+            "  second:\n"
+            "    steps:\n"
+            "      - with:\n"
+            "          runCmd: eigenscript-custom work.eigs\n"
+        )}, {"eigenscript", "eigenscript-custom"}),
         # --- PATH EDITS (round 5, Fable r4 check 3). The name set is empty
         # for most of these on purpose: a PATH edit is a finding of its own.
         ("path-edit-absolute", {"run.sh":

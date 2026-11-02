@@ -1,1 +1,0 @@
-- The Lean reference runtime now closes adversarial parity gaps in locals, error prefixes, assignment counts, comparisons, strings, and numeric-domain refusals (#2018).

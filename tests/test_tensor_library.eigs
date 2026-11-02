@@ -1,0 +1,19 @@
+# Regression coverage for every function documented by lib/tensor.eigs (#2227).
+load_file of "lib/tensor.eigs"
+
+assert of [(shape of (xavier_init of [2, 3])) == [2, 3], "xavier_init shape"]
+assert of [(shape of (he_init of [3, 2])) == [3, 2], "he_init shape"]
+assert of [(ones of [2, 3]) == [[1, 1, 1], [1, 1, 1]], "ones fills complete matrix"]
+assert of [(linear of [[1, 2], [[3], [4]], [5]]) == [16], "linear affine value"]
+assert of [(mse_loss of [[1, 3], [3, 1]]) == 4, "mse_loss value"]
+ce is cross_entropy_loss of [[0, 0], 1]
+assert of [(abs of (ce - 0.6931471805599453)) < 0.000001, "cross_entropy_loss value"]
+assert of [(accuracy of [[[1, 0], [0, 2], [3, 1]], [0, 1, 1]]) == (2.0 / 3.0), "accuracy value"]
+normalized is normalize of [1.0, 2.0, 3.0, 4.0]
+assert of [(len of normalized) == 4, "normalize preserves shape"]
+assert of [(abs of (normalized[0] - -1.3416354199689269)) < 0.000001, "normalize first value"]
+assert of [(abs of (normalized[3] - 1.3416354199689269)) < 0.000001, "normalize last value"]
+assert of [(clip of [[[-2, 0, 4], [1, 3, -1]], -1, 2]) == [[-1, 0, 2], [1, 2, -1]], "clip matrix values"]
+assert of [(l2_norm of [3, 4]) == 5, "l2_norm value"]
+assert of [(scale of [[1, 2, 3, 4], 2]) == [2, 4, 6, 8], "scale complete vector"]
+print of "PASS: tensor library documented functions"

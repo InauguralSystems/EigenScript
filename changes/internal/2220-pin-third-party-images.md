@@ -1,0 +1,1 @@
+- CI and published runtime base images are digest-pinned and automatically monitored for updates (#2220).

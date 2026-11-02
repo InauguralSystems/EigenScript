@@ -19,7 +19,12 @@ for thunk in [(x) => min of [], (x) => min of ([]), (x) => max of [], (x) => max
     catch e:
         empty_kind is e.kind
     assert_eq of [empty_kind, "value", "R1.6b-D2 empty min/max raises"]
-assert_eq of [max of ["a", 5], 0, "non-number element keeps the 0 fallback"]
+bad_max_caught is false
+try:
+    ignored_bad_max is max of ["a", 5]
+catch e:
+    bad_max_caught is contains of [e.message, "max: element 0 is str"]
+assert_true of [bad_max_caught, "non-number element raises even in compatibility mode"]
 
 # ---- #316: string predicates reject non-string operands ----
 assert_eq of [index_of of [[1, 2, 3], 2], -1, "index_of list haystack is a miss"]
