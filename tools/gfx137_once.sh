@@ -28,8 +28,11 @@ ALLOW="${GFX137_ALLOWLIST:-$ROOT/tests/gfx137_defer_allowlist.txt}"
 # it. The binary is built from every hosted source, but a change elsewhere in
 # src/ is judged by the merge queue, where the owner runs [137] on every
 # candidate unscoped; this list only decides whether a PR gets that answer
-# early. lib/ui*.eigs is not here: no corpus program loads or imports a module.
-INPUT_RE='^(src/ext_gfx[^/]*|tests/gfx_asan_corpus/.*|tests/test_asan_gfx\.sh|tests/lsan_classify\.sh|tests/test_gfx_timeout\.py|tools/werror_flags\.txt|tools/read_werror_flags\.sh|Makefile|tests/run_all_tests\.sh|tools/gfx137_once\.sh|tests/gfx137_defer_allowlist\.txt)$'
+# early. The dev image (.devcontainer/Dockerfile: gcc, the ASan runtime, SDL2)
+# and the compiler guard wrappers (tools/cc-guard-bin/) are here because they
+# change the toolchain [137] builds with. lib/ui*.eigs is not here: no corpus
+# program loads or imports a module.
+INPUT_RE='^(src/ext_gfx[^/]*|\.devcontainer/Dockerfile|tools/cc-guard-bin/.*|tests/gfx_asan_corpus/.*|tests/test_asan_gfx\.sh|tests/lsan_classify\.sh|tests/test_gfx_timeout\.py|tools/werror_flags\.txt|tools/read_werror_flags\.sh|Makefile|tests/run_all_tests\.sh|tools/gfx137_once\.sh|tests/gfx137_defer_allowlist\.txt)$'
 
 # allow_rows -> "id|owner|reason" per entry; rc 1 (with the reason on stderr)
 # when the file is unreadable, empty, malformed, or has a duplicate id.

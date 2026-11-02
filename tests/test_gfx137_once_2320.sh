@@ -32,8 +32,11 @@
 #      unlisted one is a FAIL; a clean run prints the `GFX137: ran` receipt; a
 #      skipped or failed corpus prints no receipt.
 #   C10 `scope`: an ext_gfx.c edit, a corpus file, a rename away from
-#      ext_gfx.c and a Makefile edit run [137]; a docs edit, a vm.c edit and a
-#      lib/ui*.eigs edit do not.
+#      ext_gfx.c, a Makefile edit, a dev-image Dockerfile edit and a compiler
+#      guard edit must run [137]. Only that direction is
+#      asserted: counting an extra file as an input can never make a PR read
+#      green when it should not (the queue runs [137] regardless), so a docs,
+#      vm.c or lib/ui*.eigs edit is classified for information only.
 #   C11 `receipt`: the owner needs exactly one `ran` line and no deferral; a
 #      deferring lane needs exactly its own deferral line and no run.
 set -u
@@ -101,10 +104,14 @@ def combos(j):
 def name(jid, j, c):
     return re.sub(r"\$\{\{\s*matrix\.([\w-]+)\s*\}\}", lambda mo: str(c.get(mo.group(1), "?")), str(j.get("name", jid)))
 
+# A step runs the suite if it calls the runner directly or through `make test`
+# / `make test-changed` (both reach run_all_tests.sh). Composite actions
+# (`uses: ./.github/actions/...`) are not followed; see the PR notes.
+SUITE_RE = re.compile(r"run_all_tests\.sh|\bmake\s+(-\S+\s+)*test(-changed)?(?![\w-])")
 suite = []   # (jid, combo, step, job) for every step that runs the full suite
 for jid, j in jobs.items():
     for st in j.get("steps") or []:
-        if isinstance(st, dict) and "run_all_tests.sh" in str(st.get("run", "")):
+        if isinstance(st, dict) and SUITE_RE.search(str(st.get("run", ""))):
             secs = (st.get("env") or {}).get("EIGS_SUITE_SECTIONS")
             if secs is not None and "137" not in str(secs).split(): continue
             for c in combos(j): suite.append((jid, c, st, j))
@@ -268,29 +275,32 @@ EOF
 
 # scope_checks TOOL -> C10, on a tiny history.
 scope_checks() {
-    local tool=$1 d="$W/git" why="" n=0
+    local tool=$1 d="$W/git" why="" info="" n=0
     rm -rf "$d"; mkdir -p "$d"
     git -C "$d" init -q; git -C "$d" symbolic-ref HEAD refs/heads/base
     mkdir -p "$d/src" "$d/docs" "$d/lib" "$d/tests/gfx_asan_corpus"
     echo 'int g;' > "$d/src/ext_gfx.c"; echo 'int v;' > "$d/src/vm.c"; echo doc > "$d/docs/x.md"
     echo 'x is 1' > "$d/lib/ui_w_basic.eigs"; echo 'all:' > "$d/Makefile"
     git -C "$d" add -A; git -C "$d" -c user.name=t -c user.email=t@t commit -q -m base
-    sc() {   # sc WANT MUTATION
+    sc() {   # sc WANT MUTATION -- WANT=info prints the verdict, asserts nothing
         local want=$1 got; shift
         n=$((n + 1)); git -C "$d" checkout -q -B "t$n" base
         ( cd "$d" && eval "$*" )
         git -C "$d" add -A; git -C "$d" -c user.name=t -c user.email=t@t commit -q -m "t$n"
         got=$(cd "$d" && "$BASH_BIN" "$tool" scope HEAD~1 HEAD 2>/dev/null)
-        [ "$got" = "gfx137=$want" ] || why="$why '$*' -> '$got', want gfx137=$want;"
+        if [ "$want" = info ]; then info="$info '$*' -> ${got:-error};"
+        else [ "$got" = "gfx137=$want" ] || why="$why '$*' -> '$got', want gfx137=$want;"; fi
     }
     sc true  'echo "int h;" >> src/ext_gfx.c'
     sc true  'echo "print of 1" > tests/gfx_asan_corpus/07_new.eigs'
     sc true  'git mv src/ext_gfx.c src/gfx_moved.c'
     sc true  'echo "x:" >> Makefile'
-    sc false 'echo more >> docs/x.md'
-    sc false 'echo "int w;" >> src/vm.c'
-    sc false 'echo "y is 2" >> lib/ui_w_basic.eigs'
-    if [ -z "$why" ]; then echo "ok C10 ($n diffs classified)"; else echo "bad C10:$why"; fi
+    sc true  'mkdir -p .devcontainer && echo "FROM x" > .devcontainer/Dockerfile'
+    sc true  'mkdir -p tools/cc-guard-bin && echo "#!/bin/sh" > tools/cc-guard-bin/gcc'
+    sc info 'echo more >> docs/x.md'
+    sc info 'echo "int w;" >> src/vm.c'
+    sc info 'echo "y is 2" >> lib/ui_w_basic.eigs'
+    if [ -z "$why" ]; then echo "ok C10 (6 must-run diffs run [137]; info:$info)"; else echo "bad C10:$why"; fi
 }
 
 # receipt_checks TOOL -> C11
@@ -368,6 +378,12 @@ else echo "  FAIL: control: the tree fails a check"; printf '%s\n' "$res" | sed 
 plant "two owners: zlib stops deferring" ci C1 \
     "      EIGS_GFX137_DEFER: extensions-zlib
 " ""
+plant "a lane runs the suite through make test, undeferred" ci C1 \
+    "        name: Run full suite against zlib build
+        run: cd tests && bash run_all_tests.sh" "        name: Run full suite against zlib build
+        env:
+          EIGS_GFX137_DEFER: ''
+        run: make test"
 plant "absence: the owner defers in the queue too" ci C1 \
     "matrix.cc == 'clang' && 'linux-clang' ||" "'linux-clang' ||"
 plant "a native macOS lane defers" ci C3 \
@@ -408,12 +424,12 @@ plant "runner prints no ran receipt" runner C9 \
 ' ""
 plant "scope drops src/ext_gfx" tool C10 \
     "^(src/ext_gfx[^/]*|" "^("
-plant "scope counts lib/ui as an input" tool C10 \
-    "tests/gfx137_defer_allowlist\\.txt)\$'" "tests/gfx137_defer_allowlist\\.txt|lib/ui.*)\$'"
+plant "scope drops the gfx corpus" tool C10 \
+    "tests/gfx_asan_corpus/.*|" ""
 plant "receipt: the owner accepts a deferral" tool C11 \
     "if [ \"\$ran\" = 1 ] && [ \"\$deferred\" = 0 ]; then" "if [ \"\$ran\" = 1 ] || [ \"\$deferred\" = 1 ]; then"
 
-[ "$n" -eq 18 ] || { echo "gfx137_once selftest: ran $n cases, want 18"; exit 1; }
+[ "$n" -eq 19 ] || { echo "gfx137_once selftest: ran $n cases, want 19"; exit 1; }
 echo "PLAN: $n"
 echo "gfx137_once selftest: $((n - fail)) of $n passed"
 [ "$fail" -eq 0 ]

@@ -483,7 +483,10 @@ each compiled and judged the same thing linux / gcc does. Those lanes set
 names the owner. An id not on the list is a FAIL. The owner job requires the
 `GFX137: ran` receipt in its own suite log (`tools/gfx137_once.sh receipt`).
 On a pull request the owner runs `[137]` only when the diff touches one of its
-inputs (`tools/gfx137_once.sh scope`, the `scope` job's `gfx137` output). A
+inputs (`tools/gfx137_once.sh scope`, the `scope` job's `gfx137` output),
+which include the dev image's `.devcontainer/Dockerfile` and the compiler
+guard `tools/cc-guard-bin/`. A change to any other hosted source is first
+judged by `[137]` in the merge queue, where the owner runs it unscoped. A
 missing verdict runs it. `[137b]` (`tests/test_gfx137_once_2320.sh`) reads this
 workflow and fails on zero or two queue runners, a native lane that defers, or
 a stale or unlisted id. macOS and the release dry-runs keep their own copies:
