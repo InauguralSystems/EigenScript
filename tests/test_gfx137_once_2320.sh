@@ -247,6 +247,15 @@ section_skip() { echo "  SKIP: $1"; SKIPPED=$((SKIPPED + 1)); }
 . "$2"
 echo "COUNTS total=$TOTAL pass=$PASS fail=$FAIL skipped=$SKIPPED"
 EOF
+    # Count '  GFX137: ' lines with no pipeline: an early reader under pipefail
+    # turns a SIGPIPE into a false verdict (#1122, tools/pipefail_verdict_check.sh).
+    receipt_lines() {
+        local line n=0
+        while IFS= read -r line; do
+            case "$line" in '  GFX137: '*) n=$((n + 1)) ;; esac
+        done <<< "$1"
+        echo "$n"
+    }
     # case MODE DEFER WANT-COUNTS WANT-RECEIPT CORPUS-RAN
     rcase() {
         local mode=$1 defer=$2 counts=$3 receipt=$4 ran=$5 got
@@ -256,8 +265,8 @@ EOF
         got=$(printf '%s\n' "$out" | sed -n 's/^COUNTS //p')
         [ "$got" = "$counts" ] || why="$why mode=$mode defer='$defer': counts '$got', want '$counts';"
         case "$receipt" in
-            -) ! printf '%s\n' "$out" | grep -q '^  GFX137: ' || why="$why mode=$mode defer='$defer': printed a receipt;" ;;
-            *) [ "$(printf '%s\n' "$out" | grep -c '^  GFX137: ')" = 1 ] && printf '%s\n' "$out" | grep -qxF "  GFX137: $receipt" \
+            -) [ "$(receipt_lines "$out")" = 0 ] || why="$why mode=$mode defer='$defer': printed a receipt;" ;;
+            *) [ "$(receipt_lines "$out")" = 1 ] && [[ $'\n'"$out"$'\n' == *$'\n'"  GFX137: $receipt"$'\n'* ]] \
                    || why="$why mode=$mode defer='$defer': no single '  GFX137: $receipt' line;" ;;
         esac
         [ "$(grep -c corpus-ran "$d/stub.log")" = "$ran" ] || why="$why mode=$mode defer='$defer': corpus ran $(grep -c corpus-ran "$d/stub.log")x, want $ran;"
@@ -367,7 +376,7 @@ open(sys.argv[2], "w").write(s.replace(sys.argv[3], sys.argv[4]))
 PY
     case "$which" in allow) allow=$dst ;; tool) tool=$dst ;; runner) runner=$dst ;; esac
     res=$(run_checks "$ci" "$allow" "$tool" "$runner" "$want"); n=$((n + 1))
-    if printf '%s\n' "$res" | grep -q "^bad $want:"; then echo "  PASS: plant $name caught by $want"
+    if [[ $'\n'"$res" == *$'\n'"bad $want:"* ]]; then echo "  PASS: plant $name caught by $want"
     else echo "  FAIL: plant $name NOT caught by $want"; printf '%s\n' "$res" | sed 's/^/    /'; fail=$((fail + 1)); fi
 }
 
