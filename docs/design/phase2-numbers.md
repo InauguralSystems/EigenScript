@@ -725,6 +725,7 @@ result).**
 | `jit.c:jit_compile_to_thunk/OP_NULL` | not-a-classifier | the constant arm writes null and bool bits (D3) |
 | `embed_smoke.c:main` | guarded | C smoke fixture checks a known result-list slot with slot_is_bool before reading its bool payload (R1.6z-D1) |
 | `jit_smoke.c:run_bool_cases` | not-a-classifier | test harness: expected bool bits (D3) |
+| `jit_smoke.c:nan_smoke_row` | not-a-classifier | R2.1 test harness: compares the emitted completion sentinel with expected bool bits; synthetic slot/advance assertions, not a runtime classifier (D3) |
 | `jit_smoke.c:run_index_bail_cases` | guarded | test harness: an exact null test of a result (D3) |
 | `trace.c:trace_source_replay` | guarded | source-size metadata requires `VAL_INT` before the exact int reader; a rejected float is read only for main's unchanged diagnostic (sync #5, #1885) (D1) |
 | `trace.c:write_slot` | smi-arm | v9 retains R1.3's exact int digits and float point/exponent markers; an unknown tag refuses (D1) |
