@@ -674,10 +674,10 @@ The `O cfg` record's current shape is pinned by `O3.ocfg-no-hlow` (its file list
 - `O1.where-is-int` [R3] `x is 9007199254740993 / print of (where is x)`
   -> `9007199254740993` (an int prints per N6)
   tag: `6.0443533557040756e-15`, an entropy (run, R3.0; the branch base prints the same)
-- `O1.unobserved-jit-sample` [R3] `define run(n)`: `x is 1125899906842624.0` (2^50), then inside `unobserved:` a `loop while i < n:` adding `1.0` to `x`; `return [converged of x, stable of x, diverging of x]`; called 60 times with `0.0`, then LAST with `60.0`; `print of r`
+- `O1.unobserved-jit-sample` [R3] `define run(n, a, b)`: `x is a`, then inside `unobserved:` a `loop while i < n:` doing `x is b / x is a`; `return [converged of x, stable of x, oscillating of x]`; called 60 times as `run of [0.0, p, q]`, then LAST as `run of [30.0, p, q]`, with `p is 9007199254740992 / q is p + 1` (ints passed as arguments, so the loop only MOVES them and the JIT compiles it); `print of r` (the round-2 critic's int-move form)
   shape: F  witness: fn-stop run PREDICATE_SLOT  ops: ADD
-  -> `[false, false, true]` (the elided samples are written by `jit_sample_num_gated` in the JIT tier: the ring writer must carry the exact/sign rings and the float noise-floor rule, R3 writer table; witness probed on the branch: `run jit yes adv 120 stop PREDICATE_SLOT`)
-  tag: `[true, true, false]` in all three tiers (run, R3.0r2; the branch base prints the same)
+  -> `[false, false, true]` (the elided samples go through `jit_sample_num_gated` natively; with the exact flag the all-exact window settles only when constant and its unit swings are motion. Witness probed on the branch: `run 61 yes ... adv 133 ... PREDICATE_SLOT`)
+  tag: `[true, true, false]` in all three tiers (run, R3.0r3; the branch base prints the same, and so does the plant "inline double ring writes")
 - `O1.int-observed-numeric` [R1.3] `a is 3 / b is 140737488355328 / af is 3.0 / bf is 140737488355328.0`, then 12 times `a is a * 2 / b is b * 2 / af is af * 2.0 / bf is bf * 2.0`; `print of [report of a, report of af, report of b, report of bf, num_type of b]`
   -> `["diverging", "diverging", "diverging", "diverging", "int"]`: an SMI (`a`) and a boxed int (`b`, 2^47 and up) are observed exactly as their float twins (the numeric channel, as a double until round 3)
   tag: `num_type` undefined (the reports alone are all `"diverging"` on main, where every number is a double)
@@ -699,28 +699,25 @@ The `O cfg` record's current shape is pinned by `O3.ocfg-no-hlow` (its file list
   -> `[false, false, false, true, false, false]`, `inf` (Hardy §62: it oscillates infinitely; the 16 `ieee_inf_alternating` declarations)
   tag: `[false, false, false, true, true, false]`, `1e+308` (run, R3.0). Branch base: `[false, false, false, false, true, false]`
 - `O2.int-counter-2p53` [R3] #1830's reproduction: `x is 9007199254740992`, 60 times `x is x * 1 + 1`; `print of [x, converged of x, stable of x, diverging of x, equilibrium of x]`
-  -> `[9007199254741052, false, false, true, false]` (an exact int step has no rounding floor: R3-#1830)
+  -> `[9007199254741052, false, false, true, false]` (#1830's int mechanism at the signal: an all-exact window settles only when constant, and an exact step has a zero noise floor in the incumbent `raw_diverging`)
   tag: `[9007199254740992, true, true, false, true]` (doubles: 2^53 + 1 rounds back to 2^53; run, R3.0). Branch base: `[9007199254741052, true, true, false, false]`
+- `O2.int-down-counter-2p53` [R3] `x is 9007199254740992`, 60 times `x is x - 1`; `print of [x, converged of x, stable of x, diverging of x, equilibrium of x]`
+  -> `[9007199254740932, false, false, true, false]` (the same mechanism, falling; ints run interpreted in every tier until R5)
+  tag: `[9007199254740932, true, true, false, true]` (run, R3.0r3). Branch base: `[9007199254740932, true, true, false, false]`
 - `O2.harmonic-not-converged` [R3] `h is 1.0 / n is 1.0`, then while `n < 301.0`: `h is h + 1.0 / (n + 1.0) / n is n + 1.0`; `print of [converged of h, stable of h, diverging of h]`
-  -> `[false, false, false]` (#1752's decision: `converged` is conservative; `diverging` false is the documented honesty bound). This row is the travel bound's only gate: harmonic's `converged` was wrong on the tag, so it is not a floor verdict
+  -> `[false, true, false]` (STD_converged, the windowed Cauchy test: at n = 300 ten steps span ~0.033 > tau = 1e-3*6.28; STD_stable's 2% band holds; `diverging` false is the documented honesty bound. STD_converged still reads harmonic converged from n = 1295, #1752's STOP-11). Not a floor verdict: harmonic's `converged` was wrong on the tag
   tag: `[true, true, false]` (run, R3.0; the branch base prints the same)
 - `O2.inverse-growth-not-converged` [R3] #1990's M5 run: `x is 0.0293`, then 120 times `x is x + 1.0 / x`, recording the first iteration at which `converged of x` reads true (`first` starts `null`); `print of [first, x]`
-  -> `[null, 37.48239150668529]` (the travel bound with the newest step ratio: never converged at any of the 120 iterations; model trace in the R3.0 report)
+  -> `[null, 37.48239150668529]` (STD_converged: its window diameter never falls under tau on this run; model trace in the R3.0 report)
   tag: `[11, 37.48239150668529]` (run, R3.0r2; the branch base prints the same)
 - `O2.counter-pause-not-converged` [R3, invariant] a float counter 0..30, one `+1e-9` step, then 40 more unit steps; `converged of x` asked after the pause and after every later step, counted in `hits`; `print of [[converged of x, stable of x] at the pause, hits]`
-  -> `[[false, false], 0]`. Base-green on `968d9fe4` and the tag; design round 1's rule read `[conv stab]` at the pause (the geometric-mean-only `rho`). Plant: `rho` without its newest-ratio term
+  -> `[[false, false], 0]`. Base-green on `968d9fe4` and the tag, and STD_converged keeps it (the window's diameter spans the earlier unit steps); design round 1's rule read `[conv stab]` at the pause
   tag: `[[false, false], 0]` (run, R3.0r2)
-- `O2.float-counter-2p53-by2` [R3] `x is 9007199254740992.0`, 60 times `x is x * 1.0 + 2.0`; `print of [x, converged of x, stable of x, diverging of x]`
-  -> `[9007199254741112.0, false, false, true]` (a full same-sign non-shrinking float window is motion: RULING R30-1 item 3; the `float_count` corpus rows' twin)
-  tag: `[9007199254741112, true, true, false]` (run, R3.0r2). Branch base: `[9007199254741112.0, true, true, false]`
-- `O2.noise-equilibrium` [R3] iid noise of amplitude 0.001 around 100 (Park-Miller LCG, seed 1.0, 201 values); `print of [equilibrium of x, oscillating of x]`
-  -> `[true, true]` (#1754: weakly stationary AND Hardy-oscillating; the inherited `raw_oscillating` exclusion is dropped)
-  tag: `[false, true]` (run, R3.0r2; the branch base prints the same)
 - `O2.noisy-loss-improving-count` [R3] `loss is 0.2 + 2.0 * (exp of (-0.02 * i)) + 0.1 * u` (Park-Miller LCG, seed 2024.0, i = 0..120); count the iterations i >= 20 at which `improving of loss` is true; `print of hits`
-  -> `96` (the record-high boundedness test; with the round-1 `_expanding` proxy the model gives 51)
+  -> `42` (STD_improving, reference.py's `improving`: the newer half's minimum below the older half's by min_delta, and bounded by its approximation; design round 2's candidate `top` test gave 96)
   tag: `0` (run, R3.0r2; the branch base prints the same)
 - `O2.report-noisy-loss` [R3] a Park-Miller LCG (`s is (s * 16807.0) % 2147483647.0`, seed 12345.0, exact in doubles) drives `loss is 0.5 + 2.0 * (exp of (-0.03 * i)) + 0.01 * u` for i = 0..60, u in [-1, 1); `print of [report of loss, improving of loss, oscillating of loss]`
-  -> `["improving", true, false]` (#1754's corrected `improving`: a new best within the window on a bounded sequence; Keras `mode='min'`; `report` ranks `improving` above `oscillating`, RULING R30-1 item 5)
+  -> `["improving", true, false]` (#1754's corrected `improving`: a new best within the window on a bounded sequence; Keras `mode='min'`; `report`'s ranking is unchanged, RULING R30-2 item 6; STD_improving)
   tag: `["moving", false, false]` (run, R3.0; the branch base prints the same: its contraction band never reads a 0.97-ratio decay as improving, #1771)
 - Planned control, not yet a MAP row (R3.1 adds `tests/phase2/controls/ctl.O2.noise-oscillates.eigs` with its `.out` and this line becomes the control row `ctl.O2.noise-oscillates`; a control is checked in every mode, so listing it before its file exists would fail every `--through`): iid noise of amplitude 1 around 100 (Park-Miller LCG, seed 777.0, 61 values); `print of (oscillating of x)`
   -> `true` on both binaries. #1754 (Hardy §62): iid noise has no limit and does not tend to +-inf, so it oscillates. This replaces the R0 row `O2.noise-not-oscillating`, whose expected `false` contradicted the decided definition and which could not fail on the tag (it prints `true`)
