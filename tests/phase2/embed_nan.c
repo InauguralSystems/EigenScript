@@ -10,9 +10,10 @@
 
 #include "eigs_embed.h"
 #include "eigenscript.h"
+#include "vm.h"
 
 #define CANON_NAN UINT64_C(0x7ff8000000000000)
-static unsigned checks, failures, cases, callback_calls;
+static unsigned checks, failures, cases, callback_calls, arithmetic_cases, constructor_cases;
 static uint64_t callback_payload, callback_argument;
 
 static double from_bits(uint64_t bits) {
@@ -160,6 +161,88 @@ static void callback_case(uint64_t input) {
     eigs_clear_error();
 }
 
+/* A getter that canonicalizes its answer cannot prove that a language
+ * arithmetic producer stored a canonical NaN. Inspect the actual counted
+ * result/global Value instead. These ordinary regression cases complement
+ * the public C-boundary rows above; they use no f64_bits/as_num oracle. */
+static void arithmetic_storage_cases(void) {
+    static const struct {
+        const char *name, *source, *binding, *function;
+        int leaf;
+    } programs[] = {
+        {"inline_div", "return 0.0 / 0.0\n", NULL, NULL, 0},
+        {"module_div",
+         "r24_embed_div_result is 0.0 / 0.0\nreturn r24_embed_div_result\n",
+         "r24_embed_div_result", NULL, 0},
+        {"function_sub",
+         "define r24_embed_sub_fn(a) as:\n"
+         "    local t is a - a\n"
+         "    return t\n"
+         "r24_embed_fn_result is r24_embed_sub_fn of (1e308 * 10.0)\n"
+         "return r24_embed_fn_result\n",
+         "r24_embed_fn_result", "r24_embed_sub_fn", 0},
+        {"leaf_sub",
+         "define r24_embed_sub_leaf(a, b) as:\n"
+         "    return a - b\n"
+         "r24_embed_leaf_result is r24_embed_sub_leaf of [1e308 * 10.0, 1e308 * 10.0]\n"
+         "return r24_embed_leaf_result\n",
+         "r24_embed_leaf_result", "r24_embed_sub_leaf", 1},
+    };
+    for (size_t i = 0; i < sizeof programs / sizeof programs[0]; i++) {
+        eigs_clear_error();
+        EigsValue *result = eigs_eval_string(programs[i].source);
+        char label[96];
+        snprintf(label, sizeof label, "%s eval returned float", programs[i].name);
+        check(result && result->type == VAL_FLOAT && !eigs_has_error(), label, 0, 0);
+        snprintf(label, sizeof label, "%s physical result bits", programs[i].name);
+        check_bits(stored_num_bits(result), CANON_NAN, label, 0, 0);
+        eigs_value_release(result);
+        if (programs[i].binding) {
+            EigsValue *stored = eigs_get_global(programs[i].binding);
+            snprintf(label, sizeof label, "%s global returned float", programs[i].name);
+            check(stored && stored->type == VAL_FLOAT && !eigs_has_error(), label, 0, 0);
+            snprintf(label, sizeof label, "%s physical global bits", programs[i].name);
+            check_bits(stored_num_bits(stored), CANON_NAN, label, 0, 0);
+            eigs_value_release(stored);
+        }
+        if (programs[i].function) {
+            EigsValue *fn = eigs_get_global(programs[i].function);
+            EigsChunk *chunk = fn && fn->type == VAL_FN && fn->data.fn.body_count == -1
+                ? (EigsChunk *)fn->data.fn.body : NULL;
+            /* These cases are called once. The generic function body has
+             * one real entry; a successful frameless leaf has none. This
+             * is the existing execution counter, not a new test seam. */
+            int witnessed = chunk && (programs[i].leaf
+                ? chunk->leaf_accessor && chunk->exec_count == 0
+                : !chunk->leaf_accessor && chunk->exec_count == 1);
+            snprintf(label, sizeof label, "%s actual call witness", programs[i].name);
+            check(witnessed, label, 0, 0);
+            eigs_value_release(fn);
+        }
+        arithmetic_cases++;
+        eigs_clear_error();
+    }
+}
+
+/* f64_bits is itself a canonical boundary, so its answer cannot establish
+ * what the new constructor stored. Inspect counted results independently. */
+static void constructor_storage_cases(void) {
+    static const char *programs[] = {
+        "try:\n    return f64_from_bits of 0x7FF0000000000001\ncatch e:\n    return null\n",
+        "try:\n    return f64_from_bits of 0xFFFB000000001000\ncatch e:\n    return null\n",
+    };
+    for (size_t i = 0; i < sizeof programs / sizeof programs[0]; i++) {
+        eigs_clear_error();
+        EigsValue *result = eigs_eval_string(programs[i]);
+        check(result && result->type == VAL_FLOAT && !eigs_has_error(),
+              "f64_from_bits returns a float", (uint64_t)i, 0);
+        check_bits(stored_num_bits(result), CANON_NAN,
+                   "f64_from_bits physical result bits", (uint64_t)i, 0);
+        eigs_value_release(result);
+        constructor_cases++;
+    }
+}
+
 int main(void) {
     static const uint64_t inputs[] = {
         UINT64_C(0x3ff8000000000000), UINT64_C(0xbff8000000000000),
@@ -187,11 +270,13 @@ int main(void) {
     eigs_register_function("r24_embed_nan", host_nan);
     for (size_t i = 0; i < sizeof inputs / sizeof inputs[0]; i++)
         callback_case(inputs[i]);
+    arithmetic_storage_cases();
+    constructor_storage_cases();
     eigs_value_release(eigs_get_global("r24_embed_number"));
     eigs_clear_error();
     eigs_close(state);
-    printf("embed-nan: %s inputs=%zu modes=2 cases=%u callbacks=%u checks=%u failures=%u\n",
+    printf("embed-nan: %s inputs=%zu modes=2 cases=%u callbacks=%u arithmetic=%u constructors=%u checks=%u failures=%u\n",
            failures ? "FAIL" : "PASS", sizeof inputs / sizeof inputs[0],
-           cases, callback_calls, checks, failures);
+           cases, callback_calls, arithmetic_cases, constructor_cases, checks, failures);
     return failures ? 1 : 0;
 }

@@ -2108,9 +2108,14 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
                     math_flags |= EIGS_MATH_UNDERFLOW;
                 break;
             }
-            /* A speculative failure must not publish flags or errors.
-             * Re-execute non-finite arithmetic in the generic callee. */
-            if (!isfinite(r)) return 0;
+            /* R2.4: default IEEE leaf results use the same single writer.
+             * Keep status private until RETURN: a later speculative bail
+             * must publish neither flags nor errors. Strict arithmetic
+             * still re-executes in the generic callee for its exact line. */
+            if (!isfinite(r)) {
+                if (g_strict) return 0;
+                math_flags |= isnan(r) ? EIGS_MATH_INVALID : EIGS_MATH_OVERFLOW;
+            }
             msp--;
             mini[msp - 1] = slot_from_f64(r);
             break;

@@ -263,12 +263,18 @@ void eigs_strict_nan_raise(const char *who) {
     rt_error(EK_VALUE, 0, "%s: result is not a number (NaN has no defined value)",
              who ? who : "arithmetic");
 }
-void eigs_math_nonfinite(double x, const char *who) {
+double eigs_math_nonfinite(double x, const char *who) {
     g_math_flags |= isnan(x) ? EIGS_MATH_INVALID : EIGS_MATH_OVERFLOW;
-    if (!g_strict || g_has_error) return;
-    if (isnan(x)) eigs_strict_nan_raise(who);
-    else rt_error(EK_VALUE, 0, "%s: non-finite arithmetic result (infinity)",
-                  who ? who : "arithmetic");
+    if (g_strict && !g_has_error) {
+        if (isnan(x)) eigs_strict_nan_raise(who);
+        else rt_error(EK_VALUE, 0, "%s: non-finite arithmetic result (infinity)",
+                      who ? who : "arithmetic");
+    }
+    /* R2.4: boxed arithmetic temporaries are valid too. Normalize on this
+     * already-cold result path before a reuse store can retain NaN payloads.
+     * The single slot writer owns the only NaN payload policy. */
+    EigsSlot canonical = slot_from_f64(x);
+    return SLOT_F64_RAW(canonical);
 }
 
 const char* tok_type_name(TokType t) {

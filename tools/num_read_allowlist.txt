@@ -39,7 +39,8 @@ eigenscript.c|value_to_string|2|printing, switch case VAL_FLOAT and case VAL_INT
 eigenscript.h|#define VAL_F64_OFFSET|1|the raw double member offset definition (JIT; #1758 R1.2a: was VAL_NUM_OFFSET)
 eigenscript.h|#define VAL_F64_RAW|1|the raw double read definition (#1758 R1.2a: was VAL_NUM_RAW)
 eigenscript.h|#define VAL_I64_RAW|1|the raw int64 read definition (#1758 R1.2a)
-eigs_embed.c|eigs_value_as_num|2|embedding API: reads only after type == VAL_FLOAT; a bool answers NaN and other non-numbers 0.0 (docs/EMBEDDING.md)
+eigs_embed.c|embed_f64|1|R2.4 public double boundary: slot_from_f64 constructs a canonical float before its SLOT_F64_RAW extraction; no reference or integer is read as a float
+eigs_embed.c|eigs_value_as_num|2|embedding API: reads only after type == VAL_FLOAT; a bool answers canonical NaN and other non-numbers 0.0 (R2.4, docs/EMBEDDING.md)
 eigs_embed.c|eigs_value_as_int|2|Q3: int payload read only after VAL_INT; float payload only after VAL_FLOAT, exact int64 checked before cast under the default floating environment
 embed_smoke.c|test_embed_int|1|Q3/#1969 C fixture: deliberate raw float payload write including nonfinites and subnormal before hostile-host conversion tests
 embed_smoke.c|main|6|C test: known float payloads; S9-K1 assignment count now uses the int accessor
@@ -84,6 +85,7 @@ container.h|slot_view|2|typed float or int facade, preserving exact payload and 
 ext_db.c|db_build_query|1|VAL_INT parameters encode as exact digits after the kind test (#1758 R1.2)
 vm.c|vm_value_index_is_int|2|Guarded exact VAL_INT-to-C-index conversion; the other numeric kind keeps the float integrality test (#1758 R1.2)
 vm.c|vm_subscript_index_is_int|2|subscript-only exact VAL_INT read after its kind test; all callers prove val_is_number so the other arm is VAL_FLOAT; int64 values outside C int clamp only to a necessarily out-of-bounds diagnostic endpoint (#1849, N5)
+eigenscript.c|eigs_math_nonfinite|1|R2.4 cold arithmetic result: slot_from_f64 produces a canonical float before SLOT_F64_RAW extraction, preserving existing strict traps and flags
 eigenscript.c|make_int|1|int constructor initializes the exact signed payload
 eigenscript.c|eigs_number_read|2|final checked reader: exact int and float payloads are read only behind their corresponding Value type tests (#1758 R1.6a)
 eigenscript.c|buffer_index_at|1|writes the raw buffer float into a borrowed stack facade; eigs_int_arg performs the finite/exact int conversion (#1758 R1.6a)

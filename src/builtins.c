@@ -3429,7 +3429,7 @@ static const char *SANDBOX_ALLOW[] = {
     "u64_div",
     "u64_rem",
     "u64_to_string",
-    "fround",
+    "fround", "f64_bits", "f64_from_bits",
     /* bit ops */
     "bit_and", "bit_not", "bit_or", "bit_shl", "bit_shr", "bit_xor",
     /* list / sequence (operate on the value handed in) */
@@ -3446,8 +3446,8 @@ static const char *SANDBOX_ALLOW[] = {
     "regex_find", "regex_match", "regex_replace",
     /* buffers + text builders (in-memory only; allocators charge #292) */
     "buffer", "buf_copy", "buf_deinterleave", "buf_dot", "buf_fill",
-    "buf_from_list", "buf_from_pcm16le", "buf_get", "buf_len", "buf_mix",
-    "buf_peak", "buf_resample_linear", "buf_scale_range", "buf_set",
+    "buf_from_list", "buf_from_pcm16le", "buf_get", "buf_get_bits", "buf_len", "buf_mix",
+    "buf_peak", "buf_resample_linear", "buf_scale_range", "buf_set", "buf_set_bits",
     "buf_to_pcm16le",
     "str_from_bytes", "text_builder_new", "text_builder_append",
     "text_builder_append_line", "text_builder_to_string",
@@ -6923,12 +6923,16 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "buffer", make_builtin(builtin_buffer));
     env_set_local_owned(env, "reshape", make_builtin(builtin_reshape));
     env_set_local_owned(env, "buf_get", make_builtin(builtin_buf_get));
+    env_set_local_owned(env, "buf_get_bits", make_builtin(builtin_buf_get_bits));
     env_set_local_owned(env, "buf_set", make_builtin(builtin_buf_set));
+    env_set_local_owned(env, "buf_set_bits", make_builtin(builtin_buf_set_bits));
     env_set_local_owned(env, "buf_len", make_builtin(builtin_buf_len));
     env_set_local_owned(env, "buf_from_list", make_builtin(builtin_buf_from_list));
     env_set_local_owned(env, "str_from_bytes", make_builtin(builtin_str_from_bytes));
     env_set_local_owned(env, "f64_to_bytes", make_builtin(builtin_f64_to_bytes));
     env_set_local_owned(env, "f64_from_bytes", make_builtin(builtin_f64_from_bytes));
+    env_set_local_owned(env, "f64_bits", make_builtin(builtin_f64_bits));
+    env_set_local_owned(env, "f64_from_bits", make_builtin(builtin_f64_from_bits));
     /* DEFLATE codecs (#684) — registered unconditionally; the bodies
      * raise "compiled without zlib support" when EIGENSCRIPT_EXT_ZLIB=0. */
     env_set_local_owned(env, "inflate", make_builtin(builtin_inflate));

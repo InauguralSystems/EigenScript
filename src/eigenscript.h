@@ -1937,9 +1937,9 @@ void free_value(Value *v);
 #define EIGS_MATH_UNDERFLOW 4u /* nonzero product/quotient rounded to zero;
                                * detected where its operands are still live */
 void eigs_strict_nan_raise(const char *who);
-void eigs_math_nonfinite(double x, const char *who);
+double eigs_math_nonfinite(double x, const char *who);
 static inline double eigs_math_result_named(double x, const char *who) {
-    if (__builtin_expect(!isfinite(x), 0)) eigs_math_nonfinite(x, who);
+    if (__builtin_expect(!isfinite(x), 0)) return eigs_math_nonfinite(x, who);
     return x;
 }
 static inline double eigs_math_result(double x) {

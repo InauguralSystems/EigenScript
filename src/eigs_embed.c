@@ -375,7 +375,15 @@ EigsValue *eigs_get_global(const char *name) {
 
 /* ---- Values ------------------------------------------------------- */
 
-EigsValue *eigs_value_new_num(double n)         { return make_float(n); }
+/* R2.4: the public double boundary uses the same ONE writer as slots.
+ * Extracting its float bits adds no arithmetic, flag write or payload policy;
+ * non-NaNs (including infinity, subnormals and signed zero) stay exact. */
+static double embed_f64(double number) {
+    EigsSlot slot = slot_from_f64(number);
+    return SLOT_F64_RAW(slot);
+}
+
+EigsValue *eigs_value_new_num(double n)         { return make_float(embed_f64(n)); }
 EigsValue *eigs_value_new_int(int64_t n)        { return make_int(n); }
 EigsValue *eigs_value_new_string(const char *s) { return make_str(s ? s : ""); }
 EigsValue *eigs_value_new_null(void)            { return make_null(); }
@@ -435,14 +443,15 @@ int eigs_value_as_bool(EigsValue *v) {
  * plausible false-as-zero. Other non-numbers keep the documented 0.0. Hosts
  * test eigs_value_type first, or read a bool with eigs_value_as_bool. */
 double eigs_value_as_num(EigsValue *v) {
-    /* Phase 2 (Q3): an int is a number, converted like lua_tonumber; a float
-     * is read raw. Anything else reports through #1932's pending error
-     * (attached threads only), keeping #1637's NaN for a bool and 0.0
-     * otherwise. */
+    /* Phase 2 (Q3): an int is a number, converted like lua_tonumber. R2.4
+     * canonicalizes a float only as it crosses this double boundary, without
+     * mutating the runtime Value. Anything else reports through #1932's
+     * pending error (attached threads only), keeping #1637's NaN for a bool
+     * and 0.0 otherwise. The NaN sentinel is canonical too. */
     if (v && v->type == VAL_INT) return (double)VAL_I64_RAW(v);
-    if (v && v->type == VAL_FLOAT) return VAL_F64_RAW(v);
+    if (v && v->type == VAL_FLOAT) return embed_f64(VAL_F64_RAW(v));
     embed_value_error(EK_TYPE, "eigs_value_as_num: expected a number");
-    return (v && v->type == VAL_BOOL) ? NAN : 0.0;
+    return (v && v->type == VAL_BOOL) ? embed_f64(NAN) : 0.0;
 }
 
 int64_t eigs_value_as_int(EigsValue *v, int *ok) {
@@ -536,8 +545,9 @@ double eigs_value_buffer_get(EigsValue *v, int i) {
                            i, v->data.buffer.count);
         return 0.0;
     }
-    /* R1.6z-D1: the public C API exposes stored data, bit for bit. */
-    return v->data.buffer.data[i];
+    /* R2.4 amends R1.6z-D1's NaN payload promise at the C double boundary.
+     * The raw cell stays untouched; integer buffer-bits access retains it. */
+    return embed_f64(v->data.buffer.data[i]);
 }
 
 void eigs_value_buffer_set(EigsValue *v, int i, double x) {
@@ -551,7 +561,7 @@ void eigs_value_buffer_set(EigsValue *v, int i, double x) {
                            i, v->data.buffer.count);
         return;
     }
-    v->data.buffer.data[i] = x;
+    v->data.buffer.data[i] = embed_f64(x);
 }
 
 /* ---- Trace tape (record + replay) ---------------------------------- */

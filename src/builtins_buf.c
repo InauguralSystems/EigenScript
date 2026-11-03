@@ -177,6 +177,100 @@ Value* builtin_buf_set(Value *arg) {
     return make_null();
 }
 
+/* buf_get_bits of [buf, index] — raw IEEE bits as signed int64 (R24-1). */
+Value* builtin_buf_get_bits(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "buf_get_bits");
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
+        rt_error(EK_TYPE, 0, "buf_get_bits requires [buffer, index]");
+        return make_null();
+    }
+    EIGS_VIEW(buf_view);
+    Value *buf = list_get_view(arg, 0, &buf_view);
+    if (!buf || buf->type != VAL_BUFFER) {
+        rt_error(EK_TYPE, 0, "buf_get_bits: first argument must be a buffer");
+        return make_null();
+    }
+    EigsNum idx_n = eigs_list_number(arg, 1, "buf_get_bits");
+    if (g_has_error) return make_null();
+    int64_t idx;
+    if (idx_n.is_int) idx = idx_n.value.i64;
+    else if (!num_to_i64_exact(idx_n.value.f64, &idx)) {
+        rt_error(EK_VALUE, 0, EIGS_NO_INT_REP_FMT, "buf_get_bits", idx_n.value.f64);
+        return make_null();
+    }
+    if (idx < 0 || idx >= buf->data.buffer.count) {
+        char idx_text[32];
+        if (idx_n.is_int) eigs_int_text(idx_text, sizeof(idx_text), idx_n.value.i64);
+        else eigs_num_text(idx_text, sizeof(idx_text), idx_n.value.f64);
+        rt_error(EK_INDEX, 0, "buffer index %s out of range (length %d)",
+                 idx_text, buf->data.buffer.count);
+        return make_null();
+    }
+    /* Do not load as a double: even a signaling/tag-spelling payload is data.
+     * memcpy also avoids unsigned-to-signed implementation-defined casts. */
+    int64_t payload;
+    memcpy(&payload, &buf->data.buffer.data[idx], sizeof(payload));
+    return make_int(payload);
+}
+
+/* buf_set_bits of [buf, index, bits] — preserve all bits; return null (R24-1). */
+Value* builtin_buf_set_bits(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "buf_set_bits");
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
+        rt_error(EK_TYPE, 0, "buf_set_bits requires [buffer, index, bits]");
+        return make_null();
+    }
+    EIGS_VIEW(buf_view);
+    Value *buf = list_get_view(arg, 0, &buf_view);
+    if (!buf || buf->type != VAL_BUFFER) {
+        rt_error(EK_TYPE, 0, "buf_set_bits: first argument must be a buffer");
+        return make_null();
+    }
+    if (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT) {
+        rt_error(EK_TYPE, 0, "buf_set_bits: index must be a number, got %s", val_type_name(list_elem_type(arg, 1)));
+        return make_null();
+    }
+    if (list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT) {
+        rt_error(EK_TYPE, 0, "cannot store %s in a buffer (buffers hold numbers)", val_type_name(list_elem_type(arg, 2)));
+        return make_null();
+    }
+    int64_t idx = eigs_list_int(arg, 1, "buf_set_bits");
+    int64_t payload = eigs_list_int(arg, 2, "buf_set_bits");
+    if (g_has_error) return make_null();
+    if (idx < 0 || idx >= buf->data.buffer.count) {
+        rt_error(EK_INDEX, 0, "buffer index %lld out of range (length %d)",
+                 (long long)idx, buf->data.buffer.count);
+        return make_null();
+    }
+    memcpy(&buf->data.buffer.data[idx], &payload, sizeof(payload));
+    return make_null();
+}
+
+/* f64_bits of number — the IEEE representation as signed int64 (N12).
+ * Like f64_to_bytes, an int converts to double first. Unlike an encoder,
+ * this inspection accepts non-finite floats without trapping or status. */
+Value* builtin_f64_bits(Value *arg) {
+    EigsNum number;
+    if (!eigs_number_read(arg, &number, "f64_bits")) return make_null();
+    double value = number.is_int ? (double)number.value.i64 : number.value.f64;
+    /* The compatibility bridge may hand a builtin a boxed float temporary.
+     * Its logical float representation still passes through the one writer;
+     * only integer and buffer-bit paths preserve a NaN payload. */
+    EigsSlot canonical = slot_from_f64(value);
+    int64_t payload;
+    memcpy(&payload, &canonical.u, sizeof(payload));
+    return make_int(payload);
+}
+
+/* f64_from_bits of bits — N5 exact int64 bits; NaNs use the single writer. */
+Value* builtin_f64_from_bits(Value *arg) {
+    int64_t payload = eigs_int_arg(arg, "f64_from_bits");
+    if (g_has_error) return make_null();
+    double value;
+    memcpy(&value, &payload, sizeof(value));
+    return slot_to_value(slot_from_f64(value));
+}
+
 /* buf_len of buf — return buffer length */
 Value* builtin_buf_len(Value *arg) {
     ARG_GUARD(!arg || arg->type != VAL_BUFFER, "buf_len", "a buffer", make_int(0));

@@ -406,7 +406,9 @@ void          eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-o
 `EIGS_TYPE_NUM` covers signed int64 and float, like Lua's `LUA_TNUMBER`.
 `eigs_value_new_int` constructs an exact signed int64, like `lua_pushinteger`;
 `eigs_value_new_num` constructs a float, like `lua_pushnumber`.
-`eigs_value_as_num` converts either kind to `double`,
+R2.4 canonicalizes every NaN at the C double boundary to
+`0x7ff8000000000000`, on both input and output; finite values, infinities
+and signed zeros keep their bits. `eigs_value_as_num` converts either kind to `double`,
 like `lua_tonumber`; an int above 2^53 can lose precision in that conversion.
 Use `eigs_value_as_int` for an exact integer result, like `lua_tointegerx`:
 
@@ -715,12 +717,16 @@ documented accessors.
 
 ### Stored non-finite buffer data
 
-`eigs_value_buffer_get` returns a valid element's stored double exactly,
-including NaN payloads, infinities and negative zero. A set/get round trip
-preserves bits; the getter neither normalizes nor writes math flags and never
-raises for non-finite data. The setter already stores doubles unchanged. C
-callers can use `isfinite()` when their application needs finite values.
+`eigs_value_buffer_get` returns a canonical NaN for every stored NaN payload,
+without rewriting the raw buffer cell. Every non-NaN bit, including infinities
+and negative zero, is preserved. `eigs_value_buffer_set` canonicalizes an
+incoming NaN before storing it. This is R2.4's explicit amendment of the
+earlier R1.6z-D1 raw-NaN getter contract. Neither operation writes math flags
+or raises for valid non-finite data. C callers can use `isfinite()` when their
+application needs finite values. Exact NaN payload access inside a program
+uses the signed-int `buf_get_bits` / `buf_set_bits` interface; those integers
+are not passed through a floating-point conversion.
 Wrong-type and out-of-range reports and their sentinels keep the API contract
-above. Script indexing and iteration instead enforce the finite data boundary.
-This follows Lua's `lua_tonumberx` and CPython's `PyFloat_AsDouble` C boundary
-(R1.6z-D1; design §2.6a).
+above. Pure representation transport does not opt into strict arithmetic
+trapping. The canonicalization policy is the same single double writer used
+for variables and container slots (R2.4/N12; design §5 and §8).

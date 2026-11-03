@@ -979,8 +979,9 @@ int main(void) {
     CHECK(eigs_has_error() && strcmp(eigs_last_error_kind(), "index_range") == 0,
           "negative buffer set leaves index_range");
     eigs_clear_error();
-    /* R1.6z-D1 point 2 / N11: the C getter preserves stored bits and
-     * leaves both the pending-error channel and math flags alone. */
+    /* R2.4 amends R1.6z-D1 point 2 for NaN payloads at the C boundary.
+     * This infinity control still preserves every stored bit and leaves
+     * both the pending-error channel and math flags alone. */
     {
         double stored = INFINITY;
         unsigned saved_flags = g_math_flags;
