@@ -2500,7 +2500,7 @@ critics).
 - **O2's definition alignments:** R3.1.
 - **#1580's scale rule:** R3.3.
 - **#1752's conservative `converged`:** not scheduled. It is a candidate-arm
-  mechanism, below (STOP-11).
+  mechanism, below (RULING R30-3 item 3).
 
 The LOO table below is the model's, on the calibration corpus. The registered
 LOO runs on H1 at the reveal, for every p where |BA_p(R3) − BA_p(INC)| ≥ 0.02.
@@ -2621,8 +2621,12 @@ are, or with the additions named:
      is repeated.
 
 9. **A "Deviations from the pre-registration" section** in the PR. It holds
-   every departure, posted before the reveal, including any ruling on STOP-9,
-   STOP-10 and STOP-11 below.
+   every departure, posted before the reveal: D1 and D2 (below, RULING
+   R30-3), and any later one.
+10. **Review the `ieee_nan_recover@13` label under #1754's NaN rule** (R30-3
+    item 2). If the label stands, its declaration in `oracle_expect.txt`
+    ("window holds a NaN until checkpoint 19 (windowed-test limit)") is the
+    documented limit.
 
 #### R3.1 is arm R3-STD
 
@@ -2677,8 +2681,8 @@ down-counter from 2^53 by −1 reads `diverging` with no other predicate true.
 | predicate | its test after R3.1 | signal | MAP rows |
 |---|---|---|---|
 | `converged` | **STD_converged**: full window of W + 1 finite values; window diameter ≤ τ(x), τ = 1e-3·max(\|x\|, 1e-3) (the windowed Cauchy test, as reference.py `converged`); an all-exact window uses τ_abs = 1e-6 | O1 + the int mechanism | `O2.int-counter-2p53`, `O2.int-down-counter-2p53`, `O2.harmonic-not-converged`, `O2.inverse-growth-not-converged`, `O2.counter-pause-not-converged` (invariant) |
-| `stable` | **STD_stable**: full window of finite values; diameter ≤ 2·0.02·max(\|mean\|, 1e-3) (the 2% settling band); all-exact: ≤ 2·0.02·1e-3. **STOP-9:** it costs a floor key | O1 + the int mechanism | `O2.int-counter-2p53`, `O2.harmonic-not-converged` |
-| `improving` | **STD_improving**: reference.py `improving` exactly: min(newer half) < min(older half) − 1e-3·max(\|best\|, 1e-3), best = min(older half), AND not diverging (reference.py's) AND not expanding on a full window. **STOP-9:** it costs a floor key | O1 | `O2.report-noisy-loss`, `O2.noisy-loss-improving-count` |
+| `stable` | **STD′_stable** (Deviation D1, RULING R30-3): full window of finite values; diameter ≤ 2·0.01·max(\|mean\|, 1e-3) (the 1% band, reference.py's, the band #1754's labels use); all-exact: ≤ 2·0.01·1e-3 | O1 + the int mechanism | `O2.int-counter-2p53`, `O2.harmonic-not-converged` |
+| `improving` | **STD_improving with Keras' own running best** (Deviation D2, RULING R30-3): `best` starts at the trajectory's first value (a baseline, never an improvement); a value < best − 1e-3·max(\|best\|, 1e-3) is an improvement and becomes `best`; true iff the last improvement is within the last W steps (patience = the window), AND not diverging (reference.py's) AND not expanding on a full window (reference.py's bounded approximation) | O1 | `O2.report-noisy-loss`, `O2.noisy-loss-improving-count` |
 | `oscillating` | **incumbent, unchanged:** `obs_num_oscillating` (eigenscript.c:1456): `obs_num_rel_oscillating` or `observer_slot_raw_oscillating` or `obs_num_bounded_oscillating`; the int mechanism's zero noise floor applies | O1 + the int mechanism | `O2.inf-alternating-oscillates`, `O1.unobserved-jit-sample` |
 | `diverging` | **incumbent, unchanged:** `obs_num_diverging` (eigenscript.c:1463), `observer_slot_raw_diverging`; the int mechanism's zero floor applies | O1 + the int mechanism | `O2.int-counter-2p53`, `O2.int-down-counter-2p53`, `O2.inf-diverging` (invariant) |
 | `equilibrium` | **incumbent, unchanged:** `obs_num_equilibrium` (eigenscript.c:1565), #1899's one-direction guard and the `raw_oscillating` exclusion included | O1 | `O2.nan-all-false` |
@@ -2689,26 +2693,48 @@ down-counter from 2^53 by −1 reads `diverging` with no other predicate true.
 
 **Score of THIS configuration** (`out/r3/model/std_model.py`: the port
 `cur_model.py`, which agrees with the branch binary on 708/708, plus O1 + the
-int mechanism + STD_p on three predicates + the alignments; scored as
-`score.py` scores):
+int mechanism + the three standard tests with Deviations D1 and D2 + the
+alignments; scored as `score.py` scores):
 
 | configuration | floor keys lost /468 | all /702 | non-cap /600 | ieee /84 | int64 /18 | conv /118 | stab /118 | impr /118 | osc /116 | div /116 | equi /116 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | today (the port) | 0 | 592 | 503 | 77 | 12 | 96 | 89 | 110 | 98 | 96 | 103 |
 | `reference.py` | 28 | 585 | 498 | 77 | 10 | 109 | 100 | 115 | 97 | 99 | 65 |
-| **R3-STD** | **2** | **630** | 529 | 83 | 18 | 111 | 99 | 115 | 100 | 102 | 103 |
-| LOO: without the int mechanism | 2 | 624 | 529 | 83 | 12 | 109 | 97 | 115 | 100 | 100 | 103 |
-| LOO: without the alignments | 2 | 624 | 529 | 77 | 18 | 111 | 99 | 115 | 98 | 98 | 103 |
+| **R3-STD (with D1, D2)** | **0** | **636** | 535 | 83 | 18 | 111 | 102 | 118 | 100 | 102 | 103 |
+| the pre-registration's primary wording (2% band, half-window best) | 2 | 630 | 529 | 83 | 18 | 111 | 99 | 115 | 100 | 102 | 103 |
+| D1 only | 1 | 633 | 532 | 83 | 18 | 111 | 102 | 115 | 100 | 102 | 103 |
+| D2 only | 1 | 633 | 532 | 83 | 18 | 111 | 99 | 118 | 100 | 102 | 103 |
+| LOO: without the int mechanism | 0 | 630 | 535 | 83 | 12 | 109 | 100 | 118 | 100 | 100 | 103 |
+| LOO: without the alignments | 0 | 630 | 535 | 77 | 18 | 111 | 102 | 118 | 98 | 98 | 103 |
 | LOO: incumbent tests (O1 + int + alignments only) | 0 | 604 | 503 | 83 | 18 | 98 | 91 | 110 | 100 | 102 | 103 |
 
-- **The cost: R3-STD loses 2 floor keys (STOP-9).** They are
-  `alt_series_ln2@60 stable` (the 2% band reads it settled; the label's band is
-  #1754's 1%) and `quasi_2@300 improving` (the window's older half cannot see
-  the history's best).
-- **What R3-STD gains.** It removes 40 of today's 110 disagreements and adds
-  those 2.
-- **What still stays wrong.** The declared `ieee_nan_recover@13 stable`
-  (STOP-10) and `harmonic@2000 converged` (#1752, STOP-11).
+- **The floor: R3-STD keeps all 468 keys** with Deviations D1 and D2. The
+  pre-registration's primary wording loses 2: `alt_series_ln2@60 stable`
+  under the 2% band, and `quasi_2@300 improving` under the half-window best.
+- **What R3-STD gains.** It removes 44 of today's 110 disagreements and adds
+  none.
+- **What still stays wrong.**
+  - The declared `ieee_nan_recover@13 stable` stays in `oracle_expect.txt`
+    with the reason "window holds a NaN until checkpoint 19 (windowed-test
+    limit)" (RULING R30-3 item 2). Decision rule 6 names #1830's declaration
+    list, not this one. R3.0-I reviews the @13 label under #1754's NaN rule.
+  - `harmonic@2000 converged` is STD_converged's documented limit (R30-3
+    item 3; the candidate arm below).
+
+#### Deviations from the pre-registration
+
+Recorded under the pre-registration's own clause ("any change to this text
+after it is posted goes in a Deviations section before the reveal") by
+RULING R30-3 (#1758). R3.0-I's PR carries them in its own Deviations section
+before it lands.
+
+| # | registered | deviation | reason | modelled effect (calibration corpus) |
+|---|---|---|---|---|
+| D1 | STD_stable = the 2% settling band; STD′_stable = the 1% band (reported) | `stable` uses the 1% band, the registered STD′_stable | It is the band #1754's labels use (`stable`'s band β = 1e-2·max(\|L\|, 1e-3), "the observer's coarse dh_small tier"). The 2% band answers a coarser question than the label asks and loses `alt_series_ln2@60 stable` (window diameter 0.0192 ≤ 0.0278, while \|x − ln 2\| = 0.0081 > 0.0069) | `stable` 99 → 102 of 118; floor key `alt_series_ln2@60 stable` kept |
+| D2 | STD_improving: min(newer half) < min(older half) − min_delta (reference.py's approximation of Keras) | the best is Keras EarlyStopping's own running best: from x_0, improved by more than min_delta, patience = the window | It is the cited standard itself, not a novel rule: EarlyStopping keeps `best` across epochs, while the older-half minimum is reference.py's window approximation, which cannot see a lower best earlier in the history and loses `quasi_2@300 improving` | `improving` 115 → 118 of 118; floor key `quasi_2@300 improving` kept |
+
+Together: 0 floor keys lost, 636/702. Both come from the registered text (the
+STD′ arm and the cited source), and neither is a rule invented here.
 - These are the model's numbers. R3-STD's decision is H1's.
 
 #### O1, O4 and the writers (unchanged from design round 2 except where noted)
@@ -2841,6 +2867,16 @@ These ideas are recorded so that a later arm can be built and judged against
 R3-STD on H1, under the amendment's step 3 (+0.05 BA, lower CI bound above 0).
 Nothing in Phase 2's landing depends on them.
 
+**#1752's conservative `converged` is a candidate-arm mechanism** (RULING
+R30-3 item 3). The 2026-10-26 pre-registration supersedes #1752's 2026-10-19
+Done-when under the owner's rule (standard measurement first). The
+pre-registration names "#1752's conservative `converged`" as a LOO mechanism,
+so it is a candidate-arm change judged on H1 against R3-STD. #1752's
+Done-when is re-scoped to that. Until an arm beats R3-STD by the registered
+margin, the harmonic rows' disagreement (`harmonic@2000 converged`) is
+STD_converged's documented limit. The travel bound below was design round 2's
+attempt at that mechanism.
+
 | idea (design round 2) | what it does | the critic's refuting probe |
 |---|---|---|
 | remaining-travel bound, `R = \|d0\|·ρ/(1−ρ)` | vetoes a monotone window whose geometric tail exceeds the tolerance (#1752's conservative `converged`) | round 2 F1: `travel_bound` returns R = 0 when a sign reversal ends the run, so a warm-up loss (`1.0, 1.2, 1.4, 1.6`, then `0.2 + 1.4/√(i−2)`) reads `converged` at i = 12, 2213 × eps (R3-STD and today: never). F2: on noisy harmonic, the base path bypasses the bound (1425 of 3000 prefixes). F8: sublinear tails are under-estimated by (p+1)/p |
@@ -2872,7 +2908,10 @@ Under STD_converged, the model gives (every prefix,
     R3.1 restates it with these figures.
 - **Slow divergence.** The harmonic series reads `converged` from n = 1295
   (706 of 2001 prefixes; today from n = 183), and it is never `diverging`.
-  This is #1752's class (STOP-11).
+  This is STD_converged's documented limit: the windowed Cauchy test cannot
+  see slow divergence, the honesty bound PREDICATES.md states. #1752's
+  conservative `converged` is the candidate-arm mechanism for it, judged on
+  H1 against R3-STD (RULING R30-3 item 3).
 - **Noise.** Harmonic plus U(±1e-3) reads `converged` on 1675 of 3000
   prefixes, first at k = 1094 (today: 1750, first at 207). A diameter test
   cannot tell bounded noise around a drift from rest.
@@ -2926,7 +2965,7 @@ procedure. The named check must go red on its own message.
 | a NaN current value keeps R2.2's `diverging` veto | oracle `... ieee_nan@3 diverging`; row `O2.nan-all-false` |
 | the inf sign rule removed | oracle `... ieee_inf_alternating@20 oscillating`; row `O2.inf-alternating-oscillates` |
 | STD_converged replaced by the incumbent band | row `O2.harmonic-not-converged` (converged `true` at 300) |
-| STD_improving replaced by the incumbent contraction band | rows `O2.report-noisy-loss`, `O2.noisy-loss-improving-count` (42 becomes 0) |
+| STD_improving replaced by the incumbent contraction band | rows `O2.report-noisy-loss`, `O2.noisy-loss-improving-count` (51 becomes 0) |
 | `report` at NaN returns `moving` | row `O2.nan-report-undefined` |
 | `where is x` reads entropy | row `O1.where-is-value` |
 | `how` on an infinite step uses the formula alone | row `O4.how-infinite-step` |

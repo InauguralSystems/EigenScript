@@ -705,7 +705,7 @@ The `O cfg` record's current shape is pinned by `O3.ocfg-no-hlow` (its file list
   -> `[9007199254740932, false, false, true, false]` (the same mechanism, falling; ints run interpreted in every tier until R5)
   tag: `[9007199254740932, true, true, false, true]` (run, R3.0r3). Branch base: `[9007199254740932, true, true, false, false]`
 - `O2.harmonic-not-converged` [R3] `h is 1.0 / n is 1.0`, then while `n < 301.0`: `h is h + 1.0 / (n + 1.0) / n is n + 1.0`; `print of [converged of h, stable of h, diverging of h]`
-  -> `[false, true, false]` (STD_converged, the windowed Cauchy test: at n = 300 ten steps span ~0.033 > tau = 1e-3*6.28; STD_stable's 2% band holds; `diverging` false is the documented honesty bound. STD_converged still reads harmonic converged from n = 1295, #1752's STOP-11). Not a floor verdict: harmonic's `converged` was wrong on the tag
+  -> `[false, true, false]` (STD_converged, the windowed Cauchy test: at n = 300 ten steps span ~0.033 > tau = 1e-3*6.28; STD'_stable's 1% band (Deviation D1) holds; `diverging` false is the documented honesty bound. STD_converged still reads harmonic converged from n = 1295: its documented limit, and #1752's conservative converged is a candidate arm judged on H1, RULING R30-3 item 3). Not a floor verdict: harmonic's `converged` was wrong on the tag
   tag: `[true, true, false]` (run, R3.0; the branch base prints the same)
 - `O2.inverse-growth-not-converged` [R3] #1990's M5 run: `x is 0.0293`, then 120 times `x is x + 1.0 / x`, recording the first iteration at which `converged of x` reads true (`first` starts `null`); `print of [first, x]`
   -> `[null, 37.48239150668529]` (STD_converged: its window diameter never falls under tau on this run; model trace in the R3.0 report)
@@ -714,10 +714,10 @@ The `O cfg` record's current shape is pinned by `O3.ocfg-no-hlow` (its file list
   -> `[[false, false], 0]`. Base-green on `968d9fe4` and the tag, and STD_converged keeps it (the window's diameter spans the earlier unit steps); design round 1's rule read `[conv stab]` at the pause
   tag: `[[false, false], 0]` (run, R3.0r2)
 - `O2.noisy-loss-improving-count` [R3] `loss is 0.2 + 2.0 * (exp of (-0.02 * i)) + 0.1 * u` (Park-Miller LCG, seed 2024.0, i = 0..120); count the iterations i >= 20 at which `improving of loss` is true; `print of hits`
-  -> `42` (STD_improving, reference.py's `improving`: the newer half's minimum below the older half's by min_delta, and bounded by its approximation; design round 2's candidate `top` test gave 96)
+  -> `51` (STD_improving with Keras' own running best, Deviation D2 (RULING R30-3), and reference.py's bounded approximation; the pre-registration's half-window wording gives 42; design round 2's candidate `top` test gave 96)
   tag: `0` (run, R3.0r2; the branch base prints the same)
 - `O2.report-noisy-loss` [R3] a Park-Miller LCG (`s is (s * 16807.0) % 2147483647.0`, seed 12345.0, exact in doubles) drives `loss is 0.5 + 2.0 * (exp of (-0.03 * i)) + 0.01 * u` for i = 0..60, u in [-1, 1); `print of [report of loss, improving of loss, oscillating of loss]`
-  -> `["improving", true, false]` (#1754's corrected `improving`: a new best within the window on a bounded sequence; Keras `mode='min'`; `report`'s ranking is unchanged, RULING R30-2 item 6; STD_improving)
+  -> `["improving", true, false]` (#1754's corrected `improving`: a new best within the window on a bounded sequence; Keras `mode='min'` with its own running best, Deviation D2; `report`'s ranking is unchanged, RULING R30-2 item 6)
   tag: `["moving", false, false]` (run, R3.0; the branch base prints the same: its contraction band never reads a 0.97-ratio decay as improving, #1771)
 - Planned control, not yet a MAP row (R3.1 adds `tests/phase2/controls/ctl.O2.noise-oscillates.eigs` with its `.out` and this line becomes the control row `ctl.O2.noise-oscillates`; a control is checked in every mode, so listing it before its file exists would fail every `--through`): iid noise of amplitude 1 around 100 (Park-Miller LCG, seed 777.0, 61 values); `print of (oscillating of x)`
   -> `true` on both binaries. #1754 (Hardy §62): iid noise has no limit and does not tend to +-inf, so it oscillates. This replaces the R0 row `O2.noise-not-oscillating`, whose expected `false` contradicted the decided definition and which could not fail on the tag (it prints `true`)
