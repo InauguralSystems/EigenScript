@@ -1,7 +1,8 @@
-/* R2.2: IEEE result/status and real-VM strict arithmetic regression.
+/* R2.2/R2.4: IEEE result/status and real-VM strict arithmetic regression.
  * The historical filename/Make target stay stable for suite variants.
- * Raw rows check payload preservation, including tag-spelling NaNs; the
- * separate slot test owns NaN canonicalization and refcount safety.
+ * N12/R2.4 canonicalizes result-boundary NaNs, including tag-spelling
+ * payloads; explicit integer/buffer-bit paths retain every raw payload.
+ * The separate slot test owns float-slot canonicalization and refcount safety.
  * Strict rows catch real interpreter errors, so expected refusals print no
  * uncaught-error stderr. Leaf rows use the existing scanner and VM call path.
  */
@@ -33,16 +34,18 @@ static double from_bits(uint64_t x) {
 static void raw_row(const char *name, double input) {
     const unsigned before = 0x40u;
     unsigned expected = before;
+    uint64_t expected_bits = isnan(input) ? UINT64_C(0x7ff8000000000000)
+                                         : bits(input);
     if (isnan(input)) expected |= EIGS_MATH_INVALID;
     else if (isinf(input)) expected |= EIGS_MATH_OVERFLOW;
     eigs_clear_error();
     g_math_flags = before;
     double result = eigs_math_result_named(input, "ieee-result-test");
     raw_rows++;
-    if (bits(result) != bits(input) || g_math_flags != expected || eigs_has_error()) {
-        fprintf(stderr, "FAIL: raw %s: input=%016llx output=%016llx flags=%u expected=%u error=%d\n",
+    if (bits(result) != expected_bits || g_math_flags != expected || eigs_has_error()) {
+        fprintf(stderr, "FAIL: raw %s: input=%016llx output=%016llx expected_bits=%016llx flags=%u expected=%u error=%d\n",
                 name, (unsigned long long)bits(input), (unsigned long long)bits(result),
-                g_math_flags, expected, eigs_has_error());
+                (unsigned long long)expected_bits, g_math_flags, expected, eigs_has_error());
         failed = 1;
     }
 }
@@ -98,9 +101,9 @@ static void strict_catch(const char *name, const char *expression,
 
 static void leaf_cases(void) {
     /* An earlier underflow is speculative until the later addition succeeds.
-     * The non-finite row bails after multiplication and re-executes generically.
-     * This checks the real call's result/status; static code review establishes
-     * that the speculative evaluator publishes no flags before the bailout.
+     * R2.4 permits its non-finite default-mode result through the single writer.
+     * This checks the real call's combined underflow/INVALID status; the leaf
+     * publishes that private status only after its successful RETURN.
      */
     EigsValue *defined = eigs_eval_string(
         "define ieee_leaf(a, b, c) as:\n"
@@ -125,7 +128,7 @@ static void leaf_cases(void) {
             "(ieee_leaf of [1e-300, 1e-300, 2.0]) == 2.0\n",
             EIGS_MATH_UNDERFLOW);
     leaf_rows++;
-    vm_bool("leaf underflow then non-finite bailout",
+    vm_bool("leaf underflow then non-finite result",
             "ieee_leaf_result is ieee_leaf of [1e-300, 1e-300, ieee_nan]\n"
             "ieee_leaf_result != ieee_leaf_result\n",
             EIGS_MATH_UNDERFLOW | EIGS_MATH_INVALID);
@@ -161,6 +164,13 @@ int main(void) {
             "ieee_default != ieee_default\n", EIGS_MATH_INVALID);
     vm_bool("default finite quotient from infinity operand",
             "(7 / ieee_inf) == 0.0\n", 0);
+    /* N12/R2.4: the raw buffer-bit path preserves a noncanonical NaN
+     * payload as an exact integer, without crossing a float getter. */
+    vm_bool("raw buffer NaN payload round-trip",
+            "ieee_bits_buffer is buffer of 1\n"
+            "ieee_bits_payload is 9218868437227405313\n"
+            "buf_set_bits of [ieee_bits_buffer, 0, ieee_bits_payload]\n"
+            "(buf_get_bits of [ieee_bits_buffer, 0]) == ieee_bits_payload\n", 0);
     leaf_cases();
 
     eigs_state_set_strict(state, 1);
