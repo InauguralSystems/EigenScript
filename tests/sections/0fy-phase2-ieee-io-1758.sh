@@ -27,7 +27,7 @@ else
             case "$IEEE_IO_TEST" in
                 nonfinite-tape)
                     IEEE_IO_OUT=$(make --no-print-directory -C "$TESTS_DIR/.." "IEEE_IO_VARIANT=$IEEE_IO_VARIANT" nonfinite-tape-test 2>&1); IEEE_IO_RC=$?
-                    IEEE_IO_WANT='nonfinite-tape: values=10 raw_buffer_cells=14 malformed=19 recordings=2 checks=48 failures=0'
+                    IEEE_IO_WANT='nonfinite-tape: values=10 raw_buffer_cells=14 malformed=19 recordings=2 checks=132 failures=0'
                     ;;
                 decoder-overflow)
                     IEEE_IO_OUT=$(make --no-print-directory -C "$TESTS_DIR/.." "IEEE_IO_VARIANT=$IEEE_IO_VARIANT" decoder-overflow-test 2>&1); IEEE_IO_RC=$?

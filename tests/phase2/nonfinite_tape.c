@@ -190,6 +190,44 @@ int main(void) {
         check(trace_parse_float_token(&p, &d) && !*p && bits(d) == scalars[i], "step/DAP float parser retains canonical IEEE bits");
     }
 #endif
+    /* RULING R25-1: the grammar accepts IEEE words, but these live
+     * consumers cannot return non-finite numbers. Derived by reviewing the
+     * core N-kind table: 14 scalar domains and 6 numeric container domains.
+     * The three reader size arms retain their own exact-int diagnostics. */
+    static const struct { const char *name, *prefix, *suffix; } finite[] = {
+        {"random", "", ""}, {"random_int", "", ""},
+        {"monotonic_ns", "", ""}, {"monotonic_ms", "", ""},
+        {"clock_unix", "", ""}, {"gfx_ticks", "", ""},
+        {"audio_capture_open", "", ""}, {"audio_stream_queued", "", ""},
+        {"net_listen", "", ""}, {"net_accept", "", ""},
+        {"net_dial", "", ""}, {"net_port", "", ""},
+        {"net_send", "", ""}, {"write_bytes", "", ""},
+        {"read_bytes", "[", "]"}, {"read_bytes_buf", "b[", "]"},
+        {"net_recv", "b[", "]"}, {"gfx_read", "[", "]"},
+        {"audio_capture_read", "b[", "]"}, {"audio_noise", "[", "]"}
+    };
+    const char *nonfinite[] = {"nan", "inf", "-inf"};
+    for (size_t i = 0; i < sizeof finite / sizeof finite[0]; i++) {
+        char token[128], diagnostic[160], label[192];
+        snprintf(diagnostic, sizeof diagnostic,
+                 "trace: %s: non-finite replay value", finite[i].name);
+        for (size_t j = 0; j < sizeof nonfinite / sizeof nonfinite[0]; j++) {
+            snprintf(token, sizeof token, "%s%s%s", finite[i].prefix, nonfinite[j], finite[i].suffix);
+            snprintf(label, sizeof label, "R25-1 %s refuses %s by name", finite[i].name, token);
+            check(child_verdict(finite[i].name, token, 3, diagnostic), label);
+        }
+        snprintf(token, sizeof token, "%s0%s", finite[i].prefix, finite[i].suffix);
+        snprintf(label, sizeof label, "R25-1 %s finite control", finite[i].name);
+        check(child_verdict(finite[i].name, token, 0, NULL), label);
+    }
+    check(child_verdict("random_normal", "[inf,-inf]", 0, NULL),
+          "R25-1 normal samples may overflow finite scale to infinity");
+    check(child_verdict("random_normal", "[nan]", 3, "trace: random_normal: non-finite replay value"),
+          "R25-1 normal samples cannot produce NaN from finite scale");
+    check(child_verdict("random_normal", "[[nan]]", 3, "trace: random_normal: non-finite replay value"),
+          "R25-1 matrix normal samples cannot produce NaN from finite scale");
+    check(child_verdict("net_recv", "b[bits(-1)]", 3, "trace: net_recv: non-finite replay value"),
+          "R25-1 raw buffer NaN bits cannot bypass a byte domain");
     char old[128];
     int old_n = snprintf(old, sizeof old, "V 9 %s\n", EIGENSCRIPT_VERSION);
     check(old_n > 0 && (size_t)old_n < sizeof old && !eigs_set_replay_tape(old, (size_t)old_n, 1),
