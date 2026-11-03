@@ -635,7 +635,9 @@ check_eigs_suite() {
     local out rc n=1
     # Guard #681: abort if the binary was rebuilt while a previous block ran.
     check_binary_fingerprint
-    out=$($EIGS_TMO ./eigenscript "../tests/$file" </dev/null 2>&1); rc=$?
+    # Use the same canonical run conditions as the differential runners.
+    # In particular, strict-contract fixtures opt in after R2.2's mode change.
+    out=$(suite_program_run "$file" $EIGS_TMO ./eigenscript "../tests/$file" </dev/null 2>&1); rc=$?
     TOTAL=$((TOTAL + n))
     if [ "$rc" = "124" ]; then
         # rc=124 is the runaway guard (GNU/gtimeout both use it): the test file
