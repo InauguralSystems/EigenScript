@@ -129,11 +129,14 @@ run_plant() {
 }
 
 # Plant 1 (9.3): an int that fits inline stored boxed. slot_from_int, the one
-# int writer, skips the small-int rule and tags the int as a heap pointer.
+# int writer, skips the small-int rule and allocates a real VAL_INT box.
+# A heap tag on the integer bits is an invalid pointer, not this plant: it
+# also crashes unrelated VM/container checks after Part C's assertion is
+# deleted, so cannot prove that the small-int assertion is transverse.
 # Named check: the C slot test's slot_from_int rows (Part C).
 run_plant 1 src/value_slot.h \
     'EigsSlot s; s.u = TAG_SMI | ((uint64_t)i & SLOT_PAYLOAD_MASK); return s;' \
-    'EigsSlot s; s.u = TAG_HEAP | ((uint64_t)i & SLOT_PAYLOAD_MASK); return s;' \
+    'return slot_from_heap(make_int(i));' \
     tests/phase2/slot_layer.c \
     '        if (s.u != smi(v).u)' \
     '        if (0)' \

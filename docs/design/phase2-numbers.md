@@ -2830,7 +2830,7 @@ The tier-witness and leaf-differential plants (§9.2's calibration) belong to
 instrument, not the semantics.
 
 As built in R1.1, the tool holds the plants whose named checks exist: plant
-1 (`slot_from_int` tags an int that fits as a heap pointer; its named line
+1 (`slot_from_int` stores an int that fits in a real `VAL_INT` box; its named line
 is `slot-layer-test: FAIL slot_from_int(0): bits ...`). Plants 2-7 join the
 table in the commits that land their rows, and its output then reads
 `plants=7`. Its transverse run deletes exactly the named assertion
