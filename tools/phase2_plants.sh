@@ -18,6 +18,7 @@
 #
 # Plants land with their named checks: plant 1 with R1.1 (the C slot test),
 # plant 2 with R2.1 (the C NaN-writer rows; the program half is R2.4).
+# Plant3 joins at R2.3: JSON and store refuse inside their encoders.
 # Other MAP-row plants join as their named checks land. The R1.1
 # fix round added three instrument plants on the slot test: an integer overflow
 # that wraps instead of raising (Part D), and a population scan that writes noise
@@ -43,7 +44,7 @@ while [ $# -gt 0 ]; do
             [ $# -gt 1 ] || { echo "phase2-plants: FAIL: --only needs a plant id"; exit 2; }
             [ -z "$ONLY" ] || { echo "phase2-plants: FAIL: --only may be given once"; exit 2; }
             case "$2" in
-                1|2|overflow-wrap|stderr-noise|stdout-noise|return-type) ONLY="$2" ;;
+                1|2|3-json|3-store|overflow-wrap|stderr-noise|stdout-noise|return-type) ONLY="$2" ;;
                 *) echo "phase2-plants: FAIL: unknown plant id $2"; exit 2 ;;
             esac
             shift 2 ;;
@@ -104,15 +105,16 @@ run_plant() {
             break
         fi
         if [ "$mode" = plant ]; then
-            if grep -Eq "$re" "$log"; then verdict=KILLED
-            elif [ "$rc" -eq 124 ] || grep -q 'build: \|make phase2-slot-test exited' "$log"; then
-                verdict=BROKEN; echo "  $id: the check did not run (rc=$rc):"; tail -20 "$log" | sed 's/^/    | /'
+            if [ "$rc" -eq 124 ] || grep -q 'build: \|make phase2-slot-test exited\|^writer-map: BROKEN' "$log"; then
+                verdict=BROKEN; echo "  $id: the check did not complete (rc=$rc):"; tail -20 "$log" | sed 's/^/    | /'
+            elif grep -Eq "$re" "$log"; then verdict=KILLED
             else verdict=SURVIVED; echo "  $id: no failure line matching /$re/ (rc=$rc):"; tail -20 "$log" | sed 's/^/    | /'; fi
             grep -E "$re" "$log" | head -3 | sed 's/^/    red: /'
             [ "$verdict" = KILLED ] || break
         else
             if grep -Eq "$re" "$log"; then trans=NOT-TRANSVERSE; echo "  $id: the line still fired with its assertion deleted"
-            elif [ "$rc" -eq 124 ]; then trans=BROKEN
+            elif [ "$rc" -ne 0 ] || grep -q 'build: \|make phase2-slot-test exited\|^writer-map: BROKEN' "$log"; then
+                trans=BROKEN; echo "  $id: assertion-deleted check did not complete cleanly (rc=$rc)"
             else trans=TRANSVERSE; fi
             tail -2 "$log" | sed 's/^/    assertion deleted: /'
         fi
@@ -153,6 +155,36 @@ run_plant 2 src/value_slot.h \
             FAILF("N12.nan-payload-tags' \
     '^slot-layer-test: FAIL N12.nan-payload-tags slot_from_f64\(fffb000000001000\): got X:signal 11:' \
     bash tests/phase2/slot_layer.sh release
+
+# Plant 3 (R2.3, design 9.3): delete only the encoder's finite refusal.
+# The public JSON row is an R23-1 invariant on the accepted parent, but the
+# encoder now owns its error: removing that refusal must expose accepted inf.
+# Transverse deletes this named row's assertion, not the row or its controls.
+run_plant 3-json src/builtins.c \
+    '            if (!isfinite(n)) {
+                rt_error(EK_VALUE, 0, "eigs_json_encode_value: expected a finite number");
+                return -1;
+            }' \
+    '            /* PLANT 3-json: accept non-finite numeric JSON text. */' \
+    tests/phase2/writer_map_check.py \
+    "            if row == 'N13.json-refuses-inf' and not matched:" \
+    "            if False and row == 'N13.json-refuses-inf' and not matched:" \
+    '^writer-map: FAIL N13\.json-refuses-inf tier=' \
+    python3 -W error tests/phase2/writer_map_check.py N13.json-refuses-inf
+
+# All store scalar/slot/buffer arms use this encoder helper. Its deletion
+# accepts the actual MAP NaN record; no unrelated I/O or parser fault is added.
+run_plant 3-store src/ext_store.c \
+    '    if (!isfinite(d)) {
+        rt_error(EK_VALUE, 0, "store: cannot encode a non-finite number");
+        return -1;
+    }' \
+    '    /* PLANT 3-store: accept non-finite stored numeric text. */' \
+    tests/phase2/writer_map_check.py \
+    "            if row == 'N13.store-refuses-nan' and not matched:" \
+    "            if False and row == 'N13.store-refuses-nan' and not matched:" \
+    '^writer-map: FAIL N13\.store-refuses-nan tier=' \
+    python3 -W error tests/phase2/writer_map_check.py N13.store-refuses-nan
 
 # R1.3 N3/(A): overflow must raise, never return the wrapped int64 result.
 # The builtin computes the wrapped bits through __builtin_*_overflow; dropping

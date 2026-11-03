@@ -3,7 +3,7 @@ name: phase2
 # #1758: landed MAP rows, the pre-registered builtin table on matched
 # capability profiles, the C readers and the stdlib differential. The shared
 # phase2_check.py helper derives the complete declared MAP prefix by default.
-# R2.2 selects the IEEE rows against the exact accepted R2.1 baseline.
+# R2.3 adds writer refusal and no-mutation proofs after accepted R2.2.
 on:
   push:
     branches: [phase2-numbers]
@@ -34,7 +34,7 @@ jobs:
     env:
       DATABASE_URL: postgres://eigs:eigs_test@127.0.0.1:5432/eigs_test
     steps:
-      # Every branch and tag is needed: origin/main, v0.46.0 and the R2.1 baseline.
+      # Every branch and tag is needed: origin/main, v0.46.0 and the accepted R2.2 baseline.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
@@ -52,14 +52,14 @@ jobs:
           export XDG_CACHE_HOME="$RUNNER_TEMP/cache"
           make --no-print-directory observer-anchor
           anchor="$XDG_CACHE_HOME/eigs-oracle-anchor/$(sha256sum tools/observer_oracle/build_anchor.sh | cut -d' ' -f1)/src/eigenscript"
-          mkdir -p "$RUNNER_TEMP/main" "$RUNNER_TEMP/tag-profiles" "$RUNNER_TEMP/r22-baseline"
+          mkdir -p "$RUNNER_TEMP/main" "$RUNNER_TEMP/tag-profiles" "$RUNNER_TEMP/r23-baseline"
           git archive origin/main | tar -x -C "$RUNNER_TEMP/main"
           git archive v0.46.0 | tar -x -C "$RUNNER_TEMP/tag-profiles"
-          git archive 3a1c5e84dfb3f705f6c9033fe59606f2689a8011 | tar -x -C "$RUNNER_TEMP/r22-baseline"
+          git archive 2c402e2fdd0662ac5ad85429240c8346279a7f00 | tar -x -C "$RUNNER_TEMP/r23-baseline"
           make -C "$RUNNER_TEMP/main" > "$RUNNER_TEMP/main-build.log" 2>&1 \
             || { tail -n 50 "$RUNNER_TEMP/main-build.log"; echo "::error::the origin/main build failed"; exit 1; }
-          make -C "$RUNNER_TEMP/r22-baseline" > "$RUNNER_TEMP/r22-baseline-build.log" 2>&1 \
-            || { tail -n 50 "$RUNNER_TEMP/r22-baseline-build.log"; echo "::error::the R2.1 baseline build failed"; exit 1; }
+          make -C "$RUNNER_TEMP/r23-baseline" > "$RUNNER_TEMP/r23-baseline-build.log" 2>&1 \
+            || { tail -n 50 "$RUNNER_TEMP/r23-baseline-build.log"; echo "::error::the R2.2 baseline build failed"; exit 1; }
           # The table uses matching capability builds; a capability-unavailable
           # transcript is a failure, including on the tag (ruling A3).
           for profile in server zlib db; do
@@ -88,26 +88,14 @@ jobs:
           # Restore the release alias before the MAP and library checks.
           PATH="$PWD/tools/cc-guard-bin:$PATH" make build
           bash tools/cc_guard.sh --report
-          bash tools/phase2_ci.sh --through R2.2 --baseline "$RUNNER_TEMP/r22-baseline/src/eigenscript" \
+          bash tools/phase2_ci.sh --through R2.3 --baseline "$RUNNER_TEMP/r23-baseline/src/eigenscript" \
             "$anchor" "$RUNNER_TEMP/main/src/eigenscript" src/eigenscript
 
-      - name: R2.2 interim writer observations for R2.3
-        if: always()
+      - name: R2.3 encoder failure and no-mutation proofs
         run: |
-          python3 tools/phase2_r22_writers.py --binary build/release/eigenscript \
-            --server build/server/eigenscript --output "$RUNNER_TEMP/r22-writers.json"
-      - name: R2.2 writer memory-safety observations
-        if: always()
+          bash tests/phase2/writers.sh release build/release/eigenscript build/server/eigenscript
+      - name: R2.3 writer proofs under ASan and UBSan
         run: |
           make asan
           make asan-server
-          ASAN_OPTIONS=detect_leaks=1 python3 tools/phase2_r22_writers.py \
-            --binary build/asan/eigenscript --server build/asan-server/eigenscript \
-            --output "$RUNNER_TEMP/r22-writers-asan.json"
-      - name: Preserve R2.2 writer observations
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
-        with:
-          name: r22-writer-observations
-          path: ${{ runner.temp }}/r22-writers*.json
-          if-no-files-found: error
+          ASAN_OPTIONS=detect_leaks=1 bash tests/phase2/writers.sh asan build/asan/eigenscript build/asan-server/eigenscript

@@ -3105,3 +3105,18 @@ true
 false
 false
 ```
+
+## Non-finite values at encoding boundaries
+
+`json_encode` refuses NaN and either infinity with a `value` error, including
+values inside lists, dicts and buffers. Finite buffers keep their existing
+JSON `null` representation. Byte-value encoders and integer conversions also
+refuse non-finite inputs. These data-boundary refusals apply in every strict
+mode, independently of the opt-in arithmetic trap.
+
+JSON and store encoders return failure before their callers commit output.
+A refused `shared_set`, overflowing `shared_incr`, `store_put` or
+`store_update` leaves the previous state unchanged. Store refusal does not
+create a collection, consume an automatic ID, change the caller's record or
+write file bytes. Historical stores containing quoted non-finite buffer
+sentinels remain readable; new writes of those payloads refuse.
