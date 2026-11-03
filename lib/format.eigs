@@ -111,6 +111,10 @@ define fmt_num(value, decimals) as:
     # Inspect the existing rendering so this library also runs on the main
     # double-only reference runtime (which has no num_type builtin).
     value_text is str of value
+    # R2.5/N6: nonfinite floats use the shared Python-repr words; fixed
+    # decimal padding applies only to finite numbers.
+    if (type of value) == "num" and (value_text == "inf" or value_text == "-inf" or value_text == "nan"):
+        return value_text
     # Fixed decimals format an integral float's digits just like an integer's.
     # Strip N6's kind suffix before choosing the exact digit/padding path.
     if ends_with of [value_text, ".0"]:
@@ -156,6 +160,10 @@ define fmt_num(value, decimals) as:
 # ---- fmt_percent: format as percentage ----
 # fmt_percent of [value, decimals] -> string
 define fmt_percent(value, decimals) as:
+    # Formatting an existing IEEE value is not a new arithmetic operation.
+    value_text is str of value
+    if (type of value) == "num" and (value_text == "inf" or value_text == "-inf" or value_text == "nan"):
+        return value_text + "%"
     pct is value * 100.0
     return (fmt_num of [pct, decimals]) + "%"
 

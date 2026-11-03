@@ -461,6 +461,20 @@ build/server-db/test_db_params: tests/test_db_params.c $(SRC_DIR)/ext_db.c $(DB_
 db-params-test: build/server-db/test_db_params
 	@echo "DB params test built: $<"
 
+# R2.5: actual nonfinite tape round trips and production JSON/store decoders.
+IEEE_IO_VARIANT ?= release
+IEEE_TAPE_OBJ := $(filter-out build/$(IEEE_IO_VARIANT)/main.o,$(OBJ_$(IEEE_IO_VARIANT)))
+IEEE_DECODER_OBJ := $(filter-out build/$(IEEE_IO_VARIANT)/ext_store.o,$(IEEE_TAPE_OBJ))
+build/$(IEEE_IO_VARIANT)/test_nonfinite_tape: tests/phase2/nonfinite_tape.c $(IEEE_TAPE_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(IEEE_IO_VARIANT)) -I$(SRC_DIR) -o $@ $< $(IEEE_TAPE_OBJ) $(LIBS_$(IEEE_IO_VARIANT))
+build/$(IEEE_IO_VARIANT)/test_decoder_overflow: tests/phase2/decoder_overflow.c $(SRC_DIR)/ext_store.c $(IEEE_DECODER_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(IEEE_IO_VARIANT)) -I$(SRC_DIR) -o $@ $< $(IEEE_DECODER_OBJ) $(LIBS_$(IEEE_IO_VARIANT))
+.PHONY: nonfinite-tape-test decoder-overflow-test
+nonfinite-tape-test: build/$(IEEE_IO_VARIANT)/test_nonfinite_tape
+	$<
+decoder-overflow-test: build/$(IEEE_IO_VARIANT)/test_decoder_overflow
+	$<
+
 TRACE_CONTEXT_VARIANT ?= release
 TRACE_CONTEXT_OBJ := $(filter-out build/$(TRACE_CONTEXT_VARIANT)/main.o,$(OBJ_$(TRACE_CONTEXT_VARIANT)))
 build/$(TRACE_CONTEXT_VARIANT)/test_trace_context: tests/test_trace_context.c $(TRACE_CONTEXT_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt

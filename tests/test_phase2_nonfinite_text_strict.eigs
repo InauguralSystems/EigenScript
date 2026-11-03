@@ -1,0 +1,20 @@
+# R2.5/N6: formatting transports existing IEEE values; it does not do math.
+load_file of "lib/test.eigs"
+load_file of "lib/format.eigs"
+values is [f64_from_bits of 0x7FF0000000000000, f64_from_bits of 0xFFF0000000000000, f64_from_bits of 0x7FF8000000000000, f64_from_bits of 0xFFF8000000000001]
+words is ["inf", "-inf", "nan", "nan"]
+padded is ["  inf", " -inf", "  nan", "  nan"]
+for j in range of 4:
+    x is values[j]
+    word is words[j]
+    assert_eq of [str of x, word, "strict str nonfinite"]
+    assert_eq of [f"{x}", word, "strict f-string nonfinite"]
+    assert_eq of [fmt_num of [x, 2], word, "strict fixed decimals nonfinite"]
+    percent is ""
+    try:
+        percent is fmt_percent of [x, 2]
+    catch e:
+        percent is "RAISED:" + e.kind
+    assert_eq of [percent, word + "%", "strict percent nonfinite"]
+    assert_eq of [fmt_padded of [x, 5], padded[j], "strict padded nonfinite"]
+test_summary of null
