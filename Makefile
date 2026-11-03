@@ -400,6 +400,14 @@ sigpipe-partial-test: build/$(SIGPIPE_VARIANT)/test_sigpipe_partial
 	@echo "SIGPIPE partial test built: $<"
 
 # #1038/#1028: same runtime variant as the suite; never repoint the CLI alias.
+EMBED_NAN_VARIANT ?= release
+EMBED_NAN_OBJ := $(filter-out build/$(EMBED_NAN_VARIANT)/main.o,$(OBJ_$(EMBED_NAN_VARIANT)))
+build/$(EMBED_NAN_VARIANT)/test_embed_nan: tests/phase2/embed_nan.c $(EMBED_NAN_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(EMBED_NAN_VARIANT)) -I$(SRC_DIR) -o $@ $< $(EMBED_NAN_OBJ) $(LIBS_$(EMBED_NAN_VARIANT))
+.PHONY: embed-nan-test
+embed-nan-test: build/$(EMBED_NAN_VARIANT)/test_embed_nan
+	build/$(EMBED_NAN_VARIANT)/test_embed_nan
+
 EMBED_OBSERVER_VARIANT ?= release
 EMBED_OBSERVER_OBJ := $(filter-out build/$(EMBED_OBSERVER_VARIANT)/main.o,$(OBJ_$(EMBED_OBSERVER_VARIANT)))
 build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer: tests/test_embed_observer.c $(EMBED_OBSERVER_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt

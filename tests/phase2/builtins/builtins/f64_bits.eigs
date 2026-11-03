@@ -1,0 +1,40 @@
+# R2.4/N12 new builtin: exact int64 result; int inputs use Q2 before bit reinterpretation.
+try:
+    x is f64_bits of 1.0
+    print of ["one", x, num_type of x]
+catch e:
+    print of ["one", e.kind]
+try:
+    x is f64_bits of -0.0
+    print of ["negative-zero", x, num_type of x]
+catch e:
+    print of ["negative-zero", e.kind]
+try:
+    print of ["int-promotes", f64_bits of 9007199254740993]
+catch e:
+    print of ["int-promotes", e.kind]
+try:
+    x is f64_bits of (f64_from_bits of 0xFFF8000000000042)
+    print of ["nan", x, num_type of x]
+catch e:
+    print of ["nan", e.kind]
+try:
+    print of ["infinity", f64_bits of (f64_from_bits of 0x7FF0000000000000)]
+catch e:
+    print of ["infinity", e.kind]
+try:
+    print of ["non-number", f64_bits of "x"]
+catch e:
+    print of ["non-number", e.kind]
+try:
+    print of ["bool", f64_bits of true]
+catch e:
+    print of ["bool", e.kind]
+try:
+    print of ["null", f64_bits of null]
+catch e:
+    print of ["null", e.kind]
+try:
+    print of ["list", f64_bits of ([1.0])]
+catch e:
+    print of ["list", e.kind]

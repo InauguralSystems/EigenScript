@@ -557,8 +557,9 @@ output below.
 - `N12.nan-payload-tags` [R2.1/R2.4] for every tag-spelling payload `p` in `0xFFF8000000000000, 0xFFF9000000000001, 0xFFFA000000000005, 0xFFFB000000001000, 0xFFFF000000000000`, `x is f64_from_bits of p`, stored in a variable, a list, a dict and a buffer; print `[type of x, x == x, f64_bits of x]` for each
   -> `["num", false, 9221120237041090560]` five times
   tag: undefined. **Plant 2's named check**, run under the plant build with ASan.
-- `N12.payload-through-ints` [R2.4] `i is 9218868437227405313 / print of [f64_bits of (f64_from_bits of i), <buffer bits get> of (<buffer bits set> of [buffer of 1, 0, i])]`
+- `N12.payload-through-ints` [R2.4] `i is 9218868437227405313 / b is buffer of 1 / buf_set_bits of [b, 0, i] / print of [f64_bits of (f64_from_bits of i), buf_get_bits of [b, 0]]`
   -> `[9221120237041090560, 9218868437227405313]`. Ints and buffer bits keep the payload; a float does not.
+  RULING R24-1: the setter returns null like `buf_set`; retain the buffer instead of composing the placeholder calls. Names, subject-first argument order, expected output and meaning are decided; no alias is added.
   tag: undefined
 - `N12.fn-nan-canonical` [R2.4] `define nz(a) as: t is a - a / return t`, called 60 times with `x is 1e308 * 10`; `print of (f64_bits of (nz of x))`
   -> `9221120237041090560` (the JIT bails on the NaN result; the interpreter's single writer canonicalizes)
