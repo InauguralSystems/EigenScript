@@ -14,7 +14,21 @@ for p in [0xFFF8000000000000, 0xFFF9000000000001, 0xFFFA000000000005, 0xFFFB0000
     buf_set_bits of [b, 0, p]
     if (buf_get_bits of [b, 0]) != p:
         throw of "N12 buffer bits lost their payload"
-    for value in [x, xs[0], d.x, buf_get of [b, 0], b[0]]:
+    # R24-2: only the explicit bits reconstruction produces a float here.
+    from_cell is f64_from_bits of (buf_get_bits of [b, 0])
+    get_refused is false
+    try:
+        buf_get of [b, 0]
+    catch e:
+        get_refused is e.kind == "value"
+    index_refused is false
+    try:
+        b[0]
+    catch e:
+        index_refused is e.kind == "value"
+    if not get_refused or not index_refused:
+        throw of "N13 ordinary buffer reads must refuse non-finite cells"
+    for value in [x, xs[0], d.x, from_cell]:
         if (type of value) != "num" or value == value or (f64_bits of value) != 9221120237041090560:
             throw of "N12 NaN payload escaped canonical float storage"
     print of [type of x, x == x, f64_bits of x]

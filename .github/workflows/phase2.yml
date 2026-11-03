@@ -144,3 +144,6 @@ jobs:
           fi
           grep -qx 'embed-nan: PASS inputs=20 modes=2 cases=40 callbacks=20 arithmetic=4 constructors=2 checks=1020 failures=0' "$RUNNER_TEMP/r24-embed-asan.log"
           bash tools/cc_guard.sh --report
+      - name: R2.4 named payload row under ASan and UBSan
+        run: |
+          python3 -W error tests/phase2/nan_payload_map_check.py

@@ -17,7 +17,7 @@
 # exactly the deletion of the assertion that names it.
 #
 # Plants land with their named checks: plant 1 with R1.1 (the C slot test),
-# plant 2 with R2.1 (the C NaN-writer rows; the program half is R2.4).
+# plant 2 with R2.1 (C NaN-writer rows) and R2.4 (program rows under ASan).
 # Plant3 joins at R2.3: JSON and store refuse inside their encoders.
 # Other MAP-row plants join as their named checks land. The R1.1
 # fix round added three instrument plants on the slot test: an integer overflow
@@ -96,6 +96,13 @@ run_plant() {
         if ! git -C "$ROOT" archive "$REF" | tar -x -C "$dir"; then verdict=BROKEN; echo "  $id: archive of $REF failed"; break; fi
         if ! replace "$dir/$file" "$old" "$new"; then verdict=BROKEN; break; fi
         if [ "$mode" = transverse ] && ! replace "$dir/$cfile" "$cold" "$cnew"; then trans=BROKEN; break; fi
+        # Plant2 has two named halves. Delete its program assertion after the
+        # child returns too: a corrupted HEAP payload may crash before any
+        # language assertion. Keep all 15 children and finite controls live.
+        if [ "$mode" = transverse ] && [ "$id" = 2 ] && ! replace \
+            "$dir/tests/phase2/nan_payload_map_check.py" \
+            '                if not payload_matched:' \
+            '                if False and not payload_matched:'; then trans=BROKEN; break; fi
         local log="$WORK/$id-$mode.log"
         (cd "$dir" && $TMO "$@") > "$log" 2> "$log.err"
         local rc=$?
@@ -105,15 +112,21 @@ run_plant() {
             break
         fi
         if [ "$mode" = plant ]; then
-            if [ "$rc" -eq 124 ] || grep -q 'build: \|make phase2-slot-test exited\|^writer-map: BROKEN' "$log"; then
+            if [ "$rc" -eq 124 ] || grep -q 'build: \|make phase2-slot-test exited\|^writer-map: BROKEN\|^nan-payload-map: BROKEN' "$log"; then
                 verdict=BROKEN; echo "  $id: the check did not complete (rc=$rc):"; tail -20 "$log" | sed 's/^/    | /'
-            elif grep -Eq "$re" "$log"; then verdict=KILLED
+            elif grep -Eq "$re" "$log" && { [ "$id" != 2 ] || { \
+                grep -q '^nan-payload-map: FAIL N12.nan-payload-tags payload=' "$log" && \
+                grep -qxF 'nan-payload-map: row=N12.nan-payload-tags payloads=5 tiers=3 examined=15 failures=15 controls=3 control_failures=0 timeouts=0' "$log"; }; }; then verdict=KILLED
             else verdict=SURVIVED; echo "  $id: no failure line matching /$re/ (rc=$rc):"; tail -20 "$log" | sed 's/^/    | /'; fi
             grep -E "$re" "$log" | head -3 | sed 's/^/    red: /'
+            if [ "$id" = 2 ]; then
+                grep '^nan-payload-map: FAIL N12.nan-payload-tags payload=' "$log" | head -3 | sed 's/^/    program red: /'
+                grep '^nan-payload-map: row=' "$log" | sed 's/^/    program counts: /'
+            fi
             [ "$verdict" = KILLED ] || break
         else
             if grep -Eq "$re" "$log"; then trans=NOT-TRANSVERSE; echo "  $id: the line still fired with its assertion deleted"
-            elif [ "$rc" -ne 0 ] || grep -q 'build: \|make phase2-slot-test exited\|^writer-map: BROKEN' "$log"; then
+            elif [ "$rc" -ne 0 ] || grep -q 'build: \|make phase2-slot-test exited\|^writer-map: BROKEN\|^nan-payload-map: BROKEN' "$log"; then
                 trans=BROKEN; echo "  $id: assertion-deleted check did not complete cleanly (rc=$rc)"
             else trans=TRANSVERSE; fi
             tail -2 "$log" | sed 's/^/    assertion deleted: /'
@@ -143,10 +156,13 @@ run_plant 1 src/value_slot.h \
     '^slot-layer-test: FAIL slot_from_int\(0\): bits 0x' \
     bash tests/phase2/slot_layer.sh release
 
-# Plant 2 (R2.1, design 9.3): preserve the incoming double bits, bypassing
-# the single writer's canonical branch. Part F must report the HEAP-spelling
-# payload's SIGSEGV from slot_incref, reproducing #1746. The transverse run
-# deletes only the NaN assertion: all RC children and non-NaN controls remain.
+# Plant 2 (R2.1/R2.4, design 9.3): preserve the incoming double bits,
+# bypassing the single writer's canonical branch. Part F must report the
+# HEAP-spelling payload's SIGSEGV from slot_incref, reproducing #1746.
+# The real N12 program row also runs under ASan: five payloads isolated in
+# three tiers, so one crash cannot skip another payload. Transverse deletes
+# the C NaN assertion and the program's returned-result assertion; all C
+# children/non-NaN controls and the three finite program controls remain.
 run_plant 2 src/value_slot.h \
     '    if ((s.u & 0x7FFFFFFFFFFFFFFFULL) > 0x7FF0000000000000ULL)
         s.u = 0x7FF8000000000000ULL;' \
@@ -157,7 +173,7 @@ run_plant 2 src/value_slot.h \
     '        if (!nan && strcmp(got, want) != 0)
             FAILF("N12.nan-payload-tags' \
     '^slot-layer-test: FAIL N12.nan-payload-tags slot_from_f64\(fffb000000001000\): got X:signal 11:' \
-    bash tests/phase2/slot_layer.sh release
+    bash -c 'slot_rc=0; bash tests/phase2/slot_layer.sh release || slot_rc=$?; map_rc=0; python3 -W error tests/phase2/nan_payload_map_check.py || map_rc=$?; [ "$slot_rc" -eq 0 ] && [ "$map_rc" -eq 0 ]'
 
 # Plant 3 (R2.3, design 9.3): delete only the encoder's finite refusal.
 # The public JSON row is an R23-1 invariant on the accepted parent, but the
