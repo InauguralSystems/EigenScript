@@ -579,13 +579,13 @@ output below.
   tag: num_type is absent; the v0.46 anchor predates the landed exact-line contract. Bank ed09f908 and merged probes both produce the exact output with fn RET; classify as an invariant under R1.7-D3.
   shape: F  witness: fn restored_index  ops: BINARY_LINE ADD BINARY_LINE_END INDEX_GET
 - `gate.N13.audio-buffer-boundary` [R1.6e] `tests/phase2/gfx_audio_boundary.c` through `tools/phase2_readers.sh`: R1.6d-D1 pre-registration for audio_convert_samples (audio_play, audio_play_loop, audio_stream_push). Stored lenient NaN and every infinity raise `value`; strict NaN retains INVALID and the first diagnostic before a later infinity. Continuous finite samples clamp to [-1,1], then round PCM half away from zero. The fixture drives the actual helper with raw payloads because strict scalar constructors refuse first; no SDL dependency is exercised.
-- `N13.json-refuses-inf` [R2.3] `x is 1e308 * 10 / {try print of (json_encode of [x]) catch}`, printing `e.kind`
+- `N13.json-refuses-inf` [R2.3, invariant] `x is 1e308 * 10 / {try print of (json_encode of [x]) catch}`, printing `e.kind`
   -> `value`
   tag: `1e+308`, the clamp (read; a one-element literal list passes its element, #405). **Plant 3's named check.**
 - `N13.store-refuses-nan` [R2.3] `x is (1e308 * 10) - (1e308 * 10) / s is store_open of "<tmp>/db" / {try k is store_put of [s, "c", {"v": x}] catch} / print of (store_count of [s, "c"])`
   -> `value` then `0` (refused, and nothing written)
   tag: no raise, so the count is `1` (read: `1e308 - 1e308` is `0`). **Plant 3's second named check.**
-- `N13.int-conversion-refuses` [R2.3] `x is 1e308 * 10 / {try print of (substr of ["abc", x, 1]) catch}`
+- `N13.int-conversion-refuses` [R2.3, invariant] `x is 1e308 * 10 / {try print of (substr of ["abc", x, 1]) catch}`
   -> `value`
   tag: no raise (read: `(int)` of a clamped 1e308)
 - `N13.pcm16-refuses-nan` [R2.6] `b is buffer of 1 / b[0] is (1e308 * 10) - (1e308 * 10) / {try o is buf_to_pcm16le of [b, 0, 1] catch}`, printing `e.kind`

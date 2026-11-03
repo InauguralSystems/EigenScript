@@ -2570,7 +2570,7 @@ failing on zero rows:
 | R1.8 | 0 | `gate.N7.embed-int` (the embed smoke test), the executed doc fences (suite [89]/[90]), the LSP and lint suite sections |
 | R2.1 | 0 | mechanical: the C slot test's NaN-payload rows, plant 2 and the JIT NaN fixtures; ordinary three-tier STOP-R21-1 threshold agreement is `false` (no program can make a NaN before R2.2; RULING R21-1) |
 | R2.2 | 9 | |
-| R2.3 | 3 | |
+| R2.3 | 3 (1 change row, 2 invariant controls) | R23-1: JSON/int public refusals preserve the accepted reader contract; separate encoder return-failure and no-mutation proofs discriminate the writer change |
 | R2.4 | 6 | |
 | R2.5 | 6 | |
 | R2.6 | 1 | |
@@ -3305,3 +3305,17 @@ and nonnumeric bytes/positions stay exact. The default mode stays byte strict.
 This cost-only comparison cannot establish a legacy unadorned token's source
 kind; the semantic gates and D2 live kind witnesses do. Corpus diffs remain
 exact and are attributed individually from observed evidence.
+
+### RULING R23-1 — R2.3 writer proofs and existing public refusals
+
+At accepted R2.2 `2c402e2f`, `N13.json-refuses-inf` and
+`N13.int-conversion-refuses` already print `value` in interpreter, default
+and OSR modes: finite readers enforce these public contracts. They are
+invariants under R1.7-D3, with their programs and expected output unchanged.
+`N13.store-refuses-nan` remains the public change row: `value` then count0.
+Separate discriminating proofs require the C JSON encoder to return failure
+with the error set, and shared_set/shared_incr/store_put/store_update to
+leave their external state unchanged after refusal. Each new proof is red
+on the accepted base without an induced runtime fault and green at tip.
+The public JSON error alone cannot prove internal failure propagation.
+(Orchestrator RULING R23-1, #1758, 2026-11-02.)
