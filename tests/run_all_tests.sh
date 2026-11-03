@@ -632,12 +632,15 @@ check_eigs_suite() {
     local test_name="$1"
     local file="$2"
     local marker="$3"
-    local out rc n=1
+    local out rc n=1 program
+    # Absolute operands expose subdirectory fixtures to invocation discovery;
+    # existing test basenames retain their original tests-relative resolution.
+    case "$file" in /*) program="$file" ;; *) program="../tests/$file" ;; esac
     # Guard #681: abort if the binary was rebuilt while a previous block ran.
     check_binary_fingerprint
     # Use the same canonical run conditions as the differential runners.
     # In particular, strict-contract fixtures opt in after R2.2's mode change.
-    out=$(suite_program_run "$file" $EIGS_TMO ./eigenscript "../tests/$file" </dev/null 2>&1); rc=$?
+    out=$(suite_program_run "$file" $EIGS_TMO ./eigenscript "$program" </dev/null 2>&1); rc=$?
     TOTAL=$((TOTAL + n))
     if [ "$rc" = "124" ]; then
         # rc=124 is the runaway guard (GNU/gtimeout both use it): the test file
