@@ -1238,12 +1238,17 @@ def calibrate(args, out):
         case('a new program the baseline cannot complete and branch fails is NEW-FAIL',
              (rc, v.get(new_rel), ' new=1 new_failed=1 ' in text, ' branch_only=1 ' in text),
              (3, 'NEW-FAIL', True, True), detail=text.splitlines())
-        cut = wrapper_tree(os.path.join(d, 'cut'), args.branch, files[:1] + files[2:], 'exec "$REAL" "$@"',
+        # R22-3: calibration invokes the corpus tool directly, even when the
+        # selected semantic round has no corpus-diff dispatch. Its removed-
+        # policy fixture must still need its explicit mode: numeric_guard's
+        # EIGS_STRICT=0 is now the default and cannot witness a missing row.
+        policy_files = ['tests/test_line_after_return.eigs', 'tests/test_bool.eigs']
+        cut = wrapper_tree(os.path.join(d, 'cut'), args.branch, policy_files, 'exec "$REAL" "$@"',
                            {'tests/suite_program_env.txt':
-                            lambda t: re.sub(r'(?m)^test_numeric_guard\.eigs .*\n', '', t)})
-        rc, text, v = diff_restricted(base, cut, files[:1] + files[2:])
+                            lambda t: re.sub(r'(?m)^test_line_after_return\.eigs .*\n', '', t)})
+        rc, text, v = diff_restricted(base, cut, policy_files)
         case('a policy row removed: its file exits early on both, UNDECLARED-NONZERO',
-             (rc, 'UNDECLARED-NONZERO tests/test_numeric_guard.eigs rc=1' in text,
+             (rc, 'UNDECLARED-NONZERO tests/test_line_after_return.eigs rc=1' in text,
               ' undeclared=1 ' in text, v.get('<stderr>')), (3, True, True, None), detail=text.splitlines())
         stale = wrapper_tree(os.path.join(d, 'stale'), args.branch, files[2:], 'exec "$REAL" "$@"',
                              {'tests/phase2/corpus_nonzero.txt':
@@ -1346,10 +1351,10 @@ BUILD_PLANTS = {
     # R1.6b/N3 preserves the int result; the fault remains the shifted range.
     'random-int': ('src/builtins.c', 'make_int(lo_i + (eigs_random_long() % (int64_t)span))',
                    'make_int(lo_i + 1 + (eigs_random_long() % (int64_t)span))', 'build'),
-    # R1.6z-D1: identity would make a NaN-holding buffer equal to itself.
+    # R1.6z-D1 / R2.2: identity must inspect NaN buffers and float boxes.
     'value-eq-identity': ('src/eigenscript.c',
-                          '    if (a == b && (!a || a->type != VAL_BUFFER)) {',
-                          '    if (a == b) return 1; /* PLANT: bypass IEEE buffer elements */\n    if (a == b && (!a || a->type != VAL_BUFFER)) {', 'build'),
+                          '    if (a == b && (!a || (a->type != VAL_BUFFER && a->type != VAL_FLOAT))) {',
+                          '    if (a == b) return 1; /* PLANT: bypass IEEE buffer elements */\n    if (a == b && (!a || (a->type != VAL_BUFFER && a->type != VAL_FLOAT))) {', 'build'),
 
 }
 _PLANT_DIR = []
