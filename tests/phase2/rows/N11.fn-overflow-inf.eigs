@@ -1,0 +1,16 @@
+# ROW: N11.fn-overflow-inf
+# ITEMS: N11
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn big
+# OPS: MUL CONST
+# TIERS: off default osr
+define big(a) as:
+    local t is a * 10.0
+    return t
+answer is 0.0
+calls is 0
+loop while calls < 60:
+    answer is big of 1e308
+    calls is calls + 1
+print of answer
