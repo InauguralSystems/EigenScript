@@ -93,7 +93,9 @@ case "${1:-}" in
     # decide the gate result.
     bad=$(mktemp --suffix=.eigs)
     plant=$(mktemp)
-    printf 'print of (1 / 0)\n' > "$bad"
+    # R22-2: division by zero is IEEE, so use the same DIV expression with
+    # a string operand to keep this a real runtime failure in every mode.
+    printf 'print of (1 / "bad")\n' > "$bad"
     printf '#!/bin/sh\n"%s" "%s"\nstatus=$?\necho "I refs: 1,000" >&2\nexit "$status"\n' "$EIGS" "$bad" > "$plant"
     chmod +x "$plant"
     diagnostic=$(mktemp)
