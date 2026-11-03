@@ -665,36 +665,68 @@ The `O cfg` record's current shape is pinned by `O3.ocfg-no-hlow` (its file list
 `# ITEMS: O3 T1`).
 
 ### O1
-- `gate.O1.oracle-floor` [R3] for each oracle int row (a counter, doubling to 2^62, an INT64_MIN to INT64_MAX swing), in all three tiers: `make observer-oracle` with `--floor floor.json` exits 0
+- `gate.O1.oracle-floor` [R3] `make observer-oracle EXPECT=ieee,int64` (hosted; CI's required check runs `tools/observer_oracle/ci_lane.sh`), with `tests/phase2/oracle_expect.txt` EMPTY: every one of the 1872 floor verdicts re-measured on the v0.46.0 anchor and kept, zero FINDINGs, every capability verdict right (the int rows `int64_count`, `int64_swing` and the int floor rows in all four arms), both capabilities present
   -> exit 0
-  tag: n/a. This is the oracle gate of #1758 Done-when "Observer", so it is a gate, not a row.
+  tag: n/a. This is the oracle gate of #1758 Done-when "Observer", so it is a gate, not a row (design §8 Round 3).
 - `O1.where-is-value` [R3] `x is 2.5 / print of (where is x)`
-  -> `2.5`
-  tag: `0.7219...`, an entropy (probed main: `where is x` after 1 and 4 gives `0.7219280948873623`)
+  -> `2.5` (R3-O4: `where` is the value)
+  tag: `0.863120568566631`, an entropy (run on the v0.46.0 build, R3.0; the branch base prints the same)
+- `O1.where-is-int` [R3] `x is 9007199254740993 / print of (where is x)`
+  -> `9007199254740993` (an int prints per N6)
+  tag: `6.0443533557040756e-15`, an entropy (run, R3.0; the branch base prints the same)
 - `O1.int-observed-numeric` [R1.3] `a is 3 / b is 140737488355328 / af is 3.0 / bf is 140737488355328.0`, then 12 times `a is a * 2 / b is b * 2 / af is af * 2.0 / bf is bf * 2.0`; `print of [report of a, report of af, report of b, report of bf, num_type of b]`
   -> `["diverging", "diverging", "diverging", "diverging", "int"]`: an SMI (`a`) and a boxed int (`b`, 2^47 and up) are observed exactly as their float twins (the numeric channel, as a double until round 3)
   tag: `num_type` undefined (the reports alone are all `"diverging"` on main, where every number is a double)
 
 ### O2
-- `gate.O2.predicate-floors` [R3] the post-#1754 corpus with per-predicate TP/TN floors (`floor.json`, the corpus sha256 recorded)
+- `gate.O2.predicate-floors` [R3] the same `make observer-oracle EXPECT=ieee,int64` run: its line `floor: 1872 verdicts checked, 0 lost` (every predicate's floor compared, not only the total) and its per-predicate SCORED VERDICTS table
   -> at or above every floor
   tag: n/a (the floors are measured on the tag), so it is a gate
-- `O2.noise-not-oscillating` [R3] a seeded iid noise sequence (±1 around 100, 60 steps, an LCG in the program); `print of (oscillating of x)`
-  -> `false`, per #1754's definition (Hardy §62; iid noise is the in-control baseline, not an oscillation)
-  tag: `true` (#1746 prior-art report, probe P3: 99.3% of steps read `oscillating`)
+- `O2.nan-all-false` [R3] `x is 1.0`, 12 times `x is x * 2.0`, then `big is 1e308 * 10.0 / x is big - big`; print the six predicates of `x` (named forms), then `print of [x == x, how is x]`
+  -> `[false, false, false, false, false, false]`, `[false, nan]` (#1758 O2: every predicate false at a NaN; `how` of a NaN step is NaN, R3-O4 / STOP-2)
+  tag: `[false, false, false, false, false, false]`, `[true, 0]` (the clamp makes `inf - inf` 0; run, R3.0). Branch base: `diverging` true (R2.2's non-finite veto)
+- `O2.inf-diverging` [R3, invariant] `x is 1.0`, 12 times `x is x * 1e200`; print the six predicates, then `print of x`
+  -> `[false, false, false, false, true, false]`, `inf` (Hardy §60: an infinite current value with no opposite-sign infinity in the window is `diverging`)
+  tag: `[false, false, false, false, true, false]`, `1e+308` (run, R3.0). Base-green on `968d9fe4` (R2.2); R3 must keep it while it changes the NaN and alternating-inf rules
+- `O2.inf-alternating-oscillates` [R3] `x is 1.0`, 20 times `x is x * -1e200` (x alternates +inf/-inf from x_2); print the six predicates, then `print of x`
+  -> `[false, false, false, true, false, false]`, `inf` (Hardy §62: it oscillates infinitely; the 16 `ieee_inf_alternating` declarations)
+  tag: `[false, false, false, true, true, false]`, `1e+308` (run, R3.0). Branch base: `[false, false, false, false, true, false]`
+- `O2.int-counter-2p53` [R3] #1830's reproduction: `x is 9007199254740992`, 60 times `x is x * 1 + 1`; `print of [x, converged of x, stable of x, diverging of x, equilibrium of x]`
+  -> `[9007199254741052, false, false, true, false]` (an exact int step has no rounding floor: R3-#1830)
+  tag: `[9007199254740992, true, true, false, true]` (doubles: 2^53 + 1 rounds back to 2^53; run, R3.0). Branch base: `[9007199254741052, true, true, false, false]`
+- `O2.harmonic-not-converged` [R3] `h is 1.0 / n is 1.0`, then while `n < 301.0`: `h is h + 1.0 / (n + 1.0) / n is n + 1.0`; `print of [converged of h, stable of h, diverging of h]`
+  -> `[false, false, false]` (#1752's decision: `converged` is conservative; `diverging` false is the documented honesty bound). This row is the travel bound's only gate: harmonic's `converged` was wrong on the tag, so it is not a floor verdict
+  tag: `[true, true, false]` (run, R3.0; the branch base prints the same)
+- `O2.report-noisy-loss` [R3] a Park-Miller LCG (`s is (s * 16807.0) % 2147483647.0`, seed 12345.0, exact in doubles) drives `loss is 0.5 + 2.0 * (exp of (-0.03 * i)) + 0.01 * u` for i = 0..60, u in [-1, 1); `print of [report of loss, improving of loss, oscillating of loss]`
+  -> `["improving", true, false]` (#1754's corrected `improving`: a new best within the window on a bounded sequence; Keras `mode='min'`)
+  tag: `["moving", false, false]` (run, R3.0; the branch base prints the same: its contraction band never reads a 0.97-ratio decay as improving, #1771)
+- Planned control, not yet a MAP row (R3.1 adds `tests/phase2/controls/ctl.O2.noise-oscillates.eigs` with its `.out` and this line becomes the control row `ctl.O2.noise-oscillates`; a control is checked in every mode, so listing it before its file exists would fail every `--through`): iid noise of amplitude 1 around 100 (Park-Miller LCG, seed 777.0, 61 values); `print of (oscillating of x)`
+  -> `true` on both binaries. #1754 (Hardy §62): iid noise has no limit and does not tend to +-inf, so it oscillates. This replaces the R0 row `O2.noise-not-oscillating`, whose expected `false` contradicted the decided definition and which could not fail on the tag (it prints `true`)
 
 ### O3
-- `O3.ocfg-no-hlow` [R3] (sh row) record any observed program; print the field count of the `O cfg` record
-  -> one fewer field than v6: no `h_low`
-  tag: has `h_low` (trace.c:1580-1584 writes it)
+- `O3.ocfg-no-hlow` [R3] (sh row) record `x is 1.0 / x is 2.0 / print of (report of x)` with the binary under test; build two tapes from its first two records plus `O 0 cfg 0.001 0.01 10 0.001` (four fields) and `O 0 cfg 0.001 0.01 0.1 10 0.001` (five, with `h_low`), plus the recording's remaining records; `echo q | --step` each; print the rc and whether stderr names the observer-configuration record
+  -> `cfg-4-fields rc=0 names-record=0`, `cfg-5-fields rc=3 names-record=1` (no writer emits `O cfg` since #1687, so the shape is pinned at the one reader `--step` and the DAP share)
+  tag: `cfg-4-fields rc=3 names-record=1`, `cfg-5-fields rc=0 names-record=0` (run, R3.0; the branch base prints the same)
 
 ### O4
 - `O4.why-is-displacement` [R3] `x is 1 / x is 4 / print of (why is x)`
   -> `3`: an int, because Δv fits int64 (Q5, decided)
-  tag: `-0.2780719051126377`, a dH (probed main)
-- `O4.how-is-settledness` [R3] a binding held constant for one window; `print of (how is x)`
-  -> the R3 settledness value at full rest (to be fixed by the R3 design)
-  tag: an entropy-derived value
+  tag: `-0.2780719051126377`, a dH (run, R3.0; the branch base prints the same)
+- `O4.why-int-exact` [R3] `x` 2^53 then 2^53 + 1; `y` 2^62 then INT64_MAX; `z` INT64_MIN (`(-9223372036854775807 - 1)`) then INT64_MAX; `print of [why is x, why is y, why is z]`, then the three `num_type`s
+  -> `[1, 4611686018427387903, 1.8446744073709552e+19]`, `["int", "int", "float"]` (exact where the difference fits int64; INT64_MIN -> INT64_MAX does not, so a float)
+  tag: `[0, -6.613633252161577e-18, 0]`, then rc 1 (`num_type` undefined; run, R3.0). Branch base: `[0.0, -6.613633252161577e-18, 0.0]`, `["float", "float", "float"]`
+- `O4.why-mixed` [R3] `x is 1 / x is 2.5 / a is why is x / x is 4 / b is why is x / print of [a, b, num_type of a, num_type of b]`
+  -> `[1.5, 1.5, "float", "float"]` (a mixed pair's Δv is a float, N3)
+  tag: rc 1, `num_type` undefined (run, R3.0). Branch base: `[-0.136879431433369, -0.14119247367926868, "float", "float"]`
+- `O4.how-is-settledness` [R3] `x is 3.0`, then 10 times `x is 3.0` (a full window at rest); `a is how is x`; `y` 1000.0 then 999.0 (`|r| = dh_zero`); `z` 1000.0 then 990.0 (`|r| = dh_small`); `print of [a, how is y, how is z]` (as `b`, `c`)
+  -> `[1.0, 0.5, 0.09090909090909091]` (R3-O4: f(r) = dh_zero / (dh_zero + |r|); STOP-1)
+  tag: `[1, 0.9900448926511732, 0.8996107587627084]` (run, R3.0). Branch base: `[1.0, 0.9900448926511732, 0.8996107587627084]`. The full-rest reading alone is `1.0` on the base too, so the R0 sketch (rest only) could not fail on the tag; the row now carries both tolerances
+- `O4.how-below-dh-small` [R3] `x is 1000.0 / x is 995.0 / print of (how is x)` (`|r| = 0.005`, between `dh_zero` and `dh_small`)
+  -> `0.16666666666666666`
+  tag: `0.9500390899993575` (run, R3.0; the branch base prints the same)
+- `O4.how-above-dh-small` [R3] `x is 1000.0 / x is 950.0 / print of (how is x)` (`|r| = 0.05`)
+  -> `0.0196078431372549`
+  tag: `0.47851998973256604` (run, R3.0; the branch base prints the same)
 
 ### N11
 - `N11.buffer-equal-ieee` [R1.6z] SGD stores -inf, then self-SGD stores NaN; IEEE element comparison: distinct/same NaN false, same infinity true, infinity versus finite false, signed zeros equal; strict modes 0/1 never raise or change math flags. Also exercises list_contains and list_index_of. R1.6z-D1.
