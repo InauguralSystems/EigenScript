@@ -2486,13 +2486,25 @@ H2) and the **whole-population** posting apply as registered.
 | sub-round | deliverable | its gate | accepted when |
 |---|---|---|---|
 | **R3.0-I** | the instrument PR, built and blind-reviewed as its own round, landing on `main` and synced to the branch (spec below) | its own controls: positive control (a) `plants.py --selftest` red as today; (b) a planted constant-false build scores BA = 0.5 and fails the decision rule; (c) a planted window-4 build (`OBSERVER_WINDOW_N = 4`) loses ≥ 0.05 BA on `converged` against INC (on H-cal at R3.0-I; the registered (c) is on H1 at the reveal) | (a)–(c) hold, and ANCHOR and INC are scored on the calibration set under the new method beside the old raw accuracy |
-| **R3.1** | arm **R3-STD**: O1 (distance signal; entropy removed from numeric bindings; #1830's exact-int signal mechanism), O4 (`where`/`why`/`how`), O2's definition alignments (NaN, ±inf), and STD_p for `converged`, `stable`, `improving`; the incumbent test unchanged for `oscillating`, `diverging`, `equilibrium` | the oracle with `--floor` and an empty `oracle_expect.txt`; `phase2_check --through R3.1`; the R3.1 plants; scored on H1 at the reveal | decision rules 1–6 for R3-STD as the subject, plus the MAP rows |
+| **R3.1** | arm **R3-STD**: O1 (distance signal; entropy removed from numeric bindings; #1830's exact-int signal mechanism), O4 (`where`/`why`/`how`), O2's definition alignments (NaN, ±inf), and STD_p for `converged`, `stable`, `improving`; the incumbent test unchanged for `oscillating`, `diverging`, `equilibrium` | the oracle with `--floor`, and decision rule 6 as written: no `oracle_expect.txt` line attributed to #1830 (or tagged `R3`) remains; `phase2_check --through R3.1`; the R3.1 plants | as a round: hosted CI and the floor, like every Phase 2 round, plus the MAP rows. The decision rules are applied at the single reveal (below) |
 | **R3.2** | O3: the `O cfg` record without `h_low` | `phase2_check --through R3.2` | its row and plant |
 | **R3.3** | #1580's scale rule (its own registered experiment, 2026-10-26) and the float twin of #1830 (R30-1 item 3's rule) | #1580's decision rule; the oracle floor; the `float_count` rows (#2326) | #1580's criteria |
 | **R3.4** | #1419's `chaotic` (its oracle PR first) | #1419's Done-when as the owner fixed it | the window-16 sweep, 3.56 pinned |
 
 R3.1 and R3.2 can be accepted without R3.3 or R3.4 (confirmed by both design
 critics).
+
+**One reveal, at R3.3's final SHA** (RULING R30-4 item 8):
+- **The subject.** R3.1 + R3.2 + R3.3 form Round 3's subject. The LOO
+  mechanisms include #1580's scale rule, which is R3.3's, so the subject
+  cannot be scored before R3.3 lands.
+- **Acceptance as rounds.** R3.1 and R3.2 are accepted as rounds by hosted
+  CI and the floor, as every Phase 2 round is, and R3.3 by its own gates.
+- **The decision rules.** The pre-registered rules 1–6 are applied once, at
+  the reveal, before #1776 merges. `S_H` is the first drand round after
+  R3.3's final SHA is posted.
+- **R3.4 is not scored by H1.** `chaotic` is a new predicate, outside the six
+  that H1 judges, and is accepted on #1419's Done-when.
 
 **The LOO mechanisms and the sub-rounds that build them:**
 - **O1** (the distance signal, entropy removed): R3.1.
@@ -2546,7 +2558,10 @@ are, or with the additions named:
 
 3. **Metrics.**
    - BA_p, with a 95% cluster-bootstrap CI over rows: 10,000 resamples, the
-     seed logged.
+     seed logged. **Paired** (RULING R30-4 item 9): each resample draws the
+     same rows for every arm, and the CI that decision rules 1 and 2 read is
+     the 2.5th/97.5th percentile of the per-resample difference
+     BA_p(arm A) − BA_p(arm B), not a comparison of two per-arm CIs.
    - FPR for `converged`, `stable` and `equilibrium` (false-settled) and for
      `diverging` (false alarm).
    - Secondary: raw accuracy; the report label's accuracy (derived by the
@@ -2588,13 +2603,23 @@ are, or with the additions named:
 5. **The split.**
    - Families 14 and 15 are always held out.
    - `S_split = 1600219665266993132` draws 4 of the other 14 as **H-cal**,
-     generated and released with the PR. The remaining 12 form **H1**.
+     generated and released with the PR. The remaining 12 (with families 14
+     and 15) form **H1**. The draw is fixed as code (RULING R30-4 item 7):
+
+     ```python
+     H_cal = random.Random(1600219665266993132).sample([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16], 4)
+     ```
+
+     The list is in ascending order, with Python 3 `random` semantics. The
+     instrument pins the Python version that runs it (the exact version
+     string goes in the PR's manifest).
    - The PR posts the H1 family list, the generator's sha256 and the exact n
      that follows from `S_split`.
 
 6. **The drand commitment.**
    - `S_H` is the randomness of the first drand mainnet round
-     (`api.drand.sh`) published AFTER R3's final SHA is posted on #1758.
+     (`api.drand.sh`) published AFTER R3's final SHA is posted on #1758. That
+     SHA is **R3.3's final SHA** (RULING R30-4 item 8).
    - The reveal script fetches that round and derives H1's draws from it and
      the posted generator. Anyone can recompute it, and no one sees H1 in
      advance.
@@ -2625,8 +2650,8 @@ are, or with the additions named:
    R30-3), and any later one.
 10. **Review the `ieee_nan_recover@13` label under #1754's NaN rule** (R30-3
     item 2). If the label stands, its declaration in `oracle_expect.txt`
-    ("window holds a NaN until checkpoint 19 (windowed-test limit)") is the
-    documented limit.
+    (re-tagged by R30-4: the windowed band's limit) is the documented
+    limit.
 
 #### R3.1 is arm R3-STD
 
@@ -2650,11 +2675,12 @@ are, or with the additions named:
 | int and float, either order | `(double)v - (double)v_prev` (N3) | no |
 
 **#1830's int path, a signal mechanism** (R30-2 item 3). In one sentence:
-*an exact int64 step carries no rounding, so the incumbent raw tests give it
-a noise floor of 0, and when every step in the window is exact, the settled
-tests compare the window against the absolute tolerance `rtol·scale` (1e-6
-for `converged`, 2·0.02·1e-3 for `stable`), so an exact int window settles
-only when it is constant.*
+*an exact int64 step carries no rounding, so when every step in the window is
+exact (the mechanism is decided per window), the incumbent raw tests use a
+noise floor of 0 and the settled tests compare the window against the
+absolute tolerance `rtol·scale` (1e-6 for `converged`, 2·0.01·1e-3 for
+`stable` under D1), so an exact int window settles only when it is
+constant.*
 
 | row | predicate | label | today | R3-STD with the mechanism | R3-STD without it (LOO) |
 |---|---|---|---|---|---|
@@ -2681,9 +2707,9 @@ down-counter from 2^53 by −1 reads `diverging` with no other predicate true.
 | predicate | its test after R3.1 | signal | MAP rows |
 |---|---|---|---|
 | `converged` | **STD_converged**: full window of W + 1 finite values; window diameter ≤ τ(x), τ = 1e-3·max(\|x\|, 1e-3) (the windowed Cauchy test, as reference.py `converged`); an all-exact window uses τ_abs = 1e-6 | O1 + the int mechanism | `O2.int-counter-2p53`, `O2.int-down-counter-2p53`, `O2.harmonic-not-converged`, `O2.inverse-growth-not-converged`, `O2.counter-pause-not-converged` (invariant) |
-| `stable` | **STD′_stable** (Deviation D1, RULING R30-3): full window of finite values; diameter ≤ 2·0.01·max(\|mean\|, 1e-3) (the 1% band, reference.py's, the band #1754's labels use); all-exact: ≤ 2·0.01·1e-3 | O1 + the int mechanism | `O2.int-counter-2p53`, `O2.harmonic-not-converged` |
-| `improving` | **STD_improving with Keras' own running best** (Deviation D2, RULING R30-3): `best` starts at the trajectory's first value (a baseline, never an improvement); a value < best − 1e-3·max(\|best\|, 1e-3) is an improvement and becomes `best`; true iff the last improvement is within the last W steps (patience = the window), AND not diverging (reference.py's) AND not expanding on a full window (reference.py's bounded approximation) | O1 | `O2.report-noisy-loss`, `O2.noisy-loss-improving-count` |
-| `oscillating` | **incumbent, unchanged:** `obs_num_oscillating` (eigenscript.c:1456): `obs_num_rel_oscillating` or `observer_slot_raw_oscillating` or `obs_num_bounded_oscillating`; the int mechanism's zero noise floor applies | O1 + the int mechanism | `O2.inf-alternating-oscillates`, `O1.unobserved-jit-sample` |
+| `stable` | **STD′_stable, reference.py's `stable` exactly** (Deviation D1, RULINGs R30-3 and R30-4 item 3): full window of finite values; the window fits a ball of radius β about its MIDRANGE, `hi/2 − lo/2 ≤ β`, β = 1e-2·max(\|hi/2 + lo/2\|, 1e-3) (the 1% band #1754's labels use; not mean-centred: 20 × 100.0 then 98.01 reads false, as reference.py does); all-exact: diameter ≤ 2·0.01·1e-3 | O1 + the int mechanism | `O2.int-counter-2p53`, `O2.int-smi-alternating` (invariant) |
+| `improving` | **STD_improving with Keras EarlyStopping's own running best** (Deviation D2, RULINGs R30-3 and R30-4 item 2): `best` is a running scalar with the registered relative min_delta, 1e-3·max(\|best\|, 1e-3). (a) A non-finite value is never a best: until the first FINITE value there is no best, and that value is the baseline (the `loss = inf` start idiom). (b) The baseline is never itself an improvement. A later value < best − min_delta is an improvement and becomes `best`. True iff the last improvement is within the last W steps (patience = the window), AND (c) the window holds no non-finite value (reference.py's finite-window rule), AND not diverging (reference.py's) AND not expanding on a full window (reference.py's bounded approximation) | O1 | `O2.report-noisy-loss`, `O2.noisy-loss-improving-count` |
+| `oscillating` | **incumbent, unchanged:** `obs_num_oscillating` (eigenscript.c:1456): `obs_num_rel_oscillating` or `observer_slot_raw_oscillating` or `obs_num_bounded_oscillating`; the int mechanism's zero noise floor applies | O1 + the int mechanism | `O2.inf-alternating-oscillates`, `O1.unobserved-jit-sample`, `O2.int-smi-alternating` (invariant) |
 | `diverging` | **incumbent, unchanged:** `obs_num_diverging` (eigenscript.c:1463), `observer_slot_raw_diverging`; the int mechanism's zero floor applies | O1 + the int mechanism | `O2.int-counter-2p53`, `O2.int-down-counter-2p53`, `O2.inf-diverging` (invariant) |
 | `equilibrium` | **incumbent, unchanged:** `obs_num_equilibrium` (eigenscript.c:1565), #1899's one-direction guard and the `raw_oscillating` exclusion included | O1 | `O2.nan-all-false` |
 
@@ -2696,7 +2722,7 @@ down-counter from 2^53 by −1 reads `diverging` with no other predicate true.
 int mechanism + the three standard tests with Deviations D1 and D2 + the
 alignments; scored as `score.py` scores):
 
-| configuration | floor keys lost /468 | all /702 | non-cap /600 | ieee /84 | int64 /18 | conv /118 | stab /118 | impr /118 | osc /116 | div /116 | equi /116 |
+| configuration (72-row corpus, D3) | floor keys lost /468 | all /702 | non-cap /600 | ieee /84 | int64 /18 | conv /118 | stab /118 | impr /118 | osc /116 | div /116 | equi /116 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | today (the port) | 0 | 592 | 503 | 77 | 12 | 96 | 89 | 110 | 98 | 96 | 103 |
 | `reference.py` | 28 | 585 | 498 | 77 | 10 | 109 | 100 | 115 | 97 | 99 | 65 |
@@ -2714,10 +2740,21 @@ alignments; scored as `score.py` scores):
 - **What R3-STD gains.** It removes 44 of today's 110 disagreements and adds
   none.
 - **What still stays wrong.**
-  - The declared `ieee_nan_recover@13 stable` stays in `oracle_expect.txt`
-    with the reason "window holds a NaN until checkpoint 19 (windowed-test
-    limit)" (RULING R30-3 item 2). Decision rule 6 names #1830's declaration
-    list, not this one. R3.0-I reviews the @13 label under #1754's NaN rule.
+  - The declared `ieee_nan_recover@13 stable` (4 arms) stays in
+    `oracle_expect.txt` (RULING R30-3 item 2). R3.1 re-tags it with the true
+    reason (RULING R30-4 item 1). The cause is the windowed band test, not the
+    NaN. The model gives:
+
+    | row | last non-finite index | out of the window from | D1 `stable` first true | `converged` first true |
+    |---|---:|---:|---:|---:|
+    | `ieee_nan_recover` | 3 | 14 | 20 | 24 |
+    | `ieee_inf_recover` (the NaN-free twin) | 2 | 13 | 19 | 23 |
+
+    The new tag reads `recover_round` R3.0-I (the label review) and the reason
+    "windowed band test: the NaN leaves the window at 14, the 1% band first
+    reads stable at 20, the NaN-free twin ieee_inf_recover is equally late;
+    documented limit". The line is not attributed to #1830. Decision rule 6
+    names #1830's list, so it does not block that rule.
   - `harmonic@2000 converged` is STD_converged's documented limit (R30-3
     item 3; the candidate arm below).
 
@@ -2730,11 +2767,14 @@ before it lands.
 
 | # | registered | deviation | reason | modelled effect (calibration corpus) |
 |---|---|---|---|---|
-| D1 | STD_stable = the 2% settling band; STD′_stable = the 1% band (reported) | `stable` uses the 1% band, the registered STD′_stable | It is the band #1754's labels use (`stable`'s band β = 1e-2·max(\|L\|, 1e-3), "the observer's coarse dh_small tier"). The 2% band answers a coarser question than the label asks and loses `alt_series_ln2@60 stable` (window diameter 0.0192 ≤ 0.0278, while \|x − ln 2\| = 0.0081 > 0.0069) | `stable` 99 → 102 of 118; floor key `alt_series_ln2@60 stable` kept |
-| D2 | STD_improving: min(newer half) < min(older half) − min_delta (reference.py's approximation of Keras) | the best is Keras EarlyStopping's own running best: from x_0, improved by more than min_delta, patience = the window | It is the cited standard itself, not a novel rule: EarlyStopping keeps `best` across epochs, while the older-half minimum is reference.py's window approximation, which cannot see a lower best earlier in the history and loses `quasi_2@300 improving` | `improving` 115 → 118 of 118; floor key `quasi_2@300 improving` kept |
+| D1 | STD_stable = the 2% settling band; STD′_stable = the 1% band (reported) | `stable` is the registered STD′_stable, which is reference.py's `stable` EXACTLY: the window fits a ball of radius β = 1e-2·max(\|centre\|, 1e-3) about its midrange centre (hi + lo)/2 | It is the band #1754's labels use (`stable`'s band β = 1e-2·max(\|L\|, 1e-3), "the observer's coarse dh_small tier"). The 2% band answers a coarser question than the label asks and loses `alt_series_ln2@60 stable` (window diameter 0.0192 ≤ 0.0278, while \|x − ln 2\| = 0.0081 > 0.0069). The centre is reference.py's midrange, not the mean (R30-4 item 3) | `stable` 99 → 102 of 118; floor key `alt_series_ln2@60 stable` kept; midrange against mean moves no corpus verdict |
+| D2 | STD_improving: min(newer half) < min(older half) − min_delta (reference.py's approximation of Keras) | `best` is Keras EarlyStopping's own running best with the registered RELATIVE min_delta, plus three rules: (a) a non-finite `best` is "no best yet", so the first finite value becomes the baseline; (b) `improving` is false while the window holds a non-finite value (reference.py's finite-window rule); (c) the baseline x₀ is never itself an improvement (Keras' `baseline` argument) | It is the cited standard itself, not a novel rule: EarlyStopping keeps `best` across epochs, while the older-half minimum is reference.py's window approximation, which cannot see a lower best earlier in the history and loses `quasi_2@300 improving`. Keras' literal defaults do not fit the registered question. With best starting at +inf (so x₀ counts as an improvement) the model loses 3 floor keys (`modulated_decay_094@7`, `modulated_runaway_minimal@7`, `short_const@5` `improving`; 631/702). With Keras' absolute min_delta = 0 as well, it loses 20 (614/702). Rule (a) keeps the `loss = inf` start idiom right: Keras' absolute min_delta never computes inf − inf, but the relative one would, and then no value would ever improve | `improving` 115 → 118 of 118; floor key `quasi_2@300 improving` kept; (a)–(c) move no corpus verdict. Probes: `[inf] + 100·0.8^k` now reads `improving` from @11, the first full finite window (before (a) it read false at every checkpoint). A decreasing loss with a NaN at 10 reads false at @10–@20 (before (b) it read true) |
+| D3 | the calibration set is `corpus.json` sha256 `317531993699d714312a2799ae7d0321a8c370713d29dd631d8028033a9383b0` at `dffac840` (71 rows) | re-pinned to the tree's `corpus.json`, sha256 `e3f5e94e97bd28972480977a5ff21173221e878ab784abc7f4ed5459bedfefe4` (72 rows) | The added row is `ieee_nan_recover` (#1765/#2036), which pre-dates Round 3. Every model figure in this section is on that 72-row corpus | every `/702` figure here is the 72-row corpus's |
+| D4 | REF is "reference.py as on main (sha256 prefix 11de2a0191b25086)" | re-pinned to the tree's `reference.py`, sha256 `fa74d83f23422f5ddee9b30dc0f133417f98d9d8e7f9806151233d9e18ca1993` | The change is a docstring (#2139, 2026-10-28). R30-1 item 4's report-only amendment (the exact-int floor, the inf sign rule) moves REF again, and R3.0-I pins that version in its own Deviations entry | none on any verdict |
 
-Together: 0 floor keys lost, 636/702. Both come from the registered text (the
-STD′ arm and the cited source), and neither is a rule invented here.
+Together, on the 72-row corpus: 0 floor keys lost, 636/702. D1 and D2 come
+from the registered text (the STD′ arm and the cited source), D2's (a)–(c)
+from R30-4, and none is a rule invented here.
 - These are the model's numbers. R3-STD's decision is H1's.
 
 #### O1, O4 and the writers (unchanged from design round 2 except where noted)
@@ -2760,10 +2800,27 @@ STD′ arm and the cited source), and neither is a rule invented here.
 gives `0.0004997501249375313`. The `at L`/`when N` forms read the same triple
 from the history snapshot, which `trace_record_obs` fills.
 
+**Where D2's state lives** (RULING R30-4 item 5):
+- **Home.** `best` and `since` live on the binding's `ObserverSlot`, beside
+  the rings. `observer_slot_record_num` writes them on every numeric record,
+  elided samples included.
+- **Readers that carry them:**
+  - `trajectory of x` and its parser `observer_slot_from_trajectory`;
+  - the `at L`/`when N` history snapshots: `ObsSnapshot` copies them, so a
+    past `improving` reads the state of that moment;
+  - ouroboros `aot_rt.h`, which mirrors the slot at its observe and
+    trajectory sites (1766, 1866, 1905–1932).
+- **The tape carries no observer state.** Replay recomputes every slot from
+  the recorded values, so `best`/`since` are derived, and the tape and the
+  window are unchanged, as the amendment requires. `tape_traj_feed` folds
+  them like the rings.
+- **`observer_slot_v_ensure`** resizes only the rings; the two scalars are not
+  window-sized.
+
 **Readers of the numeric entropy fields** answer from the value channel:
 - `observe of x`: `[band, where, why, previous why]`;
-- `trajectory of x`: `rel`, `raw`, `exact` and an exact `last_value`;
-  `dh` is empty and `entropy`/`dH`/`last_entropy` are null;
+- `trajectory of x`: `rel`, `raw`, `exact`, `best`, `since` and an exact
+  `last_value`; `dh` is empty and `entropy`/`dH`/`last_entropy` are null;
 - `classify of t` rebuilds those fields;
 - `classify of [t, "entropy"]` on a numeric snapshot raises `value`;
 - the loop stall backstop counts a numeric binding's quiet iteration as
@@ -2915,9 +2972,37 @@ Under STD_converged, the model gives (every prefix,
 - **Noise.** Harmonic plus U(±1e-3) reads `converged` on 1675 of 3000
   prefixes, first at k = 1094 (today: 1750, first at 207). A diameter test
   cannot tell bounded noise around a drift from rest.
+- **`stable`'s slow-divergence residual** (RULING R30-4 item 10), beside
+  `converged`'s. Under D1 the 1% band reads the same family settled, where
+  the label says not:
+  - the scored verdicts: `harmonic@300`, `@2000`, `log_n@300`, `sqrt_n@300`,
+    `inv_log@300`, `ml_loss_power@2000` and `sin_iter@2000` read
+    `stable = true` with the label false;
+  - harmonic first reads `stable` at n = 101 (1900 of 2001 prefixes).
+
+  A diameter band cannot see a drift slower than its band, so this is the
+  same honesty bound.
+- **Incumbent `diverging` misses.** The incumbent `diverging`, unchanged in
+  R3.1, never reads slow divergence: `harmonic@60`/`300`/`2000`,
+  `log_n@300`, `sqrt_n@300`, `hardy_xxiv5`, `sawtooth_up`.
 - **One-step pause.** A counter or ramp that pauses for one tiny step never
   reads `converged`: the window's diameter still spans the earlier steps
   (0 prefixes on all four pause probes).
+- **The exact-int mechanism's boundary: a window with one inexact step**
+  (RULING R30-4 item 10).
+  - The mechanism is decided per WINDOW: the absolute tolerance and the zero
+    noise floor apply only when every step in the window is exact.
+  - A window that holds one float value, or one int step that does not fit
+    int64, takes the float path with the relative tolerance.
+  - Model probe: `int64_count` with x₂₅ written as a float reads `converged`
+    and `stable` at prefixes 25 to 35 (11 prefixes), until the window is
+    all-exact again at 36.
+  - #1754's verdict there is `converged = false` (the sequence is unbounded),
+    so those 11 readings are wrong: #1830's class, for the length of one
+    window.
+  - It is stated as the boundary, not fixed in R3.1: a mixed int/float window
+    has no exact difference to judge, and the float twin (R3.3) is where
+    float steps that size get their rule.
 - **The warm-up and dip probes** of round-2 F1 also never read `converged`,
   and neither do #1990's two `x ← x + 1/x` runs.
 
@@ -2946,8 +3031,10 @@ hosted (CodSpeed).
 #### Gates and plants (R3.1, R3.2)
 
 **Gates:**
-- **`gate.O1.oracle-floor`:** `make observer-oracle EXPECT=ieee,int64` with
-  an empty `tests/phase2/oracle_expect.txt`.
+- **`gate.O1.oracle-floor`:** `make observer-oracle EXPECT=ieee,int64`,
+  with decision rule 6 as written (RULING R30-4 item 1): no line attributed
+  to #1830, or tagged `R3`, remains in `tests/phase2/oracle_expect.txt`. The
+  4 `ieee_nan_recover@13 stable` lines stay, re-tagged as below.
 - **`gate.O2.predicate-floors`:** the same run's line
   `floor: 1872 verdicts checked, 0 lost`.
 - **`phase2_check.sh --through R3.1`** (R3.1 adds `R3.1` … `R3.4` to
@@ -2961,6 +3048,7 @@ procedure. The named check must go red on its own message.
 |---|---|
 | the int mechanism's absolute tolerance removed (an all-exact window uses τ(x)) | oracle `CAPABILITY WRONG ... int64_count@10 converged`; row `O2.int-counter-2p53` |
 | the int mechanism's zero noise floor removed | oracle `... int64_count@10 diverging`; row `O2.int-down-counter-2p53` |
+| the exact flag set for boxed ints only (\|v\| or \|v_prev\| ≥ 2^47; SMI pairs never exact) | row `O2.int-smi-alternating` (`[1000000, true, true, true, false]` under the plant, against `[1000000, false, false, true, false]`). Every other row stays green under this plant: the int rows, the JIT row and the oracle all use boxed ints at 2^53, and the model scores 636/702 with 0 keys lost under it, so this row is the plant's only check |
 | `jit_sample_num_gated` keeps its inline double ring writes (no exact flag) | row `O1.unobserved-jit-sample` (`fn-stop` tier: the int-move form reads `[true, true, false]`) |
 | a NaN current value keeps R2.2's `diverging` veto | oracle `... ieee_nan@3 diverging`; row `O2.nan-all-false` |
 | the inf sign rule removed | oracle `... ieee_inf_alternating@20 oscillating`; row `O2.inf-alternating-oscillates` |
@@ -3239,7 +3327,7 @@ failing on zero rows:
 | R2.4 | 6 | |
 | R2.5 | 6 | |
 | R2.6 | 6 (3 change rows, 3 invariant controls) | R23-1: pcm16 NaN, the `when` ordinal and the `numerical_grad` waiver case were already closed on `aed64ce3`; suite [0fz] (`tests/test_phase2_r26_residue.eigs`) pins pcm16 saturation and no partial result, and under the ASan lanes' float-cast-overflow it is the base-red half of the `when`/`at` casts; `net_send` stays pinned by `gate.N5.net-byte-boundary` |
-| R3 | 22 (20 change rows, 2 invariant controls) | `gate.O1.oracle-floor`, `gate.O2.predicate-floors` (both `make observer-oracle EXPECT=ieee,int64` with an empty `oracle_expect.txt`); R3.0 (design round 3) sequences R3.0-I (the instrument PR), R3.1 = arm R3-STD (19 change rows, the two invariants), R3.2 (`O3.ocfg-no-hlow`), R3.3 (#1580, the float twin) and R3.4 (#1419); R3.1 adds them to `ROUNDS` |
+| R3 | 23 (20 change rows, 3 invariant controls) | `gate.O1.oracle-floor`, `gate.O2.predicate-floors` (both `make observer-oracle EXPECT=ieee,int64` with an empty `oracle_expect.txt`); R3.0 (design round 3) sequences R3.0-I (the instrument PR), R3.1 = arm R3-STD (19 change rows, the three invariants), R3.2 (`O3.ocfg-no-hlow`), R3.3 (#1580, the float twin) and R3.4 (#1419); R3.1 adds them to `ROUNDS` |
 
 (The counts are the MAP's at this commit; `phase2_check.sh` derives them, and
 fails if a round named here has neither rows nor its mechanical gates.)

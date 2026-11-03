@@ -665,7 +665,7 @@ The `O cfg` record's current shape is pinned by `O3.ocfg-no-hlow` (its file list
 `# ITEMS: O3 T1`).
 
 ### O1
-- `gate.O1.oracle-floor` [R3] `make observer-oracle EXPECT=ieee,int64` (hosted; CI's required check runs `tools/observer_oracle/ci_lane.sh`), with `tests/phase2/oracle_expect.txt` EMPTY: every one of the 1872 floor verdicts re-measured on the v0.46.0 anchor and kept, zero FINDINGs, every capability verdict right (the int rows `int64_count`, `int64_swing` and the int floor rows in all four arms), both capabilities present
+- `gate.O1.oracle-floor` [R3] `make observer-oracle EXPECT=ieee,int64` (hosted; CI's required check runs `tools/observer_oracle/ci_lane.sh`), with decision rule 6 as written (RULING R30-4 item 1): no `tests/phase2/oracle_expect.txt` line attributed to #1830 (or tagged `R3`) remains; every one of the 1872 floor verdicts re-measured on the v0.46.0 anchor and kept, zero FINDINGs, every #1830 capability verdict right (`int64_count`, `int64_swing` and the int floor rows in all four arms), both capabilities present. The 4 `ieee_nan_recover@13 stable` lines stay, re-tagged as the windowed band's limit (the NaN leaves the window at 14, the 1% band first reads stable at 20, the NaN-free twin `ieee_inf_recover` is equally late)
   -> exit 0
   tag: n/a. This is the oracle gate of #1758 Done-when "Observer", so it is a gate, not a row (design §8 Round 3).
 - `O1.where-is-value` [R3] `x is 2.5 / print of (where is x)`
@@ -701,12 +701,15 @@ The `O cfg` record's current shape is pinned by `O3.ocfg-no-hlow` (its file list
 - `O2.int-counter-2p53` [R3] #1830's reproduction: `x is 9007199254740992`, 60 times `x is x * 1 + 1`; `print of [x, converged of x, stable of x, diverging of x, equilibrium of x]`
   -> `[9007199254741052, false, false, true, false]` (#1830's int mechanism at the signal: an all-exact window settles only when constant, and an exact step has a zero noise floor in the incumbent `raw_diverging`)
   tag: `[9007199254740992, true, true, false, true]` (doubles: 2^53 + 1 rounds back to 2^53; run, R3.0). Branch base: `[9007199254741052, true, true, false, false]`
+- `O2.int-smi-alternating` [R3, invariant] `x is 1000000`, then 20 times `x is 2000001 - x` (SMI-range ints alternating 1000000/1000001); `print of [x, converged of x, stable of x, oscillating of x, diverging of x]`
+  -> `[1000000, false, false, true, false]`. Base-green on `968d9fe4` and the tag (the incumbent's raw guard reads the unit swing as motion); under R3-STD it holds only through the exact flag on SMI pairs: the plant "exact flag for boxed ints only" reads `[1000000, true, true, true, false]` (STD_converged's relative tau = 1e3 swallows the unit swing), and no other row or oracle verdict sees that plant (RULING R30-4 item 4)
+  tag: `[1000000, false, false, true, false]` (run, R3.0r5, all three tiers; the branch base and the trace tier print the same)
 - `O2.int-down-counter-2p53` [R3] `x is 9007199254740992`, 60 times `x is x - 1`; `print of [x, converged of x, stable of x, diverging of x, equilibrium of x]`
   -> `[9007199254740932, false, false, true, false]` (the same mechanism, falling; ints run interpreted in every tier until R5)
   tag: `[9007199254740932, true, true, false, true]` (run, R3.0r3). Branch base: `[9007199254740932, true, true, false, false]`
-- `O2.harmonic-not-converged` [R3] `h is 1.0 / n is 1.0`, then while `n < 301.0`: `h is h + 1.0 / (n + 1.0) / n is n + 1.0`; `print of [converged of h, stable of h, diverging of h]`
-  -> `[false, true, false]` (STD_converged, the windowed Cauchy test: at n = 300 ten steps span ~0.033 > tau = 1e-3*6.28; STD'_stable's 1% band (Deviation D1) holds; `diverging` false is the documented honesty bound. STD_converged still reads harmonic converged from n = 1295: its documented limit, and #1752's conservative converged is a candidate arm judged on H1, RULING R30-3 item 3). Not a floor verdict: harmonic's `converged` was wrong on the tag
-  tag: `[true, true, false]` (run, R3.0; the branch base prints the same)
+- `O2.harmonic-not-converged` [R3] `h is 1.0 / n is 1.0`, then while `n < 301.0`: `h is h + 1.0 / (n + 1.0) / n is n + 1.0`; `print of [converged of h, diverging of h]` (pins `converged` and `diverging` only, RULING R30-4 item 10: `stable` reads true here under D1, a label-wrong verdict that is the documented slow-divergence residual, so the row does not pin it)
+  -> `[false, false]` (STD_converged, the windowed Cauchy test: at n = 300 ten steps span ~0.033 > tau = 1e-3*6.28; `diverging` false is the incumbent's documented honesty bound. STD_converged still reads harmonic converged from n = 1295: its documented limit, and #1752's conservative converged is a candidate arm judged on H1, RULING R30-3 item 3). Not a floor verdict: harmonic's `converged` was wrong on the tag
+  tag: `[true, false]` (run, R3.0r5, all three tiers; the branch base prints the same)
 - `O2.inverse-growth-not-converged` [R3] #1990's M5 run: `x is 0.0293`, then 120 times `x is x + 1.0 / x`, recording the first iteration at which `converged of x` reads true (`first` starts `null`); `print of [first, x]`
   -> `[null, 37.48239150668529]` (STD_converged: its window diameter never falls under tau on this run; model trace in the R3.0 report)
   tag: `[11, 37.48239150668529]` (run, R3.0r2; the branch base prints the same)
