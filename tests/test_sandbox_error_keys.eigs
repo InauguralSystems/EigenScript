@@ -19,14 +19,14 @@ big is ""
 for i in range of 250:
     big is big + "XXXXXXXX"
 
-# str_lower(1) raises inside try; its catch drops the structured error and a
+# num of "not-a-number" raises in try; catch drops the structured error and a
 # later missing-name lookup supplies sandbox_run's host-returned error.
 late_error_code is [TRY_BEGIN,11,0,
                      GET_NAME,0,0, CONST,1,0, CALL,1,0,
                      TRY_END, RETURN,
                      POP, GET_NAME,2,0, RETURN]
 late_error_desc is [ABI, late_error_code,
-                    ["str_lower", 1, "missing_after_catch"]]
+                    ["num", "not-a-number", "missing_after_catch"]]
 
 # The same catch shape around an allocation larger than max_bytes. The sticky
 # refusal makes sandbox_run return the budget error even though catch resumes.
