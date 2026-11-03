@@ -6885,6 +6885,7 @@ else
     SELFTEST_OUT=$( "$SELFTEST_TMO" -k 3 10 \
         env EIGS_TEST_TIMEOUT=2 EIGS_TMO="$SELFTEST_TMO 2" \
         bash -c '
+            . "$EIGS_TEST_DIR/suite_program_env.sh" || exit 1
             PASS=0; FAIL=0; TOTAL=0; LEAKED=0
             check_eigs_suite "$1" "$2" "__SELFTEST_MARKER_NEVER_PRINTED__" "$3"
             echo "SELFTEST_DELTAS PASS=$PASS FAIL=$FAIL TOTAL=$TOTAL"
