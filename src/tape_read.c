@@ -364,9 +364,9 @@ static int tape_parse(Tape *t, long len) {
                         a.rec = t->nrecs;
                         a.step = r.step;
                         a.value = r.value;
-                        char *ne = NULL;
-                        a.num = strtod(r.value, &ne);
-                        a.is_num = (ne != r.value && *ne == '\0');
+                        const char *ne = r.value;
+                        a.num = 0.0;
+                        a.is_num = trace_parse_float_token(&ne, &a.num) && *ne == '\0';
                         hist_push(h, a);
                     }
                 }

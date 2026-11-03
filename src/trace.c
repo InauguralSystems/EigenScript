@@ -2305,7 +2305,8 @@ static int unescape_string(const char **p, char *out, int out_cap) {
  * Recognized shapes:
  *   null | true | false              immediates
  *   <int digits>                     exact signed int64, no decimal point
- *   <float>                          decimal point or exponent marks its kind
+ *   <float>                          decimal point/exponent, inf, -inf or nan
+ *   b[bits(<int64>), ...]             raw noncanonical NaN buffer payloads
  *   "<str>"                          escapes per unescape_string
  *   [v, v, …]                        list
  *   b[num, num, …]                   buffer (the leading 'b' disambiguates
@@ -2318,6 +2319,77 @@ static void skip_ws(const char **p) { while (**p == ' ') (*p)++; }
 
 static int at_token_boundary(char c) {
     return c == '\0' || c == ' ' || c == ',' || c == ']' || c == '}' || c == ':';
+}
+
+/* The tape has one float grammar, shared with step/DAP. libc strtod also
+ * accepts Infinity, NAN(payload), hex and overflow-to-inf; none is a tape
+ * token. The three explicit IEEE spellings are distinct from decimal input. */
+int trace_parse_float_token(const char **cursor, double *out) {
+    const char *p = *cursor, *q = p;
+    if (strncmp(p, "inf", 3) == 0 && at_token_boundary(p[3])) {
+        *out = INFINITY; *cursor = p + 3; return 1;
+    }
+    if (strncmp(p, "-inf", 4) == 0 && at_token_boundary(p[4])) {
+        *out = -INFINITY; *cursor = p + 4; return 1;
+    }
+    if (strncmp(p, "nan", 3) == 0 && at_token_boundary(p[3])) {
+        const uint64_t canonical = UINT64_C(0x7ff8000000000000);
+        memcpy(out, &canonical, sizeof canonical);
+        *cursor = p + 3; return 1;
+    }
+    if (*q == '-') q++;
+    const char *digits = q;
+    while (*q >= '0' && *q <= '9') q++;
+    if (q == digits) return 0;
+    if (*q == '.') {
+        q++;
+        digits = q;
+        while (*q >= '0' && *q <= '9') q++;
+        if (q == digits) return 0;
+    }
+    if (*q == 'e' || *q == 'E') {
+        q++;
+        if (*q == '-' || *q == '+') q++;
+        digits = q;
+        while (*q >= '0' && *q <= '9') q++;
+        if (q == digits) return 0;
+    }
+    if (!at_token_boundary(*q)) return 0;
+    char *end = NULL;
+    double d = strtod(p, &end);
+    if (end != q || !isfinite(d)) return 0;
+    *out = d; *cursor = q; return 1;
+}
+
+/* Signed decimal bits use the same N12 carrier as buf_get_bits. Only a
+ * buffer cell may use bits(...), and only for a noncanonical NaN: scalars
+ * canonicalize at their single writer, while raw buffer cells retain bits. */
+static int parse_buffer_nan_bits(const char **cursor, double *out) {
+    const char *p = *cursor;
+    if (strncmp(p, "bits(", 5) != 0) return 0;
+    p += 5;
+    int neg = *p == '-';
+    if (neg) p++;
+    const char *digits = p;
+    uint64_t limit = neg ? UINT64_C(9223372036854775808)
+                         : UINT64_C(9223372036854775807), magnitude = 0;
+    while (*p >= '0' && *p <= '9') {
+        unsigned digit = (unsigned)(*p - '0');
+        if (magnitude > (limit - digit) / 10) return 0;
+        magnitude = magnitude * 10 + digit;
+        p++;
+    }
+    if (p == digits || *p != ')' || !at_token_boundary(p[1])) return 0;
+    int64_t signed_bits = neg && magnitude ? -1 - (int64_t)(magnitude - 1)
+                                           : (int64_t)magnitude;
+    uint64_t raw;
+    memcpy(&raw, &signed_bits, sizeof raw);
+    if ((raw & UINT64_C(0x7ff0000000000000)) != UINT64_C(0x7ff0000000000000) ||
+        !(raw & UINT64_C(0x000fffffffffffff)) ||
+        raw == UINT64_C(0x7ff8000000000000)) return 0;
+    memcpy(out, &raw, sizeof raw);
+    *cursor = p + 1;
+    return 1;
 }
 
 static Value *parse_value_p(const char **p) {
@@ -2361,11 +2433,10 @@ static Value *parse_value_p(const char **p) {
         if (**p != ']') {
             for (;;) {
                 skip_ws(p);
-                char *end = NULL;
-                double d = strtod(*p, &end);
-                /* This legacy tape grammar refuses non-finite buffer cells.
-                 * R2.5 owns the explicit non-finite tape tokens. */
-                if (end == *p || !isfinite(d)) { free(data); return NULL; }
+                const char *end = *p;
+                double d;
+                if (!parse_buffer_nan_bits(&end, &d) &&
+                    !trace_parse_float_token(&end, &d)) { free(data); return NULL; }
                 if (count >= cap) {
                     int nc = cap ? cap * 2 : 8;
                     double *nd = realloc(data, (size_t)nc * sizeof(double));
@@ -2469,13 +2540,11 @@ static Value *parse_value_p(const char **p) {
         *p = end_digits;
         return make_int(i);
     }
-    char *end = NULL;
-    double d = strtod(*p, &end);
-    /* Retain the legacy finite tape grammar until R2.5. R2.2 makes IEEE
-     * arithmetic reachable but does not introduce new replay tokens. */
-    if (end == *p || !at_token_boundary(*end) || !isfinite(d)) return NULL;
-    *p = end;
-    return make_float(d);
+    double d;
+    if (!trace_parse_float_token(p, &d)) return NULL;
+    /* The replay boundary uses the same single canonical double writer as
+     * variables and containers. Raw NaN payloads exist only in buffer cells. */
+    return slot_to_value(slot_from_f64(d));
 }
 
 static Value *parse_value(const char *s) {
@@ -3038,10 +3107,28 @@ static void write_string(const char *s) {
     tp_putc('"');
 }
 
-/* N6/T1: the point/exponent is the v8 float-kind marker. The shared
- * shortest writer retains it for every integral float, including -0.0. */
+/* N6/T1: finite floats retain the point/exponent kind marker, including
+ * integral floats and -0.0. The explicit inf/-inf/nan tokens are floats too. */
 static void tape_float_text(char *buf, size_t nbuf, double n) {
     eigs_num_text(buf, nbuf, n);
+}
+
+/* A buffer's bits interface observes payloads that a float cannot carry.
+ * Decimal text plus nan would merge those distinct cells on replay. */
+static void tape_buffer_text(char *buf, size_t nbuf, double n) {
+    uint64_t raw;
+    memcpy(&raw, &n, sizeof raw);
+    if ((raw & UINT64_C(0x7ff0000000000000)) == UINT64_C(0x7ff0000000000000) &&
+        (raw & UINT64_C(0x000fffffffffffff)) &&
+        raw != UINT64_C(0x7ff8000000000000)) {
+        int64_t signed_bits;
+        char digits[21];
+        memcpy(&signed_bits, &raw, sizeof signed_bits);
+        eigs_int_text(digits, sizeof digits, signed_bits);
+        snprintf(buf, nbuf, "bits(%s)", digits);
+    } else {
+        tape_float_text(buf, nbuf, n);
+    }
 }
 
 static void write_float(double n) {
@@ -3255,7 +3342,7 @@ static int write_value_ptr_full(strbuf *buf, Value *v, int *budget,
             for (int i = 0; i < n; i++) {
                 if (i) wf_puts(buf, ", ", budget);
                 char number[32];
-                eigs_num_text(number, sizeof number, v->data.buffer.data[i]);
+                tape_buffer_text(number, sizeof number, v->data.buffer.data[i]);
                 wf_puts(buf, number, budget);
             }
             wf_putc(buf, ']', budget);
