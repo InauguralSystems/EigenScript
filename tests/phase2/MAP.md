@@ -674,6 +674,10 @@ The `O cfg` record's current shape is pinned by `O3.ocfg-no-hlow` (its file list
 - `O1.where-is-int` [R3] `x is 9007199254740993 / print of (where is x)`
   -> `9007199254740993` (an int prints per N6)
   tag: `6.0443533557040756e-15`, an entropy (run, R3.0; the branch base prints the same)
+- `O1.unobserved-jit-sample` [R3] `define run(n)`: `x is 1125899906842624.0` (2^50), then inside `unobserved:` a `loop while i < n:` adding `1.0` to `x`; `return [converged of x, stable of x, diverging of x]`; called 60 times with `0.0`, then LAST with `60.0`; `print of r`
+  shape: F  witness: fn-stop run PREDICATE_SLOT  ops: ADD
+  -> `[false, false, true]` (the elided samples are written by `jit_sample_num_gated` in the JIT tier: the ring writer must carry the exact/sign rings and the float noise-floor rule, R3 writer table; witness probed on the branch: `run jit yes adv 120 stop PREDICATE_SLOT`)
+  tag: `[true, true, false]` in all three tiers (run, R3.0r2; the branch base prints the same)
 - `O1.int-observed-numeric` [R1.3] `a is 3 / b is 140737488355328 / af is 3.0 / bf is 140737488355328.0`, then 12 times `a is a * 2 / b is b * 2 / af is af * 2.0 / bf is bf * 2.0`; `print of [report of a, report of af, report of b, report of bf, num_type of b]`
   -> `["diverging", "diverging", "diverging", "diverging", "int"]`: an SMI (`a`) and a boxed int (`b`, 2^47 and up) are observed exactly as their float twins (the numeric channel, as a double until round 3)
   tag: `num_type` undefined (the reports alone are all `"diverging"` on main, where every number is a double)
@@ -685,6 +689,9 @@ The `O cfg` record's current shape is pinned by `O3.ocfg-no-hlow` (its file list
 - `O2.nan-all-false` [R3] `x is 1.0`, 12 times `x is x * 2.0`, then `big is 1e308 * 10.0 / x is big - big`; print the six predicates of `x` (named forms), then `print of [x == x, how is x]`
   -> `[false, false, false, false, false, false]`, `[false, nan]` (#1758 O2: every predicate false at a NaN; `how` of a NaN step is NaN, R3-O4 / STOP-2)
   tag: `[false, false, false, false, false, false]`, `[true, 0]` (the clamp makes `inf - inf` 0; run, R3.0). Branch base: `diverging` true (R2.2's non-finite veto)
+- `O2.nan-report-undefined` [R3] the same NaN program; `print of (report of x)`
+  -> `"undefined"`, printed `undefined` (RULING R30-1 item 6; #1758 O2, #1746)
+  tag: `moving` (run, R3.0r2). Branch base: `diverging`
 - `O2.inf-diverging` [R3, invariant] `x is 1.0`, 12 times `x is x * 1e200`; print the six predicates, then `print of x`
   -> `[false, false, false, false, true, false]`, `inf` (Hardy §60: an infinite current value with no opposite-sign infinity in the window is `diverging`)
   tag: `[false, false, false, false, true, false]`, `1e+308` (run, R3.0). Base-green on `968d9fe4` (R2.2); R3 must keep it while it changes the NaN and alternating-inf rules
@@ -697,16 +704,31 @@ The `O cfg` record's current shape is pinned by `O3.ocfg-no-hlow` (its file list
 - `O2.harmonic-not-converged` [R3] `h is 1.0 / n is 1.0`, then while `n < 301.0`: `h is h + 1.0 / (n + 1.0) / n is n + 1.0`; `print of [converged of h, stable of h, diverging of h]`
   -> `[false, false, false]` (#1752's decision: `converged` is conservative; `diverging` false is the documented honesty bound). This row is the travel bound's only gate: harmonic's `converged` was wrong on the tag, so it is not a floor verdict
   tag: `[true, true, false]` (run, R3.0; the branch base prints the same)
+- `O2.inverse-growth-not-converged` [R3] #1990's M5 run: `x is 0.0293`, then 120 times `x is x + 1.0 / x`, recording the first iteration at which `converged of x` reads true (`first` starts `null`); `print of [first, x]`
+  -> `[null, 37.48239150668529]` (the travel bound with the newest step ratio: never converged at any of the 120 iterations; model trace in the R3.0 report)
+  tag: `[11, 37.48239150668529]` (run, R3.0r2; the branch base prints the same)
+- `O2.counter-pause-not-converged` [R3, invariant] a float counter 0..30, one `+1e-9` step, then 40 more unit steps; `converged of x` asked after the pause and after every later step, counted in `hits`; `print of [[converged of x, stable of x] at the pause, hits]`
+  -> `[[false, false], 0]`. Base-green on `968d9fe4` and the tag; design round 1's rule read `[conv stab]` at the pause (the geometric-mean-only `rho`). Plant: `rho` without its newest-ratio term
+  tag: `[[false, false], 0]` (run, R3.0r2)
+- `O2.float-counter-2p53-by2` [R3] `x is 9007199254740992.0`, 60 times `x is x * 1.0 + 2.0`; `print of [x, converged of x, stable of x, diverging of x]`
+  -> `[9007199254741112.0, false, false, true]` (a full same-sign non-shrinking float window is motion: RULING R30-1 item 3; the `float_count` corpus rows' twin)
+  tag: `[9007199254741112, true, true, false]` (run, R3.0r2). Branch base: `[9007199254741112.0, true, true, false]`
+- `O2.noise-equilibrium` [R3] iid noise of amplitude 0.001 around 100 (Park-Miller LCG, seed 1.0, 201 values); `print of [equilibrium of x, oscillating of x]`
+  -> `[true, true]` (#1754: weakly stationary AND Hardy-oscillating; the inherited `raw_oscillating` exclusion is dropped)
+  tag: `[false, true]` (run, R3.0r2; the branch base prints the same)
+- `O2.noisy-loss-improving-count` [R3] `loss is 0.2 + 2.0 * (exp of (-0.02 * i)) + 0.1 * u` (Park-Miller LCG, seed 2024.0, i = 0..120); count the iterations i >= 20 at which `improving of loss` is true; `print of hits`
+  -> `96` (the record-high boundedness test; with the round-1 `_expanding` proxy the model gives 51)
+  tag: `0` (run, R3.0r2; the branch base prints the same)
 - `O2.report-noisy-loss` [R3] a Park-Miller LCG (`s is (s * 16807.0) % 2147483647.0`, seed 12345.0, exact in doubles) drives `loss is 0.5 + 2.0 * (exp of (-0.03 * i)) + 0.01 * u` for i = 0..60, u in [-1, 1); `print of [report of loss, improving of loss, oscillating of loss]`
-  -> `["improving", true, false]` (#1754's corrected `improving`: a new best within the window on a bounded sequence; Keras `mode='min'`)
+  -> `["improving", true, false]` (#1754's corrected `improving`: a new best within the window on a bounded sequence; Keras `mode='min'`; `report` ranks `improving` above `oscillating`, RULING R30-1 item 5)
   tag: `["moving", false, false]` (run, R3.0; the branch base prints the same: its contraction band never reads a 0.97-ratio decay as improving, #1771)
 - Planned control, not yet a MAP row (R3.1 adds `tests/phase2/controls/ctl.O2.noise-oscillates.eigs` with its `.out` and this line becomes the control row `ctl.O2.noise-oscillates`; a control is checked in every mode, so listing it before its file exists would fail every `--through`): iid noise of amplitude 1 around 100 (Park-Miller LCG, seed 777.0, 61 values); `print of (oscillating of x)`
   -> `true` on both binaries. #1754 (Hardy §62): iid noise has no limit and does not tend to +-inf, so it oscillates. This replaces the R0 row `O2.noise-not-oscillating`, whose expected `false` contradicted the decided definition and which could not fail on the tag (it prints `true`)
 
 ### O3
-- `O3.ocfg-no-hlow` [R3] (sh row) record `x is 1.0 / x is 2.0 / print of (report of x)` with the binary under test; build two tapes from its first two records plus `O 0 cfg 0.001 0.01 10 0.001` (four fields) and `O 0 cfg 0.001 0.01 0.1 10 0.001` (five, with `h_low`), plus the recording's remaining records; `echo q | --step` each; print the rc and whether stderr names the observer-configuration record
-  -> `cfg-4-fields rc=0 names-record=0`, `cfg-5-fields rc=3 names-record=1` (no writer emits `O cfg` since #1687, so the shape is pinned at the one reader `--step` and the DAP share)
-  tag: `cfg-4-fields rc=3 names-record=1`, `cfg-5-fields rc=0 names-record=0` (run, R3.0; the branch base prints the same)
+- `O3.ocfg-no-hlow` [R3] (sh row) record `x is 1.0 / x is 2.0 / print of (report of x)` with the binary under test; splice one `cfg` record after the recording's first two records and `echo q | --step` the tape, three times: `O 0 cfg 0.001 0.01 10 0.001` (4 fields), `O 0 cfg 0.001 0.01 8 10 0.001` (5 fields: its h_low 8 is also a valid window, so only a field COUNT can refuse it) and `O 0 cfg 0.001 0.01 10 0.001 99 7` (6 fields); print each rc and whether stderr says `has N fields`
+  -> `cfg-4-fields rc=0 names-count=0`, `cfg-5-fields rc=3 names-count=1`, `cfg-6-fields rc=3 names-count=1` (the reader refuses any count but 4: `tape observer-configuration record has N fields, expected 4`; a 4-field parser that ignores the tail installs window 8 and scale 10 from the 5-field record and turns this row red)
+  tag: `cfg-4-fields rc=3 names-count=0`, `cfg-5-fields rc=0 names-count=0`, `cfg-6-fields rc=3 names-count=0` (run, R3.0r2; the branch base prints the same)
 
 ### O4
 - `O4.why-is-displacement` [R3] `x is 1 / x is 4 / print of (why is x)`
@@ -727,6 +749,9 @@ The `O cfg` record's current shape is pinned by `O3.ocfg-no-hlow` (its file list
 - `O4.how-above-dh-small` [R3] `x is 1000.0 / x is 950.0 / print of (how is x)` (`|r| = 0.05`)
   -> `0.0196078431372549`
   tag: `0.47851998973256604` (run, R3.0; the branch base prints the same)
+- `O4.how-infinite-step` [R3] `x is 1e308 / x is x * 10.0 / a is [why is x, how is x] / x is x * 10.0 / b is [why is x, how is x] / y is 5.0 / c is [why is y, how is y] / print of [a, b, c]`
+  -> `[[inf, 0.0], [nan, nan], [null, null]]` (RULING R30-1 item 2: finite -> inf, inf -> inf, no step yet)
+  tag: `[[0, 1], [0, 1], [0, 1]]` (run, R3.0r2). Branch base: `[[-1.0231538532253075e-305, 1.0], [0.0, 1.0], [0.0, 1.0]]`
 
 ### N11
 - `N11.buffer-equal-ieee` [R1.6z] SGD stores -inf, then self-SGD stores NaN; IEEE element comparison: distinct/same NaN false, same infinity true, infinity versus finite false, signed zeros equal; strict modes 0/1 never raise or change math flags. Also exercises list_contains and list_index_of. R1.6z-D1.

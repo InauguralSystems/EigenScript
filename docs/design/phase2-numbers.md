@@ -2,7 +2,8 @@
 
 Status: design round 3, with R1.1/R1.2 implementation notes and R1.2
 fix-round verification in §12. §8's Round 3 section is design sub-round
-R3.0 (written on `r3` @ `968d9fe4`, after R2.6's acceptance). The first program-visible int producer
+R3.0 (written on `r3` @ `968d9fe4`, after R2.6's acceptance; revised in its
+design round 2). The first program-visible int producer
 remains R1.3. Inventory and prototype measurements below describe the
 original design tree. Spec: issue #1758 (Revision 1), its owner decisions (A), (B), (C), the
 Q1-Q6 decisions
@@ -2407,42 +2408,76 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    construction and the waiver ends) were already closed and are R23-1
    invariants.
 
-### Round 3: the observer (O1–O4)
+### Round 3: the observer (O1–O4, #1580, #1752, #1419)
 
-Written in design sub-round R3.0 on `r3` @ `968d9fe4` (after R2.6 was
-accepted), before any R3 code, in the form of Rounds 1 and 2. Sources, in
-the order they bind: `docs/PRINCIPLES.md` §0–§3 and §5; #1758's O1–O4 and
-its Observer Done-when; #1754 (every comment: the definitions); #1667's
-decision record; #1830; #1752 and its 2026-10-19 decision. Owner questions
-the sources do not settle are the numbered STOP items in R3.0's report; this
-section states each with its proposed answer and marks it `(STOP-n)`.
+Design sub-round R3.0. It was written on `r3` @ `968d9fe4`, after R2.6 was
+accepted, and revised in its design round 2 after a blind critic's FAIL on
+`72fcde19`. No R3 code exists yet. The section follows the form of Rounds 1
+and 2.
+
+Sources, in the order they bind:
+- `docs/PRINCIPLES.md` §0–§3 and §5;
+- #1758's O1–O4 and its Observer Done-when;
+- #1758's decision pass of 2026-10-19, which assigns `#1667 (a), #1580,
+  #1752, #1419` to Round 3;
+- #1754, every comment (the definitions);
+- #1667's decision record;
+- #1830;
+- #1752 and its 2026-10-19 decision;
+- #1580's owner decision (option C) and its registered measurement of
+  2026-10-26;
+- #1419's decision record;
+- **RULING R30-1** (orchestrator, 2026-11-03, on #1758), which settles design
+  round 1's six STOP items. They are written in below.
+
+Questions the sources leave open are STOP-7 and STOP-8 in the R3.0 report,
+marked `(STOP-n)` where they apply.
 
 **How every rule below was measured.** The branch runtime's numeric value
 channel (`observer_slot_record_value` and the `obs_num_*` family at
-`968d9fe4`) was ported line for line to Python, and the port was checked
-against the branch binary: every corpus row in `score.py`'s straight form,
-every checkpoint, all six predicates, **708 of 708 readings agree**. The
-port's capability disagreements are exactly the 52 lines of
-`tests/phase2/oracle_expect.txt` (13 row/checkpoint/predicate keys × 4
-arms), and it keeps all 468 floor keys (1,872 arm verdicts). Each R3 rule
-is a delta on that port, scored against `labels.json` and `floor.json` the
-way `score.py` scores (one question per predicate, REPORTED verdicts
-skipped). This is a model, not the oracle: the build round's acceptance is
-`make observer-oracle` on the branch binary, hosted. Because the rules were
-chosen with this corpus in view, the corpus score is IN-SAMPLE evidence;
-#1990's registered held-out set (425 runs, comment on #1752 of 2026-10-28)
-is R3's out-of-sample judge, and its rule is quoted under the gates below.
+`968d9fe4`) was ported line for line to Python.
+- **Checked against the binary.** The port was run against the branch binary
+  on every corpus row in `score.py`'s straight form, every checkpoint and all
+  six predicates. All 708 readings agree.
+- **Reproduces the oracle's known state.** The port's capability
+  disagreements are exactly the 52 lines of `tests/phase2/oracle_expect.txt`
+  (13 row/checkpoint/predicate keys × 4 arms). It keeps all 468 floor keys
+  (1,872 arm verdicts).
+- **How R3 is scored.** Each R3 rule is a delta on that port. It is scored
+  against `labels.json` and `floor.json` the way `score.py` scores: one
+  question per predicate, REPORTED verdicts skipped.
+- **A model, not the oracle.** The build round is accepted on
+  `make observer-oracle` run hosted on the branch binary.
+- **In-sample on the corpus, so other judges are added.** The rules were
+  chosen with the corpus in view. Design round 2 therefore also judges them:
+  - at EVERY prefix of the drift probes, not at chosen checkpoints;
+  - on the critic's noisy-loss population;
+  - on three new `float_count` corpus rows, certified by `certify.py` in a
+    copy of the oracle before any rule was tried on them.
 
-| channel | floor keys lost (of 468) | non-capability right (of 600) | ieee (of 84) | int64 (of 18) | all scored (of 702) |
-|---|---:|---:|---:|---:|---:|
-| branch runtime today (the port) | 0 | 503 | 77 | 12 | 592 |
-| `reference.py` (distance) | 28 | 498 | 77 | 10 | 585 |
-| **R3 (this section)** | **0** | **532** | **84** | **18** | **634** |
+  #1990's registered held-out set (425 runs, on #1752, 2026-10-28) is R3's
+  out-of-sample judge.
 
-R3 removes 42 of the runtime's 110 disagreements and adds none (a per-key
-diff of the two disagreement lists). Per predicate, R3 is right on
+| channel | floor keys lost (of 468) | non-capability right (of 600) | ieee (of 84) | int64 (of 18) | all scored (of 702) | with the 3 `float_count` rows (of 738) |
+|---|---:|---:|---:|---:|---:|---:|
+| branch runtime today (the port) | 0 | 503 | 77 | 12 | 592 | 592 |
+| `reference.py` (distance) | 28 | 498 | 77 | 10 | 585 | n/a |
+| design round 1's rule | 0 | 532 | 84 | 18 | 634 | n/a |
+| **R3 (this section)** | **0** | **534** | **84** | **18** | **636** | **672** |
+
+Today's port gets every `float_count` verdict wrong (it reads them converged),
+so its 738 figure equals its 702 figure.
+
+**R3 against today.** Diffed per key, R3 removes 44 of the runtime's 110
+disagreements and adds none. Per predicate, R3 is right on:
 `converged` 106/118, `stable` 105/118, `improving` 118/118, `oscillating`
-100/116, `diverging` 102/116, `equilibrium` 103/116.
+100/116, `diverging` 102/116, `equilibrium` 105/116.
+
+**Ablation.** Each of the four design-round-2 deltas (A–D below) is switched
+off in turn, and every switched-off variant keeps all 468 floor keys. A and B
+change no corpus score; their judges are the drift traces and the
+noisy-loss population. C is worth 2 verdicts. D is worth the 18 `float_count`
+verdicts.
 
 #### R3-O1. The signal is distance
 
@@ -2453,69 +2488,98 @@ observed assignments of one binding. Per step the slot records:
 |---|---|---|---|
 | float, float | `v - v_prev` in binary64 | `Δv / max(|v|, |v_prev|, scale)` | no |
 | int, int, and `v - v_prev` fits int64 (`__builtin_sub_overflow` false) | the exact int64 difference (Q5) | `(double)Δv / max(|(double)v|, |(double)v_prev|, scale)` | **yes** |
-| int, int, difference outside int64 (INT64_MIN ↔ INT64_MAX) | `(double)v - (double)v_prev` | as above | no |
+| int, int, difference outside int64 | `(double)v - (double)v_prev`, rounded: INT64_MIN → INT64_MAX is 2^64 = `1.8446744073709552e+19`, rounded from the exact 18446744073709551615 (Q5: a readout never raises) | as above | no |
 | int, float or float, int | `(double)v - (double)v_prev` (N3: int op float is float) | as above | no |
 
-- **The window** is the last W = 10 steps (W + 1 values), as `reference.py`
-  keeps it (`W = 10`, `classify` slices `values[at - W : at + 1]`). The two
-  existing rings (`v_window` relative, `vr_window` raw) keep their shape and
-  gain a parallel one-byte ring of exact flags and a ring of the W + 1 values'
-  non-finite signs (R3-O2's inf rule needs the window's infinities). Two
-  scalars per binding are added for `improving` (`best`, `since`, R3-O2).
-  Nothing else is retained: no look-back beyond the window.
-- **Entropy is no longer computed or stored for a numeric binding.** A
-  numeric assignment (`observer_slot_update_num`, the numeric arm of
-  `observer_slot_update`, the elided `observer_slot_sample_*`) does not call
-  `entropy_of_num`, does not push the dH ring and does not write
-  `entropy`/`dH`/`last_entropy`/`prev_dH`. The entropy trajectory is the
-  trajectory of the binding's NON-numeric assignments; a numeric assignment
-  neither enters it nor resets it.
-- **The entropy channel is otherwise unchanged** (#861): strings, lists,
-  dicts, buffers and text builders keep `compute_entropy_impl`, the dH window,
-  the equality route for `converged`/`stable` (#1992), `h_low` as the
-  compiled-in constant `OBSERVER_H_LOW_DEFAULT` (it has had no setter since
-  v0.46.0, #1687), `classify of [t, "entropy"]` on a snapshot of such a
-  binding, and `where`/`why`/`how` on such a binding (entropy, dH,
-  settledness-of-dH). `get_observer_thresholds` keeps returning
-  `[dh_zero, dh_small, h_low]`: `h_low` is still the threshold in force on
-  that channel.
-- **Readers of the numeric entropy fields** answer from the value channel
-  instead: `observe of x` on a numeric binding returns
-  `[band, where, why, previous why]`, the same four positions with the
-  numeric meanings of R3-O4; `trajectory of x` on a numeric binding carries
-  `rel`, `raw`, the new `exact` list, `best`, `since` and an exact
-  `last_value` (an int stays an int), with `dh` empty and `entropy`, `dH`,
-  `last_entropy` null; `classify of [t, "entropy"]` on a numeric snapshot
-  raises `value` ("a numeric trajectory has no entropy channel"), where it
-  would otherwise classify an empty window as a plausible label (principle
-  2); the loop stall backstop (`obs_stall_trajectory`, vm.c:93, and the JIT's
-  `jit_helper_loop_stall_check`) counts a quiet iteration on a numeric
-  binding as `|r| < dh_zero` of its last step, where it read `|dH|`; the
-  SIGUSR1 dump prints the value and the last Δv for a numeric binding.
-- Opt-in observation (#1667 (b)) is sequenced after R3 and out of scope. This
-  design does not preclude it: every new piece of state lives on the
-  `ObserverSlot` that the observe op already allocates, and no rule reads a
-  binding that was not observed; opt-in changes which bindings get an observe
-  op, not what an observed binding records.
+- **The window** is the last W = 10 steps, that is W + 1 values, as
+  `reference.py` keeps it.
+  - The two rings `v_window` (relative) and `vr_window` (raw) keep their
+    shape.
+  - They gain a parallel one-byte ring of exact flags and a ring of the
+    W + 1 values' non-finite signs.
+  - Four scalars per binding are added: `best` and `since`, plus their
+    mirror `top` and `top_since` (R3-O2's `improving`).
+  - Nothing else is retained. There is no look-back beyond the window.
+- **Entropy is no longer computed or stored for a numeric binding.** A numeric
+  assignment does not call `entropy_of_num`, does not push the dH ring, and
+  does not write `entropy`, `dH`, `last_entropy` or `prev_dH`. The entropy
+  trajectory is the trajectory of the binding's non-numeric assignments; a
+  numeric assignment neither enters it nor resets it. This holds on every
+  path that records a number: interpreter, JIT helper, JIT inline and the
+  elided `unobserved:` paths (the writer table below).
+- **The entropy channel is otherwise unchanged** (#861). Strings, lists,
+  dicts, buffers and text builders keep:
+  - `compute_entropy_impl` and the dH window;
+  - the equality route for `converged`/`stable` (#1992);
+  - `h_low` as the compiled-in constant `OBSERVER_H_LOW_DEFAULT` (it has had
+    no setter since v0.46.0, #1687);
+  - `classify of [t, "entropy"]` on such a binding's snapshot;
+  - `where`/`why`/`how`: entropy, dH, and the settledness of dH.
 
-#### R3-#1830. The int scale
+  `get_observer_thresholds` keeps returning `[dh_zero, dh_small, h_low]`.
+- **Readers of the numeric entropy fields** answer from the value channel:
+  - `observe of x` on a numeric binding returns
+    `[band, where, why, previous why]`;
+  - `trajectory of x` carries `rel`, `raw`, `exact`, `best`, `since`, `top`,
+    `top_since` and an exact `last_value`, with `dh` empty and `entropy`,
+    `dH`, `last_entropy` null;
+  - `classify of t` rebuilds every one of those fields;
+  - `classify of [t, "entropy"]` on a numeric snapshot raises `value` (a
+    numeric trajectory has no entropy channel);
+  - the loop stall backstop (`obs_stall_trajectory`, vm.c:93, and
+    `jit_helper_loop_stall_check`) counts a numeric binding's quiet iteration
+    as `|r| < dh_zero` of its last step;
+  - the SIGUSR1 dump prints the value and the last Δv.
+- **Opt-in observation** (#1667 (b)) is sequenced after Round 3 and is out of
+  scope. Nothing here precludes it: every new piece of state lives on the
+  `ObserverSlot` that an observe op allocates, and no rule reads a binding
+  that was not observed.
 
-**The rule: the relative step keeps the float scale; an exact int step also
-keeps its exactness, and the raw-structure tests read an exact step with a
-zero noise floor.** Today every raw test refuses steps under the
-floating-point noise floor `4·ε·(1 + |v|)` (eigenscript.c:947). At
-`v ≈ 2^53` that floor is 8, so a unit step reads as rounding noise and the
-counter `2^53 + n` reads as settled; but an exact int64 difference has no
-rounding at all. Per step the floor is `0` when the step is exact and
-`4·ε·(1 + |v|)` otherwise; a test over the window uses the largest floor of
-its steps (one concept, one predicate: the same helper serves
-`raw_nonvanishing`, `raw_diverging`, `raw_oscillating`,
-`bounded_oscillating`, `improving` and the travel bound of R3-O2).
+#### R3-#1830 and the float twin: when a step is noise
 
-`int64_count` (x_n = 2^53 + n), checkpoints 10 and 60, identical in all four
-arms (the slot code is one function on every tier):
+The raw-structure tests (`raw_nonvanishing`, `raw_diverging`,
+`raw_oscillating`, `bounded_oscillating`, `improving` and the travel bound)
+ignore a step at or under a **noise floor**. One helper decides the floor for
+every test (one concept, one predicate). For a step it is:
 
-| predicate | label | runtime today | R3 | `reference.py` |
+| step | floor |
+|---|---|
+| exact (an int pair whose difference fits int64) | `0` |
+| float, in a FULL window whose W raw steps are all nonzero, finite and of one sign, and not shrinking (`|d_0| ≥ |d_9|`) | `0` (RULING R30-1 item 3: a same-sign run of ulp-sized steps is motion) |
+| float, otherwise | `4·ε·(1 + |v|)` (today's floor) |
+
+A test over the window uses the largest floor among its steps.
+
+**Why the float rule takes this shape.**
+- **The 2·ulp floor is rejected** (R30-1 item 3). It fixes `2^50 + n` and not
+  `2^51 + n`, `2^52 + n` or `2^53 + 2n`.
+- **A plain same-sign rule costs floor keys.** Without the "not shrinking"
+  clause, the rule loses two floor keys, `ml_loss_rise_plateau@300`
+  `converged` and `stable`. There a decay reaches its limit 1.0 with
+  6–15-ulp same-sign steps, and rounding makes two newest steps equal. A
+  decay's steps shrink across the window and a counter's do not, so the
+  clause separates them and loses none.
+
+**The `float_count` rows were added first** (R30-1 item 3). In a copy of the
+oracle (`out/r3/model/oracle_ext/`), three rows were added: `float_count_2p50`
+(x_n = 2^50 + n), `float_count_2p52` (2^52 + n) and `float_count_2p53_by2`
+(2^53 + 2n). All are floats, `tends_to = +inf`, checkpoints 10 and 60.
+- `certify.py` certified them (`symbolic`, sympy limit = oo):
+  `certified: ... refused=0 of 75 rows`.
+- `derive.py --write` labelled them, with every existing label unchanged.
+- **R3 reads all 18 of their verdicts right:** at every checkpoint
+  `diverging` is true and the rest are false.
+- With the float rule switched off (D), all 18 are wrong: `converged` and
+  `stable` true, `diverging` false.
+
+The oracle owner adds these rows to `tools/observer_oracle/corpus.json` in the
+oracle's own commit, before R3.1. They are non-capability rows the anchor
+gets wrong, so the floor does not change.
+
+**`int64_count`** (x_n = 2^53 + n), checkpoints 10 and 60, is identical in
+all four arms:
+
+| predicate | label | runtime today | R3 | `reference.py` today |
 |---|---|---|---|---|
 | `converged` | false | **true** | false | **true** |
 | `stable` | false | **true** | false | **true** |
@@ -2524,393 +2588,603 @@ arms (the slot code is one function on every tier):
 | `diverging` | true | **false** | true | **false** |
 | `equilibrium` | false | false (#1899) | false | **true** |
 
-R3 is right on all 24 declared verdicts, and on all 18 int64 verdicts
-(`int64_swing`@60 included: its INT64_MIN ↔ INT64_MAX step does not fit
-int64, so it is an inexact float step and the row still reads
-`oscillating`). **`reference.py` does not agree:** its `converged` and
-`stable` compare the window's diameter (10) with a relative tolerance
-(`1e-3 · 2^53 ≈ 9e12`), and its `diverging` requires every step above that
-same tolerance, so it has #1830 too. The runtime must differ from
-`reference.py` here; amending `reference.py` is STOP-4. The float twin (a
-float counter at 2^50, the case #1830's triage measured on main) is NOT
-fixed by this rule: its unit step equals the float floor exactly, and the
-R3 model still reads it `converged` and `stable`. It is not in the corpus;
-STOP-3 proposes the fix.
-
-R3 is accepted only when the 52 R3 lines have left
-`tests/phase2/oracle_expect.txt` (the file is then empty, the #1776
-pre-merge condition); a declaration that has become right fails the oracle
-as STALE, so the build round deletes them in the commit whose binary makes
-them right.
+- R3 is right on all 24 declared verdicts and on all 18 int64 verdicts.
+  `int64_swing`'s INT64_MIN ↔ INT64_MAX step is inexact, so the row still
+  reads `oscillating`.
+- **`reference.py` has #1830 too.** Its tolerances are relative to |x|, so a
+  diameter of 10 is far under `1e-3 · 2^53`.
+- **R30-1 item 4:** the oracle owner amends `reference.py`'s
+  `converged`/`stable`/`diverging` with the exact-int floor and the inf sign
+  rule, written from the definitions. It is a report-only change, and no gate
+  moves on it.
+- R3 is accepted only when the 52 R3 lines have left
+  `tests/phase2/oracle_expect.txt`, so the file is empty (the #1776 pre-merge
+  condition). A declaration that has become right fails the oracle as STALE,
+  so R3.1 deletes the lines in the commit whose binary makes them right.
 
 #### R3-O2. The six predicates
 
-Notation: `x` is the current value, `d_0` the newest raw step and `d_9` the
-oldest of a full window, `m = max(|x|, scale)`, and `ε(L) = 1e-3·max(|L|,
-1e-3)` is the corpus's tolerance (`dh_zero` and `scale`). "Full" means W
-steps recorded. Every predicate first applies the non-finite rules below.
+Notation:
+- `x` is the current value;
+- `d_0` is the newest raw step and `d_9` the oldest of a full window;
+- `m = max(|x|, scale)`;
+- "full" means W steps have been recorded.
 
-**The remaining-travel bound** (new; #1752, #1754's `stable` clarification).
-The trailing run is the newest steps that are finite, above their noise
-floor and of one sign. If the run covers every finite step of the window,
-the window is monotone and
+Every predicate first applies the non-finite rules below.
 
-    rho = (|d_0| / |d_{k-1}|)^(1/(k-1))      (k = run length >= 2; the geometric-mean step ratio)
-    R   = |d_0| · rho / (1 - rho)             (rho < 1),   R = inf   (rho >= 1)
+**The remaining-travel bound** (#1752; #1754's `stable`, "within a band about
+its final value"; the critic's variant, with one change):
+1. **The trailing run.** It is the newest steps that are finite, above their
+   noise floor and of one sign.
+2. **When it applies.** Only to a monotone window: the run covers every
+   finite step of the window, it is at least 2 steps long, and the newest step
+   is above noise.
+3. **The ratio.** `rho = max( (|d_0| / |d_{k-1}|)^(1/(k-1)), |d_0| / |d_1| )`,
+   where k is the run length. This is the larger of the geometric-mean step
+   ratio and the NEWEST ratio. The newest ratio is the standard a-posteriori
+   contraction estimate for a linearly convergent iteration.
+4. **The bound.** `R = |d_0| · rho / (1 - rho)` when `rho < 1`, and
+   `R = inf` when `rho ≥ 1`.
+5. **Otherwise** (a window that reverses, or whose newest step is noise),
+   `R = 0` and the existing tests decide.
 
-which bounds `|x - L|` for a geometric tail (the standard a-posteriori bound
-for a linearly convergent sequence, the ratio test `reference.py`'s
-`_contracting` and #1752's "step-ratio trend test"). A window that reverses
-direction, or whose newest step is at noise level, has `R = 0` here (the
-existing tests decide it). The geometric mean, not the maximum ratio: the
-maximum loses five floor verdicts on `modulated_decay_094` (the #1891 class),
-the geometric mean loses none.
+Why `rho` is chosen this way:
+- **The geometric mean alone, design round 1's choice, reads drift as
+  convergence.** One large old step drags the mean down. With it, round 1's
+  rule read `converged` at iterations 9–10 of both #1990 `x ← x + 1/x` runs,
+  and at the pause of a float counter that paused for one `1e-9` step.
+- **The maximum ratio over the run is too strict.** It loses five floor keys
+  on `modulated_decay_094`, the #1891 class.
 
-**One rest rule for `converged` and `stable`:** `settled(t)` is true iff
-`R <= t·m` AND either the window's existing rest test holds (today's
-`obs_num_converged`, or `obs_num_stable`), or the monotone run is at least
-W − 1 steps long and neither raw guard (`raw_diverging`, `raw_oscillating`)
-fires. `converged = settled(dh_zero)`, `stable = settled(dh_small)`. Since
-`dh_zero < dh_small` and today's converged test implies today's stable test,
-`converged ⇒ stable` holds by construction (checked on all 23,649 corpus
-prefixes: no violation). The `W − 1` admits a window whose oldest step is
-the reset from a non-finite value (`ieee_nan_recover`@13); it is chosen with
-the corpus in view (in-sample).
+**One rest rule for `converged` and `stable`: `settled(t)`.** `settled(t)` is
+true iff `R ≤ t·m` AND one of these holds:
+- the window's existing rest test holds (today's `obs_num_converged`, or
+  `obs_num_stable`); OR
+- the window is full, the monotone run is at least W − 1 steps, the run is
+  **strictly contracting** (each step smaller than the one before it), and
+  neither raw guard fires.
+
+`converged = settled(dh_zero)`, `stable = settled(dh_small)`, so
+`converged ⇒ stable` holds by construction. Checked on all 23,649 corpus
+prefixes: there are no violations.
+
+The `W − 1` admits a window whose oldest step is the reset from a non-finite
+value (`ieee_nan_recover`@13). Like the strictness clause, it was chosen with
+the corpus in view.
+
+**Every-prefix traces** (`out/r3/model/trace_drift.py`). Each line gives the
+prefixes at which `converged` / `stable` read true, over every prefix:
+
+| probe | runtime today | design round 1 | R3 |
+|---|---|---|---|
+| #1990 `x ← x + 1/x`, x0 = 0.0293 (121 prefixes) | 11–120 / 11–120 | **9–10 / 9–10** | never / never |
+| #1990 `x ← x + 1/x`, x0 = 0.0227 | 11–120 / 11–120 | **9–10 / 9–10** | never / never |
+| float counter, one `1e-9` step at 31, resumes | never | **31 / 31** | never |
+| float counter, one `1e-3` step at 31, resumes | never | **31 / 31** | never |
+| ramp of 0.1, one `1e-5` step at 11, resumes | never | **11 / 11** | never |
+| steps halving 9 times, then constant | 10–18 / 10–18 | 9–18 / 9–18 | 10 / 10 |
+| `harmonic` (2001 prefixes) | 183–2000 / 34–2000 | never | never |
+| `log_n` | 198–300 / 37–300 | never | never |
+| `sqrt_n` | never / 59–300 | never | never |
+| `ml_loss_power` | 382–2000 / 45–2000 | never | never |
+| `inv_log` | 198–300 / 37–300 | never | never |
+| `sin_iter` | 504–2000 / 56–2000 | never | never |
+| `e_limit` | 31–2000 / 15–2000 | 244–2000 / 10,15–2000 | 248–2000 / 23–2000 |
+
+Two residuals remain, and both are documented in `docs/PREDICATES.md`:
+- **"Halving then constant" at prefix 10.** Prefix 10 is the last window that
+  holds only the nine halving steps. No causal window can see the regime
+  change that follows (the corpus's own reason `converged` is a tail
+  property). From prefix 11, where the window shows a ratio-1 step, R3 says
+  false.
+- **`e_limit` reads `converged` from about n = 248.** The value comes within
+  `eps` of its limit only at about n = 500. Its error is about e/(2n) and its
+  steps are about e/(2n²), so the geometric bound under-estimates a
+  1/n-convergent tail by about a factor of 2. No corpus checkpoint (60, 2000)
+  is affected.
 
 | predicate | the runtime's windowed rule (R3) | `reference.py` function | agree on 702 scored verdicts | where they differ |
 |---|---|---|---:|---|
-| `converged` | full window; every `|r| < dh_zero`; no raw runaway or oscillation; `R <= dh_zero·m`; OR a monotone run of ≥ W−1 steps with `R <= dh_zero·m` | `converged`: window diameter `<= ε(x)` | 107/118 | R3 right 4, reference right 7 |
-| `stable` | the same with `dh_small`, plus today's no-strong-flip clause on the first path | `stable`: diameter `<= 2·1e-2·max(|centre|, scale)` | 101/118 | R3 right 11, reference right 6 |
-| `improving` | **Keras `EarlyStopping` `mode='min'`, patience W, exactly as the corpus defines it:** `best` starts at the trajectory's first value (a baseline, never an improvement); a value `< best - dh_zero·max(|best|, scale)` is an improvement and becomes `best`; true iff the last improvement is within the last W steps AND the window does not look unbounded (not `diverging`, and not `reference.py`'s `_expanding` on a full window) | `improving`: the recent half's min below the older half's best | 115/118 | R3 right 3, reference right 0 |
-| `oscillating` | unchanged (`rel_oscillating` or `raw_oscillating` or `bounded_oscillating`), with the exact floor; at ±inf, R3-O2's inf rule | `oscillating`: not converged, not contracting, not diverging | 99/116 | R3 right 10, reference right 7 |
-| `diverging` | unchanged (`raw_diverging`), with the exact floor; at ±inf, the inf rule | `diverging`: same-sign steps above ε that do not contract, or an infinite value | 105/116 | R3 right 7, reference right 4 |
-| `equilibrium` | unchanged (`obs_num_equilibrium`, #1899's one-direction guard) | `equilibrium`: CUSUM of the recent half against the older half | 70/116 | R3 right 42, reference right 4 |
+| `converged` | `settled(dh_zero)` | `converged`: window diameter `≤ ε(x)` | 107/118 | R3 right 4, reference right 7 |
+| `stable` | `settled(dh_small)`, plus today's no-strong-flip clause on its base path | `stable`: diameter `≤ 2·1e-2·max(|centre|, scale)` | 101/118 | R3 right 11, reference right 6 |
+| `improving` | see below | `improving`: the recent half's minimum below the older half's best | 115/118 | R3 right 3, reference right 0 |
+| `oscillating` | unchanged (`rel_oscillating` or `raw_oscillating` or `bounded_oscillating`), with the noise floor above; at ±inf, the inf rule | `oscillating`: not converged, not contracting, not diverging | 99/116 | R3 right 10, reference right 7 |
+| `diverging` | unchanged (`raw_diverging`), with the noise floor; at ±inf, the inf rule | `diverging`: same-sign steps above ε that do not contract, or an infinite value | 105/116 | R3 right 7, reference right 4 |
+| `equilibrium` | today's `obs_num_equilibrium` (full window, `|mean(r)| < dh_zero`, `var(r) < dh_zero²`, and #1899's one-direction guard) **without** its `raw_oscillating` exclusion | `equilibrium`: CUSUM of the recent half against the older half | 72/116 | R3 right 42, reference right 2 |
 
-Every difference is listed per verdict in the R3.0 report's agreement table.
-Where reference is right and R3 is not, the reference rule loses floor
-verdicts when transplanted (taking `reference.py` whole loses 28 floor keys, among them
-`equilibrium` on damped and periodic rows, `oscillating` on `ml_plateau`
-and `noise_below_s1`, and `diverging` on `int_doubling` and
-`modulated_runaway_minimal`), and the floor has no waivers. **The runtime
-runs incrementally and `reference.py` does not:** `reference.py` slices
-W + 1 values from the whole sequence; the runtime holds the same W + 1
-values in its rings, so the windowed rules are the same functions of the
-same values. The one place R3 reads beyond the window is `improving`'s
-`best`, a running minimum (one double and one counter, not a buffer): that
-is what the definition asks ("a new best ... from x_0"), and it is why
-`improving` reaches 118/118 where any window-only approximation, the
-reference's included, cannot (`quasi_2`@300 sets a window low that is not a
-new best of its history; `reference.py` reads it `improving`, the label and
-R3 do not).
+Every difference is listed per verdict in
+`out/r3/model/r3f_vs_ref_diffs.txt`. Where reference is right and R3 is not,
+transplanting reference's rule loses floor verdicts: taking `reference.py`
+whole loses 28 floor keys, and the floor has no waivers.
 
-**Non-finite checkpoints** (#1746, #1754, #1758 O2):
-- **NaN current value: every predicate is false** (the #1758 convention).
-  This replaces R2.2's non-finite veto, which reported `diverging` at NaN
-  (the 8 `ieee_nan` declarations). A NaN does not touch `best`.
-- **±inf current value (Hardy §60, §62):** `diverging` iff no infinity of
-  the opposite sign is among the window's W + 1 values; otherwise
-  `oscillating` (the sequence oscillates infinitely: `ieee_inf_alternating`'s
-  16 declarations); every rest band and `improving` false.
-- **A finite current value with a non-finite value in the window:** a step
-  touching the non-finite value has a NaN relative step, which no band flag
-  reads as motion (as today: a NaN never clears a flag), and it ends the
-  monotone run; the window still counts it for fullness.
-- **`report` at a NaN current value:** every predicate is false, so a full
-  window reports `moving`, and the partial-window fallback must not report
-  `stable` (today its `all_small` flag reads a NaN step as small).
+**`reference.py` runs over the whole sequence; the runtime runs
+incrementally.** The windowed rules are the same functions of the same W + 1
+values. Beyond the window, the runtime reads only `improving`'s two running
+extremes.
 
-**The `report` ranking is unchanged:** `oscillating → diverging →
-improving → converged → equilibrium → stable → moving`. Two consequences,
-both stated in `docs/PREDICATES.md`: the motion bands are no longer mutually
-exclusive (`improving` is now true for a bounded noisy loss that Hardy calls
-`oscillating`; 181 of the corpus's 23,649 prefixes have both), and on such a
-prefix `report` says `oscillating`. Whether `improving` should outrank
-`oscillating` (#1754: "a noisy falling loss stays improving") is STOP-5. A
-NaN current value reports `moving` (a label outside the bands); whether
-it gets its own label is STOP-6.
+**`improving`** (#1754's corrected ruling, Keras `EarlyStopping`
+`mode='min'`, patience W, exactly as the corpus defines it):
+- **`best`** starts at the trajectory's first value. That value is a
+  baseline and is never an improvement.
+- **An improvement** is a value `< best - dh_zero·max(|best|, scale)`; it
+  becomes `best`.
+- **`improving`** is true iff the last improvement is within the last W
+  steps, AND the sequence looks bounded.
+- **"Looks bounded"** means: not `diverging`, AND no new record HIGH within
+  the last W steps.
+  - `top` is a running maximum, the mirror of `best`. A value
+    `> top + dh_zero·max(|top|, scale)` is a new record high.
+  - Why this is a boundedness test: a sequence that oscillates infinitely
+    (Hardy §62) sets new records in both directions, while a bounded falling
+    loss sets new lows and not new highs.
+  - This is the one modelling choice in this predicate (§0). No source states
+    a windowed boundedness test for one observed series. It replaces design
+    round 1's `reference.py` `_expanding` proxy.
+- **Evidence** (`out/r3/model/impr_trace.py`): the critic's population, a
+  falling loss `0.2 + 2e^{-0.02i} + amp·U(-1,1)`, 20 seeds, i = 20..300.
+
+  | amp | Keras-true checkpoints | design round 1 | R3 | R3's misses: `diverging` / new-high / other | R3 true where Keras is false |
+  |---|---:|---:|---:|---|---:|
+  | 0.001 | 5,615 | 85.6% | 94.7% | 297 / 0 / 0 | 0 of 5 |
+  | 0.01 | 5,307 | 63.8% | 95.0% | 264 / 0 / 0 | 0 of 313 |
+  | 0.1 | 4,107 | 48.7% | 100.0% | 0 / 0 / 0 | 0 of 1,513 |
+
+  - The new boundedness test misses nothing. Every remaining miss is the
+    `diverging` false positive of today's raw half-window rule on a noisy
+    descent: the #1891 class. #1891 now carries a repro of it, and R3 does
+    not change `raw_diverging`.
+  - On `O2.report-noisy-loss`, `improving` is true on 52 of the 60
+    Keras-true checkpoints. The eight exceptions (4, 27, 29, 38, 39, 41, 56
+    and 58) are all `diverging` false positives.
+  - The corpus score stays 118/118, with 0 floor keys lost.
+
+**`equilibrium`.** #1754 decides `equilibrium` as weak stationarity (NIST
+6.4.4.2), and iid noise is both Hardy-oscillating and stationary. So the
+inherited `raw_oscillating` exclusion is dropped. That gains `ml_plateau@200`
+and `noise_below_s1@200` (636 against 634), with 0 floor keys lost.
+
+**Non-finite current values** (#1746, #1754, #1758 O2):
+- **NaN current value:** every predicate is false. This replaces R2.2's
+  non-finite veto (the 8 `ieee_nan` declarations). A NaN touches neither
+  `best` nor `top`.
+- **±inf current value (Hardy §60, §62):** `diverging` iff no infinity of the
+  opposite sign is among the window's W + 1 values. Otherwise `oscillating`:
+  it oscillates infinitely (the 16 `ieee_inf_alternating` declarations).
+  Every rest band and `improving` is false.
+- **Finite current value, non-finite value in the window:** a step that
+  touches the non-finite value has a NaN relative step, which no band flag
+  reads as motion, and it ends the monotone run. The window still counts it
+  for fullness.
+
+**`report`** (R30-1 items 5 and 6):
+- **The ranking** is `diverging → improving → oscillating → converged →
+  equilibrium → stable → moving`. `improving` now ranks above `oscillating`,
+  because a bounded noisy falling loss is both (241 of the corpus's 23,649
+  prefixes are) and #1754 says it "stays improving". `diverging` stays first;
+  `improving` excludes it by construction.
+- **At a NaN current value,** `report` (and `report_value`) is `"undefined"`
+  at any window fill. The label lies outside the band lattice, as `opaque`
+  and `moving` do. There is no interim `moving`, and the partial-window
+  fallback never says `stable` there.
 
 #### R3-#1752. The finite-window bound
 
-**Recorded decision (2026-10-19, on #1752, implemented here):** the
-`converged=true` reads on slow divergence are WRONG and are fixed;
-`converged` is conservative: where the window cannot exclude continued
-drift, it reads false. R3's remaining-travel bound is that criterion:
-`harmonic`@300 and @2000, `log_n`@300, `ml_loss_power`@2000, `inv_log`@300,
-`sin_iter`@2000 and `e_limit`@60 all leave their `converged=true`
-disagreement (`sqrt_n` already read false), and eleven `stable=true`
-disagreements on the same family go too (`harmonic`@60/300/2000,
-`inv_log`@60/300, `log_n`@300, `ml_loss_power`@60/2000, `sin_iter`@60/2000,
-`sqrt_n`@300); `modulated_decay_094`@102's `converged=true` remains (the
-#1891 class). The `diverging` misses
-on `harmonic`, `log_n` and `sqrt_n` remain: no finite window can see slow
-divergence, and the decision accepts them as the documented honesty bound in
-`docs/PREDICATES.md`. **Every MATH row still scores at or above its floor:**
-the floor is per verdict, and the R3 model keeps all 468 floor keys. #1990's
-two divergent `x ← x + 1/x` runs (x0 = 0.0293, 0.0227) no longer read
-`converged` at any checkpoint the model probed (11, 20, 60).
+**Recorded decision (2026-10-19, on #1752; implemented here):**
+- The `converged=true` reads on slow divergence are wrong, and are fixed.
+- `converged` is conservative: where the window cannot exclude continued
+  drift, it reads false.
+- The `diverging` misses are the documented honesty bound.
+
+**R3's remaining-travel bound is that criterion.** At every prefix, not only
+at checkpoints (the table above), `harmonic`, `log_n`, `sqrt_n`,
+`ml_loss_power`, `inv_log` and `sin_iter` never read `converged` or `stable`,
+and both #1990 runs never read `converged`.
+
+**What remains.**
+- The `diverging` misses on `harmonic`, `log_n` and `sqrt_n` are the
+  documented honesty bound in `docs/PREDICATES.md`.
+- `modulated_decay_094@102`'s `converged=true` stays (the #1891 class).
+- A monotone drift with sawtooth-modulated steps still reads `converged` on
+  30 of 300 prefixes, as it does today (the #1891 class).
+- **The floor is kept.** It is per verdict, and R3 keeps all 468 keys.
+
+#### R3-#1580. One scale rule for every verdict (option C): R3.3
+
+The decision pass puts #1580 in Round 3. The owner's decision (2026-10-01,
+option C) is that every verdict judges "small" relative to the binding's own
+history. The floor is a fixed fraction f of the binding's peak magnitude,
+"chosen by measurement", and verdicts must be invariant under unit scaling.
+The measurement is registered (#1580, 2026-10-26): 11 arms, U_above, BA_p, Z,
+K, a sealed held-out set, and a decision rule that can also adopt the standard
+`math.isclose` form.
+
+**The rule stays the registered experiment's, so R3 does not choose f.** It
+builds the place where f goes:
+- **R3.1** routes every read of `scale` through ONE helper,
+  `obs_floor_scale(slot)`. The helper returns `g_obs_scale` until R3.3. Its
+  readers are the relative step, the travel bound's `t·m`, `improving`'s
+  `min_delta` and the noise floor.
+- **R3.3** runs #1580's registered experiment. Its instrument is a
+  value-route port that must match the INC binary. This design's
+  `cur_model.py` plus `portcheck.py` (708/708) is that port at `968d9fe4`.
+  The experiment re-runs it at the R3.2 tip, with ≥ 400 planted sequences.
+- R3.3 then changes the helper to the winning rule (C_f*, STD-rel, or INC if
+  neither passes, per the decision rule).
+- **Rows:** #1580's suite test is identical verdicts at ×1, ×1000 and
+  ×0.001 for above-floor signals, in all three tiers, failing on the old
+  floor. Add a decay-to-zero row that must read `converged` (Z = 1) and a
+  #1830 counter row (K = 1).
+- **Gates:** the experiment's decision rule, and the oracle floor (0 keys
+  lost).
+
+The one known residual of the current scale rule is `issue1891_underflow_tail`
+@10/@80: steps of -1e-170 tending to -inf still read `converged` and `stable`
+under R3. The absolute floor `dh_zero · 1e-3` makes any 1e-160 window "at
+rest", which is #1580's reason. It stays declared to R3.3, not fixed in R3.1.
+
+#### R3-#1419. The `chaotic` predicate: R3.4
+
+The decision pass and #1419's decision record add `chaotic`. It separates a
+2-cycle and the period-3 window from chaos, on top of #1580's floor. Its bar
+is the oracle's logistic rows labelled by the Lyapunov sign.
+- **The oracle first, as #1757 was.** The oracle owner adds `chaotic` to
+  `corpus.json` `definitions`. The definition is "bounded, not convergent,
+  negative or positive Lyapunov exponent per #1419's external key", with
+  #1419's band of 0.05 as the ungraded zone.
+- **Corpus rows.** #1419's 101-point logistic sweep becomes corpus rows,
+  labelled from the external exponent computed in certify (float64, 2k
+  warm-up, 20k steps, the mean of ln|r(1−2x)|).
+- **The live candidate** is period detection over the window, merging
+  values with `converged`'s deadband (#1419, corrected body).
+- **Language surface.** `chaotic` is a seventh predicate. That means a new
+  reserved keyword (predicates are reserved), a predicate kind appended after
+  `equilibrium` (`TOK_CONVERGED + k`, `EIGS_PREDICATE_NAMES`), lint W016, the
+  LSP, the AOT's predicate table, and a place in the `report` ranking (STOP-8).
+- **STOP-7.** #1419's Done-when grades the sweep with
+  `set_observer_window of 16`, a builtin removed in v0.46.0 (#1687). The
+  window is fixed at 10, so period 6 and period 8 do not fit two cycles.
+- R3.4 is designed in its own sub-round once STOP-7 and STOP-8 are ruled and
+  R3.3 has fixed the scale.
 
 #### R3-O3. The `O cfg` record
 
 `h_low` leaves the record: `O <stream> cfg <dh_zero> <dh_small> <window>
-<scale>`. **The format number stays 10.** Phase 2's v10 (R2.5) is mutable on
-the branch and frozen at the merge (#1758 T1); no released binary has ever
-written v10, and since the setters were removed (v0.46.0, #1687) no writer
-emits `O cfg` at all (`src/embed_concurrent.c` asserts `ocfg == 0`). A tape
-also names its runtime version and is refused under any other, so a v10
-tape from an earlier branch build cannot reach an R3 reader as valid.
+<scale>`. **The format number stays 10.**
+- Phase 2's v10 (R2.5) is mutable on the branch and frozen at the merge
+  (#1758 T1).
+- No released binary has ever written v10: v0.47.0 and v0.48.0 write formats
+  7 and 8.
+- No writer has emitted `O cfg` at all since the setters were removed (#1687).
+  `src/embed_concurrent.c` asserts `ocfg == 0`.
+- Every branch build stamps `V 10 0.48.0`, so a version check does NOT
+  separate an earlier branch build's tape. Exact field counting is what
+  protects the reader (next item).
 
-- **`tape_read.c`** parses exactly four fields after `cfg`. A current-format
-  tape whose `cfg` record still carries `h_low` (five fields) is refused with
-  exit 3 by the existing message (`tape observer-configuration record is not
-  one this runtime could have written`); the reader never guesses which
-  field was dropped. `ObsCfgRec`, `TapeObsCfg`, `obs_cfg_install` and
-  `obs_cfg_capture` lose `h_low`; `obs_cfg_rec_ok` drops its `h_low > 0`
-  check.
-- **`trace.c`**: `TraceRecordingBinding.obs_h_low` and the `obs_cfg_sync`
-  compare and print of it go; the header comment's grammar line changes.
-- **`docs/TRACE.md`**: the `O cfg` grammar row and the Observer
-  Configuration section; the format history gains one sentence (v10's `O
-  cfg` lost `h_low` before the freeze).
-- **`eigsdap`**: no change of its own; it folds through `tape_read.c`
-  (`tape_traj_feed`), as `--step` does.
-- **The stepper's fold is part of R3.1, not O3**: `tape_traj_feed` feeds the
-  value channel from the tape's `A` records as doubles
-  (`trace_parse_float_token`); with R3-#1830 it must feed an int token as an
-  exact int, or `--step` and live `report` disagree on `int64_count`.
-- The `trace` tier of §9.2 runs every R3 row with `EIGS_TRACE` (all R3.0
-  rows print the same in all four tiers on the branch binary today), and
-  `T1.twice-*` are untouched: R3 changes no `A`/`N` record and no writer
-  emits `O cfg`.
+**`tape_read.c` REFUSES any `cfg` record whose field count after `cfg` is
+not exactly 4** (§186: refuse what cannot be parsed, never skip it).
+- The refusal is exit 3 with
+  `tape observer-configuration record has N fields, expected 4: <record>`.
+- It is checked before any field is installed, after tokenising to the end of
+  the record.
+- Today's parser ignores trailing fields: a 6-field record returns rc 0 on the
+  branch. A 4-field parser that did the same would accept
+  `O 0 cfg 0.001 0.01 8 10 0.001` and install window 8 and scale 10, because
+  that record's h_low is a valid window.
+
+Other changes:
+- `ObsCfgRec`, `TapeObsCfg`, `obs_cfg_install` and `obs_cfg_capture` lose
+  `h_low`, and `obs_cfg_rec_ok` drops its `h_low > 0` check.
+- **`trace.c`:** `TraceRecordingBinding.obs_h_low` goes, and so do its compare
+  and print in `obs_cfg_sync`, and the header comment's grammar line.
+- **`docs/TRACE.md`:** the `O cfg` grammar row and the Observer Configuration
+  section. The format history gains one sentence (v10's `O cfg` lost `h_low`
+  before the freeze).
+- **Tests:**
+  - `tests/test_trace_mt.sh:53`, the 5-field grammar regex, becomes the
+    4-field form;
+  - `tests/test_replay.sh:669`, the observer-work-limit fixture, writes the
+    4-field record.
+- **`eigsdap`** has no change of its own; it folds through `tape_read.c`.
+- **The stepper's exact fold belongs to R3.1, not O3.** `tape_traj_feed`
+  folds `A` records as doubles. With R3's exact steps it must feed an int
+  token as an exact int, or `--step` and the live `report` disagree on
+  `int64_count`.
+- The `trace` tier of §9.2 runs every R3 `.eigs` row (all print the same in
+  all four tiers on the branch binary today). `T1.twice-*` are untouched: R3
+  changes no `A`/`N` record.
 
 #### R3-O4. The interrogations
 
 On a binding whose current trajectory is numeric:
-- **`where is x`** = the value, as stored: an int prints as an int (N6).
-- **`why is x`** = the last displacement Δv: an int when both values are
-  ints and the difference fits int64, otherwise a float (R3-O1's table);
-  `INT64_MIN → INT64_MAX` is the float `1.8446744073709552e+19`.
-- **`how is x`** = settledness of the last step on the predicates' relative
-  scale:
+- **`where is x`** is the value, as stored. An int prints as an int (N6).
+- **`why is x`** is the last displacement Δv: the IEEE or exact result of
+  R3-O1's table.
+- **`how is x`** is the settledness of the last step, on the predicates'
+  relative scale (R30-1 items 1 and 2). As a case table:
 
-      f(r) = dh_zero / (dh_zero + |r|),     r = Δv / max(|v|, |v_prev|, scale)
+| last step (v_prev → v) | `why` | `how` |
+|---|---|---|
+| none yet (one observed value) | `null` | `null` |
+| finite → finite, `r = Δv / max(|v|, |v_prev|, scale)` finite | Δv | `dh_zero / (dh_zero + |r|)` |
+| finite → finite whose subtraction overflows (`1e308 → -1e308`) | `-inf` | `0.0` |
+| finite → ±inf | ±inf (the IEEE Δv) | `0.0` |
+| ±inf → finite | ∓inf | `0.0` |
+| inf → inf of the same sign | `nan` (inf − inf) | `nan` |
+| inf → inf of the other sign | ±inf | `0.0` |
+| any step from or to NaN | `nan` | `nan` |
 
-  | step | f |
-  |---|---|
-  | full rest, `r = 0` | `1.0` |
-  | `|r| = dh_zero` (the `converged` tolerance) | `0.5` |
-  | `|r| = dh_small` (the `stable` band) | `1/11 = 0.09090909090909091` |
-  | `|r| = 0.005` (between them) | `0.16666666666666666` |
-  | `|r| = 0.05` (above `dh_small`) | `0.0196078431372549` |
-  | `|r| = 2` (the largest finite relative step: a sign flip) | `0.0004997501249375313` |
+The formula's points: rest gives `1.0`; `|r| = dh_zero` gives `0.5`;
+`|r| = dh_small` gives `0.09090909090909091`; `|r| = 0.005` gives
+`0.16666666666666666`; `|r| = 0.05` gives `0.0196078431372549`; and `|r| = 2`
+(the largest finite relative step, a sign flip) gives
+`0.0004997501249375313`.
 
-  Monotone in `|r|`, in (0, 1] for every finite step, and informative on both
-  sides of both tolerances (today's `1 - min(|dH|/dh_zero, 1)` is 0 for every
-  step at or above `dh_zero`). The formula is STOP-1.
-- **Before a step exists** (the binding has one observed value): `why` and
-  `how` are `null`, not `0` and `1.0`, which would claim a measured rest
-  (STOP-2). `how` does not need a full window: it reads one step.
-- **A non-finite step:** a NaN value, or a step from or to NaN, gives `why`
-  and `how` NaN (undefined, #1746); an infinite Δv with a finite or same-sign
-  pair gives `why` = ±inf and `how` = 0.0, the limit of `f` (STOP-2).
-- **`where`/`why`/`how is x at L` and `when N`** read the history snapshot
-  (trace.c:669-692, 752, 822). R3 changes what `trace_record_obs` stores for
-  a numeric binding: the slot's (value, Δv, settledness) instead of (entropy,
-  dH, settledness-of-dH), so the past forms agree with the live ones.
+The rule is "an infinite Δv gives 0.0, a NaN Δv gives nan", applied to the
+IEEE Δv. The formula alone would give NaN on finite → inf (inf/inf), which
+is why the cases are written out.
+
+Also:
+- **`where`/`why`/`how is x at L` and `when N`** read the history snapshot.
+  R3 changes what `trace_record_obs` stores for a numeric binding: the
+  numeric triple of this table, so the past forms agree with the live ones.
 - Entropy is not computed for a numeric binding on any of the three.
 
-#### R3 site map (adds to §7's O1-O4 entry)
+#### Every writer of the numeric rings, and the token that deletes its old form
 
-- `src/eigenscript.c`: `observer_slot_record_value` (exact flag, sign ring,
-  `best`/`since`), `observer_slot_update_num` and the numeric arms of
-  `observer_slot_update`/`_sample_*` (no entropy), the step-floor helper and
-  every raw test, `obs_num_converged`/`_stable` (`settled`),
-  `obs_num_improving` (Keras), `obs_num_diverging`/`_oscillating` (inf and
-  NaN), `observer_slot_nonfinite`, `observer_settledness`,
-  `observer_slot_trajectory` and its parser (eigenscript.c:1875-1995);
-- `src/vm.c`: `CASE(INTERROGATE_NAMED)` kinds 3-5, `OBSERVE_SLOT_REPORT`/
-  `OBSERVE_VALUE_NAME` (the `observe` list), `obs_stall_trajectory`, the
-  SIGUSR1 dump (`obs_dump_scope`), the two `trace_record_obs` callers
-  (vm.c:1915, 5869), `CASE(OBSERVE_ASSIGN_LOCAL)`/`OBSERVE_NAME_POST` (they
-  pass the slot, not a double);
-- `src/jit.c`: `jit_helper_observe_assign_local`,
-  `jit_helper_observe_name_post`, `jit_helper_loop_stall_check`;
-- `src/trace.c`, `src/trace.h`: `trace_record_obs`, `trace_query_at`/`_when`
-  kinds 3-5, the `O cfg` writer; `src/tape_read.c`: the `cfg` parser and
-  `tape_traj_feed`; `src/state.c`/`eigenscript.h`: `obs_h_low` and
-  `g_obs_h_low`;
-- `src/builtins.c`: `builtin_classify` (the numeric-snapshot refusal);
-- ouroboros (the AOT round, at the merge-SHA pin): `aot/aot_rt.h` calls
-  `observer_slot_update_num(oe, oidx, double)` (1766), `trace_record_obs`
-  with `entropy`/`dH` (1731, 1774), `observer_entropy_now` (1866) and builds
-  the `observe` list from `s->dH` (1969). The token changes below make each
-  a compile error against the R3 runtime, which is loud.
+| writer (what it writes) | where | its callers | the token that stops it compiling |
+|---|---|---|---|
+| `observer_slot_v_push(s, double rel, double raw)` (the rings) | eigenscript.c:912 | `observer_slot_record_value` only | deleted; the rings are renamed `v_rel`/`v_raw` (from `v_window`/`vr_window`), so every direct ring access (this, `jit_sample_num_gated`'s inline writes, the snapshot parser) fails |
+| `observer_slot_record_value(ObserverSlot *, double)` (rings, `last_value`) | eigenscript.c:1010 | `observer_slot_update_locked` (1072), `_num_locked` (1088), `_sample_num_locked` (1100), `_update_value_num_shared` (1133), `tape_read.c:635` | deleted; `observer_slot_record_num(ObserverSlot *, EigsSlot)` replaces it (a kind-carrying value) |
+| `jit_sample_num_gated(Env *, int, double)` (the JIT's INLINE elided-sample ring writes, `last_value`) | vm.c:1793-1817 | `jit_helper_observe_assign_local` (vm.c:1840) | its signature takes the `EigsSlot`, and its inline writes fail on the ring rename; it calls `observer_slot_record_num` |
+| `observer_slot_sample_num_gated(Env *, int, double)` (elided path) | eigenscript.c:1265 | `jit_sample_num_gated` (vm.c:1797, 1803), `observer_slot_sample_gated` (1277), `CASE(OBSERVE_ASSIGN_LOCAL)` (vm.c:5612), `jit_helper_observe_name_post` (vm.c:1902), `CASE(OBSERVE_NAME_POST)` (vm.c:5856) | deleted with its double parameter; the slot-taking replacement |
+| `observer_slot_sample_num(Env *, int, double)` | eigenscript.c:1290 | public (eigenscript.h:704) | deleted |
+| `observer_slot_update_num(Env *, int, double)` (observed path) | eigenscript.c:1222 | vm.c:1845, 1907, 5597, 5859; ouroboros `aot_rt.h:1766` | deleted; the slot-taking replacement |
+| `obs_slot_num(EigsSlot, double *)` (the int → double conversion every observe site uses) | vm.c:1780 | vm.c:1840, 1845 and the four CASE/helper sites | deleted, so no site can convert before recording |
+| `observer_slot_update(Env *, int, Value *)` and `_sample_gated(..., Value *)`, numeric arms (boxed int → double) | eigenscript.c:1072, 1133, 1277 | every non-SMI number | their numeric arms call `observer_slot_record_num` (the `(double)VAL_I64_RAW` casts are on deleted calls) |
+| `observer_slot_from_trajectory` (`classify of t`: rebuilds the rings) | eigenscript.c:1961 | `builtin_classify` | the ring rename, plus the parser reading `exact`/`best`/`since`/`top`/`top_since` |
+
+Other tokens:
+- **Entropy fields:** `entropy`, `dH`, `prev_dH` and `last_entropy` become
+  `ent_entropy`, `ent_dH`, `ent_prev_dH` and `ent_last_entropy`, for the
+  entropy channel only. Every reader (`where`/`why`/`how`, `observe`,
+  `trajectory`, the stall check, the SIGUSR1 dump, the AOT) is then
+  re-decided numeric versus non-numeric.
+- **Settledness:** `observer_settledness(double dH)` is split into
+  `observer_settledness_step(…)` (R3-O4's table) and
+  `observer_settledness_dh(double)`, for the entropy channel.
+- **History snapshots:** `trace_record_obs(name, entropy, dH, last_entropy)`
+  takes an `ObsSnapshot`.
+- **No entropy on the numeric record path.** The structural guarantee is that
+  `observer_slot_record_num` has no entropy parameter and the deleted
+  `entropy_of_num` loses all three of its numeric-binding callers:
+  - `observer_slot_update_num` (eigenscript.c:1225) is deleted;
+  - `observer_entropy_now`'s number arm (eigenscript.c:1858, the query-time
+    `where`) is deleted, because `where` of a number is the value;
+  - the SIGUSR1 dump's number arms (vm.c:260, 262) print the value. With no
+    callers left, `observer_entropy_of_num` is deleted.
+
+  What remains are `compute_entropy_impl`'s `VAL_FLOAT`/`VAL_INT` arms and
+  `ent_child_slot`: a number INSIDE a container's entropy, which is the
+  entropy channel and is unchanged. The design round 1 plant "a callgrind count of `entropy_of_num`"
+  is withdrawn: it was a check that exists only to be planted against
+  (§5).
+
+#### Site map (adds to §7's O1-O4 entry)
+
+- **`src/eigenscript.c`:**
+  - the writer table above;
+  - the noise-floor helper and every raw test;
+  - `obs_num_converged`/`_stable` (`settled`) and `obs_num_improving`
+    (Keras, `top`);
+  - `obs_num_equilibrium` (no `raw_oscillating`);
+  - `obs_num_diverging`/`_oscillating` (inf and NaN);
+  - `obs_num_report` (ranking, `"undefined"`);
+  - `observer_settledness`;
+  - `observer_slot_trajectory` and its parser.
+- **`src/vm.c`:**
+  - `CASE(INTERROGATE_NAMED)` kinds 3-5;
+  - `OBSERVE_SLOT_REPORT`/`OBSERVE_VALUE_NAME` (the `observe` list);
+  - `obs_stall_trajectory`;
+  - the SIGUSR1 dump (`obs_dump_scope`);
+  - the two `trace_record_obs` callers (1915, 5869);
+  - `CASE(OBSERVE_ASSIGN_LOCAL)`, `CASE(OBSERVE_NAME_POST)`;
+  - **the JIT's observe helpers, which live in vm.c, not jit.c:**
+    `jit_helper_observe_assign_local` (1823), `jit_sample_num_gated` (1793),
+    `jit_helper_observe_name_post` (~1879) and `jit_helper_loop_stall_check`
+    (~2389).
+- **`src/trace.c`, `src/trace.h`:** `trace_record_obs`,
+  `trace_query_at`/`_when` kinds 3-5, the `O cfg` writer.
+- **`src/tape_read.c`:** the `cfg` parser and `tape_traj_feed`.
+- **`src/state.c`, `eigenscript.h`:** `obs_h_low` and `g_obs_h_low`.
+- **`src/builtins.c`:** `builtin_classify`.
+- **ouroboros `aot/aot_rt.h`** (the AOT round, at the merge pin): 1731, 1766,
+  1774, 1866, 1969.
 
 #### The sub-rounds, their tokens and their gates
 
-The dependencies force O1, O2 and O4 into one commit: removing entropy from
-the numeric path (O1) leaves `where`/`why`/`how` (O4) reading fields that no
-longer move, and the stepper and `trajectory` must fold the same value
-channel the predicates read. O3 is independent.
+The dependencies force O1, O2 and O4 into one commit. Removing entropy from
+the numeric path leaves `where`/`why`/`how` reading fields that no longer
+move, and the stepper and `trajectory` must fold the value channel the
+predicates read.
 
 1. **R3.1, the value channel (O1, O2, O4, #1830, #1752) and its docs.**
-   **Tokens that force every site:**
-   - `observer_slot_update_num(Env *, int, double)` and
-     `observer_slot_sample_num(Env *, int, double)` are deleted; the
-     replacements take the `EigsSlot` (an SMI or a box keeps its kind), so
-     each observe site, JIT helper and AOT call stops compiling until it
-     passes the slot;
-   - the `ObserverSlot` fields `entropy`, `dH`, `prev_dH`, `last_entropy`
-     become `ent_entropy`, `ent_dH`, `ent_prev_dH`, `ent_last_entropy`
-     (entropy channel only), so every reader (`where`/`why`/`how`, the
-     `observe` list, `trajectory`, the stall check, the SIGUSR1 dump, the
-     embed and AOT readers) stops compiling and is re-decided numeric versus
-     non-numeric;
-   - `observer_settledness(double dH)` is deleted; `observer_settledness_rel
-     (double r)` (R3-O4's f) and the entropy channel's own
-     `observer_settledness_dh` replace it;
-   - `trace_record_obs(name, entropy, dH, last_entropy)` takes an
-     `ObsSnapshot` that carries the numeric triple or the entropy triple.
-   **The token-less changes** are the predicate bodies (`settled`, Keras
-   `improving`, the non-finite rules, the step floor). Their gate is the
-   oracle (every capability verdict, every floor verdict) plus the R3 MAP
-   rows below, each tied to a plant: the oracle alone cannot see a
-   regression on a non-capability verdict the tag got WRONG (the floor holds
-   only tag-right verdicts), so `O2.harmonic-not-converged` and
-   `O2.report-noisy-loss` carry #1752 and the Keras rule.
-   **Rows** (all tagged `[R3]` in MAP.md at R3.0; R3.1 adds `R3.1` and
-   `R3.2` to `phase2_check.py`'s `ROUNDS` in place of `R3` and retags them):
-   every R3 change row except `O3.ocfg-no-hlow`, i.e. 13 change rows, the
-   invariant `O2.inf-diverging` and the control `ctl.O2.noise-oscillates`.
-   Each change row must FAIL on the v0.46.0 tag and PASS on the branch in
-   the `off`, `default`, `osr` and `trace` tiers (`S` rows: interpreted in
-   every tier, witness `none`).
-   **`tests/phase2/oracle_expect.txt`** loses all 52 lines in this commit.
-2. **R3.2, the `O cfg` record (O3).** Token: the `obs_h_low` fields of
-   `ObsCfgRec`, `TapeObsCfg` and `TraceRecordingBinding`, and the
-   `g_obs_h_low` macro, are deleted; the entropy channel's three readers use
-   `OBSERVER_H_LOW_DEFAULT`. Row: `O3.ocfg-no-hlow` (an `sh` row; it sets
-   `EIGS_TRACE` itself, so it skips the `trace` tier). `tests/test_replay.sh`'s
-   observer-work-limit fixture (line 669) writes the four-field record.
+   - **Tokens:** the writer table and the other tokens above.
+   - **Scale helper:** `obs_floor_scale(slot)` is introduced, for R3.3.
+   - **Token-less changes:** the predicate bodies (`settled`, `improving`,
+     `equilibrium`, the non-finite rules, the noise floor). Their gate is the
+     oracle (every capability verdict, every floor verdict) plus the R3 MAP
+     rows, each tied to a plant. The floor holds only verdicts the tag got
+     right, so a regression on a verdict the tag got WRONG is invisible to the
+     oracle. Each such mechanism therefore has its own MAP row (#2325 records
+     the question of a `--require` list).
+   - **Rows:** every R3 change row except `O3.ocfg-no-hlow`, the two
+     invariants and the planned control `ctl.O2.noise-oscillates`. R3.1 adds
+     `R3.1` … `R3.4` to `phase2_check.py`'s `ROUNDS` in place of `R3` and
+     retags the rows. Each change row must FAIL on the v0.46.0 tag and PASS on
+     the branch in the `off`, `default`, `osr` and `trace` tiers.
+     `O1.unobserved-jit-sample` is an `F` row with witness
+     `fn-stop run PREDICATE_SLOT`: its loop body, inside `unobserved:`, runs
+     natively, through `jit_sample_num_gated`.
+   - **Oracle declarations:** `tests/phase2/oracle_expect.txt` loses all 52
+     lines in this commit.
+2. **R3.2, the `O cfg` record (O3).**
+   - **Token:** the `obs_h_low` fields of `ObsCfgRec`, `TapeObsCfg` and
+     `TraceRecordingBinding`, and the `g_obs_h_low` macro, are deleted. The
+     entropy channel's three readers use `OBSERVER_H_LOW_DEFAULT`.
+   - **Row:** `O3.ocfg-no-hlow`, an `sh` row. It sets `EIGS_TRACE` itself, so
+     it skips the `trace` tier.
+   - **Files:** `tests/test_trace_mt.sh:53` and `tests/test_replay.sh:669`.
+3. **R3.3, #1580's scale rule:** the registered experiment, then the helper.
+   The `issue1891_underflow_tail` residual is recorded there.
+4. **R3.4, #1419's `chaotic`:** after the oracle PR, STOP-7 and STOP-8.
 
-**Gates, both rounds** (the MAP's `gate.*` rows; `phase2_check` verifies
-that the command each names exists, and the Done-when runs it):
-- `gate.O1.oracle-floor`: `make observer-oracle EXPECT=ieee,int64` (hosted;
-  `ci_lane.sh` is the required check `observer oracle (floor)`). Exit 0
-  means: every floor verdict re-measured on the v0.46.0 anchor and none lost;
-  zero FINDINGs (no arm disagrees with another); every capability verdict
-  right with `--declared tests/phase2/oracle_expect.txt` EMPTY, so no
-  verdict is excused; both capabilities present (`EXPECT` makes an absent
-  one a failure rather than a skip). This is #1758's "Observer" step 2.
-- `gate.O2.predicate-floors`: the same run's per-predicate table; exit 0
-  additionally requires `floor: 1872 verdicts checked, 0 lost` (the
-  `ci_lane.sh` line), so every predicate's floor is compared, not only the
-  total. **Not `tools/phase2_readers.sh` entries:** that script compiles C
-  fixtures through the no-SDL amalgamation, and the oracle is `score.py`
-  over the release binary; a wrapper would be a second copy of `ci_lane.sh`.
-- `phase2_check.sh --through R3.1`, then `--through R3.2`: exit 0 iff in
-  every tier `examined == tag_fail == branch_pass > 0`, `vacuous=0`, the
-  invariant passes on the branch, the controls pass on both binaries, and
-  the population checks pass (every R3 id has a file and every file an id).
-- **#1990's held-out set** (the registration on #1752): R3's wrong-exit rate
-  W on the same 425 runs must not exceed INC's by more than 0.005, and
-  should fall on M3 and M5; the two `x ← x + 1/x` runs are the M5 cases.
-- **Plants** (each a `sed` on a scratch copy, §9.3's procedure; the named
-  check must go red, keyed on its own message):
-  | plant | named check that must go red |
+**Gates** (the MAP's `gate.*` rows; `phase2_check` verifies that each named
+command exists, and the Done-when runs it):
+- **`gate.O1.oracle-floor`:** `make observer-oracle EXPECT=ieee,int64`
+  (hosted; `ci_lane.sh` is the required check `observer oracle (floor)`).
+  Exit 0 means:
+  - every floor verdict was re-measured on the v0.46.0 anchor, and none was
+    lost;
+  - there are zero FINDINGs;
+  - every capability verdict is right, with `--declared` EMPTY;
+  - both capabilities are present.
+- **`gate.O2.predicate-floors`:** the same run. Its line
+  `floor: 1872 verdicts checked, 0 lost` must appear (`ci_lane.sh` checks
+  it). These are named commands, not `tools/phase2_readers.sh` entries: that
+  script compiles C fixtures through the no-SDL amalgamation, and an oracle
+  entry there would be a second copy of `ci_lane.sh`.
+- **`phase2_check.sh --through R3.1`, then `--through R3.2`:** exit 0 iff,
+  in every tier, `examined == tag_fail == branch_pass > 0`, `vacuous=0`, the
+  invariants pass on the branch, the controls pass on both binaries, and the
+  population checks pass.
+- **#1990's held-out set:** R3's W on the 425 runs must not exceed INC's by
+  more than 0.005, and should fall on M3 and M5. The model's every-prefix
+  trace shows R3 never reading `converged` on the two M5 `x ← x + 1/x` runs.
+- **Plants.** Each is applied by `tools/phase2_plants.sh`'s procedure to a
+  scratch copy, once, at R3.1/R3.2 acceptance (§5: a check proves it fires
+  when it is written). The named check must go red, keyed on its own message.
+
+  | plant (the edit in the C) | named check that must go red |
   |---|---|
-  | exact steps use the float floor | oracle `CAPABILITY WRONG ... int64_count@10 diverging`; row `O2.int-counter-2p53` |
-  | NaN current value keeps the `diverging` veto | oracle `CAPABILITY WRONG ... ieee_nan@3 diverging`; row `O2.nan-all-false` |
-  | the inf sign rule removed (any inf is `diverging`) | oracle `ieee_inf_alternating@20 oscillating`; row `O2.inf-alternating-oscillates` |
-  | the travel bound removed from `settled` | row `O2.harmonic-not-converged` (the oracle cannot see it: harmonic's `converged` was wrong on the tag, so it is not a floor verdict) |
+  | the noise-floor helper returns `4·ε·(1+|v|)` for an exact step | oracle `CAPABILITY WRONG ... int64_count@10 diverging`; row `O2.int-counter-2p53` |
+  | the helper's same-sign float clause removed | row `O2.float-counter-2p53-by2` (and the `float_count` rows once the oracle has them) |
+  | a NaN current value keeps R2.2's `diverging` veto | oracle `CAPABILITY WRONG ... ieee_nan@3 diverging`; row `O2.nan-all-false` |
+  | the inf sign rule removed (any inf is `diverging`) | oracle `... ieee_inf_alternating@20 oscillating`; row `O2.inf-alternating-oscillates` |
+  | the `R > t·m` return deleted from `settled` | oracle `FLOOR VIOLATION` (the model loses 17 floor keys, e.g. `geo_decay_0.9@20 converged`); rows `O2.harmonic-not-converged`, `O2.inverse-growth-not-converged` |
+  | `rho` = the geometric mean only (the newest-ratio term deleted) | row `O2.counter-pause-not-converged` |
   | the W−1 monotone acceptance removed | oracle `CAPABILITY WRONG ... ieee_nan_recover@13 stable` |
-  | `improving` reverted to the contraction band | row `O2.report-noisy-loss` |
+  | `improving`'s boundedness reverted to `_expanding` | row `O2.noisy-loss-improving-count` (96 becomes 51) |
+  | `improving` reverted to today's contraction band | row `O2.report-noisy-loss` |
+  | `equilibrium` keeps `raw_oscillating` | row `O2.noise-equilibrium` |
+  | `jit_sample_num_gated` keeps its inline double ring writes (no exact or sign ring, no `top`) | row `O1.unobserved-jit-sample` (`fn-stop` tier) |
   | `where is x` reads entropy again | row `O1.where-is-value` |
-  | `f` reverted to `1 - min(|r|/dh_zero, 1)` | row `O4.how-is-settledness` (`dh_small` reading `0.0`) |
-  | a five-field `cfg` accepted | row `O3.ocfg-no-hlow` |
-  | `entropy_of_num` still called on a numeric observe | a callgrind function count of `entropy_of_num` on `O1.where-is-value`'s program is 0 (test-side instrument; nothing in production changes so it can be observed) |
-- **Hosted list** (none of these runs on the 4 GB box): the observer oracle
-  lane; the full suite release and ASan; the TSan lane (the observer fold is
-  #607/#1867 shared state, and R3 adds fields to it: the existing
-  `EIGS_TSAN_OBSERVER_FOLD_OUTSIDE_HOLD` seam must still go red); the
-  CodSpeed cost gate; `tools/replay_diff.sh`; the executed doc fences
-  (suite [89]/[90]); `tools/phase2_check.sh` in all four tiers;
-  `tools/phase2_plants.sh`; the #1990 held-out run.
+  | `how` on an infinite step uses the formula alone | row `O4.how-infinite-step` |
+  | `report` at NaN returns `moving` | row `O2.nan-report-undefined` |
+  | the `cfg` reader ignores fields after the fourth | row `O3.ocfg-no-hlow` (`cfg-5-fields rc=0`) |
+
+- **Hosted list** (none of these runs on the 4 GB box):
+  - the observer oracle lane;
+  - the full suite, release and ASan;
+  - the TSan lane: R3 adds fields to #607/#1867's shared fold, and the
+    `EIGS_TSAN_OBSERVER_FOLD_OUTSIDE_HOLD` seam must still go red;
+  - the CodSpeed cost gate;
+  - `tools/replay_diff.sh`;
+  - the executed doc fences (suite [89]/[90]);
+  - `tools/phase2_check.sh` in all four tiers;
+  - `tools/phase2_plants.sh`;
+  - the #1990 held-out run.
 
 #### Cost
 
-The observe ops run on every assignment, but only behind the #915 gate:
-a program that asks the observer nothing never enters
-`observer_slot_update_num` (`EIGS_OBS_GATE_STATS=1` on the branch binary:
-`observe-calls 0`). Of the cost corpus (`tests/phase2/cost_expect.txt`
-workloads), the gate is open on three: `bench/conservative_observed_loop`
-(115,001 observe calls), `bench/conservative_unobserved_loop` (60,001) and
-`tests/bench_perf.eigs` (172,015); `bench/unobserved_armed_loop` makes
-1,200,003 elided SAMPLE calls, which already skip entropy; every other row,
-`tests/bench_dmg_shape.eigs` included, makes 0. **Predicted direction:**
-- DOWN on the three open-gate rows: each numeric observe drops
-  `entropy_of_num`'s two `log2` calls and the dH bookkeeping, and gains one
-  `__builtin_sub_overflow`, two byte stores and one compare (`best`);
-- a small rise on `unobserved_armed_loop`, whose elided samples gain the
-  exact-flag and `best` work and lose nothing;
-- unchanged everywhere else (the gate is closed). The predicates' new work
-  (the travel bound, `_expanding`) runs per QUERY, O(W), not per assignment.
+The observe ops run on every assignment, but only behind the #915 gate: a
+program that asks the observer nothing never enters a numeric record function
+(`EIGS_OBS_GATE_STATS=1`: `observe-calls 0`).
 
-**Declaration:** a decrease needs no declaration and is reported with its
-measured Ir. A rise above the gate's +0.3% bound is not declared: R3 is
-the round that removes entropy, `cost_expect.txt` must be empty at the
-merge, and no later round owns an observer cost, so a rise is a defect R3
-fixes (for example by testing exactness only when both slots are SMIs).
-The measurement is hosted (CodSpeed, both tiers).
+Of the cost corpus, the gate is open on three rows:
+- `bench/conservative_observed_loop`: 115,001 observe calls;
+- `bench/conservative_unobserved_loop`: 60,001;
+- `tests/bench_perf.eigs`: 172,015.
+
+`bench/unobserved_armed_loop` makes 1,200,003 elided SAMPLE calls (through
+`jit_sample_num_gated` in its JIT tier). Every other row, `bench_dmg_shape`
+included, makes 0.
+
+**Predicted direction:**
+- **Down on the three open-gate rows.** Each numeric observe drops
+  `entropy_of_num`'s two `log2` calls and the dH bookkeeping. It gains one
+  overflow-checked subtraction, two byte stores and two compares (`best`,
+  `top`).
+- **A small rise on `unobserved_armed_loop`.** Its elided samples gain that
+  work and lose nothing.
+- **Unchanged everywhere else** (the gate is closed). The predicates' new
+  work (the travel bound) runs per QUERY, O(W), not per assignment.
+
+A decrease needs no declaration and is reported. A rise above the gate's
++0.3% is a defect R3 fixes, not a declaration, because `cost_expect.txt` must
+be empty at the merge and no later round owns an observer cost. The
+measurement is hosted (CodSpeed, both tiers).
 
 #### Docs (the user-visible changes and where each lands)
 
-- `docs/PREDICATES.md`: the "six predicates — the ENTROPY route" section is
-  reduced to the non-numeric route it still serves; "Which channel answers"
-  states R3-O1; the numeric band table becomes R3-O2's rules, cited to
-  #1754; the honesty bound is restated per #1752 (conservative `converged`,
-  the `diverging` bound); the Non-finite rule replaces R2.2's NaN veto; the
-  `improving` and `equilibrium` caveats under "What each predicate is graded
-  against" are rewritten (improving is now the definition); `h_low` is
-  described as the entropy route's constant; the `Inputs` table splits into
-  the value channel and the entropy channel; the `report` section states the
-  motion-band overlap.
-- `docs/OBSERVER.md`: "Two signals" and "What the observer knows"
-  (`where`/`why`/`how`, f and its table, `null` before a step), the
-  thresholds, the stall backstop's numeric reading.
-- `docs/SPEC.md`: the interrogatives' numeric meanings, `observe`'s list,
-  `trajectory`'s fields.
-- `docs/BUILTINS.md`: `observe`, `trajectory`, `classify` (the refusal),
-  `get_observer_thresholds` (unchanged list, `h_low` labelled as the
-  entropy route's), and the Predicates table (it still says "Entropy very
-  low and stable").
-- `docs/TRACE.md`: the `O cfg` grammar and Observer Configuration (R3.2).
-- `README.md`, `docs/llms.txt`, `docs/SYNTAX.md`, `docs/COMPARISON.md`,
-  `docs/STDLIB.md`, `docs/ARCHITECTURE.md`, `docs/DEBUGGING.md`,
-  `docs/DIAGNOSTICS.md`: every sentence that says `where` is an entropy or
-  `why` is a dH (the R3.0 report lists the lines).
-- `changes/`: one fragment per sub-round.
-- Executable doc fences that change: every fence in the files above that
-  reads `where`/`why`/`how`, `observe of`, `trajectory of`, `classify of`,
-  or a predicate on a numeric binding whose verdict moves; the R3.0 report
-  names them per file. The suite's doc-fence sections ([89]/[90]) run them.
+- **`docs/PREDICATES.md`:**
+  - the entropy-route section is reduced to the non-numeric route;
+  - "Which channel answers" states R3-O1;
+  - the numeric band table becomes R3-O2's rules, cited to #1754;
+  - the honesty bound follows #1752 and lists the residuals above (the
+    halve-then-constant prefix, `e_limit`'s factor-2 under-estimate,
+    `underflow_tail` until R3.3, the #1891 sawtooth);
+  - the Non-finite rule replaces R2.2's NaN veto, and `report`'s
+    `"undefined"` is added;
+  - the `improving` and `equilibrium` caveats are rewritten;
+  - `h_low` is described as the entropy route's constant;
+  - the Inputs table splits by channel;
+  - the `report` ranking.
+- **`docs/OBSERVER.md`:** `where`/`why`/`how` and R3-O4's case table; the
+  stall backstop.
+- **`docs/SPEC.md`:** the interrogatives, `observe`, `trajectory`,
+  `report`'s ranking and `"undefined"`.
+- **`docs/BUILTINS.md`:** `observe`, `trajectory`, `classify`,
+  `get_observer_thresholds`, and the Predicates table.
+- **`docs/TRACE.md`:** the `O cfg` grammar (R3.2).
+- **Other docs:** `README.md`, `docs/llms.txt`, `docs/SYNTAX.md`,
+  `docs/COMPARISON.md`, `docs/STDLIB.md`, `docs/ARCHITECTURE.md`,
+  `docs/DEBUGGING.md` and `docs/DIAGNOSTICS.md`: every sentence that calls
+  `where` an entropy or `why` a dH.
+- **`changes/`:** one fragment per sub-round.
+- **Executable doc fences** that read the observer: 22 in README.md,
+  SPEC.md, COMPARISON.md, SYNTAX.md and PREDICATES.md, listed with line
+  numbers in the R3.0 report (`out/r3/doc_fences.txt`).
 
 #### The existing-test inventory
 
-`grep -rln -E "where is|why is|how is|h_low|entropy|oscillating of|converged of|stable of|improving of|diverging of|equilibrium of|report of" tests docs lib examples`
-lists **155 files**. The R3.0 report classifies them by mechanism:
-(A) reads `where`/`why`/`how` (32 files), (B) reads `h_low` or
-`get_observer_thresholds` (21 files under `tests`/`docs`/`lib`/`examples`,
-plus the `src`/`tools` sites), (C) names `improving` (41 files), (D) reads
-`observe`/`trajectory`/`classify` or an entropy field (51 files), (E) builds
-an `O cfg` tape (3 files: `tests/test_replay.sh`, `tests/test_trace_mt.sh`,
-`src/embed_concurrent.c`), and the remainder assert the other five
-predicates or `report`. Every (A), (B), (D) and (E) file changes by
-construction. (C) and the remainder change where a verdict moves, which the
-model cannot decide per file without the runtime: the build round runs each
-listed file on the base and on R3.1 BEFORE hosted CI, and every expectation
-it edits names the rule that moved it. `make test-changed` does not select
-a suite whose expectation a semantic change invalidates, so it is not the
-instrument for this.
+Round 1's grep missed bare predicates and the `observe`/`classify`/
+`trajectory` forms. Round 2 re-derives the inventory over every tracked file
+under `tests`, `docs`, `lib`, `examples` and `README.md` (3,013 files), with
+one pattern per class:
+
+| class | what the file does | files |
+|---|---|---:|
+| (A) | reads `where`/`why`/`how` | 28 |
+| (B) | reads `h_low` or `get_observer_thresholds` (`tests/phase2/builtins` included) | 20 |
+| (C) | names `improving` | 52 |
+| (D) | uses `observe`, `trajectory of`, `classify of`, `report_value`, `entropy` or `dH` | 135 |
+| (E) | builds or parses an `O cfg` record | 8 |
+| (F) | uses another predicate word, `report of` or `while not converged` | 187 |
+
+238 files match at least one class. The per-file list, with every file's
+classes and match counts, is `out/r3/inventory_r2.tsv`, from which R3.1 is
+briefed. Round 1's 155 files are all in it except five round-1 false
+positives (`lib/physics.eigs`'s `entropy_change` and similar, and the
+generated `docs/design/phase2-inventory.txt`).
+
+How each class is handled:
+- (A), (B), (E) and the `observe`/`trajectory`/`classify` part of (D) change
+  by construction.
+- (C) and (F) change where a verdict moves. R3.1 runs each of those files on
+  the base and on its own build BEFORE hosted CI, and every expectation it
+  edits names the rule that moved it.
+- `make test-changed` is not the instrument for this: it does not select a
+  suite whose expectations a semantic change invalidates.
 
 ### Round 5 obligations (recorded by earlier rounds)
 
@@ -3131,7 +3405,7 @@ failing on zero rows:
 | R2.4 | 6 | |
 | R2.5 | 6 | |
 | R2.6 | 6 (3 change rows, 3 invariant controls) | R23-1: pcm16 NaN, the `when` ordinal and the `numerical_grad` waiver case were already closed on `aed64ce3`; suite [0fz] (`tests/test_phase2_r26_residue.eigs`) pins pcm16 saturation and no partial result, and under the ASan lanes' float-cast-overflow it is the base-red half of the `when`/`at` casts; `net_send` stays pinned by `gate.N5.net-byte-boundary` |
-| R3 | 15 (14 change rows, 1 invariant control) | `gate.O1.oracle-floor`, `gate.O2.predicate-floors` (both `make observer-oracle EXPECT=ieee,int64` with an empty `oracle_expect.txt`); R3.0 designs the split into R3.1 (13 change rows, the invariant) and R3.2 (`O3.ocfg-no-hlow`), which R3.1 adds to `ROUNDS` |
+| R3 | 23 (21 change rows, 2 invariant controls) | `gate.O1.oracle-floor`, `gate.O2.predicate-floors` (both `make observer-oracle EXPECT=ieee,int64` with an empty `oracle_expect.txt`); R3.0 designs the split into R3.1 (20 change rows, the two invariants), R3.2 (`O3.ocfg-no-hlow`), R3.3 (#1580) and R3.4 (#1419), which R3.1 adds to `ROUNDS` |
 
 (The counts are the MAP's at this commit; `phase2_check.sh` derives them, and
 fails if a round named here has neither rows nor its mechanical gates.)
