@@ -1,5 +1,13 @@
 # EigenScript compared to Python, JavaScript, Rust, and Lisp
 
+Non-finite float text uses `inf`, `-inf`, and unsigned `nan` in `print`,
+`str`, f-strings, and fixed-decimal number formatting. These are output
+words, not JSON literals: JSON decoding of `1e400` (including a nested
+number) raises `value` in default and strict modes. Source exponent literals
+use binary64 floats, so source `1e400` and default `num of "1e400"` remain
+`inf`; JSON applies its separate finite-number rule. Ordinary non-finite
+buffer reads still raise; use the explicit bits APIs to inspect raw cells.
+
 
 Width arithmetic uses explicit wrapping, checked and saturating builtins.
 N5 converts integral floats, then checks the named type range without masking.

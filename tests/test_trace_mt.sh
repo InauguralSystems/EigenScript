@@ -310,7 +310,7 @@ EIGS_REPLAY="$TMPDIR/large-workers-interleaved.tape" "$EIGS" \
     "$TESTS_DIR/trace_mt_large_workers.eigs" >/dev/null 2>"$TMPDIR/large-workers-interleaved.err"
 interleaved_rc=$?
 if [ "$interleaved_rc" -eq 3 ] \
-   && grep -q 'malformed v9 .*N value' "$TMPDIR/large-workers-interleaved.err" \
+   && grep -q 'malformed v10 .*N value' "$TMPDIR/large-workers-interleaved.err" \
    && grep -q 'refusing to replay' "$TMPDIR/large-workers-interleaved.err"; then
     ok "large-answer reader rejects a record interleaved between N and C"
 else
@@ -371,7 +371,7 @@ else
 fi
 
 # Missing, signed, overflowed, and concatenated stream tags are all red.  The
-# header is copied from this v9 binary and each short N value is valid v9
+# header is copied from this v10 binary and each short N value is valid v10
 # syntax, so these fixtures reach stream-tag validation rather than framing or
 # format-version rejection.
 printf 'print of (random of null)\n' > "$TMPDIR/take.eigs"

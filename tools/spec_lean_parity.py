@@ -58,7 +58,7 @@ def replay_refusal_cases(ref):
   td=Path(raw); source=td/'replay_refusal.eigs'; source.write_text('local x is random_int of [1, 2]\nprint of x\n')
   good=td/'refusal-good.tape'
   subprocess.run([VM,source],capture_output=True,input=b'',check=True,env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_TRACE':str(good)})
-  lines=good.read_text().splitlines(); n=next(i for i,x in enumerate(lines) if x.startswith('N '))
+  lines=good.read_text().splitlines(); header=lines[0]; n=next(i for i,x in enumerate(lines) if x.startswith('N '))
   wrong=td/'wrong-kind.tape'; wrong.write_text('\n'.join(lines[:n]+[lines[n].replace('random_int=','env_get=',1)]+lines[n+1:])+'\n')
   short=td/'short.tape'; short.write_text('\n'.join(lines[:n])+'\n')
   checked=0
@@ -72,7 +72,7 @@ def replay_refusal_cases(ref):
   # A V header is a hard session boundary.  Neither implementation may scan
   # into the following session for an otherwise matching N record.
   sessions=td/'sessions.tape';sessions.write_text(
-   f'V 9 {runtime_version()}\nB 0 1 1 0 root -\nV 9 {runtime_version()}\nB 0 1 1 0 root -\nN 0 random_int=1\n')
+   f'{header}\nB 0 1 1 0 root -\n{header}\nB 0 1 1 0 root -\nN 0 random_int=1\n')
   c=subprocess.run([VM,source],capture_output=True,input=b'',env={**os.environ,'EIGS_JIT_OFF':'1','EIGS_REPLAY':str(sessions),'EIGS_REPLAY_STRICT':'1'})
   l=subprocess.run(ref_args(ref,'--replay',sessions,'--strict',source),capture_output=True,input=b'')
   message=b'random_int: replay stream 0 has no matching recorded N value'
@@ -100,7 +100,7 @@ def replay_refusal_cases(ref):
   # view consumed by unescape_string.  The missing closing quote is a
   # malformed taped value (strict-replay exit 3), not a shortened string.
   raw_nul=td/'raw-nul.tape'
-  raw_nul.write_bytes(f'V 9 {runtime_version()}\nB 0 1 1 0 root -\nN 0 read_line="before'.encode()+b'\0'+b'after"\n')
+  raw_nul.write_bytes(f'{header}\nB 0 1 1 0 root -\nN 0 read_line="before'.encode()+b'\0'+b'after"\n')
   nul_source=td/'raw-nul.eigs';nul_source.write_text('print of (read_line of [])\n')
   c=subprocess.run([VM,nul_source],capture_output=True,input=b'',env={**os.environ,
    'EIGS_JIT_OFF':'1','EIGS_REPLAY':str(raw_nul),'EIGS_REPLAY_STRICT':'1'})

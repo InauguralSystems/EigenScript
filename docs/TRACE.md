@@ -88,7 +88,7 @@ The tape is plain text, one record per line:
 
 | Record | Meaning |
 |--------|---------|
-| `V <format> <runtime>` | Version header — always the first record (e.g. `V 9 <version>`). Here `<version>` is the version of the binary writing the tape. Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
+| `V <format> <runtime>` | Version header — always the first record (e.g. `V 10 <version>`). Here `<version>` is the version of the binary writing the tape. Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
 | `B <stream_id> <lifetime> <state> <spawn_base> <origin>` | Stream association, before that stream's events. Describes state grouping and host/causal correspondence; folded as metadata by stepping, never a source-line stop. See below. |
 | `L <stream_id> <line>` | Source-line event (from `OP_LINE`, and when native code that ran EigenScript — a builtin's callback, an embedder's eval — gets control back: the line it entered with, so an assignment it makes next is filed under the same line on the tape as in live history, #1434; v5 carries the stream ID shown here). Duplicate lines within the same stream with no intervening `A`/`N` in that stream are deduped — the compiler emits per-statement LINEs and bare repeats are noise. |
 | `S <stream_id> <fn> <depth> <serial>` | Scope transition (#539 v2): the `A` records that follow belong to this frame instance — `<fn>` is the chunk name (`<module>`, `<lambda>`, or the function name), `<depth>` the 0-based frame depth, `<serial>` a per-thread monotonically increasing frame-instance id stamped at frame push. Emitted lazily with the same dedup discipline as `L`: only when the frame owning the next assignment differs from the last `S`, so the byte cost lands at call boundaries that actually assign. Two invocations of the same function carry different serials — their local streams never merge. Skipped on replay; folded by `--step`. |
@@ -238,6 +238,25 @@ The only output that follows the replaying binary is output that reads line
 identity: `what is x at N`, `e.line` and error headers.
 
 ### Value serialization
+
+Format **v10** adds exact `inf`, `-inf` and `nan` float tokens. The `nan`
+token reconstructs the canonical bits `0x7FF8000000000000`. The spelling is
+case-sensitive; `Infinity`, signed/payload NaNs, and decimal overflow such as
+`1e400` are malformed tape numbers. Decimal finite values keep their existing
+kind markers and exact int digits.
+
+Raw buffer cells have an additional **buffer-only** token,
+`bits(<signed-int64>)`, for a noncanonical NaN payload. The integer carries
+the cell's exact two's-complement bits, just like `buf_get_bits`; for example
+`b[bits(9218868437227405313), nan, inf]`. This token is invalid for a scalar,
+for a finite cell or for canonical NaN (which uses `nan`). Lists/dicts may
+contain such buffers recursively. Ordinary buffer float reads retain N13's
+refusal; recording a raw cell is serialization, not a float read.
+
+The replay reader and the step/DAP reader share the float-token grammar.
+Malformed-value and return-kind mismatch diagnostics include the offending
+token. Every earlier format, including v9, is refused before reading values;
+re-record with this binary. There is no tape migration.
 
 `N` records are written with full fidelity so they can be parsed back
 into real values on replay:
@@ -837,7 +856,9 @@ everywhere else in the runtime (version-and-reject, never migrate).
   sources, and length-framed oversized answers. An old main v8 numeric
   digit token denotes a float, whereas the Phase 2 reader gives it int kind,
   so either old v8 format is refused rather than silently reinterpreted.
-  Every older format is refused by replay, stepping and DAP.
+  **v10** (#1758 R2.5) adds explicit nonfinite float tokens and exact raw-NaN
+  buffer bit tokens. It refuses v9 and every older format by replay, stepping
+  and DAP, preserving the version-and-reject contract.
   Within a current-format tape, replay also refuses a recorded value of a kind its builtin cannot
   return, with exit 3 and a message naming the record, the builtin, the kinds
   it returns and the tape version. Every taped builtin declares its return

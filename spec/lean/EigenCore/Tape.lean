@@ -286,7 +286,9 @@ private def serializeRecord (record : String) : List String :=
         (leader ++ "@" ++ toString encoded.utf8ByteSize ++ ":" ++ first) ::
           rest.map ("C 0 " ++ ·)
 
-def tapeFormat : String := "9"
+-- The model's admitted values remain a subset of the runtime's values, but
+-- its tapes use the current physical format and the same version refusal.
+def tapeFormat : String := "10"
 
 def tapeHeader (runtimeVersion : String) : String :=
   "V " ++ tapeFormat ++ " " ++ runtimeVersion

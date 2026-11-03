@@ -2375,8 +2375,17 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    three rounds, rather than its instances.
 4. **R2.4, N12.** `f64_bits`/`f64_from_bits`, buffer bits get/set, and a
    canonical NaN at the embed boundary.
-5. **R2.5, tape v7 `inf`/`-inf`/`nan` tokens; N6 non-finite printing;
-   N14 `1e400` raises.**
+5. **R2.5, tape `inf`/`-inf`/`nan` tokens; N6 non-finite printing;
+   N14 `1e400` raises.** The original v7 numeric plan became v9 at sync
+   #10; the encoding change now lands as v10 under TRACE's version-and-reject
+   contract. Raw buffer NaNs retain their N12 payload through buffer-only
+   `bits(<signed-int64>)` tokens; float NaNs use canonical `nan`. The public
+   output scenarios already green on R2.4 remain invariants under R23-1;
+   actual N-return decoding and fixed-decimal nonfinite formatting provide
+   separate base-red proofs. JSON decimal overflow raises independently of
+   strict mode; this does not change N1/N10's source/exponent float grammar.
+   The planned F overflow witness is `fn-stop big MUL`, retaining R2.2's
+   required infinity status fallback and its unchanged `inf` output.
 6. **R2.6, the #1746 residue:**
    - the internal `(int)` casts the Q7 readers do not cover (the audio
      generators' `dur * rate`);
