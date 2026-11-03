@@ -1375,6 +1375,13 @@ static Value* eigs_json_parse_number(const char *s, int *pos) {
         free(iso);
     }
     *pos = p;
+    /* N14/R2.5: JSON has no infinity token. An overflowing decimal is
+     * a value error in every caller, independently of arithmetic strictness. */
+    if (!isfinite(d)) {
+        g_json_parse_err = 1;
+        rt_error(EK_VALUE, 0, "JSON number is outside the finite float range");
+        return make_null();
+    }
     return make_float(d);
 }
 
@@ -2423,6 +2430,10 @@ Value* builtin_json_path(Value *arg) {
 
     int pos = 0;
     Value *root = eigs_json_parse_root(json_str, &pos);   /* #777: fresh parse */
+    if (g_has_error) {
+        val_decref(root);
+        return make_null();
+    }
     /* #971 Phase C. A DOCUMENT that failed to parse is not "no value at that
      * path", yet the lenient walk below answers the same "" an absent key
      * returns, so a caller cannot tell malformed JSON from a missing field.

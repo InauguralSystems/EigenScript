@@ -332,6 +332,12 @@ static Value* store_json_parse_number(const char *s, int *pos) {
     double val = strtod(start, &end);
     if (end == start) return NULL;  /* no digits consumed */
     *pos = (int)(end - s);
+    /* N14/R2.5: records use JSON numbers, never decimal overflow to inf.
+     * Legacy quoted buffer sentinels have their separate reader below. */
+    if (!isfinite(val)) {
+        rt_error(EK_VALUE, 0, "store JSON number is outside the finite float range");
+        return NULL;
+    }
 
     /* #1758 N14: decimal integer text within int64 decodes exactly. A
      * decimal point or exponent keeps the float kind even for a whole value.
@@ -943,7 +949,10 @@ static Value* builtin_store_open(Value *arg) {
             return make_null();
         }
         if (store_load_catalog(store) != 0) {
-            rt_error(EK_IO, 0, "store_open: corrupt catalog in '%s'\n", path);
+            /* Preserve a decoder's value error; other corrupt catalogs keep
+             * the existing I/O diagnosis. */
+            if (!g_has_error)
+                rt_error(EK_IO, 0, "store_open: corrupt catalog in '%s'\n", path);
             fclose(fp);
             store_free(store);
             return make_null();
@@ -1468,6 +1477,11 @@ static Value* builtin_store_query(Value *arg) {
             json[rec.json_len] = '\0';
             Value *val = store_json_decode(json);
             free(json);
+            if (g_has_error) {
+                val_decref(val);
+                val_decref(results);
+                return make_null();
+            }
             if (val) list_append_owned(results, val);  /* adopt parser's ref */
         }
         pg = page.next_page; if (pg >= store->page_count) break;

@@ -740,25 +740,15 @@ static int http_url_is_allowed(const char *url) {
 
 Value* builtin_http_post(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "http_post");
-    TRACE_NONDET_TAKE("http_post");
     /* http_post of [url, headers_json, body_string] -> response body string
      * Uses fork/execvp to invoke curl — no shell involved, no injection risk. */
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3)
-        TRACE_NONDET_RECORD("http_post", make_str(""));
+    int request_ok = arg && arg->type == VAL_LIST && arg->data.list.count >= 3;
     const char *url = "", *headers_json = "", *body = "";
-    if (list_get_view(arg, 0, &(EigsView){{0}})->type == VAL_STR) url = list_get_view(arg, 0, &(EigsView){{0}})->data.str;
-    if (list_get_view(arg, 1, &(EigsView){{0}})->type == VAL_STR) headers_json = list_get_view(arg, 1, &(EigsView){{0}})->data.str;
-    if (list_get_view(arg, 2, &(EigsView){{0}})->type == VAL_STR) body = list_get_view(arg, 2, &(EigsView){{0}})->data.str;
-    if (!http_url_is_allowed(url)) TRACE_NONDET_RECORD("http_post", make_str(""));
-
-    /* Write body to temp file */
-    char req_path[] = "/tmp/eigen_http_XXXXXX";
-    int req_fd = mkstemp(req_path);
-    if (req_fd < 0) TRACE_NONDET_RECORD("http_post", make_str(""));
-    FILE *reqf = fdopen(req_fd, "w");
-    if (!reqf) { close(req_fd); unlink(req_path); TRACE_NONDET_RECORD("http_post", make_str("")); }
-    fprintf(reqf, "%s", body);
-    fclose(reqf);
+    if (request_ok) {
+        if (list_get_view(arg, 0, &(EigsView){{0}})->type == VAL_STR) url = list_get_view(arg, 0, &(EigsView){{0}})->data.str;
+        if (list_get_view(arg, 1, &(EigsView){{0}})->type == VAL_STR) headers_json = list_get_view(arg, 1, &(EigsView){{0}})->data.str;
+        if (list_get_view(arg, 2, &(EigsView){{0}})->type == VAL_STR) body = list_get_view(arg, 2, &(EigsView){{0}})->data.str;
+    }
 
     /* Build argv array for curl — no shell interpolation */
     /* Max 96 args: curl -s --max-time 15 --proto ... [-H "k: v"]... -d @file -- url */
@@ -776,8 +766,18 @@ Value* builtin_http_post(Value *arg) {
     /* Parse headers JSON and add -H flags */
     char header_bufs[32][256]; /* up to 32 headers */
     int hdr_count = 0;
-    int jpos = 0;
-    Value *hdr_obj = eigs_json_parse_root(headers_json, &jpos);   /* #777 */
+    Value *hdr_obj = NULL;
+    if (request_ok && http_url_is_allowed(url)) {
+        /* N14/R2.5: header decoding is deterministic. Refuse numeric
+         * overflow before consuming a replay value or starting request I/O. */
+        int jpos = 0;
+        hdr_obj = eigs_json_parse_root(headers_json, &jpos);   /* #777 */
+        if (g_has_error) {
+            val_decref(hdr_obj);
+            return make_null();
+        }
+    }
+    ValType wrong_header_type = VAL_NULL;
     /* #755: a JSON OBJECT is the shape a caller reaches for first, and it used
      * to send NO headers at all — this tested only VAL_LIST, while
      * eigs_json_parse_object returns a VAL_DICT, so the loop never ran and the
@@ -821,18 +821,30 @@ Value* builtin_http_post(Value *arg) {
          * sending nothing is the #755 failure mode; say so. An unparseable
          * headers argument (including "") still means "no headers", which is
          * the documented idiom. */
+        wrong_header_type = hdr_obj->type;
+    }
+    /* Header argv owns no parsed Values. Release before TAKE, whose replay
+     * return bypasses the live path, and keep wrong-shape recording unchanged. */
+    val_decref(hdr_obj);
+    TRACE_NONDET_TAKE("http_post");
+    if (!request_ok || !http_url_is_allowed(url))
+        TRACE_NONDET_RECORD("http_post", make_str(""));
+    if (wrong_header_type != VAL_NULL) {
         rt_error(EK_TYPE, 0,
                  "http_post: headers must be a JSON object or a flat "
                  "[key, value, ...] array (got %s)",
-                 val_type_name(hdr_obj->type));
-        val_decref(hdr_obj);
-        unlink(req_path);
+                 val_type_name(wrong_header_type));
         TRACE_NONDET_RECORD("http_post", make_str(""));
     }
-    /* Released here rather than at the end of the function: the pipe/fork
-     * failure paths below return through TRACE_NONDET_RECORD, and hdr_obj is
-     * not used past this point. */
-    val_decref(hdr_obj);
+
+    /* Write body to temp file only after deterministic header validation. */
+    char req_path[] = "/tmp/eigen_http_XXXXXX";
+    int req_fd = mkstemp(req_path);
+    if (req_fd < 0) TRACE_NONDET_RECORD("http_post", make_str(""));
+    FILE *reqf = fdopen(req_fd, "w");
+    if (!reqf) { close(req_fd); unlink(req_path); TRACE_NONDET_RECORD("http_post", make_str("")); }
+    fprintf(reqf, "%s", body);
+    fclose(reqf);
 
     char data_arg[512];
     snprintf(data_arg, sizeof(data_arg), "@%s", req_path);
