@@ -1082,6 +1082,47 @@ catch e:
 value
 ```
 
+### IEEE bits and canonical NaNs
+
+`f64_bits of number` returns signed int64 two's-complement IEEE bits; an
+int input converts to float first (Q2). `f64_from_bits of bits` reconstructs
+a float and canonicalizes any NaN to `0x7FF8000000000000`, as does every
+double crossing the [C embedding API](EMBEDDING.md). Signed zero and
+infinity retain their representations. Bit inspection and reconstruction
+do not trap non-finite float representations or change `math_flags`.
+
+`buf_get_bits of [buffer, index]` preserves raw payloads as an int.
+`buf_set_bits of [buffer, index, bits]` stores them verbatim and returns
+`null` (R24-1). The indices and bits inputs use N5: integral floats in
+int64 range convert, while fractions, non-finite inputs and out-of-range
+floats raise `value`. Wrong types or missing buffer arguments raise
+`type_mismatch`; out-of-range indices raise `index_range`. Ordinary
+`buf_get`, indexing and iteration retain N13 refusal in every strict mode.
+Use `f64_from_bits of (buf_get_bits of [buffer, index])` for an explicit
+non-finite reconstruction (R24-2).
+
+```eigenscript
+b is buffer of 1
+print of [f64_bits of -0.0, f64_from_bits of 4607182418800017408.0]
+print of (buf_set_bits of [b, 0.0, 9218868437227405313])
+print of [buf_get_bits of [b, 0], f64_bits of (f64_from_bits of (buf_get_bits of [b, 0]))]
+try:
+    buf_get of [b, 0]
+catch e:
+    print of e.kind
+try:
+    f64_from_bits of 0.5
+catch e:
+    print of e.kind
+```
+```output
+[-9223372036854775808, 1.0]
+null
+[9218868437227405313, 9221120237041090560]
+value
+value
+```
+
 ### Stored buffer data boundary
 
 Buffer kernels can retain non-finite data. Scalar indexing and iteration

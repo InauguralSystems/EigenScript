@@ -935,14 +935,17 @@ and elements, terminates on cycles, never raises and never writes
 the #1665 depth cap unchanged. `N11.container-self-equal-ieee` pre-registers
 the structural cases and a 40-level `[x, x]` finite-buffer DAG cost witness.
 
-The public C getter `eigs_value_buffer_get` returns the stored double exactly,
-including NaN payloads, infinities and negative zero. It never normalizes,
-raises for a valid element, or writes math flags. It mirrors the setter's
-bit-preserving store and Lua `lua_tonumberx`/CPython `PyFloat_AsDouble`,
-which also hand C the raw double. Clamping fabricates a value; a new status
-channel would change the ABI for a property C can test with `isfinite`.
-Wrong-type and out-of-range reports remain the separately decided API contract.
-The getter migration and public API docs land in the embed file group.
+R1.6z-D1 originally made the public C getter `eigs_value_buffer_get` return
+the stored double exactly, including NaN payloads. **R2.4 explicitly amends
+the NaN part of that boundary contract:** every public C double input/output
+uses the single `slot_from_f64` writer, so NaNs become the canonical quiet
+NaN in either direction. Infinities, negative zero, subnormals and all other
+non-NaN bits remain exact. Valid reads/writes never raise or write math flags;
+getters do not rewrite underlying raw buffer or boxed-value storage. Raw
+program payload access remains available as int64 through `buf_get_bits`
+and `buf_set_bits` (R24-1). Wrong-type and out-of-range reports keep the
+separately decided API contract. The four direct double crossings and the
+actual opaque-handle/callback paths are covered by `tests/phase2/embed_nan.c`.
 
 VM indexing and iteration use the finite data boundary, matching `get_at`
 (R1.6d-D1): lenient NaN and every infinity raise `value`; strict NaN keeps
@@ -1312,11 +1315,30 @@ of i) == i` for every `i` that is not a non-canonical NaN pattern, and
 payload fidelity goes through ints (N12: "Ints are never NaN-canonicalized").
 
 **Buffers** hold raw doubles and are not slots, so a buffer element may hold
-any payload. Reading it as a float (`buf_get`) puts it in a slot, so it is
-canonicalized. Reading it through the new bits accessor (N12: "Buffer
+any payload. Ordinary float reads (`buf_get`, indexing, iteration) refuse
+non-finite cells per R1.6z-D1. To read a non-finite cell as a float, use
+`f64_from_bits of (buf_get_bits of [b, i])`, which canonicalizes it in the
+slot (RULING R24-2). Reading it through the new bits accessor (N12: "Buffer
 elements are also readable and writable as bits") returns the stored bits
 exactly as an int. That is the path the bar critic found missing: payload
 `0x7FF0...01` came back canonical through every route on the prototype.
+
+**R24-1 names and argument order.** `buf_get_bits of [buffer, index]`
+returns the stored 64 bits as a signed int64 without float conversion.
+`buf_set_bits of [buffer, index, bits]` stores those bits verbatim and returns
+null, exactly like `buf_set`. Index and argument validation mirror the
+corresponding `buf_get`/`buf_set` family; a bit-pattern operand follows N5.
+The names and subject-first order follow #1833 and RULING R24-1. Because
+the setter returns null, `N12.payload-through-ints` writes the cell first,
+then calls the getter on that buffer; its expected output is unchanged.
+
+`f64_bits` accepts either numeric kind, converting an int to float as
+`f64_to_bytes` does (Q2), then returns the float representation as an exact
+int64. `f64_from_bits` reads its bit-pattern argument by N5: an integral
+float may convert exactly to int64; fractional, non-finite or out-of-range
+numeric arguments raise `value`, and non-numbers raise `type_mismatch`.
+NaN reconstruction uses the single canonical double writer. These are
+representation operations, not arithmetic traps, in either strict mode.
 
 ---
 
@@ -1417,9 +1439,10 @@ column against the note both ways: a row's note says "continuous" exactly
 when its `q7` column is not `-`. Counts: geometry 9, bounded 13, magnitude 13.
 
 **Counts** (from the table below, checked by `tools/phase2_inventory.py`,
-which prints them): 303 numeric builtins (including N9, R1.6g; S10-D2 and
-sync11 explicitly retire the obsolete process/model/corpus rows). By class:
-37 int-preserving, 57 float-producing, 158 int-requiring, 51 other. The decided Q1 moved 16 rows
+which prints them): 307 numeric builtins (including N9, R1.6g; S10-D2 and
+sync11 explicitly retire the obsolete process/model/corpus rows, and R2.4
+adds the four N12 representation builtins). By class:
+38 int-preserving, 57 float-producing, 161 int-requiring, 51 other. The decided Q1 moved 16 rows
 from other to int-requiring (counts, byte values, handles, flags and
 selectors); `ppu_render_frame` is a new int-requiring row; design round 3
 moved `buf_from_pcm16le` from float-producing to int-requiring (its inputs are
@@ -1760,11 +1783,17 @@ current state behind several rows:
 | `u64_rem` | int-requiring | - | - | N9: N5 int64 bit patterns; unsigned remainder as int64 bits; zero raises value (Rust std) |
 | `u64_to_string` | int-requiring | - | - | N9: N5 int64 bit pattern to unsigned decimal string (Rust std) |
 | `fround` | float-producing | - | - | N9: int converts to f64 first; f64 to f32 to f64, float result; R2.2 retires the prior result guard, so float32 overflow gives ±inf (strict opt-in traps) |
+| `f64_bits` | int-preserving | - | - | N12: exact signed int64 representation; int input first converts to f64 like f64_to_bytes (Q2); non-number raises |
+| `f64_from_bits` | int-requiring | - | - | N12: N5 exact int64 bit pattern; float result passes through the canonical NaN writer |
+| `buf_get_bits` | int-requiring | - | - | N12 / R24-1: index mirrors buf_get; raw stored bits return as an exact signed int64, preserving NaN payloads |
+| `buf_set_bits` | int-requiring | - | - | N12 / R24-1: index mirrors buf_set; N5 exact int64 bit pattern stores verbatim, returning null |
 <!-- builtin-table:end -->
 
 **Builtins to add**, outside the checked table until they exist:
 - `num_type` (N7);
-- `f64_bits` and `f64_from_bits`, plus buffer bits get/set (N12);
+
+R2.4 adds the N12 representation family above: `f64_bits`, `f64_from_bits`,
+`buf_get_bits` and `buf_set_bits` (the buffer pair is named by R24-1).
 
 **N9 width family (R1.6g, in the checked table above):**
 

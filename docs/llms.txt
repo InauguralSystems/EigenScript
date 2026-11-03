@@ -466,6 +466,50 @@ catch e:
 value
 ```
 
+## IEEE bits: explicit raw access and canonical floats
+
+`f64_bits of number` returns signed int64 two's-complement IEEE bits; int
+inputs first convert to float (Q2). `f64_from_bits of bits` returns a float
+and canonicalizes all NaNs to `0x7FF8000000000000`, including tag-spelling
+payloads. Every double crossing the C embedding API is canonical too.
+Signed zero, infinities and finite representations keep their bits.
+
+`buf_get_bits of [buffer, index]` returns raw bits as an int and preserves
+NaN payloads. `buf_set_bits of [buffer, index, bits]` stores verbatim and
+returns `null` (R24-1). Bits inputs and indices follow N5: exact int64s and
+integral floats in range are accepted; fractions, non-finite inputs and
+out-of-range floats raise `value`. Wrong types or missing buffer arguments
+raise `type_mismatch`; negative or out-of-range indices raise `index_range`.
+These rules apply in either strict mode. Bit inspection and reconstruction
+do not trigger arithmetic traps or change `math_flags`.
+
+Ordinary `buf_get`, indexing and iteration still refuse non-finite cells
+under N13. Use `f64_from_bits of (buf_get_bits of [buffer, index])` to
+reconstruct a canonical float explicitly (R24-2); do not expect a raw-bit
+setter to return a buffer for composition.
+
+```eigenscript
+b is buffer of 1
+print of [f64_bits of -0.0, f64_from_bits of 4607182418800017408.0]
+print of (buf_set_bits of [b, 0.0, 9218868437227405313])
+print of [buf_get_bits of [b, 0], f64_bits of (f64_from_bits of (buf_get_bits of [b, 0]))]
+try:
+    buf_get of [b, 0]
+catch e:
+    print of e.kind
+try:
+    f64_from_bits of 0.5
+catch e:
+    print of e.kind
+```
+```output
+[-9223372036854775808, 1.0]
+null
+[9218868437227405313, 9221120237041090560]
+value
+value
+```
+
 ## Numeric vectors: `buffer`, not `list`
 
 - `buffer of n` (and `zeros of n`, which returns a **buffer**) is the flat

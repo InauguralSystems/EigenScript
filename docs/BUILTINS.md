@@ -73,6 +73,8 @@ examples are `tests/phase2/rows/N6.float-repr.eigs` and
 | `num` | `num of value` | Parse complete numeric-literal text (N10): decimal integer text fitting int64 and wrapped hex integers give ints; a point/exponent or decimal overflow gives a float. Optional sign and surrounding ASCII whitespace are accepted. Partial/empty text, separators, 0b/0o, hex floats, inf and nan raise `value` in every strict mode. Numbers retain their kind; existing non-text coercions remain. |
 | `type` | `type of value` | Return type name: "num", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "null" (the null value; the type label matches the literal) |
 | `num_type` | `num_type of value` | Return "int" for an int64, "float" for a binary64, or `null` for any other value. Both numeric kinds still have `type of` "num" (#1758 N7). |
+| `f64_bits` | `f64_bits of number` | Return IEEE-754 binary64 bits as signed int64 two's complement; `-0.0` gives `-9223372036854775808`. An int input first converts to float (Q2). Accepts infinity and canonical NaN without changing `math_flags`. Non-numbers raise `type_mismatch` in either strict mode (N12). |
+| `f64_from_bits` | `f64_from_bits of bits` | Reconstruct a float from exact int64 bits (N5 accepts integral floats in int64 range). All NaN payloads canonicalize to `0x7FF8000000000000`; other representations retain their bits. No arithmetic trap or `math_flags` change. Fractions, non-finite inputs and out-of-range floats raise `value`; non-numbers raise `type_mismatch` in either strict mode (N12). |
 | `assert` | `assert of [cond, msg]` | Raise catchable error `"ASSERT FAIL: <msg>"` if condition is false |
 | `exit` | `exit of N` | Terminate the program with exit code `N` (default 0). **Uncatchable** — a `try`/`catch` does not intercept it — and unwinds through normal teardown, so it is leak-clean even with live closures. Code after it does not run. The request is scoped to the evaluating thread and cleared at each host eval entry, so under the embedding API a script that calls `exit` does not disable `try`/`catch` for the host's *next* eval (#739). A supplied numeric code follows N5, then the C int range; invalid codes raise catchably before requesting exit. |
 | `set_exit_code` | `set_exit_code of N` | Set the status (integer 0..255) used when the process ends gracefully, without ending it. The last call wins. Explicit `exit` and runtime failures retain their own status. Integral floats are accepted; fractions raise `value` (N5). |
@@ -281,8 +283,10 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `buffer` | `buffer of count` | Dimensions and size follow N5, then the C int range. Create zero-filled buffer of given size (or `buffer of [rows, cols]` for a shaped one). A non-numeric size raises with `EIGS_STRICT=1`; by default or under `EIGS_STRICT=0` it makes an empty buffer (#971). |
-| `buf_get` | `buf_get of [buf, index]` | The index follows N5; the returned element is float. Read element; out-of-range raises `index_range` (#502 — folding to 0 was indistinguishable from a real stored 0), matching the `buf[i]` operator |
-| `buf_set` | `buf_set of [buf, index, value]` | The index follows N5; stored values convert to float (Q2). Write element |
+| `buf_get` | `buf_get of [buf, index]` | The index follows N5; the returned element is float. Non-finite cells raise `value` in either strict mode (N13). Out-of-range raises `index_range` (#502 — folding to 0 was indistinguishable from a real stored 0), matching the `buf[i]` operator. |
+| `buf_get_bits` | `buf_get_bits of [buf, index]` | Return a cell's raw IEEE bits as signed int64, preserving every NaN payload. Index validation mirrors `buf_get`: N5, then `index_range` for negative/out-of-range indices. Wrong types or missing arguments raise `type_mismatch` in either strict mode (N12, R24-1). |
+| `buf_set` | `buf_set of [buf, index, value]` | The index follows N5; stored values convert to float (Q2). Write element and return `null`. |
+| `buf_set_bits` | `buf_set_bits of [buf, index, bits]` | Store exact int64 bits verbatim and return `null`. Index and bits follow N5 (integral floats in int64 range accepted; fractions, non-finite inputs and out-of-range floats raise `value`). Index validation mirrors `buf_set`; negative/out-of-range indices raise `index_range`. Wrong types or missing arguments raise `type_mismatch` in either strict mode (N12, R24-1). |
 | `buf_len` | `buf_len of buf` | Returns an integer count. Return buffer element count |
 | `buf_from_list` | `buf_from_list of list` | Integer cells convert to float storage (Q2). Convert numeric list to buffer |
 | `buf_copy` | `buf_copy of [src, src_off, dst, dst_off, count]` | Offsets/counts follow N5; fractions raise `value`. Bulk copy between buffers (`memmove`, overlap-safe). Out-of-range windows / negative count raise (`index_range`/`value`); count 0 is a no-op |
@@ -341,6 +345,11 @@ For serialization: reconstruct strings/floats from raw bytes (the inverse of an
 
 Buffers also support direct indexing (`buf[i]`, `buf[i] is val`) and
 compound assignment (`buf[i] += val`).
+Ordinary `buf_get`, indexing and iteration refuse non-finite cells under
+N13 in every strict mode. Reconstruct such a cell explicitly with
+`f64_from_bits of (buf_get_bits of [buf, index])`; that float has canonical
+NaN bits even when the stored payload differs (R24-2). The buffer bits
+accessors retain `buf_get`/`buf_set` strict surplus-argument validation.
 
 ### Compression
 

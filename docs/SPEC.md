@@ -3067,6 +3067,55 @@ catch e:
 value
 ```
 
+### IEEE bits and canonical NaNs (N12)
+
+`f64_bits of number` returns the IEEE-754 binary64 representation as a
+signed int64 two's-complement bit pattern. An int input first converts to
+float (Q2), so this is a representation operation, not an exact integer
+conversion. `f64_bits of -0.0` is `-9223372036854775808`.
+`f64_from_bits of bits` returns a float. Its input follows N5: an exact
+int64 or an integral float in int64 range is accepted; fractions,
+non-finite inputs and out-of-range floats raise `value`.
+
+`buf_get_bits of [buffer, index]` returns a cell's raw bits as an int,
+preserving every NaN payload. `buf_set_bits of [buffer, index, bits]`
+stores those bits verbatim and returns `null` (R24-1). The setter's bits
+and both indices follow N5. Negative or out-of-range indices raise
+`index_range`; a non-buffer, non-number argument or missing buffer/index/bits
+raises `type_mismatch`, in either strict mode. The buffer forms retain
+`buf_get`/`buf_set` argument validation, including strict surplus-argument
+rejection.
+
+Every float NaN becomes `0x7FF8000000000000`, including values constructed
+by `f64_from_bits` and doubles crossing the [embedding API](EMBEDDING.md).
+Signed zero, infinity and finite representations keep their bits. The bits
+APIs accept non-finite float representations without arithmetic traps or
+changes to `math_flags`. Ordinary `buf_get`, indexing and iteration still
+refuse non-finite cells under N13. To reconstruct such a cell as a float,
+use `f64_from_bits of (buf_get_bits of [buffer, index])` (R24-2).
+
+```eigenscript
+b is buffer of 1
+print of [f64_bits of -0.0, f64_from_bits of 4607182418800017408.0]
+print of (buf_set_bits of [b, 0.0, 9218868437227405313])
+print of [buf_get_bits of [b, 0], f64_bits of (f64_from_bits of (buf_get_bits of [b, 0]))]
+try:
+    buf_get of [b, 0]
+catch e:
+    print of e.kind
+try:
+    f64_from_bits of 0.5
+catch e:
+    print of e.kind
+```
+```output
+[-9223372036854775808, 1.0]
+null
+[9218868437227405313, 9221120237041090560]
+value
+value
+```
+
 ### Stored buffer data boundary
 
 Buffer kernels can retain non-finite data. Scalar indexing and iteration

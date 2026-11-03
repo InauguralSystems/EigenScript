@@ -3,7 +3,7 @@ name: phase2
 # #1758: landed MAP rows, the pre-registered builtin table on matched
 # capability profiles, the C readers and the stdlib differential. The shared
 # phase2_check.py helper derives the complete declared MAP prefix by default.
-# R2.3 adds writer refusal and no-mutation proofs after accepted R2.2.
+# R2.4 adds IEEE bit access and canonical embed doubles after accepted R2.3.
 on:
   push:
     branches: [phase2-numbers]
@@ -34,7 +34,7 @@ jobs:
     env:
       DATABASE_URL: postgres://eigs:eigs_test@127.0.0.1:5432/eigs_test
     steps:
-      # Every branch and tag is needed: origin/main, v0.46.0 and the accepted R2.2 baseline.
+      # Every branch and tag is needed: origin/main, v0.46.0 and the accepted R2.3 baseline.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
@@ -42,6 +42,8 @@ jobs:
         run: |
           git fetch --no-tags origin 0a73adb0612f8612d75393891ae2ba2e1c803663
           git cat-file -e '0a73adb0612f8612d75393891ae2ba2e1c803663^{tree}'
+          git fetch --no-tags origin f09632d01e982d74cbe009db7f292c28afa8aa7e
+          git cat-file -e 'f09632d01e982d74cbe009db7f292c28afa8aa7e^{tree}'
       - name: Install matched capability dependencies
         run: |
           sudo apt-get update
@@ -52,14 +54,14 @@ jobs:
           export XDG_CACHE_HOME="$RUNNER_TEMP/cache"
           make --no-print-directory observer-anchor
           anchor="$XDG_CACHE_HOME/eigs-oracle-anchor/$(sha256sum tools/observer_oracle/build_anchor.sh | cut -d' ' -f1)/src/eigenscript"
-          mkdir -p "$RUNNER_TEMP/main" "$RUNNER_TEMP/tag-profiles" "$RUNNER_TEMP/r23-baseline"
+          mkdir -p "$RUNNER_TEMP/main" "$RUNNER_TEMP/tag-profiles" "$RUNNER_TEMP/r24-baseline"
           git archive origin/main | tar -x -C "$RUNNER_TEMP/main"
           git archive v0.46.0 | tar -x -C "$RUNNER_TEMP/tag-profiles"
-          git archive 2c402e2fdd0662ac5ad85429240c8346279a7f00 | tar -x -C "$RUNNER_TEMP/r23-baseline"
+          git archive f09632d01e982d74cbe009db7f292c28afa8aa7e | tar -x -C "$RUNNER_TEMP/r24-baseline"
           make -C "$RUNNER_TEMP/main" > "$RUNNER_TEMP/main-build.log" 2>&1 \
             || { tail -n 50 "$RUNNER_TEMP/main-build.log"; echo "::error::the origin/main build failed"; exit 1; }
-          make -C "$RUNNER_TEMP/r23-baseline" > "$RUNNER_TEMP/r23-baseline-build.log" 2>&1 \
-            || { tail -n 50 "$RUNNER_TEMP/r23-baseline-build.log"; echo "::error::the R2.2 baseline build failed"; exit 1; }
+          make -C "$RUNNER_TEMP/r24-baseline" > "$RUNNER_TEMP/r24-baseline-build.log" 2>&1 \
+            || { tail -n 50 "$RUNNER_TEMP/r24-baseline-build.log"; echo "::error::the R2.3 baseline build failed"; exit 1; }
           # The table uses matching capability builds; a capability-unavailable
           # transcript is a failure, including on the tag (ruling A3).
           for profile in server zlib db; do
@@ -88,14 +90,57 @@ jobs:
           # Restore the release alias before the MAP and library checks.
           PATH="$PWD/tools/cc-guard-bin:$PATH" make build
           bash tools/cc_guard.sh --report
-          bash tools/phase2_ci.sh --through R2.3 --baseline "$RUNNER_TEMP/r23-baseline/src/eigenscript" \
+          bash tools/phase2_ci.sh --through R2.4 --baseline "$RUNNER_TEMP/r24-baseline/src/eigenscript" \
             "$anchor" "$RUNNER_TEMP/main/src/eigenscript" src/eigenscript
 
       - name: R2.3 encoder failure and no-mutation proofs
         run: |
           bash tests/phase2/writers.sh release build/release/eigenscript build/server/eigenscript
+      - name: R2.4 canonical embed doubles on the release profile
+        run: |
+          set -euo pipefail
+          export CC_GUARD_LOG="$RUNNER_TEMP/cc-guard.log"
+          proof_rc=0
+          PATH="$PWD/tools/cc-guard-bin:$PATH" make --no-print-directory EMBED_NAN_VARIANT=release embed-nan-test \
+            > "$RUNNER_TEMP/r24-embed-release.log" 2>&1 || proof_rc=$?
+          cat "$RUNNER_TEMP/r24-embed-release.log"
+          . tests/lsan_classify.sh
+          proof_class=0
+          lsan_classify "$(cat "$RUNNER_TEMP/r24-embed-release.log")" || proof_class=$?
+          if [ "$proof_rc" -ne 0 ] || [ "$proof_class" -ne 2 ]; then
+            echo "::error::R2.4 release embed proof failed: rc=$proof_rc sanitizer-class=$proof_class"
+            exit 1
+          fi
+          if grep -q 'warning:' "$RUNNER_TEMP/r24-embed-release.log"; then
+            echo "::error::R2.4 release embed proof emitted a compiler warning"
+            exit 1
+          fi
+          grep -qx 'embed-nan: PASS inputs=20 modes=2 cases=40 callbacks=20 arithmetic=4 constructors=2 checks=1020 failures=0' "$RUNNER_TEMP/r24-embed-release.log"
+          bash tools/cc_guard.sh --report
       - name: R2.3 writer proofs under ASan and UBSan
         run: |
           make asan
           make asan-server
           ASAN_OPTIONS=detect_leaks=1 bash tests/phase2/writers.sh asan build/asan/eigenscript build/asan-server/eigenscript
+      - name: R2.4 canonical embed doubles under ASan and UBSan
+        run: |
+          set -euo pipefail
+          export CC_GUARD_LOG="$RUNNER_TEMP/cc-guard.log"
+          proof_rc=0
+          ASAN_OPTIONS=detect_leaks=1 PATH="$PWD/tools/cc-guard-bin:$PATH" \
+            make --no-print-directory EMBED_NAN_VARIANT=asan embed-nan-test \
+            > "$RUNNER_TEMP/r24-embed-asan.log" 2>&1 || proof_rc=$?
+          cat "$RUNNER_TEMP/r24-embed-asan.log"
+          . tests/lsan_classify.sh
+          proof_class=0
+          lsan_classify "$(cat "$RUNNER_TEMP/r24-embed-asan.log")" || proof_class=$?
+          if [ "$proof_rc" -ne 0 ] || [ "$proof_class" -ne 2 ]; then
+            echo "::error::R2.4 ASan embed proof failed: rc=$proof_rc sanitizer-class=$proof_class"
+            exit 1
+          fi
+          if grep -q 'warning:' "$RUNNER_TEMP/r24-embed-asan.log"; then
+            echo "::error::R2.4 ASan embed proof emitted a compiler warning"
+            exit 1
+          fi
+          grep -qx 'embed-nan: PASS inputs=20 modes=2 cases=40 callbacks=20 arithmetic=4 constructors=2 checks=1020 failures=0' "$RUNNER_TEMP/r24-embed-asan.log"
+          bash tools/cc_guard.sh --report

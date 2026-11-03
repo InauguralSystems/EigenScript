@@ -1025,6 +1025,45 @@ catch e:
 value
 ```
 
+### IEEE bits and canonical NaNs
+
+`f64_bits` returns a number's IEEE bits as signed int64 (an int input first
+converts to float); `f64_from_bits` reconstructs a float. `buf_get_bits`
+and `buf_set_bits` preserve a buffer cell's raw payload, and the setter
+returns `null` (R24-1). Bits inputs and indices accept exact int64s and
+integral floats in range (N5): fractions, non-finite inputs and floats
+outside int64 raise `value`; wrong types raise `type_mismatch` and bad
+indices raise `index_range`.
+
+Float NaNs, including [embedded host doubles](docs/EMBEDDING.md),
+canonicalize to `0x7FF8000000000000`. Bit inspection and reconstruction
+leave `math_flags` unchanged and do not trap non-finite representations.
+Ordinary `buf_get`, indexing and iteration keep N13 refusal in every strict
+mode. Reconstruct a non-finite cell explicitly with
+`f64_from_bits of (buf_get_bits of [buffer, index])` (R24-2).
+
+```eigenscript
+b is buffer of 1
+print of [f64_bits of -0.0, f64_from_bits of 4607182418800017408.0]
+print of (buf_set_bits of [b, 0.0, 9218868437227405313])
+print of [buf_get_bits of [b, 0], f64_bits of (f64_from_bits of (buf_get_bits of [b, 0]))]
+try:
+    buf_get of [b, 0]
+catch e:
+    print of e.kind
+try:
+    f64_from_bits of 0.5
+catch e:
+    print of e.kind
+```
+```output
+[-9223372036854775808, 1.0]
+null
+[9218868437227405313, 9221120237041090560]
+value
+value
+```
+
 ### Stored buffer data boundary
 
 Buffer kernels can retain non-finite data. Scalar indexing and iteration
