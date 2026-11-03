@@ -3115,9 +3115,9 @@ static void tape_float_text(char *buf, size_t nbuf, double n) {
 
 /* A buffer's bits interface observes payloads that a float cannot carry.
  * Decimal text plus nan would merge those distinct cells on replay. */
-static void tape_buffer_text(char *buf, size_t nbuf, double n) {
+static void tape_buffer_text(char *buf, size_t nbuf, const double *cell) {
     uint64_t raw;
-    memcpy(&raw, &n, sizeof raw);
+    memcpy(&raw, cell, sizeof raw);
     if ((raw & UINT64_C(0x7ff0000000000000)) == UINT64_C(0x7ff0000000000000) &&
         (raw & UINT64_C(0x000fffffffffffff)) &&
         raw != UINT64_C(0x7ff8000000000000)) {
@@ -3127,6 +3127,8 @@ static void tape_buffer_text(char *buf, size_t nbuf, double n) {
         eigs_int_text(digits, sizeof digits, signed_bits);
         snprintf(buf, nbuf, "bits(%s)", digits);
     } else {
+        double n;
+        memcpy(&n, cell, sizeof n);
         tape_float_text(buf, nbuf, n);
     }
 }
@@ -3342,7 +3344,7 @@ static int write_value_ptr_full(strbuf *buf, Value *v, int *budget,
             for (int i = 0; i < n; i++) {
                 if (i) wf_puts(buf, ", ", budget);
                 char number[32];
-                tape_buffer_text(number, sizeof number, v->data.buffer.data[i]);
+                tape_buffer_text(number, sizeof number, &v->data.buffer.data[i]);
                 wf_puts(buf, number, budget);
             }
             wf_putc(buf, ']', budget);
