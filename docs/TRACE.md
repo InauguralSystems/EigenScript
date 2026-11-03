@@ -319,6 +319,33 @@ something nothing records (#2200).
 | Graphics extension | `gfx_read` (#823), `gfx_ticks` |
 | Audio (graphics extension) | `audio_capture_open`, `audio_capture_read` (#579), `audio_stream_queued`, `audio_noise` (#1803) |
 
+Numeric record domains (RULING R25-1) are checked separately from the
+v10 token grammar, using the requested consumer's row in `k_tape_kinds`:
+
+- `random`, `random_int`, `monotonic_ns`, `monotonic_ms`, `clock_unix`,
+  `gfx_ticks`, `audio_capture_open`, `audio_stream_queued`, `net_listen`,
+  `net_accept`, `net_dial`, `net_port`, `net_send` and `write_bytes` have
+  finite numeric returns. Replaying a non-finite return exits 3 with
+  `trace: NAME: non-finite replay value 'VALUE'; refusing to replay`.
+- The numeric cells of `read_bytes`, `read_bytes_buf`, `net_recv`,
+  `gfx_read`, `audio_capture_read` and every `audio_noise` chunk are finite,
+  with the same named refusal. Raw buffer NaN payload tokens are checked
+  as bits, without performing an ordinary N13 buffer read.
+- `read_text`, `read_bytes` and `read_bytes_buf` over-cap size records keep
+  the reader's existing exact-int check and catchable `io` message:
+  `NAME: replay record size is not an exact integer in range; refusing to replay`.
+  The source metadata and `tensor_load` verdict retain their typed checks.
+- `random_normal` has finite scale and finite Box–Muller factors, so its
+  samples may overflow to either infinity but cannot be NaN. Replay keeps
+  the infinities and refuses NaN with the named domain diagnostic above.
+- Other core records have no live numeric field. Host-declared N sources
+  retain their declared IEEE transport domain, including canonical NaN
+  and exact raw buffer bits; the host owns any narrower domain contract.
+
+These checks precede publishing or re-recording a served value. This fixes
+invalid current-format inputs without changing v10 encoding or refusing
+any value that the source can genuinely record.
+
 Notes on the families:
 
 - **Files:** the filesystem replay rules are defined once in

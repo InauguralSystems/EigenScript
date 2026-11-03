@@ -100,8 +100,15 @@ static int child_verdict(const char *name, const char *token, int wanted_rc,
     error[at] = 0; close(fds[0]);
     int status;
     if (waitpid(pid, &status, 0) != pid) return 0;
+    if (diagnostic && !strncmp(diagnostic, "trace: ", 7)) {
+        char exact[1024];
+        int n = snprintf(exact, sizeof exact, "%s '%s'; refusing to replay\n",
+                         diagnostic, token);
+        return n > 0 && (size_t)n < sizeof exact && !strcmp(error, exact) &&
+               WIFEXITED(status) && WEXITSTATUS(status) == wanted_rc;
+    }
     return WIFEXITED(status) && WEXITSTATUS(status) == wanted_rc &&
-           (!diagnostic || (strstr(error, diagnostic) && strstr(error, token)));
+           (diagnostic ? (strstr(error, diagnostic) && strstr(error, token)) : !*error);
 }
 
 int main(void) {

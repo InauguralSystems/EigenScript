@@ -1947,59 +1947,115 @@ static void replay_malformed_value(const char *value) {
 #define TK_LIST_ TK(VAL_LIST)
 #define TK_DICT_ TK(VAL_DICT)
 #define TK_BUF_  TK(VAL_BUFFER)
-static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
-    {"args",                 TK_LIST_},
-    {"audio_capture_open",   TK_NUM_},
-    {"audio_capture_read",   TK_BUF_ | TK_NULL_},
-    {"audio_noise",          TK_LIST_},   /* one call = one or more sample chunks */
-    {"audio_stream_queued",  TK_NUM_},
-    {"clock_unix",           TK_NUM_},
-    {"env_get",              TK_STR_},
-    {"exe_path",             TK_STR_},
-    {"file_exists",          TK_BOOL_},
-    {"getcwd",               TK_STR_},
-    {"gfx_read",             TK_LIST_ | TK_NULL_},
-    {"gfx_ticks",            TK_NUM_},
-    {"http_post",            TK_STR_},
-    {"http_request_body",    TK_STR_},
-    {"http_request_headers", TK_STR_},
-    {"http_session_id",      TK_STR_},
-    {"is_dir",               TK_BOOL_},
-    {"is_file",              TK_BOOL_},
-    {"ls",                   TK_LIST_},
-    {"md5_file",             TK_STR_ | TK_LIST_},
-    {"import_source",        TK_LIST_},
-    {"import_source_chunk",  TK_STR_},
-    {"import_warning",       TK_STR_},
-    {"load_file_source",     TK_LIST_},
-    {"load_file_source_chunk", TK_STR_},
-    {"mkdir",                TK_BOOL_},
-    {"monotonic_ms",         TK_NUM_},
-    {"monotonic_ns",         TK_NUM_},
-    {"observer_source",      TK_LIST_},
-    {"observer_source_chunk", TK_STR_},
-    {"net_accept",           TK_NUM_ | TK_NULL_},
-    {"net_dial",             TK_NUM_ | TK_NULL_},
-    {"net_listen",           TK_NUM_ | TK_NULL_},
-    {"net_port",             TK_NUM_ | TK_NULL_},
-    {"net_recv",             TK_BUF_ | TK_NULL_},
-    {"net_send",             TK_NUM_},
-    {"random",               TK_NUM_},
-    {"random_hex",           TK_STR_},
-    {"random_int",           TK_NUM_},
-    {"random_normal",        TK_LIST_ | TK_NULL_},
-    {"read_bytes",           TK_LIST_ | TK_NULL_ | TK_NUM_},
-    {"read_bytes_buf",       TK_BUF_ | TK_NULL_ | TK_NUM_ | TK_LIST_}, /* list: I/O error */
-    {"read_line",            TK_STR_ | TK_NULL_},
-    {"read_text",            TK_STR_ | TK_LIST_ | TK_NUM_}, /* num: over-cap */
-    {"remove_file",          TK_BOOL_ | TK_LIST_}, /* list: I/O error */
-    {"rename",               TK_BOOL_ | TK_LIST_}, /* list: I/O error */
-    {"file_sync",            TK_BOOL_ | TK_LIST_}, /* list: I/O error */
-    {"dir_sync",             TK_BOOL_ | TK_LIST_}, /* list: I/O error */
-    {"tensor_load",          TK_LIST_ | TK_NULL_},  /* structurally validated boundary verdict */
-    {"write_bytes",          TK_NUM_ | TK_LIST_},  /* list: I/O error */
-    {"write_text",           TK_BOOL_ | TK_LIST_}, /* list: I/O error */
+/* R25-1: token grammar and a consumer's numeric domain are distinct.
+ * Most core sources can only return finite numbers, including numeric cells
+ * in bytes/samples. Reader sizes and source/tensor metadata retain their
+ * existing typed validation and diagnostics. A normal sample can overflow a
+ * finite scale to infinity, but cannot become NaN. Host-declared sources keep
+ * the full IEEE domain, as promised by their generic numeric kind. */
+typedef enum {
+    REPLAY_FINITE, REPLAY_READER, REPLAY_CHECKED, REPLAY_NORMAL, REPLAY_IEEE
+} ReplayNumberDomain;
+static const struct {
+    const char *name;
+    unsigned kinds;
+    ReplayNumberDomain numbers;
+} k_tape_kinds[] = {
+    {"args",                 TK_LIST_, REPLAY_CHECKED},
+    {"audio_capture_open",   TK_NUM_, REPLAY_FINITE},
+    {"audio_capture_read",   TK_BUF_ | TK_NULL_, REPLAY_FINITE},
+    {"audio_noise",          TK_LIST_, REPLAY_FINITE},   /* one call = one or more sample chunks */
+    {"audio_stream_queued",  TK_NUM_, REPLAY_FINITE},
+    {"clock_unix",           TK_NUM_, REPLAY_FINITE},
+    {"env_get",              TK_STR_, REPLAY_CHECKED},
+    {"exe_path",             TK_STR_, REPLAY_CHECKED},
+    {"file_exists",          TK_BOOL_, REPLAY_CHECKED},
+    {"getcwd",               TK_STR_, REPLAY_CHECKED},
+    {"gfx_read",             TK_LIST_ | TK_NULL_, REPLAY_FINITE},
+    {"gfx_ticks",            TK_NUM_, REPLAY_FINITE},
+    {"http_post",            TK_STR_, REPLAY_CHECKED},
+    {"http_request_body",    TK_STR_, REPLAY_CHECKED},
+    {"http_request_headers", TK_STR_, REPLAY_CHECKED},
+    {"http_session_id",      TK_STR_, REPLAY_CHECKED},
+    {"is_dir",               TK_BOOL_, REPLAY_CHECKED},
+    {"is_file",              TK_BOOL_, REPLAY_CHECKED},
+    {"ls",                   TK_LIST_, REPLAY_CHECKED},
+    {"md5_file",             TK_STR_ | TK_LIST_, REPLAY_CHECKED},
+    {"import_source",        TK_LIST_, REPLAY_CHECKED},
+    {"import_source_chunk",  TK_STR_, REPLAY_CHECKED},
+    {"import_warning",       TK_STR_, REPLAY_CHECKED},
+    {"load_file_source",     TK_LIST_, REPLAY_CHECKED},
+    {"load_file_source_chunk", TK_STR_, REPLAY_CHECKED},
+    {"mkdir",                TK_BOOL_, REPLAY_CHECKED},
+    {"monotonic_ms",         TK_NUM_, REPLAY_FINITE},
+    {"monotonic_ns",         TK_NUM_, REPLAY_FINITE},
+    {"observer_source",      TK_LIST_, REPLAY_CHECKED},
+    {"observer_source_chunk", TK_STR_, REPLAY_CHECKED},
+    {"net_accept",           TK_NUM_ | TK_NULL_, REPLAY_FINITE},
+    {"net_dial",             TK_NUM_ | TK_NULL_, REPLAY_FINITE},
+    {"net_listen",           TK_NUM_ | TK_NULL_, REPLAY_FINITE},
+    {"net_port",             TK_NUM_ | TK_NULL_, REPLAY_FINITE},
+    {"net_recv",             TK_BUF_ | TK_NULL_, REPLAY_FINITE},
+    {"net_send",             TK_NUM_, REPLAY_FINITE},
+    {"random",               TK_NUM_, REPLAY_FINITE},
+    {"random_hex",           TK_STR_, REPLAY_CHECKED},
+    {"random_int",           TK_NUM_, REPLAY_FINITE},
+    {"random_normal",        TK_LIST_ | TK_NULL_, REPLAY_NORMAL},
+    {"read_bytes",           TK_LIST_ | TK_NULL_ | TK_NUM_, REPLAY_READER},
+    {"read_bytes_buf",       TK_BUF_ | TK_NULL_ | TK_NUM_ | TK_LIST_, REPLAY_READER}, /* list: I/O error */
+    {"read_line",            TK_STR_ | TK_NULL_, REPLAY_CHECKED},
+    {"read_text",            TK_STR_ | TK_LIST_ | TK_NUM_, REPLAY_READER}, /* num: over-cap */
+    {"remove_file",          TK_BOOL_ | TK_LIST_, REPLAY_CHECKED}, /* list: I/O error */
+    {"rename",               TK_BOOL_ | TK_LIST_, REPLAY_CHECKED}, /* list: I/O error */
+    {"file_sync",            TK_BOOL_ | TK_LIST_, REPLAY_CHECKED}, /* list: I/O error */
+    {"dir_sync",             TK_BOOL_ | TK_LIST_, REPLAY_CHECKED}, /* list: I/O error */
+    {"tensor_load",          TK_LIST_ | TK_NULL_, REPLAY_CHECKED},  /* structurally validated boundary verdict */
+    {"write_bytes",          TK_NUM_ | TK_LIST_, REPLAY_FINITE},  /* list: I/O error */
+    {"write_text",           TK_BOOL_ | TK_LIST_, REPLAY_CHECKED}, /* list: I/O error */
 };
+
+/* Parsed tapes are trees with no reference cycles. Inspect
+ * values without argument conversion: a domain refusal must not mutate the
+ * arithmetic flags, and raw buffer NaNs must not first cross N13's reader. */
+static int replay_numbers_valid(const Value *v, int allow_infinity) {
+    if (val_is_number(v)) {
+        EigsNum n;
+        if (!eigs_number_read(v, &n, "replay domain")) return 0;
+        return n.is_int || (allow_infinity ? !isnan(n.value.f64) : isfinite(n.value.f64));
+    }
+    if (v->type == VAL_BUFFER) {
+        for (int i = 0; i < v->data.buffer.count; i++) {
+            uint64_t bits;
+            memcpy(&bits, &v->data.buffer.data[i], sizeof bits);
+            uint64_t magnitude = bits & UINT64_C(0x7fffffffffffffff);
+            if (allow_infinity ? magnitude > UINT64_C(0x7ff0000000000000) :
+                                 magnitude >= UINT64_C(0x7ff0000000000000)) return 0;
+        }
+    } else if (v->type == VAL_LIST) {
+        for (int i = 0; i < v->data.list.count; i++) {
+            EigsView view;
+            if (!replay_numbers_valid(list_get_view(v, i, &view), allow_infinity)) return 0;
+        }
+    } else if (v->type == VAL_DICT) {
+        DICT_FOR_EACH(v, i) {
+            EigsView view;
+            if (!replay_numbers_valid(dict_value_get_view(v, i, &view), allow_infinity)) return 0;
+        }
+    }
+    return 1;
+}
+
+static int replay_consumer_numbers_valid(const char *name, Value *v) {
+    ReplayNumberDomain domain = REPLAY_IEEE;
+    for (size_t i = 0; i < sizeof k_tape_kinds / sizeof k_tape_kinds[0]; i++)
+        if (strcmp(name, k_tape_kinds[i].name) == 0) {
+            domain = k_tape_kinds[i].numbers;
+            break;
+        }
+    if (domain == REPLAY_IEEE || domain == REPLAY_CHECKED ||
+        (domain == REPLAY_READER && val_is_number(v))) return 1;
+    return replay_numbers_valid(v, domain == REPLAY_NORMAL);
+}
 
 /* Host-declared kinds (eigs_trace_declare_kind). Small, append-only. */
 static struct { char *name; unsigned kinds; } *g_host_kinds;
@@ -2854,6 +2910,17 @@ int trace_replay_take(const char *fn, Value **out) {
             _exit(3);
 #endif
         }
+    }
+    /* Validate the requested consumer after parsing/kind validation, before
+     * publishing or re-recording. The common parser accepts IEEE words. */
+    if (v && !replay_consumer_numbers_valid(fn ? fn : hit->name, v)) {
+        fprintf(stderr, "trace: %s: non-finite replay value '%s'; refusing to replay\n",
+                fn ? fn : hit->name, hit->value);
+#if EIGENSCRIPT_FREESTANDING
+        abort();
+#else
+        _exit(3);
+#endif
     }
     /* A served value is this run's external input.  When recording and
      * replaying together, copy it into the new tape while the shared tape

@@ -38,7 +38,10 @@ words, not JSON literals: JSON decoding of `1e400` (including a nested
 number) raises `value` in default and strict modes. Source exponent literals
 use binary64 floats, so source `1e400` and default `num of "1e400"` remain
 `inf`; JSON applies its separate finite-number rule. Ordinary non-finite
-buffer reads still raise; use the explicit bits APIs to inspect raw cells.
+buffer reads still raise; use the explicit bits APIs to inspect raw cells. Replay accepts IEEE tape tokens only when the
+recorded source can produce them: finite random, clock, byte and sample
+domains refuse non-finite values by name; normal samples may overflow to
+infinity, while reader sizes retain their exact-integer checks.
 
 A complete, standalone programming language with native observer semantics,
 OS-thread concurrency (`spawn`/`channel`/`thread_join`), a cooperative task
