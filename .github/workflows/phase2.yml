@@ -3,7 +3,7 @@ name: phase2
 # #1758: landed MAP rows, the pre-registered builtin table on matched
 # capability profiles, the C readers and the stdlib differential. The shared
 # phase2_check.py helper derives the complete declared MAP prefix by default.
-# R2.5 adds nonfinite tape/text and JSON overflow refusal after accepted R2.4.
+# R2.6 closes the #1746 double-to-integer residue after accepted R2.5 (Round 2 complete).
 on:
   push:
     branches: [phase2-numbers]
@@ -34,7 +34,7 @@ jobs:
     env:
       DATABASE_URL: postgres://eigs:eigs_test@127.0.0.1:5432/eigs_test
     steps:
-      # Every branch and tag is needed: origin/main, v0.46.0 and the accepted R2.4 baseline.
+      # Every branch and tag is needed: origin/main, v0.46.0 and the accepted R2.5 baseline.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
@@ -54,14 +54,14 @@ jobs:
           export XDG_CACHE_HOME="$RUNNER_TEMP/cache"
           make --no-print-directory observer-anchor
           anchor="$XDG_CACHE_HOME/eigs-oracle-anchor/$(sha256sum tools/observer_oracle/build_anchor.sh | cut -d' ' -f1)/src/eigenscript"
-          mkdir -p "$RUNNER_TEMP/main" "$RUNNER_TEMP/tag-profiles" "$RUNNER_TEMP/r25-baseline"
+          mkdir -p "$RUNNER_TEMP/main" "$RUNNER_TEMP/tag-profiles" "$RUNNER_TEMP/r26-baseline"
           git archive origin/main | tar -x -C "$RUNNER_TEMP/main"
           git archive v0.46.0 | tar -x -C "$RUNNER_TEMP/tag-profiles"
-          git archive 9cebca4d676fb14385f0235554f4eb0eca616255 | tar -x -C "$RUNNER_TEMP/r25-baseline"
+          git archive aed64ce3f0891902831fa74fc428535142883e58 | tar -x -C "$RUNNER_TEMP/r26-baseline"
           make -C "$RUNNER_TEMP/main" > "$RUNNER_TEMP/main-build.log" 2>&1 \
             || { tail -n 50 "$RUNNER_TEMP/main-build.log"; echo "::error::the origin/main build failed"; exit 1; }
-          make -C "$RUNNER_TEMP/r25-baseline" > "$RUNNER_TEMP/r25-baseline-build.log" 2>&1 \
-            || { tail -n 50 "$RUNNER_TEMP/r25-baseline-build.log"; echo "::error::the R2.4 baseline build failed"; exit 1; }
+          make -C "$RUNNER_TEMP/r26-baseline" > "$RUNNER_TEMP/r26-baseline-build.log" 2>&1 \
+            || { tail -n 50 "$RUNNER_TEMP/r26-baseline-build.log"; echo "::error::the R2.5 baseline build failed"; exit 1; }
           # The table uses matching capability builds; a capability-unavailable
           # transcript is a failure, including on the tag (ruling A3).
           for profile in server zlib db; do
@@ -90,7 +90,7 @@ jobs:
           # Restore the release alias before the MAP and library checks.
           PATH="$PWD/tools/cc-guard-bin:$PATH" make build
           bash tools/cc_guard.sh --report
-          bash tools/phase2_ci.sh --through R2.5 --baseline "$RUNNER_TEMP/r25-baseline/src/eigenscript" \
+          bash tools/phase2_ci.sh --through R2.6 --baseline "$RUNNER_TEMP/r26-baseline/src/eigenscript" \
             "$anchor" "$RUNNER_TEMP/main/src/eigenscript" src/eigenscript
 
       - name: R2.3 encoder failure and no-mutation proofs

@@ -2393,6 +2393,19 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
    - `buf_to_pcm16le` with a NaN sample;
    - the `numerical_grad` waiver.
 
+   Landed (R2.6): the population is every double-to-integer conversion the
+   compiler emits (gimple `fix_trunc_expr` over every `src/*.c` TU, all
+   extensions on, and `src/freestanding`: 46 sites) plus the 4 JIT-emitted
+   `cvttsd2si` sites. The `at` line (truncated `8.5` to line 8; undefined for
+   NaN, an infinity or out of range), the `when` ordinal's whole-number test
+   (undefined cast) and the audio generators' sample count (truncated; Q7
+   magnitude rounds) were fixed. `buf_to_pcm16le` (R1.6 `buffer_read_f64`),
+   `net_send` (R1.6d-D1/R1.6f-D2: no valid prefix is sent) and the
+   `numerical_grad_rows`/`_cols` waiver (#1889's entry selector snapshot: the
+   in-loop index reads cannot fail, so the waiver's reason now holds by
+   construction and the waiver ends) were already closed and are R23-1
+   invariants.
+
 ### Round 5 obligations (recorded by earlier rounds)
 
 Round 5 gives the JIT and the leaf evaluator their int fast paths (§4.4).
@@ -2611,7 +2624,7 @@ failing on zero rows:
 | R2.3 | 3 (1 change row, 2 invariant controls) | R23-1: JSON/int public refusals preserve the accepted reader contract; separate encoder return-failure and no-mutation proofs discriminate the writer change |
 | R2.4 | 6 | |
 | R2.5 | 6 | |
-| R2.6 | 1 | |
+| R2.6 | 6 (3 change rows, 3 invariant controls) | R23-1: pcm16 NaN, the `when` ordinal and the `numerical_grad` waiver case were already closed on `aed64ce3`; suite [0fz] (`tests/test_phase2_r26_residue.eigs`) pins pcm16 saturation and no partial result, and under the ASan lanes' float-cast-overflow it is the base-red half of the `when`/`at` casts; `net_send` stays pinned by `gate.N5.net-byte-boundary` |
 | R3 | 5 | `gate.O1.oracle-floor`, `gate.O2.predicate-floors` |
 
 (The counts are the MAP's at this commit; `phase2_check.sh` derives them, and
