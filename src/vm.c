@@ -5994,7 +5994,29 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 vm_push(make_null());
                 DISPATCH();
             }
-        } else line = (int)VAL_F64_RAW(line_v);
+        } else {
+            /* R2.6 (#1746 residue): a float line is integer-valued by N5's
+             * exact rule. Convert only after the exactness and range checks:
+             * `(int)` truncated 8.5 to line 8 and was undefined for NaN, an
+             * infinity or a value outside int. */
+            double line_d = VAL_F64_RAW(line_v);
+            int64_t line_i;
+            if (!num_to_i64_exact(line_d, &line_i)) {
+                rt_error(EK_VALUE, current_line,
+                         "'at' line must be a whole number, got %g", line_d);
+                val_decref(line_v);
+                vm_push(make_null());
+                DISPATCH();
+            }
+            if (line_i < INT_MIN || line_i > INT_MAX) {
+                rt_error(EK_VALUE, current_line, "'at' line %lld is out of range",
+                         (long long)line_i);
+                val_decref(line_v);
+                vm_push(make_null());
+                DISPATCH();
+            }
+            line = (int)line_i;
+        }
         val_decref(line_v);
         Value *result = make_null();
         const char *name = chunk->const_interns[name_idx];
@@ -6028,15 +6050,18 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             DISPATCH();
         }
         /* A fractional ordinal names no assignment. Truncating silently would
-         * answer a question that was not asked. */
-        if (ord_d != (double)(long long)ord_d) {
+         * answer a question that was not asked. R2.6 (#1746 residue): the
+         * exactness test itself must not cast first -- `(long long)` of NaN,
+         * an infinity or a value outside int64 is undefined. */
+        int64_t ord_x = 0;
+        if (!ord_is_int && !num_to_i64_exact(ord_d, &ord_x)) {
             rt_error(EK_VALUE, current_line,
                 "'when' ordinal must be a whole number, got %g", ord_d);
             vm_push(make_null());
             DISPATCH();
         }
 
-        long long ordinal = ord_is_int ? (long long)ord_i : (long long)ord_d;
+        long long ordinal = ord_is_int ? (long long)ord_i : (long long)ord_x;
         EigsSlot w_slot;
         long long total = 0, oldest = 0;
         int r = trace_query_when(kind, name, ordinal, &w_slot, &total, &oldest);

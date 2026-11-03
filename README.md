@@ -41,7 +41,11 @@ use binary64 floats, so source `1e400` and default `num of "1e400"` remain
 buffer reads still raise; use the explicit bits APIs to inspect raw cells. Replay accepts IEEE tape tokens only when the
 recorded source can produce them: finite random, clock, byte and sample
 domains refuse non-finite values by name; normal samples may overflow to
-infinity, while reader sizes retain their exact-integer checks.
+infinity, while reader sizes retain their exact-integer checks. A float `at`
+line or `when` ordinal must be an exact whole number: a fraction, a non-finite
+value or a line outside the C `int` range raises `value` instead of being
+truncated. Audio generators round `duration * rate` half away from zero to get
+their sample count.
 
 A complete, standalone programming language with native observer semantics,
 OS-thread concurrency (`spawn`/`channel`/`thread_join`), a cooperative task

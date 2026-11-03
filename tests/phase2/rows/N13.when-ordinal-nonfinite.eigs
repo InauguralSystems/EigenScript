@@ -5,8 +5,8 @@
 # WITNESS: none
 # OPS:
 # R2.6 (R23-1 invariant): base already raises here, through an undefined
-# (long long) cast of the ordinal; the UBSan proof (tests/phase2/r26_casts.sh)
-# is the base-red half.
+# (long long) cast of the ordinal; UBSan float-cast-overflow (the ASan lanes
+# running suite [0fz]) is the base-red half.
 x is 10
 x is 20
 big is 1e308 * 10

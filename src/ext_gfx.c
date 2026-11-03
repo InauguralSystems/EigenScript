@@ -2103,13 +2103,10 @@ static int audio_generator_sample_count(double duration, int rate,
     int64_t rounded;
     if (!eigs_slot_magnitude(slot_from_f64(samples), INT_MIN, INT_MAX, &rounded, who))
         return 0;
-    /* RULINGS B5: Q7 validates the rounded count here; conversion itself
-     * remains truncation until R2.6's #1746 residue migration. */
-    if (samples <= 0.0) {
-        *count = 0;
-        return 1;
-    }
-    *count = (int)samples;
+    /* Q7 magnitude (R2.6, the #1746 residue): the count is the ROUNDED
+     * product (Q4, half away from zero) the reader just validated, never a
+     * truncating cast of the double. */
+    *count = rounded <= 0 ? 0 : (int)rounded;
     return 1;
 }
 
