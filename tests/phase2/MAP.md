@@ -418,7 +418,7 @@ gates (design §9.2).
 - `N6.neg-zero-literal-dedup` [R1.7] `a is 0.0 / b is -0.0 / print of [a, b]`
   -> `[0.0, -0.0]`
   tag: `[0, 0]`. (The constant pool dedup folds `-0.0` into `+0.0`, chunk.c:196; the row pins that a literal `-0.0` survives a chunk that also holds `0.0`.)
-- `N6.nonfinite` [R2.5] `print of [1.0 / 0, -1.0 / 0, 0.0 / 0, -(0.0 / 0)]`
+- `N6.nonfinite` [R2.5, invariant] `print of [1.0 / 0, -1.0 / 0, 0.0 / 0, -(0.0 / 0)]`
   -> `[inf, -inf, nan, nan]` (never `-nan`)
   tag: raises
 - `ctl.N6.small-ints` (control) `print of [1, 2, 3, -4, 100000]`
@@ -525,14 +525,14 @@ Names, operands and operations follow the decided [#1758 comment 6304880619](htt
 - `N11.constant-1e308-converges` [R2.2] the #1746 row: a binding assigned the literal `1e308` 12 times; `print of (converged of x)`
   -> `true`
   tag: `false`, because saturation reads as diverging (#861; probed on the #1746 baseline)
-- `N11.fn-overflow-inf` [R2.5] `define big(a) as: t is a * 10.0 / return t`, called 60 times with `1e308`; print the last result
-  -> `inf` (an inf result is not a NaN, so the JIT keeps it native)
+- `N11.fn-overflow-inf` [R2.5, invariant] `define big(a) as: t is a * 10.0 / return t`, called 60 times with `1e308`; print the last result
+  -> `inf` (accepted R2.2 status/trap policy bails at magnitude >= inf; stdout was already green on the R2.4 base)
   tag: `1e+308`, the clamp (probed main)
-  shape: F  witness: fn big  ops: MUL CONST
+  shape: F  witness: fn-stop big MUL  ops: MUL CONST
 - `N11.min-max-nan` [R2.2] `x is (1e308 * 10) - (1e308 * 10) / a is min of [1, x] / b is min of [x, 1] / c is max of [x, 1] / print of [a == a, b == b, c == c]`
   -> `[false, false, false]` (NaN propagates in either argument order: Q8, IEEE 754-2019 `minimum`/`maximum`)
   tag: `[true, true, true]`: the clamp turns `x` into 0 (probed main)
-- `N11.sort-total-order` [R2.5] `x is (1e308 * 10) - (1e308 * 10) / inf is 1e308 * 10 / print of (sort of [3, x, 1, inf, 2])`
+- `N11.sort-total-order` [R2.5, invariant] `x is (1e308 * 10) - (1e308 * 10) / inf is 1e308 * 10 / print of (sort of [3, x, 1, inf, 2])`
   -> `[1, 2, 3, inf, nan]` (Q8: IEEE `totalOrder`, NaN after +inf)
   tag: `[0, 1, 2, 3, 1e+308]` (probed main)
   R2.2 / RULING R22-1 orders mixed zero as `-0.0` before `{int 0, +0.0}`;
@@ -639,10 +639,10 @@ output below.
 - `T1.v6-refused` [R1.3] (sh row) `EIGS_REPLAY=tests/phase2/fixtures/v6.tape eigenscript p.eigs`; print the rc and whether stderr names version 6
   -> `rc!=0 names-6`
   tag: rc 0 (the fixture is its own version). **Plant 7's named check.**
-- `T1.twice-inf` [R2.5] (sh row) the same procedure for `x is 1e308 * 10 / y is -x / print of [x, y]`
+- `T1.twice-inf` [R2.5, invariant] (sh row) the same procedure for `x is 1e308 * 10 / y is -x / print of [x, y]`
   -> `tapes identical`, `replay identical`, `A 0 x=inf`, `A 0 y=-inf`
   tag: `A 0 x=1e+308` (the clamp)
-- `T1.twice-nan` [R2.5] (sh row) the same procedure for `x is (1e308 * 10) - (1e308 * 10) / print of (x == x)`
+- `T1.twice-nan` [R2.5, invariant] (sh row) the same procedure for `x is (1e308 * 10) - (1e308 * 10) / print of (x == x)`
   -> `tapes identical`, `replay identical`, `A 0 x=nan`
   tag: `A 0 x=0` (the clamp, then `inf - inf` collapses to 0)
 

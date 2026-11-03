@@ -2,7 +2,7 @@
 # ITEMS: N11
 # EXPECT-RC: 0
 # SHAPE: F
-# WITNESS: fn big
+# WITNESS: fn-stop big MUL
 # OPS: MUL CONST
 # TIERS: off default osr
 define big(a) as:
