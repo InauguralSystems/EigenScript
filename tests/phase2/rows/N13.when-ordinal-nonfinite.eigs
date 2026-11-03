@@ -1,0 +1,17 @@
+# ROW: N13.when-ordinal-nonfinite
+# ITEMS: N13
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+# R2.6 (R23-1 invariant): base already raises here, through an undefined
+# (long long) cast of the ordinal; the UBSan proof (tests/phase2/r26_casts.sh)
+# is the base-red half.
+x is 10
+x is 20
+big is 1e308 * 10
+for k in [2.0, 1.5, big - big, big, 0.0 - big, 1e300]:
+    try:
+        print of ["answered", k, what is x when k]
+    catch e:
+        print of [e.kind, e.message]

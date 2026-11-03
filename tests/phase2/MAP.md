@@ -388,6 +388,12 @@ gates (design §9.2).
   -> `value` twice (byte values: N5, then 0..255; #1758 comment 6174964306)
   tag: no raise, samples `0.009155552842799158` and `4.577776421399579e-05` (probed main)
 - `N5.audio-channel-domain` [R1.6e] R1.6e-D1 (#1922 comment 6355101247): audio_open, audio_capture_open and audio_stream_open reject channels 0, 256, 257, -1 and 1.5 with `value` at the N5/domain reader; 255 and 1 pass that reader (unsupported counts remain SDL's to refuse). Validation precedes SDL/device/tape side effects.
+- `N5.at-line-fraction-raises` [R2.6] `x is 10 / x is 20 / print of [what is x at 8.0, what is x at 9.0, what is x at 8] / {try what is x at L catch}` for L = 8.5, 9.9 (x is set on lines 8 and 9 of the row file)
+  -> `[10, 20, 10]`, then `value` with `'at' line must be a whole number, got 8.5` and `... got 9.9`
+  tag: `10` and `20`: `(int)` truncates 8.5 to line 8 and 9.9 to line 9 (probed `aed64ce3`), a silent wrong answer
+- `N5.audio-count-rounds` [R2.6] Q7 magnitude: `len of` each generator (`audio_sine`, `audio_saw`, `audio_square`, `audio_noise`, `audio_sweep`) for `dur = n / 44100`, n = 0.4, 0.5, 2.4, 2.5, 2.6, no device open
+  -> counts `0, 1, 2, 3, 3` for every generator (dur * rate rounded half away from zero, Q4)
+  tag: `0, 0, 2, 2, 2`: the count truncates (probed `aed64ce3`; the comment there deferred this conversion to R2.6)
 - `gate.N5.gfx-byte-boundary` [R1.6e] `tests/phase2/gfx_byte_boundary.c` through `tools/phase2_readers.sh`: R1.6d-D1 pre-registration for buffer_read_byte's gfx_fb and ppu_render_frame callers. Both reject stored lenient NaN and every infinity with `value`; strict first NaN preserves INVALID/diagnostic before a later infinity. Q1 rejects 1.5 and 256, while integral float 255 succeeds. Actual client calls and rendered/framebuffer sentinels prove that rejection at the first palette byte or first LCDC register stops before the sink changes; the PPU retains its existing progressive writes after valid reads.
 - `gate.N5.q7-readers` [R1.6e] `tests/phase2/q7_readers.c` (through the amalgamation, no SDL): `eigs_geom_shape` clips `RECT [-3e9, 0, 6e9, 10]` on a 640x480 drawable area to `[0, 0, 640, 10]` (saturating each argument would give half of that), clips a `LINE` with Liang-Barsky, bounds a `CIRCLE` of radius 3e9 to the visible rows; `eigs_bounded_arg` clamps 300 to 255; `eigs_magnitude_arg` raises `value` on 3e12 for a C `int`
   -> every case as stated
@@ -590,9 +596,18 @@ output below.
 - `N13.int-conversion-refuses` [R2.3, invariant] `x is 1e308 * 10 / {try print of (substr of ["abc", x, 1]) catch}`
   -> `value`
   tag: no raise (read: `(int)` of a clamped 1e308)
-- `N13.pcm16-refuses-nan` [R2.6] `b is buffer of 1 / b[0] is (1e308 * 10) - (1e308 * 10) / {try o is buf_to_pcm16le of [b, 0, 1] catch}`, printing `e.kind`
-  -> `value` (the quantizer refuses a NaN sample: the #1746 residue)
-  tag: no raise, bytes `0, 0` (probed main)
+- `N13.pcm16-refuses-nan` [R2.6, invariant] `b is buffer of 1 / buf_set_bits of [b, 0, 9221120237041090560] / {try o is buf_to_pcm16le of [b, 0, 1] catch}`, printing `e.kind`. R2.6 restatement: the original sketch stored the NaN with `b[0] is ...`, which R1.6z's buffer store refuses before the quantizer runs; N12 bits (R24-2) are the path that reaches it.
+  -> `value` (the quantizer's reader refuses a NaN sample: the #1746 residue)
+  tag: no raise, bytes `0, 0` (probed main). Base `aed64ce3` already raises (R1.6 `buffer_read_f64`), so this is an R23-1 invariant; saturation and the no-partial-result half are in `tests/test_phase2_r26_residue.eigs` ([0fz]).
+- `N13.at-line-nonfinite-raises` [R2.6] `x is 10 / x is 20 / {try what is x at L catch}` for L = NaN, inf, -inf, 1e300, 3000000000.0, then the int 3000000000
+  -> `value` for each: `'at' line must be a whole number, got nan|inf|-inf|1e+300`, then `'at' line 3000000000 is out of range` twice (the float matches the int arm)
+  tag: `null` for every float (read: `(int)` of the double, undefined for NaN and out of range; UBSan names vm.c on `aed64ce3`)
+- `N13.when-ordinal-nonfinite` [R2.6, invariant] `{try what is x when K catch}` for K = 2.0, 1.5, NaN, inf, -inf, 1e300
+  -> `20`, then `value` with `'when' ordinal must be a whole number, got <K>` for each other K
+  tag: identical output; the conversion behind it was an undefined `(long long)` cast, which UBSan's float-cast-overflow reports on `aed64ce3` (the ASan lanes run [0fz])
+- `N13.grad-index-snapshot` [R2.6, invariant] the #1746 waiver case: a `numerical_grad_rows`/`_cols` loss callback writes NaN into its selector list
+  -> both gradients complete over the entry selectors (8 loss calls each); the NaN is never read
+  tag: base `aed64ce3` already snapshots selectors (#1889), so the waiver's reason ("the in-loop reads cannot fail") now holds by construction
 
 ### N14
 - `N14.json-build-int-exact` [R1.3] `json_build` emits an SMI and both int64 endpoints as exact JSON digits

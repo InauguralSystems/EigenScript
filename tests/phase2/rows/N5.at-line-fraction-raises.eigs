@@ -1,0 +1,15 @@
+# ROW: N5.at-line-fraction-raises
+# ITEMS: N5
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+# R2.6: an `at` line is integer-valued (N5); 8.5 names no line (x is set on lines 8 and 9).
+x is 10
+x is 20
+print of [what is x at 8.0, what is x at 9.0, what is x at 8]
+for ln in [8.5, 9.9]:
+    try:
+        print of ["answered", ln, what is x at ln]
+    catch e:
+        print of [ln, e.kind, e.message]
