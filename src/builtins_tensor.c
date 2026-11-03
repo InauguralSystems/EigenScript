@@ -246,9 +246,9 @@ static int tensor_dims(Value *v, int *rows, int *cols) {
 static double* tensor_to_flat(Value *v, int *rows, int *cols,
                               const char *who) {
     int ndim = tensor_dims(v, rows, cols);
-    /* Historically every non-number slot became 0.0 below. Strict mode is
-     * the default, so reject that lossy conversion before allocating; the
-     * explicit EIGS_STRICT=0 path deliberately retains the old stand-in.
+    /* Historically every non-number slot became 0.0 below. Explicit strict
+     * rejects that lossy conversion before allocating; default/strict-off
+     * retains the old element stand-in. Structural row errors are separate.
      * Check even when the first element or row gives no usable shape. */
     /* #1637: a bool element is refused in every strict mode. */
 #define FLAT_BAD(t) (((t) != VAL_FLOAT && (t) != VAL_INT) && (g_strict || (t) == VAL_BOOL))
@@ -261,7 +261,9 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols,
             for (int r = 0; r < v->data.list.count && !bad; r++) {
                 /* list_get_ref is NULL for a number: test the type first. */
                 ValType rt = list_elem_type(v, r);
-                if (rt != VAL_LIST) { bad = g_strict || rt == VAL_BOOL; if (bad) break; continue; }
+                /* A scalar where a row belongs is a structural error,
+                 * independent of the arithmetic/legacy coercion mode. */
+                if (rt != VAL_LIST) { bad = 1; break; }
                 Value *row = list_get_ref(v, r);
                 for (int c = 0; c < row->data.list.count; c++)
                     if (FLAT_BAD(list_elem_type(row, c))) { bad = 1; break; }
@@ -418,6 +420,13 @@ static double op_pow(double a, double b) {
 /* #1093: materialise a buffer as the nested-list tensor of the same shape, so
  * a MIXED buffer/list pair falls back to the list path (and yields a list). */
 static Value* buf_as_tensor_list(Value *b) {
+    /* This is an arithmetic consumer, not generic tensor transport. Read
+     * the source through N13 before materializing: pure float constructors
+     * must not be relied on for the first-NaN diagnostic or early stop. */
+    for (int i = 0; i < b->data.buffer.count; ++i) {
+        (void)buffer_read_f64(b, i);
+        if (g_has_error) return make_null();
+    }
     if (b->data.buffer.rows > 0)
         return flat_to_tensor_2d(b->data.buffer.data,
                                  b->data.buffer.rows, b->data.buffer.cols);
