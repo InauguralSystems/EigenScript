@@ -5,6 +5,9 @@ Kinds come from source-bound witnesses, never from legacy text ("3" can be a
 float). Numeric position means line and ordinal plus identical separating
 bytes; character offsets may move when a rendering grows. The anchor is the
 last pre-N6 commit, including earlier accepted frozen-bar amendments.
+Later NEW builtins are admitted only by a separate exact-path overlay with
+accepted-anchor absence and current source/branch hashes. They never enter
+the historic N6 re-render population or its kind/value comparison.
 """
 import argparse
 import hashlib
@@ -35,6 +38,9 @@ NEAREST_DECISION = 'https://github.com/InauguralSystems/EigenScript/issues/1888#
 FROUND_PATH = BAR + 'fround.branch'
 R22_ANCHOR = '3a1c5e84dfb3f705f6c9033fe59606f2689a8011'
 FROUND_DECISION = 'docs/design/phase2-numbers.md: fround result guard until R2.2; Round 2 item 2'
+R24_ADDITION_ANCHOR = 'f09632d01e982d74cbe009db7f292c28afa8aa7e'
+R24_ADDITIONS = {BAR + name + '.branch' for name in (
+    'f64_bits', 'f64_from_bits', 'buf_get_bits', 'buf_set_bits')}
 
 
 def require(ok, message):
@@ -103,6 +109,30 @@ def retired_paths(root, data):
         require(len(waiver) == 3 and waiver[:2] == ['DELETED', ruling] and bool(waiver[2]),
                 path + ': retirement requires an explicit DELETED ' + ruling + ' amendment')
     return set(retired)
+
+
+def added_paths(root, data):
+    """Only four NEW R2.4 paths, absent at its accepted start, may be added."""
+    additions = data.get('additions', {})
+    require(isinstance(additions, dict) and set(additions) == R24_ADDITIONS,
+            'addition population must be exactly the four R2.4-N12 paths')
+    prior = set(git(root, 'ls-tree', '-r', '--name-only', R24_ADDITION_ANCHOR,
+                    '--', BAR).decode().splitlines())
+    amendments = amendments_for(root, additions)
+    for path, entry in additions.items():
+        require(isinstance(entry, dict) and entry.get('ruling') == 'R2.4-N12' and
+                entry.get('anchor') == R24_ADDITION_ANCHOR,
+                path + ': addition needs R2.4-N12 and its accepted start anchor')
+        source = path.removesuffix('.branch') + '.eigs'
+        for current_path, key in ((path, 'branch_sha256'), (source, 'source_sha256')):
+            require(current_path not in prior,
+                    current_path + ': addition already existed at the accepted R2.4 start')
+            require(sha((root / current_path).read_bytes()) == entry.get(key),
+                    current_path + ': addition SHA-256 differs from reviewed bytes')
+        waiver = amendments.get(path, [])
+        require(len(waiver) == 3 and waiver[:2] == [entry['branch_sha256'], 'R2.4-N12'] and bool(waiver[2]),
+                path + ': addition requires an exact SHA-256 R2.4-N12 amendment and reason')
+    return set(additions)
 
 
 def apply_semantic_amendment(root, data, frozen):
@@ -301,6 +331,9 @@ def load(root, metadata):
         require(bool(profiles) and set(profiles) <= set(PROFILES), path + ': invalid profile population')
     paths = git(root, 'ls-tree', '-r', '--name-only', BASE, '--', BAR).decode().splitlines()
     require(retired <= set(paths), 'retirement path was not in the frozen pre-N6 population')
+    additions = added_paths(root, data)
+    require(not (additions & (set(paths) | set(population) | set(files))),
+            'addition path overlaps the historic frozen or derived re-render population')
     branch_paths = [path for path in paths if path.endswith('.branch') and path not in retired]
     source_paths = [path.removesuffix('.branch') + '.eigs' for path in files]
     anchored = anchor_files(root, branch_paths + source_paths)
@@ -380,7 +413,7 @@ def check(root, metadata, candidate_dir=None, baseline_binary=None, binary=None)
         actual = {path: (candidate_dir / Path(path).name).read_bytes() for path in data['files']}
     else:
         actual = {p.relative_to(root).as_posix(): p.read_bytes() for p in (root / BAR).rglob('*.branch')}
-        require(set(actual) == set(frozen), 'frozen .branch file population changed')
+        require(set(actual) == set(frozen) | set(data['additions']), 'frozen .branch file population changed')
         require(all(actual[p] == frozen[p] for p in frozen if p not in data['files']),
                 'a frozen file outside the derived population changed')
     changed, tokens = [], 0

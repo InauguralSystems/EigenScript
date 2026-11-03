@@ -4207,7 +4207,7 @@
       ]
     }
   },
-  "population_sha256_scope": "Original four-profile R1.7-D6 derivation before explicit retirements; active population excludes exactly the two S10-D2 paths and six SYNC11-model-retirement paths. The original derivation digest is unchanged.",
+  "population_sha256_scope": "Original four-profile R1.7-D6 derivation before explicit retirements; active population excludes exactly the two S10-D2 paths and six SYNC11-model-retirement paths. The original derivation digest is unchanged. The four R2.4-N12 additions are validated separately and never enter this historic derivation.",
   "retirements": {
     "tests/phase2/builtins/builtins/proc_read_buf.branch": {
       "ruling": "S10-D2",
@@ -4256,6 +4256,32 @@
       "anchor": "5b3b64db40cdd50c42c8ad3e9c913bb5d36a9e1a",
       "branch_sha256": "3c8484817b38a96f35a6b27281ecc30637f4ad1db2dd887c81abcc0b8b031733",
       "source_sha256": "931ab975eb3397d3449112d36c2e858d417a8c5546f08306604df0d4e472e1d5"
+    }
+  },
+  "additions": {
+    "tests/phase2/builtins/builtins/f64_bits.branch": {
+      "ruling": "R2.4-N12",
+      "anchor": "f09632d01e982d74cbe009db7f292c28afa8aa7e",
+      "branch_sha256": "de1384f57f409e91588f168943271bd09f6d13689fa5c22532c3d3a267513cf1",
+      "source_sha256": "61dd06bfed9ae6c3c167e7a3d0299be480610aeae6771ea30e6492dd4e4c0518"
+    },
+    "tests/phase2/builtins/builtins/f64_from_bits.branch": {
+      "ruling": "R2.4-N12",
+      "anchor": "f09632d01e982d74cbe009db7f292c28afa8aa7e",
+      "branch_sha256": "bdfc9a3868961d06f0e28e6579b24370a8a3b08bc9be2e3200437d1eeb52802e",
+      "source_sha256": "1c1d0f0dbfa4d535f4f673563050a29b18fd1bc7aa26053c02b18d36605bbaba"
+    },
+    "tests/phase2/builtins/builtins/buf_get_bits.branch": {
+      "ruling": "R2.4-N12",
+      "anchor": "f09632d01e982d74cbe009db7f292c28afa8aa7e",
+      "branch_sha256": "8c67df6923f553873ed2985c45e3957747752e1de83f3ade61d6fb3a4b8c8c0c",
+      "source_sha256": "59ac7458937fb03be4c570785a51fd90b18f3cff1921b7aa44b3669f29f6a594"
+    },
+    "tests/phase2/builtins/builtins/buf_set_bits.branch": {
+      "ruling": "R2.4-N12",
+      "anchor": "f09632d01e982d74cbe009db7f292c28afa8aa7e",
+      "branch_sha256": "c962bc3c4a4445fed6c4932fdfdf93d7643929ee9120965ac7671b7f9449f6a0",
+      "source_sha256": "b548131a2a0d52405e7416a4396ecf906fd5f0ee25a3cac5ac9c771f7cbe33c0"
     }
   },
   "semantic_amendments": {

@@ -635,6 +635,8 @@ acos|print of (acos of "x")
 asin|print of (asin of "x")
 atan|print of (atan of "x")
 atan2|print of (atan2 of ["y", 1])
+buf_get_bits|print of (buf_get_bits of ["x", 0])|buf_get_bits: first argument must be a buffer
+buf_set_bits|print of (buf_set_bits of ["x", 0, 0])|buf_set_bits: first argument must be a buffer
 buf_len|print of (buf_len of "x")
 ceil|print of (ceil of "x")
 char_at|print of (char_at of [42, 0])
@@ -645,6 +647,8 @@ cos|print of (cos of "hello")
 dot|print of (dot of [1, 2])
 ends_with|print of (ends_with of [42, "x"])
 f64_from_bytes|print of (f64_from_bytes of "x")
+f64_bits|print of (f64_bits of "x")
+f64_from_bits|print of (f64_from_bits of "x")
 floor|print of (floor of "x")
 gather|print of (gather of ["hello", [0]])
 has_key|print of (has_key of [42, "k"])
@@ -814,6 +818,10 @@ PROBES="${PROBES//@TMP@/$TMP}"
 # N10 removed inf from the successful coercion pins; it is a grammar refusal above.
 # label|program — must exit 0 under EIGS_STRICT=1
 PINS=$(cat <<'EOF'
+f64_bits keeps negative zero bits|print of (f64_bits of -0.0)
+f64_from_bits canonicalizes a tag-spelling NaN|print of (f64_bits of (f64_from_bits of 0xFFFB000000001000))
+buf_get_bits reads a finite cell without strict coercion|print of (buf_get_bits of [buffer of 1, 0])
+buf_set_bits returns null for a signed payload|print of (type of (buf_set_bits of [buffer of 1, 0, -9223372036854775808]))
 task_alive of an unknown id is 0, not an error|print of (task_alive of 999)
 list_contains that finds nothing is 0|print of (list_contains of [[1, 2], 9])
 ends_with with a suffix longer than the string is 0|print of (ends_with of ["ab", "abc"])

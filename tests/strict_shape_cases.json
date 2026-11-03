@@ -716,6 +716,20 @@
     "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
   },
   {
+    "name": "buf_get_bits",
+    "args": [
+      "a",
+      "1"
+    ],
+    "setup": "define shape_bits_snapshot(b) as:\n    return [buf_get_bits of [b, 0], buf_get_bits of [b, 1]]\na is buf_from_list of ([1.0, 2.0])",
+    "valid_assert": "shape_result == 4611686018427387904 and (num_type of shape_result) == \"int\"",
+    "observe": "print of shape_result\nprint of (shape_bits_snapshot of a)",
+    "unchanged": "assert of [(shape_bits_snapshot of a) == [4607182418800017408, 4611686018427387904], \"raw buffer bits changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "R2.4/N12: finite raw-bit read returns an exact int; surplus rejection preserves every input bit."
+  },
+  {
     "name": "buf_mix",
     "args": [
       "b",
@@ -792,6 +806,21 @@
     "cleanup": "",
     "requirements": [],
     "claim": "Finite valid operands and one inert surplus element; successful result plus post-call state compared in fresh processes."
+  },
+  {
+    "name": "buf_set_bits",
+    "args": [
+      "a",
+      "1",
+      "4609434218613702656"
+    ],
+    "setup": "define shape_bits_snapshot(b) as:\n    return [buf_get_bits of [b, 0], buf_get_bits of [b, 1]]\na is buf_from_list of ([1.0, 2.0])",
+    "valid_assert": "shape_result == null and (buf_get_bits of [a, 1]) == 4609434218613702656",
+    "observe": "print of shape_result\nprint of (shape_bits_snapshot of a)",
+    "unchanged": "assert of [(shape_bits_snapshot of a) == [4607182418800017408, 4611686018427387904], \"raw buffer bits changed on rejection\"]",
+    "cleanup": "",
+    "requirements": [],
+    "claim": "R2.4/N12 and R24-1: finite raw-bit store returns null; surplus rejection occurs before any buffer mutation."
   },
   {
     "name": "buf_to_pcm16le",

@@ -102,7 +102,7 @@ VOCAB = {
     'dict_value_set_num': 'PRODUCE',
     'list_rewrite_num': 'PRODUCE',
     'dict_value_rewrite_num': 'PRODUCE',
-    'eigs_math_result': 'GUARD', # R2.2 status/trap only, no value substitution
+    'eigs_math_result': 'GUARD', # R2.2 status/trap; R2.4 canonical NaN through the single writer
     'eigs_math_result_named': 'GUARD',
     'eigs_number_read': 'READ', # exact kind + IEEE payload for numeric consumers
     'vm_number_f64': 'READ', # R2.2 arithmetic-only Q2 int promotion / unchanged IEEE float
@@ -195,6 +195,8 @@ CATEGORY_NAMES = {
 # changes with them. (Derived check: a new such function must be added to
 # VOCAB or here, with a reason.)
 WRAPPERS = {
+    'eigs_math_nonfinite': 'R2.4 cold result adapter: slot_from_f64 and its typed SLOT_F64_RAW extraction are the counted canonicalization sites; flags/traps stay on this existing path',
+    'embed_f64': 'R2.4 public C double adapter: slot_from_f64 and its typed SLOT_F64_RAW extraction are the sites; every public double crossing calls this adapter',
     'compute_entropy_impl': 'observer: returns an entropy, not the number; its payload read is the site',
     'ent_child_slot': 'observer: returns a child entropy, not the number; its payload read is the site',
     'observer_entropy_now': 'observer: writes an entropy, not the number; its payload read is the site',

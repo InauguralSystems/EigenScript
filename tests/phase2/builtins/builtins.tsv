@@ -41,12 +41,14 @@ buf_fill	builtins_buf.c	float-producing	-	-	d	-	release	-	-	yes	yes
 buf_from_list	builtins_buf.c	float-producing	-	-	d	-	release	-	-	yes	yes
 buf_from_pcm16le	builtins_buf.c	int-requiring	-	-	d	-	release	-	-	yes	yes
 buf_get	builtins_buf.c	int-requiring	-	-	d	-	release	-	-	yes	yes
+buf_get_bits	builtins_buf.c	int-requiring	-	-	d	-	release	-	-	yes	yes
 buf_len	builtins_buf.c	int-preserving	-	-	d	-	release	-	-	yes	yes
 buf_mix	builtins_buf.c	float-producing	-	-	d	-	release	-	-	yes	yes
 buf_peak	builtins_buf.c	float-producing	-	-	d	-	release	-	-	yes	yes
 buf_resample_linear	builtins_buf.c	float-producing	-	-	d	-	release	-	-	yes	yes
 buf_scale_range	builtins_buf.c	float-producing	-	-	d	-	release	-	-	yes	yes
 buf_set	builtins_buf.c	int-requiring	-	-	d	-	release	-	-	yes	yes
+buf_set_bits	builtins_buf.c	int-requiring	-	-	d	-	release	-	-	yes	yes
 buf_to_pcm16le	builtins_buf.c	other	-	bounded	d	-	release	-	-	yes	yes
 buffer	builtins_buf.c	int-requiring	-	-	d	-	release	-	-	yes	yes
 ceil	builtins.c	int-preserving	LOSS	-	b	-	release	-	-	yes	yes
@@ -67,6 +69,8 @@ dot	builtins.c	float-producing	-	-	c	-	release	-	-	yes	yes
 exec_capture	builtins_host.c	other	-	magnitude	c	-	release	-	-	yes	yes
 exit	builtins.c	int-requiring	-	-	c	-	release	-	-	yes	yes
 exp	builtins_tensor.c	float-producing	-	-	d	-	release	-	-	yes	yes
+f64_bits	builtins_buf.c	int-preserving	-	-	d	-	release	-	-	yes	yes
+f64_from_bits	builtins_buf.c	int-requiring	-	-	d	-	release	-	-	yes	yes
 f64_from_bytes	builtins_buf.c	int-requiring	-	-	d	-	release	-	-	yes	yes
 f64_to_bytes	builtins_buf.c	other	-	-	d	-	release	-	-	yes	yes
 fill	builtins.c	int-requiring	-	-	c	-	release	-	-	yes	yes

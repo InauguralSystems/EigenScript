@@ -41,12 +41,14 @@ buf_fill	-	release
 buf_from_list	-	release
 buf_from_pcm16le	-	release
 buf_get	-	release
+buf_get_bits	-	release
 buf_len	-	release
 buf_mix	-	release
 buf_peak	-	release
 buf_resample_linear	-	release
 buf_scale_range	-	release
 buf_set	-	release
+buf_set_bits	-	release
 buf_to_pcm16le	-	release
 buffer	-	release
 ceil	-	release
@@ -67,6 +69,8 @@ dot	-	release
 exec_capture	-	release
 exit	-	release
 exp	-	release
+f64_bits	-	release
+f64_from_bits	-	release
 f64_from_bytes	-	release
 f64_to_bytes	-	release
 fill	-	release

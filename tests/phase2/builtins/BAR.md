@@ -32,13 +32,17 @@ chooses; `net_port`'s port line and its siblings print a predicate instead.
 **Sync #5, R1.6-S1/S2.** Main's `rm` deletion removes no table row: the
 number-reading bar never included it. R1.6-S2 adds main's `set_exit_code`
 as an int-requiring release-profile row in round c, closed by main #1909.
-After sync11's explicit model/corpus retirement, the current population is 303 rows and 304 cases, with round counts b 46,
-c 75, d 48, e 38, f 19 and g 77 (b/f include R1.6b-D3's `http_post` correction).
-The new `.branch` is an authorized addition recorded by SHA-256 under
-R1.6-S2 in `../builtins_changes.md`; existing frozen expectations stay fixed.
+After sync11's explicit model/corpus retirement, the population was 303 rows
+and 304 cases. R2.4 adds four N12 representation builtins, giving 307 rows
+and 308 cases, with round counts b 46, c 75, d 52, e 38, f 19 and g 77
+(b/f include R1.6b-D3's `http_post` correction; all four R2.4 bodies use the
+existing builtins_buf.c round-d bucket).
+The `set_exit_code.branch` addition is recorded by SHA-256 under R1.6-S2
+in `../builtins_changes.md`; the four R2.4 additions use that same exact-hash
+mechanism with their own authority. Existing frozen expectations stay fixed.
 
 ## Files
-- `builtins.tsv`, 303 rows: `builtin file class loss q7 round closed_in
+- `builtins.tsv`, 307 rows: `builtin file class loss q7 round closed_in
   profile hook stdin changes_vs_pre changes_vs_tag`. `make_table.py` writes
   it. Rows come from the §6 table, checked both ways against the inventory's
   `## Builtins` list, field by field. Both files and `src/` are extracted with
@@ -47,8 +51,9 @@ R1.6-S2 in `../builtins_changes.md`; existing frozen expectations stay fixed.
   `1fd4422c`), so the population is pinned to the ruled commit, not to a
   checkout's state; `EIGS_TREE` overrides it for the plants. `file` is the
   `src/*.c` file that defines the inventory's C function. `round` follows the
-  plan's rule, and the counts are checked against b 46, c 75, d 48, e 38,
-  f 19 and g 77 (R1.6b-D3, R1.6-S2, R1.6g-D1, S10-D2 and sync11 retirement). The other columns:
+  plan's rule, and the counts are checked against b 46, c 75, d 52, e 38,
+  f 19 and g 77 (R1.6b-D3, R1.6-S2, R1.6g-D1, S10-D2, sync11 retirement
+  and the four NEW R2.4/N12 rows). The other columns:
   - `closed_in` (ruling A2) and `profile` (A3) come from `rowmeta.tsv`;
   - `hook` (A4) and `stdin` (A5) list the hooks and the stdin fixtures of the
     row's cases, in case order. `-` means none, and stdin `-` is `/dev/null`;
@@ -60,7 +65,7 @@ R1.6-S2 in `../builtins_changes.md`; existing frozen expectations stay fixed.
     original one. It is recorded as an observation and never checked, because
     the tag has no `num_type`, and `set_exit_code` also postdates the tag.
 - `rowmeta.tsv`: `builtin closed_in profile`, one line per table row.
-- `cases.tsv`: `case builtin hook stdin`, 304 cases. A row's primary case is
+- `cases.tsv`: `case builtin hook stdin`, 308 cases. A row's primary case is
   `builtins/<b>`. The surviving second case is `gfx_poll.empty` (B3).
   S10-D2 explicitly retires both `proc_read_buf` cases (A5/C10).
 - `builtins/<case>.eigs` is the probe. `<case>.branch` is the pre-registered
@@ -145,7 +150,7 @@ a binary built with the profile, derived from the design:
 | db | `make server-db`, plus `DATABASE_URL` naming a live PostgreSQL | `db_execute`, `db_query_json`, `db_query_value` (b) |
 | zlib | `make zlib` | `inflate` (d) |
 
-Current profile counts (sync11): release 283, server 16, db 3, zlib 1.
+Current profile counts (R2.4): release 287, server 16, db 3, zlib 1.
 
 R1.6a records these rows on matched builds: the same profile built at
 `4ac31e67` and at v0.46.0, passed as `PRE_BIN_<P>` and `TAG_BIN_<P>` (`P` is
@@ -1090,8 +1095,83 @@ The builder brief explicitly retires main's archived extension under #2178,
 #2201 and #2202, including its six numeric table rows. All 24 probe/record
 files are deleted with six `DELETED` frozen amendments in
 `../builtins_changes.md`; surviving cases and expected bytes are unchanged.
-The table now has 303 rows and 304 cases (b 46, c 75, d 48, e 38, f 19, g 77), with
+That retirement left 303 rows and 304 cases (b 46, c 75, d 48, e 38, f 19, g 77), with
 release 283, server 16, db 3, zlib 1 profiles. The server witness drops its removed
 capability arm and still requires HTTP and NET. The existing plant set has no
 model/corpus dependent plant, so its IDs and population remain unchanged.
 Earlier import/coverage tables remain explicitly historical observations.
+
+## R2.4 N12 representation addition
+
+The R2.4 brief authorizes four NEW builtins and their probes; RULING R24-1
+settles the buffer pair's names, subject-first argument order and null setter
+return. The new primary cases are `f64_bits`, `f64_from_bits`, `buf_get_bits`
+and `buf_set_bits`. No previous `.branch` expectation is rewritten for this
+addition. Each new `.branch` must be listed with its exact SHA-256 and
+R2.4/N12 authority in `../builtins_changes.md`'s frozen-amendment table.
+
+The new `.branch` transcripts were derived and preregistered before any
+candidate observations. Their numeric oracle is independent Python stdlib
+IEEE packing (`struct.unpack('>q', struct.pack('>d', x))[0]`) plus N12's
+explicit canonical NaN rule, N5 and R24-1. The implementation already
+existed when these transcripts were preregistered; no binary output supplied
+an expectation. `.pre` and `.tag` are separately observed on the approved
+reference binaries, as in the original bar.
+
+The NEW reference observations were subsequently recorded on release builds
+of `4ac31e67b4694eea96f2f7151ecf8f9ee62f686d` (`.pre`) and v0.46.0 commit
+`4a3a5c1941568e9bc562c7c8221cff22dc8ba697` (`.tag`). Both builds completed
+with zero warnings. Each of the eight records has the caught
+`undefined_name` answers and ends `rc=0`; each new expectation differs from
+both references. The exact preregistered hashes were admitted only after
+those records were inspected. These observations establish the baseline
+delta; candidate comparison remains a separate run.
+
+R1.7-D6's independent N6 proof retains its historic re-render population.
+Its `r17_float_text.json` additions overlay admits exactly these four NEW
+R2.4 paths, requires both each source and each `.branch` to be absent at the
+accepted `f09632d01e982d74cbe009db7f292c28afa8aa7e` start, and binds their
+current bytes by SHA-256. Each branch also needs the same exact digest,
+`R2.4-N12` ruling and nonempty reason in the frozen-amendment table. The
+checker requires the actual branch set to equal the historic frozen set
+after approved retirements, union those four validated additions; it still
+checks every historical N6 kind, bit, rendering and unchanged-file rule.
+The additions do not enter the N6 derivation, its original digest, or its
+67-row active re-render population.
+
+The probes pin signed int64 representation, canonical float NaNs and raw
+buffer payload fidelity, including negative zero. `f64_bits` returns an int
+and follows `f64_to_bytes`' Q2 promotion for int input. Bit-pattern arguments
+and indices follow N5; the three int-requiring probes identify fractional
+refusal and a successful integral-float conversion. The buffer setter's
+result is null, and failed conversions leave the previous raw bits intact.
+The four rows are release-profile cases with no observation hook or stdin.
+
+All four C definitions live in `builtins_buf.c`, so the existing file-based
+round assignment adds them to bucket d. The live table is therefore 307 rows
+and 308 cases, with b 46, c 75, d 52, e 38, f 19, g 77; release rows become
+287 while server 16, db 3 and zlib 1 stay fixed. These are additions to the
+existing membership checks, not exemptions from them. Existing LOSS/Q7
+membership and every older frozen path remain unchanged.
+
+The arithmetic derivation is:
+
+| input | IEEE hex | expected signed int64 |
+|---|---|---|
+| 1.0 | `3FF0000000000000` | 4607182418800017408 |
+| 1.5 | `3FF8000000000000` | 4609434218613702656 |
+| -0.0 | `8000000000000000` | -9223372036854775808 |
+| Q2 float conversion of 9007199254740993 | `4340000000000000` | 4845873199050653696 |
+| +infinity | `7FF0000000000000` | 9218868437227405312 |
+| canonical NaN (N12) | `7FF8000000000000` | 9221120237041090560 |
+| raw buffer payload (N12) | `7FF0000000000001` | 9218868437227405313 |
+
+`f64_from_bits`' integral-float pattern is exactly representable and gives
+1.0 of kind float. Both negative NaN patterns used by the scalar probes
+canonicalize to the table's NaN; self-comparison stays false. Non-number
+operands raise `type_mismatch`. N5 fractional, out-of-int64 and non-finite
+numeric operands raise `value`; integer indices outside the cell range raise
+`index_range`. All failures are caught, hence each transcript ends `rc=0`.
+The setter's final `unchanged` line proves every rejected call left its last
+successful negative-zero write intact. Ordinary non-finite buffer reads
+retain R24-2's frozen N13 refusal; these raw-bit probes do not amend it.

@@ -367,7 +367,10 @@ def main():
         for kind, v in (("pre", vs_pre), ("tag", vs_tag)):
             tally[(r, kind, v)] = tally.get((r, kind, v), 0) + 1
 
-    want = {"b": 46, "c": 75, "d": 48, "e": 38, "f": 19, "g": 77}  # S10-D2 retires proc_read_buf; sync11 retires build_corpus (c) and five model rows (d).
+    # R2.4/N12 adds f64_bits, f64_from_bits, buf_get_bits and buf_set_bits.
+    # All four new definitions live in builtins_buf.c, the existing d bucket;
+    # no historical expectation or LOSS member is removed by this addition.
+    want = {"b": 46, "c": 75, "d": 52, "e": 38, "f": 19, "g": 77}  # S10-D2 and sync11 retirements remain; R2.4 adds four d rows.
     if counts != want: fail.append("round counts %s, the plan says %s" % (counts, want))
     if not rows or len(rows) != len(sec6): fail.append("examined=%d table=%d" % (len(rows), len(sec6)))
     if guard["guarded"] != guard["yes"] + guard["closed_in"] + guard["pending-profile"] + guard["vacuous"]:

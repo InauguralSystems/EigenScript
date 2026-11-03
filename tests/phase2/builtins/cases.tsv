@@ -41,12 +41,14 @@ buf_fill	buf_fill	-	-
 buf_from_list	buf_from_list	-	-
 buf_from_pcm16le	buf_from_pcm16le	-	-
 buf_get	buf_get	-	-
+buf_get_bits	buf_get_bits	-	-
 buf_len	buf_len	-	-
 buf_mix	buf_mix	-	-
 buf_peak	buf_peak	-	-
 buf_resample_linear	buf_resample_linear	-	-
 buf_scale_range	buf_scale_range	-	-
 buf_set	buf_set	-	-
+buf_set_bits	buf_set_bits	-	-
 buf_to_pcm16le	buf_to_pcm16le	-	-
 buffer	buffer	-	-
 ceil	ceil	-	-
@@ -67,6 +69,8 @@ dot	dot	-	-
 exec_capture	exec_capture	-	-
 exit	exit	-	-
 exp	exp	-	-
+f64_bits	f64_bits	-	-
+f64_from_bits	f64_from_bits	-	-
 f64_from_bytes	f64_from_bytes	-	-
 f64_to_bytes	f64_to_bytes	-	-
 fill	fill	-	-

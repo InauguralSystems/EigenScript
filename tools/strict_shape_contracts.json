@@ -420,6 +420,18 @@
     "disposition": "guarded"
   },
   {
+    "function": "builtin_buf_get_bits",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "R2.4/N12 and R24-1 consume buffer and index exactly like buf_get; trailing operands have no role.",
+    "public_names": [
+      "buf_get_bits"
+    ],
+    "disposition": "guarded"
+  },
+  {
     "function": "builtin_buf_mix",
     "file": "src/builtins_buf.c",
     "category": "fixed",
@@ -476,6 +488,18 @@
     "reason": "Consumes the first three tuple operands; trailing operands have no role.",
     "public_names": [
       "buf_set"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_buf_set_bits",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "R2.4/N12 and R24-1 consume buffer, index and bit pattern exactly like buf_set; reject surplus before mutation.",
+    "public_names": [
+      "buf_set_bits"
     ],
     "disposition": "guarded"
   },

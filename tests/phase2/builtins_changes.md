@@ -391,6 +391,10 @@ Historical import records above are already included in the pin.
 | `tests/phase2/builtins/builtins/eigen_model_load.branch` | `DELETED` | SYNC11-model-retirement | Explicit main #2178/#2201/#2202 retirement authorized by sync11 brief; prior bank SHA-256 `af5bda3ccb7070cadf2f84dd304a31808d461d92603b4b2e247f0234c06fc2d6`. |
 | `tests/phase2/builtins/builtins/model_load_weights.branch` | `DELETED` | SYNC11-model-retirement | Explicit main #2178/#2201/#2202 retirement authorized by sync11 brief; prior bank SHA-256 `af5bda3ccb7070cadf2f84dd304a31808d461d92603b4b2e247f0234c06fc2d6`. |
 | `tests/phase2/builtins/builtins/native_train_step_builtin.branch` | `DELETED` | SYNC11-model-retirement | Explicit main #2178/#2201/#2202 retirement authorized by sync11 brief; prior bank SHA-256 `3c8484817b38a96f35a6b27281ecc30637f4ad1db2dd887c81abcc0b8b031733`. |
+| `tests/phase2/builtins/builtins/f64_bits.branch` | `de1384f57f409e91588f168943271bd09f6d13689fa5c22532c3d3a267513cf1` | R2.4-N12 | NEW representation builtin; N12 signed IEEE bits and canonical NaN, Q2 promotion, independent Python struct arithmetic; preregistered before candidate observations |
+| `tests/phase2/builtins/builtins/f64_from_bits.branch` | `bdfc9a3868961d06f0e28e6579b24370a8a3b08bc9be2e3200437d1eeb52802e` | R2.4-N12 | NEW representation builtin; N12 canonical float reconstruction and N5 exact bit-pattern conversion; preregistered before candidate observations |
+| `tests/phase2/builtins/builtins/buf_get_bits.branch` | `8c67df6923f553873ed2985c45e3957747752e1de83f3ade61d6fb3a4b8c8c0c` | R2.4-N12 | NEW raw buffer bits getter; R24-1 validation, independent IEEE values and N12 payload fidelity; preregistered before candidate observations |
+| `tests/phase2/builtins/builtins/buf_set_bits.branch` | `c962bc3c4a4445fed6c4932fdfdf93d7643929ee9120965ac7671b7f9449f6a0` | R2.4-N12 | NEW raw buffer bits setter; R24-1 null return/validation, exact payload writes and N5 conversion; preregistered before candidate observations |
 
 ## R1.6b bar amendments
 
@@ -810,3 +814,55 @@ result kind and rc=0. Its four transcript lines become `inf`, `nan`, `inf`,
 boundary; exact integer `// 0` still raises. This is a MAP expectation
 amendment under the recorded round boundary, not a new frozen builtin case.
 Hosted MAP tier runs provide the tip verdict.
+
+## R2.4/N12 — four new representation builtin rows
+
+The R2.4 brief explicitly adds `f64_bits`, `f64_from_bits`, `buf_get_bits`
+and `buf_set_bits`; RULING R24-1 names the buffer pair and preserves the
+`buf_set` family's null return. Following the R1.6g-D1 NEW-row pattern,
+these are new case and expectation paths, not amendments to existing frozen
+outputs. Each new `.branch` is admitted only by an exact SHA-256 entry in
+the frozen-amendment table above, citing R2.4/N12 and R24-1.
+
+The new `.branch` expectations were derived and preregistered before any
+candidate observations, independently of the MAP programs. The implementation
+already existed at preregistration; no candidate output supplied an expected
+byte. Python stdlib IEEE packing independently supplies the finite and
+infinity bit values, while the N12 design supplies the representation answers:
+signed int64 bits, one canonical float NaN, raw buffer payload fidelity and
+negative-zero preservation. N5 supplies exact integral-float conversion,
+fraction/range/non-finite numeric refusal, and non-number type refusal.
+R24-1 supplies validation consistent with `buf_get`/`buf_set` and the null
+setter result. `.pre` and `.tag` must be recorded on the actual approved
+binaries; the preregistered `.branch` is then compared with focused candidate
+observations. The full numeric and failure derivations are in BAR.md's R2.4
+section. No old probe, transcript or historical LOSS
+classification is changed by adding these four rows.
+
+The four NEW `.pre` and `.tag` records were then observed on actual release
+builds of R1.5 `4ac31e67b4694eea96f2f7151ecf8f9ee62f686d` and v0.46.0
+`4a3a5c1941568e9bc562c7c8221cff22dc8ba697`, respectively. Both builds
+completed with rc=0 and zero warnings. All four cases on each reference
+produce the caught `undefined_name` lines and finish `rc=0`; every new
+`.branch` therefore differs from both observations. The exact preregistered
+hashes above were admitted only after inspecting those real records, with
+no expected-byte changes and no candidate verdict inferred from them.
+
+Section 6, the generated inventory, rowmeta, primary cases and builtins.tsv
+retain their existing both-ways membership checks. All four actual bodies
+are in `builtins_buf.c`, so the existing file-based round rule adds four d
+rows (48 to 52); the total is 307 rows and 308 cases. This explicit addition
+does not relax the vacuity or closure checks and does not move BAR_PIN.
+
+The independent R1.7-D6 proof checker also has an explicit additions overlay
+in `r17_float_text.json`. Its allowed set is exactly the four NEW R2.4
+branches. `phase2_float_amend.py` proves neither the source nor the branch
+existed at accepted R2.4 start `f09632d01e982d74cbe009db7f292c28afa8aa7e`,
+binds current source/branch bytes by SHA-256, requires the exact branch
+digest/ruling/reason in the frozen-amendment table, and rejects any overlap
+with the historical frozen or derived N6 population. Actual membership must
+equal the historic frozen set after retirements plus these validated paths.
+The historic 67 active N6 rows, original population digest, old hashes,
+render/kind/value comparisons and semantic/diagnostic overlays stay fixed.
+The owner runs the one-time positive and fault controls; no new permanent
+self-test layer is added.

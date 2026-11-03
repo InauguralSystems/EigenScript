@@ -1,0 +1,10 @@
+["one", "undefined_name"]
+["negative-zero", "undefined_name"]
+["int-promotes", "undefined_name"]
+["nan", "undefined_name"]
+["infinity", "undefined_name"]
+["non-number", "undefined_name"]
+["bool", "undefined_name"]
+["null", "undefined_name"]
+["list", "undefined_name"]
+rc=0
