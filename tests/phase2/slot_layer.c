@@ -378,8 +378,8 @@ CELL(obs_value) { r_v(b, n, obs_slot_value(s)); }
 #define EXP(name) static void e_##name(int k, char *b, size_t n)
 #define ABORT(who) snprintf(b, n, "A:%s", who)
 static void e_bool(char *b, size_t n, int k) { snprintf(b, n, "v:%s", k == K_TRUE ? "true" : "false"); }
-EXP(store_slot) {   /* both normalisers: a double is guarded (NaN -> 0), the rest kept */
-    snprintf(b, n, "b:%016llx", (unsigned long long)(k == K_NAN ? 0 : KB[k]));
+EXP(store_slot) {   /* R2.2 N11/N12: transport retains canonical NaN; all other kinds kept */
+    snprintf(b, n, "b:%016llx", (unsigned long long)KB[k]);
 }
 EXP(ent_child) {
     switch (kclass(k)) {
@@ -471,7 +471,7 @@ EXP(is_heap) { snprintf(b, n, "i:%d", k == K_HEAP); }
 EXP(is_null) { snprintf(b, n, "i:%d", k == K_NULL); }
 EXP(slot_box) {
     switch (kclass(k)) {
-        case C_F64: snprintf(b, n, "v:num:%016llx", (unsigned long long)(k == K_NAN ? 0 : KB[k])); break;
+        case C_F64: snprintf(b, n, "v:num:%016llx", (unsigned long long)KB[k]); break;
         case C_NULL: snprintf(b, n, "v:null"); break;
         case C_BOOL: e_bool(b, n, k); break;
         case C_HEAP: snprintf(b, n, "v:H"); break;
@@ -496,7 +496,7 @@ EXP(slot_view) {
 }
 EXP(to_value) {
     switch (kclass(k)) {
-        case C_F64: snprintf(b, n, "v:num:%016llx", (unsigned long long)(k == K_NAN ? 0 : KB[k])); break;
+        case C_F64: snprintf(b, n, "v:num:%016llx", (unsigned long long)KB[k]); break;
         case C_NULL: snprintf(b, n, "v:null"); break;
         case C_BOOL: e_bool(b, n, k); break;
         case C_HEAP: snprintf(b, n, "v:H"); break;
@@ -513,7 +513,7 @@ EXP(observable) {
 }
 EXP(unwrap) {
     switch (kclass(k)) {
-        case C_F64: snprintf(b, n, "v:num:%016llx", (unsigned long long)(k == K_NAN ? 0 : KB[k])); break;
+        case C_F64: snprintf(b, n, "v:num:%016llx", (unsigned long long)KB[k]); break;
         case C_NULL: snprintf(b, n, "v:null"); break;
         case C_BOOL: e_bool(b, n, k); break;
         case C_HEAP: snprintf(b, n, "v:H"); break;
@@ -1015,8 +1015,8 @@ static int part_g(EigsState *st) {
 int main(void) {
     EigsState *st = eigs_open();
     if (!st) { printf("slot-layer-test: FAIL eigs_open\n"); return 1; }
-    /* Part B reads the canonical NaN back through make_float, whose guard
-     * raises under strict mode; the test pins the soft read instead. */
+    /* R2.2 N11/N12: Part B expects canonical NaN bits through every
+     * transport. Strict arithmetic is independent of these pure writers. */
     eigs_state_set_strict(st, 0);
     g_str = make_str("x");
     static const uint64_t kinds[N_KINDS] = {

@@ -10,7 +10,6 @@
 # A double bridge would lose int digits in the exact readers; each raw payload
 # read is behind its own kind test. Exceptions still need exact per-function
 # token counts and reasons; they do not exempt ordinary argument coercion.
-builtins_tensor.c|builtin_tensor_matmul|1|writes the NaN-boxed null sentinel into a result buffer cell (EIGS_STRICT=0 path); a write, no Value is read
 builtins.c|eigs_json_encode_value|1|JSON encoder: case VAL_INT writes the int's exact digits (#1758 R1.2a)
 container.h|dict_value_get_return|1|builtin-return read boxes an immediate only after slot_is_f64
 container.h|eigs_container_slot|2|Value-to-slot encoder reads a box only after type == VAL_FLOAT (then num_guards it) or type == VAL_INT (an SMI in range, design 2.1)

@@ -75,7 +75,7 @@ try:
     print of (gather of [nans, [0]])[0]
 catch e:
     print of e.kind
-# R1.6d-D1 point 3 / N13: lenient scalar refusals leave INVALID clear.
+# R2.2 N11: matmul setup sets INVALID; N13 reader refusals preserve it.
 print of (math_flags of null).invalid
 
 # Buffer indices require finite exact data before any integer conversion.
@@ -93,5 +93,5 @@ try:
 catch e:
     print of e.kind
 print of target[0]
-# R1.6d-D1 point 3 / N13: lenient scalar refusals leave INVALID clear.
+# R2.2 N11: matmul setup sets INVALID; N13 reader refusals preserve it.
 print of (math_flags of null).invalid

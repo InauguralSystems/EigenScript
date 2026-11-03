@@ -78,7 +78,7 @@ print of f\"{buf_len of b} {b[0]} {b[2]}\"" \
 
 # 5. Guard-like max_bytes mistakes raise type_mismatch in strict mode; the
 # hard-ceiling policy remains a value error in every mode.
-run_case "max_bytes 0 raises type mismatch" \
+EIGS_STRICT=1 run_case "max_bytes 0 raises type mismatch" \
 "caught is \"none\"
 try:
     b is read_bytes_buf of [\"$SMALL\", 0]
@@ -96,7 +96,7 @@ catch e:
 print of caught" \
 "value"
 
-run_case "non-numeric max_bytes raises type mismatch" \
+EIGS_STRICT=1 run_case "non-numeric max_bytes raises type mismatch" \
 "caught is \"none\"
 try:
     b is read_bytes_buf of [\"$SMALL\", \"lots\"]

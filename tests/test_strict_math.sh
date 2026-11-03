@@ -343,10 +343,10 @@ rm -f "/tmp/eigs_strict_nan_$$.tensor"
 # any non-finite result, so the raise comes from the same num_guard either way.
 run_jitoff "SM61 strict pow raises with the JIT off too" 1 1 "pow: result is not a number" \
 'print of (pow of [0 - 8, 0.5])'
-# #1361: both directions of the default with the JIT off as well.
-run_jitoff "SM61b default (unset) pow raises with the JIT off" unset 1 "pow: result is not a number" \
+# R2.2 / N11: unset and explicit 0 retain NaN with the JIT off as well.
+run_jitoff "SM61b default (unset) pow -> NaN with the JIT off" unset 0 "nan" \
 'print of (pow of [0 - 8, 0.5])'
-run_jitoff "SM61c opt-out pow -> 0 with the JIT off" 0 0 "0" \
+run_jitoff "SM61c non-strict pow -> NaN with the JIT off" 0 0 "nan" \
 'print of (pow of [0 - 8, 0.5])'
 
 # --- #971 Phase D: the -1 / falsy sentinel families (#1008) and the --sweep list

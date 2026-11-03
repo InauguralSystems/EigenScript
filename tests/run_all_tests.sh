@@ -1344,14 +1344,7 @@ fi
 echo ""
 
 echo "[Call Semantics] test_call_semantics.eigs"
-CS_OUTPUT=$(./eigenscript ../tests/test_call_semantics.eigs 2>&1)
-TOTAL=$((TOTAL + 1))
-if echo "$CS_OUTPUT" | grep -q "All tests passed"; then
-    echo "  PASS: all call-semantics/aliasing checks"; PASS=$((PASS + 1))
-else
-    echo "  FAIL: call-semantics"; FAIL=$((FAIL + 1))
-    echo "$CS_OUTPUT" | grep -iE "ASSERT|error" | head -5
-fi
+check_eigs_suite "all call-semantics/aliasing checks" test_call_semantics.eigs "All tests passed"
 echo ""
 
 echo "[STEM Accuracy] test_stem_accuracy.eigs"

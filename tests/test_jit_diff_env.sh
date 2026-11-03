@@ -10,6 +10,7 @@ expected='test_audio.eigs
 test_buffer_nonfinite_read.eigs
 test_builtin_contracts.eigs
 test_builtin_indirect.eigs
+test_call_semantics.eigs
 test_coalesce_legacy.eigs
 test_file_io.eigs
 test_file_rename.eigs
@@ -40,4 +41,4 @@ grep -q 'suite-env completed=\$n_suite_env' "$TESTS_DIR/../tools/jit_diff.sh" ||
     echo "FAIL: jit_diff does not report the suite-environment completion population"
     exit 1
 }
-echo "PASS: jit_diff and the suite share 17 per-program environments; fail-soft program reached its final marker"
+echo "PASS: jit_diff and the suite share 18 per-program environments; fail-soft program reached its final marker"

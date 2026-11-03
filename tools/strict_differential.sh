@@ -740,6 +740,10 @@ json_path|print of (json_path of ["{\"a\": 1e", "a"])|json_path: invalid JSON at
 pow|print of (pow of [0 - 8, 0.5])|pow: result is not a number
 matmul|local m1 is buffer of [1, 2]\nm1[0] is 1e200\nm1[1] is 1e200\nlocal m2 is buffer of [2, 1]\nm2[0] is 1e200\nm2[1] is 1e200\nlocal r is matmul of [m1, m2]\nprint of (r[0] > 1e308)|matmul: non-finite arithmetic result
 fround|print of (fround of 1e39)|fround: non-finite arithmetic result
+sqrt|print of (sqrt of -1)|sqrt: argument out of domain
+log|print of (log of 0)|log: argument out of domain
+exp|print of (exp of 999999)|exp: non-finite arithmetic result
+negative|local p is buf_from_list of ([1e308])\nsgd_update of [p, p, 1e308]\nsgd_update of [p, p, 1.0]\nprint of (negative of p)|negative: result is not a number
 min|print of (min of [])|min: expected at least one number
 min|print of (min of ([]))|min: expected at least one number
 max|print of (max of [])|max: expected at least one number
@@ -1422,9 +1426,9 @@ if [ -f "$TMP/shapes/rows" ]; then
         fi
         on="$(shape_capture "$NEW" 1 "$TMP/shapes/$who/$shape_subject/1/strict/case.eigs" "$cap")"
         if ! shape_done "$on"; then shape_abort "$who" "strict surplus" "$on"; break; fi
-        default="$(shape_capture "$NEW" - "$TMP/shapes/$who/$shape_subject/default/strict/case.eigs" "$cap")"
-        if ! shape_done "$default"; then shape_abort "$who" "default surplus" "$default"; break; fi
-        shape_done "$on" && [ "$on" = "$default" ] || row_good=0
+        default="$(shape_capture "$NEW" - "$TMP/shapes/$who/$shape_subject/default/surplus/case.eigs" "$cap")"
+        if ! shape_receipt_ok "$default"; then shape_abort "$who" "default surplus" "$default"; break; fi
+        shape_done "$on" && [ "$soft" = "$default" ] || row_good=0
         if [ -n "$shape_absence_output" ] && [ "$on" != $'0\nshape-complete' ]; then row_good=0; fi
         if [ "$row_good" = 1 ]; then
             if [ -n "$shape_absence_output" ]; then
@@ -1435,7 +1439,7 @@ if [ -f "$TMP/shapes/rows" ]; then
             fi
         else
             shape_fail=$((shape_fail + 1)); rc=1
-            echo "  FAIL shape: $who (strict/default=$(clip "$on" 160); soft=$(clip "$soft" 160))"
+            echo "  FAIL shape: $who (strict=$(clip "$on" 160); default=$(clip "$default" 160); soft=$(clip "$soft" 160))"
             # Stop at a real unexpected failure; do not run later resource rows.
             break
         fi

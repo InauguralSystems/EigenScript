@@ -121,13 +121,13 @@ EIGS
 # ---- three phases, one second apart --------------------------------------------
 eig "$W/rec"  "$W/noise.eigs"  EIGS_TRACE="$W/noise.tape"
 eig "$W/mrec" "$W/multi.eigs"  EIGS_TRACE="$W/multi.tape"
-eig "$W/jrec" "$W/reject.eigs" EIGS_TRACE="$W/reject.tape"
+eig "$W/jrec" "$W/reject.eigs" EIGS_STRICT=1 EIGS_TRACE="$W/reject.tape"
 eig "$W/frec" "$W/refuse.eigs" EIGS_TRACE="$W/refuse.tape"
 eig "$W/s42a" "$W/seed42.eigs"
 sleep 1
 eig "$W/rep1"  "$W/noise.eigs"  EIGS_REPLAY="$W/noise.tape"
 eig "$W/mrep1" "$W/multi.eigs"  EIGS_REPLAY="$W/multi.tape"
-eig "$W/jrep"  "$W/reject.eigs" EIGS_REPLAY="$W/reject.tape"
+eig "$W/jrep"  "$W/reject.eigs" EIGS_STRICT=1 EIGS_REPLAY="$W/reject.tape"
 eig "$W/frep"  "$W/refuse.eigs" EIGS_REPLAY="$W/refuse.tape"
 sleep 1
 eig "$W/rep2"  "$W/noise.eigs"  EIGS_REPLAY="$W/noise.tape"

@@ -56,8 +56,9 @@ overflow) is recoverable with `try`/`catch`. If uncaught, it is **fatal**:
 execution stops, the process exits non-zero, and a stack trace (every
 frame from the failure to the top level, innermost first) is printed to
 stderr after the error line. Programs never continue past an
-unrecovered error or report success on failure. Warnings (e.g.
-division by zero, which yields 0) are not errors and do not stop execution.
+unrecovered error or report success on failure. IEEE float division by zero
+produces signed infinity or NaN by default (R2.2); `EIGS_STRICT=1` traps the
+non-finite result. Exact integer `// 0` and `% 0` remain value errors.
 
 **What `catch` binds (#406):** a **built-in** runtime error binds a small
 dict `{kind, message, file, line}` — `kind` is drawn from a closed vocabulary

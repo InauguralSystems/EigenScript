@@ -331,10 +331,10 @@ def is_asan_build():
 # ---------------------------------------------------------------------------
 POPULATION = {
     # file                       fences paired fragment nocheck value-comments
-    "README.md":                 (17, 15, 2, 0, 0), # Phase2 union; #2295 turns both value-claim fragments into paired output
+    "README.md":                 (18, 16, 2, 0, 0), # Phase2 union; #2295 turns both value-claim fragments into paired output
     "docs/llms.txt":             (23, 20, 2, 1, 0), # Phase2 + main lexical scope/implicit n/named predicates/catch guard
-    "docs/SPEC.md":              (99, 95, 1, 3, 0), # Phase2 + main evaluation-order example (#2172)
-    "docs/COMPARISON.md":        (29, 28, 1, 0, 0), # R1.6g: +1 paired Rust-derived N9 example
+    "docs/SPEC.md":              (101, 97, 1, 3, 0), # Phase2 + main evaluation-order example (#2172)
+    "docs/COMPARISON.md":        (30, 29, 1, 0, 0), # R1.6g: +1 paired Rust-derived N9 example
     "docs/CONCURRENCY.md":       (  9,    9,     0,      0,      0),   # #1879: +1 paired (thread handle crosses a channel)
     "docs/STDLIB.md":            ( 16,   11,     5,      0,      0),
     "docs/SYNTAX.md":            ( 35,   24,    11,      0,      0),

@@ -1,4 +1,4 @@
-Floating arithmetic now retains IEEE NaNs and infinities instead of clamping
+- Floating arithmetic now retains IEEE NaNs and infinities instead of clamping
 to 1e308 or replacing NaN with zero. Float division and modulo by zero, sqrt
 of a negative number, and log of zero produce IEEE results by default;
 EIGS_STRICT=1 opts into non-finite result errors. Integer zero-division still

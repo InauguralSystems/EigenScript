@@ -324,7 +324,8 @@ if [ "$restricted" -eq 1 ]; then
   fi
 elif [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
   [ "$n" -ge 100 ] || { echo "jit_diff: only $n JIT programs found -- the scan is vacuous"; exit 1; }
-  [ "$n_suite_env" -eq 16 ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=16"; exit 1; }
+  expected_suite_env=$(awk '$0 !~ /^[[:space:]]*#/ && NF { n++ } END { print n+0 }' "$ROOT/tests/suite_program_env.txt")
+  [ "$n_suite_env" -eq "$expected_suite_env" ] || { echo "jit_diff: FAIL: suite-environment programs completed=$n_suite_env, expected=$expected_suite_env"; exit 1; }
   [ "$n_obs" -ge 500 ] || { echo "jit_diff: FAIL: OBS examined=$n_obs denied=$n_deny (floor 500)"; exit 1; }
 fi
 echo "jit_diff: OBS examined=$n_obs denied=$n_deny timeout-both=$n_timeout"

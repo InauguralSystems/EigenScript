@@ -836,10 +836,11 @@ def every_mode(through, out):
 def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
     res = {}
     gates = list(MECHANICAL.get(through, ()))
-    # R2.1 writer safety and the preceding-round corpus remain live when
-    # R2.2 makes non-finite results reachable; use the explicit round baseline.
+    # Writer safety stays live when R2.2 makes non-finite values reachable.
+    # The zero-difference corpus oracle belongs to behavior-preserving
+    # mechanical rounds above; semantic rounds use their declared MAP rows.
     if ROUNDS.index(through) > ROUNDS.index('R2.1'):
-        gates.extend(('slot-test', 'corpus-diff'))
+        gates.append('slot-test')
     # A landed gate stays live for every subsequent --through, including
     # rounds with ordinary MAP rows and no other mechanical dispatch.
     if ROUNDS.index(through) >= ROUNDS.index('R1.6e'):

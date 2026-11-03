@@ -76,7 +76,7 @@ jobs:
           # serially; the ordinary build below restores the release -O2 flags.
           for optimization in 0 1; do
             PATH="$PWD/tools/cc-guard-bin:$PATH" make build \
-              CFLAGS="-Wall -Wextra -Werror -Werror=switch -Werror=comment -Werror=misleading-indentation -O$optimization -fstack-protector-strong -fPIE"
+              CFLAGS="-Wall -Wextra -Werror \$(WERROR_FLAGS) -O$optimization -fstack-protector-strong -fPIE"
           done
           for profile in server zlib db; do
             target="$profile"
