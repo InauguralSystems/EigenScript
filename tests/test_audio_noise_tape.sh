@@ -8,6 +8,10 @@
 # records its samples as `N audio_noise=[...]` records of at most 2048 samples
 # each; the first record shorter than a full chunk ends the call.
 #
+# The sample count is dur * rate ROUNDED half away from zero (Phase 2 R2.6,
+# Q7 magnitude; #1746 residue): 0.0002 s at 44100 Hz is 8.82, so 9 samples.
+# Before R2.6 the count truncated to 8.
+#
 # time(NULL) has one-second resolution, so a clock-seeded rand() replayed in the
 # same second as its recording repeats itself by accident (measured: a 4410-
 # sample record/replay pair run back to back passed on the unfixed builtin).
@@ -22,7 +26,7 @@
 #        an exact multiple of the record size (4096) and an empty call replay
 #        byte-identically on both tiers, with EIGS_REPLAY_STRICT=1 on the second
 #        replay, and a `random` call between them stays aligned
-#   AN05 that tape's record sizes are exactly 2048 2048 314 / 2048 2048 0 / 0 / 8
+#   AN05 that tape's record sizes are exactly 2048 2048 314 / 2048 2048 0 / 0 / 9
 #   AN06 seed_random pins audio_noise across processes
 #   AN07 a different seed moves it (AN06 is not vacuous)
 #   AN08 after the same seed, sample i is ((random * 2) - 1) * amplitude for the
@@ -140,9 +144,9 @@ eig "$W/rep_ed" "$W/noise.eigs" EIGS_REPLAY="$W/edited.tape"
 
 # ---- the issue's program ----------------------------------------------------------
 REC=$(first_line "$W/rec")
-if [ "$(tail -n 1 "$W/rec")" = "rc=0" ] && [ "$(n_items "$REC")" = 8 ] &&
+if [ "$(tail -n 1 "$W/rec")" = "rc=0" ] && [ "$(n_items "$REC")" = 9 ] &&
    cmp -s "$W/rec" "$W/rep1" && cmp -s "$W/rec" "$W/rep2"; then
-    ok "AN01 record, replay, replay (one second apart): byte-identical, 8 samples"
+    ok "AN01 record, replay, replay (one second apart): byte-identical, 9 samples"
 else
     fail "AN01 replay does not reproduce the recording" \
          "rec='$(one_line "$W/rec")' rep1='$(one_line "$W/rep1")' rep2='$(one_line "$W/rep2")'"
@@ -164,9 +168,9 @@ else
 fi
 
 # ---- longer than one record -----------------------------------------------------
-if [ "$(first_line "$W/mrec")" = "[4410, 4096, 0, 8]" ] && [ "$(tail -n 1 "$W/mrec")" = "rc=0" ] &&
+if [ "$(first_line "$W/mrec")" = "[4410, 4096, 0, 9]" ] && [ "$(tail -n 1 "$W/mrec")" = "rc=0" ] &&
    cmp -s "$W/mrec" "$W/mrep1" && cmp -s "$W/mrec" "$W/mrep2"; then
-    ok "AN04 4410, 4096 and 0 samples replay byte-identically, both tiers, strict; random stays aligned"
+    ok "AN04 4410, 4096, 0 and 9 samples replay byte-identically, both tiers, strict; random stays aligned"
 else
     fail "AN04 a multi-record call does not replay" \
          "rec='$(first_line "$W/mrec") $(tail -n 1 "$W/mrec")' rep1='$(one_line "$W/mrep1")' rep2='$(one_line "$W/mrep2")'"
@@ -178,8 +182,8 @@ SIZES=$(awk '/^N [0-9][0-9]* audio_noise=/ {
                  printf "%s%d", sep, n; sep = " "
              }
              END { print "" }' "$W/multi.tape")
-if [ "$SIZES" = "2048 2048 314 2048 2048 0 0 8" ] && ! grep -q 'truncated' "$W/multi.tape"; then
-    ok "AN05 record sizes 2048 2048 314 / 2048 2048 0 / 0 / 8, none truncated"
+if [ "$SIZES" = "2048 2048 314 2048 2048 0 0 9" ] && ! grep -q 'truncated' "$W/multi.tape"; then
+    ok "AN05 record sizes 2048 2048 314 / 2048 2048 0 / 0 / 9, none truncated"
 else
     fail "AN05 the samples are not chunked as recorded" \
          "sizes='$SIZES' truncated=$(grep -c 'truncated' "$W/multi.tape")"
@@ -187,19 +191,19 @@ fi
 
 # ---- the shared stream ----------------------------------------------------------
 S42=$(first_line "$W/s42a")
-if [ "$(n_items "$S42")" = 8 ] && cmp -s "$W/s42a" "$W/s42b"; then
+if [ "$(n_items "$S42")" = 9 ] && cmp -s "$W/s42a" "$W/s42b"; then
     ok "AN06 seed_random pins audio_noise across processes"
 else
     fail "AN06 seed_random does not pin audio_noise" "first='$S42' second='$(first_line "$W/s42b")'"
 fi
-if [ "$(n_items "$S42")" = 8 ] && [ "$(first_line "$W/s43")" != "$(first_line "$W/s42b")" ]; then
+if [ "$(n_items "$S42")" = 9 ] && [ "$(first_line "$W/s43")" != "$(first_line "$W/s42b")" ]; then
     ok "AN07 a different seed moves audio_noise (AN06 is not vacuous)"
 else
     fail "AN07 audio_noise ignores the seed" "seed 42='$(first_line "$W/s42b")' seed 43='$(first_line "$W/s43")'"
 fi
 
 NOISE=$(sed -n '1p' "$W/stream"); EXPECT=$(sed -n '2p' "$W/stream")
-if [ "$(n_items "$NOISE")" = 8 ] && [ "$NOISE" = "$EXPECT" ] && [ "$(tail -n 1 "$W/stream")" = "rc=0" ]; then
+if [ "$(n_items "$NOISE")" = 9 ] && [ "$NOISE" = "$EXPECT" ] && [ "$(tail -n 1 "$W/stream")" = "rc=0" ]; then
     ok "AN08 after the same seed, the samples are ((random * 2) - 1) * amp draw for draw"
 else
     fail "AN08 audio_noise does not draw from random's stream" "noise='$NOISE' expect='$EXPECT'"
@@ -219,7 +223,7 @@ fi
 # of the 31 s call would take the valid call's record and the valid call would
 # find the tape empty: its replay raises, so the transcripts differ.
 N_REF=$(grep -c '^N [0-9][0-9]* audio_noise=' "$W/refuse.tape")
-if [ "$(first_line "$W/frec")" = "refused" ] && [ "$(n_items "$(sed -n '2p' "$W/frec")")" = 8 ] &&
+if [ "$(first_line "$W/frec")" = "refused" ] && [ "$(n_items "$(sed -n '2p' "$W/frec")")" = 9 ] &&
    [ "$(tail -n 1 "$W/frec")" = "rc=0" ] && [ "$N_REF" = 1 ] && cmp -s "$W/frec" "$W/frep"; then
     ok "AN10 a refused duration raises, consumes no record; capture == replay"
 else
