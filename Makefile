@@ -313,6 +313,15 @@ build/$(NUM_GUARD_VALUE_VARIANT)/test_num_guard_value: tests/test_num_guard_valu
 num-guard-value-test: build/$(NUM_GUARD_VALUE_VARIANT)/test_num_guard_value
 	@echo "IEEE result/status test built: $<"
 
+# R23-1: encoder failure-return is observable below the public VM error.
+WRITER_JSON_VARIANT ?= release
+WRITER_JSON_OBJ := $(filter-out build/$(WRITER_JSON_VARIANT)/main.o,$(OBJ_$(WRITER_JSON_VARIANT)))
+build/$(WRITER_JSON_VARIANT)/test_writer_json: tests/phase2/writer_json.c $(WRITER_JSON_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(WRITER_JSON_VARIANT)) -I$(SRC_DIR) -o $@ $< $(WRITER_JSON_OBJ) $(LIBS_$(WRITER_JSON_VARIANT))
+.PHONY: writer-json-test
+writer-json-test: build/$(WRITER_JSON_VARIANT)/test_writer_json
+	@echo "JSON writer failure test built: $<"
+
 # Focused lifetime regression for sandbox descriptor interns (#964). Link the
 # public embedding/runtime surface without CLI-only translation units so the
 # C test can inspect the internal thread-local intern accounting directly.

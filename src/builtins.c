@@ -945,8 +945,15 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
              * %d fast path stopped at 2^31 and handed everything above it
              * to %.15g, so integer IDs between 2^31 and 2^53 came back as a
              * different number. */
+            /* N13: serialization owns refusal and reports failure, rather
+             * than formatting a finite-reader stand-in after an error. */
+            double n = VAL_F64_RAW(v);
+            if (!isfinite(n)) {
+                rt_error(EK_VALUE, 0, "eigs_json_encode_value: expected a finite number");
+                return -1;
+            }
             char nb[32];
-            eigs_num_text(nb, sizeof(nb), eigs_float_arg(v, __func__));
+            eigs_num_text(nb, sizeof(nb), n);
             strbuf_append(out, nb);
             break;
         }
@@ -1028,10 +1035,20 @@ static int eigs_json_encode_value(Value *v, strbuf *out, int depth) {
          * ValType is a build error here (-Werror=switch) instead of a silent
          * null. These are the types it covered, unchanged: null, fn and
          * builtin (also caught above), and a buffer. */
+        case VAL_BUFFER:
+            /* Keep the established finite-buffer JSON mapping to null, but
+             * apply N13 to its stored doubles inside this encoder too. */
+            for (int i = 0; i < v->data.buffer.count; i++) {
+                if (!isfinite(v->data.buffer.data[i])) {
+                    rt_error(EK_VALUE, 0, "eigs_json_encode_value: expected a finite number");
+                    return -1;
+                }
+            }
+            strbuf_append(out, "null");
+            break;
         case VAL_NULL:
         case VAL_FN:
         case VAL_BUILTIN:
-        case VAL_BUFFER:
             strbuf_append(out, "null");
             break;
     }
@@ -1051,7 +1068,7 @@ Value* builtin_json_encode(Value *arg) {
     strbuf_init(&out);
     if (eigs_json_encode_value(arg, &out, 0) != 0) {
         strbuf_free(&out);
-        json_encode_depth_error("json_encode");
+        if (!g_has_error) json_encode_depth_error("json_encode");
         return make_null();
     }
     /* #965: the strbuf payload is already charged (reserve growth + finish
@@ -1060,14 +1077,15 @@ Value* builtin_json_encode(Value *arg) {
     return result;
 }
 
-/* Returns NULL when the value is too deep to encode, having already raised.
- * Callers must check — the C-string entry point has no other way to say no. */
+/* Returns NULL on any encoding refusal, with the error already set.
+ * Callers must stop before mutation; partial output is never returned. */
 char* eigs_json_encode(Value *v) {
+    if (g_has_error) return NULL;
     strbuf out;
     strbuf_init(&out);
     if (eigs_json_encode_value(v, &out, 0) != 0) {
         strbuf_free(&out);
-        json_encode_depth_error("json_encode");
+        if (!g_has_error) json_encode_depth_error("json_encode");
         return NULL;
     }
     char *result = xstrdup(out.data);
@@ -1531,7 +1549,11 @@ Value* builtin_json_build(Value *arg) {
         if (val_is_number(val)) {
             char nb[32];                              /* #875: the shared rule */
             if (val->type == VAL_INT) eigs_int_text(nb, sizeof(nb), VAL_I64_RAW(val));
-            else eigs_num_text(nb, sizeof(nb), eigs_float_arg(val, "json_build"));
+            else {
+                double n = eigs_float_arg(val, "json_build");
+                if (g_has_error) { strbuf_free(&out); return make_null(); }
+                eigs_num_text(nb, sizeof(nb), n);
+            }
             strbuf_append(&out, nb);
         } else if (val->type == VAL_NULL) {
             strbuf_append(&out, "null");
@@ -2478,7 +2500,11 @@ Value* builtin_json_path(Value *arg) {
     if (val_is_number(current)) {
         char buf[64];
         if (current->type == VAL_INT) eigs_int_text(buf, sizeof(buf), VAL_I64_RAW(current));
-        else eigs_num_text(buf, sizeof(buf), eigs_float_arg(current, "json_path"));   /* #875 */
+        else {
+            double n = eigs_float_arg(current, "json_path");
+            if (g_has_error) { val_decref(root); return make_null(); }
+            eigs_num_text(buf, sizeof(buf), n);   /* #875 */
+        }
         val_decref(root);
         return make_str(buf);
     }
@@ -2491,7 +2517,7 @@ Value* builtin_json_path(Value *arg) {
     if (eigs_json_encode_value(current, &out, 0) != 0) {
         strbuf_free(&out);
         val_decref(root);
-        json_encode_depth_error("json_path");
+        if (!g_has_error) json_encode_depth_error("json_path");
         return make_null();
     }
     /* #965: the strbuf payload is already charged (reserve growth + finish

@@ -933,7 +933,8 @@ Value* builtin_shared_set(Value *arg) {
     Server *s = eigs_http_active;
     if (!s) return make_null();
 
-    /* NULL when the value is cyclic or deeper than JSON_MAX_DEPTH (#730). A
+    /* NULL on every encoder refusal, including N13 non-finite numbers.
+     * A cyclic or deeper-than-JSON_MAX_DEPTH value (#730) is also refused. A
      * handler storing a self-referential value used to segfault the server
      * here; reject the store instead. eigs_json_encode has already raised, so
      * the route sees a catchable error rather than a silent no-op. */
@@ -1031,8 +1032,8 @@ Value* builtin_shared_incr(Value *arg) {
     /* eigs_json_encode borrows new_v. Keep its owned ref for the return value
      * on success and release it on every refusal before leaving the lock. */
     char *new_json = eigs_json_encode(new_v);
-    /* A number can't exceed the depth bound, but don't leave a bare strlen on
-     * a documented-nullable return. */
+    /* N13: the finite operands may have overflowed. Encoding must succeed
+     * before any shared entry or byte accounting changes. */
     if (!new_json) {
         val_decref(new_v);
         pthread_mutex_unlock(&s->shared_mu);
