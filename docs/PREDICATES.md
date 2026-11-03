@@ -57,6 +57,9 @@ false: the #1758 O2 convention (NaN is undefined), not a MATH answer. The
 oracle labels such a checkpoint CONVENTION for all six predicates, citing
 #1758, whatever the whole sequence does. It is the one recorded exception to
 one question per predicate.
+This is the R3/O2 oracle contract. R2.2's current non-finite veto also reports
+`diverging` at NaN (R22-2); the precise mismatches remain declared in
+`tests/phase2/oracle_expect.txt` for R3, with the oracle answers unchanged.
 
 **The bands below are not those definitions.** They are the runtime's current
 windowed tests of the last `N` observations. Two limits are inherent: a window
@@ -333,9 +336,9 @@ routes, `4` for the value route's motion bands (the half-split needs two
 samples per half) and `3` for the entropy route's. A two-write program can
 never report any predicate true; this is the single most important
 difference from the old pointwise rule, which fired on the first step.
-**One exception**: `diverging` fires at infinity regardless of window fill
-— see the non-finite rule below. The NaN convention above still makes every
-predicate false at NaN.
+**One current R2.2 exception**: `diverging` fires at a non-finite current
+value regardless of window fill — see the rule below. The all-false NaN
+convention above describes the separate R3/O2 oracle obligation.
 
 ## Opaque rule (#708): function-valued bindings
 
@@ -367,8 +370,10 @@ An infinite current value is **diverging, and in no rest band**:
 | `oscillating` | evaluated from the window's sign changes |
 
 `report` and `report_value` use the same numeric classifier. The entropy
-measurement itself is unchanged. The NaN convention is separate: every
-predicate is false when the current numeric value is NaN.
+measurement itself is unchanged. R2.2 applies its current non-finite veto
+to NaN too: it reports `diverging` and no rest band. The separate O2 oracle
+convention (all predicates false at a current NaN) remains a documented R3
+obligation, not an implemented R2.2 claim.
 
 The original #861 runaway and finite-constant scenarios remain in
 `tests/test_observer_saturation.eigs`: overflow must never become an
