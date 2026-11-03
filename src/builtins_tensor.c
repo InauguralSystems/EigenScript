@@ -251,12 +251,17 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols,
      * retains the old element stand-in. Structural row errors are separate.
      * Check even when the first element or row gives no usable shape. */
     /* #1637: a bool element is refused in every strict mode. */
-#define FLAT_BAD(t) (((t) != VAL_FLOAT && (t) != VAL_INT) && (g_strict || (t) == VAL_BOOL))
+#define FLAT_BAD(t) ((t) == VAL_LIST || (t) == VAL_BUFFER || \
+                     (((t) != VAL_FLOAT && (t) != VAL_INT) && (g_strict || (t) == VAL_BOOL)))
     if (v && v->type == VAL_LIST) {
         int bad = 0;
         if (ndim == 1) {
-            for (int i = 0; i < v->data.list.count; i++)
-                if (FLAT_BAD(list_elem_type(v, i))) { bad = 1; break; }
+            for (int i = 0; i < v->data.list.count; i++) {
+                ValType t = list_elem_type(v, i);
+                /* A row among scalars is the same structural mismatch as
+                 * a scalar among rows, regardless of which occurs first. */
+                if (FLAT_BAD(t)) { bad = 1; break; }
+            }
         } else {
             for (int r = 0; r < v->data.list.count && !bad; r++) {
                 /* list_get_ref is NULL for a number: test the type first. */
