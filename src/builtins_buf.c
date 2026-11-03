@@ -180,6 +180,7 @@ Value* builtin_buf_set(Value *arg) {
 /* buf_get_bits of [buf, index] — raw IEEE bits as signed int64 (R24-1). */
 Value* builtin_buf_get_bits(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "buf_get_bits");
+    STRICT_REQUIRE(!arg || arg->type != VAL_LIST, "buf_get_bits", "[buffer, index]");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "buf_get_bits requires [buffer, index]");
         return make_null();
@@ -216,6 +217,7 @@ Value* builtin_buf_get_bits(Value *arg) {
 /* buf_set_bits of [buf, index, bits] — preserve all bits; return null (R24-1). */
 Value* builtin_buf_set_bits(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "buf_set_bits");
+    STRICT_REQUIRE(!arg || arg->type != VAL_LIST, "buf_set_bits", "[buffer, index, bits]");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "buf_set_bits requires [buffer, index, bits]");
         return make_null();
@@ -250,6 +252,7 @@ Value* builtin_buf_set_bits(Value *arg) {
  * Like f64_to_bytes, an int converts to double first. Unlike an encoder,
  * this inspection accepts non-finite floats without trapping or status. */
 Value* builtin_f64_bits(Value *arg) {
+    STRICT_REQUIRE(!arg || !val_is_number(arg), "f64_bits", "a number");
     EigsNum number;
     if (!eigs_number_read(arg, &number, "f64_bits")) return make_null();
     double value = number.is_int ? (double)number.value.i64 : number.value.f64;
@@ -264,6 +267,7 @@ Value* builtin_f64_bits(Value *arg) {
 
 /* f64_from_bits of bits — N5 exact int64 bits; NaNs use the single writer. */
 Value* builtin_f64_from_bits(Value *arg) {
+    STRICT_REQUIRE(!arg || !val_is_number(arg), "f64_from_bits", "a number");
     int64_t payload = eigs_int_arg(arg, "f64_from_bits");
     if (g_has_error) return make_null();
     double value;
