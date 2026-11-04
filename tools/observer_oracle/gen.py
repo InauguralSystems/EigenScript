@@ -8,7 +8,7 @@ import math
 import random
 
 INT64_MIN = -2 ** 63
-RANDOM_KINDS = ("noise", "walk")        # realizations of random processes
+RANDOM_KINDS = ("noise", "walk", "ar1", "uwalk")   # realizations of random processes
 IN_PROGRAM = ("affine", "pieces")       # the runtime computes x * a + b itself
 
 
@@ -77,6 +77,18 @@ def generate(gen, n):
         xs = [gen["x0"]]
         for _ in range(n):
             xs.append(xs[-1] + (gen["step"] if rng.random() < 0.5 else -gen["step"]))
+    elif k == "ar1":                     # x <- mu + phi (x - mu) + sigma u, u iid uniform[-1, 1], after `burn` steps
+        rng, x = random.Random(gen["seed"]), gen["mu"]
+        xs = []
+        for i in range(gen["burn"] + n + 1):
+            if i >= gen["burn"]:
+                xs.append(x)
+            x = gen["mu"] + gen["phi"] * (x - gen["mu"]) + gen["sigma"] * rng.uniform(-1.0, 1.0)
+    elif k == "uwalk":                   # x <- x + step u, u iid uniform[-1, 1]
+        rng = random.Random(gen["seed"])
+        xs = [gen["x0"]]
+        for _ in range(n):
+            xs.append(xs[-1] + gen["step"] * rng.uniform(-1.0, 1.0))
     else:
         raise HarnessError(f"unknown generator kind {k!r}")
     if num is int and any(not isinstance(v, int) or not INT64_MIN <= v < 2 ** 63 for v in xs):

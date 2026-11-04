@@ -51,10 +51,16 @@ FLAGS = ("has_trend", "periodic", "variance_changes")
 PROCESS = {"noise": ((False, False, False), "iid noise with a fixed centre and amplitude is"
                      " stationary: no trend, no periodic fluctuation, constant variance"),
            "walk": ((False, False, True), "a random walk x_0 + (n iid steps) has Var x_n ="
-                    " n sigma^2, so its variance changes; its mean stays x_0 (no trend)")}
+                    " n sigma^2, so its variance changes; its mean stays x_0 (no trend)"),
+           "ar1": ((False, False, False), "AR(1) with |phi| < 1 and iid innovations is weakly stationary"
+                   " (mean mu, variance sigma_u^2/(1 - phi^2)) once started from its stationary law; the"
+                   " generator discards `burn` steps, after which the start's influence is |phi|^burn"),
+           "uwalk": ((False, False, True), "a walk x_0 + (n iid uniform steps) has Var x_n = n step^2/3,"
+                     " so its variance changes; its mean stays x_0 (no trend)")}
 CAPABILITIES = ("ieee", "int64")
 GEN_KEYS = {"affine": ("x0", "a", "b"), "pieces": ("pieces",), "closed": ("expr",), "recur": ("x0", "expr"),
-            "cycle": ("values",), "noise": ("center", "amp", "seed"), "walk": ("x0", "step", "seed")}
+            "cycle": ("values",), "noise": ("center", "amp", "seed"), "walk": ("x0", "step", "seed"),
+            "ar1": ("mu", "phi", "sigma", "burn", "seed"), "uwalk": ("x0", "step", "seed")}
 STEP = re.compile(r"\bstep\(\s*n\s*,\s*(\d+)\s*\)")      # the one spelling of a law change
 NAN_WHY = ("x_n is NaN: the #1758 O2 convention (#1746: NaN is undefined), not a MATH answer:"
            " every predicate is false while the current value is NaN")
