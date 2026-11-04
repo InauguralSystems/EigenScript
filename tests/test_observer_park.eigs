@@ -5,9 +5,7 @@
 # silently "converges" on its 2nd invocation by inheriting the 1st call's
 # samples. The window is 10.
 
-# #412 note: the settling value is 0.001, NOT 1.0 — unity is the entropy
-# HORIZON now (H = 1.0 there, >= h_low), so nothing parked at exactly 1.0 can
-# classify converged; 0.001 sits in the low-entropy home region (H ~ 0.011).
+# Constant0.001 is the settling value; numeric constants converge at any scale.
 
 # (a) DRIFT GUARD: 6 observed assigns/call (< 10) must NEVER fill the window,
 #     no matter how many times the function is called on a recycled env.

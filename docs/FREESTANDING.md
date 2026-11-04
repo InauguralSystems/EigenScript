@@ -78,9 +78,9 @@ nothing else runs without it.**
 ### Math (libm) — `BUILD` subset (load-bearing, not optional)
 `log` `log2` `pow` `sqrt` `exp` `sin` `cos` `tan` `asin` `acos` `atan` `atan2`
 `fmod` `round`
-`log2` is called by the **observer entropy formula** (`entropy_of_num`), so the
-language's *defining feature* depends on libm — freestanding cannot just drop
-math. Minimum for the core: `log2`, `fabs`. The rest back the STEM stdlib;
+`log2` is called by the **non-numeric observer entropy path**: numeric
+leaves inside a container still use `entropy_of_num`. Numeric binding
+observations no longer compute entropy. Freestanding still needs libm. Minimum for the core: `log2`, `fabs`. The rest back the STEM stdlib;
 vendor a small libm or implement on demand.
 
 ### String / mem — `BUILD` tiny
@@ -346,9 +346,9 @@ above.
 
 ## Standout findings
 
-- **The observer depends on libm.** `entropy_of_num` → `log2`. The one place the
-  *core language* (not a stdlib extension) couples to the host — only bare metal
-  exposed it.
+- **Non-numeric observer entropy depends on libm.** Numeric leaves inside
+  containers retain `entropy_of_num` → `log2`; numeric bindings use their
+  value signal. Bare metal still exposes that core dependency.
 - **No net in minimal** — confirms the HTTP/DB surface is cleanly optional; the
   freestanding profile starts from `minimal`, not `full`.
 - **Threading is the soft spot**, not by symbol count but by maturity — and it's

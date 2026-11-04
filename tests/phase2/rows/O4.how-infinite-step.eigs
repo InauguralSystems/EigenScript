@@ -3,7 +3,7 @@
 # EXPECT-RC: 0
 # SHAPE: S
 # WITNESS: none
-# OPS: 
+# OPS:
 x is 1e308
 x is x * 10.0
 a is [why is x, how is x]

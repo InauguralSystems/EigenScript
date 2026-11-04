@@ -24,6 +24,9 @@
 # that wraps instead of raising (Part D), and a population scan that writes noise
 # to stderr or an unparsed line to stdout (the critic's class); and #1775's
 # plant, the missing return that makes the -O0 amalgamation warn.
+# R3.1 adds eleven observer plants. Each first runs its named MAP check on
+# an unmodified archive. The named assertion, four tiers, JIT witness and
+# finite control then run on the mutant and its assertion-deleted twin.
 # Prints one line per plant and `plants=N killed=N survived=0 broken=0
 # transverse=N`; exit 0 only for exactly that, with N > 0. --only ID runs
 # one named plant and its transverse control; a successful restricted run
@@ -44,7 +47,10 @@ while [ $# -gt 0 ]; do
             [ $# -gt 1 ] || { echo "phase2-plants: FAIL: --only needs a plant id"; exit 2; }
             [ -z "$ONLY" ] || { echo "phase2-plants: FAIL: --only may be given once"; exit 2; }
             case "$2" in
-                1|2|3-json|3-store|overflow-wrap|stderr-noise|stdout-noise|return-type) ONLY="$2" ;;
+                1|2|3-json|3-store|overflow-wrap|stderr-noise|stdout-noise|return-type|\
+                r31-absolute-tolerance|r31-zero-floor|r31-smi-exact|r31-jit-inline-double|\
+                r31-nan-diverging|r31-inf-sign|r31-converged-incumbent|r31-improving-incumbent|\
+                r31-nan-report|r31-where-entropy|r31-how-infinite) ONLY="$2" ;;
                 *) echo "phase2-plants: FAIL: unknown plant id $2"; exit 2 ;;
             esac
             shift 2 ;;
@@ -80,7 +86,31 @@ with open(path, 'w', encoding='utf-8') as f:
 PY
 }
 
-plants=0; killed=0; survived=0; broken=0; transverse=0; available=0
+plants=0; killed=0; survived=0; broken=0; transverse=0; available=0; observer_green=0
+EXPECTED_PLANTS=19
+EXPECTED_OBSERVER=11
+
+# Two registered concepts have two production sites. Each individual edit
+# retains the same exactly-once anchor requirement as the primary edit.
+observer_second_edit() {
+    case "$1" in
+        r31-absolute-tolerance)
+            replace "$2/src/eigenscript.c" \
+                '        return obs_num_exact_diameter(s) <= 2.0 * g_obs_dh_small * scale;' \
+                '        return obs_num_exact_diameter(s) <= 2.0 * g_obs_dh_small * fmax(fabs(s->last_value), scale);' ;;
+        r31-inf-sign)
+            replace "$2/src/eigenscript.c" \
+                '    if (isinf(s->last_value)) return !obs_num_opposite_inf(s);' \
+                '    if (isinf(s->last_value)) return 1; /* PLANT: no polarity rule */' ;;
+    esac
+}
+
+observer_red_complete() {
+    [ "$1" != r31-improving-incumbent ] || {
+        grep -q '^observer-map: FAIL O2.report-noisy-loss tier=' "$2" &&
+        grep -q '^observer-map: FAIL O2.noisy-loss-improving-count tier=' "$2"
+    }
+}
 
 # run_plant ID FILE OLD NEW CHECK_FILE CHECK_OLD CHECK_NEW FAIL_RE CHECK_CMD...
 run_plant() {
@@ -89,12 +119,16 @@ run_plant() {
     available=$((available + 1))
     [ -z "$ONLY" ] || [ "$ONLY" = "$id" ] || return 0
     plants=$((plants + 1))
-    local verdict="" trans=""
-    for mode in plant transverse; do
+    local verdict="" trans="" observer=0 modes="plant transverse"
+    case "$id" in r31-*) observer=1; modes="green plant transverse" ;; esac
+    for mode in $modes; do
         local dir="$WORK/$id-$mode"
         mkdir -p "$dir"
         if ! git -C "$ROOT" archive "$REF" | tar -x -C "$dir"; then verdict=BROKEN; echo "  $id: archive of $REF failed"; break; fi
-        if ! replace "$dir/$file" "$old" "$new"; then verdict=BROKEN; break; fi
+        if [ "$mode" != green ]; then
+            if ! replace "$dir/$file" "$old" "$new"; then verdict=BROKEN; break; fi
+            if ! observer_second_edit "$id" "$dir"; then verdict=BROKEN; break; fi
+        fi
         if [ "$mode" = transverse ] && ! replace "$dir/$cfile" "$cold" "$cnew"; then trans=BROKEN; break; fi
         # Plant2 has two named halves. Delete its program assertion after the
         # child returns too: a corrupted HEAP payload may crash before any
@@ -111,12 +145,20 @@ run_plant() {
             [ "$mode" = plant ] && verdict=BROKEN || trans=BROKEN
             break
         fi
-        if [ "$mode" = plant ]; then
-            if [ "$rc" -eq 124 ] || grep -q 'build: \|make phase2-slot-test exited\|^writer-map: BROKEN\|^nan-payload-map: BROKEN' "$log"; then
+        if [ "$mode" = green ]; then
+            if [ "$rc" -ne 0 ] || ! grep -q '^observer-map: PASS ' "$log"; then
+                verdict=BROKEN; echo "  $id: unplanted named check did not pass (rc=$rc):"; tail -20 "$log" | sed 's/^/    | /'; break
+            fi
+            observer_green=$((observer_green + 1))
+            tail -1 "$log" | sed 's/^/    unplanted: /'
+        elif [ "$mode" = plant ]; then
+            if [ "$rc" -eq 124 ] || grep -q 'build: \|make phase2-slot-test exited\|^writer-map: BROKEN\|^nan-payload-map: BROKEN\|^observer-map: BROKEN' "$log"; then
                 verdict=BROKEN; echo "  $id: the check did not complete (rc=$rc):"; tail -20 "$log" | sed 's/^/    | /'
+            elif [ "$observer" -eq 1 ] && [ "$rc" -ne 1 ]; then
+                verdict=SURVIVED; echo "  $id: named row assertion did not return rc=1 (rc=$rc)"
             elif grep -Eq "$re" "$log" && { [ "$id" != 2 ] || { \
                 grep -q '^nan-payload-map: FAIL N12.nan-payload-tags payload=' "$log" && \
-                grep -qxF 'nan-payload-map: row=N12.nan-payload-tags payloads=5 tiers=3 examined=15 failures=15 controls=3 control_failures=0 timeouts=0' "$log"; }; }; then verdict=KILLED
+                grep -qxF 'nan-payload-map: row=N12.nan-payload-tags payloads=5 tiers=3 examined=15 failures=15 controls=3 control_failures=0 timeouts=0' "$log"; }; } && observer_red_complete "$id" "$log"; then verdict=KILLED
             else verdict=SURVIVED; echo "  $id: no failure line matching /$re/ (rc=$rc):"; tail -20 "$log" | sed 's/^/    | /'; fi
             grep -E "$re" "$log" | head -3 | sed 's/^/    red: /'
             if [ "$id" = 2 ]; then
@@ -126,8 +168,10 @@ run_plant() {
             [ "$verdict" = KILLED ] || break
         else
             if grep -Eq "$re" "$log"; then trans=NOT-TRANSVERSE; echo "  $id: the line still fired with its assertion deleted"
-            elif [ "$rc" -ne 0 ] || grep -q 'build: \|make phase2-slot-test exited\|^writer-map: BROKEN\|^nan-payload-map: BROKEN' "$log"; then
+            elif [ "$rc" -ne 0 ] || grep -q 'build: \|make phase2-slot-test exited\|^writer-map: BROKEN\|^nan-payload-map: BROKEN\|^observer-map: BROKEN' "$log"; then
                 trans=BROKEN; echo "  $id: assertion-deleted check did not complete cleanly (rc=$rc)"
+            elif [ "$observer" -eq 1 ] && ! grep -Eq '^observer-map: PASS .*mismatches=[1-9][0-9]* ' "$log"; then
+                trans=BROKEN; echo "  $id: assertion-deleted observer check lost its live mismatch"
             else trans=TRANSVERSE; fi
             tail -2 "$log" | sed 's/^/    assertion deleted: /'
         fi
@@ -257,7 +301,140 @@ run_plant return-type src/builtins_tensor.c \
     "^slot-layer: FAIL: the slot test build printed [0-9]+ warning" \
     bash tests/phase2/slot_layer.sh release
 
+# R3.1's named checks reuse the MAP runner/transcripts. The transverse copy
+# disables only the selected rows' comparison: all four runs, the fn-stop
+# witness and the independent finite control still execute.
+run_observer_plant() {
+    local id="$1" file="$2" old="$3" new="$4"
+    shift 4
+    local row_re=${1//./\\.}
+    run_plant "$id" "$file" "$old" "$new" \
+        tests/phase2/observer_map_check.py \
+        '                if not matched:' \
+        '                if False and not matched:' \
+        "^observer-map: FAIL $row_re tier=" \
+        python3 -W error tests/phase2/observer_map_check.py "$@"
+}
+
+# Both settled tests lose their absolute tolerance, while the raw zero
+# floor stays intact. observer_second_edit changes stable's matching site.
+run_observer_plant r31-absolute-tolerance src/eigenscript.c \
+    '        return obs_num_exact_diameter(s) <= g_obs_dh_zero * scale;' \
+    '        return obs_num_exact_diameter(s) <= g_obs_dh_zero * fmax(fabs(s->last_value), scale);' \
+    O2.int-counter-2p53
+
+run_observer_plant r31-zero-floor src/eigenscript.c \
+    '    return observer_slot_all_exact(s) ? 0.0
+        : 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));' \
+    '    return 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));' \
+    O2.int-down-counter-2p53
+
+# SMI is the half-open range [-2^47, 2^47). Boxed pairs stay exact, so the
+# SMI invariant is the unique named check of this registered fault.
+run_observer_plant r31-smi-exact src/eigenscript.c \
+    '        int exact = v.is_int && s->last_is_int &&' \
+    '        int exact = v.is_int && s->last_is_int &&
+            (v.integer < -140737488355328LL || v.integer >= 140737488355328LL ||
+             s->last_int < -140737488355328LL || s->last_int >= 140737488355328LL) &&' \
+    O2.int-smi-alternating
+
+# Reproduce the former inline double writer at its JIT-only private sample
+# site. The shared recorder still maintains the new authoritative W+1
+# inputs/D2 scalars, but receives the rounded float and writes no exact flag.
+# Copying only the old two ring stores would instead leave the W+1 inputs
+# empty and fail on a different defect than the registered double writer.
+run_observer_plant r31-jit-inline-double src/vm.c \
+    '    observer_slot_record_num(s, value);
+    s->used = 1;
+}' \
+    '    observer_slot_record_num(s, slot_from_f64(eigs_slot_float(value, __func__)));
+    s->used = 1;
+}' \
+    O1.unobserved-jit-sample
+
+run_observer_plant r31-nan-diverging src/eigenscript.c \
+    'static int obs_num_diverging(const ObserverSlot *s) {
+    if (isnan(s->last_value)) return 0;' \
+    'static int obs_num_diverging(const ObserverSlot *s) {
+    if (isnan(s->last_value)) return 1; /* PLANT: R2.2 non-finite veto */' \
+    O2.nan-all-false
+
+# Removing the polarity rule restores the old infinity result in both
+# predicates; observer_second_edit changes diverging's matching site.
+run_observer_plant r31-inf-sign src/eigenscript.c \
+    '    if (isinf(s->last_value)) return obs_num_opposite_inf(s);' \
+    '    if (isinf(s->last_value)) { (void)obs_num_opposite_inf; return 0; } /* PLANT */' \
+    O2.inf-alternating-oscillates
+
+# Restore the incumbent body as an early-return block. The STD body stays
+# compiled below it so its private helpers do not become unused warnings:
+# build warnings must never be mistaken for a killed numeric plant.
+run_observer_plant r31-converged-incumbent src/eigenscript.c \
+    'static int obs_num_converged(const ObserverSlot *s) {' \
+    'static int obs_num_converged(const ObserverSlot *s) {
+    { /* PLANT: incumbent relative-step band */
+        if (observer_slot_nonfinite(s)) return 0;
+        if (obs_v_count(s) < (size_t)observer_slot_window(s)) return 0;
+        int all_zero, all_small;
+        obs_num_flags(s, &all_zero, &all_small);
+        if (!all_zero) return 0;
+        if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
+        return 1;
+    }' \
+    O2.harmonic-not-converged
+
+run_observer_plant r31-improving-incumbent src/eigenscript.c \
+    'static int obs_num_improving(const ObserverSlot *s) {' \
+    'static int obs_num_improving(const ObserverSlot *s) {
+    { /* PLANT: incumbent contraction band */
+        if (observer_slot_nonfinite(s)) return 0;
+        size_t cnt = obs_v_count(s);
+        if (cnt < 4) return 0;
+        int all_zero, all_small;
+        obs_num_flags(s, &all_zero, &all_small);
+        if (all_zero || obs_num_oscillating(s)) return 0;
+        double first = observer_slot_vr_get(s, 0);
+        if (first >= 0.0) return 0;
+        for (size_t i = 1; i < cnt; i++)
+            if (observer_slot_vr_get(s, i) * first <= 0.0) return 0;
+        const double CONTRACT = 0.7;
+        double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
+        size_t half = cnt / 2;
+        double recent = 0.0, older = 0.0, recent_max = 0.0, older_max = 0.0;
+        for (size_t i = 0; i < half; i++) {
+            double m = fabs(observer_slot_vr_get(s, i));
+            recent += m;
+            if (m > recent_max) recent_max = m;
+        }
+        for (size_t i = half; i < cnt; i++) {
+            double m = fabs(observer_slot_vr_get(s, i));
+            older += m;
+            if (m > older_max) older_max = m;
+        }
+        recent /= (double)half;
+        older /= (double)(cnt - half);
+        if (older <= floor_eps || recent <= floor_eps) return 0;
+        return recent <= older * CONTRACT && recent_max <= older_max * CONTRACT;
+    }' \
+    O2.report-noisy-loss O2.noisy-loss-improving-count
+
+run_observer_plant r31-nan-report src/eigenscript.c \
+    '    if (isnan(s->last_value)) return "undefined";' \
+    '    if (isnan(s->last_value)) return "moving";' \
+    O2.nan-report-undefined
+
+run_observer_plant r31-where-entropy src/eigenscript.c \
+    '    if (kind == 3) return observer_number_slot(s->where);' \
+    '    if (kind == 3) return slot_from_f64(entropy_of_num(s->where.value));' \
+    O1.where-is-value
+
+run_observer_plant r31-how-infinite src/eigenscript.c \
+    '    if (isinf(raw)) return 0.0;' \
+    '    /* PLANT: apply the relative-step formula even for an infinite step. */' \
+    O4.how-infinite-step
+
 echo "plants=$plants killed=$killed survived=$survived broken=$broken transverse=$transverse"
+echo "observer-unplanted=$observer_green expected=$EXPECTED_OBSERVER"
 VERDICT_DONE=1
 if [ -n "$ONLY" ]; then
     if [ "$plants" -eq 1 ] && [ "$killed" -eq 1 ] && [ "$transverse" -eq 1 ]; then
@@ -267,7 +444,9 @@ if [ -n "$ONLY" ]; then
     echo "phase2-plants: FAIL: restricted plant $ONLY did not complete its named check and transverse control"
     exit 1
 fi
-if [ "$plants" -gt 0 ] && [ "$killed" -eq "$plants" ] && [ "$transverse" -eq "$plants" ]; then
+if [ "$available" -eq "$EXPECTED_PLANTS" ] && [ "$plants" -eq "$EXPECTED_PLANTS" ] && \
+   [ "$killed" -eq "$plants" ] && [ "$transverse" -eq "$plants" ] && \
+   [ "$observer_green" -eq "$EXPECTED_OBSERVER" ]; then
     echo "phase2-plants: PASS"; exit 0
 fi
 echo "phase2-plants: FAIL"; exit 1

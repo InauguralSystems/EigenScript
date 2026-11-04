@@ -3,7 +3,7 @@
 # EXPECT-RC: 0
 # SHAPE: S
 # WITNESS: none
-# OPS: 
+# OPS:
 s is 12345.0
 i is 0.0
 loop while i < 61.0:

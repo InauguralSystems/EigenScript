@@ -1,19 +1,6 @@
-# #861: numeric bindings route the predicate words to the VALUE channel
-# (see docs/PREDICATES.md). The sequences below drive numbers, so the
-# entropy-window mechanics this file was written for are now reachable
-# only via `classify of [t, "entropy"]` — pinned per-case where the
-# entropy behaviour was the point. The routed pins were re-measured and
-# each change is annotated at the assert.
-# Windowed `improving` (#207, docs/PREDICATES.md) — hybrid rule:
-#   improving = count >= 3
-#               AND sum(window) < 0           (NET entropy descent, magnitude-aware)
-#               AND down_fraction >= 0.6      (>=60% of steps are genuine descents,
-#                                              a "down" step being dH < -dh_small)
-# The sum<0 gate refuses to call a net-worsening run improving; the proportional
-# vote tolerates noisy bounces; the dh_small threshold keeps a gray-band descent
-# out of `improving` (it reads `stable`) per the #187 mutual-exclusivity contract.
-# Entropy of a number x is H_binary(1/(1+|x|)) — for |x|>1 it falls as |x| grows,
-# so increasing |x| is an entropy descent. Self-asserting; prints the marker.
+# R3.1: numeric improving is D2: relative improvement of a running best,
+# patience W, finite active values, and the reference boundedness checks.
+# The explicit entropy witness below uses a nonnumeric singleton container.
 
 print of "=== WINDOWED IMPROVING (docs/PREDICATES.md, #207) ==="
 
@@ -30,7 +17,7 @@ a is 99.0
 a is 499.0
 i1 is improving
 # #861 re-pin: value route: growth 3->499 is a linear/geometric runaway -> diverging; the ENTROPY descent this case drove reads "improving" only on the entropy channel (pinned via classify below for WI1)
-want of ["WI1 monotone clean descent fires", i1, false]
+want of ["WI1 rising loss does not improve", i1, false]
 
 # WI2: noisy descent with bounces still fires — net down AND majority (4/6)
 #      genuine descents. The old absolute bounce cap rejected this; the
@@ -44,7 +31,7 @@ b is 60.0
 b is 4000.0
 i2 is improving
 # #861 re-pin: value route: wild bouncing (4 deadband sign-flips) -> oscillating
-want of ["WI2 noisy descent, net+majority, fires", i2, false]
+want of ["WI2 wild bouncing does not improve", i2, false]
 
 # WI3: net entropy ROSE despite several descent steps -> does NOT fire.
 #      Guards against the magnitude-blind failure: most steps tick down but the
@@ -56,7 +43,7 @@ c is 6.0
 c is 2.2
 c is 1.6
 i3 is improving
-want of ["WI3 net-up despite descents does not fire", i3, false]
+want of ["WI3 new low beats the running best", i3, true]
 
 # WI4: steady descent INSIDE the gray band (dh_zero <= |dH| < dh_small) does
 #      NOT fire — it reads `stable`. #187 mutual-exclusivity guard.
@@ -67,7 +54,7 @@ d is 56.0
 d is 58.0
 d is 60.0
 i4 is improving
-want of ["WI4 gray-band steady descent does not fire", i4, false]
+want of ["WI4 rising partial loss does not improve", i4, false]
 
 # WI5: net DOWN but only a MINORITY (2/5) of steps are genuine descents -> does
 #      NOT fire. Proves the proportional vote gates independently of sum<0.
@@ -78,7 +65,7 @@ e is 4000.0
 e is 1500.0
 e is 600.0
 i5 is improving
-want of ["WI5 net-down but sub-majority does not fire", i5, false]
+want of ["WI5 tail never beats initial best", i5, false]
 
 # WI6: flat sequence (all dH ~ 0) does not fire
 f is 5.0
@@ -87,7 +74,7 @@ f is 5.0
 f is 5.0
 f is 5.0
 i6 is improving
-want of ["WI6 flat does not fire", i6, false]
+want of ["WI6 constant baseline is not an improvement", i6, false]
 
 # WI7: slow ascent (rising entropy, sum > 0) does not fire
 g is 99.0
@@ -95,24 +82,24 @@ g is 60.0
 g is 40.0
 g is 25.0
 i7 is improving
-want of ["WI7 slow ascent does not fire", i7, false]
+want of ["WI7 partial falling loss improves", i7, true]
 
 # WI8: fewer than 3 samples (count == 2) does not fire (partial-window rule)
 h is 3.0
 h is 50.0
 h is 9999.0
 i8 is improving
-want of ["WI8 count < 3 does not fire", i8, false]
+want of ["WI8 rising two-step prefix does not improve", i8, false]
 
 
 # #861: keep the entropy-window mechanics covered — WI1 is the canonical
 # entropy-descent (value growth) case; its entropy label must stay "improving".
-wi1e is 3.0
-wi1e is 5.0
-wi1e is 9.0
-wi1e is 19.0
-wi1e is 99.0
-wi1e is 499.0
+wi1e is [3.0]
+wi1e is [5.0]
+wi1e is [9.0]
+wi1e is [19.0]
+wi1e is [99.0]
+wi1e is [499.0]
 elabel is classify of [(trajectory of wi1e), "entropy"]
 assert of [elabel == "improving", f"WI1e entropy channel lost its improving verdict: {elabel}"]
 print of "  PASS: WI1e entropy channel still reads improving via classify"
@@ -143,7 +130,7 @@ define falling_improving(n) as:
 rise_verdicts is rising_improving of 14
 fall_verdicts is falling_improving of 14
 assert of [rise_verdicts == "false false false false false false false false false false false false false false ", f"rising plateau must never improve: {rise_verdicts}"]
-assert of [fall_verdicts == "false false false true true true true true true true true true true true ", f"falling loss must keep improving: {fall_verdicts}"]
+assert of [fall_verdicts == "true true true true true true true true true true true true true true ", f"falling loss must keep improving: {fall_verdicts}"]
 print of "  PASS: #1771 improving is directional (falling only)"
 
 print of "WINDOWED_IMPROVING_ALL_PASS"

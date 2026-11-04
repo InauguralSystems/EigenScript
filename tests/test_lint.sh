@@ -2071,7 +2071,8 @@ rm -f "$TMPFILE"
 
 # Runtime proof that the rule is about a real verdict, not style: the same
 # program answers `oscillating` for the DECAYING entity through the shared
-# binding and `improving` through a named one.
+# binding and `moving` through a named one. The named binding starts at 0.0,
+# so its positive decay never beats D2's history-wide running minimum.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 cat > "$TMPFILE" << 'EIGS'
 fleet is [["a", 0, 100.0], ["b", 0, 1.0]]
@@ -2092,7 +2093,7 @@ print of ("named " + (report_value of qa))
 EIGS
 RUN=$($EIGS "$TMPFILE" 2>&1 || true)
 check_contains "#1048 shared binding manufactures 'oscillating' for a decaying entity" "$RUN" "^shared oscillating$"
-check_contains "#1048 named binding answers 'improving' for the same entity" "$RUN" "^named improving$"
+check_contains "#1048 named binding answers 'moving' above its initial minimum" "$RUN" "^named moving$"
 rm -f "$TMPFILE"
 
 # The closure-per-entity recipe is EXTRACTED from docs/PREDICATES.md, not
@@ -2123,9 +2124,9 @@ check_contains "#1048 PREDICATES.md closure recipe extracts (non-vacuous)" "$(ca
 check_contains "#1048 PREDICATES.md closure recipe extracts the whole block" "$(cat "$TMPFILE")" "print of (a + \" \" + b)"
 # Pin the paired output block rather than an unchecked value comment in the
 # executable source. This is the documentation gate's checked-value form.
-check_contains "#1048 PREDICATES.md paired output states the recipe's output" "$(cat "$OUTFILE")" "^improving oscillating$"
+check_contains "#1048 PREDICATES.md paired output states the recipe's output" "$(cat "$OUTFILE")" "^moving oscillating$"
 RUN=$($EIGS "$TMPFILE" 2>&1 || true)
-check_contains "#1048 PREDICATES.md closure recipe prints one verdict per entity" "$RUN" "^improving oscillating$"
+check_contains "#1048 PREDICATES.md closure recipe prints one verdict per entity" "$RUN" "^moving oscillating$"
 OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "#1048 PREDICATES.md closure recipe lints clean" "$OUTPUT" "W024"
 rm -f "$TMPFILE" "$OUTFILE"

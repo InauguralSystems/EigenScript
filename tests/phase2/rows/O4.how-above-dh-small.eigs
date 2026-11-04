@@ -3,7 +3,7 @@
 # EXPECT-RC: 0
 # SHAPE: S
 # WITNESS: none
-# OPS: 
+# OPS:
 x is 1000.0
 x is 950.0
 print of (how is x)

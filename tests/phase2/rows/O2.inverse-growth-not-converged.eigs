@@ -3,7 +3,7 @@
 # EXPECT-RC: 0
 # SHAPE: S
 # WITNESS: none
-# OPS: 
+# OPS:
 x is 0.0293
 first is null
 n is 0

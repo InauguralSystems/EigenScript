@@ -1,21 +1,6 @@
-# #861: numeric bindings route the predicate words to the VALUE channel
-# (see docs/PREDICATES.md). The sequences below drive numbers, so the
-# entropy-window mechanics this file was written for are now reachable
-# only via `classify of [t, "entropy"]` — pinned per-case where the
-# entropy behaviour was the point. The routed pins were re-measured and
-# each change is annotated at the assert.
-# Windowed `diverging` (#208, docs/PREDICATES.md) — mirror of `improving`:
-#   diverging = count >= 3
-#               AND sum(window) > 0           (NET entropy ascent, magnitude-aware)
-#               AND up_fraction >= 0.6        (>=60% of steps are genuine ascents,
-#                                              an "up" step being dH > +dh_small)
-# The sum>0 gate refuses to call a net-improving run diverging; the proportional
-# vote tolerates noisy down-ticks; the dh_small threshold keeps a gray-band
-# ascent out of `diverging` (it reads `stable`) per the #187 contract. A
-# sustained oscillation has no net trend and no directional majority, so it does
-# NOT co-fire diverging (unlike the old pointwise rule).
-# Entropy of a number x is H_binary(1/(1+|x|)) — for |x|>1 it RISES as |x| falls
-# toward 1, so decreasing |x| (staying >1) is an entropy ascent. Self-asserting.
+# R3.1: numeric diverging retains incumbent raw/relative tests, with zero
+# noise floor for all-exact windows and the registered NaN/infinity alignment.
+# The separate entropy-ascent witness uses nonnumeric singleton containers.
 
 print of "=== WINDOWED DIVERGING (docs/PREDICATES.md, #208) ==="
 
@@ -109,12 +94,12 @@ want of ["WD8 count < 3 does not fire", d8, false]
 
 # #861: entropy-window mechanics — WD1 is the canonical entropy-ascent (value
 # decay toward 1) case; its entropy label must stay "diverging".
-wd1e is 499.0
-wd1e is 99.0
-wd1e is 19.0
-wd1e is 9.0
-wd1e is 5.0
-wd1e is 3.0
+wd1e is [499.0]
+wd1e is [99.0]
+wd1e is [19.0]
+wd1e is [9.0]
+wd1e is [5.0]
+wd1e is [3.0]
 elabel is classify of [(trajectory of wd1e), "entropy"]
 assert of [elabel == "diverging", f"WD1e entropy channel lost its diverging verdict: {elabel}"]
 print of "  PASS: WD1e entropy channel still reads diverging via classify"

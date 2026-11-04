@@ -1002,14 +1002,14 @@ check "WHO name (counter)" "$(echo "$OUTPUT" | grep -A1 'different variable' | t
 check "WHEN step (1)" "$(echo "$OUTPUT" | grep -A1 'temporal step' | tail -1)" "1" # S9-K1 (#1758): published counts are ints.
 check "WHEN multi-assign (3)" "$(echo "$OUTPUT" | grep -A1 'multiple assignments' | tail -1)" "3" # S9-K1 (#1758): published counts are ints.
 
-WHERE_VAL=$(echo "$OUTPUT" | grep -A1 'WHERE returns entropy' | tail -1)
-check_numeric "WHERE entropy >= 0" "$WHERE_VAL" "0" "10"
+WHERE_VAL=$(echo "$OUTPUT" | grep -A1 'WHERE returns current value' | tail -1)
+check "WHERE current value" "$WHERE_VAL" "100"
 
-WHY_VAL=$(echo "$OUTPUT" | grep -A1 'WHY returns gradient' | tail -1)
-check_numeric "WHY gradient is number" "$WHY_VAL" "-10" "10"
+WHY_VAL=$(echo "$OUTPUT" | grep -A1 'WHY returns displacement' | tail -1)
+check "WHY first sample has no displacement" "$WHY_VAL" "null"
 
-HOW_VAL=$(echo "$OUTPUT" | grep -A1 'HOW returns stability' | tail -1)
-check_numeric "HOW stability 0-1" "$HOW_VAL" "0" "1"
+HOW_VAL=$(echo "$OUTPUT" | grep -A1 'HOW returns settledness' | tail -1)
+check "HOW first sample has no settledness" "$HOW_VAL" "null"
 
 check "WHAT assignment (256)" "$(echo "$OUTPUT" | grep -A1 'ASSIGNMENT THEN' | tail -1)" "256"
 echo ""
@@ -1119,7 +1119,7 @@ echo "[6/15] Halting: Runaway Loop Contract (#861)"
 HD_OUTPUT=$(./eigenscript ../tests/test_halting_descent.eigs 2>&1)
 
 # #861: the runaway loop's honest contract — the stall backstop ends it
-# after ~100 quiet-entropy iterations (was: exit at ~13 via the entropy
+# after ~100 quiet-relative-step iterations (was: exit at ~13 via the entropy
 # defect certifying a doubling runaway as converged).
 HD_ITERS=$(echo "$HD_OUTPUT" | grep -A1 'HD1:' | tail -1)
 TOTAL=$((TOTAL + 1))
@@ -1140,10 +1140,10 @@ check "HD3 __loop_exit__=stalled" "$HD_EXIT" "stalled"
 HD_DH=$(echo "$HD_OUTPUT" | grep -A4 'HD1:' | tail -1)
 TOTAL=$((TOTAL + 1))
 if [ -n "$HD_DH" ]; then
-    echo "  PASS: HD4 final dH reported ($HD_DH)"
+    echo "  PASS: HD4 final displacement reported ($HD_DH)"
     PASS=$((PASS + 1))
 else
-    echo "  FAIL: HD4 final dH empty"
+    echo "  FAIL: HD4 final displacement empty"
     FAIL=$((FAIL + 1))
 fi
 echo ""
@@ -1159,16 +1159,16 @@ check "HS2 equilibrium=true at dH~0" "$HS_EQ" "true"
 
 HS_H=$(echo "$HS_OUTPUT" | grep -A1 'HS2:' | tail -1)
 TOTAL=$((TOTAL + 1))
-if [ -n "$HS_H" ]; then
-    echo "  PASS: HS3 entropy above threshold ($HS_H)"
+if [ "$HS_H" = "42" ]; then
+    echo "  PASS: HS3 current value is42 ($HS_H)"
     PASS=$((PASS + 1))
 else
-    echo "  FAIL: HS3 entropy empty"
+    echo "  FAIL: HS3 current value differs from42"
     FAIL=$((FAIL + 1))
 fi
 
 HS_DH=$(echo "$HS_OUTPUT" | grep -A2 'HS2:' | tail -1)
-check "HS4 dH~0" "$HS_DH" "0.0"
+check "HS4 exact integer displacement0" "$HS_DH" "0"
 
 HS_REPORT=$(echo "$HS_OUTPUT" | grep -A3 'HS2:' | tail -1)
 check "HS5 report=converged (#861)" "$HS_REPORT" "converged"
@@ -1211,7 +1211,7 @@ check_eigs_suite "predicate family matrix: mutual-exclusion + co-fire edges + th
 echo ""
 
 echo "[8d] Windowed Improving"
-check_eigs_suite "windowed improving: net-descent + proportional vote + gray-band/sub-majority/partial-window" \
+check_eigs_suite "windowed improving: running best + relative minimum improvement + patience" \
     "test_windowed_improving.eigs" "WINDOWED_IMPROVING_ALL_PASS"
 echo ""
 
@@ -1226,7 +1226,7 @@ check_eigs_suite "windowed oscillating: flip-count threshold + dh_zero deadband 
 echo ""
 
 echo "[8g] Windowed Stable"
-check_eigs_suite "windowed stable: full-window small-motion + entropy floor + no-flips + h_low boundary" \
+check_eigs_suite "windowed stable: full-window finite midrange ball + one-percent band" \
     "test_windowed_stable.eigs" "WINDOWED_STABLE_ALL_PASS"
 echo ""
 
@@ -5863,9 +5863,8 @@ echo ""
 echo "[Observer] Parked call-env observer reset"
 check_eigs_suite "observer park-env reset" test_observer_park.eigs "OBS_PARK_OK"
 
-# #412: the settled observer-surface decisions — unity horizon (entropy at
-# |x|=1.0 is the formula max, never converged) and `how` as the
-# deadband-normalized settledness gradient.
+# R3.1: numeric value/displacement/relative-step settledness, including
+# first-sample nulls and the continuous how formula.
 check_eigs_suite "observer coherence (#412)" test_observer_coherence.eigs "All tests passed"
 
 # #861 / R2.2: infinite runaway values cannot certify rest, while a finite

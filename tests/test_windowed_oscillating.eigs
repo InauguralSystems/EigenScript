@@ -1,18 +1,5 @@
-# #861: numeric bindings route the predicate words to the VALUE channel
-# (see docs/PREDICATES.md). The sequences below drive numbers, so the
-# entropy-window mechanics this file was written for are now reachable
-# only via `classify of [t, "entropy"]` — pinned per-case where the
-# entropy behaviour was the point. The routed pins were re-measured and
-# each change is annotated at the assert.
-# Windowed `oscillating` (#206, docs/PREDICATES.md):
-#   oscillating = count >= 3
-#                 AND sign_flip_count(window) >= FLIPS   (FLIPS = ceil(N/3) = 4)
-# A sign flip is an adjacent dH pair with opposite signs whose magnitudes BOTH
-# clear dh_zero (sub-noise wobble does not count). Unlike improving/diverging
-# this gates at dh_zero, not dh_small — it is a deadband-escape test, not a
-# direction verdict (#187 left it on dh_zero). FLIPS=4 means a window needs >=5
-# samples / 4 alternating dH to ever fire: a single reversal is not oscillation.
-# Self-asserting; prints WINDOWED_OSCILLATING_ALL_PASS on success.
+# R3.1: numeric oscillating retains incumbent sign-flip tests, with zero
+# raw noise floor when every active step is exact and infinity alignment.
 
 print of "=== WINDOWED OSCILLATING (docs/PREDICATES.md, #206) ==="
 

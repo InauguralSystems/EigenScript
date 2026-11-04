@@ -49,15 +49,25 @@ static int host_occurrences(const PrevEntry *e) {
     return e->occ_total == 2 && e->occ_count == 2 && e->occ &&
            number(e->occ[0].value, 11) && number(e->occ[1].value, 22);
 }
+/* R3.1 records one scalar snapshot; retain this fixture's nonnumeric
+ * metadata control and its original boundary/retention assertions. */
+static void record_entropy_obs(const char *name, double entropy, double dh,
+                               double last_entropy) {
+    ObsSnapshot snapshot = {0};
+    snapshot.ent_entropy = entropy;
+    snapshot.ent_dH = dh;
+    snapshot.ent_last_entropy = last_entropy;
+    trace_record_obs(name, snapshot);
+}
 static int host_observers(const PrevEntry *e) {
     return e->hist_count == 2 && e->history &&
-           e->history[1].obs_valid && e->history[1].entropy == .5 &&
-           e->history[1].dH == .25 && e->history[1].last_entropy == .125;
+           e->history[1].obs_valid && e->history[1].obs.ent_entropy == .5 &&
+           e->history[1].obs.ent_dH == .25 && e->history[1].obs.ent_last_entropy == .125;
 }
 static int host_occ_observers(const PrevEntry *e) {
     return e->occ_count == 2 && e->occ && e->occ[1].obs_valid &&
-           e->occ[1].entropy == .5 && e->occ[1].dH == .25 &&
-           e->occ[1].last_entropy == .125;
+           e->occ[1].obs.ent_entropy == .5 && e->occ[1].obs.ent_dH == .25 &&
+           e->occ[1].obs.ent_last_entropy == .125;
 }
 typedef struct {
     char bytes[4096];
@@ -90,7 +100,7 @@ int main(void) {
     trace_assign_filtered(fresh, slot_from_f64(2));
     trace_assign_at_line(fresh, slot_from_f64(3), 10);
     trace_assign_filtered_at_line(fresh, slot_from_f64(4), 20);
-    trace_record_obs(fresh, .5, .25, .125);
+    record_entropy_obs(fresh, .5, .25, .125);
     g_sandbox_active = 0;
     check(!g_prev_tab && g_prev_count == 0 && g_prev_cap == 0,
           "active boundary creates no history table or name entry");
@@ -114,9 +124,9 @@ int main(void) {
 
     trace_arm_occurrences_name(host);
     trace_assign_at_line(host, slot_from_f64(11), 10);
-    trace_record_obs(host, .25, .125, .0625);
+    record_entropy_obs(host, .25, .125, .0625);
     trace_assign_filtered_at_line(host, slot_from_f64(22), 20);
-    trace_record_obs(host, .5, .25, .125);
+    record_entropy_obs(host, .5, .25, .125);
     check(g_prev_tab && g_prev_count == 1, "host producer creates one entry");
     if (!g_prev_tab) goto done;
     PrevEntry *e = prev_lookup_slot(g_prev_tab, g_prev_cap, host);
@@ -137,7 +147,7 @@ int main(void) {
     g_sandbox_active = 1;
     trace_assign(host, slot_from_f64(33));
     trace_assign_filtered_at_line(host, slot_from_f64(44), 30);
-    trace_record_obs(host, 9, 8, 7);
+    record_entropy_obs(host, 9, 8, 7);
     g_sandbox_active = 0;
     check(g_prev_tab == table && g_prev_count == count && g_prev_cap == capacity,
           "active boundary preserves existing table metadata");
@@ -158,7 +168,7 @@ int main(void) {
     trace_assign_filtered(fresh, slot_from_f64(6));
     trace_assign_at_line(fresh, slot_from_f64(7), 30);
     trace_assign_filtered_at_line(fresh, slot_from_f64(8), 40);
-    trace_record_obs(host, 9, 8, 7);
+    record_entropy_obs(host, 9, 8, 7);
     g_sandbox_active = 0;
     check(!tape.overflow && tape.assignments == 4 &&
           strstr(tape.bytes, "A 0 boundary_fresh=5.0\n") &&
@@ -175,7 +185,7 @@ int main(void) {
           "wildcard recording preserves both host observer snapshots");
 
     trace_assign_at_line(host, slot_from_f64(33), 30);
-    trace_record_obs(host, .75, .5, .25);
+    record_entropy_obs(host, .75, .5, .25);
     check(number(e->current, 33) && number(e->prev, 22),
           "host producer resumes after boundary ends");
     EigsSlot answer = slot_null();
@@ -183,10 +193,10 @@ int main(void) {
     check(found && number(answer, 22), "earlier explicit-line answer survives");
     if (found) slot_decref(answer);
     check(e->hist_count == 3 && e->history[2].obs_valid &&
-          e->history[2].entropy == .75 && e->history[2].dH == .5,
+          e->history[2].obs.ent_entropy == .75 && e->history[2].obs.ent_dH == .5,
           "host history observer recording resumes");
     check(e->occ_total == 3 && e->occ_count == 3 && e->occ[2].obs_valid &&
-          e->occ[2].entropy == .75 && e->occ[2].dH == .5,
+          e->occ[2].obs.ent_entropy == .75 && e->occ[2].obs.ent_dH == .5,
           "host occurrence observer recording resumes");
     trace_assign_tape_only(fresh, slot_from_f64(9));
     check(tape.assignments == 6 && strstr(tape.bytes, "A 0 boundary_fresh=9.0\n") &&

@@ -1,0 +1,14 @@
+# ROW: ctl.O2.noise-oscillates
+# ITEMS: O2
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+s is 777.0
+i is 0.0
+x is 100.0
+loop while i < 61.0:
+    s is (s * 16807.0) % 2147483647.0
+    x is 100.0 + (s / 2147483647.0 * 2.0 - 1.0)
+    i is i + 1.0
+print of (oscillating of x)

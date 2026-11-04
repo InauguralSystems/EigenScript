@@ -58,9 +58,9 @@ print of ["return", __loop_iterations__]
 exit_o is 0
 loop while exit_o < 1:
     exit_o is exit_o + 1
-    stall_x is 100.0
+    stall_x is 1000000.0
     loop while not converged:
-        stall_x is stall_x * 2
+        stall_x is stall_x + 200.0
     stalled_reason is __loop_exit__
     limit_code is [101, 63,3,0, 30,6,0, 25,0,0, 40]
     limit_r is sandbox_run of [[1, limit_code, ["__loop_iterations__"]], 5]

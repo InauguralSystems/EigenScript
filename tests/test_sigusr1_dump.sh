@@ -51,6 +51,7 @@ FIX2=/tmp/eigs_sigusr1_b_$$.eigs
 # collected its dumps (see the header).
 SENT1=/tmp/eigs_sigusr1_a_$$.go
 ARM1=/tmp/eigs_sigusr1_a_$$.arm
+ARM2=/tmp/eigs_sigusr1_b_$$.arm
 SENT2=/tmp/eigs_sigusr1_b_$$.go
 OUT1=/tmp/eigs_sigusr1_a_$$.out
 ERR1=/tmp/eigs_sigusr1_a_$$.err
@@ -65,7 +66,7 @@ cleanup() {
     for p in $PIDS; do
         sigusr1_stop "$p" || status=1
     done
-    rm -f "$FIX1" "$FIX2" "$OUT1" "$ERR1" "$OUT2" "$ERR2" "$SENT1" "$SENT2" "$ARM1" "$FIX1.bak" "$FIX2.bak"
+    rm -f "$FIX1" "$FIX2" "$OUT1" "$ERR1" "$OUT2" "$ERR2" "$SENT1" "$SENT2" "$ARM1" "$ARM2" "$FIX1.bak" "$FIX2.bak"
     exit "$status"
 }
 trap cleanup EXIT
@@ -178,13 +179,13 @@ if grep -q "observer gate CLOSED" "$ERR1"; then
     fi
 fi
 
-# Row shape: name | value | when=<assigns> | entropy=<H> | dH=<dH> | word.
+# Row shape: numeric name | value | when=<assigns> | delta=<step> | word.
 # when must have 4+ digits: READY follows 5000 step_count assignments;
 # a gated second dump additionally waits for 5000 post-arm assignments.
 # This is a settled long-lived
 # binding, visibly distinct from a fresh per-call one.
-if grep -qE '^step_count \| [0-9]+ \| when=[0-9]{4,} \| entropy=[^ ]+ \| dH=[^ ]+ \| [a-z]+$' "$ERR1"; then
-    pass "sigusr1: module row shape (name|value|when|entropy|dH|trajectory) with settled when"
+if grep -qE '^step_count \| [0-9]+ \| when=[0-9]{4,} \| delta=[^ ]+ \| [a-z]+$' "$ERR1"; then
+    pass "sigusr1: module row shape (name|value|when|delta|trajectory) with settled when"
 else
     fail "sigusr1: module step_count row missing/misshaped"
 fi
@@ -198,7 +199,7 @@ else
     fail "sigusr1: live-frame when=1 row for parameter n missing"
 fi
 
-if grep -qE '^loss \| [0-9.]+ \| when=[0-9]{4,} \| entropy=[^ ]+ \| dH=[^ ]+ \| [a-z]+$' "$ERR1"; then
+if grep -qE '^loss \| [0-9.]+ \| when=[0-9]{4,} \| delta=[^ ]+ \| [a-z]+$' "$ERR1"; then
     pass "sigusr1: fn-local row carries its accumulated when count"
 else
     fail "sigusr1: fn-local loss row missing/misshaped"
@@ -250,9 +251,18 @@ define churn(n) as:
 t is spawn of [churn, 2500000000]
 define train(n) as:
     loss is 5.0
+    post_arm_samples is -1
     loop while step_count < n:
         step_count is step_count + 1
         loss is loss * 0.999 + 0.001
+        if post_arm_samples < 0:
+            if file_exists of "@ARM2@":
+                post_arm_samples is 0
+        else:
+            if post_arm_samples < 5000:
+                post_arm_samples is post_arm_samples + 1
+                if post_arm_samples == 5000:
+                    print of "POST_ARM_READY"
         if step_count == 5000:
             print of "READY"
         if step_count % 200000 == 0:
@@ -264,6 +274,8 @@ thread_join of t
 print of "DONE"
 EOF
 sigusr1_replace_sentinel "$FIX2" "@SENT2@" "$SENT2" || exit 1
+sigusr1_replace_sentinel "$FIX2" "@ARM2@" "$ARM2" || exit 1
+rm -f "$ARM2"
 
 "$EIGS" "$FIX2" > "$OUT2" 2> "$ERR2" &
 PID=$!
@@ -289,10 +301,31 @@ else
     exit 1
 fi
 
-if grep -qE '^step_count \| [0-9]+ \| when=[0-9]{4,} \| entropy=[^ ]+ \| dH=[^ ]+ \| [a-z]+$' "$ERR2"; then
+# Each child owns its observer gate. As in the single-thread control,
+# collect a second populated dump after a closed first dump arms this child.
+if grep -q "observer gate CLOSED" "$ERR2"; then
+    : > "$ARM2"
+    if ! poll_file "$OUT2" "^POST_ARM_READY$" 600; then
+        fail "sigusr1-mt: child never completed 5000 assignments after the gate armed"
+        exit 1
+    fi
+    DUMPS_BEFORE=$(grep -c '^# end dump$' "$ERR2")
+    kill -USR1 "$PID" 2>/dev/null || true
+    for _ in $(seq 1 600); do
+        [ "$(grep -c '^# end dump$' "$ERR2")" -gt "$DUMPS_BEFORE" ] && break
+        sleep 0.1
+    done
+    if [ "$(grep -c '^# end dump$' "$ERR2")" -le "$DUMPS_BEFORE" ]; then
+        fail "sigusr1-mt: no second dump after the gate armed"
+        exit 1
+    fi
+fi
+
+if grep -qE '^step_count \| [0-9]+ \| when=[0-9]{4,} \| delta=[^ ]+ \| [a-z]+$' "$ERR2"; then
     pass "sigusr1-mt: module row shape with settled when"
 else
     fail "sigusr1-mt: module step_count row missing/misshaped"
+    sed 's/^/    dump: /' "$ERR2"
 fi
 
 # RELEASE the worker and the main loop (same rule as subtest 1).

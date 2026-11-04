@@ -1,8 +1,8 @@
-=== HALTING: BOUNDED DESCENT TEST ===
---- HD1: Entropy strictly decreases each iteration ---
-110
+=== HALTING: NUMERIC-QUIET RUNAWAY TEST ===
+--- HD1: Numeric-quiet runaway exits via stall ---
+100
 diverging
-8.730003786945632e-33
--8.575929391394651e-33
+1020000.0
+200.0
 
-=== BOUNDED DESCENT COMPLETE ===
+=== NUMERIC-QUIET RUNAWAY COMPLETE ===

@@ -1953,9 +1953,9 @@ x
 ```
 
 ```eigenscript fragment x=1
-print of (where is x)   # x's current value: 1
-print of (why is x)     # null: no numeric step yet
-print of (how is x)     # null: no numeric step yet
+assert of [(where is x) == 1, "where retains the current value"]
+assert of [(why is x) == null, "a fresh binding has no displacement"]
+assert of [(how is x) == null, "a fresh binding has no relative step"]
 ```
 
 ## Observer semantics and predicates

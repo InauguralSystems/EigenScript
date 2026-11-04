@@ -790,7 +790,7 @@ loop while not converged of w:
     grad is ((loss_at of (w + h)) - (loss_at of (w - h))) / (2 * h)
     w is w - lr * grad
     steps is steps + 1
-assert of [steps == 22, f"helper trajectory took {steps} steps"]
+assert of [steps == 21, f"helper trajectory took {steps} steps"]
 assert of [(when is w) == 22, f"helper trajectory recorded {when is w} observations"]
 ```
 
@@ -982,8 +982,13 @@ loop while t < 40:
 print of (a + " " + b)
 ```
 ```output
-improving oscillating
+moving oscillating
 ```
+
+A closure's initial `q is 0.0` is its first finite baseline and running
+minimum. The positive decay never beats that minimum, so D2 does not call
+it `improving`; its window is still moving after these 40 updates. The
+second entity's own sign-flipping history reads `oscillating`.
 
 A named binding per entity (`qa is fleet[0][2]`, `qb is fleet[1][2]`) is the
 same thing when N is fixed at authoring time. Container-keyed trajectory

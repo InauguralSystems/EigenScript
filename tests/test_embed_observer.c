@@ -10,6 +10,15 @@
 #include "eigenscript.h"
 #include "vm.h"
 
+/* The direct baseline lane compiles this fixture against the pre-R3 API. */
+static void observe_native_num(Env *env, int idx, double x) {
+#ifdef EIGS_OBS_BASELINE_ONLY
+    observer_slot_update_num(env, idx, x);
+#else
+    observer_slot_update_numeric(env, idx, slot_from_f64(x));
+#endif
+}
+
 static int passed, failed;
 static void check(int ok, const char *name) {
     printf("%s: %s\n", ok ? "PASS" : "FAIL", name);
@@ -39,7 +48,7 @@ static void raw_host(void) {
     for (int i = 0; i < 12; i++) {
         x *= 0.5;
         env_set_local_owned(env, "raw_x", make_float(x));
-        observer_slot_update_num(env, 0, x);
+        observe_native_num(env, 0, x);
     }
     int answer = observer_predicate_at(env, 0, 2 /* improving */, 1);
     printf("raw host: obs_needed=%d improving=%d\n", g_obs_needed, answer);
@@ -59,7 +68,7 @@ static void direct(void) {
     for (int i = 0; i < 12; i++) {
         x *= 0.5;
         env_set_local_owned(env, "native_x", make_float(x));
-        observer_slot_update_num(env, idx, x);
+        observe_native_num(env, idx, x);
     }
     int answer = observer_predicate_at(env, idx, 2 /* improving opcode operand */, 1);
     printf("native improving=%d\n", answer);
@@ -208,7 +217,7 @@ static EigsValue *host_reader(EigsValue *arg) {
     for (int i = 0; i < 12; i++) {
         x *= 0.5;
         env_set_local_owned(env, "x", make_float(x));
-        observer_slot_update_num(env, 0, x);
+        observe_native_num(env, 0, x);
     }
     int answer = observer_predicate_at(env, 0, 2 /* improving */, 1);
     env_decref(env);

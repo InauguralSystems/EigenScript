@@ -1,16 +1,5 @@
-# #861: numeric bindings route the predicate words to the VALUE channel
-# (see docs/PREDICATES.md). The sequences below drive numbers, so the
-# entropy-window mechanics this file was written for are now reachable
-# only via `classify of [t, "entropy"]` — pinned per-case where the
-# entropy behaviour was the point. The routed pins were re-measured and
-# each change is annotated at the assert.
-# Windowed `equilibrium` (#209, docs/PREDICATES.md):
-#   equilibrium = count == N (full window)
-#                 AND |mean(window)| < dh_zero
-#                 AND variance(window) < dh_zero^2
-# The value is sitting still on average with negligible spread, regardless of
-# entropy. A low-entropy value can independently read `converged`; a
-# high-entropy equilibrium also reads `stable`. Self-asserting; prints marker.
+# R3.1: numeric equilibrium retains its incumbent full-window tests, with
+# zero raw noise floor when every active step is exact; NaN is always false.
 
 print of "=== WINDOWED EQUILIBRIUM (docs/PREDICATES.md, #209) ==="
 

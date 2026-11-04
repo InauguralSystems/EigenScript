@@ -33,21 +33,21 @@ EXPECT: 1
 3
 EXPECT: 3
 
---- WHERE: entropy (spatial) ---
-WHERE returns entropy (number >= 0):
-0.08013604733127525
+--- WHERE: current numeric value ---
+WHERE returns current value (number):
+100
 
---- WHY: gradient (dH/dt) ---
-WHY returns gradient (number):
-0.0
+--- WHY: displacement (null on first sample) ---
+WHY returns displacement (null on first sample):
+null
 
---- HOW: stability (0-1) ---
-HOW returns stability (0-1 range):
-1.0
+--- HOW: settledness (null on first sample) ---
+HOW returns settledness (null on first sample):
+null
 
 --- ARITHMETIC COMPOSITION ---
 Arithmetic on interrogatives works:
-102.0
+103.0
 
 --- ASSIGNMENT THEN INTERROGATIVE ---
 256

@@ -1,47 +1,28 @@
-# #862 — the EXACT entropy level set {x, -x, 1/x, -1/x}.
-#
-# `entropy_of_num` is H2(1/(1+|x|)). Two identities follow from the formula
-# alone: H2(p) = H2(1-p) with p(1/x) = 1-p(x) gives H(x) = H(1/x), and the
-# fabs() gives H(x) = H(-x). So every value has level set {x, -x, 1/x, -1/x},
-# and a trajectory confined to it has dH IDENTICALLY 0 — not merely small.
-#
-# That blindness is permanent: the entropy constants are load-bearing (changing
-# them re-tunes every predicate threshold at once), so the formula is not
-# changing. What protects the language is that #294 added the value channel and
-# #861/#892 routed numeric predicates and `report` through it, so these
-# trajectories are classified on relative value steps instead.
-#
-# This test pins BOTH halves of that arrangement on the exact level set:
-#   - the value-channel surfaces (`report`, the bare predicates) see the
-#     oscillation, and
-#   - the entropy channel, asked for by name, still does not.
-#
-# Why it is not covered by test_observer_value_signal.eigs: that test's
-# oscillator is 5 + 0.6*cos(k*omega), which lives in a FLAT-entropy region —
-# dH is small there, but not zero. If numeric predicates were ever routed back
-# to the entropy channel, a small-dH oscillation could still be detected and
-# that test would likely stay green. On the level set dH is exactly 0, so
-# nothing can recover the signal from it, and case 1 here goes red immediately.
+# R3.1: scalar predicates use value trajectories. Singleton containers
+# retain entropy(value)+1, so sign/reciprocal level sets remain entropy-blind.
+# Compare numeric oscillation against that independent nonnumeric channel.
 
-# Sign flip: x = 5, -5, 5, -5, ... The simplest possible trajectory on the
-# level set. Returns [entropy-channel label, report, oscillating].
 define run_signflip() as:
     local x is 5.0
+    local boxed_x is [x]
     local k is 0
     loop while k < 60:
         x is 0 - x
+        boxed_x is [x]
         k is k + 1
-    return [classify of [trajectory of x, "entropy"], report of x, oscillating of x]
+    return [classify of [trajectory of boxed_x, "entropy"], report of x, oscillating of x]
 
 # Reciprocal: y = 1000, 0.001, 1000, ... The worse case — six orders of
 # magnitude per step, and the entropy channel calls it the STRONGEST rest band.
 define run_recip() as:
     local y is 1000.0
+    local boxed_y is [y]
     local k is 0
     loop while k < 60:
         y is 1.0 / y
+        boxed_y is [y]
         k is k + 1
-    return [classify of [trajectory of y, "entropy"], report of y, oscillating of y]
+    return [classify of [trajectory of boxed_y, "entropy"], report of y, oscillating of y]
 
 local pass is 1
 

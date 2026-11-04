@@ -14,8 +14,9 @@
 # share the module-global heap on one thread):
 #   * A worker publishes RAW progress each step with `heartbeat of [slot, v]`.
 #   * The SUPERVISOR samples each alive worker's progress every tick, feeds a
-#     BOUNDED signature (1.5 + v % 8 — never a raw counter, which hits the
-#     #294 flat-entropy blind spot) into that slot's observer trajectory, and
+#     BOUNDED signature (1.5 + v % 8) into that slot's value trajectory, and
+#     keeps this established signature policy even though numeric observation
+#     no longer uses the historical #294 entropy route. It
 #     flags a worker whose signature has gone `stable` (frozen) after a
 #     warm-up window. Sampling on the SUPERVISOR side is what makes a wedge
 #     visible: a frozen worker stops calling heartbeat, so only the poller

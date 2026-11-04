@@ -184,9 +184,9 @@ cleanly with what ships today:
   `numerical_grad` / SGD helpers
 - Single-threaded automation scripts and data pipelines over JSON / CSV
 - Small HTTP toys using the optional server/client extension
-- Observer-driven analytics that exploit the built-in entropy, dH, and
-  trajectory tracking on every variable (`unobserved:` blocks for
-  performance-critical paths)
+- Observer-driven analytics using numeric value/displacement trajectories
+  and non-numeric entropy/dH. `unobserved:` can elide non-numeric entropy
+  and comparison work; numeric histories remain complete.
 - SDL2 graphical applications using the `gfx_*` extension
   (see [Tidepool](https://github.com/InauguralSystems/Tidepool))
 - Physics, game-logic, and simulation demos (see `examples/`: rope,

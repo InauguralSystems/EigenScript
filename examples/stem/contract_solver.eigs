@@ -39,9 +39,9 @@ print of ""
 define cos_fixed(x) as:
     return cos of x
 
-# Contract-convergence settles to the observer's step deadband (dh_zero=1e-3),
-# not arbitrary precision: cos converges LINEARLY, so its residual rests near
-# that scale (Newton reached machine-eps above only because it is quadratic).
+# Contract-convergence uses the full-window diameter tolerance, not arbitrary
+# precision: cos converges linearly. Newton reached machine precision above
+# because its convergence is quadratic. The residual check pins the target.
 print of "Fixed point x = cos(x):"
 dottie is expect_converging of [1.0, cos_fixed, 80, "cos iteration must converge"]
 fp_resid is math_abs of ((cos of dottie) - dottie)
@@ -51,10 +51,9 @@ print of ("  resid = " + (str of fp_resid) + "  (contract: converging + fixed-po
 print of ""
 
 # ---- The value the contract adds: catching a divergent solver ----
-# A relaxation factor > 2 turns the same fixed-point search into a runaway. The
-# ENTROPY channel is fooled — a monotonically exploding value reads "converged"
-# (the #294 blind spot) — so a naive `report`-based guard would pass it. The
-# contract reads the VALUE channel and catches it.
+# A relaxation factor > 2 turns the same fixed-point search into a runaway.
+# Numeric report and report_value both read the value channel; the contract
+# adds a checked observation budget and throws when it detects divergence.
 define bad_relax(x) as:
     return x + 2.5 * ((cos of x) - x)
 

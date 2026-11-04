@@ -41,12 +41,12 @@
 # silently certifying nothing. For a vector solver, have step_fn return the
 # scalar residual/estimate you actually want to constrain.
 #
-# RESOLUTION FLOOR. The value channel classifies the *relative* step
-# (v-last)/(1+|v|) against dh_zero=1e-3 / dh_small=1e-2 over a 10-sample
-# window, PLUS (since #422 was fixed upstream) a raw-step structure test:
-# non-vanishing same-sign steps classify "diverging" (an additive/polynomial
-# runaway no longer hides behind normalization) and non-vanishing alternating
-# steps classify "oscillating" even below the deadband. A damped (decaying-
+# RESOLUTION FLOOR. Numeric report and report_value share the value channel.
+# Converged compares the diameter of ten steps' eleven finite values with
+# 1e-3*max(abs(current),1e-3); stable uses the 1% band about the midrange.
+# All-exact int64 windows use absolute settled tolerances and zero raw noise
+# floor. Incumbent raw tests still classify non-vanishing same-sign steps as
+# "diverging" and alternating steps as "oscillating". A damped (decaying-
 # step) oscillation still settles to "converged" — feed the residual if you
 # mean "never rings at all". Convergence is not correctness even when caught —
 # pair with `ensure` on the final residual to pin the actual target, not
@@ -62,7 +62,7 @@ define _num_guard(a, who) as:
     throw of (who + ": trajectory must be a scalar (num), got " + t + " — return a residual/estimate from step_fn, not the raw state")
 
 # ---- _budget_guard: reject a budget too small to classify ----
-# Internal. The observer window is OBSERVER_WINDOW_N = 10 samples; fewer cannot
+# Internal. The observer window is OBSERVER_WINDOW_N = 10 steps; fewer cannot
 # distinguish settling from a single lucky read, so a small max_obs would
 # vacuously accept a divergent solver. A too-small budget is a caller error.
 define _budget_guard(max_obs, who) as:
@@ -90,18 +90,16 @@ define ensure(n) as:
 
 # ---- expect_converging of [x0, step_fn, max_obs, msg] ----
 # Drives step_fn from x0 and asserts the trajectory reaches the value channel's
-# "converged" verdict — a full 10-sample window of below-deadband relative steps
+# "converged" verdict — a full ten-step window whose diameter fits its tolerance
 # — within max_obs observations. Returns the converged value; throws, naming the
 # last regime, if the budget is spent without converging (a runaway stays
-# "moving", an over-relaxed solver "oscillating", a crawler "stable").
+# "diverging", an over-relaxed solver "oscillating", a crawler "stable").
 #
-# WHY THE VALUE CHANNEL, NOT `report`. The entropy channel cannot tell a
-# converging solver from an exploding one: a monotonically growing value has
-# falling-then-flat entropy, so `report` labels a runaway "converged" (measured:
-# grow x*1.5 for 40 steps -> report=converged). Only the value channel keeps
-# them apart — same run reads report_value=moving (or, since #422,
-# "diverging" outright). Runaways now FAIL FAST: a mid-run "diverging"
+# report_value explicitly chooses the scalar value trajectory; numeric report
+# uses the same classifier. Runaways FAIL FAST: a mid-run "diverging"
 # classification throws immediately instead of burning the whole budget.
+# A recent D2 improvement can outrank converged in report, so this contract
+# waits for the report label as written, rather than a bare converged predicate.
 define expect_converging(n) as:
     a is n[0]
     step_fn is n[1]
@@ -124,8 +122,8 @@ define expect_converging(n) as:
 # ---- expect_monotone of [x0, step_fn, max_obs, msg] ----
 # The #294 value-delta contract: asserts the VALUE trajectory never oscillates
 # (sign-flipping steps above the deadband) across up to max_obs updates. Uses
-# report_value — the value signal catches oscillation the entropy channel goes
-# blind to in flat-entropy regions. Returns early on a converged value, else the
+# report_value, which agrees with numeric report and follows value motion.
+# Returns early on a converged report label, else the
 # final value; throws on the first "oscillating" classification. A damped
 # oscillation (alternating but shrinking) IS oscillation on the raw state — feed
 # its residual/|x| if you mean "converges, possibly by ringing down".

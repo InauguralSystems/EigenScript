@@ -213,7 +213,7 @@ assert of [je_fn == "null", "CV2-58 json_encode fn returns null"]
 s_num is str of 42
 assert of [s_num == "42", "CV2-59 str of num"]
 
-# --- observe returns report+entropy+dH+prev_dH ---
+# --- observe retains its four-element shape for a nonnumeric literal ---
 obs is observe of null
 assert of [(type of obs) == "list", "CV2-60 observe returns list"]
 assert of [(len of obs) == 4, "CV2-61 observe list has 4 elements"]
