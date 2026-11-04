@@ -82,21 +82,11 @@ static double vm_floor_mod(double a, double b) {
     return rem;
 }
 
-/* #262 Phase-3 D: read the last-observed trajectory (dH, entropy) for the
- * observer loop-stall check. Prefers the slot model (the default); falls back
- * to the global last-observer Value when the slot isn't populated (e.g. a
- * the last-observed binding's slot). Shared by the interpreter
- * CASE(LOOP_STALL_CHECK) and jit_helper_loop_stall_check so the two can never
- * disagree on loop classification (the same lockstep invariant the opcode
- * encoding enforces). Returns 1 if (*dH, *ent) were filled. */
-
-static inline int obs_stall_trajectory(double *dH, double *ent) {
+/* The shared stall backstop reads the same recorded channel as the
+ * predicates: a numeric last relative step, or non-numeric dH. */
+static inline int obs_stall_quiet(void) {
     const ObserverSlot *s = env_obs_slot(g_last_obs_slot_env, g_last_obs_slot_idx);
-    if (s && s->used) {
-        *dH = s->ent_dH; *ent = s->ent_entropy;
-        return 1;
-    }
-    return 0;
+    return s && s->used && observer_slot_quiet(s);
 }
 void vm_obs_slot_dropped(Env *e) {
     if (g_last_obs_slot_env == e) { g_last_obs_slot_env = NULL; g_last_obs_slot_idx = -1; }
@@ -105,7 +95,8 @@ void vm_obs_slot_dropped(Env *e) {
 /* ---- #660: SIGUSR1 live observer dump ----
  * An outside process asks a long-running program whether it is progressing:
  * `kill -USR1 <pid>` prints one row per live binding to stderr:
- *     name | value | when=<assign count> | entropy=<H> | dH=<dH> | trajectory
+ *     name | value | when=<assign count> | delta=<last step> | trajectory
+ * Non-numeric bindings retain entropy=<H> and dH=<dH>.
  * The signal handler (installed by the CLI in main.c, SA_RESTART) ONLY sets
  * g_eigs_sigusr1_pending — no allocation, no I/O. The dump runs at the next
  * loop safepoint (the OP_LOOP_STALL_CHECK / OP_LOOP_CAP_CHECK per-iteration
@@ -270,8 +261,19 @@ static void obs_dump_scope(const char *scope, Env *e, int shared,
                 Value *sv = slot_as_ptr(s);
                 if (sv && sv->type == VAL_FN) band = "opaque";   /* #708 */
             }
-            fprintf(stderr, "%s | %s | when=%s | entropy=%.6g | dH=%.6g | %s\n",
-                    name, vbuf, whenbuf, qs.ent_entropy, os->ent_dH, band);
+            if (qs.v_used && qs.v_last) {
+                ObsSnapshot snapshot = observer_slot_snapshot(&qs);
+                char stepbuf[64];
+                if (!snapshot.has_step) snprintf(stepbuf, sizeof(stepbuf), "null");
+                else if (snapshot.why.is_int)
+                    eigs_int_text(stepbuf, sizeof(stepbuf), snapshot.why.integer);
+                else eigs_num_text(stepbuf, sizeof(stepbuf), snapshot.why.value);
+                fprintf(stderr, "%s | %s | when=%s | delta=%s | %s\n",
+                        name, vbuf, whenbuf, stepbuf, band);
+            } else {
+                fprintf(stderr, "%s | %s | when=%s | entropy=%.6g | dH=%.6g | %s\n",
+                        name, vbuf, whenbuf, qs.ent_entropy, os->ent_dH, band);
+            }
         } else {
             fprintf(stderr, "%s | %s | when=%s | entropy=- | dH=- | unobserved\n",
                     name, vbuf, whenbuf);
@@ -1848,7 +1850,7 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
      * program resolved every assigned name only to return at the helper's
      * gate test). #1049: inside `unobserved:` the name is still resolved when
      * the gate IS open, so the elided assignment's sample reaches the value
-     * window; only the entropy update, alias and tape snapshot are skipped. */
+     * window; only the non-numeric update and bare alias are skipped. */
     if (!eigs_obs_gate_open()) return;
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     EigsSlot s = g_vm.stack[g_vm.sp - 1];
@@ -1865,6 +1867,10 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
     if (oe && oidx >= 0 && g_unobserved_depth != 0) {
         if (isnum) observer_slot_sample_numeric_gated(oe, oidx, s);
         else       observer_slot_sample_gated(oe, oidx, obs_slot_value(s));
+        if (isnum && __builtin_expect(g_trace_obs_hist, 0)) {
+            const ObserverSlot *os = env_obs_slot(oe, oidx);
+            if (os) trace_record_obs(name, observer_slot_snapshot(os));
+        }
         return;
     }
     if (oe && oidx >= 0) {
@@ -1876,7 +1882,7 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
          * interpreter CASE(OBSERVE_NAME_POST). */
         if (__builtin_expect(g_trace_obs_hist, 0)) {
             const ObserverSlot *os = env_obs_slot(oe, oidx);
-            if (os) trace_record_obs(name, os->ent_entropy, os->ent_dH, os->ent_last_entropy);
+            if (os) trace_record_obs(name, observer_slot_snapshot(os));
         }
     }
 }
@@ -2262,25 +2268,9 @@ static int eigs_loop_stall_step_named(Env *e, CallFrame *frame, uint16_t counter
     }
     int should_exit = 0;
     if (g_unobserved_depth == 0) {
-        double dH, ent;
-        /* #861: quiet trajectory at ANY entropy. The old `ent >= h_low`
-         * clause existed because a quiet LOW-entropy trajectory used to be
-         * `converged`'s territory — the entropy-channel predicate fired
-         * there (often wrongly: that was the [77, 1e307] permissive region)
-         * and the stall only needed to cover the high-entropy remainder.
-         * With the predicates routed to the value channel, `converged`
-         * fires exactly where the VALUE settles, at any magnitude — and a
-         * runaway that saturates (or drifts forever below the deadband)
-         * now correctly never certifies. Those trajectories are entropy-
-         * quiet at LOW entropy, which the old clause excluded, so a bare
-         * `loop while not converged` around a runaway would spin forever
-         * (#772 removed the unconditional cap). The honest contract:
-         * `converged` ends the loop when the value settles; `stalled` ends
-         * it when the observer has watched 100 quiet iterations without
-         * certifying — and __loop_exit__ says which one happened. */
-        if (obs_stall_trajectory(&dH, &ent)
-            && fabs(dH) < g_obs_dh_zero) {
-            (void)ent;
+        /* A numeric quiet iteration has |relative step| < dh_zero.
+         * The non-numeric channel keeps its entropy-step backstop. */
+        if (obs_stall_quiet()) {
             g_loop_stall_count++;
             if (g_loop_stall_count >= 100) {
                 g_loop_exit_reason = "stalled";
@@ -5725,23 +5715,22 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
     }
 
     CASE(OBSERVE_VALUE_SLOT): {
-        /* #262 Phase-3 D: `observe of <local>` → [status,entropy,dH,prev_dH]
-         * from the local's slot trajectory; no-observation tuple if unpopulated. */
+        /* Numeric: [status, value, last step, previous step].
+         * Non-numeric: the existing entropy/dH tuple. */
         uint16_t slot = read_u16(ip); ip += 2;
         Env *e = frame->fn_env;
         const ObserverSlot *s = env_obs_slot(e, (int)slot);
         if (s && s->used) {
-            /* #708: the band is "opaque" for a fn/builtin binding; the
-             * dH numbers stay as recorded. #711: the entropy element and
-             * the band read the query-time view — mutations included. */
+            /* #708: opaque for a fn/builtin. #711: non-numeric
+             * current entropy includes mutations; steps stay recorded. */
             ObserverSlot q = vm_slot_query_view(e, (int)slot, s);
             Value *list = make_list(4);
             list_append_owned(list, make_str(
                 vm_slot_value_opaque(e, (int)slot) ? "opaque"
                                                    : observer_slot_report(&q)));
-            list_append_owned(list, make_float(q.ent_entropy));
-            list_append_owned(list, make_float(s->ent_dH));
-            list_append_owned(list, make_float(s->ent_prev_dH));
+            list_append_owned(list, observer_slot_readout(&q, 3));
+            list_append_owned(list, observer_slot_readout(s, 4));
+            list_append_owned(list, observer_slot_readout(s, 6));
             vm_push(list);
         } else {
             vm_push(builtin_observe(NULL));
@@ -5776,9 +5765,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             list_append_owned(list, make_str(
                 vm_slot_value_opaque(oe, oidx) ? "opaque"     /* #708 */
                                                : observer_slot_report(&q)));
-            list_append_owned(list, make_float(q.ent_entropy));
-            list_append_owned(list, make_float(s->ent_dH));
-            list_append_owned(list, make_float(s->ent_prev_dH));
+            list_append_owned(list, observer_slot_readout(&q, 3));
+            list_append_owned(list, observer_slot_readout(s, 4));
+            list_append_owned(list, observer_slot_readout(s, 6));
             vm_push(list);
         } else {
             vm_push(builtin_observe(NULL));
@@ -5797,8 +5786,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
          * program hashed and resolved every assigned name only to return at
          * the helper's gate test). #1049: inside `unobserved:` the binding is
          * still resolved when the gate IS open, so the elided assignment's
-         * sample reaches the value window; the entropy update, the alias and
-         * the tape snapshot are what the block skips. Mirrors
+         * sample reaches the value window; the non-numeric update and bare alias
+         * are what the block skips. Mirrors
          * jit_helper_observe_name_post. */
         if (eigs_obs_gate_open()) {
             EigsSlot s = g_vm.stack[g_vm.sp - 1];
@@ -5816,6 +5805,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     eigs_obs_count_call();
                     if (isnum) observer_slot_sample_numeric_gated(oe, oidx, s);
                     else       observer_slot_sample_gated(oe, oidx, obs_slot_value(s));
+                    if (isnum && __builtin_expect(g_trace_obs_hist, 0)) {
+                        const ObserverSlot *os = env_obs_slot(oe, oidx);
+                        if (os) trace_record_obs(name, observer_slot_snapshot(os));
+                    }
                 } else if (oe && oidx >= 0) {
                     if (isnum) observer_slot_update_numeric(oe, oidx, s);
                     else observer_slot_update(oe, oidx, obs_slot_value(s));
@@ -5827,7 +5820,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                      * trace_assign). */
                     if (__builtin_expect(g_trace_obs_hist, 0)) {
                         const ObserverSlot *os = env_obs_slot(oe, oidx);
-                        if (os) trace_record_obs(name, os->ent_entropy, os->ent_dH, os->ent_last_entropy);
+                        if (os) trace_record_obs(name, observer_slot_snapshot(os));
                     }
                 }
             }
@@ -5902,25 +5895,15 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             break;
         }
         case 3: case 4: case 5: {
-            /* #262 Phase-3 A: where/why/how on a bound name read the binding's
-             * SLOT trajectory (entropy / dH / settledness-of-dH, #412). Falls
-             * back to the Value's observer fields if the slot isn't populated
-             * yet, so the answer matches the value path. */
+            /* The numeric triple is recorded at assignment; a non-numeric
+             * where still refreshes its current entropy for in-place mutation. */
             int oidx = -1, odepth = 0;
             Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
             const ObserverSlot *s = env_obs_slot(oe, oidx);
             if (s && s->used) {
-                if (kind == 3) {
-                    /* #711: `where is x` is the current-state channel —
-                     * recomputed from the value that is there NOW, so an
-                     * in-place mutation is visible. dH (why/how) is the
-                     * assignment-recorded trajectory and stays as stored. */
-                    double h_now;
-                    result = make_float(observer_entropy_now(oe, oidx, &h_now)
-                                          ? h_now : s->ent_entropy);
-                }
-                else if (kind == 4) result = make_float(s->ent_dH);
-                else                result = make_float(observer_settledness_dh(s->ent_dH));
+                ObserverSlot q = vm_slot_query_view(oe, oidx, s);
+                val_decref(result);
+                result = observer_slot_readout(&q, kind);
             } else {
                 /* #262 Step E: unobserved binding — no trajectory. */
                 result = make_float(kind == 5 ? 1.0 : 0.0);

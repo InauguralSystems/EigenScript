@@ -128,9 +128,7 @@ typedef struct {
      * every entry recorded before the flag flipped on mid-run (eval/REPL
      * compiling a historical observer query). */
     uint8_t  obs_valid;
-    double   entropy;
-    double   dH;
-    double   last_entropy;
+    ObsSnapshot obs;           /* scalar-only triple, best and since */
 } HistoryEntry;
 
 /* (line -> assignment count) histogram, kept sorted by line so `when is x
@@ -149,9 +147,7 @@ typedef struct {
 typedef struct {
     EigsSlot value;
     uint8_t  obs_valid;
-    double   entropy;
-    double   dH;
-    double   last_entropy;
+    ObsSnapshot obs;           /* scalar-only triple, best and since */
 } OccEntry;
 
 /* #739: the prev-table lives on EigsThread, not in a file static. It is keyed
@@ -659,15 +655,13 @@ static void prev_record_assign(const char *name, EigsSlot value, int filtered,
 /* #262 Phase-3 D2: patch the observer snapshot for `name`'s most recent
  * history entry from the slot-model trajectory. Called by OBSERVE_NAME_POST
  * after the binding's slot is freshly updated, so `where/why/how is x at L`
- * sources entropy/dH from the Env slot rather than the (Step-E-doomed) Value
- * observer fields. The history entry and its parallel obs slot were created by
+ * sources the numeric triple or entropy channel from the Env slot. The history entry and its parallel obs slot were created by
  * the preceding prev_record_assign — the SET runs before OBSERVE_NAME_POST —
  * so this overwrites a just-written (and, pre-flip, identical value-sourced)
  * entry, or fills the valid=0 entry left once observed numbers become
  * immediates. `name` must be the interned constant (pointer-keyed lookup).
  * Gated by g_trace_obs_hist at the call site. */
-void trace_record_obs(const char *name, double entropy, double dH,
-                      double last_entropy) {
+void trace_record_obs(const char *name, ObsSnapshot snapshot) {
     /* An ignored sandbox assignment must not overwrite an older host
      * assignment's observer snapshot, including its occurrence-ring twin. */
     if (!eigs_current || g_sandbox_active || !name || !g_prev_tab) return;
@@ -680,16 +674,12 @@ void trace_record_obs(const char *name, double entropy, double dH,
     if (e->occ && e->occ_count > 0) {
         int oi = e->occ_head == 0 ? e->occ_cap - 1 : e->occ_head - 1;
         OccEntry *o = &e->occ[oi];
-        o->entropy = entropy;
-        o->dH = dH;
-        o->last_entropy = last_entropy;
+        o->obs = snapshot;
         o->obs_valid = 1;
     }
     if (e->hist_count == 0) return;
     HistoryEntry *h = &e->history[e->hist_count - 1];
-    h->entropy = entropy;
-    h->dH = dH;
-    h->last_entropy = last_entropy;
+    h->obs = snapshot;
     h->obs_valid = 1;
 }
 
@@ -749,10 +739,7 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
         /* where/why/how — read the observer snapshot captured at that
          * assign. Mirrors the live INTERROGATE formulas. */
         if (!h->obs_valid) return 0;
-        double r = (kind == 3) ? h->entropy
-                 : (kind == 4) ? h->dH
-                 : observer_settledness_dh(h->dH);   /* #412: how = f(dH) */
-        *out = slot_from_f64(r);
+        *out = observer_snapshot_query(&h->obs, kind);
         return 1;
     }
 
@@ -819,10 +806,7 @@ int trace_query_when(int kind, const char *interned_name, long long ordinal,
 
     if (kind >= 3 && kind <= 5) {
         if (!o->obs_valid) return TRACE_WHEN_MISS;
-        double r = (kind == 3) ? o->entropy
-                 : (kind == 4) ? o->dH
-                 : observer_settledness_dh(o->dH);   /* #412: how = f(dH) */
-        *out = slot_from_f64(r);
+        *out = observer_snapshot_query(&o->obs, kind);
         return TRACE_WHEN_HIT;
     }
 

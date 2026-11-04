@@ -64,6 +64,14 @@ _eigen_throw is throw
 _eigen_type is type
 _eigen_log is log
 _eigen_divide is divide
+_eigen_num_type is num_type
+_eigen_max is max
+_eigen_f64_from_bits is f64_from_bits
+
+# Observer-only IEEE constants do not raise or change arithmetic flags.
+_eigen_obs_inf is _eigen_f64_from_bits of 0x7ff0000000000000
+_eigen_obs_neg_inf is _eigen_f64_from_bits of 0xfff0000000000000
+_eigen_obs_nan is _eigen_f64_from_bits of 0x7ff8000000000000
 
 # math.log2 calls public log/divide at invocation time. Capturing its function
 # would leave those transitive dependencies mutable. Preserve its formula
@@ -1451,8 +1459,11 @@ _eigen_current_line is 0
 define eigen_set_hook(hook) as:
     _eigen_debug_hook is hook
 
-# Observer state per binding: [name, value, obs_count, entropy, prev_entropy, dH]
-# For simplicity, we store observer metadata in a separate dict keyed by name.
+# Observer metadata is keyed by name (the meta evaluator's existing model).
+# [age, where, why, entropy_anchor, numeric_how, numeric, last_num, last_entropy]
+# Indexes0..3 stay available to debugger consumers. Numeric records never
+# compute entropy; the retained entropy scalar belongs only to nonnumeric
+# assignments. last_num survives a temporary nonnumeric assignment, as in C.
 _eigen_obs is {}
 # #1637: the value of the most recently observed assignment, for the bare
 # predicates' bridge (a dict so module functions update it by mutation).
@@ -1491,23 +1502,67 @@ define _compute_entropy(val) as:
         return _eigen_log2 of (dlen + 1)
     return 0
 
+# R3.1 O4: exact int displacement when subtraction fits, floating otherwise.
+# This preflight avoids trapping on observer-only IEEE edges in strict mode.
+define _eigen_numeric_step(current, previous) as:
+    if (current != current) or (previous != previous):
+        return [_eigen_obs_nan, _eigen_obs_nan]
+    if (current == _eigen_obs_inf) or (current == _eigen_obs_neg_inf):
+        if current == previous:
+            return [_eigen_obs_nan, _eigen_obs_nan]
+        return [current, 0.0]
+    if previous == _eigen_obs_inf:
+        return [_eigen_obs_neg_inf, 0.0]
+    if previous == _eigen_obs_neg_inf:
+        return [_eigen_obs_inf, 0.0]
+
+    local exact is (_eigen_num_type of current) == "int" and (_eigen_num_type of previous) == "int"
+    if exact:
+        if (previous > 0) and (current < (0x8000000000000000 + previous)):
+            exact is false
+        elif (previous < 0) and (current > (9223372036854775807 + previous)):
+            exact is false
+    local raw is 0.0
+    if exact:
+        raw is current - previous
+    else:
+        # The half-difference stays finite for finite binary64 operands.
+        # Above DBL_MAX/2, the full subtraction would overflow to infinity.
+        local half is current / 2.0 - previous / 2.0
+        if half > 8.988465674311579e307:
+            return [_eigen_obs_inf, 0.0]
+        if half < -8.988465674311579e307:
+            return [_eigen_obs_neg_inf, 0.0]
+        raw is current * 1.0 - previous * 1.0
+    # Convert before abs: abs(INT64_MIN) is a checked integer error.
+    local scale is _eigen_max of [_eigen_abs of (current * 1.0), _eigen_abs of (previous * 1.0), 0.001]
+    local relative is raw / scale
+    return [raw, 0.001 / (0.001 + (_eigen_abs of relative))]
+
 define _update_observer(name, val) as:
     _eigen_last.v is val
-    new_entropy is _compute_entropy of val
-    if (_eigen_has_key of [_eigen_obs, name]):
-        old is _eigen_obs[name]
-        obs_count is old[0] + 1
-        prev_ent is old[1]
-        dH is new_entropy - prev_ent
-        _eigen_dict_set of [_eigen_obs, name, [obs_count, new_entropy, dH, old[3]]]
+    local old is _get_observer of name
+    local count is old[0] + 1
+    if (_eigen_type of val) == "num":
+        local delta is null
+        local settled is null
+        if old[6] != null:
+            local step is _eigen_numeric_step of [val, old[6]]
+            delta is step[0]
+            settled is step[1]
+        _eigen_dict_set of [_eigen_obs, name, [count, val, delta, old[3], settled, true, val, old[7]]]
     else:
-        _eigen_dict_set of [_eigen_obs, name, [1, new_entropy, 0, 0]]
+        local ent is _compute_entropy of val
+        local change is 0
+        if old[0] > 0:
+            change is ent - old[7]
+        _eigen_dict_set of [_eigen_obs, name, [count, ent, change, old[3], null, false, old[6], ent]]
     return null
 
 define _get_observer(name) as:
     if (_eigen_has_key of [_eigen_obs, name]):
         return _eigen_obs[name]
-    return [0, 0, 0, 0]
+    return [0, 0, 0, 0, null, false, null, 0]
 
 define eigen_eval(node, env) as:
     if node == null:
@@ -1946,13 +2001,13 @@ define eigen_eval(node, env) as:
                 return obs[0]
             return 0
         if kind == 3:
-            # where: entropy
+            # where: numeric value, nonnumeric entropy
             if node[2][0] == "ident":
                 obs is _get_observer of node[2][1]
                 return obs[1]
             return _compute_entropy of target
         if kind == 4:
-            # why: dH (entropy change)
+            # why: exact numeric displacement/null, or nonnumeric dH
             if node[2][0] == "ident":
                 obs is _get_observer of node[2][1]
                 return obs[2]
@@ -1961,6 +2016,8 @@ define eigen_eval(node, env) as:
             # how: stability score
             if node[2][0] == "ident":
                 obs is _get_observer of node[2][1]
+                if obs[5]:
+                    return obs[4]
                 ent is obs[1]
                 prior is obs[3]
                 initial is prior

@@ -1992,6 +1992,15 @@ void observer_slot_dispose(ObserverSlot *s) {
     memset(s, 0, sizeof *s);
 }
 
+/* Snapshot signals deliberately retain IEEE values. The ordinary scalar
+ * API rejects non-finite data; this validated numeric payload is observer
+ * history, not a scalar data conversion. */
+static double observer_snapshot_number(const Value *v) {
+    EigsNum n = {0};
+    (void)eigs_number_read(v, &n, __func__);
+    return n.is_int ? (double)n.value.i64 : n.value.f64;
+}
+
 int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     memset(out, 0, sizeof *out);
     out->since = UINT8_MAX;
@@ -2009,7 +2018,7 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         (observed && observed->type != VAL_BOOL)) return 0;
     if (win) {
         if (!val_is_number(win)) return 0;
-        double n = eigs_float_arg(win, __func__);
+        double n = observer_snapshot_number(win);
         if (!isfinite(n) || n < OBSERVER_WINDOW_MIN || n > OBSERVER_WINDOW_MAX || n != floor(n)) return 0;
         out->win_override = (uint8_t)n;
     }
@@ -2017,7 +2026,8 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     if (raw->data.list.count != vc) return 0;
     out->used = observed ? observed->data.boolean : 1;
     out->v_used = out->v_last = numeric ? numeric->data.boolean : vc != 0;
-    if (out->v_used) {
+    int current_numeric = out->v_last;
+    if (out->v_used || (xs && xs->type == VAL_LIST && xs->data.list.count != 0)) {
         if (!ex || ex->type != VAL_LIST || ex->data.list.count != vc ||
             !xs || xs->type != VAL_LIST || xs->data.list.count != vc + 1) return 0;
         /* Rebuild the signal by recording the retained inputs, then restore
@@ -2035,18 +2045,19 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
             size_t back = (size_t)(vc - 1 - i);
             int j = (int)out->v_window_head - 1 - (int)back;
             while (j < 0) j += out->v_cap;
-            out->v_rel[j] = eigs_slot_float(r, __func__);
-            out->v_raw[j] = eigs_slot_float(d, __func__);
+            out->v_rel[j] = observer_number(r).value;
+            out->v_raw[j] = observer_number(d).value;
             if (slot_as_bool(e) && !out->v_exact[j]) goto bad;
             out->v_exact[j] = (uint8_t)slot_as_bool(e);
         }
     }
+    out->v_last = (uint8_t)current_numeric;
     out->dh_window = xcalloc((size_t)n, sizeof(double)); out->dh_cap = (uint8_t)n;
     int dc = dh->data.list.count, first = dc > n ? dc - n : 0;
     for (int i = first; i < dc; i++) {
         EigsSlot v = list_slot(dh, i);
         if (!observer_slot_is_numeric(v)) goto bad;
-        out->dh_window[out->dh_window_count++] = eigs_slot_float(v, __func__);
+        out->dh_window[out->dh_window_count++] = observer_number(v).value;
     }
     out->dh_window_head = (uint8_t)(out->dh_window_count % n);
     const char *keys[] = {"entropy", "dH", "last_entropy", "best"};
@@ -2055,14 +2066,14 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         EIGS_VIEW(vv); Value *v = dict_get_view(dict, keys[i], &vv);
         if (!v || v->type == VAL_NULL) continue;
         if (!val_is_number(v)) goto bad;
-        *dst[i] = eigs_float_arg(v, __func__);
+        *dst[i] = observer_snapshot_number(v);
         if (i == 3) { if (!isfinite(*dst[i])) goto bad; out->best_used = 1; }
     }
     EIGS_VIEW(sv); Value *since = dict_get_view(dict, "since", &sv);
     out->since = UINT8_MAX;
     if (since && since->type != VAL_NULL) {
         if (!val_is_number(since)) goto bad;
-        double age = eigs_float_arg(since, __func__);
+        double age = observer_snapshot_number(since);
         if (!isfinite(age) || age < 0 || age > UINT8_MAX || age != floor(age)) goto bad;
         out->since = (uint8_t)age;
     }

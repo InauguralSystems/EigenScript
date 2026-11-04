@@ -1,0 +1,14 @@
+# ROW: O4.why-int-exact
+# ITEMS: O4
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+x is 9007199254740992
+x is 9007199254740993
+y is 4611686018427387904
+y is 9223372036854775807
+z is (-9223372036854775807 - 1)
+z is 9223372036854775807
+print of [why is x, why is y, why is z]
+print of [num_type of (why is x), num_type of (why is y), num_type of (why is z)]

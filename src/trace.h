@@ -305,13 +305,12 @@ void trace_assign_filtered_at_line(const char *name, EigsSlot value, int line);
  * name the owning chunk does not interrogate (EigsChunk.local_traced). */
 void trace_assign_tape_only(const char *name, EigsSlot value);
 
-/* #262 Phase-3 D2: overwrite the observer snapshot of `name`'s most recent
- * history entry with slot-sourced entropy/dH/last_entropy. Called from
- * OBSERVE_NAME_POST under g_trace_obs_hist so `where/why/how is x at L` reads
- * the Env slot, decoupling the temporal feature from the Value observer
- * fields. `name` must be the interned constant. */
-void trace_record_obs(const char *name, double entropy, double dH,
-                      double last_entropy);
+/* The observer snapshot is a by-value numeric triple plus running
+ * best/patience state, or the non-numeric entropy channel. No retained refs.
+ * OBSERVE_NAME_POST patches the most recent assignment under g_trace_obs_hist.
+ * `name` must be the interned constant. Full definition: eigenscript.h. */
+struct ObsSnapshot;
+void trace_record_obs(const char *name, struct ObsSnapshot snapshot);
 
 /* Forward decl; Value is fully defined in eigenscript.h. */
 struct Value;

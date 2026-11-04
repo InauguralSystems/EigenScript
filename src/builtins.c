@@ -841,13 +841,16 @@ Value* builtin_classify(Value *arg) {
     /* #861: the explicit channels must not route — "entropy" answers from the
      * entropy classifier even for a numeric trajectory (that is the point of
      * asking for it by name); "value" was always the numeric classifier. */
+    if (s.v_last && strcmp(channel, "entropy") == 0) {
+        observer_slot_dispose(&s);
+        rt_error(EK_VALUE, 0, "classify: numeric trajectories have no entropy channel");
+        return make_null();
+    }
     const char *label = (strcmp(channel, "entropy") == 0)
                         ? observer_slot_report_entropy(&s)
                         : observer_slot_report_value(&s);
     Value *out = make_str(label ? label : "equilibrium");
-    free(s.dh_window);
-    free(s.v_rel);
-    free(s.v_raw);
+    observer_slot_dispose(&s);
     return out;
 }
 
