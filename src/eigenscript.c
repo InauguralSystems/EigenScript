@@ -957,14 +957,6 @@ static void observer_slot_v_ensure(ObserverSlot *s, int n) {
 
 /* #1758 O1/#1830: exactness is one property of the active step window.
  * Partial raw tests and full-window settled tests share this definition. */
-
-/* R3.1 keeps the incumbent floor; R3.3 changes this one scale seam. */
-static double obs_floor_scale(const ObserverSlot *s) {
-    (void)s;
-    return eigs_current ? eigs_current->state->obs_scale : 0.001;
-}
-
-
 static int observer_slot_all_exact(const ObserverSlot *s) {
     size_t cnt = s ? obs_v_count(s) : 0;
     if (!cnt || !s->v_exact) return 0;
@@ -974,6 +966,12 @@ static int observer_slot_all_exact(const ObserverSlot *s) {
         if (!s->v_exact[idx]) return 0;
     }
     return 1;
+}
+
+/* R3.1 keeps the incumbent floor; R3.3 changes this one scale seam. */
+static double obs_floor_scale(const ObserverSlot *s) {
+    (void)s;
+    return eigs_current ? eigs_current->state->obs_scale : 0.001;
 }
 
 static double observer_slot_noise_floor(const ObserverSlot *s) {
@@ -1088,6 +1086,14 @@ void observer_slot_record_num(ObserverSlot *s, EigsSlot value) {
     s->v_values[s->values_head] = v;
     if (++s->values_head >= s->values_cap) s->values_head = 0;
     if (s->values_count < s->values_cap) s->values_count++;
+    double scale = obs_floor_scale(s);
+    if (!s->best_used && isfinite(v.value)) {
+        s->best = v.value; s->best_used = 1;
+    } else if (s->best_used && isfinite(v.value) &&
+               (v.is_int ? eigs_cmp_int_float(v.integer, s->best - g_obs_dh_zero * fmax(fabs(s->best), scale)) < 0
+                         : v.value < s->best - g_obs_dh_zero * fmax(fabs(s->best), scale))) {
+        s->best = v.value; s->since = 0;
+    } else if (s->since < UINT8_MAX) s->since++;
     s->last_value = v.value;
     s->last_int = v.integer; s->last_is_int = v.is_int;
     s->v_used = s->v_last = 1;
@@ -1546,33 +1552,6 @@ static double obs_num_exact_diameter(const ObserverSlot *s) {
     return (double)((uint64_t)hi - (uint64_t)lo);
 }
 
-static size_t obs_num_value_count(const ObserverSlot *s) {
-    size_t n = (size_t)observer_slot_window(s) + 1;
-    return s->values_count < n ? s->values_count : n;
-}
-
-static double obs_num_exact_diameter(const ObserverSlot *s) {
-    int64_t lo = observer_slot_value_get(s, 0).integer, hi = lo;
-    size_t n = obs_num_value_count(s);
-    for (size_t i = 1; i < n; i++) {
-        int64_t v = observer_slot_value_get(s, i).integer;
-        if (v < lo) lo = v;
-        if (v > hi) hi = v;
-    }
-    /* Unsigned subtraction represents the exact nonnegative diameter even
-     * when it exceeds INT64_MAX. Conversion happens only for the tolerance. */
-    return (double)((uint64_t)hi - (uint64_t)lo);
-}
-
-static int obs_num_opposite_inf(const ObserverSlot *s) {
-    size_t n = obs_num_value_count(s);
-    for (size_t i = 0; i < n; i++) {
-        double v = observer_slot_value_get(s, i).value;
-        if (isinf(v) && !!signbit(v) != !!signbit(s->last_value)) return 1;
-    }
-    return 0;
-}
-
 static int obs_num_oscillating(const ObserverSlot *s) {
     if (isnan(s->last_value)) return 0;
     if (isinf(s->last_value)) return obs_num_opposite_inf(s);
@@ -1588,82 +1567,74 @@ static int obs_num_diverging(const ObserverSlot *s) {
     return observer_slot_raw_diverging(s);
 }
 
-/* Improving: values are DECREASING and the step magnitudes are CONTRACTING — recent-half mean |Δv|
- * at most CONTRACT x the older-half mean. Contraction at any ratio < 1
- * per step means the remaining travel is a summable (geometric-class)
- * tail: the trajectory is genuinely closing on a limit, which is what
- * "improving" should claim for a number. The 0.7 half-window bar (~0.93
- * per step over a 10-window) is what separates that class from
- * harmonic-family stagnation, whose step ratio -> 1: harmonic's half-
- * window ratio at n=60 is ~0.91 and rising toward 1, so it stays outside
- * the band instead of being promised a limit it does not have. */
-static int obs_num_improving(const ObserverSlot *s) {
-    if (observer_slot_nonfinite(s)) return 0;
-    size_t cnt = obs_v_count(s);
-    if (cnt < 4) return 0;                       /* early-warning band: same
-                                                  * 4-sample floor as the raw
-                                                  * tests, not the rest bands'
-                                                  * full window */
-    int all_zero, all_small;
-    obs_num_flags(s, &all_zero, &all_small);
-    if (all_zero) return 0;                      /* already settled -> converged's claim */
-    if (obs_num_oscillating(s)) return 0;        /* motion bands are exclusive */
-    /* Directional and monotone: every raw step is negative. "Improving" uses
-     * the ML/loss convention that lower is better, and claims a clean
-     * approach toward a limit; measurement jitter (mixed signs) can land a
-     * chance half-window contraction — a lab sensor reading 45.2, 44.8,
-     * 44.9, 44.7, 44.85 flickered into `improving` on its final step and
-     * broke a trailing-rest count. A genuine approach (Newton, geometric
-     * decay) is monotone; a damped oscillation belongs to `oscillating`. */
-    {
-        double first = observer_slot_vr_get(s, 0);
-        if (first >= 0.0) return 0;
-        for (size_t i = 1; i < cnt; i++)
-            if (observer_slot_vr_get(s, i) * first <= 0.0) return 0;
+/* D2's bounded approximation uses reference.py's diverging, not the
+ * incumbent diverging predicate. w is oldest-first, as in that reference. */
+static int obs_num_reference_diverging(const ObserverSlot *s, const double *w, size_t n, size_t full) {
+    if (n < full) return 0;
+    double scale = obs_floor_scale(s);
+    double tau = g_obs_dh_zero * fmax(fabs(w[n - 1]), scale);
+    int positive = 1, negative = 1;
+    for (size_t i = 1; i < n; i++) {
+        double d = w[i] - w[i - 1];
+        if (!(d > tau)) positive = 0;
+        if (!(d < -tau)) negative = 0;
     }
-    const double CONTRACT = 0.7;
-    double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
-    size_t half = cnt / 2;
-    double recent = 0.0, older = 0.0, recent_max = 0.0, older_max = 0.0;
-    for (size_t i = 0; i < half; i++) {
-        double m = fabs(observer_slot_vr_get(s, i));
-        recent += m;
-        if (m > recent_max) recent_max = m;
+    if (!positive && !negative) return 0;
+    double sum_log = 0.0;
+    for (size_t i = 2; i < n; i++) {
+        double a = w[i - 1] - w[i - 2], b = w[i] - w[i - 1];
+        sum_log += log(fabs(b) / fabs(a));
     }
-    for (size_t i = half; i < cnt; i++) {
-        double m = fabs(observer_slot_vr_get(s, i));
-        older += m;
-        if (m > older_max) older_max = m;
-    }
-    recent /= (double)half;
-    older  /= (double)(cnt - half);
-    if (older <= floor_eps) return 0;            /* nothing to contract from */
-    if (recent <= floor_eps) return 0;           /* motion already died — the
-                                                  * quiescent bands' claim, not
-                                                  * "improving": improving means
-                                                  * STILL MOVING and contracting */
-    /* Both the mean AND the largest step must contract. The mean alone is
-     * alignment-sensitive: a period-4 cycle (0, +27, 0, -27, ...) can land
-     * two spikes in the recent half and three in the older, "contracting"
-     * the mean by chance. A cycle's largest step never shrinks; a genuine
-     * geometric approach shrinks its largest step along with its mean. */
-    return (recent <= older * CONTRACT && recent_max <= older_max * CONTRACT) ? 1 : 0;
+    return exp(sum_log / (double)(n - 2)) >= 1.0 - 1e-9;
 }
 
-/* Converged: the mixed-tolerance stopping criterion — a full window of
- * relative steps all under the settle deadband — with the raw-step
- * structure tests as guards (a linear runaway's Δv/(1+|v|) vanishes while
- * its raw steps do not). */
+static int obs_num_reference_expanding(const double *w, size_t n) {
+    double mean = 0.0;
+    for (size_t i = 0; i < n; i++) mean += w[i];
+    mean /= (double)n;
+    size_t half = n / 2;
+    double older = 0.0, newer = 0.0;
+    int crossings = 0;
+    for (size_t i = 0; i < n; i++) {
+        double d = w[i] - mean, magnitude = fabs(d);
+        if (i < half) {
+            if (magnitude > older) older = magnitude;
+        } else {
+            if (magnitude > newer) newer = magnitude;
+        }
+        if (i && (w[i - 1] - mean) * d < 0.0) crossings++;
+    }
+    return crossings >= 2 && newer > older;
+}
+
+static int obs_num_improving(const ObserverSlot *s) {
+    if (!s->best_used || s->since >= observer_slot_window(s)
+        || !obs_num_finite_window(s)) return 0;
+    size_t n = obs_num_value_count(s);
+    size_t full = (size_t)observer_slot_window(s) + 1;
+    double w[OBSERVER_WINDOW_MAX + 1];
+    for (size_t i = 0; i < n; i++)
+        w[i] = observer_slot_value_get(s, n - 1 - i).value;
+    return !obs_num_reference_diverging(s, w, n, full)
+        && !(n >= full && obs_num_reference_expanding(w, n));
+}
+
+/* STD_converged: windowed Cauchy diameter (Rudin 3.8/3.11), with
+ * #1830's absolute tolerance for an all-exact int window. */
 static int obs_num_converged(const ObserverSlot *s) {
-    if (observer_slot_nonfinite(s)) return 0;
-    if (obs_v_count(s) < (size_t)observer_slot_window(s)) return 0;
+    size_t n = obs_num_value_count(s);
+    if (n < (size_t)observer_slot_window(s) + 1
+        || !obs_num_finite_window(s)) return 0;
+    double scale = obs_floor_scale(s);
     if (observer_slot_all_exact(s))
-        return obs_num_exact_diameter(s) <= g_obs_dh_zero * obs_floor_scale(s);
-    int all_zero, all_small;
-    obs_num_flags(s, &all_zero, &all_small);
-    if (!all_zero) return 0;
-    if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
-    return 1;
+        return obs_num_exact_diameter(s) <= g_obs_dh_zero * scale;
+    double lo = s->last_value, hi = lo;
+    for (size_t i = 1; i < n; i++) {
+        double v = observer_slot_value_get(s, i).value;
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+    }
+    return hi - lo <= g_obs_dh_zero * fmax(fabs(s->last_value), scale);
 }
 
 /* A trend needs evidence of motion: exact-zero steps are neutral because
@@ -1705,25 +1676,23 @@ static int obs_num_equilibrium(const ObserverSlot *s) {
     return (var < g_obs_dh_zero * g_obs_dh_zero) ? 1 : 0;
 }
 
-/* Stable: small motion — every relative step under dh_small, no strong
- * consecutive sign flips. May carry steady drift (harmonic-class vanishing
- * steps live here: real motion, no certified limit). converged => stable. */
+/* D1 = STD'_stable = reference.py stable: the 1% ball is centred
+ * at the midrange, not at the mean. Halves first avoid hi+lo overflow. */
 static int obs_num_stable(const ObserverSlot *s) {
-    if (observer_slot_nonfinite(s)) return 0;
-    size_t N = (size_t)observer_slot_window(s);
-    if (obs_v_count(s) < N) return 0;
-    if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
+    size_t n = obs_num_value_count(s);
+    if (n < (size_t)observer_slot_window(s) + 1
+        || !obs_num_finite_window(s)) return 0;
+    double scale = obs_floor_scale(s);
     if (observer_slot_all_exact(s))
-        return obs_num_exact_diameter(s) <= 2.0 * g_obs_dh_small * obs_floor_scale(s);
-    int all_zero, all_small;
-    obs_num_flags(s, &all_zero, &all_small);
-    if (!all_small) return 0;
-    for (size_t i = 0; i + 1 < N; i++) {
-        double a = observer_slot_v_get(s, i);
-        double b = observer_slot_v_get(s, i + 1);
-        if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) return 0;
+        return obs_num_exact_diameter(s) <= 2.0 * g_obs_dh_small * scale;
+    double lo = s->last_value, hi = lo;
+    for (size_t i = 1; i < n; i++) {
+        double v = observer_slot_value_get(s, i).value;
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
     }
-    return 1;
+    return hi / 2.0 - lo / 2.0
+        <= g_obs_dh_small * fmax(fabs(hi / 2.0 + lo / 2.0), scale);
 }
 
 /* Numeric `report`: the canonical priority order over the family above,

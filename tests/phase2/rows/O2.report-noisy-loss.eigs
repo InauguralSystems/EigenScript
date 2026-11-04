@@ -1,0 +1,14 @@
+# ROW: O2.report-noisy-loss
+# ITEMS: O2
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+s is 12345.0
+i is 0.0
+loop while i < 61.0:
+    s is (s * 16807.0) % 2147483647.0
+    u is s / 2147483647.0 * 2.0 - 1.0
+    loss is 0.5 + 2.0 * (exp of (-0.03 * i)) + 0.01 * u
+    i is i + 1.0
+print of [report of loss, improving of loss, oscillating of loss]

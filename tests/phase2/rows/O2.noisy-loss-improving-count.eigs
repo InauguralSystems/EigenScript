@@ -1,0 +1,16 @@
+# ROW: O2.noisy-loss-improving-count
+# ITEMS: O2
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+s is 2024.0
+i is 0.0
+hits is 0
+loop while i < 121.0:
+    s is (s * 16807.0) % 2147483647.0
+    loss is 0.2 + 2.0 * (exp of (-0.02 * i)) + 0.1 * (s / 2147483647.0 * 2.0 - 1.0)
+    if i >= 20.0 and improving of loss:
+        hits is hits + 1
+    i is i + 1.0
+print of hits

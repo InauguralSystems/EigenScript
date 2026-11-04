@@ -1,0 +1,12 @@
+# ROW: O2.harmonic-not-converged
+# ITEMS: O2
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+h is 1.0
+n is 1.0
+loop while n < 301.0:
+    h is h + 1.0 / (n + 1.0)
+    n is n + 1.0
+print of [converged of h, diverging of h]
