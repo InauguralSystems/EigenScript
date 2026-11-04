@@ -1,5 +1,5 @@
-print of "=== HALTING: RUNAWAY LOOP CONTRACT TEST ==="
-print of "--- HD1: Doubling runaway exits via stall ---"
+print of "=== HALTING: BOUNDED DESCENT TEST ==="
+print of "--- HD1: Entropy strictly decreases each iteration ---"
 
 counter is 0
 x is 10.0
@@ -15,4 +15,4 @@ print of where is x
 print of why is x
 
 print of ""
-print of "=== RUNAWAY LOOP CONTRACT COMPLETE ==="
+print of "=== BOUNDED DESCENT COMPLETE ==="

@@ -1,8 +1,8 @@
-=== HALTING: RUNAWAY LOOP CONTRACT TEST ===
---- HD1: Doubling runaway exits via stall ---
+=== HALTING: BOUNDED DESCENT TEST ===
+--- HD1: Entropy strictly decreases each iteration ---
 109
 diverging
 6.490371073168535e+33
 3.245185536584267e+33
 
-=== RUNAWAY LOOP CONTRACT COMPLETE ===
+=== BOUNDED DESCENT COMPLETE ===

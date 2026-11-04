@@ -12,3 +12,8 @@
   Pin HD1b/LE1b at 100 stalled. Extend the once-at-acceptance clause plants
   from three to five, including removal of the oscillation arm and a finite
   amplitude early return incorrectly placed ahead of non-finite handling.
+
+  D15: restore the vendored iLambdaAi halting-descent program byte-for-byte
+  to its c8/upstream input. Re-pin only the three literal title lines in its
+  golden; count, classification and numeric readouts are unchanged. The
+  earlier ledger's byte-restoration claim was incorrect.
