@@ -108,11 +108,24 @@ reveal):
 | D7 | rule 5: zero flips on the family-15 rows above the floor; family 15 copies 10 rows of the other families | rule 5 is evaluated only when every declared family-15 copy is compared (examined == declared > 0), else NOT EVALUATED and the table INCOMPLETE. Family 15 draws its 10 bases from the other H1 families' own generators and keeps only a base that stays ≥ 10 in magnitude over its whole run, so every ×1e-3 copy clears the 1e-2 floor (the bases are scored rows too) | Rule 5 printed PASS on zero comparisons, and on the frozen draws most H1 seeds had no base above the floor (12 of seeds 1–30 had none). A pool of existing rows held fewer than 10 such bases on 11 of seeds 1–500 (RULING R30I-2 item 1) |
 | D8 | family 8: 4 parameter draws × 10 seeds, amplitudes {1e-9, 1e-5, 1e-3, 1e-1, 10} | the five draws are the five amplitudes, × 8 seeds (40 rows) | Four draws over five amplitudes never covered all five (RULING R30I-2 item 2) |
 | D9 | the population is the rows every runtime arm runs | every row stays. A runtime arm without a row's capability (INC: int64, ieee) has no reading there. Rule 2 against INC is NOT EVALUATED on those rows (each comparison is paired on the rows both arms read, and the count left out is printed). Rules 1, 3 and 4 use all rows the subject reads; rule 6 remains the #1830 gate | Otherwise `f14_7`, #1830's own int64 row, left every arm's population because INC lacks int64 (RULING R30I-2 item 4) |
+| D10 | arms are binaries | a runtime arm is pinned by recipe: the manifest records (source SHA, recipe id, binary sha256). `recipe_id` is the sha256 of the build recipe (`tools/observer_oracle/build_arm.sh`, or `build_anchor.sh` for the anchor), which builds a commit's own files with `make build`. Verification matches source SHA and recipe id; the binary sha256 is printed as information. An arm with no recipe stamp is pinned by its binary sha256 | The across-machine A/A cannot share binary hashes (another toolchain builds other bytes) (RULING R30I-3 item 3) |
+| D11 | (not stated) | the subject must have every registered capability: a subject arm lacking int64 or ieee FAILS rule 6, and rules 1, 3 and 4 are NOT EVALUATED for it, with the reason printed | A subject that reads fewer rows must never be advantaged. Without this, a subject that lost int64 would never be scored on #1830's own row (RULING R30I-3 item 4) |
 
 `judge.py --calibration` refuses to run on a `corpus.json` or `reference.py`
 other than the D3 and D4 files. `judge.py --corpus DIR` refuses (exit 2) unless
 `DIR/manifest.json` pins the set's corpus, labels and certificate, the
-instrument's code and every arm binary (RULING R30I-2 item 5).
+instrument's code (standard, families, judge, reference, score, plants, schema)
+and every arm (RULING R30I-2 item 5, R30I-3 items 2-3). The manifest's own
+sha256 is printed when it is sealed and when it is verified; that number is
+posted on #1758 at the commitment.
+
+Two consequences of D7, recorded here (RULING R30I-3 item 8):
+- Family 15's bases come only from families whose rows stay above |10|. In
+  practice those are families 7, 8, 9, 10 and 13. The p-series, power laws,
+  alternating runaways and #1891 rows start below 10, so rule 5 never sees a
+  diverging or runaway row. That follows from the registered floor.
+- The copies are regenerated from scaled parameters, so they are scalings
+  within 2.4e-15 relative, not bit-exact copies of base × s.
 
 ## Which channel answers (#861)
 

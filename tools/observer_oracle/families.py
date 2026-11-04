@@ -357,21 +357,39 @@ def sha(path=None):
         return hashlib.sha256(f.read()).hexdigest()
 
 
-# The reveal-path manifest (RULING R30I-2 item 5): a corpus directory is scored only against the code, labels and
-# arm binaries it was sealed with. families.py/seal.py write it at generation (labels pending); judge.py
-# --write-manifest completes it after certify/derive; judge.py --corpus DIR refuses any mismatch (exit 2).
-MANIFEST, CODE, SET = "manifest.json", ("standard.py", "families.py", "judge.py", "reference.py"), \
-    ("corpus.json", "labels.json", "certificate.json")
+# The reveal-path manifest (RULING R30I-2 item 5, R30I-3 items 2-3): a corpus directory is scored only against the
+# code, labels and arms it was sealed with. families.py/seal.py write it at generation (labels pending); judge.py
+# --write-manifest completes it after certify/derive; judge.py --corpus DIR refuses any mismatch (exit 2). The
+# manifest's own sha256 is printed at sealing and at verification: it is the number posted on #1758.
+MANIFEST, SET = "manifest.json", ("corpus.json", "labels.json", "certificate.json")
+CODE = ("standard.py", "families.py", "judge.py", "reference.py", "score.py", "plants.py", "schema.py")
+
+
+def arm_record(binary):
+    """D10: an arm is (source_sha, recipe_id) from the stamp its recipe wrote beside it (build_arm.sh's arm.json,
+    build_anchor.sh's anchor.json); binary_sha256 is information. A binary with no stamp records only its sha256."""
+    real, d = os.path.realpath(binary), os.path.dirname(os.path.realpath(binary))
+    for _ in range(4):
+        for stamp, src, rec in (("arm.json", "source_sha", "recipe_id"), ("anchor.json", "commit", "recipe_sha256")):
+            path = os.path.join(d, stamp)
+            if os.path.exists(path):
+                st = json.load(open(path))
+                if os.path.realpath(st.get("binary", "")) == real:
+                    return {"source_sha": st[src], "recipe_id": st[rec], "binary_sha256": sha(binary)}
+        d = os.path.dirname(d)
+    return {"source_sha": None, "recipe_id": None, "binary_sha256": sha(binary)}
 
 
 def manifest_of(d, arms):
-    return {"format": "r3-manifest/1",
+    return {"format": "r3-manifest/2",
             "set": {f: (sha(os.path.join(d, f)) if os.path.exists(os.path.join(d, f)) else None) for f in SET},
-            "code": {f: sha(os.path.join(HERE, f)) for f in CODE}, "arms": {a: sha(b) for a, b in sorted(arms.items())}}
+            "code": {f: sha(os.path.join(HERE, f)) for f in CODE},
+            "arms": {a: arm_record(b) for a, b in sorted(arms.items())}}
 
 
 def write_manifest(d, arms):
-    """Write d/manifest.json; an existing manifest's code and corpus.json pins must still hold (no re-sealing over a change)."""
+    """Write d/manifest.json; an existing manifest's code and corpus.json pins must still hold (no re-sealing over a
+    change). Prints the manifest's sha256."""
     m, path = manifest_of(d, arms), os.path.join(d, MANIFEST)
     if os.path.exists(path):
         old = json.load(open(path))
@@ -380,11 +398,14 @@ def write_manifest(d, arms):
     with open(path, "w") as f:
         json.dump(m, f, indent=1, sort_keys=True)
         f.write("\n")
+    print(f"manifest sealed: {path} sha256 {sha(path)}")
     return m
 
 
 def verify_manifest(d, arms):
-    """HarnessError (exit 2, never a verdict) unless d/manifest.json pins exactly this set, code and every arm."""
+    """HarnessError (exit 2, never a verdict) unless d/manifest.json pins exactly this set, this code and every arm:
+    a recipe arm by (source_sha, recipe_id), its binary sha256 printed as information; an arm with no recipe by
+    its binary sha256."""
     path = os.path.join(d, MANIFEST)
     try:
         want = json.load(open(path))
@@ -392,9 +413,23 @@ def verify_manifest(d, arms):
         raise gen.HarnessError(f"{path}: no readable manifest ({e}); seal the set with judge.py --write-manifest")
     have = manifest_of(d, arms)
     bad = [f"{k}/{f}" for k in ("set", "code") for f in have[k] if want.get(k, {}).get(f) is None or want[k][f] != have[k][f]]
-    bad += [f"arms/{a}" for a in have["arms"] if want.get("arms", {}).get(a) != have["arms"][a]]
+    info = []
+    for a, h in have["arms"].items():
+        w = want.get("arms", {}).get(a)
+        if not isinstance(w, dict):
+            bad.append(f"arms/{a}")
+        elif w.get("recipe_id") is None:
+            bad += [f"arms/{a} (no recipe: binary sha256)"] if w.get("binary_sha256") != h["binary_sha256"] else []
+        elif (w.get("source_sha"), w.get("recipe_id")) != (h["source_sha"], h["recipe_id"]):
+            bad.append(f"arms/{a} (source {h['source_sha']} recipe {str(h['recipe_id'])[:12]}, sealed source"
+                       f" {w.get('source_sha')} recipe {str(w.get('recipe_id'))[:12]})")
+        else:
+            info.append(f"{a}: source {h['source_sha'][:12]} recipe {h['recipe_id'][:12]} binary {h['binary_sha256'][:12]}"
+                        + (" (as sealed)" if h["binary_sha256"] == w.get("binary_sha256") else
+                           f" (sealed binary {str(w.get('binary_sha256'))[:12]}: another toolchain, information only)"))
     if bad:
         raise gen.HarnessError(f"{path}: {', '.join(bad)} differ from (or are missing in) the manifest: refused")
+    print(f"manifest verified: {path} sha256 {sha(path)}" + "".join(f"\n  arm {x}" for x in info))
 
 
 def write(corpus, d):

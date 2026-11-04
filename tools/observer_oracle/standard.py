@@ -312,6 +312,15 @@ def tol_converged(k):
     return arm
 
 
+# A deliberately scale-DEPENDENT arm (converged iff every step is below an ABSOLUTE t): the judge selftest's witness
+# that rule 5 counts unit flips (RULING R30I-3 item 5). Not an arm of the pre-registration.
+def abs_converged(t):
+    def arm(xs, n):
+        w = win(xs, n)
+        return _ok(w) and max(abs(d) for d in R._steps(w)) < t
+    return arm
+
+
 THETAS = [10 ** (-5 + k / 2) for k in range(9)]     # 10^{-5, -4.5, ..., -1}
 # Fitted by `standard.py --fit` on the calibration labels (corpus.json + hcal/):
 # frozen here; judge.py refuses to score when a refit disagrees.

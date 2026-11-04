@@ -13,7 +13,9 @@
 #      its exit code is the verdict: 1 is a lost or split verdict (the gate
 #      working), 2 a harness error. Every floor verdict must then have been
 #      compared;
-#   5. requires the guard to have seen the candidate's compiles.
+#   5. runs judge.py --calibration on the candidate and the anchor (the Round 3 instrument's frozen-file check and
+#      calibration tables, #1758 RULING R30I-3 item 7);
+#   6. requires the guard to have seen the candidate's compiles.
 # The proof that the floor can still fail is not re-run here: it is the
 # tools/selftests.txt row `plants.py --selftest`, which runs when
 # tools/observer_oracle/ changes (docs/PRINCIPLES.md section 5).
@@ -64,6 +66,12 @@ n=$(python3 -c 'import json; print(len(json.load(open("tools/observer_oracle/flo
     || fail "cannot read tools/observer_oracle/floor.json"
 [ "$(grep -cx "floor: $n verdicts checked, 0 lost" "$tmp/oracle.out")" -eq 1 ] \
     || fail "score.py did not report all $n floor verdicts compared"
+
+phase "the Round 3 judge's calibration path (judge.py --calibration: frozen files, refit, control tables; #1758 R30I-3)"
+python3 -I tools/observer_oracle/judge.py --calibration --manifest-out "$tmp/r3_calibration_manifest.json" \
+    --resamples 1000 > "$tmp/judge.out" 2>&1 || { tail -n 20 "$tmp/judge.out" >&2; fail "judge.py --calibration did not complete (exit 1 is a FINDING, 2 a harness error or a changed frozen file)"; }
+grep -E '^(calibration manifest sha256|population:|judge exit)' "$tmp/judge.out"
+[ "$(grep -cx 'judge exit 0' "$tmp/judge.out")" -eq 1 ] || fail "judge.py --calibration printed no 'judge exit 0'"
 
 phase "the compiler guard saw the candidate's compiles"
 bash tools/cc_guard.sh --report || fail "the compiler guard recorded no compile"

@@ -1,0 +1,39 @@
+#!/bin/bash
+# Build a Round 3 runtime arm by recipe (#1758, Deviation D10): EigenScript at commit SHA, the Makefile's release
+# target (`make build`, one job), from that commit's own files (git archive), so nothing in this checkout but the
+# commit reaches the build. The arm lives in
+# ${XDG_CACHE_HOME:-$HOME/.cache}/eigs-oracle-arms/<sha256 of this recipe>/<SHA>/ beside its stamp arm.json:
+# {source_sha, recipe_id, binary, binary_sha256, toolchain}. recipe_id is the sha256 of this file, so an arm is
+# identified across machines by (source_sha, recipe_id); its binary sha256 is information (another toolchain
+# builds other bytes). judge.py reads the stamp beside a binary to seal and verify a manifest.
+# usage: bash tools/observer_oracle/build_arm.sh SHA   (prints the stamp)
+set -euo pipefail
+[ $# -eq 1 ] || { echo "usage: build_arm.sh SHA" >&2; exit 2; }
+here=$(cd "$(dirname "$0")" && pwd)
+top=$(git -C "$here" rev-parse --show-toplevel)
+sha=$(git -C "$top" rev-parse --verify "$1^{commit}") || { echo "build_arm: $1 is not a commit here" >&2; exit 2; }
+recipe=$(sha256sum "$here/build_arm.sh" | cut -d' ' -f1)
+root=${XDG_CACHE_HOME:-$HOME/.cache}/eigs-oracle-arms/$recipe
+DIR=$root/$sha
+bin=$DIR/build/release/eigenscript
+mkdir -p "$root"
+exec 9>"$DIR.lock"
+flock -x 9
+if [ -x "$bin" ] && [ -f "$DIR/arm.json" ] \
+        && grep -q "\"binary_sha256\": \"$(sha256sum "$bin" | cut -d' ' -f1)\"" "$DIR/arm.json"; then
+    cat "$DIR/arm.json"
+    exit 0
+fi
+rm -rf "$DIR"
+mkdir -p "$DIR"
+git -C "$top" archive "$sha" | tar -x -C "$DIR"
+[ -f "$DIR/Makefile" ] || { echo "build_arm: git archive of $sha produced no Makefile" >&2; exit 2; }
+if ! make -C "$DIR" build > "$DIR.log" 2>&1; then
+    echo "build_arm: make failed, see $DIR.log" >&2
+    exit 2
+fi
+bsha=$(sha256sum "$bin" | cut -d' ' -f1)
+tool=$( (readelf -p .comment "$bin" 2>/dev/null || true) | sed -n 's/^ *\[ *[0-9a-f]*\] *//p' | head -1 | tr -d '"\\')
+printf '{"source_sha": "%s", "recipe_id": "%s", "binary": "%s", "binary_sha256": "%s", "toolchain": "%s"}\n' \
+    "$sha" "$recipe" "$bin" "$bsha" "$tool" > "$DIR/arm.json"
+cat "$DIR/arm.json"

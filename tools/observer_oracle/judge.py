@@ -31,12 +31,15 @@ runtime arm without a row's capability has no reading there, and every
 difference is taken, paired, on the rows both arms read. Exit 0 when the table printed, 1 on a FINDING, 2 on
 a harness error.
 """
+import contextlib
 import hashlib
+import io
 import json
 import math
 import operator
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -55,8 +58,8 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 # The instrument is frozen against these files (Deviations D3, D4; docs/PREDICATES.md; the posted generator).
 FROZEN = {"corpus.json": "e3f5e94e97bd28972480977a5ff21173221e878ab784abc7f4ed5459bedfefe4",
           "reference.py": "fa74d83f23422f5ddee9b30dc0f133417f98d9d8e7f9806151233d9e18ca1993",
-          "families.py": "a53f10374d3592dfcd637153cc482ddbbdc5afd0d80425c0f86ab671888887eb",
-          "hcal/corpus.json": "af06b08602ae37050af5e4e0262623559dec1f2532a270d87054573c38a7b7ae"}
+          "families.py": "e895ab61ca7af6b794f15e7c59c68ce9e99eb13c2e4548534c2c851eb3de5707",
+          "hcal/corpus.json": "5c0a1d1d9afed1f29018b8ef2b771c7a28d7b0a5f7f354fc68664d6ac53f569a"}
 ORDER = ("oscillating", "diverging", "improving", "converged", "equilibrium", "stable")   # report's priority
 CELL = {(True, True): 0, (False, True): 1, (True, False): 2, (False, False): 3}        # (label, got) -> TP FP FN TN
 
@@ -92,7 +95,7 @@ def run_arms(binaries, rows, seed):
     for a in binaries:
         if got[a]:
             score.check_witnessed(wit[a])
-    return got, split, skipped, order
+    return got, split, skipped, order, caps
 
 
 def ba(c):
@@ -111,12 +114,12 @@ def fmt(x, w=7):
 
 
 def main(argv):
-    args, opt = argv[1:], {"corpus": [], "arm": [], "diff": [], "const-false": [], "tol-converged": []}
+    args, opt = argv[1:], {"corpus": [], "arm": [], "diff": [], "const-false": [], "tol-converged": [], "abs-converged": []}
     while args:
         k = args.pop(0)
         if k == "--calibration":
             opt["calibration"] = True
-        elif k in ("--corpus", "--arm", "--diff", "--const-false", "--tol-converged", "--subject", "--seed", "--resamples",
+        elif k in ("--corpus", "--arm", "--diff", "--const-false", "--tol-converged", "--abs-converged", "--subject", "--seed", "--resamples",
                    "--floor-exit", "--declarations", "--write-manifest", "--manifest-out") and args:
             v = args.pop(0)
             (opt[k[2:]].append(v) if isinstance(opt.get(k[2:]), list) else opt.__setitem__(k[2:], v))
@@ -124,10 +127,10 @@ def main(argv):
             raise HarnessError(f"usage: {__doc__.split('options:')[0].split('usage:')[1].strip()} (bad argument {k!r})")
     seed, nres = int(opt.get("seed", 1758)), int(opt.get("resamples", 10000))
     binaries = dict(x.split("=", 1) for x in opt["arm"])
-    real = {**binaries, **dict(x.split("=", 1) for x in opt["const-false"])}     # what each arm runs
+    runs = {**binaries, **dict(x.split("=", 1) for x in opt["const-false"])}     # what each arm runs
     if opt.get("write-manifest"):
         load(opt["write-manifest"])                     # the label gate first: never seal labels derive.py disowns
-        m = F.write_manifest(opt["write-manifest"], real)
+        m = F.write_manifest(opt["write-manifest"], runs)
         print(f"manifest written: {os.path.join(opt['write-manifest'], F.MANIFEST)}: {json.dumps(m, sort_keys=True)}")
         return 0
     if opt.get("calibration"):
@@ -146,15 +149,14 @@ def main(argv):
                   " identical at R3.0-I round 2. Pass --arm INC=<v0.47.0 binary> for the registered arm")
         if "ANCHOR" not in binaries:
             binaries["ANCHOR"] = score.anchor()["binary"]
-        real.update(binaries)
+        runs.update(binaries)
     else:
         for d in opt["corpus"]:                         # the reveal path: a set is scored only as it was sealed
-            F.verify_manifest(d, real)
-            print(f"manifest {os.path.join(d, F.MANIFEST)}: set, code and {len(real)} arm binaries match")
+            F.verify_manifest(d, runs)
     tmps = []
     for x in opt["const-false"]:
-        name, real = x.split("=", 1)
-        binaries[name], t = const_false(real)
+        cf_name, cf_binary = x.split("=", 1)
+        binaries[cf_name], t = const_false(cf_binary)
         tmps.append(t)
     if not opt["corpus"]:
         raise HarnessError("no corpus: --calibration or --corpus DIR")
@@ -169,8 +171,8 @@ def main(argv):
             rows[r["id"]], src[r["id"]] = r, d
         labels.update(lab)
     if opt.get("calibration"):
-        cal = {"format": "r3-manifest/1", "corpora": {os.path.relpath(d, ROOT): F.manifest_of(d, {})["set"] for d in opt["corpus"]},
-               "code": F.manifest_of(HERE, {})["code"], "arms": {a: F.sha(b) for a, b in sorted(real.items())}}
+        cal = {"format": "r3-manifest/2", "corpora": {os.path.relpath(d, ROOT): F.manifest_of(d, {})["set"] for d in opt["corpus"]},
+               "code": F.manifest_of(HERE, {})["code"], "arms": {a: F.arm_record(b) for a, b in sorted(runs.items())}}
         text = json.dumps(cal, indent=1, sort_keys=True) + "\n"
         if opt.get("manifest-out"):
             open(opt["manifest-out"], "w").write(text)
@@ -183,7 +185,7 @@ def main(argv):
     for a, b in sorted(binaries.items()):
         print(f"runtime arm {a}: {b}")
     try:
-        got, split, skipped, order = run_arms(binaries, rows, seed)
+        got, split, skipped, order, caps = run_arms(binaries, rows, seed)
     finally:
         for t in tmps:
             shutil.rmtree(t, ignore_errors=True)
@@ -200,6 +202,9 @@ def main(argv):
     for x in opt["tol-converged"]:                # control (c2): STD converged, tolerance x K
         name, k = x.split("=", 1)
         arms_py[name] = {"converged": S.tol_converged(float(k))}
+    for x in opt["abs-converged"]:                # a scale-DEPENDENT arm: rule 5's flip witness (selftest)
+        name, k = x.split("=", 1)
+        arms_py[name] = {"converged": S.abs_converged(float(k))}
     for arm, preds in arms_py.items():
         V[arm] = {k: preds[k[2]](held[k[0]], k[1]) for k in keys if k[2] in preds}
     L = {k: labels[f"{k[0]}@{k[1]}"][k[2]][1] for k in keys}
@@ -229,31 +234,43 @@ def main(argv):
             col[(a, p)] = c
     point = {ap: ba([sum(x) for x in c]) for ap, c in col.items()}
     rows_of = {(a, p): frozenset(idx[k[0]] for k in V[a] if k[2] == p) for a, p in col}
-    rng, boot, weights = random.Random(seed), {ap: [] for ap in col}, []
-    for _ in range(nres):
-        w = [0] * len(pop)
-        for _j in range(len(pop)):
-            w[rng.randrange(len(pop))] += 1
-        weights.append(w)
-        for ap, c in col.items():
-            boot[ap].append(ba([sum(map(operator.mul, w, x)) for x in c]))
+    full, wcache = frozenset(range(len(pop))), {}
+
+    def weights_for(rs):
+        """nres weight vectors resampling exactly the rows rs (with replacement, len(rs) draws): the full population
+        uses random.Random(seed), any other row set its own stream seeded from seed and the set (RULING R30I-3 item 6)."""
+        if rs not in wcache:
+            members = sorted(rs)
+            rng = random.Random(seed) if rs == full else random.Random(f"{seed}/" + ",".join(pop[i] for i in members))
+            ws = []
+            for _ in range(nres):
+                w = [0] * len(pop)
+                for _j in range(len(members)):
+                    w[members[rng.randrange(len(members))]] += 1
+                ws.append(w)
+            wcache[rs] = ws
+        return wcache[rs]
+
+    boot = {ap: [ba([sum(map(operator.mul, w, x)) for x in c]) for w in weights_for(rows_of[ap])] if rows_of[ap] else
+            [None] * nres for ap, c in col.items()}
 
     def ci(xs):
         xs = [x for x in xs if x is not None]
         return (pct(xs, 0.025), pct(xs, 0.975), nres - len(xs)) if xs else (None, None, nres)
 
     def diff(a, b, p):
-        """(point, lo, hi, verdicts left out): BA(a) - BA(b) on the rows BOTH arms read (D9), paired."""
+        """(point, lo, hi, verdicts left out): BA(a) - BA(b) on the rows BOTH arms read (D9), resampling those rows."""
         if (a, p) not in col or (b, p) not in col:
             return None, None, None, 0
         common = rows_of[(a, p)] & rows_of[(b, p)]
+        ws = weights_for(common) if common else []
         if common == rows_of[(a, p)] == rows_of[(b, p)]:
             pa, pb, ba_, bb = point[(a, p)], point[(b, p)], boot[(a, p)], boot[(b, p)]
         else:
             ca, cb = ([[x if i in common else 0 for i, x in enumerate(r)] for r in col[q]] for q in ((a, p), (b, p)))
             pa, pb = ba([sum(x) for x in ca]), ba([sum(x) for x in cb])
-            ba_ = [ba([sum(map(operator.mul, w, x)) for x in ca]) for w in weights]
-            bb = [ba([sum(map(operator.mul, w, x)) for x in cb]) for w in weights]
+            ba_ = [ba([sum(map(operator.mul, w, x)) for x in ca]) for w in ws]
+            bb = [ba([sum(map(operator.mul, w, x)) for x in cb]) for w in ws]
         out = sum(sum(x[i] for x in col[q] for i in rows_of[q] - common) for q in ((a, p), (b, p)))
         if pa is None or pb is None:
             return None, None, None, out
@@ -310,7 +327,7 @@ def main(argv):
     print(f"\nUNIT FLIPS on family 15: examined={len(examined)} declared={len(declared)} copies, {len(above)} bases above"
           f" the floor, {len(pairs)} comparisons: " + ", ".join(f"{a} {flips[a]}" for a in arms))
     if opt.get("subject"):
-        decide(opt, arms, point, fpr, diff, flips, len(examined), len(declared), pairs)
+        decide(opt, arms, point, fpr, diff, flips, len(examined), len(declared), pairs, caps)
     print("\nCONFUSION per arm x predicate x family (TP FP FN TN):")
     fams = sorted({rows[r]["family"] for r in pop})
     for a in arms:
@@ -365,8 +382,10 @@ def rule6(rc, decl):
     return None if rc is None or decl is None else rc == "0" and not decl
 
 
-def decide(opt, arms, point, fpr, diff, flips, examined, declared, pairs):
+def decide(opt, arms, point, fpr, diff, flips, examined, declared, pairs, caps):
     s = opt["subject"]
+    lacks = sorted(c for c in derive.CAPABILITIES if s in caps and not caps[s][c])    # D11
+    d11 = f" (D11: {s} lacks {', '.join(lacks)})" if lacks else ""
     if s not in arms or "INC" not in arms:
         raise HarnessError(f"decision rules need the subject {s!r} and INC among the arms {arms}")
     r3std = "R3-STD" if "R3-STD" in arms and s != "R3-STD" else None
@@ -381,8 +400,8 @@ def decide(opt, arms, point, fpr, diff, flips, examined, declared, pairs):
             res.append(ok)
             print(f"  {p:12} {name:22} {'NOT EVALUATED' if ok is None else 'PASS' if ok else 'FAIL'}: {text}")
         d, lo, _hi, out = diff(s, "STD", p)
-        crit("1 standard parity", rule1(lo), f"lower CI of BA({s}) - BA(STD) = {fmt(lo)} > -0.05"
-             + (f" ({out} verdicts on rows {s} cannot read left out)" if out else ""))
+        crit("1 standard parity", None if lacks else rule1(lo), f"lower CI of BA({s}) - BA(STD) = {fmt(lo)} > -0.05"
+             + (f" ({out} verdicts on rows {s} cannot read left out)" if out else "") + d11)
         for ref in ["INC"] + ([r3std] if r3std and p in ("converged", "stable") else []):
             d, lo, _hi, out = diff(s, ref, p)
             note = f" (NOT EVALUATED on {out} capability-row verdicts, D9)" if out else ""
@@ -392,16 +411,17 @@ def decide(opt, arms, point, fpr, diff, flips, examined, declared, pairs):
                 crit(f"2 vs {ref}", rule2(p, d, lo), f"lower CI of BA({s}) - BA({ref}) = {fmt(lo)} > -0.02" + note)
         f = {a: fpr.get((a, p)) for a in (s, "INC", "STD")}
         if p in S.SETTLED:
-            crit("3 safety", rule3(p, f[s], f["INC"], f["STD"]),
-                 f"FPR({s}) {fmt(f[s])} <= min(FPR(INC) {fmt(f['INC'])}, FPR(STD) + 0.02)")
+            crit("3 safety", None if lacks else rule3(p, f[s], f["INC"], f["STD"]),
+                 f"FPR({s}) {fmt(f[s])} <= min(FPR(INC) {fmt(f['INC'])}, FPR(STD) + 0.02)" + d11)
         elif p == "diverging":
-            crit("3 safety", rule3(p, f[s], f["INC"], None), f"FPR({s}) {fmt(f[s])} <= FPR(INC) {fmt(f['INC'])}")
-        crit("4 trivial floor", rule4(point.get((s, p))), f"BA({s}) = {fmt(point.get((s, p)))} >= 0.65")
+            crit("3 safety", None if lacks else rule3(p, f[s], f["INC"], None), f"FPR({s}) {fmt(f[s])} <= FPR(INC) {fmt(f['INC'])}" + d11)
+        crit("4 trivial floor", None if lacks else rule4(point.get((s, p))), f"BA({s}) = {fmt(point.get((s, p)))} >= 0.65" + d11)
         crit("5 unit invariance", rule5(flips[s], examined, declared),
              f"{flips[s]} flips on {len(pairs)} family-15 comparisons, examined={examined} declared={declared}")
         rc = opt.get("floor-exit")
-        crit("6 existing gates", rule6(rc, decl), f"--floor exit {rc if rc is not None else 'not given'}; #1830/R3"
-             " declarations " + (str(len(decl)) if decl is not None else "not given"))
+        crit("6 existing gates", False if lacks else rule6(rc, decl), f"--floor exit {rc if rc is not None else 'not given'};"
+             " #1830/R3 declarations " + (str(len(decl)) if decl is not None else "not given")
+             + (f"; D11: the subject {s} lacks {', '.join(lacks)}, so it cannot be judged on every registered row" if lacks else ""))
         v = "FAIL" if False in res else "PASS" if None not in res else "INCOMPLETE"
         print(f"  {p:12} => {v}")
 
@@ -429,10 +449,15 @@ BOUNDARY = [   # (rule, case, call, want): each rule placed exactly at its margi
 
 
 def selftest():
-    """The tools/selftests.txt row. (1) Every decision rule at its margin, both sides (BOUNDARY). (2) Control (b)
-    as the judge's own calibration, on a manifest-sealed copy of hcal/: the anchor with every reading rewritten
-    false must score BA = 0.5 and FAIL the rules, and STD and REF, the same `converged` test, must differ by
-    exactly 0 in every resample (pairing). (3) A set sealed for another arm binary is refused (exit 2 path)."""
+    """The tools/selftests.txt row.
+    (1) Every decision rule at its margin, both sides (BOUNDARY).
+    (2) Control (b) through the CALIBRATION path (R30I-3 item 1): the anchor with every reading rewritten false
+        scores BA 0.5000 and FAILs all six predicates (a few resamples; the frozen-file check runs too).
+    (3) The manifest refuses a set sealed for another arm, other code or another set file.
+    (4) Control (b) on the --corpus path over a sealed copy of hcal/ plus selftest_set/ (an int64 row and a
+        family-15 base with its copies): capability rows stay (D9), pairs leave them out, rule 5 compares 2 of 2
+        copies and the scale-dependent ABS arm flips, STD and REF differ by exactly 0 (pairing), and the subject's
+        missing capabilities fail rule 6 (D11)."""
     word = {True: "PASS", False: "FAIL", None: "NOT EVALUATED"}
     for rule, case, call, want in BOUNDARY:
         got = call()
@@ -441,22 +466,42 @@ def selftest():
                       stdout=subprocess.DEVNULL).returncode:
         raise HarnessError("make observer-anchor failed: no anchor to plant against")
     a = score.anchor()["binary"]
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            rc = main(["judge.py", "--calibration", "--arm", f"INC={a}", "--const-false", f"CF={a}", "--subject", "CF",
+                       "--resamples", "50"])
+        out = buf.getvalue()
+        half = len(re.findall(r"^    CF +.* BA  0\.5000 ", out, re.M))
+        fails = len(re.findall(r"^  \S+ +=> FAIL$", out, re.M))
+        print(f"CALIBRATION-PATH control (b): rc={rc}, CF BA 0.5000 on {half} of 6 predicates, => FAIL on {fails} of 6")
+    except HarnessError as e:
+        print(f"CALIBRATION-PATH control (b): HARNESS ERROR {e}")
     with tempfile.TemporaryDirectory(prefix="judge_selftest_") as t:
-        for f in F.SET:
-            shutil.copy(os.path.join(HERE, "hcal", f), t)
-        m = F.write_manifest(t, {"INC": a})            # (3) a set sealed for another INC binary must be refused
-        m["arms"]["INC"] = "0" * 64
-        json.dump(m, open(os.path.join(t, F.MANIFEST), "w"))
-        try:
-            main(["judge.py", "--corpus", t, "--arm", f"INC={a}", "--resamples", "10"])
-            print("MANIFEST a set sealed for another INC binary was SCORED: MISMATCH")
-        except HarnessError as e:
-            print(f"MANIFEST a set sealed for another INC binary was refused: ok ({str(e).split(': ', 1)[1]})")
-        os.remove(os.path.join(t, F.MANIFEST))
-        F.write_manifest(t, {"INC": a, "CF": a})
-        return main(["judge.py", "--corpus", t, "--arm", f"INC={a}", "--const-false", f"CF={a}",
-                     "--subject", "CF", "--diff", "STD,REF", "--resamples", "1000",
-                     "--floor-exit", "1", "--declarations", os.devnull])
+        sets = [os.path.join(t, "hcal"), os.path.join(t, "fixture")]
+        for src, d in zip((os.path.join(HERE, "hcal"), os.path.join(HERE, "selftest_set")), sets):
+            os.makedirs(d)
+            for f in F.SET:
+                shutil.copy(os.path.join(src, f), d)
+        for what, edit in (("another INC source SHA", lambda m: m["arms"]["INC"].update(source_sha="0" * 40)),
+                           ("other score.py", lambda m: m["code"].update({"score.py": "0" * 64})),
+                           ("another certificate.json", lambda m: m["set"].update({"certificate.json": "0" * 64}))):
+            with contextlib.redirect_stdout(io.StringIO()):
+                m = F.write_manifest(sets[0], {"INC": a})
+            edit(m)
+            json.dump(m, open(os.path.join(sets[0], F.MANIFEST), "w"))
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    main(["judge.py", "--corpus", sets[0], "--arm", f"INC={a}", "--resamples", "10"])
+                print(f"MANIFEST a set sealed with {what} was SCORED: MISMATCH")
+            except HarnessError as e:
+                print(f"MANIFEST a set sealed with {what} was refused: ok ({str(e).split(': ', 1)[1]})")
+            os.remove(os.path.join(sets[0], F.MANIFEST))
+        for d in sets:
+            F.write_manifest(d, {"INC": a, "CF": a})
+        return main(["judge.py", "--corpus", sets[0], "--corpus", sets[1], "--arm", f"INC={a}", "--const-false", f"CF={a}",
+                     "--subject", "CF", "--diff", "STD,REF", "--diff", "STD,INC", "--abs-converged", "ABS=1e-3",
+                     "--resamples", "1000", "--floor-exit", "1", "--declarations", os.devnull])
 
 
 if __name__ == "__main__":
