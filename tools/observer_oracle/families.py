@@ -19,6 +19,7 @@ import json
 import math
 import os
 import random
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))     # python3 -I drops the script's directory
@@ -362,74 +363,152 @@ def sha(path=None):
 # --write-manifest completes it after certify/derive; judge.py --corpus DIR refuses any mismatch (exit 2). The
 # manifest's own sha256 is printed at sealing and at verification: it is the number posted on #1758.
 MANIFEST, SET = "manifest.json", ("corpus.json", "labels.json", "certificate.json")
-CODE = ("standard.py", "families.py", "judge.py", "reference.py", "score.py", "plants.py", "schema.py")
+TOOLS = os.path.dirname(HERE)                       # tools/: native_witness.py lives here (R30I-4 item 4)
+
+
+def load_json(path):
+    with open(path) as f:
+        return json.load(f)
+
+
+_CODE = []
+
+
+def measurement_code():
+    """The code that can change a reading, DERIVED (R30I-4 item 4, mechanical-gates section 1): every file under
+    tools/ that `import judge, score, plants` loads, read from sys.modules in a fresh `python3 -I` (so the
+    calling process's own imports cannot widen or narrow it). No hand list; refused if empty."""
+    if not _CODE:
+        code = ("import json, sys; sys.path.insert(0, sys.argv[1]); import judge, score, plants; print(json.dumps(sorted("
+                "m.__file__ for m in list(sys.modules.values()) if getattr(m, '__file__', None)"
+                " and m.__file__.startswith(sys.argv[2] + '/'))))")
+        out = subprocess.run([sys.executable, "-I", "-c", code, HERE, TOOLS], capture_output=True, text=True, check=True)
+        _CODE.extend(os.path.relpath(f, TOOLS) for f in json.loads(out.stdout))
+        if not _CODE or "observer_oracle/judge.py" not in _CODE:
+            raise gen.HarnessError(f"the derived measurement code list is {_CODE}: refused (it must hold judge.py and its imports)")
+    return list(_CODE)
+
+
+def tree_sha(d):
+    """sha256 over (relative path, sha256) of every file under d, sorted."""
+    h = hashlib.sha256()
+    for root, dirs, files in os.walk(d):
+        dirs.sort()
+        for f in sorted(files):
+            p = os.path.join(root, f)
+            h.update(f"{os.path.relpath(p, d)}\0{sha(p)}\n".encode())
+    return h.hexdigest()
+
+
+def arm_root(binary):
+    """The tree an arm binary was built in (the nearest ancestor with a Makefile and lib/): its stdlib."""
+    d = os.path.dirname(os.path.realpath(binary))
+    for _ in range(4):
+        if os.path.isfile(os.path.join(d, "Makefile")) and os.path.isdir(os.path.join(d, "lib")):
+            return d
+        d = os.path.dirname(d)
+    return None
 
 
 def arm_record(binary):
     """D10: an arm is (source_sha, recipe_id) from the stamp its recipe wrote beside it (build_arm.sh's arm.json,
-    build_anchor.sh's anchor.json); binary_sha256 is information. A binary with no stamp records only its sha256."""
+    build_anchor.sh's anchor.json). binary_sha256 is the executable now; stamp_binary_sha256 is what the recipe built,
+    and the two must be equal (R30I-4 item 3). lib is the tree hash of the arm's stdlib directory (item 4). A binary
+    with no stamp records only its sha256 and lib."""
     real, d = os.path.realpath(binary), os.path.dirname(os.path.realpath(binary))
+    root = arm_root(binary)
+    rec = {"source_sha": None, "recipe_id": None, "binary_sha256": sha(binary), "stamp_binary_sha256": None,
+           "lib": tree_sha(os.path.join(root, "lib")) if root else None}
     for _ in range(4):
-        for stamp, src, rec in (("arm.json", "source_sha", "recipe_id"), ("anchor.json", "commit", "recipe_sha256")):
+        for stamp, src, rid in (("arm.json", "source_sha", "recipe_id"), ("anchor.json", "commit", "recipe_sha256")):
             path = os.path.join(d, stamp)
             if os.path.exists(path):
-                st = json.load(open(path))
+                st = load_json(path)
                 if os.path.realpath(st.get("binary", "")) == real:
-                    return {"source_sha": st[src], "recipe_id": st[rec], "binary_sha256": sha(binary)}
+                    rec.update(source_sha=st[src], recipe_id=st[rid], stamp_binary_sha256=st.get("binary_sha256"))
+                    return rec
         d = os.path.dirname(d)
-    return {"source_sha": None, "recipe_id": None, "binary_sha256": sha(binary)}
+    return rec
+
+
+def programs_sha(d):
+    """sha256 of every program score.py runs for the set's rows (each row's straight form and each loop form)."""
+    import score
+    h = hashlib.sha256()
+    for row in load_json(os.path.join(d, "corpus.json"))["rows"]:
+        xs = gen.generate(row["gen"], row["n"])
+        ys = gen.generate(row["second"], row["n"]) if "second" in row else None
+        h.update(score.emit_straight(row, xs, ys).encode())
+        for c in row["checkpoints"]:
+            for warm in sorted({a["warmup"] for a in score.ARMS.values()}):
+                h.update(score.emit_loop(row, xs, ys, c, warm).encode())
+    return h.hexdigest()
 
 
 def manifest_of(d, arms):
-    return {"format": "r3-manifest/2",
-            "set": {f: (sha(os.path.join(d, f)) if os.path.exists(os.path.join(d, f)) else None) for f in SET},
-            "code": {f: sha(os.path.join(HERE, f)) for f in CODE},
+    have = {f: (sha(os.path.join(d, f)) if os.path.exists(os.path.join(d, f)) else None) for f in SET}
+    return {"format": "r3-manifest/3", "set": have,
+            "programs": programs_sha(d) if have["corpus.json"] else None,
+            "code": {f: sha(os.path.join(TOOLS, f)) for f in measurement_code()},
             "arms": {a: arm_record(b) for a, b in sorted(arms.items())}}
 
 
 def write_manifest(d, arms):
     """Write d/manifest.json; an existing manifest's code and corpus.json pins must still hold (no re-sealing over a
-    change). Prints the manifest's sha256."""
+    change), and a recipe arm must be the binary its stamp records. Prints the manifest's sha256."""
     m, path = manifest_of(d, arms), os.path.join(d, MANIFEST)
+    stale = [a for a, r in m["arms"].items() if r["recipe_id"] and r["binary_sha256"] != r["stamp_binary_sha256"]]
+    if stale:
+        raise gen.HarnessError(f"{path}: arm(s) {stale} are not the binary their recipe stamp records: refused")
     if os.path.exists(path):
-        old = json.load(open(path))
+        old = load_json(path)
         if old.get("code") != m["code"] or old["set"].get("corpus.json") != m["set"]["corpus.json"]:
             raise gen.HarnessError(f"{path}: the code or corpus.json changed since this set was sealed: refused")
     with open(path, "w") as f:
         json.dump(m, f, indent=1, sort_keys=True)
         f.write("\n")
-    print(f"manifest sealed: {path} sha256 {sha(path)}")
+    print(f"manifest sealed: {path} sha256 {sha(path)} ({len(m['code'])} code files derived from the import graph)")
     return m
 
 
 def verify_manifest(d, arms):
-    """HarnessError (exit 2, never a verdict) unless d/manifest.json pins exactly this set, this code and every arm:
-    a recipe arm by (source_sha, recipe_id), its binary sha256 printed as information; an arm with no recipe by
-    its binary sha256."""
+    """HarnessError (exit 2, never a verdict) unless d/manifest.json pins exactly this set, its row programs, the
+    derived measurement code and every arm: a recipe arm by (source_sha, recipe_id) AND its binary equal to its own
+    stamp's binary_sha256 (the sealed binary sha256 is information: another machine builds other bytes), an arm with
+    no recipe by its binary sha256; every arm's stdlib tree."""
     path = os.path.join(d, MANIFEST)
     try:
-        want = json.load(open(path))
+        want = load_json(path)
     except (OSError, ValueError) as e:
         raise gen.HarnessError(f"{path}: no readable manifest ({e}); seal the set with judge.py --write-manifest")
     have = manifest_of(d, arms)
-    bad = [f"{k}/{f}" for k in ("set", "code") for f in have[k] if want.get(k, {}).get(f) is None or want[k][f] != have[k][f]]
+    bad = [f"{k}/{f}" for k in ("set", "code") for f in sorted(set(have[k]) | set(want.get(k, {})))
+           if want.get(k, {}).get(f) is None or want[k][f] != have[k].get(f)]
+    bad += ["programs"] if want.get("programs") != have["programs"] else []
     info = []
     for a, h in have["arms"].items():
         w = want.get("arms", {}).get(a)
         if not isinstance(w, dict):
             bad.append(f"arms/{a}")
-        elif w.get("recipe_id") is None:
+            continue
+        if w.get("lib") != h["lib"]:
+            bad.append(f"arms/{a} (stdlib tree)")
+        if w.get("recipe_id") is None:
             bad += [f"arms/{a} (no recipe: binary sha256)"] if w.get("binary_sha256") != h["binary_sha256"] else []
         elif (w.get("source_sha"), w.get("recipe_id")) != (h["source_sha"], h["recipe_id"]):
             bad.append(f"arms/{a} (source {h['source_sha']} recipe {str(h['recipe_id'])[:12]}, sealed source"
                        f" {w.get('source_sha')} recipe {str(w.get('recipe_id'))[:12]})")
+        elif h["binary_sha256"] != h["stamp_binary_sha256"]:
+            bad.append(f"arms/{a} (the executable {h['binary_sha256'][:12]} is not the binary its stamp records,"
+                       f" {str(h['stamp_binary_sha256'])[:12]})")
         else:
             info.append(f"{a}: source {h['source_sha'][:12]} recipe {h['recipe_id'][:12]} binary {h['binary_sha256'][:12]}"
                         + (" (as sealed)" if h["binary_sha256"] == w.get("binary_sha256") else
                            f" (sealed binary {str(w.get('binary_sha256'))[:12]}: another toolchain, information only)"))
     if bad:
         raise gen.HarnessError(f"{path}: {', '.join(bad)} differ from (or are missing in) the manifest: refused")
-    print(f"manifest verified: {path} sha256 {sha(path)}" + "".join(f"\n  arm {x}" for x in info))
+    print(f"manifest verified: {path} sha256 {sha(path)} ({len(have['code'])} code files derived from the import graph)"
+          + "".join(f"\n  arm {x}" for x in info))
 
 
 def write(corpus, d):

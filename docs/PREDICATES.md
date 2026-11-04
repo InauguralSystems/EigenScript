@@ -113,11 +113,26 @@ reveal):
 
 `judge.py --calibration` refuses to run on a `corpus.json` or `reference.py`
 other than the D3 and D4 files. `judge.py --corpus DIR` refuses (exit 2) unless
-`DIR/manifest.json` pins the set's corpus, labels and certificate, the
-instrument's code (standard, families, judge, reference, score, plants, schema)
-and every arm (RULING R30I-2 item 5, R30I-3 items 2-3). The manifest's own
-sha256 is printed when it is sealed and when it is verified; that number is
-posted on #1758 at the commitment.
+`DIR/manifest.json` pins:
+- the set's corpus, labels and certificate, and the row programs score.py runs
+  for them;
+- the measurement code, derived rather than listed: every file under `tools/`
+  that `import judge, score, plants` loads in a fresh interpreter;
+- every arm: a recipe arm by (source SHA, recipe id), with its executable equal
+  to its own stamp's binary; an arm with no recipe by its binary. Each arm's
+  stdlib tree (`lib/`) is pinned too.
+
+(RULING R30I-2 item 5, R30I-3 items 2–3, R30I-4 items 3–4.) The manifest's own
+sha256 is printed when it is sealed and when it is verified, and that number is
+posted on #1758 at the commitment. `build_arm.sh` builds under `env -i`, as the
+`observer-anchor` target does, so no caller's `MAKEFLAGS` or `CFLAGS` reaches an
+arm.
+
+The decision rules compare exact rationals (R30I-4 item 2): BA, FPR and their
+differences are computed with `fractions.Fraction` from the confusion counts,
+and a bootstrap CI bound enters a rule after rounding to 1e-9. So a value
+exactly on a registered threshold (0.05, 0.02, 0.65) decides as the
+pre-registration's text says. Floats remain for printing and for the bootstrap.
 
 Two consequences of D7, recorded here (RULING R30I-3 item 8):
 - Family 15's bases come only from families whose rows stay above |10|. In

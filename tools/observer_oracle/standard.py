@@ -21,7 +21,6 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))     # python3 -I drops the script's directory
 import reference as R
-from reference import W, SCALE, tau
 
 Z975 = statistics.NormalDist().inv_cdf(0.975)     # two-sided alpha = 0.05
 DBL_EPSILON = sys.float_info.epsilon
@@ -33,7 +32,7 @@ def mean(w):
 
 
 def win(xs, n):
-    return xs[max(0, n - W):n + 1]
+    return xs[max(0, n - R.W):n + 1]
 
 
 def _ok(w):
@@ -180,7 +179,7 @@ def std_stable(xs, n):
     w = win(xs, n)
     if not _ok(w):
         return False
-    return max(w) / 2 - min(w) / 2 <= 0.02 * max(abs(mean(w)), SCALE)
+    return max(w) / 2 - min(w) / 2 <= 0.02 * max(abs(mean(w)), R.SCALE)
 
 
 # stable STD' = Deviation D1: reference.stable exactly (1% ball about the midrange).
@@ -228,10 +227,10 @@ def d2_improving(xs, n):
             continue
         if best is None:
             best = v
-        elif v < best - 1e-3 * max(abs(best), SCALE):
+        elif v < best - 1e-3 * max(abs(best), R.SCALE):
             best, last = v, i
     w = win(xs, n)
-    return last is not None and last >= n - W + 1 and R._finite(w) and _bounded(w)
+    return last is not None and last >= n - R.W + 1 and R._finite(w) and _bounded(w)
 
 
 # oscillating STD: Hardy Sec. 62's complement, windowed: reference.oscillating.
@@ -299,7 +298,7 @@ def stdpp_equilibrium(xs, n):
 def persist(theta):
     def arm(xs, n):
         w = win(xs, n)
-        return _ok(w) and max(abs(s) for s in R._steps(w)) < theta * max(abs(w[-1]), SCALE)
+        return _ok(w) and max(abs(s) for s in R._steps(w)) < theta * max(abs(w[-1]), R.SCALE)
     return arm
 
 
@@ -308,7 +307,7 @@ def persist(theta):
 def tol_converged(k):
     def arm(xs, n):
         w = win(xs, n)
-        return _ok(w) and max(w) - min(w) <= k * tau(w[-1])
+        return _ok(w) and max(w) - min(w) <= k * R.tau(w[-1])
     return arm
 
 
@@ -446,7 +445,8 @@ def calibration_items():
     for sub in ("", "hcal"):
         d = os.path.join(here, sub)
         corpus = derive.load_corpus(os.path.join(d, "corpus.json"))
-        labels = json.load(open(os.path.join(d, "labels.json")))
+        with open(os.path.join(d, "labels.json")) as f:
+            labels = json.load(f)
         for row in corpus["rows"]:
             xs = generate(row["gen"], row["n"])
             for at in row["checkpoints"]:

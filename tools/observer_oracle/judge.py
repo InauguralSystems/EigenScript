@@ -16,7 +16,7 @@ options: --arm NAME=BINARY      a runtime arm (repeatable)
          --tol-converged NAME=K  STD converged with its tolerance x K (control (c2), Deviation D5)
          --const-false NAME=BINARY   the arm BINARY with every reading rewritten false
                                 (plants.py's const_false shim): control (b)
-         --subject NAME         evaluate decision rules 1-6 for this arm
+         --subject NAME         evaluate decision rules 1-6 for this arm (repeatable)
          --diff A,B             print BA(A) - BA(B) with its paired CI (repeatable)
          --seed N               run-order and bootstrap seed (default 1758; printed)
          --resamples N          (default 10000)
@@ -44,6 +44,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from fractions import Fraction
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))     # python3 -I drops the script's directory
 import derive
@@ -58,8 +59,8 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 # The instrument is frozen against these files (Deviations D3, D4; docs/PREDICATES.md; the posted generator).
 FROZEN = {"corpus.json": "e3f5e94e97bd28972480977a5ff21173221e878ab784abc7f4ed5459bedfefe4",
           "reference.py": "fa74d83f23422f5ddee9b30dc0f133417f98d9d8e7f9806151233d9e18ca1993",
-          "families.py": "e895ab61ca7af6b794f15e7c59c68ce9e99eb13c2e4548534c2c851eb3de5707",
-          "hcal/corpus.json": "5c0a1d1d9afed1f29018b8ef2b771c7a28d7b0a5f7f354fc68664d6ac53f569a"}
+          "families.py": "3acedd906d78b9a15389d25d9404b3d778a46d8ca665d72b503ce16f32f2268e",
+          "hcal/corpus.json": "47f9fedd37bf4cd56d86f781aa8995a9791fe404f56351dba712727825f06b0d"}
 ORDER = ("oscillating", "diverging", "improving", "converged", "equilibrium", "stable")   # report's priority
 CELL = {(True, True): 0, (False, True): 1, (True, False): 2, (False, False): 3}        # (label, got) -> TP FP FN TN
 
@@ -102,6 +103,17 @@ def ba(c):
     return S.balanced(c)
 
 
+def exact_ba(c):
+    """BA as an exact rational from [TP, FP, FN, TN] (R30I-4 item 2); None when a class is absent."""
+    tp, fp, fn, tn = c
+    return None if tp + fn == 0 or tn + fp == 0 else (Fraction(tp, tp + fn) + Fraction(tn, tn + fp)) / 2
+
+
+def ci_bound(x):
+    """A bootstrap CI bound as it enters a rule: rounded to 1e-9, then exact (R30I-4 item 2)."""
+    return None if x is None else Fraction(f"{x:.9f}")
+
+
 def pct(xs, q):
     s = sorted(xs)
     i = q * (len(s) - 1)
@@ -110,11 +122,12 @@ def pct(xs, q):
 
 
 def fmt(x, w=7):
-    return f"{'undef':>{w}}" if x is None else f"{x:{w}.4f}"
+    return f"{'undef':>{w}}" if x is None else f"{float(x):{w}.4f}"
 
 
 def main(argv):
-    args, opt = argv[1:], {"corpus": [], "arm": [], "diff": [], "const-false": [], "tol-converged": [], "abs-converged": []}
+    args, opt = argv[1:], {"corpus": [], "arm": [], "diff": [], "const-false": [], "tol-converged": [], "abs-converged": [],
+                           "subject": []}
     while args:
         k = args.pop(0)
         if k == "--calibration":
@@ -175,7 +188,8 @@ def main(argv):
                "code": F.manifest_of(HERE, {})["code"], "arms": {a: F.arm_record(b) for a, b in sorted(runs.items())}}
         text = json.dumps(cal, indent=1, sort_keys=True) + "\n"
         if opt.get("manifest-out"):
-            open(opt["manifest-out"], "w").write(text)
+            with open(opt["manifest-out"], "w") as f:
+                f.write(text)
         print(f"calibration manifest sha256 {hashlib.sha256(text.encode()).hexdigest()}"
               + (f" written to {opt['manifest-out']}" if opt.get("manifest-out") else "") + f": {json.dumps(cal, sort_keys=True)}")
     print(f"python {sys.version.split()[0]}; seed {seed} (run order and bootstrap); {nres} resamples;"
@@ -204,7 +218,7 @@ def main(argv):
         arms_py[name] = {"converged": S.tol_converged(float(k))}
     for x in opt["abs-converged"]:                # a scale-DEPENDENT arm: rule 5's flip witness (selftest)
         name, k = x.split("=", 1)
-        arms_py[name] = {"converged": S.abs_converged(float(k))}
+        arms_py[name] = {"converged": S.abs_converged(float(k)), "stable": S.std_stable}   # flips on ONE predicate
     for arm, preds in arms_py.items():
         V[arm] = {k: preds[k[2]](held[k[0]], k[1]) for k in keys if k[2] in preds}
     L = {k: labels[f"{k[0]}@{k[1]}"][k[2]][1] for k in keys}
@@ -232,7 +246,7 @@ def main(argv):
                 if k[2] == p:
                     c[CELL[(L[k], v)]][idx[k[0]]] += 1
             col[(a, p)] = c
-    point = {ap: ba([sum(x) for x in c]) for ap, c in col.items()}
+    point = {ap: exact_ba([sum(x) for x in c]) for ap, c in col.items()}       # exact; floats only in the bootstrap
     rows_of = {(a, p): frozenset(idx[k[0]] for k in V[a] if k[2] == p) for a, p in col}
     full, wcache = frozenset(range(len(pop))), {}
 
@@ -268,7 +282,7 @@ def main(argv):
             pa, pb, ba_, bb = point[(a, p)], point[(b, p)], boot[(a, p)], boot[(b, p)]
         else:
             ca, cb = ([[x if i in common else 0 for i, x in enumerate(r)] for r in col[q]] for q in ((a, p), (b, p)))
-            pa, pb = ba([sum(x) for x in ca]), ba([sum(x) for x in cb])
+            pa, pb = exact_ba([sum(x) for x in ca]), exact_ba([sum(x) for x in cb])
             ba_ = [ba([sum(map(operator.mul, w, x)) for x in ca]) for w in ws]
             bb = [ba([sum(map(operator.mul, w, x)) for x in cb]) for w in ws]
         out = sum(sum(x[i] for x in col[q] for i in rows_of[q] - common) for q in ((a, p), (b, p)))
@@ -278,7 +292,7 @@ def main(argv):
         return pa - pb, lo, hi, out
 
     cells = {ap: [sum(x) for x in c] for ap, c in col.items()}
-    fpr = {ap: (c[1] / (c[1] + c[3]) if c[1] + c[3] else None) for ap, c in cells.items()}
+    fpr = {ap: (Fraction(c[1], c[1] + c[3]) if c[1] + c[3] else None) for ap, c in cells.items()}
     print(f"\nBALANCED ACCURACY per arm x predicate: TP FP FN TN, raw right/total, BA [95% paired-bootstrap CI], FPR")
     for p in PREDS:
         print(f"  {p}")
@@ -322,12 +336,16 @@ def main(argv):
              and F.above_floor(held[r])}
     examined = [r for r in declared if rows[r]["base"] in above]
     pairs = [(r, at, p) for r in examined for at in rows[r]["checkpoints"] for p in PREDS]
-    flips = {a: sum(1 for r, at, p in pairs if (r, at, p) in V[a] and (rows[r]["base"], at, p) in V[a]
-                    and V[a][(r, at, p)] != V[a][(rows[r]["base"], at, p)]) for a in arms}
+    both = lambda a, r, at, p: (r, at, p) in V[a] and (rows[r]["base"], at, p) in V[a]
+    flips = {(a, p): sum(1 for r, at, q in pairs if q == p and both(a, r, at, p)        # per (arm, predicate): R30I-4 item 1
+                         and V[a][(r, at, p)] != V[a][(rows[r]["base"], at, p)]) for a in arms for p in PREDS}
+    compared = {(a, p): sum(1 for r in examined if all(both(a, r, at, p) for at in rows[r]["checkpoints"]))
+                for a in arms for p in PREDS}
     print(f"\nUNIT FLIPS on family 15: examined={len(examined)} declared={len(declared)} copies, {len(above)} bases above"
-          f" the floor, {len(pairs)} comparisons: " + ", ".join(f"{a} {flips[a]}" for a in arms))
-    if opt.get("subject"):
-        decide(opt, arms, point, fpr, diff, flips, len(examined), len(declared), pairs, caps)
+          f" the floor, {len(pairs)} comparisons; flips per arm and predicate (nonzero): "
+          + (", ".join(f"{a} {p} {flips[(a, p)]}" for a in arms for p in PREDS if flips[(a, p)]) or "none"))
+    for s in opt["subject"]:
+        decide(opt, s, arms, point, fpr, diff, flips, compared, len(declared), caps)
     print("\nCONFUSION per arm x predicate x family (TP FP FN TN):")
     fams = sorted({rows[r]["family"] for r in pop})
     for a in arms:
@@ -353,24 +371,26 @@ def main(argv):
     return 1 if split else 0
 
 
+# The rules compare exact rationals (point BA, FPR and their differences from the confusion counts; CI bounds after
+# ci_bound's rounding to 1e-9), so a value exactly on a registered threshold decides as the text says (R30I-4 item 2).
 def rule1(lo):
-    return None if lo is None else lo > -0.05
+    return None if lo is None else lo > Fraction(-1, 20)
 
 
 def rule2(p, d, lo):
     if d is None or lo is None:
         return None
-    return d >= 0.05 and lo > 0 if p in ("converged", "stable") else lo > -0.02
+    return d >= Fraction(1, 20) and lo > 0 if p in ("converged", "stable") else lo > Fraction(-1, 50)
 
 
 def rule3(p, fs, finc, fstd):
     if p in S.SETTLED:
-        return None if None in (fs, finc, fstd) else fs <= min(finc, fstd + 0.02)
+        return None if None in (fs, finc, fstd) else fs <= min(finc, fstd + Fraction(1, 50))
     return None if None in (fs, finc) else fs <= finc          # diverging
 
 
 def rule4(b):
-    return None if b is None else b >= 0.65
+    return None if b is None else b >= Fraction(13, 20)
 
 
 def rule5(flips, examined, declared):
@@ -382,8 +402,7 @@ def rule6(rc, decl):
     return None if rc is None or decl is None else rc == "0" and not decl
 
 
-def decide(opt, arms, point, fpr, diff, flips, examined, declared, pairs, caps):
-    s = opt["subject"]
+def decide(opt, s, arms, point, fpr, diff, flips, compared, declared, caps):
     lacks = sorted(c for c in derive.CAPABILITIES if s in caps and not caps[s][c])    # D11
     d11 = f" (D11: {s} lacks {', '.join(lacks)})" if lacks else ""
     if s not in arms or "INC" not in arms:
@@ -391,7 +410,8 @@ def decide(opt, arms, point, fpr, diff, flips, examined, declared, pairs, caps):
     r3std = "R3-STD" if "R3-STD" in arms and s != "R3-STD" else None
     decl = None
     if opt.get("declarations"):
-        decl = [ln for ln in open(opt["declarations"]) if "#1830" in ln or "R3" in ln.split()]
+        with open(opt["declarations"]) as f:
+            decl = [ln for ln in f if "#1830" in ln or "R3" in ln.split()]
     print(f"\nDECISION RULES (pre-registration; subject {s}; STD = the primary STD_p; amendment: R3-STD"
           f" {'= ' + r3std if r3std else 'absent'}):")
     for p in PREDS:
@@ -400,15 +420,15 @@ def decide(opt, arms, point, fpr, diff, flips, examined, declared, pairs, caps):
             res.append(ok)
             print(f"  {p:12} {name:22} {'NOT EVALUATED' if ok is None else 'PASS' if ok else 'FAIL'}: {text}")
         d, lo, _hi, out = diff(s, "STD", p)
-        crit("1 standard parity", None if lacks else rule1(lo), f"lower CI of BA({s}) - BA(STD) = {fmt(lo)} > -0.05"
+        crit("1 standard parity", None if lacks else rule1(ci_bound(lo)), f"lower CI of BA({s}) - BA(STD) = {fmt(lo)} > -0.05"
              + (f" ({out} verdicts on rows {s} cannot read left out)" if out else "") + d11)
         for ref in ["INC"] + ([r3std] if r3std and p in ("converged", "stable") else []):
             d, lo, _hi, out = diff(s, ref, p)
             note = f" (NOT EVALUATED on {out} capability-row verdicts, D9)" if out else ""
             if p in ("converged", "stable"):
-                crit(f"2 vs {ref}", rule2(p, d, lo), f"BA({s}) - BA({ref}) = {fmt(d)} >= +0.05, lower CI {fmt(lo)} > 0" + note)
+                crit(f"2 vs {ref}", rule2(p, d, ci_bound(lo)), f"BA({s}) - BA({ref}) = {fmt(d)} >= +0.05, lower CI {fmt(lo)} > 0" + note)
             else:
-                crit(f"2 vs {ref}", rule2(p, d, lo), f"lower CI of BA({s}) - BA({ref}) = {fmt(lo)} > -0.02" + note)
+                crit(f"2 vs {ref}", rule2(p, d, ci_bound(lo)), f"lower CI of BA({s}) - BA({ref}) = {fmt(lo)} > -0.02" + note)
         f = {a: fpr.get((a, p)) for a in (s, "INC", "STD")}
         if p in S.SETTLED:
             crit("3 safety", None if lacks else rule3(p, f[s], f["INC"], f["STD"]),
@@ -416,8 +436,8 @@ def decide(opt, arms, point, fpr, diff, flips, examined, declared, pairs, caps):
         elif p == "diverging":
             crit("3 safety", None if lacks else rule3(p, f[s], f["INC"], None), f"FPR({s}) {fmt(f[s])} <= FPR(INC) {fmt(f['INC'])}" + d11)
         crit("4 trivial floor", None if lacks else rule4(point.get((s, p))), f"BA({s}) = {fmt(point.get((s, p)))} >= 0.65" + d11)
-        crit("5 unit invariance", rule5(flips[s], examined, declared),
-             f"{flips[s]} flips on {len(pairs)} family-15 comparisons, examined={examined} declared={declared}")
+        crit("5 unit invariance", rule5(flips[(s, p)], compared[(s, p)], declared),
+             f"{flips[(s, p)]} {p} flips of {s}, examined={compared[(s, p)]} declared={declared}")
         rc = opt.get("floor-exit")
         crit("6 existing gates", False if lacks else rule6(rc, decl), f"--floor exit {rc if rc is not None else 'not given'};"
              " #1830/R3 declarations " + (str(len(decl)) if decl is not None else "not given")
@@ -426,26 +446,38 @@ def decide(opt, arms, point, fpr, diff, flips, examined, declared, pairs, caps):
         print(f"  {p:12} => {v}")
 
 
-BOUNDARY = [   # (rule, case, call, want): each rule placed exactly at its margin and just past it (RULING R30I-2 item 3)
-    ("rule1", "lo=-0.05", lambda: rule1(-0.05), False), ("rule1", "lo=-0.0499", lambda: rule1(-0.0499), True),
+def _ba(*c):
+    return exact_ba(list(c))
+
+
+# (rule, case, call, want): each rule at its registered threshold, exactly, and just past it (R30I-2 item 3, R30I-4
+# item 2). Point values come from confusion counts as exact rationals; CI bounds pass through ci_bound.
+BOUNDARY = [
+    ("rule1", "lo=-0.05", lambda: rule1(ci_bound(-0.05)), False), ("rule1", "lo=-0.0499", lambda: rule1(ci_bound(-0.0499)), True),
     ("rule1", "lo=undef", lambda: rule1(None), None),
-    ("rule2cs", "d=0.05,lo=0.001", lambda: rule2("converged", 0.05, 0.001), True),
-    ("rule2cs", "d=0.0499,lo=0.001", lambda: rule2("stable", 0.0499, 0.001), False),
-    ("rule2cs", "d=0.06,lo=0", lambda: rule2("converged", 0.06, 0.0), False),
-    ("rule2o", "lo=-0.02", lambda: rule2("improving", 0.0, -0.02), False),
-    ("rule2o", "lo=-0.0199", lambda: rule2("oscillating", 0.0, -0.0199), True),
-    ("rule3", "fs=FPR(STD)+0.02", lambda: rule3("converged", 0.25 + 0.02, 0.5, 0.25), True),
-    ("rule3", "fs=FPR(STD)+0.0201", lambda: rule3("stable", 0.2701, 0.5, 0.25), False),
-    ("rule3", "fs=FPR(INC)", lambda: rule3("equilibrium", 0.1, 0.1, 0.25), True),
-    ("rule3", "fs=FPR(INC)+1e-4", lambda: rule3("equilibrium", 0.1001, 0.1, 0.25), False),
-    ("rule3", "diverging fs=FPR(INC)", lambda: rule3("diverging", 0.2, 0.2, None), True),
-    ("rule3", "diverging fs=FPR(INC)+1e-4", lambda: rule3("diverging", 0.2001, 0.2, None), False),
-    ("rule4", "BA=0.65", lambda: rule4(0.65), True), ("rule4", "BA=0.6499", lambda: rule4(0.6499), False),
+    ("rule2cs", "d=1/20 exactly ([0,7,1,3] - [0,8,1,2]), lo=0.001",
+     lambda: rule2("converged", _ba(0, 7, 1, 3) - _ba(0, 8, 1, 2), ci_bound(0.001)), True),
+    ("rule2cs", "d=1/20-1e-6 ([10,0,0,10] - [900002,0,99998,10])",
+     lambda: rule2("stable", _ba(10, 0, 0, 10) - _ba(900002, 0, 99998, 10), ci_bound(0.001)), False),
+    ("rule2cs", "d=0.06,lo=0", lambda: rule2("converged", Fraction(3, 50), ci_bound(0.0)), False),
+    ("rule2o", "lo=-0.02 exactly", lambda: rule2("improving", Fraction(0), ci_bound(-0.02)), False),
+    ("rule2o", "lo=-0.02+1e-6", lambda: rule2("oscillating", Fraction(0), ci_bound(-0.019999)), True),
+    ("rule3", "fs=FPR(STD)+0.02 exactly (27/100 vs 1/4)", lambda: rule3("converged", Fraction(27, 100), Fraction(1, 2), Fraction(1, 4)), True),
+    ("rule3", "fs=FPR(STD)+0.02+1e-6", lambda: rule3("stable", Fraction(270001, 1000000), Fraction(1, 2), Fraction(1, 4)), False),
+    ("rule3", "fs=FPR(INC)", lambda: rule3("equilibrium", Fraction(1, 10), Fraction(1, 10), Fraction(1, 4)), True),
+    ("rule3", "fs=FPR(INC)+1e-4", lambda: rule3("equilibrium", Fraction(1001, 10000), Fraction(1, 10), Fraction(1, 4)), False),
+    ("rule3", "diverging fs=FPR(INC)", lambda: rule3("diverging", Fraction(1, 5), Fraction(1, 5), None), True),
+    ("rule3", "diverging fs=FPR(INC)+1e-4", lambda: rule3("diverging", Fraction(2001, 10000), Fraction(1, 5), None), False),
+    ("rule4", "BA=13/20 exactly from counts [2,11,1,19]", lambda: rule4(_ba(2, 11, 1, 19)), True),
+    ("rule4", "BA=13/20-1/2e6 from counts [299999,0,700001,10]", lambda: rule4(_ba(299999, 0, 700001, 10)), False),
     ("rule5", "0 flips 20/20", lambda: rule5(0, 20, 20), True), ("rule5", "1 flip 20/20", lambda: rule5(1, 20, 20), False),
     ("rule5", "0 flips 19/20", lambda: rule5(0, 19, 20), None), ("rule5", "0 flips 0/0", lambda: rule5(0, 0, 0), None),
     ("rule6", "floor 0, none declared", lambda: rule6("0", []), True),
     ("rule6", "floor 0, one declared", lambda: rule6("0", ["x #1830"]), False),
     ("rule6", "floor 1, none declared", lambda: rule6("1", []), False), ("rule6", "not given", lambda: rule6(None, []), None)]
+# The planted-fault proof for exact thresholds: the float path the rules used before R30I-4 decides these wrongly.
+FLOAT_PATH = [("rule4 BA=13/20 from [2,11,1,19]", lambda: S.balanced([2, 11, 1, 19]) >= 0.65, True),
+              ("rule2 d=1/20 from [0,7,1,3] - [0,8,1,2]", lambda: S.balanced([0, 7, 1, 3]) - S.balanced([0, 8, 1, 2]) >= 0.05, True)]
 
 
 def selftest():
@@ -462,6 +494,9 @@ def selftest():
     for rule, case, call, want in BOUNDARY:
         got = call()
         print(f"BOUNDARY {rule} {case}: {word[got]} (want {word[want]}) {'ok' if got == want else 'MISMATCH'}")
+    for case, call, want in FLOAT_PATH:
+        print(f"FLOAT-PATH {case}: the float comparison says {call()}, the exact one {want}"
+              f" ({'agrees' if call() == want else 'MIS-DECIDES: why the rules are exact'})")
     if subprocess.run(["make", "--no-print-directory", "-C", ROOT, "observer-anchor"], stdin=subprocess.DEVNULL,
                       stdout=subprocess.DEVNULL).returncode:
         raise HarnessError("make observer-anchor failed: no anchor to plant against")
@@ -484,12 +519,14 @@ def selftest():
             for f in F.SET:
                 shutil.copy(os.path.join(src, f), d)
         for what, edit in (("another INC source SHA", lambda m: m["arms"]["INC"].update(source_sha="0" * 40)),
-                           ("other score.py", lambda m: m["code"].update({"score.py": "0" * 64})),
+                           ("other score.py", lambda m: m["code"].update({"observer_oracle/score.py": "0" * 64})),
+                           ("other native_witness.py", lambda m: m["code"].update({"native_witness.py": "0" * 64})),
                            ("another certificate.json", lambda m: m["set"].update({"certificate.json": "0" * 64}))):
             with contextlib.redirect_stdout(io.StringIO()):
                 m = F.write_manifest(sets[0], {"INC": a})
             edit(m)
-            json.dump(m, open(os.path.join(sets[0], F.MANIFEST), "w"))
+            with open(os.path.join(sets[0], F.MANIFEST), "w") as f:
+                json.dump(m, f)
             try:
                 with contextlib.redirect_stdout(io.StringIO()):
                     main(["judge.py", "--corpus", sets[0], "--arm", f"INC={a}", "--resamples", "10"])
@@ -497,10 +534,28 @@ def selftest():
             except HarnessError as e:
                 print(f"MANIFEST a set sealed with {what} was refused: ok ({str(e).split(': ', 1)[1]})")
             os.remove(os.path.join(sets[0], F.MANIFEST))
+        # (3b) a recipe arm whose executable was replaced under its old stamp (R30I-4 item 3)
+        arm = os.path.join(t, "arm", "build", "release")
+        os.makedirs(arm)
+        shutil.copy(a, arm)
+        with open(os.path.join(t, "arm", "arm.json"), "w") as f:
+            json.dump({"source_sha": "selftest", "recipe_id": "selftest", "binary": os.path.join(arm, "eigenscript"),
+                       "binary_sha256": F.sha(os.path.join(arm, "eigenscript"))}, f)
+        with contextlib.redirect_stdout(io.StringIO()):
+            F.write_manifest(sets[0], {"INC": os.path.join(arm, "eigenscript")})
+        with open(os.path.join(arm, "eigenscript"), "ab") as f:
+            f.write(b"\0")
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                F.verify_manifest(sets[0], {"INC": os.path.join(arm, "eigenscript")})
+            print("MANIFEST a recipe arm replaced under its old stamp was ACCEPTED: MISMATCH")
+        except HarnessError as e:
+            print(f"MANIFEST a recipe arm replaced under its old stamp was refused: ok ({str(e).split(': ', 1)[1]})")
+        os.remove(os.path.join(sets[0], F.MANIFEST))
         for d in sets:
             F.write_manifest(d, {"INC": a, "CF": a})
         return main(["judge.py", "--corpus", sets[0], "--corpus", sets[1], "--arm", f"INC={a}", "--const-false", f"CF={a}",
-                     "--subject", "CF", "--diff", "STD,REF", "--diff", "STD,INC", "--abs-converged", "ABS=1e-3",
+                     "--subject", "CF", "--subject", "ABS", "--diff", "STD,REF", "--diff", "STD,INC", "--abs-converged", "ABS=1e-3",
                      "--resamples", "1000", "--floor-exit", "1", "--declarations", os.devnull])
 
 

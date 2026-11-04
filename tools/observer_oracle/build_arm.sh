@@ -3,7 +3,7 @@
 # target (`make build`, one job), from that commit's own files (git archive), so nothing in this checkout but the
 # commit reaches the build. The arm lives in
 # ${XDG_CACHE_HOME:-$HOME/.cache}/eigs-oracle-arms/<sha256 of this recipe>/<SHA>/ beside its stamp arm.json:
-# {source_sha, recipe_id, binary, binary_sha256, toolchain}. recipe_id is the sha256 of this file, so an arm is
+# {source_sha, recipe_id, binary, binary_sha256, toolchain, cc}. recipe_id is the sha256 of this file, so an arm is
 # identified across machines by (source_sha, recipe_id); its binary sha256 is information (another toolchain
 # builds other bytes). judge.py reads the stamp beside a binary to seal and verify a manifest.
 # usage: bash tools/observer_oracle/build_arm.sh SHA   (prints the stamp)
@@ -28,12 +28,15 @@ rm -rf "$DIR"
 mkdir -p "$DIR"
 git -C "$top" archive "$sha" | tar -x -C "$DIR"
 [ -f "$DIR/Makefile" ] || { echo "build_arm: git archive of $sha produced no Makefile" >&2; exit 2; }
-if ! make -C "$DIR" build > "$DIR.log" 2>&1; then
+# The build runs under a sanitized environment, as the observer-anchor Makefile target runs build_anchor.sh
+# (env -i HOME PATH=/usr/bin:/bin): no MAKEFLAGS, CFLAGS, CC or other caller override reaches it (R30I-4 item 5).
+if ! env -i HOME="$HOME" PATH=/usr/bin:/bin LANG=C make -C "$DIR" build > "$DIR.log" 2>&1; then
     echo "build_arm: make failed, see $DIR.log" >&2
     exit 2
 fi
 bsha=$(sha256sum "$bin" | cut -d' ' -f1)
 tool=$( (readelf -p .comment "$bin" 2>/dev/null || true) | sed -n 's/^ *\[ *[0-9a-f]*\] *//p' | head -1 | tr -d '"\\')
-printf '{"source_sha": "%s", "recipe_id": "%s", "binary": "%s", "binary_sha256": "%s", "toolchain": "%s"}\n' \
-    "$sha" "$recipe" "$bin" "$bsha" "$tool" > "$DIR/arm.json"
+cc=$(env -i PATH=/usr/bin:/bin cc --version 2>/dev/null | head -1 | tr -d '"\\')
+printf '{"source_sha": "%s", "recipe_id": "%s", "binary": "%s", "binary_sha256": "%s", "toolchain": "%s", "cc": "%s"}\n' \
+    "$sha" "$recipe" "$bin" "$bsha" "$tool" "$cc" > "$DIR/arm.json"
 cat "$DIR/arm.json"
