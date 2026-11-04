@@ -2756,6 +2756,11 @@ alignments; scored as `score.py` scores):
     These timings describe certification latency; they are not wrong
     verdicts against the D6 labels. No recovery line is re-tagged or
     attributed to #1830. Decision rule 6 sees zero declarations.
+  - D2/report ranking can keep a certified geometric tail labelled
+    `improving`: for `x_k = 1024/2^k`, update40 has both `converged` and
+    `improving` true, hence reports `improving`. This is a reveal residual,
+    not a ranking change. The scale floor matters: the last improvement is
+    update31, so at41 D2 expires and the report is `converged` (R31 round4).
   - `harmonic@2000 converged` is STD_converged's documented limit (R30-3
     item 3; the candidate arm below).
 
@@ -2780,6 +2785,7 @@ before it lands.
 | D10 | arms are binaries | a runtime arm is pinned by recipe: the manifest records (source SHA, recipe id, binary sha256). `recipe_id` is the sha256 of the build recipe (`tools/observer_oracle/build_arm.sh`, or `build_anchor.sh` for the anchor), which builds a commit's own files with `make build`. Verification matches source SHA and recipe id; the binary sha256 is printed as information. An arm with no recipe stamp is pinned by its binary sha256 | The across-machine A/A cannot share binary hashes (another toolchain builds other bytes) (RULING R30I-3 item 3) |  |
 | D11 | (not stated) | the subject must have every registered capability: a subject arm lacking int64 or ieee FAILS rule 6, and rules 1, 3 and 4 are NOT EVALUATED for it, with the reason printed | A subject that reads fewer rows must never be advantaged. Without this, a subject that lost int64 would never be scored on #1830's own row (RULING R30I-3 item 4) |  |
 | D12 | R3-STD = each predicate's test replaced by STD_p; keyword, window and tape unchanged. | R3-STD computes STD_p's tests on the exact-aware signal (#1830's int path, decided per window): a window of all-exact int64 steps uses a noise floor of 0 in the raw tests and the absolute tolerance `rtol·scale` in the settled tests. | Rule 6 (#1830's declaration list empty) binds every subject arm including R3-STD, and STD_p on a float signal cannot satisfy it (int64 verdicts 12/18 against 18/18; an exactly incrementing counter is not converged). The signal is the measurement device; the test is unchanged (R30-2 item 3). | Two keys per predicate on the 72-row corpus: `int64_count`@10 and @60 × {`converged`, `stable`}, four keys total, R3 false and STD/D1 true. (RULING R31-1 item 2.) |
+| D13 | The stepper fixture halves 1024 forty times and expects the end label `converged`. | Use `x is 1 + x / 2` for the witnessed flip; retain halving at40/41 as residual coverage, and compare every tape label with live `report`. | D2 and unchanged ranking put `improving` before `converged`; the nonzero-limit fixture expires D2 at30 and certifies at29. | No calibration or H-cal verdict/label change; consumer expectation coverage only. |
 
 D5–D11 above are copied unchanged from the instrument's R3.0-I deviations
 in [PREDICATES.md](../PREDICATES.md#how-round-3-is-judged-1758), citing
