@@ -3109,7 +3109,7 @@ procedure. The named check must go red on its own message.
 | `how` on an infinite step uses the formula alone | row `O4.how-infinite-step` |
 | the `cfg` reader ignores fields after the fourth | row `O3.ocfg-no-hlow` |
 
-RULING R31-2 adds three separately counted stall-clause plants to that
+RULING R31-4 adds five separately counted stall-clause/order plants to that
 once-at-acceptance run (the original 19 plants retain their own count):
 
 | removed stall clause | named check that must go red |
@@ -3117,6 +3117,14 @@ once-at-acceptance run (the original 19 plants retain their own count):
 | quiet last relative step | `stall-contract: FAIL quiet tier=...` on a shrinking tail seeded at n = 1000 |
 | non-finite current value | `stall-contract: FAIL nan tier=...` |
 | diverging window | `stall-contract: FAIL doubling tier=...` |
+| oscillating with a non-contracting amplitude | `stall-contract: FAIL alternating tier=...` |
+| oscillating early return moved before current-non-finite | `stall-contract: FAIL infinite-alternating tier=...` |
+
+R31-5 pins the three alternation exits to `stalled` in 100..112, allowing
+the incumbent oscillator to fill before counting. The damped control stays
+`1454 normal converged`. HD1b and LE1b each pin their amended-rule count100.
+The ordering plant moves the actual early return, not commutative OR terms;
+its finite-only amplitude test must not suppress a current infinity.
 
 The NaN isolates the non-finite term: infinity also reads `diverging`, so
 removing only the non-finite term cannot distinguish an inf witness. A

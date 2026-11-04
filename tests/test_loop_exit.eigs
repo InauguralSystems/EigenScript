@@ -20,6 +20,8 @@ loop while not converged:
 print of __loop_exit__
 print of __loop_iterations__
 print of ""
+assert of [__loop_iterations__ == 100, "LE1b loop iteration count"]
+assert of [__loop_exit__ == "stalled", "LE1b stall exit"]
 print of "--- LE2: Constant certifies converged, exits normally ---"
 y is 42
 y is 42

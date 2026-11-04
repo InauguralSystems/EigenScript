@@ -33,4 +33,6 @@ print of report of x
 print of __loop_exit__
 print of why is x
 print of ""
+assert of [counter == 100, "HD1b loop iteration count"]
+assert of [__loop_exit__ == "stalled", "HD1b stall exit"]
 print of "=== RUNAWAY LOOP CONTRACT COMPLETE ==="
