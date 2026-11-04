@@ -8,7 +8,7 @@ define want(tag, got, exp) as:
     assert of [got == exp, f"{tag}: diverging expected {exp} got {got}"]
     print of f"  PASS: {tag} (diverging={got})"
 
-# WD1: monotone clean ascent fires (all steps big ascents, net up)
+# WD1: a contracting descent is not a non-vanishing runaway.
 a is 499.0
 a is 99.0
 a is 19.0
@@ -17,10 +17,9 @@ a is 5.0
 a is 3.0
 d1 is diverging
 # #861 re-pin: value route: 499->3 with steps contracting 400->2 is a genuine approach -> improving; the ENTROPY ascent reads "diverging" only on the entropy channel (pinned via classify below)
-want of ["WD1 monotone clean ascent fires", d1, false]
+want of ["WD1 contracting descent does not diverge", d1, false]
 
-# WD2: noisy ascent with down-ticks still fires — net up AND majority (4/6)
-#      genuine ascents. Proportional vote tolerates the bounces.
+# WD2: mixed-sign bouncing is not same-direction divergence.
 b is 4000.0
 b is 60.0
 b is 200.0
@@ -30,11 +29,9 @@ b is 5.0
 b is 3.0
 d2 is diverging
 # #861 re-pin: value route: bouncing -> oscillating
-want of ["WD2 noisy ascent, net+majority, fires", d2, false]
+want of ["WD2 mixed-sign bouncing does not diverge", d2, false]
 
-# WD3: net entropy FELL despite several ascent steps -> does NOT fire.
-#      Magnitude mirror of the anti-lie guard: most steps tick up but the value
-#      ends MORE determined than it started (sum <= 0).
+# WD3: a reversal and contracting tail do not establish divergence.
 c is 1.6
 c is 2.2
 c is 6.0
@@ -44,8 +41,7 @@ c is 3.0
 d3 is diverging
 want of ["WD3 net-down despite ascents does not fire", d3, false]
 
-# WD4: steady ascent INSIDE the gray band (dh_zero <= |dH| < dh_small) does
-#      NOT fire — it reads `stable`. #187 mutual-exclusivity guard.
+# WD4: steady negative raw steps are a same-direction runaway and fire.
 e is 60.0
 e is 58.0
 e is 56.0
@@ -54,10 +50,9 @@ e is 52.0
 e is 50.0
 d4 is diverging
 # #861 re-pin: value route AGREES here for the right reason: -2/step is a linear runaway toward -inf (raw non-vanishing same-sign), where the entropy channel called it gray-band "stable"
-want of ["WD4 gray-band steady ascent does not fire", d4, true]
+want of ["WD4 steady negative steps diverge", d4, true]
 
-# WD5: net UP but only a MINORITY (2/5) of steps are genuine ascents -> does
-#      NOT fire. Proves the proportional vote gates independently of sum>0.
+# WD5: mixed-sign motion fails the same-direction raw test.
 f is 600.0
 f is 1500.0
 f is 4000.0
@@ -67,7 +62,7 @@ f is 2.0
 d5 is diverging
 want of ["WD5 net-up but sub-majority does not fire", d5, false]
 
-# WD6: flat sequence (all dH ~ 0) does not fire
+# WD6: zero raw steps do not establish non-vanishing motion.
 g is 5.0
 g is 5.0
 g is 5.0
@@ -76,15 +71,15 @@ g is 5.0
 d6 is diverging
 want of ["WD6 flat does not fire", d6, false]
 
-# WD7: slow descent (falling entropy, sum < 0) does not fire
+# WD7: three growing steps are short of the four-step raw test.
 h is 25.0
 h is 40.0
 h is 60.0
 h is 99.0
 d7 is diverging
-want of ["WD7 slow descent does not fire", d7, false]
+want of ["WD7 three-step growth prefix does not fire", d7, false]
 
-# WD8: fewer than 3 samples (count == 2) does not fire (partial-window rule)
+# WD8: the two-step contracting prefix does not establish divergence.
 k is 9999.0
 k is 50.0
 k is 3.0

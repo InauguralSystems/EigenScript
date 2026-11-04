@@ -7,7 +7,7 @@ define want(tag, got, exp) as:
     assert of [got == exp, f"{tag}: equilibrium expected {exp} got {got}"]
     print of f"  PASS: {tag} (equilibrium={got})"
 
-# WE1: full-window quiet at HIGH entropy -> equilibrium (regardless of entropy)
+# WE1: a full window at constant 2 has zero mean and variance.
 a is 2.0
 a is 2.0
 a is 2.0
@@ -19,9 +19,9 @@ a is 2.0
 a is 2.0
 a is 2.0
 a is 2.0
-want of ["WE1 quiet high-entropy fires", equilibrium, true]
+want of ["WE1 constant 2 is equilibrium", equilibrium, true]
 
-# WE2: full-window SETTLED at LOW entropy -> equilibrium (all raw steps are zero)
+# WE2: a full window at constant 1e6 also has only zero raw steps.
 b is 1000000.0
 b is 1000000.0
 b is 1000000.0
@@ -33,7 +33,7 @@ b is 1000000.0
 b is 1000000.0
 b is 1000000.0
 b is 1000000.0
-want of ["WE2 settled low-entropy fires", equilibrium, true]
+want of ["WE2 constant 1e6 is equilibrium", equilibrium, true]
 
 # WE3: partial window (count == 9 < N) -> does NOT fire (full-window rule)
 c is 2.0
@@ -48,7 +48,7 @@ c is 2.0
 c is 2.0
 want of ["WE3 partial window does not fire", equilibrium, false]
 
-# WE4: steady drift, |mean| > dh_zero -> does NOT fire (not at rest on average)
+# WE4: steady one-direction motion is excluded from equilibrium.
 d is 30.0
 d is 32.0
 d is 34.0
@@ -76,7 +76,7 @@ e is 10.0
 e is 2.0
 want of ["WE5 large-amp oscillation does not fire (variance)", equilibrium, false]
 
-# WE6: sub-dh_zero cancelling motion (|dH|~1.5e-5) -> zero-mean, low variance -> YES
+# WE6: alternating +/-1 raw steps are motion, not equilibrium.
 f is 800.0
 f is 801.0
 f is 800.0
@@ -89,10 +89,9 @@ f is 800.0
 f is 801.0
 f is 800.0
 # #861 re-pin: value route: 800<->801 is a real +/-1 perpetual oscillation (#422) — an active-motion band, exclusive of equilibrium; the entropy channel saw dH~1.5e-5 and called it rest
-want of ["WE6 sub-noise cancellation fires", equilibrium, false]
+want of ["WE6 unit alternation does not fire", equilibrium, false]
 
-# WE7: gray-band oscillation (|dH|~0.0057) -> zero-mean but variance over
-#      dh_zero^2 -> does NOT fire (variance gate, distinct from large amplitude)
+# WE7: alternating +/-5 raw steps are also excluded from equilibrium.
 g is 70.0
 g is 75.0
 g is 70.0
@@ -104,9 +103,9 @@ g is 75.0
 g is 70.0
 g is 75.0
 g is 70.0
-want of ["WE7 gray-band oscillation does not fire (variance)", equilibrium, false]
+want of ["WE7 five-unit alternation does not fire", equilibrium, false]
 
-# WE8: quiet at moderate entropy (|x|=42) -> equilibrium (entropy-independent)
+# WE8: a full window at constant 42 is equilibrium at this magnitude too.
 h is 42.0
 h is 42.0
 h is 42.0
@@ -118,6 +117,6 @@ h is 42.0
 h is 42.0
 h is 42.0
 h is 42.0
-want of ["WE8 quiet moderate-entropy fires", equilibrium, true]
+want of ["WE8 constant 42 is equilibrium", equilibrium, true]
 
 print of "WINDOWED_EQUILIBRIUM_ALL_PASS"

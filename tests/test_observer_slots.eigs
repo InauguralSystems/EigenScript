@@ -30,8 +30,7 @@ loop while i < 14:
     i is i + 1
 check of ["growing signal is not stable", observer_slots.is_stable of (1), false]
 
-# slot 3: entropy RISING (magnitude shrinking toward |x|=1 from above,
-# never crossing) -> diverging per the lattice
+# slot 3: a contracting numeric descent is not diverging.
 v is 4096.0
 i is 0
 loop while i < 14:

@@ -2742,21 +2742,20 @@ alignments; scored as `score.py` scores):
 - **What R3-STD gains.** It removes 44 of today's 110 disagreements and adds
   none.
 - **What still stays wrong.**
-  - The declared `ieee_nan_recover@13 stable` (4 arms) stays in
-    `oracle_expect.txt` (RULING R30-3 item 2). R3.1 re-tags it with the true
-    reason (RULING R30-4 item 1). The cause is the windowed band test, not the
-    NaN. The model gives:
+  - Recovery latency remains a documented limit of the windowed band test.
+    D6 changed `ieee_nan_recover@13 stable` from true to false because the
+    NaN remains inside the observer's W + 1 input values. Those four arms
+    need no declaration: R3.0-I already removed them, and R3.1 leaves
+    `oracle_expect.txt` empty. The model gives:
 
     | row | last non-finite index | out of the window from | D1 `stable` first true | `converged` first true |
     |---|---:|---:|---:|---:|
     | `ieee_nan_recover` | 3 | 14 | 20 | 24 |
     | `ieee_inf_recover` (the NaN-free twin) | 2 | 13 | 19 | 23 |
 
-    The new tag reads `recover_round` R3.0-I (the label review) and the reason
-    "windowed band test: the NaN leaves the window at 14, the 1% band first
-    reads stable at 20, the NaN-free twin ieee_inf_recover is equally late;
-    documented limit". The line is not attributed to #1830. Decision rule 6
-    names #1830's list, so it does not block that rule.
+    These timings describe certification latency; they are not wrong
+    verdicts against the D6 labels. No recovery line is re-tagged or
+    attributed to #1830. Decision rule 6 sees zero declarations.
   - `harmonic@2000 converged` is STD_converged's documented limit (R30-3
     item 3; the candidate arm below).
 
@@ -3062,12 +3061,15 @@ hosted (CodSpeed).
 **Gates:**
 - **`gate.O1.oracle-floor`:** `make observer-oracle EXPECT=ieee,int64`,
   with decision rule 6 as written (RULING R30-4 item 1): no line attributed
-  to #1830, or tagged `R3`, remains in `tests/phase2/oracle_expect.txt`. The
-  4 `ieee_nan_recover@13 stable` lines stay, re-tagged as below.
+  to #1830, or tagged `R3`, remains in `tests/phase2/oracle_expect.txt`.
+  The file is empty. D6 already removed the four `ieee_nan_recover@13 stable`
+  lines when its W + 1-value label changed to false.
 - **`gate.O2.predicate-floors`:** the same run's line
   `floor: 1872 verdicts checked, 0 lost`.
-- **`phase2_check.sh --through R3.1`** (R3.1 adds `R3.1` … `R3.4` to
-  `ROUNDS` and retags the `[R3]` rows), then **`--through R3.2`**.
+- **`phase2_check.sh --through R3.1`** (R3.1 adds the landed `R3.1` and
+  `R3.2` rows to `ROUNDS` and retags the `[R3]` rows), then
+  **`--through R3.2`**. Later rounds join `ROUNDS` when their first row or
+  gate lands.
 - **The registered decision rule on H1**, at the reveal.
 
 **Plants.** Each runs once, at acceptance, with `tools/phase2_plants.sh`'s

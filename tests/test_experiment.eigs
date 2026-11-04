@@ -14,7 +14,8 @@ tracked is track_measurements of converging
 assert_eq of [len of tracked, 13, "tracked all 13 measurements"]
 assert_eq of [tracked[0].value, 10, "first value is 10"]
 assert_eq of [tracked[12].value, 1.001, "last value is 1.001"]
-# Each entry should have status, entropy, dH
+# Compatibility keys status/entropy/dH remain; numeric entropy/dH fields
+# carry routed value/displacement, with null before the first step.
 assert_true of [(type of tracked[5].status) == "str", "status is string"]
 assert_true of [(type of tracked[5].entropy) == "num", "entropy is numeric"]
 print of ("  first status: " + tracked[0].status)
@@ -36,7 +37,7 @@ print of ("  stable: " + (str of result2))
 
 # ---- detect_entropy_spikes finds outliers ----
 print of "--- detect_entropy_spikes ---"
-# Smooth data with one big jump — dH spikes at ~0.08
+# Smooth numeric data with a large raw displacement on each side of the jump.
 spike_data is [1, 1, 1, 1, 1, 100, 1, 1, 1, 1]
 spikes is detect_entropy_spikes of [spike_data, 0.05]
 assert_true of [(len of spikes) > 0, "detected at least one spike"]
@@ -48,7 +49,7 @@ for i in range of (len of spikes):
 print of "--- detect_entropy_spikes (smooth) ---"
 smooth is [5, 5, 5, 5, 5, 5, 5, 5]
 spikes2 is detect_entropy_spikes of [smooth, 0.05]
-# After initial assignment, constant values should have low dH
+# After the initial null displacement, constant values have zero raw steps.
 print of ("  spikes on smooth: " + (str of (len of spikes2)))
 
 # ---- convergence_rate on converging sequence ----

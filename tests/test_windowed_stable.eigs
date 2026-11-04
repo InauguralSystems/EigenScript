@@ -50,7 +50,7 @@ c is 46.0
 c is 48.0
 want of ["WS3 partial window does not fire", stable, false]
 
-# WS4: a single step exceeds dh_small -> does NOT fire
+# WS4: the jump makes the full value window exceed the midrange ball.
 d is 40.0
 d is 42.0
 d is 44.0
@@ -78,7 +78,7 @@ e is 1000000.0
 e is 1000000.0
 want of ["WS5 constant1e6 is stable", stable, true]
 
-# WS6: gray-band oscillation (consecutive sign flips) -> NOT stable
+# WS6: the 70..75 range exceeds the midrange ball.
 f is 70.0
 f is 75.0
 f is 70.0
@@ -104,7 +104,7 @@ g is 42.0
 g is 42.0
 g is 42.0
 g is 42.0
-want of ["WS7 quiet just above h_low fires", stable, true]
+want of ["WS7 constant42 is stable", stable, true]
 
 # WS8: constant100 is stable.
 h is 100.0
@@ -118,6 +118,6 @@ h is 100.0
 h is 100.0
 h is 100.0
 h is 100.0
-want of ["WS8 quiet just below h_low does not fire", stable, true]
+want of ["WS8 constant100 is stable", stable, true]
 
 print of "WINDOWED_STABLE_ALL_PASS"

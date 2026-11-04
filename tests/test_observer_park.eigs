@@ -1,4 +1,4 @@
-# Regression: observer state (Env::obs — per-slot entropy/dH) is part of binding
+# Regression: observer state (Env::obs — per-slot numeric/entropy history) is part of binding
 # identity, so a parked-and-reused call env must reset it (vm_park_call_env).
 # Otherwise a windowed predicate on an observed LOCAL reads the PREVIOUS call's
 # trajectory: a function with fewer than the window's worth of observed assigns

@@ -4270,10 +4270,10 @@ else
 fi
 echo ""
 
-# [99] Value-signal observer channel — report_value (#294). Pins that the value
-# channel classifies the value trajectory (not entropy) against closed-form
-# oracles: blind-to-slow-oscillation entropy vs not-settled value, fast
-# oscillation, geometric decay -> converged, monotone climb -> moving.
+# [99] Value-signal observer channel — report_value (#294). Pins agreement
+# with report on numeric trajectories: sustained oscillation does not settle,
+# fast alternation oscillates, geometric decay converges, and monotone climb
+# is neither oscillating nor converged.
 echo "[99] Value-Signal Observer (report_value, #294)"
 check_eigs_suite "report_value value-channel verdicts" test_observer_value_signal.eigs "All tests passed."
 
@@ -5877,13 +5877,11 @@ check_eigs_suite "descriptor read of an unrecorded host observer binding raises 
 # zero by +/- is exact cancellation, which the file's controls pin.
 check_eigs_suite "math underflow flag (#971)" test_math_underflow.eigs "MATH_UNDERFLOW_ALL_PASS"
 
-# #861: the convergence predicates scored against an EXTERNAL oracle — 27
-# sequences whose behaviour is known analytically, no implementation
-# consulted. This is the one component in the project that never had a
-# reference to be wrong against, and it is wrong: the entropy channel that
-# `converged`/`report` use scores 19/27 (3 false positives, 5 false
-# negatives). The baseline is PINNED and fails on a move in either
-# direction, so the defect cannot drift and a fix cannot land silently.
+# #861 / R3.1: the convergence predicates scored against an external oracle
+# of 27 analytic trajectories. Both numeric report surfaces now use STD/D1/D2;
+# the test pins their full verdicts as well as their convergence scores.
+# The historical entropy route scored 19/27; it is no longer this test's
+# numeric signal. Any future movement requires a measured semantic change.
 check_eigs_suite "convergence oracle baseline (#861)" test_convergence_oracle.eigs "CONVERGENCE_ORACLE_BASELINE_HELD"
 
 # #571: the entropy walk is visited-once — cyclic/shared container graphs

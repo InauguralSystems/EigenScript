@@ -665,7 +665,7 @@ The `O cfg` record's current shape is pinned by `O3.ocfg-no-hlow` (its file list
 `# ITEMS: O3 T1`).
 
 ### O1
-- `gate.O1.oracle-floor` [R3.1] `make observer-oracle EXPECT=ieee,int64` (hosted; CI's required check runs `tools/observer_oracle/ci_lane.sh`), with decision rule 6 as written (RULING R30-4 item 1): no `tests/phase2/oracle_expect.txt` line attributed to #1830 (or tagged `R3`) remains; every one of the 1872 floor verdicts re-measured on the v0.46.0 anchor and kept, zero FINDINGs, every #1830 capability verdict right (`int64_count`, `int64_swing` and the int floor rows in all four arms), both capabilities present. The 4 `ieee_nan_recover@13 stable` lines stay, re-tagged as the windowed band's limit (the NaN leaves the window at 14, the 1% band first reads stable at 20, the NaN-free twin `ieee_inf_recover` is equally late)
+- `gate.O1.oracle-floor` [R3.1] `make observer-oracle EXPECT=ieee,int64` (hosted; CI's required check runs `tools/observer_oracle/ci_lane.sh`), with decision rule 6 as written (RULING R30-4 item 1): no `tests/phase2/oracle_expect.txt` line attributed to #1830 (or tagged `R3`) remains; every one of the 1872 floor verdicts re-measured on the v0.46.0 anchor and kept, zero FINDINGs, every #1830 capability verdict right (`int64_count`, `int64_swing` and the int floor rows in all four arms), both capabilities present. `oracle_expect.txt` is empty; D6 already removed the four `ieee_nan_recover@13 stable` lines when its W + 1-value label changed to false. Recovery latency remains documented in the design, without a declaration
   -> exit 0
   tag: n/a. This is the oracle gate of #1758 Done-when "Observer", so it is a gate, not a row (design §8 Round 3).
 - `O1.where-is-value` [R3.1] `x is 2.5 / print of (where is x)`
