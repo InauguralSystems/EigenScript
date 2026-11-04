@@ -1564,7 +1564,18 @@ static double obs_num_exact_diameter(const ObserverSlot *s) {
     return (double)((uint64_t)hi - (uint64_t)lo);
 }
 
+static int obs_num_opposite_inf(const ObserverSlot *s) {
+    size_t n = obs_num_value_count(s);
+    for (size_t i = 0; i < n; i++) {
+        double v = observer_slot_value_get(s, i).value;
+        if (isinf(v) && !!signbit(v) != !!signbit(s->last_value)) return 1;
+    }
+    return 0;
+}
+
 static int obs_num_oscillating(const ObserverSlot *s) {
+    if (isnan(s->last_value)) return 0;
+    if (isinf(s->last_value)) return obs_num_opposite_inf(s);
     return obs_num_rel_oscillating(s) || observer_slot_raw_oscillating(s)
         || obs_num_bounded_oscillating(s);
 }
@@ -1572,7 +1583,8 @@ static int obs_num_oscillating(const ObserverSlot *s) {
 /* Divergence: a non-finite position, or the #422 raw test: non-vanishing
  * same-sign steps sum without bound no matter how small delta/value looks. */
 static int obs_num_diverging(const ObserverSlot *s) {
-    if (observer_slot_nonfinite(s)) return 1;
+    if (isnan(s->last_value)) return 0;
+    if (isinf(s->last_value)) return !obs_num_opposite_inf(s);
     return observer_slot_raw_diverging(s);
 }
 
@@ -1718,17 +1730,17 @@ static int obs_num_stable(const ObserverSlot *s) {
  * `moving` for a full window in no band, and report_value's historical
  * partial-window fallback preserved verbatim. */
 static const char *obs_num_report(const ObserverSlot *s) {
-    if (!s || !s->v_used) return "equilibrium";   /* no numeric trajectory */
+    if (!s || !s->v_used) return "equilibrium";
+    if (isnan(s->last_value)) return "undefined";
     size_t cnt = obs_v_count(s);
-    if (cnt == 0) return "equilibrium";           /* one value seen, no step yet */
     if (obs_num_oscillating(s)) return "oscillating";
-    if (obs_num_diverging(s))   return "diverging";
-    if (obs_num_improving(s))   return "improving";   /* partial-capable, like
-                                                       * the two bands above */
+    if (obs_num_diverging(s)) return "diverging";
+    if (cnt == 0) return "equilibrium";
+    if (obs_num_improving(s)) return "improving";
     if (cnt >= (size_t)observer_slot_window(s)) {
-        if (obs_num_converged(s))   return "converged";
+        if (obs_num_converged(s)) return "converged";
         if (obs_num_equilibrium(s)) return "equilibrium";
-        if (obs_num_stable(s))      return "stable";
+        if (obs_num_stable(s)) return "stable";
         return "moving";
     }
     int all_zero, all_small;
