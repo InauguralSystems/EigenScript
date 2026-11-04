@@ -25,3 +25,11 @@ Update both slot-layer population labels to the numeric classifier’s new
 value_slot.h home, preserving every test and the derived population check.
 Move the stall-contract checker under tests/phase2 so its long plant row
 remains keyed on a checker dependency under the existing trigger policy.
+
+Require actual native tape coverage in the stepper/live comparison: force
+OSR at 1 for its short loop and, on hosted x86-64 builds, check positive native compile diagnostics at
+a nonzero loop entry; the interpreter control must compile zero chunks.
+Other architectures retain every live/p/t comparison; the acceptance flag
+--require-native demands the native witness explicitly. Deleting the forcing
+is rejected by the coverage assertion. The additional
+checker requirement changes no runtime, fixture values or report rule.
