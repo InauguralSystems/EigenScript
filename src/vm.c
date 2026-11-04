@@ -82,17 +82,55 @@ static double vm_floor_mod(double a, double b) {
     return rem;
 }
 
-/* R31-2: the bare observer loop counts quiet steps, non-finite values and
- * diverging windows toward its stall backstop. Oscillation never counts.
- * Non-numeric bindings retain the entropy-step rule. Shared by VM and JIT. */
+/* Magnitudes compare through negative absolute values: INT64_MIN fits,
+ * and the standard mixed comparator preserves adjacent int64 magnitudes. */
+static int obs_stall_magnitude_cmp(ObserverNumber a, ObserverNumber b) {
+    if (a.is_int) { if (a.integer > 0) a.integer = -a.integer; }
+    else a.value = -fabs(a.value);
+    if (b.is_int) { if (b.integer > 0) b.integer = -b.integer; }
+    else b.value = -fabs(b.value);
+    if (a.is_int && b.is_int)
+        return (a.integer < b.integer) - (a.integer > b.integer);
+    if (a.is_int) return -eigs_cmp_int_float(a.integer, b.value);
+    if (b.is_int) return eigs_cmp_int_float(b.integer, a.value);
+    return (a.value < b.value) - (a.value > b.value);
+}
+
+/* R31-4: a finite-window fact, not a prediction of an eventual limit.
+ * The recent half's magnitude envelope has not contracted iff its maximum
+ * is at least the older half's maximum. Read the newest W+1 inputs, or the
+ * available prefix. Non-finite windows cannot establish this finite fact. */
+static int obs_stall_amplitude_noncontracting(const ObserverSlot *s) {
+    size_t n = s->values_count;
+    size_t full = (size_t)observer_slot_window(s) + 1;
+    if (n > full) n = full;
+    if (n < 2 || !s->v_values) return 0;
+    size_t half = n / 2;
+    ObserverNumber recent = { .is_int = 1, .integer = 0 };
+    ObserverNumber older = recent;
+    for (size_t i = 0; i < n; i++) {
+        int idx = (int)s->values_head - 1 - (int)i;
+        while (idx < 0) idx += s->values_cap;
+        ObserverNumber v = s->v_values[idx];
+        if (!v.is_int && !isfinite(v.value)) return 0;
+        ObserverNumber *peak = i < half ? &recent : &older;
+        if (obs_stall_magnitude_cmp(v, *peak) > 0) *peak = v;
+    }
+    return obs_stall_magnitude_cmp(recent, older) >= 0;
+}
+
+/* R31-4/R31-5: one stall reader for interpreter, JIT and exported AOT core.
+ * Non-numeric subjects retain the entropy-step rule. */
 static inline int obs_stall_quiet(void) {
     const ObserverSlot *s = env_obs_slot(g_last_obs_slot_env, g_last_obs_slot_idx);
     if (!s || !s->used) return 0;
     if (!s->v_last || !s->v_used) return observer_slot_quiet(s);
-    if (observer_slot_oscillating(s)) return 0;
-    return observer_slot_quiet(s) ||
-           !isfinite(s->last_value) ||
-           observer_slot_diverging(s);
+    if (!isfinite(s->last_value)) return 1;
+    if (observer_slot_quiet(s)) return 1;
+    if (observer_slot_diverging(s)) return 1;
+    if (observer_slot_oscillating(s))
+        return obs_stall_amplitude_noncontracting(s);
+    return 0;
 }
 void vm_obs_slot_dropped(Env *e) {
     if (g_last_obs_slot_env == e) { g_last_obs_slot_env = NULL; g_last_obs_slot_idx = -1; }
@@ -2271,7 +2309,7 @@ static int eigs_loop_stall_step_named(Env *e, CallFrame *frame, uint16_t counter
     }
     int should_exit = 0;
     if (g_unobserved_depth == 0) {
-        /* The shared reader applies the R31-2 numeric stall rule;
+        /* The shared reader applies the R31-4 numeric stall rule;
          * the non-numeric channel keeps its entropy-step backstop. */
         if (obs_stall_quiet()) {
             g_loop_stall_count++;

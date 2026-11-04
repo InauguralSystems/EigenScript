@@ -2857,9 +2857,21 @@ from the history snapshot, which `trace_record_obs` fills.
 - `classify of [t, "entropy"]` on a numeric snapshot raises `value`;
 - the loop stall backstop counts an iteration when the numeric subject's
   last relative step is quiet (`|r| < dh_zero`), OR its current value is
-  non-finite, OR its window reads `diverging`; never for `oscillating`, never
-  for merely not converged. The counter resets on every other iteration
-  (RULING R31-2);
+  non-finite, OR its window reads `diverging`, OR it reads `oscillating`
+  with a non-contracting amplitude. The oscillation clause never counts a
+  contracting amplitude; merely not converged never counts. The counter
+  resets on every other iteration. Non-finite current values count before
+  any finite-amplitude test (RULING R31-4, count band amended by R31-5).
+  **Amplitude is a window fact:** split the newest W+1 retained input values
+  (or the available prefix) into a recent half of floor(n/2) values and an
+  older half of the remainder. For finite inputs let R and O be their
+  maximum absolute magnitudes. Non-contracting means R >= O. A geometric
+  decay of magnitudes has R < O; a constant alternation has R = O; a growing
+  alternation has R > O. This uses only the retained window, without a
+  forecast, tolerance or change to any numeric predicate. Integer and mixed
+  magnitude comparisons preserve int64 ordering. A non-finite window does
+  not establish this finite fact; the independent current-non-finite clause
+  still counts unconditionally;
 - the SIGUSR1 dump prints the value and the last Δv.
 
 **Every writer of the numeric rings, and the token that deletes its old

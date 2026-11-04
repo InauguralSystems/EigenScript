@@ -892,10 +892,19 @@ Two cases still deserve a guard:
   fires on a runaway. The bare form (`loop while not converged`) carries
   the observer stall backstop. An iteration counts when the numeric subject's
   last relative step is quiet (`|r| < dh_zero`), OR its current value is
-  non-finite, OR its window reads `diverging`; never for `oscillating`, never
-  for merely not converged. The counter resets on every other iteration.
-  After 100 counted iterations the loop exits with
-  `__loop_exit__ == "stalled"` (RULING R31-2). The **named** form deliberately does
+  non-finite, OR its window reads `diverging`, OR it reads `oscillating`
+  with a non-contracting amplitude. The oscillation clause never counts a
+  contracting amplitude; merely not converged never counts. The counter
+  resets on every other iteration. Non-finite current values count before
+  any finite-amplitude test. For the newest W+1 inputs (or available prefix), provided all are finite,
+  compare the maximum absolute magnitude R of the recent floor(n/2)
+  values with O of the older remainder: R >= O is non-contracting, R < O is
+  contracting. A retained non-finite input does not establish this finite
+  amplitude fact; the current-non-finite clause still counts independently.
+  This is a fact about the stored window, with exact integer
+  and mixed comparisons, not a claim about a future limit. After 100 counted
+  iterations the loop exits with `__loop_exit__ == "stalled"`
+  (RULING R31-4; the alternation count band is 100..112 under R31-5). The **named** form deliberately does
   not (it must not false-halt on the global alias), so give it an
   absolute cap:
 
