@@ -248,6 +248,9 @@ def scaled(base, s):
               "form": f"{s:g} x ({base['form']})", "why": f"{base['why']}; scaled by {s:g} > 0, which keeps a limit, +-inf and boundedness"})
     if "manual" in base:
         r["manual"] = manual(base["manual"]["argument"] + f"; the row is the base row times {s:g} > 0", base["manual"]["cite"], p)
+    elif base["family"].startswith("F2 "):      # sympy 1.14 sums 1/(n+1)^p but not c/(n+1)^p (STOP-9)
+        r["manual"] = manual(f"x_n = {s:g} sum_(k=1)^(n+1) k^-p with p > 1: the p-series converges to zeta(p) (the base"
+                             f" row's symbolic certificate), so x_n tends to {s:g} zeta(p)", ["HARDY_58"], p)
     cap = derive.capability(r)
     if cap:
         r["capability"] = cap

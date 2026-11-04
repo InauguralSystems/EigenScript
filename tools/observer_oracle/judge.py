@@ -4,7 +4,8 @@ RULINGS R30-1..R30-4): every arm scored per predicate by balanced accuracy
 with a PAIRED cluster bootstrap over rows, and the six decision rules
 evaluated mechanically.
 
-usage: judge.py --calibration [options]       corpus.json + hcal/, arms INC = src/eigenscript
+usage: judge.py --selftest                    control (b) on hcal/ against the anchor (tools/selftests.txt)
+       judge.py --calibration [options]       corpus.json + hcal/, arms INC = src/eigenscript
                                               and ANCHOR = the build_anchor.sh binary
        judge.py --corpus DIR [--corpus DIR ...] [options]
 options: --arm NAME=BINARY      a runtime arm (repeatable)
@@ -32,6 +33,7 @@ import operator
 import os
 import random
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -44,9 +46,11 @@ from schema import PREDS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-# The instrument is frozen against these files (Deviations D3, D4; docs/PREDICATES.md).
+# The instrument is frozen against these files (Deviations D3, D4; docs/PREDICATES.md; the posted generator).
 FROZEN = {"corpus.json": "e3f5e94e97bd28972480977a5ff21173221e878ab784abc7f4ed5459bedfefe4",
-          "reference.py": "fa74d83f23422f5ddee9b30dc0f133417f98d9d8e7f9806151233d9e18ca1993"}
+          "reference.py": "fa74d83f23422f5ddee9b30dc0f133417f98d9d8e7f9806151233d9e18ca1993",
+          "families.py": "69914f3fc5d1f116e5d53fff985eac2ab72f277a2733d89c4c166cc4bcea908a",
+          "hcal/corpus.json": "87c19486679b1a7664f007504d05a33b56a3e522857f1000f3a8d2966a9986ab"}
 ORDER = ("oscillating", "diverging", "improving", "converged", "equilibrium", "stable")   # report's priority
 CELL = {(True, True): 0, (False, True): 1, (True, False): 2, (False, False): 3}        # (label, got) -> TP FP FN TN
 
@@ -71,10 +75,11 @@ def run_arms(binaries, rows, seed):
     random.Random(seed).shuffle(order)
     got, split, skipped, wit = {a: {} for a in binaries}, [], set(), {a: {"wit": {}} for a in binaries}
     for a, rid in order:
-        res = score.measure(binaries[a], {"rows": [rows[rid]]}, caps[a])
-        if res["skipped"]:
-            skipped.add((a, rid, res["skipped"][0][1]))
+        cap = rows[rid].get("capability")
+        if cap and not caps[a][cap]:            # measure's own skip rule; a 1-row corpus must not run empty
+            skipped.add((a, rid, cap))
             continue
+        res = score.measure(binaries[a], {"rows": [rows[rid]]}, caps[a])
         wit[a]["wit"].update(res["wit"])
         split += [(a, k, r) for k, r in score.findings(res)]
         got[a][rid] = {(at, p): v for (t, f, _r, at, p), v in res["read"].items() if (t, f) == ("interp", "straight")}
@@ -230,11 +235,16 @@ def main(argv):
     print(f"\nREPORT LABEL accuracy (canonical priority {' > '.join(ORDER)} > moving), {len(rk)} fully scored checkpoints:")
     for a in full:
         print(f"  {a:8} {sum(rep(lambda p: V[a][(r, t, p)]) == rep(lambda p: L[(r, t, p)]) for r, t in rk)}/{len(rk)}")
-    far = {rid: generate(rows[rid]["gen"], rows[rid]["n"] + 40) for rid in pop}
+    far = {}
+    for rid in pop:
+        try:
+            far[rid] = generate(rows[rid]["gen"], rows[rid]["n"] + 40)
+        except HarnessError:                     # an int64 row that leaves int64 within 40 steps
+            pass
     print("\nFORECAST accuracy (settled verdict at n against |x_{n+k} - x_n| <= tol for k = 1..40; tol = eps for"
-          " converged, band for stable):")
+          f" converged, band for stable); rows whose generator cannot run 40 steps on: {sorted(set(pop) - set(far)) or 'none'}")
     for p, tol in (("converged", derive.eps), ("stable", derive.band)):
-        fk = [k for k in keys if k[2] == p]
+        fk = [k for k in keys if k[2] == p and k[0] in far]
         truth = {k: all(math.isfinite(v) for v in far[k[0]][k[1]:k[1] + 41]) and
                  max(abs(v - far[k[0]][k[1]]) for v in far[k[0]][k[1]:k[1] + 41]) <= tol(far[k[0]][k[1]]) for k in fk}
         print(f"  {p}: " + ", ".join(f"{a} {sum(V[a][k] == truth[k] for k in fk)}/{len(fk)}" for a in arms if (a, p) in col))
@@ -313,9 +323,22 @@ def decide(opt, arms, col, point, fpr, diff, flips, f15, pairs):
         print(f"  {p:12} => {v}")
 
 
+def selftest():
+    """The tools/selftests.txt row, control (b) as the judge's own calibration: the
+    anchor with every reading rewritten false must score BA = 0.5 and FAIL the rules; and
+    STD and REF, the same `converged` test, must differ by exactly 0 in every resample (pairing)."""
+    if subprocess.run(["make", "--no-print-directory", "-C", ROOT, "observer-anchor"], stdin=subprocess.DEVNULL,
+                      stdout=subprocess.DEVNULL).returncode:
+        raise HarnessError("make observer-anchor failed: no anchor to plant against")
+    a = score.anchor()["binary"]
+    return main(["judge.py", "--corpus", os.path.join(HERE, "hcal"), "--arm", f"INC={a}", "--const-false", f"CF={a}",
+                 "--subject", "CF", "--diff", "STD,REF", "--resamples", "1000",
+                 "--floor-exit", "1", "--declarations", os.devnull])
+
+
 if __name__ == "__main__":
     try:
-        sys.exit(main(sys.argv))
+        sys.exit(selftest() if sys.argv[1:] == ["--selftest"] else main(sys.argv))
     except HarnessError as e:
         print(f"OBSERVER_ORACLE_ERROR: {e}", file=sys.stderr)
         sys.exit(2)

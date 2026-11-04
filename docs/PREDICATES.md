@@ -76,6 +76,37 @@ runtime answers a different question for two predicates:
 
 The per-predicate tables `make observer-oracle` prints measure all of this.
 
+### How Round 3 is judged (#1758)
+
+Round 3 of Phase 2 rewrites the six numeric predicates. Its acceptance is
+pre-registered on #1758 (comments 6430031838 and 6430139845, 2026-10-26;
+rulings R30-1 to R30-4, 2026-11-03), and the instrument is in
+`tools/observer_oracle/`:
+- `standard.py` holds each predicate's standard test (STD, the primary arm;
+  STD′ and STD″ are reported), the ruled deviation D2 for `improving`, and the
+  trivial and persistence arms C0, C1 and PERSIST. Every test cites its source.
+  `--selftest` runs the one-time textbook checks.
+- `families.py` holds the 16 process families. `S_split` draws four of them as
+  the calibration families H-cal (`hcal/`). The held-out set H1 is drawn at the
+  reveal from a drand round (`seal.py` states the procedure).
+- `judge.py` scores every arm by balanced accuracy, with a paired cluster
+  bootstrap over rows, and evaluates the six decision rules mechanically.
+  `python3 -I tools/observer_oracle/judge.py --calibration` prints the
+  calibration table.
+
+**Deviations from the pre-registration** (its own clause: recorded before the
+reveal):
+
+| # | registered | as built | reason |
+|---|---|---|---|
+| D1 | `stable`: STD = the 2% band, STD′ = the 1% band | R3's `stable` is STD′, reference.py's `stable` exactly (a ball of radius 1e-2·max(\|centre\|, 1e-3) about the midrange). The decision rules still compare against the registered STD | The labels use this band. The 2% band loses `alt_series_ln2@60 stable` (R30-3 item 1, R30-4 item 3) |
+| D2 | `improving`: STD = min(newer half) < min(older half) − min_delta | arm D2: Keras EarlyStopping's running best over the history, with the registered relative min_delta. A non-finite best counts as no best yet; the arm is false while the window holds a non-finite value; x₀ is never an improvement | It is the cited standard itself. The half-window form loses `quasi_2@300 improving` (R30-3 item 1, R30-4 item 2) |
+| D3 | calibration `corpus.json` sha256 `317531993699d714312a2799ae7d0321a8c370713d29dd631d8028033a9383b0` (dffac840, 71 rows) | sha256 `e3f5e94e97bd28972480977a5ff21173221e878ab784abc7f4ed5459bedfefe4` (72 rows) | The added row is `ieee_nan_recover` (#1765/#2036), which pre-dates Round 3 (R30-4 item 6) |
+| D4 | REF = `reference.py` sha256 prefix `11de2a0191b25086` | sha256 `fa74d83f23422f5ddee9b30dc0f133417f98d9d8e7f9806151233d9e18ca1993` | A docstring change (#2139). R30-1 item 4's report-only amendment will move it again, as its own Deviation (R30-4 item 6) |
+
+`judge.py --calibration` refuses to run on a `corpus.json` or `reference.py`
+other than the D3 and D4 files.
+
 ## Which channel answers (#861)
 
 The predicate words and `report` are **routed**: a binding whose most

@@ -2,7 +2,7 @@
 """The standard-test, trivial and persistence arms of #1758's Round 3
 pre-registration (comments 6430031838 + 6430139845; RULINGS R30-1..R30-4).
 
-usage: standard.py --check   (the one-time textbook checks; a tools/selftests.txt row)
+usage: standard.py --selftest   (the one-time textbook checks; a tools/selftests.txt row)
        standard.py --fit     (C1 and PERSIST refitted on the calibration labels)
 
 Every arm is a pure function f(xs, n) of the values x_0..x_n a row's
@@ -26,6 +26,10 @@ from reference import W, SCALE, tau
 Z975 = statistics.NormalDist().inv_cdf(0.975)     # two-sided alpha = 0.05
 DBL_EPSILON = sys.float_info.epsilon
 SETTLED = ("converged", "stable", "equilibrium")   # FPR = false-settled; PERSIST's domain (P11)
+
+
+def mean(w):
+    return sum(v / len(w) for v in w)     # no overflow at 1e308
 
 
 def win(xs, n):
@@ -126,15 +130,18 @@ def kpss_lags(e):
     for i in range(1, covlags + 1):
         prod = sum(a * b for a, b in zip(e[i:], e[:n - i])) / (n / 2.0)
         s0, s1 = s0 + prod, s1 + i * prod
+    if s0 == 0.0:                       # statsmodels would divide by zero here; take the longest lag
+        return n - 1
     return min(int(1.1447 * ((s1 / s0) ** 2) ** (1 / 3) * n ** (1 / 3)), n - 1)
 
 
 def kpss_stat(x):
-    n = len(x)
-    m = sum(x) / n
+    n, m = len(x), mean(x)
     e = [v - m for v in x]
-    if all(r == 0.0 for r in e):
+    big = max(abs(r) for r in e)
+    if big == 0.0:
         return 0.0
+    e = [r / big for r in e]            # eta is scale-free; scaling keeps e*e from underflowing (1e-300 windows)
     lags = kpss_lags(e)
     sig = sum(r * r for r in e)
     for i in range(1, lags + 1):
@@ -173,8 +180,7 @@ def std_stable(xs, n):
     w = win(xs, n)
     if not _ok(w):
         return False
-    m = sum(w) / len(w)
-    return max(w) / 2 - min(w) / 2 <= 0.02 * max(abs(m), SCALE)
+    return max(w) / 2 - min(w) / 2 <= 0.02 * max(abs(mean(w)), SCALE)
 
 
 # stable STD' = Deviation D1: reference.stable exactly (1% ball about the midrange).
@@ -434,7 +440,7 @@ def calibration_items():
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] == ["--check"]:
+    if sys.argv[1:] == ["--selftest"]:
         sys.exit(check())
     if sys.argv[1:] == ["--fit"]:
         c1, th = fit(calibration_items())
