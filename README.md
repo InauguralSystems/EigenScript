@@ -287,8 +287,9 @@ print of [1.0 // 0.1, 1 // 0.1, 1e-300 // -1e300, y, num_type of y]
 
 ### Ask Your Code
 
-Every value quietly remembers how it has been changing — and you don't pay
-for it until you ask. Six questions, in plain English:
+Bindings retain their observed assignment history. Programs that never
+read observer state can skip that bookkeeping through the observer gate.
+Six questions, in plain English:
 
 At the REPL, where an interrogative displays its answer:
 
@@ -301,8 +302,9 @@ eigs> signal is 15
 eigs> what is signal     => 15        — the value now
 eigs> who is signal      => signal    — the name you gave it
 eigs> when is signal     => 3         — how many times it has been set
-eigs> where is signal    => 0.337…    — how much information it carries
-eigs> why is signal      => -0.016…   — how fast that information is changing
+eigs> where is signal    => 15        — the current numeric value
+eigs> why is signal      => 1         — its last exact displacement
+eigs> how is signal      => 0.014778… — settledness of that relative step
 ```
 
 In a script an interrogative is an expression, so use it where a value
@@ -343,9 +345,9 @@ print of loss
 ```
 
 ```output
-converged
-35
-1.4551915228366852e-09
+improving
+36
+7.275957614183426e-10
 ```
 
 ```eigenscript
@@ -366,9 +368,9 @@ Trajectory states: `converged`, `stable`, `equilibrium`, `oscillating`,
 alerts, or debugging without writing logging code.
 
 The everyday payoff before any theory: `loop while not converged` supplies a
-fixed 0.1%-relative stopping test and remembers the trajectory. It is not a
+fixed 0.1%-relative windowed Cauchy test and remembers the trajectory. It is not a
 drop-in replacement for a caller-chosen epsilon and guard: the registered
-#1990 population found a 0.47% wrong-exit rate for the bare form and a 2.29x
+#1990 pre-R3.1 population found a 0.47% wrong-exit rate for the bare form and a 2.29x
 median iteration ratio to its matched Python loop; the named form still needs
 an explicit cap. These figures, and the decision-rule failure, are reproduced
 by `python3 reports/convergence_loops/report1990.py`. See
@@ -376,10 +378,12 @@ by `python3 reports/convergence_loops/report1990.py`. See
 
 > **What `improving` and the rest actually mean.** For numbers the
 > trajectory words read the value's own motion (#861): `converged` is the
-> standard stopping criterion — steps settled under a tolerance — and
-> `improving` uses the ML loss convention that lower is better: the value
-> must be decreasing, with steps contracting toward a limit. Growth is never
-> improving, even when it rises toward a plateau. For
+> windowed Cauchy test — eleven values within a fixed tolerance — and
+> `stable` is a 1% ball about the window's midrange. `improving` uses
+> Keras' loss convention: a significant lower running best within ten
+> steps, subject to the finite-window and boundedness approximation. A
+> recent improvement can remain true while the next value rises, or while
+> `converged` also becomes true; `report` keeps its existing priority. For
 > non-numeric values, `converged` and ordinarily `stable` compare bounded,
 > detached assignment snapshots; the other predicates and `report` read
 > entropy. A bounded snapshot containing a NaN float or buffer cannot converge;
@@ -394,8 +398,9 @@ by `python3 reports/convergence_loops/report1990.py`. See
 
 ### Don't Ask — `unobserved`
 
-The observer runs on every assignment so interrogations are always
-cheap. When you know a hot region won't be interrogated, opt out:
+With the observer gate open, assignments maintain history before a query.
+`unobserved:` elides non-numeric entropy/comparison work while keeping numeric
+samples complete:
 
 ```eigenscript fragment i=0 n=3 acc=0 weights=[1,2,3] xs=[1,1,1]
 unobserved:
@@ -404,14 +409,13 @@ unobserved:
         i is i + 1
 ```
 
-Inside the block, assignments to plain variables skip the observer's
-entropy walk and mutate the existing `Value` in place. Outside, normal
-behavior resumes. Measured 2.7x on a 2M-iteration accumulator loop
-(834ms → 307ms, n=5 medians); iLambdaAi saw ~22% end-to-end on an
-18-hour training run. A scalar assignment inside the block still drops its
-O(1) sample into the value window (#1049), so the verdicts `report` and the
-predicates give a numeric binding are the same with the block as without
-it — only the entropy channel (`why`/`how`, the dH window) is elided.
+Numeric relative/raw steps, exact flags, running-best state and history
+snapshots still update inside the block. Numeric `report`, predicates and
+`where`/`why`/`how` after the block give the same answers as the observed
+version. Non-numeric entropy and comparison samples are elided. Programs
+with no observer/history reader can skip bookkeeping automatically through
+the observer gate; historical speedups from removing numeric entropy walks
+do not describe R3.1's numeric path.
 
 The block only helps **plain variables** — `x is ...`. A dict field or
 list element (`d.k is ...`, `xs[i] is ...`) is never observed in the
@@ -420,9 +424,7 @@ nothing; `--lint` flags a block with no plain-variable assignments as
 W020. Note the depth is global rather than lexical: a function *called*
 inside the block runs unobserved too.
 
-Because the depth is dynamic, an interrogation inside the block — or
-inside anything it calls — has no trajectory to classify. Rather than
-answer `false` forever, **an observer predicate raises inside an
+Because the depth is dynamic, **an observer predicate raises inside an
 `unobserved:` block** (#871):
 
 ```

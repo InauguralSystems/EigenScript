@@ -1931,8 +1931,12 @@ assigned — **every** assignment, including those made inside an
 not assignment, and not the O(1) value-window sample that `report`,
 `report_value` and the six predicates read on a numeric binding
 (#908/#1049); [PREDICATES.md](PREDICATES.md#inputs) lists the readers
-that can differ. (`where`, `why`, `how` return the observer's entropy,
-entropy-delta, and stability — see [OBSERVER.md](OBSERVER.md).)
+that can differ. Numeric `where` is the current value, `why` is the last
+raw displacement (exact when the int64 difference fits), and `how` is
+`dh_zero / (dh_zero + abs(r))` for a finite relative step. `why` and `how`
+are null before the first step. Non-numeric bindings retain entropy, dH
+and entropy-step settledness; see [OBSERVER.md](OBSERVER.md) for the full
+non-finite case table.
 
 ```eigenscript
 x is 10
@@ -1949,15 +1953,16 @@ x
 ```
 
 ```eigenscript fragment x=1
-print of (where is x)   # entropy of x's value (a float >= 0)
-print of (why is x)     # dH: change in entropy at last assignment
-print of (how is x)     # stability in [0, 1]
+print of (where is x)   # x's current value: 1
+print of (why is x)     # null: no numeric step yet
+print of (how is x)     # null: no numeric step yet
 ```
 
 ## Observer semantics and predicates
 
-Every assignment (outside `unobserved`) updates an observer that tracks
-the value's entropy and its trend. The entropy walk **stops at a
+Numeric assignments update the binding's value trajectory, including inside
+`unobserved:`. Numeric bindings do not compute or store entropy. For
+non-numeric assignments outside `unobserved:`, the entropy walk **stops at a
 reference**: a list or dict computes over its own elements, and an element
 that is itself a container contributes only its size term `log2(count+1)`
 rather than being entered. This is the rule buffers and text builders
@@ -1984,15 +1989,25 @@ true
 true
 ```
 
-For a **numeric** binding the predicates classify the value's own
-trajectory (#861): the observed signal is the relative step
-`Δv / max(|v|, |v_prev|, scale)` (#1045) — the standard mixed-tolerance
-stopping criterion `|Δx| ≤ rtol·|x|` with the settle deadband as `rtol`
-and `dh_zero · scale` as the absolute floor. The runtime computes `scale`
-as the floor in `max(|v|, |v_prev|, scale)`; above that floor, the
-limit's magnitude and the **unit** the value is stored in do not matter.
-A loop converging to `5`, `5000` or `0.005` certifies identically, and a
-bank angle reads the same in radians and degrees. For non-numeric bindings
+For a **numeric** binding, R3.1 implements arm R3-STD. Over ten steps
+(eleven values), `converged` is the windowed Cauchy test: finite values
+whose diameter is at most `0.001·max(abs(current), 0.001)`. `stable` is
+D1: a finite window fits a 1% ball about its midrange, calculated as
+`hi/2 + lo/2`. `improving` is D2: a significant new running lower best
+within ten steps, with relative `min_delta = 0.001·max(abs(best), 0.001)`
+and the reference boundedness approximation. The first finite value is the
+baseline, never an improvement; non-finite values never become best, and
+any non-finite value in the current window suppresses improvement.
+
+Both-int displacements that fit int64 are exact. If every step in a window
+is exact, incumbent raw-motion tests use zero noise floor and the settled
+tests use absolute tolerances: diameter `1e-6` for `converged`, radius
+`1e-5` for `stable`. Otherwise the floating rules apply. Relative steps
+`r = Δv / max(abs(v), abs(v_prev), 0.001)` remain available for the
+incumbent oscillation/divergence/equilibrium tests and numeric `how`.
+See [PREDICATES.md](PREDICATES.md) for the cited rules and their residuals.
+
+For non-numeric bindings
 (strings, containers), `converged` and ordinarily `stable` compare detached
 assignment snapshots across a full window, bounded to 4,096 content units per
 assignment. Finite in-place mutations remain visible when the binding is
@@ -2006,11 +2021,12 @@ The real matmul scenario
 in `tests/test_observer_snapshot_fix2.sh` gives `false`, `true`, `false` for
 `x == x`, `stable of x`, and `converged of x`, without equality changing data
 or math flags. The other four predicates and non-numeric `report` use entropy;
-the entropy MEASUREMENT (`where is x`) is unchanged for everything.
+non-numeric `where is x` remains an entropy measurement; numeric `where`
+returns the value.
 
 **Convergence-halting is opt-in.** A `loop while` is auto-halted on a
-quiet observer trajectory (~100 iterations without motion, at any
-entropy) **only when its condition is observer-based** — i.e. references a
+quiet observer trajectory (~100 iterations with `abs(r) < dh_zero`
+for a numeric binding, or quiet dH for a non-numeric binding) **only when its condition is observer-based** — i.e. references a
 predicate, as in `loop while not converged`. A plain loop whose
 condition is an ordinary expression (`loop while i < n`,
 `loop while not done`) is **never** halted by the observer; it runs until
@@ -2021,8 +2037,7 @@ compositional: a plain loop can't be cut short by what its body — or a
 function it calls — happens to assign to the global observer.
 The division of labour (#861): `converged` ends an observer loop when the
 value settles at the deadband; `stalled` ends it when 100 quiet
-iterations pass without certification (a non-finite runaway,
-sub-deadband drift); `__loop_exit__` records which
+iterations pass without certification; `__loop_exit__` records which
 one happened.
 
 `report` and `report_value` are **reserved observer forms**, like the
@@ -2063,8 +2078,8 @@ bands are not exhaustive, and `moving` is the honest answer for the gap
 instantaneous label the predicates don't yet confirm. See
 [PREDICATES.md](PREDICATES.md).
 
-**Entropy is current-state; dH is the assignment trajectory** (#711).
-`where is x` — and the entropy every classification surface reads
+**For non-numeric bindings, entropy is current-state and dH is the
+assignment trajectory** (#711). `where is x` — and the entropy every classification surface reads
 (`report`, the predicates, `observe`'s band, `trajectory` snapshots) —
 is recomputed from the binding's **current value at ask time**, so an
 in-place mutation (`dict_set`, `append`, an indexed store) is visible:
@@ -2112,7 +2127,11 @@ opaque
 false
 ```
 
-**Non-finite values are not rest states.** Float overflow produces infinity
+**Non-finite values are not rest states.** A current NaN makes all six
+predicates false and `report` return `undefined`. A current infinity is
+`diverging` unless the window's eleven values include the opposite-sign
+infinity, in which case it is `oscillating`; the other four predicates
+are false. Float overflow produces infinity
 rather than a clamped fixed point. A non-finite trajectory cannot certify
 `converged`; a finite constant can, including `1e308`. There is no special
 ceiling at `±1e308`. The runaway below still does not converge:
@@ -2131,34 +2150,30 @@ diverging
 false
 ```
 
-**The value channel** (`report_value of x`) is, since #861, the same
-classifier the predicate words and `report` use on numeric bindings —
-the two surfaces cannot disagree about one trajectory. Over a window of
-relative steps `Δv / max(|v|, |v_prev|, scale)` — `N` samples deep, 10
-`N` samples of the observation cadence cannot fold inside the window) —
-`converged` is a full window all
-under the settle deadband; `stable` all under the small-motion band;
-`equilibrium` zero-mean, variance under deadband²; `improving` decreasing
-steps contracting geometrically (the ML loss convention: lower is better;
-growth is never improving; a summable tail genuinely closing on a limit);
-`diverging` the #422 raw rule (non-vanishing same-sign steps —
-an additive runaway whose relative step vanishes is still unbounded) or
-an infinite value; `oscillating` deadband sign-flips,
-non-vanishing alternation (a perpetual oscillation below the deadband is
-still an oscillation), or window-scale folding (net travel small against
-path length — a sinusoid sampled slower than its half-period).
-`converged` is a **stopping criterion, not a proof**: vanishing steps do
-not imply a limit (the harmonic series' steps vanish; its sum does not
-converge), so it means *settled at the deadband* — the strongest claim a
-finite window supports. The deadband is the tolerance knob
-spans; the structure rules are deliberately threshold-free.
+**The value channel** (`report_value of x`) is the classifier used by
+numeric `report` and the predicates. The three standard tests above share
+no extra incumbent motion vetoes. Predicates may overlap, and `report`
+keeps its priority: oscillating, diverging, improving, converged,
+equilibrium, stable, moving. A true `converged` predicate can therefore
+coexist with the report `improving`. `converged` is a finite-window stopping
+criterion, not proof of a limit; a slow drift can fit the window.
 
-**Trajectories cross call boundaries as snapshots** (#421). Observer state
-is binding-identity — a value passed to a function arrives with no history —
-so `trajectory of x` captures the binding's observer windows into a plain
-dict, and `classify of t` (value channel; `classify of [t, "entropy"]` for
-the entropy channel) classifies it with the same machinery. `classify` of
-anything that is not a snapshot raises a `type_mismatch` error:
+**Trajectories cross call boundaries as snapshots** (#421). A value passed
+to a function arrives with fresh binding history. `trajectory of x`
+captures the original binding's state in a plain dictionary. Numeric
+snapshots carry `rel`, `raw`, `exact`, `best`, `since`, and `last_value`
+with its exact numeric kind preserved. `exact` flags the corresponding raw
+steps; `best`/`since` preserve D2's whole-history state. Their entropy
+channel is absent: `dh` is `[]` and `entropy`, `dH`, `last_entropy` are
+null. The `at L` and `when N` history snapshots also carry the numeric
+interrogation triple and running-best state.
+
+`classify of t` rebuilds a snapshot's value state and uses the same
+classifier. `classify of [t, "entropy"]` remains available for a
+non-numeric snapshot; on a numeric snapshot it raises `value`. A non-snapshot
+argument raises `type_mismatch`. Replay derives observer state from recorded
+values, including exact int tokens; the tape does not carry a second copy
+of running-best state.
 
 ```eigenscript
 define judge(t) as:
@@ -2178,7 +2193,8 @@ diverging
 ```
 
 `unobserved:` blocks (and `loop` bodies inside them) skip the
-**entropy** half of observation — use them for hot numeric loops. The
+**non-numeric entropy/comparison** bookkeeping. Numeric bookkeeping
+remains complete, so this block does not remove numeric sampling cost. The
 depth is dynamic, so it covers functions called from inside the block; an
 observer predicate asked anywhere under one **raises**, because there is
 no trajectory for it to classify (a performance annotation must not
@@ -2205,26 +2221,15 @@ that makes a predicate raise rather than answer from a dead trajectory
 is why the counter does not quietly shrink — a performance annotation
 must not change an answer.
 
-For the same reason a scalar assignment inside the block still records
-its **sample into the value window** (#1049): the relative and raw step
-enter the 10-deep ring the numeric predicates, `report` and
-`report_value` read, at O(1) per assignment. So the window is complete,
-and the verdicts a numeric binding gives after (or inside) the block are
-identical to the ones it gives without it — an elided initialiser no
-longer shifts the window-fill boundary, and a mid-stream elided step no
-longer merges two steps into one. What is *not* computed for an elided
-assignment is the entropy and everything built on it: `where`'s stored
-entropy (the query-time read is unaffected), `dH` and its window
-(`why`/`how`, `observe`'s dH pair, a `trajectory` snapshot's `dh`/`dH`),
-the tape's observer snapshot, and the bare-predicate alias (a bare
-`converged` keeps reading the last **observed** binding, so scratch work
-inside the block cannot hijack it). Those entropy-channel readers — and
-`report` plus the four entropy predicates on a **non-numeric** binding —
-therefore remain sensitive to elision. The non-numeric `converged`/`stable`
-equality window also omits elided assignments;
-[PREDICATES.md](PREDICATES.md#inputs) lists them. (It follows that the
-block is not a way to declare a numeric binding without a sample; seed
-with `null`, which is never sampled.)
+A scalar assignment inside the block still records the relative and raw
+step, exact flag, running-best state, and history snapshot. Numeric
+`where`/`why`/`how`, `observe`, `trajectory`, and post-block predicate
+verdicts agree with the same assignments outside the block. A predicate
+asked inside the block still raises. The bare last-observed alias is not
+moved by elided scratch assignments. Non-numeric entropy and comparison
+windows do omit those assignments, so their verdicts and diagnostics can
+differ. A numeric initializer still counts as a sample; use `null` to
+declare a binding without seeding its numeric history.
 
 ```eigenscript
 x is 9.0
@@ -2236,9 +2241,9 @@ print of (len of (trajectory of x).rel)
 print of (why is x)
 ```
 ```output
-moving
+improving
 2
-0.0
+-2.25
 ```
 
 ```eigenscript
@@ -2255,10 +2260,8 @@ print of (what is c when 3)
 2
 ```
 
-The two halves side by side. The first program elides two assignments;
-`when` still counts them, `why` is frozen at the value it had *before*
-the block (the entropy channel never moved), and `report` answers from
-the complete value window:
+The two forms side by side: numeric displacement and D2 state remain
+complete across the block, alongside assignment counts and value windows:
 
 ```eigenscript check
 x is 8.0
@@ -2274,14 +2277,13 @@ print of (report of x)
 ```
 ```output
 4
-0.21866976011171657
-0.21866976011171657
-moving
+-4.0
+-1.0
+improving
 ```
 
-The same program without the block. `when` and `report` are identical —
-that is the #1049 promise, and this pair is what pins it — while `why`
-differs, because the entropy channel is exactly what the block buys back:
+The same program without the block gives the same numeric `when`, `why`,
+and `report`:
 
 ```eigenscript check
 x is 8.0
@@ -2294,8 +2296,8 @@ print of (report of x)
 ```
 ```output
 4
-0.08170416594551044
-moving
+-1.0
+improving
 ```
 
 ## Temporal interrogatives

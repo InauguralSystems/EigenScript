@@ -279,18 +279,26 @@ Requires: `env_get`, `random_hex`, `http_request_headers` builtins.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `entropy_of` | `entropy_of of value` | Current entropy |
-| `delta_of` | `delta_of of value` | Current dH (rate of change) |
-| `prev_delta_of` | `prev_delta_of of value` | Previous dH |
+| `entropy_of` | `entropy_of of value` | Routed `where` (numeric value; non-numeric entropy), retaining the compatibility name |
+| `delta_of` | `delta_of of value` | Routed last displacement / dH; numeric null before a step |
+| `prev_delta_of` | `prev_delta_of of value` | Previous routed displacement / dH; numeric null before a previous step |
 | `is_converged` | `is_converged of value` | `true` if converged |
 | `is_stable` | `is_stable of value` | `true` if stable or converged |
-| `is_improving` | `is_improving of value` | `true` if entropy decreasing |
-| `is_diverging` | `is_diverging of value` | `true` if entropy increasing |
-| `is_oscillating` | `is_oscillating of value` | `true` if dH sign-flipping |
+| `is_improving` | `is_improving of value` | `true` if the report label is improving |
+| `is_diverging` | `is_diverging of value` | `true` if the report label is diverging |
+| `is_oscillating` | `is_oscillating of value` | `true` if the report label is oscillating |
 | `wait_until_converged` | `wait_until_converged of [val, fn, max]` | Run fn until convergence |
 | `track_regimes` | `track_regimes of [val, fn, max]` | Log regime transitions |
 | `threshold_alert` | `threshold_alert of [val, lo, hi]` | "below", "above", or "ok" |
-| `snapshot` | `snapshot of value` | [value, status, entropy, dH, prev_dH] |
+| `snapshot` | `snapshot of value` | `[value, status, where, why, previous why]` |
+
+These ordinary wrappers observe their own parameter bindings; passing a value
+does not transfer the caller's history. Use `trajectory of x` and `classify`
+to carry a history across a call. Numeric snapshots retain exact-step flags
+and D2's running `best`/`since`, and refuse an explicit entropy-channel
+classification. The compatibility names `entropy_of` and fields called
+`entropy`/`dH` in older wrapper records refer to routed value/displacement
+for numeric inputs, not a computed numeric entropy.
 
 ### lib/tensor.eigs — Tensor Convenience Wrappers
 
@@ -432,7 +440,11 @@ behind index dispatch, because observer
 trajectories key to named bindings and `stable of xs[i]` can never
 accumulate one (#262). Feed forces fresh values; slot 9 throws
 (silently-unobserved is the failure mode this prevents). Feed bounded
-signatures, not raw counters (the #294 flat-entropy band).
+signatures when that is the quantity to track. Slots use the numeric value
+channel. This wrapper retains its `v + 0.0` writes, so its trajectories are
+floating and keep the documented floating-window limitations. Each slot
+starts at `0.0`, and D2 keeps that baseline as its earlier best; feeding
+positive values that fall toward zero does not reset that running best.
 
 ### lib/datetime.eigs — Dates, Times, Durations
 
@@ -927,9 +939,10 @@ function and assert a property of the resulting trajectory.
 | `expect_monotone` | `expect_monotone of [x0, step_fn, max_obs, msg]` | Throws on a sign-flipping (oscillating) value trajectory |
 | `invariant_stable` | `invariant_stable of [x0, step_fn, max_obs, msg]` | Throws if the value ever begins moving or oscillating |
 
-Convergence is read on the value channel, not entropy (a monotonically
-exploding value reads `converged` on the entropy channel — the #294 blind
-spot). Convergence is not correctness: pair with `ensure` on the final
+Convergence uses the numeric windowed Cauchy test; numeric bindings no
+longer maintain an entropy channel. D1 stability uses the 1% midrange band,
+and D2 improvement uses a significant lower running best within ten steps.
+These tests can overlap; report keeps its existing priority. Convergence is not correctness: pair with `ensure` on the final
 residual. See docs/OBSERVER.md "Contracts" and
 `examples/stem/contract_solver.eigs`.
 
@@ -1457,13 +1470,17 @@ Numerical differentiation, integration (trapezoidal/Simpson/Monte Carlo), root f
 
 ### lib/experiment.eigs
 
-**Observer-aware.** Measurement stability tracking, entropy-spike outlier detection, convergence-rate estimation, behavioural regime detection.
+**Observer-aware.** Measurement stability tracking, routed-displacement
+outlier detection, convergence-rate estimation, behavioural regime detection.
+Compatibility record keys `entropy` and `dH` carry numeric value and
+displacement for numeric measurements; non-numeric measurements retain
+entropy/dH. Initial numeric displacements are null.
 
 | Function | Signature | Description |
 |---|---|---|
 | `track_measurements` | `track_measurements of values` | annotate each measurement with observer state |
 | `is_measurement_stable` | `is_measurement_stable of [values, min_stable_count]` | check if recent measurements are stable |
-| `detect_entropy_spikes` | `detect_entropy_spikes of [values, threshold]` | find anomalies via entropy derivative |
+| `detect_entropy_spikes` | `detect_entropy_spikes of [values, threshold]` | find anomalies via routed displacement (numeric Δv; non-numeric dH) |
 | `convergence_rate` | `convergence_rate of values` | estimate how fast a sequence converges |
 | `detect_regimes` | `detect_regimes of values` | identify behavioral phase transitions |
 
@@ -1794,7 +1811,7 @@ Experiment management composing EigenStore, observer semantics, stats, and the e
 | `load` | `load of name` | Load a saved experiment by name |
 | `list_experiments` | `list_experiments of null` | List saved experiment names |
 | `delete_experiment` | `delete_experiment of name` | Delete a saved experiment |
-| `find_outliers` | `find_outliers of [exp, variable, threshold]` | Flag measurements beyond an entropy threshold |
+| `find_outliers` | `find_outliers of [exp, variable, threshold]` | Flag measurements beyond a routed-displacement threshold |
 | `detect_phases` | `detect_phases of [exp, variable]` | Identify behavioural phase transitions |
 | `convergence_info` | `convergence_info of [exp, variable]` | Convergence-rate info for a variable |
 
@@ -1867,7 +1884,8 @@ crashed, never timing out, but no longer making progress — by sampling each
 worker's progress trajectory and seeing it go `stable` (the EigenOS
 red-title pattern generalized). Workers publish raw progress with
 `heartbeat of [slot, value]`; the supervisor turns it into a bounded
-signature (dodging the #294 flat-entropy blind spot). `supervisor_new`,
+signature before classification. Numeric signatures use the value channel;
+the old flat-entropy explanation is historical. `supervisor_new`,
 `supervise of [sup, fn, slot]`, `supervise_step`, and `supervise_run of
 [sup, max_ticks]` (drive to settled); wedged and crashed workers are
 restarted from their spec under a per-worker restart-intensity cap. Eight

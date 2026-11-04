@@ -754,29 +754,16 @@ print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))
 sqrt(2) = 1.414213562373095
 ```
 
-`converged` reads the loop's last-assigned value and fires once a full
-window of its relative steps (`Δv` over the step's own scale, #1045 — so
-the unit the value is stored in does not matter) sits under the settle
-deadband — the standard mixed-tolerance stopping criterion, built in
-(#861). This run exits
-through the predicate itself in 13 iterations. The tolerance is fixed, not
-configurable; its authoritative value is `OBSERVER_DH_ZERO_DEFAULT` in
-`src/eigenscript.h`. A run that diverges ends via the observer's stall
-backstop with
-`__loop_exit__ == "stalled"` instead of hanging or lying. (Use the loop
-inside a function so it gets a fresh binding to watch — see
-`examples/observer_vs_boilerplate.eigs`.) The next section is *why* this
-works; you can reach for it long before you need the theory.
-
-The frozen v0.47.0 experiment (#1990) measured 425 runs per arm. The bare form
-had W=0.47%, including wrong convergence on M5, exhausted 13.43% of converging
-runs, and took a median 2.29x the matched `STD-py` iterations where both were
-correct. The named form had W=11.53% without its 10,000-iteration cap taking
-effect as an exhaustion, and its median ratio was 2.36x. Thus H3 failed and the
-original “no epsilon, no remembered previous, no guard” replacement claim does
-not stand. `python3 reports/convergence_loops/report1990.py` derives every figure in
-this paragraph from the per-run experiment outputs; the full protocol and
-deviations are in issue #1990.
+`converged` reads the loop's last-assigned binding and applies the
+windowed Cauchy test: eleven finite values with diameter at most
+`0.001·max(abs(current), 0.001)`. This run exits through the predicate
+itself in 13 iterations. Numeric all-exact int64 windows instead use the
+absolute tolerance `1e-6`. The tolerance is fixed. This is a finite-window
+stopping rule; slow divergence can still fit its band. The named form needs
+an explicit cap. The bare observer loop also has a stall backstop that
+counts iterations with `abs(r) < dh_zero`; it does not prove a result for
+every divergent input. Use a fresh function-local binding for each run.
+See [PREDICATES.md](PREDICATES.md) for the standard test and residuals.
 
 ## What has no equivalent elsewhere: the observer
 
@@ -791,21 +778,20 @@ The matmul scenario's equality / stability /
 convergence remains `false` / `true` / `false`, with no equality-driven data
 or math-flag changes. The other predicates and non-numeric `report` use entropy.
 
-Every assignment (outside `unobserved` blocks) updates an observer
-tracking the value's entropy and trend (for containers, one pass over the
-value's own elements — the walk stops at a reference, so a nested container
-contributes only its size term, #685). The boundary is explicit too: a
-binding holding a function classifies `opaque` — a function has no content
-to sample, and the observer names its blind spots (#708) rather than
-reporting a band it cannot defend. (The `unobserved` boundary is about
-the entropy walk only — assignments inside such a block are still counted
-by `when is x` and still addressable by ordinal, #908, and a scalar's
-sample still enters the value window the numeric predicates read, #1049,
-because a performance annotation must not change an answer; what stays
-elided is entropy/dH, so `why`/`how` and the non-numeric route can still
-differ.) You can ask a variable about
-itself, terminate loops on *convergence* instead of a hand-written
-epsilon test, and read a variable's past:
+Numeric assignments update value trajectories, exact-step flags and D2's
+running-best state. Numeric `where`, `why`, `how` mean current value, last
+displacement, and relative-step settledness. Numeric bindings no longer
+compute entropy. Other bindings retain entropy and bounded snapshots;
+container entropy walks stop at references (#685). Functions classify as
+`opaque` (#708), and a current numeric NaN as `undefined` with all six
+predicates false.
+
+`unobserved:` elides non-numeric entropy/comparison bookkeeping. Numeric
+samples, interrogation/history snapshots and D2 state remain complete;
+numeric answers after the block agree with the observed version. Assignment
+counts and ordinals remain complete too. A predicate asked inside the block
+raises; the bare last-observed alias is not moved by elided scratch writes.
+You can ask a binding about itself or its past:
 
 ```eigenscript
 x is 10

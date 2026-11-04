@@ -531,7 +531,7 @@ Absolute paths (starting with `/`) are used verbatim with no fallback.
 
 ## Interrogatives — Ask Your Code
 
-Every value in EigenScript tracks its own observer state. Interrogatives are
+Each observed binding in EigenScript tracks its own observer state. Interrogatives are
 the query interface. Asking costs nothing extra — the state is maintained as
 you go — but that maintenance is paid on every assignment outside
 `unobserved:`, whether or not anything asks ([OBSERVER.md](OBSERVER.md#cost)):
@@ -541,9 +541,9 @@ you go — but that maintenance is paid on every assignment outside
 | `what is x` | Current value (scalar), or length (list/string) | `what is loss` → `55.0` |
 | `who is x` | Variable name as string | `who is loss` → `"loss"` |
 | `when is x` | Observation age (number of assignments) | `when is loss` → `4` |
-| `where is x` | Entropy (information content) | `where is loss` → `0.832` |
-| `why is x` | dH (rate of entropy change; negative while descending into a basin = improving) | `why is loss` → `-0.27` |
-| `how is x` | Settledness of the last step, `1 - min(1, \|dH\| / dh_zero)` — a real gradient in `[0, 1]` since #412: `1` when the step is inside the deadband, `0` when it clears it | `how is loss` → `0` |
+| `where is x` | Numeric value; non-numeric entropy | `where is loss` → `55.0` |
+| `why is x` | Numeric last displacement (null before a step); non-numeric dH | `100.0 → 55.0` gives `-45.0` |
+| `how is x` | Numeric `dh_zero / (dh_zero + abs(r))`, null before a step; non-numeric entropy-step settledness | At rest after a step: `1.0` |
 
 ```eigenscript
 loss is 0.9
@@ -551,21 +551,23 @@ loss is 0.5
 loss is 0.2
 
 print of (what is loss)
-print of (why is loss)     # negative — descending into a basin (entropy falling)
+print of (why is loss)     # last numeric displacement
 print of (how is loss)
 print of (when is loss)
 ```
 ```output
 0.2
--0.26827341240613545
-0.0
+-0.3
+0.0016638935108153079
 3
 ```
 
-Note that `why` tracks the *entropy* trajectory, not the raw value: a
-magnitude shrinking toward `1` (e.g. `100 → 55`) climbs the entropy ridge and
-reads as *diverging* (positive dH), while one descending into a basin below `1`
-reads as *improving*. See `docs/OBSERVER.md` for the full model.
+Numeric `why` tracks raw value displacement, while `how` uses its
+relative step `r = Δv / max(abs(v), abs(v_prev), 0.001)`. Int displacements
+remain exact when checked int64 subtraction fits. An infinite step gives
+`how = 0.0`; NaN or same-sign infinity-to-infinity gives NaN. Non-numeric
+bindings retain entropy/dH; see [OBSERVER.md](OBSERVER.md) for the full case
+table and fixed points.
 
 Use interrogatives for debugging, convergence detection, or understanding
 runtime behavior without writing logging code.
@@ -606,16 +608,16 @@ print of (what is x at 2)
 print of (prev of x at 3)    # value before the assign at/before line 3
 print of (when is x at 2)    # assignment count up to line 2
 print of (who is x at 2)
-print of (where is x at 2)   # entropy as of the line-2 assign
-print of (why is x at 2)     # dH as of the line-2 assign
+print of (where is x at 2)   # numeric value as of the line-2 assign
+print of (why is x at 2)     # exact displacement as of the line-2 assign
 ```
 ```output
 2
 2
 2
 x
-0.9182958340544896
--0.08170416594551044
+2
+1
 ```
 
 **A line inside a loop is asked once, not per iteration.** "The last value
@@ -673,11 +675,17 @@ state is observe of loss
 print of state
 ```
 ```output
-["equilibrium", 1.0, 0.0, 0.0]
+["equilibrium", 1.0, null, null]
 ```
 
 With the fragment's single initial `loss` assignment, `status` is
-`"equilibrium"`; an `improving` verdict requires a falling trajectory.
+`"equilibrium"`; `why` and previous `why` are null because no step
+exists. An `improving` verdict requires a significant lower running best.
+Numeric trajectory snapshots carry `rel/raw/exact/best/since/last_value`,
+with empty `dh` and null entropy fields; an explicit entropy classification
+on a numeric snapshot raises `value`. At a current NaN all predicates are
+false and report is `undefined`. See [PREDICATES.md](PREDICATES.md) for
+STD convergence, D1 stability, D2 improvement and the non-finite rules.
 
 Six trajectory states: `improving`, `diverging`, `stable`, `equilibrium`,
 `oscillating`, `converged`.

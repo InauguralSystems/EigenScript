@@ -608,3 +608,11 @@ offending token (`start`/`end` from the token's column and length);
 diagnostics without a tracked position fall back to a whole-line range.
 For batch static checks, `eigenscript --lint file.eigs` runs the linter
 and `eigenscript --fmt` the formatter.
+
+
+## Observer numeric diagnostics (R3.1)
+
+`classify of [t, "entropy"]` on a numeric trajectory raises `value`; numeric
+snapshots no longer carry entropy. Numeric why/how are null before a step.
+A current NaN makes all six predicates false and report `undefined`. See
+[OBSERVER.md](OBSERVER.md) for the full interrogation case table.

@@ -32,8 +32,8 @@ print of (fround of 0.1)
 ```
 
 > EigenScript is a small dynamically-typed language with one distinctive
-> feature: an **observer** tracks every value's entropy/trend on each
-> assignment, so convergence, stability, and oscillation are first-class. This
+> feature: an **observer** tracks numeric value trajectories and non-numeric
+> entropy/content snapshots on assignments, so convergence, stability, and oscillation are first-class. This
 > file is the whole surface you need to generate correct `.eigs`. Models
 > generate EigenScript badly by defaulting to Python/JS habits — the traps below
 > are where that fails. When unsure, generate, then run the validation ladder at
@@ -209,7 +209,8 @@ what is e
 
 ## The observer (the reason to use this language)
 
-Every assignment (outside `unobserved:`) updates the value's observer. Trajectory
+Numeric assignments update value history even inside `unobserved:`;
+non-numeric entropy/comparison samples are recorded outside the block. Trajectory
 predicates classify it: `converged`, `stable`, `improving`, `diverging`,
 `oscillating`, `equilibrium`.
 
@@ -255,25 +256,44 @@ false
 - `report of x` returns the routed state string (value channel for numeric
   bindings, entropy channel otherwise); `report_value of x` uses the value
   channel explicitly. Both read the named binding's trajectory.
-- Numeric verdicts are over the value's RELATIVE step,
-  `Δv / max(|v|, |v_prev|, scale)`, read across a fixed window of the last 10
-  samples. Above the run's characteristic `scale` (`0.001` by default) a
-  verdict is unit-free; below it the deadband turns absolute
-  (`|Δv| < dh_zero*scale`), so a decay toward zero reads `improving` until it
-  is inside the scale. `improving` is directional: lower is better, as for ML
-  loss, so growth never qualifies even when its steps contract toward a
-  plateau. A mode slower than about ten samples of your assignment cadence
-  cannot show up inside the window (the window is not configurable), so pick
-  a cadence that fits a full period of the slowest mode you care about inside
-  those ten samples (`10 ≥ T / Δt`), while still sampling fast enough to catch
-  the reversals of faster modes.
+- Numeric `converged` is STD's windowed Cauchy test: ten steps / eleven
+  finite values with diameter ≤ `0.001·max(abs(current), 0.001)`. `stable`
+  is D1's 1% ball about the window's midrange. `improving` is D2's Keras
+  running lower best with relative `min_delta = 0.001·max(abs(best), 0.001)`
+  and ten-step patience, with the reference boundedness approximation.
+  The first finite value is a baseline, never an improvement; non-finite
+  values never become best, and any non-finite value still in the current
+  window suppresses improvement. Other three numeric predicates retain
+  their incumbent relative/raw-step rules. An all-exact int64 step window
+  uses zero raw noise floor and absolute settled tolerances (`1e-6` for
+  convergence, radius `1e-5` for stability). Float or mixed windows keep
+  the floating rules. Finite windows cannot prove a limit; slow divergence
+  can fit their bands. See docs/PREDICATES.md for citations and residuals.
+- Numeric `where is x` is x's value, `why is x` its last raw displacement
+  (exact int if checked int64 subtraction fits), and finite-step `how is x`
+  is `0.001 / (0.001 + abs(r))`, where
+  `r = Δv / max(abs(v), abs(v_prev), 0.001)`. Before a step, `why` and
+  `how` are null. An infinite step gives how 0.0; NaN and same-sign
+  infinity-to-infinity steps give NaN. Numeric `observe` is
+  `[band, where, why, previous why]`. Numeric `trajectory` carries
+  `rel/raw/exact/best/since/last_value`, empty `dh`, and null entropy
+  fields. `classify of t` rebuilds it; explicit `"entropy"` raises `value`
+  on a numeric snapshot. Temporal `at`/`when` snapshots carry the triple
+  and `best`/`since`.
+- At a current NaN all six predicates are false and `report` is
+  `undefined`. Current ±inf is `diverging` unless the window holds the
+  opposite-sign infinity, then `oscillating`. Other four predicates are
+  false. `report` keeps priority oscillating → diverging → improving →
+  converged → equilibrium → stable → moving, so convergence can be true
+  while report says improving. A single numeric baseline reports
+  equilibrium with null why/how and all predicates false.
+
 - Trajectory is keyed to a binding's env slot, never to a value: a dict field,
   list element, parameter or `for` binder has none, and ONE binding rebound
   from `fleet[i][2]` in a loop carries the interleave of every entity (lint
   `W024`) — give each entity its own named binding or a closure per entity.
-- `converged` on a numeric binding needs a full window whose relative steps are
-  all below the fixed settle deadband, with finite raw-step guards; a constant
-  therefore converges regardless of its magnitude. Non-numeric `converged`
+- A numeric constant converges after a full window regardless of its
+  magnitude. Non-numeric `converged`
   and ordinarily `stable` compare bounded, detached assignment snapshots;
   finite alias mutations remain visible on reassignment, and refused or
   oversized snapshots leave both false. For an accepted snapshot containing
@@ -283,7 +303,7 @@ false
   Refusal clears that eligibility even if entropy has a full window already.
   The real matmul scenario's equality /
   stability / convergence is `false` / `true` / `false`, without equality
-  changing data or math flags. The other predicates and `report` use entropy.
+  changing data or math flags. On non-numeric bindings the other predicates and `report` use entropy.
   See docs/PREDICATES.md for the routed definitions and fixed tolerance.
 - Temporal reads: `prev of x` (value before the last assignment),
   `what is x at 12` / `state_at of 12` (past-line state). Bare `x at 12` is a
@@ -291,9 +311,11 @@ false
   line, while a runtime error inside it (`e.file`, `e.line`, the error header)
   reports the source file and physical line of the faulting sub-expression.
   File, eval, stdin, and unnamed embed units use their loader path, `<eval>`,
-  `<stdin>`, and `<embed>` respectively; sandbox-synthesized errors use `<sandbox>`; the browser playground uses `<playground>`. Wrap hot loops in `unobserved:` to skip the observer's entropy
-  walk (a scalar's value-window sample still lands, so numeric verdicts do not
-  change; `why`/`how` and non-numeric bindings' verdicts can).
+  `<stdin>`, and `<embed>` respectively; sandbox-synthesized errors use `<sandbox>`; the browser playground uses `<playground>`. `unobserved:` skips non-numeric entropy/comparison bookkeeping. Numeric
+  samples, exact flags, running-best state and interrogation snapshots
+  remain complete; numeric why/how and post-block verdicts do not change.
+  A predicate asked inside the block still raises. The bare last-observed
+  alias is not moved by elided scratch assignments.
 
 ## Values and strings
 

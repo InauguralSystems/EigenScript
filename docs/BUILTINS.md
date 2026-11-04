@@ -401,9 +401,9 @@ inside one a scalar still pays the O(1) value-window sample (#1049). See
 | `what` | `what is x` | Current value (scalar), or length (list/string) |
 | `who` | `who is x` | Variable name as string |
 | `when` | `when is x` | Observation age (number of assignments) |
-| `where` | `where is x` | Entropy (information content) |
-| `why` | `why is x` | dH (rate of change) |
-| `how` | `how is x` | Currently degenerate — returns 0 (1 only at zero entropy); see OBSERVER.md, #412 |
+| `where` | `where is x` | Numeric current value (exact ints preserved); entropy for non-numeric bindings |
+| `why` | `why is x` | Numeric last displacement Δv, null before a step; non-numeric entropy change dH |
+| `how` | `how is x` | Numeric `dh_zero / (dh_zero + abs(r))`, null before a step; non-numeric entropy-step settledness. See OBSERVER.md for non-finite cases |
 
 ### Temporal
 
@@ -420,9 +420,9 @@ Query a binding's assignment history. Always on for top-level bindings;
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `observe` | `observe of value` | Return [status, entropy, dH, prev_dH] snapshot |
+| `observe` | `observe of value` | Return `[band, where, why, previous why]`: numeric value/displacements, non-numeric entropy/dH |
 | `get_observer_thresholds` | `get_observer_thresholds of null` | `[dh_zero, dh_small, h_low]`. Numeric inputs convert to float; numeric results are floats. |
-| `classify` | `classify of t` or `classify of [t, "entropy"]` | Classify a trajectory snapshot (from `trajectory of x`, #421): value-channel label by default, entropy-channel with `"entropy"`. Raises `type_mismatch` on a non-snapshot — a bare value never silently classifies |
+| `classify` | `classify of t` or `classify of [t, "entropy"]` | Classify a trajectory snapshot (from `trajectory of x`, #421): value-channel label by default; `"entropy"` selects a non-numeric entropy snapshot and raises `value` on a numeric snapshot. A non-snapshot raises `type_mismatch` |
 
 **`report` and `report_value` are reserved** (#1102). They cannot be bound or
 used as first-class values. Non-identifier operands, including `report of 5`
@@ -444,12 +444,18 @@ interrogatives, `report of x` / `report_value of x` / `observe of x` /
 trajectory — an operation on the name, not the value. The report words are
 reserved; a user rebinding of `observe` or `trajectory` does not change their
 name-keyed forms (`--lint` W013 warns on those shadowing attempts). `trajectory of x` (#421) snapshots the slot's observer windows into
-a plain dict (`kind`/`rel`/`raw`/`dh`/`entropy`/…) that survives a call
+a plain dict that survives a call
 boundary, for `classify` to read on the other side — the binding slot itself
 is binding-identity and a passed value arrives with no history. The non-ident
 forms of `observe` / `trajectory` (`observe of expr`) are ordinary calls to the
 value-path builtins. `dispatch` is deliberately NOT in this set — it is a
 plain builtin and a user rebinding wins (see Lists above).
+
+Numeric trajectory snapshots carry `rel`, `raw`, `exact`, `best`, `since`,
+and an exact `last_value`; `dh` is empty and `entropy`, `dH`, and
+`last_entropy` are null. `classify` rebuilds those fields, preserving the
+exact-int window rule and D2 running-best state. Numeric `at L` / `when N`
+history snapshots carry the interrogation triple and `best`/`since` too.
 
 ### Predicates
 
@@ -457,12 +463,18 @@ Boolean keywords that check the most recently observed value:
 
 | Name | True when |
 |------|-----------|
-| `converged` | Entropy very low and stable |
-| `stable` | Entropy changing slowly |
-| `improving` | Entropy decreasing |
-| `oscillating` | dH sign-flipping |
-| `diverging` | Entropy increasing |
-| `equilibrium` | dH near zero |
+| `converged` | Numeric full finite window has Cauchy diameter ≤ `0.001·max(abs(current), 0.001)`; non-numeric detached snapshots stay equal |
+| `stable` | Numeric full finite window fits D1's 1% ball about its midrange; non-numeric equality rule with the bounded NaN-snapshot entropy exception |
+| `improving` | Numeric D2 significant lower running best within ten steps, finite window, reference boundedness approximation; non-numeric entropy trend rule |
+| `oscillating` | Incumbent relative/raw oscillation or folding; current infinity with opposite-sign infinity in the window |
+| `diverging` | Incumbent non-vanishing same-sign raw steps; current infinity without opposite-sign infinity in the window |
+| `equilibrium` | Incumbent near-zero relative-step mean/variance with raw trend/oscillation exclusions; non-numeric entropy rest rule |
+
+All six are false at a current numeric NaN (`report` is `undefined`).
+An all-exact int64 window uses zero raw noise floor and absolute settled
+tolerances. See [PREDICATES.md](PREDICATES.md) for citations, complete
+conditions, and residuals. `get_observer_thresholds` retains the three
+floats `[0.001, 0.01, 0.1]` in R3.1; the last is non-numeric `h_low`.
 
 ## File I/O
 
