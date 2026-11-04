@@ -79,6 +79,72 @@ runtime answers a different question for two predicates:
 
 The per-predicate tables `make observer-oracle` prints measure all of this.
 
+### How Round 3 is judged (#1758)
+
+Round 3 of Phase 2 rewrites the six numeric predicates. Its acceptance is
+pre-registered on #1758 (comments 6430031838 and 6430139845, 2026-10-26;
+rulings R30-1 to R30-4, 2026-11-03), and the instrument is in
+`tools/observer_oracle/`:
+- `standard.py` holds each predicate's standard test (STD, the primary arm;
+  STD′ and STD″ are reported), the ruled deviation D2 for `improving`, and the
+  trivial and persistence arms C0, C1 and PERSIST. Every test cites its source.
+  `--selftest` runs the one-time textbook checks.
+- `families.py` holds the 16 process families. `S_split` draws four of them as
+  the calibration families H-cal (`hcal/`). The held-out set H1 is drawn at the
+  reveal from a drand round (`seal.py` states the procedure).
+- `judge.py` scores every arm by balanced accuracy, with a paired cluster
+  bootstrap over rows, and evaluates the six decision rules mechanically.
+  `python3 -I tools/observer_oracle/judge.py --calibration` prints the
+  calibration table.
+
+**Deviations from the pre-registration** (its own clause: recorded before the
+reveal):
+
+| # | registered | as built | reason |
+|---|---|---|---|
+| D1 | `stable`: STD = the 2% band, STD′ = the 1% band | R3's `stable` is STD′, reference.py's `stable` exactly (a ball of radius 1e-2·max(\|centre\|, 1e-3) about the midrange). The decision rules still compare against the registered STD | The labels use this band. The 2% band loses `alt_series_ln2@60 stable` (R30-3 item 1, R30-4 item 3) |
+| D2 | `improving`: STD = min(newer half) < min(older half) − min_delta | arm D2: Keras EarlyStopping's running best over the history, with the registered relative min_delta. A non-finite best counts as no best yet; the arm is false while the window holds a non-finite value; x₀ is never an improvement | It is the cited standard itself. The half-window form loses `quasi_2@300 improving` (R30-3 item 1, R30-4 item 2) |
+| D3 | calibration `corpus.json` sha256 `317531993699d714312a2799ae7d0321a8c370713d29dd631d8028033a9383b0` (dffac840, 71 rows) | sha256 `e3f5e94e97bd28972480977a5ff21173221e878ab784abc7f4ed5459bedfefe4` (72 rows) | The added row is `ieee_nan_recover` (#1765/#2036), which pre-dates Round 3 (R30-4 item 6) |
+| D4 | REF = `reference.py` sha256 prefix `11de2a0191b25086` | sha256 `fa74d83f23422f5ddee9b30dc0f133417f98d9d8e7f9806151233d9e18ca1993` | A docstring change (#2139). R30-1 item 4's report-only amendment will move it again, as its own Deviation (R30-4 item 6) |
+| D5 | control (c): a window-4 build loses ≥ 0.05 BA on `converged` against INC | (c1) the window-4 build must FAIL the decision table; (c2) margin resolution is shown by STD `converged` with its tolerance scaled (`judge.py --tol-converged`): ×100 is tried first, then ×0.01 | On the calibration labels a window-4 build certifies a settled tail earlier and gains BA (−0.059 [−0.135, 0.007] on H-cal), while rules 2 and 3 still reject it. A tolerance change does not depend on checkpoint timing. ×100 gained BA, so ×0.01 is the recorded arm (RULING R30I-1 item 1) |
+| D6 | the labeller's NaN window for `converged`/`stable` is [n−9, n] (10 values) | [n−10, n], the observer's W + 1 = 11 values | The labels must ask about the window the observer holds. One label moves: `ieee_nan_recover@13 stable`, true → false. `floor.json` re-derived under the same anchor is byte-identical (RULING R30I-1 item 3) |
+| D7 | rule 5: zero flips on the family-15 rows above the floor; family 15 copies 10 rows of the other families | rule 5 is evaluated only when every declared family-15 copy is compared (examined == declared > 0), else NOT EVALUATED and the table INCOMPLETE. Family 15 draws its 10 bases from the other H1 families' own generators and keeps only a base that stays ≥ 10 in magnitude over its whole run, so every ×1e-3 copy clears the 1e-2 floor (the bases are scored rows too) | Rule 5 printed PASS on zero comparisons, and on the frozen draws most H1 seeds had no base above the floor (12 of seeds 1–30 had none). A pool of existing rows held fewer than 10 such bases on 11 of seeds 1–500 (RULING R30I-2 item 1) |
+| D8 | family 8: 4 parameter draws × 10 seeds, amplitudes {1e-9, 1e-5, 1e-3, 1e-1, 10} | the five draws are the five amplitudes, × 8 seeds (40 rows) | Four draws over five amplitudes never covered all five (RULING R30I-2 item 2) |
+| D9 | the population is the rows every runtime arm runs | every row stays. A runtime arm without a row's capability (INC: int64, ieee) has no reading there. Rule 2 against INC is NOT EVALUATED on those rows (each comparison is paired on the rows both arms read, and the count left out is printed). Rules 1, 3 and 4 use all rows the subject reads; rule 6 remains the #1830 gate | Otherwise `f14_7`, #1830's own int64 row, left every arm's population because INC lacks int64 (RULING R30I-2 item 4) |
+| D10 | arms are binaries | a runtime arm is pinned by recipe: the manifest records (source SHA, recipe id, binary sha256). `recipe_id` is the sha256 of the build recipe (`tools/observer_oracle/build_arm.sh`, or `build_anchor.sh` for the anchor), which builds a commit's own files with `make build`. Verification matches source SHA and recipe id; the binary sha256 is printed as information. An arm with no recipe stamp is pinned by its binary sha256 | The across-machine A/A cannot share binary hashes (another toolchain builds other bytes) (RULING R30I-3 item 3) |
+| D11 | (not stated) | the subject must have every registered capability: a subject arm lacking int64 or ieee FAILS rule 6, and rules 1, 3 and 4 are NOT EVALUATED for it, with the reason printed | A subject that reads fewer rows must never be advantaged. Without this, a subject that lost int64 would never be scored on #1830's own row (RULING R30I-3 item 4) |
+
+`judge.py --calibration` refuses to run on a `corpus.json` or `reference.py`
+other than the D3 and D4 files. `judge.py --corpus DIR` refuses (exit 2) unless
+`DIR/manifest.json` pins:
+- the set's corpus, labels and certificate, and the row programs score.py runs
+  for them;
+- the measurement code, derived rather than listed: every file under `tools/`
+  that `import judge, score, plants` loads in a fresh interpreter;
+- every arm: a recipe arm by (source SHA, recipe id), with its executable equal
+  to its own stamp's binary; an arm with no recipe by its binary. Each arm's
+  stdlib tree (`lib/`) is pinned too.
+
+(RULING R30I-2 item 5, R30I-3 items 2–3, R30I-4 items 3–4.) The manifest's own
+sha256 is printed when it is sealed and when it is verified, and that number is
+posted on #1758 at the commitment. `build_arm.sh` builds under `env -i`, as the
+`observer-anchor` target does, so no caller's `MAKEFLAGS` or `CFLAGS` reaches an
+arm.
+
+The decision rules compare exact rationals (R30I-4 item 2): BA, FPR and their
+differences are computed with `fractions.Fraction` from the confusion counts,
+and a bootstrap CI bound enters a rule after rounding to 1e-9. So a value
+exactly on a registered threshold (0.05, 0.02, 0.65) decides as the
+pre-registration's text says. Floats remain for printing and for the bootstrap.
+
+Two consequences of D7, recorded here (RULING R30I-3 item 8):
+- Family 15's bases come only from families whose rows stay above |10|. In
+  practice those are families 7, 8, 9, 10 and 13. The p-series, power laws,
+  alternating runaways and #1891 rows start below 10, so rule 5 never sees a
+  diverging or runaway row. That follows from the registered floor.
+- The copies are regenerated from scaled parameters, so they are scalings
+  within 2.4e-15 relative, not bit-exact copies of base × s.
+
 ## Which channel answers (#861)
 
 The predicate words and `report` are **routed**: a binding whose most

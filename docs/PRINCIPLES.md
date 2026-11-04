@@ -30,6 +30,18 @@ EigenScript different (the observer, the trace tape) as much as to anything
 else: those stay because measurement shows they earn their place.
 (#1286)
 
+**A standard answer sits behind one seam, so the next standard answer is a
+swap, not a rebuild.** Standard answers change: cryptography under quantum
+computers or a P=NP proof, a font rasterizer, a codec, a protocol version. A
+consumer depends on the seam (one module, one builtin family, one file format
+reader), never on the answer's internals, and the seam is the unit its oracle
+tests. A swap that keeps the seam's contract then changes one place and
+reruns one oracle; a change to the contract itself (protocol, format or
+observable behavior) still needs consumer validation and migration under §6.
+This is modularity in Parnas's original sense ("On the Criteria To Be Used in
+Decomposing Systems into Modules", 1972): hide each decision likely to change
+behind its own module. (owner, 2026-11-03)
+
 ## 2. No silent wrong answers
 
 A result that is wrong must be loud. A builtin that cannot do what was asked
