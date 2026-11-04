@@ -2036,9 +2036,13 @@ execution never truncates a loop. This keeps loop termination
 compositional: a plain loop can't be cut short by what its body — or a
 function it calls — happens to assign to the global observer.
 The division of labour (#861): `converged` ends an observer loop when the
-value settles at the deadband; `stalled` ends it when 100 quiet
-iterations pass without certification; `__loop_exit__` records which
-one happened.
+value settles at the deadband; `stalled` ends it when 100 counted
+iterations pass without certification (a non-finite runaway,
+sub-deadband drift or a diverging window). An iteration counts when the
+numeric subject's last relative step is quiet (`|r| < dh_zero`), OR its
+current value is non-finite, OR its window reads `diverging`; never for
+`oscillating`, never for merely not converged. The counter resets otherwise.
+`__loop_exit__` records which one happened (RULING R31-2).
 
 `report` and `report_value` are **reserved observer forms**, like the
 predicate keywords: neither may be a binding name (including function names,

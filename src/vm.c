@@ -82,11 +82,17 @@ static double vm_floor_mod(double a, double b) {
     return rem;
 }
 
-/* The shared stall backstop reads the same recorded channel as the
- * predicates: a numeric last relative step, or non-numeric dH. */
+/* R31-2: the bare observer loop counts quiet steps, non-finite values and
+ * diverging windows toward its stall backstop. Oscillation never counts.
+ * Non-numeric bindings retain the entropy-step rule. Shared by VM and JIT. */
 static inline int obs_stall_quiet(void) {
     const ObserverSlot *s = env_obs_slot(g_last_obs_slot_env, g_last_obs_slot_idx);
-    return s && s->used && observer_slot_quiet(s);
+    if (!s || !s->used) return 0;
+    if (!s->v_last || !s->v_used) return observer_slot_quiet(s);
+    if (observer_slot_oscillating(s)) return 0;
+    return observer_slot_quiet(s) ||
+           !isfinite(s->last_value) ||
+           observer_slot_diverging(s);
 }
 void vm_obs_slot_dropped(Env *e) {
     if (g_last_obs_slot_env == e) { g_last_obs_slot_env = NULL; g_last_obs_slot_idx = -1; }
@@ -2268,8 +2274,8 @@ static int eigs_loop_stall_step_named(Env *e, CallFrame *frame, uint16_t counter
     }
     int should_exit = 0;
     if (g_unobserved_depth == 0) {
-        /* A numeric quiet iteration has |relative step| < dh_zero.
-         * The non-numeric channel keeps its entropy-step backstop. */
+        /* The shared reader applies the R31-2 numeric stall rule;
+         * the non-numeric channel keeps its entropy-step backstop. */
         if (obs_stall_quiet()) {
             g_loop_stall_count++;
             if (g_loop_stall_count >= 100) {

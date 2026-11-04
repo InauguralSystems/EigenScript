@@ -890,8 +890,12 @@ Two cases still deserve a guard:
 
 - **Input that may genuinely diverge.** `converged` (correctly) never
   fires on a runaway. The bare form (`loop while not converged`) carries
-  the observer stall backstop — ~100 quiet iterations end the loop with
-  `__loop_exit__ == "stalled"` — but the **named** form deliberately does
+  the observer stall backstop. An iteration counts when the numeric subject's
+  last relative step is quiet (`|r| < dh_zero`), OR its current value is
+  non-finite, OR its window reads `diverging`; never for `oscillating`, never
+  for merely not converged. The counter resets on every other iteration.
+  After 100 counted iterations the loop exits with
+  `__loop_exit__ == "stalled"` (RULING R31-2). The **named** form deliberately does
   not (it must not false-halt on the global alias), so give it an
   absolute cap:
 

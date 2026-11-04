@@ -2849,8 +2849,11 @@ from the history snapshot, which `trace_record_obs` fills.
   `last_value`; `dh` is empty and `entropy`/`dH`/`last_entropy` are null;
 - `classify of t` rebuilds those fields;
 - `classify of [t, "entropy"]` on a numeric snapshot raises `value`;
-- the loop stall backstop counts a numeric binding's quiet iteration as
-  `|r| < dh_zero`;
+- the loop stall backstop counts an iteration when the numeric subject's
+  last relative step is quiet (`|r| < dh_zero`), OR its current value is
+  non-finite, OR its window reads `diverging`; never for `oscillating`, never
+  for merely not converged. The counter resets on every other iteration
+  (RULING R31-2);
 - the SIGUSR1 dump prints the value and the last Δv.
 
 **Every writer of the numeric rings, and the token that deletes its old

@@ -1119,7 +1119,7 @@ echo "[6/15] Halting: Runaway Loop Contract (#861)"
 HD_OUTPUT=$(./eigenscript ../tests/test_halting_descent.eigs 2>&1)
 
 # #861: the runaway loop's honest contract — the stall backstop ends it
-# after ~100 quiet-relative-step iterations (was: exit at ~13 via the entropy
+# after ~100 quiet, non-finite or diverging iterations (was: exit at ~13 via the entropy
 # defect certifying a doubling runaway as converged).
 HD_ITERS=$(echo "$HD_OUTPUT" | grep -A1 'HD1:' | tail -1)
 TOTAL=$((TOTAL + 1))
