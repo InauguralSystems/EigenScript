@@ -68,6 +68,7 @@ if __name__ == "__main__":
         rnd, rand = checked(fetch(a[0]), int(a[0]))
         s_h = int(rand, 16)
         families.write(families.build(families.H1, s_h), a[2])
+        families.write_manifest(a[2], {})                 # labels pending: judge.py --write-manifest completes it
         print(f"round {rnd}: randomness {rand}; S_H = {s_h}; H1 = {families.H1} written to {a[2]}/corpus.json")
     else:
         sys.exit(__doc__)

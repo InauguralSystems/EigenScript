@@ -11,7 +11,7 @@ Every row is in corpus.json's schema (derive.load_corpus), so score.py runs
 it unchanged and certify.py/derive.py label it. A row's parameters come from
 random.Random(sha256("<seed>/<family>/<draw>")), so a row depends only on the
 seed, its family and its index. Deterministic families give 8 draws, the
-stochastic ones (8, 9, 10, 16) 4 parameter draws x 10 seeds; every row has 3
+stochastic ones (9, 10, 16) 4 parameter draws x 10 seeds, family 8 its 5 amplitudes x 8 seeds (D8); every row has 3
 checkpoints (early, middle, late), each at least its regime index + 10.
 """
 import hashlib
@@ -23,6 +23,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))     # python3 -I drops the script's directory
 import derive
+import gen
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 S_SPLIT = 1600219665266993132
@@ -156,7 +157,7 @@ def f7(k, r):
 
 
 def f8(k, s, r, rs):
-    c, rel = level(r), r.choice(RELS)
+    c, rel = level(r), RELS[k]                              # D8: the five draws ARE the five amplitudes
     p = props(deterministic=False, has_trend=False, periodic=False, variance_changes=False)
     return row(8, f"f08_{k}_{s}", f"iid uniform noise, amplitude {rel!r} |c| about c = {c!r}",
                {"kind": "noise", "center": c, "amp": rel * abs(c), "seed": rs}, [50, 150, 300], p,
@@ -287,17 +288,51 @@ def f16(k, s, r, rs):
 RAND = {8: f8, 9: f9, 10: f10, 16: f16}
 
 
+BASE_MIN, UNIT_FLOOR = 10.0, 1e-2      # D7: a base stays >= 10 in magnitude, so its x1e-3 copy clears 1e-2
+
+
+def above_floor(values):
+    """Decision rule 5's floor: every value at least 1e-2 in magnitude (the x1e-3 copy). judge.py calls this."""
+    return all(abs(v) >= UNIT_FLOOR for v in values)
+
+
+def eligible_base(row):
+    """D7: a family-15 base keeps |x| >= 10 over its whole run, and its x1e-3 copy clears the floor."""
+    return all(abs(v) >= BASE_MIN for v in gen.generate(row["gen"], row["n"])) and \
+        above_floor(gen.generate(scaled(row, 1e-3)["gen"], row["n"]))
+
+
+def f15_bases(seed):
+    """D7: ten base rows drawn from the other H1 families' own generators, each kept only if it stays >= 10 in
+    magnitude over its whole run (its x1e-3 copy then clears the floor); the draw is a deterministic rejection
+    sampler over sub-seeds, and a base that never comes is refused. A pool of existing rows did not suffice:
+    on 11 of seeds 1-500 it held fewer than 10 such rows."""
+    fams, out = sorted(f for f in H1 if f not in (14, 15)), []
+    for attempt in range(5000):
+        r = rng(seed, 15, f"base/{attempt}")
+        fam = r.choice(fams)
+        row = (RAND[fam](r.randrange(len(RELS) if fam == 8 else 4), 0, r, r.randrange(2 ** 31)) if fam in STOCHASTIC
+               else DET[fam](r.randrange(8), r))
+        if eligible_base(row):
+            row.update({"id": f"f15b_{len(out)}", "family": f"F15b base for unit-scaled copies, from F{fam} {NAMES[fam]}"})
+            out.append(row)
+            if len(out) == 10:
+                return out
+    raise gen.HarnessError(f"family 15, seed {seed}: fewer than 10 bases with |x| >= {BASE_MIN} in 5000 draws: refused")
+
+
 def family_rows(fam, seed, pool_rows=()):
     if fam == 15:
-        base = [x for x in pool_rows if not x["family"].startswith(("F14 ", "F15 "))]
-        r = rng(seed, 15, 0)
-        return [scaled(b, s) for b in r.sample(base, 10) for s in (1e-3, 1e3)]
+        bases = f15_bases(seed)
+        rows = [scaled(b, s) for b in bases for s in (1e-3, 1e3)]
+        assert all(eligible_base(b) for b in bases) and all(above_floor(gen.generate(c["gen"], c["n"])) for c in rows if c["scale"] < 1)
+        return bases + rows
     if fam in STOCHASTIC:
         out = []
-        for k in range(4):
+        for k in range(len(RELS) if fam == 8 else 4):           # D8: family 8 is 5 amplitudes x 8 seeds
             r = rng(seed, fam, k)
             st = r.getstate()
-            for s in range(10):
+            for s in range(8 if fam == 8 else 10):
                 r.setstate(st)                       # every seed sees the same parameter draw
                 rs = rng(seed, fam, f"{k}/seed{s}").randrange(2 ** 31)
                 out.append(RAND[fam](k, s, r, rs))
@@ -317,9 +352,49 @@ def build(fams, seed):
             "sources": main["sources"], "definitions": main["definitions"], "rows": rows}
 
 
-def sha():
-    with open(os.path.abspath(__file__), "rb") as f:
+def sha(path=None):
+    with open(path or os.path.abspath(__file__), "rb") as f:
         return hashlib.sha256(f.read()).hexdigest()
+
+
+# The reveal-path manifest (RULING R30I-2 item 5): a corpus directory is scored only against the code, labels and
+# arm binaries it was sealed with. families.py/seal.py write it at generation (labels pending); judge.py
+# --write-manifest completes it after certify/derive; judge.py --corpus DIR refuses any mismatch (exit 2).
+MANIFEST, CODE, SET = "manifest.json", ("standard.py", "families.py", "judge.py", "reference.py"), \
+    ("corpus.json", "labels.json", "certificate.json")
+
+
+def manifest_of(d, arms):
+    return {"format": "r3-manifest/1",
+            "set": {f: (sha(os.path.join(d, f)) if os.path.exists(os.path.join(d, f)) else None) for f in SET},
+            "code": {f: sha(os.path.join(HERE, f)) for f in CODE}, "arms": {a: sha(b) for a, b in sorted(arms.items())}}
+
+
+def write_manifest(d, arms):
+    """Write d/manifest.json; an existing manifest's code and corpus.json pins must still hold (no re-sealing over a change)."""
+    m, path = manifest_of(d, arms), os.path.join(d, MANIFEST)
+    if os.path.exists(path):
+        old = json.load(open(path))
+        if old.get("code") != m["code"] or old["set"].get("corpus.json") != m["set"]["corpus.json"]:
+            raise gen.HarnessError(f"{path}: the code or corpus.json changed since this set was sealed: refused")
+    with open(path, "w") as f:
+        json.dump(m, f, indent=1, sort_keys=True)
+        f.write("\n")
+    return m
+
+
+def verify_manifest(d, arms):
+    """HarnessError (exit 2, never a verdict) unless d/manifest.json pins exactly this set, code and every arm."""
+    path = os.path.join(d, MANIFEST)
+    try:
+        want = json.load(open(path))
+    except (OSError, ValueError) as e:
+        raise gen.HarnessError(f"{path}: no readable manifest ({e}); seal the set with judge.py --write-manifest")
+    have = manifest_of(d, arms)
+    bad = [f"{k}/{f}" for k in ("set", "code") for f in have[k] if want.get(k, {}).get(f) is None or want[k][f] != have[k][f]]
+    bad += [f"arms/{a}" for a in have["arms"] if want.get("arms", {}).get(a) != have["arms"][a]]
+    if bad:
+        raise gen.HarnessError(f"{path}: {', '.join(bad)} differ from (or are missing in) the manifest: refused")
 
 
 def write(corpus, d):
@@ -348,6 +423,7 @@ if __name__ == "__main__":
     elif len(args) == 4 and args[0] == "--h1" and args[2] == "--out":
         c = build(H1, int(args[1]))
         write(c, args[3])
+        write_manifest(args[3], {})
         print(f"H1 (seed {args[1]}): {len(c['rows'])} rows, {sum(len(r['checkpoints']) for r in c['rows'])} checkpoints -> {args[3]}")
     else:
         sys.exit(__doc__)

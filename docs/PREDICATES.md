@@ -105,9 +105,14 @@ reveal):
 | D4 | REF = `reference.py` sha256 prefix `11de2a0191b25086` | sha256 `fa74d83f23422f5ddee9b30dc0f133417f98d9d8e7f9806151233d9e18ca1993` | A docstring change (#2139). R30-1 item 4's report-only amendment will move it again, as its own Deviation (R30-4 item 6) |
 | D5 | control (c): a window-4 build loses ≥ 0.05 BA on `converged` against INC | (c1) the window-4 build must FAIL the decision table; (c2) margin resolution is shown by STD `converged` with its tolerance scaled (`judge.py --tol-converged`): ×100 is tried first, then ×0.01 | On the calibration labels a window-4 build certifies a settled tail earlier and gains BA (−0.059 [−0.135, 0.007] on H-cal), while rules 2 and 3 still reject it. A tolerance change does not depend on checkpoint timing. ×100 gained BA, so ×0.01 is the recorded arm (RULING R30I-1 item 1) |
 | D6 | the labeller's NaN window for `converged`/`stable` is [n−9, n] (10 values) | [n−10, n], the observer's W + 1 = 11 values | The labels must ask about the window the observer holds. One label moves: `ieee_nan_recover@13 stable`, true → false. `floor.json` re-derived under the same anchor is byte-identical (RULING R30I-1 item 3) |
+| D7 | rule 5: zero flips on the family-15 rows above the floor; family 15 copies 10 rows of the other families | rule 5 is evaluated only when every declared family-15 copy is compared (examined == declared > 0), else NOT EVALUATED and the table INCOMPLETE. Family 15 draws its 10 bases from the other H1 families' own generators and keeps only a base that stays ≥ 10 in magnitude over its whole run, so every ×1e-3 copy clears the 1e-2 floor (the bases are scored rows too) | Rule 5 printed PASS on zero comparisons, and on the frozen draws most H1 seeds had no base above the floor (12 of seeds 1–30 had none). A pool of existing rows held fewer than 10 such bases on 11 of seeds 1–500 (RULING R30I-2 item 1) |
+| D8 | family 8: 4 parameter draws × 10 seeds, amplitudes {1e-9, 1e-5, 1e-3, 1e-1, 10} | the five draws are the five amplitudes, × 8 seeds (40 rows) | Four draws over five amplitudes never covered all five (RULING R30I-2 item 2) |
+| D9 | the population is the rows every runtime arm runs | every row stays. A runtime arm without a row's capability (INC: int64, ieee) has no reading there. Rule 2 against INC is NOT EVALUATED on those rows (each comparison is paired on the rows both arms read, and the count left out is printed). Rules 1, 3 and 4 use all rows the subject reads; rule 6 remains the #1830 gate | Otherwise `f14_7`, #1830's own int64 row, left every arm's population because INC lacks int64 (RULING R30I-2 item 4) |
 
 `judge.py --calibration` refuses to run on a `corpus.json` or `reference.py`
-other than the D3 and D4 files.
+other than the D3 and D4 files. `judge.py --corpus DIR` refuses (exit 2) unless
+`DIR/manifest.json` pins the set's corpus, labels and certificate, the
+instrument's code and every arm binary (RULING R30I-2 item 5).
 
 ## Which channel answers (#861)
 
