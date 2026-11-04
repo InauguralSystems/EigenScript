@@ -303,6 +303,15 @@ def persist(theta):
     return arm
 
 
+# Control (c2) (Deviation D5, RULING R30I-1 item 1): STD converged with its tolerance scaled by k, a
+# degradation independent of checkpoint timing; judge.py --tol-converged NAME=K adds it as an arm.
+def tol_converged(k):
+    def arm(xs, n):
+        w = win(xs, n)
+        return _ok(w) and max(w) - min(w) <= k * tau(w[-1])
+    return arm
+
+
 THETAS = [10 ** (-5 + k / 2) for k in range(9)]     # 10^{-5, -4.5, ..., -1}
 # Fitted by `standard.py --fit` on the calibration labels (corpus.json + hcal/):
 # frozen here; judge.py refuses to score when a refit disagrees.

@@ -271,9 +271,9 @@ def _tail_within(row, far, n, radius, name):
     if far is None:
         return False, "tends to " + p["tends_to"] if p["tends_to"] else "unbounded"
     h, tail = len(far) - 1, far[n:]
-    window = far[max(0, n - PATIENCE + 1):n + 1]
+    window = far[max(0, n - PATIENCE):n + 1]   # the observer's W + 1 = 11 values (Deviation D6, RULING R30I-1 item 3)
     if any(math.isnan(v) for v in window):
-        return False, f"NaN lies in the observer window [{max(0, n - PATIENCE + 1)}, {n}]"
+        return False, f"NaN lies in the observer window [{max(0, n - PATIENCE)}, {n}]"
     if not all(math.isfinite(v) for v in tail):
         return False, f"x_m is inf or NaN for some m in [{n}, {h}]"
     if p["limit"] is not None:

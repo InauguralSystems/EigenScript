@@ -5,10 +5,12 @@ with a PAIRED cluster bootstrap over rows, and the six decision rules
 evaluated mechanically.
 
 usage: judge.py --selftest                    control (b) on hcal/ against the anchor (tools/selftests.txt)
-       judge.py --calibration [options]       corpus.json + hcal/, arms INC = src/eigenscript
+       judge.py --calibration [options]       corpus.json + hcal/, arms INC (default src/eigenscript, standing in
+                                              for v0.47.0)
                                               and ANCHOR = the build_anchor.sh binary
        judge.py --corpus DIR [--corpus DIR ...] [options]
 options: --arm NAME=BINARY      a runtime arm (repeatable)
+         --tol-converged NAME=K  STD converged with its tolerance x K (control (c2), Deviation D5)
          --const-false NAME=BINARY   the arm BINARY with every reading rewritten false
                                 (plants.py's const_false shim): control (b)
          --subject NAME         evaluate decision rules 1-6 for this arm
@@ -105,12 +107,12 @@ def fmt(x, w=7):
 
 
 def main(argv):
-    args, opt = argv[1:], {"corpus": [], "arm": [], "diff": [], "const-false": []}
+    args, opt = argv[1:], {"corpus": [], "arm": [], "diff": [], "const-false": [], "tol-converged": []}
     while args:
         k = args.pop(0)
         if k == "--calibration":
             opt["calibration"] = True
-        elif k in ("--corpus", "--arm", "--diff", "--const-false", "--subject", "--seed", "--resamples",
+        elif k in ("--corpus", "--arm", "--diff", "--const-false", "--tol-converged", "--subject", "--seed", "--resamples",
                    "--floor-exit", "--declarations") and args:
             v = args.pop(0)
             (opt[k[2:]].append(v) if isinstance(opt.get(k[2:]), list) else opt.__setitem__(k[2:], v))
@@ -128,7 +130,10 @@ def main(argv):
             raise HarnessError(f"standard.py's frozen C1/PERSIST {S.C1_MAJORITY} {S.PERSIST_THETA} differ from a refit"
                                f" on the calibration labels {c1} {th}")
         opt["corpus"] = [HERE, os.path.join(HERE, "hcal")] + opt["corpus"]
-        binaries.setdefault("INC", os.path.join(ROOT, "src", "eigenscript"))
+        if "INC" not in binaries:     # RULING R30I-1 item 2: INC is the v0.47.0 tag; main's binary stands in where identical
+            binaries["INC"] = os.path.join(ROOT, "src", "eigenscript")
+            print("INC: main's binary standing in for the registered v0.47.0 (3d8a14b4); their calibration verdicts were"
+                  " identical at R3.0-I round 2. Pass --arm INC=<v0.47.0 binary> for the registered arm")
         if "ANCHOR" not in binaries:
             binaries["ANCHOR"] = score.anchor()["binary"]
     tmps = []
@@ -168,10 +173,14 @@ def main(argv):
     keys = [(rid, at, p) for rid in pop for at in rows[rid]["checkpoints"] for p in PREDS
             if labels[f"{rid}@{at}"][p][0] != "REPORTED"]
     V = {a: {k: got[a][k[0]][k[1:]] for k in keys} for a in binaries}
-    for arm, preds in S.ARMS.items():
+    arms_py = dict(S.ARMS)
+    for x in opt["tol-converged"]:                # control (c2): STD converged, tolerance x K
+        name, k = x.split("=", 1)
+        arms_py[name] = {"converged": S.tol_converged(float(k))}
+    for arm, preds in arms_py.items():
         V[arm] = {k: preds[k[2]](held[k[0]], k[1]) for k in keys if k[2] in preds}
     L = {k: labels[f"{k[0]}@{k[1]}"][k[2]][1] for k in keys}
-    arms = sorted(binaries) + list(S.ARMS)
+    arms = sorted(binaries) + list(arms_py)
     print(f"population: {len(pop)} of {len(rows)} rows, {sum(len(rows[r]['checkpoints']) for r in pop)} checkpoints,"
           f" {len(keys)} scored verdicts per arm; arms: {', '.join(arms)}")
     print(f"run order: {len(order)} (arm, row) pairs shuffled by random.Random({seed}),"
