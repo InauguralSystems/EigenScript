@@ -23,8 +23,8 @@ CASES = {
     "quiet": ("n is 1000\nx is 1.0 / n", "n is n + 1\nx is 1.0 / n"),
     "harmonic": ("n is 1\nx is 1.0 / n", "n is n + 1\nx is 1.0 / n"),
 }
-TIERS = {"off": {"EIGS_JIT": "off"}, "default": {},
-         "osr": {"EIGS_JIT_OSR": "1"}, "trace": {"EIGS_TRACE": "1"}}
+TIERS = {"off": {"EIGS_JIT_OFF": "1"}, "default": {},
+         "osr": {"EIGS_JIT_OSR_THRESHOLD": "1"}, "trace": {"EIGS_TRACE": "1"}}
 
 
 def program(case):
@@ -71,8 +71,11 @@ def main():
                 print("stall-contract: FAIL %s lint: %s" % (case, lint.stdout + lint.stderr))
                 failed += 1
             for tier, extra in TIERS.items():
+                tier_env = env | extra
+                if tier == "trace":
+                    tier_env["EIGS_TRACE"] = str(Path(tmp) / (case + ".eigst"))
                 try:
-                    result = subprocess.run([binary, str(path)], cwd=root, env=env | extra,
+                    result = subprocess.run([binary, str(path)], cwd=root, env=tier_env,
                                             capture_output=True, text=True, timeout=args.timeout)
                     rc, stdout, stderr = result.returncode, result.stdout, result.stderr
                 except subprocess.TimeoutExpired:

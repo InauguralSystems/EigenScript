@@ -1873,10 +1873,7 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
     if (oe && oidx >= 0 && g_unobserved_depth != 0) {
         if (isnum) observer_slot_sample_numeric_gated(oe, oidx, s);
         else       observer_slot_sample_gated(oe, oidx, obs_slot_value(s));
-        if (isnum && __builtin_expect(g_trace_obs_hist, 0)) {
-            const ObserverSlot *os = env_obs_slot(oe, oidx);
-            if (os) trace_record_obs(name, observer_slot_snapshot(os));
-        }
+        /* Elided samples update numeric state, never trace history (R31-2). */
         return;
     }
     if (oe && oidx >= 0) {
@@ -5811,10 +5808,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                     eigs_obs_count_call();
                     if (isnum) observer_slot_sample_numeric_gated(oe, oidx, s);
                     else       observer_slot_sample_gated(oe, oidx, obs_slot_value(s));
-                    if (isnum && __builtin_expect(g_trace_obs_hist, 0)) {
-                        const ObserverSlot *os = env_obs_slot(oe, oidx);
-                        if (os) trace_record_obs(name, observer_slot_snapshot(os));
-                    }
+                    /* Elided samples update numeric state, never trace history (R31-2). */
                 } else if (oe && oidx >= 0) {
                     if (isnum) observer_slot_update_numeric(oe, oidx, s);
                     else observer_slot_update(oe, oidx, obs_slot_value(s));
