@@ -93,7 +93,7 @@ static double vm_floor_mod(double a, double b) {
 static inline int obs_stall_trajectory(double *dH, double *ent) {
     const ObserverSlot *s = env_obs_slot(g_last_obs_slot_env, g_last_obs_slot_idx);
     if (s && s->used) {
-        *dH = s->dH; *ent = s->entropy;
+        *dH = s->ent_dH; *ent = s->ent_entropy;
         return 1;
     }
     return 0;
@@ -256,16 +256,14 @@ static void obs_dump_scope(const char *scope, Env *e, int shared,
              * so refresh inline — observer_entropy_now would self-deadlock).
              * The band classifies the same refreshed view. */
             ObserverSlot qs = *os;
-            if (slot_is_f64(s)) {
-                qs.entropy = observer_entropy_of_num(SLOT_F64_RAW(s));
-            } else if (slot_is_smi(s)) {   /* #1758: an int, as its double */
-                qs.entropy = observer_entropy_of_num((double)slot_smi_val(s));
+            if (observer_slot_is_numeric(s)) {
+                /* O1: numeric bindings have only the value channel. */
             } else if (slot_is_bool(s)) {
-                qs.entropy = compute_entropy(make_bool(slot_as_bool(s)));   /* #1637 */
+                qs.ent_entropy = compute_entropy(make_bool(slot_as_bool(s)));   /* #1637 */
             } else if (slot_is_ptr(s)) {
                 Value *sv0 = slot_as_ptr(s);
                 if (sv0 && sv0->type != VAL_NULL)
-                    qs.entropy = compute_entropy(sv0);
+                    qs.ent_entropy = compute_entropy(sv0);
             }
             const char *band = observer_slot_report(&qs);
             if (slot_is_ptr(s)) {
@@ -273,7 +271,7 @@ static void obs_dump_scope(const char *scope, Env *e, int shared,
                 if (sv && sv->type == VAL_FN) band = "opaque";   /* #708 */
             }
             fprintf(stderr, "%s | %s | when=%s | entropy=%.6g | dH=%.6g | %s\n",
-                    name, vbuf, whenbuf, qs.entropy, os->dH, band);
+                    name, vbuf, whenbuf, qs.ent_entropy, os->ent_dH, band);
         } else {
             fprintf(stderr, "%s | %s | when=%s | entropy=- | dH=- | unobserved\n",
                     name, vbuf, whenbuf);
@@ -397,7 +395,7 @@ static int vm_slot_predicate(const ObserverSlot *s, uint16_t kind) {
 static ObserverSlot vm_slot_query_view(Env *e, int idx, const ObserverSlot *s) {
     ObserverSlot q = *s;
     double h;
-    if (observer_entropy_now(e, idx, &h)) q.entropy = h;
+    if (observer_entropy_now(e, idx, &h)) q.ent_entropy = h;
     return q;
 }
 
@@ -460,7 +458,7 @@ int observer_predicate_at(Env *e, int idx, int kind, int require_used) {
     int result = 0;
     if (s && (!require_used || s->used)) {
         ObserverSlot q = *s;
-        if (have_entropy) q.entropy = entropy;
+        if (have_entropy) q.ent_entropy = entropy;
         result = vm_slot_predicate(&q, (uint16_t)kind);
     }
     env_dump_unlock(e);
@@ -1756,67 +1754,35 @@ void jit_helper_observe_assign(EigsChunk *chunk, int name_idx) {
     (void)chunk; (void)name_idx;
 }
 
-/* Numeric `unobserved:` assignments are deliberately common in simulation
- * loops.  Keep the already-allocated ring fast path in this translation unit
- * so the JIT helper does not bounce through two more out-of-line functions on
- * every assignment.  The public routine owns allocation/window-growth and is
- * still the cold fallback. */
+/* Numeric `unobserved:` assignments keep their original slot through the
+ * shared recorder, including the exact-int step flag. Shared bindings fold
+ * through the public helper under #607. */
 /* #1637: the observer sees a bool binding through its immortal singleton
  * (entropy: false 0.0, true 1.0 — compute_entropy's VAL_BOOL band). Callers
  * test obs_slot_observable first: a heap pointer or a bool. Null is the only
  * value still not observed. */
-/* #1758 R1.1: an SMI (or a reserved tag) is refused: every caller first
- * routes a number to the numeric channel (obs_slot_num), so an int that got
- * here would be silently unobserved. A BOXED int is a pointer and goes to
- * observer_slot_update's Value arm (R1.2). */
+/* Every caller routes numeric slots to the numeric channel first. An SMI
+ * reaching this non-numeric classifier would otherwise be silently lost. */
 static inline int obs_slot_observable(EigsSlot s) {
     if (slot_is_ptr(s) || slot_is_bool(s)) return 1;
     if (slot_is_null(s) || slot_is_f64(s)) return 0;
     eigs_slot_refuse("obs_slot_observable", s);
 }
-/* #1758: the observer's numeric channel takes a double -- a float's own, or
- * an int's (exact: |SMI| < 2^47) until round 3 (design 7). 0 for anything
- * that is not an immediate number. */
-static inline int obs_slot_num(EigsSlot s, double *out) {
-    if (slot_is_f64(s)) { *out = SLOT_F64_RAW(s); return 1; }
-    if (slot_is_smi(s)) { *out = (double)slot_smi_val(s); return 1; }
-    if (slot_is_heap(s) && slot_as_ptr(s)->type == VAL_INT) {
-        *out = (double)VAL_I64_RAW(slot_as_ptr(s));
-        return 1;
-    }
-    return 0;
-}
 static inline Value *obs_slot_value(EigsSlot s) {
     return slot_is_bool(s) ? make_bool(slot_as_bool(s)) : slot_as_ptr(s);
 }
 
-static inline void jit_sample_num_gated(Env *e, int slot, double v) {
-    /* #1867: the inline ring writes are valid only for a private env.  A
-     * shared binding must enter the public helper, which folds under #607. */
+static inline void jit_sample_num_gated(Env *e, int slot, EigsSlot value) {
     if (__builtin_expect(g_vm_multithreaded, 0) && e->mt_shared) {
-        observer_slot_sample_num_gated(e, slot, v);
+        observer_slot_sample_numeric_gated(e, slot, value);
         return;
     }
     ObserverSlot *s = env_obs_slot(e, slot);
-    int n = s && s->win_override ? s->win_override : g_obs_window;
-    if (!s || (s->v_used && (!s->v_window || s->v_cap < n))) {
-        observer_slot_sample_num_gated(e, slot, v);
+    if (!s) {
+        observer_slot_sample_numeric_gated(e, slot, value);
         return;
     }
-    if (s->v_used) {
-        double raw = v - s->last_value;
-        double scale = fabs(v);
-        double prev_scale = fabs(s->last_value);
-        if (prev_scale > scale) scale = prev_scale;
-        if (g_obs_scale > scale) scale = g_obs_scale;
-        s->v_window[s->v_window_head] = raw / scale;
-        s->vr_window[s->v_window_head] = raw;
-        if (++s->v_window_head >= s->v_cap) s->v_window_head = 0;
-        if (s->v_window_count < s->v_cap) s->v_window_count++;
-    }
-    s->last_value = v;
-    s->v_used = 1;
-    s->v_last = 1;
+    observer_slot_record_num(s, value);
     s->used = 1;
 }
 
@@ -1834,15 +1800,14 @@ void jit_helper_observe_assign_local(int slot) {
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     EigsSlot s = g_vm.stack[g_vm.sp - 1];
     Env *e = frame->fn_env;
-    double d;
     if (g_unobserved_depth != 0) {
         /* #1049: elided — value-window sample only (mirrors the CASE body). */
-        if (obs_slot_num(s, &d))  jit_sample_num_gated(e, slot, d);
+        if (observer_slot_is_numeric(s))  jit_sample_num_gated(e, slot, s);
         else if (obs_slot_observable(s)) observer_slot_sample_gated(e, slot, obs_slot_value(s));
         return;
     }
-    if (obs_slot_num(s, &d)) {
-        observer_slot_update_num(e, slot, d);
+    if (observer_slot_is_numeric(s)) {
+        observer_slot_update_numeric(e, slot, s);
         g_last_obs_slot_env = e; g_last_obs_slot_idx = slot;
     } else if (obs_slot_observable(s)) {
         observer_slot_update(e, slot, obs_slot_value(s));
@@ -1890,8 +1855,7 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
     /* #262 Phase-3 D: TOS may be an immediate num (the default path no longer
      * promotes observed names to tracked Values) or a heap value — observe the
      * slot from whichever (#1637: a bool too). Skip null. */
-    double d;
-    int isnum = obs_slot_num(s, &d);   /* #1758: a float or an int */
+    int isnum = observer_slot_is_numeric(s);   /* #1758: a float or an int */
     if (!isnum && !obs_slot_observable(s)) return;
     const char *name = chunk->const_interns[name_idx];
     uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
@@ -1899,12 +1863,12 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
     int oidx = -1, odepth = 0;
     Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
     if (oe && oidx >= 0 && g_unobserved_depth != 0) {
-        if (isnum) observer_slot_sample_num_gated(oe, oidx, d);
+        if (isnum) observer_slot_sample_numeric_gated(oe, oidx, s);
         else       observer_slot_sample_gated(oe, oidx, obs_slot_value(s));
         return;
     }
     if (oe && oidx >= 0) {
-        if (isnum) observer_slot_update_num(oe, oidx, d);
+        if (isnum) observer_slot_update_numeric(oe, oidx, s);
         else observer_slot_update(oe, oidx, obs_slot_value(s));
         g_last_obs_slot_env = oe;
         g_last_obs_slot_idx = oidx;
@@ -1912,7 +1876,7 @@ void jit_helper_observe_name_post(EigsChunk *chunk, int name_idx) {
          * interpreter CASE(OBSERVE_NAME_POST). */
         if (__builtin_expect(g_trace_obs_hist, 0)) {
             const ObserverSlot *os = env_obs_slot(oe, oidx);
-            if (os) trace_record_obs(name, os->entropy, os->dH, os->last_entropy);
+            if (os) trace_record_obs(name, os->ent_entropy, os->ent_dH, os->ent_last_entropy);
         }
     }
 }
@@ -5592,9 +5556,8 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
              * the slot persists across assignments, which is the #262 fix. */
             EigsSlot s = g_vm.stack[g_vm.sp - 1];
             Env *e = frame->fn_env;
-            double d;
-            if (obs_slot_num(s, &d)) {       /* #1758: a float or an int */
-                observer_slot_update_num(e, (int)slot, d);
+            if (observer_slot_is_numeric(s)) {       /* #1758: a float or an int */
+                observer_slot_update_numeric(e, (int)slot, s);
                 g_last_obs_slot_env = e; g_last_obs_slot_idx = (int)slot;
             } else if (obs_slot_observable(s)) {
                 observer_slot_update(e, (int)slot, obs_slot_value(s));
@@ -5604,12 +5567,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             /* #1049: elided assignment — the sample still enters the value
              * window (O(1)); the entropy walk, the bare-predicate alias and
              * the tape snapshot are what the block skips. See
-             * observer_slot_sample_num (eigenscript.c). */
+             * observer_slot_sample_numeric (eigenscript.c). */
             EigsSlot s = g_vm.stack[g_vm.sp - 1];
             Env *e = frame->fn_env;
-            double d;
             eigs_obs_count_call();
-            if (obs_slot_num(s, &d))  observer_slot_sample_num_gated(e, (int)slot, d);
+            if (observer_slot_is_numeric(s))  observer_slot_sample_numeric_gated(e, (int)slot, s);
             else if (obs_slot_observable(s)) observer_slot_sample_gated(e, (int)slot, obs_slot_value(s));
         }
         DISPATCH();
@@ -5777,9 +5739,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             list_append_owned(list, make_str(
                 vm_slot_value_opaque(e, (int)slot) ? "opaque"
                                                    : observer_slot_report(&q)));
-            list_append_owned(list, make_float(q.entropy));
-            list_append_owned(list, make_float(s->dH));
-            list_append_owned(list, make_float(s->prev_dH));
+            list_append_owned(list, make_float(q.ent_entropy));
+            list_append_owned(list, make_float(s->ent_dH));
+            list_append_owned(list, make_float(s->ent_prev_dH));
             vm_push(list);
         } else {
             vm_push(builtin_observe(NULL));
@@ -5814,9 +5776,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             list_append_owned(list, make_str(
                 vm_slot_value_opaque(oe, oidx) ? "opaque"     /* #708 */
                                                : observer_slot_report(&q)));
-            list_append_owned(list, make_float(q.entropy));
-            list_append_owned(list, make_float(s->dH));
-            list_append_owned(list, make_float(s->prev_dH));
+            list_append_owned(list, make_float(q.ent_entropy));
+            list_append_owned(list, make_float(s->ent_dH));
+            list_append_owned(list, make_float(s->ent_prev_dH));
             vm_push(list);
         } else {
             vm_push(builtin_observe(NULL));
@@ -5843,8 +5805,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
             /* #262 Phase-3 D: TOS is now an immediate num for an observed name
              * (default path no longer promotes), or a heap value. Observe the
              * slot from whichever (#1637: a bool too); skip null. */
-            double d;
-            int isnum = obs_slot_num(s, &d);   /* #1758: a float or an int */
+            int isnum = observer_slot_is_numeric(s);   /* #1758: a float or an int */
             if (isnum || obs_slot_observable(s)) {
                 const char *name = chunk->const_interns[name_idx];
                 uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
@@ -5853,10 +5814,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 Env *oe = env_resolve_chain(frame->env, name, h, &oidx, &odepth);
                 if (oe && oidx >= 0 && g_unobserved_depth != 0) {
                     eigs_obs_count_call();
-                    if (isnum) observer_slot_sample_num_gated(oe, oidx, d);
+                    if (isnum) observer_slot_sample_numeric_gated(oe, oidx, s);
                     else       observer_slot_sample_gated(oe, oidx, obs_slot_value(s));
                 } else if (oe && oidx >= 0) {
-                    if (isnum) observer_slot_update_num(oe, oidx, d);
+                    if (isnum) observer_slot_update_numeric(oe, oidx, s);
                     else observer_slot_update(oe, oidx, obs_slot_value(s));
                     g_last_obs_slot_env = oe;
                     g_last_obs_slot_idx = oidx;
@@ -5866,7 +5827,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                      * trace_assign). */
                     if (__builtin_expect(g_trace_obs_hist, 0)) {
                         const ObserverSlot *os = env_obs_slot(oe, oidx);
-                        if (os) trace_record_obs(name, os->entropy, os->dH, os->last_entropy);
+                        if (os) trace_record_obs(name, os->ent_entropy, os->ent_dH, os->ent_last_entropy);
                     }
                 }
             }
@@ -5956,10 +5917,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                      * assignment-recorded trajectory and stays as stored. */
                     double h_now;
                     result = make_float(observer_entropy_now(oe, oidx, &h_now)
-                                          ? h_now : s->entropy);
+                                          ? h_now : s->ent_entropy);
                 }
-                else if (kind == 4) result = make_float(s->dH);
-                else                result = make_float(observer_settledness(s->dH));
+                else if (kind == 4) result = make_float(s->ent_dH);
+                else                result = make_float(observer_settledness_dh(s->ent_dH));
             } else {
                 /* #262 Step E: unobserved binding — no trajectory. */
                 result = make_float(kind == 5 ? 1.0 : 0.0);

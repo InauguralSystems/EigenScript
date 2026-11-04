@@ -353,8 +353,22 @@ typedef struct {
  * variable BINDING (env + slot index), not the recyclable Value object, so
  * aliasing/temp-built iterates track their own trajectory. The per-Value
  * observer fields were removed in Step E. See issue #262. */
+typedef struct ObserverNumber {
+    double value;
+    int64_t integer;
+    uint8_t is_int;
+} ObserverNumber;
+
+typedef struct ObsSnapshot {
+    ObserverNumber where, why;
+    double how, best;
+    double ent_entropy, ent_dH, ent_last_entropy;
+    uint8_t numeric, has_step, best_used, since;
+} ObsSnapshot;
+
+
 typedef struct ObserverSlot {
-    double  entropy, last_entropy, dH, prev_dH;
+    double  ent_entropy, ent_last_entropy, ent_dH, ent_prev_dH;
     int     obs_age;
     double *dh_window;          /* lazily allocated ring of dH values; dh_cap deep */
     uint8_t dh_window_head, dh_window_count;
@@ -367,11 +381,18 @@ typedef struct ObserverSlot {
      * windowed logic/thresholds as the entropy channel; only the observed
      * signal differs. */
     double  last_value;         /* last observed numeric value (Δv source) */
-    double *v_window;           /* lazily allocated ring of relative steps; v_cap deep */
-    double *vr_window;          /* #422 raw deltas (Δv un-normalized), same head/count:
+    double *v_rel;           /* lazily allocated ring of relative steps; v_cap deep */
+    double *v_raw;          /* #422 raw deltas (Δv un-normalized), same head/count:
                                  * the non-vanishing-step signal that catches additive
                                  * runaway and sub-deadband oscillation, both of which
                                  * relative normalization erases */
+    ObserverNumber *v_values; /* W+1 inputs: subtraction is not invertible */
+    uint8_t values_head, values_count, values_cap;
+    uint8_t *v_exact;       /* exact int64 difference, per step */
+    int64_t last_int, last_step_int;
+    uint8_t last_is_int;
+    double best;
+    uint8_t best_used, since; /* since saturates beyond the maximum window */
     uint8_t v_window_head, v_window_count;
     /* #1044: ring CAPACITIES (what is allocated) and the per-binding window
      * OVERRIDE (what the classifiers read). The depth a slot classifies over
@@ -696,15 +717,15 @@ int observer_slot_set_window(struct Env *e, int idx, int n);
 /* #262 Phase-1 prototype slot-keyed observer API (behind EIGS_OBS_SHADOW). */
 void observer_slot_update(struct Env *e, int idx, Value *newval);
 /* #262 Phase-3 D: slot update from a raw immediate number (no Value needed). */
-void observer_slot_update_num(struct Env *e, int idx, double num);
+void observer_slot_update_numeric(struct Env *e, int idx, EigsSlot num);
 /* #1049: the elided (`unobserved:`) assignment — value-window sample only,
  * no entropy walk. What the observe ops call when g_unobserved_depth != 0;
  * exported so the AOT runtime can call the same thing instead of skipping. */
 void observer_slot_sample(struct Env *e, int idx, Value *newval);
-void observer_slot_sample_num(struct Env *e, int idx, double num);
+void observer_slot_sample_numeric(struct Env *e, int idx, EigsSlot num);
 /* Fast forms for observe opcodes which already proved the observer gate open. */
 void observer_slot_sample_gated(struct Env *e, int idx, Value *newval);
-void observer_slot_sample_num_gated(struct Env *e, int idx, double num);
+void observer_slot_sample_numeric_gated(struct Env *e, int idx, EigsSlot num);
 void observer_slot_reset(struct Env *e);
 /* Clear every slot and its inner rings, retaining the initialized outer array
  * only when its allocated capacity is no greater than max_retain_cap.
@@ -755,7 +776,10 @@ const char *observer_slot_report_value(const struct ObserverSlot *s);
  * Δv/(1+|v|)). Exported for the --step tape-stepper (step.c), which rebuilds
  * per-binding trajectories from tape A records through the SAME classifier
  * the language uses — a reimplementation there could silently drift. */
-void observer_slot_record_value(struct ObserverSlot *s, double v);
+void observer_slot_record_num(struct ObserverSlot *s, EigsSlot v);
+int observer_slot_is_numeric(EigsSlot v);
+int observer_slot_quiet(const ObserverSlot *s);
+void observer_slot_dispose(ObserverSlot *s);
 /* #421 trajectory snapshots: capture a slot's observer windows into a plain
  * dict Value that survives a call boundary (`trajectory of x`), and rebuild
  * a classifiable slot from such a dict (`classify of t`). from_trajectory
@@ -2453,13 +2477,16 @@ void eigs_loading_leave(const char *abs_path);
  * 1.0 (unmoved) .. 0.0 (moved by >= the settle deadband). Pure function of
  * the recorded dH, shared by the live INTERROGATE paths (vm.c) and the tape
  * history reader (trace.c) so `how is x at L` matches the live reading. */
-double observer_settledness(double dH);
+double observer_settledness_dh(double dH);
+double observer_settledness_step(double raw, double relative);
+ObsSnapshot observer_slot_snapshot(const ObserverSlot *s);
+EigsSlot observer_snapshot_query(const ObsSnapshot *s, int kind);
+Value *observer_slot_readout(const ObserverSlot *s, int kind);
 
 /* #711: entropy of the binding's CURRENT value, computed at query time —
  * the current-state channel of the entropy/dH split. Returns 1 + fills
  * *out when the slot holds a measurable value; never writes the slot. */
 int observer_entropy_now(struct Env *e, int idx, double *out);
-double observer_entropy_of_num(double num);   /* lock-free shim for dump sites */
 double compute_entropy(Value *v);             /* the #685 O(own-size) fold */
 
 /* ---- Cross-file functions for tensor builtins ---- */

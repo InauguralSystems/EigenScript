@@ -165,7 +165,8 @@ static int r_obs_dump_value(int64_t v) {
     snprintf(want, sizeof want, "%lld", (long long)v);
     return strcmp(buf, want) != 0;
 }
-static int r_obs_slot_num(int64_t v) { double d = -7.25; return obs_slot_num(smi(v), &d) != 1 || d != (double)v; }
+static int r_observer_number(int64_t v) { ObserverNumber n = observer_number(smi(v)); return !n.is_int || n.integer != v; }
+static int r_observer_slot_is_numeric(int64_t v) { return observer_slot_is_numeric(smi(v)) != 1; }
 static int r_slot_truthy(int64_t v) { return slot_truthy(smi(v)) != (v != 0); }
 static int r_slot_type_name(int64_t v) { return strcmp(slot_type_name(smi(v)), "num") != 0; }
 static int r_slot_decref(int64_t v) { slot_decref(smi(v)); return 0; }   /* no refcount: no-op */
@@ -243,7 +244,8 @@ static const Entry ENTRIES[] = {
     {"value_slot.h:slot_smi_val", r_slot_smi_val, 0, 0, "the int, sign-extended"},
     {"value_slot.h:slot_truthy_immediate", r_slot_truthy_immediate, 0, 0, "decided: not 0"},
     {"vm.c:obs_dump_value", r_obs_dump_value, 0, 0, "exact digits"},
-    {"vm.c:obs_slot_num", r_obs_slot_num, 0, 0, "the numeric channel: the int's double"},
+    {"eigenscript.c:observer_number", r_observer_number, 0, 0, "original int64 payload"},
+    {"eigenscript.c:observer_slot_is_numeric", r_observer_slot_is_numeric, 0, 0, "numeric kind preserved, no double conversion"},
     {"vm.c:slot_truthy", r_slot_truthy, 0, 0, "not 0"},
     {"vm.c:slot_type_name", r_slot_type_name, 0, 0, "\"num\""},
     {"value_slot.h:slot_decref", r_slot_decref, 0, 0, "no refcount"},
@@ -348,8 +350,13 @@ CELL(is_smi) { snprintf(b, n, "i:%d", slot_is_smi(s)); }
 CELL(smi_val) { snprintf(b, n, "i:%lld", (long long)slot_smi_val(s)); }
 CELL(truthy_imm) { int dec = -1; int t = slot_truthy_immediate(s, &dec); snprintf(b, n, "o:%d dec:%d", t, dec); }
 CELL(dump_value) { char buf[160]; obs_dump_value(s, buf, sizeof buf); snprintf(b, n, "s:%s", buf); }
-CELL(obs_num) { double d = -7.25; int r = obs_slot_num(s, &d);
-                snprintf(b, n, "o:%d d:%016llx", r, (unsigned long long)u64_of(d)); }
+CELL(observer_number) {
+    if (!observer_slot_is_numeric(s)) { snprintf(b, n, "not-num"); return; }
+    ObserverNumber v = observer_number(s);
+    if (v.is_int) snprintf(b, n, "i:%lld", (long long)v.integer);
+    else snprintf(b, n, "d:%016llx", (unsigned long long)u64_of(v.value));
+}
+CELL(obs_num) { snprintf(b, n, "o:%d", observer_slot_is_numeric(s)); }
 CELL(truthy) { snprintf(b, n, "i:%d", slot_truthy(s)); }
 CELL(type_name) { snprintf(b, n, "s:%s", slot_type_name(s)); }
 CELL(decref) { if (is_heap_kind(s)) slot_incref(s); slot_decref(s); snprintf(b, n, "ok"); }
@@ -447,12 +454,13 @@ EXP(dump_value) {
         default: snprintf(b, n, "s:?");
     }
 }
+EXP(observer_number) {
+    if (kclass(k) == C_SMI) snprintf(b, n, "i:5");
+    else if (kclass(k) == C_F64) snprintf(b, n, "d:%016llx", (unsigned long long)u64_of(KD(k)));
+    else snprintf(b, n, "not-num");
+}
 EXP(obs_num) {
-    switch (kclass(k)) {
-        case C_F64: snprintf(b, n, "o:1 d:%016llx", (unsigned long long)KB[k]); break;
-        case C_SMI: snprintf(b, n, "o:1 d:%016llx", (unsigned long long)u64_of(5.0)); break;
-        default: snprintf(b, n, "o:0 d:%016llx", (unsigned long long)u64_of(-7.25));
-    }
+    snprintf(b, n, "o:%d", kclass(k) == C_F64 || kclass(k) == C_SMI);
 }
 EXP(truthy) {
     switch (kclass(k)) {
@@ -578,7 +586,8 @@ static const MatrixEntry MATRIX[] = {
     {"value_slot.h:slot_smi_val", c_smi_val, e_smi_val},
     {"value_slot.h:slot_truthy_immediate", c_truthy_imm, e_truthy_imm},
     {"vm.c:obs_dump_value", c_dump_value, e_dump_value},
-    {"vm.c:obs_slot_num", c_obs_num, e_obs_num},
+    {"eigenscript.c:observer_number", c_observer_number, e_observer_number},
+    {"eigenscript.c:observer_slot_is_numeric", c_obs_num, e_obs_num},
     {"vm.c:slot_truthy", c_truthy, e_truthy},
     {"vm.c:slot_type_name", c_type_name, e_type_name},
     {"value_slot.h:slot_decref", c_decref, e_ok},

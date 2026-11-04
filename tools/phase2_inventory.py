@@ -199,8 +199,6 @@ WRAPPERS = {
     'embed_f64': 'R2.4 public C double adapter: slot_from_f64 and its typed SLOT_F64_RAW extraction are the sites; every public double crossing calls this adapter',
     'compute_entropy_impl': 'observer: returns an entropy, not the number; its payload read is the site',
     'ent_child_slot': 'observer: returns a child entropy, not the number; its payload read is the site',
-    'observer_entropy_now': 'observer: writes an entropy, not the number; its payload read is the site',
-    'obs_slot_num': 'observer: the numeric channel of a slot (R1.1); its payload read is the site',
     'numerical_loss': 'tensor: reads the loss callback result once; that read is the site',
     'gradient_perturb': 'tensor: returns the normalized float actually stored by list_set_f64; list_get_f64 is the counted payload read',
     'tensor_flatten_recursive': 'tensor: bulk element flattener into a double array; the per-element read is the site',

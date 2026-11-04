@@ -440,7 +440,7 @@ static double entropy_of_num(double num) {
  * `how is x at L` reads identically from tape history — no new record kind.
  * (The old 1 - entropy/last_entropy was degenerate: the observer refreshes
  * last_entropy to entropy on every push, so it read 0 or 1 only.) */
-double observer_settledness(double dH) {
+double observer_settledness_dh(double dH) {
     double r = fabs(dH) / g_obs_dh_zero;
     if (r > 1.0) r = 1.0;
     return 1.0 - r;
@@ -875,47 +875,58 @@ static void observer_slot_window_push(ObserverSlot *s, double dh) {
  * and oscillation below the deadband — and both are recoverable from the
  * raw step's sign/decay structure alone. */
 static double observer_slot_v_get(const ObserverSlot *s, size_t offset_back) {
-    if (!s->v_window || offset_back >= s->v_window_count) return 0.0;
+    if (!s->v_rel || offset_back >= s->v_window_count) return 0.0;
     int idx = (int)s->v_window_head - 1 - (int)offset_back;
     while (idx < 0) idx += s->v_cap;
-    return s->v_window[idx];
+    return s->v_rel[idx];
 }
 
 static double observer_slot_vr_get(const ObserverSlot *s, size_t offset_back) {
-    if (!s->vr_window || offset_back >= s->v_window_count) return 0.0;
+    if (!s->v_raw || offset_back >= s->v_window_count) return 0.0;
     int idx = (int)s->v_window_head - 1 - (int)offset_back;
     while (idx < 0) idx += s->v_cap;
-    return s->vr_window[idx];
+    return s->v_raw[idx];
 }
 
 /* #1044: value-channel twin of observer_slot_dh_ensure (both rings share
  * head/count, so they grow together). */
+static int observer_slot_exact_get(const ObserverSlot *s, size_t back) {
+    int i = (int)s->v_window_head - 1 - (int)back;
+    while (i < 0) i += s->v_cap;
+    return s->v_exact && back < s->v_window_count ? s->v_exact[i] : 0;
+}
+
+static ObserverNumber observer_slot_value_get(const ObserverSlot *s, size_t back) {
+    int i = (int)s->values_head - 1 - (int)back;
+    while (i < 0) i += s->values_cap;
+    return s->v_values[i];
+}
+
 static void observer_slot_v_ensure(ObserverSlot *s, int n) {
-    if (s->v_window && s->v_cap >= n) return;
+    if (s->v_rel && s->v_cap >= n && s->values_cap >= n + 1) return;
     double *nv = xcalloc((size_t)n, sizeof(double));
     double *nr = xcalloc((size_t)n, sizeof(double));
-    int cnt = s->v_window ? s->v_window_count : 0;
+    uint8_t *ne = xcalloc((size_t)n, sizeof(uint8_t));
+    ObserverNumber *nx = xcalloc((size_t)n + 1, sizeof(*nx));
+    int cnt = s->v_rel ? s->v_window_count : 0;
     if (cnt > n) cnt = n;
     for (int i = 0; i < cnt; i++) {
         nv[i] = observer_slot_v_get(s, (size_t)(cnt - 1 - i));
         nr[i] = observer_slot_vr_get(s, (size_t)(cnt - 1 - i));
+        ne[i] = (uint8_t)observer_slot_exact_get(s, (size_t)(cnt - 1 - i));
     }
-    free(s->v_window);
-    free(s->vr_window);
-    s->v_window = nv;
-    s->vr_window = nr;
+    int xc = s->values_count;
+    if (xc > n + 1) xc = n + 1;
+    for (int i = 0; i < xc; i++)
+        nx[i] = observer_slot_value_get(s, (size_t)(xc - 1 - i));
+    free(s->v_rel); free(s->v_raw); free(s->v_exact); free(s->v_values);
+    s->v_rel = nv; s->v_raw = nr; s->v_exact = ne; s->v_values = nx;
     s->v_cap = (uint8_t)n;
+    s->values_cap = (uint8_t)(n + 1);
+    s->values_count = (uint8_t)xc;
+    s->values_head = (uint8_t)(xc % (n + 1));
     s->v_window_count = (uint8_t)cnt;
     s->v_window_head = (uint8_t)(cnt % n);
-}
-
-static void observer_slot_v_push(ObserverSlot *s, double rel_delta, double raw_delta) {
-    int n = obs_win(s);
-    if (!s->v_window || s->v_cap < n) observer_slot_v_ensure(s, n);
-    s->v_window[s->v_window_head] = rel_delta;
-    s->vr_window[s->v_window_head] = raw_delta;
-    if (++s->v_window_head >= s->v_cap) s->v_window_head = 0;
-    if (s->v_window_count < s->v_cap) s->v_window_count++;
 }
 
 /* #422 raw-step structure tests. Both require a FULL window and steps above
@@ -943,6 +954,17 @@ static void observer_slot_v_push(ObserverSlot *s, double rel_delta, double raw_d
  * 10-window here would mean a 6-step monotone runaway answers `diverging`
  * false where the old semantics said true. The full-window requirement
  * stays where it belongs: on the REST bands, which certify. */
+
+/* #1758 O1/#1830: exactness is one property of the active step window.
+ * Partial raw tests and full-window settled tests share this definition. */
+
+/* R3.1 keeps the incumbent floor; R3.3 changes this one scale seam. */
+static double obs_floor_scale(const ObserverSlot *s) {
+    (void)s;
+    return eigs_current ? eigs_current->state->obs_scale : 0.001;
+}
+
+
 static int observer_slot_raw_nonvanishing(const ObserverSlot *s) {
     size_t cnt = obs_v_count(s);
     if (cnt < 4) return 0;
@@ -1007,19 +1029,122 @@ static int observer_slot_raw_oscillating(const ObserverSlot *s) {
  * matter how far from its limit the value still is (1e6·0.3^k certifies at
  * x ~= 1.8) — and widening the window (#1044) makes it worse, r^49 at
  * N = 50. The local scale keeps the two knobs independent. */
-void observer_slot_record_value(ObserverSlot *s, double v) {
+int observer_slot_quiet(const ObserverSlot *s) {
+    if (!s) return 0;
+    if (s->v_last && s->v_used)
+        return obs_v_count(s) && fabs(observer_slot_v_get(s, 0)) < g_obs_dh_zero;
+    return fabs(s->ent_dH) < g_obs_dh_zero;
+}
+
+int observer_slot_is_numeric(EigsSlot v) {
+    return slot_is_f64(v) || slot_is_smi(v) ||
+        (slot_is_heap(v) && slot_as_ptr(v)->type == VAL_INT);
+}
+
+static ObserverNumber observer_number(EigsSlot v) {
+    ObserverNumber n = {0};
+    n.is_int = !slot_is_f64(v);
+    if (n.is_int) {
+        n.integer = slot_is_smi(v) ? slot_smi_val(v) : VAL_I64_RAW(slot_as_ptr(v));
+        n.value = (double)n.integer;
+    } else n.value = SLOT_F64_RAW(v);
+    return n;
+}
+
+void observer_slot_record_num(ObserverSlot *s, EigsSlot value) {
+    ObserverNumber v = observer_number(value);
+    observer_slot_v_ensure(s, obs_win(s));
     if (s->v_used) {
-        double raw = v - s->last_value;
-        double a = fabs(v), b = fabs(s->last_value);
-        if (b > a) a = b;
-        double fl = eigs_current ? eigs_current->state->obs_scale : 0.001;
-        if (fl > a) a = fl;
-        double rel = raw / a;
-        observer_slot_v_push(s, rel, raw);
+        int64_t delta = 0;
+        int exact = v.is_int && s->last_is_int &&
+            !__builtin_sub_overflow(v.integer, s->last_int, &delta);
+        double raw = exact ? (double)delta : v.value - s->last_value;
+        double scale = fmax(fmax(fabs(v.value), fabs(s->last_value)),
+                            obs_floor_scale(s));
+        int h = s->v_window_head;
+        s->v_rel[h] = raw / scale;
+        s->v_raw[h] = raw;
+        s->v_exact[h] = (uint8_t)exact;
+        s->last_step_int = delta;
+        if (++s->v_window_head >= s->v_cap) s->v_window_head = 0;
+        if (s->v_window_count < s->v_cap) s->v_window_count++;
+    } else s->since = UINT8_MAX;
+    s->v_values[s->values_head] = v;
+    if (++s->values_head >= s->values_cap) s->values_head = 0;
+    if (s->values_count < s->values_cap) s->values_count++;
+    s->last_value = v.value;
+    s->last_int = v.integer; s->last_is_int = v.is_int;
+    s->v_used = s->v_last = 1;
+}
+
+double observer_settledness_step(double raw, double relative) {
+    if (isnan(raw)) return NAN;
+    if (isinf(raw)) return 0.0;
+    return g_obs_dh_zero / (g_obs_dh_zero + fabs(relative));
+}
+
+static ObserverNumber observer_slot_step(const ObserverSlot *s, size_t back) {
+    ObserverNumber out = {0};
+    out.value = observer_slot_vr_get(s, back);
+    out.is_int = (uint8_t)observer_slot_exact_get(s, back);
+    if (out.is_int) {
+        ObserverNumber now = observer_slot_value_get(s, back);
+        ObserverNumber prev = observer_slot_value_get(s, back + 1);
+        if (__builtin_sub_overflow(now.integer, prev.integer, &out.integer))
+            out.is_int = 0; /* a malformed snapshot cannot invent exactness */
     }
-    s->last_value = v;
-    s->v_used = 1;
-    s->v_last = 1;   /* #861: this binding's current trajectory is numeric */
+    return out;
+}
+
+static EigsSlot observer_number_slot(ObserverNumber n) {
+    return n.is_int ? slot_from_int(n.integer) : slot_from_f64(n.value);
+}
+
+static Value *observer_number_value(ObserverNumber n) {
+    return n.is_int ? make_int(n.integer) : make_float(n.value);
+}
+
+ObsSnapshot observer_slot_snapshot(const ObserverSlot *s) {
+    ObsSnapshot out = {0};
+    if (!s) return out;
+    out.numeric = s->v_used && s->v_last;
+    out.ent_entropy = s->ent_entropy;
+    out.ent_dH = s->ent_dH;
+    out.ent_last_entropy = s->ent_last_entropy;
+    out.best = s->best; out.best_used = s->best_used; out.since = s->since;
+    if (out.numeric) {
+        out.where.value = s->last_value;
+        out.where.integer = s->last_int; out.where.is_int = s->last_is_int;
+        out.has_step = obs_v_count(s) > 0;
+        if (out.has_step) {
+            out.why = observer_slot_step(s, 0);
+            out.how = observer_settledness_step(out.why.value, observer_slot_v_get(s, 0));
+        }
+    }
+    return out;
+}
+
+EigsSlot observer_snapshot_query(const ObsSnapshot *s, int kind) {
+    if (!s->numeric) return slot_from_f64(kind == 3 ? s->ent_entropy :
+        kind == 4 ? s->ent_dH : observer_settledness_dh(s->ent_dH));
+    if (kind == 3) return observer_number_slot(s->where);
+    if (!s->has_step) return slot_null();
+    return kind == 4 ? observer_number_slot(s->why) : slot_from_f64(s->how);
+}
+
+Value *observer_slot_readout(const ObserverSlot *s, int kind) {
+    ObsSnapshot snap = observer_slot_snapshot(s);
+    if (kind == 6) { /* previous why in observe's tuple */
+        if (snap.numeric) {
+            if (obs_v_count(s) < 2) return make_null();
+            return observer_number_value(observer_slot_step(s, 1));
+        }
+        return make_float(s->ent_prev_dH);
+    }
+    EigsSlot value = observer_snapshot_query(&snap, kind);
+    Value *out = slot_to_value(value);
+    slot_decref(value);
+    return out;
 }
 
 /* #694: grow e->obs to cover `idx`. Defined with the #607 module-env MT
@@ -1051,55 +1176,38 @@ static void observer_slot_update_e_locked(Env *e, int idx, double new_entropy) {
      * itself must still be synchronized. */
     ObserverSlot *s = env_obs_slot(e, idx);
     if (!s) return;
-    s->prev_dH = s->dH;
+    s->ent_prev_dH = s->ent_dH;
     if (!s->used || s->obs_age == 0) {
-        s->dH = 0;                 /* first observation of this binding */
+        s->ent_dH = 0;                 /* first observation of this binding */
     } else {
-        s->dH = new_entropy - s->last_entropy;
-        observer_slot_window_push(s, s->dH);
+        s->ent_dH = new_entropy - s->ent_last_entropy;
+        observer_slot_window_push(s, s->ent_dH);
     }
-    s->entropy = new_entropy;
-    s->last_entropy = new_entropy;
+    s->ent_entropy = new_entropy;
+    s->ent_last_entropy = new_entropy;
     s->obs_age++;
     s->used = 1;
+}
+
+static inline void observer_slot_update_numeric_locked(Env *e, int idx, EigsSlot num) {
+    ObserverSlot *s = env_obs_slot(e, idx);
+    if (!s) return;
+    observer_slot_record_num(s, num);
+    s->used = 1; s->obs_age++;
+    val_decref(s->eq_last); s->eq_last = NULL; s->eq_identity_last = NULL;
+    s->eq_window_count = s->eq_window_head = s->eq_seen = 0;
 }
 
 static inline void observer_slot_update_locked(Env *e, int idx, Value *newval,
                                                double entropy) {
     observer_slot_update_e_locked(e, idx, entropy);
-    if (newval && val_is_number(newval)) {
-        ObserverSlot *s = env_obs_slot(e, idx);
-        if (s) observer_slot_record_value(s, newval->type == VAL_INT ? (double)VAL_I64_RAW(newval)
-                                                               : VAL_F64_RAW(newval));
-    } else {
-        ObserverSlot *s = env_obs_slot(e, idx);
-        if (s) {
-            s->v_last = 0;
-            observer_slot_record_equality_local(s, newval);
-        }
-    }
-}
-
-static inline void observer_slot_update_num_locked(Env *e, int idx, double num,
-                                                   double entropy) {
-    observer_slot_update_e_locked(e, idx, entropy);
-    ObserverSlot *vs = env_obs_slot(e, idx);
-    if (vs) {
-        observer_slot_record_value(vs, num);
-        val_decref(vs->eq_last);
-        vs->eq_last = NULL;
-        vs->eq_identity_last = NULL;
-        vs->eq_window_count = vs->eq_window_head = 0;
-        vs->eq_seen = 0;
-    }
-}
-
-static inline void observer_slot_sample_num_locked(Env *e, int idx, double num) {
     ObserverSlot *s = env_obs_slot(e, idx);
-    if (s) {
-        observer_slot_record_value(s, num);
-        s->used = 1;
-    }
+    if (s) { s->v_last = 0; observer_slot_record_equality_local(s, newval); }
+}
+
+static inline void observer_slot_sample_numeric_locked(Env *e, int idx, EigsSlot num) {
+    ObserverSlot *s = env_obs_slot(e, idx);
+    if (s) { observer_slot_record_num(s, num); s->used = 1; }
 }
 
 static inline void observer_slot_sample_locked(Env *e, int idx) {
@@ -1122,30 +1230,17 @@ static void __attribute__((noinline)) observer_slot_update_shared(
     env_shared_fold_unlock();
 }
 
-static void observer_slot_update_value_num_shared(
-        Env *e, int idx, Value *newval, double entropy)
-        __attribute__((noinline));
-static void observer_slot_update_value_num_shared(
-        Env *e, int idx, Value *newval, double entropy) {
+static __attribute__((noinline)) void observer_slot_update_numeric_shared(
+        Env *e, int idx, EigsSlot num) {
     env_shared_fold_lock();
-    observer_slot_update_e_locked(e, idx, entropy);
-    ObserverSlot *s = env_obs_slot(e, idx);
-    if (s) observer_slot_record_value(s, newval->type == VAL_INT ? (double)VAL_I64_RAW(newval)
-                                                               : VAL_F64_RAW(newval));
+    observer_slot_update_numeric_locked(e, idx, num);
     env_shared_fold_unlock();
 }
 
-static __attribute__((noinline)) void observer_slot_update_num_shared(
-        Env *e, int idx, double num, double entropy) {
+static __attribute__((noinline)) void observer_slot_sample_numeric_shared(
+        Env *e, int idx, EigsSlot num) {
     env_shared_fold_lock();
-    observer_slot_update_num_locked(e, idx, num, entropy);
-    env_shared_fold_unlock();
-}
-
-static __attribute__((noinline)) void observer_slot_sample_num_shared(
-        Env *e, int idx, double num) {
-    env_shared_fold_lock();
-    observer_slot_sample_num_locked(e, idx, num);
+    observer_slot_sample_numeric_locked(e, idx, num);
     env_shared_fold_unlock();
 }
 
@@ -1184,119 +1279,63 @@ void eigs_obs_gate_stats_report(void) {
 #endif
 }
 
+void observer_slot_update_numeric(Env *e, int idx, EigsSlot num) {
+    eigs_obs_count_call();
+    if (!eigs_obs_gate_open() || !e || idx < 0) return;
+    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
+    if (observer_fold_is_shared(e)) observer_slot_update_numeric_shared(e, idx, num);
+    else observer_slot_update_numeric_locked(e, idx, num);
+}
+
 void observer_slot_update(Env *e, int idx, Value *newval) {
-    eigs_obs_count_call();   /* #972: before the gate test, by design */
-    /* #915: nothing compiled into this state can interrogate the observer, so
-     * skip the entropy walk entirely. compute_entropy recurses through every
-     * reachable list item and dict value, which is where the 88% goes.
-     *
-     * `obs_needed` is monotonic — set at compile time by chunk_reads_observer,
-     * and by eigs_obs_enable_runtime() at runtime, never cleared within a unit. The
-     * OTHER half of eigs_obs_gate_open(), the trace-history flag, is NOT:
-     * `record_history of 0` calls trace_history_disable() and closes it again
-     * mid-program. A previous version of this comment claimed the gate "cannot
-     * flicker mid-loop"; that is true of obs_needed and false of the pair, and
-     * a critic executed the flicker. `record_history` is now in OBS_BUILTINS so
-     * a program that names it opens the gate at COMPILE time and the flicker
-     * cannot change an answer. */
+    if (newval && val_is_number(newval)) {
+        EigsSlot num = newval->type == VAL_INT ? slot_from_int(VAL_I64_RAW(newval))
+                                              : slot_from_f64(VAL_F64_RAW(newval));
+        observer_slot_update_numeric(e, idx, num);
+        slot_decref(num);
+        return;
+    }
+    eigs_obs_count_call();
     if (!eigs_obs_gate_open()) return;
-    double entropy = compute_entropy(newval); /* outside the #607 hold */
+    double entropy = compute_entropy(newval);
     if (!e || idx < 0) return;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
     if (observer_fold_is_shared(e)) {
-        if (newval && val_is_number(newval)) {
-            observer_slot_update_value_num_shared(e, idx, newval, entropy);
-        } else {
-            ObserverEqualitySnapshot eq = observer_equality_snapshot(newval);
-            observer_slot_update_shared(e, idx, entropy, &eq);
-            val_decref(eq.snapshot);
-        }
-    } else {
-        observer_slot_update_locked(e, idx, newval, entropy);
-    }
+        ObserverEqualitySnapshot eq = observer_equality_snapshot(newval);
+        observer_slot_update_shared(e, idx, entropy, &eq);
+        val_decref(eq.snapshot);
+    } else observer_slot_update_locked(e, idx, newval, entropy);
 }
 
-/* #262 Phase-3 D: update a binding's observer slot from a raw immediate
- * number, so the default path can observe without promoting the num to a
- * tracked Value. Same trajectory math as observer_slot_update. */
-void observer_slot_update_num(Env *e, int idx, double num) {
-    eigs_obs_count_call();   /* #972 */
-    if (!eigs_obs_gate_open()) return;           /* #915 — see observer_slot_update */
-    double entropy = entropy_of_num(num); /* outside the #607 hold */
+void observer_slot_sample_numeric_gated(Env *e, int idx, EigsSlot num) {
     if (!e || idx < 0) return;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
-    if (observer_fold_is_shared(e)) {
-        observer_slot_update_num_shared(e, idx, num, entropy);
-    } else {
-        observer_slot_update_num_locked(e, idx, num, entropy);
-    }
-}
-
-/* #1049: the ELIDED assignment — what an `unobserved:` block still records.
- *
- * The block exists to skip the expensive half of an observation: the entropy
- * walk (entropy_of_num's two log2s for a scalar, compute_entropy's
- * O(children) pass for a container) and the dH bookkeeping built on it. It
- * used to skip the whole update, so an elided assignment was ABSENT from the
- * value window, and every value-channel verdict (`report`, the six predicates
- * on a numeric binding, `report_value`, a trajectory snapshot's rel/raw
- * lists) differed from the unelided program until the missing sample would
- * have aged out of the 10-deep window: an elided `b is 0.0` initialiser
- * moved the window-fill boundary by one read, a mid-stream elision merged two
- * steps into one. A performance annotation was changing answers.
- *
- * So the O(1) half still runs here: a scalar's sample enters the value ring
- * (observer_slot_record_value — one subtraction, one division, two ring
- * writes, no log2), and the slot counts as having a trajectory (`used`,
- * with obs_age untouched so the next OBSERVED assignment still seeds the
- * entropy channel as a first observation). A non-numeric value only flips
- * the route bit (v_last) the way an observed one would, so a binding rebound
- * from number to container inside the block routes to the entropy channel
- * exactly as it does outside — nothing is walked. What is NOT recorded:
- * entropy, dH, the dH window, obs_age, the tape's observer snapshot, and the
- * bare-predicate alias (g_last_obs_slot_*) — that alias is deliberately left
- * on the last OBSERVED binding, because shielding a bare `loop while not
- * converged` from scratch work is one of the block's documented uses. The
- * entropy-channel readers (`why`/`how`, `observe`'s dH pair, a snapshot's
- * `dh` list, `classify of [t, "entropy"]`, and `report`/predicates on a
- * NON-numeric binding) therefore remain elision-sensitive; PREDICATES.md
- * says so. Gated by the same #915 observer gate as the full update: a
- * program nothing in which reads the observer still pays nothing. */
-void observer_slot_sample_num_gated(Env *e, int idx, double num) {
-    if (!e || idx < 0) return;
-    if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
-    if (observer_fold_is_shared(e)) {
-        observer_slot_sample_num_shared(e, idx, num);
-    } else {
-        observer_slot_sample_num_locked(e, idx, num);
-    }
+    if (observer_fold_is_shared(e)) observer_slot_sample_numeric_shared(e, idx, num);
+    else observer_slot_sample_numeric_locked(e, idx, num);
 }
 
 void observer_slot_sample_gated(Env *e, int idx, Value *newval) {
-    if (newval && val_is_number(newval)) {     /* #1758: an int box as its double */
-        observer_slot_sample_num_gated(e, idx, newval->type == VAL_INT ? (double)VAL_I64_RAW(newval)
-                                                                       : VAL_F64_RAW(newval));
+    if (newval && val_is_number(newval)) {
+        EigsSlot num = newval->type == VAL_INT ? slot_from_int(VAL_I64_RAW(newval))
+                                              : slot_from_f64(VAL_F64_RAW(newval));
+        observer_slot_sample_numeric_gated(e, idx, num);
+        slot_decref(num);
         return;
     }
     if (!e || idx < 0) return;
     if (idx >= e->obs_cap && !observer_obs_grow(e, idx)) return;
-    if (observer_fold_is_shared(e)) {
-        observer_slot_sample_shared(e, idx);
-    } else {
-        observer_slot_sample_locked(e, idx);
-    }
+    if (observer_fold_is_shared(e)) observer_slot_sample_shared(e, idx);
+    else observer_slot_sample_locked(e, idx);
 }
 
-void observer_slot_sample_num(Env *e, int idx, double num) {
-    eigs_obs_count_call();   /* #972 */
-    if (!eigs_obs_gate_open()) return;
-    observer_slot_sample_num_gated(e, idx, num);
+void observer_slot_sample_numeric(Env *e, int idx, EigsSlot num) {
+    eigs_obs_count_call();
+    if (eigs_obs_gate_open()) observer_slot_sample_numeric_gated(e, idx, num);
 }
 
 void observer_slot_sample(Env *e, int idx, Value *newval) {
-    eigs_obs_count_call();   /* #972 */
-    if (!eigs_obs_gate_open()) return;
-    observer_slot_sample_gated(e, idx, newval);
+    eigs_obs_count_call();
+    if (eigs_obs_gate_open()) observer_slot_sample_gated(e, idx, newval);
 }
 
 /* #1044: per-binding window override. Only the OVERRIDE is written — the
@@ -1324,8 +1363,10 @@ void observer_slot_reset_bounded(Env *e, int max_retain_cap) {
     vm_obs_slot_dropped(e);   /* invalidate the VM's last-observed-slot tracker */
     for (int i = 0; i < e->obs_cap; i++) {
         free(e->obs[i].dh_window);
-        free(e->obs[i].v_window);   /* #294 value-signal window */
-        free(e->obs[i].vr_window);  /* #422 raw-step window */
+        free(e->obs[i].v_rel);   /* #294 value-signal window */
+        free(e->obs[i].v_exact);
+        free(e->obs[i].v_values);
+        free(e->obs[i].v_raw);  /* #422 raw-step window */
         val_decref(e->obs[i].eq_last);
         free(e->obs[i].eq_window);
     }
@@ -1451,6 +1492,47 @@ static int obs_num_bounded_oscillating(const ObserverSlot *s) {
     }
     if (path <= floor_eps) return 0;
     return (reversals >= 2 && fabs(net) <= 0.3 * path) ? 1 : 0;
+}
+
+/* The W+1 retained input values are authoritative for the standard tests.
+ * They cannot be recovered by inverting rounded or non-finite deltas. */
+static size_t obs_num_value_count(const ObserverSlot *s) {
+    size_t n = (size_t)observer_slot_window(s) + 1;
+    return s->values_count < n ? s->values_count : n;
+}
+
+static int obs_num_finite_window(const ObserverSlot *s) {
+    size_t n = obs_num_value_count(s);
+    for (size_t i = 0; i < n; i++)
+        if (!isfinite(observer_slot_value_get(s, i).value)) return 0;
+    return n != 0;
+}
+
+static int obs_num_opposite_inf(const ObserverSlot *s) {
+    size_t n = obs_num_value_count(s);
+    for (size_t i = 0; i < n; i++) {
+        double v = observer_slot_value_get(s, i).value;
+        if (isinf(v) && !!signbit(v) != !!signbit(s->last_value)) return 1;
+    }
+    return 0;
+}
+
+static double obs_num_exact_diameter(const ObserverSlot *s) {
+    int64_t lo = observer_slot_value_get(s, 0).integer, hi = lo;
+    size_t n = obs_num_value_count(s);
+    for (size_t i = 1; i < n; i++) {
+        int64_t v = observer_slot_value_get(s, i).integer;
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+    }
+    /* Unsigned subtraction represents the exact nonnegative diameter even
+     * when it exceeds INT64_MAX. Conversion happens only for the tolerance. */
+    return (double)((uint64_t)hi - (uint64_t)lo);
+}
+
+static size_t obs_num_value_count(const ObserverSlot *s) {
+    size_t n = (size_t)observer_slot_window(s) + 1;
+    return s->values_count < n ? s->values_count : n;
 }
 
 static int obs_num_oscillating(const ObserverSlot *s) {
@@ -1638,7 +1720,7 @@ static int obs_entropy_converged(const ObserverSlot *s) {
     if (obs_dh_count(s) < N) return 0;
     for (size_t i = 0; i < N; i++)
         if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_zero) return 0;
-    return (s->entropy < g_obs_h_low) ? 1 : 0;
+    return (s->ent_entropy < g_obs_h_low) ? 1 : 0;
 }
 
 int observer_slot_converged(const ObserverSlot *s) {
@@ -1709,7 +1791,7 @@ int observer_slot_oscillating(const ObserverSlot *s) {
 static int obs_entropy_stable(const ObserverSlot *s) {
     size_t cnt = s ? obs_dh_count(s) : 0;
     if (cnt < (size_t)observer_slot_window(s)) return 0;
-    if (s->entropy < g_obs_h_low) return 0;
+    if (s->ent_entropy < g_obs_h_low) return 0;
     for (size_t i = 0; i < cnt; i++)
         if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_small) return 0;
     for (size_t i = 0; i + 1 < cnt; i++) {
@@ -1776,8 +1858,8 @@ const char *observer_slot_report_entropy(const ObserverSlot *s) {
      * documented settled-plus-hold recipe. */
     if (obs_dh_count(s) >= (size_t)observer_slot_window(s)) return "moving";
     /* Partial-window best-effort label (mirrors builtin_report's tail). */
-    if (fabs(s->dH) < g_obs_dh_zero) return "equilibrium";
-    if (fabs(s->dH) < g_obs_dh_small && s->entropy >= g_obs_h_low) return "stable";
+    if (fabs(s->ent_dH) < g_obs_dh_zero) return "equilibrium";
+    if (fabs(s->ent_dH) < g_obs_dh_small && s->ent_entropy >= g_obs_h_low) return "stable";
     return "stable";
 }
 
@@ -1824,42 +1906,24 @@ const char *observer_slot_report_value(const ObserverSlot *s) {
 /* #711: exported for call sites that already hold the module-env lock
  * (the SIGUSR1 dump) and so cannot go through observer_entropy_now —
  * the mutex is not recursive. Single source of truth stays entropy_of_num. */
-double observer_entropy_of_num(double num) { return entropy_of_num(num); }
-
 int observer_entropy_now(Env *e, int idx, double *out) {
     if (!e || idx < 0) return 0;
-    int kind = 0;              /* 0 = none, 1 = num, 2 = heap */
-    double num = 0.0;
     Value *held = NULL;
-    env_dump_lock(e);          /* exported #607 lock wrapper (defined below) */
+    env_dump_lock(e);
     if (idx < e->count) {
         EigsSlot s = e->values[idx];
-        if (slot_is_f64(s)) {
-            kind = 1;
-            num = SLOT_F64_RAW(s);
-        } else if (slot_is_smi(s)) {
-            kind = 1;          /* #1758: the numeric channel, as a double */
-            num = (double)slot_smi_val(s);
-        } else if (slot_is_bool(s)) {
-            held = make_bool(slot_as_bool(s));   /* #1637: immortal; incref no-op */
-            kind = 2;
-        } else if (slot_is_ptr(s)) {
+        if (slot_is_bool(s)) held = make_bool(slot_as_bool(s));
+        else if (slot_is_ptr(s)) {
             Value *v = slot_as_ptr(s);
-            if (v && v->type != VAL_NULL) {
-                held = v;
-                val_incref(held);
-                kind = 2;
+            if (v && v->type != VAL_NULL && !val_is_number(v)) {
+                held = v; val_incref(held);
             }
         }
     }
     env_dump_unlock(e);
-    if (kind == 0) return 0;
-    if (kind == 1) {
-        *out = entropy_of_num(num);
-    } else {
-        *out = compute_entropy(held);
-        val_decref(held);
-    }
+    if (!held) return 0;
+    *out = compute_entropy(held);
+    val_decref(held);
     return 1;
 }
 
@@ -1873,142 +1937,128 @@ int observer_entropy_now(Env *e, int idx, double *out) {
  * JSON-able, tape-visible as <dict:N>) rather than an opaque handle. */
 
 Value *observer_slot_trajectory(const ObserverSlot *s) {
-    Value *out = make_dict(10);
-    if (!out) return NULL;
-    dict_set_owned(out, "kind", make_str("trajectory"));
-    int vcnt = (s && s->v_window)  ? (int)obs_v_count(s)  : 0;
-    int dcnt = (s && s->dh_window) ? (int)obs_dh_count(s) : 0;
-    Value *rel = make_list_heap(vcnt > 0 ? vcnt : 1);
-    Value *raw = make_list_heap(vcnt > 0 ? vcnt : 1);
-    Value *dh  = make_list_heap(dcnt > 0 ? dcnt : 1);
-    /* windows read newest-first (offset 0 = most recent); emit oldest-first
-     * so the lists read chronologically, like a history. */
-    for (int i = vcnt - 1; i >= 0; i--) {
+    Value *out = make_dict(16);
+    int numeric = s && s->v_last && s->v_used;
+    int vc = s ? (int)obs_v_count(s) : 0;
+    int dc = s && !numeric ? (int)obs_dh_count(s) : 0;
+    Value *rel = make_list_heap(vc + 1), *raw = make_list_heap(vc + 1);
+    Value *exact = make_list_heap(vc + 1), *values = make_list_heap(vc + 2);
+    Value *dh = make_list_heap(dc + 1);
+    for (int i = vc - 1; i >= 0; i--) {
         list_append_owned(rel, make_float(observer_slot_v_get(s, (size_t)i)));
-        list_append_owned(raw, make_float(observer_slot_vr_get(s, (size_t)i)));
+        list_append_owned(raw, observer_number_value(observer_slot_step(s, (size_t)i)));
+        list_append_owned(exact, make_bool(observer_slot_exact_get(s, (size_t)i)));
     }
-    for (int i = dcnt - 1; i >= 0; i--)
+    int xc = s ? s->values_count : 0;
+    if (xc > observer_slot_window(s) + 1) xc = observer_slot_window(s) + 1;
+    for (int i = xc - 1; i >= 0; i--)
+        list_append_owned(values, observer_number_value(observer_slot_value_get(s, (size_t)i)));
+    for (int i = dc - 1; i >= 0; i--)
         list_append_owned(dh, make_float(observer_slot_window_get(s, (size_t)i)));
-    dict_set_owned(out, "rel", rel);
-    dict_set_owned(out, "raw", raw);
-    dict_set_owned(out, "dh",  dh);
-    dict_set_owned(out, "entropy",      make_float(s ? s->entropy : 0.0));
-    dict_set_owned(out, "dH",           make_float(s ? s->dH : 0.0));
-    dict_set_owned(out, "last_entropy", make_float(s ? s->last_entropy : 0.0));
-    dict_set_owned(out, "last_value",   make_float((s && s->v_used) ? s->last_value : 0.0));
-    dict_set_owned(out, "observed",     make_bool(s && s->used != 0));     /* #1637 */
-    dict_set_owned(out, "numeric",      make_bool(s && s->v_used != 0));
-    /* #1044: the depth this slot classifies over travels with the snapshot,
-     * so `classify of (trajectory of x)` agrees with `report of x` for a
-     * binding carrying a per-binding override. */
-    dict_set_owned(out, "window",       make_int(observer_slot_window(s)));
+    dict_set_owned(out, "kind", make_str("trajectory"));
+    dict_set_owned(out, "rel", rel); dict_set_owned(out, "raw", raw);
+    dict_set_owned(out, "exact", exact); dict_set_owned(out, "values", values);
+    dict_set_owned(out, "dh", dh);
+    dict_set_owned(out, "entropy", numeric ? make_null() : make_float(s ? s->ent_entropy : 0.0));
+    dict_set_owned(out, "dH", numeric ? make_null() : make_float(s ? s->ent_dH : 0.0));
+    dict_set_owned(out, "last_entropy", numeric ? make_null() : make_float(s ? s->ent_last_entropy : 0.0));
+    dict_set_owned(out, "last_value", s && s->v_used ?
+        observer_number_value((ObserverNumber){s->last_value, s->last_int, s->last_is_int}) : make_null());
+    dict_set_owned(out, "best", s && s->best_used ? make_float(s->best) : make_null());
+    dict_set_owned(out, "since", s && s->since != UINT8_MAX ? make_int(s->since) : make_null());
+    dict_set_owned(out, "observed", make_bool(s && s->used));
+    dict_set_owned(out, "numeric", make_bool(numeric));
+    dict_set_owned(out, "window", make_int(observer_slot_window(s)));
     return out;
 }
 
-static Value *dict_get_view_local(Value *dict, const char *key, EigsView *view) {
-    return dict_get_view(dict, key, view);
+void observer_slot_dispose(ObserverSlot *s) {
+    free(s->v_rel); free(s->v_raw); free(s->v_exact); free(s->v_values);
+    free(s->dh_window); free(s->eq_window); val_decref(s->eq_last);
+    memset(s, 0, sizeof *s);
 }
 
-/* Rebuild a classifiable slot from a snapshot dict. Returns 1 and fills
- * *out (windows malloc'd — caller frees dh_window/v_window/vr_window) when
- * the dict is a well-formed trajectory; 0 otherwise. Wrong shapes are the
- * CALLER's error to raise loudly — no silent tolerance here. */
 int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
     memset(out, 0, sizeof *out);
+    out->since = UINT8_MAX;
     if (!dict || dict->type != VAL_DICT) return 0;
-    EIGS_VIEW(kind_view); EIGS_VIEW(rel_view); EIGS_VIEW(raw_view); EIGS_VIEW(dh_view);
-    Value *kind = dict_get_view_local(dict, "kind", &kind_view);
-    if (!kind || kind->type != VAL_STR || strcmp(kind->data.str, "trajectory") != 0)
-        return 0;
-    Value *rel = dict_get_view_local(dict, "rel", &rel_view);
-    Value *raw = dict_get_view_local(dict, "raw", &raw_view);
-    Value *dh  = dict_get_view_local(dict, "dh", &dh_view);
-    if (!rel || rel->type != VAL_LIST || !raw || raw->type != VAL_LIST ||
-        !dh || dh->type != VAL_LIST)
-        return 0;
-    /* #1044: a snapshot carries the depth it was taken at (a hand-built dict
-     * may omit it — the state default then applies). Out of range means a
-     * malformed snapshot, refused like any other wrong shape. */
-    {
-        EIGS_VIEW(w_view);
-        Value *w = dict_get_view_local(dict, "window", &w_view);
-        if (w) {
-            /* #1758: a number of either kind, read through the bridge */
-            double wd = val_is_number(w) ? eigs_float_arg(w, __func__) : 0.0;
-            if (!val_is_number(w) || wd < OBSERVER_WINDOW_MIN ||
-                wd > OBSERVER_WINDOW_MAX || wd != (int)wd)
-                return 0;
-            out->win_override = (uint8_t)(int)wd;
+    EIGS_VIEW(kv); EIGS_VIEW(rv); EIGS_VIEW(bv); EIGS_VIEW(dv);
+    EIGS_VIEW(ev); EIGS_VIEW(xv); EIGS_VIEW(nv); EIGS_VIEW(ov); EIGS_VIEW(wv);
+    Value *kind = dict_get_view(dict, "kind", &kv);
+    Value *rel = dict_get_view(dict, "rel", &rv), *raw = dict_get_view(dict, "raw", &bv);
+    Value *dh = dict_get_view(dict, "dh", &dv), *ex = dict_get_view(dict, "exact", &ev);
+    Value *xs = dict_get_view(dict, "values", &xv), *numeric = dict_get_view(dict, "numeric", &nv);
+    Value *observed = dict_get_view(dict, "observed", &ov), *win = dict_get_view(dict, "window", &wv);
+    if (!kind || kind->type != VAL_STR || strcmp(kind->data.str, "trajectory") ||
+        !rel || rel->type != VAL_LIST || !raw || raw->type != VAL_LIST ||
+        !dh || dh->type != VAL_LIST || (numeric && numeric->type != VAL_BOOL) ||
+        (observed && observed->type != VAL_BOOL)) return 0;
+    if (win) {
+        if (!val_is_number(win)) return 0;
+        double n = eigs_float_arg(win, __func__);
+        if (!isfinite(n) || n < OBSERVER_WINDOW_MIN || n > OBSERVER_WINDOW_MAX || n != floor(n)) return 0;
+        out->win_override = (uint8_t)n;
+    }
+    int n = observer_slot_window(out), vc = rel->data.list.count;
+    if (raw->data.list.count != vc) return 0;
+    out->used = observed ? observed->data.boolean : 1;
+    out->v_used = out->v_last = numeric ? numeric->data.boolean : vc != 0;
+    if (out->v_used) {
+        if (!ex || ex->type != VAL_LIST || ex->data.list.count != vc ||
+            !xs || xs->type != VAL_LIST || xs->data.list.count != vc + 1) return 0;
+        /* Rebuild the signal by recording the retained inputs, then restore
+         * D2's history-wide scalars. Never infer values from rounded deltas. */
+        int xc = xs->data.list.count, first = xc > n + 1 ? xc - n - 1 : 0;
+        out->v_used = 0;
+        for (int i = first; i < xc; i++) {
+            EigsSlot v = list_slot(xs, i);
+            if (!observer_slot_is_numeric(v)) goto bad;
+            observer_slot_record_num(out, v);
+        }
+        for (int i = first; i < vc; i++) {
+            EigsSlot r = list_slot(rel, i), d = list_slot(raw, i), e = list_slot(ex, i);
+            if (!observer_slot_is_numeric(r) || !observer_slot_is_numeric(d) || !slot_is_bool(e)) goto bad;
+            size_t back = (size_t)(vc - 1 - i);
+            int j = (int)out->v_window_head - 1 - (int)back;
+            while (j < 0) j += out->v_cap;
+            out->v_rel[j] = eigs_slot_float(r, __func__);
+            out->v_raw[j] = eigs_slot_float(d, __func__);
+            if (slot_as_bool(e) && !out->v_exact[j]) goto bad;
+            out->v_exact[j] = (uint8_t)slot_as_bool(e);
         }
     }
-    const int N = observer_slot_window(out);
-    /* Only the most recent N entries matter — a hand-built longer list
-     * classifies identically to its tail, same ring semantics. */
-    int vcnt = rel->data.list.count;
-    if (raw->data.list.count < vcnt) vcnt = raw->data.list.count;
-    int vstart = vcnt > N ? vcnt - N : 0;
-    out->v_window  = xcalloc((size_t)N, sizeof(double));
-    out->vr_window = xcalloc((size_t)N, sizeof(double));
-    out->v_cap = out->dh_cap = (uint8_t)N;
-    for (int i = vstart; i < vcnt; i++) {
-        EigsSlot a = list_slot(rel, i), b = list_slot(raw, i);
-        ValType ta = slot_type(a), tb = slot_type(b);   /* #1758: either number kind */
-        if ((ta != VAL_FLOAT && ta != VAL_INT) || (tb != VAL_FLOAT && tb != VAL_INT)) {
-            free(out->v_window); free(out->vr_window);
-            memset(out, 0, sizeof *out);
-            return 0;
-        }
-        out->v_window[out->v_window_count]  = eigs_slot_float(a, __func__);
-        out->vr_window[out->v_window_count] = eigs_slot_float(b, __func__);
-        out->v_window_count++;
+    out->dh_window = xcalloc((size_t)n, sizeof(double)); out->dh_cap = (uint8_t)n;
+    int dc = dh->data.list.count, first = dc > n ? dc - n : 0;
+    for (int i = first; i < dc; i++) {
+        EigsSlot v = list_slot(dh, i);
+        if (!observer_slot_is_numeric(v)) goto bad;
+        out->dh_window[out->dh_window_count++] = eigs_slot_float(v, __func__);
     }
-    out->v_window_head = (uint8_t)(out->v_window_count % N);
-    int dcnt = dh->data.list.count;
-    int dstart = dcnt > N ? dcnt - N : 0;
-    out->dh_window = xcalloc((size_t)N, sizeof(double));
-    for (int i = dstart; i < dcnt; i++) {
-        EigsSlot a = list_slot(dh, i);
-        ValType ta = slot_type(a);
-        if (ta != VAL_FLOAT && ta != VAL_INT) {
-            free(out->v_window); free(out->vr_window); free(out->dh_window);
-            memset(out, 0, sizeof *out);
-            return 0;
-        }
-        out->dh_window[out->dh_window_count++] = eigs_slot_float(a, __func__);
+    out->dh_window_head = (uint8_t)(out->dh_window_count % n);
+    const char *keys[] = {"entropy", "dH", "last_entropy", "best"};
+    double *dst[] = {&out->ent_entropy, &out->ent_dH, &out->ent_last_entropy, &out->best};
+    for (int i = 0; i < 4; i++) {
+        EIGS_VIEW(vv); Value *v = dict_get_view(dict, keys[i], &vv);
+        if (!v || v->type == VAL_NULL) continue;
+        if (!val_is_number(v)) goto bad;
+        *dst[i] = eigs_float_arg(v, __func__);
+        if (i == 3) { if (!isfinite(*dst[i])) goto bad; out->best_used = 1; }
     }
-    out->dh_window_head = (uint8_t)(out->dh_window_count % N);
-    /* #1637: the scalar fields are numbers and the two flags are bools, as
-     * `trajectory of x` writes them. Absent keeps the default; any other
-     * type is not a snapshot (the old code read a bool flag as "not a
-     * number" and defaulted `observed: false` to observed). */
-    static const char *const nums[] = {"entropy", "dH", "last_entropy", "last_value"};
-    double *dsts[] = {&out->entropy, &out->dH, &out->last_entropy, &out->last_value};
-    for (int k = 0; k < 4; k++) {
-        EIGS_VIEW(v_view);
-        Value *v = dict_get_view_local(dict, nums[k], &v_view);
-        if (!v) continue;
-        if (!val_is_number(v)) {
-            free(out->v_window); free(out->vr_window); free(out->dh_window);
-            memset(out, 0, sizeof *out);
-            return 0;
-        }
-        *dsts[k] = eigs_float_arg(v, __func__);   /* #1758: an int converts (the bridge) */
+    EIGS_VIEW(sv); Value *since = dict_get_view(dict, "since", &sv);
+    out->since = UINT8_MAX;
+    if (since && since->type != VAL_NULL) {
+        if (!val_is_number(since)) goto bad;
+        double age = eigs_float_arg(since, __func__);
+        if (!isfinite(age) || age < 0 || age > UINT8_MAX || age != floor(age)) goto bad;
+        out->since = (uint8_t)age;
     }
-    EIGS_VIEW(fo_view); EIGS_VIEW(fn_view);
-    Value *fo = dict_get_view_local(dict, "observed", &fo_view);
-    Value *fn = dict_get_view_local(dict, "numeric", &fn_view);
-    if ((fo && fo->type != VAL_BOOL) || (fn && fn->type != VAL_BOOL)) {
-        free(out->v_window); free(out->vr_window); free(out->dh_window);
-        memset(out, 0, sizeof *out);
-        return 0;
-    }
-    out->used = fo ? fo->data.boolean : 1;
-    out->v_used = fn ? fn->data.boolean : (out->v_window_count > 0);
-    /* A full slot re-fed through the classifiers needs obs_age > 0 so the
-     * partial-window fallbacks behave like a live slot's. */
     out->obs_age = out->dh_window_count + out->v_window_count;
     return 1;
+bad:
+    observer_slot_dispose(out);
+    return 0;
 }
+
 
 /* g_last_observer, g_builtin_call_env, g_unobserved_depth are EigsThread
  * fields; g_obs_dh_zero/small/h_low are EigsState fields. See the macros

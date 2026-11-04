@@ -82,7 +82,7 @@ import phase2_inventory as inv  # noqa: E402  (strip_c: one C-comment grammar)
 STATIC_INT_SOURCE_REF = '0c43ec88ca8915f9d365e3e63549cb1e322c76d3'
 ROUNDS = ['R1.1', 'R1.2', 'R1.3', 'R1.4', 'R1.5',
           'R1.6a', 'R1.6b', 'R1.6c', 'R1.6d', 'R1.6e', 'R1.6f', 'R1.6g', 'R1.6z', 'R1.7', 'R1.8',
-          'R2.1', 'R2.2', 'R2.3', 'R2.4', 'R2.5', 'R2.6', 'R3']
+          'R2.1', 'R2.2', 'R2.3', 'R2.4', 'R2.5', 'R2.6', 'R3.1', 'R3.2', 'R3.3', 'R3.4', 'R3']
 # Gates every mode runs: the token gate (a landed round's deleted tokens stay
 # deleted) and the inventory's own verdict, which includes the committed
 # docs/design/phase2-inventory.txt being exactly the generated one (#1804).

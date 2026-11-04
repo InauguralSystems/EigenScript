@@ -10,6 +10,7 @@
 #include "eigenscript.h"
 #include "trace.h"
 #include "tape_read.h"
+#include <errno.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -632,7 +633,14 @@ const char *tape_traj_feed(TapeTraj *tr, const Assign *a) {
     while (tr->ci < t->nobscfg && t->obscfg[tr->ci].rec <= a->rec)
         obs_cfg_apply(tr, &t->obscfg[tr->ci++]);
     if (!a->is_num) return NULL;
-    observer_slot_record_value(&tr->slot, a->num);
+    /* Digit-only tape tokens preserve the exact int64 kind. */
+    char *end;
+    errno = 0;
+    int64_t integer = strtoll(a->value, &end, 10);
+    EigsSlot value = !errno && *end == '\0' && end != a->value
+        ? slot_from_int(integer) : slot_from_f64(a->num);
+    observer_slot_record_num(&tr->slot, value);
+    slot_decref(value);
     tr->fed++;
     return observer_slot_report_value(&tr->slot);
 }
@@ -659,10 +667,7 @@ const char *tape_traj_settle(TapeTraj *tr, int pos) {
 }
 
 void tape_traj_end(TapeTraj *tr) {
-    free(tr->slot.v_window);
-    free(tr->slot.vr_window);
-    free(tr->slot.dh_window);
-    memset(&tr->slot, 0, sizeof tr->slot);
+    observer_slot_dispose(&tr->slot);
     obs_cfg_install(&tr->saved);
 }
 

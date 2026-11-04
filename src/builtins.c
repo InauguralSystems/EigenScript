@@ -846,8 +846,8 @@ Value* builtin_classify(Value *arg) {
                         : observer_slot_report_value(&s);
     Value *out = make_str(label ? label : "equilibrium");
     free(s.dh_window);
-    free(s.v_window);
-    free(s.vr_window);
+    free(s.v_rel);
+    free(s.v_raw);
     return out;
 }
 

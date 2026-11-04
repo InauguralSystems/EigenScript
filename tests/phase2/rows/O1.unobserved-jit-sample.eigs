@@ -1,0 +1,24 @@
+# ROW: O1.unobserved-jit-sample
+# ITEMS: O1
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop run PREDICATE_SLOT
+# OPS: ADD
+define run(n, a, b) as:
+    x is a
+    i is 0.0
+    unobserved:
+        loop while i < n:
+            x is b
+            x is a
+            i is i + 1.0
+    return [converged of x, stable of x, oscillating of x]
+p is 9007199254740992
+q is p + 1
+k is 0
+r is null
+loop while k < 60:
+    r is run of [0.0, p, q]
+    k is k + 1
+r is run of [30.0, p, q]
+print of r

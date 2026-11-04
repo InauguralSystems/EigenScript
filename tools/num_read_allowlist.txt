@@ -27,10 +27,7 @@ eigenscript.c|is_truthy|2|truthiness, switch case VAL_FLOAT and case VAL_INT (a 
 eigenscript.c|make_float_pooled|1|shared float constructors: writes the number of a Value it just typed VAL_FLOAT
 eigenscript.c|make_float_permanent|1|unpooled float constructor: writes the number of a Value it just typed VAL_FLOAT
 eigenscript.c|module_ns_project|1|mirror refresh: reads the binding slot after slot_is_f64 and stores it over a numeric mirror slot
-eigenscript.c|observer_entropy_now|1|observer entropy of a slot after slot_is_f64
 eigenscript.c|observer_slot_sample_gated|2|observer sample inside val_is_number: the VAL_INT box as its double, else the VAL_FLOAT (design 7)
-eigenscript.c|observer_slot_update_locked|2|observer update inside val_is_number: the VAL_INT box explicitly converts to the observer double channel, else the VAL_FLOAT; both reads follow their kind test (design 7, main #1867)
-eigenscript.c|observer_slot_update_value_num_shared|2|shared observer update called only by observer_slot_update inside val_is_number; the VAL_INT arm converts to double and the other arm reads VAL_FLOAT, while env_shared_fold_lock covers the fold (design 7, main #1867)
 eigenscript.c|values_equal_for_observation|8|non-raising observer snapshot equality: cross-kind pairs are proven VAL_INT/VAL_FLOAT before eigs_cmp_int_float; equal-kind switch arms read both operands only after their shared VAL_FLOAT or VAL_INT type proof (N2, main #1992)
 eigenscript.c|slot_from_value|2|NaN-boxing boundary, inside its VAL_FLOAT branch and its VAL_INT branch (an SMI in range, design 2.1)
 eigenscript.c|slot_to_value|1|NaN-boxing boundary after slot_is_f64
@@ -69,9 +66,7 @@ vm.c|jit_helper_dot_set|1|JIT helper: number store after slot_is_f64
 vm.c|jit_helper_index_get|3|JIT helper: index read after slot_is_f64 / VAL_FLOAT tests on index and element
 vm.c|jit_helper_index_set|5|JIT helper: index store after slot_is_f64 / VAL_FLOAT tests on index and value
 vm.c|jit_helper_local_dot_set|1|JIT helper: number store after slot_is_f64
-vm.c|obs_dump_scope|1|SIGUSR1 observer dump after slot_is_f64
 vm.c|obs_dump_value|3|SIGUSR1 observer dump after slot_is_f64 / case VAL_FLOAT / case VAL_INT (exact digits)
-vm.c|obs_slot_num|2|observer numeric channel (#1758): reads an immediate after slot_is_f64; an int explicitly converts to the observer double channel (precision can round above 2^53)
 vm.c|slot_bridge_unwrap|1|NaN-boxing boundary after slot_is_f64
 vm.c|slot_truthy|1|truthiness after slot_is_f64
 vm.c|vm_leaf_accessor_exec|1|leaf-accessor fast path: constants the scanner admitted only as VAL_FLOAT (chunk_scan_leaf_accessor) and values behind VAL_FLOAT tests
@@ -90,3 +85,5 @@ eigenscript.c|make_int|1|int constructor initializes the exact signed payload
 eigenscript.c|eigs_number_read|2|final checked reader: exact int and float payloads are read only behind their corresponding Value type tests (#1758 R1.6a)
 eigenscript.c|buffer_index_at|1|writes the raw buffer float into a borrowed stack facade; eigs_int_arg performs the finite/exact int conversion (#1758 R1.6a)
 builtins_host.c|replay_reader_size|2|v9 taped reader-size metadata: both exact int64 payload reads are dominated by v->type == VAL_INT; the first rejects negative sizes and the second returns the validated size without a float bridge (sync6 #1758 / main #1918)
+eigenscript.c|observer_number|2|numeric-only slot extractor: VAL_INT after observer_slot_is_numeric and non-f64 branch; SLOT_F64_RAW in f64 branch, preserving the original int payload
+eigenscript.c|observer_slot_update|2|val_is_number guard; VAL_INT selects the integer payload, otherwise VAL_FLOAT selects its float payload; the slot-taking fold preserves the original kind

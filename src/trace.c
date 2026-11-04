@@ -751,7 +751,7 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
         if (!h->obs_valid) return 0;
         double r = (kind == 3) ? h->entropy
                  : (kind == 4) ? h->dH
-                 : observer_settledness(h->dH);   /* #412: how = f(dH) */
+                 : observer_settledness_dh(h->dH);   /* #412: how = f(dH) */
         *out = slot_from_f64(r);
         return 1;
     }
@@ -821,7 +821,7 @@ int trace_query_when(int kind, const char *interned_name, long long ordinal,
         if (!o->obs_valid) return TRACE_WHEN_MISS;
         double r = (kind == 3) ? o->entropy
                  : (kind == 4) ? o->dH
-                 : observer_settledness(o->dH);   /* #412: how = f(dH) */
+                 : observer_settledness_dh(o->dH);   /* #412: how = f(dH) */
         *out = slot_from_f64(r);
         return TRACE_WHEN_HIT;
     }
