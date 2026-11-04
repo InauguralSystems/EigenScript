@@ -968,6 +968,15 @@ static int observer_slot_all_exact(const ObserverSlot *s) {
     return 1;
 }
 
+/* C99 fmax semantics (a NaN operand yields the other) without the libm
+ * import: the freestanding profile's allowlist (tools/freestanding_allowlist.txt)
+ * carries fabs but not fmax, and this file is in that profile. */
+static double obs_fmax(double a, double b) {
+    if (isnan(a)) return b;
+    if (isnan(b)) return a;
+    return a > b ? a : b;
+}
+
 /* R3.1 keeps the incumbent floor; R3.3 changes this one scale seam. */
 static double obs_floor_scale(const ObserverSlot *s) {
     (void)s;
@@ -1073,7 +1082,7 @@ void observer_slot_record_num(ObserverSlot *s, EigsSlot value) {
         int exact = v.is_int && s->last_is_int &&
             !__builtin_sub_overflow(v.integer, s->last_int, &delta);
         double raw = exact ? (double)delta : v.value - s->last_value;
-        double scale = fmax(fmax(fabs(v.value), fabs(s->last_value)),
+        double scale = obs_fmax(obs_fmax(fabs(v.value), fabs(s->last_value)),
                             obs_floor_scale(s));
         int h = s->v_window_head;
         s->v_rel[h] = raw / scale;
@@ -1090,8 +1099,8 @@ void observer_slot_record_num(ObserverSlot *s, EigsSlot value) {
     if (!s->best_used && isfinite(v.value)) {
         s->best = v.value; s->best_used = 1;
     } else if (s->best_used && isfinite(v.value) &&
-               (v.is_int ? eigs_cmp_int_float(v.integer, s->best - g_obs_dh_zero * fmax(fabs(s->best), scale)) < 0
-                         : v.value < s->best - g_obs_dh_zero * fmax(fabs(s->best), scale))) {
+               (v.is_int ? eigs_cmp_int_float(v.integer, s->best - g_obs_dh_zero * obs_fmax(fabs(s->best), scale)) < 0
+                         : v.value < s->best - g_obs_dh_zero * obs_fmax(fabs(s->best), scale))) {
         s->best = v.value; s->since = 0;
     } else if (s->since < UINT8_MAX) s->since++;
     s->last_value = v.value;
@@ -1572,7 +1581,7 @@ static int obs_num_diverging(const ObserverSlot *s) {
 static int obs_num_reference_diverging(const ObserverSlot *s, const double *w, size_t n, size_t full) {
     if (n < full) return 0;
     double scale = obs_floor_scale(s);
-    double tau = g_obs_dh_zero * fmax(fabs(w[n - 1]), scale);
+    double tau = g_obs_dh_zero * obs_fmax(fabs(w[n - 1]), scale);
     int positive = 1, negative = 1;
     for (size_t i = 1; i < n; i++) {
         double d = w[i] - w[i - 1];
@@ -1634,7 +1643,7 @@ static int obs_num_converged(const ObserverSlot *s) {
         if (v < lo) lo = v;
         if (v > hi) hi = v;
     }
-    return hi - lo <= g_obs_dh_zero * fmax(fabs(s->last_value), scale);
+    return hi - lo <= g_obs_dh_zero * obs_fmax(fabs(s->last_value), scale);
 }
 
 /* A trend needs evidence of motion: exact-zero steps are neutral because
@@ -1692,7 +1701,7 @@ static int obs_num_stable(const ObserverSlot *s) {
         if (v > hi) hi = v;
     }
     return hi / 2.0 - lo / 2.0
-        <= g_obs_dh_small * fmax(fabs(hi / 2.0 + lo / 2.0), scale);
+        <= g_obs_dh_small * obs_fmax(fabs(hi / 2.0 + lo / 2.0), scale);
 }
 
 /* Numeric `report`: the canonical priority order over the family above,
@@ -2069,13 +2078,16 @@ int observer_slot_from_trajectory(ObserverSlot *out, Value *dict) {
         *dst[i] = observer_snapshot_number(v);
         if (i == 3) { if (!isfinite(*dst[i])) goto bad; out->best_used = 1; }
     }
-    EIGS_VIEW(sv); Value *since = dict_get_view(dict, "since", &sv);
     out->since = UINT8_MAX;
-    if (since && since->type != VAL_NULL) {
-        if (!val_is_number(since)) goto bad;
-        double age = observer_snapshot_number(since);
-        if (!isfinite(age) || age < 0 || age > UINT8_MAX || age != floor(age)) goto bad;
-        out->since = (uint8_t)age;
+    {   /* Own block: clang refuses a goto that jumps past a cleanup-attributed
+         * declaration at function scope (the gotos above target `bad`). */
+        EIGS_VIEW(sv); Value *since = dict_get_view(dict, "since", &sv);
+        if (since && since->type != VAL_NULL) {
+            if (!val_is_number(since)) goto bad;
+            double age = observer_snapshot_number(since);
+            if (!isfinite(age) || age < 0 || age > UINT8_MAX || age != floor(age)) goto bad;
+            out->since = (uint8_t)age;
+        }
     }
     out->obs_age = out->dh_window_count + out->v_window_count;
     return 1;
