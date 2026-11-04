@@ -768,7 +768,7 @@ result).**
 | `vm.c:loop_iter_store` | smi-arm | public loop counts are exact ints; a same-kind in-range SMI update avoids boxing, while other counts publish make_int through the environment setter, with shared writes locked (S9-K1/sync 10 #1906) (D1) |
 | `vm.c:obs_dump_scope` | smi-arm | an int's entropy, as its double (D1) |
 | `vm.c:obs_dump_value` | smi-arm | an int prints as its exact digits (D1) |
-| `eigenscript.c:observer_slot_is_numeric` | smi-arm | R3.1 tests the numeric kind without converting the original slot (D1) |
+| `value_slot.h:observer_slot_is_numeric` | smi-arm | R3.1 tests the numeric kind without converting the original slot (D1) |
 | `eigenscript.c:observer_number` | smi-arm | R3.1 copies an int64 payload exactly and keeps its kind alongside the floating arithmetic view (D1) |
 | `eigenscript.c:observer_slot_from_trajectory` | guarded | R3.1 exact flags are bools after a slot_is_bool guard; numeric samples retain their original slot kind (D3) |
 | `vm.c:obs_slot_observable` | refuse | answered "pointer or bool", so an SMI was silently unobserved. R1.1 aborts on an SMI or a reserved tag; every caller routes a number to `obs_slot_num` first. A BOXED int is a pointer and goes to `observer_slot_update(Value *)`, whose number arm (eigenscript.c:785) R1.2's `VAL_NUM` rename forces (§7, O map) (D1 since R1.1: it names `slot_is_f64`) |

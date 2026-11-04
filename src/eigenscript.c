@@ -902,8 +902,9 @@ static ObserverNumber observer_slot_value_get(const ObserverSlot *s, size_t back
     return s->v_values[i];
 }
 
-static void observer_slot_v_ensure(ObserverSlot *s, int n) {
-    if (s->v_rel && s->v_cap >= n && s->values_cap >= n + 1) return;
+/* Capacity growth is cold: keep its allocation/copy register setup out of
+ * the per-sample recorder (R31 round4 cost attribution). */
+static __attribute__((noinline)) void observer_slot_v_grow(ObserverSlot *s, int n) {
     double *nv = xcalloc((size_t)n, sizeof(double));
     double *nr = xcalloc((size_t)n, sizeof(double));
     uint8_t *ne = xcalloc((size_t)n, sizeof(uint8_t));
@@ -927,6 +928,11 @@ static void observer_slot_v_ensure(ObserverSlot *s, int n) {
     s->values_head = (uint8_t)(xc % (n + 1));
     s->v_window_count = (uint8_t)cnt;
     s->v_window_head = (uint8_t)(cnt % n);
+}
+
+static inline void observer_slot_v_ensure(ObserverSlot *s, int n) {
+    if (!s->v_rel || s->v_cap < n || s->values_cap < n + 1)
+        observer_slot_v_grow(s, n);
 }
 
 /* #422 raw-step structure tests. Both require a FULL window and steps above
@@ -1059,10 +1065,6 @@ int observer_slot_quiet(const ObserverSlot *s) {
     return fabs(s->ent_dH) < g_obs_dh_zero;
 }
 
-int observer_slot_is_numeric(EigsSlot v) {
-    return slot_is_f64(v) || slot_is_smi(v) ||
-        (slot_is_heap(v) && slot_as_ptr(v)->type == VAL_INT);
-}
 
 static ObserverNumber observer_number(EigsSlot v) {
     ObserverNumber n = {0};

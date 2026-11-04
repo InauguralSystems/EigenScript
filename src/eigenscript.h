@@ -777,7 +777,7 @@ const char *observer_slot_report_value(const struct ObserverSlot *s);
  * per-binding trajectories from tape A records through the SAME classifier
  * the language uses — a reimplementation there could silently drift. */
 void observer_slot_record_num(struct ObserverSlot *s, EigsSlot v);
-int observer_slot_is_numeric(EigsSlot v);
+static inline int observer_slot_is_numeric(EigsSlot v);
 int observer_slot_quiet(const ObserverSlot *s);
 void observer_slot_dispose(ObserverSlot *s);
 /* #421 trajectory snapshots: capture a slot's observer windows into a plain

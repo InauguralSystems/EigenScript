@@ -11,3 +11,10 @@ Deviations:
 - D14: re-pin iLambdaAi report-alignment RA1/RA4 from moving to improving.
   D2 records the later0.5 as a new best; RA4’s third value remains within
   patience W. Program/source pin unchanged; only two golden lines move.
+
+Keep cold observer capacity growth out of the numeric recorder’s hot path
+and inline its shared numeric tag test. The single recorder, exact signal,
+value/step windows, D2 state and R31-2 stall semantics are unchanged.
+Local Callgrind attributes/removes redundant call/register setup; five
+existing cost reasons record remaining required work forR5. No numeric
+cost bound is set from local measurements; hosted re-declaration remains.

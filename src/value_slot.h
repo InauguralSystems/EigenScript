@@ -109,6 +109,12 @@ static inline Value   *slot_as_ptr(EigsSlot s) {
 #endif
     return (Value*)(uintptr_t)(s.u & SLOT_PAYLOAD_MASK);
 }
+
+/* Shared observer numeric tag test; no out-of-TU call per sample. */
+static inline int observer_slot_is_numeric(EigsSlot v) {
+    return slot_is_f64(v) || slot_is_smi(v) ||
+        (slot_is_heap(v) && slot_as_ptr(v)->type == VAL_INT);
+}
 #define slot_as_heap     slot_as_ptr
 /* The int an SMI holds, sign-extending payload bit 47 without an
  * implementation-defined right shift (design 2.1). */
