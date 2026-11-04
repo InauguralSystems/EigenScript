@@ -124,7 +124,9 @@ observer_red_complete() {
 
 # The design names these literal oracle keys in addition to each MAP row.
 # The frozen score/floor/labels/declarations are never edited by this half.
-# make propagates score.py's rc1 as rc2; a timeout/build failure is not red.
+# Build the anchor from the Git checkout, not the deliberately .git-free
+# mutant archive. As in ci_lane.sh, score.py's own rc1 is a verdict failure;
+# rc2, a timeout or a build failure is not a killed plant.
 observer_oracle_key() {
     case "$1" in
         r31-absolute-tolerance) echo 'int64_count@10 converged' ;;
@@ -141,7 +143,20 @@ observer_oracle() {
     [ "$mode" != transverse ] || return 0
     if [ "$mode" = green ] && [ "$oracle_green" -ne 0 ]; then return 0; fi
     log="$WORK/$id-$mode-oracle.log"
-    (cd "$dir" && $TMO make observer-oracle EXPECT=ieee,int64) > "$log" 2>&1
+    if [ "$mode" = green ]; then
+        (cd "$ROOT" && $TMO make observer-anchor) > "$log" 2>&1
+        rc=$?
+        if [ "$rc" -ne 0 ]; then
+            echo "  $id: pristine anchor setup failed (rc=$rc):"
+            tail -30 "$log" | sed 's/^/    | /'
+            return 1
+        fi
+    else
+        : > "$log"
+    fi
+    (cd "$dir" && $TMO python3 tools/observer_oracle/score.py src/eigenscript \
+        --floor tools/observer_oracle/floor.json --expect ieee,int64 \
+        --declared tests/phase2/oracle_expect.txt) >> "$log" 2>&1
     rc=$?
     if [ "$mode" = green ]; then
         if [ "$rc" -ne 0 ] || ! grep -qxF 'floor: 1872 verdicts checked, 0 lost' "$log" ||
@@ -154,7 +169,7 @@ observer_oracle() {
         echo '    unplanted oracle: floor: 1872 verdicts checked, 0 lost; CAPABILITY WRONG=0'
     else
         local pattern="^  CAPABILITY WRONG [^ ]+ $key: expected=(true|false)$"
-        if [ "$rc" -ne 2 ] || ! grep -Eq "$pattern" "$log" ||
+        if [ "$rc" -ne 1 ] || ! grep -Eq "$pattern" "$log" ||
            grep -q 'warning:\|build: \|DRIVER_TIMEOUT' "$log"; then
             echo "  $id: oracle did not give its named capability failure (rc=$rc):"
             tail -30 "$log" | sed 's/^/    | /'
