@@ -3090,6 +3090,21 @@ procedure. The named check must go red on its own message.
 | `how` on an infinite step uses the formula alone | row `O4.how-infinite-step` |
 | the `cfg` reader ignores fields after the fourth | row `O3.ocfg-no-hlow` |
 
+RULING R31-2 adds three separately counted stall-clause plants to that
+once-at-acceptance run (the original 19 plants retain their own count):
+
+| removed stall clause | named check that must go red |
+|---|---|
+| quiet last relative step | `stall-contract: FAIL quiet tier=...` on a shrinking tail seeded at n = 1000 |
+| non-finite current value | `stall-contract: FAIL nan tier=...` |
+| diverging window | `stall-contract: FAIL doubling tier=...` |
+
+The NaN isolates the non-finite term: infinity also reads `diverging`, so
+removing only the non-finite term cannot distinguish an inf witness. A
+runaway reaching infinity remains an unplanted control and must stall.
+The full harmonic tail from n = 1 is measured without an exit requirement;
+the quiet-clause fixture instead pins the stated 100 quiet-iteration rule.
+
 **Hosted list:**
 - the observer oracle lane;
 - the suite, release and ASan;

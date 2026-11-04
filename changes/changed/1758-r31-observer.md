@@ -22,3 +22,25 @@
     each with both verdicts; examined == declared == 4. A fifth or missing
     key fails. Frozen standard/reference implementations, instrument and
     labels are unchanged.
+
+
+  **R31-2 correction and disclosure:** The earlier delivery changed the
+  original HD1, LE1 and vendored doubling-runaway inputs to additive
+  trajectories. That concealed a regression from termination to timeout;
+  it was not a valid expectation migration. Restore those original inputs
+  and retain additive cases as additional HD1b/LE1b rows.
+
+  The one shared interpreter/JIT stall reader counts a numeric iteration
+  when its last relative step is quiet (`|r| < dh_zero`), OR its current
+  value is non-finite, OR its window is `diverging`. It never counts an
+  `oscillating` window or merely not-converged input, and resets otherwise.
+  Original HD1 now stalls at109 iterations (base110); LE1 at102 (base107).
+  This follows the amended reader rather than an artificial count delay.
+  A damped oscillation now exits through convergence. The harmonic tail
+  still stalls before certification; R31-2 records that as a residual.
+
+  Elided numeric samples still update the live value rings and running
+  best/since, but do not write trace-history observer snapshots. Their
+  line-qualified where/why/how remain null, matching the base. All four
+  design-named oracle plant messages are asserted in the repository's
+  once-at-acceptance plant gate; no external executable supplement remains.
