@@ -18,3 +18,10 @@ value/step windows, D2 state and R31-2 stall semantics are unchanged.
 Local Callgrind attributes/removes redundant call/register setup; five
 existing cost reasons record remaining required work forR5. No numeric
 cost bound is set from local measurements; hosted re-declaration remains.
+
+Correct the remaining elided-history expectations in test_unobserved.eigs
+to R31-2 F7: numeric samples update the live slot without patching history.
+Update both slot-layer population labels to the numeric classifier’s new
+value_slot.h home, preserving every test and the derived population check.
+Move the stall-contract checker under tests/phase2 so its long plant row
+remains keyed on a checker dependency under the existing trigger policy.

@@ -57,7 +57,7 @@ def main():
     ap.add_argument("--timeout", type=float, default=5)
     args = ap.parse_args()
     binary = str(args.binary.resolve())
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parents[2]
     records = []
     failed = 0
     env = {k: v for k, v in os.environ.items() if not k.startswith("EIGS_")}

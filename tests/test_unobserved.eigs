@@ -243,10 +243,12 @@ assert of [(counted908 of 0) == 4, "UO-908 fn-local count includes the block"]
 
 test_summary of null
 
-# R3.1: elided numeric assignments still patch temporal observer snapshots.
+# R31-2 F7: elided numeric samples update the live slot, not observer history.
+# The ordinal still names the assignment, but its observer triple is absent,
+# matching the c8e59616 base and the elided-line witness in the same suite.
 uhist is 1
 unobserved:
     uhist is 2
-assert of [(where is uhist when 2) == 2, "unobserved numeric historical value"]
-assert of [(why is uhist when 2) == 1, "unobserved numeric historical step"]
-assert of [(how is uhist when 2) == (0.001 / 0.501), "unobserved numeric historical settledness"]
+assert of [(where is uhist when 2) == null, "unobserved numeric historical value is absent"]
+assert of [(why is uhist when 2) == null, "unobserved numeric historical step is absent"]
+assert of [(how is uhist when 2) == null, "unobserved numeric historical settledness is absent"]

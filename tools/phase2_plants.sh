@@ -543,7 +543,7 @@ run_stall_plant() {
             tail -20 "$build" | sed 's/^/    | /'; break
         fi
         log="$WORK/$id-$mode.log"
-        (cd "$dir" && $TMO python3 -W error tests/test_stall_contract.py src/eigenscript --case "$case_name") > "$log" 2> "$log.err"
+        (cd "$dir" && $TMO python3 -W error tests/phase2/stall_contract.py src/eigenscript --case "$case_name") > "$log" 2> "$log.err"
         rc=$?
         if [ -s "$log.err" ]; then
             verdict=BROKEN; sed 's/^/    check stderr: /' "$log.err"; break
