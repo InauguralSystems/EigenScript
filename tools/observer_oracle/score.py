@@ -382,6 +382,14 @@ def witness(tier, rid, err, hot, held, c):
     return "VACUOUS", f"stops at {stop} (bked={bked}), not on a non-finite value computing x"
 
 
+def check_witnessed(res):
+    """A VACUOUS run, or a JIT tier that witnessed no native run, is a harness error."""
+    vacuous = [f"{t} {rid}@{c}: {d}" for (t, rid, c), (s, d) in res["wit"].items() if s == "VACUOUS"]
+    if vacuous or not all(any(k[0] == t and x[0] == "native" for k, x in res["wit"].items()) for t in ("jit", "osr")):
+        raise HarnessError(f"VACUOUS: {len(vacuous)} JIT-tier run(s) did not run their loop body natively"
+                           f" and stopped on finite values, first {vacuous[:1]}; or a tier witnessed no run")
+
+
 def probe(binary, code):
     try:
         p = run_group([binary, "-e", code], 30, env=scrubbed({}))
@@ -678,10 +686,7 @@ def main(argv):
     v = verdicts(res, corpus, labels)
     report(v, res, corpus, "ieee" if ieee else "clamp", caps, probes, labels,
            derive.scored_classes(corpus)[1], expect)
-    vacuous = [f"{t} {rid}@{c}: {d}" for (t, rid, c), (s, d) in res["wit"].items() if s == "VACUOUS"]
-    if vacuous or not all(any(k[0] == t and x[0] == "native" for k, x in res["wit"].items()) for t in ("jit", "osr")):
-        raise HarnessError(f"VACUOUS: {len(vacuous)} JIT-tier run(s) did not run their loop body natively"
-                           f" and stopped on finite values, first {vacuous[:1]}; or a tier witnessed no run")
+    check_witnessed(res)
     split = findings(res)
     print(f"\nFINDINGS (a reading, REPORTED ones included, that differs between arms; each one fails the run):"
           f" {len(split)}")
