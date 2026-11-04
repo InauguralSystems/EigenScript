@@ -27,6 +27,10 @@
 # R3.1 adds eleven observer plants. Each first runs its named MAP check on
 # an unmodified archive. The named assertion, four tiers, JIT witness and
 # finite control then run on the mutant and its assertion-deleted twin.
+# Four design-named oracle messages are also required on the mutant, after
+# one pristine oracle control. Reuse that built mutant for its transverse
+# assertion deletion; only the check changes, so a second product build is
+# neither needed nor allowed to change the artifact under measurement.
 # Prints one line per plant and `plants=N killed=N survived=0 broken=0
 # transverse=N`; exit 0 only for exactly that, with N > 0. --only ID runs
 # one named plant and its transverse control; a successful restricted run
@@ -50,7 +54,8 @@ while [ $# -gt 0 ]; do
                 1|2|3-json|3-store|overflow-wrap|stderr-noise|stdout-noise|return-type|\
                 r31-absolute-tolerance|r31-zero-floor|r31-smi-exact|r31-jit-inline-double|\
                 r31-nan-diverging|r31-inf-sign|r31-converged-incumbent|r31-improving-incumbent|\
-                r31-nan-report|r31-where-entropy|r31-how-infinite) ONLY="$2" ;;
+                r31-nan-report|r31-where-entropy|r31-how-infinite|\
+                r312-stall-quiet|r312-stall-nonfinite|r312-stall-diverging) ONLY="$2" ;;
                 *) echo "phase2-plants: FAIL: unknown plant id $2"; exit 2 ;;
             esac
             shift 2 ;;
@@ -87,6 +92,11 @@ PY
 }
 
 plants=0; killed=0; survived=0; broken=0; transverse=0; available=0; observer_green=0
+oracle_red=0; oracle_green=0
+EXPECTED_ORACLE=4
+stall_plants=0; stall_killed=0; stall_survived=0; stall_broken=0; stall_green=0; stall_available=0
+EXPECTED_STALL=3
+PRISTINE="$WORK/observer-pristine"
 EXPECTED_PLANTS=19
 EXPECTED_OBSERVER=11
 
@@ -97,7 +107,7 @@ observer_second_edit() {
         r31-absolute-tolerance)
             replace "$2/src/eigenscript.c" \
                 '        return obs_num_exact_diameter(s) <= 2.0 * g_obs_dh_small * scale;' \
-                '        return obs_num_exact_diameter(s) <= 2.0 * g_obs_dh_small * fmax(fabs(s->last_value), scale);' ;;
+                '        return obs_num_exact_diameter(s) <= 2.0 * g_obs_dh_small * obs_fmax(fabs(s->last_value), scale);' ;;
         r31-inf-sign)
             replace "$2/src/eigenscript.c" \
                 '    if (isinf(s->last_value)) return !obs_num_opposite_inf(s);' \
@@ -112,6 +122,50 @@ observer_red_complete() {
     }
 }
 
+# The design names these literal oracle keys in addition to each MAP row.
+# The frozen score/floor/labels/declarations are never edited by this half.
+# make propagates score.py's rc1 as rc2; a timeout/build failure is not red.
+observer_oracle_key() {
+    case "$1" in
+        r31-absolute-tolerance) echo 'int64_count@10 converged' ;;
+        r31-zero-floor) echo 'int64_count@10 diverging' ;;
+        r31-nan-diverging) echo 'ieee_nan@3 diverging' ;;
+        r31-inf-sign) echo 'ieee_inf_alternating@20 oscillating' ;;
+    esac
+}
+
+observer_oracle() {
+    local id="$1" mode="$2" dir="$3" key log rc
+    key=$(observer_oracle_key "$id")
+    [ -n "$key" ] || return 0
+    [ "$mode" != transverse ] || return 0
+    if [ "$mode" = green ] && [ "$oracle_green" -ne 0 ]; then return 0; fi
+    log="$WORK/$id-$mode-oracle.log"
+    (cd "$dir" && $TMO make observer-oracle EXPECT=ieee,int64) > "$log" 2>&1
+    rc=$?
+    if [ "$mode" = green ]; then
+        if [ "$rc" -ne 0 ] || ! grep -qxF 'floor: 1872 verdicts checked, 0 lost' "$log" ||
+           grep -q 'CAPABILITY WRONG' "$log"; then
+            echo "  $id: unplanted oracle failed (rc=$rc):"
+            tail -30 "$log" | sed 's/^/    | /'
+            return 1
+        fi
+        oracle_green=$((oracle_green + 1))
+        echo '    unplanted oracle: floor: 1872 verdicts checked, 0 lost; CAPABILITY WRONG=0'
+    else
+        local pattern="^  CAPABILITY WRONG [^ ]+ $key: expected=(true|false)$"
+        if [ "$rc" -ne 2 ] || ! grep -Eq "$pattern" "$log" ||
+           grep -q 'warning:\|build: \|DRIVER_TIMEOUT' "$log"; then
+            echo "  $id: oracle did not give its named capability failure (rc=$rc):"
+            tail -30 "$log" | sed 's/^/    | /'
+            return 1
+        fi
+        oracle_red=$((oracle_red + 1))
+        grep -E "$pattern" "$log" | head -3 | sed 's/^/    oracle red: /'
+        echo "    oracle $id: named=$key rc=$rc RED"
+    fi
+}
+
 # run_plant ID FILE OLD NEW CHECK_FILE CHECK_OLD CHECK_NEW FAIL_RE CHECK_CMD...
 run_plant() {
     local id="$1" file="$2" old="$3" new="$4" cfile="$5" cold="$6" cnew="$7" re="$8"
@@ -122,12 +176,24 @@ run_plant() {
     local verdict="" trans="" observer=0 modes="plant transverse"
     case "$id" in r31-*) observer=1; modes="green plant transverse" ;; esac
     for mode in $modes; do
-        local dir="$WORK/$id-$mode"
-        mkdir -p "$dir"
-        if ! git -C "$ROOT" archive "$REF" | tar -x -C "$dir"; then verdict=BROKEN; echo "  $id: archive of $REF failed"; break; fi
-        if [ "$mode" != green ]; then
-            if ! replace "$dir/$file" "$old" "$new"; then verdict=BROKEN; break; fi
-            if ! observer_second_edit "$id" "$dir"; then verdict=BROKEN; break; fi
+        local dir="$WORK/$id-$mode" fresh=1
+        # Observer greens share one untouched archive. A transverse check
+        # reuses its already measured mutant: only the assertion is removed.
+        if [ "$observer" -eq 1 ]; then
+            if [ "$mode" = green ]; then
+                dir="$PRISTINE"
+                [ ! -d "$dir" ] || fresh=0
+            elif [ "$mode" = transverse ]; then
+                dir="$WORK/$id-plant"; fresh=0
+            fi
+        fi
+        if [ "$fresh" -eq 1 ]; then
+            mkdir -p "$dir"
+            if ! git -C "$ROOT" archive "$REF" | tar -x -C "$dir"; then verdict=BROKEN; echo "  $id: archive of $REF failed"; break; fi
+            if [ "$mode" != green ]; then
+                if ! replace "$dir/$file" "$old" "$new"; then verdict=BROKEN; break; fi
+                if ! observer_second_edit "$id" "$dir"; then verdict=BROKEN; break; fi
+            fi
         fi
         if [ "$mode" = transverse ] && ! replace "$dir/$cfile" "$cold" "$cnew"; then trans=BROKEN; break; fi
         # Plant2 has two named halves. Delete its program assertion after the
@@ -151,6 +217,7 @@ run_plant() {
             fi
             observer_green=$((observer_green + 1))
             tail -1 "$log" | sed 's/^/    unplanted: /'
+            if ! observer_oracle "$id" "$mode" "$dir"; then verdict=BROKEN; break; fi
         elif [ "$mode" = plant ]; then
             if [ "$rc" -eq 124 ] || grep -q 'build: \|make phase2-slot-test exited\|^writer-map: BROKEN\|^nan-payload-map: BROKEN\|^observer-map: BROKEN' "$log"; then
                 verdict=BROKEN; echo "  $id: the check did not complete (rc=$rc):"; tail -20 "$log" | sed 's/^/    | /'
@@ -166,6 +233,7 @@ run_plant() {
                 grep '^nan-payload-map: row=' "$log" | sed 's/^/    program counts: /'
             fi
             [ "$verdict" = KILLED ] || break
+            if ! observer_oracle "$id" "$mode" "$dir"; then verdict=BROKEN; break; fi
         else
             if grep -Eq "$re" "$log"; then trans=NOT-TRANSVERSE; echo "  $id: the line still fired with its assertion deleted"
             elif [ "$rc" -ne 0 ] || grep -q 'build: \|make phase2-slot-test exited\|^writer-map: BROKEN\|^nan-payload-map: BROKEN\|^observer-map: BROKEN' "$log"; then
@@ -320,7 +388,7 @@ run_observer_plant() {
 # floor stays intact. observer_second_edit changes stable's matching site.
 run_observer_plant r31-absolute-tolerance src/eigenscript.c \
     '        return obs_num_exact_diameter(s) <= g_obs_dh_zero * scale;' \
-    '        return obs_num_exact_diameter(s) <= g_obs_dh_zero * fmax(fabs(s->last_value), scale);' \
+    '        return obs_num_exact_diameter(s) <= g_obs_dh_zero * obs_fmax(fabs(s->last_value), scale);' \
     O2.int-counter-2p53
 
 run_observer_plant r31-zero-floor src/eigenscript.c \
@@ -433,12 +501,83 @@ run_observer_plant r31-how-infinite src/eigenscript.c \
     '    /* PLANT: apply the relative-step formula even for an infinite step. */' \
     O4.how-infinite-step
 
+# R31-2 amends the shared stall reader. These three supplemental plants
+# isolate each OR-clause; they are separate from the19 registered signal/
+# predicate plants above. Their bounded checker names the failed case even
+# when a mutant loop cannot exit. The current-nonfinite witness is NaN:
+# an infinity would also satisfy diverging and would not isolate the clause.
+run_stall_plant() {
+    local id="$1" case_name="$2" old="$3" new="$4" mode dir log build rc verdict="" pattern
+    stall_available=$((stall_available + 1))
+    [ -z "$ONLY" ] || [ "$ONLY" = "$id" ] || return 0
+    stall_plants=$((stall_plants + 1))
+    for mode in green plant; do
+        if [ "$mode" = green ]; then dir="$PRISTINE"; else dir="$WORK/$id-plant"; fi
+        if [ ! -d "$dir" ]; then
+            mkdir -p "$dir"
+            if ! git -C "$ROOT" archive "$REF" | tar -x -C "$dir"; then
+                verdict=BROKEN; echo "  $id: archive of $REF failed"; break
+            fi
+        fi
+        if [ "$mode" = plant ] && ! replace "$dir/src/vm.c" "$old" "$new"; then verdict=BROKEN; break; fi
+        build="$WORK/$id-$mode-build.log"
+        (cd "$dir" && $TMO make) > "$build" 2>&1
+        rc=$?
+        if [ "$rc" -ne 0 ] || grep -q 'warning:' "$build"; then
+            verdict=BROKEN; echo "  $id: build did not finish warning-free (rc=$rc):"
+            tail -20 "$build" | sed 's/^/    | /'; break
+        fi
+        log="$WORK/$id-$mode.log"
+        (cd "$dir" && $TMO python3 -W error tests/test_stall_contract.py src/eigenscript --case "$case_name") > "$log" 2> "$log.err"
+        rc=$?
+        if [ -s "$log.err" ]; then
+            verdict=BROKEN; sed 's/^/    check stderr: /' "$log.err"; break
+        fi
+        pattern="^stall-contract: FAIL $case_name tier="
+        if [ "$mode" = green ]; then
+            if [ "$rc" -ne 0 ] || ! grep -qxF 'stall-contract: measured=4 failures=0' "$log"; then
+                verdict=BROKEN; echo "  $id: unplanted named check failed (rc=$rc):"
+                tail -20 "$log" | sed 's/^/    | /'; break
+            fi
+            stall_green=$((stall_green + 1))
+            tail -1 "$log" | sed "s/^/    unplanted $id: /"
+        elif [ "$rc" -eq 1 ] && [ "$(grep -Ec "$pattern" "$log")" -eq 4 ] &&
+             grep -qxF 'stall-contract: measured=4 failures=4' "$log"; then
+            verdict=KILLED
+            grep -E "$pattern" "$log" | sed 's/^/    red: /'
+        else
+            verdict=SURVIVED; echo "  $id: four own-message failures absent (rc=$rc):"
+            tail -20 "$log" | sed 's/^/    | /'
+        fi
+    done
+    case "$verdict" in
+        KILLED) stall_killed=$((stall_killed + 1)) ;;
+        SURVIVED) stall_survived=$((stall_survived + 1)) ;;
+        *) stall_broken=$((stall_broken + 1)); verdict=BROKEN ;;
+    esac
+    echo "stall plant $id: $verdict"
+}
+
+run_stall_plant r312-stall-quiet quiet \
+    '    return observer_slot_quiet(s) ||' \
+    '    return 0 || /* PLANT R31-2: no quiet-step backstop */'
+run_stall_plant r312-stall-nonfinite nan \
+    '           !isfinite(s->last_value) ||' \
+    '           0 || /* PLANT R31-2: no current-nonfinite backstop */'
+run_stall_plant r312-stall-diverging doubling \
+    '           observer_slot_diverging(s);' \
+    '           0; /* PLANT R31-2: no diverging-window backstop */'
+
 echo "plants=$plants killed=$killed survived=$survived broken=$broken transverse=$transverse"
 echo "observer-unplanted=$observer_green expected=$EXPECTED_OBSERVER"
+echo "observer-oracle=$oracle_red expected=$EXPECTED_ORACLE oracle-unplanted=$oracle_green"
+echo "stall-plants=$stall_plants killed=$stall_killed survived=$stall_survived broken=$stall_broken"
+echo "stall-unplanted=$stall_green expected=$EXPECTED_STALL"
 VERDICT_DONE=1
 if [ -n "$ONLY" ]; then
-    if [ "$plants" -eq 1 ] && [ "$killed" -eq 1 ] && [ "$transverse" -eq 1 ]; then
-        echo "phase2-plants: RESTRICTED selected=$ONLY examined=$plants available=$available; full population not checked"
+    if { [ "$plants" -eq 1 ] && [ "$killed" -eq 1 ] && [ "$transverse" -eq 1 ]; } ||
+       { [ "$stall_plants" -eq 1 ] && [ "$stall_killed" -eq 1 ] && [ "$stall_green" -eq 1 ]; }; then
+        echo "phase2-plants: RESTRICTED selected=$ONLY examined=$plants stall-examined=$stall_plants available=$available stall-available=$stall_available; full population not checked"
         exit 3
     fi
     echo "phase2-plants: FAIL: restricted plant $ONLY did not complete its named check and transverse control"
@@ -446,7 +585,10 @@ if [ -n "$ONLY" ]; then
 fi
 if [ "$available" -eq "$EXPECTED_PLANTS" ] && [ "$plants" -eq "$EXPECTED_PLANTS" ] && \
    [ "$killed" -eq "$plants" ] && [ "$transverse" -eq "$plants" ] && \
-   [ "$observer_green" -eq "$EXPECTED_OBSERVER" ]; then
+   [ "$observer_green" -eq "$EXPECTED_OBSERVER" ] &&
+   [ "$oracle_red" -eq "$EXPECTED_ORACLE" ] && [ "$oracle_green" -eq 1 ] &&
+   [ "$stall_available" -eq "$EXPECTED_STALL" ] && [ "$stall_plants" -eq "$EXPECTED_STALL" ] &&
+   [ "$stall_killed" -eq "$EXPECTED_STALL" ] && [ "$stall_green" -eq "$EXPECTED_STALL" ]; then
     echo "phase2-plants: PASS"; exit 0
 fi
 echo "phase2-plants: FAIL"; exit 1
