@@ -965,10 +965,26 @@ static double obs_floor_scale(const ObserverSlot *s) {
 }
 
 
+static int observer_slot_all_exact(const ObserverSlot *s) {
+    size_t cnt = s ? obs_v_count(s) : 0;
+    if (!cnt || !s->v_exact) return 0;
+    for (size_t i = 0; i < cnt; i++) {
+        int idx = (int)s->v_window_head - 1 - (int)i;
+        while (idx < 0) idx += s->v_cap;
+        if (!s->v_exact[idx]) return 0;
+    }
+    return 1;
+}
+
+static double observer_slot_noise_floor(const ObserverSlot *s) {
+    return observer_slot_all_exact(s) ? 0.0
+        : 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
+}
+
 static int observer_slot_raw_nonvanishing(const ObserverSlot *s) {
     size_t cnt = obs_v_count(s);
     if (cnt < 4) return 0;
-    double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
+    double floor_eps = observer_slot_noise_floor(s);
     size_t half = cnt / 2;
     double recent = 0.0, older = 0.0;
     for (size_t i = 0; i < half; i++)        recent += fabs(observer_slot_vr_get(s, i));
@@ -992,7 +1008,7 @@ static int observer_slot_raw_oscillating(const ObserverSlot *s) {
     if (!observer_slot_raw_nonvanishing(s)) return 0;
     size_t cnt = obs_v_count(s);
     const int FLIPS = (observer_slot_window(s) + 2) / 3;
-    double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
+    double floor_eps = observer_slot_noise_floor(s);
     int flips = 0;
     for (size_t i = 0; i + 1 < cnt; i++) {
         double a = observer_slot_vr_get(s, i);
@@ -1477,7 +1493,7 @@ static int obs_num_bounded_oscillating(const ObserverSlot *s) {
         obs_num_flags(s, &az, &asm_);
         if (az) return 0;
     }
-    double floor_eps = 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));
+    double floor_eps = observer_slot_noise_floor(s);
     double net = 0.0, path = 0.0, prev = 0.0;
     int reversals = 0, have_prev = 0;
     for (size_t i = 0; i < cnt; i++) {
@@ -1533,6 +1549,19 @@ static double obs_num_exact_diameter(const ObserverSlot *s) {
 static size_t obs_num_value_count(const ObserverSlot *s) {
     size_t n = (size_t)observer_slot_window(s) + 1;
     return s->values_count < n ? s->values_count : n;
+}
+
+static double obs_num_exact_diameter(const ObserverSlot *s) {
+    int64_t lo = observer_slot_value_get(s, 0).integer, hi = lo;
+    size_t n = obs_num_value_count(s);
+    for (size_t i = 1; i < n; i++) {
+        int64_t v = observer_slot_value_get(s, i).integer;
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+    }
+    /* Unsigned subtraction represents the exact nonnegative diameter even
+     * when it exceeds INT64_MAX. Conversion happens only for the tolerance. */
+    return (double)((uint64_t)hi - (uint64_t)lo);
 }
 
 static int obs_num_oscillating(const ObserverSlot *s) {
@@ -1616,6 +1645,8 @@ static int obs_num_improving(const ObserverSlot *s) {
 static int obs_num_converged(const ObserverSlot *s) {
     if (observer_slot_nonfinite(s)) return 0;
     if (obs_v_count(s) < (size_t)observer_slot_window(s)) return 0;
+    if (observer_slot_all_exact(s))
+        return obs_num_exact_diameter(s) <= g_obs_dh_zero * obs_floor_scale(s);
     int all_zero, all_small;
     obs_num_flags(s, &all_zero, &all_small);
     if (!all_zero) return 0;
@@ -1670,6 +1701,8 @@ static int obs_num_stable(const ObserverSlot *s) {
     size_t N = (size_t)observer_slot_window(s);
     if (obs_v_count(s) < N) return 0;
     if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
+    if (observer_slot_all_exact(s))
+        return obs_num_exact_diameter(s) <= 2.0 * g_obs_dh_small * obs_floor_scale(s);
     int all_zero, all_small;
     obs_num_flags(s, &all_zero, &all_small);
     if (!all_small) return 0;

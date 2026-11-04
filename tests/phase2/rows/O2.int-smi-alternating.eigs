@@ -1,0 +1,12 @@
+# ROW: O2.int-smi-alternating
+# ITEMS: O2
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+x is 1000000
+i is 0
+loop while i < 20:
+    x is 2000001 - x
+    i is i + 1
+print of [x, converged of x, stable of x, oscillating of x, diverging of x]
