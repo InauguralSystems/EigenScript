@@ -64,14 +64,25 @@ _eigen_throw is throw
 _eigen_type is type
 _eigen_log is log
 _eigen_divide is divide
-_eigen_num_type is num_type
 _eigen_max is max
-_eigen_f64_from_bits is f64_from_bits
 
-# Observer-only IEEE constants do not raise or change arithmetic flags.
-_eigen_obs_inf is _eigen_f64_from_bits of 0x7ff0000000000000
-_eigen_obs_neg_inf is _eigen_f64_from_bits of 0xfff0000000000000
-_eigen_obs_nan is _eigen_f64_from_bits of 0x7ff8000000000000
+# num_type and f64_from_bits are Phase 2 builtins (#1758); until #1776 lands,
+# tools/phase2_lib_diff.sh runs this source on origin/main as well (design 9.5),
+# so they are detected rather than assumed. Without them every numeric step is
+# inexact and the observer-only IEEE constants below are unreachable sentinels:
+# that runtime raises on a NaN result and never yields an infinity.
+# With them, the constants do not raise or change arithmetic flags.
+_eigen_num_type is null
+_eigen_obs_inf is null
+_eigen_obs_neg_inf is null
+_eigen_obs_nan is null
+try:
+    _eigen_num_type is num_type
+    _eigen_obs_inf is f64_from_bits of 0x7ff0000000000000
+    _eigen_obs_neg_inf is f64_from_bits of 0xfff0000000000000
+    _eigen_obs_nan is f64_from_bits of 0x7ff8000000000000
+catch _eigen_missing_phase2_builtin:
+    _eigen_num_type is null
 
 # math.log2 calls public log/divide at invocation time. Capturing its function
 # would leave those transitive dependencies mutable. Preserve its formula
@@ -1516,7 +1527,9 @@ define _eigen_numeric_step(current, previous) as:
     if previous == _eigen_obs_neg_inf:
         return [_eigen_obs_inf, 0.0]
 
-    local exact is (_eigen_num_type of current) == "int" and (_eigen_num_type of previous) == "int"
+    local exact is false
+    if _eigen_num_type != null:
+        exact is (_eigen_num_type of current) == "int" and (_eigen_num_type of previous) == "int"
     if exact:
         if (previous > 0) and (current < (0x8000000000000000 + previous)):
             exact is false
