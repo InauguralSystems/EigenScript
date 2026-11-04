@@ -1,4 +1,4 @@
-Correct observer consumer expectations under the registered R3-STD ranking.
+- Correct observer consumer expectations under the registered R3-STD ranking.
 The stepper compares p/t labels to live report at every assignment in both
 JIT-enabled and interpreter policies; its flip fixture approaches2.
 
