@@ -1,5 +1,6 @@
 - Restore the bare observer-loop stall exit for non-contracting oscillations
-  under RULING R31-4/R31-5. Current non-finite values count unconditionally;
+  whose peaks fall in both halves of the retained window, under
+  RULING R31-4/R31-5. Current non-finite values count unconditionally;
   finite oscillations compare the magnitude envelopes of the retained window's
   halves. Contracting oscillations keep the convergence route. Numeric
   predicate rules and report priority are unchanged.
