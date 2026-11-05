@@ -2040,9 +2040,20 @@ value settles at the deadband; `stalled` ends it when 100 counted
 iterations pass without certification (a non-finite runaway,
 sub-deadband drift or a diverging window). An iteration counts when the
 numeric subject's last relative step is quiet (`|r| < dh_zero`), OR its
-current value is non-finite, OR its window reads `diverging`; never for
-`oscillating`, never for merely not converged. The counter resets otherwise.
-`__loop_exit__` records which one happened (RULING R31-2).
+newest W+1 retained input values (or the available prefix, the same window
+the amplitude clause reads) contain any non-finite input, OR its window
+reads `diverging`, OR it reads `oscillating` with a non-contracting
+amplitude. The oscillation clause never counts a contracting amplitude;
+merely not converged never counts. The counter resets otherwise. A retained
+non-finite input counts before the finite-amplitude test: every certifying
+numeric predicate requires a finite window. An overflowing difference
+between finite inputs does not count through the non-finite-input clause,
+so a finite contracting alternation keeps its convergence route.
+For finite inputs, split the newest W+1 values (or available prefix) into
+a recent half of floor(n/2) values and the older remainder; the amplitude
+is non-contracting when the recent maximum absolute magnitude is at least
+the older maximum. `__loop_exit__` records which exit happened
+(RULING R31-7; the alternation count band is 100..112 under R31-5).
 
 `report` and `report_value` are **reserved observer forms**, like the
 predicate keywords: neither may be a binding name (including function names,

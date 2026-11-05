@@ -289,6 +289,11 @@ not new acceptance exceptions:
   W = 10 the recent half has five inputs; period-6 `[5, 1, -2, 3, -2, 1]`
   hangs on R3-STD, c8 and main. This is a Phase 3 candidate alongside the
   certified-verdict work (RULING R31-6).
+- A non-finite value recurring less often than once per W+1 retained
+  inputs can leave a finite window each period and reset the stall counter.
+  At default W = 10, R31-7 records a period-12 cycle with one NaN hanging
+  on the current path and c8. This is a Phase 3 candidate alongside the
+  certified-verdict work.
 - Still-contracting alternations keep their convergence route. From 1.0,
   multipliers -0.999 and -0.9999 take 14511 and 145089 iterations,
   respectively, with cost growing approximately as ln(scale)/ln|r| as r
@@ -901,25 +906,29 @@ Two cases still deserve a guard:
 - **Input that may genuinely diverge.** `converged` (correctly) never
   fires on a runaway. The bare form (`loop while not converged`) carries
   the observer stall backstop. An iteration counts when the numeric subject's
-  last relative step is quiet (`|r| < dh_zero`), OR its current value is
-  non-finite OR its last step is non-finite (a step from or to a non-finite
-  value), OR its window reads `diverging`, OR it reads `oscillating`
-  with a non-contracting amplitude. The oscillation clause never counts a
-  contracting amplitude; merely not converged never counts. The counter
-  resets on every non-counting iteration. Non-finite current values or
-  last steps count before any finite-amplitude test. The last step is the
-  retained relative step that the quiet clause already reads, so its
-  non-finiteness is a window fact even when the current value is finite.
+  last relative step is quiet (`|r| < dh_zero`), OR any of its newest W+1
+  retained input values (or the available prefix, the same window the
+  amplitude clause reads) is non-finite, OR its window reads `diverging`,
+  OR it reads `oscillating` with a non-contracting amplitude. The oscillation
+  clause never counts a contracting amplitude; merely not converged never
+  counts. The counter
+  resets on every non-counting iteration. A retained non-finite input
+  counts before any finite-amplitude test. Every certifying numeric predicate
+  (`converged`, `stable`, `improving`) requires a finite window, so a
+  retained non-finite input prevents certification on that iteration.
+  This clause reads inputs only: an overflowing difference between two
+  finite inputs does not count through it, so a finite contracting
+  alternation keeps its convergence route.
   For the newest W+1 inputs (or available prefix), provided all are finite,
   compare the maximum absolute magnitude R of the recent floor(n/2)
   values with O of the older remainder: R >= O is non-contracting, R < O is
   contracting. A retained non-finite input does not establish this finite
-  amplitude fact; the current-or-last-step non-finite clause still counts
+  amplitude fact; the retained-input non-finite clause still counts
   independently.
   This is a fact about the stored window, with exact integer
   and mixed comparisons, not a claim about a future limit. After 100 counted
   iterations the loop exits with `__loop_exit__ == "stalled"`
-  (RULING R31-6 amends R31-4's non-finite clause; the alternation count band
+  (RULING R31-7 amends R31-4's non-finite clause; the alternation count band
   is 100..112 under R31-5). The **named** form deliberately does
   not (it must not false-halt on the global alias), so give it an
   absolute cap:

@@ -2857,14 +2857,21 @@ from the history snapshot, which `trace_record_obs` fills.
 - `classify of t` rebuilds those fields;
 - `classify of [t, "entropy"]` on a numeric snapshot raises `value`;
 - the loop stall backstop counts an iteration when the numeric subject's
-  last relative step is quiet (`|r| < dh_zero`), OR its current value is
-  non-finite OR its last step is non-finite (a step from or to a non-finite
-  value), OR its window reads `diverging`, OR it reads `oscillating`
-  with a non-contracting amplitude. The oscillation clause never counts a
-  contracting amplitude; merely not converged never counts. The counter
-  resets on every non-counting iteration. Non-finite current values or
-  last steps count before any finite-amplitude test (RULING R31-6 amends
+  last relative step is quiet (`|r| < dh_zero`), OR any of its newest W+1
+  retained input values (or the available prefix, the same window the
+  amplitude clause reads) is non-finite, OR its window reads `diverging`,
+  OR it reads `oscillating` with a non-contracting amplitude. The oscillation
+  clause never counts a contracting amplitude; merely not converged never
+  counts. The counter
+  resets on every non-counting iteration. A retained non-finite input
+  counts before any finite-amplitude test (RULING R31-7 amends
   R31-4's non-finite clause; count band amended by R31-5).
+  Every certifying numeric predicate (`converged`, `stable`, `improving`)
+  requires a finite window, so an iteration whose retained window holds a
+  non-finite input is one on which the subject cannot certify. This clause
+  reads input values only: an overflowing difference between two finite
+  inputs does not count through it, so a finite contracting alternation
+  keeps its convergence route.
   **Amplitude is a window fact:** split the newest W+1 retained input values
   (or the available prefix) into a recent half of floor(n/2) values and an
   older half of the remainder. For finite inputs let R and O be their
@@ -2873,11 +2880,8 @@ from the history snapshot, which `trace_record_obs` fills.
   alternation has R > O. This uses only the retained window, without a
   forecast, tolerance or change to any numeric predicate. Integer and mixed
   magnitude comparisons preserve int64 ordering. A non-finite window does
-  not establish this finite fact; the independent current-or-last-step
-  non-finite clause still counts unconditionally. The last step is the same
-  retained relative step that the quiet clause reads: inspecting whether
-  that step is finite is a fact about the stored window, including a move
-  from a non-finite prior value to a finite current value;
+  not establish this finite fact; the independent retained-input
+  non-finite clause still counts unconditionally;
 - the SIGUSR1 dump prints the value and the last Δv.
 
 **Every writer of the numeric rings, and the token that deletes its old
@@ -3002,8 +3006,8 @@ the design-round-2 rows moved to the R3.0 report (`O2.noise-equilibrium`;
 
 #### Residuals of R3-STD (stated for `docs/PREDICATES.md`)
 
-RULING R31-6 records two stall-backstop residuals without changing the
-registered numeric predicates or report ranking:
+RULINGs R31-6 and R31-7 record three stall-backstop residuals without
+changing the registered numeric predicates or report ranking:
 
 - **Longer constant-amplitude cycles need not stall.** The half-window
   maximum comparison sees a recurrent peak in both halves only when the
@@ -3012,6 +3016,11 @@ registered numeric predicates or report ranking:
   and reset the counter. The period-6 cycle `[5, 1, -2, 3, -2, 1]` hangs on
   R3-STD, `c8e59616` and main. This is a Phase 3 candidate alongside the
   certified-verdict work, not a Round 3 predicate change.
+- **Sparse non-finite inputs need not stall.** A non-finite value recurring
+  less often than once per W+1 retained inputs leaves a finite window each
+  period and can reset the counter. At default W = 10, R31-7 records a
+  period-12 cycle with one NaN hanging on the current path and `c8e59616`.
+  This is a Phase 3 candidate alongside the certified-verdict work.
 - **Slow contracting alternations can take many iterations.** From 1.0,
   multiplier -0.999 exits `normal`/`converged` at 14511 iterations and
   -0.9999 at 145089. Cost grows approximately as ln(scale)/ln|r| as the
@@ -3132,17 +3141,20 @@ procedure. The named check must go red on its own message.
 | the `cfg` reader ignores fields after the fourth | row `O3.ocfg-no-hlow` |
 
 RULING R31-4 adds five separately counted stall-clause/order plants to that
-once-at-acceptance run; R31-6 adds the sixth, for the last-step half of the
-non-finite clause (the original 19 plants retain their own count):
+once-at-acceptance run. R31-7 replaces R31-6's sixth plant with three
+retained-window/finite-overflow plants, for eight stall plants in total
+(the original 19 plants retain their own count):
 
-| removed stall clause | named check that must go red |
+| stall-clause/order plant | named check that must go red |
 |---|---|
 | quiet last relative step | `stall-contract: FAIL quiet tier=...` on a shrinking tail seeded at n = 1000 |
-| the whole non-finite clause (current value OR last step) | `stall-contract: FAIL nan tier=...` |
+| the whole retained-input non-finite clause | `stall-contract: FAIL nan tier=...` |
 | diverging window | `stall-contract: FAIL doubling tier=...` |
 | oscillating with a non-contracting amplitude | `stall-contract: FAIL alternating tier=...` |
 | oscillating early return moved before the non-finite clause | `stall-contract: FAIL infinite-alternating tier=...` |
-| non-finite last step removed, current-value half retained | `stall-contract: FAIL nan-alternating tier=...` |
+| non-finite clause narrowed to the current input only | `stall-contract: FAIL nan-period3 tier=...` |
+| non-finite window shortened by one input | `stall-contract: FAIL nan-window-edge tier=...` |
+| R31-6's non-finite-step half restored | `stall-contract: FAIL overflow-contracting tier=...` |
 
 R31-5 pins the three alternation exits to `stalled` in 100..112, allowing
 the incumbent oscillator to fill before counting. The damped control stays
@@ -3152,11 +3164,14 @@ its finite-only amplitude test must not suppress a current infinity.
 
 The NaN isolates the non-finite term: infinity also reads `diverging`, so
 removing the whole non-finite term cannot distinguish an inf witness.
-The finite/NaN alternation instead isolates the last-step half: after a NaN,
-a finite current value still has a non-finite last step. It must stall in
-100..112 in all four tiers, while the existing 44 contract readings keep
-their exits and counts. A runaway reaching infinity remains an unplanted
-control and must stall.
+The period-3 cycle `[1.0, 2.0, nan]` isolates retained non-current inputs;
+the period-W+1 cycle `[512, 256, 128, 64, 32, 16, 8, 4, 2, 1, nan]`
+isolates the oldest retained input. Both must stall in 100..112 in all
+four tiers. A contracting finite alternation whose raw steps overflow for
+at least 100 iterations must instead retain its exact measured
+`normal`/certified count. The existing 48 contract readings keep their
+exits and counts. A runaway reaching infinity remains an unplanted control
+and must stall.
 The full harmonic tail from n = 1 is measured without an exit requirement;
 the quiet-clause fixture instead pins the stated 100 quiet-iteration rule.
 

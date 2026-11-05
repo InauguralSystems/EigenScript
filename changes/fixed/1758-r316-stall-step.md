@@ -1,9 +1,11 @@
-- Make the observer-loop stall backstop count an iteration when the current
-  numeric value is non-finite OR its last step is non-finite (a step from or
-  to a non-finite value), under RULING R31-6. The quiet, diverging and
-  finite-amplitude clauses retain their rules. The counter resets on every
+- Superseded by RULING R31-7: the observer-loop stall backstop counts an
+  iteration when any of the newest W+1 retained numeric input values (or
+  the available prefix, the same window the amplitude clause reads) is
+  non-finite. The quiet, diverging and finite-amplitude clauses retain their
+  rules. The counter resets on every
   non-counting iteration. Finite/NaN alternation now has a four-tier contract
-  row and a plant that removes only the last-step half of the clause.
+  row; R31-7 replaces the last-step plant with retained-window and
+  finite-overflow witnesses.
 
   The oscillation arm covers non-contracting oscillations whose peaks fall
   in both halves of the retained window. Period-6 `[5, 1, -2, 3, -2, 1]`
@@ -15,8 +17,9 @@
   Deviations: the earlier HD1b/LE1b assertions had no suite consumer of their
   exit status; the owning suite blocks now require successful completion and
   the final marker. The finite/NaN class returned through c8's NaN-blind
-  convergence rule and hung after its removal; the amended non-finite clause
-  uses only the latest stored step. Numeric predicate rules, report ranking
+  convergence rule and hung after its removal; the R31-7 clause uses the
+  retained input window, so an overflowing difference between finite inputs
+  does not count through it. Numeric predicate rules, report ranking
   and registered decision rules are unchanged.
 
   The sanitizer sweep control includes the one new Assert completion check
