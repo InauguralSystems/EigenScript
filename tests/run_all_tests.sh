@@ -875,6 +875,8 @@ ALLOC_CUM=$(printf '%s\n' "$ALLOC_STATS_LINE" | sed -n 's/.*cumulative=\([0-9][0
 ALLOC_LIVE=$(printf '%s\n' "$ALLOC_STATS_LINE" | sed -n 's/.*live=\([0-9][0-9]*\).*/\1/p')
 ALLOC_PEAK=$(printf '%s\n' "$ALLOC_STATS_LINE" | sed -n 's/.*peak=\([0-9][0-9]*\).*/\1/p')
 ALLOC_OFF_OUT=$(EIGS_ALLOC_STATS=0 ./eigenscript -e 'print of 1' 2>&1)
+ALLOC_OFF_OUT_RC=$?
+check "Disabled allocation statistics completed" "$(rc_ok "$ALLOC_OFF_OUT_RC" "$ALLOC_OFF_OUT" && echo ok)" "ok"
 TOTAL=$((TOTAL + 1))
 if [ "$ALLOC_STATS_RC" -eq 0 ] && [ -n "$ALLOC_CUM" ] && [ -n "$ALLOC_LIVE" ] && [ -n "$ALLOC_PEAK" ] && \
    [ "$ALLOC_CUM" -ge "$ALLOC_PEAK" ] && [ "$ALLOC_PEAK" -ge "$ALLOC_LIVE" ] && \
@@ -963,6 +965,8 @@ echo ""
 echo "[1/15] Gen 0 Baseline (basic language features)"
 check_binary_fingerprint
 OUTPUT=$(./eigenscript ../tests/test_gen0_baseline.eigs 2>&1)
+GEN0_RC=$?
+check "GEN0 program completed (status and final marker)" "$(rc_ok "$GEN0_RC" "$OUTPUT" && grep -qxF '=== GEN 0 BASELINE COMPLETE ===' <<< "$OUTPUT" && echo ok)" "ok"
 check "T01 Numeric Assignment" "$(echo "$OUTPUT" | grep -A1 'T01' | tail -1)" "42"
 check "T02 String Assignment" "$(echo "$OUTPUT" | grep -A1 'T02' | tail -1)" "hello world"
 check "T03 Addition" "$(echo "$OUTPUT" | grep -A1 'T03' | tail -1)" "30"
@@ -993,6 +997,8 @@ echo ""
 
 echo "[2/15] Interrogative Spec Compliance (LLVM IR parity)"
 OUTPUT=$(./eigenscript ../tests/test_interrogative_spec.eigs 2>&1)
+INTERROGATIVE_RC=$?
+check "Interrogative program completed (status and final marker)" "$(rc_ok "$INTERROGATIVE_RC" "$OUTPUT" && grep -qxF '=== INTERROGATIVE SPEC COMPLETE ===' <<< "$OUTPUT" && echo ok)" "ok"
 check "WHAT scalar (42)" "$(echo "$OUTPUT" | grep -A1 'eigen_get_value' | tail -1)" "42"
 check "WHAT list length (5)" "$(echo "$OUTPUT" | grep -A1 'list length' | tail -1)" "5" # S9-K1 (#1758): published counts are ints.
 check "WHAT string length (5)" "$(echo "$OUTPUT" | grep -A1 'string length' | tail -1)" "5" # S9-K1 (#1758): published counts are ints.
@@ -1018,8 +1024,12 @@ echo "[3/15] Benchmark Interrogative Arithmetic"
 BENCH_FILE="../../attached_assets/bench_interrogative_overhead_1771718100198.eigs"
 if [ -f "$BENCH_FILE" ]; then
     BENCH=$(./eigenscript "$BENCH_FILE" 2>&1)
+    BENCH_RC=$?
+    check "BENCH program completed" "$(rc_ok "$BENCH_RC" "$BENCH" && echo ok)" "ok"
     check_numeric "Bench result is numeric" "$BENCH" "1" "1000"
     BENCH2=$(./eigenscript "$BENCH_FILE" 2>&1)
+    BENCH2_RC=$?
+    check "BENCH2 program completed" "$(rc_ok "$BENCH2_RC" "$BENCH2" && echo ok)" "ok"
     check "Bench deterministic" "$BENCH" "$BENCH2"
 else
     # Round 6 counted this skip as two PASSes; the asset is archived, so every
@@ -1030,6 +1040,8 @@ echo ""
 
 echo "[4/15] Keyword Reservation"
 OUTPUT=$(./eigenscript ../tests/test_keyword_reservation.eigs 2>&1)
+KEYWORD_RC=$?
+check "Keyword program completed (status and final marker)" "$(rc_ok "$KEYWORD_RC" "$OUTPUT" && grep -qxF '=== KEYWORD RESERVATION COMPLETE ===' <<< "$OUTPUT" && echo ok)" "ok"
 check "what is keyword" "$(echo "$OUTPUT" | grep -A1 '^what:' | tail -1)" "42"
 check "who is keyword" "$(echo "$OUTPUT" | grep -A1 '^who:' | tail -1)" "x"
 check "when is keyword" "$(echo "$OUTPUT" | grep -A1 '^when:' | tail -1)" "1" # S9-K1 (#1758): published counts are ints.
@@ -1088,6 +1100,8 @@ echo ""
 
 echo "[5/15] Report-Predicate Alignment"
 RA_OUTPUT=$(./eigenscript ../tests/test_report_alignment.eigs 2>&1)
+RA_RC=$?
+check "RA program completed (status and final marker)" "$(rc_ok "$RA_RC" "$RA_OUTPUT" && grep -qxF '=== REPORT-PREDICATE ALIGNMENT COMPLETE ===' <<< "$RA_OUTPUT" && echo ok)" "ok"
 
 RA1_D=$(echo "$RA_OUTPUT" | grep -A2 'RA1:' | tail -2 | head -1)
 RA1_R=$(echo "$RA_OUTPUT" | grep -A2 'RA1:' | tail -1)
@@ -1117,6 +1131,8 @@ echo ""
 
 echo "[6/15] Halting: Runaway Loop Contract (#861)"
 HD_OUTPUT=$(./eigenscript ../tests/test_halting_descent.eigs 2>&1)
+HD_RC=$?
+check "HD program completed (exit 0 and final marker)" "$([ "$HD_RC" -eq 0 ] && rc_ok "$HD_RC" "$HD_OUTPUT" && grep -qxF '=== RUNAWAY LOOP CONTRACT COMPLETE ===' <<< "$HD_OUTPUT" && echo ok)" "ok"
 
 # #861: the runaway loop's honest contract — the stall backstop ends it
 # after ~100 quiet, non-finite or diverging iterations (was: exit at ~13 via the entropy
@@ -1150,6 +1166,8 @@ echo ""
 
 echo "[7/15] Halting: Settled Constant (#861)"
 HS_OUTPUT=$(./eigenscript ../tests/test_halting_stall.eigs 2>&1)
+HS_RC=$?
+check "HS program completed (status and final marker)" "$(rc_ok "$HS_RC" "$HS_OUTPUT" && grep -qxF '=== SETTLED CONSTANT COMPLETE ===' <<< "$HS_OUTPUT" && echo ok)" "ok"
 
 HS_CONV=$(echo "$HS_OUTPUT" | grep -A1 'HS1:' | tail -1)
 check "HS1 converged=true at moderate H (#861: dead zone gone)" "$HS_CONV" "true"
@@ -1176,6 +1194,8 @@ echo ""
 
 echo "[8/15] Stable Band"
 SB_OUTPUT=$(./eigenscript ../tests/test_stable_band.eigs 2>&1)
+SB_RC=$?
+check "SB program completed (status and final marker)" "$(rc_ok "$SB_RC" "$SB_OUTPUT" && grep -qxF '=== STABLE BAND COMPLETE ===' <<< "$SB_OUTPUT" && echo ok)" "ok"
 
 SB1_S=$(echo "$SB_OUTPUT" | grep -A1 'SB1:' | tail -1)
 check "SB1 stable=false (#861: linear drift is diverging)" "$SB1_S" "false"
@@ -1192,6 +1212,8 @@ echo ""
 
 echo "[8b] Windowed Converged"
 WC_OUTPUT=$(./eigenscript ../tests/test_windowed_converged.eigs 2>&1)
+WC_RC=$?
+check "WC program completed (status and final marker)" "$(rc_ok "$WC_RC" "$WC_OUTPUT" && grep -qxF '=== WINDOWED CONVERGED COMPLETE ===' <<< "$WC_OUTPUT" && echo ok)" "ok"
 WC1=$(echo "$WC_OUTPUT" | grep -A1 'WC1:' | tail -1)
 check "WC1 short trajectory cannot converge" "$WC1" "false"
 WC2=$(echo "$WC_OUTPUT" | grep -A1 'WC2:' | tail -1)
@@ -1240,6 +1262,8 @@ echo ""
 echo "[9/15] Assert"
 check_binary_fingerprint
 AS_OUTPUT=$(./eigenscript ../tests/test_assert.eigs 2>&1)
+AS_RC=$?
+check "Assert program completed (status and final marker)" "$(rc_ok "$AS_RC" "$AS_OUTPUT" && grep -qxF '=== ASSERT COMPLETE ===' <<< "$AS_OUTPUT" && echo ok)" "ok"
 check "AS1 assert true passes" "$(echo "$AS_OUTPUT" | grep 'pass1')" "pass1"
 check "AS2 assert list passes" "$(echo "$AS_OUTPUT" | grep 'pass2')" "pass2"
 
@@ -1257,6 +1281,8 @@ echo ""
 
 echo "[10/15] Observe Snapshot"
 OB_OUTPUT=$(./eigenscript ../tests/test_observe.eigs 2>&1)
+OB_RC=$?
+check "Observe program completed (status and final marker)" "$(rc_ok "$OB_RC" "$OB_OUTPUT" && grep -qxF '=== OBSERVE COMPLETE ===' <<< "$OB_OUTPUT" && echo ok)" "ok"
 
 OB1_TYPE=$(echo "$OB_OUTPUT" | grep -A1 'OB1:' | tail -1)
 check "OB1 observe type=list" "$OB1_TYPE" "list"
@@ -1284,6 +1310,8 @@ echo ""
 
 echo "[11/15] Loop Exit Reason"
 LE_OUTPUT=$(./eigenscript ../tests/test_loop_exit.eigs 2>&1)
+LE_RC=$?
+check "LE program completed (exit 0 and final marker)" "$([ "$LE_RC" -eq 0 ] && rc_ok "$LE_RC" "$LE_OUTPUT" && grep -qxF '=== LOOP EXIT COMPLETE ===' <<< "$LE_OUTPUT" && echo ok)" "ok"
 
 LE1_EXIT=$(echo "$LE_OUTPUT" | grep -A1 'LE1:' | tail -1)
 check "LE1 runaway exit=stalled (#861: false-converged exit gone)" "$LE1_EXIT" "stalled"
@@ -1306,8 +1334,9 @@ echo ""
 
 echo "[Structural Equality] test_equality.eigs"
 EQ_OUTPUT=$(./eigenscript ../tests/test_equality.eigs 2>&1)
+EQ_RC=$?
 TOTAL=$((TOTAL + 1))
-if echo "$EQ_OUTPUT" | grep -q "All tests passed"; then
+if rc_ok "$EQ_RC" "$EQ_OUTPUT" && echo "$EQ_OUTPUT" | grep -qxF "All tests passed"; then
     echo "  PASS: all structural-equality checks"; PASS=$((PASS + 1))
 else
     echo "  FAIL: structural-equality"; FAIL=$((FAIL + 1))
@@ -1317,8 +1346,9 @@ echo ""
 
 echo "[Number Formatting] test_number_format.eigs"
 NF_OUTPUT=$(./eigenscript ../tests/test_number_format.eigs 2>&1)
+NF_RC=$?
 TOTAL=$((TOTAL + 1))
-if echo "$NF_OUTPUT" | grep -q "All tests passed"; then
+if rc_ok "$NF_RC" "$NF_OUTPUT" && echo "$NF_OUTPUT" | grep -qxF "All tests passed"; then
     echo "  PASS: all number-format round-trip checks"; PASS=$((PASS + 1))
 else
     echo "  FAIL: number-format"; FAIL=$((FAIL + 1))
@@ -1328,8 +1358,9 @@ echo ""
 
 echo "[Security Hardening] test_security_hardening.eigs"
 SH_OUTPUT=$(./eigenscript ../tests/test_security_hardening.eigs 2>&1)
+SH_RC=$?
 TOTAL=$((TOTAL + 1))
-if echo "$SH_OUTPUT" | grep -q "All tests passed"; then
+if rc_ok "$SH_RC" "$SH_OUTPUT" && echo "$SH_OUTPUT" | grep -qxF "All tests passed"; then
     echo "  PASS: secure_equals + parser depth guard"; PASS=$((PASS + 1))
 else
     echo "  FAIL: security-hardening (possible crash/regression)"; FAIL=$((FAIL + 1))
@@ -1339,8 +1370,9 @@ echo ""
 
 echo "[JSON Depth / DoS guard] test_json_depth.eigs"
 JD_OUTPUT=$(./eigenscript ../tests/test_json_depth.eigs 2>&1)
+JD_RC=$?
 TOTAL=$((TOTAL + 1))
-if echo "$JD_OUTPUT" | grep -q "All tests passed"; then
+if rc_ok "$JD_RC" "$JD_OUTPUT" && echo "$JD_OUTPUT" | grep -qxF "All tests passed"; then
     echo "  PASS: deep-JSON guard (decode + encode) + nested parsing"; PASS=$((PASS + 1))
 else
     echo "  FAIL: json-depth (possible crash/regression)"; FAIL=$((FAIL + 1))
@@ -1354,8 +1386,9 @@ echo ""
 
 echo "[STEM Accuracy] test_stem_accuracy.eigs"
 SA_OUTPUT=$($EIGS_TMO ./eigenscript ../tests/test_stem_accuracy.eigs </dev/null 2>&1)
+SA_RC=$?
 TOTAL=$((TOTAL + 1))
-if echo "$SA_OUTPUT" | grep -q "All STEM accuracy checks passed"; then
+if rc_ok "$SA_RC" "$SA_OUTPUT" && echo "$SA_OUTPUT" | grep -qxF "All STEM accuracy checks passed"; then
     echo "  PASS: all STEM known-answer checks"; PASS=$((PASS + 1))
 else
     echo "  FAIL: STEM accuracy"; FAIL=$((FAIL + 1))
@@ -1365,8 +1398,9 @@ echo ""
 
 echo "[Coercion] test_coercion.eigs"
 CO_OUTPUT=$(./eigenscript ../tests/test_coercion.eigs 2>&1)
+CO_RC=$?
 TOTAL=$((TOTAL + 1))
-if echo "$CO_OUTPUT" | grep -q "All tests passed"; then
+if rc_ok "$CO_RC" "$CO_OUTPUT" && echo "$CO_OUTPUT" | grep -qxF "All tests passed"; then
     echo "  PASS: all coercion checks"; PASS=$((PASS + 1))
 else
     echo "  FAIL: coercion"; FAIL=$((FAIL + 1))
@@ -1376,6 +1410,8 @@ echo ""
 
 echo "[12/15] Type Labels"
 TY_OUTPUT=$(./eigenscript ../tests/test_type.eigs 2>&1)
+TY_RC=$?
+check "Type program completed (status and final marker)" "$(rc_ok "$TY_RC" "$TY_OUTPUT" && grep -qxF '=== TYPE COMPLETE ===' <<< "$TY_OUTPUT" && echo ok)" "ok"
 
 TY_NUM=$(echo "$TY_OUTPUT" | grep -A1 'TY1:' | tail -1)
 check "TY1 type of num" "$TY_NUM" "num"
@@ -1392,6 +1428,8 @@ echo ""
 
 echo "[13/15] JSON Round-Trip"
 JS_OUTPUT=$(./eigenscript ../tests/test_json.eigs 2>&1)
+JS_RC=$?
+check "JSON program completed (status and final marker)" "$(rc_ok "$JS_RC" "$JS_OUTPUT" && grep -qxF '=== JSON COMPLETE ===' <<< "$JS_OUTPUT" && echo ok)" "ok"
 
 JS1_NUM=$(echo "$JS_OUTPUT" | grep -A1 'JS1:' | tail -1)
 check "JS1 encode number" "$JS1_NUM" "42"
@@ -1418,6 +1456,8 @@ echo ""
 
 echo "[15/15] try_parse Validation"
 TP_OUTPUT=$(./eigenscript ../tests/test_try_parse.eigs 2>&1)
+TP_RC=$?
+check "try_parse program completed" "$(rc_ok "$TP_RC" "$TP_OUTPUT" && echo ok)" "ok"
 
 check "TP_V1 valid assignment" "$(echo "$TP_OUTPUT" | grep -A1 'TP_V1:' | tail -1)" "true"
 check "TP_V2 valid define" "$(echo "$TP_OUTPUT" | grep -A1 'TP_V2:' | tail -1)" "true"
@@ -1625,8 +1665,9 @@ echo "[18/18] File I/O Builtins"
 check_binary_fingerprint
 # #1361 EIGS_STRICT=0: pins the wrong-type stand-ins read_text(42)="", write_text(bad)=0, exec_capture(bad)=[-1,""] (RT3/WT3/EC3/EC4).
 FIO_OUTPUT=$(suite_program_run test_file_io.eigs ./eigenscript ../tests/test_file_io.eigs 2>&1)
+FIO_RC=$?
 
-if echo "$FIO_OUTPUT" | grep -q "All file_io tests passed"; then
+if rc_ok "$FIO_RC" "$FIO_OUTPUT" && echo "$FIO_OUTPUT" | grep -qxF "All file_io tests passed"; then
     # All asserts passed — count individual checks
     TOTAL=$((TOTAL + 1))
     PASS=$((PASS + 1))
@@ -1658,8 +1699,9 @@ echo ""
 echo "[19/19] String & Math Builtins"
 check_binary_fingerprint
 SM_OUTPUT=$(./eigenscript ../tests/test_string_math.eigs 2>&1)
+SM_RC=$?
 
-if echo "$SM_OUTPUT" | grep -q "All string_math tests passed"; then
+if rc_ok "$SM_RC" "$SM_OUTPUT" && echo "$SM_OUTPUT" | grep -qxF "All string_math tests passed"; then
     TOTAL=$((TOTAL + 1))
     PASS=$((PASS + 1))
     echo "  PASS: all string/math checks"
@@ -2992,7 +3034,8 @@ fi
 # that replaced the fixed MAX_STR stack arrays in v0.8.0.
 echo "[48a] Large Strings"
 LS_OUTPUT=$(./eigenscript "$TESTS_DIR/test_large_strings.eigs" 2>&1)
-if echo "$LS_OUTPUT" | grep -q "All tests passed"; then
+LS_RC=$?
+if rc_ok "$LS_RC" "$LS_OUTPUT" && echo "$LS_OUTPUT" | grep -qxF "All tests passed."; then
     TOTAL=$((TOTAL + 1)); PASS=$((PASS + 1))
     echo "  PASS: all large-string checks"
 else
@@ -3002,7 +3045,8 @@ fi
 
 echo "[48b] F-String Large"
 FL_OUTPUT=$(./eigenscript "$TESTS_DIR/test_fstring_large.eigs" 2>&1)
-if echo "$FL_OUTPUT" | grep -q "All tests passed"; then
+FL_RC=$?
+if rc_ok "$FL_RC" "$FL_OUTPUT" && echo "$FL_OUTPUT" | grep -qxF "All tests passed."; then
     TOTAL=$((TOTAL + 1)); PASS=$((PASS + 1))
     echo "  PASS: all f-string-large checks"
 else
@@ -3012,7 +3056,8 @@ fi
 
 echo "[48c] Regex Large"
 RL_OUTPUT=$(./eigenscript "$TESTS_DIR/test_regex_large.eigs" 2>&1)
-if echo "$RL_OUTPUT" | grep -q "All tests passed"; then
+RL_RC=$?
+if rc_ok "$RL_RC" "$RL_OUTPUT" && echo "$RL_OUTPUT" | grep -qxF "All tests passed."; then
     TOTAL=$((TOTAL + 1)); PASS=$((PASS + 1))
     echo "  PASS: all regex-large checks"
 else
@@ -3022,7 +3067,8 @@ fi
 
 echo "[48d] JSON Large"
 JL_OUTPUT=$(./eigenscript "$TESTS_DIR/test_json_large.eigs" 2>&1)
-if echo "$JL_OUTPUT" | grep -q "All tests passed"; then
+JL_RC=$?
+if rc_ok "$JL_RC" "$JL_OUTPUT" && echo "$JL_OUTPUT" | grep -qxF "All tests passed."; then
     TOTAL=$((TOTAL + 1)); PASS=$((PASS + 1))
     echo "  PASS: all json-large checks"
 else
@@ -3242,6 +3288,8 @@ echo ""
 # [55] Concurrency: spawn/join/channel
 echo "[55] Concurrency"
 CC_OUTPUT=$(./eigenscript ../tests/test_concurrent.eigs 2>&1)
+CC_RC=$?
+check "Concurrency program completed (status and final summary)" "$(rc_ok "$CC_RC" "$CC_OUTPUT" && grep -qxE 'Concurrent: [0-9]+ passed, 0 failed' <<< "$CC_OUTPUT" && echo ok)" "ok"
 CC_PASS=$(echo "$CC_OUTPUT" | grep -c "^PASS:" || true)
 CC_FAIL=$(echo "$CC_OUTPUT" | grep -c "^FAIL:" || true)
 TOTAL=$((TOTAL + CC_PASS + CC_FAIL))
@@ -5235,7 +5283,11 @@ check_eigs_suite "lib/supervise observer supervision (#409)" test_supervise.eigs
 # interleaving is a pure function of program order, no tape).
 TOTAL=$((TOTAL + 1))
 DET1=$(./eigenscript ../examples/task_pipeline.eigs </dev/null 2>&1)
+DET1_RC=$?
+check "Task pipeline first run completed" "$(rc_ok "$DET1_RC" "$DET1" && echo ok)" "ok"
 DET2=$(./eigenscript ../examples/task_pipeline.eigs </dev/null 2>&1)
+DET2_RC=$?
+check "Task pipeline second run completed" "$(rc_ok "$DET2_RC" "$DET2" && echo ok)" "ok"
 if [ "$DET1" = "$DET2" ] && echo "$DET1" | grep -q "= 120"; then
     echo "  PASS: cooperative tasks replay byte-identically (#408 determinism)"
     PASS=$((PASS + 1))
@@ -5251,9 +5303,15 @@ TOTAL=$((TOTAL + 1))
 VT_EX=../examples/task_virtual_time.eigs
 VT_TAPE=$(mktemp -t eigs_vt.XXXXXX)
 VTA=$(./eigenscript "$VT_EX" </dev/null 2>&1)
+VTA_RC=$?
+check "Virtual-time first run completed" "$(rc_ok "$VTA_RC" "$VTA" && echo ok)" "ok"
 VTB=$(./eigenscript "$VT_EX" </dev/null 2>&1)
+VTB_RC=$?
+check "Virtual-time second run completed" "$(rc_ok "$VTB_RC" "$VTB" && echo ok)" "ok"
 EIGS_TRACE="$VT_TAPE" ./eigenscript "$VT_EX" </dev/null >/dev/null 2>&1
 VTR=$(EIGS_REPLAY="$VT_TAPE" ./eigenscript "$VT_EX" </dev/null 2>&1)
+VTR_RC=$?
+check "Virtual-time replay completed" "$(rc_ok "$VTR_RC" "$VTR" && echo ok)" "ok"
 VT_NREC=$(grep -c '^N ' "$VT_TAPE" 2>/dev/null)
 rm -f "$VT_TAPE"
 if [ "$VTA" = "$VTB" ] && [ "$VTA" = "$VTR" ] && [ "$VT_NREC" -eq 0 ] && \
@@ -5273,9 +5331,15 @@ TOTAL=$((TOTAL + 1))
 SS_EX=../examples/task_seeded_schedule.eigs
 SS_TAPE=$(mktemp -t eigs_ss.XXXXXX)
 SSA=$(./eigenscript "$SS_EX" </dev/null 2>&1)
+SSA_RC=$?
+check "Seeded-schedule first run completed" "$(rc_ok "$SSA_RC" "$SSA" && echo ok)" "ok"
 SSB=$(./eigenscript "$SS_EX" </dev/null 2>&1)
+SSB_RC=$?
+check "Seeded-schedule second run completed" "$(rc_ok "$SSB_RC" "$SSB" && echo ok)" "ok"
 EIGS_TRACE="$SS_TAPE" ./eigenscript "$SS_EX" </dev/null >/dev/null 2>&1
 SSR=$(EIGS_REPLAY="$SS_TAPE" ./eigenscript "$SS_EX" </dev/null 2>&1)
+SSR_RC=$?
+check "Seeded-schedule replay completed" "$(rc_ok "$SSR_RC" "$SSR" && echo ok)" "ok"
 SS_NREC=$(grep -c '^N ' "$SS_TAPE" 2>/dev/null)
 rm -f "$SS_TAPE"
 if [ "$SSA" = "$SSB" ] && [ "$SSA" = "$SSR" ] && [ "$SS_NREC" -eq 0 ] && \
@@ -5644,8 +5708,9 @@ TOTAL=$((TOTAL + 1))
 # executed-bytes total.
 if [ "$(uname -m)" = "x86_64" ]; then
     JHOT_OUTPUT=$(EIGS_JIT_HOT=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1 >/dev/null)
+    JHOT_RC=$?
     JHOT_BYTES=$(echo "$JHOT_OUTPUT" | sed -n 's/.*bytes native: [0-9]* \/ total: \([0-9]*\).*/\1/p' | head -1)
-    if echo "$JHOT_OUTPUT" | grep -q "=== Hot chunks" &&
+    if rc_ok "$JHOT_RC" "$JHOT_OUTPUT" && echo "$JHOT_OUTPUT" | grep -q "=== Hot chunks" &&
        echo "$JHOT_OUTPUT" | grep -qE '[0-9]+  (yes |no  |full|\?   ) +[0-9.]+%' &&
        [ -n "$JHOT_BYTES" ] && [ "$JHOT_BYTES" -gt 0 ]; then
         PASS=$((PASS + 1))
@@ -5706,6 +5771,7 @@ TOTAL=$((TOTAL + 1))
 if [ "$(uname -m)" = "x86_64" ]; then
     JFULL_OUTPUT=$(EIGS_JIT_CACHE_PAGES=1 EIGS_JIT_STATS=1 EIGS_JIT_STOPS=1 EIGS_JIT_HOT=1 \
         ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1 >/dev/null)
+    JFULL_RC=$?
     JFULL_SCANNED=$(sed -n 's/.*scanned=\([0-9][0-9]*\).*/\1/p' <<< "$JFULL_OUTPUT")
     JFULL_REJECTS=$(sed -n 's/.*cache_full_rejects=\([0-9][0-9]*\).*/\1/p' <<< "$JFULL_OUTPUT")
     JFULL_COMPILED=$(sed -n 's/^compiled: *\([0-9][0-9]*\).*/\1/p' <<< "$JFULL_OUTPUT")
@@ -5715,7 +5781,7 @@ if [ "$(uname -m)" = "x86_64" ]; then
         $2 ~ /^[0-9]+$/ { n += $15 + 0 }
         END { print n + 0 }
     ' <<< "$JFULL_OUTPUT")
-    if [ -n "$JFULL_SCANNED" ] && [ -n "$JFULL_REJECTS" ] &&
+    if rc_ok "$JFULL_RC" "$JFULL_OUTPUT" && [ -n "$JFULL_SCANNED" ] && [ -n "$JFULL_REJECTS" ] &&
        [ -n "$JFULL_COMPILED" ] && [ -n "$JFULL_BAILOUTS" ] &&
        [ "$JFULL_REJECTS" -gt 0 ] && [ "$JFULL_ROWS" -eq "$JFULL_REJECTS" ] &&
        [ $((JFULL_COMPILED + JFULL_BAILOUTS)) -eq $((JFULL_SCANNED - JFULL_REJECTS)) ]; then
@@ -6263,7 +6329,11 @@ QL_DIR=$(mktemp -d /tmp/eigs_quietload_XXXX)
 printf 'print of "frag"\n'              > "$QL_DIR/frag.eigs"
 printf 'load_file of "frag.eigs"\n'     > "$QL_DIR/main.eigs"
 QL_ERR=$( cd "$QL_DIR" && "$BIN_ABS" main.eigs </dev/null 2>&1 >/dev/null )
+QL_ERR_RC=$?
+check "Quiet load_file run completed" "$(rc_ok "$QL_ERR_RC" "$QL_ERR" && echo ok)" "ok"
 QL_VERB=$( cd "$QL_DIR" && EIGS_VERBOSE_LOAD=1 "$BIN_ABS" main.eigs </dev/null 2>&1 >/dev/null )
+QL_VERB_RC=$?
+check "Verbose load_file run completed" "$(rc_ok "$QL_VERB_RC" "$QL_VERB" && echo ok)" "ok"
 rm -rf "$QL_DIR"
 TOTAL=$((TOTAL + 1))
 QL_OK=1
