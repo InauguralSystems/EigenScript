@@ -18,3 +18,8 @@
   convergence rule and hung after its removal; the amended non-finite clause
   uses only the latest stored step. Numeric predicate rules, report ranking
   and registered decision rules are unchanged.
+
+  The sanitizer sweep control includes the one new Assert completion check
+  and eight task capture-status checks: its exact passing population is 93 (84 + 9).
+  Seven semantic display rows remain declared alongside their owning
+  completion checks; hard diagnostics still fail each owning section.
