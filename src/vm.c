@@ -119,15 +119,30 @@ static int obs_stall_amplitude_noncontracting(const ObserverSlot *s) {
     return obs_stall_magnitude_cmp(recent, older) >= 0;
 }
 
-/* R31-4/R31-5/R31-6: one stall reader for interpreter, JIT and exported AOT core.
+/* R31-7: certification needs a finite input window. Read the same newest
+ * W+1 inputs (or available prefix) as the amplitude clause, never a delta:
+ * subtraction between finite inputs can overflow. */
+static int obs_stall_window_nonfinite(const ObserverSlot *s) {
+    size_t n = s->values_count;
+    size_t full = (size_t)observer_slot_window(s) + 1;
+    if (n > full) n = full;
+    if (!s->v_values) return 0;
+    for (size_t i = 0; i < n; i++) {
+        int idx = (int)s->values_head - 1 - (int)i;
+        while (idx < 0) idx += s->values_cap;
+        ObserverNumber v = s->v_values[idx];
+        if (!v.is_int && !isfinite(v.value)) return 1;
+    }
+    return 0;
+}
+
+/* R31-4/R31-5/R31-7: one stall reader for interpreter, JIT and exported AOT core.
  * Non-numeric subjects retain the entropy-step rule. */
 static inline int obs_stall_quiet(void) {
     const ObserverSlot *s = env_obs_slot(g_last_obs_slot_env, g_last_obs_slot_idx);
     if (!s || !s->used) return 0;
     if (!s->v_last || !s->v_used) return observer_slot_quiet(s);
-    if (!isfinite(s->last_value) ||
-        (s->v_window_count && s->v_rel &&
-         !isfinite(s->v_rel[s->v_window_head ? s->v_window_head - 1 : s->v_cap - 1]))) return 1;
+    if (obs_stall_window_nonfinite(s)) return 1;
     if (observer_slot_quiet(s)) return 1;
     if (observer_slot_diverging(s)) return 1;
     if (observer_slot_oscillating(s))
