@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R31-4/R31-5: bare loops stall on qualifying window signals.
+"""R31-4/R31-5/R31-6: bare loops stall on qualifying window signals.
 
 Each subject is the final assignment in its loop. Plain bookkeeping must
 not replace the global observer alias. The harmonic case is measured only:
@@ -21,6 +21,7 @@ CASES = {
     "alternating": ("x is 1.0\nx is 1.0", "x is 0.0 - x"),
     "growing-alternating": ("x is 1.0\nx is 1.0", "x is -2.0 * x"),
     "infinite-alternating": ("x is 1e308 * 10.0\nx is 1e308 * 10.0", "x is 0.0 - x"),
+    "nan-alternating": ("nan is f64_from_bits of 0x7ff8000000000000\nvals is [1.0, nan]\ni is 0\nx is 1.0", "i is 1 - i\nx is vals[i]"),
     "nan": ("x is f64_from_bits of 0x7ff8000000000000", "x is x"),
     "inf": ("x is 1e308\nx is 1e308", "x is x * 2.0"),
     "quiet": ("n is 1000\nx is 1.0 / n", "n is n + 1\nx is 1.0 / n"),
@@ -44,7 +45,7 @@ def correct(case, value):
     count, reason, report, certified = value
     if case == "damped":
         return reason == "normal" and certified is True and count == 1454
-    if case in ("alternating", "growing-alternating", "infinite-alternating"):
+    if case in ("alternating", "growing-alternating", "infinite-alternating", "nan-alternating"):
         return 100 <= count <= 112 and reason == "stalled" and certified is False
     if case == "doubling":
         return 108 <= count <= 112 and reason == "stalled" and report == "diverging"

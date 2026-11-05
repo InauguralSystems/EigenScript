@@ -119,13 +119,15 @@ static int obs_stall_amplitude_noncontracting(const ObserverSlot *s) {
     return obs_stall_magnitude_cmp(recent, older) >= 0;
 }
 
-/* R31-4/R31-5: one stall reader for interpreter, JIT and exported AOT core.
+/* R31-4/R31-5/R31-6: one stall reader for interpreter, JIT and exported AOT core.
  * Non-numeric subjects retain the entropy-step rule. */
 static inline int obs_stall_quiet(void) {
     const ObserverSlot *s = env_obs_slot(g_last_obs_slot_env, g_last_obs_slot_idx);
     if (!s || !s->used) return 0;
     if (!s->v_last || !s->v_used) return observer_slot_quiet(s);
-    if (!isfinite(s->last_value)) return 1;
+    if (!isfinite(s->last_value) ||
+        (s->v_window_count && s->v_rel &&
+         !isfinite(s->v_rel[s->v_window_head ? s->v_window_head - 1 : s->v_cap - 1]))) return 1;
     if (observer_slot_quiet(s)) return 1;
     if (observer_slot_diverging(s)) return 1;
     if (observer_slot_oscillating(s))
