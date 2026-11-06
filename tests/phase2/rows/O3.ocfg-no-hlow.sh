@@ -90,3 +90,6 @@ install_case cfg-install-scale flat 'O 0 cfg 0.001 0.01 10 1000'
 install_case cfg-install-dh-small flat 'O 0 cfg 0.001 0.9 10 0.001'
 install_case cfg-install-slow-none slow ''
 install_case cfg-install-dh-zero slow 'O 0 cfg 0.0000001 0.01 10 0.001'
+
+# R32-1: window syntax stays decimal; a correct field count is not enough.
+cfg_case cfg-4-window-hex 'O 0 cfg 0.001 0.01 0x4 0.001'
