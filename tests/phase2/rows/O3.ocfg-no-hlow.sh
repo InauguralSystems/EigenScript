@@ -120,3 +120,16 @@ done
 install_case cfg-start-tiny tiny ''
 install_case cfg-start-p1 p1 ''
 install_case cfg-start-p2 p2 ''
+
+# R32-2: retained range/token refusals and both window boundaries.
+cfg_case cfg-dh-zero-0 'O 0 cfg 0 0.01 10 0.001'
+cfg_case cfg-dh-zero-negative 'O 0 cfg -1 0.01 10 0.001'
+cfg_case cfg-dh-small-negative 'O 0 cfg 0.001 -1 10 0.001'
+cfg_case cfg-thresholds-equal 'O 0 cfg 0.01 0.01 10 0.001'
+cfg_case cfg-scale-0 'O 0 cfg 0.001 0.01 10 0'
+cfg_case cfg-scale-huge 'O 0 cfg 0.001 0.01 10 1e301'
+cfg_case cfg-window-65 'O 0 cfg 0.001 0.01 65 0.001'
+cfg_case cfg-window-3 'O 0 cfg 0.001 0.01 3 0.001'
+cfg_case cfg-window-wide 'O 0 cfg 0.001 0.01 4294967304 0.001'
+cfg_case cfg-scale-junk 'O 0 cfg 0.001 0.01 10 0.001x'
+cfg_case cfg-window-64 'O 0 cfg 0.001 0.01 64 0.001'

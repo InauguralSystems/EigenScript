@@ -36,3 +36,25 @@ cfg-start-p1 rc=0 label=[stable]
 cfg-start-p1 first-stderr=<empty>
 cfg-start-p2 rc=0 label=[moving]
 cfg-start-p2 first-stderr=<empty>
+cfg-dh-zero-0 rc=3 names-count=0
+cfg-dh-zero-0 first-stderr=step: tape observer-configuration record is not one this runtime could have written (thresholds must be positive): 'O 0 cfg 0 0.01 10 0.001'; refusing to step (docs/TRACE.md)
+cfg-dh-zero-negative rc=3 names-count=0
+cfg-dh-zero-negative first-stderr=step: tape observer-configuration record is not one this runtime could have written (thresholds must be positive): 'O 0 cfg -1 0.01 10 0.001'; refusing to step (docs/TRACE.md)
+cfg-dh-small-negative rc=3 names-count=0
+cfg-dh-small-negative first-stderr=step: tape observer-configuration record is not one this runtime could have written (thresholds must be positive): 'O 0 cfg 0.001 -1 10 0.001'; refusing to step (docs/TRACE.md)
+cfg-thresholds-equal rc=3 names-count=0
+cfg-thresholds-equal first-stderr=step: tape observer-configuration record is not one this runtime could have written (dh_zero must be less than dh_small): 'O 0 cfg 0.01 0.01 10 0.001'; refusing to step (docs/TRACE.md)
+cfg-scale-0 rc=3 names-count=0
+cfg-scale-0 first-stderr=step: tape observer-configuration record is not one this runtime could have written (scale must be positive and finite): 'O 0 cfg 0.001 0.01 10 0'; refusing to step (docs/TRACE.md)
+cfg-scale-huge rc=3 names-count=0
+cfg-scale-huge first-stderr=step: tape observer-configuration record is not one this runtime could have written (scale must be positive and finite): 'O 0 cfg 0.001 0.01 10 1e301'; refusing to step (docs/TRACE.md)
+cfg-window-65 rc=3 names-count=0
+cfg-window-65 first-stderr=step: tape observer-configuration record is not one this runtime could have written (window depth outside its [4, 64] range): 'O 0 cfg 0.001 0.01 65 0.001'; refusing to step (docs/TRACE.md)
+cfg-window-3 rc=3 names-count=0
+cfg-window-3 first-stderr=step: tape observer-configuration record is not one this runtime could have written (window depth outside its [4, 64] range): 'O 0 cfg 0.001 0.01 3 0.001'; refusing to step (docs/TRACE.md)
+cfg-window-wide rc=3 names-count=0
+cfg-window-wide first-stderr=step: tape observer-configuration record is not one this runtime could have written (window depth outside its [4, 64] range): 'O 0 cfg 0.001 0.01 4294967304 0.001'; refusing to step (docs/TRACE.md)
+cfg-scale-junk rc=3 names-count=0
+cfg-scale-junk first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01 10 0.001x'; refusing to step (docs/TRACE.md)
+cfg-window-64 rc=0 names-count=0
+cfg-window-64 first-stderr=<empty>
