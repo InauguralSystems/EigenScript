@@ -609,7 +609,7 @@ Value* builtin_get_observer_thresholds(Value *arg) {
     Value *result = make_list(3);
     list_append_owned(result, make_float(g_obs_dh_zero));
     list_append_owned(result, make_float(g_obs_dh_small));
-    list_append_owned(result, make_float(g_obs_h_low));
+    list_append_owned(result, make_float(OBSERVER_H_LOW_DEFAULT));
     return result;
 }
 

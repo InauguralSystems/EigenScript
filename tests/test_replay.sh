@@ -666,7 +666,7 @@ fi
 WORK_TAPE="$TMPDIR/observer-work-limit.tape"
 head -2 "$CONTRACT_TAPE" > "$WORK_TAPE"
 for _ in $(seq 1 1000); do
-    echo 'O 0 cfg 0.001 0.01 0.1 10 0.001' >> "$WORK_TAPE"
+    echo 'O 0 cfg 0.001 0.01 10 0.001' >> "$WORK_TAPE"
 done
 echo 'L 0 1' >> "$WORK_TAPE"
 for i in $(seq 1 1001); do

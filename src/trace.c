@@ -8,7 +8,7 @@
  *   L <stream> <line>           source-line event
  *   A <stream> <name>=<value>   name-keyed assignment delta
  *   N <stream> <fn>=<value>     nondeterministic builtin return
- *   O <stream> cfg <dh_zero> <dh_small> <h_low> <window> <scale>
+ *   O <stream> cfg <dh_zero> <dh_small> <window> <scale>
  *                               observer configuration in force (v3)
  *   O <stream> win <name> <n>   per-binding observer window override (v3)
  *
@@ -1028,7 +1028,7 @@ typedef struct TraceRecordingBinding {
     int line_dirty;             /* an A/N since the previous L */
     uint32_t scope_serial;
     int scope_native;
-    double obs_dh_zero, obs_dh_small, obs_h_low, obs_scale;
+    double obs_dh_zero, obs_dh_small, obs_scale;
     int obs_window;
 } TraceRecordingBinding;
 static TraceRecordingBinding g_native_recording;
@@ -1074,7 +1074,6 @@ static void recording_binding_reset(TraceRecordingBinding *binding,
     binding->last_line = -1;
     binding->obs_dh_zero = OBSERVER_DH_ZERO_DEFAULT;
     binding->obs_dh_small = OBSERVER_DH_SMALL_DEFAULT;
-    binding->obs_h_low = OBSERVER_H_LOW_DEFAULT;
     binding->obs_scale = OBSERVER_SCALE_DEFAULT;
     binding->obs_window = OBSERVER_WINDOW_N;
 }
@@ -1525,8 +1524,8 @@ static void emit_scope_transition(void) {
 /* ---- #1044/#1045 follow-up: the observer CONFIGURATION on the tape.
  *
  * Every verdict the runtime prints (`report of x`, the predicates, the
- * `--step`/DAP trajectory labels) is a function of the A records AND of five
- * knobs — three thresholds, the window depth, the characteristic scale — plus
+ * `--step`/DAP trajectory labels) is a function of the A records AND of four
+ * knobs — two step thresholds, the window depth, the characteristic scale — plus
  * a per-binding window override. The tape carried the assignments and not the
  * knobs, so a stepped tape classified at the state defaults and printed a
  * verdict the live run never gave (the phugoid `oscillating` vs `diverging`
@@ -1549,7 +1548,7 @@ static void emit_scope_transition(void) {
  * (#2198).
  *
  * Cost when no tape is open: nothing (the recording entry points return on
- * g_trace_enabled). With a tape open: five compares per L/A/N/O-win record. */
+ * g_trace_enabled). With a tape open: four compares per L/A/N/O-win record. */
 /* Emit `O cfg` when the state's observer configuration has moved since
  * what THIS STREAM last emitted. Callers hold g_tape_mu and have checked
  * trace_out_active(). A default-config stream writes no configuration record. */
@@ -1559,24 +1558,20 @@ static void obs_cfg_sync(void) {
     TraceRecordingBinding *binding = g_emit_stream;
     if (st->obs_dh_zero  == binding->obs_dh_zero  &&
         st->obs_dh_small == binding->obs_dh_small &&
-        st->obs_h_low    == binding->obs_h_low    &&
         st->obs_scale    == binding->obs_scale    &&
         st->obs_window   == binding->obs_window) return;
     binding->obs_dh_zero  = st->obs_dh_zero;
     binding->obs_dh_small = st->obs_dh_small;
-    binding->obs_h_low    = st->obs_h_low;
     binding->obs_scale    = st->obs_scale;
     binding->obs_window   = st->obs_window;
-    /* One field per tp_printf: its staging buffer is 128 bytes and five
-     * %.17g fields in one call could silently truncate the record. */
+    /* One field per tp_printf: its staging buffer is 128 bytes and four
+     * numeric fields in one call could silently truncate the record. */
     emit_tag("O");
     tp_puts("cfg ");
     char number[32];
     eigs_num_text(number, sizeof number, binding->obs_dh_zero);
     tp_printf("%s ", number);
     eigs_num_text(number, sizeof number, binding->obs_dh_small);
-    tp_printf("%s ", number);
-    eigs_num_text(number, sizeof number, binding->obs_h_low);
     tp_printf("%s ", number);
     tp_printf("%d ",    binding->obs_window);
     eigs_num_text(number, sizeof number, binding->obs_scale);

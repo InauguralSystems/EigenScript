@@ -53,7 +53,6 @@ EigsState *eigs_state_new(void) {
     /* Observer thresholds — same defaults as the legacy TLS globals. */
     st->obs_dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
     st->obs_dh_small = OBSERVER_DH_SMALL_DEFAULT;
-    st->obs_h_low    = OBSERVER_H_LOW_DEFAULT;
     st->obs_window   = OBSERVER_WINDOW_N;        /* #1044 */
     st->obs_scale    = OBSERVER_SCALE_DEFAULT;   /* #1045 */
     /* R2.2: IEEE arithmetic by default; strict is an explicit per-state trap.

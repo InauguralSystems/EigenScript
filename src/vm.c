@@ -533,7 +533,7 @@ int observer_predicate_at(Env *e, int idx, int kind, int require_used) {
  * control-flow / error-state globals (g_return_val, g_returning,
  * g_breaking, g_continuing, g_error_msg, g_error_value, g_has_error,
  * g_try_depth), and observer state (g_unobserved_depth, g_last_observer,
- * g_builtin_call_env, g_obs_dh_zero/small/h_low) are EigsThread/EigsState
+ * g_builtin_call_env, g_obs_dh_zero/small) are EigsThread/EigsState
  * fields; the g_* identifiers are macros in eigenscript.h. No extern
  * decls needed here. */
 

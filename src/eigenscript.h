@@ -948,7 +948,6 @@ struct EigsState {
     int             obs_eval_retains_code;
     double          obs_dh_zero;    /* |dH| < this → "zero change"  (default 0.001) */
     double          obs_dh_small;   /* |dH| < this → "small change" (default 0.01)  */
-    double          obs_h_low;      /* entropy < this → "low info"  (default 0.1)   */
     int             obs_window;     /* #1044 default value/dH window depth (default OBSERVER_WINDOW_N) */
     double          obs_scale;      /* #1045 characteristic scale: rel = Δv / max(|v|, |v_prev|, obs_scale) (default 0.001) */
     /* #971/#1361: strict mode. ON by default (read once at creation; only
@@ -1662,7 +1661,6 @@ void eigs_bool_gate_exempt(BuiltinFn fn);   /* a host function: never gated */
 #define g_jit_compiled_count  (eigs_current->jit_compiled_count)
 #define g_obs_dh_zero       (eigs_current->state->obs_dh_zero)
 #define g_obs_dh_small      (eigs_current->state->obs_dh_small)
-#define g_obs_h_low         (eigs_current->state->obs_h_low)
 #define g_obs_window        (eigs_current->state->obs_window)
 #define g_obs_scale         (eigs_current->state->obs_scale)
 #define g_global_env          (eigs_current->state->global_env)
@@ -2470,8 +2468,9 @@ int  eigs_loading_active(const char *abs_path);
 void eigs_loading_enter(const char *abs_path);
 void eigs_loading_leave(const char *abs_path);
 
-/* Observer thresholds are EigsState fields — set via set_observer_thresholds;
- * read through g_obs_dh_zero / g_obs_dh_small / g_obs_h_low (macros above). */
+/* The two step thresholds are EigsState fields (macros above), retained
+ * for tape configuration folds. Entropy uses OBSERVER_H_LOW_DEFAULT directly;
+ * no program or embed setter changes the observer constants. */
 
 /* #412: `how` — deadband-normalized settledness of the last observed step,
  * 1.0 (unmoved) .. 0.0 (moved by >= the settle deadband). Pure function of

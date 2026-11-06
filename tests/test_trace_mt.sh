@@ -50,7 +50,7 @@ parse_tape() {
     function ok_line(s, v) {
         if (s ~ /^L [0-9][0-9]* [0-9][0-9]*$/) return 1
         if (s ~ /^S [0-9][0-9]* [^ ]+ [0-9][0-9]* [0-9][0-9]*$/) return 1
-        if (s ~ /^O [0-9][0-9]* cfg [^ ]+ [^ ]+ [^ ]+ [0-9][0-9]* [^ ]+$/) return 1
+        if (s ~ /^O [0-9][0-9]* cfg [^ ]+ [^ ]+ [0-9][0-9]* [^ ]+$/) return 1
         if (s ~ /^O [0-9][0-9]* win [^ ]+ [0-9][0-9]*$/) return 1
         if (s ~ /^V [0-9][0-9]* [^ ]+$/) return 1
         if (s ~ /^B [0-9][0-9]* [0-9][0-9]* [0-9][0-9]* [0-9][0-9]* (root (-|[0-9a-f]+)|host [0-9a-f]+|child [0-9][0-9]* [0-9][0-9]*|local)$/) return 1
@@ -93,7 +93,7 @@ selftest() {
     printf '%s\n' 'V 5 0.43.0' '30257A r=570844060311' '30101653L 7' \
         'N 0 random=0.5N 0 monotonic_ns=17' 'A 0 x=1A 0 y=2' > "$torn"
     : > "$empty"
-    printf '%s\n' 'V 5 0.43.0' 'B 0 1 1 0 root -' 'L 0 1' 'N 0 random=0.5' 'A 0 x=1' > "$good"
+    printf '%s\n' 'V 5 0.43.0' 'B 0 1 1 0 root -' 'O 0 cfg 0.001 0.01 10 0.001' 'L 0 1' 'N 0 random=0.5' 'A 0 x=1' > "$good"
 
     local t_lines t_well t_mal t_n t_o t_ex
     read -r t_lines t_well t_mal t_n t_o t_ex <<< "$(parse_tape "$torn")"
@@ -118,7 +118,7 @@ selftest() {
     fi
 
     read -r t_lines t_well t_mal t_n t_o t_ex <<< "$(parse_tape "$good")"
-    if [ "$t_mal" -eq 0 ] && [ "$t_ex" -eq 5 ] && [ "$t_n" -eq 1 ]; then
+    if [ "$t_mal" -eq 0 ] && [ "$t_ex" -eq 6 ] && [ "$t_n" -eq 1 ]; then
         ok "selftest: well-formed fixture is green (examined=$t_ex N=$t_n)"
     else
         fail "selftest: well-formed fixture is green" \

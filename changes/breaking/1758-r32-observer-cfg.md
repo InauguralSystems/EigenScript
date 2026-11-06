@@ -1,0 +1,1 @@
+- Tape v10 observer configuration now carries exactly `dh_zero dh_small window scale`. Readers refuse any other field count before applying configuration, including legacy five-field records. Non-numeric entropy and `get_observer_thresholds` use the compiled `h_low = 0.1` constant. (#1758)

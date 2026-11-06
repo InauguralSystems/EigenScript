@@ -1745,7 +1745,7 @@ static int obs_entropy_converged(const ObserverSlot *s) {
     if (obs_dh_count(s) < N) return 0;
     for (size_t i = 0; i < N; i++)
         if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_zero) return 0;
-    return (s->ent_entropy < g_obs_h_low) ? 1 : 0;
+    return (s->ent_entropy < OBSERVER_H_LOW_DEFAULT) ? 1 : 0;
 }
 
 int observer_slot_converged(const ObserverSlot *s) {
@@ -1816,7 +1816,7 @@ int observer_slot_oscillating(const ObserverSlot *s) {
 static int obs_entropy_stable(const ObserverSlot *s) {
     size_t cnt = s ? obs_dh_count(s) : 0;
     if (cnt < (size_t)observer_slot_window(s)) return 0;
-    if (s->ent_entropy < g_obs_h_low) return 0;
+    if (s->ent_entropy < OBSERVER_H_LOW_DEFAULT) return 0;
     for (size_t i = 0; i < cnt; i++)
         if (fabs(observer_slot_window_get(s, i)) >= g_obs_dh_small) return 0;
     for (size_t i = 0; i + 1 < cnt; i++) {
@@ -1884,7 +1884,7 @@ const char *observer_slot_report_entropy(const ObserverSlot *s) {
     if (obs_dh_count(s) >= (size_t)observer_slot_window(s)) return "moving";
     /* Partial-window best-effort label (mirrors builtin_report's tail). */
     if (fabs(s->ent_dH) < g_obs_dh_zero) return "equilibrium";
-    if (fabs(s->ent_dH) < g_obs_dh_small && s->ent_entropy >= g_obs_h_low) return "stable";
+    if (fabs(s->ent_dH) < g_obs_dh_small && s->ent_entropy >= OBSERVER_H_LOW_DEFAULT) return "stable";
     return "stable";
 }
 
@@ -2100,7 +2100,7 @@ bad:
 
 
 /* g_last_observer, g_builtin_call_env, g_unobserved_depth are EigsThread
- * fields; g_obs_dh_zero/small/h_low are EigsState fields. See the macros
+ * fields; g_obs_dh_zero/small are EigsState fields. See the macros
  * in eigenscript.h that bridge the source identifiers to those fields. */
 
 /* Phase 8: release per-thread NUM freelist memory + intern table at detach.
