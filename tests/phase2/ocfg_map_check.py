@@ -3,6 +3,8 @@
 
 A selected case retains the valid four-field control in every MAP tier.
 The transverse plant removes only the selected mismatch's failure assertion.
+Child --step crashes are captured by the row as case rc/label/stderr, so a
+planted reader crash is a named mismatch. A failed row harness is BROKEN.
 """
 from pathlib import Path
 import argparse
