@@ -93,3 +93,30 @@ install_case cfg-install-dh-zero slow 'O 0 cfg 0.0000001 0.01 10 0.001'
 
 # R32-1: window syntax stays decimal; a correct field count is not enough.
 cfg_case cfg-4-window-hex 'O 0 cfg 0.001 0.01 0x4 0.001'
+
+# R32-2: the no-record fold starts from all four compiled defaults.
+cat > tiny.eigs <<'EOF'
+x is 1.0
+n is 0
+loop while n < 30:
+    n is n + 1
+    x is 0.0005 + 0.0001 / n
+print of (report of x)
+EOF
+cat > p1.eigs <<'EOF'
+x is 1.0
+x is 1.005
+print of (report of x)
+EOF
+cat > p2.eigs <<'EOF'
+x is 0.0
+x is 0.00005
+print of (report of x)
+EOF
+for program in tiny p1 p2; do
+    "$bin" --lint --json "$program.eigs" > "$program.lint"
+    EIGS_TRACE="$program.tape" "$bin" "$program.eigs" > "$program.record"
+done
+install_case cfg-start-tiny tiny ''
+install_case cfg-start-p1 p1 ''
+install_case cfg-start-p2 p2 ''

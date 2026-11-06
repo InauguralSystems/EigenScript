@@ -30,3 +30,9 @@ cfg-install-dh-zero rc=0 label=[stable]
 cfg-install-dh-zero first-stderr=<empty>
 cfg-4-window-hex rc=3 names-count=0
 cfg-4-window-hex first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01 0x4 0.001'; refusing to step (docs/TRACE.md)
+cfg-start-tiny rc=0 label=[improving]
+cfg-start-tiny first-stderr=<empty>
+cfg-start-p1 rc=0 label=[stable]
+cfg-start-p1 first-stderr=<empty>
+cfg-start-p2 rc=0 label=[moving]
+cfg-start-p2 first-stderr=<empty>
