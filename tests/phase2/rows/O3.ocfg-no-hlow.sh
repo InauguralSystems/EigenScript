@@ -20,6 +20,9 @@ print of (report of x)
 EOF
 "$bin" --lint --json p.eigs > lint.out
 EIGS_TRACE=base.tape "$bin" p.eigs > record.out
+# A refusal quotes the record. Print a vertical tab as ^ and every byte
+# above 0x7f as #, so the transcript stays one ASCII line per case.
+visible() { LC_ALL=C tr '\013' '^' | LC_ALL=C tr '\200-\377' '#'; }
 cfg_case() {
     label=$1
     record=$2
@@ -29,7 +32,7 @@ cfg_case() {
     names=0
     if grep -q 'has [0-9][0-9]* fields, expected 4:' step.err; then names=1; fi
     printf '%s rc=%s names-count=%s\n' "$label" "$rc" "$names"
-    first=$(head -1 step.err)
+    first=$(head -1 step.err | visible)
     printf '%s first-stderr=%s\n' "$label" "${first:-<empty>}"
 }
 cfg_case cfg-4-fields 'O 0 cfg 0.001 0.01 10 0.001'
@@ -80,7 +83,7 @@ install_case() {
     { "$bin" --step install.tape "$program.eigs" < commands.in > step.out; } 2> step.err || rc=$?
     label=$(sed -n '/x = /s/.*\[\([^]]*\)\].*/[\1]/p' step.out)
     printf '%s rc=%s label=%s\n' "$name" "$rc" "${label:-<missing>}"
-    first=$(head -1 step.err)
+    first=$(head -1 step.err | visible)
     printf '%s first-stderr=%s\n' "$name" "${first:-<empty>}"
 }
 install_case cfg-install-flat-none flat ''
@@ -206,3 +209,96 @@ live_case cfg-entropy-es-high es_high
 # witness. This row does not claim to test that unreachable observable.
 # Also recorded: observer_slot_report_entropy's final h_low condition is
 # dead (both its true branch and fallthrough return stable); unchanged here.
+
+# R32-3: the mechanical sweep's witnesses. Every case below is the one input
+# that tells a surviving one-token mutant of a line R3.2 wrote from the head
+# (briefs/out/r3-2/orch-sweep/um/: 941 mutants, the survivor table).
+vt=$(printf '\013')
+hi=$(printf '\303\251')
+
+# Each numeric field is one whole token, and the scale is the last one.
+cfg_case cfg-dh-zero-junk 'O 0 cfg 0.001+0.9 10 0.001 0.001'
+cfg_case cfg-dh-small-junk 'O 0 cfg 0.001 0.01+10 0.001 0.001'
+cfg_case cfg-window-dot 'O 0 cfg 0.001 0.01 .5 0.001'
+cfg_case cfg-scale-text 'O 0 cfg 0.001 0.01 10 x'
+cfg_case cfg-scale-high-byte "O 0 cfg 0.001 0.01 10 0.001$hi"
+# dh_small 0 is refused as a threshold, not as an ordering; a window of
+# -(2^32 - 4) is refused, not narrowed to 4.
+cfg_case cfg-dh-small-0 'O 0 cfg 0.001 0 10 0.001'
+cfg_case cfg-window-wide-negative 'O 0 cfg 0.001 0.01 -4294967292 0.001'
+
+# Fields are whitespace-delimited (docs/TRACE.md): runs of spaces, a trailing
+# space and a vertical tab all separate, in the count and after the keyword.
+install_case cfg-sep-spaces flat 'O 0 cfg  0.001   0.9 10 0.001 '
+install_case cfg-sep-vtab-keyword flat "O 0 cfg${vt}0.001 0.9 10 0.001"
+cfg_case cfg-sep-vtab-field "O 0 cfg 0.001${vt}0.9 10 0.001 0.001"
+
+# Only the exact keyword `cfg` is a configuration record. The four records
+# below install nothing: the label is the no-record `[moving]`. (That an
+# unknown O sub-record is skipped silently, rc 0, is #2334's residual; the
+# pin here is that it is not read as `cfg`.) An `O win` record still applies.
+install_case cfg-keyword-cfa flat 'O 0 cfa 0.001 0.9 10 0.001'
+install_case cfg-keyword-cfz flat 'O 0 cfz 0.001 0.9 10 0.001'
+install_case cfg-keyword-cfgx flat 'O 0 cfgx 0.001 0.9 10 0.001'
+install_case cfg-keyword-high-byte flat "O 0 cfg$hi 0.001 0.9 10 0.001"
+install_case cfg-win-record flat 'O 0 win x 4'
+
+# The entropy constant, bracketed: a one-`b` string of 78 bytes has entropy
+# 0.09896 and one of 77 bytes has 0.100001. Each reader lands on opposite
+# sides of 0.1 for the two, so a constant outside (0.09896, 0.100001] is red.
+cat > ec_below.eigs <<'EOF'
+define run() as:
+    local s is "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+    local k is 0
+    loop while k < 60:
+        s is "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+        k is k + 1
+    return classify of [trajectory of s, "entropy"]
+print of (run of null)
+EOF
+cat > ec_above.eigs <<'EOF'
+define run() as:
+    local s is "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+    local k is 0
+    loop while k < 60:
+        s is "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+        k is k + 1
+    return classify of [trajectory of s, "entropy"]
+print of (run of null)
+EOF
+cat > es_below.eigs <<'EOF'
+define run() as:
+    local s is "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+    local k is 0
+    loop while k < 14:
+        s is s + "a"
+        k is k + 1
+    return classify of [trajectory of s, "entropy"]
+print of (run of null)
+EOF
+cat > es_above.eigs <<'EOF'
+define run() as:
+    local s is "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+    local k is 0
+    loop while k < 14:
+        s is s + "a"
+        k is k + 1
+    return classify of [trajectory of s, "entropy"]
+print of (run of null)
+EOF
+# The third reader's partial-window tail (three steps, entropy above 0.1,
+# each step between dh_zero and dh_small): the label is `stable`.
+cat > rp_part.eigs <<'EOF'
+define run() as:
+    local s is "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+    s is s + "a"
+    s is s + "a"
+    s is s + "a"
+    return classify of [trajectory of s, "entropy"]
+print of (run of null)
+EOF
+live_case cfg-entropy-ec-below ec_below
+live_case cfg-entropy-ec-above ec_above
+live_case cfg-entropy-es-below es_below
+live_case cfg-entropy-es-above es_above
+live_case cfg-entropy-report-partial rp_part

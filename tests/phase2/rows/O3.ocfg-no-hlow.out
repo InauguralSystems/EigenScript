@@ -66,3 +66,43 @@ cfg-entropy-es-low rc=0 last=moving
 cfg-entropy-es-low first-stderr=<empty>
 cfg-entropy-es-high rc=0 last=stable
 cfg-entropy-es-high first-stderr=<empty>
+cfg-dh-zero-junk rc=3 names-count=0
+cfg-dh-zero-junk first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001+0.9 10 0.001 0.001'; refusing to step (docs/TRACE.md)
+cfg-dh-small-junk rc=3 names-count=0
+cfg-dh-small-junk first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01+10 0.001 0.001'; refusing to step (docs/TRACE.md)
+cfg-window-dot rc=3 names-count=0
+cfg-window-dot first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01 .5 0.001'; refusing to step (docs/TRACE.md)
+cfg-scale-text rc=3 names-count=0
+cfg-scale-text first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01 10 x'; refusing to step (docs/TRACE.md)
+cfg-scale-high-byte rc=3 names-count=0
+cfg-scale-high-byte first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01 10 0.001##'; refusing to step (docs/TRACE.md)
+cfg-dh-small-0 rc=3 names-count=0
+cfg-dh-small-0 first-stderr=step: tape observer-configuration record is not one this runtime could have written (thresholds must be positive): 'O 0 cfg 0.001 0 10 0.001'; refusing to step (docs/TRACE.md)
+cfg-window-wide-negative rc=3 names-count=0
+cfg-window-wide-negative first-stderr=step: tape observer-configuration record is not one this runtime could have written (window depth outside its [4, 64] range): 'O 0 cfg 0.001 0.01 -4294967292 0.001'; refusing to step (docs/TRACE.md)
+cfg-sep-spaces rc=0 label=[stable]
+cfg-sep-spaces first-stderr=<empty>
+cfg-sep-vtab-keyword rc=0 label=[stable]
+cfg-sep-vtab-keyword first-stderr=<empty>
+cfg-sep-vtab-field rc=3 names-count=1
+cfg-sep-vtab-field first-stderr=tape observer-configuration record has 5 fields, expected 4: O 0 cfg 0.001^0.9 10 0.001 0.001
+cfg-keyword-cfa rc=0 label=[moving]
+cfg-keyword-cfa first-stderr=<empty>
+cfg-keyword-cfz rc=0 label=[moving]
+cfg-keyword-cfz first-stderr=<empty>
+cfg-keyword-cfgx rc=0 label=[moving]
+cfg-keyword-cfgx first-stderr=<empty>
+cfg-keyword-high-byte rc=0 label=[moving]
+cfg-keyword-high-byte first-stderr=<empty>
+cfg-win-record rc=0 label=[converged]
+cfg-win-record first-stderr=<empty>
+cfg-entropy-ec-below rc=0 last=converged
+cfg-entropy-ec-below first-stderr=<empty>
+cfg-entropy-ec-above rc=0 last=equilibrium
+cfg-entropy-ec-above first-stderr=<empty>
+cfg-entropy-es-below rc=0 last=moving
+cfg-entropy-es-below first-stderr=<empty>
+cfg-entropy-es-above rc=0 last=stable
+cfg-entropy-es-above first-stderr=<empty>
+cfg-entropy-report-partial rc=0 last=stable
+cfg-entropy-report-partial first-stderr=<empty>
