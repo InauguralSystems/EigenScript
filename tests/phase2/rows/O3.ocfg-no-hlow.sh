@@ -228,9 +228,10 @@ cfg_case cfg-dh-small-0 'O 0 cfg 0.001 0 10 0.001'
 cfg_case cfg-window-wide-negative 'O 0 cfg 0.001 0.01 -4294967292 0.001'
 
 # Fields are whitespace-delimited (docs/TRACE.md): runs of spaces, a trailing
-# space and a vertical tab all separate, in the count and after the keyword.
+# space and a vertical tab all separate: after the keyword, in the count and
+# at the end of every field (the second record uses nothing but vertical tabs).
 install_case cfg-sep-spaces flat 'O 0 cfg  0.001   0.9 10 0.001 '
-install_case cfg-sep-vtab-keyword flat "O 0 cfg${vt}0.001 0.9 10 0.001"
+install_case cfg-sep-vtab-keyword flat "O 0 cfg${vt}0.001${vt}0.9${vt}10${vt}0.001${vt}"
 cfg_case cfg-sep-vtab-field "O 0 cfg 0.001${vt}0.9 10 0.001 0.001"
 
 # Only the exact keyword `cfg` is a configuration record. The four records
@@ -302,3 +303,157 @@ live_case cfg-entropy-ec-above ec_above
 live_case cfg-entropy-es-below es_below
 live_case cfg-entropy-es-above es_above
 live_case cfg-entropy-report-partial rp_part
+
+# R32-3: the fold's start values, bracketed. The trajectory is one value,
+# one bump and nine returns, so the 11-value window's diameter is the bump.
+# converged needs bump <= dh_zero * max(|x|, scale); stable needs
+# bump / 2 <= dh_small * max(|midrange|, scale). The two bumps of each pair
+# sit 2e-8 (relative) either side of the threshold the default implies, so
+# a start dh_zero, dh_small or scale that is off by more than that, or held
+# in a float, is red. The window is pinned exactly: ten repeats do not fill
+# an 11-value window, eleven do.
+cat > dz_in.eigs <<'EOF'
+x is 1.0
+x is 1.00099999998
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+print of (report of x)
+EOF
+cat > dz_out.eigs <<'EOF'
+x is 1.0
+x is 1.00100000002
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+print of (report of x)
+EOF
+cat > ds_in.eigs <<'EOF'
+x is 1.0
+x is 1.02020202
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+print of (report of x)
+EOF
+cat > ds_out.eigs <<'EOF'
+x is 1.0
+x is 1.0202020204040405
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+print of (report of x)
+EOF
+cat > sc_in.eigs <<'EOF'
+x is 0.0
+x is 9.999999799999999e-07
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+print of (report of x)
+EOF
+cat > sc_out.eigs <<'EOF'
+x is 0.0
+x is 1.00000002e-06
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+print of (report of x)
+EOF
+cat > w10.eigs <<'EOF'
+x is 1.0
+x is 2.0
+x is 2.0
+x is 2.0
+x is 2.0
+x is 2.0
+x is 2.0
+x is 2.0
+x is 2.0
+x is 2.0
+x is 2.0
+print of (report of x)
+EOF
+cat > w11.eigs <<'EOF'
+x is 1.0
+x is 2.0
+x is 2.0
+x is 2.0
+x is 2.0
+x is 2.0
+x is 2.0
+x is 2.0
+x is 2.0
+x is 2.0
+x is 2.0
+x is 2.0
+print of (report of x)
+EOF
+cat > dzx.eigs <<'EOF'
+x is 1.0
+x is 1.0010000002104689
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+print of (report of x)
+EOF
+for program in dz_in dz_out ds_in ds_out sc_in sc_out w10 w11 dzx; do
+    "$bin" --lint --json "$program.eigs" > "$program.lint"
+    EIGS_TRACE="$program.tape" "$bin" "$program.eigs" > "$program.record"
+done
+install_case cfg-start-dh-zero-in dz_in ''
+install_case cfg-start-dh-zero-out dz_out ''
+install_case cfg-start-dh-small-in ds_in ''
+install_case cfg-start-dh-small-out ds_out ''
+install_case cfg-start-scale-in sc_in ''
+install_case cfg-start-scale-out sc_out ''
+install_case cfg-start-window-short w10 ''
+install_case cfg-start-window-full w11 ''
+# A record's value is carried at full double precision: this dh_zero is
+# 1e-14 above the bump and 4.6e-11 above the nearest float below it.
+install_case cfg-install-exact-none dzx ''
+install_case cfg-install-exact dzx 'O 0 cfg 0.0010000002104789019 0.01 10 0.001'
+# The smallest thresholds and the largest scale the checks admit.
+cfg_case cfg-bounds-accepted 'O 0 cfg 1e-300 1e-299 10 1e300'

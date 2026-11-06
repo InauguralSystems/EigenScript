@@ -106,3 +106,25 @@ cfg-entropy-es-above rc=0 last=stable
 cfg-entropy-es-above first-stderr=<empty>
 cfg-entropy-report-partial rc=0 last=stable
 cfg-entropy-report-partial first-stderr=<empty>
+cfg-start-dh-zero-in rc=0 label=[converged]
+cfg-start-dh-zero-in first-stderr=<empty>
+cfg-start-dh-zero-out rc=0 label=[equilibrium]
+cfg-start-dh-zero-out first-stderr=<empty>
+cfg-start-dh-small-in rc=0 label=[stable]
+cfg-start-dh-small-in first-stderr=<empty>
+cfg-start-dh-small-out rc=0 label=[moving]
+cfg-start-dh-small-out first-stderr=<empty>
+cfg-start-scale-in rc=0 label=[converged]
+cfg-start-scale-in first-stderr=<empty>
+cfg-start-scale-out rc=0 label=[equilibrium]
+cfg-start-scale-out first-stderr=<empty>
+cfg-start-window-short rc=0 label=[moving]
+cfg-start-window-short first-stderr=<empty>
+cfg-start-window-full rc=0 label=[converged]
+cfg-start-window-full first-stderr=<empty>
+cfg-install-exact-none rc=0 label=[equilibrium]
+cfg-install-exact-none first-stderr=<empty>
+cfg-install-exact rc=0 label=[converged]
+cfg-install-exact first-stderr=<empty>
+cfg-bounds-accepted rc=0 names-count=0
+cfg-bounds-accepted first-stderr=<empty>
