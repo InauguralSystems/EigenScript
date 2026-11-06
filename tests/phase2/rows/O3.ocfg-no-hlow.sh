@@ -192,3 +192,16 @@ live_case cfg-entropy-ec-low ec_low
 live_case cfg-entropy-ec-high ec_high
 live_case cfg-entropy-es-low es_low
 live_case cfg-entropy-es-high es_high
+
+# R32-2 caller-audit residual: capture/restore has no observable through
+# current clients. tape_classify_at returns only the settled literal label;
+# step.c print_binding / show_trajectory and eigsdap.c append_binding_value /
+# handle_variables serialize labels, then inspect only the tape. DAP evaluate
+# resolves recorded names; it executes no program. Every later fold resets
+# all four defaults, so leftover reader configuration cannot change it.
+# Makefile CLI_ONLY excludes tape_read.c from EMBED_SOURCES/amalgamation;
+# the embed API has no TapeTraj caller. No nested or concurrent live fold.
+# Future callers mixing tape folds and live evaluation need a restoration
+# witness. This row does not claim to test that unreachable observable.
+# Also recorded: observer_slot_report_entropy's final h_low condition is
+# dead (both its true branch and fallthrough return stable); unchanged here.
