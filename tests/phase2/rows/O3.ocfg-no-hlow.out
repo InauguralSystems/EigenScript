@@ -170,5 +170,17 @@ cfg-install-mid-before rc=0 label=[moving]
 cfg-install-mid-before first-stderr=<empty>
 cfg-install-mid-after rc=0 label=[converged]
 cfg-install-mid-after first-stderr=<empty>
+cfg-install-inner-before rc=0 label=[moving]
+cfg-install-inner-before first-stderr=<empty>
+cfg-install-inner-next rc=0 label=[converged]
+cfg-install-inner-next first-stderr=<empty>
 cfg-install-other-stream rc=0 label=[moving]
 cfg-install-other-stream first-stderr=<empty>
+cfg-stream1-5-fields rc=3 names-count=1
+cfg-stream1-5-fields first-stderr=tape observer-configuration record has 5 fields, expected 4: O 1 cfg 0.001 0.01 8 10 0.001
+cfg-stream1-window-text rc=3 names-count=0
+cfg-stream1-window-text first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 1 cfg 0.001 0.01 eight 0.001'; refusing to step (docs/TRACE.md)
+cfg-stream1-window-3 rc=3 names-count=0
+cfg-stream1-window-3 first-stderr=step: tape observer-configuration record is not one this runtime could have written (window depth outside its [4, 64] range): 'O 1 cfg 0.001 0.01 3 0.001'; refusing to step (docs/TRACE.md)
+cfg-valid-then-5-fields rc=3 names-count=1
+cfg-valid-then-5-fields first-stderr=tape observer-configuration record has 5 fields, expected 4: O 0 cfg 0.001 0.01 8 10 0.001

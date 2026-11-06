@@ -71,7 +71,9 @@ while [ $# -gt 0 ]; do
                 r324-report-partial|\
                 r325-entropy-converged-float|r325-entropy-stable-float|\
                 r326-entropy-converged-strict|r326-entropy-stable-strict|\
-                r326-entropy-field|r326-record-position|r326-record-stream) ONLY="$2" ;;
+                r326-entropy-field|r326-record-position|r326-record-stream|\
+                r327-refuse-count-table|r327-refuse-parse-table|\
+                r327-refuse-range-table|r327-record-next) ONLY="$2" ;;
                 *) echo "phase2-plants: FAIL: unknown plant id $2"; exit 2 ;;
             esac
             shift 2 ;;
@@ -113,7 +115,7 @@ EXPECTED_ORACLE=4
 stall_plants=0; stall_killed=0; stall_survived=0; stall_broken=0; stall_green=0; stall_available=0
 EXPECTED_STALL=10
 ocfg_plants=0; ocfg_killed=0; ocfg_survived=0; ocfg_broken=0; ocfg_green=0; ocfg_transverse=0; ocfg_available=0
-EXPECTED_OCFG=33
+EXPECTED_OCFG=37
 PRISTINE="$WORK/observer-pristine"
 EXPECTED_PLANTS=19
 EXPECTED_OBSERVER=11
@@ -781,6 +783,25 @@ mutate_ocfg() {
                     q0 = q; o.dh_zero = strtod(q, &q);' \
                 '                    o.rec = 0;
                     q0 = q; o.dh_zero = strtod(q, &q);' || return 1 ;;
+        r327-refuse-count-table)
+            replace "$file" '"fields, expected 4: %s\n", fields, p);
+                        free(streams);' \
+                '"fields, expected 4: %s\n", fields, p);
+                        free(ps);' || return 1 ;;
+        r327-refuse-parse-table)
+            replace "$file" \
+                'if (!ok) { free(streams); return obs_cfg_refuse("truncated record", p); }' \
+                'if (!ok) { free(ps); return obs_cfg_refuse("truncated record", p); }' || return 1 ;;
+        r327-refuse-range-table)
+            replace "$file" 'return obs_cfg_refuse("truncated record", p); }
+                    if (!obs_cfg_rec_ok(&o, p)) { free(streams); return 0; }' \
+                'return obs_cfg_refuse("truncated record", p); }
+                    if (!obs_cfg_rec_ok(&o, p)) { free(ps); return 0; }' || return 1 ;;
+        r327-record-next)
+            replace "$file" '                o.rec = t->nrecs;
+                o.scope = ps->scope;' \
+                '                o.rec = t->nrecs + 1;
+                o.scope = ps->scope;' || return 1 ;;
         r326-record-stream)
             replace "$file" '                    o.binding = 0;
                     q0 = q; o.dh_zero = strtod(q, &q);' \
@@ -789,13 +810,25 @@ mutate_ocfg() {
         *) echo "unknown ocfg mutation: $id"; return 1 ;;
     esac
 }
+# One tree serves every O-configuration plant, so only the first plant pays
+# for a full build (33 full builds, one per plant, took the hosted self-test job to its time
+# limit). Each plant first restores the files a plant may edit from the
+# pristine archive: a fresh copy, so make sees it as newer than its object.
+OCFG_TREE="$WORK/ocfg-plant"
+OCFG_SEEN=""; OCFG_GREEN_SUM=""
+ocfg_restore() {
+    local f
+    for f in src/tape_read.c src/eigenscript.c tests/phase2/ocfg_map_check.py; do
+        cmp -s "$PRISTINE/$f" "$OCFG_TREE/$f" || cp "$PRISTINE/$f" "$OCFG_TREE/$f" || return 1
+    done
+}
 run_ocfg_plant() {
-    local id="$1" case_name="$2" mode dir log build rc verdict="" trans="" pattern
+    local id="$1" case_name="$2" mode dir log build rc verdict="" trans="" pattern sum
     ocfg_available=$((ocfg_available + 1))
     [ -z "$ONLY" ] || [ "$ONLY" = "$id" ] || return 0
     ocfg_plants=$((ocfg_plants + 1))
     for mode in green plant transverse; do
-        if [ "$mode" = green ]; then dir="$PRISTINE"; else dir="$WORK/$id-plant"; fi
+        if [ "$mode" = green ]; then dir="$PRISTINE"; else dir="$OCFG_TREE"; fi
         if [ ! -d "$dir" ]; then
             mkdir -p "$dir"
             if ! git -C "$ROOT" archive "$REF" | tar -x -C "$dir"; then
@@ -803,6 +836,7 @@ run_ocfg_plant() {
             fi
         fi
         if [ "$mode" = plant ]; then
+            if ! ocfg_restore; then verdict=BROKEN; echo "  $id: restore of the shared tree failed"; break; fi
             if ! mutate_ocfg "$id" "$dir"; then verdict=BROKEN; break; fi
         elif [ "$mode" = transverse ]; then
             if ! replace "$dir/tests/phase2/ocfg_map_check.py" \
@@ -818,6 +852,18 @@ run_ocfg_plant() {
             if [ "$rc" -ne 0 ] || grep -q 'warning:' "$build"; then
                 verdict=BROKEN; echo "  $id: build did not finish warning-free (rc=$rc):"
                 tail -20 "$build" | sed 's/^/    | /'; break
+            fi
+            # The shared tree must not serve a stale product: this binary has
+            # to differ from the unplanted one and from every earlier plant's.
+            sum=$(cksum < "$dir/src/eigenscript" | tr ' ' ':') || { verdict=BROKEN; break; }
+            if [ "$mode" = green ]; then
+                OCFG_GREEN_SUM="$sum"
+            else
+                case " $OCFG_GREEN_SUM$OCFG_SEEN " in
+                    *" $sum "*) verdict=BROKEN
+                        echo "  $id: the plant build repeats an earlier binary ($sum)"; break ;;
+                esac
+                OCFG_SEEN="$OCFG_SEEN $sum"
             fi
         fi
         log="$WORK/$id-$mode.log"
@@ -899,6 +945,14 @@ run_ocfg_plant r326-entropy-stable-strict cfg-entropy-dict-es-equal
 run_ocfg_plant r326-entropy-field cfg-entropy-dict-ec-equal
 run_ocfg_plant r326-record-position cfg-install-mid-before
 run_ocfg_plant r326-record-stream cfg-install-other-stream
+
+# R32-6: the three refusals release the stream table (a second declared
+# stream tells it from the current stream's entry), and a record does not
+# reach one record later than its own position.
+run_ocfg_plant r327-refuse-count-table cfg-stream1-5-fields
+run_ocfg_plant r327-refuse-parse-table cfg-stream1-window-text
+run_ocfg_plant r327-refuse-range-table cfg-stream1-window-3
+run_ocfg_plant r327-record-next cfg-install-inner-next
 
 echo "plants=$plants killed=$killed survived=$survived broken=$broken transverse=$transverse"
 echo "observer-unplanted=$observer_green expected=$EXPECTED_OBSERVER"

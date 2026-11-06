@@ -58,7 +58,11 @@ def main():
                                     'cfg-entropy-dict-ec-equal',
                                     'cfg-entropy-dict-es-equal',
                                     'cfg-install-mid-before',
-                                    'cfg-install-other-stream'))
+                                    'cfg-install-other-stream',
+                                    'cfg-stream1-5-fields',
+                                    'cfg-stream1-window-text',
+                                    'cfg-stream1-window-3',
+                                    'cfg-install-inner-next'))
     args = p.parse_args()
     row = ROOT / 'tests/phase2/rows/O3.ocfg-no-hlow.sh'
     if header(str(row)).get('TIERS', '').split() != TIERS:

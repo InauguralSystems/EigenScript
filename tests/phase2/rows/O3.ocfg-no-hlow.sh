@@ -28,7 +28,9 @@ cfg_case() {
     record=$2
     { head -2 base.tape; printf '%s\n' "$record"; tail -n +3 base.tape; } > case.tape
     rc=0
-    printf 'q\n' | "$bin" --step case.tape p.eigs > step.out 2> step.err || rc=$?
+    # The group keeps the shell's own report of a killed reader out of the
+    # row's stderr, so an abort shows as its exit code, not as a broken row.
+    { printf 'q\n' | "$bin" --step case.tape p.eigs > step.out 2> step.err; } 2> shell.err || rc=$?
     names=0
     if grep -q 'has [0-9][0-9]* fields, expected 4:' step.err; then names=1; fi
     printf '%s rc=%s names-count=%s\n' "$label" "$rc" "$names"
@@ -666,22 +668,32 @@ install_case cfg-start-zero-1000-above xz_gt ''
 install_case cfg-start-small-100-equal xs_eq ''
 install_case cfg-start-small-100-above xs_gt ''
 # The range checks at their exact bounds: the smallest positive double is
-# accepted for both thresholds and the scale; the next double above 1e300
-# is refused.
+# accepted for dh_zero and the scale, and the next double above it for
+# dh_small (which must exceed dh_zero); the next double above 1e300 is
+# refused as a scale.
 cfg_case cfg-bounds-smallest 'O 0 cfg 4.9e-324 1e-323 10 4.9e-324'
 cfg_case cfg-scale-above-max 'O 0 cfg 0.001 0.01 10 1.0000000000000002e300'
 
 # R32-5: a record governs the records that follow it, on its own stream.
 # Spliced before the seventh statement of flat, a window-4 record leaves the
 # stop after the sixth assignment `[moving]` and makes the last `[converged]`.
+# R32-6: the same record spliced one record later, between the seventh
+# statement's line record and its assignment, still leaves that stop
+# `[moving]` and makes the next stop `[converged]`. The two placements bound
+# the record's reach from both sides: one record earlier turns the first
+# `[converged]`, one record later leaves the second `[moving]`.
+# `[moving]` at the earlier stop follows src/tape_read.h (`rec` is the first
+# stored record the change governs); docs/TRACE.md does not say which stop
+# owns a record that sits between two stops (#2334).
 # The same record on a second, declared stream leaves stream 0 `[moving]`.
 mid_case() {
     name=$1
     steps=$2
     at=$(grep -n '^L 0 7$' flat.tape | cut -d: -f1)
-    { head -$((at - 1)) flat.tape
+    at=$((at - 1 + $3))
+    { head -"$at" flat.tape
       printf '%s\n' 'O 0 cfg 0.001 0.01 4 0.001'
-      tail -n +"$at" flat.tape
+      tail -n +$((at + 1)) flat.tape
     } > install.tape
     printf 's %s\np x\nq\n' "$steps" > commands.in
     rc=0
@@ -691,7 +703,24 @@ mid_case() {
     first=$(head -1 step.err | visible)
     printf '%s first-stderr=%s\n' "$name" "${first:-<empty>}"
 }
-mid_case cfg-install-mid-before 5
-mid_case cfg-install-mid-after 400
+mid_case cfg-install-mid-before 5 0
+mid_case cfg-install-mid-after 400 0
+mid_case cfg-install-inner-before 5 1
+mid_case cfg-install-inner-next 6 1
 install_case cfg-install-other-stream flat 'B 1 3 1 0 child 0 1
 O 1 cfg 0.001 0.01 4 0.001'
+
+# R32-6: each refusal releases the reader's stream table, not the current
+# stream's entry. On a second declared stream the two differ: the three
+# refusal sites (field count, parse, range) each still exit 3 with their
+# own message.
+cfg_case cfg-stream1-5-fields 'B 1 3 1 0 child 0 1
+O 1 cfg 0.001 0.01 8 10 0.001'
+cfg_case cfg-stream1-window-text 'B 1 3 1 0 child 0 1
+O 1 cfg 0.001 0.01 eight 0.001'
+cfg_case cfg-stream1-window-3 'B 1 3 1 0 child 0 1
+O 1 cfg 0.001 0.01 3 0.001'
+# A refusal after an accepted record: the reader's scratch pointers still
+# hold the earlier record's values, and the refusal must not release one.
+cfg_case cfg-valid-then-5-fields 'O 0 cfg 0.001 0.01 10 0.001
+O 0 cfg 0.001 0.01 8 10 0.001'
