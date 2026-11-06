@@ -1558,7 +1558,7 @@ current state behind several rows:
 | `floor` | int-preserving | LOSS | - | Lua math.floor: an int when the result fits int64, else a float |
 | `gather` | int-requiring | - | - | each index, from a list or an index buffer, is integer-valued: N5 raises on 1.5 (today `flat_index_at` truncates: `gather of [t, ib]` with `ib[0]` = 1.5 returns `[11, 22]`, probed); returns elements unchanged |
 | `get_at` | int-requiring | - | - | index, row and col; returns the element |
-| `get_observer_thresholds` | float-producing | - | - | observer thresholds (O3 drops h_low) |
+| `get_observer_thresholds` | float-producing | - | - | observer thresholds (O3 drops h_low from the tape only) |
 | `gfx_circle` | other | - | geometry,bounded | centre and radius are continuous geometry: the circle is clipped in float space against the drawable area, then rounded; the colour channels are continuous and bounded: clamped to 0..255, then rounded (Q7) |
 | `gfx_clear` | other | - | bounded | the colour channels are continuous and bounded: clamped to 0..255, then rounded (Q7) |
 | `gfx_clip` | other | - | geometry | the clip rect is continuous geometry: intersected with the drawable area in float space, then rounded (Q7) |

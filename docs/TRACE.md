@@ -95,7 +95,7 @@ The tape is plain text, one record per line:
 | `A <stream_id> <name>=<value>` | Assignment delta: a binding changed. Fires at **every scope** — function locals included — and is scope-qualified by the preceding `S` record, so a function-local `i` and the top-level `i` are separate streams (`--step` resolves names innermost-first along the reconstructed call chain, with shadowing). |
 | `N <stream_id> <fn>=<value>` | Nondeterministic builtin return — the replay-determinism substrate. |
 | `C <stream_id> <bytes>` | Immediate continuation of an oversized `N` value (v9). See [Value serialization](#value-serialization). |
-| `O <stream_id> cfg <dh_zero> <dh_small> <h_low> <window> <scale>` | Observer configuration in force (v3). Written whenever the state's observer knobs differ from what this stream last announced, before its next `L`/`A`/`N`/`O win` record. See [Observer Configuration](#observer-configuration-10441045). |
+| `O <stream_id> cfg <dh_zero> <dh_small> <window> <scale>` | Observer configuration in force (v3). Written whenever the state's observer knobs differ from what this stream last announced, before its next `L`/`A`/`N`/`O win` record. See [Observer Configuration](#observer-configuration-10441045). |
 
 ### Stream identity and correspondence (v5, #1286)
 
@@ -482,10 +482,13 @@ construction is neither run nor leaked.
 
 A trajectory verdict — `report of x`, the six predicates, the trajectory
 labels `--step` and the DAP server print — is a function of the
-**assignments** and of the **observer configuration**: three thresholds
-state and per binding), and the characteristic scale
-configuration, so a recorded run stepped back classified at the *state
-defaults* and printed a verdict the live run never gave:
+**assignments** and of the **observer configuration**: two step thresholds,
+the window (state and per binding), and the characteristic scale. The
+non-numeric entropy threshold `h_low = 0.1` is a compiled-in constant;
+`get_observer_thresholds` still returns `[dh_zero, dh_small, h_low]`.
+Historically the tape omitted configuration, so a recorded run stepped
+back classified at the *state defaults* and printed a verdict the live
+run never gave:
 
 ```
 u is 0.0
@@ -499,15 +502,18 @@ $ eigenscript --step u.tape u.eigs      # before: [diverging]  ← never happene
 A debugger that confidently prints the wrong verdict is exactly the
 fail-soft shape this language refuses, so the configuration rides the tape:
 
-- **`O cfg`** carries the five state-level scalars. It is emitted **by
-  diff**, not from the knob builtins: the writer compares the state's live
+- **`O cfg`** carries the four state-level scalars: `dh_zero dh_small window scale`. It is emitted **by
+  diff**: the writer compares the state's live
   configuration against what **that stream last emitted** and emits a record
   when they differ, before its next `L`, `A`, `N` or `O win` record. A
   default-config state writes no `O cfg` (single-threaded tapes stay
   byte-identical). Sibling attachments of one state each announce its nondefault knobs;
   co-located states with different thresholds likewise emit at first use — not a torn ping-pong against a process-
-  global last-emitted (#1142). A program that never moves a knob writes
-  no `O` records at all. The record shape is unchanged (no format bump).
+  global last-emitted (#1142). The observer setter builtins were removed in v0.46.0 (#1687); neither
+  programs nor the supported embed API can move these knobs, so current live
+  runs emit no `O cfg` records. The writer and reader remain for the tape
+  machinery (#2198). R3.2 removes `h_low` from the record within unreleased
+  format 10; the version stays 10.
 - **`O win`** carries the per-binding window override, which lives on an
   `Env` slot rather than on the state and so has no cheap diff. It is
   its own frame's `S` record — the override belongs to the frame that
@@ -525,7 +531,7 @@ fail-soft shape this language refuses, so the configuration rides the tape:
   into its own state.
 - **The configuration is folded to the STOP, not to the last assign.** The
   knobs split by when the runtime consumes them: the window and the scale are
-  read while a value is being *recorded*, the three thresholds (and the window
+  read while a value is being *recorded*, the two step thresholds (and the window
   again, for the full-window certifications) while a verdict is being
   *reported*. So a knob moved after a binding's last assign and before the
   stop still changes what `report of x` says there — and folding only up to
@@ -548,6 +554,14 @@ fail-soft shape this language refuses, so the configuration rides the tape:
   label differs, it gets a line of its own ("observer configuration changed
   after the last assign — at this stop: [converged]") rather than letting the
   last row speak for the present; the DAP shows the same as a `#now` row.
+- **A `cfg` record must have exactly four whitespace-delimited fields.**
+  Before parsing or installing any configuration, the reader refuses every
+  other count with exit 3 and
+  `tape observer-configuration record has N fields, expected 4: <record>`.
+  This includes an empty record, a legacy five-field record and nonnumeric
+  extra fields. All branch builds stamp the same format 10, so this count
+  check protects against old record shapes. A four-field record still must
+  parse and satisfy the existing value restrictions below.
 - **A corrupt `O` record is refused, not installed.** The reader puts these
   values into its own observer state, so `O cfg … 0 …` divides by zero sizing
   the value ring and a negative or 4e9 window asks `calloc` for 2^64−1 bytes.

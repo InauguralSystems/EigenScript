@@ -474,7 +474,8 @@ All six are false at a current numeric NaN (`report` is `undefined`).
 An all-exact int64 window uses zero raw noise floor and absolute settled
 tolerances. See [PREDICATES.md](PREDICATES.md) for citations, complete
 conditions, and residuals. `get_observer_thresholds` retains the three
-floats `[0.001, 0.01, 0.1]` in R3.1; the last is non-numeric `h_low`.
+floats `[0.001, 0.01, 0.1]`; the last is the compiled-in non-numeric
+`h_low` constant, independent of tape configuration.
 
 ## File I/O
 

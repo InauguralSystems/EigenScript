@@ -345,7 +345,8 @@ oldest to newest; `count` is its number of real entries, at most `N`.
 
 ## Thresholds
 
-Three numbers from `EigsState` (defaults shown):
+Two step thresholds retained in `EigsState` for tape folds, plus the
+compiled-in entropy constant `h_low` (defaults shown):
 
 ```
 dh_zero  = 0.001   |dH| below this is "essentially zero change"

@@ -1,6 +1,6 @@
 # R3.1 D1: stable requires a full finite W+1-value window inside the 1%
 # ball about its midrange; all-exact windows use the absolute tolerance.
-# The h_low API remains available for nonnumeric bindings until R3.2.
+# get_observer_thresholds retains compiled h_low for nonnumeric bindings.
 
 print of "=== WINDOWED STABLE (docs/PREDICATES.md, #205) ==="
 

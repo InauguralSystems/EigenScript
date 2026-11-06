@@ -112,7 +112,7 @@ window is 10
 ```
 
 These are runtime constants. `get_observer_thresholds` still returns
-`[dh_zero, dh_small, h_low]` in R3.1; `h_low = 0.1` belongs to the
+`[dh_zero, dh_small, h_low]`; `h_low = 0.1` is compiled in and belongs to the
 non-numeric entropy rules. The numeric tests adopt the documented loss
 convention and tolerance bands.
 
