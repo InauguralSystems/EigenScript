@@ -32,7 +32,10 @@ def pairs(text):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('binary')
-    p.add_argument('--case', choices=('cfg-5-fields', 'cfg-6-fields', 'cfg-3-fields'))
+    p.add_argument('--case', choices=('cfg-5-fields', 'cfg-6-fields', 'cfg-3-fields',
+                                    'cfg-4-window-hex', 'cfg-install-window',
+                                    'cfg-install-dh-zero', 'cfg-install-dh-small',
+                                    'cfg-install-scale'))
     args = p.parse_args()
     row = ROOT / 'tests/phase2/rows/O3.ocfg-no-hlow.sh'
     if header(str(row)).get('TIERS', '').split() != TIERS:

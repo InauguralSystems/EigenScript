@@ -59,7 +59,9 @@ while [ $# -gt 0 ]; do
                 r314-stall-oscillating|r314-stall-nonfinite-order|\
                 r317-stall-window-current|r317-stall-window-extent|r317-stall-step-overflow|\
                 r318-stall-window-index|r319-stall-window-newest|\
-                r32-cfg-legacy-five|r32-cfg-at-least-four|r32-cfg-at-most-four) ONLY="$2" ;;
+                r32-cfg-legacy-five|r32-cfg-at-least-four|r32-cfg-at-most-four|\
+                r32-cfg-binding|r32-cfg-window-base|r32-cfg-drop-dh-zero|\
+                r32-cfg-drop-dh-small|r32-cfg-drop-window|r32-cfg-drop-scale) ONLY="$2" ;;
                 *) echo "phase2-plants: FAIL: unknown plant id $2"; exit 2 ;;
             esac
             shift 2 ;;
@@ -101,7 +103,7 @@ EXPECTED_ORACLE=4
 stall_plants=0; stall_killed=0; stall_survived=0; stall_broken=0; stall_green=0; stall_available=0
 EXPECTED_STALL=10
 ocfg_plants=0; ocfg_killed=0; ocfg_survived=0; ocfg_broken=0; ocfg_green=0; ocfg_transverse=0; ocfg_available=0
-EXPECTED_OCFG=3
+EXPECTED_OCFG=9
 PRISTINE="$WORK/observer-pristine"
 EXPECTED_PLANTS=19
 EXPECTED_OBSERVER=11
@@ -653,20 +655,53 @@ run_stall_plant r319-stall-window-newest nan-newest \
     for (size_t i = 0; i < n; i++) {
         int idx = (int)s->values_head - 2 - (int)i;'
 
-# O3: count both sides of four, using the same exact MAP transcript.
+# O3: count both sides of four, decimal window syntax and each installed
+# field, using the same exact MAP transcript. R32-1 deliberately permits a
+# planted reader crash: the row captures it as a named case mismatch.
 # The legacy plant consumes the third token as h_low before window/scale,
 # just as the old reader did; the removed per-state h_low has no new home.
+mutate_ocfg() {
+    local id="$1" file="$2/src/tape_read.c"
+    case "$id" in
+        r32-cfg-legacy-five)
+            replace "$file" '                    if (fields != 4) {' \
+                '                    if (fields != 4 && fields != 5) {' || return 1
+            replace "$file" \
+                '                    q0 = q; long window = strtol(q, &q, 10);' \
+                '                    if (fields == 5) {
+                        q0 = q; double legacy_h_low = strtod(q, &q);
+                        ok &= (q != q0 && legacy_h_low > 0.0);
+                    }
+                    q0 = q; long window = strtol(q, &q, 10);' || return 1 ;;
+        r32-cfg-at-least-four)
+            replace "$file" '                    if (fields != 4) {' \
+                '                    if (fields < 4) {' || return 1 ;;
+        r32-cfg-at-most-four)
+            replace "$file" '                    if (fields != 4) {' \
+                '                    if (fields > 4) {' || return 1 ;;
+        r32-cfg-binding)
+            replace "$file" '                    o.binding = 0;' \
+                '                    o.binding = 1;' || return 1 ;;
+        r32-cfg-window-base)
+            replace "$file" \
+                '                    q0 = q; long window = strtol(q, &q, 10);' \
+                '                    q0 = q; long window = strtol(q, &q, 0);' || return 1 ;;
+        r32-cfg-drop-dh-zero)
+            replace "$file" '    g_obs_dh_zero  = c->dh_zero;' '' || return 1 ;;
+        r32-cfg-drop-dh-small)
+            replace "$file" '    g_obs_dh_small = c->dh_small;' '' || return 1 ;;
+        r32-cfg-drop-window)
+            replace "$file" '    g_obs_window   = c->window;' '' || return 1 ;;
+        r32-cfg-drop-scale)
+            replace "$file" '    g_obs_scale    = c->scale;' '' || return 1 ;;
+        *) echo "unknown ocfg mutation: $id"; return 1 ;;
+    esac
+}
 run_ocfg_plant() {
     local id="$1" case_name="$2" mode dir log build rc verdict="" trans="" pattern
-    local old='                    if (fields != 4) {' new
     ocfg_available=$((ocfg_available + 1))
     [ -z "$ONLY" ] || [ "$ONLY" = "$id" ] || return 0
     ocfg_plants=$((ocfg_plants + 1))
-    case "$id" in
-        r32-cfg-legacy-five) new='                    if (fields != 4 && fields != 5) {' ;;
-        r32-cfg-at-least-four) new='                    if (fields < 4) {' ;;
-        r32-cfg-at-most-four) new='                    if (fields > 4) {' ;;
-    esac
     for mode in green plant transverse; do
         if [ "$mode" = green ]; then dir="$PRISTINE"; else dir="$WORK/$id-plant"; fi
         if [ ! -d "$dir" ]; then
@@ -676,16 +711,7 @@ run_ocfg_plant() {
             fi
         fi
         if [ "$mode" = plant ]; then
-            if ! replace "$dir/src/tape_read.c" "$old" "$new"; then verdict=BROKEN; break; fi
-            if [ "$id" = r32-cfg-legacy-five ]; then
-                if ! replace "$dir/src/tape_read.c" \
-                    '                    q0 = q; long window = strtol(q, &q, 10);' \
-                    '                    if (fields == 5) {
-                        q0 = q; double legacy_h_low = strtod(q, &q);
-                        ok &= (q != q0 && legacy_h_low > 0.0);
-                    }
-                    q0 = q; long window = strtol(q, &q, 10);'; then verdict=BROKEN; break; fi
-            fi
+            if ! mutate_ocfg "$id" "$dir"; then verdict=BROKEN; break; fi
         elif [ "$mode" = transverse ]; then
             if ! replace "$dir/tests/phase2/ocfg_map_check.py" \
                 '                if not matched:' \
@@ -741,6 +767,12 @@ run_ocfg_plant() {
 run_ocfg_plant r32-cfg-legacy-five cfg-5-fields
 run_ocfg_plant r32-cfg-at-least-four cfg-6-fields
 run_ocfg_plant r32-cfg-at-most-four cfg-3-fields
+run_ocfg_plant r32-cfg-binding cfg-install-window
+run_ocfg_plant r32-cfg-window-base cfg-4-window-hex
+run_ocfg_plant r32-cfg-drop-dh-zero cfg-install-dh-zero
+run_ocfg_plant r32-cfg-drop-dh-small cfg-install-dh-small
+run_ocfg_plant r32-cfg-drop-window cfg-install-window
+run_ocfg_plant r32-cfg-drop-scale cfg-install-scale
 
 echo "plants=$plants killed=$killed survived=$survived broken=$broken transverse=$transverse"
 echo "observer-unplanted=$observer_green expected=$EXPECTED_OBSERVER"
