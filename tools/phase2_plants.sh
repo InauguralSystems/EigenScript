@@ -65,7 +65,10 @@ while [ $# -gt 0 ]; do
                 r323-start-dh-zero|r323-start-dh-small|r323-start-scale|\
                 r323-positive-dh-zero|r323-window-max|r323-window-narrow|\
                 r323-scale-token|r323-entropy-converged-low|r323-entropy-converged-high|\
-                r323-entropy-stable-low|r323-entropy-stable-high) ONLY="$2" ;;
+                r323-entropy-stable-low|r323-entropy-stable-high|\
+                r324-guard-dh-zero|r324-keyword-blank|r324-count-blank|\
+                r324-entropy-converged-tight|r324-entropy-stable-tight|\
+                r324-report-partial) ONLY="$2" ;;
                 *) echo "phase2-plants: FAIL: unknown plant id $2"; exit 2 ;;
             esac
             shift 2 ;;
@@ -107,7 +110,7 @@ EXPECTED_ORACLE=4
 stall_plants=0; stall_killed=0; stall_survived=0; stall_broken=0; stall_green=0; stall_available=0
 EXPECTED_STALL=10
 ocfg_plants=0; ocfg_killed=0; ocfg_survived=0; ocfg_broken=0; ocfg_green=0; ocfg_transverse=0; ocfg_available=0
-EXPECTED_OCFG=20
+EXPECTED_OCFG=26
 PRISTINE="$WORK/observer-pristine"
 EXPECTED_PLANTS=19
 EXPECTED_OBSERVER=11
@@ -735,6 +738,26 @@ mutate_ocfg() {
         r323-entropy-stable-high)
             replace "$entropy" '    if (s->ent_entropy < OBSERVER_H_LOW_DEFAULT) return 0;' \
                 '    if (s->ent_entropy < OBSERVER_WINDOW_N) return 0;' || return 1 ;;
+        r324-guard-dh-zero)
+            replace "$file" '                    q0 = q; o.dh_zero = strtod(q, &q);
+                    ok &= (q != q0 && (*q == '"'"'\0'"'"' || isspace((unsigned char)*q)));' \
+                '                    q0 = q; o.dh_zero = strtod(q, &q);
+                    ok &= (q != q0 || (*q == '"'"'\0'"'"' || isspace((unsigned char)*q)));' || return 1 ;;
+        r324-keyword-blank)
+            replace "$file" '                    (body[3] == '"'"'\0'"'"' || isspace((unsigned char)body[3]))) {' \
+                '                    (body[3] == '"'"'\0'"'"' || isblank((unsigned char)body[3]))) {' || return 1 ;;
+        r324-count-blank)
+            replace "$file" '                        while (*q && !isspace((unsigned char)*q)) q++;' \
+                '                        while (*q && !isblank((unsigned char)*q)) q++;' || return 1 ;;
+        r324-entropy-converged-tight)
+            replace "$entropy" '    return (s->ent_entropy < OBSERVER_H_LOW_DEFAULT) ? 1 : 0;' \
+                '    return (s->ent_entropy < 0.101) ? 1 : 0;' || return 1 ;;
+        r324-entropy-stable-tight)
+            replace "$entropy" '    if (s->ent_entropy < OBSERVER_H_LOW_DEFAULT) return 0;' \
+                '    if (s->ent_entropy < 0.098) return 0;' || return 1 ;;
+        r324-report-partial)
+            replace "$entropy" '    if (fabs(s->ent_dH) < g_obs_dh_small && s->ent_entropy >= OBSERVER_H_LOW_DEFAULT) return "stable";' \
+                '    if (fabs(s->ent_dH) < g_obs_dh_small && s->ent_entropy >= OBSERVER_H_LOW_DEFAULT) return "";' || return 1 ;;
         *) echo "unknown ocfg mutation: $id"; return 1 ;;
     esac
 }
@@ -827,6 +850,15 @@ run_ocfg_plant r323-entropy-converged-low cfg-entropy-ec-low
 run_ocfg_plant r323-entropy-converged-high cfg-entropy-ec-high
 run_ocfg_plant r323-entropy-stable-low cfg-entropy-es-low
 run_ocfg_plant r323-entropy-stable-high cfg-entropy-es-high
+
+# R32-3: the third critic's survivors (a field guard, the two whitespace
+# classes), the constant bracketed within 0.002, and the third reader's tail.
+run_ocfg_plant r324-guard-dh-zero cfg-dh-zero-junk
+run_ocfg_plant r324-keyword-blank cfg-sep-vtab-keyword
+run_ocfg_plant r324-count-blank cfg-sep-vtab-field
+run_ocfg_plant r324-entropy-converged-tight cfg-entropy-ec-above
+run_ocfg_plant r324-entropy-stable-tight cfg-entropy-es-below
+run_ocfg_plant r324-report-partial cfg-entropy-report-partial
 
 echo "plants=$plants killed=$killed survived=$survived broken=$broken transverse=$transverse"
 echo "observer-unplanted=$observer_green expected=$EXPECTED_OBSERVER"

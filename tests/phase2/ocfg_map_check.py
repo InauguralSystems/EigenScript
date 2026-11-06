@@ -46,7 +46,13 @@ def main():
                                     'cfg-entropy-ec-low',
                                     'cfg-entropy-ec-high',
                                     'cfg-entropy-es-low',
-                                    'cfg-entropy-es-high'))
+                                    'cfg-entropy-es-high',
+                                    'cfg-dh-zero-junk',
+                                    'cfg-sep-vtab-keyword',
+                                    'cfg-sep-vtab-field',
+                                    'cfg-entropy-ec-above',
+                                    'cfg-entropy-es-below',
+                                    'cfg-entropy-report-partial'))
     args = p.parse_args()
     row = ROOT / 'tests/phase2/rows/O3.ocfg-no-hlow.sh'
     if header(str(row)).get('TIERS', '').split() != TIERS:
