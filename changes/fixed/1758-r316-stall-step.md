@@ -4,7 +4,7 @@
   non-finite. The quiet, diverging and finite-amplitude clauses retain their
   rules. The counter resets on every
   non-counting iteration. Finite/NaN alternation now has a four-tier contract
-  row; R31-7 replaces the last-step plant with retained-window and
+  row; R31-7 replaces `r316-stall-step-nonfinite` with retained-window and
   finite-overflow witnesses.
 
   The oscillation arm covers non-contracting oscillations whose peaks fall

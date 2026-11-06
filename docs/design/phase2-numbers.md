@@ -3142,8 +3142,8 @@ procedure. The named check must go red on its own message.
 
 RULING R31-4 adds five separately counted stall-clause/order plants to that
 once-at-acceptance run. R31-7 replaces R31-6's sixth plant with three
-retained-window/finite-overflow plants, for eight stall plants in total
-(the original 19 plants retain their own count):
+retained-window/finite-overflow plants. R31-8 adds the prefix index plant,
+for nine stall plants in total (the original 19 retain their own count):
 
 | stall-clause/order plant | named check that must go red |
 |---|---|
@@ -3155,6 +3155,23 @@ retained-window/finite-overflow plants, for eight stall plants in total
 | non-finite clause narrowed to the current input only | `stall-contract: FAIL nan-period3 tier=...` |
 | non-finite window shortened by one input | `stall-contract: FAIL nan-window-edge tier=...` |
 | R31-6's non-finite-step half restored | `stall-contract: FAIL overflow-contracting tier=...` |
+| non-finite reader starts at `values_head - i`, one slot ahead | `stall-contract: FAIL nan-prefix tier=...` |
+
+R31-8's prefix witness starts with `n is 1000`, an initial NaN subject,
+then assigns `n is n + 1` and finally `x is 1.0 / n` in each iteration.
+It pins exactly `100 stalled`, not certified, in all four tiers. The current
+contract has 64 readings; the 60 readings established before R31-8 retain
+their exits and counts.
+
+**Witness deviation (R31-8).** The three R31-7 witnesses did not distinguish
+a one-slot index error. The ring holds exactly W+1 inputs, so a full scan
+reads the same set from any starting slot once the ring fills. The periodic
+witnesses start with a finite oldest prefix input, and the overflow witness
+has only finite inputs. `nan-prefix` instead places the NaN in the oldest
+available prefix slot: the correct reader counts its first iteration, while
+the wrong index drops it and stalls at 101. No W+2 row is added: the read
+length is capped by the W+1 ring, making that change equivalent at the
+default window. Runtime rules, arms, split and decision rule are unchanged.
 
 R31-5 pins the three alternation exits to `stalled` in 100..112, allowing
 the incumbent oscillator to fill before counting. The damped control stays
@@ -3169,8 +3186,7 @@ the period-W+1 cycle `[512, 256, 128, 64, 32, 16, 8, 4, 2, 1, nan]`
 isolates the oldest retained input. Both must stall in 100..112 in all
 four tiers. A contracting finite alternation whose raw steps overflow for
 at least 100 iterations must instead retain its exact measured
-`normal`/certified count. The existing 48 contract readings keep their
-exits and counts. A runaway reaching infinity remains an unplanted control
+`normal`/certified count. A runaway reaching infinity remains an unplanted control
 and must stall.
 The full harmonic tail from n = 1 is measured without an exit requirement;
 the quiet-clause fixture instead pins the stated 100 quiet-iteration rule.
