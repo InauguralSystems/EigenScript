@@ -1,0 +1,16 @@
+cfg-4-fields rc=0 names-count=0
+cfg-4-fields first-stderr=<empty>
+cfg-5-fields rc=3 names-count=1
+cfg-5-fields first-stderr=tape observer-configuration record has 5 fields, expected 4: O 0 cfg 0.001 0.01 8 10 0.001
+cfg-6-fields rc=3 names-count=1
+cfg-6-fields first-stderr=tape observer-configuration record has 6 fields, expected 4: O 0 cfg 0.001 0.01 10 0.001 99 7
+cfg-3-fields rc=3 names-count=1
+cfg-3-fields first-stderr=tape observer-configuration record has 3 fields, expected 4: O 0 cfg 0.001 0.01 10
+cfg-0-fields rc=3 names-count=1
+cfg-0-fields first-stderr=tape observer-configuration record has 0 fields, expected 4: O 0 cfg
+cfg-5-text rc=3 names-count=1
+cfg-5-text first-stderr=tape observer-configuration record has 5 fields, expected 4: O 0 cfg 0.001 0.01 10 0.001 extra
+cfg-4-window-text rc=3 names-count=0
+cfg-4-window-text first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01 eight 0.001'; refusing to step (docs/TRACE.md)
+cfg-4-window-fraction rc=3 names-count=0
+cfg-4-window-fraction first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01 10.5 0.001'; refusing to step (docs/TRACE.md)
