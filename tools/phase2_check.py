@@ -113,6 +113,7 @@ DELETED_TOKENS = {
                'dict_value_rewrite_num', 'list_get_num', 'dict_value_get_num',
                'finite_num_to_byte', 'buffer_read_byte', 'buffer_read_num'],
     'R2.2': ['num_guard', 'num_guard_named', 'EIGS_NUM_MAX'],
+    'R3.2': ['g_obs_h_low'],
 }
 # design 2.1: the canonicalizing writers convert an existing VAL_INT, so they
 # are the only runtime callers of an int writer allowed once VAL_INT exists

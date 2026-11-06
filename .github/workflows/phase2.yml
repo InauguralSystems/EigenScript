@@ -3,7 +3,7 @@ name: phase2
 # #1758: landed MAP rows, the pre-registered builtin table on matched
 # capability profiles, the C readers and the stdlib differential. The shared
 # phase2_check.py helper derives the complete declared MAP prefix by default.
-# R3.1 implements arm R3-STD under R31-1; R3.2+ remain unlanded.
+# R3.1 implements arm R3-STD under R31-1; R3.2 lands the four-field O cfg.
 on:
   push:
     branches: [phase2-numbers]
@@ -90,7 +90,7 @@ jobs:
           # Restore the release alias before the MAP and library checks.
           PATH="$PWD/tools/cc-guard-bin:$PATH" make build
           bash tools/cc_guard.sh --report
-          bash tools/phase2_ci.sh --through R3.1 --baseline "$RUNNER_TEMP/r31-baseline/src/eigenscript" \
+          bash tools/phase2_ci.sh --through R3.2 --baseline "$RUNNER_TEMP/r31-baseline/src/eigenscript" \
             "$anchor" "$RUNNER_TEMP/main/src/eigenscript" src/eigenscript
 
       - name: R2.3 encoder failure and no-mutation proofs
