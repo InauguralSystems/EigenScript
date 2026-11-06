@@ -128,3 +128,11 @@ cfg-install-exact rc=0 label=[converged]
 cfg-install-exact first-stderr=<empty>
 cfg-bounds-accepted rc=0 names-count=0
 cfg-bounds-accepted first-stderr=<empty>
+cfg-entropy-ec-near-below rc=0 last=converged
+cfg-entropy-ec-near-below first-stderr=<empty>
+cfg-entropy-ec-near-above rc=0 last=equilibrium
+cfg-entropy-ec-near-above first-stderr=<empty>
+cfg-entropy-es-near-below rc=0 last=moving
+cfg-entropy-es-near-below first-stderr=<empty>
+cfg-entropy-es-near-above rc=0 last=stable
+cfg-entropy-es-near-above first-stderr=<empty>

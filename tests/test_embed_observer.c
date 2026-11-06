@@ -271,6 +271,30 @@ static void isolated_gap_truth(void) {
     gap("improving of x", "isolated gap: eval-unit read after the direct read still raises");
     eigs_close(st);
 }
+/* R32-4 (#1758): a direct read answers exactly 1, not merely nonzero, when
+ * the answer comes from the entropy route. A binding reaches that route
+ * with a full window of a constant string, then a number (which clears the
+ * equality route), then the string again as an unobserved sample. A reader
+ * that returned 2 or -1 passed every program-level check, because a
+ * predicate word is a bool there; a host sees the int. */
+static void entropy_direct(void) {
+    EigsState *st = eigs_open();
+    if (!st) { check(0, "entropy host: open state"); return; }
+    eval_ok("x is \"aaaa\"\nx is \"aaaa\"\nx is \"aaaa\"\nx is \"aaaa\"\n"
+            "x is \"aaaa\"\nx is \"aaaa\"\nx is \"aaaa\"\nx is \"aaaa\"\n"
+            "x is \"aaaa\"\nx is \"aaaa\"\nx is \"aaaa\"\nx is \"aaaa\"\n"
+            "x is 5\n"
+            "unobserved:\n    x is \"aaaa\"\n"
+            "c is converged of x\nc\n",
+            "entropy host: unit executes");
+    int slot = -1;
+    for (int i = 0; i < g_global_env->count; i++)
+        if (!strcmp(g_global_env->names[i], "x")) { slot = i; break; }
+    int answer = slot < 0 ? -1 : observer_predicate_at(g_global_env, slot, 0 /* converged */, 1);
+    printf("entropy host: DIRECT converged=%d\n", answer);
+    check(answer == 1, "entropy host: the entropy route answers exactly 1");
+    eigs_close(st);
+}
 static void eval_contract(void) {
     /* A native host can load/compile a module without routing through the
      * eval API. That module's verdict says nothing about the C caller. */
@@ -369,6 +393,7 @@ int main(int argc, char **argv) {
         eval_contract();
         isolated_host();
         isolated_gap_truth();
+        entropy_direct();
     }
 #endif
     printf("embed observer: %d passed, %d failed\n", passed, failed);

@@ -457,3 +457,49 @@ install_case cfg-install-exact-none dzx ''
 install_case cfg-install-exact dzx 'O 0 cfg 0.0010000002104789019 0.01 10 0.001'
 # The smallest thresholds and the largest scale the checks admit.
 cfg_case cfg-bounds-accepted 'O 0 cfg 1e-300 1e-299 10 1e300'
+
+# R32-4: the entropy constant to 1e-8 (relative). Two six-letter strings of
+# about 5000 bytes: entropy 0.1 - 1.04e-9 and 0.1 + 6.6e-10 (the counts are
+# the search result recorded in briefs/out/r3-2/orch-sweep/progs/tight.json).
+# A reader comparing against the float 0.1f (0.1 + 1.49e-9) is red on the
+# second. The margins are 1e6 times libm's last bit; a string whose entropy
+# is the double 0.1 exactly would not be a portable witness (RULING R32-4).
+rep() { awk -v c="$1" -v n="$2" 'BEGIN { for (i = 0; i < n; i++) printf "%s", c }'; }
+under="$(rep b 38)$(rep c 2)$(rep d 3)$(rep e 4)$(rep f 5)$(rep a 4804)"
+over="$(rep b 34)$(rep c 1)$(rep d 9)$(rep e 7)$(rep f 2)$(rep a 4996)"
+chunk=$(rep a 150)
+near_const() {
+    cat > "$1.eigs" <<EOF
+define run() as:
+    local s is "$2"
+    local k is 0
+    loop while k < 14:
+        s is "$2"
+        k is k + 1
+    return classify of [trajectory of s, "entropy"]
+print of (run of null)
+EOF
+}
+# The growing form reaches the same final string in 14 appends of 150 `a`s;
+# every entropy step is between dh_zero and dh_small (0.0026 to 0.0069).
+near_grow() {
+    start=$(printf '%s' "$2" | cut -c1-$((${#2} - 2100)))
+    cat > "$1.eigs" <<EOF
+define run() as:
+    local s is "$start"
+    local k is 0
+    loop while k < 14:
+        s is s + "$chunk"
+        k is k + 1
+    return classify of [trajectory of s, "entropy"]
+print of (run of null)
+EOF
+}
+near_const ec_under "$under"
+near_const ec_over "$over"
+near_grow es_under "$under"
+near_grow es_over "$over"
+live_case cfg-entropy-ec-near-below ec_under
+live_case cfg-entropy-ec-near-above ec_over
+live_case cfg-entropy-es-near-below es_under
+live_case cfg-entropy-es-near-above es_over
