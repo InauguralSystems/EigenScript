@@ -35,7 +35,18 @@ def main():
     p.add_argument('--case', choices=('cfg-5-fields', 'cfg-6-fields', 'cfg-3-fields',
                                     'cfg-4-window-hex', 'cfg-install-window',
                                     'cfg-install-dh-zero', 'cfg-install-dh-small',
-                                    'cfg-install-scale'))
+                                    'cfg-install-scale',
+                                    'cfg-start-tiny',
+                                    'cfg-start-p1',
+                                    'cfg-start-p2',
+                                    'cfg-dh-zero-0',
+                                    'cfg-window-64',
+                                    'cfg-window-wide',
+                                    'cfg-scale-junk',
+                                    'cfg-entropy-ec-low',
+                                    'cfg-entropy-ec-high',
+                                    'cfg-entropy-es-low',
+                                    'cfg-entropy-es-high'))
     args = p.parse_args()
     row = ROOT / 'tests/phase2/rows/O3.ocfg-no-hlow.sh'
     if header(str(row)).get('TIERS', '').split() != TIERS:

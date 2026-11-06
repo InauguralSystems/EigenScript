@@ -61,7 +61,11 @@ while [ $# -gt 0 ]; do
                 r318-stall-window-index|r319-stall-window-newest|\
                 r32-cfg-legacy-five|r32-cfg-at-least-four|r32-cfg-at-most-four|\
                 r32-cfg-binding|r32-cfg-window-base|r32-cfg-drop-dh-zero|\
-                r32-cfg-drop-dh-small|r32-cfg-drop-window|r32-cfg-drop-scale) ONLY="$2" ;;
+                r32-cfg-drop-dh-small|r32-cfg-drop-window|r32-cfg-drop-scale|\
+                r323-start-dh-zero|r323-start-dh-small|r323-start-scale|\
+                r323-positive-dh-zero|r323-window-max|r323-window-narrow|\
+                r323-scale-token|r323-entropy-converged-low|r323-entropy-converged-high|\
+                r323-entropy-stable-low|r323-entropy-stable-high) ONLY="$2" ;;
                 *) echo "phase2-plants: FAIL: unknown plant id $2"; exit 2 ;;
             esac
             shift 2 ;;
@@ -103,7 +107,7 @@ EXPECTED_ORACLE=4
 stall_plants=0; stall_killed=0; stall_survived=0; stall_broken=0; stall_green=0; stall_available=0
 EXPECTED_STALL=10
 ocfg_plants=0; ocfg_killed=0; ocfg_survived=0; ocfg_broken=0; ocfg_green=0; ocfg_transverse=0; ocfg_available=0
-EXPECTED_OCFG=9
+EXPECTED_OCFG=20
 PRISTINE="$WORK/observer-pristine"
 EXPECTED_PLANTS=19
 EXPECTED_OBSERVER=11
@@ -661,7 +665,7 @@ run_stall_plant r319-stall-window-newest nan-newest \
 # The legacy plant consumes the third token as h_low before window/scale,
 # just as the old reader did; the removed per-state h_low has no new home.
 mutate_ocfg() {
-    local id="$1" file="$2/src/tape_read.c"
+    local id="$1" file="$2/src/tape_read.c" entropy="$2/src/eigenscript.c"
     case "$id" in
         r32-cfg-legacy-five)
             replace "$file" '                    if (fields != 4) {' \
@@ -694,6 +698,43 @@ mutate_ocfg() {
             replace "$file" '    g_obs_window   = c->window;' '' || return 1 ;;
         r32-cfg-drop-scale)
             replace "$file" '    g_obs_scale    = c->scale;' '' || return 1 ;;
+        r323-start-dh-zero)
+            replace "$file" '    TapeObsCfg start = { OBSERVER_DH_ZERO_DEFAULT, OBSERVER_DH_SMALL_DEFAULT,' \
+                '    TapeObsCfg start = { OBSERVER_DH_SMALL_DEFAULT, OBSERVER_DH_SMALL_DEFAULT,' || return 1 ;;
+        r323-start-dh-small)
+            replace "$file" '    TapeObsCfg start = { OBSERVER_DH_ZERO_DEFAULT, OBSERVER_DH_SMALL_DEFAULT,' \
+                '    TapeObsCfg start = { OBSERVER_DH_ZERO_DEFAULT, OBSERVER_DH_ZERO_DEFAULT,' || return 1 ;;
+        r323-start-scale)
+            replace "$file" '    TapeObsCfg start = { OBSERVER_DH_ZERO_DEFAULT, OBSERVER_DH_SMALL_DEFAULT,
+                         OBSERVER_SCALE_DEFAULT,' \
+                '    TapeObsCfg start = { OBSERVER_DH_ZERO_DEFAULT, OBSERVER_DH_SMALL_DEFAULT,
+                         OBSERVER_DH_SMALL_DEFAULT,' || return 1 ;;
+        r323-positive-dh-zero)
+            replace "$file" '    if (!(o->dh_zero > 0.0) || !(o->dh_small > 0.0))' \
+                '    if (!(o->dh_small > 0.0))' || return 1 ;;
+        r323-window-max)
+            replace "$file" '                                window <= OBSERVER_WINDOW_MAX) ? (int)window : 0;' \
+                '                                window < OBSERVER_WINDOW_MAX) ? (int)window : 0;' || return 1 ;;
+        r323-window-narrow)
+            replace "$file" '                                window <= OBSERVER_WINDOW_MAX) ? (int)window : 0;' \
+                '                                window <= OBSERVER_WINDOW_MAX) ? (int)window : (int)window;' || return 1 ;;
+        r323-scale-token)
+            replace "$file" '                    q0 = q; o.scale = strtod(q, &q);
+                    ok &= (q != q0 && (*q == '"'"'\0'"'"' || isspace((unsigned char)*q)));' \
+                '                    q0 = q; o.scale = strtod(q, &q);
+                    ok &= (q != q0);' || return 1 ;;
+        r323-entropy-converged-low)
+            replace "$entropy" '    return (s->ent_entropy < OBSERVER_H_LOW_DEFAULT) ? 1 : 0;' \
+                '    return (s->ent_entropy < OBSERVER_DH_SMALL_DEFAULT) ? 1 : 0;' || return 1 ;;
+        r323-entropy-converged-high)
+            replace "$entropy" '    return (s->ent_entropy < OBSERVER_H_LOW_DEFAULT) ? 1 : 0;' \
+                '    return (s->ent_entropy < OBSERVER_WINDOW_N) ? 1 : 0;' || return 1 ;;
+        r323-entropy-stable-low)
+            replace "$entropy" '    if (s->ent_entropy < OBSERVER_H_LOW_DEFAULT) return 0;' \
+                '    if (s->ent_entropy < OBSERVER_DH_SMALL_DEFAULT) return 0;' || return 1 ;;
+        r323-entropy-stable-high)
+            replace "$entropy" '    if (s->ent_entropy < OBSERVER_H_LOW_DEFAULT) return 0;' \
+                '    if (s->ent_entropy < OBSERVER_WINDOW_N) return 0;' || return 1 ;;
         *) echo "unknown ocfg mutation: $id"; return 1 ;;
     esac
 }
@@ -773,6 +814,19 @@ run_ocfg_plant r32-cfg-drop-dh-zero cfg-install-dh-zero
 run_ocfg_plant r32-cfg-drop-dh-small cfg-install-dh-small
 run_ocfg_plant r32-cfg-drop-window cfg-install-window
 run_ocfg_plant r32-cfg-drop-scale cfg-install-scale
+
+# R32-2: start defaults, retained guards, window bounds and live entropy.
+run_ocfg_plant r323-start-dh-zero cfg-start-tiny
+run_ocfg_plant r323-start-dh-small cfg-start-p1
+run_ocfg_plant r323-start-scale cfg-start-p2
+run_ocfg_plant r323-positive-dh-zero cfg-dh-zero-0
+run_ocfg_plant r323-window-max cfg-window-64
+run_ocfg_plant r323-window-narrow cfg-window-wide
+run_ocfg_plant r323-scale-token cfg-scale-junk
+run_ocfg_plant r323-entropy-converged-low cfg-entropy-ec-low
+run_ocfg_plant r323-entropy-converged-high cfg-entropy-ec-high
+run_ocfg_plant r323-entropy-stable-low cfg-entropy-es-low
+run_ocfg_plant r323-entropy-stable-high cfg-entropy-es-high
 
 echo "plants=$plants killed=$killed survived=$survived broken=$broken transverse=$transverse"
 echo "observer-unplanted=$observer_green expected=$EXPECTED_OBSERVER"
