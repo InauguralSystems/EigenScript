@@ -69,7 +69,9 @@ while [ $# -gt 0 ]; do
                 r324-guard-dh-zero|r324-keyword-blank|r324-count-blank|\
                 r324-entropy-converged-tight|r324-entropy-stable-tight|\
                 r324-report-partial|\
-                r325-entropy-converged-float|r325-entropy-stable-float) ONLY="$2" ;;
+                r325-entropy-converged-float|r325-entropy-stable-float|\
+                r326-entropy-converged-strict|r326-entropy-stable-strict|\
+                r326-entropy-field|r326-record-position|r326-record-stream) ONLY="$2" ;;
                 *) echo "phase2-plants: FAIL: unknown plant id $2"; exit 2 ;;
             esac
             shift 2 ;;
@@ -111,7 +113,7 @@ EXPECTED_ORACLE=4
 stall_plants=0; stall_killed=0; stall_survived=0; stall_broken=0; stall_green=0; stall_available=0
 EXPECTED_STALL=10
 ocfg_plants=0; ocfg_killed=0; ocfg_survived=0; ocfg_broken=0; ocfg_green=0; ocfg_transverse=0; ocfg_available=0
-EXPECTED_OCFG=28
+EXPECTED_OCFG=33
 PRISTINE="$WORK/observer-pristine"
 EXPECTED_PLANTS=19
 EXPECTED_OBSERVER=11
@@ -765,6 +767,25 @@ mutate_ocfg() {
         r325-entropy-stable-float)
             replace "$entropy" '    if (s->ent_entropy < OBSERVER_H_LOW_DEFAULT) return 0;' \
                 '    if (s->ent_entropy < 0.1f) return 0;' || return 1 ;;
+        r326-entropy-converged-strict)
+            replace "$entropy" '    return (s->ent_entropy < OBSERVER_H_LOW_DEFAULT) ? 1 : 0;' \
+                '    return (s->ent_entropy <= OBSERVER_H_LOW_DEFAULT) ? 1 : 0;' || return 1 ;;
+        r326-entropy-stable-strict)
+            replace "$entropy" '    if (s->ent_entropy < OBSERVER_H_LOW_DEFAULT) return 0;' \
+                '    if (s->ent_entropy <= OBSERVER_H_LOW_DEFAULT) return 0;' || return 1 ;;
+        r326-entropy-field)
+            replace "$entropy" '    return (s->ent_entropy < OBSERVER_H_LOW_DEFAULT) ? 1 : 0;' \
+                '    return (s->ent_last_entropy < OBSERVER_H_LOW_DEFAULT) ? 1 : 0;' || return 1 ;;
+        r326-record-position)
+            replace "$file" '                    o.binding = 0;
+                    q0 = q; o.dh_zero = strtod(q, &q);' \
+                '                    o.rec = 0;
+                    q0 = q; o.dh_zero = strtod(q, &q);' || return 1 ;;
+        r326-record-stream)
+            replace "$file" '                    o.binding = 0;
+                    q0 = q; o.dh_zero = strtod(q, &q);' \
+                '                    o.stream = 0;
+                    q0 = q; o.dh_zero = strtod(q, &q);' || return 1 ;;
         *) echo "unknown ocfg mutation: $id"; return 1 ;;
     esac
 }
@@ -870,6 +891,14 @@ run_ocfg_plant r324-report-partial cfg-entropy-report-partial
 # R32-4: the fourth critic's float literal (0.1f is 0.1 + 1.49e-9).
 run_ocfg_plant r325-entropy-converged-float cfg-entropy-ec-near-above
 run_ocfg_plant r325-entropy-stable-float cfg-entropy-es-near-above
+
+# R32-5: strictness at exactly 0.1, the wrong slot field, and a record's
+# position and stream (the fifth critic's survivors and the identifier sweep).
+run_ocfg_plant r326-entropy-converged-strict cfg-entropy-dict-ec-equal
+run_ocfg_plant r326-entropy-stable-strict cfg-entropy-dict-es-equal
+run_ocfg_plant r326-entropy-field cfg-entropy-dict-ec-equal
+run_ocfg_plant r326-record-position cfg-install-mid-before
+run_ocfg_plant r326-record-stream cfg-install-other-stream
 
 echo "plants=$plants killed=$killed survived=$survived broken=$broken transverse=$transverse"
 echo "observer-unplanted=$observer_green expected=$EXPECTED_OBSERVER"

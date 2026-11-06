@@ -54,7 +54,11 @@ def main():
                                     'cfg-entropy-es-below',
                                     'cfg-entropy-report-partial',
                                     'cfg-entropy-ec-near-above',
-                                    'cfg-entropy-es-near-above'))
+                                    'cfg-entropy-es-near-above',
+                                    'cfg-entropy-dict-ec-equal',
+                                    'cfg-entropy-dict-es-equal',
+                                    'cfg-install-mid-before',
+                                    'cfg-install-other-stream'))
     args = p.parse_args()
     row = ROOT / 'tests/phase2/rows/O3.ocfg-no-hlow.sh'
     if header(str(row)).get('TIERS', '').split() != TIERS:
