@@ -565,11 +565,10 @@ fail-soft shape this language refuses, so the configuration rides the tape:
 - **A corrupt `O` record is refused, not installed.** The reader puts these
   values into its own observer state, so `O cfg … 0 …` divides by zero sizing
   the value ring and a negative or 4e9 window asks `calloc` for 2^64−1 bytes.
-  Every field is therefore checked at parse time against exactly the
-  invariants the live builtins enforce — window in `[4, 64]` (plus the `O win
-  <name> 0` clear form), positive thresholds with `dh_zero < dh_small`,
-  positive finite scale — and a record
-  outside them refuses the tape with exit 3 (`tape observer-configuration
+  At parse time the reader requires a window in `[4, 64]` (plus the
+  `O win <name> 0` clear form), positive thresholds with
+  `dh_zero < dh_small`, and a positive finite scale no greater than `1e300`.
+  A record outside these bounds refuses the tape with exit 3 (`tape observer-configuration
   record is not one this runtime could have written …`). Tapes travel in #413
   attached-tape bundles, so this is the torn-archive rule applied to the
   configuration. Clamping was rejected: a clamped window is a configuration
