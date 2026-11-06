@@ -133,3 +133,62 @@ cfg_case cfg-window-3 'O 0 cfg 0.001 0.01 3 0.001'
 cfg_case cfg-window-wide 'O 0 cfg 0.001 0.01 4294967304 0.001'
 cfg_case cfg-scale-junk 'O 0 cfg 0.001 0.01 10 0.001x'
 cfg_case cfg-window-64 'O 0 cfg 0.001 0.01 64 0.001'
+
+# R32-2: live string entropy, on each side of the fixed 0.1 threshold.
+cat > ec_low.eigs <<'EOF'
+define run() as:
+    local s is "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+    local k is 0
+    loop while k < 60:
+        s is "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+        k is k + 1
+    return classify of [trajectory of s, "entropy"]
+print of (run of null)
+EOF
+cat > ec_high.eigs <<'EOF'
+define run() as:
+    local s is "ab"
+    local k is 0
+    loop while k < 60:
+        s is "ab"
+        k is k + 1
+    return classify of [trajectory of s, "entropy"]
+print of (run of null)
+EOF
+cat > es_low.eigs <<'EOF'
+define run() as:
+    local s is "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+    local k is 0
+    loop while k < 14:
+        s is s + "aaa"
+        k is k + 1
+    return classify of [trajectory of s, "entropy"]
+print of (run of null)
+EOF
+cat > es_high.eigs <<'EOF'
+define run() as:
+    local s is "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"
+    local k is 0
+    loop while k < 14:
+        s is s + "a"
+        k is k + 1
+    return classify of [trajectory of s, "entropy"]
+print of (run of null)
+EOF
+live_case() {
+    name=$1
+    program=$2
+    "$bin" --lint --json "$program.eigs" > "$program.lint"
+    rc=0
+    # This is a live witness in every tier, including the trace tier.
+    # Preserve its JIT settings but do not record or read a tape.
+    { (unset EIGS_TRACE; "$bin" "$program.eigs") > live.out; } 2> live.err || rc=$?
+    last=$(tail -1 live.out)
+    printf '%s rc=%s last=%s\n' "$name" "$rc" "${last:-<missing>}"
+    first=$(head -1 live.err)
+    printf '%s first-stderr=%s\n' "$name" "${first:-<empty>}"
+}
+live_case cfg-entropy-ec-low ec_low
+live_case cfg-entropy-ec-high ec_high
+live_case cfg-entropy-es-low es_low
+live_case cfg-entropy-es-high es_high

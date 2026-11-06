@@ -58,3 +58,11 @@ cfg-scale-junk rc=3 names-count=0
 cfg-scale-junk first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01 10 0.001x'; refusing to step (docs/TRACE.md)
 cfg-window-64 rc=0 names-count=0
 cfg-window-64 first-stderr=<empty>
+cfg-entropy-ec-low rc=0 last=converged
+cfg-entropy-ec-low first-stderr=<empty>
+cfg-entropy-ec-high rc=0 last=equilibrium
+cfg-entropy-ec-high first-stderr=<empty>
+cfg-entropy-es-low rc=0 last=moving
+cfg-entropy-es-low first-stderr=<empty>
+cfg-entropy-es-high rc=0 last=stable
+cfg-entropy-es-high first-stderr=<empty>
