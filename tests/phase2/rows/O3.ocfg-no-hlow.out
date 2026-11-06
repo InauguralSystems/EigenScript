@@ -136,3 +136,39 @@ cfg-entropy-es-near-below rc=0 last=moving
 cfg-entropy-es-near-below first-stderr=<empty>
 cfg-entropy-es-near-above rc=0 last=stable
 cfg-entropy-es-near-above first-stderr=<empty>
+cfg-entropy-dict-ec-equal rc=0 last=equilibrium
+cfg-entropy-dict-ec-equal first-stderr=<empty>
+cfg-entropy-dict-ec-below rc=0 last=converged
+cfg-entropy-dict-ec-below first-stderr=<empty>
+cfg-entropy-dict-es-equal rc=0 last=stable
+cfg-entropy-dict-es-equal first-stderr=<empty>
+cfg-entropy-dict-es-below rc=0 last=moving
+cfg-entropy-dict-es-below first-stderr=<empty>
+cfg-thresholds-builtin rc=0 last=[0.001, 0.01, 0.1]
+cfg-thresholds-builtin first-stderr=<empty>
+cfg-start-zero-scale-equal rc=0 label=[converged]
+cfg-start-zero-scale-equal first-stderr=<empty>
+cfg-start-zero-scale-above rc=0 label=[equilibrium]
+cfg-start-zero-scale-above first-stderr=<empty>
+cfg-start-small-scale-equal rc=0 label=[stable]
+cfg-start-small-scale-equal first-stderr=<empty>
+cfg-start-small-scale-above rc=0 label=[moving]
+cfg-start-small-scale-above first-stderr=<empty>
+cfg-start-zero-1000-equal rc=0 label=[converged]
+cfg-start-zero-1000-equal first-stderr=<empty>
+cfg-start-zero-1000-above rc=0 label=[equilibrium]
+cfg-start-zero-1000-above first-stderr=<empty>
+cfg-start-small-100-equal rc=0 label=[stable]
+cfg-start-small-100-equal first-stderr=<empty>
+cfg-start-small-100-above rc=0 label=[moving]
+cfg-start-small-100-above first-stderr=<empty>
+cfg-bounds-smallest rc=0 names-count=0
+cfg-bounds-smallest first-stderr=<empty>
+cfg-scale-above-max rc=3 names-count=0
+cfg-scale-above-max first-stderr=step: tape observer-configuration record is not one this runtime could have written (scale must be positive and finite): 'O 0 cfg 0.001 0.01 10 1.0000000000000002e300'; refusing to step (docs/TRACE.md)
+cfg-install-mid-before rc=0 label=[moving]
+cfg-install-mid-before first-stderr=<empty>
+cfg-install-mid-after rc=0 label=[converged]
+cfg-install-mid-after first-stderr=<empty>
+cfg-install-other-stream rc=0 label=[moving]
+cfg-install-other-stream first-stderr=<empty>

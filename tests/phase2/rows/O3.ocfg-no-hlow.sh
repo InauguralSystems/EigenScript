@@ -504,3 +504,194 @@ live_case cfg-entropy-ec-near-below ec_under
 live_case cfg-entropy-ec-near-above ec_over
 live_case cfg-entropy-es-near-below es_under
 live_case cfg-entropy-es-near-above es_over
+
+# R32-5: exact equality at the entropy readers, with no string and no libm.
+# `classify of [t, "entropy"]` takes a trajectory snapshot dict whose
+# `entropy`, `last_entropy` and `dH` fields go straight into the slot, and
+# 1 / 10 is the double 0.1 on every IEEE machine. At 0.1 the strict `<` is
+# false; at the next double below it is true. The other fields are set on
+# the opposite side, so a reader of the wrong field is red.
+cat > dict_ec_eq.eigs <<'EOF'
+t is {"kind": "trajectory", "rel": [], "raw": [], "numeric": false, "dh": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "entropy": 1 / 10, "last_entropy": 0.05}
+print of (classify of [t, "entropy"])
+EOF
+cat > dict_ec_lt.eigs <<'EOF'
+t is {"kind": "trajectory", "rel": [], "raw": [], "numeric": false, "dh": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "entropy": 0.09999999999999999, "last_entropy": 0.5, "dH": 0.5}
+print of (classify of [t, "entropy"])
+EOF
+cat > dict_es_eq.eigs <<'EOF'
+t is {"kind": "trajectory", "rel": [], "raw": [], "numeric": false, "dh": [-0.005, -0.005, -0.005, -0.005, -0.005, -0.005, -0.005, -0.005, -0.005, -0.005], "entropy": 1 / 10, "last_entropy": 0.05}
+print of (classify of [t, "entropy"])
+EOF
+cat > dict_es_lt.eigs <<'EOF'
+t is {"kind": "trajectory", "rel": [], "raw": [], "numeric": false, "dh": [-0.005, -0.005, -0.005, -0.005, -0.005, -0.005, -0.005, -0.005, -0.005, -0.005], "entropy": 0.09999999999999999, "last_entropy": 0.5, "dH": 0.5}
+print of (classify of [t, "entropy"])
+EOF
+live_case cfg-entropy-dict-ec-equal dict_ec_eq
+live_case cfg-entropy-dict-ec-below dict_ec_lt
+live_case cfg-entropy-dict-es-equal dict_es_eq
+live_case cfg-entropy-dict-es-below dict_es_lt
+# The builtin still reports the three constants.
+printf 'print of (get_observer_thresholds of null)\n' > thresholds.eigs
+live_case cfg-thresholds-builtin thresholds
+
+# R32-5: the fold's start values at exact equality. With the window at
+# zero the thresholds are the products dh_zero * scale and dh_small * scale;
+# the bump equals the product (converged / stable) or is the next double
+# above it. At |x| = 1000 and a midrange of 100 the thresholds are
+# dh_zero * 1000 = 1.0 and dh_small * 100 = 1.0, and the bump is 1.0 or the
+# next representable diameter above it.
+cat > xp_eq.eigs <<'EOF'
+x is 0.0
+x is 1e-06
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+print of (report of x)
+EOF
+cat > xp_gt.eigs <<'EOF'
+x is 0.0
+x is 1.0000000000000002e-06
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+print of (report of x)
+EOF
+cat > xq_eq.eigs <<'EOF'
+x is 0.0
+x is 2e-05
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+print of (report of x)
+EOF
+cat > xq_gt.eigs <<'EOF'
+x is 0.0
+x is 2.0000000000000005e-05
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+print of (report of x)
+EOF
+cat > xz_eq.eigs <<'EOF'
+x is 1000.0
+x is 1001.0
+x is 1000.0
+x is 1000.0
+x is 1000.0
+x is 1000.0
+x is 1000.0
+x is 1000.0
+x is 1000.0
+x is 1000.0
+x is 1000.0
+print of (report of x)
+EOF
+cat > xz_gt.eigs <<'EOF'
+x is 1000.0
+x is 1001.0000000000001
+x is 1000.0
+x is 1000.0
+x is 1000.0
+x is 1000.0
+x is 1000.0
+x is 1000.0
+x is 1000.0
+x is 1000.0
+x is 1000.0
+print of (report of x)
+EOF
+cat > xs_eq.eigs <<'EOF'
+x is 99.0
+x is 101.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+print of (report of x)
+EOF
+cat > xs_gt.eigs <<'EOF'
+x is 99.0
+x is 101.00000000000001
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+print of (report of x)
+EOF
+for program in xp_eq xp_gt xq_eq xq_gt xz_eq xz_gt xs_eq xs_gt; do
+    "$bin" --lint --json "$program.eigs" > "$program.lint"
+    EIGS_TRACE="$program.tape" "$bin" "$program.eigs" > "$program.record"
+done
+install_case cfg-start-zero-scale-equal xp_eq ''
+install_case cfg-start-zero-scale-above xp_gt ''
+install_case cfg-start-small-scale-equal xq_eq ''
+install_case cfg-start-small-scale-above xq_gt ''
+install_case cfg-start-zero-1000-equal xz_eq ''
+install_case cfg-start-zero-1000-above xz_gt ''
+install_case cfg-start-small-100-equal xs_eq ''
+install_case cfg-start-small-100-above xs_gt ''
+# The range checks at their exact bounds: the smallest positive double is
+# accepted for both thresholds and the scale; the next double above 1e300
+# is refused.
+cfg_case cfg-bounds-smallest 'O 0 cfg 4.9e-324 1e-323 10 4.9e-324'
+cfg_case cfg-scale-above-max 'O 0 cfg 0.001 0.01 10 1.0000000000000002e300'
+
+# R32-5: a record governs the records that follow it, on its own stream.
+# Spliced before the seventh statement of flat, a window-4 record leaves the
+# stop after the sixth assignment `[moving]` and makes the last `[converged]`.
+# The same record on a second, declared stream leaves stream 0 `[moving]`.
+mid_case() {
+    name=$1
+    steps=$2
+    at=$(grep -n '^L 0 7$' flat.tape | cut -d: -f1)
+    { head -$((at - 1)) flat.tape
+      printf '%s\n' 'O 0 cfg 0.001 0.01 4 0.001'
+      tail -n +"$at" flat.tape
+    } > install.tape
+    printf 's %s\np x\nq\n' "$steps" > commands.in
+    rc=0
+    { "$bin" --step install.tape flat.eigs < commands.in > step.out; } 2> step.err || rc=$?
+    label=$(sed -n '/x = /s/.*\[\([^]]*\)\].*/[\1]/p' step.out)
+    printf '%s rc=%s label=%s\n' "$name" "$rc" "${label:-<missing>}"
+    first=$(head -1 step.err | visible)
+    printf '%s first-stderr=%s\n' "$name" "${first:-<empty>}"
+}
+mid_case cfg-install-mid-before 5
+mid_case cfg-install-mid-after 400
+install_case cfg-install-other-stream flat 'B 1 3 1 0 child 0 1
+O 1 cfg 0.001 0.01 4 0.001'
