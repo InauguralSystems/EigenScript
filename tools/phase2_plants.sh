@@ -68,7 +68,8 @@ while [ $# -gt 0 ]; do
                 r323-entropy-stable-low|r323-entropy-stable-high|\
                 r324-guard-dh-zero|r324-keyword-blank|r324-count-blank|\
                 r324-entropy-converged-tight|r324-entropy-stable-tight|\
-                r324-report-partial) ONLY="$2" ;;
+                r324-report-partial|\
+                r325-entropy-converged-float|r325-entropy-stable-float) ONLY="$2" ;;
                 *) echo "phase2-plants: FAIL: unknown plant id $2"; exit 2 ;;
             esac
             shift 2 ;;
@@ -110,7 +111,7 @@ EXPECTED_ORACLE=4
 stall_plants=0; stall_killed=0; stall_survived=0; stall_broken=0; stall_green=0; stall_available=0
 EXPECTED_STALL=10
 ocfg_plants=0; ocfg_killed=0; ocfg_survived=0; ocfg_broken=0; ocfg_green=0; ocfg_transverse=0; ocfg_available=0
-EXPECTED_OCFG=26
+EXPECTED_OCFG=28
 PRISTINE="$WORK/observer-pristine"
 EXPECTED_PLANTS=19
 EXPECTED_OBSERVER=11
@@ -758,6 +759,12 @@ mutate_ocfg() {
         r324-report-partial)
             replace "$entropy" '    if (fabs(s->ent_dH) < g_obs_dh_small && s->ent_entropy >= OBSERVER_H_LOW_DEFAULT) return "stable";' \
                 '    if (fabs(s->ent_dH) < g_obs_dh_small && s->ent_entropy >= OBSERVER_H_LOW_DEFAULT) return "";' || return 1 ;;
+        r325-entropy-converged-float)
+            replace "$entropy" '    return (s->ent_entropy < OBSERVER_H_LOW_DEFAULT) ? 1 : 0;' \
+                '    return (s->ent_entropy < 0.1f) ? 1 : 0;' || return 1 ;;
+        r325-entropy-stable-float)
+            replace "$entropy" '    if (s->ent_entropy < OBSERVER_H_LOW_DEFAULT) return 0;' \
+                '    if (s->ent_entropy < 0.1f) return 0;' || return 1 ;;
         *) echo "unknown ocfg mutation: $id"; return 1 ;;
     esac
 }
@@ -859,6 +866,10 @@ run_ocfg_plant r324-count-blank cfg-sep-vtab-field
 run_ocfg_plant r324-entropy-converged-tight cfg-entropy-ec-above
 run_ocfg_plant r324-entropy-stable-tight cfg-entropy-es-below
 run_ocfg_plant r324-report-partial cfg-entropy-report-partial
+
+# R32-4: the fourth critic's float literal (0.1f is 0.1 + 1.49e-9).
+run_ocfg_plant r325-entropy-converged-float cfg-entropy-ec-near-above
+run_ocfg_plant r325-entropy-stable-float cfg-entropy-es-near-above
 
 echo "plants=$plants killed=$killed survived=$survived broken=$broken transverse=$transverse"
 echo "observer-unplanted=$observer_green expected=$EXPECTED_OBSERVER"

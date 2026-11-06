@@ -52,7 +52,9 @@ def main():
                                     'cfg-sep-vtab-field',
                                     'cfg-entropy-ec-above',
                                     'cfg-entropy-es-below',
-                                    'cfg-entropy-report-partial'))
+                                    'cfg-entropy-report-partial',
+                                    'cfg-entropy-ec-near-above',
+                                    'cfg-entropy-es-near-above'))
     args = p.parse_args()
     row = ROOT / 'tests/phase2/rows/O3.ocfg-no-hlow.sh'
     if header(str(row)).get('TIERS', '').split() != TIERS:
