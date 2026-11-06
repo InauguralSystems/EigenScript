@@ -1,0 +1,11 @@
+["integral-float", "undefined_name"]
+["negative-zero", "undefined_name"]
+["payload", "undefined_name"]
+["index-fraction", "undefined_name"]
+["index-negative", "undefined_name"]
+["index-high", "undefined_name"]
+["index-outside-int64", "undefined_name"]
+["index-type", "undefined_name"]
+["buffer-type", "undefined_name"]
+["few", "undefined_name"]
+rc=0

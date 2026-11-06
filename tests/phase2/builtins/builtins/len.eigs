@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: len (int-preserving; count (Lua # is an integer))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is len of [1, 2]
+print of [a, nt of a]
+b is len of "hello"
+print of [b, nt of b]
+c is len of {"k": 1, "j": 2, "i": 3}
+print of [c, nt of c]
+d is len of (buffer of 4)
+print of [d, nt of d]

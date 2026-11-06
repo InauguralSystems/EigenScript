@@ -41,4 +41,18 @@ try:
 catch e:
     assert_eq of [e.kind, "type_mismatch", "relu on a ragged tensor raises a type error"]
 
+# R22-2: reversing the scalar/row mixture must not launder the row to zero.
+try:
+    r is relu of ([1, [7, 1]])
+    assert_eq of ["no raise", "raise", "relu reversed ragged shape raises"]
+catch e:
+    assert_eq of [e.kind, "type_mismatch", "relu reversed ragged shape is a type error"]
+
+# A nested row where a matrix cell belongs is the same structural mismatch.
+try:
+    r is relu of ([[1, [7, 1]]])
+    assert_eq of ["no raise", "raise", "relu nested ragged cell raises"]
+catch e:
+    assert_eq of [e.kind, "type_mismatch", "relu nested ragged cell is a type error"]
+
 test_summary of null

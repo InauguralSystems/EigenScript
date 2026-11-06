@@ -1,0 +1,10 @@
+["integral-float", "undefined_name"]
+["negative-zero", "undefined_name"]
+["tag-nan", "undefined_name"]
+["fraction", "undefined_name"]
+["outside-int64", "undefined_name"]
+["nan-argument", "undefined_name"]
+["infinity-argument", "undefined_name"]
+["non-number", "undefined_name"]
+["bool", "undefined_name"]
+rc=0

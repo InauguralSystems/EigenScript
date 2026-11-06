@@ -1,0 +1,9 @@
+# R1.6 behaviour-table probe: random (float-producing; Lua math.random() in [0,1))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+seed_random of 7
+r is random of null
+print of [nt of r, r >= 0, r < 1]

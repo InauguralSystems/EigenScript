@@ -110,7 +110,7 @@ static Value *continuing_worker(Value *arg) {
         pthread_mutex_unlock(&mu);
         Value *v = NULL;
         if (!trace_replay_take("sample", &v)) {
-            v = make_num(7 + i + live_bias);
+            v = make_float(7 + i + live_bias);
             trace_nondet_value("sample", v);
             live_calls++;
         }
@@ -122,7 +122,7 @@ static Value *continuing_worker(Value *arg) {
         pthread_cond_broadcast(&cv);
         pthread_mutex_unlock(&mu);
     }
-    return make_num(observed[0]*10 + observed[1]);
+    return make_float(observed[0]*10 + observed[1]);
 }
 static Value *start_worker(void) {
     phase = completed = worker_error = 0;
@@ -244,10 +244,48 @@ int main(void) {
           !eigs_trace_declare_kind("fnval", EIGS_KIND(EIGS_TYPE_FN)) &&
           !eigs_trace_declare_kind("nokind", 0),
           "a runtime name, an empty name, a FN kind and no kind are refused");
+
+    /* #1758 v9: unlike the bridge builtins, a host can supply actual int
+     * N values now. Exercise the production writer AND parser, with values
+     * whose low bits would be lost by a double intermediate. */
+    used = 0; journal[0] = 0; bad_sink = 0;
+    eigs_set_trace_sink(sink, NULL);
+    Value *numbers[] = {make_int(3), make_int(INT64_C(9007199254740993)),
+                        make_int(INT64_MIN), make_int(INT64_MAX),
+                        make_float(3.0), make_float(-0.0)};
+    for (size_t i = 0; i < sizeof numbers / sizeof numbers[0]; i++) {
+        trace_nondet_value("sample", numbers[i]);
+        val_decref(numbers[i]);
+    }
+    eigs_set_trace_sink(NULL, NULL);
+    check(!bad_sink && strstr(journal, " sample=9007199254740993\n") &&
+          strstr(journal, " sample=-9223372036854775808\n") &&
+          strstr(journal, " sample=9223372036854775807\n") &&
+          strstr(journal, " sample=3.0\n") && strstr(journal, " sample=-0.0\n"),
+          "v9 writer spells exact int digits and marks integral floats");
+    check(eigs_set_replay_tape(journal, used, 1), "v9 numeric-kind journal installs");
+    const int64_t exact[] = {3, INT64_C(9007199254740993), INT64_MIN, INT64_MAX};
+    for (size_t i = 0; i < sizeof exact / sizeof exact[0]; i++) {
+        EigsValue *v = NULL;
+        int got = eigs_replay_take("sample", &v);
+        check(got && v && v->type == VAL_INT && VAL_I64_RAW(v) == exact[i],
+              "v9 int replay retains exact kind and int64 payload");
+        eigs_value_release(v);
+    }
+    for (int i = 0; i < 2; i++) {
+        EigsValue *v = NULL;
+        int got = eigs_replay_take("sample", &v);
+        check(got && v && v->type == VAL_FLOAT &&
+              VAL_F64_RAW(v) == (i ? -0.0 : 3.0) &&
+              (!!signbit(VAL_F64_RAW(v)) == i),
+              "v9 float replay retains kind and signed zero");
+        eigs_value_release(v);
+    }
+    check(eigs_set_replay_tape(NULL, 0, 0), "v9 numeric-kind replay releases its source");
     if (!eigs_thread_switch(peer)) return 2;
     eigs_thread_detach(); eigs_state_destroy(peer);
     if (!eigs_thread_switch(root)) return 2;
     eigs_close(root);
-    printf("trace context: %d passed, %d failed (44 declared)\n", passed, failed);
-    return failed || total != 44;
+    printf("trace context: %d passed, %d failed (53 declared)\n", passed, failed);
+    return failed || total != 53;
 }

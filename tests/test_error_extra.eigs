@@ -65,21 +65,21 @@ catch e:
     caught6 is 1
 assert of [caught6 == 1, "EE06 try/catch caught num-minus-string"]
 
-# ---- Division by zero raises (no defined value) ----
+# ---- R2.2: float division by zero returns infinity ----
 caught7 is 0
 try:
     v_dz is 10 / 0
 catch e:
     caught7 is 1
-assert of [caught7 == 1, "EE07 division by zero raises"]
+assert of [caught7 == 0 and v_dz == (1.0 / 0), "EE07 division by zero returns infinity"]
 
-# ---- 0 / 0 also raises ----
+# ---- R2.2: 0 / 0 returns NaN ----
 caught8 is 0
 try:
     v_dz2 is 0 / 0
 catch e:
     caught8 is 1
-assert of [caught8 == 1, "EE08 0/0 raises"]
+assert of [caught8 == 0 and v_dz2 != v_dz2, "EE08 0/0 returns NaN"]
 
 # ---- try/catch around throw with custom message ----
 caught9 is 0

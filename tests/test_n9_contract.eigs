@@ -1,0 +1,17 @@
+# #1758 N9: supplementary contract witnesses, pre-registered from Rust.
+load_file of "lib/test.eigs"
+rounded is fround of 4611686293305294849
+assert_eq of [rounded, 4611686018427387904, "int converts to double before float32"]
+assert_eq of [num_type of rounded, "float", "fround result kind"]
+assert_eq of [fround of [0.1], fround of 0.1, "unary one-element unwrap"]
+assert_eq of [u64_to_string of [-1], u64_to_string of -1, "unsigned unary unwrap"]
+for operation in [u64_div, u64_rem]:
+    refused is false
+    try:
+        operation of [9007199254740993, 0]
+    catch e:
+        assert_eq of [e.kind, "value", "unsigned zero divisor kind"]
+        assert_eq of [e.message, "division by zero", "unsigned zero divisor exact message"]
+        refused is true
+    assert_eq of [refused, true, "zero divisor raises"]
+test_summary of null

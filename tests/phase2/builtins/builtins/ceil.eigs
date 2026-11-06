@@ -1,0 +1,12 @@
+# R1.6 behaviour-table probe: ceil (int-preserving, LOSS; Lua math.ceil: an int when the result fits int64, else a float)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is ceil of 9007199254740993
+print of [a, nt of a]
+b is ceil of -2.5
+print of [b, nt of b]
+c is ceil of 1e300
+print of [c, nt of c]

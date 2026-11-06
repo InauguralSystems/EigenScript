@@ -1,0 +1,10 @@
+["one", 4607182418800017408, "int"]
+["negative-zero", -9223372036854775808, "int"]
+["int-promotes", 4845873199050653696]
+["nan", 9221120237041090560, "int"]
+["infinity", 9218868437227405312]
+["non-number", "type_mismatch"]
+["bool", "type_mismatch"]
+["null", "type_mismatch"]
+["list", "type_mismatch"]
+rc=0

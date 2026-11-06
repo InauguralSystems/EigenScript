@@ -1,0 +1,7 @@
+# ROW: N12.f64-bits
+# ITEMS: N12
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+print of [f64_bits of 1.0, f64_bits of -0.0, f64_from_bits of 4607182418800017408]

@@ -222,6 +222,12 @@ typedef enum {
                            * Appended to preserve the public bytecode ABI. */
     OP_TRUE,            /*obs:NONE*/ /* #1637: push the bool true immediate. Appended. */
     OP_FALSE,           /*obs:NONE*/ /* #1637: push the bool false immediate. Appended. */
+    /* #1758 R1.3: int literal opcodes append to preserve the bytecode ABI.
+     * The float literal opcodes above retain their original meanings. */
+    OP_INT_ZERO,        /*obs:NONE*/ /* push int 0 */
+    OP_INT_ONE,         /*obs:NONE*/ /* push int 1 */
+    OP_INT_CONST,       /*obs:NONE*/ /* [idx:16] push int constant pool entry */
+    OP_IDIV,            /*obs:NONE*/ /* #1758 N4: floor division, appended */
     OP_LOOP_ENTER,      /*obs:DIAG*/ /* legacy shared counter reset */
     OP_LOOP_STALL_NAMED,/*obs:READS*/ /* [exit:16][stack_depth:16] per-loop stall/cap guard */
     OP_LOOP_CAP_NAMED,  /*obs:DIAG*/ /* [exit:16][stack_depth:16] per-loop cap guard */
@@ -695,7 +701,7 @@ int    task_handle_unpack(double packed, int *id, uint32_t *gen);
 Value *task_sched_trace_read(void);   /* list of {seq, tick, task, cause} dicts; [] when off / no scheduler */
 void   task_sched_trace_clear(void);  /* discard the recorded history (no-op without a scheduler) */
 /* Inc 4 seeded scheduling strategy (builtins.c task_sched_seed). */
-void   task_sched_set_seed(double seed); /* install a seed → seeded pick; ensures the scheduler */
+void   task_sched_set_seed(int64_t seed); /* install a seed → seeded pick; ensures the scheduler */
 
 /* ---- Public API ---- */
 
@@ -825,21 +831,17 @@ void       vm_thread_reset_caches(void);
  * integral double outside the C int range is clamped to the nearest endpoint.
  * That preserves the predicate's compact
  * interface while sending it through the caller's ordinary out-of-range path;
- * critically, the range test happens before the cast. Values outside the int
- * range but below 2^52 are tested with a (long long) round-trip (exact there, and
- * no libm: the freestanding profile has no trunc()); at and above 2^52 every finite
- * binary64 value is already integral. Negatives pass here and fail the usual
- * range check downstream, unchanged. */
+ * critically, Phase2's exact signed-int64 check happens before either cast.
+ * A fractional, non-finite or out-of-int64 float is a value refusal (N5);
+ * an exact int64 outside the C index domain takes main's range-error path.
+ * num_to_i64_exact is pure inline and needs no freestanding libm helper.
+ * Negatives pass here and fail the usual range check downstream, unchanged. */
 static inline int vm_index_is_int(double d, int *out) {
-    if (d < (double)INT_MIN || d > (double)INT_MAX) {
-        if (!isfinite(d) || (fabs(d) < 4503599627370496.0 && (double)(long long)d != d))
-            return 0;
-        *out = d < 0.0 ? INT_MIN : INT_MAX;
-        return 1;
-    }
-    int i = (int)d;
-    if ((double)i != d) return 0;
-    *out = i;
+    int64_t i;
+    if (!num_to_i64_exact(d, &i)) return 0;
+    if (i < INT_MIN) *out = INT_MIN;
+    else if (i > INT_MAX) *out = INT_MAX;
+    else *out = (int)i;
     return 1;
 }
 

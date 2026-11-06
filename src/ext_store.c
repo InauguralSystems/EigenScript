@@ -6,6 +6,7 @@
 #include "ext_store_internal.h"
 #include "builtins_internal.h"
 #include "trace.h"
+#include <errno.h>
 
 #if EIGENSCRIPT_FREESTANDING
 /* The page store is file-backed end to end — carved out of the
@@ -92,7 +93,7 @@ static int store_record_next(const Page *page, int *offset, StoreRecord *rec) {
  * JSON helpers for dicts (the core json_encode doesn't handle VAL_DICT)
  * ================================================================ */
 
-static void store_json_encode(Value *v, strbuf *out);
+static int store_json_encode(Value *v, strbuf *out);
 
 static int page_data_used(Page *page);
 
@@ -154,103 +155,74 @@ static int store_nonfinite_sentinel(const char *s, double *out) {
     return 0;
 }
 
-/* Buffer elements use the 17-significant-digit form, as trace.c's buffer tape
- * encoding does: %.17g is the shortest width that round-trips a double
- * bit-exactly, and a buffer holding samples or weights would otherwise come
- * back subtly altered. Scalar numbers use the shared round-trip formatter
- * below as well. */
-static void store_json_encode_buf_elem(strbuf *out, double d) {
-    if (isnan(d)) { strbuf_append(out, "\"nan\""); return; }
-    if (isinf(d)) { strbuf_append(out, d < 0 ? "\"-inf\"" : "\"inf\""); return; }
-    strbuf_append_fmt(out, "%.17g", d);
-}
-
-static void store_json_encode(Value *v, strbuf *out);
-
-/* Recursive container walks consume slots directly.  In particular, do not
- * manufacture a stack-backed Value and pass it down the recursion for an
- * inline number. */
-static void store_json_encode_slot(EigsSlot slot, strbuf *out) {
-    if (slot_is_num(slot)) {
-        double n = eigs_slot_num(slot, __func__);
-        char buf[32];
-        eigs_num_text(buf, sizeof(buf), n);
-        strbuf_append(out, buf);
-        return;
+/* N13: every persisted double is refused here before any bytes are committed.
+ * Old quoted sentinel reads remain supported by store_nonfinite_sentinel. */
+static int store_json_encode_f64(strbuf *out, double d) {
+    if (!isfinite(d)) {
+        rt_error(EK_VALUE, 0, "store: cannot encode a non-finite number");
+        return -1;
     }
-    store_json_encode(eigs_slot_ref(slot), out);
+    char nb[32];
+    eigs_num_text(nb, sizeof nb, d);
+    strbuf_append(out, nb);
+    return 0;
 }
 
-static void store_json_encode(Value *v, strbuf *out) {
+static int store_json_encode(Value *v, strbuf *out);
+static int store_json_encode_dict(Value *v, strbuf *out, const char *record_id);
+
+/* Recursive walks consume slots directly, without temporary boxed floats. */
+static int store_json_encode_slot(EigsSlot slot, strbuf *out) {
+    if (slot_is_f64(slot))
+        return store_json_encode_f64(out, SLOT_F64_RAW(slot));
+    if (slot_is_smi(slot)) {
+        char nb[24];
+        eigs_int_text(nb, sizeof nb, slot_smi_val(slot));
+        strbuf_append(out, nb);
+        return 0;
+    }
+    return store_json_encode(eigs_slot_ref(slot), out);
+}
+
+static int store_json_encode(Value *v, strbuf *out) {
     if (!v || v->type == VAL_NULL || v->type == VAL_FN || v->type == VAL_BUILTIN) {
         strbuf_append(out, "null");
-        return;
+        return 0;
     }
     switch (v->type) {
-        case VAL_NUM: {
-            double n = eigs_num_arg(v, __func__);
-            char buf[32];
-            eigs_num_text(buf, sizeof(buf), n);
-            strbuf_append(out, buf);
+        case VAL_FLOAT:
+            return store_json_encode_f64(out, VAL_F64_RAW(v));
+        case VAL_INT: {
+            char nb[24];
+            eigs_int_text(nb, sizeof nb, VAL_I64_RAW(v));
+            strbuf_append(out, nb);
             break;
         }
-        case VAL_STR: {
+        case VAL_STR:
             eigs_json_escape_string(out, v->data.str);
             break;
-        }
-        case VAL_BOOL:   /* #1637: JSON's own literal; decodes back to a bool */
+        case VAL_BOOL:
             strbuf_append(out, v->data.boolean ? "true" : "false");
             break;
-        case VAL_LIST: {
+        case VAL_LIST:
             strbuf_append_char(out, '[');
             for (int i = 0; i < v->data.list.count; i++) {
                 if (i > 0) strbuf_append_char(out, ',');
-                store_json_encode_slot(list_slot(v, i), out);
+                if (store_json_encode_slot(list_slot(v, i), out) != 0) return -1;
             }
             strbuf_append_char(out, ']');
             break;
-        }
-        case VAL_DICT: {
-            strbuf_append_char(out, '{');
-            int first = 1;
-            DICT_FOR_EACH(v, i) {
-                const char *key = v->data.dict.keys[i];
-                /* Skip internal pointer fields */
-                if (key[0] == '_' && (strcmp(key, "_store") == 0)) continue;
-                if (!first) strbuf_append_char(out, ',');
-                first = 0;
-                eigs_json_escape_string(out, key);
-                strbuf_append_char(out, ':');
-                store_json_encode_slot(dict_value_slot(v, i), out);
-            }
-            /* Escape the complete buffer-tag namespace.  Repeating the shape
-             * member preserves its value after dict insertion while leaving a
-             * lexical fact that no user VAL_DICT can itself contain. */
-            if (v->data.dict.count == 2 &&
-                store_dict_get_view(v, STORE_BUF_TAG, &(EigsView){{0}}) && store_dict_get_view(v, STORE_SHAPE_TAG, &(EigsView){{0}})) {
-                strbuf_append(out, ",\"" STORE_SHAPE_TAG "\":");
-                store_json_encode(store_dict_get_view(v, STORE_SHAPE_TAG, &(EigsView){{0}}), out);
-            }
-            strbuf_append_char(out, '}');
-            break;
-        }
-        case VAL_BUFFER: {
-            /* Tagged so the decoder rebuilds a VAL_BUFFER rather than a list
-             * or a null — see the STORE_BUF_TAG block above for the shape,
-             * its collision surface, and the compatibility argument. */
+        case VAL_DICT:
+            return store_json_encode_dict(v, out, NULL);
+        case VAL_BUFFER:
             strbuf_append(out, "{\"" STORE_BUF_TAG "\":[");
             for (int i = 0; i < v->data.buffer.count; i++) {
                 if (i > 0) strbuf_append_char(out, ',');
-                store_json_encode_buf_elem(out, v->data.buffer.data[i]);
+                if (store_json_encode_f64(out, v->data.buffer.data[i]) != 0) return -1;
             }
             strbuf_append_fmt(out, "],\"" STORE_SHAPE_TAG "\":[%d,%d]}",
                               v->data.buffer.rows, v->data.buffer.cols);
             break;
-        }
-        /* VAL_NULL/VAL_FN/VAL_BUILTIN are handled by the guard above; text
-         * builders have no store encoding. Enumerated rather
-         * than covered by a `default:` so -Werror=switch forces a new ValType
-         * to choose its store-JSON encoding here. */
         case VAL_NULL:
         case VAL_FN:
         case VAL_BUILTIN:
@@ -258,12 +230,56 @@ static void store_json_encode(Value *v, strbuf *out) {
             strbuf_append(out, "null");
             break;
     }
+    return 0;
 }
 
-static char* store_dict_to_json(Value *dict) {
+/* A record's selected key is encoded in the same walk without first changing
+ * the caller's dict. Recursive dicts and the catalog use record_id == NULL. */
+static int store_json_encode_dict(Value *v, strbuf *out, const char *record_id) {
+    strbuf_append_char(out, '{');
+    int first = 1, id_seen = 0;
+    DICT_FOR_EACH(v, i) {
+        const char *key = v->data.dict.keys[i];
+        if (key[0] == '_' && strcmp(key, "_store") == 0) continue;
+        if (!first) strbuf_append_char(out, ',');
+        first = 0;
+        eigs_json_escape_string(out, key);
+        strbuf_append_char(out, ':');
+        if (record_id && strcmp(key, "_id") == 0) {
+            eigs_json_escape_string(out, record_id);
+            id_seen = 1;
+        } else if (store_json_encode_slot(dict_value_slot(v, i), out) != 0) {
+            return -1;
+        }
+    }
+    if (record_id && !id_seen) {
+        if (!first) strbuf_append_char(out, ',');
+        eigs_json_escape_string(out, "_id");
+        strbuf_append_char(out, ':');
+        eigs_json_escape_string(out, record_id);
+    }
+    /* Preserve the existing escape of user dicts resembling native buffers.
+     * An injected record _id contributes to the effective dict size exactly
+     * as it did when store_put inserted it before serializing. */
+    int count = v->data.dict.count + (record_id && !id_seen);
+    if (count == 2 &&
+        store_dict_get_view(v, STORE_BUF_TAG, &(EigsView){{0}}) &&
+        store_dict_get_view(v, STORE_SHAPE_TAG, &(EigsView){{0}})) {
+        strbuf_append(out, ",\"" STORE_SHAPE_TAG "\":");
+        if (store_json_encode(store_dict_get_view(v, STORE_SHAPE_TAG, &(EigsView){{0}}), out) != 0)
+            return -1;
+    }
+    strbuf_append_char(out, '}');
+    return 0;
+}
+
+static char* store_dict_to_json(Value *dict, const char *record_id) {
     strbuf out;
     strbuf_init(&out);
-    store_json_encode(dict, &out);
+    if (store_json_encode_dict(dict, &out, record_id) != 0) {
+        strbuf_free(&out);
+        return NULL;
+    }
     char *result = xstrdup(out.data);
     strbuf_free(&out);
     return result;
@@ -311,11 +327,29 @@ static Value* store_json_parse_string(const char *s, int *pos) {
 }
 
 static Value* store_json_parse_number(const char *s, int *pos) {
+    const char *start = s + *pos;
     char *end = NULL;
-    double val = strtod(s + *pos, &end);
-    if (end == s + *pos) return NULL;  /* no digits consumed */
+    double val = strtod(start, &end);
+    if (end == start) return NULL;  /* no digits consumed */
     *pos = (int)(end - s);
-    return make_num(val);
+    /* N14/R2.5: records use JSON numbers, never decimal overflow to inf.
+     * Legacy quoted buffer sentinels have their separate reader below. */
+    if (!isfinite(val)) {
+        rt_error(EK_VALUE, 0, "store JSON number is outside the finite float range");
+        return NULL;
+    }
+
+    /* #1758 N14: decimal integer text within int64 decodes exactly. A
+     * decimal point or exponent keeps the float kind even for a whole value.
+     * Keep strtod's existing token span and float fallback (including the
+     * guard in make_float); float text itself changes in R1.7, not here. */
+    char *int_end = NULL;
+    errno = 0;
+    long long integer = strtoll(start, &int_end, 10);
+    if (int_end == end && errno != ERANGE &&
+        integer >= INT64_MIN && integer <= INT64_MAX)
+        return make_int((int64_t)integer);
+    return make_float(val);
 }
 
 static Value* store_json_parse_array(const char *s, int *pos) {
@@ -351,21 +385,21 @@ static Value* store_buffer_from_tag(Value *dict) {
 
     Value *rv = list_get_view(shape, 0, &(EigsView){{0}});
     Value *cv = list_get_view(shape, 1, &(EigsView){{0}});
-    if (!rv || rv->type != VAL_NUM || !cv || cv->type != VAL_NUM) return NULL;
+    if (!rv || !val_is_number(rv) || !cv || !val_is_number(cv)) return NULL;
 
-    /* Range-gate BEFORE narrowing. A stored shape is whatever double the file
-     * holds, and (int)d is undefined when d is outside int's range (C11
-     * 6.3.1.4p1) — reachable here with e.g. [1e300, 0]. The negated form also
-     * rejects a NaN, which fails every comparison. Only once the value is
-     * known in-range is the exact `==` below meaningful: it is an INTEGRALITY
-     * test (is this dimension a whole number?), so exact equality is the
-     * correct operator and a tolerance would be the bug — 2.0000000000000004
-     * is not a row count. This also establishes rows/cols >= 0. */
-    double rd = eigs_num_arg(rv, __func__), cd = eigs_num_arg(cv, __func__);
-    if (!(rd >= 0 && rd <= (double)INT_MAX)) return NULL;
-    if (!(cd >= 0 && cd <= (double)INT_MAX)) return NULL;
-    int rows = (int)rd, cols = (int)cd;
-    if (rd != (double)rows || cd != (double)cols) return NULL;
+    /* This is an untrusted codec tag, so an invalid dimension leaves it a
+     * user dict, as before. Read integer text without passing through double;
+     * float dimensions must convert exactly before the C int range check. */
+    EigsNum rn = eigs_number_arg(rv, __func__);
+    EigsNum cn = eigs_number_arg(cv, __func__);
+    if (g_has_error) return NULL;
+    int64_t ri, ci;
+    if (rn.is_int) ri = rn.value.i64;
+    else if (!num_to_i64_exact(rn.value.f64, &ri)) return NULL;
+    if (cn.is_int) ci = cn.value.i64;
+    else if (!num_to_i64_exact(cn.value.f64, &ci)) return NULL;
+    if (ri < 0 || ri > INT_MAX || ci < 0 || ci > INT_MAX) return NULL;
+    int rows = (int)ri, cols = (int)ci;
 
     /* Accept exactly the (rows, cols, count) triples the buffer constructors
      * can produce, no more. rows>0 is a real 2-D shape, so rows*cols must be
@@ -381,7 +415,7 @@ static Value* store_buffer_from_tag(Value *dict) {
     for (int i = 0; i < count; i++) {
         Value *e = list_get_view(body, i, &(EigsView){{0}});
         if (!e) return NULL;
-        if (e->type == VAL_NUM) continue;
+        if (val_is_number(e)) continue;
         if (e->type == VAL_STR && store_nonfinite_sentinel(e->data.str, NULL)) continue;
         return NULL;
     }
@@ -396,7 +430,7 @@ static Value* store_buffer_from_tag(Value *dict) {
     for (int i = 0; i < count; i++) {
         Value *e = list_get_view(body, i, &(EigsView){{0}});
         double d = 0;
-        if (e->type == VAL_NUM) d = eigs_num_arg(e, __func__);
+        if (val_is_number(e)) d = eigs_float_arg(e, __func__);
         else store_nonfinite_sentinel(e->data.str, &d);
         buf->data.buffer.data[i] = d;
     }
@@ -626,7 +660,8 @@ static int store_read_header(Store *store) {
 
 static int store_flush_catalog(Store *store) {
     if (!store->dirty) return 0;
-    char *json = store_dict_to_json(store->catalog);
+    char *json = store_dict_to_json(store->catalog, NULL);
+    if (!json) return -1;
     size_t json_len = strlen(json);
 
     /* Write catalog across page 0 (and overflow pages if needed) */
@@ -734,12 +769,17 @@ static int store_load_catalog(Store *store) {
         }
         Value *rv = store_dict_get_view(col, "root", &(EigsView){{0}});
         Value *nv = store_dict_get_view(col, "next_id", &(EigsView){{0}});
-        if (!rv || rv->type != VAL_NUM || !nv || nv->type != VAL_NUM) {
+        if (!rv || !val_is_number(rv) || !nv || !val_is_number(nv)) {
             fprintf(stderr, "store_open: collection '%s' missing root or next_id\n", name);
             free(visited);
             return -1;
         }
-        uint32_t root = (uint32_t)eigs_num_arg(rv, __func__);
+        int64_t root_id;
+        if (!eigs_int_arg_range(rv, 0, UINT32_MAX, &root_id, "store_open")) {
+            free(visited);
+            return -1;
+        }
+        uint32_t root = (uint32_t)root_id;
         if (root == 0 || root >= store->page_count) {
             fprintf(stderr, "store_open: collection '%s' has invalid root %u\n", name, root);
             free(visited);
@@ -801,15 +841,21 @@ cat_fail:
  * store's slot; a forged handle (tests/test_handle_forge.eigs) carries no
  * generation and reads as gen 0, which no live slot ever has. `out_id` is set
  * even on failure so the refusal can name the slot. */
-static Store* get_store_why(Value *v, int *why, int *out_id) {
+/* R1.6f-D1: this reader owns all nine store_arg callers, including the
+ * already-b key/record operations. Refuse numeric fields before handle lookup. */
+static Store* get_store_why(Value *v, int *why, int *out_id, const char *who) {
     *why = HANDLE_CLAIM_BADVALUE;
     *out_id = 0;
     if (!v || v->type != VAL_DICT) return NULL;
     Value *sv = store_dict_get_view(v, "_store_id", &(EigsView){{0}});
-    if (!sv || sv->type != VAL_NUM) return NULL;
-    *out_id = (int)eigs_num_arg(sv, __func__);
+    if (!sv || !val_is_number(sv)) return NULL;
+    int64_t id, generation = 0;
+    if (!eigs_int_arg_range(sv, INT_MIN, INT_MAX, &id, who)) return NULL;
+    *out_id = (int)id;
     Value *gv = store_dict_get_view(v, "_store_gen", &(EigsView){{0}});
-    uint32_t gen = (gv && gv->type == VAL_NUM) ? (uint32_t)eigs_num_arg(gv, __func__) : 0;
+    if (gv && val_is_number(gv)
+        && !eigs_int_arg_range(gv, 0, UINT32_MAX, &generation, who)) return NULL;
+    uint32_t gen = (uint32_t)generation;
     return (Store*)handle_lookup(*out_id, gen, HANDLE_STORE, why);
 }
 
@@ -823,8 +869,8 @@ static Store* get_store_why(Value *v, int *why, int *out_id) {
  * tenth cannot re-open the hole by forgetting to check. */
 static Store* store_arg(Value *v, const char *who) {
     int why = 0, id = 0;
-    Store *st = get_store_why(v, &why, &id);
-    if (!st) handle_raise_unresolved(who, "store", id, why, "closed");
+    Store *st = get_store_why(v, &why, &id, who);
+    if (!st && !g_has_error) handle_raise_unresolved(who, "store", id, why, "closed");
     return st;
 }
 
@@ -903,7 +949,10 @@ static Value* builtin_store_open(Value *arg) {
             return make_null();
         }
         if (store_load_catalog(store) != 0) {
-            rt_error(EK_IO, 0, "store_open: corrupt catalog in '%s'\n", path);
+            /* Preserve a decoder's value error; other corrupt catalogs keep
+             * the existing I/O diagnosis. */
+            if (!g_has_error)
+                rt_error(EK_IO, 0, "store_open: corrupt catalog in '%s'\n", path);
             fclose(fp);
             store_free(store);
             return make_null();
@@ -947,8 +996,8 @@ static Value* builtin_store_open(Value *arg) {
         return make_null();
     }
     Value *handle = make_dict(8);
-    dict_set_owned(handle, "_store_id", make_num((double)hid));
-    dict_set_owned(handle, "_store_gen", make_num((double)sgen));
+    dict_set_owned(handle, "_store_id", make_int(hid));
+    dict_set_owned(handle, "_store_gen", make_int(sgen));
     dict_set_owned(handle, "_type", make_str("eigenstore"));
     return handle;
 }
@@ -961,10 +1010,12 @@ static Value* builtin_store_close(Value *arg) {
     /* Release handle BEFORE freeing memory to prevent use-after-free
      * if another thread calls get_store() concurrently. */
     Value *id_val = (arg && arg->type == VAL_DICT) ? store_dict_get_view(arg, "_store_id", &(EigsView){{0}}) : NULL;
-    int hid = (id_val && id_val->type == VAL_NUM) ? (int)eigs_num_arg(id_val, __func__) : -1;
+    int64_t hid;
+    if (!eigs_int_arg_range(id_val, INT_MIN, INT_MAX, &hid, "store_close")) return make_null();
     Value *g_val = (arg && arg->type == VAL_DICT) ? store_dict_get_view(arg, "_store_gen", &(EigsView){{0}}) : NULL;
-    uint32_t hgen = (g_val && g_val->type == VAL_NUM) ? (uint32_t)eigs_num_arg(g_val, __func__) : 0;
-    handle_release(hid, hgen);
+    int64_t hgen;
+    if (!eigs_int_arg_range(g_val, 0, UINT32_MAX, &hgen, "store_close")) return make_null();
+    handle_release((int)hid, (uint32_t)hgen);
     store->dirty = 1; /* Force flush */
     store_flush_catalog(store);
     fclose(store->fp);
@@ -977,28 +1028,11 @@ static Value* builtin_store_close(Value *arg) {
     return make_null();
 }
 
-/* store_put([handle, collection, record]) -> key string */
-static Value* builtin_store_put(Value *arg) {
-    STRICT_LIST_MAX(arg, 3, "store_put");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
-        rt_error(EK_TYPE, 0, "store_put requires [handle, collection, record]\n");
-        return make_null();
-    }
-    Store *store = store_arg(list_get_view(arg, 0, &(EigsView){{0}}), "store_put");
-    if (!store) return make_null();
-    if (replay_blocks("store_put", "store")) return make_null();
-    Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
-    Value *record = list_get_view(arg, 2, &(EigsView){{0}});
-    if (!col_val || col_val->type != VAL_STR) {
-        rt_error(EK_VALUE, 0, "store_put: invalid handle or collection\n");
-        return make_null();
-    }
-    if (!record || record->type != VAL_DICT) {
-        rt_error(EK_TYPE, 0, "store_put: record must be a dict\n");
-        return make_null();
-    }
-    const char *collection = col_val->data.str;
-
+/* Takes ownership of json. No encoder runs after mutation starts; update
+ * passes the same successful serialization through its tombstone/put path. */
+static Value* store_put_encoded(Store *store, const char *collection,
+                                Value *record, const char *key_buf,
+                                char *json, int automatic_id) {
     /* Get or create collection entry in catalog */
     Value *col_info = store_dict_get_view(store->catalog, collection, &(EigsView){{0}});
     uint32_t root_page;
@@ -1009,8 +1043,8 @@ static Value* builtin_store_put(Value *arg) {
         root_page = store_alloc_page(store);
         next_id = 1;
         col_info = make_dict(4);
-        dict_set_owned(col_info, "root", make_num(root_page));
-        dict_set_owned(col_info, "next_id", make_num(next_id));
+        dict_set_owned(col_info, "root", make_int(root_page));
+        dict_set_owned(col_info, "next_id", make_int(next_id));
         dict_set_owned(store->catalog, collection, col_info);  /* adopt make_dict ref */
         store->dirty = 1;
 
@@ -1024,28 +1058,24 @@ static Value* builtin_store_put(Value *arg) {
     } else {
         Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
         Value *nv = store_dict_get_view(col_info, "next_id", &(EigsView){{0}});
-        root_page = (uint32_t)(rv ? eigs_num_arg(rv, __func__) : 0);
-        next_id = (int)(nv ? eigs_num_arg(nv, __func__) : 1);
+        int64_t root = 0, next = 1;
+        if (rv && !eigs_int_arg_range(rv, 0, UINT32_MAX, &root, "store_put")) {
+            free(json); return make_null();
+        }
+        if (nv && !eigs_int_arg_range(nv, INT_MIN, INT_MAX, &next, "store_put")) {
+            free(json); return make_null();
+        }
+        root_page = (uint32_t)root;
+        next_id = (int)next;
     }
 
-    /* Determine key */
-    char key_buf[STORE_MAX_KEY_LEN];
-    Value *id_val = store_dict_get_view(record, "_id", &(EigsView){{0}});
-    if (id_val && id_val->type == VAL_STR && id_val->data.str[0] != '\0') {
-        strncpy(key_buf, id_val->data.str, STORE_MAX_KEY_LEN - 1);
-        key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
-    } else {
-        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", next_id);
-        next_id++;
-        dict_set_owned(col_info, "next_id", make_num(next_id));
+    /* Serialization has succeeded; only now publish metadata and caller _id. */
+    if (automatic_id) {
+        dict_set_owned(col_info, "next_id", make_int((int64_t)next_id + 1));
         store->dirty = 1;
     }
-
-    /* Set _id on record */
     dict_set_owned(record, "_id", make_str(key_buf));
 
-    /* Serialize record to JSON */
-    char *json = store_dict_to_json(record);
     size_t json_len = strlen(json);
     size_t key_len = strlen(key_buf);
 
@@ -1142,6 +1172,51 @@ static Value* builtin_store_put(Value *arg) {
     return make_str(key_buf);
 }
 
+/* store_put([handle, collection, record]) -> key string */
+static Value* builtin_store_put(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "store_put");
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
+        rt_error(EK_TYPE, 0, "store_put requires [handle, collection, record]\n");
+        return make_null();
+    }
+    Store *store = store_arg(list_get_view(arg, 0, &(EigsView){{0}}), "store_put");
+    if (!store) return make_null();
+    if (replay_blocks("store_put", "store")) return make_null();
+    Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
+    Value *record = list_get_view(arg, 2, &(EigsView){{0}});
+    if (!col_val || col_val->type != VAL_STR) {
+        rt_error(EK_VALUE, 0, "store_put: invalid handle or collection\n");
+        return make_null();
+    }
+    if (!record || record->type != VAL_DICT) {
+        rt_error(EK_TYPE, 0, "store_put: record must be a dict\n");
+        return make_null();
+    }
+    const char *collection = col_val->data.str;
+
+    /* Select the prospective key without creating a collection, advancing an
+     * id, or changing the caller's record. Refusal must precede all of them. */
+    char key_buf[STORE_MAX_KEY_LEN];
+    Value *id_val = store_dict_get_view(record, "_id", &(EigsView){{0}});
+    int automatic_id = !(id_val && id_val->type == VAL_STR && id_val->data.str[0] != '\0');
+    if (!automatic_id) {
+        strncpy(key_buf, id_val->data.str, STORE_MAX_KEY_LEN - 1);
+        key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
+    } else {
+        int64_t next = 1;
+        Value *col_info = store_dict_get_view(store->catalog, collection, &(EigsView){{0}});
+        if (col_info && col_info->type == VAL_DICT) {
+            Value *nv = store_dict_get_view(col_info, "next_id", &(EigsView){{0}});
+            if (nv && !eigs_int_arg_range(nv, INT_MIN, INT_MAX, &next, "store_put"))
+                return make_null();
+        }
+        snprintf(key_buf, sizeof key_buf, "%d", (int)next);
+    }
+    char *json = store_dict_to_json(record, key_buf);
+    if (!json) return make_null();
+    return store_put_encoded(store, collection, record, key_buf, json, automatic_id);
+}
+
 /* store_get([handle, collection, key]) -> record dict or null */
 static Value* builtin_store_get(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "store_get");
@@ -1161,8 +1236,10 @@ static Value* builtin_store_get(Value *arg) {
     if (key_val->type == VAL_STR) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
-    } else if (key_val->type == VAL_NUM) {
-        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", (int)eigs_num_arg(key_val, __func__));
+    } else if (val_is_number(key_val)) {
+        int64_t key = eigs_int_arg(key_val, "store_get");
+        if (g_has_error) return make_null();
+        eigs_int_text(key_buf, sizeof(key_buf), key);
     } else {
         return make_null();
     }
@@ -1171,7 +1248,9 @@ static Value* builtin_store_get(Value *arg) {
     if (!col_info || col_info->type != VAL_DICT) return make_null();
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return make_null();
-    uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
+    int64_t root;
+    if (!eigs_int_arg_range(rv, 0, UINT32_MAX, &root, "store_get")) return make_null();
+    uint32_t pg = (uint32_t)root;
 
     size_t target_key_len = strlen(key_buf);
 
@@ -1229,7 +1308,9 @@ static int store_locate(Store *store, const char *collection,
     if (!col_info || col_info->type != VAL_DICT) return 0;
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return 0;
-    uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
+    int64_t root;
+    if (!eigs_int_arg_range(rv, 0, UINT32_MAX, &root, "store_locate")) return 0;
+    uint32_t pg = (uint32_t)root;
     size_t target_key_len = strlen(key_buf);
 
     for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
@@ -1325,8 +1406,10 @@ static Value* builtin_store_delete(Value *arg) {
     if (key_val->type == VAL_STR) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
-    } else if (key_val->type == VAL_NUM) {
-        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", (int)eigs_num_arg(key_val, __func__));
+    } else if (val_is_number(key_val)) {
+        int64_t key = eigs_int_arg(key_val, "store_delete");
+        if (g_has_error) return make_bool(0);
+        eigs_int_text(key_buf, sizeof(key_buf), key);
     } else {
         /* Reaching the else arm IS the rejection: the key is neither a string
          * nor a number. Guarded in place with a constant condition so the
@@ -1372,7 +1455,9 @@ static Value* builtin_store_query(Value *arg) {
     if (!col_info || col_info->type != VAL_DICT) return make_list(0);
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (!rv) return make_list(0);
-    uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
+    int64_t root;
+    if (!eigs_int_arg_range(rv, 0, UINT32_MAX, &root, "store_query")) return make_list(0);
+    uint32_t pg = (uint32_t)root;
 
     Value *results = make_list(16);
 
@@ -1392,6 +1477,11 @@ static Value* builtin_store_query(Value *arg) {
             json[rec.json_len] = '\0';
             Value *val = store_json_decode(json);
             free(json);
+            if (g_has_error) {
+                val_decref(val);
+                val_decref(results);
+                return make_null();
+            }
             if (val) list_append_owned(results, val);  /* adopt parser's ref */
         }
         pg = page.next_page; if (pg >= store->page_count) break;
@@ -1407,7 +1497,7 @@ static Value* builtin_store_count(Value *arg) {
         /* fs:CHANNEL the arity/type failure is already signalled by the
          * unconditional rt_error above (EK_TYPE latch, catchable — asserted by
          * CV2-71); this return is the post-raise placeholder, not a count. */
-        return make_num(0);
+        return make_int(0);
     }
     Store *store = store_arg(list_get_view(arg, 0, &(EigsView){{0}}), "store_count");
     /* fs:CHANNEL store_arg is resolve-OR-RAISE (#1146): it has already
@@ -1415,24 +1505,26 @@ static Value* builtin_store_count(Value *arg) {
      * than unwinding, so this return is the post-raise placeholder, not a
      * count of 0. Distinct from the two documented-answer zeros below, which
      * are store_count's real result for an unknown collection. */
-    if (!store) return make_num(0);
-    if (replay_blocks("store_count", "store")) return make_num(0);
+    if (!store) return make_int(0);
+    if (replay_blocks("store_count", "store")) return make_int(0);
     Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
     ARG_GUARD(!col_val || col_val->type != VAL_STR,
-              "store_count", "[store handle, string collection]", make_num(0));
+              "store_count", "[store handle, string collection]", make_int(0));
 
     const char *collection = col_val->data.str;
     Value *col_info = store_dict_get_view(store->catalog, collection, &(EigsView){{0}});
     /* fs:ANSWER a collection that is not in the catalog holds no records, so
      * its count is 0 — the documented result for an unknown collection. */
-    if (!col_info || col_info->type != VAL_DICT) return make_num(0);
+    if (!col_info || col_info->type != VAL_DICT) return make_int(0);
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     /* fs:ANSWER a catalog entry with no root page has no record pages, so the
      * count is 0. */
-    if (!rv) return make_num(0);
-    uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
+    if (!rv) return make_int(0);
+    int64_t page_id;
+    if (!eigs_int_arg_range(rv, 0, UINT32_MAX, &page_id, "store_count")) return make_null();
+    uint32_t pg = (uint32_t)page_id;
 
-    int count = 0;
+    int64_t count = 0;
     for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
         Page page;
         if (store_read_page(store, pg, &page) != 0) break;
@@ -1441,13 +1533,13 @@ static Value* builtin_store_count(Value *arg) {
         int offset = 0;
         for (int i = 0; i < (int)page.count; i++) {
             StoreRecord rec;
-            if (store_record_next(&page, &offset, &rec) != 0) return make_num(count);
+            if (store_record_next(&page, &offset, &rec) != 0) return make_int(count);
             if (rec.key_len == 0) continue;  /* deleted */
             count++;
         }
         pg = page.next_page; if (pg >= store->page_count) break;
     }
-    return make_num(count);
+    return make_int(count);
 }
 
 /* store_update([handle, collection, key, record]) -> 1 or 0 */
@@ -1481,8 +1573,10 @@ static Value* builtin_store_update(Value *arg) {
     if (key_val->type == VAL_STR) {
         strncpy(key_buf, key_val->data.str, STORE_MAX_KEY_LEN - 1);
         key_buf[STORE_MAX_KEY_LEN - 1] = '\0';
-    } else if (key_val->type == VAL_NUM) {
-        snprintf(key_buf, STORE_MAX_KEY_LEN, "%d", (int)eigs_num_arg(key_val, __func__));
+    } else if (val_is_number(key_val)) {
+        int64_t key = eigs_int_arg(key_val, "store_update");
+        if (g_has_error) return make_bool(0);
+        eigs_int_text(key_buf, sizeof(key_buf), key);
     } else {
         /* Reaching the else arm IS the rejection: the key is neither a string
          * nor a number. Guarded in place with a constant condition so the
@@ -1517,7 +1611,11 @@ static Value* builtin_store_update(Value *arg) {
         return make_bool(0);
     }
 
+    char *json = store_dict_to_json(record, key_buf);
+    if (!json) return make_bool(0);
+
     if (store_tombstone(store, &loc) != 0) {
+        free(json);
         rt_error(EK_IO, 0, "store_update: page write failed\n");
         /* fs:CHANNEL the IO failure is signalled by the unconditional rt_error
          * above (EK_IO latch, catchable); this return is the post-raise
@@ -1526,16 +1624,9 @@ static Value* builtin_store_update(Value *arg) {
         return make_bool(0);
     }
 
-    /* Set _id on new record so store_put reuses the same key. */
-    dict_set_owned(record, "_id", make_str(key_buf));
-
-    /* Put new record. Free the args list and store_put's returned key. */
-    Value *put_args = make_list(3);
-    list_append_slot(put_args, list_slot(arg, 0));
-    list_append_slot(put_args, list_slot(arg, 1));
-    list_append_slot(put_args, list_slot(arg, 3));
-    Value *put_result = builtin_store_put(put_args);
-    val_decref(put_args);
+    /* Encoding succeeded before the tombstone. Commit those exact bytes;
+     * the helper also sets the caller's _id only on this successful path. */
+    Value *put_result = store_put_encoded(store, collection, record, key_buf, json, 0);
 
     /* store_put answers with the key it wrote (VAL_STR) and signals every
      * failure with make_null() — a Value OF TYPE null, never a C NULL. A
@@ -1623,7 +1714,9 @@ static Value* builtin_store_drop(Value *arg) {
     /* Mark all pages in chain as free */
     Value *rv = store_dict_get_view(col_info, "root", &(EigsView){{0}});
     if (rv) {
-        uint32_t pg = (uint32_t)eigs_num_arg(rv, __func__);
+        int64_t page_id;
+        if (!eigs_int_arg_range(rv, 0, UINT32_MAX, &page_id, "store_drop")) return make_null();
+        uint32_t pg = (uint32_t)page_id;
         for (int _hops = 0; pg != 0 && _hops < STORE_MAX_PAGE_HOPS; _hops++) {
             Page page;
             if (store_read_page(store, pg, &page) != 0) break;

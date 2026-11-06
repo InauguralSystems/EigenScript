@@ -1,0 +1,8 @@
+# R1.6 behaviour-table probe: dot (float-producing; buffer dot product)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+d is dot of [buf_from_list of [1, 2], buf_from_list of [3, 4]]
+print of [d, nt of d]

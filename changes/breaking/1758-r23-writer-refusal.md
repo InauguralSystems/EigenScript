@@ -1,0 +1,1 @@
+- Reject non-finite numbers inside JSON and store encoders, returning failure before shared-state or store mutation. Preserve existing finite encodings and reads of historical buffer sentinels. (#1758)

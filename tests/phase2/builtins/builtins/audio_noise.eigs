@@ -1,0 +1,13 @@
+# R1.6 behaviour-table probe: audio_noise (float-producing, Q7 magnitude; float samples (seeded); a sample count the C int cannot hold raises); phase2-exercises: {"q7":["magnitude"]}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+seed_random of 7
+s is audio_noise of [0.001, 0.5]
+print of [len of s, nt of s[0], (abs of s[0]) <= 0.5]
+try:
+    print of ["huge-duration-answer", len of (audio_noise of [1e300, 0.5])]
+catch e:
+    print of ["duration-magnitude", e.kind]

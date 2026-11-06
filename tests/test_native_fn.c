@@ -15,10 +15,10 @@ static void check(int ok, const char *what) {
     if (!ok) fail = 1;
 }
 static Value *probe_add1(Value *a) {
-    double d = (a && a->type == VAL_NUM) ? VAL_NUM_RAW(a) : 0.0;
-    return make_num(d + 1);
+    double d = (a && val_is_number(a)) ? eigs_float_arg(a, __func__) : 0.0;
+    return make_float(d + 1);
 }
-static Value *probe_plain(Value *a) { (void)a; return make_num(0); }
+static Value *probe_plain(Value *a) { (void)a; return make_float(0); }
 
 static char *eval_str(const char *src) {
     Value *v = eigs_eval_string(src);
@@ -39,7 +39,7 @@ int main(void) {
     s = eval_str("str of g");
     check(strcmp(s, "<fn g>") == 0, "str of a named native fn is <fn g>"); free(s);
     s = eval_str("g of 41");
-    check(strcmp(s, "42") == 0, "a named native fn still calls through (g of 41 = 42)"); free(s);
+    check(strcmp(s, "42.0") == 0, "a named native fn still calls through (g of 41 = 42.0)"); free(s);
     s = eval_str("type of b");
     check(strcmp(s, "builtin") == 0, "a plain builtin still reports \"builtin\""); free(s);
     s = eval_str("str of b");

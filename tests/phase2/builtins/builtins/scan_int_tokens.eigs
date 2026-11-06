@@ -1,0 +1,13 @@
+# R1.6 behaviour-table probe: scan_int_tokens (int-preserving, LOSS; integers accumulate in a double)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+rows is scan_int_tokens of "7 9007199254740993\nab"
+print of rows
+print of [nt of rows[0][1], nt of rows[1][6], nt of rows[2][5]]
+try:
+    print of ["beyond-answer", scan_int_tokens of "9223372036854775808"]
+catch e:
+    print of ["beyond-int64", e.kind, contains of [e.message, "9223372036854775808"]]

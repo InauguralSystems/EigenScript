@@ -18,7 +18,7 @@ typedef enum {
  * switch is the single operand-role table used by every bytecode walker. */
 static inline int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
     switch ((OpCode)op8) {
-    case OP_CONST:
+    case OP_CONST: case OP_INT_CONST:
         roles[0] = VR_CONST; return 1;
     case OP_GET_NAME: case OP_SET_NAME: case OP_SET_NAME_LOCAL:
     case OP_SET_FN_NAME_LOCAL: case OP_DOT_GET: case OP_DOT_SET:
@@ -63,7 +63,8 @@ static inline int op_verify_operands(uint8_t op8, VerifyRole roles[3]) {
     case OP_LOCAL_IDX_DOT_GET: case OP_LOCAL_IDX_DOT_SET:
         roles[0] = VR_RAW; roles[1] = VR_RAW; roles[2] = VR_NAME; return 3;
     case OP_NULL: case OP_NUM_ZERO: case OP_NUM_ONE: case OP_TRUE: case OP_FALSE:
-    case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD:
+    case OP_INT_ZERO: case OP_INT_ONE:
+    case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV: case OP_MOD: case OP_IDIV:
     case OP_BAND: case OP_BOR: case OP_BXOR: case OP_SHL: case OP_SHR:
     case OP_NEG: case OP_NOT: case OP_BNOT:
     case OP_EQ: case OP_NE: case OP_LT: case OP_GT: case OP_LE: case OP_GE:

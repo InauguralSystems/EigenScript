@@ -38,10 +38,10 @@ else
     FAIL=$((FAIL + 1)); echo "  FAIL: REPL entry point (rc=$DU_RC)"; printf '%s\n' "$DU_OUT" | eigs_failure_output
 fi
 
-printf '%s\n' 'i is 0' 'loop while i < 2:' '    i is i + 1' 'print of __loop_iterations__' > "$DU_DIR/read.eigs"
+printf '%s\n' 'i is 0' 'loop while i < 2:' '    i is i + 1' 'print of __loop_iterations__' 'print of (num_type of __loop_iterations__)' > "$DU_DIR/read.eigs"
 DU_OUT=$($EIGS_TMO ./eigenscript "$DU_DIR/read.eigs" </dev/null 2>&1); DU_RC=$?
 TOTAL=$((TOTAL + 1))
-if [ "$DU_RC" = 0 ] && [ "$DU_OUT" = 2 ]; then
+if [ "$DU_RC" = 0 ] && [ "$DU_OUT" = "$(printf '2\nint')" ]; then
     PASS=$((PASS + 1)); echo "  PASS: loop while synthesizes a legally readable runtime binding"
 else
     FAIL=$((FAIL + 1)); echo "  FAIL: runtime dunder read (rc=$DU_RC out='$DU_OUT')"

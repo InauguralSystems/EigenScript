@@ -1,0 +1,8 @@
+# R1.6 behaviour-table probe: buf_len (int-preserving; element count)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+n is buf_len of (buffer of 5)
+print of [n, nt of n]

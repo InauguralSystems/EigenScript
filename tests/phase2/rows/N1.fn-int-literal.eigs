@@ -1,0 +1,16 @@
+# ROW: N1.fn-int-literal
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop g INT_ONE
+# OPS: INT_ONE
+define g(a) as:
+    warm is 0.5
+    t is a + 1
+    return t * 2
+r is null
+i is 0.0
+loop while i < 60.0:
+    r is g of 9007199254740992
+    i is i + 1.0
+print of r

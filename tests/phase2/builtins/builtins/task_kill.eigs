@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: task_kill (int-requiring; task handle); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":2}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define w(x) as:
+    return x * 2
+t is task_spawn of [w, 21]
+try:
+    print of ["fraction-answer", task_kill of (t + 0.5)]
+catch e:
+    print of ["id-fraction", e.kind]
+print of [task_alive of t, task_kill of (t + 0.0), task_alive of t]

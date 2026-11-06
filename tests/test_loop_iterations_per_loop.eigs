@@ -35,7 +35,7 @@ loop while error_o < 3:
         error_i is 0
         loop while error_i < 2:
             error_i is error_i + 1
-            bad is sqrt of -1
+            bad is 1 // 0
     catch error_value:
         caught is true
 print of ["catch", __loop_iterations__]
@@ -58,17 +58,17 @@ print of ["return", __loop_iterations__]
 exit_o is 0
 loop while exit_o < 1:
     exit_o is exit_o + 1
-    stall_x is 100
+    stall_x is 1000000.0
     loop while not converged:
-        stall_x is stall_x * 2
+        stall_x is stall_x + 200.0
     stalled_reason is __loop_exit__
-    limit_code is [97, 63,3,0, 30,6,0, 25,0,0, 40]
+    limit_code is [101, 63,3,0, 30,6,0, 25,0,0, 40]
     limit_r is sandbox_run of [[1, limit_code, ["__loop_iterations__"]], 5]
 print of ["stall-limit", __loop_iterations__, stalled_reason, limit_r.ok, limit_r.result]
 
 # Two three-iteration loops under a five-iteration sandbox budget.  Neither
 # loop exceeds five alone; together they trip it on inner count 2 (total 5).
-budget_code is [2,27,0,0,35,97,25,0,0,0,3,0,19,31,15,0,25,0,0,3,4,26,0,0,35,63,3,0,30,25,0,2,27,1,0,35,97,25,1,0,0,3,0,19,31,15,0,25,1,0,3,4,26,1,0,35,63,3,0,30,25,0,25,2,0,40]
+budget_code is [2,27,0,0,35,101,25,0,0,0,3,0,19,31,15,0,25,0,0,3,4,26,0,0,35,63,3,0,30,25,0,2,27,1,0,35,101,25,1,0,0,3,0,19,31,15,0,25,1,0,3,4,26,1,0,35,63,3,0,30,25,0,25,2,0,40]
 budget_r is sandbox_run of [[1, budget_code,
                             ["budget_a", "budget_b", "__loop_iterations__", 3]], 5]
 print of ["budget", budget_r.ok, budget_r.result,

@@ -1,0 +1,5 @@
+echo "[0fv] IEEE numeric ordering and equivalent ties (R22-1, #1758)"
+EIGS_STRICT=0 EIGS_JIT_OFF=1 check_eigs_suite "interpreter: IEEE sort/min/max order" test_ieee_order_1758.eigs "All tests passed."
+EIGS_STRICT=0 check_eigs_suite "default JIT: IEEE sort/min/max order" test_ieee_order_1758.eigs "All tests passed."
+EIGS_STRICT=0 EIGS_JIT_OSR_THRESHOLD=1 check_eigs_suite "OSR: IEEE sort/min/max order" test_ieee_order_1758.eigs "All tests passed."
+echo ""

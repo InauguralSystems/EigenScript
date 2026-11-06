@@ -1,0 +1,7 @@
+# R1.6 behaviour-table probe: str (other; N6 printing via value_to_string)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of [str of 9007199254740993, str of 2.5, str of 3.0, str of (-9223372036854775807 - 1)]

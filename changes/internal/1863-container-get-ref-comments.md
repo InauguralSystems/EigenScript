@@ -1,0 +1,1 @@
+- Comments only: `src/container.h` states that `list_get_ref` and `dict_value_get_ref` return NULL for a double or an SMI, and a boxed int's `VAL_INT` Value otherwise, and that container storage holds boxed ints outside the SMI range (#1863). No behaviour changes.

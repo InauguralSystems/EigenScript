@@ -3,8 +3,8 @@
 The bare predicate words — `converged`, `equilibrium`, `stable`,
 `improving`, `diverging`, `oscillating` — and the `report of x` builtin
 classify a value's recent trajectory into one of those bands (`report` adds
-one label the predicates don't have: `moving`, for a full window in which
-none of the six is true — see [The `report` builtin](#the-report-builtin)).
+labels the predicates don't have: `moving` when none of the six is true,
+`undefined` at a current NaN, and `opaque` for a callable — see [The `report` builtin](#the-report-builtin)).
 Each
 predicate also has a **named form**, `converged of x` (and so on), that
 binds to a specific value rather than the last-observed one — the
@@ -15,17 +15,13 @@ evaluates, a canonical `dH`-sequence trace, and the pointwise behavior it
 replaces. ([`docs/OBSERVER.md`](OBSERVER.md) is the model; this is the
 operational target the runtime enforces.)
 
-These are **trajectory claims, not snapshot claims.** On the numeric channel,
-`improving` means a decreasing value whose progress is contracting (lower is
-better); on the entropy channel it means "the value has been getting more
-determined *over its recent history*." Neither means merely that the last
-single step happened to go down. The canonical use is a
-loop condition — `loop while improving`, `loop while not stable` — which
-must be robust to a single noisy tick. That is why every predicate reads
-a **window** of the last `N` observations rather than the instantaneous
-`dH`. (The original observer semantics were trajectory-based; the early C
-runtime simplified five of the six to single-step checks, which flickered
-under noise — see "Pointwise behavior replaced" in each section.)
+These are **trajectory claims, not proofs about the future**. Numeric
+`converged` tests the diameter of a full recent window; `stable` tests a 1%
+ball about its midrange; `improving` uses a running lower best and a ten-step
+patience, following Keras' loss convention. A noisy tick need not erase a
+recent improvement. Non-numeric bindings retain the entropy and bounded
+snapshot rules below. Prefer the named forms in code that assigns more than
+one binding.
 
 ## What each predicate is graded against (#1754)
 
@@ -52,29 +48,16 @@ the oracle.
 MATH "does the sequence have a limit" (Hardy §58, Rudin Def. 3.1) is reported
 beside `converged` but not scored: no windowed observer can decide it at n.
 
-**NaN.** At a checkpoint whose current value is NaN, every predicate is
-false: the #1758 O2 convention (NaN is undefined), not a MATH answer. The
-oracle labels such a checkpoint CONVENTION for all six predicates, citing
-#1758, whatever the whole sequence does. It is the one recorded exception to
-one question per predicate.
+**NaN.** At a checkpoint whose current value is NaN, all six predicates
+are false and `report`/`report_value` return `"undefined"`. This is #1758's
+O2 convention, not a mathematical verdict about the whole sequence.
 
-**The bands below are not those definitions.** They are the runtime's current
-windowed tests of the last `N` observations. Two limits are inherent: a window
-cannot see the values after n that `converged` and `stable` ask about, nor the
-whole sequence that `oscillating` and `diverging` describe. Beyond that, the
-runtime answers a different question for two predicates:
-- `improving`: the directional band approximates the convention's new lower
-  best by more than `min_delta` within the window on an eventually bounded
-  sequence, but is narrower: it requires every raw step to be negative and
-  both the mean and maximum step magnitudes to contract to at most 0.7× their
-  values in the older half of the window.
-- `equilibrium`: the band tests that the window's relative steps have
-  near-zero mean and variance, so a sequence whose steps have died down reads
-  `equilibrium` although it is not constant (a decay settling on a limit,
-  Newton's iteration for √2, even the slowly growing harmonic series), which
-  the definition says it is not.
-
-The per-predicate tables `make observer-oracle` prints measure all of this.
+**Finite windows cannot establish the labelled future.** R3.1 implements
+arm R3-STD: STD_converged, the registered STD′_stable (Deviation D1), and
+Keras' running-best test (Deviation D2). The incumbent `oscillating`,
+`diverging` and `equilibrium` tests remain, with the exact-int noise floor
+and non-finite alignments described below. The per-predicate tables printed
+by `make observer-oracle` measure the remaining disagreements.
 
 ### How Round 3 is judged (#1758)
 
@@ -110,6 +93,17 @@ reveal):
 | D9 | the population is the rows every runtime arm runs | every row stays. A runtime arm without a row's capability (INC: int64, ieee) has no reading there. Rule 2 against INC is NOT EVALUATED on those rows (each comparison is paired on the rows both arms read, and the count left out is printed). Rules 1, 3 and 4 use all rows the subject reads; rule 6 remains the #1830 gate | Otherwise `f14_7`, #1830's own int64 row, left every arm's population because INC lacks int64 (RULING R30I-2 item 4) |
 | D10 | arms are binaries | a runtime arm is pinned by recipe: the manifest records (source SHA, recipe id, binary sha256). `recipe_id` is the sha256 of the build recipe (`tools/observer_oracle/build_arm.sh`, or `build_anchor.sh` for the anchor), which builds a commit's own files with `make build`. Verification matches source SHA and recipe id; the binary sha256 is printed as information. An arm with no recipe stamp is pinned by its binary sha256 | The across-machine A/A cannot share binary hashes (another toolchain builds other bytes) (RULING R30I-3 item 3) |
 | D11 | (not stated) | the subject must have every registered capability: a subject arm lacking int64 or ieee FAILS rule 6, and rules 1, 3 and 4 are NOT EVALUATED for it, with the reason printed | A subject that reads fewer rows must never be advantaged. Without this, a subject that lost int64 would never be scored on #1830's own row (RULING R30I-3 item 4) |
+| D12 | R3-STD = each predicate's test replaced by STD_p; keyword, window and tape unchanged. | R3-STD computes STD_p's tests on the exact-aware signal (#1830's int path, decided per window): a window of all-exact int64 steps uses a noise floor of 0 in the raw tests and the absolute tolerance `rtol·scale` in the settled tests. | Rule 6 (#1830's declaration list empty) binds every subject arm including R3-STD, and STD_p on a float signal cannot satisfy it (int64 verdicts 12/18 against 18/18; an exactly incrementing counter is not converged). The signal is the measurement device; the test is unchanged (R30-2 item 3). Modelled effect: Two keys per predicate on the 72-row corpus: `int64_count`@10 and @60 × {`converged`, `stable`}, four keys total, R3 false and STD/D1 true. (RULING R31-1 item 2.) |
+
+Under RULING R31-1 (2026-11-04), the R3-versus-STD/D1/D2 parity check is
+per key: the differing set must be exactly those four D12 keys, each printed
+with both verdicts, examined == declared == 4. A fifth or missing key fails.
+Aggregate converged FP 6→4 / TN 118→120 and stable FP 14→12 / TN 102→104
+are consistent with that set, while improving is identical; aggregate cells
+are not the proof. The registered LOO arm "R3-STD without the int path" is
+scored on H1 beside R3-STD, so the strict reading of the amendment has its
+comparison. No decision rule changes. Frozen `standard.py`, `reference.py`,
+the instrument and the labels are unchanged.
 
 `judge.py --calibration` refuses to run on a `corpus.json` or `reference.py`
 other than the D3 and D4 files. `judge.py --corpus DIR` refuses (exit 2) unless
@@ -148,26 +142,45 @@ The predicate words and `report` are **routed**: a binding whose most
 recent observed assignment is **numeric** answers from the **value
 channel** — the classifier below, over relative steps
 `rel = Δv / max(|v|, |v_prev|, scale)` (#1045); every
-other binding (strings, containers) uses deep equality of successive values
-for **`converged` and `stable`**: both are true exactly when every successive
-pair in the full window is equal under the language's `==`. This makes order
-changes visible and lets an unchanged non-empty value converge. Its other
-four predicates, and `report`, answer from the **entropy channel**, the
+other binding (strings, containers) uses deep equality of successive
+assignment snapshots for **`converged`** and ordinarily **`stable`**: every
+successive pair in the full window must be equal. Numeric cells compare
+exactly across int/float kinds; a bool/number pair is simply unequal, without
+raising. This makes finite content changes visible and lets an unchanged
+non-empty value converge. The bounded NaN-containing snapshot exception below routes
+`stable` to its entropy rule after a full bounded comparison window. The other
+four predicates, and `report`, answer
+from the **entropy channel**, the
 windowed formulas in "The six predicates". `report_value of x` is the
 value-channel classifier by name (identical to the routed words on a
 numeric binding — the two surfaces cannot disagree); `classify of
-[t, "entropy"]` reaches the entropy classifier by name. The entropy
-MEASUREMENT — `where`, `why`, `how`, trajectory snapshots, container
-folds, the tape — is unchanged everywhere.
+[t, "entropy"]` reaches it only for a non-numeric snapshot. For a numeric
+snapshot it raises `value`: numeric bindings no longer compute or store
+entropy. Numeric `where`, `why` and `how` read the value channel; numbers
+inside a container still contribute to that container's entropy.
 
 Each equality entry compares against a private content snapshot, not a
 reference that can be changed through an alias.  Snapshotting is bounded to
 4,096 content units per assignment (value nodes plus string/key bytes, buffer
-elements, and text-builder bytes).  A larger value is **not sampled**: both
-predicates refuse to judge (return false), reset the equality run, and require
-a new full window of bounded samples before either can become true.  Thus the
-observer's additional comparison work is bounded independently of container
-size; the pre-existing entropy calculation remains size-dependent.
+elements, and text-builder bytes). A larger value is **not sampled**: both
+predicates refuse to judge (return false) and reset the equality run. Both
+remain ineligible until a new full window of bounded comparisons is available.
+
+An accepted snapshot containing a NaN float or buffer, directly or inside a list or
+dict, is unequal to itself: buffer cells use raw IEEE equality without
+normalizing data, raising or writing math flags. `converged` remains false.
+For that bounded, non-reflexive snapshot only, after a full bounded comparison
+window, `stable` uses the entropy-window formula below (S10-D1); it can be true
+even though equality is false. This
+preserves the bank's `false` / `true` / `false` result for the real matmul
+scenario's `x == x`, `stable of x`, and `converged of x`. A current refused or
+oversized snapshot gets no entropy fallback and clears its eligibility, even
+when the entropy window is already complete. Finite snapshots keep the
+comparison against detached contents, so mutating an aliased container before
+assigning it again cannot manufacture equality.
+
+The observer's additional comparison work is bounded independently of
+container size; the pre-existing entropy calculation remains size-dependent.
 
 Why: entropy is a function of `|x|` alone, so any clause on it is a
 clause on magnitude. The current CI corpus compares every predicate, not
@@ -179,20 +192,44 @@ cell from the corpus and the selected binary; no score is copied into this
 document. The explicit entropy channel can certify a geometric runaway and
 can fail to certify a finite nonzero limit because magnitude is a lossy proxy
 for motion. Entropy and dH are still computed and exposed for non-numeric
-bindings; they simply do not decide those bindings' `converged` and `stable`.
+bindings. They do not decide equality-routed convergence or finite-snapshot
+stability; they do decide stability for the bounded NaN-containing snapshot exception.
 
-**The numeric definitions** (a fixed window of `N = 10` relative steps — see
-[The window](#the-window-1044) — `rel = Δv / max(|v|, |v_prev|, scale)`, raw
-steps `Δv` kept alongside — #422):
+**The numeric definitions (R3.1, arm R3-STD).** The fixed window holds
+`W = 10` steps and their `W + 1 = 11` values. Let `hi` and `lo` be its
+maximum and minimum, `c = hi/2 + lo/2` its midrange, and `x` the current
+value. The characteristic scale is `scale = 0.001`.
 
-| band | fires when |
-|---|---|
-| `converged` | full window, every `\|rel\| < dh_zero`, raw guards clean |
-| `stable` | full window, every `\|rel\| < dh_small`, no strong consecutive sign flips |
-| `equilibrium` | full window, `\|mean(rel)\| < dh_zero`, `variance(rel) < dh_zero²` |
-| `improving` | ≥ 4 samples, **decreasing** raw steps whose mean *and* max contract to ≤ 0.7× the older half — lower is better; a summable (geometric-class) tail genuinely closing on a limit |
-| `diverging` | value at the saturation ceiling (any window fill), or non-vanishing same-sign raw steps (a linear/polynomial runaway whose `Δv/\|v\| → 0` is still unbounded) |
-| `oscillating` | ≥ 4 deadband sign-flips of `rel`; or non-vanishing raw alternation (a perpetual oscillation below the deadband is still an oscillation); or **window-scale folding** — ≥ 2 direction reversals with net travel ≤ 0.3× path length and motion above the deadband (a sinusoid sampled slower than its half-period) |
+| band | fires when | source |
+|---|---|---|
+| `converged` | full finite window, `hi − lo ≤ 0.001·max(\|x\|, scale)` | `standard.py:std_converged`, `reference.py:converged`; Rudin, *Principles of Mathematical Analysis*, 3rd ed., Def. 3.8 / Thm. 3.11 (windowed Cauchy criterion) |
+| `stable` | full finite window, `hi/2 − lo/2 ≤ 0.01·max(\|c\|, scale)` | D1, `standard.py:stdp_stable` = `reference.py:stable`; the registered 1% settling band (STD′), rather than STD's 2% band |
+| `improving` | a significant new running lower best in the last `W` steps; finite current window; not `reference.py:diverging`, nor a full window with `reference.py:_expanding` | D2, `standard.py:d2_improving`; [Keras EarlyStopping, v3.6.0](https://github.com/keras-team/keras/blob/v3.6.0/keras/src/callbacks/early_stopping.py), `mode='min'`, running `best` and patience, with the registered relative `min_delta` |
+| `diverging` | incumbent non-vanishing same-sign raw steps, or the infinity rule below | #422/#674/#1891, `obs_num_diverging` |
+| `oscillating` | incumbent relative sign flips, non-vanishing raw alternation, or window-scale folding | #422/#1044, `obs_num_oscillating` |
+| `equilibrium` | incumbent near-zero relative-step mean and variance, excluding raw oscillation and a one-direction raw trend | #1899, `obs_num_equilibrium` |
+
+**D2's history.** The binding keeps `best` and `since` across the whole
+numeric history, including samples inside `unobserved:`. A later value
+improves only when `v < best − 0.001·max(\|best\|, scale)`; otherwise it
+leaves `best` unchanged. Non-finite values never become `best`. The first
+finite value establishes the baseline and is never itself an improvement.
+A non-finite value anywhere in the current window suppresses `improving`.
+The boundedness approximation rejects a reference-diverging window or a full
+window whose fluctuations cross its mean at least twice and whose newer-half
+maximum deviation exceeds its older half's. This is D2 exactly, including
+(a) non-finite best means no best, (b) the finite-window veto, and (c) the
+baseline rule. It does not require four samples or a full window to fire.
+
+**Exact int64 steps.** When both values are ints and checked subtraction
+fits int64, the displacement is exact and its ring entry is flagged exact.
+An overflowing int difference, mixed int/float pair, or float pair uses a
+double displacement. One shared per-window test decides whether every step
+is exact. Such a window uses zero noise floor in the incumbent raw tests
+and absolute tolerances in the settled tests: `1e-6` for `converged`, and
+radius `1e-5` for `stable`. A moving exact-int counter therefore cannot
+settle merely because its magnitude is large. A window containing even one
+inexact step keeps the floating rules.
 
 **Modulated raw steps (#1891).** The historical half-window mean rule is
 kept. With only `N = 10` samples, it cannot separate a slowly modulated decay
@@ -208,108 +245,94 @@ These scored disagreements are the documented residual, not waived oracle
 floor losses. More observer memory than `N = 10` is the open direction on
 #1891.
 
-The quiescent lattice on this route has `converged ⊂ stable`. A converged
-one-direction tail is not `equilibrium`: its deterministic mean still has a
-trend, even though its remaining motion is below the convergence deadband.
-The rest bands exclude the raw structure tests; the motion bands are mutually
-exclusive. `report` resolves the canonical priority `oscillating →
-diverging → improving → converged → equilibrium → stable → moving`.
+The three standard tests do not inherit the incumbent motion-band vetoes.
+Their verdicts can overlap with a motion predicate; `report` keeps its
+priority `oscillating → diverging → improving → converged → equilibrium →
+stable → moving`. A true `converged` predicate can therefore coexist with
+`report == "improving"`. `converged` implies `stable`; `equilibrium` retains
+its separate raw-trend and raw-oscillation exclusions.
 
-**The relative step is scale-free (#1045).** `rel` divides the raw step
-by the step's own local scale, `max(|v|, |v_prev|)`, floored at the
-runtime state's characteristic scale (`0.001` in a normal run). Above the
-scale a verdict is **unit-free**: one physical
-trajectory stored in radians, degrees or milliradians reads the same
-(phugoid's spiral mode — bank angle `0.0124 rad = 0.71 deg = 12.4 mrad`,
-halving every 14.9 s, replayed at 1 Hz — reads `moving` in all three;
-`tests/test_observer_window_scale.eigs`). Below the scale the deadband
-turns absolute: `|Δv| < dh_zero · scale` (`1e-6` by default), so
-rounding noise around an exact zero (`Δv ~ 1e-16`) is not motion, and a
-geometric decay toward zero keeps `rel = 1 − r` — `improving`, never
-`converged` — until it is inside the scale. Read as the textbook
-criterion, `converged` is `|Δx| ≤ rtol·|x|` with `rtol = dh_zero` and an
-absolute floor `atol = dh_zero · scale`. The previous step,
-`Δv/(1+|v|)`, was the entropy formula's normalisation borrowed as a step:
-below `|v| ~ 1` it was just `Δv`, an absolute deadband, and the unit the
-consumer stored the value in decided the verdict. The scale is the one number a unit choice still touches; the runtime uses it
-as the fixed absolute floor. Why the local scale and not the
-window's running maximum: for a monotone decay that maximum is the
-*oldest* sample, so `rel = (1−r)·r^(N−1)` and any ratio under ~0.5 would
-certify `converged` at the first full window no matter how far from its
-limit the value still was (`1e6·0.3^k` at `x ≈ 1.8`) — and a wider window
-would make it worse.
+**The relative signal.** The observer records
+`r = Δv / max(\|v\|, \|v_prev\|, scale)` alongside each raw displacement.
+This remains the signal for the incumbent motion/equilibrium tests, numeric
+`how`, and the stall backstop. The standard `converged` and `stable` tests
+compare the window's value span, rather than testing each `r` separately.
+Below the scale their floating tolerances become absolute. Exact-int
+windows use the absolute tolerances regardless of magnitude.
 
-**The honesty bound.** `converged` is a **stopping criterion, not a
-proof**: it means *settled at the deadband* — every recent step below the
-tolerance — which is the strongest claim a finite window supports.
-Vanishing steps do not imply a limit (the harmonic series' steps vanish;
-its sum does not), so a slow-enough divergence will eventually read
-`stable` and, at extreme patience, `converged`; and a slowly-converging
-sequence reads `converged` while still `~1e-2` from its limit (corpus
-cases 6 and 8). The deadband is the tolerance knob:
-the settle tolerance, `dh_small` the small-motion band; the raw
-STRUCTURE tests are deliberately threshold-free (a perpetual ±5 swing is
-an oscillation at any tolerance). `h_low` affects only the entropy
-route.
+**Documented residuals of R3-STD.** These are finite-window limitations,
+not new acceptance exceptions:
+
+- Sublinear tails settle before reaching the limit: the p-series with
+  `p = 2` first certifies at `n = 82` with error `7.3 × eps`; `p = 1.5`
+  at `257`, `47.6 × eps`; `1 + n^−0.5` at `286`, `59 × eps`.
+- Harmonic sums first read `converged` at `n = 1295` (706 of 2001
+  prefixes), and never read `diverging`. Harmonic sums with ±0.001 noise
+  first certify at `1094` (1675 of 3000 prefixes). The harmonic stable
+  band starts at `101` (1900 of 2001 prefixes). A finite Cauchy window
+  cannot decide the infinite Cauchy condition.
+- D1's stable false positives include the harmonic 300/2000, log 300,
+  sqrt 300, inverse-log 300, power-law ML loss 2000 and sine-iteration 2000
+  rows. The incumbent diverging test still misses harmonic 60/300/2000,
+  log 300, sqrt 300, Hardy XXIV.5 and the upward sawtooth.
+- A mixed window around an int counter can still use floating tolerances:
+  the `int64_count` float at index 25 leaves `converged` and `stable` true
+  through index 35; index 36 is the first all-exact window. Same-sign
+  float ulp steps and the scale rule belong to R3.3.
+- A one-step pause alone does not fill the convergence window. The
+  `ieee_nan_recover@13 stable` label disagreement is a windowed-band
+  residual: the NaN leaves at 14 and D1 first fires at 20; the NaN-free
+  infinity-recovery twin first fires at 19.
+
+- The bare-loop stall backstop can miss constant-amplitude cycles whose
+  peaks do not fall in both halves of the retained window. At default
+  W = 10 the recent half has five inputs; period-6 `[5, 1, -2, 3, -2, 1]`
+  hangs on R3-STD, c8 and main. This is a Phase 3 candidate alongside the
+  certified-verdict work (RULING R31-6).
+- A non-finite value recurring less often than once per W+1 retained
+  inputs can leave a finite window each period and reset the stall counter.
+  At default W = 10, R31-7 records a period-12 cycle with one NaN hanging
+  on the current path and c8. This is a Phase 3 candidate alongside the
+  certified-verdict work.
+- Still-contracting alternations keep their convergence route. From 1.0,
+  multipliers -0.999 and -0.9999 take 14511 and 145089 iterations,
+  respectively, with cost growing approximately as ln(scale)/ln|r| as r
+  approaches -1. These are ruled costs, not a new predicate or stall rule.
+
+`converged` is a stopping criterion, not proof of arrival or of a finite
+limit. Pair it with a residual test when the destination matters.
 
 ## Inputs
 
-Every predicate reads the same observer state on the most recently
-assigned top-level value (`g_last_observer`):
+The observer belongs to a binding's environment slot. Numeric assignments
+record the current value, relative and raw step rings, an exact flag per
+step, and D2's running `best`/`since`. Numeric `where` is the current value,
+`why` is the last raw step, and `how` is
+`dh_zero / (dh_zero + |r|)` for a finite step. Before any step, `why` and
+`how` are null. See [OBSERVER.md](OBSERVER.md#what-the-observer-knows) for
+non-finite cases and fixed points.
 
-| Field | What it is | Computed by |
-|-------|-----------|-------------|
-| `entropy` | current information content `where is x` — **recomputed from the value present at ask time** (#711), so in-place mutation is visible | `compute_entropy_impl` via `observer_entropy_now` |
-| `dH` | change since previous observation `why is x` — a trajectory of **assignments**; mutation does not move it, and a query never writes back | `update_observer` (`new − last`) |
-| `prev_dH` | the previous step's `dH` | `update_observer` |
-| `dh_window` | ring buffer of the last `N` `dH` values (`N` = the window depth in force, 10 by default — [The window](#the-window-1044)) | `observer_window_push` in `update_observer` |
-| `obs_age` | number of observations since the value first existed | `update_observer` |
+Non-numeric bindings retain current entropy, `dH`, previous `dH`, and an
+entropy-step window, plus the bounded comparison snapshots described above.
+`where` recomputes their entropy from the current contents at query time;
+`why` records assignment-time change. Asking never writes observer state.
 
-The ring buffer is allocated lazily on the *second* observation (the
-first push only happens once `obs_age >= 1`), so a binding
-assigned exactly once pays no allocation. Note the gate is the second
-*observation*, not interrogation: a binding nothing ever queries still allocates
-its window on its second assignment, because the observe op is emitted
-unconditionally (see [OBSERVER.md](OBSERVER.md#cost)). `unobserved:` is what
-avoids it. they cannot be tracked across resets.
+**`unobserved:` (#1049).** Numeric value records remain complete, including
+exact flags, D2 state, the interrogation triple, and history snapshots. The
+six named predicates, numeric `report`, `observe`, `trajectory`, and numeric
+`where`/`why`/`how` therefore retain their answers after the block. A
+predicate asked inside the block still raises. Non-numeric entropy and
+comparison samples are elided, so their windows and verdicts can differ.
+The last-observed alias is not moved by an elided assignment: scratch work
+inside a block cannot hijack a bare `loop while not converged`.
 
-**What `unobserved:` elides, precisely (#1049).** An assignment inside the
-block still records its **value-channel** sample: a scalar's relative and
-raw step enter `v_window`/`vr_window` and `last_value` moves (O(1) — one
-subtraction, one division, two ring writes), and a non-numeric value flips
-the route bit exactly as an observed one would. So the window the numeric
-route reads is complete, and every verdict on that route — the six
-predicates on a numeric binding, `report`, `report_value`, a `trajectory`
-snapshot's `rel`/`raw` — is **identical with and without the block**
-(an elided `b is 0.0` initialiser no longer moves the window-fill
-boundary by one read; one elided step mid-stream no longer perturbs the
-next ten verdicts). What the block does not compute is the entropy walk
-and everything built on it, so these remain **elision-sensitive**:
-
-| Reader | Why it can differ under `unobserved:` |
-|---|---|
-| `why is x`, `how is x` | read `dH`, which the block never updates |
-| `observe of x` | its `dH`/`prev_dH` elements; the band is routed like `report` |
-| `trajectory of x` | the `dh` list, `dH`, `last_entropy` (`rel`/`raw`/`last_value` are complete) |
-| `classify of [t, "entropy"]` | the explicit entropy channel |
-| `report` / the four entropy predicates on a **non-numeric** binding | the entropy route — its `dh_window` is missing the elided steps |
-| `converged` / `stable` on a **non-numeric** binding | the equality window is missing the elided comparisons |
-| the loop stall backstop | reads the last observed slot's `dH` |
-| a **bare** predicate | reads the last **observed** binding — the alias is deliberately not moved by an elided assignment, so scratch work inside the block cannot hijack a `loop while not converged` |
-
-`where is x` is unaffected: it is recomputed from the current value at
-ask time (#711). A predicate asked *inside* the block still raises (#871).
-
-One consequence: `unobserved:` is no longer a way to **declare** a numeric
-binding without putting a sample in its window (the pre-#1049 idiom in
-`lib/experiment.eigs`, which seeded `tracker is 0` inside a block so the
-seed-to-first-reading jump would not sit at the head of the trajectory).
-Seed with `null` instead — null and boolean assignments are never sampled,
-on either path — and the first real reading is the first observation:
+A `null` seed declares a binding without a numeric sample; the first real
+number is then the baseline. A numeric seed inside `unobserved:` still
+counts as the first numeric observation.
 
 ```eigenscript fragment
 define first_stable(values) as:
-    tracker is null            # declares the binding; not a sample
+    tracker is null
     for v in values:
         tracker is v
         if stable of tracker:
@@ -317,12 +340,13 @@ define first_stable(values) as:
     return null
 ```
 
-`window` below means the `dh_window` contents oldest→newest;
-`count = window_size(v)` is how many real samples it holds (≤ N).
+For the entropy formulas below, `window` means the entropy-step ring,
+oldest to newest; `count` is its number of real entries, at most `N`.
 
 ## Thresholds
 
-Three numbers from `EigsState` (defaults shown):
+Two step thresholds retained in `EigsState` for tape folds, plus the
+compiled-in entropy constant `h_low` (defaults shown):
 
 ```
 dh_zero  = 0.001   |dH| below this is "essentially zero change"
@@ -337,7 +361,7 @@ A fourth number, the value channel's characteristic scale (#1045):
 scale    = 0.001   |v| below this counts as "at zero": rel = Δv / max(|v|, |v_prev|, scale)
 ```
 
-See "The relative step is scale-free" above for what it means.
+See "The relative signal" above for what it means.
 
 Two derived window constants (for the fixed window depth `N = 10`):
 
@@ -348,8 +372,8 @@ FLIPS = ceil(N / 3)  = 4   min sign-flips in the window for oscillating
 
 ## The window (#1044)
 
-Every predicate classifies over the last `N = 10` **samples** — observed
-assignments, not seconds. The depth is fixed by `OBSERVER_WINDOW_N`; a window
+Numeric window tests read `N = 10` **steps**, spanning `N + 1` values —
+assignments, not seconds. Entropy formulas read ten entropy steps. The depth is fixed by `OBSERVER_WINDOW_N`; a window
 must be full before a quiet verdict such as `converged` can fire.
 
 ```eigenscript fragment
@@ -360,8 +384,7 @@ window is 10
 cadence cannot fold inside the window. Choose an observation cadence that puts
 at least one period of the slowest mode inside those ten samples (`10 ≥ T / Δt`).
 A mode much faster than the cadence can alias too, so sample fast enough to
-preserve its reversals. The ring stores ten doubles per channel per binding
-(the value channel keeps two), and folding/variance tests are `O(10)` per
+preserve its reversals. The numeric route keeps relative and raw rings plus exact flags; and folding/variance tests are `O(10)` per
 verdict asked, not per assignment.
 
 ## Configuration recorded on older tapes
@@ -369,19 +392,18 @@ verdict asked, not per assignment.
 Tape formats retain observer-configuration events so recordings made when the
 configuration builtins existed still replay deterministically. Ordinary source
 programs cannot emit those events now; live runs use the fixed thresholds,
-ten-sample window, and characteristic scale above.
+ten-step window, and characteristic scale above.
 
-## Partial-window rule (applies to all six)
+## Partial windows
 
-If the window does not yet hold enough samples, **every predicate returns
-`false`** — "we haven't seen enough yet to claim anything." The minimum is
-`N` for the rest bands (`converged`, `stable`, `equilibrium`) on both
-routes, `4` for the value route's motion bands (the half-split needs two
-samples per half) and `3` for the entropy route's. A two-write program can
-never report any predicate true; this is the single most important
-difference from the old pointwise rule, which fired on the first step.
-**One exception**: `diverging` fires at the numeric ceiling regardless of
-window fill — see the saturation rule below.
+Numeric `converged`, `stable` and `equilibrium` require ten steps (eleven
+values). The incumbent motion tests need enough steps for their structure
+tests; D2 `improving` can fire as soon as a later finite value improves the
+baseline. Infinity and NaN follow their rules regardless of window fill.
+Non-numeric rest predicates need full windows; entropy motion predicates
+retain their three-step minimum. `report` retains its partial-history
+fallback; a single numeric baseline reports `equilibrium` while the six
+predicates are false.
 
 ## Opaque rule (#708): function-valued bindings
 
@@ -398,49 +420,21 @@ differently. The check reads the binding's current value at ask time —
 rebind `f` to a number and its numeric trajectory (which was recorded
 all along) answers normally again.
 
-## Saturation rule (#861): bindings at the numeric ceiling
+## Non-finite rule (R3.1)
 
-Overflow saturates at `±1e308` (`num_guard`, the "finite by construction"
-rule), which turns an unbounded trajectory into a **fixed point**. Once a
-runaway pins there, `dH` is exactly 0 in the entropy channel and the
-relative step is exactly 0 in the value channel, and `H(1e308)` sits far
-under `h_low` — so every clause of `converged` is *legitimately* satisfied.
-The window really is quiet. The quiet is an artifact of the clamp, formed
-after the evidence of divergence was already destroyed.
+Float overflow produces signed infinity; there is no finite saturation
+ceiling. A held finite `1e308` can converge like any finite constant.
 
-So a binding whose last observed number has `|value| >= 1e308` is treated
-as **diverging, and in no rest band**:
+| current value | `oscillating` | `diverging` | other four predicates | `report` / `report_value` |
+|---|---|---|---|---|
+| NaN | false | false | false | `undefined` |
+| ±inf, with the opposite-sign infinity in the window's `W + 1` values | true | false | false | `oscillating` |
+| ±inf, without an opposite-sign infinity in that window | false | true | false | `diverging` |
 
-| predicate | at the ceiling |
-|---|---|
-| `converged`, `equilibrium`, `stable`, `improving` | forced `false` — a value at the clamp is not resting or approaching |
-| `diverging` | forced `true`, **including on a partial window** |
-| `oscillating` | evaluated normally — a value flipping `±1e308` reads as the oscillation it is, and `report`'s priority resolves it to `oscillating` |
-
-Since #861 both `report` and `report_value` run the same classifier, so
-they agree here by construction. (The `H(x) ≡ H(−x)` blindness that once
-made them disagree at the ceiling — #862 — still exists in the entropy
-SIGNAL, but no numeric classification reads it anymore; it is visible
-only through `classify of [t, "entropy"]` and for non-numeric bindings,
-whose values have no ceiling.)
-
-`diverging` is claimed before the partial-window guard because the
-evidence is the value's *position*, not the shape of the (flattened)
-window — this is the one place a predicate fires on fewer than 4 samples.
-
-**A literal `±1e308` that never overflowed reads `diverging` too.** The
-runtime cannot distinguish a saturated value from one deliberately
-assigned the ceiling (#865: the saturated value compares equal to itself
-under further growth, so no in-language predicate separates them). Of the
-two possible errors this is the loud one: a diverging solver that reports
-`converged` returns `1e308` *as an answer*, while a deliberate ceiling
-constant reported as `diverging` is a visible false alarm. Below the
-ceiling nothing changes — `1e307` held constant still converges.
-
-As with the opaque rule, the entropy *constants* are untouched: this is a
-classification gate, not a change to what entropy measures. It lives with
-the predicates rather than in the VM (contrast #708, which must read the
-binding), so the tape, DAP, and step surfaces inherit it.
+These rules also apply on partial histories. A non-finite value still in a
+finite-current window prevents STD convergence, D1 stability, and D2
+improvement. The original runaway and finite-constant scenarios remain in
+`tests/test_observer_saturation.eigs`.
 
 ## Implementation status
 
@@ -462,8 +456,9 @@ single-step rule that the windowed version superseded.
 Since #861 the kinds dispatch by route: a numeric binding answers from
 the value-channel definitions in "Which channel answers" above; the
 windowed-entropy formulas in the next section serve non-numeric bindings
-except for equality-routed `converged`/`stable`, and serve the explicit
-`classify of [t, "entropy"]` channel. `report_value of
+except for equality-routed `converged` and ordinary `stable`; the bounded
+NaN-buffer stability exception does use them. They also serve the explicit
+`classify of [t, "entropy"]` channel for non-numeric snapshots only. `report_value of
 x` (#294) is the value-channel classifier by name — on a numeric binding
 it and the predicate words are one classifier and cannot disagree.
 
@@ -473,9 +468,10 @@ it and the predicate words are one classifier and cannot disagree.
 **These formulas classify the trajectory of `entropy(value)`. Since #861
 they answer the four entropy-routed predicates and `report` for non-numeric
 bindings (strings, containers), plus all six predicates on the explicit
-entropy channel; numeric bindings use the value-channel definitions above,
-and routed non-numeric `converged`/`stable` use deep equality.** The traces and design notes are kept because the
-mechanics still run — on the signal they were always sound for.
+non-numeric entropy channel; numeric bindings use the value-channel definitions above,
+and routed non-numeric `converged`/`stable` use deep equality except for the
+bounded NaN-buffer stability case described above.** The traces and design notes describe this retained entropy mechanism;
+they do not define numeric predicates.
 
 ### `converged` (kind 0)
 
@@ -655,71 +651,20 @@ samples whose product is negative and whose magnitudes both clear
 single adjacent sign flip, indistinguishable from one reversal in an
 otherwise monotone descent.
 
-## Mutual exclusion
+## Overlaps and report priority
 
-Under the windowed semantics the "active motion" bands —
-`improving`, `diverging`, `oscillating` — are mutually exclusive, and each
-is exclusive of the "at rest" bands. The three quiescent bands form an
-intentional subset lattice rather than disjoint sets; `report` resolves to
-the most specific via its priority order.
+On numeric bindings, STD convergence and D1 stability answer their standard
+window questions independently of the incumbent raw-motion predicates.
+D2 can remain true for ten steps after a significant lower best, including
+steps that also certify convergence. These overlaps are intentional;
+`report`'s ranking remains unchanged. Do not infer that every true predicate
+must be the string returned by `report`.
 
-- `improving` and `diverging` require opposite net trends, so at most one
-  fires.
-- `oscillating` requires ≥ `FLIPS` sign changes, which a window with a
-  monotone net trend (improving/diverging) cannot have. (At the numeric
-  ceiling `diverging` is forced true from the value's *position* rather
-  than the window's trend, so it is the one case where both can hold at
-  once: a trajectory that moves in and out of the ceiling and lands on it
-  has real `dH` sign changes AND a saturated last value. `report`'s
-  priority order resolves that to `oscillating`, the more specific claim.)
-- `stable` requires every `|dH| < dh_small`; `improving`/`diverging`
-  require ≥ 60% of steps to *clear* `dh_small` in one direction, so a
-  uniformly small-motion (gray-band) window is `stable` with a
-  `down_fraction`/`up_fraction` of 0 — never improving or diverging. This
-  is the #187 contract enforced at the window level. The `stable`
-  no-consecutive-flips clause likewise excludes `oscillating`.
-- **The numeric value-channel quiescent bands.** For a numeric binding,
-  `converged`, `equilibrium` and `stable` read the window's relative steps
-  and NEVER the entropy. All three need a full window, and none fires on a
-  raw runaway or a raw oscillation.
-  - `converged ⊂ stable`. Every relative step under the settle deadband
-    implies every step under `dh_small`, with no sign flip above the deadband.
-  - `equilibrium` is not implied by `converged`. It needs balanced motion,
-    meaning a window mean and variance under the deadband. It also rejects a
-    one-direction trend: at least two nonzero raw steps, all of one sign.
-    Exact-zero steps are neutral.
-
-  Concretely, a full window whose relative steps are all under the deadband
-  is one of:
-  - **balanced or settled** (raw steps mixed in sign, or exactly zero) →
-    `converged`, `equilibrium` and `stable` (`report` → `converged`);
-  - **a one-direction tail** → `converged` and `stable` but not
-    `equilibrium` (`report` → `converged`).
-
-  `equilibrium` can fire without `converged`. A balanced window whose mean
-  and variance are under the deadband can still hold individual steps above
-  it. A `stable` window that is not `converged` has every step under
-  `dh_small` but some above the deadband: small, steady motion.
-- **The entropy-channel quiescent bands have a separate lattice.** Entropy
-  predicates operate on the `dH` window and do not apply the numeric route's
-  raw-value-step trend guard. When a full low-entropy window has every
-  `|dH| < dh_zero`, both `converged` and `equilibrium` are true, including
-  when all its nonzero `dH` steps point in one direction (`report` →
-  `converged`). At high entropy, `equilibrium ⊂ stable` as before. Thus the
-  entropy route permits `converged` and `equilibrium` to co-fire for a
-  same-direction quiet window; the numeric value route deliberately does not.
-- **The bands are not exhaustive.** A full window with steady gray-band
-  drift at *low* entropy fires nothing: the steps are under `dh_small` so
-  `improving`/`diverging` are excluded by the #187 rule, the mean is over
-  `dh_zero` so `equilibrium`/`converged` are excluded, and `stable`'s
-  `entropy >= h_low` clause excludes it too. That state is real (a value
-  decaying toward zero is in it) and it has no predicate — `report` names
-  it `moving` (#735). Do not read "no band fired" as "at rest".
-
-This makes `report`'s priority order load-bearing: `oscillating` →
-`diverging` → `improving` → `converged` → `equilibrium` → `stable` returns
-the most specific true band. `tests/test_predicate_matrix.eigs` pins the
-overlaps and the report resolution.
+`converged` implies `stable`. Numeric `equilibrium` additionally rejects a
+one-direction raw trend (at least two nonzero raw steps of one sign; zeros
+are neutral) and raw oscillation. Non-numeric predicates retain the
+entropy/equality rules above, with their own overlaps. The six bands are
+not exhaustive: `moving` names the remaining classified motion.
 
 ## The `report` builtin
 
@@ -737,33 +682,18 @@ band, tested in priority order:
 
 7. `moving`
 
-These all use the same windowed helpers as the predicates, so
-`report of x == "converged"` agrees with `if converged:` on the same value
-— **at a full window**. That agreement is the contract: at a full window
-the windowed helpers are the *only* authority, so `report` either names a
-band whose bare predicate is true, or says `moving`. It never names a band
-the predicates deny. (`moving` is also the value channel's residual label,
-so both channels answer "not settled, not in any named band" the same way.)
+For numeric bindings these use the same helpers as the named predicates.
+At a full window `report` names the highest-priority true predicate, or
+`moving` if none is true. A true `converged` does not force the string
+`converged` when a higher-priority motion predicate is also true. At a
+current NaN the label is `undefined`; callable bindings are `opaque`.
+Non-numeric `report` retains the entropy classifier, so it can differ from
+the equality-routed `converged` and `stable` predicates.
 
-For a *partial* window (`count < N`), the full-window predicates
-(`converged`/`equilibrium`/`stable`) are all false by the partial-window
-rule, but `report` still needs to say something, so it falls back to an
-instantaneous best-effort label: `equilibrium` if the last
-`|dH| < dh_zero`, else `stable` if `|dH| < dh_small` at high entropy, else
-`stable`. This is the one place `report` can disagree with the bare
-predicates, and only while observations are still accumulating — by the
-time the window fills, the windowed helpers decide and the two agree.
-
-**#735**: that fallback used to run at *any* window fill, so a full window
-in which no band fired was still labelled from the last `dH` alone — a
-low-entropy gray-band drift (every step under `dh_small`, so not
-improving/diverging; mean over `dh_zero`, so not equilibrium/converged;
-entropy under `h_low`, so not stable) reported `equilibrium` while nothing
-had settled. A convergence loop written exactly as the settled-plus-hold
-recipe below recommends therefore exited early, at rc=0, with a plausible
-answer. The fallback is now gated on `count < N`, and the agreement
-invariant is asserted directly in `tests/test_predicate_matrix.eigs`
-rather than stated only here — which is how it survived.
+The existing partial-history fallback is retained. A single numeric value
+reports `equilibrium`, although no step has occurred and all six predicates
+are false. Once steps exist, numeric motion tests, including D2, can answer
+before the settled tests have a full window.
 
 ## Canonical examples
 
@@ -786,15 +716,15 @@ value route reads motion, so magnitude is irrelevant.
 
 ### Newton's sqrt certifies `converged` (#861)
 
-`sqrt(2)` settles to `1.41421…`; once a full window of relative steps sits
-under the deadband it reports **`converged`** — the textbook example of
+`sqrt(2)` settles to `1.41421…`; once the full window
+fits the Cauchy tolerance it reports **`converged`** — the textbook example of
 convergence is certifiable. (Before #861 the `entropy < h_low` clause
 blocked every limit in `[~0.013, 76]`, and this section documented the
 blindness as intended behavior: "it reports `equilibrium`, not
 `converged`." See `tests/test_windowed_converged.eigs` WC4, now pinned to
 the certification.)
 
-### Short trajectories never fire
+### Short trajectories cannot certify convergence
 
 ```eigenscript fragment
 y is 0
@@ -858,12 +788,12 @@ loop while not converged of w:
     grad is (loss_plus - loss_minus) / (2 * h)
     w is w - lr * grad
     steps is steps + 1
-assert of [steps == 13, f"probe-write trajectory took {steps} steps"]
-assert of [(when is w) == 53, f"probe-write trajectory recorded {when is w} observations"]
+assert of [steps == 14, f"probe-write trajectory took {steps} steps"]
+assert of [(when is w) == 57, f"probe-write trajectory recorded {when is w} observations"]
 ```
 
-On this trajectory, the probed version stops after 13 updates with
-`when is w` equal to 53. Compute probe values through a helper instead, so
+On this trajectory, the probed version stops after 14 updates with
+`when is w` equal to 57. Compute probe values through a helper instead, so
 only the real update writes `w`:
 
 ```eigenscript fragment
@@ -876,11 +806,11 @@ loop while not converged of w:
     grad is ((loss_at of (w + h)) - (loss_at of (w - h))) / (2 * h)
     w is w - lr * grad
     steps is steps + 1
-assert of [steps == 20, f"helper trajectory took {steps} steps"]
-assert of [(when is w) == 21, f"helper trajectory recorded {when is w} observations"]
+assert of [steps == 21, f"helper trajectory took {steps} steps"]
+assert of [(when is w) == 22, f"helper trajectory recorded {when is w} observations"]
 ```
 
-The helper version takes 20 updates and `when is w` is 21: the initial
+The helper version takes 21 updates and `when is w` is 22: the initial
 assignment plus one assignment per update. The runnable full-batch example is
 [`examples/gradient_descent.eigs`](../examples/gradient_descent.eigs).
 
@@ -888,17 +818,16 @@ assignment plus one assignment per update. The runnable full-batch example is
 
 `loop while not converged` reads as the obvious convergence idiom, and
 since #861 it is correct for any numeric value that actually settles —
-gently, steeply, oscillating on the way in, at any magnitude. What
+subject to its finite-window tolerance and exact-int rules. What
 remains worth knowing: the tolerance semantics (settled ≠ arrived), the
-observation-cadence rule, and the divergent-input guard. Every trace
-below is a real run.
+observation-cadence rule, and the divergent-input guard. Fence expectations below follow R3-STD; hosted doc-fence execution
+checks the runtime results.
 
-### Regime tracks per-step `dH`, not distance to the limit
+### A small step alone does not certify convergence
 
-A predicate classifies the *trajectory* by its steps against the
-deadband. A quantity that is still moving but observed in tiny per-step
-increments has every relative step under `dh_zero` and reads settled —
-while still far from its limit:
+The Cauchy test measures the span of the whole window, rather than each
+step separately. Twenty 0.05% decreases still span about 0.5% over the
+last ten steps, so this trajectory remains `improving`:
 
 ```eigenscript
 x is 100.0
@@ -907,23 +836,12 @@ for i in range of 20:
 print of (report of x)
 ```
 ```output
-converged
+improving
 ```
 
-This is the tolerance semantics, not a defect: `converged` means every
-recent step is below the tolerance, and per-step motion of 0.05% is strictly below the
-fixed `dh_zero = 0.001`. (A 0.1% step is exactly the boundary and is not
-`converged`.) This tolerance is not a
-runtime setting; read its authoritative value at
-`OBSERVER_DH_ZERO_DEFAULT` in `src/eigenscript.h`.
-
-The lesson is about **observation cadence**: observe at a rate matched to
-the dynamics, not once per micro-step. The robust pattern is to advance the
-system several substeps *unobserved* and observe the quantity once per
-frame, so each observed `dH` reflects a meaningful step (`dynamics/physics.eigs`
-runs `SUB` integration substeps `unobserved`, then observes once per frame
-— without this, a damped oscillator, a diverging one, and a steady
-oscillation all read `equilibrium` alike).
+A sufficiently slow unbounded drift can nevertheless fit a finite Cauchy
+window. The residuals above state that limit. `unobserved:` does not alter
+numeric sampling cadence: its numeric steps still enter the window.
 
 ### The entropy-peak artifacts are gone from numeric classification (#861)
 
@@ -954,10 +872,11 @@ print of (report of x)
 diverging
 ```
 
-The formula and its horizon property are unchanged in the MEASUREMENT
-(`where is x` at `1.0` is still the maximum) and still classify
-non-numeric bindings; `H(x) ≡ H(1/x) ≡ H(−x)` (#862) remains a blind
-spot of that signal, reachable via `classify of [t, "entropy"]`.
+Numeric `where` now returns the value itself, so `where is x` at `1.0`
+is `1.0` without computing entropy. The entropy formula remains for numbers
+inside containers and for non-numeric classification; its magnitude
+symmetries remain properties of that separate signal. A numeric snapshot
+refuses `classify of [t, "entropy"]` with `value`.
 
 ### An iterative residual certifies directly (#861)
 
@@ -987,8 +906,31 @@ Two cases still deserve a guard:
 
 - **Input that may genuinely diverge.** `converged` (correctly) never
   fires on a runaway. The bare form (`loop while not converged`) carries
-  the observer stall backstop — ~100 quiet iterations end the loop with
-  `__loop_exit__ == "stalled"` — but the **named** form deliberately does
+  the observer stall backstop. An iteration counts when the numeric subject's
+  last relative step is quiet (`|r| < dh_zero`), OR any of its newest W+1
+  retained input values (or the available prefix, the same window the
+  amplitude clause reads) is non-finite, OR its window reads `diverging`,
+  OR it reads `oscillating` with a non-contracting amplitude. The oscillation
+  clause never counts a contracting amplitude; merely not converged never
+  counts. The counter
+  resets on every non-counting iteration. A retained non-finite input
+  counts before any finite-amplitude test. Every certifying numeric predicate
+  (`converged`, `stable`, `improving`) requires a finite window, so a
+  retained non-finite input prevents certification on that iteration.
+  This clause reads inputs only: an overflowing difference between two
+  finite inputs does not count through it, so a finite contracting
+  alternation keeps its convergence route.
+  For the newest W+1 inputs (or available prefix), provided all are finite,
+  compare the maximum absolute magnitude R of the recent floor(n/2)
+  values with O of the older remainder: R >= O is non-contracting, R < O is
+  contracting. A retained non-finite input does not establish this finite
+  amplitude fact; the retained-input non-finite clause still counts
+  independently.
+  This is a fact about the stored window, with exact integer
+  and mixed comparisons, not a claim about a future limit. After 100 counted
+  iterations the loop exits with `__loop_exit__ == "stalled"`
+  (RULING R31-7 amends R31-4's non-finite clause; the alternation count band
+  is 100..112 under R31-5). The **named** form deliberately does
   not (it must not false-halt on the global alias), so give it an
   absolute cap:
 
@@ -1001,8 +943,8 @@ loop while not (converged of x):
         throw of "did not settle"
 ```
 
-- **Tolerance tighter than the fixed value.** `converged` fires at the
-  deadband (`dh_zero`, fixed at 0.1% relative). It is not configurable;
+- **Tolerance tighter than the fixed value.** `converged` tests the window diameter
+  (`dh_zero`, fixed at 0.1% relative with an absolute floor). It is not configurable;
   read the authoritative value at `OBSERVER_DH_ZERO_DEFAULT` in
   `src/eigenscript.h`. For a tighter answer, calculate and test the desired
   residual explicitly.
@@ -1079,8 +1021,13 @@ loop while t < 40:
 print of (a + " " + b)
 ```
 ```output
-improving oscillating
+moving oscillating
 ```
+
+A closure's initial `q is 0.0` is its first finite baseline and running
+minimum. The positive decay never beats that minimum, so D2 does not call
+it `improving`; its window is still moving after these 40 updates. The
+second entity's own sign-flipping history reads `oscillating`.
 
 A named binding per entity (`qa is fleet[0][2]`, `qb is fleet[1][2]`) is the
 same thing when N is fixed at authoring time. Container-keyed trajectory
@@ -1089,14 +1036,13 @@ not a current capability.
 
 ## Cost
 
-The `dh_window` costs one `xcalloc(N * sizeof(double))` (80 bytes at the
-default N=10; the depth in force at the first push, see [The
-window](#the-window-1044)) per *interrogated* value, lazily on the second
-observation. Per assignment
-the cost is one buffer write + head advance, gated on the compile-time
-observer-tracking flag — values that no predicate or interrogative ever
-reads pay nothing. Free is handled in `free_value` before the `VAL_NUM`
-freelist path so recycled numbers do not leak the buffer.
+Numeric assignments perform O(1) value bookkeeping: checked displacement,
+relative normalization, ring writes, an exact flag, and a running-best
+update. They do not call the numeric entropy formula or maintain an
+entropy-step ring. Predicate queries scan the fixed ten-step window.
+Non-numeric entropy still costs the binding's own content size, plus bounded
+comparison work. The observer gate can skip bookkeeping for a program that
+has no observer or history readers; see [OBSERVER.md](OBSERVER.md#cost).
 
 ## See also
 

@@ -1,0 +1,15 @@
+# ROW: N1.osr-global-int-store
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: O
+# WITNESS: osr put
+# OPS: SET_NAME NUM_ONE ADD GE JUMP_IF_FALSE
+x is 0
+define put(big, n) as:
+    i is 0.0
+    loop while true:
+        x is big
+        i is i + 1.0
+        if i >= n:
+            return x
+print of (put of [9007199254740993, 4.0])

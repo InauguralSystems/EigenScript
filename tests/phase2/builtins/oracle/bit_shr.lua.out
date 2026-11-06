@@ -1,0 +1,4 @@
+9223372036854775807	integer
+0	2
+false	bit_shr.lua:4: number has no integer representation
+4	integer

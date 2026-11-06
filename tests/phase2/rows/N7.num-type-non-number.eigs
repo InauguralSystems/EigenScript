@@ -1,0 +1,7 @@
+# ROW: N7.num-type-non-number
+# ITEMS: N7
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [num_type of "3", num_type of null, num_type of true, num_type of ([1])]

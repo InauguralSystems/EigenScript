@@ -1,0 +1,4 @@
+Hi
+false	bad argument #1 to 'string.char' (number has no integer representation)
+false	bad argument #1 to 'string.char' (value out of range)
+Hi

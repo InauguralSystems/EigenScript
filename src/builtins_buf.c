@@ -32,10 +32,12 @@
 Value* builtin_buffer(Value *arg) {
     /* buffer of [rows, cols] -> shaped 2-D buffer (flat double[rows*cols]) */
     if (arg && arg->type == VAL_LIST && arg->data.list.count == 2 &&
-        list_elem_type(arg, 0) == VAL_NUM &&
-        list_elem_type(arg, 1) == VAL_NUM) {
-        int r = (int)eigs_list_num(arg, 0, __func__);
-        int c = (int)eigs_list_num(arg, 1, __func__);
+        (list_elem_type(arg, 0) == VAL_FLOAT || list_elem_type(arg, 0) == VAL_INT) &&
+        (list_elem_type(arg, 1) == VAL_FLOAT || list_elem_type(arg, 1) == VAL_INT)) {
+        int64_t r64, c64;
+        if (!eigs_list_int_range(arg, 0, INT_MIN, INT_MAX, &r64, "buffer") ||
+            !eigs_list_int_range(arg, 1, INT_MIN, INT_MAX, &c64, "buffer")) return make_null();
+        int r = (int)r64, c = (int)c64;
         if (r < 0) r = 0;
         if (c < 0) c = 0;
         long total = (long)r * (long)c;
@@ -53,8 +55,12 @@ Value* builtin_buffer(Value *arg) {
     int count = 0;
     /* #971 Phase D: a non-number size (or a malformed [rows, cols]) made an
      * EMPTY buffer — a plausible object with nothing in it. */
-    STRICT_REQUIRE(!arg || arg->type != VAL_NUM, "buffer", "a size or [rows, cols]");
-    if (arg && arg->type == VAL_NUM) count = (int)eigs_num_arg(arg, __func__);
+    STRICT_REQUIRE(!arg || !val_is_number(arg), "buffer", "a size or [rows, cols]");
+    if (arg && val_is_number(arg)) {
+        int64_t n;
+        if (!eigs_int_arg_range(arg, INT_MIN, INT_MAX, &n, "buffer")) return make_null();
+        count = (int)n;
+    }
     if (count < 0) count = 0;
     if (count > EIGS_TENSOR_MAX_ELEMENTS) count = EIGS_TENSOR_MAX_ELEMENTS;
     if (!sandbox_charge((size_t)count * sizeof(double))) return make_null();  /* #292 */
@@ -75,10 +81,12 @@ Value* builtin_reshape(Value *arg) {
     Value *b = list_get_view(arg, 0, &b_view);
     if (b->type != VAL_BUFFER) return make_null();
     BOOL_REFUSE(arg, "reshape");   /* rows/cols; the buffer is not a bool */
-    if (list_elem_type(arg, 1) != VAL_NUM ||
-        list_elem_type(arg, 2) != VAL_NUM) return make_null();
-    int r = (int)eigs_list_num(arg, 1, __func__);
-    int c = (int)eigs_list_num(arg, 2, __func__);
+    if ((list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT) ||
+        (list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT)) return make_null();
+    int64_t r64, c64;
+    if (!eigs_list_int_range(arg, 1, INT_MIN, INT_MAX, &r64, "reshape") ||
+        !eigs_list_int_range(arg, 2, INT_MIN, INT_MAX, &c64, "reshape")) return make_null();
+    int r = (int)r64, c = (int)c64;
     if (r < 0 || c < 0 || (long)r * (long)c != (long)b->data.buffer.count) return make_null();
     /* Same buffer chokepoint as buf_from_list — reshape copies the payload. */
     if (!sandbox_charge((b->data.buffer.count > 0 ? (size_t)b->data.buffer.count : 1) * sizeof(double)))
@@ -102,31 +110,35 @@ Value* builtin_buf_get(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
         rt_error(EK_TYPE, 0, "buf_get requires [buffer, index]");
         /* fs:CHANNEL the rt_error above already raised */
-        return make_num(0);
+        return make_float(0);
     }
     EIGS_VIEW(buf_view);
     Value *buf = list_get_view(arg, 0, &buf_view);
     if (!buf || buf->type != VAL_BUFFER) {
         rt_error(EK_TYPE, 0, "buf_get: first argument must be a buffer");
         /* fs:CHANNEL the rt_error above already raised */
-        return make_num(0);
+        return make_float(0);
     }
-    double idx_d = eigs_list_num(arg, 1, __func__);
-    int idx;
-    if (g_has_error) return make_num(0);   /* fs:CHANNEL #1637: a non-number index raised */
-    if (!vm_index_is_int(idx_d, &idx)) {
-        rt_error(EK_VALUE, 0, "index must be an integer, got %g", idx_d);
-        return make_num(0);
+    EigsNum idx_n = eigs_list_number(arg, 1, "buf_get");
+    if (g_has_error) return make_float(0);   /* fs:CHANNEL #1637: a non-number index raised */
+    int64_t idx;
+    if (idx_n.is_int) idx = idx_n.value.i64;
+    else if (!num_to_i64_exact(idx_n.value.f64, &idx)) {
+        rt_error(EK_VALUE, 0, EIGS_NO_INT_REP_FMT, "buf_get", idx_n.value.f64);
+        return make_float(0);
     }
     if (idx < 0 || idx >= buf->data.buffer.count) {
+        /* Report the supplied kind as well as its value: N5 conversion does
+         * not turn a float argument into an int for N6 diagnostic text. */
         char idx_text[32];
-        eigs_num_text(idx_text, sizeof(idx_text), idx_d);
+        if (idx_n.is_int) eigs_int_text(idx_text, sizeof(idx_text), idx_n.value.i64);
+        else eigs_num_text(idx_text, sizeof(idx_text), idx_n.value.f64);
         rt_error(EK_INDEX, 0, "buffer index %s out of range (length %d)",
                  idx_text, buf->data.buffer.count);
         /* fs:CHANNEL the EK_INDEX rt_error above already raised (#502) */
-        return make_num(0);
+        return make_float(0);
     }
-    return make_num(buffer_read_num(buf, idx));
+    return make_float(buffer_read_f64(buf, idx));
 }
 
 /* buf_set of [buf, index, value] — O(1) indexed write */
@@ -145,30 +157,128 @@ Value* builtin_buf_set(Value *arg) {
     /* #1061: both operands were read through the num union member unchecked
      * -- a string index or value read garbage bits (the #1007 type-pun class).
      * Loud, like the `b[i] is v` opcode path. */
-    if (list_elem_type(arg, 1) != VAL_NUM) {
+    if ((list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT)) {
         rt_error(EK_TYPE, 0, "buf_set: index must be a number, got %s", val_type_name(list_elem_type(arg, 1)));
         return make_null();
     }
-    if (list_elem_type(arg, 2) != VAL_NUM) {
+    if ((list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT)) {
         rt_error(EK_TYPE, 0, "cannot store %s in a buffer (buffers hold numbers)", val_type_name(list_elem_type(arg, 2)));
         return make_null();
     }
-    int idx = (int)eigs_list_num(arg, 1, __func__);
-    double val = eigs_list_num(arg, 2, __func__);
+    int64_t idx = eigs_list_int(arg, 1, "buf_set");
+    double val = eigs_list_float(arg, 2, "buf_set");
     if (g_has_error) return make_null();   /* #1637: a non-number index raised; nothing written */
     if (idx < 0 || idx >= buf->data.buffer.count) {
-        rt_error(EK_INDEX, 0, "buffer index %d out of range (length %d)",
-                 idx, buf->data.buffer.count);
+        rt_error(EK_INDEX, 0, "buffer index %lld out of range (length %d)",
+                 (long long)idx, buf->data.buffer.count);
         return make_null();
     }
     buf->data.buffer.data[idx] = val;
     return make_null();
 }
 
+/* buf_get_bits of [buf, index] — raw IEEE bits as signed int64 (R24-1). */
+Value* builtin_buf_get_bits(Value *arg) {
+    STRICT_LIST_MAX(arg, 2, "buf_get_bits");
+    STRICT_REQUIRE(!arg || arg->type != VAL_LIST, "buf_get_bits", "[buffer, index]");
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) {
+        rt_error(EK_TYPE, 0, "buf_get_bits requires [buffer, index]");
+        return make_null();
+    }
+    EIGS_VIEW(buf_view);
+    Value *buf = list_get_view(arg, 0, &buf_view);
+    if (!buf || buf->type != VAL_BUFFER) {
+        rt_error(EK_TYPE, 0, "buf_get_bits: first argument must be a buffer");
+        return make_null();
+    }
+    EigsNum idx_n = eigs_list_number(arg, 1, "buf_get_bits");
+    if (g_has_error) return make_null();
+    int64_t idx;
+    if (idx_n.is_int) idx = idx_n.value.i64;
+    else if (!num_to_i64_exact(idx_n.value.f64, &idx)) {
+        rt_error(EK_VALUE, 0, EIGS_NO_INT_REP_FMT, "buf_get_bits", idx_n.value.f64);
+        return make_null();
+    }
+    if (idx < 0 || idx >= buf->data.buffer.count) {
+        char idx_text[32];
+        if (idx_n.is_int) eigs_int_text(idx_text, sizeof(idx_text), idx_n.value.i64);
+        else eigs_num_text(idx_text, sizeof(idx_text), idx_n.value.f64);
+        rt_error(EK_INDEX, 0, "buffer index %s out of range (length %d)",
+                 idx_text, buf->data.buffer.count);
+        return make_null();
+    }
+    /* Do not load as a double: even a signaling/tag-spelling payload is data.
+     * memcpy also avoids unsigned-to-signed implementation-defined casts. */
+    int64_t payload;
+    memcpy(&payload, &buf->data.buffer.data[idx], sizeof(payload));
+    return make_int(payload);
+}
+
+/* buf_set_bits of [buf, index, bits] — preserve all bits; return null (R24-1). */
+Value* builtin_buf_set_bits(Value *arg) {
+    STRICT_LIST_MAX(arg, 3, "buf_set_bits");
+    STRICT_REQUIRE(!arg || arg->type != VAL_LIST, "buf_set_bits", "[buffer, index, bits]");
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
+        rt_error(EK_TYPE, 0, "buf_set_bits requires [buffer, index, bits]");
+        return make_null();
+    }
+    EIGS_VIEW(buf_view);
+    Value *buf = list_get_view(arg, 0, &buf_view);
+    if (!buf || buf->type != VAL_BUFFER) {
+        rt_error(EK_TYPE, 0, "buf_set_bits: first argument must be a buffer");
+        return make_null();
+    }
+    if (list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT) {
+        rt_error(EK_TYPE, 0, "buf_set_bits: index must be a number, got %s", val_type_name(list_elem_type(arg, 1)));
+        return make_null();
+    }
+    if (list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT) {
+        rt_error(EK_TYPE, 0, "cannot store %s in a buffer (buffers hold numbers)", val_type_name(list_elem_type(arg, 2)));
+        return make_null();
+    }
+    int64_t idx = eigs_list_int(arg, 1, "buf_set_bits");
+    int64_t payload = eigs_list_int(arg, 2, "buf_set_bits");
+    if (g_has_error) return make_null();
+    if (idx < 0 || idx >= buf->data.buffer.count) {
+        rt_error(EK_INDEX, 0, "buffer index %lld out of range (length %d)",
+                 (long long)idx, buf->data.buffer.count);
+        return make_null();
+    }
+    memcpy(&buf->data.buffer.data[idx], &payload, sizeof(payload));
+    return make_null();
+}
+
+/* f64_bits of number — the IEEE representation as signed int64 (N12).
+ * Like f64_to_bytes, an int converts to double first. Unlike an encoder,
+ * this inspection accepts non-finite floats without trapping or status. */
+Value* builtin_f64_bits(Value *arg) {
+    STRICT_REQUIRE(!arg || !val_is_number(arg), "f64_bits", "a number");
+    EigsNum number;
+    if (!eigs_number_read(arg, &number, "f64_bits")) return make_null();
+    double value = number.is_int ? (double)number.value.i64 : number.value.f64;
+    /* The compatibility bridge may hand a builtin a boxed float temporary.
+     * Its logical float representation still passes through the one writer;
+     * only integer and buffer-bit paths preserve a NaN payload. */
+    EigsSlot canonical = slot_from_f64(value);
+    int64_t payload;
+    memcpy(&payload, &canonical.u, sizeof(payload));
+    return make_int(payload);
+}
+
+/* f64_from_bits of bits — N5 exact int64 bits; NaNs use the single writer. */
+Value* builtin_f64_from_bits(Value *arg) {
+    STRICT_REQUIRE(!arg || !val_is_number(arg), "f64_from_bits", "a number");
+    int64_t payload = eigs_int_arg(arg, "f64_from_bits");
+    if (g_has_error) return make_null();
+    double value;
+    memcpy(&value, &payload, sizeof(value));
+    return slot_to_value(slot_from_f64(value));
+}
+
 /* buf_len of buf — return buffer length */
 Value* builtin_buf_len(Value *arg) {
-    ARG_GUARD(!arg || arg->type != VAL_BUFFER, "buf_len", "a buffer", make_num(0));
-    return make_num(arg->data.buffer.count);
+    ARG_GUARD(!arg || arg->type != VAL_BUFFER, "buf_len", "a buffer", make_int(0));
+    return make_int(arg->data.buffer.count);
 }
 
 /* buf_from_list of list — convert list of numbers to buffer */
@@ -188,8 +298,9 @@ Value* builtin_buf_from_list(Value *arg) {
     v->data.buffer.data = xcalloc(n > 0 ? n : 1, sizeof(double));
     v->refcount = 1;
     for (int i = 0; i < n; i++) {
-        if (list_elem_type(arg, i) == VAL_NUM) {
-            v->data.buffer.data[i] = eigs_slot_num(list_slot(arg, i), __func__);
+        if ((list_elem_type(arg, i) == VAL_FLOAT || list_elem_type(arg, i) == VAL_INT)) {
+            v->data.buffer.data[i] = eigs_slot_float(list_slot(arg, i), "buf_from_list");
+            if (g_has_error) { val_decref(v); return make_null(); }
         } else {
             /* #1061: a non-number element silently stayed 0.0. */
             const char *tn = val_type_name(list_elem_type(arg, i));
@@ -210,15 +321,19 @@ static int strict_numeric_byte_list(Value *arg, const char *who, int nul_ends) {
         EIGS_VIEW(item_view);
         Value *item = list_get_view(arg, i, &item_view);
         /* #1637: a bool byte is refused in every strict mode. */
-        if (!item || (item->type != VAL_NUM && (g_strict || item->type == VAL_BOOL))) {
+        if (!item || (!val_is_number(item) && (g_strict || item->type == VAL_BOOL))) {
             rt_error(EK_TYPE, 0, "%s: expected numeric byte values", who);
             return 0;
         }
         /* EIGS_STRICT=0 legacy: a non-number element (a bool never reaches
          * here) ends the string as a NUL would -- the documented truncation
          * the compatibility mode keeps. It is never read as a number. */
-        if (nul_ends && (item->type != VAL_NUM
-                         || finite_num_to_byte(eigs_num_arg(item, __func__)) == 0)) break;
+        if (nul_ends && !val_is_number(item)) break;
+        if (val_is_number(item)) {
+            uint8_t byte = eigs_byte_arg(item, who);
+            if (g_has_error) return 0;
+            if (nul_ends && byte == 0) break;
+        }
     }
     return 1;
 }
@@ -242,11 +357,13 @@ Value* builtin_str_from_bytes(Value *arg) {
     char *s = xcalloc((size_t)(n > 0 ? n : 0) + 1, 1);
     int len = 0;
     for (int i = 0; i < n; i++) {
-        double dv = arg->type == VAL_LIST
-                        ? (list_elem_type(arg, i) == VAL_NUM ? eigs_slot_num(list_slot(arg, i), __func__) : 0.0)
-                        : buffer_read_num(arg, i);
+        uint8_t b = 0;
+        if (arg->type == VAL_BUFFER) {
+            if (!buffer_byte_at(arg, i, &b, "str_from_bytes")) { free(s); return make_null(); }
+        } else if (list_elem_type(arg, i) == VAL_FLOAT || list_elem_type(arg, i) == VAL_INT) {
+            b = eigs_slot_byte(list_slot(arg, i), "str_from_bytes");
+        }
         if (g_has_error) { free(s); return make_null(); }
-        int b = finite_num_to_byte(dv);
         if (b == 0) break;            /* C-string terminates at NUL */
         s[len++] = (char)b;
     }
@@ -264,14 +381,15 @@ Value* builtin_str_from_bytes(Value *arg) {
  * explicit shifts, yielding the standard IEEE-754 layout on any platform. */
 Value* builtin_f64_to_bytes(Value *arg) {
     /* #971 Phase D: a non-number encoded as 0.0's eight bytes. */
-    STRICT_REQUIRE(!arg || arg->type != VAL_NUM, "f64_to_bytes", "a number");
-    double d = (arg && arg->type == VAL_NUM) ? eigs_num_arg(arg, __func__) : 0.0;
+    STRICT_REQUIRE(!arg || !val_is_number(arg), "f64_to_bytes", "a number");
+    double d = (arg && val_is_number(arg)) ? eigs_float_arg(arg, "f64_to_bytes") : 0.0;
+    if (g_has_error) return make_null();
     uint64_t bits;
     memcpy(&bits, &d, sizeof(bits));
     Value *list = make_list(8);
     for (int i = 0; i < 8; i++) {
         int shift = 8 * (7 - i);
-        list_append_owned(list, make_num((double)((bits >> shift) & 0xFFu)));
+        list_append_owned(list, make_int((int64_t)((bits >> shift) & 0xFFu)));
     }
     return list;
 }
@@ -279,16 +397,17 @@ Value* builtin_f64_to_bytes(Value *arg) {
 /* f64_from_bytes of <list|buffer of 8 big-endian bytes> → the decoded double.
  * Inverse of f64_to_bytes; reads exactly the first 8 bytes. */
 Value* builtin_f64_from_bytes(Value *arg) {
-    double bytes_in[8] = {0,0,0,0,0,0,0,0};
+    uint8_t bytes_in[8] = {0,0,0,0,0,0,0,0};
     if (arg && arg->type == VAL_LIST) {
         int n = arg->data.list.count;
         if (n < 8) {
             rt_error(EK_VALUE, 0, "f64_from_bytes: needs 8 bytes, got %d", n);
             return make_null();
         }
-        for (int i = 0; i < 8; i++)
-            if (list_elem_type(arg, i) == VAL_NUM)
-                bytes_in[i] = eigs_slot_num(list_slot(arg, i), __func__);
+        for (int i = 0; i < 8; i++) {
+            bytes_in[i] = eigs_slot_elem_byte(list_slot(arg, i), "f64_from_bytes");
+            if (g_has_error) return make_null();
+        }
     } else if (arg && arg->type == VAL_BUFFER) {
         int n = arg->data.buffer.count;
         if (n < 8) {
@@ -296,39 +415,37 @@ Value* builtin_f64_from_bytes(Value *arg) {
             return make_null();
         }
         for (int i = 0; i < 8; i++) {
-            bytes_in[i] = buffer_read_num(arg, i);
+            if (!buffer_byte_at(arg, i, &bytes_in[i], "f64_from_bytes")) return make_null();
             if (g_has_error) return make_null();
         }
     } else {
-        ARG_GUARD(1, "f64_from_bytes", "a list or buffer of 8 byte values", make_num(0));
+        ARG_GUARD(1, "f64_from_bytes", "a list or buffer of 8 byte values", make_float(0));
     }
     uint64_t bits = 0;
     for (int i = 0; i < 8; i++)
-        bits = (bits << 8) | (uint64_t)finite_num_to_byte(bytes_in[i]);
+        bits = (bits << 8) | (uint64_t)bytes_in[i];
     double d;
     memcpy(&d, &bits, sizeof(d));
-    /* #971: eight arbitrary bytes can spell a NaN; collapse (default) or
-     * raise (strict) under this builtin's own name. */
-    return make_num(num_guard_named(d, "f64_from_bytes"));
+    /* Eight arbitrary bytes can spell a NaN or infinity. Preserve the IEEE
+     * result by default; opt-in strict mode traps under this builtin's name. */
+    return make_float(eigs_math_result_named(d, "f64_from_bytes"));
 }
 
 /* ---- DEFLATE codec implementation (#684) ----
  * Thin wrappers over the system zlib (-lz), gated behind
  * EIGENSCRIPT_EXT_ZLIB — the same EIGENSCRIPT_EXT_* mechanism the http
  * variant uses. Default OFF so the minimal build stays zero-dependency;
- * compiled without zlib the four names stay registered but raise a
+ * compiled without zlib the name stays registered but raises a
  * catchable runtime error, so a script can feature-detect with
  * try/catch instead of dying on "undefined variable".
  *
  * Byte representation mirrors read_bytes/write_bytes exactly: input is
- * a list of ints 0-255 (values taken mod 256) or a VAL_BUFFER; output is
+ * a list of exact bytes 0-255 or a VAL_BUFFER with exact byte cells; output is
  * always a fresh list of ints 0-255. Strict mode rejects nonnumeric list
  * elements; compatibility mode retains their numeric-zero conversion.
  *
  * The raw codec uses windowBits -15 — the ZIP member format, so
- * .xlsx/.ods entries are readable. The wrapped implementation uses windowBits
- * 15+32, which auto-detects zlib AND gzip headers — that is what makes
- * plain .gz files readable.
+ * .xlsx/.ods entries are readable.
  */
 #if EIGENSCRIPT_EXT_ZLIB
 
@@ -339,7 +456,7 @@ Value* builtin_f64_from_bytes(Value *arg) {
  * sandbox_run default allocation budget. */
 #define EIGS_INFLATE_MAX_OUT ((unsigned long)256 * 1024 * 1024)
 
-/* Shared argument extraction for the four codecs: accept the byte
+/* Argument extraction for inflate: accept the byte
  * representations write_bytes accepts and copy them into a malloc'd
  * byte array. Returns 1 on success; on a wrong-shape argument raises
  * `type` and returns 0. */
@@ -361,11 +478,14 @@ static int zlib_bytes_arg(Value *arg, const char *who,
     if (!strict_numeric_byte_list(arg, who, 0)) return 0;
     unsigned char *b = xmalloc((size_t)(n > 0 ? n : 1));
     for (int i = 0; i < n; i++) {
-        double dv = arg->type == VAL_LIST
-                        ? (list_elem_type(arg, i) == VAL_NUM ? eigs_slot_num(list_slot(arg, i), __func__) : 0.0)
-                        : buffer_read_num(arg, i);
+        uint8_t byte = 0;
+        if (arg->type == VAL_BUFFER) {
+            if (!buffer_byte_at(arg, i, &byte, who)) { free(b); return 0; }
+        } else if (list_elem_type(arg, i) == VAL_FLOAT || list_elem_type(arg, i) == VAL_INT) {
+            byte = eigs_slot_byte(list_slot(arg, i), who);
+        }
         if (g_has_error) { free(b); return 0; }
-        b[i] = finite_num_to_byte(dv);
+        b[i] = byte;
     }
     *out = b;
     *out_n = (size_t)n;
@@ -386,7 +506,7 @@ static Value *zlib_bytes_result(const unsigned char *buf, unsigned long n) {
         return make_null();
     Value *result = make_list((int)n);
     for (unsigned long i = 0; i < n; i++)
-        list_append_owned(result, make_num((double)buf[i]));
+        list_append_owned(result, make_int(buf[i]));
     return result;
 }
 
@@ -477,8 +597,7 @@ static Value *zlib_inflate_impl(const char *who, int window_bits, Value *arg) {
     return result;
 }
 
-/* Shared compression core (dual of the decompression implementation). The output buffer is
- * deflateBound-sized up front, so a single Z_FINISH pass always fits. */
+/* Raw DEFLATE entry point. */
 Value* builtin_inflate(Value *arg)      { return zlib_inflate_impl("inflate", -15, arg); }
 #else /* !EIGENSCRIPT_EXT_ZLIB */
 
@@ -505,11 +624,12 @@ Value* builtin_inflate(Value *arg)      { (void)arg; return zlib_unavailable("in
  * #490-#512 direction (buf_get/buf_set/set_at) — no silent truncation:
  * a clamped audio mix is a silently wrong render. */
 static int buf_count_arg(const char *who, EigsSlot cnt, long long *out) {
-    if (slot_type(cnt) != VAL_NUM) {
+    if ((slot_type(cnt) != VAL_FLOAT && slot_type(cnt) != VAL_INT)) {
         rt_error(EK_VALUE, 0, "%s: count must be a number", who);
         return 0;
     }
-    long long c = (long long)eigs_slot_num(cnt, __func__);
+    long long c = eigs_slot_int(cnt, who);
+    if (g_has_error) return 0;
     if (c < 0) {
         rt_error(EK_VALUE, 0, "%s: count must be non-negative (got %lld)",
                  who, c);
@@ -519,14 +639,14 @@ static int buf_count_arg(const char *who, EigsSlot cnt, long long *out) {
     return 1;
 }
 
-static int buf_num_arg(const char *who, const char *what, EigsSlot s,
+static int buf_float_arg(const char *who, const char *what, EigsSlot s,
                        double *out) {
-    if (slot_type(s) != VAL_NUM) {
+    if ((slot_type(s) != VAL_FLOAT && slot_type(s) != VAL_INT)) {
         rt_error(EK_VALUE, 0, "%s: %s must be a number", who, what);
         return 0;
     }
-    *out = eigs_slot_num(s, __func__);
-    return 1;
+    *out = eigs_slot_float(s, who);
+    return !g_has_error;
 }
 
 /* Validate one (buffer, offset, count) window. On success writes the
@@ -538,16 +658,17 @@ static int buf_window_arg(const char *who, Value *buf, EigsSlot off,
         rt_error(EK_TYPE, 0, "%s: expected a buffer", who);
         return 0;
     }
-    if (slot_type(off) != VAL_NUM) {
+    if ((slot_type(off) != VAL_FLOAT && slot_type(off) != VAL_INT)) {
         rt_error(EK_VALUE, 0, "%s: offset must be a number", who);
         return 0;
     }
-    long long offset = (long long)eigs_slot_num(off, __func__);
+    long long offset = eigs_slot_int(off, who);
+    if (g_has_error) return 0;
     long long n = buf->data.buffer.count;
     if (offset < 0 || offset > n - count) {
         rt_error(EK_INDEX, 0,
-                 "%s: window [%lld, %lld) out of range (length %lld)",
-                 who, offset, offset + count, n);
+                 "%s: window offset %lld count %lld out of range (length %lld)",
+                 who, offset, count, n);
         return 0;
     }
     *out_off = offset;
@@ -583,7 +704,7 @@ Value* builtin_buf_copy(Value *arg) {
  * dst[dst_off+i] += src[src_off+i] * gain, in place. The audio mix-down
  * kernel (DeslanStudio's ab_mix_into): one C loop instead of ~441k
  * dispatched VM iterations per stem pass. Arithmetic mirrors the VM
- * (num_guard per step) so the result is byte-identical to the
+ * (IEEE result checks per step) so the result is byte-identical to the
  * equivalent interpreted loop. dst and src may be the same buffer with
  * overlapping windows; the loop runs forward in index order (documented,
  * deterministic). Returns null. */
@@ -602,17 +723,17 @@ Value* builtin_buf_mix(Value *arg) {
     if (!buf_count_arg("buf_mix", list_slot(arg, 4), &count) ||
         !buf_window_arg("buf_mix", dst, list_slot(arg, 2), count, &dst_off) ||
         !buf_window_arg("buf_mix", src, list_slot(arg, 3), count, &src_off) ||
-        !buf_num_arg("buf_mix", "gain", list_slot(arg, 5), &gain))
+        !buf_float_arg("buf_mix", "gain", list_slot(arg, 5), &gain))
         return make_null();
     double *dd = &dst->data.buffer.data[dst_off];
     double *sd = &src->data.buffer.data[src_off];
     for (long long i = 0; i < count; i++)
-        dd[i] = num_guard(dd[i] + num_guard(sd[i] * gain));
+        dd[i] = eigs_math_result(dd[i] + eigs_math_result(sd[i] * gain));
     return make_null();
 }
 
 /* buf_scale_range of [b, off, count, gain] — in-place multiply over a
- * window: b[off+i] *= gain (num_guard per element, VM-identical).
+ * window: b[off+i] *= gain (IEEE result checks, VM-identical).
  * Fades/normalize. Returns null. */
 Value* builtin_buf_scale_range(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "buf_scale_range");
@@ -626,11 +747,11 @@ Value* builtin_buf_scale_range(Value *arg) {
     double gain;
     if (!buf_count_arg("buf_scale_range", list_slot(arg, 2), &count) ||
         !buf_window_arg("buf_scale_range", buf, list_slot(arg, 1), count, &off) ||
-        !buf_num_arg("buf_scale_range", "gain", list_slot(arg, 3), &gain))
+        !buf_float_arg("buf_scale_range", "gain", list_slot(arg, 3), &gain))
         return make_null();
     double *d = &buf->data.buffer.data[off];
     for (long long i = 0; i < count; i++)
-        d[i] = num_guard(d[i] * gain);
+        d[i] = eigs_math_result(d[i] * gain);
     return make_null();
 }
 
@@ -649,7 +770,7 @@ Value* builtin_buf_fill(Value *arg) {
     double val;
     if (!buf_count_arg("buf_fill", list_slot(arg, 2), &count) ||
         !buf_window_arg("buf_fill", buf, list_slot(arg, 1), count, &off) ||
-        !buf_num_arg("buf_fill", "value", list_slot(arg, 3), &val))
+        !buf_float_arg("buf_fill", "value", list_slot(arg, 3), &val))
         return make_null();
     double *d = &buf->data.buffer.data[off];
     for (long long i = 0; i < count; i++)
@@ -664,7 +785,7 @@ Value* builtin_buf_peak(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "buf_peak requires [buffer, off, count]");
         /* fs:CHANNEL the rt_error above already raised */
-        return make_num(0);
+        return make_float(0);
     }
     EIGS_VIEW(buf_view);
     Value *buf = list_get_view(arg, 0, &buf_view);
@@ -672,15 +793,15 @@ Value* builtin_buf_peak(Value *arg) {
     if (!buf_count_arg("buf_peak", list_slot(arg, 2), &count) ||
         !buf_window_arg("buf_peak", buf, list_slot(arg, 1), count, &off))
         /* fs:CHANNEL buf_count_arg/buf_window_arg raise before returning 0 */
-        return make_num(0);
+        return make_float(0);
     double m = 0.0;
     for (long long i = 0; i < count; i++) {
-        double x = buffer_read_num(buf, off + i);
+        double x = buffer_read_f64(buf, off + i);
         if (g_has_error) return make_null();
         double a = x < 0 ? -x : x;
         if (a > m) m = a;
     }
-    return make_num(m);
+    return make_float(m);
 }
 
 /* buf_dot of [a, b, a_off, b_off, count] — windowed dot product:
@@ -688,13 +809,13 @@ Value* builtin_buf_peak(Value *arg) {
  * kernel. Same contract as `dot`: the summation ORDER / ASSOCIATION is
  * UNSPECIFIED (a backend may reassociate across SIMD lanes) — programs
  * needing a strict left-to-right reduction write the explicit loop.
- * no-NaN/Inf is preserved (num_guard at each step). */
+ * IEEE results and opt-in strict traps match VM arithmetic. */
 Value* builtin_buf_dot(Value *arg) {
     STRICT_LIST_MAX(arg, 5, "buf_dot");
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 5) {
         rt_error(EK_TYPE, 0, "buf_dot requires [a, b, a_off, b_off, count]");
         /* fs:CHANNEL the rt_error above already raised */
-        return make_num(0);
+        return make_float(0);
     }
     EIGS_VIEW(a_view);
     Value *a = list_get_view(arg, 0, &a_view);
@@ -705,25 +826,24 @@ Value* builtin_buf_dot(Value *arg) {
         !buf_window_arg("buf_dot", a, list_slot(arg, 2), count, &a_off) ||
         !buf_window_arg("buf_dot", b, list_slot(arg, 3), count, &b_off))
         /* fs:CHANNEL buf_count_arg/buf_window_arg raise before returning 0 */
-        return make_num(0);
+        return make_float(0);
     double s = 0.0;
     for (long long i = 0; i < count; i++) {
-        double av = buffer_read_num(a, a_off + i);
+        double av = buffer_read_f64(a, a_off + i);
         if (g_has_error) return make_null();
-        double bv = buffer_read_num(b, b_off + i);
+        double bv = buffer_read_f64(b, b_off + i);
         if (g_has_error) return make_null();
-        s = num_guard(s + num_guard(av * bv));
+        s = eigs_math_result(s + eigs_math_result(av * bv));
     }
-    return make_num(s);
+    return make_float(s);
 }
 
 /* ---- Bulk PCM16LE codec kernels (#602) ----
  * The byte-decode siblings of the #597 window kernels: DeslanStudio's
  * WAV import spent 10.8 s decoding a 50 s stereo file sample-by-sample
  * in the interpreter (src/tools/wavio.eigs). Each kernel mirrors the
- * consumer's interpreted arithmetic step-for-step (num_guard per VM
- * operation, same evaluation order), so the result is bit-identical to
- * the loop it replaces — pinned by the differential leg in
+ * consumer's interpreted arithmetic step-for-step (same evaluation order),
+ * so the result is bit-identical to the loop it replaces — pinned by the differential leg in
  * tests/test_pcm_codec.eigs. Pure compute over arguments: sandbox
  * pure-compute allowlist (allocation charged per #292),
  * freestanding-safe, tape-neutral. */
@@ -766,14 +886,16 @@ Value* builtin_buf_from_pcm16le(Value *arg) {
     if (!out) return make_null();
     double *od = out->data.buffer.data;
     for (long long i = 0; i < count; i++) {
-        double lo = buffer_read_num(src, off + 2*i);
-        if (g_has_error) { val_decref(out); return make_null(); }
-        double hi = buffer_read_num(src, off + 2*i + 1);
-        if (g_has_error) { val_decref(out); return make_null(); }
-        double v = num_guard(lo + num_guard(256.0 * hi));
-        if (g_has_error) { val_decref(out); return make_null(); }
-        if (v >= 32768.0) v = num_guard(v - 65536.0);
-        od[i] = num_guard(v / 32767.0);
+        uint8_t lo, hi;
+        if (!buffer_byte_at(src, off + 2*i, &lo, "buf_from_pcm16le") ||
+            !buffer_byte_at(src, off + 2*i + 1, &hi, "buf_from_pcm16le")) {
+            val_decref(out); return make_null();
+        }
+        /* Checked bytes bound v to [0, 65535]; each decode operation
+         * remains finite, including the signed sample division. */
+        double v = lo + 256.0 * hi;
+        if (v >= 32768.0) v = v - 65536.0;
+        od[i] = v / 32767.0;
     }
     return out;
 }
@@ -806,14 +928,16 @@ Value* builtin_buf_to_pcm16le(Value *arg) {
     if (!out) return make_null();
     double *od = out->data.buffer.data;
     for (long long i = 0; i < count; i++) {
-        double x = buffer_read_num(src, off + i);
+        double x = buffer_read_f64(src, off + i);
         if (g_has_error) { val_decref(out); return make_null(); }
         if (x < -1.0) x = -1.0;
         if (x > 1.0) x = 1.0;
-        double v = round(num_guard(x * 32767.0));
-        if (v < 0.0) v = num_guard(v + 65536.0);
-        double q = floor(num_guard(v / 256.0));
-        od[2*i]     = num_guard(v - num_guard(q * 256.0));
+        /* The final reader refused non-finite x before the clamp; all
+         * quantizer operations are bounded by the 16-bit sample range. */
+        double v = round(x * 32767.0);
+        if (v < 0.0) v = v + 65536.0;
+        double q = floor(v / 256.0);
+        od[2*i]     = v - q * 256.0;
         od[2*i + 1] = q;
     }
     return out;
@@ -839,12 +963,13 @@ Value* builtin_buf_deinterleave(Value *arg) {
     Value *ch_v = list_get_view(arg, 1, &ch_v_view);
     EIGS_VIEW(nch_v_view);
     Value *nch_v = list_get_view(arg, 2, &nch_v_view);
-    if (!ch_v || ch_v->type != VAL_NUM || !nch_v || nch_v->type != VAL_NUM) {
+    if (!ch_v || !val_is_number(ch_v) || !nch_v || !val_is_number(nch_v)) {
         rt_error(EK_VALUE, 0, "buf_deinterleave: channel and nch must be numbers");
         return make_null();
     }
-    long long nch = (long long)eigs_num_arg(nch_v, __func__);
-    long long channel = (long long)eigs_num_arg(ch_v, __func__);
+    long long nch = eigs_int_arg(nch_v, "buf_deinterleave");
+    long long channel = eigs_int_arg(ch_v, "buf_deinterleave");
+    if (g_has_error) return make_null();
     if (nch < 1) {
         rt_error(EK_VALUE, 0, "buf_deinterleave: nch must be >= 1 (got %lld)", nch);
         return make_null();
@@ -855,7 +980,7 @@ Value* builtin_buf_deinterleave(Value *arg) {
         return make_null();
     }
     long long n = src->data.buffer.count;
-    long long avail = channel < n ? (n - channel + nch - 1) / nch : 0;
+    long long avail = channel < n ? 1 + (n - 1 - channel) / nch : 0;
     long long count = avail;
     if (arg->data.list.count >= 4 && list_elem_type(arg, 3) != VAL_NULL) {
         if (!buf_count_arg("buf_deinterleave", list_slot(arg, 3), &count))
@@ -884,7 +1009,7 @@ Value* builtin_buf_deinterleave(Value *arg) {
  *   pos  = i * (n - 1) / (dst_len - 1)      (0 when dst_len == 1)
  *   lo   = floor(pos); hi = min(lo + 1, n - 1); frac = pos - lo
  *   out[i] = src[lo] * (1 - frac) + src[hi] * frac
- * num_guard per step in VM evaluation order — bit-identical to the
+ * IEEE result checks in VM evaluation order — bit-identical to the
  * interpreted loop (differential-pinned in tests/test_buf_resample.eigs).
  * The kernel is LINEAR interpolation, not Fourier/sinc resampling (the
  * consumer-documented divergence from scipy.signal.resample — see
@@ -921,8 +1046,9 @@ Value* builtin_buf_resample_linear(Value *arg) {
     for (long long i = 0; i < dst_len; i++) {
         double pos = 0.0;
         if (dst_len > 1)
-            pos = num_guard(num_guard((double)i * (double)(n - 1)) /
-                            (double)(dst_len - 1));
+            /* Counts are at most INT_MAX, so this product and quotient
+             * are finite and pos stays in [0, n-1]. */
+            pos = ((double)i * (double)(n - 1)) / (double)(dst_len - 1);
         double lo_f = floor(pos);
         long long lo = (long long)lo_f;
         long long hi = lo + 1;
@@ -935,9 +1061,9 @@ Value* builtin_buf_resample_linear(Value *arg) {
         if (lo < 0) lo = 0;
         if (lo > n - 1) lo = n - 1;
         if (hi < 0) hi = 0;
-        double frac = num_guard(pos - lo_f);
-        od[i] = num_guard(num_guard(sd[lo] * num_guard(1.0 - frac)) +
-                          num_guard(sd[hi] * frac));
+        double frac = pos - lo_f;
+        od[i] = eigs_math_result(eigs_math_result(sd[lo] * (1.0 - frac)) +
+                                 eigs_math_result(sd[hi] * frac));
     }
     return out;
 }

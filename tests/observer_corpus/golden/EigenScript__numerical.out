@@ -1,12 +1,12 @@
 --- Newton's Method: Square Roots ---
 sqrt(2) = 1.414213562373095
-sqrt(9) = 3
-sqrt(144) = 12
+sqrt(9) = 3.0
+sqrt(144) = 12.0
 sqrt(2.5) = 1.5811388300841895
 
 --- Bisection Method: x^3 - x - 2 = 0 ---
-Root: 1.5213796943426132
-f(root) = -7.407122248892506e-08
+Root: 1.5213797017931938
+f(root) = -2.978654611851539e-08
 
 --- Fixed Point: cos(x) = x ---
 Fixed point: 0.739078885994992
@@ -35,9 +35,11 @@ Step 95: value=1.971505272456838e-05 status=improving
 Step 100: value=8.747673630108587e-06 status=improving
 Step 105: value=3.881389261695339e-06 status=improving
 Step 110: value=1.7221930352946745e-06 status=improving
-Converged at step 112 with value 1.2442844680004022e-06
+Step 115: value=7.64146198910747e-07 status=improving
+Step 120: value=3.390557279833801e-07 status=improving
+Converged at step 124 with value 1.7698920910562428e-07
 
 --- Gradient Descent: minimize (x-3)^2 ---
-Minimum at x = 3.0014538431203897
-f(x) = 2.1136598187043226e-06
-Status: converged
+Minimum at x = 3.000304893000761
+f(x) = 9.29597419131674e-08
+Status: improving

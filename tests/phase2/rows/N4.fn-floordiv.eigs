@@ -1,0 +1,16 @@
+# ROW: N4.fn-floordiv
+# ITEMS: N4
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop d IDIV
+# OPS: IDIV
+define d(a, b) as:
+    warm is 0.5
+    t is a // b
+    return t
+r is null
+i is 0.0
+loop while i < 60.0:
+    r is d of [-7.5, 2]
+    i is i + 1.0
+print of [r, num_type of r]

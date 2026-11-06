@@ -21,7 +21,7 @@ mkdir -p web/dist
 
 # Core sources: the Makefile's EMBED_SOURCES (SOURCES minus CLI_ONLY, the
 # runtime without main.c and the CLI-only units), plus web/eigs_wasm.c in
-# place of main.c. The optional ext_* / model_* units are not in SOURCES.
+# place of main.c. The optional extension units are not in SOURCES.
 # Derived, never copied (#2301): a hand-written list here drifted and lost
 # src/eigs_embed.c, so eigs_source_lookup was undefined and every `import`
 # aborted the deployed playground; tools/embed_stack_soak.sh and

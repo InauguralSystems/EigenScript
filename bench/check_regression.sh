@@ -1,13 +1,14 @@
 #!/bin/bash
 # Deterministic perf regression gate (#398). Wall-clock medians flake on shared
 # CI runners, so the GATE uses cachegrind instruction counts (Ir) instead:
-# same binary + same input => identical Ir, run to run, machine to machine. A
-# regression is then a diffable fact, not a statistical argument. Fails if any
-# workload's Ir exceeds its baseline: --vs (CI, same job) by more than THRESHOLD_PCT, the checked-in file by more than FILE_THRESHOLD_PCT.
+# same binary + same input in one environment gives a diffable instruction
+# count; glibc ifunc selection can vary across hosts (#1939). The --vs
+# threshold is THRESHOLD_PCT; checked-in files use FILE_THRESHOLD_PCT.
 #
 #   bench/check_regression.sh            # gate: compare vs bench/baseline.txt
 #   bench/check_regression.sh --update   # regenerate the baseline
 #   bench/check_regression.sh --selftest # prove a 2x-work pessimization is caught
+#   bench/check_regression.sh --list-vs  # derived --vs workload/tier population
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 EIGS="${EIGENSCRIPT:-$DIR/../src/eigenscript}"
@@ -30,12 +31,18 @@ FILE_THRESHOLD_PERMILLE=$(( FILE_THRESHOLD_PCT * 10 ))
 # above and below stay exact integer permille comparisons.
 pct() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f", (a - b) * 100 / b }'; }
 
-ir_of() {  # ir_of <binary> <file> -> instruction count
+# Drop caller EIGS_* settings, then select the requested tier explicitly.
+# --vs measures the union of bench/*.eigs (default JIT) and every declared
+# workload/tier pair, so its own CI log can re-declare every max_ci (#1939).
+ir_of() {  # ir_of <binary> <file> [jit|off] -> instruction count
+    local tier="${3:-jit}" tier_env=
+    case "$tier" in jit) ;; off) tier_env=EIGS_JIT_OFF=1 ;; *) return 2 ;; esac
     # Capture the producer before parsing it.  This is the standard portable
     # shell pattern when a pipeline must preserve an earlier command's status
     # (rather than relying on the pipeline's final command or bash pipefail).
     out=$(mktemp) || return
-    "$VALGRIND" --tool=cachegrind --cachegrind-out-file=/dev/null "$1" "$2" >"$out" 2>&1
+    env $(compgen -e | grep '^EIGS_' | sed 's/^/-u /') $tier_env \
+        "$VALGRIND" --tool=cachegrind --cachegrind-out-file=/dev/null "$1" "$2" >"$out" 2>&1
     status=$?
     if [ "$status" -ne 0 ]; then
         cat "$out" >&2
@@ -86,7 +93,9 @@ case "${1:-}" in
     # decide the gate result.
     bad=$(mktemp --suffix=.eigs)
     plant=$(mktemp)
-    printf 'print of (1 / 0)\n' > "$bad"
+    # R22-2: division by zero is IEEE, so use the same DIV expression with
+    # a string operand to keep this a real runtime failure in every mode.
+    printf 'print of (1 / "bad")\n' > "$bad"
     printf '#!/bin/sh\n"%s" "%s"\nstatus=$?\necho "I refs: 1,000" >&2\nexit "$status"\n' "$EIGS" "$bad" > "$plant"
     chmod +x "$plant"
     diagnostic=$(mktemp)
@@ -110,21 +119,43 @@ case "${1:-}" in
     reference="$scratch/reference"
     printf '#!/bin/sh\nexit 0\n' > "$current"
     cp "$current" "$reference"
+    # Equal synthetic counts would make real declared costs STALE. Keep the
+    # full population and give each declared row counts inside its own band.
     cat > "$profiler" <<'EOF'
-#!/bin/sh
-while [ "$#" -gt 2 ]; do shift; done
-printf '%s %s\n' "$(basename "$1")" "$(basename "$2")" >> "$MEASURE_LOG"
-echo 'I refs: 1,000'
+#!/usr/bin/env python3
+from decimal import Decimal
+import os
+from pathlib import Path
+import sys
+
+root = Path(os.environ['BENCH_SELFTEST_ROOT']).resolve()
+sys.path.insert(0, str(root / 'tools'))
+from phase2_cost_declarations import NOISE, parse_declarations
+
+binary, file = map(Path, sys.argv[-2:])
+workload = file.resolve().relative_to(root).as_posix()
+tier = 'off' if os.environ.get('EIGS_JIT_OFF') == '1' else 'jit'
+with open(os.environ['MEASURE_LOG'], 'a') as log:
+    log.write(f'{binary.name}\t{workload}\t{tier}\n')
+declarations = parse_declarations((root / 'tests/phase2/cost_expect.txt').read_text())
+declaration = declarations.get((workload, tier))
+count = 1000000
+if binary.name == 'current' and declaration:
+    delta = max(Decimal(0), declaration.max_ci - NOISE)
+    count = int(Decimal(count) * (1 + delta / 100))
+print(f'I refs: {count}')
 EOF
     chmod +x "$profiler" "$current" "$reference"
-    if ! MEASURE_LOG="$measure_log" VALGRIND="$profiler" EIGENSCRIPT="$current" "$0" --vs "$reference" >/dev/null; then
+    if ! BENCH_SELFTEST_ROOT="$DIR/.." MEASURE_LOG="$measure_log" VALGRIND="$profiler" EIGENSCRIPT="$current" "$0" --vs "$reference" >"$scratch/population.out" 2>&1; then
+        cat "$scratch/population.out"
         rm -rf "$scratch"
         echo "SELFTEST FAILED: valid derived benchmark population was rejected"; exit 1
     fi
     expected="$scratch/expected"
-    for f in "$DIR"/*.eigs; do
-        printf 'current %s\nreference %s\n' "$(basename "$f")" "$(basename "$f")"
-    done | sort > "$expected"
+    "$0" --list-vs > "$scratch/population" || exit 1
+    while IFS=$'\t' read -r workload tier; do
+        printf 'current\t%s\t%s\nreference\t%s\t%s\n' "$workload" "$tier" "$workload" "$tier"
+    done < "$scratch/population" | sort > "$expected"
     if ! sort "$measure_log" | cmp -s - "$expected"; then
         rm -rf "$scratch"
         echo "SELFTEST FAILED: a workload/tier was skipped or measured more than once"; exit 1
@@ -132,25 +163,46 @@ EOF
     rm -rf "$scratch"
     echo "SELFTEST OK: every derived workload/tier is measured once"
     exit 0 ;;
---vs)
-    # Compare THIS binary ($EIGENSCRIPT) against a reference binary ($2) on the
-    # same workloads. Both built in the same environment => the Ir difference is
-    # a pure code-change signal (this is what CI runs: PR binary vs origin/main
-    # binary, so no cross-machine baseline drift). Fails on > THRESHOLD_PCT.
-    ref="$2"; fail=0
+--vs|--list-vs)
+    # Base and candidate use this gate's own measurement recipe. Its CI
+    # counts, including off-tier declarations, are the source of max_ci.
+    ref="${2:-}"; fail=0; used=0
+    if [ "$1" = --vs ] && [ -z "$ref" ]; then echo "  FAIL: --vs requires a reference binary"; exit 2; fi
+    decl=$(bash "$DIR/../tools/phase2_cost.sh" --declared all --method ci) \
+        || { echo "  FAIL: cannot read the declared costs (tools/phase2_cost.sh --declared all --method ci)"; exit 2; }
+    ndecl=$(awk 'NF {n++} END {print n+0}' <<< "$decl")
+    work=$(mktemp -d "${TMPDIR:-/tmp}/eigs-bench-vs.XXXXXX") || exit 2
+    trap 'rm -rf "$work"' EXIT
     for f in "$DIR"/*.eigs; do
-        name=$(basename "$f" .eigs)
-        a=$(ir_of "$EIGS" "$f") || exit $?
-        b=$(ir_of "$ref" "$f") || exit $?
-        inc=$(pct "$a" "$b")
-        if [ $(( (a - b) * 1000 )) -gt $(( THRESHOLD_PERMILLE * b )) ]; then
-            echo "  REGRESSION: $name  Ir ${b} -> ${a}  (+${inc}% > ${THRESHOLD_PCT}%)"; fail=1
-        else
-            echo "  ok: $name  Ir ${a}  (${inc}% vs ref)"
-        fi
+        printf 'bench/%s\tjit\n' "$(basename "$f")" >> "$work/population.unsorted"
     done
-    [ "$fail" -eq 0 ] && echo "no instruction-count regressions vs reference (threshold ${THRESHOLD_PCT}%)"
+    awk -F'\t' 'NF {print $1 "\t" $2}' <<< "$decl" >> "$work/population.unsorted"
+    LC_ALL=C sort -u "$work/population.unsorted" > "$work/population"
+    if [ "$1" = --list-vs ]; then cat "$work/population"; exit 0; fi
+    nrows=$(wc -l < "$work/population")
+    echo "  tiers: explicit jit/off (caller EIGS_* unset); column: max_ci; stale_below_max=0.5; declared rows: $ndecl; measured rows: $nrows"
+    while IFS=$'\t' read -r workload tier; do
+        f="$DIR/../$workload"
+        [ -f "$f" ] || { echo "  FAIL: missing workload: $workload"; exit 2; }
+        a=$(ir_of "$EIGS" "$f" "$tier") || exit $?
+        b=$(ir_of "$ref" "$f" "$tier") || exit $?
+        [[ "$a" =~ ^[1-9][0-9]*$ && "$b" =~ ^[1-9][0-9]*$ ]] \
+            || { echo "  FAIL: $workload $tier: no instruction count (cand='$a' ref='$b')"; exit 2; }
+        row=$(awk -F'\t' -v w="$workload" -v t="$tier" '$1 == w && $2 == t' <<< "$decl")
+        if [ -n "$row" ]; then used=$((used + 1)); fi
+        # One exact two-sided predicate; selects max_ci for both tiers.
+        python3 "$DIR/../tools/phase2_cost_declarations.py" --method ci \
+            --row "$workload" "$tier" "$b" "$a"
+        rc=$?
+        [ "$rc" -le 1 ] || exit "$rc"
+        [ "$rc" -eq 0 ] || fail=1
+    done < "$work/population"
+    # Every declaration was measured exactly once, regardless of workload dir
+    # or tier. The union's population is derived, never hand-maintained.
+    [ "$used" -eq "$ndecl" ] || { echo "  FAIL: declared rows=$ndecl applied=$used"; exit 2; }
+    [ "$fail" -eq 0 ] && echo "no instruction-count regressions vs reference (threshold ${THRESHOLD_PCT}%; declared rows applied=$used; measured rows=$nrows)"
     exit $fail ;;
+
 esac
 
 # Default (local): compare against the checked-in baseline. NOTE the baseline is

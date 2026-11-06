@@ -1,0 +1,42 @@
+# #1758 R1.6b: real heap ints on successful and raising final-reader paths.
+load_file of "lib/test.eigs"
+big is 9007199254740993
+imax is 9223372036854775807
+imin is -9223372036854775807 - 1
+assert_eq of [num_type of big, "int", "heap operand kind"]
+for iteration in range of 30:
+    copied is num_copy of big
+    assert_eq of [copied, big, "num_copy keeps heap int"]
+    assert_eq of [num_type of copied, "int", "copy kind"]
+    for op in [floor, ceil, round, abs]:
+        result is op of big
+        assert_eq of [result, big, "rounding/abs exact heap result"]
+        assert_eq of [num_type of result, "int", "rounding/abs kind"]
+    assert_eq of [min of [big, imax], big, "min exact"]
+    assert_eq of [max of [big, imax], imax, "max exact"]
+    assert_eq of [random_int of [big, big], big, "exact equal random bounds"]
+    assert_eq of [hex of big, "20000000000001", "hex exact"]
+    assert_eq of [num of (str of big), big, "N10 exact heap parse"]
+    decoded is json_decode of (json_encode of [big, imin, imax])
+    assert_eq of [decoded, [big, imin, imax], "N14 exact heap decode"]
+    assert_eq of [num_type of decoded[0], "int", "decoded heap kind"]
+    assert_eq of [scan_ints of "9007199254740993 -9223372036854775808", [big, imin], "C3 exact scanners"]
+    caught is 0
+    for thunk in [(x) => hex of (0 - x), (x) => range of x, (x) => abs of imin, (x) => scan_ints of "9007199254740993 9223372036854775808", (x) => scan_int_tokens of "9007199254740993 9223372036854775808", (x) => sign_extend of [-9223372036854775553, 8], (x) => min of [], (x) => max of ([])]:
+        try:
+            thunk of big
+        catch e:
+            assert_eq of [e.kind, "value", "exact-reader refusal kind"]
+            caught += 1
+    assert_eq of [caught, 8, "all reader raises reached"]
+    ch is channel of null
+    send of [ch, big]
+    assert_eq of [recv of ch, big, "heap int through channel with int handle"]
+    close_channel of ch
+# Return one heap argument through the migrated spawn result handle.
+define identity(x) as:
+    return x
+h is spawn of [identity, big]
+assert_eq of [num_type of h._handle_id, "int", "thread id kind"]
+assert_eq of [thread_join of h, big, "heap thread argument survives"]
+test_summary of null

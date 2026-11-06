@@ -15,22 +15,22 @@ load_file of "lib/test.eigs"
 
 define run(rounds) as:
     items is []
-    for i in range of 20:
-        v is (i + 1) * 1.0
+    for i in range of 20.0:
+        v is (i + 1.0) * 1.0
         append of [items, v]
-    total is 0
+    total is 0.0
     for k in range of rounds:
-        for i in range of 20:
+        for i in range of 20.0:
             a is items[i]
-            b is items[19]
+            b is items[19.0]
             pick is a
-            if i > 10:
+            if i > 10.0:
                 pick is b
             total is total + pick
         # Rebuild items each round so the picked values are fresh heap
         # objects (the leak only bites when the rebound value is a pointer).
         new_items is []
-        for i in range of 20:
+        for i in range of 20.0:
             w is items[i] + 0.0
             append of [new_items, w]
         items is new_items
@@ -40,10 +40,10 @@ define run(rounds) as:
 # threshold. Per round: i=0..10 -> pick=items[i]=i+1 (sum 1..11 = 66);
 # i=11..19 -> pick=items[19]=20 (9 * 20 = 180); round total 246.
 # 300 rounds -> 73800.
-r1 is run of 300
-assert of [r1 == 73800, "OSR conditional observed-assign result correct"]
+r1 is run of 300.0
+assert of [r1 == 73800.0, "OSR conditional observed-assign result correct"]
 
-r2 is run of 300
+r2 is run of 300.0
 assert of [r1 == r2, "OSR result is deterministic across repeated runs"]
 
 print of "osr observe-assign: all passed"

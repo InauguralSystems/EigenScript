@@ -1,9 +1,11 @@
 # tests/suite_variant.sh -- which build the suite binary is (sourced; cwd is
 # src/, as for every section).
 #
-# One predicate for sections that build a C test against the suite binary's
-# own variant. They used to look only for build/asan, so CI's asan-server
-# shards compiled their RELEASE variant: no ASan, LSan, or UBSan (#1783).
+# One predicate for the sections that build a C test against the suite
+# binary's own variant ([0ff] test_container_slots, [0fka] the C slot test).
+# Each used to look only for build/asan, so in the CI ASan shards, which
+# build `asan-server`, both compiled their RELEASE variant: no ASan, no LSan,
+# no UBSan (#1783, found by the #1758 R1.1 critic).
 #
 # suite_binary_variant: print the build/<variant> whose eigenscript the suite
 #   binary ./eigenscript is (a hard link: the same file); print nothing when

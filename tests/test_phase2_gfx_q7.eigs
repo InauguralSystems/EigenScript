@@ -1,0 +1,39 @@
+load_file of "lib/test.eigs"
+# #1758 N5/Q7: real pixels for clipping, enormous curved spans and source crop.
+opened is gfx_open of [64, 48, "Q7 pixels"]
+if (not opened):
+    print of "SKIP: gfx_open failed (no SDL2)"
+    exit of 0
+gfx_clear of [0, 0, 0]
+gfx_line of [-1e300, 7, 1e300, 7, 0, 255, 0]
+assert_eq of [gfx_read of [0, 7], [0, 255, 0], "huge line enters at the viewport edge"]
+assert_eq of [gfx_read of [63, 7], [0, 255, 0], "huge line keeps its full visible interval"]
+assert_eq of [gfx_read of [32, 8], [0, 0, 0], "clipping keeps the line slope"]
+gfx_clear of [0, 0, 0]
+gfx_line of [63.25, 10, 63.25, 20, 0, 255, 0]
+assert_eq of [gfx_read of [63, 15], [0, 255, 0], "fractional last-pixel line survives float clipping"]
+gfx_clear of [0, 0, 0]
+gfx_circle of [0, 1e308, 1e308, 0, 255, 0]
+assert_eq of [gfx_read of [0, 0], [0, 255, 0], "huge circle's tangent pixel"]
+assert_eq of [gfx_read of [1, 0], [0, 0, 0], "tangent row has a point span"]
+assert_eq of [gfx_read of [63, 1], [0, 255, 0], "huge circle's visible chord retains the row offset"]
+gfx_clear of [0, 0, 0]
+gfx_circle of [1e308, 1e308, 1e308, 0, 255, 0]
+assert_eq of [gfx_read of [0, 0], [0, 0, 0], "far diagonal disk misses despite intersecting bounds"]
+assert_eq of [gfx_read of [63, 47], [0, 0, 0], "far diagonal disk does not overflow into the viewport"]
+fb is buf_from_list of [0, 3]
+gfx_clear of [255, 0, 0]
+gfx_fb of [fb, 2, 1, 0, 0, 1.5]
+assert_eq of [gfx_read of [1, 0], [255, 255, 255], "fractional first source cell rounds at its edge"]
+assert_eq of [gfx_read of [2, 0], [0, 0, 0], "fractional second source cell retains its index"]
+assert_eq of [gfx_read of [3, 0], [255, 0, 0], "fractional destination stops at its rounded extent"]
+gfx_clear of [255, 0, 0]
+gfx_fb of [fb, 2, 1, -3e9, 0, 3e9]
+assert_eq of [gfx_read of [0, 0], [0, 0, 0], "clipped framebuffer uses the second source pixel"]
+assert_eq of [gfx_read of [63, 47], [0, 0, 0], "huge cropped framebuffer keeps source mapping"]
+gfx_point of [3e9, 3e9, 255, 255, 255]
+assert_eq of [gfx_read of [32, 24], [0, 0, 0], "outside finite point paints nothing"]
+gfx_rrect of [0, 0, 0, 20, 1e300, 255, 255, 255]
+assert_eq of [gfx_read of [32, 24], [0, 0, 0], "empty rounded rectangle stays empty"]
+gfx_close of null
+test_summary of null

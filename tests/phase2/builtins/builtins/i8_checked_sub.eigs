@@ -1,0 +1,71 @@
+# phase2-exercises: {"int-requiring": ["fractional", "integral-float-success"], "integral-float-success": {"stdout-line": 1}, "q7": []}
+try:
+    x is i8_checked_sub of [1.0, 1.0]
+    print of [x, num_type of x]
+catch e:
+    print of ["integral-float", e.kind, (index_of of [e.message, "i8_checked_sub"]) >= 0]
+try:
+    x is i8_checked_sub of [-128, 1]
+    print of [x, num_type of x]
+catch e:
+    print of ["upper-or-lower", e.kind, (index_of of [e.message, "i8_checked_sub"]) >= 0]
+try:
+    x is i8_checked_sub of [127, -1]
+    print of [x, num_type of x]
+catch e:
+    print of ["other-boundary", e.kind, (index_of of [e.message, "i8_checked_sub"]) >= 0]
+try:
+    x is i8_checked_sub of [1.5, 1]
+    print of ["fraction-ANSWER", x]
+catch e:
+    print of ["fraction", e.kind]
+try:
+    x is i8_checked_sub of [1, 1e30]
+    print of ["float-outside-int64-ANSWER", x]
+catch e:
+    print of ["float-outside-int64", e.kind]
+try:
+    x is i8_checked_sub of [1, 1.5]
+    print of ["fraction-right-ANSWER", x]
+catch e:
+    print of ["fraction-right", e.kind]
+try:
+    x is i8_checked_sub of [-129, 1]
+    print of ["range-low-ANSWER", x]
+catch e:
+    print of ["range-low", e.kind]
+try:
+    x is i8_checked_sub of [1, 128]
+    print of ["range-high-ANSWER", x]
+catch e:
+    print of ["range-high", e.kind]
+try:
+    x is i8_checked_sub of ["bad", 1]
+    print of ["non-number-ANSWER", x]
+catch e:
+    print of ["non-number", e.kind]
+try:
+    x is i8_checked_sub of [1, null]
+    print of ["non-number-right-ANSWER", x]
+catch e:
+    print of ["non-number-right", e.kind]
+try:
+    x is i8_checked_sub of ([1])
+    print of ["few-ANSWER", x]
+catch e:
+    print of ["few", e.kind]
+try:
+    x is i8_checked_sub of ([])
+    print of ["empty-ANSWER", x]
+catch e:
+    print of ["empty", e.kind]
+try:
+    x is i8_checked_sub of [1, 2, 3]
+    print of ["many-ANSWER", x]
+catch e:
+    print of ["many", e.kind]
+try:
+    x is i8_checked_sub of 1
+    print of ["scalar-ANSWER", x]
+catch e:
+    print of ["scalar", e.kind]

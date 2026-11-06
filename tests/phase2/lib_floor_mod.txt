@@ -1,0 +1,9 @@
+# N4 successful stdlib value changes (#1758). TSV: module.function, N4: reason.
+# phase2_lib_diff.sh derives modulo users and named callers from source; each
+# declaration must be exercised by a changed successful result or is stale.
+eigen.eigen_eval	N4: the meta-interpreter's % binop inherits host floor modulo for opposite-sign operands.
+eigen.eigen_run	N4: running source through eigen_eval inherits host floor modulo for opposite-sign operands.
+checksum.adler32	N4: accepted numeric buffers can contain negative non-byte samples; their modulo residues now floor (documented byte inputs are unchanged).
+checksum.sum8	N4: accepted numeric buffers can contain negative non-byte samples; their modulo residues now floor (documented byte inputs are unchanged).
+supervise.supervise_step	N4: a negative heartbeat's bounded observer signature now uses the non-negative progress % 8 residue.
+supervise.supervise_run	N4: inherits supervise_step's changed observer feed for negative heartbeat progress.

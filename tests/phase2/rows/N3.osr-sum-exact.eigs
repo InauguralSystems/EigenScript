@@ -1,0 +1,15 @@
+# ROW: N3.osr-sum-exact
+# ITEMS: N3
+# EXPECT-RC: 0
+# SHAPE: O
+# WITNESS: osr-stop total ADD
+# OPS: ADD
+define total(n, step) as:
+    acc is 9007199254740000
+    i is 0.0
+    loop while true:
+        acc is acc + step
+        i is i + 1.0
+        if i >= n:
+            return acc
+print of (total of [1000.0, 1])

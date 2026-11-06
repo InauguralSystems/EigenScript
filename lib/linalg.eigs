@@ -222,7 +222,7 @@ define mat_inverse(A) as:
         row_scale is 0.0
         for j in range of n:
             append of [row, A[i][j] * 1.0]
-            entry_scale is abs of A[i][j]
+            entry_scale is abs of row[j]
             if entry_scale > row_scale:
                 row_scale is entry_scale
         for j in range of n:
@@ -389,7 +389,7 @@ define solve_linear(A, b) as:
         row_scale is 0.0
         for j in range of n:
             append of [row, A[i][j] * 1.0]
-            entry_scale is abs of A[i][j]
+            entry_scale is abs of row[j]
             if entry_scale > row_scale:
                 row_scale is entry_scale
         append of [row, b[i] * 1.0]
@@ -485,8 +485,9 @@ define least_squares(A, b) as:
 # Use `eigenvalues` below for anything that can oscillate; it returns
 # complex pairs and handles the 2x2 case too.
 define eigenvalues_2x2(A) as:
-    tr is A[0][0] + A[1][1]
-    det is A[0][0] * A[1][1] - A[0][1] * A[1][0]
+    # This numerical eigenvalue formula follows the float elimination paths.
+    tr is A[0][0] * 1.0 + A[1][1]
+    det is A[0][0] * 1.0 * A[1][1] - A[0][1] * 1.0 * A[1][0]
     disc is tr * tr - 4 * det
     if disc < 0:
         return null
@@ -502,7 +503,7 @@ define eigenvectors_2x2(A) as:
     matrix_scale is 0.0
     for i in range of 2:
         for j in range of 2:
-            entry_scale is abs of A[i][j]
+            entry_scale is abs of (A[i][j] * 1.0)
             if entry_scale > matrix_scale:
                 matrix_scale is entry_scale
     cutoff is matrix_scale * 1e-12
@@ -510,8 +511,8 @@ define eigenvectors_2x2(A) as:
         lam is evals[k]
         # Solve (A - lam*I) v = 0
         a11 is A[0][0] - lam
-        a12 is A[0][1]
-        a21 is A[1][0]
+        a12 is A[0][1] * 1.0
+        a21 is A[1][0] * 1.0
         a22 is A[1][1] - lam
         # Use the row with larger absolute values for numerical stability,
         # but do not construct a direction from roundoff-sized A-lambda*I.

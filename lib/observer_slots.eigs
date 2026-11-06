@@ -9,10 +9,12 @@
 #   if (observer_slots.is_stable of (w.slot)):
 #       mark_stalled of w                          # wedged: value stopped moving
 #
-# Feed BOUNDED signatures (e.g. 1.5 + (raw % 8)), not raw counters —
-# and remember the lattice is ENTROPY-shaped: growing magnitude is
-# falling entropy (`improving`), shrinking toward |x|=1 is rising
-# entropy (`diverging`). Pick predicates from docs/PREDICATES.md.
+# Numeric slots use the value channel: STD windowed-Cauchy convergence,
+# D1's 1% midrange stability band, and D2's running lower best with relative
+# min_delta and ten-step patience. Pick predicates from docs/PREDICATES.md.
+# Every slot starts at0.0; that baseline remains in its running-best history.
+# Positive values falling toward0 therefore need not read improving, since
+# they never beat that earlier best. feed does not reset history.
 #
 # Why this module exists (the trap it encodes): observer trajectories
 # key to the ENV SLOT of a *named binding* — a list element or dict
@@ -26,10 +28,11 @@
 # forces a fresh value (`v + 0.0`) so an aliased iterate can't smuggle
 # its old trajectory in.
 #
-# Verdict semantics are the predicate lattice (docs/PREDICATES.md):
-# a wedged counter reads `stable` (nonzero constant), an advancing
-# BOUNDED signature keeps moving — feed `1.5 + (raw % 8)`-style
-# signatures, not unbounded counters (the #294 flat-entropy band).
+# A stopped value can settle; an advancing signal is judged by its motion.
+# Bounded signatures can be useful when they represent the progress to watch.
+# feed writes v+0.0, retaining this module's floating trajectory semantics;
+# exact-int windows are not introduced by this wrapper. Floating/mixed-window
+# tolerance limits still apply, including the float-step work deferred to R3.3.
 
 _s0 is 0.0
 _s1 is 0.0

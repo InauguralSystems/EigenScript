@@ -1,0 +1,8 @@
+# ROW: N4b.min-mod-neg1-zero
+# ITEMS: N4b
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+m is -9223372036854775807 - 1
+print of [m % -1, num_type of (m % -1)]

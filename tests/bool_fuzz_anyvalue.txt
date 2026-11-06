@@ -20,6 +20,9 @@ str|e1|converts any value to text
 type|u|names any value's type
 type|e0|names any value's type
 type|e1|names any value's type
+num_type|u|names a numeric kind or returns null for other values
+num_type|e0|a list is a non-number so num_type returns null
+num_type|e1|a list is a non-number so num_type returns null
 json_encode|u|JSON has true and false
 json_encode|e0|JSON has true and false
 json_encode|e1|JSON has true and false

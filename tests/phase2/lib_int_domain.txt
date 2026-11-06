@@ -1,0 +1,6 @@
+# Integer-domain stdlib functions (#1848): tools/phase2_lib_diff.sh lists every
+# call that main completes and the branch raises; a listed function must be
+# declared here, and a declaration no call needs is stale. Decision (A), #1758:
+# int overflow raises, as Julia's factorial(21) does. TSV: module.function, reason.
+probability.factorial	n! is an integer count: past 20! it leaves int64 and raises, decided (A) in #1758 (comment 6266498388; Julia's factorial(21) raises)
+probability.permutations	P(n,k) is an integer count: R1.6b N3 range elements keep the multiplicative accumulator in ints; products beyond int64 raise under decision (A), #1758 (for example P(21,21)=21!).

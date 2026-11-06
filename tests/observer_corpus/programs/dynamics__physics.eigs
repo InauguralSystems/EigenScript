@@ -15,10 +15,9 @@
 #   ζ < 0:      energy GROWS (diverges).
 # The observer constitutes the measurement — the founding question, in physics.
 #
-# Observation cadence matters: entropy of a number is H(1/(1+|x|)) and the
-# predicates fire on dH vs dh_small=0.01 / dh_zero=0.001. Sampling every step
-# (DT=0.05) moves entropy less than dh_zero, so everything reads "equilibrium".
-# We therefore observe once per FRAME of SUB substeps (see FINDINGS.md F-DYN-3).
+# The original entropy-based showcase chose one observation per FRAME of
+# SUB substeps (see FINDINGS.md F-DYN-3). Keep that cadence for the vendored
+# experiment; R3.1 numeric predicates classify its value windows and steps.
 #
 # We report the RAW regime flags each quantity passed through (oscillated /
 # converged / diverged) rather than one collapsed label — the honest observer

@@ -1,0 +1,20 @@
+# ROW: cal.fnstop-cat-plant
+# ITEMS: N3
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop cat ADD
+# OPS: ADD
+# plant: two floats, so ADD runs natively to the return
+define cat(a, b) as:
+    t is a + b
+    return t
+k is 0
+r is 0
+loop while k < 60:
+    r is cat of [1.5, 2.5]
+    k is k + 1
+print of r
+try:
+    print of (5.5 & 1)
+catch e:
+    print of e.kind

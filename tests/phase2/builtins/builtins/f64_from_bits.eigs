@@ -1,0 +1,40 @@
+# R2.4/N12 new builtin, R24-1; phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":1}}
+try:
+    x is f64_from_bits of 4607182418800017408.0
+    print of ["integral-float", x, num_type of x]
+catch e:
+    print of ["integral-float", e.kind]
+try:
+    x is f64_from_bits of 0x8000000000000000
+    print of ["negative-zero", f64_bits of x, num_type of x]
+catch e:
+    print of ["negative-zero", e.kind]
+try:
+    x is f64_from_bits of 0xFFFB000000001000
+    print of ["tag-nan", x == x, f64_bits of x, num_type of x]
+catch e:
+    print of ["tag-nan", e.kind]
+try:
+    print of ["fraction-answer", f64_from_bits of 0.5]
+catch e:
+    print of ["fraction", e.kind]
+try:
+    print of ["outside-answer", f64_from_bits of 1e100]
+catch e:
+    print of ["outside-int64", e.kind]
+try:
+    print of ["nan-answer", f64_from_bits of (f64_from_bits of 0x7FF8000000000000)]
+catch e:
+    print of ["nan-argument", e.kind]
+try:
+    print of ["infinity-answer", f64_from_bits of (f64_from_bits of 0x7FF0000000000000)]
+catch e:
+    print of ["infinity-argument", e.kind]
+try:
+    print of ["non-number", f64_from_bits of "x"]
+catch e:
+    print of ["non-number", e.kind]
+try:
+    print of ["bool", f64_from_bits of true]
+catch e:
+    print of ["bool", e.kind]

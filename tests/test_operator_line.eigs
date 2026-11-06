@@ -8,8 +8,8 @@
 # LINE-NUMBER SENSITIVE: every expected line is a literal (the line of the
 # operator in the row above it). Append new rows only after the last row.
 load_file of "lib/test.eigs"
-define zero(n) as:
-    return 0
+define text_operand(n) as:
+    return "s"
 define hot_div(k) as:
     r is 1 / (
         k)
@@ -27,7 +27,7 @@ got is 0
 
 try:
     z is 1 / (
-        x)
+        s)
 catch e:
     got is e.line
 assert_eq of [got, 29, "/ with a multi-line right operand"]
@@ -57,20 +57,20 @@ catch e:
     got is e.line
 assert_eq of [got, 54, "chain a + b + c: the SECOND + faults"]
 try:
-    z is 1 / (zero of [
+    z is 1 / (text_operand of [
         4])
 catch e:
     got is e.line
 assert_eq of [got, 60, "right operand is a multi-line call"]
 try:
-    z is (zero of [
+    z is (text_operand of [
         4]) / x
 catch e:
     got is e.line
 assert_eq of [got, 67, "left operand is a multi-line call, operator after it"]
 try:
     z is (1
-        / x)
+        / s)
 catch e:
     got is e.line
 assert_eq of [got, 73, "operator on the line after its left operand"]
@@ -99,7 +99,7 @@ got is 0
 try:
     loop while k > 0:
         r is 1 / (
-            k - 1)
+            k - 1 or s)
         k is k - 1
 catch e:
     got is e.line
@@ -109,7 +109,7 @@ k is 6001
 got is 0
 try:
     loop while k > 0:
-        r is hot_div of (k - 1)
+        r is hot_div of (k - 1 or s)
         k is k - 1
 catch e:
     got is e.line
@@ -154,7 +154,7 @@ catch e:
 assert_eq of [got, 150, "bitwise & type error"]
 try:
     z is f"{1 / (
-        x)}"
+        s)}"
 catch e:
     got is e.line
 assert_eq of [got, 156, "an operator written inside an f-string interpolation"]

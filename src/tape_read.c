@@ -10,6 +10,8 @@
 #include "eigenscript.h"
 #include "trace.h"
 #include "tape_read.h"
+#include <errno.h>
+#include <ctype.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -199,7 +201,7 @@ static int obs_cfg_rec_ok(const ObsCfgRec *o, const char *line) {
         (o->window < OBSERVER_WINDOW_MIN || o->window > OBSERVER_WINDOW_MAX))
         why = "window depth outside its [4, 64] range";
     else if (o->binding == 0) {
-        if (!(o->dh_zero > 0.0) || !(o->dh_small > 0.0) || !(o->h_low > 0.0))
+        if (!(o->dh_zero > 0.0) || !(o->dh_small > 0.0))
             why = "thresholds must be positive";
         else if (!(o->dh_zero < o->dh_small))
             why = "dh_zero must be less than dh_small";
@@ -364,9 +366,9 @@ static int tape_parse(Tape *t, long len) {
                         a.rec = t->nrecs;
                         a.step = r.step;
                         a.value = r.value;
-                        char *ne = NULL;
-                        a.num = strtod(r.value, &ne);
-                        a.is_num = (ne != r.value && *ne == '\0');
+                        const char *ne = r.value;
+                        a.num = 0.0;
+                        a.is_num = trace_parse_float_token(&ne, &a.num) && *ne == '\0';
                         hist_push(h, a);
                     }
                 }
@@ -380,15 +382,38 @@ static int tape_parse(Tape *t, long len) {
                 o.rec = t->nrecs;
                 o.scope = ps->scope;
                 o.stream = stream_key;
-                if (strncmp(body, "cfg ", 4) == 0) {
-                    char *q = body + 4, *q0;
+                if (strncmp(body, "cfg", 3) == 0 &&
+                    (body[3] == '\0' || isspace((unsigned char)body[3]))) {
+                    /* Every branch build stamps v10: count tokens before
+                     * parsing or installing any configuration field. */
+                    char *q = body + 3, *q0;
+                    size_t fields = 0;
+                    while (*q) {
+                        while (isspace((unsigned char)*q)) q++;
+                        if (!*q) break;
+                        fields++;
+                        while (*q && !isspace((unsigned char)*q)) q++;
+                    }
+                    if (fields != 4) {
+                        fprintf(stderr, "tape observer-configuration record has %zu "
+                                "fields, expected 4: %s\n", fields, p);
+                        free(streams);
+                        return 0;
+                    }
+                    q = body + 3;
                     int ok = 1;
-                    o.binding  = 0;
-                    q0 = q; o.dh_zero  = strtod(q, &q);        ok &= (q != q0);
-                    q0 = q; o.dh_small = strtod(q, &q);        ok &= (q != q0);
-                    q0 = q; o.h_low    = strtod(q, &q);        ok &= (q != q0);
-                    q0 = q; o.window   = (int)strtol(q, &q, 10); ok &= (q != q0);
-                    q0 = q; o.scale    = strtod(q, &q);        ok &= (q != q0);
+                    o.binding = 0;
+                    q0 = q; o.dh_zero = strtod(q, &q);
+                    ok &= (q != q0 && (*q == '\0' || isspace((unsigned char)*q)));
+                    q0 = q; o.dh_small = strtod(q, &q);
+                    ok &= (q != q0 && (*q == '\0' || isspace((unsigned char)*q)));
+                    q0 = q; long window = strtol(q, &q, 10);
+                    ok &= (q != q0 && (*q == '\0' || isspace((unsigned char)*q)));
+                    /* Refuse out-of-range windows without narrowing them. */
+                    o.window = (window >= OBSERVER_WINDOW_MIN &&
+                                window <= OBSERVER_WINDOW_MAX) ? (int)window : 0;
+                    q0 = q; o.scale = strtod(q, &q);
+                    ok &= (q != q0 && (*q == '\0' || isspace((unsigned char)*q)));
                     if (!ok) { free(streams); return obs_cfg_refuse("truncated record", p); }
                     if (!obs_cfg_rec_ok(&o, p)) { free(streams); return 0; }
                     obscfg_push(t, &o);
@@ -532,7 +557,6 @@ static void obs_cfg_install(const TapeObsCfg *c) {
     if (!eigs_current || !eigs_current->state) return;
     g_obs_dh_zero  = c->dh_zero;
     g_obs_dh_small = c->dh_small;
-    g_obs_h_low    = c->h_low;
     g_obs_scale    = c->scale;
     g_obs_window   = c->window;
 }
@@ -541,14 +565,12 @@ static void obs_cfg_capture(TapeObsCfg *c) {
     if (eigs_current && eigs_current->state) {
         c->dh_zero  = g_obs_dh_zero;
         c->dh_small = g_obs_dh_small;
-        c->h_low    = g_obs_h_low;
         c->scale    = g_obs_scale;
         c->window   = g_obs_window;
         return;
     }
     c->dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
     c->dh_small = OBSERVER_DH_SMALL_DEFAULT;
-    c->h_low    = OBSERVER_H_LOW_DEFAULT;
     c->scale    = OBSERVER_SCALE_DEFAULT;
     c->window   = OBSERVER_WINDOW_N;
 }
@@ -605,7 +627,7 @@ void tape_traj_begin(TapeTraj *tr, const Tape *t, const NameHist *h) {
     tr->fed = 0;
     obs_cfg_capture(&tr->saved);
     TapeObsCfg start = { OBSERVER_DH_ZERO_DEFAULT, OBSERVER_DH_SMALL_DEFAULT,
-                         OBSERVER_H_LOW_DEFAULT, OBSERVER_SCALE_DEFAULT,
+                         OBSERVER_SCALE_DEFAULT,
                          OBSERVER_WINDOW_N };
     obs_cfg_install(&start);
 }
@@ -614,7 +636,7 @@ void tape_traj_begin(TapeTraj *tr, const Tape *t, const NameHist *h) {
 static void obs_cfg_apply(TapeTraj *tr, const ObsCfgRec *o) {
     if (!tr->h || o->stream != tr->h->stream) return;
     if (o->binding == 0) {
-        TapeObsCfg c = { o->dh_zero, o->dh_small, o->h_low, o->scale,
+        TapeObsCfg c = { o->dh_zero, o->dh_small, o->scale,
                          o->window };
         obs_cfg_install(&c);
     } else if (tr->h && strcmp(o->name, tr->h->name) == 0) {
@@ -632,7 +654,14 @@ const char *tape_traj_feed(TapeTraj *tr, const Assign *a) {
     while (tr->ci < t->nobscfg && t->obscfg[tr->ci].rec <= a->rec)
         obs_cfg_apply(tr, &t->obscfg[tr->ci++]);
     if (!a->is_num) return NULL;
-    observer_slot_record_value(&tr->slot, a->num);
+    /* Digit-only tape tokens preserve the exact int64 kind. */
+    char *end;
+    errno = 0;
+    int64_t integer = strtoll(a->value, &end, 10);
+    EigsSlot value = !errno && *end == '\0' && end != a->value
+        ? slot_from_int(integer) : slot_from_f64(a->num);
+    observer_slot_record_num(&tr->slot, value);
+    slot_decref(value);
     tr->fed++;
     return observer_slot_report_value(&tr->slot);
 }
@@ -659,10 +688,7 @@ const char *tape_traj_settle(TapeTraj *tr, int pos) {
 }
 
 void tape_traj_end(TapeTraj *tr) {
-    free(tr->slot.v_window);
-    free(tr->slot.vr_window);
-    free(tr->slot.dh_window);
-    memset(&tr->slot, 0, sizeof tr->slot);
+    observer_slot_dispose(&tr->slot);
     obs_cfg_install(&tr->saved);
 }
 

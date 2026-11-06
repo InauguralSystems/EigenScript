@@ -1,0 +1,21 @@
+# ROW: N5.gather-index-fraction-raises
+# ITEMS: N5
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+t is buffer of [2, 3]
+t[0] is 10
+t[1] is 11
+t[2] is 12
+t[3] is 20
+t[4] is 21
+t[5] is 22
+ib is buffer of 2
+ib[0] is 1.5
+ib[1] is 2.0
+try:
+    g is gather of [t, ib]
+    print of [g[0], g[1]]
+catch e:
+    print of e.kind

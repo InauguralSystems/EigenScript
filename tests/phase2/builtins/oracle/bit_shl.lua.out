@@ -1,0 +1,4 @@
+-9223372036854775808	integer
+0	4
+false	bit_shl.lua:4: number has no integer representation
+16	integer

@@ -62,7 +62,7 @@ static void collect(int nodes,int garbage,int values,int envs,int chunks) {
 
 static void duplicate_and_leaf(void) {
     Value *leaf=make_list_heap(64), *root=make_list_heap(2);
-    for (int i=0;i<64;++i) list_append_owned(leaf,make_num(i));
+    for (int i=0;i<64;++i) list_append_owned(leaf,make_float(i));
     list_append(root,leaf); list_append(root,leaf);
     duplicate_child=leaf;
     val_decref(leaf); gc_note_possible_root(root);
@@ -73,7 +73,7 @@ static void duplicate_and_leaf(void) {
     collect(4,2,4,0,0);
     CHECK(traversal_skips>before,"numeric-leaf mark traversal skipped");
     CHECK(list_slot(root,0).u==list_slot(root,1).u,"live duplicate aliases retained");
-    CHECK(eigs_slot_num(list_slot(slot_as_ptr(list_slot(root,0)),63),"gc_traversal")==63,"live leaf contents retained");
+    CHECK(eigs_slot_float(list_slot(slot_as_ptr(list_slot(root,0)),63),"gc_traversal")==63,"live leaf contents retained");
     duplicate_child=NULL;
     val_decref(root); gc_collect_cycles();
     ++cases;

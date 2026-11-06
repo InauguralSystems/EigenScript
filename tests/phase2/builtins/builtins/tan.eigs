@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: tan (float-producing; Lua math.tan)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is tan of 0
+print of [a, nt of a]
+b is tan of 1
+print of [b, nt of b]

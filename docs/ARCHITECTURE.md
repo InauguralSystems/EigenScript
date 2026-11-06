@@ -37,7 +37,7 @@ Source code (.eigs)
     │            ▼
     │          JIT (x86-64)   hot chunks/loops → native thunks
     ▼
-  Observer       track entropy, dH, trajectory per variable
+  Observer       track numeric values / non-numeric entropy per binding
 ```
 
 ### Lexer
@@ -145,29 +145,33 @@ unchanged, and `EIGS_JIT_OFF=1` disables it for bisection.
 
 ### Observer
 
-The observer system tracks entropy and rate-of-change for every assigned
-variable. The six trajectory states are:
+The observer is keyed to a binding's environment slot. Numeric assignments
+record the exact current value, raw and relative step rings, an exact flag
+per step, and D2's running `best`/`since`. Numeric bindings do not compute
+or store entropy. Non-numeric bindings retain entropy/dH plus bounded
+comparison snapshots for converged/stable.
 
-- **improving** — entropy is decreasing
-- **diverging** — entropy is increasing
-- **stable** — entropy is changing slowly
-- **equilibrium** — entropy has nearly stopped changing
-- **oscillating** — dH is sign-flipping
-- **converged** — entropy is very low and stable
+The numeric tests are STD's windowed Cauchy convergence, D1's 1% midrange
+stability band, D2's Keras running lower best with relative significant
+improvement and ten-step patience, and the incumbent raw/relative tests
+for oscillating, diverging and equilibrium. An all-exact int64 window uses
+zero raw noise floor and absolute settled tolerances. At a current NaN all
+six are false and report is `undefined`; infinity follows the signed-window
+rule in [PREDICATES.md](PREDICATES.md).
 
-Observer state is accessible via interrogatives (`what`, `who`, `when`,
-`where`, `why`, `how`) and predicates (`converged`, `stable`, etc.),
-and drives `loop while not converged` termination.
+Numeric `where`/`why`/`how` return value, last displacement, and relative-step
+settledness, with null why/how before a step. `observe`, `trajectory`,
+`classify`, and temporal snapshots preserve that value state and D2 history.
+The observer gate can skip work when the whole program has no reader.
+With it open, assignments sample eagerly; `unobserved:` keeps numeric
+records complete while eliding non-numeric entropy/comparison work. It does
+not repoint the thread-local last-observed alias (`g_last_observer`).
 
-Observation uses lazy evaluation: `OP_OBSERVE_ASSIGN` marks values dirty
-(O(1)), and entropy is computed on demand when observer state is read.
-The last observed value is tracked via a thread-local pointer
-(`g_last_observer`). `unobserved` blocks skip the entropy update; a scalar
-assignment inside one still records its value-window sample (#1049).
+The bare observer-loop stall check exits after 100 quiet iterations, using
+`abs(r) < dh_zero` for numeric bindings and dH for the entropy route,
+setting `__loop_exit__` and `__loop_iterations__`. Named-predicate loops
+require their own cap.
 
-Loop stall detection (`OP_LOOP_STALL_CHECK`) exits while-loops after 100
-consecutive iterations with `|dH| < threshold`, setting `__loop_exit__`
-and `__loop_iterations__` env variables.
 Each `loop while` carries its own iteration count in a private counter slot
 on the frame's operand stack (#1906): `OP_LOOP_ENTER_NAMED` pushes it and
 publishes zero, `OP_LOOP_STALL_NAMED`/`OP_LOOP_CAP_NAMED` increment it per
@@ -193,9 +197,10 @@ EigenScript uses reference counting plus numeric and environment freelists.
 (`__ATOMIC_RELAXED` increment, `__ATOMIC_ACQ_REL` decrement). When the
 refcount reaches zero, `free_value` tears down the value and its children.
 
-**Numeric freelist.** Freed `VAL_NUM` values are placed in a per-thread
-freelist (up to 4096 entries) and reused by `make_num`, avoiding
-malloc/free churn in arithmetic-heavy loops.
+**Numeric freelist.** Freed `VAL_FLOAT` values are placed in a per-thread
+freelist (up to 4096 entries) and reused by `make_float`, avoiding
+malloc/free churn in arithmetic-heavy loops. `VAL_INT` boxes are freed
+directly; immediate floats and SMIs need no heap reference count.
 
 **Environment freelist.** Freed `Env` structs are cached per-thread (up to
 1024 entries) and reused by `env_new`, avoiding allocation in tight
@@ -231,7 +236,7 @@ only attached thread (#1147), else by the exit sweep (#297). See
 Extensions are conditionally compiled via flags:
 
 The hosted release (`make build`) compiles graphics in while keeping SDL
-lazy-loaded. `make server` adds HTTP, raw TCP, and models; `make server-db` adds
+lazy-loaded. `make server` adds HTTP and raw TCP; `make server-db` adds
 PostgreSQL, and `make zlib` separately adds the libz-backed codecs. The old
 `gfx`, `http`, `net`, and `full` targets remain compatibility aliases.
 

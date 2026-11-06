@@ -1,0 +1,10 @@
+# ROW: A.sub-overflow-raises
+# ITEMS: A
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+try:
+    print of (-9223372036854775807 - 2)
+catch e:
+    print of [e.kind, (index_of of [e.message, "-"]) >= 0]

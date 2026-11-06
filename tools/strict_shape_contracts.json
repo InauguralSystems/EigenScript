@@ -137,20 +137,20 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "reason": "Whole sample list/buffer data has no fixed tuple maximum. R1.6e N13 reviews the changed audio_convert_samples closure: finite continuous samples clamp and round; stored NaN/infinity refuse at the data boundary, independently of payload length.",
     "public_names": [
       "audio_play"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "ea799d0a7d251e8cd8d5b8eaad7735e5ea03c600b026a57d4f41e40b80a4a34b"
+      "3ab967bbd1c8275d133bb159c9f7bc0b07f122b1b701af0f8aa143a1957fe77d"
     ],
     "source_sha256": {
       "audio_convert_samples": [
-        "01a118dbda254e0065f13d68f234dbfa5b3673fac1a68f711cd6c6fc9ca9cb77"
+        "d0eb9a7c748b74dab12ca7bebbb9d68c931d3e076b0943400c7523b5ae966397"
       ],
       "builtin_audio_play": [
-        "ea799d0a7d251e8cd8d5b8eaad7735e5ea03c600b026a57d4f41e40b80a4a34b"
+        "3ab967bbd1c8275d133bb159c9f7bc0b07f122b1b701af0f8aa143a1957fe77d"
       ],
       "gfx_bad_samples": [
         "06b184f2d2c365ae61d277905810ed9d7257d7f2c81d8a13e26d90d0b9b6a23c"
@@ -223,7 +223,7 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "reason": "Whole sample list/buffer data has no fixed tuple maximum. R1.6e N13 reviews the changed audio_convert_samples closure: finite continuous samples clamp and round; stored NaN/infinity refuse at the data boundary, independently of payload length.",
     "public_names": [
       "audio_stream_push"
     ],
@@ -233,7 +233,7 @@
     ],
     "source_sha256": {
       "audio_convert_samples": [
-        "01a118dbda254e0065f13d68f234dbfa5b3673fac1a68f711cd6c6fc9ca9cb77"
+        "d0eb9a7c748b74dab12ca7bebbb9d68c931d3e076b0943400c7523b5ae966397"
       ],
       "builtin_audio_stream_push": [
         "cd6347275f699b2ee2d7079e39972b43c9c705f566185907b9831dae2978282b"
@@ -381,17 +381,17 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "reason": "List is the whole value/data input, not a bounded tuple. R1.6d review: Q2 float conversion and error cleanup consume the complete input list; no tuple-width change.",
     "public_names": [
       "buf_from_list"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "c45c354c5cc6390200cb91b736b185b44af3d20728c0d57869e24e4d0f79a1d9"
+      "62d524fce828a136c69d911f201bf63239c7d1630d60c8500611884a5d4f816f"
     ],
     "source_sha256": {
       "builtin_buf_from_list": [
-        "c45c354c5cc6390200cb91b736b185b44af3d20728c0d57869e24e4d0f79a1d9"
+        "62d524fce828a136c69d911f201bf63239c7d1630d60c8500611884a5d4f816f"
       ]
     }
   },
@@ -416,6 +416,18 @@
     "reason": "Consumes the first two tuple operands; trailing operands have no role.",
     "public_names": [
       "buf_get"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_buf_get_bits",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "R2.4/N12 and R24-1 consume buffer and index exactly like buf_get; trailing operands have no role.",
+    "public_names": [
+      "buf_get_bits"
     ],
     "disposition": "guarded"
   },
@@ -480,6 +492,18 @@
     "disposition": "guarded"
   },
   {
+    "function": "builtin_buf_set_bits",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "R2.4/N12 and R24-1 consume buffer, index and bit pattern exactly like buf_set; reject surplus before mutation.",
+    "public_names": [
+      "buf_set_bits"
+    ],
+    "disposition": "guarded"
+  },
+  {
     "function": "builtin_buf_to_pcm16le",
     "file": "src/builtins_buf.c",
     "category": "fixed",
@@ -497,20 +521,23 @@
     "category": "exact_strict_rejection",
     "minimum": 2,
     "maximum": 2,
-    "reason": "Only two numeric list elements select shaped buffer; other lists already raise via STRICT_REQUIRE, strict-off legacy empty buffer retained.",
+    "reason": "Only two numeric list elements select shaped buffer; other lists already raise via STRICT_REQUIRE, strict-off legacy empty buffer retained. R1.6d review: N5 exact dimensions retain the existing exactly-two numeric list recognition and strict-off other-shape behavior.",
     "public_names": [
       "buffer"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "57cb0537fbd5bc20702d3c01759e2fb51829e2218925a950d203725c736932db"
+      "2edb03734cf4aac5f813ffbfc63811134f98840f6d3a998f2d1e1e4c5f2e669c"
     ],
     "source_sha256": {
       "builtin_buffer": [
-        "57cb0537fbd5bc20702d3c01759e2fb51829e2218925a950d203725c736932db"
+        "2edb03734cf4aac5f813ffbfc63811134f98840f6d3a998f2d1e1e4c5f2e669c"
       ],
-      "eigs_list_num": [
-        "9f81cf3349e551156657ba9cf52b16170875dbce7bbbca4ac6f076ea5a72423d"
+      "eigs_int_arg_range": [
+        "6c64833ddf01abc9ae34c664470f2f9bdb3d6196a4c240aea29df622cfdeb288"
+      ],
+      "eigs_list_int_range": [
+        "890b2394e8acf3972d7046eb0ad5aec3b8ea161fc315818f9cab0a7f617d6ad8"
       ]
     }
   },
@@ -623,7 +650,7 @@
         "4cf207881dd2dd1bbc61735eb3ffa36eaad8a5acd8d918cda47413a6d99ff2b6"
       ],
       "db_build_query": [
-        "a265ff30def4515920a7a361fb07d1fa5f3ff5eefabf961b72e6c093c3b9f109"
+        "5781874e0f84f785f5d7fc56a3ec858561e023357c4b860a72b6f820b4693aea"
       ],
       "db_exec_from_arg": [
         "f91b6f1b3f2081c538ed33c1217ee62162003947bee6442cd51f8921d9f4805c"
@@ -642,14 +669,14 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "489467a3f39ce6728624d84b7d9b20ce7d5ec8415fa6d2a9d3ae7d9270925957"
+      "e95fd32ee88cbcb6b32fee954dbcf9718bca4962947d7e5ec923b62ef9d6325d"
     ],
     "source_sha256": {
       "builtin_db_query_json": [
-        "489467a3f39ce6728624d84b7d9b20ce7d5ec8415fa6d2a9d3ae7d9270925957"
+        "e95fd32ee88cbcb6b32fee954dbcf9718bca4962947d7e5ec923b62ef9d6325d"
       ],
       "db_build_query": [
-        "a265ff30def4515920a7a361fb07d1fa5f3ff5eefabf961b72e6c093c3b9f109"
+        "5781874e0f84f785f5d7fc56a3ec858561e023357c4b860a72b6f820b4693aea"
       ],
       "db_exec_from_arg": [
         "f91b6f1b3f2081c538ed33c1217ee62162003947bee6442cd51f8921d9f4805c"
@@ -668,14 +695,14 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "3908eda08837e16a96c0e0a8f8f8395d07bde686123cc8f997e4d0dadb4f4c3e"
+      "57429b5195fcbfed06b39ef5ba9c9a3ad42639e47162a1609c746110bf298ac4"
     ],
     "source_sha256": {
       "builtin_db_query_value": [
-        "3908eda08837e16a96c0e0a8f8f8395d07bde686123cc8f997e4d0dadb4f4c3e"
+        "57429b5195fcbfed06b39ef5ba9c9a3ad42639e47162a1609c746110bf298ac4"
       ],
       "db_build_query": [
-        "a265ff30def4515920a7a361fb07d1fa5f3ff5eefabf961b72e6c093c3b9f109"
+        "5781874e0f84f785f5d7fc56a3ec858561e023357c4b860a72b6f820b4693aea"
       ],
       "db_exec_from_arg": [
         "f91b6f1b3f2081c538ed33c1217ee62162003947bee6442cd51f8921d9f4805c"
@@ -748,20 +775,20 @@
     "category": "variadic",
     "minimum": null,
     "maximum": null,
-    "reason": "Whole string list is argv; exactly [argv-list, timeout] is alternate form. Rejecting all >2 breaks valid commands.",
+    "reason": "Whole string list is argv; exactly [argv-list, timeout] is alternate form. Rejecting all >2 breaks valid commands. Reviewed R1.6c (#1758): numeric readers changed; outer argument shape is unchanged. R1.6z reviewed repin: only the retired constructor spelling in a comment changes (make_num to make_float); executable C and the whole-argument helper closure are unchanged.",
     "public_names": [
       "exec_capture"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "930595270b5c7e68102042960102a80180c87d174545052d5c6e685691ad210f"
+      "7814f2bb43b8dce29b6bfa35c4c28337ecb1f5aea918a2881f69bb8312706f05"
     ],
     "source_sha256": {
       "builtin_exec_capture": [
-        "930595270b5c7e68102042960102a80180c87d174545052d5c6e685691ad210f"
+        "7814f2bb43b8dce29b6bfa35c4c28337ecb1f5aea918a2881f69bb8312706f05"
       ],
-      "eigs_list_num": [
-        "9f81cf3349e551156657ba9cf52b16170875dbce7bbbca4ac6f076ea5a72423d"
+      "eigs_list_float": [
+        "b2a4c2d694e7b0e66e6f5b0f13b5df946ace858226f059f88a4af52bcbfc0f93"
       ]
     }
   },
@@ -783,17 +810,20 @@
     "category": "unary_data_prefix",
     "minimum": null,
     "maximum": null,
-    "reason": "Documented first eight bytes of list OR buffer; prefix byte decoding is data semantics, not argument arity. Explicitly exempt from this tuple repair (BUILTINS.md:208).",
+    "reason": "Documented first eight bytes of list OR buffer; prefix byte decoding is data semantics, not argument arity. Explicitly exempt from this tuple repair (BUILTINS.md:208). R1.6d review: Q1 validates each consumed encoded byte; the documented first-eight prefix and ignored trailing data remain.",
     "public_names": [
       "f64_from_bytes"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "5f12865bdbf33058b8e42e22e6f23c4e957da26f62ee09de00b881a73cfd432d"
+      "e8d0e583c9e4b3441b4c4e06492ac532901fcf9c0acb41a2810d380ea36ae9c0"
     ],
     "source_sha256": {
+      "buffer_byte_at": [
+        "954a4c009acced1938aa3c2b2aad8010e57b8d4c73372cc98d1500deaad3a9cd"
+      ],
       "builtin_f64_from_bytes": [
-        "5f12865bdbf33058b8e42e22e6f23c4e957da26f62ee09de00b881a73cfd432d"
+        "e8d0e583c9e4b3441b4c4e06492ac532901fcf9c0acb41a2810d380ea36ae9c0"
       ]
     }
   },
@@ -815,17 +845,17 @@
     "category": "exact_rejection",
     "minimum": 2,
     "maximum": 3,
-    "reason": "Exact 2/3 branches; other lengths raise.",
+    "reason": "Exact 2/3 branches; other lengths raise. Reviewed R1.6c (#1758): numeric readers changed; outer argument shape is unchanged.",
     "public_names": [
       "get_at"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "bfff841ee81514af4584b2f305e60ae405ebc7e245ff8fe724007ff16677a04d"
+      "aec54f2ab04e9c4f7036ee33c2c4857fc48448467bde2294c0553269f070f3e5"
     ],
     "source_sha256": {
       "builtin_get_at": [
-        "bfff841ee81514af4584b2f305e60ae405ebc7e245ff8fe724007ff16677a04d"
+        "aec54f2ab04e9c4f7036ee33c2c4857fc48448467bde2294c0553269f070f3e5"
       ]
     }
   },
@@ -1015,20 +1045,20 @@
     "category": "exact_rejection",
     "minimum": 2,
     "maximum": 2,
-    "reason": "List overload requires exactly port/path; numeric/null scalar form remains.",
+    "reason": "List overload requires exactly port/path; numeric/null scalar form remains. R1.6f: reviewed exact list rejection after numeric-reader migration; tuple arity and scalar/optional forms are unchanged.",
     "public_names": [
       "http_early_bind"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "75b902a6ab9ba175be7d051448b761f66da9453dcb7843d16e3e5c25d46efe4d"
+      "018483db44d526e5a75f95440160e90a1546d7e5e6096d7d940a78e94a9fe4c2"
     ],
     "source_sha256": {
       "builtin_http_early_bind": [
-        "75b902a6ab9ba175be7d051448b761f66da9453dcb7843d16e3e5c25d46efe4d"
+        "018483db44d526e5a75f95440160e90a1546d7e5e6096d7d940a78e94a9fe4c2"
       ],
-      "eigs_opt_num": [
-        "9725bffff66601bf6a82c4b5e69281c6109e3277efbdd751fd9390bdbce6727e"
+      "eigs_int_arg_range": [
+        "6c64833ddf01abc9ae34c664470f2f9bdb3d6196a4c240aea29df622cfdeb288"
       ]
     }
   },
@@ -1118,7 +1148,7 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list.",
+    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list. R1.6d review: Q1 validates all compressed input bytes; the complete list remains byte data rather than a fixed tuple.",
     "public_names": [
       "inflate"
     ],
@@ -1128,15 +1158,18 @@
       "a3fc2607ff39bc3c2f9e41a02467c751cb5b171ddf2e46c829c267143a5f2950"
     ],
     "source_sha256": {
+      "buffer_byte_at": [
+        "954a4c009acced1938aa3c2b2aad8010e57b8d4c73372cc98d1500deaad3a9cd"
+      ],
       "builtin_inflate": [
         "13a5b43ee3f28d3a0d1a79c9804eff17c926297a0bac2c784cfe1abd39d01c51",
         "a3fc2607ff39bc3c2f9e41a02467c751cb5b171ddf2e46c829c267143a5f2950"
       ],
       "strict_numeric_byte_list": [
-        "e271c965b69981e5f8e2ddf71b4f25220dd7d491135e67d8d1ada1d680bcbccc"
+        "27efb919189b608ba9d9b30a0f4df0ae568d9f9ec25afa4f4ca12307a3cd8487"
       ],
       "zlib_bytes_arg": [
-        "a20d6431a2a031d5f01ba74a3cbc5dd6dd28541106d0a008d174042844aa1ad9"
+        "8c966dfa58791ec6da82c4649e718a4ecbd4af86481d9e200fb08c69a4c2484f"
       ],
       "zlib_inflate_impl": [
         "39c9ed3051f3b2bce8578f00f212463c209ce29ddb530ba531802253ef7b4c96"
@@ -1167,11 +1200,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "895b607a44f311b0910c4111ede8af5385dd8c947a93ffac24671c2931c7c026"
+      "9be15e0529f10468e7c08633b1caf63d1f51b0ed3f813289d42cc232cd9669ff"
     ],
     "source_sha256": {
       "builtin_json_build": [
-        "895b607a44f311b0910c4111ede8af5385dd8c947a93ffac24671c2931c7c026"
+        "9be15e0529f10468e7c08633b1caf63d1f51b0ed3f813289d42cc232cd9669ff"
       ]
     }
   },
@@ -1187,14 +1220,14 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "3d31ab37b9f8ae841e1676582d4fd67faa2920584ca29fcb51d140bfa8b00e6f"
+      "85168159f829668b1438e36d4e6bbc2a73a2da4f1c134e8139499855a5250eea"
     ],
     "source_sha256": {
       "builtin_json_encode": [
-        "3d31ab37b9f8ae841e1676582d4fd67faa2920584ca29fcb51d140bfa8b00e6f"
+        "85168159f829668b1438e36d4e6bbc2a73a2da4f1c134e8139499855a5250eea"
       ],
       "eigs_json_encode_value": [
-        "9d0c4bc6ee9e5e2e998168d1dc5df09020ee0acd9848b18d20edf22a02f26608"
+        "9a0e8a2b99d21ad73bde9d6b5d7fc26a5e71f881e415c108b09e169abbf2c824"
       ]
     }
   },
@@ -1245,11 +1278,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "65efba69b67175c6be83e386f9f77ab4db6da9aeab72c4b59533eb8d81ab42f8"
+      "f22ffba4405a23b85d1b8c946594379016d32b09a274ed3a5bac6920d376f95b"
     ],
     "source_sha256": {
       "builtin_len": [
-        "65efba69b67175c6be83e386f9f77ab4db6da9aeab72c4b59533eb8d81ab42f8"
+        "f22ffba4405a23b85d1b8c946594379016d32b09a274ed3a5bac6920d376f95b"
       ],
       "eigs_module_ns_sync": [
         "89a5440e7753fd7b8b20da8c57b1e135dbb89f726777035c3f0ebee65bf59fb7"
@@ -1390,8 +1423,11 @@
       "builtin_max": [
         "2175b6fc725553d83e745e380ecddc20ad81175878ea6d2854231e8bacdeea44"
       ],
+      "eigs_number_read": [
+        "57e2a967de83cd8f19f756d38eed62e3e917f657be77d878ea2aaae5b69e24e7"
+      ],
       "minmax_reduce": [
-        "96b723fedb15051c304959e8ed377e4efa782ca2de7f77803b06ff5d8d2a1636"
+        "091a0f37719186d5f0bfdf23d5ae4e10fe15c0198432764066ec7b00d0df5c8a"
       ]
     }
   },
@@ -1413,8 +1449,11 @@
       "builtin_min": [
         "aa04459f66b91bc896e90d66cbef455dc88f9637cdc9c81d8841cd5f64ffdfe6"
       ],
+      "eigs_number_read": [
+        "57e2a967de83cd8f19f756d38eed62e3e917f657be77d878ea2aaae5b69e24e7"
+      ],
       "minmax_reduce": [
-        "96b723fedb15051c304959e8ed377e4efa782ca2de7f77803b06ff5d8d2a1636"
+        "091a0f37719186d5f0bfdf23d5ae4e10fe15c0198432764066ec7b00d0df5c8a"
       ]
     }
   },
@@ -1480,26 +1519,26 @@
     "category": "exact_rejection",
     "minimum": 2,
     "maximum": 2,
-    "reason": "net_require_list(2,2) on list overload; scalar handle also valid.",
+    "reason": "net_require_list(2,2) on list overload; scalar handle also valid. R1.6f: reviewed exact list rejection after numeric-reader migration; tuple arity and scalar/optional forms are unchanged.",
     "public_names": [
       "net_accept"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "25d612383126cbd0518e4a4255ff1c204b3c95545ab92469b10c361786125981"
+      "82ebad6080c69a224b2f84b13904f019de14e247da3996033cb2fee222227ffe"
     ],
     "source_sha256": {
       "builtin_net_accept": [
-        "25d612383126cbd0518e4a4255ff1c204b3c95545ab92469b10c361786125981"
+        "82ebad6080c69a224b2f84b13904f019de14e247da3996033cb2fee222227ffe"
       ],
-      "net_lookup": [
-        "b7c5760787594aad4ec34d3eb3d5339e6a0bb317e153eac4687223fdff69e618"
-      ],
-      "net_num_at": [
-        "d55a8eaf22d6cc93637730627247269e559fd7b0459aac2c6cef2994361c595e"
+      "eigs_int_arg": [
+        "4adef0d09678cfe76f30b2b9cd882e775a9d48ef7f30665102169c2e5ccae1aa"
       ],
       "net_require_list": [
         "90e3f1361bcc52f17a0accbf87ff18b8f941f333a1050dc60f60e99dda9f4164"
+      ],
+      "net_timeout_at": [
+        "170fc2f6a6ce6cc2fdb8823981690fa6d28e197b1e243868c7dac2ece1a18cfa"
       ]
     }
   },
@@ -1509,23 +1548,26 @@
     "category": "exact_rejection",
     "minimum": 2,
     "maximum": 3,
-    "reason": "net_require_list(2,3) rejects surplus in every mode; optional timeout.",
+    "reason": "net_require_list(2,3) rejects surplus in every mode; optional timeout. R1.6f: reviewed exact list rejection after numeric-reader migration; tuple arity and scalar/optional forms are unchanged.",
     "public_names": [
       "net_dial"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "a4ae095a389638dc862a3587dd19ebc3d215dc3531440803219f1c8fdaf3ff6e"
+      "05a2c97b1c37c0a3b8d25288b84adb9850803b99421232cdc601662d74662833"
     ],
     "source_sha256": {
       "builtin_net_dial": [
-        "a4ae095a389638dc862a3587dd19ebc3d215dc3531440803219f1c8fdaf3ff6e"
+        "05a2c97b1c37c0a3b8d25288b84adb9850803b99421232cdc601662d74662833"
       ],
-      "net_num_at": [
-        "d55a8eaf22d6cc93637730627247269e559fd7b0459aac2c6cef2994361c595e"
+      "eigs_list_int_range": [
+        "890b2394e8acf3972d7046eb0ad5aec3b8ea161fc315818f9cab0a7f617d6ad8"
       ],
       "net_require_list": [
         "90e3f1361bcc52f17a0accbf87ff18b8f941f333a1050dc60f60e99dda9f4164"
+      ],
+      "net_timeout_at": [
+        "170fc2f6a6ce6cc2fdb8823981690fa6d28e197b1e243868c7dac2ece1a18cfa"
       ]
     }
   },
@@ -1535,23 +1577,26 @@
     "category": "exact_rejection",
     "minimum": 2,
     "maximum": 3,
-    "reason": "net_require_list(2,3) rejects surplus in every mode; optional timeout.",
+    "reason": "net_require_list(2,3) rejects surplus in every mode; optional timeout. R1.6f: reviewed exact list rejection after numeric-reader migration; tuple arity and scalar/optional forms are unchanged.",
     "public_names": [
       "net_recv"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "47b4ad9023aca053634a5cd5ee4224f218e1a7b3b41c167bcea36bf62d13db8a"
+      "0519f32fd0cc22b7b6fb3489de377365138d764ab94aaa6d57b0655f0999ab2f"
     ],
     "source_sha256": {
       "builtin_net_recv": [
-        "47b4ad9023aca053634a5cd5ee4224f218e1a7b3b41c167bcea36bf62d13db8a"
+        "0519f32fd0cc22b7b6fb3489de377365138d764ab94aaa6d57b0655f0999ab2f"
       ],
-      "net_num_at": [
-        "d55a8eaf22d6cc93637730627247269e559fd7b0459aac2c6cef2994361c595e"
+      "net_count_at": [
+        "5b0ea0900672f5061670fd704a03b05348d6d3a7c726b778d73daa7037428baa"
       ],
       "net_require_list": [
         "90e3f1361bcc52f17a0accbf87ff18b8f941f333a1050dc60f60e99dda9f4164"
+      ],
+      "net_timeout_at": [
+        "170fc2f6a6ce6cc2fdb8823981690fa6d28e197b1e243868c7dac2ece1a18cfa"
       ]
     }
   },
@@ -1561,17 +1606,17 @@
     "category": "exact_rejection",
     "minimum": 2,
     "maximum": 2,
-    "reason": "net_require_list(2,2) before tape/socket work.",
+    "reason": "net_require_list(2,2) before tape/socket work. R1.6f: reviewed exact list rejection after numeric-reader migration; tuple arity and scalar/optional forms are unchanged.",
     "public_names": [
       "net_send"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "adafc473adbba2ab8fbdba59d748f171efd7ad87077de9a1e8d938dc5dbd33d8"
+      "d6a373148f5e94eb39e1ffcb73f47d437125aa82bbdb51bd53bdad3d661eefd8"
     ],
     "source_sha256": {
       "builtin_net_send": [
-        "adafc473adbba2ab8fbdba59d748f171efd7ad87077de9a1e8d938dc5dbd33d8"
+        "d6a373148f5e94eb39e1ffcb73f47d437125aa82bbdb51bd53bdad3d661eefd8"
       ],
       "net_require_list": [
         "90e3f1361bcc52f17a0accbf87ff18b8f941f333a1050dc60f60e99dda9f4164"
@@ -1657,7 +1702,7 @@
         "f5dca9f11e0c4cee680a747e2a6af8f32baa59e2b15f8b305e546c74847e2cca"
       ],
       "value_to_string": [
-        "269292118bde6226411ea5a201cc73ae9a5d81dc010f8caca57118e4b8257f70"
+        "541c34dfd1dbe93f2ca39b800321afb116be9c74d7d8e35b297502a157a2e1fd"
       ]
     }
   },
@@ -1847,17 +1892,17 @@
     "category": "exact_rejection",
     "minimum": 3,
     "maximum": 4,
-    "reason": "Exact 3/4 branches; other lengths raise. Nested list/buffer data is not tuple width.",
+    "reason": "Exact 3/4 branches; other lengths raise. Nested list/buffer data is not tuple width. Reviewed R1.6c (#1758): numeric readers changed; outer argument shape is unchanged.",
     "public_names": [
       "set_at"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "1f465449b8e6c57f14b1d07b0cb389c090666dd78d77b40ea7baba52ec4cf521"
+      "ad8734cf3a49fc6f8c0623409fcaf62b3bc7249b08dfaa293b449f56519733d2"
     ],
     "source_sha256": {
       "builtin_set_at": [
-        "1f465449b8e6c57f14b1d07b0cb389c090666dd78d77b40ea7baba52ec4cf521"
+        "ad8734cf3a49fc6f8c0623409fcaf62b3bc7249b08dfaa293b449f56519733d2"
       ]
     }
   },
@@ -1945,11 +1990,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "7b7068ffe4f1906946d5187541e9115ab151a7621cf6ef257f28be438eff80c4"
+      "c308177b6ce236122390a1956e97adf6199ea7431dd7132539dc3579652af2a4"
     ],
     "source_sha256": {
       "builtin_sort": [
-        "7b7068ffe4f1906946d5187541e9115ab151a7621cf6ef257f28be438eff80c4"
+        "c308177b6ce236122390a1956e97adf6199ea7431dd7132539dc3579652af2a4"
       ]
     }
   },
@@ -1977,11 +2022,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "e85e17e5f0c2e7dd74d6f3b1499208ca01307c8ab5c444adfba8f94ba8c598f6"
+      "8f68ccddf114c1b379a1d36dc57ec727e740264b25dc8c1f3e30868247c88c5b"
     ],
     "source_sha256": {
       "builtin_spawn": [
-        "e85e17e5f0c2e7dd74d6f3b1499208ca01307c8ab5c444adfba8f94ba8c598f6"
+        "8f68ccddf114c1b379a1d36dc57ec727e740264b25dc8c1f3e30868247c88c5b"
       ]
     }
   },
@@ -2112,7 +2157,7 @@
         "1f942006a4fdfa43f5447114d478b219bc60142b61f4585660944fc9a933ef61"
       ],
       "value_to_string": [
-        "269292118bde6226411ea5a201cc73ae9a5d81dc010f8caca57118e4b8257f70"
+        "541c34dfd1dbe93f2ca39b800321afb116be9c74d7d8e35b297502a157a2e1fd"
       ]
     }
   },
@@ -2122,20 +2167,23 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list.",
+    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list. R1.6d review: Q1 validates byte cells through the existing NUL termination boundary; no tuple limit.",
     "public_names": [
       "str_from_bytes"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "491909802276ad7bbf448b7fd0d1a7c4249c6dc448bf2ff435b261e7dd7c8942"
+      "b038f331d1de71baf8f863a07e202547e5f1a0dbd96e837508d56ceaabd93743"
     ],
     "source_sha256": {
+      "buffer_byte_at": [
+        "954a4c009acced1938aa3c2b2aad8010e57b8d4c73372cc98d1500deaad3a9cd"
+      ],
       "builtin_str_from_bytes": [
-        "491909802276ad7bbf448b7fd0d1a7c4249c6dc448bf2ff435b261e7dd7c8942"
+        "b038f331d1de71baf8f863a07e202547e5f1a0dbd96e837508d56ceaabd93743"
       ],
       "strict_numeric_byte_list": [
-        "e271c965b69981e5f8e2ddf71b4f25220dd7d491135e67d8d1ada1d680bcbccc"
+        "27efb919189b608ba9d9b30a0f4df0ae568d9f9ec25afa4f4ca12307a3cd8487"
       ]
     }
   },
@@ -2199,11 +2247,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "9f0d31d8976c9edb8ea910358826f6bc006aa03b418399d1e4fba8737bb99798"
+      "60f439671a849649e20722a8a6e03059e01a41e2eb6c9d5921b707d8b7f242cf"
     ],
     "source_sha256": {
       "builtin_task_spawn": [
-        "9f0d31d8976c9edb8ea910358826f6bc006aa03b418399d1e4fba8737bb99798"
+        "60f439671a849649e20722a8a6e03059e01a41e2eb6c9d5921b707d8b7f242cf"
       ]
     }
   },
@@ -2250,7 +2298,7 @@
         "55f0129b970addd257aa61f5c0f87c0604d2534ad5cbf5404b2f0504678bdaf5"
       ],
       "tensor_unary": [
-        "04fd54c5ccf01c248491a72c9ced77c1c5229d02584040585435fb1fe1c5c4a6"
+        "76ea67a37aac2aeaa33a78e2f30c5f998403752e7109e13d791e284d44f3c389"
       ]
     }
   },
@@ -2272,17 +2320,20 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum. R1.6d review: Float scalar/list/tensor conversion preserves whole-data shape recognition and flat output shape.",
     "public_names": [
       "leaky_relu"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "752b8737e5fd748eea05d7d5e46753ac937a51ccadefb458c18325ff24b2715e"
+      "438aeb6f2cd2d0d95ad84bdc5e611659da5961536899a41dd1b5dde3a424f576"
     ],
     "source_sha256": {
       "builtin_tensor_leaky_relu": [
-        "752b8737e5fd748eea05d7d5e46753ac937a51ccadefb458c18325ff24b2715e"
+        "438aeb6f2cd2d0d95ad84bdc5e611659da5961536899a41dd1b5dde3a424f576"
+      ],
+      "eigs_float_arg": [
+        "628eed4fed7515fe2738a26153798fcb173cb23a350d8436f78215f7d1f4c4a8"
       ],
       "flat_to_like": [
         "244c127abae1a7bf7fa14097cf4c4930239ba42febae9d6d8f3264ea974d4dd1"
@@ -2291,7 +2342,7 @@
         "65240f647516c2717f73e1df84f89fa46da785a5ff51062d545adca210986100"
       ],
       "tensor_to_flat": [
-        "f6ed317543ac1e298bce2f18706f3c8fb7d7067bbe89525f2d1c4f645b87e39d"
+        "5e7c0e1245289789d3b7b04d120a015595a96f034ea9b4d5fc141df131f3b3a1"
       ]
     }
   },
@@ -2301,17 +2352,17 @@
     "category": "output_only",
     "minimum": null,
     "maximum": null,
-    "reason": "Input is scalar string; list operations concern output or replay result, not input tuple.",
+    "reason": "Input is scalar string; list operations concern output or replay result, not input tuple. R1.6z reviewed repin: only the retired constructor spelling in a comment changes (make_num to make_float); executable C and the whole-argument helper closure are unchanged.",
     "public_names": [
       "tensor_load"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "9c5a7fcdd81ab0a65c4c4895efa71fcdd2b5388b8d2101a41bb670472e351a34"
+      "8d1dc1186b2e15789858e364466b18cf82d536a1afc85a7ff045de872eb8f49c"
     ],
     "source_sha256": {
       "builtin_tensor_load": [
-        "9c5a7fcdd81ab0a65c4c4895efa71fcdd2b5388b8d2101a41bb670472e351a34"
+        "8d1dc1186b2e15789858e364466b18cf82d536a1afc85a7ff045de872eb8f49c"
       ]
     }
   },
@@ -2334,7 +2385,7 @@
         "b4a539220becdecfac11ef2593b2da1b485db0397c1790217a22bde526ff7290"
       ],
       "tensor_unary": [
-        "04fd54c5ccf01c248491a72c9ced77c1c5229d02584040585435fb1fe1c5c4a6"
+        "76ea67a37aac2aeaa33a78e2f30c5f998403752e7109e13d791e284d44f3c389"
       ]
     }
   },
@@ -2344,17 +2395,17 @@
     "category": "overloaded_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Exactly [list, number] is special tensor/dim form; otherwise entire list is tensor data. A global cap of two is incorrect; preserve documented recognition.",
+    "reason": "Exactly [list, number] is special tensor/dim form; otherwise entire list is tensor data. A global cap of two is incorrect; preserve documented recognition. R1.6d review: Float scalar result writer preserves exactly [list, number] overload recognition and whole-list data fallback.",
     "public_names": [
       "log_softmax"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "b431416fb41cf6a08ba614b21435f6f9df5386f253cb1f8e69418c4443c6d54d"
+      "128b48d0f155a4bcb8105da0cc97dc3f1561458505ff7489992db98022baaa68"
     ],
     "source_sha256": {
       "builtin_tensor_log_softmax": [
-        "b431416fb41cf6a08ba614b21435f6f9df5386f253cb1f8e69418c4443c6d54d"
+        "128b48d0f155a4bcb8105da0cc97dc3f1561458505ff7489992db98022baaa68"
       ]
     }
   },
@@ -2400,23 +2451,26 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "reason": "List is the whole value/data input, not a bounded tuple. R1.6d review: Final float readers refuse nonfinite scalar data without imposing a list arity; the whole list is reduced.",
     "public_names": [
       "mean"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "8d6e2d9d5b0e3091de9a903c7bce88703f3f99b7960fcfb1ef2d472ead4a4937"
+      "098667c61831052efd5876759aad465f927b44517f4188322a94554aed5d730c"
     ],
     "source_sha256": {
+      "buffer_read_f64": [
+        "9f8d1032819c96b10d89078becaaf95b17ff0cc3edb6c03c0ca0b4b123887d0b"
+      ],
       "builtin_tensor_mean": [
-        "8d6e2d9d5b0e3091de9a903c7bce88703f3f99b7960fcfb1ef2d472ead4a4937"
+        "098667c61831052efd5876759aad465f927b44517f4188322a94554aed5d730c"
       ],
       "tensor_flatten_recursive": [
-        "fdaa19d7ba1bcf588fd8be8658a654e5ddbae696a8503715121da43d172ac8e0"
+        "fa55a91461d8a3791b0c4520b063faa164cd50b8c4da1c4e20cbccd2ab929c91"
       ],
       "tensor_total": [
-        "1beba45467365e63a8f1ce473a609f9274e7c48b7dbb495e304003dfcc319ba3"
+        "309b8235701347551651091820df50ed8b7afa8f64598b94f2aaaa5b65d1a2cd"
       ]
     }
   },
@@ -2451,7 +2505,7 @@
         "1197e210c14cfbfda2e6cb1316245d316693dadce0aee086ebd830c96c10be4b"
       ],
       "tensor_unary": [
-        "04fd54c5ccf01c248491a72c9ced77c1c5229d02584040585435fb1fe1c5c4a6"
+        "76ea67a37aac2aeaa33a78e2f30c5f998403752e7109e13d791e284d44f3c389"
       ]
     }
   },
@@ -2461,23 +2515,26 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "reason": "List is the whole value/data input, not a bounded tuple. R1.6d review: Final float readers refuse nonfinite scalar data without imposing a list arity; the whole list is reduced.",
     "public_names": [
       "norm"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "5dac71b8db9006db985e089ebf1bd86567897dca30f429355360fe5e6a80ddcf"
+      "ede3429bf171ce84fa68dfed98bcd1899397dc2b5881e1a5ae1b5ff8e641fb53"
     ],
     "source_sha256": {
+      "buffer_read_f64": [
+        "9f8d1032819c96b10d89078becaaf95b17ff0cc3edb6c03c0ca0b4b123887d0b"
+      ],
       "builtin_tensor_norm": [
-        "5dac71b8db9006db985e089ebf1bd86567897dca30f429355360fe5e6a80ddcf"
+        "ede3429bf171ce84fa68dfed98bcd1899397dc2b5881e1a5ae1b5ff8e641fb53"
       ],
       "tensor_flatten_recursive": [
-        "fdaa19d7ba1bcf588fd8be8658a654e5ddbae696a8503715121da43d172ac8e0"
+        "fa55a91461d8a3791b0c4520b063faa164cd50b8c4da1c4e20cbccd2ab929c91"
       ],
       "tensor_total": [
-        "1beba45467365e63a8f1ce473a609f9274e7c48b7dbb495e304003dfcc319ba3"
+        "309b8235701347551651091820df50ed8b7afa8f64598b94f2aaaa5b65d1a2cd"
       ]
     }
   },
@@ -2499,23 +2556,26 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum. R1.6d review: Float scalar/list/tensor conversion preserves whole-data shape recognition and flat output shape.",
     "public_names": [
       "relu"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "22ca05ce8c0e3fe3887c87bc9f74b1df24e2700c61205e7f5928a7a871fa2640"
+      "c82f86a53fd89c1440228e099d166d9ee1f11672dfc8c6def438182b000df3bd"
     ],
     "source_sha256": {
       "builtin_tensor_relu": [
-        "22ca05ce8c0e3fe3887c87bc9f74b1df24e2700c61205e7f5928a7a871fa2640"
+        "c82f86a53fd89c1440228e099d166d9ee1f11672dfc8c6def438182b000df3bd"
+      ],
+      "eigs_float_arg": [
+        "628eed4fed7515fe2738a26153798fcb173cb23a350d8436f78215f7d1f4c4a8"
       ],
       "flat_to_like": [
         "244c127abae1a7bf7fa14097cf4c4930239ba42febae9d6d8f3264ea974d4dd1"
       ],
       "tensor_to_flat": [
-        "f6ed317543ac1e298bce2f18706f3c8fb7d7067bbe89525f2d1c4f645b87e39d"
+        "5e7c0e1245289789d3b7b04d120a015595a96f034ea9b4d5fc141df131f3b3a1"
       ]
     }
   },
@@ -2549,17 +2609,17 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Entire list is data; no argument-list maximum.",
+    "reason": "Entire list is data; no argument-list maximum. R1.6d review: N3 integer dimension results preserve whole-list input shape recognition.",
     "public_names": [
       "shape"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "c91cd906174337cc0a2d10bdb7daac932bb513e9632b97f1f9c0e96b1c4bb2a0"
+      "b63ea605f6ab1cac996fb74bb08680c675dc0723695a362a240391dea4337fad"
     ],
     "source_sha256": {
       "builtin_tensor_shape": [
-        "c91cd906174337cc0a2d10bdb7daac932bb513e9632b97f1f9c0e96b1c4bb2a0"
+        "b63ea605f6ab1cac996fb74bb08680c675dc0723695a362a240391dea4337fad"
       ]
     }
   },
@@ -2569,20 +2629,20 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum. R1.6d review: Float result writers and final data readers preserve whole-data recognition and output dimensions.",
     "public_names": [
       "softmax"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "645c908202070b64e51e3d65f24b1ea4248b9def36909422e28bd47eead6fdf5"
+      "ddbdaefbe7e894385de7d03855bb97610a61b45f11ff9e34b50c228c131ba78d"
     ],
     "source_sha256": {
       "buf_dims": [
         "eed52bb80872976c3f6c755c1ef9677c5c990de16e492d4856d23fbf3f20615b"
       ],
       "builtin_tensor_softmax": [
-        "645c908202070b64e51e3d65f24b1ea4248b9def36909422e28bd47eead6fdf5"
+        "ddbdaefbe7e894385de7d03855bb97610a61b45f11ff9e34b50c228c131ba78d"
       ],
       "flat_to_like": [
         "244c127abae1a7bf7fa14097cf4c4930239ba42febae9d6d8f3264ea974d4dd1"
@@ -2591,7 +2651,7 @@
         "65240f647516c2717f73e1df84f89fa46da785a5ff51062d545adca210986100"
       ],
       "tensor_to_flat": [
-        "f6ed317543ac1e298bce2f18706f3c8fb7d7067bbe89525f2d1c4f645b87e39d"
+        "5e7c0e1245289789d3b7b04d120a015595a96f034ea9b4d5fc141df131f3b3a1"
       ]
     }
   },
@@ -2614,7 +2674,7 @@
         "62a668ee5f0d2e59177d0bcc41818a1a2c07dca2862e9dbeca2366f3d6f37f06"
       ],
       "tensor_unary": [
-        "04fd54c5ccf01c248491a72c9ced77c1c5229d02584040585435fb1fe1c5c4a6"
+        "76ea67a37aac2aeaa33a78e2f30c5f998403752e7109e13d791e284d44f3c389"
       ]
     }
   },
@@ -2642,17 +2702,20 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "140ee44cdec4231baa98cc893ad6e92d2451fc68efe9dced8c7351a24115ac78"
+      "5d90e26e48acfff3de1efe35ec59018a7405281cf1373ab204b1c27299f93dfe"
     ],
     "source_sha256": {
       "builtin_tensor_sum": [
-        "140ee44cdec4231baa98cc893ad6e92d2451fc68efe9dced8c7351a24115ac78"
+        "5d90e26e48acfff3de1efe35ec59018a7405281cf1373ab204b1c27299f93dfe"
       ],
-      "tensor_flatten_recursive": [
-        "fdaa19d7ba1bcf588fd8be8658a654e5ddbae696a8503715121da43d172ac8e0"
+      "tensor_sum_has_float": [
+        "7b754441747db5227a2f92136d335123a055ea229472ff6ed660d88051e4f3c9"
+      ],
+      "tensor_sum_into": [
+        "62cdee510784e9540c15b984eb4091ae18b2705fe90c7fd992455344f311bc6a"
       ],
       "tensor_total": [
-        "1beba45467365e63a8f1ce473a609f9274e7c48b7dbb495e304003dfcc319ba3"
+        "309b8235701347551651091820df50ed8b7afa8f64598b94f2aaaa5b65d1a2cd"
       ]
     }
   },
@@ -2674,17 +2737,17 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "reason": "List is the whole value/data input, not a bounded tuple. R1.6d review: Float zero results preserve whole-data input recognition and output dimensions.",
     "public_names": [
       "zeros_like"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "0decd89b1c7923300c9fcede1eaf79c37cbe3f8843a659e748847b8fd47554b9"
+      "fbd514f82a1b1119c27d53a6c7abbdbe273d88dcb90a5ba13daf8bd44c9feef9"
     ],
     "source_sha256": {
       "builtin_tensor_zeros_like": [
-        "0decd89b1c7923300c9fcede1eaf79c37cbe3f8843a659e748847b8fd47554b9"
+        "fbd514f82a1b1119c27d53a6c7abbdbe273d88dcb90a5ba13daf8bd44c9feef9"
       ],
       "make_buffer_like": [
         "65240f647516c2717f73e1df84f89fa46da785a5ff51062d545adca210986100"
@@ -2734,7 +2797,7 @@
         "58643ba82f7389f7db40c267f5d9a1da317dcea2994a74da4617006eb112153b"
       ],
       "value_to_string": [
-        "269292118bde6226411ea5a201cc73ae9a5d81dc010f8caca57118e4b8257f70"
+        "541c34dfd1dbe93f2ca39b800321afb116be9c74d7d8e35b297502a157a2e1fd"
       ]
     }
   },
@@ -2750,11 +2813,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "cc1a745c40ba3e4a89932ddf0c8362f819d9a50f47dcda5c4da022bdb166c8c2"
+      "8822d10dee00d55b95f816a9627c0cc9fcbac6f63762bfc9477d041bbcbfe09d"
     ],
     "source_sha256": {
       "builtin_type": [
-        "cc1a745c40ba3e4a89932ddf0c8362f819d9a50f47dcda5c4da022bdb166c8c2"
+        "8822d10dee00d55b95f816a9627c0cc9fcbac6f63762bfc9477d041bbcbfe09d"
       ]
     }
   },
@@ -2787,23 +2850,23 @@
     "category": "descriptor_data",
     "minimum": null,
     "maximum": null,
-    "reason": "Whole ABI-stamped descriptor is data validated by vm_desc_abi_error; it is not a fixed builtin argument tuple. No descriptor execution is needed for this classification.",
+    "reason": "Whole ABI-stamped descriptor is data validated by vm_desc_abi_error; it is not a fixed builtin argument tuple. No descriptor execution is needed for this classification. Reviewed R1.6c (#1758): numeric readers changed; outer argument shape is unchanged.",
     "public_names": [
       "vm_run_bytecode"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "503497c43ec971fb5f2f0033038cedd0948c3016967fd49daca688a8c9f56741"
+      "e3cf03f3b871b4206196bf676e5e5cdaf66c9bb552645f23f5e47457c3ad07e7"
     ],
     "source_sha256": {
       "builtin_vm_run_bytecode": [
-        "503497c43ec971fb5f2f0033038cedd0948c3016967fd49daca688a8c9f56741"
+        "e3cf03f3b871b4206196bf676e5e5cdaf66c9bb552645f23f5e47457c3ad07e7"
       ],
       "vm_build_chunk_desc": [
         "56131f5a520be3bff59da05c8cc0203b0e9841de25d8bc7b76922aa2f9a21e18"
       ],
       "vm_desc_abi_error": [
-        "c01ddd713da0938f1f770c7c32675ddc3f0f2cb32c23426e3f58cce41540c3d2"
+        "49ef36eb548d2e0b2a779190cbf62c69777545392d39b4b6a96600fe9f6d27de"
       ]
     }
   },
@@ -2826,7 +2889,7 @@
         "df9046f4cdc7e9431a3b4c81e7c9752d9bb7520af99660223fb3e9b6f586171b"
       ],
       "value_to_string": [
-        "269292118bde6226411ea5a201cc73ae9a5d81dc010f8caca57118e4b8257f70"
+        "541c34dfd1dbe93f2ca39b800321afb116be9c74d7d8e35b297502a157a2e1fd"
       ]
     }
   },
@@ -2853,5 +2916,1998 @@
       "write_text"
     ],
     "disposition": "guarded"
+  },
+  {
+    "function": "builtin_i8_wrapping_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i8_wrapping_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "d60836356c1be9c75718289222378458f702f1b5c3311fddae3ed56c2e618668"
+    ],
+    "source_sha256": {
+      "builtin_i8_wrapping_add": [
+        "d60836356c1be9c75718289222378458f702f1b5c3311fddae3ed56c2e618668"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i8_wrapping_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i8_wrapping_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "0c4fe03abb11fdf8e01e631e22230b1c9c62b11648cc85cd399daa35c591870c"
+    ],
+    "source_sha256": {
+      "builtin_i8_wrapping_sub": [
+        "0c4fe03abb11fdf8e01e631e22230b1c9c62b11648cc85cd399daa35c591870c"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i8_wrapping_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i8_wrapping_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "3a99ec26a8a08d88f63ce6c88ebf85f5cf48f29f9355c028337f5cf1b9cbab1a"
+    ],
+    "source_sha256": {
+      "builtin_i8_wrapping_mul": [
+        "3a99ec26a8a08d88f63ce6c88ebf85f5cf48f29f9355c028337f5cf1b9cbab1a"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i8_checked_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i8_checked_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "f5c73080d630e65ba609129c89a017003b08fcec66e21aed5a18f7a322c656e4"
+    ],
+    "source_sha256": {
+      "builtin_i8_checked_add": [
+        "f5c73080d630e65ba609129c89a017003b08fcec66e21aed5a18f7a322c656e4"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i8_checked_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i8_checked_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "c33e6f3efc9893832166f24e0cb8c832e18781e359afc6e331fd2dcea1b7a6d8"
+    ],
+    "source_sha256": {
+      "builtin_i8_checked_sub": [
+        "c33e6f3efc9893832166f24e0cb8c832e18781e359afc6e331fd2dcea1b7a6d8"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i8_checked_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i8_checked_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "f5a9c8f949cf9ad50c030be0b033b2e04cb2f988b3035bf9844ba78b494cc4f7"
+    ],
+    "source_sha256": {
+      "builtin_i8_checked_mul": [
+        "f5a9c8f949cf9ad50c030be0b033b2e04cb2f988b3035bf9844ba78b494cc4f7"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i8_saturating_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i8_saturating_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "335b71aa6da345081aa17ab54aa912cd4d5ffbf8a2768f15f3e3cb2775eb00cf"
+    ],
+    "source_sha256": {
+      "builtin_i8_saturating_add": [
+        "335b71aa6da345081aa17ab54aa912cd4d5ffbf8a2768f15f3e3cb2775eb00cf"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i8_saturating_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i8_saturating_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "49a350b53edb0530849d97b2cdb72e8586831fd4b37cdbbdb9b4d023577cf5f9"
+    ],
+    "source_sha256": {
+      "builtin_i8_saturating_sub": [
+        "49a350b53edb0530849d97b2cdb72e8586831fd4b37cdbbdb9b4d023577cf5f9"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i8_saturating_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i8_saturating_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "4b4285eab3b7ee92f2b3b9787a99b75261969e14ef7b2893b1f58cd8b5dfbe93"
+    ],
+    "source_sha256": {
+      "builtin_i8_saturating_mul": [
+        "4b4285eab3b7ee92f2b3b9787a99b75261969e14ef7b2893b1f58cd8b5dfbe93"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i16_wrapping_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i16_wrapping_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "791c3ff629d6d81368f3a9ff2081fcd8d7efc6969230549b4d2be401280acab3"
+    ],
+    "source_sha256": {
+      "builtin_i16_wrapping_add": [
+        "791c3ff629d6d81368f3a9ff2081fcd8d7efc6969230549b4d2be401280acab3"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i16_wrapping_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i16_wrapping_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "c80537627672a2f45b1fee5f71cd9015a7085095778453bad3671f16ae774ac4"
+    ],
+    "source_sha256": {
+      "builtin_i16_wrapping_sub": [
+        "c80537627672a2f45b1fee5f71cd9015a7085095778453bad3671f16ae774ac4"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i16_wrapping_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i16_wrapping_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "99b9a63bb0d608259bb1f85efcfe371086c110cadc82a1229364434a329a62c3"
+    ],
+    "source_sha256": {
+      "builtin_i16_wrapping_mul": [
+        "99b9a63bb0d608259bb1f85efcfe371086c110cadc82a1229364434a329a62c3"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i16_checked_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i16_checked_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "a77877a011718198d72c0d0a50f11989c6d95bb3aaee912e72f458da4b374b3c"
+    ],
+    "source_sha256": {
+      "builtin_i16_checked_add": [
+        "a77877a011718198d72c0d0a50f11989c6d95bb3aaee912e72f458da4b374b3c"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i16_checked_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i16_checked_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "d46336e474a7617ab7f0f6b59c4b1b8c9ab8754be110ac45f0f75cce68550e82"
+    ],
+    "source_sha256": {
+      "builtin_i16_checked_sub": [
+        "d46336e474a7617ab7f0f6b59c4b1b8c9ab8754be110ac45f0f75cce68550e82"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i16_checked_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i16_checked_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "ba092b25c3e669adde7a6669e1c9619b2352f00f6fc72049570850059de3e571"
+    ],
+    "source_sha256": {
+      "builtin_i16_checked_mul": [
+        "ba092b25c3e669adde7a6669e1c9619b2352f00f6fc72049570850059de3e571"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i16_saturating_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i16_saturating_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "42e664fb6d0ee421612fe2486d57ebcec589fe3aa209eb910f4c7e5dbc007cd4"
+    ],
+    "source_sha256": {
+      "builtin_i16_saturating_add": [
+        "42e664fb6d0ee421612fe2486d57ebcec589fe3aa209eb910f4c7e5dbc007cd4"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i16_saturating_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i16_saturating_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "c67d10e0b8e1daaac9d446375965cc5f74aa63cf9a4c271ae95c117abb938909"
+    ],
+    "source_sha256": {
+      "builtin_i16_saturating_sub": [
+        "c67d10e0b8e1daaac9d446375965cc5f74aa63cf9a4c271ae95c117abb938909"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i16_saturating_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i16_saturating_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "061691de49ce5d833edfce351b4bc7ac88be4c4fccb6b10052c964e6addbcb99"
+    ],
+    "source_sha256": {
+      "builtin_i16_saturating_mul": [
+        "061691de49ce5d833edfce351b4bc7ac88be4c4fccb6b10052c964e6addbcb99"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i32_wrapping_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i32_wrapping_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "a5db9f259166411b5afc57a0df29e38bda398f88b2909b6dcc04c2316665ceb3"
+    ],
+    "source_sha256": {
+      "builtin_i32_wrapping_add": [
+        "a5db9f259166411b5afc57a0df29e38bda398f88b2909b6dcc04c2316665ceb3"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i32_wrapping_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i32_wrapping_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "54d51fc24da1045da218f5b15d2f0982383a0b4222c207203799e468f895dde4"
+    ],
+    "source_sha256": {
+      "builtin_i32_wrapping_sub": [
+        "54d51fc24da1045da218f5b15d2f0982383a0b4222c207203799e468f895dde4"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i32_wrapping_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i32_wrapping_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "13ececb51237ac99480a93ee057b50f08977f4c601d5d669ea411451abac587d"
+    ],
+    "source_sha256": {
+      "builtin_i32_wrapping_mul": [
+        "13ececb51237ac99480a93ee057b50f08977f4c601d5d669ea411451abac587d"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i32_checked_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i32_checked_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "91a978bb340dc5375e280e156bd33db98d9c128e67a769176571f5a65cfe32f1"
+    ],
+    "source_sha256": {
+      "builtin_i32_checked_add": [
+        "91a978bb340dc5375e280e156bd33db98d9c128e67a769176571f5a65cfe32f1"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i32_checked_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i32_checked_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "7a326f945fcb657990907c7b2231dafe534d91ad3acce84f5791169d8f3821e8"
+    ],
+    "source_sha256": {
+      "builtin_i32_checked_sub": [
+        "7a326f945fcb657990907c7b2231dafe534d91ad3acce84f5791169d8f3821e8"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i32_checked_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i32_checked_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "07eb9f3bb071198a873c9112f8934526619f11c21ce389aea2e15d3e40f4389e"
+    ],
+    "source_sha256": {
+      "builtin_i32_checked_mul": [
+        "07eb9f3bb071198a873c9112f8934526619f11c21ce389aea2e15d3e40f4389e"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i32_saturating_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i32_saturating_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "214fe4841e912759d2effad2d060a4922b1e55391fea33384730374ffb2f5c26"
+    ],
+    "source_sha256": {
+      "builtin_i32_saturating_add": [
+        "214fe4841e912759d2effad2d060a4922b1e55391fea33384730374ffb2f5c26"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i32_saturating_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i32_saturating_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "ce231dac618bfe95e62e6ef92d24166f637a74a0fdb419b96b1a4b5266887c58"
+    ],
+    "source_sha256": {
+      "builtin_i32_saturating_sub": [
+        "ce231dac618bfe95e62e6ef92d24166f637a74a0fdb419b96b1a4b5266887c58"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i32_saturating_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i32_saturating_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "74bafcdf32529da812e98b977108695cb002797b5183f890e7a69a3b3aa8993e"
+    ],
+    "source_sha256": {
+      "builtin_i32_saturating_mul": [
+        "74bafcdf32529da812e98b977108695cb002797b5183f890e7a69a3b3aa8993e"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i64_wrapping_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i64_wrapping_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "68c7f3282f21fe998542353339b1064580d60de4d90f6c48a68eacda8847ea98"
+    ],
+    "source_sha256": {
+      "builtin_i64_wrapping_add": [
+        "68c7f3282f21fe998542353339b1064580d60de4d90f6c48a68eacda8847ea98"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i64_wrapping_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i64_wrapping_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "8074da2a24ba68feef340b8454c886da2d9c1bd710eeb530f5d6f5ab21355934"
+    ],
+    "source_sha256": {
+      "builtin_i64_wrapping_sub": [
+        "8074da2a24ba68feef340b8454c886da2d9c1bd710eeb530f5d6f5ab21355934"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i64_wrapping_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i64_wrapping_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "1b1fbc9b7c4378a61929453b953a76c13cdfbbbfd31c958caaf2aaa49b0e7fc8"
+    ],
+    "source_sha256": {
+      "builtin_i64_wrapping_mul": [
+        "1b1fbc9b7c4378a61929453b953a76c13cdfbbbfd31c958caaf2aaa49b0e7fc8"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i64_checked_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i64_checked_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "74b3cc5a8cc56e29c10cfa38bd7f880b60919d7bcbcc90cca06bec18ec9da67a"
+    ],
+    "source_sha256": {
+      "builtin_i64_checked_add": [
+        "74b3cc5a8cc56e29c10cfa38bd7f880b60919d7bcbcc90cca06bec18ec9da67a"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i64_checked_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i64_checked_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "f9028710ce537acd6d09fb3c22dbcb139b170b4cc795d6a32be48f26ece55154"
+    ],
+    "source_sha256": {
+      "builtin_i64_checked_sub": [
+        "f9028710ce537acd6d09fb3c22dbcb139b170b4cc795d6a32be48f26ece55154"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i64_checked_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i64_checked_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "f1d1175ce387a65d8109966f5cd0e0f3449a820ea2846ef87a9311f7c498dbdc"
+    ],
+    "source_sha256": {
+      "builtin_i64_checked_mul": [
+        "f1d1175ce387a65d8109966f5cd0e0f3449a820ea2846ef87a9311f7c498dbdc"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i64_saturating_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i64_saturating_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "fdc690492db8283a55d3af553705ef6113fe731a6523e9b51a87cae4dcd2eafd"
+    ],
+    "source_sha256": {
+      "builtin_i64_saturating_add": [
+        "fdc690492db8283a55d3af553705ef6113fe731a6523e9b51a87cae4dcd2eafd"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i64_saturating_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i64_saturating_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "5b5dc454c618cd6491476ad748d2572ef5241dc9b01dfe1185196c682a6cf07d"
+    ],
+    "source_sha256": {
+      "builtin_i64_saturating_sub": [
+        "5b5dc454c618cd6491476ad748d2572ef5241dc9b01dfe1185196c682a6cf07d"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_i64_saturating_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "i64_saturating_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "f85aece237b65d8efbc310b7db6acaf0d62c2021b69f8c7f45094f21542d3be3"
+    ],
+    "source_sha256": {
+      "builtin_i64_saturating_mul": [
+        "f85aece237b65d8efbc310b7db6acaf0d62c2021b69f8c7f45094f21542d3be3"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u8_wrapping_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u8_wrapping_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "55493824adb52e1a28d254f9cb5024238914ab8463875e994b9b7824151d77d0"
+    ],
+    "source_sha256": {
+      "builtin_u8_wrapping_add": [
+        "55493824adb52e1a28d254f9cb5024238914ab8463875e994b9b7824151d77d0"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u8_wrapping_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u8_wrapping_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "00de168d773519c55541d43e417f233b32184a907db396cf5ffa7b3fd34e6edb"
+    ],
+    "source_sha256": {
+      "builtin_u8_wrapping_sub": [
+        "00de168d773519c55541d43e417f233b32184a907db396cf5ffa7b3fd34e6edb"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u8_wrapping_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u8_wrapping_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "eeba4cd16500af7b22d5b28eff5dccfb25c01cfc9bf51215192196bcaead106e"
+    ],
+    "source_sha256": {
+      "builtin_u8_wrapping_mul": [
+        "eeba4cd16500af7b22d5b28eff5dccfb25c01cfc9bf51215192196bcaead106e"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u8_checked_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u8_checked_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "958464e39e8606805225201aceff28ea9db4a0940400795b2d3c873758d7919a"
+    ],
+    "source_sha256": {
+      "builtin_u8_checked_add": [
+        "958464e39e8606805225201aceff28ea9db4a0940400795b2d3c873758d7919a"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u8_checked_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u8_checked_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "f87d1e753b89003151d4ce779e3d535f1cf9ddc2f9de08766d9921ab64254d8e"
+    ],
+    "source_sha256": {
+      "builtin_u8_checked_sub": [
+        "f87d1e753b89003151d4ce779e3d535f1cf9ddc2f9de08766d9921ab64254d8e"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u8_checked_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u8_checked_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "104e43743eda70bb25a0ac9aaab9958476950261561bb699fe01197a61e96725"
+    ],
+    "source_sha256": {
+      "builtin_u8_checked_mul": [
+        "104e43743eda70bb25a0ac9aaab9958476950261561bb699fe01197a61e96725"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u8_saturating_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u8_saturating_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "d404f7a66d2696fc7f2b7e1e3d489d72af27eb3ca90cb77c49709fb335d52f62"
+    ],
+    "source_sha256": {
+      "builtin_u8_saturating_add": [
+        "d404f7a66d2696fc7f2b7e1e3d489d72af27eb3ca90cb77c49709fb335d52f62"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u8_saturating_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u8_saturating_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "dcf72491a2410f34e8a394848cc55d932e4cc1bd42dd16e06e1b9f4ee9b94f22"
+    ],
+    "source_sha256": {
+      "builtin_u8_saturating_sub": [
+        "dcf72491a2410f34e8a394848cc55d932e4cc1bd42dd16e06e1b9f4ee9b94f22"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u8_saturating_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u8_saturating_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "6e7c0c474be39a69c8ac4acdf6f2ee2d4e554595916331f3680f3c5409541dc4"
+    ],
+    "source_sha256": {
+      "builtin_u8_saturating_mul": [
+        "6e7c0c474be39a69c8ac4acdf6f2ee2d4e554595916331f3680f3c5409541dc4"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u16_wrapping_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u16_wrapping_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "5743ee2a2611994740f35fd705fbc94ed0d3a56f523abeeb759dec4eaac131cf"
+    ],
+    "source_sha256": {
+      "builtin_u16_wrapping_add": [
+        "5743ee2a2611994740f35fd705fbc94ed0d3a56f523abeeb759dec4eaac131cf"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u16_wrapping_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u16_wrapping_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "bfc05a7037a6709d32f4f46d35e9fb255e213fec4be12cc4a43fdd91a4129dc2"
+    ],
+    "source_sha256": {
+      "builtin_u16_wrapping_sub": [
+        "bfc05a7037a6709d32f4f46d35e9fb255e213fec4be12cc4a43fdd91a4129dc2"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u16_wrapping_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u16_wrapping_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "9982e0432905ddcac16da2ff49a74dbcef8ba16f5c9328445129fba2cc48fed7"
+    ],
+    "source_sha256": {
+      "builtin_u16_wrapping_mul": [
+        "9982e0432905ddcac16da2ff49a74dbcef8ba16f5c9328445129fba2cc48fed7"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u16_checked_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u16_checked_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "75e047c4c477ed8073bde33b6780638291ba80fffe8164f48023fcf75810dbef"
+    ],
+    "source_sha256": {
+      "builtin_u16_checked_add": [
+        "75e047c4c477ed8073bde33b6780638291ba80fffe8164f48023fcf75810dbef"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u16_checked_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u16_checked_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "5db19cf8b15cb67b3eecb734bea7dba45addfd867164c700e24009dd50fe362f"
+    ],
+    "source_sha256": {
+      "builtin_u16_checked_sub": [
+        "5db19cf8b15cb67b3eecb734bea7dba45addfd867164c700e24009dd50fe362f"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u16_checked_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u16_checked_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "eec652f3ec2771845136de3666835dcbf7a95e6e3b04fafeb14af50a29287741"
+    ],
+    "source_sha256": {
+      "builtin_u16_checked_mul": [
+        "eec652f3ec2771845136de3666835dcbf7a95e6e3b04fafeb14af50a29287741"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u16_saturating_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u16_saturating_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "12dccc30b15117ac29f5b93ab3803ba578ac5c73694f8c024842a2d846829d12"
+    ],
+    "source_sha256": {
+      "builtin_u16_saturating_add": [
+        "12dccc30b15117ac29f5b93ab3803ba578ac5c73694f8c024842a2d846829d12"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u16_saturating_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u16_saturating_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "3b0a82dcacb4059b97b38d04bd18a859ea9f56f07afab1131235c32ec5205903"
+    ],
+    "source_sha256": {
+      "builtin_u16_saturating_sub": [
+        "3b0a82dcacb4059b97b38d04bd18a859ea9f56f07afab1131235c32ec5205903"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u16_saturating_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u16_saturating_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "550787af46b85137de3e68c459f9e2539c3477bc004d8dc84303ac0c1f4b637a"
+    ],
+    "source_sha256": {
+      "builtin_u16_saturating_mul": [
+        "550787af46b85137de3e68c459f9e2539c3477bc004d8dc84303ac0c1f4b637a"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u32_wrapping_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u32_wrapping_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "fb99fa4cea2c88728f82e5524848d7e8979779ff6fba8ce83505dbc7796ccd64"
+    ],
+    "source_sha256": {
+      "builtin_u32_wrapping_add": [
+        "fb99fa4cea2c88728f82e5524848d7e8979779ff6fba8ce83505dbc7796ccd64"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u32_wrapping_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u32_wrapping_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "8a60c21abaa46893b5a7c3893c7e5e2bd9c8253d3a0c2e925dac307df73a5f35"
+    ],
+    "source_sha256": {
+      "builtin_u32_wrapping_sub": [
+        "8a60c21abaa46893b5a7c3893c7e5e2bd9c8253d3a0c2e925dac307df73a5f35"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u32_wrapping_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u32_wrapping_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "3a9b63d75031e99937003bdde481093b3ac912eb8b5405f6e1a368f5ae86c89e"
+    ],
+    "source_sha256": {
+      "builtin_u32_wrapping_mul": [
+        "3a9b63d75031e99937003bdde481093b3ac912eb8b5405f6e1a368f5ae86c89e"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u32_checked_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u32_checked_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "30a2152ad88422bf300ae6670091f0da22c74f134827df0328c81ee0b05b4459"
+    ],
+    "source_sha256": {
+      "builtin_u32_checked_add": [
+        "30a2152ad88422bf300ae6670091f0da22c74f134827df0328c81ee0b05b4459"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u32_checked_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u32_checked_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "904cd4a05afc377eb123d09bc1899001835421dc278b1bb00f711d345c1af930"
+    ],
+    "source_sha256": {
+      "builtin_u32_checked_sub": [
+        "904cd4a05afc377eb123d09bc1899001835421dc278b1bb00f711d345c1af930"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u32_checked_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u32_checked_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "e035b3ac98d8e645ab665d0f0d2a4280f9304d8ca9752ea5e4bb88905bd19852"
+    ],
+    "source_sha256": {
+      "builtin_u32_checked_mul": [
+        "e035b3ac98d8e645ab665d0f0d2a4280f9304d8ca9752ea5e4bb88905bd19852"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u32_saturating_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u32_saturating_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "af1d6106a22cc5a9473ce752ba514bef1d9e35334355eea872344bc38c03a0ad"
+    ],
+    "source_sha256": {
+      "builtin_u32_saturating_add": [
+        "af1d6106a22cc5a9473ce752ba514bef1d9e35334355eea872344bc38c03a0ad"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u32_saturating_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u32_saturating_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "bf0b7a32f17590390143348ca0788cf1409a643c18f7045da5c1cd13547f7473"
+    ],
+    "source_sha256": {
+      "builtin_u32_saturating_sub": [
+        "bf0b7a32f17590390143348ca0788cf1409a643c18f7045da5c1cd13547f7473"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u32_saturating_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u32_saturating_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "35eb5250c46fe559f1bad2cd3ec26b8b682f4a7feb8c63b3d54b294b651015db"
+    ],
+    "source_sha256": {
+      "builtin_u32_saturating_mul": [
+        "35eb5250c46fe559f1bad2cd3ec26b8b682f4a7feb8c63b3d54b294b651015db"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u64_wrapping_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u64_wrapping_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "986d61de96e1cd34bc48866a5943adb2c77fb68f46003bd6f42e817e8178fdc0"
+    ],
+    "source_sha256": {
+      "builtin_u64_wrapping_add": [
+        "986d61de96e1cd34bc48866a5943adb2c77fb68f46003bd6f42e817e8178fdc0"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u64_wrapping_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u64_wrapping_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "4a021a4565f4fd3c02143158a39e7646a1af78578650a003c253d1a3fc57f5bd"
+    ],
+    "source_sha256": {
+      "builtin_u64_wrapping_sub": [
+        "4a021a4565f4fd3c02143158a39e7646a1af78578650a003c253d1a3fc57f5bd"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u64_wrapping_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u64_wrapping_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "710eb5a6354d5294edb436db4f9d763790edc47b1c1bcb5e0ea94b96df99039d"
+    ],
+    "source_sha256": {
+      "builtin_u64_wrapping_mul": [
+        "710eb5a6354d5294edb436db4f9d763790edc47b1c1bcb5e0ea94b96df99039d"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u64_checked_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u64_checked_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "e870a2fd43e35e4109a5255cb9605c2fa7377f0b7fb530d27c2f658c96bc8346"
+    ],
+    "source_sha256": {
+      "builtin_u64_checked_add": [
+        "e870a2fd43e35e4109a5255cb9605c2fa7377f0b7fb530d27c2f658c96bc8346"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u64_checked_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u64_checked_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "accba026959827f236c091b67820dcdfd9e0e5d01518d782b9b28a99545ea110"
+    ],
+    "source_sha256": {
+      "builtin_u64_checked_sub": [
+        "accba026959827f236c091b67820dcdfd9e0e5d01518d782b9b28a99545ea110"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u64_checked_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u64_checked_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "a6fe8fba91fc016197a1ac231f0b04d9ec29045f83e7aa8564f9a870ea634eb6"
+    ],
+    "source_sha256": {
+      "builtin_u64_checked_mul": [
+        "a6fe8fba91fc016197a1ac231f0b04d9ec29045f83e7aa8564f9a870ea634eb6"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u64_saturating_add",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u64_saturating_add"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "63dcb9738d9759e8eeb536edcfb1a6efbc02a56a8cb26112f942704a979f63bc"
+    ],
+    "source_sha256": {
+      "builtin_u64_saturating_add": [
+        "63dcb9738d9759e8eeb536edcfb1a6efbc02a56a8cb26112f942704a979f63bc"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u64_saturating_sub",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u64_saturating_sub"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "103af2eb58f75f99b543533cc380dde3ecc1bc55e0c34fee6f807b0b7e023e4b"
+    ],
+    "source_sha256": {
+      "builtin_u64_saturating_sub": [
+        "103af2eb58f75f99b543533cc380dde3ecc1bc55e0c34fee6f807b0b7e023e4b"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u64_saturating_mul",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u64_saturating_mul"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "ec3604603c272e9eecb8d58838d960633ce053f3a976b29cf789e1661105c2b9"
+    ],
+    "source_sha256": {
+      "builtin_u64_saturating_mul": [
+        "ec3604603c272e9eecb8d58838d960633ce053f3a976b29cf789e1661105c2b9"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_width": [
+        "8b5c83d564ed7f22532d42d0d487d31cfe3ec9756902ae2519ae9e4c180fbe81"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u64_compare",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u64_compare"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "a983d96be765208d4397a56c0f19e9da07595c9a0ff7bbee6c67b6d32477a455"
+    ],
+    "source_sha256": {
+      "builtin_u64_compare": [
+        "a983d96be765208d4397a56c0f19e9da07595c9a0ff7bbee6c67b6d32477a455"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u64_div",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u64_div"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "7f7c16dd1a925b74531aa5c392e7cd16a73162693eda1e87b83a38e7170224d7"
+    ],
+    "source_sha256": {
+      "builtin_u64_div": [
+        "7f7c16dd1a925b74531aa5c392e7cd16a73162693eda1e87b83a38e7170224d7"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_unsigned_div": [
+        "87fc0b63a7b4077b0aff909cf31269077d6dd376fcbbd1c5610ed5dbc4023552"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u64_rem",
+    "file": "src/builtins_int.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "N9 R1.6g-D1: shared n9_pair unconditionally refuses surplus and missing binary operands before N5/range reads; both strict modes are covered by frozen probes and Rust differential.",
+    "public_names": [
+      "u64_rem"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "291a646a0f0b9c41965b1ddefd353fd91d60fc47594f8c8ef9c5e66a97bde1ed"
+    ],
+    "source_sha256": {
+      "builtin_u64_rem": [
+        "291a646a0f0b9c41965b1ddefd353fd91d60fc47594f8c8ef9c5e66a97bde1ed"
+      ],
+      "n9_pair": [
+        "2af010e12576426af8fd8e1b4efe6143459215cad378f78746ba853e521aee6f"
+      ],
+      "n9_unsigned_div": [
+        "87fc0b63a7b4077b0aff909cf31269077d6dd376fcbbd1c5610ed5dbc4023552"
+      ]
+    }
+  },
+  {
+    "function": "builtin_u64_to_string",
+    "file": "src/builtins_int.c",
+    "category": "unary",
+    "minimum": 1,
+    "maximum": 1,
+    "reason": "N9 R1.6g-D1: scalar unary reader with one-element list unwrap; every other list is a non-number and raises in both strict modes.",
+    "public_names": [
+      "u64_to_string"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "613a3341661ab5926f250beee6c32a06898872e65fc2809d88db1c655ad8d346"
+    ],
+    "source_sha256": {
+      "builtin_u64_to_string": [
+        "613a3341661ab5926f250beee6c32a06898872e65fc2809d88db1c655ad8d346"
+      ],
+      "eigs_int_arg": [
+        "4adef0d09678cfe76f30b2b9cd882e775a9d48ef7f30665102169c2e5ccae1aa"
+      ]
+    }
+  },
+  {
+    "function": "builtin_fround",
+    "file": "src/builtins_int.c",
+    "category": "unary",
+    "minimum": 1,
+    "maximum": 1,
+    "reason": "N9 R1.6g-D1: scalar unary reader with one-element list unwrap; every other list is a non-number and raises in both strict modes.",
+    "public_names": [
+      "fround"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "4b309d53784a2159951be0018d29403341e43bec55011e30588cf87f18c461a8"
+    ],
+    "source_sha256": {
+      "builtin_fround": [
+        "4b309d53784a2159951be0018d29403341e43bec55011e30588cf87f18c461a8"
+      ],
+      "eigs_float_arg": [
+        "628eed4fed7515fe2738a26153798fcb173cb23a350d8436f78215f7d1f4c4a8"
+      ]
+    }
   }
 ]

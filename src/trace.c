@@ -8,12 +8,12 @@
  *   L <stream> <line>           source-line event
  *   A <stream> <name>=<value>   name-keyed assignment delta
  *   N <stream> <fn>=<value>     nondeterministic builtin return
- *   O <stream> cfg <dh_zero> <dh_small> <h_low> <window> <scale>
+ *   O <stream> cfg <dh_zero> <dh_small> <window> <scale>
  *                               observer configuration in force (v3)
  *   O <stream> win <name> <n>   per-binding observer window override (v3)
  *
  * Value encoding:
- *   <num>          numeric (immediate, tracked, or heap VAL_NUM)
+ *   <num>          numeric (immediate, tracked, or heap VAL_FLOAT)
  *   null           VAL_NULL / immediate null slot
  *   true|false
  *   "<str…>"       heap string, content truncated at TRACE_STR_MAX
@@ -128,9 +128,7 @@ typedef struct {
      * every entry recorded before the flag flipped on mid-run (eval/REPL
      * compiling a historical observer query). */
     uint8_t  obs_valid;
-    double   entropy;
-    double   dH;
-    double   last_entropy;
+    ObsSnapshot obs;           /* scalar-only triple, best and since */
 } HistoryEntry;
 
 /* (line -> assignment count) histogram, kept sorted by line so `when is x
@@ -149,9 +147,7 @@ typedef struct {
 typedef struct {
     EigsSlot value;
     uint8_t  obs_valid;
-    double   entropy;
-    double   dH;
-    double   last_entropy;
+    ObsSnapshot obs;           /* scalar-only triple, best and since */
 } OccEntry;
 
 /* #739: the prev-table lives on EigsThread, not in a file static. It is keyed
@@ -659,15 +655,13 @@ static void prev_record_assign(const char *name, EigsSlot value, int filtered,
 /* #262 Phase-3 D2: patch the observer snapshot for `name`'s most recent
  * history entry from the slot-model trajectory. Called by OBSERVE_NAME_POST
  * after the binding's slot is freshly updated, so `where/why/how is x at L`
- * sources entropy/dH from the Env slot rather than the (Step-E-doomed) Value
- * observer fields. The history entry and its parallel obs slot were created by
+ * sources the numeric triple or entropy channel from the Env slot. The history entry and its parallel obs slot were created by
  * the preceding prev_record_assign — the SET runs before OBSERVE_NAME_POST —
  * so this overwrites a just-written (and, pre-flip, identical value-sourced)
  * entry, or fills the valid=0 entry left once observed numbers become
  * immediates. `name` must be the interned constant (pointer-keyed lookup).
  * Gated by g_trace_obs_hist at the call site. */
-void trace_record_obs(const char *name, double entropy, double dH,
-                      double last_entropy) {
+void trace_record_obs(const char *name, ObsSnapshot snapshot) {
     /* An ignored sandbox assignment must not overwrite an older host
      * assignment's observer snapshot, including its occurrence-ring twin. */
     if (!eigs_current || g_sandbox_active || !name || !g_prev_tab) return;
@@ -680,16 +674,12 @@ void trace_record_obs(const char *name, double entropy, double dH,
     if (e->occ && e->occ_count > 0) {
         int oi = e->occ_head == 0 ? e->occ_cap - 1 : e->occ_head - 1;
         OccEntry *o = &e->occ[oi];
-        o->entropy = entropy;
-        o->dH = dH;
-        o->last_entropy = last_entropy;
+        o->obs = snapshot;
         o->obs_valid = 1;
     }
     if (e->hist_count == 0) return;
     HistoryEntry *h = &e->history[e->hist_count - 1];
-    h->entropy = entropy;
-    h->dH = dH;
-    h->last_entropy = last_entropy;
+    h->obs = snapshot;
     h->obs_valid = 1;
 }
 
@@ -737,7 +727,7 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
         long long count = 0;
         for (int i = 0; i < e->lc_count && e->lc[i].line <= line; i++)
             count += e->lc[i].count;
-        *out = slot_from_num((double)count);
+        *out = slot_from_int(count);
         return 1;
     }
 
@@ -749,10 +739,7 @@ int trace_query_at(int kind, const char *interned_name, int line, EigsSlot *out)
         /* where/why/how — read the observer snapshot captured at that
          * assign. Mirrors the live INTERROGATE formulas. */
         if (!h->obs_valid) return 0;
-        double r = (kind == 3) ? h->entropy
-                 : (kind == 4) ? h->dH
-                 : observer_settledness(h->dH);   /* #412: how = f(dH) */
-        *out = slot_from_num(r);
+        *out = observer_snapshot_query(&h->obs, kind);
         return 1;
     }
 
@@ -801,7 +788,7 @@ int trace_query_when(int kind, const char *interned_name, long long ordinal,
      * answerable without the entry, so it too only needs the range check. */
     if (kind == 2) {
         if (ordinal < 1 || ordinal > e->occ_total) return TRACE_WHEN_MISS;
-        *out = slot_from_num((double)ordinal);
+        *out = slot_from_int(ordinal);
         return TRACE_WHEN_HIT;
     }
 
@@ -819,10 +806,7 @@ int trace_query_when(int kind, const char *interned_name, long long ordinal,
 
     if (kind >= 3 && kind <= 5) {
         if (!o->obs_valid) return TRACE_WHEN_MISS;
-        double r = (kind == 3) ? o->entropy
-                 : (kind == 4) ? o->dH
-                 : observer_settledness(o->dH);   /* #412: how = f(dH) */
-        *out = slot_from_num(r);
+        *out = observer_snapshot_query(&o->obs, kind);
         return TRACE_WHEN_HIT;
     }
 
@@ -1044,7 +1028,7 @@ typedef struct TraceRecordingBinding {
     int line_dirty;             /* an A/N since the previous L */
     uint32_t scope_serial;
     int scope_native;
-    double obs_dh_zero, obs_dh_small, obs_h_low, obs_scale;
+    double obs_dh_zero, obs_dh_small, obs_scale;
     int obs_window;
 } TraceRecordingBinding;
 static TraceRecordingBinding g_native_recording;
@@ -1090,7 +1074,6 @@ static void recording_binding_reset(TraceRecordingBinding *binding,
     binding->last_line = -1;
     binding->obs_dh_zero = OBSERVER_DH_ZERO_DEFAULT;
     binding->obs_dh_small = OBSERVER_DH_SMALL_DEFAULT;
-    binding->obs_h_low = OBSERVER_H_LOW_DEFAULT;
     binding->obs_scale = OBSERVER_SCALE_DEFAULT;
     binding->obs_window = OBSERVER_WINDOW_N;
 }
@@ -1541,8 +1524,8 @@ static void emit_scope_transition(void) {
 /* ---- #1044/#1045 follow-up: the observer CONFIGURATION on the tape.
  *
  * Every verdict the runtime prints (`report of x`, the predicates, the
- * `--step`/DAP trajectory labels) is a function of the A records AND of five
- * knobs — three thresholds, the window depth, the characteristic scale — plus
+ * `--step`/DAP trajectory labels) is a function of the A records AND of four
+ * knobs — two step thresholds, the window depth, the characteristic scale — plus
  * a per-binding window override. The tape carried the assignments and not the
  * knobs, so a stepped tape classified at the state defaults and printed a
  * verdict the live run never gave (the phugoid `oscillating` vs `diverging`
@@ -1565,7 +1548,7 @@ static void emit_scope_transition(void) {
  * (#2198).
  *
  * Cost when no tape is open: nothing (the recording entry points return on
- * g_trace_enabled). With a tape open: five compares per L/A/N/O-win record. */
+ * g_trace_enabled). With a tape open: four compares per L/A/N/O-win record. */
 /* Emit `O cfg` when the state's observer configuration has moved since
  * what THIS STREAM last emitted. Callers hold g_tape_mu and have checked
  * trace_out_active(). A default-config stream writes no configuration record. */
@@ -1575,23 +1558,24 @@ static void obs_cfg_sync(void) {
     TraceRecordingBinding *binding = g_emit_stream;
     if (st->obs_dh_zero  == binding->obs_dh_zero  &&
         st->obs_dh_small == binding->obs_dh_small &&
-        st->obs_h_low    == binding->obs_h_low    &&
         st->obs_scale    == binding->obs_scale    &&
         st->obs_window   == binding->obs_window) return;
     binding->obs_dh_zero  = st->obs_dh_zero;
     binding->obs_dh_small = st->obs_dh_small;
-    binding->obs_h_low    = st->obs_h_low;
     binding->obs_scale    = st->obs_scale;
     binding->obs_window   = st->obs_window;
-    /* One field per tp_printf: its staging buffer is 128 bytes and five
-     * %.17g fields in one call could silently truncate the record. */
+    /* One field per tp_printf: its staging buffer is 128 bytes and four
+     * numeric fields in one call could silently truncate the record. */
     emit_tag("O");
     tp_puts("cfg ");
-    tp_printf("%.17g ", binding->obs_dh_zero);
-    tp_printf("%.17g ", binding->obs_dh_small);
-    tp_printf("%.17g ", binding->obs_h_low);
+    char number[32];
+    eigs_num_text(number, sizeof number, binding->obs_dh_zero);
+    tp_printf("%s ", number);
+    eigs_num_text(number, sizeof number, binding->obs_dh_small);
+    tp_printf("%s ", number);
     tp_printf("%d ",    binding->obs_window);
-    tp_printf("%.17g\n", binding->obs_scale);
+    eigs_num_text(number, sizeof number, binding->obs_scale);
+    tp_printf("%s\n", number);
 }
 
 /* The per-binding override, recorded at the point it was set (n == 0 clears
@@ -1935,66 +1919,122 @@ static void replay_malformed_value(const char *value) {
  * API declare their kinds with eigs_trace_declare_kind; a name in neither
  * table is refused at replay. Bits are ValType (TK below). */
 #define TK(t) (1u << (t))
-#define TK_NUM_  TK(VAL_NUM)
+#define TK_NUM_  (TK(VAL_FLOAT) | TK(VAL_INT))
 #define TK_STR_  TK(VAL_STR)
 #define TK_BOOL_ TK(VAL_BOOL)
 #define TK_NULL_ TK(VAL_NULL)
 #define TK_LIST_ TK(VAL_LIST)
 #define TK_DICT_ TK(VAL_DICT)
 #define TK_BUF_  TK(VAL_BUFFER)
-static const struct { const char *name; unsigned kinds; } k_tape_kinds[] = {
-    {"args",                 TK_LIST_},
-    {"audio_capture_open",   TK_NUM_},
-    {"audio_capture_read",   TK_BUF_ | TK_NULL_},
-    {"audio_noise",          TK_LIST_},   /* one call = one or more sample chunks */
-    {"audio_stream_queued",  TK_NUM_},
-    {"clock_unix",           TK_NUM_},
-    {"env_get",              TK_STR_},
-    {"exe_path",             TK_STR_},
-    {"file_exists",          TK_BOOL_},
-    {"getcwd",               TK_STR_},
-    {"gfx_read",             TK_LIST_ | TK_NULL_},
-    {"gfx_ticks",            TK_NUM_},
-    {"http_post",            TK_STR_},
-    {"http_request_body",    TK_STR_},
-    {"http_request_headers", TK_STR_},
-    {"http_session_id",      TK_STR_},
-    {"is_dir",               TK_BOOL_},
-    {"is_file",              TK_BOOL_},
-    {"ls",                   TK_LIST_},
-    {"md5_file",             TK_STR_ | TK_LIST_},
-    {"import_source",        TK_LIST_},
-    {"import_source_chunk",  TK_STR_},
-    {"import_warning",       TK_STR_},
-    {"load_file_source",     TK_LIST_},
-    {"load_file_source_chunk", TK_STR_},
-    {"mkdir",                TK_BOOL_},
-    {"monotonic_ms",         TK_NUM_},
-    {"monotonic_ns",         TK_NUM_},
-    {"observer_source",      TK_LIST_},
-    {"observer_source_chunk", TK_STR_},
-    {"net_accept",           TK_NUM_ | TK_NULL_},
-    {"net_dial",             TK_NUM_ | TK_NULL_},
-    {"net_listen",           TK_NUM_ | TK_NULL_},
-    {"net_port",             TK_NUM_ | TK_NULL_},
-    {"net_recv",             TK_BUF_ | TK_NULL_},
-    {"net_send",             TK_NUM_},
-    {"random",               TK_NUM_},
-    {"random_hex",           TK_STR_},
-    {"random_int",           TK_NUM_},
-    {"random_normal",        TK_LIST_ | TK_NULL_},
-    {"read_bytes",           TK_LIST_ | TK_NULL_ | TK_NUM_},
-    {"read_bytes_buf",       TK_BUF_ | TK_NULL_ | TK_NUM_ | TK_LIST_}, /* list: I/O error */
-    {"read_line",            TK_STR_ | TK_NULL_},
-    {"read_text",            TK_STR_ | TK_LIST_ | TK_NUM_}, /* num: over-cap */
-    {"remove_file",          TK_BOOL_ | TK_LIST_}, /* list: I/O error */
-    {"rename",               TK_BOOL_ | TK_LIST_}, /* list: I/O error */
-    {"file_sync",            TK_BOOL_ | TK_LIST_}, /* list: I/O error */
-    {"dir_sync",             TK_BOOL_ | TK_LIST_}, /* list: I/O error */
-    {"tensor_load",          TK_LIST_ | TK_NULL_},  /* structurally validated boundary verdict */
-    {"write_bytes",          TK_NUM_ | TK_LIST_},  /* list: I/O error */
-    {"write_text",           TK_BOOL_ | TK_LIST_}, /* list: I/O error */
+/* R25-1: token grammar and a consumer's numeric domain are distinct.
+ * Most core sources can only return finite numbers, including numeric cells
+ * in bytes/samples. Reader sizes and source/tensor metadata retain their
+ * existing typed validation and diagnostics. A normal sample can overflow a
+ * finite scale to infinity, but cannot become NaN. Host-declared sources keep
+ * the full IEEE domain, as promised by their generic numeric kind. */
+typedef enum {
+    REPLAY_FINITE, REPLAY_READER, REPLAY_CHECKED, REPLAY_NORMAL, REPLAY_IEEE
+} ReplayNumberDomain;
+static const struct {
+    const char *name;
+    unsigned kinds;
+    ReplayNumberDomain numbers;
+} k_tape_kinds[] = {
+    {"args",                 TK_LIST_, REPLAY_CHECKED},
+    {"audio_capture_open",   TK_NUM_, REPLAY_FINITE},
+    {"audio_capture_read",   TK_BUF_ | TK_NULL_, REPLAY_FINITE},
+    {"audio_noise",          TK_LIST_, REPLAY_FINITE},   /* one call = one or more sample chunks */
+    {"audio_stream_queued",  TK_NUM_, REPLAY_FINITE},
+    {"clock_unix",           TK_NUM_, REPLAY_FINITE},
+    {"env_get",              TK_STR_, REPLAY_CHECKED},
+    {"exe_path",             TK_STR_, REPLAY_CHECKED},
+    {"file_exists",          TK_BOOL_, REPLAY_CHECKED},
+    {"getcwd",               TK_STR_, REPLAY_CHECKED},
+    {"gfx_read",             TK_LIST_ | TK_NULL_, REPLAY_FINITE},
+    {"gfx_ticks",            TK_NUM_, REPLAY_FINITE},
+    {"http_post",            TK_STR_, REPLAY_CHECKED},
+    {"http_request_body",    TK_STR_, REPLAY_CHECKED},
+    {"http_request_headers", TK_STR_, REPLAY_CHECKED},
+    {"http_session_id",      TK_STR_, REPLAY_CHECKED},
+    {"is_dir",               TK_BOOL_, REPLAY_CHECKED},
+    {"is_file",              TK_BOOL_, REPLAY_CHECKED},
+    {"ls",                   TK_LIST_, REPLAY_CHECKED},
+    {"md5_file",             TK_STR_ | TK_LIST_, REPLAY_CHECKED},
+    {"import_source",        TK_LIST_, REPLAY_CHECKED},
+    {"import_source_chunk",  TK_STR_, REPLAY_CHECKED},
+    {"import_warning",       TK_STR_, REPLAY_CHECKED},
+    {"load_file_source",     TK_LIST_, REPLAY_CHECKED},
+    {"load_file_source_chunk", TK_STR_, REPLAY_CHECKED},
+    {"mkdir",                TK_BOOL_, REPLAY_CHECKED},
+    {"monotonic_ms",         TK_NUM_, REPLAY_FINITE},
+    {"monotonic_ns",         TK_NUM_, REPLAY_FINITE},
+    {"observer_source",      TK_LIST_, REPLAY_CHECKED},
+    {"observer_source_chunk", TK_STR_, REPLAY_CHECKED},
+    {"net_accept",           TK_NUM_ | TK_NULL_, REPLAY_FINITE},
+    {"net_dial",             TK_NUM_ | TK_NULL_, REPLAY_FINITE},
+    {"net_listen",           TK_NUM_ | TK_NULL_, REPLAY_FINITE},
+    {"net_port",             TK_NUM_ | TK_NULL_, REPLAY_FINITE},
+    {"net_recv",             TK_BUF_ | TK_NULL_, REPLAY_FINITE},
+    {"net_send",             TK_NUM_, REPLAY_FINITE},
+    {"random",               TK_NUM_, REPLAY_FINITE},
+    {"random_hex",           TK_STR_, REPLAY_CHECKED},
+    {"random_int",           TK_NUM_, REPLAY_FINITE},
+    {"random_normal",        TK_LIST_ | TK_NULL_, REPLAY_NORMAL},
+    {"read_bytes",           TK_LIST_ | TK_NULL_ | TK_NUM_, REPLAY_READER},
+    {"read_bytes_buf",       TK_BUF_ | TK_NULL_ | TK_NUM_ | TK_LIST_, REPLAY_READER}, /* list: I/O error */
+    {"read_line",            TK_STR_ | TK_NULL_, REPLAY_CHECKED},
+    {"read_text",            TK_STR_ | TK_LIST_ | TK_NUM_, REPLAY_READER}, /* num: over-cap */
+    {"remove_file",          TK_BOOL_ | TK_LIST_, REPLAY_CHECKED}, /* list: I/O error */
+    {"rename",               TK_BOOL_ | TK_LIST_, REPLAY_CHECKED}, /* list: I/O error */
+    {"file_sync",            TK_BOOL_ | TK_LIST_, REPLAY_CHECKED}, /* list: I/O error */
+    {"dir_sync",             TK_BOOL_ | TK_LIST_, REPLAY_CHECKED}, /* list: I/O error */
+    {"tensor_load",          TK_LIST_ | TK_NULL_, REPLAY_CHECKED},  /* structurally validated boundary verdict */
+    {"write_bytes",          TK_NUM_ | TK_LIST_, REPLAY_FINITE},  /* list: I/O error */
+    {"write_text",           TK_BOOL_ | TK_LIST_, REPLAY_CHECKED}, /* list: I/O error */
 };
+
+/* Parsed tapes are trees with no reference cycles. Inspect
+ * values without argument conversion: a domain refusal must not mutate the
+ * arithmetic flags, and raw buffer NaNs must not first cross N13's reader. */
+static int replay_numbers_valid(const Value *v, int allow_infinity) {
+    if (val_is_number(v)) {
+        EigsNum n;
+        if (!eigs_number_read(v, &n, "replay domain")) return 0;
+        return n.is_int || (allow_infinity ? !isnan(n.value.f64) : isfinite(n.value.f64));
+    }
+    if (v->type == VAL_BUFFER) {
+        for (int i = 0; i < v->data.buffer.count; i++) {
+            uint64_t bits;
+            memcpy(&bits, &v->data.buffer.data[i], sizeof bits);
+            uint64_t magnitude = bits & UINT64_C(0x7fffffffffffffff);
+            if (allow_infinity ? magnitude > UINT64_C(0x7ff0000000000000) :
+                                 magnitude >= UINT64_C(0x7ff0000000000000)) return 0;
+        }
+    } else if (v->type == VAL_LIST) {
+        for (int i = 0; i < v->data.list.count; i++) {
+            EigsView view;
+            if (!replay_numbers_valid(list_get_view(v, i, &view), allow_infinity)) return 0;
+        }
+    } else if (v->type == VAL_DICT) {
+        DICT_FOR_EACH(v, i) {
+            EigsView view;
+            if (!replay_numbers_valid(dict_value_get_view(v, i, &view), allow_infinity)) return 0;
+        }
+    }
+    return 1;
+}
+
+static int replay_consumer_numbers_valid(const char *name, Value *v) {
+    ReplayNumberDomain domain = REPLAY_IEEE;
+    for (size_t i = 0; i < sizeof k_tape_kinds / sizeof k_tape_kinds[0]; i++)
+        if (strcmp(name, k_tape_kinds[i].name) == 0) {
+            domain = k_tape_kinds[i].numbers;
+            break;
+        }
+    if (domain == REPLAY_IEEE || domain == REPLAY_CHECKED ||
+        (domain == REPLAY_READER && val_is_number(v))) return 1;
+    return replay_numbers_valid(v, domain == REPLAY_NORMAL);
+}
 
 /* Host-declared kinds (eigs_trace_declare_kind). Small, append-only. */
 static struct { char *name; unsigned kinds; } *g_host_kinds;
@@ -2046,7 +2086,9 @@ static unsigned replay_expected_kinds(const char *fn) {
 
 /* "a bool", "a list or null" */
 static void kinds_text(unsigned kinds, char *buf, size_t n) {
-    static const ValType order[] = {VAL_NUM, VAL_STR, VAL_BOOL, VAL_LIST, VAL_DICT,
+    /* Both numeric kinds have the one surface name, num. */
+    if (kinds & TK(VAL_INT)) kinds |= TK(VAL_FLOAT);
+    static const ValType order[] = {VAL_FLOAT, VAL_STR, VAL_BOOL, VAL_LIST, VAL_DICT,
                                     VAL_BUFFER, VAL_NULL};
     size_t used = 0; int first = 1;
     buf[0] = '\0';
@@ -2297,7 +2339,9 @@ static int unescape_string(const char **p, char *out, int out_cap) {
  *
  * Recognized shapes:
  *   null | true | false              immediates
- *   <num>                            strtod-parseable
+ *   <int digits>                     exact signed int64, no decimal point
+ *   <float>                          decimal point/exponent, inf, -inf or nan
+ *   b[bits(<int64>), ...]             raw noncanonical NaN buffer payloads
  *   "<str>"                          escapes per unescape_string
  *   [v, v, …]                        list
  *   b[num, num, …]                   buffer (the leading 'b' disambiguates
@@ -2310,6 +2354,77 @@ static void skip_ws(const char **p) { while (**p == ' ') (*p)++; }
 
 static int at_token_boundary(char c) {
     return c == '\0' || c == ' ' || c == ',' || c == ']' || c == '}' || c == ':';
+}
+
+/* The tape has one float grammar, shared with step/DAP. libc strtod also
+ * accepts Infinity, NAN(payload), hex and overflow-to-inf; none is a tape
+ * token. The three explicit IEEE spellings are distinct from decimal input. */
+int trace_parse_float_token(const char **cursor, double *out) {
+    const char *p = *cursor, *q = p;
+    if (strncmp(p, "inf", 3) == 0 && at_token_boundary(p[3])) {
+        *out = INFINITY; *cursor = p + 3; return 1;
+    }
+    if (strncmp(p, "-inf", 4) == 0 && at_token_boundary(p[4])) {
+        *out = -INFINITY; *cursor = p + 4; return 1;
+    }
+    if (strncmp(p, "nan", 3) == 0 && at_token_boundary(p[3])) {
+        const uint64_t canonical = UINT64_C(0x7ff8000000000000);
+        memcpy(out, &canonical, sizeof canonical);
+        *cursor = p + 3; return 1;
+    }
+    if (*q == '-') q++;
+    const char *digits = q;
+    while (*q >= '0' && *q <= '9') q++;
+    if (q == digits) return 0;
+    if (*q == '.') {
+        q++;
+        digits = q;
+        while (*q >= '0' && *q <= '9') q++;
+        if (q == digits) return 0;
+    }
+    if (*q == 'e' || *q == 'E') {
+        q++;
+        if (*q == '-' || *q == '+') q++;
+        digits = q;
+        while (*q >= '0' && *q <= '9') q++;
+        if (q == digits) return 0;
+    }
+    if (!at_token_boundary(*q)) return 0;
+    char *end = NULL;
+    double d = strtod(p, &end);
+    if (end != q || !isfinite(d)) return 0;
+    *out = d; *cursor = q; return 1;
+}
+
+/* Signed decimal bits use the same N12 carrier as buf_get_bits. Only a
+ * buffer cell may use bits(...), and only for a noncanonical NaN: scalars
+ * canonicalize at their single writer, while raw buffer cells retain bits. */
+static int parse_buffer_nan_bits(const char **cursor, double *out) {
+    const char *p = *cursor;
+    if (strncmp(p, "bits(", 5) != 0) return 0;
+    p += 5;
+    int neg = *p == '-';
+    if (neg) p++;
+    const char *digits = p;
+    uint64_t limit = neg ? UINT64_C(9223372036854775808)
+                         : UINT64_C(9223372036854775807), magnitude = 0;
+    while (*p >= '0' && *p <= '9') {
+        unsigned digit = (unsigned)(*p - '0');
+        if (magnitude > (limit - digit) / 10) return 0;
+        magnitude = magnitude * 10 + digit;
+        p++;
+    }
+    if (p == digits || *p != ')' || !at_token_boundary(p[1])) return 0;
+    int64_t signed_bits = neg && magnitude ? -1 - (int64_t)(magnitude - 1)
+                                           : (int64_t)magnitude;
+    uint64_t raw;
+    memcpy(&raw, &signed_bits, sizeof raw);
+    if ((raw & UINT64_C(0x7ff0000000000000)) != UINT64_C(0x7ff0000000000000) ||
+        !(raw & UINT64_C(0x000fffffffffffff)) ||
+        raw == UINT64_C(0x7ff8000000000000)) return 0;
+    memcpy(out, &raw, sizeof raw);
+    *cursor = p + 1;
+    return 1;
 }
 
 static Value *parse_value_p(const char **p) {
@@ -2353,12 +2468,10 @@ static Value *parse_value_p(const char **p) {
         if (**p != ']') {
             for (;;) {
                 skip_ws(p);
-                char *end = NULL;
-                double d = strtod(*p, &end);
-                /* Numbers on a tape are untrusted.  The language's numeric
-                 * constructor never permits a non-finite value, so accepting
-                 * one here would bypass num_guard for buffer elements too. */
-                if (end == *p || !isfinite(d)) { free(data); return NULL; }
+                const char *end = *p;
+                double d;
+                if (!parse_buffer_nan_bits(&end, &d) &&
+                    !trace_parse_float_token(&end, &d)) { free(data); return NULL; }
                 if (count >= cap) {
                     int nc = cap ? cap * 2 : 8;
                     double *nd = realloc(data, (size_t)nc * sizeof(double));
@@ -2439,17 +2552,34 @@ static Value *parse_value_p(const char **p) {
      * not replayable. Caller falls back to live source. */
     if (c == '<' || (unsigned char)c == 0xE2) return NULL;
 
-    char *end = NULL;
-    double d = strtod(*p, &end);
-    /* A genuine recording cannot contain NaN or infinity: num_guard rejects
-     * or clamps them before a Value reaches the recorder.  Treat either as a
-     * corrupt token at the common tape parser boundary, rather than exposing
-     * it to consumers (some of which legitimately convert numbers to C
-     * integer types).  Returning NULL selects replay_malformed_value(), whose
-     * diagnostic names the offending serialized value. */
-    if (end == *p || !isfinite(d)) return NULL;
-    *p = end;
-    return make_num(d);
+    /* v8: a decimal digit token without a point/exponent is an int. Parse
+     * its magnitude exactly, including INT64_MIN, without routing through a
+     * double (9007199254740993 must retain its low bit on replay). */
+    const char *digits = *p;
+    int negative = *digits == '-';
+    if (negative) digits++;
+    const char *end_digits = digits;
+    while (*end_digits >= '0' && *end_digits <= '9') end_digits++;
+    if (end_digits != digits && at_token_boundary(*end_digits)) {
+        uint64_t limit = negative ? UINT64_C(9223372036854775808)
+                                  : UINT64_C(9223372036854775807);
+        uint64_t magnitude = 0;
+        for (const char *q = digits; q != end_digits; q++) {
+            unsigned digit = (unsigned)(*q - '0');
+            if (magnitude > (limit - digit) / 10) return NULL;
+            magnitude = magnitude * 10 + digit;
+        }
+        int64_t i = negative
+                  ? -(int64_t)(magnitude - (magnitude != 0)) - (magnitude != 0)
+                  : (int64_t)magnitude;
+        *p = end_digits;
+        return make_int(i);
+    }
+    double d;
+    if (!trace_parse_float_token(p, &d)) return NULL;
+    /* The replay boundary uses the same single canonical double writer as
+     * variables and containers. Raw NaN payloads exist only in buffer cells. */
+    return slot_to_value(slot_from_f64(d));
 }
 
 static Value *parse_value(const char *s) {
@@ -2760,6 +2890,17 @@ int trace_replay_take(const char *fn, Value **out) {
 #endif
         }
     }
+    /* Validate the requested consumer after parsing/kind validation, before
+     * publishing or re-recording. The common parser accepts IEEE words. */
+    if (v && !replay_consumer_numbers_valid(fn ? fn : hit->name, v)) {
+        fprintf(stderr, "trace: %s: non-finite replay value '%s'; refusing to replay\n",
+                fn ? fn : hit->name, hit->value);
+#if EIGENSCRIPT_FREESTANDING
+        abort();
+#else
+        _exit(3);
+#endif
+    }
     /* A served value is this run's external input.  When recording and
      * replaying together, copy it into the new tape while the shared tape
      * lock still orders the take.  The recorded name, rather than a leniently
@@ -2795,7 +2936,7 @@ int trace_source_record(const char *kind, const char *source, size_t size,
         Value *meta = make_list(3);
         list_append_owned(meta, make_bool(0));
         list_append_owned(meta, make_str(message));
-        list_append_owned(meta, make_num(0));
+        list_append_owned(meta, make_int(0));
         trace_nondet_value(kind, meta);
         val_decref(meta);
         rt_error(EK_IO, 0, "%s", message);
@@ -2804,7 +2945,7 @@ int trace_source_record(const char *kind, const char *source, size_t size,
     Value *meta = make_list(3);
     list_append_owned(meta, make_bool(error == NULL));
     list_append_owned(meta, make_str(error ? error : (identity ? identity : "")));
-    list_append_owned(meta, make_num(error ? 0.0 : (double)size));
+    list_append_owned(meta, make_int(error ? 0 : (int64_t)size));
     trace_nondet_value(kind, meta);
     val_decref(meta);
     if (error) return 1;
@@ -2828,24 +2969,34 @@ int trace_source_replay(const char *kind, char **source, long *size,
     if (!trace_replay_take(kind, &meta)) return -1;
     if (!meta || meta->type != VAL_LIST || meta->data.list.count != 3 ||
         list_elem_type(meta, 0) != VAL_BOOL || list_elem_type(meta, 1) != VAL_STR ||
-        list_elem_type(meta, 2) != VAL_NUM) {
+        (list_elem_type(meta, 2) != VAL_INT && list_elem_type(meta, 2) != VAL_FLOAT)) {
         val_decref(meta);
         rt_error(EK_IO, 0, "%s: malformed source record", kind);
         return -1;
     }
     int ok = list_get_ref(meta, 0)->data.boolean;
     const char *detail = list_get_ref(meta, 1)->data.str;
-    double taped_size = eigs_slot_elem_num(list_slot(meta, 2), __func__);
+    /* v8 metadata counts are exact ints. A float is refused with the
+     * existing numeric-size diagnostic, including an integral float. */
+    if (list_elem_type(meta, 2) != VAL_INT) {
+        double bad_size = 0.0;
+        slot_f64_value(list_slot(meta, 2), &bad_size);
+        val_decref(meta);
+        rt_error(EK_IO, 0, "%s: invalid source size %.17g (maximum %u)",
+                 kind, bad_size, TRACE_SOURCE_MAX);
+        return -1;
+    }
+    int64_t taped_size = 0;
+    slot_int_value(list_slot(meta, 2), &taped_size);
     if (!ok) {
         *error = xstrdup(detail);
         val_decref(meta);
         return 1;
     }
-    if (!isfinite(taped_size) || taped_size < 0 ||
-        taped_size > (double)TRACE_SOURCE_MAX || taped_size != floor(taped_size)) {
+    if (taped_size < 0 || taped_size > TRACE_SOURCE_MAX) {
         val_decref(meta);
         rt_error(EK_IO, 0, "%s: invalid source size %.17g (maximum %u)",
-                 kind, taped_size, TRACE_SOURCE_MAX);
+                 kind, (double)taped_size, TRACE_SOURCE_MAX);
         return -1;
     }
     long n = (long)taped_size;
@@ -3002,12 +3153,51 @@ static void write_string(const char *s) {
     tp_putc('"');
 }
 
+/* N6/T1: finite floats retain the point/exponent kind marker, including
+ * integral floats and -0.0. The explicit inf/-inf/nan tokens are floats too. */
+static void tape_float_text(char *buf, size_t nbuf, double n) {
+    eigs_num_text(buf, nbuf, n);
+}
+
+/* A buffer's bits interface observes payloads that a float cannot carry.
+ * Decimal text plus nan would merge those distinct cells on replay. */
+static void tape_buffer_text(char *buf, size_t nbuf, const double *cell) {
+    uint64_t raw;
+    memcpy(&raw, cell, sizeof raw);
+    if ((raw & UINT64_C(0x7ff0000000000000)) == UINT64_C(0x7ff0000000000000) &&
+        (raw & UINT64_C(0x000fffffffffffff)) &&
+        raw != UINT64_C(0x7ff8000000000000)) {
+        int64_t signed_bits;
+        char digits[21];
+        memcpy(&signed_bits, &raw, sizeof signed_bits);
+        eigs_int_text(digits, sizeof digits, signed_bits);
+        snprintf(buf, nbuf, "bits(%s)", digits);
+    } else {
+        double n;
+        memcpy(&n, cell, sizeof n);
+        tape_float_text(buf, nbuf, n);
+    }
+}
+
+static void write_float(double n) {
+    char buf[32];
+    tape_float_text(buf, sizeof buf, n);
+    tp_puts(buf);
+}
+
+static void write_int(int64_t n) {
+    char buf[32];
+    eigs_int_text(buf, sizeof buf, n);
+    tp_puts(buf);
+}
+
 /* Format a heap or tracked Value*. Numeric heap values unwrap to their
  * number; collections show their size for at-a-glance scanning. */
 static void write_value_ptr(Value *v) {
     if (!v) { tp_puts("null"); return; }
     switch (v->type) {
-        case VAL_NUM:          tp_printf("%.17g", VAL_NUM_RAW(v)); break;
+        case VAL_FLOAT:       write_float(VAL_F64_RAW(v)); break;
+        case VAL_INT:         write_int(VAL_I64_RAW(v)); break;
         case VAL_NULL:         tp_puts("null"); break;
         case VAL_STR:          write_string(v->data.str); break;
         case VAL_LIST:         tp_printf("<list:%d>", v->data.list.count); break;
@@ -3023,11 +3213,12 @@ static void write_value_ptr(Value *v) {
 }
 
 static void write_slot(EigsSlot s) {
-    if (slot_is_num(s))  { tp_printf("%.17g", SLOT_NUM_RAW(s)); return; }
+    if (slot_is_f64(s))  { write_float(SLOT_F64_RAW(s)); return; }
     if (slot_is_null(s)) { tp_puts("null"); return; }
     if (slot_is_bool(s)) { tp_puts(slot_as_bool(s) ? "true" : "false"); return; }
     if (slot_is_heap(s)) { write_value_ptr(slot_as_ptr(s)); return; }
-    tp_puts("<unknown>");
+    if (slot_is_smi(s))  { write_int(slot_smi_val(s)); return; }
+    eigs_slot_refuse("write_slot", s);
 }
 
 static void trace_assign_ex(const char *name, EigsSlot value, int filtered,
@@ -3149,7 +3340,18 @@ static int write_value_ptr_full(strbuf *buf, Value *v, int *budget,
     }
     WfAncestor here = {v, ancestors};
     switch (v->type) {
-        case VAL_NUM:  wf_printf(buf, budget, "%.17g", VAL_NUM_RAW(v)); break;
+        case VAL_FLOAT: {
+            char number[32];
+            tape_float_text(number, sizeof number, VAL_F64_RAW(v));
+            wf_puts(buf, number, budget);
+            break;
+        }
+        case VAL_INT: {
+            char number[32];
+            eigs_int_text(number, sizeof number, VAL_I64_RAW(v));
+            wf_puts(buf, number, budget);
+            break;
+        }
         case VAL_NULL: wf_puts(buf, "null", budget); break;
         case VAL_BOOL: wf_puts(buf, v->data.boolean ? "true" : "false", budget); break;
         case VAL_STR:  write_string_full_len(buf, v->data.str, val_str_len(v), budget); break;
@@ -3187,7 +3389,9 @@ static int write_value_ptr_full(strbuf *buf, Value *v, int *budget,
             int n = v->data.buffer.count;
             for (int i = 0; i < n; i++) {
                 if (i) wf_puts(buf, ", ", budget);
-                wf_printf(buf, budget, "%.17g", v->data.buffer.data[i]);
+                char number[32];
+                tape_buffer_text(number, sizeof number, &v->data.buffer.data[i]);
+                wf_puts(buf, number, budget);
             }
             wf_putc(buf, ']', budget);
             break;

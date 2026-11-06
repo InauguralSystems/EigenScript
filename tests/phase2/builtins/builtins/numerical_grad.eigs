@@ -1,0 +1,11 @@
+# R1.6 behaviour-table probe: numerical_grad (float-producing; finite differences)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+q is [[1.0, 2.0], [3.0, 4.0]]
+define loss(u) as:
+    return q[1][0] * q[1][0]
+g is numerical_grad of [loss, q, 0.5]
+print of [g, nt of g[1][0]]

@@ -88,14 +88,14 @@ The tape is plain text, one record per line:
 
 | Record | Meaning |
 |--------|---------|
-| `V <format> <runtime>` | Version header — always the first record (e.g. `V 8 <version>`). Here `<version>` is the version of the binary writing the tape. Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
+| `V <format> <runtime>` | Version header — always the first record (e.g. `V 10 <version>`). Here `<version>` is the version of the binary writing the tape. Stamped once per tape-open; a journal appended across sessions carries one per session. See [Format Versioning](#format-versioning-411). |
 | `B <stream_id> <lifetime> <state> <spawn_base> <origin>` | Stream association, before that stream's events. Describes state grouping and host/causal correspondence; folded as metadata by stepping, never a source-line stop. See below. |
 | `L <stream_id> <line>` | Source-line event (from `OP_LINE`, and when native code that ran EigenScript — a builtin's callback, an embedder's eval — gets control back: the line it entered with, so an assignment it makes next is filed under the same line on the tape as in live history, #1434; v5 carries the stream ID shown here). Duplicate lines within the same stream with no intervening `A`/`N` in that stream are deduped — the compiler emits per-statement LINEs and bare repeats are noise. |
 | `S <stream_id> <fn> <depth> <serial>` | Scope transition (#539 v2): the `A` records that follow belong to this frame instance — `<fn>` is the chunk name (`<module>`, `<lambda>`, or the function name), `<depth>` the 0-based frame depth, `<serial>` a per-thread monotonically increasing frame-instance id stamped at frame push. Emitted lazily with the same dedup discipline as `L`: only when the frame owning the next assignment differs from the last `S`, so the byte cost lands at call boundaries that actually assign. Two invocations of the same function carry different serials — their local streams never merge. Skipped on replay; folded by `--step`. |
 | `A <stream_id> <name>=<value>` | Assignment delta: a binding changed. Fires at **every scope** — function locals included — and is scope-qualified by the preceding `S` record, so a function-local `i` and the top-level `i` are separate streams (`--step` resolves names innermost-first along the reconstructed call chain, with shadowing). |
 | `N <stream_id> <fn>=<value>` | Nondeterministic builtin return — the replay-determinism substrate. |
-| `C <stream_id> <bytes>` | Immediate continuation of an oversized `N` value (v8). See [Value serialization](#value-serialization). |
-| `O <stream_id> cfg <dh_zero> <dh_small> <h_low> <window> <scale>` | Observer configuration in force (v3). Written whenever the state's observer knobs differ from what this stream last announced, before its next `L`/`A`/`N`/`O win` record. See [Observer Configuration](#observer-configuration-10441045). |
+| `C <stream_id> <bytes>` | Immediate continuation of an oversized `N` value (v9). See [Value serialization](#value-serialization). |
+| `O <stream_id> cfg <dh_zero> <dh_small> <window> <scale>` | Observer configuration in force (v3). Written whenever the state's observer knobs differ from what this stream last announced, before its next `L`/`A`/`N`/`O win` record. See [Observer Configuration](#observer-configuration-10441045). |
 
 ### Stream identity and correspondence (v5, #1286)
 
@@ -239,11 +239,34 @@ identity: `what is x at N`, `e.line` and error headers.
 
 ### Value serialization
 
+Format **v10** adds exact `inf`, `-inf` and `nan` float tokens. The `nan`
+token reconstructs the canonical bits `0x7FF8000000000000`. The spelling is
+case-sensitive; `Infinity`, signed/payload NaNs, and decimal overflow such as
+`1e400` are malformed tape numbers. Decimal finite values keep their existing
+kind markers and exact int digits.
+
+Raw buffer cells have an additional **buffer-only** token,
+`bits(<signed-int64>)`, for a noncanonical NaN payload. The integer carries
+the cell's exact two's-complement bits, just like `buf_get_bits`; for example
+`b[bits(9218868437227405313), nan, inf]`. This token is invalid for a scalar,
+for a finite cell or for canonical NaN (which uses `nan`). Lists/dicts may
+contain such buffers recursively. Ordinary buffer float reads retain N13's
+refusal; recording a raw cell is serialization, not a float read.
+
+The replay reader and the step/DAP reader share the float-token grammar.
+Malformed-value and return-kind mismatch diagnostics include the offending
+token. Every earlier format, including v9, is refused before reading values;
+re-record with this binary. There is no tape migration.
+
 `N` records are written with full fidelity so they can be parsed back
 into real values on replay:
 
-- Numbers and `null` are written verbatim; a bool is written `true` or
-  `false` and read back as a bool (format v6, #1637).
+- Ints are exact signed decimal digits; floats retain a decimal point or
+  exponent (`3.0`, `-0.0`, `1e+300`) so replay preserves the numeric kind
+  (format v9, #1758). An out-of-range int digit token is malformed rather
+  than rounded through a double. Version 6 tapes are refused by the format
+  check; re-record them with this binary. `null` is written verbatim; a bool
+  is written `true` or `false` and read back as a bool (#1637).
 - Strings are double-quoted; `\"`, `\\`, `\n`, `\r` are escaped, other
   control/non-printable bytes become `\xNN`.
 - Lists and dicts are emitted recursively: `[1, 2, 3]`,
@@ -296,6 +319,33 @@ something nothing records (#2200).
 | Graphics extension | `gfx_read` (#823), `gfx_ticks` |
 | Audio (graphics extension) | `audio_capture_open`, `audio_capture_read` (#579), `audio_stream_queued`, `audio_noise` (#1803) |
 
+Numeric record domains (RULING R25-1) are checked separately from the
+v10 token grammar, using the requested consumer's row in `k_tape_kinds`:
+
+- `random`, `random_int`, `monotonic_ns`, `monotonic_ms`, `clock_unix`,
+  `gfx_ticks`, `audio_capture_open`, `audio_stream_queued`, `net_listen`,
+  `net_accept`, `net_dial`, `net_port`, `net_send` and `write_bytes` have
+  finite numeric returns. Replaying a non-finite return exits 3 with
+  `trace: NAME: non-finite replay value 'VALUE'; refusing to replay`.
+- The numeric cells of `read_bytes`, `read_bytes_buf`, `net_recv`,
+  `gfx_read`, `audio_capture_read` and every `audio_noise` chunk are finite,
+  with the same named refusal. Raw buffer NaN payload tokens are checked
+  as bits, without performing an ordinary N13 buffer read.
+- `read_text`, `read_bytes` and `read_bytes_buf` over-cap size records keep
+  the reader's existing exact-int check and catchable `io` message:
+  `NAME: replay record size is not an exact integer in range; refusing to replay`.
+  The source metadata and `tensor_load` verdict retain their typed checks.
+- `random_normal` has finite scale and finite Box–Muller factors, so its
+  samples may overflow to either infinity but cannot be NaN. Replay keeps
+  the infinities and refuses NaN with the named domain diagnostic above.
+- Other core records have no live numeric field. Host-declared N sources
+  retain their declared IEEE transport domain, including canonical NaN
+  and exact raw buffer bits; the host owns any narrower domain contract.
+
+These checks precede publishing or re-recording a served value. This fixes
+invalid current-format inputs without changing v10 encoding or refusing
+any value that the source can genuinely record.
+
 Notes on the families:
 
 - **Files:** the filesystem replay rules are defined once in
@@ -320,7 +370,7 @@ Notes on the families:
   otherwise-impossible result shapes and re-raises the
   identical error without live filesystem access. The fixed-cap readers
   `read_text`, `read_bytes`, and `read_bytes_buf` instead record an over-cap
-  file's observed size as a `VAL_NUM` `N` record and reconstruct the error
+  file's observed size as a `VAL_INT` `N` record and reconstruct the error
   containing both size and active cap. Empty files remain ordinary successful
   empty string/list/buffer records.
   Mutating file builtins return their taped success value or re-raise their
@@ -389,7 +439,7 @@ Notes on the families:
   microphone; the recorded device id and sample buffers (the `b[…]`
   encoding) are served instead. `audio_capture_read` retains its 2048-sample
   per-call device-read bound; those values fit one `N` record without needing
-  v8 continuation records. Drain loops
+  v9 continuation records. Drain loops
   ("read until empty") replay faithfully: one record per call, empties
   included. (`audio_capture_close` is deterministic — always `null` —
   and untraced; under replay it is a no-op because no device was
@@ -432,10 +482,13 @@ construction is neither run nor leaked.
 
 A trajectory verdict — `report of x`, the six predicates, the trajectory
 labels `--step` and the DAP server print — is a function of the
-**assignments** and of the **observer configuration**: three thresholds
-state and per binding), and the characteristic scale
-configuration, so a recorded run stepped back classified at the *state
-defaults* and printed a verdict the live run never gave:
+**assignments** and of the **observer configuration**: two step thresholds,
+the window (state and per binding), and the characteristic scale. The
+non-numeric entropy threshold `h_low = 0.1` is a compiled-in constant;
+`get_observer_thresholds` still returns `[dh_zero, dh_small, h_low]`.
+Historically the tape omitted configuration, so a recorded run stepped
+back classified at the *state defaults* and printed a verdict the live
+run never gave:
 
 ```
 u is 0.0
@@ -449,15 +502,18 @@ $ eigenscript --step u.tape u.eigs      # before: [diverging]  ← never happene
 A debugger that confidently prints the wrong verdict is exactly the
 fail-soft shape this language refuses, so the configuration rides the tape:
 
-- **`O cfg`** carries the five state-level scalars. It is emitted **by
-  diff**, not from the knob builtins: the writer compares the state's live
+- **`O cfg`** carries the four state-level scalars: `dh_zero dh_small window scale`. It is emitted **by
+  diff**: the writer compares the state's live
   configuration against what **that stream last emitted** and emits a record
   when they differ, before its next `L`, `A`, `N` or `O win` record. A
   default-config state writes no `O cfg` (single-threaded tapes stay
   byte-identical). Sibling attachments of one state each announce its nondefault knobs;
   co-located states with different thresholds likewise emit at first use — not a torn ping-pong against a process-
-  global last-emitted (#1142). A program that never moves a knob writes
-  no `O` records at all. The record shape is unchanged (no format bump).
+  global last-emitted (#1142). The observer setter builtins were removed in v0.46.0 (#1687); neither
+  programs nor the supported embed API can move these knobs, so current live
+  runs emit no `O cfg` records. The writer and reader remain for the tape
+  machinery (#2198). R3.2 removes `h_low` from the record within unreleased
+  format 10; the version stays 10.
 - **`O win`** carries the per-binding window override, which lives on an
   `Env` slot rather than on the state and so has no cheap diff. It is
   its own frame's `S` record — the override belongs to the frame that
@@ -475,7 +531,7 @@ fail-soft shape this language refuses, so the configuration rides the tape:
   into its own state.
 - **The configuration is folded to the STOP, not to the last assign.** The
   knobs split by when the runtime consumes them: the window and the scale are
-  read while a value is being *recorded*, the three thresholds (and the window
+  read while a value is being *recorded*, the two step thresholds (and the window
   again, for the full-window certifications) while a verdict is being
   *reported*. So a knob moved after a binding's last assign and before the
   stop still changes what `report of x` says there — and folding only up to
@@ -498,14 +554,21 @@ fail-soft shape this language refuses, so the configuration rides the tape:
   label differs, it gets a line of its own ("observer configuration changed
   after the last assign — at this stop: [converged]") rather than letting the
   last row speak for the present; the DAP shows the same as a `#now` row.
+- **A `cfg` record must have exactly four whitespace-delimited fields.**
+  Before parsing or installing any configuration, the reader refuses every
+  other count with exit 3 and
+  `tape observer-configuration record has N fields, expected 4: <record>`.
+  This includes an empty record, a legacy five-field record and nonnumeric
+  extra fields. All branch builds stamp the same format 10, so this count
+  check protects against old record shapes. A four-field record still must
+  parse and satisfy the existing value restrictions below.
 - **A corrupt `O` record is refused, not installed.** The reader puts these
   values into its own observer state, so `O cfg … 0 …` divides by zero sizing
   the value ring and a negative or 4e9 window asks `calloc` for 2^64−1 bytes.
-  Every field is therefore checked at parse time against exactly the
-  invariants the live builtins enforce — window in `[4, 64]` (plus the `O win
-  <name> 0` clear form), positive thresholds with `dh_zero < dh_small`,
-  positive finite scale — and a record
-  outside them refuses the tape with exit 3 (`tape observer-configuration
+  At parse time the reader requires a window in `[4, 64]` (plus the
+  `O win <name> 0` clear form), positive thresholds with
+  `dh_zero < dh_small`, and a positive finite scale no greater than `1e300`.
+  A record outside these bounds refuses the tape with exit 3 (`tape observer-configuration
   record is not one this runtime could have written …`). Tapes travel in #413
   attached-tape bundles, so this is the torn-archive rule applied to the
   configuration. Clamping was rejected: a clamped window is a configuration
@@ -823,11 +886,20 @@ everywhere else in the runtime (version-and-reject, never migrate).
   answer (`file_exists`, `is_dir`, `mkdir`, ...) as `1`/`0`, so replaying it
   on a v6 binary would hand a number where the program now gets a bool; it is
   refused instead (covered by the existing replay kind-validation cases in
-  `tests/test_replay.sh`). **v7** (#1885) adds metadata plus bounded chunk records for `import` and
+  `tests/test_replay.sh`). **v7** (#1885) added metadata plus bounded chunk records for `import` and
   `load_file` source, making module acquisition replayable without live reads.
-  **v8** (#1816) adds length-framed `N` values and `C` continuation records so
-  answers larger than 64 KiB round-trip without truncation.
-  Within a v8 tape, replay also refuses a recorded value of a kind its builtin cannot
+  Main's **v8** (#1816) adds length-framed `N` values and `C` continuation
+  records for answers larger than 64 KiB. The Phase 2 bank independently
+  used v8 for exact int digit tokens, integral-float `.0` markers (#1758),
+  and chunked module-source records (#1885).
+  **v9** combines both v8 contracts: exact numeric kinds, replayable module
+  sources, and length-framed oversized answers. An old main v8 numeric
+  digit token denotes a float, whereas the Phase 2 reader gives it int kind,
+  so either old v8 format is refused rather than silently reinterpreted.
+  **v10** (#1758 R2.5) adds explicit nonfinite float tokens and exact raw-NaN
+  buffer bit tokens. It refuses v9 and every older format by replay, stepping
+  and DAP, preserving the version-and-reject contract.
+  Within a current-format tape, replay also refuses a recorded value of a kind its builtin cannot
   return, with exit 3 and a message naming the record, the builtin, the kinds
   it returns and the tape version. Every taped builtin declares its return
   kinds in one table (`k_tape_kinds` in `src/trace.c`; for example

@@ -1,0 +1,7 @@
+# ROW: N9.fround
+# ITEMS: N9
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+print of (fround of 0.1)

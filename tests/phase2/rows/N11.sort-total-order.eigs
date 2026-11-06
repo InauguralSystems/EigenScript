@@ -1,0 +1,10 @@
+# ROW: N11.sort-total-order
+# ITEMS: N11
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: MUL SUB
+# TIERS: off default osr
+x is (1e308 * 10) - (1e308 * 10)
+inf is 1e308 * 10
+print of (sort of [3, x, 1, inf, 2])

@@ -1,0 +1,7 @@
+# ROW: N4.floor-mod
+# ITEMS: N4
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+print of [-7 % 3, 7 % -3, -7.5 % 2, 7 % 3]

@@ -94,8 +94,10 @@ printf '%s\n' "$STATS" | grep -Eq '^eigs-alloc-stats: cumulative=[0-9]+ live=0 p
 echo "  PASS: observer fix2 closure ownership: no tracked bytes left"
 
 # A real matmul kernel leaves the null-slot NaN sentinel in unboxed buffer
-# storage after inf-inf.  Language equality and observer equality must apply
-# the same finite-number VALUE mapping without mutating that work area.
+# storage after inf-inf. S10-D1 / R1.6z-D1 require the same raw IEEE
+# comparison for language and observer equality, with no mutation or flags.
+# Bank stability stays true for this non-reflexive snapshot; convergence is
+# false. Finite mutable snapshots above retain #2048's alias protection.
 cat >"$TMP/nonfinite.eigs" <<'EOF'
 left is buffer of [1, 2]
 left[0] is 1e200
@@ -116,13 +118,15 @@ x is x
 x is x
 x is x
 x is x
+flags_before is math_flags of null
 print of (x == x)
 print of (stable of x)
 print of (converged of x)
+assert of [(math_flags of null) == flags_before, "IEEE observer equality preserves math flags"]
 EOF
-[ "$(EIGS_STRICT=0 "$EIGS" "$TMP/nonfinite.eigs")" = "true
+[ "$(EIGS_STRICT=0 "$EIGS" "$TMP/nonfinite.eigs")" = "false
 true
-true" ]
+false" ]
 echo "  PASS: observer fix2 nonfinite buffer equality"
 
 echo observer-snapshot-fix2-ok

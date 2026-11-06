@@ -1,0 +1,7 @@
+# ROW: N10.int-or-float
+# ITEMS: N10
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+print of [num_type of (num of "3"), num_type of (num of "3.0"), num_type of (num of "9223372036854775808"), num of "9007199254740993"]

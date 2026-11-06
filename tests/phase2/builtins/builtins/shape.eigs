@@ -1,0 +1,12 @@
+# R1.6 behaviour-table probe: shape (int-preserving; dimension counts)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is shape of [[1, 2, 3], [4, 5, 6]]
+print of [a, nt of a[0]]
+b is shape of (buffer of 4)
+print of [b, nt of b[0]]
+c is shape of (reshape of [buf_from_list of [1, 2, 3, 4], 2, 2])
+print of [c, nt of c[1]]

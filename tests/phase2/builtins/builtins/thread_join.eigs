@@ -1,0 +1,18 @@
+# R1.6 behaviour-table probe: thread_join (int-requiring; thread handle id/gen); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":2}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define w(x) as:
+    return x + 1
+h is spawn of [w, 41]
+try:
+    print of ["fraction-answer", thread_join of {"_handle_id": h["_handle_id"] + 0.5, "_handle_gen": h["_handle_gen"], "done": 0}]
+catch e:
+    print of ["id-fraction", e.kind]
+try:
+    r is thread_join of {"_handle_id": h["_handle_id"] + 0.0, "_handle_gen": h["_handle_gen"] + 0.0, "done": 0}
+    print of [r, nt of r]
+catch e:
+    print of ["join", e.kind]

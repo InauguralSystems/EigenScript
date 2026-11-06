@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: subtract (int-preserving, LOSS; scalar arm mirrors -, (A))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+r is subtract of [9007199254740993, 2]
+print of [r, nt of r]
+try:
+    print of (subtract of [-9223372036854775807, 2])
+catch e:
+    print of ["overflow", e.kind]
+l is subtract of [[5, 9007199254740993], [2, 1]]
+print of [l, nt of l[0], nt of l[1]]

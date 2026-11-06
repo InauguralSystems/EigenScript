@@ -1,0 +1,7 @@
+# ROW: ctl.B.type-of
+# ITEMS: B
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [type of 3, type of 3.0, type of -2]

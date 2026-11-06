@@ -1,0 +1,8 @@
+# ROW: N1.decimal-past-int64-is-float
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+x is 9223372036854775808
+print of [num_type of x, x]

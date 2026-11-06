@@ -1,0 +1,5 @@
+["key-fraction", "value"]
+["count-after-fraction", 1]
+[true, 0]
+["delete-big-key", true, 0]
+rc=0

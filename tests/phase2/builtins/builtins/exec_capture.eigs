@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: exec_capture (other, Q7 magnitude; the timeout seconds; returns exit status ints); phase2-exercises: {"q7":["magnitude"]}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+r is exec_capture of ["/bin/echo", "hi"]
+print of [r[0], nt of r[0], trim of r[1]]
+try:
+    print of ["huge-timeout-answer", type of (exec_capture of [["/bin/echo", "hi"], 1e300])]
+catch e:
+    print of ["timeout-magnitude", e.kind]
+t is exec_capture of [["/bin/echo", "hi"], 5]
+print of [t[0], nt of t[0], trim of t[1]]

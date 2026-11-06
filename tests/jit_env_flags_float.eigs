@@ -1,0 +1,8 @@
+# R1.3: native env-flag witnesses use explicit float literals until the
+# JIT int fast-path round. Keep cost benchmarks unchanged.
+i is 0.0
+total is 0.0
+loop while i < 20000.0:
+    total is total + i
+    i is i + 1.0
+print of total

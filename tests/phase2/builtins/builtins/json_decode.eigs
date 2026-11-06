@@ -1,0 +1,9 @@
+# R1.6 behaviour-table probe: json_decode (other, LOSS; N14 decoder: integer text gives an int when it fits int64)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+v is json_decode of "[3, 3.0, 9223372036854775807, 18446744073709551615, 9007199254740993, -7, 1e2]"
+print of [nt of v[0], nt of v[1], v[2], nt of v[3], v[4], nt of v[5], nt of v[6]]
+print of v

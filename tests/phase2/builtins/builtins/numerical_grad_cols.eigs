@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: numerical_grad_cols (float-producing; finite differences; column indices int)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+q is [[1.0, 2.0], [3.0, 4.0]]
+define loss(u) as:
+    return q[1][0] * q[1][0]
+g is numerical_grad_cols of [loss, q, [0, 1], 0.5]
+print of [g, nt of g[1][0]]
+try:
+    print of ["fraction-answer", numerical_grad_cols of [loss, q, [0.5, 1], 0.5]]
+catch e:
+    print of ["col-fraction", e.kind]
+print of (numerical_grad_cols of [loss, q, [0.0, 1.0], 0.5])

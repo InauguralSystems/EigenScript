@@ -56,8 +56,9 @@ overflow) is recoverable with `try`/`catch`. If uncaught, it is **fatal**:
 execution stops, the process exits non-zero, and a stack trace (every
 frame from the failure to the top level, innermost first) is printed to
 stderr after the error line. Programs never continue past an
-unrecovered error or report success on failure. Warnings (e.g.
-division by zero, which yields 0) are not errors and do not stop execution.
+unrecovered error or report success on failure. IEEE float division by zero
+produces signed infinity or NaN by default (R2.2); `EIGS_STRICT=1` traps the
+non-finite result. Exact integer `// 0` and `% 0` remain value errors.
 
 **What `catch` binds (#406):** a **built-in** runtime error binds a small
 dict `{kind, message, file, line}` — `kind` is drawn from a closed vocabulary
@@ -140,58 +141,50 @@ examples (executed by the suite).
 ## Numbers
 
 **Promise:**
-- One numeric type: IEEE-754 double. Integers are exact up to 2^53.
-- No NaN, no Infinity reaches a program. By default a NaN-producing
-  operation, an out-of-domain argument or a wrong-typed argument raises a
-  catchable error (strict is the default, #1361); division by zero raises
-  in every mode. Overflow saturates at ±1e308. Under the per-run opt-out
-  `EIGS_STRICT=0` the arithmetic is finite by construction instead: a NaN
-  collapses to 0 and domain functions substitute a stand-in.
-- **Every clamp is recorded.** The finite invariant keeps a program
-  running, but it keeps it running with a plausible number, so the
-  clamps are readable as sticky status flags — IEEE-754's own model
-  (`fetestexcept`) — rather than being undetectable (#865):
+- One surface type, `num`, with exact signed int64 and IEEE-754 double
+  kinds. `num_type of` gives `"int"` or `"float"`, or null for a non-number.
+  Decimal integer literals within int64 and wrapping hexadecimal literals are
+  ints; a point or exponent produces a float, as does decimal overflow.
+  Int `+ - *` raise `value` on overflow; unary minus and `abs` raise at
+  INT64_MIN. Mixed arithmetic converts to float; cross-kind comparison is exact.
+  Float integer exactness ends at 2^53.
+- Float results follow IEEE 754 by default: overflow gives infinity;
+  `1 / 0` gives `inf`, `0.0 / 0` and float `% 0` give NaN, `sqrt of -1`
+  and out-of-domain `asin`/`acos` give NaN, and `log of 0` gives `-inf`.
+  There is no `1e308` clamp. Int `// 0` and `% 0` still raise `value`.
+  `EIGS_STRICT=1` opts into catchable errors for non-finite arithmetic and
+  invalid argument types; it is off by default.
+- **Arithmetic status is sticky.** `math_flags of null` reports `overflow`
+  when an arithmetic result is infinite and `invalid` when it is NaN.
+  These flags remain set for the state's lifetime; later finite arithmetic
+  does not clear them.
 
   ```eigenscript fragment risky='(vs) => vs[0]' xs=[1,2]
   result is risky of xs
   if (math_flags of null).overflow:
-      print of "a value saturated; this result is contaminated"
+      print of "an infinite arithmetic result occurred"
   ```
 
-  `overflow` is set by the ±1e308 clamp. Under `EIGS_STRICT=0` (strict
-  mode is the default since #1361) `invalid` is set by the
-  out-of-domain substitutions: `log of x` for `x <= 0` (which
-  returns `log(1e-10)`, i.e. `-23.025850929940457`), `sqrt of x` for
-  negative `x` (returns 0, otherwise indistinguishable from
-  `sqrt of 0`), and `asin`/`acos` outside [-1, 1] (argument clamped).
-  `invalid` is also set when a NaN is collapsed, which the arithmetic
-  operators cannot produce (there is no way to obtain an Inf to combine)
-  but a few builtins can: `num of "nan"` is `0` and `num of "inf"` is
-  `1e308`, so a data column containing either used to parse to a
-  plausible number with nothing to check; `pow` of a negative base with
-  a fractional exponent, `f64_from_bytes` of a NaN bit pattern,
-  `matmul` reaching `inf - inf`, and `tensor_load` of a file carrying
-  NaN bytes collapse the same way. A buffer may retain the raw kernel value
-  internally, but every scalar read applies this same collapse (or raises in
-  strict mode), including structural equality and scalar reductions. Both bits are sticky until
-  FPU. In strict mode, the default, every one of those out-of-domain
-  calls and NaN sources raises a catchable `value` error naming the
-  builtin instead of substituting (SPEC.md, *Strict mode*).
-- **Saturation is not associative, and that is not detectable from the
-  value alone.** `(1e300 * 1e300) / 1e300` is `1e8`; `1e300 * (1e300 /
-  1e300)` is `1e300`. The first overflowed and came back down, and
-  `1e8` will pass any plausibility check a caller applies. The results
-  are what the finite invariant requires — the `overflow` flag is how
-  you tell. Stated here because the trade should be visible rather than
-  discovered.
-- `str of` produces the shortest representation that round-trips back to
-  the same double; `num of (str of x) == x`.
+  Buffer kernels such as `matmul` may retain raw non-finite work data.
+  Scalar buffer extraction and reductions keep their declared finite-only
+  readers and refuse stored non-finite cells with `value` in every strict
+  mode (R1.6z-D1). Structural equality, including observer snapshots,
+  compares stored IEEE values: NaN is unequal to itself, also through
+  container structure, without mutation, errors or math-flag writes.
+- **Floating arithmetic is not associative.** `(1e300 * 1e300) / 1e300`
+  gives `inf`; `1e300 * (1e300 / 1e300)` gives `1e300`. The first overflow
+  remains visible in both the result and the sticky `overflow` flag.
+- Ints print exact decimal digits. For floats, `str of` produces the shortest
+  round-trip representation, including `.0` for integral floats and signed
+  zero. `num of` and JSON decoders preserve integer text within int64 exactly;
+  a decimal point or exponent selects a float (N10, N14).
 - **Every producer of number text obeys that same rule** — `str of`,
   `json_encode`, `json_build`, `json_path`, and the SIGUSR1 observer dump
   all share one implementation (`eigs_num_text`), so a JSON round-trip
   returns the same double and `json_encode of x` equals `str of x` for
-  every number (#875).
-- `%` follows the dividend's sign (C semantics): `-7 % 3 == -1`.
+  every float (#875).
+- `%` uses floor modulo: a nonzero remainder follows the divisor's sign
+  (`-7 % 3 == 2`). `//` is floor division; `/` always returns a float (N4).
 
 **Status:** Enforced — `tests/test_number_format.eigs`,
 `tests/test_numeric_guard.eigs` (NG20–NG30 cover the flags),
@@ -232,9 +225,10 @@ integers. Every operand, the shift count included, must be an **exact integer in
 `[-2^63, 2^63)`**; a fractional operand (`1.5 | 0`, `1 << 0.5`) or one outside
 that range (`1e30 | 0`, `9223372036854775808 | 0`) raises a catchable `value` error ("number
 has no integer representation"). This is Lua 5.4's rule (reference manual
-§3.4.3); nothing is truncated or wrapped. `-9223372036854775808 | 0` is valid. A shift count
-that passes the check is masked to `[0,63]`, so large or negative shifts
-are defined, not UB (`1 << 64` == `1 << 0` == `1`; `1 << 100` == `1 << 36`). The
+§3.4.3); operand conversion never truncates or wraps. Results are exact ints.
+`-9223372036854775808 | 0` is valid. Shifts follow Lua 5.4: a count outside
+`(-64,64)` gives zero, a negative count shifts in the opposite direction,
+and right shifts zero-fill (`1 << 64` is `0`; `-1 >> 1` is `9223372036854775807`). The
 infix operators and the `bit_*` builtins agree bit-for-bit on the same operands —
 they were once a divergent `int32` implementation (`0xEDB88320`, CRC-32's
 polynomial, was the first casualty). Non-numeric operands **raise** a runtime
@@ -244,9 +238,11 @@ operator … raises") hold for *every* operator with no exceptions.
 
 **Status:** Enforced — `tests/test_bitwise.eigs` (builtin == infix parity across
 the high-bit range and out-of-range shift counts; a `value` raise for every
-non-integer operand form, in the VM, the builtins and JIT-compiled hot loops),
+non-integer operand form, including hot functions and loops),
 `num_to_i64_exact` in `eigenscript.h`, `INT_BINOP_R` / `CASE(BNOT)` in `vm.c`,
-`bit_*` builtins in `builtins.c`, and the exactness bail in `jit.c`'s bitwise arms.
+`bit_*` builtins in `builtins.c`, and `eigs_bit_shift` in `eigenscript.h`.
+The JIT scanner and leaf evaluator refuse bitwise opcodes during round 1;
+the interpreter executes them with these same rules.
 
 ## Truthiness
 
@@ -468,17 +464,19 @@ unary and `of` are right-associative.
 - Out-of-range indices (including too-negative, e.g. `a[-(len+1)]`)
   raise a runtime error.
 - A non-integer index **raises** (`a[1.5]` → error). Integer-valued doubles
-  are accepted (`a[2.0]` works), since EigenScript has a single number type;
+  are accepted (`a[2.0]` works), since ints and floats share the numeric surface type;
   but a fractional value is never silently truncated. Because `/` always
   yields a double, a division-derived index must be collapsed explicitly —
   `a[floor of ((lo + hi) / 2)]` — which keeps the rounding decision in the
   programmer's hands. A value that is fractional only through float drift
   (`2.9999998`) also raises, surfacing the sloppy arithmetic rather than
   mis-indexing.
-- An integer-valued number outside the runtime's C `int` index representation
-  raises `index_range`, just like any other out-of-bounds index. This applies
-  consistently to indexing, dispatch keys, and slice bounds; it is not
-  misdiagnosed as a fractional value.
+- An exact int64 subscript or dispatch key outside the runtime's C `int`
+  index representation raises `index_range`, like other out-of-bounds indices;
+  it is not misdiagnosed as fractional. A float must first satisfy Phase 2's
+  exact int64 conversion rule. Slice-bound and trace-line readers retain their
+  explicit representability checks: an int outside their C `int` domain raises
+  `value` before any narrowing.
 
 **Status:** Enforced — `tests/test_trycatch.eigs`; `vm_index_is_int` guards
 every dynamic index site in `OP_INDEX_GET`/`OP_INDEX_SET` and

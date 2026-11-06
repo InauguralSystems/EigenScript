@@ -86,15 +86,57 @@ define classify_elsewhere(t) as:
 check of ["snapshot crosses the call boundary", classify_elsewhere of (trajectory of h), "converged"]
 check of ["snapshot agrees with report_value", classify_elsewhere of (trajectory of a), "diverging"]
 
-# 9. entropy channel from the same snapshot
-ch is classify of [(trajectory of h), "entropy"]
-check of ["entropy channel reachable from snapshot", ch, "converged"]
+# 9. Numeric snapshots contain no entropy channel; nonnumeric ones retain it.
+caught_entropy is 0
+try:
+    ch is classify of [(trajectory of h), "entropy"]
+catch entropy_error:
+    if entropy_error.kind == "value":
+        caught_entropy is 1
+check of ["numeric entropy channel raises value", caught_entropy, 1]
+container_h is [h]
+container_h is [h]
+check of ["nonnumeric entropy channel remains available", classify of [(trajectory of container_h), "entropy"], report of container_h]
 
 # 10. the snapshot is a transparent dict
 t is trajectory of h
 check of ["snapshot kind field", t["kind"], "trajectory"]
 check of ["snapshot rel window is full", len of (t["rel"]), 10]
 check of ["snapshot raw window is full", len of (t["raw"]), 10]
+check of ["snapshot exact flags accompany every step", len of t.exact, 10]
+check of ["snapshot retains full original values", len of t.values, 11]
+check of ["numeric snapshot has no dh window", len of t.dh, 0]
+check of ["numeric snapshot entropy is absent", t.entropy, null]
+check of ["numeric snapshot dH is absent", t.dH, null]
+check of ["numeric snapshot last entropy is absent", t.last_entropy, null]
+check of ["numeric snapshot preserves current value", t.last_value, h]
+check of ["numeric snapshot retains running best", (type of t.best), "num"]
+check of ["numeric snapshot retains patience counter", (type of t.since), "num"]
+
+# Exact integers that alias as doubles survive the snapshot call boundary.
+wide_int is 9007199254740992
+wide_int is wide_int + 1
+wide_t is trajectory of wide_int
+check of ["snapshot last value preserves exact int", wide_t.last_value, 9007199254740993]
+check of ["snapshot raw step preserves exact int", wide_t.raw[0], 1]
+check of ["snapshot exact flag is set", wide_t.exact[0], true]
+check of ["integer snapshot roundtrip", classify_elsewhere of wide_t, report of wide_int]
+
+# Nonfinite values must roundtrip too: opposite infinity behind NaN is still
+# inside the W+1-value window and changes the current infinity alignment.
+huge is 1e308 * 10.0
+not_number is huge - huge
+opposite_inf is 0 - huge
+opposite_inf is not_number
+same_inf is huge
+same_inf is not_number
+for inf_k in range of 9:
+    opposite_inf is huge
+    same_inf is huge
+check of ["opposite infinity remains oscillating through NaN", report of opposite_inf, "oscillating"]
+check of ["same-sign infinity remains diverging through NaN", report of same_inf, "diverging"]
+check of ["opposite infinity snapshot keeps original values", classify_elsewhere of (trajectory of opposite_inf), "oscillating"]
+check of ["same infinity snapshot keeps original values", classify_elsewhere of (trajectory of same_inf), "diverging"]
 
 # 11. unobserved parameter snapshots as an empty trajectory
 define snap_param(v) as:
@@ -119,6 +161,17 @@ catch e2:
         caught2 is 1
 check of ["classify of a bogus channel raises", caught2, 1]
 
+# Optional absent route flags preserve the documented minimal nonnumeric form.
+minimal_t is {"kind": "trajectory", "rel": [], "raw": [], "dh": []}
+check of ["minimal nonnumeric snapshot entropy channel", classify of [minimal_t, "entropy"], "equilibrium"]
+
+# D2 compares an exact int candidate to the floating relative-best threshold.
+# Converting both operands to double first loses this strict boundary.
+best_boundary is 9223372036854775807
+best_boundary is 9214148664817921023
+check of ["int64 candidate below rounded D2 threshold improves", improving of best_boundary, true]
+check of ["int64 D2 boundary survives snapshot", classify_elsewhere of (trajectory of best_boundary), "improving"]
+
 print of "=== expect_regime (lib/contract.eigs) ==="
 
 # 14. snapshot-form contract: pass and mismatch paths
@@ -142,6 +195,15 @@ catch e4:
     if e4 != null:
         caught4 is 1
 check of ["expect_converging throws on a runaway", caught4, 1]
+
+# A nonnumeric current assignment keeps the earlier explicit value channel.
+transition is 0
+for transition_k in range of 10:
+    transition is transition + 1
+transition is "s"
+transition_t is trajectory of transition
+check of ["numeric history survives nonnumeric snapshot", classify of transition_t, report_value of transition]
+check of ["nonnumeric snapshot entropy remains available", classify of [transition_t, "entropy"], report of transition]
 
 if fails == 0:
     print of "TRAJECTORY_ALL_PASS"

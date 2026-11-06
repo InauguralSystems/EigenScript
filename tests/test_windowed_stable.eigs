@@ -1,19 +1,6 @@
-# #861: numeric bindings route the predicate words to the VALUE channel
-# (see docs/PREDICATES.md). The sequences below drive numbers, so the
-# entropy-window mechanics this file was written for are now reachable
-# only via `classify of [t, "entropy"]` — pinned per-case where the
-# entropy behaviour was the point. The routed pins were re-measured and
-# each change is annotated at the assert.
-# Windowed `stable` (#205, docs/PREDICATES.md):
-#   stable = count == N (full window)
-#            AND every |dH| < dh_small
-#            AND entropy >= h_low
-#            AND no consecutive sign flips (adjacent opposite-sign pair, both
-#                magnitudes clearing dh_zero)
-# Small but nonzero motion at high information content, holding direction.
-# A full-window quiet HIGH-entropy value is both stable and equilibrium (report
-# resolves to equilibrium); a quiet LOW-entropy value is converged, not stable.
-# Self-asserting; prints WINDOWED_STABLE_ALL_PASS on success.
+# R3.1 D1: stable requires a full finite W+1-value window inside the 1%
+# ball about its midrange; all-exact windows use the absolute tolerance.
+# get_observer_thresholds retains compiled h_low for nonnumeric bindings.
 
 print of "=== WINDOWED STABLE (docs/PREDICATES.md, #205) ==="
 
@@ -21,8 +8,7 @@ define want(tag, got, exp) as:
     assert of [got == exp, f"{tag}: stable expected {exp} got {got}"]
     print of f"  PASS: {tag} (stable={got})"
 
-# WS1: full-window steady small drift at high entropy -> stable (mean > dh_zero
-#      so NOT equilibrium; gray-band steps so NOT improving/diverging)
+# WS1: broad finite drift is outside the midrange ball.
 a is 30.0
 a is 32.0
 a is 34.0
@@ -35,9 +21,9 @@ a is 46.0
 a is 48.0
 a is 50.0
 # #861 re-pin: value route: +2/step linear climb -> diverging; entropy small-dH "stable" was the additive-runaway blindness (#422)
-want of ["WS1 full-window drift fires", stable, false]
+want of ["WS1 broad full-window drift is outside midrange band", stable, false]
 
-# WS2: full-window quiet at HIGH entropy -> stable (also equilibrium)
+# WS2: constant2 is inside the ball.
 b is 2.0
 b is 2.0
 b is 2.0
@@ -49,7 +35,7 @@ b is 2.0
 b is 2.0
 b is 2.0
 b is 2.0
-want of ["WS2 quiet high-entropy fires", stable, true]
+want of ["WS2 constant2 is stable", stable, true]
 
 # WS3: partial window (count == 9 < N) -> does NOT fire (full-window rule)
 c is 30.0
@@ -64,7 +50,7 @@ c is 46.0
 c is 48.0
 want of ["WS3 partial window does not fire", stable, false]
 
-# WS4: a single step exceeds dh_small -> does NOT fire
+# WS4: the jump makes the full value window exceed the midrange ball.
 d is 40.0
 d is 42.0
 d is 44.0
@@ -76,9 +62,9 @@ d is 54.0
 d is 56.0
 d is 58.0
 d is 200.0
-want of ["WS4 step over dh_small does not fire", stable, false]
+want of ["WS4 window with a jump is outside midrange band", stable, false]
 
-# WS5: full-window quiet at LOW entropy -> NOT stable (entropy < h_low; converged)
+# WS5: constant1e6 is inside the ball at any magnitude.
 e is 1000000.0
 e is 1000000.0
 e is 1000000.0
@@ -90,9 +76,9 @@ e is 1000000.0
 e is 1000000.0
 e is 1000000.0
 e is 1000000.0
-want of ["WS5 low-entropy quiet does not fire (converged)", stable, true]
+want of ["WS5 constant1e6 is stable", stable, true]
 
-# WS6: gray-band oscillation (consecutive sign flips) -> NOT stable
+# WS6: the 70..75 range exceeds the midrange ball.
 f is 70.0
 f is 75.0
 f is 70.0
@@ -106,7 +92,7 @@ f is 75.0
 f is 70.0
 want of ["WS6 oscillation does not fire", stable, false]
 
-# WS7: quiet at entropy JUST ABOVE h_low (|x|=42, H~0.159) -> stable
+# WS7: constant42 is stable.
 g is 42.0
 g is 42.0
 g is 42.0
@@ -118,9 +104,9 @@ g is 42.0
 g is 42.0
 g is 42.0
 g is 42.0
-want of ["WS7 quiet just above h_low fires", stable, true]
+want of ["WS7 constant42 is stable", stable, true]
 
-# WS8: quiet at entropy JUST BELOW h_low (|x|=100, H~0.080) -> NOT stable
+# WS8: constant100 is stable.
 h is 100.0
 h is 100.0
 h is 100.0
@@ -132,6 +118,6 @@ h is 100.0
 h is 100.0
 h is 100.0
 h is 100.0
-want of ["WS8 quiet just below h_low does not fire", stable, true]
+want of ["WS8 constant100 is stable", stable, true]
 
 print of "WINDOWED_STABLE_ALL_PASS"

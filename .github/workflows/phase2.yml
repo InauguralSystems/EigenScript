@@ -1,0 +1,149 @@
+name: phase2
+
+# #1758: landed MAP rows, the pre-registered builtin table on matched
+# capability profiles, the C readers and the stdlib differential. The shared
+# phase2_check.py helper derives the complete declared MAP prefix by default.
+# R3.1 implements arm R3-STD under R31-1; R3.2 lands the four-field O cfg.
+on:
+  push:
+    branches: [phase2-numbers]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase2:
+    name: phase2 (MAP + builtins + readers + lib)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      db:
+        image: postgres:16@sha256:1beaa3084eee2676f20a9cd9928f0bf2c5bf674f8e49f81017912183d377c61c
+        env:
+          POSTGRES_USER: eigs
+          POSTGRES_PASSWORD: eigs_test
+          POSTGRES_DB: eigs_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eigs"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://eigs:eigs_test@127.0.0.1:5432/eigs_test
+    steps:
+      # Every branch and tag is needed: origin/main, v0.46.0 and the accepted R3.1 baseline.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Fetch the approved builtin bar object
+        run: |
+          git fetch --no-tags origin 0a73adb0612f8612d75393891ae2ba2e1c803663
+          git cat-file -e '0a73adb0612f8612d75393891ae2ba2e1c803663^{tree}'
+          git fetch --no-tags origin f09632d01e982d74cbe009db7f292c28afa8aa7e
+          git cat-file -e 'f09632d01e982d74cbe009db7f292c28afa8aa7e^{tree}'
+      - name: Install matched capability dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev zlib1g-dev libsdl2-2.0-0 libsdl2-mixer-2.0-0 libsdl2-ttf-2.0-0
+      - name: Build tag, main and branch profiles serially; run the phase2 lane
+        run: |
+          set -euo pipefail
+          export XDG_CACHE_HOME="$RUNNER_TEMP/cache"
+          make --no-print-directory observer-anchor
+          anchor="$XDG_CACHE_HOME/eigs-oracle-anchor/$(sha256sum tools/observer_oracle/build_anchor.sh | cut -d' ' -f1)/src/eigenscript"
+          mkdir -p "$RUNNER_TEMP/main" "$RUNNER_TEMP/tag-profiles" "$RUNNER_TEMP/r31-baseline"
+          git archive origin/main | tar -x -C "$RUNNER_TEMP/main"
+          git archive v0.46.0 | tar -x -C "$RUNNER_TEMP/tag-profiles"
+          git archive c8e596161912fa3c0e19bb5bd0beea7c87e4ed32 | tar -x -C "$RUNNER_TEMP/r31-baseline"
+          make -C "$RUNNER_TEMP/main" > "$RUNNER_TEMP/main-build.log" 2>&1 \
+            || { tail -n 50 "$RUNNER_TEMP/main-build.log"; echo "::error::the origin/main build failed"; exit 1; }
+          make -C "$RUNNER_TEMP/r31-baseline" > "$RUNNER_TEMP/r31-baseline-build.log" 2>&1 \
+            || { tail -n 50 "$RUNNER_TEMP/r31-baseline-build.log"; echo "::error::the R3.1 baseline build failed"; exit 1; }
+          # The table uses matching capability builds; a capability-unavailable
+          # transcript is a failure, including on the tag (ruling A3).
+          for profile in server zlib db; do
+            target="$profile"
+            [ "$profile" != db ] || target=server-db
+            make -C "$RUNNER_TEMP/tag-profiles" "$target" > "$RUNNER_TEMP/tag-$profile-build.log" 2>&1 \
+              || { tail -n 50 "$RUNNER_TEMP/tag-$profile-build.log"; echo "::error::the tag $profile build failed"; exit 1; }
+            printf -v "TAG_BIN_${profile^^}" '%s' "$RUNNER_TEMP/tag-profiles/build/$target/eigenscript"
+            export "TAG_BIN_${profile^^}"
+          done
+          export CC_GUARD_LOG="$RUNNER_TEMP/cc-guard.log"
+          : > "$CC_GUARD_LOG"
+          # R2.2 remote-default build proof: compile each optimization level
+          # serially; the ordinary build below restores the release -O2 flags.
+          for optimization in 0 1; do
+            PATH="$PWD/tools/cc-guard-bin:$PATH" make build \
+              CFLAGS="-Wall -Wextra -Werror \$(WERROR_FLAGS) -O$optimization -fstack-protector-strong -fPIE"
+          done
+          for profile in server zlib db; do
+            target="$profile"
+            [ "$profile" != db ] || target=server-db
+            PATH="$PWD/tools/cc-guard-bin:$PATH" make "$target"
+            printf -v "BRANCH_BIN_${profile^^}" '%s' "$PWD/build/$target/eigenscript"
+            export "BRANCH_BIN_${profile^^}"
+          done
+          # Restore the release alias before the MAP and library checks.
+          PATH="$PWD/tools/cc-guard-bin:$PATH" make build
+          bash tools/cc_guard.sh --report
+          bash tools/phase2_ci.sh --through R3.2 --baseline "$RUNNER_TEMP/r31-baseline/src/eigenscript" \
+            "$anchor" "$RUNNER_TEMP/main/src/eigenscript" src/eigenscript
+
+      - name: R2.3 encoder failure and no-mutation proofs
+        run: |
+          bash tests/phase2/writers.sh release build/release/eigenscript build/server/eigenscript
+      - name: R2.4 canonical embed doubles on the release profile
+        run: |
+          set -euo pipefail
+          export CC_GUARD_LOG="$RUNNER_TEMP/cc-guard.log"
+          proof_rc=0
+          PATH="$PWD/tools/cc-guard-bin:$PATH" make --no-print-directory EMBED_NAN_VARIANT=release embed-nan-test \
+            > "$RUNNER_TEMP/r24-embed-release.log" 2>&1 || proof_rc=$?
+          cat "$RUNNER_TEMP/r24-embed-release.log"
+          . tests/lsan_classify.sh
+          proof_class=0
+          lsan_classify "$(cat "$RUNNER_TEMP/r24-embed-release.log")" || proof_class=$?
+          if [ "$proof_rc" -ne 0 ] || [ "$proof_class" -ne 2 ]; then
+            echo "::error::R2.4 release embed proof failed: rc=$proof_rc sanitizer-class=$proof_class"
+            exit 1
+          fi
+          if grep -q 'warning:' "$RUNNER_TEMP/r24-embed-release.log"; then
+            echo "::error::R2.4 release embed proof emitted a compiler warning"
+            exit 1
+          fi
+          grep -qx 'embed-nan: PASS inputs=20 modes=2 cases=40 callbacks=20 arithmetic=4 constructors=2 checks=1020 failures=0' "$RUNNER_TEMP/r24-embed-release.log"
+          bash tools/cc_guard.sh --report
+      - name: R2.3 writer proofs under ASan and UBSan
+        run: |
+          make asan
+          make asan-server
+          ASAN_OPTIONS=detect_leaks=1 bash tests/phase2/writers.sh asan build/asan/eigenscript build/asan-server/eigenscript
+      - name: R2.4 canonical embed doubles under ASan and UBSan
+        run: |
+          set -euo pipefail
+          export CC_GUARD_LOG="$RUNNER_TEMP/cc-guard.log"
+          proof_rc=0
+          ASAN_OPTIONS=detect_leaks=1 PATH="$PWD/tools/cc-guard-bin:$PATH" \
+            make --no-print-directory EMBED_NAN_VARIANT=asan embed-nan-test \
+            > "$RUNNER_TEMP/r24-embed-asan.log" 2>&1 || proof_rc=$?
+          cat "$RUNNER_TEMP/r24-embed-asan.log"
+          . tests/lsan_classify.sh
+          proof_class=0
+          lsan_classify "$(cat "$RUNNER_TEMP/r24-embed-asan.log")" || proof_class=$?
+          if [ "$proof_rc" -ne 0 ] || [ "$proof_class" -ne 2 ]; then
+            echo "::error::R2.4 ASan embed proof failed: rc=$proof_rc sanitizer-class=$proof_class"
+            exit 1
+          fi
+          if grep -q 'warning:' "$RUNNER_TEMP/r24-embed-asan.log"; then
+            echo "::error::R2.4 ASan embed proof emitted a compiler warning"
+            exit 1
+          fi
+          grep -qx 'embed-nan: PASS inputs=20 modes=2 cases=40 callbacks=20 arithmetic=4 constructors=2 checks=1020 failures=0' "$RUNNER_TEMP/r24-embed-asan.log"
+          bash tools/cc_guard.sh --report
+      - name: R2.4 named payload row under ASan and UBSan
+        run: |
+          python3 -W error tests/phase2/nan_payload_map_check.py

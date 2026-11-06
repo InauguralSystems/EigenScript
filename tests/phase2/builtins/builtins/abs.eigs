@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: abs (int-preserving, LOSS; Lua math.abs; N4b)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+r is abs of -9007199254740993
+print of [r, nt of r]
+f is abs of -2.5
+print of [f, nt of f]
+try:
+    print of (abs of (-9223372036854775807 - 1))
+catch e:
+    print of ["int64-min", e.kind]

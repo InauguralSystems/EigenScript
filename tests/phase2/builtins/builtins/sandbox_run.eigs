@@ -1,0 +1,15 @@
+# R1.6 behaviour-table probe: sandbox_run (int-requiring; iteration, byte and work limits; returns line ints); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+d is [1, [0, 0, 0, 40], [7]]
+print of (sandbox_run of [d, 1000])
+try:
+    print of ["fraction-answer", sandbox_run of [d, 1000.5]]
+catch e:
+    print of ["iterations-fraction", e.kind]
+print of (sandbox_run of [d, 1000.0])
+bad is sandbox_run of [[1, [0, 0, 0, 0, 1, 0, 4, 40], ["a", 1]], 1000]
+print of [bad["ok"], bad["error"]["kind"], nt of bad["error"]["line"]]

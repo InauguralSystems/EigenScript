@@ -1,0 +1,19 @@
+# R1.6 behaviour-table probe: buf_deinterleave (int-requiring; channel count and index); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+s is buf_from_list of [1, 10, 2, 20, 3, 30]
+r is buf_deinterleave of [s, 1, 2]
+print of [buf_len of r, r[0], r[2]]
+try:
+    print of ["fraction-answer", buf_len of (buf_deinterleave of [s, 0.5, 2])]
+catch e:
+    print of ["channel-fraction", e.kind]
+try:
+    print of ["fraction-answer", buf_len of (buf_deinterleave of [s, 0, 2.5])]
+catch e:
+    print of ["nch-fraction", e.kind]
+f is buf_deinterleave of [s, 0.0, 2.0]
+print of [f[0], f[1], f[2]]

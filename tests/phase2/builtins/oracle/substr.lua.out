@@ -1,0 +1,4 @@
+el
+false	bad argument #2 to 'string.sub' (number has no integer representation)
+false	bad argument #3 to 'string.sub' (number has no integer representation)
+el

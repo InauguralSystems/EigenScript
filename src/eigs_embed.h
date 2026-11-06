@@ -29,6 +29,7 @@
 #define EIGS_EMBED_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -148,7 +149,7 @@ EigsValue  *eigs_get_global(const char *name);
 
 typedef enum {
     EIGS_TYPE_NULL = 0,
-    EIGS_TYPE_NUM,
+    EIGS_TYPE_NUM,      /* int and float, like Lua's LUA_TNUMBER */
     EIGS_TYPE_STR,
     EIGS_TYPE_LIST,
     EIGS_TYPE_DICT,
@@ -158,7 +159,11 @@ typedef enum {
     EIGS_TYPE_BOOL      /* #1637; appended so the earlier values keep their numbers */
 } EigsValueType;
 
+/* R2.4: each public double input/output maps every NaN payload to canonical
+ * 0x7ff8000000000000. All non-NaN bits, including infinities and signed zero,
+ * are preserved. This is a representation boundary, not a strict-mode trap. */
 EigsValue     *eigs_value_new_num(double n);
+EigsValue     *eigs_value_new_int(int64_t n);      /* exact signed int64 */
 EigsValue     *eigs_value_new_string(const char *s);
 EigsValue     *eigs_value_new_null(void);
 EigsValue     *eigs_value_new_bool(int b);         /* #1637: the true/false value */
@@ -169,6 +174,11 @@ void           eigs_value_release(EigsValue *v);
 
 EigsValueType  eigs_value_type(EigsValue *v);
 double         eigs_value_as_num(EigsValue *v);     /* wrong type: sentinel + error; bool sentinel is NaN */
+/* Like lua_tointegerx: exact int64 from int or integral float. Numeric
+ * refusal returns 0 with *ok=0 and sets no error; a non-number also sets a
+ * type error. ok may be NULL. Existing pending errors are never cleared. */
+int64_t        eigs_value_as_int(EigsValue *v, int *ok);
+int            eigs_value_is_int(EigsValue *v);    /* kind only, like lua_isinteger */
 int            eigs_value_as_bool(EigsValue *v);    /* wrong type: 0 + error */
 const char    *eigs_value_as_string(EigsValue *v);  /* NULL if not str; borrowed */
 
@@ -196,6 +206,11 @@ EigsValue     *eigs_value_new_buffer(int count);   /* zeroed, 1-D (unshaped) */
  * unchanged; inspect/clear the error through the error API above. A thread
  * with no attached state has no error channel and gets the sentinel alone. */
 int            eigs_value_buffer_len(EigsValue *v);          /* wrong type: 0 + error */
+/* R2.4: valid reads return a canonical NaN or preserve all non-NaN bits,
+ * including infinities and signed zero. The getter does not rewrite the raw
+ * buffer cell. The setter canonicalizes its incoming double before storing.
+ * Neither writes math flags or raises for a valid element. Raw payload access
+ * in programs uses buf_get_bits/buf_set_bits, whose values are signed ints. */
 double         eigs_value_buffer_get(EigsValue *v, int i);   /* OOB: 0.0 + error */
 void           eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-op + error */
 

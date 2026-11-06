@@ -1,0 +1,17 @@
+# R1.6 behaviour-table probe: str_from_bytes (int-requiring; byte values: N5, then 0..255 (Q1; Lua string.char)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of (str_from_bytes of [72, 105])
+try:
+    print of ["fraction-answer", str_from_bytes of ([65.5])]
+catch e:
+    print of ["byte-fraction", e.kind]
+try:
+    print of ["328-answer", str_from_bytes of ([328])]
+catch e:
+    print of ["byte-328", e.kind]
+print of (str_from_bytes of [72.0, 105.0])
+print of (str_from_bytes of (buf_from_list of [72, 105]))

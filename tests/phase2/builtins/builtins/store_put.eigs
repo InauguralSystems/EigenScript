@@ -1,0 +1,13 @@
+# R1.6 behaviour-table probe: store_put (other, LOSS; the writer's %.15g float arm is R1.7; the round trip decodes ints exactly from R1.6)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+s is store_open of (p + "/db")
+k is store_put of [s, "c", {"big": 9007199254740993, "min": -9223372036854775807 - 1}]
+print of [k, type of k]
+r is store_get of [s, "c", k]
+print of [r["big"], nt of r["big"], r["min"], nt of r["min"]]
+store_close of s

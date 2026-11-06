@@ -9,7 +9,7 @@
 set -u
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 EIGS="$TESTS_DIR/../src/eigenscript"
-PROG="$TESTS_DIR/bench_idxset.eigs"
+PROG="$TESTS_DIR/jit_env_flags_float.eigs"
 compiled() { env "$@" EIGS_JIT_STATS=1 "$EIGS" "$PROG" 2>&1 >/dev/null | grep -o 'compiled=[0-9]*' | head -1; }
 c_on=$(compiled -u EIGS_JIT_OFF)
 c_zero=$(compiled EIGS_JIT_OFF=0)

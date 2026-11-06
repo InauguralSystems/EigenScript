@@ -1,0 +1,23 @@
+# ROW: O2.counter-pause-not-converged
+# ITEMS: O2
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+x is 0.0
+hits is 0
+i is 0
+loop while i < 30:
+    x is x + 1.0
+    i is i + 1
+x is x + 0.000000001
+if converged of x:
+    hits is hits + 1
+a is [converged of x, stable of x]
+j is 0
+loop while j < 40:
+    x is x + 1.0
+    if converged of x:
+        hits is hits + 1
+    j is j + 1
+print of [a, hits]

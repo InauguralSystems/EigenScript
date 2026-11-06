@@ -199,6 +199,38 @@ captured_rebind_row() {
     fi
 }
 
+# The control owns one one-double buffer. Count complete report blocks that
+# actually witness its two payload stores; an unrelated shared-env race must
+# not make the control look live. Keep every field inside the SAME report.
+scope_payload_reports() {
+    awk '
+    /^WARNING: ThreadSanitizer:/ {
+        active=1; race=($0 ~ /^WARNING: ThreadSanitizer: data race/)
+        writes=0; first=""; same=1; location=0; allocation=0; buffer=0
+    }
+    active && /^  (Previous )?[Ww]rite of size 8 at 0x[0-9a-fA-F]+ / {
+        address=$0
+        sub(/^.*[Ww]rite of size 8 at /, "", address)
+        sub(/ .*/, "", address)
+        if (writes == 0) first=address
+        else if (address != first) same=0
+        writes++
+    }
+    active && /^  Location is heap block of size 8 at 0x[0-9a-fA-F]+ allocated by / {
+        address=$0
+        sub(/^.*Location is heap block of size 8 at /, "", address)
+        sub(/ .*/, "", address)
+        location=(address == first); allocation=1; next
+    }
+    active && allocation && /^[[:space:]]*#[0-9]+[[:space:]]+builtin_buffer[[:space:]]/ { buffer=1 }
+    active && allocation && /^  (Mutex|Thread|SUMMARY)/ { allocation=0 }
+    active && /^SUMMARY: ThreadSanitizer:/ {
+        if (race && writes == 2 && same && location && buffer) found++
+        active=0
+    }
+    END { print found+0 }'
+}
+
 scope_boundary_row() {
     echo "=== #1144 scope boundary: the user-level race names NO loader structure ==="
     # tests/loader_mt_userrace.eigs races ON PURPOSE while workers load
@@ -216,15 +248,18 @@ scope_boundary_row() {
     # with none (§121: a check that examined nothing is vacuous). The race is
     # deterministic now: a ready/release barrier rendezvous workers before
     # their one-shot accesses to a separate race word, so one run suffices and
-    # no retry can hide a control that stopped racing.
+    # no retry can hide a control that stopped racing. Require the actual
+    # shared-buffer payload report: another permitted user/env race cannot
+    # substitute for the positive control.
     local fixture="$TESTS_DIR/loader_mt_userrace.eigs"
     local forbidden='loading_stack|eigs_loading_|module_cache|module_lock|g_module_ns|module_ns_'
-    local loader
+    local loader payload
     if [ ! -f "$fixture" ]; then
         echo "  FAIL: scope-boundary fixture missing ($fixture)"; FAIL=$((FAIL + 1)); return
     fi
     tsan_warnings "$fixture"
     loader=$(grep -cE "$forbidden" <<< "$RUN_OUTPUT" || true)
+    payload=$(scope_payload_reports <<< "$RUN_OUTPUT")
     if [ "$WARNINGS" -eq 0 ]; then
         echo "  FAIL (vacuous): the probe captured NO ThreadSanitizer report (rc=$LAST_RC): its"
         echo "        deliberate race did not run, so the boundary check examined nothing"
@@ -233,6 +268,10 @@ scope_boundary_row() {
         echo "  FAIL (boundary): a LOADER STRUCTURE appears in the user-race reports ($loader line(s)) — #1144 regressed"
         grep -E "$forbidden" <<< "$RUN_OUTPUT" | head -6
         FAIL=$((FAIL + 1))
+    elif [ "$payload" -eq 0 ]; then
+        echo "  FAIL (vacuous): $WARNINGS report(s) contain no intentional shared-buffer two-write race (rc=$LAST_RC)"
+        FAIL=$((FAIL + 1))
+        tsan_report <<< "$RUN_OUTPUT"
     else
         echo "  PASS: $WARNINGS report(s) examined, 0 loader frames (probe rc=$LAST_RC: racy by design, not a verdict)"
         PASS=$((PASS + 1))
@@ -476,7 +515,8 @@ if [ -f "$RP_EIGS" ]; then
         elif [ "$LAST_RC" -eq 124 ]; then
             echo "  FAIL: replay-workers HUNG"
             FAIL=$((FAIL + 1))
-        elif [ "$LAST_RC" -eq 0 ] && grep -qx 'a=1500 b=1500' \
+        # N6: random draws and their sums are floats, including integral sums.
+        elif [ "$LAST_RC" -eq 0 ] && grep -Fxq 'a=1500.0 b=1500.0' \
                 "$TESTS_DIR/../build/tsan_replay_mt.out"; then
             echo "  PASS: replay-workers causal values, TSan-clean"; PASS=$((PASS + 1))
         else

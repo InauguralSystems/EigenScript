@@ -1,0 +1,3 @@
+# Phase 2 literal syntax (including //) is absent from the main merge-base.
+# Compare the complete formatter corpus against the reviewed R1.8 bank.
+ed09f908603a414f77ead78e241fa10aff7f2f38

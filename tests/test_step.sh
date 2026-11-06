@@ -27,13 +27,9 @@ if [ ! -x "$EIGS" ]; then
     exit 1
 fi
 
-# ---- fixture: an oscillator, a halving (converging) binding, a string,
-# and one nondet call. 40 halvings of 1024 push the step below the absolute
-# settle floor dh_zero*scale (1e-3 * 1e-3 = 1e-6, #1045 — a value inside the
-# characteristic scale settles on |dv|, above it on dv/|v|) with a full
-# 10-wide window to spare -> [converged]; 30 halvings only reached 9.5e-7
-# on the LAST step, one under the floor, so the window still read
-# [improving]. The +1/-1 alternation sign-flips every step -> [oscillating].
+# ---- fixture: x_k = 2 + 1022/2^k. D2 last improves at20, expires at30.
+# The W=10 Cauchy window certifies at29; ranking still gives improving at29,
+# converged at30 and40. Forty tape stops back is mid-flight improving.
 FIX="$TMPDIR/fix.eigs"
 cat > "$FIX" <<'EOF'
 osc is 1
@@ -42,7 +38,7 @@ msg is "hello"
 seed is random of null
 for i in range of 40:
     osc is 0 - osc
-    conv is conv / 2
+    conv is 1 + conv / 2
 print of conv
 EOF
 
@@ -94,11 +90,7 @@ echo "$OUT" | grep -Eq '^msg = "hello"  \(1 assign\)' \
     && ok "non-numeric binding shows value, no trajectory label" \
     || fail "non-numeric binding shows value, no trajectory label"
 
-# ---- 5. THE ACCEPTANCE CHECK (#418): step back and watch the label flip.
-#         At the end conv is [converged]; 40 steps earlier it is still
-#         mid-descent -> [improving] (#861: the halving steps are contracting,
-#         which the routed classifier names; pre-#861 the mid-flight label
-#         was the residual "moving"). Same binding, same tape, different moment.
+# ---- 5. #418: end k=40 is converged; forty tape stops back is improving.
 OUT=$(drive "s 200" "b 40" p q)
 echo "$OUT" | grep -Eq "^conv = .*\[improving\]" \
     && ok "stepping back flips conv's label converged -> improving" \
@@ -274,6 +266,15 @@ echo "$OUT" | grep -q '^shared_name: 1 assign' \
     && ok "native assignment shadows a dead callback binding" \
     || fail "native assignment shadows a dead callback binding" \
             "$(echo "$OUT" | grep -E "shared_name|no binding|^[[:space:]]+[0-9]" | head -2)"
+
+# #294/#418: compare every live assignment with both tape views.
+DIFF_OUT=$(python3 "$TESTS_DIR/test_step_report.py" "$EIGS" 2>&1)
+DIFF_RC=$?
+if [ "$DIFF_RC" -eq 0 ]; then
+    ok "stepper p/t labels equal live report at every assignment in both tiers"
+else
+    fail "stepper p/t labels equal live report at every assignment in both tiers" "$DIFF_OUT"
+fi
 
 echo "STEP: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -29,7 +29,7 @@ assert of [(closures1737[0] of null) == 3 and (closures1737[2] of null) == 3,
 side1737 is 0
 define body_effect1737(v) as:
     side1737 is v
-    return 10 / (v - 2)
+    return 10 // (v - 2)
 
 try:
     body_result1737 is [body_effect1737 of body_v1737 for body_v1737 in [1, 2, 3]]
@@ -42,7 +42,7 @@ assert of [outer1737 == 41 and report of outer1737 == outer_report1737,
 
 try:
     filter_result1737 is [filter_v1737 for filter_v1737 in [1, 2, 3]
-                          if 10 / (filter_v1737 - 2)]
+                          if 10 // (filter_v1737 - 2)]
 catch filter_error1737:
     filter_kind1737 is filter_error1737.kind
 assert of [filter_kind1737 == "value", "filter error is caught"]
@@ -110,7 +110,7 @@ assert of [parameter_comp1737 of 90 == [1, 2],
 define parameter_catch_read1737(err) as:
     local seen1737 is "missing"
     try:
-        fault1737 is 1 / 0
+        fault1737 is 1 // 0
     catch err:
         seen1737 is err.kind
     return [seen1737, err]
@@ -120,7 +120,7 @@ assert of [parameter_catch_read1737 of "parameter" == ["value", "parameter"],
 define parameter_catch_write1737(err) as:
     local seen1737 is "missing"
     try:
-        fault1737 is 1 / 0
+        fault1737 is 1 // 0
     catch err:
         err is "updated"
         seen1737 is err
@@ -137,7 +137,7 @@ define slot_catch_write1737() as:
     unobserved:
         local promoted1737 is 1
     try:
-        fault1737 is 1 / 0
+        fault1737 is 1 // 0
     catch err:
         err is "updated"
         observed1737 is [err, who is err, when is err,
@@ -153,7 +153,7 @@ jump_count1737 is 0
 loop while jump_count1737 < 2:
     jump_count1737 is jump_count1737 + 1
     try:
-        fault1737 is 1 / 0
+        fault1737 is 1 // 0
     catch jump_err1737:
         if jump_count1737 == 1:
             continue
@@ -163,7 +163,7 @@ assert of [jump_err1737 == "outer" and jump_count1737 == 2,
 
 define return_catch1737(err) as:
     try:
-        fault1737 is 1 / 0
+        fault1737 is 1 // 0
     catch err:
         return err.kind
 assert of [return_catch1737 of "parameter" == "value",

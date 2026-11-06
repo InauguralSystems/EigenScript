@@ -64,7 +64,7 @@ REC_B=$(EIGS_TRACE="$TAPE_B" "$EIGS" "$TMPDIR/p_buf.eigs" 2>&1)
 printf '\xff\xfe\xfd' > "$INPUT"
 REP_B=$(EIGS_REPLAY="$TAPE_B" "$EIGS" "$TMPDIR/p_buf.eigs" 2>&1)
 
-EXPECTED_B=$'1\n2\n3'
+EXPECTED_B=$'1.0\n2.0\n3.0'
 if [ "$REC_B" = "$EXPECTED_B" ] && [ "$REP_B" = "$EXPECTED_B" ]; then
     ok "buffer replay: read_bytes_buf restored as VAL_BUFFER (b[…] disambiguator)"
 else
@@ -220,7 +220,7 @@ N 0 ls=[{"k": 42}, {"k": "ok"}, b[10, 20, 30]]
 EOF
 
 REP_N=$(EIGS_REPLAY="$TMPDIR/nested.tape" "$EIGS" "$TMPDIR/p_nested.eigs" 2>/dev/null)
-EXPECTED_N=$'{"k": 42}\nok\n20'
+EXPECTED_N=$'{"k": 42}\nok\n20.0'
 
 if [ "$REP_N" = "$EXPECTED_N" ]; then
     ok "nested replay: list[dict, dict, buffer] round-trip"
@@ -634,8 +634,8 @@ print of x
 EOF
 CONTRACT_TAPE="$TMPDIR/contract.tape"
 EIGS_TRACE="$CONTRACT_TAPE" "$EIGS" "$TMPDIR/p_tape_contract.eigs" >/dev/null 2>&1
-if head -1 "$CONTRACT_TAPE" | grep -q '^V 8 '; then
-    ok "tapes written by this build stamp format v8"
+if head -1 "$CONTRACT_TAPE" | grep -q '^V 10 '; then
+    ok "tapes written by this build stamp format v10"
 else
     fail "format stamp" "$(head -1 "$CONTRACT_TAPE")"
 fi
@@ -660,13 +660,13 @@ else
     fail "pre-v3 replay refusal" "rc=$OLD_REPLAY_RC $(cat "$TMPDIR/old-replay.err")"
 fi
 
-# O records remain part of v8 tapes and the stepper still folds them. Bound the
+# O records remain part of v10 tapes and the stepper still folds them. Bound the
 # multiplicative configuration-record x binding work even though programs can
 # no longer create those records through observer setter builtins.
 WORK_TAPE="$TMPDIR/observer-work-limit.tape"
 head -2 "$CONTRACT_TAPE" > "$WORK_TAPE"
 for _ in $(seq 1 1000); do
-    echo 'O 0 cfg 0.001 0.01 0.1 10 0.001' >> "$WORK_TAPE"
+    echo 'O 0 cfg 0.001 0.01 10 0.001' >> "$WORK_TAPE"
 done
 echo 'L 0 1' >> "$WORK_TAPE"
 for i in $(seq 1 1001); do

@@ -4,7 +4,7 @@
 #   scatter_add             — gather's dual, vs the hand-written list loop
 #   gather on buffers       — vs the list path
 #   subtract/multiply/divide on buffers, scalar + bias broadcast — vs the list
-#                             path (same num_guard elementwise kernels)
+#                             path (same IEEE elementwise kernels)
 #   softmax/log_softmax/leaky_relu/mean on buffers — vs the list path
 #   numerical_grad on a buffer parameter — vs the list parameter
 # plus the loud failure modes (shape/type/index errors raise, never fold to 0).
@@ -149,9 +149,12 @@ guard is buffer of [3, 4]
 raises of ["scatter_add column out of range", (nul) => scatter_add of [guard, [1, 4, 1], [1.0, 2.0, 3.0]], "index_range"]
 assert_eq of [sum of guard, 0.0, "scatter_add: a raise leaves dst untouched (no partial row 0 write)"]
 raises of ["scatter_add flat out of range", (nul) => scatter_add of [(buffer of 3), [3], 1.0], "index_range"]
-raises of ["scatter_add huge list index", (nul) => scatter_add of [(buffer of 3), [1e300], 1.0], "index_range"]
-raises of ["scatter_add fractional buffer index", (nul) => scatter_add of [(buffer of 3), (vec_buf of [[1.5]]), 1.0], "index_range"]
-raises of ["scatter_add fractional index", (nul) => scatter_add of [(buffer of 3), [1.5], 1.0], "index_range"]
+# N5 / R1.6d: exact index conversion precedes bounds checks.
+raises of ["scatter_add huge list index", (nul) => scatter_add of [(buffer of 3), [1e300], 1.0], "value"]
+# N5 / R1.6d: exact index conversion precedes bounds checks.
+raises of ["scatter_add fractional buffer index", (nul) => scatter_add of [(buffer of 3), (vec_buf of [[1.5]]), 1.0], "value"]
+# N5 / R1.6d: exact index conversion precedes bounds checks.
+raises of ["scatter_add fractional index", (nul) => scatter_add of [(buffer of 3), [1.5], 1.0], "value"]
 raises of ["scatter_add non-buffer dst", (nul) => scatter_add of [[0.0, 0.0], [0], 1.0], "type_mismatch"]
 # length mismatches are LOUD, not truncated — a dropped gradient entry is a
 # silent wrong number, the same reason an out-of-range index raises
@@ -189,10 +192,19 @@ same_2d of ["multiply bias broadcast", (multiply of [M, v[0]]), multiply of [Mb,
 same_2d of ["multiply buf-scalar", (multiply of [M, 2.5]), multiply of [Mb, 2.5]]
 same_2d of ["add scalar-buf", (add of [0.25, M]), add of [0.25, Mb]]
 same_2d of ["divide scalar-buf", (divide of [1.0, M]), divide of [1.0, Mb]]
-# divide by a zero element folds to 0 on both paths (the documented rule)
+# R2.2: zero division produces infinity on both paths. The list exposes
+# the IEEE value; the buffer's finite-only scalar reader still refuses it.
 z is buffer of 2
 z[0] is 3.0
-same_1d of ["divide by zero element folds to 0", (divide of [[1.0, 1.0], [3.0, 0.0]]), divide of [(vec_buf of [1.0, 1.0]), z]]
+zero_list is divide of [[1.0, 1.0], [3.0, 0.0]]
+zero_buffer is divide of [(vec_buf of [1.0, 1.0]), z]
+assert_eq of [len of zero_buffer, len of zero_list, "divide by zero element: length"]
+zero_read_refused is false
+try:
+    unused_zero_cell is zero_buffer[1]
+catch e:
+    zero_read_refused is e.kind == "value"
+assert_eq of [zero_list[0] == zero_buffer[0] and zero_list[1] == (1.0 / 0) and zero_read_refused, true, "IEEE zero division preserves buffer read refusal"]
 # Settled at integration (#973 vs #1093): the four arithmetic builtins have
 # ONE buffer path, and it is the shared `tensor_elementwise` algebra — so the
 # answers below are the LIST answers, container for container, rather than the

@@ -1,0 +1,25 @@
+# Existing quoted-sentinel stores remain readable after new writes refuse.
+# The driver copies the two committed base-produced fixtures into owned scratch.
+load_file of "lib/test.eigs"
+root is env_get of "EIGS_PROBE_TMP"
+assert of [root != "", "legacy store fixture needs an owned scratch directory"]
+for kind in ["nan", "infinity"]:
+    path is root + "/r23-legacy-buffer-" + kind + ".db"
+    s is store_open of path
+    first is store_get of [s, "c", "1"]
+    assert_eq of [type of first.v, "buffer", kind + " historical sentinel decodes as a buffer"]
+    if kind == "nan":
+        assert_true of [first.v != first.v, "historical NaN remains non-reflexive"]
+    else:
+        assert_true of [first.v == first.v, "historical infinity remains reflexive"]
+    refused is false
+    try:
+        first.v[0]
+    catch e:
+        refused is e.kind == "value"
+    assert_true of [refused, kind + " historical payload still obeys finite readers"]
+    second is store_get of [s, "c", "2"]
+    assert_eq of [second.v, 7, kind + " finite neighbor remains readable"]
+    assert_eq of [store_count of [s, "c"], 2, kind + " all historical rows remain present"]
+    store_close of s
+test_summary of null

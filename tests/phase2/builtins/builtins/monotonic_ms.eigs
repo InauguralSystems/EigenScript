@@ -1,0 +1,9 @@
+# R1.6 behaviour-table probe: monotonic_ms (float-producing; fractional milliseconds)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is monotonic_ms of null
+b is monotonic_ms of null
+print of [nt of a, nt of b, b >= a]

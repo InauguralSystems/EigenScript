@@ -53,14 +53,11 @@ EigsState *eigs_state_new(void) {
     /* Observer thresholds — same defaults as the legacy TLS globals. */
     st->obs_dh_zero  = OBSERVER_DH_ZERO_DEFAULT;
     st->obs_dh_small = OBSERVER_DH_SMALL_DEFAULT;
-    st->obs_h_low    = OBSERVER_H_LOW_DEFAULT;
     st->obs_window   = OBSERVER_WINDOW_N;        /* #1044 */
     st->obs_scale    = OBSERVER_SCALE_DEFAULT;   /* #1045 */
-    /* #971/#1361: strict mode, read once from env at creation (like the JIT
-     * thresholds below). ON BY DEFAULT: unset or empty is strict, and so is
-     * any value other than "0"; EIGS_STRICT=0 is the per-run opt-out that
-     * restores the finite stand-ins. */
-    st->strict = eigs_env_flag_default("EIGS_STRICT", 1);
+    /* R2.2: IEEE arithmetic by default; strict is an explicit per-state trap.
+     * Keep the existing flag parser and its nonzero aliases. */
+    st->strict = eigs_env_flag_default("EIGS_STRICT", 0);
     /* Filesystem anchor defaults; main/eigenlsp overwrite after attach. */
     st->script_dir[0] = '.'; st->script_dir[1] = '\0';
     st->exe_dir[0]    = '.'; st->exe_dir[1]    = '\0';

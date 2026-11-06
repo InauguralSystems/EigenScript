@@ -170,7 +170,7 @@ fi
 
 # ---- Division by zero raises (uncaught -> exit 1) ----
 TMP=$(mktemp /tmp/eigs_cli_XXXXXX.eigs)
-printf 'x is 10 / 0\n' > "$TMP"
+printf 'x is 10 // 0\n' > "$TMP"
 OUT=$("$EIGS" "$TMP" 2>&1)
 RC=$?
 rm -f "$TMP"

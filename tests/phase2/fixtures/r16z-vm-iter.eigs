@@ -1,0 +1,27 @@
+define read_cell(b, i) as:
+    local result is 0.0
+    for cell in b:
+        result is cell
+    return result
+finite is buffer of 128
+for warm in range of 60:
+    read_cell of [finite, 0.0]
+for kind in ["nan", "inf", "-inf"]:
+    p is buf_from_list of ([1e308])
+    g is buf_from_list of ([1e308])
+    if kind == "inf":
+        g[0] is -1e308
+    sgd_update of [p, g, 1e308]
+    if kind == "nan":
+        sgd_update of [p, p, 1.0]
+    try:
+        many is buffer of 128
+        buf_copy of [p, 0, many, 127, 1]
+        v is read_cell of [many, 0.0]
+        print of [kind, "accepted", v]
+    catch e:
+        local strict_nan is kind == "nan" and (env_get of "EIGS_STRICT") == "1"
+        local message_ok is e.message == "buffer_read_f64: expected a finite number"
+        if strict_nan:
+            message_ok is e.message == "arithmetic: result is not a number (NaN has no defined value)"
+        print of [kind, e.kind, message_ok, e.line, (math_flags of null).invalid]

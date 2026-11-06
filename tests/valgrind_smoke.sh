@@ -60,10 +60,16 @@ if command -v timeout >/dev/null 2>&1; then VG_TMO="timeout 600"; PRE_TMO="timeo
 elif command -v gtimeout >/dev/null 2>&1; then VG_TMO="gtimeout 600"; PRE_TMO="gtimeout 60"; fi
 
 if [ "$FULL" -eq 1 ]; then
+  ROOT=$(cd "$(dirname "$0")/.." && pwd)
+  OWNED_CORPUS=$(mktemp) || exit 1
+  trap 'rm -f "$OWNED_CORPUS"' EXIT
+  (cd "$ROOT" && find tests -type f -name '*.eigs' | LC_ALL=C sort) > "$OWNED_CORPUS"
+  python3 "$ROOT/tools/phase2_corpus_exclude.py" "$ROOT" "$OWNED_CORPUS" || exit 1
   SMOKE=("${PROGS[@]}")
   CANDIDATES=()
   for f in test_*.eigs; do
     [ -f "$f" ] || continue
+    grep -qxF "tests/$f" "$OWNED_CORPUS" || continue
     CANDIDATES+=("${f%.eigs}")
   done
   if [ "${#CANDIDATES[@]}" -lt "${#SMOKE[@]}" ]; then

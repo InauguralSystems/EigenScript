@@ -1,7 +1,7 @@
 /*
  * EigenScript Language Runtime — public header.
  * Core types, parser, evaluator, and value constructors.
- * Extension types live in private headers (model_internal.h, ext_http_internal.h, ext_db_internal.h).
+ * Extension types live in private headers (ext_http_internal.h, ext_db_internal.h).
  */
 
 #ifndef EIGENSCRIPT_H
@@ -14,7 +14,7 @@
  * defines both; the default build (none defined) is the pooled baseline. The
  * call sites below test the per-layer macros only — never EIGS_POOL_OFF
  * directly — so this is the single point of truth for the union.
- *   EIGS_POOL_OFF_NUM     — Value NUM freelist (free_value/make_num/recycle_intermediate)
+ *   EIGS_POOL_OFF_NUM     — Value NUM freelist (free_value/make_float/recycle_intermediate)
  *   EIGS_POOL_OFF_CALLENV — call-env recycling (vm_park_call_env/vm_take_call_env) */
 #ifdef EIGS_POOL_OFF
 #  ifndef EIGS_POOL_OFF_NUM
@@ -149,6 +149,13 @@ static inline int eigs_name_is_reserved(const char *name) {
 #define MAX_PARAMS      16
 #define MAX_MATCH_CASES 64
 
+/* #1758 R1.3: a source number retains its literal kind through lexing and
+ * parsing. Decimal integers outside int64 are floats; hex integers wrap. */
+typedef struct {
+    int is_int;
+    union { int64_t i64; double f64; } value;
+} EigsNum;
+
 /* ---- Tokenizer ---- */
 
 typedef enum {
@@ -177,12 +184,13 @@ typedef enum {
     TOK_PLUS_EQ, TOK_MINUS_EQ, TOK_STAR_EQ, TOK_SLASH_EQ, TOK_PERCENT_EQ,
     TOK_AMP_EQ, TOK_BITOR_EQ, TOK_CARET_EQ, TOK_SHL_EQ, TOK_SHR_EQ,
     TOK_NEWLINE, TOK_INDENT, TOK_DEDENT,
-    TOK_EOF
+    TOK_EOF,
+    TOK_SLASH_SLASH, TOK_SLASH_SLASH_EQ /* #1758 N4/Q6: append; existing token IDs stay fixed */
 } TokType;
 
 typedef struct {
     TokType type;
-    double num_val;
+    EigsNum number;
     char *str_val;
     int line;
     int col;    /* 0-based column offset */
@@ -221,7 +229,7 @@ typedef enum {
     AST_TRY, AST_DICT, AST_DOT, AST_BREAK, AST_CONTINUE, AST_DOT_ASSIGN, AST_IMPORT,
     AST_MATCH, AST_LAMBDA, AST_UNOBSERVED, AST_INDEX_ASSIGN, AST_LIST_PATTERN_ASSIGN,
     AST_SLICE,
-    AST_BOOL      /* #1637: `true`/`false`; the value is data.num (1 or 0) */
+    AST_BOOL      /* #1637: `true`/`false`; the value is data.boolean (1 or 0) */
 } ASTType;
 
 typedef struct ASTNode ASTNode;
@@ -238,7 +246,8 @@ struct ASTNode {
                             * parenthesized literal list is a single call
                             * argument, never spread (#355) */
     union {
-        double num;
+        EigsNum number;
+        int boolean;
         char *str;
         struct { char *name; } ident;
         struct { char op[4]; ASTNode *left; ASTNode *right; uint8_t synth; } binop; /* synth: f-string `+` (#1425) */
@@ -276,25 +285,49 @@ struct ASTNode {
 /* ---- Value types ---- */
 
 typedef enum {
-    VAL_NUM, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL,
-    /* #1690: keep the surviving type tag numbers unchanged. */
+    /* #1758 R1.2a: a double. A number Value is a VAL_FLOAT or a
+     * VAL_INT; `type of` says "num" for both (decision (B)). */
+    VAL_FLOAT, VAL_STR, VAL_LIST, VAL_FN, VAL_BUILTIN, VAL_NULL,
+    /* #1690: preserve surviving tags; #1758 appends VAL_INT below. */
     VAL_DICT = 7, VAL_BUFFER, VAL_TEXT_BUILDER,
     /* #1637: a distinct boolean. Two immortal singletons (make_bool); the
      * slot layer carries it as the TAG_BOOL immediate. Arithmetic on it and
      * `==` against a number raise. */
-    VAL_BOOL
+    VAL_BOOL,
+    /* #1758: an exact int64. Stack/container slots use an SMI when it fits;
+     * the Value API and out-of-SMI values use make_int (design 2.1). */
+    VAL_INT,
 } ValType;
 
 typedef struct Value Value;
 typedef Value* (*BuiltinFn)(Value* arg);
+/* #1758 R1.2: a number Value is a VAL_FLOAT or a VAL_INT. THE test a number
+ * test uses when an int belongs on the same path as a float (a builtin's
+ * number test admits an int and reads it through the bridge, design 2.7). */
+#define val_is_number(v)  ((v)->type == VAL_FLOAT || (v)->type == VAL_INT)
+/* #1758 N2 (design 7): an int and a float compare exactly, by value. Returns
+ * -1, 0 or 1 for i < f, i == f, i > f, and 2 when f is NaN (unordered: every
+ * comparison is false except !=). Lua's LTintfloat/EQintfloat give the same
+ * answers. Pure; neither operand is rounded through the other kind. */
+static inline int eigs_cmp_int_float(int64_t i, double f) {
+    if (f != f) return 2;
+    if (f >= 9223372036854775808.0) return -1;     /* f above every int64 */
+    if (f < -9223372036854775808.0) return 1;      /* f below every int64 */
+    double fl = floor(f);                          /* in [-2^63, 2^63): the cast is exact */
+    int64_t il = (int64_t)fl;
+    if (i != il) return i < il ? -1 : 1;
+    return f != fl ? -1 : 0;                       /* i == floor(f) < f when f has a fraction */
+}
 
 /* #1637 round 4: the ONE raw way into a Value's number (an lvalue: also the
- * write). Only for a Value whose type is proven VAL_NUM, in a function listed
- * in tools/num_read_allowlist.txt with its use count. Everything else uses
- * eigs_num_arg / eigs_list_num / eigs_opt_num. VAL_NUM_OFFSET is the same
- * member for JIT-emitted loads and stores. */
-#define VAL_NUM_RAW(v)  ((v)->data.num_)
-#define VAL_NUM_OFFSET  ((int32_t)offsetof(Value, data.num_))
+ * write). Only for a Value whose type is proven (VAL_FLOAT for the double,
+ * VAL_INT for the int64), in a function listed in tools/num_read_allowlist.txt
+ * with its use count. Everything else uses eigs_float_arg / eigs_list_float /
+ * eigs_opt_float. VAL_F64_OFFSET is the double member for JIT-emitted loads and
+ * stores (#1758 R1.2). */
+#define VAL_F64_RAW(v)  ((v)->data.f64_)
+#define VAL_I64_RAW(v)  ((v)->data.i64_)
+#define VAL_F64_OFFSET  ((int32_t)offsetof(Value, data.f64_))
 
 /* EigsSlot union — full inline helpers in value_slot.h, which is
  * included below after the Value struct is fully declared. We need the
@@ -320,8 +353,22 @@ typedef struct {
  * variable BINDING (env + slot index), not the recyclable Value object, so
  * aliasing/temp-built iterates track their own trajectory. The per-Value
  * observer fields were removed in Step E. See issue #262. */
+typedef struct ObserverNumber {
+    double value;
+    int64_t integer;
+    uint8_t is_int;
+} ObserverNumber;
+
+typedef struct ObsSnapshot {
+    ObserverNumber where, why;
+    double how, best;
+    double ent_entropy, ent_dH, ent_last_entropy;
+    uint8_t numeric, has_step, best_used, since;
+} ObsSnapshot;
+
+
 typedef struct ObserverSlot {
-    double  entropy, last_entropy, dH, prev_dH;
+    double  ent_entropy, ent_last_entropy, ent_dH, ent_prev_dH;
     int     obs_age;
     double *dh_window;          /* lazily allocated ring of dH values; dh_cap deep */
     uint8_t dh_window_head, dh_window_count;
@@ -334,11 +381,18 @@ typedef struct ObserverSlot {
      * windowed logic/thresholds as the entropy channel; only the observed
      * signal differs. */
     double  last_value;         /* last observed numeric value (Δv source) */
-    double *v_window;           /* lazily allocated ring of relative steps; v_cap deep */
-    double *vr_window;          /* #422 raw deltas (Δv un-normalized), same head/count:
+    double *v_rel;           /* lazily allocated ring of relative steps; v_cap deep */
+    double *v_raw;          /* #422 raw deltas (Δv un-normalized), same head/count:
                                  * the non-vanishing-step signal that catches additive
                                  * runaway and sub-deadband oscillation, both of which
                                  * relative normalization erases */
+    ObserverNumber *v_values; /* W+1 inputs: subtraction is not invertible */
+    uint8_t values_head, values_count, values_cap;
+    uint8_t *v_exact;       /* exact int64 difference, per step */
+    int64_t last_int, last_step_int;
+    uint8_t last_is_int;
+    double best;
+    uint8_t best_used, since; /* since saturates beyond the maximum window */
     uint8_t v_window_head, v_window_count;
     /* #1044: ring CAPACITIES (what is allocated) and the per-binding window
      * OVERRIDE (what the classifiers read). The depth a slot classifies over
@@ -439,13 +493,14 @@ struct Value {
     ValType type;
     union {
         /* #1637 round 4: renamed so no unchecked read compiles. A Value's
-         * number is read through the checking accessors (eigs_num_arg,
-         * eigs_list_num, eigs_opt_num), which raise on a bool or any other
-         * non-number, or through VAL_NUM_RAW where the type is already
-         * proven -- and every VAL_NUM_RAW use sits in a function on the
+         * number is read through the checking accessors (eigs_float_arg,
+         * eigs_list_float, eigs_opt_float), which raise on a bool or any other
+         * non-number, or through VAL_F64_RAW where the type is already
+         * proven -- and every VAL_F64_RAW use sits in a function on the
          * reviewed list tools/num_read_allowlist.txt, pinned by count
          * (tools/num_read_check.sh). */
-        double num_;
+        double f64_;    /* VAL_FLOAT (#1758 R1.2a) */
+        int64_t i64_;   /* VAL_INT (#1758) */
         int boolean;    /* VAL_BOOL: 0 or 1 (only the two singletons exist) */
         /* VAL_STR payload: NUL-terminated bytes.
          *
@@ -520,10 +575,10 @@ _Static_assert(sizeof(((Value *)0)->data.strv) <= sizeof(((Value *)0)->data.fn),
  * compiler instruments for ASan; every other build expands these to nothing,
  * so release objects are byte-identical.
  *
- * Parked NUM (free_value / recycle_intermediate -> make_num): the whole Value
+ * Parked NUM (free_value / recycle_intermediate -> make_float): the whole Value
  * is poisoned EXCEPT the link word, the sizeof(Value *) bytes the freelist
  * threads its next pointer through (EIGS_NUM_LINK). Only the pool's own push,
- * pop (make_num) and drain (eigs_thread_drain_caches) touch those bytes. In
+ * pop (make_float) and drain (eigs_thread_drain_caches) touch those bytes. In
  * every other build the link overlays the number itself (offset
  * offsetof(Value, data)), which would leave a stale NUMBER read -- the
  * commonest stale read of a recycled NUM -- undetectable; so under ASan the
@@ -662,15 +717,15 @@ int observer_slot_set_window(struct Env *e, int idx, int n);
 /* #262 Phase-1 prototype slot-keyed observer API (behind EIGS_OBS_SHADOW). */
 void observer_slot_update(struct Env *e, int idx, Value *newval);
 /* #262 Phase-3 D: slot update from a raw immediate number (no Value needed). */
-void observer_slot_update_num(struct Env *e, int idx, double num);
+void observer_slot_update_numeric(struct Env *e, int idx, EigsSlot num);
 /* #1049: the elided (`unobserved:`) assignment — value-window sample only,
  * no entropy walk. What the observe ops call when g_unobserved_depth != 0;
  * exported so the AOT runtime can call the same thing instead of skipping. */
 void observer_slot_sample(struct Env *e, int idx, Value *newval);
-void observer_slot_sample_num(struct Env *e, int idx, double num);
+void observer_slot_sample_numeric(struct Env *e, int idx, EigsSlot num);
 /* Fast forms for observe opcodes which already proved the observer gate open. */
 void observer_slot_sample_gated(struct Env *e, int idx, Value *newval);
-void observer_slot_sample_num_gated(struct Env *e, int idx, double num);
+void observer_slot_sample_numeric_gated(struct Env *e, int idx, EigsSlot num);
 void observer_slot_reset(struct Env *e);
 /* Clear every slot and its inner rings, retaining the initialized outer array
  * only when its allocated capacity is no greater than max_retain_cap.
@@ -721,7 +776,10 @@ const char *observer_slot_report_value(const struct ObserverSlot *s);
  * Δv/(1+|v|)). Exported for the --step tape-stepper (step.c), which rebuilds
  * per-binding trajectories from tape A records through the SAME classifier
  * the language uses — a reimplementation there could silently drift. */
-void observer_slot_record_value(struct ObserverSlot *s, double v);
+void observer_slot_record_num(struct ObserverSlot *s, EigsSlot v);
+static inline int observer_slot_is_numeric(EigsSlot v);
+int observer_slot_quiet(const ObserverSlot *s);
+void observer_slot_dispose(ObserverSlot *s);
 /* #421 trajectory snapshots: capture a slot's observer windows into a plain
  * dict Value that survives a call boundary (`trajectory of x`), and rebuild
  * a classifiable slot from such a dict (`classify of t`). from_trajectory
@@ -890,7 +948,6 @@ struct EigsState {
     int             obs_eval_retains_code;
     double          obs_dh_zero;    /* |dH| < this → "zero change"  (default 0.001) */
     double          obs_dh_small;   /* |dH| < this → "small change" (default 0.01)  */
-    double          obs_h_low;      /* entropy < this → "low info"  (default 0.1)   */
     int             obs_window;     /* #1044 default value/dH window depth (default OBSERVER_WINDOW_N) */
     double          obs_scale;      /* #1045 characteristic scale: rel = Δv / max(|v|, |v_prev|, obs_scale) (default 0.001) */
     /* #971/#1361: strict mode. ON by default (read once at creation; only
@@ -1407,30 +1464,59 @@ extern __thread EigsThread *eigs_current;
  * and false in every argument slot of every builtin must raise unless the
  * slot is on its reviewed any-value list. */
 int eigs_arg_has_bool(const Value *arg);
-/* #1637: THE checked number reads. C code turning a Value into a double goes
- * through one of these (tools/num_read_check.sh enforces it: a raw
- * `->data.num` read needs a VAL_NUM test in the same function, or a reviewed
- * allowlist entry). A bool -- or any other non-number -- raises a type error
- * naming `who` (a `builtin_` prefix is dropped) and reads as 0.0; the caller
- * checks g_has_error before acting on the value.
- *   eigs_num_arg(v, who)       v must be a number
- *   eigs_list_num(l, i, who)   element i of the argument list must exist and
- *                              be a number
- *   eigs_opt_num(v, &d, who)   optional: absent/null -> 0 (use the default);
- *                              a number -> 1 with *d set; anything else raises
- *                              and returns 0 */
-double eigs_num_arg_slow(const Value *v, const char *who);
-static inline double eigs_num_arg(const Value *v, const char *who) {
-    if (__builtin_expect(v && v->type == VAL_NUM, 1)) return VAL_NUM_RAW(v);
-    return eigs_num_arg_slow(v, who);
-}
-double eigs_list_num(const Value *list, int i, const char *who);
-/* #1637 round 4: an ELEMENT a builtin reads as a number (a tensor cell, a
- * byte). A bool raises in every strict mode; any other non-number raises
- * under EIGS_STRICT and reads as the documented 0.0 under EIGS_STRICT=0.
- * The caller checks g_has_error. */
-double eigs_elem_num(const Value *v, const char *who);
-int eigs_opt_num(const Value *v, double *out, const char *who);
+/* #1637/#1758: required, element and optional checked readers are split
+ * by numeric contract below. Raw payload macros require a reviewed kind
+ * proof in tools/num_read_allowlist.txt. Callers stop on g_has_error. */
+/* Read numeric kind and IEEE payload without a finite-only conversion.
+ * Used by arithmetic, equality and ordering after their numeric kind check.
+ * It neither owns nor normalizes the value. Non-numbers raise type. */
+int eigs_number_read(const Value *v, EigsNum *out, const char *who);
+/* #1758 R1.6a: final numeric readers. All inputs are BORROWED, including
+ * on a raise: no reader allocates, retains, or releases its argument. Every
+ * floating input must be finite. Required/list reads reject non-numbers;
+ * element reads retain the legacy non-strict zero default (never for bool);
+ * optional reads return 0 for absent/null or a raise, leaving *out unchanged.
+ * A successful range/optional read returns 1. Callers stop on g_has_error. */
+EigsNum eigs_number_arg(const Value *v, const char *who);
+EigsNum eigs_list_number(const Value *list, int i, const char *who);
+EigsNum eigs_elem_number(const Value *v, const char *who);
+int eigs_opt_number(const Value *v, EigsNum *out, const char *who);
+double eigs_float_arg(const Value *v, const char *who);
+double eigs_list_float(const Value *list, int i, const char *who);
+double eigs_elem_float(const Value *v, const char *who);
+int eigs_opt_float(const Value *v, double *out, const char *who);
+int64_t eigs_int_arg(const Value *v, const char *who);
+int64_t eigs_list_int(const Value *list, int i, const char *who);
+int64_t eigs_elem_int(const Value *v, const char *who);
+int eigs_opt_int(const Value *v, int64_t *out, const char *who);
+uint8_t eigs_byte_arg(const Value *v, const char *who);
+uint8_t eigs_list_byte(const Value *list, int i, const char *who);
+uint8_t eigs_elem_byte(const Value *v, const char *who);
+int eigs_opt_byte(const Value *v, uint8_t *out, const char *who);
+int eigs_int_arg_range(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who);
+int eigs_list_int_range(const Value *list, int i, int64_t lo, int64_t hi, int64_t *out, const char *who);
+int eigs_elem_int_range(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who);
+int eigs_opt_int_range(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who);
+/* Q7 geometry: clipped pixel bounds plus borrowed continuous coordinates.
+ * CIRCLE/RRECT callers iterate only y..y+h and clip each span to x..x+w. */
+typedef enum { EIGS_POINT, EIGS_RECT, EIGS_LINE, EIGS_CIRCLE, EIGS_RRECT } EigsShapeKind;
+typedef struct { int x, y, w, h; } EigsRect;
+typedef struct {
+    EigsShapeKind kind;
+    int empty, x, y, w, h, x2, y2;
+    double raw[5];
+} EigsShape;
+int eigs_geom_shape(const Value *args, int first, EigsShapeKind kind,
+                    const EigsRect *drawable, EigsShape *out, const char *who);
+int eigs_bounded_arg(const Value *v, double lo, double hi, int *out, const char *who);
+int eigs_list_bounded(const Value *list, int i, double lo, double hi, int *out, const char *who);
+int eigs_elem_bounded(const Value *v, double lo, double hi, int *out, const char *who);
+int eigs_opt_bounded(const Value *v, double lo, double hi, int *out, const char *who);
+int eigs_magnitude_arg(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who);
+int eigs_list_magnitude(const Value *list, int i, int64_t lo, int64_t hi, int64_t *out, const char *who);
+int eigs_elem_magnitude(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who);
+int eigs_opt_magnitude(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who);
+
 /* #1637: the builtin-call bool gate -- the structural half of "a bool is
  * not a number". Every call of a C builtin goes through eigs_call_builtin
  * (tools/num_read_check.sh refuses a bare `->data.builtin(` call). When the
@@ -1517,7 +1603,7 @@ void eigs_bool_gate_exempt(BuiltinFn fn);   /* a host function: never gated */
  * simple early return. The raise still returns, so the caller stops before
  * consuming the coerced value.
  *
- * These sites have no `return make_num(0)` to enumerate. A probe that
+ * These sites have no `return make_float(0)` to enumerate. A probe that
  * stays silent under strict is what tools/strict_differential.sh catches. */
 /* PLACEMENT IS LOAD-BEARING: this RETURNS, so it must sit BEFORE anything the
  * function has allocated and still owns, or the raise abandons it. Put the
@@ -1575,7 +1661,6 @@ void eigs_bool_gate_exempt(BuiltinFn fn);   /* a host function: never gated */
 #define g_jit_compiled_count  (eigs_current->jit_compiled_count)
 #define g_obs_dh_zero       (eigs_current->state->obs_dh_zero)
 #define g_obs_dh_small      (eigs_current->state->obs_dh_small)
-#define g_obs_h_low         (eigs_current->state->obs_h_low)
 #define g_obs_window        (eigs_current->state->obs_window)
 #define g_obs_scale         (eigs_current->state->obs_scale)
 #define g_global_env          (eigs_current->state->global_env)
@@ -1804,7 +1889,9 @@ void   strbuf_free(strbuf *b);
 
 /* ---- Value constructors ---- */
 
-Value* make_num(double n);
+Value* make_float(double n);
+Value* make_float_permanent(double n);
+Value* make_int(int64_t n);   /* owned, unpooled int box; slots canonicalize small ints */
 void recycle_intermediate(Value *v);
 Value* make_str(const char *s);
 Value* make_str_len(const char *s, size_t n);   /* #1183: caller knows strlen(s) */
@@ -1814,7 +1901,6 @@ Value* make_null(void);
 /* #1637: the immortal true/false singletons (refcount no-ops, like null). */
 Value* make_bool(int b);
 Value* make_list(int capacity);
-Value* make_num_permanent(double n);   /* unpooled make_num; needs no VM thread */
 Value* make_list_heap(int capacity);
 Value* make_text_builder(void);
 Value* make_fn(const char *name, char **params, int param_count, Env *closure);
@@ -1863,91 +1949,23 @@ void free_value(Value *v);
  * Acquire-release decrement: release ensures writes are visible before the
  * refcount store; acquire ensures the thread that sees 0 observes all prior
  * writes before calling free_value. */
-/* The saturation ceiling: the largest magnitude a user number can hold.
- * #861: three sites must agree on this or the observer goes blind to the
- * boundary the arithmetic clamps to — num_guard below, the JIT's bail
- * comparison (jit.c), and observer_slot_saturated (eigenscript.c). It was
- * a bare literal in all three; one macro so they cannot drift apart. */
-#define EIGS_NUM_MAX 1e308
-
-/* Binary tensor files share the same aggregate element ceiling as tensor
- * construction.  Keep readers and every writer on this one policy. */
+/* Tensor construction and its binary readers share one element ceiling. */
 #define EIGS_TENSOR_MAX_ELEMENTS 10000000
 
-/* Numeric invariant: EigenScript has no NaN or Infinity.
- * All numeric operations route through this guard.
- * NaN -> 0; values escaping the finite number line saturate at
- * +/-EIGS_NUM_MAX instead of becoming Infinity. */
-/* #865: sticky status bits for the two clamps below. The finite invariant
- * keeps a program running past an overflow with a plausible-looking number,
- * and nothing in the language could tell that apart from a real result:
- * (1e300 * 1e300) / 1e300 is 1e8, which passes any sanity check a caller
- * applies, and a NaN collapses to 0, which is indistinguishable from a real
- * zero. IEEE-754 solved exactly this with sticky exception flags, so these
- * are those: set on the clamp and readable with `math_flags`. They remain
- * sticky for the lifetime of the interpreter state. */
-#define EIGS_MATH_OVERFLOW 1u   /* a value saturated at +/-EIGS_NUM_MAX */
-#define EIGS_MATH_INVALID  2u   /* a NaN was collapsed, or a domain clamp fired */
-#define EIGS_MATH_UNDERFLOW 4u  /* #971: a product/quotient of two NONZERO operands
-                                 * came back exactly 0. The result is a real IEEE
-                                 * zero, so nothing downstream can tell it from an
-                                 * exact one — 1e-300 * 1e-300 and 5 - 5 are the
-                                 * same bits. Only * and / raise it: reaching 0 by
-                                 * + or - is exact cancellation, not underflow, and
-                                 * flagging that would fire on ordinary arithmetic.
-                                 *
-                                 * NOTE it cannot live in num_guard(): by the time
-                                 * num_guard sees the result the operands are gone
-                                 * and the value is already 0.0, so the obvious
-                                 * `x != 0 && result == 0` test can never fire
-                                 * there. Detection has to sit where the operands
-                                 * are still live — the arithmetic dispatch. */
-
-/* #971: in strict mode (the default, #1361) a NaN does not collapse — it RAISES a catchable
- * `value` error. `who` names the builtin whose result was undefined (the
- * enumerated sources call num_guard_named); NULL is the backstop from
- * num_guard itself for a source nobody enumerated. Out of line so the NaN
- * branch stays one call on a path a finite program never takes. */
+/* Sticky arithmetic status is independent of the IEEE result. R2.2 never
+ * substitutes a value: NaN stays NaN and infinities stay infinities. */
+#define EIGS_MATH_OVERFLOW 1u
+#define EIGS_MATH_INVALID  2u
+#define EIGS_MATH_UNDERFLOW 4u /* nonzero product/quotient rounded to zero;
+                               * detected where its operands are still live */
 void eigs_strict_nan_raise(const char *who);
-
-/* Side-effect-free VALUE mapping of num_guard, for readers such as observer
- * equality which must see language numbers without changing interpreter
- * state or raising in strict mode.  Keep its branches in sync with
- * num_guard; tests/test_num_guard_value.c pins their bit-level results. */
-static inline double num_guard_value(double x) {
-    if (x != x) return 0.0;
-    if (x > EIGS_NUM_MAX) return EIGS_NUM_MAX;
-    if (x < -EIGS_NUM_MAX) return -EIGS_NUM_MAX;
+double eigs_math_nonfinite(double x, const char *who);
+static inline double eigs_math_result_named(double x, const char *who) {
+    if (__builtin_expect(!isfinite(x), 0)) return eigs_math_nonfinite(x, who);
     return x;
 }
-
-static inline double num_guard(double x) {
-    /* Fast path unchanged: the flag writes live only on the clamp branches,
-     * which a program that does not overflow never takes. */
-    if (x != x) {                                                            /* NaN */
-        g_math_flags |= EIGS_MATH_INVALID;
-        if (g_strict) eigs_strict_nan_raise(NULL);
-        return 0.0;
-    }
-    if (x > EIGS_NUM_MAX)  { g_math_flags |= EIGS_MATH_OVERFLOW; return EIGS_NUM_MAX; }
-    if (x < -EIGS_NUM_MAX) { g_math_flags |= EIGS_MATH_OVERFLOW; return -EIGS_NUM_MAX; }
-    return x;
-}
-
-/* #1417: VAL_BUFFER storage is an unboxed numerical work area, so kernels
- * can transiently leave an IEEE NaN or infinity in it.  The language's
- * finite-number invariant applies when an element crosses the buffer/scalar
- * boundary: every scalar read goes through this helper.  Keeping the guard at
- * that boundary also lets bulk kernels retain their unboxed representation. */
-static inline double buffer_read_num(const Value *buffer, int64_t index) {
-    return num_guard(buffer->data.buffer.data[index]);
-}
-
-/* Numeric byte consumers truncate and wrap modulo 256. Reduce in double
- * first: even a normalized finite number can be outside the C int range.
- * The caller must normalize the input and stop on a raised read first. */
-static inline unsigned char finite_num_to_byte(double x) {
-    return (unsigned char)((int)fmod(x, 256.0) & 0xFF);
+static inline double eigs_math_result(double x) {
+    return eigs_math_result_named(x, NULL);
 }
 
 /* #1740: a bitwise operand converts to int64 only if it is an EXACT integer
@@ -1962,37 +1980,27 @@ static inline int num_to_i64_exact(double x, int64_t *out) {
     *out = i;
     return 1;
 }
+/* #1758 N8: Lua 5.4 shifts operate on an unsigned 64-bit pattern.
+ * Bound the signed count BEFORE negating it (INT64_MIN is valid input).
+ * Convert the result pattern without an out-of-range unsigned-to-signed cast. */
+static inline int64_t eigs_bit_shift(int64_t a, int64_t count, int right) {
+    if (count <= -64 || count >= 64) return 0;
+    if (count < 0) { count = -count; right = !right; }
+    uint64_t bits = right ? (uint64_t)a >> count : (uint64_t)a << count;
+    return bits <= INT64_MAX ? (int64_t)bits : -1 - (int64_t)(UINT64_MAX - bits);
+}
+
+/* Final buffer readers refuse non-finite payloads; byte/index reads also
+ * require exactness. IEEE arithmetic does not relax these data boundaries. */
+double buffer_read_f64(const Value *buffer, int64_t index);
+int buffer_byte_at(const Value *buffer, int64_t index, uint8_t *out, const char *who);
+int buffer_index_at(const Value *buffer, int64_t index, int64_t *out, const char *who);
+
 #define EIGS_NO_INT_REP_FMT "'%s': number %.17g has no integer representation"
 
-__attribute__((unused))
-static inline unsigned char buffer_read_byte(const Value *buffer, int64_t index) {
-    double x = buffer_read_num(buffer, index);
-    if (g_has_error) return 0;
-    return finite_num_to_byte(x);
-}
-
-/* #971: num_guard for a builtin whose result CAN be NaN on the current tree
- * (`pow` of a negative base with a fractional exponent, `num of "nan"`,
- * `f64_from_bytes` of a NaN bit pattern, `matmul`'s inf-inf accumulation,
- * `tensor_load` of a file carrying NaN bytes). Default path identical to
- * num_guard — collapse to 0, set EIGS_MATH_INVALID — but under strict the
- * raise NAMES the builtin, which the bare backstop cannot. The string is the
- * cross-check key tools/strict_differential.sh derives its probe set from,
- * so a new caller here without a probe row goes red there. */
-static inline double num_guard_named(double x, const char *who) {
-    if (x != x) {
-        g_math_flags |= EIGS_MATH_INVALID;
-        if (g_strict) eigs_strict_nan_raise(who);
-        return 0.0;
-    }
-    return num_guard(x);
-}
-
-/* #971: a value-domain raise inside a double-returning helper, where
- * ARG_GUARD's `return make_null()` does not fit. Raises under strict and
- * does nothing otherwise, so the soft path is byte-identical by
- * construction (the caller keeps returning its stand-in). `who` is the
- * cross-check key, like ARG_GUARD's. */
+/* Named opt-in domain error inside a double-returning helper. The caller
+ * still computes its IEEE result; strict changes the error state, not bits.
+ * `who` is the source-derived strict-differential probe key. */
 #define STRICT_DOMAIN(cond, who, what)                                       \
     do {                                                                      \
         if (g_strict && (cond))                                               \
@@ -2014,7 +2022,8 @@ static inline double num_guard_named(double x, const char *who) {
  * inside on GC-enabled / not-collecting / single-threaded. */
 void gc_note_possible_root(Value *v);
 
-static inline void val_incref(Value *v) {
+/* Keep reference acquisition inline as the numeric slow paths grow (#1758). */
+static inline __attribute__((always_inline)) void val_incref(Value *v) {
     if (v && v->type != VAL_NULL && v->type != VAL_BOOL) {
         if (__builtin_expect(g_vm_multithreaded, 0))
             __atomic_add_fetch(&v->refcount, 1, __ATOMIC_RELAXED);
@@ -2143,7 +2152,7 @@ Value* env_get_hashed(Env *env, const char *name, uint32_t h);
 Value* env_get_local_hashed(Env *env, const char *name, uint32_t h);
 void env_set_local_hashed(Env *env, const char *name, uint32_t h, Value *val);
 /* Slot-flavored fast paths: take/produce EigsSlot directly so immediates
- * never round-trip through make_num + val_decref. Reference-count
+ * never round-trip through make_float + val_decref. Reference-count
  * semantics match the Value* variants: env *borrows* the input slot and
  * incref's internally, *_get returns a slot the caller must slot_decref. */
 /* #868/#908: how many assignments this binding has seen, for the `when <n>`
@@ -2300,6 +2309,7 @@ char* value_to_string(Value *v);
  * `str of`, all three JSON encoders, the SIGUSR1 observer dump — so a copy
  * with a different precision cannot reappear. Needs 32 bytes. */
 void eigs_num_text(char *buf, size_t nbuf, double n);
+void eigs_int_text(char *buf, size_t nbuf, int64_t i);   /* #1758 R1.2a: exact digits */
 void eigs_json_escape_string(strbuf *out, const char *s);
 /* #880: decode a JSON string body (s[*pos] = first byte after the opening
  * quote) into `out`, leaving *pos past the closing quote. Returns whether
@@ -2458,20 +2468,24 @@ int  eigs_loading_active(const char *abs_path);
 void eigs_loading_enter(const char *abs_path);
 void eigs_loading_leave(const char *abs_path);
 
-/* Observer thresholds are EigsState fields — set via set_observer_thresholds;
- * read through g_obs_dh_zero / g_obs_dh_small / g_obs_h_low (macros above). */
+/* The two step thresholds are EigsState fields (macros above), retained
+ * for tape configuration folds. Entropy uses OBSERVER_H_LOW_DEFAULT directly;
+ * no program or embed setter changes the observer constants. */
 
 /* #412: `how` — deadband-normalized settledness of the last observed step,
  * 1.0 (unmoved) .. 0.0 (moved by >= the settle deadband). Pure function of
  * the recorded dH, shared by the live INTERROGATE paths (vm.c) and the tape
  * history reader (trace.c) so `how is x at L` matches the live reading. */
-double observer_settledness(double dH);
+double observer_settledness_dh(double dH);
+double observer_settledness_step(double raw, double relative);
+ObsSnapshot observer_slot_snapshot(const ObserverSlot *s);
+EigsSlot observer_snapshot_query(const ObsSnapshot *s, int kind);
+Value *observer_slot_readout(const ObserverSlot *s, int kind);
 
 /* #711: entropy of the binding's CURRENT value, computed at query time —
  * the current-state channel of the entropy/dH split. Returns 1 + fills
  * *out when the slot holds a measurable value; never writes the slot. */
 int observer_entropy_now(struct Env *e, int idx, double *out);
-double observer_entropy_of_num(double num);   /* lock-free shim for dump sites */
 double compute_entropy(Value *v);             /* the #685 O(own-size) fold */
 
 /* ---- Cross-file functions for tensor builtins ---- */

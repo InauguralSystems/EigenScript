@@ -1,0 +1,9 @@
+# R1.6 behaviour-table probe: get_observer_thresholds (float-producing; observer thresholds)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+t is get_observer_thresholds of null
+print of t
+print of [nt of t[0], nt of t[1], nt of t[2]]

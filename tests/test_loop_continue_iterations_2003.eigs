@@ -16,9 +16,9 @@ print of ["only-continue", __loop_iterations__]
 # The observer stall guard must also be on continue's path.  This loop has no
 # body fallthrough at all; without the shared iteration-end edge it never
 # reaches the guard and runs forever.
-x is 100
+x is 1000000.0
 loop while not converged:
-    x is x * 2
+    x is x + 200.0
     continue
 print of ["continue-stall", __loop_iterations__, __loop_exit__]
 

@@ -1,0 +1,14 @@
+# ROW: cal.leafgen-nth
+# ITEMS: N5
+# EXPECT-RC: 0
+# SHAPE: L
+# WITNESS: leaf-gen nth
+# OPS: INDEX_GET
+# the leaf INDEX_GET bails on a string, the generic call indexes
+define nth(xs, i) as:
+    return xs[i]
+print of (nth of ["abc", 0.0])
+try:
+    print of (5.5 & 1)
+catch e:
+    print of e.kind

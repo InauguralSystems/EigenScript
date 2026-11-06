@@ -1,0 +1,11 @@
+# ROW: N1.leaf-int-literal
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: L
+# WITNESS: leaf-gen big one
+# OPS: INT_CONST INT_ONE
+define big(x) as:
+    return 9007199254740993
+define one(x) as:
+    return 1
+print of [big of 0, one of 0]

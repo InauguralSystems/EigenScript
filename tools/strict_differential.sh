@@ -10,15 +10,14 @@
 #                           substring (default "<name>: expected")
 #   guarded-name cross-check  names derived from ARG_GUARD / ARG_GUARD_TAPED /
 #                           ARG_GUARD_PRETAKE / STRICT_REQUIRE / STRICT_DOMAIN /
-#                           num_guard_named; a guarded name with no probe fails
+#                           eigs_math_result_named; a guarded name with no probe fails
 #   pins                    documented answers must not raise under strict
-#   unset-equals-strict     #1361: strict is the DEFAULT, so every probe row
+#   unset-equals-plain      R2.2: strict is opt-in, so every probe row
 #                           (and every pixel row) run with EIGS_STRICT UNSET
-#                           must equal its EIGS_STRICT=1 run: stdout+stderr+rc.
+#                           must equal its EIGS_STRICT=0 run: stdout+stderr+rc.
 #                           Needs no baseline, so it runs in suite [99s] too.
 #   identical-when-off      baseline vs subject under an explicit EIGS_STRICT=0
-#                           ("off" is the opt-out since #1361, not the unset
-#                           default), stdout+stderr+rc; valid-input rows in all
+#                           (the default since R2.2), stdout+stderr+rc; valid-input rows in all
 #                           three modes (unset, 0, 1) when a baseline is given
 #   gfx container-shape sweep   ext_gfx.c want-strings, wrong containers
 #   gfx pixel differential  canvas digests and source coverage. Every pixel
@@ -636,6 +635,8 @@ acos|print of (acos of "x")
 asin|print of (asin of "x")
 atan|print of (atan of "x")
 atan2|print of (atan2 of ["y", 1])
+buf_get_bits|print of (buf_get_bits of ["x", 0])|buf_get_bits: first argument must be a buffer
+buf_set_bits|print of (buf_set_bits of ["x", 0, 0])|buf_set_bits: first argument must be a buffer
 buf_len|print of (buf_len of "x")
 ceil|print of (ceil of "x")
 char_at|print of (char_at of [42, 0])
@@ -646,6 +647,8 @@ cos|print of (cos of "hello")
 dot|print of (dot of [1, 2])
 ends_with|print of (ends_with of [42, "x"])
 f64_from_bytes|print of (f64_from_bytes of "x")
+f64_bits|print of (f64_bits of "x")
+f64_from_bits|print of (f64_from_bits of "x")
 floor|print of (floor of "x")
 gather|print of (gather of ["hello", [0]])
 has_key|print of (has_key of [42, "k"])
@@ -739,7 +742,18 @@ audio_envelope|print of (len of (audio_envelope of [([0.1, 0.2]), "0.01", 0.01, 
 audio_gain|print of (len of (audio_gain of [([1.0]), "2.0"]))
 json_path|print of (json_path of ["{\"a\": 1e", "a"])|json_path: invalid JSON at position
 pow|print of (pow of [0 - 8, 0.5])|pow: result is not a number
-num|print of (num of "nan")|num: result is not a number
+matmul|local m1 is buffer of [1, 2]\nm1[0] is 1e200\nm1[1] is 1e200\nlocal m2 is buffer of [2, 1]\nm2[0] is 1e200\nm2[1] is 1e200\nlocal r is matmul of [m1, m2]\nprint of (r[0] > 1e308)|matmul: non-finite arithmetic result
+fround|print of (fround of 1e39)|fround: non-finite arithmetic result
+sqrt|print of (sqrt of -1)|sqrt: argument out of domain
+log|print of (log of 0)|log: argument out of domain
+exp|print of (exp of 999999)|exp: non-finite arithmetic result
+negative|local p is buf_from_list of ([1e308])\nsgd_update of [p, p, 1e308]\nsgd_update of [p, p, 1.0]\nprint of (negative of p)|negative: result is not a number
+min|print of (min of [])|min: expected at least one number
+min|print of (min of ([]))|min: expected at least one number
+max|print of (max of [])|max: expected at least one number
+max|print of (max of ([]))|max: expected at least one number
+num|print of (num of "nan")|num: expected complete numeric-literal text
+num|print of (num of "inf")|num: expected complete numeric-literal text
 f64_from_bytes|print of (f64_from_bytes of ([127, 248, 0, 0, 0, 0, 0, 0]))|f64_from_bytes: result is not a number
 matmul|local m1 is buffer of [1, 2]\nm1[0] is 1e200\nm1[1] is 1e200\nlocal m2 is buffer of [2, 1]\nm2[0] is 1e200\nm2[1] is 0 - 1e200\nlocal r is matmul of [m1, m2]\nprint of (r[0])|matmul: result is not a number
 matmul|print of (matmul of [[[1, "x"]], [[1], [1]]])|matmul: expected a tensor containing only numbers
@@ -801,8 +815,13 @@ EOF
 )
 PROBES="${PROBES//@TMP@/$TMP}"
 
+# N10 removed inf from the successful coercion pins; it is a grammar refusal above.
 # label|program — must exit 0 under EIGS_STRICT=1
 PINS=$(cat <<'EOF'
+f64_bits keeps negative zero bits|print of (f64_bits of -0.0)
+f64_from_bits canonicalizes a tag-spelling NaN|print of (f64_bits of (f64_from_bits of 0xFFFB000000001000))
+buf_get_bits reads a finite cell without strict coercion|print of (buf_get_bits of [buffer of 1, 0])
+buf_set_bits returns null for a signed payload|print of (type of (buf_set_bits of [buffer of 1, 0, -9223372036854775808]))
 task_alive of an unknown id is 0, not an error|print of (task_alive of 999)
 list_contains that finds nothing is 0|print of (list_contains of [[1, 2], 9])
 ends_with with a suffix longer than the string is 0|print of (ends_with of ["ab", "abc"])
@@ -811,7 +830,6 @@ substr starting past the end is ""|print of (substr of ["ab", 9, 1])
 join of an empty list is ""|print of (join of [[], ","])
 num coerces a list to 0 (documented)|print of (num of ([1, 2]))
 try_parse of invalid syntax is 0|print of (try_parse of "!!!")
-max of an empty list is 0|print of (max of ([]))
 sum of an empty list is 0 (the identity, not a type mistake)|print of (sum of ([]))
 mean of an empty list is 0|print of (mean of ([]))
 gather of a 1-D tensor in the per-row form is 0 per row (shape, not index)|print of (gather of [[1, 2], [0, 0]])
@@ -827,7 +845,6 @@ json_path of a JSON null renders as ""|print of f"[{json_path of ["{\"a\": null}
 file_exists of a real absent path is 0 (#1008 Phase D)|print of (file_exists of "/nonexistent/eigs_971_probe")
 is_dir of a real absent path is 0|print of (is_dir of "/nonexistent/eigs_971_probe")
 index_of miss is -1 even with the flag on|print of (index_of of ["abc", "z"])
-num of "inf" saturates (overflow, not NaN)|print of (num of "inf")
 pow of a negative base with an INTEGER exponent is defined|print of (pow of [0 - 2, 3])
 token_name of an unknown id is "?"|print of (token_name of 9999)
 channel_closed of a reclaimed/unknown channel is 1|print of (channel_closed of ({"_channel_id": 99999}))
@@ -886,7 +903,6 @@ print of (pow of [[1, 2, 3], 2])
 print of (num of "3.5e2")
 print of (f64_from_bytes of (f64_to_bytes of 42.5))
 print of (matmul of [[[1, 2]], [[3], [4]]])
-local m1 is buffer of [1, 2]\nm1[0] is 1e200\nm1[1] is 1e200\nlocal m2 is buffer of [2, 1]\nm2[0] is 1e200\nm2[1] is 1e200\nlocal r is matmul of [m1, m2]\nprint of (r[0] > 1e308)
 print of (divide of [[6, 8], [2, 4]])
 print of (split of ["a,b,c", ","])
 print of (split of "x y")
@@ -958,7 +974,7 @@ clip() { printf '%s' "$1" | tr '\n' ' ' | cut -c1-"${2:-80}"; }
 
 extract_guard_names() {
     awk '
-    /(ARG_GUARD(_TAPED|_PRETAKE)?|STRICT_REQUIRE|STRICT_DOMAIN|num_guard_named|numerical_loss)\(/ || /tensor_to_flat\(.*"/ { acc = ""; collecting = 1 }
+    /(ARG_GUARD(_TAPED|_PRETAKE)?|STRICT_REQUIRE|STRICT_DOMAIN|eigs_math_result_named|numerical_loss)\(/ || /tensor_to_flat\(.*"/ { acc = ""; collecting = 1 }
     collecting { acc = acc $0; if (acc ~ /\);[ \t]*$/ || $0 ~ /\);/) {
         collecting = 0
         n = split(acc, parts, "\"")
@@ -1180,11 +1196,12 @@ while IFS='|' read -r who prog expect; do
     s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
     s_rc="${s%%$'\n'*}"
     u="$(run_capture "$NEW" - "$TMP/p.eigs")"
-    if [ "$u" = "$s" ]; then n_unset_eq=$((n_unset_eq + 1))
+    plain="$(run_capture "$NEW" 0 "$TMP/p.eigs")"
+    if [ "$u" = "$plain" ]; then n_unset_eq=$((n_unset_eq + 1))
     else unset_list="$unset_list
     $who
       unset: $(clip "$u" 90)
-      =1   : $(clip "$s" 90)"; fi
+      =0   : $(clip "$plain" 90)"; fi
     why="$(run_did_not_measure "$s_rc")"
     if [ -n "$why" ]; then
         n_unrun=$((n_unrun + 1))
@@ -1291,7 +1308,7 @@ if [ -n "$profile_transitions" ]; then
 fi
 if [ -n "$BASE" ]; then echo "  identical-when-off: $n_ident   differing: $n_differ"
 else echo "  identical-when-off: SKIPPED (--no-baseline)"; fi
-echo "  unset-equals-strict: $n_unset_eq / $n_probe"
+echo "  unset-equals-plain: $n_unset_eq / $n_probe"
 echo "  raises-under-strict: $n_raise   silent: $n_silent   misattributed: $n_misattr"
 [ "$n_unrun" -gt 0 ] && echo "  probes that did not run: $n_unrun"
 echo "  answer-pins held: $n_pin_ok   broken: $n_pin_broke"
@@ -1300,7 +1317,7 @@ if [ -n "$BASE" ]; then
     echo "  expanded valid rows mode-identical (subject rc=0, unset=0=1; baseline absence verified): $((n_valid_expanded - n_valid_expanded_bad)) / $n_valid_expanded"
     echo "  absent valid rows (exact absence verified; NOT valid successes): $n_valid_absent"
 fi
-[ -n "$unset_list" ] && { echo "  UNSET DIFFERS FROM EIGS_STRICT=1 (the default is not strict):$unset_list"; rc=1; }
+[ -n "$unset_list" ] && { echo "  UNSET DIFFERS FROM EIGS_STRICT=0 (strict must be opt-in):$unset_list"; rc=1; }
 [ -n "$differ_list" ] && { echo "  DIFFERING (the EIGS_STRICT=0 path was NOT preserved):$differ_list"; rc=1; }
 [ -n "$silent_list" ] && { echo "  SILENT UNDER STRICT:$silent_list"; rc=1; }
 [ -n "$misattr_list" ] && { echo "  RAISED BY THE WRONG GUARD (probe does not reach its target):$misattr_list"; rc=1; }
@@ -1417,9 +1434,9 @@ if [ -f "$TMP/shapes/rows" ]; then
         fi
         on="$(shape_capture "$NEW" 1 "$TMP/shapes/$who/$shape_subject/1/strict/case.eigs" "$cap")"
         if ! shape_done "$on"; then shape_abort "$who" "strict surplus" "$on"; break; fi
-        default="$(shape_capture "$NEW" - "$TMP/shapes/$who/$shape_subject/default/strict/case.eigs" "$cap")"
-        if ! shape_done "$default"; then shape_abort "$who" "default surplus" "$default"; break; fi
-        shape_done "$on" && [ "$on" = "$default" ] || row_good=0
+        default="$(shape_capture "$NEW" - "$TMP/shapes/$who/$shape_subject/default/surplus/case.eigs" "$cap")"
+        if ! shape_receipt_ok "$default"; then shape_abort "$who" "default surplus" "$default"; break; fi
+        shape_done "$on" && [ "$soft" = "$default" ] || row_good=0
         if [ -n "$shape_absence_output" ] && [ "$on" != $'0\nshape-complete' ]; then row_good=0; fi
         if [ "$row_good" = 1 ]; then
             if [ -n "$shape_absence_output" ]; then
@@ -1430,7 +1447,7 @@ if [ -f "$TMP/shapes/rows" ]; then
             fi
         else
             shape_fail=$((shape_fail + 1)); rc=1
-            echo "  FAIL shape: $who (strict/default=$(clip "$on" 160); soft=$(clip "$soft" 160))"
+            echo "  FAIL shape: $who (strict=$(clip "$on" 160); default=$(clip "$default" 160); soft=$(clip "$soft" 160))"
             # Stop at a real unexpected failure; do not run later resource rows.
             break
         fi
@@ -1709,8 +1726,8 @@ while IFS='|' read -r label who slot prog; do
     b="$(run_capture "$NEW" 0 "$TMP/p.eigs")"
     s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
     u="$(run_capture "$NEW" - "$TMP/p.eigs")"
-    [ "$u" = "$s" ] || { pdiffer="$pdiffer
-    $label [unset vs EIGS_STRICT=1, same binary] — the default is not strict"; rc=1; }
+    [ "$u" = "$b" ] || { pdiffer="$pdiffer
+    $label [unset vs EIGS_STRICT=0, same binary] — strict must be opt-in"; rc=1; }
     if [ "$slot" = "-" ]; then
         n_pvalid=$((n_pvalid + 1))
         if [ "$NO_RENDERER" = 0 ] && [ "$who" != "gfx_read" ] && [ "${b#*$'\n'}" = "$blank_digest" ]; then

@@ -1,0 +1,8 @@
+# R1.6 behaviour-table probe: sgd_update (float-producing; float update)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+r is sgd_update of [[1, 2], [2, 2], 0.5]
+print of [r, nt of r[0]]

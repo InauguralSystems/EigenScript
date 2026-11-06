@@ -1,7 +1,7 @@
 echo "[11c] Continue crosses the one while-loop iteration edge (#2003; interpreter/default/OSR)"
 LC_EXPECTED='["mixed", 5]
 ["only-continue", 5]
-["continue-stall", 107, "stalled"]
+["continue-stall", 100, "stalled"]
 ["continue-cap", false, true]'
 for tier in "EIGS_JIT_OFF=1" "" "EIGS_JIT_OSR_THRESHOLD=1"; do
     LC_OUTPUT=$($EIGS_TMO env $tier ./eigenscript ../tests/test_loop_continue_iterations_2003.eigs 2>&1)

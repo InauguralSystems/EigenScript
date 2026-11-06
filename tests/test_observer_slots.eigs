@@ -30,8 +30,7 @@ loop while i < 14:
     i is i + 1
 check of ["growing signal is not stable", observer_slots.is_stable of (1), false]
 
-# slot 3: entropy RISING (magnitude shrinking toward |x|=1 from above,
-# never crossing) -> diverging per the lattice
+# slot 3: a contracting numeric descent is not diverging.
 v is 4096.0
 i is 0
 loop while i < 14:
@@ -63,13 +62,14 @@ check of ["ninth slot throws, never silently unobserved", caught, 1]
 
 # verdict(): the full regime string, resolving the slot correctly (the #383
 # non-bug) and AGREEING with the boolean predicates.
-# slot 4: a descending signal -> improving (not equilibrium — proves report-of
-# reads the slot, not the value-fallback).
+# Slot4 starts with the library baseline0.0. Feed new lows approaching -100
+# so D2 sees actual improvements of that running best; this proves report-of
+# reads the slot rather than a fresh value fallback.
 i is 0
 dv is 100.0
 loop while i < 14:
     dv is dv * 0.5
-    observer_slots.feed of [4, dv]
+    observer_slots.feed of [4, (0 - 100.0) + dv]
     i is i + 1
 check of ["verdict reads the slot regime (improving)", observer_slots.verdict of (4), "improving"]
 check of ["verdict agrees with is_diverging (0)", observer_slots.is_diverging of (4), false]

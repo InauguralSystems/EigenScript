@@ -1,0 +1,186 @@
+cfg-4-fields rc=0 names-count=0
+cfg-4-fields first-stderr=<empty>
+cfg-5-fields rc=3 names-count=1
+cfg-5-fields first-stderr=tape observer-configuration record has 5 fields, expected 4: O 0 cfg 0.001 0.01 8 10 0.001
+cfg-6-fields rc=3 names-count=1
+cfg-6-fields first-stderr=tape observer-configuration record has 6 fields, expected 4: O 0 cfg 0.001 0.01 10 0.001 99 7
+cfg-3-fields rc=3 names-count=1
+cfg-3-fields first-stderr=tape observer-configuration record has 3 fields, expected 4: O 0 cfg 0.001 0.01 10
+cfg-0-fields rc=3 names-count=1
+cfg-0-fields first-stderr=tape observer-configuration record has 0 fields, expected 4: O 0 cfg
+cfg-5-text rc=3 names-count=1
+cfg-5-text first-stderr=tape observer-configuration record has 5 fields, expected 4: O 0 cfg 0.001 0.01 10 0.001 extra
+cfg-4-window-text rc=3 names-count=0
+cfg-4-window-text first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01 eight 0.001'; refusing to step (docs/TRACE.md)
+cfg-4-window-fraction rc=3 names-count=0
+cfg-4-window-fraction first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01 10.5 0.001'; refusing to step (docs/TRACE.md)
+cfg-install-flat-none rc=0 label=[moving]
+cfg-install-flat-none first-stderr=<empty>
+cfg-install-defaults rc=0 label=[moving]
+cfg-install-defaults first-stderr=<empty>
+cfg-install-window rc=0 label=[converged]
+cfg-install-window first-stderr=<empty>
+cfg-install-scale rc=0 label=[stable]
+cfg-install-scale first-stderr=<empty>
+cfg-install-dh-small rc=0 label=[stable]
+cfg-install-dh-small first-stderr=<empty>
+cfg-install-slow-none rc=0 label=[converged]
+cfg-install-slow-none first-stderr=<empty>
+cfg-install-dh-zero rc=0 label=[stable]
+cfg-install-dh-zero first-stderr=<empty>
+cfg-4-window-hex rc=3 names-count=0
+cfg-4-window-hex first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01 0x4 0.001'; refusing to step (docs/TRACE.md)
+cfg-start-tiny rc=0 label=[improving]
+cfg-start-tiny first-stderr=<empty>
+cfg-start-p1 rc=0 label=[stable]
+cfg-start-p1 first-stderr=<empty>
+cfg-start-p2 rc=0 label=[moving]
+cfg-start-p2 first-stderr=<empty>
+cfg-dh-zero-0 rc=3 names-count=0
+cfg-dh-zero-0 first-stderr=step: tape observer-configuration record is not one this runtime could have written (thresholds must be positive): 'O 0 cfg 0 0.01 10 0.001'; refusing to step (docs/TRACE.md)
+cfg-dh-zero-negative rc=3 names-count=0
+cfg-dh-zero-negative first-stderr=step: tape observer-configuration record is not one this runtime could have written (thresholds must be positive): 'O 0 cfg -1 0.01 10 0.001'; refusing to step (docs/TRACE.md)
+cfg-dh-small-negative rc=3 names-count=0
+cfg-dh-small-negative first-stderr=step: tape observer-configuration record is not one this runtime could have written (thresholds must be positive): 'O 0 cfg 0.001 -1 10 0.001'; refusing to step (docs/TRACE.md)
+cfg-thresholds-equal rc=3 names-count=0
+cfg-thresholds-equal first-stderr=step: tape observer-configuration record is not one this runtime could have written (dh_zero must be less than dh_small): 'O 0 cfg 0.01 0.01 10 0.001'; refusing to step (docs/TRACE.md)
+cfg-scale-0 rc=3 names-count=0
+cfg-scale-0 first-stderr=step: tape observer-configuration record is not one this runtime could have written (scale must be positive and finite): 'O 0 cfg 0.001 0.01 10 0'; refusing to step (docs/TRACE.md)
+cfg-scale-huge rc=3 names-count=0
+cfg-scale-huge first-stderr=step: tape observer-configuration record is not one this runtime could have written (scale must be positive and finite): 'O 0 cfg 0.001 0.01 10 1e301'; refusing to step (docs/TRACE.md)
+cfg-window-65 rc=3 names-count=0
+cfg-window-65 first-stderr=step: tape observer-configuration record is not one this runtime could have written (window depth outside its [4, 64] range): 'O 0 cfg 0.001 0.01 65 0.001'; refusing to step (docs/TRACE.md)
+cfg-window-3 rc=3 names-count=0
+cfg-window-3 first-stderr=step: tape observer-configuration record is not one this runtime could have written (window depth outside its [4, 64] range): 'O 0 cfg 0.001 0.01 3 0.001'; refusing to step (docs/TRACE.md)
+cfg-window-wide rc=3 names-count=0
+cfg-window-wide first-stderr=step: tape observer-configuration record is not one this runtime could have written (window depth outside its [4, 64] range): 'O 0 cfg 0.001 0.01 4294967304 0.001'; refusing to step (docs/TRACE.md)
+cfg-scale-junk rc=3 names-count=0
+cfg-scale-junk first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01 10 0.001x'; refusing to step (docs/TRACE.md)
+cfg-window-64 rc=0 names-count=0
+cfg-window-64 first-stderr=<empty>
+cfg-entropy-ec-low rc=0 last=converged
+cfg-entropy-ec-low first-stderr=<empty>
+cfg-entropy-ec-high rc=0 last=equilibrium
+cfg-entropy-ec-high first-stderr=<empty>
+cfg-entropy-es-low rc=0 last=moving
+cfg-entropy-es-low first-stderr=<empty>
+cfg-entropy-es-high rc=0 last=stable
+cfg-entropy-es-high first-stderr=<empty>
+cfg-dh-zero-junk rc=3 names-count=0
+cfg-dh-zero-junk first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001+0.9 10 0.001 0.001'; refusing to step (docs/TRACE.md)
+cfg-dh-small-junk rc=3 names-count=0
+cfg-dh-small-junk first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01+10 0.001 0.001'; refusing to step (docs/TRACE.md)
+cfg-window-dot rc=3 names-count=0
+cfg-window-dot first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01 .5 0.001'; refusing to step (docs/TRACE.md)
+cfg-scale-text rc=3 names-count=0
+cfg-scale-text first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01 10 x'; refusing to step (docs/TRACE.md)
+cfg-scale-high-byte rc=3 names-count=0
+cfg-scale-high-byte first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 0 cfg 0.001 0.01 10 0.001##'; refusing to step (docs/TRACE.md)
+cfg-dh-small-0 rc=3 names-count=0
+cfg-dh-small-0 first-stderr=step: tape observer-configuration record is not one this runtime could have written (thresholds must be positive): 'O 0 cfg 0.001 0 10 0.001'; refusing to step (docs/TRACE.md)
+cfg-window-wide-negative rc=3 names-count=0
+cfg-window-wide-negative first-stderr=step: tape observer-configuration record is not one this runtime could have written (window depth outside its [4, 64] range): 'O 0 cfg 0.001 0.01 -4294967292 0.001'; refusing to step (docs/TRACE.md)
+cfg-sep-spaces rc=0 label=[stable]
+cfg-sep-spaces first-stderr=<empty>
+cfg-sep-vtab-keyword rc=0 label=[stable]
+cfg-sep-vtab-keyword first-stderr=<empty>
+cfg-sep-vtab-field rc=3 names-count=1
+cfg-sep-vtab-field first-stderr=tape observer-configuration record has 5 fields, expected 4: O 0 cfg 0.001^0.9 10 0.001 0.001
+cfg-keyword-cfa rc=0 label=[moving]
+cfg-keyword-cfa first-stderr=<empty>
+cfg-keyword-cfz rc=0 label=[moving]
+cfg-keyword-cfz first-stderr=<empty>
+cfg-keyword-cfgx rc=0 label=[moving]
+cfg-keyword-cfgx first-stderr=<empty>
+cfg-keyword-high-byte rc=0 label=[moving]
+cfg-keyword-high-byte first-stderr=<empty>
+cfg-win-record rc=0 label=[converged]
+cfg-win-record first-stderr=<empty>
+cfg-entropy-ec-below rc=0 last=converged
+cfg-entropy-ec-below first-stderr=<empty>
+cfg-entropy-ec-above rc=0 last=equilibrium
+cfg-entropy-ec-above first-stderr=<empty>
+cfg-entropy-es-below rc=0 last=moving
+cfg-entropy-es-below first-stderr=<empty>
+cfg-entropy-es-above rc=0 last=stable
+cfg-entropy-es-above first-stderr=<empty>
+cfg-entropy-report-partial rc=0 last=stable
+cfg-entropy-report-partial first-stderr=<empty>
+cfg-start-dh-zero-in rc=0 label=[converged]
+cfg-start-dh-zero-in first-stderr=<empty>
+cfg-start-dh-zero-out rc=0 label=[equilibrium]
+cfg-start-dh-zero-out first-stderr=<empty>
+cfg-start-dh-small-in rc=0 label=[stable]
+cfg-start-dh-small-in first-stderr=<empty>
+cfg-start-dh-small-out rc=0 label=[moving]
+cfg-start-dh-small-out first-stderr=<empty>
+cfg-start-scale-in rc=0 label=[converged]
+cfg-start-scale-in first-stderr=<empty>
+cfg-start-scale-out rc=0 label=[equilibrium]
+cfg-start-scale-out first-stderr=<empty>
+cfg-start-window-short rc=0 label=[moving]
+cfg-start-window-short first-stderr=<empty>
+cfg-start-window-full rc=0 label=[converged]
+cfg-start-window-full first-stderr=<empty>
+cfg-install-exact-none rc=0 label=[equilibrium]
+cfg-install-exact-none first-stderr=<empty>
+cfg-install-exact rc=0 label=[converged]
+cfg-install-exact first-stderr=<empty>
+cfg-bounds-accepted rc=0 names-count=0
+cfg-bounds-accepted first-stderr=<empty>
+cfg-entropy-ec-near-below rc=0 last=converged
+cfg-entropy-ec-near-below first-stderr=<empty>
+cfg-entropy-ec-near-above rc=0 last=equilibrium
+cfg-entropy-ec-near-above first-stderr=<empty>
+cfg-entropy-es-near-below rc=0 last=moving
+cfg-entropy-es-near-below first-stderr=<empty>
+cfg-entropy-es-near-above rc=0 last=stable
+cfg-entropy-es-near-above first-stderr=<empty>
+cfg-entropy-dict-ec-equal rc=0 last=equilibrium
+cfg-entropy-dict-ec-equal first-stderr=<empty>
+cfg-entropy-dict-ec-below rc=0 last=converged
+cfg-entropy-dict-ec-below first-stderr=<empty>
+cfg-entropy-dict-es-equal rc=0 last=stable
+cfg-entropy-dict-es-equal first-stderr=<empty>
+cfg-entropy-dict-es-below rc=0 last=moving
+cfg-entropy-dict-es-below first-stderr=<empty>
+cfg-thresholds-builtin rc=0 last=[0.001, 0.01, 0.1]
+cfg-thresholds-builtin first-stderr=<empty>
+cfg-start-zero-scale-equal rc=0 label=[converged]
+cfg-start-zero-scale-equal first-stderr=<empty>
+cfg-start-zero-scale-above rc=0 label=[equilibrium]
+cfg-start-zero-scale-above first-stderr=<empty>
+cfg-start-small-scale-equal rc=0 label=[stable]
+cfg-start-small-scale-equal first-stderr=<empty>
+cfg-start-small-scale-above rc=0 label=[moving]
+cfg-start-small-scale-above first-stderr=<empty>
+cfg-start-zero-1000-equal rc=0 label=[converged]
+cfg-start-zero-1000-equal first-stderr=<empty>
+cfg-start-zero-1000-above rc=0 label=[equilibrium]
+cfg-start-zero-1000-above first-stderr=<empty>
+cfg-start-small-100-equal rc=0 label=[stable]
+cfg-start-small-100-equal first-stderr=<empty>
+cfg-start-small-100-above rc=0 label=[moving]
+cfg-start-small-100-above first-stderr=<empty>
+cfg-bounds-smallest rc=0 names-count=0
+cfg-bounds-smallest first-stderr=<empty>
+cfg-scale-above-max rc=3 names-count=0
+cfg-scale-above-max first-stderr=step: tape observer-configuration record is not one this runtime could have written (scale must be positive and finite): 'O 0 cfg 0.001 0.01 10 1.0000000000000002e300'; refusing to step (docs/TRACE.md)
+cfg-install-mid-before rc=0 label=[moving]
+cfg-install-mid-before first-stderr=<empty>
+cfg-install-mid-after rc=0 label=[converged]
+cfg-install-mid-after first-stderr=<empty>
+cfg-install-inner-before rc=0 label=[moving]
+cfg-install-inner-before first-stderr=<empty>
+cfg-install-inner-next rc=0 label=[converged]
+cfg-install-inner-next first-stderr=<empty>
+cfg-install-other-stream rc=0 label=[moving]
+cfg-install-other-stream first-stderr=<empty>
+cfg-stream1-5-fields rc=3 names-count=1
+cfg-stream1-5-fields first-stderr=tape observer-configuration record has 5 fields, expected 4: O 1 cfg 0.001 0.01 8 10 0.001
+cfg-stream1-window-text rc=3 names-count=0
+cfg-stream1-window-text first-stderr=step: tape observer-configuration record is not one this runtime could have written (truncated record): 'O 1 cfg 0.001 0.01 eight 0.001'; refusing to step (docs/TRACE.md)
+cfg-stream1-window-3 rc=3 names-count=0
+cfg-stream1-window-3 first-stderr=step: tape observer-configuration record is not one this runtime could have written (window depth outside its [4, 64] range): 'O 1 cfg 0.001 0.01 3 0.001'; refusing to step (docs/TRACE.md)
+cfg-valid-then-5-fields rc=3 names-count=1
+cfg-valid-then-5-fields first-stderr=tape observer-configuration record has 5 fields, expected 4: O 0 cfg 0.001 0.01 8 10 0.001

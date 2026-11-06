@@ -35,6 +35,12 @@ ABI_ASSERT(OP_LINE, 68);
 ABI_ASSERT(OP_SET_LOCAL_INTERNAL, 94);
 ABI_ASSERT(OP_TRUE, 95);
 ABI_ASSERT(OP_FALSE, 96);
+/* #1758 N1: int literals append; old float producer numbers do not move. */
+ABI_ASSERT(OP_INT_ZERO, 97);
+ABI_ASSERT(OP_INT_ONE, 98);
+ABI_ASSERT(OP_INT_CONST, 99);
+/* #1758 N4: append-only floor division; no descriptor ABI bump. */
+ABI_ASSERT(OP_IDIV, 100);
 
 /* #704: the revision the ABI-stamped descriptors in the .eigs fixtures under
  * tests/ declare. Those
@@ -54,5 +60,12 @@ int main(void) {
 }
 
 /* #1425: appended scope markers, also assembled by the parent-line test. */
-ABI_ASSERT(OP_BINARY_LINE, 102);
-ABI_ASSERT(OP_BINARY_LINE_END, 103);
+ABI_ASSERT(OP_BINARY_LINE, 106);
+ABI_ASSERT(OP_BINARY_LINE_END, 107);
+
+/* Sync #10: main loop opcodes follow Phase2 append-only opcodes. */
+ABI_ASSERT(OP_LOOP_ENTER, 101);
+ABI_ASSERT(OP_LOOP_STALL_NAMED, 102);
+ABI_ASSERT(OP_LOOP_CAP_NAMED, 103);
+ABI_ASSERT(OP_LOOP_ENTER_NAMED, 104);
+ABI_ASSERT(OP_LOOP_EXIT_NAMED, 105);

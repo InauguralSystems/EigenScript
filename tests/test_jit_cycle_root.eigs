@@ -17,34 +17,34 @@ define mk() as:
     return l
 
 define churn() as:
-    local i is 0
-    loop while i < 1200:
+    local i is 0.0
+    loop while i < 1200.0:
         local t is mk of []
-        t is 0
-        i is i + 1
-    return 0
+        t is 0.0
+        i is i + 1.0
+    return 0.0
 
 define spin(c) as:
     churn of []
-    local i is 0
-    local dropped is 0
-    loop while i < 6000:
-        if i == 5990:
-            c is 0
-            dropped is 1
-        i is i + 1
+    local i is 0.0
+    local dropped is 0.0
+    loop while i < 6000.0:
+        if i == 5990.0:
+            c is 0.0
+            dropped is 1.0
+        i is i + 1.0
     return dropped
 
-checks is 0
-passed is 0
+checks is 0.0
+passed is 0.0
 define check(label, got, want) as:
-    checks is checks + 1
+    checks is checks + 1.0
     if got == want:
-        passed is passed + 1
+        passed is passed + 1.0
     else:
         print of ("MISMATCH " + label + ": got=" + str of got + " want=" + str of want)
 
-check of ["native drop executed", spin of (mk of []), 1]
+check of ["native drop executed", spin of (mk of []), 1.0]
 
 if passed == checks:
     print of "All tests passed"

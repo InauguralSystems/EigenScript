@@ -1,0 +1,1 @@
+- Store, HTTP and TCP numeric arguments use exact integer readers: fractional identifiers, ports, counts and bytes raise `value`; counts, ports and handles return integers. TCP byte values must be in 0..255 and an invalid payload sends nothing.

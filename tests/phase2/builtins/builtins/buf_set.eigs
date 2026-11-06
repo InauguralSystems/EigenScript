@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: buf_set (int-requiring; index; the value converts to float storage (Q2)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+b is buffer of 3
+buf_set of [b, 1, 7]
+print of [b[1], nt of b[1]]
+try:
+    buf_set of [b, 1.5, 9]
+    print of ["fraction accepted", b[1]]
+catch e:
+    print of ["index-fraction", e.kind]
+buf_set of [b, 2.0, 9007199254740993]
+print of [b[2], nt of b[2]]

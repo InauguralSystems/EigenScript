@@ -331,10 +331,10 @@ def is_asan_build():
 # ---------------------------------------------------------------------------
 POPULATION = {
     # file                       fences paired fragment nocheck value-comments
-    "README.md":                 (  7,    5,     2,      0,      0),
-    "docs/llms.txt":             ( 13,   10,     2,      1,      0),   # #2203: +1 paired (catch-type guard, string throw + runtime error)
-    "docs/SPEC.md":              ( 88,   84,     1,      3,      0),   # #1425: +1 paired (multi-line binary operator error line)
-    "docs/COMPARISON.md":        ( 19,   18,     1,      0,      0),
+    "README.md":                 (19, 17, 2, 0, 0), # R2.4: +1 paired IEEE bits and N13 reconstruction example
+    "docs/llms.txt":             (24, 21, 2, 1, 0), # R2.4: +1 paired IEEE bits and N13 reconstruction example
+    "docs/SPEC.md":              (102, 98, 1, 3, 0), # R2.4: +1 paired IEEE bits and N13 reconstruction example
+    "docs/COMPARISON.md":        (31, 30, 1, 0, 0), # R2.4: +1 paired IEEE bits and N13 reconstruction example
     "docs/CONCURRENCY.md":       (  9,    9,     0,      0,      0),   # #1879: +1 paired (thread handle crosses a channel)
     "docs/STDLIB.md":            ( 16,   11,     5,      0,      0),
     "docs/SYNTAX.md":            ( 35,   24,    11,      0,      0),
@@ -342,7 +342,7 @@ POPULATION = {
     "docs/PREDICATES.md":        ( 15,    5,     9,      1,      0),
     "docs/DIAGNOSTICS.md":       (  6,    1,     5,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
-    "docs/BUILTINS.md":          (  3,    2,     1,      0,      0),   # #2186: durable atomic-save recipe
+    "docs/BUILTINS.md":          (5, 4, 1, 0, 0), # Phase2 + main atomic-save fragment (#2186)
     "docs/LANGUAGE_CONTRACT.md": (  1,    0,     1,      0,      0),
 }
 

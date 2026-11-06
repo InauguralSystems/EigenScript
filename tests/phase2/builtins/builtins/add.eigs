@@ -1,0 +1,17 @@
+# R1.6 behaviour-table probe: add (int-preserving, LOSS; scalar arm mirrors +, (A); buffer arm float)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+r is add of [9007199254740993, 1]
+print of [r, nt of r]
+try:
+    print of (add of [9223372036854775807, 1])
+catch e:
+    print of ["overflow", e.kind]
+b is buf_from_list of [1, 2]
+s is add of [b, 1]
+print of [s[0], nt of s[0], type of s]
+l is add of [[1, 9007199254740993], [2, 1]]
+print of [l, nt of l[0], nt of l[1]]

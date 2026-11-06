@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: zeros_like (float-producing; float zeros)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is zeros_like of [1, 2]
+print of [a, nt of a[0]]
+b is zeros_like of 5
+print of [b, nt of b]

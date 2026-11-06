@@ -24,7 +24,7 @@ else
         # later section (the macOS merge-queue suite died silently after [47i]).
         rc=0
         ../build/$variant/test_container_slots --escape-view >/tmp/eigs-slot-escape.$$ 2>&1 || rc=$?
-        if [ "$rc" -gt 128 ] && grep -q 'escaped numeric view' /tmp/eigs-slot-escape.$$; then
+        if rc_expect 134 "$rc" "$(cat /tmp/eigs-slot-escape.$$)" && grep -q 'escaped numeric view' /tmp/eigs-slot-escape.$$; then
             PASS=$((PASS + 1))
         else
             FAIL=$((FAIL + 1)); echo "  FAIL: escaped view plant rc=$rc"; cat /tmp/eigs-slot-escape.$$

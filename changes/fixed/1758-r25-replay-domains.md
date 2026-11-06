@@ -1,0 +1,1 @@
+- Refuse non-finite replay values in finite random, clock, size, byte and sample domains by the consumer name, preserving IEEE tape tokens and genuine normal-sample infinities (RULING R25-1).

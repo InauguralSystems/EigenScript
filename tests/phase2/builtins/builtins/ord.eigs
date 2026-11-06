@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: ord (int-preserving; byte code (Lua string.byte))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is ord of "A"
+print of [a, nt of a]
+b is ord of ""
+print of [b, nt of b]

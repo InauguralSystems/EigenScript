@@ -1,0 +1,22 @@
+# R1.6 behaviour-table probe: seed_random (int-requiring, LOSS; a seed's range is all of int64; Lua randomseed takes integers); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+r is seed_random of 9007199254740993
+a is random_int of [0, 1000000]
+seed_random of 9007199254740992
+b is random_int of [0, 1000000]
+print of ["seeds-2^53+1-and-2^53-differ", a != b]
+print of r
+try:
+    seed_random of 1.5
+    print of "fraction accepted"
+catch e:
+    print of ["fraction", e.kind]
+seed_random of 42.0
+x is random_int of [0, 1000000]
+seed_random of 42
+y is random_int of [0, 1000000]
+print of ["integral-float-seed", x == y]

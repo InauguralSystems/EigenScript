@@ -1,0 +1,7 @@
+# R1.6 behaviour-table probe: json_build (other, LOSS; exact int text arm written in R1.2, live from R1.3)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of (json_build of ["a", 9007199254740993, "b", 2.5, "c", -9223372036854775807 - 1, "d", 3.0])

@@ -16,7 +16,7 @@
 # Fundamental Constants
 # ============================================================
 
-SPEED_OF_LIGHT is 299792458              # m/s (exact)
+SPEED_OF_LIGHT is 299792458.0            # m/s (exact; a float, so m·c² with an int m stays real, #1848)
 PLANCK is 6.62607015e-34                 # J·s (exact)
 HBAR is 1.054571817e-34                  # J·s (reduced Planck, h/2π)
 BOLTZMANN is 1.380649e-23               # J/K (exact)

@@ -1,8 +1,9 @@
-# Test scripts nothing in CI runs, on purpose (tools/enrolment_check.sh, #1264).
-# `path | reason`. A row for a missing or invoked file fails; prefer a section.
+# Test scripts and tools/ entry points that no workflow invokes, as tools/enrolment_check.sh
+# reads "invoked" (#1264; tools/ since #1758 R1.3). `path | reason`: the reason says how the
+# script does run. A row for a missing or invoked file fails; prefer a section or a workflow step.
 tests/test_gc_runner_controls.py | manual deferred control for the GC traversal runner (tests/GC_TRAVERSAL.md); forks child sessions and must run with the heavy slot released, so it is run by hand
-tools/builtin_usage.sh | maintainer-only source audit that reports builtin use sites; it is not an executable CI check
-tools/doc_coupling_hook.sh | optional local Git pre-commit hook installed by a contributor, not a CI entry point
-tools/mutants.sh | manual mutation-train driver documented in concurrency and trace guides; individual product tests run in CI
+tools/builtin_usage.sh | a report over local consumer checkouts (counts builtin references), not a gate; run by hand
+tools/doc_coupling_hook.sh | a Claude Code hook (.claude/settings.json) for agent sessions, not a CI gate
+tools/mutants.sh | the manual mutation trains (its header); its --selftest is a tools/selftests.txt row
 tests/test_gfx_utf8_title.eigs | alternate oracle: test_gfx_utf8_title.sh checks WM_NAME and _NET_WM_NAME on the live X11 window, covering the fixture's sole "X11 window opens" assertion
 tests/test_variant_stdlib.eigs | alternate oracle: 18f-variant-stdlib-1679.sh runs a byte-for-byte temporary copy from outside the checkout and requires rc 0 plus its exact Tests: 1 | Pass: 1 | Fail: 0 summary, covering the fixture's stdlib-load assertion

@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: range (int-preserving; bounds by N5; the elements are ints)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+r is range of 3
+print of [r, nt of r[0]]
+r2 is range of [1.0, 3.0]
+print of [r2, nt of r2[0]]
+try:
+    print of (range of 2.5)
+catch e:
+    print of ["fraction", e.kind]

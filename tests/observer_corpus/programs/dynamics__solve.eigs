@@ -7,8 +7,9 @@
 # decides "done".
 #
 # Each method observes its convergence scalar `change` and asks `report of change`.
-# A scalar is "settled" when the observer calls it `converged` (low entropy, stable)
-# or `equilibrium` (dH stopped) — which one fires depends on how fast the residual
+# A scalar is "settled" when report reads `converged` (full-window diameter
+# fits tolerance) or `equilibrium` (settled without persistent raw motion).
+# Report ranking also accounts for a recent D2 improvement; the residual
 # fell. But a single settled reading is not enough: an oscillatory residual (e.g.
 # PageRank swinging toward its stationary point) shows a transient `equilibrium`
 # mid-swing. So we DEBOUNCE — require the settled reading to HOLD for several

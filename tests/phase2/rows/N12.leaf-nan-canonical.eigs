@@ -1,0 +1,10 @@
+# ROW: N12.leaf-nan-canonical
+# ITEMS: N12
+# EXPECT-RC: 0
+# SHAPE: L
+# WITNESS: leaf dif
+# OPS: SUB
+define dif(a, b) as:
+    return a - b
+x is 1e308 * 10
+print of (f64_bits of (dif of [x, x]))

@@ -111,6 +111,10 @@ __ledf2
 __gtdf2
 __gedf2
 __unorddf2
+# Phase 2 N9 fround (c57a2720): f64 -> f32 -> f64 soft-float casts.
+# The existing stage-2 compiler-rt link supplies both; these are not HAL roots.
+__extendsfdf2
+__truncdfsf2
 
 # --- atomic HAL roots on targets which cannot implement the width ---
 __atomic_load_1

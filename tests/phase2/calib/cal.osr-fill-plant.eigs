@@ -1,0 +1,22 @@
+# ROW: cal.osr-fill-plant
+# ITEMS: N5
+# EXPECT-RC: 0
+# SHAPE: O
+# WITNESS: osr fill
+# OPS: INDEX_SET
+# plant: a string concat ahead of the claimed op, so INDEX_SET never runs natively
+define fill(big, n) as:
+    xs is [0, 0, 0, 0]
+    s is ""
+    i is 0.0
+    loop while true:
+        s is s + "a"
+        xs[i] is big
+        i is i + 1.0
+        if i >= n:
+            return xs
+print of (fill of [9007199254740993, 4.0])
+try:
+    print of (5.5 & 1)
+catch e:
+    print of e.kind

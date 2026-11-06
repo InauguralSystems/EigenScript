@@ -1,12 +1,51 @@
 # EigenScript — single-file reference for language models
 
+Non-finite float text uses `inf`, `-inf`, and unsigned `nan` in `print`,
+`str`, f-strings, and fixed-decimal number formatting. These are output
+words, not JSON literals: JSON decoding of `1e400` (including a nested
+number) raises `value` in default and strict modes. Source exponent literals
+use binary64 floats, so source `1e400` and default `num of "1e400"` remain
+`inf`; JSON applies its separate finite-number rule. Ordinary non-finite
+buffer reads still raise; use the explicit bits APIs to inspect raw cells. Replay accepts IEEE tape tokens only when the
+recorded source can produce them: finite random, clock, byte and sample
+domains refuse non-finite values by name; normal samples may overflow to
+infinity, while reader sizes retain their exact-integer checks. A float `at`
+line or `when` ordinal must be an exact whole number: a fraction, a non-finite
+value or a line outside the C `int` range raises `value` instead of being
+truncated. Audio generators round `duration * rate` half away from zero to get
+their sample count.
+
+
+Width arithmetic uses explicit wrapping, checked and saturating builtins.
+N5 converts integral floats, then checks the named type range without masking.
+Width results are ints; checked overflow raises `value`. `u64` uses int64 bit
+patterns. `fround` returns a float after double-to-float32-to-double conversion
+(ints convert to double first). See [the width builtins](BUILTINS.md#width-arithmetic-n9).
+
+```eigenscript
+print of [i64_wrapping_add of [9223372036854775807, 1], u8_wrapping_add of [255, 1]]
+print of (fround of 0.1)
+```
+```output
+[-9223372036854775808, 0]
+0.10000000149011612
+```
+
 > EigenScript is a small dynamically-typed language with one distinctive
-> feature: an **observer** tracks every value's entropy/trend on each
-> assignment, so convergence, stability, and oscillation are first-class. This
+> feature: an **observer** tracks numeric value trajectories and non-numeric
+> entropy/content snapshots on assignments, so convergence, stability, and oscillation are first-class. This
 > file is the whole surface you need to generate correct `.eigs`. Models
 > generate EigenScript badly by defaulting to Python/JS habits — the traps below
 > are where that fails. When unsure, generate, then run the validation ladder at
 > the end.
+
+Builtin `sort` sorts a list in place; `sort_by` returns a new list using numeric keys.
+Both are stable on every platform: ordering-equivalent elements or keys keep
+their input order. Float values and float keys use IEEE 754 `totalOrder`:
+`-0.0` precedes the equivalent class `{0, 0.0}`, and the canonical NaN comes
+after `inf` (R22-1). Nonzero mixed int/float comparisons remain exact.
+Equality still treats every signed or integer zero as equal. `min` and `max`
+propagate a NaN in any argument position and use the same order for zeros.
 
 ## Calls use `of`, never `f(x)`
 
@@ -170,7 +209,8 @@ what is e
 
 ## The observer (the reason to use this language)
 
-Every assignment (outside `unobserved:`) updates the value's observer. Trajectory
+Numeric assignments update value history even inside `unobserved:`;
+non-numeric entropy/comparison samples are recorded outside the block. Trajectory
 predicates classify it: `converged`, `stable`, `improving`, `diverging`,
 `oscillating`, `equilibrium`.
 
@@ -216,36 +256,66 @@ false
 - `report of x` returns the routed state string (value channel for numeric
   bindings, entropy channel otherwise); `report_value of x` uses the value
   channel explicitly. Both read the named binding's trajectory.
-- Numeric verdicts are over the value's RELATIVE step,
-  `Δv / max(|v|, |v_prev|, scale)`, read across a fixed window of the last 10
-  samples. Above the run's characteristic `scale` (`0.001` by default) a
-  verdict is unit-free; below it the deadband turns absolute
-  (`|Δv| < dh_zero*scale`), so a decay toward zero reads `improving` until it
-  is inside the scale. `improving` is directional: lower is better, as for ML
-  loss, so growth never qualifies even when its steps contract toward a
-  plateau. A mode slower than about ten samples of your assignment cadence
-  cannot show up inside the window (the window is not configurable), so pick
-  a cadence that fits a full period of the slowest mode you care about inside
-  those ten samples (`10 ≥ T / Δt`), while still sampling fast enough to catch
-  the reversals of faster modes.
+- Numeric `converged` is STD's windowed Cauchy test: ten steps / eleven
+  finite values with diameter ≤ `0.001·max(abs(current), 0.001)`. `stable`
+  is D1's 1% ball about the window's midrange. `improving` is D2's Keras
+  running lower best with relative `min_delta = 0.001·max(abs(best), 0.001)`
+  and ten-step patience, with the reference boundedness approximation.
+  The first finite value is a baseline, never an improvement; non-finite
+  values never become best, and any non-finite value still in the current
+  window suppresses improvement. Other three numeric predicates retain
+  their incumbent relative/raw-step rules. An all-exact int64 step window
+  uses zero raw noise floor and absolute settled tolerances (`1e-6` for
+  convergence, radius `1e-5` for stability). Float or mixed windows keep
+  the floating rules. Finite windows cannot prove a limit; slow divergence
+  can fit their bands. See docs/PREDICATES.md for citations and residuals.
+- Numeric `where is x` is x's value, `why is x` its last raw displacement
+  (exact int if checked int64 subtraction fits), and finite-step `how is x`
+  is `0.001 / (0.001 + abs(r))`, where
+  `r = Δv / max(abs(v), abs(v_prev), 0.001)`. Before a step, `why` and
+  `how` are null. An infinite step gives how 0.0; NaN and same-sign
+  infinity-to-infinity steps give NaN. Numeric `observe` is
+  `[band, where, why, previous why]`. Numeric `trajectory` carries
+  `rel/raw/exact/best/since/last_value`, empty `dh`, and null entropy
+  fields. `classify of t` rebuilds it; explicit `"entropy"` raises `value`
+  on a numeric snapshot. Temporal `at`/`when` snapshots carry the triple
+  and `best`/`since`.
+- At a current NaN all six predicates are false and `report` is
+  `undefined`. Current ±inf is `diverging` unless the window holds the
+  opposite-sign infinity, then `oscillating`. Other four predicates are
+  false. `report` keeps priority oscillating → diverging → improving →
+  converged → equilibrium → stable → moving, so convergence can be true
+  while report says improving. A single numeric baseline reports
+  equilibrium with null why/how and all predicates false.
+
 - Trajectory is keyed to a binding's env slot, never to a value: a dict field,
   list element, parameter or `for` binder has none, and ONE binding rebound
   from `fleet[i][2]` in a loop carries the interleave of every entity (lint
   `W024`) — give each entity its own named binding or a closure per entity.
-- `converged` on a numeric binding needs a full window whose relative steps are
-  all below the fixed settle deadband, with finite raw-step guards; a constant
-  therefore converges regardless of its magnitude. Non-numeric bindings use the
-  entropy classifier. See docs/PREDICATES.md for the routed definitions and the
-  fixed tolerance's authoritative source.
+- A numeric constant converges after a full window regardless of its
+  magnitude. Non-numeric `converged`
+  and ordinarily `stable` compare bounded, detached assignment snapshots;
+  finite alias mutations remain visible on reassignment, and refused or
+  oversized snapshots leave both false. For an accepted snapshot containing
+  a NaN float or buffer, raw IEEE equality keeps `converged` false while
+  `stable` uses
+  its entropy-window rule after a full bounded comparison window (S10-D1).
+  Refusal clears that eligibility even if entropy has a full window already.
+  The real matmul scenario's equality /
+  stability / convergence is `false` / `true` / `false`, without equality
+  changing data or math flags. On non-numeric bindings the other predicates and `report` use entropy.
+  See docs/PREDICATES.md for the routed definitions and fixed tolerance.
 - Temporal reads: `prev of x` (value before the last assignment),
   `what is x at 12` / `state_at of 12` (past-line state). Bare `x at 12` is a
   parse error. A statement spanning several lines is filed under its FIRST
   line, while a runtime error inside it (`e.file`, `e.line`, the error header)
   reports the source file and physical line of the faulting sub-expression.
   File, eval, stdin, and unnamed embed units use their loader path, `<eval>`,
-  `<stdin>`, and `<embed>` respectively; sandbox-synthesized errors use `<sandbox>`; the browser playground uses `<playground>`. Wrap hot loops in `unobserved:` to skip the observer's entropy
-  walk (a scalar's value-window sample still lands, so numeric verdicts do not
-  change; `why`/`how` and non-numeric bindings' verdicts can).
+  `<stdin>`, and `<embed>` respectively; sandbox-synthesized errors use `<sandbox>`; the browser playground uses `<playground>`. `unobserved:` skips non-numeric entropy/comparison bookkeeping. Numeric
+  samples, exact flags, running-best state and interrogation snapshots
+  remain complete; numeric why/how and post-block verdicts do not change.
+  A predicate asked inside the block still raises. The bare last-observed
+  alias is not moved by elided scratch assignments.
 
 ## Values and strings
 
@@ -270,31 +340,212 @@ false
   `d["nope"]`, and a misspelled module member `m.typo` all give `null` (so
   `m.typo of x` fails later as `cannot call null`). A list index out of range
   DOES raise. Test for a key with `has_key of [d, k]`.
-- Numbers are f64 and finite by construction: overflow saturates at ±1e308.
-  Integer bit ops are `bit_and`/`&` etc. on int64; exactness ends at 2^53.
+- Numbers are signed int64 or IEEE-754 f64. Decimal integer literals within
+  int64 are exact; a point/exponent or out-of-range decimal literal gives
+  float. Hex literals wrap modulo 2^64. `type of` says "num" for both;
+  `num_type of` says "int"/"float", or null for a non-number. Int +, -, *
+  raise value on overflow; unary minus and abs raise at INT64_MIN. Mixed
+  arithmetic converts to float, while cross-kind comparison is exact.
+  True division `/` produces a float. Counts and indices produce ints;
+  other builtin result kinds are documented individually. Float overflow
+  gives signed infinity, without a `1e308` clamp. `1 / 0` gives `inf`,
+  `-1.0 / 0` gives `-inf`, and `0.0 / 0` and float `% 0` give NaN.
+  Float or mixed `// 0` follows `floor(x / 0)`; int `// 0` and `% 0` raise
+  `value`. `sqrt of -1` and `asin`/`acos` outside `[-1, 1]` give NaN;
+  `log of 0` gives `-inf`. NaN is unequal to everything, including itself
+  and through list/dict/buffer structure; comparing NaN never raises or
+  changes math flags.
+  Integer bit ops and bit_* builtins accept exact int64 operands and return ints.
+  Right shifts zero-fill, negative counts reverse direction, and counts outside
+  (-64,64) give zero (Lua 5.4).
   A bit-op operand that is not an exact integer (`1.5 | 0`, `1e30 & 1`)
   raises a `value` error; it is never truncated.
-  Strict mode is the DEFAULT: out-of-domain math (`sqrt of -1`), a NaN
-  result, a wrong-typed builtin argument (`abs of "x"`) and a malformed
-  `json_path` document raise catchable errors. `EIGS_STRICT=0` is the per-run
-  opt-out that brings the finite stand-ins back (`NaN` collapses to `0`,
-  `sqrt of -1` is `0`, `abs of "x"` is `0`).
-  Raw non-finite tensor results receive the same guard whenever an element is
-  read from a buffer, independent of the consuming operator. Structural buffer
-  equality, scalar reductions, mixed buffer/list materialization and numeric
-  byte/sample/device conversions normalize their buffer inputs too and stop at
-  the first raised read. Numeric bytes truncate and wrap modulo 256 afterward;
+  Strict mode is opt-in: `EIGS_STRICT=1` traps non-finite arithmetic
+  results, wrong-typed builtin arguments (`abs of "x"`) and malformed
+  `json_path` documents with catchable errors. With the variable unset or
+  set to `0`, arithmetic keeps its IEEE results and the legacy argument
+  stand-ins remain (`abs of "x"` is `0.0`).
+  Indexing and iteration refuse stored NaN and infinity with `value` in
+  every strict mode, matching `get_at` (N13). Strict NaN keeps its first
+  diagnostic and sets `math_flags.invalid`; every execution tier agrees on
+  the error kind, message and source line.
+  The other scalar reductions, mixed buffer/list materialization
+  and numeric byte/sample/device conversions normalize their inputs and stop at
+  the first raised read. `write_bytes` requires exact bytes in 0..255
+  (N5/Q1); other byte converters retain truncation and wrapping at this stage;
   raw copies, serialization and buffer-only work areas preserve representation.
   `str_from_bytes` and `inflate` (a `make zlib` build) reject a non-numeric
-  list element with a builtin-named `type_mismatch` error by default; `EIGS_STRICT=0` retains numeric-zero
+  list element with a builtin-named `type_mismatch` error in strict mode; `EIGS_STRICT=0` retains numeric-zero
   substitution. `str_from_bytes` stops at numeric NUL without inspecting later
   elements; byte codecs consume the complete list.
+
+Bitwise operators and `bit_*` builtins return ints, including when an
+operand is an integral float. They use Lua 5.4's 64-bit shift rules: `>>`
+zero-fills; a negative count shifts in the opposite direction; a count of
+64 or more, or -64 or less, gives zero. Each operand must be an exact int64;
+a fractional or out-of-range float raises `value`.
+
+```eigenscript
+print of [1 << 64, 1 << -1, -1 >> 1, 8 >> -1, 1 << 63]
+print of [bit_shr of [-1, 1], bit_shl of [8, -1], num_type of (3.0 & 1)]
+```
+```output
+[0, 0, 9223372036854775807, 16, -9223372036854775808]
+[9223372036854775807, 4, "int"]
+```
+
+`//` floors the quotient; `%` has the divisor's sign. `//=` applies the same
+operation to its assignment target, like `/=`. Zero divisors raise `value`
+for int, float and mixed operands. Two ints produce an int for
+`//` and `%`; a float operand produces a float. `/` always produces a float.
+Float and mixed `//` use Python’s `divmod` quotient correction: `1.0 // 0.1`
+is `9.0`, and `1e-300 // -1e300` is `-1.0`. `//=` uses the same rule.
+
+```eigenscript
+x is -7
+x //= 2
+print of [x, 7 // -2, -7 % 3, 7 % -3, -7.5 % 2]
+print of [num_type of (7 // 2), num_type of (7.0 // 2)]
+y is 1.0
+y //= 0.1
+print of [1.0 // 0.1, 1 // 0.1, 1e-300 // -1e300, y, num_type of y]
+```
+```output
+[-4, -4, 2, -2, 0.5]
+["int", "float"]
+[9.0, 9.0, -1.0, 9.0, "float"]
+```
+
 - Hex integer literals: `0xFF`, `0X10` (digits only). Hex-float forms
   (`0x1p4`) are parse errors. No `mod` keyword — the operator is `%`.
 - Precedence: comparisons bind tighter than word-form `not`; `not` binds
   tighter than `and`, which binds tighter than `or`. Thus `not 1 < 2` means
   `not (1 < 2)`. Arithmetic unary `-` and bitwise unary `~` bind more tightly.
 - f-strings interpolate: `f"step {i}: {report of x}"`. Escapes: `\n \t \r \\ \" \{ \}`. Each `{…}` converts with the builtin `str`, even if you rebind `str`.
+
+
+Empty `min`/`max` raises `value` in both call forms (R1.6b-D2); empty
+`sum` remains int zero (C2). `sign_extend` reads exact int64 arguments and
+raises `value` if its existing subtraction underflows (R1.6b-D1).
+
+Counts and indices are ints. `floor`, `ceil` and half-away-from-zero `round`
+return an int when the result fits int64. `min`/`max` return the winning
+argument with its kind; the first ordering-equivalent argument wins a tie
+(R22-1). Any NaN argument
+propagates as NaN. `num` requires a complete numeric-literal string (N10). JSON integer text fitting int64
+decodes exactly (N14).
+
+The [C embedding API](EMBEDDING.md#value-handles) follows Lua’s numeric
+accessors: `eigs_value_new_int` constructs an exact int64, `eigs_value_is_int`
+tests the stored kind (`lua_isinteger`), and `eigs_value_as_int` reports
+whether a number converts exactly to int64 (`lua_tointegerx`).
+`eigs_value_as_num` converts either kind to double (`lua_tonumber`);
+`EIGS_TYPE_NUM` covers both.
+
+LSP hover on a numeric literal reports `int` or `float` from the literal’s
+kind: `3.0` remains a float even though its value is integral.
+
+```eigenscript
+print of [type of 3, num_type of 3, num_type of 3.0]
+print of [9007199254740993, 3.0, -0.0]
+print of [num_type of (len of "abc"), num_type of (floor of -2.5)]
+print of [num of "9007199254740993", num_type of (num of "3.0")]
+print of [num_type of (min of [3, 3.0]), num_type of (min of [3.0, 3])]
+print of (json_path of ["{\"n\":9223372036854775807}", "n"])
+try:
+    min of []
+catch e:
+    print of [e.kind, (index_of of [e.message, "min"]) >= 0]
+try:
+    print of (num of "12abc")
+catch e:
+    print of e.kind
+```
+```output
+["num", "int", "float"]
+[9007199254740993, 3.0, -0.0]
+["int", "int"]
+[9007199254740993, "float"]
+["int", "float"]
+9223372036854775807
+["value", true]
+value
+```
+
+`add`, `subtract` and `multiply` preserve exact ints for scalar operands and
+for each pair of list elements, with `value` on int64 overflow. `negative`
+preserves int scalar and list elements and raises at INT64_MIN. Buffer
+arithmetic remains float. A buffer kernel stops at its first raised result,
+releases its partial output and does not read later elements (#1417).
+An all-int `sum` returns an exact int, while a
+float anywhere in a nested input selects float addition for the entire
+reduction. A buffer selects float addition too. An empty list's sum is int
+zero, in both call forms. `sum` refuses non-finite buffer elements with a
+`value` error in every strict mode (N13). In strict mode, it stops at the first NaN with a "not a number" diagnostic and sets `math_flags.invalid`; later elements are not read (#1417).
+
+```eigenscript
+exact is sum of [9007199254740993, 1]
+print of [exact, num_type of exact]
+mixed is sum of [9223372036854775807, 1, 0.5]
+print of [num_type of mixed, mixed == 9223372036854775808.0]
+print of [num_type of (sum of []), num_type of (sum of ([]))]
+print of (add of [[9007199254740993, 2], [1, 3]])
+try:
+    negative of (-9223372036854775807 - 1)
+catch e:
+    print of e.kind
+```
+```output
+[9007199254740994, "int"]
+["float", true]
+["int", "int"]
+[9007199254740994, 5]
+value
+```
+
+## IEEE bits: explicit raw access and canonical floats
+
+`f64_bits of number` returns signed int64 two's-complement IEEE bits; int
+inputs first convert to float (Q2). `f64_from_bits of bits` returns a float
+and canonicalizes all NaNs to `0x7FF8000000000000`, including tag-spelling
+payloads. Every double crossing the C embedding API is canonical too.
+Signed zero, infinities and finite representations keep their bits.
+
+`buf_get_bits of [buffer, index]` returns raw bits as an int and preserves
+NaN payloads. `buf_set_bits of [buffer, index, bits]` stores verbatim and
+returns `null` (R24-1). Bits inputs and indices follow N5: exact int64s and
+integral floats in range are accepted; fractions, non-finite inputs and
+out-of-range floats raise `value`. Wrong types or missing buffer arguments
+raise `type_mismatch`; negative or out-of-range indices raise `index_range`.
+These rules apply in either strict mode. Bit inspection and reconstruction
+do not trigger arithmetic traps or change `math_flags`.
+
+Ordinary `buf_get`, indexing and iteration still refuse non-finite cells
+under N13. Use `f64_from_bits of (buf_get_bits of [buffer, index])` to
+reconstruct a canonical float explicitly (R24-2); do not expect a raw-bit
+setter to return a buffer for composition.
+
+```eigenscript
+b is buffer of 1
+print of [f64_bits of -0.0, f64_from_bits of 4607182418800017408.0]
+print of (buf_set_bits of [b, 0.0, 9218868437227405313])
+print of [buf_get_bits of [b, 0], f64_bits of (f64_from_bits of (buf_get_bits of [b, 0]))]
+try:
+    buf_get of [b, 0]
+catch e:
+    print of e.kind
+try:
+    f64_from_bits of 0.5
+catch e:
+    print of e.kind
+```
+```output
+[-9223372036854775808, 1.0]
+null
+[9218868437227405313, 9221120237041090560]
+value
+value
+```
 
 ## Numeric vectors: `buffer`, not `list`
 
@@ -345,7 +596,7 @@ print of (buf_get of [(recv of c), 0])    # the BUFFER copied
 ```
 ```output
 [1, 2]
-1
+1.0
 ```
 
 - The measured kind-by-kind table lives in docs/CONCURRENCY.md and is itself an
@@ -392,12 +643,61 @@ match x:
 
 `vm_run_bytecode` raises a catchable `value` error naming a rejected chunk descriptor; a valid program may still return `null`. `sandbox_run` reports descriptor rejection in its structured `{ok: false, error: ...}` result. Its optional fourth limit, `max_work`, bounds cumulative bytecode instructions across function calls and callback re-entry (default 10,000,000), independently of loop and allocation limits. This meters VM work, not elapsed time: a blocking native callback must return before the sandbox can stop.
 
+The positions and counts of `char_at`, `substr`, `get_at`, `set_at`,
+`copy_into`, `fill` and the `list_*` mutation/slice builtins use exact conversion
+(N5). So do handle fields, bytecode ABI/counts/bytes, sandbox limits and numeric
+exit codes. Integral floats are accepted; fractions and values outside the
+receiving C type raise `value` before indexing or effects.
+`recv_timeout` rounds milliseconds half away from zero and raises beyond the
+C long range, with no one-year cap. `usleep` rounds microseconds and raises
+beyond the C int range. `record_history` returns its previous flag as an int;
+nonzero numeric flags still enable history. `task_detach` and sandbox error lines return ints.
+`read_bytes` produces int bytes; `write_bytes` requires exact bytes in 0..255
+and returns an int count. File caps and corpus/stream counts follow N5; an
+integral stream count outside its cap still raises `limit`. Subprocess exit
+statuses are ints, and timeout seconds round to representable poll milliseconds.
+
+```eigenscript
+print of (substr of ["hello", 1.0, 2.0])
+try:
+    print of (substr of ["hello", 1.5, 2])
+catch e:
+    print of e.kind
+print of (num_type of (record_history of 0.5))
+print of (usleep of 1.5)
+try:
+    usleep of 1e300
+catch e:
+    print of e.kind
+path is mktemp of null
+written is write_bytes of [path, [65.0, 66.0]]
+bytes is read_bytes of path
+print of [num_type of written, num_type of bytes[0], str_from_bytes of bytes]
+try:
+    write_bytes of [path, [65.5]]
+catch e:
+    print of e.kind
+remove_file of path
+```
+```output
+el
+value
+int
+null
+value
+["int", "int", "AB"]
+value
+```
+
 Fixed- or optional-shape builtin argument lists reject surplus outer elements in strict mode with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
+
+Runtime-published counts and indices are exact ints (S9-K1): `__loop_iterations__`, live and historical `when` assignment counts, aggregate `what` lengths, trajectory `window`, error `line`, and scheduler trace `seq` and task ids. Scheduler `tick` remains a continuous virtual time.
 
 Sandbox execution does not update shared temporal history: assignment values, names, counts and observer snapshots stay outside that history even when recording is armed. Ordinary tape assignment records still emit. Host and trusted descriptor history recording resumes normally outside the sandbox; sandbox temporal reads remain refused.
 
-**Division by zero RAISES** — it is a catchable `value`-kind error, not a
-warning and not `0` (that fossil died with the fail-soft reform, #975).
+**Integer floor division and integer modulo by zero raise** a catchable
+`value` error. Float arithmetic instead produces IEEE infinity or NaN by
+default; `EIGS_STRICT=1` opts into trapping non-finite arithmetic results.
 A runtime error is caught as a dict with `kind`, `message`, `line` and `file`.
 A value you `throw of` is caught exactly as thrown: `throw of "boom"` binds the
 string `"boom"`, so `"caught: " + err` works for your own string throws and
@@ -407,7 +707,7 @@ whose `message` you read (`err.message` on a string raises):
 
 ```eigenscript check
 try:
-    x is 1 / 0
+    x is 1 // 0
     print of "not reached"
 catch err:
     print of err.kind
@@ -433,7 +733,7 @@ catch err:
     show_error of err
 
 try:
-    print of (1 / 0)
+    print of (1 // 0)
 catch err:
     show_error of err
 ```
@@ -449,7 +749,7 @@ Each left-hand form below is a parse error or a runtime error. Use the right sid
 - `while c:` -> `loop while c:` (bare `while` is a parse error)
 - `else if c:` -> `elif c:`
 - `x = 1` -> `x is 1` (`x += 1` works)
-- `a ** b` -> `pow of [a, b]`; `a // b` -> `floor of (a / b)`
+- `a ** b` -> `pow of [a, b]`; floor division is `a // b`
 - `a && b`, `a || b`, `!a` -> `a and b`, `a or b`, `not a` (`!=` is fine)
 - `a if c else b` -> there is no conditional expression; use an `if`/`else`
   statement
@@ -477,6 +777,52 @@ including a binding to null; other unknown names retain `undefined_name` errors.
 `--api`, lint and token-vocabulary discovery describe the language surface,
 not callable availability. Direct host global lookup returns actual absence.
 Direct AOT adoption, capability imports and host grants remain separate work.
+
+## Stored records
+
+Store handles carry integer `_store_id` and `_store_gen` fields. Every store operation requires exact, in-range integer handle fields; integral floats convert, while fractional, non-finite or out-of-range numeric fields raise `value` before store access (R1.6f-D1). `store_count` returns an integer.
+
+`store_get`, `store_delete`, and `store_update` accept string keys or exact
+int64 numeric keys. Integral floats convert; fractional or out-of-range floats
+raise `value` before lookup or mutation. Numeric keys retain all int64 digits.
+Stored decimal integer text within int64 decodes as an int; a decimal point or
+exponent selects a float. Buffer payloads remain floats. Store records preserve
+int64 digits and use shortest round-trip float text, including `.0` for
+integral floats and the sign of `-0.0`, so `3.0` reads back as a float.
+
+See the [stored-record example](SPEC.md#stored-records).
+
+PostgreSQL integer columns (`smallint`, `integer`, `bigint`, `oid`) return
+exact int64 values through `db_query_value`; `db_query_json` retains their
+exact decimal digits (N14, Q-DB253). A `bigint` beyond 2^53 is an int,
+including both int64 boundaries. `numeric` remains text, and finite real
+columns returned directly remain floats. Float parameters use N6 shortest round-trip text, preserving `.0` and
+signed zero. Store records use the same float writer and exact int64 digits
+(N14, #1762). The executable DB examples and boundary assertions
+in `tests/test_db.eigs` run on the server-db profile with PostgreSQL.
+
+TCP handles, ports and sent-byte counts are integers. Numeric socket handles, ports, receive counts and outgoing bytes require exact integers (integral floats convert); bytes must be in 0..255. `net_send` validates the entire payload before sending any byte. Poll timeouts are continuous milliseconds rounded to the C int range; an unrepresentable duration raises `value`.
+
+`http_early_bind` and `http_serve` require an exact integer port in 0..65535; integral floats convert and port zero requests an ephemeral port. Fractional or out-of-range ports raise `value` before binding. `shared_delete` and `shared_size` return integer counts.
+
+N6 prints each float with Python's shortest round-trip spelling: integral
+floats retain `.0`, negative zero is `-0.0`, and scientific notation starts
+below `1e-4` or at `1e16`. Ints keep their exact decimal digits. `print`,
+`write`, `str`, f-strings and JSON share the number writer. The executed
+examples are `tests/phase2/rows/N6.float-repr.eigs` and
+`tests/phase2/rows/N6.str-fstring.eigs`.
+
+The HTTP shared counter `shared_incr` follows numeric `+`: two int operands
+return an exact int and int64 overflow raises `value` without changing the
+stored counter (A). A missing counter starts at int zero. A float operand
+produces a float. The stored operand is its JSON-decoded value; N6 preserves an
+integer-valued float as a float by retaining its `.0`. Executable shared-counter examples in
+`tests/test_http.eigs` cover exact values, both overflow directions and the
+next operation after a raise.
+
+`http_post` also preserves every digit of JSON integer header values within
+int64 before sending them as text (N14, B6). The executed loopback example
+is `tests/phase2/builtins/builtins/http_post.eigs`.
 
 ## Before hand-rolling a helper
 
@@ -565,6 +911,106 @@ See docs/TRACE.md and docs/EMBEDDING.md for binding and format compatibility.
 Replay refuses unreconstructable host effects: `mktemp` raises a catchable
 filesystem-boundary error before creating a file; ordinary `mktemp` still
 creates the file and returns its path for later `remove_file`.
+
+Tensor sizes and indices follow N5: an integral float is accepted and a
+fraction raises `value`. `gather` keeps the selected list cell's int/float
+kind; buffer elements and numeric tensor calculations are floats. `shape`
+returns integer dimension counts. `mean` and `norm` refuse non-finite buffer
+cells with `value` in both strict modes.
+
+```eigenscript
+g is gather of [[[1, 2], [3, 4]], [1.0, 0]]
+print of [g, num_type of g[0], num_type of (shape of g)[0]]
+try:
+    gather of [[10, 20], 0.5]
+catch e:
+    print of e.kind
+```
+```output
+[[2, 3], "int", "int"]
+value
+```
+
+Buffer sizes, indices, offsets and counts follow N5. Byte inputs to
+`str_from_bytes`, `f64_from_bytes`, `inflate` and `buf_from_pcm16le` must be
+exact integers in 0..255; fractions and out-of-range bytes raise `value`.
+`buf_len`, `f64_to_bytes` and `inflate` return integer counts or bytes;
+buffer storage and scalar buffer reads are floats. `buf_get`, `buf_peak`,
+`buf_dot` and the byte/PCM codecs refuse non-finite input cells with `value`.
+
+Audio playback (`audio_play`, `audio_play_loop`, `audio_stream_push`) refuses
+stored non-finite buffer samples at the scalar boundary in both strict modes
+(N13). Strict NaN preserves the first diagnostic and INVALID flag. Finite
+samples clamp to [-1,1], then round PCM16 half away from zero (Q7/Q4).
+Channel indices and loop counts follow N5; continuous mixer gain stays
+fractional after clamping to [0,4].
+
+Q7 magnitude validation also applies before SDL is loaded:
+
+```eigenscript
+try:
+    gfx_delay of 1e300
+catch e:
+    print of e.kind
+```
+```output
+value
+```
+
+### Stored buffer data boundary
+
+Buffer kernels can retain non-finite data. Scalar indexing and iteration
+raise `value` when that data is read, in every strict mode (N13).
+
+```eigenscript
+p is buf_from_list of ([1e308])
+g is buf_from_list of ([1e308])
+sgd_update of [p, g, 1e308]
+try:
+    print of p[0]
+catch e:
+    print of e.kind
+```
+```output
+value
+```
+
+### Buffer equality
+
+Buffers compare their stored doubles with IEEE equality: NaN differs from
+everything, even itself; infinities compare by sign; signed zeros are equal.
+Equality never raises or changes math flags, including under strict mode.
+
+```eigenscript
+p is buf_from_list of ([1e308])
+g is buf_from_list of ([1e308])
+sgd_update of [p, g, 1e308]
+print of (p == p)
+print of (p == g)
+sgd_update of [p, p, 1.0]
+print of (p == p)
+```
+```output
+true
+false
+false
+```
+
 Recorded builtins validate deterministic argument refusals before their tape
 boundary. A builtin call that raises during recording must raise with the same
 kind and message during strict replay, never return a recorded stand-in.
+
+## Non-finite values at encoding boundaries
+
+`json_encode` refuses NaN and either infinity with a `value` error, including
+values inside lists, dicts and buffers. Finite buffers keep their existing
+JSON `null` representation. Byte-value encoders and integer conversions also
+refuse non-finite inputs. These data-boundary refusals apply in every strict
+mode, independently of the opt-in arithmetic trap.
+
+JSON and store encoders return failure before their callers commit output.
+A refused `shared_set`, overflowing `shared_incr`, `store_put` or
+`store_update` leaves the previous state unchanged. Store refusal does not
+create a collection, consume an automatic ID, change the caller's record or
+write file bytes. Historical stores containing quoted non-finite buffer
+sentinels remain readable; new writes of those payloads refuse.

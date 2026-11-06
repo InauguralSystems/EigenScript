@@ -87,20 +87,27 @@ for bad in 1.5 -1 1e100; do
 done
 [ "$valid" = 1 ] && pass 'fractional, negative, and out-of-range taped sizes are refused by the reader' || fail 'invalid taped size verdict was converted'
 
-# Non-finite numbers are corrupt in every N record, not merely reader sizes.
-# The common tape parser must name and reject the token before it can become a
-# language VAL_NUM.  Exercise both a reader record and an unrelated builtin.
+# RULING R25-1: IEEE words are valid tape tokens. Consumers enforce
+# their own domains: size metadata stays exact-int, random stays finite.
+# Keep this as one boundary row, with exact consumer-owned messages.
 boundary=1
-for bad in nan inf; do
+boundary_detail=
+for bad in nan inf -inf; do
     sed -E "s/(N [0-9]+ read_text=)[^[:space:]]+/\\1$bad/" "$TMP/size.tape" >"$TMP/bad.tape"
     out=$(EIGS_REPLAY="$TMP/bad.tape" "$BIN" "$TMP/regular-cap.eigs" 2>&1)
-    echo "$out" | grep -q "malformed v[0-9][0-9]* stream id or N value '$bad'; refusing to replay" || boundary=0
+    if [ "$out" != 'io|read_text: replay record size is not an exact integer in range; refusing to replay' ]; then
+        boundary=0; boundary_detail="$boundary_detail reader $bad: $out"
+    fi
 done
 cat >"$TMP/random.eigs" <<'EOF'
 print of (random of null)
 EOF
 EIGS_TRACE="$TMP/random.tape" "$BIN" "$TMP/random.eigs" >/dev/null 2>&1
-sed -E 's/(N [0-9]+ random=)[^[:space:]]+/\1nan/' "$TMP/random.tape" >"$TMP/random-nan.tape"
-out=$(EIGS_REPLAY="$TMP/random-nan.tape" "$BIN" "$TMP/random.eigs" 2>&1)
-echo "$out" | grep -q "malformed v[0-9][0-9]* stream id or N value 'nan'; refusing to replay" || boundary=0
-[ "$boundary" = 1 ] && pass 'nan and infinity are refused at the common tape boundary for reader and non-reader records' || fail "non-finite tape number crossed the boundary: $out"
+for bad in nan inf -inf; do
+    sed -E "s/(N [0-9]+ random=)[^[:space:]]+/\\1$bad/" "$TMP/random.tape" >"$TMP/random-bad.tape"
+    out=$(EIGS_REPLAY="$TMP/random-bad.tape" "$BIN" "$TMP/random.eigs" 2>&1)
+    if [ "$out" != "trace: random: non-finite replay value '$bad'; refusing to replay" ]; then
+        boundary=0; boundary_detail="$boundary_detail random $bad: $out"
+    fi
+done
+[ "$boundary" = 1 ] && pass 'IEEE tape words are refused by the reader-size and random consumer domains' || fail "non-finite tape number crossed a consumer boundary:$boundary_detail"

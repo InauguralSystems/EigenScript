@@ -88,6 +88,13 @@ caller environment. Thus, an API call made re-entrantly by a host callback
 runs in the default environment even if that callback temporarily changed its
 rounding mode, and the callback's mode is back when the inner call returns.
 
+The exact float-to-int conversion in `eigs_value_as_int` also saves and
+restores this environment, so a host's DAZ setting cannot turn a nonzero
+subnormal into a successful integer zero conversion. `eigs_value_new_int`
+and `eigs_value_is_int` do no floating-point work and need no environment
+swap. These are the R1.8 additions to the public-boundary census; the
+existing code-running and number-text entry points keep their boundaries.
+
 Host callbacks execute in EigenScript's default environment; the runtime does
 not swap around them. A callback that needs a different mode must save, set,
 and restore it itself before returning to EigenScript. Re-entrant API calls do
@@ -133,13 +140,15 @@ the state is destroyed or the thread exits.
 
 ### Per-state strict mode
 
-Strict errors are enabled by default. At creation, each state independently
-snapshots `EIGS_STRICT`; exactly `EIGS_STRICT=0` selects the legacy finite
-stand-ins. An embedder can supersede that creation-time value for one state:
+Strict mode is opt-in. At creation, each state independently snapshots
+`EIGS_STRICT`; unset, empty or `0` keeps default IEEE arithmetic and the
+legacy argument-type stand-ins. `EIGS_STRICT=1` traps non-finite arithmetic
+and enables strict argument guards. An embedder can supersede that
+creation-time value for one state:
 
 ```c
 EigsState *st = eigs_open();
-eigs_state_set_strict(st, 0); /* stand-in mode; nonzero enables strict mode */
+eigs_state_set_strict(st, 0); /* IEEE arithmetic; nonzero enables strict traps and argument guards */
 ```
 
 `eigs_state_set_strict` is valid after either `eigs_state_new` or `eigs_open`,
@@ -358,6 +367,7 @@ embed API refuses it too: `eigs_set_global`, `eigs_get_global` and
 
 ```c
 EigsValue *eigs_value_new_num(double n);
+EigsValue *eigs_value_new_int(int64_t n);
 EigsValue *eigs_value_new_string(const char *s);
 EigsValue *eigs_value_new_null(void);
 EigsValue *eigs_value_new_bool(int b);           /* true/false (#1637) */
@@ -379,6 +389,8 @@ Inspection:
 ```c
 EigsValueType eigs_value_type(EigsValue *v);   /* EIGS_TYPE_NUM, _STR, _LIST, _DICT, _NULL, _FN, _BUFFER, _OTHER, _BOOL */
 double        eigs_value_as_num(EigsValue *v);     /* wrong type: sentinel + error; bool sentinel is NaN */
+int64_t       eigs_value_as_int(EigsValue *v, int *ok); /* ok may be NULL */
+int           eigs_value_is_int(EigsValue *v);     /* int kind only; pure predicate */
 int           eigs_value_as_bool(EigsValue *v);    /* wrong type: 0 + error */
 const char   *eigs_value_as_string(EigsValue *v);  /* NULL if wrong type; borrowed pointer */
 int           eigs_value_list_len(EigsValue *v);   /* wrong type: 0 + error */
@@ -390,6 +402,29 @@ int           eigs_value_buffer_len(EigsValue *v);          /* wrong type: 0 + e
 double        eigs_value_buffer_get(EigsValue *v, int i);   /* OOB: 0.0 + error */
 void          eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-op + error */
 ```
+
+`EIGS_TYPE_NUM` covers signed int64 and float, like Lua's `LUA_TNUMBER`.
+`eigs_value_new_int` constructs an exact signed int64, like `lua_pushinteger`;
+`eigs_value_new_num` constructs a float, like `lua_pushnumber`.
+R2.4 canonicalizes every NaN at the C double boundary to
+`0x7ff8000000000000`, on both input and output; finite values, infinities
+and signed zeros keep their bits. `eigs_value_as_num` converts either kind to `double`,
+like `lua_tonumber`; an int above 2^53 can lose precision in that conversion.
+Use `eigs_value_as_int` for an exact integer result, like `lua_tointegerx`:
+
+| input | result | `*ok` | new error |
+|---|---:|---:|---|
+| int, including `9007199254740993` | exact int64 | 1 | none |
+| integral float in [-2^63, 2^63), including `3.0` and -2^63 | exact int64 | 1 | none |
+| fractional or out-of-range number, including `1.5` and float 2^63 | 0 | 0 | none |
+| non-number, including `NULL` | 0 | 0 | `type_mismatch` |
+
+The success pointer may be `NULL`. The accessor never clears a pending
+error, and a numeric refusal does not replace it. `eigs_value_is_int`, like
+`lua_isinteger`, tests the stored kind: it returns false for `3.0`, and
+returns false without setting an error for any non-number. All four numeric
+operations leave ownership unchanged; each constructed value still needs
+`eigs_value_release`.
 
 The numeric, boolean, list-length, and buffer accessors leave a pending
 `type_mismatch` error when `v` has the wrong type (including `NULL`); buffer
@@ -571,7 +606,7 @@ through lifetime metadata, never through repeated numeric IDs.
 An installed memory tape suspends the file replay context as a whole. Clearing
 memory restores the file's cursor, queued values, parser buffer, bindings and
 strictness; it neither rewinds nor takes data from the memory source. A refused
-memory replacement leaves the active context untouched. The version 6 grammar
+memory replacement leaves the active context untouched. The current tape grammar
 and older-format refusal rule are documented in `docs/TRACE.md`.
 
 Host builtins participate with the take/record pair, the same contract
@@ -679,3 +714,19 @@ CHANGELOG entry. The opaque types (`EigsState`, `EigsThread`,
 `EigsValue`) intentionally hide their layout: those structs change
 between releases and the only safe way to touch them is through the
 documented accessors.
+
+### Stored non-finite buffer data
+
+`eigs_value_buffer_get` returns a canonical NaN for every stored NaN payload,
+without rewriting the raw buffer cell. Every non-NaN bit, including infinities
+and negative zero, is preserved. `eigs_value_buffer_set` canonicalizes an
+incoming NaN before storing it. This is R2.4's explicit amendment of the
+earlier R1.6z-D1 raw-NaN getter contract. Neither operation writes math flags
+or raises for valid non-finite data. C callers can use `isfinite()` when their
+application needs finite values. Exact NaN payload access inside a program
+uses the signed-int `buf_get_bits` / `buf_set_bits` interface; those integers
+are not passed through a floating-point conversion.
+Wrong-type and out-of-range reports and their sentinels keep the API contract
+above. Pure representation transport does not opt into strict arithmetic
+trapping. The canonicalization policy is the same single double writer used
+for variables and container slots (R2.4/N12; design §5 and §8).

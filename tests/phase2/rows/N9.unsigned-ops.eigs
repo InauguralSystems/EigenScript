@@ -1,0 +1,7 @@
+# ROW: N9.unsigned-ops
+# ITEMS: N9
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+print of [u64_compare of [-1, 1], u64_to_string of -1, u64_div of [-1, 2]]

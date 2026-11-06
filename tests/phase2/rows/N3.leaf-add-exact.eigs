@@ -1,0 +1,9 @@
+# ROW: N3.leaf-add-exact
+# ITEMS: N3
+# EXPECT-RC: 0
+# SHAPE: L
+# WITNESS: leaf-gen add2
+# OPS: ADD
+define add2(a, b) as:
+    return a + b
+print of (add2 of [9007199254740992, 1])

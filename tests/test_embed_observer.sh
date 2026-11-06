@@ -35,7 +35,9 @@ lsan_classify "$(cat "$out")" || classification=$?
 if [[ "$rc" -ne 0 || "$classification" -ne 2 ]]; then
     exit 1
 fi
-grep -q '^embed observer: 43 passed, 0 failed$' "$out"
+grep -q '^embed observer: 45 passed, 0 failed$' "$out"
+# R32-4: the entropy route's direct answer is exactly 1.
+grep -q '^entropy host: DIRECT converged=1$' "$out"
 grep -q '^raw host: obs_needed=1 improving=1$' "$out"
 grep -q '^isolated host: DIRECT improving=1 obs_needed=1 gap=0$' "$out"
 # #1114: after a closed unit the gap flag is already 1 at a DIRECT read. The

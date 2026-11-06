@@ -1,0 +1,8 @@
+# ROW: N4.float-mod-zero-nan
+# ITEMS: N4
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+x is 5.5 % 0
+print of (x == x)

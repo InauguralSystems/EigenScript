@@ -1,0 +1,13 @@
+["integral-float", "undefined_name", true]
+["upper-or-lower", "undefined_name", true]
+["other-boundary", "undefined_name", true]
+["fraction", "undefined_name"]
+["float-outside-int64", "undefined_name"]
+["fraction-right", "undefined_name"]
+["non-number", "undefined_name"]
+["non-number-right", "undefined_name"]
+["few", "undefined_name"]
+["empty", "undefined_name"]
+["many", "undefined_name"]
+["scalar", "undefined_name"]
+rc=0

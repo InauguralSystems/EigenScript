@@ -1,0 +1,12 @@
+# ROW: N13.int-conversion-refuses
+# ITEMS: N13
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+# TIERS: off default osr
+x is 1e308 * 10
+try:
+    print of (substr of ["abc", x, 1])
+catch e:
+    print of e.kind

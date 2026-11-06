@@ -1,0 +1,2 @@
+- Keep float iterator exits ahead of int refusals and retain inlined index validation and reference acquisition; measure the CodSpeed workload list in both execution tiers (#1758).
+- Apply the machine's graphics-only memory ceiling in the Phase 2 corpus comparison without limiting thread-stack reservations (#1758).

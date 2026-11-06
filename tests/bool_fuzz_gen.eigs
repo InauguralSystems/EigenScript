@@ -267,6 +267,8 @@ for v in ["true", "false"]:
     append of [vm_calls, ["1 - " + v, "arith-sub", v]]
     append of [vm_calls, [v + " * 2", "arith-mul", v]]
     append of [vm_calls, ["2 / " + v, "arith-div", v]]
+    append of [vm_calls, [v + " // 2", "arith-idiv-left", v]]
+    append of [vm_calls, ["2 // " + v, "arith-idiv-right", v]]
     append of [vm_calls, [v + " % 2", "arith-mod", v]]
     append of [vm_calls, ["0 - " + v, "arith-neg", v]]
     append of [vm_calls, [v + " < 1", "order", v]]

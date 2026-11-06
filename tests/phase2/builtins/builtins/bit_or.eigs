@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: bit_or (int-requiring; Lua |); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is bit_or of [9007199254740992, 1]
+print of [a, nt of a]
+try:
+    print of ["fraction-answer", bit_or of [1.5, 1]]
+catch e:
+    print of ["fraction", e.kind]
+f is bit_or of [4.0, 1.0]
+print of [f, nt of f]

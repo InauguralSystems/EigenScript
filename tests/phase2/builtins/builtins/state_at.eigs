@@ -1,0 +1,17 @@
+# R1.6 behaviour-table probe: state_at (int-requiring; step index (the probe's own line numbers)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+x is 5
+y is 7
+s is state_at of 8
+print of [s["x"], s["y"]]
+try:
+    t is state_at of 8.5
+    print of ["fraction accepted", t["y"]]
+catch e:
+    print of ["line-fraction", e.kind]
+u is state_at of 8.0
+print of u["y"]

@@ -78,7 +78,7 @@ print of caught' "1"
 # A normal matmul still produces the right answer (guards the cap refactor).
 run_case "matmul normal correctness" \
 'print of (matmul of [[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]])' \
-'[[19, 22], [43, 50]]'
+'[[19.0, 22.0], [43.0, 50.0]]'
 
 # substr: a huge length overflowed `start + rlen` (int) past the clamp, then the
 # allocation aborted (SIGABRT). Now clamped via subtraction to the string tail.

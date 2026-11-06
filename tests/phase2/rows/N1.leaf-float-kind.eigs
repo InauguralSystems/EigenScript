@@ -1,0 +1,13 @@
+# ROW: N1.leaf-float-kind
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: L
+# WITNESS: leaf onef zerof halff
+# OPS: NUM_ONE NUM_ZERO CONST
+define onef(x) as:
+    return 1.0
+define zerof(x) as:
+    return 0.0
+define halff(x) as:
+    return 0.5
+print of [num_type of (onef of 7), num_type of (zerof of 7), num_type of (halff of 7)]

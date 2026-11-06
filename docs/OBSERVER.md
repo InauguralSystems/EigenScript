@@ -7,93 +7,76 @@
 > Read this if you want to know what the words actually mean — and why
 > they sometimes disagree with your intuition.
 
-## The question it emerged from
+## The signal and its conventions
 
-> *If an observer is embedded in a system with no concept of an outside,
-> how does it find its location?*
+The observer records a binding's assignments and answers questions about
+that history. Numeric bindings use their value and displacement. Other
+bindings retain entropy diagnostics and bounded content snapshots. The
+numeric predicates use cited standard tests where those exist; a finite
+window remains an approximation to questions about an infinite sequence.
 
-The language was not designed toward a goal. It fell out of taking that
-question literally. Everything below is a consequence of one constraint:
-**the observer has no outside.** It cannot measure its position against an
-external origin, because there is no "out there" to measure against. It
-cannot be told "smaller is better" or "closer to the target," because a
-target is an external fact. Whatever it knows, it must compute from
-inside itself.
-
-That single constraint is why the observer behaves the way it does, and
-why a naive "loss going down means improving" reading is not always what
-you get. "Down" and "better" are outside-talk.
-
-## Two frames
-
-The runtime quietly contains two points of view, and most confusion comes
-from mixing them up. This document keeps them apart on purpose.
-
-- **The observer (the inside).** Wordless. It has a value and a few
-  numbers it can derive from its own history. No goals, no labels, no
-  knowledge that any threshold exists.
-- **The oracle (the outside).** That's you. You *place* values (every
-  `is` assignment is an act of the oracle), you *set the thresholds*, and
-  therefore you supply every *name* the observer's continuous experience
-  gets quantized into.
+Numeric `improving` adopts the loss convention that lower is better, with
+Keras' running best and patience. This is an explicit convention, rather
+than something inferred from entropy or from an external target. A
+smaller loss need not be a correct answer; check a solver's residual when
+the destination matters. [PREDICATES.md](PREDICATES.md) gives the formulas,
+citations, registered deviations and residual disagreements.
 
 ## What the observer knows
 
-From the inside, the observer has exactly these, all computed from its own
-history — never from an external reference:
+| You ask | Numeric binding | Non-numeric binding |
+|---|---|---|
+| `what is x` | current value | current value / content query |
+| `who is x` | binding name (or type) | binding name (or type) |
+| `when is x` | assignment count | assignment count |
+| `where is x` | current value, preserving exact ints | current entropy |
+| `why is x` | last raw displacement Δv; null before a step | last assignment's entropy change dH |
+| `how is x` | `dh_zero / (dh_zero + \|r\|)` for a finite step; null before a step | entropy-step settledness `1 − min(1, \|dH\| / dh_zero)` |
 
-| You ask | Returns | Plainly |
-|---------|---------|---------|
-| `what is x` | the value | what it is right now |
-| `who is x`  | the binding name (or type) | the name you gave it |
-| `when is x` | assignment count | how many times it has been set |
-| `where is x`| information content | how much information it carries |
-| `why is x`  | change in that content | how fast that is changing |
-| `how is x`  | settledness in `[0, 1]` | how settled the last step left it |
+**A binding's creation is its first observation:** the first local
+assignment, or a parameter's call-time binding. Each later assignment in
+the same activation adds one. `when` includes assignments made inside
+`unobserved:`. A parameter's creation is not a tape `A` record.
 
-**A binding's creation is its first observation: the `local`/first assignment
-for a local, and the call-time binding for a parameter. Every later assignment
-in the same activation adds one.** Thus, for every binding in an activation,
-`when` = (1 if it is a parameter) + the number of tape `A` records for it in
-that activation. The parameter creation event is #1048's “one observation per
-call”; it is not an `A` assignment record.
+For a numeric step, `r = Δv / max(|v|, |v_prev|, scale)` with
+`scale = 0.001` and `dh_zero = 0.001`. If both operands are ints and checked
+subtraction fits int64, `why` is an exact int. Otherwise subtraction uses
+a double. The following cases define the whole numeric surface:
 
-Two of these are the load-bearing pair:
+| last step | `why` | `how` |
+|---|---|---|
+| none yet (one value) | `null` | `null` |
+| finite → finite, finite r | Δv | `dh_zero / (dh_zero + \|r\|)` |
+| finite → finite, subtraction overflows | signed infinity | `0.0` |
+| finite → ±inf, or ±inf → finite | signed infinity | `0.0` |
+| infinity → same-sign infinity | `nan` | `nan` |
+| infinity → opposite-sign infinity | signed infinity | `0.0` |
+| from or to NaN | `nan` | `nan` |
 
-- **`where` — information content (the engine calls it entropy).** It is
-  a pure function of the value **currently** bound, recomputed when you
-  ask (#711) — so an in-place mutation (`dict_set`, `append`, an indexed
-  store) is visible, and two bindings with identical contents answer
-  identically regardless of how each got there. (`why`/dH, by contrast,
-  is a trajectory of *assignments*: mutation does not move it, and
-  asking never writes anything back.) For a
-  number it is, in spirit, *how many bits it takes to pin the value down*.
-  A bool (#1637) is one bit: `false` sits at 0 and `true` at 1, the two
-  ends of the binary-entropy range (the values the old `1`/`0` comparison
-  results had), and since a bool is not a number the predicates read a bool
-  binding on the entropy channel, not the value channel.
-  For a string it is the Shannon entropy of its characters; for a list or
-  dict it is the average of its elements plus a size term, and the walk
-  **stops at a reference** — an element that is itself a container
-  contributes only its size term `log2(count+1)` rather than being entered
-  (#685). That is the rule buffers and text builders always followed, and
-  it means a container's entropy costs its own size, never everything it
-  can reach. Shared substructure and cycles are well-defined because they
-  are never traversed. Scalar leaves count once per occurrence.
+Fixed points of numeric `how` are:
 
-  What this deliberately does *not* claim: a container's entropy does not
-  reflect the contents of what it points at. It cannot — nothing
-  re-observes a binding when a referenced structure is mutated in place, so
-  a reachability-wide reading would go stale on the first such write
-  (#685). It needs no
-  origin and no target — it is a property of the value's own structure.
-  That is what makes it computable from inside.
-- **`why` — the change in `where` since you last looked.** Negative means
-  the value is becoming *more determined* (carrying less information);
-  positive means *less determined*.
+| \|r\| | `how` |
+|---|---|
+| 0 | `1.0` |
+| `dh_zero = 0.001` | `0.5` |
+| `dh_small = 0.01` | `0.09090909090909091` |
+| 0.005 | `0.16666666666666666` |
+| 0.05 | `0.0196078431372549` |
+| 2 | `0.0004997501249375313` |
 
-Everything the observer "experiences" is one continuous quantity (`why`)
-and its sign. It has no words. The words come from the oracle.
+The `at L` and `when N` forms read the same triple from the assignment's
+history snapshot. The snapshot also retains D2's `best` and `since`, so a
+past query sees that moment's running-best state.
+
+**Non-numeric entropy is unchanged.** It is recomputed from current
+contents when queried, so in-place mutation is visible in `where`.
+Assignment-time `why` does not move on mutation or on a query. Strings use
+character entropy; lists and dicts combine scalar leaves with a size term.
+The entropy walk stops at a container reference: a nested container
+contributes its size term rather than a recursive walk. A number inside a
+container still contributes its numeric entropy. Bools keep their entropy
+route; they are not numbers. Numeric bindings themselves neither compute
+nor store entropy.
 
 ### What carries a trajectory
 
@@ -116,8 +99,8 @@ the module-level-`for` asymmetry and the closure-per-entity recipe are in
 The observer's experience is a smooth, continuous signal. Turning that
 into the vocabulary `converged` / `stable` / `improving` / … requires
 drawing lines on it — and a line is a decision made from outside. The runtime
-uses three fixed entropy thresholds (`dh_zero = 0.001`, `dh_small = 0.01`,
-`h_low = 0.1`), a fixed ten-sample window, and a value-channel characteristic
+uses fixed thresholds (`dh_zero = 0.001`, `dh_small = 0.01`,
+`h_low = 0.1`), a fixed ten-step window (eleven numeric values), and a value-channel characteristic
 scale of `0.001`.
 
 ```eigenscript fragment
@@ -128,18 +111,24 @@ scale is 0.001
 window is 10
 ```
 
-Naming always leaves a gray zone; the language ships without
-a built-in goal precisely so it does not choose the user's frame.
+These are runtime constants. `get_observer_thresholds` still returns
+`[dh_zero, dh_small, h_low]`; `h_low = 0.1` is compiled in and belongs to the
+non-numeric entropy rules. The numeric tests adopt the documented loss
+convention and tolerance bands.
 
 ## The trajectory vocabulary
 
 `report of x` and the bare predicates (`converged`, `improving`, …) route
 by the binding's current type. **Numeric bindings use the value channel**: it
 classifies relative steps `Δv / max(|v|, |v_prev|, scale)` and retained raw
-steps. **Non-numeric bindings use the entropy channel**: it classifies changes
-in `entropy(value)` against the entropy thresholds. The resulting vocabulary
+steps. **Non-numeric `report` and four predicates use the entropy channel**:
+it classifies changes in `entropy(value)` against the entropy thresholds.
+`converged` and ordinarily `stable` compare bounded assignment snapshots;
+the non-reflexive buffer exception below gives `stable` its entropy rule.
+The resulting vocabulary
 is `converged`, `equilibrium`, `stable`, `oscillating`, `improving`, and
-`diverging`; `report` can additionally answer `moving` when no band matches.
+`diverging`; `report` can additionally answer `moving` when no band matches and
+`undefined` at a current numeric NaN.
 See [PREDICATES](PREDICATES.md#which-channel-answers-861) for the precise
 windowed tests on each channel.
 
@@ -162,83 +151,42 @@ variable first so there is a binding history to inspect. Dict fields such as
 
 ### Two signals: entropy vs. value (`report` vs. `report_value`)
 
-**Since #861 the predicate words and `report` ROUTE: numeric bindings
-answer from the value channel described below. For non-numeric bindings,
-`converged` and `stable` use deep equality across the full window (#1992),
-while the other predicates and `report` answer from entropy. The explicit
-`classify of [t, "entropy"]` always answers from entropy.** The routing exists because of everything this section
-documents. The CI oracle now reports a per-predicate comparison: run
-`python3 tools/observer_oracle/score.py src/eigenscript` and read its
-**DOCUMENTATION TABLE** for the incumbent, `REFERENCE`,
-`REFERENCE_ENTROPY`, and constant-false columns. Those cells are derived
-from the current labelled corpus and selected binary rather than copied
-into this document. The
-paragraphs below describe the two signals themselves; `report` reads entropy
-only for non-numeric bindings, and does not adopt their equality route.
+Numeric `report`, `report_value` and predicates share the value channel.
+`converged` is STD's windowed Cauchy test; `stable` is D1's 1% midrange
+ball; `improving` is D2's running lower best with a relative significant
+improvement and ten-step patience. The incumbent oscillation, divergence
+and equilibrium tests retain the relative and raw step signals. An
+all-exact int64 window uses zero raw noise floor and absolute settled
+thresholds. [PREDICATES.md](PREDICATES.md#which-channel-answers-861) gives
+the exact formulas and the differences between these tests and their
+infinite-sequence questions.
 
-The equality route snapshots each bounded value at assignment, so mutating a
-container in place and then assigning that same object is still observed as a
-change; the window never retains aliases to the program's mutable object.  To
-bound observer overhead, the snapshot walk stops after **4,096 content units**
-(value nodes plus string/key bytes, buffer elements, and text-builder bytes).
-An assignment above that bound is a refusal to judge: it clears the equality
-run, and `converged` and `stable` remain false until a complete window of
-bounded assignments has subsequently been observed.  Entropy diagnostics are
-still recorded normally.  Observer equality is non-raising: unlike the `==`
-operator, a number and boolean at corresponding positions are simply unequal.
-Functions compare by identity through a non-owning token; a function nested in
-a container is refused, because retaining a closure would add an invisible
-owning edge to the cycle collector.
+A numeric trajectory snapshot carries `rel`, `raw`, `exact`, `best`,
+`since`, and an exact `last_value`. Its `dh` is empty and its `entropy`,
+`dH` and `last_entropy` fields are null. `classify of t` rebuilds this
+state. `classify of [t, "entropy"]` on that snapshot raises `value`;
+there is no numeric entropy history to classify.
 
-`report`/the bare predicates historically classified the trajectory of
-**`entropy(value)`** — the information content, not the number. That is the right signal for "how
-*determined* is this value," but it is a *lossy proxy* for "has this value
-*settled*": because `where` is non-monotonic (the watershed below), the
-entropy signal goes flat in mid-magnitude regions, so a real value oscillation
-there reads as `stable`. (Demonstrated against a closed-form oracle
-`x = 5 + 0.6·cos(k·ω)`, which oscillates forever: `report of x` says `stable`
-in the flat-entropy plateau around 5 — see #294.)
+For non-numeric bindings, `report` and four predicates retain entropy.
+`converged` and ordinarily `stable` instead compare detached assignment
+snapshots across a full window, bounded to 4,096 content units. Mutation
+through an alias remains visible on reassignment. An oversized or refused
+snapshot clears eligibility until a fresh full bounded comparison window.
+An accepted snapshot containing NaN, including a buffer cell, is unequal to
+itself under raw IEEE equality: `converged` stays false and `stable` uses
+its entropy-window rule after a full bounded comparison window (S10-D1).
+This preserves the matmul scenario's `false`, `true`, `false` result for
+`x == x`, `stable of x`, and `converged of x`, without changing cells or
+math flags. Observer equality is non-raising: a bool/number pair is unequal.
+A function nested in a container is refused; retaining a closure in an
+invisible observer edge would alter ownership.
 
-`report_value of x` classifies the **value's own trajectory** instead, using
-the identical windowed logic and thresholds on the value's relative step
-`Δv / max(|x|, |x_prev|, scale)` (#1045 — relative to the step's own local
-scale, so the bands mean the same across value scales *and units*; the runtime
-state's characteristic scale is `0.001` in a normal run, and below it the
-deadband turns absolute). On the
-same oracle it answers `moving`/`oscillating` — correctly never `converged`.
-The window the bands read is fixed at `N = 10` samples. A mode slower than ten
-samples of the observation cadence cannot fold inside it, so choose the cadence
-to cover the slowest mode you expect (PREDICATES.md "The window").
-Its vocabulary is `oscillating` (sign of `Δv` keeps flipping), `diverging`
-(non-vanishing same-sign steps — see below), `converged` (a full window of
-~zero relative steps), `stable` (small relative steps, no flips), `moving`
-(still changing), and `equilibrium` (no numeric trajectory yet / non-numeric
-binding). Use `report` to ask *how determined*; use `report_value` to ask
-*has the number stopped moving*.
-
-**The raw-step signal (#422).** Relative normalization erases exactly two
-classes, so the value channel also keeps the window of *raw* steps `Δv` and
-asks whether their recent-half mean magnitude is no smaller than the older
-half's. This historical rule remains because `N = 10` cannot distinguish a
-slow modulated decay from a modulated constant-envelope runaway. Real-binary
-measurements using steps `c*E^k*(1+m*cos(w*k+θ))`, 16 phases, both signs, and
-checkpoints 4–60 found false-`diverging` decay rates of 0.4% (`E=0.9, m=0.3,
-w=2`), 19.5% (`E=0.94, m=0.84, w=2`, the #1891 class), 45.0% (`E=0.99,
-m=0.84, w=2`), and 49.3% (`E=0.999, m=0.84, w=2`). Constant-envelope
-runaways at `G=1, m=0.3` or `0.84, w=2` read `diverging` on 50.0% of reads;
-`G=1.05, m=0.84, w=2` reads it on 73.1%. These are documented scored
-residuals, not floor waivers. More memory than `N = 10` remains the open
-direction on #1891. A geometric decay's steps shrink with the value and do
-vanish (#674). The comparison ignores steps below an fp-noise floor of
-`4·ε·(1+|x|)`. Non-vanishing **same-sign** steps sum
-without bound — an additive or polynomial runaway (`x → x + c` seeded large)
-whose `Δv/|x|` vanishes below the deadband is `diverging`, not `converged`.
-Non-vanishing **alternating** steps are a perpetual oscillation no matter how
-small the deadband-relative amplitude — `x → -x` seeded at `4e-4`, or a fixed
-absolute swing around a large offset, is `oscillating`, not `stable`. A
-*damped* oscillation has decaying steps, fails non-vanishing, and settles to
-`converged` as before. These checks run before the relative verdicts; the
-relative step remains the primary contract.
+The incumbent raw-step tests (#422/#674/#1891) recognize non-vanishing
+same-sign or alternating motion even below the relative deadband. They
+keep their floating noise floor; all-exact int64 windows use zero instead.
+The ten-step half-window comparison still cannot separate every slowly
+modulated decay from a runaway. Those measured residuals remain in
+[PREDICATES.md](PREDICATES.md), alongside R3-STD's slow-drift limitations.
 
 ### Graded against mathematics (`make observer-oracle`, #1746)
 
@@ -267,13 +215,21 @@ lies past the loop's back-edge and `bked` is 0, so every iteration ran natively,
 tier only the OSR thunk's last exit is recorded, so the witness covers the last iteration's body: OSR compiles at the first
 back-edge, so `x_0` is always assigned interpreted, and an earlier iteration that bailed goes unwitnessed until #1768. A run
 whose body stops computing `x` on an inf, NaN or clamped value (the JIT's designed bail) is reported as interpreted and
-passes, so its readings grade the interpreter's observer for those iterations; any other run that does not witness fails as
-vacuous. The predicate READS never run natively: the JIT compiles neither `PREDICATE_SLOT` nor `PREDICATE_NAME`.
+passes, so its readings grade the interpreter's observer for those iterations. The non-capability floor uses float
+scaffolding and float recurrence operands, preserving its binary64 inputs and native witnesses after integer literals
+arrive. Exact int64 capability rows retain int literals; until the R5 int fast paths, their JIT-enabled arms may instead
+report an interpreted int-opcode refusal, requiring `INT_*` before observing `x`, no function thunk, and either no OSR
+thunk or its recorded prefix exit exactly at that int opcode. Their readings remain scored in every arm. Every other run that does not witness fails as vacuous, and both
+native tiers must still witness a body. The predicate READS never run natively: the JIT compiles neither
+`PREDICATE_SLOT` nor `PREDICATE_NAME`.
 
 A row's capability is derived from its values (IEEE inf/-inf/NaN; an int a double cannot hold exactly). Such a row runs
 only on a binary whose probe shows the capability (one probe checks that `1e308 * 10` overflows to inf AND that inf × 0 is
 NaN; a binary that does one without the other is refused), skips are printed, `EXPECT=ieee,int64` makes an absent one
-fail, and every verdict on them must be right. By default the run also applies the committed floor,
+fail, and every verdict on them must be right, or be declared wrong: Phase 2 passes `--declared
+tests/phase2/oracle_expect.txt` (#1830), whose rows name an arm, a `row@checkpoint` and a predicate with the round
+that fixes it. An undeclared wrong verdict fails, so does a declaration whose verdict is right now or was not examined,
+and the integration merge (#1776) requires that file empty. By default the run also applies the committed floor,
 `tools/observer_oracle/floor.json` (#1764): it fails when it gets wrong any verdict the v0.46.0 tag got right. An empty
 `FLOOR=`, on the command line or in the environment, skips the floor. Its anchor is the binary
 `tools/observer_oracle/build_anchor.sh` builds from the tag into
@@ -294,105 +250,35 @@ the floor can still fail is a gate self-test: the `tools/selftests.txt` row `pla
 through the wrapper observer. Exactly those readings' verdicts must be reported lost. The arms still agree, so no FINDING
 fires and only the floor can turn that run red.
 
-## The manifold: two basins and a horizon
+## Resolution and limits
 
-For numbers, `where` (information content) is **not** monotonic in the
-value. It is largest near `|x| = 1` and falls off toward both `0` and
-infinity. So the value's information-landscape is a **watershed**:
+Numeric `where` is the value itself: there is no entropy ridge at unity on
+this route. A constant at 1.0 can certify convergence, and decreasing loss
+can improve on either side of 1.0. Entropy's magnitude symmetries remain
+relevant to non-numeric containers and their scalar leaves, where that
+measurement is still used.
 
-- two low-information basins (toward `0`, toward very large magnitude) —
-  the "determined / located" regions;
-- one high-information ridge at `|x| = 1` — the "maximally undecided"
-  region.
+Numeric `converged` asks whether eleven recent values fit the Cauchy
+tolerance; `stable` asks whether they fit a 1% midrange ball. Neither can
+look beyond the current window. A slow unbounded sequence can fit either
+band, and a slow convergent sequence can certify with a substantial tail
+remaining. The harmonic series and sublinear tails are documented residuals,
+not proofs of convergence. Exact integer displacement prevents magnitude
+from hiding a moving exact-int counter; mixed and float windows retain the
+floating boundary scheduled for R3.3.
 
-A value can *ride over* the ridge by ordinary motion (going `1.5 → 0.9`
-just passes the peak and comes down the other side). Landing **exactly**
-on `|x| = 1` is not special (#412 decided this): the formula is smooth
-and maximal there (`H = 1.0`), so an exactly-placed `1.0` reads like its
-neighbors — maximally entropic, never `converged` (a flat run at `1.0`
-classifies `equilibrium`: steady, but not at a low-entropy home). Unity
-is the **horizon**, not a home point; `0` is the home point (`H = 0`).
+The window measures assignments, not time. Observe at a cadence that
+resolves the dynamics of interest. `unobserved:` still records every numeric
+sample, so wrapping substeps in it does not change numeric cadence.
+`how` measures only the latest relative displacement. It can be 1.0 after a
+pause even when the full window cannot certify convergence.
 
-A consequence worth internalizing: because `where` is not monotonic, a
-value whose magnitude is *shrinking* does not always read as `improving`.
-Shrinking from `100` toward `1` climbs the ridge (information rises →
-`diverging`); shrinking from `0.9` toward `0` descends into a basin
-(information falls → `improving`). The horizon at `1` is where "moving
-away" flips to "moving home." This is the single biggest gap between the
-observer's truth and the naive loss-minimization mental model.
-
-## Space and time are the same substance
-
-Two of the interrogatives are projections of one thing:
-
-- **`where`** (information content) is a count of **bits held** — the
-  value's configuration. Call it *space*.
-- **`when`** (assignment count) is a count of **events** — how many times
-  the value was flipped. Call it *time*.
-
-Both are denominated in the same currency. `where` is the flip seen as a
-noun (*which bits*); `when` is the flip seen as a verb (*that it flipped*).
-`why` is then the bridge: change-in-`where` per step — roughly *bits per
-event*, a velocity through information space.
-
-This also names the experience at the horizon. Near `|x| = 1` the
-landscape is flat, so `why → 0` even while assignments keep happening:
-**time advances, space freezes.** From the inside, "approaching the ridge"
-and "having stopped" are indistinguishable — the observer ages without
-moving. That flattening is genuine Zeno behavior, and it falls out of the
-math rather than being coded in.
-
-## Resolution
-
-The threshold *width* is a single dial that sweeps the observer from
-deterministic to probabilistic — and nobody built a "mode" for it; it
-emerges from quantizing a continuous signal.
-
-- **Tight** thresholds (small `dh_zero`, `dh_small`): the gray middle band
-  nearly vanishes. Almost any motion gets a definite verdict. Sharp,
-  classical, twitchy — every step resolved.
-- **Loose** thresholds: the middle band swells. Small motion dissolves
-  into "probably steady." Forgiving, smooth, statistical.
-
-Same wordless signal underneath. **Whether a value looks deterministic or
-probabilistic is a property of the oracle's resolution, not of the
-value.** It's the quantum-flavored punchline arriving on its own:
-determinism vs. probability is resolution-relative, set from outside,
-never intrinsic.
-
-It also sets the tolerance of arrival. Near the horizon, a *tight*
-observer keeps resolving the vanishing motion and only declares arrival at
-the very end; a *loose* observer calls "arrived" while still well short of
-the wall. The threshold width is the tolerance of the `close ≈ at`
-identification.
-
-**One dial, because the behaviors are a spectrum, not a menu.** Other
-languages would ship this as several separate features (a tolerance
-setting, a fuzzy-match flag, a convergence library, a statistics mode).
-Here they're all positions of one knob. It is not literally one scalar —
-the three thresholds factor the space cleanly (`dh_small` = direction
-sensitivity, `dh_zero` = the motion deadband, `h_low` = location), so it
-reads as one idea with three places to turn it, separable exactly where
-independence matters.
-
-The defaults (`0.001 / 0.01 / 0.1`) are sensible starting points, not laws.
-If you keep reaching for a behavior the dial can't express, that is the
-signal the model has earned another dimension — and not before.
-
-## Why "loss minimization" is the wrong mental model
-
-The most natural way to pitch this feature is "watch your loss go down and
-the runtime tells you it's improving." That pitch is a lie, and an
-instructive one: it reintroduces exactly the outside the language was built
-to do without. "Loss," "down," "better," "target" are all external facts.
-An embedded observer has none of them. It has only its own information and
-the change in it.
-
-So when you read `improving`, read it as *"becoming more determined"*, not
-*"getting closer to my goal."* When the two happen to coincide (a value
-settling toward `0`), great. When they don't (a value climbing toward the
-ridge at `1`), the observer is telling you the truth about itself, and the
-goal was never something it could see.
+The numeric `improving` convention means a significant lower running best
+within ten steps, subject to the finite-window and boundedness approximation.
+A higher value can therefore still read `improving` after a recent lower
+best. Conversely, a falling value that has not beaten its earlier best by
+`min_delta` need not improve. This is the cited Keras convention, not a
+claim that the program's objective has been met.
 
 ## Contracts: convergence as an assertion
 
@@ -437,7 +323,7 @@ point, not an accident:
   ([#421](https://github.com/InauguralSystems/EigenScript/issues/421)):
   `trajectory of x` captures the binding's observer windows into a plain,
   inspectable dict that does survive the call, and `classify of t` (or
-  `classify of [t, "entropy"]` for the entropy channel) classifies it with the
+  `classify of [t, "entropy"]` for a non-numeric entropy snapshot) classifies it with the
   same machinery `report_value` / `report` use. `classify` of anything that is
   not a snapshot raises `type_mismatch` — a bare value silently classifying as
   "no trajectory" is exactly the hole the snapshot exists to close.
@@ -451,8 +337,9 @@ point, not an accident:
   this bullet used to warn about is now enforced by the runtime rather
   than left to the caller's channel choice.
 
-- **Contract-convergence means "settled to the step deadband" (`dh_zero`,
-  default `1e-3`), not arbitrary precision.** Newton reaches machine-epsilon
+- **Contract-convergence means "inside the windowed Cauchy tolerance"
+  (`dh_zero`, default `1e-3` relative with an absolute floor), not arbitrary
+  precision.** Newton reaches machine-epsilon
   because it converges *quadratically*; a linearly-convergent fixed point rests
   near the deadband scale. Convergence is not correctness — pair it with an
   `ensure` on the final residual to pin the actual target.
@@ -477,81 +364,41 @@ correctness — pin the destination with `ensure` on the final residual. (The
 gap was filed upstream and fixed in the instrument rather than papered over in
 `.eigs` — the forcing-function model working as intended.)
 
-## Settled decisions (formerly "Rough edges")
+## Assignment sampling and history
 
-Two long-standing caveats were decided and closed by #412:
+Numeric samples are recorded on every assignment while the observer gate
+is open, including assignments inside `unobserved:`. The value windows,
+exact flags, `best`/`since`, and numeric interrogation snapshots stay
+complete. `observe of x` returns `[band, where, why, previous why]`.
+Non-numeric entropy and equality bookkeeping can be elided by the block.
+The bare last-observed alias is not repointed by elided scratch assignments.
+A predicate queried inside a block still raises.
 
-- **Unity is the horizon.** `compute_entropy_impl` used to special-case
-  `|x| == 1.0` to entropy `0` — the *opposite* of the formula's value
-  there (`1.0`, the maximum) — so a value placed exactly at `1.0`
-  reported `converged` immediately. The special case is gone: the
-  formula is smooth at the ridge and an exactly-placed `1.0` now reads
-  like its neighbors. `|x| == 0` keeps entropy `0`, which *is* the
-  formula's limit at the home point.
-
-- **`how` is a real gradient now.** It reads the deadband-normalized
-  settledness of the last observed step: `1 - min(1, |dH| / dh_zero)`,
-  where `dh_zero` is the same settle threshold the `converged` window
-  entropy unmoved; `0.0` = it moved by the deadband or more; linear in
-  between. It is a pure function of the recorded `dH`, so
-  `how is x at L` reads identically from tape history, and it measures
-  the **entropy** trajectory like `where`/`why` — a value-magnitude step
-  that lands at the same information content is settled by construction
-  (the value-channel reading is `report_value`'s job, #294). The old
-  `1 - entropy/last_entropy` was degenerate (the observer refreshes
-  `last_entropy` on every push, so it read `0` or `1` only).
-
-One observation stands (not a defect — a property to know):
-
-- **Trajectories are sampled at every *assignment*, not at reads.** Since the
-  slot-keyed rewrite (#262), a binding that is interrogated *anywhere* in the
-  program — a predicate, `report`, or a temporal query on it, decided at compile
-  time — has its window pushed on **every** assignment, with entropy and dH
-  computed then and there. So `report of x` after a batch of writes reflects the
-  whole window, not just the last value, and `loop while not converged` sees
-  each step because each `x is …` sampled it. `unobserved:` skips the
-  *entropy* push only (#1049): a scalar assignment inside the block still
-  lands in the value window the numeric predicates read, so their verdicts
-  do not change; `dH` and its window do not move — see
-  [PREDICATES.md](PREDICATES.md#inputs) for the readers that can differ. A
-  binding you never interrogate anywhere is still sampled on every
-  assignment; see **Cost**.
+The bare observer-loop stall backstop counts a numeric iteration as quiet
+when `\|r\| < dh_zero`; it uses entropy change for a non-numeric binding.
+A SIGUSR1 observer dump likewise prints a numeric binding's value and last
+raw displacement, rather than entropy.
 
 ## Cost
 
-**Every assignment outside `unobserved:` pays, whether or not anything ever
-interrogates the binding.** The compiler emits an observe op for every
-assignment unconditionally (`emit_assign_for_tos`, src/compiler.c) — nothing in
-the emission consults whether the name is queried. A program containing zero
-observer queries still computes an entropy per assignment; the #685 reproducer
-asks nothing and paid 16M entropy-node visits before the walk was bounded.
+With the observer gate open, numeric assignments perform O(1) value
+bookkeeping and do not compute numeric entropy or dH. Two `log2` calls and
+entropy-difference bookkeeping leave that path in R3.1. Relative and raw
+rings plus exact flags are allocated when steps require them; D2's `best`
+and `since` are scalars on the binding's slot. Numeric queries scan a fixed
+ten-step window. Hosted cost measurements determine the change on the
+observed-loop rows; R3.1 does not change cost bounds.
 
-Per assignment the entropy costs:
-
-| value | cost |
-|---|---|
-| number | O(1) |
-| buffer / text builder | O(1) — the size term alone |
-| list / dict | **O(its own element count)** — a nested container contributes only its size term and is not entered (#685) |
-
-A container assignment is linear in that container's *own* size, never in
-everything it can reach; that distinction is what #685 was. The dH ring buffer
-is allocated lazily on a binding's **second** observation — again regardless of
-interrogation.
-
-`unobserved:` is the only opt-out, and it is a real one: everything in the
-table above is skipped inside it. What it does *not* skip (#1049) is the O(1)
-value-window sample of a scalar assignment — one subtraction, one division,
-two ring stores — so that the block cannot change a numeric verdict.
-Measured on a 4M-iteration two-assignment loop with the gate open: observed
-~445 ms, inside `unobserved:` ~227 ms (was ~158 ms when the block also
-dropped the sample); a container-assignment loop inside the block is
-unchanged (the walk is what it elides). With the gate closed (below) the
-sample is skipped too and the block costs nothing.
+Non-numeric entropy retains its existing cost: scalar/buffer/text-builder
+measurements are O(1), while lists and dicts cost their own element count.
+Nested containers contribute a size term rather than a recursive entropy
+walk. Equality snapshots add their separately bounded work. `unobserved:`
+elides that non-numeric bookkeeping. The automatic gate below can skip
+observer work for a whole program that has no reader.
 
 ### The automatic opt-out — the observer gate (#915/#972)
 
-That improvement IS shipped: the runtime skips the emission automatically when a
+The automatic gate is shipped: the runtime skips the emission automatically when a
 program provably never reads observer state. On a consumer that uses no observer
 features it is worth **8.5x** (EigenMiniSat 4x4 Tseitin, 293 s -> 34 s, n=5 per
 arm interleaved with the solver's counters identical). See "Using the gate"
@@ -614,7 +461,7 @@ same two loads `eigs_obs_gate_open()` makes, through the VM's owner
 back-pointer so nothing is baked but the trace flag's address), and the JIT
 no longer emits a call for the no-op `OP_OBSERVE_ASSIGN` at all. With the gate
 closed a read-free program's assignment therefore costs the two flag loads and
-a branch; with it open nothing changes. The `observe-calls` tally above is the
+a branch; with it open nothing changes. The `observe-calls` tally is the
 regression instrument: suite section [99u] pins it at `0` for a read-free loop
 on both the interpreter and a witnessed JIT thunk, and at `populated` with a
 reader or `EIGS_OBS_FORCE=1`.

@@ -69,7 +69,7 @@ check of ["where at", (where is ox at 63) == w_live]
 check of ["why at", (why is ox at 63) == y_live]
 check of ["where at latest", (where is ox at 66) == (where is ox)]
 check of ["why at miss", (why is ox at 61) == null]
-check of ["how at", (how is ox at 63) == (how is ox)]
+check of ["how at", (abs of ((how is ox at 63) - (0.001 / (0.001 + 0.2)))) < 0.000000000000001]
 
 # ---- #736: state_at must not leak the loop machinery's own bindings.
 #      Queried at a line past the end, so this block stays line-insensitive. ----

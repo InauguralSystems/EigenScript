@@ -1,0 +1,7 @@
+# R1.6 behaviour-table probe: join (other; elements via value_to_string (N6))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of (join of [[1, 9007199254740993, 2.5, 3.0], ","])

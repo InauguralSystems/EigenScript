@@ -130,7 +130,6 @@ define is_alpha(value) as:
     lc is str_lower of value
     for i in range of (len of lc):
         c is char_at of [lc, i]
-        code is num of c
         # a-z check via lowercase comparison
         if (not (contains of ["abcdefghijklmnopqrstuvwxyz", c])):
             return false

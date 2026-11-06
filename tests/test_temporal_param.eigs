@@ -116,32 +116,32 @@ assert_true of [(plain of 1) == 1, "no interrogation: same restore (#1064)"]
 # the tape. Before the fix the inline SET_LOCAL recorded nothing, so history
 # froze at the OSR threshold: prev of t answered 4999, not 199999.
 define hot(t) as:
-    for i in range of 200000:
-        t is t + 1
+    for i in range of 200000.0:
+        t is t + 1.0
     return prev of t
 define hot_local(q) as:
     local t is q
-    for i in range of 200000:
-        t is t + 1
+    for i in range of 200000.0:
+        t is t + 1.0
     return prev of t
-assert_true of [(hot of 0) == 199999, "OSR-compiled slot writes reach the tape (param)"]
-assert_true of [(hot_local of 0) == 199999, "local twin of (6)"]
+assert_true of [(hot of 0.0) == 199999.0, "OSR-compiled slot writes reach the tape (param)"]
+assert_true of [(hot_local of 0.0) == 199999.0, "local twin of (6)"]
 define hot_what(t) as:
-    for i in range of 20000:
-        t is t + 1
-    return what is t at 131
-assert_true of [(hot_what of 0) == 20000, "what is <param> at <hot line> reads the LAST write, past OSR"]
+    for i in range of 20000.0:
+        t is t + 1.0
+    return what is t at 131.0
+assert_true of [(hot_what of 0.0) == 20000.0, "what is <param> at <hot line> reads the LAST write, past OSR"]
 define hot_bind(p) as:
-    for p in range of 20000:
-        p is p + 0
+    for p in range of 20000.0:
+        p is p + 0.0
     return prev of p
 define hot_bind_local(q) as:
     local p is q
-    for p in range of 20000:
-        p is p + 0
+    for p in range of 20000.0:
+        p is p + 0.0
     return prev of p
-assert_true of [(hot_bind of 1) == (hot_bind_local of 1), "hot binder over a param == its local twin"]
-assert_true of [(hot_bind of 1) == 19999, "...and the value itself (main froze the tape at OSR: 19998)"]
+assert_true of [(hot_bind of 1.0) == (hot_bind_local of 1.0), "hot binder over a param == its local twin"]
+assert_true of [(hot_bind of 1.0) == 19999.0, "...and the value itself (main froze the tape at OSR: 19998)"]
 
 # ---- (6b) the history table is keyed by NAME across all frames. A callee's
 # same-named SLOT local must not rewrite the caller's `prev` -- only a chunk

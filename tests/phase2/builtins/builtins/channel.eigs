@@ -1,0 +1,12 @@
+# R1.6 behaviour-table probe: channel (int-preserving; handle dict with int id/gen fields)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+c is channel of null
+print of [nt of c["_channel_id"], nt of c["_channel_gen"]]
+send of [c, 5]
+v is recv of c
+print of [v, nt of v]
+close_channel of c

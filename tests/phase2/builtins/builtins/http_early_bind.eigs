@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: http_early_bind (int-requiring; port; PROFILE server (make server); run in a child (it prints its cwd on stdout)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define run_child(name, lines, secs) as:
+    local f is p + "/" + name + ".eigs"
+    write_text of [f, join of [lines, "\n"]]
+    local r is exec_capture of [[exe_path of null, f], secs]
+    for line in split of [r[1], "\n"]:
+        if starts_with of [line, "R16|"]:
+            print of (substr of [line, 4, 100000])
+    print of [name + "-rc", r[0]]
+p is env_get of "EIGS_PROBE_TMP"
+run_child of ["early", ["define say(v) as:", "    print of (\"R16|\" + (str of v))", "try:", "    say of [\"fraction-answer\", http_early_bind of 0.5]", "catch e:", "    say of [\"port-fraction\", e.kind, contains of [e.message, \"capability\"]]", "try:", "    say of [\"65536-answer\", http_early_bind of 65536]", "catch e:", "    say of [\"port-65536\", e.kind, contains of [e.message, \"capability\"]]", "try:", "    say of [\"integral-float\", http_early_bind of 0.0]", "catch e:", "    say of [\"integral-float-error\", e.kind, contains of [e.message, \"capability\"]]"], 5]

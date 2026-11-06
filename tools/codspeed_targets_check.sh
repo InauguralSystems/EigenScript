@@ -27,7 +27,7 @@ CFG="${CODSPEED_CFG:-$ROOT/codspeed.yml}"
 WF="${CODSPEED_WF:-$ROOT/.github/workflows/codspeed.yml}"
 GUARD="${CODSPEED_GUARD:-$ROOT/tools/codspeed_unit_guard.py}"
 
-TARGET_COUNT=13                                   # the set is the claim
+TARGET_COUNT=20                                   # the set is the claim
 CONSUMER_IDS="dmg-cpu-instrs dmg-cpu-instrs-vm"   # the rows a proxy cannot replace
 CONSUMER_DIR=".codspeed-consumers/DMG"            # what the fetch step populates
 

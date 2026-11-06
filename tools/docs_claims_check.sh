@@ -85,20 +85,25 @@ def derived_counts():
         red('COUNTS examined 0')
 
 
-def strict_default_wording():
-    """Keep builtin error rows and graphics/audio strict-by-default."""
+def strict_opt_in_wording():
+    """Keep graphics/audio argument prose aligned with N11's strict opt-in.
+
+    R2.2 changes the shared state.c strict default to 0. Numeric N5/Q7
+    validation that raises in both modes remains separate from these legacy
+    type/shape guards; this policy retains its two graphics/audio sections.
+    """
     text = Path('docs/BUILTINS.md').read_text(encoding='utf-8')
-    conditional = re.compile(
-        r'\braises?\s+under\s+(?:strict\b|`EIGS_STRICT=1`)|'
-        r'\bunder\s+`EIGS_STRICT=1`\s+(?:(?:it|both|they)\s+)?raises?\b', re.I)
+    default_strict = re.compile(
+        r'\bstrict(?:\s+mode)?\s+is\s+(?:the\s+)?default\b|'
+        r'\bstrict[- ]by[- ]default\b|\bdefault\s+strict(?:\s+mode)?\b', re.I)
     lines = text.splitlines()
     for lineno, line in enumerate(lines, 1):
-        if conditional.search(line):
-            red(f'docs/BUILTINS.md:{lineno}: describes strict errors as conditional; '
-                'state the default first and the EIGS_STRICT=0 fallback second (#1396)')
-    print(f'  STRICT DEFAULT ROWS: examined {len(lines)} line(s)')
+        if default_strict.search(line):
+            red(f'docs/BUILTINS.md:{lineno}: describes strict mode as the default; '
+                'EIGS_STRICT=1 is opt-in (N11, R2.2)')
+    print(f'  STRICT OPT-IN ROWS: examined {len(lines)} line(s)')
     if not lines:
-        red('STRICT DEFAULT ROWS examined 0 lines')
+        red('STRICT OPT-IN ROWS examined 0 lines')
     headings = ('Graphics (SDL2) Extension', 'Audio (additional)')
     sections = collections.defaultdict(list)
     for match in re.finditer(r'^## ([^\n]+)\n(.*?)(?=^## |\Z)', text, re.M | re.S):
@@ -107,22 +112,25 @@ def strict_default_wording():
     examined = 0
     for heading in headings:
         if len(sections[heading]) != 1:
-            red(f'docs/BUILTINS.md: strict-default section {heading!r} must exist exactly once')
+            red(f'docs/BUILTINS.md: strict-opt-in section {heading!r} must exist exactly once')
             continue
         examined += 1
         section = sections[heading][0]
-        stale = re.findall(r'(?:under|with)\s+`EIGS_STRICT=1`|with the flag off', section, re.I)
+        stale = re.findall(r'\braises?\s+by\s+default\b|'
+                           r'\bby\s+default\s+every\s+wrong-typed\s+row\s+must\s+raise\b',
+                           section, re.I)
         if stale:
-            red(f'docs/BUILTINS.md: {heading} describes strict as opt-in: ' + ', '.join(stale))
+            red(f'docs/BUILTINS.md: {heading} describes strict argument errors as default: ' + ', '.join(stale))
         if heading == headings[0]:
-            paragraph = re.search(r'\*\*Wrong-typed and wrong-arity arguments \(#1007\)\.\*\*(.*?)(?=\nTwo shapes are deliberately|\Z)', section, re.S)
+            paragraph = re.search(r'\*\*Wrong-typed and wrong-arity arguments \(#1007\)\.\*\*(.*?)(?=\n\n|\Z)', section, re.S)
             if not paragraph:
                 red('docs/BUILTINS.md: gfx wrong-argument paragraph is missing')
-            elif not re.search(r'\bby default\b', paragraph[1], re.I) or '`EIGS_STRICT=0`' not in paragraph[1]:
-                red('docs/BUILTINS.md: gfx paragraph must name the strict default and '
-                    'EIGS_STRICT=0 compatibility mode (#1428)')
-    print(f'  STRICT DEFAULT: examined {examined} section(s), declared {len(headings)}')
-
+            elif ('`EIGS_STRICT=1`' not in paragraph[1] or
+                  '`EIGS_STRICT=0`' not in paragraph[1] or
+                  not re.search(r'\bby default\b', paragraph[1], re.I)):
+                red('docs/BUILTINS.md: gfx paragraph must name explicit EIGS_STRICT=1 '
+                    'and the default EIGS_STRICT=0 stand-ins (N11, R2.2)')
+    print(f'  STRICT OPT-IN: examined {examined} section(s), declared {len(headings)}')
 
 def bool_result_wording():
     """Reject numeric result prose for builtins whose C constructors are bool.
@@ -566,19 +574,19 @@ def selftest():
             original = p.read_text()
             for label, anchor, replacement, witness in [
                 ('strict-intro', '**Wrong-typed and wrong-arity arguments (#1007).**',
-                 '**Wrong-typed and wrong-arity arguments (#1007).** Under `EIGS_STRICT=1` invalid input raises.', 'describes strict as opt-in'),
+                 '**Wrong-typed and wrong-arity arguments (#1007).** Invalid input raises by default.', 'describes strict argument errors as default'),
                 ('strict-later-gfx', '**Text rendering and fonts (#593).**',
-                 '**Text rendering and fonts (#593).** With `EIGS_STRICT=1` invalid input raises.', 'describes strict as opt-in'),
+                 '**Text rendering and fonts (#593).** Invalid input raises by default.', 'describes strict argument errors as default'),
                 ('strict-audio', '## Audio (additional)',
-                 '## Audio (additional)\nUnder `EIGS_STRICT=1` invalid input raises.', 'describes strict as opt-in'),
+                 '## Audio (additional)\nInvalid input raises by default.', 'describes strict argument errors as default'),
                 ('strict-core-row', '## Core Language',
-                 '## Core Language\nA bad argument answers `0`; under `EIGS_STRICT=1` it raises.', 'describes strict errors as conditional'),
-                ('strict-audio-short', 'A **short or non-list** argument also raises by default;',
-                 'A **short or non-list** argument also raises under strict;', 'describes strict errors as conditional'),
+                 '## Core Language\nStrict mode is the default for bad arguments.', 'describes strict mode as the default'),
+                ('strict-audio-short', 'A **short or non-list** argument also raises under `EIGS_STRICT=1`;',
+                 'A **short or non-list** argument also raises by default;', 'describes strict argument errors as default'),
                 ('strict-section-missing', '## Audio (additional)',
-                 '## Removed audio heading', "strict-default section 'Audio (additional)' must exist exactly once"),
+                 '## Removed audio heading', "strict-opt-in section 'Audio (additional)' must exist exactly once"),
                 ('strict-gfx-section-missing', '## Graphics (SDL2) Extension',
-                 '## Removed graphics heading', "strict-default section 'Graphics (SDL2) Extension' must exist exactly once"),
+                 '## Removed graphics heading', "strict-opt-in section 'Graphics (SDL2) Extension' must exist exactly once"),
             ]:
                 assert original.count(anchor) == 1, (label, anchor)
                 p.write_text(original.replace(anchor, replacement, 1))
@@ -587,7 +595,7 @@ def selftest():
                 passed += ok
                 print(f'SELFTEST: {label}: {"PASS" if ok else "FAIL"}')
                 p.write_text(original)
-            p.write_text(original + '\nAn explicit `EIGS_STRICT=1` setting keeps the default strict mode.\n')
+            p.write_text(original + '\nAn explicit `EIGS_STRICT=1` setting opts into strict mode.\n')
             result = gate()
             ok = result.returncode == 0
             passed += ok
@@ -649,7 +657,7 @@ def main():
     stdlib_headings()
     changelog_version()
     derived_counts()
-    strict_default_wording()
+    strict_opt_in_wording()
     bool_result_wording()
     check_floors()
     for kind in ('PATHS', 'FLAGS', 'TARGETS', 'NAMES', 'DOC ENROLMENT'):

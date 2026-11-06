@@ -3,7 +3,7 @@
 # Use report of x to get the status, or check it in loop conditions.
 
 # ============================================================
-# 1. converged — value has stopped changing
+# 1. converged — full-window diameter fits the settled tolerance
 # ============================================================
 
 # Newton's method: the runtime decides when guess has converged.
@@ -48,7 +48,8 @@ print of ("Converged at step " + (str of step) + " signal=" + (str of signal))
 # ============================================================
 
 # Detect when a decaying value enters the stable band.
-# stable != converged — stable means "still moving but slowly."
+# stable tests the wider 1% midrange band; predicates can overlap.
+# report prioritizes improving and converged before stable.
 print of ""
 print of "--- stable as early detection ---"
 value is 50.0
@@ -68,11 +69,11 @@ loop while status != "converged":
 print of ("Converged at step " + (str of step) + " value=" + (str of value))
 
 # ============================================================
-# 4. improving — entropy is decreasing
+# 4. improving — a significant new running lower best remains recent
 # ============================================================
 
-# Multiplicative decay: the observer sees entropy decrease and reports "improving".
-# This is a natural trajectory that passes through improving on its way to converged.
+# Positive multiplicative decay sets lower running bests under D2.
+# Improving can overlap convergence; report gives improving priority until patience expires.
 print of ""
 print of "--- improving as progress monitor ---"
 value is 80.0
@@ -123,7 +124,7 @@ print of ("Final loss: " + (str of loss))
 # ============================================================
 
 # An unstable learning rate causes the value to oscillate.
-# The runtime detects sign-flipping dH and reports "oscillating".
+# The runtime detects alternating or folding value motion and reports "oscillating".
 # React by halving the learning rate until it stabilizes.
 print of ""
 print of "--- oscillating as instability detector ---"

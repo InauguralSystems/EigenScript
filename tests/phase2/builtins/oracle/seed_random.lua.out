@@ -1,0 +1,3 @@
+seeds-2^53+1-and-2^53-differ	true
+false	bad argument #1 to 'math.randomseed' (number has no integer representation)
+integral-float-seed	true

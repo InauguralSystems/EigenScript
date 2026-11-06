@@ -2,13 +2,16 @@
 # num_read_check.sh -- #1637 round 4: raw number reads are TOKENS, and every
 # token is reviewed.
 #
-# The Value union's number member is `num_` and the EigsSlot union's double is
-# `d_`, so no unreviewed spelling compiles. Code reaches a number in exactly
-# two ways:
-#   - the checking accessors eigs_num_arg / eigs_list_num / eigs_opt_num,
+# The Value union's number members are `f64_` (a VAL_FLOAT) and `i64_` (a
+# VAL_INT), and the EigsSlot union's double is `d_`, so no unreviewed spelling
+# compiles. #1758 R1.2z removed the deprecated numeric aliases; the scanner
+# also catches their reintroduction before compilation. Code reaches a number in
+# exactly two ways:
+#   - the checking accessors eigs_float_arg / eigs_list_float / eigs_opt_float,
 #     which raise a type error on a bool or any other non-number;
-#   - the raw macros VAL_NUM_RAW(v) / SLOT_NUM_RAW(s) (and VAL_NUM_OFFSET for
-#     JIT-emitted loads), for a value whose type is already proven.
+#   - the raw macros VAL_F64_RAW(v) / VAL_I64_RAW(v) / SLOT_F64_RAW(s) (and
+#     VAL_F64_OFFSET for JIT-emitted loads), for a value whose type is
+#     already proven.
 # This gate enumerates every raw token in src/*.c and src/*.h. It attributes
 # each one to its enclosing function, or to its #define for a macro. Then it
 # requires each (file, function) to appear in tools/num_read_allowlist.txt as
@@ -17,7 +20,7 @@
 # a count and goes red until someone reviews it.
 #
 # It also fails on:
-#   - `data.num_` / `.d_` spelled out anywhere except the macro definitions
+#   - raw Value payload members / `.d_` outside the macro definitions
 #     (a bypass of the macros);
 #   - a bare `->data.builtin(` call: every builtin call must pass the bool
 #     gate, eigs_call_builtin;
@@ -55,6 +58,22 @@ trap 'rm -f "$TMP" "$TMP.b" "$TMP.c"' EXIT
 for f in "$SRC_DIR"/*.c "$SRC_DIR"/*.h; do
     [ -f "$f" ] || continue
     awk -v FILE="$(basename "$f")" -v BYPASS="$TMP.b" '
+    # Attributes may precede the function name. Skip their balanced argument
+    # lists for attribution only; raw-token and bypass scanning stay intact.
+    function without_attributes(s, start, open, depth, i, c, end) {
+        while (match(s, /__attribute__[ \t]*\(/)) {
+            start = RSTART; open = RSTART + RLENGTH - 1; depth = 1; end = 0
+            for (i = open + 1; i <= length(s); i++) {
+                c = substr(s, i, 1)
+                if (c == "(") depth++
+                else if (c == ")") depth--
+                if (depth == 0) { end = i; break }
+            }
+            if (!end) return s
+            s = substr(s, 1, start - 1) " " substr(s, end + 1)
+        }
+        return s
+    }
     {
         line = $0
         # strip comments (block comments carry state across lines) and
@@ -64,23 +83,24 @@ for f in "$SRC_DIR"/*.c "$SRC_DIR"/*.h; do
         while (match(line, /\/\*([^*]|\*[^\/])*\*\//)) line = substr(line, 1, RSTART - 1) " " substr(line, RSTART + RLENGTH)
         if (index(line, "/*")) { line = substr(line, 1, index(line, "/*") - 1); incmt = 1 }
         sub(/\/\/.*/, "", line)
+        attribution = without_attributes(line)
     }
     # attribution: a #define names its macro (continuations stay with it);
     # a column-0 line with a parameter list that is not a declaration starts
     # a function; a column-0 "}" ends it
     !incont && /^#[ \t]*define[ \t]/ { m = $0; sub(/^#[ \t]*define[ \t]+/, "", m); sub(/[^A-Za-z0-9_].*/, "", m); scope = "#define " m; inmac = 1 }
-    !incont && !/^#/ && /^[A-Za-z_][^;]*\(/ && $0 !~ /;[ \t]*$/ && $0 !~ /^(typedef|return|extern)/ {
-        fn = $0; sub(/\(.*/, "", fn); n = split(fn, w, /[ *]+/); scope = w[n]; inmac = 0
+    !incont && !/^#/ && attribution ~ /^[A-Za-z_][^;]*\(/ && attribution !~ /;[ \t]*$/ && attribution !~ /^(typedef|return|extern)/ {
+        fn = attribution; sub(/\(.*/, "", fn); n = split(fn, w, /[ *]+/); scope = w[n]; inmac = 0
     }
     { linemac = inmac }
     {
         s = line
-        while (match(s, /(VAL_NUM_RAW|SLOT_NUM_RAW)[ \t]*\(|VAL_NUM_OFFSET/)) {
+        while (match(s, /(VAL_NUM_RAW|VAL_F64_RAW|VAL_I64_RAW|SLOT_F64_RAW)[ \t]*\(|VAL_NUM_OFFSET|VAL_F64_OFFSET/)) {
             tok = substr(s, RSTART, RLENGTH); sub(/[ \t]*\($/, "", tok)
             printf "%s|%s|%s|%d\n", FILE, (scope == "" ? "<file scope>" : scope), tok, NR
             s = substr(s, RSTART + RLENGTH)
         }
-        if (line ~ /data\.num_|[A-Za-z0-9_)\]]\.d_([^A-Za-z0-9_]|$)/ && scope !~ /^#define (VAL_NUM_RAW|SLOT_NUM_RAW|VAL_NUM_OFFSET)$/)
+        if (line ~ /data\.(num_|f64_|i64_)|[A-Za-z0-9_)\]]\.d_([^A-Za-z0-9_]|$)/ && scope !~ /^#define (VAL_NUM_RAW|VAL_F64_RAW|VAL_I64_RAW|SLOT_F64_RAW|VAL_NUM_OFFSET|VAL_F64_OFFSET)$/)
             printf "%s:%d: %s\n", FILE, NR, $0 >> BYPASS
         if (line ~ /->data\.builtin[ \t]*\(/) printf "%s:%d: ungated builtin call: %s\n", FILE, NR, $0 >> BYPASS
         incont = ($0 ~ /\\$/)

@@ -1,0 +1,12 @@
+# R1.6 behaviour-table probe: spawn (int-preserving; handle dict with int id/gen fields)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define w(x) as:
+    return x + 1
+h is spawn of [w, 41]
+print of [nt of h["_handle_id"], nt of h["_handle_gen"], nt of h["done"]]
+r is thread_join of h
+print of [r, nt of r]

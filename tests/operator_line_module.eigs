@@ -6,5 +6,5 @@ k is 6001
 d is 1
 loop while k > 0:
     r is 1 / (
-        k - d)
+        k - d or "s")
     k is k - 1

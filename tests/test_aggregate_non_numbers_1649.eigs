@@ -39,12 +39,17 @@ catch e:
     max_caught is (contains of [e.message, "max: element 1 is str"])
 assert_true of [max_caught, "max names the bad element index and type"]
 
-# Pin the existing empty-list identities explicitly: this issue does not
-# change them.
+# Empty sum/mean/norm identities are unchanged. S11-STOP-1 retains
+# R1.6b-D2: min/max have no winning argument and raise value in both forms.
 assert_eq of [sum of [], 0, "empty sum remains zero"]
 assert_eq of [mean of [], 0, "empty mean remains zero"]
 assert_eq of [norm of [], 0, "empty norm remains zero"]
-assert_eq of [min of [], 0, "empty min remains zero"]
-assert_eq of [max of [], 0, "empty max remains zero"]
+for thunk in [(x) => min of [], (x) => min of ([]), (x) => max of [], (x) => max of ([])]:
+    empty_kind is ""
+    try:
+        thunk of null
+    catch e:
+        empty_kind is e.kind
+    assert_eq of [empty_kind, "value", "S11-STOP-1 empty min/max raises value"]
 
 print of "All tests passed"

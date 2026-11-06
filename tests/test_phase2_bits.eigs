@@ -1,0 +1,92 @@
+# R2.4/N12: explicit bit access is deterministic in either strict mode.
+load_file of "lib/test.eigs"
+
+define expect_bits_error(action, expected, desc) as:
+    local caught is ""
+    try:
+        action of null
+    catch err:
+        caught is err.kind
+    assert_eq of [caught, expected, desc]
+
+define first_buffer_cell(data) as:
+    for cell in data:
+        return cell
+    return null
+
+flags_before is math_flags of null
+canonical is 0x7FF8000000000000
+bits_buffer is buffer of 1
+
+# Finite representations include both zeros, subnormals and both signs.
+for pattern in [0, 0x8000000000000000, 1, 0x8000000000000001, 0x3FF8000000000000, 0xBFF8000000000000, 0x7FEFFFFFFFFFFFFF, 0xFFEFFFFFFFFFFFFF]:
+    value is f64_from_bits of pattern
+    assert_eq of [num_type of value, "float", "from_bits returns float"]
+    assert_eq of [f64_bits of value, pattern, "finite scalar bits round-trip"]
+    assert_eq of [buf_set_bits of [bits_buffer, 0, pattern], null, "bits setter returns null"]
+    assert_eq of [buf_get_bits of [bits_buffer, 0], pattern, "finite buffer bits round-trip"]
+    assert_eq of [num_type of (buf_get_bits of [bits_buffer, 0]), "int", "bits getter returns int"]
+
+assert_eq of [f64_bits of -0.0, -9223372036854775808, "negative zero is signed int64 minimum"]
+assert_eq of [f64_bits of 1, 4607182418800017408, "integer scalar first converts to float"]
+assert_eq of [f64_bits of 9007199254740993, f64_bits of 9007199254740992.0, "integer scalar follows Q2 rounding"]
+assert_eq of [f64_from_bits of 4607182418800017408.0, 1.0, "integral float bits follow N5"]
+assert_eq of [buf_set_bits of [bits_buffer, 0.0, 4607182418800017408.0], null, "integral float index and bits accepted"]
+assert_eq of [buf_get_bits of [bits_buffer, 0.0], 4607182418800017408, "integral float getter index accepted"]
+assert_eq of [buf_get of [bits_buffer, 0], 1.0, "ordinary finite buffer read remains float"]
+
+positive_infinity is f64_from_bits of 0x7FF0000000000000
+negative_infinity is f64_from_bits of 0xFFF0000000000000
+assert_eq of [f64_bits of positive_infinity, 0x7FF0000000000000, "positive infinity bits preserved"]
+assert_eq of [f64_bits of negative_infinity, 0xFFF0000000000000, "negative infinity bits preserved"]
+
+# Signaling, negative and slot-tag-spelling NaNs canonicalize only as floats.
+for payload in [0x7FF0000000000001, 0xFFF8000000000042, 0xFFF9000000000001, 0xFFFA000000000005, 0xFFFB000000001000, 0xFFFF000000000000]:
+    nan_value is f64_from_bits of payload
+    assert_eq of [num_type of nan_value, "float", "NaN payload becomes a float"]
+    assert_false of [nan_value == nan_value, "reconstructed NaN has IEEE equality"]
+    assert_eq of [f64_bits of nan_value, canonical, "scalar NaN canonicalized"]
+    nan_list is [nan_value]
+    record is {"value": nan_value}
+    assert_eq of [f64_bits of nan_list[0], canonical, "list NaN remains canonical"]
+    assert_eq of [f64_bits of record.value, canonical, "dict NaN remains canonical"]
+    assert_eq of [buf_set_bits of [bits_buffer, 0, payload], null, "raw NaN setter returns null"]
+    assert_eq of [buf_get_bits of [bits_buffer, 0], payload, "raw NaN buffer payload preserved"]
+    reconstructed is f64_from_bits of (buf_get_bits of [bits_buffer, 0])
+    assert_eq of [f64_bits of reconstructed, canonical, "R24-2 reconstruction canonicalizes"]
+
+assert_eq of [math_flags of null, flags_before, "bit inspection and reconstruction do not change math flags"]
+
+for invalid in [null, true, "bad", [], {}]:
+    expect_bits_error of [(unused) => f64_bits of invalid, "type_mismatch", "f64_bits rejects non-number"]
+    expect_bits_error of [(unused) => f64_from_bits of invalid, "type_mismatch", "f64_from_bits rejects non-number"]
+    expect_bits_error of [(unused) => buf_get_bits of [bits_buffer, invalid], "type_mismatch", "buf_get_bits rejects non-number index"]
+    expect_bits_error of [(unused) => buf_set_bits of [bits_buffer, invalid, 0], "type_mismatch", "buf_set_bits rejects non-number index"]
+    expect_bits_error of [(unused) => buf_set_bits of [bits_buffer, 0, invalid], "type_mismatch", "buf_set_bits rejects non-number bits"]
+
+buf_set_bits of [bits_buffer, 0, 0x3FF0000000000000]
+for invalid in [0.5, 1e100, positive_infinity, negative_infinity, nan_value]:
+    expect_bits_error of [(unused) => f64_from_bits of invalid, "value", "from_bits requires exact int64"]
+    expect_bits_error of [(unused) => buf_get_bits of [bits_buffer, invalid], "value", "bits getter index requires exact int64"]
+    expect_bits_error of [(unused) => buf_set_bits of [bits_buffer, invalid, 0], "value", "bits setter index requires exact int64"]
+    expect_bits_error of [(unused) => buf_set_bits of [bits_buffer, 0, invalid], "value", "bits setter payload requires exact int64"]
+    assert_eq of [buf_get_bits of [bits_buffer, 0], 0x3FF0000000000000, "invalid numeric arguments do not mutate buffer"]
+
+for invalid in [-1, 1]:
+    expect_bits_error of [(unused) => buf_get_bits of [bits_buffer, invalid], "index_range", "bits getter rejects out-of-range index"]
+    expect_bits_error of [(unused) => buf_set_bits of [bits_buffer, invalid, 0], "index_range", "bits setter rejects out-of-range index"]
+expect_bits_error of [(unused) => buf_get_bits of ["bad", 0], "type_mismatch", "bits getter requires buffer"]
+expect_bits_error of [(unused) => buf_set_bits of ["bad", 0, 0], "type_mismatch", "bits setter requires buffer"]
+expect_bits_error of [(unused) => buf_get_bits of ([bits_buffer]), "type_mismatch", "bits getter rejects missing index"]
+expect_bits_error of [(unused) => buf_set_bits of [bits_buffer, 0], "type_mismatch", "bits setter rejects missing payload"]
+assert_eq of [buf_get_bits of [bits_buffer, 0], 0x3FF0000000000000, "rejected calls leave stored bits unchanged"]
+
+# R24-2: raw reconstruction leaves the accepted N13 ordinary-read refusal intact.
+for nonfinite_bits in [0x7FF8000000000042, 0x7FF0000000000000, 0xFFF0000000000000]:
+    buf_set_bits of [bits_buffer, 0, nonfinite_bits]
+    expect_bits_error of [(unused) => buf_get of [bits_buffer, 0], "value", "N13 buf_get refuses non-finite data"]
+    expect_bits_error of [(unused) => bits_buffer[0], "value", "N13 indexing refuses non-finite data"]
+    expect_bits_error of [(unused) => first_buffer_cell of bits_buffer, "value", "N13 iteration refuses non-finite data"]
+    assert_eq of [buf_get_bits of [bits_buffer, 0], nonfinite_bits, "ordinary refusal preserves raw payload"]
+
+test_summary of null

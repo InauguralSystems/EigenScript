@@ -1,0 +1,25 @@
+"3"	3	integer
+"3.0"	3.0	float
+"9007199254740993"	9007199254740993	integer
+"9223372036854775808"	9.2233720368548e+18	float
+" 12 "	12	integer
+"+5"	5	integer
+"-0x10"	-16	integer
+"0x1F"	31	integer
+"0X1f"	31	integer
+"0xFFFFFFFFFFFFFFFF"	-1	integer
+".5"	0.5	float
+"1."	1.0	float
+"1e5"	100000.0	float
+"12abc"	nil	nil
+"0b101"	nil	nil
+"0o17"	nil	nil
+"1_000"	nil	nil
+""	nil	nil
+" "	nil	nil
+"inf"	nil	nil
+"nan"	nil	nil
+"1.2.3"	nil	nil
+"0x"	nil	nil
+"0x1p4"	16.0	float
+"-9223372036854775808"	-9223372036854775808	integer

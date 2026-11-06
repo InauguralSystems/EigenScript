@@ -1,0 +1,18 @@
+# R1.6 behaviour-table probe: num (other, LOSS; N10 (#1758 comment 6304880619): exactly the lexer's numeric grammar, like Lua tonumber)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define p(s) as:
+    try:
+        local v is num of s
+        return [s, v, nt of v]
+    catch e:
+        return [s, e.kind]
+for s in ["3", "3.0", "9007199254740993", "9223372036854775808", " 12 ", "+5", "-0x10", "0x1F", "0X1f", "0xFFFFFFFFFFFFFFFF", ".5", "1.", "1e5", "12abc", "0b101", "0o17", "1_000", "", " ", "inf", "nan", "1.2.3", "0x", "0x1p4", "-9223372036854775808"]:
+    print of (p of s)
+n is num of 7
+print of [n, nt of n]
+f is num of 2.5
+print of [f, nt of f]

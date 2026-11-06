@@ -1,0 +1,7 @@
+# R1.6 behaviour-table probe: type (other; type of an int or a float is num ((B)))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of [type of 3, type of 3.0, type of 9007199254740993, type of "3"]

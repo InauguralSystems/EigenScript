@@ -1,18 +1,5 @@
-# #861: numeric bindings route the predicate words to the VALUE channel
-# (see docs/PREDICATES.md). The sequences below drive numbers, so the
-# entropy-window mechanics this file was written for are now reachable
-# only via `classify of [t, "entropy"]` — pinned per-case where the
-# entropy behaviour was the point. The routed pins were re-measured and
-# each change is annotated at the assert.
-# Windowed `oscillating` (#206, docs/PREDICATES.md):
-#   oscillating = count >= 3
-#                 AND sign_flip_count(window) >= FLIPS   (FLIPS = ceil(N/3) = 4)
-# A sign flip is an adjacent dH pair with opposite signs whose magnitudes BOTH
-# clear dh_zero (sub-noise wobble does not count). Unlike improving/diverging
-# this gates at dh_zero, not dh_small — it is a deadband-escape test, not a
-# direction verdict (#187 left it on dh_zero). FLIPS=4 means a window needs >=5
-# samples / 4 alternating dH to ever fire: a single reversal is not oscillation.
-# Self-asserting; prints WINDOWED_OSCILLATING_ALL_PASS on success.
+# R3.1: numeric oscillating retains incumbent sign-flip tests, with zero
+# raw noise floor when every active step is exact and infinity alignment.
 
 print of "=== WINDOWED OSCILLATING (docs/PREDICATES.md, #206) ==="
 
@@ -20,7 +7,7 @@ define want(tag, got, exp) as:
     assert of [got == exp, f"{tag}: oscillating expected {exp} got {got}"]
     print of f"  PASS: {tag} (oscillating={got})"
 
-# WO1: sustained large-amplitude alternation fires (6 dH, 5 flips)
+# WO1: sustained large-amplitude alternation fires (six steps, five flips).
 a is 2.0
 a is 10.0
 a is 2.0
@@ -31,8 +18,7 @@ a is 2.0
 o1 is oscillating
 want of ["WO1 large-amplitude alternation fires", o1, true]
 
-# WO2: gray-band alternation fires too — flips gate at dh_zero, so |dH|~0.0057
-#      (between dh_zero and dh_small) still counts.
+# WO2: alternating 70 and 75 has relative steps above the flip deadband.
 b is 70.0
 b is 75.0
 b is 70.0
@@ -41,9 +27,9 @@ b is 70.0
 b is 75.0
 b is 70.0
 o2 is oscillating
-want of ["WO2 gray-band alternation fires", o2, true]
+want of ["WO2 five-unit alternation fires", o2, true]
 
-# WO3: exactly FLIPS=4 flips (5 dH, perfect alternation) — the boundary, fires
+# WO3: exactly FLIPS=4 flips (five steps, perfect alternation) fires.
 c is 2.0
 c is 10.0
 c is 2.0
@@ -53,7 +39,7 @@ c is 10.0
 o3 is oscillating
 want of ["WO3 exactly 4 flips fires", o3, true]
 
-# WO4: only 3 flips (4 dH) — below threshold, does NOT fire
+# WO4: only three flips (four steps) is below the threshold.
 d is 2.0
 d is 10.0
 d is 2.0
@@ -62,8 +48,7 @@ d is 2.0
 o4 is oscillating
 want of ["WO4 only 3 flips does not fire", o4, false]
 
-# WO5: sub-noise wobble — alternating but |dH|~1.5e-5 < dh_zero, so no flip
-#      counts. Stays out of `oscillating` (it reads equilibrium/converged-ish).
+# WO5: alternating 800 and 801 has visible relative and raw sign flips.
 e is 800.0
 e is 801.0
 e is 800.0
@@ -73,9 +58,9 @@ e is 801.0
 e is 800.0
 o5 is oscillating
 # #861 re-pin: value route: 800<->801 is a REAL +/-1 perpetual oscillation — "sub-noise" only to the entropy signal (H is flat out there, the #294 blindness). #422 pins this class as oscillating; the entropy label (equilibrium-ish) is preserved via classify below
-want of ["WO5 sub-noise wobble does not fire", o5, true]
+want of ["WO5 unit alternation fires", o5, true]
 
-# WO6: monotone descent — no flips at all
+# WO6: monotone growth has no sign flips.
 f is 3.0
 f is 5.0
 f is 9.0
@@ -96,7 +81,7 @@ g is 2.0
 o7 is oscillating
 want of ["WO7 one reversal does not fire", o7, false]
 
-# WO8: fewer than 3 samples (count == 2) does not fire (partial-window rule)
+# WO8: two steps provide too few flips for oscillating.
 h is 2.0
 h is 10.0
 h is 2.0

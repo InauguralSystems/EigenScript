@@ -50,7 +50,7 @@ static Value *sensor(Value *arg) {
     pthread_mutex_unlock(&mu);
     Value *value = NULL;
     if (!trace_replay_take("ordinary_sensor", &value)) {
-        value = make_num(id + live_bias);
+        value = make_float(id + live_bias);
         trace_nondet_value("ordinary_sensor", value); /* deliberately before LINE */
         pthread_mutex_lock(&mu);
         live_calls++;
@@ -73,7 +73,7 @@ typedef struct {
 static Value *spawn_sensor(int id) {
     Value *args = make_list(2);
     Value *fn = make_builtin(sensor);
-    Value *number = make_num(id);
+    Value *number = make_float(id);
     list_append(args, fn);
     list_append(args, number);
     val_decref(fn);

@@ -152,9 +152,9 @@ assert_eq of [str of th_u.raw, str of th_o.raw, "J hot loop: raw window identica
 assert_eq of [th_u.last_value, th_o.last_value, "J hot loop: last value identical"]
 assert_eq of [classify of th_u, classify of th_o, "J hot loop: snapshot classifies identically"]
 assert_eq of [th_u.observed, true, "J the sampled binding counts as observed"]
-assert_eq of [len of th_o.dh, 10, "J control: the observed dH window is full"]
+assert_eq of [len of th_o.dh, 0, "J numeric observations have no entropy window"]
 assert_eq of [len of th_u.dh, 0, "J the ENTROPY channel is still elided: no dH window"]
-assert_eq of [th_u.dH, 0, "J the ENTROPY channel is still elided: dH never computed"]
+assert_eq of [th_u.dH, null, "J numeric snapshots have no entropy dH"]
 
 # ---- Route bit: a non-numeric elided assignment ends the numeric route
 # exactly as an observed one does (O(1), no walk), so `report` does not answer
@@ -176,8 +176,8 @@ assert_true of [ro[0] != "moving", "R control: the observed container routes to 
 assert_true of [ru[0] != "moving", "R an elided container also leaves the numeric route"]
 assert_eq of [ru[1], ro[1], "R the explicit value channel is identical either way"]
 
-# ---- What the block still skips is documented, and pinned here so the
-# elision stays real: dH/why is not computed for an elided assignment.
+# ---- Numeric interrogation stays sample-neutral; pin that the
+# numeric displacement is computed even for an elided assignment.
 define why_probe(elide) as:
     w is 4.0
     w is 2.0
@@ -193,8 +193,8 @@ define why_before() as:
     w is 2.0
     return why is w
 
-assert_true of [(why_probe of 0) != (why_before of 0), "W control: an observed assignment moves dH"]
-assert_eq of [why_probe of 1, why_before of 0, "W an elided assignment leaves dH at the previous OBSERVED step's"]
+assert_true of [(why_probe of 0) != (why_before of 0), "W control: an observed assignment updates displacement"]
+assert_eq of [why_probe of 1, why_probe of 0, "W numeric displacement is identical with the last assignment elided"]
 
 # ---- The bare-predicate alias (the last OBSERVED binding) is not moved by an
 # elided assignment: shielding a bare `loop while not converged` from scratch
@@ -211,5 +211,23 @@ define alias_probe() as:
     return converged  # lint: allow W016 -- the bare alias is exactly what is under test
 
 assert_eq of [alias_probe of 0, true, "A bare predicate still reads the last OBSERVED binding after the block"]
+
+# Nonnumeric assignments still elide entropy bookkeeping.
+define container_why(elide) as:
+    w is [4.0]
+    w is [2.0]
+    if elide == 1:
+        unobserved:  # lint: allow W020 -- nonnumeric entropy elision is the point
+            w is [1.0]
+    else:
+        w is [1.0]
+    return why is w
+
+define container_before() as:
+    w is [4.0]
+    w is [2.0]
+    return why is w
+assert_true of [(container_why of 0) != (container_before of 0), "W nonnumeric observed assignment updates entropy displacement"]
+assert_eq of [container_why of 1, container_before of 0, "W nonnumeric elided assignment preserves prior entropy displacement"]
 
 test_summary of null

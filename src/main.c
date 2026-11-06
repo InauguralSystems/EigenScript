@@ -107,7 +107,7 @@ static void *tsan_env_count_writer(void *opaque) {
     eigs_thread_attach(control->state);
     while (!atomic_load_explicit(&control->reader_started,
                                  memory_order_relaxed)) { }
-    Value *value = make_num(2129);
+    Value *value = make_int(2129);
     env_set_local_hashed(control->env, "issue_2129", 0, value);
     val_decref(value);
     atomic_store_explicit(&control->writer_done, 1, memory_order_relaxed);
@@ -325,7 +325,8 @@ int main(int argc, char **argv) {
     }
 
     /* Machine-readable lexer fingerprint used by the formatter safety gate.
-     * Values are hex bytes, so quotes, newlines and CR are unambiguous. */
+     * String values are hex bytes; numbers carry an i/f kind prefix followed
+     * by exact decimal int digits or an exact hexadecimal float. */
     if (argc >= 2 && strcmp(argv[1], "--dump-tokens") == 0) {
         if (argc != 3) {
             fprintf(stderr, "Usage: eigenscript --dump-tokens file.eigs\n");
@@ -345,8 +346,12 @@ int main(int argc, char **argv) {
         if (!rc) for (int i = 0; i < tl.count; i++) {
             Token *t = &tl.tokens[i];
             printf("%d\t", (int)t->type);
-            if (t->type == TOK_NUM) printf("%a", t->num_val);
-            else if (t->str_val) {
+            if (t->type == TOK_NUM) {
+                if (t->number.is_int)
+                    printf("i%lld", (long long)t->number.value.i64);
+                else
+                    printf("f%a", t->number.value.f64);
+            } else if (t->str_val) {
                 const unsigned char *p = (const unsigned char *)t->str_val;
                 while (*p) printf("%02x", *p++);
             }

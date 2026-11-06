@@ -1,0 +1,6 @@
+["answered", 2.0, 20]
+["value", "'when' ordinal must be a whole number, got 1.5"]
+["value", "'when' ordinal must be a whole number, got nan"]
+["value", "'when' ordinal must be a whole number, got inf"]
+["value", "'when' ordinal must be a whole number, got -inf"]
+["value", "'when' ordinal must be a whole number, got 1e+300"]

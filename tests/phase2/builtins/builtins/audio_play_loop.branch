@@ -1,0 +1,6 @@
+["loops-fraction", "value"]
+[1, "int"]
+["mixed", true]
+hook-loaded mix
+mix: 16384 -32767 16384 -32767 0 0 0 0
+rc=0

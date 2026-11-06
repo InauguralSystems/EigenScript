@@ -43,6 +43,115 @@ static int old_task_ran = 0;
     }                                                                      \
 } while (0)
 
+/* #1758 Q3: public C API, including boxed ints, exact conversion bounds,
+ * optional success flags, and the two distinct failure contracts. */
+static void test_embed_int(void) {
+    int before = failures, checks = 0;
+#define INT_CHECK(cond, msg) do { checks++; CHECK((cond), (msg)); } while (0)
+    const int64_t ints[] = {0, 3, -3, INT64_C(9007199254740993),
+                           INT64_MIN, INT64_MAX};
+    for (size_t i = 0; i < sizeof ints / sizeof ints[0]; i++) {
+        EigsValue *v = eigs_value_new_int(ints[i]);
+        int ok = -1;
+        INT_CHECK(eigs_value_type(v) == EIGS_TYPE_NUM, "int has public number type");
+        INT_CHECK(eigs_value_is_int(v), "int predicate includes boxed int64");
+        INT_CHECK(eigs_value_as_int(v, &ok) == ints[i] && ok == 1,
+                  "int round-trips all 64 bits");
+        INT_CHECK(eigs_value_as_int(v, NULL) == ints[i], "int permits NULL flag");
+        INT_CHECK(eigs_value_as_num(v) == (double)ints[i], "as_num converts int");
+        INT_CHECK(!eigs_has_error(), "valid int access leaves no error");
+        /* Exercise the owning container bridge with a genuinely boxed int. */
+        EigsValue *list = eigs_value_new_list(1);
+        eigs_value_list_append(list, v);
+        eigs_value_release(v);
+        v = eigs_value_list_get(list, 0);
+        INT_CHECK(eigs_value_as_int(v, &ok) == ints[i] && ok == 1,
+                  "list bridge preserves exact int after caller releases");
+        eigs_value_release(v);
+        eigs_value_release(list);
+    }
+    const struct { double n; int ok; int64_t want; } floats[] = {
+        {3.0, 1, 3}, {-0.0, 1, 0}, {1.5, 0, 0},
+        {-0x1p63, 1, INT64_MIN}, {0x1p63, 0, 0},
+        {0x1.fffffffffffffp62, 1, INT64_MAX - 1023},
+        {-0x1.0000000000001p63, 0, 0}, {0x1p-1074, 0, 0}
+    };
+    for (size_t i = 0; i < sizeof floats / sizeof floats[0]; i++) {
+        EigsValue *v = eigs_value_new_num(floats[i].n);
+        int ok = -1;
+        INT_CHECK(eigs_value_type(v) == EIGS_TYPE_NUM, "float has public number type");
+        INT_CHECK(!eigs_value_is_int(v), "integral float is never int kind");
+        INT_CHECK(eigs_value_as_int(v, &ok) == floats[i].want && ok == floats[i].ok,
+                  "float exact int64 conversion and refusal bounds");
+        INT_CHECK(eigs_value_as_int(v, NULL) == floats[i].want,
+                  "float permits NULL success flag");
+        INT_CHECK(!eigs_has_error(), "numeric refusal sets no embed error");
+        eigs_value_release(v);
+    }
+    /* #1969 census: as_int's float arm is a conversion boundary. Raw
+     * storage also exercises nonfinite payloads constructors can refuse. */
+    const double raw[] = {0x1p-1074, 1.5, -0x1p63, 0x1p63, INFINITY, -INFINITY, NAN};
+    const int modes[] = {FE_TONEAREST, FE_UPWARD, FE_DOWNWARD, FE_TOWARDZERO};
+    fenv_t saved;
+    fegetenv(&saved);
+    for (size_t m = 0; m < sizeof modes / sizeof modes[0]; m++) {
+        for (size_t i = 0; i < sizeof raw / sizeof raw[0]; i++) {
+            EigsValue *v = eigs_value_new_num(0.0);
+            VAL_F64_RAW(v) = raw[i];
+            fesetround(modes[m]);
+            feclearexcept(FE_ALL_EXCEPT);
+            feraiseexcept(FE_DIVBYZERO);
+#if defined(__x86_64__)
+            _mm_setcsr(_mm_getcsr() | (1u << 15) | (1u << 6));
+            unsigned csr = _mm_getcsr();
+#endif
+            int flags = fetestexcept(FE_ALL_EXCEPT), ok = -1;
+            int64_t got = eigs_value_as_int(v, &ok);
+            INT_CHECK(ok == (i == 2) && got == (i == 2 ? INT64_MIN : 0),
+                      "as_int exactness survives every host mode and DAZ");
+            INT_CHECK(fegetround() == modes[m] && fetestexcept(FE_ALL_EXCEPT) == flags,
+                      "as_int restores host rounding and sticky flags");
+#if defined(__x86_64__)
+            INT_CHECK(_mm_getcsr() == csr, "as_int restores FTZ/DAZ and MXCSR flags");
+#endif
+            INT_CHECK(!eigs_has_error(), "raw numeric refusal sets no embed error");
+            fesetenv(&saved);
+            eigs_value_release(v);
+        }
+    }
+    fesetenv(&saved);
+    EigsValue *wrong[] = {NULL, eigs_value_new_null(), eigs_value_new_bool(1),
+                         eigs_value_new_string("3"), eigs_value_new_list(0),
+                         eigs_value_new_dict(0)};
+    for (size_t i = 0; i < sizeof wrong / sizeof wrong[0]; i++) {
+        int ok = -1;
+        INT_CHECK(!eigs_value_is_int(wrong[i]) && !eigs_has_error(),
+                  "kind predicate is pure on non-numbers");
+        INT_CHECK(eigs_value_as_int(wrong[i], &ok) == 0 && ok == 0,
+                  "non-number fails with zero success flag");
+        INT_CHECK(eigs_has_error() && strcmp(eigs_last_error_kind(), "type_mismatch") == 0
+                  && strstr(eigs_last_error_message(), "eigs_value_as_int"),
+                  "non-number reports embed type error naming accessor");
+        eigs_clear_error();
+        INT_CHECK(eigs_value_as_int(wrong[i], NULL) == 0 && eigs_has_error(),
+                  "wrong type with NULL flag still reports error");
+        eigs_clear_error();
+        eigs_value_release(wrong[i]);
+    }
+    EigsValue *fraction = eigs_value_new_num(1.5);
+    eigs_value_as_int(NULL, NULL);
+    char pending[160];
+    snprintf(pending, sizeof pending, "%s", eigs_last_error_message());
+    int ok = -1;
+    INT_CHECK(eigs_value_as_int(fraction, &ok) == 0 && ok == 0 &&
+              strcmp(pending, eigs_last_error_message()) == 0,
+              "numeric refusal preserves an existing error");
+    eigs_clear_error();
+    eigs_value_release(fraction);
+    printf("gate.N7.embed-int: checks=%d failures=%d\n", checks, failures - before);
+#undef INT_CHECK
+}
+
 static EigsValue *mark_old_task_ran(EigsValue *arg) {
     (void)arg;
     old_task_ran++;
@@ -112,7 +221,77 @@ static void check_fenv_eval(const char *mode_name, int mode, const char *witness
     eigs_clear_error();
 }
 
+/* #1969 / Phase 2 N6: exact binary64 payloads cross the public eval
+ * boundary and print Python repr text. Expected strings are from Python's
+ * struct.unpack(">d", bytes.fromhex(bits)); no decimal parser is the oracle. */
+static void check_fenv_n6_text(void) {
+    static const struct { const char *bits, *source, *expected; } rows[] = {
+        {"3fd3333333333334", "print of (f64_from_bytes of [63, 211, 51, 51, 51, 51, 51, 52])", "0.30000000000000004\n"},
+        {"bfd3333333333334", "print of (f64_from_bytes of [191, 211, 51, 51, 51, 51, 51, 52])", "-0.30000000000000004\n"},
+        {"0000000000000001", "print of (f64_from_bytes of [0, 0, 0, 0, 0, 0, 0, 1])", "5e-324\n"},
+        {"8000000000000001", "print of (f64_from_bytes of [128, 0, 0, 0, 0, 0, 0, 1])", "-5e-324\n"},
+    };
+    static const struct { const char *name; int rounding; int flush; } modes[] = {
+        {"FE_UPWARD", FE_UPWARD, 0},
+        {"FE_DOWNWARD", FE_DOWNWARD, 0},
+        {"FE_TOWARDZERO", FE_TOWARDZERO, 0},
+#if defined(__x86_64__)
+        {"FTZ/DAZ", FE_TONEAREST, 1},
+#endif
+    };
+    fenv_t saved;
+    CHECK(fegetenv(&saved) == 0, "N6 saves the host environment");
+    for (size_t m = 0; m < sizeof(modes) / sizeof(modes[0]); m++) {
+        for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+            CHECK(fesetenv(FE_DFL_ENV) == 0, "N6 initializes the host environment");
+            CHECK(fesetround(modes[m].rounding) == 0, "N6 sets the host rounding mode");
+            CHECK(feraiseexcept(FE_INVALID) == 0, "N6 seeds sticky flags");
+#if defined(__x86_64__)
+            if (modes[m].flush) _mm_setcsr(_mm_getcsr() | (1u << 15) | (1u << 6));
+            unsigned before = _mm_getcsr();
+#endif
+            int flags = fetestexcept(FE_ALL_EXCEPT);
+            FILE *capture = tmpfile();
+            int host_stdout = dup(STDOUT_FILENO);
+            CHECK(capture && host_stdout >= 0, "N6 opens stdout capture");
+            if (!capture || host_stdout < 0) {
+                if (capture) fclose(capture);
+                if (host_stdout >= 0) close(host_stdout);
+                continue;
+            }
+            fflush(stdout);
+            int redirected = dup2(fileno(capture), STDOUT_FILENO);
+            CHECK(redirected >= 0, "N6 redirects stdout");
+            if (redirected < 0) { fclose(capture); close(host_stdout); continue; }
+            EigsValue *v = eigs_eval_string(rows[i].source);
+            int restored = fegetround() == modes[m].rounding &&
+                           fetestexcept(FE_ALL_EXCEPT) == flags;
+#if defined(__x86_64__)
+            restored = restored && _mm_getcsr() == before;
+#endif
+            fflush(stdout);
+            CHECK(dup2(host_stdout, STDOUT_FILENO) >= 0, "N6 restores stdout");
+            close(host_stdout);
+            rewind(capture);
+            char output[128];
+            size_t length = fread(output, 1, sizeof(output) - 1, capture);
+            output[length] = '\0';
+            CHECK(!ferror(capture), "N6 reads captured print output");
+            fclose(capture);
+            int ok = v && strcmp(output, rows[i].expected) == 0 && restored;
+            CHECK(ok, "N6 exact-bit repr and host fenv restoration");
+            printf("N6-FENV %s %s %s\n", modes[m].name, rows[i].bits, ok ? "PASS" : "FAIL");
+            if (!ok) fprintf(stderr, "N6 expected <%s> got <%s>; restored=%d\n",
+                             rows[i].expected, output, restored);
+            eigs_value_release(v);
+            eigs_clear_error();
+        }
+    }
+    CHECK(fesetenv(&saved) == 0, "N6 restores the original host environment");
+}
+
 static void test_fenv_boundary(void) {
+    check_fenv_n6_text();
     EigsValue *v;
     check_fenv_default_fast_path();
     check_fenv_eval("FE_UPWARD", FE_UPWARD,
@@ -320,8 +499,8 @@ static void test_worker_exit_lifecycle(void) {
             CHECK(handle && handle->type == VAL_DICT, "exit fixture owns join handle");
             if (handle && handle->type == VAL_DICT) {
                 int found_id = 0, found_gen = 0;
-                f.handle_id = (int)eigs_slot_num(dict_get_slot(handle, "_handle_id", &found_id), "embed_smoke");
-                f.handle_gen = (uint32_t)eigs_slot_num(dict_get_slot(handle, "_handle_gen", &found_gen), "embed_smoke");
+                f.handle_id = (int)eigs_slot_float(dict_get_slot(handle, "_handle_id", &found_id), "embed_smoke");
+                f.handle_gen = (uint32_t)eigs_slot_float(dict_get_slot(handle, "_handle_gen", &found_gen), "embed_smoke");
                 CHECK(found_id && found_gen, "join handle carries its id and generation");
                 pthread_t requester;
                 int made = pthread_create(&requester, NULL, exit_after_join_claim, &f) == 0;
@@ -399,6 +578,18 @@ static void tape_sink(const char *bytes, size_t len, void *ud) {
     if (g_tape_len + len > sizeof g_tape) len = sizeof g_tape - g_tape_len;
     memcpy(g_tape + g_tape_len, bytes, len);
     g_tape_len += len;
+}
+
+/* A tape assertion matches WHOLE lines. `want` is one or more complete lines,
+ * each ending in '\n', and it must begin at the start of a tape line. A bare
+ * strstr cannot tell `=100` from `=1000` or from v7's `=100.0`, so it passes
+ * on a v6 tape and on a v7 one alike. */
+static int tape_has_lines(const char *tape, const char *want) {
+    size_t wl = strlen(want);
+    if (wl == 0 || want[wl - 1] != '\n') return 0;   /* not whole lines: refuse */
+    for (const char *p = tape; (p = strstr(p, want)) != NULL; p++)
+        if (p == tape || p[-1] == '\n') return 1;
+    return 0;
 }
 
 /* Host function: adds two numbers. Multi-arg calls receive a VAL_LIST. */
@@ -480,18 +671,19 @@ int main(void) {
         int line_save = g_trace_current_line;
 
         g_trace_current_line = 10;
-        SLOT_NUM_RAW(s) = 11.0; trace_assign(NM, s);
+        SLOT_F64_RAW(s) = 11.0; trace_assign(NM, s);
         g_trace_current_line = 20;
-        SLOT_NUM_RAW(s) = 22.0; trace_assign(NM, s);
+        SLOT_F64_RAW(s) = 22.0; trace_assign(NM, s);
 
-        CHECK(trace_query_prev(NM, &out) && SLOT_NUM_RAW(out) == 11.0,
+        CHECK(trace_query_prev(NM, &out) && SLOT_F64_RAW(out) == 11.0,
               "#830: prev of a name recorded by a non-compiler producer");
         /* TEMPORAL-BACKWARD: at 15 the answer is the line-10 assignment. */
-        CHECK(trace_query_at(0, NM, 15, &out) && SLOT_NUM_RAW(out) == 11.0,
+        CHECK(trace_query_at(0, NM, 15, &out) && SLOT_F64_RAW(out) == 11.0,
               "#830: what-at from a non-compiler producer (line-10 value)");
-        CHECK(trace_query_at(0, NM, 99, &out) && SLOT_NUM_RAW(out) == 22.0,
+        CHECK(trace_query_at(0, NM, 99, &out) && SLOT_F64_RAW(out) == 22.0,
               "#830: what-at past the last non-compiler assignment");
-        CHECK(trace_query_at(2, NM, 99, &out) && SLOT_NUM_RAW(out) == 2.0,
+        /* S9-K1: historical assignment counts are published as exact ints. */
+        CHECK(trace_query_at(2, NM, 99, &out) && slot_is_smi(out) && slot_smi_val(out) == 2,
               "#830: when-at counts non-compiler assignments");
 
         g_trace_current_line = line_save;
@@ -500,6 +692,7 @@ int main(void) {
     /* #1969: every code-running boundary installs IEEE defaults and restores
      * all host controls and sticky flags, including on errors/re-entry. */
     test_fenv_boundary();
+    test_embed_int();
 
     /* #1394: strictness is state-local embedder configuration. Reuse the
      * one-shot state already keeping the process alive, then create a staged
@@ -587,8 +780,7 @@ int main(void) {
     eigs_value_release(r);
 
     /* --- Error retrieval. -------------------------------------------- *
-     * Reading an undefined name is a real runtime error (divide-by-zero
-     * is num_guard'd to 0, so it doesn't qualify). */
+     * Reading an undefined name remains an error under the IEEE default. */
     eigs_clear_error();
     r = eigs_eval_string("definitely_not_defined");
     CHECK(r == NULL, "undefined name returns NULL");
@@ -787,9 +979,22 @@ int main(void) {
     CHECK(eigs_has_error() && strcmp(eigs_last_error_kind(), "index_range") == 0,
           "negative buffer set leaves index_range");
     eigs_clear_error();
-    eigs_value_buffer_set(buf, 2, INFINITY);
-    CHECK(eigs_value_buffer_get(buf, 2) == EIGS_NUM_MAX,
-          "buffer non-finite get is clamped");
+    /* R2.4 amends R1.6z-D1 point 2 for NaN payloads at the C boundary.
+     * This infinity control still preserves every stored bit and leaves
+     * both the pending-error channel and math flags alone. */
+    {
+        double stored = INFINITY;
+        unsigned saved_flags = g_math_flags;
+        eigs_value_buffer_set(buf, 2, stored);
+        g_math_flags = EIGS_MATH_UNDERFLOW;
+        double read_back = eigs_value_buffer_get(buf, 2);
+        CHECK(memcmp(&read_back, &stored, sizeof stored) == 0,
+              "R1.6z-D1 buffer non-finite get preserves stored bits");
+        CHECK(!eigs_has_error(), "R1.6z-D1 buffer non-finite get never raises");
+        CHECK(g_math_flags == EIGS_MATH_UNDERFLOW,
+              "R1.6z-D1 buffer non-finite get preserves math flags");
+        g_math_flags = saved_flags;
+    }
 
     /* Host buffer visible to script — SAME object, no copy at the
      * boundary: the script's buf_set is visible back in C. */
@@ -808,18 +1013,47 @@ int main(void) {
     {
         int nf_saved_strict = g_strict;
         unsigned nf_saved_flags = g_math_flags;
+        const char *ieee_results[] = {"0.0 / 0.0", "1.0 / 0.0", "-1.0 / 0.0"};
+        for (size_t ieee_i = 0; ieee_i < sizeof ieee_results / sizeof ieee_results[0]; ++ieee_i) {
+            eigs_state_set_strict(st, 0);  /* R2.2 default mode */
+            r = eigs_eval_string(ieee_results[ieee_i]);
+            double ieee_value = r ? eigs_value_as_num(r) : 0.0;
+            CHECK(r && !eigs_has_error() &&
+                      (ieee_i == 0 ? isnan(ieee_value) :
+                       isinf(ieee_value) && (signbit(ieee_value) != 0) == (ieee_i == 2)),
+                  "R22-2 default arithmetic returns its IEEE value without an error");
+            eigs_value_release(r);
+            eigs_clear_error();
+            eigs_state_set_strict(st, 1);  /* opt in for this state */
+            r = eigs_eval_string(ieee_results[ieee_i]);
+            CHECK(r == NULL && eigs_has_error() && eigs_last_error_kind() &&
+                      strcmp(eigs_last_error_kind(), "value") == 0,
+                  "R22-2 explicit strict arithmetic traps the paired non-finite result");
+            eigs_value_release(r);
+            eigs_clear_error();
+        }
         EigsValue *nf_raw = eigs_value_new_buffer(2);
         EigsValue *nf_finite = eigs_value_new_buffer(2);
         EigsValue *nf_later = eigs_value_new_buffer(2);
+        EigsValue *nf_finite3 = eigs_value_new_buffer(3);
+        EigsValue *nf_prefix = eigs_value_new_buffer(3);
         eigs_value_buffer_set(nf_raw, 0, NAN);
         eigs_value_buffer_set(nf_raw, 1, INFINITY);
         eigs_value_buffer_set(nf_finite, 0, 3.0);
         eigs_value_buffer_set(nf_finite, 1, 4.0);
         eigs_value_buffer_set(nf_later, 0, INFINITY);
         eigs_value_buffer_set(nf_later, 1, 4.0);
+        eigs_value_buffer_set(nf_finite3, 0, 3.0);
+        eigs_value_buffer_set(nf_finite3, 1, 4.0);
+        eigs_value_buffer_set(nf_finite3, 2, 5.0);
+        eigs_value_buffer_set(nf_prefix, 0, 3.0);
+        eigs_value_buffer_set(nf_prefix, 1, NAN);
+        eigs_value_buffer_set(nf_prefix, 2, INFINITY);
         eigs_set_global("nf_raw", nf_raw);
         eigs_set_global("nf_finite", nf_finite);
         eigs_set_global("nf_later", nf_later);
+        eigs_set_global("nf_finite3", nf_finite3);
+        eigs_set_global("nf_prefix", nf_prefix);
         /* #1926: f64_from_bytes refuses fewer than 8 bytes before reading
          * any, so its row keeps the NaN-then-infinity prefix in a full
          * 8-byte input. */
@@ -831,17 +1065,41 @@ int main(void) {
         eigs_value_release(nf_raw);
         eigs_value_release(nf_finite);
         eigs_value_release(nf_later);
+        eigs_value_release(nf_finite3);
+        eigs_value_release(nf_prefix);
         eigs_state_set_strict(st, 1);
         r = eigs_eval_string("nf_shaped is reshape of [nf_raw, 1, 2]");
         CHECK(r != NULL && !eigs_has_error(),
               "#1417 prepare shaped materialization control");
         eigs_value_release(r);
+        r = eigs_eval_string("num_type of (add of [9007199254740993, 1])");
+        CHECK(r && eigs_value_type(r) == EIGS_TYPE_STR &&
+                  strcmp(eigs_value_as_string(r), "int") == 0,
+              "#1417 recursive failure prefix has a boxed int result");
+        eigs_value_release(r);
+        /* R1.6z-D1: equality never crosses the scalar data boundary. */
+        for (int mode = 0; mode <= 1; ++mode) {
+            eigs_state_set_strict(st, mode);
+            g_math_flags = 0;
+            r = eigs_eval_string("[nf_raw == nf_raw, nf_raw == nf_finite, "
+                "list_contains of [[nf_raw, nf_later], nf_finite], "
+                "list_index_of of [[nf_raw, nf_later], nf_finite]]");
+            CHECK(r && !eigs_has_error() && r->type == VAL_LIST &&
+                  r->data.list.count == 4 &&
+                  slot_is_bool(list_slot(r, 0)) && !slot_as_bool(list_slot(r, 0)),
+                  "R1.6z-D1 NaN buffer equality is false without a raise");
+            CHECK(g_math_flags == 0, "R1.6z-D1 equality leaves math flags alone");
+            eigs_value_release(r);
+            eigs_clear_error();
+        }
+        eigs_state_set_strict(st, 1);
         const char *nf_reads[] = {
-            "nf_raw == nf_raw", "nf_raw == nf_finite",
-            "list_contains of [[nf_raw, nf_later], nf_finite]",
-            "list_index_of of [[nf_raw, nf_later], nf_finite]",
             "sum of nf_raw", "mean of nf_raw", "norm of nf_raw",
             "sum of ([nf_raw, nf_later])",
+            "sum of nf_shaped",
+            "sum of ([9223372036854775807, 1, nf_raw, nf_later])",
+            "sum of (negative of nf_raw)",
+            "sum of (negative of ([9007199254740993, nf_raw, nf_later]))",
             "mean of ([nf_raw, nf_later])",
             "norm of ([nf_raw, nf_later])",
             "dot of [nf_raw, nf_finite]",
@@ -853,6 +1111,21 @@ int main(void) {
             "add of [nf_raw, [0, 0]]", "add of [[0, 0], nf_raw]",
             "subtract of [nf_raw, [0, 0]]", "subtract of [[0, 0], nf_raw]",
             "multiply of [nf_raw, [0, 0]]", "multiply of [[0, 0], nf_raw]",
+            /* #1417: stop after a buffer kernel raises too, including both
+             * operand orders, shaped broadcasts, truncation and recursion.
+             * The nested int prefix owns a boxed result before the failure. */
+            "add of [nf_raw, nf_finite]", "add of [nf_finite, nf_raw]",
+            "subtract of [nf_raw, nf_finite]", "subtract of [nf_finite, nf_raw]",
+            "multiply of [nf_raw, nf_finite]", "multiply of [nf_finite, nf_raw]",
+            "add of [nf_raw, 1]", "add of [1, nf_raw]",
+            "subtract of [nf_raw, 1]", "subtract of [1, nf_raw]",
+            "multiply of [nf_raw, 1]", "multiply of [1, nf_raw]",
+            "add of [nf_shaped, nf_finite]", "add of [nf_finite, nf_shaped]",
+            "add of [nf_raw, nf_finite3]", "add of [nf_finite3, nf_raw]",
+            "add of [nf_prefix, nf_finite3]",
+            "add of [[9007199254740993, nf_raw, nf_later], [1, nf_finite, nf_finite]]",
+            "exp of nf_prefix",
+            "divide of [nf_raw, nf_finite]", "pow of [nf_raw, nf_finite]",
             "divide of [nf_raw, [1, 1]]", "divide of [[1, 1], nf_raw]",
             "pow of [nf_raw, [1, 1]]", "pow of [[1, 1], nf_raw]",
             "add of [nf_shaped, [[0, 0]]]", "add of [[[0, 0]], nf_shaped]",
@@ -1239,10 +1512,11 @@ int main(void) {
     {
         static const char *const NM = "native_after_callback";
         EigsSlot s;
-        SLOT_NUM_RAW(s) = 1441.0;
+        SLOT_F64_RAW(s) = 1441.0;
         trace_assign(NM, s);
         g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
-        CHECK(strstr(g_tape, "S 0 <native> 0 0\nA 0 native_after_callback=1441\n") != NULL,
+        /* Tape v7 marks an integral float as a float: `1441.0`, never `1441`. */
+        CHECK(tape_has_lines(g_tape, "S 0 <native> 0 0\nA 0 native_after_callback=1441.0\n"),
               "native assignment after callback carries native scope");
     }
 
@@ -1262,9 +1536,9 @@ int main(void) {
     eigs_set_trace_sink(NULL, NULL);
     CHECK(g_tape_len > 0, "sink captured tape bytes");
     g_tape[g_tape_len < sizeof g_tape ? g_tape_len : sizeof g_tape - 1] = 0;
-    CHECK(strstr(g_tape, "N 0 host_sensor=100") != NULL, "tape has N record 100");
-    CHECK(strstr(g_tape, "N 0 host_sensor=101") != NULL, "tape has N record 101");
-    CHECK(strstr(g_tape, "A 0 s1=100") != NULL, "tape has assignment record");
+    CHECK(tape_has_lines(g_tape, "N 0 host_sensor=100.0\n"), "tape has N record 100.0");
+    CHECK(tape_has_lines(g_tape, "N 0 host_sensor=101.0\n"), "tape has N record 101.0");
+    CHECK(tape_has_lines(g_tape, "A 0 s1=100.0\n"), "tape has assignment record");
 
     /* recording stopped: another live read advances but adds no bytes */
     size_t tape_frozen = g_tape_len;

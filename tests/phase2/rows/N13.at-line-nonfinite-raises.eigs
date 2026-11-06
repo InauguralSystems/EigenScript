@@ -1,0 +1,19 @@
+# ROW: N13.at-line-nonfinite-raises
+# ITEMS: N13 N5
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+# R2.6: a non-finite or out-of-range float `at` line raises, as the int arm does.
+x is 10
+x is 20
+big is 1e308 * 10
+for ln in [big - big, big, 0.0 - big, 1e300, 3000000000.0]:
+    try:
+        print of ["answered", ln, what is x at ln]
+    catch e:
+        print of [e.kind, e.message]
+try:
+    print of ["answered", what is x at 3000000000]
+catch e:
+    print of [e.kind, e.message]

@@ -1,0 +1,16 @@
+# ROW: ctl.N1.fn-int-truthiness
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop truth JUMP_IF_FALSE
+# OPS: JUMP_IF_FALSE
+define truth(a) as:
+    if a:
+        return 1
+    return 2
+r is null
+i is 0.0
+loop while i < 60.0:
+    r is truth of 0
+    i is i + 1.0
+print of [truth of 0.0, truth of 5, truth of 0]

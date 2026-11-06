@@ -1,0 +1,32 @@
+# R1.6 behaviour-table probe: net_send (int-requiring; the handle and the byte values: N5, bytes then 0..255 (Q1); PROFILE server (make server), loopback only); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":5}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    l is net_listen of 0
+catch e:
+    print of ["capability", e.kind, e.message]
+    exit of 0
+pt is net_port of l
+c is net_dial of ["127.0.0.1", pt]
+a is net_accept of [l, 2000]
+n is net_send of [c, "hi"]
+print of [n, nt of n]
+try:
+    print of ["fraction-answer", net_send of [c + 0.5, "x"]]
+catch e:
+    print of ["handle-fraction", e.kind]
+try:
+    print of ["300-answer", net_send of [c, [65, 300]]]
+catch e:
+    print of ["byte-300", e.kind]
+try:
+    print of ["fraction-answer", net_send of [c, [65.5, 66]]]
+catch e:
+    print of ["byte-fraction", e.kind]
+m is net_send of [c + 0.0, [104.0, 105.0]]
+print of [m, nt of m]
+r is net_recv of [a, 16, 2000]
+print of (str_from_bytes of r)
