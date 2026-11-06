@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R31-4 through R31-8: bare loops stall on qualifying window signals.
+"""R31-4 through R31-9: bare loops stall on qualifying window signals.
 
 Each subject is the final assignment in its loop. Plain bookkeeping must
 not replace the global observer alias. The harmonic case is measured only:
@@ -23,6 +23,7 @@ CASES = {
     "infinite-alternating": ("x is 1e308 * 10.0\nx is 1e308 * 10.0", "x is 0.0 - x"),
     "nan-alternating": ("nan is f64_from_bits of 0x7ff8000000000000\nvals is [1.0, nan]\ni is 0\nx is 1.0", "i is 1 - i\nx is vals[i]"),
     "nan-prefix": ("n is 1000\nnan is f64_from_bits of 0x7ff8000000000000\nx is nan", "n is n + 1\nx is 1.0 / n"),
+    "nan-newest": ("n is 1000\nnan is f64_from_bits of 0x7ff8000000000000\nx is 5.0", "n is n + 1\ny is 1.0 / n\nif n == 1005:\n    y is nan\nx is y"),
     "nan-period3": ("nan is f64_from_bits of 0x7ff8000000000000\nvals is [1.0, 2.0, nan]\ni is 0\nx is 1.0", "i is (i + 1) % 3\nx is vals[i]"),
     "nan-window-edge": ("nan is f64_from_bits of 0x7ff8000000000000\nvals is [512.0, 256.0, 128.0, 64.0, 32.0, 16.0, 8.0, 4.0, 2.0, 1.0, nan]\ni is 0\nx is 512.0", "i is (i + 1) % 11\nx is vals[i]"),
     "overflow-contracting": ("x is 1.7e308\nx is 1.7e308", "x is -0.995 * x"),
@@ -53,6 +54,8 @@ def correct(case, value):
         return reason == "normal" and certified is True and count == 144495
     if case == "nan-prefix":
         return count == 100 and reason == "stalled" and certified is False
+    if case == "nan-newest":
+        return count == 101 and reason == "stalled" and certified is False
     if case in ("alternating", "growing-alternating", "infinite-alternating", "nan-alternating",
                 "nan-period3", "nan-window-edge"):
         return 100 <= count <= 112 and reason == "stalled" and certified is False
