@@ -12,9 +12,10 @@
   Cover a period-3 NaN cycle, the oldest retained input in a period-W+1 NaN
   cycle, and a contracting finite alternation with overflowing steps in all
   four tiers. Three named plants replace `r316-stall-step-nonfinite`;
-  R31-8 adds the initial-NaN prefix witness and one-slot index plant, for
-  nine stall plants and 64 contract readings. The 60 readings established
-  before R31-8 retain their exits and counts.
+  R31-8 adds the initial-NaN prefix witness and forward index plant, and
+  R31-9 adds the newest-NaN prefix witness and backward index plant, for
+  ten stall plants and 68 contract readings. The 64 readings established
+  before R31-9 retain their exits and counts.
 
   A period-12 cycle with one NaN can leave a finite window and reset the
   counter at default W = 10. R31-7 records this residual alongside
