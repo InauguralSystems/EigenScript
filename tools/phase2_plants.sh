@@ -57,7 +57,8 @@ while [ $# -gt 0 ]; do
                 r31-nan-report|r31-where-entropy|r31-how-infinite|\
                 r312-stall-quiet|r312-stall-nonfinite|r312-stall-diverging|\
                 r314-stall-oscillating|r314-stall-nonfinite-order|\
-                r317-stall-window-current|r317-stall-window-extent|r317-stall-step-overflow) ONLY="$2" ;;
+                r317-stall-window-current|r317-stall-window-extent|r317-stall-step-overflow|\
+                r318-stall-window-index) ONLY="$2" ;;
                 *) echo "phase2-plants: FAIL: unknown plant id $2"; exit 2 ;;
             esac
             shift 2 ;;
@@ -97,7 +98,7 @@ plants=0; killed=0; survived=0; broken=0; transverse=0; available=0; observer_gr
 oracle_red=0; oracle_green=0
 EXPECTED_ORACLE=4
 stall_plants=0; stall_killed=0; stall_survived=0; stall_broken=0; stall_green=0; stall_available=0
-EXPECTED_STALL=8
+EXPECTED_STALL=9
 PRISTINE="$WORK/observer-pristine"
 EXPECTED_PLANTS=19
 EXPECTED_OBSERVER=11
@@ -518,11 +519,12 @@ run_observer_plant r31-how-infinite src/eigenscript.c \
     '    /* PLANT: apply the relative-step formula even for an infinite step. */' \
     O4.how-infinite-step
 
-# R31-7: eight independently named clause/order plants. The first three
+# R31-8: nine independently named clause/order/index plants. The first three
 # retain their original witnesses. Finite constant alternation isolates the
 # oscillation arm; infinite alternation witnesses non-finite priority, and
 # period-three and period-eleven NaN cycles isolate the retained-input window.
 # A finite contracting alternation protects against counting overflowed steps.
+# An initial NaN distinguishes the newest index before the ring fills.
 run_stall_plant() {
     local id="$1" case_name="$2" old="$3" new="$4" mode dir log build rc verdict="" pattern
     stall_available=$((stall_available + 1))
@@ -614,6 +616,22 @@ run_stall_plant r317-stall-step-overflow overflow-contracting \
     '    if (obs_stall_window_nonfinite(s) ||
         (s->v_window_count && s->v_rel &&
          !isfinite(s->v_rel[s->v_window_head ? s->v_window_head - 1 : s->v_cap - 1]))) return 1; /* PLANT: count overflowed finite-input step */'
+
+run_stall_plant r318-stall-window-index nan-prefix \
+    'static int obs_stall_window_nonfinite(const ObserverSlot *s) {
+    size_t n = s->values_count;
+    size_t full = (size_t)observer_slot_window(s) + 1;
+    if (n > full) n = full;
+    if (!s->v_values) return 0;
+    for (size_t i = 0; i < n; i++) {
+        int idx = (int)s->values_head - 1 - (int)i;' \
+    'static int obs_stall_window_nonfinite(const ObserverSlot *s) {
+    size_t n = s->values_count;
+    size_t full = (size_t)observer_slot_window(s) + 1;
+    if (n > full) n = full;
+    if (!s->v_values) return 0;
+    for (size_t i = 0; i < n; i++) {
+        int idx = (int)s->values_head - (int)i;'
 
 echo "plants=$plants killed=$killed survived=$survived broken=$broken transverse=$transverse"
 echo "observer-unplanted=$observer_green expected=$EXPECTED_OBSERVER"
