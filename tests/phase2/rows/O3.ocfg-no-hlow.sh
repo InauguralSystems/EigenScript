@@ -180,9 +180,10 @@ live_case() {
     program=$2
     "$bin" --lint --json "$program.eigs" > "$program.lint"
     rc=0
-    # This is a live witness in every tier, including the trace tier.
-    # Preserve its JIT settings but do not record or read a tape.
-    { (unset EIGS_TRACE; "$bin" "$program.eigs") > live.out; } 2> live.err || rc=$?
+    # A live run in every tier: no tape is spliced or stepped. The trace
+    # tier records it (EIGS_TRACE is inherited), so that tier's leaf
+    # differential covers the entropy readers as well.
+    { "$bin" "$program.eigs" > live.out; } 2> live.err || rc=$?
     last=$(tail -1 live.out)
     printf '%s rc=%s last=%s\n' "$name" "$rc" "${last:-<missing>}"
     first=$(head -1 live.err)
