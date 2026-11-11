@@ -24,30 +24,35 @@
 # injection path where a user-supplied value could reference another
 # variable.
 define render(tmpl, vars) as:
-    result is ""
-    remaining is tmpl
-    loop while (len of remaining) > 0:
-        open_pos is index_of of [remaining, "{{"]
-        if open_pos < 0:
-            result is result + remaining
-            return result
-        # Literal prefix before the placeholder.
-        result is result + (substr of [remaining, 0, open_pos])
-        # Look for the matching }} after the opener.
-        after_open is substr of [remaining, open_pos + 2, (len of remaining) - open_pos - 2]
-        close_pos is index_of of [after_open, "}}"]
-        if close_pos < 0:
-            # Unterminated placeholder — emit it verbatim and stop.
-            result is result + (substr of [remaining, open_pos, (len of remaining) - open_pos])
-            return result
-        key is substr of [after_open, 0, close_pos]
-        val is "{{" + key + "}}"
-        for i in range of (len of vars):
-            if vars[i][0] == key:
-                val is str of vars[i][1]
-        result is result + val
-        remaining is substr of [after_open, close_pos + 2, (len of after_open) - close_pos - 2]
-    return result
+    "" + tmpl
+    # Split both delimiters in native code, then rebuild the first-close
+    # semantics while collecting output.  key_parts matters for nested
+    # openers: in "{{a{{b}}", the key is "a{{b".
+    local result_parts is []
+    if (index_of of [tmpl, "}}"]) < 0:
+        return tmpl
+    local open_parts is split of [tmpl, "{{"]
+    append of [result_parts, open_parts[0]]
+    local key_parts is []
+    for part in list_slice of [open_parts, 1, len of open_parts]:
+        local close_parts is split of [part, "}}"]
+        append of [key_parts, close_parts[0]]
+        if (len of close_parts) > 1:
+            local key is join of [key_parts, "{{"]
+            local val is "{{" + key + "}}"
+            for var_i in range of (len of vars):
+                if vars[var_i][0] == key:
+                    val is str of vars[var_i][1]
+            append of [result_parts, val]
+            append of [result_parts, close_parts[1]]
+            for close_part in list_slice of [close_parts, 2, len of close_parts]:
+                append of [result_parts, "}}"]
+                append of [result_parts, close_part]
+            key_parts is []
+    if (len of key_parts) > 0:
+        append of [result_parts, "{{"]
+        append of [result_parts, join of [key_parts, "{{"]]
+    return join of [result_parts, ""]
 
 # ---- render_file: load a template file and render it ----
 # render_file of ["template.txt", vars] -> string
