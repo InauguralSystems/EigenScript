@@ -11,8 +11,16 @@ setup_failure() {
   exit 1
 }
 
+# Valgrind is installed when Memcheck starts, not when the binary prints a
+# version. With a libc6-dbg that does not match the installed libc6, or one
+# that dpkg unpacked and could not configure, it prints its version and then
+# dies at startup, and the gate that follows reads that as a regression.
+memcheck_starts() {
+  command -v valgrind >/dev/null 2>&1 && valgrind --version && valgrind --quiet /bin/true
+}
+
 verify() {
-  valgrind --version || { echo "::error::valgrind installed but not runnable"; return 1; }
+  memcheck_starts || { echo "::error::valgrind is installed but Memcheck does not start"; return 1; }
 }
 
 # A restored cache is deliberately installed without apt: this makes the warm
@@ -22,16 +30,28 @@ shopt -s nullglob
 archives=("$archive_dir"/*.deb)
 if ((${#archives[@]})); then
   echo "Installing Valgrind from cached .deb archives"
-  if timeout 120 sudo dpkg -i "${archives[@]}" && command -v valgrind >/dev/null 2>&1 && verify; then
+  if timeout 120 sudo dpkg -i "${archives[@]}" && memcheck_starts; then
     exit 0
   fi
-  echo "::warning::cached Valgrind archives were incomplete or corrupt; falling back to the network"
+  echo "::warning::the cached Valgrind archives did not install a working Valgrind; falling back to the network"
+  # A dpkg -i that fails leaves what it unpacked: Valgrind on the PATH,
+  # printing its version, unconfigured (#2341). apt does not fetch an archive
+  # for a package in that state, so the directory saved afterwards could not
+  # install Valgrind; told to reinstall it, apt stops with "Internal Error, No
+  # file name for valgrind". So remove what the archives installed: the
+  # install below then starts where a runner without a cache starts, and
+  # fetches every archive again.
+  cached_packages=()
+  for archive in "${archives[@]}"; do
+    name=$(dpkg-deb -f "$archive" Package 2>/dev/null) && [ -n "$name" ] && cached_packages+=("$name")
+  done
+  if ((${#cached_packages[@]})); then
+    timeout 120 sudo dpkg --remove "${cached_packages[@]}" ||
+      echo "::warning::could not remove what the cached archives had installed"
+  fi
   sudo rm -f "$archive_dir"/*.deb
-fi
-
-# Some images may already contain Valgrind. This needs neither cache nor mirror.
-if command -v valgrind >/dev/null 2>&1; then
-  verify
+elif memcheck_starts; then
+  # Some images may already contain Valgrind. This needs neither cache nor mirror.
   exit 0
 fi
 
