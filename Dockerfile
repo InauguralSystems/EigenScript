@@ -8,7 +8,7 @@
 # Default build is the slim release (no HTTP / net / db extensions),
 # matching the `eigenscript-linux-x86_64` release artifact.
 
-FROM debian:stable-slim@sha256:13e0a2e78aa0554ad5ff66e4e260c6dbcdff807eb1f39d43b9fb0288aae88b04 AS builder
+FROM debian:stable-slim@sha256:fbfb4059d2127120aa05b6e6064523d2102552f0cf0026ddf0701c12f1f8f3e0 AS builder
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -21,7 +21,7 @@ COPY . .
 
 RUN make install PREFIX=/out CC=gcc
 
-FROM debian:stable-slim@sha256:13e0a2e78aa0554ad5ff66e4e260c6dbcdff807eb1f39d43b9fb0288aae88b04
+FROM debian:stable-slim@sha256:fbfb4059d2127120aa05b6e6064523d2102552f0cf0026ddf0701c12f1f8f3e0
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
