@@ -118,7 +118,7 @@ def staged_count_plant(directory):
     # Keep the real row roster so the count check itself, rather than the
     # earlier row-membership check, must reject the derived checkpoint count.
     row = next(row for row in corpus['rows'] if len(row['checkpoints']) > 1)
-    row['checkpoints'].pop()
+    row['checkpoints'].pop(0)  # retain the required final checkpoint at n
     population.write_json(path, corpus)
     population.check_counts(staged_counts(directory))
 

@@ -1,0 +1,159 @@
+{
+  "format": "r33-site-plants/1",
+  "mutants": [
+    {
+      "id": "S1_ref_current_only",
+      "reading": {
+        "binary": {
+          "float": "0x1.ffffffffffffcp-2"
+        },
+        "key": [
+          "boundary-d2-exact-int",
+          1,
+          "how"
+        ],
+        "missing": false,
+        "mutant": {
+          "float": "0x1.ffbe6e642564dp-2"
+        },
+        "source": "purpose"
+      },
+      "site": "S1"
+    },
+    {
+      "id": "S2-int-significance-disabled",
+      "reading": {
+        "binary": false,
+        "key": [
+          "boundary-d2-int-equality",
+          1,
+          "improving"
+        ],
+        "missing": false,
+        "mutant": true,
+        "source": "purpose"
+      },
+      "site": "S2"
+    },
+    {
+      "id": "S3-float-significance-disabled",
+      "reading": {
+        "binary": false,
+        "key": [
+          "boundary-d2-equality",
+          1,
+          "improving"
+        ],
+        "missing": false,
+        "mutant": true,
+        "source": "purpose"
+      },
+      "site": "S3"
+    },
+    {
+      "id": "S4_tau_zero",
+      "reading": {
+        "binary": true,
+        "key": [
+          "boundary-s4-negative-tau-equality",
+          10,
+          "improving"
+        ],
+        "missing": false,
+        "mutant": false,
+        "source": "purpose"
+      },
+      "site": "S4"
+    },
+    {
+      "id": "ast-Slot.converged-comparison-19-0-complement",
+      "reading": {
+        "binary": true,
+        "key": [
+          "boundary-s5-int-constant",
+          10,
+          "converged"
+        ],
+        "missing": false,
+        "mutant": false,
+        "source": "purpose"
+      },
+      "site": "S5"
+    },
+    {
+      "id": "converged_le_to_lt",
+      "reading": {
+        "binary": true,
+        "key": [
+          "boundary-s6-equality",
+          10,
+          "converged"
+        ],
+        "missing": false,
+        "mutant": false,
+        "source": "purpose"
+      },
+      "site": "S6"
+    },
+    {
+      "id": "ast-Slot.stable-comparison-25-0-complement",
+      "reading": {
+        "binary": true,
+        "key": [
+          "boundary-s5-int-constant",
+          10,
+          "stable"
+        ],
+        "missing": false,
+        "mutant": false,
+        "source": "purpose"
+      },
+      "site": "S7"
+    },
+    {
+      "id": "stable_le_to_lt",
+      "reading": {
+        "binary": true,
+        "key": [
+          "boundary-s8-equality",
+          10,
+          "stable"
+        ],
+        "missing": false,
+        "mutant": false,
+        "source": "purpose"
+      },
+      "site": "S8"
+    },
+    {
+      "id": "N1_last_to_prev",
+      "reading": {
+        "binary": false,
+        "key": [
+          "boundary-n1-last-reference",
+          4,
+          "diverging"
+        ],
+        "missing": false,
+        "mutant": true,
+        "source": "purpose"
+      },
+      "site": "N1"
+    },
+    {
+      "id": "D2_int_compare_via_float",
+      "reading": {
+        "binary": true,
+        "key": [
+          "boundary-d2-exact-int",
+          1,
+          "improving"
+        ],
+        "missing": false,
+        "mutant": false,
+        "source": "purpose"
+      },
+      "site": "D2"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+<!-- Portable projection of historical path spellings. Verbatim OUT artifact SHA256: 6e91f25c56338e4cd6f536dfbdcc001da33177a3a009bae064bebd25be1edef0 -->
 # Design changes: design-0 to R33-1 alignment
 
 62 replacement places: 31 for the original R33-1 alignment, 13 for addendum 1/continuation alignment, and 18 for addendum 2/continuation 2 alignment. Old and new text below are exact text regions; no experimental result is asserted. Unchanged definitions, including the fixture formulas, remain in r3-3-design.r1.md.
@@ -215,7 +216,7 @@ For a qualifying run return `converged=false`, `stable=false`, and `diverging=tr
 
 | object | status on 54008422 | planned use |
 |---|---|---|
-| `float_count_2p50`, `float_count_2p52`, `float_count_2p53_by2` | absent from branch corpus, certificate and labels; present in `/home/jon/src/wt/briefs/out/r3/model/oracle_ext/{corpus,certificate,labels}.json` | add a separately pinned `r33_float/` corpus of these three affine float rows, n=60, checkpoints 10 and 60; regenerate certificates/labels with unchanged frozen tools; compare existing branch labels byte-for-byte; keep the original 72-row calibration pin |
+| `float_count_2p50`, `float_count_2p52`, `float_count_2p53_by2` | absent from branch corpus, certificate and labels; present in `${WORKTREES}/briefs/out/r3/model/oracle_ext/{corpus,certificate,labels}.json` | add a separately pinned `r33_float/` corpus of these three affine float rows, n=60, checkpoints 10 and 60; regenerate certificates/labels with unchanged frozen tools; compare existing branch labels byte-for-byte; keep the original 72-row calibration pin |
 | their generators | x0=2^50,2^52,2^53; a=1.0; b=1.0,1.0,2.0 respectively | each has limit null, tends_to +inf, bounded false, deterministic, HARDY_60; the six-vector label is `[false,false,false,false,true,false]` in schema order |
 | `O2.float-counter-2p53-by2` | absent from MAP and row files | 60 updates from 9007199254740992.0 by 2.0; print `[x, converged, stable, diverging]`: proposed final stdout `[9007199254741112.0, false, false, true]`; design's base `[... ,true,true,false]` remains an unverified source/handoff expectation until measured in the authorized build round |
 | `issue1891_underflow_tail` | in canonical corpus, checkpoints 10 and 80; labels false converged/stable and true diverging | retain and report it, without promising a fix from a floor change |
@@ -884,7 +885,7 @@ Authority: R33-1 item4; addendum2 item1; continuation2 outcome3 portability.
 Old words:
 
 ```text
-Evidence: `work/site_search.py` and `work/site_search.txt`. Re-run with `python3 -B work/site_search.py /home/jon/src/wt/es-r33-design`. The lexical search is the equivalent of `rg -n '\b(obs_floor_scale|g_obs_scale|obs_scale)\b' src`, followed by expansion of each local `scale` to its uses and inspection of the raw tests. There are **five calls** to `obs_floor_scale`, **eight consumer expressions** (the two D2 branches count separately), and the supplying read at line 989. All line numbers below refer to this exact commit. The script's enclosing-function labels are a heuristic; the function names in this table were checked against the declarations.
+Evidence: `work/site_search.py` and `work/site_search.txt`. Re-run with `python3 -B work/site_search.py ${WORKTREES}/es-r33-design`. The lexical search is the equivalent of `rg -n '\b(obs_floor_scale|g_obs_scale|obs_scale)\b' src`, followed by expansion of each local `scale` to its uses and inspection of the raw tests. There are **five calls** to `obs_floor_scale`, **eight consumer expressions** (the two D2 branches count separately), and the supplying read at line 989. All line numbers below refer to this exact commit. The script's enclosing-function labels are a heuristic; the function names in this table were checked against the declarations.
 ```
 
 New words:
