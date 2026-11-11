@@ -229,7 +229,7 @@ def inventory(previous, site_binary, surface_binary, imports_binary):
         streams=[]
         if parent and parent['status']=='CAUGHT':
             w=parent['witness'];key=tuple(w['key']);kind=w['source'];rowid=key[0]
-            mapping=purpose if kind=='purpose' else surfaces if kind=='surface' else old
+            mapping={'purpose':purpose,'surface':surfaces,'import':imports,'immutable':old}[kind]
             row=mapping[rowid]
             answers=actual[kind] if kind in actual else {key:decoded(w['binary'])}
             streams.append((kind,row,answers))

@@ -122,17 +122,9 @@ def import_plants(out=None):
         if key in binary:
             raise HarnessError('INCOMPLETE: duplicate real import-binary key')
         binary[key] = decode(cell['value'])
-    all_rows = r33_imports.verify(DATA / 'site-coverage' / 'imports')
-    # This CI sample keeps the three programs carrying its two planted
-    # faults. The complete identity additionally covers routing probes.
-    ci_ids = {'addendum3-trajectory-imports', 'addendum3-trajectory-refusals',
-              'addendum3-import-store-targets'}
-    if not ci_ids <= {row['id'] for row in all_rows}:
-        raise HarnessError('INCOMPLETE: real CI import programs missing')
-    rows = [row for row in all_rows if row['id'] in ci_ids]
-    if any(key[0] not in {row['id'] for row in all_rows} for key in binary):
-        raise HarnessError('INCOMPLETE: undeclared real import-binary row')
-    binary = {key:value for key,value in binary.items() if key[0] in ci_ids}
+    # After each pre-read seal the full accepted oracle is recorded. The
+    # final enrolled control compares every import fixture, including routes.
+    rows = r33_imports.verify(DATA / 'site-coverage' / 'imports')
     expected = {(row['id'], *key):value for row in rows
                 for key,value in r33_imports.model(row).items()}
     compared = identity.compare_records(expected, binary, 'real import-binary control')

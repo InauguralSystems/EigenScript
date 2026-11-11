@@ -3,6 +3,214 @@
   "readings": [
     {
       "key": [
+        "addendum3-empty-import-routing",
+        0,
+        "probe.ghost-value-channel"
+      ],
+      "value": "equilibrium"
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        0,
+        "probe.ghost-value-channel.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        1,
+        "probe.numeric-true-empty-values"
+      ],
+      "value": "REFUSED"
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        1,
+        "probe.numeric-true-empty-values.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        2,
+        "probe.ignored-nonnumeric-step-payloads"
+      ],
+      "value": "equilibrium"
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        2,
+        "probe.ignored-nonnumeric-step-payloads.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        3,
+        "probe.missing-values-and-exact"
+      ],
+      "value": "equilibrium"
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        3,
+        "probe.missing-values-and-exact.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        4,
+        "probe.scalar-values-ignored"
+      ],
+      "value": "equilibrium"
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        4,
+        "probe.scalar-values-ignored.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        5,
+        "probe.missing-DH-refuses"
+      ],
+      "value": "REFUSED"
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        5,
+        "probe.missing-DH-refuses.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        6,
+        "probe.old-DH-prefix-ignored"
+      ],
+      "value": "equilibrium"
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        6,
+        "probe.old-DH-prefix-ignored.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        7,
+        "probe.nonnumeric-flag-with-single-value"
+      ],
+      "value": "equilibrium"
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        7,
+        "probe.nonnumeric-flag-with-single-value.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        8,
+        "probe.nonnumeric-flag-with-bool-value-refuses"
+      ],
+      "value": "REFUSED"
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        8,
+        "probe.nonnumeric-flag-with-bool-value-refuses.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        9,
+        "probe.unequal-ghost-lengths-refuses"
+      ],
+      "value": "REFUSED"
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        9,
+        "probe.unequal-ghost-lengths-refuses.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        10,
+        "probe.default-empty-numeric-flag"
+      ],
+      "value": "equilibrium"
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        10,
+        "probe.default-empty-numeric-flag.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        11,
+        "probe.default-nonempty-numeric-flag-refuses"
+      ],
+      "value": "REFUSED"
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        11,
+        "probe.default-nonempty-numeric-flag-refuses.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        12,
+        "probe.retained-step-validation-must-use-window"
+      ],
+      "value": "REFUSED"
+    },
+    {
+      "key": [
+        "addendum3-empty-import-routing",
+        12,
+        "probe.retained-step-validation-must-use-window.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
         "addendum3-import-store-targets",
         0,
         "custom.best-store-cannot-change-scale.best"
