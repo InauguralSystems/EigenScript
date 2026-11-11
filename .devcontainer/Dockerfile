@@ -20,7 +20,7 @@
 # once. Dependabot (.github/dependabot.yml, docker) proposes each new digest as
 # its own PR, and that PR's floor run shows whether the new toolchain moves a
 # verdict.
-FROM debian:stable@sha256:23ef8ad09b87c0dbee73f1f962ee78a6515842480a4444a2e5275912d4cad8e4
+FROM debian:stable@sha256:3f0347f4b50e7a54a91d1beaf6ce6fa5aec392347da6a9184b5bfe4e1b814538
 
 ENV DEBIAN_FRONTEND=noninteractive
 
