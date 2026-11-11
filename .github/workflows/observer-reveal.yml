@@ -1,0 +1,93 @@
+name: Observer reveal
+
+on:
+  pull_request:
+    paths:
+      - 'tools/observer_oracle/**'
+      - '.github/workflows/observer-reveal.yml'
+  workflow_dispatch:
+    inputs:
+      round:
+        description: First drand mainnet round after the final SHA post
+        required: true
+        type: string
+      r3:
+        description: Final R3 source commit SHA
+        required: true
+        type: string
+      r3_std:
+        description: Registered R3-STD source commit SHA
+        default: '3eed5caf'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observer-reveal-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  reveal:
+    name: observer reveal (sealed / dry H-cal)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Python dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/reveal-venv"
+          "$RUNNER_TEMP/reveal-venv/bin/pip" install sympy==1.14.0
+      - name: Install compiler guard
+        run: |
+          echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+          echo "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"
+          : > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"
+      - name: Guarded checkout build
+        run: |
+          make build
+          bash tools/cc_guard.sh --report
+      # Historical recipe builds deliberately sanitize PATH, as D10 requires.
+      - name: Driver fixtures
+        run: '"$RUNNER_TEMP/reveal-venv/bin/python" -I tools/observer_oracle/reveal.py --selftest'
+      # --out is absolute in both steps. The driver writes it into the instrument
+      # copy's .git file, and git reads a relative gitdir against that copy: control
+      # (a)'s plant run then finds no repository and the run is VOID (#2339's first run).
+      - name: Dry calibration and H-cal (registered resamples)
+        if: github.event_name == 'pull_request'
+        run: |
+          if "$RUNNER_TEMP/reveal-venv/bin/python" -I tools/observer_oracle/reveal.py \
+              --dry --calibration --r3 3eed5caf --r3-std 3eed5caf \
+              --resamples 10000 --out "$GITHUB_WORKSPACE/build/reveal-result" > "$RUNNER_TEMP/reveal-dry.log" 2>&1; then
+            rc=0
+          else
+            rc=$?
+          fi
+          cat "$RUNNER_TEMP/reveal-dry.log"
+          test "$rc" -eq 2
+          test "$(grep -xc INCOMPLETE "$RUNNER_TEMP/reveal-dry.log")" -eq 1
+          if grep -Eq '^(REFUSED|VOID|FINDING|OUTCOME|DRY OUTCOME)(:| |$)' "$RUNNER_TEMP/reveal-dry.log"; then
+            exit 1
+          fi
+          "$RUNNER_TEMP/reveal-venv/bin/python" -I tools/observer_oracle/reveal.py \
+            --check-dry-a "$GITHUB_WORKSPACE/build/reveal-result/raw.json"
+      - name: Sealed reveal
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          DRAND_ROUND: ${{ inputs.round }}
+          R3_SHA: ${{ inputs.r3 }}
+          R3_STD_SHA: ${{ inputs.r3_std }}
+        run: |
+          "$RUNNER_TEMP/reveal-venv/bin/python" -I tools/observer_oracle/reveal.py \
+            --round "$DRAND_ROUND" --r3 "$R3_SHA" --r3-std "$R3_STD_SHA" \
+            --resamples 10000 --out "$GITHUB_WORKSPACE/build/reveal-result"
+      - name: Raw log, canonical decision and whole population
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: observer-reveal
+          path: build/reveal-result/
+          if-no-files-found: error

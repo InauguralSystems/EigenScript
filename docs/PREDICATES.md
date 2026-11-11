@@ -49,6 +49,8 @@ the oracle.
 | `diverging` | MATH | Hardy §60, Rudin Def. 3.15 | the mathematical definition (no choice) | Does the sequence tend to +∞ or −∞? |
 | `equilibrium` | MATH | NIST e-Handbook 6.4.4.2 | the standard answer, under the delegation; the deterministic case is OUR derivation | Is the sequence weakly stationary: a constant mean and variance, an autocovariance that depends only on the lag? For a deterministic sequence that means constant, so a random walk (constant mean, growing variance) is not in equilibrium, and neither is a settled but still-moving decay. |
 
+D14 (RULING R30R-4): stochastic-family labels hold up to deviations below `2^-53` relative; F9's finite burn is bounded by `0.9^400`, which the reveal checks with exact rationals from each row's own `phi` and `burn`, including its F15 copies and bases, before scoring.
+
 MATH "does the sequence have a limit" (Hardy §58, Rudin Def. 3.1) is reported
 beside `converged` but not scored: no windowed observer can decide it at n.
 
@@ -141,6 +143,96 @@ Two consequences of D7, recorded here (RULING R30I-3 item 8):
   diverging or runaway row. That follows from the registered floor.
 - The copies are regenerated from scaled parameters, so they are scalings
   within 2.4e-15 relative, not bit-exact copies of base × s.
+
+### Running the sealed reveal (#2330)
+
+After the final R3.3 SHA is posted on #1758, use `seal.py --round-after`
+with the post's UTC time to determine the first eligible drand round. The
+orchestrator records the blind argument reviews in
+`tools/observer_oracle/manual_review.json`, then dispatches the
+`Observer reveal` workflow with that round and the declared source SHAs.
+The equivalent command is:
+
+```bash
+python3 -I tools/observer_oracle/reveal.py --round ROUND --r3 FINAL_SHA \
+  --r3-std 3eed5caf --out "$PWD/build/reveal-result"
+```
+
+Give `--out` as an absolute path, as the workflow does. The driver writes
+that path into the `.git` file of its instrument copy, and git reads a
+relative one against the copy's own directory. Control (a)'s plant run then
+finds no repository, the control fails and the run is `VOID`. The first
+hosted dry run of #2339 ended that way.
+
+Before unsealing, the driver verifies `tools/observer_oracle/reveal_commitment.json`
+against the accepted driver, selftest and named fixture inventory hashes. A
+mismatch refuses the run before the beacon is read.
+
+Run with SymPy installed for `certify.py`. Runtime binaries come only from
+serial recipe builds. Rule 6 is checked on R3 before reading the beacon:
+the floor must exit zero, the relevant declarations must be empty, and every
+registered capability must be present. A failure is `REFUSED`, and no H1
+seed is drawn. R3-STD carries its own rule-6 results into the judge.
+
+The complete roster is required before a decision: runtime subjects and
+references, the standard and secondary Python tests in their registered
+predicate domains, and the constant-false, window-four and scaled-tolerance
+controls. Missing evidence is `INCOMPLETE`; a split between execution tiers
+is a `FINDING`. Neither prints an outcome.
+
+Controls are checked on H1: the existing floor plant must go red, constant
+false must score BA one half and fail each predicate's table, W4 must fail
+at least one evaluated rule from 1 through 5 on `converged` (D5 c1;
+rule 6 is recorded separately and does not count), and the registered
+degraded tolerance must resolve the margin (D5 c2). A failed control makes
+the run `VOID`: no outcome is
+printed, and step 1 is repeated before a subject is judged again.
+An undefined constant-false BA makes control (b) undefined and the run
+`INCOMPLETE`; the raw log names the affected predicates. The PR's H-cal dry
+job accepts that diagnostic only for `diverging` and `equilibrium`, with
+control (b) true on the other predicates.
+
+R30R-2 supplies the first-match shipping order for each predicate:
+
+| Condition | What ships | Registered sentence |
+|---|---|---|
+| R3 passes all six rules | R3's band | “All six criteria pass: R3's band ships.” |
+| Otherwise R3-STD passes all six rules | R3-STD's test; R3's further divergence is reverted | “Otherwise R3-STD ships for that predicate.” |
+| Otherwise | INC's band; Round 3 changes to the predicate are reverted | “INC's band stays for p, R3's change to p is reverted, and the table is posted.” |
+
+The reporting duties are additive. When R3 fails rule 4, open the registered
+`kind:silent-wrong` issue and record the measured BA here. When it passes
+rules 2 through 5 but fails rule 1, score the STD_p replacement on a fresh
+sealed H2. These duties do not choose what ships. The driver records the
+duties; it does not open issues or edit this document during measurement.
+The R3-STD comparison remains limited to `converged` and `stable`, as the
+amendment's last paragraph and frozen judge specify.
+
+`raw.json` records the run order and bootstrap seed, manifests and their
+hashes, recipe stamps, preflight facts, labels, readings, execution tiers,
+rule results and controls. Its schema is documented in `reveal.py`'s module
+docstring. `decision.json` is extracted solely from this log, with no machine
+identity, paths, timestamps or Python version. Extraction verifies the registered
+rule lists and verdicts and re-derives the status from the recorded evidence.
+Missing controls, preflight facts or primary rows, or a status mismatch,
+refuses with exit 2 and produces no decision table or outcome. Recompute it with:
+
+```bash
+python3 -I tools/observer_oracle/reveal.py --extract build/reveal-result/raw.json \
+  --out build/reveal-extracted
+```
+
+The independent replication recomputes the decision table from the raw log
+with its own script and compares the bytes. Population files beside the table
+contain every family confusion matrix and disagreement, with absent
+capability readings explicit, for both calibration and the held-out set.
+`--dry --calibration --r3 3eed5caf --r3-std 3eed5caf` exercises the visible
+calibration population and H-cal. Its expected status is `INCOMPLETE`:
+H-cal has no family-15 rows for rule 5 and no positive `diverging` or
+`equilibrium` class for BA. The PR workflow accepts exactly those reasons;
+any additional reason, `REFUSED`, `VOID` or a `FINDING` fails the job.
+Dry runs on H1 families accept only INC or
+ANCHOR as stand-in subjects; every printed outcome is marked `DRY`.
 
 ## Which channel answers (#861)
 
