@@ -1,6 +1,6 @@
 # Design changes: design-0 to R33-1 alignment
 
-44 replacement places: 31 for the original R33-1 alignment and 13 for addendum 1/continuation alignment. Old and new text below are exact text regions; no experimental result is asserted. Unchanged definitions, including the fixture formulas, remain in r3-3-design.r1.md.
+62 replacement places: 31 for the original R33-1 alignment, 13 for addendum 1/continuation alignment, and 18 for addendum 2/continuation 2 alignment. Old and new text below are exact text regions; no experimental result is asserted. Unchanged definitions, including the fixture formulas, remain in r3-3-design.r1.md.
 
 ## 1. Title
 
@@ -857,4 +857,314 @@ New words:
 
 ```text
 R33-1 overrides the pre-ruling design where they differ; addendum 1 overrides its confirmation-refusal rule and nonfinal confirmation counts, as recorded in `design-changes.md`.
+```
+
+
+## 45. Status and complete authority
+
+Authority: R33-1 addendum2 items1–5; continuation2 Read first.
+
+Old words:
+
+```text
+This text brings the design of 2026-11-11 into line with RULING R33-1 and its addendum 1, recorded before any binary ran. The ruling and addendum control the exact changes recorded in `design-changes.md`; addendum 1 replaces the confirmation-refusal sentence and the fixed confirmation counts.
+```
+
+New words:
+
+```text
+This text brings the design of 2026-11-11 into line with RULING R33-1, addendum 1 (recorded before any binary ran), addendum 2 (recorded before the first measurement), and the binding continuation briefs. The exact changes and their authorities are recorded in `design-changes.md`. Addendum 1 replaces the confirmation-refusal sentence and fixed confirmation counts; addendum 2 adds site-reaching identity, group switches, four detailed rules and a new manifest before measurement.
+```
+
+
+## 46. Section a, portable source anchor and coverage distinction
+
+Authority: R33-1 item4; addendum2 item1; continuation2 outcome3 portability.
+
+Old words:
+
+```text
+Evidence: `work/site_search.py` and `work/site_search.txt`. Re-run with `python3 -B work/site_search.py /home/jon/src/wt/es-r33-design`. The lexical search is the equivalent of `rg -n '\b(obs_floor_scale|g_obs_scale|obs_scale)\b' src`, followed by expansion of each local `scale` to its uses and inspection of the raw tests. There are **five calls** to `obs_floor_scale`, **eight consumer expressions** (the two D2 branches count separately), and the supplying read at line 989. All line numbers below refer to this exact commit. The script's enclosing-function labels are a heuristic; the function names in this table were checked against the declarations.
+```
+
+New words:
+
+```text
+The seam inventory is anchored to `src/eigenscript.c` and the state/configuration files at `54008422`. Reproduce its lexical search with `rg -n '\b(obs_floor_scale|g_obs_scale|obs_scale)\b' src`, then expand each local `scale` to its uses and inspect raw tests. There are five calls to `obs_floor_scale`, eight consumer expressions (the two D2 branches count separately), and the supplying read at line 989. All line numbers below refer to this exact commit. The source table states the arm definitions; it is not a substitute for the binary readings that must reach each site.
+```
+
+
+## 47. Section b, PRE1045 and N1 authority
+
+Authority: R33-1 addendum2 item3, first and second bullets.
+
+Old words:
+
+```text
+The per-site policy follows. Every arithmetic comparison not named here keeps the F0 code, including strictness, saturation of `since`, finite-window checks, non-vanishing slack and report priority. Exact S5/S7 and N1's exact branch remain unchanged under every policy.
+```
+
+New words:
+
+```text
+The per-site policy follows. Every arithmetic comparison not named here keeps the F0 code, including strictness, saturation of `since`, finite-window checks, non-vanishing slack and report priority. Exact S5/S7 and N1's exact branch remain unchanged under every policy. Addendum 2 item 3 makes the table's details explicit bar: PRE1045 at S1 uses `1+abs(new)`; its other sites use `1+abs(reference)`. N1 uses `4*eps*(1+abs(last))` for F0/PRE1045, `4*eps*abs(last)` for STD-rel, and `4*eps*max(abs(last),f*peak)` for C. No interpretation of a single scalar replaces those policies.
+```
+
+
+## 48. Section b, group switches before measurement
+
+Authority: R33-1 addendum2 item2; continuation2 outcome2.
+
+Old words:
+
+```text
+A context-aware policy seam resolves step denominators, reference tolerances and raw noise thresholds from one arm selector. S5/S7 have an explicit exact-purpose result.
+```
+
+New words:
+
+```text
+A context-aware policy seam resolves step denominators, reference tolerances and raw noise thresholds from one arm selector. Before the first measurement the port also has an independent switch for each registered leave-one-out group: S1 alone; N1 alone; and S2/S3/S4/S6/S8 with the zero guard. All groups on reproduce the full selected arm, reading for reading; all groups off reproduce F0. Show both on windows written by hand and include the switch machinery in identity. Do not edit the port after the sweep to obtain these ablations. S5/S7 and exact N1 have no experimental switch and retain their exact rule.
+```
+
+
+## 49. Section d, queryable scalars and quiet limitation
+
+Authority: R33-1 addendum2 item1; continuation2 outcome1.
+
+Old words:
+
+```text
+Port all scalar outputs with explicit NaN equality/zero-sign rules. Print examined/declared/mismatch counts and the first differing trace; never call an aggregate score identity.
+```
+
+New words:
+
+```text
+Port and compare each available language-query scalar with explicit NaN equality/zero-sign rules. `quiet` is internal and has no language query at this commit; list it as not compared with the binary and make no identity claim for it. Print examined/declared/mismatch counts and the first differing trace; never call an aggregate score identity.
+```
+
+
+## 50. Section d, site coverage and mutation inventory
+
+Authority: R33-1 addendum2 item1; continuation2 outcome1.
+
+Old words:
+
+```text
+**Scaled calibration.** The rule:
+```
+
+New words:
+
+```text
+**Site-reaching identity and mutation inventory.** The fixed 512 seeded sequences and four anchors remain byte for byte unchanged. Add separate F0 acceptance fixtures, written out in full or generated by a seeded logged rule, until the identity reaches every site the sweep changes. Hash and commit these new fixture definitions/programs in the third manifest before the recipe binary first reads them. Mutate one at a time every comparison operator, constant and choice of reference in S1–S8, N1, D2's running best, raw guards, partial-window rules and the non-finite rule. Include every surviving fault named by the critic. Each mutant belongs to exactly one list: caught by a real binary reading (with the catching reading); equivalent (with a reason); or not reachable through this commit's language (with a reason and the missing capability). Leave none unexplained. Source agreement alone does not establish site coverage.
+
+Where the language can ask, compare non-numeric detours, window override, trajectory export/import and temporal `at`/`when` against the F0 binary. List unqueryable `quiet` separately. These checks establish the instrument; they are not scored calibration samples, scale-policy measurements or new process-family draws.
+
+**Scaled calibration.** The rule:
+```
+
+
+## 51. Section d, non-finite magnitude exclusion authority
+
+Authority: R33-1 addendum2 item3, third bullet.
+
+Old words:
+
+```text
+nonfinite scaled values are excluded by the same recipe.
+```
+
+New words:
+
+```text
+nonfinite scaled values also drop their entire base, now explicitly ruled by addendum 2 item 3.
+```
+
+
+## 52. Section d, distinguish conditional Z definition from user preflight stop
+
+Authority: R33-1 item12; continuation1 added Z stop, retained by continuation2.
+
+Old words:
+
+```text
+For confirmation, all six named rows must remain present and have a true derived label at ×1e6; verify and print those labels before any binary runs. The confirmation Z check reads those six final checkpoints. A missing or unconfirmed required reading is INCOMPLETE, never a smaller denominator.
+```
+
+New words:
+
+```text
+R33-1 item 12 defines confirmation Z on roster rows whose derived label is true at ×1e6. Separately, continuation 1's added stop requires preflight certification of all six named rows with true ×1e6 labels; that continuation still binds. Thus, after that preflight passes, all six are included in confirmation Z. A missing/refused row or a non-true label triggers that preflight stop, rather than silently shrinking the denominator. The six-row preflight requirement is from the user's continuation, not a new clause invented in R33-1 or addendum 2.
+```
+
+
+## 53. Section d, printed-bound threshold
+
+Authority: R33-1 addendum2 item3, fourth bullet.
+
+Old words:
+
+```text
+Read the bound and number of set-aside resamples from what the program prints.
+```
+
+New words:
+
+```text
+Read the bound and number of set-aside resamples from what the program prints. The guard uses the printed bound at four decimals: a printed lower bound of `-0.0200` is not above `-0.02` and fails. Do not reconstruct hidden precision or treat that printed boundary as undecided.
+```
+
+
+## 54. Section d, judge proof and retained outputs
+
+Authority: R33-1 addendum2 item4.
+
+Old words:
+
+```text
+Demonstrate the program on F0 versus F0 before relying on this interface.
+```
+
+New words:
+
+```text
+Demonstrate the program on F0 versus F0 before relying on this interface. Addendum 2 item 4 records what this program proof does: the frozen judge internally computes F0 BA on the two released ×1 sets, while only the zero differences and set-aside counts are retained. This is the registered instrument proof; it does not supply a scale-arm measurement or authorize retaining an F0 experiment metric table in this turn.
+```
+
+
+## 55. Section d, real and portable selftest plants
+
+Authority: continuation2 outcome3; R33-1 addendum2 item1.
+
+Old words:
+
+```text
+Plant each intended refusal once: a one-reading port mismatch, a missing reading, a scaled certifier refusal, a ruling-count mismatch, confirmation without the choice file, and empty comparison. Enrol the selftest in `tools/selftests.txt` and show `bash tools/selftests.sh --changed 54008422b7bb4950131f4dd4d15ead942a2ecb2e --list` exits 0. These are the instrument brief's concrete calibration of R33-1's additive instrument, not new experimental criteria.
+```
+
+New words:
+
+```text
+The selftest plants exercise real derivations: site faults scored against saved real binary readings; a missing reading in a real identity output; a count derived from mutated staged files; parsed confirmation-refusal exclusions that list the refused base and remove it at every relevant scale; confirmation without a choice file; and an empty real comparison. The row uses the portable `python3 -I` standard-library environment of the other oracle rows. It calls no certifier or Sympy process: certifier-dependent facts come from the unchanged program's recorded output and are verified when the manifest is built. Enrol the row in `tools/selftests.txt`, pin its observed plant count, and show `bash tools/selftests.sh --changed 54008422b7bb4950131f4dd4d15ead942a2ecb2e --list` exits 0. Its green control and each actual red detector are retained. These calibrate the instrument rather than add an experimental criterion.
+```
+
+
+## 56. Section d, portable population derivation reference
+
+Authority: continuation2 outcome3 portability; unchanged R33-1 items3,8.
+
+Old words:
+
+```text
+`work/corpus_inventory.py` derives 63 runnable common rows /100 checkpoints;
+```
+
+New words:
+
+```text
+`r33_population.py` derives 63 runnable common rows /100 checkpoints;
+```
+
+
+## 57. Section d, third manifest and earliest measurement
+
+Authority: R33-1 addendum2 item5; continuation2 outcomes5–6.
+
+Old words:
+
+```text
+Its sha256 is posted before any measurement.
+```
+
+New words:
+
+```text
+Its sha256 is posted before any measurement. Addendum 2 requires a new third manifest after the site-coverage/group-switch changes, with the earlier two retained under historical names. The first commit of this continuation holds the new fixtures and the third input manifest before their first binary read. The real binary oracle output is recorded as measured output when obtained; the accepted manifest records its hash and preserves that chronology. Run the full identity again twice, including the A/A, before the first measurement. The earliest permitted first measurement remains **2026-11-12 16:00Z**; publishing a manifest or passing identity does not advance that time.
+```
+
+
+## 58. Section g, extended full identity
+
+Authority: R33-1 addendum2 items1,2,5; continuation2 outcomes1,5.
+
+Old words:
+
+```text
+Prove zero mismatches/key gaps on all 72 canonical rows, every scaled calibration row, H-cal at all four scales, 512 seeded sequences at every index and four anchors.
+```
+
+New words:
+
+```text
+Prove zero mismatches/key gaps on all 72 canonical rows, every certified scaled calibration/confirmation row, released H-cal and matched H-cal copies, the unchanged 512 seeded sequences at every index, four anchors, and the new site/query-surface fixtures. Re-run the full identity twice under the new manifest; the mutation inventory must account for every ruled site and every named surviving fault.
+```
+
+
+## 59. Section g, first measurement time
+
+Authority: R33-1 addendum2 item5.
+
+Old words:
+
+```text
+The manifest is posted before the next turn measures.
+```
+
+New words:
+
+```text
+The new manifest is posted before the next turn measures, and measurement must not begin before 2026-11-12 16:00Z.
+```
+
+
+## 60. Closing site-table stop
+
+Authority: continuation2 added stop and explicit non-stop.
+
+Old words:
+
+```text
+Also stop if ruling items cannot both hold or cannot be built as written
+```
+
+New words:
+
+```text
+Also stop if a new reading shows that the binary differs from the ruled site table's expression, reference or comparison at a site an arm changes: report the window, binary reading and site row, change no arm policy, and end (continuation 2's added stop, protecting the ruled arm definitions). A newly exposed F0-port mismatch is instead corrected against the binary and the full identity repeated. Also stop if ruling items cannot both hold or cannot be built as written
+```
+
+
+## 61. Section d, enrolled real-plant sample
+
+Authority: continuation2 outcome3; the portable selftest's ten site plants and seven input-path plants.
+
+Old words:
+
+```text
+The row uses the portable `python3 -I` standard-library environment of the other oracle rows.
+```
+
+New words:
+
+```text
+The enrolled row samples 17 plants: one recorded-reading fault for each of S1–S8, N1 and D2, plus seven real input-path plants (one changed reading, a missing reading, an empty comparison, a staged count, an unlisted refusal, a refused row restored at one scale, and confirmation without a choice). The row uses the portable `python3 -I` standard-library environment of the other oracle rows.
+```
+
+
+## 62. Section d, distinguish hand-unit depth from binary window query
+
+Authority: addendum2 item1 and continuation2 outcome1, where the language can ask; frozen trajectory import supports depths4–64.
+
+Old words:
+
+```text
+Window-override values 1 and 64, reset/copy and historical-peak carry are additional direct acceptance checks after the baseline identity proof, not substitutes for any of its 512 inputs.
+```
+
+New words:
+
+```text
+Handwritten port unit checks may use depths 1 and 64. Binary window override is queried through trajectory import at the language-supported depths 4 and 64; the language has no ordinary setter and cannot import depth 1 at this commit. Make no binary-identity claim for depth 1. Reset/copy and historical-peak carry checks supplement the baseline identity rather than replace any of its 512 inputs; each available language surface is separately compared as specified below.
 ```

@@ -72,15 +72,15 @@
       {
         "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
         "command": [
-          "/home/jon/.local/venvs/oracle/bin/python",
+          "python3",
           "-B",
-          "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+          "tools/observer_oracle/certify.py",
           "--corpus",
           "tools/observer_oracle/r33_data/populations/cal/x1e6/corpus.json"
         ],
-        "corpus": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/calibration/x1e6/corpus.json",
+        "corpus": "tools/observer_oracle/r33_data/certification-evidence/attempts/calibration/x1e6/corpus.json",
         "corpus_sha256": "f7e9f9c4688c4f4dad7aa59040d33d05ae33e088ce0e9b6dfee2f043a55a471a",
-        "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/calibration-x1e6-full-certify.log",
+        "log": "tools/observer_oracle/r33_data/certification-evidence/logs/calibration-x1e6-full-certify.log",
         "log_sha256": "28040cef47534565fbeea4347264e3dcc36ea368afc631661c16fee734eecbe0",
         "rc": 1,
         "refused": [
@@ -95,7 +95,9 @@
         "scale": "x1e6"
       },
       {
+        "certificate": "tools/observer_oracle/r33_data/certification-evidence/attempts/calibration/x1/certificate.json",
         "certificate_sha256": "e7848129c74d8f3e8264bdc8454dd7e21ce802ac09fd457dfb49bdce61b1822d",
+        "corpus": "tools/observer_oracle/r33_data/certification-evidence/attempts/calibration/x1/corpus.json",
         "corpus_sha256": "f1fc06bc0dbea5aa5e19767b548608b3c81776b645e31150e081d08d10202f64",
         "rc": 0,
         "refused": [],
@@ -104,7 +106,9 @@
         "validated_cached_certificate": true
       },
       {
+        "certificate": "tools/observer_oracle/r33_data/certification-evidence/attempts/calibration/x1e-3/certificate.json",
         "certificate_sha256": "3516972d2ddbb2e9b8c4a587c63e2dad0a93717f1e20fa55dc3499743fa71e17",
+        "corpus": "tools/observer_oracle/r33_data/certification-evidence/attempts/calibration/x1e-3/corpus.json",
         "corpus_sha256": "31ee1dbe7823707067c7beb0022c9c416865d637ab5e60e742ccdb09df3ddeb0",
         "rc": 0,
         "refused": [],
@@ -113,7 +117,9 @@
         "validated_cached_certificate": true
       },
       {
+        "certificate": "tools/observer_oracle/r33_data/certification-evidence/attempts/calibration/x1e3/certificate.json",
         "certificate_sha256": "3cfe828be51aa505c0b71f098ed7e04adc06c69592169db6680797a76f89cba7",
+        "corpus": "tools/observer_oracle/r33_data/certification-evidence/attempts/calibration/x1e3/corpus.json",
         "corpus_sha256": "f7984f659089d32950da440163a0515ac0fb0403afde54d336533c02987a6acf",
         "rc": 0,
         "refused": [],
@@ -126,15 +132,15 @@
       {
         "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
         "command": [
-          "/home/jon/.local/venvs/oracle/bin/python",
+          "python3",
           "-B",
-          "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+          "tools/observer_oracle/certify.py",
           "--corpus",
-          "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1/corpus.json"
+          "tools/observer_oracle/r33_data/certification-evidence/attempts/hcal/x1/corpus.json"
         ],
-        "corpus": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1/corpus.json",
+        "corpus": "tools/observer_oracle/r33_data/certification-evidence/attempts/hcal/x1/corpus.json",
         "corpus_sha256": "f615fb4acfd06d8d53c0368c6bd6db3d7f4ab6d848323496460f860422136647",
-        "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/hcal-x1-full-certify.log",
+        "log": "tools/observer_oracle/r33_data/certification-evidence/logs/hcal-x1-full-certify.log",
         "log_sha256": "0a0e62b9bbeb09457cf2f6a85acfb1b05463afd141aad8ed7a1e18813481bf66",
         "rc": 0,
         "refused": [],
@@ -144,15 +150,15 @@
       {
         "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
         "command": [
-          "/home/jon/.local/venvs/oracle/bin/python",
+          "python3",
           "-B",
-          "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+          "tools/observer_oracle/certify.py",
           "--corpus",
-          "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1e-3/corpus.json"
+          "tools/observer_oracle/r33_data/certification-evidence/attempts/hcal/x1e-3/corpus.json"
         ],
-        "corpus": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1e-3/corpus.json",
+        "corpus": "tools/observer_oracle/r33_data/certification-evidence/attempts/hcal/x1e-3/corpus.json",
         "corpus_sha256": "68eda960ae57ce69e004d049b874d14271c6f563641b90656365f5ac0dc253d4",
-        "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/hcal-x1e-3-full-certify.log",
+        "log": "tools/observer_oracle/r33_data/certification-evidence/logs/hcal-x1e-3-full-certify.log",
         "log_sha256": "733554a9587c847c6da0ddc53d55ce981bceec31a3f0a372648eea90cd4e5fa8",
         "rc": 0,
         "refused": [],
@@ -162,15 +168,15 @@
       {
         "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
         "command": [
-          "/home/jon/.local/venvs/oracle/bin/python",
+          "python3",
           "-B",
-          "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+          "tools/observer_oracle/certify.py",
           "--corpus",
-          "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1e3/corpus.json"
+          "tools/observer_oracle/r33_data/certification-evidence/attempts/hcal/x1e3/corpus.json"
         ],
-        "corpus": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1e3/corpus.json",
+        "corpus": "tools/observer_oracle/r33_data/certification-evidence/attempts/hcal/x1e3/corpus.json",
         "corpus_sha256": "4e445b859d173cb0c771b8339ded19b207f652020b9b8c5619cfeda5a81067f5",
-        "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/hcal-x1e3-full-certify.log",
+        "log": "tools/observer_oracle/r33_data/certification-evidence/logs/hcal-x1e3-full-certify.log",
         "log_sha256": "b4784fdacd5e94d4770250f1b39bfc79b0432f196c63de25791867972c608446",
         "rc": 0,
         "refused": [],
@@ -180,15 +186,15 @@
       {
         "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
         "command": [
-          "/home/jon/.local/venvs/oracle/bin/python",
+          "python3",
           "-B",
-          "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+          "tools/observer_oracle/certify.py",
           "--corpus",
-          "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1e6/corpus.json"
+          "tools/observer_oracle/r33_data/certification-evidence/attempts/hcal/x1e6/corpus.json"
         ],
-        "corpus": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1e6/corpus.json",
+        "corpus": "tools/observer_oracle/r33_data/certification-evidence/attempts/hcal/x1e6/corpus.json",
         "corpus_sha256": "7bd8d9ffa038c54b795bc670a7f690ef6ef99b739ce657fbf3dc7647bc1d9b4a",
-        "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/hcal-x1e6-full-certify.log",
+        "log": "tools/observer_oracle/r33_data/certification-evidence/logs/hcal-x1e6-full-certify.log",
         "log_sha256": "57d860ac4349220f1683bbfe072fed0a2cd300069cffef45c705260c9e919d95",
         "rc": 0,
         "refused": [],
@@ -198,15 +204,15 @@
     ]
   },
   "calibration_unchanged": {
-    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1/certificate.json": "e7848129c74d8f3e8264bdc8454dd7e21ce802ac09fd457dfb49bdce61b1822d",
-    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1/corpus.json": "f1fc06bc0dbea5aa5e19767b548608b3c81776b645e31150e081d08d10202f64",
-    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1/labels.json": "6a6c227fa73cb88c4be8c32b417e8b4693bbdf29b3eb8d0c994e60a8cc352cec",
-    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1e-3/certificate.json": "3516972d2ddbb2e9b8c4a587c63e2dad0a93717f1e20fa55dc3499743fa71e17",
-    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1e-3/corpus.json": "31ee1dbe7823707067c7beb0022c9c416865d637ab5e60e742ccdb09df3ddeb0",
-    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1e-3/labels.json": "b81483c24876cfbebe431c8f43cc57898e39d902e7f221035e86a1b87602dde8",
-    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1e3/certificate.json": "3cfe828be51aa505c0b71f098ed7e04adc06c69592169db6680797a76f89cba7",
-    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1e3/corpus.json": "f7984f659089d32950da440163a0515ac0fb0403afde54d336533c02987a6acf",
-    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1e3/labels.json": "bdd18b56cd3edb452adb0e437d013acf93e085c5d727b9f9fbba9db0a22ccd58"
+    "tools/observer_oracle/r33_data/populations/cal/x1/certificate.json": "e7848129c74d8f3e8264bdc8454dd7e21ce802ac09fd457dfb49bdce61b1822d",
+    "tools/observer_oracle/r33_data/populations/cal/x1/corpus.json": "f1fc06bc0dbea5aa5e19767b548608b3c81776b645e31150e081d08d10202f64",
+    "tools/observer_oracle/r33_data/populations/cal/x1/labels.json": "6a6c227fa73cb88c4be8c32b417e8b4693bbdf29b3eb8d0c994e60a8cc352cec",
+    "tools/observer_oracle/r33_data/populations/cal/x1e-3/certificate.json": "3516972d2ddbb2e9b8c4a587c63e2dad0a93717f1e20fa55dc3499743fa71e17",
+    "tools/observer_oracle/r33_data/populations/cal/x1e-3/corpus.json": "31ee1dbe7823707067c7beb0022c9c416865d637ab5e60e742ccdb09df3ddeb0",
+    "tools/observer_oracle/r33_data/populations/cal/x1e-3/labels.json": "b81483c24876cfbebe431c8f43cc57898e39d902e7f221035e86a1b87602dde8",
+    "tools/observer_oracle/r33_data/populations/cal/x1e3/certificate.json": "3cfe828be51aa505c0b71f098ed7e04adc06c69592169db6680797a76f89cba7",
+    "tools/observer_oracle/r33_data/populations/cal/x1e3/corpus.json": "f7984f659089d32950da440163a0515ac0fb0403afde54d336533c02987a6acf",
+    "tools/observer_oracle/r33_data/populations/cal/x1e3/labels.json": "bdd18b56cd3edb452adb0e437d013acf93e085c5d727b9f9fbba9db0a22ccd58"
   },
   "comparison_sets": {
     "i": {
@@ -756,7 +762,7 @@
         "refusals": [
           {
             "line": "REFUSED cos_fixed_point: f(L) != L at the stated limit 739085.1332151607: L is not a fixed point",
-            "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/calibration-x1e6-full-certify.log",
+            "log": "tools/observer_oracle/r33_data/certification-evidence/logs/calibration-x1e6-full-certify.log",
             "log_sha256": "28040cef47534565fbeea4347264e3dcc36ea368afc631661c16fee734eecbe0",
             "message": "f(L) != L at the stated limit 739085.1332151607: L is not a fixed point",
             "scale": "x1e6"
@@ -791,15 +797,15 @@
     {
       "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
       "command": [
-        "/home/jon/.local/venvs/oracle/bin/python",
+        "python3",
         "-B",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+        "tools/observer_oracle/certify.py",
         "--corpus",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-cal/x1/corpus.json"
+        "tools/observer_oracle/r33_data/populations/confirm-cal/x1/corpus.json"
       ],
-      "corpus": "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-cal/x1/corpus.json",
+      "corpus": "tools/observer_oracle/r33_data/populations/confirm-cal/x1/corpus.json",
       "corpus_sha256": "fe85a5df03a9ee09a857df981d4c04e3c95438b21c2997c6d7fbfb49399a5673",
-      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-cal-x1-certify.log",
+      "log": "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-cal-x1-certify.log",
       "log_sha256": "ca0533c9a9b1b66fc34dc6be1399864ba89e29f63f1cb14ef1c844add596d2fd",
       "rc": 0,
       "refused": [],
@@ -807,14 +813,14 @@
     },
     {
       "command": [
-        "/home/jon/.local/venvs/oracle/bin/python",
+        "python3",
         "-B",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/derive.py",
+        "tools/observer_oracle/derive.py",
         "--corpus",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-cal/x1/corpus.json",
+        "tools/observer_oracle/r33_data/populations/confirm-cal/x1/corpus.json",
         "--write"
       ],
-      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-cal-x1-derive.log",
+      "log": "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-cal-x1-derive.log",
       "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "rc": 0,
       "receipt_reconstructed_after_programs": true
@@ -822,15 +828,15 @@
     {
       "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
       "command": [
-        "/home/jon/.local/venvs/oracle/bin/python",
+        "python3",
         "-B",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+        "tools/observer_oracle/certify.py",
         "--corpus",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-cal/x1e6/corpus.json"
+        "tools/observer_oracle/r33_data/populations/confirm-cal/x1e6/corpus.json"
       ],
-      "corpus": "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-cal/x1e6/corpus.json",
+      "corpus": "tools/observer_oracle/r33_data/populations/confirm-cal/x1e6/corpus.json",
       "corpus_sha256": "4086f65a203a2452c3e95aa0f0527d7c0b663b25c3fd7000fed331e184030b6a",
-      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-cal-x1e6-certify.log",
+      "log": "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-cal-x1e6-certify.log",
       "log_sha256": "0f2aef0068ee9d32187d2fba51433ea1c51cffa45ade2af11b982a3129f29960",
       "rc": 0,
       "refused": [],
@@ -838,14 +844,14 @@
     },
     {
       "command": [
-        "/home/jon/.local/venvs/oracle/bin/python",
+        "python3",
         "-B",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/derive.py",
+        "tools/observer_oracle/derive.py",
         "--corpus",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-cal/x1e6/corpus.json",
+        "tools/observer_oracle/r33_data/populations/confirm-cal/x1e6/corpus.json",
         "--write"
       ],
-      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-cal-x1e6-derive.log",
+      "log": "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-cal-x1e6-derive.log",
       "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "rc": 0,
       "receipt_reconstructed_after_programs": true
@@ -853,15 +859,15 @@
     {
       "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
       "command": [
-        "/home/jon/.local/venvs/oracle/bin/python",
+        "python3",
         "-B",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+        "tools/observer_oracle/certify.py",
         "--corpus",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1/corpus.json"
+        "tools/observer_oracle/r33_data/populations/confirm-hcal/x1/corpus.json"
       ],
-      "corpus": "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1/corpus.json",
+      "corpus": "tools/observer_oracle/r33_data/populations/confirm-hcal/x1/corpus.json",
       "corpus_sha256": "f615fb4acfd06d8d53c0368c6bd6db3d7f4ab6d848323496460f860422136647",
-      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1-certify.log",
+      "log": "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1-certify.log",
       "log_sha256": "0a0e62b9bbeb09457cf2f6a85acfb1b05463afd141aad8ed7a1e18813481bf66",
       "rc": 0,
       "refused": [],
@@ -869,14 +875,14 @@
     },
     {
       "command": [
-        "/home/jon/.local/venvs/oracle/bin/python",
+        "python3",
         "-B",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/derive.py",
+        "tools/observer_oracle/derive.py",
         "--corpus",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1/corpus.json",
+        "tools/observer_oracle/r33_data/populations/confirm-hcal/x1/corpus.json",
         "--write"
       ],
-      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1-derive.log",
+      "log": "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1-derive.log",
       "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "rc": 0,
       "receipt_reconstructed_after_programs": true
@@ -884,15 +890,15 @@
     {
       "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
       "command": [
-        "/home/jon/.local/venvs/oracle/bin/python",
+        "python3",
         "-B",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+        "tools/observer_oracle/certify.py",
         "--corpus",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e-3/corpus.json"
+        "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e-3/corpus.json"
       ],
-      "corpus": "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e-3/corpus.json",
+      "corpus": "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e-3/corpus.json",
       "corpus_sha256": "68eda960ae57ce69e004d049b874d14271c6f563641b90656365f5ac0dc253d4",
-      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1e-3-certify.log",
+      "log": "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1e-3-certify.log",
       "log_sha256": "733554a9587c847c6da0ddc53d55ce981bceec31a3f0a372648eea90cd4e5fa8",
       "rc": 0,
       "refused": [],
@@ -900,14 +906,14 @@
     },
     {
       "command": [
-        "/home/jon/.local/venvs/oracle/bin/python",
+        "python3",
         "-B",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/derive.py",
+        "tools/observer_oracle/derive.py",
         "--corpus",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e-3/corpus.json",
+        "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e-3/corpus.json",
         "--write"
       ],
-      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1e-3-derive.log",
+      "log": "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1e-3-derive.log",
       "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "rc": 0,
       "receipt_reconstructed_after_programs": true
@@ -915,15 +921,15 @@
     {
       "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
       "command": [
-        "/home/jon/.local/venvs/oracle/bin/python",
+        "python3",
         "-B",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+        "tools/observer_oracle/certify.py",
         "--corpus",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e3/corpus.json"
+        "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e3/corpus.json"
       ],
-      "corpus": "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e3/corpus.json",
+      "corpus": "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e3/corpus.json",
       "corpus_sha256": "4e445b859d173cb0c771b8339ded19b207f652020b9b8c5619cfeda5a81067f5",
-      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1e3-certify.log",
+      "log": "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1e3-certify.log",
       "log_sha256": "b4784fdacd5e94d4770250f1b39bfc79b0432f196c63de25791867972c608446",
       "rc": 0,
       "refused": [],
@@ -931,14 +937,14 @@
     },
     {
       "command": [
-        "/home/jon/.local/venvs/oracle/bin/python",
+        "python3",
         "-B",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/derive.py",
+        "tools/observer_oracle/derive.py",
         "--corpus",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e3/corpus.json",
+        "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e3/corpus.json",
         "--write"
       ],
-      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1e3-derive.log",
+      "log": "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1e3-derive.log",
       "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "rc": 0,
       "receipt_reconstructed_after_programs": true
@@ -946,15 +952,15 @@
     {
       "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
       "command": [
-        "/home/jon/.local/venvs/oracle/bin/python",
+        "python3",
         "-B",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+        "tools/observer_oracle/certify.py",
         "--corpus",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e6/corpus.json"
+        "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e6/corpus.json"
       ],
-      "corpus": "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e6/corpus.json",
+      "corpus": "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e6/corpus.json",
       "corpus_sha256": "7bd8d9ffa038c54b795bc670a7f690ef6ef99b739ce657fbf3dc7647bc1d9b4a",
-      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1e6-certify.log",
+      "log": "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1e6-certify.log",
       "log_sha256": "57d860ac4349220f1683bbfe072fed0a2cd300069cffef45c705260c9e919d95",
       "rc": 0,
       "refused": [],
@@ -962,19 +968,54 @@
     },
     {
       "command": [
-        "/home/jon/.local/venvs/oracle/bin/python",
+        "python3",
         "-B",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/derive.py",
+        "tools/observer_oracle/derive.py",
         "--corpus",
-        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e6/corpus.json",
+        "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e6/corpus.json",
         "--write"
       ],
-      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1e6-derive.log",
+      "log": "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1e6-derive.log",
       "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "rc": 0,
       "receipt_reconstructed_after_programs": true
     }
   ],
+  "portable_projection": {
+    "command_note": "Recorded commands use portable descriptive paths; original argv is retained with the historical OUT receipt.",
+    "evidence_files": {
+      "tools/observer_oracle/r33_data/certification-evidence/attempts/calibration/x1/certificate.json": "e7848129c74d8f3e8264bdc8454dd7e21ce802ac09fd457dfb49bdce61b1822d",
+      "tools/observer_oracle/r33_data/certification-evidence/attempts/calibration/x1/corpus.json": "f1fc06bc0dbea5aa5e19767b548608b3c81776b645e31150e081d08d10202f64",
+      "tools/observer_oracle/r33_data/certification-evidence/attempts/calibration/x1e-3/certificate.json": "3516972d2ddbb2e9b8c4a587c63e2dad0a93717f1e20fa55dc3499743fa71e17",
+      "tools/observer_oracle/r33_data/certification-evidence/attempts/calibration/x1e-3/corpus.json": "31ee1dbe7823707067c7beb0022c9c416865d637ab5e60e742ccdb09df3ddeb0",
+      "tools/observer_oracle/r33_data/certification-evidence/attempts/calibration/x1e3/certificate.json": "3cfe828be51aa505c0b71f098ed7e04adc06c69592169db6680797a76f89cba7",
+      "tools/observer_oracle/r33_data/certification-evidence/attempts/calibration/x1e3/corpus.json": "f7984f659089d32950da440163a0515ac0fb0403afde54d336533c02987a6acf",
+      "tools/observer_oracle/r33_data/certification-evidence/attempts/calibration/x1e6/corpus.json": "f7e9f9c4688c4f4dad7aa59040d33d05ae33e088ce0e9b6dfee2f043a55a471a",
+      "tools/observer_oracle/r33_data/certification-evidence/attempts/hcal/x1/corpus.json": "f615fb4acfd06d8d53c0368c6bd6db3d7f4ab6d848323496460f860422136647",
+      "tools/observer_oracle/r33_data/certification-evidence/attempts/hcal/x1e-3/corpus.json": "68eda960ae57ce69e004d049b874d14271c6f563641b90656365f5ac0dc253d4",
+      "tools/observer_oracle/r33_data/certification-evidence/attempts/hcal/x1e3/corpus.json": "4e445b859d173cb0c771b8339ded19b207f652020b9b8c5619cfeda5a81067f5",
+      "tools/observer_oracle/r33_data/certification-evidence/attempts/hcal/x1e6/corpus.json": "7bd8d9ffa038c54b795bc670a7f690ef6ef99b739ce657fbf3dc7647bc1d9b4a",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/calibration-x1e6-full-certify.log": "28040cef47534565fbeea4347264e3dcc36ea368afc631661c16fee734eecbe0",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-cal-x1-certify.log": "ca0533c9a9b1b66fc34dc6be1399864ba89e29f63f1cb14ef1c844add596d2fd",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-cal-x1-derive.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-cal-x1e6-certify.log": "0f2aef0068ee9d32187d2fba51433ea1c51cffa45ade2af11b982a3129f29960",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-cal-x1e6-derive.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1-certify.log": "0a0e62b9bbeb09457cf2f6a85acfb1b05463afd141aad8ed7a1e18813481bf66",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1-derive.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1e-3-certify.log": "733554a9587c847c6da0ddc53d55ce981bceec31a3f0a372648eea90cd4e5fa8",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1e-3-derive.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1e3-certify.log": "b4784fdacd5e94d4770250f1b39bfc79b0432f196c63de25791867972c608446",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1e3-derive.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1e6-certify.log": "57d860ac4349220f1683bbfe072fed0a2cd300069cffef45c705260c9e919d95",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/confirm-hcal-x1e6-derive.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/hcal-x1-full-certify.log": "0a0e62b9bbeb09457cf2f6a85acfb1b05463afd141aad8ed7a1e18813481bf66",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/hcal-x1e-3-full-certify.log": "733554a9587c847c6da0ddc53d55ce981bceec31a3f0a372648eea90cd4e5fa8",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/hcal-x1e3-full-certify.log": "b4784fdacd5e94d4770250f1b39bfc79b0432f196c63de25791867972c608446",
+      "tools/observer_oracle/r33_data/certification-evidence/logs/hcal-x1e6-full-certify.log": "57d860ac4349220f1683bbfe072fed0a2cd300069cffef45c705260c9e919d95"
+    },
+    "format": "r33-portable-receipts/1",
+    "original_receipt_sha256": "7aef7a3e9449933cc677619ae89953025ae2ab1861243fed2b59bc7c595b5a76"
+  },
   "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
   "retained": {
     "calibration": [

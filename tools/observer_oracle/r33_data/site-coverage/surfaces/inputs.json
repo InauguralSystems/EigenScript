@@ -1,0 +1,1960 @@
+{
+  "format": "r33-surfaces/1",
+  "rows": [
+    {
+      "export_at": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "id": "string-first-temporal",
+      "import_windows": [
+        4,
+        64
+      ],
+      "ops": [
+        {
+          "op": "detour",
+          "value": "ab"
+        },
+        {
+          "op": "record",
+          "value": 1.0
+        },
+        {
+          "op": "detour",
+          "value": "abcd"
+        },
+        {
+          "op": "record",
+          "value": 0.9
+        },
+        {
+          "op": "record",
+          "value": 0.5
+        }
+      ],
+      "read_at": [
+        1,
+        3,
+        4
+      ],
+      "temporal": [
+        1,
+        3,
+        4
+      ]
+    },
+    {
+      "export_at": [
+        0,
+        6,
+        7,
+        8,
+        24
+      ],
+      "id": "string-detour-temporal",
+      "import_windows": [
+        4,
+        64
+      ],
+      "ops": [
+        {
+          "op": "record",
+          "value": 1000.0
+        },
+        {
+          "op": "record",
+          "value": 999.5
+        },
+        {
+          "op": "record",
+          "value": 999.0
+        },
+        {
+          "op": "record",
+          "value": 998.5
+        },
+        {
+          "op": "record",
+          "value": 998.0
+        },
+        {
+          "op": "record",
+          "value": 997.5
+        },
+        {
+          "op": "record",
+          "value": 997.0
+        },
+        {
+          "op": "detour",
+          "value": "ab"
+        },
+        {
+          "op": "record",
+          "value": 996.5
+        },
+        {
+          "op": "record",
+          "value": 996.0
+        },
+        {
+          "op": "record",
+          "value": 995.5
+        },
+        {
+          "op": "record",
+          "value": 995.0
+        },
+        {
+          "op": "record",
+          "value": 994.5
+        },
+        {
+          "op": "record",
+          "value": 994.0
+        },
+        {
+          "op": "record",
+          "value": 993.5
+        },
+        {
+          "op": "record",
+          "value": 993.0
+        },
+        {
+          "op": "record",
+          "value": 992.5
+        },
+        {
+          "op": "record",
+          "value": 992.0
+        },
+        {
+          "op": "record",
+          "value": 991.5
+        },
+        {
+          "op": "record",
+          "value": 991.0
+        },
+        {
+          "op": "record",
+          "value": 990.5
+        },
+        {
+          "op": "record",
+          "value": 990.0
+        },
+        {
+          "op": "record",
+          "value": 989.5
+        },
+        {
+          "op": "record",
+          "value": 989.0
+        },
+        {
+          "op": "record",
+          "value": 988.5
+        }
+      ],
+      "read_at": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24
+      ],
+      "temporal": [
+        0,
+        6,
+        8,
+        24
+      ]
+    },
+    {
+      "export_at": [
+        0,
+        4,
+        5,
+        6,
+        18
+      ],
+      "id": "exact-detour-temporal",
+      "import_windows": [
+        4,
+        64
+      ],
+      "ops": [
+        {
+          "op": "record",
+          "value": 9007199254740992
+        },
+        {
+          "op": "record",
+          "value": 9007199254740993
+        },
+        {
+          "op": "record",
+          "value": 9007199254740994
+        },
+        {
+          "op": "record",
+          "value": 9007199254740995
+        },
+        {
+          "op": "record",
+          "value": 9007199254740996
+        },
+        {
+          "op": "detour",
+          "value": "abcd"
+        },
+        {
+          "op": "record",
+          "value": 9007199254740997
+        },
+        {
+          "op": "record",
+          "value": 9007199254740998
+        },
+        {
+          "op": "record",
+          "value": 9007199254740999
+        },
+        {
+          "op": "record",
+          "value": 9007199254741000
+        },
+        {
+          "op": "record",
+          "value": 9007199254741001
+        },
+        {
+          "op": "record",
+          "value": 9007199254741002
+        },
+        {
+          "op": "record",
+          "value": 9007199254741003
+        },
+        {
+          "op": "record",
+          "value": 9007199254741004
+        },
+        {
+          "op": "record",
+          "value": 9007199254741005
+        },
+        {
+          "op": "record",
+          "value": 9007199254741006
+        },
+        {
+          "op": "record",
+          "value": 9007199254741007
+        },
+        {
+          "op": "record",
+          "value": 9007199254741008
+        },
+        {
+          "op": "record",
+          "value": 9007199254741009
+        }
+      ],
+      "read_at": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18
+      ],
+      "temporal": [
+        0,
+        4,
+        6,
+        18
+      ]
+    },
+    {
+      "export_at": [
+        21
+      ],
+      "id": "since-age-20",
+      "import_windows": [
+        4,
+        64
+      ],
+      "ops": [
+        {
+          "op": "record",
+          "value": 1.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        }
+      ],
+      "read_at": [
+        21
+      ],
+      "temporal": [
+        0,
+        1,
+        21
+      ]
+    },
+    {
+      "export_at": [
+        261
+      ],
+      "id": "since-age-260",
+      "import_windows": [
+        4,
+        64
+      ],
+      "ops": [
+        {
+          "op": "record",
+          "value": 1.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        },
+        {
+          "op": "record",
+          "value": 0.0
+        }
+      ],
+      "read_at": [
+        261
+      ],
+      "temporal": [
+        254,
+        255,
+        256,
+        261
+      ]
+    },
+    {
+      "export_at": [],
+      "id": "custom-import-boundaries",
+      "ops": [],
+      "read_at": [],
+      "temporal": [],
+      "trajectories": [
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 0.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              1.0,
+              1.0,
+              0.999999999,
+              0.999999999
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": null,
+            "values": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "window": 4
+          },
+          "name": "raw-nonvanishing-ratio-equality"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              1e-200,
+              -1e-200,
+              1e-200,
+              -1e-200,
+              1e-200,
+              -1e-200,
+              1e-200,
+              -1e-200,
+              1e-200,
+              -1e-200
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": null,
+            "values": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "window": 10
+          },
+          "name": "exact-import-raw-product-underflow"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": -1.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              -2.0,
+              2.0,
+              -2.0
+            ],
+            "rel": [
+              -2.0,
+              2.0,
+              -2.0
+            ],
+            "since": null,
+            "values": [
+              1.0,
+              -1.0,
+              1.0,
+              -1.0
+            ],
+            "window": 4
+          },
+          "name": "window4-three-step-oscillation"
+        },
+        {
+          "data": {
+            "best": 994.0,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 994.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              -2.0,
+              -2.0,
+              -2.0
+            ],
+            "rel": [
+              -0.002,
+              -0.002004008016032064,
+              -0.002008032128514056
+            ],
+            "since": 0,
+            "values": [
+              1000.0,
+              998.0,
+              996.0,
+              994.0
+            ],
+            "window": 64
+          },
+          "name": "window64-partial-drift"
+        },
+        {
+          "data": {
+            "best": 1000.0,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 1000.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": 0,
+            "values": [
+              990.0,
+              991.0,
+              992.0,
+              993.0,
+              994.0,
+              995.0,
+              996.0,
+              997.0,
+              998.0,
+              999.0,
+              1000.0
+            ],
+            "window": 10
+          },
+          "name": "reference-positive-tau-equality"
+        },
+        {
+          "data": {
+            "best": -1000.0,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": -1000.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": 0,
+            "values": [
+              -990.0,
+              -991.0,
+              -992.0,
+              -993.0,
+              -994.0,
+              -995.0,
+              -996.0,
+              -997.0,
+              -998.0,
+              -999.0,
+              -1000.0
+            ],
+            "window": 10
+          },
+          "name": "reference-negative-tau-equality"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 1.01,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              1.0,
+              1.0,
+              1.0,
+              -1.0,
+              -1.0,
+              -1.0,
+              -1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "rel": [
+              0.001,
+              0.001,
+              0.001,
+              0.001,
+              0.001,
+              0.001,
+              0.001,
+              0.001,
+              0.001,
+              0.001
+            ],
+            "since": null,
+            "values": [
+              1.0,
+              1.001,
+              1.002,
+              1.003,
+              1.004,
+              1.005,
+              1.006,
+              1.007,
+              1.008,
+              1.009,
+              1.01
+            ],
+            "window": 10
+          },
+          "name": "zero-window-flag-equality"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 1.01,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "rel": [
+              0.001,
+              0.001,
+              0.001,
+              0.001
+            ],
+            "since": null,
+            "values": [
+              1.0,
+              1.01,
+              1.005,
+              1.0,
+              1.01
+            ],
+            "window": 4
+          },
+          "name": "equilibrium-mean-equality"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 1.01,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "rel": [
+              -0.001,
+              0.001,
+              -0.001,
+              0.001
+            ],
+            "since": null,
+            "values": [
+              1.0,
+              1.01,
+              1.005,
+              1.0,
+              1.01
+            ],
+            "window": 4
+          },
+          "name": "equilibrium-variance-equality"
+        }
+      ]
+    }
+  ]
+}

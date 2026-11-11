@@ -1,0 +1,23 @@
+x is 1000.0
+print of f"I boundary-s6-last-reference 0 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} null {how is x} {when is x} false false"
+x is 1000.5
+print of f"I boundary-s6-last-reference 1 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 1000.5
+print of f"I boundary-s6-last-reference 2 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 1000.5
+print of f"I boundary-s6-last-reference 3 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 1000.5
+print of f"I boundary-s6-last-reference 4 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 1000.5
+print of f"I boundary-s6-last-reference 5 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 1000.5
+print of f"I boundary-s6-last-reference 6 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 1000.5
+print of f"I boundary-s6-last-reference 7 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 1000.5
+print of f"I boundary-s6-last-reference 8 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 1000.5
+print of f"I boundary-s6-last-reference 9 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 1001.0005
+print of f"I boundary-s6-last-reference 10 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+print of "DONE boundary-s6-last-reference"

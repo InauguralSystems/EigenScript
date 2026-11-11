@@ -14,15 +14,15 @@ from gen import HarnessError
 import r33_identity as I
 import r33_metrics as M
 import r33_population as P
-from r33_port import Slot, POLICIES
+from r33_port import Slot, POLICIES, GROUPS
 from schema import PREDS
 
 
-def collect(policy, sets):
+def collect(policy, sets, groups=None):
     records = []
     for name, corpus in sets.items():
         for row in corpus['rows']:
-            slot = Slot(policy=policy)
+            slot = Slot(policy=policy, groups=groups)
             for at, value in enumerate(I.model_values(row)):
                 slot.record(value)
                 if at in row['checkpoints']:
@@ -38,6 +38,8 @@ def main():
     mode.add_argument('--calibration',action='store_true')
     mode.add_argument('--confirmation',action='store_true')
     parser.add_argument('--policy',choices=POLICIES,required=True)
+    parser.add_argument('--groups', nargs='*', choices=GROUPS, default=None,
+                        help='item 19 site groups; omitted=all, empty=F0 at every site')
     parser.add_argument('--manifest',type=Path,required=True)
     parser.add_argument('--data',type=Path,required=True)
     parser.add_argument('--choice',type=Path)
@@ -63,9 +65,9 @@ def main():
             sets.update({'released/x1':released,'released-hcal/x1':P.load_set(P.HERE/'hcal')[0]})
         counter=next(row for row in released['rows'] if row['id']=='int64_count')
         sets['counter/x1']={'rows':[counter]}
-        rows=collect(args.policy,sets)
+        rows=collect(args.policy,sets,args.groups)
         args.out.parent.mkdir(parents=True,exist_ok=True)
-        args.out.write_text(''.join(json.dumps(dict(choice_sha256=digest,**row),sort_keys=True)+'\n' for row in rows))
+        args.out.write_text(''.join(json.dumps(dict(choice_sha256=digest,groups=list(GROUPS if args.groups is None else args.groups),**row),sort_keys=True)+'\n' for row in rows))
         print(json.dumps(dict(choice_sha256=digest,status='READINGS_ONLY',policy=args.policy,
                               readings=len(rows),output=str(args.out))))
         return 0

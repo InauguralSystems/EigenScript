@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
-"""One-time calibration of R33 checks; never an experimental arm sweep.
+"""Portable R33 calibration on real staged inputs and saved F0 readings.
 
-Mutation inputs are handwritten or label-only transforms. Binary/port
-equivalence itself is established by r33_identity, not these toy records.
+No runtime or certifier process, Sympy, experiment metric or non-F0 policy
+runs here. The real binary oracle is captured after the fixture input seal.
+The unchanged certifier's actual recorded output supplies refusal facts.
 """
 import argparse
+import contextlib
+import copy
+import io
 import json
 from pathlib import Path
-import subprocess
+import shutil
 import sys
 import tempfile
 
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))  # Same python3 -I invocation as other oracle rows.
 from gen import HarnessError
-from r33_identity import compare_records
+import r33_identity as identity
 import r33_population as population
+import r33_run as runner
+
+DATA = HERE / 'r33_data'
+SITES = frozenset(('S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'N1', 'D2'))
 
 
 def expect_red(name, action, fragment, out=None):
@@ -28,78 +38,214 @@ def expect_red(name, action, fragment, out=None):
     line = f'PLANT {name}: RED {red}'
     print(line)
     if out:
-        (Path(out)/(name+'.log')).write_text(line+'\n')
+        (Path(out) / (name + '.log')).write_text(line + '\n')
+    return 1
 
 
-def certification_plant(tmp):
-    """Real scaled corpus through the real certifier refusal path."""
-    original = json.loads((population.HERE/'corpus.json').read_text())
-    row = next(r for r in original['rows'] if r['id'] == 'const_5')
-    row = population.scale_row(row, 1e3)
-    row['props']['limit'] = 5001.0
-    original['rows'] = [row]
-    corpus = tmp/'corpus.json'
-    population.write_json(corpus, original)
-    return population.certify_one(corpus, '/home/jon/.local/venvs/oracle/bin/python', tmp/'certifier.log')
+def decode(value):
+    if isinstance(value, dict):
+        return (float.fromhex(value['float']) if set(value) == {'float'} else
+                {key: decode(item) for key, item in value.items()})
+    return [decode(item) for item in value] if isinstance(value, list) else value
 
 
-def missing_choice():
-    with tempfile.TemporaryDirectory(prefix='r33-choice-plant-') as directory:
-        refusal = Path(directory)/'refusal.json'
-        absent_choice = Path(directory)/'missing-choice.json'
-        proc = subprocess.run([sys.executable, '-B', str(population.HERE/'r33_run.py'),
-                               '--confirm', '--choice', str(absent_choice),
-                               '--data', '/must-not-open-r33-data', '--readings', '/must-not-open-r33-readings',
-                               '--out', str(refusal)],
-                              capture_output=True, text=True)
-        if proc.returncode != 2 or not refusal.is_file():
-            raise AssertionError(f'confirmation missing-choice path did not write its rc2 refusal: {proc.stdout} {proc.stderr}')
-        result = json.loads(refusal.read_text())
-    reason = result.get('reason', '')
-    if (result.get('status') != 'REFUSED' or result.get('choice_sha256') is not None
-            or 'choice' not in reason.lower()
-            or any(s in reason for s in ('must-not-open-r33-data', 'must-not-open-r33-readings'))
-            or not any(s in reason.lower() for s in ('missing', 'required', 'refus', 'no such'))):
-        raise AssertionError(f'wrong confirmation failure or inputs opened before choice: {result}')
-    raise HarnessError('CONFIRMATION REFUSED without choice: '+reason)
+def saved_binary(path):
+    obj = json.loads(Path(path).read_text())
+    if obj.get('format') != 'r33-site-binary/1':
+        raise HarnessError('INCOMPLETE: unrecognised real site-binary format')
+    result = {}
+    for record in obj['readings']:
+        key = tuple(record['key'])
+        if len(key) != 3 or key in result:
+            raise HarnessError('INCOMPLETE: duplicate or malformed real site-binary key')
+        result[key] = decode(record['value'])
+    if not result:
+        raise HarnessError('INCOMPLETE: empty saved real site-binary readings')
+    return result
 
 
-def main(out=None):
-    if out:
-        Path(out).mkdir(parents=True, exist_ok=True)
-    expected = {('handwritten', 10, 'converged'): True, ('handwritten', 10, 'stable'): True}
-    compare_records(expected, dict(expected), 'handwritten control')
-    print('CONTROL complete reading comparison: GREEN')
-    wrong = dict(expected)
-    wrong[('handwritten', 10, 'converged')] = False
-    expect_red('one-reading-differs', lambda: compare_records(expected, wrong, 'handwritten port mutant'),
-               'MISMATCH', out)
-    missing = dict(expected)
-    missing.pop(('handwritten', 10, 'stable'))
-    expect_red('missing-reading', lambda: compare_records(expected, missing, 'handwritten missing mutant'),
-               'MISSING', out)
-    counts = {k: want for k, (_item,want) in population.EXPECTED.items()}
-    population.check_counts(counts)
-    counts['bases'] -= 1
-    expect_red('ruling-count-differs', lambda: population.check_counts(counts), 'STOP R33-1 item 3', out)
-    expect_red('empty-comparison', lambda: compare_records({}, {}, 'empty plant'), 'INCOMPLETE', out)
-    expect_red('confirmation-without-choice', missing_choice, 'REFUSED without choice', out)
-    with tempfile.TemporaryDirectory(prefix='r33-certifier-plant-') as directory:
-        tmp = Path(directory)
-        expect_red('scaled-certifier-refusal', lambda: certification_plant(tmp), 'CERTIFIER REFUSED/ERROR', out)
+def site_control(cases_path, binary_path):
+    expected = {}
+    for line in Path(cases_path).read_text().splitlines():
+        row = json.loads(line)
+        for (at, field), value in identity.model_fixture(row).items():
+            key = row['id'], at, field
+            if key in expected:
+                raise HarnessError('INCOMPLETE: duplicate site fixture')
+            expected[key] = value
+    binary = saved_binary(binary_path)
+    n = identity.compare_records(expected, binary, 'real site-binary control')
+    print(f'CONTROL real site-binary comparison: GREEN readings={n}')
+    return expected, binary
+
+
+def site_plants(cases_path, binary_path, out=None):
+    import r33_mutants
+    selection = json.loads((DATA / 'site-coverage' / 'site-plants.json').read_text())
+    if selection.get('format') != 'r33-site-plants/1':
+        raise HarnessError('INCOMPLETE: unknown committed site-plant selection')
+    selected = {row['id']: row['site'] for row in selection['mutants']}
+    if (len(selected) != len(selection['mutants']) or len(selected) != len(SITES)
+            or set(selected.values()) != SITES):
+        raise HarnessError('INCOMPLETE: committed site plants omit a ruled site or repeat a mutant')
+    results = r33_mutants.verify_site_plants(cases_path, binary_path, identifiers=set(selected))
+    if {row['id'] for row in results} != set(selected):
+        raise AssertionError('committed site-plant IDs differ from the live mutation inventory')
+    if not results or not SITES <= {row['site'] for row in results}:
+        raise AssertionError('site plants do not cover S1-S8, N1 and D2')
+    ids = set()
+    for row in results:
+        if (row['id'] in ids or row['caught'] is not True or not row.get('reading')
+                or 'key' not in row['reading'] or row['site'] != selected[row['id']]):
+            raise AssertionError(f'site mutant survived or lacks a catching reading: {row}')
+        ids.add(row['id'])
+        name = f'site-{row["site"]}-{row["id"]}'
+        line = f'PLANT {name}: RED real F0 reading {json.dumps(row["reading"], sort_keys=True)}'
+        print(line)
         if out:
-            (Path(out)/'scaled-certifier.stdout').write_bytes((tmp/'certifier.log').read_bytes())
-            (Path(out)/'scaled-certifier-input.json').write_bytes((tmp/'corpus.json').read_bytes())
-    print('R33 SELFTEST: 6 plants caught, 0 survived; complete control green')
+            (Path(out) / (name + '.log')).write_text(line + '\n')
+    return len(results)
+
+
+def staged_counts(directory):
+    """Actual staged-file derivation; no value comes from EXPECTED."""
+    return population.staged_counts(directory)
+
+
+def staged_count_plant(directory):
+    path = Path(directory) / 'cal' / 'x1' / 'corpus.json'
+    corpus = json.loads(path.read_text())
+    # Keep the real row roster so the count check itself, rather than the
+    # earlier row-membership check, must reject the derived checkpoint count.
+    row = next(row for row in corpus['rows'] if len(row['checkpoints']) > 1)
+    row['checkpoints'].pop()
+    population.write_json(path, corpus)
+    population.check_counts(staged_counts(directory))
+
+
+def certifier_control(log_path):
+    corpus = DATA / 'populations' / 'cal' / 'x1e6' / 'corpus.json'
+    receipt = json.loads((DATA / 'populations' / 'confirmation-counts.json').read_text())
+    recorded = next(row for row in receipt['attempts']['calibration']
+                    if row['scale'] == 'x1e6' and not row.get('validated_cached_certificate'))
+    if (population.sha(log_path) != recorded['log_sha256']
+            or population.sha(corpus) != recorded['corpus_sha256']
+            or population.sha(HERE / 'certify.py') != recorded['certifier_sha256']):
+        raise HarnessError('INCOMPLETE: recorded refusal output/corpus/certifier changed')
+    parsed = population.parse_attempt(corpus, recorded['command'], recorded['rc'], log_path)
+    parsed['scale'] = 'x1e6'
+    if {row['id'] for row in parsed['refused']} != {'cos_fixed_point'}:
+        raise AssertionError('unexpected recorded certifier refusal roster')
+    attempts = {'calibration': [parsed], 'hcal': []}
+    excluded = population.exclusions_from_attempts(attempts)
+    if {row['id'] for row in excluded['calibration']} != {'cos_fixed_point'}:
+        raise AssertionError('real parsed refusal was not listed')
+    population.validate_exclusions(DATA / 'populations', attempts)
+    print('CONTROL recorded certifier refusal: GREEN parsed, listed, removed at every scale')
+    return attempts
+
+
+def unlisted_refusal_plant(log_path, tmp):
+    mutant = Path(tmp) / 'refusal-without-row.log'
+    mutant.write_text('\n'.join(line for line in Path(log_path).read_text().splitlines()
+                               if not line.startswith('REFUSED cos_fixed_point: ')) + '\n')
+    population.parse_attempt(DATA / 'populations' / 'cal' / 'x1e6' / 'corpus.json',
+                             ['python3', 'certify.py'], 1, mutant)
+
+
+def retained_refusal_plant(directory, attempts):
+    original = json.loads((DATA / 'populations' / 'cal' / 'x1' / 'corpus.json').read_text())
+    row = next(row for row in original['rows'] if row['id'] == 'cos_fixed_point')
+    path = Path(directory) / 'confirm-cal' / 'x1' / 'corpus.json'
+    corpus = json.loads(path.read_text())
+    corpus['rows'].append(copy.deepcopy(row))
+    population.write_json(path, corpus)
+    population.validate_exclusions(directory, attempts)
+
+
+def copy_corpora(source, target, groups):
+    for group, scales in groups:
+        for scale in scales:
+            dst = Path(target) / group / scale / 'corpus.json'
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(Path(source) / group / scale / 'corpus.json', dst)
+
+
+def missing_choice(tmp):
+    tmp = Path(tmp)
+    refusal = tmp / 'choice-refusal.json'
+    with contextlib.redirect_stdout(io.StringIO()):
+        rc = runner.main(['--confirm', '--choice', str(tmp / 'missing-choice.json'),
+                          '--data', str(tmp / 'must-not-open-data'),
+                          '--readings', str(tmp / 'must-not-open-readings'), '--out', str(refusal)])
+    result = json.loads(refusal.read_text())
+    reason = result.get('reason', '')
+    if (rc != 2 or result.get('status') != 'REFUSED' or result.get('choice_sha256') is not None
+            or 'choice' not in reason.lower()
+            or any(word in reason for word in ('must-not-open-data', 'must-not-open-readings'))):
+        raise AssertionError(f'wrong confirmation failure or input opened before choice: {result}')
+    raise HarnessError('CONFIRMATION REFUSED without choice: ' + reason)
+
+
+def main(out=None, cases=None, binary=None):
+    out = Path(out) if out else None
+    if out:
+        out.mkdir(parents=True, exist_ok=True)
+    cases = Path(cases) if cases else DATA / 'site-coverage' / 'cases.jsonl'
+    binary = Path(binary) if binary else DATA / 'site-coverage' / 'binary-readings.json'
+    if not cases.is_file() or not binary.is_file():
+        raise HarnessError('INCOMPLETE: real binary site oracle has not been captured yet')
+    expected, actual = site_control(cases, binary)
+    plants = site_plants(cases, binary, out)
+    wrong = copy.deepcopy(actual)
+    key = next(key for key in sorted(wrong) if type(wrong[key]) is bool)
+    wrong[key] = not wrong[key]
+    plants += expect_red('one-reading-differs',
+                         lambda: identity.compare_records(expected, wrong, 'one real binary reading changed'),
+                         'MISMATCH', out)
+    missing = dict(actual)
+    missing.pop(next(iter(missing)))
+    plants += expect_red('missing-reading',
+                         lambda: identity.compare_records(expected, missing, 'one real binary reading missing'),
+                         'MISSING', out)
+    empty = dict(actual)
+    empty.clear()
+    plants += expect_red('empty-comparison',
+                         lambda: identity.compare_records(expected, empty, 'real binary readings removed'),
+                         'INCOMPLETE', out)
+    population.check_counts(staged_counts(DATA / 'populations'))
+    print('CONTROL staged population counts: GREEN derived from files')
+    log_path = DATA / 'site-coverage' / 'certifier-refusal.log'
+    attempts = certifier_control(log_path)
+    with tempfile.TemporaryDirectory(prefix='r33-selftest-') as directory:
+        tmp = Path(directory)
+        staged = tmp / 'staged'
+        copy_corpora(DATA / 'populations', staged, (('cal', ('x1', 'x1e-3', 'x1e3')),))
+        plants += expect_red('ruling-count-differs', lambda: staged_count_plant(staged),
+                             'STOP R33-1 item 3', out)
+        plants += expect_red('confirmation-refusal-unlisted', lambda: unlisted_refusal_plant(log_path, tmp),
+                             'certifier accounting differs', out)
+        copies = tmp / 'confirmation'
+        copy_corpora(DATA / 'populations', copies,
+                     (('confirm-cal', ('x1', 'x1e6')), ('confirm-hcal', tuple(population.SCALES)),
+                      ('cal', ('x1',)), ('judge', ('hcal',))))
+        plants += expect_red('confirmation-refusal-retained-copy',
+                             lambda: retained_refusal_plant(copies, attempts), 'confirmation exclusion roster', out)
+        plants += expect_red('confirmation-without-choice', lambda: missing_choice(tmp),
+                             'REFUSED without choice', out)
+    print(f'R33 SELFTEST: {plants} plants caught, 0 survived; real controls green')
+    return plants
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--selftest',action='store_true',help='explicit registry self-test mode')
+    parser.add_argument('--selftest', action='store_true', help='explicit registry self-test mode')
     parser.add_argument('--out')
+    parser.add_argument('--cases', type=Path)
+    parser.add_argument('--binary-readings', type=Path)
     args = parser.parse_args()
     try:
-        main(args.out)
-    except (AssertionError, HarnessError) as error:
-        print('R33 SELFTEST FAILED: '+str(error), file=sys.stderr)
+        main(args.out, args.cases, args.binary_readings)
+    except (AssertionError, HarnessError, OSError, ValueError, KeyError, TypeError, StopIteration) as error:
+        print('R33 SELFTEST FAILED: ' + str(error), file=sys.stderr)
         raise SystemExit(1)

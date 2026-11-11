@@ -16,6 +16,7 @@ import sys
 import derive
 from gen import HarnessError, generate
 import r33_fixtures as fixtures
+import r33_boundaries as boundaries
 import r33_population as population
 from r33_port import Slot
 from schema import PREDS
@@ -43,6 +44,10 @@ def same(a, b):
         return False
     if isinstance(a, float):
         return (math.isnan(a) and math.isnan(b)) or struct.pack('>d', a) == struct.pack('>d', b)
+    if isinstance(a, dict):
+        return a.keys() == b.keys() and all(same(a[k], b[k]) for k in a)
+    if isinstance(a, (list, tuple)):
+        return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b))
     return a == b
 
 
@@ -95,6 +100,19 @@ def verify_manifest(path):
         raise HarnessError('MANIFEST identity inputs differ from fixed 512 sequences plus four anchors')
     if len(inputs) != 516 or any(row['checkpoints'] != list(range(32)) for row in inputs):
         raise HarnessError('MANIFEST missing declared fixture index')
+    coverage = m['site_coverage']
+    casepath = ROOT/coverage['inputs']
+    cases = [json.loads(line) for line in casepath.read_text().splitlines()]
+    if cases != boundaries.fixtures() or not cases or any(r['window'] != 10 for r in cases):
+        raise HarnessError('MANIFEST purpose inputs differ from written F0 windows')
+    if {p.name for p in (ROOT/coverage['programs']).iterdir()} != {r['id']+'.eigs' for r in cases}:
+        raise HarnessError('MANIFEST missing or extra purpose program')
+    for row in cases:
+        program = ROOT/coverage['programs']/(row['id']+'.eigs')
+        if program.read_text() != fixtures.emit(row):
+            raise HarnessError('MANIFEST purpose program differs from declared window: '+row['id'])
+    import r33_surfaces as surfaces
+    surfaces.verify(ROOT/coverage['surfaces'])
     counts = json.loads((ROOT/data/'confirmation-counts.json').read_text())
     if m['confirmation'] != counts:
         raise HarnessError('MANIFEST confirmation receipt differs from certified populations')
@@ -173,9 +191,9 @@ def fixture_output(row, lines):
     return actual
 
 
-def model_fixture(row):
+def model_fixture(row, slot_type=Slot):
     result = {}
-    slot = Slot(policy='F0')
+    slot = slot_type(policy='F0', window=row.get('window',10))
     for at, typed_value in enumerate(row['values']):
         slot.record(fixtures.untyped(typed_value))
         r = slot.reading()
@@ -250,11 +268,14 @@ def run(manifest_path, binary, out):
             target.extend(dict(set=entry['name'],key=list(k),value=v) for k,v in sorted(result['read'].items()))
         summary['binary_aa_predicate_readings'] = len(second['read'])
         print('IDENTITY '+json.dumps(summary, sort_keys=True), flush=True)
-    fixture_counts = {'seeded': 0, 'anchors': 0}
-    for relative in m['identity_inputs']:
+    fixture_counts = {'seeded': 0, 'anchors': 0, 'site-windows': 0}
+    site_records = []
+    fixture_specs = [(relative, m['identity_programs']) for relative in m['identity_inputs']]
+    fixture_specs.append((m['site_coverage']['inputs'],m['site_coverage']['programs']))
+    for relative, program_directory in fixture_specs:
         for line in (ROOT/relative).read_text().splitlines():
             row = json.loads(line)
-            program = ROOT/m['identity_programs']/(row['id']+'.eigs')
+            program = ROOT/program_directory/(row['id']+'.eigs')
             # Lint reads fixtures too: it happens only after committed manifest.
             lint = score.run_group([binary, '--lint', '--json', str(program)], 120,
                                    env=score.scrubbed({'EIGS_JIT_OFF': '1'}))
@@ -282,7 +303,10 @@ def run(manifest_path, binary, out):
             for result,target in ((actual,binary_a),(second,binary_b)):
                 target.extend(dict(set='fixture',row=row['id'],key=list(k),value=encode(v))
                               for k,v in sorted(result.items()))
-            group = 'seeded' if row['id'].startswith('seeded-') else 'anchors'
+            group = ('seeded' if row['id'].startswith('seeded-') else
+                     'anchors' if row['id'].startswith('ieee-anchor-') else 'site-windows')
+            if group == 'site-windows':
+                site_records.extend(dict(key=[row['id'],*k],value=encode(v)) for k,v in sorted(actual.items()))
             fixture_counts[group] += len(row['checkpoints'])
             for at in row['checkpoints']:
                 all_records.append(dict(set=group, row=row['id'], at=at,
@@ -292,13 +316,50 @@ def run(manifest_path, binary, out):
     for entry in m['sets']:
         _, records = model_corpus(derive.load_corpus(str(ROOT/entry['corpus'])), entry['name'])
         repeated.extend(records)
-    for relative in m['identity_inputs']:
+    for relative, _ in fixture_specs:
         for line in (ROOT/relative).read_text().splitlines():
             row = json.loads(line)
             want = model_fixture(row)
-            group = 'seeded' if row['id'].startswith('seeded-') else 'anchors'
+            group = ('seeded' if row['id'].startswith('seeded-') else
+                     'anchors' if row['id'].startswith('ieee-anchor-') else 'site-windows')
             repeated.extend(dict(set=group, row=row['id'], at=at, predicates={p:want[(at,p)] for p in PREDS})
                             for at in row['checkpoints'])
+    import r33_surfaces as surfaces
+    surface_count = 0
+    surface_records = []
+    for row in surfaces.cases():
+        program = ROOT/m['site_coverage']['surfaces']/'programs'/(row['id']+'.eigs')
+        lint = score.run_group([binary,'--lint','--json',str(program)],120,
+                               env=score.scrubbed({'EIGS_JIT_OFF':'1'}))
+        (out/(row['id']+'.lint.json')).write_text(lint.stdout)
+        if lint.returncode or any(x.get('severity')=='error' for x in json.loads(lint.stdout)):
+            raise HarnessError(f'SURFACE LINT {row["id"]}: {lint.stdout} {lint.stderr}')
+        want = surfaces.model(row)
+        actuals = []
+        for suffix in ('stdout','aa.stdout'):
+            rc,lines,errors,stderr,_ = score.run(binary,str(program),{'EIGS_JIT_OFF':'1'})
+            (out/(row['id']+'.'+suffix)).write_text('\n'.join(lines)+'\n')
+            (out/(row['id']+'.'+suffix+'.stderr')).write_text(stderr)
+            if rc or errors:
+                raise HarnessError(f'SURFACE {row["id"]}: rc={rc} {errors} {stderr}')
+            actuals.append(surfaces.parse(row,lines))
+        try:
+            surface_count += compare_records(want,actuals[0],row['id'])
+            compare_records(actuals[0],actuals[1],row['id']+' binary A/A')
+        except HarnessError as error:
+            write_json(out/(row['id']+'.mismatch.json'),dict(error=str(error),input=row,
+                port=[dict(key=list(k),value=encode(v)) for k,v in sorted(want.items())],
+                binary=[dict(key=list(k),value=encode(v)) for k,v in sorted(actuals[0].items())]))
+            raise
+        for actual, target in zip(actuals,(binary_a,binary_b)):
+            target.extend(dict(set='surface',row=row['id'],key=list(k),value=encode(v))
+                          for k,v in sorted(actual.items()))
+        surface_records.extend(dict(key=[row['id'],*k],value=encode(v)) for k,v in sorted(actuals[0].items()))
+        # Persist scalar identity answers only; no population metric reduction.
+        all_records.extend(dict(set='surface',row=row['id'],key=list(k),value=encode(v)) for k,v in sorted(want.items()))
+        repeated.extend(dict(set='surface',row=row['id'],key=list(k),value=encode(v)) for k,v in sorted(surfaces.model(row).items()))
+    write_json(out/'site-binary-readings.json',dict(format='r33-site-binary/1',readings=site_records))
+    write_json(out/'surface-binary-readings.json',dict(format='r33-surface-binary/1',readings=surface_records))
     for name, records in (('f0-aa-1.jsonl',all_records), ('f0-aa-2.jsonl',repeated)):
         (out/name).write_text(''.join(json.dumps(r, sort_keys=True)+'\n' for r in records))
     if sha(out/'f0-aa-1.jsonl') != sha(out/'f0-aa-2.jsonl'):
@@ -309,6 +370,8 @@ def run(manifest_path, binary, out):
         raise HarnessError('A/A MISMATCH: independent real F0 binary repetitions differ')
     counts.extend(dict(set=k, checkpoints=v, predicate_readings=v*6, scalar_fields=7,
                        total_fields_compared=v*13, mismatches=0) for k,v in fixture_counts.items())
+    counts.append(dict(set='language-surfaces',windows=len(surfaces.cases()),
+                       total_fields_compared=surface_count,mismatches=0))
     write_json(out/'counts.json', dict(sets=counts, aa_sha256=sha(out/'f0-aa-1.jsonl'),
                                     binary_aa_sha256=sha(out/'binary-aa-1.jsonl'),
                                     manifest_sha256=sha(manifest_path), mismatches=0))

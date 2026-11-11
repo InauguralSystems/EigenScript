@@ -21,6 +21,8 @@ POLICIES = ("F0", "STD-rel") + tuple(
     f"C_{f}^{mode}" for mode in ("win", "hist") for f in FRACTIONS
 ) + ("PRE1045",)
 INT_MIN, INT_MAX = -(2**63), 2**63 - 1
+GROUPS = ("S1", "N1", "reference")
+REFERENCE_SITES = frozenset(("S2", "S3", "S4", "S6", "S8", "zero"))
 
 
 def fmax(a, b):
@@ -90,13 +92,13 @@ class Policy:
             return 1.0 + abs(reference)
         return fmax(abs(reference), self.fraction * peak)
 
-    def step(self, raw, previous, current, peak, scale):
+    def step(self, raw, previous, current, peak, scale, zero_guard=True):
         if self.name == "PRE1045":
             denominator = 1.0 + abs(current)
         else:
             reference = fmax(abs(current), abs(previous))
             denominator = self.magnitude(reference, peak, scale)
-        if (self.name == "STD-rel" or self.mode) and denominator == 0.0:
+        if zero_guard and (self.name == "STD-rel" or self.mode) and denominator == 0.0:
             if math.isfinite(previous) and math.isfinite(current) and previous == current == 0.0:
                 return raw  # the registered finite zero-to-zero step, preserving its sign
         return divide(raw, denominator)
@@ -111,8 +113,14 @@ class Slot:
     runtime depths through 64; the subject's default depth is 10.
     """
 
-    def __init__(self, policy="F0", window=10, scale=0.001, dh_zero=0.001, dh_small=0.01):
+    def __init__(self, policy="F0", window=10, scale=0.001, dh_zero=0.001, dh_small=0.01,
+                 groups=None):
         self.policy = policy if isinstance(policy, Policy) else Policy(policy)
+        if isinstance(groups, str):
+            groups = (groups,)
+        self.groups = frozenset(GROUPS if groups is None else groups)
+        if not self.groups <= frozenset(GROUPS):
+            raise ValueError(f"unknown site groups {sorted(self.groups - frozenset(GROUPS))}")
         if type(window) is not int or not 1 <= window <= 64:
             raise ValueError("window must be an integer in 1..64")
         self.window = window
@@ -120,9 +128,73 @@ class Slot:
         self.reset()
 
     def reset(self):
-        self.values, self.raw, self.exact, self.rel = [], [], [], []
+        self._values_buffer, self._raw_buffer = [], []
+        self._exact_buffer, self._rel_buffer = [], []
+        self.capacity = 0
         self.best, self.best_used, self.since = 0.0, False, 255
         self.peak_abs, self.count = 0.0, 0
+        self.numeric = False
+        self.observed = False
+        self._dh_buffer, self.dh_capacity = [], 0
+        self.entropy = self.dH = self.last_entropy = self.previous_dH = 0.0
+
+    @property
+    def values(self):
+        return self._values_buffer[-(self.window + 1):]
+
+    @values.setter
+    def values(self, values):
+        self._values_buffer = list(values)
+
+    @property
+    def raw(self):
+        return self._raw_buffer[-self.window:]
+
+    @raw.setter
+    def raw(self, values):
+        self._raw_buffer = list(values)
+
+    @property
+    def exact(self):
+        return self._exact_buffer[-self.window:]
+
+    @exact.setter
+    def exact(self, values):
+        self._exact_buffer = list(values)
+
+    @property
+    def rel(self):
+        return self._rel_buffer[-self.window:]
+
+    @rel.setter
+    def rel(self, values):
+        self._rel_buffer = list(values)
+
+    @property
+    def dh(self):
+        return self._dh_buffer[-self.window:]
+
+    def set_window(self, window):
+        """Change active depth only; buffers grow on their next push.
+
+        Zero restores the subject's default depth of ten. Decreasing depth
+        never discards the samples retained by the allocated capacity.
+        """
+        if type(window) is not int or not 0 <= window <= 64:
+            raise ValueError("window must be an integer in 0..64")
+        self.window = window or 10
+        return self
+
+    def policy_for(self, site):
+        group = "reference" if site in REFERENCE_SITES else site
+        return self.policy if group in self.groups else Policy("F0")
+
+    def magnitude(self, site, reference, peak=None):
+        return self.policy_for(site).magnitude(reference, self.peak() if peak is None else peak, self.scale)
+
+    def _step(self, raw, previous, current, peak):
+        return self.policy_for("S1").step(raw, previous, current, peak, self.scale,
+                                           zero_guard="reference" in self.groups)
 
     def copy(self):
         return copy.deepcopy(self)
@@ -148,20 +220,22 @@ class Slot:
             delta = value - previous if is_int(value) and is_int(previous) else 0
             exact = is_int(value) and is_int(previous) and INT_MIN <= delta <= INT_MAX
             raw = float(delta) if exact else shadow - float(previous)
-        self.values.append(value)
-        self.values = self.values[-(self.window + 1):]
+        self.capacity = max(self.capacity, self.window)
+        self._values_buffer.append(value)
+        self._values_buffer = self._values_buffer[-(self.capacity + 1):]
         if math.isfinite(shadow) and abs(shadow) > self.peak_abs:
             self.peak_abs = abs(shadow)
         peak = self.peak()
         if previous is not None:
-            relative = self.policy.step(raw, float(previous), shadow, peak, self.scale)
-            self.raw.append(raw)
-            self.exact.append(exact)
-            self.rel.append(relative)
-            self.raw, self.exact, self.rel = (xs[-self.window:] for xs in (self.raw, self.exact, self.rel))
+            relative = self._step(raw, float(previous), shadow, peak)
+            self._raw_buffer.append(raw)
+            self._exact_buffer.append(exact)
+            self._rel_buffer.append(relative)
+            self._raw_buffer, self._exact_buffer, self._rel_buffer = (
+                xs[-self.capacity:] for xs in (self._raw_buffer, self._exact_buffer, self._rel_buffer))
         else:
             self.since = 255
-        threshold = self.best - self.zero * self.policy.magnitude(self.best, peak, self.scale)
+        threshold = self.best - self.zero * self.magnitude("S2" if is_int(value) else "S3", self.best, peak)
         if not self.best_used and math.isfinite(shadow):
             self.best, self.best_used = shadow, True
         elif self.best_used and math.isfinite(shadow) and value < threshold:
@@ -169,16 +243,47 @@ class Slot:
         elif self.since < 255:
             self.since += 1
         self.count += 1
+        self.numeric = True
+        self.observed = True
+        return self
+
+    def detour(self, value):
+        """Observe a string detour without clearing numeric fold state.
+
+        Only its stored entropy fields are modelled here, for trajectory
+        export/import and return to numeric observation. This value-route
+        instrument does not claim identity of nonnumeric predicates.
+        """
+        if type(value) is not str:
+            raise TypeError("detour accepts a string; other entropy routes are outside this value port")
+        data = value.encode("utf-8").split(b"\x00", 1)[0]
+        entropy = 0.0
+        if data:
+            for byte in range(256):
+                count = data.count(byte)
+                if count:
+                    p = count / float(len(data))
+                    entropy -= p * math.log2(p)
+        self.previous_dH = self.dH
+        self.dH = 0.0 if self.count == 0 else entropy - self.last_entropy
+        if self.count:
+            self.dh_capacity = max(self.dh_capacity, self.window)
+            self._dh_buffer.append(self.dH)
+            self._dh_buffer = self._dh_buffer[-self.dh_capacity:]
+        self.entropy = self.last_entropy = entropy
+        self.count += 1
+        self.numeric = False
+        self.observed = True
         return self
 
     def steps(self):
-        if not self.policy.mode:
+        if not self.policy_for("S1").mode:
             return self.rel[:]
         # Item 7: every retained step uses the peak of this question. Raw
         # exact-int subtraction is retained rather than reconstructed from
         # rounded float shadows, as in observer_slot_record_num.
         peak = self.peak()
-        return [self.policy.step(raw, float(a), float(b), peak, self.scale)
+        return [self._step(raw, float(a), float(b), peak)
                 for raw, a, b in zip(self.raw, self.values, self.values[1:])]
 
     def all_exact(self):
@@ -188,8 +293,9 @@ class Slot:
         if self.all_exact():
             return 0.0
         last = float(self.values[-1]) if self.values else 0.0
-        magnitude = (1.0 + abs(last) if self.policy.name in ("F0", "PRE1045") else
-                     self.policy.magnitude(last, self.peak(), self.scale))
+        policy = self.policy_for("N1")
+        magnitude = (1.0 + abs(last) if policy.name in ("F0", "PRE1045") else
+                     policy.magnitude(last, self.peak(), self.scale))
         return 4.0 * sys.float_info.epsilon * magnitude
 
     def raw_nonvanishing(self):
@@ -287,7 +393,7 @@ class Slot:
         if len(self.values) < self.window + 1:
             return False
         w = [float(v) for v in self.values]
-        tau = self.zero * self.policy.magnitude(w[-1], self.peak(), self.scale)
+        tau = self.zero * self.magnitude("S4", w[-1])
         positive, negative = True, True
         for a, b in zip(w, w[1:]):
             d = b - a
@@ -340,7 +446,7 @@ class Slot:
         if self.all_exact():
             return self.exact_diameter() <= self.zero * self.scale
         lo, hi = min(map(float, self.values)), max(map(float, self.values))
-        return hi - lo <= self.zero * self.policy.magnitude(float(self.values[-1]), self.peak(), self.scale)
+        return hi - lo <= self.zero * self.magnitude("S6", float(self.values[-1]))
 
     def raw_one_direction(self):
         negative, nonzero = False, 0
@@ -382,7 +488,7 @@ class Slot:
         lo, hi = min(map(float, self.values)), max(map(float, self.values))
         half_diameter = hi / 2.0 - lo / 2.0
         midrange = hi / 2.0 + lo / 2.0
-        return half_diameter <= self.small * self.policy.magnitude(midrange, self.peak(), self.scale)
+        return half_diameter <= self.small * self.magnitude("S8", midrange)
 
     def report(self):
         if not self.values:
@@ -404,7 +510,17 @@ class Slot:
             return "moving"
         return "stable" if self.flags()[1] else "moving"
 
+    def report_value(self):
+        """The explicit value channel remains queryable during a detour."""
+        return self.report()
+
     def reading(self):
+        if self.values and not self.numeric:
+            raise ValueError("nonnumeric route: use trajectory/report_value; entropy predicates are not modelled")
+        return self.value_reading()
+
+    def value_reading(self):
+        """Numeric-channel readouts, independent of the routed v_last bit."""
         where = self.values[-1] if self.values else None
         why = None
         how = None
@@ -428,31 +544,41 @@ class Slot:
         raw = [b - a if exact else d for a, b, d, exact in
                zip(self.values, self.values[1:], self.raw, self.exact)]
         return {"kind": "trajectory", "values": self.values[:], "rel": self.steps(),
-                "raw": raw, "exact": self.exact[:], "dh": [], "entropy": None,
-                "dH": None, "last_entropy": None, "last_value": self.values[-1] if self.values else None,
+                "raw": raw, "exact": self.exact[:], "dh": [] if self.numeric else self.dh,
+                "entropy": None if self.numeric else self.entropy,
+                "dH": None if self.numeric else self.dH,
+                "last_entropy": None if self.numeric else self.last_entropy,
+                "last_value": self.values[-1] if self.values else None,
                 "best": self.best if self.best_used else None,
                 "since": self.since if self.since != 255 else None,
-                "observed": bool(self.values), "numeric": bool(self.values),
+                "observed": self.observed, "numeric": self.numeric,
                 "window": self.window,
-                **({"peak_abs": self.peak_abs} if self.policy.mode == "hist" else {})}
+                **({"peak_abs": self.peak_abs} if self.policy.mode == "hist" and self.groups else {})}
 
     @classmethod
     def from_trajectory(cls, data, policy="F0", **configuration):
         """Import retained values and D2 state; C ignores stored relatives."""
-        if data.get("kind") != "trajectory":
+        if type(data) is not dict or data.get("kind") != "trajectory":
             raise ValueError("not a trajectory")
-        obj = cls(policy=policy, window=data["window"], **configuration)
+        window = data.get("window", 10)
+        if type(window) not in (int, float) or not math.isfinite(window) or window != math.floor(window) or not 4 <= window <= 64:
+            raise ValueError("trajectory window must be an integer in 4..64")
+        obj = cls(policy=policy, window=int(window), **configuration)
         values, relative, raw, exact = (data[k] for k in ("values", "rel", "raw", "exact"))
+        if any(type(channel) is not list for channel in (values, relative, raw, exact)):
+            raise ValueError("trajectory channels must be lists")
         if not (len(relative) == len(raw) == len(exact) == max(0, len(values) - 1)):
             raise ValueError("trajectory channels have unequal lengths")
-        for value in values:
+        if any(type(value) not in (int, float) for channel in (relative, raw) for value in channel[-obj.window:]):
+            raise ValueError("trajectory step channels must be numeric")
+        for value in values[-(obj.window + 1):]:
             obj.record(value)
         for old, rebuilt in zip(exact[-obj.window:], obj.exact):
             if type(old) is not bool or (old and not rebuilt):
                 raise ValueError("trajectory cannot invent exactness")
         obj.raw = [float(v) for v in raw[-obj.window:]]
         obj.exact = exact[-obj.window:]
-        if not obj.policy.mode:
+        if not obj.policy_for("S1").mode:
             obj.rel = [float(v) for v in relative[-obj.window:]]
         best = data.get("best")
         if best is not None:
@@ -464,9 +590,27 @@ class Slot:
                                 age != math.floor(age) or not 0 <= age <= 255):
             raise ValueError("trajectory since is not a uint8")
         obj.since = 255 if age is None else int(age)
-        if obj.policy.mode == "hist":
+        if obj.policy.mode == "hist" and obj.groups:
             peak = data.get("peak_abs")
             if type(peak) not in (int, float) or not math.isfinite(float(peak)) or peak < obj.peak_abs:
                 raise ValueError("historical trajectory lacks its finite history peak")
             obj.peak_abs = float(peak)
+        for key, attribute in (("entropy", "entropy"), ("dH", "dH"), ("last_entropy", "last_entropy")):
+            value = data.get(key)
+            if value is not None:
+                if type(value) not in (int, float):
+                    raise ValueError(f"trajectory {key} is not numeric")
+                setattr(obj, attribute, float(value))
+        dh = data.get("dh", [])
+        if type(dh) is not list or any(type(v) not in (int, float) for v in dh):
+            raise ValueError("trajectory dh channel is not numeric")
+        obj.dh_capacity = obj.window
+        obj._dh_buffer = [float(v) for v in dh[-obj.window:]]
+        numeric = data.get("numeric", bool(relative))
+        observed = data.get("observed", True)
+        if type(numeric) is not bool or type(observed) is not bool:
+            raise ValueError("trajectory route flags must be boolean")
+        obj.numeric = numeric
+        obj.observed = observed
+        obj.count = len(obj._dh_buffer) + len(obj._raw_buffer)
         return obj

@@ -2,13 +2,13 @@
   "choice_sha256": null,
   "commands": {
     "hcal": [
-      "/usr/bin/python3",
+      "python3",
       "-I",
-      "/home/jon/src/wt/es-r33/tools/observer_oracle/judge.py",
+      "tools/observer_oracle/judge.py",
       "--arm",
-      "F0=/home/jon/src/wt/briefs/out/r3-3/instrument/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/54008422b7bb4950131f4dd4d15ead942a2ecb2e/build/release/eigenscript",
+      "F0=$EVIDENCE/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/54008422b7bb4950131f4dd4d15ead942a2ecb2e/build/release/eigenscript",
       "--arm",
-      "ARM=/home/jon/src/wt/briefs/out/r3-3/instrument/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/54008422b7bb4950131f4dd4d15ead942a2ecb2e/build/release/eigenscript",
+      "ARM=$EVIDENCE/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/54008422b7bb4950131f4dd4d15ead942a2ecb2e/build/release/eigenscript",
       "--diff",
       "ARM,F0",
       "--seed",
@@ -16,16 +16,16 @@
       "--resamples",
       "10000",
       "--corpus",
-      "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/judge-proof/hcal"
+      "tools/observer_oracle/r33_data/judge-proof/hcal"
     ],
     "union": [
-      "/usr/bin/python3",
+      "python3",
       "-I",
-      "/home/jon/src/wt/es-r33/tools/observer_oracle/judge.py",
+      "tools/observer_oracle/judge.py",
       "--arm",
-      "F0=/home/jon/src/wt/briefs/out/r3-3/instrument/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/54008422b7bb4950131f4dd4d15ead942a2ecb2e/build/release/eigenscript",
+      "F0=$EVIDENCE/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/54008422b7bb4950131f4dd4d15ead942a2ecb2e/build/release/eigenscript",
       "--arm",
-      "ARM=/home/jon/src/wt/briefs/out/r3-3/instrument/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/54008422b7bb4950131f4dd4d15ead942a2ecb2e/build/release/eigenscript",
+      "ARM=$EVIDENCE/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/54008422b7bb4950131f4dd4d15ead942a2ecb2e/build/release/eigenscript",
       "--diff",
       "ARM,F0",
       "--seed",
@@ -33,9 +33,9 @@
       "--resamples",
       "10000",
       "--corpus",
-      "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/judge-proof/hcal",
+      "tools/observer_oracle/r33_data/judge-proof/hcal",
       "--corpus",
-      "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/judge-proof/calibration"
+      "tools/observer_oracle/r33_data/judge-proof/calibration"
     ]
   },
   "format": "r33-judge-stage/1",

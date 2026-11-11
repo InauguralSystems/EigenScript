@@ -1,0 +1,23 @@
+x is 0.0
+print of f"I boundary-tau-0x0.0p+0--1-0x1.0000000000000p+0 0 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} null {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} false"
+x is -1.0
+print of f"I boundary-tau-0x0.0p+0--1-0x1.0000000000000p+0 1 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is -2.0
+print of f"I boundary-tau-0x0.0p+0--1-0x1.0000000000000p+0 2 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is -3.0
+print of f"I boundary-tau-0x0.0p+0--1-0x1.0000000000000p+0 3 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is -4.0
+print of f"I boundary-tau-0x0.0p+0--1-0x1.0000000000000p+0 4 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is -5.0
+print of f"I boundary-tau-0x0.0p+0--1-0x1.0000000000000p+0 5 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is -6.0
+print of f"I boundary-tau-0x0.0p+0--1-0x1.0000000000000p+0 6 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is -7.0
+print of f"I boundary-tau-0x0.0p+0--1-0x1.0000000000000p+0 7 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is -8.0
+print of f"I boundary-tau-0x0.0p+0--1-0x1.0000000000000p+0 8 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is -9.0
+print of f"I boundary-tau-0x0.0p+0--1-0x1.0000000000000p+0 9 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is -10.0
+print of f"I boundary-tau-0x0.0p+0--1-0x1.0000000000000p+0 10 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+print of "DONE boundary-tau-0x0.0p+0--1-0x1.0000000000000p+0"

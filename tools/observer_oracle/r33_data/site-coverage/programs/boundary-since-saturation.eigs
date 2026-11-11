@@ -1,0 +1,525 @@
+x is 1.0
+print of f"I boundary-since-saturation 0 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} null {how is x} {when is x} false false"
+x is 0.0
+print of f"I boundary-since-saturation 1 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} false"
+x is 0.0
+print of f"I boundary-since-saturation 2 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 3 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 4 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 5 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 6 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 7 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 8 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 9 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 10 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 11 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 12 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 13 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 14 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 15 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 16 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 17 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 18 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 19 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 20 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 21 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 22 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 23 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 24 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 25 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 26 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 27 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 28 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 29 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 30 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 31 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 32 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 33 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 34 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 35 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 36 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 37 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 38 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 39 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 40 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 41 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 42 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 43 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 44 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 45 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 46 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 47 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 48 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 49 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 50 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 51 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 52 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 53 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 54 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 55 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 56 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 57 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 58 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 59 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 60 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 61 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 62 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 63 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 64 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 65 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 66 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 67 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 68 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 69 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 70 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 71 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 72 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 73 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 74 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 75 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 76 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 77 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 78 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 79 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 80 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 81 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 82 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 83 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 84 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 85 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 86 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 87 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 88 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 89 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 90 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 91 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 92 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 93 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 94 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 95 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 96 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 97 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 98 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 99 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 100 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 101 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 102 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 103 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 104 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 105 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 106 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 107 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 108 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 109 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 110 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 111 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 112 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 113 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 114 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 115 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 116 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 117 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 118 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 119 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 120 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 121 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 122 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 123 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 124 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 125 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 126 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 127 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 128 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 129 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 130 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 131 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 132 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 133 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 134 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 135 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 136 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 137 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 138 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 139 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 140 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 141 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 142 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 143 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 144 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 145 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 146 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 147 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 148 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 149 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 150 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 151 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 152 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 153 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 154 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 155 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 156 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 157 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 158 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 159 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 160 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 161 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 162 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 163 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 164 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 165 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 166 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 167 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 168 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 169 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 170 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 171 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 172 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 173 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 174 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 175 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 176 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 177 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 178 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 179 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 180 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 181 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 182 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 183 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 184 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 185 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 186 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 187 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 188 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 189 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 190 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 191 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 192 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 193 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 194 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 195 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 196 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 197 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 198 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 199 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 200 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 201 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 202 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 203 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 204 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 205 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 206 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 207 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 208 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 209 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 210 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 211 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 212 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 213 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 214 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 215 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 216 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 217 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 218 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 219 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 220 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 221 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 222 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 223 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 224 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 225 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 226 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 227 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 228 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 229 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 230 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 231 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 232 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 233 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 234 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 235 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 236 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 237 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 238 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 239 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 240 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 241 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 242 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 243 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 244 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 245 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 246 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 247 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 248 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 249 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 250 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 251 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 252 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 253 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 254 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 255 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 256 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 257 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 258 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 259 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 260 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I boundary-since-saturation 261 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+print of "DONE boundary-since-saturation"

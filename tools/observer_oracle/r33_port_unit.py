@@ -1,13 +1,74 @@
 #!/usr/bin/env python3
 """Direct R33 port checks on handwritten windows only; no data files read."""
+import argparse
 import math
+from pathlib import Path
+import struct
+import subprocess
+import sys
+import types
 import r33_port as P
+
+CHECKS = 0
 
 
 def check(name, condition):
+    global CHECKS
     if not condition:
         raise AssertionError(name)
+    CHECKS += 1
     print(f"PORT UNIT {name}: ok")
+
+
+def same(a, b):
+    if type(a) is not type(b):
+        return False
+    if type(a) is float:
+        return math.isnan(a) and math.isnan(b) or struct.pack('>d', a) == struct.pack('>d', b)
+    if type(a) is dict:
+        return a.keys() == b.keys() and all(same(a[key], b[key]) for key in a)
+    if type(a) in (tuple, list):
+        return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b))
+    return a == b
+
+
+def handwritten_windows():
+    """Direct unit inputs; never a corpus row or an identity-fixture file."""
+    return [[5.0] * 15,
+            [1000.0 - 0.5 * i for i in range(21)],
+            [1000.0] + [i / 1000.0 for i in range(1, 24)],
+            [0.0, -0.0, 0.0001, -0.0002, 0.0] * 4,
+            [2**53 + i for i in range(21)],
+            [-(2**63), 2**63 - 1, 0, 2**53, float(2**53)] * 4,
+            [0.0, math.inf, math.nan, -math.inf] + [1.0] * 14]
+
+
+def compare_prior(repository, commit):
+    """Optional one-time compatibility check against the delivered port.
+
+    Only the prior source module is read from git. Both ports receive the
+    handwritten in-memory windows above; neither reads population files.
+    The repository location is supplied by the caller, keeping this test
+    portable across the registered independent-replication machines.
+    """
+    source = subprocess.check_output(['git', '-C', str(repository), 'show',
+                                      f'{commit}:tools/observer_oracle/r33_port.py'], text=True)
+    prior = types.ModuleType('_r33_prior_port')
+    prior.__file__ = f'{commit}:tools/observer_oracle/r33_port.py'
+    sys.modules[prior.__name__] = prior
+    exec(compile(source, prior.__file__, 'exec'), prior.__dict__)
+    readings = 0
+    for policy in P.POLICIES:
+        for values in handwritten_windows():
+            original = prior.Slot(policy)
+            grouped = P.Slot(policy, groups=P.GROUPS)
+            for value in values:
+                original.record(value)
+                grouped.record(value)
+                if not same(original.reading(), grouped.reading()):
+                    raise AssertionError(f'all-groups compatibility differs: {policy}, index {grouped.count-1}')
+                readings += 1
+    check(f'all groups equal prior {commit} on {readings} handwritten readings', True)
 
 
 def main():
@@ -87,8 +148,100 @@ def main():
     copied.reset()
     check("reset state",copied.count==0 and copied.peak()==0.0 and not copied.values
           and copied.reading()['where'] is None and copied.reading()['report']=='equilibrium')
-    print("PORT UNIT: 21 checks passed")
+    all_on = all_off = 0
+    for policy in P.POLICIES:
+        for values in handwritten_windows():
+            default = P.Slot(policy)
+            explicit = P.Slot(policy, groups=P.GROUPS)
+            disabled = P.Slot(policy, groups=())
+            baseline = P.Slot('F0')
+            for value in values:
+                for current in (default, explicit, disabled, baseline):
+                    current.record(value)
+                if not same(default.reading(), explicit.reading()):
+                    raise AssertionError(f'all-group selector differs at {policy}/{default.count}')
+                if not same(disabled.reading(), baseline.reading()):
+                    raise AssertionError(f'all-off differs from F0 at {policy}/{default.count}')
+                all_on += 1
+                all_off += 1
+    check(f'all groups match default on {all_on} handwritten readings', True)
+    check(f'all groups off match F0 on {all_off} handwritten readings', True)
+    grouped = P.Slot('C_1e-3^hist', groups=('reference',))
+    check('reference group sites', all(grouped.policy_for(site).name == grouped.policy.name
+          for site in P.REFERENCE_SITES) and grouped.policy_for('S1').name == 'F0'
+          and grouped.policy_for('N1').name == 'F0')
+    s1 = P.Slot('STD-rel', groups=('S1',))
+    s1.record(0.0).record(0.0001)
+    check('S1-only policy', s1.steps() == [1.0]
+          and s1.noise_floor() == 4.0*sys.float_info.epsilon*(1.0+0.0001)
+          and s1.magnitude('S6', 0.0001) == 0.001)
+    n1 = P.Slot('STD-rel', groups=('N1',))
+    n1.record(0.0).record(0.0001)
+    check('N1-only policy', n1.steps() == [0.1]
+          and n1.noise_floor() == 4.0*sys.float_info.epsilon*0.0001
+          and n1.magnitude('S6', 0.0001) == 0.001)
+    unguarded = P.Slot('STD-rel', groups=('S1',)).record(0.0).record(0.0)
+    guarded = P.Slot('STD-rel', groups=('S1', 'reference')).record(0.0).record(0.0)
+    check('zero guard belongs to reference group', math.isnan(unguarded.steps()[0])
+          and guarded.steps() == [0.0])
+    shrinking = P.Slot(window=10)
+    for value in range(11):
+        shrinking.record(float(value))
+    original = shrinking.trajectory()
+    shrinking.set_window(4)
+    check('window shrink reads active suffix', shrinking.values == original['values'][-5:]
+          and shrinking.raw == original['raw'][-4:] and shrinking.capacity == 10)
+    shrinking.set_window(10)
+    check('window expansion restores retained samples', shrinking.trajectory() == original)
+    shrinking.set_window(4).record(11.0)
+    shrinking.set_window(10)
+    check('push under smaller window retains capacity', shrinking.values == [float(i) for i in range(1, 12)]
+          and len(shrinking.raw) == 10 and shrinking.capacity == 10)
+    shrinking.set_window(64)
+    before = shrinking.values[:]
+    check('larger query does not allocate', shrinking.capacity == 10 and shrinking.values == before)
+    shrinking.record(12.0)
+    check('larger push grows and preserves', shrinking.capacity == 64 and shrinking.values == before+[12.0])
+    detour = P.Slot()
+    for value in (5.0, 4.0, 3.0):
+        detour.record(value)
+    best, since, last, values = detour.best, detour.since, detour.values[-1], detour.values[:]
+    detour.detour('ab')
+    exported = detour.trajectory()
+    check('string detour preserves numeric state', not exported['numeric'] and exported['observed']
+          and exported['best'] == best and exported['since'] == since
+          and exported['last_value'] == last and exported['values'] == values
+          and exported['entropy'] == 1.0 and exported['dH'] == 1.0 and exported['dh'] == [1.0]
+          and detour.count == 4)
+    imported = P.Slot.from_trajectory(exported)
+    check('nonnumeric trajectory import keeps value channel', not imported.numeric
+          and imported.report_value() == detour.report_value()
+          and imported.trajectory() == exported)
+    detour.record(2.0)
+    check('numeric return folds across detour', detour.numeric and detour.count == 5
+          and detour.reading()['why'] == -1.0 and detour.best == 2.0 and detour.since == 0)
+    historical = P.Slot('C_1e-3^hist').record(1000.0)
+    saved = historical.snapshot()
+    historical.detour('abcd').set_window(4)
+    for value in (1.0, 0.5, 0.25, 0.125, 0.0625):
+        historical.record(value)
+    check('history peak survives detour and depth changes', historical.peak() == 1000.0
+          and P.Slot.from_trajectory(historical.trajectory(), 'C_1e-3^hist').peak() == 1000.0)
+    check('temporal snapshot is detached', saved['where'] == 1000.0 and saved['count'] == 1)
+
+
+def cli():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--prior-repository', type=Path)
+    parser.add_argument('--prior-commit')
+    args = parser.parse_args()
+    if (args.prior_repository is None) != (args.prior_commit is None):
+        parser.error('--prior-repository and --prior-commit must be supplied together')
+    main()
+    if args.prior_repository is not None:
+        compare_prior(args.prior_repository, args.prior_commit)
+    print(f'PORT UNIT: {CHECKS} checks passed')
 
 
 if __name__ == "__main__":
-    main()
+    cli()

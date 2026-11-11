@@ -55,6 +55,35 @@ def check_counts(counts):
             raise HarnessError(f'STOP R33-1 item {item}: {name}: derived {counts.get(name)!r}, ruling {expected}')
 
 
+def staged_counts(dest):
+    """Re-derive the actual staged calibration roster and masks for its gate.
+
+    This reads the three corpus files the identity/sweep consumes, rather
+    than handing the checker its own expected-count dictionary.
+    """
+    dest=Path(dest)
+    source, hcal, bases, hbases, receipt=sources()
+    counts=dict(receipt['counts'])
+    corpora={s:derive.load_corpus(str(dest/'cal'/s/'corpus.json')) for s in ('x1','x1e-3','x1e3')}
+    reference={r['id'] for r in bases}
+    for scale,corpus in corpora.items():
+        if {r['id'] for r in corpus['rows']} != reference:
+            raise HarnessError(f'STOP R33-1 item3: staged calibration {scale} row roster differs from the ruled source')
+    rows=corpora['x1']['rows']
+    checkpoints=sum(len(r['checkpoints']) for r in rows)
+    counts.update(bases=len(rows),base_checkpoints=checkpoints,
+                  scaled_rows=sum(len(c['rows']) for c in corpora.values()),calibration_comparisons=checkpoints*2)
+    minimum=corpora['x1e-3']['rows']
+    above=0
+    for row in minimum:
+        xs=generate(row['gen'],row['n'])
+        above+=sum(all(math.isfinite(v) and abs(v)>=1e-2 for v in xs[max(0,at-10):at+1])
+                   for at in row['checkpoints'])
+    counts['calibration_above_comparisons']=above*2
+    check_counts(counts)
+    return counts
+
+
 def scale_gen(g, scale):
     """Positive unit transform: parameters regenerate each sequence in binary64.
 
@@ -260,6 +289,8 @@ def inventory(dest):
     for path in set_dirs(dest):
         load_set(path)
     confirmation = json.loads((dest / 'confirmation-counts.json').read_text())
+    validate_exclusions(dest, confirmation['attempts'])
+    staged_counts(dest)
     for corpus_path in confirmation['sets'].values():
         load_set((ROOT / corpus_path).parent)
     load_set(dest / 'judge' / 'calibration')
@@ -275,6 +306,8 @@ def inventory(dest):
 
 def parse_attempt(corpus_path, command, rc, log_path):
     """A certifier refusal is distinct from a crash, malformed report or missing row."""
+    corpus_path, log_path = (Path(p) if Path(p).is_absolute() else ROOT/Path(p)
+                             for p in (corpus_path, log_path))
     text = Path(log_path).read_text()
     corpus = derive.load_corpus(str(corpus_path))
     ids = {r['id'] for r in corpus['rows']}
@@ -290,8 +323,9 @@ def parse_attempt(corpus_path, command, rc, log_path):
         raise HarnessError(f'INCOMPLETE: certifier accounting differs from corpus in {log_path}')
     if rc != (1 if refused else 0):
         raise HarnessError(f'INCOMPLETE: certifier internal error or inconsistent rc={rc}: {log_path}')
-    return {'command': command, 'rc': rc, 'log': str(log_path), 'log_sha256': sha(log_path),
-            'corpus': str(corpus_path), 'corpus_sha256': sha(corpus_path), 'rows': len(ids),
+    reference = lambda p: str(p.relative_to(ROOT)) if p.is_relative_to(ROOT) else str(p)
+    return {'command': command, 'rc': rc, 'log': reference(log_path), 'log_sha256': sha(log_path),
+            'corpus': reference(corpus_path), 'corpus_sha256': sha(corpus_path), 'rows': len(ids),
             'refused': refused, 'certifier_sha256': sha(HERE / 'certify.py')}
 
 
@@ -321,6 +355,37 @@ def exclusions_from_attempts(attempts):
                 rows.setdefault(refused['id'], []).append({'scale': rec['scale'], 'message': refused['message'],
                     'line': refused['line'], 'log': rec['log'], 'log_sha256': rec['log_sha256']})
         excluded[population] = [{'id': rid, 'refusals': rows[rid]} for rid in sorted(rows)]
+    return excluded
+
+
+def validate_exclusions(dest, attempts):
+    """The actual comparison sets equal source minus parsed full-copy refusals.
+
+    Membership is checked both ways at every scale. Existing logs are parsed
+    again, so deleting a refusal from progress metadata cannot restore a row.
+    This validator neither imports sympy nor starts an oracle/binary process.
+    """
+    dest=Path(dest)
+    checked=copy.deepcopy(attempts)
+    for population,records in checked.items():
+        for rec in records:
+            if rec.get('validated_cached_certificate'):
+                continue
+            parsed=parse_attempt(rec['corpus'],rec['command'],rec['rc'],rec['log'])
+            if parsed['refused'] != rec['refused'] or parsed['log_sha256'] != rec['log_sha256'] or parsed['corpus_sha256'] != rec['corpus_sha256']:
+                raise HarnessError(f'INCOMPLETE: changed refusal evidence {population}/{rec["scale"]}')
+    excluded=exclusions_from_attempts(checked)
+    originals={'calibration':derive.load_corpus(str(dest/'cal'/'x1'/'corpus.json')),
+               'hcal':derive.load_corpus(str(dest/'judge'/'hcal'/'corpus.json'))}
+    for population,name,scales in (('calibration','confirm-cal',('x1','x1e6')),
+                                   ('hcal','confirm-hcal',tuple(SCALES))):
+        want={r['id'] for r in originals[population]['rows']}-{r['id'] for r in excluded[population]}
+        for scale in scales:
+            corpus=derive.load_corpus(str(dest/name/scale/'corpus.json'))
+            actual={r['id'] for r in corpus['rows']}
+            if actual != want:
+                raise HarnessError(f'INCOMPLETE: confirmation exclusion roster {name}/{scale}: '
+                                   f'extra={sorted(actual-want)} missing={sorted(want-actual)}')
     return excluded
 
 
@@ -418,6 +483,7 @@ def finish_confirmation(dest, logs, counts_path, attempts, components, excluded,
                         retained, commands, calibration_before):
     """Verify labels and emit a receipt only after every reduced set exists."""
     dest, logs = Path(dest).resolve(), Path(logs).resolve()
+    validate_exclusions(dest, attempts)
     _cal, _hcal, bases, _hbases, _source = sources()
     new_sets = {f'{name}/{scale}': dest / name / scale
                 for name, scales in (('confirm-cal', ('x1', 'x1e6')), ('confirm-hcal', tuple(SCALES)))
@@ -525,7 +591,8 @@ def main():
     p.add_argument('action', choices=('stage', 'certify', 'audit', 'confirmation', 'finalize'))
     p.add_argument('--out', type=Path, required=True)
     p.add_argument('--logs', type=Path)
-    p.add_argument('--python', default='/home/jon/.local/venvs/oracle/bin/python')
+    p.add_argument('--python', default=sys.executable,
+                   help='Sympy-capable interpreter for frozen certification during manifest construction; CI reading plants use only stdlib')
     p.add_argument('--attempts', type=Path)
     p.add_argument('--counts', type=Path)
     p.add_argument('--prior-cal-log', type=Path)
