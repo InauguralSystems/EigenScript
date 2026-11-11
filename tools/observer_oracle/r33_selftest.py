@@ -215,7 +215,7 @@ def main(out=None, cases=None, binary=None):
                          'INCOMPLETE', out)
     population.check_counts(staged_counts(DATA / 'populations'))
     print('CONTROL staged population counts: GREEN derived from files')
-    log_path = DATA / 'site-coverage' / 'certifier-refusal.log'
+    log_path = DATA / 'site-coverage' / 'certifier-refusal.txt'
     attempts = certifier_control(log_path)
     with tempfile.TemporaryDirectory(prefix='r33-selftest-') as directory:
         tmp = Path(directory)
