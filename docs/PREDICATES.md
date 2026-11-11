@@ -155,8 +155,14 @@ The equivalent command is:
 
 ```bash
 python3 -I tools/observer_oracle/reveal.py --round ROUND --r3 FINAL_SHA \
-  --r3-std 3eed5caf --out build/reveal-result
+  --r3-std 3eed5caf --out "$PWD/build/reveal-result"
 ```
+
+Give `--out` as an absolute path, as the workflow does. The driver writes
+that path into the `.git` file of its instrument copy, and git reads a
+relative one against the copy's own directory. Control (a)'s plant run then
+finds no repository, the control fails and the run is `VOID`. The first
+hosted dry run of #2339 ended that way.
 
 Before unsealing, the driver verifies `tools/observer_oracle/reveal_commitment.json`
 against the accepted driver, selftest and named fixture inventory hashes. A

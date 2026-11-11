@@ -310,6 +310,16 @@ rebase or merge `main` into a long-lived branch before its first dispatch.
   `.devcontainer/Dockerfile` names `debian:stable` by digest, and Dependabot
   proposes each new digest as a pull request. That pull request's floor run
   shows whether the new toolchain moves a verdict.
+- The reveal workflow (`observer-reveal.yml`, #2330) does not run in the image.
+  The image's reference is resolved by a job inside `ci.yml`, which another
+  workflow cannot use, so the job runs on the `ubuntu-24.04` runner. Every arm
+  and the anchor are built in that one job by their recipes, with the runner's
+  compiler, and `raw.json` records each binary's toolchain. Rule 6 re-measures
+  the floor on the anchor built there: a toolchain that moves a floor verdict
+  ends the run `REFUSED` before the beacon is read. On a pull request that
+  touches `tools/observer_oracle/` the same job runs the driver's selftest and
+  then calibration and H-cal dry, at the registered 10,000 resamples, and
+  accepts only the two diagnostic gaps of RULING R30R-4.
 - The proof that the floor can still fail is a gate self-test, not part of
   the check (`docs/PRINCIPLES.md` §5). The `tools/selftests.txt` row
   `tools/observer_oracle/plants.py --selftest` runs when
@@ -794,6 +804,7 @@ file:
 | `deploy` (`pages.yml`) | advisory | runs only on push and `workflow_dispatch` — it publishes, it does not test |
 | `codspeed (simulation)` (`codspeed.yml`), and the CodSpeed app's `CodSpeed Performance Analysis` | advisory | path-filtered (`paths-ignore: '**.md'`), so it never reports on a docs-only PR; the instruction-count gate that blocks is `bench`. The lane's Value is modeled cycles, not instructions (runner pinned; `tools/codspeed_unit_guard.py` fails the job if that unit drifts; see INSTRUMENTS.md) |
 | `build` (`docker.yml`) | advisory | runs on push to `main`, `v*` tags and `workflow_dispatch`, never on a PR |
+| `observer reveal (sealed / dry H-cal)` (`observer-reveal.yml`) | advisory | path-filtered (`tools/observer_oracle/**` and the workflow itself), so it reports only on a PR that touches the oracle; on `workflow_dispatch` it runs the sealed reveal (**Observer oracle**, above) |
 | `Scorecard analysis` (`scorecard.yml`) | advisory | runs on push, schedule and `branch_protection_rule`, never on a PR; a posture score |
 | `Analyze (python)`, `Analyze (javascript-typescript)` | advisory | CodeQL *default setup* (a GitHub app, not a workflow file) over the repo's non-C code; the C analysis that blocks is `Analyze C` |
 | `issue-triage / …` (`issue-triage.yml`), `release.yml` jobs | advisory | not triggered by PRs or pushes to `main` |

@@ -53,12 +53,15 @@ jobs:
       # Historical recipe builds deliberately sanitize PATH, as D10 requires.
       - name: Driver fixtures
         run: '"$RUNNER_TEMP/reveal-venv/bin/python" -I tools/observer_oracle/reveal.py --selftest'
+      # --out is absolute in both steps. The driver writes it into the instrument
+      # copy's .git file, and git reads a relative gitdir against that copy: control
+      # (a)'s plant run then finds no repository and the run is VOID (#2339's first run).
       - name: Dry calibration and H-cal (registered resamples)
         if: github.event_name == 'pull_request'
         run: |
           if "$RUNNER_TEMP/reveal-venv/bin/python" -I tools/observer_oracle/reveal.py \
               --dry --calibration --r3 3eed5caf --r3-std 3eed5caf \
-              --resamples 10000 --out build/reveal-result > "$RUNNER_TEMP/reveal-dry.log" 2>&1; then
+              --resamples 10000 --out "$GITHUB_WORKSPACE/build/reveal-result" > "$RUNNER_TEMP/reveal-dry.log" 2>&1; then
             rc=0
           else
             rc=$?
@@ -70,7 +73,7 @@ jobs:
             exit 1
           fi
           "$RUNNER_TEMP/reveal-venv/bin/python" -I tools/observer_oracle/reveal.py \
-            --check-dry-a build/reveal-result/raw.json
+            --check-dry-a "$GITHUB_WORKSPACE/build/reveal-result/raw.json"
       - name: Sealed reveal
         if: github.event_name == 'workflow_dispatch'
         env:
@@ -80,7 +83,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/reveal-venv/bin/python" -I tools/observer_oracle/reveal.py \
             --round "$DRAND_ROUND" --r3 "$R3_SHA" --r3-std "$R3_STD_SHA" \
-            --resamples 10000 --out build/reveal-result
+            --resamples 10000 --out "$GITHUB_WORKSPACE/build/reveal-result"
       - name: Raw log, canonical decision and whole population
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
