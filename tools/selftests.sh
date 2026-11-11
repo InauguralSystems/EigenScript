@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 export EIGS_CHILD_PLAN_HELPER="$PWD/tools/child_plan.sh"
 command -v python3 >/dev/null 2>&1 || { echo 'selftests: INSTRUMENT ERROR: python3 missing'; exit 2; }
 exec python3 - "$@" <<'PY'
-import fnmatch, json, os, re, resource, shlex, shutil, subprocess, sys, tempfile, time
+import ast, fnmatch, json, os, re, resource, shlex, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
 
 def error(message):
@@ -23,11 +23,14 @@ def git_ref_exists(ref):
 
 PRODUCT_TRIGGER_MAX_S = 60
 
-# A self-test whose body is a module of its own (#2330): body -> the script that dispatches to it.
-# The dispatch pattern matches the body's own calls of the mode, but the body has no command; its row
-# is its dispatcher's. main() checks each entry: the body still matches the pattern (or the entry is
-# stale), the dispatcher has a row, the body is one of that row's triggers, so that a change to the
-# body runs the row, and the dispatcher imports the body.
+# A self-test whose body is a Python module of its own (#2330): body -> the script that dispatches
+# to it. The dispatch pattern matches the body's own calls of the mode, but the body has no command;
+# its row is its dispatcher's. main() checks each entry whose body is in the tree: the body still
+# matches the pattern (or the entry is stale) and has no `if __name__ ...` (a module with an entry
+# point of its own needs its own row), the dispatcher has a row, the body is one of that row's
+# triggers, so that a change to the body runs the row, and the dispatcher has an import statement
+# for the body. An entry whose body is not in the tree does nothing: the fixture trees of
+# selftests_selection_selftest.sh hold this script and none of the files it names.
 BODIES = {'tools/observer_oracle/reveal_selftest.py': 'tools/observer_oracle/reveal.py'}
 
 def child_plan_verdict(output, rc, pass_re, fail_re):
@@ -76,10 +79,11 @@ def main():
             code = '\n'.join(s for s in source.splitlines() if not s.lstrip().startswith('#'))
             if dispatch.search(code):
                 implemented.add(path.as_posix())
-    for body in BODIES:
+    bodies = {body: owner for body, owner in BODIES.items() if Path(body).is_file()}
+    for body in bodies:
         if body not in implemented:
             error(f'self-test body {body} does not match the dispatch pattern: its BODIES entry is stale')
-    implemented -= set(BODIES)
+    implemented -= set(bodies)
     # Product files change on most PRs, so a row triggered by one runs on most
     # PRs (#1352). Allowed only when its own timeout bound keeps that cheap:
     # the section_plan row keyed on the runner (bound 1860s) made precheck take
@@ -152,13 +156,19 @@ def main():
         if plan_pins and (len(plan_pins) != 1 or not all(isinstance(plan_pins[0].get(k), str) for k in ('pass', 'fail'))):
             error(f'selftests.txt:{n}: PLAN pin needs declared pass and fail marker regexps')
         rows.append((triggers.split(), command, target, pins, ci_job))
-    for body, owner in BODIES.items():
+    for body, owner in bodies.items():
         row = next((r for r in rows if r[2] == owner), None)
         if row is None:
             error(f'self-test body {body}: its dispatcher {owner} has no row')
         if not any(fnmatch.fnmatchcase(body, g) for g in row[0]):
             error(f'self-test body {body} is not a trigger of the row of {owner}')
-        if not re.search(r'^\s*(?:import|from)\s+' + re.escape(Path(body).stem) + r'\b', Path(owner).read_text(), re.M):
+        if any(isinstance(n, ast.If) and isinstance(n.test, ast.Compare)
+               and any(isinstance(x, ast.Name) and x.id == '__name__' for x in [n.test.left] + n.test.comparators)
+               for n in ast.walk(ast.parse(Path(body).read_text()))):
+            error(f'self-test body {body} tests __name__: a module with an entry point of its own needs its own row')
+        stem = Path(body).stem
+        if not any(isinstance(n, ast.Import) and any(a.name == stem for a in n.names) or isinstance(n, ast.ImportFrom) and n.module == stem
+                   for n in ast.walk(ast.parse(Path(owner).read_text()))):
             error(f'self-test body {body} is not imported by {owner}')
     if not rows or enrolled != implemented:
         error('enrolment mismatch: missing=' + repr(sorted(implemented - enrolled)) + ' stale=' + repr(sorted(enrolled - implemented)))
