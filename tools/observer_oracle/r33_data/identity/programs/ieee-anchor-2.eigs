@@ -1,0 +1,65 @@
+x is 1.0
+print of f"I ieee-anchor-2 0 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} null {how is x} {when is x} false false"
+x is (0.0 / 0.0)
+print of f"I ieee-anchor-2 1 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is (0.0 / 0.0)
+print of f"I ieee-anchor-2 2 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 2.0
+print of f"I ieee-anchor-2 3 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 2.0
+print of f"I ieee-anchor-2 4 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 5 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 6 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 7 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 8 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 9 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 10 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 11 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 12 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 13 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 14 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 15 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 16 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 17 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 18 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 19 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 20 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 21 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 22 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 23 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 24 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 25 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 26 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 27 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 28 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 29 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 30 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 2.0
+print of f"I ieee-anchor-2 31 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false {(atan2 of [(why is x), -1.0]) < 0.0}"
+print of "DONE ieee-anchor-2"

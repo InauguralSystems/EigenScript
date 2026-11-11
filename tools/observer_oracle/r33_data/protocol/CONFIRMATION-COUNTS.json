@@ -1,0 +1,1086 @@
+{
+  "BA_guard": {
+    "fallback": "judge/calibration + judge/hcal (all original72+32)",
+    "primary": "judge/hcal (all original32)"
+  },
+  "Hcal_label_support": {
+    "converged": {
+      "both_labels": true,
+      "negative": 46,
+      "positive": 50
+    },
+    "diverging": {
+      "both_labels": false,
+      "negative": 96,
+      "positive": 0
+    },
+    "equilibrium": {
+      "both_labels": false,
+      "negative": 96,
+      "positive": 0
+    },
+    "improving": {
+      "both_labels": true,
+      "negative": 84,
+      "positive": 12
+    },
+    "oscillating": {
+      "both_labels": true,
+      "negative": 72,
+      "positive": 24
+    },
+    "stable": {
+      "both_labels": true,
+      "negative": 42,
+      "positive": 54
+    }
+  },
+  "Z_roster": [
+    {
+      "checkpoint": 80,
+      "id": "issue1891_repeated_tail",
+      "label_x1e6": true
+    },
+    {
+      "checkpoint": 60,
+      "id": "geo_decay_0.5",
+      "label_x1e6": true
+    },
+    {
+      "checkpoint": 300,
+      "id": "geo_decay_0.9",
+      "label_x1e6": true
+    },
+    {
+      "checkpoint": 300,
+      "id": "damped_osc_0.9",
+      "label_x1e6": true
+    },
+    {
+      "checkpoint": 60,
+      "id": "two_vars",
+      "label_x1e6": true
+    },
+    {
+      "checkpoint": 300,
+      "id": "neg_decay",
+      "label_x1e6": true
+    }
+  ],
+  "attempts": {
+    "calibration": [
+      {
+        "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
+        "command": [
+          "/home/jon/.local/venvs/oracle/bin/python",
+          "-B",
+          "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+          "--corpus",
+          "tools/observer_oracle/r33_data/populations/cal/x1e6/corpus.json"
+        ],
+        "corpus": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/calibration/x1e6/corpus.json",
+        "corpus_sha256": "f7e9f9c4688c4f4dad7aa59040d33d05ae33e088ce0e9b6dfee2f043a55a471a",
+        "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/calibration-x1e6-full-certify.log",
+        "log_sha256": "28040cef47534565fbeea4347264e3dcc36ea368afc631661c16fee734eecbe0",
+        "rc": 1,
+        "refused": [
+          {
+            "id": "cos_fixed_point",
+            "line": "REFUSED cos_fixed_point: f(L) != L at the stated limit 739085.1332151607: L is not a fixed point",
+            "message": "f(L) != L at the stated limit 739085.1332151607: L is not a fixed point"
+          }
+        ],
+        "reused_original_attempt": true,
+        "rows": 61,
+        "scale": "x1e6"
+      },
+      {
+        "certificate_sha256": "e7848129c74d8f3e8264bdc8454dd7e21ce802ac09fd457dfb49bdce61b1822d",
+        "corpus_sha256": "f1fc06bc0dbea5aa5e19767b548608b3c81776b645e31150e081d08d10202f64",
+        "rc": 0,
+        "refused": [],
+        "rows": 61,
+        "scale": "x1",
+        "validated_cached_certificate": true
+      },
+      {
+        "certificate_sha256": "3516972d2ddbb2e9b8c4a587c63e2dad0a93717f1e20fa55dc3499743fa71e17",
+        "corpus_sha256": "31ee1dbe7823707067c7beb0022c9c416865d637ab5e60e742ccdb09df3ddeb0",
+        "rc": 0,
+        "refused": [],
+        "rows": 61,
+        "scale": "x1e-3",
+        "validated_cached_certificate": true
+      },
+      {
+        "certificate_sha256": "3cfe828be51aa505c0b71f098ed7e04adc06c69592169db6680797a76f89cba7",
+        "corpus_sha256": "f7984f659089d32950da440163a0515ac0fb0403afde54d336533c02987a6acf",
+        "rc": 0,
+        "refused": [],
+        "rows": 61,
+        "scale": "x1e3",
+        "validated_cached_certificate": true
+      }
+    ],
+    "hcal": [
+      {
+        "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
+        "command": [
+          "/home/jon/.local/venvs/oracle/bin/python",
+          "-B",
+          "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+          "--corpus",
+          "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1/corpus.json"
+        ],
+        "corpus": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1/corpus.json",
+        "corpus_sha256": "f615fb4acfd06d8d53c0368c6bd6db3d7f4ab6d848323496460f860422136647",
+        "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/hcal-x1-full-certify.log",
+        "log_sha256": "0a0e62b9bbeb09457cf2f6a85acfb1b05463afd141aad8ed7a1e18813481bf66",
+        "rc": 0,
+        "refused": [],
+        "rows": 32,
+        "scale": "x1"
+      },
+      {
+        "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
+        "command": [
+          "/home/jon/.local/venvs/oracle/bin/python",
+          "-B",
+          "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+          "--corpus",
+          "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1e-3/corpus.json"
+        ],
+        "corpus": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1e-3/corpus.json",
+        "corpus_sha256": "68eda960ae57ce69e004d049b874d14271c6f563641b90656365f5ac0dc253d4",
+        "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/hcal-x1e-3-full-certify.log",
+        "log_sha256": "733554a9587c847c6da0ddc53d55ce981bceec31a3f0a372648eea90cd4e5fa8",
+        "rc": 0,
+        "refused": [],
+        "rows": 32,
+        "scale": "x1e-3"
+      },
+      {
+        "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
+        "command": [
+          "/home/jon/.local/venvs/oracle/bin/python",
+          "-B",
+          "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+          "--corpus",
+          "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1e3/corpus.json"
+        ],
+        "corpus": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1e3/corpus.json",
+        "corpus_sha256": "4e445b859d173cb0c771b8339ded19b207f652020b9b8c5619cfeda5a81067f5",
+        "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/hcal-x1e3-full-certify.log",
+        "log_sha256": "b4784fdacd5e94d4770250f1b39bfc79b0432f196c63de25791867972c608446",
+        "rc": 0,
+        "refused": [],
+        "rows": 32,
+        "scale": "x1e3"
+      },
+      {
+        "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
+        "command": [
+          "/home/jon/.local/venvs/oracle/bin/python",
+          "-B",
+          "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+          "--corpus",
+          "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1e6/corpus.json"
+        ],
+        "corpus": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-attempts/hcal/x1e6/corpus.json",
+        "corpus_sha256": "7bd8d9ffa038c54b795bc670a7f690ef6ef99b739ce657fbf3dc7647bc1d9b4a",
+        "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/hcal-x1e6-full-certify.log",
+        "log_sha256": "57d860ac4349220f1683bbfe072fed0a2cd300069cffef45c705260c9e919d95",
+        "rc": 0,
+        "refused": [],
+        "rows": 32,
+        "scale": "x1e6"
+      }
+    ]
+  },
+  "calibration_unchanged": {
+    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1/certificate.json": "e7848129c74d8f3e8264bdc8454dd7e21ce802ac09fd457dfb49bdce61b1822d",
+    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1/corpus.json": "f1fc06bc0dbea5aa5e19767b548608b3c81776b645e31150e081d08d10202f64",
+    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1/labels.json": "6a6c227fa73cb88c4be8c32b417e8b4693bbdf29b3eb8d0c994e60a8cc352cec",
+    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1e-3/certificate.json": "3516972d2ddbb2e9b8c4a587c63e2dad0a93717f1e20fa55dc3499743fa71e17",
+    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1e-3/corpus.json": "31ee1dbe7823707067c7beb0022c9c416865d637ab5e60e742ccdb09df3ddeb0",
+    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1e-3/labels.json": "b81483c24876cfbebe431c8f43cc57898e39d902e7f221035e86a1b87602dde8",
+    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1e3/certificate.json": "3cfe828be51aa505c0b71f098ed7e04adc06c69592169db6680797a76f89cba7",
+    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1e3/corpus.json": "f7984f659089d32950da440163a0515ac0fb0403afde54d336533c02987a6acf",
+    "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/cal/x1e3/labels.json": "bdd18b56cd3edb452adb0e437d013acf93e085c5d727b9f9fbba9db0a22ccd58"
+  },
+  "comparison_sets": {
+    "i": {
+      "above_checkpoints": [
+        {
+          "checkpoint": 10,
+          "id": "f01_2",
+          "minimum_abs": 0.022697886427140893
+        },
+        {
+          "checkpoint": 14,
+          "id": "f01_2",
+          "minimum_abs": 0.022551980600846327
+        },
+        {
+          "checkpoint": 28,
+          "id": "f01_2",
+          "minimum_abs": 0.022529845871213497
+        },
+        {
+          "checkpoint": 24,
+          "id": "f05_3",
+          "minimum_abs": 0.014208874547560871
+        },
+        {
+          "checkpoint": 49,
+          "id": "f05_3",
+          "minimum_abs": 0.015199582546025716
+        },
+        {
+          "checkpoint": 98,
+          "id": "f05_3",
+          "minimum_abs": 0.015232889915482854
+        },
+        {
+          "checkpoint": 10,
+          "id": "f11_0",
+          "minimum_abs": 0.01664584815864159
+        },
+        {
+          "checkpoint": 17,
+          "id": "f11_0",
+          "minimum_abs": 0.04899118162373555
+        },
+        {
+          "checkpoint": 34,
+          "id": "f11_0",
+          "minimum_abs": 0.05033206918758632
+        },
+        {
+          "checkpoint": 11,
+          "id": "f11_2",
+          "minimum_abs": 0.02894271359815439
+        },
+        {
+          "checkpoint": 12,
+          "id": "f11_2",
+          "minimum_abs": 0.02894271359815439
+        },
+        {
+          "checkpoint": 10,
+          "id": "f11_7",
+          "minimum_abs": 0.010239233306900027
+        },
+        {
+          "checkpoint": 15,
+          "id": "f11_7",
+          "minimum_abs": 0.03365977538953435
+        },
+        {
+          "checkpoint": 30,
+          "id": "f11_7",
+          "minimum_abs": 0.03751555114093816
+        }
+      ],
+      "above_comparisons": 42,
+      "above_trajectories": [
+        "f01_2",
+        "f05_3",
+        "f11_0",
+        "f11_2",
+        "f11_7"
+      ],
+      "all_comparisons": 288,
+      "checkpoints": 96,
+      "rows": 32
+    },
+    "ii": {
+      "above_checkpoints": [
+        {
+          "checkpoint": 102,
+          "id": "issue1891_damped_cosine",
+          "minimum_abs": 0.9829243786092812
+        },
+        {
+          "checkpoint": 115,
+          "id": "issue1891_damped_cosine",
+          "minimum_abs": 0.9829083876745829
+        },
+        {
+          "checkpoint": 118,
+          "id": "issue1891_damped_cosine",
+          "minimum_abs": 0.9829060327398422
+        },
+        {
+          "checkpoint": 60,
+          "id": "modulated_decay_094",
+          "minimum_abs": 14.564342128679925
+        },
+        {
+          "checkpoint": 102,
+          "id": "modulated_decay_094",
+          "minimum_abs": 15.212787074528064
+        },
+        {
+          "checkpoint": 115,
+          "id": "modulated_decay_094",
+          "minimum_abs": 15.24103251733539
+        },
+        {
+          "checkpoint": 118,
+          "id": "modulated_decay_094",
+          "minimum_abs": 15.245254255370575
+        },
+        {
+          "checkpoint": 60,
+          "id": "modulated_runaway_minimal",
+          "minimum_abs": 49.93057778497524
+        },
+        {
+          "checkpoint": 60,
+          "id": "const_5",
+          "minimum_abs": 5.0
+        },
+        {
+          "checkpoint": 5,
+          "id": "geo_decay_0.5",
+          "minimum_abs": 0.03125
+        },
+        {
+          "checkpoint": 20,
+          "id": "geo_decay_0.9",
+          "minimum_abs": 0.12157665459056936
+        },
+        {
+          "checkpoint": 60,
+          "id": "geo_decay_0.99",
+          "minimum_abs": 0.5471566423907612
+        },
+        {
+          "checkpoint": 60,
+          "id": "halving_to_5",
+          "minimum_abs": 5.0
+        },
+        {
+          "checkpoint": 60,
+          "id": "halving_to_5000",
+          "minimum_abs": 5000.0
+        },
+        {
+          "checkpoint": 60,
+          "id": "geo_growth_1.5",
+          "minimum_abs": 637621500.2140496
+        },
+        {
+          "checkpoint": 60,
+          "id": "linear_decrease",
+          "minimum_abs": 40.0
+        },
+        {
+          "checkpoint": 60,
+          "id": "harmonic",
+          "minimum_abs": 4.518813181466678
+        },
+        {
+          "checkpoint": 300,
+          "id": "harmonic",
+          "minimum_abs": 6.252256161047234
+        },
+        {
+          "checkpoint": 2000,
+          "id": "harmonic",
+          "minimum_abs": 8.17385907802901
+        },
+        {
+          "checkpoint": 300,
+          "id": "log_n",
+          "minimum_abs": 5.676753802268282
+        },
+        {
+          "checkpoint": 300,
+          "id": "sqrt_n",
+          "minimum_abs": 17.05872210923198
+        },
+        {
+          "checkpoint": 60,
+          "id": "alt_inv_n",
+          "minimum_abs": 0.01639344262295082
+        },
+        {
+          "checkpoint": 60,
+          "id": "alt_series_ln2",
+          "minimum_abs": 0.683624234482404
+        },
+        {
+          "checkpoint": 2000,
+          "id": "alt_series_ln2",
+          "minimum_abs": 0.692896239546892
+        },
+        {
+          "checkpoint": 100,
+          "id": "damped_osc_0.99",
+          "minimum_abs": 0.021263748015562696
+        },
+        {
+          "checkpoint": 60,
+          "id": "period2_wide",
+          "minimum_abs": 3.0
+        },
+        {
+          "checkpoint": 60,
+          "id": "period2_reciprocal",
+          "minimum_abs": 0.5
+        },
+        {
+          "checkpoint": 60,
+          "id": "period4_square",
+          "minimum_abs": 3.0
+        },
+        {
+          "checkpoint": 60,
+          "id": "period4_distinct",
+          "minimum_abs": 1.0
+        },
+        {
+          "checkpoint": 10,
+          "id": "logistic_2.8",
+          "minimum_abs": 0.4
+        },
+        {
+          "checkpoint": 200,
+          "id": "logistic_2.8",
+          "minimum_abs": 0.6428571428571428
+        },
+        {
+          "checkpoint": 300,
+          "id": "logistic_3.2",
+          "minimum_abs": 0.5130445095326298
+        },
+        {
+          "checkpoint": 300,
+          "id": "logistic_3.5",
+          "minimum_abs": 0.38281968301732416
+        },
+        {
+          "checkpoint": 300,
+          "id": "logistic_3.9",
+          "minimum_abs": 0.10153833228976493
+        },
+        {
+          "checkpoint": 300,
+          "id": "sin_n",
+          "minimum_abs": 0.16732598101183924
+        },
+        {
+          "checkpoint": 30,
+          "id": "newton_sqrt2",
+          "minimum_abs": 1.414213562373095
+        },
+        {
+          "checkpoint": 100,
+          "id": "noise_below_s1",
+          "minimum_abs": 99.9990114182589
+        },
+        {
+          "checkpoint": 200,
+          "id": "noise_below_s1",
+          "minimum_abs": 99.99920884844569
+        },
+        {
+          "checkpoint": 300,
+          "id": "noise_below_s1",
+          "minimum_abs": 99.99922272462025
+        },
+        {
+          "checkpoint": 300,
+          "id": "noise_below_s2",
+          "minimum_abs": 99.99905876981929
+        },
+        {
+          "checkpoint": 300,
+          "id": "noise_tiny_s3",
+          "minimum_abs": 99.99999999920627
+        },
+        {
+          "checkpoint": 100,
+          "id": "noise_above_s1",
+          "minimum_abs": 90.11418258900785
+        },
+        {
+          "checkpoint": 300,
+          "id": "noise_above_s1",
+          "minimum_abs": 92.22724620253784
+        },
+        {
+          "checkpoint": 300,
+          "id": "random_walk",
+          "minimum_abs": 5.0
+        },
+        {
+          "checkpoint": 103,
+          "id": "level_shift",
+          "minimum_abs": 1.0
+        },
+        {
+          "checkpoint": 160,
+          "id": "level_shift",
+          "minimum_abs": 2.0
+        },
+        {
+          "checkpoint": 30,
+          "id": "ml_loss_exp",
+          "minimum_abs": 0.2586512925656488
+        },
+        {
+          "checkpoint": 400,
+          "id": "ml_loss_exp",
+          "minimum_abs": 0.05000000000002913
+        },
+        {
+          "checkpoint": 60,
+          "id": "ml_loss_power",
+          "minimum_abs": 0.8559289460184544
+        },
+        {
+          "checkpoint": 2000,
+          "id": "ml_loss_power",
+          "minimum_abs": 0.24106912317171966
+        },
+        {
+          "checkpoint": 200,
+          "id": "ml_plateau",
+          "minimum_abs": 0.34999905524403147
+        },
+        {
+          "checkpoint": 20,
+          "id": "ml_loss_rise_plateau",
+          "minimum_abs": 0.7907929359399999
+        },
+        {
+          "checkpoint": 300,
+          "id": "ml_loss_rise_plateau",
+          "minimum_abs": 0.9999999999999678
+        },
+        {
+          "checkpoint": 14,
+          "id": "rise_to_1",
+          "minimum_abs": 0.9375
+        },
+        {
+          "checkpoint": 5,
+          "id": "neg_to_m5",
+          "minimum_abs": 7.96875
+        },
+        {
+          "checkpoint": 60,
+          "id": "neg_to_m5",
+          "minimum_abs": 5.0
+        },
+        {
+          "checkpoint": 20,
+          "id": "neg_decay",
+          "minimum_abs": 0.12157665459056936
+        },
+        {
+          "checkpoint": 5,
+          "id": "short_const",
+          "minimum_abs": 7.0
+        },
+        {
+          "checkpoint": 200,
+          "id": "growing_osc",
+          "minimum_abs": 2.854901219407645
+        },
+        {
+          "checkpoint": 144,
+          "id": "burst",
+          "minimum_abs": 1.0
+        },
+        {
+          "checkpoint": 149,
+          "id": "burst",
+          "minimum_abs": 1.0
+        },
+        {
+          "checkpoint": 300,
+          "id": "hardy_alt",
+          "minimum_abs": 0.9965635738831615
+        },
+        {
+          "checkpoint": 200,
+          "id": "neg_1.1_pow",
+          "minimum_abs": 73216704.9665922
+        },
+        {
+          "checkpoint": 60,
+          "id": "hardy_xxiv5",
+          "minimum_abs": 2499.0
+        },
+        {
+          "checkpoint": 200,
+          "id": "hardy_xxiv5",
+          "minimum_abs": 36099.0
+        },
+        {
+          "checkpoint": 200,
+          "id": "sawtooth_up",
+          "minimum_abs": 188.0
+        },
+        {
+          "checkpoint": 300,
+          "id": "quasi_2",
+          "minimum_abs": 0.06323449197683073
+        },
+        {
+          "checkpoint": 60,
+          "id": "inv_log",
+          "minimum_abs": 0.2422988705246811
+        },
+        {
+          "checkpoint": 300,
+          "id": "inv_log",
+          "minimum_abs": 0.17511825244545517
+        },
+        {
+          "checkpoint": 60,
+          "id": "e_limit",
+          "minimum_abs": 2.6921022089150086
+        },
+        {
+          "checkpoint": 2000,
+          "id": "e_limit",
+          "minimum_abs": 2.7175995002529723
+        },
+        {
+          "checkpoint": 60,
+          "id": "sin_iter",
+          "minimum_abs": 0.21494866347499728
+        },
+        {
+          "checkpoint": 2000,
+          "id": "sin_iter",
+          "minimum_abs": 0.038662301280887656
+        },
+        {
+          "checkpoint": 60,
+          "id": "int_counter",
+          "minimum_abs": 50.0
+        },
+        {
+          "checkpoint": 200,
+          "id": "int_counter",
+          "minimum_abs": 190.0
+        },
+        {
+          "checkpoint": 30,
+          "id": "int_doubling",
+          "minimum_abs": 1048576.0
+        },
+        {
+          "checkpoint": 62,
+          "id": "int_doubling",
+          "minimum_abs": 4503599627370496.0
+        },
+        {
+          "checkpoint": 60,
+          "id": "int_swing",
+          "minimum_abs": 4.611686018427388e+18
+        }
+      ],
+      "above_comparisons": 78,
+      "above_trajectories": [
+        "alt_inv_n",
+        "alt_series_ln2",
+        "burst",
+        "const_5",
+        "damped_osc_0.99",
+        "e_limit",
+        "geo_decay_0.5",
+        "geo_decay_0.9",
+        "geo_decay_0.99",
+        "geo_growth_1.5",
+        "growing_osc",
+        "halving_to_5",
+        "halving_to_5000",
+        "hardy_alt",
+        "hardy_xxiv5",
+        "harmonic",
+        "int_counter",
+        "int_doubling",
+        "int_swing",
+        "inv_log",
+        "issue1891_damped_cosine",
+        "level_shift",
+        "linear_decrease",
+        "log_n",
+        "logistic_2.8",
+        "logistic_3.2",
+        "logistic_3.5",
+        "logistic_3.9",
+        "ml_loss_exp",
+        "ml_loss_power",
+        "ml_loss_rise_plateau",
+        "ml_plateau",
+        "modulated_decay_094",
+        "modulated_runaway_minimal",
+        "neg_1.1_pow",
+        "neg_decay",
+        "neg_to_m5",
+        "newton_sqrt2",
+        "noise_above_s1",
+        "noise_below_s1",
+        "noise_below_s2",
+        "noise_tiny_s3",
+        "period2_reciprocal",
+        "period2_wide",
+        "period4_distinct",
+        "period4_square",
+        "quasi_2",
+        "random_walk",
+        "rise_to_1",
+        "sawtooth_up",
+        "short_const",
+        "sin_iter",
+        "sin_n",
+        "sqrt_n"
+      ],
+      "all_comparisons": 95,
+      "checkpoints": 95,
+      "rows": 60
+    }
+  },
+  "exclusions": {
+    "calibration": [
+      {
+        "id": "cos_fixed_point",
+        "refusals": [
+          {
+            "line": "REFUSED cos_fixed_point: f(L) != L at the stated limit 739085.1332151607: L is not a fixed point",
+            "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/calibration-x1e6-full-certify.log",
+            "log_sha256": "28040cef47534565fbeea4347264e3dcc36ea368afc631661c16fee734eecbe0",
+            "message": "f(L) != L at the stated limit 739085.1332151607: L is not a fixed point",
+            "scale": "x1e6"
+          }
+        ]
+      }
+    ],
+    "hcal": []
+  },
+  "files": {
+    "tools/observer_oracle/r33_data/populations/confirm-cal/x1/certificate.json": "3cb7d8b6dfab12195fc657ccf3a77396a7eab4d4cff77011c4b48b34df97fc2c",
+    "tools/observer_oracle/r33_data/populations/confirm-cal/x1/corpus.json": "fe85a5df03a9ee09a857df981d4c04e3c95438b21c2997c6d7fbfb49399a5673",
+    "tools/observer_oracle/r33_data/populations/confirm-cal/x1/labels.json": "11838f2f647f0709509590f8e8e0904abbd1d8565e08ce9973f8712503cf6055",
+    "tools/observer_oracle/r33_data/populations/confirm-cal/x1e6/certificate.json": "a97ab4ebde671af50a0ce5697ced44164e898769625338efb8357dab32771d40",
+    "tools/observer_oracle/r33_data/populations/confirm-cal/x1e6/corpus.json": "4086f65a203a2452c3e95aa0f0527d7c0b663b25c3fd7000fed331e184030b6a",
+    "tools/observer_oracle/r33_data/populations/confirm-cal/x1e6/labels.json": "b02e4b32cb7b0a03655293a5a6850b7aefbb3787e24138d04353e4158d340337",
+    "tools/observer_oracle/r33_data/populations/confirm-hcal/x1/certificate.json": "038e63f87d78d8e2c3ad7f4311fa56995b7880ca54868915b943f645c6199048",
+    "tools/observer_oracle/r33_data/populations/confirm-hcal/x1/corpus.json": "f615fb4acfd06d8d53c0368c6bd6db3d7f4ab6d848323496460f860422136647",
+    "tools/observer_oracle/r33_data/populations/confirm-hcal/x1/labels.json": "323b0e9501e350ed61b9862e8b6f2d0c1fce662baf27cd200d40eaa6e0db86d6",
+    "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e-3/certificate.json": "cd40c811f10256ef889ea2e4918866f3f3a1da36d6dc9c7ed640bfef19f7f52a",
+    "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e-3/corpus.json": "68eda960ae57ce69e004d049b874d14271c6f563641b90656365f5ac0dc253d4",
+    "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e-3/labels.json": "9e26e0dff2d3e99746f592c6c44fca1cbb1b46b5a2570c35ff91be82a0cb6413",
+    "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e3/certificate.json": "635ac2b53a09f9f2cafe66297d9bf5cdf1c9c0f3b45e97555c35315f0b2d9712",
+    "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e3/corpus.json": "4e445b859d173cb0c771b8339ded19b207f652020b9b8c5619cfeda5a81067f5",
+    "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e3/labels.json": "f2f00bdb58d26736d4c4263bdd22434e7097aecf2273c404ee4a4a1919de6a80",
+    "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e6/certificate.json": "b4d8ed2a88dd01821e92b120c82779002636cc1df1cc7a0310e1583998425839",
+    "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e6/corpus.json": "7bd8d9ffa038c54b795bc670a7f690ef6ef99b739ce657fbf3dc7647bc1d9b4a",
+    "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e6/labels.json": "8c5edb2acdf525530f71bc7c2add06dcce5344a52fbd0ec8483cc3d0896d1e41"
+  },
+  "format": "r33-confirmation-counts/1",
+  "oracle_commands": [
+    {
+      "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
+      "command": [
+        "/home/jon/.local/venvs/oracle/bin/python",
+        "-B",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+        "--corpus",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-cal/x1/corpus.json"
+      ],
+      "corpus": "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-cal/x1/corpus.json",
+      "corpus_sha256": "fe85a5df03a9ee09a857df981d4c04e3c95438b21c2997c6d7fbfb49399a5673",
+      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-cal-x1-certify.log",
+      "log_sha256": "ca0533c9a9b1b66fc34dc6be1399864ba89e29f63f1cb14ef1c844add596d2fd",
+      "rc": 0,
+      "refused": [],
+      "rows": 60
+    },
+    {
+      "command": [
+        "/home/jon/.local/venvs/oracle/bin/python",
+        "-B",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/derive.py",
+        "--corpus",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-cal/x1/corpus.json",
+        "--write"
+      ],
+      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-cal-x1-derive.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rc": 0,
+      "receipt_reconstructed_after_programs": true
+    },
+    {
+      "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
+      "command": [
+        "/home/jon/.local/venvs/oracle/bin/python",
+        "-B",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+        "--corpus",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-cal/x1e6/corpus.json"
+      ],
+      "corpus": "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-cal/x1e6/corpus.json",
+      "corpus_sha256": "4086f65a203a2452c3e95aa0f0527d7c0b663b25c3fd7000fed331e184030b6a",
+      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-cal-x1e6-certify.log",
+      "log_sha256": "0f2aef0068ee9d32187d2fba51433ea1c51cffa45ade2af11b982a3129f29960",
+      "rc": 0,
+      "refused": [],
+      "rows": 60
+    },
+    {
+      "command": [
+        "/home/jon/.local/venvs/oracle/bin/python",
+        "-B",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/derive.py",
+        "--corpus",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-cal/x1e6/corpus.json",
+        "--write"
+      ],
+      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-cal-x1e6-derive.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rc": 0,
+      "receipt_reconstructed_after_programs": true
+    },
+    {
+      "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
+      "command": [
+        "/home/jon/.local/venvs/oracle/bin/python",
+        "-B",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+        "--corpus",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1/corpus.json"
+      ],
+      "corpus": "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1/corpus.json",
+      "corpus_sha256": "f615fb4acfd06d8d53c0368c6bd6db3d7f4ab6d848323496460f860422136647",
+      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1-certify.log",
+      "log_sha256": "0a0e62b9bbeb09457cf2f6a85acfb1b05463afd141aad8ed7a1e18813481bf66",
+      "rc": 0,
+      "refused": [],
+      "rows": 32
+    },
+    {
+      "command": [
+        "/home/jon/.local/venvs/oracle/bin/python",
+        "-B",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/derive.py",
+        "--corpus",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1/corpus.json",
+        "--write"
+      ],
+      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1-derive.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rc": 0,
+      "receipt_reconstructed_after_programs": true
+    },
+    {
+      "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
+      "command": [
+        "/home/jon/.local/venvs/oracle/bin/python",
+        "-B",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+        "--corpus",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e-3/corpus.json"
+      ],
+      "corpus": "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e-3/corpus.json",
+      "corpus_sha256": "68eda960ae57ce69e004d049b874d14271c6f563641b90656365f5ac0dc253d4",
+      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1e-3-certify.log",
+      "log_sha256": "733554a9587c847c6da0ddc53d55ce981bceec31a3f0a372648eea90cd4e5fa8",
+      "rc": 0,
+      "refused": [],
+      "rows": 32
+    },
+    {
+      "command": [
+        "/home/jon/.local/venvs/oracle/bin/python",
+        "-B",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/derive.py",
+        "--corpus",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e-3/corpus.json",
+        "--write"
+      ],
+      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1e-3-derive.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rc": 0,
+      "receipt_reconstructed_after_programs": true
+    },
+    {
+      "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
+      "command": [
+        "/home/jon/.local/venvs/oracle/bin/python",
+        "-B",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+        "--corpus",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e3/corpus.json"
+      ],
+      "corpus": "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e3/corpus.json",
+      "corpus_sha256": "4e445b859d173cb0c771b8339ded19b207f652020b9b8c5619cfeda5a81067f5",
+      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1e3-certify.log",
+      "log_sha256": "b4784fdacd5e94d4770250f1b39bfc79b0432f196c63de25791867972c608446",
+      "rc": 0,
+      "refused": [],
+      "rows": 32
+    },
+    {
+      "command": [
+        "/home/jon/.local/venvs/oracle/bin/python",
+        "-B",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/derive.py",
+        "--corpus",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e3/corpus.json",
+        "--write"
+      ],
+      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1e3-derive.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rc": 0,
+      "receipt_reconstructed_after_programs": true
+    },
+    {
+      "certifier_sha256": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
+      "command": [
+        "/home/jon/.local/venvs/oracle/bin/python",
+        "-B",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/certify.py",
+        "--corpus",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e6/corpus.json"
+      ],
+      "corpus": "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e6/corpus.json",
+      "corpus_sha256": "7bd8d9ffa038c54b795bc670a7f690ef6ef99b739ce657fbf3dc7647bc1d9b4a",
+      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1e6-certify.log",
+      "log_sha256": "57d860ac4349220f1683bbfe072fed0a2cd300069cffef45c705260c9e919d95",
+      "rc": 0,
+      "refused": [],
+      "rows": 32
+    },
+    {
+      "command": [
+        "/home/jon/.local/venvs/oracle/bin/python",
+        "-B",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/derive.py",
+        "--corpus",
+        "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/populations/confirm-hcal/x1e6/corpus.json",
+        "--write"
+      ],
+      "log": "/home/jon/src/wt/briefs/out/r3-3/instrument/confirmation-logs/confirm-hcal-x1e6-derive.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rc": 0,
+      "receipt_reconstructed_after_programs": true
+    }
+  ],
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "retained": {
+    "calibration": [
+      "issue1891_row63",
+      "issue1891_damped_cosine",
+      "modulated_decay_094",
+      "modulated_runaway_minimal",
+      "issue1891_repeated_tail",
+      "issue1891_underflow_tail",
+      "const_5",
+      "geo_decay_0.5",
+      "geo_decay_0.9",
+      "geo_decay_0.99",
+      "halving_to_5",
+      "halving_to_5000",
+      "halving_to_0.005",
+      "geo_growth_1.5",
+      "linear_decrease",
+      "harmonic",
+      "log_n",
+      "sqrt_n",
+      "alt_inv_n",
+      "alt_series_ln2",
+      "damped_osc_0.9",
+      "damped_osc_0.99",
+      "period2_wide",
+      "period2_reciprocal",
+      "period4_square",
+      "period4_distinct",
+      "logistic_2.8",
+      "logistic_3.2",
+      "logistic_3.5",
+      "logistic_3.9",
+      "sin_n",
+      "newton_sqrt2",
+      "noise_below_s1",
+      "noise_below_s2",
+      "noise_tiny_s3",
+      "noise_above_s1",
+      "random_walk",
+      "level_shift",
+      "ml_loss_exp",
+      "ml_loss_power",
+      "ml_plateau",
+      "ml_loss_rise_plateau",
+      "rise_to_1",
+      "two_vars",
+      "neg_to_m5",
+      "neg_decay",
+      "short_const",
+      "growing_osc",
+      "burst",
+      "hardy_alt",
+      "neg_1.1_pow",
+      "hardy_xxiv5",
+      "sawtooth_up",
+      "quasi_2",
+      "inv_log",
+      "e_limit",
+      "sin_iter",
+      "int_counter",
+      "int_doubling",
+      "int_swing"
+    ],
+    "hcal": [
+      "f01_0",
+      "f01_1",
+      "f01_2",
+      "f01_3",
+      "f01_4",
+      "f01_5",
+      "f01_6",
+      "f01_7",
+      "f05_0",
+      "f05_1",
+      "f05_2",
+      "f05_3",
+      "f05_4",
+      "f05_5",
+      "f05_6",
+      "f05_7",
+      "f06_0",
+      "f06_1",
+      "f06_2",
+      "f06_3",
+      "f06_4",
+      "f06_5",
+      "f06_6",
+      "f06_7",
+      "f11_0",
+      "f11_1",
+      "f11_2",
+      "f11_3",
+      "f11_4",
+      "f11_5",
+      "f11_6",
+      "f11_7"
+    ]
+  },
+  "sets": {
+    "confirm-cal/x1": "tools/observer_oracle/r33_data/populations/confirm-cal/x1/corpus.json",
+    "confirm-cal/x1e6": "tools/observer_oracle/r33_data/populations/confirm-cal/x1e6/corpus.json",
+    "confirm-hcal/x1": "tools/observer_oracle/r33_data/populations/confirm-hcal/x1/corpus.json",
+    "confirm-hcal/x1e-3": "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e-3/corpus.json",
+    "confirm-hcal/x1e3": "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e3/corpus.json",
+    "confirm-hcal/x1e6": "tools/observer_oracle/r33_data/populations/confirm-hcal/x1e6/corpus.json"
+  },
+  "status": "CERTIFIED_BEFORE_BINARY"
+}

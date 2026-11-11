@@ -1,0 +1,65 @@
+x is 1000063.0
+print of f"I seeded-1-63 0 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} null {how is x} {when is x} false false"
+x is -1000063.0
+print of f"I seeded-1-63 1 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.0
+print of f"I seeded-1-63 2 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} false"
+x is -0.0
+print of f"I seeded-1-63 3 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I seeded-1-63 4 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is -0.0
+print of f"I seeded-1-63 5 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I seeded-1-63 6 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is -0.0
+print of f"I seeded-1-63 7 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I seeded-1-63 8 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is -0.0
+print of f"I seeded-1-63 9 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I seeded-1-63 10 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is -0.0
+print of f"I seeded-1-63 11 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I seeded-1-63 12 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is -0.0
+print of f"I seeded-1-63 13 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I seeded-1-63 14 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is -0.0
+print of f"I seeded-1-63 15 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I seeded-1-63 16 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is -0.0
+print of f"I seeded-1-63 17 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I seeded-1-63 18 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is -0.0
+print of f"I seeded-1-63 19 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I seeded-1-63 20 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is -0.0
+print of f"I seeded-1-63 21 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I seeded-1-63 22 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is -0.0
+print of f"I seeded-1-63 23 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I seeded-1-63 24 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is -0.0
+print of f"I seeded-1-63 25 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I seeded-1-63 26 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is -0.0
+print of f"I seeded-1-63 27 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I seeded-1-63 28 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is -0.0
+print of f"I seeded-1-63 29 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is 0.0
+print of f"I seeded-1-63 30 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+x is -0.0
+print of f"I seeded-1-63 31 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} {(atan2 of [(why is x), -1.0]) < 0.0}"
+print of "DONE seeded-1-63"

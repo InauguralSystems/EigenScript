@@ -1,0 +1,842 @@
+{
+  "calibration_above": [
+    {
+      "checkpoint": 60,
+      "id": "modulated_decay_094",
+      "minimum_abs": 0.014564342128679925
+    },
+    {
+      "checkpoint": 102,
+      "id": "modulated_decay_094",
+      "minimum_abs": 0.015212787074528064
+    },
+    {
+      "checkpoint": 115,
+      "id": "modulated_decay_094",
+      "minimum_abs": 0.01524103251733539
+    },
+    {
+      "checkpoint": 118,
+      "id": "modulated_decay_094",
+      "minimum_abs": 0.015245254255370575
+    },
+    {
+      "checkpoint": 60,
+      "id": "modulated_runaway_minimal",
+      "minimum_abs": 0.04993057778497524
+    },
+    {
+      "checkpoint": 60,
+      "id": "halving_to_5000",
+      "minimum_abs": 5.0
+    },
+    {
+      "checkpoint": 60,
+      "id": "geo_growth_1.5",
+      "minimum_abs": 637621.5002140492
+    },
+    {
+      "checkpoint": 60,
+      "id": "linear_decrease",
+      "minimum_abs": 0.03999999999999995
+    },
+    {
+      "checkpoint": 300,
+      "id": "sqrt_n",
+      "minimum_abs": 0.01705872210923198
+    },
+    {
+      "checkpoint": 100,
+      "id": "noise_below_s1",
+      "minimum_abs": 0.09999901141825891
+    },
+    {
+      "checkpoint": 200,
+      "id": "noise_below_s1",
+      "minimum_abs": 0.0999992088484457
+    },
+    {
+      "checkpoint": 300,
+      "id": "noise_below_s1",
+      "minimum_abs": 0.09999922272462027
+    },
+    {
+      "checkpoint": 300,
+      "id": "noise_below_s2",
+      "minimum_abs": 0.0999990587698193
+    },
+    {
+      "checkpoint": 300,
+      "id": "noise_tiny_s3",
+      "minimum_abs": 0.09999999999920627
+    },
+    {
+      "checkpoint": 100,
+      "id": "noise_above_s1",
+      "minimum_abs": 0.09011418258900786
+    },
+    {
+      "checkpoint": 300,
+      "id": "noise_above_s1",
+      "minimum_abs": 0.09222724620253785
+    },
+    {
+      "checkpoint": 200,
+      "id": "neg_1.1_pow",
+      "minimum_abs": 73216.7049665922
+    },
+    {
+      "checkpoint": 60,
+      "id": "hardy_xxiv5",
+      "minimum_abs": 2.499
+    },
+    {
+      "checkpoint": 200,
+      "id": "hardy_xxiv5",
+      "minimum_abs": 36.099000000000004
+    },
+    {
+      "checkpoint": 200,
+      "id": "sawtooth_up",
+      "minimum_abs": 0.188
+    },
+    {
+      "checkpoint": 60,
+      "id": "int_counter",
+      "minimum_abs": 0.05000000000000004
+    },
+    {
+      "checkpoint": 200,
+      "id": "int_counter",
+      "minimum_abs": 0.19000000000000014
+    },
+    {
+      "checkpoint": 30,
+      "id": "int_doubling",
+      "minimum_abs": 1048.576
+    },
+    {
+      "checkpoint": 62,
+      "id": "int_doubling",
+      "minimum_abs": 4503599627370.496
+    },
+    {
+      "checkpoint": 60,
+      "id": "int_swing",
+      "minimum_abs": 4611686018427388.0
+    }
+  ],
+  "calibration_x1_x1e6_above": [
+    {
+      "checkpoint": 102,
+      "id": "issue1891_damped_cosine",
+      "minimum_abs": 0.9829243786092812
+    },
+    {
+      "checkpoint": 115,
+      "id": "issue1891_damped_cosine",
+      "minimum_abs": 0.9829083876745829
+    },
+    {
+      "checkpoint": 118,
+      "id": "issue1891_damped_cosine",
+      "minimum_abs": 0.9829060327398422
+    },
+    {
+      "checkpoint": 60,
+      "id": "modulated_decay_094",
+      "minimum_abs": 14.564342128679925
+    },
+    {
+      "checkpoint": 102,
+      "id": "modulated_decay_094",
+      "minimum_abs": 15.212787074528064
+    },
+    {
+      "checkpoint": 115,
+      "id": "modulated_decay_094",
+      "minimum_abs": 15.24103251733539
+    },
+    {
+      "checkpoint": 118,
+      "id": "modulated_decay_094",
+      "minimum_abs": 15.245254255370575
+    },
+    {
+      "checkpoint": 60,
+      "id": "modulated_runaway_minimal",
+      "minimum_abs": 49.93057778497524
+    },
+    {
+      "checkpoint": 60,
+      "id": "const_5",
+      "minimum_abs": 5.0
+    },
+    {
+      "checkpoint": 5,
+      "id": "geo_decay_0.5",
+      "minimum_abs": 0.03125
+    },
+    {
+      "checkpoint": 20,
+      "id": "geo_decay_0.9",
+      "minimum_abs": 0.12157665459056936
+    },
+    {
+      "checkpoint": 60,
+      "id": "geo_decay_0.99",
+      "minimum_abs": 0.5471566423907612
+    },
+    {
+      "checkpoint": 60,
+      "id": "halving_to_5",
+      "minimum_abs": 5.0
+    },
+    {
+      "checkpoint": 60,
+      "id": "halving_to_5000",
+      "minimum_abs": 5000.0
+    },
+    {
+      "checkpoint": 60,
+      "id": "geo_growth_1.5",
+      "minimum_abs": 637621500.2140496
+    },
+    {
+      "checkpoint": 60,
+      "id": "linear_decrease",
+      "minimum_abs": 40.0
+    },
+    {
+      "checkpoint": 60,
+      "id": "harmonic",
+      "minimum_abs": 4.518813181466678
+    },
+    {
+      "checkpoint": 300,
+      "id": "harmonic",
+      "minimum_abs": 6.252256161047234
+    },
+    {
+      "checkpoint": 2000,
+      "id": "harmonic",
+      "minimum_abs": 8.17385907802901
+    },
+    {
+      "checkpoint": 300,
+      "id": "log_n",
+      "minimum_abs": 5.676753802268282
+    },
+    {
+      "checkpoint": 300,
+      "id": "sqrt_n",
+      "minimum_abs": 17.05872210923198
+    },
+    {
+      "checkpoint": 60,
+      "id": "alt_inv_n",
+      "minimum_abs": 0.01639344262295082
+    },
+    {
+      "checkpoint": 60,
+      "id": "alt_series_ln2",
+      "minimum_abs": 0.683624234482404
+    },
+    {
+      "checkpoint": 2000,
+      "id": "alt_series_ln2",
+      "minimum_abs": 0.692896239546892
+    },
+    {
+      "checkpoint": 100,
+      "id": "damped_osc_0.99",
+      "minimum_abs": 0.021263748015562696
+    },
+    {
+      "checkpoint": 60,
+      "id": "period2_wide",
+      "minimum_abs": 3.0
+    },
+    {
+      "checkpoint": 60,
+      "id": "period2_reciprocal",
+      "minimum_abs": 0.5
+    },
+    {
+      "checkpoint": 60,
+      "id": "period4_square",
+      "minimum_abs": 3.0
+    },
+    {
+      "checkpoint": 60,
+      "id": "period4_distinct",
+      "minimum_abs": 1.0
+    },
+    {
+      "checkpoint": 10,
+      "id": "logistic_2.8",
+      "minimum_abs": 0.4
+    },
+    {
+      "checkpoint": 200,
+      "id": "logistic_2.8",
+      "minimum_abs": 0.6428571428571428
+    },
+    {
+      "checkpoint": 300,
+      "id": "logistic_3.2",
+      "minimum_abs": 0.5130445095326298
+    },
+    {
+      "checkpoint": 300,
+      "id": "logistic_3.5",
+      "minimum_abs": 0.38281968301732416
+    },
+    {
+      "checkpoint": 300,
+      "id": "logistic_3.9",
+      "minimum_abs": 0.10153833228976493
+    },
+    {
+      "checkpoint": 300,
+      "id": "sin_n",
+      "minimum_abs": 0.16732598101183924
+    },
+    {
+      "checkpoint": 10,
+      "id": "cos_fixed_point",
+      "minimum_abs": 0.5403023058681398
+    },
+    {
+      "checkpoint": 60,
+      "id": "cos_fixed_point",
+      "minimum_abs": 0.7390851327392538
+    },
+    {
+      "checkpoint": 30,
+      "id": "newton_sqrt2",
+      "minimum_abs": 1.414213562373095
+    },
+    {
+      "checkpoint": 100,
+      "id": "noise_below_s1",
+      "minimum_abs": 99.9990114182589
+    },
+    {
+      "checkpoint": 200,
+      "id": "noise_below_s1",
+      "minimum_abs": 99.99920884844569
+    },
+    {
+      "checkpoint": 300,
+      "id": "noise_below_s1",
+      "minimum_abs": 99.99922272462025
+    },
+    {
+      "checkpoint": 300,
+      "id": "noise_below_s2",
+      "minimum_abs": 99.99905876981929
+    },
+    {
+      "checkpoint": 300,
+      "id": "noise_tiny_s3",
+      "minimum_abs": 99.99999999920627
+    },
+    {
+      "checkpoint": 100,
+      "id": "noise_above_s1",
+      "minimum_abs": 90.11418258900785
+    },
+    {
+      "checkpoint": 300,
+      "id": "noise_above_s1",
+      "minimum_abs": 92.22724620253784
+    },
+    {
+      "checkpoint": 300,
+      "id": "random_walk",
+      "minimum_abs": 5.0
+    },
+    {
+      "checkpoint": 103,
+      "id": "level_shift",
+      "minimum_abs": 1.0
+    },
+    {
+      "checkpoint": 160,
+      "id": "level_shift",
+      "minimum_abs": 2.0
+    },
+    {
+      "checkpoint": 30,
+      "id": "ml_loss_exp",
+      "minimum_abs": 0.2586512925656488
+    },
+    {
+      "checkpoint": 400,
+      "id": "ml_loss_exp",
+      "minimum_abs": 0.05000000000002913
+    },
+    {
+      "checkpoint": 60,
+      "id": "ml_loss_power",
+      "minimum_abs": 0.8559289460184544
+    },
+    {
+      "checkpoint": 2000,
+      "id": "ml_loss_power",
+      "minimum_abs": 0.24106912317171966
+    },
+    {
+      "checkpoint": 200,
+      "id": "ml_plateau",
+      "minimum_abs": 0.34999905524403147
+    },
+    {
+      "checkpoint": 20,
+      "id": "ml_loss_rise_plateau",
+      "minimum_abs": 0.7907929359399999
+    },
+    {
+      "checkpoint": 300,
+      "id": "ml_loss_rise_plateau",
+      "minimum_abs": 0.9999999999999678
+    },
+    {
+      "checkpoint": 14,
+      "id": "rise_to_1",
+      "minimum_abs": 0.9375
+    },
+    {
+      "checkpoint": 5,
+      "id": "neg_to_m5",
+      "minimum_abs": 7.96875
+    },
+    {
+      "checkpoint": 60,
+      "id": "neg_to_m5",
+      "minimum_abs": 5.0
+    },
+    {
+      "checkpoint": 20,
+      "id": "neg_decay",
+      "minimum_abs": 0.12157665459056936
+    },
+    {
+      "checkpoint": 5,
+      "id": "short_const",
+      "minimum_abs": 7.0
+    },
+    {
+      "checkpoint": 200,
+      "id": "growing_osc",
+      "minimum_abs": 2.854901219407645
+    },
+    {
+      "checkpoint": 144,
+      "id": "burst",
+      "minimum_abs": 1.0
+    },
+    {
+      "checkpoint": 149,
+      "id": "burst",
+      "minimum_abs": 1.0
+    },
+    {
+      "checkpoint": 300,
+      "id": "hardy_alt",
+      "minimum_abs": 0.9965635738831615
+    },
+    {
+      "checkpoint": 200,
+      "id": "neg_1.1_pow",
+      "minimum_abs": 73216704.9665922
+    },
+    {
+      "checkpoint": 60,
+      "id": "hardy_xxiv5",
+      "minimum_abs": 2499.0
+    },
+    {
+      "checkpoint": 200,
+      "id": "hardy_xxiv5",
+      "minimum_abs": 36099.0
+    },
+    {
+      "checkpoint": 200,
+      "id": "sawtooth_up",
+      "minimum_abs": 188.0
+    },
+    {
+      "checkpoint": 300,
+      "id": "quasi_2",
+      "minimum_abs": 0.06323449197683073
+    },
+    {
+      "checkpoint": 60,
+      "id": "inv_log",
+      "minimum_abs": 0.2422988705246811
+    },
+    {
+      "checkpoint": 300,
+      "id": "inv_log",
+      "minimum_abs": 0.17511825244545517
+    },
+    {
+      "checkpoint": 60,
+      "id": "e_limit",
+      "minimum_abs": 2.6921022089150086
+    },
+    {
+      "checkpoint": 2000,
+      "id": "e_limit",
+      "minimum_abs": 2.7175995002529723
+    },
+    {
+      "checkpoint": 60,
+      "id": "sin_iter",
+      "minimum_abs": 0.21494866347499728
+    },
+    {
+      "checkpoint": 2000,
+      "id": "sin_iter",
+      "minimum_abs": 0.038662301280887656
+    },
+    {
+      "checkpoint": 60,
+      "id": "int_counter",
+      "minimum_abs": 50.0
+    },
+    {
+      "checkpoint": 200,
+      "id": "int_counter",
+      "minimum_abs": 190.0
+    },
+    {
+      "checkpoint": 30,
+      "id": "int_doubling",
+      "minimum_abs": 1048576.0
+    },
+    {
+      "checkpoint": 62,
+      "id": "int_doubling",
+      "minimum_abs": 4503599627370496.0
+    },
+    {
+      "checkpoint": 60,
+      "id": "int_swing",
+      "minimum_abs": 4.611686018427388e+18
+    }
+  ],
+  "counts": {
+    "base_checkpoints": 97,
+    "bases": 61,
+    "calibration_above_comparisons": 50,
+    "calibration_comparisons": 194,
+    "calibration_x1_x1e6_above_comparisons": 80,
+    "corpus_checkpoints": 118,
+    "corpus_rows": 72,
+    "hcal_above_checkpoints": 14,
+    "hcal_above_comparisons": 42,
+    "hcal_above_trajectories": 5,
+    "hcal_checkpoints": 96,
+    "hcal_rows": 32,
+    "runnable_checkpoints": 100,
+    "runnable_rows": 63,
+    "scaled_rows": 183
+  },
+  "excluded_calibration": [
+    {
+      "failures": [
+        {
+          "binding": "x",
+          "index": 0,
+          "scale": "x1",
+          "value": "1e+308"
+        },
+        {
+          "binding": "x",
+          "index": 0,
+          "scale": "x1e-3",
+          "value": "1e+305"
+        },
+        {
+          "binding": "x",
+          "index": 0,
+          "scale": "x1e3",
+          "value": "inf"
+        },
+        {
+          "binding": "x",
+          "index": 0,
+          "scale": "x1e6",
+          "value": "inf"
+        }
+      ],
+      "id": "const_1e308_literal"
+    },
+    {
+      "failures": [
+        {
+          "binding": "x",
+          "index": 0,
+          "scale": "x1",
+          "value": "1e+305"
+        },
+        {
+          "binding": "x",
+          "index": 0,
+          "scale": "x1e3",
+          "value": "1e+308"
+        },
+        {
+          "binding": "x",
+          "index": 0,
+          "scale": "x1e6",
+          "value": "inf"
+        }
+      ],
+      "id": "huge_conv"
+    }
+  ],
+  "excluded_hcal": [],
+  "hcal_above": [
+    {
+      "checkpoint": 10,
+      "id": "f01_2",
+      "minimum_abs": 0.022697886427140893
+    },
+    {
+      "checkpoint": 14,
+      "id": "f01_2",
+      "minimum_abs": 0.022551980600846327
+    },
+    {
+      "checkpoint": 28,
+      "id": "f01_2",
+      "minimum_abs": 0.022529845871213497
+    },
+    {
+      "checkpoint": 24,
+      "id": "f05_3",
+      "minimum_abs": 0.014208874547560871
+    },
+    {
+      "checkpoint": 49,
+      "id": "f05_3",
+      "minimum_abs": 0.015199582546025716
+    },
+    {
+      "checkpoint": 98,
+      "id": "f05_3",
+      "minimum_abs": 0.015232889915482854
+    },
+    {
+      "checkpoint": 10,
+      "id": "f11_0",
+      "minimum_abs": 0.01664584815864159
+    },
+    {
+      "checkpoint": 17,
+      "id": "f11_0",
+      "minimum_abs": 0.04899118162373555
+    },
+    {
+      "checkpoint": 34,
+      "id": "f11_0",
+      "minimum_abs": 0.05033206918758632
+    },
+    {
+      "checkpoint": 11,
+      "id": "f11_2",
+      "minimum_abs": 0.02894271359815439
+    },
+    {
+      "checkpoint": 12,
+      "id": "f11_2",
+      "minimum_abs": 0.02894271359815439
+    },
+    {
+      "checkpoint": 10,
+      "id": "f11_7",
+      "minimum_abs": 0.010239233306900027
+    },
+    {
+      "checkpoint": 15,
+      "id": "f11_7",
+      "minimum_abs": 0.03365977538953435
+    },
+    {
+      "checkpoint": 30,
+      "id": "f11_7",
+      "minimum_abs": 0.03751555114093816
+    }
+  ],
+  "hcal_above_trajectories": [
+    "f01_2",
+    "f05_3",
+    "f11_0",
+    "f11_2",
+    "f11_7"
+  ],
+  "retained_calibration": [
+    "issue1891_row63",
+    "issue1891_damped_cosine",
+    "modulated_decay_094",
+    "modulated_runaway_minimal",
+    "issue1891_repeated_tail",
+    "issue1891_underflow_tail",
+    "const_5",
+    "geo_decay_0.5",
+    "geo_decay_0.9",
+    "geo_decay_0.99",
+    "halving_to_5",
+    "halving_to_5000",
+    "halving_to_0.005",
+    "geo_growth_1.5",
+    "linear_decrease",
+    "harmonic",
+    "log_n",
+    "sqrt_n",
+    "alt_inv_n",
+    "alt_series_ln2",
+    "damped_osc_0.9",
+    "damped_osc_0.99",
+    "period2_wide",
+    "period2_reciprocal",
+    "period4_square",
+    "period4_distinct",
+    "logistic_2.8",
+    "logistic_3.2",
+    "logistic_3.5",
+    "logistic_3.9",
+    "sin_n",
+    "cos_fixed_point",
+    "newton_sqrt2",
+    "noise_below_s1",
+    "noise_below_s2",
+    "noise_tiny_s3",
+    "noise_above_s1",
+    "random_walk",
+    "level_shift",
+    "ml_loss_exp",
+    "ml_loss_power",
+    "ml_plateau",
+    "ml_loss_rise_plateau",
+    "rise_to_1",
+    "two_vars",
+    "neg_to_m5",
+    "neg_decay",
+    "short_const",
+    "growing_osc",
+    "burst",
+    "hardy_alt",
+    "neg_1.1_pow",
+    "hardy_xxiv5",
+    "sawtooth_up",
+    "quasi_2",
+    "inv_log",
+    "e_limit",
+    "sin_iter",
+    "int_counter",
+    "int_doubling",
+    "int_swing"
+  ],
+  "retained_hcal": [
+    "f01_0",
+    "f01_1",
+    "f01_2",
+    "f01_3",
+    "f01_4",
+    "f01_5",
+    "f01_6",
+    "f01_7",
+    "f05_0",
+    "f05_1",
+    "f05_2",
+    "f05_3",
+    "f05_4",
+    "f05_5",
+    "f05_6",
+    "f05_7",
+    "f06_0",
+    "f06_1",
+    "f06_2",
+    "f06_3",
+    "f06_4",
+    "f06_5",
+    "f06_6",
+    "f06_7",
+    "f11_0",
+    "f11_1",
+    "f11_2",
+    "f11_3",
+    "f11_4",
+    "f11_5",
+    "f11_6",
+    "f11_7"
+  ],
+  "ruling_counts": [
+    {
+      "derived": 72,
+      "item": 1,
+      "name": "corpus_rows",
+      "ruling": 72
+    },
+    {
+      "derived": 118,
+      "item": 1,
+      "name": "corpus_checkpoints",
+      "ruling": 118
+    },
+    {
+      "derived": 63,
+      "item": 3,
+      "name": "runnable_rows",
+      "ruling": 63
+    },
+    {
+      "derived": 100,
+      "item": 3,
+      "name": "runnable_checkpoints",
+      "ruling": 100
+    },
+    {
+      "derived": 61,
+      "item": 3,
+      "name": "bases",
+      "ruling": 61
+    },
+    {
+      "derived": 97,
+      "item": 3,
+      "name": "base_checkpoints",
+      "ruling": 97
+    },
+    {
+      "derived": 183,
+      "item": 3,
+      "name": "scaled_rows",
+      "ruling": 183
+    },
+    {
+      "derived": 194,
+      "item": 3,
+      "name": "calibration_comparisons",
+      "ruling": 194
+    },
+    {
+      "derived": 50,
+      "item": 8,
+      "name": "calibration_above_comparisons",
+      "ruling": 50
+    },
+    {
+      "derived": 32,
+      "item": 12,
+      "name": "hcal_rows",
+      "ruling": 32
+    }
+  ],
+  "scope": "Pre-certification released-source masks only; final comparison counts are confirmation-counts.json under R33-1 addendum1."
+}

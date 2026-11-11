@@ -1,0 +1,65 @@
+x is 1000191.0
+print of f"I seeded-3-63 0 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} null {how is x} {when is x} false false"
+x is -1000191.0
+print of f"I seeded-3-63 1 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.0
+print of f"I seeded-3-63 2 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} {(atan2 of [(where is x), -1.0]) < 0.0} false"
+x is 0.5
+print of f"I seeded-3-63 3 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.75
+print of f"I seeded-3-63 4 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.875
+print of f"I seeded-3-63 5 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9375
+print of f"I seeded-3-63 6 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.96875
+print of f"I seeded-3-63 7 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.984375
+print of f"I seeded-3-63 8 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9921875
+print of f"I seeded-3-63 9 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.99609375
+print of f"I seeded-3-63 10 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.998046875
+print of f"I seeded-3-63 11 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9990234375
+print of f"I seeded-3-63 12 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.99951171875
+print of f"I seeded-3-63 13 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.999755859375
+print of f"I seeded-3-63 14 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9998779296875
+print of f"I seeded-3-63 15 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.99993896484375
+print of f"I seeded-3-63 16 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.999969482421875
+print of f"I seeded-3-63 17 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9999847412109375
+print of f"I seeded-3-63 18 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9999923706054688
+print of f"I seeded-3-63 19 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9999961853027344
+print of f"I seeded-3-63 20 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9999980926513672
+print of f"I seeded-3-63 21 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9999990463256836
+print of f"I seeded-3-63 22 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9999995231628418
+print of f"I seeded-3-63 23 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9999997615814209
+print of f"I seeded-3-63 24 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9999998807907104
+print of f"I seeded-3-63 25 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9999999403953552
+print of f"I seeded-3-63 26 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9999999701976776
+print of f"I seeded-3-63 27 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9999999850988388
+print of f"I seeded-3-63 28 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9999999925494194
+print of f"I seeded-3-63 29 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9999999962747097
+print of f"I seeded-3-63 30 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0.9999999981373549
+print of f"I seeded-3-63 31 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+print of "DONE seeded-3-63"

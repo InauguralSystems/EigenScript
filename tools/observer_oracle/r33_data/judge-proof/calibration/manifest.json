@@ -1,0 +1,37 @@
+{
+ "arms": {
+  "ARM": {
+   "binary_sha256": "4b39c6ff3b7cbd3070bb18b0f026dbb6150607af4d3554c9d851a68d11480720",
+   "lib": "d23abbdcea05a5d5718be530fdd9d1ebb22c38cba2a00c1a72c7779c0c9416a1",
+   "recipe_id": "9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27",
+   "source_sha": "54008422b7bb4950131f4dd4d15ead942a2ecb2e",
+   "stamp_binary_sha256": "4b39c6ff3b7cbd3070bb18b0f026dbb6150607af4d3554c9d851a68d11480720"
+  },
+  "F0": {
+   "binary_sha256": "4b39c6ff3b7cbd3070bb18b0f026dbb6150607af4d3554c9d851a68d11480720",
+   "lib": "d23abbdcea05a5d5718be530fdd9d1ebb22c38cba2a00c1a72c7779c0c9416a1",
+   "recipe_id": "9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27",
+   "source_sha": "54008422b7bb4950131f4dd4d15ead942a2ecb2e",
+   "stamp_binary_sha256": "4b39c6ff3b7cbd3070bb18b0f026dbb6150607af4d3554c9d851a68d11480720"
+  }
+ },
+ "code": {
+  "native_witness.py": "3eea544572aaf14d3808cb468d850c2e99756e0d63d378f03917e9e23e764252",
+  "observer_oracle/derive.py": "a379bbda4571d21f59aa413113b2e5db2c7252c86e4f3a59534efdeb4cd1cee8",
+  "observer_oracle/families.py": "3acedd906d78b9a15389d25d9404b3d778a46d8ca665d72b503ce16f32f2268e",
+  "observer_oracle/gen.py": "6911560a73a1fd8749d0c96008a778ce184e71e2ec40468757b13638656caeb5",
+  "observer_oracle/judge.py": "c456dbc36fb1c65d762ba7e96a4e8c49ceffb5dba5a0713eb1a4ffd6dd33bbaa",
+  "observer_oracle/plants.py": "51869af88325f55ae34f60cc7cb8b92bb9c50b5ca9ec9fb5448a4354cb9dc4c0",
+  "observer_oracle/reference.py": "fa74d83f23422f5ddee9b30dc0f133417f98d9d8e7f9806151233d9e18ca1993",
+  "observer_oracle/schema.py": "199f7401adba63740b4b8db4aaa4e9450297d4709b679b941f0b88c193abbb33",
+  "observer_oracle/score.py": "e74b1c84d5e2e7f019e946d4cd4807fd418c67d7541ee5c1bde1063d1bc267e4",
+  "observer_oracle/standard.py": "3830286c043babdf1064e9d762b38968e974ed71880c86839cb85f0f903d44e3"
+ },
+ "format": "r3-manifest/3",
+ "programs": "342bec649e5fe5924e9ddb04493b18b632137831fe3c2040fa6cb823a20a2ff8",
+ "set": {
+  "certificate.json": "5a3840c0a1d7a3078ff808614c4199ad9d768dedba84d6110bf4ffc0c56cd7a5",
+  "corpus.json": "e3f5e94e97bd28972480977a5ff21173221e878ab784abc7f4ed5459bedfefe4",
+  "labels.json": "de4d61390cde512f5bfec01d51cceb28c3cf17db8758fbac38b72cd8891cd5cb"
+ }
+}

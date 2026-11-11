@@ -1,0 +1,74 @@
+{
+  "choice_sha256": null,
+  "commands": {
+    "hcal": [
+      "/usr/bin/python3",
+      "-I",
+      "/home/jon/src/wt/es-r33/tools/observer_oracle/judge.py",
+      "--arm",
+      "F0=/home/jon/src/wt/briefs/out/r3-3/instrument/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/54008422b7bb4950131f4dd4d15ead942a2ecb2e/build/release/eigenscript",
+      "--arm",
+      "ARM=/home/jon/src/wt/briefs/out/r3-3/instrument/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/54008422b7bb4950131f4dd4d15ead942a2ecb2e/build/release/eigenscript",
+      "--diff",
+      "ARM,F0",
+      "--seed",
+      "175833",
+      "--resamples",
+      "10000",
+      "--corpus",
+      "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/judge-proof/hcal"
+    ],
+    "union": [
+      "/usr/bin/python3",
+      "-I",
+      "/home/jon/src/wt/es-r33/tools/observer_oracle/judge.py",
+      "--arm",
+      "F0=/home/jon/src/wt/briefs/out/r3-3/instrument/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/54008422b7bb4950131f4dd4d15ead942a2ecb2e/build/release/eigenscript",
+      "--arm",
+      "ARM=/home/jon/src/wt/briefs/out/r3-3/instrument/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/54008422b7bb4950131f4dd4d15ead942a2ecb2e/build/release/eigenscript",
+      "--diff",
+      "ARM,F0",
+      "--seed",
+      "175833",
+      "--resamples",
+      "10000",
+      "--corpus",
+      "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/judge-proof/hcal",
+      "--corpus",
+      "/home/jon/src/wt/es-r33/tools/observer_oracle/r33_data/judge-proof/calibration"
+    ]
+  },
+  "format": "r33-judge-stage/1",
+  "guard_population_note": "released x1 sets as they stand; addendum1 exclusions apply to unit-comparison sets",
+  "guard_populations": {
+    "converged": "hcal",
+    "diverging": "union",
+    "equilibrium": "union",
+    "improving": "hcal",
+    "oscillating": "hcal",
+    "stable": "hcal"
+  },
+  "sets": {
+    "calibration": {
+      "checkpoints": 118,
+      "files": {
+        "certificate.json": "5a3840c0a1d7a3078ff808614c4199ad9d768dedba84d6110bf4ffc0c56cd7a5",
+        "corpus.json": "e3f5e94e97bd28972480977a5ff21173221e878ab784abc7f4ed5459bedfefe4",
+        "labels.json": "de4d61390cde512f5bfec01d51cceb28c3cf17db8758fbac38b72cd8891cd5cb",
+        "manifest.json": "552ca28aaed7725c54c01de50dcbc2c0289b28b7838a87635aab7796d8683849"
+      },
+      "rows": 72
+    },
+    "hcal": {
+      "checkpoints": 96,
+      "files": {
+        "certificate.json": "3a73e7fda9787d4627137b7abb1dc01830cbfc1b652932dcb4232dc80f588de6",
+        "corpus.json": "47f9fedd37bf4cd56d86f781aa8995a9791fe404f56351dba712727825f06b0d",
+        "labels.json": "323b0e9501e350ed61b9862e8b6f2d0c1fce662baf27cd200d40eaa6e0db86d6",
+        "manifest.json": "348c300cc3acd5f6daa6de3c7af9cc049a0f2e16eece7e9b366bd10e951e7420"
+      },
+      "rows": 32
+    }
+  },
+  "subject": "54008422b7bb4950131f4dd4d15ead942a2ecb2e"
+}
