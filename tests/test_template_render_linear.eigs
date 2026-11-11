@@ -61,4 +61,27 @@ for size in [1, 2, 1000, 100001]:
     compared += 1
 
 print of ("TEMPLATE ORACLE: " + (str of compared) + " inputs, zero differences")
+
+# Exhaust every string of length 0..9 over the delimiter alphabet.  Include
+# both present and absent keys so lookup and missing-key preservation agree.
+local exhaustive_vars is [
+    ["", "empty"], ["a", "A"], ["{", "left"], ["a{", "a-left"],
+    ["{a", "left-a"], ["}", "right"], ["aa", "AA"]
+]
+local population is [""]
+local exhaustive_compared is 0
+for length in range of 10:
+    for sample in population:
+        assert_eq of [render of [sample, exhaustive_vars], render_before_2344 of [sample, exhaustive_vars], "render exhaustive oracle"]
+        exhaustive_compared += 1
+    if length < 9:
+        local next_population is []
+        for prefix in population:
+            append of [next_population, prefix + "{"]
+            append of [next_population, prefix + "}"]
+            append of [next_population, prefix + "a"]
+        population is next_population
+
+assert_eq of [exhaustive_compared, 29524, "exhaustive template population"]
+print of ("TEMPLATE EXHAUSTIVE: " + (str of exhaustive_compared) + " strings, zero differences")
 test_summary of null

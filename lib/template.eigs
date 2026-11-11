@@ -24,32 +24,32 @@
 # injection path where a user-supplied value could reference another
 # variable.
 define render(tmpl, vars) as:
-    # Scan by index, collect pieces, and join once.  Each source byte is
-    # visited a constant number of times; no unconsumed suffix is copied.
+    # Split both delimiters in native code, then rebuild the first-close
+    # semantics while collecting output.  key_parts matters for nested
+    # openers: in "{{a{{b}}", the key is "a{{b".
     local result_parts is []
-    local template_len is len of tmpl
-    local cursor is 0
-    loop while cursor < template_len:
-        local open_pos is cursor
-        loop while open_pos + 1 < template_len and (substr of [tmpl, open_pos, 2]) != "{{":
-            open_pos += 1
-        if open_pos + 1 >= template_len:
-            append of [result_parts, substr of [tmpl, cursor, template_len - cursor]]
-            return join of [result_parts, ""]
-        append of [result_parts, substr of [tmpl, cursor, open_pos - cursor]]
-        local close_pos is open_pos + 2
-        loop while close_pos + 1 < template_len and (substr of [tmpl, close_pos, 2]) != "}}":
-            close_pos += 1
-        if close_pos + 1 >= template_len:
-            append of [result_parts, substr of [tmpl, open_pos, template_len - open_pos]]
-            return join of [result_parts, ""]
-        local key is substr of [tmpl, open_pos + 2, close_pos - open_pos - 2]
-        local val is "{{" + key + "}}"
-        for i in range of (len of vars):
-            if vars[i][0] == key:
-                val is str of vars[i][1]
-        append of [result_parts, val]
-        cursor is close_pos + 2
+    local open_parts is split of [tmpl, "{{"]
+    append of [result_parts, open_parts[0]]
+    local key_parts is []
+    for open_i in range of ((len of open_parts) - 1):
+        local part is open_parts[open_i + 1]
+        local close_parts is split of [part, "}}"]
+        append of [key_parts, close_parts[0]]
+        if (len of close_parts) > 1:
+            local key is join of [key_parts, "{{"]
+            local val is "{{" + key + "}}"
+            for var_i in range of (len of vars):
+                if vars[var_i][0] == key:
+                    val is str of vars[var_i][1]
+            append of [result_parts, val]
+            append of [result_parts, close_parts[1]]
+            for close_i in range of ((len of close_parts) - 2):
+                append of [result_parts, "}}"]
+                append of [result_parts, close_parts[close_i + 2]]
+            key_parts is []
+    if (len of key_parts) > 0:
+        append of [result_parts, "{{"]
+        append of [result_parts, join of [key_parts, "{{"]]
     return join of [result_parts, ""]
 
 # ---- render_file: load a template file and render it ----
