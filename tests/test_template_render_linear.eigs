@@ -29,6 +29,18 @@ define render_before_2344(tmpl, vars) as:
         remaining is substr of [after_open, close_pos + 2, (len of after_open) - close_pos - 2]
     return result
 
+define raises_for_template(renderer, tmpl) as:
+    try:
+        renderer of [tmpl, []]
+    catch err:
+        return true
+    return false
+
+# Both implementations reject every non-string template before rendering.
+for invalid_template in [42, 3.5, null, true, ["not", "a string"]]:
+    assert of [raises_for_template of [render, invalid_template], "render rejects non-string template"]
+    assert of [raises_for_template of [render_before_2344, invalid_template], "main render rejects non-string template"]
+
 local cases is [
     ["plain text", []],
     ["{{a}}{{b}}", [["a", "A"], ["b", "B"]]],
@@ -71,9 +83,6 @@ for size in [1, 2, 2000]:
         differences += 1
     compared += 1
 
-if differences == 0:
-    print of ("TEMPLATE ORACLE: " + (str of compared) + " inputs, zero differences")
-
 # Exhaust every string of length 0..9 over the delimiter alphabet.  Include
 # both present and absent keys so lookup and missing-key preservation agree.
 local exhaustive_vars is [
@@ -100,6 +109,6 @@ for length in range of 10:
         population is next_population
 
 assert_eq of [exhaustive_compared, 29524, "exhaustive template population"]
-if exhaustive_differences == 0:
-    print of ("TEMPLATE EXHAUSTIVE: " + (str of exhaustive_compared) + " strings, zero differences")
+if differences == 0 and exhaustive_differences == 0:
+    print of ("TEMPLATE ORACLE: " + (str of compared) + " inputs and " + (str of exhaustive_compared) + " strings, zero differences")
 test_summary of null

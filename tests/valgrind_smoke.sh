@@ -58,7 +58,12 @@ VG_TMO=""
 PRE_TMO=""
 VG_LIMIT="${EIGS_VALGRIND_TIMEOUT:-600}"
 case "$VG_LIMIT" in
-  *[!0-9]*|0|'')
+  *[!0-9]*|'')
+    echo "ERROR: EIGS_VALGRIND_TIMEOUT must be a positive whole number; got '$VG_LIMIT'"
+    exit 2
+    ;;
+  *[1-9]*) ;;
+  *)
     echo "ERROR: EIGS_VALGRIND_TIMEOUT must be a positive whole number; got '$VG_LIMIT'"
     exit 2
     ;;

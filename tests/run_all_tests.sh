@@ -623,24 +623,19 @@ derive_count() {
 check_eigs_suite() {
     local test_name="$1"
     local file="$2"
-    shift 2
-    local out rc n=1 marker markers_ok=1
+    local marker="$3"
+    local out rc n=1
     # Guard #681: abort if the binary was rebuilt while a previous block ran.
     check_binary_fingerprint
     out=$($EIGS_TMO ./eigenscript "../tests/$file" </dev/null 2>&1); rc=$?
     TOTAL=$((TOTAL + n))
-    for marker in "$@"; do
-        if ! grep -q "$marker" <<< "$out"; then
-            markers_ok=0
-        fi
-    done
     if [ "$rc" = "124" ]; then
         # rc=124 is the runaway guard (GNU/gtimeout both use it): the test file
         # never terminated. Name the block so the failure points at the culprit
         # instead of folding into the generic rc path — and let the suite continue.
         FAIL=$((FAIL + n))
         echo "  FAIL: $test_name (timed out after ${EIGS_TEST_TIMEOUT}s — runaway in $file)"
-    elif rc_ok "$rc" "$out" && [ "$markers_ok" -eq 1 ]; then
+    elif rc_ok "$rc" "$out" && echo "$out" | grep -q "$marker"; then
         PASS=$((PASS + n))
         echo "  PASS: $test_name"
     else

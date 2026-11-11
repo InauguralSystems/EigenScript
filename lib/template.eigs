@@ -24,6 +24,7 @@
 # injection path where a user-supplied value could reference another
 # variable.
 define render(tmpl, vars) as:
+    "" + tmpl
     # Split both delimiters in native code, then rebuild the first-close
     # semantics while collecting output.  key_parts matters for nested
     # openers: in "{{a{{b}}", the key is "a{{b".
