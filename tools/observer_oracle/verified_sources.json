@@ -1,0 +1,34 @@
+{
+  "format": "r3-supplemental-sources/1",
+  "note": "Supplement to the frozen corpus.json sources table. The existing RW_RECURRENT entry verifies the simple +/-1 walk; it is insufficient by itself for F10. This entry documents the nonlattice result used by F10's unchanged Chung-Fuchs argument. No corpus, label, certificate, generator or decision rule is changed.",
+  "sources": {
+    "CHUNG_FUCHS_1951": {
+      "authors": ["K. L. Chung", "W. H. J. Fuchs"],
+      "title": "On the distribution of values of sums of random variables",
+      "year": 1951,
+      "publication": "Memoirs of the American Mathematical Society 6, pp. 1-12",
+      "supplements_cite_key": "RW_RECURRENT",
+      "applies_to": "families.py F10 uniform-step random walk; F15b bases and positive F15 scalings descended from F10",
+      "theorem": "For a one-dimensional random walk with iid increments of finite absolute first moment and mean zero, recurrent values exist. For a nondegenerate nonlattice increment distribution the recurrent-value set is all of R: every neighborhood of each fixed real value is visited infinitely often almost surely.",
+      "where_read": [
+        {
+          "author": "K. L. Chung",
+          "title": "A Course in Probability Theory",
+          "location": "Section 8.3, recurrent-value definition; Theorem 8.3.1 (closed additive group), Theorem 8.3.4 and proof, printed pp. 279 and 283-285; Section 8.3 Exercise 5; chapter bibliography credits Chung-Fuchs (1951)",
+          "url": "https://dokumen.pub/course-in-probability-theory-2ndnbsped-9780121741518-0121741516.html",
+          "copy_note": "Read Chung's reproduced book text, not the host's inconsistent edition/year metadata. The theorem explicitly attributes the criterion to Chung and Fuchs (1951). The 1951 memoir's full text was not accessible."
+        },
+        {
+          "authors": ["Roberta S. Wenocur", "Stephen W. Salant"],
+          "title": "Recurrence of a modified random walk and its application to an economic model",
+          "year": 1981,
+          "publication": "SIAM Journal on Applied Mathematics 40(1), pp. 163-166",
+          "location": "Section 4 Remarks, equation (3), p. 165 (nonlattice recurrence), and references p. 166 (1951 bibliographic details)",
+          "url": "https://mpra.ub.uni-muenchen.de/11171/1/recurrence.pdf"
+        }
+      ],
+      "status": "VERIFIED: primary authored theorem statements read 2026-11-06 at the listed locations; original memoir bibliographic details cross-checked in Rockefeller University's Four Papers on Probability catalogue (1951), https://digitalcommons.rockefeller.edu/pamphlets-offprints-and-reprints/77/. The original memoir itself was not read.",
+      "application": "OUR derivation: F10's increments are Uniform[-step,step], step>0, hence iid, nondegenerate, nonlattice, integrable and centered. Recurrence near every integer on a countable probability-one intersection excludes convergence, either signed infinite limit, and boundedness. Translation by x0 and multiplication by a fixed positive scale preserve these properties."
+    }
+  }
+}
