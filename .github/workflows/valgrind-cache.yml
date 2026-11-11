@@ -1,0 +1,38 @@
+name: Valgrind cache
+
+# The merge queue's valgrind and bench jobs install Valgrind from a .deb
+# cache (.github/actions/install-valgrind). A cache that one merge group
+# saves is not visible to the next, and ci.yml does not run those jobs on a
+# push, so nothing saved the cache where the queue can read it: on main.
+# Every queue run then installed from the network, and on 2026-11-11 runners
+# that could not reach the package servers ejected every pull request for
+# three hours (#2341). This job saves the cache on main: after each push,
+# once a day, and on request. It does not make the queue independent of the
+# network: when the package's candidate version changes, the first run on
+# main still has to fetch it.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '47 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: valgrind-cache
+  cancel-in-progress: false
+
+jobs:
+  warm:
+    name: valgrind cache (main)
+    # The same runner label as the valgrind and bench jobs of ci.yml: the
+    # cache key holds the image's name and the package's candidate version.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install Valgrind (restores the cache, or installs and saves it)
+        timeout-minutes: 10
+        uses: ./.github/actions/install-valgrind
