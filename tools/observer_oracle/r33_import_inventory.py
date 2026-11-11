@@ -101,6 +101,9 @@ def import_proof(spec):
 def split_prior(spec):
     """Ruling3/4 replaces old fixed-window premises with explicit scope."""
     row=copy.deepcopy(spec)
+    if row['id'] in {'ast-Slot.record-call-reference-65-0-fault','ast-Slot.record-constant-142-0-fault'}:
+        row.update(status='EQUIVALENT',reason='The record numeric-type refusal can be reached by a malformed imported value such as bool. This mutation changes only its TypeError construction or message; the faulty raise still raises, including TypeError for a non-exception object. Valid numeric input bypasses the branch. The value-route verdict/REFUSED contract is identical; no exception spelling or Python error class is claimed.',missing_capability=None)
+        return row
     equal_parameters={'ast-Slot.magnitude-reference-12-0-fault',
                       'ast-Slot._step-reference-14-0-fault',
                       'ast-Slot.converged-reference-61-0-fault',

@@ -1325,9 +1325,9 @@
     "drivers/group_plants.py": "9b2d4cc92c7a19c6df1087414544546a3ab17d722f213d91ad1b455dc7310785",
     "drivers/identity_plants.py": "d77430c3bbac2828ac9227537cae7b7af6f15476071b1f006375526eaa945afe",
     "drivers/import_discovery.py": "bd04651214f1ce6a92ef353fb9ded1e428a4e0a56906227df0e9d7412528e530",
-    "drivers/import_identity_cont3.py": "fcc72b436e0de6f8fb9b6783eb93076c4d5b469a077e5aac022f63dd65ce0184",
+    "drivers/import_identity_cont3.py": "b6cd2dbf344dd8c176996c35173e697aa630f5c77e98f02b1d00d7e064c21de8",
     "drivers/make_manifest.py": "70eadfa2acd5db6769702e914a7f48407b15dfc94a8d5497cf7607142f7fce5b",
-    "drivers/manifest4.py": "f52f8e7d7534b0a54513d8d270377d13a5a9b6aa0f33e39b643a5447a54f9e4d",
+    "drivers/manifest4.py": "3faae8bf86caf4d190e8e63d05673199042737e0a6cdd34b3b7ebb8bdbc75327",
     "drivers/portable_receipts.py": "2f4e13d0ddb23e948aab6b276c5c8158d527eeb8ad9da08f297b8f1c5c71fd40",
     "drivers/report_cont2.py": "e4583be129b39965fda2a7dac31f2e4a1838d54691f3561c9ae6e17f3238cce4",
     "drivers/score_mutants.py": "9fdce77b5bd045c6bb20e6ff3862a8385416c7575f461c413b68878d235c0ccb",
@@ -1962,7 +1962,7 @@
     "tools/observer_oracle/r33_data/site-coverage/certifier-refusal.txt": "28040cef47534565fbeea4347264e3dcc36ea368afc631661c16fee734eecbe0",
     "tools/observer_oracle/r33_data/site-coverage/imports/inputs.json": "e10d8bc387369c32563bdc35161e3d2953ba26e67a59f8023583dfc797e698fd",
     "tools/observer_oracle/r33_data/site-coverage/imports/programs/addendum3-trajectory-imports.eigs": "bf1e4bcf691259c76b3225759a00ba275ec16fd3feed2d536db78ffef4fd79f6",
-    "tools/observer_oracle/r33_data/site-coverage/imports/programs/addendum3-trajectory-refusals.eigs": "0bb235889ab4e2c31a73bdc5b22ed6b3ae4bc3ec99d6908f9a1148599916320f",
+    "tools/observer_oracle/r33_data/site-coverage/imports/programs/addendum3-trajectory-refusals.eigs": "cdbca7c6844ffae875f9477addbd3c997a9c10e6616e1c0eaa860dcce897806b",
     "tools/observer_oracle/r33_data/site-coverage/programs/boundary-bounded-floor-equality.eigs": "cc7cec5bb8333b0d7f46b80b15853acc9e5d04c2607e391de300f19ed854b0ee",
     "tools/observer_oracle/r33_data/site-coverage/programs/boundary-bounded-net-equality.eigs": "e85b3c4c86c0949c8d5f6a154f34c1c1c05bb3fe793d6e5950a681c1ccd2c53f",
     "tools/observer_oracle/r33_data/site-coverage/programs/boundary-bounded-two-reversals.eigs": "2eb0c69b28e0d9626ad0642e7632e173bfeec9bd6b64839d8ae5bd6e55aeef39",
@@ -2056,8 +2056,8 @@
     "tools/observer_oracle/r33_data/site-coverage/surfaces/programs/string-first-temporal.eigs": "f95682e63d01645bddcde7ba94687b2820ed2dba013c7b34930f3fd7a688c7b8",
     "tools/observer_oracle/r33_fixtures.py": "da5c084a60f0603232d982701f54e26b07d33456605a2940c53663dc89acf7e6",
     "tools/observer_oracle/r33_identity.py": "7356ea17f43c9c8aadf6275d3119efb5c4a5192f2b07ae00b8b33c25f4e0099e",
-    "tools/observer_oracle/r33_import_inventory.py": "9dff4856b25dbc4d3301e2da0514c3e3f84168a10a709a8e7fa8cd2ef9bb1807",
-    "tools/observer_oracle/r33_imports.py": "93cb16f0ab5c7c7cda6a601d81e57aa2e7d5165efcdb10e809534327123dce06",
+    "tools/observer_oracle/r33_import_inventory.py": "0b1194e633c77ae458c09acff2277d4c3d235a58166124b0a00fbe848c879271",
+    "tools/observer_oracle/r33_imports.py": "549b3eaff9ecbf784fafdc3a0a38273f8054aeb84e22dd59851aeac71354970f",
     "tools/observer_oracle/r33_judge.py": "41013d420e1a63a7111a2f653f0beb2eb1dad1781321d351bc287e4b54207fac",
     "tools/observer_oracle/r33_metrics.py": "0a6912bd979a2d1fd6aedcf05868f78201d40a0b17b79e0b5da0a66022121a2b",
     "tools/observer_oracle/r33_mutants.py": "0af460d6c778c5d3ec8563e5d75b5af19ca66aae2c318e796ec227dec4c52f1f",
@@ -2601,7 +2601,7 @@
     "tools/observer_oracle/r33_data/site-coverage/certifier-refusal.txt": "28040cef47534565fbeea4347264e3dcc36ea368afc631661c16fee734eecbe0",
     "tools/observer_oracle/r33_data/site-coverage/imports/inputs.json": "e10d8bc387369c32563bdc35161e3d2953ba26e67a59f8023583dfc797e698fd",
     "tools/observer_oracle/r33_data/site-coverage/imports/programs/addendum3-trajectory-imports.eigs": "bf1e4bcf691259c76b3225759a00ba275ec16fd3feed2d536db78ffef4fd79f6",
-    "tools/observer_oracle/r33_data/site-coverage/imports/programs/addendum3-trajectory-refusals.eigs": "0bb235889ab4e2c31a73bdc5b22ed6b3ae4bc3ec99d6908f9a1148599916320f",
+    "tools/observer_oracle/r33_data/site-coverage/imports/programs/addendum3-trajectory-refusals.eigs": "cdbca7c6844ffae875f9477addbd3c997a9c10e6616e1c0eaa860dcce897806b",
     "tools/observer_oracle/r33_data/site-coverage/programs/boundary-bounded-floor-equality.eigs": "cc7cec5bb8333b0d7f46b80b15853acc9e5d04c2607e391de300f19ed854b0ee",
     "tools/observer_oracle/r33_data/site-coverage/programs/boundary-bounded-net-equality.eigs": "e85b3c4c86c0949c8d5f6a154f34c1c1c05bb3fe793d6e5950a681c1ccd2c53f",
     "tools/observer_oracle/r33_data/site-coverage/programs/boundary-bounded-two-reversals.eigs": "2eb0c69b28e0d9626ad0642e7632e173bfeec9bd6b64839d8ae5bd6e55aeef39",
@@ -2701,11 +2701,21 @@
     "reason": "new import fixtures sealed before first binary read",
     "sha256": "96b6e54a2b3f2055ed823552338467c05e2d2240d727da3fe5976a20ff7a81a7"
   },
+  "fourth_pre_read_refresh": {
+    "bank_commit": "c0f98ca5740d56d4ca01224e7c95ae30eeea4bcd",
+    "checkpoint": 8,
+    "reason": "final inventory proofs and guard execution linkage before first import read",
+    "sha256": "59c77bfcfe0267baec4c19bd6e1dec2ba1185b5f665b96f88e64b21cf6b18f8e"
+  },
   "identity_inputs": [
     "tools/observer_oracle/r33_data/identity/seeded.jsonl",
     "tools/observer_oracle/r33_data/identity/anchors.jsonl"
   ],
   "identity_programs": "tools/observer_oracle/r33_data/identity/programs",
+  "import_program_revision": {
+    "first_input_sha256": "e10d8bc387369c32563bdc35161e3d2953ba26e67a59f8023583dfc797e698fd",
+    "reason": "W001 unused catch binding renamed with underscore; input definitions unchanged"
+  },
   "instrument_files": {
     "tools/native_witness.py": "3eea544572aaf14d3808cb468d850c2e99756e0d63d378f03917e9e23e764252",
     "tools/observer_oracle/certify.py": "62245b785bac5cafb3294eeee5d5090498e82450fd49c757923bda232b1ebfd0",
@@ -2719,8 +2729,8 @@
     "tools/observer_oracle/r33_collect.py": "a375814bf107909f8f688970ab396a3221d88377d7d573c99a2d4ab04687f3aa",
     "tools/observer_oracle/r33_fixtures.py": "da5c084a60f0603232d982701f54e26b07d33456605a2940c53663dc89acf7e6",
     "tools/observer_oracle/r33_identity.py": "7356ea17f43c9c8aadf6275d3119efb5c4a5192f2b07ae00b8b33c25f4e0099e",
-    "tools/observer_oracle/r33_import_inventory.py": "9dff4856b25dbc4d3301e2da0514c3e3f84168a10a709a8e7fa8cd2ef9bb1807",
-    "tools/observer_oracle/r33_imports.py": "93cb16f0ab5c7c7cda6a601d81e57aa2e7d5165efcdb10e809534327123dce06",
+    "tools/observer_oracle/r33_import_inventory.py": "0b1194e633c77ae458c09acff2277d4c3d235a58166124b0a00fbe848c879271",
+    "tools/observer_oracle/r33_imports.py": "549b3eaff9ecbf784fafdc3a0a38273f8054aeb84e22dd59851aeac71354970f",
     "tools/observer_oracle/r33_judge.py": "41013d420e1a63a7111a2f653f0beb2eb1dad1781321d351bc287e4b54207fac",
     "tools/observer_oracle/r33_metrics.py": "0a6912bd979a2d1fd6aedcf05868f78201d40a0b17b79e0b5da0a66022121a2b",
     "tools/observer_oracle/r33_mutants.py": "0af460d6c778c5d3ec8563e5d75b5af19ca66aae2c318e796ec227dec4c52f1f",

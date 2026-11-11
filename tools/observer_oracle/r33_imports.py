@@ -153,7 +153,7 @@ def emit(row):
         out.append('r33_traj is '+S.source_literal(custom['data']))
         out.append('try:')
         out.append('    r33_answer is classify of r33_traj')
-        out.append('catch r33_import_error:')
+        out.append('catch _r33_import_error:')
         out.append('    r33_answer is "REFUSED"')
         S.scalar(out, row, i, 'refusal.'+custom['name'], 'r33_answer')
     out.append('print of '+S.source_literal('SURF_DONE '+row['id']))
