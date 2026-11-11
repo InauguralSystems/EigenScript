@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Hand-written examples only for addendum3's registered procedure steps.
 
-No staged population, saved population reading or fixture file is opened.
+No staged population, saved population reading or fixture file is parsed.
+The frozen guard files are hashed to verify declared judge support.
 The small labelled verdict matrices below are written here in full. Actual
 collection is demonstrated on the literal hand window [2.0, 2.0, 2.0].
 """
@@ -79,6 +80,8 @@ def hand_judge(lower="-0.0199", subject="C_1e-6^hist"):
         "arms": identities, "binary_paths": paths, "candidate_policy": subject,
         "choice_sha256": proof["choice_sha256"], "manifest_sha256": proof["manifest_sha256"],
         "judge_sha256": D.J.sha(D.J.HERE / "judge.py"), "command": command,
+        "guard_set_files": {key: value for key, value in D.J.guard_set_hashes().items()
+                            if name == "union" or key == "hcal"},
         "bounds": {p: {"bound_print_precision": 4, "printed_lower": lower,
             "printed_point_difference": "0.0000", "printed_upper": "0.0100",
             "resamples_set_aside": 1 if p == "equilibrium" else 0, "scored_verdicts_per_arm": 2}
@@ -94,7 +97,7 @@ def run_hand_tests():
     def refuses(name, function, fragment):
         try:
             function()
-        except (M.Incomplete, ValueError, KeyError) as error:
+        except (M.Incomplete, D.J.HarnessError, ValueError, KeyError) as error:
             if fragment not in str(error):
                 raise AssertionError(f"{name}: wrong refusal: {error}") from error
             evidence["checks"].append({"name": name, "verdict": "REFUSED", "red_line": str(error)})
@@ -212,6 +215,28 @@ def run_hand_tests():
     wrong_command["hcal"]["command"] = ["other-program"]
     refuses("c arbitrary command cannot name a frozen judge bound", lambda: D.confirmation_judgment(
             ctable["subject"], ctable, wrong_command, hand_proof()), "not the frozen program")
+    wrong_sets = hand_judge()
+    wrong_sets["hcal"]["guard_set_files"]["hcal"]["corpus.json"] = "0" * 64
+    refuses("c judge input hashes must identify the released item12 population", lambda: D.confirmation_judgment(
+            ctable["subject"], ctable, wrong_sets, hand_proof()), "guard input files differ")
+    with tempfile.TemporaryDirectory(prefix="r33-guard-files-hand-") as directory:
+        temp = Path(directory)
+        source_dirs = {name: temp / ("source-" + name) for name in ("hcal", "calibration")}
+        staged = temp / "stage"
+        for name, source_dir in source_dirs.items():
+            source_dir.mkdir()
+            target_dir = staged / name
+            target_dir.mkdir(parents=True)
+            for filename in D.J.families.SET:
+                text = json.dumps({"hand_written_guard_input": name + "/" + filename}) + "\n"
+                (source_dir / filename).write_text(text)
+                (target_dir / filename).write_text(text)
+        frozen_hashes = D.J.guard_set_hashes(source_dirs)
+        check("c judge stage matches all three released-file identities per hand set",
+              D.J.verify_guard_sets(staged, sources=source_dirs) == frozen_hashes)
+        (staged / "hcal" / "corpus.json").write_text("changed hand input\n")
+        refuses("c altered staged guard corpus refuses before judge execution", lambda: D.J.verify_guard_sets(
+                staged, sources=source_dirs), "staged hcal/corpus.json differs")
     std_table = hand_confirmation("STD-rel")
     std_port = D.port_confirmation("STD-rel", std_table)
     c_failed = {**judgment, "met": False}

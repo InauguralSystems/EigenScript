@@ -1325,9 +1325,9 @@
     "drivers/group_plants.py": "9b2d4cc92c7a19c6df1087414544546a3ab17d722f213d91ad1b455dc7310785",
     "drivers/identity_plants.py": "d77430c3bbac2828ac9227537cae7b7af6f15476071b1f006375526eaa945afe",
     "drivers/import_discovery.py": "bd04651214f1ce6a92ef353fb9ded1e428a4e0a56906227df0e9d7412528e530",
-    "drivers/import_identity_cont3.py": "c36696640cbb70748a0d623530c6e1bbc4a1fb52bca3e67ffc722449e351a596",
+    "drivers/import_identity_cont3.py": "fcc72b436e0de6f8fb9b6783eb93076c4d5b469a077e5aac022f63dd65ce0184",
     "drivers/make_manifest.py": "70eadfa2acd5db6769702e914a7f48407b15dfc94a8d5497cf7607142f7fce5b",
-    "drivers/manifest4.py": "c036e31941dd245d2e10a44460fef77fda89ad036b34070885a82aad8d5d9178",
+    "drivers/manifest4.py": "f52f8e7d7534b0a54513d8d270377d13a5a9b6aa0f33e39b643a5447a54f9e4d",
     "drivers/portable_receipts.py": "2f4e13d0ddb23e948aab6b276c5c8158d527eeb8ad9da08f297b8f1c5c71fd40",
     "drivers/report_cont2.py": "e4583be129b39965fda2a7dac31f2e4a1838d54691f3561c9ae6e17f3238cce4",
     "drivers/score_mutants.py": "9fdce77b5bd045c6bb20e6ff3862a8385416c7575f461c413b68878d235c0ccb",
@@ -2056,16 +2056,16 @@
     "tools/observer_oracle/r33_data/site-coverage/surfaces/programs/string-first-temporal.eigs": "f95682e63d01645bddcde7ba94687b2820ed2dba013c7b34930f3fd7a688c7b8",
     "tools/observer_oracle/r33_fixtures.py": "da5c084a60f0603232d982701f54e26b07d33456605a2940c53663dc89acf7e6",
     "tools/observer_oracle/r33_identity.py": "7356ea17f43c9c8aadf6275d3119efb5c4a5192f2b07ae00b8b33c25f4e0099e",
-    "tools/observer_oracle/r33_import_inventory.py": "6722d958a24153b5325c2e1791858959f94972b3b0ef2770640f656f2f0b115d",
+    "tools/observer_oracle/r33_import_inventory.py": "9dff4856b25dbc4d3301e2da0514c3e3f84168a10a709a8e7fa8cd2ef9bb1807",
     "tools/observer_oracle/r33_imports.py": "93cb16f0ab5c7c7cda6a601d81e57aa2e7d5165efcdb10e809534327123dce06",
-    "tools/observer_oracle/r33_judge.py": "a111c12b9155f5a65ba225af6b23d0d267d17d7faa30dea1901e83334cbc8630",
+    "tools/observer_oracle/r33_judge.py": "41013d420e1a63a7111a2f653f0beb2eb1dad1781321d351bc287e4b54207fac",
     "tools/observer_oracle/r33_metrics.py": "0a6912bd979a2d1fd6aedcf05868f78201d40a0b17b79e0b5da0a66022121a2b",
     "tools/observer_oracle/r33_mutants.py": "0af460d6c778c5d3ec8563e5d75b5af19ca66aae2c318e796ec227dec4c52f1f",
     "tools/observer_oracle/r33_population.py": "d9dc781ef96f0c584ad0d22310aeb9874ff4e2d64a37a4a621e4d8169e340b4d",
     "tools/observer_oracle/r33_port.py": "e5adfb9deeccd631767acbb7794eb45288a4d269704958674ab01c740b8e1a13",
     "tools/observer_oracle/r33_port_unit.py": "86ef1779b9be1d27a60ddd40b1af3d8b52d6d3e570092137169d5a41ab954718",
-    "tools/observer_oracle/r33_procedure.py": "bd15589a7138113b10a50d09898ab70ece2ddc174b2085f8f2f1798a0ad411d5",
-    "tools/observer_oracle/r33_procedure_unit.py": "53b7b87a824c49ea6deb5aaed388ef7dca8f0adde8bc7ec285762d202f576c62",
+    "tools/observer_oracle/r33_procedure.py": "6095ed732aff2f83cf74d81d05b0fa8315aadb2df1783cda514af0e38416400d",
+    "tools/observer_oracle/r33_procedure_unit.py": "0f74abf320ad23f9879202ce7f806b1cfdf190b46491064156d8823250bb485f",
     "tools/observer_oracle/r33_run.py": "abba628e5eaa4421cbd4da77fc9268fdcc3ed567bb2a1fc6eaf77d797b20fef2",
     "tools/observer_oracle/r33_selftest.py": "69a6dc4c2d76d64a08de91575119271367a139cc5be0751cee7d68537ef6feda",
     "tools/observer_oracle/r33_surfaces.py": "876b5e2fd908da973dbb69c4f9d572c0d66f252859d0160c82a449a5774b00c8",
@@ -2074,7 +2074,7 @@
     "tools/observer_oracle/score.py": "e74b1c84d5e2e7f019e946d4cd4807fd418c67d7541ee5c1bde1063d1bc267e4",
     "tools/observer_oracle/seal.py": "a2525fd40f01632399d019efba7a5eb1ed2f28aeee0fe3882bfa68e94970fefd",
     "tools/observer_oracle/standard.py": "3830286c043babdf1064e9d762b38968e974ed71880c86839cb85f0f903d44e3",
-    "tools/selftests.txt": "06963472949b3f6c88ec39419601c4d12961d856943c816fcc114e0a01aa2212"
+    "tools/selftests.txt": "e6fdcefe6acc68413aa125263ef180815cbf4fda4e87c2ce5b65bf8fd441c3cf"
   },
   "fixture_files": {
     "tools/observer_oracle/r33_data/identity/anchors.jsonl": "daeff0d73eed083b3b41f674ad3cebf4610f2e154465d43311da8fa68b4a15de",
@@ -2695,6 +2695,12 @@
     "tools/observer_oracle/r33_data/site-coverage/surfaces/programs/string-first-temporal.eigs": "f95682e63d01645bddcde7ba94687b2820ed2dba013c7b34930f3fd7a688c7b8"
   },
   "format": "r33-instrument-manifest/4",
+  "fourth_manifest_input_seal": {
+    "bank_commit": "f260e84ce3fa6330e25cd82696fc6a35e99c8381",
+    "checkpoint": 7,
+    "reason": "new import fixtures sealed before first binary read",
+    "sha256": "96b6e54a2b3f2055ed823552338467c05e2d2240d727da3fe5976a20ff7a81a7"
+  },
   "identity_inputs": [
     "tools/observer_oracle/r33_data/identity/seeded.jsonl",
     "tools/observer_oracle/r33_data/identity/anchors.jsonl"
@@ -2713,16 +2719,16 @@
     "tools/observer_oracle/r33_collect.py": "a375814bf107909f8f688970ab396a3221d88377d7d573c99a2d4ab04687f3aa",
     "tools/observer_oracle/r33_fixtures.py": "da5c084a60f0603232d982701f54e26b07d33456605a2940c53663dc89acf7e6",
     "tools/observer_oracle/r33_identity.py": "7356ea17f43c9c8aadf6275d3119efb5c4a5192f2b07ae00b8b33c25f4e0099e",
-    "tools/observer_oracle/r33_import_inventory.py": "6722d958a24153b5325c2e1791858959f94972b3b0ef2770640f656f2f0b115d",
+    "tools/observer_oracle/r33_import_inventory.py": "9dff4856b25dbc4d3301e2da0514c3e3f84168a10a709a8e7fa8cd2ef9bb1807",
     "tools/observer_oracle/r33_imports.py": "93cb16f0ab5c7c7cda6a601d81e57aa2e7d5165efcdb10e809534327123dce06",
-    "tools/observer_oracle/r33_judge.py": "a111c12b9155f5a65ba225af6b23d0d267d17d7faa30dea1901e83334cbc8630",
+    "tools/observer_oracle/r33_judge.py": "41013d420e1a63a7111a2f653f0beb2eb1dad1781321d351bc287e4b54207fac",
     "tools/observer_oracle/r33_metrics.py": "0a6912bd979a2d1fd6aedcf05868f78201d40a0b17b79e0b5da0a66022121a2b",
     "tools/observer_oracle/r33_mutants.py": "0af460d6c778c5d3ec8563e5d75b5af19ca66aae2c318e796ec227dec4c52f1f",
     "tools/observer_oracle/r33_population.py": "d9dc781ef96f0c584ad0d22310aeb9874ff4e2d64a37a4a621e4d8169e340b4d",
     "tools/observer_oracle/r33_port.py": "e5adfb9deeccd631767acbb7794eb45288a4d269704958674ab01c740b8e1a13",
     "tools/observer_oracle/r33_port_unit.py": "86ef1779b9be1d27a60ddd40b1af3d8b52d6d3e570092137169d5a41ab954718",
-    "tools/observer_oracle/r33_procedure.py": "bd15589a7138113b10a50d09898ab70ece2ddc174b2085f8f2f1798a0ad411d5",
-    "tools/observer_oracle/r33_procedure_unit.py": "53b7b87a824c49ea6deb5aaed388ef7dca8f0adde8bc7ec285762d202f576c62",
+    "tools/observer_oracle/r33_procedure.py": "6095ed732aff2f83cf74d81d05b0fa8315aadb2df1783cda514af0e38416400d",
+    "tools/observer_oracle/r33_procedure_unit.py": "0f74abf320ad23f9879202ce7f806b1cfdf190b46491064156d8823250bb485f",
     "tools/observer_oracle/r33_run.py": "abba628e5eaa4421cbd4da77fc9268fdcc3ed567bb2a1fc6eaf77d797b20fef2",
     "tools/observer_oracle/r33_selftest.py": "69a6dc4c2d76d64a08de91575119271367a139cc5be0751cee7d68537ef6feda",
     "tools/observer_oracle/r33_surfaces.py": "876b5e2fd908da973dbb69c4f9d572c0d66f252859d0160c82a449a5774b00c8",
@@ -2731,7 +2737,7 @@
     "tools/observer_oracle/score.py": "e74b1c84d5e2e7f019e946d4cd4807fd418c67d7541ee5c1bde1063d1bc267e4",
     "tools/observer_oracle/seal.py": "a2525fd40f01632399d019efba7a5eb1ed2f28aeee0fe3882bfa68e94970fefd",
     "tools/observer_oracle/standard.py": "3830286c043babdf1064e9d762b38968e974ed71880c86839cb85f0f903d44e3",
-    "tools/selftests.txt": "06963472949b3f6c88ec39419601c4d12961d856943c816fcc114e0a01aa2212"
+    "tools/selftests.txt": "e6fdcefe6acc68413aa125263ef180815cbf4fda4e87c2ce5b65bf8fd441c3cf"
   },
   "new_fixture_binary_read_before_input_seal": false,
   "new_import_inputs": {
@@ -2820,7 +2826,7 @@
     "first_measurement_not_before": "2026-11-12T16:00:00Z",
     "phase": "INSTRUMENT_ONLY_NO_MEASUREMENTS",
     "python": "3.12.3",
-    "revision": "pre-new-import-binary-input-seal",
+    "revision": "pre-new-import-binary-input-seal-refresh",
     "ruling": "R33-1",
     "seed": 1409075,
     "self_hash": "external; manifest excludes itself"

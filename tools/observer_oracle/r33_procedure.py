@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """R33-1 decisions on supplied tables, printed judge bounds and identity proofs.
 
-This program does not run a classifier, open a population, build an arm or
-resample labels. Hand demonstrations live in r33_procedure_unit.py. File
+This program does not run a classifier, build an arm or resample labels.
+It hashes frozen guard inputs to verify the declared judge populations. Hand demonstrations live in r33_procedure_unit.py. File
 provenance is carried into every CLI output; a confirmation also requires the
 posted choice bytes before its other inputs are opened.
 """
@@ -114,6 +114,10 @@ def check_judge_execution(receipt, identity, subject, population):
             or receipt.get("manifest_sha256") != identity.get("manifest_sha256")
             or receipt.get("judge_sha256") != J.sha(J.HERE / "judge.py")):
         raise M.Incomplete("REFUSED: judge execution does not bind this build's policy, choice, manifest and frozen program")
+    source_hashes = J.guard_set_hashes()
+    names = ("hcal",) if population == "hcal" else ("hcal", "calibration")
+    if receipt.get("guard_set_files") != {name: source_hashes[name] for name in names}:
+        raise M.Incomplete("REFUSED: judge guard input files differ from the released item12 populations")
     expected_arms = {"ARM": {"source_sha": identity["commit"],
                              "binary_sha256": identity["binary_sha256"],
                              "recipe_id": identity["recipe_id"]}, "F0": identity["f0"]}
@@ -138,9 +142,9 @@ def check_judge_execution(receipt, identity, subject, population):
 def confirmation_judgment(subject, table, judge_receipts=None, identity=None, standard_plan=None):
     """Item12 step2: every criterion printed separately with its own support.
 
-    A failed port criterion is already decisive and needs no bound or build.
-    If all three port criteria pass, a matching build and both frozen-judge
-    population receipts are required before the result can say 'met'.
+    A failed STD-rel port criterion needs no bound or second build. C retains
+    every supplied bound even if another criterion fails. A matching build
+    and frozen-judge population receipts are required to say 'met'.
     """
     result = port_confirmation(subject, table)
     populations = guard_populations(table)

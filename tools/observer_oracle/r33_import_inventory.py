@@ -101,6 +101,35 @@ def import_proof(spec):
 def split_prior(spec):
     """Ruling3/4 replaces old fixed-window premises with explicit scope."""
     row=copy.deepcopy(spec)
+    equal_parameters={'ast-Slot.magnitude-reference-12-0-fault',
+                      'ast-Slot._step-reference-14-0-fault',
+                      'ast-Slot.converged-reference-61-0-fault',
+                      'ast-Slot.stable-reference-85-0-fault'}
+    lattice={'ast-Slot.converged-reference-59-0-fault',
+             'ast-Slot.stable-constant-112-0-fault',
+             'ast-Slot.stable-reference-114-0-fault'}
+    capacity={'ast-Slot.record-reference-89-0-fault',
+              'ast-Slot.record-reference-207-0-fault',
+              'ast-Slot.record-reference-385-0-fault',
+              'ast-Slot.record-reference-451-0-fault'}
+    underflow={'ast-Slot.rel_oscillating-comparison-47-0-strictness'}
+    if row['id'] in equal_parameters|lattice|capacity|underflow:
+        row['status']='OUTSIDE_CONFIGURATION'
+        row['premise']=('Default equal scale=dh_zero=0.001.' if row['id'] in equal_parameters else
+                        'Default exact tolerances1e-6 and2e-5 are strictly between integer diameters0 and1.' if row['id'] in lattice else
+                        'Live depth is never changed after a numeric binding begins.' if row['id'] in capacity else
+                        'Default relative amplitude cutoff0.001 prevents underflow of an admitted step product.')
+        row['reason']=('Legal tape O cfg can separate scale from dh_zero, cross the exact integer diameter lattice, or lower the relative cutoff enough for an admitted product to underflow; legal O win/O cfg can change live depth. This mutant is equivalent only under the stated experiment premise, not on every legal tape. '+row['reason'])
+        row['missing_capability']=None
+        return row
+    if row['scope']=='Slot.set_window':
+        if row['id']=='ast-Slot.set_window-reference-13-0-fault':
+            row.update(status='EQUIVALENT', reason='Only the return value of the model window setter changes. Runtime O cfg/O win installs window state and discards any setter result; all slot state updates are unchanged. Fluent host-only chaining is not a language/tape observation.',missing_capability=None)
+            return row
+        if row['id'] in {'ast-Slot.set_window-call-reference-17-0-fault','ast-Slot.set_window-constant-30-0-fault',
+                         'ast-Slot.set_window-reference-39-0-fault','ast-Slot.set_window-constant-40-0-fault'}:
+            row.update(status='UNREACHABLE',reason='This mutation changes only rejection wording or admits invalid out-of-range host arguments. Every legal tape O win is0(clear) or4..64, and every O cfg depth is4..64, validated before the fold. On those legal arguments the same window is installed. No program or legal tape reaches the distinguishing invalid setter argument.',missing_capability='A host call bypassing tape validation with an invalid window, or a change to the frozen tape validator.')
+            return row
     if row['status']!='UNREACHABLE':
         if row['id']=='ast-Policy.step-constant-12-0-fault':
             row['reason']='The optional zero_guard default changes, but the F0 policy short-circuits the STD/C finite-zero branch. Its strictly positive floor supplies the same denominator and every F0 reader is unchanged.'
@@ -202,13 +231,28 @@ def inventory(previous, site_binary, surface_binary, imports_binary):
             try:
                 got=({(row['id'],*key):value for key,value in (T.model(row,cls) if kind=='import' else S.model(row,cls)).items()}
                      if kind in ('surface','import') else M.model_case(row,cls))
-                key=next((key for key in expected_keys if key not in got or not M.same(got[key],answers[key])),None)
+                key=next((key for key in sorted(expected_keys) if key not in got or not M.same(got[key],answers[key])),None)
                 if key is not None:
                     witness={'source':kind,'key':list(key),'binary':encoded(answers[key]),
                              'mutant':encoded(got.get(key)),'missing':key not in got}
             except Exception as error:
-                key=next(iter(sorted(expected_keys)))
+                at=None
+                locations=[]
+                trace=error.__traceback__
+                while trace:
+                    frame=trace.tb_frame
+                    locations.append({'file':Path(frame.f_code.co_filename).name,
+                                      'function':frame.f_code.co_name,'line':trace.tb_lineno})
+                    if frame.f_code.co_name in ('model_case','model'):
+                        if 'at' in frame.f_locals:
+                            at=frame.f_locals['at']
+                        elif 'i' in frame.f_locals:
+                            at=frame.f_locals['i']
+                    trace=trace.tb_next
+                key=next((key for key in sorted(expected_keys) if key[1]==at),
+                         next(iter(sorted(expected_keys))))
                 witness={'source':kind,'key':list(key),'binary':encoded(answers[key]),
+                         'error_index':at,'locations':locations,
                          'error':type(error).__name__+': '+str(error),
                          'detector':'A declared reading was unavailable because the faulty port raised an error.'}
             if witness:break

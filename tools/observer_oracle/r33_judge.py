@@ -175,9 +175,40 @@ def printed_bounds(output, required=PREDS):
     return result
 
 
+def guard_set_hashes(sources=None):
+    """The item12 BA populations are the released files, byte for byte."""
+    sources = sources or {"hcal": HERE / "hcal", "calibration": HERE}
+    if set(sources) != {"hcal", "calibration"}:
+        raise HarnessError("CONFIRMATION REFUSED: guard source roster differs from the two released sets")
+    return {name: {filename: sha(Path(directory) / filename) for filename in families.SET}
+            for name, directory in sources.items()}
+
+
+def verify_guard_sets(destination, population="union", sources=None):
+    """Validate the actual staged inputs before the frozen judge can run.
+
+    The optional sources seam is for hand-directory tests; the command line
+    always uses the frozen released files at HERE and HERE/hcal.
+    """
+    if population not in {"hcal", "union"}:
+        raise HarnessError("CONFIRMATION REFUSED: unknown BA guard population")
+    expected = guard_set_hashes(sources)
+    names = ("hcal",) if population == "hcal" else ("hcal", "calibration")
+    result = {}
+    for name in names:
+        result[name] = {}
+        for filename, wanted in expected[name].items():
+            staged = Path(destination) / name / filename
+            if not staged.is_file() or sha(staged) != wanted:
+                raise HarnessError(f"CONFIRMATION REFUSED: staged {name}/{filename} differs from the released guard set")
+            result[name][filename] = wanted
+    return result
+
+
 def run(destination, f0, out, population="union", candidate=None, choice=None, candidate_policy=None, standard_plan=None):
     binaries = arms(f0, candidate)
     choice_sha = choice_hash(choice, binaries["ARM"], binaries["F0"], candidate_policy, standard_plan)
+    guard_files = verify_guard_sets(destination, population)
     cmd = commands(destination, f0, candidate)[population]
     # Bind the exact executables and frozen program before it starts. The
     # identity proof is checked by r33_procedure against these identities;
@@ -199,6 +230,7 @@ def run(destination, f0, out, population="union", candidate=None, choice=None, c
                "command": cmd, "returncode": process.returncode,
                "arms": identities, "binary_paths": binaries, "candidate_policy": policy,
                "manifest_sha256": manifest_sha, "judge_sha256": sha(HERE / "judge.py"),
+               "guard_set_files": guard_files,
                "population": population, "stdout_sha256": hashlib.sha256(process.stdout.encode()).hexdigest(),
                "stderr_sha256": hashlib.sha256(process.stderr.encode()).hexdigest()}
     if process.returncode:
