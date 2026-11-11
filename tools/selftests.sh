@@ -25,11 +25,15 @@ PRODUCT_TRIGGER_MAX_S = 60
 
 # A self-test whose body is a Python module of its own (#2330): body -> the script that dispatches
 # to it. The dispatch pattern matches the body's own calls of the mode, but the body has no command;
-# its row is its dispatcher's. main() checks each entry whose body is in the tree: the body still
-# matches the pattern (or the entry is stale) and has no `if __name__ ...` (a module with an entry
-# point of its own needs its own row), the dispatcher has a row, the body is one of that row's
-# triggers, so that a change to the body runs the row, and the dispatcher has an import statement
-# for the body. An entry whose body is not in the tree does nothing: the fixture trees of
+# its row is its dispatcher's. An entry is an exemption, accepted by whoever reviews the change that
+# adds it. main() checks what an honest entry gets wrong, for each entry whose body is in the tree:
+# both files are Python and stand in one directory; the body still matches the pattern (or the entry
+# is stale); the dispatcher has a row; the body is one of that row's triggers, so that a change to
+# the body runs the row; the dispatcher has an import statement for the body's module name; and no
+# `if`, `while` or conditional expression in the body tests `__name__`. The last check catches the
+# ordinary entry-point guard. It does not prove that the body cannot run as a self-test of its own:
+# a module-level statement that reads `sys.argv` passes it.
+# An entry whose body is not in the tree does nothing: the fixture trees of
 # selftests_selection_selftest.sh hold this script and none of the files it names.
 BODIES = {'tools/observer_oracle/reveal_selftest.py': 'tools/observer_oracle/reveal.py'}
 
@@ -80,7 +84,9 @@ def main():
             if dispatch.search(code):
                 implemented.add(path.as_posix())
     bodies = {body: owner for body, owner in BODIES.items() if Path(body).is_file()}
-    for body in bodies:
+    for body, owner in bodies.items():
+        if not (body.endswith('.py') and owner.endswith('.py')) or Path(body).parent != Path(owner).parent:
+            error(f'self-test body {body}: a BODIES entry names two Python files in one directory')
         if body not in implemented:
             error(f'self-test body {body} does not match the dispatch pattern: its BODIES entry is stale')
     implemented -= set(bodies)
@@ -162,8 +168,8 @@ def main():
             error(f'self-test body {body}: its dispatcher {owner} has no row')
         if not any(fnmatch.fnmatchcase(body, g) for g in row[0]):
             error(f'self-test body {body} is not a trigger of the row of {owner}')
-        if any(isinstance(n, ast.If) and isinstance(n.test, ast.Compare)
-               and any(isinstance(x, ast.Name) and x.id == '__name__' for x in [n.test.left] + n.test.comparators)
+        if any(isinstance(n, (ast.If, ast.While, ast.IfExp))
+               and any(isinstance(x, ast.Name) and x.id == '__name__' for x in ast.walk(n.test))
                for n in ast.walk(ast.parse(Path(body).read_text()))):
             error(f'self-test body {body} tests __name__: a module with an entry point of its own needs its own row')
         stem = Path(body).stem
