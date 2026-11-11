@@ -32,7 +32,7 @@ import r33_identity as I
 HERE = Path(__file__).resolve().parent
 
 
-def records(paths):
+def records(paths, expected_choice_sha256=None):
     arms = {}
     for path in paths:
         with Path(path).open() as source:
@@ -42,6 +42,14 @@ def records(paths):
                     arm = record["arm"]
                     if arm not in POLICIES:
                         raise ValueError("unregistered arm")
+                    if expected_choice_sha256 is not None:
+                        bound = record.get('choice_sha256')
+                        # F0 may have been read before posting the choice.
+                        allowed = {None,expected_choice_sha256} if arm=='F0' else {expected_choice_sha256}
+                        if bound not in allowed:
+                            raise M.Incomplete(f'REFUSED: {arm} input choice_sha256 does not match posted choice')
+                except M.Incomplete:
+                    raise
                 except (KeyError, TypeError, ValueError) as exc:
                     raise M.Incomplete(f"INCOMPLETE: invalid reading at {path}:{number}") from exc
                 arms.setdefault(arm, []).append(record)
@@ -222,7 +230,7 @@ def main(argv=None):
         I.verify_manifest(args.manifest)
         if args.data.resolve() != (HERE/'r33_data/populations').resolve():
             raise M.Incomplete('REFUSED: data directory differs from the manifest population root')
-        got = records(args.readings)
+        got = records(args.readings, digest if args.confirm else None)
         value = confirm(args.data, got, choice) if args.confirm else sweep(args.data, got)
         value.update(input_sha256={str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in args.readings})
         rc = 0

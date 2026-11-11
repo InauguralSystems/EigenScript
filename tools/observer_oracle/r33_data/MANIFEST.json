@@ -93,7 +93,7 @@
       }
     }
   ],
-  "binary_has_read_fixture": false,
+  "binary_has_read_fixture": true,
   "confirmation": {
     "BA_guard": {
       "fallback": "judge/calibration + judge/hcal (all original72+32)",
@@ -1202,7 +1202,7 @@
     "drivers/checkpoint.py": "dde47115ac088c65b679e56186b894fa51fb84b253ab8a9de3fea06285331d54",
     "drivers/deliver.py": "b30ef9ef5d6cbbe9ee6531f4b5717bddbb6f59f8c9fa172366056dda3aaabc3b",
     "drivers/identity_plants.py": "d77430c3bbac2828ac9227537cae7b7af6f15476071b1f006375526eaa945afe",
-    "drivers/make_manifest.py": "85193edcf9dd08e8a45e82c85907ef7c13a925c49b7314c3e66fb4b072147934",
+    "drivers/make_manifest.py": "3febd297b16eaa96d9762190be20405ec82f10ca006971f014bdb29f688c7325",
     "drivers/stage_judge.py": "541d3e83388937f7af9c352d904292df1a4fb3bc4fa4ba8205db3893c21a6287",
     "drivers/work.py": "6d9f393ad549b7741ccd6a00c713e953d1796161bdd3fc849250ef0b911c3339"
   },
@@ -1795,12 +1795,12 @@
     "tools/observer_oracle/r33_data/protocol/r3-3-design.r1.md": "8de3a105f8f99e6ad9ffd07789a112af05b3be57ab0f135af67de39c29b93614",
     "tools/observer_oracle/r33_fixtures.py": "da5c084a60f0603232d982701f54e26b07d33456605a2940c53663dc89acf7e6",
     "tools/observer_oracle/r33_identity.py": "9b6d89143f1c8eea3035fe6dca60ea3c2e05bbde9bd259cda5a721aa45fde622",
-    "tools/observer_oracle/r33_judge.py": "56a96ad4e0a1545dcb2b13476ddce7b47c4bfc03a69dfebf1b993f736f445241",
+    "tools/observer_oracle/r33_judge.py": "ba44ff170cc48c0232e9e864e4cce8d561e009f6b7ff5238e5481c52413cc949",
     "tools/observer_oracle/r33_metrics.py": "ed3b9c03236ab4b636159bb886582ce94e2baf1f859dd855e19631b9990c3b27",
     "tools/observer_oracle/r33_population.py": "f4d7cb574d85c459f0fef101b54971cfc4ccdfd7584fac38f32785f8ef2df8cb",
     "tools/observer_oracle/r33_port.py": "e36d15ef1350bfff263885e8e716a40c1dc06d73d7824c8cb8ef2b2d86f1b478",
-    "tools/observer_oracle/r33_port_unit.py": "8c09402876c630d1e84cade64b86bb68bc8f029fdd154f91c388cd765f61ec03",
-    "tools/observer_oracle/r33_run.py": "04814a73e3f18e6eed539b8733807efffbef4532da8efea4914799f7beae8a3a",
+    "tools/observer_oracle/r33_port_unit.py": "3ee9804e4e22063227fddedf71ed8c1bf1fd43c7d655fb64afd7d422734d4665",
+    "tools/observer_oracle/r33_run.py": "fdadc476aafe742e43ee71f88a7bed4445ec8e184b7f51e3bbd6b32cdd202bf8",
     "tools/observer_oracle/r33_selftest.py": "4ea3d58acc6ec28f704b123b9a4ffba6a5a6c8e2ea4eb51b3299adbbaa29716f",
     "tools/observer_oracle/reference.py": "fa74d83f23422f5ddee9b30dc0f133417f98d9d8e7f9806151233d9e18ca1993",
     "tools/observer_oracle/schema.py": "199f7401adba63740b4b8db4aaa4e9450297d4709b679b941f0b88c193abbb33",
@@ -2345,12 +2345,12 @@
     "tools/observer_oracle/r33_collect.py": "23b01426deb9c494623274a336ff622f8b70edaaae9386db7f44d87bd73bf73e",
     "tools/observer_oracle/r33_fixtures.py": "da5c084a60f0603232d982701f54e26b07d33456605a2940c53663dc89acf7e6",
     "tools/observer_oracle/r33_identity.py": "9b6d89143f1c8eea3035fe6dca60ea3c2e05bbde9bd259cda5a721aa45fde622",
-    "tools/observer_oracle/r33_judge.py": "56a96ad4e0a1545dcb2b13476ddce7b47c4bfc03a69dfebf1b993f736f445241",
+    "tools/observer_oracle/r33_judge.py": "ba44ff170cc48c0232e9e864e4cce8d561e009f6b7ff5238e5481c52413cc949",
     "tools/observer_oracle/r33_metrics.py": "ed3b9c03236ab4b636159bb886582ce94e2baf1f859dd855e19631b9990c3b27",
     "tools/observer_oracle/r33_population.py": "f4d7cb574d85c459f0fef101b54971cfc4ccdfd7584fac38f32785f8ef2df8cb",
     "tools/observer_oracle/r33_port.py": "e36d15ef1350bfff263885e8e716a40c1dc06d73d7824c8cb8ef2b2d86f1b478",
-    "tools/observer_oracle/r33_port_unit.py": "8c09402876c630d1e84cade64b86bb68bc8f029fdd154f91c388cd765f61ec03",
-    "tools/observer_oracle/r33_run.py": "04814a73e3f18e6eed539b8733807efffbef4532da8efea4914799f7beae8a3a",
+    "tools/observer_oracle/r33_port_unit.py": "3ee9804e4e22063227fddedf71ed8c1bf1fd43c7d655fb64afd7d422734d4665",
+    "tools/observer_oracle/r33_run.py": "fdadc476aafe742e43ee71f88a7bed4445ec8e184b7f51e3bbd6b32cdd202bf8",
     "tools/observer_oracle/r33_selftest.py": "4ea3d58acc6ec28f704b123b9a4ffba6a5a6c8e2ea4eb51b3299adbbaa29716f",
     "tools/observer_oracle/reference.py": "fa74d83f23422f5ddee9b30dc0f133417f98d9d8e7f9806151233d9e18ca1993",
     "tools/observer_oracle/schema.py": "199f7401adba63740b4b8db4aaa4e9450297d4709b679b941f0b88c193abbb33",
@@ -2410,6 +2410,15 @@
     "tools/observer_oracle/r33_data/populations/judge/hcal/corpus.json": "47f9fedd37bf4cd56d86f781aa8995a9791fe404f56351dba712727825f06b0d",
     "tools/observer_oracle/r33_data/populations/judge/hcal/labels.json": "323b0e9501e350ed61b9862e8b6f2d0c1fce662baf27cd200d40eaa6e0db86d6",
     "tools/observer_oracle/r33_data/populations/source-inventory.json": "f820985aad7a0956607857813e2cd13f38d93f05e719e3dd7881af417f1ad97b"
+  },
+  "previous_manifest": {
+    "bank_commit": "3f84f52306517e17391dbc417186f714176ba1ae",
+    "full_identity_repeat_required_before_measurement": true,
+    "identity_log": "logs/identity-1.log",
+    "identity_rc": 0,
+    "path_in_commit": "tools/observer_oracle/r33_data/MANIFEST.json",
+    "reason_for_revision": "fresh source review: choice provenance, required defined bounds, direct acceptance coverage",
+    "sha256": "6bedba9c77ec49af0fc44660e66e01b6f1879b3be2609a1d31730852976705ae"
   },
   "protocol": {
     "addendum": "R33-1 addendum 1",

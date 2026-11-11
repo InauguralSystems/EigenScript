@@ -74,7 +74,20 @@ def main():
     for _ in range(11):
         ieee.record(1.0)
     check("IEEE recovery", ieee.reading()["converged"] and ieee.reading()["stable"])
-    print("PORT UNIT: 17 checks passed")
+    for depth in (1,64):
+        fixed=P.Slot(window=depth)
+        for _ in range(depth+1):
+            fixed.record(5.0)
+        answer=fixed.reading()
+        check(f"window {depth}",answer['converged'] and answer['stable'] and answer['equilibrium']
+              and len(fixed.raw)==depth and len(fixed.values)==depth+1)
+    copied=hist.copy()
+    copied.record(9999.0)
+    check("copy isolation",hist.peak()==1000.0 and copied.peak()==9999.0)
+    copied.reset()
+    check("reset state",copied.count==0 and copied.peak()==0.0 and not copied.values
+          and copied.reading()['where'] is None and copied.reading()['report']=='equilibrium')
+    print("PORT UNIT: 21 checks passed")
 
 
 if __name__ == "__main__":

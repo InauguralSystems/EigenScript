@@ -13,6 +13,7 @@ import contextlib
 import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -105,7 +106,7 @@ def stage(destination, f0, candidate=None, choice=None):
     return receipt
 
 
-def printed_bounds(output):
+def printed_bounds(output, required=PREDS):
     """Read emitted data only, with matched-support count justification.
 
     A binary prediction cannot change whether a resample has both label
@@ -153,6 +154,13 @@ def printed_bounds(output):
                      "printed_upper": upper, "resamples_set_aside": a["undefined"],
                      "scored_verdicts_per_arm": a["total"],
                      "bound_print_precision": 4}
+        if p in required:
+            try:
+                numeric = [float(value) for value in (point,lower,upper)]
+            except ValueError as error:
+                raise HarnessError(f'INCOMPLETE: required {p} difference bound is undefined') from error
+            if not all(math.isfinite(value) for value in numeric) or a['undefined']>=10000:
+                raise HarnessError(f'INCOMPLETE: required {p} difference bound is nonfinite or has no defined resample')
     if set(result) != set(PREDS):
         raise HarnessError("INCOMPLETE: missing predicate difference bound")
     return result
@@ -172,7 +180,8 @@ def run(destination, f0, out, population="union", candidate=None, choice=None):
                "stderr_sha256": hashlib.sha256(process.stderr.encode()).hexdigest()}
     if process.returncode:
         raise HarnessError(f"frozen judge exited {process.returncode}: {process.stderr[-1000:]}")
-    receipt["bounds"] = printed_bounds(process.stdout)
+    required = PREDS if population=='union' else tuple(p for p in PREDS if p not in ('diverging','equilibrium'))
+    receipt["bounds"] = printed_bounds(process.stdout,required)
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     Path(out).write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
     return receipt
