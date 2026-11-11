@@ -28,9 +28,8 @@ def record(value):
 def trajectory(values, window, raw=None, relative=None, best=None, since=None):
     """A transparent, legal numeric trajectory supplied by hand."""
     values = list(values)
-    computed = [float(b)-float(a) for a, b in zip(values, values[1:])]
     if raw is None:
-        raw = computed
+        raw = [float(b)-float(a) for a, b in zip(values, values[1:])]
     if relative is None:
         relative = [d/max(abs(float(a)), abs(float(b)), 0.001)
                     for d, a, b in zip(raw, values, values[1:])]
@@ -96,6 +95,71 @@ def cases():
                                  raw=[0.0, 0.0, 0.0, 1.0], relative=[-0.001, 0.001, -0.001, 0.001])}
          ]}
     ]
+    ratio_values=[10.0]
+    step=-1.0
+    for _ in range(10):
+        ratio_values.append(ratio_values[-1]+step)
+        step*=1.0-1.5e-9
+    count_values=[10.0]
+    step=-1.0
+    for _ in range(10):
+        count_values.append(count_values[-1]+step)
+        step*=1.0-1.2e-9
+    rows.append({'id':'source-survivor-imports','ops':[], 'read_at':[], 'export_at':[], 'temporal':[],
+        'trajectories':[
+            {'name':'bounded-net-guard-outside',
+             'data':trajectory([1.0]*11,10,raw=[1.0]*5+[-1.0]+[1.0]*4,
+                               relative=[1.0]*10,best=1.0,since=0)},
+            {'name':'unobserved-import-has-numeric-best',
+             'data':{**trajectory([1.0]*11,10,raw=[0.0]*10,relative=[0.0]*10,best=1.0,since=0),
+                     'observed':False}},
+            {'name':'nonfinite-first-positive-raw','echo':False,
+             'data':trajectory([{'$float':'nan'}]+[1.0]*10,10,raw=[1.0]*10,relative=[0.0]*10)},
+            {'name':'relative-flip-zero-equality',
+             'data':trajectory([float(i) for i in range(7)],10,raw=[0.0]*6,
+                               relative=[.1,-.1,.001,-.1,.1,-.1])},
+            {'name':'exact-bounded-product-underflow',
+             'data':{**trajectory([0]*11,10,raw=[1e-200,-1e-200]*5,
+                                  relative=[1.0]*10),'exact':[True]*10}},
+            {'name':'reference-ratio-log-count',
+             'data':trajectory(count_values,10,raw=[0.0]*10,relative=[0.0]*10,best=count_values[-1],since=0)},
+            {'name':'positive-raw-independent-of-relative','data':trajectory([0.0]*11,10,raw=[1.0]*10,relative=[0.0]*10)},
+            {'name':'alternating-raw-independent-of-relative','data':trajectory([0.0]*11,10,raw=[1.0,-1.0]*5,relative=[0.0]*10)},
+            {'name':'finite-values-nonfinite-raw','echo':False,
+             'data':trajectory([1.0]*11,10,raw=[{'$float':'inf'}]+[0.0]*9,relative=[0.0]*10,best=1.0,since=0)},
+            {'name':'nonfinite-history-finite-last','echo':False,
+             'data':trajectory([{'$float':'nan'}]+[1.0]*10,10,raw=[0.0]*10,relative=[0.0]*10,best=1.0,since=0)},
+            {'name':'one-direction-raw-independent-of-relative',
+             'data':trajectory([-1.0,1.0]*5+[-1.0],10,raw=[2.0**(-i) for i in range(10)],relative=[0.0]*10)},
+            {'name':'reference-positive-direction',
+             'data':trajectory([980.0+2.0*i for i in range(11)],10,raw=[0.0]*10,relative=[0.0]*10,best=1000.0,since=0)},
+            {'name':'raw-slack-interior',
+             'data':trajectory([0.0]*5,4,raw=[1.0,1.0,1.0-1.5e-9,1.0-1.5e-9],relative=[0.0]*4)},
+            {'name':'reference-slack-interior',
+             'data':trajectory(ratio_values,10,raw=[0.0]*10,relative=[0.0]*10,best=ratio_values[-1],since=0)},
+            {'name':'window6-raw-flip-boundary',
+             'data':trajectory([0.0,1.0,2.0,1.0,0.0,1.0,2.0],6,
+                               raw=[1.0,1.0,-1.0,-1.0,1.0,1.0],relative=[0.0]*6)},
+            {'name':'window6-relative-flip-boundary',
+             'data':trajectory([0.0,1.0,2.0,1.0,0.0,1.0,2.0],6,
+                               raw=[0.0]*6,relative=[1.0,1.0,-1.0,-1.0,1.0,1.0])},
+            {'name':'equilibrium-centering',
+             'data':trajectory([-1.0,1.0]*5+[-1.0],10,raw=[0.0]*9+[1.0],
+                               relative=[0.0016]*5+[0.0]*5)},
+            {'name':'bounded-zero-path',
+             'data':trajectory([float(i) for i in range(11)],10,raw=[0.0]*10,relative=[0.001]*10)},
+            {'name':'reference-older-initial-maximum',
+             'data':trajectory([-.01,.01,-.02,.02,-.04,.04,-.08,.08,-.16,.16,-.32],10,
+                               raw=[0.0]*10,relative=[0.0]*10,best=-.32,since=0)},
+            {'name':'reference-newer-initial-maximum',
+             'data':trajectory([-.01,.01,-.1,.1,-.01,.01,-.02,.02,-.03,.03,-.04],10,
+                               raw=[0.0]*10,relative=[0.0]*10,best=-.04,since=0)},
+            {'name':'reference-half-partition-equality',
+             'data':trajectory([-1.,1.,-2.,2.,-1.,10.,-1.,1.,-2.,2.,-3.],10,
+                               raw=[0.0]*10,relative=[0.0]*10,best=-3.,since=0)},
+            {'name':'reference-newer-running-maximum',
+             'data':trajectory([-5.,5.,-4.,4.,-3.,10.,-2.,2.,-1.,1.,-.5],10,
+                               raw=[0.0]*10,relative=[0.0]*10,best=-.5,since=0)}]})
     return rows
 
 
@@ -154,10 +218,20 @@ def model(row, slot_type=Slot, cls=None):
                 put(result, i, f'temporal.{channel}.{field}', answer[field])
     for i, custom in enumerate(row.get('trajectories', [])):
         prefix = 'custom.'+custom['name']
-        put_trajectory(result, i, prefix, custom['data'])
-        imported = slot_type.from_trajectory(copy.deepcopy(custom['data']))
+        data=decode_special(custom['data'])
+        if custom.get('echo',True):
+            put_trajectory(result, i, prefix, data)
+        imported = slot_type.from_trajectory(data)
         put(result, i, prefix+'.classify', imported.report_value())
     return result
+
+
+def decode_special(value):
+    if type(value) is dict:
+        if set(value)=={'$float'}:
+            return float.fromhex(value['$float'])
+        return {key:decode_special(item) for key,item in value.items()}
+    return [decode_special(item) for item in value] if type(value) is list else value
 
 
 def source_literal(value):
@@ -172,6 +246,8 @@ def source_literal(value):
     if type(value) is list:
         return '['+', '.join(source_literal(v) for v in value)+']'
     if type(value) is dict:
+        if set(value)=={'$float'}:
+            return literal(float.fromhex(value['$float']))
         return '{'+', '.join(source_literal(k)+': '+source_literal(v) for k, v in value.items())+'}'
     raise HarnessError(f'unsupported surface source literal {value!r}')
 
@@ -230,7 +306,8 @@ def emit(row):
     for i, custom in enumerate(row.get('trajectories', [])):
         prefix = 'custom.'+custom['name']
         out.append('r33_traj is '+source_literal(custom['data']))
-        emit_trajectory(out, row, i, prefix)
+        if custom.get('echo',True):
+            emit_trajectory(out, row, i, prefix)
         scalar(out, row, i, prefix+'.classify', 'classify of r33_traj')
     out.append('print of '+source_literal('SURF_DONE '+row['id']))
     return '\n'.join(out)+'\n'

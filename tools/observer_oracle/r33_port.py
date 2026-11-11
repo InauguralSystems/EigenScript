@@ -131,7 +131,9 @@ class Slot:
         self._values_buffer, self._raw_buffer = [], []
         self._exact_buffer, self._rel_buffer = [], []
         self.capacity = 0
-        self.best, self.best_used, self.since = 0.0, False, 255
+        # A fresh language slot is zero-filled. Its first numeric observation
+        # installs UINT8_MAX; a string-first export still exposes zero here.
+        self.best, self.best_used, self.since = 0.0, False, 0
         self.peak_abs, self.count = 0.0, 0
         self.numeric = False
         self.observed = False

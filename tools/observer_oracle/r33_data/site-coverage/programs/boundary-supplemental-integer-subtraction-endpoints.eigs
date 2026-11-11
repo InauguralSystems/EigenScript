@@ -1,0 +1,9 @@
+x is 0
+print of f"I boundary-supplemental-integer-subtraction-endpoints 0 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} null {how is x} {when is x} false false"
+x is (-9223372036854775807 - 1)
+print of f"I boundary-supplemental-integer-subtraction-endpoints 1 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 0
+print of f"I boundary-supplemental-integer-subtraction-endpoints 2 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+x is 9223372036854775807
+print of f"I boundary-supplemental-integer-subtraction-endpoints 3 {converged of x} {stable of x} {improving of x} {oscillating of x} {diverging of x} {equilibrium of x} {report of x} {where is x} {num_type of x} {why is x} {num_type of (why is x)} {how is x} {when is x} false false"
+print of "DONE boundary-supplemental-integer-subtraction-endpoints"

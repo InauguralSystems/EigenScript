@@ -126,7 +126,7 @@ def fixtures():
             for delta in (0.001,1e-6,1.0):
                 add(f'tau-{initial.hex()}-{int(direction)}-{delta.hex()}',
                     [initial + direction*delta*n for n in range(11)], 'Raw-step/reference-tau equality neighborhood')
-    return cases
+    return cases + supplemental_fixtures()
 
 
 def write(destination):
@@ -146,7 +146,47 @@ def write(destination):
     print(f'F0 purpose inputs: {len(rows)} windows, {sum(len(r["values"]) for r in rows)} observations; no binary run')
 
 
+def supplemental_fixtures():
+    """Source-derived gaps found after the first purpose-fixture binary read.
+
+    These get their own pre-read commit; they do not rewrite the74-input seal.
+    """
+    definitions=(
+        ('initial-nonfinite-best',[math.inf]+[1000.-0.5*n for n in range(21)],
+         'Initial nonfinite value must not initialize D2 best'),
+        ('nonfinite-best-poison',[1000.,-math.inf]+[1000.-0.5*n for n in range(21)],
+         'A later negative infinity must not replace a finite D2 best'),
+        ('integer-subtraction-endpoints',[0,-2**63,0,2**63-1],
+         'Exact int subtraction includes both INT64_MIN and INT64_MAX endpoints'),
+        ('oscillation-last-nan',[1.,-1.]*5+[math.nan],
+         'Last-value NaN routing suppresses retained relative reversals'),
+        ('tiny-full-oscillation',[1.+(1e-12 if i%2 else -1e-12) for i in range(11)],
+         'Raw oscillation veto of equilibrium is queried directly at a full window'),
+        ('damped-small-relative',[1.+((-1.)**i)*1e-6*(.9**i) for i in range(11)],
+         'All relative steps are in the zero bucket while raw oscillation decays'),
+        ('typed-integer-constant',[5]*11,
+         'Exact integer constant at nonzero magnitude constrains minimum/diameter references'))
+    return [{'id':'boundary-supplemental-'+name,'values':[F.typed(v) for v in values],
+             'checkpoints':list(range(len(values))),'window':10,'purpose':purpose,'policy':'F0'}
+            for name,values,purpose in definitions]
+
+
+def write_supplemental(destination):
+    destination=Path(destination)
+    destination.mkdir(parents=True,exist_ok=True)
+    rows=supplemental_fixtures()
+    (destination/'supplemental-cases.jsonl').write_text(''.join(json.dumps(r,sort_keys=True)+'\n' for r in rows))
+    programs=destination/'supplemental-programs'
+    programs.mkdir(exist_ok=True)
+    for row in rows:
+        (programs/(row['id']+'.eigs')).write_text(F.emit(row))
+    print(f'SUPPLEMENTAL F0 inputs: {len(rows)} windows, {sum(len(r["values"]) for r in rows)} observations; no binary run')
+
+
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        raise SystemExit('usage: r33_boundaries.py DESTINATION')
-    write(sys.argv[1])
+    if len(sys.argv)==3 and sys.argv[1]=='--supplemental':
+        write_supplemental(sys.argv[2])
+    elif len(sys.argv)==2:
+        write(sys.argv[1])
+    else:
+        raise SystemExit('usage: r33_boundaries.py [--supplemental] DESTINATION')

@@ -1955,6 +1955,1382 @@
           "name": "equilibrium-variance-equality"
         }
       ]
+    },
+    {
+      "export_at": [],
+      "id": "source-survivor-imports",
+      "ops": [],
+      "read_at": [],
+      "temporal": [],
+      "trajectories": [
+        {
+          "data": {
+            "best": 1.0,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 1.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              -1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "rel": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "since": 0,
+            "values": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "window": 10
+          },
+          "name": "bounded-net-guard-outside"
+        },
+        {
+          "data": {
+            "best": 1.0,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 1.0,
+            "numeric": true,
+            "observed": false,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": 0,
+            "values": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "window": 10
+          },
+          "name": "unobserved-import-has-numeric-best"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 1.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": null,
+            "values": [
+              {
+                "$float": "nan"
+              },
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "window": 10
+          },
+          "echo": false,
+          "name": "nonfinite-first-positive-raw"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 6.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.1,
+              -0.1,
+              0.001,
+              -0.1,
+              0.1,
+              -0.1
+            ],
+            "since": null,
+            "values": [
+              0.0,
+              1.0,
+              2.0,
+              3.0,
+              4.0,
+              5.0,
+              6.0
+            ],
+            "window": 10
+          },
+          "name": "relative-flip-zero-equality"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              1e-200,
+              -1e-200,
+              1e-200,
+              -1e-200,
+              1e-200,
+              -1e-200,
+              1e-200,
+              -1e-200,
+              1e-200,
+              -1e-200
+            ],
+            "rel": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "since": null,
+            "values": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "window": 10
+          },
+          "name": "exact-bounded-product-underflow"
+        },
+        {
+          "data": {
+            "best": 5.399999991606563e-08,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 5.399999991606563e-08,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": 0,
+            "values": [
+              10.0,
+              9.0,
+              8.0000000012,
+              7.0000000036,
+              6.000000007200001,
+              5.000000012000001,
+              4.000000018000001,
+              3.0000000252000003,
+              2.0000000336,
+              1.0000000432,
+              5.399999991606563e-08
+            ],
+            "window": 10
+          },
+          "name": "reference-ratio-log-count"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 0.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": null,
+            "values": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "window": 10
+          },
+          "name": "positive-raw-independent-of-relative"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 0.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              1.0,
+              -1.0,
+              1.0,
+              -1.0,
+              1.0,
+              -1.0,
+              1.0,
+              -1.0,
+              1.0,
+              -1.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": null,
+            "values": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "window": 10
+          },
+          "name": "alternating-raw-independent-of-relative"
+        },
+        {
+          "data": {
+            "best": 1.0,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 1.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              {
+                "$float": "inf"
+              },
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": 0,
+            "values": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "window": 10
+          },
+          "echo": false,
+          "name": "finite-values-nonfinite-raw"
+        },
+        {
+          "data": {
+            "best": 1.0,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 1.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": 0,
+            "values": [
+              {
+                "$float": "nan"
+              },
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ],
+            "window": 10
+          },
+          "echo": false,
+          "name": "nonfinite-history-finite-last"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": -1.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              1.0,
+              0.5,
+              0.25,
+              0.125,
+              0.0625,
+              0.03125,
+              0.015625,
+              0.0078125,
+              0.00390625,
+              0.001953125
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": null,
+            "values": [
+              -1.0,
+              1.0,
+              -1.0,
+              1.0,
+              -1.0,
+              1.0,
+              -1.0,
+              1.0,
+              -1.0,
+              1.0,
+              -1.0
+            ],
+            "window": 10
+          },
+          "name": "one-direction-raw-independent-of-relative"
+        },
+        {
+          "data": {
+            "best": 1000.0,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 1000.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": 0,
+            "values": [
+              980.0,
+              982.0,
+              984.0,
+              986.0,
+              988.0,
+              990.0,
+              992.0,
+              994.0,
+              996.0,
+              998.0,
+              1000.0
+            ],
+            "window": 10
+          },
+          "name": "reference-positive-direction"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 0.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              1.0,
+              1.0,
+              0.9999999985,
+              0.9999999985
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": null,
+            "values": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "window": 4
+          },
+          "name": "raw-slack-interior"
+        },
+        {
+          "data": {
+            "best": 6.750000103306064e-08,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 6.750000103306064e-08,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": 0,
+            "values": [
+              10.0,
+              9.0,
+              8.0000000015,
+              7.0000000045,
+              6.000000009000001,
+              5.000000015000001,
+              4.000000022500001,
+              3.000000031500001,
+              2.000000042000001,
+              1.000000054000001,
+              6.750000103306064e-08
+            ],
+            "window": 10
+          },
+          "name": "reference-slack-interior"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 2.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              1.0,
+              1.0,
+              -1.0,
+              -1.0,
+              1.0,
+              1.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": null,
+            "values": [
+              0.0,
+              1.0,
+              2.0,
+              1.0,
+              0.0,
+              1.0,
+              2.0
+            ],
+            "window": 6
+          },
+          "name": "window6-raw-flip-boundary"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 2.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              1.0,
+              1.0,
+              -1.0,
+              -1.0,
+              1.0,
+              1.0
+            ],
+            "since": null,
+            "values": [
+              0.0,
+              1.0,
+              2.0,
+              1.0,
+              0.0,
+              1.0,
+              2.0
+            ],
+            "window": 6
+          },
+          "name": "window6-relative-flip-boundary"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": -1.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "rel": [
+              0.0016,
+              0.0016,
+              0.0016,
+              0.0016,
+              0.0016,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": null,
+            "values": [
+              -1.0,
+              1.0,
+              -1.0,
+              1.0,
+              -1.0,
+              1.0,
+              -1.0,
+              1.0,
+              -1.0,
+              1.0,
+              -1.0
+            ],
+            "window": 10
+          },
+          "name": "equilibrium-centering"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 10.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.001,
+              0.001,
+              0.001,
+              0.001,
+              0.001,
+              0.001,
+              0.001,
+              0.001,
+              0.001,
+              0.001
+            ],
+            "since": null,
+            "values": [
+              0.0,
+              1.0,
+              2.0,
+              3.0,
+              4.0,
+              5.0,
+              6.0,
+              7.0,
+              8.0,
+              9.0,
+              10.0
+            ],
+            "window": 10
+          },
+          "name": "bounded-zero-path"
+        },
+        {
+          "data": {
+            "best": -0.32,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": -0.32,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": 0,
+            "values": [
+              -0.01,
+              0.01,
+              -0.02,
+              0.02,
+              -0.04,
+              0.04,
+              -0.08,
+              0.08,
+              -0.16,
+              0.16,
+              -0.32
+            ],
+            "window": 10
+          },
+          "name": "reference-older-initial-maximum"
+        },
+        {
+          "data": {
+            "best": -0.04,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": -0.04,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": 0,
+            "values": [
+              -0.01,
+              0.01,
+              -0.1,
+              0.1,
+              -0.01,
+              0.01,
+              -0.02,
+              0.02,
+              -0.03,
+              0.03,
+              -0.04
+            ],
+            "window": 10
+          },
+          "name": "reference-newer-initial-maximum"
+        },
+        {
+          "data": {
+            "best": -3.0,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": -3.0,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": 0,
+            "values": [
+              -1.0,
+              1.0,
+              -2.0,
+              2.0,
+              -1.0,
+              10.0,
+              -1.0,
+              1.0,
+              -2.0,
+              2.0,
+              -3.0
+            ],
+            "window": 10
+          },
+          "name": "reference-half-partition-equality"
+        },
+        {
+          "data": {
+            "best": -0.5,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": -0.5,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": 0,
+            "values": [
+              -5.0,
+              5.0,
+              -4.0,
+              4.0,
+              -3.0,
+              10.0,
+              -2.0,
+              2.0,
+              -1.0,
+              1.0,
+              -0.5
+            ],
+            "window": 10
+          },
+          "name": "reference-newer-running-maximum"
+        }
+      ]
     }
   ]
 }
