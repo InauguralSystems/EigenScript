@@ -36,21 +36,29 @@ def saved(path):
 
 
 def proof_key(spec):
-    fields=('scope','kind','fragment','operator_index','operator','variant','old','new')
-    return tuple(json.dumps(spec.get(key),sort_keys=True) for key in fields)
+    if spec.get('semantic_anchor'):
+        return spec['semantic_anchor']
+    # The recorded pre-routing registry is the sole bridge for old rows
+    # lacking a semantic anchor. Its source hash is checked by inventory().
+    aliases=M.prior_point_aliases()
+    matches=[anchor for anchor,ids in aliases.items() if spec['id'] in ids]
+    if len(matches)!=1:
+        return ('legacy',spec['id'],spec.get('scope'),spec.get('fragment'))
+    return matches[0]
 
 
 def import_proof(spec):
-    """Source reasons are keyed by the actual single changed expression.
+    """Source proofs by semantic AST role, never a mutable walk index.
 
-    A survivor without one of these independently checked reasons refuses
-    finalization; absence of a discovered counterexample is never a proof.
+    Established old proofs are reused only on the same STORE/LOAD-aware
+    semantic anchor. A new routing point needs an actual witness or one
+    of these local proofs; otherwise finalization refuses it.
     """
     if spec['id']=='from_traj_best_ignored':
         return ('UNREACHABLE',
-                'The change only discards restored best/best_used. Every finite retained numeric window already sets best_used while rebuilding; a window without finite values cannot improve. classify reads the imported value report and disposes the temporary slot. No language or tape record turns that temporary imported slot into a live binding or reads its best before disposal.',
-                'A language operation retaining an imported ObserverSlot for later numeric updates or exposing its internal best; neither classify nor legal O cfg/O win records does so.')
-    if spec['scope']!='Slot.from_trajectory':
+                'The change discards restored best/best_used only. Finite retained windows already set best_used while rebuilding; nonfinite/empty windows cannot improve. classify reads the value report and disposes the temporary slot. No language or legal tape retains that imported slot for later recording or reads its best.',
+                'An imported-slot update API or internal best getter, neither present at commit54008422.')
+    if spec['scope']!='Slot.from_trajectory' or spec['kind']=='text':
         return None
     source=M.SOURCE.read_text()
     fn=M.scope(ast.parse(source),'Slot.from_trajectory')
@@ -63,38 +71,30 @@ def import_proof(spec):
         ancestors.append(current)
     if any(isinstance(node,ast.Raise) for node in ancestors):
         return ('EQUIVALENT',
-                'Only construction or wording of an import-rejection exception changes. On the same invalid input the mutated raise still raises (a non-exception replacement causes TypeError); valid inputs bypass it. The declared comparison is verdict versus REFUSED, not Python exception wording or class.',None)
-    number=spec['node_index']
-    hist={195,197,200,201,372,376,377,379,381,382,386,570,574,575,577,579,731,732,733,735,736,829}
-    if number in hist:
-        return ('UNREACHABLE',
-                'This expression changes only C^hist import/peak handling under obj.policy.mode == hist. The fixed binary and every legal tape configuration have the F0 classifier; O cfg/O win changes thresholds/depth, never the scale-policy kind. The temporary F0 import does not enter that history-peak branch.',
-                'A C^hist classifier binary or a policy-selection language/tape record; neither exists at commit54008422.')
-    transport={92,93,94,103,104,105,228,233,237,250,252,390,393,396,406,421,427,444,594,753,849}
-    if number in transport:
+                'Only construction/wording of a rejection exception changes. The mutated raise still raises (a non-exception object causes TypeError); valid inputs bypass it. The comparison contract is verdict versus REFUSED, not Python exception spelling or class.',None)
+    if isinstance(target,ast.Constant) and target.value=='S1' and any(
+            isinstance(node,ast.Call) and isinstance(node.func,ast.Attribute)
+            and node.func.attr=='policy_for' for node in ancestors):
         return ('EQUIVALENT',
-                'After the same import validation this point changes only entropy/dh storage, route flags, or the temporary slot observation count. classify of t selects the explicit value channel; its report reads retained numeric values/raw/rel/exact, window and improving age, and never these fields. No subsequent record is made on that disposable imported slot. This equivalence is for the experiment value-route read contract; entropy-channel classification is outside that contract.',None)
-    if number in {347,349,548}:
-        return ('EQUIVALENT',
-                'The changed assignment affects restored best/best_used only, after all rebuilding records. A finite retained window has already set best_used=True while rebuilding. A nonfinite window cannot improve. The numeric value of best is read only by future record updates, and classify disposes the imported slot after its report. Every declared imported value-channel query therefore agrees.',None)
-    if number==191:
-        return ('EQUIVALENT',
-                'The unknown-age sentinel255 becomes510. Every legal configured/imported window is at most64. Both sentinels fail since < window, and imported classify has no since getter/export or subsequent update on the temporary slot. All observable value reports agree.',None)
-    if number==529:
-        return ('EQUIVALENT',
-                'The S1 site tag changes to an unknown tag, selecting the fallback F0 policy. The current policy is also F0, so both modes are None and the same supplied relative channel is restored.',None)
-    if number==453:
-        return ('EQUIVALENT',
-                'Only the window type test is bypassed. Every other representable nonnumeric value still fails isfinite/floor/range; booleans are0/1 and fail the unchanged lower bound4. Int and float windows are checked exactly as before, so accepted inputs and refusals agree.',None)
-    if number==458:
-        return ('EQUIVALENT',
-                'Only the window isfinite guard is bypassed. NaN/Inf still fail the unchanged integral test (floor raises) or bounds; finite values have the same remaining checks. No invalid window becomes accepted.',None)
-    if number==466:
-        return ('EQUIVALENT',
-                'The import upper window bound64 is doubled to128, but the immediately following unchanged Slot constructor refuses every window above64. Windows below4 are still refused by the lower bound. Valid accepted windows and all refusal outcomes are unchanged.',None)
-    if number in {718,816}:
-        return ('EQUIVALENT',
-                'Only the since isfinite check is made vacuous. The unchanged numeric type check, floor(age) integral check and0..255 bounds still reject all nonfinite/invalid ages. Every valid age is restored identically.',None)
+                'The S1 tag becomes an unknown site tag. Current and fallback policies are both F0 in every fixed-subject language/tape import, so both mode values are None and the identical supplied relative channel is restored.',None)
+    statement=next((node for node in [target]+ancestors if isinstance(node,ast.stmt)),None)
+    transport={'dh_capacity','_dh_buffer','numeric','observed','count'}
+    essential={'scale','zero','small','window','_values_buffer','_raw_buffer','_rel_buffer',
+               '_exact_buffer','best_used','since'}
+    if isinstance(statement,ast.Assign):
+        original_targets={node.attr for item in statement.targets for node in ast.walk(item)
+                          if isinstance(node,ast.Attribute) and isinstance(node.ctx,ast.Store)}
+        if original_targets and original_targets <= transport:
+            changed=M.mutate_source(spec,source)
+            changed_fn=M.scope(ast.parse(changed),'Slot.from_trajectory')
+            changed_statement=next((node for node in ast.walk(changed_fn)
+                                    if isinstance(node,ast.Assign) and node.lineno==statement.lineno),None)
+            if changed_statement is not None:
+                changed_targets={node.attr for item in changed_statement.targets for node in ast.walk(item)
+                                 if isinstance(node,ast.Attribute) and isinstance(node.ctx,ast.Store)}
+                if not changed_targets & essential:
+                    return ('EQUIVALENT',
+                            'This assignment changes only imported entropy history, routing flags or observation-count transport. Its retained list/float/slice operation remains defined on validated data. Explicit value-channel classify never consumes these fields and makes no subsequent record on the disposable imported slot. Entropy-channel classification is outside this experiment value-route contract.',None)
     return None
 
 
@@ -184,6 +184,10 @@ def check_result(result):
 def inventory(previous, site_binary, surface_binary, imports_binary):
     source=M.SOURCE.read_text()
     prior=json.loads(Path(previous).read_text())
+    registry=json.loads((M.HERE/'r33_data/site-coverage/census-before-routing.json').read_text())
+    if (prior['source_sha256'] not in {registry['source_sha256'],hashlib.sha256(source.encode()).hexdigest()}
+            and not all(row.get('semantic_anchor') for row in prior['mutants'])):
+        raise ValueError('INVENTORY: prior source has no matching semantic-point registry')
     previous_by_id={row['id']:row for row in prior['mutants']}
     previous_by_key={proof_key(row):row for row in prior['mutants']}
     data=M.HERE/'r33_data'
@@ -203,21 +207,22 @@ def inventory(previous, site_binary, surface_binary, imports_binary):
             'outside_numeric_census':[row for row in prior.get('outside_numeric_census',[])
                                       if row['function']!='Slot.from_trajectory'],
             'prior_inventory_sha256':hashlib.sha256(Path(previous).read_bytes()).hexdigest(),
-            'retired_or_remapped_prior_points':[],
+            'retired_or_remapped_prior_points':copy.deepcopy(prior.get('retired_or_remapped_prior_points',[])),
             'unqueried':[{'field':'quiet','status':'UNREACHABLE',
                          'reason':'No language or tape query exposes quiet at the fixed commit.'}]}
     definitions=M.definitions(source)
-    current_ids={row['id'] for row in definitions}
+    current_by_key={}
+    for row in definitions:
+        current_by_key.setdefault(proof_key(row),[]).append(row['id'])
     for oldid,row in previous_by_id.items():
-        if oldid not in current_ids:
-            mapped=[new['id'] for new in definitions if proof_key(new)==proof_key(row)]
+        mapped=current_by_key.get(proof_key(row),[])
+        if mapped != [oldid]:
             result['retired_or_remapped_prior_points'].append({'prior_id':oldid,'current_ids':mapped,
-                'reason':'The S1 zero rule now travels with the selected relative step (addendum3 ruling3); the obsolete reference-group zero keyword is removed. Surviving expressions are mapped by their exact semantic mutation anchor.'})
+                'prior_status':row['status'],'prior_semantic_anchor':proof_key(row),
+                'reason':'The empty/nonnumeric import routing now mirrors the fixed C reader. Exact statement/node/field-path anchors map unchanged points; removed/restructured validation points are retired and their replacement code receives a fresh mutation census and actual readings.'})
     for number,spec in enumerate(definitions,1):
         cls=M.mutated_slot(spec,source)
-        parent=previous_by_id.get(spec['id'])
-        if parent and proof_key(parent)!=proof_key(spec):parent=None
-        parent=parent or previous_by_key.get(proof_key(spec))
+        parent=previous_by_key.get(proof_key(spec))
         witness=None
         # Re-execute the previous actual killing case. Its binary value is
         # protected by the prior manifest and is independently joined later.

@@ -5065,6 +5065,337 @@
           "name": "exact-best-cannot-change-scale"
         }
       ]
+    },
+    {
+      "export_at": [],
+      "id": "addendum3-empty-import-routing",
+      "ops": [],
+      "read_at": [],
+      "refusals": [
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "numeric": false,
+            "observed": true,
+            "raw": [
+              1.0
+            ],
+            "rel": [
+              0.0
+            ],
+            "since": null,
+            "values": [],
+            "window": 4
+          },
+          "name": "ghost-value-channel"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "numeric": true,
+            "observed": true,
+            "raw": [],
+            "rel": [],
+            "since": null,
+            "values": [],
+            "window": 4
+          },
+          "name": "numeric-true-empty-values"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": 5,
+            "kind": "trajectory",
+            "last_entropy": null,
+            "numeric": false,
+            "observed": true,
+            "raw": [
+              "ignored"
+            ],
+            "rel": [
+              {}
+            ],
+            "since": null,
+            "values": [],
+            "window": 4
+          },
+          "name": "ignored-nonnumeric-step-payloads"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "kind": "trajectory",
+            "last_entropy": null,
+            "numeric": false,
+            "observed": true,
+            "raw": [
+              1.0
+            ],
+            "rel": [
+              0.0
+            ],
+            "since": null,
+            "window": 4
+          },
+          "name": "missing-values-and-exact"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "numeric": false,
+            "observed": true,
+            "raw": [
+              1.0
+            ],
+            "rel": [
+              0.0
+            ],
+            "since": null,
+            "values": "ignored",
+            "window": 4
+          },
+          "name": "scalar-values-ignored"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "entropy": null,
+            "exact": [],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "numeric": false,
+            "observed": true,
+            "raw": [],
+            "rel": [],
+            "since": null,
+            "values": [],
+            "window": 4
+          },
+          "name": "missing-DH-refuses"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [
+              "ignored",
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "entropy": null,
+            "exact": [],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "numeric": false,
+            "observed": true,
+            "raw": [],
+            "rel": [],
+            "since": null,
+            "values": [],
+            "window": 4
+          },
+          "name": "old-DH-prefix-ignored"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "numeric": false,
+            "observed": true,
+            "raw": [],
+            "rel": [],
+            "since": null,
+            "values": [
+              1.0
+            ],
+            "window": 4
+          },
+          "name": "nonnumeric-flag-with-single-value"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "numeric": false,
+            "observed": true,
+            "raw": [],
+            "rel": [],
+            "since": null,
+            "values": [
+              false
+            ],
+            "window": 4
+          },
+          "name": "nonnumeric-flag-with-bool-value-refuses"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "numeric": false,
+            "observed": true,
+            "raw": [
+              1.0
+            ],
+            "rel": [],
+            "since": null,
+            "values": [],
+            "window": 4
+          },
+          "name": "unequal-ghost-lengths-refuses"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "observed": true,
+            "raw": [],
+            "rel": [],
+            "since": null,
+            "values": [],
+            "window": 4
+          },
+          "name": "default-empty-numeric-flag"
+        },
+        {
+          "data": {
+            "best": null,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "observed": true,
+            "raw": [
+              1.0
+            ],
+            "rel": [
+              0.0
+            ],
+            "since": null,
+            "values": [],
+            "window": 4
+          },
+          "name": "default-nonempty-numeric-flag-refuses"
+        },
+        {
+          "data": {
+            "best": 0.5,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              false,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "since": 10,
+            "values": [
+              1.0,
+              0.5,
+              0.5,
+              0.5,
+              0.5,
+              0.5,
+              0.5,
+              0.5,
+              0.5,
+              0.5,
+              0.5
+            ],
+            "window": 10
+          },
+          "name": "retained-step-validation-must-use-window"
+        }
+      ],
+      "routing_probes": true,
+      "temporal": []
     }
   ]
 }

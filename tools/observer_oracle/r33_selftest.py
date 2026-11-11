@@ -108,6 +108,54 @@ def site_plants(cases_path, binary_path, out=None):
     return len(results)
 
 
+def import_plants(out=None):
+    """Two reachable import faults, killed by actual sealed F0 classify readings."""
+    import r33_imports
+    import r33_mutants
+    path = DATA / 'site-coverage' / 'import-binary-readings.json'
+    payload = json.loads(path.read_text())
+    if payload.get('format') != 'r33-import-binary/1':
+        raise HarnessError('INCOMPLETE: unknown real import-binary format')
+    binary = {}
+    for cell in payload['readings']:
+        key = tuple(cell['key'])
+        if key in binary:
+            raise HarnessError('INCOMPLETE: duplicate real import-binary key')
+        binary[key] = decode(cell['value'])
+    all_rows = r33_imports.verify(DATA / 'site-coverage' / 'imports')
+    # This CI sample keeps the three programs carrying its two planted
+    # faults. The complete identity additionally covers routing probes.
+    ci_ids = {'addendum3-trajectory-imports', 'addendum3-trajectory-refusals',
+              'addendum3-import-store-targets'}
+    if not ci_ids <= {row['id'] for row in all_rows}:
+        raise HarnessError('INCOMPLETE: real CI import programs missing')
+    rows = [row for row in all_rows if row['id'] in ci_ids]
+    if any(key[0] not in {row['id'] for row in all_rows} for key in binary):
+        raise HarnessError('INCOMPLETE: undeclared real import-binary row')
+    binary = {key:value for key,value in binary.items() if key[0] in ci_ids}
+    expected = {(row['id'], *key):value for row in rows
+                for key,value in r33_imports.model(row).items()}
+    compared = identity.compare_records(expected, binary, 'real import-binary control')
+    print(f'CONTROL real import-binary comparison: GREEN readings={compared}')
+    selected = ('from_traj_since_plus1', 'from_traj_best_store_scale')
+    for identifier in selected:
+        cls = r33_mutants.mutated_slot(identifier)
+        got = {(row['id'], *key):value for row in rows
+               for key,value in r33_imports.model(row, slot_type=cls).items()}
+        identity.compare_records(expected, binary, 'real import-binary oracle')
+        wrong = [key for key in sorted(binary) if not identity.same(binary[key], got[key])]
+        if not wrong:
+            raise AssertionError('import fault survived real binary readings: '+identifier)
+        key = wrong[0]
+        line = ('PLANT import-'+identifier+': RED real F0 reading '
+                +json.dumps(dict(key=list(key), binary=identity.encode(binary[key]),
+                                 mutant=identity.encode(got[key])), sort_keys=True))
+        print(line)
+        if out:
+            (Path(out)/(identifier+'.log')).write_text(line+'\n')
+    return len(selected)
+
+
 def staged_counts(directory):
     """Actual staged-file derivation; no value comes from EXPECTED."""
     return population.staged_counts(directory)
@@ -198,6 +246,7 @@ def main(out=None, cases=None, binary=None):
         raise HarnessError('INCOMPLETE: real binary site oracle has not been captured yet')
     expected, actual = site_control(cases, binary)
     plants = site_plants(cases, binary, out)
+    plants += import_plants(out)
     wrong = copy.deepcopy(actual)
     key = next(key for key in sorted(wrong) if type(wrong[key]) is bool)
     wrong[key] = not wrong[key]

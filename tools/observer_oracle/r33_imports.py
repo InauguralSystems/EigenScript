@@ -139,8 +139,37 @@ def cases():
                                 raw=[0.0]*10, relative=[0.1]*10,
                                 best=2**53, since=10), 'exact':[True]*10}}
     ]}
+    # C skips numeric reconstruction when numeric is false and no retained
+    # value list is present. These full dictionaries exercise that boundary,
+    # and the mandatory DH list / retained-only DH validation.
+    empty = dict(kind='trajectory', window=4, values=[], raw=[], rel=[], exact=[],
+                 dh=[], numeric=False, observed=True, best=None, since=None,
+                 entropy=None, dH=None, last_entropy=None)
+    routes = []
+    def route(name, remove=(), **changes):
+        data = {**empty, **changes}
+        for key in remove:
+            data.pop(key, None)
+        routes.append(dict(name=name, data=data))
+    route('ghost-value-channel', raw=[1.0], rel=[0.0], exact=[False])
+    route('numeric-true-empty-values', numeric=True)
+    route('ignored-nonnumeric-step-payloads', raw=['ignored'], rel=[{}], exact=5)
+    route('missing-values-and-exact', remove=('values','exact'), raw=[1.0], rel=[0.0])
+    route('scalar-values-ignored', values='ignored', raw=[1.0], rel=[0.0])
+    route('missing-DH-refuses', remove=('dh',))
+    route('old-DH-prefix-ignored', dh=['ignored',0.0,0.0,0.0,0.0])
+    route('nonnumeric-flag-with-single-value', values=[1.0])
+    route('nonnumeric-flag-with-bool-value-refuses', values=[False])
+    route('unequal-ghost-lengths-refuses', raw=[1.0])
+    route('default-empty-numeric-flag', remove=('numeric',))
+    route('default-nonempty-numeric-flag-refuses', remove=('numeric',), raw=[1.0], rel=[0.0])
+    route('retained-step-validation-must-use-window', numeric=True, window=10,
+          values=[1.0]+[0.5]*10, raw=[False]+[0.0]*9, rel=[0.0]*10,
+          exact=[False]*10, best=0.5, since=10)
+    routing = dict(id='addendum3-empty-import-routing', ops=[], read_at=[],
+                   export_at=[], temporal=[], routing_probes=True, refusals=routes)
     return [accepted, {'id':'addendum3-trajectory-refusals', 'ops':[], 'read_at':[],
-                       'export_at':[], 'temporal':[], 'refusals':rejected}, stores]
+                       'export_at':[], 'temporal':[], 'refusals':rejected}, stores, routing]
 
 
 def model(row, slot_type=None):
@@ -154,7 +183,7 @@ def model(row, slot_type=None):
             value = cls.from_trajectory(S.decode_special(custom['data'])).report_value()
         except Exception:
             value = 'REFUSED'
-        S.put(result, i, 'refusal.'+custom['name'], value)
+        S.put(result, i, ('probe.' if row.get('routing_probes') else 'refusal.')+custom['name'], value)
     return result
 
 
@@ -168,7 +197,7 @@ def emit(row):
         out.append('    r33_answer is classify of r33_traj')
         out.append('catch _r33_import_error:')
         out.append('    r33_answer is "REFUSED"')
-        S.scalar(out, row, i, 'refusal.'+custom['name'], 'r33_answer')
+        S.scalar(out, row, i, ('probe.' if row.get('routing_probes') else 'refusal.')+custom['name'], 'r33_answer')
     out.append('print of '+S.source_literal('SURF_DONE '+row['id']))
     return '\n'.join(out)+'\n' 
 
@@ -185,7 +214,8 @@ def write(destination):
     for row in rows:
         (destination/'programs'/(row['id']+'.eigs')).write_text(emit(row))
     return {'cases':len(rows), 'imports':sum(len(r.get('trajectories',[])) for r in rows),
-            'refusals':sum(len(r.get('refusals',[])) for r in rows),
+            'refusals':sum(len(r.get('refusals',[])) for r in rows if not r.get('routing_probes')),
+            'routing_probes':sum(len(r.get('refusals',[])) for r in rows if r.get('routing_probes')),
             'programs':len(rows), 'classifier_or_binary_run':False}
 
 

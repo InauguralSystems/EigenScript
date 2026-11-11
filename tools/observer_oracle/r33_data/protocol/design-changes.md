@@ -1,4 +1,4 @@
-<!-- Portable historical path projection; verbatim OUT sha256 eb2504a09a11d0c1f7155c6a024ba996669112e3ee50711f87ed031624a2676f -->
+<!-- Portable historical path projection; verbatim OUT sha256 6766956611a6b2c852edfdff5adcce206a33389330f3b3ecbe01bc07220bc93d -->
 # Design changes: design-0 to R33-1 alignment
 
 62 replacement places: 31 for the original R33-1 alignment, 13 for addendum 1/continuation alignment, and 18 for addendum 2/continuation 2 alignment. Old and new text below are exact text regions; no experimental result is asserted. Unchanged definitions, including the fixture formulas, remain in r3-3-design.r1.md.
@@ -1529,4 +1529,21 @@ New words:
 
 ```text
 The enrolled row samples 19 plants: one recorded-reading fault for each of S1–S8, N1 and D2, two import faults (since restoration and the restored-best STORE reference), and seven real input-path plants (one changed reading, a missing reading, an empty comparison, a staged count, an unlisted refusal, a refused row restored at one scale, and confirmation without a choice).
+```
+
+
+## 84. Match the fixed subject's empty-channel import routing
+
+Authority: R33-1 item1; addendum3 item5; src/eigenscript.c observer_slot_from_trajectory at54008422.
+
+Old words:
+
+```text
+Where the language can ask, compare non-numeric detours, window override, trajectory export/import and temporal `at`/`when` against the F0 binary. List unqueryable `quiet` separately.
+```
+
+New words:
+
+```text
+Where the language can ask, compare non-numeric detours, window override, trajectory export/import and temporal `at`/`when` against the F0 binary. Import mirrors the branch's reconstruction gate: rel/raw/dh must be lists and rel/raw lengths must agree; require and rebuild values/exact only when the numeric flag or a nonempty value list selects that channel. Otherwise those numeric payloads are ignored. Validate only the retained dh suffix, as the branch does. Separate hand probes cover both accepted and refused empty-channel routes. These are F0 import semantics, not a change to any arm's scale formula. List unqueryable `quiet` separately.
 ```

@@ -1,40 +1,85 @@
-# R33-1 instrument, fixed subject 54008422, addendum 1
+# R33-1 instrument, fixed subject 54008422, addenda 1–3
 
-This directory contains inputs, labels and a manifest, not experiment scores.
-The first bank commit containing MANIFEST.json must precede all binary fixture
-reads. OUT/MANIFEST.json is the identical posting copy; its external sha256 is
-recorded in the delivery receipts. Its own bytes are excluded from file hashes.
+This directory contains sealed inputs, labels and F0 identity evidence.
+It contains no experiment U/BA/Z/K tables. The posting copy of MANIFEST.json
+is byte-identical to the branch copy; the manifest excludes its own bytes.
+Historical manifests and each pre-read seal remain in the delivery folder.
+Every new fixture program is committed before the binary first reads it.
 
-`populations/cal/{x1,x1e-3,x1e3}` is the untouched61-base calibration.
-`confirm-cal/{x1,x1e6}` and `confirm-hcal/{x1,x1e-3,x1e3,x1e6}` below
-`populations/` use the addendum's matched certification exclusions.
-`populations/cal/x1e6/corpus.json` and pre-exclusion `hcal/` corpora are
-attempt inputs; only the manifest's named certified sets are runnable.
-`populations/confirmation-counts.json` lists every refusal and derived mask.
-The BA guard separately uses original released Hcal32 and calibration72;
-their staged proof sets and manifests live in `judge-proof/`.
+`populations/cal/{x1,x1e-3,x1e3}` is the 61-base calibration. The certified
+`confirm-cal/{x1,x1e6}` and `confirm-hcal/{x1,x1e-3,x1e3,x1e6}` use matched
+refusal exclusions. Attempt corpora are not automatically runnable sets.
+`confirmation-counts.json` records exclusions, certifier messages and masks.
+The BA guard uses original released H-cal32 and, where a label is absent,
+the original released calibration72 plus H-cal. `judge-proof/` preserves the
+once-only F0/F0 program proof. No bootstrap is copied or reimplemented.
 
-Identity inputs are 512 seeded32-observation sequences and four IEEE anchors.
-Every index is read. The harness compares six predicates, report, where/why
-values and kinds, how, assignment counts and explicit signed-zero witnesses.
-`quiet` is an internal C reader with no direct language query at this pin;
-its implementation is hand-tested, not independently binary-compared.
+The original 512 seeded sequences, four IEEE anchors and their programs are
+unchanged. Separate site, surface and import fixtures reach the ruled sites.
+Identity compares every declared key and the available scalar values/types,
+with NaN equality and signed zeros handled explicitly. `quiet` has no query
+at this commit. The port's claim is the default configuration, live bindings
+and imported trajectories at the covered depths 4,6,10,64. Other live-window
+or configuration changes require extended binary identity first.
 
-After the instrument is delivered and its manifest posted, a later turn can
-collect explicit policy readings using `r33_collect.py --calibration --policy
-NAME --manifest MANIFEST --data populations --out FILE`. Run policies in the
-order printed by `r33_metrics.arm_order()` (seed1580). Collection does not
-compute metrics. `r33_run.py --sweep --data populations --readings FILE ...
---out TABLE` processes collected readings; a PRE1045 control below0.10 yields
-VOID and no choice. Current instrument construction runs neither command.
+`MUTANTS.json` has four disjoint lists: caught; equivalent under the declared
+value-route read contract; outside the experiment's configuration, with its
+premise; and not reachable by a program or legal tape at this commit. Error
+catches are marked and counted. Trajectory import is in the source census. Empty-channel imports follow C's reconstruction gate and retained DH validation; separate routing probes verify both acceptance and refusal.
+The enrolled isolated Python selftest checks actual saved binary readings,
+staged derivations and certification output, plus handwritten step cases.
+It needs only the standard library and leaves no bytecode cache in the tree.
 
-Confirmation collection and point tables require `--choice POSTED-CHOICE.json`,
-whose schema contains `arm` and `sweep_tables_sha256`; every output carries
-the sha256 of its exact bytes. They cannot prove human posting chronology.
-The selected real build must first match the port. Bounds come only from the
-unchanged judge program through `r33_judge.py`, with10000 paired resamples,
-seed175833. Its commands/staging and F0/F0 program-acceptance proof are in OUT.
-No bootstrap is copied. Printed bounds retain the judge's four-decimal text;
-discarded counts come from the equal-support arms' printed BA rows.
+All procedure code is present before measurement:
 
-No H1 input is used or generated. No runtime source or frozen oracle is edited.
+- `r33_run.single/subject_tables`: one subject's U, BA, Z and K tables, no choice.
+- `r33_run.positive_control`: PRE1045's separate U_above >= 0.10 judgment.
+- `r33_procedure.confirmation_judgment`: every confirmation criterion, using
+  the printed four-decimal bound; -0.0200 fails. Receipts bind the actual
+  build, local recipe F0, posted choice, manifest and released guard files.
+- `r33_procedure.standard_first`: both confirmation results, C's BA advantage
+  or U_all(STD)-U_all(C) >= 0.02, and conditional STD build permission.
+- `r33_identity.confirmation_build`: declared build/commit/policy identity on
+  all confirmation checkpoints and every queried scalar field.
+- `r33_procedure.leave_one_out`: S1, N1 and reference-only tables; effects
+  against F0 and total effect minus the three group effects.
+- `r33_collect.collect_logged`: actual starts/completions/failures beside
+  the seed1580 draw, with no duplicate arm/phase/group run.
+
+For later use, from the repository root, set `R33_DATA` to
+`tools/observer_oracle/r33_data/populations`. Collect F0 and PRE1045 first,
+using `r33_collect.py --calibration --policy NAME --manifest MANIFEST
+--data "$R33_DATA" --run-log RUNS.json --out READINGS.jsonl`. Write a single
+subject's tables with `r33_run.py --single --subject NAME --manifest MANIFEST
+--data "$R33_DATA" --readings READINGS.jsonl --out TABLE.json`; use
+`--positive-control --subject PRE1045` for the separate control. A failed
+control stops the experiment and prevents a calibration choice.
+
+After the first measurement is posted, every remaining arm collector requires
+`--first-measurement POSTED-FIRST-MEASUREMENT`; its exact sha256 appears in
+every reading. The sweep takes that same file and refuses missing or different
+provenance. Continue the remaining arms in their seed1580 draw order; the
+ledger preserves the separate F0/PRE1045 prelude and the actual order too.
+No machine proves human posting history.
+
+`r33_binary.py` reports INC47 and ANCHOR outside the eleven policy names.
+It calls frozen score.measure one row at a time and uses interp/straight.
+Only capability skips, a row measurement raising, or the capability probe
+raising can remove a reading. Tier splits, vacuity and unwitnessed JIT are
+printed diagnostics. Missing one calibration scale removes all comparisons
+for that base; missing Z/K is printed not read, with denominators. The fourth
+manifest has exact score.py program commands for F0, INC47 and ANCHOR; whole
+stdout/stderr/returncode are retained by r33_binary.run_old_method.
+
+Confirmation requires `--choice POSTED-CHOICE.json`, containing the provisional
+arm and sweep_tables_sha256. Every output carries the exact choice-file hash.
+The chosen build matches the port before judgment. Bounds come only from the
+frozen judge as a program: seed175833,10000 paired resamples, predicate-specific
+released x1 sets, matched support and printed set-aside counts. STD-rel is
+first judged on port U/Z/K; only an eligible standard-first plan permits its
+build and bound. Raw judge text can be inspected; judgment needs its execution
+receipt tied to the checked build and source files.
+
+This instrument turn performs no experiment arm sweep or metric reduction.
+Historical binaries receive handwritten windows only. No H1 input is generated
+or read, no float twin is built, and no runtime or frozen oracle file changes.

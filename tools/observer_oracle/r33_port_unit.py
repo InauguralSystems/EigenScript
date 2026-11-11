@@ -98,6 +98,28 @@ def main():
     overflow.record(-(2**63)).record(2**63 - 1)
     check("subtraction overflow is inexact", not overflow.all_exact() and
           overflow.reading()["why_kind"] == "float" and overflow.reading()["why"] == float(2**64 - 1))
+    empty_route = {'kind':'trajectory', 'rel':['ignored'], 'raw':[False], 'dh':[],
+                   'numeric':False, 'values':[], 'exact':'ignored', 'window':4}
+    empty_import = P.Slot.from_trajectory(empty_route)
+    check('empty numeric route ignores unselected step contents',
+          empty_import.report_value() == 'equilibrium' and not empty_import.values
+          and not empty_import.raw)
+    try:
+        P.Slot.from_trajectory({**empty_route, 'numeric':True, 'rel':[], 'raw':[], 'exact':[]})
+    except ValueError:
+        refused = True
+    else:
+        refused = False
+    check('selected numeric channel requires its initial value', refused)
+    suffix = P.Slot.from_trajectory({**empty_route, 'dh':['ignored',1.0,2.0,3.0,4.0]})
+    check('import validates only retained dh suffix', suffix.dh == [1.0,2.0,3.0,4.0])
+    try:
+        P.Slot.from_trajectory({key:value for key,value in empty_route.items() if key != 'dh'})
+    except ValueError:
+        refused = True
+    else:
+        refused = False
+    check('import requires dh list even for an empty route', refused)
     zeros = P.Slot("STD-rel")
     zeros.record(-0.0).record(0.0).record(1.0).record(0.0)
     check("STD zero rule", zeros.steps() == [0.0, 1.0, -1.0])

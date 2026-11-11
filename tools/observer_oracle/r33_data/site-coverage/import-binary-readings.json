@@ -3,6 +3,2962 @@
   "readings": [
     {
       "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.best"
+      ],
+      "value": {
+        "float": "0x1.f400000000000p+9"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.best.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.classify"
+      ],
+      "value": "moving"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.classify.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.dH"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.dH.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.dh.length"
+      ],
+      "value": 0
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.dh.length.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.entropy"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.entropy.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.0"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.0.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.1"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.1.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.2"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.2.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.3"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.3.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.4"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.4.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.5"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.5.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.6"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.6.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.7"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.7.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.8"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.8.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.9"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.9.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.length"
+      ],
+      "value": 10
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.exact.length.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.fields"
+      ],
+      "value": 15
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.fields.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.kind"
+      ],
+      "value": "trajectory"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.kind.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.last_entropy"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.last_entropy.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.last_value"
+      ],
+      "value": {
+        "float": "0x1.199999999999ap+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.last_value.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.numeric"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.numeric.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.observed"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.observed.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.0"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.0.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.1"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.1.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.2"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.2.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.3"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.3.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.4"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.4.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.5"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.5.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.6"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.6.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.7"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.7.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.8"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.8.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.9"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.9.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.length"
+      ],
+      "value": 10
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.raw.length.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.0"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.0.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.1"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.1.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.2"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.2.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.3"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.3.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.4"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.4.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.5"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.5.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.6"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.6.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.7"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.7.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.8"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.8.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.9"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.9.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.length"
+      ],
+      "value": 10
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.rel.length.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.since"
+      ],
+      "value": 10
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.since.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.0"
+      ],
+      "value": {
+        "float": "0x1.0000000000000p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.0.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.1"
+      ],
+      "value": {
+        "float": "0x1.028f5c28f5c29p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.1.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.10"
+      ],
+      "value": {
+        "float": "0x1.199999999999ap+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.10.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.2"
+      ],
+      "value": {
+        "float": "0x1.051eb851eb852p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.2.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.3"
+      ],
+      "value": {
+        "float": "0x1.07ae147ae147bp+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.3.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.4"
+      ],
+      "value": {
+        "float": "0x1.0a3d70a3d70a4p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.4.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.5"
+      ],
+      "value": {
+        "float": "0x1.0cccccccccccdp+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.5.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.6"
+      ],
+      "value": {
+        "float": "0x1.0f5c28f5c28f6p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.6.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.7"
+      ],
+      "value": {
+        "float": "0x1.11eb851eb851fp+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.7.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.8"
+      ],
+      "value": {
+        "float": "0x1.147ae147ae148p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.8.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.9"
+      ],
+      "value": {
+        "float": "0x1.170a3d70a3d71p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.9.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.length"
+      ],
+      "value": 11
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.values.length.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.window"
+      ],
+      "value": 10
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        0,
+        "custom.best-store-cannot-change-scale.window.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.best"
+      ],
+      "value": {
+        "float": "-0x1.f400000000000p+9"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.best.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.classify"
+      ],
+      "value": "converged"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.classify.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.dH"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.dH.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.dh.length"
+      ],
+      "value": 0
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.dh.length.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.entropy"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.entropy.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.0"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.0.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.1"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.1.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.2"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.2.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.3"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.3.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.4"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.4.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.5"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.5.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.6"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.6.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.7"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.7.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.8"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.8.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.9"
+      ],
+      "value": false
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.9.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.length"
+      ],
+      "value": 10
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.exact.length.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.fields"
+      ],
+      "value": 15
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.fields.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.kind"
+      ],
+      "value": "trajectory"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.kind.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.last_entropy"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.last_entropy.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.last_value"
+      ],
+      "value": {
+        "float": "0x1.ad7f29abcaf48p-24"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.last_value.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.numeric"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.numeric.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.observed"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.observed.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.0"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.0.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.1"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.1.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.2"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.2.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.3"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.3.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.4"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.4.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.5"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.5.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.6"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.6.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.7"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.7.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.8"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.8.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.9"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.9.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.length"
+      ],
+      "value": 10
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.raw.length.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.0"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.0.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.1"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.1.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.2"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.2.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.3"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.3.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.4"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.4.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.5"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.5.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.6"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.6.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.7"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.7.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.8"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.8.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.9"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.9.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.length"
+      ],
+      "value": 10
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.rel.length.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.since"
+      ],
+      "value": 10
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.since.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.0"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.0.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.1"
+      ],
+      "value": {
+        "float": "0x1.5798ee2308c3ap-27"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.1.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.10"
+      ],
+      "value": {
+        "float": "0x1.ad7f29abcaf48p-24"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.10.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.2"
+      ],
+      "value": {
+        "float": "0x1.5798ee2308c3ap-26"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.2.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.3"
+      ],
+      "value": {
+        "float": "0x1.01b2b29a4692bp-25"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.3.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.4"
+      ],
+      "value": {
+        "float": "0x1.5798ee2308c3ap-25"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.4.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.5"
+      ],
+      "value": {
+        "float": "0x1.ad7f29abcaf48p-25"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.5.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.6"
+      ],
+      "value": {
+        "float": "0x1.01b2b29a4692bp-24"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.6.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.7"
+      ],
+      "value": {
+        "float": "0x1.2ca5d05ea7ab3p-24"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.7.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.8"
+      ],
+      "value": {
+        "float": "0x1.5798ee2308c3ap-24"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.8.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.9"
+      ],
+      "value": {
+        "float": "0x1.828c0be769dc1p-24"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.9.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.length"
+      ],
+      "value": 11
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.values.length.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.window"
+      ],
+      "value": 10
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        1,
+        "custom.negative-best-cannot-remove-floor.window.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.best"
+      ],
+      "value": 9007199254740992
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.best.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.classify"
+      ],
+      "value": "moving"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.classify.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.dH"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.dH.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.dh.length"
+      ],
+      "value": 0
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.dh.length.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.entropy"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.entropy.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.0"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.0.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.1"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.1.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.2"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.2.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.3"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.3.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.4"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.4.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.5"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.5.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.6"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.6.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.7"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.7.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.8"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.8.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.9"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.9.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.length"
+      ],
+      "value": 10
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.exact.length.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.fields"
+      ],
+      "value": 15
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.fields.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.kind"
+      ],
+      "value": "trajectory"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.kind.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.last_entropy"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.last_entropy.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.last_value"
+      ],
+      "value": 9007199254741002
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.last_value.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.numeric"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.numeric.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.observed"
+      ],
+      "value": true
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.observed.kind"
+      ],
+      "value": null
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.0"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.0.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.1"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.1.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.2"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.2.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.3"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.3.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.4"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.4.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.5"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.5.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.6"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.6.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.7"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.7.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.8"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.8.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.9"
+      ],
+      "value": {
+        "float": "0x0.0p+0"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.9.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.length"
+      ],
+      "value": 10
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.raw.length.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.0"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.0.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.1"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.1.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.2"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.2.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.3"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.3.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.4"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.4.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.5"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.5.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.6"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.6.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.7"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.7.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.8"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.8.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.9"
+      ],
+      "value": {
+        "float": "0x1.999999999999ap-4"
+      }
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.9.kind"
+      ],
+      "value": "float"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.length"
+      ],
+      "value": 10
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.rel.length.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.since"
+      ],
+      "value": 10
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.since.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.0"
+      ],
+      "value": 9007199254740992
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.0.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.1"
+      ],
+      "value": 9007199254740993
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.1.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.10"
+      ],
+      "value": 9007199254741002
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.10.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.2"
+      ],
+      "value": 9007199254740994
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.2.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.3"
+      ],
+      "value": 9007199254740995
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.3.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.4"
+      ],
+      "value": 9007199254740996
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.4.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.5"
+      ],
+      "value": 9007199254740997
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.5.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.6"
+      ],
+      "value": 9007199254740998
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.6.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.7"
+      ],
+      "value": 9007199254740999
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.7.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.8"
+      ],
+      "value": 9007199254741000
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.8.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.9"
+      ],
+      "value": 9007199254741001
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.9.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.length"
+      ],
+      "value": 11
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.values.length.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.window"
+      ],
+      "value": 10
+    },
+    {
+      "key": [
+        "addendum3-import-store-targets",
+        2,
+        "custom.exact-best-cannot-change-scale.window.kind"
+      ],
+      "value": "int"
+    },
+    {
+      "key": [
         "addendum3-trajectory-imports",
         0,
         "custom.since-null.best"

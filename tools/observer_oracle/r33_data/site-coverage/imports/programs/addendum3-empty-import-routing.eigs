@@ -1,0 +1,92 @@
+r33_traj is {"kind": "trajectory", "window": 4, "values": [], "raw": [1.0], "rel": [0.0], "exact": [false], "dh": [], "numeric": false, "observed": true, "best": null, "since": null, "entropy": null, "dH": null, "last_entropy": null}
+try:
+    r33_answer is classify of r33_traj
+catch _r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-empty-import-routing", "op": 0, "field": "probe.ghost-value-channel", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "window": 4, "values": [], "raw": [], "rel": [], "exact": [], "dh": [], "numeric": true, "observed": true, "best": null, "since": null, "entropy": null, "dH": null, "last_entropy": null}
+try:
+    r33_answer is classify of r33_traj
+catch _r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-empty-import-routing", "op": 1, "field": "probe.numeric-true-empty-values", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "window": 4, "values": [], "raw": ["ignored"], "rel": [{}], "exact": 5, "dh": [], "numeric": false, "observed": true, "best": null, "since": null, "entropy": null, "dH": null, "last_entropy": null}
+try:
+    r33_answer is classify of r33_traj
+catch _r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-empty-import-routing", "op": 2, "field": "probe.ignored-nonnumeric-step-payloads", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "window": 4, "raw": [1.0], "rel": [0.0], "dh": [], "numeric": false, "observed": true, "best": null, "since": null, "entropy": null, "dH": null, "last_entropy": null}
+try:
+    r33_answer is classify of r33_traj
+catch _r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-empty-import-routing", "op": 3, "field": "probe.missing-values-and-exact", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "window": 4, "values": "ignored", "raw": [1.0], "rel": [0.0], "exact": [], "dh": [], "numeric": false, "observed": true, "best": null, "since": null, "entropy": null, "dH": null, "last_entropy": null}
+try:
+    r33_answer is classify of r33_traj
+catch _r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-empty-import-routing", "op": 4, "field": "probe.scalar-values-ignored", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "window": 4, "values": [], "raw": [], "rel": [], "exact": [], "numeric": false, "observed": true, "best": null, "since": null, "entropy": null, "dH": null, "last_entropy": null}
+try:
+    r33_answer is classify of r33_traj
+catch _r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-empty-import-routing", "op": 5, "field": "probe.missing-DH-refuses", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "window": 4, "values": [], "raw": [], "rel": [], "exact": [], "dh": ["ignored", 0.0, 0.0, 0.0, 0.0], "numeric": false, "observed": true, "best": null, "since": null, "entropy": null, "dH": null, "last_entropy": null}
+try:
+    r33_answer is classify of r33_traj
+catch _r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-empty-import-routing", "op": 6, "field": "probe.old-DH-prefix-ignored", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "window": 4, "values": [1.0], "raw": [], "rel": [], "exact": [], "dh": [], "numeric": false, "observed": true, "best": null, "since": null, "entropy": null, "dH": null, "last_entropy": null}
+try:
+    r33_answer is classify of r33_traj
+catch _r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-empty-import-routing", "op": 7, "field": "probe.nonnumeric-flag-with-single-value", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "window": 4, "values": [false], "raw": [], "rel": [], "exact": [], "dh": [], "numeric": false, "observed": true, "best": null, "since": null, "entropy": null, "dH": null, "last_entropy": null}
+try:
+    r33_answer is classify of r33_traj
+catch _r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-empty-import-routing", "op": 8, "field": "probe.nonnumeric-flag-with-bool-value-refuses", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "window": 4, "values": [], "raw": [1.0], "rel": [], "exact": [], "dh": [], "numeric": false, "observed": true, "best": null, "since": null, "entropy": null, "dH": null, "last_entropy": null}
+try:
+    r33_answer is classify of r33_traj
+catch _r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-empty-import-routing", "op": 9, "field": "probe.unequal-ghost-lengths-refuses", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "window": 4, "values": [], "raw": [], "rel": [], "exact": [], "dh": [], "observed": true, "best": null, "since": null, "entropy": null, "dH": null, "last_entropy": null}
+try:
+    r33_answer is classify of r33_traj
+catch _r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-empty-import-routing", "op": 10, "field": "probe.default-empty-numeric-flag", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "window": 4, "values": [], "raw": [1.0], "rel": [0.0], "exact": [], "dh": [], "observed": true, "best": null, "since": null, "entropy": null, "dH": null, "last_entropy": null}
+try:
+    r33_answer is classify of r33_traj
+catch _r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-empty-import-routing", "op": 11, "field": "probe.default-nonempty-numeric-flag-refuses", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "window": 10, "values": [1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "raw": [false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "exact": [false, false, false, false, false, false, false, false, false, false], "dh": [], "numeric": true, "observed": true, "best": 0.5, "since": 10, "entropy": null, "dH": null, "last_entropy": null}
+try:
+    r33_answer is classify of r33_traj
+catch _r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-empty-import-routing", "op": 12, "field": "probe.retained-step-validation-must-use-window", "kind": num_type of r33_value, "value": r33_value}))
+print of "SURF_DONE addendum3-empty-import-routing"

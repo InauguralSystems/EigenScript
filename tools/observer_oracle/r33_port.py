@@ -558,29 +558,56 @@ class Slot:
 
     @classmethod
     def from_trajectory(cls, data, policy="F0", **configuration):
-        """Import retained values and D2 state; C ignores stored relatives."""
+        """Rebuild exactly the numeric channel selected by a trajectory.
+
+        The fixed reader always validates the three required list channels
+        and their route flags. Only a selected/nonempty value channel
+        reconstructs numerical state; an unselected empty channel ignores
+        values/exact and step contents. Every retained suffix follows the
+        fixed window before its elements are validated.
+        """
         if type(data) is not dict or data.get("kind") != "trajectory":
             raise ValueError("not a trajectory")
         window = data.get("window", 10)
         if type(window) not in (int, float) or not math.isfinite(window) or window != math.floor(window) or not 4 <= window <= 64:
             raise ValueError("trajectory window must be an integer in 4..64")
+        relative, raw, dh = (data.get(key) for key in ("rel", "raw", "dh"))
+        if any(type(channel) is not list for channel in (relative, raw, dh)):
+            raise ValueError("trajectory rel/raw/dh channels must be lists")
+        if len(relative) != len(raw):
+            raise ValueError("trajectory step channels have unequal lengths")
+        numeric = data.get("numeric", bool(relative))
+        observed = data.get("observed", True)
+        if type(numeric) is not bool or type(observed) is not bool:
+            raise ValueError("trajectory route flags must be boolean")
         obj = cls(policy=policy, window=int(window), **configuration)
-        values, relative, raw, exact = (data[k] for k in ("values", "rel", "raw", "exact"))
-        if any(type(channel) is not list for channel in (values, relative, raw, exact)):
-            raise ValueError("trajectory channels must be lists")
-        if not (len(relative) == len(raw) == len(exact) == max(0, len(values) - 1)):
-            raise ValueError("trajectory channels have unequal lengths")
-        if any(type(value) not in (int, float) for channel in (relative, raw) for value in channel[-obj.window:]):
-            raise ValueError("trajectory step channels must be numeric")
-        for value in values[-(obj.window + 1):]:
-            obj.record(value)
-        for old, rebuilt in zip(exact[-obj.window:], obj.exact):
-            if type(old) is not bool or (old and not rebuilt):
-                raise ValueError("trajectory cannot invent exactness")
-        obj.raw = [float(v) for v in raw[-obj.window:]]
-        obj.exact = exact[-obj.window:]
-        if not obj.policy_for("S1").mode:
-            obj.rel = [float(v) for v in relative[-obj.window:]]
+        values, exact = data.get("values"), data.get("exact")
+        if numeric or (type(values) is list and bool(values)):
+            if (type(values) is not list or type(exact) is not list or
+                    len(values) != len(relative) + 1 or len(exact) != len(relative)):
+                raise ValueError("trajectory value channel has unequal lengths")
+            for value in values[-(obj.window + 1):]:
+                obj.record(value)
+            if any(type(value) not in (int, float)
+                   for channel in (relative, raw) for value in channel[-obj.window:]):
+                raise ValueError("trajectory step channels must be numeric")
+            for old, rebuilt in zip(exact[-obj.window:], obj.exact):
+                if type(old) is not bool or (old and not rebuilt):
+                    raise ValueError("trajectory cannot invent exactness")
+            obj.raw = [float(value) for value in raw[-obj.window:]]
+            obj.exact = exact[-obj.window:]
+            if not obj.policy_for("S1").mode:
+                obj.rel = [float(value) for value in relative[-obj.window:]]
+        obj.dh_capacity = obj.window
+        if any(type(value) not in (int, float) for value in dh[-obj.window:]):
+            raise ValueError("trajectory dh channel is not numeric")
+        obj._dh_buffer = [float(value) for value in dh[-obj.window:]]
+        for key, attribute in (("entropy", "entropy"), ("dH", "dH"), ("last_entropy", "last_entropy")):
+            value = data.get(key)
+            if value is not None:
+                if type(value) not in (int, float):
+                    raise ValueError(f"trajectory {key} is not numeric")
+                setattr(obj, attribute, float(value))
         best = data.get("best")
         if best is not None:
             if type(best) not in (int, float) or not math.isfinite(float(best)):
@@ -596,21 +623,6 @@ class Slot:
             if type(peak) not in (int, float) or not math.isfinite(float(peak)) or peak < obj.peak_abs:
                 raise ValueError("historical trajectory lacks its finite history peak")
             obj.peak_abs = float(peak)
-        for key, attribute in (("entropy", "entropy"), ("dH", "dH"), ("last_entropy", "last_entropy")):
-            value = data.get(key)
-            if value is not None:
-                if type(value) not in (int, float):
-                    raise ValueError(f"trajectory {key} is not numeric")
-                setattr(obj, attribute, float(value))
-        dh = data.get("dh", [])
-        if type(dh) is not list or any(type(v) not in (int, float) for v in dh):
-            raise ValueError("trajectory dh channel is not numeric")
-        obj.dh_capacity = obj.window
-        obj._dh_buffer = [float(v) for v in dh[-obj.window:]]
-        numeric = data.get("numeric", bool(relative))
-        observed = data.get("observed", True)
-        if type(numeric) is not bool or type(observed) is not bool:
-            raise ValueError("trajectory route flags must be boolean")
         obj.numeric = numeric
         obj.observed = observed
         obj.count = len(obj._dh_buffer) + len(obj._raw_buffer)
