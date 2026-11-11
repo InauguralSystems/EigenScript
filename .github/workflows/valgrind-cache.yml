@@ -12,7 +12,8 @@ name: Valgrind cache
 #
 # This job does the install and nothing else, so what it saves on main does
 # not depend on a test: after each push, once a day, and on request. It
-# fails when the directory it is about to save could not install Valgrind.
+# fails when the directory it is about to save lacks the Valgrind or the
+# libc6-dbg archive.
 #
 # It does not make the queue independent of the network. When a new runner
 # image changes the version of Valgrind or of libc6, the cache key changes

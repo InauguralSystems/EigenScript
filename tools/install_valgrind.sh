@@ -25,7 +25,8 @@ verify() {
 
 # A restored cache is deliberately installed without apt: this makes the warm
 # path independent of package indexes and mirrors. The action only restores a
-# cache when its candidate Valgrind version matches (see action.yml).
+# cache when its candidate Valgrind version and the installed libc6 version
+# both match (see action.yml).
 shopt -s nullglob
 archives=("$archive_dir"/*.deb)
 if ((${#archives[@]})); then
@@ -41,9 +42,12 @@ if ((${#archives[@]})); then
   # file name for valgrind". So remove what the archives installed: the
   # install below then starts where a runner without a cache starts, and
   # fetches every archive again.
+  # Only a well-formed package name goes on dpkg's command line: a Package
+  # field that begins with a dash would be read as an option.
   cached_packages=()
   for archive in "${archives[@]}"; do
-    name=$(dpkg-deb -f "$archive" Package 2>/dev/null) && [ -n "$name" ] && cached_packages+=("$name")
+    name=$(dpkg-deb -f "$archive" Package 2>/dev/null) &&
+      [[ "$name" =~ ^[a-z0-9][a-z0-9+.-]+$ ]] && cached_packages+=("$name")
   done
   if ((${#cached_packages[@]})); then
     timeout 120 sudo dpkg --remove "${cached_packages[@]}" ||
