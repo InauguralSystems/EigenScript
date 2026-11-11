@@ -1,0 +1,8 @@
+{
+ "format": "r3-reveal-commitment/1",
+ "sha256": {
+  "reveal.py": "b002d937cf5faf286e391cb0a0e0e2c69baff0d860149763909aa9b2c882bc35",
+  "reveal_fixtures.json": "c6b4727e279d00bd96795ae1d7c658d09819aed68c7f42336b2afbf440e7298c",
+  "reveal_selftest.py": "9180c7330e5b2ed6bf5451d5a8e97da7a8986d03783e61a654b55b28d6d94e2d"
+ }
+}
