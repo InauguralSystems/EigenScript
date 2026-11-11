@@ -4861,6 +4861,210 @@
         }
       ],
       "temporal": []
+    },
+    {
+      "export_at": [],
+      "id": "addendum3-import-store-targets",
+      "ops": [],
+      "read_at": [],
+      "temporal": [],
+      "trajectories": [
+        {
+          "data": {
+            "best": 1000.0,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 1.1,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1
+            ],
+            "since": 10,
+            "values": [
+              1.0,
+              1.01,
+              1.02,
+              1.03,
+              1.04,
+              1.05,
+              1.06,
+              1.07,
+              1.08,
+              1.09,
+              1.1
+            ],
+            "window": 10
+          },
+          "name": "best-store-cannot-change-scale"
+        },
+        {
+          "data": {
+            "best": -1000.0,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 1e-07,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1
+            ],
+            "since": 10,
+            "values": [
+              0.0,
+              1e-08,
+              2e-08,
+              3e-08,
+              4e-08,
+              5e-08,
+              6e-08,
+              7e-08,
+              8e-08,
+              9e-08,
+              1e-07
+            ],
+            "window": 10
+          },
+          "name": "negative-best-cannot-remove-floor"
+        },
+        {
+          "data": {
+            "best": 9007199254740992,
+            "dH": null,
+            "dh": [],
+            "entropy": null,
+            "exact": [
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "kind": "trajectory",
+            "last_entropy": null,
+            "last_value": 9007199254741002,
+            "numeric": true,
+            "observed": true,
+            "raw": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rel": [
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1,
+              0.1
+            ],
+            "since": 10,
+            "values": [
+              9007199254740992,
+              9007199254740993,
+              9007199254740994,
+              9007199254740995,
+              9007199254740996,
+              9007199254740997,
+              9007199254740998,
+              9007199254740999,
+              9007199254741000,
+              9007199254741001,
+              9007199254741002
+            ],
+            "window": 10
+          },
+          "name": "exact-best-cannot-change-scale"
+        }
+      ]
     }
   ]
 }

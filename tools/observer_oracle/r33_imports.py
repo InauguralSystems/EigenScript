@@ -126,8 +126,21 @@ def cases():
     for key in ('entropy','dH','last_entropy'):
         bad(key+'-string', **{key:'x'})
         bad(key+'-numeric-string', **{key:'0'})
+    stores = {'id':'addendum3-import-store-targets', 'ops':[], 'read_at':[],
+              'export_at':[], 'temporal':[], 'trajectories':[
+        {'name':'best-store-cannot-change-scale',
+         'data':S.trajectory([1.0,1.01,1.02,1.03,1.04,1.05,1.06,1.07,1.08,1.09,1.1],
+                              10, raw=[0.0]*10, relative=[0.1]*10, best=1000.0, since=10)},
+        {'name':'negative-best-cannot-remove-floor',
+         'data':S.trajectory([0.0,1e-8,2e-8,3e-8,4e-8,5e-8,6e-8,7e-8,8e-8,9e-8,1e-7],
+                              10, raw=[0.0]*10, relative=[0.1]*10, best=-1000.0, since=10)},
+        {'name':'exact-best-cannot-change-scale',
+         'data':{**S.trajectory([2**53+i for i in range(11)], 10,
+                                raw=[0.0]*10, relative=[0.1]*10,
+                                best=2**53, since=10), 'exact':[True]*10}}
+    ]}
     return [accepted, {'id':'addendum3-trajectory-refusals', 'ops':[], 'read_at':[],
-                       'export_at':[], 'temporal':[], 'refusals':rejected}]
+                       'export_at':[], 'temporal':[], 'refusals':rejected}, stores]
 
 
 def model(row, slot_type=None):

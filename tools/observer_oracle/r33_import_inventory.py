@@ -74,7 +74,7 @@ def import_proof(spec):
     if number in transport:
         return ('EQUIVALENT',
                 'After the same import validation this point changes only entropy/dh storage, route flags, or the temporary slot observation count. classify of t selects the explicit value channel; its report reads retained numeric values/raw/rel/exact, window and improving age, and never these fields. No subsequent record is made on that disposable imported slot. This equivalence is for the experiment value-route read contract; entropy-channel classification is outside that contract.',None)
-    if number in {346,347,349,548}:
+    if number in {347,349,548}:
         return ('EQUIVALENT',
                 'The changed assignment affects restored best/best_used only, after all rebuilding records. A finite retained window has already set best_used=True while rebuilding. A nonfinite window cannot improve. The numeric value of best is read only by future record updates, and classify disposes the imported slot after its report. Every declared imported value-channel query therefore agrees.',None)
     if number==191:
@@ -104,6 +104,8 @@ def split_prior(spec):
     if row['id'] in {'ast-Slot.record-call-reference-65-0-fault','ast-Slot.record-constant-142-0-fault'}:
         row.update(status='EQUIVALENT',reason='The record numeric-type refusal can be reached by a malformed imported value such as bool. This mutation changes only its TypeError construction or message; the faulty raise still raises, including TypeError for a non-exception object. Valid numeric input bypasses the branch. The value-route verdict/REFUSED contract is identical; no exception spelling or Python error class is claimed.',missing_capability=None)
         return row
+    if row['id']=='ast-Slot.from_trajectory-reference-346-0-fault':
+        raise ValueError('INVALID PRIOR PROOF: STORE best mutates scale; this point requires an actual killing reading, never the unused-best waiver')
     equal_parameters={'ast-Slot.magnitude-reference-12-0-fault',
                       'ast-Slot._step-reference-14-0-fault',
                       'ast-Slot.converged-reference-61-0-fault',

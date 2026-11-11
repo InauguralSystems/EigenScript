@@ -1,4 +1,4 @@
-<!-- Portable historical path projection; verbatim OUT sha256 2541cd55b279b48c3df14d804628d48cdb3aa0ee5e032186873ecd3636decafa -->
+<!-- Portable historical path projection; verbatim OUT sha256 eb2504a09a11d0c1f7155c6a024ba996669112e3ee50711f87ed031624a2676f -->
 # Design changes: design-0 to R33-1 alignment
 
 62 replacement places: 31 for the original R33-1 alignment, 13 for addendum 1/continuation alignment, and 18 for addendum 2/continuation 2 alignment. Old and new text below are exact text regions; no experimental result is asserted. Unchanged definitions, including the fixture formulas, remain in r3-3-design.r1.md.
@@ -1512,4 +1512,21 @@ New words:
 
 ```text
 The site fixtures were sealed under the third manifest before their first binary read. Seal the new trajectory-import definitions/programs under the fourth manifest before the recipe binary first reads them.
+```
+
+
+## 83. Keep both newly reached import faults in the real CI row
+
+Authority: R33-1 addendum3 item5; continuation3 outcomes4,5.
+
+Old words:
+
+```text
+The enrolled row samples 17 plants: one recorded-reading fault for each of S1–S8, N1 and D2, plus seven real input-path plants (one changed reading, a missing reading, an empty comparison, a staged count, an unlisted refusal, a refused row restored at one scale, and confirmation without a choice).
+```
+
+New words:
+
+```text
+The enrolled row samples 19 plants: one recorded-reading fault for each of S1–S8, N1 and D2, two import faults (since restoration and the restored-best STORE reference), and seven real input-path plants (one changed reading, a missing reading, an empty comparison, a staged count, an unlisted refusal, a refused row restored at one scale, and confirmation without a choice).
 ```
