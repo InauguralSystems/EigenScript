@@ -1,0 +1,64 @@
+# #2344: byte-for-byte oracle for the linear template renderer.
+load_file of "lib/test.eigs"
+load_file of "lib/template.eigs"
+
+# Frozen copy of render before #2344.  This deliberately keeps the repeated
+# prefix/suffix copies: it is a behavioural oracle, not production code.
+define render_before_2344(tmpl, vars) as:
+    local result is ""
+    local remaining is tmpl
+    loop while (len of remaining) > 0:
+        local open_pos is index_of of [remaining, "{{"]
+        if open_pos < 0:
+            result is result + remaining
+            return result
+        result is result + (substr of [remaining, 0, open_pos])
+        local after_open is substr of [remaining, open_pos + 2, (len of remaining) - open_pos - 2]
+        local close_pos is index_of of [after_open, "}}"]
+        if close_pos < 0:
+            result is result + (substr of [remaining, open_pos, (len of remaining) - open_pos])
+            return result
+        local key is substr of [after_open, 0, close_pos]
+        local val is "{{" + key + "}}"
+        for i in range of (len of vars):
+            if vars[i][0] == key:
+                val is str of vars[i][1]
+        result is result + val
+        remaining is substr of [after_open, close_pos + 2, (len of after_open) - close_pos - 2]
+    return result
+
+local cases is [
+    ["plain text", []],
+    ["{{a}}{{b}}", [["a", "A"], ["b", "B"]]],
+    ["{{a}} middle {{b}}", [["a", "A"], ["b", "B"]]],
+    ["before {{open", [["open", "X"]]],
+    ["close }} only", []],
+    ["{{}}", [["", "empty"]]],
+    ["{{missing}}", []],
+    ["{{x}}/{{x}}/{{x}}/{{x}}", [["x", "repeat"]]],
+    ["{{{x}}}", [["{x", "left"], ["x", "center"]]],
+    ["{{x}}", [["x", "{{inner}} and }}"]]],
+    ["λ {{名}} café", [["名", "世界"]]],
+    ["{{outer {{inner}} tail", [["outer {{inner", "nested"]]],
+    ["Hello {{user}}!", [["user", "World"]]],
+    ["Hi {{name}}, count={{n}}.", [["name", "World"], ["n", "42"]]],
+    ["{{missing}} remains", []],
+    ["prefix {{forever", [["forever", "nope"]]],
+    ["{{name}} is running v{{version}}", [["name", "EigenScript"], ["version", "1"]]]
+]
+
+local compared is 0
+for c in cases:
+    assert_eq of [render of [c[0], c[1]], render_before_2344 of [c[0], c[1]], "render oracle case"]
+    compared += 1
+
+for size in [1, 2, 1000, 100001]:
+    local pieces is []
+    for i in range of size:
+        append of [pieces, "{{x}}"]
+    local large_template is join of [pieces, ""]
+    assert_eq of [render of [large_template, [["x", "a"]]], render_before_2344 of [large_template, [["x", "a"]]], "render oracle generated size"]
+    compared += 1
+
+print of ("TEMPLATE ORACLE: " + (str of compared) + " inputs, zero differences")
+test_summary of null

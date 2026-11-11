@@ -24,30 +24,33 @@
 # injection path where a user-supplied value could reference another
 # variable.
 define render(tmpl, vars) as:
-    result is ""
-    remaining is tmpl
-    loop while (len of remaining) > 0:
-        open_pos is index_of of [remaining, "{{"]
-        if open_pos < 0:
-            result is result + remaining
-            return result
-        # Literal prefix before the placeholder.
-        result is result + (substr of [remaining, 0, open_pos])
-        # Look for the matching }} after the opener.
-        after_open is substr of [remaining, open_pos + 2, (len of remaining) - open_pos - 2]
-        close_pos is index_of of [after_open, "}}"]
-        if close_pos < 0:
-            # Unterminated placeholder — emit it verbatim and stop.
-            result is result + (substr of [remaining, open_pos, (len of remaining) - open_pos])
-            return result
-        key is substr of [after_open, 0, close_pos]
-        val is "{{" + key + "}}"
+    # Scan by index, collect pieces, and join once.  Each source byte is
+    # visited a constant number of times; no unconsumed suffix is copied.
+    local result_parts is []
+    local template_len is len of tmpl
+    local cursor is 0
+    loop while cursor < template_len:
+        local open_pos is cursor
+        loop while open_pos + 1 < template_len and (substr of [tmpl, open_pos, 2]) != "{{":
+            open_pos += 1
+        if open_pos + 1 >= template_len:
+            append of [result_parts, substr of [tmpl, cursor, template_len - cursor]]
+            return join of [result_parts, ""]
+        append of [result_parts, substr of [tmpl, cursor, open_pos - cursor]]
+        local close_pos is open_pos + 2
+        loop while close_pos + 1 < template_len and (substr of [tmpl, close_pos, 2]) != "}}":
+            close_pos += 1
+        if close_pos + 1 >= template_len:
+            append of [result_parts, substr of [tmpl, open_pos, template_len - open_pos]]
+            return join of [result_parts, ""]
+        local key is substr of [tmpl, open_pos + 2, close_pos - open_pos - 2]
+        local val is "{{" + key + "}}"
         for i in range of (len of vars):
             if vars[i][0] == key:
                 val is str of vars[i][1]
-        result is result + val
-        remaining is substr of [after_open, close_pos + 2, (len of after_open) - close_pos - 2]
-    return result
+        append of [result_parts, val]
+        cursor is close_pos + 2
+    return join of [result_parts, ""]
 
 # ---- render_file: load a template file and render it ----
 # render_file of ["template.txt", vars] -> string

@@ -56,8 +56,9 @@ FULL=0
 # keeps that from becoming a trap later (see .claude/rules/test-suite.md).
 VG_TMO=""
 PRE_TMO=""
-if command -v timeout >/dev/null 2>&1; then VG_TMO="timeout 600"; PRE_TMO="timeout 60"
-elif command -v gtimeout >/dev/null 2>&1; then VG_TMO="gtimeout 600"; PRE_TMO="gtimeout 60"; fi
+VG_LIMIT="${EIGS_VALGRIND_TIMEOUT:-600}"
+if command -v timeout >/dev/null 2>&1; then VG_TMO="timeout $VG_LIMIT"; PRE_TMO="timeout 60"
+elif command -v gtimeout >/dev/null 2>&1; then VG_TMO="gtimeout $VG_LIMIT"; PRE_TMO="gtimeout 60"; fi
 
 if [ "$FULL" -eq 1 ]; then
   SMOKE=("${PROGS[@]}")
@@ -113,8 +114,13 @@ for p in "${PROGS[@]}"; do
   if EIGS_JIT_OFF=1 $VG_TMO "${VG[@]}" "$BIN" "$f" </dev/null >"$log" 2>&1; then
     echo "  PASS: $p"; pass=$((pass+1))
   else
-    echo "  FAIL: $p — Valgrind reported errors:"
-    grep -iE 'Invalid (read|write|free)|uninitialised|uninitialized|definitely lost|indirectly lost|Conditional jump|Use of uninitialised|Process terminating' "$log" | head -6
+    status=$?
+    if [ "$status" -eq 124 ] && [ -n "$VG_TMO" ]; then
+      echo "  FAIL: $p — timed out after $VG_LIMIT seconds"
+    else
+      echo "  FAIL: $p — Valgrind reported errors (status $status):"
+      grep -iE 'Invalid (read|write|free)|uninitialised|uninitialized|definitely lost|indirectly lost|Conditional jump|Use of uninitialised|Process terminating' "$log" | head -6
+    fi
     fail=$((fail+1))
   fi
   rm -f "$log"
