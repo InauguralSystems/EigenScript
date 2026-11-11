@@ -1,0 +1,64 @@
+name: Valgrind cache
+
+# The merge queue's valgrind and bench jobs install Valgrind from a .deb
+# cache (.github/actions/install-valgrind). A merge group can restore a cache
+# saved on its own branch or on main, and not one that another merge group
+# saved. main had none. ci.yml does not run those two jobs on a push. The one
+# job that runs the install on main, nightly's full Valgrind corpus, saves
+# its cache only when the whole job passes, and it has failed at its test
+# step every night since 2026-10-31 (#1168). So every queue run installed
+# from the network, and on 2026-11-11 runners that could not reach the
+# package servers ejected every pull request for three hours (#2341).
+#
+# This job does the install and nothing else, so what it saves on main does
+# not depend on a test: after each push, once a day, and on request. It
+# fails when the directory it is about to save lacks the Valgrind or the
+# libc6-dbg archive.
+#
+# It does not make the queue independent of the network. When a new runner
+# image changes the version of Valgrind or of libc6, the cache key changes
+# with it, and every run needs the package servers until this job has run
+# on that image.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '47 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: valgrind-cache
+  cancel-in-progress: false
+
+jobs:
+  warm:
+    name: valgrind cache (main)
+    # The same runner label as the valgrind and bench jobs of ci.yml: the
+    # cache key holds the image's name and version.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install Valgrind (restores the cache, or installs and saves it)
+        timeout-minutes: 10
+        uses: ./.github/actions/install-valgrind
+      # The cache is saved when the job ends, and only if the job passed. An
+      # image that ships Valgrind leaves this directory empty: then this job
+      # and the cache have no purpose, and the red says so.
+      - name: The directory to be saved holds both archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dir="$RUNNER_TEMP/valgrind-debs"
+          for package in valgrind libc6-dbg; do
+            found=("$dir/${package}"_*.deb)
+            if ((${#found[@]} == 0)); then
+              echo "::error::no ${package} archive in $dir after the install: the cache this job saves could not install Valgrind in the merge queue"
+              exit 1
+            fi
+          done
+          ls -l "$dir"
