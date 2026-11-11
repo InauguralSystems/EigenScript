@@ -28,11 +28,12 @@ define render(tmpl, vars) as:
     # semantics while collecting output.  key_parts matters for nested
     # openers: in "{{a{{b}}", the key is "a{{b".
     local result_parts is []
+    if (index_of of [tmpl, "}}"]) < 0:
+        return tmpl
     local open_parts is split of [tmpl, "{{"]
     append of [result_parts, open_parts[0]]
     local key_parts is []
-    for open_i in range of ((len of open_parts) - 1):
-        local part is open_parts[open_i + 1]
+    for part in list_slice of [open_parts, 1, len of open_parts]:
         local close_parts is split of [part, "}}"]
         append of [key_parts, close_parts[0]]
         if (len of close_parts) > 1:
@@ -43,9 +44,9 @@ define render(tmpl, vars) as:
                     val is str of vars[var_i][1]
             append of [result_parts, val]
             append of [result_parts, close_parts[1]]
-            for close_i in range of ((len of close_parts) - 2):
+            for close_part in list_slice of [close_parts, 2, len of close_parts]:
                 append of [result_parts, "}}"]
-                append of [result_parts, close_parts[close_i + 2]]
+                append of [result_parts, close_part]
             key_parts is []
     if (len of key_parts) > 0:
         append of [result_parts, "{{"]

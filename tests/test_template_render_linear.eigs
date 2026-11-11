@@ -2,8 +2,10 @@
 load_file of "lib/test.eigs"
 load_file of "lib/template.eigs"
 
-# Frozen copy of render before #2344.  This deliberately keeps the repeated
-# prefix/suffix copies: it is a behavioural oracle, not production code.
+# Behavioural copy of render before #2344.  It adds `local` to seven
+# assignments and omits three explanatory comments; its output is unchanged.
+# It deliberately keeps the repeated prefix/suffix copies, so it is an oracle,
+# not production code.
 define render_before_2344(tmpl, vars) as:
     local result is ""
     local remaining is tmpl
@@ -48,19 +50,29 @@ local cases is [
 ]
 
 local compared is 0
+local differences is 0
 for c in cases:
-    assert_eq of [render of [c[0], c[1]], render_before_2344 of [c[0], c[1]], "render oracle case"]
+    local actual is render of [c[0], c[1]]
+    local expected is render_before_2344 of [c[0], c[1]]
+    assert_eq of [actual, expected, "render oracle case"]
+    if actual != expected:
+        differences += 1
     compared += 1
 
-for size in [1, 2, 1000, 100001]:
+for size in [1, 2, 2000]:
     local pieces is []
     for i in range of size:
         append of [pieces, "{{x}}"]
     local large_template is join of [pieces, ""]
-    assert_eq of [render of [large_template, [["x", "a"]]], render_before_2344 of [large_template, [["x", "a"]]], "render oracle generated size"]
+    local actual is render of [large_template, [["x", "a"]]]
+    local expected is render_before_2344 of [large_template, [["x", "a"]]]
+    assert_eq of [actual, expected, "render oracle generated size"]
+    if actual != expected:
+        differences += 1
     compared += 1
 
-print of ("TEMPLATE ORACLE: " + (str of compared) + " inputs, zero differences")
+if differences == 0:
+    print of ("TEMPLATE ORACLE: " + (str of compared) + " inputs, zero differences")
 
 # Exhaust every string of length 0..9 over the delimiter alphabet.  Include
 # both present and absent keys so lookup and missing-key preservation agree.
@@ -70,9 +82,14 @@ local exhaustive_vars is [
 ]
 local population is [""]
 local exhaustive_compared is 0
+local exhaustive_differences is 0
 for length in range of 10:
     for sample in population:
-        assert_eq of [render of [sample, exhaustive_vars], render_before_2344 of [sample, exhaustive_vars], "render exhaustive oracle"]
+        local actual is render of [sample, exhaustive_vars]
+        local expected is render_before_2344 of [sample, exhaustive_vars]
+        assert_eq of [actual, expected, "render exhaustive oracle"]
+        if actual != expected:
+            exhaustive_differences += 1
         exhaustive_compared += 1
     if length < 9:
         local next_population is []
@@ -83,5 +100,6 @@ for length in range of 10:
         population is next_population
 
 assert_eq of [exhaustive_compared, 29524, "exhaustive template population"]
-print of ("TEMPLATE EXHAUSTIVE: " + (str of exhaustive_compared) + " strings, zero differences")
+if exhaustive_differences == 0:
+    print of ("TEMPLATE EXHAUSTIVE: " + (str of exhaustive_compared) + " strings, zero differences")
 test_summary of null

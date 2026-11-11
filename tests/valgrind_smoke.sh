@@ -57,6 +57,12 @@ FULL=0
 VG_TMO=""
 PRE_TMO=""
 VG_LIMIT="${EIGS_VALGRIND_TIMEOUT:-600}"
+case "$VG_LIMIT" in
+  *[!0-9]*|0|'')
+    echo "ERROR: EIGS_VALGRIND_TIMEOUT must be a positive whole number; got '$VG_LIMIT'"
+    exit 2
+    ;;
+esac
 if command -v timeout >/dev/null 2>&1; then VG_TMO="timeout $VG_LIMIT"; PRE_TMO="timeout 60"
 elif command -v gtimeout >/dev/null 2>&1; then VG_TMO="gtimeout $VG_LIMIT"; PRE_TMO="gtimeout 60"; fi
 
