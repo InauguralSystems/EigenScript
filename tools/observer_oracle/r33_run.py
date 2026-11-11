@@ -10,9 +10,9 @@ It validates declared keys against frozen-tool-validated staged populations.
 
 --sweep consumes all eleven arms' already collected calibration readings;
 --confirm requires the posted choice before reading any input/population.
-Confirmation output contains point estimates only, not a passing judgment:
-the frozen judge program supplies BA bounds and the real build must first
-match the port on every confirmation checkpoint. No bootstrap is reproduced.
+--single makes one subject table without a choice; --positive-control tests
+PRE1045 separately. Confirmation judgment is r33_procedure.py, using the frozen
+judge printed bounds after real build identity. No bootstrap is reproduced.
 """
 import argparse
 import hashlib
@@ -24,7 +24,7 @@ import sys
 import derive
 from gen import HarnessError, generate
 from schema import PREDS
-from r33_port import POLICIES
+from r33_port import POLICIES, GROUPS
 import r33_metrics as M
 import r33_population as P
 import r33_identity as I
@@ -32,7 +32,9 @@ import r33_identity as I
 HERE = Path(__file__).resolve().parent
 
 
-def records(paths, expected_choice_sha256=None):
+def records(paths, expected_choice_sha256=None, expected_first_measurement_sha256=None,
+            named_subject=None, require_full_groups=False, expected_groups=None):
+    """Read explicit verdicts and validate both posted-file order witnesses."""
     arms = {}
     for path in paths:
         with Path(path).open() as source:
@@ -40,12 +42,18 @@ def records(paths, expected_choice_sha256=None):
                 try:
                     record = json.loads(line)
                     arm = record["arm"]
-                    if arm not in POLICIES:
+                    if arm not in POLICIES and arm != named_subject:
                         raise ValueError("unregistered arm")
+                    if arm in POLICIES and arm not in {"F0", "PRE1045"}:
+                        if (expected_first_measurement_sha256 is None or
+                                record.get("first_measurement_sha256") != expected_first_measurement_sha256):
+                            raise M.Incomplete(f"REFUSED: {arm} reading lacks the posted first measurement sha256")
+                    if ((require_full_groups or expected_groups is not None) and
+                            record.get("groups") != list(GROUPS if expected_groups is None else expected_groups)):
+                        raise M.Incomplete(f"REFUSED: {arm} sweep reading is not the complete arm")
                     if expected_choice_sha256 is not None:
                         bound = record.get('choice_sha256')
-                        # F0 may have been read before posting the choice.
-                        allowed = {None,expected_choice_sha256} if arm=='F0' else {expected_choice_sha256}
+                        allowed = {None, expected_choice_sha256} if arm == 'F0' else {expected_choice_sha256}
                         if bound not in allowed:
                             raise M.Incomplete(f'REFUSED: {arm} input choice_sha256 does not match posted choice')
                 except M.Incomplete:
@@ -53,6 +61,10 @@ def records(paths, expected_choice_sha256=None):
                 except (KeyError, TypeError, ValueError) as exc:
                     raise M.Incomplete(f"INCOMPLETE: invalid reading at {path}:{number}") from exc
                 arms.setdefault(arm, []).append(record)
+    if named_subject is not None and not arms:
+        # A named binary can supply no reading when its capability probe
+        # raises. Its explicit cannot_run receipt must account for every key.
+        return {named_subject: {}}
     return {a: M.index(rs) for a, rs in M.nonempty(arms, "arm reading files").items()}
 
 
@@ -115,24 +127,112 @@ def counter_keys():
     return [("counter/x1", row["id"], at) for at in row["checkpoints"]]
 
 
-def sweep(data, readings):
-    if set(readings) != set(POLICIES):
-        raise M.Incomplete("INCOMPLETE: sweep needs every registered arm exactly once")
+def calibration_context(data):
+    """One derivation of the sweep's keys, masks, roster and label support."""
     sets = load(data, "cal", ("x1", "x1e-3", "x1e3"))
     pairs = comparisons(sets, "cal", ("x1e-3", "x1e3"), "x1e-3")
     if len(pairs) != 194 or sum(p[2] for p in pairs) != 50:
         raise M.Incomplete("STOP R33-1 items3/8: calibration comparison counts differ")
-    z = [(f"cal/{scale}", row, at) for row, at in roster(sets) for scale in ("x1", "x1e-3", "x1e3")]
+    z = [(f"cal/{scale}", row, at) for row, at in roster(sets)
+         for scale in ("x1", "x1e-3", "x1e3")]
     k = counter_keys()
-    want = expected(sets) | set(k)
-    tables = {}
-    for arm in M.arm_order():
-        got = readings[arm]
-        M.require_keys(got, want, arm)
-        tables[arm] = {"U": M.unit(got, pairs), "BA": M.balanced(got, labels(sets, "cal/x1")),
-                       "Z": M.zeros(got, z), "K": M.counter(got, k)}
-    # choose() itself guards the registered control, so no caller can obtain
-    # a choice from these tables when PRE1045 fails its 0.10 threshold.
+    return {"pairs": pairs, "labels": labels(sets, "cal/x1"), "z": z, "k": k,
+            "expected": expected(sets) | set(k)}
+
+
+def subject_tables(subject, got, context, *, binary=False, not_read=(), diagnostics=None, groups=None):
+    """Items8-10 for one subject. This path never calls choose().
+
+    Runtime-reference subjects have the addendum3-only missing support rule.
+    Every unavailable reading must be named by their cannot_run receipt;
+    an unavailable scale removes that base's complete set of U comparisons.
+    BA retains each available x1 reading; Z/K state what was not read.
+    """
+    want = set(M.nonempty(context["expected"], "subject expected readings"))
+    omissions = {}
+    for entry in not_read:
+        if (not isinstance(entry, dict) or not isinstance(entry.get("reason"), str)
+                or not entry["reason"] or not isinstance(entry.get("set"), str)
+                or not isinstance(entry.get("row"), str)):
+            raise M.Incomplete("INCOMPLETE: malformed binary cannot_run receipt")
+        keys = {key for key in want if key[0] == entry["set"] and key[1] == entry["row"]
+                and ("at" not in entry or key[2] == entry["at"])}
+        if not keys or set(omissions) & keys:
+            raise M.Incomplete("INCOMPLETE: duplicate or undeclared binary cannot_run row")
+        for key in keys:
+            omissions[key] = entry["reason"]
+    if binary:
+        if subject in POLICIES:
+            raise M.Incomplete("REFUSED: a binary reference name must be outside the eleven arms")
+        if set(got) & set(omissions) or set(got) | set(omissions) != want:
+            raise M.Incomplete("INCOMPLETE: binary readings and cannot_run reasons do not partition declared support")
+        removed = {key[1] for key in omissions if key[0].startswith("cal/")}
+        pairs = [pair for pair in context["pairs"] if pair[0][1] not in removed]
+        ba_labels = {key: value for key, value in context["labels"].items() if key in got}
+        u = M.unit(got, pairs, allow_empty=True)
+        ba = M.balanced(got, ba_labels) if ba_labels else {
+            p: {"BA": None, "status": "NOT_READ: no available x1 labels"} for p in PREDS}
+        available_z = [key for key in context["z"] if key in got]
+        z = M.zeros(got, available_z) if available_z else {"Z": None, "readings": []}
+        z["not_read"] = [{"key": list(key), "reason": omissions[key]}
+                         for key in context["z"] if key not in got]
+        z["status"] = "NOT_READ: incomplete Z support" if z["not_read"] else "COMPLETE"
+        missing_k = [key for key in context["k"] if key not in got]
+        k = M.counter(got, context["k"]) if not missing_k else {
+            "K": None, "status": "NOT_READ: incomplete typed K support",
+            "not_read": [{"key": list(key), "reason": omissions[key]} for key in missing_k]}
+    else:
+        if subject not in POLICIES or omissions:
+            raise M.Incomplete("REFUSED: unregistered policy or missing policy reading")
+        M.require_keys(got, want, subject)
+        removed, pairs, ba_labels = set(), context["pairs"], context["labels"]
+        u, ba = M.unit(got, pairs), M.balanced(got, ba_labels)
+        z, k = M.zeros(got, context["z"]), M.counter(got, context["k"])
+    rows = {(key[0], key[1]) for key in got}
+    return {"subject": subject, "groups": list(GROUPS if groups is None else (group for group in GROUPS if group in groups)),
+            "U": u, "BA": ba, "Z": z, "K": k,
+            "support": {"declared_readings": len(want), "readings": len(got),
+                        "rows_at_scales": len(rows), "x1_BA_rows": len({key[1] for key in ba_labels}),
+                        "x1_BA_checkpoints": len(ba_labels), "comparisons": len(pairs),
+                        "above_comparisons": sum(pair[2] for pair in pairs),
+                        "comparison_bases": len({pair[0][1] for pair in pairs}),
+                        "comparison_bases_removed": sorted(removed),
+                        "not_read": [{"key": list(key), "reason": reason}
+                                     for key, reason in sorted(omissions.items())]},
+            "binary_diagnostics": diagnostics if binary else None,
+            "choice_made": False}
+
+
+def single(data, subject, readings, binary_receipt=None, groups=None):
+    if set(readings) != {subject}:
+        raise M.Incomplete("INCOMPLETE: single-subject tables need exactly the named subject")
+    receipt = binary_receipt or {}
+    table = subject_tables(subject, readings[subject], calibration_context(data),
+                           binary=subject not in POLICIES,
+                           not_read=receipt.get("cannot_run", receipt.get("not_read", [])),
+                           diagnostics=receipt.get("diagnostics"), groups=groups)
+    return {"status": "POINT_ESTIMATES", "subject": subject, "table": table,
+            "choice_made": False}
+
+
+def positive_control(table):
+    if table.get("subject") != "PRE1045":
+        raise M.Incomplete("REFUSED: positive control requires PRE1045's single-subject tables")
+    try:
+        result = M.require_positive_control({"PRE1045": table})
+        return {"status": "MET", "met": True, "U_above": result,
+                "criterion": "PRE1045 U_above >= 0.10"}
+    except M.ControlFailure as exc:
+        return {"status": "NOT_MET_EXPERIMENT_STOPS", "met": False,
+                "reason": str(exc), "U_above": table["U"]["U_above"],
+                "criterion": "PRE1045 U_above >= 0.10"}
+
+
+def sweep(data, readings):
+    if set(readings) != set(POLICIES):
+        raise M.Incomplete("INCOMPLETE: sweep needs every registered arm exactly once")
+    context = calibration_context(data)
+    tables = {arm: subject_tables(arm, readings[arm], context) for arm in M.arm_order()}
     choice = M.choose(tables)
     return {"status": "POINT_ESTIMATES", "arm_order_seed": 1580,
             "registered_arm_order": M.arm_order(), "tables": tables,
@@ -182,11 +282,11 @@ def confirm(data, readings, choice):
     z = []
     for row, at in roster(cal):
         label = ccal["confirm-cal/x1e6"][1].get(f"{row}@{at}")
-        if label is None or label["converged"][0] == "REPORTED" or label["converged"][1] is not True:
-            raise M.Incomplete(f"INCOMPLETE: mandatory Z row {row}@{at} absent or not labelled true at x1e6")
-        z.append(("confirm-cal/x1e6", row, at))
-    if len(z) != 6:
-        raise M.Incomplete("INCOMPLETE: confirmation needs all six Z readings at x1e6")
+        if label is None or label["converged"][0] == "REPORTED":
+            raise M.Incomplete(f"INCOMPLETE: Z row {row}@{at} absent or not labelled at x1e6")
+        if label["converged"][1] is True:
+            z.append(("confirm-cal/x1e6", row, at))
+    M.nonempty(z, "confirmation roster rows labelled true at x1e6")
     k = counter_keys()
     want = expected(sets) | set(k)
     tables = {}
@@ -197,7 +297,8 @@ def confirm(data, readings, choice):
         hpoints, upoints = M.balanced(got, hlabels), M.balanced(got, union_labels)
         guards = {p: {"population": "H-cal x1" if hpoints[p]["BA"] is not None else "released72 + H-cal x1",
                       **(hpoints[p] if hpoints[p]["BA"] is not None else upoints[p])} for p in PREDS}
-        tables[arm] = {"U": M.unit(got, hpairs + cpairs),
+        tables[arm] = {"subject": arm, "U": M.unit(got, hpairs + cpairs),
+                       "U_parts": {"i": M.unit(got, hpairs), "ii": M.unit(got, cpairs)},
                        "BA_Hcal_point": hpoints, "BA_guard_point": guards,
                        "Z": M.zeros(got, z), "K": M.counter(got, k)}
     return {"status": "POINT_ESTIMATES_ONLY_NOT_JUDGED", "choice": choice, "tables": tables,
@@ -214,6 +315,12 @@ def main(argv=None):
     mode = p.add_mutually_exclusive_group(required=True)
     mode.add_argument("--sweep", action="store_true")
     mode.add_argument("--confirm", action="store_true")
+    mode.add_argument("--single", action="store_true", help="one subject; no calibration choice")
+    mode.add_argument("--positive-control", action="store_true", help="PRE1045 only, before sweep")
+    p.add_argument("--subject")
+    p.add_argument("--groups", nargs="*", choices=GROUPS, default=None)
+    p.add_argument("--not-read", type=Path, help="named binary cannot_run receipt")
+    p.add_argument("--first-measurement", type=Path)
     p.add_argument("--data", type=Path, required=True)
     p.add_argument("--readings", action="append", type=Path, required=True)
     p.add_argument("--choice", type=Path)
@@ -230,8 +337,22 @@ def main(argv=None):
         I.verify_manifest(args.manifest)
         if args.data.resolve() != (HERE/'r33_data/populations').resolve():
             raise M.Incomplete('REFUSED: data directory differs from the manifest population root')
-        got = records(args.readings, digest if args.confirm else None)
-        value = confirm(args.data, got, choice) if args.confirm else sweep(args.data, got)
+        if (args.single or args.positive_control) and not args.subject:
+            raise M.Incomplete("REFUSED: a one-subject entry point requires --subject")
+        measurement_sha = (M.first_measurement_file(args.first_measurement)
+                           if args.first_measurement is not None else None)
+        got = records(args.readings, digest if args.confirm else None, measurement_sha,
+                      args.subject if args.single else None, require_full_groups=args.sweep or args.confirm,
+                      expected_groups=(tuple(group for group in GROUPS if group in args.groups) if args.groups is not None else GROUPS)
+                      if (args.single or args.positive_control) and args.subject in POLICIES else None)
+        if args.single or args.positive_control:
+            receipt = json.loads(args.not_read.read_text()) if args.not_read else None
+            value = single(args.data, args.subject, got, receipt, args.groups)
+            if args.positive_control:
+                value["positive_control"] = positive_control(value["table"])
+        else:
+            value = confirm(args.data, got, choice) if args.confirm else sweep(args.data, got)
+        value["first_measurement_sha256"] = measurement_sha
         value.update(input_sha256={str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in args.readings})
         rc = 0
     except M.ControlFailure as exc:

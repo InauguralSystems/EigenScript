@@ -1,4 +1,4 @@
-<!-- Portable projection of historical path spellings. Verbatim OUT artifact SHA256: 6e91f25c56338e4cd6f536dfbdcc001da33177a3a009bae064bebd25be1edef0 -->
+<!-- Portable historical path projection; verbatim OUT sha256 2541cd55b279b48c3df14d804628d48cdb3aa0ee5e032186873ecd3636decafa -->
 # Design changes: design-0 to R33-1 alignment
 
 62 replacement places: 31 for the original R33-1 alignment, 13 for addendum 1/continuation alignment, and 18 for addendum 2/continuation 2 alignment. Old and new text below are exact text regions; no experimental result is asserted. Unchanged definitions, including the fixture formulas, remain in r3-3-design.r1.md.
@@ -1168,4 +1168,348 @@ New words:
 
 ```text
 Handwritten port unit checks may use depths 1 and 64. Binary window override is queried through trajectory import at the language-supported depths 4 and 64; the language has no ordinary setter and cannot import depth 1 at this commit. Make no binary-identity claim for depth 1. Reset/copy and historical-peak carry checks supplement the baseline identity rather than replace any of its 512 inputs; each available language surface is separately compared as specified below.
+```
+
+
+## 63. Authority and fourth instrument
+
+Authority: R33-1 addendum3 items1–7.
+
+Old words:
+
+```text
+addendum 2 (recorded before the first measurement), and the binding continuation briefs.
+```
+
+New words:
+
+```text
+addendum 2 and addendum 3 (both recorded before the first measurement).
+```
+
+
+## 64. New programs before measurement
+
+Authority: R33-1 addendum3 items1–7.
+
+Old words:
+
+```text
+It restates the registered scale experiment and its implementation definitions in one text.
+```
+
+New words:
+
+```text
+Addendum 3 seals the programs for every registered step before measurement, fixes the binary-subject reading path, attaches the zero rule to each switched relative step, scopes the inventory, includes trajectory import and marks faults caught by an error. It restates the registered scale experiment and its implementation definitions in one text.
+```
+
+
+## 65. Relative-step zero rule and group setting
+
+Authority: R33-1 addendum3 item3.
+
+Old words:
+
+```text
+C also needs a 0/0 guard when its peak is zero: return zero for a finite zero→zero step.
+```
+
+New words:
+
+```text
+C also needs a 0/0 guard when its peak is zero: return zero for a finite zero→zero step. Every site switched to an arm forms its relative step with that arm's zero rule, including S1 alone. The reference-site group has no zero rule of its own: its sites use the arm's magnitude as it stands, and STD-rel gives a zero tolerance for a zero reference. No group setting divides zero by zero. Addendum 3 item 3 explicitly departs from the registration's group-list wording to keep this rule with the relative step; it changes no calibration leave-one-out checkpoint, since none holds a 0→0 step.
+```
+
+
+## 66. Three groups
+
+Authority: R33-1 addendum3 item3.
+
+Old words:
+
+```text
+and S2/S3/S4/S6/S8 with the zero guard.
+```
+
+New words:
+
+```text
+and S2/S3/S4/S6/S8. The arm's zero rule travels with its relative step, rather than with the reference group.
+```
+
+
+## 67. Inventory scope and four lists
+
+Authority: R33-1 addendum3 items4–6.
+
+Old words:
+
+```text
+Each mutant belongs to exactly one list: caught by a real binary reading (with the catching reading); equivalent (with a reason); or not reachable through this commit's language (with a reason and the missing capability). Leave none unexplained.
+```
+
+New words:
+
+```text
+Include Slot.from_trajectory in this census and a sealed import fixture that catches the since-restore fault; classify the critic's best-ignored import fault too. The port is claimed at the default configuration, with live bindings and imported trajectories at windows 4, 6, 10 and 64. Each mutant belongs to exactly one list: caught (with the binary reading or an explicit caught-by-error witness); equivalent (with a reason); outside the experiment's configuration (with the nondefault configuration or live-window-change premise, reachable through tape O records); or not reachable by any program or legal tape at this commit (with a reason). State the caught-by-error count. Quiet remains unqueried and unclaimed. Leave none unexplained.
+```
+
+
+## 68. Confirmation Z follows the ruling
+
+Authority: R33-1 item12; addendum3 item1(c) (supersedes the stricter continuation reading).
+
+Old words:
+
+```text
+R33-1 item 12 defines confirmation Z on roster rows whose derived label is true at ×1e6. Separately, continuation 1's added stop requires preflight certification of all six named rows with true ×1e6 labels; that continuation still binds. Thus, after that preflight passes, all six are included in confirmation Z. A missing/refused row or a non-true label triggers that preflight stop, rather than silently shrinking the denominator. The six-row preflight requirement is from the user's continuation, not a new clause invented in R33-1 or addendum 2.
+```
+
+New words:
+
+```text
+R33-1 item 12 and addendum 3 item 1(c) define confirmation Z on the item-9 roster rows whose derived label is true at ×1e6. Retain and print every roster label; use only the true-label rows in that confirmation denominator. A missing/refused roster row remains a stop; a certified false label is reported and does not enter confirmation Z. The roster itself remains the six rows derived from the three calibration scales.
+```
+
+
+## 69. Fourth manifest chronology
+
+Authority: R33-1 addendum3 items1,2,5,7.
+
+Old words:
+
+```text
+Run the full identity again twice, including the A/A, before the first measurement.
+```
+
+New words:
+
+```text
+Addendum 3 requires the fourth manifest, preserving all three earlier manifests under descriptive historical names. This continuation's first commit holds the new import fixture and fourth input manifest before the binary first reads that fixture; the accepted manifest subsequently records the actual F0 evidence. All programs for the registered procedure, the binary-subject recipes and the three exact old-scorer commands are sealed now. Run the full identity again twice, including the A/A, before the first measurement.
+```
+
+
+## 70. Selftest leaves the tree clean
+
+Authority: Continuation3 outcome5; R33-1 addendum3 item1.
+
+Old words:
+
+```text
+The row uses the portable `python3 -I` standard-library environment of the other oracle rows.
+```
+
+New words:
+
+```text
+The row uses the portable `python3 -I` standard-library environment of the other oracle rows, disables bytecode-cache writes before local imports, and leaves no file behind in the tree.
+```
+
+
+## 71. Confirmation Z criterion
+
+Authority: R33-1 item12; addendum3 item1(c).
+
+Old words:
+
+```text
+Z is all six required rows of (d), present and labelled true at ×1e6; K remains the typed exact row.
+```
+
+New words:
+
+```text
+Z uses the item-9 roster rows whose certified label is true at ×1e6 (R33-1 item12; addendum3 item1(c)); K remains the typed exact row.
+```
+
+
+## 72. STD port eligibility before bound
+
+Authority: R33-1 addendum3 item1(c); R33-1 items17,18.
+
+Old words:
+
+```text
+Standard-arm confirmation uses these same conditions with STD-rel in C*'s place.
+```
+
+New words:
+
+```text
+STD-rel is judged first on its port U_above, Z and K. Only if all three meet, and C* fails or lacks the item-17 advantage, is its conditional second build made and its bound taken. It cannot meet Z by item9. The program nevertheless carries the total decision rule.
+```
+
+
+## 73. Confirmation Z denominator in decision step
+
+Authority: R33-1 item12; addendum3 item1(c).
+
+Old words:
+
+```text
+Confirmation Z is at ×1e6 for all six required roster rows, whose presence and true labels are established before binary use.
+```
+
+New words:
+
+```text
+Confirmation Z is at ×1e6 over roster rows whose label is true there, retaining the complete roster and labels in the output.
+```
+
+
+## 74. Execution provenance and single-subject tables
+
+Authority: R33-1 addendum3 item1(a,b,g).
+
+Old words:
+
+```text
+Every arm runs once after the A/A, with the order shuffled from logged seed **1580**;
+```
+
+New words:
+
+```text
+The single-subject entry point writes the complete items8–10 tables without choosing. The positive control is a separate step before the sweep. Every collector for an arm other than F0 or PRE1045 requires the posted first measurement as a file and hashes it into every reading; the sweep refuses a missing or different hash. Every arm runs once after the A/A; the collecting tool logs the actual execution order beside the order drawn from seed **1580**;
+```
+
+
+## 75. New instrument includes future steps now
+
+Authority: R33-1 addendum3 item1.
+
+Old words:
+
+```text
+Add the port and policies, fixtures, scaled calibration/H-cal data, metrics, identity harness, posted-choice mechanism, staged ×1 judge sets/manifests, and selftest,
+```
+
+New words:
+
+```text
+Add the port and policies, fixtures, scaled calibration/H-cal data, metrics, identity harness, posted-choice and posted-first-measurement mechanisms, staged ×1 judge sets/manifests, selftest, and code for every step in addendum3 item1(a)–(g), demonstrated on handwritten positive and refusal inputs,
+```
+
+
+## 76. Binary hand demonstrations before measurement
+
+Authority: R33-1 addendum3 item2.
+
+Old words:
+
+```text
+Policy unit checks use handwritten windows only.
+```
+
+New words:
+
+```text
+Policy unit checks use handwritten windows only. INC47 and ANCHOR are built one at a time by their frozen recipes and read only on handwritten windows in this turn. No canonical, H-cal, scaled or existing fixture row goes through either, and the old scorer is not run on them before the first measurement.
+```
+
+
+## 77. STD conditional build and build identity
+
+Authority: R33-1 addendum3 item1(c,e); items18,20.
+
+Old words:
+
+```text
+If standard-first selects STD-rel, one conditional second real build is allowed with the same identity requirement, never a grid of real builds.
+```
+
+New words:
+
+```text
+The build identity entry point takes the named build, its declared commit and claimed arm, and compares every confirmation checkpoint in every field compared for F0; replication uses the same path. If STD-rel first meets its port U_above, Z and K and C* fails or lacks the item17 advantage, one conditional second real build is allowed and its bound is taken only after the same identity check, never a grid of real builds.
+```
+
+
+## 78. LOO groups and effect residual
+
+Authority: R33-1 addendum3 item1(f),item3.
+
+Old words:
+
+```text
+For calibration f*, apply its rule alone to S1, to N1, and to its remaining changed sites S2/S3/S4/S6/S8 with the zero guard. Exact S5/S7 stay untouched. Give U_above and BA for each and the residual (total minus the three).
+```
+
+New words:
+
+```text
+For calibration f*, apply its rule alone to S1, to N1, and to its remaining changed sites S2/S3/S4/S6/S8. Each switched relative step carries its arm's zero rule. Exact S5/S7 stay untouched. Give U_above and BA for each. For U_above and each predicate's BA, define a group effect as the group value minus F0, the total effect as f* minus F0, and the residual as the total effect minus the three group effects.
+```
+
+
+## 79. Named binary subjects
+
+Authority: R33-1 addendum3 item2.
+
+Old words:
+
+```text
+## c. The exact path and the withdrawn float twin
+```
+
+New words:
+
+```text
+**Binary subjects and both methods (addendum3 item2).** Build INC47 at v0.47.0 (`3d8a14b4`) with `build_arm.sh` and ANCHOR at v0.46.0 (`4a3a5c19`) with `build_anchor.sh`. Read each as the frozen judge's `run_arms` reads a runtime arm: call frozen `score.measure` one row at a time and use the interpreter's straight reading. A capability probe that skips a row, a row measurement that raises, or a probe that raises (then every row) are the only cannot-run cases; retain the printed reason. A tier split, vacuous run or unwitnessed JIT removes no row: print it beside the binary table. A base unavailable at any calibration scale leaves that binary's comparisons at all three scales. Unavailable Z/K readings are printed not read; print rows and comparison denominators. Their standalone tables use names outside the eleven policies and never reach the choice. The old method is frozen `score.py` as a program on the canonical corpus for F0, INC47 and ANCHOR; the fourth manifest gives each exact command, and its complete output or refusal is kept. Neither historical subject decides the choice. Standing repository oracle CI is outside this experiment and continues unchanged.
+
+## c. The exact path and the withdrawn float twin
+```
+
+
+## 80. Procedure code sealed now
+
+Authority: R33-1 addendum3 item1(a)–(g).
+
+Old words:
+
+```text
+## g. Ordered work
+```
+
+New words:
+
+```text
+**Programs before their data (addendum3 item1).** All of the following are instrument code under the fourth manifest, demonstrated on handwritten inputs and an input that refuses or does not meet the rule: (a) one subject's complete calibration tables, without choice; (b) PRE1045's separate positive-control judgment and posted-first-measurement provenance; (c) each confirmation criterion, using the printed predicate-specific bound and true-label Z subset; (d) standard-first over the two confirmation results; (e) named build/commit/arm confirmation identity; (f) f*'s three group tables and effect residuals; (g) drawn and actual order recorded by the collector. Only the provisional build and permitted conditional second build are new code after the first measurement; no procedure code is deferred to the data-bearing turn.
+
+## g. Ordered work
+```
+
+
+## 81. Additional stops
+
+Authority: Continuation3 Stops.
+
+Old words:
+
+```text
+Give the conflicting items, file/smallest diff, or exact differing readings/window, as appropriate.
+```
+
+New words:
+
+```text
+If a registered step cannot be coded without a choice the ruling and addenda do not make, identify the step, choice and readings of the text, implement up to that choice and continue independent work; the orchestrator rules before measurement. If INC47 or ANCHOR cannot be read by the fixed method into six verdicts even on a handwritten window, show the window and output, leave that binary unchanged and continue the rest. A machine build failure is instead NOT VERIFIED HERE. Give the conflicting items, file/smallest diff, or exact differing readings/window, as appropriate.
+```
+
+
+## 82. Distinguish third site seal and fourth import seal
+
+Authority: R33-1 addendum3 items5,7.
+
+Old words:
+
+```text
+Hash and commit these new fixture definitions/programs in the third manifest before the recipe binary first reads them.
+```
+
+New words:
+
+```text
+The site fixtures were sealed under the third manifest before their first binary read. Seal the new trajectory-import definitions/programs under the fourth manifest before the recipe binary first reads them.
 ```

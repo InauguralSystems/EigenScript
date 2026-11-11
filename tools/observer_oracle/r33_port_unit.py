@@ -180,10 +180,21 @@ def main():
     check('N1-only policy', n1.steps() == [0.1]
           and n1.noise_floor() == 4.0*sys.float_info.epsilon*0.0001
           and n1.magnitude('S6', 0.0001) == 0.001)
-    unguarded = P.Slot('STD-rel', groups=('S1',)).record(0.0).record(0.0)
-    guarded = P.Slot('STD-rel', groups=('S1', 'reference')).record(0.0).record(0.0)
-    check('zero guard belongs to reference group', math.isnan(unguarded.steps()[0])
-          and guarded.steps() == [0.0])
+    for policy in P.POLICIES:
+        for selected in ((), ('S1',), ('N1',), ('reference',), P.GROUPS):
+            zero_window = P.Slot(policy, groups=selected)
+            for _ in range(11):
+                zero_window.record(0.0)
+            check(f'finite zero step {policy}/{selected}',
+                  zero_window.steps() == [0.0]*10 and zero_window.reading()['equilibrium']
+                  and zero_window.reading()['how'] == 1.0)
+    s1_zero = P.Slot('STD-rel', groups=('S1',))
+    for value in [0.0, -0.0, 1.0, 0.0]:
+        s1_zero.record(value)
+    check('S1-only arm carries zero rule', s1_zero.steps() == [-0.0, 1.0, -1.0])
+    reference_zero = P.Slot('STD-rel', groups=('reference',)).record(0.0).record(0.0)
+    check('reference group has no zero rule', reference_zero.steps() == [0.0]
+          and reference_zero.magnitude('S6', 0.0) == 0.0)
     shrinking = P.Slot(window=10)
     for value in range(11):
         shrinking.record(float(value))

@@ -75,13 +75,14 @@ def fraction(result):
     return Fraction(result["numerator"], result["denominator"])
 
 
-def unit(readings, comparisons):
+def unit(readings, comparisons, allow_empty=False):
     """One flip per unequal vector; each comparison is (left_key,right_key,above).
 
     A mask applies to the entire declared comparison, not to individual
     predicate bits. Keep each vector for every unequal comparison.
     """
-    nonempty(comparisons, "unit comparisons")
+    if not allow_empty:
+        nonempty(comparisons, "unit comparisons")
     seen, details = set(), []
     per_row, per_scale = {}, {}
     total = above_total = flips = above_flips = 0
@@ -112,14 +113,17 @@ def unit(readings, comparisons):
             per_predicate[p] += x != y
         details.append({"left": list(left), "right": list(right), "above": above,
                         "flip": changed, **({"left_vector": a, "right_vector": b} if changed else {})})
-    nonempty(above_total, "above-floor unit comparisons")
+    if not allow_empty:
+        nonempty(above_total, "above-floor unit comparisons")
     for groups in (per_row, per_scale):
         for cell in groups.values():
             cell["U_all"] = ratio(cell["flips"], cell["comparisons"])
             cell["U_above"] = (ratio(cell["above_flips"], cell["above_comparisons"])
                                  if cell["above_comparisons"] else None)
             cell["above_status"] = "COMPLETE" if cell["above_comparisons"] else "INCOMPLETE: no above-floor comparisons"
-    return {"U_all": ratio(flips, total), "U_above": ratio(above_flips, above_total),
+    return {"status": "COMPLETE" if total and above_total else "INCOMPLETE: empty unit comparison denominator",
+            "U_all": ratio(flips, total) if total else None,
+            "U_above": ratio(above_flips, above_total) if above_total else None,
             "per_predicate_flips": per_predicate, "per_row": per_row,
             "per_scale": per_scale, "comparisons": details}
 
@@ -219,6 +223,20 @@ def arm_order():
     arms = list(POLICIES)
     random.Random(1580).shuffle(arms)
     return arms
+
+
+def first_measurement_file(path):
+    """Pin the bytes supplied as the posted first measurement; posting is human.
+
+    No table or verdict is inferred here: this is the item14-style order
+    witness required by addendum3 1(b), not a replacement control test.
+    """
+    if path is None:
+        raise Incomplete("REFUSED: this arm requires posted first measurement file")
+    raw = Path(path).read_bytes()
+    if not raw:
+        raise Incomplete("REFUSED: posted first measurement file is empty")
+    return hashlib.sha256(raw).hexdigest()
 
 
 def choice_file(path):

@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import shutil
 import sys
+sys.dont_write_bytecode = True  # -I ignores PYTHONDONTWRITEBYTECODE; leave no tree writes.
 import tempfile
 
 HERE = Path(__file__).resolve().parent
@@ -233,6 +234,16 @@ def main(out=None, cases=None, binary=None):
                              lambda: retained_refusal_plant(copies, attempts), 'confirmation exclusion roster', out)
         plants += expect_red('confirmation-without-choice', lambda: missing_choice(tmp),
                              'REFUSED without choice', out)
+    # Procedure tests are handwritten inputs only; all population-derived
+    # checks above remain anchored to staged files and saved real readings.
+    import r33_procedure_unit
+    import r33_binary_unit
+    import r33_port_unit
+    r33_procedure_unit.run_hand_tests()
+    binary_hands = r33_binary_unit.demonstrations()
+    print(f'BINARY HAND: {len(binary_hands["events"])} demonstrations; no binary/population run')
+    r33_port_unit.main()
+    print(f'PORT UNIT: {r33_port_unit.CHECKS} checks passed')
     print(f'R33 SELFTEST: {plants} plants caught, 0 survived; real controls green')
     return plants
 

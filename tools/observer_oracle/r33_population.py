@@ -279,8 +279,8 @@ def inventory(dest):
     roster = [r for r in zero if all(r['labels'][name] for name in ('x1', 'x1e-3', 'x1e3'))]
     if {r['id'] for r in roster} != Z_EXPECTED:
         raise HarnessError(f'STOP R33-1 item9: derived Z roster {[r["id"] for r in roster]}, ruling {sorted(Z_EXPECTED)}')
-    if any(r['labels']['x1e6'] is not True for r in roster):
-        raise HarnessError('STOP R33-1 item9: a fixed Z row is absent or not labelled converged at x1e6')
+    if any(type(r['labels']['x1e6']) is not bool for r in roster):
+        raise HarnessError('STOP R33-1 item12: a fixed Z row lacks a certified x1e6 label')
     _, labels = load_set(dest / 'judge' / 'hcal')
     support = {p: {'positive': sum(v[p][1] for v in labels.values() if v[p][0] != 'REPORTED'),
                    'negative': sum(not v[p][1] for v in labels.values() if v[p][0] != 'REPORTED')} for p in PREDS}
@@ -500,8 +500,8 @@ def finish_confirmation(dest, logs, counts_path, attempts, components, excluded,
         if all(cal_labels[s][key]['converged'][1] for s in cal_labels):
             label = last_labels.get(key, {}).get('converged', [None, None])[1]
             roster.append({'id': row['id'], 'checkpoint': max(row['checkpoints']), 'label_x1e6': label})
-    if {r['id'] for r in roster} != Z_EXPECTED or any(r['label_x1e6'] is not True for r in roster):
-        raise HarnessError(f'STOP: fixed Z roster absent or not six true certified x1e6 labels: {roster}')
+    if {r['id'] for r in roster} != Z_EXPECTED or any(type(r['label_x1e6']) is not bool for r in roster):
+        raise HarnessError(f'STOP: fixed Z roster absent or missing certified x1e6 labels: {roster}')
     _hc, hl = load_set(dest / 'judge' / 'hcal')
     support = {p: {'positive': sum(v[p][1] for v in hl.values() if v[p][0] != 'REPORTED'),
                    'negative': sum(not v[p][1] for v in hl.values() if v[p][0] != 'REPORTED')} for p in PREDS}

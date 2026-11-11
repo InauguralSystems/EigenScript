@@ -22,7 +22,7 @@ POLICIES = ("F0", "STD-rel") + tuple(
 ) + ("PRE1045",)
 INT_MIN, INT_MAX = -(2**63), 2**63 - 1
 GROUPS = ("S1", "N1", "reference")
-REFERENCE_SITES = frozenset(("S2", "S3", "S4", "S6", "S8", "zero"))
+REFERENCE_SITES = frozenset(("S2", "S3", "S4", "S6", "S8"))
 
 
 def fmax(a, b):
@@ -195,8 +195,7 @@ class Slot:
         return self.policy_for(site).magnitude(reference, self.peak() if peak is None else peak, self.scale)
 
     def _step(self, raw, previous, current, peak):
-        return self.policy_for("S1").step(raw, previous, current, peak, self.scale,
-                                           zero_guard="reference" in self.groups)
+        return self.policy_for("S1").step(raw, previous, current, peak, self.scale)
 
     def copy(self):
         return copy.deepcopy(self)

@@ -9,9 +9,11 @@ import argparse
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import struct
 import sys
+import tempfile
 
 import derive
 from gen import HarnessError, generate
@@ -113,6 +115,9 @@ def verify_manifest(path):
             raise HarnessError('MANIFEST purpose program differs from declared window: '+row['id'])
     import r33_surfaces as surfaces
     surfaces.verify(ROOT/coverage['surfaces'])
+    if 'imports' in coverage:
+        import r33_imports as imports
+        imports.verify(ROOT/coverage['imports'])
     counts = json.loads((ROOT/data/'confirmation-counts.json').read_text())
     if m['confirmation'] != counts:
         raise HarnessError('MANIFEST confirmation receipt differs from certified populations')
@@ -204,6 +209,134 @@ def model_fixture(row, slot_type=Slot):
 
 def write_json(path, value):
     Path(path).write_text(json.dumps(encode(value), indent=2, sort_keys=True)+'\n')
+
+
+def build_claim(binary, name, commit, arm, manifest, choice_path=None):
+    """Validate a declared future build without replacing F0's fixed subject.
+
+    The default run() below remains fixed to F0. This separate path serves
+    item 18 and its independent replication. A non-F0 build needs the posted
+    calibration choice before any confirmation population is opened.
+    """
+    import r33_metrics as metrics
+    from r33_port import POLICIES
+    if not isinstance(name, str) or not name or arm not in POLICIES:
+        raise HarnessError('BUILD CLAIM: named build and registered claimed arm required')
+    if not isinstance(commit, str) or len(commit) != 40 or any(c not in '0123456789abcdef' for c in commit):
+        raise HarnessError('BUILD CLAIM: declared commit must be a full lowercase SHA')
+    choice_digest = None
+    if arm != 'F0':
+        choice, choice_digest = metrics.choice_file(choice_path)
+        if arm not in (choice['arm'], 'STD-rel'):
+            raise HarnessError('BUILD CLAIM: claimed arm differs from provisional choice/STD-rel')
+    elif commit != manifest['subject']['commit']:
+        raise HarnessError('BUILD CLAIM: F0 is the fixed subject commit')
+    binary = Path(binary).resolve()
+    stamp = json.loads((binary.parents[2]/'arm.json').read_text())
+    if stamp.get('source_sha') != commit or stamp.get('recipe_id') != sha(ROOT/'tools/observer_oracle/build_arm.sh'):
+        raise HarnessError('BUILD CLAIM: declared commit/recipe differs from build stamp')
+    if stamp.get('binary_sha256') != sha(binary):
+        raise HarnessError('BUILD CLAIM: binary differs from build stamp')
+    return dict(name=name, commit=commit, arm=arm, choice_sha256=choice_digest, stamp=stamp)
+
+
+def baseline_claim(manifest, binary=None):
+    """The local F0 recipe build used by the later paired judge, without running it."""
+    subject = manifest['subject']
+    if binary is None:
+        cache = Path(os.environ.get('XDG_CACHE_HOME', str(Path.home()/'.cache')))
+        binary = cache/'eigs-oracle-arms'/subject['recipe_sha256']/subject['commit']/'build/release/eigenscript'
+    binary = Path(binary).resolve()
+    stamp = json.loads((binary.parents[2]/'arm.json').read_text())
+    if (stamp.get('source_sha') != subject['commit']
+            or stamp.get('recipe_id') != subject['recipe_sha256']
+            or stamp.get('binary_sha256') != sha(binary)):
+        raise HarnessError('BUILD CLAIM: local F0 baseline differs from its source/recipe/stamp')
+    return {key:stamp[key] for key in ('source_sha','recipe_id','binary_sha256')}
+
+
+def compare_build_records(want, actual, *, name, commit, arm, checkpoints,
+                          manifest_sha256, choice_sha256=None):
+    """Common strict comparison and proof envelope, also shown on hand inputs."""
+    if type(checkpoints) is not int or checkpoints <= 0:
+        raise HarnessError('BUILD IDENTITY: no declared confirmation checkpoints')
+    compared = compare_records(want, actual, name+' build against '+arm)
+    if compared != checkpoints * 13:
+        raise HarnessError('BUILD IDENTITY: every confirmation checkpoint needs all 13 queried fields')
+    return dict(format='r33-build-identity/1', name=name, commit=commit, arm=arm,
+                status='MATCH', mismatches=0, checkpoints=checkpoints,
+                fields_compared=compared, manifest_sha256=manifest_sha256,
+                choice_sha256=choice_sha256)
+
+
+def confirmation_build(manifest_path, binary, out, *, name, commit, arm, choice_path=None, f0_binary=None):
+    """Item18: a named recipe build versus its claimed policy, all guard/U/Z/K rows.
+
+    The confirmation's released72+H-cal BA guards are included as well as
+    both scaled comparison sets. Exact K is present in canonical. Every
+    queried field used by F0 identity is compared at each checkpoint;
+    quiet remains unqueryable. No experiment metric is computed here.
+    """
+    manifest = verify_manifest(manifest_path)
+    claim = build_claim(binary, name, commit, arm, manifest, choice_path)
+    baseline = baseline_claim(manifest, f0_binary)
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    write_json(out/'claim.json', dict(manifest_sha256=sha(manifest_path), **claim))
+    wanted, actual, summaries = {}, {}, []
+    fields = (*PREDS, 'report', 'where', 'where_kind', 'why', 'why_kind', 'how', 'count')
+    selected = [entry for entry in manifest['sets']
+                if entry['name'].startswith('confirm-') or entry['name'] in ('canonical','released-hcal')]
+    if not selected:
+        raise HarnessError('BUILD IDENTITY: manifest declares no confirmation populations')
+    with tempfile.TemporaryDirectory(prefix='r33_build_identity_') as temporary:
+        for entry in selected:
+            corpus = derive.load_corpus(str(ROOT/entry['corpus']))
+            declared_count = 0
+            for row in corpus['rows']:
+                values = model_values(row)
+                fixture = dict(id='build-'+row['id'], values=[fixtures.typed(value) for value in values],
+                               checkpoints=list(range(len(values))))
+                program = Path(temporary)/(fixture['id']+'.eigs')
+                program.write_text(fixtures.emit(fixture))
+                rc, lines, errors, stderr, _ = score.run(str(binary), str(program), {'EIGS_JIT_OFF':'1'})
+                prefix = entry['name']+'--'+row['id']
+                (out/(prefix+'.stdout.txt')).write_text('\n'.join(lines)+'\n')
+                (out/(prefix+'.stderr.txt')).write_text(stderr)
+                if rc or errors:
+                    raise HarnessError(f'BUILD IDENTITY {prefix}: rc={rc} errors={errors} stderr={stderr}')
+                read = fixture_output(fixture, lines)
+                slot = Slot(policy=arm)
+                for at, value in enumerate(values):
+                    slot.record(value)
+                    if at not in row['checkpoints']:
+                        continue
+                    port = slot.reading()
+                    for field in fields:
+                        key = (entry['name'], row['id'], at, field)
+                        wanted[key], actual[key] = port[field], read[at, field]
+                    declared_count += 1
+                try:
+                    compare_records({key:value for key,value in wanted.items() if key[:2] == (entry['name'],row['id'])},
+                                    {key:value for key,value in actual.items() if key[:2] == (entry['name'],row['id'])}, prefix)
+                except HarnessError as error:
+                    write_json(out/'mismatch.json', dict(error=str(error), set=entry['name'],row=row['id'],
+                               checkpoints=row['checkpoints'], values=values))
+                    raise
+            summaries.append(dict(set=entry['name'], rows=len(corpus['rows']), checkpoints=declared_count,
+                                  fields_compared=declared_count*13, mismatches=0))
+    result = compare_build_records(wanted, actual, name=name, commit=commit, arm=arm,
+        checkpoints=sum(summary['checkpoints'] for summary in summaries),
+        manifest_sha256=sha(manifest_path), choice_sha256=claim['choice_sha256'])
+    result['sets'] = summaries
+    result['binary_sha256'] = claim['stamp']['binary_sha256']
+    result['recipe_id'] = claim['stamp']['recipe_id']
+    result['f0'] = baseline
+    write_json(out/'build-identity.json',result)
+    write_json(out/'port-readings.json',dict(readings=[dict(key=list(key),value=value) for key,value in sorted(wanted.items())]))
+    write_json(out/'binary-readings.json',dict(readings=[dict(key=list(key),value=value) for key,value in sorted(actual.items())]))
+    print('BUILD IDENTITY zero mismatches; every confirmation checkpoint and queried field compared')
+    return result
 
 
 def run(manifest_path, binary, out):
@@ -325,41 +458,49 @@ def run(manifest_path, binary, out):
             repeated.extend(dict(set=group, row=row['id'], at=at, predicates={p:want[(at,p)] for p in PREDS})
                             for at in row['checkpoints'])
     import r33_surfaces as surfaces
-    surface_count = 0
-    surface_records = []
-    for row in surfaces.cases():
-        program = ROOT/m['site_coverage']['surfaces']/'programs'/(row['id']+'.eigs')
-        lint = score.run_group([binary,'--lint','--json',str(program)],120,
-                               env=score.scrubbed({'EIGS_JIT_OFF':'1'}))
-        (out/(row['id']+'.lint.json')).write_text(lint.stdout)
-        if lint.returncode or any(x.get('severity')=='error' for x in json.loads(lint.stdout)):
-            raise HarnessError(f'SURFACE LINT {row["id"]}: {lint.stdout} {lint.stderr}')
-        want = surfaces.model(row)
-        actuals = []
-        for suffix in ('stdout','aa.stdout'):
-            rc,lines,errors,stderr,_ = score.run(binary,str(program),{'EIGS_JIT_OFF':'1'})
-            (out/(row['id']+'.'+suffix)).write_text('\n'.join(lines)+'\n')
-            (out/(row['id']+'.'+suffix+'.stderr')).write_text(stderr)
-            if rc or errors:
-                raise HarnessError(f'SURFACE {row["id"]}: rc={rc} {errors} {stderr}')
-            actuals.append(surfaces.parse(row,lines))
-        try:
-            surface_count += compare_records(want,actuals[0],row['id'])
-            compare_records(actuals[0],actuals[1],row['id']+' binary A/A')
-        except HarnessError as error:
-            write_json(out/(row['id']+'.mismatch.json'),dict(error=str(error),input=row,
-                port=[dict(key=list(k),value=encode(v)) for k,v in sorted(want.items())],
-                binary=[dict(key=list(k),value=encode(v)) for k,v in sorted(actuals[0].items())]))
-            raise
-        for actual, target in zip(actuals,(binary_a,binary_b)):
-            target.extend(dict(set='surface',row=row['id'],key=list(k),value=encode(v))
-                          for k,v in sorted(actual.items()))
-        surface_records.extend(dict(key=[row['id'],*k],value=encode(v)) for k,v in sorted(actuals[0].items()))
-        # Persist scalar identity answers only; no population metric reduction.
-        all_records.extend(dict(set='surface',row=row['id'],key=list(k),value=encode(v)) for k,v in sorted(want.items()))
-        repeated.extend(dict(set='surface',row=row['id'],key=list(k),value=encode(v)) for k,v in sorted(surfaces.model(row).items()))
+    surface_sets = [(surfaces, 'surfaces', 'surface', 'language-surfaces')]
+    if 'imports' in m['site_coverage']:
+        import r33_imports as imports
+        surface_sets.append((imports, 'imports', 'import', 'trajectory-imports'))
+    surface_summaries = []
+    for module, manifest_key, record_set, summary_name in surface_sets:
+        surface_count, surface_records = 0, []
+        for row in module.cases():
+            program = ROOT/m['site_coverage'][manifest_key]/'programs'/(row['id']+'.eigs')
+            lint = score.run_group([binary,'--lint','--json',str(program)],120,
+                                   env=score.scrubbed({'EIGS_JIT_OFF':'1'}))
+            (out/(row['id']+'.lint.json')).write_text(lint.stdout)
+            if lint.returncode or any(x.get('severity')=='error' for x in json.loads(lint.stdout)):
+                raise HarnessError(f'SURFACE LINT {row["id"]}: {lint.stdout} {lint.stderr}')
+            want = module.model(row)
+            actuals = []
+            for suffix in ('stdout','aa.stdout'):
+                rc,lines,errors,stderr,_ = score.run(binary,str(program),{'EIGS_JIT_OFF':'1'})
+                (out/(row['id']+'.'+suffix)).write_text('\n'.join(lines)+'\n')
+                (out/(row['id']+'.'+suffix+'.stderr')).write_text(stderr)
+                if rc or errors:
+                    raise HarnessError(f'SURFACE {row["id"]}: rc={rc} {errors} {stderr}')
+                actuals.append(module.parse(row,lines))
+            try:
+                surface_count += compare_records(want,actuals[0],row['id'])
+                compare_records(actuals[0],actuals[1],row['id']+' binary A/A')
+            except HarnessError as error:
+                write_json(out/(row['id']+'.mismatch.json'),dict(error=str(error),input=row,
+                    port=[dict(key=list(k),value=encode(v)) for k,v in sorted(want.items())],
+                    binary=[dict(key=list(k),value=encode(v)) for k,v in sorted(actuals[0].items())]))
+                raise
+            for actual, target in zip(actuals,(binary_a,binary_b)):
+                target.extend(dict(set=record_set,row=row['id'],key=list(k),value=encode(v))
+                              for k,v in sorted(actual.items()))
+            surface_records.extend(dict(key=[row['id'],*k],value=encode(v)) for k,v in sorted(actuals[0].items()))
+            # Persist scalar identity answers only; no population metric reduction.
+            all_records.extend(dict(set=record_set,row=row['id'],key=list(k),value=encode(v)) for k,v in sorted(want.items()))
+            repeated.extend(dict(set=record_set,row=row['id'],key=list(k),value=encode(v)) for k,v in sorted(module.model(row).items()))
+        write_json(out/(record_set+'-binary-readings.json'),
+                   dict(format='r33-'+record_set+'-binary/1',readings=surface_records))
+        surface_summaries.append(dict(set=summary_name,windows=len(module.cases()),
+                                      total_fields_compared=surface_count,mismatches=0))
     write_json(out/'site-binary-readings.json',dict(format='r33-site-binary/1',readings=site_records))
-    write_json(out/'surface-binary-readings.json',dict(format='r33-surface-binary/1',readings=surface_records))
     for name, records in (('f0-aa-1.jsonl',all_records), ('f0-aa-2.jsonl',repeated)):
         (out/name).write_text(''.join(json.dumps(r, sort_keys=True)+'\n' for r in records))
     if sha(out/'f0-aa-1.jsonl') != sha(out/'f0-aa-2.jsonl'):
@@ -370,8 +511,7 @@ def run(manifest_path, binary, out):
         raise HarnessError('A/A MISMATCH: independent real F0 binary repetitions differ')
     counts.extend(dict(set=k, checkpoints=v, predicate_readings=v*6, scalar_fields=7,
                        total_fields_compared=v*13, mismatches=0) for k,v in fixture_counts.items())
-    counts.append(dict(set='language-surfaces',windows=len(surfaces.cases()),
-                       total_fields_compared=surface_count,mismatches=0))
+    counts.extend(surface_summaries)
     write_json(out/'counts.json', dict(sets=counts, aa_sha256=sha(out/'f0-aa-1.jsonl'),
                                     binary_aa_sha256=sha(out/'binary-aa-1.jsonl'),
                                     manifest_sha256=sha(manifest_path), mismatches=0))
@@ -385,9 +525,20 @@ if __name__ == '__main__':
     p.add_argument('--manifest', required=True)
     p.add_argument('--binary', required=True)
     p.add_argument('--out', required=True)
+    p.add_argument('--build-name', help='item18/20 declared build identity instead of fixed F0 fixture identity')
+    p.add_argument('--commit', help='full declared build commit for --build-name')
+    p.add_argument('--claimed-arm', help='registered policy claimed by --build-name')
+    p.add_argument('--choice', help='posted calibration choice for a non-F0 build')
+    p.add_argument('--f0', help='local recipe-built F0 baseline for build/judge linkage; defaults to recipe cache')
     args = p.parse_args()
     try:
-        run(args.manifest, args.binary, args.out)
+        if args.build_name:
+            confirmation_build(args.manifest,args.binary,args.out,name=args.build_name,
+                               commit=args.commit,arm=args.claimed_arm,choice_path=args.choice,f0_binary=args.f0)
+        else:
+            if args.commit or args.claimed_arm or args.choice or args.f0:
+                raise HarnessError('BUILD CLAIM: build metadata requires --build-name')
+            run(args.manifest, args.binary, args.out)
     except (HarnessError, OSError, ValueError) as error:
         print('IDENTITY REFUSED: '+str(error), file=sys.stderr)
         raise SystemExit(2)

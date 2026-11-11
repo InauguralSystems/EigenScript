@@ -1,0 +1,365 @@
+r33_traj is {"kind": "trajectory", "window": 4, "values": [], "raw": "", "rel": [], "exact": [], "dh": [], "numeric": false, "observed": true, "best": null, "since": null, "entropy": null, "dH": null, "last_entropy": null, "last_value": null}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 0, "field": "refusal.empty-string-raw", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "window": 4, "values": [], "raw": [], "rel": "", "exact": [], "dh": [], "numeric": false, "observed": true, "best": null, "since": null, "entropy": null, "dH": null, "last_entropy": null, "last_value": null}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 1, "field": "refusal.empty-string-rel", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "not-trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 2, "field": "refusal.kind", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 3}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 3, "field": "refusal.window-3", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 65}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 4, "field": "refusal.window-4", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 4.5}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 5, "field": "refusal.window-5", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": true}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 6, "field": "refusal.window-6", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": "10"}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 7, "field": "refusal.window-7", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": (1.0 / 0.0)}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 8, "field": "refusal.window-8", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": (0.0 / 0.0)}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 9, "field": "refusal.window-9", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": 1, "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 10, "field": "refusal.raw-not-list", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": 1, "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 11, "field": "refusal.rel-not-list", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": "0000000000", "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 12, "field": "refusal.raw-numeric-string-channel", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": "0000000000", "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 13, "field": "refusal.rel-numeric-string-channel", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": 1, "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 14, "field": "refusal.exact-not-list", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": 1, "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 15, "field": "refusal.values-not-list", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 16, "field": "refusal.raw-short", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 17, "field": "refusal.rel-short", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 18, "field": "refusal.exact-short", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 19, "field": "refusal.values-short", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "x"], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 20, "field": "refusal.raw-string", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "x"], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 21, "field": "refusal.rel-string", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, "x"], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 22, "field": "refusal.value-string", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, false], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 23, "field": "refusal.value-bool", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, 0], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 24, "field": "refusal.exact-number", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [true, true, true, true, true, true, true, true, true, true], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 25, "field": "refusal.invented-exactness", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [true, false, false, false, false, false, false, false, false, false], "values": [1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 26, "field": "refusal.invented-exact-prefix", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [false, false, false, false, false, false, false, false, false, false], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 27, "field": "refusal.raw-bool", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [false, false, false, false, false, false, false, false, false, false], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 28, "field": "refusal.rel-bool", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [false], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 29, "field": "refusal.dh-bool", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": "x", "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 30, "field": "refusal.best-30", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": "0", "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 31, "field": "refusal.best-31", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": true, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 32, "field": "refusal.best-32", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": (1.0 / 0.0), "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 33, "field": "refusal.best-33", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": (0.0 / 0.0), "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 34, "field": "refusal.best-34", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": -1, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 35, "field": "refusal.since-35", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 256, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 36, "field": "refusal.since-36", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9.5, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 37, "field": "refusal.since-37", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": true, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 38, "field": "refusal.since-38", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": "9", "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 39, "field": "refusal.since-39", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": (1.0 / 0.0), "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 40, "field": "refusal.since-40", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": (0.0 / 0.0), "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 41, "field": "refusal.since-41", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": 1, "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 42, "field": "refusal.dh-not-list", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": ["x"], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 43, "field": "refusal.dh-string", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": 1, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 44, "field": "refusal.numeric-not-bool", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": 1, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 45, "field": "refusal.observed-not-bool", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": "x", "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 46, "field": "refusal.entropy-string", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": "0", "dH": null, "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 47, "field": "refusal.entropy-numeric-string", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": "x", "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 48, "field": "refusal.dH-string", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": "0", "last_entropy": null, "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 49, "field": "refusal.dH-numeric-string", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": "x", "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 50, "field": "refusal.last_entropy-string", "kind": num_type of r33_value, "value": r33_value}))
+r33_traj is {"kind": "trajectory", "rel": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "raw": [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -0.5, -0.1, -0.01, -0.001], "exact": [false, false, false, false, false, false, false, false, false, false], "values": [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.5, 3.4, 3.39, 3.389], "dh": [], "entropy": null, "dH": null, "last_entropy": "0", "last_value": 3.389, "best": 3.389, "since": 9, "observed": true, "numeric": true, "window": 10}
+try:
+    r33_answer is classify of r33_traj
+catch r33_import_error:
+    r33_answer is "REFUSED"
+r33_value is (r33_answer)
+print of ("SURF " + (json_encode of {"surface": "addendum3-trajectory-refusals", "op": 51, "field": "refusal.last_entropy-numeric-string", "kind": num_type of r33_value, "value": r33_value}))
+print of "SURF_DONE addendum3-trajectory-refusals"

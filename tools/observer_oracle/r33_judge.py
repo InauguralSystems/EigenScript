@@ -36,7 +36,7 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def choice_hash(path, candidate, f0):
+def choice_hash(path, candidate, f0, candidate_policy=None, standard_plan=None):
     if path is None:
         if Path(candidate).resolve() != Path(f0).resolve():
             raise HarnessError("CONFIRMATION REFUSED: posted choice file required before a non-F0 arm")
@@ -47,7 +47,16 @@ def choice_hash(path, candidate, f0):
     # One schema is shared with the point-table confirmation driver: arm
     # and sweep-table sha256 are required, and the actual posted bytes are
     # pinned, including any owner-supplied posting metadata.
-    _choice, digest = r33_metrics.choice_file(path)
+    choice, digest = r33_metrics.choice_file(path)
+    policy = candidate_policy or choice["arm"]
+    if policy not in {choice["arm"], "STD-rel"}:
+        raise HarnessError("CONFIRMATION REFUSED: candidate policy differs from posted choice/comparator")
+    if policy == "STD-rel":
+        if standard_plan is None:
+            raise HarnessError("CONFIRMATION REFUSED: STD-rel bound needs standard-first second-build permission")
+        plan = json.loads(Path(standard_plan).read_text())
+        if plan.get("choice_sha256") != digest or plan.get("second_build_allowed") is not True:
+            raise HarnessError("CONFIRMATION REFUSED: STD-rel second-build permission is absent or not choice-bound")
     return digest
 
 
@@ -66,10 +75,10 @@ def commands(destination, f0, candidate=None):
             "union": hcal + ["--corpus", str(destination / "calibration")]}
 
 
-def stage(destination, f0, candidate=None, choice=None):
+def stage(destination, f0, candidate=None, choice=None, candidate_policy=None, standard_plan=None):
     destination = Path(destination).resolve()
     binaries = arms(f0, candidate)
-    choice_sha = choice_hash(choice, binaries["ARM"], binaries["F0"])
+    choice_sha = choice_hash(choice, binaries["ARM"], binaries["F0"], candidate_policy, standard_plan)
     baseline = families.arm_record(binaries["F0"])
     if baseline["source_sha"] != SUBJECT or baseline["recipe_id"] != sha(HERE / "build_arm.sh"):
         raise HarnessError("F0 is not the fixed subject's recipe-built binary")
@@ -166,16 +175,30 @@ def printed_bounds(output, required=PREDS):
     return result
 
 
-def run(destination, f0, out, population="union", candidate=None, choice=None):
+def run(destination, f0, out, population="union", candidate=None, choice=None, candidate_policy=None, standard_plan=None):
     binaries = arms(f0, candidate)
-    choice_sha = choice_hash(choice, binaries["ARM"], binaries["F0"])
+    choice_sha = choice_hash(choice, binaries["ARM"], binaries["F0"], candidate_policy, standard_plan)
     cmd = commands(destination, f0, candidate)[population]
+    # Bind the exact executables and frozen program before it starts. The
+    # identity proof is checked by r33_procedure against these identities;
+    # a bound from a different build or an unbound old F0 proof cannot pass.
+    identities = {name: families.arm_record(binary) for name, binary in binaries.items()}
+    for name, identity in identities.items():
+        if (identity.get("source_sha") is None or identity.get("recipe_id") is None or
+                identity.get("binary_sha256") != identity.get("stamp_binary_sha256")):
+            raise HarnessError(f"CONFIRMATION REFUSED: {name} is not its recipe-stamped executable")
+    manifest_sha = sha(HERE / "r33_data" / "MANIFEST.json")
+    policy = candidate_policy
+    if policy is None:
+        policy = r33_metrics.choice_file(choice)[0]["arm"] if choice is not None else "F0"
     # Actual confirmation is order-gated above. The fixed-subject proof
     # passes the very same F0 recipe binary in both runtime-arm positions.
     env = {k: v for k, v in os.environ.items() if not k.startswith("EIGS_")}
     process = subprocess.run(cmd, capture_output=True, text=True, env=env)
     receipt = {"format": "r33-judge-proof/1", "choice_sha256": choice_sha,
                "command": cmd, "returncode": process.returncode,
+               "arms": identities, "binary_paths": binaries, "candidate_policy": policy,
+               "manifest_sha256": manifest_sha, "judge_sha256": sha(HERE / "judge.py"),
                "population": population, "stdout_sha256": hashlib.sha256(process.stdout.encode()).hexdigest(),
                "stderr_sha256": hashlib.sha256(process.stderr.encode()).hexdigest()}
     if process.returncode:
@@ -194,18 +217,20 @@ def main():
     parser.add_argument("--f0", required=True)
     parser.add_argument("--candidate")
     parser.add_argument("--choice")
+    parser.add_argument("--candidate-policy")
+    parser.add_argument("--standard-plan", help="choice-bound standard-first result allowing STD-rel second build")
     parser.add_argument("--population", choices=("hcal", "union"), default="union")
     parser.add_argument("--out")
     args = parser.parse_args()
     if args.action == "stage":
-        result = stage(args.stage, args.f0, args.candidate, args.choice)
+        result = stage(args.stage, args.f0, args.candidate, args.choice, args.candidate_policy, args.standard_plan)
     elif args.action == "commands":
-        choice_sha = choice_hash(args.choice, args.candidate or args.f0, args.f0)
+        choice_sha = choice_hash(args.choice, args.candidate or args.f0, args.f0, args.candidate_policy, args.standard_plan)
         result = {"choice_sha256": choice_sha, "commands": commands(args.stage, args.f0, args.candidate)}
     else:
         if args.out is None:
             parser.error("run requires --out")
-        result = run(args.stage, args.f0, args.out, args.population, args.candidate, args.choice)
+        result = run(args.stage, args.f0, args.out, args.population, args.candidate, args.choice, args.candidate_policy, args.standard_plan)
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
