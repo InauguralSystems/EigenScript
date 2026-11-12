@@ -1,0 +1,8 @@
+{
+  "arm": "STD-rel",
+  "c_star": null,
+  "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+  "manifest_sha256": "4620e6d21065ec7d2d87388967ddb1d5d12b567aa043d1b300162979a1bbd32a",
+  "rule": "RULING R33-1 step 1 with item 16",
+  "sweep_tables_sha256": "db5aafc7e5253f7ef0379cfcf4d7415d41659a3063a158804083d4888d53e8d3"
+}

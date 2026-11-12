@@ -1,0 +1,10 @@
+# Files of the R33-1 experiment whose bytes hold the absolute path they were written at.
+# They are not in this folder. Each sha256 is in the public record on issue 1580.
+# name as written at /home/jon/src/wt/briefs/out/r3-3/instrument/<name>
+2bbcb5f647efb66bd4d865e472d69c1832ed00b5ab6691ebf6715a4117409be8  first-measurement-2/arm-order.json
+0e55f9f6a77295b92c8ad915a802f5931eafa002c0bb54039f662a15ee01619e  sweep/arm-order.json
+db5aafc7e5253f7ef0379cfcf4d7415d41659a3063a158804083d4888d53e8d3  sweep/sweep.output.json
+9361349b290b58eb342760ef1fdc9ad0417c46d6fa0e02db5a614bc09ed4f495  confirmation/arm-order.json
+2b0209bb8e9037f78e33f387df2dcca6bff82e336a3258488bd6b84f2cd57a20  confirmation/confirm.output.json
+186e1683f1a7c698b8b0117237f010fa3f747c5b1d521cee8137a485e998a87a  confirmation/STD-rel.judgment.json
+094850d98ded3b433368a3b5e3a46bb95e216ea141a8a9cdaccdf5a5c98f139e  confirmation/standard-first.json
