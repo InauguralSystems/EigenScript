@@ -100,7 +100,7 @@
       "old_method": {
         "argv": [
           "/usr/bin/python3",
-          "-I",
+          "-B",
           "tools/observer_oracle/score.py",
           "../briefs/out/r3-3/instrument/cache/eigs-oracle-anchor/f8da66db6655542289b40a381c4bf47a39534c9f3fc5b7c365d170d3c7853ce1/build/release/eigenscript",
           "--corpus",
@@ -123,7 +123,7 @@
       "old_method": {
         "argv": [
           "/usr/bin/python3",
-          "-I",
+          "-B",
           "tools/observer_oracle/score.py",
           "../briefs/out/r3-3/instrument/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/54008422b7bb4950131f4dd4d15ead942a2ecb2e/build/release/eigenscript",
           "--corpus",
@@ -146,7 +146,7 @@
       "old_method": {
         "argv": [
           "/usr/bin/python3",
-          "-I",
+          "-B",
           "tools/observer_oracle/score.py",
           "../briefs/out/r3-3/instrument/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/3d8a14b49e88a59a37e1d3501891afe2d430ffcb/build/release/eigenscript",
           "--corpus",
@@ -1367,8 +1367,8 @@
     "tools/observer_oracle/hcal/labels.json": "323b0e9501e350ed61b9862e8b6f2d0c1fce662baf27cd200d40eaa6e0db86d6",
     "tools/observer_oracle/judge.py": "c456dbc36fb1c65d762ba7e96a4e8c49ceffb5dba5a0713eb1a4ffd6dd33bbaa",
     "tools/observer_oracle/labels.json": "de4d61390cde512f5bfec01d51cceb28c3cf17db8758fbac38b72cd8891cd5cb",
-    "tools/observer_oracle/r33_binary.py": "a455b555b69ed7db4d57bed54d715aafdc95b43f6dde7b7b882f4e7cbf437673",
-    "tools/observer_oracle/r33_binary_unit.py": "88c0fec1c44ddb1db38f904a3e42f7739f721b3e893fd140dea67eadfb09144b",
+    "tools/observer_oracle/r33_binary.py": "bc70eb2d6ab874325f0218b8b97fcba93564e430dd528830b281229233d64ed8",
+    "tools/observer_oracle/r33_binary_unit.py": "c30cb52e7e3a9b15819410ec7a154c508c17a23f439f3f14f2238bafe3f2b6eb",
     "tools/observer_oracle/r33_boundaries.py": "265aa7c6bf3a5751d300e579e36c960a7cf1a50d48a8806aec044d2718907f0e",
     "tools/observer_oracle/r33_collect.py": "a375814bf107909f8f688970ab396a3221d88377d7d573c99a2d4ab04687f3aa",
     "tools/observer_oracle/r33_data/README.md": "08adbbce549f96d454d6ea42161dc48ac4b2ef93f2a96246c24145f0facb8781",
@@ -2717,7 +2717,7 @@
     "tools/observer_oracle/r33_data/site-coverage/surfaces/programs/string-detour-temporal.eigs": "2ea1bdc144584c5434c27ed255675a31ee4bac8c8d02cc629c6d760fcd346077",
     "tools/observer_oracle/r33_data/site-coverage/surfaces/programs/string-first-temporal.eigs": "f95682e63d01645bddcde7ba94687b2820ed2dba013c7b34930f3fd7a688c7b8"
   },
-  "format": "r33-instrument-manifest/4",
+  "format": "r33-instrument-manifest/5",
   "fourth_empty_import_input_seal": {
     "bank_commit": "7d6a7a53e7c2db3d2e238b350963aa33c1e9294b",
     "checkpoint": 11,
@@ -2764,8 +2764,8 @@
     "tools/observer_oracle/families.py": "3acedd906d78b9a15389d25d9404b3d778a46d8ca665d72b503ce16f32f2268e",
     "tools/observer_oracle/gen.py": "6911560a73a1fd8749d0c96008a778ce184e71e2ec40468757b13638656caeb5",
     "tools/observer_oracle/judge.py": "c456dbc36fb1c65d762ba7e96a4e8c49ceffb5dba5a0713eb1a4ffd6dd33bbaa",
-    "tools/observer_oracle/r33_binary.py": "a455b555b69ed7db4d57bed54d715aafdc95b43f6dde7b7b882f4e7cbf437673",
-    "tools/observer_oracle/r33_binary_unit.py": "88c0fec1c44ddb1db38f904a3e42f7739f721b3e893fd140dea67eadfb09144b",
+    "tools/observer_oracle/r33_binary.py": "bc70eb2d6ab874325f0218b8b97fcba93564e430dd528830b281229233d64ed8",
+    "tools/observer_oracle/r33_binary_unit.py": "c30cb52e7e3a9b15819410ec7a154c508c17a23f439f3f14f2238bafe3f2b6eb",
     "tools/observer_oracle/r33_boundaries.py": "265aa7c6bf3a5751d300e579e36c960a7cf1a50d48a8806aec044d2718907f0e",
     "tools/observer_oracle/r33_collect.py": "a375814bf107909f8f688970ab396a3221d88377d7d573c99a2d4ab04687f3aa",
     "tools/observer_oracle/r33_fixtures.py": "da5c084a60f0603232d982701f54e26b07d33456605a2940c53663dc89acf7e6",
@@ -2863,6 +2863,11 @@
       "bank_commit": "d71ba272a1d962d6b7021b4f07da7ba6101a98cf",
       "number": 3,
       "sha256": "0d422625717dd8b3035129c03e28008a4e7b42aa9f83f574decae154746dc237"
+    },
+    {
+      "bank_commit": "39f6e0d9110546ff54eb78ecd46c9cfa0494cc34",
+      "number": 4,
+      "sha256": "6f15ad3ec5cb7245a0d261b2e14a9798dc4a5b01cab2abc99f7784c0b488b75e"
     }
   ],
   "protocol": {

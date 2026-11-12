@@ -42,7 +42,7 @@ def old_method_command(binary, root=ROOT, python=sys.executable):
     report. The frozen scorer's complete output and exit are retained.
     """
     root = Path(root)
-    return [str(python), "-I", str(root / "tools/observer_oracle/score.py"),
+    return [str(python), "-B", str(root / "tools/observer_oracle/score.py"),
             str(binary), "--corpus", str(root / "tools/observer_oracle/corpus.json")]
 
 

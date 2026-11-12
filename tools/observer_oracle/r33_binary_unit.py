@@ -9,6 +9,7 @@ import argparse
 from copy import deepcopy
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 
@@ -60,6 +61,23 @@ class HandScorer:
     def check_witnessed(result):
         import score
         return score.check_witnessed(result)
+
+
+def old_method_startup():
+    """Start the frozen scorer without opening a binary or population."""
+    with tempfile.TemporaryDirectory(prefix='r33_hand_old_command_') as temporary:
+        missing_binary = Path(temporary) / 'HAND-BINARY'
+        assert not missing_binary.exists()
+        command = B.old_method_command(missing_binary)
+        result = subprocess.run(command, cwd=B.ROOT, env=B.score.scrubbed({}),
+                                capture_output=True, text=True, timeout=30)
+        printed = result.stdout + result.stderr
+        refusal = 'OBSERVER_ORACLE_ERROR: binary not found or not executable'
+        assert result.returncode == 2 and any(line.startswith(refusal) for line in printed.splitlines()), (
+            command, result.returncode, printed)
+        return dict(case='old-method-program-command',status='MET',command=command,
+                    program_was_run=True, binary_was_run=False,
+                    returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)
 
 
 def demonstrations():
@@ -148,11 +166,7 @@ def demonstrations():
         binary.write_text('planted changed bytes')
         refusal('named-build-changed-binary',lambda:I.build_claim(binary,'HAND-BUILD',commit,'F0',manifest),
                 'differs from build stamp')
-    command = B.old_method_command('HAND-BINARY',root=Path('/HAND-ROOT'),python='python3')
-    assert command == ['python3','-I','/HAND-ROOT/tools/observer_oracle/score.py','HAND-BINARY',
-                       '--corpus','/HAND-ROOT/tools/observer_oracle/corpus.json']
-    events.append(dict(case='old-method-program-command',status='MET',command=command,
-                       program_was_run=False))
+    events.append(old_method_startup())
     return dict(format='r33-binary-hand-demonstrations/1', events=events,
                 no_binary_was_run=True,no_population_was_read=True)
 
