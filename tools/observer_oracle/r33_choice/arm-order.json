@@ -1,0 +1,375 @@
+{
+  "actual_completed_order": [
+    "F0",
+    "PRE1045",
+    "C_1e-3^hist",
+    "C_1e-4^hist",
+    "STD-rel",
+    "C_1e-3^win",
+    "C_1e-4^win",
+    "C_1e-6^hist",
+    "C_1e-6^win",
+    "C_1e-2^hist",
+    "C_1e-2^win"
+  ],
+  "actual_started_order": [
+    "F0",
+    "PRE1045",
+    "C_1e-3^hist",
+    "C_1e-4^hist",
+    "STD-rel",
+    "C_1e-3^win",
+    "C_1e-4^win",
+    "C_1e-6^hist",
+    "C_1e-6^win",
+    "C_1e-2^hist",
+    "C_1e-2^win"
+  ],
+  "drawn_order": [
+    "C_1e-3^hist",
+    "C_1e-4^hist",
+    "STD-rel",
+    "C_1e-3^win",
+    "C_1e-4^win",
+    "C_1e-6^hist",
+    "PRE1045",
+    "C_1e-6^win",
+    "C_1e-2^hist",
+    "F0",
+    "C_1e-2^win"
+  ],
+  "events": [
+    {
+      "arm": "F0",
+      "choice_sha256": null,
+      "event": "started",
+      "first_measurement_sha256": null,
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": null,
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 0
+    },
+    {
+      "arm": "F0",
+      "choice_sha256": null,
+      "event": "completed",
+      "first_measurement_sha256": null,
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": "c7bec320d54b4eeab0b6b9664bfdf04bf5a05802ca265b8220409e93194c4bed",
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 1
+    },
+    {
+      "arm": "PRE1045",
+      "choice_sha256": null,
+      "event": "started",
+      "first_measurement_sha256": null,
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": null,
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 2
+    },
+    {
+      "arm": "PRE1045",
+      "choice_sha256": null,
+      "event": "completed",
+      "first_measurement_sha256": null,
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": "49a2534c3cdbc797292566ecde844e049dc701f7231ffa5fbcc78c101a5bfb1c",
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 3
+    },
+    {
+      "arm": "C_1e-3^hist",
+      "choice_sha256": null,
+      "event": "started",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": null,
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 4
+    },
+    {
+      "arm": "C_1e-3^hist",
+      "choice_sha256": null,
+      "event": "completed",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": "1bde6b17185b49c9226c2a96b79643f580f4cd8473d51d241ba31cf9a580d2a5",
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 5
+    },
+    {
+      "arm": "C_1e-4^hist",
+      "choice_sha256": null,
+      "event": "started",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": null,
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 6
+    },
+    {
+      "arm": "C_1e-4^hist",
+      "choice_sha256": null,
+      "event": "completed",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": "db170d41542e04449ebce327acbafde214a623549e4b0298d093678aad6fcf12",
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 7
+    },
+    {
+      "arm": "STD-rel",
+      "choice_sha256": null,
+      "event": "started",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": null,
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 8
+    },
+    {
+      "arm": "STD-rel",
+      "choice_sha256": null,
+      "event": "completed",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": "b45404f0ed223648c6d65a5c395a753a04f46b9e3d30d82e2faaa3c61f7badaf",
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 9
+    },
+    {
+      "arm": "C_1e-3^win",
+      "choice_sha256": null,
+      "event": "started",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": null,
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 10
+    },
+    {
+      "arm": "C_1e-3^win",
+      "choice_sha256": null,
+      "event": "completed",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": "4d2c79d9167f3f6bcc5b0a6cc421dac84984d558f4b0ce24802fc5536a730682",
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 11
+    },
+    {
+      "arm": "C_1e-4^win",
+      "choice_sha256": null,
+      "event": "started",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": null,
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 12
+    },
+    {
+      "arm": "C_1e-4^win",
+      "choice_sha256": null,
+      "event": "completed",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": "2323350e719d152123129d662b62dc2bc569176f9828cc5a4f840d0c165f1a31",
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 13
+    },
+    {
+      "arm": "C_1e-6^hist",
+      "choice_sha256": null,
+      "event": "started",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": null,
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 14
+    },
+    {
+      "arm": "C_1e-6^hist",
+      "choice_sha256": null,
+      "event": "completed",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": "057f48c4fbb1b9efa984d2664ee48ba6b693c65e275da0e123d886b9240b1bdf",
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 15
+    },
+    {
+      "arm": "C_1e-6^win",
+      "choice_sha256": null,
+      "event": "started",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": null,
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 16
+    },
+    {
+      "arm": "C_1e-6^win",
+      "choice_sha256": null,
+      "event": "completed",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": "53040c13f16b359993c9391eec4ad95bc240bece1709b2eaf2976dec801ca242",
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 17
+    },
+    {
+      "arm": "C_1e-2^hist",
+      "choice_sha256": null,
+      "event": "started",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": null,
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 18
+    },
+    {
+      "arm": "C_1e-2^hist",
+      "choice_sha256": null,
+      "event": "completed",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": "ea5f571df228f7b3a548f2fa7ec8a07a7e921a3a8ebcb7a102ec513787a61c4b",
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 19
+    },
+    {
+      "arm": "C_1e-2^win",
+      "choice_sha256": null,
+      "event": "started",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": null,
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 20
+    },
+    {
+      "arm": "C_1e-2^win",
+      "choice_sha256": null,
+      "event": "completed",
+      "first_measurement_sha256": "8dd6605555b45b67ea9d2e360964fb26af016a3b413cfe32af400c991ed7c872",
+      "groups": [
+        "S1",
+        "N1",
+        "reference"
+      ],
+      "output_sha256": "35dae3de0f87078e1ce1b8219b309b07f3fd0845141c9d12c196ecd179ebffe5",
+      "phase": "calibration",
+      "reason": null,
+      "sequence": 21
+    }
+  ],
+  "format": "r33-arm-order/1",
+  "seed": 1580
+}
