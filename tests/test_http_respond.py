@@ -434,11 +434,12 @@ def alphabet(binary, folder):
 
 
 def many_names(binary, folder):
-    """As many distinct names as the limit holds with one-byte values, set by one call
-    and every one replaced by a second call in another spelling. The response is exact,
-    and a call's cost does not grow with the square of the number of names: eight times
-    the names must not take thirty times as long (comparing every pair took about a
-    hundred times as long)."""
+    """As many distinct names as the limit holds with one-byte values, set and then every
+    one replaced in another spelling: by two calls, and by a call for each name. The
+    response is exact, and the cost does not grow with the square of the number of names:
+    seven times the names must not take thirty times as long. (Comparing every pair of
+    names in one call took 77 times as long; sorting every name again on each call of
+    17,058 did not answer inside the client's 15 seconds.)"""
     letters = "!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyz"
     def pool(limit):
         names, left = [], limit
@@ -449,28 +450,32 @@ def many_names(binary, folder):
                 names.append(''.join(combo))
                 left -= size + 5
         return names
-    def two_calls(names):
-        return [{'headers': {n: 'a' for n in names}}, {'headers': {n.upper(): 'b' for n in names}}]
+    shapes = {
+        'two calls': lambda names: [{'headers': {n: 'a' for n in names}},
+                                    {'headers': {n.upper(): 'b' for n in names}}],
+        'a call for each name': lambda names: ([{'headers': {n: 'a'}} for n in names] +
+                                               [{'headers': {n.upper(): 'b'}} for n in names]),
+    }
     big, small = pool(65536), pool(65536 // 8)
     require((len(big), len(small)) == (8529, 1177), f'name populations {len(big)}/{len(small)}')
     with server(binary, folder) as port:
-        def best_of_three(names):
-            calls, best = two_calls(names), None
-            want = response_bytes(calls, 'many')
+        def best_of_three(calls, label):
+            want, best = response_bytes(calls, 'many'), None
             for _ in range(3):
                 start = time.monotonic()
                 actual = describe(port, calls, 'many')
                 spent = time.monotonic() - start
-                equal(actual, want, f'{len(names)} names set and replaced')
+                equal(actual, want, label)
                 best = spent if best is None else min(best, spent)
             return best
-        t_small, t_big = best_of_three(small), best_of_three(big)
-    ratio = t_big / max(t_small, 1e-4)
-    require(ratio < 30, f'{len(big)} names took {t_big:.3f}s and {len(small)} names {t_small:.3f}s: '
-                        f'ratio {ratio:.1f}, declared under 30')
-    print(f'COUNTS: many names={len(big)} set and {len(big)} replaced; {t_big:.3f}s against '
-          f'{t_small:.3f}s for {len(small)}, ratio {ratio:.1f}', flush=True)
-
+        for shape, build in shapes.items():
+            t_small = best_of_three(build(small), f'{len(small)} names, {shape}')
+            t_big = best_of_three(build(big), f'{len(big)} names, {shape}')
+            ratio = t_big / max(t_small, 1e-4)
+            require(ratio < 30, f'{shape}: {len(big)} names took {t_big:.3f}s and {len(small)} names '
+                                f'{t_small:.3f}s: ratio {ratio:.1f}, declared under 30')
+            print(f'COUNTS: many names, {shape}: {len(big)} set and {len(big)} replaced; {t_big:.3f}s '
+                  f'against {t_small:.3f}s for {len(small)}, ratio {ratio:.1f}', flush=True)
 
 
 def exceptional(binary, folder, name):

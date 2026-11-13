@@ -58,9 +58,15 @@ static __thread int tls_write_nowait = 0;
  * No Value is retained across VM evaluation, and spawned threads start with
  * a NULL pointer. Cooperative tasks share the answering thread's response. */
 typedef struct { char *name, *value; } RouteHeader;
+/* headers is in the order each name was first set, which is the order they
+ * are sent in. by_name is the same headers sorted by name without case:
+ * by_name[k] is the index of the k-th. A name is then found by bisection, in
+ * a call and when the response is written, however many names a program
+ * sets; a new name is inserted at its place. */
 typedef struct {
     int status;
     RouteHeader *headers;
+    int *by_name;
     int header_count;
     char **cookies;
     int cookie_count;
@@ -76,26 +82,38 @@ static void route_response_clear(RouteResponse *r) {
     }
     for (int i = 0; i < r->cookie_count; i++) free(r->cookies[i]);
     free(r->headers);
+    free(r->by_name);
     free(r->cookies);
     memset(r, 0, sizeof *r);
 }
 
-static int route_header_find(const RouteResponse *r, const char *name) {
-    for (int i = 0; i < r->header_count; i++)
-        if (strcasecmp(r->headers[i].name, name) == 0) return i;
+/* The index of the header called `name`, or -1. `where`, when given, receives
+ * its place among the sorted names, or the place it would take there. */
+static int route_header_find(const RouteResponse *r, const char *name, int *where) {
+    int lo = 0, hi = r->header_count;
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        int found = r->by_name[mid];
+        int c = strcasecmp(name, r->headers[found].name);
+        if (c == 0) {
+            if (where) *where = mid;
+            return found;
+        }
+        if (c < 0) hi = mid;
+        else lo = mid + 1;
+    }
+    if (where) *where = lo;
     return -1;
 }
 
-/* One name with its place, for the sorted lookups of builtin_http_respond. */
-typedef struct { const char *name; int index; } RouteNameRef;
-
-static int route_name_ref_cmp(const void *a, const void *b) {
-    return strcasecmp(((const RouteNameRef *)a)->name, ((const RouteNameRef *)b)->name);
+/* Orders the names of one call, to find two that differ only in case. */
+static int route_name_cmp(const void *a, const void *b) {
+    return strcasecmp(*(const char *const *)a, *(const char *const *)b);
 }
 
 static const char *route_header_value(const RouteResponse *r, const char *name,
                                       const char *fallback) {
-    int i = r ? route_header_find(r, name) : -1;
+    int i = r ? route_header_find(r, name, NULL) : -1;
     return i < 0 ? fallback : r->headers[i].value;
 }
 
@@ -157,22 +175,19 @@ Value *builtin_http_respond(Value *arg) {
             cookies = value;
         } else return route_response_error(EK_VALUE, "unknown response key");
     }
-    /* Names are matched through two sorted arrays (this call's names, and the
-     * names this request has set already), so a call costs n log n comparisons.
-     * A program can set several thousand names inside the byte limit, and
-     * comparing every pair took seconds there. slot[i] is the header that name
-     * i replaces, or -1. Replacements may shrink the state: all removals are
+    /* A name is looked up among the sorted names of what this request has
+     * set, and this call's own names are sorted once to find two that differ
+     * only in case, so neither one call with thousands of names nor thousands
+     * of calls compare every pair. Replacements may shrink the state: all removals are
      * applied before the additions are checked, so a valid final size never
      * depends on dictionary order. */
     int hn = headers ? headers->data.dict.count : 0;
-    RouteNameRef *want = NULL, *have = NULL;
-    int *slot = NULL;
+    const char **names = NULL;
     int added = 0;
     Value *refused = NULL;
     size_t bytes = r->bytes;
     if (hn) {
-        want = xmalloc_array((size_t)hn, sizeof *want);
-        slot = xmalloc_array((size_t)hn, sizeof *slot);
+        names = xmalloc_array((size_t)hn, sizeof *names);
         for (int i = 0; i < hn; i++) {
             const char *name = headers->data.dict.keys[i];
             EIGS_VIEW(view);
@@ -184,34 +199,19 @@ Value *builtin_http_respond(Value *arg) {
             else if (!route_header_value_valid(value->data.str, val_str_len(value)))
                 refused = route_response_error(EK_VALUE, "invalid header value");
             if (refused) goto done;
-            want[i].name = name;
-            want[i].index = i;
-        }
-        qsort(want, (size_t)hn, sizeof *want, route_name_ref_cmp);
-        for (int i = 1; i < hn; i++)
-            if (strcasecmp(want[i - 1].name, want[i].name) == 0) {
-                refused = route_response_error(EK_VALUE, "duplicate header name");
-                goto done;
-            }
-        if (r->header_count) {
-            have = xmalloc_array((size_t)r->header_count, sizeof *have);
-            for (int i = 0; i < r->header_count; i++) {
-                have[i].name = r->headers[i].name;
-                have[i].index = i;
-            }
-            qsort(have, (size_t)r->header_count, sizeof *have, route_name_ref_cmp);
-        }
-        for (int i = 0; i < hn; i++) {
-            RouteNameRef key = { headers->data.dict.keys[i], 0 };
-            const RouteNameRef *old = have ? bsearch(&key, have, (size_t)r->header_count,
-                                                     sizeof *have, route_name_ref_cmp) : NULL;
-            slot[i] = old ? old->index : -1;
-            if (old)
-                bytes -= strlen(r->headers[old->index].name) +
-                         strlen(r->headers[old->index].value) + 4;
+            names[i] = name;
+            int old = route_header_find(r, name, NULL);
+            if (old >= 0)
+                bytes -= strlen(r->headers[old].name) + strlen(r->headers[old].value) + 4;
             else
                 added++;
         }
+        qsort(names, (size_t)hn, sizeof *names, route_name_cmp);
+        for (int i = 1; i < hn; i++)
+            if (strcasecmp(names[i - 1], names[i]) == 0) {
+                refused = route_response_error(EK_VALUE, "duplicate header name");
+                goto done;
+            }
         for (int i = 0; i < hn; i++) {
             EIGS_VIEW(view);
             Value *value = dict_value_get_view(headers, i, &view);
@@ -238,17 +238,27 @@ Value *builtin_http_respond(Value *arg) {
         bytes += n + 14;  /* Set-Cookie: <value> CR LF */
     }
     /* No fallible language operation remains. Keep first-set name/order. */
-    if (added)
-        r->headers = xrealloc_array(r->headers, (size_t)r->header_count + (size_t)added,
-                                    sizeof *r->headers);
+    if (added) {
+        size_t room = (size_t)r->header_count + (size_t)added;
+        r->headers = xrealloc_array(r->headers, room, sizeof *r->headers);
+        r->by_name = xrealloc_array(r->by_name, room, sizeof *r->by_name);
+    }
     for (int i = 0; i < hn; i++) {
+        const char *name = headers->data.dict.keys[i];
         EIGS_VIEW(view);
         Value *value = dict_value_get_view(headers, i, &view);
-        int at = slot[i];
+        int where;
+        int at = route_header_find(r, name, &where);
         if (at < 0) {
-            at = r->header_count++;
-            r->headers[at].name = xstrdup(headers->data.dict.keys[i]);
+            /* A new name takes the next place in the order of sending, and
+             * its own place among the sorted names. */
+            at = r->header_count;
+            memmove(r->by_name + where + 1, r->by_name + where,
+                    (size_t)(at - where) * sizeof *r->by_name);
+            r->by_name[where] = at;
+            r->headers[at].name = xstrdup(name);
             r->headers[at].value = NULL;
+            r->header_count++;
         }
         free(r->headers[at].value);
         r->headers[at].value = xstrdup(value->data.str);
@@ -265,9 +275,7 @@ Value *builtin_http_respond(Value *arg) {
     r->status = (int)status;
     r->bytes = bytes;
 done:
-    free(want);
-    free(have);
-    free(slot);
+    free(names);
     return refused ? refused : make_null();
 }
 

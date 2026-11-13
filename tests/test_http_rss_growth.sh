@@ -457,13 +457,18 @@ kill "$AUTH_PID" 2>/dev/null || true
 wait "$AUTH_PID" 2>/dev/null || true
 rm -f "$AUTH_SRV" "/tmp/eigs_rss_auth_$$.log"
 
-# #2351: exercise owned headers/cookies, replacement and appending. On this
-# branch the inherited /heap_sample fixtures return literal 0 (#2364), so the RSS leg
-# must detect this path itself: 8 KiB fields put a dropped cleanup above its
-# 4096 kB threshold in every measured batch. Small allocation leaks remain
-# outside this RSS-only witness. Status 200 also pins batch completion.
+# #2351: the response state a route sets with http_respond is allocated and freed
+# for each request. On this branch the /heap_sample fixtures return the literal 0
+# (#2364), so this row has the RSS leg alone, and RSS shows a leak only when it
+# passes 4096 kB over 2000 requests: 2,098 bytes for each request. The route
+# therefore repeats every allocation 1,000 times: 1,000 names and values set,
+# all 1,000 set again (each value replaced), 1,000 cookies, and a third call that
+# is refused at its last item, after its names have been sorted. The smallest
+# allocation is 4 bytes for each entry of an array, so the smallest thing that
+# can be left unfreed is 4,000 bytes for each request. Status 200 also pins
+# batch completion.
 run_growth_check "RSS3 http_respond" "/respond" \
-'r is http_route of ["GET", "/respond", "code", "v is \"x\"\ni is 0\nloop while i < 13:\n    v is v + v\n    i is i + 1\nhttp_respond of {\"status\": 200, \"headers\": {\"X-Request\": v}, \"cookies\": [\"session=\" + v + \"; HttpOnly\"]}\nhttp_respond of {\"headers\": {\"x-request\": v}, \"cookies\": [\"other=\" + v]}\n\"ok\""]
+'r is http_route of ["GET", "/respond", "code", "h is {}\nc is []\ni is 0\nloop while i < 1000:\n    h[\"h\" + (str of i)] is \"v\"\n    append of [c, \"c\" + (str of i) + \"=1\"]\n    i is i + 1\nhttp_respond of {\"status\": 200, \"headers\": h, \"cookies\": c}\nhttp_respond of {\"headers\": h}\ncaught is false\ntry:\n    http_respond of {\"headers\": h, \"cookies\": [\"refused \"]}\ncatch e:\n    caught is true\nassert of [caught, \"the third call must be refused\"]\n\"ok\""]
 h is http_route of ["GET", "/heap_sample", "code", "0"]
 n is http_route of ["GET", "/gate_nonce", "code", "\"__NONCE__\""]
 s is http_serve of __PORT__' rss-only
