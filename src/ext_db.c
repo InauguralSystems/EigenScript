@@ -86,6 +86,17 @@ static PGresult* db_exec_from_arg(Value *arg) {
     return PQexecParams(g_db_conn, sql, nparams, (const Oid *)types, params, NULL, NULL, 0);
 }
 
+static Value *db_connect_error(const char *message) {
+    strbuf sb;
+    strbuf_init(&sb);
+    strbuf_append(&sb, "{\"status\": \"error\", \"error\": ");
+    eigs_json_escape_string(&sb, message);
+    strbuf_append_char(&sb, '}');
+    Value *result = make_str(sb.data);
+    strbuf_free(&sb);
+    return result;
+}
+
 Value* builtin_db_connect(Value *arg) {
     (void)arg;
     if (replay_blocks("db_connect", "database")) return make_null();
@@ -94,24 +105,43 @@ Value* builtin_db_connect(Value *arg) {
         return make_str("{\"status\": \"no_database\", \"message\": \"DATABASE_URL not set\"}");
     }
 
-    char conn_str[4096];
-    if (strchr(url, '?')) {
-        snprintf(conn_str, sizeof(conn_str), "%s&connect_timeout=3", url);
-    } else {
-        snprintf(conn_str, sizeof(conn_str), "%s?connect_timeout=3", url);
+    /* libpq owns both grammars (URI and keyword/value). Preserve its parsed
+     * values, including an explicitly supplied timeout, without rewriting or
+     * truncating the connection string. expand_dbname=0 keeps a parsed dbname
+     * literal even when it contains '=' or looks like another connection URI. */
+    char *parse_error = NULL;
+    PQconninfoOption *options = PQconninfoParse(url, &parse_error);
+    if (!options) {
+        Value *result = db_connect_error(parse_error ? parse_error : "libpq could not parse DATABASE_URL");
+        PQfreemem(parse_error);
+        return result;
     }
-    g_db_conn = PQconnectdb(conn_str);
+    size_t count = 0;
+    while (options[count].keyword) count++;
+    const char **keywords = xcalloc(count + 2, sizeof(*keywords));
+    const char **values = xcalloc(count + 2, sizeof(*values));
+    size_t used = 0;
+    int has_timeout = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (!options[i].val) continue;
+        keywords[used] = options[i].keyword;
+        values[used++] = options[i].val;
+        if (strcmp(options[i].keyword, "connect_timeout") == 0) has_timeout = 1;
+    }
+    if (!has_timeout) {
+        keywords[used] = "connect_timeout";
+        values[used++] = "3";
+    }
+    /* calloc supplies the terminating NULL pair, including after the default. */
+    g_db_conn = PQconnectdbParams(keywords, values, 0);
+    free(keywords);
+    free(values);
+    PQconninfoFree(options);
 
     if (PQstatus(g_db_conn) != CONNECTION_OK) {
-        strbuf sb;
-        strbuf_init(&sb);
-        strbuf_append(&sb, "{\"status\": \"error\", \"error\": ");
-        eigs_json_escape_string(&sb, PQerrorMessage(g_db_conn));
-        strbuf_append_char(&sb, '}');
+        Value *result = db_connect_error(PQerrorMessage(g_db_conn));
         PQfinish(g_db_conn);
         g_db_conn = NULL;
-        Value *result = make_str(sb.data);
-        strbuf_free(&sb);
         return result;
     }
 

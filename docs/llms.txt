@@ -769,6 +769,14 @@ Hosted release includes lazy graphics. The server profile adds HTTP and raw
 TCP; server-db additionally includes PostgreSQL. Omitted HTTP, network and
 database names follow the first-reference rule below.
 
+`http_static` adds a folder at an absolute path-segment prefix, drops trailing
+slashes, and refuses empty, root-only, relative or duplicate prefixes. The
+longest matching segment prefix serves a request; registration freezes when
+serving starts. See [HTTP builtins](BUILTINS.md#optional-http-extension).
+`db_connect` accepts libpq URIs and keyword/value `DATABASE_URL` strings,
+supplies `connect_timeout=3` only when absent, and returns libpq parser errors
+in its `error` status. Connection strings have no fixed-length copy.
+
 In VM/native-JIT evaluation, an unresolved omitted HTTP, network or database
 builtin name raises a catchable `value` error at its first reference,
 naming the unavailable capability and required profile. This occurs before

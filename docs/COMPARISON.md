@@ -1038,10 +1038,19 @@ attaches that field to every response, including startup and static files.
 Header names/values are validated and a rejected registration prevents server
 startup. See [HTTP builtin rules](BUILTINS.md#optional-http-extension) for the full
 limits and reserved names (#1128, #1129).
-Routes and the static root are fixed once `http_serve` starts: `http_route`,
+`http_static` adds folders at absolute path-segment prefixes, normalizing
+trailing slashes. The longest matching segment prefix serves the request;
+invalid or duplicate prefixes raise `value`, and exceeding the registration
+limit raises `limit`. See [HTTP builtins](BUILTINS.md#optional-http-extension).
+Routes and the static roots are fixed once `http_serve` starts: `http_route`,
 `http_route_authed` and `http_static` then raise, including from a `code`
 route, and an uncaught error in a `code` route's source answers 500 with a
 generic body; the error message goes to the server's stderr only (#1140).
+
+`db_connect` follows libpq's URI and keyword/value connection syntax in
+`DATABASE_URL`. It defaults the connection timeout only when absent, preserves
+explicit values without a fixed-length copy, and returns parser failures as
+the `error` status with libpq's message.
 
 Tensor sizes and indices follow N5: an integral float is accepted and a
 fraction raises `value`. `gather` keeps the selected list cell's int/float

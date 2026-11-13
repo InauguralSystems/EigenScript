@@ -32,6 +32,11 @@ print of (fround of 0.1)
 
 # EigenScript
 
+The HTTP server can register multiple static folders; the longest matching
+path-segment prefix serves each request. PostgreSQL connections accept libpq
+URIs and keyword/value strings, preserving an explicit connection timeout.
+See [builtins](docs/BUILTINS.md) for registration limits and connection details.
+
 Non-finite float text uses `inf`, `-inf`, and unsigned `nan` in `print`,
 `str`, f-strings, and fixed-decimal number formatting. These are output
 words, not JSON literals: JSON decoding of `1e400` (including a nested

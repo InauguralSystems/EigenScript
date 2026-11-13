@@ -12,6 +12,7 @@
 #include <pthread.h>
 
 #define MAX_ROUTES 256
+#define MAX_STATIC_PREFIXES 16
 #define HTTP_RESPONSE_HEADER_MAX 16
 #define HTTP_RESPONSE_NAME_MAX 64
 #define HTTP_RESPONSE_VALUE_MAX 1024
@@ -29,6 +30,13 @@ typedef struct {
     int requires_auth;
 } Route;
 
+/* Owned by the server; immutable after http_serve starts. */
+typedef struct {
+    char *prefix;
+    size_t prefix_len;
+    char *directory;
+} StaticRoot;
+
 /* Shared-store entry: JSON-encoded value keyed by string. Storage is
  * heap-owned so it outlives any worker EigsState. */
 typedef struct {
@@ -39,8 +47,8 @@ typedef struct {
 struct EigsHttpServer {
     Route routes[MAX_ROUTES];
     int route_count;
-    char *static_prefix;
-    char *static_dir;
+    StaticRoot static_roots[MAX_STATIC_PREFIXES];
+    int static_count;
     Env *global_env;
     int early_bind_fd;
     pthread_t init_tid;
