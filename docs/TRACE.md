@@ -389,7 +389,9 @@ Notes on the families:
   invocations, so the recorded list is served on replay regardless of
   the live argv; #471)
 - **HTTP extension:** `http_post` records its success and all its error
-  paths.
+  paths. `http_respond` reads only program values and sets the current response;
+  it writes no tape record. The request-reading builtins, including
+  `http_request_body`, retain their own nondeterministic input records.
 - **Network extension (#414):** `net_listen`, `net_port`, `net_accept`,
   `net_dial`, `net_recv`, `net_send`. Every environment outcome is a
   recorded *value* — `null` for failure/timeout, a number or buffer for

@@ -396,6 +396,8 @@ Historical import records above are already included in the pin.
 | `tests/phase2/builtins/builtins/buf_get_bits.branch` | `8c67df6923f553873ed2985c45e3957747752e1de83f3ade61d6fb3a4b8c8c0c` | R2.4-N12 | NEW raw buffer bits getter; R24-1 validation, independent IEEE values and N12 payload fidelity; preregistered before candidate observations |
 | `tests/phase2/builtins/builtins/buf_set_bits.branch` | `c962bc3c4a4445fed6c4932fdfdf93d7643929ee9120965ac7671b7f9449f6a0` | R2.4-N12 | NEW raw buffer bits setter; R24-1 null return/validation, exact payload writes and N5 conversion; preregistered before candidate observations |
 
+| `tests/phase2/builtins/builtins/http_respond.branch` | `86a7273708774d467b9d194842c1dc9695cf21a81aa5ef6a988623df39e1f664` | HTTP2351 | NEW request-only response builtin; Decision no-request value refusal and exact message, preregistered before candidate observation |
+
 ## R1.6b bar amendments
 
 The orchestrator ruled on R1.6b's two stops (issues #1894 and #1895):
@@ -866,3 +868,41 @@ The historic 67 active N6 rows, original population digest, old hashes,
 render/kind/value comparisons and semantic/diagnostic overlays stay fixed.
 The owner runs the one-time positive and fault controls; no new permanent
 self-test layer is added.
+
+## HTTP2351 — new request response builtin
+
+The #2351 Decision authorizes one NEW builtin, `http_respond`, on Phase 2.
+Following the R2.4/N12 NEW-row precedent, its new `.branch` was derived from
+the Decision before any candidate observation, and its exact hash is in the
+frozen-amendment table. A standalone probe is not an HTTP request: even an
+integral `status` of `404.0` raises `value` with exactly
+`http_respond: no request is being answered`. This is the probe's complete
+expected stdout, followed by `rc=0`; no existing transcript is amended.
+
+The status uses N5 exact integer conversion and range 200..599, so the row
+is int-requiring, server-profile, in ext_http.c's existing f bucket. The
+standalone-context witness is checked explicitly for this row; successful
+integral-float conversion and fractional refusal are exercised over actual
+requests by the #2351 socket suite. The live table becomes 308 rows and 309
+cases, with f 20 and server 17; other round/profile counts do not move.
+
+The new source and expectation are absent at accepted start
+`2094be14ee131fdef517ee258c38d77c48671594`. The separate additions overlay
+binds their exact hashes and HTTP2351 authority. They never enter the
+historical N6 re-render population or change its digest/kind/value rules.
+
+The new `.pre` and `.tag` were recorded on matched `make server` builds of
+`4ac31e67b4694eea96f2f7151ecf8f9ee62f686d` and
+`4a3a5c1941568e9bc562c7c8221cff22dc8ba697`, respectively. Both builds exited
+0 with zero warnings. Both observations catch `undefined_name` with
+`undefined variable 'http_respond'` and end `rc=0`. Each has SHA-256
+`c4bbe503960332e86b7e4928b348d81ff217efa91808d14f05dae52a374d8586`.
+The preregistered `.branch` retains SHA-256
+`86a7273708774d467b9d194842c1dc9695cf21a81aa5ef6a988623df39e1f664`;
+its probe retains SHA-256
+`6f28e64a71e2ee81b6ae43da9f38cbb1b037460303086802f4e6c374c3242416`.
+`make_table.py --write --final` changes only the generated table's new
+`http_respond` row; it reports 308 rows, 309 cases and zero vacuous rows.
+The table's focused `run_probes.sh --check ... http_respond` compares actual
+matched tag and candidate observations successfully: one requested case,
+one run, no empty/hookless result and no pending capability profile.

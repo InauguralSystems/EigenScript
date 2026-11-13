@@ -32,6 +32,11 @@ print of (fround of 0.1)
 
 # EigenScript
 
+Code routes can set their own status, headers and cookies with `http_respond`;
+the route's final value stays the body. Failed calls change nothing, and an
+uncaught route error drops its settings before the generic 500.
+See [the response rules](docs/BUILTINS.md#per-worker-code-routes).
+
 The HTTP server can register multiple static folders; the longest matching
 path-segment prefix serves each request. PostgreSQL connections accept libpq
 URIs and keyword/value strings, preserving an explicit connection timeout.

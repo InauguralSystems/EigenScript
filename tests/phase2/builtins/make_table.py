@@ -298,7 +298,13 @@ def main():
             kind = "int" if cls == "int-preserving" else "float"
             if '"' + kind + '"' not in brs:
                 fail.append("%s: %s .branch does not show result subtype %s" % (n, cls, kind))
-        if cls == "int-requiring":
+        if cls == "int-requiring" and n == "http_respond":
+            # #2351 explicitly places a standalone probe outside a request.
+            # Conversion witnesses need a real request (the HTTP socket suite).
+            expected = '["no-request", "value", "http_respond: no request is being answered"]\nrc=0\n'
+            if profile != "server" or mine != [n] or brs != expected or not re.search(r'http_respond of \{"status": 404\.0\}', probe):
+                fail.append("http_respond: request-only probe must witness the exact standalone value refusal")
+        elif cls == "int-requiring":
             if not re.search(r'^\[.*fraction[^\n]*, "value"(?:,[^\n]*)?\]$', brs, re.M):
                 fail.append("%s: int-requiring .branch has no fractional-call value raise" % n)
             if exercises.get("int-requiring") != ["fractional", "integral-float-success"] or not re.search(r"\d+\.0(?:\D|$)", probe):
@@ -369,8 +375,9 @@ def main():
 
     # R2.4/N12 adds f64_bits, f64_from_bits, buf_get_bits and buf_set_bits.
     # All four new definitions live in builtins_buf.c, the existing d bucket;
-    # no historical expectation or LOSS member is removed by this addition.
-    want = {"b": 46, "c": 75, "d": 52, "e": 38, "f": 19, "g": 77}  # S10-D2 and sync11 retirements remain; R2.4 adds four d rows.
+    # #2351 adds one request-only ext_http.c row to f; historical expectations
+    # and LOSS membership stay fixed.
+    want = {"b": 46, "c": 75, "d": 52, "e": 38, "f": 20, "g": 77}  # S10-D2 and sync11 retirements remain; R2.4 adds four d rows.
     if counts != want: fail.append("round counts %s, the plan says %s" % (counts, want))
     if not rows or len(rows) != len(sec6): fail.append("examined=%d table=%d" % (len(rows), len(sec6)))
     if guard["guarded"] != guard["yes"] + guard["closed_in"] + guard["pending-profile"] + guard["vacuous"]:

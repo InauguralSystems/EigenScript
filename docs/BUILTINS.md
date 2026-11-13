@@ -784,7 +784,8 @@ axis. Three controls bound it:
 | `http_route_authed` | `http_route_authed of [method, path, body]` or `[method, path, "code", source]` | Register authenticated route; auth source published via `shared_set of ["require_auth", "<source>"]`. Register before `http_serve`: once serving it raises, including from a `code` route (#1140) |
 | `http_static` | `http_static of [prefix, directory]` | Add a static folder, realpath-confined to `directory`. A prefix begins with `/` and names one or more path segments; trailing slashes are dropped. Empty, root-only and relative prefixes raise `value`. At most 16 prefixes; a duplicate after normalization raises `value`, the 17th raises `limit`. The longest prefix matching at a segment boundary serves the path, with no fallback on a missing file. Register before `http_serve`: once serving it raises, including from a `code` route (#1140) |
 | `http_early_bind` | `http_early_bind of port`, `http_early_bind of null`, or `http_early_bind of [port, "/livez"]` | Bind/listen before initialization. `null` defaults to 5000; a positive `PORT` environment override still wins. During init every request receives **503 Service Unavailable** with `Retry-After: 1`; never a fake 200 for arbitrary paths. Only an explicitly supplied liveness path answers GET/HEAD with 200, `text/plain`, body `OK` (HEAD has no body), by exact request-target match, including any query string. The path must start with `/` and contain no whitespace, CR, LF or NUL; invalid paths raise. The two scalar spellings configure no liveness path. Init-window capacity is the same number as the serving connection cap (`HTTP_MAX_CONCURRENT_CONNS`, 256): an idle or slow client cannot delay any other in-flight answer, a newcomer past that cap is accepted and answered a bodyless 503 (Content-Length 0, identical on the wire for every method including HEAD) immediately, and a client that never sends a complete request line is answered 503 at a 1 s per-client deadline. Init-window replies (liveness 200, init 503, capacity shed, handoff/teardown drain) are best-effort to a peer that is not reading: the responder never waits on a client. Once `http_serve` takes over, normal routing applies even to that path (404 unless registered) |
-| `http_response_header` | `http_response_header of [name, value]` | Register before `http_serve`, including before or after `http_early_bind`; returns `"response header registered"`. Both arguments must be strings. Name: RFC 7230 token, **1–64 bytes**. Value: **0–1024 bytes**, visible ASCII, space or tab only; **no CR/LF/NUL**. Runtime-owned and runtime-emitted names (`Content-Length`, `Content-Type`, `Transfer-Encoding`, `Connection`, `Cache-Control`, `Retry-After`, `Allow`, `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`) are refused case-insensitively. An existing name is **replaced case-insensitively**, including at capacity; at most **16** distinct headers. Every violation raises a loud error naming the builtin and rule; a rejected registration prevents `http_serve` from starting even if caught. Registered headers accompany **every** response: routes (string/file/code/authed), static files, HEAD, OPTIONS, errors, load shedding, init 503s and optional liveness 200s. Content-Type, Content-Length, status and body bytes are unchanged. Registration is deterministic configuration and adds no tape records |
+| `http_response_header` | `http_response_header of [name, value]` | Register before `http_serve`, including before or after `http_early_bind`; returns `"response header registered"`. Both arguments must be strings. Name: RFC 7230 token, **1–64 bytes**. Value: **0–1024 bytes**, visible ASCII, space or tab only; **no CR/LF/NUL**. Runtime-owned and runtime-emitted names (`Content-Length`, `Content-Type`, `Transfer-Encoding`, `Connection`, `Cache-Control`, `Retry-After`, `Allow`, `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`) are refused case-insensitively. An existing name is **replaced case-insensitively**, including at capacity; at most **16** distinct headers. Every violation raises a loud error naming the builtin and rule; a rejected registration prevents `http_serve` from starting even if caught. Registered headers accompany **every** response: routes (string/file/code/authed), static files, HEAD, OPTIONS, errors, load shedding, init 503s and optional liveness 200s. Registration leaves Content-Type, Content-Length, status and body bytes unchanged. A code route may replace a registered header's value for its own response with `http_respond`; the registered spelling and position stay fixed. Registration is deterministic configuration and adds no tape records |
+| `http_respond` | `http_respond of response` | Set this request's optional status, headers and cookies; returns `null`. The body stays the code route's final value. See [Per-worker code routes](#per-worker-code-routes) for validation, merging and response order (#2351) |
 | `http_serve` | `http_serve of port` | Start blocking HTTP server on an exact integer port in 0..65535 (integral floats convert). |
 | `http_request_body` | `http_request_body of null` | Get current request body |
 | `http_session_id` | `http_session_id of null` | Get current session ID |
@@ -796,7 +797,7 @@ axis. Three controls bound it:
 A route declared as `[method, path, "code", source]` evaluates `source`
 in a fresh worker `EigsState` on every request — stdlib + the
 request-scoped HTTP builtins (`http_request_body`, `http_session_id`,
-`http_request_headers`, `http_post`, and the `shared_*` family below)
+`http_request_headers`, `http_post`, `http_respond`, and the `shared_*` family below)
 are available; **startup-scope globals are not**. The final
 expression's value is sent as the response body; an uncaught error
 answers **500** with the generic body `{"error": "internal error"}`
@@ -806,6 +807,58 @@ stderr, since it can carry paths or values a client must not see. An
 means concurrent requests don't race on script state and mutations
 don't leak across requests; cross-worker state goes through the
 shared store.
+
+`http_respond of response` sets only the response currently being answered
+on this thread. `response` is a dict with only these optional keys:
+
+| Key | Value |
+|-----|-------|
+| `status` | Number representing an exact integer from 200 through 599; integral floats such as `404.0` convert as ports do |
+| `headers` | Dict of header names to string values |
+| `cookies` | List of strings, each sent after `Set-Cookie: ` |
+
+A name is an RFC 7230 token of 1–64 bytes. A value may be empty and contains
+only visible ASCII, spaces and tabs, with no space or tab at either end.
+Cookies follow that value rule and must be nonempty. There is no separate
+per-value size cap. `Content-Length`, `Transfer-Encoding`, `Connection` and
+`Set-Cookie` are refused as header names, ignoring case; cookies use the list.
+Two names in one call that differ only in case are refused. Wrong types,
+including explicit `null` for a key, raise `type_mismatch`; other broken rules
+raise `value`. A failed call changes nothing. The headers and cookies currently
+set, including lines suppressed for 204/304, may total at most 65,536 bytes,
+counting each `name: value` and its CR LF. Passing this limit raises `limit`
+and also changes nothing.
+
+Several calls merge: the last status wins; a header replaces its previous
+value case-insensitively while keeping its first spelling and position; and
+cookies append in call order. Calls in functions and cooperative tasks on the
+route's thread count until evaluation ends. Calls in the main program or a
+spawned thread raise `value` with exactly
+`http_respond: no request is being answered`.
+
+A successful code route writes its status (default 200), Content-Type and
+Content-Length, Cache-Control, the configured CORS lines, Connection, registered
+headers, additional route headers, then cookies, in that order. Route values
+replace matching default, CORS and registered header values without duplicating
+the lines. A registered name retains its registered spelling. Content-Type
+defaults to `application/json` for bodies beginning with `{` or `[` and
+`text/plain` otherwise; Cache-Control defaults to `no-cache`. Additional route
+headers keep the order and spelling of their first call. The status line
+carries the standard reason phrase for 200, 201, 202, 204, 301, 302, 303, 304,
+307, 308, 400, 401, 403, 404, 405, 408, 409, 410, 413, 415, 422, 429, 431, 500,
+502, 503 and 504. Any other status has an empty phrase, and the space after
+the status number stays (`HTTP/1.1 299 `).
+
+HEAD has the GET status and headers with no body. With 204 or 304 there is no
+body, Content-Type or Content-Length. A route's 204 uses the usual route CORS
+methods (`GET, POST, OPTIONS`) and adds no automatic Allow line. A route can
+set its own Allow header. An uncaught raise drops everything set and answers
+the existing generic 500; `exit` keeps what was set. Auth-source settings are
+dropped before an auth refusal (the existing 401) or the route's evaluation.
+Response settings never cross requests. A route that makes no call, fixed-body
+and file routes, static files, OPTIONS and errors before route evaluation keep
+their existing bytes. `http_respond` reads no external input and writes no tape
+record. It is unavailable inside `sandbox_run`, as other HTTP builtins are.
 
 ### Shared store: cross-worker key/value primitive
 

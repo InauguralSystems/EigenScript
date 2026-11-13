@@ -1578,6 +1578,7 @@ current state behind several rows:
 | `hex` | int-requiring | LOSS | - | refuses above 2^53 by a double compare, so int 2^53+1 reads as 2^53 and passes silently |
 | `http_early_bind` | int-requiring | - | - | port |
 | `http_post` | other | LOSS | - | header JSON ints decode exactly (N14, B6); lossy before R1.6 |
+| `http_respond` | int-requiring | - | - | optional status: N5, then 200..599; request-only (#2351), null return |
 | `http_route` | other | - | - | formats via value_to_string |
 | `http_route_authed` | other | - | - | formats via value_to_string |
 | `http_serve` | int-requiring | - | - | port |

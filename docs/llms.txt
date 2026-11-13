@@ -769,6 +769,12 @@ Hosted release includes lazy graphics. The server profile adds HTTP and raw
 TCP; server-db additionally includes PostgreSQL. Omitted HTTP, network and
 database names follow the first-reference rule below.
 
+
+A code route can call `http_respond of {"status": 404, "headers": {"Content-Type": "text/html"}, "cookies": ["sid=x; HttpOnly"]}`
+to set its own status, headers and cookies; its final value is still the body.
+Settings merge within this request, failed calls change nothing, and an
+uncaught raise drops them before the generic 500. See [the response rules](BUILTINS.md#per-worker-code-routes).
+
 `http_static` adds a folder at an absolute path-segment prefix, drops trailing
 slashes, and refuses empty, root-only, relative or duplicate prefixes. The
 longest matching segment prefix serves a request; registration freezes when

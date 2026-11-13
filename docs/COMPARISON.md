@@ -1028,6 +1028,11 @@ conservatively instead of answering a rest value. See the
 
 ### HTTP startup and response attribution
 
+A code route can call `http_respond of {"status": 404, "headers": {"Content-Type": "text/html"}, "cookies": ["sid=x; HttpOnly"]}`
+to set its own status, headers and cookies; its final value is still the body.
+Settings merge within this request, failed calls change nothing, and an
+uncaught raise drops them before the generic 500. See [the response rules](BUILTINS.md#per-worker-code-routes).
+
 With the HTTP extension, `http_early_bind of port` (or `of null`) listens
 while initialization continues, answering 503 with `Retry-After: 1`.
 `http_early_bind of [port, "/livez"]` explicitly opts one exact GET/HEAD
