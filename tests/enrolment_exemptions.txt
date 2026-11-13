@@ -1,6 +1,7 @@
 # Test scripts and tools/ entry points that no workflow invokes, as tools/enrolment_check.sh
 # reads "invoked" (#1264; tools/ since #1758 R1.3). `path | reason`: the reason says how the
 # script does run. A row for a missing or invoked file fails; prefer a section or a workflow step.
+tests/http_respond_reference.py | imported byte oracle used by tests/test_http_respond.py in suite section 45g; it is a helper module, not a standalone test
 tests/test_gc_runner_controls.py | manual deferred control for the GC traversal runner (tests/GC_TRAVERSAL.md); forks child sessions and must run with the heavy slot released, so it is run by hand
 tools/builtin_usage.sh | a report over local consumer checkouts (counts builtin references), not a gate; run by hand
 tools/doc_coupling_hook.sh | a Claude Code hook (.claude/settings.json) for agent sessions, not a CI gate

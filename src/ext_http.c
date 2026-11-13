@@ -54,6 +54,223 @@ static __thread int tls_suppress_body = 0;
  * reading is abandoned (connection closed); the responder never blocks. */
 static __thread int tls_write_nowait = 0;
 
+/* Owned by handle_request's stack and accessed only on its answering thread.
+ * No Value is retained across VM evaluation, and spawned threads start with
+ * a NULL pointer. Cooperative tasks share the answering thread's response. */
+typedef struct { char *name, *value; } RouteHeader;
+typedef struct {
+    int status;
+    RouteHeader *headers;
+    int header_count;
+    char **cookies;
+    int cookie_count;
+    size_t bytes;
+} RouteResponse;
+static __thread RouteResponse *tls_response = NULL;
+#define HTTP_ROUTE_RESPONSE_MAX 65536u
+
+static void route_response_clear(RouteResponse *r) {
+    for (int i = 0; i < r->header_count; i++) {
+        free(r->headers[i].name);
+        free(r->headers[i].value);
+    }
+    for (int i = 0; i < r->cookie_count; i++) free(r->cookies[i]);
+    free(r->headers);
+    free(r->cookies);
+    memset(r, 0, sizeof *r);
+}
+
+static int route_header_find(const RouteResponse *r, const char *name) {
+    for (int i = 0; i < r->header_count; i++)
+        if (strcasecmp(r->headers[i].name, name) == 0) return i;
+    return -1;
+}
+
+/* One name with its place, for the sorted lookups of builtin_http_respond. */
+typedef struct { const char *name; int index; } RouteNameRef;
+
+static int route_name_ref_cmp(const void *a, const void *b) {
+    return strcasecmp(((const RouteNameRef *)a)->name, ((const RouteNameRef *)b)->name);
+}
+
+static const char *route_header_value(const RouteResponse *r, const char *name,
+                                      const char *fallback) {
+    int i = r ? route_header_find(r, name) : -1;
+    return i < 0 ? fallback : r->headers[i].value;
+}
+
+static Value *route_response_error(ErrKind kind, const char *message) {
+    rt_error(kind, 0, "http_respond: %s", message);
+    return make_null();
+}
+
+static int route_header_name_valid(const char *name) {
+    size_t n = strlen(name);
+    if (n < 1 || n > 64) return 0;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)name[i];
+        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+              (c >= '0' && c <= '9') || strchr("!#$%&'*+-.^_`|~", c))) return 0;
+    }
+    return strcasecmp(name, "Content-Length") != 0 &&
+           strcasecmp(name, "Transfer-Encoding") != 0 &&
+           strcasecmp(name, "Connection") != 0 &&
+           strcasecmp(name, "Set-Cookie") != 0;
+}
+
+static int route_header_value_valid(const char *value, size_t len) {
+    if (len && (value[0] == ' ' || value[0] == '\t' ||
+                value[len - 1] == ' ' || value[len - 1] == '\t')) return 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)value[i];
+        if ((c < 32 && c != '\t') || c > 126) return 0;
+    }
+    return 1;
+}
+
+/* Validation and size accounting finish before any mutation. In particular a
+ * late bad cookie, a duplicate name, or the byte limit cannot partially set
+ * a status/header. Script text never reaches the wire without validation. */
+/* http_respond of response — set this request's status, headers and cookies; return null. */
+Value *builtin_http_respond(Value *arg) {
+    if (!tls_response)
+        return route_response_error(EK_VALUE, "no request is being answered");
+    if (!arg || arg->type != VAL_DICT)
+        return route_response_error(EK_TYPE, "response must be a dict");
+    RouteResponse *r = tls_response;
+    Value *headers = NULL, *cookies = NULL;
+    int64_t status = r->status;
+    for (int i = 0; i < arg->data.dict.count; i++) {
+        const char *key = arg->data.dict.keys[i];
+        EIGS_VIEW(view);
+        Value *value = dict_value_get_view(arg, i, &view);
+        if (strcmp(key, "status") == 0) {
+            if (!eigs_int_arg_range(value, 200, 599, &status, "http_respond"))
+                return make_null();
+        } else if (strcmp(key, "headers") == 0) {
+            if (value->type != VAL_DICT)
+                return route_response_error(EK_TYPE, "headers must be a dict");
+            headers = value;  /* heap container, not the numeric view */
+        } else if (strcmp(key, "cookies") == 0) {
+            if (value->type != VAL_LIST)
+                return route_response_error(EK_TYPE, "cookies must be a list");
+            cookies = value;
+        } else return route_response_error(EK_VALUE, "unknown response key");
+    }
+    /* Names are matched through two sorted arrays (this call's names, and the
+     * names this request has set already), so a call costs n log n comparisons.
+     * A program can set several thousand names inside the byte limit, and
+     * comparing every pair took seconds there. slot[i] is the header that name
+     * i replaces, or -1. Replacements may shrink the state: all removals are
+     * applied before the additions are checked, so a valid final size never
+     * depends on dictionary order. */
+    int hn = headers ? headers->data.dict.count : 0;
+    RouteNameRef *want = NULL, *have = NULL;
+    int *slot = NULL;
+    int added = 0;
+    Value *refused = NULL;
+    size_t bytes = r->bytes;
+    if (hn) {
+        want = xmalloc_array((size_t)hn, sizeof *want);
+        slot = xmalloc_array((size_t)hn, sizeof *slot);
+        for (int i = 0; i < hn; i++) {
+            const char *name = headers->data.dict.keys[i];
+            EIGS_VIEW(view);
+            Value *value = dict_value_get_view(headers, i, &view);
+            if (!route_header_name_valid(name))
+                refused = route_response_error(EK_VALUE, "invalid or reserved header name");
+            else if (value->type != VAL_STR)
+                refused = route_response_error(EK_TYPE, "header value must be a string");
+            else if (!route_header_value_valid(value->data.str, val_str_len(value)))
+                refused = route_response_error(EK_VALUE, "invalid header value");
+            if (refused) goto done;
+            want[i].name = name;
+            want[i].index = i;
+        }
+        qsort(want, (size_t)hn, sizeof *want, route_name_ref_cmp);
+        for (int i = 1; i < hn; i++)
+            if (strcasecmp(want[i - 1].name, want[i].name) == 0) {
+                refused = route_response_error(EK_VALUE, "duplicate header name");
+                goto done;
+            }
+        if (r->header_count) {
+            have = xmalloc_array((size_t)r->header_count, sizeof *have);
+            for (int i = 0; i < r->header_count; i++) {
+                have[i].name = r->headers[i].name;
+                have[i].index = i;
+            }
+            qsort(have, (size_t)r->header_count, sizeof *have, route_name_ref_cmp);
+        }
+        for (int i = 0; i < hn; i++) {
+            RouteNameRef key = { headers->data.dict.keys[i], 0 };
+            const RouteNameRef *old = have ? bsearch(&key, have, (size_t)r->header_count,
+                                                     sizeof *have, route_name_ref_cmp) : NULL;
+            slot[i] = old ? old->index : -1;
+            if (old)
+                bytes -= strlen(r->headers[old->index].name) +
+                         strlen(r->headers[old->index].value) + 4;
+            else
+                added++;
+        }
+        for (int i = 0; i < hn; i++) {
+            EIGS_VIEW(view);
+            Value *value = dict_value_get_view(headers, i, &view);
+            size_t n = strlen(headers->data.dict.keys[i]) + 4;
+            size_t v = val_str_len(value);
+            if (v > HTTP_ROUTE_RESPONSE_MAX || n + v > HTTP_ROUTE_RESPONSE_MAX - bytes) {
+                refused = route_response_error(EK_LIMIT, "response headers and cookies exceed 65536 bytes");
+                goto done;
+            }
+            bytes += n + v;
+        }
+    }
+    if (cookies) for (int i = 0; i < cookies->data.list.count; i++) {
+        EIGS_VIEW(view);
+        Value *value = list_get_view(cookies, i, &view);
+        size_t n = value->type == VAL_STR ? val_str_len(value) : 0;
+        if (value->type != VAL_STR)
+            refused = route_response_error(EK_TYPE, "cookie must be a string");
+        else if (!n || !route_header_value_valid(value->data.str, n))
+            refused = route_response_error(EK_VALUE, "invalid cookie");
+        else if (n > HTTP_ROUTE_RESPONSE_MAX || n + 14 > HTTP_ROUTE_RESPONSE_MAX - bytes)
+            refused = route_response_error(EK_LIMIT, "response headers and cookies exceed 65536 bytes");
+        if (refused) goto done;
+        bytes += n + 14;  /* Set-Cookie: <value> CR LF */
+    }
+    /* No fallible language operation remains. Keep first-set name/order. */
+    if (added)
+        r->headers = xrealloc_array(r->headers, (size_t)r->header_count + (size_t)added,
+                                    sizeof *r->headers);
+    for (int i = 0; i < hn; i++) {
+        EIGS_VIEW(view);
+        Value *value = dict_value_get_view(headers, i, &view);
+        int at = slot[i];
+        if (at < 0) {
+            at = r->header_count++;
+            r->headers[at].name = xstrdup(headers->data.dict.keys[i]);
+            r->headers[at].value = NULL;
+        }
+        free(r->headers[at].value);
+        r->headers[at].value = xstrdup(value->data.str);
+    }
+    if (cookies && cookies->data.list.count) {
+        int count = cookies->data.list.count;
+        r->cookies = xrealloc_array(r->cookies, (size_t)r->cookie_count + (size_t)count,
+                                    sizeof *r->cookies);
+        for (int i = 0; i < count; i++) {
+            EIGS_VIEW(view);
+            r->cookies[r->cookie_count++] = xstrdup(list_get_view(cookies, i, &view)->data.str);
+        }
+    }
+    r->status = (int)status;
+    r->bytes = bytes;
+done:
+    free(want);
+    free(have);
+    free(slot);
+    return refused ? refused : make_null();
+}
+
 /* Concurrent connection cap. Each accepted connection runs in a detached
  * pthread; once g_conn_count reaches the cap we shed load with a 503. */
 #define HTTP_MAX_CONCURRENT_CONNS 256
@@ -1238,9 +1455,10 @@ static int write_all(int fd, const char *data, size_t len) {
     return 1;
 }
 
-static void send_response_full(int fd, int status, const char *status_text,
-                               const char *content_type, const char *body,
-                               long body_len, int cache_cors, const char *extra) {
+static void send_response_with(int fd, int status, const char *status_text,
+                              const char *content_type, const char *body,
+                              long body_len, int cache_cors, const char *extra,
+                              const RouteResponse *response) {
     /* Size from actual fields, with 512 bytes for fixed literals, integer
      * formatting and the final NUL. No fixed header buffer: even sixteen
      * maximum-size custom fields plus an arbitrarily long CORS origin fit.
@@ -1249,38 +1467,103 @@ static void send_response_full(int fd, int status, const char *status_text,
     const char *origin = cache_cors ? g_server.cors_origin : NULL;
     size_t cap = 512 + strlen(status_text) + strlen(extra) +
                  (content_type ? strlen(content_type) : 0) +
-                 (origin ? strlen(origin) : 0);
+                 (origin ? strlen(origin) : 0) + (response ? response->bytes : 0);
     for (int i = 0; i < g_server.response_header_count; i++) {
         ResponseHeader *h = &g_server.response_headers[i];
         cap += strlen(h->name) + strlen(h->value) + 4;
     }
+    content_type = route_header_value(response, "Content-Type", content_type);
+    if (response && (status == 204 || status == 304)) content_type = NULL;
     char *header = xmalloc(cap);
     size_t used = (size_t)snprintf(header, cap, "HTTP/1.1 %d %s\r\n", status, status_text);
     if (content_type)
         used += (size_t)snprintf(header + used, cap - used,
                                 "Content-Type: %s\r\nContent-Length: %ld\r\n",
                                 content_type, body_len);
-    if (status == 204)
+    if (status == 204 && !response)
         used += (size_t)snprintf(header + used, cap - used, "Allow: GET, HEAD, OPTIONS\r\n");
     if (cache_cors)
-        used += (size_t)snprintf(header + used, cap - used, "Cache-Control: no-cache\r\n");
+        used += (size_t)snprintf(header + used, cap - used, "Cache-Control: %s\r\n",
+                                route_header_value(response, "Cache-Control", "no-cache"));
     if (origin)
         used += (size_t)snprintf(header + used, cap - used,
                                 "Access-Control-Allow-Origin: %s\r\n"
                                 "Access-Control-Allow-Methods: %s\r\n"
-                                "Access-Control-Allow-Headers: Content-Type\r\n",
-                                origin, status == 204 ? "GET, HEAD, OPTIONS" : "GET, POST, OPTIONS");
+                                "Access-Control-Allow-Headers: %s\r\n",
+                                route_header_value(response, "Access-Control-Allow-Origin", origin),
+                                route_header_value(response, "Access-Control-Allow-Methods",
+                                    status == 204 && !response ? "GET, HEAD, OPTIONS" : "GET, POST, OPTIONS"),
+                                route_header_value(response, "Access-Control-Allow-Headers", "Content-Type"));
     used += (size_t)snprintf(header + used, cap - used, "Connection: close\r\n%s", extra);
     for (int i = 0; i < g_server.response_header_count; i++) {
         ResponseHeader *h = &g_server.response_headers[i];
-        used += (size_t)snprintf(header + used, cap - used, "%s: %s\r\n", h->name, h->value);
+        used += (size_t)snprintf(header + used, cap - used, "%s: %s\r\n", h->name,
+                                route_header_value(response, h->name, h->value));
+    }
+    if (response) {
+        for (int i = 0; i < response->header_count; i++) {
+            const RouteHeader *h = &response->headers[i];
+            if (strcasecmp(h->name, "Content-Type") == 0 ||
+                strcasecmp(h->name, "Cache-Control") == 0) continue;
+            if (origin && (strcasecmp(h->name, "Access-Control-Allow-Origin") == 0 ||
+                           strcasecmp(h->name, "Access-Control-Allow-Methods") == 0 ||
+                           strcasecmp(h->name, "Access-Control-Allow-Headers") == 0)) continue;
+            int registered = 0;
+            for (int j = 0; j < g_server.response_header_count; j++)
+                if (strcasecmp(h->name, g_server.response_headers[j].name) == 0) registered = 1;
+            if (!registered)
+                used += (size_t)snprintf(header + used, cap - used, "%s: %s\r\n", h->name, h->value);
+        }
+        for (int i = 0; i < response->cookie_count; i++)
+            used += (size_t)snprintf(header + used, cap - used, "Set-Cookie: %s\r\n", response->cookies[i]);
     }
     used += (size_t)snprintf(header + used, cap - used, "\r\n");
     pthread_mutex_unlock(&g_server.response_mu);
     int sent = write_all(fd, header, used);
     free(header);
-    if (sent && !tls_suppress_body && body && body_len > 0)
+    if (sent && !tls_suppress_body && body && body_len > 0 &&
+        !(response && (status == 204 || status == 304)))
         write_all(fd, body, (size_t)body_len);
+}
+
+static void send_response_full(int fd, int status, const char *status_text,
+                               const char *content_type, const char *body,
+                               long body_len, int cache_cors, const char *extra) {
+    send_response_with(fd, status, status_text, content_type, body, body_len,
+                       cache_cors, extra, NULL);
+}
+
+static const char *route_status_phrase(int status) {
+    switch (status) {
+        case 200: return "OK";
+        case 201: return "Created";
+        case 202: return "Accepted";
+        case 204: return "No Content";
+        case 301: return "Moved Permanently";
+        case 302: return "Found";
+        case 303: return "See Other";
+        case 304: return "Not Modified";
+        case 307: return "Temporary Redirect";
+        case 308: return "Permanent Redirect";
+        case 400: return "Bad Request";
+        case 401: return "Unauthorized";
+        case 403: return "Forbidden";
+        case 404: return "Not Found";
+        case 405: return "Method Not Allowed";
+        case 408: return "Request Timeout";
+        case 409: return "Conflict";
+        case 410: return "Gone";
+        case 413: return "Payload Too Large";
+        case 415: return "Unsupported Media Type";
+        case 422: return "Unprocessable Content";
+        case 429: return "Too Many Requests";
+        case 431: return "Request Header Fields Too Large";
+        case 500: return "Internal Server Error";
+        case 502: return "Bad Gateway";
+        case 503: return "Service Unavailable";
+        case 504: return "Gateway Timeout";
+        default: return "";
+    }
 }
 
 static void send_response(int fd, int status, const char *status_text,
@@ -1513,6 +1796,9 @@ static int http_find_content_length(const char *block, long *out_len) {
 }
 
 static void handle_request(int fd) {
+    RouteResponse response = {0};
+    tls_response = &response;
+    tls_suppress_body = 0;
     /* Per-read timeout (backstop for fully idle sockets) */
     struct timeval tv = { .tv_sec = HTTP_READ_TIMEOUT_SEC, .tv_usec = 0 };
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
@@ -1741,6 +2027,7 @@ static void handle_request(int fd) {
                  * worker env never has it). Empty result = allow; any
                  * non-empty value_to_string output becomes the 401 body. */
                 if (r->requires_auth) {
+                    route_response_clear(&response);
                     char *auth_src = NULL;
                     Server *srv = eigs_http_active;
                     if (srv) {
@@ -1772,6 +2059,7 @@ static void handle_request(int fd) {
                     Env *auth_env = env_new(g_global_env);
                     EigsChunk *auth_chunk = compile_ast(auth_ast, auth_env, auth_src, "<embed>");
                     Value *auth_result = vm_execute(auth_chunk, auth_env);
+                    route_response_clear(&response);
                     chunk_free(auth_chunk);
                     env_decref(auth_env);
                     char *auth_str = value_to_string(auth_result);
@@ -1787,6 +2075,7 @@ static void handle_request(int fd) {
                     }
                     free(auth_str);
                 }
+                route_response_clear(&response);
                 TokenList tl = tokenize(r->payload);
                 ASTNode *ast = parse(&tl);
                 Env *req_env = env_new(g_global_env);
@@ -1802,6 +2091,7 @@ static void handle_request(int fd) {
                      * `exit` in the route is an unwind, not an error, so it
                      * keeps its old answer. */
                     static const char body500[] = "{\"error\": \"internal error\"}";
+                    route_response_clear(&response);
                     send_response(fd, 500, "Internal Server Error", "application/json",
                                   body500, (long)(sizeof body500 - 1));
                     env_decref(req_env);
@@ -1816,7 +2106,9 @@ static void handle_request(int fd) {
                 const char *ct = "application/json";
                 if (result_str[0] != '{' && result_str[0] != '[')
                     ct = "text/plain";
-                send_response(fd, 200, "OK", ct, result_str, strlen(result_str));
+                int status = response.status ? response.status : 200;
+                send_response_with(fd, status, route_status_phrase(status), ct,
+                                   result_str, strlen(result_str), 1, "", &response);
                 free(result_str);
                 free_tokenlist(&tl);
                 free_ast(ast);  /* compile_ast does not own it */
@@ -1833,6 +2125,8 @@ static void handle_request(int fd) {
 
     send_404(fd, path);
 done:
+    route_response_clear(&response);
+    tls_response = NULL;
     tls_request_body = NULL;
     tls_request_headers = NULL;
     tls_session_id = NULL;

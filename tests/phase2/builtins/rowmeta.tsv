@@ -97,6 +97,7 @@ gfx_ticks	-	release
 hex	-	release
 http_early_bind	-	server
 http_post	-	server
+http_respond	-	server
 http_route	-	server
 http_route_authed	-	server
 http_serve	-	server

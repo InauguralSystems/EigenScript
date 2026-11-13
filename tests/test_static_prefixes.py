@@ -5,11 +5,12 @@ import json
 import os
 from pathlib import Path
 import signal
-import socket
 import subprocess
 import sys
 import tempfile
 import time
+
+from http_readiness import pick_port
 
 ROOT = Path(__file__).resolve().parents[1]
 EIGS = str(Path(sys.argv[1]).resolve()) if len(sys.argv) > 1 else str(ROOT / 'src/eigenscript')
@@ -68,16 +69,7 @@ def request(port, path):
 
 @contextlib.contextmanager
 def server(source):
-    # Tests run serially. Probe before launch; readiness also checks our PID.
-    for port in range(38800, 38900):
-        with socket.socket() as sock:
-            try:
-                sock.bind(('127.0.0.1', port))
-            except OSError:
-                continue
-            break
-    else:
-        raise AssertionError('no free test port in 38800..38899')
+    port = pick_port()  # below the ephemeral range, bind-probed (#760)
     with tempfile.TemporaryDirectory(prefix='static-case-') as directory:
         folder = Path(directory)
         path = program(folder, source +

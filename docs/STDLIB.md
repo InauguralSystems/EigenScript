@@ -1071,7 +1071,7 @@ Client helpers only allow `http://` and `https://` URLs; rejected URLs return `[
 | `route_post` | `route_post of [path, body]` | Register POST route with a literal body (not a callback — see `http_route`) |
 | `json_response` | `json_response of data` | Build JSON response |
 | `text_response` | `text_response of string` | Build text response |
-| `error_response` | `error_response of [code, msg]` | Build error response |
+| `error_response` | `error_response of [code, msg]` | Return a JSON body containing the code and message; sets no status or headers. In a code route it still answers 200 unless the route sets a status with `http_respond` |
 | `parse_query` | `parse_query of string` | Parse query string |
 | `start_server` | `start_server of port` | Bind and serve |
 

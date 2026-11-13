@@ -76,6 +76,7 @@
 
 /* ---- ext_http.c: request-scope builtins, safe on worker states ---- */
 #define EIGS_HTTP_REQUEST_BUILTINS(X) \
+    X(http_respond, builtin_http_respond) \
     X(http_request_body, builtin_http_request_body) \
     X(http_session_id, builtin_http_session_id) \
     X(http_post, builtin_http_post) \

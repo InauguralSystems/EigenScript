@@ -41,6 +41,8 @@ FROUND_DECISION = 'docs/design/phase2-numbers.md: fround result guard until R2.2
 R24_ADDITION_ANCHOR = 'f09632d01e982d74cbe009db7f292c28afa8aa7e'
 R24_ADDITIONS = {BAR + name + '.branch' for name in (
     'f64_bits', 'f64_from_bits', 'buf_get_bits', 'buf_set_bits')}
+HTTP2351_ANCHOR = '2094be14ee131fdef517ee258c38d77c48671594'
+HTTP2351_ADDITIONS = {BAR + 'http_respond.branch'}
 
 
 def require(ok, message):
@@ -112,26 +114,29 @@ def retired_paths(root, data):
 
 
 def added_paths(root, data):
-    """Only four NEW R2.4 paths, absent at its accepted start, may be added."""
+    """Admit only the named NEW builtin groups at their own accepted starts."""
     additions = data.get('additions', {})
-    require(isinstance(additions, dict) and set(additions) == R24_ADDITIONS,
-            'addition population must be exactly the four R2.4-N12 paths')
-    prior = set(git(root, 'ls-tree', '-r', '--name-only', R24_ADDITION_ANCHOR,
-                    '--', BAR).decode().splitlines())
+    require(isinstance(additions, dict) and set(additions) == R24_ADDITIONS | HTTP2351_ADDITIONS,
+            'addition population must be exactly four R2.4-N12 and one HTTP2351 paths')
     amendments = amendments_for(root, additions)
-    for path, entry in additions.items():
-        require(isinstance(entry, dict) and entry.get('ruling') == 'R2.4-N12' and
-                entry.get('anchor') == R24_ADDITION_ANCHOR,
-                path + ': addition needs R2.4-N12 and its accepted start anchor')
-        source = path.removesuffix('.branch') + '.eigs'
-        for current_path, key in ((path, 'branch_sha256'), (source, 'source_sha256')):
-            require(current_path not in prior,
-                    current_path + ': addition already existed at the accepted R2.4 start')
-            require(sha((root / current_path).read_bytes()) == entry.get(key),
-                    current_path + ': addition SHA-256 differs from reviewed bytes')
-        waiver = amendments.get(path, [])
-        require(len(waiver) == 3 and waiver[:2] == [entry['branch_sha256'], 'R2.4-N12'] and bool(waiver[2]),
-                path + ': addition requires an exact SHA-256 R2.4-N12 amendment and reason')
+    for paths, ruling, anchor in ((R24_ADDITIONS, 'R2.4-N12', R24_ADDITION_ANCHOR),
+                                  (HTTP2351_ADDITIONS, 'HTTP2351', HTTP2351_ANCHOR)):
+        prior = set(git(root, 'ls-tree', '-r', '--name-only', anchor,
+                        '--', BAR).decode().splitlines())
+        for path in sorted(paths):
+            entry = additions[path]
+            require(isinstance(entry, dict) and entry.get('ruling') == ruling and
+                    entry.get('anchor') == anchor,
+                    path + ': addition needs ' + ruling + ' and its accepted start anchor')
+            source = path.removesuffix('.branch') + '.eigs'
+            for current_path, key in ((path, 'branch_sha256'), (source, 'source_sha256')):
+                require(current_path not in prior,
+                        current_path + ': addition already existed at the accepted start')
+                require(sha((root / current_path).read_bytes()) == entry.get(key),
+                        current_path + ': addition SHA-256 differs from reviewed bytes')
+            waiver = amendments.get(path, [])
+            require(len(waiver) == 3 and waiver[:2] == [entry['branch_sha256'], ruling] and bool(waiver[2]),
+                    path + ': addition requires an exact SHA-256 ' + ruling + ' amendment and reason')
     return set(additions)
 
 

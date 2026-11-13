@@ -98,6 +98,7 @@ gfx_ticks	gfx_ticks	-	-
 hex	hex	-	-
 http_early_bind	http_early_bind	-	-
 http_post	http_post	-	-
+http_respond	http_respond	-	-
 http_route	http_route	-	-
 http_route_authed	http_route_authed	-	-
 http_serve	http_serve	-	-

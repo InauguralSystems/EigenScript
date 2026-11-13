@@ -4909,5 +4909,25 @@
         "628eed4fed7515fe2738a26153798fcb173cb23a350d8436f78215f7d1f4c4a8"
       ]
     }
+  },
+  {
+    "function": "builtin_http_respond",
+    "file": "src/ext_http.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "#2351 consumes one whole response dict, not a fixed tuple. Outside the answering thread it must raise the no-request value error before argument validation. Request-context type/atomicity/limit checks are exercised by tests/test_http_respond.py HR14-refusals and HR15-limit.",
+    "public_names": [
+      "http_respond"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "feb8d4352fcaba1226ab6093c07ec16ac431713b6f309b153530d8d6adce9026"
+    ],
+    "source_sha256": {
+      "builtin_http_respond": [
+        "feb8d4352fcaba1226ab6093c07ec16ac431713b6f309b153530d8d6adce9026"
+      ]
+    }
   }
 ]

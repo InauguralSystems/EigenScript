@@ -42,7 +42,7 @@ in `../builtins_changes.md`; the four R2.4 additions use that same exact-hash
 mechanism with their own authority. Existing frozen expectations stay fixed.
 
 ## Files
-- `builtins.tsv`, 307 rows: `builtin file class loss q7 round closed_in
+- `builtins.tsv`, 308 rows: `builtin file class loss q7 round closed_in
   profile hook stdin changes_vs_pre changes_vs_tag`. `make_table.py` writes
   it. Rows come from the §6 table, checked both ways against the inventory's
   `## Builtins` list, field by field. Both files and `src/` are extracted with
@@ -52,8 +52,8 @@ mechanism with their own authority. Existing frozen expectations stay fixed.
   checkout's state; `EIGS_TREE` overrides it for the plants. `file` is the
   `src/*.c` file that defines the inventory's C function. `round` follows the
   plan's rule, and the counts are checked against b 46, c 75, d 52, e 38,
-  f 19 and g 77 (R1.6b-D3, R1.6-S2, R1.6g-D1, S10-D2, sync11 retirement
-  and the four NEW R2.4/N12 rows). The other columns:
+  f 20 and g 77 (R1.6b-D3, R1.6-S2, R1.6g-D1, S10-D2, sync11 retirement,
+  the four NEW R2.4/N12 rows and the NEW HTTP2351 row). The other columns:
   - `closed_in` (ruling A2) and `profile` (A3) come from `rowmeta.tsv`;
   - `hook` (A4) and `stdin` (A5) list the hooks and the stdin fixtures of the
     row's cases, in case order. `-` means none, and stdin `-` is `/dev/null`;
@@ -65,7 +65,7 @@ mechanism with their own authority. Existing frozen expectations stay fixed.
     original one. It is recorded as an observation and never checked, because
     the tag has no `num_type`, and `set_exit_code` also postdates the tag.
 - `rowmeta.tsv`: `builtin closed_in profile`, one line per table row.
-- `cases.tsv`: `case builtin hook stdin`, 308 cases. A row's primary case is
+- `cases.tsv`: `case builtin hook stdin`, 309 cases. A row's primary case is
   `builtins/<b>`. The surviving second case is `gfx_poll.empty` (B3).
   S10-D2 explicitly retires both `proc_read_buf` cases (A5/C10).
 - `builtins/<case>.eigs` is the probe. `<case>.branch` is the pre-registered
@@ -150,7 +150,7 @@ a binary built with the profile, derived from the design:
 | db | `make server-db`, plus `DATABASE_URL` naming a live PostgreSQL | `db_execute`, `db_query_json`, `db_query_value` (b) |
 | zlib | `make zlib` | `inflate` (d) |
 
-Current profile counts (R2.4): release 287, server 16, db 3, zlib 1.
+Current profile counts (HTTP2351): release 287, server 17, db 3, zlib 1.
 
 R1.6a records these rows on matched builds: the same profile built at
 `4ac31e67` and at v0.46.0, passed as `PRE_BIN_<P>` and `TAG_BIN_<P>` (`P` is
@@ -1175,3 +1175,31 @@ numeric operands raise `value`; integer indices outside the cell range raise
 The setter's final `unchanged` line proves every rejected call left its last
 successful negative-zero write intact. Ordinary non-finite buffer reads
 retain R24-2's frozen N13 refusal; these raw-bit probes do not amend it.
+
+## HTTP2351 request-only response addition
+
+The #2351 Decision adds `http_respond`. Its new probe and `.branch` were
+preregistered from that Decision before candidate output was inspected.
+A probe is outside a request, so the call raises `value` with the exact
+message `http_respond: no request is being answered`, even with status
+`404.0`. Its transcript ends `rc=0`. The new `.pre` and `.tag` are observed
+separately on matched server-profile builds of the same approved reference
+commits used for R2.4; a release-only capability stub is not an observation.
+
+The row is int-requiring because optional status uses N5's exact integer
+reader followed by 200..599. It belongs to ext_http.c's existing f bucket.
+`make_table.py` checks the exact standalone refusal for this one request-only
+row; the HTTP2351 raw-socket suite witnesses fractional refusal and integral
+float acceptance inside a request. The hash-ledger and additions overlay
+follow R2.4, anchored at `2094be14ee131fdef517ee258c38d77c48671594`; no old
+source, transcript or N6 derivation changes. The current table has 308 rows
+and 309 cases: b 46, c 75, d 52, e 38, f 20, g 77; profiles release 287,
+server 17, db 3, zlib 1.
+
+The matched server reference observations are now recorded: both are the
+caught `undefined_name` refusal and end `rc=0`, with the common transcript
+SHA-256 `c4bbe503960332e86b7e4928b348d81ff217efa91808d14f05dae52a374d8586`.
+Both reference builds completed with zero warnings; the focused table runner
+compares the candidate with the unchanged preregistered expectation and the
+tag with its observed transcript. `make_table.py --write --final` reports
+308 rows, 309 cases, 217 guarded rows and zero vacuous rows.

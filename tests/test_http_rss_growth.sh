@@ -306,9 +306,11 @@ pick_port() {
     echo $(( (RANDOM % (hi - lo + 1)) + lo ))
 }
 
-# $1 = label, $2 = route path, $3 = server script body
+# $1 = label, $2 = route path, $3 = server script body,
+# $4 = rss-only when the row has no heap sample to judge (optional)
 run_growth_check() {
     local label="$1" route="$2" body="$3"
+    local metric=${4:-both}
     local port srv_file srv_pid
     port=$(pick_port)
     srv_file=$(mktemp /tmp/eigs_rss_srv_XXXXXX.eigs)
@@ -343,7 +345,7 @@ run_growth_check() {
     local heap_reason heap_rc rss_reason rss_rc
     warm=$(batch_200s "http://127.0.0.1:$port$route?[1-$WARMUP]")
     ha=$(heap_of "$port"); ra=$(rss_of "$srv_pid")
-    heap_sample_ok "$label" "$ha" "$srv_pid"
+    if [ "$metric" != rss-only ]; then heap_sample_ok "$label" "$ha" "$srv_pid"; fi
     m1=$(batch_200s "http://127.0.0.1:$port$route?[1-$MEASURE]")
     hb=$(heap_of "$port"); rb=$(rss_of "$srv_pid")
     m2=$(batch_200s "http://127.0.0.1:$port$route?[1-$MEASURE]")
@@ -362,14 +364,22 @@ run_growth_check() {
         return
     fi
 
+    rss_reason=$(leak_verdict "$RSS_THRESHOLD_KB" "$((rb - ra))" "$((rc_ - rb))" "$((rd - rc_))")
+    rss_rc=$?
+    if [ "$metric" = rss-only ]; then
+        if [ "$rss_rc" -eq 0 ]; then
+            ok "$label rss: $rss_reason; heap unavailable (#2364)"
+        else
+            fail "$label rss: $rss_reason; heap unavailable (#2364)"
+        fi
+        return
+    fi
     case "$hb$hc$hd" in *[!0-9]*|'')
         fail "$label could not read live heap" "ha='$ha' hb='$hb' hc='$hc' hd='$hd'"
         return ;;
     esac
     heap_reason=$(leak_verdict "$THRESHOLD_KB" "$(( (hb - ha) / 1024 ))" "$(( (hc - hb) / 1024 ))" "$(( (hd - hc) / 1024 ))")
     heap_rc=$?
-    rss_reason=$(leak_verdict "$RSS_THRESHOLD_KB" "$((rb - ra))" "$((rc_ - rb))" "$((rd - rc_))")
-    rss_rc=$?
     if [ "$heap_rc" -eq 0 ] && [ "$rss_rc" -eq 0 ]; then
         ok "$label heap: $heap_reason | rss: $rss_reason"
     else
@@ -446,6 +456,17 @@ fi
 kill "$AUTH_PID" 2>/dev/null || true
 wait "$AUTH_PID" 2>/dev/null || true
 rm -f "$AUTH_SRV" "/tmp/eigs_rss_auth_$$.log"
+
+# #2351: exercise owned headers/cookies, replacement and appending. On this
+# branch the inherited /heap_sample fixtures return literal 0 (#2364), so the RSS leg
+# must detect this path itself: 8 KiB fields put a dropped cleanup above its
+# 4096 kB threshold in every measured batch. Small allocation leaks remain
+# outside this RSS-only witness. Status 200 also pins batch completion.
+run_growth_check "RSS3 http_respond" "/respond" \
+'r is http_route of ["GET", "/respond", "code", "v is \"x\"\ni is 0\nloop while i < 13:\n    v is v + v\n    i is i + 1\nhttp_respond of {\"status\": 200, \"headers\": {\"X-Request\": v}, \"cookies\": [\"session=\" + v + \"; HttpOnly\"]}\nhttp_respond of {\"headers\": {\"x-request\": v}, \"cookies\": [\"other=\" + v]}\n\"ok\""]
+h is http_route of ["GET", "/heap_sample", "code", "0"]
+n is http_route of ["GET", "/gate_nonce", "code", "\"__NONCE__\""]
+s is http_serve of __PORT__' rss-only
 
 
 echo "HTTP_RSS: $PASS passed, $FAIL failed"
