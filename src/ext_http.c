@@ -68,6 +68,7 @@ typedef struct {
     RouteHeader *headers;
     int *by_name;
     int header_count;
+    int header_room;   /* entries that headers and by_name can hold */
     char **cookies;
     int cookie_count;
     size_t bytes;
@@ -183,7 +184,6 @@ Value *builtin_http_respond(Value *arg) {
      * depends on dictionary order. */
     int hn = headers ? headers->data.dict.count : 0;
     const char **names = NULL;
-    int added = 0;
     Value *refused = NULL;
     size_t bytes = r->bytes;
     if (hn) {
@@ -203,8 +203,6 @@ Value *builtin_http_respond(Value *arg) {
             int old = route_header_find(r, name, NULL);
             if (old >= 0)
                 bytes -= strlen(r->headers[old].name) + strlen(r->headers[old].value) + 4;
-            else
-                added++;
         }
         qsort(names, (size_t)hn, sizeof *names, route_name_cmp);
         for (int i = 1; i < hn; i++)
@@ -237,11 +235,17 @@ Value *builtin_http_respond(Value *arg) {
         if (refused) goto done;
         bytes += n + 14;  /* Set-Cookie: <value> CR LF */
     }
-    /* No fallible language operation remains. Keep first-set name/order. */
-    if (added) {
-        size_t room = (size_t)r->header_count + (size_t)added;
-        r->headers = xrealloc_array(r->headers, room, sizeof *r->headers);
-        r->by_name = xrealloc_array(r->by_name, room, sizeof *r->by_name);
+    /* No fallible language operation remains. Keep first-set name/order.
+     * Room is made for every name of the call, new or not, so that no
+     * insertion below can pass the end of an array whatever a search returns.
+     * It at least doubles when it grows, so a route that sets its headers
+     * one call at a time does not copy both arrays on every call. */
+    if (r->header_count + hn > r->header_room) {
+        int room = r->header_count + hn;
+        if (room < 2 * r->header_room) room = 2 * r->header_room;
+        r->headers = xrealloc_array(r->headers, (size_t)room, sizeof *r->headers);
+        r->by_name = xrealloc_array(r->by_name, (size_t)room, sizeof *r->by_name);
+        r->header_room = room;
     }
     for (int i = 0; i < hn; i++) {
         const char *name = headers->data.dict.keys[i];

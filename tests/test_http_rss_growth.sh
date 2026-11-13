@@ -465,8 +465,8 @@ rm -f "$AUTH_SRV" "/tmp/eigs_rss_auth_$$.log"
 # all 1,000 set again (each value replaced), 1,000 cookies, and a third call that
 # is refused at its last item, after its names have been sorted. The smallest
 # allocation is 4 bytes for each entry of an array, so the smallest thing that
-# can be left unfreed is 4,000 bytes for each request. Status 200 also pins
-# batch completion.
+# can be left unfreed is at least 4,000 bytes for each request. Status 200
+# also pins batch completion.
 run_growth_check "RSS3 http_respond" "/respond" \
 'r is http_route of ["GET", "/respond", "code", "h is {}\nc is []\ni is 0\nloop while i < 1000:\n    h[\"h\" + (str of i)] is \"v\"\n    append of [c, \"c\" + (str of i) + \"=1\"]\n    i is i + 1\nhttp_respond of {\"status\": 200, \"headers\": h, \"cookies\": c}\nhttp_respond of {\"headers\": h}\ncaught is false\ntry:\n    http_respond of {\"headers\": h, \"cookies\": [\"refused \"]}\ncatch e:\n    caught is true\nassert of [caught, \"the third call must be refused\"]\n\"ok\""]
 h is http_route of ["GET", "/heap_sample", "code", "0"]
