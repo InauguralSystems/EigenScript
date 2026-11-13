@@ -6621,7 +6621,7 @@ void register_builtins(Env *env) {
     env_set_local_owned(env, "close_channel", make_builtin(builtin_close_channel));
     env_set_local_owned(env, "channel_closed", make_builtin(builtin_channel_closed));
 
-    /* ---- Hash builtins (sha256, md5, hmac) ---- */
+    /* ---- Hash builtins (sha256, md5) ---- */
     register_hash_builtins(env);
 
 #if EIGENSCRIPT_EXT_HTTP

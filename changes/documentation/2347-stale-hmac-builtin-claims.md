@@ -1,0 +1,1 @@
+- Correct the hash documentation and source comments to reflect the removal of the unused HMAC-SHA256 builtin.
