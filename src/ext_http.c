@@ -373,10 +373,10 @@ static int route_slot_is_callable(const Value *v) {
     return v && (v->type == VAL_FN || v->type == VAL_BUILTIN);
 }
 
-/* #1140: the route table and static root are frozen once http_serve starts.
+/* #1140: the route table and static roots are frozen once http_serve starts.
  * Workers read them lock-free, and a code route's worker points g_server at
  * the SPAWNING server, so a registration from a code route used to write the
- * live table (route_count++ with no fence, static_prefix swapped under
+ * live table (route_count++ with no fence, static configuration swapped under
  * readers). Refuse, the way http_response_header already does; every
  * lock-free read then sees immutable data. `serving` is only written under
  * response_mu, so it is read there too. */
@@ -479,9 +479,42 @@ Value* builtin_http_static(Value *arg) {
     if (http_config_frozen("http_static")) return make_null();
     if (arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
     char *prefix = value_to_string(list_get_view(arg, 0, &(EigsView){{0}}));
+    if (!prefix[0]) {
+        free(prefix);
+        rt_error(EK_VALUE, 0, "http_static: prefix must not be empty");
+        return make_null();
+    }
+    if (prefix[0] != '/') {
+        free(prefix);
+        rt_error(EK_VALUE, 0, "http_static: prefix must begin with '/'");
+        return make_null();
+    }
+    size_t prefix_len = strlen(prefix);
+    while (prefix_len > 0 && prefix[prefix_len - 1] == '/')
+        prefix[--prefix_len] = '\0';
+    if (prefix_len == 0) {
+        free(prefix);
+        rt_error(EK_VALUE, 0, "http_static: prefix must name a path segment (not only slashes)");
+        return make_null();
+    }
+    for (int i = 0; i < g_server.static_count; i++) {
+        if (strcmp(g_server.static_roots[i].prefix, prefix) == 0) {
+            rt_error(EK_VALUE, 0, "http_static: prefix already registered: %s", prefix);
+            free(prefix);
+            return make_null();
+        }
+    }
+    if (g_server.static_count >= MAX_STATIC_PREFIXES) {
+        free(prefix);
+        rt_error(EK_LIMIT, 0, "http_static: prefix table full (max %d prefixes)", MAX_STATIC_PREFIXES);
+        return make_null();
+    }
     char *dir = value_to_string(list_get_view(arg, 1, &(EigsView){{0}}));
-    g_server.static_prefix = prefix;
-    g_server.static_dir = dir;
+    StaticRoot *root = &g_server.static_roots[g_server.static_count];
+    root->prefix = prefix;
+    root->prefix_len = prefix_len;
+    root->directory = dir;
+    g_server.static_count++;
     return make_str("static registered");
 }
 
@@ -1652,12 +1685,18 @@ static void handle_request(int fd) {
     tls_request_body = body ? body : "";
     tls_request_headers = reqbuf;
 
-    if (g_server.static_prefix) {
-        size_t pfx_len = strlen(g_server.static_prefix);
-        /* Match prefix only at a path-segment boundary (followed by '/' or end of string) */
-        if (strncmp(path, g_server.static_prefix, pfx_len) == 0 &&
-            (path[pfx_len] == '/' || path[pfx_len] == '\0')) {
-        const char *rel = path + strlen(g_server.static_prefix);
+    const StaticRoot *static_root = NULL;
+    for (int i = 0; i < g_server.static_count; i++) {
+        const StaticRoot *root = &g_server.static_roots[i];
+        size_t pfx_len = root->prefix_len;
+        /* strncmp stops at NUL; the indexed read is reached only on a match. */
+        if ((!static_root || pfx_len > static_root->prefix_len) &&
+            strncmp(path, root->prefix, pfx_len) == 0 &&
+            (path[pfx_len] == '/' || path[pfx_len] == '\0'))
+            static_root = root;
+    }
+    if (static_root) {
+        const char *rel = path + static_root->prefix_len;
         if (rel[0] == '/') rel++;
         if (rel[0] == '/') {
             send_response(fd, 403, "Forbidden", "text/plain", "Forbidden", 9);
@@ -1666,7 +1705,7 @@ static void handle_request(int fd) {
 
         char resolved_path[4096];
         int static_fd = -1;
-        int open_status = open_static_file_confined(g_server.static_dir, rel,
+        int open_status = open_static_file_confined(static_root->directory, rel,
                                                     resolved_path, sizeof(resolved_path),
                                                     &static_fd);
         if (open_status == 0) {
@@ -1680,7 +1719,7 @@ static void handle_request(int fd) {
         send_open_file(fd, static_fd, resolved_path);
         close(static_fd);
         goto done;
-    }}
+    }
 
     for (int i = 0; i < g_server.route_count; i++) {
         Route *r = &g_server.routes[i];
@@ -2064,8 +2103,10 @@ void ext_http_state_destroy(EigsState *st) {
         free(s->routes[i].kind);
         free(s->routes[i].payload);
     }
-    free(s->static_prefix);
-    free(s->static_dir);
+    for (int i = 0; i < s->static_count; i++) {
+        free(s->static_roots[i].prefix);
+        free(s->static_roots[i].directory);
+    }
     free(s->cors_origin);
     for (int i = 0; i < s->shared_count; i++) {
         free(s->shared[i].key);
