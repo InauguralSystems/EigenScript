@@ -30,6 +30,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SEED = 2373
 
 
+class Skipped(Exception):
+    """A row that cannot be judged here; it is counted as skipped, never as passed."""
+
+
 def route(path, source, method='GET', authed=False):
     return ('http_route_authed' if authed else 'http_route') + ' of ' + json.dumps(
         [method, path, 'code', source]) + '\n'
@@ -465,14 +469,12 @@ def cost(binary, folder):
 
 def leak(binary, folder):
     if not Path('/proc/self/status').exists():
-        print('SKIP: QH17-leak requires Linux /proc RSS', flush=True)
-        return
+        raise Skipped('requires Linux /proc RSS')
     # ASan quarantine and TSan metadata measure the detector, not live leaks.
     symbols = subprocess.run(['nm', '-D', binary], capture_output=True, text=True, timeout=20)
     require(symbols.returncode == 0, 'cannot identify sanitizer build')
     if '__asan_init' in symbols.stdout or '__tsan_init' in symbols.stdout:
-        print('SKIP: QH17-leak RSS on sanitizer build (release RSS gate owns this row)', flush=True)
-        return
+        raise Skipped('RSS on a sanitizer build (the release RSS gate owns this row)')
     code = 'i is 0\nloop while i < 128:\n    vals is http_request_header of "x-a"\n    assert of [len of vals == 1, "RSS lookup must allocate a value"]\n    assert of [len of vals[0] == 64, "RSS value allocation must be 65 bytes"]\n    i is i + 1\n"ok"'
     ids = []
     with server(binary, folder, route('/leak', code), pid_out=ids) as port:
@@ -525,20 +527,23 @@ def main():
         rows = [(n,f) for n,f in rows if n in selected]
     print(f'HTTP_REQUEST_HEADER seed={SEED} rows={len(rows)}', flush=True)
     def run(folder):
-        passed = failed = 0
+        passed = failed = skipped = 0
         for name, fn in rows:
             path = folder / name
             path.mkdir(parents=True, exist_ok=True)
             try:
                 fn(str(Path(args.binary).resolve()), path)
+            except Skipped as why:
+                skipped += 1
+                print(f'SKIP: {name}: {why}', flush=True)
             except Exception as exc:
                 failed += 1
                 print(f'FAIL: {name}: {exc}', flush=True)
             else:
                 passed += 1
                 print(f'PASS: {name}', flush=True)
-        require(passed + failed == len(rows) > 0, 'named row accounting')
-        print(f'HTTP_REQUEST_HEADER: {passed} passed, {failed} failed', flush=True)
+        require(passed + failed + skipped == len(rows) > 0, 'named row accounting')
+        print(f'HTTP_REQUEST_HEADER: {passed} passed, {failed} failed, {skipped} skipped', flush=True)
         return int(failed != 0)
     if args.scratch:
         return run(Path(args.scratch))

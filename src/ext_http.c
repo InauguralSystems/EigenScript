@@ -1212,7 +1212,7 @@ Value *builtin_http_request_header(Value *arg) {
             const char *eol = p;
             p += 2;
             if (first) { first = 0; continue; }  /* never a field */
-            if (eol == line) break;
+            if (eol == line) break;  /* the empty line; `end` is just past it: either stop alone would do */
             if (!colon || (size_t)(colon - line) != n) continue;
             size_t i = 0;
             while (i < n && request_header_lower((unsigned char)line[i]) ==
