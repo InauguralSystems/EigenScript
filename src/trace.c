@@ -1954,6 +1954,7 @@ static const struct {
     {"gfx_ticks",            TK_NUM_, REPLAY_FINITE},
     {"http_post",            TK_STR_, REPLAY_CHECKED},
     {"http_request_body",    TK_STR_, REPLAY_CHECKED},
+    {"http_request_header",  TK_LIST_, REPLAY_CHECKED},
     {"http_request_headers", TK_STR_, REPLAY_CHECKED},
     {"http_session_id",      TK_STR_, REPLAY_CHECKED},
     {"is_dir",               TK_BOOL_, REPLAY_CHECKED},

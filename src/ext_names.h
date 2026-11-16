@@ -80,6 +80,7 @@
     X(http_request_body, builtin_http_request_body) \
     X(http_session_id, builtin_http_session_id) \
     X(http_post, builtin_http_post) \
+    X(http_request_header, builtin_http_request_header) \
     X(http_request_headers, builtin_http_request_headers) \
     X(shared_set, builtin_shared_set) \
     X(shared_incr, builtin_shared_incr) \

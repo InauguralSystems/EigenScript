@@ -474,5 +474,22 @@ n is http_route of ["GET", "/gate_nonce", "code", "\"__NONCE__\""]
 s is http_serve of __PORT__' rss-only
 
 
+# #2373 uses raw Python sockets and pick_port; minimum allocation per request
+# is 128 * 64 = 8192 bytes (list slots), above twice 4096 KiB / 2000.
+# The check is row QH17-leak of tests/test_http_request_header.py. This file
+# prints one PASS: or FAIL: line for each check and the suite counts those
+# lines, so the verdict line of the row is not printed beside the line of
+# RSS4: a failing RSS4 carries it, without the colon after its first word.
+QH_RSS=$(python3 "$TESTS_DIR/test_http_request_header.py" --row QH17-leak 2>&1)
+QH_RSS_RC=$?
+QH_RSS_SAID=$(grep -E '^(PASS|FAIL|SKIP): ' <<< "$QH_RSS")
+QH_RSS_SAID=${QH_RSS_SAID/: / }
+grep -vE '^(PASS|FAIL|SKIP): ' <<< "$QH_RSS"
+if [ "$QH_RSS_RC" -eq 0 ] && grep -qxF 'HTTP_REQUEST_HEADER: 1 passed, 0 failed, 0 skipped' <<< "$QH_RSS"; then
+    ok "RSS4 http_request_header"
+else
+    fail "RSS4 http_request_header" "rc=$QH_RSS_RC; the row said: ${QH_RSS_SAID:-no verdict line}"
+fi
+
 echo "HTTP_RSS: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

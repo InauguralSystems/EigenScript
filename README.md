@@ -37,6 +37,10 @@ the route's final value stays the body. Failed calls change nothing, and an
 uncaught route error drops its settings before the generic 500.
 See [the response rules](docs/BUILTINS.md#per-worker-code-routes).
 
+`http_request_header of "origin"` returns every matching request-header value
+in order. `http_request_headers` returns the request head without its body.
+See [the HTTP builtins](docs/BUILTINS.md#optional-http-extension).
+
 The HTTP server can register multiple static folders; the longest matching
 path-segment prefix serves each request. PostgreSQL connections accept libpq
 URIs and keyword/value strings, preserving an explicit connection timeout.

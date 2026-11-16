@@ -46,6 +46,10 @@ __thread Server *eigs_http_active = NULL;
  * handle_request and reads them via the http_request_* builtins. */
 static __thread const char *tls_request_body = NULL;
 static __thread const char *tls_request_headers = NULL;
+/* The read loop's framing decision, including its terminating empty line.
+ * -1 means it found no head. Borrowed bytes live until handle_request ends;
+ * no parsing or allocation is done until a route asks for a header. */
+static __thread int tls_request_head_end = -1;
 static __thread const char *tls_session_id = NULL;
 /* Set when serving a HEAD request — send_response writes the header but
  * skips the body. */
@@ -1155,9 +1159,74 @@ Value* builtin_http_post(Value *arg) {
 
 Value* builtin_http_request_headers(Value *arg) {
     (void)arg;
+    if (tls_request_headers && tls_request_head_end >= 0)
+        TRACE_NONDET_RET("http_request_headers",
+                         make_str_len(tls_request_headers, (size_t)tls_request_head_end));
     if (tls_request_headers)
         TRACE_NONDET_RET("http_request_headers", make_str(tls_request_headers));
     TRACE_NONDET_RET("http_request_headers", make_str(""));
+}
+
+/* RFC 7230 token, with no reserved spellings. Explicit ASCII folding below
+ * is independent of the process locale. NUL is not strchr's terminator. */
+static int request_header_token(unsigned char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+           (c >= '0' && c <= '9') || (c && strchr("!#$%&'*+-.^_`|~", c));
+}
+
+static unsigned char request_header_lower(unsigned char c) {
+    return c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c;
+}
+
+Value *builtin_http_request_header(Value *arg) {
+    if (!arg || arg->type != VAL_STR) {
+        rt_error(EK_TYPE, 0, "http_request_header: name must be a string");
+        return make_null();
+    }
+    size_t n = val_str_len(arg);
+    int valid = n >= 1 && n <= 64;
+    for (size_t i = 0; valid && i < n; i++)
+        valid = request_header_token((unsigned char)arg->data.str[i]);
+    if (!valid) {
+        rt_error(EK_VALUE, 0, "http_request_header: invalid header name");
+        return make_null();
+    }
+    if (!tls_request_headers) {
+        rt_error(EK_VALUE, 0, "http_request_header: no request is being answered");
+        return make_null();
+    }
+    TRACE_NONDET_TAKE("http_request_header");
+    Value *values = make_list(0);
+    if (tls_request_head_end >= 0) {
+        const char *p = tls_request_headers;
+        const char *end = p + tls_request_head_end;
+        int first = 1;
+        while (p < end) {
+            const char *line = p, *colon = NULL;
+            /* Only CR LF ends a line. Both reads stay inside the framed
+             * head, even for malformed lines and arbitrarily long names. */
+            while (p + 1 < end && !(p[0] == '\r' && p[1] == '\n')) {
+                if (*p == ':' && !colon) colon = p;
+                p++;
+            }
+            const char *eol = p;
+            p += 2;
+            if (first) { first = 0; continue; }  /* never a field */
+            if (eol == line) break;  /* the empty line; `end` is just past it: either stop alone would do */
+            if (!colon || (size_t)(colon - line) != n) continue;
+            size_t i = 0;
+            while (i < n && request_header_lower((unsigned char)line[i]) ==
+                            request_header_lower((unsigned char)arg->data.str[i])) i++;
+            /* Equal to a validated token proves the WHOLE field name is a
+             * token too. Invalid/continuation lines cannot match. */
+            if (i != n) continue;
+            const char *value = colon + 1;
+            while (value < eol && (*value == ' ' || *value == '\t')) value++;
+            while (eol > value && (eol[-1] == ' ' || eol[-1] == '\t')) eol--;
+            list_append_owned(values, make_str_len(value, (size_t)(eol - value)));
+        }
+    }
+    TRACE_NONDET_RECORD("http_request_header", values);
 }
 
 /* ================================================================
@@ -1773,8 +1842,23 @@ static double monotonic_now(void) {
  *
  * `block` is NUL-terminated at the end of the header block, terminator included.
  */
+/* A bounded search avoids measuring the remaining C string for every line.
+ * In particular ASan's strstr interceptor measures that suffix even when the
+ * match is nearby, making many short lines quadratic. memchr takes an explicit
+ * range; each search resumes after the previous line (or lone CR). */
+static const char *http_find_crlf_before(const char *p, const char *end) {
+    while (p < end) {
+        const char *cr = memchr(p, '\r', (size_t)(end - p));
+        if (!cr) return NULL;
+        if (cr + 1 < end && cr[1] == '\n') return cr;
+        p = cr + 1;
+    }
+    return NULL;
+}
+
 static int http_find_content_length(const char *block, long *out_len) {
-    const char *p = strstr(block, "\r\n");
+    const char *block_end = block + strlen(block);
+    const char *p = http_find_crlf_before(block, block_end);
     if (!p) return 0;                       /* request line only, no headers */
     p += 2;
 
@@ -1783,8 +1867,8 @@ static int http_find_content_length(const char *block, long *out_len) {
 
     while (*p) {
         if (p[0] == '\r' && p[1] == '\n') break;      /* blank line: block ends */
-        const char *eol = strstr(p, "\r\n");
-        size_t linelen = eol ? (size_t)(eol - p) : strlen(p);
+        const char *eol = http_find_crlf_before(p, block_end);
+        size_t linelen = eol ? (size_t)(eol - p) : (size_t)(block_end - p);
 
         if (linelen > 14 && strncasecmp(p, "Content-Length", 14) == 0 && p[14] == ':') {
             const char *v = p + 15;
@@ -1982,6 +2066,7 @@ static void handle_request(int fd) {
     tls_session_id = sess_id;
     tls_request_body = body ? body : "";
     tls_request_headers = reqbuf;
+    tls_request_head_end = header_end;
 
     const StaticRoot *static_root = NULL;
     for (int i = 0; i < g_server.static_count; i++) {
@@ -2141,6 +2226,7 @@ done:
     tls_response = NULL;
     tls_request_body = NULL;
     tls_request_headers = NULL;
+    tls_request_head_end = -1;
     tls_session_id = NULL;
     tls_suppress_body = 0;
     /* Release this connection's share of the aggregate in-flight body budget.

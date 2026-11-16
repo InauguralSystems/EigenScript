@@ -3039,6 +3039,15 @@ conservatively instead of answering a rest value. See the
 
 ### HTTP startup and response attribution
 
+`http_request_header of name` returns all matching fields of the server-framed
+request head, in order, with ASCII case ignored and surrounding spaces and
+tabs trimmed. The name is a string of 1–64 token bytes; invalid types and
+names raise. Only CR LF ends a line, malformed lines are ignored, and neither
+the request line nor body is a field. Without a framed empty line there are
+no fields. `http_request_headers` returns the request line and header lines
+through the empty line without the body; without one, it retains the request
+text up to its first NUL or its end. See [the HTTP builtins](BUILTINS.md#optional-http-extension).
+
 A code route can call `http_respond of {"status": 404, "headers": {"Content-Type": "text/html"}, "cookies": ["sid=x; HttpOnly"]}`
 to set its own status, headers and cookies; its final value is still the body.
 Settings merge within this request, failed calls change nothing, and an
