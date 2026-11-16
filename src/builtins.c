@@ -2700,8 +2700,12 @@ Value* builtin_secure_equals(Value *arg) {
 }
 
 /* ==== BUILTIN: http_request_headers ==== */
-/* http_request_headers of null → raw request headers as string.
+/* http_request_headers of null → request line and header lines, without the body.
  * Only meaningful during HTTP request handling. */
+
+/* ==== BUILTIN: http_request_header ==== */
+/* http_request_header of name → matching field values in order as a list.
+ * ASCII case ignored, space/tab trimmed. Requires an answering thread. */
 
 /* ==== BUILTIN: chr ==== */
 /* chr of n → single-character string from ASCII code */

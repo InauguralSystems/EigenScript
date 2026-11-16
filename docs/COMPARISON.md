@@ -1028,6 +1028,13 @@ conservatively instead of answering a rest value. See the
 
 ### HTTP startup and response attribution
 
+`http_request_header of "origin"` returns a list of all matching request-head
+field values in order, like Go's `Header.Values` and Node's `headersDistinct`.
+It ignores ASCII name case and trims only surrounding spaces and tabs. It
+ignores malformed lines without folding them into earlier values. Only CR LF
+ends a line. `http_request_headers` returns the request head without its body.
+See [the HTTP builtins](BUILTINS.md#optional-http-extension).
+
 A code route can call `http_respond of {"status": 404, "headers": {"Content-Type": "text/html"}, "cookies": ["sid=x; HttpOnly"]}`
 to set its own status, headers and cookies; its final value is still the body.
 Settings merge within this request, failed calls change nothing, and an

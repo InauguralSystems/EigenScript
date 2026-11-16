@@ -790,14 +790,15 @@ axis. Three controls bound it:
 | `http_request_body` | `http_request_body of null` | Get current request body |
 | `http_session_id` | `http_session_id of null` | Get current session ID |
 | `http_post` | `http_post of [url, headers, body]` | HTTP POST via curl (no shell). `headers` is a JSON **string**, either an object (`"{\"X-Key\": \"v\"}"`) or a flat alternating array (`"[\"X-Key\", \"v\"]"`); `""` means no headers. Any other parsed shape raises `type_mismatch` rather than silently sending none (#755). JSON integer header values within int64 retain every digit when sent as text (N14, B6). Max 32 headers; CR/LF is stripped from both halves |
-| `http_request_headers` | `http_request_headers of null` | Get current request headers |
+| `http_request_header` | `http_request_header of name` | Return a list of this request's values for the whole ASCII case-insensitive header name, in field order, or `[]` when absent. `name` must be a string of 1–64 bytes of RFC 7230 token characters; a non-string raises `type_mismatch`, an invalid name raises `value`. No spelling is reserved. Values lose only spaces and tabs at their ends; their other bytes are kept. Only CR LF ends a line. Malformed lines and continuations are ignored, and the request line and body are never fields. A request with no server-framed empty line has no fields. Outside the answering thread, including a thread spawned by a route, raises `value`: `http_request_header: no request is being answered`. Works in called functions, cooperative tasks and route auth source. Each returned list is recorded on the tape (#2373) |
+| `http_request_headers` | `http_request_headers of null` | Return the request line and header lines through the empty line, without the body. If the server found no CR LF CR LF before the first NUL, return the request text up to the first NUL or its end. Outside a request, return `""` |
 
 ### Per-worker code routes
 
 A route declared as `[method, path, "code", source]` evaluates `source`
 in a fresh worker `EigsState` on every request — stdlib + the
 request-scoped HTTP builtins (`http_request_body`, `http_session_id`,
-`http_request_headers`, `http_post`, `http_respond`, and the `shared_*` family below)
+`http_request_header`, `http_request_headers`, `http_post`, `http_respond`, and the `shared_*` family below)
 are available; **startup-scope globals are not**. The final
 expression's value is sent as the response body; an uncaught error
 answers **500** with the generic body `{"error": "internal error"}`

@@ -314,7 +314,7 @@ something nothing records (#2200).
 | Tensor files | `tensor_load` (#1393) |
 | Module sources | `import_source`, `import_source_chunk`, `load_file_source`, `load_file_source_chunk`, `import_warning` |
 | Observer gate sources | `observer_source`, `observer_source_chunk` (#915) |
-| HTTP extension | `http_post`, `http_request_body`, `http_session_id`, `http_request_headers` |
+| HTTP extension | `http_post`, `http_request_body`, `http_session_id`, `http_request_header`, `http_request_headers` |
 | Network extension | `net_listen`, `net_port`, `net_accept`, `net_dial`, `net_recv`, `net_send` (#414) |
 | Graphics extension | `gfx_read` (#823), `gfx_ticks` |
 | Audio (graphics extension) | `audio_capture_open`, `audio_capture_read` (#579), `audio_stream_queued`, `audio_noise` (#1803) |
@@ -392,6 +392,9 @@ Notes on the families:
   paths. `http_respond` reads only program values and sets the current response;
   it writes no tape record. The request-reading builtins, including
   `http_request_body`, retain their own nondeterministic input records.
+  Each returning `http_request_header` call records its whole list in one
+  `N` record (with `C` continuations for a large list). Argument and request
+  context refusals precede the tape seam and write no record (#2373).
 - **Network extension (#414):** `net_listen`, `net_port`, `net_accept`,
   `net_dial`, `net_recv`, `net_send`. Every environment outcome is a
   recorded *value* — `null` for failure/timeout, a number or buffer for

@@ -775,6 +775,17 @@ to set its own status, headers and cookies; its final value is still the body.
 Settings merge within this request, failed calls change nothing, and an
 uncaught raise drops them before the generic 500. See [the response rules](BUILTINS.md#per-worker-code-routes).
 
+`http_request_header of "origin"` returns a list of all matching header values
+from this request's server-framed head, in order. Names ignore ASCII case;
+only spaces and tabs at the value's ends are trimmed. A name must be a string
+of 1–64 RFC token bytes. Request lines, bodies, malformed lines and
+continuations are not fields; only CR LF ends a line, and without a framed
+empty line there are no fields. Outside the answering thread the call raises
+`value`. Called functions, cooperative tasks and auth source see the same
+request; a spawned thread does not. `http_request_headers` returns the request
+line and header lines through the empty line without the body; if no empty
+line was found, it keeps the old request text up to NUL or end.
+
 `http_static` adds a folder at an absolute path-segment prefix, drops trailing
 slashes, and refuses empty, root-only, relative or duplicate prefixes. The
 longest matching segment prefix serves a request; registration freezes when
