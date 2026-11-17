@@ -2521,11 +2521,17 @@ critics).
   - `reveal_fixtures.json`:
     `c6b4727e279d00bd96795ae1d7c658d09819aed68c7f42336b2afbf440e7298c`;
   - `reveal_commitment.json`:
-    `18aa162928e39580468cc77bdca1dde913dd9e5fc72f4706d062de324f63f269`.
+    `18aa162928e39580468cc77bdca1dde913dd9e5fc72f4706d062de324f63f269`;
+  - the selftest's row in `tools/selftests.txt`. That file was
+    `2c818e156dac951429622dfac16e7e81b46b5190edeeac22b46d70c6ee35c2bb` when
+    R3.0-R landed and is so today; it changes when any other row is added,
+    so the row is also named by itself: its one line, with its newline, is
+    `41b881eee172cfc14a90ef839232cd792e3c9c43c251ada185f7f4f77736cc28`.
 
-  Those files are not on this branch. Two tags keep the reveal's commits
+  Those files are not on this branch. Tags keep the reveal's commits
   fetchable after the branch is merged (R30R-9 item 3): `phase2-r3-std` is
-  the registered R3-STD, and `phase2-r3-final` is R3.3's final commit.
+  the registered R3-STD, and R3.3's final commit is tagged `phase2-r3-final`
+  once it is on the branch.
 
 **The LOO mechanisms and the sub-rounds that build them:**
 - **O1** (the distance signal, entropy removed): R3.1.
@@ -3005,10 +3011,13 @@ twin. This is the record of what ran. The tables are in the posts on #1580.
     that margin.
   - The four window-peak arms and STD-rel read none of the 18 `converged`.
     The ruling had shown before any data that they could not.
-  - So no arm was feasible. STD-rel was then confirmed alone on the fixed
-    confirmation population, and did not meet it (none of the six zero-limit
-    readings there `converged`). By the registered rule the floor stays as
-    it is and #1580's Done-when is reopened.
+  - So no arm with a floor that follows a peak was feasible. STD-rel was
+    then tested alone on the fixed confirmation population, and failed it
+    (none of the six zero-limit readings there `converged`). By the
+    registered rule the floor stays as it is and #1580's Done-when is
+    reopened.
+  - With no feasible arm there was no choice to build (R33-1, item 18) and
+    no fraction for the local leave-one-out (item 19).
 - **Replication.** A blind rerun of the port's part of all three steps on
   another machine gave the same bytes for 35 of 35 output files.
 - **What R3.3 changes in the runtime: nothing.** No line of `src/` moved in
@@ -3025,19 +3034,35 @@ twin. This is the record of what ran. The tables are in the posts on #1580.
 
   R33-1's section 8 said "as new files on the branch". This is the one
   departure from it, and it moves no measurement and no rule. The reasons:
-  the instrument is 725 files and 18.7 MB of sealed fixtures beside a tree
-  of 3,618 files and 18.1 MB, and a sealed file should not come under the
-  gates of a tree it was not sealed on.
+  the instrument is 725 files and 18.7 MB (its code, its sealed fixtures and
+  readings, and the three files of the choice) beside a tree of 3,618 files
+  and 18.1 MB, and a sealed file should not come under the gates of a tree
+  it was not sealed on.
 - **The float twin was withdrawn** (R33-1, section 6). The rule "a same-sign
-  run of ulp-sized float steps is motion" called a converging sequence
-  diverging (`1 + 1e-13 * 0.99^n`, at 144 checkpoints), did not reach the
-  float counters of H1's family 14, and is not one of the registered
-  mechanisms. What stays true is in `docs/PREDICATES.md` under the
-  documented residuals: a float counter reads `stable` and then `converged`
-  once it is large, with the measured magnitudes. #2326's rows record it;
-  they enter the corpus after the reveal, because the frozen judge pins that
-  file. The row `O2.float-counter-2p53-by2` that design round 5 planned is
-  not added.
+  run of ulp-sized float steps is motion" was made testable as ten same-sign
+  float steps of one to four ulps. Two of the ruling's reasons stand:
+  - it called a converging sequence diverging (`1 + 1e-13 * 0.99^n`, at 144
+    checkpoints): inside ten steps, a counter at the resolution of a double
+    and a sequence still converging there are the same data, so the rule
+    trades one wrong reading for another;
+  - it is not one of the registered mechanisms.
+
+  The ruling's third reason was wrong, and is corrected here and on #1580.
+  Item 23 said the rule did not reach the float counters of H1's family 14.
+  The frozen `families.py` gives that family four float counters: from 1e6
+  and 2^40 by 1, which the rule does not reach, and from 2^50 by 1 (four
+  ulps) and from 2^53 by 2 (one ulp), which it does. So at the reveal the
+  subject reads those two as `converged` and not `diverging`, where the
+  withdrawn rule would have read them right. The withdrawal stands on the
+  first two reasons. A rule for float counters is work for after the reveal,
+  and the pre-registration judges a change made after the reveal on a fresh
+  sealed set.
+
+  What stays true is in `docs/PREDICATES.md` under the documented residuals:
+  a float counter reads `stable` and then `converged` once it is large, with
+  the measured magnitudes. #2326's rows record it; they enter the corpus
+  after the reveal, because the frozen judge pins that file. The row
+  `O2.float-counter-2p53-by2` that design round 5 planned is not added.
 - **`issue1891_underflow_tail` is not fixed here.** Design round 5 promised
   that R3.3 would fix its `converged`. Every arm of the experiment reads
   that row as F0 does, so no floor rule changes it. It is a documented
@@ -3565,7 +3590,7 @@ failing on zero rows:
 | R2.4 | 6 | |
 | R2.5 | 6 | |
 | R2.6 | 6 (3 change rows, 3 invariant controls) | R23-1: pcm16 NaN, the `when` ordinal and the `numerical_grad` waiver case were already closed on `aed64ce3`; suite [0fz] (`tests/test_phase2_r26_residue.eigs`) pins pcm16 saturation and no partial result, and under the ASan lanes' float-cast-overflow it is the base-red half of the `when`/`at` casts; `net_send` stays pinned by `gate.N5.net-byte-boundary` |
-| R3 | 23 (20 change rows, 3 invariant controls) | `gate.O1.oracle-floor`, `gate.O2.predicate-floors` (both `make observer-oracle EXPECT=ieee,int64` with an empty `oracle_expect.txt`); R3.0 (design round 3) sequences R3.0-I (the instrument PR), R3.1 = arm R3-STD (19 change rows, the three invariants), R3.2 (`O3.ocfg-no-hlow`), R3.3 (#1580's experiment: no rule adopted, the float twin withdrawn, so it has no row and no gate of its own and is not in `ROUNDS`) and R3.4 (#1419, not built in Phase 2); R3.1 and R3.2 are in `ROUNDS` |
+| R3 | 23 (20 change rows, 3 invariant controls) | `gate.O1.oracle-floor`, `gate.O2.predicate-floors` (both `make observer-oracle EXPECT=ieee,int64` with an empty `oracle_expect.txt`); R3.0 (design round 3) sequences R3.0-I (the instrument PR), R3.1 = arm R3-STD (19 change rows, the three invariants), R3.2 (`O3.ocfg-no-hlow`), R3.3 (#1580's experiment: no rule adopted, the float twin withdrawn, so it has no MAP row and no gate of this checker and is not in `ROUNDS`; its own gate was the experiment's registered decision rule) and R3.4 (#1419, not built in Phase 2); R3.1 and R3.2 are in `ROUNDS` |
 
 (The counts are the MAP's at this commit; `phase2_check.sh` derives them, and
 fails if a round named here has neither rows nor its mechanical gates.)
