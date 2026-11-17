@@ -798,6 +798,11 @@ def dealt_arrives(binary, folder, version):
         expected = [request_reference(arg,version) for arg in arguments]
         got = run_calls(binary, folder, arguments, timeout=120)
         equal(len(got),600,'arrivals compared calls')
+        # Each call's own outcome first, so a refused call is named.
+        for i,result in enumerate(got):
+            try: expect_answer(result, answer_reference(Plan().wire,arguments[i]['method']))
+            except AssertionError as exc:
+                raise AssertionError(f'arrivals call {i} (headers {list(arguments[i]["headers"])[:6]}): {exc}') from exc
         equal(len(peer.requests),600,'arrivals listener calls')
         for i,(record,want,result) in enumerate(zip(peer.requests,expected,got)):
             try:
@@ -1546,11 +1551,11 @@ def https_proxy(binary,folder,version):
         value=run_calls(binary,folder,[{'url':f'https://127.0.0.1:{target}/x'}],{'https_proxy':f'http://127.0.0.1:{port}','CURL_CA_BUNDLE':str(cert)})[0]
         thread.join(25)
         require(not thread.is_alive(),'proxy listener did not finish')
+        require(len(seen)>=1 and seen[0].startswith(f'CONNECT 127.0.0.1:{target} HTTP/1.1\r\n'.encode()),f'proxy: not a CONNECT: {seen[:1]!r}')
+        expect_answer(value,{'status':404,'headers':{'x-a':'1','content-length':'4'},'body':b'body'})
         require(not problems,f'proxy listener: {problems}')
         equal(len(seen),2,'proxy: the CONNECT and the request')
-        require(seen[0].startswith(f'CONNECT 127.0.0.1:{target} HTTP/1.1\r\n'.encode()),f'proxy: not a CONNECT: {seen[0][:80]!r}')
         require(seen[1].startswith(b'GET /x HTTP/1.1\r\n'),f'proxy: inner request {seen[1][:80]!r}')
-        expect_answer(value,{'status':404,'headers':{'x-a':'1','content-length':'4'},'body':b'body'})
     finally:
         listener.close()
 
