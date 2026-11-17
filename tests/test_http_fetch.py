@@ -44,6 +44,8 @@ THIRTEEN = ('Accept-Encoding', 'Alt-Used', 'Authorization', 'Content-Range', 'Co
             'If-Modified-Since', 'If-Unmodified-Since', 'Last-Modified', 'Proxy-Authorization', 'Range', 'Referer')
 ID_NAMES = tuple(name + '-Id' for name in ('Content-Length', 'Transfer-Encoding', 'Expect') + CONNECTION_WRITTEN)
 OTHER_NAMES = ('X-Connection', 'Trailer', 'Via', 'Origin', 'Sec-X')
+PROXY_VARIABLES = ('http_proxy', 'https_proxy', 'all_proxy', 'no_proxy',
+                   'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY')
 RUNTIME_TMP = None
 
 
@@ -1422,7 +1424,7 @@ def nul_body(binary,folder,version):
         equal(peer.record_count,2,'raw and compressed NUL-body comparisons')
 
 
-def curl_version_text():
+def curl_library():
     # The library itself, by the names the runtime loads it by.
     import ctypes
     names=('libcurl.4.dylib','libcurl.dylib') if sys.platform=='darwin' else ('libcurl.so.4','libcurl.so')
@@ -1431,12 +1433,126 @@ def curl_version_text():
         try: lib=ctypes.CDLL(name);break
         except OSError: pass
     require(lib is not None,'curl library not found for fixture version check')
+    return lib
+
+
+def curl_version_text():
+    import ctypes
+    lib=curl_library()
     lib.curl_version.restype=ctypes.c_char_p
     return lib.curl_version().decode()
 
 
 def curl_version():
     return int(re.search(r'libcurl/(\d+)',curl_version_text()).group(1))
+
+
+def library_outcome(url):
+    # What the library itself makes of an answer: a request of the row's own
+    # through curl_easy_perform (GET, HTTP/1.1, the body dropped), with no
+    # option the runtime does not set; then CURLINFO_RESPONSE_CODE.
+    import ctypes
+    lib=curl_library()
+    lib.curl_easy_init.restype=ctypes.c_void_p
+    lib.curl_easy_setopt.restype=lib.curl_easy_perform.restype=lib.curl_easy_getinfo.restype=ctypes.c_int
+    handle=ctypes.c_void_p(lib.curl_easy_init())
+    require(handle.value is not None,'curl_easy_init failed')
+    drop=ctypes.CFUNCTYPE(ctypes.c_size_t,ctypes.c_void_p,ctypes.c_size_t,ctypes.c_size_t,ctypes.c_void_p)(lambda data,size,count,user:size*count)
+    try:
+        for option,value in ((10002,ctypes.c_char_p(url.encode())),(84,ctypes.c_long(2)),(99,ctypes.c_long(1)),
+                             (155,ctypes.c_long(10000)),(20011,drop)):
+            equal(lib.curl_easy_setopt(handle,ctypes.c_int(option),value),0,f'library option {option}')
+        code=lib.curl_easy_perform(handle)
+        status=ctypes.c_long(-1)
+        equal(lib.curl_easy_getinfo(handle,ctypes.c_int(0x200002),ctypes.byref(status)),0,'library response code')
+        return code,status.value
+    finally:
+        lib.curl_easy_cleanup(handle)
+
+
+def table_message(code):
+    # The table of "Errors" for the library's error N.
+    return {6:'could not resolve the host (curl error 6)',7:'could not connect (curl error 7)',28:'timed out (curl error 28)',
+            18:'the answer ended early',52:'the answer ended early',56:'the answer ended early'}.get(code,f'curl failed (curl error {code})')
+
+
+def status_library(binary,folder,version):
+    # Each status line with the status it says by the rule of "Errors" (None: none).
+    lines=[(b'HTTP/1.1\t404 Not Found',404),(b'HTTP/1.1 200OK',200),(b'HTTP/2 404',404),(b'http/1.1 404 Not Found',None),
+           (b'HTTP/2.0 404 Not Found',404),(b'HTTP/3.0 500 Oops',500),(b'HTTP/2x 404 Not Found',404),(b'Http/1.1 200 OK',None)]
+    answers=[(line,said,line+b'\r\nX-A: 1\r\nContent-Length: 4\r\n\r\nbody',{'x-a':'1','content-length':'4'},b'body') for line,said in lines]
+    answers.append((b'HTTP/1.1 200 OK',200,b'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nok\r\n0\r\nHTTP/1.1: v\r\nX-T: t\r\n\r\n',
+                    {'transfer-encoding':'chunked'},b'ok'))
+    equal(len(answers),9,'status-line answers')
+    # The library reads the proxy variables when it performs: the request of
+    # the row's own runs without them, as every row's program does.
+    saved={k:os.environ.pop(k) for k in PROXY_VARIABLES if k in os.environ}
+    try:
+        with Peer([Plan(wire) for _,_,wire,_,_ in answers]) as peer:
+            library=[library_outcome(peer.url+f'/{i}') for i in range(len(answers))]
+            equal(peer.accepted,9,'library requests')
+    finally:
+        os.environ.update(saved)
+    with Peer([Plan(wire) for _,_,wire,_,_ in answers]) as peer:
+        got=run_calls(binary,folder,[{'url':peer.url+f'/{i}'} for i in range(len(answers))])
+        equal(peer.accepted,9,'program requests')
+    compared,failures=0,[]
+    for (line,said,wire,headers,body),(code,status),value in zip(answers,library,got):
+        print(f'STATUS_LINE {line!r} says={said} library_error={code} library_status={status} program={value[:3]}',flush=True)
+        try:
+            if code: expect_error(value,'io',table_message(code))
+            elif status==said: expect_answer(value,{'status':said,'headers':headers,'body':body})
+            else: expect_error(value,'io','the answer ended early')
+        except AssertionError as exc: failures.append(f'{line!r}: {exc}')
+        compared+=1
+    equal(compared,9,'status-line comparisons')
+    require(not failures,f'{len(failures)} of 9: '+' | '.join(failures))
+
+
+def https_proxy(binary,folder,version):
+    if not shutil.which('openssl'): raise Skipped('openssl is unavailable')
+    import ssl
+    cert=folder/'proxy.pem';key=folder/'proxy.key';config=folder/'proxy.cnf'
+    config.write_text('[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=127.0.0.1\n[ext]\nsubjectAltName=IP:127.0.0.1\nbasicConstraints=critical,CA:TRUE\n')
+    proc=subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','1','-config',str(config),'-keyout',str(key),'-out',str(cert)],capture_output=True,timeout=30)
+    require(proc.returncode==0,'proxy certificate generation: '+proc.stderr.decode())
+    tls=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER);tls.load_cert_chain(cert,key)
+    port=pick_port()
+    listener=socket.socket();listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+    listener.bind(('127.0.0.1',port));listener.listen(4);listener.settimeout(20)
+    seen,problems=[],[]
+    def head(sock):
+        wire=b''
+        while b'\r\n\r\n' not in wire:
+            data=sock.recv(65536)
+            if not data: break
+            wire+=data
+        return wire
+    def serve():
+        try:
+            sock,_=listener.accept();sock.settimeout(20)
+            with sock:
+                seen.append(head(sock))
+                sock.sendall(b'HTTP/1.1 200 Connection established\r\nX-P: 1\r\n\r\n')
+                with tls.wrap_socket(sock,server_side=True) as inner:
+                    seen.append(head(inner))
+                    inner.sendall(b'HTTP/1.1 404 Not Found\r\nX-A: 1\r\nContent-Length: 4\r\n\r\nbody')
+        except (OSError,ssl.SSLError) as exc:
+            problems.append(str(exc))
+    thread=threading.Thread(target=serve,daemon=True);thread.start()
+    try:
+        # Nothing listens at the URL's own port: only the proxy can answer.
+        target=pick_port()
+        value=run_calls(binary,folder,[{'url':f'https://127.0.0.1:{target}/x'}],{'https_proxy':f'http://127.0.0.1:{port}','CURL_CA_BUNDLE':str(cert)})[0]
+        thread.join(25)
+        require(not thread.is_alive(),'proxy listener did not finish')
+        require(not problems,f'proxy listener: {problems}')
+        equal(len(seen),2,'proxy: the CONNECT and the request')
+        require(seen[0].startswith(f'CONNECT 127.0.0.1:{target} HTTP/1.1\r\n'.encode()),f'proxy: not a CONNECT: {seen[0][:80]!r}')
+        require(seen[1].startswith(b'GET /x HTTP/1.1\r\n'),f'proxy: inner request {seen[1][:80]!r}')
+        expect_answer(value,{'status':404,'headers':{'x-a':'1','content-length':'4'},'body':b'body'})
+    finally:
+        listener.close()
 
 
 def nul_header(binary,folder,version):
@@ -1943,8 +2059,8 @@ ROWS=[
     ('answer-status-like-neighbours',status_like_neighbours),
     ('limit-endless-and-head',immediate_limit_head),
 ]+[(f'body-env-{i:02}',lambda *args,s=setting:body_environment(*args,s)) for i,setting in enumerate(BODY_ENV_VALUES)]+[
-    ('keylog',keylog),('https-certificates',https_certificates),('connection-errors',connection_errors),('timeouts',timeouts),
-    ('default-timeouts',default_timeouts),('early-answers',early_answers),('nul-body',nul_body),('nul-header',nul_header),
+    ('keylog',keylog),('https-certificates',https_certificates),('https-proxy',https_proxy),('connection-errors',connection_errors),('timeouts',timeouts),
+    ('default-timeouts',default_timeouts),('early-answers',early_answers),('answer-status-library',status_library),('nul-body',nul_body),('nul-header',nul_header),
     ('no-library',no_library),('refused-option',refused_option),('timeout-edges',timeout_edges),
     ('no-child',no_children),('concurrent-calls',concurrent_calls),('tape-three',tape_three),
     ('tape-refusals',tape_refusals),('tape-large-limit',tape_large),('tape-kinds-docs',tape_kinds_docs),
