@@ -1288,7 +1288,12 @@ def nul_header(binary,folder,version):
 def timeout_edges(binary,folder,version):
     port=pick_port()
     value=run_calls(binary,folder,[{'url':f'http://127.0.0.1:{port}/','timeout':.001}])[0]
-    expect_error(value,'io','could not connect (curl error 7)')
+    # "Taken" means the attempt was made: an io error of the attempt, never the
+    # argument's value error. Which of the two comes first, the refused connect
+    # or the 1 ms limit, is a race (28 in 4 of 20 runs on the TSan build).
+    equal(value[:2],['error','io'],'0.001 taken: attempt error kind')
+    require(value[2] in ('http_fetch: could not connect (curl error 7)','http_fetch: timed out (curl error 28)'),
+            f'0.001 taken: attempt message {value[2]!r}')
     for timeout in (300,300.0): one_request(binary,folder,{'timeout':timeout},version)
 
 
