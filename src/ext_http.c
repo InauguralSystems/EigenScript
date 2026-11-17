@@ -1114,6 +1114,9 @@ enum {
     FETCH_CURLINFO_RESPONSE_CODE = 0x200002
 };
 #define FETCH_HEADER_LIMIT 65536u
+/* The runtime's own limit on lines, below curl's 5000 (from 8.14.0), so that
+ * the same answer decides the same way on every release. */
+#define FETCH_HEADER_LINE_LIMIT 4096u
 
 typedef struct {
     const char *name, *value;
@@ -1335,6 +1338,7 @@ static Value *fetch_curl_error(const char *fn, int code) {
 typedef struct {
     char *body, *headers;
     size_t body_len, body_room, header_len, header_bytes, header_lines;
+    size_t exchange_lines; /* every header line of the exchange; never reset */
     int status, final_complete, limit;
 } FetchAnswer;
 
@@ -1376,7 +1380,9 @@ static size_t fetch_header_write(char *bytes, size_t size, size_t count, void *o
         return n;
     }
     if (n > FETCH_HEADER_LIMIT - a->header_bytes) { a->limit = 1; return 0; }
+    if (a->exchange_lines >= FETCH_HEADER_LINE_LIMIT) { a->limit = 3; return 0; }
     a->header_bytes += n;
+    a->exchange_lines++;
     if (!a->final_complete && a->status >= 200) {
         if (!a->headers) a->headers = xmalloc(FETCH_HEADER_LIMIT + 1);
         memcpy(a->headers + a->header_len, bytes, n);
@@ -1538,6 +1544,7 @@ done:
     fetch_curl.slist_free_all(head);
     Value *result;
     if (a.limit == 1) result = fetch_attempt_error(fn, EK_LIMIT, "the answer's headers are longer than 65536 bytes");
+    else if (a.limit == 3) result = fetch_attempt_error(fn, EK_LIMIT, "the answer has more than 4096 header lines");
     else if (a.limit == 2) {
         char text[128];
         snprintf(text, sizeof text, "the answer's body is longer than %zu bytes (EIGS_HTTP_FETCH_MAX_BODY)", fetch_body_limit);
