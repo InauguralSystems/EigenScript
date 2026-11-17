@@ -34,6 +34,7 @@ TOKEN = b"!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrs
 AUTHORITY = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_:[]"
 METHODS = ('GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE')
 HEADER_LIMIT = 65536
+HEADER_LINE_LIMIT = 4096
 DEFAULT_BODY_LIMIT = 16777216
 RUNTIME_TMP = None
 
@@ -130,7 +131,18 @@ def answer_reference(wire, method='GET', body_limit=DEFAULT_BODY_LIMIT, reset=Fa
         fail('io', 'the answer ended early')
     def body_over():
         fail('limit', f"the answer's body is longer than {body_limit} bytes (EIGS_HTTP_FETCH_MAX_BODY)")
-    pos, total, final_headers, status = 0, 0, {}, None
+    def header_line(line):
+        # Both header limits count every header line of the exchange (interim,
+        # final, trailers); no status line, no empty line. Bytes are looked at
+        # first, so a line that passes both reports bytes.
+        nonlocal total, lines
+        total += len(line) + 2
+        lines += 1
+        if total > HEADER_LIMIT:
+            fail('limit', "the answer's headers are longer than 65536 bytes")
+        if lines > HEADER_LINE_LIMIT:
+            fail('limit', 'the answer has more than 4096 header lines')
+    pos, total, lines, final_headers, status = 0, 0, 0, {}, None
     while True:
         end = wire.find(b'\r\n', pos)
         if end < 0:
@@ -151,9 +163,7 @@ def answer_reference(wire, method='GET', body_limit=DEFAULT_BODY_LIMIT, reset=Fa
                 break
             if b'\0' in line:
                 fail('io', 'curl failed (curl error 8)')
-            total += len(line) + 2
-            if total > HEADER_LIMIT:
-                fail('limit', "the answer's headers are longer than 65536 bytes")
+            header_line(line)
             name, sep, value = line.partition(b':')
             if not sep:
                 raise ValueError('oracle received unspecified malformed header')
@@ -184,9 +194,7 @@ def answer_reference(wire, method='GET', body_limit=DEFAULT_BODY_LIMIT, reset=Fa
                     pos = end + 2
                     if not line:
                         break
-                    total += len(line) + 2
-                    if total > HEADER_LIMIT:
-                        fail('limit', "the answer's headers are longer than 65536 bytes")
+                    header_line(line)
                 break
             available = min(n, len(wire) - pos)
             count += available
@@ -1075,6 +1083,86 @@ def answer_header_limit(binary,folder,version):
     equal(compared+1,9,'answer header limit comparisons')
 
 
+LINES_MESSAGE='the answer has more than 4096 header lines'
+BYTES_MESSAGE="the answer's headers are longer than 65536 bytes"
+
+
+def header_block(n,width=8,start=0):
+    # n header lines of exactly `width` bytes each (CR LF counted), distinct
+    # three-byte names; nothing else in the block.
+    names=short_names(start+n)[start:]
+    block=b''.join(name.encode()+b': '+b'v'*(width-7)+b'\r\n' for name in names)
+    equal(len(block),n*width,'line-limit fixture bytes')
+    return block
+
+
+def line_shape(binary,folder,cases,legacy_over=None):
+    """Each case: (label, wire, None for returned or the limit message).
+    The stated outcome is checked against the second reference first, then
+    the runtime against both. legacy_over: a wire http_post must refuse."""
+    compared=0
+    for label,wire,message in cases:
+        try:
+            want=answer_reference(wire)
+        except Refusal as exc:
+            equal((exc.kind,exc.message),('limit','http_fetch: '+str(message)),f'{label}: reference outcome')
+            want=None
+        else:
+            equal(message,None,f'{label}: reference returned an answer')
+        with Peer([Plan(wire)]) as peer:
+            value=run_calls(binary,folder,[{'url':peer.url+'/'}])[0]
+            try:
+                if want is None: expect_error(value,'limit',message)
+                else: expect_answer(value,want)
+            except AssertionError as exc: raise AssertionError(f'{label}: {exc}') from exc
+            equal(peer.accepted,1,f'{label}: one connection')
+            require(not peer.errors,f'{label}: peer errors {peer.errors}')
+        compared+=1
+    if legacy_over is not None:
+        with Peer([Plan(legacy_over)]) as peer:
+            value=run_calls(binary,folder,[[peer.url+'/','{}','x']],legacy=True)[0]
+            expect_error(value,'limit',LINES_MESSAGE,'http_post')
+        compared+=1
+    equal(compared,len(cases)+(legacy_over is not None),'line-limit comparisons')
+
+
+def answer_lines_edge(binary,folder,version):
+    status=b'HTTP/1.1 200 OK\r\n'
+    over=status+header_block(4097)+b'\r\n'
+    line_shape(binary,folder,[('4096x8',status+header_block(4096)+b'\r\n',None),
+                              ('4097x8',over,LINES_MESSAGE)],legacy_over=over)
+
+
+def answer_lines_6000(binary,folder,version):
+    # Above the library's own 5000 from release 8.14.0: the runtime's limit
+    # must be the one reached, never curl error 100.
+    line_shape(binary,folder,[('6000x8',b'HTTP/1.1 200 OK\r\n'+header_block(6000)+b'\r\n',LINES_MESSAGE)])
+
+
+def answer_lines_both(binary,folder,version):
+    # Line 4097 takes bytes (65544) and lines past at once: bytes is reported.
+    wire=b'HTTP/1.1 200 OK\r\n'+header_block(4096,16)+header_block(1,8,4096)+b'\r\n'
+    line_shape(binary,folder,[('4096x16+1x8',wire,BYTES_MESSAGE)])
+
+
+def answer_lines_interim(binary,folder,version):
+    def wire(interim,final):
+        return (b'HTTP/1.1 100 Continue\r\n'+header_block(interim)+b'\r\n'
+                +b'HTTP/1.1 200 OK\r\n'+header_block(final,8,interim)+b'\r\n')
+    line_shape(binary,folder,[('2048+2048',wire(2048,2048),None),
+                              ('2048+2049',wire(2048,2049),LINES_MESSAGE),
+                              ('3000+3000',wire(3000,3000),LINES_MESSAGE)])
+
+
+def answer_lines_trailer(binary,folder,version):
+    framing=b'Transfer-Encoding: chunked\r\n'
+    def wire(trailers):
+        return (b'HTTP/1.1 200 OK\r\n'+framing+header_block(4094)+b'\r\n'
+                +b'2\r\nok\r\n0\r\n'+header_block(trailers,8,4094)+b'\r\n')
+    line_shape(binary,folder,[('4095+1 trailer',wire(1),None),
+                              ('4095+2 trailers',wire(2),LINES_MESSAGE)])
+
+
 def immediate_limit_head(binary,folder,version):
     wire=b'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n'
     with Peer([Plan(wire,endless=True,drip=.001)]) as peer:
@@ -1669,7 +1757,10 @@ ROWS=[
     ('request-body',request_body),('request-headers',request_headers),('request-limit',request_limit),
     ('curlrc',curlrc),('userinfo',userinfo),('statuses-no-redirect',statuses),
     ('answer-join-order',join_order),('interim-trailer',interim_trailer),('answer-body-sizes',answer_sizes),
-    ('answer-header-limit',answer_header_limit),('limit-endless-and-head',immediate_limit_head),
+    ('answer-header-limit',answer_header_limit),
+    ('answer-lines-edge',answer_lines_edge),('answer-lines-6000',answer_lines_6000),('answer-lines-both',answer_lines_both),
+    ('answer-lines-interim',answer_lines_interim),('answer-lines-trailer',answer_lines_trailer),
+    ('limit-endless-and-head',immediate_limit_head),
 ]+[(f'body-env-{i:02}',lambda *args,s=setting:body_environment(*args,s)) for i,setting in enumerate(BODY_ENV_VALUES)]+[
     ('keylog',keylog),('https-certificates',https_certificates),('connection-errors',connection_errors),('timeouts',timeouts),
     ('default-timeouts',default_timeouts),('early-answers',early_answers),('nul-body',nul_body),('nul-header',nul_header),

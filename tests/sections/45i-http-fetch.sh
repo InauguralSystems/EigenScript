@@ -13,7 +13,7 @@ elif grep -Eq 'undefined variable|capability unavailable' <<< "$HF_PROBE_OUT"; t
     section_skip "binary built without HTTP"
 else
     TOTAL=$((TOTAL + 1))
-    # 67 named rows include the whole-run TMPDIR check. The five /proc/loader
+    # 72 named rows include the whole-run TMPDIR check. The five /proc/loader
     # rows, two openssl rows and curl-8 header-NUL row have explicit skips.
     HF_SKIPS=0
     if [ "$(uname -s)" != Linux ]; then
@@ -25,7 +25,7 @@ else
     HF_LIB_MAJOR=$(python3 -c 'import sys; sys.path.insert(0,sys.argv[1]); from test_http_fetch import curl_version; print(curl_version())' "$TESTS_DIR" 2>&1)
     HF_LIB_RC=$?
     if [ "$HF_LIB_RC" -eq 0 ] && [ "$HF_LIB_MAJOR" -lt 8 ]; then HF_SKIPS=$((HF_SKIPS + 1)); fi
-    HF_PASSES=$((67 - HF_SKIPS))
+    HF_PASSES=$((72 - HF_SKIPS))
     HF_WANT="HTTP_FETCH: $HF_PASSES passed, 0 failed, $HF_SKIPS skipped"
     HF_TEST=$(python3 "$TESTS_DIR/test_http_fetch.py" 2>&1); HF_TEST_RC=$?
     if [ "$HF_LIB_RC" -eq 0 ] && rc_ok "$HF_TEST_RC" "$HF_TEST" && grep -qxF "$HF_WANT" <<< "$HF_TEST"; then
