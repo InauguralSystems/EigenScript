@@ -1347,6 +1347,9 @@ typedef struct {
     size_t exchange_lines; /* every header line of the exchange; never reset */
     int status, final_complete, limit;
     int mid_block; /* 0 when the next line opens a block: the first line, or one after an empty line */
+    int said;      /* the status the block's status line says, or -1 when it says none */
+    int unsaid;    /* the final block's status line did not say the library's status */
+    void *easy;    /* the call's own handle, asked for the code at a block's empty line */
 } FetchAnswer;
 
 static size_t fetch_body_write(char *bytes, size_t size, size_t count, void *opaque) {
@@ -1369,34 +1372,50 @@ static size_t fetch_body_write(char *bytes, size_t size, size_t count, void *opa
     a->body[a->body_len] = '\0';
     return n;
 }
+/* The status a status line says: the line begins with the bytes HTTP/, and
+ * the first run of spaces or tabs in it is followed by three digits and no
+ * fourth. -1 when the line says none. */
+static int fetch_status_said(const char *bytes, size_t n) {
+    if (n < 5 || memcmp(bytes, "HTTP/", 5)) return -1;
+    size_t i = 5;
+    while (i < n && bytes[i] != ' ' && bytes[i] != '\t') i++;
+    while (i < n && (bytes[i] == ' ' || bytes[i] == '\t')) i++;
+    if (i + 3 > n) return -1;
+    for (size_t j = i; j < i + 3; j++) if (bytes[j] < '0' || bytes[j] > '9') return -1;
+    if (i + 3 < n && bytes[i + 3] >= '0' && bytes[i + 3] <= '9') return -1;
+    return (bytes[i] - '0') * 100 + (bytes[i + 1] - '0') * 10 + bytes[i + 2] - '0';
+}
+/* Which block is final is the library's: at the empty line that ends a block
+ * it reports the block's status (0 for a proxy's answer to CONNECT). A block
+ * at 200 or more is final, and the answer it starts is one only when its
+ * status line said that same status. Up to then the first line of a block is
+ * its status line; after the final block every line is a trailer line. */
 static size_t fetch_header_write(char *bytes, size_t size, size_t count, void *opaque) {
     FetchAnswer *a = opaque;
     if (size && count > SIZE_MAX / size) { a->limit = 1; return 0; }
     size_t n = size * count;
-    /* A status line is told by its place and its beginning together: a line
-     * beginning HTTP/ that is the exchange's first or follows an empty line.
-     * Anywhere else such a line is a header line and counts as one. */
-    int opens_block = !a->mid_block;
-    a->mid_block = 1;
-    if (opens_block && n >= 5 && !memcmp(bytes, "HTTP/", 5)) {
-        a->status = 0; a->final_complete = 0; a->header_len = 0; a->header_lines = 0;
-        size_t i = 5;
-        while (i < n && bytes[i] != ' ') i++;
-        if (i + 3 < n && bytes[i + 1] >= '0' && bytes[i + 1] <= '9' &&
-            bytes[i + 2] >= '0' && bytes[i + 2] <= '9' && bytes[i + 3] >= '0' && bytes[i + 3] <= '9')
-            a->status = (bytes[i + 1] - '0') * 100 + (bytes[i + 2] - '0') * 10 + bytes[i + 3] - '0';
-        return n;
-    }
-    if ((n == 2 && bytes[0] == '\r' && bytes[1] == '\n') || (n == 1 && bytes[0] == '\n')) {
-        a->mid_block = 0;
-        if (a->status >= 200) a->final_complete = 1;
-        return n;
-    }
+    int empty = (n == 2 && bytes[0] == '\r' && bytes[1] == '\n') || (n == 1 && bytes[0] == '\n');
+    if (!a->final_complete) {
+        if (!a->mid_block) {
+            a->mid_block = 1;
+            a->header_len = 0; a->header_lines = 0;
+            a->said = fetch_status_said(bytes, n);
+            return n;
+        }
+        if (empty) {
+            long code = 0;
+            a->mid_block = 0;
+            if (fetch_curl.easy_getinfo(a->easy, FETCH_CURLINFO_RESPONSE_CODE, &code) || code < 200) return n;
+            a->final_complete = 1;
+            if (code != a->said) { a->unsaid = 1; return 0; }
+            return n;
+        }
+    } else if (empty) return n;
     if (n > FETCH_HEADER_LIMIT - a->header_bytes) { a->limit = 1; return 0; }
     if (a->exchange_lines >= FETCH_HEADER_LINE_LIMIT) { a->limit = 3; return 0; }
     a->header_bytes += n;
     a->exchange_lines++;
-    if (!a->final_complete && a->status >= 200) {
+    if (!a->final_complete) {
         if (!a->headers) a->headers = xmalloc(FETCH_HEADER_LIMIT + 1);
         memcpy(a->headers + a->header_len, bytes, n);
         a->header_len += n;
@@ -1493,6 +1512,7 @@ static Value *fetch_exchange(FetchRequest *r, const char *fn) {
     void *easy = fetch_curl.easy_init();
     if (!easy) return fetch_curl_error(fn, 2); /* CURLE_FAILED_INIT */
     FetchAnswer a = {0};
+    a.easy = easy;
     FetchSlist *head = NULL, *tail = NULL;
     int code = 0, host = -1, content_type = 0, user_agent = 0, accept = 0;
     for (size_t i = 0; i < r->header_count; i++) {
@@ -1565,7 +1585,8 @@ done:
         char text[128];
         snprintf(text, sizeof text, "the answer's body is longer than %zu bytes (EIGS_HTTP_FETCH_MAX_BODY)", fetch_body_limit);
         result = fetch_attempt_error(fn, EK_LIMIT, text);
-    } else if (code) result = fetch_curl_error(fn, code);
+    } else if (a.unsaid) result = fetch_attempt_error(fn, EK_IO, "the answer ended early");
+    else if (code) result = fetch_curl_error(fn, code);
     else if (!a.final_complete) result = fetch_attempt_error(fn, EK_IO, "the answer ended early");
     else if (a.body_len && memchr(a.body, '\0', a.body_len)) result = fetch_attempt_error(fn, EK_IO, "the answer holds a NUL byte, which text cannot carry");
     else {
