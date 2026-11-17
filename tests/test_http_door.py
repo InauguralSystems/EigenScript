@@ -285,6 +285,13 @@ def exchange(port, data, way=0, cuts=None, keep_open=False, wait=30):
         return parse(read_all(peer))
 
 
+def exchange_named(label, *args, **kwargs):
+    try:
+        return exchange(*args, **kwargs)
+    except AssertionError as exc:
+        raise AssertionError(f'{label}: {exc}') from None
+
+
 def read_all(peer):
     chunks = []
     while True:
@@ -292,6 +299,9 @@ def read_all(peer):
             chunk = peer.recv(65536)
         except ConnectionResetError:
             break
+        except TimeoutError:
+            raise AssertionError(f'the server neither answered nor closed within {peer.gettimeout()} s '
+                                 f'({sum(map(len, chunks))} bytes read)') from None
         if not chunk:
             break
         chunks.append(chunk)
@@ -492,7 +502,7 @@ def row_at_byte(ctx):
             if d.kind != 'refused' or d.index is None:
                 continue
             start = time.monotonic()
-            r = exchange(port, data[:d.index + 1], keep_open=True, wait=2)
+            r = exchange_named(name, port, data[:d.index + 1], keep_open=True, wait=2)
             took = time.monotonic() - start
             require(r is not None and r[0] == d.status and took < 2,
                     f'{name}: sent through byte {d.index}, got {r and r[0]} after {took:.2f}s, want {d.status} within 2s')
@@ -653,7 +663,7 @@ def edge_check(ctx, port, limit, problems):
             problems.append(f'{name}: the reference says {d.line[:80]}')
             continue
         start = time.monotonic()
-        r = exchange(port, data[:d.index + 1], keep_open=True, wait=2)
+        r = exchange_named(f'{name} at {limit}', port, data[:d.index + 1], keep_open=True, wait=2)
         if not (r and r[0] == 431 and time.monotonic() - start < 2):
             problems.append(f'{name} at {limit}: got {r and r[0]} after {time.monotonic() - start:.2f}s')
         checked += 1
@@ -748,7 +758,7 @@ def row_body_limit(ctx):
                 problems.append(f'{label}: the reference says {d.line[:80]} for {len(sent)} bytes')
                 return
             start = time.monotonic()
-            r = exchange(port, sent, keep_open=True, wait=2)
+            r = exchange_named(label, port, sent, keep_open=True, wait=2)
             if not (r and r[0] == 413 and time.monotonic() - start < 2):
                 problems.append(f'{label}: got {r and r[0]} after {time.monotonic() - start:.2f}s')
 
@@ -766,12 +776,22 @@ def row_body_limit(ctx):
         served('65536 chunks of 1 byte', ones)
         checked = 6
         # A complete request with nothing after it is closed at once, with no
-        # linger, though the client keeps its side open.
-        start = time.monotonic()
-        r = exchange(port, b'GET /v HTTP/1.1\r\nHost: h\r\n\r\n', keep_open=True, wait=5)
-        took = time.monotonic() - start
-        if not (r and r[0] == 200 and took < 1):
-            problems.append(f'no bytes after: closed after {took:.2f}s ({r and r[0]})')
+        # linger, though the client keeps its side open: after the answer the
+        # socket is closed, so a byte the client sends then is refused (a
+        # lingering server would read it and drop it).
+        with socket.create_connection(('127.0.0.1', port), timeout=5) as peer:
+            peer.sendall(b'GET /v HTTP/1.1\r\nHost: h\r\n\r\n')
+            r = parse(read_all(peer))
+            refused = False
+            for _ in range(10):
+                time.sleep(.1)
+                try:
+                    peer.sendall(b'x')
+                except (BrokenPipeError, ConnectionResetError):
+                    refused = True
+                    break
+        if not (r and r[0] == 200 and refused):
+            problems.append(f'no bytes after: the server still read after its answer ({r and r[0]})')
         checked += 1
     # What a request held is released before the linger: with a budget for
     # what all connections hold of 120,000 bytes, a request whose body room
