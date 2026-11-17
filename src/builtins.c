@@ -1153,6 +1153,20 @@ static void eigs_json_skip_ws(const char *s, int *pos) {
         (*pos)++;
 }
 
+/* A complete JSON document, with the same syntax as json_decode. Lenient
+ * callers (http_post's historical invalid-JSON default) distinguish a parse
+ * refusal (C NULL) from the successfully parsed JSON null. Numeric refusals
+ * already raised by the parser remain raised. */
+Value *eigs_json_parse_complete(const char *s, int *pos) {
+    Value *v = eigs_json_parse_root(s, pos);
+    eigs_json_skip_ws(s, pos);
+    if (g_has_error || g_json_parse_err || g_json_parse_recoverable || s[*pos] != '\0') {
+        val_decref(v);
+        return NULL;
+    }
+    return v;
+}
+
 /* #724: encode one Unicode scalar as UTF-8 (1–4 bytes). Never called with
  * cp == 0 (strings are C-terminated and cannot carry NUL — EMBEDDING.md)
  * or with a surrogate-range cp (those are rejected by the caller). */

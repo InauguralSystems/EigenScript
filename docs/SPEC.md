@@ -3039,6 +3039,15 @@ conservatively instead of answering a rest value. See the
 
 ### HTTP startup and response attribution
 
+`http_fetch of request` sends one HTTP/1.1 request from a dict with `url`
+and optional `method`, `headers`, `body` and `timeout`. It returns exactly
+`status` (int), `headers` (lower-case names, duplicate values joined) and
+`body` (complete text). Statuses 4xx/5xx are answers; a failed or incomplete
+exchange raises. URL and argument refusals occur before I/O and the tape.
+`http_post` shares the exchange, keeping its list/JSON-header interface and
+body-only result. See [outbound HTTP](BUILTINS.md#outbound-http) for the full
+validation rules, four limits, environment and replay behavior.
+
 `http_request_header of name` returns all matching fields of the server-framed
 request head, in order, with ASCII case ignored and surrounding spaces and
 tabs trimmed. The name is a string of 1–64 token bytes; invalid types and

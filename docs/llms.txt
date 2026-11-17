@@ -769,6 +769,17 @@ Hosted release includes lazy graphics. The server profile adds HTTP and raw
 TCP; server-db additionally includes PostgreSQL. Omitted HTTP, network and
 database names follow the first-reference rule below.
 
+`http_fetch of {"url": "https://example.org/", "method": "GET"}` returns
+exactly `status` (int), `headers` (lower-case names, duplicate values joined
+with `", "`) and `body` (complete text). Optional keys are `method`,
+`headers` (dict), `body` (string) and `timeout` (finite seconds 0.001–300,
+default 15). GET/HEAD require an empty body. Invalid arguments raise before
+I/O/tape; exchange failures, limits and NUL in a complete body raise rather
+than returning a partial answer. Statuses 4xx/5xx are answers; redirects are
+not followed. `http_post` shares the exchange and keeps its JSON-header
+input and body-only result. See [outbound HTTP](BUILTINS.md#outbound-http)
+for header/URL rules, limits, environment and replay.
+
 
 A code route can call `http_respond of {"status": 404, "headers": {"Content-Type": "text/html"}, "cookies": ["sid=x; HttpOnly"]}`
 to set its own status, headers and cookies; its final value is still the body.

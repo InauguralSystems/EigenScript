@@ -43,6 +43,8 @@ R24_ADDITIONS = {BAR + name + '.branch' for name in (
     'f64_bits', 'f64_from_bits', 'buf_get_bits', 'buf_set_bits')}
 HTTP2351_ANCHOR = '2094be14ee131fdef517ee258c38d77c48671594'
 HTTP2351_ADDITIONS = {BAR + 'http_respond.branch'}
+HTTP2375_ANCHOR = '3450dff5c3bd5e9222ef6e0b05cef738cd0182e3'
+HTTP2375_ADDITIONS = {BAR + 'http_fetch.branch'}
 
 
 def require(ok, message):
@@ -116,11 +118,12 @@ def retired_paths(root, data):
 def added_paths(root, data):
     """Admit only the named NEW builtin groups at their own accepted starts."""
     additions = data.get('additions', {})
-    require(isinstance(additions, dict) and set(additions) == R24_ADDITIONS | HTTP2351_ADDITIONS,
-            'addition population must be exactly four R2.4-N12 and one HTTP2351 paths')
+    require(isinstance(additions, dict) and set(additions) == R24_ADDITIONS | HTTP2351_ADDITIONS | HTTP2375_ADDITIONS,
+            'addition population must be exactly four R2.4-N12, one HTTP2351 and one HTTP2375 paths')
     amendments = amendments_for(root, additions)
     for paths, ruling, anchor in ((R24_ADDITIONS, 'R2.4-N12', R24_ADDITION_ANCHOR),
-                                  (HTTP2351_ADDITIONS, 'HTTP2351', HTTP2351_ANCHOR)):
+                                  (HTTP2351_ADDITIONS, 'HTTP2351', HTTP2351_ANCHOR),
+                                  (HTTP2375_ADDITIONS, 'HTTP2375', HTTP2375_ANCHOR)):
         prior = set(git(root, 'ls-tree', '-r', '--name-only', anchor,
                         '--', BAR).decode().splitlines())
         for path in sorted(paths):

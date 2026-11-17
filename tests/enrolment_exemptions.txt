@@ -9,3 +9,4 @@ tools/mutants.sh | the manual mutation trains (its header); its --selftest is a 
 tests/test_gfx_utf8_title.eigs | alternate oracle: test_gfx_utf8_title.sh checks WM_NAME and _NET_WM_NAME on the live X11 window, covering the fixture's sole "X11 window opens" assertion
 tests/test_variant_stdlib.eigs | alternate oracle: 18f-variant-stdlib-1679.sh runs a byte-for-byte temporary copy from outside the checkout and requires rc 0 plus its exact Tests: 1 | Pass: 1 | Fail: 0 summary, covering the fixture's stdlib-load assertion
 tests/http_request_header_reference.py | imported #2373 byte oracle used by tests/test_http_request_header.py in suite section 45h; helper module, not a standalone test
+tests/http_fetch_peer.py | imported raw socket peer used by tests/test_http_fetch.py in suite section 45i; its listener is exercised by the contract rows

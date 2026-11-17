@@ -398,6 +398,8 @@ Historical import records above are already included in the pin.
 
 | `tests/phase2/builtins/builtins/http_respond.branch` | `86a7273708774d467b9d194842c1dc9695cf21a81aa5ef6a988623df39e1f664` | HTTP2351 | NEW request-only response builtin; Decision no-request value refusal and exact message, preregistered before candidate observation |
 
+| `tests/phase2/builtins/builtins/http_fetch.branch` | `9f0a19f8e7f7bfc7cc335a41998b0421ff2c52329ee22355bc0172b94d3109c4` | HTTP2375 | NEW exchange builtin; Decision timeout refusals and accepted edges with deterministic curl3 attempt, preregistered before candidate observation |
+
 ## R1.6b bar amendments
 
 The orchestrator ruled on R1.6b's two stops (issues #1894 and #1895):
@@ -906,3 +908,48 @@ its probe retains SHA-256
 The table's focused `run_probes.sh --check ... http_respond` compares actual
 matched tag and candidate observations successfully: one requested case,
 one run, no empty/hookless result and no pending capability profile.
+
+## HTTP2375 — new outbound exchange builtin
+
+The #2375 Decision authorizes one NEW builtin, `http_fetch`. The unchanged
+inventory admits it because it reads numeric timeout seconds and returns an
+integer response status. Its row is `other`, with continuous-duration
+`magnitude` validation, in ext_http.c's existing f bucket on the server
+profile. The live table becomes 309 rows and 310 cases; f becomes 21,
+server 18, and the other round/profile memberships stay fixed.
+
+The new probe and `.branch` were written from the Decision before candidate
+output was inspected. The six out-of-range/non-finite timeouts each raise
+`value`. Accepted timeout edges 0.001, 300 and 300.0 reach an attempted
+exchange to port 99999, which must raise `io` with exactly
+`http_fetch: curl failed (curl error 3)`. No listener or environment-chosen
+value is needed. The raw-socket HTTP suite separately witnesses integer
+status results and millisecond timing. Every failure is caught, so the
+transcript ends `rc=0`.
+
+The accepted start is `3450dff5c3bd5e9222ef6e0b05cef738cd0182e3`; both new source and
+expectation are absent there. The separate additions overlay admits their
+exact hashes under HTTP2375. Existing probes and transcripts, LOSS
+membership, N6 historical derivation and its digest remain unchanged.
+
+Preregistered branch SHA-256: `9f0a19f8e7f7bfc7cc335a41998b0421ff2c52329ee22355bc0172b94d3109c4`.
+Probe SHA-256: `119f8cee398570b41c70fa0d426e87f74a784e7a893845ce6914fc23d555b871`.
+
+The first source evaluated non-finite arithmetic while constructing its loop
+list, outside `try`. On the historical reference builds that raised before
+reaching the builtin. The probe now defers each timeout expression until
+inside the caught call; the preregistered `.branch` remains byte-identical.
+Only this NEW source hash is renewed; no existing probe or transcript moves.
+Reference observations and candidate checks are recorded below.
+
+The repaired probe's `.pre` and `.tag` were observed separately on the
+matched server-profile reference builds of
+`4ac31e67b4694eea96f2f7151ecf8f9ee62f686d` and
+`4a3a5c1941568e9bc562c7c8221cff22dc8ba697`. Each prints nine caught
+`undefined_name` observations and ends `rc=0`; each has SHA-256
+`f3c967517acccfd287906271742048fe2f313891f1f2b00094eec240c102b5fd`.
+The candidate matches the unchanged `.branch`, and the focused runner also
+matches `http_post`'s unchanged probe and transcripts: two requested cases,
+two run, zero empty/hookless results and no pending profile.
+`make_table.py --write --final` reports 309 rows, 310 cases, 218 guarded
+rows and zero vacuous rows. The new probe lints with `[]`.

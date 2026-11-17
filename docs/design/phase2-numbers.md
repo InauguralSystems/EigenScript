@@ -1577,6 +1577,7 @@ current state behind several rows:
 | `gfx_ticks` | int-preserving | - | - | SDL ticks (Uint32 ms) |
 | `hex` | int-requiring | LOSS | - | refuses above 2^53 by a double compare, so int 2^53+1 reads as 2^53 and passes silently |
 | `http_early_bind` | int-requiring | - | - | port |
+| `http_fetch` | other | - | magnitude | continuous timeout seconds: finite 0.001..300, rounded up to milliseconds; final status is an int (#2375) |
 | `http_post` | other | LOSS | - | header JSON ints decode exactly (N14, B6); lossy before R1.6 |
 | `http_respond` | int-requiring | - | - | optional status: N5, then 200..599; request-only (#2351), null return |
 | `http_route` | other | - | - | formats via value_to_string |

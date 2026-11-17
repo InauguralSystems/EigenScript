@@ -1,0 +1,10 @@
+["refused-timeout", "undefined_name"]
+["refused-timeout", "undefined_name"]
+["refused-timeout", "undefined_name"]
+["refused-timeout", "undefined_name"]
+["refused-timeout", "undefined_name"]
+["refused-timeout", "undefined_name"]
+["accepted-timeout", "undefined_name", "undefined variable 'http_fetch'"]
+["accepted-timeout", "undefined_name", "undefined variable 'http_fetch'"]
+["accepted-timeout", "undefined_name", "undefined variable 'http_fetch'"]
+rc=0
