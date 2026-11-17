@@ -1589,8 +1589,10 @@ def cost_pair(binary,folder,kind):
             head=b''.join(name.encode()+b': x\r\n' for name in names)
             equal(len(head),n*8,'cost response header fixture bytes')
             return b'HTTP/1.1 200 OK\r\n'+head+b'Content-Length: 0\r\n\r\n'
-        smallplan=Plan(wire(1000));largeplan=Plan(wire(8000))
-        smallarg={};largearg={};bound=None if duplicate else 24
+        # 4,000 lines (and Content-Length) stay under the runtime's 4,096 and
+        # under the 5,000 of the curl library from 8.14.0.
+        smallplan=Plan(wire(500));largeplan=Plan(wire(4000))
+        smallarg={};largearg={};bound=None if duplicate else 10
     with Peer([smallplan],repeat=True) as smallpeer,Peer([largeplan],repeat=True) as largepeer:
         smallarg['url']=smallpeer.url+'/';largearg['url']=largepeer.url+'/'
         source='small is '+eigs(smallarg)+'\nlarge is '+eigs(largearg)+'\nsmall_times is []\nlarge_times is []\ni is 0\nloop while i < 7:\n'
@@ -1611,7 +1613,7 @@ def cost_pair(binary,folder,kind):
                 elif kind=='request-headers':
                     source+='        assert of [answer.body == "ok" and (len of (keys of answer.headers)) == 1 and answer.headers["content-length"] == "2", "cost request-header answer"]\n'
                 else:
-                    n=8000 if large_case else 1000
+                    n=4000 if large_case else 500
                     source+='        assert of [answer.body == "" and answer.headers["content-length"] == "0", "cost answer framing"]\n'
                     if kind=='answer-duplicates':
                         digest=hashlib.sha256(b', '.join([b'x']*n)).hexdigest()
