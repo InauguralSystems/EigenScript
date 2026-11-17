@@ -24,6 +24,27 @@ if [ -z "$SOURCES" ]; then
     exit 1
 fi
 
+# llhttp (#2370): the builds with the HTTP extension compile the vendored
+# parser, read from the Makefile like SOURCES. Its objects are compiled apart
+# with -Wno-unused-parameter (the generated parser has unused callback
+# parameters; those files are never edited), so every warning of our own files
+# still shows.
+LLHTTP_SOURCES=$(grep '^LLHTTP_SOURCES :=' ../Makefile | sed 's/^LLHTTP_SOURCES :=//; s|\$(SRC_DIR)/||g')
+if [ -z "$LLHTTP_SOURCES" ]; then
+    echo "build.sh: cannot read LLHTTP_SOURCES from ../Makefile" >&2
+    exit 1
+fi
+llhttp_objects() {
+    LLHTTP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/eigs_llhttp.XXXXXX")
+    trap 'rm -rf "$LLHTTP_DIR"' EXIT
+    LLHTTP_OBJECTS=""
+    for f in $LLHTTP_SOURCES; do
+        o="$LLHTTP_DIR/$(basename "$f" .c).o"
+        $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -Wno-unused-parameter -O2 -fstack-protector-strong -c "$f" -o "$o"
+        LLHTTP_OBJECTS="$LLHTTP_OBJECTS $o"
+    done
+}
+
 # macOS Intel JIT: enabled via the Mach-O TLV-aware prologue (the JIT
 # now calls eigs_jit_load_eigs_current instead of inlining %fs:
 # tpoff, which is Linux-ELF-only). The dict-field inline cache stays
@@ -59,7 +80,8 @@ if [ "$1" = "lsp" ]; then
     echo "EigenScript LSP $VERSION built. Binary: $(du -sh eigenlsp | cut -f1)"
 elif [ "$1" = "server-db" ] || [ "$1" = "full" ]; then
     # Server + PostgreSQL profile. "full" is the compatibility spelling.
-    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c ext_http.c ext_net.c ext_db.c \
+    llhttp_objects
+    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c ext_http.c ext_net.c ext_db.c $LLHTTP_OBJECTS \
         -I/usr/include/postgresql \
         -DEIGENSCRIPT_EXT_HTTP=1 \
         \
@@ -72,7 +94,8 @@ elif [ "$1" = "server-db" ] || [ "$1" = "full" ]; then
     echo "EigenScript $VERSION (server-db) built. Binary: $(du -sh eigenscript | cut -f1)"
 elif [ "$1" = "server" ] || [ "$1" = "http" ] || [ "$1" = "net" ]; then
     # Network server profile. "http" and "net" are compatibility spellings.
-    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c ext_http.c ext_net.c \
+    llhttp_objects
+    $CC -Wall -Wextra -Werror=implicit-function-declaration $WERROR_FLAGS -O2 -fstack-protector-strong -o eigenscript $SOURCES ext_gfx.c ext_http.c ext_net.c $LLHTTP_OBJECTS \
         -DEIGENSCRIPT_EXT_HTTP=1 \
         \
         -DEIGENSCRIPT_EXT_DB=0 \

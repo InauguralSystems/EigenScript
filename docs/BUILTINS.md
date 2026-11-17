@@ -751,9 +751,52 @@ TCP handles, ports and sent-byte counts are integers. Numeric socket handles, po
 
 Requires full build. Provides an embedded HTTP server.
 
+**How a request is read (#2370).** The server reads every request through
+llhttp (release v9.4.4, the HTTP/1.1 parser of Node's `http`, vendored unchanged
+under `src/vendor/llhttp/`) in its strict mode, and serves a request only when
+the parser has found it complete. A route then reads exactly what the parser
+framed: `http_request_headers` is the head from the first byte of the request
+line through the empty line (CR and LF bytes before the request line are
+skipped and are not part of it), `http_request_header` reads its fields, and
+`http_request_body` is the body: the bytes a `Content-Length` announced, or the
+data of a chunked body's chunks joined, **decoded**: chunk sizes, chunk
+extensions and trailer fields are not in it, and a trailer field is not a field
+of the head. A `CONNECT` has no body: its route reads an empty one, whatever the
+head announces. Bytes after the request are never read as a request; the server
+answers one request on a connection and closes it. An upgrade request is served
+as an ordinary request; the server never changes protocol.
+
+**What the server refuses.** Before any route, auth source or static file, with
+the headers `http_response_header` registered, and the connection closed:
+
+| Status | When |
+|---|---|
+| `431` | the head's count would pass the head's limit (below) |
+| `400` | the parser reports an error: a malformed request line, method, target or version; a line with no colon, whitespace before a colon, a folded line, a lone CR or LF inside a line, a control byte, LF alone as a line end; two `Content-Length` lines, or one that is not a plain number; `Content-Length` with `Transfer-Encoding`; a `Transfer-Encoding` whose last coding is not `chunked`; a malformed chunked body |
+| `505` | the opening bytes of HTTP/2; a head the parser accepts whose version is not 1.0 or 1.1 |
+| `400` | a head the parser accepts whose protocol's name is not `HTTP` |
+| `501` | a head the parser accepts whose `Transfer-Encoding` lines, joined by commas, cut at the commas and trimmed, are not the one element `chunked` (`gzip, chunked`) |
+| `413` | an announced `Content-Length` over `EIGS_HTTP_MAX_BODY`, or chunk sizes announced so far adding up to more than it |
+| `400` | the client stops sending before the request is complete |
+| `408` | a time limit passes before the request is complete |
+
+When more than one applies, the one whose byte comes first; a refusal is sent
+when its byte has been read, without waiting for the rest of the request. A
+connection on which nothing is sent gets no answer.
+
+**The head's limit** is 65,536 bytes by default; `EIGS_HTTP_MAX_HEAD` sets
+another (one to nine decimal digits, not zero; any other value leaves the
+default). One count per request is held against it: every byte of the head from
+the first byte the client sent through the empty line (CR and LF before the
+request line included), and of a chunked body the chunk extensions whole, the
+trailer fields with their line ends, and the hex digits of a size line past its
+sixteenth. A body announced with `Content-Length` adds nothing to it. A count of
+exactly the limit is served.
+
 **Request limits (DoS bounds).** Each request body is capped by
-`EIGS_HTTP_MAX_BODY` (default 16 MiB; an over-cap `Content-Length` gets `400`,
-oversized headers `431`). Because that per-request cap times the concurrent-
+`EIGS_HTTP_MAX_BODY` (default 16 MiB; an over-cap body gets `413`, an over-limit
+head `431`). What the server holds for one request is its head and its body;
+the bytes of a chunked body that are not data are read and dropped. Because that per-request cap times the concurrent-
 connection cap is still a large aggregate, the server also bounds the **total**
 request-body bytes in flight across *all* connections with
 `EIGS_HTTP_MAX_BODY_TOTAL` (default 128 MiB) — once exceeded, further
@@ -772,7 +815,9 @@ axis. Three controls bound it:
   instead (the recommended posture for a directly-exposed server).
 - `EIGS_HTTP_HEADER_TIMEOUT` (default 10s) — a request's headers must arrive
   within this window (separate from, and shorter than, the 30s total-request
-  deadline that must accommodate a large body); otherwise `408`.
+  deadline that must accommodate a large body); otherwise `408`. A request that
+  is not complete when 5 seconds pass without a byte, or 30 seconds in all, is
+  also answered `408`.
 - `EIGS_HTTP_HEADER_MIN_RATE` (default 256 bytes/sec, `0` disables) — after a
   short grace period the header phase must sustain at least this byte rate, so a
   byte-per-second trickle is dropped (`408`) in a couple of seconds instead of
@@ -787,12 +832,12 @@ axis. Three controls bound it:
 | `http_response_header` | `http_response_header of [name, value]` | Register before `http_serve`, including before or after `http_early_bind`; returns `"response header registered"`. Both arguments must be strings. Name: RFC 7230 token, **1–64 bytes**. Value: **0–1024 bytes**, visible ASCII, space or tab only; **no CR/LF/NUL**. Runtime-owned and runtime-emitted names (`Content-Length`, `Content-Type`, `Transfer-Encoding`, `Connection`, `Cache-Control`, `Retry-After`, `Allow`, `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers`) are refused case-insensitively. An existing name is **replaced case-insensitively**, including at capacity; at most **16** distinct headers. Every violation raises a loud error naming the builtin and rule; a rejected registration prevents `http_serve` from starting even if caught. Registered headers accompany **every** response: routes (string/file/code/authed), static files, HEAD, OPTIONS, errors, load shedding, init 503s and optional liveness 200s. Registration leaves Content-Type, Content-Length, status and body bytes unchanged. A code route may replace a registered header's value for its own response with `http_respond`; the registered spelling and position stay fixed. Registration is deterministic configuration and adds no tape records |
 | `http_respond` | `http_respond of response` | Set this request's optional status, headers and cookies; returns `null`. The body stays the code route's final value. See [Per-worker code routes](#per-worker-code-routes) for validation, merging and response order (#2351) |
 | `http_serve` | `http_serve of port` | Start blocking HTTP server on an exact integer port in 0..65535 (integral floats convert). |
-| `http_request_body` | `http_request_body of null` | Get current request body |
+| `http_request_body` | `http_request_body of null` | Get current request body: the bytes the parser framed as the body (a chunked body decoded to its data; empty for `CONNECT`) |
 | `http_session_id` | `http_session_id of null` | Get current session ID |
 | `http_fetch` | `http_fetch of request` | Send one HTTP/1.1 request and return `{status, headers, body}`. See [Outbound HTTP](#outbound-http) for the request, validation, limits and catchable errors (#2375) |
 | `http_post` | `http_post of [url, headers, body]` | POST through the same exchange as `http_fetch`, returning only the body. `headers` is JSON text: an object or flat alternating array; malformed JSON and `""` mean no headers. CR/LF is stripped from header names and values before validation. JSON integer header values within int64 retain every digit (N14, B6). See [Outbound HTTP](#outbound-http) for compatibility and errors |
 | `http_request_header` | `http_request_header of name` | Return a list of this request's values for the whole ASCII case-insensitive header name, in field order, or `[]` when absent. `name` must be a string of 1–64 bytes of RFC 7230 token characters; a non-string raises `type_mismatch`, an invalid name raises `value`. No spelling is reserved. Values lose only spaces and tabs at their ends; their other bytes are kept. Only CR LF ends a line. Malformed lines and continuations are ignored, and the request line and body are never fields. A request with no server-framed empty line has no fields. Outside the answering thread, including a thread spawned by a route, raises `value`: `http_request_header: no request is being answered`. Works in called functions, cooperative tasks and route auth source. Each returned list is recorded on the tape (#2373) |
-| `http_request_headers` | `http_request_headers of null` | Return the request line and header lines through the empty line, without the body. If the server found no CR LF CR LF before the first NUL, return the request text up to the first NUL or its end. Outside a request, return `""` |
+| `http_request_headers` | `http_request_headers of null` | Return the head the parser framed: the request line and header lines through the empty line, without the body, from the first byte of the request line (CR and LF bytes before it are skipped and are not part of it). A request is served only with a complete head (#2370). Outside a request, return `""` |
 
 ### Outbound HTTP
 

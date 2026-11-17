@@ -428,7 +428,9 @@ static long http_max_body_total(void) {
  * is created: pthread_create is the happens-before edge, and afterwards every
  * reader sees an initialised value and never writes. */
 static long shared_max_bytes(void);
+static long http_max_head(void);
 static void http_prime_config_caches(void) {
+    (void)http_max_head();
     (void)http_max_conn_per_ip();
     (void)http_max_body();
     (void)http_max_body_total();
@@ -2285,32 +2287,427 @@ static void generate_session_id(char *buf, int len) {
     snprintf(buf, len, "sess_%lx_%ld", (unsigned long)time(NULL), (long)getpid());
 }
 
-/* Per-connection total deadline: 30 seconds for entire request (header + body).
- * Uses monotonic clock — not reset by progress, so slow-trickle attacks are bounded.
- * SO_RCVTIMEO is set to 5s as a per-read backstop (prevents blocking on a fully idle socket). */
+/* ================================================================
+ * THE DOOR (#2370): every request is read through llhttp
+ *
+ * One place reads a request. The loop in handle_request reads the socket and
+ * hands each read to door_feed, which gives the bytes to llhttp (v9.4.4,
+ * src/vendor/llhttp/, strict, no leniency flag) and keeps beside it the rules
+ * of #2370 that are ours:
+ *
+ *  - the head's limit (EIGS_HTTP_MAX_HEAD, 65,536 by default), held against
+ *    one count per request: every byte of the head from the first byte the
+ *    client sent, and of a chunked body every byte but the first sixteen hex
+ *    digits of a size line, the CR ending that line and the byte after it,
+ *    the chunk data and the two bytes after it, and after the last size line
+ *    a CR that begins a line and the byte after it. The byte that would make
+ *    the count one more than the limit is never given to the parser (431);
+ *  - the parser's error (400), and the opening of HTTP/2 (505);
+ *  - at the LF that completes the head, once the parser has accepted it: the
+ *    protocol's name (400), the version (505), Transfer-Encoding (501), and a
+ *    Content-Length over the body's limit (413);
+ *  - at the LF of each chunk size line, the sum of the sizes announced so
+ *    far against the body's limit (413).
+ *
+ * The parser's callbacks say where the head ends, what the body is and when
+ * the message is complete; each of those pauses the parser, so the place of
+ * every event in the read is known (llhttp_get_error_pos). The server holds
+ * the head (from the first byte of the method through the empty line) and the
+ * body (the data the parser framed). The bytes of a chunked body that are not
+ * data are read and dropped, and bytes after the request are never read as a
+ * request.
+ * ================================================================ */
+
+#include "vendor/llhttp/llhttp.h"
+
+#define HTTP_DEFAULT_MAX_HEAD 65536L
+static long g_http_max_head = 0;
+
+/* EIGS_HTTP_MAX_HEAD: one to nine decimal digits, not zero; any other value
+ * leaves the default. */
+static long http_max_head(void) {
+    if (g_http_max_head != 0) return g_http_max_head;
+    long v = HTTP_DEFAULT_MAX_HEAD;
+    const char *env = getenv("EIGS_HTTP_MAX_HEAD");
+    if (env) {
+        size_t n = strlen(env);
+        int digits = n >= 1 && n <= 9;
+        for (size_t i = 0; digits && i < n; i++)
+            digits = env[i] >= '0' && env[i] <= '9';
+        if (digits) {
+            long parsed = strtol(env, NULL, 10);
+            if (parsed > 0) v = parsed;
+        }
+    }
+    g_http_max_head = v;
+    return v;
+}
+
+/* Where the next byte stands; this decides whether the count holds it. */
+enum { DOOR_HEAD, DOOR_BODY, DOOR_SIZE, DOOR_DATA, DOOR_TRAILER };
+
+typedef struct {
+    unsigned digits;     /* hex digits so far at the start of a size line */
+    int in_digits;       /* still in that run of digits */
+    int skip_next;       /* the byte after a CR the count leaves out */
+    int line_start;      /* a trailer line begins here */
+} DoorPlace;
+
+typedef struct {
+    llhttp_t parser;
+    llhttp_settings_t settings;
+    int phase;
+    DoorPlace place;
+    uint64_t count, limit, max_body, chunk_sum;
+    long max_total;
+    long charged;                   /* bytes charged to g_http_body_in_flight */
+    char *head; size_t head_len, head_room;
+    char *body; size_t body_len, body_room;
+    const char *copy_from;          /* first head byte in the bytes being fed */
+    int head_started;
+    size_t url_off, url_len; int url_seen;
+    char protocol[5]; size_t protocol_len;
+    char name[18]; size_t name_len;
+    /* Transfer-Encoding, read as its bytes arrive: every line's value,
+     * joined by commas, cut at the commas, trimmed of SP and HTAB. */
+    int field_is_te, te_seen, te_elements, te_bad;
+    unsigned te_match; int te_trail, te_elem_bad;
+    int ev_head, ev_chunk, ev_data_end, over_body, over_budget, complete;
+    const char *why;                /* the body of a refusal */
+} Door;
+
+/* Grow one held buffer to fit `more` bytes, charging the growth to the
+ * budget for what all connections hold at once. */
+static int door_hold(Door *d, char **buf, size_t *len, size_t *room, const char *at, size_t more) {
+    if (*len + more + 1 > *room) {
+        size_t want = *room ? *room : 1024;
+        while (want < *len + more + 1) want *= 2;
+        long inc = (long)(want - *room);
+        long in_flight = __atomic_add_fetch(&g_http_body_in_flight, inc, __ATOMIC_RELAXED);
+        d->charged += inc;
+        if (in_flight > d->max_total) { d->over_budget = 1; return -1; }
+        *buf = xrealloc(*buf, want);
+        *room = want;
+    }
+    memcpy(*buf + *len, at, more);
+    *len += more;
+    (*buf)[*len] = '\0';
+    return 0;
+}
+
+static int door_lower(int c) { return c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c; }
+
+static size_t door_head_offset(Door *d, const char *at) {
+    return d->head_len + (size_t)(at - d->copy_from);
+}
+
+static int door_on_method(llhttp_t *p, const char *at, size_t n) {
+    Door *d = p->data;
+    (void)n;
+    if (!d->head_started) { d->head_started = 1; d->copy_from = at; }
+    return 0;
+}
+
+static int door_on_url(llhttp_t *p, const char *at, size_t n) {
+    Door *d = p->data;
+    if (!d->url_seen) { d->url_seen = 1; d->url_off = door_head_offset(d, at); }
+    d->url_len += n;
+    return 0;
+}
+
+static int door_on_protocol(llhttp_t *p, const char *at, size_t n) {
+    Door *d = p->data;
+    for (size_t i = 0; i < n; i++, d->protocol_len++)
+        if (d->protocol_len < sizeof d->protocol) d->protocol[d->protocol_len] = at[i];
+    return 0;
+}
+
+static int door_on_header_field(llhttp_t *p, const char *at, size_t n) {
+    Door *d = p->data;
+    if (d->ev_head || d->phase != DOOR_HEAD) return 0;   /* a trailer field */
+    for (size_t i = 0; i < n; i++, d->name_len++)
+        if (d->name_len < sizeof d->name) d->name[d->name_len] = (char)door_lower((unsigned char)at[i]);
+    return 0;
+}
+
+static void door_te_element_end(Door *d) {
+    d->te_elements++;
+    if (d->te_elem_bad || d->te_match != 7) d->te_bad = 1;
+    d->te_match = 0; d->te_trail = 0; d->te_elem_bad = 0;
+}
+
+static int door_on_header_field_complete(llhttp_t *p) {
+    Door *d = p->data;
+    if (d->ev_head || d->phase != DOOR_HEAD) return 0;
+    d->field_is_te = d->name_len == 17 && memcmp(d->name, "transfer-encoding", 17) == 0;
+    d->name_len = 0;
+    if (d->field_is_te) d->te_seen = 1;
+    return 0;
+}
+
+static int door_on_header_value(llhttp_t *p, const char *at, size_t n) {
+    Door *d = p->data;
+    if (!d->field_is_te || d->ev_head || d->phase != DOOR_HEAD) return 0;
+    for (size_t i = 0; i < n; i++) {
+        int c = (unsigned char)at[i];
+        if (c == ',') { door_te_element_end(d); continue; }
+        if (c == ' ' || c == '\t') {
+            if (d->te_match || d->te_elem_bad) d->te_trail = 1;
+            continue;
+        }
+        if (d->te_trail || d->te_match >= 7 || door_lower(c) != "chunked"[d->te_match]) d->te_elem_bad = 1;
+        else d->te_match++;
+    }
+    return 0;
+}
+
+static int door_on_header_value_complete(llhttp_t *p) {
+    Door *d = p->data;
+    if (d->field_is_te && !d->ev_head && d->phase == DOOR_HEAD) door_te_element_end(d);
+    d->field_is_te = 0;
+    return 0;
+}
+
+static int door_on_headers_complete(llhttp_t *p) {
+    Door *d = p->data;
+    d->ev_head = 1;
+    return HPE_PAUSED;      /* causes 4 to 7 wait for the parser's own checks */
+}
+
+static int door_on_body(llhttp_t *p, const char *at, size_t n) {
+    Door *d = p->data;
+    return door_hold(d, &d->body, &d->body_len, &d->body_room, at, n) == 0 ? 0 : HPE_USER;
+}
+
+static int door_on_chunk_header(llhttp_t *p) {
+    Door *d = p->data;
+    /* Cause 8, at the LF that ends the size line: the size it announces. */
+    if (p->content_length > d->max_body - d->chunk_sum) d->over_body = 1;
+    else d->chunk_sum += p->content_length;
+    d->ev_chunk = 1;
+    return HPE_PAUSED;
+}
+
+static int door_on_chunk_complete(llhttp_t *p) {
+    Door *d = p->data;
+    if (d->phase == DOOR_TRAILER) return 0;    /* the message completes next */
+    d->ev_data_end = 1;
+    return HPE_PAUSED;
+}
+
+static int door_on_message_complete(llhttp_t *p) {
+    Door *d = p->data;
+    d->complete = 1;
+    return HPE_PAUSED;
+}
+
+static void door_init(Door *d, uint64_t limit, uint64_t max_body, long max_total) {
+    memset(d, 0, sizeof *d);
+    llhttp_settings_init(&d->settings);
+    d->settings.on_method = door_on_method;
+    d->settings.on_url = door_on_url;
+    d->settings.on_protocol = door_on_protocol;
+    d->settings.on_header_field = door_on_header_field;
+    d->settings.on_header_field_complete = door_on_header_field_complete;
+    d->settings.on_header_value = door_on_header_value;
+    d->settings.on_header_value_complete = door_on_header_value_complete;
+    d->settings.on_headers_complete = door_on_headers_complete;
+    d->settings.on_body = door_on_body;
+    d->settings.on_chunk_header = door_on_chunk_header;
+    d->settings.on_chunk_complete = door_on_chunk_complete;
+    d->settings.on_message_complete = door_on_message_complete;
+    llhttp_init(&d->parser, HTTP_REQUEST, &d->settings);
+    d->parser.data = d;
+    d->phase = DOOR_HEAD;
+    d->limit = limit;
+    d->max_body = max_body;
+    d->max_total = max_total;
+}
+
+static int door_is_hex(int c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+/* Does the count hold this byte? Advances `pl` past it. */
+static int door_counts(int phase, DoorPlace *pl, int c) {
+    switch (phase) {
+    case DOOR_HEAD: return 1;
+    case DOOR_SIZE:
+        if (pl->skip_next) { pl->skip_next = 0; return 0; }
+        if (c == '\r') { pl->skip_next = 1; return 0; }
+        if (pl->in_digits && door_is_hex(c)) return pl->digits++ >= 16;
+        pl->in_digits = 0;
+        return 1;
+    case DOOR_TRAILER:
+        if (pl->skip_next) { pl->skip_next = 0; return 0; }
+        if (pl->line_start && c == '\r') { pl->skip_next = 1; return 0; }
+        pl->line_start = c == '\n';
+        return 1;
+    default: return 0;     /* DOOR_BODY, DOOR_DATA */
+    }
+}
+
+/* Cause 2: the parser's own refusal. */
+static int door_parser_error(Door *d, enum llhttp_errno err) {
+    d->why = err == HPE_INVALID_CONTENT_LENGTH || err == HPE_UNEXPECTED_CONTENT_LENGTH
+                 ? "Invalid Content-Length" : llhttp_get_error_reason(&d->parser);
+    if (!d->why) d->why = "Bad Request";
+    return 400;
+}
+
+/* What door_feed decided. 0: the request is not complete yet. */
+#define DOOR_SERVE 1
+
+/* Causes 4 to 7, at the LF that completes the head, after the parser has
+ * accepted it. */
+static int door_head_rules(Door *d) {
+    if (d->protocol_len && !(d->protocol_len == 4 && memcmp(d->protocol, "HTTP", 4) == 0)) {
+        d->why = "Invalid HTTP version";
+        return 400;
+    }
+    if (!(d->parser.http_major == 1 && (d->parser.http_minor == 0 || d->parser.http_minor == 1))) {
+        d->why = "HTTP version not supported";
+        return 505;
+    }
+    if (d->te_seen && (d->te_elements != 1 || d->te_bad)) {
+        d->why = "Transfer-Encoding not implemented";
+        return 501;
+    }
+    if ((d->parser.flags & F_CONTENT_LENGTH) && d->parser.content_length > d->max_body) {
+        d->why = "Payload too large";
+        return 413;
+    }
+    return 0;
+}
+
+/* Give the bytes of one read to the parser. Returns 0 to read on, DOOR_SERVE
+ * when the request is complete, or the status of a refusal. */
+static int door_feed(Door *d, const char *buf, size_t n) {
+    size_t pos = 0;
+    while (pos < n) {
+        /* Each byte adds at most one to the count, so `room` bytes cannot pass
+         * the limit. With no room left, the next byte is looked at alone: if
+         * the count holds it, it would pass the limit and is never given to
+         * the parser (cause 1). The count itself is taken below, over the
+         * bytes the parser took, once each. */
+        size_t end = n;
+        if (d->phase != DOOR_BODY && d->phase != DOOR_DATA) {
+            uint64_t room = d->limit - d->count;
+            if (room == 0) {
+                DoorPlace pl = d->place;
+                if (door_counts(d->phase, &pl, (unsigned char)buf[pos])) {
+                    d->why = "Headers too large";
+                    return 431;
+                }
+                end = pos + 1;
+            } else if (room < (uint64_t)(n - pos)) {
+                end = pos + (size_t)room;
+            }
+        }
+        if (d->head_started) d->copy_from = buf + pos;
+        enum llhttp_errno err = llhttp_execute(&d->parser, buf + pos, end - pos);
+        if (d->over_budget) { d->why = "Server overloaded"; return 503; }
+        size_t q = end;
+        if (err == HPE_PAUSED) q = (size_t)(llhttp_get_error_pos(&d->parser) - buf);
+        else if (err == HPE_PAUSED_H2_UPGRADE) { d->why = "HTTP version not supported"; return 505; }
+        else if (err != HPE_OK) return door_parser_error(d, err);
+        for (size_t i = pos; i < q; i++)
+            d->count += (uint64_t)door_counts(d->phase, &d->place, (unsigned char)buf[i]);
+        if (d->phase == DOOR_HEAD && d->head_started) {
+            const char *from = d->copy_from;
+            if (from < buf + q &&
+                door_hold(d, &d->head, &d->head_len, &d->head_room, from, (size_t)(buf + q - from)) != 0)
+            { d->why = "Server overloaded"; return 503; }
+            d->copy_from = buf + q;
+        }
+        pos = q;
+        if (err == HPE_PAUSED) {
+            llhttp_resume(&d->parser);
+            if (d->ev_head) {
+                /* Run the parser's own checks at the end of the head first. */
+                enum llhttp_errno after = llhttp_execute(&d->parser, buf + pos, 0);
+                if (after != HPE_OK && after != HPE_PAUSED && after != HPE_PAUSED_UPGRADE)
+                    return door_parser_error(d, after);
+                int status = door_head_rules(d);
+                if (status) return status;
+                d->ev_head = 0;
+                d->phase = (d->parser.flags & F_CHUNKED) ? DOOR_SIZE : DOOR_BODY;
+                memset(&d->place, 0, sizeof d->place);
+                d->place.in_digits = 1;
+                if (after == HPE_PAUSED) llhttp_resume(&d->parser);
+            }
+            if (d->ev_chunk) {
+                d->ev_chunk = 0;
+                if (d->over_body) { d->why = "Payload too large"; return 413; }
+                d->phase = d->parser.content_length > 0 ? DOOR_DATA : DOOR_TRAILER;
+                memset(&d->place, 0, sizeof d->place);
+                d->place.line_start = 1;
+            }
+            if (d->ev_data_end) {
+                d->ev_data_end = 0;
+                d->phase = DOOR_SIZE;
+                memset(&d->place, 0, sizeof d->place);
+                d->place.in_digits = 1;
+            }
+            if (d->complete) return DOOR_SERVE;
+            continue;
+        }
+        if (d->complete) return DOOR_SERVE;
+    }
+    return 0;
+}
+
+static void door_free(Door *d) {
+    __atomic_sub_fetch(&g_http_body_in_flight, d->charged, __ATOMIC_RELAXED);
+    d->charged = 0;
+    free(d->head);
+    free(d->body);
+    d->head = d->body = NULL;
+}
+
+/* After an answer: no more is written, and what the client still sends is
+ * read and dropped for a short while, so closing does not reset a
+ * connection whose answer the client has not read yet. */
+static void door_linger(int fd, char *buf, size_t room) {
+    shutdown(fd, SHUT_WR);
+    double until = monotonic_now() + 2.0;
+    for (;;) {
+        double left = until - monotonic_now();
+        if (left <= 0) break;
+        struct pollfd pfd = { .fd = fd, .events = POLLIN };
+        int r = poll(&pfd, 1, (int)(left * 1000) + 1);
+        if (r < 0 && errno == EINTR) continue;
+        if (r <= 0) break;
+        ssize_t got = read(fd, buf, room);
+        if (got < 0 && errno == EINTR) continue;
+        if (got <= 0) break;
+    }
+}
+
+static const char *door_status_text(int status) {
+    switch (status) {
+    case 400: return "Bad Request";
+    case 408: return "Request Timeout";
+    case 413: return "Payload Too Large";
+    case 431: return "Request Header Fields Too Large";
+    case 501: return "Not Implemented";
+    case 503: return "Service Unavailable";
+    case 505: return "HTTP Version Not Supported";
+    default: return "";
+    }
+}
+
+/* Time limits: 10 s for the head from the first read (EIGS_HTTP_HEADER_TIMEOUT)
+ * and a least rate looked at when bytes arrive (EIGS_HTTP_HEADER_MIN_RATE,
+ * after a grace of 2 s); for the whole request 5 s without a byte and 30 s in
+ * all. Each answers 408 once the client has sent a byte; a connection on which
+ * nothing was sent is closed without an answer. */
 #define HTTP_REQUEST_DEADLINE_SEC 30
 #define HTTP_READ_TIMEOUT_SEC 5
-
-/* Header-phase controls (slow-loris). The client has nothing to compute before
- * sending its request headers, so a slow HEADER phase is a slow-loris, not a
- * slow upload — it gets a tighter budget than the 30s total-request deadline
- * (which must accommodate a legitimately large body). Two independent bounds,
- * both applied only until the "\r\n\r\n" terminator is seen:
- *
- *   - a hard header deadline (default 10s), and
- *   - a minimum sustained byte rate (Apache mod_reqtimeout's MinRate): after a
- *     short grace period the connection must have averaged at least this many
- *     bytes/sec toward its headers. A fixed deadline alone lets a ~1 byte/sec
- *     trickle hold a worker for the FULL deadline; the rate floor drops it in
- *     one read cycle (~grace+timeout) instead. A real client sends its whole
- *     header block in one packet and exits the header phase before either bound
- *     is ever evaluated.
- *
- * Both overridable (EIGS_HTTP_HEADER_TIMEOUT / EIGS_HTTP_HEADER_MIN_RATE);
- * min-rate 0 disables the rate floor (the hard deadline still applies). */
 #define HTTP_HEADER_DEADLINE_SEC 10
 #define HTTP_HEADER_MIN_RATE     256   /* bytes/sec */
 #define HTTP_HEADER_GRACE_SEC    2
+#define HTTP_READ_ROOM 16384
 
 static long http_header_deadline(void) {
     const char *env = getenv("EIGS_HTTP_HEADER_TIMEOUT");
@@ -2338,230 +2735,78 @@ static double monotonic_now(void) {
     return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
 }
 
-/* Find the request's Content-Length by walking the header block LINE BY LINE.
- *
- * The previous strcasestr() over the whole block took the first match anywhere,
- * so a decoy anywhere earlier framed the body: inside another header's VALUE
- * (`X-Note: Content-Length: 0`), as a suffix of another header's NAME
- * (`X-Content-Length: 0`), or in the request target
- * (`POST /x?q=Content-Length:0`). The server then framed the body at the decoy's
- * length and broke out of the read loop, dispatching a `code` route with an
- * empty or partial body — and let a client hide an oversized real length behind
- * a small fake one, dodging the `> max_body` 400.
- *
- * Matching only at a line start, with the colon required immediately after the
- * name (RFC 7230 forbids whitespace there), closes all three. The request line
- * is skipped outright rather than relying on it never starting with the name.
- *
- * Returns 1 and sets *out_len when present, 0 when absent, -1 when malformed —
- * unparseable, trailing garbage, or two Content-Length headers that disagree
- * (previously the first silently won).
- *
- * `block` is NUL-terminated at the end of the header block, terminator included.
- */
-/* A bounded search avoids measuring the remaining C string for every line.
- * In particular ASan's strstr interceptor measures that suffix even when the
- * match is nearby, making many short lines quadratic. memchr takes an explicit
- * range; each search resumes after the previous line (or lone CR). */
-static const char *http_find_crlf_before(const char *p, const char *end) {
-    while (p < end) {
-        const char *cr = memchr(p, '\r', (size_t)(end - p));
-        if (!cr) return NULL;
-        if (cr + 1 < end && cr[1] == '\n') return cr;
-        p = cr + 1;
-    }
-    return NULL;
-}
-
-static int http_find_content_length(const char *block, long *out_len) {
-    const char *block_end = block + strlen(block);
-    const char *p = http_find_crlf_before(block, block_end);
-    if (!p) return 0;                       /* request line only, no headers */
-    p += 2;
-
-    int found = 0;
-    long value = 0;
-
-    while (*p) {
-        if (p[0] == '\r' && p[1] == '\n') break;      /* blank line: block ends */
-        const char *eol = http_find_crlf_before(p, block_end);
-        size_t linelen = eol ? (size_t)(eol - p) : (size_t)(block_end - p);
-
-        if (linelen > 14 && strncasecmp(p, "Content-Length", 14) == 0 && p[14] == ':') {
-            const char *v = p + 15;
-            while (*v == ' ' || *v == '\t') v++;
-            char *end = NULL;
-            long n = strtol(v, &end, 10);
-            if (end == v) return -1;                  /* no digits at all */
-            while (*end == ' ' || *end == '\t') end++;
-            if (end != p + linelen) return -1;        /* trailing garbage */
-            if (found && n != value) return -1;       /* conflicting duplicates */
-            found = 1;
-            value = n;
+/* Read one request through the door. Returns DOOR_SERVE, a refusal's status,
+ * or -1 for a connection on which nothing was sent (no answer). */
+static int door_read(int fd, Door *d, char *rbuf) {
+    double start = monotonic_now();
+    double total_deadline = start + HTTP_REQUEST_DEADLINE_SEC;
+    double header_deadline = start + (double)http_header_deadline();
+    long header_min_rate = http_header_min_rate();
+    double last_byte = start;
+    size_t received = 0;
+    for (;;) {
+        double now = monotonic_now();
+        double wait = total_deadline - now;
+        if (last_byte + HTTP_READ_TIMEOUT_SEC - now < wait) wait = last_byte + HTTP_READ_TIMEOUT_SEC - now;
+        if (d->phase == DOOR_HEAD && header_deadline - now < wait) wait = header_deadline - now;
+        if (wait <= 0) {
+            d->why = d->phase == DOOR_HEAD && now >= header_deadline ? "Request header timeout" : "Request timeout";
+            return received ? 408 : -1;
         }
-
-        if (!eol) break;
-        p = eol + 2;
+        struct pollfd pfd = { .fd = fd, .events = POLLIN };
+        int r = poll(&pfd, 1, (int)(wait * 1000) + 1);
+        if (r < 0 && errno == EINTR) continue;
+        if (r < 0) { d->why = "Bad Request"; return received ? 400 : -1; }
+        if (r == 0) continue;           /* the loop's top decides which limit passed */
+        ssize_t got = read(fd, rbuf, HTTP_READ_ROOM);
+        if (got < 0 && (errno == EINTR || errno == EAGAIN)) continue;
+        if (got <= 0) {                 /* cause 9: the client stopped */
+            d->why = "Incomplete request";
+            return received ? 400 : -1;
+        }
+        received += (size_t)got;
+        last_byte = monotonic_now();
+        int verdict = door_feed(d, rbuf, (size_t)got);
+        if (verdict) return verdict;
+        if (d->phase == DOOR_HEAD && header_min_rate > 0) {
+            double elapsed = last_byte - start;
+            if (elapsed > HTTP_HEADER_GRACE_SEC && (double)received < (double)header_min_rate * elapsed) {
+                d->why = "Request header too slow";
+                return 408;
+            }
+        }
     }
-
-    if (found) *out_len = value;
-    return found;
 }
 
 static void handle_request(int fd) {
     RouteResponse response = {0};
     tls_response = &response;
     tls_suppress_body = 0;
-    /* Per-read timeout (backstop for fully idle sockets) */
-    struct timeval tv = { .tv_sec = HTTP_READ_TIMEOUT_SEC, .tv_usec = 0 };
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    Door door;
+    door_init(&door, (uint64_t)http_max_head(), (uint64_t)http_max_body(), http_max_body_total());
+    char *rbuf = xmalloc(HTTP_READ_ROOM);
+    door.charged = HTTP_READ_ROOM;
+    __atomic_add_fetch(&g_http_body_in_flight, (long)HTTP_READ_ROOM, __ATOMIC_RELAXED);
+    char *path = NULL;
+    char method[32] = {0};
 
-    double start = monotonic_now();
-    double total_deadline  = start + HTTP_REQUEST_DEADLINE_SEC;
-    double header_deadline = start + (double)http_header_deadline();
-    long   header_min_rate = http_header_min_rate();
-
-    long max_body = http_max_body();
-    long max_body_total = http_max_body_total();
-    size_t cap = 8192;
-    char *reqbuf = xmalloc(cap);
-    /* Bytes this connection has charged to the global in-flight budget; mirrors
-     * `cap` exactly so the decrement at `cleanup` is always balanced. */
-    long body_accounted = (long)cap;
-    __atomic_add_fetch(&g_http_body_in_flight, body_accounted, __ATOMIC_RELAXED);
-    int total = 0;
-    int header_end = -1;
-
-    for (;;) {
-        double now = monotonic_now();
-        /* Enforce total request deadline */
-        if (now >= total_deadline) {
-            goto done;
-        }
-        /* Header-phase bounds (slow-loris): only while the header terminator
-         * has not been seen. A legitimate client clears this in one read. */
-        if (header_end < 0) {
-            if (now >= header_deadline) {
-                const char *m = "Request header timeout";
-                send_response(fd, 408, "Request Timeout", "text/plain",
-                              m, (long)strlen(m));
-                goto done;
-            }
-            double elapsed = now - start;
-            if (header_min_rate > 0 && elapsed > HTTP_HEADER_GRACE_SEC &&
-                (double)total < (double)header_min_rate * elapsed) {
-                /* Below the minimum header byte-rate after the grace period —
-                 * a trickle. Drop it now instead of letting it hold a worker
-                 * slot until the total deadline. */
-                const char *m = "Request header too slow";
-                send_response(fd, 408, "Request Timeout", "text/plain",
-                              m, (long)strlen(m));
-                goto done;
-            }
-        }
-        /* Grow when less than 4KB headroom, subject to max_body + 64KB header slack. */
-        if ((size_t)total + 4096 >= cap) {
-            size_t new_cap = cap * 2;
-            size_t hard_cap = (size_t)max_body + 65536;
-            if (new_cap > hard_cap) new_cap = hard_cap;
-            if (new_cap == cap) {
-                /* Already at ceiling. If we still have not seen the header
-                 * terminator, the headers themselves exceeded our budget —
-                 * answer 431 instead of letting sscanf parse a truncated
-                 * prefix as a "valid" request. */
-                if (header_end < 0) {
-                    const char *m = "Headers too large";
-                    send_response(fd, 431, "Request Header Fields Too Large",
-                                  "text/plain", m, (long)strlen(m));
-                    goto done;
-                }
-                break;
-            }
-            /* Aggregate-body budget: charge the growth to the global counter
-             * BEFORE allocating. If the total in-flight across all connections
-             * would exceed the budget, shed THIS connection with 503 rather
-             * than let conns x per-conn-cap exhaust host memory. */
-            long inc = (long)new_cap - body_accounted;
-            long in_flight = __atomic_add_fetch(&g_http_body_in_flight, inc,
-                                                __ATOMIC_RELAXED);
-            body_accounted = (long)new_cap;
-            if (in_flight > max_body_total) {
-                const char *m = "Server overloaded";
-                send_response(fd, 503, "Service Unavailable", "text/plain",
-                              m, (long)strlen(m));
-                goto done;
-            }
-            reqbuf = xrealloc_array(reqbuf, new_cap, 1);
-            cap = new_cap;
-        }
-        int n = read(fd, reqbuf + total, cap - 1 - total);
-        if (n <= 0) break;
-        total += n;
-        reqbuf[total] = '\0';
-
-        char *hend = strstr(reqbuf, "\r\n\r\n");
-        if (hend) {
-            header_end = (int)(hend - reqbuf) + 4;
-
-            /* Search only within headers (before \r\n\r\n), not in body */
-            char saved = reqbuf[header_end];
-            reqbuf[header_end] = '\0';
-            long content_length = 0;
-            int cl = http_find_content_length(reqbuf, &content_length);
-            reqbuf[header_end] = saved;
-            if (cl != 0) {
-                /* strtol rather than atoi, which silently accepts negative and
-                 * non-numeric input; a negative Content-Length would make
-                 * body_received trivially >= content_length and exit the read
-                 * loop mid-body. Reject anything outside [0, max_body], and any
-                 * header the line parser flagged as malformed. */
-                if (cl < 0 || content_length < 0 || content_length > max_body) {
-                    /* Malformed or oversized Content-Length — answer 400 so
-                     * the client sees a real error instead of hanging until
-                     * the per-connection deadline. */
-                    const char *m = "Invalid Content-Length";
-                    send_response(fd, 400, "Bad Request", "text/plain",
-                                  m, (long)strlen(m));
-                    goto done;
-                }
-                int body_received = total - header_end;
-                if (body_received >= content_length) break;
-            } else {
-                break;
-            }
-        }
-    }
-
-    if (total == 0) { goto done; }
-    reqbuf[total] = '\0';
-
-    char method[16] = {0}, path[2048] = {0}, version[16] = {0};
-    if (sscanf(reqbuf, "%15s %2047s %15s", method, path, version) != 3) {
-        send_response(fd, 400, "Bad Request", "text/plain", "Invalid request line", 20);
+    int verdict = door_read(fd, &door, rbuf);
+    if (verdict < 0) goto done;               /* nothing was sent: no answer */
+    if (verdict != DOOR_SERVE) {
+        /* A refusal, before any route, auth source or static file. */
+        const char *m = door.why ? door.why : door_status_text(verdict);
+        send_response(fd, verdict, door_status_text(verdict), "text/plain", m, (long)strlen(m));
         goto done;
     }
 
-    /* Validate HTTP version: must start with "HTTP/" followed by digit. The
-     * previous code accepted anything (e.g. "HTTP/junk") because sscanf only
-     * checks length. Strict here keeps downgrade/parser games out. */
-    if (strncmp(version, "HTTP/", 5) != 0 ||
-        !isdigit((unsigned char)version[5])) {
-        send_response(fd, 400, "Bad Request", "text/plain", "Invalid HTTP version", 20);
-        goto done;
-    }
-
-    /* Split off any query string: the request target's `?...` is request data,
-     * not part of the route identity (a route on /ping must match /ping?x=1).
-     * Route and static matching below use the path component only. The raw
-     * request line stays intact in reqbuf (http_request_headers), so a script
-     * can still read the query string from there (lib/http.eigs parse_query). */
+    snprintf(method, sizeof method, "%s", llhttp_method_name((llhttp_method_t)door.parser.method));
+    /* The route identity is the target's path; its `?...` is request data
+     * (lib/http.eigs parse_query reads it from the head). */
+    path = xmalloc(door.url_len + 1);
+    memcpy(path, door.head + door.url_off, door.url_len);
+    path[door.url_len] = '\0';
     char *qmark = strchr(path, '?');
     if (qmark) *qmark = '\0';
-
-    char *body = NULL;
-    if (header_end > 0 && header_end < total) {
-        body = reqbuf + header_end;
-    }
 
     if (strcmp(method, "OPTIONS") == 0) {
         /* Proper preflight: advertise the methods this server handles and
@@ -2581,9 +2826,9 @@ static void handle_request(int fd) {
     char sess_id[64];
     generate_session_id(sess_id, sizeof(sess_id));
     tls_session_id = sess_id;
-    tls_request_body = body ? body : "";
-    tls_request_headers = reqbuf;
-    tls_request_head_end = header_end;
+    tls_request_body = door.body ? door.body : "";
+    tls_request_headers = door.head;
+    tls_request_head_end = (int)door.head_len;
 
     const StaticRoot *static_root = NULL;
     for (int i = 0; i < g_server.static_count; i++) {
@@ -2746,11 +2991,12 @@ done:
     tls_request_head_end = -1;
     tls_session_id = NULL;
     tls_suppress_body = 0;
-    /* Release this connection's share of the aggregate in-flight body budget.
-     * Every exit path funnels through here, so the charge made during the read
-     * loop is always balanced (body_accounted mirrors the final `cap`). */
-    __atomic_sub_fetch(&g_http_body_in_flight, body_accounted, __ATOMIC_RELAXED);
-    free(reqbuf);
+    /* Release what this request held (the door charged it as it grew), after
+     * lingering so the client reads the answer before the close. */
+    if (verdict >= 0) door_linger(fd, rbuf, HTTP_READ_ROOM);
+    door_free(&door);
+    free(rbuf);
+    free(path);
     close(fd);
 }
 

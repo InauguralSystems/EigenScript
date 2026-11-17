@@ -40,6 +40,17 @@ In-scope security issues:
 - HTTP server vulnerabilities in the extension build: request-parsing bugs,
   path traversal out of the configured `static_dir`, response splitting,
   unbounded resource consumption.
+  The server reads every request through llhttp, the HTTP/1.1 parser of
+  Node's `http`, at release v9.4.4, vendored unchanged under
+  `src/vendor/llhttp/` (its MIT licence is `src/vendor/llhttp/LICENSE-MIT`)
+  and compiled only into the builds with the HTTP extension. A fault in that
+  parser is in scope here as well as upstream. To replace it with a later
+  release, copy the release's `src/llhttp.c`, `src/api.c`, `src/http.c`,
+  `include/llhttp.h` and `LICENSE-MIT` over the five files, put their sha256
+  in `tools/vendor_llhttp_check.sh` (a `make precheck` row that fails when a
+  vendored file is not the recorded release), and run the HTTP sections of the
+  suite, `[45i]` above all, which judges the server against a reference built
+  from the same parser.
 - Deserialization flaws in `model_io` when loading untrusted weight files.
 - SQL injection in the DB extension's own code paths. (Callers that
   concatenate untrusted data into SQL via the `db_query*` string argument are

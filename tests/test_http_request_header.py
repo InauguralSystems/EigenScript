@@ -25,6 +25,7 @@ from http_readiness import pick_port
 from http_request_header_reference import (TOKEN, LONG_NAME, NAMES, NO_REQUEST,
     Refusal, answer, describe, request_header, request_headers)
 from test_http_respond import clean, equal, require, main_program
+from test_http_door import shared_reference
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED = 2373
@@ -91,7 +92,7 @@ loop while pad < 400:
 
 
 @contextlib.contextmanager
-def server(binary, folder, extra='', trace=False, pid_out=None):
+def server(binary, folder, extra='', trace=False, pid_out=None, env_extra=None):
     folder.mkdir(parents=True, exist_ok=True)
     port = pick_port()
     source = route('/fields', FIELDS) + route('/fields', FIELDS, 'POST')
@@ -105,6 +106,8 @@ def server(binary, folder, extra='', trace=False, pid_out=None):
     require(lint.returncode == 0 and lint.stdout.strip() == '[]' and not lint.stderr,
             f'lint rc={lint.returncode}: {lint.stdout}{lint.stderr}')
     env = os.environ.copy()
+    env.pop('EIGS_HTTP_MAX_HEAD', None)
+    env.update(env_extra or {})
     if trace:
         env['EIGS_TRACE'] = str(folder / 'trace.tape')
     with (folder / 'server.log').open('w+') as log:
@@ -140,6 +143,15 @@ def server(binary, folder, extra='', trace=False, pid_out=None):
 
 
 def compare(port, data, label):
+    # #2370: a request the door refuses reaches no route; the refusal's status
+    # is the #2370 reference's. A served request is read by #2373's rules.
+    decision = shared_reference().decide(data)
+    if decision.kind == 'refused':
+        response = raw(port, data)
+        require(response.startswith(f'HTTP/1.1 {decision.status} '.encode()),
+                f'{label}: #2370 refuses with {decision.status} (cause {decision.cause}): {response[:200]!r}')
+        return
+    require(decision.kind == 'served', f'{label}: #2370 reference {decision.line}')
     equal(body(port, data), answer(data), label)
 
 
@@ -223,7 +235,10 @@ def dealt(binary, folder):
 
 def name_bytes(binary, folder):
     alphabet = [c for c in range(1, 256) if c not in (10, 13, 58)]
-    lines = [b'X-A' + bytes([c]) + b': v' + str(c).encode() for c in alphabet]
+    every = [b'X-A' + bytes([c]) + b': v' + str(c).encode() for c in alphabet]
+    # #2370 cause 2: a field name with a byte that is not a token byte is
+    # refused before any route; the argument sweep reads the lines it serves.
+    lines = [line for line in every if shared_reference().decide(request([line])).kind == 'served']
     code = SUMMARY + '''out is ""
 for c in range of [1, 256]:
     if c != 10 and c != 13 and c != 58:
@@ -235,8 +250,7 @@ for c in range of [1, 256]:
             out is out + (str of c) + " raised " + e.kind + "\\n"
 out'''
     with server(binary, folder, route('/names', code)) as port:
-        data = request(lines)
-        compare(port, data, 'whole names')
+        compare(port, request(every), 'whole names')
         data = request(lines, path=b'/names')
         expected = b''
         counts = Counter()
@@ -250,17 +264,22 @@ out'''
                 counts['raised'] += 1
         actual = body(port, data)
         equal(actual, expected, 'name byte argument sweep')
-        require(len(lines) == len(actual.splitlines()) == 252 and counts == Counter({'raised': 175, 1: 25, 2: 52}),
-                f'name population {len(lines)}, {counts}')
-    print('COUNTS: name lines=252/252 calls=252/252 raised=175 single=25 double=52', flush=True)
+        require(len(every) == len(actual.splitlines()) == 252 and len(lines) == 77 and
+                counts == Counter({'raised': 175, 1: 25, 2: 52}),
+                f'name population {len(every)}/{len(lines)}, {counts}')
+    print('COUNTS: name lines=252/252 served lines=77/77 calls=252/252 raised=175 single=25 double=52', flush=True)
 
 
 def value_bytes(binary, folder):
     lines = [b'X-V: ' + bytes([c]) + b'mid' + bytes([c]) for c in range(1, 256) if c not in (10, 13)]
+    # #2370 cause 2: a value byte the parser refuses refuses the request; the
+    # lines it serves are compared together.
+    served = [line for line in lines if shared_reference().decide(request([line])).kind == 'served']
     with server(binary, folder) as port:
         compare(port, request(lines), 'value ends alphabet')
-    require(len(lines) == 253, f'value population {len(lines)}')
-    print('COUNTS: value lines=253/253', flush=True)
+        compare(port, request(served), 'value ends the decision serves')
+    require(len(lines) == 253 and len(served) == 224, f'value population {len(lines)}/{len(served)}')
+    print('COUNTS: value lines=253/253 served lines=224/224', flush=True)
 
 
 def named(binary, folder, which):
@@ -410,7 +429,9 @@ def tape(binary, folder):
     refused = 'try:\n    http_request_header of 42\ncatch e:\n    assert of [e.kind == "type_mismatch", "refusal kind"]\n' + PAD + '\n"refused"'
     big = 'a is http_request_header of "x-v"\n' + PAD + '\nlen of a[0]'
     extra = route('/tape', code) + route('/refused', refused) + route('/big', big)
-    with server(binary, folder, extra, trace=True) as port:
+    # #2370 cause 1: the 100,000-byte value (it needs a continuation record)
+    # passes the default head limit of 65,536, so this server sets a larger one.
+    with server(binary, folder, extra, trace=True, env_extra={'EIGS_HTTP_MAX_HEAD': '200000'}) as port:
         for i in range(3):
             equal(body(port, request([f'X-A: tape-{i}'.encode()], path=b'/tape')),
                   f'[["tape-{i}"],[]]'.encode(), 'tape response')
@@ -436,7 +457,9 @@ def tape(binary, folder):
 
 def cost(binary, folder):
     code = 'len of (http_request_header of "x-a")'
-    with server(binary, folder, route('/cost', code)) as port:
+    # #2370 cause 1: the large shapes pass the default head limit of 65,536;
+    # this row measures the lookup, so the server sets a limit they fit in.
+    with server(binary, folder, route('/cost', code), env_extra={'EIGS_HTTP_MAX_HEAD': '2000000'}) as port:
         shapes = []
         # Each header line is exactly 20 bytes including CR LF.
         for n in (6250, 50000):

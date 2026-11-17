@@ -510,5 +510,22 @@ for HF_RSS_ROW in leak-success leak-error; do
 done
 unset HF_RSS_ROW HF_RSS HF_RSS_RC HF_RSS_SAID
 
+# RSS5 (#2370): the door's read path. The batch is the refused named rows of
+# #2370 in turn, and chunked requests of 2,000 bytes; 1,000 to warm up, three
+# batches of 2,000, the median of the three against 4,096 kB. The check is row
+# D14-leak of tests/test_http_door.py (raw sockets: the refused rows hold bytes
+# curl does not send). RSS leg alone, as RSS3: on this branch the /heap_sample
+# fixtures read 0 (#2364). Its verdict line is carried as RSS4's is.
+DOOR_RSS=$(python3 "$TESTS_DIR/test_http_door.py" --row D14-leak 2>&1)
+DOOR_RSS_RC=$?
+DOOR_RSS_SAID=$(grep -E '^(PASS|FAIL|SKIP): ' <<< "$DOOR_RSS")
+DOOR_RSS_SAID=${DOOR_RSS_SAID/: / }
+grep -vE '^(PASS|FAIL|SKIP): ' <<< "$DOOR_RSS"
+if [ "$DOOR_RSS_RC" -eq 0 ] && grep -qxF 'HTTP_DOOR: 1 passed, 0 failed, 0 skipped' <<< "$DOOR_RSS"; then
+    ok "RSS5 llhttp door"
+else
+    fail "RSS5 llhttp door" "rc=$DOOR_RSS_RC; the row said: ${DOOR_RSS_SAID:-no verdict line}"
+fi
+
 echo "HTTP_RSS: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
