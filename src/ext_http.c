@@ -1340,6 +1340,7 @@ typedef struct {
     size_t body_len, body_room, header_len, header_bytes, header_lines;
     size_t exchange_lines; /* every header line of the exchange; never reset */
     int status, final_complete, limit;
+    int mid_block; /* 0 when the next line opens a block: the first line, or one after an empty line */
 } FetchAnswer;
 
 static size_t fetch_body_write(char *bytes, size_t size, size_t count, void *opaque) {
@@ -1366,7 +1367,12 @@ static size_t fetch_header_write(char *bytes, size_t size, size_t count, void *o
     FetchAnswer *a = opaque;
     if (size && count > SIZE_MAX / size) { a->limit = 1; return 0; }
     size_t n = size * count;
-    if (n >= 5 && !memcmp(bytes, "HTTP/", 5)) {
+    /* A status line is told by its place and its beginning together: a line
+     * beginning HTTP/ that is the exchange's first or follows an empty line.
+     * Anywhere else such a line is a header line and counts as one. */
+    int opens_block = !a->mid_block;
+    a->mid_block = 1;
+    if (opens_block && n >= 5 && !memcmp(bytes, "HTTP/", 5)) {
         a->status = 0; a->final_complete = 0; a->header_len = 0; a->header_lines = 0;
         size_t i = 5;
         while (i < n && bytes[i] != ' ') i++;
@@ -1376,6 +1382,7 @@ static size_t fetch_header_write(char *bytes, size_t size, size_t count, void *o
         return n;
     }
     if ((n == 2 && bytes[0] == '\r' && bytes[1] == '\n') || (n == 1 && bytes[0] == '\n')) {
+        a->mid_block = 0;
         if (a->status >= 200) a->final_complete = 1;
         return n;
     }

@@ -896,7 +896,13 @@ The limits are:
   responses, the final one, trailers, and a proxy's answer to `CONNECT`);
   status lines and empty lines do not count. The 4,097th line raises. When
   one line takes both header counts past their limits, the byte limit is
-  the one reported.
+  the one reported. A status line is the first line of the exchange, or the
+  line after an empty line, when it begins with `HTTP/`; any other line that
+  begins with `HTTP/` is a header line and counts against both limits.
+  Known and left: a trailer line that begins with `HTTP/` and directly
+  follows the empty line of the header block is still taken for a status
+  line (it cannot be told from the status line after a proxy's answer to
+  `CONNECT`), and such a call raises `the answer ended early`.
 - **Request headers:** 65,536 bytes, counted as described above.
 
 An earlier library error wins over a limit not yet crossed. A NUL in the
