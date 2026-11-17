@@ -36,6 +36,14 @@ METHODS = ('GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE')
 HEADER_LIMIT = 65536
 HEADER_LINE_LIMIT = 4096
 DEFAULT_BODY_LIMIT = 16777216
+CONNECTION_WRITTEN = ('Connection', 'Keep-Alive', 'Proxy-Connection', 'TE', 'Upgrade')
+CONNECTION_NAMES = tuple(name.lower().encode() for name in CONNECTION_WRITTEN)
+# The names the library's HTTP source looks for in a caller's headers (8.14.1
+# and 8.18.0), less the refused ones and Host, User-Agent and Accept.
+THIRTEEN = ('Accept-Encoding', 'Alt-Used', 'Authorization', 'Content-Range', 'Content-Type', 'Cookie', 'Date',
+            'If-Modified-Since', 'If-Unmodified-Since', 'Last-Modified', 'Proxy-Authorization', 'Range', 'Referer')
+ID_NAMES = tuple(name + '-Id' for name in ('Content-Length', 'Transfer-Encoding', 'Expect') + CONNECTION_WRITTEN)
+OTHER_NAMES = ('X-Connection', 'Trailer', 'Via', 'Origin', 'Sec-X')
 RUNTIME_TMP = None
 
 
@@ -93,6 +101,9 @@ def request_reference(argument, version):
             raise Refusal('value')
         if lower in names or lower in (b'content-length', b'transfer-encoding', b'expect'):
             raise Refusal('value')
+        # The connection is the runtime's: these five raise as well.
+        if lower in CONNECTION_NAMES:
+            raise Refusal('value')
         if any(c not in (9, 32) and not 0x21 <= c <= 0x7e for c in value):
             raise Refusal('value')
         if value[:1] in (b' ', b'\t') or value[-1:] in (b' ', b'\t'):
@@ -113,6 +124,9 @@ def request_reference(argument, version):
         lines.append((b'Accept', b'*/*'))
     if method in ('POST', 'PUT', 'PATCH') or (method == 'DELETE' and body):
         lines.append((b'Content-Length', str(len(body)).encode()))
+    # Exactly once in every request; its place is the library's, so the
+    # comparison below takes the lines as a multiset.
+    lines.append((b'Connection', b'close'))
     return {'line': method.encode() + b' ' + target + b' HTTP/1.1',
             'headers': lines, 'caller': [(k, v) for k, v in caller if k.lower() != b'host'],
             'body': body, 'header_bytes': size}
@@ -384,6 +398,10 @@ def check_refusal_message(got,name,argument):
     elif name.startswith('body-'): words=('body','payload','content','data','get','head')
     else: words=('header','value','field','token','ascii','framing','content-length','transfer-encoding','expect')
     text=got[2][len('http_fetch: '):].lower()
+    if name.startswith('connection-'):
+        # The message names the reserved names.
+        for reserved in CONNECTION_WRITTEN:
+            require(re.search(r'(?<![-\w])'+re.escape(reserved.lower())+r'(?![-\w])',text) is not None,f'{name}: error does not name {reserved}: {got[2]!r}')
     require(any(re.search(r'\b'+word+r'\b',text) if word in ('get','head','post','put','patch','delete') else word in text
                 for word in words),f'{name}: error does not name its rule: {got[2]!r}')
     if isinstance(argument,dict):
@@ -398,6 +416,9 @@ def check_refusal_message(got,name,argument):
 def check_wire(got, expected):
     equal(got['line'], expected['line'], 'request line')
     equal(Counter(got['headers']), Counter(expected['headers']), 'whole header multiset')
+    # Each line exactly once: no name stands twice, in any case.
+    names = Counter(k.lower() for k, _ in got['headers'])
+    equal(sorted(n for n, c in names.items() if c > 1), [], 'header names that stand more than once')
     caller_names = {k.lower() for k, _ in expected['caller']}
     observed = [(k, v) for k, v in got['headers'] if k.lower() in caller_names]
     equal(observed, expected['caller'], 'caller header order and spelling')
@@ -676,6 +697,16 @@ def dealt_arrives(binary, folder, version):
     qdraw=([c for c in visible if c != '#']*((len(eligible)+92)//93))[:len(eligible)]
     rng.shuffle(pdraw); rng.shuffle(qdraw)
     byte_draws={index:(p,q) for index,p,q in zip(eligible,pdraw,qdraw)}
+    # Names a library or a build could treat as its own (amendment 3): each
+    # of the thirteen, with a value and empty, once as the first of the
+    # caller's headers and once between two of them; the rest anywhere.
+    named=[(n,vk,place) for n in THIRTEEN for vk in ('value','empty') for place in ('first','middle')]
+    named+=[(n,'value','any') for n in ID_NAMES+OTHER_NAMES for _ in range(2)]
+    not_host=[i for i in range(600) if special[specials[i]][0]!='Host']
+    first_calls=rng.sample(not_host,sum(place=='first' for _,_,place in named))
+    rest=rng.sample([i for i in range(600) if i not in first_calls],len(named)-len(first_calls))
+    calls=iter(first_calls+rest)
+    named_at={next(calls):item for item in sorted(named,key=lambda item:item[2]!='first')}
     with Peer([Plan() for _ in range(600)]) as peer:
         for i in range(600):
             method = methods[i]
@@ -719,6 +750,22 @@ def dealt_arrives(binary, folder, version):
             entries.insert(rng.randint(0,len(entries)), (custom, 'example.test' if base == 'Host' else 'caller'))
             headers = dict(entries)
             counts['special-'+base+'-'+custom] += 1
+            if i in named_at:
+                extra_name,vk,place=named_at[i]
+                entries=list(headers.items())
+                outside=[j for j,(k,_) in enumerate(entries) if k.lower()!='host']
+                at=0 if place=='first' else rng.randint(outside[0]+1,outside[-1]) if place=='middle' else rng.randint(0,len(entries))
+                entries.insert(at,(extra_name,'' if vk=='empty' else 'v'+str(rng.randrange(1000000))))
+                headers=dict(entries)
+            # Counted from the argument as built, not from the deal.
+            for extra_name in THIRTEEN+ID_NAMES+OTHER_NAMES:
+                if extra_name in headers:
+                    kind='named-'+extra_name+('-empty' if headers[extra_name]=='' else '-value')
+                    counts[kind]+=1
+                    keys=[k for k in headers if k.lower()!='host']
+                    at=keys.index(extra_name)
+                    if at==0 and len(headers)>=3 and next(iter(headers))==extra_name: counts[kind+'-first']+=1
+                    if 0<at<len(keys)-1: counts[kind+'-middle']+=1
             counts['method-'+method] += 1
             counts['body-'+str(bkind)] += 1
             counts['target-'+str(target_kind)] += 1
@@ -736,7 +783,15 @@ def dealt_arrives(binary, folder, version):
         for c in TOKEN:
             floors['name-first-'+str(c)] = floors['name-last-'+str(c)] = 2
         floors['value-inside-space'] = floors['value-inside-tab'] = 2
-        for kind, floor in floors.items():
+        places={}
+        for name in THIRTEEN:
+            for vk in ('value','empty'):
+                floors['named-'+name+'-'+vk]=2
+                places['named-'+name+'-'+vk+'-first']=places['named-'+name+'-'+vk+'-middle']=1
+        for name in ID_NAMES+OTHER_NAMES:
+            floors['named-'+name+'-value']=2
+        equal(len(places),52,'arrivals declared place population')
+        for kind, floor in list(floors.items())+list(places.items()):
             require(counts[kind] >= floor, f'arrivals dealt {kind}={counts[kind]} < {floor}')
         expected = [request_reference(arg,version) for arg in arguments]
         got = run_calls(binary, folder, arguments, timeout=120)
@@ -749,12 +804,12 @@ def dealt_arrives(binary, folder, version):
             except AssertionError as exc:
                 raise AssertionError(f'arrivals call {i}: {exc}') from exc
         require(not peer.errors, f'arrivals peer errors: {peer.errors}')
-    equal(len(floors),567,'arrivals declared kind population')
+    equal(len(floors),606,'arrivals declared kind population')
     print('DEALT arrives calls=600 kinds='+str(len(floors))+' counts='+json.dumps(dict(sorted(counts.items())), separators=(',',':')),flush=True)
 
 
 def refusal_arguments(url,rng=None):
-    """Exactly one broken rule per kind; count fixed by BAR's 100 kinds."""
+    """Exactly one broken rule per kind; count fixed by BAR's 120 kinds."""
     rng=rng or random.Random(SEED+1)
     base = {'url':url+'?draw='+str(rng.randrange(1000000)), 'method':rng.choice(('POST','PUT','PATCH','DELETE')), 'body':'body-marker-'+str(rng.randrange(1000000)), 'headers':{'X-Seed':'header-marker-'+str(rng.randrange(1000000))}}
     kinds = []
@@ -791,6 +846,13 @@ def refusal_arguments(url,rng=None):
     for name in ('Content-Length','Transfer-Encoding','Expect'):
         for spelling in (name.lower(),name.upper(),name):
             add('reserved-'+spelling,'headers',{spelling:'1'})
+    for name in CONNECTION_WRITTEN:
+        mixed=''
+        while mixed in ('',name.lower(),name.upper()):
+            mixed=''.join(c.upper() if rng.random()<.5 else c.lower() for c in name)
+        for label,spelling in (('lower',name.lower()),('upper',name.upper()),('mixed',mixed)):
+            add('connection-'+label+'-'+name,'headers',{spelling:'v'+str(rng.randrange(10))})
+        add('connection-empty-'+name,'headers',{name:''})
     for method in ('GET','HEAD'):
         add('body-with-'+method,'method',method)
     for value in (0,.0009,300.0001,-1,float('inf'),float('nan')):
@@ -806,8 +868,8 @@ def refusal_arguments(url,rng=None):
         add('header-value-type-'+repr(value),'headers',{'X-A':value})
     for value in (True,'15',None):
         add('timeout-type-'+repr(value),'timeout',value)
-    equal(len(kinds),100,'refusal kind population')
-    equal(len({name for name,arg in kinds}),100,'distinct refusal kind population')
+    equal(len(kinds),120,'refusal kind population')
+    equal(len({name for name,arg in kinds}),120,'distinct refusal kind population')
     return kinds
 
 
@@ -819,7 +881,7 @@ def dealt_refused(binary,folder,version):
         rng.shuffle(dealt)
         counts=Counter(name for name,arg in dealt)
         equal(set(counts.values()),{4},'refusal dealt kind counts')
-        equal(len(dealt),400,'refusal dealt calls')
+        equal(len(dealt),480,'refusal dealt calls')
         expected=[]
         for name,arg in dealt:
             try: request_reference(arg,version)
@@ -827,7 +889,7 @@ def dealt_refused(binary,folder,version):
             else: raise AssertionError('refusal oracle accepted '+name)
         keylog=folder/'refused-keylog.log'
         got=run_calls(binary,folder,[arg for name,arg in dealt],{'SSLKEYLOGFILE':str(keylog)},timeout=60)
-        equal(len(got),400,'refusal compared calls')
+        equal(len(got),480,'refusal compared calls')
         for (name,arg),value,kind in zip(dealt,got,expected):
             try:
                 expect_error(value,kind)
@@ -835,7 +897,7 @@ def dealt_refused(binary,folder,version):
             except AssertionError as exc: raise AssertionError(name+': '+str(exc)) from exc
         equal(peer.accepted,0,'refused listener connections')
         require(not keylog.exists(),'argument-only refusals initialized the curl/TLS library')
-    print('DEALT refused calls=400 kinds=100 counts='+json.dumps(dict(sorted(counts.items())),separators=(',',':')),flush=True)
+    print('DEALT refused calls=480 kinds=120 counts='+json.dumps(dict(sorted(counts.items())),separators=(',',':')),flush=True)
 
 
 def dealt_answers(binary,folder,version):
@@ -929,7 +991,11 @@ def defaults(binary,folder,version):
     compared=0
     for method in METHODS:
         for body in ('','x') if method not in ('GET','HEAD') else ('',):
-            one_request(binary,folder,{'method':method,'body':body},version)
+            record,_=one_request(binary,folder,{'method':method,'body':body},version)
+            names=['Host','User-Agent','Accept','Connection']
+            if method in ('POST','PUT','PATCH') or body: names.append('Content-Length')
+            equal(sorted(k.decode().lower() for k,v in record['headers']),sorted(n.lower() for n in names),f'{method} {body!r}: header names')
+            equal([v for k,v in record['headers'] if k.lower()==b'connection'],[b'close'],f'{method} {body!r}: the Connection line')
             compared+=1
     equal(compared,10,'default header/method/body comparisons')
 
@@ -941,6 +1007,76 @@ def target_literal(binary,folder,version):
 def host_order(binary,folder,version):
     record,_=one_request(binary,folder,{'headers':{'X-A':'1','Host':'example.test','X-B':'2'}},version)
     equal([k for k,v in record['headers'] if k.lower() in (b'host',b'x-a',b'x-b')],[b'Host',b'X-A',b'X-B'],'caller Host first')
+
+
+def one_connection_each(binary,folder,version):
+    # A listener that keeps each connection open and takes one at a time:
+    # when it accepts the next, a read on the one before must return its end.
+    port=pick_port()
+    listener=socket.socket()
+    listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+    listener.bind(('127.0.0.1',port));listener.listen(8);listener.settimeout(20)
+    records,problems,held=[],[],[]
+    def serve():
+        try:
+            for index in range(3):
+                try: sock,_=listener.accept()
+                except socket.timeout:
+                    problems.append(f'connection {index+1} never came'); return
+                if held:
+                    held[-1].settimeout(5)
+                    try: rest=held[-1].recv(65536)
+                    except socket.timeout: rest=None
+                    if rest!=b'': problems.append(f'connection {index}: no end before connection {index+1} (read {rest!r})')
+                held.append(sock)
+                sock.settimeout(20)
+                wire=b''
+                while b'\r\n\r\n' not in wire:
+                    data=sock.recv(65536)
+                    if not data: break
+                    wire+=data
+                head,_,body=wire.partition(b'\r\n\r\n')
+                lines=head.split(b'\r\n')
+                length=[int(l.split(b':',1)[1]) for l in lines[1:] if l.split(b':',1)[0].lower()==b'content-length']
+                while length and len(body)<length[0]:
+                    data=sock.recv(65536)
+                    if not data: break
+                    body+=data
+                records.append(lines)
+                sock.sendall(b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok')
+            # A request sent again on a kept connection would wait here.
+            listener.settimeout(1)
+            try:
+                extra,_=listener.accept();extra.close();problems.append('a fourth connection')
+            except socket.timeout: pass
+        except OSError as exc:
+            problems.append('listener: '+str(exc))
+    thread=threading.Thread(target=serve,daemon=True);thread.start()
+    try:
+        url=f'http://127.0.0.1:{port}/'
+        source=DESCRIBE+call_source({'url':url,'timeout':5})+call_source({'url':url,'timeout':5})+call_source([url,'{}','x'],True)
+        output=program(binary,folder,source)
+        thread.join(30)
+        require(not thread.is_alive(),'listener did not finish')
+        for sock in held:
+            # A second request on a kept connection is read here.
+            sock.settimeout(.2)
+            try: late=sock.recv(65536)
+            except (socket.timeout,OSError): late=b''
+            if late: problems.append(f'a second request on one connection: {late[:60]!r}')
+        require(not problems,'; '.join(problems))
+        values=[json.loads(line) for line in output.splitlines()]
+        equal(len(values),3,'one connection each: calls')
+        equal(values[2],['body',2,hashlib.sha256(b'ok').hexdigest()],'one connection each: http_post')
+        for value in values[:2]: equal(value[:2],['answer',200],'one connection each: http_fetch')
+        equal(len(records),3,'one connection each: connections with a request')
+        for index,lines in enumerate(records):
+            connection=[l for l in lines[1:] if l.split(b':',1)[0].lower()==b'connection']
+            equal(connection,[b'Connection: close'],f'request {index+1}: the Connection line')
+    finally:
+        listener.close()
+        for sock in held:
+            with contextlib.suppress(OSError): sock.close()
 
 
 def request_body(binary,folder,version):
@@ -1494,9 +1630,10 @@ def tape_three(binary,folder,version):
 
 def tape_refusals(binary,folder,version):
     kinds=refusal_arguments('PEER_URL/')
+    require(any(name.startswith('connection-') and any(k.lower()=='connection' for k in arg['headers']) for name,arg in kinds),'tape refusals: no call gives a Connection')
     source=DESCRIBE+''.join(call_source(arg) for name,arg in kinds)
     output,_,_=tape_program(binary,folder,source,[Plan()],expected_records=0)
-    equal(len(output.splitlines()),100,'argument-only refusal tape calls')
+    equal(len(output.splitlines()),120,'argument-only refusal tape calls')
 
 
 def tape_large(binary,folder,version):
@@ -1539,15 +1676,21 @@ def post_arguments_tape(binary,folder,version):
     good=[['ftp://x/','','b'],['ftp://x/',5,'b'],['http://127.0.0.1:1/']]
     bad=[['http://127.0.0.1:1/',5,'b'],['http://127.0.0.1:1/','{}',7],
          ['http://127.0.0.1:1/','"just-a-string"','b'],['http://127.0.0.1:1/','["X-A","1","X-B"]','b']]
-    source=DESCRIBE+''.join(call_source(arg,True) for arg in good+bad)
-    trace=folder/'post.tape'
-    out=program(binary,folder,source,{'EIGS_TRACE':str(trace)},name='record')
-    values=[json.loads(line) for line in out.splitlines()]
-    equal(len(values),len(good)+len(bad),'post argument compared calls')
-    for value in values[:3]: equal(value,['body',0,hashlib.sha256(b'').hexdigest()],'post legacy empty')
-    for value,kind in zip(values[3:],('type_mismatch','type_mismatch','type_mismatch','value')): expect_error(value,kind,prefix='http_post')
-    equal(sum(b' http_post=' in line for line in trace.read_bytes().splitlines()),3,'legacy malformed calls tape count')
-    equal(program(binary,folder,source,{'EIGS_REPLAY':str(trace)},name='replay'),out,'post argument replay')
+    # The connection's names, refused from the argument alone (amendment 3).
+    connection=['{"Connection": "close"}','["connection", ""]','{"Keep-Alive": "timeout=1"}',
+                '["proxy-connection", "close"]','{"TE": "trailers"}','["upgrade", "h2c"]']
+    with Peer() as peer:
+        bad+=[[peer.url+'/',text,'b'] for text in connection]
+        source=DESCRIBE+''.join(call_source(arg,True) for arg in good+bad)
+        trace=folder/'post.tape'
+        out=program(binary,folder,source,{'EIGS_TRACE':str(trace)},name='record')
+        values=[json.loads(line) for line in out.splitlines()]
+        equal(len(values),len(good)+len(bad),'post argument compared calls')
+        for value in values[:3]: equal(value,['body',0,hashlib.sha256(b'').hexdigest()],'post legacy empty')
+        for value,kind in zip(values[3:],('type_mismatch','type_mismatch','type_mismatch','value')+('value',)*6): expect_error(value,kind,prefix='http_post')
+        equal(sum(b' http_post=' in line for line in trace.read_bytes().splitlines()),3,'legacy malformed calls tape count')
+        equal(program(binary,folder,source,{'EIGS_REPLAY':str(trace)},name='replay'),out,'post argument replay')
+        equal(peer.accepted,0,'post connection names: listener connections')
     with Peer() as peer:
         extra=[peer.url+'/','{}','x','ignored']
         value=run_calls(binary,folder,[extra],legacy=True)[0]
@@ -1789,6 +1932,7 @@ def no_temp_files(binary,folder,version):
 ROWS=[
     ('dealt-arrives',dealt_arrives),('dealt-refused',dealt_refused),('dealt-answers',dealt_answers),
     ('defaults',defaults),('target-literal',target_literal),('host-order',host_order),
+    ('one-connection-each',one_connection_each),
     ('request-body',request_body),('request-headers',request_headers),('request-limit',request_limit),
     ('curlrc',curlrc),('userinfo',userinfo),('statuses-no-redirect',statuses),
     ('answer-join-order',join_order),('interim-trailer',interim_trailer),('answer-body-sizes',answer_sizes),
