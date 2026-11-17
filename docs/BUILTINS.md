@@ -863,6 +863,7 @@ begin `http_fetch: ` and name the broken rule. All other messages are exact:
 | Early end (curl 18, 52 or 56, or success without a complete final header block) | `io` | `http_fetch: the answer ended early` |
 | Another library failure, including a refused option | `io` | `http_fetch: curl failed (curl error N)` |
 | Answer headers exceed their limit | `limit` | `http_fetch: the answer's headers are longer than 65536 bytes` |
+| Answer has more header lines than its limit | `limit` | `http_fetch: the answer has more than 4096 header lines` |
 | Answer body exceeds its limit | `limit` | `http_fetch: the answer's body is longer than N bytes (EIGS_HTTP_FETCH_MAX_BODY)` |
 | Complete, within-limit body contains a NUL byte | `io` | `http_fetch: the answer holds a NUL byte, which text cannot carry` |
 
@@ -873,7 +874,7 @@ untrusted certificate (60) and an unusable certificate file (77). Messages
 contain no URL, request-header value or body. Every option's return code is
 checked; a refused option raises before sending anything.
 
-The four limits are:
+The limits are:
 
 - **Time:** the supplied seconds round up to whole milliseconds for the
   entire exchange, including name lookup, connect, send and read. A library
@@ -891,10 +892,30 @@ The four limits are:
   lines and empty block-ending lines do not count. A never-ended line is
   left to the library's early-end, timeout or line-size error. The first
   line that exceeds the total raises.
+- **Answer header lines:** 4,096 lines across the same responses (interim
+  responses, the final one, trailers, and a proxy's answer to `CONNECT`);
+  status lines and empty lines do not count. The 4,097th line raises. When
+  one line takes both header counts past their limits, the byte limit is
+  the one reported.
 - **Request headers:** 65,536 bytes, counted as described above.
 
 An earlier library error wins over a limit not yet crossed. A NUL in the
-body is checked last, after completeness and both answer limits.
+body is checked last, after completeness and the answer limits.
+
+The curl library has limits of its own on an answer's headers. From release
+8.3.0 it allows 300 KB of header bytes in one transfer, and it counts status
+lines, which the runtime's 65,536 bytes do not; an exchange whose status
+lines reach that size ends with curl error 56, reported as
+`http_fetch: the answer ended early`. From release 8.14.0 it refuses a
+transfer with more than 5,000 header lines (curl error 100), counted over the
+same responses with no status line, no empty line and no folded continuation
+line. The runtime's 4,096 lines stand below that, so for an answer without
+folded lines the number of header lines decides the same way on every
+release. A folded continuation line (which a server must not send) is a line
+of its own to the runtime up to release 8.17; from 8.18.0 the library joins it
+to the line before it and hands over one line, so an answer that passes the
+limit only by its folded lines is refused by the older releases and returned
+by the newer.
 
 Both builtins load the curl shared library once, safely from any thread,
 and share the same exchange. No curl program is started, and one worker's
@@ -903,6 +924,8 @@ file for writing except the library's key log when `SSLKEYLOGFILE` asks
 for one, as described below.
 Linux tries `libcurl.so.4`, then `libcurl.so`; macOS tries `libcurl.4.dylib`,
 then `libcurl.dylib`. There is no build-time header or link dependency.
+No CI job runs the macOS names of the library: no hosted job builds the
+HTTP extension on macOS (#2388).
 The oldest curl release providing every function and option used is 7.42.0
 (`CURLOPT_PATH_AS_IS`). A missing library/function raises the load error;
 an option refused by the loaded library raises its curl error before sending.
