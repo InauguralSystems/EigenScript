@@ -22,8 +22,19 @@ else
         HF_SKIPS=$((HF_SKIPS + 2))
     fi
     if ! command -v openssl >/dev/null 2>&1; then HF_SKIPS=$((HF_SKIPS + 2)); fi
-    HF_LIB_MAJOR=$(python3 -c 'import sys; sys.path.insert(0,sys.argv[1]); from test_http_fetch import curl_version; print(curl_version())' "$TESTS_DIR" 2>&1)
+    # The release of the curl library the rows run against, asked of the
+    # library itself (curl_version) by the names the runtime loads it by.
+    HF_LIB_TEXT=$(python3 -c 'import sys; sys.path.insert(0,sys.argv[1]); from test_http_fetch import curl_version_text; print(curl_version_text())' "$TESTS_DIR" 2>&1)
     HF_LIB_RC=$?
+    HF_LIB_MAJOR=
+    if [ "$HF_LIB_RC" -eq 0 ]; then
+        # The suite counts these words: a release line that held one would
+        # be counted, so it is not printed and the section fails instead.
+        if grep -Eq 'PASS|FAIL|SKIP' <<< "$HF_LIB_TEXT"; then HF_LIB_RC=3; HF_LIB_TEXT='(the text holds a word the suite counts)'
+        else echo "HTTP_FETCH_LIBCURL: $HF_LIB_TEXT"; fi
+        HF_LIB_MAJOR=$(sed -n 's/^libcurl\/\([0-9][0-9]*\)\..*/\1/p' <<< "$HF_LIB_TEXT")
+        if [ -z "$HF_LIB_MAJOR" ]; then HF_LIB_RC=4; fi
+    fi
     if [ "$HF_LIB_RC" -eq 0 ] && [ "$HF_LIB_MAJOR" -lt 8 ]; then HF_SKIPS=$((HF_SKIPS + 1)); fi
     HF_PASSES=$((72 - HF_SKIPS))
     HF_WANT="HTTP_FETCH: $HF_PASSES passed, 0 failed, $HF_SKIPS skipped"
@@ -35,9 +46,9 @@ else
         FAIL=$((FAIL + 1))
         echo "  FAIL: http_fetch contract (probe=$HF_PROBE_RC rows=$HF_TEST_RC; wanted: $HF_WANT)"
         printf '%s\n' "$HF_PROBE_OUT"
-        if [ "$HF_LIB_RC" -ne 0 ]; then printf '%s\n' "$HF_LIB_MAJOR"; fi
+        if [ "$HF_LIB_RC" -ne 0 ]; then echo "  curl library release not read (code $HF_LIB_RC)"; printf '%s\n' "$HF_LIB_TEXT" | sed 's/^/    /'; fi
     fi
     printf '%s\n' "$HF_TEST"
 fi
-unset HF_PROBE HF_PROBE_OUT HF_PROBE_RC HF_SKIPS HF_LIB_MAJOR HF_LIB_RC HF_PASSES HF_WANT HF_TEST HF_TEST_RC
+unset HF_PROBE HF_PROBE_OUT HF_PROBE_RC HF_SKIPS HF_LIB_TEXT HF_LIB_MAJOR HF_LIB_RC HF_PASSES HF_WANT HF_TEST HF_TEST_RC
 echo ""

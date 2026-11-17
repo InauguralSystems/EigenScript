@@ -1262,7 +1262,8 @@ def nul_body(binary,folder,version):
         equal(peer.record_count,2,'raw and compressed NUL-body comparisons')
 
 
-def curl_version():
+def curl_version_text():
+    # The library itself, by the names the runtime loads it by.
     import ctypes
     names=('libcurl.4.dylib','libcurl.dylib') if sys.platform=='darwin' else ('libcurl.so.4','libcurl.so')
     lib=None
@@ -1271,8 +1272,11 @@ def curl_version():
         except OSError: pass
     require(lib is not None,'curl library not found for fixture version check')
     lib.curl_version.restype=ctypes.c_char_p
-    text=lib.curl_version().decode()
-    return int(re.search(r'libcurl/(\d+)',text).group(1))
+    return lib.curl_version().decode()
+
+
+def curl_version():
+    return int(re.search(r'libcurl/(\d+)',curl_version_text()).group(1))
 
 
 def nul_header(binary,folder,version):
