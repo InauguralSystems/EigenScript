@@ -1190,6 +1190,12 @@ static int fetch_headers_valid(FetchRequest *r, const char *fn) {
         if (!strcasecmp(h->name, "Content-Length") ||
             !strcasecmp(h->name, "Transfer-Encoding") || !strcasecmp(h->name, "Expect"))
             return fetch_error(fn, EK_VALUE, "Content-Length, Transfer-Encoding and Expect are reserved headers");
+        /* The connection is the runtime's: one for each call, closed at its
+         * end, and the Connection line written by the runtime. */
+        if (!strcasecmp(h->name, "Connection") || !strcasecmp(h->name, "Keep-Alive") ||
+            !strcasecmp(h->name, "Proxy-Connection") || !strcasecmp(h->name, "TE") ||
+            !strcasecmp(h->name, "Upgrade"))
+            return fetch_error(fn, EK_VALUE, "Connection, Keep-Alive, Proxy-Connection, TE and Upgrade are reserved headers: the connection is the runtime's");
         for (size_t j = 0; j < h->value_len; j++) {
             unsigned char c = (unsigned char)h->value[j];
             if (c != '\t' && (c < 0x20 || c > 0x7e))
@@ -1512,6 +1518,9 @@ static Value *fetch_exchange(FetchRequest *r, const char *fn) {
         snprintf(length, sizeof length, "Content-Length: %zu", r->body_len);
         if (!fetch_line(&head, &tail, length)) { code = 27; goto done; }
     }
+    /* RFC 9112, 9.3: a client that keeps no connection sends close. From
+     * curl 8.16.0 the library moves this line to the end of the request. */
+    if (!fetch_line(&head, &tail, "Connection: close")) { code = 27; goto done; }
 #define FETCH_SET(option, value) do { \
     code = fetch_curl.easy_setopt(easy, FETCH_CURLOPT_##option, (value)); \
     if (code) goto done; \
