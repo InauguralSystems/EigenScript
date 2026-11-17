@@ -1028,6 +1028,16 @@ conservatively instead of answering a rest value. See the
 
 ### HTTP startup and response attribution
 
+`http_fetch of request` takes a request dict and returns the final status,
+headers and complete body, like fetch, Python requests and Go net/http.
+Statuses 4xx and 5xx are answers. Its defaults differ explicitly: redirects
+are not followed, a whole-exchange timeout is 15 seconds, and compression
+is neither requested nor undone. URL credentials are refused; duplicate
+response header values join with `", "`, including Set-Cookie. `http_post`
+uses the same exchange with its existing JSON-header input and body-only
+result. See [outbound HTTP](BUILTINS.md#outbound-http) for validation, limits,
+errors and replay.
+
 `http_request_header of "origin"` returns a list of all matching request-head
 field values in order, like Go's `Header.Values` and Node's `headersDistinct`.
 It ignores ASCII name case and trims only surrounding spaces and tabs. It

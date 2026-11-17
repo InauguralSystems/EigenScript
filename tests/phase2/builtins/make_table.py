@@ -375,9 +375,9 @@ def main():
 
     # R2.4/N12 adds f64_bits, f64_from_bits, buf_get_bits and buf_set_bits.
     # All four new definitions live in builtins_buf.c, the existing d bucket;
-    # #2351 adds one request-only ext_http.c row to f; historical expectations
+    # #2351 and #2375 add one ext_http.c row each to f; historical expectations
     # and LOSS membership stay fixed.
-    want = {"b": 46, "c": 75, "d": 52, "e": 38, "f": 20, "g": 77}  # S10-D2 and sync11 retirements remain; R2.4 adds four d rows.
+    want = {"b": 46, "c": 75, "d": 52, "e": 38, "f": 21, "g": 77}  # S10-D2 and sync11 retirements remain; R2.4 adds four d rows.
     if counts != want: fail.append("round counts %s, the plan says %s" % (counts, want))
     if not rows or len(rows) != len(sec6): fail.append("examined=%d table=%d" % (len(rows), len(sec6)))
     if guard["guarded"] != guard["yes"] + guard["closed_in"] + guard["pending-profile"] + guard["vacuous"]:

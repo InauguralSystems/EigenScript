@@ -32,6 +32,13 @@ print of (fround of 0.1)
 
 # EigenScript
 
+`http_fetch of {"url": "https://example.org/", "method": "GET"}` returns
+the final status as an int, response headers and complete body. It uses the
+curl library at runtime, validates before sending and raises catchable errors
+for failed exchanges. `http_post` shares that exchange and returns its body.
+See [outbound HTTP](docs/BUILTINS.md#outbound-http) for limits, certificate
+settings and replay.
+
 Code routes can set their own status, headers and cookies with `http_respond`;
 the route's final value stays the body. Failed calls change nothing, and an
 uncaught route error drops its settings before the generic 500.

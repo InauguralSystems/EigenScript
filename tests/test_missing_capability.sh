@@ -44,7 +44,7 @@ for strict in unset 0 1; do
         rm -f "$output"
         [[ "$rc" -eq 0 && "$classification" -eq 2 ]]
         [[ "$summary" =~ $summary_pattern ]]
-        [[ $((BASH_REMATCH[1] + BASH_REMATCH[2])) -eq 32 ]]  # #2373 adds http_request_header after #2351's http_respond
+        [[ $((BASH_REMATCH[1] + BASH_REMATCH[2])) -eq 33 ]]  # #2375 adds http_fetch after #2373's http_request_header
         extra=0
         if [[ "$(uname -m)" == x86_64 && "$jit" != off && "${BASH_REMATCH[1]}" -gt 0 ]]; then extra=1; fi
         [[ "${BASH_REMATCH[3]}" -eq $((4 + 12 * BASH_REMATCH[1] + 2 * BASH_REMATCH[2] + (BASH_REMATCH[1] > 0) + extra)) ]]

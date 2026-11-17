@@ -2381,6 +2381,7 @@ Value* eigs_json_parse_value(const char *s, int *pos);
  * g_json_parse_recoverable) before delegating to eigs_json_parse_value, so
  * one malformed parse cannot poison the next parse in the same thread. */
 Value* eigs_json_parse_root(const char *s, int *pos);
+Value* eigs_json_parse_complete(const char *s, int *pos);
 /* Encode any Value as JSON. Returns heap-owned string (caller frees).
  * Functions/builtins emit "null" (matches the json_encode builtin). */
 char* eigs_json_encode(Value *v);

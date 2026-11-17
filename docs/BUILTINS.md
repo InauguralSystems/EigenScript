@@ -789,16 +789,186 @@ axis. Three controls bound it:
 | `http_serve` | `http_serve of port` | Start blocking HTTP server on an exact integer port in 0..65535 (integral floats convert). |
 | `http_request_body` | `http_request_body of null` | Get current request body |
 | `http_session_id` | `http_session_id of null` | Get current session ID |
-| `http_post` | `http_post of [url, headers, body]` | HTTP POST via curl (no shell). `headers` is a JSON **string**, either an object (`"{\"X-Key\": \"v\"}"`) or a flat alternating array (`"[\"X-Key\", \"v\"]"`); `""` means no headers. Any other parsed shape raises `type_mismatch` rather than silently sending none (#755). JSON integer header values within int64 retain every digit when sent as text (N14, B6). Max 32 headers; CR/LF is stripped from both halves |
+| `http_fetch` | `http_fetch of request` | Send one HTTP/1.1 request and return `{status, headers, body}`. See [Outbound HTTP](#outbound-http) for the request, validation, limits and catchable errors (#2375) |
+| `http_post` | `http_post of [url, headers, body]` | POST through the same exchange as `http_fetch`, returning only the body. `headers` is JSON text: an object or flat alternating array; malformed JSON and `""` mean no headers. CR/LF is stripped from header names and values before validation. JSON integer header values within int64 retain every digit (N14, B6). See [Outbound HTTP](#outbound-http) for compatibility and errors |
 | `http_request_header` | `http_request_header of name` | Return a list of this request's values for the whole ASCII case-insensitive header name, in field order, or `[]` when absent. `name` must be a string of 1–64 bytes of RFC 7230 token characters; a non-string raises `type_mismatch`, an invalid name raises `value`. No spelling is reserved. Values lose only spaces and tabs at their ends; their other bytes are kept. Only CR LF ends a line. Malformed lines and continuations are ignored, and the request line and body are never fields. A request with no server-framed empty line has no fields. Outside the answering thread, including a thread spawned by a route, raises `value`: `http_request_header: no request is being answered`. Works in called functions, cooperative tasks and route auth source. Each returned list is recorded on the tape (#2373) |
 | `http_request_headers` | `http_request_headers of null` | Return the request line and header lines through the empty line, without the body. If the server found no CR LF CR LF before the first NUL, return the request text up to the first NUL or its end. Outside a request, return `""` |
+
+### Outbound HTTP
+
+`http_fetch of request` takes a dict with only these keys. An explicit `null`
+is a wrong type, even for an optional key.
+
+| Key | Type | Default and rule |
+|-----|------|------------------|
+| `url` | String | Required; lower-case `http://` or `https://`, with every byte visible ASCII (`0x21`–`0x7E`) |
+| `method` | String | `"GET"`; exactly `GET`, `HEAD`, `POST`, `PUT`, `PATCH` or `DELETE` |
+| `headers` | Dict of string values | `{}`; names, values and total size follow the rules below |
+| `body` | String | `""`; sent unchanged; a nonempty body with GET or HEAD raises `value` |
+| `timeout` | Int or float | `15` seconds; finite and in `0.001`–`300`, inclusive |
+
+The URL authority runs from the scheme to the next `/`, `?` or `#`, or the
+end. It must be nonempty and contain only ASCII letters, digits, `.`, `-`,
+`_`, `:`, `[` and `]`. Credentials and backslashes in the authority are
+refused. The path and query are sent byte for byte, including dot segments,
+braces, brackets and percent signs. A target that begins with a query or is
+empty gets a leading `/`; the fragment is omitted. Redirects are returned
+as answers and are never followed.
+
+A header name is an RFC 7230 token of 1–64 bytes. A value contains visible
+ASCII, spaces and tabs, with no leading or trailing space or tab; it may
+be empty. Names that differ only in ASCII case raise `value`.
+`Content-Length`, `Transfer-Encoding` and `Expect` are reserved, in any
+case. Each caller line counts `name length + value length + 4`, even for
+an empty value. The total may be at most 65,536 bytes. Names and values are
+never shortened or dropped.
+
+Caller headers retain their spelling and dict order, except that a caller's
+Host is the first line. When the caller did not give that name, the exchange
+adds Host from the URL, `User-Agent: EigenScript/<version>` and `Accept: */*`.
+It adds Content-Length for POST, PUT and PATCH (including `0` for an empty
+body), and for DELETE only with a nonempty body. GET and HEAD have none.
+It adds no other header: there is no implicit Content-Type, Expect,
+Authorization or Cookie. No compression is requested or undone. Chunked
+transfer framing is removed, while the body's other bytes remain unchanged.
+
+The result has exactly three keys:
+
+| Key | Value |
+|-----|-------|
+| `status` | Int: the final response's status; 4xx and 5xx are ordinary answers |
+| `headers` | Dict of lower-case names in their first-arrival order; values lose only surrounding spaces/tabs; repeated values join with `", "` in arrival order |
+| `body` | String: the complete body; empty for HEAD and final status 204 or 304, regardless of announced length |
+
+Interim-response headers and chunked trailers are excluded from the result.
+`Set-Cookie` values join like other headers, so they cannot be split again
+reliably. HTTP violations not named here follow the loaded library's result
+or error. An answer is complete only after the empty line ending a final
+(non-1xx) response's header block. A truncated block and a 101 upgrade raise;
+no call returns part of an answer.
+
+Every error is catchable by `try`. Argument-only errors happen before the
+tape or library is consulted and before a request is sent. Their messages
+begin `http_fetch: ` and name the broken rule. All other messages are exact:
+
+| Failure | Kind | Message |
+|---------|------|---------|
+| Wrong argument/key value type | `type_mismatch` | Names the required type |
+| Unknown key, missing URL, invalid URL/method/header/body/timeout rule | `value` | Names the rule; NaN and infinity are invalid timeouts |
+| Request headers exceed 65,536 bytes | `limit` | Names the request-header limit |
+| Library or a required function cannot be loaded | `io` | `http_fetch: could not load the curl library` |
+| Host lookup failed | `io` | `http_fetch: could not resolve the host (curl error 6)` |
+| Connection failed | `io` | `http_fetch: could not connect (curl error 7)` |
+| Whole-exchange time limit expired | `io` | `http_fetch: timed out (curl error 28)` |
+| Early end (curl 18, 52 or 56, or success without a complete final header block) | `io` | `http_fetch: the answer ended early` |
+| Another library failure, including a refused option | `io` | `http_fetch: curl failed (curl error N)` |
+| Answer headers exceed their limit | `limit` | `http_fetch: the answer's headers are longer than 65536 bytes` |
+| Answer body exceeds its limit | `limit` | `http_fetch: the answer's body is longer than N bytes (EIGS_HTTP_FETCH_MAX_BODY)` |
+| Complete, within-limit body contains a NUL byte | `io` | `http_fetch: the answer holds a NUL byte, which text cannot carry` |
+
+Here N is the library's error number or the configured body limit, as
+appropriate. Examples of other library errors include an invalid port (3),
+a NUL in a response header (8 with curl 8), an unsupported option (48), an
+untrusted certificate (60) and an unusable certificate file (77). Messages
+contain no URL, request-header value or body. Every option's return code is
+checked; a refused option raises before sending anything.
+
+The four limits are:
+
+- **Time:** the supplied seconds round up to whole milliseconds for the
+  entire exchange, including name lookup, connect, send and read. A library
+  built with a synchronous name resolver cannot interrupt that lookup at
+  the limit; major distribution libraries resolve on a separate thread.
+- **Answer body:** 16,777,216 bytes by default, counted after chunk framing
+  is removed. `EIGS_HTTP_FETCH_MAX_BODY` overrides it only when its entire
+  value is one to ten decimal digits representing 1–2,147,483,647. An empty,
+  signed, spaced, overlong or out-of-range value is ignored. The first byte
+  beyond the limit raises immediately, even if the stream never ends.
+  Announced lengths alone do not count, including for HEAD.
+  The variable is read once, safely from any thread.
+- **Answer headers:** 65,536 bytes across all responses, including interim
+  fields and trailers. Each complete header line counts its CR LF; status
+  lines and empty block-ending lines do not count. A never-ended line is
+  left to the library's early-end, timeout or line-size error. The first
+  line that exceeds the total raises.
+- **Request headers:** 65,536 bytes, counted as described above.
+
+An earlier library error wins over a limit not yet crossed. A NUL in the
+body is checked last, after completeness and both answer limits.
+
+Both builtins load the curl shared library once, safely from any thread,
+and share the same exchange. No curl program is started, and one worker's
+exchange does not serialize other workers' exchanges. The call opens no
+file for writing except the library's key log when `SSLKEYLOGFILE` asks
+for one, as described below.
+Linux tries `libcurl.so.4`, then `libcurl.so`; macOS tries `libcurl.4.dylib`,
+then `libcurl.dylib`. There is no build-time header or link dependency.
+The oldest curl release providing every function and option used is 7.42.0
+(`CURLOPT_PATH_AS_IS`). A missing library/function raises the load error;
+an option refused by the loaded library raises its curl error before sending.
+No curl configuration file or `.netrc` is read, wherever HOME, CURL_HOME or
+XDG_CONFIG_HOME points. Certificates and host names are always verified.
+
+Certificate environment settings are read once, safely across threads.
+Nonempty `CURL_CA_BUNDLE` selects the CA file and suppresses the other two
+settings. Otherwise nonempty `SSL_CERT_FILE` selects the file and nonempty
+`SSL_CERT_DIR` selects the CA folder; both may be passed together. With no
+setting, the library's trust store applies. The library decides which file
+or folder certificates it uses. Its proxy environment behavior also applies:
+with curl 8.5.0, `http_proxy`, `all_proxy` and `ALL_PROXY` apply to an HTTP
+URL; `HTTP_PROXY` does not. The library's `CURLOPT_PROXY` documentation
+describes its other scheme/proxy and `no_proxy` settings.
+
+The library and its TLS library also read `SSLKEYLOGFILE` and `OPENSSL_CONF`;
+the runtime neither sets nor clears them. With curl 8.5.0 and OpenSSL 3.0.13,
+a nonempty `SSLKEYLOGFILE` naming an openable file causes initialization to
+open it for appending, creating it if absent, and TLS connections write their
+secrets there. An unset or empty value, or a path that cannot be opened,
+creates nothing and does not affect the call. `OPENSSL_CONF` names the TLS
+library's configuration file, read when that library first initializes.
+Neither setting is an option of a call. Replay loads no curl library and
+therefore does not create a key log.
+
+Those libraries read other environment variables of their own. On this
+machine these include `OPENSSL_FORCE_FIPS_MODE`,
+`OPENSSL_FIPS_MODE_SWITCH_PATH`, `OPENSSL_ia32cap`, names beginning with
+`GNUTLS_`, `NETTLE_` and `P11_KIT_`, and the C library's `HOSTALIASES`,
+`LOCALDOMAIN` and `RES_OPTIONS`. Some can make a call fail or send it to
+another host. `GNUTLS_DEBUG_LEVEL`, `NETTLE_FAT_VERBOSE` and `P11_KIT_DEBUG`
+can have those libraries write diagnostics to the process's standard error.
+The runtime leaves all these variables untouched; none is an option of a
+call. HOME, CURL_HOME, XDG_CONFIG_HOME and TMPDIR do not select an HTTP
+request configuration or a request-body file.
+
+`http_post of [url, headers, body]` uses this exchange with POST and a
+15-second timeout, returning only the body whatever the status. Its header
+argument must be a JSON string decoding to an object or a flat alternating
+array. `""` and text that does not parse mean no headers. Names and values
+are converted with `str` (keeping exact int64 digits), CR/LF are removed,
+and the same header rules then apply. Duplicate JSON object keys keep the
+first place and last value. A flat array with an odd number of items raises
+`value`; another parsed shape or a non-string header/body argument raises
+`type_mismatch`. Absent a caller Content-Type, it adds
+`Content-Type: application/x-www-form-urlencoded`.
+
+For compatibility, a non-list argument or a list shorter than three items
+returns and records `""`. So does a URL that is not a string beginning
+`http://` or `https://`; these checks happen before header/body validation.
+Additional list items are ignored except under `EIGS_STRICT=1`, where they
+raise `type_mismatch`. Other URL/header/type refusals write no record.
+Attempt errors use the same kinds and messages with `http_post: ` in place
+of `http_fetch: `.
+
+An attempted call records one answer or error under its own name. Replay
+returns the answer or raises the same kind/message before loading the
+library, opening a socket or creating a file. See [Trace & Replay](TRACE.md).
 
 ### Per-worker code routes
 
 A route declared as `[method, path, "code", source]` evaluates `source`
 in a fresh worker `EigsState` on every request — stdlib + the
 request-scoped HTTP builtins (`http_request_body`, `http_session_id`,
-`http_request_header`, `http_request_headers`, `http_post`, `http_respond`, and the `shared_*` family below)
+`http_request_header`, `http_request_headers`, `http_fetch`, `http_post`, `http_respond`, and the `shared_*` family below)
 are available; **startup-scope globals are not**. The final
 expression's value is sent as the response body; an uncaught error
 answers **500** with the generic body `{"error": "internal error"}`
