@@ -1163,6 +1163,30 @@ def answer_lines_trailer(binary,folder,version):
                               ('4095+2 trailers',wire(2),LINES_MESSAGE)])
 
 
+# A header line that begins with HTTP/ is a header line: only the first line
+# of the exchange, or the line after an empty line, is a status line.
+def status_like_many(binary,folder,version):
+    wire=b'HTTP/1.1 200 OK\r\n'+b'HTTP/9: v\r\n'*6000+b'\r\n'
+    line_shape(binary,folder,[('6000 HTTP/9 lines',wire,LINES_MESSAGE)])
+
+
+def status_like_wide(binary,folder,version):
+    wire=b'HTTP/1.1 200 OK\r\n'+(b'HTTP/9: '+b'v'*60+b'\r\n')*1000+b'X-B: 2\r\nContent-Length: 2\r\n\r\nhi'
+    line_shape(binary,folder,[('1000 HTTP/9 lines of 70 bytes',wire,BYTES_MESSAGE)])
+
+
+def status_like_neighbours(binary,folder,version):
+    # What comes back for a name that is not a token is the library's (the
+    # bar's "Not decided here"): pin the status and the lines around it only.
+    wire=b'HTTP/1.1 200 OK\r\nSet-Cookie: a=1\r\nHTTP/1.1 599 x: y\r\nX-B: 2\r\nContent-Length: 2\r\n\r\nhi'
+    with Peer([Plan(wire)]) as peer:
+        value=run_calls(binary,folder,[{'url':peer.url+'/'}])[0]
+        equal(value[:3],['answer',200,'int'],'HTTP/ header line: status')
+        got=dict(zip(value[3],value[4]))
+        equal((got.get('set-cookie'),got.get('x-b'),got.get('content-length')),('a=1','2','2'),'HTTP/ header line: neighbours kept')
+        equal(value[5],2,'HTTP/ header line: body length')
+
+
 def immediate_limit_head(binary,folder,version):
     wire=b'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n'
     with Peer([Plan(wire,endless=True,drip=.001)]) as peer:
@@ -1771,6 +1795,8 @@ ROWS=[
     ('answer-header-limit',answer_header_limit),
     ('answer-lines-edge',answer_lines_edge),('answer-lines-6000',answer_lines_6000),('answer-lines-both',answer_lines_both),
     ('answer-lines-interim',answer_lines_interim),('answer-lines-trailer',answer_lines_trailer),
+    ('answer-status-like-many',status_like_many),('answer-status-like-wide',status_like_wide),
+    ('answer-status-like-neighbours',status_like_neighbours),
     ('limit-endless-and-head',immediate_limit_head),
 ]+[(f'body-env-{i:02}',lambda *args,s=setting:body_environment(*args,s)) for i,setting in enumerate(BODY_ENV_VALUES)]+[
     ('keylog',keylog),('https-certificates',https_certificates),('connection-errors',connection_errors),('timeouts',timeouts),
