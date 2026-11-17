@@ -2491,8 +2491,8 @@ H2) and the **whole-population** posting apply as registered.
 | **R3.0-I** | the instrument PR, built and blind-reviewed as its own round, landing on `main` and synced to the branch (spec below) | its own controls: positive control (a) `plants.py --selftest` red as today; (b) a planted constant-false build scores BA = 0.5 and fails the decision rule; (c) a planted window-4 build (`OBSERVER_WINDOW_N = 4`) loses ≥ 0.05 BA on `converged` against INC (on H-cal at R3.0-I; the registered (c) is on H1 at the reveal) | (a)–(c) hold, and ANCHOR and INC are scored on the calibration set under the new method beside the old raw accuracy |
 | **R3.1** | arm **R3-STD**: O1 (distance signal; entropy removed from numeric bindings; #1830's exact-int signal mechanism), O4 (`where`/`why`/`how`), O2's definition alignments (NaN, ±inf), and STD_p for `converged`, `stable`, `improving`; the incumbent test unchanged for `oscillating`, `diverging`, `equilibrium` | the oracle with `--floor`, and decision rule 6 as written: no `oracle_expect.txt` line attributed to #1830 (or tagged `R3`) remains; `phase2_check --through R3.1`; the R3.1 plants | as a round: hosted CI and the floor, like every Phase 2 round, plus the MAP rows. The decision rules are applied at the single reveal (below) |
 | **R3.2** | O3: the `O cfg` record without `h_low` | `phase2_check --through R3.2` | its row and plant |
-| **R3.3** | #1580's scale rule (its own registered experiment, 2026-10-26) and the float twin of #1830 (R30-1 item 3's rule) | #1580's decision rule; the oracle floor; the `float_count` rows (#2326) | #1580's criteria |
-| **R3.4** | #1419's `chaotic` (its oracle PR first) | #1419's Done-when as the owner fixed it | the window-16 sweep, 3.56 pinned |
+| **R3.3** | #1580's scale experiment (registered 2026-10-26), as RULING R33-1 restated it on the branch before any data. The float twin of #1830 was withdrawn by the same ruling | the registered decision rule, measured on a Python port of the branch's classifier that was first proven against the binary; the oracle floor | done 2026-11-12: no tested rule met the criteria, the floor stays as R3.1 left it, and #1580's Done-when is reopened ("R3.3 and R3.4", below) |
+| **R3.4** | #1419's `chaotic` (its oracle PR first) | #1419's Done-when as the owner fixed it | not built in Phase 2 ("R3.3 and R3.4", below); when it is built: the window-16 sweep, 3.56 pinned |
 
 R3.1 and R3.2 can be accepted without R3.3 or R3.4 (confirmed by both design
 critics).
@@ -2500,20 +2500,41 @@ critics).
 **One reveal, at R3.3's final SHA** (RULING R30-4 item 8):
 - **The subject.** R3.1 + R3.2 + R3.3 form Round 3's subject. The LOO
   mechanisms include #1580's scale rule, which is R3.3's, so the subject
-  cannot be scored before R3.3 lands.
+  cannot be scored before R3.3 lands. R3.3 ended without a change to the
+  classifier, so the subject's observer is the one R3.1 and R3.2 built, and
+  R3.3's final SHA is the commit that records the experiment.
 - **Acceptance as rounds.** R3.1 and R3.2 are accepted as rounds by hosted
   CI and the floor, as every Phase 2 round is, and R3.3 by its own gates.
 - **The decision rules.** The pre-registered rules 1–6 are applied once, at
   the reveal, before #1776 merges. `S_H` is the first drand round after
   R3.3's final SHA is posted.
 - **R3.4 is not scored by H1.** `chaotic` is a new predicate, outside the six
-  that H1 judges, and is accepted on #1419's Done-when.
+  that H1 judges, and is accepted on #1419's Done-when. It is not built
+  before the landing ("R3.3 and R3.4", below).
+- **The referee.** The reveal is run from `main`, by the driver that R3.0-R
+  landed there (#2339). RULING R30R-9 item 4 has R3.3 name it by its hashes.
+  Under `tools/observer_oracle/` on `main`:
+  - `reveal.py`:
+    `b002d937cf5faf286e391cb0a0e0e2c69baff0d860149763909aa9b2c882bc35`;
+  - `reveal_selftest.py`:
+    `9180c7330e5b2ed6bf5451d5a8e97da7a8986d03783e61a654b55b28d6d94e2d`;
+  - `reveal_fixtures.json`:
+    `c6b4727e279d00bd96795ae1d7c658d09819aed68c7f42336b2afbf440e7298c`;
+  - `reveal_commitment.json`:
+    `18aa162928e39580468cc77bdca1dde913dd9e5fc72f4706d062de324f63f269`.
+
+  Those files are not on this branch. Two tags keep the reveal's commits
+  fetchable after the branch is merged (R30R-9 item 3): `phase2-r3-std` is
+  the registered R3-STD, and `phase2-r3-final` is R3.3's final commit.
 
 **The LOO mechanisms and the sub-rounds that build them:**
 - **O1** (the distance signal, entropy removed): R3.1.
-- **#1830's int path:** R3.1, at the signal; its float twin goes to R3.3.
+- **#1830's int path:** R3.1, at the signal. Its float twin was withdrawn
+  (RULING R33-1, section 6).
 - **O2's definition alignments:** R3.1.
-- **#1580's scale rule:** R3.3.
+- **#1580's scale rule:** R3.3's experiment adopted none. The subject keeps
+  the floor that R3.1 routed through `obs_floor_scale`, so in this mechanism
+  the subject and R3-STD do not differ.
 - **#1752's conservative `converged`:** not scheduled. It is a candidate-arm
   mechanism, below (RULING R30-3 item 3).
 
@@ -2949,22 +2970,83 @@ the oracle cannot see a regression to it; each such mechanism has its own row
 
 #### R3.3 and R3.4
 
-**R3.3: #1580's scale rule and the float twin.**
-- **Scale rule.** #1580's registered experiment (2026-10-26) chooses the
-  scale rule: C_f*, STD-rel, or INC, by its own decision rule. R3.1 routes
-  every scale read through one helper, `obs_floor_scale(slot)`, so R3.3
-  changes one site.
-- **Float twin.** The same sub-round implements R30-1 item 3's rule: "a
-  same-sign run of ulp-sized steps is motion". This is where the scale
-  question lives (R30-2 item 4). Design round 2's "not shrinking" clause is
-  not adopted; the critic's down-counter crossing 2^53 refutes it.
-- **Judges.** #2326's `float_count` rows (in the oracle copy) and the planned
-  row `O2.float-counter-2p53-by2` (base `[9007199254741112.0, true, true,
-  false]`; R3-STD leaves it unchanged).
-- **Residual fixed here.** `issue1891_underflow_tail`'s `converged`, from
-  #1580's absolute floor.
+**R3.3: #1580's scale experiment. Done; no rule adopted.**
+
+Design round 5 gave R3.3 two jobs: choose #1580's scale rule by the
+experiment registered on #1580 (2026-10-26), and build the float twin of
+#1830. RULING R33-1 (#1580, 2026-11-11, posted before any data) restated the
+experiment on the branch as R3.1 and R3.2 had left it, and withdrew the float
+twin. This is the record of what ran. The tables are in the posts on #1580.
+
+- **The subject and the instrument.**
+  - F0 is the branch at `54008422` with its floor as it is: every scale read
+    goes through `obs_floor_scale(slot)`, which returns the state's scale,
+    0.001.
+  - The instrument is a Python port of that classifier. It was proven
+    against that commit's recipe-built binary before any arm ran: 263,554
+    compared values in each of two runs, no mismatch.
+  - Its populations and fixtures were sealed by a manifest before the first
+    measurement. The fifth and last has sha256
+    `4620e6d21065ec7d2d87388967ddb1d5d12b567aa043d1b300162979a1bbd32a`.
+- **The arms.** F0; STD-rel (no floor); a floor of `f` times the largest
+  value in the window, and of `f` times the largest value the binding has
+  shown, for `f` in {1e-2, 1e-3, 1e-4, 1e-6}; and the additive form
+  `1 + |x|`, the control that must show unit dependence. Exact integer
+  windows keep their own absolute rule in every arm.
+- **What came out** (61 base rows at three scales: 194 comparisons, 50 of
+  them above the floor; 18 readings of rows whose limit is zero).
+  - The control was met: the additive form flips 10 of the 50.
+  - F0 flips none of the 50, and 7 of the 194, all of them below the floor.
+  - The four history-peak arms flip none of the 194 and read all 18
+    zero-limit readings `converged`. They lose more than the registered
+    0.01 of balanced accuracy against F0 on `converged`, `stable` and
+    `improving`. The whole loss is two checkpoints of rows near 1e-12, and
+    one lost positive checkpoint of `converged` is 1/72, which is more than
+    that margin.
+  - The four window-peak arms and STD-rel read none of the 18 `converged`.
+    The ruling had shown before any data that they could not.
+  - So no arm was feasible. STD-rel was then confirmed alone on the fixed
+    confirmation population, and did not meet it (none of the six zero-limit
+    readings there `converged`). By the registered rule the floor stays as
+    it is and #1580's Done-when is reopened.
+- **Replication.** A blind rerun of the port's part of all three steps on
+  another machine gave the same bytes for 35 of 35 output files.
+- **What R3.3 changes in the runtime: nothing.** No line of `src/` moved in
+  R3.3, and `obs_floor_scale` is as R3.1 wrote it. The files that hold the
+  observer (`src/eigenscript.c`, `src/eigenscript.h`, `src/step.c`,
+  `src/vm.c`, `src/tape_read.h`) are at this commit byte for byte those of
+  `54008422`, the commit the port was proven against.
+- **Where the instrument is.** It is not in this tree. It stays on the
+  commit it was sealed on, published as two tags:
+  - `phase2-r33-choice`: the instrument at the fifth manifest, with the
+    calibration choice committed on top of it;
+  - `phase2-r33-replication`: the same instrument with the inputs and the
+    posted outputs that the replication compared.
+
+  R33-1's section 8 said "as new files on the branch". This is the one
+  departure from it, and it moves no measurement and no rule. The reasons:
+  the instrument is 725 files and 18.7 MB of sealed fixtures beside a tree
+  of 3,618 files and 18.1 MB, and a sealed file should not come under the
+  gates of a tree it was not sealed on.
+- **The float twin was withdrawn** (R33-1, section 6). The rule "a same-sign
+  run of ulp-sized float steps is motion" called a converging sequence
+  diverging (`1 + 1e-13 * 0.99^n`, at 144 checkpoints), did not reach the
+  float counters of H1's family 14, and is not one of the registered
+  mechanisms. What stays true is in `docs/PREDICATES.md` under the
+  documented residuals: a float counter reads `stable` and then `converged`
+  once it is large, with the measured magnitudes. #2326's rows record it;
+  they enter the corpus after the reveal, because the frozen judge pins that
+  file. The row `O2.float-counter-2p53-by2` that design round 5 planned is
+  not added.
+- **`issue1891_underflow_tail` is not fixed here.** Design round 5 promised
+  that R3.3 would fix its `converged`. Every arm of the experiment reads
+  that row as F0 does, so no floor rule changes it. It is a documented
+  residual.
 
 **R3.4: #1419's `chaotic`** (the owner's 2026-10-01 decision, Option 1).
+- **Not built in Phase 2.** It adds one predicate and changes nothing the
+  observer says today, so the landing does not wait for it. #1419 keeps its
+  Done-when, and the design below stands for when it is built.
 - **What it is.** A separate predicate that requires `oscillating`; `chaotic`
   is a reserved word.
 - **What does not change.** `report` strings and priority (STOP-8 is
@@ -3080,8 +3162,9 @@ Under STD_converged, the model gives (every prefix,
     so those 11 readings are wrong: #1830's class, for the length of one
     window.
   - It is stated as the boundary, not fixed in R3.1: a mixed int/float window
-    has no exact difference to judge, and the float twin (R3.3) is where
-    float steps that size get their rule.
+    has no exact difference to judge. The float twin, which was to give float
+    steps of that size a rule, was withdrawn in R3.3 (RULING R33-1, section
+    6), so the boundary stays a documented residual.
 - **The warm-up and dip probes** of round-2 F1 also never read `converged`,
   and neither do #1990's two `x ← x + 1/x` runs.
 
@@ -3258,7 +3341,7 @@ These land in R3.1, except TRACE.md, which lands in R3.2.
 | C | `improving` | R3.1 (STD_improving) |
 | D | `observe`/`trajectory`/`classify`/entropy | R3.1 |
 | E | `O cfg` | R3.2 |
-| F | the other predicates | R3.1 for `converged`/`stable`, unchanged for the incumbent three, which no sub-round before R3.3 moves |
+| F | the other predicates | R3.1 for `converged`/`stable`, unchanged for the incumbent three, which no sub-round moves (R3.3 adopted no rule) |
 
 R3.1 runs every R3.1 file on the base and on its build before hosted CI.
 `make test-changed` is not the instrument for this.
@@ -3482,7 +3565,7 @@ failing on zero rows:
 | R2.4 | 6 | |
 | R2.5 | 6 | |
 | R2.6 | 6 (3 change rows, 3 invariant controls) | R23-1: pcm16 NaN, the `when` ordinal and the `numerical_grad` waiver case were already closed on `aed64ce3`; suite [0fz] (`tests/test_phase2_r26_residue.eigs`) pins pcm16 saturation and no partial result, and under the ASan lanes' float-cast-overflow it is the base-red half of the `when`/`at` casts; `net_send` stays pinned by `gate.N5.net-byte-boundary` |
-| R3 | 23 (20 change rows, 3 invariant controls) | `gate.O1.oracle-floor`, `gate.O2.predicate-floors` (both `make observer-oracle EXPECT=ieee,int64` with an empty `oracle_expect.txt`); R3.0 (design round 3) sequences R3.0-I (the instrument PR), R3.1 = arm R3-STD (19 change rows, the three invariants), R3.2 (`O3.ocfg-no-hlow`), R3.3 (#1580, the float twin) and R3.4 (#1419); R3.1 adds them to `ROUNDS` |
+| R3 | 23 (20 change rows, 3 invariant controls) | `gate.O1.oracle-floor`, `gate.O2.predicate-floors` (both `make observer-oracle EXPECT=ieee,int64` with an empty `oracle_expect.txt`); R3.0 (design round 3) sequences R3.0-I (the instrument PR), R3.1 = arm R3-STD (19 change rows, the three invariants), R3.2 (`O3.ocfg-no-hlow`), R3.3 (#1580's experiment: no rule adopted, the float twin withdrawn, so it has no row and no gate of its own and is not in `ROUNDS`) and R3.4 (#1419, not built in Phase 2); R3.1 and R3.2 are in `ROUNDS` |
 
 (The counts are the MAP's at this commit; `phase2_check.sh` derives them, and
 fails if a round named here has neither rows nor its mechanical gates.)

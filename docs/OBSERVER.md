@@ -264,8 +264,9 @@ look beyond the current window. A slow unbounded sequence can fit either
 band, and a slow convergent sequence can certify with a substantial tail
 remaining. The harmonic series and sublinear tails are documented residuals,
 not proofs of convergence. Exact integer displacement prevents magnitude
-from hiding a moving exact-int counter; mixed and float windows retain the
-floating boundary scheduled for R3.3.
+from hiding a moving exact-int counter. Mixed and float windows keep the
+floating tolerances, so a large float counter reads as settled: see the
+documented residuals in [PREDICATES.md](PREDICATES.md).
 
 The window measures assignments, not time. Observe at a cadence that
 resolves the dynamics of interest. `unobserved:` still records every numeric

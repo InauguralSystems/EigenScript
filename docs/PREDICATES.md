@@ -277,8 +277,33 @@ not new acceptance exceptions:
   log 300, sqrt 300, Hardy XXIV.5 and the upward sawtooth.
 - A mixed window around an int counter can still use floating tolerances:
   the `int64_count` float at index 25 leaves `converged` and `stable` true
-  through index 35; index 36 is the first all-exact window. Same-sign
-  float ulp steps and the scale rule belong to R3.3.
+  through index 35; index 36 is the first all-exact window.
+- A float counter settles once it is large. The settled tests compare the
+  window's span with its size, and ten steps of a counter become small
+  beside its value. With unit steps, `stable` is true once the value has
+  passed about 500, and `converged` once it has reached 10,000. `diverging`
+  is true as well and wins in `report`, until a step is only a few units
+  in the last place: from 2^50 a unit-step float counter no longer reads
+  `diverging`, and `report` says `converged`. An exact int counter is not
+  affected (above). A rule for same-sign runs of such small steps was
+  designed and withdrawn before it was built: inside ten steps, a counter
+  at the resolution of a double and a sequence still converging there are
+  the same data (#1580, RULING R33-1; #2326 holds the rows).
+- `x_n = 1e-160 − n·1e-170`, which tends to −∞, reads `converged` and
+  `stable` from its tenth step on, and never `diverging` (the corpus row
+  `issue1891_underflow_tail`). Ten of its steps travel a billionth of its
+  value, and the product of two adjacent raw steps underflows to zero. None
+  of the eleven scale rules measured in #1580's experiment reads it
+  differently.
+- Near the scale a verdict can change with the unit. In #1580's experiment
+  the absolute scale gave another verdict for 7 of 194 comparisons of a
+  checkpoint with its copy rescaled by 1e-3 or 1e3: each of the seven
+  against the 1e-3 copy, in a window that holds a value below 0.01. Of the
+  50 comparisons whose windows hold no such value, none changed. No rule
+  that was tested replaced it (a floor that follows the binding's largest
+  past value removed all seven, and cost more accuracy against the labels
+  than the experiment allowed), so the scale stays absolute and #1580 is
+  open.
 - A one-step pause alone does not fill the convergence window. The
   `ieee_nan_recover@13 stable` label disagreement is a windowed-band
   residual: the NaN leaves at 14 and D1 first fires at 20; the NaN-free
@@ -842,6 +867,40 @@ improving
 A sufficiently slow unbounded drift can nevertheless fit a finite Cauchy
 window. The residuals above state that limit. `unobserved:` does not alter
 numeric sampling cadence: its numeric steps still enter the window.
+
+A float counter is the plainest such drift. Once it is large, ten of its
+steps are small beside it, and the settled tests pass while it moves. An int
+counter of the same size does not settle, because its steps are exact:
+
+```eigenscript
+x is 20000.0
+k is 20000
+for i in range of 30:
+    x is x + 1.0
+    k is k + 1
+print of [converged of x, stable of x, diverging of x, report of x]
+print of [converged of k, stable of k, diverging of k, report of k]
+```
+```output
+[true, true, true, "diverging"]
+[false, false, true, "diverging"]
+```
+
+`report` still says `diverging` for the float counter, because that test
+is true too and has priority. It stops being true when a step is only a few
+units in the last place of the value, and then the report is wrong:
+
+```eigenscript
+y is 1125899906842624.0
+for i in range of 30:
+    y is y + 1.0
+print of [y, converged of y, diverging of y, report of y]
+```
+```output
+[1125899906842654.0, true, false, "converged"]
+```
+
+A counter that large should be an int.
 
 ### The entropy-peak artifacts are gone from numeric classification (#861)
 

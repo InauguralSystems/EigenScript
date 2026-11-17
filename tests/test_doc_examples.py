@@ -339,7 +339,7 @@ POPULATION = {
     "docs/STDLIB.md":            ( 16,   11,     5,      0,      0),
     "docs/SYNTAX.md":            ( 35,   24,    11,      0,      0),
     # #1991: these observer documents are part of the executable doc gate.
-    "docs/PREDICATES.md":        ( 15,    5,     9,      1,      0),
+    "docs/PREDICATES.md":        ( 17,    7,     9,      1,      0),   # #1580: +2 paired (a large float counter settles; an int counter does not)
     "docs/DIAGNOSTICS.md":       (  6,    1,     5,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
     "docs/BUILTINS.md":          (5, 4, 1, 0, 0), # Phase2 + main atomic-save fragment (#2186)
