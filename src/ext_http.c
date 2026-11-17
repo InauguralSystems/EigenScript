@@ -2374,6 +2374,8 @@ typedef struct {
     unsigned te_match; int te_trail, te_elem_bad;
     int ev_head, ev_chunk, ev_data_end, over_body, over_budget, complete;
     const char *why;                /* the body of a refusal */
+    int bytes_after;                /* the read held bytes after a complete request */
+    int client_stopped;             /* the client closed its side (cause 9) */
 } Door;
 
 /* Grow one held buffer to fit `more` bytes, charging the growth to the
@@ -2649,10 +2651,10 @@ static int door_feed(Door *d, const char *buf, size_t n) {
                 memset(&d->place, 0, sizeof d->place);
                 d->place.in_digits = 1;
             }
-            if (d->complete) return DOOR_SERVE;
+            if (d->complete) { d->bytes_after = pos < n; return DOOR_SERVE; }
             continue;
         }
-        if (d->complete) return DOOR_SERVE;
+        if (d->complete) { d->bytes_after = pos < n; return DOOR_SERVE; }
     }
     return 0;
 }
@@ -2666,12 +2668,30 @@ static void door_free(Door *d) {
 }
 
 /* After an answer: no more is written, and what the client still sends is
- * read and dropped for a short while, so closing does not reset a
- * connection whose answer the client has not read yet. */
-static void door_linger(int fd, char *buf, size_t room) {
+ * read and dropped for a short while, so closing does not reset a connection
+ * whose answer the client has not read yet. Two bounds: 2 s, and the most
+ * bytes one request can be on the wire under the limits (#2370: the head's
+ * limit, plus twenty-one times the body's, plus 20), so a client that writes a
+ * whole request before it reads (curl's uploads, tests/test_http_server.sh
+ * HS12) still reads its refusal, and one that sends without end is cut off. It is needed only
+ * when bytes the server will not read are still to come or already waiting:
+ * after a refusal sent before the client stopped, or after a complete request
+ * with bytes behind it. Called after the request's head and body are freed;
+ * it holds only the read buffer. */
+#define DOOR_LINGER_SEC   2.0
+static int door_needs_linger(int fd, const Door *d, int verdict) {
+    if (verdict < 0 || d->client_stopped) return 0;
+    if (verdict != DOOR_SERVE || d->bytes_after) return 1;
+    char c;
+    ssize_t waiting = recv(fd, &c, 1, MSG_PEEK | MSG_DONTWAIT);
+    return waiting > 0;
+}
+
+static void door_linger(int fd, char *buf, size_t room, uint64_t most) {
     shutdown(fd, SHUT_WR);
-    double until = monotonic_now() + 2.0;
-    for (;;) {
+    double until = monotonic_now() + DOOR_LINGER_SEC;
+    uint64_t drained = 0;
+    while (drained < most) {
         double left = until - monotonic_now();
         if (left <= 0) break;
         struct pollfd pfd = { .fd = fd, .events = POLLIN };
@@ -2681,6 +2701,7 @@ static void door_linger(int fd, char *buf, size_t room) {
         ssize_t got = read(fd, buf, room);
         if (got < 0 && errno == EINTR) continue;
         if (got <= 0) break;
+        drained += (uint64_t)got;
     }
 }
 
@@ -2761,6 +2782,7 @@ static int door_read(int fd, Door *d, char *rbuf) {
         ssize_t got = read(fd, rbuf, HTTP_READ_ROOM);
         if (got < 0 && (errno == EINTR || errno == EAGAIN)) continue;
         if (got <= 0) {                 /* cause 9: the client stopped */
+            d->client_stopped = got == 0;
             d->why = "Incomplete request";
             return received ? 400 : -1;
         }
@@ -2784,8 +2806,7 @@ static void handle_request(int fd) {
     tls_suppress_body = 0;
     Door door;
     door_init(&door, (uint64_t)http_max_head(), (uint64_t)http_max_body(), http_max_body_total());
-    char *rbuf = xmalloc(HTTP_READ_ROOM);
-    door.charged = HTTP_READ_ROOM;
+    char *rbuf = xmalloc(HTTP_READ_ROOM);   /* charged apart: it outlives door_free */
     __atomic_add_fetch(&g_http_body_in_flight, (long)HTTP_READ_ROOM, __ATOMIC_RELAXED);
     char *path = NULL;
     char method[32] = {0};
@@ -2991,10 +3012,12 @@ done:
     tls_request_head_end = -1;
     tls_session_id = NULL;
     tls_suppress_body = 0;
-    /* Release what this request held (the door charged it as it grew), after
-     * lingering so the client reads the answer before the close. */
-    if (verdict >= 0) door_linger(fd, rbuf, HTTP_READ_ROOM);
+    /* Release what this request held (the door charged it as it grew), then
+     * linger, holding only the read buffer, when the client may still send. */
+    int linger = door_needs_linger(fd, &door, verdict);
     door_free(&door);
+    if (linger) door_linger(fd, rbuf, HTTP_READ_ROOM, door.limit + 21 * door.max_body + 20);
+    __atomic_sub_fetch(&g_http_body_in_flight, (long)HTTP_READ_ROOM, __ATOMIC_RELAXED);
     free(rbuf);
     free(path);
     close(fd);

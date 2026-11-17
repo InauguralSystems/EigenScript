@@ -469,11 +469,17 @@ def row_reference(ctx):
 
 
 def row_named(ctx):
+    problems = []
     with server(ctx.binary, ctx.folder / 'named') as port:
         compared = 0
         for name, text, data, _ in named_rows():
-            judge(data, ctx.ref.decide(data), exchange(port, data), name)
+            try:
+                judge(data, ctx.ref.decide(data), exchange(port, data), name)
+            except AssertionError as exc:
+                problems.append((name, str(exc)))
             compared += 1
+    require(not problems, f'{len(problems)} named row(s) not answered as the reference: ' +
+            ' '.join(n for n, _ in problems) + '; first: ' + problems[0][1][:300] if problems else '')
     require(compared == 109, f'compared {compared}')
     print('COUNTS: named rows answered as the reference=109/109', flush=True)
 
@@ -759,8 +765,32 @@ def row_body_limit(ctx):
         require(len(ones) - len(head) == 393221, 'one-byte chunks')
         served('65536 chunks of 1 byte', ones)
         checked = 6
+        # A complete request with nothing after it is closed at once, with no
+        # linger, though the client keeps its side open.
+        start = time.monotonic()
+        r = exchange(port, b'GET /v HTTP/1.1\r\nHost: h\r\n\r\n', keep_open=True, wait=5)
+        took = time.monotonic() - start
+        if not (r and r[0] == 200 and took < 1):
+            problems.append(f'no bytes after: closed after {took:.2f}s ({r and r[0]})')
+        checked += 1
+    # What a request held is released before the linger: with a budget for
+    # what all connections hold of 120,000 bytes, a request whose body room
+    # is 65,536 bytes (82,944 bytes held in all) is served while the one before
+    # it lingers (bytes after it, its client open), and it would be 503 if the
+    # lingering one still held its head and body.
+    with server(ctx.binary, ctx.folder / 'linger', {'EIGS_HTTP_MAX_BODY_TOTAL': '120000'}) as port:
+        body = bytes(rng.randint(1, 255) for _ in range(40000))
+        data = b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: 40000\r\n\r\n' + body
+        with socket.create_connection(('127.0.0.1', port), timeout=10) as first:
+            first.sendall(data + b'GET /v HTTP/1.1\r\n')
+            r1 = parse(first.recv(1 << 20) if select.select([first], [], [], 5)[0] else b'')
+            r2 = exchange(port, data, wait=5)
+            more = read_all(first)
+        if not (r1 and r1[0] == 200 and r2 and r2[0] == 200 and more == b''):
+            problems.append(f'held during the linger: first {r1 and r1[0]}, second {r2 and r2[0]}')
+        checked += 1
     require(not problems, '; '.join(problems[:6]))
-    print(f'COUNTS: body limit checks={checked}/6', flush=True)
+    print(f'COUNTS: body limit checks={checked}/8', flush=True)
 
 
 def vm_hwm(pid):
