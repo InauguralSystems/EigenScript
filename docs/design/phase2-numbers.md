@@ -2512,8 +2512,8 @@ critics).
   that H1 judges, and is accepted on #1419's Done-when. It is not built
   before the landing ("R3.3 and R3.4", below).
 - **The referee.** The reveal is run from `main`, by the driver that R3.0-R
-  landed there (#2339). RULING R30R-9 item 4 has R3.3 name it by its hashes.
-  Under `tools/observer_oracle/` on `main`:
+  landed there (#2339). RULING R30R-9 item 4 has R3.3 name it by its hashes,
+  the five of #2339. Four are files under `tools/observer_oracle/` on `main`:
   - `reveal.py`:
     `b002d937cf5faf286e391cb0a0e0e2c69baff0d860149763909aa9b2c882bc35`;
   - `reveal_selftest.py`:
@@ -2521,17 +2521,20 @@ critics).
   - `reveal_fixtures.json`:
     `c6b4727e279d00bd96795ae1d7c658d09819aed68c7f42336b2afbf440e7298c`;
   - `reveal_commitment.json`:
-    `18aa162928e39580468cc77bdca1dde913dd9e5fc72f4706d062de324f63f269`;
-  - the selftest's row in `tools/selftests.txt`. That file was
-    `2c818e156dac951429622dfac16e7e81b46b5190edeeac22b46d70c6ee35c2bb` when
-    R3.0-R landed and is so today; it changes when any other row is added,
-    so the row is also named by itself: its one line, with its newline, is
-    `41b881eee172cfc14a90ef839232cd792e3c9c43c251ada185f7f4f77736cc28`.
+    `18aa162928e39580468cc77bdca1dde913dd9e5fc72f4706d062de324f63f269`.
 
-  Those files are not on this branch. Tags keep the reveal's commits
-  fetchable after the branch is merged (R30R-9 item 3): `phase2-r3-std` is
-  the registered R3-STD, and R3.3's final commit is tagged `phase2-r3-final`
-  once it is on the branch.
+  The fifth is the selftest's row in `tools/selftests.txt` on `main`. That
+  file was `2c818e156dac951429622dfac16e7e81b46b5190edeeac22b46d70c6ee35c2bb`
+  at the landing (`2bd6356b`) and is the same at `main`'s `e5556702`. It
+  changes when any other row is added, so the row is also named by itself:
+  its one line, with its newline, is
+  `41b881eee172cfc14a90ef839232cd792e3c9c43c251ada185f7f4f77736cc28`.
+
+  The four files are not on this branch, and this branch's
+  `tools/selftests.txt` does not hold that row. Tags keep the reveal's
+  commits fetchable after the branch is merged (R30R-9 item 3):
+  `phase2-r3-std` is the registered R3-STD, and R3.3's final commit is
+  tagged `phase2-r3-final` once it is on the branch.
 
 **The LOO mechanisms and the sub-rounds that build them:**
 - **O1** (the distance signal, entropy removed): R3.1.
