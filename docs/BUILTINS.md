@@ -819,7 +819,12 @@ A header name is an RFC 7230 token of 1–64 bytes. A value contains visible
 ASCII, spaces and tabs, with no leading or trailing space or tab; it may
 be empty. Names that differ only in ASCII case raise `value`.
 `Content-Length`, `Transfer-Encoding` and `Expect` are reserved, in any
-case. Each caller line counts `name length + value length + 4`, even for
+case: the exchange frames the body itself. `Connection`, `Keep-Alive`,
+`Proxy-Connection`, `TE` and `Upgrade` are reserved too, in any case and with
+any value, because the connection is the runtime's: it makes one connection
+for each call, closes it when the call ends, and writes the `Connection` line
+itself. A name that only begins or ends with a reserved name, such as
+`Connection-Id` or `X-Connection`, is an ordinary header. Each caller line counts `name length + value length + 4`, even for
 an empty value. The total may be at most 65,536 bytes. Names and values are
 never shortened or dropped.
 
@@ -828,7 +833,11 @@ Host is the first line. When the caller did not give that name, the exchange
 adds Host from the URL, `User-Agent: EigenScript/<version>` and `Accept: */*`.
 It adds Content-Length for POST, PUT and PATCH (including `0` for an empty
 body), and for DELETE only with a nonempty body. GET and HEAD have none.
-It adds no other header: there is no implicit Content-Type, Expect,
+Every request carries `Connection: close` exactly once (RFC 9112, section
+9.3). The exchange hands that line to the library as the last of its lines,
+and where it stands is the library's (from release 8.16.0 the library writes
+that line itself); with curl 8.5.0, 8.14.1 and 8.18.0 it arrives as the last
+header line. It adds no other header: there is no implicit Content-Type, Expect,
 Authorization or Cookie. No compression is requested or undone. Chunked
 transfer framing is removed, while the body's other bytes remain unchanged.
 
@@ -844,8 +853,20 @@ Interim-response headers and chunked trailers are excluded from the result.
 `Set-Cookie` values join like other headers, so they cannot be split again
 reliably. HTTP violations not named here follow the loaded library's result
 or error. An answer is complete only after the empty line ending a final
-(non-1xx) response's header block. A truncated block and a 101 upgrade raise;
-no call returns part of an answer.
+response's header block, and which block is final is the library's: at that
+empty line it reports the block's status (`CURLINFO_RESPONSE_CODE`), and a
+block at 200 or more is the final one. An interim response, a 101 and a
+proxy's answer to `CONNECT` (for which the library reports 0) are not. The
+first line of each block up to the final one is that block's status line, and
+the status it says is read from it as well: the line begins with the bytes
+`HTTP/`, and the first run of spaces or tabs in it is followed by three digits
+and no fourth. A final block whose status line does not say the status the
+library reports raises `the answer ended early`, whatever arrives after it, so
+the status of an answer is always one its status line says. (The library
+alone reports 200 for `http/1.1 404 Not Found` and for `HTTP/2.0 404 Not
+Found`; both raise.) Every line after the final block is a trailer line,
+whatever it begins with. A truncated block and a 101 upgrade raise; no call
+returns part of an answer.
 
 Every error is catchable by `try`. Argument-only errors happen before the
 tape or library is consulted and before a request is sent. Their messages
@@ -860,7 +881,7 @@ begin `http_fetch: ` and name the broken rule. All other messages are exact:
 | Host lookup failed | `io` | `http_fetch: could not resolve the host (curl error 6)` |
 | Connection failed | `io` | `http_fetch: could not connect (curl error 7)` |
 | Whole-exchange time limit expired | `io` | `http_fetch: timed out (curl error 28)` |
-| Early end (curl 18, 52 or 56, or success without a complete final header block) | `io` | `http_fetch: the answer ended early` |
+| Early end (curl 18, 52 or 56, or success without a complete final header block, or a final status line that does not say the library's status) | `io` | `http_fetch: the answer ended early` |
 | Another library failure, including a refused option | `io` | `http_fetch: curl failed (curl error N)` |
 | Answer headers exceed their limit | `limit` | `http_fetch: the answer's headers are longer than 65536 bytes` |
 | Answer has more header lines than its limit | `limit` | `http_fetch: the answer has more than 4096 header lines` |
@@ -896,13 +917,11 @@ The limits are:
   responses, the final one, trailers, and a proxy's answer to `CONNECT`);
   status lines and empty lines do not count. The 4,097th line raises. When
   one line takes both header counts past their limits, the byte limit is
-  the one reported. A status line is the first line of the exchange, or the
-  line after an empty line, when it begins with `HTTP/`; any other line that
-  begins with `HTTP/` is a header line and counts against both limits.
-  Known and left: a trailer line that begins with `HTTP/` and directly
-  follows the empty line of the header block is still taken for a status
-  line (it cannot be told from the status line after a proxy's answer to
-  `CONNECT`), and such a call raises `the answer ended early`.
+  the one reported. A status line is the first line the library hands over
+  for a block (the exchange's first line, or the line after an empty line),
+  up to the final response's block; any other line, whatever it begins with,
+  is a header line and counts against both limits. The lines after the final
+  block are trailer lines: they count, and they are never in the result.
 - **Request headers:** 65,536 bytes, counted as described above.
 
 An earlier library error wins over a limit not yet crossed. A NUL in the
