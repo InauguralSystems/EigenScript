@@ -1,1 +1,1 @@
-- Derive the section-group self-test population from the validator enumeration instead of pinning it. (#2188)
+- The section-group self-test counts the population of its planted split from the chunk table instead of pinning a number and a line; the group audit fails when it cannot run. (#2188)
