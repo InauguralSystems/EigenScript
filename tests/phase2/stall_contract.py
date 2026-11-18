@@ -52,10 +52,20 @@ def correct(case, value):
         return reason == "normal" and certified is True and count == 1454
     if case == "overflow-contracting":
         return reason == "normal" and certified is True and count == 144495
+    # #2407: under the restored converged test (v0.47.0's relative-step band,
+    # RULING R30R-2) these four loops certify before the stall counter can
+    # reach 100. Each count is tools/reveal_restored_reference.py's first
+    # converged read on the case's values (the additive runaway's one zero
+    # step hides it from the raw same-sign guard; quiet's steps 1/(n+1) are
+    # under 0.1%; the NaN leaves the window after 11 and after 16 iterations).
+    if case == "additive":
+        return count == 9 and reason == "normal" and certified is True
+    if case == "quiet":
+        return count == 10 and reason == "normal" and certified is True
     if case == "nan-prefix":
-        return count == 100 and reason == "stalled" and certified is False
+        return count == 11 and reason == "normal" and certified is True
     if case == "nan-newest":
-        return count == 101 and reason == "stalled" and certified is False
+        return count == 16 and reason == "normal" and certified is True
     if case in ("alternating", "growing-alternating", "infinite-alternating", "nan-alternating",
                 "nan-period3", "nan-window-edge"):
         return 100 <= count <= 112 and reason == "stalled" and certified is False
