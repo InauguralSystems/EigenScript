@@ -94,6 +94,11 @@ SHAPE_BACKEND_PLATFORM=$(uname -s) || exit 1
 str_has()      { case "$1" in *"$2"*) return 0 ;; esac; return 1 ; }
 str_has_line() { case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) return 0 ;; esac; return 1 ; }
 str_has_word() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1 ; }
+unset_comparison_class() { # unset capture, first explicit capture, second explicit capture
+    if [ "$2" != "$3" ]; then printf 'nondeterministic'
+    elif [ "$1" != "$2" ]; then printf 'flag-difference'
+    else printf 'same'; fi
+}
 sweep_classify_output() { # builtin name, captured stderr
     case "$2" in
         "Error "*":1: $1:"*|*"
@@ -526,8 +531,17 @@ shape-backend: true' Linux
     eval "$saved"
     unset -f shape_backend_original
     backend_case 'restored Linux-positive policy refuses absence' 1 '' sdl $'0\ngfx_open: cannot load libSDL2\nshape-backend: false' Linux
-    echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 88 declared"
-    [ "$failed" = 0 ] && [ "$passed" = 88 ]
+    comparison_case() {
+        local label="$1" expected="$2" actual
+        actual=$(unset_comparison_class "$3" "$4" "$5")
+        if [ "$actual" = "$expected" ]; then echo "  PASS: $label"; passed=$((passed + 1))
+        else echo "  FAIL: $label (got $actual, want $expected)"; failed=$((failed + 1)); fi
+    }
+    comparison_case 'stable equal captures agree' same alpha alpha alpha
+    comparison_case 'stable explicit captures identify a flag difference' flag-difference alpha beta beta
+    comparison_case 'two differing explicit captures identify nondeterminism' nondeterministic alpha beta gamma
+    echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 91 declared"
+    [ "$failed" = 0 ] && [ "$passed" = 91 ]
 }
 if [ "$BASE" = --selftest ]; then shape_selftest; exit $?; fi
 
@@ -1091,7 +1105,7 @@ check_absent_call() { # each omitted row must reach its exact error contract
 }
 
 rc=0
-n_probe=0; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_unset_eq=0; unset_list=""
+n_probe=0; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_unset_eq=0; unset_list=""; nondeterministic_list=""
 n_pin=0; n_pin_ok=0; n_pin_broke=0; n_misattr=0; n_unrun=0; n_skipped=0
 differ_list=""; silent_list=""; pin_list=""; misattr_list=""; unrun_list=""; skipped_list=""
 NEW_CAPS=""; BASE_CAPS=""; profile_transitions=""; n_profile_rows=0
@@ -1197,7 +1211,13 @@ while IFS='|' read -r who prog expect; do
     s_rc="${s%%$'\n'*}"
     u="$(run_capture "$NEW" - "$TMP/p.eigs")"
     plain="$(run_capture "$NEW" 0 "$TMP/p.eigs")"
-    if [ "$u" = "$plain" ]; then n_unset_eq=$((n_unset_eq + 1))
+    plain_again="$(run_capture "$NEW" 0 "$TMP/p.eigs")"
+    comparison=$(unset_comparison_class "$u" "$plain" "$plain_again")
+    if [ "$comparison" = same ]; then n_unset_eq=$((n_unset_eq + 1))
+    elif [ "$comparison" = nondeterministic ]; then nondeterministic_list="$nondeterministic_list
+    $who
+      =0 run 1: $(clip "$plain" 90)
+      =0 run 2: $(clip "$plain_again" 90)"
     else unset_list="$unset_list
     $who
       unset: $(clip "$u" 90)
@@ -1318,6 +1338,7 @@ if [ -n "$BASE" ]; then
     echo "  absent valid rows (exact absence verified; NOT valid successes): $n_valid_absent"
 fi
 [ -n "$unset_list" ] && { echo "  UNSET DIFFERS FROM EIGS_STRICT=0 (strict must be opt-in):$unset_list"; rc=1; }
+[ -n "$nondeterministic_list" ] && { echo "  NONDETERMINISTIC (not a flag difference):$nondeterministic_list"; rc=1; }
 [ -n "$differ_list" ] && { echo "  DIFFERING (the EIGS_STRICT=0 path was NOT preserved):$differ_list"; rc=1; }
 [ -n "$silent_list" ] && { echo "  SILENT UNDER STRICT:$silent_list"; rc=1; }
 [ -n "$misattr_list" ] && { echo "  RAISED BY THE WRONG GUARD (probe does not reach its target):$misattr_list"; rc=1; }
