@@ -14,7 +14,8 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-# The shared starter runs Xvfb with -noreset to protect pending handshakes.
+# The server is started by tests/xvfb.sh, which keeps it from resetting when
+# its last client leaves (#2215): a reset closes a handshake that is pending.
 . "$ROOT/tests/xvfb.sh" || exit 1
 xvfb_start || exit 1
 
