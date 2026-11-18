@@ -62,4 +62,33 @@ if grep -q '^scalar_loop ' "$SCRATCH/later.out"; then
     cat "$SCRATCH/later.out"
     exit 1
 fi
-echo "SELFTEST OK: clean control passed; a throwing workload and a failure on the third invocation were each named, rejected, and received no median"
+
+# The clock is a perl process. Two stand-ins for perl, first on PATH: one that
+# prints nothing and fails (perl without Time::HiRes behaves so), and one whose
+# every reading is smaller than the one before. Each must end the run with an
+# error that names the clock, and no row.
+mkdir "$SCRATCH/noclock" "$SCRATCH/backclock"
+printf '#!/bin/bash\nexit 2\n' >"$SCRATCH/noclock/perl"
+cat >"$SCRATCH/backclock/perl" <<STANDIN
+#!/bin/bash
+n=\$(cat "$SCRATCH/ticks" 2>/dev/null || echo 1000000)
+n=\$((n - 1000))
+echo "\$n" >"$SCRATCH/ticks"
+echo "\$n"
+STANDIN
+chmod +x "$SCRATCH/noclock/perl" "$SCRATCH/backclock/perl"
+for clock in noclock backclock; do
+    PATH="$SCRATCH/$clock:$PATH" EIGENSCRIPT="$BINARY" bash "$SCRATCH/run_bench.sh" >"$SCRATCH/$clock.out" 2>&1
+    rc=$?
+    if [ "$rc" -ne 3 ] || ! grep -q '^ERROR: the clock ' "$SCRATCH/$clock.out"; then
+        echo "SELFTEST FAILED: a clock with no usable reading ($clock) was not named and rejected (exit $rc)"
+        cat "$SCRATCH/$clock.out"
+        exit 1
+    fi
+    if grep -q '^scalar_loop ' "$SCRATCH/$clock.out"; then
+        echo "SELFTEST FAILED: a row was printed from a clock with no usable reading ($clock)"
+        cat "$SCRATCH/$clock.out"
+        exit 1
+    fi
+done
+echo "SELFTEST OK: clean control passed; a throwing workload, a failure on the third invocation and two unusable clocks were each named, rejected, and received no median"
