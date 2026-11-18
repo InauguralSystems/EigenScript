@@ -148,7 +148,7 @@ ph is [converged, stable, improving, diverging, oscillating, equilibrium, report
 expect of ["converged-at-boundary", ph, true, true, false, false, false, true, "converged"]
 
 # --- #735/#1045: a halving tail is still improving before its full value
-#     window fits STD convergence, then can be both improving and converged.
+#     window is under the 0.1% step band, then can be both improving and converged.
 #     Report preserves the existing priority of improving over converged. ---
 m is 0.9
 mi is 0
@@ -156,14 +156,15 @@ loop while mi < 20:
     m is m * 0.5
     mi is mi + 1
 pm20 is [converged of m, stable of m, improving of m, diverging of m, oscillating of m, equilibrium of m, report of m]
-# At 20 halvings the full value-window diameter still exceeds STD
-# convergence tolerance; D2 records a recent running-best improvement.
+# At 20 halvings the window's oldest steps are still above the 0.1% band
+# (they are measured against the scale 0.001); D2 records a recent
+# running-best improvement.
 expect of ["mid-decay toward zero (#1045)", pm20, false, false, true, false, false, false, "improving"]
 loop while mi < 30:
     m is m * 0.5
     mi is mi + 1
 pm is [converged of m, stable of m, improving of m, diverging of m, oscillating of m, equilibrium of m, report of m]
-# At 30 halvings the full value window fits STD convergence. D2 patience
+# At 30 halvings every step of the window is under the band. D2 patience
 # still holds, so improving also fires and keeps priority in report. The
 # one-direction raw tail remains outside equilibrium.
 expect of ["full-window residual drift (#735)", pm, true, true, true, false, false, false, "improving"]

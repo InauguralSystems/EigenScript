@@ -39,7 +39,7 @@ print of ""
 define cos_fixed(x) as:
     return cos of x
 
-# Contract-convergence uses the full-window diameter tolerance, not arbitrary
+# Contract-convergence uses the 0.1% relative-step tolerance, not arbitrary
 # precision: cos converges linearly. Newton reached machine precision above
 # because its convergence is quadratic. The residual check pins the target.
 print of "Fixed point x = cos(x):"

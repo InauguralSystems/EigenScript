@@ -24,10 +24,15 @@
 # that wraps instead of raising (Part D), and a population scan that writes noise
 # to stderr or an unparsed line to stdout (the critic's class); and #1775's
 # plant, the missing return that makes the -O0 amalgamation warn.
-# R3.1 adds eleven observer plants. Each first runs its named MAP check on
+# R3.1 added eleven observer plants; nine remain. The reveal (#1758, RULING
+# R30R-2) reverted Round 3's converged/stable tests (#2407), so the plants of
+# Round 3's absolute settled tolerance and of the incumbent converged band
+# retired with them (reverted by the reveal (RULING R30R-2)); the frozen-answer
+# check tools/observer_oracle/reveal_restored_check.py now owns that ground.
+# Each first runs its named MAP check on
 # an unmodified archive. The named assertion, four tiers, JIT witness and
 # finite control then run on the mutant and its assertion-deleted twin.
-# Four design-named oracle messages are also required on the mutant, after
+# Three design-named oracle messages are also required on the mutant, after
 # one pristine oracle control. Reuse that built mutant for its transverse
 # assertion deletion; only the check changes, so a second product build is
 # neither needed nor allowed to change the artifact under measurement.
@@ -52,8 +57,8 @@ while [ $# -gt 0 ]; do
             [ -z "$ONLY" ] || { echo "phase2-plants: FAIL: --only may be given once"; exit 2; }
             case "$2" in
                 1|2|3-json|3-store|overflow-wrap|stderr-noise|stdout-noise|return-type|\
-                r31-absolute-tolerance|r31-zero-floor|r31-smi-exact|r31-jit-inline-double|\
-                r31-nan-diverging|r31-inf-sign|r31-converged-incumbent|r31-improving-incumbent|\
+                r31-zero-floor|r31-smi-exact|r31-jit-inline-double|\
+                r31-nan-diverging|r31-inf-sign|r31-improving-incumbent|\
                 r31-nan-report|r31-where-entropy|r31-how-infinite|\
                 r312-stall-quiet|r312-stall-nonfinite|r312-stall-diverging|\
                 r314-stall-oscillating|r314-stall-nonfinite-order|\
@@ -111,23 +116,19 @@ PY
 
 plants=0; killed=0; survived=0; broken=0; transverse=0; available=0; observer_green=0
 oracle_red=0; oracle_green=0
-EXPECTED_ORACLE=4
+EXPECTED_ORACLE=3
 stall_plants=0; stall_killed=0; stall_survived=0; stall_broken=0; stall_green=0; stall_available=0
 EXPECTED_STALL=10
 ocfg_plants=0; ocfg_killed=0; ocfg_survived=0; ocfg_broken=0; ocfg_green=0; ocfg_transverse=0; ocfg_available=0
 EXPECTED_OCFG=37
 PRISTINE="$WORK/observer-pristine"
-EXPECTED_PLANTS=19
-EXPECTED_OBSERVER=11
+EXPECTED_PLANTS=17
+EXPECTED_OBSERVER=9
 
-# Two registered concepts have two production sites. Each individual edit
+# One registered concept has two production sites. The second edit
 # retains the same exactly-once anchor requirement as the primary edit.
 observer_second_edit() {
     case "$1" in
-        r31-absolute-tolerance)
-            replace "$2/src/eigenscript.c" \
-                '        return obs_num_exact_diameter(s) <= 2.0 * g_obs_dh_small * scale;' \
-                '        return obs_num_exact_diameter(s) <= 2.0 * g_obs_dh_small * obs_fmax(fabs(s->last_value), scale);' ;;
         r31-inf-sign)
             replace "$2/src/eigenscript.c" \
                 '    if (isinf(s->last_value)) return !obs_num_opposite_inf(s);' \
@@ -149,7 +150,6 @@ observer_red_complete() {
 # rc2, a timeout or a build failure is not a killed plant.
 observer_oracle_key() {
     case "$1" in
-        r31-absolute-tolerance) echo 'int64_count@10 converged' ;;
         r31-zero-floor) echo 'int64_count@10 diverging' ;;
         r31-nan-diverging) echo 'ieee_nan@3 diverging' ;;
         r31-inf-sign) echo 'ieee_inf_alternating@20 oscillating' ;;
@@ -419,13 +419,6 @@ run_observer_plant() {
         python3 -W error tests/phase2/observer_map_check.py "$@"
 }
 
-# Both settled tests lose their absolute tolerance, while the raw zero
-# floor stays intact. observer_second_edit changes stable's matching site.
-run_observer_plant r31-absolute-tolerance src/eigenscript.c \
-    '        return obs_num_exact_diameter(s) <= g_obs_dh_zero * scale;' \
-    '        return obs_num_exact_diameter(s) <= g_obs_dh_zero * obs_fmax(fabs(s->last_value), scale);' \
-    O2.int-counter-2p53
-
 run_observer_plant r31-zero-floor src/eigenscript.c \
     '    return observer_slot_all_exact(s) ? 0.0
         : 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));' \
@@ -468,23 +461,6 @@ run_observer_plant r31-inf-sign src/eigenscript.c \
     '    if (isinf(s->last_value)) return obs_num_opposite_inf(s);' \
     '    if (isinf(s->last_value)) { (void)obs_num_opposite_inf; return 0; } /* PLANT */' \
     O2.inf-alternating-oscillates
-
-# Restore the incumbent body as an early-return block. The STD body stays
-# compiled below it so its private helpers do not become unused warnings:
-# build warnings must never be mistaken for a killed numeric plant.
-run_observer_plant r31-converged-incumbent src/eigenscript.c \
-    'static int obs_num_converged(const ObserverSlot *s) {' \
-    'static int obs_num_converged(const ObserverSlot *s) {
-    { /* PLANT: incumbent relative-step band */
-        if (observer_slot_nonfinite(s)) return 0;
-        if (obs_v_count(s) < (size_t)observer_slot_window(s)) return 0;
-        int all_zero, all_small;
-        obs_num_flags(s, &all_zero, &all_small);
-        if (!all_zero) return 0;
-        if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
-        return 1;
-    }' \
-    O2.harmonic-not-converged
 
 run_observer_plant r31-improving-incumbent src/eigenscript.c \
     'static int obs_num_improving(const ObserverSlot *s) {' \

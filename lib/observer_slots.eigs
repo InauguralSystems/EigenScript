@@ -9,8 +9,8 @@
 #   if (observer_slots.is_stable of (w.slot)):
 #       mark_stalled of w                          # wedged: value stopped moving
 #
-# Numeric slots use the value channel: STD windowed-Cauchy convergence,
-# D1's 1% midrange stability band, and D2's running lower best with relative
+# Numeric slots use the value channel: the relative-step convergence and
+# stability bands (#2407), and D2's running lower best with relative
 # min_delta and ten-step patience. Pick predicates from docs/PREDICATES.md.
 # Every slot starts at0.0; that baseline remains in its running-best history.
 # Positive values falling toward0 therefore need not read improving, since

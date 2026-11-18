@@ -3,7 +3,7 @@
 # Use report of x to get the status, or check it in loop conditions.
 
 # ============================================================
-# 1. converged — full-window diameter fits the settled tolerance
+# 1. converged — ten relative steps, each under 0.1%, no raw runaway or swing
 # ============================================================
 
 # Newton's method: the runtime decides when guess has converged.
@@ -48,7 +48,7 @@ print of ("Converged at step " + (str of step) + " signal=" + (str of signal))
 # ============================================================
 
 # Detect when a decaying value enters the stable band.
-# stable tests the wider 1% midrange band; predicates can overlap.
+# stable tests the wider 1% step band; predicates can overlap.
 # report prioritizes improving and converged before stable.
 print of ""
 print of "--- stable as early detection ---"

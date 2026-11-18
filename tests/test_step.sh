@@ -28,7 +28,7 @@ if [ ! -x "$EIGS" ]; then
 fi
 
 # ---- fixture: x_k = 2 + 1022/2^k. D2 last improves at20, expires at30.
-# The W=10 Cauchy window certifies at29; ranking still gives improving at29,
+# The W=10 relative-step band certifies at28 (#2407); ranking still gives improving at28 and29,
 # converged at30 and40. Forty tape stops back is mid-flight improving.
 FIX="$TMPDIR/fix.eigs"
 cat > "$FIX" <<'EOF'
