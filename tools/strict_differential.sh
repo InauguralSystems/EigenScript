@@ -94,6 +94,27 @@ SHAPE_BACKEND_PLATFORM=$(uname -s) || exit 1
 str_has()      { case "$1" in *"$2"*) return 0 ;; esac; return 1 ; }
 str_has_line() { case $'\n'"$1"$'\n' in *$'\n'"$2"$'\n'*) return 0 ;; esac; return 1 ; }
 str_has_word() { case " $1 " in *" $2 "*) return 0 ;; esac; return 1 ; }
+unset_comparison_class() { # unset capture, first explicit capture, second explicit capture
+    if [ "$2" != "$3" ]; then printf 'nondeterministic'
+    elif [ "$1" != "$2" ]; then printf 'flag-difference'
+    else printf 'same'; fi
+}
+run_capture() {   # <binary> <strict-or-dash> <file> -> "rc\noutput"
+    local bin="$1" strict="$2" f="$3" out rc
+    if [ "$strict" = "-" ]; then out="$(env -u EIGS_STRICT "$bin" "$f" 2>&1)"; rc=$?
+    else out="$(EIGS_STRICT="$strict" "$bin" "$f" 2>&1)"; rc=$?; fi
+    printf '%s\n%s' "$rc" "$out"
+}
+# The unset-equals-plain half for one program, for the probe rows and the pixel
+# rows alike: one run with EIGS_STRICT unset and two with EIGS_STRICT=0.
+# Leaves the three captures in UEP_UNSET, UEP_PLAIN and UEP_PLAIN_AGAIN and
+# their class in UEP_CLASS (#1399).
+unset_equals_plain() {   # <binary> <file>
+    UEP_UNSET="$(run_capture "$1" - "$2")"
+    UEP_PLAIN="$(run_capture "$1" 0 "$2")"
+    UEP_PLAIN_AGAIN="$(run_capture "$1" 0 "$2")"
+    UEP_CLASS=$(unset_comparison_class "$UEP_UNSET" "$UEP_PLAIN" "$UEP_PLAIN_AGAIN")
+}
 sweep_classify_output() { # builtin name, captured stderr
     case "$2" in
         "Error "*":1: $1:"*|*"
@@ -526,8 +547,32 @@ shape-backend: true' Linux
     eval "$saved"
     unset -f shape_backend_original
     backend_case 'restored Linux-positive policy refuses absence' 1 '' sdl $'0\ngfx_open: cannot load libSDL2\nshape-backend: false' Linux
-    echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 88 declared"
-    [ "$failed" = 0 ] && [ "$passed" = 88 ]
+    comparison_case() {
+        local label="$1" expected="$2" actual
+        actual=$(unset_comparison_class "$3" "$4" "$5")
+        if [ "$actual" = "$expected" ]; then echo "  PASS: $label"; passed=$((passed + 1))
+        else echo "  FAIL: $label (got $actual, want $expected)"; failed=$((failed + 1)); fi
+    }
+    comparison_case 'stable equal captures agree' same alpha alpha alpha
+    comparison_case 'stable explicit captures identify a flag difference' flag-difference alpha beta beta
+    comparison_case 'two differing explicit captures identify nondeterminism' nondeterministic alpha beta gamma
+    # The same three classes through the captures themselves: a stand-in for
+    # the binary is run unset and twice with EIGS_STRICT=0, as both loops do.
+    live_case() {   # label, expected class, the stand-in's body
+        local label="$1" expected="$2" d
+        d=$(mktemp -d) || { echo "  FAIL: $label (no scratch folder)"; failed=$((failed + 1)); return; }
+        printf '#!/bin/bash\n%s\n' "$3" > "$d/standin"; chmod +x "$d/standin"; : > "$d/p.eigs"
+        unset_equals_plain "$d/standin" "$d/p.eigs"
+        if [ "$UEP_CLASS" = "$expected" ]; then echo "  PASS: $label"; passed=$((passed + 1))
+        else echo "  FAIL: $label (got $UEP_CLASS, want $expected)"; failed=$((failed + 1)); fi
+        rm -rf "$d"
+    }
+    live_case 'live captures: a stable program is the same unset and plain' same 'echo alpha'
+    live_case 'live captures: output that follows the flag is a flag difference' flag-difference 'echo "strict=${EIGS_STRICT-unset}"'
+    live_case 'live captures: an exit status that follows the flag is a flag difference' flag-difference '[ -n "${EIGS_STRICT+x}" ] || exit 3'
+    live_case 'live captures: output that changes from run to run is nondeterministic' nondeterministic 'echo "$$"'
+    echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 95 declared"
+    [ "$failed" = 0 ] && [ "$passed" = 95 ]
 }
 if [ "$BASE" = --selftest ]; then shape_selftest; exit $?; fi
 
@@ -964,12 +1009,6 @@ run_did_not_measure() {
         *) printf '' ;;
     esac
 }
-run_capture() {   # <binary> <strict-or-dash> <file> -> "rc\noutput"
-    local bin="$1" strict="$2" f="$3" out rc
-    if [ "$strict" = "-" ]; then out="$(env -u EIGS_STRICT "$bin" "$f" 2>&1)"; rc=$?
-    else out="$(EIGS_STRICT="$strict" "$bin" "$f" 2>&1)"; rc=$?; fi
-    printf '%s\n%s' "$rc" "$out"
-}
 clip() { printf '%s' "$1" | tr '\n' ' ' | cut -c1-"${2:-80}"; }
 
 extract_guard_names() {
@@ -1091,7 +1130,7 @@ check_absent_call() { # each omitted row must reach its exact error contract
 }
 
 rc=0
-n_probe=0; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_unset_eq=0; unset_list=""
+n_probe=0; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_unset_eq=0; unset_list=""; nondeterministic_list=""
 n_pin=0; n_pin_ok=0; n_pin_broke=0; n_misattr=0; n_unrun=0; n_skipped=0
 differ_list=""; silent_list=""; pin_list=""; misattr_list=""; unrun_list=""; skipped_list=""
 NEW_CAPS=""; BASE_CAPS=""; profile_transitions=""; n_profile_rows=0
@@ -1195,9 +1234,13 @@ while IFS='|' read -r who prog expect; do
     fi
     s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
     s_rc="${s%%$'\n'*}"
-    u="$(run_capture "$NEW" - "$TMP/p.eigs")"
-    plain="$(run_capture "$NEW" 0 "$TMP/p.eigs")"
-    if [ "$u" = "$plain" ]; then n_unset_eq=$((n_unset_eq + 1))
+    unset_equals_plain "$NEW" "$TMP/p.eigs"
+    u="$UEP_UNSET"; plain="$UEP_PLAIN"; plain_again="$UEP_PLAIN_AGAIN"; comparison="$UEP_CLASS"
+    if [ "$comparison" = same ]; then n_unset_eq=$((n_unset_eq + 1))
+    elif [ "$comparison" = nondeterministic ]; then nondeterministic_list="$nondeterministic_list
+    $who
+      =0 run 1: $(clip "$plain" 90)
+      =0 run 2: $(clip "$plain_again" 90)"
     else unset_list="$unset_list
     $who
       unset: $(clip "$u" 90)
@@ -1318,6 +1361,7 @@ if [ -n "$BASE" ]; then
     echo "  absent valid rows (exact absence verified; NOT valid successes): $n_valid_absent"
 fi
 [ -n "$unset_list" ] && { echo "  UNSET DIFFERS FROM EIGS_STRICT=0 (strict must be opt-in):$unset_list"; rc=1; }
+[ -n "$nondeterministic_list" ] && { echo "  NONDETERMINISTIC (not a flag difference):$nondeterministic_list"; rc=1; }
 [ -n "$differ_list" ] && { echo "  DIFFERING (the EIGS_STRICT=0 path was NOT preserved):$differ_list"; rc=1; }
 [ -n "$silent_list" ] && { echo "  SILENT UNDER STRICT:$silent_list"; rc=1; }
 [ -n "$misattr_list" ] && { echo "  RAISED BY THE WRONG GUARD (probe does not reach its target):$misattr_list"; rc=1; }
@@ -1706,7 +1750,7 @@ EOF
 mkprog() { printf '%s\n' "$HEAD" > "$1"; printf '%b\n' "$2" >> "$1"; printf '%s\n' "$TAIL" >> "$1"; }
 n_prow=0; n_pvalid=0; n_pwrong=0; n_pident=0; n_pdiffer=0
 n_praise=0; n_psilent=0; n_pmis=0
-pdiffer=""; psilent=""; pmis=""; pvac=""
+pdiffer=""; psilent=""; pmis=""; pvac=""; pnondet=""
 covered_names=""; covered_slots=""
 blank_digest=""
 if [ "$NO_RENDERER" = 0 ]; then
@@ -1723,11 +1767,15 @@ while IFS='|' read -r label who slot prog; do
     covered_names="$covered_names $who"
     [ "$slot" != "-" ] && covered_slots="$covered_slots $who:$slot"
     mkprog "$TMP/p.eigs" "$prog"
-    b="$(run_capture "$NEW" 0 "$TMP/p.eigs")"
+    unset_equals_plain "$NEW" "$TMP/p.eigs"
+    b="$UEP_PLAIN"; u="$UEP_UNSET"
     s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
-    u="$(run_capture "$NEW" - "$TMP/p.eigs")"
-    [ "$u" = "$b" ] || { pdiffer="$pdiffer
-    $label [unset vs EIGS_STRICT=0, same binary] — strict must be opt-in"; rc=1; }
+    if [ "$UEP_CLASS" = nondeterministic ]; then pnondet="$pnondet
+    $label
+      =0 run 1: $(clip "$UEP_PLAIN" 90)
+      =0 run 2: $(clip "$UEP_PLAIN_AGAIN" 90)"; rc=1
+    elif [ "$UEP_CLASS" = flag-difference ]; then pdiffer="$pdiffer
+    $label [unset vs EIGS_STRICT=0, same binary] — strict must be opt-in"; rc=1; fi
     if [ "$slot" = "-" ]; then
         n_pvalid=$((n_pvalid + 1))
         if [ "$NO_RENDERER" = 0 ] && [ "$who" != "gfx_read" ] && [ "${b#*$'\n'}" = "$blank_digest" ]; then
@@ -1809,6 +1857,7 @@ fi
 echo "  raises-under-strict: $n_praise   silent: $n_psilent   misattributed: $n_pmis"
 [ "$NO_RENDERER" = 0 ] && echo "  blank canvas: $blank_digest"
 [ -n "$pdiffer" ] && { echo "  DIFFERING:$pdiffer"; rc=1; }
+[ -n "$pnondet" ] && { echo "  NONDETERMINISTIC (not a flag difference):$pnondet"; rc=1; }
 [ -n "$psilent" ] && { echo "  SILENT UNDER STRICT:$psilent"; rc=1; }
 [ -n "$pmis" ] && { echo "  RAISED BY THE WRONG GUARD:$pmis"; rc=1; }
 [ -n "$pvac" ] && { echo "  VACUOUS ROW:$pvac"; rc=1; }
