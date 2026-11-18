@@ -10,10 +10,16 @@ runs:
         set -euo pipefail
         candidate=$(apt-cache policy valgrind | awk '/Candidate:/ { print $2; exit }')
         [ -n "$candidate" ] || candidate=none
+        # The archive holds libc6-dbg too, which depends on one exact libc6.
+        # The restore prefix leaves the image version out so that last week's
+        # archive serves this week's image; the libc6 version is in it so that
+        # it serves only an image with the same libc6 (#2341).
+        libc=$(dpkg-query -W -f='${Version}\n' libc6 2>/dev/null | awk 'NR == 1') || true
+        [ -n "$libc" ] || libc=none
         image_os=${ImageOS:-unknown-os}
         image_version=${ImageVersion:-unknown-version}
-        printf 'key=valgrind-debs-%s-%s-%s\n' "$image_os" "$candidate" "$image_version" >> "$GITHUB_OUTPUT"
-        printf 'restore-prefix=valgrind-debs-%s-%s-\n' "$image_os" "$candidate" >> "$GITHUB_OUTPUT"
+        printf 'key=valgrind-debs-%s-%s-libc%s-%s\n' "$image_os" "$candidate" "$libc" "$image_version" >> "$GITHUB_OUTPUT"
+        printf 'restore-prefix=valgrind-debs-%s-%s-libc%s-\n' "$image_os" "$candidate" "$libc" >> "$GITHUB_OUTPUT"
 
     - name: Restore Valgrind archive cache
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
