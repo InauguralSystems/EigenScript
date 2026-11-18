@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
 set -u
 
-EIGS=${EIGS:-$(cd "$(dirname "$0")/.." && pwd)/src/eigenscript}
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+EIGS=${EIGS:-$ROOT/src/eigenscript}
+. "$ROOT/tests/lsan_classify.sh" || exit 1
+
+rc_expect() {
+    want=$1
+    rc=$2
+    output=$3
+    lsan_classify "$output"
+    class=$?
+    [ "$class" -eq 1 ] && return 1
+    [ "$class" -eq 0 ] && return 0
+    [ "$rc" -eq "$want" ]
+}
 T=$(mktemp -d -t eigs-2252.XXXXXX) || exit 2
 trap 'rm -rf "$T"' EXIT
 passed=0
@@ -30,12 +43,23 @@ check_value "secure_equals accepts two unequal strings" 'secure_equals of ["abc"
 printf 'print of (secure_equals of [null, "abc"])\n' > "$T/non_string.eigs"
 non_string_out=$("$EIGS" "$T/non_string.eigs" 2>&1)
 non_string_rc=$?
-if [ "$non_string_rc" -ne 0 ] && printf '%s\n' "$non_string_out" | grep -qF 'secure_equals: expected two strings'; then
+if rc_expect 1 "$non_string_rc" "$non_string_out" && printf '%s\n' "$non_string_out" | grep -qF 'secure_equals: expected two strings'; then
     echo "PASS: secure_equals raises on a non-string with its contract message"
     passed=$((passed + 1))
 else
     echo "FAIL: secure_equals non-string refusal (rc=$non_string_rc)"
     printf '%s\n' "$non_string_out"
+    failed=$((failed + 1))
+fi
+
+printf 'print of (secure_equals of [null, "abc"])\n' > "$T/non_string_lenient.eigs"
+non_string_lenient_out=$(EIGS_STRICT=0 "$EIGS" "$T/non_string_lenient.eigs" 2>&1)
+non_string_lenient_rc=$?
+if [ "$non_string_lenient_rc" -eq 0 ] && [ "$non_string_lenient_out" = false ]; then
+    echo "PASS: secure_equals answers false for a non-string under EIGS_STRICT=0"
+    passed=$((passed + 1))
+else
+    echo "FAIL: secure_equals lenient non-string result (rc=$non_string_lenient_rc, got '$non_string_lenient_out', expected 'false')"
     failed=$((failed + 1))
 fi
 

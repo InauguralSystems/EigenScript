@@ -120,7 +120,7 @@ numeric fast paths used by reassignment and `unobserved` blocks.
 | `text_builder_append` | `text_builder_append of [builder, value]` | Append one value as text |
 | `text_builder_append_line` | `text_builder_append_line of [builder, value]` | Append one value and a newline |
 | `text_builder_to_string` | `text_builder_to_string of builder` | Render buffered text |
-| `secure_equals` | `secure_equals of [a, b]` | Constant-time string equality (`true`/`false`). Compares every byte regardless of where a mismatch occurs, so comparison time doesn't leak how much of a secret matched. Non-string arguments raise `secure_equals: expected two strings` |
+| `secure_equals` | `secure_equals of [a, b]` | Constant-time string equality (`true`/`false`). Compares every byte regardless of where a mismatch occurs, so comparison time doesn't leak how much of a secret matched. Non-string arguments raise `secure_equals: expected two strings` by default; under `EIGS_STRICT=0`, they return `false` |
 
 ### Regex
 
