@@ -21,22 +21,25 @@ trap 'rm -rf "$ROOT_BUILD"' EXIT
 # `|| true` turned that refusal into an empty result and an OK (#2308, hq#58
 # ES-CIB-1). Trust exactly this checkout, as tools/enrolment_check.sh does, and
 # treat any other git failure, an empty population, or a short scan as FAIL.
-# The floor is the complete tracked population, not a pinned count. This half
-# lexes every tracked hosted src/extensions C source and header, including
-# extension-only and CLI-only files and code hidden behind EIGENSCRIPT_EXT_*
-# conditionals.  It rejects the bare C identifiers `rand` and `srand`, so it
-# covers calls, macro bodies, header inlines, aliases and function pointers.
-# Comments, string/character literals and src/freestanding are deliberately
-# ignored; a literal is taken to end with its line.  Similar names such as random, rand_r and drand48 are out of scope:
-# issue #2309 names only rand and srand.
+# The floor is a non-empty tracked population, not a pinned count. This half
+# is a word search with no lexing: a line of a tracked hosted source or header
+# (src/ and extensions/, outside src/freestanding) that holds the word `rand`
+# or `srand` fails, whether the word stands in code, in a comment or in a
+# string. So it sees a call, a macro body, an inline in a header, an alias and
+# a function pointer in every file, built or not, and inside every
+# EIGENSCRIPT_EXT_* block. It also refuses a member or a local that is named
+# rand. It does not see a name the preprocessor puts together (`ra##nd`, or
+# the name split over a line end): the object check below sees those in the
+# files it builds, and nothing sees them in the others. random, rand_r and
+# drand48 are not searched for: issue #2309 names rand and srand.
 #
 # `--rng-only` stops after this check (tests/test_freestanding_rng_2308.sh uses
 # it to drive the real check cheaply); `make freestanding-check` and CI pass no
-# argument and run the whole gate. The source lexer is authoritative;
-# the authoritative text check covers the full population.  The object check
-# below is a second Linux-lane diagnostic for the Makefile SOURCES subset; the
-# text half runs on every platform.  Its symbol match also accepts macOS nm's
-# leading underscore, though the compile rows currently run only on Linux.
+# argument and run the whole gate. The word search covers the whole tracked
+# population and runs wherever git does. The object check below compiles the
+# Makefile's SOURCES with the extensions off and reads their undefined
+# symbols; its compile rows run on the Linux lanes, and its match takes the
+# leading underscore that nm prints on macOS.
 RNG_PATHSPEC=('src/*.c' 'src/*.h' 'extensions/*.c' 'extensions/*.h' ':(exclude)src/freestanding/*')
 RNG_GIT=(git -c safe.directory="$(pwd -P)")
 RNG_ERR="$ROOT_BUILD/rng_ls_files.err"
@@ -49,57 +52,18 @@ if [ "$rng_rc" -ne 0 ] || [ -z "$RNG_FILES" ]; then
     exit 1
 fi
 RNG_EXAMINED=$(printf '%s\n' "$RNG_FILES" | wc -l | tr -d ' ')
-RNG_VIOLATIONS="$ROOT_BUILD/rng-identifiers.txt"
-: > "$RNG_VIOLATIONS"
-RNG_SCANNED=0
-while IFS= read -r rng_file; do
-    [ -n "$rng_file" ] || continue
-    awk -v FILE="$rng_file" '
-    {
-        # A string or character literal ends with its line: a lone quote mark
-        # (as in `#error can'"'"'t`) must not hide the lines after it.
-        out = ""; i = 1; quote = ""
-        while (i <= length($0)) {
-            c = substr($0, i, 1); n = substr($0, i + 1, 1)
-            if (block) { if (c == "*" && n == "/") { block = 0; i += 2 } else i++; continue }
-            if (quote != "") {
-                if (c == "\\") i += 2
-                else { i++; if (c == quote) quote = "" }
-                continue
-            }
-            if (c == "/" && n == "*") { block = 1; i += 2; out = out " "; continue }
-            if (c == "/" && n == "/") break
-            if (c == "\"" || c == sprintf("%c", 39)) {
-                quote = c; i++
-                out = out " "; continue
-            }
-            out = out c; i++
-        }
-        s = out
-        while (match(s, /(^|[^A-Za-z0-9_])(rand|srand)([^A-Za-z0-9_]|$)/)) {
-            token = substr(s, RSTART, RLENGTH)
-            sub(/^[^A-Za-z0-9_]/, "", token); sub(/[^A-Za-z0-9_].*$/, "", token)
-            printf "%s:%d:%s\n", FILE, NR, token
-            s = substr(s, RSTART + RLENGTH)
-        }
-    }' "$rng_file" >> "$RNG_VIOLATIONS" || {
-        echo "FAIL: hosted RNG check could not scan $rng_file" >&2
-        exit 1
-    }
-    RNG_SCANNED=$((RNG_SCANNED + 1))
-done <<EOF
-$RNG_FILES
-EOF
-if [ "$RNG_SCANNED" -ne "$RNG_EXAMINED" ]; then
-    echo "FAIL: hosted RNG check examined $RNG_SCANNED of $RNG_EXAMINED tracked files" >&2
+rng_rc=0
+RNG_HITS=$("${RNG_GIT[@]}" grep -n -w -E 'rand|srand' -- "${RNG_PATHSPEC[@]}" 2>&1) || rng_rc=$?
+if [ "$rng_rc" -eq 0 ]; then
+    echo "FAIL: the word rand or srand appears in a hosted runtime source or header (code, comment or string); the runtime draws from the taped random stream:" >&2
+    echo "$RNG_HITS" >&2
+    exit 1
+elif [ "$rng_rc" -ne 1 ]; then
+    echo "FAIL: hosted RNG check could not search the runtime sources (git grep rc=$rng_rc):" >&2
+    echo "$RNG_HITS" >&2
     exit 1
 fi
-if [ -s "$RNG_VIOLATIONS" ]; then
-    echo "FAIL: hosted runtime uses bare libc rand/srand identifier(s) outside the taped random stream:" >&2
-    cat "$RNG_VIOLATIONS" >&2
-    exit 1
-fi
-echo "OK hosted RNG: no bare rand/srand identifiers in all $RNG_SCANNED tracked hosted C source/header file(s)"
+echo "OK hosted RNG: the words rand and srand appear in none of the $RNG_EXAMINED tracked hosted C source/header file(s)"
 
 # Anchor the population to the Makefile's source lists, as amalgamate does.
 SRC=$(make --no-print-directory print-SOURCES |

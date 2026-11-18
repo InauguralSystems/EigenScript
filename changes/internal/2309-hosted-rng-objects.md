@@ -1,1 +1,1 @@
-- The freestanding gate now rejects bare `rand` and `srand` identifiers across every tracked hosted runtime C source and header, including extension-guarded code (#2309).
+- The freestanding gate refuses the words `rand` and `srand` anywhere in a hosted runtime source or header, so a call through a header, an alias or a function pointer is seen in every file; its object check keeps a test of its own (#2309).
