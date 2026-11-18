@@ -4,6 +4,14 @@
 # that differs or is missing fails by its name. A later release replaces the
 # five files and this table together (SECURITY.md).
 #
+# What holds src/vendor/llhttp/, in one place: the five hashes of this script;
+# the builds' flags (the Makefile compiles each vendored .c file with the
+# command of src/ext_http.c in the same build, plus -Wno-unused-parameter: see
+# `make -n -B http`, `make -n -B asan-http`, `make -n -B tsan-http`); and suite
+# section 45j (tests/sections/45j-http-door.sh), which runs the parser through
+# the server. The checks written for the runtime's own sources are not relied
+# on for this folder, whether or not one of them reads it.
+#
 # Usage: tools/vendor_llhttp_check.sh [--selftest]
 set -u
 cd "$(dirname "$0")/.." || exit 2
