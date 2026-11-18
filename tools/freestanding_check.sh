@@ -20,7 +20,8 @@ trap 'rm -rf "$ROOT_BUILD"' EXIT
 # out, so git refused the repository ("dubious ownership", rc 128) and the old
 # `|| true` turned that refusal into an empty result and an OK (#2308, hq#58
 # ES-CIB-1). Trust exactly this checkout, as tools/enrolment_check.sh does, and
-# treat any other git failure, an empty population, or a short scan as FAIL.
+# treat as FAIL any other git failure, an empty population, a tracked file
+# that is not there to be read, and anything git grep says on its error stream.
 # The floor is a non-empty tracked population, not a pinned count. This half
 # is a word search with no lexing: a line of a tracked hosted source or header
 # (src/ and extensions/, outside src/freestanding) that holds the word `rand`
@@ -30,7 +31,8 @@ trap 'rm -rf "$ROOT_BUILD"' EXIT
 # EIGENSCRIPT_EXT_* block. It also refuses a member or a local that is named
 # rand. It does not see a name the preprocessor puts together (`ra##nd`, or
 # the name split over a line end): the object check below sees those in the
-# files it builds, and nothing sees them in the others. random, rand_r and
+# code it compiles (the Makefile's SOURCES with every extension off), and
+# nothing sees them in the other files or inside an extension's block. random, rand_r and
 # drand48 are not searched for: issue #2309 names rand and srand.
 #
 # `--rng-only` stops after this check (tests/test_freestanding_rng_2308.sh uses
@@ -52,15 +54,33 @@ if [ "$rng_rc" -ne 0 ] || [ -z "$RNG_FILES" ]; then
     exit 1
 fi
 RNG_EXAMINED=$(printf '%s\n' "$RNG_FILES" | wc -l | tr -d ' ')
+# git grep passes over a tracked file it cannot open with a message and "no
+# match", and says nothing of one that is not in the working tree. So every
+# tracked file of the population must be there and readable first.
+while IFS= read -r rng_file; do
+    [ -n "$rng_file" ] || continue
+    if [ ! -f "$rng_file" ] || [ ! -r "$rng_file" ]; then
+        echo "FAIL: hosted RNG check cannot read the tracked file $rng_file" >&2
+        exit 1
+    fi
+done <<RNG_LIST
+$RNG_FILES
+RNG_LIST
+RNG_GREP_ERR="$ROOT_BUILD/rng_grep.err"
 rng_rc=0
-RNG_HITS=$("${RNG_GIT[@]}" grep -n -w -E 'rand|srand' -- "${RNG_PATHSPEC[@]}" 2>&1) || rng_rc=$?
+RNG_HITS=$("${RNG_GIT[@]}" grep -n -w -E 'rand|srand' -- "${RNG_PATHSPEC[@]}" 2>"$RNG_GREP_ERR") || rng_rc=$?
+if [ -s "$RNG_GREP_ERR" ] && [ "$rng_rc" -le 1 ]; then
+    echo "FAIL: hosted RNG check: git grep reported a problem while searching the runtime sources:" >&2
+    cat "$RNG_GREP_ERR" >&2
+    exit 1
+fi
 if [ "$rng_rc" -eq 0 ]; then
     echo "FAIL: the word rand or srand appears in a hosted runtime source or header (code, comment or string); the runtime draws from the taped random stream:" >&2
     echo "$RNG_HITS" >&2
     exit 1
 elif [ "$rng_rc" -ne 1 ]; then
     echo "FAIL: hosted RNG check could not search the runtime sources (git grep rc=$rng_rc):" >&2
-    echo "$RNG_HITS" >&2
+    cat "$RNG_GREP_ERR" >&2
     exit 1
 fi
 echo "OK hosted RNG: the words rand and srand appear in none of the $RNG_EXAMINED tracked hosted C source/header file(s)"

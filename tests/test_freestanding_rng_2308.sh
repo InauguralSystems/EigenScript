@@ -24,7 +24,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/eigs_fs_rng.XXXXXX") || exit 2
 trap 'rm -rf "$WORK"' EXIT
 REAL_GIT=$(command -v git) || { echo "  FAIL: git is required"; exit 1; }
-echo "PLAN: 35"
+echo "PLAN: 37"
 pass=0; fail=0
 
 # A fresh HOME with no global or system config: a developer's own
@@ -216,6 +216,20 @@ chmod +x "$WORK/grepshim/git"
 case_ "git grep error (rc 128) is red, not OK" "$WORK/clean" 1 \
     "FAIL: hosted RNG check could not search the runtime sources (git grep rc=128)" \
     PATH="$WORK/grepshim:$PATH"
+# A message of git grep on its error stream is a failure even when it exits
+# with "no match": that is how it passes over a file it could not open.
+mkdir -p "$WORK/grepwarn"
+printf '#!/bin/sh\nfor a in "$@"; do [ "$a" = grep ] && { echo "error: planted grep complaint" >&2; break; }; done\nexec "%s" "$@"\n' \
+    "$REAL_GIT" > "$WORK/grepwarn/git"
+chmod +x "$WORK/grepwarn/git"
+case_ "a complaint of git grep on its error stream is red, not OK" "$WORK/clean" 1 \
+    "FAIL: hosted RNG check: git grep reported a problem" \
+    PATH="$WORK/grepwarn:$PATH"
+# A tracked file that is not in the working tree was not searched.
+make_repo "$WORK/missing"
+rm "$WORK/missing/src/a.c"
+case_ "a tracked file missing from the working tree is red, not OK" "$WORK/missing" 1 \
+    "FAIL: hosted RNG check cannot read the tracked file src/a.c"
 
 # 7. A git warning on stderr is not an examined file: the count stays exact.
 mkdir -p "$WORK/warnshim"
@@ -236,4 +250,4 @@ case_ "no tracked runtime sources is red (vacuous)" "$WORK/empty" 1 \
     "FAIL: hosted RNG check examined no runtime sources"
 
 echo "freestanding RNG selftest: $pass passed, $fail failed"
-[ "$fail" -eq 0 ] && [ "$pass" -eq 35 ]
+[ "$fail" -eq 0 ] && [ "$pass" -eq 37 ]
