@@ -16,7 +16,7 @@ and only two of the three can gate CI honestly:
 - **Instruction counts** (cachegrind `Ir`) are deterministic — the same binary
   on the same input executes the same number of instructions every run, on any
   machine. So the **regression gate** (`bench/check_regression.sh`, the CI `bench`
-  job) compares `Ir` and fails on more than a few percent. CI runs it as
+  job) compares `Ir` and fails on more than **0.5%**. CI runs it as
   `--vs <origin/main build>`: it builds the PR binary and an `origin/main` binary
   on the **same runner** and diffs their `Ir`, so there is no cross-machine
   baseline to drift — a regression is a pure code-change signal. The checked-in
@@ -90,7 +90,7 @@ section **[99zc]**:
 
 ```bash
 bash tests/test_string_scaling.sh            # the gate
-bash tests/test_string_scaling.sh --selftest # 23 cases: prove it can FAIL
+bash tests/test_string_scaling.sh --selftest # 29 cases: prove it can FAIL
 ```
 
 It times a scan at 20k, 40k and 80k characters and fails if any doubling costs
@@ -225,8 +225,8 @@ dedicated spawn/channel bench workload is future work here.
 ## CodSpeed: the hosted twin of the Ir gate
 
 The `bench` job answers one yes/no question per PR — did this change cost more
-than a few percent of instructions on five workloads — and throws the numbers
-away. `codspeed.yml` at the repository root declares the same five workloads
+than 0.5% of instructions on all ten `bench/*.eigs` workloads — and throws the
+numbers away. `codspeed.yml` at the repository root declares six of those workloads
 plus the JIT's own shapes (`tests/bench_perf.eigs`, `tests/bench_dmg_shape.eigs`,
 `tests/bench_idxset.eigs`) as CodSpeed **exec-harness** targets, and the
 `.github/workflows/codspeed.yml` lane runs them under the same valgrind CPU
