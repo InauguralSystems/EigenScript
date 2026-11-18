@@ -107,15 +107,18 @@ class Reference:
 
 
 _SHARED = []
+_SHARED_LOCK = threading.Lock()
 
 
 def shared_reference():
-    """One reference for a test that judges other rows by #2370's decision."""
-    if not _SHARED:
-        folder = Path(tempfile.mkdtemp(prefix='eigs-door-ref-'))
-        atexit.register(shutil.rmtree, folder, True)
-        _SHARED.append(Reference(folder))
-    return _SHARED[0]
+    """One reference for a test that judges other rows by #2370's decision,
+    compiled once for the process whichever thread asks first."""
+    with _SHARED_LOCK:
+        if not _SHARED:
+            folder = Path(tempfile.mkdtemp(prefix='eigs-door-ref-'))
+            atexit.register(shutil.rmtree, folder, True)
+            _SHARED.append(Reference(folder))
+        return _SHARED[0]
 
 
 def named_rows():
