@@ -1,0 +1,1 @@
+- The freestanding gate now detects hosted libc random calls through headers, aliases and function pointers (#2309).

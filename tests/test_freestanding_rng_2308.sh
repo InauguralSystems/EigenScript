@@ -24,7 +24,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/eigs_fs_rng.XXXXXX") || exit 2
 trap 'rm -rf "$WORK"' EXIT
 REAL_GIT=$(command -v git) || { echo "  FAIL: git is required"; exit 1; }
-echo "PLAN: 9"
+echo "PLAN: 15"
 pass=0; fail=0
 
 # A fresh HOME with no global or system config: a developer's own
@@ -41,6 +41,12 @@ make_repo() {   # make_repo <dir>: a clean tree the gate can examine
     printf 'int clean_e(void) { return 5; }\n' > "$d/extensions/e.c"
     # The freestanding libc implements rand(); the exclusion must keep it legal.
     printf 'int rand(void) { return 7; }\n' > "$d/src/freestanding/mini_libc.c"
+    cat > "$d/Makefile" <<'EOF'
+SOURCES := src/a.c
+CLI_ONLY :=
+print-%:
+	@echo "$($*)"
+EOF
     run_env "$REAL_GIT" -C "$d" init -q &&
         run_env "$REAL_GIT" -C "$d" add . &&
         run_env "$REAL_GIT" -C "$d" -c user.name=selftest -c user.email=selftest@example.invalid \
@@ -71,7 +77,31 @@ case_() {   # case_ <name> <dir> <want-rc> <want-substring> [env assignments...]
 # 1. Clean control, same owner: green, and it says how much it examined.
 make_repo "$WORK/clean"
 case_ "clean control passes and counts its population" "$WORK/clean" 0 \
-    "OK hosted RNG: no libc rand/srand calls in 2 tracked runtime source file(s) outside src/freestanding"
+    "OK hosted RNG objects: no libc rand/srand imports in 1 hosted object(s)"
+
+# Header, macro-alias and function-pointer plants each have an immediately
+# preceding clean control. These evade the source spelling check, so require
+# the object-symbol diagnostic rather than a git-grep match.
+for kind in header macro pointer; do
+    make_repo "$WORK/$kind-control"
+    case_ "$kind plant clean control passes" "$WORK/$kind-control" 0 \
+        "OK hosted RNG objects: no libc rand/srand imports in 1 hosted object(s)"
+    make_repo "$WORK/$kind"
+    case "$kind" in
+        header)
+            printf '#include <stdlib.h>\nstatic inline int r(void) { return rand(); }\n' > "$WORK/$kind/src/rng.h"
+            printf '#include "rng.h"\nint clean_a(void) { return r(); }\n' > "$WORK/$kind/src/a.c" ;;
+        macro)
+            printf '#include <stdlib.h>\n#define RNG rand\nint clean_a(void) { return RNG(); }\n' > "$WORK/$kind/src/a.c" ;;
+        pointer)
+            printf '#include <stdlib.h>\nint clean_a(void) { int (*p)(void) = rand; return p(); }\n' > "$WORK/$kind/src/a.c" ;;
+    esac
+    run_env "$REAL_GIT" -C "$WORK/$kind" add src &&
+        run_env "$REAL_GIT" -C "$WORK/$kind" -c user.name=selftest \
+            -c user.email=selftest@example.invalid commit -qm "$kind plant" || exit 2
+    case_ "$kind plant is red at the hosted object symbol check" "$WORK/$kind" 1 \
+        "FAIL: hosted runtime objects import libc rand/srand"
+done
 
 # 2-3. Planted calls, same owner: red and named.
 make_repo "$WORK/rand"
@@ -130,4 +160,4 @@ case_ "no tracked runtime sources is red (vacuous)" "$WORK/empty" 1 \
     "FAIL: hosted RNG check examined no runtime sources"
 
 echo "freestanding RNG selftest: $pass passed, $fail failed"
-[ "$fail" -eq 0 ] && [ "$pass" -eq 9 ]
+[ "$fail" -eq 0 ] && [ "$pass" -eq 15 ]

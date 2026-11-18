@@ -26,7 +26,9 @@ trap 'rm -rf "$ROOT_BUILD"' EXIT
 #
 # `--rng-only` stops after this check (tests/test_freestanding_rng_2308.sh uses
 # it to drive the real check cheaply); `make freestanding-check` and CI pass no
-# argument and run the whole gate.
+# argument and run the whole gate. The source grep is only a fast diagnostic;
+# the authoritative check below compiles the hosted runtime objects and reads
+# their undefined symbols, covering headers, aliases and function pointers.
 RNG_PATHSPEC=('src/*.c' 'extensions/*.c' ':(exclude)src/freestanding/*')
 RNG_GIT=(git -c safe.directory="$(pwd -P)")
 RNG_ERR="$ROOT_BUILD/rng_ls_files.err"
@@ -52,11 +54,11 @@ elif [ "$rng_rc" -ne 1 ]; then
     exit 1
 fi
 echo "OK hosted RNG: no libc rand/srand calls in $RNG_EXAMINED tracked runtime source file(s) outside src/freestanding"
-[ "${1:-}" != "--rng-only" ] || exit 0
 
 # Anchor the population to the Makefile's source lists, as amalgamate does.
 SRC=$(make --no-print-directory print-SOURCES |
       tr ' ' '\n' | sed -n 's#^src/\(.*\)\.c$#\1#p')
+HOSTED_SRC=$SRC
 CLI_ONLY=$(make --no-print-directory print-CLI_ONLY |
       tr ' ' '\n' | sed -n 's#^src/\(.*\)\.c$#\1#p')
 for u in $CLI_ONLY; do SRC=$(printf '%s\n' $SRC | grep -vx "$u"); done
@@ -64,6 +66,42 @@ if [ -z "$SRC" ]; then
     echo "FAIL: derived an EMPTY source list from the Makefile" >&2
     exit 1
 fi
+
+command -v nm >/dev/null 2>&1 || {
+    echo "FAIL: hosted RNG object check requires nm" >&2
+    exit 1
+}
+HOSTED_RNG_BUILD="$ROOT_BUILD/hosted-rng"
+mkdir "$HOSTED_RNG_BUILD"
+HOSTED_RNG_OBJECTS=0
+for f in $HOSTED_SRC; do
+    obj="$HOSTED_RNG_BUILD/$f.o"
+    if ! gcc -O0 -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 \
+        -DEIGENSCRIPT_EXT_NET=0 -DEIGENSCRIPT_EXT_GFX=0 \
+        -c "src/$f.c" -o "$obj"; then
+        echo "FAIL: hosted RNG check could not build src/$f.c" >&2
+        exit 1
+    fi
+    HOSTED_RNG_OBJECTS=$((HOSTED_RNG_OBJECTS + 1))
+done
+if [ "$HOSTED_RNG_OBJECTS" -eq 0 ]; then
+    echo "FAIL: hosted RNG check examined 0 hosted objects" >&2
+    exit 1
+fi
+HOSTED_RNG_UNDEFINED="$HOSTED_RNG_BUILD/undefined.txt"
+nm -u "$HOSTED_RNG_BUILD"/*.o 2>"$HOSTED_RNG_BUILD/nm.err" \
+    | awk '{print $NF}' | sort -u > "$HOSTED_RNG_UNDEFINED" || {
+        echo "FAIL: hosted RNG check could not read hosted objects with nm" >&2
+        cat "$HOSTED_RNG_BUILD/nm.err" >&2
+        exit 1
+    }
+if grep -E '^(rand|srand)$' "$HOSTED_RNG_UNDEFINED" > "$HOSTED_RNG_BUILD/violations.txt"; then
+    echo "FAIL: hosted runtime objects import libc rand/srand outside the taped random stream:" >&2
+    cat "$HOSTED_RNG_BUILD/violations.txt" >&2
+    exit 1
+fi
+echo "OK hosted RNG objects: no libc rand/srand imports in $HOSTED_RNG_OBJECTS hosted object(s)"
+[ "${1:-}" != "--rng-only" ] || exit 0
 
 run_row() {
     local label=$1 cc=$2 opt=$3
