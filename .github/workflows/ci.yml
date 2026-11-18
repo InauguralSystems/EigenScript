@@ -1852,9 +1852,9 @@ jobs:
   # ThreadSanitizer over ext_http.c (#1139). The stock tsan lane above builds
   # with $(DEFS_OFF), so the race detector never saw the repo's most concurrent
   # code; #1137 was found only by an ad-hoc tsan+http build while that lane
-  # stayed green. This lane runs the HTTP slice of the suite ([44], [45a] —
-  # 256 concurrent connections —, [45b], [45i], the outbound client, and [45j], the
-  # server reading every request through llhttp)
+  # stayed green. This lane runs the sections of the suite that start an HTTP
+  # server (the step below has the list once, and names the ones it leaves
+  # out with the reason for each)
   # through the real runner under
   # halt_on_error=1, so a race kills the server and its section goes red.
   tsan-http:
@@ -1890,7 +1890,12 @@ jobs:
         name: HTTP sections under TSan (setarch -R, halt_on_error=1)
         env:
           TSAN_OPTIONS: halt_on_error=1
-          EIGS_SUITE_SECTIONS: 44 45a 45b 45i 45j
+          # [45c] left out: its RSS gate deliberately skips sanitizer builds.
+          # [99s] left out: it does not run on this build. Selected here, it
+          # ended with "Program is run with limited virtual address space,
+          # which wouldn't work with ThreadSanitizer": its tool caps the
+          # address space of its gfx probe (#2425).
+          EIGS_SUITE_SECTIONS: 0f2 44 45 45a 45b 45f 45g 45h 45i 45j
         run: |
           set -o pipefail
           setarch -R bash tests/run_all_tests.sh 2>&1 | tee "$RUNNER_TEMP/tsan-http.log"
@@ -1899,15 +1904,20 @@ jobs:
           # without ext_http as a skip, which here means the lane measured
           # nothing).
           awk '
+            BEGIN {
+              n = split(ENVIRON["EIGS_SUITE_SECTIONS"], want, " ")
+              # An exit in BEGIN still runs END, which exits with `bad`.
+              if (n < 1) { print "ERROR: EIGS_SUITE_SECTIONS names no section -- the lane would check nothing"; bad = 1; exit 1 }
+              for (i = 1; i <= n; i++) selected[want[i]] = 1
+            }
             # A header is "[44/47] " (inline) or "[45i] " (a tests/sections/ fragment).
             /^\[[0-9a-z]+(\/[0-9]+)?\] / { sec = $1; sub(/\/.*/, "", sec); sub(/^\[/, "", sec); sub(/\]$/, "", sec) }
-            sec == "44" || sec == "45a" || sec == "45b" || sec == "45i" || sec == "45j" {
+            selected[sec] {
               # "PASS: all 0 ..." is a relay of a child that ran nothing (e.g. a SKIP it swallowed).
               if ($0 ~ /^  PASS: / && $0 !~ /^  PASS: all 0 /) pass[sec]++
               if ($0 ~ /^  SKIP: /) { print "ERROR: [" sec "] skipped: " $0; bad = 1 }
             }
             END {
-              n = split("44 45a 45b 45i 45j", want, " ")
               for (i = 1; i <= n; i++) {
                 if (pass[want[i]] < 1) { print "ERROR: [" want[i] "] printed no PASS line -- it did not run"; bad = 1 }
                 else print "OK: [" want[i] "] ran (" pass[want[i]] " PASS line(s))"
