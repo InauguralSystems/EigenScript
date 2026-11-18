@@ -2014,8 +2014,7 @@ jobs:
   # the gate compares deterministic cachegrind instruction counts (Ir) of THIS
   # commit against origin/main — both built in the same runner, so the diff is a
   # pure code-change signal, never machine noise. A self-test proves a 2x-work
-  # pessimization is caught. Published numbers (wall-clock) live in
-  # docs/PERFORMANCE.md, regenerated from bench/run_bench.sh.
+  # pessimization is caught.
   bench:
     name: bench (instruction-count regression gate)
     env:

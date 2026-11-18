@@ -1,7 +1,10 @@
 #!/bin/bash
 # Diagnostic wall-clock samples per bench workload (#398). Each row reports the
 # median and its min..max sample spread in microseconds; these environment-
-# dependent measurements are not published performance figures. The non-flaky REGRESSION GATE is
+# dependent measurements are not published performance figures. A sample runs from
+# one clock_us call to the next, and each call starts a perl process: a sample
+# is therefore never shorter than its workload's run, and is longer by the time
+# that process takes to start and to read the clock. The non-flaky REGRESSION GATE is
 # a separate, deterministic metric: bench/check_regression.sh (cachegrind
 # instruction counts). Workloads with nondeterministic input would be pinned
 # under EIGS_TRACE for input-determinism; these are pure-compute, so none is.
