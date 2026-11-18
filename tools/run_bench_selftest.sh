@@ -7,7 +7,8 @@ if [ "${1:-}" != "--selftest" ]; then
 fi
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-BINARY=${EIGENSCRIPT:-$ROOT/build/release/eigenscript}
+# The same default as bench/run_bench.sh.
+BINARY=${EIGENSCRIPT:-$ROOT/src/eigenscript}
 SCRATCH=$(mktemp -d "${TMPDIR:-/tmp}/run-bench-selftest.XXXXXX") || exit 1
 trap 'rm -rf "$SCRATCH"' EXIT
 cp "$ROOT/bench/run_bench.sh" "$ROOT/bench/scalar_loop.eigs" "$SCRATCH/"
