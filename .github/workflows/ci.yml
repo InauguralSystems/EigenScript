@@ -936,7 +936,8 @@ jobs:
     needs: [dev-image, scope]
     if: (github.event_name != 'push') && ((needs.scope.outputs.code == 'true') && (github.event_name != 'workflow_dispatch' || inputs.lanes == 'all' || inputs.lanes == 'linux'))
     runs-on: ubuntu-latest
-    # About 2 minutes measured (84-115 s on PR #1777); this bounds a hang.
+    # About 2 minutes measured (84-115 s on PR #1777), and the reveal step
+    # took 84-116 s on the dev box (#2407); this bounds a hang.
     timeout-minutes: 15
     permissions:
       contents: read
@@ -952,6 +953,18 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           bash tools/observer_oracle/ci_lane.sh
+      # The Round 3 reveal's frozen answers (#2407): the table is what the rule
+      # builds from the reveal's raw log (read from its tag), the reference
+      # agrees with INC and with the table, and the lane's build answers the
+      # table in all four tiers. Each command's exit status is the verdict.
+      - name: The reveal's frozen answers (tools/observer_oracle/reveal_restored_check.py)
+        run: |
+          if ! git rev-parse -q --verify refs/tags/phase2-r3-reveal > /dev/null; then
+              git fetch --no-tags --depth=1 origin refs/tags/phase2-r3-reveal:refs/tags/phase2-r3-reveal
+          fi
+          python3 tools/reveal_restored_table.py --check tests/phase2/reveal_restored_expected.json
+          python3 tools/reveal_restored_reference.py
+          python3 tools/observer_oracle/reveal_restored_check.py src/eigenscript
 
   # Freestanding symbol gate: compiles the runtime with the freestanding
   # profile (-DEIGENSCRIPT_FREESTANDING=1) and asserts its undefined-symbol
