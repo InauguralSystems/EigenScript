@@ -1,1 +1,1 @@
-- The freestanding gate now detects hosted libc random calls through headers, aliases and function pointers (#2309).
+- The freestanding gate now rejects bare `rand` and `srand` identifiers across every tracked hosted runtime C source and header, including extension-guarded code (#2309).
