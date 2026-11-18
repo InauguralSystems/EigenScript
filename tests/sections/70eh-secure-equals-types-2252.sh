@@ -1,4 +1,4 @@
-echo "[70eg] secure_equals string-only contract (#2252)"
+echo "[70eh] secure_equals string-only contract (#2252)"
 SECURE_EQUALS_OUT=$(EIGS="$EIGS" bash "$TESTS_DIR/test_issue_2252_secure_equals.sh" 2>&1); SECURE_EQUALS_RC=$?
 TOTAL=$((TOTAL + 1))
 if [ "$SECURE_EQUALS_RC" -eq 0 ] && rc_ok "$SECURE_EQUALS_RC" "$SECURE_EQUALS_OUT" &&
