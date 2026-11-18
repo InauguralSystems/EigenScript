@@ -24,11 +24,15 @@
 # that wraps instead of raising (Part D), and a population scan that writes noise
 # to stderr or an unparsed line to stdout (the critic's class); and #1775's
 # plant, the missing return that makes the -O0 amalgamation warn.
-# R3.1 added eleven observer plants; nine remain. The reveal (#1758, RULING
-# R30R-2) reverted Round 3's converged/stable tests (#2407), so the plants of
-# Round 3's absolute settled tolerance and of the incumbent converged band
-# retired with them (reverted by the reveal (RULING R30R-2)); the frozen-answer
-# check tools/observer_oracle/reveal_restored_check.py now owns that ground.
+# R3.1 added eleven observer plants; eight remain. The reveal (#1758, RULING
+# R30R-2) reverted Round 3's converged/stable tests (#2407), so three retired
+# with them (reverted by the reveal (RULING R30R-2)): Round 3's absolute
+# settled tolerance and the incumbent converged band, whose code is gone or is
+# now the shipped code, and the SMI exact-flag plant, whose named row reads
+# the same with or without the flag under the restored test (the raw swing
+# refuses both settled tests; run on #2407's tree: SURVIVED). The
+# frozen-answer check tools/observer_oracle/reveal_restored_check.py holds the
+# int64 answers (its int-as-doubles plant).
 # Each first runs its named MAP check on
 # an unmodified archive. The named assertion, four tiers, JIT witness and
 # finite control then run on the mutant and its assertion-deleted twin.
@@ -57,13 +61,12 @@ while [ $# -gt 0 ]; do
             [ -z "$ONLY" ] || { echo "phase2-plants: FAIL: --only may be given once"; exit 2; }
             case "$2" in
                 1|2|3-json|3-store|overflow-wrap|stderr-noise|stdout-noise|return-type|\
-                r31-zero-floor|r31-smi-exact|r31-jit-inline-double|\
+                r31-zero-floor|r31-jit-inline-double|\
                 r31-nan-diverging|r31-inf-sign|r31-improving-incumbent|\
                 r31-nan-report|r31-where-entropy|r31-how-infinite|\
-                r312-stall-quiet|r312-stall-nonfinite|r312-stall-diverging|\
+                r312-stall-nonfinite|r312-stall-diverging|\
                 r314-stall-oscillating|r314-stall-nonfinite-order|\
                 r317-stall-window-current|r317-stall-window-extent|r317-stall-step-overflow|\
-                r318-stall-window-index|r319-stall-window-newest|\
                 r32-cfg-legacy-five|r32-cfg-at-least-four|r32-cfg-at-most-four|\
                 r32-cfg-binding|r32-cfg-window-base|r32-cfg-drop-dh-zero|\
                 r32-cfg-drop-dh-small|r32-cfg-drop-window|r32-cfg-drop-scale|\
@@ -118,12 +121,12 @@ plants=0; killed=0; survived=0; broken=0; transverse=0; available=0; observer_gr
 oracle_red=0; oracle_green=0
 EXPECTED_ORACLE=3
 stall_plants=0; stall_killed=0; stall_survived=0; stall_broken=0; stall_green=0; stall_available=0
-EXPECTED_STALL=10
+EXPECTED_STALL=7
 ocfg_plants=0; ocfg_killed=0; ocfg_survived=0; ocfg_broken=0; ocfg_green=0; ocfg_transverse=0; ocfg_available=0
 EXPECTED_OCFG=37
 PRISTINE="$WORK/observer-pristine"
-EXPECTED_PLANTS=17
-EXPECTED_OBSERVER=9
+EXPECTED_PLANTS=16
+EXPECTED_OBSERVER=8
 
 # One registered concept has two production sites. The second edit
 # retains the same exactly-once anchor requirement as the primary edit.
@@ -422,17 +425,9 @@ run_observer_plant() {
 run_observer_plant r31-zero-floor src/eigenscript.c \
     '    return observer_slot_all_exact(s) ? 0.0
         : 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));' \
-    '    return 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));' \
+    '    (void)observer_slot_all_exact; /* PLANT: keep the helper referenced */
+    return 4.0 * DBL_EPSILON * (1.0 + fabs(s->last_value));' \
     O2.int-down-counter-2p53
-
-# SMI is the half-open range [-2^47, 2^47). Boxed pairs stay exact, so the
-# SMI invariant is the unique named check of this registered fault.
-run_observer_plant r31-smi-exact src/eigenscript.c \
-    '        int exact = v.is_int && s->last_is_int &&' \
-    '        int exact = v.is_int && s->last_is_int &&
-            (v.integer < -140737488355328LL || v.integer >= 140737488355328LL ||
-             s->last_int < -140737488355328LL || s->last_int >= 140737488355328LL) &&' \
-    O2.int-smi-alternating
 
 # Reproduce the former inline double writer at its JIT-only private sample
 # site. The shared recorder still maintains the new authoritative W+1
@@ -512,13 +507,16 @@ run_observer_plant r31-how-infinite src/eigenscript.c \
     '    /* PLANT: apply the relative-step formula even for an infinite step. */' \
     O4.how-infinite-step
 
-# R31-9: ten independently named clause/order/index plants. The first three
-# retain their original witnesses. Finite constant alternation isolates the
+# R31-9: ten independently named clause/order/index plants; seven remain. The
+# quiet-arm plant and the two NaN window-index plants retired with the
+# restored converged test (#2407; reverted by the reveal (RULING R30R-2)):
+# their named cases (quiet, nan-prefix, nan-newest) now exit through
+# `converged` before the stall counter can reach 100, so the planted reader
+# cannot change their result (each run on #2407's tree: SURVIVED). The first
+# two retain their original witnesses. Finite constant alternation isolates the
 # oscillation arm; infinite alternation witnesses non-finite priority, and
 # period-three and period-eleven NaN cycles isolate the retained-input window.
 # A finite contracting alternation protects against counting overflowed steps.
-# An initial NaN distinguishes the newest index before the ring fills.
-# A newest prefix NaN distinguishes the opposite starting-index error.
 run_stall_plant() {
     local id="$1" case_name="$2" old="$3" new="$4" mode dir log build rc verdict="" pattern
     stall_available=$((stall_available + 1))
@@ -571,9 +569,6 @@ run_stall_plant() {
     echo "stall plant $id: $verdict"
 }
 
-run_stall_plant r312-stall-quiet quiet \
-    '    if (observer_slot_quiet(s)) return 1;' \
-    '    if (0 && observer_slot_quiet(s)) return 1; /* PLANT: no quiet arm */'
 run_stall_plant r312-stall-nonfinite nan \
     '    if (obs_stall_window_nonfinite(s)) return 1;' \
     '    if (0 && obs_stall_window_nonfinite(s)) return 1; /* PLANT: no nonfinite arm */'
@@ -610,38 +605,6 @@ run_stall_plant r317-stall-step-overflow overflow-contracting \
     '    if (obs_stall_window_nonfinite(s) ||
         (s->v_window_count && s->v_rel &&
          !isfinite(s->v_rel[s->v_window_head ? s->v_window_head - 1 : s->v_cap - 1]))) return 1; /* PLANT: count overflowed finite-input step */'
-
-run_stall_plant r318-stall-window-index nan-prefix \
-    'static int obs_stall_window_nonfinite(const ObserverSlot *s) {
-    size_t n = s->values_count;
-    size_t full = (size_t)observer_slot_window(s) + 1;
-    if (n > full) n = full;
-    if (!s->v_values) return 0;
-    for (size_t i = 0; i < n; i++) {
-        int idx = (int)s->values_head - 1 - (int)i;' \
-    'static int obs_stall_window_nonfinite(const ObserverSlot *s) {
-    size_t n = s->values_count;
-    size_t full = (size_t)observer_slot_window(s) + 1;
-    if (n > full) n = full;
-    if (!s->v_values) return 0;
-    for (size_t i = 0; i < n; i++) {
-        int idx = (int)s->values_head - (int)i;'
-
-run_stall_plant r319-stall-window-newest nan-newest \
-    'static int obs_stall_window_nonfinite(const ObserverSlot *s) {
-    size_t n = s->values_count;
-    size_t full = (size_t)observer_slot_window(s) + 1;
-    if (n > full) n = full;
-    if (!s->v_values) return 0;
-    for (size_t i = 0; i < n; i++) {
-        int idx = (int)s->values_head - 1 - (int)i;' \
-    'static int obs_stall_window_nonfinite(const ObserverSlot *s) {
-    size_t n = s->values_count;
-    size_t full = (size_t)observer_slot_window(s) + 1;
-    if (n > full) n = full;
-    if (!s->v_values) return 0;
-    for (size_t i = 0; i < n; i++) {
-        int idx = (int)s->values_head - 2 - (int)i;'
 
 # O3: count both sides of four, decimal window syntax and each installed
 # field, using the same exact MAP transcript. R32-1 deliberately permits a
