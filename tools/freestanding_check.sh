@@ -76,7 +76,7 @@ mkdir "$HOSTED_RNG_BUILD"
 HOSTED_RNG_OBJECTS=0
 for f in $HOSTED_SRC; do
     obj="$HOSTED_RNG_BUILD/$f.o"
-    if ! gcc -O0 -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 \
+    if ! gcc -O0 $WERROR_FLAGS -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 \
         -DEIGENSCRIPT_EXT_NET=0 -DEIGENSCRIPT_EXT_GFX=0 \
         -c "src/$f.c" -o "$obj"; then
         echo "FAIL: hosted RNG check could not build src/$f.c" >&2
