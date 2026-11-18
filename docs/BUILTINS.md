@@ -797,11 +797,17 @@ exactly the limit is served.
 `EIGS_HTTP_MAX_BODY` (default 16 MiB; an over-cap body gets `413`, an over-limit
 head `431`). What the server holds for one request is its head and its body;
 the bytes of a chunked body that are not data are read and dropped. Because that per-request cap times the concurrent-
-connection cap is still a large aggregate, the server also bounds the **total**
-request-body bytes in flight across *all* connections with
-`EIGS_HTTP_MAX_BODY_TOTAL` (default 128 MiB) — once exceeded, further
-connections are shed with `503` rather than letting concurrency × per-request
-size exhaust host memory.
+connection cap is still a large aggregate, the server also bounds what *all*
+connections hold at once with `EIGS_HTTP_MAX_BODY_TOTAL` (default 128 MiB), so
+that concurrency × per-request size cannot exhaust host memory. A connection is
+charged against it for the room it has taken: the 16,384 bytes it reads into
+(charged when the connection starts), a room for its head and a room for its
+body. A room starts at 1,024 bytes and doubles whenever the bytes held and one
+more byte no longer fit in it; the room for a body is cut at the body's limit
+and one byte, and the room for a head at the head's limit and one byte where
+that is more than 1,024. When a room grows and the charges of all connections
+then pass the budget, the request is answered `503`. All of a connection's
+charge is given back when it has ended, whatever the answer was.
 
 **Slow-loris bounds.** The server is thread-per-connection with a global cap of
 256 workers, so slow clients that each hold a worker are a denial-of-service
