@@ -22,6 +22,15 @@ rc_expect() {
     [ "$class" -eq 0 ] && return 0
     [ "$2" -eq "$1" ]
 }
+# A run's standard error holds nothing, or a report that the classifier calls
+# leak-only (rc_expect has printed it, so the section's rc_ok records it).
+# Anything else on standard error fails the row.
+quiet_or_leak_only() {
+    [ -s "$1" ] || return 0
+    local class=0
+    lsan_classify "$(cat "$1")" || class=$?
+    [ "$class" -eq 0 ]
+}
 
 # Clean control: the same kind of test file without the failing assertion.
 set +e
@@ -30,6 +39,7 @@ pass_rc=$?
 set -e
 pass_output=$(cat "$TMP/pass.out" "$TMP/pass.err")
 rc_expect 0 "$pass_rc" "$pass_output" || fail "all-passing control exited $pass_rc or emitted a sanitizer diagnostic"
+quiet_or_leak_only "$TMP/pass.err" || fail "all-passing control wrote to standard error"
 [ "$(tail -n 1 "$TMP/pass.out")" = "Files: 1 | Passed: 1 | Failed: 0" ] ||
     fail "all-passing control ended with an unexpected line"
 ok "all-passing run ends with its summary and exits 0"
@@ -40,8 +50,18 @@ fail_rc=$?
 set -e
 fail_output=$(cat "$TMP/fail.out")
 rc_expect 1 "$fail_rc" "$fail_output" || fail "failing run exited $fail_rc or emitted a sanitizer diagnostic"
-grep -Fx 'Files: 1 | Passed: 0 | Failed: 1' "$TMP/fail.out" >/dev/null ||
-    fail "failing run did not print its summary"
+# The summary is the LAST thing the run prints (#2197), with both streams in
+# the order they were written (the failing file's own trace comes before it).
+# The one thing that may follow it is a report the classifier calls leak-only,
+# which a sanitizer build writes at exit; rc_expect has printed it.
+fail_tail=$(sed -n '/^Files: 1 | Passed: 0 | Failed: 1$/,$p' "$TMP/fail.out")
+[ -n "$fail_tail" ] || fail "failing run did not print its summary"
+fail_after=$(printf '%s\n' "$fail_tail" | tail -n +2)
+if [ -n "$fail_after" ]; then
+    fail_after_class=0
+    lsan_classify "$fail_after" || fail_after_class=$?
+    [ "$fail_after_class" -eq 0 ] || fail "failing run printed something after its summary"
+fi
 ! grep -F 'lib/test_runner.eigs' "$TMP/fail.out" >/dev/null || fail "failing run printed a runner trace"
 ! grep -F 'test file(s) failed' "$TMP/fail.out" >/dev/null || fail "failing run raised a runner assertion"
 ok "failing run ends with its summary and exits 1 without a runner trace"
