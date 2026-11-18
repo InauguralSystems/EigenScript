@@ -1891,11 +1891,7 @@ jobs:
         env:
           TSAN_OPTIONS: halt_on_error=1
           # [45c] left out: its RSS gate deliberately skips sanitizer builds.
-          # [99s] left out: it starts a server for three rows of a differential
-          # about argument guards (tests/strict_shape_cases.json, http_context),
-          # through tests/test_http_server.sh --strict-shape; that script runs
-          # whole in [45].
-          EIGS_SUITE_SECTIONS: 0f2 44 45 45a 45b 45f 45g 45h 45i 45j
+          EIGS_SUITE_SECTIONS: 0f2 44 45 45a 45b 45f 45g 45h 45i 45j 99s
         run: |
           set -o pipefail
           setarch -R bash tests/run_all_tests.sh 2>&1 | tee "$RUNNER_TEMP/tsan-http.log"
