@@ -49,7 +49,7 @@ In-scope security issues:
   `include/llhttp.h` and `LICENSE-MIT` over the five files, put their sha256
   in `tools/vendor_llhttp_check.sh` (a `make precheck` row that fails when a
   vendored file is not the recorded release), and run the HTTP sections of the
-  suite, `[45i]` above all, which judges the server against a reference built
+  suite, `[45j]` above all, which judges the server against a reference built
   from the same parser.
 - Deserialization flaws in `model_io` when loading untrusted weight files.
 - SQL injection in the DB extension's own code paths. (Callers that
