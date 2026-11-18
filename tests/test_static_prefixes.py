@@ -54,7 +54,11 @@ def program(folder, source):
 
 
 def registration(prefix):
-    return f'http_static of [{json.dumps(prefix)}, "{FILES}"]\n'
+    literal = json.dumps(prefix)
+    # EigenScript string literals preserve raw non-newline control bytes; JSON's
+    # \u spelling is deliberately not part of the language.
+    literal = literal.replace('\\u001f', '\x1f').replace('\\u007f', '\x7f')
+    return f'http_static of [{literal}, "{FILES}"]\n'
 
 
 def request(port, path):
@@ -144,12 +148,30 @@ with tempfile.TemporaryDirectory(prefix='static-prefixes-') as directory:
     (OTHER / 'escape').symlink_to(Path(directory) / 'secret')
     for prefix, name in [('/s1', 'plain'), ('/s1/', 'trailing'), ('/s1///', 'many-trailing')]:
         row('SP2356-' + name, lambda p=prefix: fetch(registration(p), [('/s1/a.txt', (200, 'first'))]))
+    row('SP2363-percent-encoded', lambda: fetch(registration('/s%201'),
+        [('/s%201/a.txt', (200, 'first'))]))
     for prefix, name, message in [
         ('', 'empty', 'http_static: prefix must not be empty'),
         ('/', 'root', 'http_static: prefix must name a path segment (not only slashes)'),
         ('///', 'slashes', 'http_static: prefix must name a path segment (not only slashes)'),
         ('s1', 'relative', "http_static: prefix must begin with '/'")]:
         row('SP2356-' + name, lambda p=prefix, m=message: refusal(registration(p), 'value', m))
+    forbidden_reason = "must not contain '?', '#', bytes at or below 0x20, or 0x7F"
+    for prefix, name in [('/s?x', 'question'), ('/s#x', 'fragment'), ('/s x', 'space'),
+                         ('/s\x1fx', 'control'), ('/s\x7fx', 'delete')]:
+        message = f"http_static: prefix '{prefix}' {forbidden_reason}"
+        row('SP2363-' + name, lambda p=prefix, m=message:
+            refusal(registration(p), 'value', m))
+
+    def refused_is_atomic():
+        source = registration('/good') + 'try:\n' + \
+            '    ' + registration('/bad?x').rstrip() + '\ncatch e:\n' + \
+            '    print of e.kind\n' + \
+            ''.join(registration('/fill' + str(i)) for i in range(15))
+        fetch(source, [('/good/a.txt', (200, 'first')),
+                       ('/fill14/a.txt', (200, 'first')),
+                       ('/bad?x/a.txt', (404, '{"error": "not_found"}'))])
+    row('SP2363-refusal-is-atomic', refused_is_atomic)
     two = registration('/s1') + f'http_static of ["/s2", "{OTHER}"]\n'
     row('SP2357-two', lambda: fetch(two, [('/s1/a.txt', (200, 'first')), ('/s2/a.txt', (200, 'second'))]))
     parent = registration('/assets')
