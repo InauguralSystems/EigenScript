@@ -3,16 +3,54 @@ load_file of "lib/geometry.eigs"
 
 _EPSILON_2298 is 2.220446049250313e-16
 
-# 256 operations' worth of binary64 roundoff covers distance construction and
-# the intersection arithmetic, relative to each circle's radius and centre.
+# Copied byte for byte from `git show HEAD~1:lib/geometry.eigs`, except for
+# the function name, so this is the differential oracle for the branch base.
+define base_circle_intersection_points_2298(c1x, c1y, c1r, c2x, c2y, c2r) as:
+    dx is c2x - c1x
+    dy is c2y - c1y
+    d is sqrt of (dx * dx + dy * dy)
+    if d < _EPS:
+        return []
+    if d > c1r + c2r + _EPS:
+        return []
+    diff is c1r - c2r
+    if diff < 0:
+        diff is 0 - diff
+    if d + _EPS < diff:
+        return []
+    a is (c1r * c1r - c2r * c2r + d * d) / (2 * d)
+    h_sq is c1r * c1r - a * a
+    if h_sq < 0:
+        h_sq is 0
+    h is sqrt of h_sq
+    mx is c1x + a * dx / d
+    my is c1y + a * dy / d
+    if h < _EPS:
+        return [[mx, my]]
+    ox is h * dy / d
+    oy is h * dx / d
+    return [[mx + ox, my - oy], [mx - ox, my + oy]]
+
 define abs_2298(x) as:
     if x < 0:
         return 0 - x
     return x
 
-define assert_residuals_2298(circle, expected_count, description) as:
-    local points is circle_intersection_points of [circle[0], circle[1], circle[2], circle[3], circle[4], circle[5]]
-    assert_eq of [len of points, expected_count, description + " shape"]
+define max_input_2298(circle) as:
+    local magnitude is 1.0
+    for value in circle:
+        local candidate is abs_2298 of value
+        if candidate > magnitude:
+            magnitude is candidate
+    return magnitude
+
+# 512 binary64 epsilons times the largest magnitude among all six inputs
+# covers the distance and point construction (fewer than 32 rounded
+# operations), including cancellation after a pair has been moved.
+define result_is_right_2298(circle, points, expected_count) as:
+    if (len of points) != expected_count:
+        return false
+    local bound is 512 * _EPSILON_2298 * (max_input_2298 of circle)
     for point in points:
         local dx1 is point[0] - circle[0]
         local dy1 is point[1] - circle[1]
@@ -20,27 +58,98 @@ define assert_residuals_2298(circle, expected_count, description) as:
         local dy2 is point[1] - circle[4]
         local residual1 is abs_2298 of ((sqrt of (dx1 * dx1 + dy1 * dy1)) - circle[2])
         local residual2 is abs_2298 of ((sqrt of (dx2 * dx2 + dy2 * dy2)) - circle[5])
-        local bound1 is 256 * _EPSILON_2298 * (circle[2] + (abs_2298 of circle[0]) + (abs_2298 of circle[1]))
-        local bound2 is 256 * _EPSILON_2298 * (circle[5] + (abs_2298 of circle[3]) + (abs_2298 of circle[4]))
-        assert_true of [residual1 <= bound1, description + " point on first circle"]
-        assert_true of [residual2 <= bound2, description + " point on second circle"]
+        if residual1 > bound or residual2 > bound:
+            return false
+    return true
 
-issue is [0, 0, 1771450.845521109, 1771450.8459096379, 0, 0.01874238839135805]
-assert_residuals_2298 of [issue, 2, "issue"]
-assert_residuals_2298 of [[issue[3], issue[4], issue[5], issue[0], issue[1], issue[2]], 2, "swapped"]
-assert_residuals_2298 of [[0, 0, issue[2], issue[3], 0 - issue[4], issue[5]], 2, "mirrored in x"]
-assert_residuals_2298 of [[0, 0, issue[2], 0 - issue[3], issue[4], issue[5]], 2, "mirrored in y"]
-assert_residuals_2298 of [[0, 0, issue[2] * 1e-6, issue[3] * 1e-6, 0, issue[5] * 1e-6], 2, "scaled down"]
-assert_residuals_2298 of [[0, 0, issue[2] * 1e6, issue[3] * 1e6, 0, issue[5] * 1e6], 2, "scaled up"]
+define new_points_2298(circle) as:
+    return circle_intersection_points of [circle[0], circle[1], circle[2], circle[3], circle[4], circle[5]]
 
-for ratio in [1e3, 1e6, 1e8, 1e10]:
-    assert_residuals_2298 of [[0, 0, ratio, ratio + 0.5, 0, 1], 2, "radius-ratio crossing"]
+define base_points_2298(circle) as:
+    return base_circle_intersection_points_2298 of [circle[0], circle[1], circle[2], circle[3], circle[4], circle[5]]
 
-assert_residuals_2298 of [[0, 0, 1, 1, 0, 1], 2, "equal circles"]
-assert_residuals_2298 of [[0, 0, 2, 1, 0, 1], 1, "internal tangent"]
-assert_residuals_2298 of [[0, 0, 1, 2, 0, 1], 1, "external tangent"]
-assert_residuals_2298 of [[0, 0, 3, 1, 0, 1], 0, "contained"]
-assert_residuals_2298 of [[0, 0, 1, 0, 0, 1], 0, "concentric"]
-assert_residuals_2298 of [[0, 0, 1, 3, 0, 1], 0, "apart"]
+both_right_2298 is 0
+base_wrong_new_right_2298 is 0
+base_right_new_wrong_2298 is 0
+both_wrong_2298 is 0
+population_2298 is 0
 
+define classify_2298(circle, expected_count) as:
+    population_2298 is population_2298 + 1
+    local base_right is result_is_right_2298 of [circle, base_points_2298 of circle, expected_count]
+    local new_right is result_is_right_2298 of [circle, new_points_2298 of circle, expected_count]
+    if base_right and new_right:
+        both_right_2298 is both_right_2298 + 1
+    if (not base_right) and new_right:
+        base_wrong_new_right_2298 is base_wrong_new_right_2298 + 1
+    if base_right and (not new_right):
+        base_right_new_wrong_2298 is base_right_new_wrong_2298 + 1
+    if (not base_right) and (not new_right):
+        both_wrong_2298 is both_wrong_2298 + 1
+
+define variant_2298(circle, variant) as:
+    if variant == 0:
+        return circle
+    if variant == 1:
+        return [circle[3], circle[4], circle[5], circle[0], circle[1], circle[2]]
+    if variant == 2:
+        return [0 - circle[0], circle[1], circle[2], 0 - circle[3], circle[4], circle[5]]
+    # Move the second circle to the origin without changing the dealt offset.
+    return [circle[0] - circle[3], circle[1] - circle[4], circle[2], 0, 0, circle[5]]
+
+# Exact external and internal tangencies in a 3-4-5 direction, at every
+# requested ratio and scale; variants cover swapping, mirroring, and moving
+# the other circle to the origin.
+for exact_ratio in [1, 1e3, 1e6, 1e8, 1e10]:
+    for exact_scale in [1e-6, 1, 1e6]:
+        local exact_large is exact_ratio * exact_scale
+        local outer_d is exact_large + exact_scale
+        for exact_variant in range of [0, 4]:
+            local outer_circle is variant_2298 of ([0, 0, exact_large, 3 * outer_d / 5, 4 * outer_d / 5, exact_scale])
+            assert_true of [result_is_right_2298 of [outer_circle, new_points_2298 of outer_circle, 1], "off-axis external tangent"]
+        if exact_ratio != 1:
+            local inner_d is exact_large - exact_scale
+            for exact_variant in range of [0, 4]:
+                local inner_circle is variant_2298 of ([0, 0, exact_large, 3 * inner_d / 5, 4 * inner_d / 5, exact_scale])
+                assert_true of [result_is_right_2298 of [inner_circle, new_points_2298 of inner_circle, 1], "off-axis internal tangent"]
+
+# Fixed review rows and a genuinely mirrored nonzero x coordinate.
+for row in [
+    [0, 0, 987654321.0, 1011111110.0, 0, 23456789.0],
+    [0.0, 0.0, 789728515.625, 774256835.9375, 0.0, 15471679.6875],
+    [13.0, 0.0, 2.0, 16.0, 0.0, 1.0],
+    [-13.0, 0.0, 2.0, -16.0, 0.0, 1.0]
+]:
+    assert_true of [result_is_right_2298 of [row, new_points_2298 of row, 1], "fixed exact tangent"]
+
+moved_issue_2298 is [-1771450.8459096379, 0.0, 1771450.845521109, 0.0, 0.0, 0.01874238839135805]
+assert_true of [result_is_right_2298 of [moved_issue_2298, new_points_2298 of moved_issue_2298, 2], "moved issue residual"]
+assert_false of [result_is_right_2298 of [moved_issue_2298, base_points_2298 of moved_issue_2298, 2], "base issue residual"]
+
+# Seed is fixed even though classes and variants, rather than random outcomes,
+# determine the expected count.
+seed_random of 2298
+for ratio in [1, 1e3, 1e6, 1e8, 1e10]:
+    for scale in [1e-6, 1, 1e6]:
+        for repetition in range of [0, 12]:
+            local large is ratio * scale
+            local small is scale
+            for variant in range of [0, 4]:
+                # Crossing has h far above 1e-6 * small; exact tangency has h=0.
+                classify_2298 of [variant_2298 of ([0, 0, large, large - 0.5 * small, 0, small]), 2]
+                classify_2298 of [variant_2298 of ([0, 0, large, large + small, 0, small]), 1]
+                classify_2298 of [variant_2298 of ([0, 0, large, large + 2 * small, 0, small]), 0]
+                if ratio == 1:
+                    classify_2298 of [variant_2298 of ([0, 0, large, 0, 0, small]), 0]
+                else:
+                    classify_2298 of [variant_2298 of ([0, 0, large, large - small, 0, small]), 1]
+                    classify_2298 of [variant_2298 of ([0, 0, large, large - 2 * small, 0, small]), 0]
+                classify_2298 of [variant_2298 of ([0, 0, scale, 0, 0, scale]), 0]
+
+print of ["differential", both_right_2298, base_wrong_new_right_2298, base_right_new_wrong_2298, both_wrong_2298]
+assert_true of [population_2298 >= 2000, "dealt population size"]
+assert_true of [population_2298 > 0, "nonempty population"]
+assert_eq of [base_right_new_wrong_2298, 0, "no regression against base"]
+assert_eq of [both_wrong_2298, 0, "all dealt cases covered"]
+assert_true of [base_wrong_new_right_2298 > 0, "differential demonstrates fix"]
 test_summary of null

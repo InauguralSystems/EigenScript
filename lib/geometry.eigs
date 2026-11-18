@@ -666,6 +666,22 @@ define circle_intersection_points(c1x, c1y, c1r, c2x, c2y, c2r) as:
         diff is 0 - diff
     if d + _EPS < diff:
         return []
+    # d uses two subtractions, two products, an addition and sqrt; comparing
+    # it with the rounded radius sum/difference adds two more roundings.
+    # Each operation can lose a bit through cancellation in the 3-4-5 distance;
+    # a 256-ulps-per-operation bound for those eight operations, relative to
+    # the smaller circle, distinguishes roundoff from a meaningful gap.
+    small_r is c1r
+    if c2r < small_r:
+        small_r is c2r
+    tangent_tolerance is 2048 * _FLOAT_EPS * small_r
+    outer_gap is d - (c1r + c2r)
+    if outer_gap < 0:
+        outer_gap is 0 - outer_gap
+    inner_gap is d - diff
+    if inner_gap < 0:
+        inner_gap is 0 - inner_gap
+    tangent is outer_gap <= tangent_tolerance or inner_gap <= tangent_tolerance
     a is (c1r * c1r - c2r * c2r + d * d) / (2 * d)
     if c2r < c1r:
         # Compute the offset from circle 2 directly; d - a would cancel.
@@ -673,12 +689,17 @@ define circle_intersection_points(c1x, c1y, c1r, c2x, c2y, c2r) as:
         h_sq is c2r * c2r - b * b
     else:
         h_sq is c1r * c1r - a * a
-    if h_sq < 0:
+    # h_sq follows two products, one addition/subtraction, and a division in
+    # b (or a), then two products and a subtraction here.  Six rounded
+    # operations can leave a few ulps at zero; 16 binary64 epsilons of the
+    # smaller radius squared conservatively cover their accumulated error.
+    h_sq_tolerance is 16 * _FLOAT_EPS * small_r * small_r
+    if tangent or h_sq <= h_sq_tolerance:
         h_sq is 0
     h is sqrt of h_sq
     mx is c1x + a * dx / d
     my is c1y + a * dy / d
-    if h < _EPS:
+    if h == 0:
         return [[mx, my]]
     ox is h * dy / d
     oy is h * dx / d
