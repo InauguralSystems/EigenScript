@@ -410,7 +410,9 @@ section_group_violations() {
 
 check_section_groups() {
     local table="$1" groups="$2" bad
-    bad=$(section_group_violations "$table" "$groups")
+    # An audit that could not run is a failure, not a clean result.
+    bad=$(section_group_violations "$table" "$groups") ||
+        die "section group audit could not run on $table and $groups"
     if [ -n "$bad" ]; then
         die "section grouping split headerless chunks from their nearest preceding header: $bad"
     fi
@@ -1105,15 +1107,15 @@ selftest() {
     expect_red 'check_chunk_count: vacuous chunk population falls below floor' 'chunk enumeration examined' \
         "$dir/bad-count.sh" --root "$SP_ROOT" --chunks --quiet
     expect_ok 'control: complete, disjoint shard assignment and count sync' "$0" --root "$SP_ROOT" --shards 3 --check --quiet
-    # Derive the planted population with the validator's own enumeration.
-    # Neither physical coordinates nor the number of headerless chunks belong
-    # in this expectation: both legitimately move as the runner grows.
+    # The planted split puts every chunk in a group of its own, so every
+    # headerless chunk that follows a header is split from it. Count those
+    # from the chunk table here, with no code of the validator: a validator
+    # that miscounts must turn this case red. Neither a line number nor a
+    # pinned count belongs in the expectation: both move as the runner grows.
     derive_chunks "$RUNNER" > "$dir/group-chunks"
-    awk '{ print $1, $1 }' "$dir/group-chunks" > "$dir/group-split"
-    group_bad=$(section_group_violations "$dir/group-chunks" "$dir/group-split")
-    group_population=${group_bad%%;*}
-    [ -n "$group_population" ] || { echo "  FAIL: section groups: planted split population is empty"; fail=$((fail + 1)); }
-    expect_red 'section groups: headerless body split from nearest header is refused' "section grouping split headerless chunks from their nearest preceding header: ${group_population:-count=none};" \
+    group_count=$(awk 'NF > 2 { seen = 1; next } seen { n++ } END { print n + 0 }' "$dir/group-chunks")
+    [ "$group_count" -gt 0 ] || { echo "  FAIL: section groups: planted split population is empty"; fail=$((fail + 1)); }
+    expect_red 'section groups: headerless body split from nearest header is refused' "section grouping split headerless chunks from their nearest preceding header: count=$group_count;" \
         env SP_SECTION_GROUP_MUTATE=split "$0" --root "$SP_ROOT" --runner "$RUNNER_SOURCE" --shards 3 --check --quiet
     expect_red 'shard_check: missing chunk makes union != full' 'union != full' \
         env SP_SHARD_MUTATE=drop "$0" --root "$SP_ROOT" --shards 3 --check --quiet
