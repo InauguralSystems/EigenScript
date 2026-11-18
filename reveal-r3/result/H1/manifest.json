@@ -1,0 +1,65 @@
+{
+ "arms": {
+  "ANCHOR": {
+   "binary_sha256": "c5c288bc5907fe323fcaff83ff06c7f50c8d1ca0f860e94d3366c9ad226277d6",
+   "lib": "e3af3198df33f0afaddf70ae7b94298e0bd841c2976852669e8daec42682fcbe",
+   "recipe_id": "f8da66db6655542289b40a381c4bf47a39534c9f3fc5b7c365d170d3c7853ce1",
+   "source_sha": "4a3a5c1941568e9bc562c7c8221cff22dc8ba697",
+   "stamp_binary_sha256": "c5c288bc5907fe323fcaff83ff06c7f50c8d1ca0f860e94d3366c9ad226277d6"
+  },
+  "CF": {
+   "binary_sha256": "f7d595455b00b3e30f5bacd20c715513ee58862a9d3edf7ed797d17ade64c0ff",
+   "lib": "188af60bce425bf36b65a47a20f3afa456671708475c5f6e6cec85d26f8a411f",
+   "recipe_id": "9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27",
+   "source_sha": "3d8a14b49e88a59a37e1d3501891afe2d430ffcb",
+   "stamp_binary_sha256": "f7d595455b00b3e30f5bacd20c715513ee58862a9d3edf7ed797d17ade64c0ff"
+  },
+  "INC": {
+   "binary_sha256": "f7d595455b00b3e30f5bacd20c715513ee58862a9d3edf7ed797d17ade64c0ff",
+   "lib": "188af60bce425bf36b65a47a20f3afa456671708475c5f6e6cec85d26f8a411f",
+   "recipe_id": "9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27",
+   "source_sha": "3d8a14b49e88a59a37e1d3501891afe2d430ffcb",
+   "stamp_binary_sha256": "f7d595455b00b3e30f5bacd20c715513ee58862a9d3edf7ed797d17ade64c0ff"
+  },
+  "R3": {
+   "binary_sha256": "4152fbd474db4b04157bbdf0c8d5e87f118c51e3e18e5f3d3ab365a09f47167c",
+   "lib": "d23abbdcea05a5d5718be530fdd9d1ebb22c38cba2a00c1a72c7779c0c9416a1",
+   "recipe_id": "9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27",
+   "source_sha": "5b93b236720c202f62d950e25ec9b888091cd809",
+   "stamp_binary_sha256": "4152fbd474db4b04157bbdf0c8d5e87f118c51e3e18e5f3d3ab365a09f47167c"
+  },
+  "R3-STD": {
+   "binary_sha256": "4c34761297d437055caac2d88f198bbbed0e950070a5f33fed29b8ff7b79f8c8",
+   "lib": "d23abbdcea05a5d5718be530fdd9d1ebb22c38cba2a00c1a72c7779c0c9416a1",
+   "recipe_id": "9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27",
+   "source_sha": "3eed5cafd678665ba1d0667fb73ce1b1437fa724",
+   "stamp_binary_sha256": "4c34761297d437055caac2d88f198bbbed0e950070a5f33fed29b8ff7b79f8c8"
+  },
+  "W4": {
+   "binary_sha256": "99d6cf5c83c14d2390dfd6e20ca9093390b7a4980351eb29ac8485ddf1c29963",
+   "lib": "188af60bce425bf36b65a47a20f3afa456671708475c5f6e6cec85d26f8a411f",
+   "recipe_id": "d408a24dd1da205fe272fd90dde29bc7e4a206fde721caee820f27c938cf5b13",
+   "source_sha": "3d8a14b49e88a59a37e1d3501891afe2d430ffcb",
+   "stamp_binary_sha256": "99d6cf5c83c14d2390dfd6e20ca9093390b7a4980351eb29ac8485ddf1c29963"
+  }
+ },
+ "code": {
+  "native_witness.py": "3eea544572aaf14d3808cb468d850c2e99756e0d63d378f03917e9e23e764252",
+  "observer_oracle/derive.py": "a379bbda4571d21f59aa413113b2e5db2c7252c86e4f3a59534efdeb4cd1cee8",
+  "observer_oracle/families.py": "3acedd906d78b9a15389d25d9404b3d778a46d8ca665d72b503ce16f32f2268e",
+  "observer_oracle/gen.py": "6911560a73a1fd8749d0c96008a778ce184e71e2ec40468757b13638656caeb5",
+  "observer_oracle/judge.py": "c456dbc36fb1c65d762ba7e96a4e8c49ceffb5dba5a0713eb1a4ffd6dd33bbaa",
+  "observer_oracle/plants.py": "be69e978d07dec0a68c1ac252e7ab233a53044acec6c9124d9c86a55a22950b3",
+  "observer_oracle/reference.py": "fa74d83f23422f5ddee9b30dc0f133417f98d9d8e7f9806151233d9e18ca1993",
+  "observer_oracle/schema.py": "199f7401adba63740b4b8db4aaa4e9450297d4709b679b941f0b88c193abbb33",
+  "observer_oracle/score.py": "e74b1c84d5e2e7f019e946d4cd4807fd418c67d7541ee5c1bde1063d1bc267e4",
+  "observer_oracle/standard.py": "3830286c043babdf1064e9d762b38968e974ed71880c86839cb85f0f903d44e3"
+ },
+ "format": "r3-manifest/3",
+ "programs": "4ce8fb649bf67b9c8cc9760dc152423f67edd96b598e64d410ffc44115d849c9",
+ "set": {
+  "certificate.json": "f627eeb9e7db4e4a873fb700e0f10fa83ceb6c48c1d9a92e8e582b8494ca3e59",
+  "corpus.json": "85be07d96390ad23f583d640be4fe46fa7a1d4affde37e82bf7125535e016cff",
+  "labels.json": "22ed149951e75ae83cdf0c867aef228f0a407133a74f588f7e7dd2b4bccdf644"
+ }
+}

@@ -1,0 +1,2300 @@
+manifest verified: /home/runner/work/EigenScript/EigenScript/build/reveal-result/hcal/manifest.json sha256 5a9452e7fe5e209520dda2b04185fbf6835e297da50a2326e672b7d4c2f8d0e6 (10 code files derived from the import graph)
+  arm ANCHOR: source 4a3a5c194156 recipe f8da66db6655 binary c5c288bc5907 (as sealed)
+  arm CF: source 3d8a14b49e88 recipe 9f05a3776920 binary f7d595455b00 (as sealed)
+  arm INC: source 3d8a14b49e88 recipe 9f05a3776920 binary f7d595455b00 (as sealed)
+  arm R3: source 5b93b236720c recipe 9f05a3776920 binary 4152fbd474db (as sealed)
+  arm R3-STD: source 3eed5cafd678 recipe 9f05a3776920 binary 4c34761297d4 (as sealed)
+  arm W4: source 3d8a14b49e88 recipe d408a24dd1da binary 99d6cf5c83c1 (as sealed)
+corpus ../hcal/corpus.json: 32 rows, sha256 47f9fedd37bf4cd56d86f781aa8995a9791fe404f56351dba712727825f06b0d
+python 3.12.3; seed 1758 (run order and bootstrap); 10000 resamples; reference.py fa74d83f23422f5d; standard.py 3830286c043babdf; families.py 3acedd906d78b9a1
+runtime arm ANCHOR: /home/runner/work/EigenScript/EigenScript/build/observer-reveal/cache/eigs-oracle-anchor/f8da66db6655542289b40a381c4bf47a39534c9f3fc5b7c365d170d3c7853ce1/build/release/eigenscript
+runtime arm CF: /tmp/judge_cf_7accx1dg/o/obs_const_false
+runtime arm INC: /home/runner/work/EigenScript/EigenScript/build/observer-reveal/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/3d8a14b49e88a59a37e1d3501891afe2d430ffcb/build/release/eigenscript
+runtime arm R3: /home/runner/work/EigenScript/EigenScript/build/observer-reveal/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/5b93b236720c202f62d950e25ec9b888091cd809/build/release/eigenscript
+runtime arm R3-STD: /home/runner/work/EigenScript/EigenScript/build/observer-reveal/cache/eigs-oracle-arms/9f05a37769200bc9ff6025ef3187f8cb8efc4a53e0106731741fe979d2f7cd27/3eed5cafd678665ba1d0667fb73ce1b1437fa724/build/release/eigenscript
+runtime arm W4: /home/runner/work/EigenScript/EigenScript/build/observer-reveal/cache/eigs-oracle-w4/d408a24dd1da205fe272fd90dde29bc7e4a206fde721caee820f27c938cf5b13/3d8a14b49e88a59a37e1d3501891afe2d430ffcb/build/release/eigenscript
+population: 32 of 32 rows, 96 checkpoints, 576 scored verdicts per arm; arms: ANCHOR, CF, INC, R3, R3-STD, W4, STD, STD', STD'', D2, REF, C0, C1, PERSIST, T001
+run order: 192 (arm, row) pairs shuffled by random.Random(1758), sha256 1594a5a9462da475
+
+BALANCED ACCURACY per arm x predicate: TP FP FN TN, raw right/total, BA [95% paired-bootstrap CI], FPR
+  converged
+    ANCHOR     24    0   26   46  raw   70/96   BA  0.7400 [ 0.6894,  0.7895] FPR  0.0000
+    CF          0    0   50   46  raw   46/96   BA  0.5000 [ 0.5000,  0.5000] FPR  0.0000
+    INC        24    0   26   46  raw   70/96   BA  0.7400 [ 0.6894,  0.7895] FPR  0.0000
+    R3         24    0   26   46  raw   70/96   BA  0.7400 [ 0.6894,  0.7895] FPR  0.0000
+    R3-STD     24    0   26   46  raw   70/96   BA  0.7400 [ 0.6894,  0.7895] FPR  0.0000
+    W4         31    1   19   45  raw   76/96   BA  0.7991 [ 0.7623,  0.8413] FPR  0.0217
+    STD        24    0   26   46  raw   70/96   BA  0.7400 [ 0.6894,  0.7895] FPR  0.0000
+    STD'       24    0   26   46  raw   70/96   BA  0.7400 [ 0.6894,  0.7895] FPR  0.0000
+    REF        24    0   26   46  raw   70/96   BA  0.7400 [ 0.6894,  0.7895] FPR  0.0000
+    C0          0    0   50   46  raw   46/96   BA  0.5000 [ 0.5000,  0.5000] FPR  0.0000
+    C1          0    0   50   46  raw   46/96   BA  0.5000 [ 0.5000,  0.5000] FPR  0.0000
+    PERSIST    37    2   13   44  raw   81/96   BA  0.8483 [ 0.7670,  0.9240] FPR  0.0435
+    T001       13    0   37   46  raw   59/96   BA  0.6300 [ 0.5814,  0.6810] FPR  0.0000
+  stable
+    ANCHOR     30    2   24   40  raw   70/96   BA  0.7540 [ 0.6893,  0.8229] FPR  0.0476
+    CF          0    0   54   42  raw   42/96   BA  0.5000 [ 0.5000,  0.5000] FPR  0.0000
+    INC        30    2   24   40  raw   70/96   BA  0.7540 [ 0.6893,  0.8229] FPR  0.0476
+    R3         35    2   19   40  raw   75/96   BA  0.8003 [ 0.7242,  0.8804] FPR  0.0476
+    R3-STD     35    2   19   40  raw   75/96   BA  0.8003 [ 0.7242,  0.8804] FPR  0.0476
+    W4         41    3   13   39  raw   80/96   BA  0.8439 [ 0.7831,  0.9012] FPR  0.0714
+    STD        38    2   16   40  raw   78/96   BA  0.8280 [ 0.7455,  0.9124] FPR  0.0476
+    STD'       35    2   19   40  raw   75/96   BA  0.8003 [ 0.7242,  0.8804] FPR  0.0476
+    REF        35    2   19   40  raw   75/96   BA  0.8003 [ 0.7242,  0.8804] FPR  0.0476
+    C0          0    0   54   42  raw   42/96   BA  0.5000 [ 0.5000,  0.5000] FPR  0.0000
+    C1          0    0   54   42  raw   42/96   BA  0.5000 [ 0.5000,  0.5000] FPR  0.0000
+    PERSIST    37    2   17   40  raw   77/96   BA  0.8188 [ 0.7386,  0.9019] FPR  0.0476
+  improving
+    ANCHOR      7    6    5   78  raw   85/96   BA  0.7560 [ 0.4670,  0.9226] FPR  0.0714  (4 resamples undefined)
+    CF          0    0   12   84  raw   84/96   BA  0.5000 [ 0.5000,  0.5000] FPR  0.0000  (4 resamples undefined)
+    INC         7    0    5   84  raw   91/96   BA  0.7917 [ 0.5000,  0.9545] FPR  0.0000  (4 resamples undefined)
+    R3         11    0    1   84  raw   95/96   BA  0.9583 [ 0.8333,  1.0000] FPR  0.0000  (4 resamples undefined)
+    R3-STD     11    0    1   84  raw   95/96   BA  0.9583 [ 0.8333,  1.0000] FPR  0.0000  (4 resamples undefined)
+    W4          4    2    8   82  raw   86/96   BA  0.6548 [ 0.4826,  0.8726] FPR  0.0238  (4 resamples undefined)
+    STD         6    6    6   78  raw   84/96   BA  0.7143 [ 0.5389,  0.8716] FPR  0.0714  (4 resamples undefined)
+    STD'       12   48    0   36  raw   48/96   BA  0.7143 [ 0.6542,  0.7734] FPR  0.5714  (4 resamples undefined)
+    D2         11    0    1   84  raw   95/96   BA  0.9583 [ 0.8333,  1.0000] FPR  0.0000  (4 resamples undefined)
+    REF         6    6    6   78  raw   84/96   BA  0.7143 [ 0.5389,  0.8716] FPR  0.0714  (4 resamples undefined)
+    C0          0    0   12   84  raw   84/96   BA  0.5000 [ 0.5000,  0.5000] FPR  0.0000  (4 resamples undefined)
+    C1          0    0   12   84  raw   84/96   BA  0.5000 [ 0.5000,  0.5000] FPR  0.0000  (4 resamples undefined)
+  oscillating
+    ANCHOR      3   30   21   42  raw   45/96   BA  0.3542 [ 0.2416,  0.5119] FPR  0.4167
+    CF          0    0   24   72  raw   72/96   BA  0.5000 [ 0.5000,  0.5000] FPR  0.0000
+    INC         3   30   21   42  raw   45/96   BA  0.3542 [ 0.2416,  0.5119] FPR  0.4167
+    R3          3   30   21   42  raw   45/96   BA  0.3542 [ 0.2416,  0.5119] FPR  0.4167
+    R3-STD      3   30   21   42  raw   45/96   BA  0.3542 [ 0.2416,  0.5119] FPR  0.4167
+    W4          3   18   21   54  raw   57/96   BA  0.4375 [ 0.3272,  0.5945] FPR  0.2500
+    STD        15   16    9   56  raw   71/96   BA  0.7014 [ 0.5278,  0.8621] FPR  0.2222
+    STD'        3   38   21   34  raw   37/96   BA  0.2986 [ 0.1603,  0.4679] FPR  0.5278
+    REF        15   16    9   56  raw   71/96   BA  0.7014 [ 0.5278,  0.8621] FPR  0.2222
+    C0          0    0   24   72  raw   72/96   BA  0.5000 [ 0.5000,  0.5000] FPR  0.0000
+    C1          0    0   24   72  raw   72/96   BA  0.5000 [ 0.5000,  0.5000] FPR  0.0000
+  diverging
+    ANCHOR      0    9    0   87  raw   87/96   BA   undef [  undef,   undef] FPR  0.0938  (10000 resamples undefined)
+    CF          0    0    0   96  raw   96/96   BA   undef [  undef,   undef] FPR  0.0000  (10000 resamples undefined)
+    INC         0    9    0   87  raw   87/96   BA   undef [  undef,   undef] FPR  0.0938  (10000 resamples undefined)
+    R3          0    9    0   87  raw   87/96   BA   undef [  undef,   undef] FPR  0.0938  (10000 resamples undefined)
+    R3-STD      0    9    0   87  raw   87/96   BA   undef [  undef,   undef] FPR  0.0938  (10000 resamples undefined)
+    W4          0    6    0   90  raw   90/96   BA   undef [  undef,   undef] FPR  0.0625  (10000 resamples undefined)
+    STD         0   13    0   83  raw   83/96   BA   undef [  undef,   undef] FPR  0.1354  (10000 resamples undefined)
+    STD'        0    9    0   87  raw   87/96   BA   undef [  undef,   undef] FPR  0.0938  (10000 resamples undefined)
+    REF         0    9    0   87  raw   87/96   BA   undef [  undef,   undef] FPR  0.0938  (10000 resamples undefined)
+    C0          0    0    0   96  raw   96/96   BA   undef [  undef,   undef] FPR  0.0000  (10000 resamples undefined)
+    C1          0    0    0   96  raw   96/96   BA   undef [  undef,   undef] FPR  0.0000  (10000 resamples undefined)
+  equilibrium
+    ANCHOR      0   28    0   68  raw   68/96   BA   undef [  undef,   undef] FPR  0.2917  (10000 resamples undefined)
+    CF          0    0    0   96  raw   96/96   BA   undef [  undef,   undef] FPR  0.0000  (10000 resamples undefined)
+    INC         0   17    0   79  raw   79/96   BA   undef [  undef,   undef] FPR  0.1771  (10000 resamples undefined)
+    R3          0   17    0   79  raw   79/96   BA   undef [  undef,   undef] FPR  0.1771  (10000 resamples undefined)
+    R3-STD      0   17    0   79  raw   79/96   BA   undef [  undef,   undef] FPR  0.1771  (10000 resamples undefined)
+    W4          0   18    0   78  raw   78/96   BA   undef [  undef,   undef] FPR  0.1875  (10000 resamples undefined)
+    STD         0   27    0   69  raw   69/96   BA   undef [  undef,   undef] FPR  0.2812  (10000 resamples undefined)
+    STD'        0   52    0   44  raw   44/96   BA   undef [  undef,   undef] FPR  0.5417  (10000 resamples undefined)
+    STD''       0   65    0   31  raw   31/96   BA   undef [  undef,   undef] FPR  0.6771  (10000 resamples undefined)
+    REF         0   65    0   31  raw   31/96   BA   undef [  undef,   undef] FPR  0.6771  (10000 resamples undefined)
+    C0          0    0    0   96  raw   96/96   BA   undef [  undef,   undef] FPR  0.0000  (10000 resamples undefined)
+    C1          0    0    0   96  raw   96/96   BA   undef [  undef,   undef] FPR  0.0000  (10000 resamples undefined)
+    PERSIST     0   17    0   79  raw   79/96   BA   undef [  undef,   undef] FPR  0.1771  (10000 resamples undefined)
+
+REPORT LABEL accuracy (canonical priority oscillating > diverging > improving > converged > equilibrium > stable > moving), 96 fully scored checkpoints:
+  ANCHOR   34/96
+  CF       16/96
+  INC      36/96
+  R3       38/96
+  R3-STD   38/96
+  W4       39/96
+  STD      49/96
+  STD'     16/96
+  REF      46/96
+  C0       16/96
+  C1       16/96
+
+FORECAST accuracy (settled verdict at n against |x_{n+k} - x_n| <= tol for k = 1..40; tol = eps for converged, band for stable); rows whose generator cannot run 40 steps on: none
+  converged: ANCHOR 83/96, CF 59/96, INC 83/96, R3 83/96, R3-STD 83/96, W4 85/96, STD 83/96, STD' 83/96, REF 83/96, C0 59/96, C1 59/96, PERSIST 76/96, T001 72/96
+  stable: ANCHOR 71/96, CF 43/96, INC 71/96, R3 76/96, R3-STD 76/96, W4 81/96, STD 79/96, STD' 76/96, REF 76/96, C0 43/96, C1 43/96, PERSIST 78/96
+
+UNIT FLIPS on family 15: examined=0 declared=0 copies, 0 bases above the floor, 0 comparisons; flips per arm and predicate (nonzero): none
+
+DECISION RULES (pre-registration; subject R3; STD = the primary STD_p; amendment: R3-STD = R3-STD):
+  converged    1 standard parity      PASS: lower CI of BA(R3) - BA(STD) =  0.0000 > -0.05
+  converged    2 vs INC               FAIL: BA(R3) - BA(INC) =  0.0000 >= +0.05, lower CI  0.0000 > 0
+  converged    2 vs R3-STD            FAIL: BA(R3) - BA(R3-STD) =  0.0000 >= +0.05, lower CI  0.0000 > 0
+  converged    3 safety               PASS: FPR(R3)  0.0000 <= min(FPR(INC)  0.0000, FPR(STD) + 0.02)
+  converged    4 trivial floor        PASS: BA(R3) =  0.7400 >= 0.65
+  converged    5 unit invariance      NOT EVALUATED: 0 converged flips of R3, examined=0 declared=0
+  converged    6 existing gates       PASS: --floor exit 0; #1830/R3 declarations 0
+  converged    => FAIL
+  stable       1 standard parity      FAIL: lower CI of BA(R3) - BA(STD) = -0.0614 > -0.05
+  stable       2 vs INC               FAIL: BA(R3) - BA(INC) =  0.0463 >= +0.05, lower CI -0.0081 > 0
+  stable       2 vs R3-STD            FAIL: BA(R3) - BA(R3-STD) =  0.0000 >= +0.05, lower CI  0.0000 > 0
+  stable       3 safety               PASS: FPR(R3)  0.0476 <= min(FPR(INC)  0.0476, FPR(STD) + 0.02)
+  stable       4 trivial floor        PASS: BA(R3) =  0.8003 >= 0.65
+  stable       5 unit invariance      NOT EVALUATED: 0 stable flips of R3, examined=0 declared=0
+  stable       6 existing gates       PASS: --floor exit 0; #1830/R3 declarations 0
+  stable       => FAIL
+  improving    1 standard parity      PASS: lower CI of BA(R3) - BA(STD) =  0.0849 > -0.05
+  improving    2 vs INC               PASS: lower CI of BA(R3) - BA(INC) =  0.0000 > -0.02
+  improving    4 trivial floor        PASS: BA(R3) =  0.9583 >= 0.65
+  improving    5 unit invariance      NOT EVALUATED: 0 improving flips of R3, examined=0 declared=0
+  improving    6 existing gates       PASS: --floor exit 0; #1830/R3 declarations 0
+  improving    => INCOMPLETE
+  oscillating  1 standard parity      FAIL: lower CI of BA(R3) - BA(STD) = -0.5278 > -0.05
+  oscillating  2 vs INC               PASS: lower CI of BA(R3) - BA(INC) =  0.0000 > -0.02
+  oscillating  4 trivial floor        FAIL: BA(R3) =  0.3542 >= 0.65
+  oscillating  5 unit invariance      NOT EVALUATED: 0 oscillating flips of R3, examined=0 declared=0
+  oscillating  6 existing gates       PASS: --floor exit 0; #1830/R3 declarations 0
+  oscillating  => FAIL
+  diverging    1 standard parity      NOT EVALUATED: lower CI of BA(R3) - BA(STD) =   undef > -0.05
+  diverging    2 vs INC               NOT EVALUATED: lower CI of BA(R3) - BA(INC) =   undef > -0.02
+  diverging    3 safety               PASS: FPR(R3)  0.0938 <= FPR(INC)  0.0938
+  diverging    4 trivial floor        NOT EVALUATED: BA(R3) =   undef >= 0.65
+  diverging    5 unit invariance      NOT EVALUATED: 0 diverging flips of R3, examined=0 declared=0
+  diverging    6 existing gates       PASS: --floor exit 0; #1830/R3 declarations 0
+  diverging    => INCOMPLETE
+  equilibrium  1 standard parity      NOT EVALUATED: lower CI of BA(R3) - BA(STD) =   undef > -0.05
+  equilibrium  2 vs INC               NOT EVALUATED: lower CI of BA(R3) - BA(INC) =   undef > -0.02
+  equilibrium  3 safety               PASS: FPR(R3)  0.1771 <= min(FPR(INC)  0.1771, FPR(STD) + 0.02)
+  equilibrium  4 trivial floor        NOT EVALUATED: BA(R3) =   undef >= 0.65
+  equilibrium  5 unit invariance      NOT EVALUATED: 0 equilibrium flips of R3, examined=0 declared=0
+  equilibrium  6 existing gates       PASS: --floor exit 0; #1830/R3 declarations 0
+  equilibrium  => INCOMPLETE
+
+DECISION RULES (pre-registration; subject R3-STD; STD = the primary STD_p; amendment: R3-STD absent):
+  converged    1 standard parity      PASS: lower CI of BA(R3-STD) - BA(STD) =  0.0000 > -0.05
+  converged    2 vs INC               FAIL: BA(R3-STD) - BA(INC) =  0.0000 >= +0.05, lower CI  0.0000 > 0
+  converged    3 safety               PASS: FPR(R3-STD)  0.0000 <= min(FPR(INC)  0.0000, FPR(STD) + 0.02)
+  converged    4 trivial floor        PASS: BA(R3-STD) =  0.7400 >= 0.65
+  converged    5 unit invariance      NOT EVALUATED: 0 converged flips of R3-STD, examined=0 declared=0
+  converged    6 existing gates       PASS: --floor exit 0; #1830/R3 declarations 0
+  converged    => FAIL
+  stable       1 standard parity      FAIL: lower CI of BA(R3-STD) - BA(STD) = -0.0614 > -0.05
+  stable       2 vs INC               FAIL: BA(R3-STD) - BA(INC) =  0.0463 >= +0.05, lower CI -0.0081 > 0
+  stable       3 safety               PASS: FPR(R3-STD)  0.0476 <= min(FPR(INC)  0.0476, FPR(STD) + 0.02)
+  stable       4 trivial floor        PASS: BA(R3-STD) =  0.8003 >= 0.65
+  stable       5 unit invariance      NOT EVALUATED: 0 stable flips of R3-STD, examined=0 declared=0
+  stable       6 existing gates       PASS: --floor exit 0; #1830/R3 declarations 0
+  stable       => FAIL
+  improving    1 standard parity      PASS: lower CI of BA(R3-STD) - BA(STD) =  0.0849 > -0.05
+  improving    2 vs INC               PASS: lower CI of BA(R3-STD) - BA(INC) =  0.0000 > -0.02
+  improving    4 trivial floor        PASS: BA(R3-STD) =  0.9583 >= 0.65
+  improving    5 unit invariance      NOT EVALUATED: 0 improving flips of R3-STD, examined=0 declared=0
+  improving    6 existing gates       PASS: --floor exit 0; #1830/R3 declarations 0
+  improving    => INCOMPLETE
+  oscillating  1 standard parity      FAIL: lower CI of BA(R3-STD) - BA(STD) = -0.5278 > -0.05
+  oscillating  2 vs INC               PASS: lower CI of BA(R3-STD) - BA(INC) =  0.0000 > -0.02
+  oscillating  4 trivial floor        FAIL: BA(R3-STD) =  0.3542 >= 0.65
+  oscillating  5 unit invariance      NOT EVALUATED: 0 oscillating flips of R3-STD, examined=0 declared=0
+  oscillating  6 existing gates       PASS: --floor exit 0; #1830/R3 declarations 0
+  oscillating  => FAIL
+  diverging    1 standard parity      NOT EVALUATED: lower CI of BA(R3-STD) - BA(STD) =   undef > -0.05
+  diverging    2 vs INC               NOT EVALUATED: lower CI of BA(R3-STD) - BA(INC) =   undef > -0.02
+  diverging    3 safety               PASS: FPR(R3-STD)  0.0938 <= FPR(INC)  0.0938
+  diverging    4 trivial floor        NOT EVALUATED: BA(R3-STD) =   undef >= 0.65
+  diverging    5 unit invariance      NOT EVALUATED: 0 diverging flips of R3-STD, examined=0 declared=0
+  diverging    6 existing gates       PASS: --floor exit 0; #1830/R3 declarations 0
+  diverging    => INCOMPLETE
+  equilibrium  1 standard parity      NOT EVALUATED: lower CI of BA(R3-STD) - BA(STD) =   undef > -0.05
+  equilibrium  2 vs INC               NOT EVALUATED: lower CI of BA(R3-STD) - BA(INC) =   undef > -0.02
+  equilibrium  3 safety               PASS: FPR(R3-STD)  0.1771 <= min(FPR(INC)  0.1771, FPR(STD) + 0.02)
+  equilibrium  4 trivial floor        NOT EVALUATED: BA(R3-STD) =   undef >= 0.65
+  equilibrium  5 unit invariance      NOT EVALUATED: 0 equilibrium flips of R3-STD, examined=0 declared=0
+  equilibrium  6 existing gates       PASS: --floor exit 0; #1830/R3 declarations 0
+  equilibrium  => INCOMPLETE
+
+DECISION RULES (pre-registration; subject CF; STD = the primary STD_p; amendment: R3-STD = R3-STD):
+  converged    1 standard parity      NOT EVALUATED: lower CI of BA(CF) - BA(STD) = -0.2895 > -0.05 (D11: CF lacks ieee, int64)
+  converged    2 vs INC               FAIL: BA(CF) - BA(INC) = -0.2400 >= +0.05, lower CI -0.2895 > 0
+  converged    2 vs R3-STD            FAIL: BA(CF) - BA(R3-STD) = -0.2400 >= +0.05, lower CI -0.2895 > 0
+  converged    3 safety               NOT EVALUATED: FPR(CF)  0.0000 <= min(FPR(INC)  0.0000, FPR(STD) + 0.02) (D11: CF lacks ieee, int64)
+  converged    4 trivial floor        NOT EVALUATED: BA(CF) =  0.5000 >= 0.65 (D11: CF lacks ieee, int64)
+  converged    5 unit invariance      NOT EVALUATED: 0 converged flips of CF, examined=0 declared=0
+  converged    6 existing gates       FAIL: --floor exit 0; #1830/R3 declarations 0; D11: the subject CF lacks ieee, int64, so it cannot be judged on every registered row
+  converged    => FAIL
+  stable       1 standard parity      NOT EVALUATED: lower CI of BA(CF) - BA(STD) = -0.4124 > -0.05 (D11: CF lacks ieee, int64)
+  stable       2 vs INC               FAIL: BA(CF) - BA(INC) = -0.2540 >= +0.05, lower CI -0.3229 > 0
+  stable       2 vs R3-STD            FAIL: BA(CF) - BA(R3-STD) = -0.3003 >= +0.05, lower CI -0.3804 > 0
+  stable       3 safety               NOT EVALUATED: FPR(CF)  0.0000 <= min(FPR(INC)  0.0476, FPR(STD) + 0.02) (D11: CF lacks ieee, int64)
+  stable       4 trivial floor        NOT EVALUATED: BA(CF) =  0.5000 >= 0.65 (D11: CF lacks ieee, int64)
+  stable       5 unit invariance      NOT EVALUATED: 0 stable flips of CF, examined=0 declared=0
+  stable       6 existing gates       FAIL: --floor exit 0; #1830/R3 declarations 0; D11: the subject CF lacks ieee, int64, so it cannot be judged on every registered row
+  stable       => FAIL
+  improving    1 standard parity      NOT EVALUATED: lower CI of BA(CF) - BA(STD) = -0.3716 > -0.05 (D11: CF lacks ieee, int64)
+  improving    2 vs INC               FAIL: lower CI of BA(CF) - BA(INC) = -0.4545 > -0.02
+  improving    4 trivial floor        NOT EVALUATED: BA(CF) =  0.5000 >= 0.65 (D11: CF lacks ieee, int64)
+  improving    5 unit invariance      NOT EVALUATED: 0 improving flips of CF, examined=0 declared=0
+  improving    6 existing gates       FAIL: --floor exit 0; #1830/R3 declarations 0; D11: the subject CF lacks ieee, int64, so it cannot be judged on every registered row
+  improving    => FAIL
+  oscillating  1 standard parity      NOT EVALUATED: lower CI of BA(CF) - BA(STD) = -0.3621 > -0.05 (D11: CF lacks ieee, int64)
+  oscillating  2 vs INC               PASS: lower CI of BA(CF) - BA(INC) = -0.0119 > -0.02
+  oscillating  4 trivial floor        NOT EVALUATED: BA(CF) =  0.5000 >= 0.65 (D11: CF lacks ieee, int64)
+  oscillating  5 unit invariance      NOT EVALUATED: 0 oscillating flips of CF, examined=0 declared=0
+  oscillating  6 existing gates       FAIL: --floor exit 0; #1830/R3 declarations 0; D11: the subject CF lacks ieee, int64, so it cannot be judged on every registered row
+  oscillating  => FAIL
+  diverging    1 standard parity      NOT EVALUATED: lower CI of BA(CF) - BA(STD) =   undef > -0.05 (D11: CF lacks ieee, int64)
+  diverging    2 vs INC               NOT EVALUATED: lower CI of BA(CF) - BA(INC) =   undef > -0.02
+  diverging    3 safety               NOT EVALUATED: FPR(CF)  0.0000 <= FPR(INC)  0.0938 (D11: CF lacks ieee, int64)
+  diverging    4 trivial floor        NOT EVALUATED: BA(CF) =   undef >= 0.65 (D11: CF lacks ieee, int64)
+  diverging    5 unit invariance      NOT EVALUATED: 0 diverging flips of CF, examined=0 declared=0
+  diverging    6 existing gates       FAIL: --floor exit 0; #1830/R3 declarations 0; D11: the subject CF lacks ieee, int64, so it cannot be judged on every registered row
+  diverging    => FAIL
+  equilibrium  1 standard parity      NOT EVALUATED: lower CI of BA(CF) - BA(STD) =   undef > -0.05 (D11: CF lacks ieee, int64)
+  equilibrium  2 vs INC               NOT EVALUATED: lower CI of BA(CF) - BA(INC) =   undef > -0.02
+  equilibrium  3 safety               NOT EVALUATED: FPR(CF)  0.0000 <= min(FPR(INC)  0.1771, FPR(STD) + 0.02) (D11: CF lacks ieee, int64)
+  equilibrium  4 trivial floor        NOT EVALUATED: BA(CF) =   undef >= 0.65 (D11: CF lacks ieee, int64)
+  equilibrium  5 unit invariance      NOT EVALUATED: 0 equilibrium flips of CF, examined=0 declared=0
+  equilibrium  6 existing gates       FAIL: --floor exit 0; #1830/R3 declarations 0; D11: the subject CF lacks ieee, int64, so it cannot be judged on every registered row
+  equilibrium  => FAIL
+
+DECISION RULES (pre-registration; subject W4; STD = the primary STD_p; amendment: R3-STD = R3-STD):
+  converged    1 standard parity      NOT EVALUATED: lower CI of BA(W4) - BA(STD) = -0.0074 > -0.05 (D11: W4 lacks ieee, int64)
+  converged    2 vs INC               FAIL: BA(W4) - BA(INC) =  0.0591 >= +0.05, lower CI -0.0074 > 0
+  converged    2 vs R3-STD            FAIL: BA(W4) - BA(R3-STD) =  0.0591 >= +0.05, lower CI -0.0074 > 0
+  converged    3 safety               NOT EVALUATED: FPR(W4)  0.0217 <= min(FPR(INC)  0.0000, FPR(STD) + 0.02) (D11: W4 lacks ieee, int64)
+  converged    4 trivial floor        NOT EVALUATED: BA(W4) =  0.7991 >= 0.65 (D11: W4 lacks ieee, int64)
+  converged    5 unit invariance      NOT EVALUATED: 0 converged flips of W4, examined=0 declared=0
+  converged    6 existing gates       FAIL: --floor exit 0; #1830/R3 declarations 0; D11: the subject W4 lacks ieee, int64, so it cannot be judged on every registered row
+  converged    => FAIL
+  stable       1 standard parity      NOT EVALUATED: lower CI of BA(W4) - BA(STD) = -0.0729 > -0.05 (D11: W4 lacks ieee, int64)
+  stable       2 vs INC               PASS: BA(W4) - BA(INC) =  0.0899 >= +0.05, lower CI  0.0085 > 0
+  stable       2 vs R3-STD            FAIL: BA(W4) - BA(R3-STD) =  0.0437 >= +0.05, lower CI -0.0450 > 0
+  stable       3 safety               NOT EVALUATED: FPR(W4)  0.0714 <= min(FPR(INC)  0.0476, FPR(STD) + 0.02) (D11: W4 lacks ieee, int64)
+  stable       4 trivial floor        NOT EVALUATED: BA(W4) =  0.8439 >= 0.65 (D11: W4 lacks ieee, int64)
+  stable       5 unit invariance      NOT EVALUATED: 0 stable flips of W4, examined=0 declared=0
+  stable       6 existing gates       FAIL: --floor exit 0; #1830/R3 declarations 0; D11: the subject W4 lacks ieee, int64, so it cannot be judged on every registered row
+  stable       => FAIL
+  improving    1 standard parity      NOT EVALUATED: lower CI of BA(W4) - BA(STD) = -0.1465 > -0.05 (D11: W4 lacks ieee, int64)
+  improving    2 vs INC               FAIL: lower CI of BA(W4) - BA(INC) = -0.3448 > -0.02
+  improving    4 trivial floor        NOT EVALUATED: BA(W4) =  0.6548 >= 0.65 (D11: W4 lacks ieee, int64)
+  improving    5 unit invariance      NOT EVALUATED: 0 improving flips of W4, examined=0 declared=0
+  improving    6 existing gates       FAIL: --floor exit 0; #1830/R3 declarations 0; D11: the subject W4 lacks ieee, int64, so it cannot be judged on every registered row
+  improving    => FAIL
+  oscillating  1 standard parity      NOT EVALUATED: lower CI of BA(W4) - BA(STD) = -0.4540 > -0.05 (D11: W4 lacks ieee, int64)
+  oscillating  2 vs INC               PASS: lower CI of BA(W4) - BA(INC) =  0.0298 > -0.02
+  oscillating  4 trivial floor        NOT EVALUATED: BA(W4) =  0.4375 >= 0.65 (D11: W4 lacks ieee, int64)
+  oscillating  5 unit invariance      NOT EVALUATED: 0 oscillating flips of W4, examined=0 declared=0
+  oscillating  6 existing gates       FAIL: --floor exit 0; #1830/R3 declarations 0; D11: the subject W4 lacks ieee, int64, so it cannot be judged on every registered row
+  oscillating  => FAIL
+  diverging    1 standard parity      NOT EVALUATED: lower CI of BA(W4) - BA(STD) =   undef > -0.05 (D11: W4 lacks ieee, int64)
+  diverging    2 vs INC               NOT EVALUATED: lower CI of BA(W4) - BA(INC) =   undef > -0.02
+  diverging    3 safety               NOT EVALUATED: FPR(W4)  0.0625 <= FPR(INC)  0.0938 (D11: W4 lacks ieee, int64)
+  diverging    4 trivial floor        NOT EVALUATED: BA(W4) =   undef >= 0.65 (D11: W4 lacks ieee, int64)
+  diverging    5 unit invariance      NOT EVALUATED: 0 diverging flips of W4, examined=0 declared=0
+  diverging    6 existing gates       FAIL: --floor exit 0; #1830/R3 declarations 0; D11: the subject W4 lacks ieee, int64, so it cannot be judged on every registered row
+  diverging    => FAIL
+  equilibrium  1 standard parity      NOT EVALUATED: lower CI of BA(W4) - BA(STD) =   undef > -0.05 (D11: W4 lacks ieee, int64)
+  equilibrium  2 vs INC               NOT EVALUATED: lower CI of BA(W4) - BA(INC) =   undef > -0.02
+  equilibrium  3 safety               NOT EVALUATED: FPR(W4)  0.1875 <= min(FPR(INC)  0.1771, FPR(STD) + 0.02) (D11: W4 lacks ieee, int64)
+  equilibrium  4 trivial floor        NOT EVALUATED: BA(W4) =   undef >= 0.65 (D11: W4 lacks ieee, int64)
+  equilibrium  5 unit invariance      NOT EVALUATED: 0 equilibrium flips of W4, examined=0 declared=0
+  equilibrium  6 existing gates       FAIL: --floor exit 0; #1830/R3 declarations 0; D11: the subject W4 lacks ieee, int64, so it cannot be judged on every registered row
+  equilibrium  => FAIL
+
+CONFUSION per arm x predicate x family (TP FP FN TN):
+  ANCHOR converged [F1 geometric decay to a nonzero limit]: 9 0 8 7
+  ANCHOR converged [F11 alternating contraction]: 7 0 10 7
+  ANCHOR converged [F5 damped sinusoid]: 8 0 8 8
+  ANCHOR converged [F6 sampled sinusoid]: 0 0 0 24
+  ANCHOR stable [F1 geometric decay to a nonzero limit]: 12 2 7 3
+  ANCHOR stable [F11 alternating contraction]: 7 0 12 5
+  ANCHOR stable [F5 damped sinusoid]: 11 0 5 8
+  ANCHOR stable [F6 sampled sinusoid]: 0 0 0 24
+  ANCHOR improving [F1 geometric decay to a nonzero limit]: 7 6 2 9
+  ANCHOR improving [F11 alternating contraction]: 0 0 2 22
+  ANCHOR improving [F5 damped sinusoid]: 0 0 0 24
+  ANCHOR improving [F6 sampled sinusoid]: 0 0 1 23
+  ANCHOR oscillating [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  ANCHOR oscillating [F11 alternating contraction]: 0 17 0 7
+  ANCHOR oscillating [F5 damped sinusoid]: 0 13 0 11
+  ANCHOR oscillating [F6 sampled sinusoid]: 3 0 21 0
+  ANCHOR diverging [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  ANCHOR diverging [F11 alternating contraction]: 0 0 0 24
+  ANCHOR diverging [F5 damped sinusoid]: 0 0 0 24
+  ANCHOR diverging [F6 sampled sinusoid]: 0 9 0 15
+  ANCHOR equilibrium [F1 geometric decay to a nonzero limit]: 0 11 0 13
+  ANCHOR equilibrium [F11 alternating contraction]: 0 7 0 17
+  ANCHOR equilibrium [F5 damped sinusoid]: 0 10 0 14
+  ANCHOR equilibrium [F6 sampled sinusoid]: 0 0 0 24
+  CF converged [F1 geometric decay to a nonzero limit]: 0 0 17 7
+  CF converged [F11 alternating contraction]: 0 0 17 7
+  CF converged [F5 damped sinusoid]: 0 0 16 8
+  CF converged [F6 sampled sinusoid]: 0 0 0 24
+  CF stable [F1 geometric decay to a nonzero limit]: 0 0 19 5
+  CF stable [F11 alternating contraction]: 0 0 19 5
+  CF stable [F5 damped sinusoid]: 0 0 16 8
+  CF stable [F6 sampled sinusoid]: 0 0 0 24
+  CF improving [F1 geometric decay to a nonzero limit]: 0 0 9 15
+  CF improving [F11 alternating contraction]: 0 0 2 22
+  CF improving [F5 damped sinusoid]: 0 0 0 24
+  CF improving [F6 sampled sinusoid]: 0 0 1 23
+  CF oscillating [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  CF oscillating [F11 alternating contraction]: 0 0 0 24
+  CF oscillating [F5 damped sinusoid]: 0 0 0 24
+  CF oscillating [F6 sampled sinusoid]: 0 0 24 0
+  CF diverging [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  CF diverging [F11 alternating contraction]: 0 0 0 24
+  CF diverging [F5 damped sinusoid]: 0 0 0 24
+  CF diverging [F6 sampled sinusoid]: 0 0 0 24
+  CF equilibrium [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  CF equilibrium [F11 alternating contraction]: 0 0 0 24
+  CF equilibrium [F5 damped sinusoid]: 0 0 0 24
+  CF equilibrium [F6 sampled sinusoid]: 0 0 0 24
+  INC converged [F1 geometric decay to a nonzero limit]: 9 0 8 7
+  INC converged [F11 alternating contraction]: 7 0 10 7
+  INC converged [F5 damped sinusoid]: 8 0 8 8
+  INC converged [F6 sampled sinusoid]: 0 0 0 24
+  INC stable [F1 geometric decay to a nonzero limit]: 12 2 7 3
+  INC stable [F11 alternating contraction]: 7 0 12 5
+  INC stable [F5 damped sinusoid]: 11 0 5 8
+  INC stable [F6 sampled sinusoid]: 0 0 0 24
+  INC improving [F1 geometric decay to a nonzero limit]: 7 0 2 15
+  INC improving [F11 alternating contraction]: 0 0 2 22
+  INC improving [F5 damped sinusoid]: 0 0 0 24
+  INC improving [F6 sampled sinusoid]: 0 0 1 23
+  INC oscillating [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  INC oscillating [F11 alternating contraction]: 0 17 0 7
+  INC oscillating [F5 damped sinusoid]: 0 13 0 11
+  INC oscillating [F6 sampled sinusoid]: 3 0 21 0
+  INC diverging [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  INC diverging [F11 alternating contraction]: 0 0 0 24
+  INC diverging [F5 damped sinusoid]: 0 0 0 24
+  INC diverging [F6 sampled sinusoid]: 0 9 0 15
+  INC equilibrium [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  INC equilibrium [F11 alternating contraction]: 0 7 0 17
+  INC equilibrium [F5 damped sinusoid]: 0 10 0 14
+  INC equilibrium [F6 sampled sinusoid]: 0 0 0 24
+  R3 converged [F1 geometric decay to a nonzero limit]: 9 0 8 7
+  R3 converged [F11 alternating contraction]: 7 0 10 7
+  R3 converged [F5 damped sinusoid]: 8 0 8 8
+  R3 converged [F6 sampled sinusoid]: 0 0 0 24
+  R3 stable [F1 geometric decay to a nonzero limit]: 10 2 9 3
+  R3 stable [F11 alternating contraction]: 9 0 10 5
+  R3 stable [F5 damped sinusoid]: 16 0 0 8
+  R3 stable [F6 sampled sinusoid]: 0 0 0 24
+  R3 improving [F1 geometric decay to a nonzero limit]: 9 0 0 15
+  R3 improving [F11 alternating contraction]: 2 0 0 22
+  R3 improving [F5 damped sinusoid]: 0 0 0 24
+  R3 improving [F6 sampled sinusoid]: 0 0 1 23
+  R3 oscillating [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  R3 oscillating [F11 alternating contraction]: 0 17 0 7
+  R3 oscillating [F5 damped sinusoid]: 0 13 0 11
+  R3 oscillating [F6 sampled sinusoid]: 3 0 21 0
+  R3 diverging [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  R3 diverging [F11 alternating contraction]: 0 0 0 24
+  R3 diverging [F5 damped sinusoid]: 0 0 0 24
+  R3 diverging [F6 sampled sinusoid]: 0 9 0 15
+  R3 equilibrium [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  R3 equilibrium [F11 alternating contraction]: 0 7 0 17
+  R3 equilibrium [F5 damped sinusoid]: 0 10 0 14
+  R3 equilibrium [F6 sampled sinusoid]: 0 0 0 24
+  R3-STD converged [F1 geometric decay to a nonzero limit]: 9 0 8 7
+  R3-STD converged [F11 alternating contraction]: 7 0 10 7
+  R3-STD converged [F5 damped sinusoid]: 8 0 8 8
+  R3-STD converged [F6 sampled sinusoid]: 0 0 0 24
+  R3-STD stable [F1 geometric decay to a nonzero limit]: 10 2 9 3
+  R3-STD stable [F11 alternating contraction]: 9 0 10 5
+  R3-STD stable [F5 damped sinusoid]: 16 0 0 8
+  R3-STD stable [F6 sampled sinusoid]: 0 0 0 24
+  R3-STD improving [F1 geometric decay to a nonzero limit]: 9 0 0 15
+  R3-STD improving [F11 alternating contraction]: 2 0 0 22
+  R3-STD improving [F5 damped sinusoid]: 0 0 0 24
+  R3-STD improving [F6 sampled sinusoid]: 0 0 1 23
+  R3-STD oscillating [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  R3-STD oscillating [F11 alternating contraction]: 0 17 0 7
+  R3-STD oscillating [F5 damped sinusoid]: 0 13 0 11
+  R3-STD oscillating [F6 sampled sinusoid]: 3 0 21 0
+  R3-STD diverging [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  R3-STD diverging [F11 alternating contraction]: 0 0 0 24
+  R3-STD diverging [F5 damped sinusoid]: 0 0 0 24
+  R3-STD diverging [F6 sampled sinusoid]: 0 9 0 15
+  R3-STD equilibrium [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  R3-STD equilibrium [F11 alternating contraction]: 0 7 0 17
+  R3-STD equilibrium [F5 damped sinusoid]: 0 10 0 14
+  R3-STD equilibrium [F6 sampled sinusoid]: 0 0 0 24
+  W4 converged [F1 geometric decay to a nonzero limit]: 13 1 4 6
+  W4 converged [F11 alternating contraction]: 9 0 8 7
+  W4 converged [F5 damped sinusoid]: 9 0 7 8
+  W4 converged [F6 sampled sinusoid]: 0 0 0 24
+  W4 stable [F1 geometric decay to a nonzero limit]: 17 3 2 2
+  W4 stable [F11 alternating contraction]: 10 0 9 5
+  W4 stable [F5 damped sinusoid]: 14 0 2 8
+  W4 stable [F6 sampled sinusoid]: 0 0 0 24
+  W4 improving [F1 geometric decay to a nonzero limit]: 4 0 5 15
+  W4 improving [F11 alternating contraction]: 0 0 2 22
+  W4 improving [F5 damped sinusoid]: 0 1 0 23
+  W4 improving [F6 sampled sinusoid]: 0 1 1 22
+  W4 oscillating [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  W4 oscillating [F11 alternating contraction]: 0 14 0 10
+  W4 oscillating [F5 damped sinusoid]: 0 4 0 20
+  W4 oscillating [F6 sampled sinusoid]: 3 0 21 0
+  W4 diverging [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  W4 diverging [F11 alternating contraction]: 0 0 0 24
+  W4 diverging [F5 damped sinusoid]: 0 1 0 23
+  W4 diverging [F6 sampled sinusoid]: 0 5 0 19
+  W4 equilibrium [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  W4 equilibrium [F11 alternating contraction]: 0 10 0 14
+  W4 equilibrium [F5 damped sinusoid]: 0 8 0 16
+  W4 equilibrium [F6 sampled sinusoid]: 0 0 0 24
+  STD converged [F1 geometric decay to a nonzero limit]: 9 0 8 7
+  STD converged [F11 alternating contraction]: 7 0 10 7
+  STD converged [F5 damped sinusoid]: 8 0 8 8
+  STD converged [F6 sampled sinusoid]: 0 0 0 24
+  STD stable [F1 geometric decay to a nonzero limit]: 12 2 7 3
+  STD stable [F11 alternating contraction]: 10 0 9 5
+  STD stable [F5 damped sinusoid]: 16 0 0 8
+  STD stable [F6 sampled sinusoid]: 0 0 0 24
+  STD improving [F1 geometric decay to a nonzero limit]: 6 0 3 15
+  STD improving [F11 alternating contraction]: 0 0 2 22
+  STD improving [F5 damped sinusoid]: 0 1 0 23
+  STD improving [F6 sampled sinusoid]: 0 5 1 18
+  STD oscillating [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  STD oscillating [F11 alternating contraction]: 0 0 0 24
+  STD oscillating [F5 damped sinusoid]: 0 16 0 8
+  STD oscillating [F6 sampled sinusoid]: 15 0 9 0
+  STD diverging [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  STD diverging [F11 alternating contraction]: 0 0 0 24
+  STD diverging [F5 damped sinusoid]: 0 0 0 24
+  STD diverging [F6 sampled sinusoid]: 0 13 0 11
+  STD equilibrium [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  STD equilibrium [F11 alternating contraction]: 0 4 0 20
+  STD equilibrium [F5 damped sinusoid]: 0 15 0 9
+  STD equilibrium [F6 sampled sinusoid]: 0 8 0 16
+  STD' converged [F1 geometric decay to a nonzero limit]: 9 0 8 7
+  STD' converged [F11 alternating contraction]: 7 0 10 7
+  STD' converged [F5 damped sinusoid]: 8 0 8 8
+  STD' converged [F6 sampled sinusoid]: 0 0 0 24
+  STD' stable [F1 geometric decay to a nonzero limit]: 10 2 9 3
+  STD' stable [F11 alternating contraction]: 9 0 10 5
+  STD' stable [F5 damped sinusoid]: 16 0 0 8
+  STD' stable [F6 sampled sinusoid]: 0 0 0 24
+  STD' improving [F1 geometric decay to a nonzero limit]: 9 6 0 9
+  STD' improving [F11 alternating contraction]: 2 9 0 13
+  STD' improving [F5 damped sinusoid]: 0 16 0 8
+  STD' improving [F6 sampled sinusoid]: 1 17 0 6
+  STD' oscillating [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  STD' oscillating [F11 alternating contraction]: 0 24 0 0
+  STD' oscillating [F5 damped sinusoid]: 0 14 0 10
+  STD' oscillating [F6 sampled sinusoid]: 3 0 21 0
+  STD' diverging [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  STD' diverging [F11 alternating contraction]: 0 0 0 24
+  STD' diverging [F5 damped sinusoid]: 0 0 0 24
+  STD' diverging [F6 sampled sinusoid]: 0 9 0 15
+  STD' equilibrium [F1 geometric decay to a nonzero limit]: 0 3 0 21
+  STD' equilibrium [F11 alternating contraction]: 0 21 0 3
+  STD' equilibrium [F5 damped sinusoid]: 0 20 0 4
+  STD' equilibrium [F6 sampled sinusoid]: 0 8 0 16
+  STD'' equilibrium [F1 geometric decay to a nonzero limit]: 0 14 0 10
+  STD'' equilibrium [F11 alternating contraction]: 0 22 0 2
+  STD'' equilibrium [F5 damped sinusoid]: 0 22 0 2
+  STD'' equilibrium [F6 sampled sinusoid]: 0 7 0 17
+  D2 improving [F1 geometric decay to a nonzero limit]: 9 0 0 15
+  D2 improving [F11 alternating contraction]: 2 0 0 22
+  D2 improving [F5 damped sinusoid]: 0 0 0 24
+  D2 improving [F6 sampled sinusoid]: 0 0 1 23
+  REF converged [F1 geometric decay to a nonzero limit]: 9 0 8 7
+  REF converged [F11 alternating contraction]: 7 0 10 7
+  REF converged [F5 damped sinusoid]: 8 0 8 8
+  REF converged [F6 sampled sinusoid]: 0 0 0 24
+  REF stable [F1 geometric decay to a nonzero limit]: 10 2 9 3
+  REF stable [F11 alternating contraction]: 9 0 10 5
+  REF stable [F5 damped sinusoid]: 16 0 0 8
+  REF stable [F6 sampled sinusoid]: 0 0 0 24
+  REF improving [F1 geometric decay to a nonzero limit]: 6 0 3 15
+  REF improving [F11 alternating contraction]: 0 0 2 22
+  REF improving [F5 damped sinusoid]: 0 1 0 23
+  REF improving [F6 sampled sinusoid]: 0 5 1 18
+  REF oscillating [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  REF oscillating [F11 alternating contraction]: 0 0 0 24
+  REF oscillating [F5 damped sinusoid]: 0 16 0 8
+  REF oscillating [F6 sampled sinusoid]: 15 0 9 0
+  REF diverging [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  REF diverging [F11 alternating contraction]: 0 0 0 24
+  REF diverging [F5 damped sinusoid]: 0 0 0 24
+  REF diverging [F6 sampled sinusoid]: 0 9 0 15
+  REF equilibrium [F1 geometric decay to a nonzero limit]: 0 14 0 10
+  REF equilibrium [F11 alternating contraction]: 0 22 0 2
+  REF equilibrium [F5 damped sinusoid]: 0 22 0 2
+  REF equilibrium [F6 sampled sinusoid]: 0 7 0 17
+  C0 converged [F1 geometric decay to a nonzero limit]: 0 0 17 7
+  C0 converged [F11 alternating contraction]: 0 0 17 7
+  C0 converged [F5 damped sinusoid]: 0 0 16 8
+  C0 converged [F6 sampled sinusoid]: 0 0 0 24
+  C0 stable [F1 geometric decay to a nonzero limit]: 0 0 19 5
+  C0 stable [F11 alternating contraction]: 0 0 19 5
+  C0 stable [F5 damped sinusoid]: 0 0 16 8
+  C0 stable [F6 sampled sinusoid]: 0 0 0 24
+  C0 improving [F1 geometric decay to a nonzero limit]: 0 0 9 15
+  C0 improving [F11 alternating contraction]: 0 0 2 22
+  C0 improving [F5 damped sinusoid]: 0 0 0 24
+  C0 improving [F6 sampled sinusoid]: 0 0 1 23
+  C0 oscillating [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  C0 oscillating [F11 alternating contraction]: 0 0 0 24
+  C0 oscillating [F5 damped sinusoid]: 0 0 0 24
+  C0 oscillating [F6 sampled sinusoid]: 0 0 24 0
+  C0 diverging [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  C0 diverging [F11 alternating contraction]: 0 0 0 24
+  C0 diverging [F5 damped sinusoid]: 0 0 0 24
+  C0 diverging [F6 sampled sinusoid]: 0 0 0 24
+  C0 equilibrium [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  C0 equilibrium [F11 alternating contraction]: 0 0 0 24
+  C0 equilibrium [F5 damped sinusoid]: 0 0 0 24
+  C0 equilibrium [F6 sampled sinusoid]: 0 0 0 24
+  C1 converged [F1 geometric decay to a nonzero limit]: 0 0 17 7
+  C1 converged [F11 alternating contraction]: 0 0 17 7
+  C1 converged [F5 damped sinusoid]: 0 0 16 8
+  C1 converged [F6 sampled sinusoid]: 0 0 0 24
+  C1 stable [F1 geometric decay to a nonzero limit]: 0 0 19 5
+  C1 stable [F11 alternating contraction]: 0 0 19 5
+  C1 stable [F5 damped sinusoid]: 0 0 16 8
+  C1 stable [F6 sampled sinusoid]: 0 0 0 24
+  C1 improving [F1 geometric decay to a nonzero limit]: 0 0 9 15
+  C1 improving [F11 alternating contraction]: 0 0 2 22
+  C1 improving [F5 damped sinusoid]: 0 0 0 24
+  C1 improving [F6 sampled sinusoid]: 0 0 1 23
+  C1 oscillating [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  C1 oscillating [F11 alternating contraction]: 0 0 0 24
+  C1 oscillating [F5 damped sinusoid]: 0 0 0 24
+  C1 oscillating [F6 sampled sinusoid]: 0 0 24 0
+  C1 diverging [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  C1 diverging [F11 alternating contraction]: 0 0 0 24
+  C1 diverging [F5 damped sinusoid]: 0 0 0 24
+  C1 diverging [F6 sampled sinusoid]: 0 0 0 24
+  C1 equilibrium [F1 geometric decay to a nonzero limit]: 0 0 0 24
+  C1 equilibrium [F11 alternating contraction]: 0 0 0 24
+  C1 equilibrium [F5 damped sinusoid]: 0 0 0 24
+  C1 equilibrium [F6 sampled sinusoid]: 0 0 0 24
+  PERSIST converged [F1 geometric decay to a nonzero limit]: 12 2 5 5
+  PERSIST converged [F11 alternating contraction]: 9 0 8 7
+  PERSIST converged [F5 damped sinusoid]: 16 0 0 8
+  PERSIST converged [F6 sampled sinusoid]: 0 0 0 24
+  PERSIST stable [F1 geometric decay to a nonzero limit]: 12 2 7 3
+  PERSIST stable [F11 alternating contraction]: 9 0 10 5
+  PERSIST stable [F5 damped sinusoid]: 16 0 0 8
+  PERSIST stable [F6 sampled sinusoid]: 0 0 0 24
+  PERSIST equilibrium [F1 geometric decay to a nonzero limit]: 0 5 0 19
+  PERSIST equilibrium [F11 alternating contraction]: 0 4 0 20
+  PERSIST equilibrium [F5 damped sinusoid]: 0 8 0 16
+  PERSIST equilibrium [F6 sampled sinusoid]: 0 0 0 24
+  T001 converged [F1 geometric decay to a nonzero limit]: 3 0 14 7
+  T001 converged [F11 alternating contraction]: 2 0 15 7
+  T001 converged [F5 damped sinusoid]: 8 0 8 8
+  T001 converged [F6 sampled sinusoid]: 0 0 0 24
+
+DISAGREEMENTS (arm row@checkpoint predicate: label, reading):
+  ANCHOR f01_0@10 converged: label=true got=false
+  ANCHOR f01_0@10 stable: label=true got=false
+  ANCHOR f01_0@11 converged: label=true got=false
+  ANCHOR f01_0@11 stable: label=true got=false
+  ANCHOR f01_0@12 converged: label=true got=false
+  ANCHOR f01_0@12 stable: label=true got=false
+  ANCHOR f01_1@10 improving: label=false got=true
+  ANCHOR f01_1@20 converged: label=true got=false
+  ANCHOR f01_1@20 improving: label=false got=true
+  ANCHOR f01_1@40 equilibrium: label=false got=true
+  ANCHOR f01_2@10 stable: label=true got=false
+  ANCHOR f01_2@10 improving: label=false got=true
+  ANCHOR f01_2@14 converged: label=true got=false
+  ANCHOR f01_2@14 stable: label=true got=false
+  ANCHOR f01_2@14 improving: label=false got=true
+  ANCHOR f01_2@28 equilibrium: label=false got=true
+  ANCHOR f01_3@96 stable: label=false got=true
+  ANCHOR f01_3@192 equilibrium: label=false got=true
+  ANCHOR f01_3@384 equilibrium: label=false got=true
+  ANCHOR f01_4@126 stable: label=false got=true
+  ANCHOR f01_4@126 improving: label=true got=false
+  ANCHOR f01_4@126 equilibrium: label=false got=true
+  ANCHOR f01_4@253 improving: label=true got=false
+  ANCHOR f01_4@253 equilibrium: label=false got=true
+  ANCHOR f01_4@506 equilibrium: label=false got=true
+  ANCHOR f01_5@16 improving: label=false got=true
+  ANCHOR f01_5@32 converged: label=true got=false
+  ANCHOR f01_5@32 improving: label=false got=true
+  ANCHOR f01_5@32 equilibrium: label=false got=true
+  ANCHOR f01_5@64 equilibrium: label=false got=true
+  ANCHOR f01_6@22 converged: label=true got=false
+  ANCHOR f01_6@44 equilibrium: label=false got=true
+  ANCHOR f01_7@10 stable: label=true got=false
+  ANCHOR f01_7@12 converged: label=true got=false
+  ANCHOR f01_7@12 stable: label=true got=false
+  ANCHOR f01_7@24 equilibrium: label=false got=true
+  ANCHOR f05_0@24 oscillating: label=false got=true
+  ANCHOR f05_0@48 converged: label=true got=false
+  ANCHOR f05_0@48 stable: label=true got=false
+  ANCHOR f05_0@48 oscillating: label=false got=true
+  ANCHOR f05_0@96 equilibrium: label=false got=true
+  ANCHOR f05_1@53 converged: label=true got=false
+  ANCHOR f05_1@53 equilibrium: label=false got=true
+  ANCHOR f05_1@106 equilibrium: label=false got=true
+  ANCHOR f05_2@34 oscillating: label=false got=true
+  ANCHOR f05_2@68 converged: label=true got=false
+  ANCHOR f05_2@68 equilibrium: label=false got=true
+  ANCHOR f05_2@136 equilibrium: label=false got=true
+  ANCHOR f05_3@24 oscillating: label=false got=true
+  ANCHOR f05_3@49 converged: label=true got=false
+  ANCHOR f05_3@49 stable: label=true got=false
+  ANCHOR f05_3@49 oscillating: label=false got=true
+  ANCHOR f05_3@98 equilibrium: label=false got=true
+  ANCHOR f05_4@19 oscillating: label=false got=true
+  ANCHOR f05_4@39 converged: label=true got=false
+  ANCHOR f05_4@39 stable: label=true got=false
+  ANCHOR f05_4@39 oscillating: label=false got=true
+  ANCHOR f05_4@78 equilibrium: label=false got=true
+  ANCHOR f05_5@46 oscillating: label=false got=true
+  ANCHOR f05_5@92 converged: label=true got=false
+  ANCHOR f05_5@92 oscillating: label=false got=true
+  ANCHOR f05_5@184 equilibrium: label=false got=true
+  ANCHOR f05_6@18 oscillating: label=false got=true
+  ANCHOR f05_6@36 converged: label=true got=false
+  ANCHOR f05_6@36 stable: label=true got=false
+  ANCHOR f05_6@36 oscillating: label=false got=true
+  ANCHOR f05_6@72 equilibrium: label=false got=true
+  ANCHOR f05_7@29 oscillating: label=false got=true
+  ANCHOR f05_7@58 converged: label=true got=false
+  ANCHOR f05_7@58 stable: label=true got=false
+  ANCHOR f05_7@58 oscillating: label=false got=true
+  ANCHOR f05_7@116 equilibrium: label=false got=true
+  ANCHOR f06_0@27 oscillating: label=true got=false
+  ANCHOR f06_0@61 oscillating: label=true got=false
+  ANCHOR f06_0@129 oscillating: label=true got=false
+  ANCHOR f06_2@44 oscillating: label=true got=false
+  ANCHOR f06_2@44 diverging: label=false got=true
+  ANCHOR f06_2@112 oscillating: label=true got=false
+  ANCHOR f06_2@112 diverging: label=false got=true
+  ANCHOR f06_2@248 oscillating: label=true got=false
+  ANCHOR f06_3@50 oscillating: label=true got=false
+  ANCHOR f06_3@50 diverging: label=false got=true
+  ANCHOR f06_3@130 oscillating: label=true got=false
+  ANCHOR f06_3@130 diverging: label=false got=true
+  ANCHOR f06_3@290 oscillating: label=true got=false
+  ANCHOR f06_3@290 diverging: label=false got=true
+  ANCHOR f06_4@49 oscillating: label=true got=false
+  ANCHOR f06_4@49 diverging: label=false got=true
+  ANCHOR f06_4@127 oscillating: label=true got=false
+  ANCHOR f06_4@127 diverging: label=false got=true
+  ANCHOR f06_4@283 oscillating: label=true got=false
+  ANCHOR f06_4@283 diverging: label=false got=true
+  ANCHOR f06_5@26 oscillating: label=true got=false
+  ANCHOR f06_5@58 oscillating: label=true got=false
+  ANCHOR f06_5@122 oscillating: label=true got=false
+  ANCHOR f06_6@31 oscillating: label=true got=false
+  ANCHOR f06_6@73 oscillating: label=true got=false
+  ANCHOR f06_6@157 improving: label=true got=false
+  ANCHOR f06_6@157 oscillating: label=true got=false
+  ANCHOR f06_7@33 oscillating: label=true got=false
+  ANCHOR f06_7@79 oscillating: label=true got=false
+  ANCHOR f06_7@79 diverging: label=false got=true
+  ANCHOR f06_7@171 oscillating: label=true got=false
+  ANCHOR f11_0@10 oscillating: label=false got=true
+  ANCHOR f11_0@17 converged: label=true got=false
+  ANCHOR f11_0@17 stable: label=true got=false
+  ANCHOR f11_0@17 oscillating: label=false got=true
+  ANCHOR f11_0@34 equilibrium: label=false got=true
+  ANCHOR f11_1@10 stable: label=true got=false
+  ANCHOR f11_1@10 oscillating: label=false got=true
+  ANCHOR f11_1@13 converged: label=true got=false
+  ANCHOR f11_1@13 stable: label=true got=false
+  ANCHOR f11_1@13 oscillating: label=false got=true
+  ANCHOR f11_1@26 equilibrium: label=false got=true
+  ANCHOR f11_2@10 converged: label=true got=false
+  ANCHOR f11_2@10 stable: label=true got=false
+  ANCHOR f11_2@10 improving: label=true got=false
+  ANCHOR f11_2@10 oscillating: label=false got=true
+  ANCHOR f11_2@11 converged: label=true got=false
+  ANCHOR f11_2@11 stable: label=true got=false
+  ANCHOR f11_2@11 oscillating: label=false got=true
+  ANCHOR f11_2@12 converged: label=true got=false
+  ANCHOR f11_2@12 stable: label=true got=false
+  ANCHOR f11_2@12 oscillating: label=false got=true
+  ANCHOR f11_3@12 oscillating: label=false got=true
+  ANCHOR f11_3@25 converged: label=true got=false
+  ANCHOR f11_3@25 stable: label=true got=false
+  ANCHOR f11_3@25 oscillating: label=false got=true
+  ANCHOR f11_3@50 equilibrium: label=false got=true
+  ANCHOR f11_4@169 oscillating: label=false got=true
+  ANCHOR f11_4@338 converged: label=true got=false
+  ANCHOR f11_4@338 stable: label=true got=false
+  ANCHOR f11_4@338 oscillating: label=false got=true
+  ANCHOR f11_4@676 equilibrium: label=false got=true
+  ANCHOR f11_5@11 oscillating: label=false got=true
+  ANCHOR f11_5@22 converged: label=true got=false
+  ANCHOR f11_5@22 stable: label=true got=false
+  ANCHOR f11_5@22 oscillating: label=false got=true
+  ANCHOR f11_5@44 equilibrium: label=false got=true
+  ANCHOR f11_6@68 oscillating: label=false got=true
+  ANCHOR f11_6@136 converged: label=true got=false
+  ANCHOR f11_6@136 stable: label=true got=false
+  ANCHOR f11_6@136 oscillating: label=false got=true
+  ANCHOR f11_6@272 equilibrium: label=false got=true
+  ANCHOR f11_7@10 stable: label=true got=false
+  ANCHOR f11_7@10 improving: label=true got=false
+  ANCHOR f11_7@10 oscillating: label=false got=true
+  ANCHOR f11_7@15 converged: label=true got=false
+  ANCHOR f11_7@15 stable: label=true got=false
+  ANCHOR f11_7@15 oscillating: label=false got=true
+  ANCHOR f11_7@30 equilibrium: label=false got=true
+  CF f01_0@10 converged: label=true got=false
+  CF f01_0@10 stable: label=true got=false
+  CF f01_0@10 improving: label=true got=false
+  CF f01_0@11 converged: label=true got=false
+  CF f01_0@11 stable: label=true got=false
+  CF f01_0@11 improving: label=true got=false
+  CF f01_0@12 converged: label=true got=false
+  CF f01_0@12 stable: label=true got=false
+  CF f01_0@12 improving: label=true got=false
+  CF f01_1@20 converged: label=true got=false
+  CF f01_1@20 stable: label=true got=false
+  CF f01_1@40 converged: label=true got=false
+  CF f01_1@40 stable: label=true got=false
+  CF f01_2@10 stable: label=true got=false
+  CF f01_2@14 converged: label=true got=false
+  CF f01_2@14 stable: label=true got=false
+  CF f01_2@28 converged: label=true got=false
+  CF f01_2@28 stable: label=true got=false
+  CF f01_3@192 converged: label=true got=false
+  CF f01_3@192 stable: label=true got=false
+  CF f01_3@384 converged: label=true got=false
+  CF f01_3@384 stable: label=true got=false
+  CF f01_4@126 improving: label=true got=false
+  CF f01_4@253 converged: label=true got=false
+  CF f01_4@253 stable: label=true got=false
+  CF f01_4@253 improving: label=true got=false
+  CF f01_4@506 converged: label=true got=false
+  CF f01_4@506 stable: label=true got=false
+  CF f01_5@32 converged: label=true got=false
+  CF f01_5@32 stable: label=true got=false
+  CF f01_5@64 converged: label=true got=false
+  CF f01_5@64 stable: label=true got=false
+  CF f01_6@11 improving: label=true got=false
+  CF f01_6@22 converged: label=true got=false
+  CF f01_6@22 stable: label=true got=false
+  CF f01_6@22 improving: label=true got=false
+  CF f01_6@44 converged: label=true got=false
+  CF f01_6@44 stable: label=true got=false
+  CF f01_7@10 stable: label=true got=false
+  CF f01_7@10 improving: label=true got=false
+  CF f01_7@12 converged: label=true got=false
+  CF f01_7@12 stable: label=true got=false
+  CF f01_7@12 improving: label=true got=false
+  CF f01_7@24 converged: label=true got=false
+  CF f01_7@24 stable: label=true got=false
+  CF f05_0@48 converged: label=true got=false
+  CF f05_0@48 stable: label=true got=false
+  CF f05_0@96 converged: label=true got=false
+  CF f05_0@96 stable: label=true got=false
+  CF f05_1@53 converged: label=true got=false
+  CF f05_1@53 stable: label=true got=false
+  CF f05_1@106 converged: label=true got=false
+  CF f05_1@106 stable: label=true got=false
+  CF f05_2@68 converged: label=true got=false
+  CF f05_2@68 stable: label=true got=false
+  CF f05_2@136 converged: label=true got=false
+  CF f05_2@136 stable: label=true got=false
+  CF f05_3@49 converged: label=true got=false
+  CF f05_3@49 stable: label=true got=false
+  CF f05_3@98 converged: label=true got=false
+  CF f05_3@98 stable: label=true got=false
+  CF f05_4@39 converged: label=true got=false
+  CF f05_4@39 stable: label=true got=false
+  CF f05_4@78 converged: label=true got=false
+  CF f05_4@78 stable: label=true got=false
+  CF f05_5@92 converged: label=true got=false
+  CF f05_5@92 stable: label=true got=false
+  CF f05_5@184 converged: label=true got=false
+  CF f05_5@184 stable: label=true got=false
+  CF f05_6@36 converged: label=true got=false
+  CF f05_6@36 stable: label=true got=false
+  CF f05_6@72 converged: label=true got=false
+  CF f05_6@72 stable: label=true got=false
+  CF f05_7@58 converged: label=true got=false
+  CF f05_7@58 stable: label=true got=false
+  CF f05_7@116 converged: label=true got=false
+  CF f05_7@116 stable: label=true got=false
+  CF f06_0@27 oscillating: label=true got=false
+  CF f06_0@61 oscillating: label=true got=false
+  CF f06_0@129 oscillating: label=true got=false
+  CF f06_1@13 oscillating: label=true got=false
+  CF f06_1@19 oscillating: label=true got=false
+  CF f06_1@31 oscillating: label=true got=false
+  CF f06_2@44 oscillating: label=true got=false
+  CF f06_2@112 oscillating: label=true got=false
+  CF f06_2@248 oscillating: label=true got=false
+  CF f06_3@50 oscillating: label=true got=false
+  CF f06_3@130 oscillating: label=true got=false
+  CF f06_3@290 oscillating: label=true got=false
+  CF f06_4@49 oscillating: label=true got=false
+  CF f06_4@127 oscillating: label=true got=false
+  CF f06_4@283 oscillating: label=true got=false
+  CF f06_5@26 oscillating: label=true got=false
+  CF f06_5@58 oscillating: label=true got=false
+  CF f06_5@122 oscillating: label=true got=false
+  CF f06_6@31 oscillating: label=true got=false
+  CF f06_6@73 oscillating: label=true got=false
+  CF f06_6@157 improving: label=true got=false
+  CF f06_6@157 oscillating: label=true got=false
+  CF f06_7@33 oscillating: label=true got=false
+  CF f06_7@79 oscillating: label=true got=false
+  CF f06_7@171 oscillating: label=true got=false
+  CF f11_0@17 converged: label=true got=false
+  CF f11_0@17 stable: label=true got=false
+  CF f11_0@34 converged: label=true got=false
+  CF f11_0@34 stable: label=true got=false
+  CF f11_1@10 stable: label=true got=false
+  CF f11_1@13 converged: label=true got=false
+  CF f11_1@13 stable: label=true got=false
+  CF f11_1@26 converged: label=true got=false
+  CF f11_1@26 stable: label=true got=false
+  CF f11_2@10 converged: label=true got=false
+  CF f11_2@10 stable: label=true got=false
+  CF f11_2@10 improving: label=true got=false
+  CF f11_2@11 converged: label=true got=false
+  CF f11_2@11 stable: label=true got=false
+  CF f11_2@12 converged: label=true got=false
+  CF f11_2@12 stable: label=true got=false
+  CF f11_3@25 converged: label=true got=false
+  CF f11_3@25 stable: label=true got=false
+  CF f11_3@50 converged: label=true got=false
+  CF f11_3@50 stable: label=true got=false
+  CF f11_4@338 converged: label=true got=false
+  CF f11_4@338 stable: label=true got=false
+  CF f11_4@676 converged: label=true got=false
+  CF f11_4@676 stable: label=true got=false
+  CF f11_5@22 converged: label=true got=false
+  CF f11_5@22 stable: label=true got=false
+  CF f11_5@44 converged: label=true got=false
+  CF f11_5@44 stable: label=true got=false
+  CF f11_6@136 converged: label=true got=false
+  CF f11_6@136 stable: label=true got=false
+  CF f11_6@272 converged: label=true got=false
+  CF f11_6@272 stable: label=true got=false
+  CF f11_7@10 stable: label=true got=false
+  CF f11_7@10 improving: label=true got=false
+  CF f11_7@15 converged: label=true got=false
+  CF f11_7@15 stable: label=true got=false
+  CF f11_7@30 converged: label=true got=false
+  CF f11_7@30 stable: label=true got=false
+  INC f01_0@10 converged: label=true got=false
+  INC f01_0@10 stable: label=true got=false
+  INC f01_0@11 converged: label=true got=false
+  INC f01_0@11 stable: label=true got=false
+  INC f01_0@12 converged: label=true got=false
+  INC f01_0@12 stable: label=true got=false
+  INC f01_1@20 converged: label=true got=false
+  INC f01_2@10 stable: label=true got=false
+  INC f01_2@14 converged: label=true got=false
+  INC f01_2@14 stable: label=true got=false
+  INC f01_3@96 stable: label=false got=true
+  INC f01_4@126 stable: label=false got=true
+  INC f01_4@126 improving: label=true got=false
+  INC f01_4@253 improving: label=true got=false
+  INC f01_5@32 converged: label=true got=false
+  INC f01_6@22 converged: label=true got=false
+  INC f01_7@10 stable: label=true got=false
+  INC f01_7@12 converged: label=true got=false
+  INC f01_7@12 stable: label=true got=false
+  INC f05_0@24 oscillating: label=false got=true
+  INC f05_0@48 converged: label=true got=false
+  INC f05_0@48 stable: label=true got=false
+  INC f05_0@48 oscillating: label=false got=true
+  INC f05_0@96 equilibrium: label=false got=true
+  INC f05_1@53 converged: label=true got=false
+  INC f05_1@53 equilibrium: label=false got=true
+  INC f05_1@106 equilibrium: label=false got=true
+  INC f05_2@34 oscillating: label=false got=true
+  INC f05_2@68 converged: label=true got=false
+  INC f05_2@68 equilibrium: label=false got=true
+  INC f05_2@136 equilibrium: label=false got=true
+  INC f05_3@24 oscillating: label=false got=true
+  INC f05_3@49 converged: label=true got=false
+  INC f05_3@49 stable: label=true got=false
+  INC f05_3@49 oscillating: label=false got=true
+  INC f05_3@98 equilibrium: label=false got=true
+  INC f05_4@19 oscillating: label=false got=true
+  INC f05_4@39 converged: label=true got=false
+  INC f05_4@39 stable: label=true got=false
+  INC f05_4@39 oscillating: label=false got=true
+  INC f05_4@78 equilibrium: label=false got=true
+  INC f05_5@46 oscillating: label=false got=true
+  INC f05_5@92 converged: label=true got=false
+  INC f05_5@92 oscillating: label=false got=true
+  INC f05_5@184 equilibrium: label=false got=true
+  INC f05_6@18 oscillating: label=false got=true
+  INC f05_6@36 converged: label=true got=false
+  INC f05_6@36 stable: label=true got=false
+  INC f05_6@36 oscillating: label=false got=true
+  INC f05_6@72 equilibrium: label=false got=true
+  INC f05_7@29 oscillating: label=false got=true
+  INC f05_7@58 converged: label=true got=false
+  INC f05_7@58 stable: label=true got=false
+  INC f05_7@58 oscillating: label=false got=true
+  INC f05_7@116 equilibrium: label=false got=true
+  INC f06_0@27 oscillating: label=true got=false
+  INC f06_0@61 oscillating: label=true got=false
+  INC f06_0@129 oscillating: label=true got=false
+  INC f06_2@44 oscillating: label=true got=false
+  INC f06_2@44 diverging: label=false got=true
+  INC f06_2@112 oscillating: label=true got=false
+  INC f06_2@112 diverging: label=false got=true
+  INC f06_2@248 oscillating: label=true got=false
+  INC f06_3@50 oscillating: label=true got=false
+  INC f06_3@50 diverging: label=false got=true
+  INC f06_3@130 oscillating: label=true got=false
+  INC f06_3@130 diverging: label=false got=true
+  INC f06_3@290 oscillating: label=true got=false
+  INC f06_3@290 diverging: label=false got=true
+  INC f06_4@49 oscillating: label=true got=false
+  INC f06_4@49 diverging: label=false got=true
+  INC f06_4@127 oscillating: label=true got=false
+  INC f06_4@127 diverging: label=false got=true
+  INC f06_4@283 oscillating: label=true got=false
+  INC f06_4@283 diverging: label=false got=true
+  INC f06_5@26 oscillating: label=true got=false
+  INC f06_5@58 oscillating: label=true got=false
+  INC f06_5@122 oscillating: label=true got=false
+  INC f06_6@31 oscillating: label=true got=false
+  INC f06_6@73 oscillating: label=true got=false
+  INC f06_6@157 improving: label=true got=false
+  INC f06_6@157 oscillating: label=true got=false
+  INC f06_7@33 oscillating: label=true got=false
+  INC f06_7@79 oscillating: label=true got=false
+  INC f06_7@79 diverging: label=false got=true
+  INC f06_7@171 oscillating: label=true got=false
+  INC f11_0@10 oscillating: label=false got=true
+  INC f11_0@17 converged: label=true got=false
+  INC f11_0@17 stable: label=true got=false
+  INC f11_0@17 oscillating: label=false got=true
+  INC f11_0@34 equilibrium: label=false got=true
+  INC f11_1@10 stable: label=true got=false
+  INC f11_1@10 oscillating: label=false got=true
+  INC f11_1@13 converged: label=true got=false
+  INC f11_1@13 stable: label=true got=false
+  INC f11_1@13 oscillating: label=false got=true
+  INC f11_1@26 equilibrium: label=false got=true
+  INC f11_2@10 converged: label=true got=false
+  INC f11_2@10 stable: label=true got=false
+  INC f11_2@10 improving: label=true got=false
+  INC f11_2@10 oscillating: label=false got=true
+  INC f11_2@11 converged: label=true got=false
+  INC f11_2@11 stable: label=true got=false
+  INC f11_2@11 oscillating: label=false got=true
+  INC f11_2@12 converged: label=true got=false
+  INC f11_2@12 stable: label=true got=false
+  INC f11_2@12 oscillating: label=false got=true
+  INC f11_3@12 oscillating: label=false got=true
+  INC f11_3@25 converged: label=true got=false
+  INC f11_3@25 stable: label=true got=false
+  INC f11_3@25 oscillating: label=false got=true
+  INC f11_3@50 equilibrium: label=false got=true
+  INC f11_4@169 oscillating: label=false got=true
+  INC f11_4@338 converged: label=true got=false
+  INC f11_4@338 stable: label=true got=false
+  INC f11_4@338 oscillating: label=false got=true
+  INC f11_4@676 equilibrium: label=false got=true
+  INC f11_5@11 oscillating: label=false got=true
+  INC f11_5@22 converged: label=true got=false
+  INC f11_5@22 stable: label=true got=false
+  INC f11_5@22 oscillating: label=false got=true
+  INC f11_5@44 equilibrium: label=false got=true
+  INC f11_6@68 oscillating: label=false got=true
+  INC f11_6@136 converged: label=true got=false
+  INC f11_6@136 stable: label=true got=false
+  INC f11_6@136 oscillating: label=false got=true
+  INC f11_6@272 equilibrium: label=false got=true
+  INC f11_7@10 stable: label=true got=false
+  INC f11_7@10 improving: label=true got=false
+  INC f11_7@10 oscillating: label=false got=true
+  INC f11_7@15 converged: label=true got=false
+  INC f11_7@15 stable: label=true got=false
+  INC f11_7@15 oscillating: label=false got=true
+  INC f11_7@30 equilibrium: label=false got=true
+  R3 f01_0@10 converged: label=true got=false
+  R3 f01_0@10 stable: label=true got=false
+  R3 f01_0@11 converged: label=true got=false
+  R3 f01_0@11 stable: label=true got=false
+  R3 f01_0@12 converged: label=true got=false
+  R3 f01_0@12 stable: label=true got=false
+  R3 f01_1@20 converged: label=true got=false
+  R3 f01_1@20 stable: label=true got=false
+  R3 f01_2@10 stable: label=true got=false
+  R3 f01_2@14 converged: label=true got=false
+  R3 f01_2@14 stable: label=true got=false
+  R3 f01_3@96 stable: label=false got=true
+  R3 f01_4@126 stable: label=false got=true
+  R3 f01_5@32 converged: label=true got=false
+  R3 f01_6@22 converged: label=true got=false
+  R3 f01_6@22 stable: label=true got=false
+  R3 f01_7@10 stable: label=true got=false
+  R3 f01_7@12 converged: label=true got=false
+  R3 f01_7@12 stable: label=true got=false
+  R3 f05_0@24 oscillating: label=false got=true
+  R3 f05_0@48 converged: label=true got=false
+  R3 f05_0@48 oscillating: label=false got=true
+  R3 f05_0@96 equilibrium: label=false got=true
+  R3 f05_1@53 converged: label=true got=false
+  R3 f05_1@53 equilibrium: label=false got=true
+  R3 f05_1@106 equilibrium: label=false got=true
+  R3 f05_2@34 oscillating: label=false got=true
+  R3 f05_2@68 converged: label=true got=false
+  R3 f05_2@68 equilibrium: label=false got=true
+  R3 f05_2@136 equilibrium: label=false got=true
+  R3 f05_3@24 oscillating: label=false got=true
+  R3 f05_3@49 converged: label=true got=false
+  R3 f05_3@49 oscillating: label=false got=true
+  R3 f05_3@98 equilibrium: label=false got=true
+  R3 f05_4@19 oscillating: label=false got=true
+  R3 f05_4@39 converged: label=true got=false
+  R3 f05_4@39 oscillating: label=false got=true
+  R3 f05_4@78 equilibrium: label=false got=true
+  R3 f05_5@46 oscillating: label=false got=true
+  R3 f05_5@92 converged: label=true got=false
+  R3 f05_5@92 oscillating: label=false got=true
+  R3 f05_5@184 equilibrium: label=false got=true
+  R3 f05_6@18 oscillating: label=false got=true
+  R3 f05_6@36 converged: label=true got=false
+  R3 f05_6@36 oscillating: label=false got=true
+  R3 f05_6@72 equilibrium: label=false got=true
+  R3 f05_7@29 oscillating: label=false got=true
+  R3 f05_7@58 converged: label=true got=false
+  R3 f05_7@58 oscillating: label=false got=true
+  R3 f05_7@116 equilibrium: label=false got=true
+  R3 f06_0@27 oscillating: label=true got=false
+  R3 f06_0@61 oscillating: label=true got=false
+  R3 f06_0@129 oscillating: label=true got=false
+  R3 f06_2@44 oscillating: label=true got=false
+  R3 f06_2@44 diverging: label=false got=true
+  R3 f06_2@112 oscillating: label=true got=false
+  R3 f06_2@112 diverging: label=false got=true
+  R3 f06_2@248 oscillating: label=true got=false
+  R3 f06_3@50 oscillating: label=true got=false
+  R3 f06_3@50 diverging: label=false got=true
+  R3 f06_3@130 oscillating: label=true got=false
+  R3 f06_3@130 diverging: label=false got=true
+  R3 f06_3@290 oscillating: label=true got=false
+  R3 f06_3@290 diverging: label=false got=true
+  R3 f06_4@49 oscillating: label=true got=false
+  R3 f06_4@49 diverging: label=false got=true
+  R3 f06_4@127 oscillating: label=true got=false
+  R3 f06_4@127 diverging: label=false got=true
+  R3 f06_4@283 oscillating: label=true got=false
+  R3 f06_4@283 diverging: label=false got=true
+  R3 f06_5@26 oscillating: label=true got=false
+  R3 f06_5@58 oscillating: label=true got=false
+  R3 f06_5@122 oscillating: label=true got=false
+  R3 f06_6@31 oscillating: label=true got=false
+  R3 f06_6@73 oscillating: label=true got=false
+  R3 f06_6@157 improving: label=true got=false
+  R3 f06_6@157 oscillating: label=true got=false
+  R3 f06_7@33 oscillating: label=true got=false
+  R3 f06_7@79 oscillating: label=true got=false
+  R3 f06_7@79 diverging: label=false got=true
+  R3 f06_7@171 oscillating: label=true got=false
+  R3 f11_0@10 oscillating: label=false got=true
+  R3 f11_0@17 converged: label=true got=false
+  R3 f11_0@17 stable: label=true got=false
+  R3 f11_0@17 oscillating: label=false got=true
+  R3 f11_0@34 equilibrium: label=false got=true
+  R3 f11_1@10 stable: label=true got=false
+  R3 f11_1@10 oscillating: label=false got=true
+  R3 f11_1@13 converged: label=true got=false
+  R3 f11_1@13 stable: label=true got=false
+  R3 f11_1@13 oscillating: label=false got=true
+  R3 f11_1@26 equilibrium: label=false got=true
+  R3 f11_2@10 converged: label=true got=false
+  R3 f11_2@10 stable: label=true got=false
+  R3 f11_2@10 oscillating: label=false got=true
+  R3 f11_2@11 converged: label=true got=false
+  R3 f11_2@11 stable: label=true got=false
+  R3 f11_2@11 oscillating: label=false got=true
+  R3 f11_2@12 converged: label=true got=false
+  R3 f11_2@12 stable: label=true got=false
+  R3 f11_2@12 oscillating: label=false got=true
+  R3 f11_3@12 oscillating: label=false got=true
+  R3 f11_3@25 converged: label=true got=false
+  R3 f11_3@25 stable: label=true got=false
+  R3 f11_3@25 oscillating: label=false got=true
+  R3 f11_3@50 equilibrium: label=false got=true
+  R3 f11_4@169 oscillating: label=false got=true
+  R3 f11_4@338 converged: label=true got=false
+  R3 f11_4@338 oscillating: label=false got=true
+  R3 f11_4@676 equilibrium: label=false got=true
+  R3 f11_5@11 oscillating: label=false got=true
+  R3 f11_5@22 converged: label=true got=false
+  R3 f11_5@22 stable: label=true got=false
+  R3 f11_5@22 oscillating: label=false got=true
+  R3 f11_5@44 equilibrium: label=false got=true
+  R3 f11_6@68 oscillating: label=false got=true
+  R3 f11_6@136 converged: label=true got=false
+  R3 f11_6@136 oscillating: label=false got=true
+  R3 f11_6@272 equilibrium: label=false got=true
+  R3 f11_7@10 stable: label=true got=false
+  R3 f11_7@10 oscillating: label=false got=true
+  R3 f11_7@15 converged: label=true got=false
+  R3 f11_7@15 stable: label=true got=false
+  R3 f11_7@15 oscillating: label=false got=true
+  R3 f11_7@30 equilibrium: label=false got=true
+  R3-STD f01_0@10 converged: label=true got=false
+  R3-STD f01_0@10 stable: label=true got=false
+  R3-STD f01_0@11 converged: label=true got=false
+  R3-STD f01_0@11 stable: label=true got=false
+  R3-STD f01_0@12 converged: label=true got=false
+  R3-STD f01_0@12 stable: label=true got=false
+  R3-STD f01_1@20 converged: label=true got=false
+  R3-STD f01_1@20 stable: label=true got=false
+  R3-STD f01_2@10 stable: label=true got=false
+  R3-STD f01_2@14 converged: label=true got=false
+  R3-STD f01_2@14 stable: label=true got=false
+  R3-STD f01_3@96 stable: label=false got=true
+  R3-STD f01_4@126 stable: label=false got=true
+  R3-STD f01_5@32 converged: label=true got=false
+  R3-STD f01_6@22 converged: label=true got=false
+  R3-STD f01_6@22 stable: label=true got=false
+  R3-STD f01_7@10 stable: label=true got=false
+  R3-STD f01_7@12 converged: label=true got=false
+  R3-STD f01_7@12 stable: label=true got=false
+  R3-STD f05_0@24 oscillating: label=false got=true
+  R3-STD f05_0@48 converged: label=true got=false
+  R3-STD f05_0@48 oscillating: label=false got=true
+  R3-STD f05_0@96 equilibrium: label=false got=true
+  R3-STD f05_1@53 converged: label=true got=false
+  R3-STD f05_1@53 equilibrium: label=false got=true
+  R3-STD f05_1@106 equilibrium: label=false got=true
+  R3-STD f05_2@34 oscillating: label=false got=true
+  R3-STD f05_2@68 converged: label=true got=false
+  R3-STD f05_2@68 equilibrium: label=false got=true
+  R3-STD f05_2@136 equilibrium: label=false got=true
+  R3-STD f05_3@24 oscillating: label=false got=true
+  R3-STD f05_3@49 converged: label=true got=false
+  R3-STD f05_3@49 oscillating: label=false got=true
+  R3-STD f05_3@98 equilibrium: label=false got=true
+  R3-STD f05_4@19 oscillating: label=false got=true
+  R3-STD f05_4@39 converged: label=true got=false
+  R3-STD f05_4@39 oscillating: label=false got=true
+  R3-STD f05_4@78 equilibrium: label=false got=true
+  R3-STD f05_5@46 oscillating: label=false got=true
+  R3-STD f05_5@92 converged: label=true got=false
+  R3-STD f05_5@92 oscillating: label=false got=true
+  R3-STD f05_5@184 equilibrium: label=false got=true
+  R3-STD f05_6@18 oscillating: label=false got=true
+  R3-STD f05_6@36 converged: label=true got=false
+  R3-STD f05_6@36 oscillating: label=false got=true
+  R3-STD f05_6@72 equilibrium: label=false got=true
+  R3-STD f05_7@29 oscillating: label=false got=true
+  R3-STD f05_7@58 converged: label=true got=false
+  R3-STD f05_7@58 oscillating: label=false got=true
+  R3-STD f05_7@116 equilibrium: label=false got=true
+  R3-STD f06_0@27 oscillating: label=true got=false
+  R3-STD f06_0@61 oscillating: label=true got=false
+  R3-STD f06_0@129 oscillating: label=true got=false
+  R3-STD f06_2@44 oscillating: label=true got=false
+  R3-STD f06_2@44 diverging: label=false got=true
+  R3-STD f06_2@112 oscillating: label=true got=false
+  R3-STD f06_2@112 diverging: label=false got=true
+  R3-STD f06_2@248 oscillating: label=true got=false
+  R3-STD f06_3@50 oscillating: label=true got=false
+  R3-STD f06_3@50 diverging: label=false got=true
+  R3-STD f06_3@130 oscillating: label=true got=false
+  R3-STD f06_3@130 diverging: label=false got=true
+  R3-STD f06_3@290 oscillating: label=true got=false
+  R3-STD f06_3@290 diverging: label=false got=true
+  R3-STD f06_4@49 oscillating: label=true got=false
+  R3-STD f06_4@49 diverging: label=false got=true
+  R3-STD f06_4@127 oscillating: label=true got=false
+  R3-STD f06_4@127 diverging: label=false got=true
+  R3-STD f06_4@283 oscillating: label=true got=false
+  R3-STD f06_4@283 diverging: label=false got=true
+  R3-STD f06_5@26 oscillating: label=true got=false
+  R3-STD f06_5@58 oscillating: label=true got=false
+  R3-STD f06_5@122 oscillating: label=true got=false
+  R3-STD f06_6@31 oscillating: label=true got=false
+  R3-STD f06_6@73 oscillating: label=true got=false
+  R3-STD f06_6@157 improving: label=true got=false
+  R3-STD f06_6@157 oscillating: label=true got=false
+  R3-STD f06_7@33 oscillating: label=true got=false
+  R3-STD f06_7@79 oscillating: label=true got=false
+  R3-STD f06_7@79 diverging: label=false got=true
+  R3-STD f06_7@171 oscillating: label=true got=false
+  R3-STD f11_0@10 oscillating: label=false got=true
+  R3-STD f11_0@17 converged: label=true got=false
+  R3-STD f11_0@17 stable: label=true got=false
+  R3-STD f11_0@17 oscillating: label=false got=true
+  R3-STD f11_0@34 equilibrium: label=false got=true
+  R3-STD f11_1@10 stable: label=true got=false
+  R3-STD f11_1@10 oscillating: label=false got=true
+  R3-STD f11_1@13 converged: label=true got=false
+  R3-STD f11_1@13 stable: label=true got=false
+  R3-STD f11_1@13 oscillating: label=false got=true
+  R3-STD f11_1@26 equilibrium: label=false got=true
+  R3-STD f11_2@10 converged: label=true got=false
+  R3-STD f11_2@10 stable: label=true got=false
+  R3-STD f11_2@10 oscillating: label=false got=true
+  R3-STD f11_2@11 converged: label=true got=false
+  R3-STD f11_2@11 stable: label=true got=false
+  R3-STD f11_2@11 oscillating: label=false got=true
+  R3-STD f11_2@12 converged: label=true got=false
+  R3-STD f11_2@12 stable: label=true got=false
+  R3-STD f11_2@12 oscillating: label=false got=true
+  R3-STD f11_3@12 oscillating: label=false got=true
+  R3-STD f11_3@25 converged: label=true got=false
+  R3-STD f11_3@25 stable: label=true got=false
+  R3-STD f11_3@25 oscillating: label=false got=true
+  R3-STD f11_3@50 equilibrium: label=false got=true
+  R3-STD f11_4@169 oscillating: label=false got=true
+  R3-STD f11_4@338 converged: label=true got=false
+  R3-STD f11_4@338 oscillating: label=false got=true
+  R3-STD f11_4@676 equilibrium: label=false got=true
+  R3-STD f11_5@11 oscillating: label=false got=true
+  R3-STD f11_5@22 converged: label=true got=false
+  R3-STD f11_5@22 stable: label=true got=false
+  R3-STD f11_5@22 oscillating: label=false got=true
+  R3-STD f11_5@44 equilibrium: label=false got=true
+  R3-STD f11_6@68 oscillating: label=false got=true
+  R3-STD f11_6@136 converged: label=true got=false
+  R3-STD f11_6@136 oscillating: label=false got=true
+  R3-STD f11_6@272 equilibrium: label=false got=true
+  R3-STD f11_7@10 stable: label=true got=false
+  R3-STD f11_7@10 oscillating: label=false got=true
+  R3-STD f11_7@15 converged: label=true got=false
+  R3-STD f11_7@15 stable: label=true got=false
+  R3-STD f11_7@15 oscillating: label=false got=true
+  R3-STD f11_7@30 equilibrium: label=false got=true
+  W4 f01_0@10 improving: label=true got=false
+  W4 f01_0@11 improving: label=true got=false
+  W4 f01_0@12 improving: label=true got=false
+  W4 f01_1@20 converged: label=true got=false
+  W4 f01_2@10 stable: label=true got=false
+  W4 f01_2@14 converged: label=true got=false
+  W4 f01_3@96 stable: label=false got=true
+  W4 f01_4@126 converged: label=false got=true
+  W4 f01_4@126 stable: label=false got=true
+  W4 f01_4@126 improving: label=true got=false
+  W4 f01_4@253 improving: label=true got=false
+  W4 f01_5@16 stable: label=false got=true
+  W4 f01_6@22 converged: label=true got=false
+  W4 f01_7@10 stable: label=true got=false
+  W4 f01_7@12 converged: label=true got=false
+  W4 f05_0@24 oscillating: label=false got=true
+  W4 f05_0@48 converged: label=true got=false
+  W4 f05_0@48 stable: label=true got=false
+  W4 f05_0@48 oscillating: label=false got=true
+  W4 f05_0@96 equilibrium: label=false got=true
+  W4 f05_1@26 improving: label=false got=true
+  W4 f05_1@53 equilibrium: label=false got=true
+  W4 f05_2@136 converged: label=true got=false
+  W4 f05_2@136 stable: label=true got=false
+  W4 f05_2@136 diverging: label=false got=true
+  W4 f05_3@24 oscillating: label=false got=true
+  W4 f05_3@49 converged: label=true got=false
+  W4 f05_3@98 equilibrium: label=false got=true
+  W4 f05_4@39 converged: label=true got=false
+  W4 f05_4@78 equilibrium: label=false got=true
+  W4 f05_5@92 converged: label=true got=false
+  W4 f05_5@92 equilibrium: label=false got=true
+  W4 f05_5@184 equilibrium: label=false got=true
+  W4 f05_6@18 oscillating: label=false got=true
+  W4 f05_6@36 converged: label=true got=false
+  W4 f05_6@72 equilibrium: label=false got=true
+  W4 f05_7@58 converged: label=true got=false
+  W4 f05_7@116 equilibrium: label=false got=true
+  W4 f06_0@27 oscillating: label=true got=false
+  W4 f06_0@27 diverging: label=false got=true
+  W4 f06_0@61 oscillating: label=true got=false
+  W4 f06_0@61 diverging: label=false got=true
+  W4 f06_0@129 improving: label=false got=true
+  W4 f06_0@129 oscillating: label=true got=false
+  W4 f06_2@44 oscillating: label=true got=false
+  W4 f06_2@112 oscillating: label=true got=false
+  W4 f06_2@248 oscillating: label=true got=false
+  W4 f06_3@50 oscillating: label=true got=false
+  W4 f06_3@130 oscillating: label=true got=false
+  W4 f06_3@290 oscillating: label=true got=false
+  W4 f06_4@49 oscillating: label=true got=false
+  W4 f06_4@127 oscillating: label=true got=false
+  W4 f06_4@283 oscillating: label=true got=false
+  W4 f06_5@26 oscillating: label=true got=false
+  W4 f06_5@58 oscillating: label=true got=false
+  W4 f06_5@122 oscillating: label=true got=false
+  W4 f06_6@31 oscillating: label=true got=false
+  W4 f06_6@31 diverging: label=false got=true
+  W4 f06_6@73 oscillating: label=true got=false
+  W4 f06_6@73 diverging: label=false got=true
+  W4 f06_6@157 improving: label=true got=false
+  W4 f06_6@157 oscillating: label=true got=false
+  W4 f06_6@157 diverging: label=false got=true
+  W4 f06_7@33 oscillating: label=true got=false
+  W4 f06_7@79 oscillating: label=true got=false
+  W4 f06_7@171 oscillating: label=true got=false
+  W4 f11_0@10 oscillating: label=false got=true
+  W4 f11_0@17 converged: label=true got=false
+  W4 f11_0@17 stable: label=true got=false
+  W4 f11_0@17 oscillating: label=false got=true
+  W4 f11_0@34 equilibrium: label=false got=true
+  W4 f11_1@10 stable: label=true got=false
+  W4 f11_1@10 oscillating: label=false got=true
+  W4 f11_1@13 converged: label=true got=false
+  W4 f11_1@13 stable: label=true got=false
+  W4 f11_1@13 oscillating: label=false got=true
+  W4 f11_1@26 equilibrium: label=false got=true
+  W4 f11_2@10 converged: label=true got=false
+  W4 f11_2@10 improving: label=true got=false
+  W4 f11_2@10 equilibrium: label=false got=true
+  W4 f11_2@11 equilibrium: label=false got=true
+  W4 f11_2@12 equilibrium: label=false got=true
+  W4 f11_3@12 oscillating: label=false got=true
+  W4 f11_3@25 converged: label=true got=false
+  W4 f11_3@25 stable: label=true got=false
+  W4 f11_3@25 oscillating: label=false got=true
+  W4 f11_3@50 equilibrium: label=false got=true
+  W4 f11_4@169 oscillating: label=false got=true
+  W4 f11_4@338 converged: label=true got=false
+  W4 f11_4@338 stable: label=true got=false
+  W4 f11_4@338 oscillating: label=false got=true
+  W4 f11_4@676 equilibrium: label=false got=true
+  W4 f11_5@11 oscillating: label=false got=true
+  W4 f11_5@22 converged: label=true got=false
+  W4 f11_5@22 stable: label=true got=false
+  W4 f11_5@22 oscillating: label=false got=true
+  W4 f11_5@44 equilibrium: label=false got=true
+  W4 f11_6@68 oscillating: label=false got=true
+  W4 f11_6@136 converged: label=true got=false
+  W4 f11_6@136 stable: label=true got=false
+  W4 f11_6@136 oscillating: label=false got=true
+  W4 f11_6@272 equilibrium: label=false got=true
+  W4 f11_7@10 stable: label=true got=false
+  W4 f11_7@10 improving: label=true got=false
+  W4 f11_7@10 oscillating: label=false got=true
+  W4 f11_7@15 converged: label=true got=false
+  W4 f11_7@15 stable: label=true got=false
+  W4 f11_7@15 oscillating: label=false got=true
+  W4 f11_7@30 equilibrium: label=false got=true
+  STD f01_0@10 converged: label=true got=false
+  STD f01_0@10 stable: label=true got=false
+  STD f01_0@11 converged: label=true got=false
+  STD f01_0@11 stable: label=true got=false
+  STD f01_0@11 improving: label=true got=false
+  STD f01_0@12 converged: label=true got=false
+  STD f01_0@12 stable: label=true got=false
+  STD f01_0@12 improving: label=true got=false
+  STD f01_1@20 converged: label=true got=false
+  STD f01_2@10 stable: label=true got=false
+  STD f01_2@14 converged: label=true got=false
+  STD f01_2@14 stable: label=true got=false
+  STD f01_3@96 stable: label=false got=true
+  STD f01_4@126 stable: label=false got=true
+  STD f01_4@253 improving: label=true got=false
+  STD f01_5@32 converged: label=true got=false
+  STD f01_6@22 converged: label=true got=false
+  STD f01_7@10 stable: label=true got=false
+  STD f01_7@12 converged: label=true got=false
+  STD f01_7@12 stable: label=true got=false
+  STD f05_0@24 oscillating: label=false got=true
+  STD f05_0@24 equilibrium: label=false got=true
+  STD f05_0@48 converged: label=true got=false
+  STD f05_0@48 oscillating: label=false got=true
+  STD f05_0@48 equilibrium: label=false got=true
+  STD f05_0@96 equilibrium: label=false got=true
+  STD f05_1@26 oscillating: label=false got=true
+  STD f05_1@26 equilibrium: label=false got=true
+  STD f05_1@53 converged: label=true got=false
+  STD f05_1@53 improving: label=false got=true
+  STD f05_1@53 oscillating: label=false got=true
+  STD f05_1@106 equilibrium: label=false got=true
+  STD f05_2@34 oscillating: label=false got=true
+  STD f05_2@34 equilibrium: label=false got=true
+  STD f05_2@68 converged: label=true got=false
+  STD f05_2@68 oscillating: label=false got=true
+  STD f05_2@68 equilibrium: label=false got=true
+  STD f05_2@136 equilibrium: label=false got=true
+  STD f05_3@24 oscillating: label=false got=true
+  STD f05_3@49 converged: label=true got=false
+  STD f05_3@49 oscillating: label=false got=true
+  STD f05_3@49 equilibrium: label=false got=true
+  STD f05_4@19 oscillating: label=false got=true
+  STD f05_4@39 converged: label=true got=false
+  STD f05_4@39 oscillating: label=false got=true
+  STD f05_5@46 oscillating: label=false got=true
+  STD f05_5@46 equilibrium: label=false got=true
+  STD f05_5@92 converged: label=true got=false
+  STD f05_5@92 oscillating: label=false got=true
+  STD f05_5@184 equilibrium: label=false got=true
+  STD f05_6@18 oscillating: label=false got=true
+  STD f05_6@18 equilibrium: label=false got=true
+  STD f05_6@36 converged: label=true got=false
+  STD f05_6@36 oscillating: label=false got=true
+  STD f05_7@29 oscillating: label=false got=true
+  STD f05_7@29 equilibrium: label=false got=true
+  STD f05_7@58 converged: label=true got=false
+  STD f05_7@58 oscillating: label=false got=true
+  STD f05_7@58 equilibrium: label=false got=true
+  STD f05_7@116 equilibrium: label=false got=true
+  STD f06_0@27 equilibrium: label=false got=true
+  STD f06_0@61 equilibrium: label=false got=true
+  STD f06_0@129 improving: label=false got=true
+  STD f06_1@13 improving: label=false got=true
+  STD f06_1@13 equilibrium: label=false got=true
+  STD f06_1@19 equilibrium: label=false got=true
+  STD f06_1@31 equilibrium: label=false got=true
+  STD f06_2@44 oscillating: label=true got=false
+  STD f06_2@44 diverging: label=false got=true
+  STD f06_2@112 oscillating: label=true got=false
+  STD f06_2@112 diverging: label=false got=true
+  STD f06_3@50 oscillating: label=true got=false
+  STD f06_3@50 diverging: label=false got=true
+  STD f06_3@130 oscillating: label=true got=false
+  STD f06_3@130 diverging: label=false got=true
+  STD f06_3@290 oscillating: label=true got=false
+  STD f06_3@290 diverging: label=false got=true
+  STD f06_4@49 oscillating: label=true got=false
+  STD f06_4@49 diverging: label=false got=true
+  STD f06_4@127 oscillating: label=true got=false
+  STD f06_4@127 diverging: label=false got=true
+  STD f06_4@283 oscillating: label=true got=false
+  STD f06_4@283 diverging: label=false got=true
+  STD f06_5@26 improving: label=false got=true
+  STD f06_5@26 diverging: label=false got=true
+  STD f06_5@58 improving: label=false got=true
+  STD f06_5@58 diverging: label=false got=true
+  STD f06_5@122 improving: label=false got=true
+  STD f06_5@122 diverging: label=false got=true
+  STD f06_6@31 equilibrium: label=false got=true
+  STD f06_6@73 equilibrium: label=false got=true
+  STD f06_6@157 improving: label=true got=false
+  STD f06_6@157 equilibrium: label=false got=true
+  STD f06_7@33 diverging: label=false got=true
+  STD f06_7@79 oscillating: label=true got=false
+  STD f06_7@79 diverging: label=false got=true
+  STD f11_0@17 converged: label=true got=false
+  STD f11_0@17 stable: label=true got=false
+  STD f11_1@10 stable: label=true got=false
+  STD f11_1@13 converged: label=true got=false
+  STD f11_1@13 stable: label=true got=false
+  STD f11_2@10 converged: label=true got=false
+  STD f11_2@10 stable: label=true got=false
+  STD f11_2@10 improving: label=true got=false
+  STD f11_2@11 converged: label=true got=false
+  STD f11_2@11 stable: label=true got=false
+  STD f11_2@12 converged: label=true got=false
+  STD f11_2@12 stable: label=true got=false
+  STD f11_3@25 converged: label=true got=false
+  STD f11_4@169 equilibrium: label=false got=true
+  STD f11_4@338 converged: label=true got=false
+  STD f11_4@676 equilibrium: label=false got=true
+  STD f11_5@22 converged: label=true got=false
+  STD f11_5@22 stable: label=true got=false
+  STD f11_6@68 equilibrium: label=false got=true
+  STD f11_6@136 converged: label=true got=false
+  STD f11_6@272 equilibrium: label=false got=true
+  STD f11_7@10 stable: label=true got=false
+  STD f11_7@10 improving: label=true got=false
+  STD f11_7@15 converged: label=true got=false
+  STD f11_7@15 stable: label=true got=false
+  STD' f01_0@10 converged: label=true got=false
+  STD' f01_0@10 stable: label=true got=false
+  STD' f01_0@10 equilibrium: label=false got=true
+  STD' f01_0@11 converged: label=true got=false
+  STD' f01_0@11 stable: label=true got=false
+  STD' f01_0@11 equilibrium: label=false got=true
+  STD' f01_0@12 converged: label=true got=false
+  STD' f01_0@12 stable: label=true got=false
+  STD' f01_0@12 equilibrium: label=false got=true
+  STD' f01_1@20 converged: label=true got=false
+  STD' f01_1@20 stable: label=true got=false
+  STD' f01_1@40 improving: label=false got=true
+  STD' f01_2@10 stable: label=true got=false
+  STD' f01_2@14 converged: label=true got=false
+  STD' f01_2@14 stable: label=true got=false
+  STD' f01_2@28 improving: label=false got=true
+  STD' f01_3@96 stable: label=false got=true
+  STD' f01_3@192 improving: label=false got=true
+  STD' f01_3@384 improving: label=false got=true
+  STD' f01_4@126 stable: label=false got=true
+  STD' f01_4@506 improving: label=false got=true
+  STD' f01_5@32 converged: label=true got=false
+  STD' f01_6@22 converged: label=true got=false
+  STD' f01_6@22 stable: label=true got=false
+  STD' f01_7@10 stable: label=true got=false
+  STD' f01_7@12 converged: label=true got=false
+  STD' f01_7@12 stable: label=true got=false
+  STD' f01_7@24 improving: label=false got=true
+  STD' f05_0@24 improving: label=false got=true
+  STD' f05_0@24 oscillating: label=false got=true
+  STD' f05_0@48 converged: label=true got=false
+  STD' f05_0@48 improving: label=false got=true
+  STD' f05_0@48 oscillating: label=false got=true
+  STD' f05_0@48 equilibrium: label=false got=true
+  STD' f05_0@96 improving: label=false got=true
+  STD' f05_0@96 oscillating: label=false got=true
+  STD' f05_0@96 equilibrium: label=false got=true
+  STD' f05_1@26 equilibrium: label=false got=true
+  STD' f05_1@53 converged: label=true got=false
+  STD' f05_1@53 improving: label=false got=true
+  STD' f05_1@106 improving: label=false got=true
+  STD' f05_1@106 equilibrium: label=false got=true
+  STD' f05_2@34 equilibrium: label=false got=true
+  STD' f05_2@68 converged: label=true got=false
+  STD' f05_2@68 equilibrium: label=false got=true
+  STD' f05_2@136 improving: label=false got=true
+  STD' f05_2@136 equilibrium: label=false got=true
+  STD' f05_3@24 oscillating: label=false got=true
+  STD' f05_3@49 converged: label=true got=false
+  STD' f05_3@49 improving: label=false got=true
+  STD' f05_3@49 oscillating: label=false got=true
+  STD' f05_3@49 equilibrium: label=false got=true
+  STD' f05_3@98 improving: label=false got=true
+  STD' f05_3@98 oscillating: label=false got=true
+  STD' f05_4@19 oscillating: label=false got=true
+  STD' f05_4@19 equilibrium: label=false got=true
+  STD' f05_4@39 converged: label=true got=false
+  STD' f05_4@39 oscillating: label=false got=true
+  STD' f05_4@39 equilibrium: label=false got=true
+  STD' f05_4@78 improving: label=false got=true
+  STD' f05_4@78 oscillating: label=false got=true
+  STD' f05_4@78 equilibrium: label=false got=true
+  STD' f05_5@46 equilibrium: label=false got=true
+  STD' f05_5@92 converged: label=true got=false
+  STD' f05_5@92 improving: label=false got=true
+  STD' f05_5@92 equilibrium: label=false got=true
+  STD' f05_5@184 improving: label=false got=true
+  STD' f05_5@184 oscillating: label=false got=true
+  STD' f05_5@184 equilibrium: label=false got=true
+  STD' f05_6@18 improving: label=false got=true
+  STD' f05_6@18 oscillating: label=false got=true
+  STD' f05_6@18 equilibrium: label=false got=true
+  STD' f05_6@36 converged: label=true got=false
+  STD' f05_6@36 improving: label=false got=true
+  STD' f05_6@36 oscillating: label=false got=true
+  STD' f05_6@36 equilibrium: label=false got=true
+  STD' f05_6@72 improving: label=false got=true
+  STD' f05_6@72 oscillating: label=false got=true
+  STD' f05_6@72 equilibrium: label=false got=true
+  STD' f05_7@29 improving: label=false got=true
+  STD' f05_7@29 oscillating: label=false got=true
+  STD' f05_7@29 equilibrium: label=false got=true
+  STD' f05_7@58 converged: label=true got=false
+  STD' f05_7@58 equilibrium: label=false got=true
+  STD' f05_7@116 improving: label=false got=true
+  STD' f05_7@116 equilibrium: label=false got=true
+  STD' f06_0@27 oscillating: label=true got=false
+  STD' f06_0@27 equilibrium: label=false got=true
+  STD' f06_0@61 improving: label=false got=true
+  STD' f06_0@61 oscillating: label=true got=false
+  STD' f06_0@61 equilibrium: label=false got=true
+  STD' f06_0@129 improving: label=false got=true
+  STD' f06_0@129 oscillating: label=true got=false
+  STD' f06_1@13 improving: label=false got=true
+  STD' f06_1@13 equilibrium: label=false got=true
+  STD' f06_1@19 improving: label=false got=true
+  STD' f06_1@19 equilibrium: label=false got=true
+  STD' f06_1@31 improving: label=false got=true
+  STD' f06_1@31 equilibrium: label=false got=true
+  STD' f06_2@44 oscillating: label=true got=false
+  STD' f06_2@44 diverging: label=false got=true
+  STD' f06_2@112 oscillating: label=true got=false
+  STD' f06_2@112 diverging: label=false got=true
+  STD' f06_2@248 oscillating: label=true got=false
+  STD' f06_3@50 improving: label=false got=true
+  STD' f06_3@50 oscillating: label=true got=false
+  STD' f06_3@50 diverging: label=false got=true
+  STD' f06_3@130 improving: label=false got=true
+  STD' f06_3@130 oscillating: label=true got=false
+  STD' f06_3@130 diverging: label=false got=true
+  STD' f06_3@290 improving: label=false got=true
+  STD' f06_3@290 oscillating: label=true got=false
+  STD' f06_3@290 diverging: label=false got=true
+  STD' f06_4@49 improving: label=false got=true
+  STD' f06_4@49 oscillating: label=true got=false
+  STD' f06_4@49 diverging: label=false got=true
+  STD' f06_4@127 improving: label=false got=true
+  STD' f06_4@127 oscillating: label=true got=false
+  STD' f06_4@127 diverging: label=false got=true
+  STD' f06_4@283 improving: label=false got=true
+  STD' f06_4@283 oscillating: label=true got=false
+  STD' f06_4@283 diverging: label=false got=true
+  STD' f06_5@26 improving: label=false got=true
+  STD' f06_5@26 oscillating: label=true got=false
+  STD' f06_5@58 improving: label=false got=true
+  STD' f06_5@58 oscillating: label=true got=false
+  STD' f06_5@122 improving: label=false got=true
+  STD' f06_5@122 oscillating: label=true got=false
+  STD' f06_6@31 improving: label=false got=true
+  STD' f06_6@31 oscillating: label=true got=false
+  STD' f06_6@31 equilibrium: label=false got=true
+  STD' f06_6@73 improving: label=false got=true
+  STD' f06_6@73 oscillating: label=true got=false
+  STD' f06_6@73 equilibrium: label=false got=true
+  STD' f06_6@157 oscillating: label=true got=false
+  STD' f06_6@157 equilibrium: label=false got=true
+  STD' f06_7@33 improving: label=false got=true
+  STD' f06_7@33 oscillating: label=true got=false
+  STD' f06_7@79 oscillating: label=true got=false
+  STD' f06_7@79 diverging: label=false got=true
+  STD' f06_7@171 oscillating: label=true got=false
+  STD' f11_0@10 oscillating: label=false got=true
+  STD' f11_0@10 equilibrium: label=false got=true
+  STD' f11_0@17 converged: label=true got=false
+  STD' f11_0@17 stable: label=true got=false
+  STD' f11_0@17 improving: label=false got=true
+  STD' f11_0@17 oscillating: label=false got=true
+  STD' f11_0@17 equilibrium: label=false got=true
+  STD' f11_0@34 oscillating: label=false got=true
+  STD' f11_0@34 equilibrium: label=false got=true
+  STD' f11_1@10 stable: label=true got=false
+  STD' f11_1@10 oscillating: label=false got=true
+  STD' f11_1@13 converged: label=true got=false
+  STD' f11_1@13 stable: label=true got=false
+  STD' f11_1@13 improving: label=false got=true
+  STD' f11_1@13 oscillating: label=false got=true
+  STD' f11_1@26 oscillating: label=false got=true
+  STD' f11_2@10 converged: label=true got=false
+  STD' f11_2@10 stable: label=true got=false
+  STD' f11_2@10 oscillating: label=false got=true
+  STD' f11_2@10 equilibrium: label=false got=true
+  STD' f11_2@11 converged: label=true got=false
+  STD' f11_2@11 stable: label=true got=false
+  STD' f11_2@11 oscillating: label=false got=true
+  STD' f11_2@11 equilibrium: label=false got=true
+  STD' f11_2@12 converged: label=true got=false
+  STD' f11_2@12 stable: label=true got=false
+  STD' f11_2@12 improving: label=false got=true
+  STD' f11_2@12 oscillating: label=false got=true
+  STD' f11_2@12 equilibrium: label=false got=true
+  STD' f11_3@12 improving: label=false got=true
+  STD' f11_3@12 oscillating: label=false got=true
+  STD' f11_3@12 equilibrium: label=false got=true
+  STD' f11_3@25 converged: label=true got=false
+  STD' f11_3@25 stable: label=true got=false
+  STD' f11_3@25 oscillating: label=false got=true
+  STD' f11_3@25 equilibrium: label=false got=true
+  STD' f11_3@50 oscillating: label=false got=true
+  STD' f11_3@50 equilibrium: label=false got=true
+  STD' f11_4@169 improving: label=false got=true
+  STD' f11_4@169 oscillating: label=false got=true
+  STD' f11_4@169 equilibrium: label=false got=true
+  STD' f11_4@338 converged: label=true got=false
+  STD' f11_4@338 improving: label=false got=true
+  STD' f11_4@338 oscillating: label=false got=true
+  STD' f11_4@338 equilibrium: label=false got=true
+  STD' f11_4@676 improving: label=false got=true
+  STD' f11_4@676 oscillating: label=false got=true
+  STD' f11_4@676 equilibrium: label=false got=true
+  STD' f11_5@11 improving: label=false got=true
+  STD' f11_5@11 oscillating: label=false got=true
+  STD' f11_5@11 equilibrium: label=false got=true
+  STD' f11_5@22 converged: label=true got=false
+  STD' f11_5@22 stable: label=true got=false
+  STD' f11_5@22 oscillating: label=false got=true
+  STD' f11_5@22 equilibrium: label=false got=true
+  STD' f11_5@44 oscillating: label=false got=true
+  STD' f11_5@44 equilibrium: label=false got=true
+  STD' f11_6@68 oscillating: label=false got=true
+  STD' f11_6@68 equilibrium: label=false got=true
+  STD' f11_6@136 converged: label=true got=false
+  STD' f11_6@136 oscillating: label=false got=true
+  STD' f11_6@136 equilibrium: label=false got=true
+  STD' f11_6@272 oscillating: label=false got=true
+  STD' f11_6@272 equilibrium: label=false got=true
+  STD' f11_7@10 stable: label=true got=false
+  STD' f11_7@10 oscillating: label=false got=true
+  STD' f11_7@10 equilibrium: label=false got=true
+  STD' f11_7@15 converged: label=true got=false
+  STD' f11_7@15 stable: label=true got=false
+  STD' f11_7@15 oscillating: label=false got=true
+  STD' f11_7@15 equilibrium: label=false got=true
+  STD' f11_7@30 improving: label=false got=true
+  STD' f11_7@30 oscillating: label=false got=true
+  STD' f11_7@30 equilibrium: label=false got=true
+  STD'' f01_0@10 equilibrium: label=false got=true
+  STD'' f01_0@11 equilibrium: label=false got=true
+  STD'' f01_0@12 equilibrium: label=false got=true
+  STD'' f01_1@40 equilibrium: label=false got=true
+  STD'' f01_2@28 equilibrium: label=false got=true
+  STD'' f01_3@192 equilibrium: label=false got=true
+  STD'' f01_3@384 equilibrium: label=false got=true
+  STD'' f01_4@253 equilibrium: label=false got=true
+  STD'' f01_4@506 equilibrium: label=false got=true
+  STD'' f01_5@64 equilibrium: label=false got=true
+  STD'' f01_6@44 equilibrium: label=false got=true
+  STD'' f01_7@10 equilibrium: label=false got=true
+  STD'' f01_7@12 equilibrium: label=false got=true
+  STD'' f01_7@24 equilibrium: label=false got=true
+  STD'' f05_0@24 equilibrium: label=false got=true
+  STD'' f05_0@48 equilibrium: label=false got=true
+  STD'' f05_0@96 equilibrium: label=false got=true
+  STD'' f05_1@26 equilibrium: label=false got=true
+  STD'' f05_1@106 equilibrium: label=false got=true
+  STD'' f05_2@34 equilibrium: label=false got=true
+  STD'' f05_2@68 equilibrium: label=false got=true
+  STD'' f05_2@136 equilibrium: label=false got=true
+  STD'' f05_3@24 equilibrium: label=false got=true
+  STD'' f05_3@49 equilibrium: label=false got=true
+  STD'' f05_3@98 equilibrium: label=false got=true
+  STD'' f05_4@19 equilibrium: label=false got=true
+  STD'' f05_4@39 equilibrium: label=false got=true
+  STD'' f05_4@78 equilibrium: label=false got=true
+  STD'' f05_5@46 equilibrium: label=false got=true
+  STD'' f05_5@184 equilibrium: label=false got=true
+  STD'' f05_6@18 equilibrium: label=false got=true
+  STD'' f05_6@36 equilibrium: label=false got=true
+  STD'' f05_6@72 equilibrium: label=false got=true
+  STD'' f05_7@29 equilibrium: label=false got=true
+  STD'' f05_7@58 equilibrium: label=false got=true
+  STD'' f05_7@116 equilibrium: label=false got=true
+  STD'' f06_0@27 equilibrium: label=false got=true
+  STD'' f06_0@61 equilibrium: label=false got=true
+  STD'' f06_1@13 equilibrium: label=false got=true
+  STD'' f06_1@19 equilibrium: label=false got=true
+  STD'' f06_1@31 equilibrium: label=false got=true
+  STD'' f06_6@31 equilibrium: label=false got=true
+  STD'' f06_6@73 equilibrium: label=false got=true
+  STD'' f11_0@10 equilibrium: label=false got=true
+  STD'' f11_0@17 equilibrium: label=false got=true
+  STD'' f11_0@34 equilibrium: label=false got=true
+  STD'' f11_1@10 equilibrium: label=false got=true
+  STD'' f11_1@13 equilibrium: label=false got=true
+  STD'' f11_1@26 equilibrium: label=false got=true
+  STD'' f11_2@10 equilibrium: label=false got=true
+  STD'' f11_2@11 equilibrium: label=false got=true
+  STD'' f11_2@12 equilibrium: label=false got=true
+  STD'' f11_3@12 equilibrium: label=false got=true
+  STD'' f11_3@25 equilibrium: label=false got=true
+  STD'' f11_3@50 equilibrium: label=false got=true
+  STD'' f11_4@169 equilibrium: label=false got=true
+  STD'' f11_4@676 equilibrium: label=false got=true
+  STD'' f11_5@11 equilibrium: label=false got=true
+  STD'' f11_5@22 equilibrium: label=false got=true
+  STD'' f11_5@44 equilibrium: label=false got=true
+  STD'' f11_6@68 equilibrium: label=false got=true
+  STD'' f11_6@272 equilibrium: label=false got=true
+  STD'' f11_7@10 equilibrium: label=false got=true
+  STD'' f11_7@15 equilibrium: label=false got=true
+  STD'' f11_7@30 equilibrium: label=false got=true
+  D2 f06_6@157 improving: label=true got=false
+  REF f01_0@10 converged: label=true got=false
+  REF f01_0@10 stable: label=true got=false
+  REF f01_0@10 equilibrium: label=false got=true
+  REF f01_0@11 converged: label=true got=false
+  REF f01_0@11 stable: label=true got=false
+  REF f01_0@11 improving: label=true got=false
+  REF f01_0@11 equilibrium: label=false got=true
+  REF f01_0@12 converged: label=true got=false
+  REF f01_0@12 stable: label=true got=false
+  REF f01_0@12 improving: label=true got=false
+  REF f01_0@12 equilibrium: label=false got=true
+  REF f01_1@20 converged: label=true got=false
+  REF f01_1@20 stable: label=true got=false
+  REF f01_1@40 equilibrium: label=false got=true
+  REF f01_2@10 stable: label=true got=false
+  REF f01_2@14 converged: label=true got=false
+  REF f01_2@14 stable: label=true got=false
+  REF f01_2@28 equilibrium: label=false got=true
+  REF f01_3@96 stable: label=false got=true
+  REF f01_3@192 equilibrium: label=false got=true
+  REF f01_3@384 equilibrium: label=false got=true
+  REF f01_4@126 stable: label=false got=true
+  REF f01_4@253 improving: label=true got=false
+  REF f01_4@253 equilibrium: label=false got=true
+  REF f01_4@506 equilibrium: label=false got=true
+  REF f01_5@32 converged: label=true got=false
+  REF f01_5@64 equilibrium: label=false got=true
+  REF f01_6@22 converged: label=true got=false
+  REF f01_6@22 stable: label=true got=false
+  REF f01_6@44 equilibrium: label=false got=true
+  REF f01_7@10 stable: label=true got=false
+  REF f01_7@10 equilibrium: label=false got=true
+  REF f01_7@12 converged: label=true got=false
+  REF f01_7@12 stable: label=true got=false
+  REF f01_7@12 equilibrium: label=false got=true
+  REF f01_7@24 equilibrium: label=false got=true
+  REF f05_0@24 oscillating: label=false got=true
+  REF f05_0@24 equilibrium: label=false got=true
+  REF f05_0@48 converged: label=true got=false
+  REF f05_0@48 oscillating: label=false got=true
+  REF f05_0@48 equilibrium: label=false got=true
+  REF f05_0@96 equilibrium: label=false got=true
+  REF f05_1@26 oscillating: label=false got=true
+  REF f05_1@26 equilibrium: label=false got=true
+  REF f05_1@53 converged: label=true got=false
+  REF f05_1@53 improving: label=false got=true
+  REF f05_1@53 oscillating: label=false got=true
+  REF f05_1@106 equilibrium: label=false got=true
+  REF f05_2@34 oscillating: label=false got=true
+  REF f05_2@34 equilibrium: label=false got=true
+  REF f05_2@68 converged: label=true got=false
+  REF f05_2@68 oscillating: label=false got=true
+  REF f05_2@68 equilibrium: label=false got=true
+  REF f05_2@136 equilibrium: label=false got=true
+  REF f05_3@24 oscillating: label=false got=true
+  REF f05_3@24 equilibrium: label=false got=true
+  REF f05_3@49 converged: label=true got=false
+  REF f05_3@49 oscillating: label=false got=true
+  REF f05_3@49 equilibrium: label=false got=true
+  REF f05_3@98 equilibrium: label=false got=true
+  REF f05_4@19 oscillating: label=false got=true
+  REF f05_4@19 equilibrium: label=false got=true
+  REF f05_4@39 converged: label=true got=false
+  REF f05_4@39 oscillating: label=false got=true
+  REF f05_4@39 equilibrium: label=false got=true
+  REF f05_4@78 equilibrium: label=false got=true
+  REF f05_5@46 oscillating: label=false got=true
+  REF f05_5@46 equilibrium: label=false got=true
+  REF f05_5@92 converged: label=true got=false
+  REF f05_5@92 oscillating: label=false got=true
+  REF f05_5@184 equilibrium: label=false got=true
+  REF f05_6@18 oscillating: label=false got=true
+  REF f05_6@18 equilibrium: label=false got=true
+  REF f05_6@36 converged: label=true got=false
+  REF f05_6@36 oscillating: label=false got=true
+  REF f05_6@36 equilibrium: label=false got=true
+  REF f05_6@72 equilibrium: label=false got=true
+  REF f05_7@29 oscillating: label=false got=true
+  REF f05_7@29 equilibrium: label=false got=true
+  REF f05_7@58 converged: label=true got=false
+  REF f05_7@58 oscillating: label=false got=true
+  REF f05_7@58 equilibrium: label=false got=true
+  REF f05_7@116 equilibrium: label=false got=true
+  REF f06_0@27 equilibrium: label=false got=true
+  REF f06_0@61 equilibrium: label=false got=true
+  REF f06_0@129 improving: label=false got=true
+  REF f06_1@13 improving: label=false got=true
+  REF f06_1@13 equilibrium: label=false got=true
+  REF f06_1@19 equilibrium: label=false got=true
+  REF f06_1@31 equilibrium: label=false got=true
+  REF f06_2@44 oscillating: label=true got=false
+  REF f06_2@44 diverging: label=false got=true
+  REF f06_2@112 oscillating: label=true got=false
+  REF f06_2@112 diverging: label=false got=true
+  REF f06_3@50 oscillating: label=true got=false
+  REF f06_3@50 diverging: label=false got=true
+  REF f06_3@130 oscillating: label=true got=false
+  REF f06_3@130 diverging: label=false got=true
+  REF f06_3@290 oscillating: label=true got=false
+  REF f06_3@290 diverging: label=false got=true
+  REF f06_4@49 oscillating: label=true got=false
+  REF f06_4@49 diverging: label=false got=true
+  REF f06_4@127 oscillating: label=true got=false
+  REF f06_4@127 diverging: label=false got=true
+  REF f06_4@283 oscillating: label=true got=false
+  REF f06_4@283 diverging: label=false got=true
+  REF f06_5@26 improving: label=false got=true
+  REF f06_5@58 improving: label=false got=true
+  REF f06_5@122 improving: label=false got=true
+  REF f06_6@31 equilibrium: label=false got=true
+  REF f06_6@73 equilibrium: label=false got=true
+  REF f06_6@157 improving: label=true got=false
+  REF f06_7@79 oscillating: label=true got=false
+  REF f06_7@79 diverging: label=false got=true
+  REF f11_0@10 equilibrium: label=false got=true
+  REF f11_0@17 converged: label=true got=false
+  REF f11_0@17 stable: label=true got=false
+  REF f11_0@17 equilibrium: label=false got=true
+  REF f11_0@34 equilibrium: label=false got=true
+  REF f11_1@10 stable: label=true got=false
+  REF f11_1@10 equilibrium: label=false got=true
+  REF f11_1@13 converged: label=true got=false
+  REF f11_1@13 stable: label=true got=false
+  REF f11_1@13 equilibrium: label=false got=true
+  REF f11_1@26 equilibrium: label=false got=true
+  REF f11_2@10 converged: label=true got=false
+  REF f11_2@10 stable: label=true got=false
+  REF f11_2@10 improving: label=true got=false
+  REF f11_2@10 equilibrium: label=false got=true
+  REF f11_2@11 converged: label=true got=false
+  REF f11_2@11 stable: label=true got=false
+  REF f11_2@11 equilibrium: label=false got=true
+  REF f11_2@12 converged: label=true got=false
+  REF f11_2@12 stable: label=true got=false
+  REF f11_2@12 equilibrium: label=false got=true
+  REF f11_3@12 equilibrium: label=false got=true
+  REF f11_3@25 converged: label=true got=false
+  REF f11_3@25 stable: label=true got=false
+  REF f11_3@25 equilibrium: label=false got=true
+  REF f11_3@50 equilibrium: label=false got=true
+  REF f11_4@169 equilibrium: label=false got=true
+  REF f11_4@338 converged: label=true got=false
+  REF f11_4@676 equilibrium: label=false got=true
+  REF f11_5@11 equilibrium: label=false got=true
+  REF f11_5@22 converged: label=true got=false
+  REF f11_5@22 stable: label=true got=false
+  REF f11_5@22 equilibrium: label=false got=true
+  REF f11_5@44 equilibrium: label=false got=true
+  REF f11_6@68 equilibrium: label=false got=true
+  REF f11_6@136 converged: label=true got=false
+  REF f11_6@272 equilibrium: label=false got=true
+  REF f11_7@10 stable: label=true got=false
+  REF f11_7@10 improving: label=true got=false
+  REF f11_7@10 equilibrium: label=false got=true
+  REF f11_7@15 converged: label=true got=false
+  REF f11_7@15 stable: label=true got=false
+  REF f11_7@15 equilibrium: label=false got=true
+  REF f11_7@30 equilibrium: label=false got=true
+  C0 f01_0@10 converged: label=true got=false
+  C0 f01_0@10 stable: label=true got=false
+  C0 f01_0@10 improving: label=true got=false
+  C0 f01_0@11 converged: label=true got=false
+  C0 f01_0@11 stable: label=true got=false
+  C0 f01_0@11 improving: label=true got=false
+  C0 f01_0@12 converged: label=true got=false
+  C0 f01_0@12 stable: label=true got=false
+  C0 f01_0@12 improving: label=true got=false
+  C0 f01_1@20 converged: label=true got=false
+  C0 f01_1@20 stable: label=true got=false
+  C0 f01_1@40 converged: label=true got=false
+  C0 f01_1@40 stable: label=true got=false
+  C0 f01_2@10 stable: label=true got=false
+  C0 f01_2@14 converged: label=true got=false
+  C0 f01_2@14 stable: label=true got=false
+  C0 f01_2@28 converged: label=true got=false
+  C0 f01_2@28 stable: label=true got=false
+  C0 f01_3@192 converged: label=true got=false
+  C0 f01_3@192 stable: label=true got=false
+  C0 f01_3@384 converged: label=true got=false
+  C0 f01_3@384 stable: label=true got=false
+  C0 f01_4@126 improving: label=true got=false
+  C0 f01_4@253 converged: label=true got=false
+  C0 f01_4@253 stable: label=true got=false
+  C0 f01_4@253 improving: label=true got=false
+  C0 f01_4@506 converged: label=true got=false
+  C0 f01_4@506 stable: label=true got=false
+  C0 f01_5@32 converged: label=true got=false
+  C0 f01_5@32 stable: label=true got=false
+  C0 f01_5@64 converged: label=true got=false
+  C0 f01_5@64 stable: label=true got=false
+  C0 f01_6@11 improving: label=true got=false
+  C0 f01_6@22 converged: label=true got=false
+  C0 f01_6@22 stable: label=true got=false
+  C0 f01_6@22 improving: label=true got=false
+  C0 f01_6@44 converged: label=true got=false
+  C0 f01_6@44 stable: label=true got=false
+  C0 f01_7@10 stable: label=true got=false
+  C0 f01_7@10 improving: label=true got=false
+  C0 f01_7@12 converged: label=true got=false
+  C0 f01_7@12 stable: label=true got=false
+  C0 f01_7@12 improving: label=true got=false
+  C0 f01_7@24 converged: label=true got=false
+  C0 f01_7@24 stable: label=true got=false
+  C0 f05_0@48 converged: label=true got=false
+  C0 f05_0@48 stable: label=true got=false
+  C0 f05_0@96 converged: label=true got=false
+  C0 f05_0@96 stable: label=true got=false
+  C0 f05_1@53 converged: label=true got=false
+  C0 f05_1@53 stable: label=true got=false
+  C0 f05_1@106 converged: label=true got=false
+  C0 f05_1@106 stable: label=true got=false
+  C0 f05_2@68 converged: label=true got=false
+  C0 f05_2@68 stable: label=true got=false
+  C0 f05_2@136 converged: label=true got=false
+  C0 f05_2@136 stable: label=true got=false
+  C0 f05_3@49 converged: label=true got=false
+  C0 f05_3@49 stable: label=true got=false
+  C0 f05_3@98 converged: label=true got=false
+  C0 f05_3@98 stable: label=true got=false
+  C0 f05_4@39 converged: label=true got=false
+  C0 f05_4@39 stable: label=true got=false
+  C0 f05_4@78 converged: label=true got=false
+  C0 f05_4@78 stable: label=true got=false
+  C0 f05_5@92 converged: label=true got=false
+  C0 f05_5@92 stable: label=true got=false
+  C0 f05_5@184 converged: label=true got=false
+  C0 f05_5@184 stable: label=true got=false
+  C0 f05_6@36 converged: label=true got=false
+  C0 f05_6@36 stable: label=true got=false
+  C0 f05_6@72 converged: label=true got=false
+  C0 f05_6@72 stable: label=true got=false
+  C0 f05_7@58 converged: label=true got=false
+  C0 f05_7@58 stable: label=true got=false
+  C0 f05_7@116 converged: label=true got=false
+  C0 f05_7@116 stable: label=true got=false
+  C0 f06_0@27 oscillating: label=true got=false
+  C0 f06_0@61 oscillating: label=true got=false
+  C0 f06_0@129 oscillating: label=true got=false
+  C0 f06_1@13 oscillating: label=true got=false
+  C0 f06_1@19 oscillating: label=true got=false
+  C0 f06_1@31 oscillating: label=true got=false
+  C0 f06_2@44 oscillating: label=true got=false
+  C0 f06_2@112 oscillating: label=true got=false
+  C0 f06_2@248 oscillating: label=true got=false
+  C0 f06_3@50 oscillating: label=true got=false
+  C0 f06_3@130 oscillating: label=true got=false
+  C0 f06_3@290 oscillating: label=true got=false
+  C0 f06_4@49 oscillating: label=true got=false
+  C0 f06_4@127 oscillating: label=true got=false
+  C0 f06_4@283 oscillating: label=true got=false
+  C0 f06_5@26 oscillating: label=true got=false
+  C0 f06_5@58 oscillating: label=true got=false
+  C0 f06_5@122 oscillating: label=true got=false
+  C0 f06_6@31 oscillating: label=true got=false
+  C0 f06_6@73 oscillating: label=true got=false
+  C0 f06_6@157 improving: label=true got=false
+  C0 f06_6@157 oscillating: label=true got=false
+  C0 f06_7@33 oscillating: label=true got=false
+  C0 f06_7@79 oscillating: label=true got=false
+  C0 f06_7@171 oscillating: label=true got=false
+  C0 f11_0@17 converged: label=true got=false
+  C0 f11_0@17 stable: label=true got=false
+  C0 f11_0@34 converged: label=true got=false
+  C0 f11_0@34 stable: label=true got=false
+  C0 f11_1@10 stable: label=true got=false
+  C0 f11_1@13 converged: label=true got=false
+  C0 f11_1@13 stable: label=true got=false
+  C0 f11_1@26 converged: label=true got=false
+  C0 f11_1@26 stable: label=true got=false
+  C0 f11_2@10 converged: label=true got=false
+  C0 f11_2@10 stable: label=true got=false
+  C0 f11_2@10 improving: label=true got=false
+  C0 f11_2@11 converged: label=true got=false
+  C0 f11_2@11 stable: label=true got=false
+  C0 f11_2@12 converged: label=true got=false
+  C0 f11_2@12 stable: label=true got=false
+  C0 f11_3@25 converged: label=true got=false
+  C0 f11_3@25 stable: label=true got=false
+  C0 f11_3@50 converged: label=true got=false
+  C0 f11_3@50 stable: label=true got=false
+  C0 f11_4@338 converged: label=true got=false
+  C0 f11_4@338 stable: label=true got=false
+  C0 f11_4@676 converged: label=true got=false
+  C0 f11_4@676 stable: label=true got=false
+  C0 f11_5@22 converged: label=true got=false
+  C0 f11_5@22 stable: label=true got=false
+  C0 f11_5@44 converged: label=true got=false
+  C0 f11_5@44 stable: label=true got=false
+  C0 f11_6@136 converged: label=true got=false
+  C0 f11_6@136 stable: label=true got=false
+  C0 f11_6@272 converged: label=true got=false
+  C0 f11_6@272 stable: label=true got=false
+  C0 f11_7@10 stable: label=true got=false
+  C0 f11_7@10 improving: label=true got=false
+  C0 f11_7@15 converged: label=true got=false
+  C0 f11_7@15 stable: label=true got=false
+  C0 f11_7@30 converged: label=true got=false
+  C0 f11_7@30 stable: label=true got=false
+  C1 f01_0@10 converged: label=true got=false
+  C1 f01_0@10 stable: label=true got=false
+  C1 f01_0@10 improving: label=true got=false
+  C1 f01_0@11 converged: label=true got=false
+  C1 f01_0@11 stable: label=true got=false
+  C1 f01_0@11 improving: label=true got=false
+  C1 f01_0@12 converged: label=true got=false
+  C1 f01_0@12 stable: label=true got=false
+  C1 f01_0@12 improving: label=true got=false
+  C1 f01_1@20 converged: label=true got=false
+  C1 f01_1@20 stable: label=true got=false
+  C1 f01_1@40 converged: label=true got=false
+  C1 f01_1@40 stable: label=true got=false
+  C1 f01_2@10 stable: label=true got=false
+  C1 f01_2@14 converged: label=true got=false
+  C1 f01_2@14 stable: label=true got=false
+  C1 f01_2@28 converged: label=true got=false
+  C1 f01_2@28 stable: label=true got=false
+  C1 f01_3@192 converged: label=true got=false
+  C1 f01_3@192 stable: label=true got=false
+  C1 f01_3@384 converged: label=true got=false
+  C1 f01_3@384 stable: label=true got=false
+  C1 f01_4@126 improving: label=true got=false
+  C1 f01_4@253 converged: label=true got=false
+  C1 f01_4@253 stable: label=true got=false
+  C1 f01_4@253 improving: label=true got=false
+  C1 f01_4@506 converged: label=true got=false
+  C1 f01_4@506 stable: label=true got=false
+  C1 f01_5@32 converged: label=true got=false
+  C1 f01_5@32 stable: label=true got=false
+  C1 f01_5@64 converged: label=true got=false
+  C1 f01_5@64 stable: label=true got=false
+  C1 f01_6@11 improving: label=true got=false
+  C1 f01_6@22 converged: label=true got=false
+  C1 f01_6@22 stable: label=true got=false
+  C1 f01_6@22 improving: label=true got=false
+  C1 f01_6@44 converged: label=true got=false
+  C1 f01_6@44 stable: label=true got=false
+  C1 f01_7@10 stable: label=true got=false
+  C1 f01_7@10 improving: label=true got=false
+  C1 f01_7@12 converged: label=true got=false
+  C1 f01_7@12 stable: label=true got=false
+  C1 f01_7@12 improving: label=true got=false
+  C1 f01_7@24 converged: label=true got=false
+  C1 f01_7@24 stable: label=true got=false
+  C1 f05_0@48 converged: label=true got=false
+  C1 f05_0@48 stable: label=true got=false
+  C1 f05_0@96 converged: label=true got=false
+  C1 f05_0@96 stable: label=true got=false
+  C1 f05_1@53 converged: label=true got=false
+  C1 f05_1@53 stable: label=true got=false
+  C1 f05_1@106 converged: label=true got=false
+  C1 f05_1@106 stable: label=true got=false
+  C1 f05_2@68 converged: label=true got=false
+  C1 f05_2@68 stable: label=true got=false
+  C1 f05_2@136 converged: label=true got=false
+  C1 f05_2@136 stable: label=true got=false
+  C1 f05_3@49 converged: label=true got=false
+  C1 f05_3@49 stable: label=true got=false
+  C1 f05_3@98 converged: label=true got=false
+  C1 f05_3@98 stable: label=true got=false
+  C1 f05_4@39 converged: label=true got=false
+  C1 f05_4@39 stable: label=true got=false
+  C1 f05_4@78 converged: label=true got=false
+  C1 f05_4@78 stable: label=true got=false
+  C1 f05_5@92 converged: label=true got=false
+  C1 f05_5@92 stable: label=true got=false
+  C1 f05_5@184 converged: label=true got=false
+  C1 f05_5@184 stable: label=true got=false
+  C1 f05_6@36 converged: label=true got=false
+  C1 f05_6@36 stable: label=true got=false
+  C1 f05_6@72 converged: label=true got=false
+  C1 f05_6@72 stable: label=true got=false
+  C1 f05_7@58 converged: label=true got=false
+  C1 f05_7@58 stable: label=true got=false
+  C1 f05_7@116 converged: label=true got=false
+  C1 f05_7@116 stable: label=true got=false
+  C1 f06_0@27 oscillating: label=true got=false
+  C1 f06_0@61 oscillating: label=true got=false
+  C1 f06_0@129 oscillating: label=true got=false
+  C1 f06_1@13 oscillating: label=true got=false
+  C1 f06_1@19 oscillating: label=true got=false
+  C1 f06_1@31 oscillating: label=true got=false
+  C1 f06_2@44 oscillating: label=true got=false
+  C1 f06_2@112 oscillating: label=true got=false
+  C1 f06_2@248 oscillating: label=true got=false
+  C1 f06_3@50 oscillating: label=true got=false
+  C1 f06_3@130 oscillating: label=true got=false
+  C1 f06_3@290 oscillating: label=true got=false
+  C1 f06_4@49 oscillating: label=true got=false
+  C1 f06_4@127 oscillating: label=true got=false
+  C1 f06_4@283 oscillating: label=true got=false
+  C1 f06_5@26 oscillating: label=true got=false
+  C1 f06_5@58 oscillating: label=true got=false
+  C1 f06_5@122 oscillating: label=true got=false
+  C1 f06_6@31 oscillating: label=true got=false
+  C1 f06_6@73 oscillating: label=true got=false
+  C1 f06_6@157 improving: label=true got=false
+  C1 f06_6@157 oscillating: label=true got=false
+  C1 f06_7@33 oscillating: label=true got=false
+  C1 f06_7@79 oscillating: label=true got=false
+  C1 f06_7@171 oscillating: label=true got=false
+  C1 f11_0@17 converged: label=true got=false
+  C1 f11_0@17 stable: label=true got=false
+  C1 f11_0@34 converged: label=true got=false
+  C1 f11_0@34 stable: label=true got=false
+  C1 f11_1@10 stable: label=true got=false
+  C1 f11_1@13 converged: label=true got=false
+  C1 f11_1@13 stable: label=true got=false
+  C1 f11_1@26 converged: label=true got=false
+  C1 f11_1@26 stable: label=true got=false
+  C1 f11_2@10 converged: label=true got=false
+  C1 f11_2@10 stable: label=true got=false
+  C1 f11_2@10 improving: label=true got=false
+  C1 f11_2@11 converged: label=true got=false
+  C1 f11_2@11 stable: label=true got=false
+  C1 f11_2@12 converged: label=true got=false
+  C1 f11_2@12 stable: label=true got=false
+  C1 f11_3@25 converged: label=true got=false
+  C1 f11_3@25 stable: label=true got=false
+  C1 f11_3@50 converged: label=true got=false
+  C1 f11_3@50 stable: label=true got=false
+  C1 f11_4@338 converged: label=true got=false
+  C1 f11_4@338 stable: label=true got=false
+  C1 f11_4@676 converged: label=true got=false
+  C1 f11_4@676 stable: label=true got=false
+  C1 f11_5@22 converged: label=true got=false
+  C1 f11_5@22 stable: label=true got=false
+  C1 f11_5@44 converged: label=true got=false
+  C1 f11_5@44 stable: label=true got=false
+  C1 f11_6@136 converged: label=true got=false
+  C1 f11_6@136 stable: label=true got=false
+  C1 f11_6@272 converged: label=true got=false
+  C1 f11_6@272 stable: label=true got=false
+  C1 f11_7@10 stable: label=true got=false
+  C1 f11_7@10 improving: label=true got=false
+  C1 f11_7@15 converged: label=true got=false
+  C1 f11_7@15 stable: label=true got=false
+  C1 f11_7@30 converged: label=true got=false
+  C1 f11_7@30 stable: label=true got=false
+  PERSIST f01_0@10 converged: label=true got=false
+  PERSIST f01_0@10 stable: label=true got=false
+  PERSIST f01_0@11 converged: label=true got=false
+  PERSIST f01_0@11 stable: label=true got=false
+  PERSIST f01_0@12 converged: label=true got=false
+  PERSIST f01_0@12 stable: label=true got=false
+  PERSIST f01_1@40 equilibrium: label=false got=true
+  PERSIST f01_2@10 stable: label=true got=false
+  PERSIST f01_2@14 converged: label=true got=false
+  PERSIST f01_2@14 stable: label=true got=false
+  PERSIST f01_3@96 converged: label=false got=true
+  PERSIST f01_3@96 stable: label=false got=true
+  PERSIST f01_3@384 equilibrium: label=false got=true
+  PERSIST f01_4@126 converged: label=false got=true
+  PERSIST f01_4@126 stable: label=false got=true
+  PERSIST f01_4@506 equilibrium: label=false got=true
+  PERSIST f01_5@64 equilibrium: label=false got=true
+  PERSIST f01_6@44 equilibrium: label=false got=true
+  PERSIST f01_7@10 stable: label=true got=false
+  PERSIST f01_7@12 converged: label=true got=false
+  PERSIST f01_7@12 stable: label=true got=false
+  PERSIST f05_0@96 equilibrium: label=false got=true
+  PERSIST f05_1@106 equilibrium: label=false got=true
+  PERSIST f05_2@136 equilibrium: label=false got=true
+  PERSIST f05_3@98 equilibrium: label=false got=true
+  PERSIST f05_4@78 equilibrium: label=false got=true
+  PERSIST f05_5@184 equilibrium: label=false got=true
+  PERSIST f05_6@72 equilibrium: label=false got=true
+  PERSIST f05_7@116 equilibrium: label=false got=true
+  PERSIST f11_0@17 converged: label=true got=false
+  PERSIST f11_0@17 stable: label=true got=false
+  PERSIST f11_1@10 stable: label=true got=false
+  PERSIST f11_1@13 converged: label=true got=false
+  PERSIST f11_1@13 stable: label=true got=false
+  PERSIST f11_2@10 converged: label=true got=false
+  PERSIST f11_2@10 stable: label=true got=false
+  PERSIST f11_2@11 converged: label=true got=false
+  PERSIST f11_2@11 stable: label=true got=false
+  PERSIST f11_2@12 converged: label=true got=false
+  PERSIST f11_2@12 stable: label=true got=false
+  PERSIST f11_3@25 converged: label=true got=false
+  PERSIST f11_3@25 stable: label=true got=false
+  PERSIST f11_3@50 equilibrium: label=false got=true
+  PERSIST f11_4@676 equilibrium: label=false got=true
+  PERSIST f11_5@22 converged: label=true got=false
+  PERSIST f11_5@22 stable: label=true got=false
+  PERSIST f11_5@44 equilibrium: label=false got=true
+  PERSIST f11_6@272 equilibrium: label=false got=true
+  PERSIST f11_7@10 stable: label=true got=false
+  PERSIST f11_7@15 converged: label=true got=false
+  PERSIST f11_7@15 stable: label=true got=false
+  T001 f01_0@10 converged: label=true got=false
+  T001 f01_0@11 converged: label=true got=false
+  T001 f01_0@12 converged: label=true got=false
+  T001 f01_1@20 converged: label=true got=false
+  T001 f01_1@40 converged: label=true got=false
+  T001 f01_2@14 converged: label=true got=false
+  T001 f01_2@28 converged: label=true got=false
+  T001 f01_3@192 converged: label=true got=false
+  T001 f01_4@253 converged: label=true got=false
+  T001 f01_5@32 converged: label=true got=false
+  T001 f01_6@22 converged: label=true got=false
+  T001 f01_6@44 converged: label=true got=false
+  T001 f01_7@12 converged: label=true got=false
+  T001 f01_7@24 converged: label=true got=false
+  T001 f05_0@48 converged: label=true got=false
+  T001 f05_1@53 converged: label=true got=false
+  T001 f05_2@68 converged: label=true got=false
+  T001 f05_3@49 converged: label=true got=false
+  T001 f05_4@39 converged: label=true got=false
+  T001 f05_5@92 converged: label=true got=false
+  T001 f05_6@36 converged: label=true got=false
+  T001 f05_7@58 converged: label=true got=false
+  T001 f11_0@17 converged: label=true got=false
+  T001 f11_0@34 converged: label=true got=false
+  T001 f11_1@13 converged: label=true got=false
+  T001 f11_1@26 converged: label=true got=false
+  T001 f11_2@10 converged: label=true got=false
+  T001 f11_2@11 converged: label=true got=false
+  T001 f11_2@12 converged: label=true got=false
+  T001 f11_3@25 converged: label=true got=false
+  T001 f11_3@50 converged: label=true got=false
+  T001 f11_4@338 converged: label=true got=false
+  T001 f11_5@22 converged: label=true got=false
+  T001 f11_5@44 converged: label=true got=false
+  T001 f11_6@136 converged: label=true got=false
+  T001 f11_7@15 converged: label=true got=false
+  T001 f11_7@30 converged: label=true got=false
+
+RUN ORDER: R3:f11_2 INC:f06_3 R3-STD:f01_0 ANCHOR:f01_6 R3-STD:f01_2 W4:f01_2 INC:f01_7 W4:f11_5 INC:f05_6 CF:f01_1 ANCHOR:f05_4 R3-STD:f05_6 CF:f01_6 ANCHOR:f01_4 R3:f06_0 CF:f05_4 W4:f05_6 R3:f05_0 CF:f11_2 R3:f06_6 CF:f05_7 ANCHOR:f11_2 INC:f01_4 R3-STD:f11_6 W4:f06_6 R3-STD:f11_2 R3:f11_5 INC:f05_4 W4:f11_6 W4:f01_6 CF:f05_6 R3-STD:f05_7 CF:f05_3 R3-STD:f06_4 CF:f06_2 W4:f01_3 ANCHOR:f11_4 R3:f01_5 R3:f11_6 R3-STD:f01_6 W4:f01_4 INC:f11_7 ANCHOR:f11_0 ANCHOR:f01_7 ANCHOR:f06_2 R3-STD:f11_4 R3:f05_4 R3-STD:f01_3 R3-STD:f11_0 W4:f11_4 W4:f06_1 R3:f01_0 INC:f06_2 INC:f06_6 W4:f06_5 R3-STD:f06_2 R3:f01_1 W4:f05_7 CF:f11_7 R3:f01_6 ANCHOR:f05_5 CF:f01_7 ANCHOR:f05_2 W4:f01_5 R3:f11_3 INC:f05_1 R3:f01_2 ANCHOR:f06_1 ANCHOR:f01_2 CF:f01_2 CF:f06_4 W4:f11_7 ANCHOR:f01_0 R3:f06_3 R3-STD:f05_3 ANCHOR:f11_6 W4:f11_3 ANCHOR:f06_7 W4:f05_0 W4:f06_2 INC:f11_5 W4:f05_3 CF:f06_7 W4:f11_0 W4:f01_1 R3-STD:f05_0 W4:f05_4 CF:f01_0 ANCHOR:f06_0 R3:f11_7 ANCHOR:f01_5 R3:f05_3 R3:f05_6 R3:f06_7 W4:f05_5 ANCHOR:f01_3 R3:f11_4 ANCHOR:f05_6 CF:f01_5 INC:f06_1 R3-STD:f11_1 R3:f05_1 INC:f11_2 CF:f06_6 CF:f05_5 CF:f06_5 INC:f05_0 R3-STD:f06_6 R3-STD:f06_7 R3:f05_2 ANCHOR:f05_0 INC:f01_2 CF:f11_0 CF:f05_0 W4:f01_0 ANCHOR:f06_5 W4:f06_0 CF:f05_2 W4:f06_4 ANCHOR:f11_1 INC:f11_4 ANCHOR:f11_5 INC:f06_5 CF:f06_1 CF:f11_4 ANCHOR:f05_3 INC:f01_0 CF:f06_0 INC:f01_1 ANCHOR:f11_7 INC:f05_2 CF:f05_1 INC:f11_1 INC:f11_6 W4:f11_1 CF:f06_3 INC:f05_7 ANCHOR:f11_3 R3-STD:f11_3 ANCHOR:f06_6 R3-STD:f06_3 CF:f11_6 CF:f01_3 W4:f06_7 INC:f01_6 R3:f01_4 R3-STD:f05_2 W4:f05_1 INC:f05_3 INC:f11_3 R3:f06_4 INC:f06_7 INC:f01_3 INC:f06_0 R3:f01_7 R3:f05_5 R3-STD:f01_1 R3-STD:f06_5 R3-STD:f11_7 R3-STD:f05_4 ANCHOR:f06_3 W4:f11_2 INC:f06_4 INC:f11_0 W4:f05_2 W4:f06_3 ANCHOR:f01_1 R3:f11_0 CF:f11_5 R3-STD:f01_7 ANCHOR:f06_4 R3-STD:f11_5 CF:f11_3 R3-STD:f01_5 R3:f06_5 ANCHOR:f05_1 R3:f11_1 R3-STD:f06_0 CF:f11_1 R3:f06_1 ANCHOR:f05_7 INC:f05_5 R3-STD:f05_1 R3:f01_3 W4:f01_7 R3:f06_2 R3-STD:f01_4 R3-STD:f06_1 R3-STD:f05_5 R3:f05_7 INC:f01_5 CF:f01_4
+
+FINDINGS (a runtime arm's tiers split): 0
+
+judge exit 0

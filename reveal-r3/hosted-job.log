@@ -1,0 +1,1060 @@
+﻿2026-11-18T03:52:00.8691801Z Current runner version: '2.338.2'
+2026-11-18T03:52:00.8727447Z ##[group]Runner Image Provisioner
+2026-11-18T03:52:00.8729101Z Hosted Compute Agent
+2026-11-18T03:52:00.8730264Z Version: 20261103.629
+2026-11-18T03:52:00.8731632Z Commit: 15dbd9ccb5dbf34fae002b6ed1a2670f52df37bc
+2026-11-18T03:52:00.8732981Z Build Date: 2026-11-03T17:26:59Z
+2026-11-18T03:52:00.8734236Z Worker ID: {cb31570e-2b70-43e5-ad6d-a0c33c50292b}
+2026-11-18T03:52:00.8736015Z Region: eastus
+2026-11-18T03:52:00.8737047Z Cloud: Azure
+2026-11-18T03:52:00.8738057Z ##[endgroup]
+2026-11-18T03:52:00.8740463Z ##[group]Operating System
+2026-11-18T03:52:00.8741561Z Ubuntu
+2026-11-18T03:52:00.8742600Z 24.04.5
+2026-11-18T03:52:00.8743630Z LTS
+2026-11-18T03:52:00.8744583Z ##[endgroup]
+2026-11-18T03:52:00.8746090Z ##[group]Runner Image
+2026-11-18T03:52:00.8747442Z Image: ubuntu-24.04
+2026-11-18T03:52:00.8748610Z Version: 20261111.370.1
+2026-11-18T03:52:00.8751423Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261111.370/images/ubuntu/Ubuntu2404-Readme.md
+2026-11-18T03:52:00.8754305Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261111.370
+2026-11-18T03:52:00.8756333Z ##[endgroup]
+2026-11-18T03:52:00.8758245Z ##[group]GITHUB_TOKEN Permissions
+2026-11-18T03:52:00.8761268Z Contents: read
+2026-11-18T03:52:00.8762191Z Metadata: read
+2026-11-18T03:52:00.8763021Z ##[endgroup]
+2026-11-18T03:52:00.8766396Z Secret source: Actions
+2026-11-18T03:52:00.8767855Z Cache mode: write
+2026-11-18T03:52:00.8769424Z Prepare workflow directory
+2026-11-18T03:52:00.9242977Z Prepare all required actions
+2026-11-18T03:52:00.9314545Z Getting action download info
+2026-11-18T03:52:01.1729786Z Download action repository 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+2026-11-18T03:52:01.2822868Z Download action repository 'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9' (SHA:cf430e030ddbb5b0abf93d22962f4752f3646cd9)
+2026-11-18T03:52:01.4687067Z Complete job name: observer reveal (sealed / dry H-cal)
+2026-11-18T03:52:01.5623931Z ##[group]Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+2026-11-18T03:52:01.5625007Z with:
+2026-11-18T03:52:01.5625453Z   fetch-depth: 0
+2026-11-18T03:52:01.5626199Z   repository: InauguralSystems/EigenScript
+2026-11-18T03:52:01.5629913Z   token: ***
+2026-11-18T03:52:01.5630413Z   ssh-strict: true
+2026-11-18T03:52:01.5630853Z   ssh-user: git
+2026-11-18T03:52:01.5631293Z   persist-credentials: true
+2026-11-18T03:52:01.5631776Z   clean: true
+2026-11-18T03:52:01.5632222Z   sparse-checkout-cone-mode: true
+2026-11-18T03:52:01.5632737Z   fetch-tags: false
+2026-11-18T03:52:01.5633173Z   show-progress: true
+2026-11-18T03:52:01.5633612Z   lfs: false
+2026-11-18T03:52:01.5634025Z   submodules: false
+2026-11-18T03:52:01.5634473Z   set-safe-directory: true
+2026-11-18T03:52:01.5634981Z   allow-unsafe-pr-checkout: false
+2026-11-18T03:52:01.5635945Z ##[endgroup]
+2026-11-18T03:52:01.8361496Z Syncing repository: InauguralSystems/EigenScript
+2026-11-18T03:52:01.8365002Z ##[group]Getting Git version info
+2026-11-18T03:52:01.8366820Z Working directory is '/home/runner/work/EigenScript/EigenScript'
+2026-11-18T03:52:01.8368408Z [command]/usr/bin/git version
+2026-11-18T03:52:01.8445254Z git version 2.56.1
+2026-11-18T03:52:01.8470991Z ##[endgroup]
+2026-11-18T03:52:01.8493657Z Temporarily overriding HOME='/home/runner/work/_temp/c29fc453-b5d3-4393-a15d-698bfa52c3ac' before making global git config changes
+2026-11-18T03:52:01.8507493Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-18T03:52:01.8510040Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/EigenScript/EigenScript
+2026-11-18T03:52:01.8567551Z Deleting the contents of '/home/runner/work/EigenScript/EigenScript'
+2026-11-18T03:52:01.8574133Z ##[group]Determining repository object format
+2026-11-18T03:52:01.8576278Z ##[endgroup]
+2026-11-18T03:52:01.8577293Z ##[group]Initializing the repository
+2026-11-18T03:52:01.8586409Z [command]/usr/bin/git init /home/runner/work/EigenScript/EigenScript
+2026-11-18T03:52:01.8716049Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-11-18T03:52:01.8718633Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-11-18T03:52:01.8720418Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-11-18T03:52:01.8721792Z hint: call:
+2026-11-18T03:52:01.8722885Z hint:
+2026-11-18T03:52:01.8724437Z hint: 	git config --global init.defaultBranch <name>
+2026-11-18T03:52:01.8725925Z hint:
+2026-11-18T03:52:01.8727395Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-11-18T03:52:01.8729216Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-11-18T03:52:01.8730515Z hint:
+2026-11-18T03:52:01.8731620Z hint: 	git branch -m <name>
+2026-11-18T03:52:01.8732771Z hint:
+2026-11-18T03:52:01.8734176Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-11-18T03:52:01.8745983Z Initialized empty Git repository in /home/runner/work/EigenScript/EigenScript/.git/
+2026-11-18T03:52:01.8759094Z [command]/usr/bin/git remote add origin https://github.com/InauguralSystems/EigenScript
+2026-11-18T03:52:01.8824373Z ##[endgroup]
+2026-11-18T03:52:01.8826574Z ##[group]Disabling automatic garbage collection
+2026-11-18T03:52:01.8829578Z [command]/usr/bin/git config --local gc.auto 0
+2026-11-18T03:52:01.8884014Z ##[endgroup]
+2026-11-18T03:52:01.8886379Z ##[group]Setting up auth
+2026-11-18T03:52:01.8887849Z Removing SSH command configuration
+2026-11-18T03:52:01.8906625Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-18T03:52:01.8965936Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-18T03:52:01.9437946Z Removing HTTP extra header
+2026-11-18T03:52:01.9445455Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-18T03:52:01.9495341Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-18T03:52:01.9759039Z Removing includeIf entries pointing to credentials config files
+2026-11-18T03:52:01.9763084Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-18T03:52:01.9816129Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-18T03:52:02.0067714Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-052fa227-6fc8-407c-a2d1-36f3ded41812.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-11-18T03:52:02.0118252Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/EigenScript/EigenScript/.git.path /home/runner/work/_temp/git-credentials-052fa227-6fc8-407c-a2d1-36f3ded41812.config
+2026-11-18T03:52:02.0160520Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/EigenScript/EigenScript/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-052fa227-6fc8-407c-a2d1-36f3ded41812.config
+2026-11-18T03:52:02.0205455Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-052fa227-6fc8-407c-a2d1-36f3ded41812.config
+2026-11-18T03:52:02.0249426Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-052fa227-6fc8-407c-a2d1-36f3ded41812.config
+2026-11-18T03:52:02.0290113Z ##[endgroup]
+2026-11-18T03:52:02.0290974Z ##[group]Fetching the repository
+2026-11-18T03:52:02.0297460Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/*
+2026-11-18T03:52:05.0049463Z From https://github.com/InauguralSystems/EigenScript
+2026-11-18T03:52:05.0053338Z  * [new branch]        arm-d-B10cx            -> origin/arm-d-B10cx
+2026-11-18T03:52:05.0055897Z  * [new branch]        arm-d-B2               -> origin/arm-d-B2
+2026-11-18T03:52:05.0058254Z  * [new branch]        arm-d-step2            -> origin/arm-d-step2
+2026-11-18T03:52:05.0060290Z  * [new branch]        bench-r4-1236          -> origin/bench-r4-1236
+2026-11-18T03:52:05.0063149Z  * [new branch]        claude/eigenscript-issue-batch-mq2jyh-1253 -> origin/claude/eigenscript-issue-batch-mq2jyh-1253
+2026-11-18T03:52:05.0065100Z  * [new branch]        cloud-1159             -> origin/cloud-1159
+2026-11-18T03:52:05.0067121Z  * [new branch]        cloud-1171             -> origin/cloud-1171
+2026-11-18T03:52:05.0068540Z  * [new branch]        cloud-1178             -> origin/cloud-1178
+2026-11-18T03:52:05.0069960Z  * [new branch]        cloud-1184             -> origin/cloud-1184
+2026-11-18T03:52:05.0071560Z  * [new branch]        cloud-1192             -> origin/cloud-1192
+2026-11-18T03:52:05.0072972Z  * [new branch]        cloud-1216             -> origin/cloud-1216
+2026-11-18T03:52:05.0074387Z  * [new branch]        cloud-1240             -> origin/cloud-1240
+2026-11-18T03:52:05.0076556Z  * [new branch]        cloud-1245             -> origin/cloud-1245
+2026-11-18T03:52:05.0078989Z  * [new branch]        cloud-1246             -> origin/cloud-1246
+2026-11-18T03:52:05.0081304Z  * [new branch]        cloud-1269             -> origin/cloud-1269
+2026-11-18T03:52:05.0083641Z  * [new branch]        cloud-1271             -> origin/cloud-1271
+2026-11-18T03:52:05.0086228Z  * [new branch]        cloud-1277             -> origin/cloud-1277
+2026-11-18T03:52:05.0088619Z  * [new branch]        cloud-1287             -> origin/cloud-1287
+2026-11-18T03:52:05.0090996Z  * [new branch]        cloud-1298             -> origin/cloud-1298
+2026-11-18T03:52:05.0093479Z  * [new branch]        cloud-1320             -> origin/cloud-1320
+2026-11-18T03:52:05.0096225Z  * [new branch]        cloud-1354             -> origin/cloud-1354
+2026-11-18T03:52:05.0098235Z  * [new branch]        cloud-1369             -> origin/cloud-1369
+2026-11-18T03:52:05.0100235Z  * [new branch]        cloud-1399             -> origin/cloud-1399
+2026-11-18T03:52:05.0102345Z  * [new branch]        cloud-1403             -> origin/cloud-1403
+2026-11-18T03:52:05.0104449Z  * [new branch]        cloud-1404             -> origin/cloud-1404
+2026-11-18T03:52:05.0106812Z  * [new branch]        cloud-1419             -> origin/cloud-1419
+2026-11-18T03:52:05.0109803Z  * [new branch]        cloud-1653             -> origin/cloud-1653
+2026-11-18T03:52:05.0113465Z  * [new branch]        codex/1444-operator-line-validation-inputs-20261002-r1 -> origin/codex/1444-operator-line-validation-inputs-20261002-r1
+2026-11-18T03:52:05.0118831Z  * [new branch]        codex/fix-adaptive-gc-thresholds-vulnerability -> origin/codex/fix-adaptive-gc-thresholds-vulnerability
+2026-11-18T03:52:05.0123802Z  * [new branch]        codex/propose-fix-for-arena-promotion-vulnerability -> origin/codex/propose-fix-for-arena-promotion-vulnerability
+2026-11-18T03:52:05.0129180Z  * [new branch]        codex/propose-fix-for-lsp-denial-of-service-vulnerability -> origin/codex/propose-fix-for-lsp-denial-of-service-vulnerability
+2026-11-18T03:52:05.0134566Z  * [new branch]        codex/validate-1452-post1460-20261002 -> origin/codex/validate-1452-post1460-20261002
+2026-11-18T03:52:05.0140409Z  * [new branch]        codex/validate-1537-post1460-20261002 -> origin/codex/validate-1537-post1460-20261002
+2026-11-18T03:52:05.0147010Z  * [new branch]        codex/validation-input-transport-20261002 -> origin/codex/validation-input-transport-20261002
+2026-11-18T03:52:05.0151559Z  * [new branch]        d1-step2-2a            -> origin/d1-step2-2a
+2026-11-18T03:52:05.0154785Z  * [new branch]        d1-step2b-pre-rebase   -> origin/d1-step2b-pre-rebase
+2026-11-18T03:52:05.0158351Z  * [new branch]        exp-ieee-p1            -> origin/exp-ieee-p1
+2026-11-18T03:52:05.0162143Z  * [new branch]        exp-ieee-phase0        -> origin/exp-ieee-phase0
+2026-11-18T03:52:05.0164433Z  * [new branch]        fix/685-entropy-memo   -> origin/fix/685-entropy-memo
+2026-11-18T03:52:05.0166875Z  * [new branch]        http-door              -> origin/http-door
+2026-11-18T03:52:05.0168914Z  * [new branch]        http-fetch             -> origin/http-fetch
+2026-11-18T03:52:05.0171355Z  * [new branch]        instr/685-observer-query-rate -> origin/instr/685-observer-query-rate
+2026-11-18T03:52:05.0174087Z  * [new branch]        jit-entry-cost         -> origin/jit-entry-cost
+2026-11-18T03:52:05.0177016Z  * [new branch]        main                   -> origin/main
+2026-11-18T03:52:05.0178935Z  * [new branch]        operator-line          -> origin/operator-line
+2026-11-18T03:52:05.0180895Z  * [new branch]        p2-1912                -> origin/p2-1912
+2026-11-18T03:52:05.0183237Z  * [new branch]        perf/observer-gate-915-oracle -> origin/perf/observer-gate-915-oracle
+2026-11-18T03:52:05.0187504Z  * [new branch]        phase2-numbers         -> origin/phase2-numbers
+2026-11-18T03:52:05.0190776Z  * [new branch]        r18                    -> origin/r18
+2026-11-18T03:52:05.0194125Z  * [new branch]        scratch/r3-final-dry   -> origin/scratch/r3-final-dry
+2026-11-18T03:52:05.0198085Z  * [new branch]        section-fragments      -> origin/section-fragments
+2026-11-18T03:52:05.0200741Z  * [new tag]           phase2-r3-final        -> phase2-r3-final
+2026-11-18T03:52:05.0202567Z  * [new tag]           phase2-r3-std          -> phase2-r3-std
+2026-11-18T03:52:05.0204396Z  * [new tag]           phase2-r33-choice      -> phase2-r33-choice
+2026-11-18T03:52:05.0206656Z  * [new tag]           phase2-r33-replication -> phase2-r33-replication
+2026-11-18T03:52:05.0208490Z  * [new tag]           v0.11.2                -> v0.11.2
+2026-11-18T03:52:05.0210057Z  * [new tag]           v0.11.3                -> v0.11.3
+2026-11-18T03:52:05.0211870Z  * [new tag]           v0.11.4                -> v0.11.4
+2026-11-18T03:52:05.0213733Z  * [new tag]           v0.11.5                -> v0.11.5
+2026-11-18T03:52:05.0215382Z  * [new tag]           v0.11.6                -> v0.11.6
+2026-11-18T03:52:05.0217306Z  * [new tag]           v0.11.7                -> v0.11.7
+2026-11-18T03:52:05.0218902Z  * [new tag]           v0.11.8                -> v0.11.8
+2026-11-18T03:52:05.0220497Z  * [new tag]           v0.12.0                -> v0.12.0
+2026-11-18T03:52:05.0222081Z  * [new tag]           v0.13.0                -> v0.13.0
+2026-11-18T03:52:05.0223695Z  * [new tag]           v0.14.0                -> v0.14.0
+2026-11-18T03:52:05.0225347Z  * [new tag]           v0.14.1                -> v0.14.1
+2026-11-18T03:52:05.0227729Z  * [new tag]           v0.14.2                -> v0.14.2
+2026-11-18T03:52:05.0229951Z  * [new tag]           v0.15.0                -> v0.15.0
+2026-11-18T03:52:05.0231581Z  * [new tag]           v0.15.1                -> v0.15.1
+2026-11-18T03:52:05.0233191Z  * [new tag]           v0.15.2                -> v0.15.2
+2026-11-18T03:52:05.0234900Z  * [new tag]           v0.15.3                -> v0.15.3
+2026-11-18T03:52:05.0236902Z  * [new tag]           v0.16.0                -> v0.16.0
+2026-11-18T03:52:05.0238508Z  * [new tag]           v0.16.1                -> v0.16.1
+2026-11-18T03:52:05.0240158Z  * [new tag]           v0.16.2                -> v0.16.2
+2026-11-18T03:52:05.0241750Z  * [new tag]           v0.16.3                -> v0.16.3
+2026-11-18T03:52:05.0243342Z  * [new tag]           v0.17.0                -> v0.17.0
+2026-11-18T03:52:05.0244957Z  * [new tag]           v0.17.1                -> v0.17.1
+2026-11-18T03:52:05.0246826Z  * [new tag]           v0.17.2                -> v0.17.2
+2026-11-18T03:52:05.0248436Z  * [new tag]           v0.18.0                -> v0.18.0
+2026-11-18T03:52:05.0250060Z  * [new tag]           v0.19.0                -> v0.19.0
+2026-11-18T03:52:05.0251672Z  * [new tag]           v0.20.0                -> v0.20.0
+2026-11-18T03:52:05.0253298Z  * [new tag]           v0.21.0                -> v0.21.0
+2026-11-18T03:52:05.0255150Z  * [new tag]           v0.21.1                -> v0.21.1
+2026-11-18T03:52:05.0257117Z  * [new tag]           v0.21.2                -> v0.21.2
+2026-11-18T03:52:05.0258707Z  * [new tag]           v0.22.0                -> v0.22.0
+2026-11-18T03:52:05.0260267Z  * [new tag]           v0.23.0                -> v0.23.0
+2026-11-18T03:52:05.0262066Z  * [new tag]           v0.24.0                -> v0.24.0
+2026-11-18T03:52:05.0263857Z  * [new tag]           v0.25.0                -> v0.25.0
+2026-11-18T03:52:05.0266048Z  * [new tag]           v0.26.0                -> v0.26.0
+2026-11-18T03:52:05.0267727Z  * [new tag]           v0.27.0                -> v0.27.0
+2026-11-18T03:52:05.0269680Z  * [new tag]           v0.28.0                -> v0.28.0
+2026-11-18T03:52:05.0271530Z  * [new tag]           v0.29.0                -> v0.29.0
+2026-11-18T03:52:05.0273052Z  * [new tag]           v0.3.1                 -> v0.3.1
+2026-11-18T03:52:05.0274573Z  * [new tag]           v0.3.2                 -> v0.3.2
+2026-11-18T03:52:05.0276332Z  * [new tag]           v0.3.21                -> v0.3.21
+2026-11-18T03:52:05.0277842Z  * [new tag]           v0.3.22                -> v0.3.22
+2026-11-18T03:52:05.0279366Z  * [new tag]           v0.3.23                -> v0.3.23
+2026-11-18T03:52:05.0280872Z  * [new tag]           v0.30.0                -> v0.30.0
+2026-11-18T03:52:05.0282554Z  * [new tag]           v0.31.0                -> v0.31.0
+2026-11-18T03:52:05.0284076Z  * [new tag]           v0.32.0                -> v0.32.0
+2026-11-18T03:52:05.0285809Z  * [new tag]           v0.33.0                -> v0.33.0
+2026-11-18T03:52:05.0287379Z  * [new tag]           v0.34.0                -> v0.34.0
+2026-11-18T03:52:05.0288904Z  * [new tag]           v0.35.0                -> v0.35.0
+2026-11-18T03:52:05.0290404Z  * [new tag]           v0.35.1                -> v0.35.1
+2026-11-18T03:52:05.0291898Z  * [new tag]           v0.35.2                -> v0.35.2
+2026-11-18T03:52:05.0293631Z  * [new tag]           v0.36.0                -> v0.36.0
+2026-11-18T03:52:05.0295167Z  * [new tag]           v0.37.0                -> v0.37.0
+2026-11-18T03:52:05.0297297Z  * [new tag]           v0.38.0                -> v0.38.0
+2026-11-18T03:52:05.0299191Z  * [new tag]           v0.39.0                -> v0.39.0
+2026-11-18T03:52:05.0300675Z  * [new tag]           v0.4.0                 -> v0.4.0
+2026-11-18T03:52:05.0302381Z  * [new tag]           v0.4.1                 -> v0.4.1
+2026-11-18T03:52:05.0304142Z  * [new tag]           v0.40.0                -> v0.40.0
+2026-11-18T03:52:05.0305885Z  * [new tag]           v0.41.0                -> v0.41.0
+2026-11-18T03:52:05.0307411Z  * [new tag]           v0.42.0                -> v0.42.0
+2026-11-18T03:52:05.0309011Z  * [new tag]           v0.43.0                -> v0.43.0
+2026-11-18T03:52:05.0310501Z  * [new tag]           v0.44.0                -> v0.44.0
+2026-11-18T03:52:05.0312023Z  * [new tag]           v0.45.0                -> v0.45.0
+2026-11-18T03:52:05.0314054Z  * [new tag]           v0.45.1                -> v0.45.1
+2026-11-18T03:52:05.0315866Z  * [new tag]           v0.46.0                -> v0.46.0
+2026-11-18T03:52:05.0317425Z  * [new tag]           v0.47.0                -> v0.47.0
+2026-11-18T03:52:05.0319338Z  * [new tag]           v0.48.0                -> v0.48.0
+2026-11-18T03:52:05.0320829Z  * [new tag]           v0.5.0                 -> v0.5.0
+2026-11-18T03:52:05.0322294Z  * [new tag]           v0.6.0                 -> v0.6.0
+2026-11-18T03:52:05.0323761Z  * [new tag]           v0.7.0                 -> v0.7.0
+2026-11-18T03:52:05.0325226Z  * [new tag]           v0.7.1                 -> v0.7.1
+2026-11-18T03:52:05.0326964Z  * [new tag]           v0.8.0                 -> v0.8.0
+2026-11-18T03:52:05.0328454Z  * [new tag]           v0.8.1                 -> v0.8.1
+2026-11-18T03:52:05.0329922Z  * [new tag]           v0.9.3                 -> v0.9.3
+2026-11-18T03:52:05.0331615Z  * [new tag]           v0.9.3.1               -> v0.9.3.1
+2026-11-18T03:52:05.0333373Z  * [new tag]           v0.9.3.2               -> v0.9.3.2
+2026-11-18T03:52:05.0334886Z  * [new tag]           v0.9.3.3               -> v0.9.3.3
+2026-11-18T03:52:05.0336746Z  * [new tag]           v0.9.3.4               -> v0.9.3.4
+2026-11-18T03:52:05.0340185Z [command]/usr/bin/git branch --list --remote origin/main
+2026-11-18T03:52:05.0341724Z   origin/main
+2026-11-18T03:52:05.0344177Z [command]/usr/bin/git rev-parse refs/remotes/origin/main
+2026-11-18T03:52:05.0346004Z e55567024e1a63c3efb82a2a04124a9dabb8d6cf
+2026-11-18T03:52:05.0349154Z ##[endgroup]
+2026-11-18T03:52:05.0350769Z ##[group]Determining the checkout info
+2026-11-18T03:52:05.0352596Z ##[endgroup]
+2026-11-18T03:52:05.0353643Z [command]/usr/bin/git sparse-checkout disable
+2026-11-18T03:52:05.0357013Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-11-18T03:52:05.0360654Z ##[group]Checking out the ref
+2026-11-18T03:52:05.0362420Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+2026-11-18T03:52:05.1697777Z Switched to a new branch 'main'
+2026-11-18T03:52:05.1701900Z branch 'main' set up to track 'origin/main'.
+2026-11-18T03:52:05.1718606Z ##[endgroup]
+2026-11-18T03:52:05.1777967Z [command]/usr/bin/git log -1 --format=%H
+2026-11-18T03:52:05.1816069Z e55567024e1a63c3efb82a2a04124a9dabb8d6cf
+2026-11-18T03:52:05.2164234Z ##[group]Run python3 -m venv "$RUNNER_TEMP/reveal-venv"
+2026-11-18T03:52:05.2166235Z [36;1mpython3 -m venv "$RUNNER_TEMP/reveal-venv"[0m
+2026-11-18T03:52:05.2168017Z [36;1m"$RUNNER_TEMP/reveal-venv/bin/pip" install sympy==1.14.0[0m
+2026-11-18T03:52:05.2193868Z shell: /usr/bin/bash -e {0}
+2026-11-18T03:52:05.2194970Z ##[endgroup]
+2026-11-18T03:52:08.6120378Z Collecting sympy==1.14.0
+2026-11-18T03:52:08.7417162Z   Downloading sympy-1.14.0-py3-none-any.whl.metadata (12 kB)
+2026-11-18T03:52:08.8198804Z Collecting mpmath<1.4,>=1.1.0 (from sympy==1.14.0)
+2026-11-18T03:52:08.8566961Z   Downloading mpmath-1.3.0-py3-none-any.whl.metadata (8.6 kB)
+2026-11-18T03:52:08.9064338Z Downloading sympy-1.14.0-py3-none-any.whl (6.3 MB)
+2026-11-18T03:52:09.1621174Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.3/6.3 MB 25.1 MB/s eta 0:00:00
+2026-11-18T03:52:09.1991315Z Downloading mpmath-1.3.0-py3-none-any.whl (536 kB)
+2026-11-18T03:52:09.2057339Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 536.2/536.2 kB 120.1 MB/s eta 0:00:00
+2026-11-18T03:52:09.2407344Z Installing collected packages: mpmath, sympy
+2026-11-18T03:52:14.6766867Z Successfully installed mpmath-1.3.0 sympy-1.14.0
+2026-11-18T03:52:14.7399324Z ##[group]Run echo "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"
+2026-11-18T03:52:14.7399879Z [36;1mecho "$GITHUB_WORKSPACE/tools/cc-guard-bin" >> "$GITHUB_PATH"[0m
+2026-11-18T03:52:14.7400395Z [36;1mecho "CC_GUARD_LOG=$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log" >> "$GITHUB_ENV"[0m
+2026-11-18T03:52:14.7400852Z [36;1m: > "$RUNNER_TEMP/cc-guard-$GITHUB_JOB.log"[0m
+2026-11-18T03:52:14.7421659Z shell: /usr/bin/bash -e {0}
+2026-11-18T03:52:14.7421932Z ##[endgroup]
+2026-11-18T03:52:14.7504850Z ##[group]Run make build
+2026-11-18T03:52:14.7505150Z [36;1mmake build[0m
+2026-11-18T03:52:14.7505413Z [36;1mbash tools/cc_guard.sh --report[0m
+2026-11-18T03:52:14.7526874Z shell: /usr/bin/bash -e {0}
+2026-11-18T03:52:14.7527130Z env:
+2026-11-18T03:52:14.7527397Z   CC_GUARD_LOG: /home/runner/work/_temp/cc-guard-reveal.log
+2026-11-18T03:52:14.7527735Z ##[endgroup]
+2026-11-18T03:52:14.9078667Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/eigenscript.c -o build/release/eigenscript.o
+2026-11-18T03:52:19.2839383Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/lexer.c -o build/release/lexer.o
+2026-11-18T03:52:19.5897975Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/parser.c -o build/release/parser.o
+2026-11-18T03:52:20.3656061Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/builtins.c -o build/release/builtins.o
+2026-11-18T03:52:23.3567234Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/builtins_buf.c -o build/release/builtins_buf.o
+2026-11-18T03:52:23.9278720Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/builtins_host.c -o build/release/builtins_host.o
+2026-11-18T03:52:24.6441904Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/builtins_tensor.c -o build/release/builtins_tensor.o
+2026-11-18T03:52:26.2633982Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/fsutil.c -o build/release/fsutil.o
+2026-11-18T03:52:26.5211925Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/hash.c -o build/release/hash.o
+2026-11-18T03:52:26.7356546Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/alloc.c -o build/release/alloc.o
+2026-11-18T03:52:26.8592777Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/state.c -o build/release/state.o
+2026-11-18T03:52:26.9936189Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/strbuf.c -o build/release/strbuf.o
+2026-11-18T03:52:27.1108824Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/ext_store.c -o build/release/ext_store.o
+2026-11-18T03:52:27.7687383Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/fmt.c -o build/release/fmt.o
+2026-11-18T03:52:27.9662651Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/lint.c -o build/release/lint.o
+2026-11-18T03:52:29.2010978Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/lint_host.c -o build/release/lint_host.o
+2026-11-18T03:52:29.7943701Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/chunk.c -o build/release/chunk.o
+2026-11-18T03:52:30.2028698Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/compiler.c -o build/release/compiler.o
+2026-11-18T03:52:31.2872215Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/vm.c -o build/release/vm.o
+2026-11-18T03:52:49.0548977Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/task.c -o build/release/task.o
+2026-11-18T03:52:49.4639199Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/jit.c -o build/release/jit.o
+2026-11-18T03:52:50.4403342Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/jit_checked.c -o build/release/jit_checked.o
+2026-11-18T03:52:50.4896006Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/trace.c -o build/release/trace.o
+2026-11-18T03:52:51.4814866Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/eigs_embed.c -o build/release/eigs_embed.o
+2026-11-18T03:52:51.7326539Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/repl.c -o build/release/repl.o
+2026-11-18T03:52:52.0251728Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/step.c -o build/release/step.o
+2026-11-18T03:52:52.1926940Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/tape_read.c -o build/release/tape_read.o
+2026-11-18T03:52:52.4989704Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/bundle.c -o build/release/bundle.o
+2026-11-18T03:52:52.6654633Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/main.c -o build/release/main.o
+2026-11-18T03:52:52.8230795Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -MMD -MP -c src/ext_gfx.c -o build/release/ext_gfx.o
+2026-11-18T03:52:53.8360688Z gcc -Wall -Wextra -Werror=implicit-function-declaration -Werror=switch -Werror=comment -Werror=misleading-indentation -O2 -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 -DEIGENSCRIPT_EXT_GFX=1 -DEIGENSCRIPT_VERSION='"0.48.0"' -o build/release/eigenscript build/release/eigenscript.o build/release/lexer.o build/release/parser.o build/release/builtins.o build/release/builtins_buf.o build/release/builtins_host.o build/release/builtins_tensor.o build/release/fsutil.o build/release/hash.o build/release/alloc.o build/release/state.o build/release/strbuf.o build/release/ext_store.o build/release/fmt.o build/release/lint.o build/release/lint_host.o build/release/chunk.o build/release/compiler.o build/release/vm.o build/release/task.o build/release/jit.o build/release/jit_checked.o build/release/trace.o build/release/eigs_embed.o build/release/repl.o build/release/step.o build/release/tape_read.o build/release/bundle.o build/release/main.o build/release/ext_gfx.o -pie -Wl,-z,relro,-z,now -lm -lpthread -ldl
+2026-11-18T03:52:53.9989172Z EigenScript 0.48.0 built. Binary: 1.3M
+2026-11-18T03:52:54.0031866Z cc-guard: examined=30
+2026-11-18T03:52:54.0070700Z ##[group]Run "$RUNNER_TEMP/reveal-venv/bin/python" -I tools/observer_oracle/reveal.py --selftest
+2026-11-18T03:52:54.0071427Z [36;1m"$RUNNER_TEMP/reveal-venv/bin/python" -I tools/observer_oracle/reveal.py --selftest[0m
+2026-11-18T03:52:54.0091649Z shell: /usr/bin/bash -e {0}
+2026-11-18T03:52:54.0091920Z env:
+2026-11-18T03:52:54.0092210Z   CC_GUARD_LOG: /home/runner/work/_temp/cc-guard-reveal.log
+2026-11-18T03:52:54.0092569Z ##[endgroup]
+2026-11-18T03:52:54.5151880Z CHECK ok: driver-root-before-fixture-expectations
+2026-11-18T03:52:54.5152510Z CHECK ok: R6-CLI-dispatch-priority
+2026-11-18T03:52:54.5153012Z CHECK ok: R6-whole-population-canonical-row-order
+2026-11-18T03:52:54.5153543Z CHECK ok: R6-helper-calls-do-not-reenter-cli
+2026-11-18T03:52:54.5154073Z CHECK ok: R6-runtime-tier-order-and-skip-association
+2026-11-18T03:52:54.5154615Z CHECK ok: R6-captured-point-canonical-order
+2026-11-18T03:52:54.5155753Z CHECK ok: R6-D14-multiline-opaque-generator-metadata
+2026-11-18T03:52:54.5156403Z CHECK ok: R6-capabilities-available-after-population-recording
+2026-11-18T03:52:54.5156918Z CHECK ok: R6-written-status-and-dry-use-recorded-input
+2026-11-18T03:52:54.5157332Z CHECK ok: R6-D14-acyclic-opaque-metadata
+2026-11-18T03:52:54.5157732Z CHECK ok: R6-D14-family-conversion-and-malformed-type
+2026-11-18T03:52:54.5158174Z CHECK ok: R6-execute-controls-and-recorded-evidence
+2026-11-18T03:52:54.5158611Z CHECK ok: R6-execute-typed-preflight-and-real-floor
+2026-11-18T03:52:54.5159044Z CHECK ok: R6-seal-malformed-response-exception-type
+2026-11-18T03:52:54.5159511Z CHECK ok: R6-boolean-short-circuit-and-status-boundaries
+2026-11-18T03:52:54.5159932Z CHECK ok: R6-no-family15-mixed-and-empty
+2026-11-18T03:52:54.5160271Z CHECK ok: R6-D14-all-terminal-kinds
+2026-11-18T03:52:54.5160657Z CHECK ok: R6-exception-types-on-malformed-JSON-evidence
+2026-11-18T03:52:54.5161150Z CHECK ok: R6-CLI-parser-error-arguments-and-integer-converter
+2026-11-18T03:52:54.5161623Z CHECK ok: R6-owned-refusal-types-and-arguments
+2026-11-18T03:52:54.5162040Z CHECK ok: R6-commitment-refusal-types-and-arguments
+2026-11-18T03:52:54.5162433Z CHECK ok: R6-entrypoint-exact-diagnostic
+2026-11-18T03:52:54.5162772Z CHECK ok: ship-R3-first-match
+2026-11-18T03:52:54.5163058Z CHECK ok: ship-R3-STD
+2026-11-18T03:52:54.5163318Z CHECK ok: retain-INC
+2026-11-18T03:52:54.5163573Z CHECK ok: silent-wrong-R3-STD
+2026-11-18T03:52:54.5163849Z CHECK ok: H2-R3-STD
+2026-11-18T03:52:54.5164094Z CHECK ok: silent-wrong-INC
+2026-11-18T03:52:54.5164364Z CHECK ok: H2-INC
+2026-11-18T03:52:54.5164607Z CHECK ok: STOP-1-overlap
+2026-11-18T03:52:54.5164901Z CHECK ok: STOP-1-shipping-conflict
+2026-11-18T03:52:54.5165219Z CHECK ok: STOP-3-only-rule6
+2026-11-18T03:52:54.5165681Z CHECK ok: H2-veto-2 vs INC-FAIL
+2026-11-18T03:52:54.5165993Z CHECK ok: H2-veto-2 vs INC-NOT EVALUATED
+2026-11-18T03:52:54.5166322Z CHECK ok: H2-veto-2 vs R3-STD-FAIL
+2026-11-18T03:52:54.5166643Z CHECK ok: H2-veto-2 vs R3-STD-NOT EVALUATED
+2026-11-18T03:52:54.5167004Z CHECK ok: H2-veto-3 safety-FAIL
+2026-11-18T03:52:54.5167315Z CHECK ok: H2-veto-3 safety-NOT EVALUATED
+2026-11-18T03:52:54.5167646Z CHECK ok: H2-veto-4 trivial floor-FAIL
+2026-11-18T03:52:54.5167956Z CHECK ok: H2-veto-4 trivial floor-NOT EVALUATED
+2026-11-18T03:52:54.5168273Z CHECK ok: H2-veto-5 unit invariance-FAIL
+2026-11-18T03:52:54.5168573Z CHECK ok: H2-veto-5 unit invariance-NOT EVALUATED
+2026-11-18T03:52:54.5168876Z CHECK ok: silent-duty-no-rule1
+2026-11-18T03:52:54.5169123Z CHECK ok: preflight-green
+2026-11-18T03:52:54.5169361Z CHECK ok: preflight-refusal-1
+2026-11-18T03:52:54.5169600Z CHECK ok: preflight-refusal-2
+2026-11-18T03:52:54.5169861Z CHECK ok: preflight-refusal-['R3 declared']
+2026-11-18T03:52:54.5170226Z CHECK ok: preflight-refusal-{'ieee': False, 'int64': True}
+2026-11-18T03:52:54.5170615Z CHECK ok: preflight-refusal-{'ieee': True, 'int64': False}
+2026-11-18T03:52:54.5170959Z CHECK ok: dry-(True, False, ['inc', 'anc'])
+2026-11-18T03:52:54.5171284Z CHECK ok: dry-(True, True, ['phase2', 'phase2'])
+2026-11-18T03:52:54.5171821Z CHECK ok: dry-(False, False, ['phase2', 'phase2'])
+2026-11-18T03:52:54.5172150Z CHECK ok: dry-(True, False, ['phase2', 'inc'])
+2026-11-18T03:52:54.5172456Z CHECK ok: dry-(True, False, ['inc', 'phase2'])
+2026-11-18T03:52:54.5172737Z CHECK ok: status-green
+2026-11-18T03:52:54.5172949Z CHECK ok: VOID-a
+2026-11-18T03:52:54.5173140Z CHECK ok: VOID-b
+2026-11-18T03:52:54.5173329Z CHECK ok: VOID-c1
+2026-11-18T03:52:54.5173518Z CHECK ok: VOID-c2
+2026-11-18T03:52:54.5173713Z CHECK ok: judge-exit-1
+2026-11-18T03:52:54.5173923Z CHECK ok: judge-exit-2
+2026-11-18T03:52:54.5174137Z CHECK ok: judge-exit-3
+2026-11-18T03:52:54.5174345Z CHECK ok: judge-exit--9
+2026-11-18T03:52:54.5174580Z CHECK ok: judge-INCOMPLETE-verdict
+2026-11-18T03:52:54.5174842Z CHECK ok: controls-green
+2026-11-18T03:52:54.5175061Z CHECK ok: plant-a
+2026-11-18T03:52:54.5175276Z CHECK ok: CF-BA-converged-1/100000
+2026-11-18T03:52:54.5175799Z CHECK ok: CF-BA-converged1/100000
+2026-11-18T03:52:54.5176216Z CHECK ok: CF-must-fail-converged
+2026-11-18T03:52:54.5176474Z CHECK ok: W4-must-fail-converged
+2026-11-18T03:52:54.5176724Z CHECK ok: CF-BA-stable-1/100000
+2026-11-18T03:52:54.5176971Z CHECK ok: CF-BA-stable1/100000
+2026-11-18T03:52:54.5177215Z CHECK ok: CF-must-fail-stable
+2026-11-18T03:52:54.5177469Z CHECK ok: W4-must-fail-stable
+2026-11-18T03:52:54.5177711Z CHECK ok: CF-BA-improving-1/100000
+2026-11-18T03:52:54.5177967Z CHECK ok: CF-BA-improving1/100000
+2026-11-18T03:52:54.5178220Z CHECK ok: CF-must-fail-improving
+2026-11-18T03:52:54.5178469Z CHECK ok: W4-must-fail-improving
+2026-11-18T03:52:54.5178720Z CHECK ok: CF-BA-oscillating-1/100000
+2026-11-18T03:52:54.5178990Z CHECK ok: CF-BA-oscillating1/100000
+2026-11-18T03:52:54.5179256Z CHECK ok: CF-must-fail-oscillating
+2026-11-18T03:52:54.5179512Z CHECK ok: W4-must-fail-oscillating
+2026-11-18T03:52:54.5179764Z CHECK ok: CF-BA-diverging-1/100000
+2026-11-18T03:52:54.5180023Z CHECK ok: CF-BA-diverging1/100000
+2026-11-18T03:52:54.5180285Z CHECK ok: CF-must-fail-diverging
+2026-11-18T03:52:54.5180540Z CHECK ok: W4-must-fail-diverging
+2026-11-18T03:52:54.5180794Z CHECK ok: CF-BA-equilibrium-1/100000
+2026-11-18T03:52:54.5181064Z CHECK ok: CF-BA-equilibrium1/100000
+2026-11-18T03:52:54.5181324Z CHECK ok: CF-must-fail-equilibrium
+2026-11-18T03:52:54.5181579Z CHECK ok: W4-must-fail-equilibrium
+2026-11-18T03:52:54.5181836Z CHECK ok: c2-margin-(Fraction(1, 20), 0)
+2026-11-18T03:52:54.5182133Z CHECK ok: c2-margin-(Fraction(4999, 100000), 0.01)
+2026-11-18T03:52:54.5182451Z CHECK ok: c2-margin-(Fraction(1, 20), None)
+2026-11-18T03:52:54.5182732Z CHECK ok: c2-margin-(None, 0.01)
+2026-11-18T03:52:54.5183000Z CHECK ok: roster-runtime-definition
+2026-11-18T03:52:54.5183279Z CHECK ok: roster-comparator-definition
+2026-11-18T03:52:54.5183546Z CHECK ok: roster-green
+2026-11-18T03:52:54.5183770Z CHECK ok: roster-missing-R3
+2026-11-18T03:52:54.5184011Z CHECK ok: roster-unsealed-R3
+2026-11-18T03:52:54.5184255Z CHECK ok: roster-missing-R3-STD
+2026-11-18T03:52:54.5184512Z CHECK ok: roster-unsealed-R3-STD
+2026-11-18T03:52:54.5184768Z CHECK ok: roster-missing-INC
+2026-11-18T03:52:54.5185010Z CHECK ok: roster-unsealed-INC
+2026-11-18T03:52:54.5185254Z CHECK ok: roster-missing-ANCHOR
+2026-11-18T03:52:54.5185648Z CHECK ok: roster-unsealed-ANCHOR
+2026-11-18T03:52:54.5185905Z CHECK ok: roster-missing-CF
+2026-11-18T03:52:54.5186151Z CHECK ok: roster-unsealed-CF
+2026-11-18T03:52:54.5186385Z CHECK ok: roster-missing-W4
+2026-11-18T03:52:54.5186613Z CHECK ok: roster-unsealed-W4
+2026-11-18T03:52:54.5186848Z CHECK ok: roster-unscored-R3
+2026-11-18T03:52:54.5187096Z CHECK ok: roster-domain-R3-converged
+2026-11-18T03:52:54.5187377Z CHECK ok: roster-domain-R3-stable
+2026-11-18T03:52:54.5187639Z CHECK ok: roster-domain-R3-improving
+2026-11-18T03:52:54.5187908Z CHECK ok: roster-domain-R3-oscillating
+2026-11-18T03:52:54.5188183Z CHECK ok: roster-domain-R3-diverging
+2026-11-18T03:52:54.5188449Z CHECK ok: roster-domain-R3-equilibrium
+2026-11-18T03:52:54.5188723Z CHECK ok: roster-unscored-R3-STD
+2026-11-18T03:52:54.5188996Z CHECK ok: roster-domain-R3-STD-converged
+2026-11-18T03:52:54.5189420Z CHECK ok: roster-domain-R3-STD-stable
+2026-11-18T03:52:54.5189706Z CHECK ok: roster-domain-R3-STD-improving
+2026-11-18T03:52:54.5190000Z CHECK ok: roster-domain-R3-STD-oscillating
+2026-11-18T03:52:54.5190296Z CHECK ok: roster-domain-R3-STD-diverging
+2026-11-18T03:52:54.5190584Z CHECK ok: roster-domain-R3-STD-equilibrium
+2026-11-18T03:52:54.5190860Z CHECK ok: roster-unscored-INC
+2026-11-18T03:52:54.5191110Z CHECK ok: roster-domain-INC-converged
+2026-11-18T03:52:54.5191381Z CHECK ok: roster-domain-INC-stable
+2026-11-18T03:52:54.5191646Z CHECK ok: roster-domain-INC-improving
+2026-11-18T03:52:54.5191924Z CHECK ok: roster-domain-INC-oscillating
+2026-11-18T03:52:54.5192204Z CHECK ok: roster-domain-INC-diverging
+2026-11-18T03:52:54.5192502Z CHECK ok: roster-domain-INC-equilibrium
+2026-11-18T03:52:54.5192776Z CHECK ok: roster-unscored-ANCHOR
+2026-11-18T03:52:54.5193040Z CHECK ok: roster-domain-ANCHOR-converged
+2026-11-18T03:52:54.5193451Z CHECK ok: roster-domain-ANCHOR-stable
+2026-11-18T03:52:54.5193741Z CHECK ok: roster-domain-ANCHOR-improving
+2026-11-18T03:52:54.5194037Z CHECK ok: roster-domain-ANCHOR-oscillating
+2026-11-18T03:52:54.5194331Z CHECK ok: roster-domain-ANCHOR-diverging
+2026-11-18T03:52:54.5194630Z CHECK ok: roster-domain-ANCHOR-equilibrium
+2026-11-18T03:52:54.5194914Z CHECK ok: roster-unscored-CF
+2026-11-18T03:52:54.5195163Z CHECK ok: roster-domain-CF-converged
+2026-11-18T03:52:54.5195449Z CHECK ok: roster-domain-CF-stable
+2026-11-18T03:52:54.5196042Z CHECK ok: roster-domain-CF-improving
+2026-11-18T03:52:54.5196320Z CHECK ok: roster-domain-CF-oscillating
+2026-11-18T03:52:54.5196595Z CHECK ok: roster-domain-CF-diverging
+2026-11-18T03:52:54.5196862Z CHECK ok: roster-domain-CF-equilibrium
+2026-11-18T03:52:54.5197126Z CHECK ok: roster-unscored-W4
+2026-11-18T03:52:54.5197369Z CHECK ok: roster-domain-W4-converged
+2026-11-18T03:52:54.5197627Z CHECK ok: roster-domain-W4-stable
+2026-11-18T03:52:54.5197901Z CHECK ok: roster-domain-W4-improving
+2026-11-18T03:52:54.5198175Z CHECK ok: roster-domain-W4-oscillating
+2026-11-18T03:52:54.5198444Z CHECK ok: roster-domain-W4-diverging
+2026-11-18T03:52:54.5198714Z CHECK ok: roster-domain-W4-equilibrium
+2026-11-18T03:52:54.5198982Z CHECK ok: roster-unscored-STD
+2026-11-18T03:52:54.5199235Z CHECK ok: roster-domain-STD-converged
+2026-11-18T03:52:54.5199507Z CHECK ok: roster-domain-STD-stable
+2026-11-18T03:52:54.5199771Z CHECK ok: roster-domain-STD-improving
+2026-11-18T03:52:54.5200042Z CHECK ok: roster-domain-STD-oscillating
+2026-11-18T03:52:54.5200322Z CHECK ok: roster-domain-STD-diverging
+2026-11-18T03:52:54.5200600Z CHECK ok: roster-domain-STD-equilibrium
+2026-11-18T03:52:54.5200869Z CHECK ok: roster-unscored-STD'
+2026-11-18T03:52:54.5201120Z CHECK ok: roster-domain-STD'-converged
+2026-11-18T03:52:54.5201388Z CHECK ok: roster-domain-STD'-stable
+2026-11-18T03:52:54.5201648Z CHECK ok: roster-domain-STD'-improving
+2026-11-18T03:52:54.5201922Z CHECK ok: roster-domain-STD'-oscillating
+2026-11-18T03:52:54.5202199Z CHECK ok: roster-domain-STD'-diverging
+2026-11-18T03:52:54.5202470Z CHECK ok: roster-domain-STD'-equilibrium
+2026-11-18T03:52:54.5202742Z CHECK ok: roster-unscored-REF
+2026-11-18T03:52:54.5202988Z CHECK ok: roster-domain-REF-converged
+2026-11-18T03:52:54.5203254Z CHECK ok: roster-domain-REF-stable
+2026-11-18T03:52:54.5203518Z CHECK ok: roster-domain-REF-improving
+2026-11-18T03:52:54.5203789Z CHECK ok: roster-domain-REF-oscillating
+2026-11-18T03:52:54.5204061Z CHECK ok: roster-domain-REF-diverging
+2026-11-18T03:52:54.5204332Z CHECK ok: roster-domain-REF-equilibrium
+2026-11-18T03:52:54.5204594Z CHECK ok: roster-unscored-C0
+2026-11-18T03:52:54.5204834Z CHECK ok: roster-domain-C0-converged
+2026-11-18T03:52:54.5205094Z CHECK ok: roster-domain-C0-stable
+2026-11-18T03:52:54.5205351Z CHECK ok: roster-domain-C0-improving
+2026-11-18T03:52:54.5205958Z CHECK ok: roster-domain-C0-oscillating
+2026-11-18T03:52:54.5206249Z CHECK ok: roster-domain-C0-diverging
+2026-11-18T03:52:54.5206532Z CHECK ok: roster-domain-C0-equilibrium
+2026-11-18T03:52:54.5206946Z CHECK ok: roster-unscored-C1
+2026-11-18T03:52:54.5207198Z CHECK ok: roster-domain-C1-converged
+2026-11-18T03:52:54.5207467Z CHECK ok: roster-domain-C1-stable
+2026-11-18T03:52:54.5207726Z CHECK ok: roster-domain-C1-improving
+2026-11-18T03:52:54.5207993Z CHECK ok: roster-domain-C1-oscillating
+2026-11-18T03:52:54.5208261Z CHECK ok: roster-domain-C1-diverging
+2026-11-18T03:52:54.5208526Z CHECK ok: roster-domain-C1-equilibrium
+2026-11-18T03:52:54.5208800Z CHECK ok: roster-unscored-STD''
+2026-11-18T03:52:54.5209061Z CHECK ok: roster-domain-STD''-equilibrium
+2026-11-18T03:52:54.5209340Z CHECK ok: roster-unscored-D2
+2026-11-18T03:52:54.5209593Z CHECK ok: roster-domain-D2-improving
+2026-11-18T03:52:54.5209865Z CHECK ok: roster-unscored-PERSIST
+2026-11-18T03:52:54.5210143Z CHECK ok: roster-domain-PERSIST-converged
+2026-11-18T03:52:54.5210440Z CHECK ok: roster-domain-PERSIST-stable
+2026-11-18T03:52:54.5210736Z CHECK ok: roster-domain-PERSIST-equilibrium
+2026-11-18T03:52:54.5211198Z CHECK ok: roster-unscored-T001
+2026-11-18T03:52:54.5211457Z CHECK ok: roster-domain-T001-converged
+2026-11-18T03:52:54.5211715Z CHECK ok: no-outcome-VOID
+2026-11-18T03:52:54.5211948Z CHECK ok: no-outcome-INCOMPLETE
+2026-11-18T03:52:54.5212196Z CHECK ok: no-outcome-REFUSED
+2026-11-18T03:52:54.5212429Z CHECK ok: no-outcome-FINDING
+2026-11-18T03:52:54.5212674Z CHECK ok: extract-all-predicates
+2026-11-18T03:52:54.5212927Z CHECK ok: extract-priority
+2026-11-18T03:52:54.5213169Z CHECK ok: unreviewed-manual-names-row
+2026-11-18T03:52:54.5213431Z CHECK ok: 425-retry-green
+2026-11-18T03:52:54.5213651Z CHECK ok: 425-bound-refusal
+2026-11-18T03:52:54.5213877Z CHECK ok: non425-no-retry
+2026-11-18T03:52:54.5214114Z CHECK ok: orchestration-calibration
+2026-11-18T03:52:54.5214372Z CHECK ok: orchestration-seal
+2026-11-18T03:52:54.5214615Z CHECK ok: preflight-before-beacon
+2026-11-18T03:52:54.5214874Z CHECK ok: FINDING-no-outcomes
+2026-11-18T03:52:54.5215121Z CHECK ok: INCOMPLETE-no-outcomes
+2026-11-18T03:52:54.5215382Z CHECK ok: preflight-no-caps
+2026-11-18T03:52:54.5215901Z CHECK ok: harness-exception-raw-INCOMPLETE
+2026-11-18T03:52:54.5216194Z CHECK ok: c2-float-round-trip
+2026-11-18T03:52:54.5216445Z CHECK ok: c2-positive-half-boundary
+2026-11-18T03:52:54.5216716Z CHECK ok: whole-population-literal
+2026-11-18T03:52:54.5216981Z CHECK ok: captured-runtime-tiers
+2026-11-18T03:52:54.5217246Z CHECK ok: captured-tier-arm-identity
+2026-11-18T03:52:54.5217518Z CHECK ok: captured-runtime-readings
+2026-11-18T03:52:54.5217781Z CHECK ok: captured-rule-statuses
+2026-11-18T03:52:54.5218031Z CHECK ok: captured-rule-count
+2026-11-18T03:52:54.5218276Z CHECK ok: captured-verdict
+2026-11-18T03:52:54.5218510Z CHECK ok: captured-order
+2026-11-18T03:52:54.5218759Z CHECK ok: raw-disk-extraction-byte-equality
+2026-11-18T03:52:54.5219044Z CHECK ok: rational-None
+2026-11-18T03:52:54.5219264Z CHECK ok: rational-exact
+2026-11-18T03:52:54.5219480Z CHECK ok: recipe-R3
+2026-11-18T03:52:54.5219682Z CHECK ok: recipe-ANCHOR
+2026-11-18T03:52:54.6203472Z CHECK ok: recipe-W4
+2026-11-18T03:52:54.6204095Z CHECK ok: recipe-stamp-mismatch
+2026-11-18T03:52:54.6204572Z CHECK ok: floor-declarations
+2026-11-18T03:52:54.6205025Z CHECK ok: floor-missing-declarations
+2026-11-18T03:52:54.6205363Z CHECK ok: prepare-seal-metadata
+2026-11-18T03:52:54.6205978Z CHECK ok: prepare-stage-options
+2026-11-18T03:52:54.6206313Z CHECK ok: bad-beacon-refused-before-draw
+2026-11-18T03:52:54.6206641Z CHECK ok: build-env
+2026-11-18T03:52:54.6206905Z CHECK ok: status-missing-subject-R3
+2026-11-18T03:52:54.6207271Z CHECK ok: status-missing-predicate-R3-converged
+2026-11-18T03:52:54.6207683Z CHECK ok: status-missing-predicate-R3-stable
+2026-11-18T03:52:54.6208093Z CHECK ok: status-missing-predicate-R3-improving
+2026-11-18T03:52:54.6208513Z CHECK ok: status-missing-predicate-R3-oscillating
+2026-11-18T03:52:54.6208944Z CHECK ok: status-missing-predicate-R3-diverging
+2026-11-18T03:52:54.6209367Z CHECK ok: status-missing-predicate-R3-equilibrium
+2026-11-18T03:52:54.6209781Z CHECK ok: status-missing-subject-R3-STD
+2026-11-18T03:52:54.6210384Z CHECK ok: status-missing-predicate-R3-STD-converged
+2026-11-18T03:52:54.6210812Z CHECK ok: status-missing-predicate-R3-STD-stable
+2026-11-18T03:52:54.6211231Z CHECK ok: status-missing-predicate-R3-STD-improving
+2026-11-18T03:52:54.6211678Z CHECK ok: status-missing-predicate-R3-STD-oscillating
+2026-11-18T03:52:54.6212118Z CHECK ok: status-missing-predicate-R3-STD-diverging
+2026-11-18T03:52:54.6212552Z CHECK ok: status-missing-predicate-R3-STD-equilibrium
+2026-11-18T03:52:54.6212951Z CHECK ok: status-missing-subject-CF
+2026-11-18T03:52:54.6213310Z CHECK ok: status-missing-predicate-CF-converged
+2026-11-18T03:52:54.6213706Z CHECK ok: status-missing-predicate-CF-stable
+2026-11-18T03:52:54.6214099Z CHECK ok: status-missing-predicate-CF-improving
+2026-11-18T03:52:54.6214508Z CHECK ok: status-missing-predicate-CF-oscillating
+2026-11-18T03:52:54.6214916Z CHECK ok: status-missing-predicate-CF-diverging
+2026-11-18T03:52:54.6215468Z CHECK ok: status-missing-predicate-CF-equilibrium
+2026-11-18T03:52:54.6216006Z CHECK ok: status-missing-subject-W4
+2026-11-18T03:52:54.6216357Z CHECK ok: status-missing-predicate-W4-converged
+2026-11-18T03:52:54.6235406Z CHECK ok: status-missing-predicate-W4-stable
+2026-11-18T03:52:54.6236199Z CHECK ok: status-missing-predicate-W4-improving
+2026-11-18T03:52:54.6236668Z CHECK ok: status-missing-predicate-W4-oscillating
+2026-11-18T03:52:54.6237050Z CHECK ok: status-missing-predicate-W4-diverging
+2026-11-18T03:52:54.6237409Z CHECK ok: status-missing-predicate-W4-equilibrium
+2026-11-18T03:52:54.6237740Z CHECK ok: status-missing-control-a
+2026-11-18T03:52:54.6238018Z CHECK ok: status-missing-control-b
+2026-11-18T03:52:54.6238290Z CHECK ok: status-missing-control-c1
+2026-11-18T03:52:54.6238563Z CHECK ok: status-missing-control-c2
+2026-11-18T03:52:54.6238829Z CHECK ok: D13-dry-INC-stand-in
+2026-11-18T03:52:54.6239083Z CHECK ok: D13-dry-ANCHOR-stand-in
+2026-11-18T03:52:54.6239343Z CHECK ok: D13-real-INC-no-exemption
+2026-11-18T03:52:54.6239623Z CHECK ok: D13-real-ANCHOR-no-exemption
+2026-11-18T03:52:54.6239907Z CHECK ok: D13-phase2-no-exemption
+2026-11-18T03:52:54.6240183Z CHECK ok: D13-full-declaration-data-refused
+2026-11-18T03:52:54.6240467Z CHECK ok: D14-F9 AR1-(0.9, 200)
+2026-11-18T03:52:54.6240732Z CHECK ok: D14-F9 AR1-(-0.9, 200)
+2026-11-18T03:52:54.6240976Z CHECK ok: D14-F9 AR1-(0.92, 200)
+2026-11-18T03:52:54.6241214Z CHECK ok: D14-F9 AR1-(0.9, 100)
+2026-11-18T03:52:54.6241448Z CHECK ok: D14-F9 AR1-(0.5, 26)
+2026-11-18T03:52:54.6241680Z CHECK ok: D14-F9 AR1-(0.5, 27)
+2026-11-18T03:52:54.6241915Z CHECK ok: D14-F9 AR1-(0, 200)
+2026-11-18T03:52:54.6242151Z CHECK ok: D14-F9 AR1-(0, 0)
+2026-11-18T03:52:54.6242390Z CHECK ok: D14-F9 AR1-(0.9, -1)
+2026-11-18T03:52:54.6242631Z CHECK ok: D14-F9 AR1-(0.9, 200.0)
+2026-11-18T03:52:54.6242912Z CHECK ok: D14-F15 unit-scaled copies-(0.9, 200)
+2026-11-18T03:52:54.6243231Z CHECK ok: D14-F15 unit-scaled copies-(-0.9, 200)
+2026-11-18T03:52:54.6243545Z CHECK ok: D14-F15 unit-scaled copies-(0.92, 200)
+2026-11-18T03:52:54.6243860Z CHECK ok: D14-F15 unit-scaled copies-(0.9, 100)
+2026-11-18T03:52:54.6244175Z CHECK ok: D14-F15 unit-scaled copies-(0.5, 26)
+2026-11-18T03:52:54.6244481Z CHECK ok: D14-F15 unit-scaled copies-(0.5, 27)
+2026-11-18T03:52:54.6244783Z CHECK ok: D14-F15 unit-scaled copies-(0, 200)
+2026-11-18T03:52:54.6245084Z CHECK ok: D14-F15 unit-scaled copies-(0, 0)
+2026-11-18T03:52:54.6245381Z CHECK ok: D14-F15 unit-scaled copies-(0.9, -1)
+2026-11-18T03:52:54.6246012Z CHECK ok: D14-F15 unit-scaled copies-(0.9, 200.0)
+2026-11-18T03:52:54.6246405Z CHECK ok: D14-F15b base for unit-scaled copies, from F9 AR1-(0.9, 200)
+2026-11-18T03:52:54.6246860Z CHECK ok: D14-F15b base for unit-scaled copies, from F9 AR1-(-0.9, 200)
+2026-11-18T03:52:54.6247301Z CHECK ok: D14-F15b base for unit-scaled copies, from F9 AR1-(0.92, 200)
+2026-11-18T03:52:54.6247730Z CHECK ok: D14-F15b base for unit-scaled copies, from F9 AR1-(0.9, 100)
+2026-11-18T03:52:54.6248156Z CHECK ok: D14-F15b base for unit-scaled copies, from F9 AR1-(0.5, 26)
+2026-11-18T03:52:54.6248840Z CHECK ok: D14-F15b base for unit-scaled copies, from F9 AR1-(0.5, 27)
+2026-11-18T03:52:54.6249266Z CHECK ok: D14-F15b base for unit-scaled copies, from F9 AR1-(0, 200)
+2026-11-18T03:52:54.6249702Z CHECK ok: D14-F15b base for unit-scaled copies, from F9 AR1-(0, 0)
+2026-11-18T03:52:54.6250120Z CHECK ok: D14-F15b base for unit-scaled copies, from F9 AR1-(0.9, -1)
+2026-11-18T03:52:54.6250555Z CHECK ok: D14-F15b base for unit-scaled copies, from F9 AR1-(0.9, 200.0)
+2026-11-18T03:52:54.6250907Z CHECK ok: D14-non-AR1
+2026-11-18T03:52:54.6251157Z CHECK ok: c1-reading-rule-('6 existing gates',)
+2026-11-18T03:52:54.6251507Z CHECK ok: c1-reading-rule-('2 vs INC', '6 existing gates')
+2026-11-18T03:52:54.6251842Z CHECK ok: c1-reading-rule-('3 safety',)
+2026-11-18T03:52:54.6252141Z CHECK ok: c1-reading-rule-('1 standard parity',)
+2026-11-18T03:52:54.6252464Z CHECK ok: c1-reading-rule-('5 unit invariance',)
+2026-11-18T03:52:54.6252778Z CHECK ok: c1-reading-rule-('4 trivial floor',)
+2026-11-18T03:52:54.6253224Z CHECK ok: Dry-A-diagnostic-green
+2026-11-18T03:52:54.6253493Z CHECK ok: Dry-A-reasons-exact
+2026-11-18T03:52:54.6253746Z CHECK ok: Dry-A-reject-REFUSED
+2026-11-18T03:52:54.6253993Z CHECK ok: Dry-A-reject-VOID
+2026-11-18T03:52:54.6254232Z CHECK ok: Dry-A-reject-FINDING
+2026-11-18T03:52:54.6254481Z CHECK ok: Dry-A-reject-COMPLETE
+2026-11-18T03:52:54.6254728Z CHECK ok: Dry-A-reject-dryFalse
+2026-11-18T03:52:54.6254977Z CHECK ok: Dry-A-reject-primaryH1
+2026-11-18T03:52:54.6255242Z CHECK ok: Dry-A-reject-errornew failure
+2026-11-18T03:52:54.6255789Z CHECK ok: Dry-A-reject-reasons['no-family-15']
+2026-11-18T03:52:54.6256277Z CHECK ok: Dry-A-reject-reasons['no-family-15', 'undefined-BA:diverging,equilibrium', 'other']
+2026-11-18T03:52:54.6256741Z CHECK ok: Dry-A-reject-finding
+2026-11-18T03:52:54.6256989Z CHECK ok: Dry-A-reject-judge
+2026-11-18T03:52:54.6257234Z CHECK ok: Dry-A-reject-control-a
+2026-11-18T03:52:54.6257491Z CHECK ok: Dry-A-reject-control-c1
+2026-11-18T03:52:54.6257758Z CHECK ok: Dry-A-reject-control-c2
+2026-11-18T03:52:54.6258015Z CHECK ok: Dry-A-reject-floor
+2026-11-18T03:52:54.6258257Z CHECK ok: Dry-A-reject-positive
+2026-11-18T03:52:54.6258515Z CHECK ok: Dry-A-reject-unknown-rule
+2026-11-18T03:52:54.6258783Z CHECK ok: Dry-A-reject-F15
+2026-11-18T03:52:54.6259031Z CHECK ok: Dry-A-reject-extra-population
+2026-11-18T03:52:54.6259320Z CHECK ok: pinned-scorer-identity
+2026-11-18T03:52:54.6259562Z CHECK ok: pinned-INC
+2026-11-18T03:52:54.6259777Z CHECK ok: pinned-ANCHOR
+2026-11-18T03:52:54.6259996Z CHECK ok: pinned-R3-STD
+2026-11-18T03:52:54.6260220Z CHECK ok: D14-resolution-inside
+2026-11-18T03:52:54.6260467Z CHECK ok: D14-resolution-outside
+2026-11-18T03:52:54.6260726Z CHECK ok: c1-rule6-recorded-separately
+2026-11-18T03:52:54.6261010Z CHECK ok: dry-standin-preflight-record
+2026-11-18T03:52:54.6261294Z CHECK ok: Dry-A-unknown-rule-named
+2026-11-18T03:52:54.6261569Z CHECK ok: Dry-A-failed-control-named
+2026-11-18T03:52:54.6261850Z CHECK ok: scorer-refused-before-stage
+2026-11-18T03:52:54.6262136Z CHECK ok: recipe-reject-source_sha
+2026-11-18T03:52:54.6262405Z CHECK ok: recipe-reject-recipe_id
+2026-11-18T03:52:54.6262667Z CHECK ok: recipe-reject-binary_sha256
+2026-11-18T03:52:54.6262934Z CHECK ok: floor-real-CLI-inputs
+2026-11-18T03:52:54.6263190Z CHECK ok: prepare-failure-0
+2026-11-18T03:52:54.6263429Z CHECK ok: prepare-failure-1
+2026-11-18T03:52:54.6263661Z CHECK ok: prepare-failure-2
+2026-11-18T03:52:54.6263912Z CHECK ok: D14-before-certify-or-arms
+2026-11-18T03:52:54.6264183Z CHECK ok: raw-orchestration-schema
+2026-11-18T03:52:54.6264453Z CHECK ok: canonical-subject-rules
+2026-11-18T03:52:54.6264712Z CHECK ok: printed-outcomes-True
+2026-11-18T03:52:54.6264968Z CHECK ok: printed-outcomes-False
+2026-11-18T03:52:54.6265240Z CHECK ok: printed-VOID-repeats-step1
+2026-11-18T03:52:54.6265739Z CHECK ok: canonical-JSON-format
+2026-11-18T03:52:54.6266006Z CHECK ok: resolve-present-8
+2026-11-18T03:52:54.6266248Z CHECK ok: resolve-present-40
+2026-11-18T03:52:54.6266492Z CHECK ok: resolve-fetch-by-SHA
+2026-11-18T03:52:54.6266750Z CHECK ok: resolve-fetch-failure
+2026-11-18T03:52:54.6267134Z CHECK ok: resolve-invalid-'not-sha'
+2026-11-18T03:52:54.6267414Z CHECK ok: resolve-invalid-'abcdef1'
+2026-11-18T03:52:54.6267784Z CHECK ok: resolve-invalid-'fffffffffffffffffffffffffffffffffffffffff'
+2026-11-18T03:52:54.6268278Z CHECK ok: resolve-invalid-'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+2026-11-18T03:52:54.6268755Z CHECK ok: resolve-invalid-'gggggggggggggggggggggggggggggggggggggggg'
+2026-11-18T03:52:54.6269243Z CHECK ok: resolve-invalid-'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'
+2026-11-18T03:52:54.6269650Z CHECK ok: resolve-invalid-'aaaaaaaa;echo'
+2026-11-18T03:52:54.6269931Z CHECK ok: CLI-missing-subject
+2026-11-18T03:52:54.6270174Z CHECK ok: CLI-missing-round
+2026-11-18T03:52:54.6270424Z CHECK ok: CLI-calibration-real-refused
+2026-11-18T03:52:54.6270704Z CHECK ok: CLI-resamples-positive-0
+2026-11-18T03:52:54.6270978Z CHECK ok: CLI-resamples-positive--1
+2026-11-18T03:52:54.6271395Z CHECK ok: CLI-real-registered-resamples-9999
+2026-11-18T03:52:54.6271733Z CHECK ok: CLI-real-registered-resamples-10001
+2026-11-18T03:52:54.6272121Z CHECK ok: CLI-execution-accepted-['--r3', 'abcdef12', '--round', '1']
+2026-11-18T03:52:54.6272674Z CHECK ok: CLI-execution-accepted-['--dry', '--calibration', '--r3', 'abcdef12', '--resamples', '1000']
+2026-11-18T03:52:54.6273302Z CHECK ok: CLI-execution-accepted-['--dry', '--r3', 'abcdef12', '--round', '1', '--resamples', '1']
+2026-11-18T03:52:54.6273746Z CHECK ok: CLI-output-required
+2026-11-18T03:52:54.6274003Z CHECK ok: CLI-dry-diagnostic-accepts
+2026-11-18T03:52:54.6274279Z CHECK ok: CLI-dry-diagnostic-rejects
+2026-11-18T03:52:54.6274561Z CHECK ok: CLI-selftest-real-entrypoint
+2026-11-18T03:52:54.6274858Z CHECK ok: command-real-subprocess-contract
+2026-11-18T03:52:54.6275164Z CHECK ok: staged-instrument-build-context
+2026-11-18T03:52:54.6275460Z CHECK ok: 425-default-last-retry-success
+2026-11-18T03:52:54.6276069Z CHECK ok: 425-default-budget-exhausted
+2026-11-18T03:52:54.6276356Z CHECK ok: driver-own-tool-directory
+2026-11-18T03:52:54.6276631Z CHECK ok: driver-own-repository-root
+2026-11-18T03:52:54.6276911Z CHECK ok: canonical-JSON-UTF8-unescaped
+2026-11-18T03:52:54.6277195Z CHECK ok: D14-exact-owned-row-reason
+2026-11-18T03:52:54.6277475Z CHECK ok: D14-negative-one-burn-huge-phi
+2026-11-18T03:52:54.6277766Z CHECK ok: dry-H1-refusal-exact-reason
+2026-11-18T03:52:54.6278071Z CHECK ok: roster-runtime-exact-INCOMPLETE-reason
+2026-11-18T03:52:54.6278426Z CHECK ok: roster-comparator-exact-INCOMPLETE-reason
+2026-11-18T03:52:54.6278775Z CHECK ok: prepare-unreviewed-before-certify
+2026-11-18T03:52:54.6279104Z CHECK ok: reasons-nonCF-null-is-not-undefined
+2026-11-18T03:52:54.6279434Z CHECK ok: reasons-defined-CF-is-not-undefined
+2026-11-18T03:52:54.6279747Z CHECK ok: reasons-R3STD-only-missing-rule
+2026-11-18T03:52:54.6280047Z CHECK ok: reasons-undefined-keeps-rule-3
+2026-11-18T03:52:54.6280340Z CHECK ok: reasons-undefined-keeps-rule-5
+2026-11-18T03:52:54.6280632Z CHECK ok: reasons-undefined-keeps-rule-6
+2026-11-18T03:52:54.6280943Z CHECK ok: reasons-defined-failed-control-b
+2026-11-18T03:52:54.6281273Z CHECK ok: reasons-defined-failed-b-with-other-gap
+2026-11-18T03:52:54.6281644Z CHECK ok: actual-refusal-classification-build-failure
+2026-11-18T03:52:54.6282016Z CHECK ok: actual-refusal-classification-build-stamp
+2026-11-18T03:52:54.6282373Z CHECK ok: actual-refusal-classification-prepare-0
+2026-11-18T03:52:54.6282720Z CHECK ok: actual-refusal-classification-prepare-1
+2026-11-18T03:52:54.6283061Z CHECK ok: actual-refusal-classification-prepare-2
+2026-11-18T03:52:54.6283437Z CHECK ok: actual-refusal-classification-measurement-order
+2026-11-18T03:52:54.6283786Z CHECK ok: D14-decimal-float-inside
+2026-11-18T03:52:54.6284051Z CHECK ok: D14-decimal-float-outside
+2026-11-18T03:52:54.6284366Z CHECK ok: D14-malformed-phi-refused-by-main
+2026-11-18T03:52:54.6284687Z CHECK ok: outcome-duty-protocol-boolean-types
+2026-11-18T03:52:54.6284997Z CHECK ok: control-protocol-boolean-types
+2026-11-18T03:52:54.6285311Z CHECK ok: control-diff-null-point-defined-CI
+2026-11-18T03:52:54.6286006Z CHECK ok: control-diff-defined-point-null-CI
+2026-11-18T03:52:54.6286348Z CHECK ok: status-invalid-verdict-complete-roster
+2026-11-18T03:52:54.6286684Z CHECK ok: status-empty-rules-complete-roster
+2026-11-18T03:52:54.6287011Z CHECK ok: status-missing-rules-complete-roster
+2026-11-18T03:52:54.6287329Z CHECK ok: Dry-A-reject-R3-only-floor
+2026-11-18T03:52:54.7684860Z CHECK ok: Dry-A-reject-equilibrium-positive
+2026-11-18T03:52:54.7686085Z CHECK ok: Dry-A-reject-mixed-diverging-labels
+2026-11-18T03:52:54.7686798Z CHECK ok: extract-exact-nonempty-population-tables
+2026-11-18T03:52:54.7687378Z CHECK ok: extract-asymmetric-subject-outcomes
+2026-11-18T03:52:54.7687925Z CHECK ok: whole-population-REPORTED-excluded
+2026-11-18T03:52:54.7688500Z CHECK ok: whole-population-order-Unicode-false-label
+2026-11-18T03:52:54.7689071Z CHECK ok: write-population-name-and-content
+2026-11-18T03:52:54.7689601Z CHECK ok: write-asymmetric-outcome-duty-lines
+2026-11-18T03:52:54.7690595Z CHECK ok: write-reasons-and-multiple-failed-controls
+2026-11-18T03:52:54.7691158Z CHECK ok: command-stringifies-None-argument
+2026-11-18T03:52:54.7691678Z CHECK ok: resolve-fetch-replaces-failed-stdout
+2026-11-18T03:52:54.7692165Z CHECK ok: build-command-log-stamp-arguments
+2026-11-18T03:52:54.7692555Z CHECK ok: scorer-refusal-reason-exact
+2026-11-18T03:52:54.7693020Z CHECK ok: instrument-stage-source-and-cache-contract
+2026-11-18T03:52:54.7693509Z CHECK ok: floor-distinct-root-output-and-all-arguments
+2026-11-18T03:52:54.7693979Z CHECK ok: beacon-round-seed-and-write-arguments
+2026-11-18T03:52:54.7694411Z CHECK ok: beacon-invalid-round-exact-refusal
+2026-11-18T03:52:54.7694843Z CHECK ok: beacon-retry-full-diagnostic-and-flush
+2026-11-18T03:52:54.7695285Z CHECK ok: beacon-http-refusal-full-diagnostic
+2026-11-18T03:52:54.7696000Z CHECK ok: beacon-zero-budget-exact-refusal
+2026-11-18T03:52:54.7696480Z CHECK ok: prepare-all-command-path-log-and-output-contract
+2026-11-18T03:52:54.7697071Z CHECK ok: population-measurement-arguments-skips-and-restoration
+2026-11-18T03:52:54.7697651Z CHECK ok: population-accounting-mismatch-both-directions
+2026-11-18T03:52:54.7698185Z CHECK ok: decision-wrapper-facts-files-forwarding-and-text
+2026-11-18T03:52:54.7698718Z CHECK ok: CLI-default-bootstrap-arguments-and-initial-raw
+2026-11-18T03:52:54.7699231Z CHECK ok: CLI-explicit-integers-and-early-refusal-raw
+2026-11-18T03:52:54.7699717Z CHECK ok: CLI-round-and-seed-integer-token-grammar
+2026-11-18T03:52:54.7700147Z CHECK ok: CLI-help-frozen-description
+2026-11-18T03:52:54.7700548Z CHECK ok: CLI-existing-output-directory-refused
+2026-11-18T03:52:54.7701014Z CHECK ok: CLI-extract-return-code-and-output-contract
+2026-11-18T03:52:54.7701525Z CHECK ok: CLI-exception-status-prefix-and-stderr-protocol
+2026-11-18T03:52:54.7702053Z CHECK ok: execute-registered-bootstrap-build-arguments
+2026-11-18T03:52:54.7702538Z CHECK ok: execute-real-standard-guard-before-build
+2026-11-18T03:52:54.7702947Z CHECK ok: execute-dry-subject-guard-before-build
+2026-11-18T03:52:54.7703318Z CHECK ok: execute-allowed-standin-facts-and-metadata
+2026-11-18T03:52:54.7703719Z CHECK ok: execute-mixed-calibration-preflight-refusal
+2026-11-18T03:52:54.7704143Z CHECK ok: execute-primary-population-routing-and-manifests
+2026-11-18T03:52:54.7704597Z CHECK ok: execute-secondary-populations-roster-and-plants-command
+2026-11-18T03:52:54.7705023Z CHECK ok: synthetic-rule2-known-win-converged-inside
+2026-11-18T03:52:54.7705374Z CHECK ok: synthetic-rule2-known-win-converged-at
+2026-11-18T03:52:54.7706066Z CHECK ok: synthetic-rule2-known-win-converged-outside
+2026-11-18T03:52:54.7706430Z CHECK ok: synthetic-rule2-known-win-stable-inside
+2026-11-18T03:52:54.7706765Z CHECK ok: synthetic-rule2-known-win-stable-at
+2026-11-18T03:52:54.7707105Z CHECK ok: synthetic-rule2-known-win-stable-outside
+2026-11-18T03:52:54.7707444Z CHECK ok: registered-rule-domain-R3-converged
+2026-11-18T03:52:54.7707763Z CHECK ok: registered-rule-domain-R3-stable
+2026-11-18T03:52:54.7708087Z CHECK ok: registered-rule-domain-R3-improving
+2026-11-18T03:52:54.7708570Z CHECK ok: registered-rule-domain-R3-oscillating
+2026-11-18T03:52:54.7708911Z CHECK ok: registered-rule-domain-R3-diverging
+2026-11-18T03:52:54.7709230Z CHECK ok: registered-rule-domain-R3-equilibrium
+2026-11-18T03:52:54.7709562Z CHECK ok: registered-rule-domain-R3-STD-converged
+2026-11-18T03:52:54.7709897Z CHECK ok: registered-rule-domain-R3-STD-stable
+2026-11-18T03:52:54.7710228Z CHECK ok: registered-rule-domain-R3-STD-improving
+2026-11-18T03:52:54.7710571Z CHECK ok: registered-rule-domain-R3-STD-oscillating
+2026-11-18T03:52:54.7710933Z CHECK ok: registered-rule-domain-R3-STD-diverging
+2026-11-18T03:52:54.7711291Z CHECK ok: registered-rule-domain-R3-STD-equilibrium
+2026-11-18T03:52:54.7711626Z CHECK ok: registered-rule-domain-CF-converged
+2026-11-18T03:52:54.7711938Z CHECK ok: registered-rule-domain-CF-stable
+2026-11-18T03:52:54.7712252Z CHECK ok: registered-rule-domain-CF-improving
+2026-11-18T03:52:54.7712704Z CHECK ok: registered-rule-domain-CF-oscillating
+2026-11-18T03:52:54.7713036Z CHECK ok: registered-rule-domain-CF-diverging
+2026-11-18T03:52:54.7713356Z CHECK ok: registered-rule-domain-CF-equilibrium
+2026-11-18T03:52:54.7713676Z CHECK ok: registered-rule-domain-W4-converged
+2026-11-18T03:52:54.7713985Z CHECK ok: registered-rule-domain-W4-stable
+2026-11-18T03:52:54.7714289Z CHECK ok: registered-rule-domain-W4-improving
+2026-11-18T03:52:54.7714615Z CHECK ok: registered-rule-domain-W4-oscillating
+2026-11-18T03:52:54.7714933Z CHECK ok: registered-rule-domain-W4-diverging
+2026-11-18T03:52:54.7715251Z CHECK ok: registered-rule-domain-W4-equilibrium
+2026-11-18T03:52:54.7715719Z CHECK ok: F2-extract-truncated-rules-refused
+2026-11-18T03:52:54.7716042Z CHECK ok: F2-extract-empty-rules-refused
+2026-11-18T03:52:54.7716340Z CHECK ok: F2-extract-no-controls-refused
+2026-11-18T03:52:54.7716643Z CHECK ok: F2-extract-failed-control-b-refused
+2026-11-18T03:52:54.7716948Z CHECK ok: F2-extract-zero-H1-refused
+2026-11-18T03:52:54.7717241Z CHECK ok: F2-extract-no-preflight-refused
+2026-11-18T03:52:54.7717561Z CHECK ok: F2-extract-lying-verdict-refused
+2026-11-18T03:52:54.7717877Z CHECK ok: F2-extract-wrong-primary-refused
+2026-11-18T03:52:54.7718229Z CHECK ok: F2-extract-calibration-primary-H1-empty-refused
+2026-11-18T03:52:54.7718644Z CHECK ok: F2-write-truncated-rules-no-artifact-or-outcomes
+2026-11-18T03:52:54.7719042Z CHECK ok: F2-write-empty-rules-no-artifact-or-outcomes
+2026-11-18T03:52:54.7719418Z CHECK ok: F2-write-no-controls-no-artifact-or-outcomes
+2026-11-18T03:52:54.7719810Z CHECK ok: F2-write-failed-control-b-no-artifact-or-outcomes
+2026-11-18T03:52:54.7720195Z CHECK ok: F2-write-zero-H1-no-artifact-or-outcomes
+2026-11-18T03:52:54.7720566Z CHECK ok: F2-write-no-preflight-no-artifact-or-outcomes
+2026-11-18T03:52:54.7720907Z CHECK ok: F1-control-b-defined-true
+2026-11-18T03:52:54.7721202Z CHECK ok: F1-control-b-undefined-tristate
+2026-11-18T03:52:54.7721537Z CHECK ok: F1-defined-failure-beats-undefined-converged
+2026-11-18T03:52:54.7721916Z CHECK ok: F1-defined-failure-beats-undefined-stable
+2026-11-18T03:52:54.7722296Z CHECK ok: F1-defined-failure-beats-undefined-improving
+2026-11-18T03:52:54.7722687Z CHECK ok: F1-defined-failure-beats-undefined-oscillating
+2026-11-18T03:52:54.7723037Z CHECK ok: F1-Dry-A-failed-point-converged
+2026-11-18T03:52:54.7723343Z CHECK ok: F1-Dry-A-failed-verdict-converged
+2026-11-18T03:52:54.7723643Z CHECK ok: F1-Dry-A-failed-point-stable
+2026-11-18T03:52:54.7723930Z CHECK ok: F1-Dry-A-failed-verdict-stable
+2026-11-18T03:52:54.7724230Z CHECK ok: F1-Dry-A-failed-point-improving
+2026-11-18T03:52:54.7724540Z CHECK ok: F1-Dry-A-failed-verdict-improving
+2026-11-18T03:52:54.7724842Z CHECK ok: F1-Dry-A-failed-point-oscillating
+2026-11-18T03:52:54.7725150Z CHECK ok: F1-Dry-A-failed-verdict-oscillating
+2026-11-18T03:52:54.7725610Z CHECK ok: F1-Dry-A-undefined-exactly-two-accepted
+2026-11-18T03:52:54.7725947Z CHECK ok: F1-Dry-A-extra-undefined-converged
+2026-11-18T03:52:54.7726249Z CHECK ok: F1-Dry-A-extra-undefined-stable
+2026-11-18T03:52:54.7726554Z CHECK ok: F1-Dry-A-extra-undefined-improving
+2026-11-18T03:52:54.7726993Z CHECK ok: F1-Dry-A-extra-undefined-oscillating
+2026-11-18T03:52:54.7727311Z CHECK ok: F1-Dry-A-b-not-undefined-False
+2026-11-18T03:52:54.7727598Z CHECK ok: F1-Dry-A-b-not-undefined-True
+2026-11-18T03:52:54.7727893Z CHECK ok: F1-H1-undefined-is-INCOMPLETE
+2026-11-18T03:52:54.7728166Z CHECK ok: F1-H1-false-is-VOID
+2026-11-18T03:52:54.7728440Z CHECK ok: PF5-preflight-ieee-'absent'
+2026-11-18T03:52:54.7728722Z CHECK ok: PF5-preflight-ieee-1
+2026-11-18T03:52:54.7728978Z CHECK ok: PF5-preflight-ieee-0
+2026-11-18T03:52:54.7729233Z CHECK ok: PF5-preflight-ieee-None
+2026-11-18T03:52:54.7729500Z CHECK ok: PF5-preflight-ieee-[]
+2026-11-18T03:52:54.7729751Z CHECK ok: PF5-preflight-ieee-{}
+2026-11-18T03:52:54.7730013Z CHECK ok: PF5-preflight-int64-'absent'
+2026-11-18T03:52:54.7730286Z CHECK ok: PF5-preflight-int64-1
+2026-11-18T03:52:54.7730535Z CHECK ok: PF5-preflight-int64-0
+2026-11-18T03:52:54.7730911Z CHECK ok: PF5-preflight-int64-None
+2026-11-18T03:52:54.7731190Z CHECK ok: PF5-preflight-int64-[]
+2026-11-18T03:52:54.7731454Z CHECK ok: PF5-preflight-int64-{}
+2026-11-18T03:52:54.7731744Z CHECK ok: D11-absent-capabilities-at-real-decide
+2026-11-18T03:52:54.7732088Z CHECK ok: R6-floor-exit-string-at-real-rule-call
+2026-11-18T03:52:54.7732398Z CHECK ok: D14-wrapper-dict-valid
+2026-11-18T03:52:54.7732680Z CHECK ok: D14-wrapper-dict-bad-bound-names-row
+2026-11-18T03:52:54.7732990Z CHECK ok: D14-wrapper-nested-valid
+2026-11-18T03:52:54.7733283Z CHECK ok: D14-wrapper-nested-bad-bound-names-row
+2026-11-18T03:52:54.7733596Z CHECK ok: D14-wrapper-row-object-valid
+2026-11-18T03:52:54.7733925Z CHECK ok: D14-wrapper-row-object-bad-bound-names-row
+2026-11-18T03:52:54.7734249Z CHECK ok: D14-wrapper-string-valid
+2026-11-18T03:52:54.7734539Z CHECK ok: D14-wrapper-string-bad-bound-names-row
+2026-11-18T03:52:54.7734898Z CHECK ok: D14-wrapper-missing-string-unresolved-refused
+2026-11-18T03:52:54.7735263Z CHECK ok: D14-wrapper-malformed-unresolved-refused
+2026-11-18T03:52:54.7735863Z CHECK ok: D14-wrapper-gen-cycle-unresolved-refused
+2026-11-18T03:52:54.7736214Z CHECK ok: D14-wrapper-top-cycle-unresolved-refused
+2026-11-18T03:52:54.7736566Z CHECK ok: D14-wrapper-F15b-unknown-unresolved-refused
+2026-11-18T03:52:54.7736935Z CHECK ok: D14-wrapper-unknown-kind-unresolved-refused
+2026-11-18T03:52:54.7737286Z CHECK ok: A1-kill-during-H1-scoring-fails-closed
+2026-11-18T03:52:54.7737621Z CHECK ok: D14-top-copy-unresolved-terminal-''
+2026-11-18T03:52:54.7737960Z CHECK ok: D14-top-copy-unresolved-terminal-'unknown'
+2026-11-18T03:52:54.7738327Z CHECK ok: D14-top-copy-unresolved-terminal-'F19 unknown'
+2026-11-18T03:52:54.7738738Z CHECK ok: D14-top-copy-unresolved-terminal-'F15 unit-scaled copies'
+2026-11-18T03:52:54.7739204Z CHECK ok: D14-top-copy-unresolved-terminal-'F15b base from F19 unknown'
+2026-11-18T03:52:54.7739622Z CHECK ok: D11-nonboolean-capability-at-decide-ieee
+2026-11-18T03:52:54.7739976Z CHECK ok: D11-nonboolean-capability-at-decide-int64
+2026-11-18T03:52:54.7740313Z CHECK ok: A1-commitment-three-files-green
+2026-11-18T03:52:54.7740620Z CHECK ok: A1-commitment-reveal.py-refused
+2026-11-18T03:52:54.7740941Z CHECK ok: A1-commitment-reveal_selftest.py-refused
+2026-11-18T03:52:54.7741287Z CHECK ok: A1-commitment-reveal_fixtures.json-refused
+2026-11-18T03:52:54.7741609Z CHECK ok: A1-commitment-format-refused
+2026-11-18T03:52:54.7741925Z CHECK ok: A1-commitment-missing-member-refused
+2026-11-18T03:52:54.7742258Z CHECK ok: A1-commitment-extra-member-refused
+2026-11-18T03:52:54.7742573Z CHECK ok: A1-commitment-missing-file-refused
+2026-11-18T03:52:54.7742902Z CHECK ok: A1-commitment-missing-commitment-refused
+2026-11-18T03:52:54.7743231Z CHECK ok: A1-commitment-invalid-json-refused
+2026-11-18T03:52:54.7743529Z CHECK ok: A1-commitment-before-beacon
+2026-11-18T03:52:54.7743815Z CHECK ok: A1-commitment-refusal-no-beacon
+2026-11-18T03:52:54.7744128Z CHECK ok: D14-frozen-flat-link-base-first-valid
+2026-11-18T03:52:54.7744467Z CHECK ok: D14-frozen-flat-link-copy-first-valid
+2026-11-18T03:52:54.7744774Z CHECK ok: D14-multihop-F9-valid
+2026-11-18T03:52:54.7745179Z CHECK ok: D14-multihop-F9-bad-bound-names-head
+2026-11-18T03:52:54.7745669Z CHECK ok: D14-multihop-unknown-family-bridge-refused
+2026-11-18T03:52:54.7746146Z CHECK ok: D14-multihop-missing-family-bridge-refused
+2026-11-18T03:52:54.7746527Z CHECK ok: D14-top-copy-unhashable-base-id-refused-by-name
+2026-11-18T03:52:54.7746919Z CHECK ok: D14-top-copy-missing-base-id-refused-by-name
+2026-11-18T03:52:54.7747304Z CHECK ok: D14-multihop-missing-link-names-requested-head
+2026-11-18T03:52:54.7747718Z CHECK ok: D14-synthetic-top-link-and-wrapper-shared-base-valid
+2026-11-18T03:52:54.7748168Z CHECK ok: D14-string-wrapper-opaque-previous-ID-collisions-valid
+2026-11-18T03:52:54.7748612Z CHECK ok: D14-string-wrapper-opaque-next-ID-collisions-valid
+2026-11-18T03:52:54.7749037Z CHECK ok: D14-string-wrapper-container-key-collisions-valid
+2026-11-18T03:52:54.7749436Z CHECK ok: D14-string-wrapper-base-before-copy-valid
+2026-11-18T03:52:54.7749993Z CHECK ok: D14-mixed-valid-metadata-missing-wrapper-names-copy
+2026-11-18T03:52:54.7750424Z CHECK ok: D14-mixed-valid-metadata-nondict-wrapper-names-copy
+2026-11-18T03:52:54.7750815Z CHECK ok: D14-initial-nondict-generator-protocol
+2026-11-18T03:52:56.1085928Z CHECK ok: D14-valid-metadata-nondict-initial-names-copy-protocol
+2026-11-18T03:52:56.1086713Z CHECK ok: D14-mixed-generator-object-cycle-protocol
+2026-11-18T03:52:56.1087190Z CHECK ok: D14-base-object-mark-not-current-generator-valid
+2026-11-18T03:52:56.1087735Z CHECK ok: D14-scaled-gen-only-container-valid
+2026-11-18T03:52:56.1088213Z CHECK ok: D14-linked-nonF9-source-unknown-copy-kind-protocol
+2026-11-18T03:52:56.1088692Z CHECK ok: D14-exact-bound-before-native-purity
+2026-11-18T03:52:56.1089129Z CHECK ok: D14-valid-F9-metadata-nonAR1-copy-protocol
+2026-11-18T03:52:56.1089649Z CHECK ok: D14-valid-metadata-own-bad-bound-names-copy-protocol
+2026-11-18T03:52:56.1090221Z CHECK ok: D14-unsupported-terminal-literals-named-protocol
+2026-11-18T03:52:56.1090763Z CHECK ok: D14-eligible-pieces-copy-accepted-no-native
+2026-11-18T03:52:56.1091243Z CHECK ok: D14-eligible-cycle-copy-accepted-no-native
+2026-11-18T03:52:56.1091699Z CHECK ok: D14-eligible-noise-copy-accepted-no-native
+2026-11-18T03:52:56.1092146Z CHECK ok: D14-eligible-uwalk-copy-accepted-no-native
+2026-11-18T03:52:56.1092581Z CHECK ok: D14-eligible-ar1-copy-accepted-no-native
+2026-11-18T03:52:56.1093013Z CHECK ok: Dry-A-independent-facts-green-control
+2026-11-18T03:52:56.1093428Z CHECK ok: Dry-A-independent-point-converged
+2026-11-18T03:52:56.1093836Z CHECK ok: Dry-A-independent-verdict-converged
+2026-11-18T03:52:56.1094245Z CHECK ok: Dry-A-independent-point-stable
+2026-11-18T03:52:56.1094626Z CHECK ok: Dry-A-independent-verdict-stable
+2026-11-18T03:52:56.1095012Z CHECK ok: Dry-A-independent-point-improving
+2026-11-18T03:52:56.1095407Z CHECK ok: Dry-A-independent-verdict-improving
+2026-11-18T03:52:56.1096148Z CHECK ok: Dry-A-independent-point-oscillating
+2026-11-18T03:52:56.1096570Z CHECK ok: Dry-A-independent-verdict-oscillating
+2026-11-18T03:52:56.1097051Z CHECK ok: Dry-A-independent-undefined-set-diverging
+2026-11-18T03:52:56.1097561Z CHECK ok: Dry-A-independent-undefined-set-equilibrium
+2026-11-18T03:52:56.1098000Z CHECK ok: failed-control-before-unavailable-rule-a
+2026-11-18T03:52:56.1098434Z CHECK ok: failed-control-before-unavailable-rule-b
+2026-11-18T03:52:56.1098872Z CHECK ok: failed-control-before-unavailable-rule-c1
+2026-11-18T03:52:56.1099306Z CHECK ok: failed-control-before-unavailable-rule-c2
+2026-11-18T03:52:56.1099734Z CHECK ok: extraction-production-entry-green-control
+2026-11-18T03:52:56.1100222Z CHECK ok: extraction-production-entry-malformed-control-scalar
+2026-11-18T03:52:56.1100744Z CHECK ok: extraction-production-entry-malformed-control-a
+2026-11-18T03:52:56.1101249Z CHECK ok: extraction-production-entry-malformed-control-b
+2026-11-18T03:52:56.1101745Z CHECK ok: extraction-production-entry-malformed-control-c1
+2026-11-18T03:52:56.1102252Z CHECK ok: extraction-production-entry-malformed-control-c2
+2026-11-18T03:52:56.1102971Z CHECK ok: Extract-evidence-complete-public-CLI-green
+2026-11-18T03:52:56.1103476Z CHECK ok: Extract-evidence-legitimate-not-evaluated-INCOMPLETE
+2026-11-18T03:52:56.1103965Z CHECK ok: Extract-evidence-01-omitted-subject-roster
+2026-11-18T03:52:56.1104395Z CHECK ok: Extract-evidence-02-incomplete-one-ne-raw
+2026-11-18T03:52:56.1104818Z CHECK ok: Extract-evidence-03-incomplete-one-ne-raw
+2026-11-18T03:52:56.1105239Z CHECK ok: Extract-evidence-04-incomplete-one-ne-raw
+2026-11-18T03:52:56.1105924Z CHECK ok: Extract-evidence-05-omitted-pred-roster
+2026-11-18T03:52:56.1106354Z CHECK ok: Extract-evidence-06-complete-raw-base
+2026-11-18T03:52:56.1106754Z CHECK ok: Extract-evidence-07-complete-raw-base
+2026-11-18T03:52:56.1107163Z CHECK ok: Extract-evidence-08-incomplete-one-ne-raw
+2026-11-18T03:52:56.1107589Z CHECK ok: Extract-evidence-09-malformed-key-error
+2026-11-18T03:52:56.1107997Z CHECK ok: Extract-evidence-10-malformed-type-error
+2026-11-18T03:52:56.1108516Z CHECK ok: Extract-evidence-11-malformed-index-error
+2026-11-18T03:52:56.1108862Z CHECK ok: Extract-evidence-12-complete-raw-base
+2026-11-18T03:52:56.1109190Z CHECK ok: Extract-evidence-13-complete-raw-base
+2026-11-18T03:52:56.1109513Z CHECK ok: Extract-evidence-14-complete-raw-base
+2026-11-18T03:52:56.1109837Z CHECK ok: Extract-evidence-15-complete-raw-base
+2026-11-18T03:52:56.1110158Z CHECK ok: Extract-evidence-16-complete-raw-base
+2026-11-18T03:52:56.1110559Z CHECK ok: Extract-evidence-nonboolean-control-status-token-matrix
+2026-11-18T03:52:56.1110960Z CHECK ok: Extract-R5-empty-H1-secondary
+2026-11-18T03:52:56.1111257Z CHECK ok: Extract-R5-empty-primary
+2026-11-18T03:52:56.1111532Z CHECK ok: Extract-R5-nonbool-capability
+2026-11-18T03:52:56.1111819Z CHECK ok: Extract-R5-missing-floor_exit
+2026-11-18T03:52:56.1112118Z CHECK ok: Extract-R5-missing-declarations
+2026-11-18T03:52:56.1112522Z CHECK ok: Extract-R5-missing-R3-capabilities-rule6-FAIL-fallback
+2026-11-18T03:52:56.1112936Z CHECK ok: Extract-R5-invalid-secondary-decisions
+2026-11-18T03:52:56.1113257Z CHECK ok: Extract-R5-secondary-judge-rc
+2026-11-18T03:52:56.1113567Z CHECK ok: Extract-R5-primary-versus-last-decisions
+2026-11-18T03:52:56.1113968Z CHECK ok: Extract-R5-refused-selected-status-cannot-emit-outcome
+2026-11-18T03:52:56.1114414Z CHECK ok: Extract-R5-status-mismatch-safe-channel-control
+2026-11-18T03:52:56.1114863Z CHECK ok: orchestration-visible-calibration-Hcal-copy-provenance
+2026-11-18T03:52:56.1115294Z CHECK ok: Extract-R5-refusal-all-splitlines-public-CLI
+2026-11-18T03:52:56.1115972Z CHECK ok: Main-R5-refusal-all-splitlines-real-catch-public-CLI
+2026-11-18T03:52:56.1116426Z CHECK ok: Extract-R5-INCOMPLETE-reason-all-splitlines-public-CLI
+2026-11-18T03:52:56.1116867Z CHECK ok: Extract-R5-VOID-failed-key-all-splitlines-public-CLI
+2026-11-18T03:52:56.1117285Z CHECK ok: safety-reveal-module-global-open-not-called
+2026-11-18T03:52:56.1117620Z CHECK ok: STOP-2-amendment-scope
+2026-11-18T03:52:56.1117893Z reveal checks: 663 examined, 663 ok, 0 failed
+2026-11-18T03:52:56.1384715Z ##[group]Run "$RUNNER_TEMP/reveal-venv/bin/python" -I tools/observer_oracle/reveal.py \
+2026-11-18T03:52:56.1385387Z [36;1m"$RUNNER_TEMP/reveal-venv/bin/python" -I tools/observer_oracle/reveal.py \[0m
+2026-11-18T03:52:56.1386243Z [36;1m  --round "$DRAND_ROUND" --r3 "$R3_SHA" --r3-std "$R3_STD_SHA" \[0m
+2026-11-18T03:52:56.1386749Z [36;1m  --resamples 10000 --out "$GITHUB_WORKSPACE/build/reveal-result"[0m
+2026-11-18T03:52:56.1407797Z shell: /usr/bin/bash -e {0}
+2026-11-18T03:52:56.1408069Z env:
+2026-11-18T03:52:56.1408358Z   CC_GUARD_LOG: /home/runner/work/_temp/cc-guard-reveal.log
+2026-11-18T03:52:56.1408722Z   DRAND_ROUND: 6648927
+2026-11-18T03:52:56.1408997Z   R3_SHA: 5b93b236720c202f62d950e25ec9b888091cd809
+2026-11-18T03:52:56.1409353Z   R3_STD_SHA: 3eed5cafd678665ba1d0667fb73ce1b1437fa724
+2026-11-18T03:52:56.1409677Z ##[endgroup]
+2026-11-18T04:03:33.1447243Z manifest sealed: /home/runner/work/EigenScript/EigenScript/build/reveal-result/calibration/manifest.json sha256 5940f08e1214f01c456738461731e480f6dbae7f72e7ac8a019a431ab69d4dbe (10 code files derived from the import graph)
+2026-11-18T04:03:33.1449918Z manifest sealed: /home/runner/work/EigenScript/EigenScript/build/reveal-result/hcal/manifest.json sha256 5a9452e7fe5e209520dda2b04185fbf6835e297da50a2326e672b7d4c2f8d0e6 (10 code files derived from the import graph)
+2026-11-18T04:03:33.1452372Z manifest sealed: /home/runner/work/EigenScript/EigenScript/build/reveal-result/H1/manifest.json sha256 4a1694c37958d103d06132616c722f61ab7dc5bc33473f698a3553eac49b0a13 (10 code files derived from the import graph)
+2026-11-18T04:03:33.1454183Z manifest H1: sha256 8e3095af031e79ef72addb72cba3dd1705069037caca0df308dda9ed06a29913; derived files 10
+2026-11-18T04:03:33.1455052Z OUTCOME converged: INC; silent-wrong=False; STD_p/H2=False
+2026-11-18T04:03:33.1455834Z OUTCOME stable: INC; silent-wrong=False; STD_p/H2=False
+2026-11-18T04:03:33.1456404Z OUTCOME improving: R3; silent-wrong=False; STD_p/H2=False
+2026-11-18T04:03:33.1457525Z OUTCOME oscillating: R3; silent-wrong=False; STD_p/H2=False
+2026-11-18T04:03:33.1458107Z OUTCOME diverging: R3; silent-wrong=False; STD_p/H2=False
+2026-11-18T04:03:33.1458685Z OUTCOME equilibrium: INC; silent-wrong=True; STD_p/H2=False
+2026-11-18T04:03:33.1459166Z COMPLETE
+2026-11-18T04:03:33.1763634Z ##[group]Run actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+2026-11-18T04:03:33.1764096Z with:
+2026-11-18T04:03:33.1764325Z   name: observer-reveal
+2026-11-18T04:03:33.1764589Z   path: build/reveal-result/
+2026-11-18T04:03:33.1764872Z   if-no-files-found: error
+2026-11-18T04:03:33.1765131Z   compression-level: 6
+2026-11-18T04:03:33.1765367Z   overwrite: false
+2026-11-18T04:03:33.1765889Z   include-hidden-files: false
+2026-11-18T04:03:33.1766138Z   archive: true
+2026-11-18T04:03:33.1766332Z env:
+2026-11-18T04:03:33.1766590Z   CC_GUARD_LOG: /home/runner/work/_temp/cc-guard-reveal.log
+2026-11-18T04:03:33.1766921Z ##[endgroup]
+2026-11-18T04:03:33.4018193Z With the provided path, there will be 189 files uploaded
+2026-11-18T04:03:33.4019487Z Artifact name is valid!
+2026-11-18T04:03:33.4020222Z Root directory input is valid!
+2026-11-18T04:03:33.5943171Z Uploading artifact: observer-reveal.zip
+2026-11-18T04:03:33.5984333Z Beginning upload of artifact content to blob storage
+2026-11-18T04:03:34.2614956Z Uploaded bytes 2182193
+2026-11-18T04:03:34.2778081Z Finished uploading artifact content to blob storage!
+2026-11-18T04:03:34.2779312Z SHA256 digest of uploaded artifact is 61d5c32744305f869b3ac4c2e4647af9c72dba71ba53a5e06811699118deb299
+2026-11-18T04:03:34.2780357Z Finalizing artifact upload
+2026-11-18T04:03:34.6490120Z Artifact observer-reveal successfully finalized. Artifact ID 14395953283
+2026-11-18T04:03:34.6491150Z Artifact observer-reveal has been successfully uploaded! Final size is 2182193 bytes. Artifact ID is 14395953283
+2026-11-18T04:03:34.6494966Z Artifact download URL: https://github.com/InauguralSystems/EigenScript/actions/runs/44233360250/artifacts/14395953283
+2026-11-18T04:03:34.6748442Z Post job cleanup.
+2026-11-18T04:03:34.7632884Z [command]/usr/bin/git version
+2026-11-18T04:03:34.7681985Z git version 2.56.1
+2026-11-18T04:03:34.7723248Z Temporarily overriding HOME='/home/runner/work/_temp/5a4ce596-1c93-4325-b9b7-b5809854c9a4' before making global git config changes
+2026-11-18T04:03:34.7724885Z Adding repository directory to the temporary git global config as a safe directory
+2026-11-18T04:03:34.7729403Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/EigenScript/EigenScript
+2026-11-18T04:03:34.7767021Z Removing SSH command configuration
+2026-11-18T04:03:34.7775003Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-11-18T04:03:34.7824165Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-11-18T04:03:34.8088825Z Removing HTTP extra header
+2026-11-18T04:03:34.8093648Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-11-18T04:03:34.8136361Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-11-18T04:03:34.8424404Z Removing includeIf entries pointing to credentials config files
+2026-11-18T04:03:34.8431437Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-11-18T04:03:34.8506813Z includeif.gitdir:/home/runner/work/EigenScript/EigenScript/.git.path
+2026-11-18T04:03:34.8511822Z includeif.gitdir:/home/runner/work/EigenScript/EigenScript/.git/worktrees/*.path
+2026-11-18T04:03:34.8512617Z includeif.gitdir:/github/workspace/.git.path
+2026-11-18T04:03:34.8513247Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-18T04:03:34.8514981Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/EigenScript/EigenScript/.git.path
+2026-11-18T04:03:34.8549997Z /home/runner/work/_temp/git-credentials-052fa227-6fc8-407c-a2d1-36f3ded41812.config
+2026-11-18T04:03:34.8564296Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/EigenScript/EigenScript/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-052fa227\-6fc8\-407c\-a2d1\-36f3ded41812\.config
+2026-11-18T04:03:34.8623094Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/EigenScript/EigenScript/.git/worktrees/*.path
+2026-11-18T04:03:34.8685736Z /home/runner/work/_temp/git-credentials-052fa227-6fc8-407c-a2d1-36f3ded41812.config
+2026-11-18T04:03:34.8693746Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/EigenScript/EigenScript/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-052fa227\-6fc8\-407c\-a2d1\-36f3ded41812\.config
+2026-11-18T04:03:34.8747646Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-11-18T04:03:34.8786299Z /github/runner_temp/git-credentials-052fa227-6fc8-407c-a2d1-36f3ded41812.config
+2026-11-18T04:03:34.8797371Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-052fa227\-6fc8\-407c\-a2d1\-36f3ded41812\.config
+2026-11-18T04:03:34.8849148Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-11-18T04:03:34.8887493Z /github/runner_temp/git-credentials-052fa227-6fc8-407c-a2d1-36f3ded41812.config
+2026-11-18T04:03:34.8898030Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-052fa227\-6fc8\-407c\-a2d1\-36f3ded41812\.config
+2026-11-18T04:03:34.8948405Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-11-18T04:03:34.9212498Z Removing credentials config '/home/runner/work/_temp/git-credentials-052fa227-6fc8-407c-a2d1-36f3ded41812.config'
+2026-11-18T04:03:34.9409483Z Cleaning up orphan processes

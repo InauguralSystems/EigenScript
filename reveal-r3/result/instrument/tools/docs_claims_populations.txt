@@ -1,0 +1,50 @@
+# Reference population floors: CLASS|document|minimum.
+# Re-pin after an intentional prose rewrite; adding references needs no edit.
+PATHS|README.md|100
+PATHS|docs/llms.txt|3
+PATHS|CLAUDE.md|17
+PATHS|docs/ARCHITECTURE.md|6
+PATHS|docs/BUILTINS.md|21
+PATHS|docs/CONCURRENCY.md|15
+FLAGS|README.md|18
+FLAGS|docs/llms.txt|10
+FLAGS|CLAUDE.md|4
+FLAGS|docs/ARCHITECTURE.md|0
+FLAGS|docs/BUILTINS.md|4
+FLAGS|docs/CONCURRENCY.md|0
+TARGETS|README.md|7
+TARGETS|docs/llms.txt|0
+TARGETS|CLAUDE.md|11
+TARGETS|docs/ARCHITECTURE.md|4
+TARGETS|docs/BUILTINS.md|5
+TARGETS|docs/CONCURRENCY.md|1
+NAMES|README.md|4
+NAMES|docs/llms.txt|42
+NAMES|CLAUDE.md|6
+NAMES|docs/ARCHITECTURE.md|1
+NAMES|docs/BUILTINS.md|348
+NAMES|docs/CONCURRENCY.md|7
+PATHS|ROADMAP.md|17
+FLAGS|ROADMAP.md|8
+TARGETS|ROADMAP.md|2
+NAMES|ROADMAP.md|6
+PATHS|docs/CI.md|38
+TARGETS|docs/CI.md|4
+NAMES|docs/CI.md|0
+# Exact declared set for executable doc fences.
+DOC ENROLMENT|README.md|1
+DOC ENROLMENT|docs/llms.txt|1
+DOC ENROLMENT|docs/SPEC.md|1
+DOC ENROLMENT|docs/COMPARISON.md|1
+DOC ENROLMENT|docs/CONCURRENCY.md|1
+DOC ENROLMENT|docs/STDLIB.md|1
+DOC ENROLMENT|docs/SYNTAX.md|1
+# #1991: observer docs belong to the exact executable-fence document set.
+DOC ENROLMENT|docs/PREDICATES.md|1
+DOC ENROLMENT|docs/DIAGNOSTICS.md|1
+DOC ENROLMENT|docs/OBSERVER.md|1
+DOC ENROLMENT|docs/BUILTINS.md|1
+DOC ENROLMENT|docs/LANGUAGE_CONTRACT.md|1
+PATHS|docs/INSTRUMENTS.md|210
+TARGETS|docs/INSTRUMENTS.md|0
+NAMES|docs/INSTRUMENTS.md|0

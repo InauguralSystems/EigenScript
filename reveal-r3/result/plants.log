@@ -1,0 +1,61 @@
+cat: VERSION: No such file or directory
+env -i HOME="$HOME" PATH=/usr/bin:/bin ${XDG_CACHE_HOME:+XDG_CACHE_HOME="$XDG_CACHE_HOME"} bash tools/observer_oracle/build_anchor.sh
+{"tag": "v0.46.0", "commit": "4a3a5c1941568e9bc562c7c8221cff22dc8ba697", "binary": "/home/runner/work/EigenScript/EigenScript/build/observer-reveal/cache/eigs-oracle-anchor/f8da66db6655542289b40a381c4bf47a39534c9f3fc5b7c365d170d3c7853ce1/build/release/eigenscript", "binary_sha256": "c5c288bc5907fe323fcaff83ff06c7f50c8d1ca0f860e94d3366c9ad226277d6", "recipe_sha256": "f8da66db6655542289b40a381c4bf47a39534c9f3fc5b7c365d170d3c7853ce1", "toolchain": "GCC: (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0"}
+RED  floor-each             rc=1 (want 1)  one floor reading per (predicate, class, label) reversed in every arm (#1777): no FINDING, and the floor alone reds the run, losing exactly those readings' verdicts
+     FINDINGS (a reading, REPORTED ones included, that differs between arms; each one fails the run): 0
+
+CAPABILITY ROWS (every scored verdict must be right): 0 run, 9 skipped, 0 wrong verdict(s); expected and absent: none
+
+floor: 1872 verdicts (per-verdict/3), re-measured on the anchor /home/runner/work/EigenScript/EigenScript/build/observer-reveal/cache/eigs-oracle-anchor/f8da66db6655542289b40a381c4bf47a39534c9f3fc5b7c365d170d3c7853ce1/build/release/eigenscript built by build_anchor.sh f8da66db6655: the list matches; binary sha256 c5c288bc5907 as when the floor was measured
+  FLOOR VIOLATION interp/loop alt_inv_n@2000 converged CONVENTION
+  FLOOR VIOLATION interp/loop alt_series_ln2@2000 converged CONVENTION
+  FLOOR VIOLATION interp/loop burst@144 diverging MATH
+  FLOOR VIOLATION interp/loop const_1e308_literal@30 improving CONVENTION
+  FLOOR VIOLATION interp/loop const_5@60 equilibrium MATH
+  FLOOR VIOLATION interp/loop cos_fixed_point@10 equilibrium MATH
+  FLOOR VIOLATION interp/loop damped_osc_0.99@100 oscillating MATH
+  FLOOR VIOLATION interp/loop damped_osc_0.9@20 stable CONVENTION
+  FLOOR VIOLATION interp/loop e_limit@2000 stable CONVENTION
+  FLOOR VIOLATION interp/loop geo_decay_0.5@5 improving CONVENTION
+  FLOOR VIOLATION interp/loop geo_growth_1.5@60 diverging MATH
+  FLOOR VIOLATION interp/loop growing_osc@200 oscillating MATH
+  FLOOR VIOLATION interp/straight alt_inv_n@2000 converged CONVENTION
+  FLOOR VIOLATION interp/straight alt_series_ln2@2000 converged CONVENTION
+  FLOOR VIOLATION interp/straight burst@144 diverging MATH
+  FLOOR VIOLATION interp/straight const_1e308_literal@30 improving CONVENTION
+  FLOOR VIOLATION interp/straight const_5@60 equilibrium MATH
+  FLOOR VIOLATION interp/straight cos_fixed_point@10 equilibrium MATH
+  FLOOR VIOLATION interp/straight damped_osc_0.99@100 oscillating MATH
+  FLOOR VIOLATION interp/straight damped_osc_0.9@20 stable CONVENTION
+  FLOOR VIOLATION interp/straight e_limit@2000 stable CONVENTION
+  FLOOR VIOLATION interp/straight geo_decay_0.5@5 improving CONVENTION
+  FLOOR VIOLATION interp/straight geo_growth_1.5@60 diverging MATH
+  FLOOR VIOLATION interp/straight growing_osc@200 oscillating MATH
+  FLOOR VIOLATION jit/loop alt_inv_n@2000 converged CONVENTION
+  FLOOR VIOLATION jit/loop alt_series_ln2@2000 converged CONVENTION
+  FLOOR VIOLATION jit/loop burst@144 diverging MATH
+  FLOOR VIOLATION jit/loop const_1e308_literal@30 improving CONVENTION
+  FLOOR VIOLATION jit/loop const_5@60 equilibrium MATH
+  FLOOR VIOLATION jit/loop cos_fixed_point@10 equilibrium MATH
+  FLOOR VIOLATION jit/loop damped_osc_0.99@100 oscillating MATH
+  FLOOR VIOLATION jit/loop damped_osc_0.9@20 stable CONVENTION
+  FLOOR VIOLATION jit/loop e_limit@2000 stable CONVENTION
+  FLOOR VIOLATION jit/loop geo_decay_0.5@5 improving CONVENTION
+  FLOOR VIOLATION jit/loop geo_growth_1.5@60 diverging MATH
+  FLOOR VIOLATION jit/loop growing_osc@200 oscillating MATH
+  FLOOR VIOLATION osr/loop alt_inv_n@2000 converged CONVENTION
+  FLOOR VIOLATION osr/loop alt_series_ln2@2000 converged CONVENTION
+  FLOOR VIOLATION osr/loop burst@144 diverging MATH
+  FLOOR VIOLATION osr/loop const_1e308_literal@30 improving CONVENTION
+  FLOOR VIOLATION osr/loop const_5@60 equilibrium MATH
+  FLOOR VIOLATION osr/loop cos_fixed_point@10 equilibrium MATH
+  FLOOR VIOLATION osr/loop damped_osc_0.99@100 oscillating MATH
+  FLOOR VIOLATION osr/loop damped_osc_0.9@20 stable CONVENTION
+  FLOOR VIOLATION osr/loop e_limit@2000 stable CONVENTION
+  FLOOR VIOLATION osr/loop geo_decay_0.5@5 improving CONVENTION
+  FLOOR VIOLATION osr/loop geo_growth_1.5@60 diverging MATH
+  FLOOR VIOLATION osr/loop growing_osc@200 oscillating MATH
+floor: 1872 verdicts checked, 48 lost
+
+observer oracle exit 1: FAIL
+plants: 1 examined, 1 red (controls included: green is their red)

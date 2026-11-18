@@ -1,0 +1,2857 @@
+[
+  {
+    "function": "builtin_append",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "append"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_assert",
+    "file": "src/builtins.c",
+    "category": "optional_or_scalar",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Two-or-more elements currently select condition/message; shorter list and scalar use truthiness. Preserve shorter forms.",
+    "public_names": [
+      "assert"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_atan2",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "atan2"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_audio_capture_open",
+    "file": "src/ext_gfx.c",
+    "category": "optional_or_scalar",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Null device defaults or [frequency, channels]; guard belongs before environment/tape/device effects.",
+    "public_names": [
+      "audio_capture_open"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_audio_envelope",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 5,
+    "maximum": 5,
+    "reason": "Consumes the first five tuple operands; trailing operands have no role.",
+    "public_names": [
+      "audio_envelope"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_audio_gain",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "audio_gain"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_audio_mix",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "audio_mix"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_audio_music_play",
+    "file": "src/ext_gfx.c",
+    "category": "optional",
+    "minimum": 1,
+    "maximum": 2,
+    "reason": "Path plus optional loop count.",
+    "public_names": [
+      "audio_music_play"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_audio_music_volume",
+    "file": "src/ext_gfx.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 1,
+    "reason": "Numeric volume or one-element volume list.",
+    "public_names": [
+      "audio_music_volume"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_audio_noise",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "audio_noise"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_audio_open",
+    "file": "src/ext_gfx.c",
+    "category": "optional_or_scalar",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Null device defaults or [frequency, channels]; guard belongs before environment/tape/device effects.",
+    "public_names": [
+      "audio_open"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_audio_play",
+    "file": "src/ext_gfx.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "public_names": [
+      "audio_play"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "ea799d0a7d251e8cd8d5b8eaad7735e5ea03c600b026a57d4f41e40b80a4a34b"
+    ],
+    "source_sha256": {
+      "audio_convert_samples": [
+        "01a118dbda254e0065f13d68f234dbfa5b3673fac1a68f711cd6c6fc9ca9cb77"
+      ],
+      "builtin_audio_play": [
+        "ea799d0a7d251e8cd8d5b8eaad7735e5ea03c600b026a57d4f41e40b80a4a34b"
+      ],
+      "gfx_bad_samples": [
+        "06b184f2d2c365ae61d277905810ed9d7257d7f2c81d8a13e26d90d0b9b6a23c"
+      ]
+    }
+  },
+  {
+    "function": "builtin_audio_play_loop",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "audio_play_loop"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_audio_saw",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "audio_saw"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_audio_sine",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "audio_sine"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_audio_square",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "audio_square"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_audio_stream_open",
+    "file": "src/ext_gfx.c",
+    "category": "optional_or_scalar",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Null device defaults or [frequency, channels]; guard belongs before environment/tape/device effects.",
+    "public_names": [
+      "audio_stream_open"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_audio_stream_push",
+    "file": "src/ext_gfx.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "public_names": [
+      "audio_stream_push"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "cd6347275f699b2ee2d7079e39972b43c9c705f566185907b9831dae2978282b"
+    ],
+    "source_sha256": {
+      "audio_convert_samples": [
+        "01a118dbda254e0065f13d68f234dbfa5b3673fac1a68f711cd6c6fc9ca9cb77"
+      ],
+      "builtin_audio_stream_push": [
+        "cd6347275f699b2ee2d7079e39972b43c9c705f566185907b9831dae2978282b"
+      ],
+      "gfx_bad_samples": [
+        "06b184f2d2c365ae61d277905810ed9d7257d7f2c81d8a13e26d90d0b9b6a23c"
+      ]
+    }
+  },
+  {
+    "function": "builtin_audio_sweep",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 5,
+    "maximum": 5,
+    "reason": "Consumes the first five tuple operands; trailing operands have no role.",
+    "public_names": [
+      "audio_sweep"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_audio_volume",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "audio_volume"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_bit_and",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "bit_pair accepts count >=2 and reads exactly two numbers; helper-mediated missing surplus guard.",
+    "public_names": [
+      "bit_and"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_bit_or",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "bit_pair accepts count >=2 and reads exactly two numbers; helper-mediated missing surplus guard.",
+    "public_names": [
+      "bit_or"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_bit_shift_left",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "bit_pair accepts count >=2 and reads exactly two numbers; helper-mediated missing surplus guard.",
+    "public_names": [
+      "bit_shl"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_bit_shift_right",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "bit_pair accepts count >=2 and reads exactly two numbers; helper-mediated missing surplus guard.",
+    "public_names": [
+      "bit_shr"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_bit_xor",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "bit_pair accepts count >=2 and reads exactly two numbers; helper-mediated missing surplus guard.",
+    "public_names": [
+      "bit_xor"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_buf_copy",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 5,
+    "maximum": 5,
+    "reason": "Consumes the first five tuple operands; trailing operands have no role.",
+    "public_names": [
+      "buf_copy"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_buf_deinterleave",
+    "file": "src/builtins_buf.c",
+    "category": "optional",
+    "minimum": 3,
+    "maximum": 4,
+    "reason": "Three required operands plus optional count; null count retains inferred count.",
+    "public_names": [
+      "buf_deinterleave"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_buf_dot",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 5,
+    "maximum": 5,
+    "reason": "Consumes the first five tuple operands; trailing operands have no role.",
+    "public_names": [
+      "buf_dot"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_buf_fill",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 4,
+    "maximum": 4,
+    "reason": "Consumes the first four tuple operands; trailing operands have no role.",
+    "public_names": [
+      "buf_fill"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_buf_from_list",
+    "file": "src/builtins_buf.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "public_names": [
+      "buf_from_list"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "c45c354c5cc6390200cb91b736b185b44af3d20728c0d57869e24e4d0f79a1d9"
+    ],
+    "source_sha256": {
+      "builtin_buf_from_list": [
+        "c45c354c5cc6390200cb91b736b185b44af3d20728c0d57869e24e4d0f79a1d9"
+      ]
+    }
+  },
+  {
+    "function": "builtin_buf_from_pcm16le",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "buf_from_pcm16le"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_buf_get",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "buf_get"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_buf_mix",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 6,
+    "maximum": 6,
+    "reason": "Consumes the first six tuple operands; trailing operands have no role.",
+    "public_names": [
+      "buf_mix"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_buf_peak",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "buf_peak"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_buf_resample_linear",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "buf_resample_linear"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_buf_scale_range",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 4,
+    "maximum": 4,
+    "reason": "Consumes the first four tuple operands; trailing operands have no role.",
+    "public_names": [
+      "buf_scale_range"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_buf_set",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "buf_set"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_buf_to_pcm16le",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "buf_to_pcm16le"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_buffer",
+    "file": "src/builtins_buf.c",
+    "category": "exact_strict_rejection",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Only two numeric list elements select shaped buffer; other lists already raise via STRICT_REQUIRE, strict-off legacy empty buffer retained.",
+    "public_names": [
+      "buffer"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "57cb0537fbd5bc20702d3c01759e2fb51829e2218925a950d203725c736932db"
+    ],
+    "source_sha256": {
+      "builtin_buffer": [
+        "57cb0537fbd5bc20702d3c01759e2fb51829e2218925a950d203725c736932db"
+      ],
+      "eigs_list_num": [
+        "9f81cf3349e551156657ba9cf52b16170875dbce7bbbca4ac6f076ea5a72423d"
+      ]
+    }
+  },
+  {
+    "function": "builtin_md5_file",
+    "file": "src/hash.c",
+    "category": "scalar",
+    "reason": "The list inspected is an internal taped-error value; the public argument is a scalar string path.",
+    "public_names": [
+      "md5_file"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "3c1ae1be6865ec230b22004469d8485b35ddfaa0ba5c1dd5a347f0acb9508eff"
+    ],
+    "source_sha256": {
+      "builtin_md5_file": [
+        "3c1ae1be6865ec230b22004469d8485b35ddfaa0ba5c1dd5a347f0acb9508eff"
+      ]
+    }
+  },
+  {
+    "function": "builtin_char_at",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "char_at"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_classify",
+    "file": "src/builtins.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 2,
+    "reason": "Trajectory dict scalar or [trajectory, optional channel].",
+    "public_names": [
+      "classify"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_coalesce",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "coalesce"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_concat",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "concat"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_contains",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "contains"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_copy_into",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "copy_into"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_db_execute",
+    "file": "src/ext_db.c",
+    "category": "variadic",
+    "minimum": null,
+    "maximum": null,
+    "reason": "db_build_query consumes SQL plus all trailing parameters, bounded separately by DB_MAX_PARAMS; existing limit raises.",
+    "public_names": [
+      "db_execute"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "4cf207881dd2dd1bbc61735eb3ffa36eaad8a5acd8d918cda47413a6d99ff2b6"
+    ],
+    "source_sha256": {
+      "builtin_db_execute": [
+        "4cf207881dd2dd1bbc61735eb3ffa36eaad8a5acd8d918cda47413a6d99ff2b6"
+      ],
+      "db_build_query": [
+        "a265ff30def4515920a7a361fb07d1fa5f3ff5eefabf961b72e6c093c3b9f109"
+      ],
+      "db_exec_from_arg": [
+        "f91b6f1b3f2081c538ed33c1217ee62162003947bee6442cd51f8921d9f4805c"
+      ]
+    }
+  },
+  {
+    "function": "builtin_db_query_json",
+    "file": "src/ext_db.c",
+    "category": "variadic",
+    "minimum": null,
+    "maximum": null,
+    "reason": "db_build_query consumes SQL plus all trailing parameters, bounded separately by DB_MAX_PARAMS; existing limit raises.",
+    "public_names": [
+      "db_query_json"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "489467a3f39ce6728624d84b7d9b20ce7d5ec8415fa6d2a9d3ae7d9270925957"
+    ],
+    "source_sha256": {
+      "builtin_db_query_json": [
+        "489467a3f39ce6728624d84b7d9b20ce7d5ec8415fa6d2a9d3ae7d9270925957"
+      ],
+      "db_build_query": [
+        "a265ff30def4515920a7a361fb07d1fa5f3ff5eefabf961b72e6c093c3b9f109"
+      ],
+      "db_exec_from_arg": [
+        "f91b6f1b3f2081c538ed33c1217ee62162003947bee6442cd51f8921d9f4805c"
+      ]
+    }
+  },
+  {
+    "function": "builtin_db_query_value",
+    "file": "src/ext_db.c",
+    "category": "variadic",
+    "minimum": null,
+    "maximum": null,
+    "reason": "db_build_query consumes SQL plus all trailing parameters, bounded separately by DB_MAX_PARAMS; existing limit raises.",
+    "public_names": [
+      "db_query_value"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "3908eda08837e16a96c0e0a8f8f8395d07bde686123cc8f997e4d0dadb4f4c3e"
+    ],
+    "source_sha256": {
+      "builtin_db_query_value": [
+        "3908eda08837e16a96c0e0a8f8f8395d07bde686123cc8f997e4d0dadb4f4c3e"
+      ],
+      "db_build_query": [
+        "a265ff30def4515920a7a361fb07d1fa5f3ff5eefabf961b72e6c093c3b9f109"
+      ],
+      "db_exec_from_arg": [
+        "f91b6f1b3f2081c538ed33c1217ee62162003947bee6442cd51f8921d9f4805c"
+      ]
+    }
+  },
+  {
+    "function": "builtin_dict_remove",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "dict_remove"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_dict_set",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "dict_set"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_dispatch",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "dispatch"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_dot",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "dot"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_ends_with",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "ends_with"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_exec_capture",
+    "file": "src/builtins_host.c",
+    "category": "variadic",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Whole string list is argv; exactly [argv-list, timeout] is alternate form. Rejecting all >2 breaks valid commands.",
+    "public_names": [
+      "exec_capture"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "930595270b5c7e68102042960102a80180c87d174545052d5c6e685691ad210f"
+    ],
+    "source_sha256": {
+      "builtin_exec_capture": [
+        "930595270b5c7e68102042960102a80180c87d174545052d5c6e685691ad210f"
+      ],
+      "eigs_list_num": [
+        "9f81cf3349e551156657ba9cf52b16170875dbce7bbbca4ac6f076ea5a72423d"
+      ]
+    }
+  },
+  {
+    "function": "builtin_exit",
+    "file": "src/builtins.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 1,
+    "reason": "Scalar code or first list element; cap only list overload before exit request.",
+    "public_names": [
+      "exit"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_f64_from_bytes",
+    "file": "src/builtins_buf.c",
+    "category": "unary_data_prefix",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Documented first eight bytes of list OR buffer; prefix byte decoding is data semantics, not argument arity. Explicitly exempt from this tuple repair (BUILTINS.md:208).",
+    "public_names": [
+      "f64_from_bytes"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "5f12865bdbf33058b8e42e22e6f23c4e957da26f62ee09de00b881a73cfd432d"
+    ],
+    "source_sha256": {
+      "builtin_f64_from_bytes": [
+        "5f12865bdbf33058b8e42e22e6f23c4e957da26f62ee09de00b881a73cfd432d"
+      ]
+    }
+  },
+  {
+    "function": "builtin_fill",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "fill"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_get_at",
+    "file": "src/builtins.c",
+    "category": "exact_rejection",
+    "minimum": 2,
+    "maximum": 3,
+    "reason": "Exact 2/3 branches; other lengths raise.",
+    "public_names": [
+      "get_at"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "bfff841ee81514af4584b2f305e60ae405ebc7e245ff8fe724007ff16677a04d"
+    ],
+    "source_sha256": {
+      "builtin_get_at": [
+        "bfff841ee81514af4584b2f305e60ae405ebc7e245ff8fe724007ff16677a04d"
+      ]
+    }
+  },
+  {
+    "function": "builtin_gfx_circle",
+    "file": "src/ext_gfx.c",
+    "category": "optional",
+    "minimum": 6,
+    "maximum": 7,
+    "reason": "Six required draw operands plus alpha.",
+    "public_names": [
+      "gfx_circle"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_gfx_clear",
+    "file": "src/ext_gfx.c",
+    "category": "optional_or_scalar",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Null default or RGB tuple; null must remain valid.",
+    "public_names": [
+      "gfx_clear"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_gfx_clip",
+    "file": "src/ext_gfx.c",
+    "category": "optional_or_scalar",
+    "minimum": 4,
+    "maximum": 4,
+    "reason": "Null clears clipping; otherwise rectangle tuple.",
+    "public_names": [
+      "gfx_clip"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_gfx_fb",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 6,
+    "maximum": 6,
+    "reason": "Consumes the first six tuple operands; trailing operands have no role.",
+    "public_names": [
+      "gfx_fb"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_gfx_line",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 7,
+    "maximum": 7,
+    "reason": "Consumes the first seven tuple operands; trailing operands have no role.",
+    "public_names": [
+      "gfx_line"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_gfx_open",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "gfx_open"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_gfx_point",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 5,
+    "maximum": 5,
+    "reason": "Consumes the first five tuple operands; trailing operands have no role.",
+    "public_names": [
+      "gfx_point"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_gfx_read",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "gfx_read"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_gfx_rect",
+    "file": "src/ext_gfx.c",
+    "category": "optional",
+    "minimum": 7,
+    "maximum": 8,
+    "reason": "Seven required draw operands plus alpha.",
+    "public_names": [
+      "gfx_rect"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_gfx_rrect",
+    "file": "src/ext_gfx.c",
+    "category": "optional",
+    "minimum": 8,
+    "maximum": 9,
+    "reason": "Eight required draw operands plus alpha.",
+    "public_names": [
+      "gfx_rrect"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_gfx_text",
+    "file": "src/ext_gfx.c",
+    "category": "optional",
+    "minimum": 6,
+    "maximum": 7,
+    "reason": "Six required draw operands plus scale.",
+    "public_names": [
+      "gfx_text"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_gfx_text_height",
+    "file": "src/ext_gfx.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 1,
+    "reason": "Numeric scale, null default, or one-element scale list.",
+    "public_names": [
+      "gfx_text_height"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_gfx_text_width",
+    "file": "src/ext_gfx.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 2,
+    "reason": "String scalar or [text, optional scale].",
+    "public_names": [
+      "gfx_text_width"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_has_key",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "has_key"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_hex",
+    "file": "src/builtins.c",
+    "category": "optional_or_scalar",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Numeric scalar or number/width tuple.",
+    "public_names": [
+      "hex"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_http_early_bind",
+    "file": "src/ext_http.c",
+    "category": "exact_rejection",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "List overload requires exactly port/path; numeric/null scalar form remains.",
+    "public_names": [
+      "http_early_bind"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "75b902a6ab9ba175be7d051448b761f66da9453dcb7843d16e3e5c25d46efe4d"
+    ],
+    "source_sha256": {
+      "builtin_http_early_bind": [
+        "75b902a6ab9ba175be7d051448b761f66da9453dcb7843d16e3e5c25d46efe4d"
+      ],
+      "eigs_opt_num": [
+        "9725bffff66601bf6a82c4b5e69281c6109e3277efbdd751fd9390bdbce6727e"
+      ]
+    }
+  },
+  {
+    "function": "builtin_http_post",
+    "file": "src/ext_http.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "http_post"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_http_response_header",
+    "file": "src/ext_http.c",
+    "category": "exact_rejection",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "count != 2 raises through response_header_error.",
+    "public_names": [
+      "http_response_header"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "e1aafd11967534ac42a08b1fb225221c8ef9500ea32ec775e8474b38ca368f9c"
+    ],
+    "source_sha256": {
+      "builtin_http_response_header": [
+        "e1aafd11967534ac42a08b1fb225221c8ef9500ea32ec775e8474b38ca368f9c"
+      ]
+    }
+  },
+  {
+    "function": "builtin_http_route",
+    "file": "src/ext_http.c",
+    "category": "optional",
+    "minimum": 3,
+    "maximum": 4,
+    "reason": "http_route_register consumes method/path/body or method/path/kind/payload (3/4); despite body... diagnostic it does not consume further entries.",
+    "public_names": [
+      "http_route"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_http_route_authed",
+    "file": "src/ext_http.c",
+    "category": "optional",
+    "minimum": 3,
+    "maximum": 4,
+    "reason": "http_route_register consumes method/path/body or method/path/kind/payload (3/4); despite body... diagnostic it does not consume further entries.",
+    "public_names": [
+      "http_route_authed"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_http_static",
+    "file": "src/ext_http.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "http_static"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_index_of",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "index_of"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_inflate",
+    "file": "src/builtins_buf.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list.",
+    "public_names": [
+      "inflate"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "13a5b43ee3f28d3a0d1a79c9804eff17c926297a0bac2c784cfe1abd39d01c51",
+      "a3fc2607ff39bc3c2f9e41a02467c751cb5b171ddf2e46c829c267143a5f2950"
+    ],
+    "source_sha256": {
+      "builtin_inflate": [
+        "13a5b43ee3f28d3a0d1a79c9804eff17c926297a0bac2c784cfe1abd39d01c51",
+        "a3fc2607ff39bc3c2f9e41a02467c751cb5b171ddf2e46c829c267143a5f2950"
+      ],
+      "strict_numeric_byte_list": [
+        "e271c965b69981e5f8e2ddf71b4f25220dd7d491135e67d8d1ada1d680bcbccc"
+      ],
+      "zlib_bytes_arg": [
+        "a20d6431a2a031d5f01ba74a3cbc5dd6dd28541106d0a008d174042844aa1ad9"
+      ],
+      "zlib_inflate_impl": [
+        "39c9ed3051f3b2bce8578f00f212463c209ce29ddb530ba531802253ef7b4c96"
+      ]
+    }
+  },
+  {
+    "function": "builtin_join",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "join"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_json_build",
+    "file": "src/builtins.c",
+    "category": "variadic",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Alternating key/value sequence; pair parity is a separate contract, not fixed maximum.",
+    "public_names": [
+      "json_build"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "895b607a44f311b0910c4111ede8af5385dd8c947a93ffac24671c2931c7c026"
+    ],
+    "source_sha256": {
+      "builtin_json_build": [
+        "895b607a44f311b0910c4111ede8af5385dd8c947a93ffac24671c2931c7c026"
+      ]
+    }
+  },
+  {
+    "function": "builtin_json_encode",
+    "file": "src/builtins.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "public_names": [
+      "json_encode"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "3d31ab37b9f8ae841e1676582d4fd67faa2920584ca29fcb51d140bfa8b00e6f"
+    ],
+    "source_sha256": {
+      "builtin_json_encode": [
+        "3d31ab37b9f8ae841e1676582d4fd67faa2920584ca29fcb51d140bfa8b00e6f"
+      ],
+      "eigs_json_encode_value": [
+        "9d0c4bc6ee9e5e2e998168d1dc5df09020ee0acd9848b18d20edf22a02f26608"
+      ]
+    }
+  },
+  {
+    "function": "builtin_json_path",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "json_path"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_keys",
+    "file": "src/builtins.c",
+    "category": "output_only",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Dictionary input; make_list uses dictionary count for output, not argument tuple.",
+    "public_names": [
+      "keys"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "b9e85732c41ae625cd669fa7606787ef0fb0dc618839be0f2d7de249c2c201db"
+    ],
+    "source_sha256": {
+      "builtin_keys": [
+        "b9e85732c41ae625cd669fa7606787ef0fb0dc618839be0f2d7de249c2c201db"
+      ],
+      "eigs_module_ns_sync": [
+        "89a5440e7753fd7b8b20da8c57b1e135dbb89f726777035c3f0ebee65bf59fb7"
+      ]
+    }
+  },
+  {
+    "function": "builtin_len",
+    "file": "src/builtins.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "public_names": [
+      "len"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "65efba69b67175c6be83e386f9f77ab4db6da9aeab72c4b59533eb8d81ab42f8"
+    ],
+    "source_sha256": {
+      "builtin_len": [
+        "65efba69b67175c6be83e386f9f77ab4db6da9aeab72c4b59533eb8d81ab42f8"
+      ],
+      "eigs_module_ns_sync": [
+        "89a5440e7753fd7b8b20da8c57b1e135dbb89f726777035c3f0ebee65bf59fb7"
+      ]
+    }
+  },
+  {
+    "function": "builtin_list_contains",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "list_contains"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_list_index_of",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "list_index_of"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_list_insert_at",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "list_insert_at"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_list_remove_at",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "list_remove_at"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_list_slice",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "list_slice"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_list_truncate",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "list_truncate"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_ls",
+    "file": "src/builtins_host.c",
+    "category": "output_only",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Input is scalar string; list operations concern output or replay result, not input tuple.",
+    "public_names": [
+      "ls"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "ff9632de9c60f241793dadf41c5ff444241cacf4faf7dedfd96427ab9276f56c"
+    ],
+    "source_sha256": {
+      "builtin_ls": [
+        "ff9632de9c60f241793dadf41c5ff444241cacf4faf7dedfd96427ab9276f56c"
+      ]
+    }
+  },
+  {
+    "function": "builtin_match",
+    "file": "src/builtins_host.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "regex_match"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_match_all",
+    "file": "src/builtins_host.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "regex_find"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_max",
+    "file": "src/builtins.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "public_names": [
+      "max"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "2175b6fc725553d83e745e380ecddc20ad81175878ea6d2854231e8bacdeea44"
+    ],
+    "source_sha256": {
+      "builtin_max": [
+        "2175b6fc725553d83e745e380ecddc20ad81175878ea6d2854231e8bacdeea44"
+      ],
+      "minmax_reduce": [
+        "96b723fedb15051c304959e8ed377e4efa782ca2de7f77803b06ff5d8d2a1636"
+      ]
+    }
+  },
+  {
+    "function": "builtin_min",
+    "file": "src/builtins.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "public_names": [
+      "min"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "aa04459f66b91bc896e90d66cbef455dc88f9637cdc9c81d8841cd5f64ffdfe6"
+    ],
+    "source_sha256": {
+      "builtin_min": [
+        "aa04459f66b91bc896e90d66cbef455dc88f9637cdc9c81d8841cd5f64ffdfe6"
+      ],
+      "minmax_reduce": [
+        "96b723fedb15051c304959e8ed377e4efa782ca2de7f77803b06ff5d8d2a1636"
+      ]
+    }
+  },
+  {
+    "function": "builtin_must_not_yield",
+    "file": "src/builtins.c",
+    "category": "scalar_callback",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Function input passed to call_eigs_fn; helper list behavior is function call binding, not this builtin tuple.",
+    "public_names": [
+      "must_not_yield"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "9b9f9c5996fe45bcc9fcba6f821abc6a758eb0ad422e6bfe4958d3e11e352ac3"
+    ],
+    "source_sha256": {
+      "builtin_must_not_yield": [
+        "9b9f9c5996fe45bcc9fcba6f821abc6a758eb0ad422e6bfe4958d3e11e352ac3"
+      ],
+      "call_eigs_fn": [
+        "4222a410a58f21666281a50e41261a3c62941257d8516de897e655d0e2e198e3"
+      ],
+      "env_set_local": [
+        "6a28deaa4e035e7a4247868be4be38bf906efc231c5ff21a908895f7f15e08f7"
+      ],
+      "vm_borrow_compensate": [
+        "39c0eb8bb815d97985d265d5c7cfb2ddb74c009945a5f1e070978a46d6c411f0"
+      ],
+      "vm_borrow_scan": [
+        "24720427e6a309464edc04905ac38f78d0ab9de6a6778910ec55c2f5ba108795"
+      ]
+    }
+  },
+  {
+    "function": "builtin_nearest_in_range",
+    "file": "src/builtins.c",
+    "category": "optional",
+    "minimum": 6,
+    "maximum": 9,
+    "reason": "Six required operands plus three optional field-name strings.",
+    "public_names": [
+      "nearest_in_range"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_nearest_in_range_all",
+    "file": "src/builtins.c",
+    "category": "optional",
+    "minimum": 4,
+    "maximum": 7,
+    "reason": "Four required operands plus three optional field-name strings.",
+    "public_names": [
+      "nearest_in_range_all"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_net_accept",
+    "file": "src/ext_net.c",
+    "category": "exact_rejection",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "net_require_list(2,2) on list overload; scalar handle also valid.",
+    "public_names": [
+      "net_accept"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "25d612383126cbd0518e4a4255ff1c204b3c95545ab92469b10c361786125981"
+    ],
+    "source_sha256": {
+      "builtin_net_accept": [
+        "25d612383126cbd0518e4a4255ff1c204b3c95545ab92469b10c361786125981"
+      ],
+      "net_lookup": [
+        "b7c5760787594aad4ec34d3eb3d5339e6a0bb317e153eac4687223fdff69e618"
+      ],
+      "net_num_at": [
+        "d55a8eaf22d6cc93637730627247269e559fd7b0459aac2c6cef2994361c595e"
+      ],
+      "net_require_list": [
+        "90e3f1361bcc52f17a0accbf87ff18b8f941f333a1050dc60f60e99dda9f4164"
+      ]
+    }
+  },
+  {
+    "function": "builtin_net_dial",
+    "file": "src/ext_net.c",
+    "category": "exact_rejection",
+    "minimum": 2,
+    "maximum": 3,
+    "reason": "net_require_list(2,3) rejects surplus in every mode; optional timeout.",
+    "public_names": [
+      "net_dial"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "a4ae095a389638dc862a3587dd19ebc3d215dc3531440803219f1c8fdaf3ff6e"
+    ],
+    "source_sha256": {
+      "builtin_net_dial": [
+        "a4ae095a389638dc862a3587dd19ebc3d215dc3531440803219f1c8fdaf3ff6e"
+      ],
+      "net_num_at": [
+        "d55a8eaf22d6cc93637730627247269e559fd7b0459aac2c6cef2994361c595e"
+      ],
+      "net_require_list": [
+        "90e3f1361bcc52f17a0accbf87ff18b8f941f333a1050dc60f60e99dda9f4164"
+      ]
+    }
+  },
+  {
+    "function": "builtin_net_recv",
+    "file": "src/ext_net.c",
+    "category": "exact_rejection",
+    "minimum": 2,
+    "maximum": 3,
+    "reason": "net_require_list(2,3) rejects surplus in every mode; optional timeout.",
+    "public_names": [
+      "net_recv"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "47b4ad9023aca053634a5cd5ee4224f218e1a7b3b41c167bcea36bf62d13db8a"
+    ],
+    "source_sha256": {
+      "builtin_net_recv": [
+        "47b4ad9023aca053634a5cd5ee4224f218e1a7b3b41c167bcea36bf62d13db8a"
+      ],
+      "net_num_at": [
+        "d55a8eaf22d6cc93637730627247269e559fd7b0459aac2c6cef2994361c595e"
+      ],
+      "net_require_list": [
+        "90e3f1361bcc52f17a0accbf87ff18b8f941f333a1050dc60f60e99dda9f4164"
+      ]
+    }
+  },
+  {
+    "function": "builtin_net_send",
+    "file": "src/ext_net.c",
+    "category": "exact_rejection",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "net_require_list(2,2) before tape/socket work.",
+    "public_names": [
+      "net_send"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "adafc473adbba2ab8fbdba59d748f171efd7ad87077de9a1e8d938dc5dbd33d8"
+    ],
+    "source_sha256": {
+      "builtin_net_send": [
+        "adafc473adbba2ab8fbdba59d748f171efd7ad87077de9a1e8d938dc5dbd33d8"
+      ],
+      "net_require_list": [
+        "90e3f1361bcc52f17a0accbf87ff18b8f941f333a1050dc60f60e99dda9f4164"
+      ]
+    }
+  },
+  {
+    "function": "builtin_numerical_grad",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "numerical_grad"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_numerical_grad_cols",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 4,
+    "maximum": 4,
+    "reason": "Consumes the first four tuple operands; trailing operands have no role.",
+    "public_names": [
+      "numerical_grad_cols"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_numerical_grad_rows",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 4,
+    "maximum": 4,
+    "reason": "Consumes the first four tuple operands; trailing operands have no role.",
+    "public_names": [
+      "numerical_grad_rows"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_path_join",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "path_join"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_ppu_render_frame",
+    "file": "src/ext_gfx.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "ppu_render_frame"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_print",
+    "file": "src/builtins.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "public_names": [
+      "print"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "f5dca9f11e0c4cee680a747e2a6af8f32baa59e2b15f8b305e546c74847e2cca"
+    ],
+    "source_sha256": {
+      "builtin_print": [
+        "f5dca9f11e0c4cee680a747e2a6af8f32baa59e2b15f8b305e546c74847e2cca"
+      ],
+      "value_to_string": [
+        "269292118bde6226411ea5a201cc73ae9a5d81dc010f8caca57118e4b8257f70"
+      ]
+    }
+  },
+  {
+    "function": "builtin_random_int",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "random_int"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_random_normal",
+    "file": "src/builtins_tensor.c",
+    "category": "exact_soft_rejection",
+    "minimum": 2,
+    "maximum": 3,
+    "reason": "Only exact argc 2/3 produce tensors; other counts record null. Add strict surplus diagnostic before TAKE for full strict-shape policy.",
+    "public_names": [
+      "random_normal"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_range",
+    "file": "src/builtins.c",
+    "category": "optional_or_scalar",
+    "minimum": 0,
+    "maximum": 3,
+    "reason": "Scalar end or list start/end/step; existing empty/one/two forms retained, bounded finite controls only.",
+    "public_names": [
+      "range"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_read_bytes",
+    "file": "src/builtins_host.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 2,
+    "reason": "Path scalar or [path, optional max_bytes]; preserve the null fallback and pre-tape validation.",
+    "public_names": [
+      "read_bytes"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_read_text",
+    "file": "src/builtins_host.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 2,
+    "reason": "Path scalar or [path, optional max_bytes]; preserve the empty-string fallback and pre-tape validation.",
+    "public_names": [
+      "read_text"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_read_bytes_buf",
+    "file": "src/builtins_host.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 2,
+    "reason": "Path scalar or [path, optional max_bytes]; preserve scalar branch and pre-tape validation.",
+    "public_names": [
+      "read_bytes_buf"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_recv_timeout",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "recv_timeout"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_regex_replace",
+    "file": "src/builtins_host.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "regex_replace"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_rename",
+    "file": "src/builtins_host.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "rename"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_reshape",
+    "file": "src/builtins_buf.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "reshape"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_sandbox_run",
+    "file": "src/builtins.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 4,
+    "reason": "Descriptor scalar or descriptor plus optional iteration/byte/work budgets. Source classification only; no historical descriptor/fault execution.",
+    "public_names": [
+      "sandbox_run"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_scan_int_tokens",
+    "file": "src/builtins.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 2,
+    "reason": "Text scalar or text plus optional delimiter/comment marker in list.",
+    "public_names": [
+      "scan_int_tokens"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_scan_ints",
+    "file": "src/builtins.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 2,
+    "reason": "Text scalar or text plus optional delimiter/comment marker in list.",
+    "public_names": [
+      "scan_ints"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_secure_equals",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "secure_equals"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_send",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "send"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_set_at",
+    "file": "src/builtins.c",
+    "category": "exact_rejection",
+    "minimum": 3,
+    "maximum": 4,
+    "reason": "Exact 3/4 branches; other lengths raise. Nested list/buffer data is not tuple width.",
+    "public_names": [
+      "set_at"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "1f465449b8e6c57f14b1d07b0cb389c090666dd78d77b40ea7baba52ec4cf521"
+    ],
+    "source_sha256": {
+      "builtin_set_at": [
+        "1f465449b8e6c57f14b1d07b0cb389c090666dd78d77b40ea7baba52ec4cf521"
+      ]
+    }
+  },
+  {
+    "function": "builtin_sgd_update",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "sgd_update"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_sgd_update_cols",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 4,
+    "maximum": 4,
+    "reason": "Consumes the first four tuple operands; trailing operands have no role.",
+    "public_names": [
+      "sgd_update_cols"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_sgd_update_rows",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 4,
+    "maximum": 4,
+    "reason": "Consumes the first four tuple operands; trailing operands have no role.",
+    "public_names": [
+      "sgd_update_rows"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_shared_incr",
+    "file": "src/ext_http.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "shared_incr"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_shared_set",
+    "file": "src/ext_http.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "shared_set"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_sign_extend",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "sign_extend"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_sort",
+    "file": "src/builtins.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Entire list is data; no argument-list maximum.",
+    "public_names": [
+      "sort"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "7b7068ffe4f1906946d5187541e9115ab151a7621cf6ef257f28be438eff80c4"
+    ],
+    "source_sha256": {
+      "builtin_sort": [
+        "7b7068ffe4f1906946d5187541e9115ab151a7621cf6ef257f28be438eff80c4"
+      ]
+    }
+  },
+  {
+    "function": "builtin_sort_by",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "sort_by"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_spawn",
+    "file": "src/builtins.c",
+    "category": "variadic",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Tail operands are all forwarded to function/process; no fixed tuple maximum.",
+    "public_names": [
+      "spawn"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "e85e17e5f0c2e7dd74d6f3b1499208ca01307c8ab5c444adfba8f94ba8c598f6"
+    ],
+    "source_sha256": {
+      "builtin_spawn": [
+        "e85e17e5f0c2e7dd74d6f3b1499208ca01307c8ab5c444adfba8f94ba8c598f6"
+      ]
+    }
+  },
+  {
+    "function": "builtin_split",
+    "file": "src/builtins.c",
+    "category": "optional_or_scalar",
+    "minimum": 1,
+    "maximum": 2,
+    "reason": "Text scalar or text plus optional delimiter/comment marker in list.",
+    "public_names": [
+      "split"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_starts_with",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "starts_with"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_store_count",
+    "file": "src/ext_store.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "store_count"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_store_delete",
+    "file": "src/ext_store.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "store_delete"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_store_drop",
+    "file": "src/ext_store.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "store_drop"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_store_get",
+    "file": "src/ext_store.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "store_get"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_store_put",
+    "file": "src/ext_store.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "store_put"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_store_query",
+    "file": "src/ext_store.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "store_query"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_store_update",
+    "file": "src/ext_store.c",
+    "category": "fixed",
+    "minimum": 4,
+    "maximum": 4,
+    "reason": "Consumes the first four tuple operands; trailing operands have no role.",
+    "public_names": [
+      "store_update"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_str",
+    "file": "src/builtins.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "public_names": [
+      "str"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "1f942006a4fdfa43f5447114d478b219bc60142b61f4585660944fc9a933ef61"
+    ],
+    "source_sha256": {
+      "builtin_str": [
+        "1f942006a4fdfa43f5447114d478b219bc60142b61f4585660944fc9a933ef61"
+      ],
+      "value_to_string": [
+        "269292118bde6226411ea5a201cc73ae9a5d81dc010f8caca57118e4b8257f70"
+      ]
+    }
+  },
+  {
+    "function": "builtin_str_from_bytes",
+    "file": "src/builtins_buf.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Whole list is byte data; strict element type validation does not impose a tuple arity. Text consumes through numeric NUL; codecs consume the complete list.",
+    "public_names": [
+      "str_from_bytes"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "491909802276ad7bbf448b7fd0d1a7c4249c6dc448bf2ff435b261e7dd7c8942"
+    ],
+    "source_sha256": {
+      "builtin_str_from_bytes": [
+        "491909802276ad7bbf448b7fd0d1a7c4249c6dc448bf2ff435b261e7dd7c8942"
+      ],
+      "strict_numeric_byte_list": [
+        "e271c965b69981e5f8e2ddf71b4f25220dd7d491135e67d8d1ada1d680bcbccc"
+      ]
+    }
+  },
+  {
+    "function": "builtin_str_replace",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "str_replace"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_stream_open",
+    "file": "src/builtins_host.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "stream_open"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_substr",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "substr"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_task_send",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "task_send"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_task_spawn",
+    "file": "src/builtins.c",
+    "category": "variadic",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Tail operands are all forwarded to function/process; no fixed tuple maximum.",
+    "public_names": [
+      "task_spawn"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "9f0d31d8976c9edb8ea910358826f6bc006aa03b418399d1e4fba8737bb99798"
+    ],
+    "source_sha256": {
+      "builtin_task_spawn": [
+        "9f0d31d8976c9edb8ea910358826f6bc006aa03b418399d1e4fba8737bb99798"
+      ]
+    }
+  },
+  {
+    "function": "builtin_tensor_add",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "add"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_tensor_divide",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "divide"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_tensor_exp",
+    "file": "src/builtins_tensor.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "public_names": [
+      "exp"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "55f0129b970addd257aa61f5c0f87c0604d2534ad5cbf5404b2f0504678bdaf5"
+    ],
+    "source_sha256": {
+      "builtin_tensor_exp": [
+        "55f0129b970addd257aa61f5c0f87c0604d2534ad5cbf5404b2f0504678bdaf5"
+      ],
+      "tensor_unary": [
+        "04fd54c5ccf01c248491a72c9ced77c1c5229d02584040585435fb1fe1c5c4a6"
+      ]
+    }
+  },
+  {
+    "function": "builtin_tensor_gather",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "gather"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_tensor_leaky_relu",
+    "file": "src/builtins_tensor.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "public_names": [
+      "leaky_relu"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "752b8737e5fd748eea05d7d5e46753ac937a51ccadefb458c18325ff24b2715e"
+    ],
+    "source_sha256": {
+      "builtin_tensor_leaky_relu": [
+        "752b8737e5fd748eea05d7d5e46753ac937a51ccadefb458c18325ff24b2715e"
+      ],
+      "flat_to_like": [
+        "244c127abae1a7bf7fa14097cf4c4930239ba42febae9d6d8f3264ea974d4dd1"
+      ],
+      "make_buffer_like": [
+        "65240f647516c2717f73e1df84f89fa46da785a5ff51062d545adca210986100"
+      ],
+      "tensor_to_flat": [
+        "f6ed317543ac1e298bce2f18706f3c8fb7d7067bbe89525f2d1c4f645b87e39d"
+      ]
+    }
+  },
+  {
+    "function": "builtin_tensor_load",
+    "file": "src/builtins_tensor.c",
+    "category": "output_only",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Input is scalar string; list operations concern output or replay result, not input tuple.",
+    "public_names": [
+      "tensor_load"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "9c5a7fcdd81ab0a65c4c4895efa71fcdd2b5388b8d2101a41bb670472e351a34"
+    ],
+    "source_sha256": {
+      "builtin_tensor_load": [
+        "9c5a7fcdd81ab0a65c4c4895efa71fcdd2b5388b8d2101a41bb670472e351a34"
+      ]
+    }
+  },
+  {
+    "function": "builtin_tensor_log",
+    "file": "src/builtins_tensor.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "public_names": [
+      "log"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "b4a539220becdecfac11ef2593b2da1b485db0397c1790217a22bde526ff7290"
+    ],
+    "source_sha256": {
+      "builtin_tensor_log": [
+        "b4a539220becdecfac11ef2593b2da1b485db0397c1790217a22bde526ff7290"
+      ],
+      "tensor_unary": [
+        "04fd54c5ccf01c248491a72c9ced77c1c5229d02584040585435fb1fe1c5c4a6"
+      ]
+    }
+  },
+  {
+    "function": "builtin_tensor_log_softmax",
+    "file": "src/builtins_tensor.c",
+    "category": "overloaded_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Exactly [list, number] is special tensor/dim form; otherwise entire list is tensor data. A global cap of two is incorrect; preserve documented recognition.",
+    "public_names": [
+      "log_softmax"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "b431416fb41cf6a08ba614b21435f6f9df5386f253cb1f8e69418c4443c6d54d"
+    ],
+    "source_sha256": {
+      "builtin_tensor_log_softmax": [
+        "b431416fb41cf6a08ba614b21435f6f9df5386f253cb1f8e69418c4443c6d54d"
+      ]
+    }
+  },
+  {
+    "function": "builtin_tensor_matmul",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "matmul"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_tensor_matmul_at",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "matmul_at"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_tensor_matmul_bt",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "matmul_bt"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_tensor_mean",
+    "file": "src/builtins_tensor.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "public_names": [
+      "mean"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "8d6e2d9d5b0e3091de9a903c7bce88703f3f99b7960fcfb1ef2d472ead4a4937"
+    ],
+    "source_sha256": {
+      "builtin_tensor_mean": [
+        "8d6e2d9d5b0e3091de9a903c7bce88703f3f99b7960fcfb1ef2d472ead4a4937"
+      ],
+      "tensor_flatten_recursive": [
+        "fdaa19d7ba1bcf588fd8be8658a654e5ddbae696a8503715121da43d172ac8e0"
+      ],
+      "tensor_total": [
+        "1beba45467365e63a8f1ce473a609f9274e7c48b7dbb495e304003dfcc319ba3"
+      ]
+    }
+  },
+  {
+    "function": "builtin_tensor_multiply",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "multiply"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_tensor_negative",
+    "file": "src/builtins_tensor.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "public_names": [
+      "negative"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "1197e210c14cfbfda2e6cb1316245d316693dadce0aee086ebd830c96c10be4b"
+    ],
+    "source_sha256": {
+      "builtin_tensor_negative": [
+        "1197e210c14cfbfda2e6cb1316245d316693dadce0aee086ebd830c96c10be4b"
+      ],
+      "tensor_unary": [
+        "04fd54c5ccf01c248491a72c9ced77c1c5229d02584040585435fb1fe1c5c4a6"
+      ]
+    }
+  },
+  {
+    "function": "builtin_tensor_norm",
+    "file": "src/builtins_tensor.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "public_names": [
+      "norm"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "5dac71b8db9006db985e089ebf1bd86567897dca30f429355360fe5e6a80ddcf"
+    ],
+    "source_sha256": {
+      "builtin_tensor_norm": [
+        "5dac71b8db9006db985e089ebf1bd86567897dca30f429355360fe5e6a80ddcf"
+      ],
+      "tensor_flatten_recursive": [
+        "fdaa19d7ba1bcf588fd8be8658a654e5ddbae696a8503715121da43d172ac8e0"
+      ],
+      "tensor_total": [
+        "1beba45467365e63a8f1ce473a609f9274e7c48b7dbb495e304003dfcc319ba3"
+      ]
+    }
+  },
+  {
+    "function": "builtin_tensor_pow",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "pow"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_tensor_relu",
+    "file": "src/builtins_tensor.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "public_names": [
+      "relu"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "22ca05ce8c0e3fe3887c87bc9f74b1df24e2700c61205e7f5928a7a871fa2640"
+    ],
+    "source_sha256": {
+      "builtin_tensor_relu": [
+        "22ca05ce8c0e3fe3887c87bc9f74b1df24e2700c61205e7f5928a7a871fa2640"
+      ],
+      "flat_to_like": [
+        "244c127abae1a7bf7fa14097cf4c4930239ba42febae9d6d8f3264ea974d4dd1"
+      ],
+      "tensor_to_flat": [
+        "f6ed317543ac1e298bce2f18706f3c8fb7d7067bbe89525f2d1c4f645b87e39d"
+      ]
+    }
+  },
+  {
+    "function": "builtin_tensor_save",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "tensor_save"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_tensor_scatter_add",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 3,
+    "maximum": 3,
+    "reason": "Consumes the first three tuple operands; trailing operands have no role.",
+    "public_names": [
+      "scatter_add"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_tensor_shape",
+    "file": "src/builtins_tensor.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Entire list is data; no argument-list maximum.",
+    "public_names": [
+      "shape"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "c91cd906174337cc0a2d10bdb7daac932bb513e9632b97f1f9c0e96b1c4bb2a0"
+    ],
+    "source_sha256": {
+      "builtin_tensor_shape": [
+        "c91cd906174337cc0a2d10bdb7daac932bb513e9632b97f1f9c0e96b1c4bb2a0"
+      ]
+    }
+  },
+  {
+    "function": "builtin_tensor_softmax",
+    "file": "src/builtins_tensor.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "public_names": [
+      "softmax"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "645c908202070b64e51e3d65f24b1ea4248b9def36909422e28bd47eead6fdf5"
+    ],
+    "source_sha256": {
+      "buf_dims": [
+        "eed52bb80872976c3f6c755c1ef9677c5c990de16e492d4856d23fbf3f20615b"
+      ],
+      "builtin_tensor_softmax": [
+        "645c908202070b64e51e3d65f24b1ea4248b9def36909422e28bd47eead6fdf5"
+      ],
+      "flat_to_like": [
+        "244c127abae1a7bf7fa14097cf4c4930239ba42febae9d6d8f3264ea974d4dd1"
+      ],
+      "make_buffer_like": [
+        "65240f647516c2717f73e1df84f89fa46da785a5ff51062d545adca210986100"
+      ],
+      "tensor_to_flat": [
+        "f6ed317543ac1e298bce2f18706f3c8fb7d7067bbe89525f2d1c4f645b87e39d"
+      ]
+    }
+  },
+  {
+    "function": "builtin_tensor_sqrt",
+    "file": "src/builtins_tensor.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "public_names": [
+      "sqrt"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "62a668ee5f0d2e59177d0bcc41818a1a2c07dca2862e9dbeca2366f3d6f37f06"
+    ],
+    "source_sha256": {
+      "builtin_tensor_sqrt": [
+        "62a668ee5f0d2e59177d0bcc41818a1a2c07dca2862e9dbeca2366f3d6f37f06"
+      ],
+      "tensor_unary": [
+        "04fd54c5ccf01c248491a72c9ced77c1c5229d02584040585435fb1fe1c5c4a6"
+      ]
+    }
+  },
+  {
+    "function": "builtin_tensor_subtract",
+    "file": "src/builtins_tensor.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "subtract"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_tensor_sum",
+    "file": "src/builtins_tensor.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "public_names": [
+      "sum"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "140ee44cdec4231baa98cc893ad6e92d2451fc68efe9dced8c7351a24115ac78"
+    ],
+    "source_sha256": {
+      "builtin_tensor_sum": [
+        "140ee44cdec4231baa98cc893ad6e92d2451fc68efe9dced8c7351a24115ac78"
+      ],
+      "tensor_flatten_recursive": [
+        "fdaa19d7ba1bcf588fd8be8658a654e5ddbae696a8503715121da43d172ac8e0"
+      ],
+      "tensor_total": [
+        "1beba45467365e63a8f1ce473a609f9274e7c48b7dbb495e304003dfcc319ba3"
+      ]
+    }
+  },
+  {
+    "function": "builtin_tensor_zeros",
+    "file": "src/builtins_tensor.c",
+    "category": "optional_or_scalar",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Numeric length or [rows, cols]; preserve scalar form.",
+    "public_names": [
+      "zeros"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_tensor_zeros_like",
+    "file": "src/builtins_tensor.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "public_names": [
+      "zeros_like"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "0decd89b1c7923300c9fcede1eaf79c37cbe3f8843a659e748847b8fd47554b9"
+    ],
+    "source_sha256": {
+      "builtin_tensor_zeros_like": [
+        "0decd89b1c7923300c9fcede1eaf79c37cbe3f8843a659e748847b8fd47554b9"
+      ],
+      "make_buffer_like": [
+        "65240f647516c2717f73e1df84f89fa46da785a5ff51062d545adca210986100"
+      ]
+    }
+  },
+  {
+    "function": "builtin_text_builder_append",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "text_builder_append"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_text_builder_append_line",
+    "file": "src/builtins.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "text_builder_append_line"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_throw",
+    "file": "src/builtins.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "public_names": [
+      "throw"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "58643ba82f7389f7db40c267f5d9a1da317dcea2994a74da4617006eb112153b"
+    ],
+    "source_sha256": {
+      "builtin_throw": [
+        "58643ba82f7389f7db40c267f5d9a1da317dcea2994a74da4617006eb112153b"
+      ],
+      "value_to_string": [
+        "269292118bde6226411ea5a201cc73ae9a5d81dc010f8caca57118e4b8257f70"
+      ]
+    }
+  },
+  {
+    "function": "builtin_type",
+    "file": "src/builtins.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "List is the whole value/data input, not a bounded tuple.",
+    "public_names": [
+      "type"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "cc1a745c40ba3e4a89932ddf0c8362f819d9a50f47dcda5c4da022bdb166c8c2"
+    ],
+    "source_sha256": {
+      "builtin_type": [
+        "cc1a745c40ba3e4a89932ddf0c8362f819d9a50f47dcda5c4da022bdb166c8c2"
+      ]
+    }
+  },
+  {
+    "function": "builtin_values",
+    "file": "src/builtins.c",
+    "category": "output_only",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Dictionary input; make_list uses dictionary count for output, not argument tuple.",
+    "public_names": [
+      "values"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "7ea3926cc6c536b67a1f0ad1012141120aa12085b9071a60bd1ff6e81f8fa9ac"
+    ],
+    "source_sha256": {
+      "builtin_values": [
+        "7ea3926cc6c536b67a1f0ad1012141120aa12085b9071a60bd1ff6e81f8fa9ac"
+      ],
+      "eigs_module_ns_sync": [
+        "89a5440e7753fd7b8b20da8c57b1e135dbb89f726777035c3f0ebee65bf59fb7"
+      ]
+    }
+  },
+  {
+    "function": "builtin_vm_run_bytecode",
+    "file": "src/builtins.c",
+    "category": "descriptor_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Whole ABI-stamped descriptor is data validated by vm_desc_abi_error; it is not a fixed builtin argument tuple. No descriptor execution is needed for this classification.",
+    "public_names": [
+      "vm_run_bytecode"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "503497c43ec971fb5f2f0033038cedd0948c3016967fd49daca688a8c9f56741"
+    ],
+    "source_sha256": {
+      "builtin_vm_run_bytecode": [
+        "503497c43ec971fb5f2f0033038cedd0948c3016967fd49daca688a8c9f56741"
+      ],
+      "vm_build_chunk_desc": [
+        "56131f5a520be3bff59da05c8cc0203b0e9841de25d8bc7b76922aa2f9a21e18"
+      ],
+      "vm_desc_abi_error": [
+        "c01ddd713da0938f1f770c7c32675ddc3f0f2cb32c23426e3f58cce41540c3d2"
+      ]
+    }
+  },
+  {
+    "function": "builtin_write",
+    "file": "src/builtins.c",
+    "category": "unary_data",
+    "minimum": null,
+    "maximum": null,
+    "reason": "Transitive helper consumes whole value/list/tensor/byte or sample data; no fixed tuple maximum.",
+    "public_names": [
+      "write"
+    ],
+    "disposition": "exempt",
+    "body_sha256": [
+      "df9046f4cdc7e9431a3b4c81e7c9752d9bb7520af99660223fb3e9b6f586171b"
+    ],
+    "source_sha256": {
+      "builtin_write": [
+        "df9046f4cdc7e9431a3b4c81e7c9752d9bb7520af99660223fb3e9b6f586171b"
+      ],
+      "value_to_string": [
+        "269292118bde6226411ea5a201cc73ae9a5d81dc010f8caca57118e4b8257f70"
+      ]
+    }
+  },
+  {
+    "function": "builtin_write_bytes",
+    "file": "src/builtins_host.c",
+    "category": "optional",
+    "minimum": 2,
+    "maximum": 3,
+    "reason": "Path/data plus optional append flag.",
+    "public_names": [
+      "write_bytes"
+    ],
+    "disposition": "guarded"
+  },
+  {
+    "function": "builtin_write_text",
+    "file": "src/builtins_host.c",
+    "category": "fixed",
+    "minimum": 2,
+    "maximum": 2,
+    "reason": "Consumes the first two tuple operands; trailing operands have no role.",
+    "public_names": [
+      "write_text"
+    ],
+    "disposition": "guarded"
+  }
+]

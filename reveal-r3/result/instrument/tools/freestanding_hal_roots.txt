@@ -1,0 +1,68 @@
+# Stage-2 residue: the symbols still imported after the mini-libc/libm
+# (src/freestanding/) is linked in. Every entry here is KERNEL-OWED —
+# an EigenOS HAL root, never portable C. If stage 2 of
+# tools/freestanding_check.sh reports anything outside this list, either
+# the mini-libc lost coverage or a new host dependency crept in.
+
+# heap root (page_alloc -> heap)
+malloc
+calloc
+realloc
+free
+
+# console-out root (console_write)
+printf
+fprintf
+fputs
+putc
+fflush
+stdout
+stderr
+
+# clock root
+clock_gettime
+usleep
+
+# scheduler roots
+pthread_create
+pthread_join
+pthread_mutex_init
+pthread_mutex_lock
+pthread_mutex_unlock
+pthread_mutex_destroy
+pthread_cond_init
+pthread_cond_wait
+pthread_cond_timedwait
+pthread_cond_signal
+pthread_cond_broadcast
+pthread_cond_destroy
+pthread_condattr_init
+pthread_condattr_destroy
+pthread_condattr_setclock
+# One-time init (the PRNG seed, the SIGPIPE ignore) and thread IDENTITY
+# (#1142: the replay tape records which OS thread opened it so a take from
+# any other thread fails loud). Both are kernel-owed on EigenOS, in the same
+# cooperative-scheduler HAL story as the roots above — neither is portable C,
+# so mini-libc cannot supply them.
+pthread_once
+pthread_self
+
+# halt root
+exit
+abort
+
+# Atomic fallback roots.  The kernel implements each imported width by masking
+# interrupts around the operation on its single CPU thread.  Targets with a
+# lock-free instruction (RV32IMA's 32-bit operations) do not import that row.
+__atomic_load_1
+__atomic_load_4
+__atomic_load_8
+__atomic_store_1
+__atomic_store_4
+__atomic_store_8
+__atomic_fetch_add_4
+__atomic_fetch_add_8
+__atomic_fetch_sub_4
+__atomic_exchange_4
+__atomic_compare_exchange_4
+__atomic_compare_exchange_8

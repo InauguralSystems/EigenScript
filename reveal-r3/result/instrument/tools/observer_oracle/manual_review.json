@@ -1,0 +1,203 @@
+{
+  "format": "r3-manual-review/1",
+  "families_sha256": "3acedd906d78b9a15389d25d9404b3d778a46d8ca665d72b503ce16f32f2268e",
+  "note": "Verdicts for the three claims each template certifies (limit, tends_to, bounded). F9 entries: the equilibrium label rests on Deviation D14 (finite-burn tolerance below 2^-53), not on the argument. The round blind critic re-reviews blind to this record; its verdict is appended before the reveal.",
+  "templates": [
+    {
+      "family": "F10",
+      "cite": [
+        "RW_RECURRENT"
+      ],
+      "argument": "a mean-zero walk with iid non-degenerate bounded steps is recurrent (Chung-Fuchs; the +-1 case is RW_RECURRENT): it a.s. neither converges nor tends to +-inf, and it is unbounded",
+      "sha256": "cb0ec5690f0ad97d3864790ada7f453acf1ad22bb6144f3220f7d420701db7b6",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06",
+      "note": "approved with the supplemental Chung-Fuchs source (scope 5, commit 58ae0531)"
+    },
+    {
+      "family": "F15/F10/x0.001",
+      "cite": [
+        "RW_RECURRENT"
+      ],
+      "argument": "a mean-zero walk with iid non-degenerate bounded steps is recurrent (Chung-Fuchs; the +-1 case is RW_RECURRENT): it a.s. neither converges nor tends to +-inf, and it is unbounded; the row is the base row times 0.001 > 0",
+      "sha256": "15627e6eb7b07956241ee366ea384e03b3895d55f073ef82e0c05c7c761f2ca4",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06",
+      "note": "approved with the supplemental Chung-Fuchs source (scope 5, commit 58ae0531)"
+    },
+    {
+      "family": "F15/F10/x1000",
+      "cite": [
+        "RW_RECURRENT"
+      ],
+      "argument": "a mean-zero walk with iid non-degenerate bounded steps is recurrent (Chung-Fuchs; the +-1 case is RW_RECURRENT): it a.s. neither converges nor tends to +-inf, and it is unbounded; the row is the base row times 1000 > 0",
+      "sha256": "dfd48d391877b99ae4ed5e25bb2a6c3298dc497349c66dea35a5b9c46a64531c",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06",
+      "note": "approved with the supplemental Chung-Fuchs source (scope 5, commit 58ae0531)"
+    },
+    {
+      "family": "F15/F2/x0.001",
+      "cite": [
+        "HARDY_58"
+      ],
+      "argument": "x_n = 0.001 sum_(k=1)^(n+1) k^-p with p > 1: the p-series converges to zeta(p) (the base row's symbolic certificate), so x_n tends to 0.001 zeta(p)",
+      "sha256": "ce6a14570729628d2691271435bb14759aa17f7ede5f643f7a20c3bb4c19778d",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06"
+    },
+    {
+      "family": "F15/F2/x1000",
+      "cite": [
+        "HARDY_58"
+      ],
+      "argument": "x_n = 1000 sum_(k=1)^(n+1) k^-p with p > 1: the p-series converges to zeta(p) (the base row's symbolic certificate), so x_n tends to 1000 zeta(p)",
+      "sha256": "7d6b1513e0e6b512d78e458de50068624cf35bb542d75c8b43467819483700ca",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06"
+    },
+    {
+      "family": "F15/F6/x0.001",
+      "cite": [
+        "HARDY_62"
+      ],
+      "argument": "theta = 2 pi / P with P = {P} > 2 lies in (0, pi), so sin(theta) != 0. If s_n = sin(theta n + phi) -> l, then c_n = cos(theta n + phi) = (s_{n+1} - s_n cos theta) / sin theta -> m, and s_{n+1} = s_n cos theta + c_n sin theta, c_{n+1} = c_n cos theta - s_n sin theta give m (1 - cos theta) = -l sin theta and m sin theta = l (1 - cos theta), whence l = m = 0 (the determinant is 2 - 2 cos theta > 0), contradicting s_n^2 + c_n^2 = 1: no limit; |x_n - c| <= amp, so bounded (Hardy Sec. 62); the row is the base row times 0.001 > 0",
+      "sha256": "041b218590de2749be0706aa3bc67a11ef0572b65e7d941c4cf0c5f7676bd1d3",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06"
+    },
+    {
+      "family": "F15/F6/x1000",
+      "cite": [
+        "HARDY_62"
+      ],
+      "argument": "theta = 2 pi / P with P = {P} > 2 lies in (0, pi), so sin(theta) != 0. If s_n = sin(theta n + phi) -> l, then c_n = cos(theta n + phi) = (s_{n+1} - s_n cos theta) / sin theta -> m, and s_{n+1} = s_n cos theta + c_n sin theta, c_{n+1} = c_n cos theta - s_n sin theta give m (1 - cos theta) = -l sin theta and m sin theta = l (1 - cos theta), whence l = m = 0 (the determinant is 2 - 2 cos theta > 0), contradicting s_n^2 + c_n^2 = 1: no limit; |x_n - c| <= amp, so bounded (Hardy Sec. 62); the row is the base row times 1000 > 0",
+      "sha256": "431d51ef2e9b091f27c97f55235478b8699338b8a6de4b4e33d86b38a1b419eb",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06"
+    },
+    {
+      "family": "F15/F8/x0.001",
+      "cite": [
+        "BOREL_CANTELLI"
+      ],
+      "argument": "an iid sequence of a non-degenerate distribution a.s. has |x_{n+1} - x_n| > delta infinitely often, so it has no limit; it stays within center +- amp; the row is the base row times 0.001 > 0",
+      "sha256": "7f43e110ebe0158590b0623cb8063ab012c0dab78d5d642bf59734be044d045c",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06"
+    },
+    {
+      "family": "F15/F8/x1000",
+      "cite": [
+        "BOREL_CANTELLI"
+      ],
+      "argument": "an iid sequence of a non-degenerate distribution a.s. has |x_{n+1} - x_n| > delta infinitely often, so it has no limit; it stays within center +- amp; the row is the base row times 1000 > 0",
+      "sha256": "ed9b551c1b8dfb4280ce0eda425dd1c32fd9f94b6c1de005c23db7aeb182bd26",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06"
+    },
+    {
+      "family": "F15/F9/x0.001",
+      "cite": [
+        "BOREL_CANTELLI"
+      ],
+      "argument": "|x_n - mu| <= sigma / (1 - |phi|) for all n, so bounded; if x_n -> l then u_n = (x_{n+1} - mu - phi (x_n - mu)) / sigma would converge, but iid non-degenerate u_n a.s. do not (second Borel-Cantelli); the row is the base row times 0.001 > 0",
+      "sha256": "5022914b34df82af1000d51b7f763e177861e2606603abb9832901ae121849e3",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06",
+      "note": "argument certifies bounded and no limit; equilibrium label by D14 (RULING R30R-4)"
+    },
+    {
+      "family": "F15/F9/x1000",
+      "cite": [
+        "BOREL_CANTELLI"
+      ],
+      "argument": "|x_n - mu| <= sigma / (1 - |phi|) for all n, so bounded; if x_n -> l then u_n = (x_{n+1} - mu - phi (x_n - mu)) / sigma would converge, but iid non-degenerate u_n a.s. do not (second Borel-Cantelli); the row is the base row times 1000 > 0",
+      "sha256": "5571dd86f6e97ad7dda3678447b88c2c36935f01073a5e8d8930e98c8af4f41b",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06",
+      "note": "argument certifies bounded and no limit; equilibrium label by D14 (RULING R30R-4)"
+    },
+    {
+      "family": "F15b/F10",
+      "cite": [
+        "RW_RECURRENT"
+      ],
+      "argument": "a mean-zero walk with iid non-degenerate bounded steps is recurrent (Chung-Fuchs; the +-1 case is RW_RECURRENT): it a.s. neither converges nor tends to +-inf, and it is unbounded",
+      "sha256": "cb0ec5690f0ad97d3864790ada7f453acf1ad22bb6144f3220f7d420701db7b6",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06",
+      "note": "approved with the supplemental Chung-Fuchs source (scope 5, commit 58ae0531)"
+    },
+    {
+      "family": "F15b/F8",
+      "cite": [
+        "BOREL_CANTELLI"
+      ],
+      "argument": "an iid sequence of a non-degenerate distribution a.s. has |x_{n+1} - x_n| > delta infinitely often, so it has no limit; it stays within center +- amp",
+      "sha256": "7dce3f0f5d93328b167f92e8a54376a86430520e7c65d8f30133b6a65f9a0659",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06"
+    },
+    {
+      "family": "F15b/F9",
+      "cite": [
+        "BOREL_CANTELLI"
+      ],
+      "argument": "|x_n - mu| <= sigma / (1 - |phi|) for all n, so bounded; if x_n -> l then u_n = (x_{n+1} - mu - phi (x_n - mu)) / sigma would converge, but iid non-degenerate u_n a.s. do not (second Borel-Cantelli)",
+      "sha256": "42231ca41fcb2ab931a6c65d7f57f4be847446fef00a0aba9c9af23808970ce2",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06",
+      "note": "argument certifies bounded and no limit; equilibrium label by D14 (RULING R30R-4)"
+    },
+    {
+      "family": "F6",
+      "cite": [
+        "HARDY_62"
+      ],
+      "argument": "theta = 2 pi / P with P = {P} > 2 lies in (0, pi), so sin(theta) != 0. If s_n = sin(theta n + phi) -> l, then c_n = cos(theta n + phi) = (s_{n+1} - s_n cos theta) / sin theta -> m, and s_{n+1} = s_n cos theta + c_n sin theta, c_{n+1} = c_n cos theta - s_n sin theta give m (1 - cos theta) = -l sin theta and m sin theta = l (1 - cos theta), whence l = m = 0 (the determinant is 2 - 2 cos theta > 0), contradicting s_n^2 + c_n^2 = 1: no limit; |x_n - c| <= amp, so bounded (Hardy Sec. 62)",
+      "sha256": "01b4af773bac4588a3be6714e36bfa6e89154c0071bc60bd6347d0c4f2e93ac7",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06"
+    },
+    {
+      "family": "F8",
+      "cite": [
+        "BOREL_CANTELLI"
+      ],
+      "argument": "an iid sequence of a non-degenerate distribution a.s. has |x_{n+1} - x_n| > delta infinitely often, so it has no limit; it stays within center +- amp",
+      "sha256": "7dce3f0f5d93328b167f92e8a54376a86430520e7c65d8f30133b6a65f9a0659",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06"
+    },
+    {
+      "family": "F9",
+      "cite": [
+        "BOREL_CANTELLI"
+      ],
+      "argument": "|x_n - mu| <= sigma / (1 - |phi|) for all n, so bounded; if x_n -> l then u_n = (x_{n+1} - mu - phi (x_n - mu)) / sigma would converge, but iid non-degenerate u_n a.s. do not (second Borel-Cantelli)",
+      "sha256": "42231ca41fcb2ab931a6c65d7f57f4be847446fef00a0aba9c9af23808970ce2",
+      "verdict": "APPROVED",
+      "reviewer": "Codex blind_review (fresh context under the build loop, independent of the builder; evidence out/r3-0r/blind-review-round3.md); recorded by Claude DevBox under RULING R30R-4",
+      "date": "2026-11-06",
+      "note": "argument certifies bounded and no limit; equilibrium label by D14 (RULING R30R-4)"
+    }
+  ],
+  "recorded_by": "Claude DevBox (orchestrator), RULING R30R-4, 2026-11-06"
+}

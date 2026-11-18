@@ -1,0 +1,1312 @@
+#!/bin/bash
+# Derive whole-suite shards and audit section-level SKIP accounting (#1275).
+# A shard is a set of complete top-level runner chunks. The matrix union,
+# disjointness, and nonempty populations are checked before it runs.
+# Usage: --chunks | --shards N --check | --shards N --shard K |
+#        --shard-owner N [--section ID] | --emit-shard K N OUT |
+#        --changed BASE | --emit-changed BASE OUT |
+#        --sections 'L1 L2' | --emit-sections 'L1 L2' OUT |
+#        --print-weights LOG [--run ID --head SHA] | --skip-audit | --selftest
+set -u
+SP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SP_HOP_DIRS=tests
+RUNNER="$SP_ROOT/tests/run_all_tests.sh"
+VERBOSE=1
+# A floor below the normal chunk population catches a collapsed scan while allowing growth.
+CHUNK_FLOOR=400
+# A floor below the normal emitter population catches a vacuous audit while allowing growth.
+SKIP_EMIT_FLOOR=10
+# A floor below the normal route population catches a lost scan while allowing growth.
+SKIP_ROUTED_FLOOR=20
+CI_FILE="$SP_ROOT/.github/workflows/ci.yml"
+# The changed-sections plan always adds the numbered core-language series
+# ([1/15]..[16/16]), so a src/ change no section names still runs the
+# language's basic tests locally (#1347). Residual: a src/ change is covered
+# only by CI's full suite; the plan prints every one as `runtime:`.
+CHANGED_FLOOR_RE='\\[[0-9]+/1[56]\\]'
+# One printed-header predicate, shared by source validation, bearing, and witness.
+SP_HEADER_TEXT_RE='^[[][^]]+[]] .+$'
+SP_HEADER_START_RE='echo "[[]'
+
+# Match executable SKIP emitters; the helper owns section-level counts.
+SKIP_EMIT_RE='^[[:space:]]*(echo|printf)[[:space:]].*SKIP'
+SKIP_ROUTE_RE='^[[:space:]]*section_skip[[:space:]]'
+# Content-pinned reasons for emitter lines that do not add a skipped section.
+SKIP_WAIVERS='
+6ef6a1325edf0172|(a) the section_skip helper own print — this IS the counter the audit polices
+d8bbaacdbda76484|(b) the [99n] classifier-gate FAIL line, which QUOTES its own skipped tally; that section fails on any skip
+e52b3a5c670b2434|(b) prose inside that same FAIL, explaining why a skipped check there is coverage loss
+86e12c645c5ad672|(c) sub-check: [119] Part B (the #548 borrow guard) is compiled out on a release build; Part A runs on every build and its PASS/FAIL lines are tallied
+459741ca98fe2fc5|(b) the [44] HTTP-readiness FAIL line, which quotes skipped= in its verdict; two skips are the expected witnesses and any other count is already a FAIL there
+23bf2806c94855bb|(b) a diagnostic inside that FAIL branch, printed only when the section is already red
+cc548685179a777b|(c) sub-check: the JIT thunk gate on a non-x86_64 host; the JIT section asserts its fast-path checks on every host
+00fd233b835a1ddb|(c) sub-check: the EIGS_JIT_HOT gate on a non-x86_64 host; same section, same reason
+4158c9982233a440|(c) sub-check: the EIGS_JIT_HOT OSR weighting gate on a non-x86_64 host; the JIT section still asserts all portable fast-path checks
+a9f637bc88ca3e2c|(c) sub-check: the cache-full diagnostic gate needs an x86-64 JIT; the JIT section still asserts its language-level fast-path checks elsewhere
+1d4789fa9df25921|(c) sub-check: --api --json validation needs python3; the --api section asserts its other rows without it
+4fd0c1454b26ae7a|(b) an examples-section PASS line that reports how many demos were skipped for want of a gfx build
+62be8333b50e395a|(b) the same PASS line on the no-gfx-build arm
+21d7909a4df0a664|(c) sub-check: [99s] on a non-gfx build, the gfx sweep and pixel halves; the core strict halves still assert
+27cfdaf9128456df|(b) the RESULTS line itself, which PRINTS the skipped count
+4d7d5f4fb99732cb|(c) sub-check: [69] relays test_leak_guard.sh own SKIP line when LeakSanitizer is unavailable (macOS arm64); the section still asserts its ASan checks (append UAF, container stores) and fails on any of them
+43af9bdd1c5e1f94|(c) sub-check: [99zb] relays the portability tool own population/oracle line (widened by #1226 to include NO OLD BASH and other arm wordings); the section fails unless the tool reports OK or one of those named arms — supersedes the pre-#1226 row for this same relay
+'
+# One scratch root and one EXIT cleanup trap.
+SP_TMPROOT=$(mktemp -d "${TMPDIR:-/tmp}/eigs_section_plan.XXXXXX") || {
+    echo "section_plan: ERROR: mktemp -d failed" >&2; exit 1; }
+trap 'rm -rf "$SP_TMPROOT"' EXIT
+sp_workdir() {   # <name> -> a fresh dir under the one root
+    local d="$SP_TMPROOT/$1"
+    rm -rf "$d"; mkdir -p "$d" || { echo "section_plan: ERROR: cannot create $d" >&2; exit 1; }
+    printf '%s\n' "$d"
+}
+
+die() { echo "section_plan: ERROR: $*" >&2; exit 1; }
+# Matrix size, ASAN_SHARDS, and every /N literal must agree.
+SHARD_LITERAL_HOMES=3
+
+shard_count_sync() {
+    local ci="$1" n_env n_matrix n_lit n_name
+    n_env=$(sed -n 's/^  ASAN_SHARDS: \([0-9][0-9]*\)$/\1/p' "$ci" | head -1)
+    n_matrix=$(sed -n 's/^        shard: \[\(.*\)\]$/\1/p' "$ci" | head -1 | tr -cd ',' | wc -c)
+    n_matrix=$((n_matrix + 1))
+    # ONE RULE FOR ALL HOMES, rather than a row per known spelling: EVERY
+    # `matrix.shard }}/<N>` in the file — job name, step name, env value, any
+    # future one — must end in /$n_env. A per-spelling list is the thing that
+    # missed the job name in the first place.
+    #
+    # ROUND 6: "all of them agree" is not enough on its own, because `>= 2`
+    # let any ONE of the three be DELETED. Deleting the env-value one was the
+    # dangerous case — `EIGS_SUITE_SHARD: ${{ matrix.shard }}` makes a job
+    # still named "shard 1/3" run the WHOLE suite, with this check, the
+    # aggregator and the receipts all still green. So the /N literal population
+    # is pinned independently, and the load-bearing spelling — the env value
+    # the runner actually parses — is required by name.
+    n_lit=$(grep -coE 'matrix\.shard \}\}/[0-9]+' "$ci")
+    n_bad=$(grep -oE 'matrix\.shard \}\}/[0-9]+' "$ci" | grep -vc "/$n_env\$")
+    n_envval=$(grep -c "EIGS_SUITE_SHARD: \${{ matrix.shard }}/$n_env\$" "$ci")
+    if [ -n "$n_env" ] && [ "$n_env" = "$n_matrix" ] \
+       && [ "$n_lit" -eq "$SHARD_LITERAL_HOMES" ] && [ "$n_bad" -eq 0 ] && [ "$n_envval" -eq 1 ]; then
+        echo "the ASan shard count agrees everywhere in ci.yml (ASAN_SHARDS=$n_env, matrix legs=$n_matrix, all $n_lit of $SHARD_LITERAL_HOMES 'matrix.shard }}/N' homes say /$n_env, EIGS_SUITE_SHARD among them)"
+        return 0
+    fi
+    echo "ci.yml shard count disagrees (ASAN_SHARDS=${n_env:-unset}, matrix legs=$n_matrix, 'matrix.shard }}/N' occurrences=$n_lit of $SHARD_LITERAL_HOMES expected, $n_bad not saying /$n_env, EIGS_SUITE_SHARD:/$n_env present=$n_envval)"
+    return 1
+}
+if command -v sha256sum >/dev/null 2>&1; then SP_HASHER="sha256sum"
+elif command -v shasum >/dev/null 2>&1; then SP_HASHER="shasum -a 256"
+else die "no sha256sum and no shasum on PATH — waivers cannot be content-pinned"; fi
+sp_line_hash() { printf '%s' "$1" | $SP_HASHER | cut -c1-16; }
+note() { [ "$VERBOSE" = "1" ] && echo "$*" >&2; return 0; }
+# ---------------------------------------------------------------------------
+# Ask bash -n for top-level boundaries, then emit chunk line ranges.
+derive_chunks() {
+    local f="$1"
+    SP_TOTAL_LINES=$(wc -l < "$f" | tr -d ' ')
+
+    # Epilogue anchor. Pinned and required to be UNIQUE: if it moves or is
+    # duplicated the tool stops rather than guessing (a gate that guesses its
+    # own boundary is the gate that silently measures less).
+    local anchors
+    anchors=$(grep -n '^# Final guard (#681)' "$f" | cut -d: -f1)
+    local n_anchor
+    n_anchor=$(printf '%s\n' "$anchors" | grep -c '[0-9]')
+    [ "$n_anchor" = "1" ] || die "epilogue anchor '# Final guard (#681)' matched $n_anchor times in $f (need exactly 1)"
+    SP_EPILOGUE_START="$anchors"
+
+    # The prefix test is incremental, and that is a correctness argument, not
+    # only a speed one: once PREV is known to be a top-level boundary, the file
+    # up to L-1 parses iff the SEGMENT [PREV, L-1] parses on its own (a valid
+    # prefix followed by a complete script is a valid prefix). Testing the
+    # segment instead of the whole prefix turns 600 parses of a 7,000-line file
+    # into 600 parses of ~15 lines.
+    local cand boundaries="" L prev=""
+    cand=$(grep -nE "^($SP_HEADER_START_RE|# \[[0-9]|[A-Za-z_][A-Za-z0-9_]*_FILE=)" "$f" | cut -d: -f1)
+    for L in $cand; do
+        [ "$L" -lt "$SP_EPILOGUE_START" ] || continue
+        [ "$L" -gt 1 ] || continue
+        if [ -z "$prev" ]; then
+            # First boundary only: the whole prefix has to be tested, because
+            # there is no known-good anchor to measure a segment from.
+            if head -n $((L - 1)) "$f" | bash -n 2>/dev/null; then
+                boundaries="$L"; prev="$L"
+            fi
+            continue
+        fi
+        [ "$L" -gt "$prev" ] || continue
+        if sed -n "${prev},$((L - 1))p" "$f" | bash -n 2>/dev/null; then
+            boundaries="$boundaries $L"; prev="$L"
+        fi
+    done
+    [ -n "$boundaries" ] || die "no top-level chunk boundary found in $f"
+
+    # shellcheck disable=SC2086
+    set -- $boundaries
+    SP_PREAMBLE_END=$(( $1 - 1 ))
+
+    local start end ids
+    while [ "$#" -gt 0 ]; do
+        start="$1"; shift
+        if [ "$#" -gt 0 ]; then end=$(( $1 - 1 )); else end=$(( SP_EPILOGUE_START - 1 )); fi
+        ids=$(sed -n "${start},${end}p" "$f" \
+              | grep -oE "$SP_HEADER_START_RE[^]]*]" \
+              | sed 's/^echo "//' \
+              | tr '\n' ' ')
+        printf '%s %s %s\n' "$start" "$end" "$ids"
+    done
+}
+
+# Partition control: preamble + every chunk + epilogue must reconstruct the
+# file byte-for-byte. Without it a boundary bug silently DROPS sections and
+# every surviving assertion still passes.
+verify_partition() {
+    local f="$1" table="$2" tmp
+    tmp=$(mktemp)
+    [ "$SP_PREAMBLE_END" -ge 1 ] && sed -n "1,${SP_PREAMBLE_END}p" "$f" > "$tmp"
+    local s e
+    while read -r s e _rest; do
+        [ -n "$s" ] || continue
+        sed -n "${s},${e}p" "$f" >> "$tmp"
+    done < "$table"
+    sed -n "${SP_EPILOGUE_START},\$p" "$f" >> "$tmp"
+    if ! cmp -s "$tmp" "$f"; then
+        rm -f "$tmp"
+        die "chunk table is not a partition of $f (preamble+chunks+epilogue != file)"
+    fi
+    rm -f "$tmp"
+}
+
+# Refuse conditional-only headings; an untaken branch would break the witness.
+check_header_shape() {
+    local table="$1" roster="${2:-/dev/null}"
+    awk -v hdr="$SP_HEADER_TEXT_RE" -v prefix="$SP_HEADER_START_RE" -v roster="$roster" '
+        FNR == NR { n++; start[n] = $1; end[n] = $2; next }
+        {
+            while (c < n && FNR > end[c]) c++
+            if (c < 1 || FNR < start[c] || FNR > end[c]) next
+            if ($0 !~ ("^[[:space:]]*" prefix)) next
+            title = $0
+            if (title !~ /"$/ || title ~ /\\/) { error = "incomplete section header in chunk start line " start[c] ": " $0; exit 1 }
+            sub(/^[[:space:]]*echo "/, "", title); sub(/"$/, "", title)
+            if (title !~ hdr) { error = "invalid section header in chunk start line " start[c] ": " $0; exit 1 }
+            if (FNR == start[c]) { if (!(c in top)) top[c] = title }
+            else if (!(c in nested)) nested[c] = title
+        }
+        END {
+            if (error == "") for (i = 1; i <= n; i++)
+                if ((i in nested) && !(i in top)) {
+                    error = "conditional-only section header in chunk start line " start[i] ": " nested[i]; break
+                }
+            if (error != "") { print "section_plan: ERROR: " error > "/dev/stderr"; exit 1 }
+            for (i = 1; i <= n; i++) print start[i] "\t" ((i in top) ? top[i] : "-") > roster
+        }
+    ' "$table" "$RUNNER"
+}
+# Measured weights balance whole-runner chunks; missing labels use a reported
+# default. The assignment is deterministic and checked as a disjoint union.
+WEIGHTS_FILE_DEFAULT="tests/section_weights.txt"
+SHARD_DEFAULT_CS=50          # centiseconds for an unmeasured section (0.5 s)
+
+# chunk weights -> "<centiseconds> <chunk-start>" per line, plus the roster of
+# section labels that had no measurement.
+derive_chunk_weights() {
+    local table="$1" out="$2" missing="$3"
+    local wf="${WEIGHTS_FILE:-$WEIGHTS_FILE_DEFAULT}"
+    # `: ;;` not `;;` — bash 3.2 cannot parse an empty inline arm (see
+    # tools/docs_claims_check.sh and .claude/rules/test-suite.md). Pre-existing
+    # here and never hit, because this tool runs on the linux lane only.
+    case "$wf" in /*) : ;; *) wf="$SP_ROOT/$wf" ;; esac
+    : > "$missing"
+    if [ ! -f "$wf" ]; then
+        SP_WEIGHTS_SOURCE="(none: $wf missing — every section takes the default)"
+        awk -v def="$SHARD_DEFAULT_CS" '{ print def, $1 }' "$table" > "$out"
+        awk '{ rest = $0; sub(/^[0-9]+[ \t]+[0-9]+[ \t]*/, "", rest)
+               while (match(rest, /\[[^]]*\]/)) { print substr(rest, RSTART, RLENGTH); rest = substr(rest, RSTART + RLENGTH) } }' \
+            "$table" | sort -u > "$missing"
+    else
+        SP_WEIGHTS_SOURCE="$wf"
+        awk -v def="$SHARD_DEFAULT_CS" -v missfile="$missing" '
+            FNR == NR {
+                if ($0 ~ /^\[/) {
+                    j = index($0, "]")
+                    if (j > 0) { lbl = substr($0, 1, j); w[lbl] += int($NF * 100 + 0.5) }
+                }
+                next
+            }
+            {
+                # The ids field is space-separated and a label may itself
+                # contain spaces, so walk the bracketed tokens with a regex
+                # rather than by field index.
+                start = $1; total = 0; seen = ""
+                rest = $0
+                sub(/^[0-9]+[ \t]+[0-9]+[ \t]*/, "", rest)
+                while (match(rest, /\[[^]]*\]/)) {
+                    id = substr(rest, RSTART, RLENGTH)
+                    rest = substr(rest, RSTART + RLENGTH)
+                    if (index(seen, "|" id "|") > 0) continue
+                    seen = seen "|" id "|"
+                    if (id in w) total += w[id]
+                    else { total += def; print id > missfile }
+                }
+                print total, start
+            }
+        ' "$wf" "$table" > "$out"
+    fi
+    sort -u "$missing" -o "$missing"
+    SP_WEIGHT_MISSING=$(grep -c . "$missing")
+}
+
+# Merge chunks that share a cross-chunk variable dependency.
+derive_chunk_groups() {
+    local table="$1" out="$2"
+    awk -v pre_end="$SP_PREAMBLE_END" '
+        FNR == NR { n++; cs[n] = $1; ce[n] = $2; header[n] = (NF > 2); next }
+        {
+            line = FNR
+            if (line <= pre_end) { scope = 0 }
+            else {
+                scope = 0
+                while (cur < n && line > ce[cur]) cur++
+                if (cur >= 1 && cur <= n && line >= cs[cur] && line <= ce[cur]) scope = cur
+                else if (cur < n && line >= cs[cur + 1]) { cur++; if (line <= ce[cur]) scope = cur }
+            }
+            body = $0
+            # ---- assignments, with the POSITION they happen at -------------
+            # Round 5 (Astra): position matters. Round 4 recorded only
+            # (name, chunk) and treated ANY same-chunk assignment as satisfying
+            # EVERY read in that chunk — so a read that PRECEDES a later
+            # same-chunk reassignment lost its producer in an earlier chunk,
+            # the chunks were not merged, and the consumer shard printed an
+            # empty value and exited 0. Assignments and reads now carry
+            # (line, column) and a read is satisfied only by an assignment
+            # EARLIER IN PROGRAM ORDER.
+            if (match(body, /^[ \t]*[A-Za-z_][A-Za-z0-9_]*=/)) {
+                nm = substr(body, RSTART, RLENGTH - 1); gsub(/^[ \t]+/, "", nm)
+                if (scope == 0) pre[nm] = 1
+                else record_asg(nm, scope, line, RSTART)
+            }
+            # Mid-line assignments (`cmd; NAME=v`, `a && NAME=v`) — the dual of
+            # the same bug: a producer the scanner cannot see is a merge it
+            # cannot make.
+            rest2 = body; off2 = 0
+            while (match(rest2, /[;&|(][ \t]*[A-Za-z_][A-Za-z0-9_]*=/)) {
+                t = substr(rest2, RSTART, RLENGTH); col = off2 + RSTART
+                off2 += RSTART + RLENGTH - 1
+                rest2 = substr(rest2, RSTART + RLENGTH)
+                sub(/^[;&|(][ \t]*/, "", t); sub(/=$/, "", t)
+                if (scope == 0) pre[t] = 1; else record_asg(t, scope, line, col)
+            }
+            if (match(body, /^[ \t]*(local|export|declare)[ \t]+[A-Za-z_][A-Za-z0-9_]*/)) {
+                t = substr(body, RSTART, RLENGTH); sub(/^[ \t]*(local|export|declare)[ \t]+/, "", t)
+                if (scope == 0) pre[t] = 1; else record_asg(t, scope, line, RSTART)
+            }
+            if (match(body, /for[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]+in/)) {
+                t = substr(body, RSTART, RLENGTH); sub(/^for[ \t]+/, "", t); sub(/[ \t]+in$/, "", t)
+                if (scope == 0) pre[t] = 1; else record_asg(t, scope, line, RSTART)
+            }
+            # ---- reads, with their position --------------------------------
+            if (scope > 0) {
+                rest = body; off = 0
+                while (match(rest, /\$\{?[A-Za-z_][A-Za-z0-9_]*/)) {
+                    v = substr(rest, RSTART, RLENGTH); col = off + RSTART
+                    off += RSTART + RLENGTH - 1
+                    rest = substr(rest, RSTART + RLENGTH)
+                    gsub(/[$\{]/, "", v)
+                    nr++; rv[nr] = v; rc[nr] = scope; rl[nr] = line; rk[nr] = col
+                }
+            }
+        }
+        END {
+            for (i = 1; i <= n; i++) parent[i] = i
+            # A section is its header chunk and every following headerless
+            # chunk up to the next header.  Dependency merging alone cannot
+            # guarantee that: a body chunk may share no shell variable with
+            # its header.  Put that whole syntactic unit in one group first;
+            # dependency merges may then conservatively join whole sections.
+            section = 0
+            for (i = 1; i <= n; i++) {
+                if (header[i]) section = i
+                else if (section > 0) {
+                    unite(i, section)
+                    merges++
+                    printf "MERGE section %d %d\n", cs[section], cs[i] > "/dev/stderr"
+                }
+            }
+            for (j = 1; j <= nr; j++) {
+                v = rv[j]; c = rc[j] + 0
+                if (v in pre) continue
+                if (!(v in names)) continue
+                if (satisfied_before(v, c, rl[j], rk[j])) continue
+                best = 0
+                for (i = 1; i < c; i++) if ((v SUBSEP i) in A) best = i
+                if (best == 0) continue
+                ra = find(c); rb = find(best)
+                if (ra != rb) {
+                    unite(ra, rb)
+                    merges++
+                    printf "MERGE %s %d %d\n", v, cs[best], cs[c] > "/dev/stderr"
+                }
+            }
+            for (i = 1; i <= n; i++) printf "%d %d\n", cs[i], cs[find(i)]
+            printf "MERGES %d\n", merges + 0 > "/dev/stderr"
+        }
+        # Only the EARLIEST assignment of a name in a chunk can matter: if that
+        # one is not before the read, none is. Keeping just the minimum keeps
+        # the lookup O(1) — scanning every assignment per read was O(reads x
+        # assignments) and took the selftest from minutes to over ten.
+        function record_asg(nm, sc, ln, col,   k) {
+            na++
+            k = nm SUBSEP sc
+            if (!(k in A) || ln < minl[k] || (ln == minl[k] && col < minc[k])) {
+                minl[k] = ln; minc[k] = col
+            }
+            A[k] = 1; names[nm] = 1
+        }
+        # A same-chunk assignment counts only if it happens BEFORE the read in
+        # program order: an earlier line, or the same line at an earlier column.
+        function satisfied_before(v, c, ln, col,   k) {
+            k = v SUBSEP c
+            if (!(k in A)) return 0
+            if (minl[k] < ln) return 1
+            if (minl[k] == ln && minc[k] < col) return 1
+            return 0
+        }
+        function unite(a, b,   ra, rb) {
+            ra = find(a); rb = find(b)
+            if (ra == rb) return
+            if (ra < rb) parent[rb] = ra; else parent[ra] = rb
+        }
+        function find(x) { while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x] } return x }
+    ' "$table" "$RUNNER" > "$out" 2> "$out.merges"
+    SP_GROUP_MERGES=$(sed -n 's/^MERGES \([0-9]*\)$/\1/p' "$out.merges")
+    : "${SP_GROUP_MERGES:=0}"
+    SP_GROUP_MERGE_LIST=$(sed -n 's/^MERGE /  merged: /p' "$out.merges")
+    SP_GROUPS=$(cut -d' ' -f2 "$out" | sort -u | grep -c .)
+}
+
+# Independently audit the section/group contract after grouping.  This is in
+# --check (rather than only the emitter) so a future grouping regression is a
+# planner failure before any shard can run a header without its body.
+check_section_groups() {
+    local table="$1" groups="$2" bad
+    bad=$(awk '
+        FNR == NR { n++; start[n]=$1; header[n]=(NF>2); label[n]=$3; next }
+        { group[$1]=$2 }
+        END {
+            h=0
+            for (i=1; i<=n; i++) {
+                if (header[i]) h=i
+                else if (h && group[start[i]] != group[start[h]]) {
+                    bad++
+                    witness = sprintf("%s header @%d body @%d", label[h], start[h], start[i])
+                    if (label[h] == "[114]" && named == "") named = witness
+                    else if (bad <= 8)
+                        witnesses = witnesses sprintf("%s%s", witnesses ? ", " : "", witness)
+                }
+            }
+            if (bad) { printf "count=%d; %s; %s\n", bad, named, witnesses; exit 1 }
+        }' "$table" "$groups") || {
+        die "section grouping split headerless chunks from their nearest preceding header: $bad"
+    }
+    echo "section groups: every headerless chunk shares the nearest preceding header group"
+}
+
+# Deterministic longest-processing-time greedy. Emits "<chunk-start> <shard>".
+derive_shard_assignment() {
+    local n="$1" weights="$2" out="$3" groups="${4:-}"
+    if [ -n "$groups" ]; then
+        # Aggregate each group's weight onto its leader, split the LEADERS, then
+        # expand back: a group is indivisible, so the balance is over groups.
+        local W2="$SP_TMPROOT/grp"
+        mkdir -p "$W2"
+        awk 'FNR == NR { g[$1] = $2; next } { lead = ($2 in g) ? g[$2] : $2; t[lead] += $1 }
+             END { for (k in t) print t[k], k }' "$groups" "$weights" > "$W2/gw"
+        sort -k1,1nr -k2,2n "$W2/gw" \
+          | awk -v n="$n" '
+                BEGIN { for (i = 1; i <= n; i++) { load[i] = 0; cnt[i] = 0 } }
+                {
+                    best = 1
+                    for (i = 2; i <= n; i++)
+                        if (load[i] < load[best] || (load[i] == load[best] && cnt[i] < cnt[best])) best = i
+                    load[best] += $1; cnt[best]++
+                    print $2, best
+                }
+            ' > "$W2/ga"
+        awk 'FNR == NR { sh[$1] = $2; next } { print $1, sh[$2] }' "$W2/ga" "$groups" | sort -n > "$out"
+        return 0
+    fi
+    sort -k1,1nr -k2,2n "$weights" \
+      | awk -v n="$n" '
+            BEGIN { for (i = 1; i <= n; i++) { load[i] = 0; cnt[i] = 0 } }
+            {
+                # Ties break on chunk COUNT, then on index, so a table of equal
+                # weights round-robins instead of piling every chunk into
+                # bucket 1 (which is what an unmeasured tree does).
+                best = 1
+                for (i = 2; i <= n; i++)
+                    if (load[i] < load[best] || (load[i] == load[best] && cnt[i] < cnt[best])) best = i
+                load[best] += $1; cnt[best]++
+                print $2, best
+            }
+        ' | sort -n > "$out"
+}
+
+shard_loads() {   # "<shard> <chunks> <seconds>" per shard
+    local weights="$1" assign="$2" n="$3"
+    awk -v n="$n" '
+        FNR == NR { w[$2] = $1; next }
+        { c[$2]++; t[$2] += w[$1] }
+        END { for (i = 1; i <= n; i++) printf "%d %d %d.%02d\n", i, c[i] + 0, t[i] / 100, t[i] % 100 }
+    ' "$weights" "$assign"
+}
+
+# The pin: union == the full chunk list, and pairwise disjoint. Both directions
+# (mechanical-gates §2) — "every chunk is in a shard" and "no chunk is in two"
+# fail differently, and only the second catches a duplicated chunk.
+shard_check() {
+    local n="$1"
+    validate_shards "$n"
+    local W; W=$(sp_workdir shards)
+    derive_chunks "$RUNNER" > "$W/chunks"
+    verify_partition "$RUNNER" "$W/chunks"
+    check_chunk_count "$W/chunks"
+    check_header_shape "$W/chunks" || die "section header shape refused"
+    shard_count_sync "$CI_FILE" || die "ASan shard count is not synchronized"
+    derive_chunk_weights "$W/chunks" "$W/weights" "$W/missing"
+    derive_chunk_groups "$W/chunks" "$W/groups"
+    if [ "${SP_SECTION_GROUP_MUTATE:-}" = split ]; then
+        awk '{ print $1, $1 }' "$W/groups" > "$W/groups.mut"
+        mv "$W/groups.mut" "$W/groups"
+    fi
+    check_section_groups "$W/chunks" "$W/groups"
+    derive_shard_assignment "$n" "$W/weights" "$W/assign" "$W/groups"
+
+    # TEST-ONLY mutation seam, used by --selftest to prove this check fires.
+    # It can only REMOVE or DUPLICATE an assignment — never add coverage — so
+    # the worst it can do is turn the check red, and it announces itself.
+    case "${SP_SHARD_MUTATE:-}" in
+        drop) echo "section_plan: WARNING: SP_SHARD_MUTATE=drop — one chunk removed from every shard (selftest seam)" >&2
+              sed -i.bak '1d' "$W/assign" && rm -f "$W/assign.bak" ;;
+        dup)  echo "section_plan: WARNING: SP_SHARD_MUTATE=dup — one chunk placed in two shards (selftest seam)" >&2
+              head -1 "$W/assign" | awk -v n="$n" '{ print $1, ($2 % n) + 1 }' >> "$W/assign"
+              sort -n -o "$W/assign" "$W/assign" ;;
+    esac
+
+    local total assigned uniq
+    total=$(grep -c '[0-9]' "$W/chunks")
+    assigned=$(grep -c '[0-9]' "$W/assign")
+    cut -d' ' -f1 "$W/assign" | sort -n -u > "$W/assigned_uniq"
+    uniq=$(grep -c '[0-9]' "$W/assigned_uniq")
+    cut -d' ' -f1 "$W/chunks" | sort -n > "$W/all_chunks"
+
+    [ "$assigned" = "$uniq" ] || die "shards OVERLAP: $assigned assignments over $uniq distinct chunks — a chunk in two shards is counted twice and its failures are reported twice"
+    if ! cmp -s "$W/all_chunks" "$W/assigned_uniq"; then
+        echo "section_plan: ERROR: the shard union is not the full chunk list:" >&2
+        diff "$W/all_chunks" "$W/assigned_uniq" | head -20 >&2
+        die "union != full — a chunk in no shard is a section that silently left CI"
+    fi
+    [ "$total" -gt 0 ] || die "chunk enumeration examined=0 floor=$CHUNK_FLOOR (scan is vacuous)"
+    # More shards than chunks cannot produce N non-empty shards, and the
+    # per-shard loop below would report the shortfall one shard at a time.
+    [ "$n" -le "$total" ] || die "asked for $n shards over $total chunks — at least one shard would be empty"
+
+    local i cnt examined=0
+    for i in $(seq 1 "$n"); do
+        examined=$((examined + 1))
+        cnt=$(awk -v k="$i" '$2 == k' "$W/assign" | grep -c .)
+        [ "$cnt" -gt 0 ] || die "shard $i/$n got ZERO chunks — a job that measures nothing must not be green"
+    done
+    [ "$examined" -eq "$n" ] && [ "$examined" -gt 0 ] || die "shard enumeration examined=$examined expected=$n"
+
+    if [ "$VERBOSE" = "1" ]; then
+        echo "weights: $SP_WEIGHTS_SOURCE"
+        if [ "$SP_WEIGHT_MISSING" -gt 0 ]; then
+            echo "UNMEASURED sections (default ${SHARD_DEFAULT_CS}cs each) — refresh the weights table:"
+            sed 's/^/  /' "$W/missing"
+        fi
+        if [ -n "$SP_GROUP_MERGE_LIST" ]; then
+            echo "chunk groups merged for a cross-chunk variable dependency:"
+            printf '%s\n' "$SP_GROUP_MERGE_LIST"
+        fi
+        shard_loads "$W/weights" "$W/assign" "$n" \
+          | while read -r k c t; do echo "  shard $k/$n: chunks=$c weight=${t}s"; done
+    fi
+    echo "SHARDS: n=$n chunks=$total groups=$SP_GROUPS (merges=$SP_GROUP_MERGES) union=full disjoint=yes zero-section-shards=0 unmeasured-sections=$SP_WEIGHT_MISSING"
+}
+
+# Extras go to the lightest shard or the shard carrying a named section.
+shard_owner() {
+    local n="$1" section="${2:-}"
+    validate_shards "$n"
+    SP_WORK="${SP_WORK:-$(sp_workdir owner)}"
+    derive_chunks "$RUNNER" > "$SP_WORK/chunks"
+    check_chunk_count "$SP_WORK/chunks"
+    check_header_shape "$SP_WORK/chunks" || die "section header shape refused"
+    derive_chunk_weights "$SP_WORK/chunks" "$SP_WORK/weights" "$SP_WORK/missing"
+    derive_chunk_groups "$SP_WORK/chunks" "$SP_WORK/groups"
+    derive_shard_assignment "$n" "$SP_WORK/weights" "$SP_WORK/assign" "$SP_WORK/groups"
+
+    if [ -n "$section" ]; then
+        local start owner
+        start=$(awk -v id="$section" '{ for (i = 3; i <= NF; i++) if ($i == id) { print $1; exit } }' "$SP_WORK/chunks")
+        [ -n "$start" ] || die "no chunk carries section '$section' — the extra it owns has no home"
+        owner=$(awk -v s="$start" '$1 == s { print $2 }' "$SP_WORK/assign")
+        [ -n "$owner" ] || die "section '$section' is in chunk @$start, which no shard claimed"
+        echo "$owner"
+        return 0
+    fi
+    shard_loads "$SP_WORK/weights" "$SP_WORK/assign" "$n" \
+      | sort -k3,3g -k1,1n | head -1 | cut -d' ' -f1
+}
+
+print_weights() {
+    local log="$1"
+    [ -f "$log" ] || die "no such log: $log"
+    # A raw CI job log (`gh api .../jobs/<id>/logs`) prefixes every line with an
+    # ISO timestamp, so the pattern tolerates one rather than making the caller
+    # strip it by hand — a manual pre-step is a step someone does differently.
+    # The floor is the RUNNER'S OWN label population, not a magic 50. A single
+    # shard log has ~78 rows and sailed through the old floor, which would have
+    # produced a table with ~160 sections silently taking the default weight —
+    # and a default-weighted section is exactly what the table exists to stop.
+    # The input for a sharded lane is the shard logs CONCATENATED.
+    local n distinct want labels
+    n=$(grep -cE '^([0-9-]+T[0-9:.]+Z )?SECTION_TIME: ' "$log")
+    labels=$(grep -oE 'echo "\[[^]]*\]' "$RUNNER" | sed 's/^echo "//' | sort -u | grep -c .)
+    # #1312: a runner with no labels made the floor 0, and any 50-row log passed.
+    # The floor is fixed (tools/suite_label_check.sh's MIN_LABELS), and the log
+    # counts only sections the runner actually has.
+    [ "$labels" -ge 200 ] || die "the runner has only $labels section labels (< 200) — the floor would be vacuous"
+    distinct=$(grep -oE 'SECTION_TIME: \[[^]]*\]' "$log" | sed 's/^SECTION_TIME: //' | sort -u |
+               grep -cxFf <(grep -oE 'echo "\[[^]]*\]' "$RUNNER" | sed 's/^echo "//' | sort -u))
+    # 85%, not 100%: one binary prints only one side of extension branches
+    # (the asan-http build never prints the HTTP skip headings), so
+    # requiring every label would refuse a complete set of real logs.
+    want=$(( labels * 85 / 100 ))
+    [ "$n" -ge 50 ] || die "only $n SECTION_TIME lines in $log — that log is not a suite run at all"
+    [ "$distinct" -ge "$want" ] || die "only $distinct of the runner's sections in $log, need >= $want (85% of the $labels labels in the runner) — this looks like ONE shard's log; concatenate every shard's log, or the table would default the sections it cannot see"
+    # PROVENANCE COMES FROM THE ARGS, so the documented recipe reproduces the
+    # committed file byte-for-byte (#1160 round 6). Round 5 hand-wrote a
+    # 14-line header that the very recipe printed next to it would have ERASED
+    # — a regeneration step that silently drops the answer to "where did these
+    # numbers come from" is how a table becomes unverifiable.
+    local rows
+    rows=$(grep -oE 'SECTION_TIME: \[[^]]*\]' "$log" | sort -u | grep -c .)
+    echo "# tests/section_weights.txt — per-section wall seconds, summed per label."
+    echo "#"
+    if [ -n "${WEIGHTS_RUN:-}" ] || [ -n "${WEIGHTS_HEAD:-}" ]; then
+        echo "# MEASURED ON THE CI RUNNER, not on the dev box: run ${WEIGHTS_RUN:-unstated},"
+        echo "# head ${WEIGHTS_HEAD:-unstated}, the \`asan + ubsan / shard k/N (http+net+gfx build)\`"
+        echo "# job logs, concatenated and fed to \`--print-weights\`."
+    else
+        echo "# PROVENANCE NOT STATED: this table was generated without --run/--head."
+        echo "# Measure on the CI RUNNER and pass them, or the numbers cannot be traced."
+    fi
+    echo "# $n SECTION_TIME lines, $rows distinct sections."
+    echo "#"
+    echo "# Refresh from every shard log of the same CI run. Different binary"
+    echo "# builds and runner hosts have different section costs."
+    echo "#"
+    echo "# Refresh — see docs/CI.md for the gh api recipe:"
+    echo "#   tools/section_plan.sh --print-weights <ci-shard-logs> \\"
+    echo "#       --run ${WEIGHTS_RUN:-<run id>} --head ${WEIGHTS_HEAD:-<head sha>} > tests/section_weights.txt"
+    # A section label may contain spaces ("[JSON Depth / DoS guard]"), so the
+    # label is everything from the first [ to the first ] and the seconds are
+    # the LAST field — splitting on whitespace produced rows like "[Structural"
+    # and a weights table with 21 phantom entries.
+    awk '/^([0-9-]+T[0-9:.]+Z )?SECTION_TIME: / {
+             i = index($0, "["); j = index($0, "]")
+             if (i == 0 || j <= i) next
+             lbl = substr($0, i, j - i + 1)
+             cs[lbl] += int($NF * 100 + 0.5)
+         }
+         END { for (k in cs) printf "%s %d.%02d\n", k, cs[k] / 100, cs[k] % 100 }' "$log" | sort
+}
+
+skip_audit() {
+    local f="$1" work="$2"
+    local hits="$work/skip_hits" unacct="$work/skip_unaccounted" used="$work/skip_waivers_used"
+    : > "$hits"; : > "$unacct"; : > "$used"
+
+    grep -nE "$SKIP_EMIT_RE" "$f" >> "$hits"
+    SP_SKIP_EMITS=$(grep -c . "$hits")
+    [ "$SKIP_EMIT_FLOOR" -gt 0 ] && [ "$SP_SKIP_EMITS" -ge "$SKIP_EMIT_FLOOR" ] || \
+        die "skip emitter enumeration examined=$SP_SKIP_EMITS floor=$SKIP_EMIT_FLOOR (scan is vacuous below floor)"
+
+    SP_SKIP_ROUTED=$(grep -cE "$SKIP_ROUTE_RE" "$f")
+    [ "$SKIP_ROUTED_FLOOR" -gt 0 ] && [ "$SP_SKIP_ROUTED" -ge "$SKIP_ROUTED_FLOOR" ] || \
+        die "skip route enumeration examined=$SP_SKIP_ROUTED floor=$SKIP_ROUTED_FLOOR (scan is vacuous below floor)"
+
+    local hit lineno text thash whash wreason ok
+    while IFS= read -r hit; do
+        [ -n "$hit" ] || continue
+        lineno=${hit%%:*}; text=${hit#*:}
+        thash=$(sp_line_hash "$text")
+        ok=""
+        while IFS='|' read -r whash wreason; do
+            [ -n "${whash:-}" ] || continue
+            if [ "$whash" = "$thash" ]; then
+                ok="waiver"; printf '%s\n' "$whash" >> "$used"; break
+            fi
+        done <<EOF
+$SKIP_WAIVERS
+EOF
+        [ -n "$ok" ] || printf '%s:%s\n' "$lineno" "$text" >> "$unacct"
+    done < "$hits"
+
+    if [ -s "$unacct" ] && [ "${SP_PRINT_WAIVERS:-0}" = "1" ]; then
+        echo "# Paste-ready SKIP_WAIVERS rows for the UNACCOUNTED lines below."
+        echo "# Each needs a REASON written by a reviewer; a bare hash is not a waiver."
+        while IFS= read -r hit; do
+            [ -n "$hit" ] || continue
+            lineno=${hit%%:*}; text=${hit#*:}
+            printf '%s|REASON HERE — line %s: %.70s\n' "$(sp_line_hash "$text")" "$lineno" "$text"
+        done < "$unacct"
+        die "$(grep -c . "$unacct") unaccounted SKIP line(s); rows printed above, nothing was written"
+    fi
+    if [ -s "$unacct" ]; then
+        echo "section_plan: ERROR: SKIP-emitting line(s) in $f that neither go through section_skip() nor carry a reviewed reason:" >&2
+        sed 's/^/    /' "$unacct" >&2
+        die "a section whose verdict is a skip must call section_skip (it prints AND counts, so the RESULTS line's 'N skipped' is true); a sub-check skip must be listed in SKIP_WAIVERS with the section that still measures"
+    fi
+
+    local unused=""
+    while IFS='|' read -r whash wreason; do
+        [ -n "${whash:-}" ] || continue
+        grep -qxF "$whash" "$used" || unused="$unused
+    $whash|$wreason"
+    done <<EOF
+$SKIP_WAIVERS
+EOF
+    if [ -n "$unused" ]; then
+        echo "section_plan: ERROR: SKIP_WAIVERS entries that matched nothing:$unused" >&2
+        die "an unused skip waiver means the line it described changed shape — re-read it and decide again whether that skip is section-level (route it) or a sub-check (re-pin it)"
+    fi
+    SP_SKIP_WAIVERS_USED=$(sort -u "$used" | grep -c .)
+}
+# ---------------------------------------------------------------------------
+# Reject empty and malformed shard populations before enumeration.
+validate_shards() {
+    local n="$1"
+    case "$n" in
+        ''|*[!0-9]*) die "shard count must be a positive integer, got '$n'" ;;
+    esac
+    [ "$n" -ge 1 ] || die "shard count must be >= 1, got '$n'"
+}
+
+# A validated top-level echo marks bearing; the wrapper checks boundaries and printed headers without interpreting branches.
+build_shard_plan() {
+    local k="$1" n="$2" s
+    validate_shards "$n"; validate_shards "$k"
+    [ "$k" -le "$n" ] || die "shard index $k is outside 1..$n"
+    SP_WORK=$(sp_workdir plan)
+    derive_chunks "$RUNNER" > "$SP_WORK/chunks"
+    verify_partition "$RUNNER" "$SP_WORK/chunks"
+    check_chunk_count "$SP_WORK/chunks"
+    check_header_shape "$SP_WORK/chunks" "$SP_WORK/headers" || die "section header shape refused"
+    derive_chunk_weights "$SP_WORK/chunks" "$SP_WORK/weights" "$SP_WORK/missing"
+    derive_chunk_groups "$SP_WORK/chunks" "$SP_WORK/groups"
+    derive_shard_assignment "$n" "$SP_WORK/weights" "$SP_WORK/assign" "$SP_WORK/groups"
+    awk -v k="$k" '$2 == k { print $1 }' "$SP_WORK/assign" | sort -n > "$SP_WORK/selected"
+    finish_plan "shard $k/$n"
+    local wsec
+    wsec=$(shard_loads "$SP_WORK/weights" "$SP_WORK/assign" "$n" | awk -v k="$k" '$1 == k {print $3}')
+    note "shard=$k/$n weights=$SP_WEIGHTS_SOURCE unmeasured=$SP_WEIGHT_MISSING"
+    echo "PLAN: shard=$k/$n bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS predicted=${wsec}s unmeasured=$SP_WEIGHT_MISSING"
+}
+
+# The selected chunks' witness metadata, shared by every plan kind.
+finish_plan() {
+    local what="$1" s first bearing
+    SP_SEL_CHUNKS=$(grep -c '[0-9]' "$SP_WORK/selected")
+    [ "$SP_SEL_CHUNKS" -gt 0 ] || die "$what selected ZERO chunks"
+    SP_SEL_BEARING=0
+    : > "$SP_WORK/expected"
+    while read -r s; do
+        [ -n "$s" ] || continue
+        first=$(awk -F '\t' -v ss="$s" '$1 == ss { print $2 }' "$SP_WORK/headers")
+        bearing=0
+        if [ "$first" != - ]; then bearing=1; SP_SEL_BEARING=$((SP_SEL_BEARING + 1)); fi
+        printf '# EIGS-EXPECT\t%s\t%s\t%s\n' "$s" "$bearing" "${first:--}" >> "$SP_WORK/expected"
+    done < "$SP_WORK/selected"
+    [ "$SP_SEL_BEARING" -gt 0 ] || die "$what selected ZERO header-bearing chunks"
+}
+
+check_chunk_count() {
+    local examined
+    examined=$(grep -c '[0-9]' "$1")
+    [ "$CHUNK_FLOOR" -gt 0 ] && [ "$examined" -ge "$CHUNK_FLOOR" ] ||
+        die "chunk enumeration examined=$examined floor=$CHUNK_FLOOR (scan is vacuous below floor)"
+}
+
+# Line numbers of the executable (non-comment) lines of FILE naming TOKEN as a
+# whole path component.
+sp_refs() {
+    grep -nE "$(sp_token_re "$2")" "$1" | grep -vE '^[0-9]+:[[:space:]]*#' | cut -d: -f1
+}
+sp_token_re() {
+    printf '(^|[^A-Za-z0-9_.-])%s([^A-Za-z0-9_-]|$)' "$(printf '%s' "$1" | sed 's/[][\.*^$+?(){}|/]/\\&/g')"
+}
+
+# Runner lines referencing TOKEN, plus (one hop) the lines referencing each
+# test script or tool that does: a helper (test_lsp.py, lint_fixtures/) selects
+# through the script that uses it (test_lsp.sh, test_lint.sh), and a program
+# the runner names in one section still selects the other section whose
+# script re-runs it (test_spawn_channel_exit.eigs -> test_replay_boundary_exit.sh, [103a]).
+sp_select() {
+    sp_refs "$RUNNER" "$1"
+    # shellcheck disable=SC2086
+    git -C "$SP_ROOT" grep -nE -- "$(sp_token_re "$1")" -- $SP_HOP_DIRS ':!tests/run_all_tests.sh' ':!tools/section_plan.sh' 2>/dev/null \
+        | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | cut -d: -f1 | sort -u \
+        | while IFS= read -r t; do sp_refs "$RUNNER" "$(sp_file_token "$t")"; done
+}
+# How a path is named: its basename when that is unique in the tree, else
+# parent/basename (examples/functional.eigs vs lib/functional.eigs, and a
+# tests/roads/README.md is not the top-level README.md).
+sp_file_token() {
+    local b
+    b=$(basename "$1")
+    case "$1" in */*) grep -qxF -- "$b" "$SP_WORK/dupnames" && b="$(basename "$(dirname "$1")")/$b" ;; esac
+    printf '%s' "$b"
+}
+
+# Module names whose loading reaches lib/M.eigs: M, then every lib module
+# that imports or load_files one already in the set, to a fixed point.
+sp_lib_closure() {
+    local set=" $1 " frontier="$1" next m f
+    while [ -n "$frontier" ]; do
+        next=''
+        for m in $frontier; do
+            for f in $(git -C "$SP_ROOT" grep -lE "(^[[:space:]]*import[[:space:]]+$m([^A-Za-z0-9_]|\$))|lib/$m\.eigs" -- 'lib/*.eigs' 2>/dev/null); do
+                f=$(basename "$f" .eigs)
+                case "$set" in *" $f "*) ;; *) set="$set$f "; next="$next $f" ;; esac
+            done
+        done
+        frontier=$next
+    done
+    printf '%s\n' $set
+}
+
+# Changed-sections plan (#1347): the chunks a diff against BASE touches, for
+# the contributor's fast local gate. CI still runs the whole suite. The diff is
+# the WORKING TREE plus untracked files against the merge base, because an
+# uncommitted fix is exactly what this gate is run on.
+build_changed_plan() {
+    local base="$1" mb p tok d lines dlines seam_start seam_end seam_delta
+    SP_WORK=$(sp_workdir changed)
+    derive_chunks "$RUNNER" > "$SP_WORK/chunks"
+    verify_partition "$RUNNER" "$SP_WORK/chunks"
+    check_chunk_count "$SP_WORK/chunks"
+    check_header_shape "$SP_WORK/chunks" "$SP_WORK/headers" || die "section header shape refused"
+    derive_chunk_weights "$SP_WORK/chunks" "$SP_WORK/weights" "$SP_WORK/missing"
+    derive_chunk_groups "$SP_WORK/chunks" "$SP_WORK/groups"
+    mb=$(git -C "$SP_ROOT" merge-base "$base" HEAD 2>/dev/null) || die "no merge base between '$base' and HEAD"
+    # --no-renames: a rename counts both sides, or a moved fixture selects nothing.
+    { git -C "$SP_ROOT" diff --no-renames --name-only "$mb" --; git -C "$SP_ROOT" ls-files --others --exclude-standard; } \
+        | sort -u > "$SP_WORK/paths"
+    : > "$SP_WORK/lines"; : > "$SP_WORK/unmatched"; : > "$SP_WORK/sourced"; : > "$SP_WORK/runtime"; SP_CHANGED_FULL=''
+    runner_source_closure "$RUNNER_SOURCE" "$SP_WORK/source-closure"
+    # Runner hunks select the chunk each changed line lands in (new-side
+    # numbering; a pure deletion selects the chunk holding the line before it).
+    seam_start=$(grep -nFx '# EIGS_SECTION_FRAGMENTS' "$RUNNER_SOURCE" | cut -d: -f1)
+    seam_end=$(grep -nFx '# EIGS_SECTION_FRAGMENTS_END' "$RUNNER_SOURCE" | cut -d: -f1)
+    seam_delta=$(($(wc -l < "$RUNNER") - $(wc -l < "$RUNNER_SOURCE")))
+    git -C "$SP_ROOT" diff -U0 "$mb" -- tests/run_all_tests.sh \
+        | sed -n 's/^@@ -[0-9,]* +\([0-9][0-9]*\)\(,\([0-9][0-9]*\)\)\{0,1\} @@.*/\1 \3/p' \
+        | awk -v ss="$seam_start" -v se="$seam_end" -v delta="$seam_delta" -v seam="$SP_WORK/seam-changed" '
+            {
+                n = ($2 == "") ? 1 : $2; if (n == 0) n = 1
+                for (i = 0; i < n; i++) {
+                    line = $1 + i
+                    if (line >= ss && line <= se) { print "yes" > seam; next }
+                    print line + (line > se ? delta : 0)
+                }
+            }' > "$SP_WORK/hunks"
+    cat "$SP_WORK/hunks" >> "$SP_WORK/lines"
+    # Every other changed file selects the chunks that reference it: by its
+    # basename when that is unique in the tree (a test is named by basename),
+    # else by parent/basename, since examples/functional.eigs and
+    # lib/functional.eigs are different files. Plus every ancestor dir a
+    # section globs (examples/, lib/, a fixture dir), except src/ and tests/,
+    # which nearly every section names.
+    git -C "$SP_ROOT" ls-files | sed 's#.*/##' | sort | uniq -d > "$SP_WORK/dupnames"
+    while read -r p; do
+        [ -n "$p" ] && [ "$p" != tests/run_all_tests.sh ] || continue
+        case "$p" in
+            tests/sections/*.sh)
+                # A fragment is itself a section definition. Select every
+                # header it contributes in the expanded runner; treating its
+                # own line numbers as main-runner lines would select nonsense.
+                fragment="$SP_ROOT/$p"
+                [ -f "$fragment" ] || fragment="$SP_WORK/old-fragment"
+                if [ ! -f "$SP_ROOT/$p" ]; then git -C "$SP_ROOT" show "$mb:$p" > "$fragment" 2>/dev/null || :; fi
+                while IFS= read -r label; do
+                    [ -n "$label" ] || continue
+                    sp_refs "$RUNNER" "$label" >> "$SP_WORK/lines"
+                done < <(sed -n 's/^[[:space:]]*echo "\(\[[^]"]*\]\).*$/\1/p' "$fragment")
+                continue ;;
+        esac
+        # The hop also reads the tools/ gates the runner calls (docs_claims
+        # checks README.md for [99za]); a src/ file is reported as runtime
+        # anyway, and tools/ naming it (consumer_acceptance) only adds cost.
+        case "$p" in src/*) SP_HOP_DIRS=tests ;; *) SP_HOP_DIRS='tests tools' ;; esac
+        tok=$(sp_file_token "$p")
+        lines=$(sp_select "$tok")
+        # A test script may build its program names from the stem
+        # (`dict_keys_mt_single|expect.out` -> "$probe.eigs"), so a tests/
+        # file is also looked up by its stem. (Not examples/: a stem such as
+        # `hello` is a common word, and selected 64 chunks.)
+        case "$p" in tests/*.*) lines="$lines
+$(sp_select "${tok%.*}")" ;; esac
+        # A module is loaded by NAME (`import math`) or through another module
+        # (ui.eigs loads ui_theme.eigs): close over lib/ importers, then every
+        # test file that imports a module in the closure selects the sections
+        # that run it.
+        case "$p" in lib/*.eigs) lines="$lines
+$(sp_lib_closure "$(basename "$p" .eigs)" | while IFS= read -r m; do
+      sp_select "$m.eigs"
+      # Importers: tests (also programs held in string literals, "...\nimport
+      # log"), the doc fences [89] runs, the programs [97] runs.
+      git -C "$SP_ROOT" grep -lE "(^|[^A-Za-z0-9_]|\\\\n)import[[:space:]]+$m([^A-Za-z0-9_]|\$)" -- tests docs examples README.md 2>/dev/null \
+          | while IFS= read -r t; do
+                case "$t" in examples/*) sp_refs "$RUNNER" examples ;; esac
+                t=$(sp_file_token "$t"); sp_select "$t"; sp_select "${t%.*}"
+            done
+  done)" ;; esac
+        # Dirs the file sits in add the sections that glob them. A nested dir
+        # (a fixture dir) identifies the file; a top-level one (lib/,
+        # examples/) does not: any `lib/...` path matches it, so those lines
+        # select sections but never count as mapping the file.
+        dlines=''
+        d=$(dirname "$p")
+        while [ "$d" != . ]; do
+            case "$d" in
+                src|tests|tools) break ;;   # named by nearly every section
+                */*) lines="$lines
+$(sp_select "$(basename "$d")")" ;;
+                *) dlines=$(sp_refs "$RUNNER" "$d") ;;
+            esac
+            d=$(dirname "$d")
+        done
+        printf '%s\n' "$dlines" | grep . >> "$SP_WORK/lines"
+        # A reference outside every chunk (a preamble list) selects nothing,
+        # so it does not count as a match.
+        lines=$(printf '%s\n' "$lines" | awk -v pre="$SP_PREAMBLE_END" -v epi="$SP_EPILOGUE_START" '$1 > pre && $1 < epi')
+        # A file in the preamble's transitive source closure runs inside every
+        # section. The stub copier below consumes this exact same derivation.
+        if grep -qxF "$p" "$SP_WORK/source-closure"; then echo "$p" >> "$SP_WORK/sourced"
+        elif [ -n "$lines" ]; then printf '%s\n' "$lines" >> "$SP_WORK/lines"
+        else echo "$p" >> "$SP_WORK/unmatched"; fi
+        # The C runtime (and the build files that make it) is exercised by
+        # every section, so no name lookup maps a src/ file to its tests (src/lint.c is named only by a linkage
+        # check, not by [81]): it is always reported, and the full suite that
+        # covers it is CI's.
+        case "$p" in src/*|Makefile|build.sh) echo "$p" >> "$SP_WORK/runtime" ;; esac
+    done < "$SP_WORK/paths"
+    # An EDIT to the preamble or epilogue, or to a file it sources, changes
+    # every section: run them all.
+    SP_CHANGED_FULL=$(awk -v pre="$SP_PREAMBLE_END" -v epi="$SP_EPILOGUE_START" \
+        '$1 <= pre || $1 >= epi { print "yes"; exit }' "$SP_WORK/hunks")
+    [ ! -s "$SP_WORK/seam-changed" ] || SP_CHANGED_FULL=yes
+    [ ! -s "$SP_WORK/sourced" ] || SP_CHANGED_FULL=yes
+    # line -> chunk, then widen to each chunk's dependency group, plus the floor.
+    awk -v full="$SP_CHANGED_FULL" -v floor_re="$CHANGED_FLOOR_RE" '
+        FILENAME == ARGV[1] { n++; cs[n] = $1; ce[n] = $2; ids[n] = $0; next }
+        FILENAME == ARGV[2] { lead[$1] = $2; next }
+        { for (i = 1; i <= n; i++) if ($1 >= cs[i] && $1 <= ce[i]) hit[lead[cs[i]]] = 1 }
+        END {
+            for (i = 1; i <= n; i++) if (full != "" || ids[i] ~ floor_re) hit[lead[cs[i]]] = 1
+            for (i = 1; i <= n; i++) if (lead[cs[i]] in hit) print cs[i]
+        }' "$SP_WORK/chunks" "$SP_WORK/groups" "$SP_WORK/lines" | sort -n > "$SP_WORK/selected"
+    finish_plan "changed-sections plan"
+    local wsec paths unm
+    wsec=$(awk 'FNR == NR { sel[$1] = 1; next } ($2 in sel) { t += $1 } END { printf "%.0f", t / 100 }' \
+        "$SP_WORK/selected" "$SP_WORK/weights")
+    paths=$(grep -c . "$SP_WORK/paths"); unm=$(grep -c . "$SP_WORK/unmatched"); rt=$(grep -c . "$SP_WORK/runtime")
+    while read -r p; do [ -z "$p" ] || note "  unmatched: $p (no section names it; a dir glob may still run it, CI checks it)"; done < "$SP_WORK/unmatched"
+    while read -r p; do [ -z "$p" ] || note "  runtime: $p (every section exercises it; only CI's full suite covers it)"; done < "$SP_WORK/runtime"
+    # The same paths close the PLAN line, which the runner prints LAST, so the
+    # report sits where the contributor reads the verdict.
+    local notlocal
+    notlocal=$(cat "$SP_WORK/unmatched" "$SP_WORK/runtime" | grep . | awk '!seen[$0]++' | tr '\n' ' ' | sed 's/ $//')
+    while read -r p; do [ -z "$p" ] || note "  sourced: $p (the runner preamble sources it: the whole suite runs)"; done < "$SP_WORK/sourced"
+    [ -n "$SP_CHANGED_FULL" ] || note "  selected: $(cut -f4 "$SP_WORK/expected" | grep -o '^[[][^]]*[]]' | tr '\n' ' ')"
+    # The weights are CI ASan wall seconds, not a local prediction ([81u] is
+    # 122s there, under 1s here), so the field says what it is.
+    echo "PLAN: changed=$base paths=$paths unmatched=$unm runtime=$rt full=${SP_CHANGED_FULL:-no} bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS ci_asan_weight=${wsec}s${notlocal:+ not-run-locally: $notlocal}"
+}
+
+# Named-sections plan (#1139): the chunks whose headers carry the given labels
+# (`44 45a 45b` selects the chunk printing [44/47], [45a/47], [45b/47]), widened
+# to their dependency groups. For a lane that runs one slice of the suite under
+# a build no other lane has (tsan-http). A label no chunk carries dies: a typo
+# must not become a lane that measures nothing.
+build_sections_plan() {
+    local want="$1" l
+    [ -n "$want" ] || die "sections plan needs at least one section label"
+    SP_WORK=$(sp_workdir sections)
+    derive_chunks "$RUNNER" > "$SP_WORK/chunks"
+    verify_partition "$RUNNER" "$SP_WORK/chunks"
+    check_chunk_count "$SP_WORK/chunks"
+    check_header_shape "$SP_WORK/chunks" "$SP_WORK/headers" || die "section header shape refused"
+    derive_chunk_groups "$SP_WORK/chunks" "$SP_WORK/groups"
+    for l in $want; do
+        case "$l" in *[!A-Za-z0-9]*) die "section label '$l' is malformed (want e.g. 44 or 45a)" ;; esac
+        awk -v l="$l" '{ for (i = 3; i <= NF; i++) if ($i == "[" l "]" || index($i, "[" l "/") == 1) { f = 1; exit } }
+            END { exit !f }' "$SP_WORK/chunks" || die "no chunk carries section [$l]"
+    done
+    awk -v want=" $want " '
+        FILENAME == ARGV[1] { n++; cs[n] = $1; hit_i = 0
+            for (i = 3; i <= NF; i++) { id = $i; sub(/^\[/, "", id); sub(/[\]\/].*$/, "", id)
+                if (index(want, " " id " ")) hit_i = 1 }
+            if (hit_i) direct[$1] = 1; next }
+        FILENAME == ARGV[2] { lead[$1] = $2; next }
+        END {
+            for (i = 1; i <= n; i++) if (cs[i] in direct) hit[lead[cs[i]]] = 1
+            for (i = 1; i <= n; i++) if (lead[cs[i]] in hit) print cs[i]
+        }' "$SP_WORK/chunks" "$SP_WORK/groups" /dev/null | sort -n > "$SP_WORK/selected"
+    finish_plan "sections plan"
+    note "  selected: $(cut -f4 "$SP_WORK/expected" | grep -o '^[[][^]]*[]]' | tr '\n' ' ')"
+    echo "PLAN: sections=$(printf '%s' "$want" | tr ' ' ',') bearing=$SP_SEL_BEARING chunks=$SP_SEL_CHUNKS"
+}
+
+emit_plan() {   # emit_plan <out> <plan builder> <args...>
+    local out="$1" planline; shift
+    # #1379: OUT is a scratch file. Passing the runner here once overwrote
+    # tests/run_all_tests.sh with a plan. OUT may be absent, empty (the mktemp
+    # suite_plan.sh hands in) or an earlier plan (line 2 is our GENERATED
+    # header); any other existing file is someone's, with or without git.
+    [ ! "$out" -ef "$RUNNER_SOURCE" ] ||   # -ef: same file through symlinks and hard links; no GNU realpath -m
+        die "refusing to write the plan over the runner it reads: $out"
+    [ ! -s "$out" ] || sed -n 2p -- "$out" | grep -q '^# GENERATED by tools/section_plan.sh; ' ||
+        die "refusing to write the plan over an existing file that is not a plan: $out"
+    "$@" > "$SP_TMPROOT/plan.line"
+    planline=$(cat "$SP_TMPROOT/plan.line")
+    {
+        echo '#!/bin/bash'
+        echo "# GENERATED by tools/section_plan.sh; $planline"
+        echo 'EIGS_PLAN_ACTIVE=1; export EIGS_PLAN_ACTIVE'
+        printf "EIGS_PLAN_TESTS_DIR='%s/tests'; export EIGS_PLAN_TESTS_DIR\n" "$SP_ROOT"
+        echo 'EIGS_SECTION_TIME=1; export EIGS_SECTION_TIME'
+        cat "$SP_WORK/expected"
+        sed -n "1,${SP_PREAMBLE_END}p" "$RUNNER"
+        local s e
+        while read -r s; do
+            [ -n "$s" ] || continue
+            e=$(awk -v ss="$s" '$1==ss {print $2}' "$SP_WORK/chunks")
+            echo '__eigs_chunk_status=$?'
+            printf "builtin echo '@@EIGS-CHUNK %s@@'\n" "$s" # SENTINEL_EMIT
+            echo '(exit "$__eigs_chunk_status")'
+            sed -n "${s},${e}p" "$RUNNER"
+        done < "$SP_WORK/selected"
+        sed -n "${SP_EPILOGUE_START},\$p" "$RUNNER"
+    } > "$out"
+    bash -n "$out" || die "emitted runner is not syntactically valid: $out"
+    echo "$planline"
+}
+
+# Emit the repository-relative transitive closure of quoted source directives.
+# Support files anchor these paths in a directory variable; the suffix after
+# that variable is relative to the file containing the source. Dynamic sources
+# without a slash cannot name a static member of this closure.
+runner_source_closure() { # <runner source> <output>
+    local runner_source="$1" output="$2" queue="$SP_TMPROOT/source-queue.$$" seen="$SP_TMPROOT/source-seen.$$"
+    local n=1 current expression suffix absolute relative root
+    : > "$output"; : > "$seen"; printf '%s\n' "$runner_source" > "$queue"
+    while current=$(sed -n "${n}p" "$queue") && [ -n "$current" ]; do
+        n=$((n + 1))
+        [ "$current" = "$runner_source" ] && root=1 || root=0
+        awk -v root="$root" '
+            root && /^PASS=0$/ { exit }
+            /^[[:space:]]*(\.|source)[[:space:]]/ {
+                if (match($0, /"\$\{?[A-Za-z_][A-Za-z0-9_]*\}?\/[^"]+"/))
+                    print substr($0, RSTART + 1, RLENGTH - 2)
+            }
+        ' "$current" | while IFS= read -r expression; do
+            suffix=${expression#*/}
+            absolute=$(cd "$(dirname "$current")/$(dirname "$suffix")" 2>/dev/null && pwd)/$(basename "$suffix")
+            [ -f "$absolute" ] || die "statically sourced support file is missing: $expression in $current"
+            case "$absolute" in "$SP_ROOT"/*) relative=${absolute#"$SP_ROOT"/} ;; *) continue ;; esac
+            if ! grep -qxF "$relative" "$seen"; then
+                printf '%s\n' "$relative" >> "$seen"
+                printf '%s\n' "$absolute" >> "$queue"
+                printf '%s\n' "$relative" >> "$output"
+            fi
+        done
+    done
+    rm -f "$queue" "$seen"
+    sort -u "$output" -o "$output"
+}
+
+# Copy the same derived closure used by changed-plan whole-suite selection.
+copy_runner_support_files() { # <runner source> <scratch tests dir>
+    local runner_source="$1" scratch_tests="$2" scratch_root rel src dst files="$SP_TMPROOT/copy-closure.$$"
+    scratch_root=$(dirname "$scratch_tests")
+    runner_source_closure "$runner_source" "$files"
+    [ -s "$files" ] || die "no statically sourced support files found in $runner_source"
+    while IFS= read -r rel; do
+        [ -n "$rel" ] || continue
+        src="$SP_ROOT/$rel"
+        dst="$scratch_root/$rel"
+        [ -f "$src" ] || die "runner-sourced support file was not copied because its source is missing: $rel"
+        mkdir -p "$(dirname "$dst")" || die "cannot create scratch directory for runner-sourced file: $rel"
+        cp "$src" "$dst" || die "could not copy runner-sourced support file: $rel"
+        [ -f "$dst" ] || die "runner-sourced support file was not copied: $rel"
+    done < "$files"
+    rm -f "$files"
+}
+
+# Calibration: every planted fault invokes the public arm it must turn red.
+selftest() {
+    local dir out pass=0 fail=0 rc label want
+    dir=$(sp_workdir selftest)
+    expect_ok() {
+        label="$1"; shift
+        if out=$("$@" 2>&1); then
+            echo "  PASS: $label"; pass=$((pass + 1))
+        else
+            rc=$?; echo "  FAIL: $label (rc=$rc)"; printf '%s\n' "$out" | tail -8; fail=$((fail + 1))
+        fi
+    }
+    expect_red() {
+        label="$1" want="$2"; shift 2
+        if out=$("$@" 2>&1); then
+            echo "  FAIL: $label (plant survived)"; fail=$((fail + 1))
+        else
+            case "$out" in
+                *"$want"*) echo "  PASS: $label"; pass=$((pass + 1)) ;;
+                *) echo "  FAIL: $label (wrong red)"; printf '%s\n' "$out" | tail -8; fail=$((fail + 1)) ;;
+            esac
+        fi
+    }
+    echo 'section_plan selftest: copied plants, public modes'
+    expect_ok 'control: chunk derivation and byte-exact partition' "$0" --root "$SP_ROOT" --chunks --quiet
+    cp "$RUNNER" "$dir/no_anchor.sh"
+    sed 's/^# Final guard (#681)/# Final guard/' "$dir/no_anchor.sh" > "$dir/t"; mv "$dir/t" "$dir/no_anchor.sh"
+    expect_red 'derive_chunks: missing epilogue anchor' 'epilogue anchor' "$0" --root "$SP_ROOT" --chunks --runner "$dir/no_anchor.sh" --quiet
+    awk '/^echo / && index($0, "[18/18] File I/O Builtins") { print "if true; then"; print "    " $0; print "fi"; next } { print }' \
+        "$RUNNER" > "$dir/conditional-header.sh"
+    expect_red 'check_header_shape: indented-only section header is refused' 'conditional-only section header in chunk start line' \
+        "$0" --root "$SP_ROOT" --runner "$dir/conditional-header.sh" --shards 3 --check --quiet
+    awk '/^echo / && index($0, "[18/18] File I/O Builtins") { print "if true; then"; print; print "fi"; next } { print }' "$RUNNER" > "$dir/column-zero-branch.sh"
+    expect_red 'check_header_shape: column-zero branch header is refused' 'conditional-only section header in chunk start line' "$0" --root "$SP_ROOT" --runner "$dir/column-zero-branch.sh" --shards 3 --check --quiet
+    awk '/^echo / && index($0, "[18/18] File I/O Builtins") { sub(/"$/, ""); print; print "wrapped\""; next } { print }' \
+        "$RUNNER" > "$dir/wrapped-header.sh"
+    expect_red 'check_header_shape: wrapped section header is refused' 'incomplete section header in chunk start line' \
+        "$0" --root "$SP_ROOT" --runner "$dir/wrapped-header.sh" --shards 3 --check --quiet
+    sed 's/^CHUNK_FLOOR=400$/CHUNK_FLOOR=999999/' "$0" > "$dir/bad-count.sh"
+    chmod +x "$dir/bad-count.sh"
+    expect_red 'check_chunk_count: vacuous chunk population falls below floor' 'chunk enumeration examined' \
+        "$dir/bad-count.sh" --root "$SP_ROOT" --chunks --quiet
+    expect_ok 'control: complete, disjoint shard assignment and count sync' "$0" --root "$SP_ROOT" --shards 3 --check --quiet
+    # The first split pair is [114]'s header and the line after it. Derive the
+    # line from the runner rather than pinning it: a fixed '@1749' turned this
+    # plant into a "wrong red" for every PR that added preamble lines (hq#58).
+    sp_114=$(grep -n '^echo "\[114\] ' "$RUNNER" | head -1 | cut -d: -f1)
+    [ -n "$sp_114" ] || { echo "  FAIL: section groups: [114] header not found in $RUNNER"; fail=$((fail + 1)); }
+    expect_red 'section groups: headerless body split from nearest header is refused' "count=213; [114] header @${sp_114:-none} body @$(( ${sp_114:-0} + 1 ))" \
+        env SP_SECTION_GROUP_MUTATE=split "$0" --root "$SP_ROOT" --shards 3 --check --quiet
+    expect_red 'shard_check: missing chunk makes union != full' 'union != full' \
+        env SP_SHARD_MUTATE=drop "$0" --root "$SP_ROOT" --shards 3 --check --quiet
+    expect_red 'shard_check: duplicate chunk makes shards OVERLAP' 'shards OVERLAP' \
+        env SP_SHARD_MUTATE=dup "$0" --root "$SP_ROOT" --shards 3 --check --quiet
+    sed 's/^  ASAN_SHARDS: 3$/  ASAN_SHARDS: 4/' "$CI_FILE" > "$dir/bad-ci.yml"
+    expect_red 'shard_count_sync: changed ASAN_SHARDS disagrees with matrix and /N' 'shard count disagrees' \
+        "$0" --root "$SP_ROOT" --ci-file "$dir/bad-ci.yml" --shards 3 --check --quiet
+    expect_ok 'control: skip audit examines emitters and routes above floors' "$0" --root "$SP_ROOT" --skip-audit
+    cp "$RUNNER" "$dir/bad-skip.sh"
+    echo 'echo "  SKIP: planted bare emitter"' >> "$dir/bad-skip.sh"
+    expect_red 'skip_audit: new bare SKIP emitter is unaccounted' 'SKIP-emitting line' \
+        "$0" --root "$SP_ROOT" --runner "$dir/bad-skip.sh" --skip-audit
+    sed 's/^SKIP_EMIT_FLOOR=10$/SKIP_EMIT_FLOOR=999999/' "$0" > "$dir/bad-skip-count.sh"
+    chmod +x "$dir/bad-skip-count.sh"
+    expect_red 'skip_audit: vacuous emitter scan falls below floor' 'skip emitter enumeration' \
+        "$dir/bad-skip-count.sh" --root "$SP_ROOT" --skip-audit
+    sed -E '/^[[:space:]]*section_skip[[:space:]]/ s/section_skip/section_skiP/' "$RUNNER" > "$dir/bad-route.sh"
+    expect_red 'skip_audit: vacuous route scan falls below floor' 'skip route enumeration' \
+        "$0" --root "$SP_ROOT" --runner "$dir/bad-route.sh" --skip-audit
+    expect_ok 'control: lightest shard has one owner' "$0" --root "$SP_ROOT" --shard-owner 3 --quiet
+    expect_ok 'control: [88] has one shard owner' "$0" --root "$SP_ROOT" --shard-owner 3 --section '[88]' --quiet
+    expect_red 'shard_owner: nonexistent section has no owner' 'no chunk carries section' \
+        "$0" --root "$SP_ROOT" --shard-owner 3 --section '[absent]' --quiet
+    expect_ok 'control: emit shard passes bash syntax check' "$0" --root "$SP_ROOT" --emit-shard 2 3 "$dir/shard.sh" --quiet
+    expect_ok 'control: sections plan selects the HTTP chunk and passes bash syntax check' \
+        "$0" --root "$SP_ROOT" --emit-sections '44 45a 45b' "$dir/sections.sh" --quiet
+    expect_red 'sections plan: a label no chunk carries is refused' 'no chunk carries section [zz9]' \
+        "$0" --root "$SP_ROOT" --sections '44 zz9' --quiet
+    expect_red 'sections plan: a malformed label is refused' 'is malformed' \
+        "$0" --root "$SP_ROOT" --sections '44/47' --quiet
+    [ -s "$dir/shard.sh" ] && bash -n "$dir/shard.sh" || { echo '  FAIL: emitted shard absent or invalid'; fail=$((fail + 1)); }
+    # Changed-sections plan (#1347): a throwaway clone, one uncommitted edit
+    # per selection rule, each read back from the plan's own report.
+    expect_plan() {
+        local plan_match
+        label="$1" want="$2"; shift 2
+        if out=$("$0" --root "$dir/cl" --changed HEAD 2>&1) &&
+           grep -q '^PLAN: changed=HEAD ' <<< "$out"; then
+            # Labels must come from a successful selection report. An error
+            # quoting the edited header is not evidence that its chunk ran.
+            case "$want" in
+                \[*) plan_match=$(sed -n '/^  selected: /p' <<< "$out") ;;
+                *) plan_match="$out" ;;
+            esac
+            case "$plan_match" in
+                *"$want"*) echo "  PASS: $label"; pass=$((pass + 1)) ;;
+                *) echo "  FAIL: $label (want '$want')"; printf '%s\n' "$out" | tail -4; fail=$((fail + 1)) ;;
+            esac
+        else
+            echo "  FAIL: $label (changed plan failed)"
+            printf '%s\n' "$out" | tail -4; fail=$((fail + 1))
+        fi
+        git -C "$dir/cl" checkout -q -- . && git -C "$dir/cl" clean -qfd
+    }
+    git clone -q --shared "$SP_ROOT" "$dir/cl" || { echo '  FAIL: clone for the changed plan'; fail=$((fail + 1)); }
+    expect_plan 'control: an empty diff selects the core floor alone' 'paths=0 unmatched=0 runtime=0 full=no '
+    printf '\n' >> "$dir/cl/tests/test_trace_mt.sh"
+    expect_plan 'changed: an edited test script selects its section' '[42h]'
+    sed -i.bak 's|^\(echo "\[18/18\] File I/O Builtins.*\)"$|\1 edited"|' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
+    expect_plan 'changed: a runner hunk selects the chunk it lands in' '[18/18]'
+    sed -i.bak 's/^\(echo "\[99p\] Child-script exit-status ledger.*\)"$/\1 edited"/' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
+    expect_plan 'changed: a runner hunk after the fragment seam keeps its expanded chunk' '[99p]'
+    sed -i.bak '1s/$/ /' "$dir/cl/tests/run_all_tests.sh"; rm -f "$dir/cl/tests/run_all_tests.sh.bak"
+    expect_plan 'changed: a preamble edit selects the whole suite' 'full=yes'
+    : > "$dir/cl/zz_named_by_nothing.txt"
+    expect_plan 'changed: an untracked file no section names is reported' 'unmatched: zz_named_by_nothing.txt'
+    printf '\n' >> "$dir/cl/tests/dict_keys_mt_single.eigs"
+    expect_plan 'changed: a program a script names by stem selects its section' '[42i]'
+    printf '\n' >> "$dir/cl/lib/math.eigs"
+    expect_plan 'changed: a lib module selects the sections of the tests that import it' '[Call Semantics]'
+    sed -i.bak '1s/^/# edited\n/' "$dir/cl/lib/ui_theme.eigs"; rm -f "$dir/cl/lib/ui_theme.eigs.bak"
+    expect_plan 'changed: a lib module loaded only through another module selects that importer'"'"'s tests' '[63]'
+    : > "$dir/cl/lib/zz_loaded_by_nothing.eigs"
+    expect_plan 'changed: a lib file nothing loads is reported, not masked by the lib/ glob' 'not-run-locally: lib/zz_loaded_by_nothing.eigs'
+    printf '\n' >> "$dir/cl/README.md"
+    expect_plan 'changed: a top-level file whose name recurs selects its section' '[89]'
+    sed -i.bak 's/^define log_info(msg) as:/define log_infox(msg) as:/' "$dir/cl/lib/log.eigs"; rm -f "$dir/cl/lib/log.eigs.bak"
+    expect_plan 'changed: a lib module imported inside a test string literal selects that section' '[107]'
+    printf '\n' >> "$dir/cl/lib/stats.eigs"
+    expect_plan 'changed: a lib module selects the doc-fence section whose docs import it' '[89]'
+    printf '\n' >> "$dir/cl/README.md"
+    expect_plan 'changed: a doc selects the section whose tools/ gate checks it' '[99za]'
+    printf '\n' >> "$dir/cl/src/lint.c"
+    expect_plan 'changed: a src/ file is always reported as runtime' 'runtime: src/lint.c'
+    printf '\n' >> "$dir/cl/tests/failure_output.sh"
+    expect_plan 'changed: a file the preamble sources selects the whole suite' 'full=yes'
+    printf '\n' >> "$dir/cl/tools/gfx_address_space.sh"
+    expect_plan 'changed: a transitively sourced file selects the whole suite' 'full=yes'
+    printf '\n' >> "$dir/cl/tests/test_spawn_channel_exit.eigs"
+    expect_plan 'changed: a program the runner names also selects the section whose script re-runs it' '[103a]'
+    printf '\n' >> "$dir/cl/examples/functional.eigs"
+    expect_plan 'changed: a file shares a name elsewhere; the section globbing its dir is selected' '[97]'
+    # Inert runner with the real dispatch/timer preamble. Every source header
+    # is top-level; a test-only echo override hides all but three at runtime.
+    local stub="$dir/stub" i
+    mkdir -p "$stub/tests" "$stub/tools" "$stub/src" "$stub/.github/workflows"
+    cp "$SP_ROOT/tools/section_plan.sh" "$SP_ROOT/tools/runner_text.sh" \
+       "$SP_ROOT/tools/tree_lock.sh" "$SP_ROOT/tools/werror_flags.txt" "$stub/tools/"
+    cp "$SP_ROOT/tests/section_weights.txt" "$stub/tests/"
+    copy_runner_support_files "$RUNNER_SOURCE" "$stub/tests"
+    cp "$CI_FILE" "$stub/.github/workflows/ci.yml"
+    printf '#!/bin/sh\nexit 0\n' > "$stub/src/eigenscript"
+    chmod +x "$stub/src/eigenscript"
+    awk '/^PASS=0$/{exit} {print}' "$RUNNER" > "$stub/tests/run_all_tests.sh"
+    awk '/^: "\$\{EIGS_SECTION_TIME:=1\}"/{copy=1} /^# Runaway guard/{copy=0} copy{print}' \
+        "$RUNNER" >> "$stub/tests/run_all_tests.sh"
+    cat >> "$stub/tests/run_all_tests.sh" <<'STUB_ECHO'
+echo() {
+    case "${1:-}" in
+        \[9*) if [ "${SP_HIDE_SECTIONS:-0}" = 1 ]; then
+                 case "$1" in '[9001]'*|'[9002]'*|'[9003]'*) ;; *) return 0 ;; esac
+             fi ;;
+    esac
+    builtin echo "$@"
+}
+STUB_ECHO
+    for i in $(seq 1 "$CHUNK_FLOOR"); do
+        printf '# [%s] Stub\necho "[%s] Stub"\n' \
+            "$((9000 + i))" "$((9000 + i))" >> "$stub/tests/run_all_tests.sh"
+    done
+    printf '# Final guard (#681)\n__eigs_section_close\nexit 0\n' >> "$stub/tests/run_all_tests.sh"
+    expect_ok 'control: ordered chunk sentinels and bearing headers appear' \
+        env EIGS_SUITE_SHARD=2/3 SP_HIDE_SECTIONS=0 bash "$stub/tests/run_all_tests.sh"
+    expect_red 'verify_shard_chunks: header-bearing chunk printed no header' 'header-bearing chunk at start line' \
+        env EIGS_SUITE_SHARD=2/3 SP_HIDE_SECTIONS=1 bash "$stub/tests/run_all_tests.sh"
+    awk '/# SENTINEL_EMIT$/ { print "            : # planted missing sentinel"; next } { print }' \
+        "$stub/tools/section_plan.sh" > "$stub/tools/t"
+    mv "$stub/tools/t" "$stub/tools/section_plan.sh"
+    expect_red 'verify_shard_chunks: missing chunk sentinel' 'chunk sentinel missing' \
+        env EIGS_SUITE_SHARD=2/3 SP_HIDE_SECTIONS=0 bash "$stub/tests/run_all_tests.sh"
+    echo 'SECTION_TIME: [only-one] 0.01' > "$dir/partial.log"
+    expect_red 'print_weights: partial log cannot refresh table' 'only 1 SECTION_TIME' \
+        "$0" --root "$SP_ROOT" --print-weights "$dir/partial.log"
+    printf '#!/bin/bash\necho no sections\n' > "$dir/nolabels.sh"
+    expect_red 'print_weights: zero-label runner is vacuous (#1312)' 'section labels (< 200)' \
+        "$0" --root "$SP_ROOT" --runner "$dir/nolabels.sh" --print-weights "$dir/partial.log"
+    for i in $(seq 1 60); do echo "SECTION_TIME: [fabricated-$i] 1"; done > "$dir/fabricated.log"
+    expect_red 'print_weights: labels the runner lacks do not count (#1312)' "only 0 of the runner's sections" \
+        "$0" --root "$SP_ROOT" --print-weights "$dir/fabricated.log"
+    # On a COPY, under ulimit -f: without the refusal the plan reads the file it
+    # is writing and grows without bound (154 GB took the box down, #1379).
+    cp "$RUNNER" "$dir/runner-copy.sh"
+    expect_red 'emit_plan: OUT may not be the runner (#1379)' 'over the runner it reads' \
+        bash -c 'ulimit -f 20000; exec "$@"' _ "$0" --root "$SP_ROOT" --runner "$dir/runner-copy.sh" --emit-changed HEAD "$dir/runner-copy.sh"
+    expect_ok 'control: a plan may be re-emitted over an earlier plan' "$0" --root "$SP_ROOT" --emit-sections '88' "$dir/shard.sh" --quiet
+    echo 'not a plan' > "$dir/notes.md"
+    expect_red 'emit_plan: OUT may not be an existing non-plan file, git or not (#1379)' 'not a plan' \
+        bash -c 'ulimit -f 20000; exec "$@"' _ "$0" --root "$SP_ROOT" --emit-sections '88' "$dir/notes.md"
+    echo "section_plan selftest: checks=$((pass + fail)) failures=$fail"
+    [ "$pass" -gt 0 ] && [ "$fail" -eq 0 ]
+}
+
+MODE='' ARG1='' ARG2='' ARG3='' SP_SHARDS='' SP_SHARD_K=''
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --root) SP_ROOT=$(cd "$2" && pwd); RUNNER="$SP_ROOT/tests/run_all_tests.sh"; CI_FILE="$SP_ROOT/.github/workflows/ci.yml"; shift 2 ;;
+        --runner) RUNNER="$2"; shift 2 ;;
+        --ci-file) CI_FILE="$2"; shift 2 ;;
+        --quiet) VERBOSE=0; shift ;;
+        --chunks|--skip-audit|--selftest|--header-regex) MODE="$1"; shift ;;
+        --shards) SP_SHARDS="$2"; shift 2 ;;
+        --shard) SP_SHARD_K="$2"; shift 2 ;;
+        --check) MODE='--shard-check'; shift ;;
+        --shard-owner|--print-weights) MODE="$1"; ARG1="$2"; shift 2 ;;
+        --section) ARG2="$2"; shift 2 ;;
+        --run) WEIGHTS_RUN="$2"; shift 2 ;;
+        --head) WEIGHTS_HEAD="$2"; shift 2 ;;
+        --weights-file) WEIGHTS_FILE="$2"; shift 2 ;;
+        --emit-shard) MODE="$1"; ARG1="$2"; ARG2="$3"; ARG3="$4"; shift 4 ;;
+        --changed) MODE="$1"; ARG1="$2"; shift 2 ;;
+        --emit-changed) MODE="$1"; ARG1="$2"; ARG2="$3"; shift 3 ;;
+        --sections) MODE="$1"; ARG1="$2"; shift 2 ;;
+        --emit-sections) MODE="$1"; ARG1="$2"; ARG2="$3"; shift 3 ;;
+        --print-waivers) SP_PRINT_WAIVERS=1; shift ;;
+        *) die "unknown argument '$1'" ;;
+    esac
+done
+[ -n "$MODE" ] || { [ -n "$SP_SHARDS" ] && [ -n "$SP_SHARD_K" ] && MODE='--shard-plan'; }
+[ -n "$MODE" ] || die 'no mode given (see header)'
+[ -f "$RUNNER" ] || die "runner not found: $RUNNER"
+RUNNER_SOURCE=$RUNNER
+RUNNER=$SP_TMPROOT/expanded-runner.sh
+bash "$SP_ROOT/tools/runner_text.sh" "$RUNNER_SOURCE" "$SP_ROOT/tests/sections" > "$RUNNER" || die "cannot expand section fragments"
+case "$MODE" in
+    --chunks)
+        W=$(sp_workdir chunks); derive_chunks "$RUNNER" > "$W/chunks"
+        verify_partition "$RUNNER" "$W/chunks"; check_chunk_count "$W/chunks"
+        [ "$VERBOSE" = 0 ] || cat "$W/chunks"
+        echo "CHUNKS: examined=$(grep -c '[0-9]' "$W/chunks") floor=$CHUNK_FLOOR partition=verified" ;;
+    --skip-audit)
+        W=$(sp_workdir audit); skip_audit "$RUNNER" "$W"
+        echo "SKIP AUDIT: emitters examined=$SP_SKIP_EMITS floor=$SKIP_EMIT_FLOOR; routes examined=$SP_SKIP_ROUTED floor=$SKIP_ROUTED_FLOOR; waivers=$SP_SKIP_WAIVERS_USED; unaccounted=0" ;;
+    --header-regex) printf '%s\n' "$SP_HEADER_TEXT_RE" ;;
+    --shard-check) [ -n "$SP_SHARDS" ] || die '--check needs --shards N'; shard_check "$SP_SHARDS" ;;
+    --shard-plan) build_shard_plan "$SP_SHARD_K" "$SP_SHARDS" ;;
+    --shard-owner) shard_owner "$ARG1" "$ARG2" ;;
+    --print-weights) print_weights "$ARG1" ;;
+    --emit-shard) emit_plan "$ARG3" build_shard_plan "$ARG1" "$ARG2" ;;
+    --changed) build_changed_plan "$ARG1" ;;
+    --emit-changed) emit_plan "$ARG2" build_changed_plan "$ARG1" ;;
+    --sections) build_sections_plan "$ARG1" ;;
+    --emit-sections) emit_plan "$ARG2" build_sections_plan "$ARG1" ;;
+    --selftest) selftest ;;
+esac

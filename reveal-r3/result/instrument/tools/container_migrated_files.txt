@@ -1,0 +1,16 @@
+# Whole-file migrations completed after the B0 API introduction.
+src/eigenscript.h
+src/eigenscript.c
+src/trace.c
+src/vm.c
+src/builtins.c
+src/builtins_tensor.c
+src/builtins_buf.c
+src/builtins_host.c
+src/ext_gfx.c
+src/ext_http.c
+src/ext_net.c
+src/ext_store.c
+src/ext_db.c
+src/eigs_embed.c
+src/lint_host.c

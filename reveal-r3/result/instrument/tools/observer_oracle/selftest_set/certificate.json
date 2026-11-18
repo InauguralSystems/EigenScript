@@ -1,0 +1,9 @@
+{
+ "sympy": "1.14.0",
+ "rows": {
+  "st_int64": {"hash": "fc213ca8e22a91281ce0876ae3cbe49fd6f0d942989d13e5ab961761c51d4562", "kind": "symbolic", "constant": false, "detail": "exact closed form of x <- 1 x + 1 on the fed values from x_0 = 9007199254740992: sympy.limit = oo"},
+  "st_base": {"hash": "923c273177fc334622581f63ab34c59cf2ffab29fbd0bacf77334f4dfb572e76", "kind": "symbolic", "constant": false, "detail": "exact closed form of x <- 0.9 x + 5.0 on the fed values from x_0 = 60.0: sympy.limit = 50.0000000000"},
+  "f15_st_base_x0.001": {"hash": "54a36922866740f66513af1af255dcaf0552a80f88f2fa6b502c219a9735701d", "kind": "symbolic", "constant": false, "detail": "exact closed form of x <- 0.9 x + 0.005 on the fed values from x_0 = 0.06: sympy.limit = 0.0500000000000"},
+  "f15_st_base_x1000": {"hash": "2fdea13e4d9e48043995c95ac4c2643aba01bebcb6daf1e5b62a0d571605ce23", "kind": "symbolic", "constant": false, "detail": "exact closed form of x <- 0.9 x + 5000.0 on the fed values from x_0 = 60000.0: sympy.limit = 50000.0000000"}
+ }
+}
