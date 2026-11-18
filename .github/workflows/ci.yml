@@ -1891,7 +1891,11 @@ jobs:
         env:
           TSAN_OPTIONS: halt_on_error=1
           # [45c] left out: its RSS gate deliberately skips sanitizer builds.
-          EIGS_SUITE_SECTIONS: 0f2 44 45 45a 45b 45f 45g 45h 45i 45j 99s
+          # [99s] left out: it does not run on this build. Selected here, it
+          # ended with "Program is run with limited virtual address space,
+          # which wouldn't work with ThreadSanitizer": its tool caps the
+          # address space of its gfx probe (#2425).
+          EIGS_SUITE_SECTIONS: 0f2 44 45 45a 45b 45f 45g 45h 45i 45j
         run: |
           set -o pipefail
           setarch -R bash tests/run_all_tests.sh 2>&1 | tee "$RUNNER_TEMP/tsan-http.log"
