@@ -794,6 +794,7 @@ file:
 | `deploy` (`pages.yml`) | advisory | runs only on push and `workflow_dispatch` — it publishes, it does not test |
 | `codspeed (simulation)` (`codspeed.yml`), and the CodSpeed app's `CodSpeed Performance Analysis` | advisory | path-filtered (`paths-ignore: '**.md'`), so it never reports on a docs-only PR; the instruction-count gate that blocks is `bench`. The lane's Value is modeled cycles, not instructions (runner pinned; `tools/codspeed_unit_guard.py` fails the job if that unit drifts; see INSTRUMENTS.md) |
 | `build` (`docker.yml`) | advisory | runs on push to `main`, `v*` tags and `workflow_dispatch`, never on a PR |
+| `valgrind cache (main)` (`valgrind-cache.yml`) | advisory | runs on push to `main`, daily and on `workflow_dispatch`, never on a PR: it installs Valgrind and saves the `.deb` cache on `main`, where the merge queue's `valgrind` and `bench` jobs can restore it, and fails when what it would save holds no Valgrind or no `libc6-dbg` archive (#2341) |
 | `Scorecard analysis` (`scorecard.yml`) | advisory | runs on push, schedule and `branch_protection_rule`, never on a PR; a posture score |
 | `Analyze (python)`, `Analyze (javascript-typescript)` | advisory | CodeQL *default setup* (a GitHub app, not a workflow file) over the repo's non-C code; the C analysis that blocks is `Analyze C` |
 | `issue-triage / …` (`issue-triage.yml`), `release.yml` jobs | advisory | not triggered by PRs or pushes to `main` |
