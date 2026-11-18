@@ -42,15 +42,16 @@
 # scalar residual/estimate you actually want to constrain.
 #
 # RESOLUTION FLOOR. Numeric report and report_value share the value channel.
-# Converged compares the diameter of ten steps' eleven finite values with
-# 1e-3*max(abs(current),1e-3); stable uses the 1% band about the midrange.
-# All-exact int64 windows use absolute settled tolerances and zero raw noise
-# floor. Incumbent raw tests still classify non-vanishing same-sign steps as
-# "diverging" and alternating steps as "oscillating". A damped (decaying-
-# step) oscillation still settles to "converged" — feed the residual if you
-# mean "never rings at all". Convergence is not correctness even when caught —
-# pair with `ensure` on the final residual to pin the actual target, not
-# merely the fact of settling.
+# Converged needs ten steps, each relative to the larger of the two values it
+# joins and of 1e-3, all under 1e-3; stable all under 1e-2 with no two steps
+# in a row of opposite sign both above 1e-3 (#2407). A step between two exact
+# int64 values is exact, and a window of such steps has a zero raw noise
+# floor. The raw tests classify non-vanishing same-sign steps as "diverging"
+# and alternating steps as "oscillating", and neither converged nor stable
+# holds for such a window. A damped (decaying-step) oscillation still
+# settles to "converged" — feed the residual if you mean "never rings at all".
+# Convergence is not correctness even when caught — pair with `ensure` on the
+# final residual to pin the actual target, not merely the fact of settling.
 
 # ---- _num_guard: refuse a non-scalar trajectory loudly ----
 # Internal. report_value is blind to non-numeric values, so an unguarded
@@ -90,7 +91,7 @@ define ensure(n) as:
 
 # ---- expect_converging of [x0, step_fn, max_obs, msg] ----
 # Drives step_fn from x0 and asserts the trajectory reaches the value channel's
-# "converged" verdict — a full ten-step window whose diameter fits its tolerance
+# "converged" verdict — a full ten-step window of relative steps under 1e-3
 # — within max_obs observations. Returns the converged value; throws, naming the
 # last regime, if the budget is spent without converging (a runaway stays
 # "diverging", an over-relaxed solver "oscillating", a crawler "stable").
