@@ -1005,6 +1005,12 @@ aliases), or `server-db` (`full` alias); `build.sh lsp` instead writes the
 minimal, graphics-disabled `src/eigenlsp`. Sanitizer and zlib profiles are
 Make targets, not `build.sh` options.
 
+The builds with the HTTP extension (`make server`, `make server-db`, their
+sanitizer profiles, and `./build.sh server` or `server-db`) compile llhttp, the
+HTTP/1.1 parser the server reads every request through, from
+`src/vendor/llhttp/`; its licence is `src/vendor/llhttp/LICENSE-MIT`. Nothing is
+loaded at run time, and the other builds do not compile it.
+
 The minimal binary is a single C program with no runtime dependencies.
 
 For toroidal simulations, `nearest_in_range_all` returns one nearest other

@@ -46,7 +46,11 @@ BINARY  := $(SRC_DIR)/eigenscript
 # --step tape-stepper, stdio+isatty, same footing).
 CLI_ONLY := $(SRC_DIR)/main.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c
 
-SERVER_SOURCES := $(HOSTED_SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c
+# llhttp v9.4.4, vendored unchanged (#2370): compiled in exactly the builds that
+# compile ext_http.c. Its objects get -Wno-unused-parameter (the generated
+# parser has unused callback parameters; those files are never edited).
+LLHTTP_SOURCES := $(SRC_DIR)/vendor/llhttp/llhttp.c $(SRC_DIR)/vendor/llhttp/api.c $(SRC_DIR)/vendor/llhttp/http.c
+SERVER_SOURCES := $(HOSTED_SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c $(LLHTTP_SOURCES)
 SERVER_DB_SOURCES := $(SERVER_SOURCES) $(SRC_DIR)/ext_db.c
 
 PREFIX  := $(HOME)/.local
@@ -216,6 +220,9 @@ VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valg
 # rebuilds; header edits are covered by the generated .d files.
 define VARIANT_RULES
 OBJ_$(1) := $$(patsubst $(SRC_DIR)/%.c,build/$(1)/%.o,$$(SRC_V_$(1)))
+build/$(1)/vendor/llhttp/%.o: $(SRC_DIR)/vendor/llhttp/%.c Makefile VERSION tools/werror_flags.txt | build/$(1)
+	@mkdir -p $$(@D)
+	$$(CC) $$(FLAGS_$(1)) -Wno-unused-parameter -MMD -MP -c $$< -o $$@
 build/$(1)/%.o: $(SRC_DIR)/%.c Makefile VERSION tools/werror_flags.txt | build/$(1)
 	$$(CC) $$(FLAGS_$(1)) -MMD -MP -c $$< -o $$@
 build/$(1)/eigenscript: $$(OBJ_$(1))

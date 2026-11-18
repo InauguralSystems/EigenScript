@@ -1,0 +1,110 @@
+# The 109 named rows of EigenScript#2370, copied from the issue: row, the decision, the bytes (a Python bytes literal), the description.
+A1	400	b'GET /v HTTP/1.1\r\nHost: h\r\nno colon here\r\n\r\n'	a line with no colon
+A2	400	b'GET /v HTTP/1.1\r\nHost: h\r\nX-A : 1\r\n\r\n'	a space between a name and its colon
+A3	400	b'GET /v HTTP/1.1\r\nHost: h\r\nX-A\t: 1\r\n\r\n'	a tab between a name and its colon
+A4	400	b'GET /v HTTP/1.1\r\nHost: h\r\nX-\xe9: 1\r\n\r\n'	a byte above 0x7E in a name
+A5	400	b'GET /v HTTP/1.1\r\nHost: h\r\nX-A: 1\r\n folded\r\n\r\n'	a line that begins with a space, after a field
+A6	400	b'GET /v HTTP/1.1\r\nHost: h\r\nX-A: 1\r\n\tfolded\r\n\r\n'	a line that begins with a tab, after a field
+A7	400	b'GET /v HTTP/1.1\r\nHost: h\r\nX-A: 1\nX-B: 2\r\n\r\n'	a lone LF inside a value
+A8	400	b'GET /v HTTP/1.1\r\nHost: h\r\nX-A: 1\rX-B: 2\r\n\r\n'	a lone CR inside a value
+A9	400	b'GET /v HTTP/1.1\r\nHost: h\r\nX-A: 1\x002\r\n\r\n'	a NUL in a value
+A10	400	b'GET /v HTTP/1.1\r\nHost: h\r\nX\x00A: 1\r\n\r\n'	a NUL in a name
+A11	400	b'GET /v HTTP/1.1\r\nHost: h\r\nX-A: a\x7fb\r\n\r\n'	0x7F in a value
+A12	400	b'GET /v HTTP/1.1\r\nHost: h\r\nX-A: a\x01b\r\n\r\n'	0x01 in a value
+A13	400	b'GET /v HTTP/1.1\r\nHost: h\r\n: 1\r\n\r\n'	a field with an empty name
+A14	400	b'GET /v HTTP/1.1\nHost: h\nX-A: 1\n\n'	LF alone at the end of every line
+A15	400	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: 9\r\n\nBODYBYTES'	CR LF lines and a bare LF as the empty line, then a body
+A16	400	b'POST /v HTTP/1.1\nX-In-Head: h\nCookie: from-the-head=1\nContent-Length: 27\n\r\nCookie: from-the-body=1\r\n\r\n'	bare LF lines, CR LF as the empty line, and CR LF CR LF at the end of the body
+A17	400	b'GET /v HTTP/1.1\r\nCookie: sid=1\nX-A: 1\n\r\n\r\n'	a CR LF request line, bare LF field lines, then CR LF CR LF
+A18	400	b'GET /v HTTP/1.1\r\nHost: h\r\nX-A: 1\r\n'	no empty line, and the client stops
+A19	served	b'GET /v HTTP/1.1\r\nHost: h\r\nX-A: caf\xc3\xa9\r\n\r\n'	bytes above 0x7F in a value
+A20	served	b'GET /v HTTP/1.1\r\nHost: h\r\nX-A:\r\n\r\n'	a field with an empty value
+A21	served	b'GET /v HTTP/1.1\r\nHost: h\r\nX-A:    \r\n\r\n'	a value of spaces only
+A22	served	b'GET /v HTTP/1.1\r\nHost: h\r\nX-A: a\tb\r\n\r\n'	a tab inside a value
+A23	served	b'GET /v HTTP/1.1\r\nHost: h\r\nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX: 1\r\n\r\n'	a name of 65 token bytes
+A24	400	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\n\rBODY'	a lone CR as the empty line, then a body
+B1	400	b'FROB /v HTTP/1.1\r\nHost: h\r\n\r\n'	a method the parser does not know
+B2	400	b'get /v HTTP/1.1\r\nHost: h\r\n\r\n'	the method in lower case
+B3	400	b'GET\t/v HTTP/1.1\r\nHost: h\r\n\r\n'	a tab after the method
+B4	served	b'GET  /v HTTP/1.1\r\nHost: h\r\n\r\n'	two spaces after the method
+B5	served	b'GET /v  HTTP/1.1\r\nHost: h\r\n\r\n'	two spaces before the version
+B6	400	b'GET /v HTTP/1.1 \r\nHost: h\r\n\r\n'	a space after the version
+B7	400	b'GET /v HTTP/1.2\r\nHost: h\r\n\r\n'	HTTP/1.2
+B8	400	b'GET /v HTTP/3.0\r\nHost: h\r\n\r\n'	HTTP/3.0
+B9	505	b'GET /v HTTP/2.0\r\nHost: h\r\n\r\n'	HTTP/2.0
+B10	505	b'GET /v HTTP/0.9\r\nHost: h\r\n\r\n'	HTTP/0.9
+B11	505	b'GET /v\r\n\r\n'	no version on the request line
+B12	400	b'GET /v http/1.1\r\nHost: h\r\n\r\n'	the version's name in lower case
+B13	400	b'GET /v RTSP/1.0\r\nHost: h\r\n\r\n'	RTSP/1.0 in the version's place
+B14	505	b'PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n'	the opening bytes of HTTP/2
+B15	400	b'GET /a b HTTP/1.1\r\nHost: h\r\n\r\n'	a space in the target
+B16	400	b'GET /a\tb HTTP/1.1\r\nHost: h\r\n\r\n'	a tab in the target
+B17	400	b'GET /a\x00b HTTP/1.1\r\nHost: h\r\n\r\n'	a NUL in the target
+B18	400	b'GET /caf\xc3\xa9 HTTP/1.1\r\nHost: h\r\n\r\n'	a byte above 0x7F in the target
+B19	400	b'GET v HTTP/1.1\r\nHost: h\r\n\r\n'	a target with no slash at its start
+B20	served	b'GET http://h/v HTTP/1.1\r\nHost: h\r\n\r\n'	a whole URL as the target
+B21	served (method OPTIONS)	b'OPTIONS * HTTP/1.1\r\nHost: h\r\n\r\n'	the target *
+B22	served: the head starts 2 bytes in	b'\r\nGET /v HTTP/1.1\r\nHost: h\r\n\r\n'	one CR LF before the request line
+B23	served: the head starts 6 bytes in	b'\r\n\r\n\r\nGET /v HTTP/1.1\r\nHost: h\r\n\r\n'	three CR LF before the request line
+B24	served: the head starts 1 bytes in	b'\nGET /v HTTP/1.1\r\nHost: h\r\n\r\n'	one bare LF before the request line
+B25	served: the head starts 1 bytes in	b'\rGET /v HTTP/1.1\r\nHost: h\r\n\r\n'	one bare CR before the request line
+B26	400	b' GET /v HTTP/1.1\r\nHost: h\r\n\r\n'	a space before the request line
+B27	served	b'GET /v HTTP/1.0\r\n\r\n'	HTTP/1.0 with no Host
+B28	400	b'GET /v HTTP/1.1\rHost: h\r\n\r\n'	a lone CR as the end of the request line
+B29	400	b'GET /v HTTP/2.0\r\nHost: h\r\nTransfer-Encoding: gzip\r\n\r\n'	HTTP/2.0 with Transfer-Encoding: gzip
+B30	505	b'POST /v HTTP/2.0\r\nHost: h\r\nTransfer-Encoding: gzip, chunked\r\n\r\n4\r\nBODY\r\n0\r\n\r\n'	HTTP/2.0 with Transfer-Encoding: gzip, chunked
+B31	served: a body of 4 bytes	b'POST /v HTTP/1.0\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nBODY\r\n0\r\n\r\n'	HTTP/1.0 with a chunked body
+C1	400	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\nContent-Length: 4\r\n\r\nBODY'	two Content-Length lines that agree
+C2	400	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\nContent-Length: 5\r\n\r\nBODYX'	two Content-Length lines that differ
+C3	400	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: +4\r\n\r\nBODY'	Content-Length: +4
+C4	400	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: 4, 4\r\n\r\nBODY'	Content-Length: 4, 4
+C5	400	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length:\r\n\r\n'	Content-Length with no value
+C6	400	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: 0x4\r\n\r\nBODY'	Content-Length: 0x4
+C7	400	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: -1\r\n\r\n'	Content-Length: -1
+C8	400	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: 99999999999999999999\r\n\r\n'	Content-Length: 99999999999999999999
+C9	served: a body of 4 bytes	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: 04\r\n\r\nBODY'	Content-Length: 04
+C10	served: a body of 4 bytes	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length:   4  \r\n\r\nBODY'	Content-Length with spaces around the number
+C11	served: a body of 9 bytes	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nBODY\r\n5\r\nBYTES\r\n0\r\n\r\n'	a chunked body, two chunks
+C12	served: a body of 4 bytes	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: Chunked\r\n\r\n4\r\nBODY\r\n0\r\n\r\n'	Transfer-Encoding: Chunked, with a capital
+C13	400	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nBODY\r\n0\r\n\r\n'	Content-Length, then Transfer-Encoding: chunked
+C14	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\nContent-Length: 4\r\n\r\n4\r\nBODY\r\n0\r\n\r\n'	Transfer-Encoding: chunked, then Content-Length
+C15	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: gzip\r\n\r\nxxxx'	Transfer-Encoding: gzip
+C16	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: identity\r\n\r\nBODY'	Transfer-Encoding: identity
+C17	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked, gzip\r\n\r\n4\r\nBODY\r\n0\r\n\r\n'	Transfer-Encoding: chunked, gzip
+C18	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nBODY\r\n0\r\n\r\n'	two Transfer-Encoding: chunked lines
+C19	501	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: gzip, chunked\r\n\r\n4\r\nBODY\r\n0\r\n\r\n'	Transfer-Encoding: gzip, chunked
+C20	served: a body of 10 bytes	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\nA\r\n0123456789\r\n0\r\n\r\n'	a chunk size in upper-case hex
+C21	served: a body of 4 bytes	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4;ext=1\r\nBODY\r\n0\r\n\r\n'	a chunk with an extension
+C22	served: a body of 4 bytes	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nBODY\r\n0\r\nX-A: 2\r\n\r\n'	a trailer field `X-A` after the last chunk
+C23	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\nG\r\nBODY\r\n0\r\n\r\n'	a chunk size that is not hex
+C24	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4 \r\nBODY\r\n0\r\n\r\n'	a space after a chunk size
+C25	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nBODYX\r\n0\r\n\r\n'	chunk data longer than its size
+C26	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4\nBODY\r\n0\r\n\r\n'	a bare LF after a chunk size
+C27	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n10000000000000000\r\nBODY\r\n0\r\n\r\n'	a chunk size of seventeen hex digits
+C28	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nBODY\r\n'	a chunked body with no last chunk, and the client stops
+C29	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nBODY\r\n0\r\n'	a chunked body with no CR LF after the last chunk, and the client stops
+C30	400	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: 9\r\n\r\nBODY'	a body shorter than its Content-Length, and the client stops
+C31	served: a body of 4 bytes	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\n\r\nBODYEXTRA'	a body longer than its Content-Length
+C32	served: a body of 4 bytes	b'GET /v HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\n\r\nBODY'	a GET with a Content-Length and a body
+C33	served	b'GET /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n'	a chunked body on a GET, empty
+C34	served	b'GET /v HTTP/1.1\r\nHost: h\r\nX-A: first\r\n\r\nGET /v HTTP/1.1\r\nHost: h\r\nX-A: second\r\n\r\n'	two requests in one write
+C35	served	b'GET /v HTTP/1.1\r\nHost: h\r\nConnection: upgrade\r\nUpgrade: websocket\r\n\r\n'	Connection: upgrade with Upgrade: websocket
+C36	served (method CONNECT)	b'CONNECT h:443 HTTP/1.1\r\nHost: h:443\r\n\r\n'	CONNECT
+C37	served: a body of 4 bytes	b'POST /v HTTP/1.1\r\nHost: h\r\nExpect: 100-continue\r\nContent-Length: 4\r\n\r\nBODY'	Expect: 100-continue with a body
+C38	no answer	b''	nothing sent, and the client stops
+C39	400	b'\r\n'	only CR LF sent, and the client stops
+C40	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4\rBODY\r\n0\r\n\r\n'	a lone CR after a chunk size
+C41	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nBODY5\r\nBYTES\r\n0\r\n\r\n'	no CR LF between a chunk's data and the next chunk's size
+C42	501	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: gzip\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nBODY\r\n0\r\n\r\n'	a Transfer-Encoding: gzip line, then a Transfer-Encoding: chunked line
+C43	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: gzip\r\n\r\n4\r\nBODY\r\n0\r\n\r\n'	a Transfer-Encoding: chunked line, then a Transfer-Encoding: gzip line
+C44	501	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: , chunked\r\n\r\n4\r\nBODY\r\n0\r\n\r\n'	Transfer-Encoding: , chunked
+C45	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked;q=1\r\n\r\n4\r\nBODY\r\n0\r\n\r\n'	Transfer-Encoding: chunked;q=1
+C46	served (method CONNECT)	b'CONNECT h:443 HTTP/1.1\r\nHost: h:443\r\nContent-Length: 4\r\n\r\nBODY'	CONNECT with Content-Length: 4 and four bytes
+C47	served: a body of 4 bytes	b'POST /v HTTP/1.1\r\nHost: h\r\nConnection: upgrade\r\nUpgrade: x\r\nContent-Length: 4\r\n\r\nBODY'	a POST with Connection: upgrade, Upgrade: x and a Content-Length body
+C48	413	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nBODY\r\nFFFFFFFFFFFFFFFF\r\n'	a chunk of 4 bytes, then a chunk size of sixteen F
+C49	served: a body of 4 bytes	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n00000000000000004\r\nBODY\r\n0\r\n\r\n'	a chunk size of seventeen hex digits that begins with zeros
+C50	served: a body of 4 bytes	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4;a="b c"\r\nBODY\r\n0\r\n\r\n'	a chunk extension with a quoted value
+C51	served: a body of 4 bytes	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nBODY\r\n0\r\nX-A: 2\r\nCookie: t=1\r\n\r\n'	two trailer fields, `X-A` and `Cookie`
+C52	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nBODY\r\n0\r\nno colon here\r\n\r\n'	a trailer line with no colon
+C53	413	b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: 18446744073709551615\r\n\r\n'	Content-Length: 18446744073709551615
+C54	400	b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nBODY\r\n0\r\nContent-Length: 4\r\n\r\n'	a Content-Length field among the trailer fields
