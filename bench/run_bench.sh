@@ -3,9 +3,9 @@
 # median and its min..max sample spread in microseconds; these environment-
 # dependent measurements are not published performance figures. A sample runs from
 # one clock_us call to the next. Each call starts a perl process, and the start of
-# the second one is inside the sample. When the two readings of a sample cannot
-# be compared as whole numbers, or the second is before the first, the run ends
-# with an error that names the clock. The non-flaky REGRESSION GATE is
+# the second one is inside the sample. When a reading is not a whole number
+# above zero, or the second reading of a sample is not after the first, the run
+# ends with an error that names the clock. The non-flaky REGRESSION GATE is
 # a separate, deterministic metric: bench/check_regression.sh (cachegrind
 # instruction counts). Workloads with nondeterministic input would be pinned
 # under EIGS_TRACE for input-determinism; these are pure-compute, so none is.
@@ -26,7 +26,7 @@ for f in "$DIR"/*.eigs; do
         "$EIGS" "$f" >/dev/null 2>&1
         rc=$?
         t1=$(clock_us)
-        if ! [ "$t1" -ge "$t0" ] 2>/dev/null; then
+        if ! [ "$t0" -gt 0 ] 2>/dev/null || ! [ "$t1" -gt "$t0" ] 2>/dev/null; then
             printf 'ERROR: the clock (perl with Time::HiRes) gave no usable reading around workload %s, timed invocation %s: before "%s", after "%s"\n' "$name" "$r" "$t0" "$t1" >&2
             exit 3
         fi

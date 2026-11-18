@@ -63,11 +63,13 @@ if grep -q '^scalar_loop ' "$SCRATCH/later.out"; then
     exit 1
 fi
 
-# The clock is a perl process. Two stand-ins for perl, first on PATH: one that
-# prints nothing and fails (perl without Time::HiRes behaves so), and one whose
-# every reading is smaller than the one before. Each must end the run with an
-# error that names the clock, and no row.
-mkdir "$SCRATCH/noclock" "$SCRATCH/backclock"
+# The clock is a perl process. Four stand-ins for perl, first on PATH: one that
+# prints nothing and fails (perl without Time::HiRes behaves so), one whose
+# every reading is smaller than the one before, one whose readings rise but
+# are below zero, and one that always reads the same. Each must end the run
+# with an error that names the clock, and no row.
+mkdir "$SCRATCH/noclock" "$SCRATCH/backclock" "$SCRATCH/negclock" "$SCRATCH/stuckclock"
+printf '#!/bin/bash\necho 7\n' >"$SCRATCH/stuckclock/perl"
 printf '#!/bin/bash\nexit 2\n' >"$SCRATCH/noclock/perl"
 cat >"$SCRATCH/backclock/perl" <<STANDIN
 #!/bin/bash
@@ -76,8 +78,15 @@ n=\$((n - 1000))
 echo "\$n" >"$SCRATCH/ticks"
 echo "\$n"
 STANDIN
-chmod +x "$SCRATCH/noclock/perl" "$SCRATCH/backclock/perl"
-for clock in noclock backclock; do
+cat >"$SCRATCH/negclock/perl" <<STANDIN
+#!/bin/bash
+n=\$(cat "$SCRATCH/negticks" 2>/dev/null || echo -1000000)
+n=\$((n + 1000))
+echo "\$n" >"$SCRATCH/negticks"
+echo "\$n"
+STANDIN
+chmod +x "$SCRATCH/noclock/perl" "$SCRATCH/backclock/perl" "$SCRATCH/negclock/perl" "$SCRATCH/stuckclock/perl"
+for clock in noclock backclock negclock stuckclock; do
     PATH="$SCRATCH/$clock:$PATH" EIGENSCRIPT="$BINARY" bash "$SCRATCH/run_bench.sh" >"$SCRATCH/$clock.out" 2>&1
     rc=$?
     if [ "$rc" -ne 3 ] || ! grep -q '^ERROR: the clock ' "$SCRATCH/$clock.out"; then
@@ -91,4 +100,4 @@ for clock in noclock backclock; do
         exit 1
     fi
 done
-echo "SELFTEST OK: clean control passed; a throwing workload, a failure on the third invocation and two unusable clocks were each named, rejected, and received no median"
+echo "SELFTEST OK: clean control passed; a throwing workload, a failure on the third invocation and four unusable clocks were each named, rejected, and received no median"
