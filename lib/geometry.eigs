@@ -667,7 +667,12 @@ define circle_intersection_points(c1x, c1y, c1r, c2x, c2y, c2r) as:
     if d + _EPS < diff:
         return []
     a is (c1r * c1r - c2r * c2r + d * d) / (2 * d)
-    h_sq is c1r * c1r - a * a
+    if c2r < c1r:
+        # Compute the offset from circle 2 directly; d - a would cancel.
+        b is ((d - c1r) * (d + c1r) + c2r * c2r) / (2 * d)
+        h_sq is c2r * c2r - b * b
+    else:
+        h_sq is c1r * c1r - a * a
     if h_sq < 0:
         h_sq is 0
     h is sqrt of h_sq

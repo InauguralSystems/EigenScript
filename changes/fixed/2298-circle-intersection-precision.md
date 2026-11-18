@@ -1,0 +1,1 @@
+- `circle_intersection_points` now keeps intersection points accurate when circle radii differ greatly (#2298).
