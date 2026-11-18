@@ -24,14 +24,14 @@ elif grep -Eq 'undefined variable|capability unavailable' <<< "$DOOR_OUT"; then
 else
     TOTAL=$((TOTAL + 1))
     DOOR_TEST=$(python3 "$TESTS_DIR/test_http_door.py" 2>&1); DOOR_TEST_RC=$?
-    # D08 (peak resident size) and D12 (time limits) are judged on the
-    # make http build; a sanitizer build, or one with no procfs for D08,
-    # counts them as skipped.
-    DOOR_WANT='HTTP_DOOR: 13 passed, 0 failed, 0 skipped'
+    # D08 (peak resident size), D12 (time limits) and D15 (the budget) are
+    # judged on the make http build; a sanitizer build, or one with no procfs
+    # for D08, counts them as skipped.
+    DOOR_WANT='HTTP_DOOR: 14 passed, 0 failed, 0 skipped'
     if grep -qaE '__asan_init|__tsan_init' ./eigenscript; then
-        DOOR_WANT='HTTP_DOOR: 11 passed, 0 failed, 2 skipped'
+        DOOR_WANT='HTTP_DOOR: 11 passed, 0 failed, 3 skipped'
     elif [ ! -r /proc/self/status ]; then
-        DOOR_WANT='HTTP_DOOR: 12 passed, 0 failed, 1 skipped'
+        DOOR_WANT='HTTP_DOOR: 13 passed, 0 failed, 1 skipped'
     fi
     if rc_ok "$DOOR_TEST_RC" "$DOOR_TEST" && grep -qxF "$DOOR_WANT" <<< "$DOOR_TEST" &&
        [ "$DOOR_LLHTTP" -gt 0 ]; then

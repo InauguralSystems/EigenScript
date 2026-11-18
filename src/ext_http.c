@@ -2378,12 +2378,20 @@ typedef struct {
     int client_stopped;             /* the client closed its side (cause 9) */
 } Door;
 
-/* Grow one held buffer to fit `more` bytes, charging the growth to the
- * budget for what all connections hold at once. */
-static int door_hold(Door *d, char **buf, size_t *len, size_t *room, const char *at, size_t more) {
-    if (*len + more + 1 > *room) {
+/* Grow one held room to fit `more` bytes, charging the growth to the budget
+ * for what all connections hold at once (#2370, "The budget"). A room starts
+ * at 1,024 bytes and doubles whenever the bytes held and one more byte no
+ * longer fit; it is cut at `cap`, the most the request can need (the body's
+ * limit and one byte, or the head's). The door's limits keep the bytes held
+ * and one more within the cap; were they not, the request is refused here
+ * rather than given a room smaller than its bytes. */
+static int door_hold(Door *d, char **buf, size_t *len, size_t *room, size_t cap, const char *at, size_t more) {
+    size_t need = *len + more + 1;
+    if (need > *room) {
         size_t want = *room ? *room : 1024;
-        while (want < *len + more + 1) want *= 2;
+        while (want < need) want *= 2;
+        if (want > cap) want = cap;
+        if (want < need) { d->over_budget = 1; return -1; }
         long inc = (long)(want - *room);
         long in_flight = __atomic_add_fetch(&g_http_body_in_flight, inc, __ATOMIC_RELAXED);
         d->charged += inc;
@@ -2478,7 +2486,7 @@ static int door_on_headers_complete(llhttp_t *p) {
 
 static int door_on_body(llhttp_t *p, const char *at, size_t n) {
     Door *d = p->data;
-    return door_hold(d, &d->body, &d->body_len, &d->body_room, at, n) == 0 ? 0 : HPE_USER;
+    return door_hold(d, &d->body, &d->body_len, &d->body_room, (size_t)d->max_body + 1, at, n) == 0 ? 0 : HPE_USER;
 }
 
 static int door_on_chunk_header(llhttp_t *p) {
@@ -2618,7 +2626,8 @@ static int door_feed(Door *d, const char *buf, size_t n) {
         if (d->phase == DOOR_HEAD && d->head_started) {
             const char *from = d->copy_from;
             if (from < buf + q &&
-                door_hold(d, &d->head, &d->head_len, &d->head_room, from, (size_t)(buf + q - from)) != 0)
+                door_hold(d, &d->head, &d->head_len, &d->head_room,
+                          d->limit + 1 > 1024 ? (size_t)d->limit + 1 : 1024, from, (size_t)(buf + q - from)) != 0)
             { d->why = "Server overloaded"; return 503; }
             d->copy_from = buf + q;
         }

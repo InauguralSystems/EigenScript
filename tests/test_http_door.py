@@ -1019,6 +1019,145 @@ def row_cost(ctx):
     require(not bad, '; '.join(bad))
 
 
+BUDGET_HEAD, BUDGET_BODY, BUDGET_READ = 4096, 65536, 16384
+
+
+def budget_request(body, framing):
+    """#2370 "The budget": the request, announced or in 7 chunks (the first
+    six of one seventh of the body's size rounded down)."""
+    if framing == 'announced':
+        return b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: %d\r\n\r\n' % len(body) + body
+    size = len(body) // 7
+    parts = [body[i * size:(i + 1) * size] for i in range(6)] + [body[6 * size:]]
+    return (b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n' +
+            b''.join(b'%x\r\n' % len(p) + p + b'\r\n' for p in parts) + b'0\r\n\r\n')
+
+
+def budget_try(port, data):
+    """One try on a connection of its own, read to the end of the stream and
+    closed. Returns the status, or a word for no answer."""
+    try:
+        r = exchange(port, data, wait=30)
+    except (AssertionError, OSError) as exc:
+        return f'error {exc}'[:120]
+    return r[0] if r else 'no answer'
+
+
+def budget_served(port, data, want_body):
+    """Served: tries again 500 ms after closing a failed try, for 10 s at
+    most. Returns (ok, the answers with their times)."""
+    start, answers = time.monotonic(), []
+    while True:
+        try:
+            r = exchange(port, data, wait=30)
+            said = r[0] if r else 'no answer'
+            ok = bool(r) and r[0] == 200 and r[2] == want_body
+        except (AssertionError, OSError) as exc:
+            said, ok = f'error {exc}'[:120], False
+        answers.append(f'{said}@{time.monotonic() - start:.2f}s')
+        if ok or time.monotonic() - start + .5 > 10:
+            return ok, answers
+        time.sleep(.5)
+
+
+def budget_refused(port, data):
+    """503: each of five tries, 100 ms apart, is answered 503."""
+    answers = []
+    for i in range(5):
+        if i:
+            time.sleep(.1)
+        answers.append(budget_try(port, data))
+    return all(a == 503 for a in answers), answers
+
+
+def row_budget(ctx):
+    """#2370 "The budget": what a connection is charged against
+    EIGS_HTTP_MAX_BODY_TOTAL: 16,384 bytes it reads into, and a room for its
+    head and one for its body, each 1,024 doubled until the bytes held and one
+    more fit, cut at the limit and one byte."""
+    if ctx.sanitizer:
+        raise Skipped('the budget on a sanitizer build (the make http build judges this row)')
+    rng = random.Random(ctx.seed + 3)
+    body = bytes(rng.randint(1, 255) for _ in range(BUDGET_BODY))
+    small = b'GET /v HTTP/1.1\r\nHost: h\r\n'
+    routes = (route('POST', '/v', 'len of (http_request_body of null)') +
+              route('GET', '/v', '"small"'))
+    limits = {'EIGS_HTTP_MAX_HEAD': str(BUDGET_HEAD), 'EIGS_HTTP_MAX_BODY': str(BUDGET_BODY)}
+    lines, failed, servers = [], 0, [0]
+
+    def at(total, label):
+        servers[0] += 1
+        env = dict(limits, EIGS_HTTP_MAX_BODY_TOTAL=str(total))
+        return server(ctx.binary, ctx.folder / f'budget-{servers[0]}-{label}', env, routes=routes)
+
+    def verdict(ok, what):
+        nonlocal failed
+        failed += not ok
+        line = f'{"PASS" if ok else "FAIL"}: budget {what}'
+        lines.append(line)
+        print(line, flush=True)
+
+    def served_and_refused(name, part, framing, room):
+        data = budget_request(part, framing)
+        charge = BUDGET_READ + 1024 + room
+        d = ctx.ref.decide(data, head=BUDGET_HEAD, body=BUDGET_BODY)
+        require(d.kind == 'served' and d.body == part, f'{name}: the reference says {d.line[:80]}')
+        with at(charge, 'served') as port:
+            ok1, got1 = budget_served(port, data, str(len(part)).encode())
+        with at(charge - 1, 'refused') as port:
+            ok2, got2 = budget_refused(port, data)
+        verdict(ok1 and ok2, f'{name} ({framing}, body {len(part)}): {charge} served {got1}; '
+                             f'{charge - 1} answered {got2}')
+
+    for framing in ('announced', 'chunked'):
+        served_and_refused('at the limit', body, framing, BUDGET_BODY + 1)
+    for framing in ('announced', 'chunked'):
+        served_and_refused('under its room', body[:30000], framing, 32768)
+
+    pad = BUDGET_HEAD - len(small) - len(b'X-Pad: \r\n\r\n')
+    padded = small + b'X-Pad: ' + b'p' * pad + b'\r\n\r\n'
+    require(len(padded) == BUDGET_HEAD, f'padded head {len(padded)}')
+    d = ctx.ref.decide(padded, head=BUDGET_HEAD, body=BUDGET_BODY)
+    require(d.kind == 'served' and d.head_len == BUDGET_HEAD, f'padded head: the reference says {d.line[:80]}')
+    with at(BUDGET_READ + BUDGET_HEAD + 1, 'head') as port:
+        ok, got = budget_served(port, padded, b'small')
+    verdict(ok, f'the head\'s room (head {len(padded)}): {BUDGET_READ + BUDGET_HEAD + 1} served {got}')
+
+    full = BUDGET_READ + 1024 + BUDGET_BODY + 1
+    data = budget_request(body, 'announced')
+    refused = [(n, r) for n, _, r, _ in named_rows()]
+    refused = [(n, r, ctx.ref.decide(r, head=BUDGET_HEAD, body=BUDGET_BODY)) for n, r in refused]
+    refused = [(n, r, d) for n, r, d in refused if d.kind == 'refused']
+    require(refused, 'no named row is refused under the budget\'s limits')
+    bad = []
+    with at(full, 'refusal') as port:
+        for name, row, d in refused:
+            got = budget_try(port, row)
+            ok, answers = budget_served(port, data, str(BUDGET_BODY).encode())
+            if got != d.status or not ok:
+                bad.append(f'{name}: {got} (reference {d.status}), then {answers}')
+                break       # the charge is not given back: the rows after it say nothing more
+    verdict(not bad, f'given back after a refusal: {full}, ' + (f'stopped at the first failure: {bad[0]}' if bad else
+                     f'{len(refused)}/{len(refused)} refused rows each followed by the request served'))
+
+    cut = data.index(b'\r\n\r\n') + 4 + 40000
+    bad = []
+    with at(full, 'drop') as port:
+        for i in range(20):
+            with socket.create_connection(('127.0.0.1', port), timeout=10) as peer:
+                peer.sendall(data[:cut])
+            ok, answers = budget_served(port, data, str(BUDGET_BODY).encode())
+            if not ok:
+                bad.append(f'drop {i}: then {answers}')
+                break
+    verdict(not bad, f'given back after a drop: {full}, ' + (f'stopped at the first failure: {bad[0]}' if bad else
+                     f'20/20 drops of {cut} bytes each followed by the request served'))
+
+    require(len(lines) == 7, f'budget lines {len(lines)}, want 7')
+    require(failed == 0, f'{failed} of 7 budget checks failed: ' + ' | '.join(l for l in lines if l.startswith('FAIL'))[:900])
+    print(f'COUNTS: budget checks=7/7 refused rows={len(refused)} servers={servers[0]}', flush=True)
+
+
 def row_leak(ctx):
     """RSS5 of tests/test_http_rss_growth.sh: refused named rows in turn, and
     chunked requests of 2,000 bytes. RSS leg only: on this branch the heap
@@ -1116,7 +1255,8 @@ def main():
             ('D04-dealt', population_part('dealt')), ('D05-sweep', population_part('sweep')),
             ('D06-head-limit', row_head_limit), ('D07-body-limit', row_body_limit), ('D08-held', row_held),
             ('D09-no-route', population_part('counter')), ('D10-authed-static', row_authed_static),
-            ('D11-framings', row_framings), ('D12-time', row_time), ('D13-cost', row_cost)]
+            ('D11-framings', row_framings), ('D12-time', row_time), ('D13-cost', row_cost),
+            ('D15-budget', row_budget)]
     # RSS5 of tests/test_http_rss_growth.sh runs this row; the section does not.
     by_name = rows + [('D14-leak', row_leak)]
     if args.record:
