@@ -172,6 +172,13 @@ with tempfile.TemporaryDirectory(prefix='static-prefixes-') as directory:
         row('SP2363-' + name, lambda p=prefix, m=message:
             refusal(registration(p), 'value', m))
 
+    def later_segment():
+        # The rows above put the byte in the first segment of the prefix.
+        for prefix in ['/a/b?c', '/a/b c', '/a/b/c#']:
+            refusal(registration(prefix), 'value',
+                    f"http_static: prefix '{prefix}' {forbidden_reason}")
+    row('SP2363-later-segment', later_segment)
+
     def every_control_byte():
         # The rows above take one control byte. Each of 0x01 to 0x1F is refused;
         # a string of this language cannot hold a NUL.
@@ -182,8 +189,9 @@ with tempfile.TemporaryDirectory(prefix='static-prefixes-') as directory:
 
     def other_bytes_register():
         # Bytes the rule does not name are still accepted: a percent sign, a
-        # plus, and bytes of 0x80 and above (the UTF-8 of a non-ASCII letter).
-        for prefix in ['/a%41b', '/a+b', '/caf\u00e9']:
+        # plus, the byte after the space (0x21), the byte before DEL (0x7E), and
+        # bytes of 0x80 and above (the UTF-8 of a non-ASCII letter).
+        for prefix in ['/a%41b', '/a+b', '/a!b', '/a~b', '/caf\u00e9']:
             accepted(f'http_static of [{json.dumps(prefix, ensure_ascii=False)}, "{FILES}"]\n')
     row('SP2363-other-bytes-register', other_bytes_register)
 

@@ -9,7 +9,7 @@ else
     TOTAL=$((TOTAL + 1))
     SP_TEST=$(python3 "$TESTS_DIR/test_static_prefixes.py" 2>&1); SP_TEST_RC=$?
     if rc_ok "$SP_RC" "$SP_OUT" && rc_ok "$SP_TEST_RC" "$SP_TEST" &&
-       grep -qxF 'STATIC_PREFIXES: 24 passed, 0 failed' <<< "$SP_TEST"; then
+       grep -qxF 'STATIC_PREFIXES: 25 passed, 0 failed' <<< "$SP_TEST"; then
         PASS=$((PASS + 1))
         echo "  PASS: static prefix contract"
     else
