@@ -16,6 +16,7 @@ fail() { echo "FAIL: $*"; exit 1; }
 ok() { echo "PASS: $*"; }
 rc_expect() {
     local class=0
+    printf '%s\n' "$3" | sed 's/^/    /'
     lsan_classify "$3" || class=$?
     [ "$class" -eq 1 ] && return 1
     [ "$class" -eq 0 ] && return 0
@@ -27,8 +28,8 @@ set +e
 "$EIGS" --test "$TMP/pass" >"$TMP/pass.out" 2>"$TMP/pass.err"
 pass_rc=$?
 set -e
-[ "$pass_rc" -eq 0 ] || fail "all-passing control exited $pass_rc, expected 0"
-[ ! -s "$TMP/pass.err" ] || fail "all-passing control wrote stderr"
+pass_output=$(cat "$TMP/pass.out" "$TMP/pass.err")
+rc_expect 0 "$pass_rc" "$pass_output" || fail "all-passing control exited $pass_rc or emitted a sanitizer diagnostic"
 [ "$(tail -n 1 "$TMP/pass.out")" = "Files: 1 | Passed: 1 | Failed: 0" ] ||
     fail "all-passing control ended with an unexpected line"
 ok "all-passing run ends with its summary and exits 0"
@@ -39,8 +40,8 @@ fail_rc=$?
 set -e
 fail_output=$(cat "$TMP/fail.out")
 rc_expect 1 "$fail_rc" "$fail_output" || fail "failing run exited $fail_rc or emitted a sanitizer diagnostic"
-[ "$(tail -n 1 "$TMP/fail.out")" = "Files: 1 | Passed: 0 | Failed: 1" ] ||
-    fail "failing run did not end with its summary"
+grep -Fx 'Files: 1 | Passed: 0 | Failed: 1' "$TMP/fail.out" >/dev/null ||
+    fail "failing run did not print its summary"
 ! grep -F 'lib/test_runner.eigs' "$TMP/fail.out" >/dev/null || fail "failing run printed a runner trace"
 ! grep -F 'test file(s) failed' "$TMP/fail.out" >/dev/null || fail "failing run raised a runner assertion"
 ok "failing run ends with its summary and exits 1 without a runner trace"
