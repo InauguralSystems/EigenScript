@@ -1852,9 +1852,9 @@ jobs:
   # ThreadSanitizer over ext_http.c (#1139). The stock tsan lane above builds
   # with $(DEFS_OFF), so the race detector never saw the repo's most concurrent
   # code; #1137 was found only by an ad-hoc tsan+http build while that lane
-  # stayed green. This lane runs the HTTP slice of the suite ([44], [45a] —
-  # 256 concurrent connections —, [45b], [45i], the outbound client, and [45j], the
-  # server reading every request through llhttp)
+  # stayed green. This lane runs the sections of the suite that start an HTTP
+  # server (the step below has the list once, and names the ones it leaves
+  # out with the reason for each)
   # through the real runner under
   # halt_on_error=1, so a race kills the server and its section goes red.
   tsan-http:
@@ -1891,7 +1891,11 @@ jobs:
         env:
           TSAN_OPTIONS: halt_on_error=1
           # [45c] left out: its RSS gate deliberately skips sanitizer builds.
-          EIGS_SUITE_SECTIONS: 44 45 45a 45b 45f 45g 45h 45i 45j
+          # [99s] left out: it starts a server for three rows of a differential
+          # about argument guards (tests/strict_shape_cases.json, http_context),
+          # through tests/test_http_server.sh --strict-shape; that script runs
+          # whole in [45].
+          EIGS_SUITE_SECTIONS: 0f2 44 45 45a 45b 45f 45g 45h 45i 45j
         run: |
           set -o pipefail
           setarch -R bash tests/run_all_tests.sh 2>&1 | tee "$RUNNER_TEMP/tsan-http.log"
@@ -1902,6 +1906,8 @@ jobs:
           awk '
             BEGIN {
               n = split(ENVIRON["EIGS_SUITE_SECTIONS"], want, " ")
+              # An exit in BEGIN still runs END, which exits with `bad`.
+              if (n < 1) { print "ERROR: EIGS_SUITE_SECTIONS names no section -- the lane would check nothing"; bad = 1; exit 1 }
               for (i = 1; i <= n; i++) selected[want[i]] = 1
             }
             # A header is "[44/47] " (inline) or "[45i] " (a tests/sections/ fragment).
