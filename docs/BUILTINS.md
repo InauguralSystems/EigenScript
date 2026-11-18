@@ -463,16 +463,15 @@ Boolean keywords that check the most recently observed value:
 
 | Name | True when |
 |------|-----------|
-| `converged` | Numeric full finite window has Cauchy diameter ≤ `0.001·max(abs(current), 0.001)`; non-numeric detached snapshots stay equal |
-| `stable` | Numeric full finite window fits D1's 1% ball about its midrange; non-numeric equality rule with the bounded NaN-snapshot entropy exception |
+| `converged` | Numeric full finite window of ten relative steps each under `0.001`, no raw runaway or swing; non-numeric detached snapshots stay equal |
+| `stable` | Numeric full finite window of ten relative steps each under `0.01`, no strong consecutive sign flip, no raw runaway or swing; non-numeric equality rule with the bounded NaN-snapshot entropy exception |
 | `improving` | Numeric D2 significant lower running best within ten steps, finite window, reference boundedness approximation; non-numeric entropy trend rule |
 | `oscillating` | Incumbent relative/raw oscillation or folding; current infinity with opposite-sign infinity in the window |
 | `diverging` | Incumbent non-vanishing same-sign raw steps; current infinity without opposite-sign infinity in the window |
 | `equilibrium` | Incumbent near-zero relative-step mean/variance with raw trend/oscillation exclusions; non-numeric entropy rest rule |
 
 All six are false at a current numeric NaN (`report` is `undefined`).
-An all-exact int64 window uses zero raw noise floor and absolute settled
-tolerances. See [PREDICATES.md](PREDICATES.md) for citations, complete
+An all-exact int64 window uses zero raw noise floor. See [PREDICATES.md](PREDICATES.md) for citations, complete
 conditions, and residuals. `get_observer_thresholds` retains the three
 floats `[0.001, 0.01, 0.1]`; the last is the compiled-in non-numeric
 `h_low` constant, independent of tape configuration.

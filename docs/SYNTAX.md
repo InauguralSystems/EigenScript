@@ -685,7 +685,7 @@ Numeric trajectory snapshots carry `rel/raw/exact/best/since/last_value`,
 with empty `dh` and null entropy fields; an explicit entropy classification
 on a numeric snapshot raises `value`. At a current NaN all predicates are
 false and report is `undefined`. See [PREDICATES.md](PREDICATES.md) for
-STD convergence, D1 stability, D2 improvement and the non-finite rules.
+the convergence and stability bands, D2 improvement and the non-finite rules.
 
 Six trajectory states: `improving`, `diverging`, `stable`, `equilibrium`,
 `oscillating`, `converged`.

@@ -367,8 +367,8 @@ print of loss
 
 ```output
 improving
-36
-7.275957614183426e-10
+35
+1.4551915228366852e-09
 ```
 
 ```eigenscript
@@ -389,7 +389,7 @@ Trajectory states: `converged`, `stable`, `equilibrium`, `oscillating`,
 alerts, or debugging without writing logging code.
 
 The everyday payoff before any theory: `loop while not converged` supplies a
-fixed 0.1%-relative windowed Cauchy test and remembers the trajectory. It is not a
+fixed 0.1%-relative step test over the last ten steps and remembers the trajectory. It is not a
 drop-in replacement for a caller-chosen epsilon and guard: the registered
 #1990 pre-R3.1 population found a 0.47% wrong-exit rate for the bare form and a 2.29x
 median iteration ratio to its matched Python loop; the named form still needs
@@ -398,9 +398,10 @@ by `python3 reports/convergence_loops/report1990.py`. See
 [docs/COMPARISON.md → Convergence loops](docs/COMPARISON.md#convergence-loops-a-built-in-fixed-tolerance).
 
 > **What `improving` and the rest actually mean.** For numbers the
-> trajectory words read the value's own motion (#861): `converged` is the
-> windowed Cauchy test — eleven values within a fixed tolerance — and
-> `stable` is a 1% ball about the window's midrange. `improving` uses
+> trajectory words read the value's own motion (#861): `converged` needs
+> each of the last ten steps under 0.1% of the value, and `stable` each
+> under 1% with no strong back-and-forth; neither holds while the raw steps
+> run away or swing. `improving` uses
 > Keras' loss convention: a significant lower running best within ten
 > steps, subject to the finite-window and boundedness approximation. A
 > recent improvement can remain true while the next value rises, or while

@@ -2738,6 +2738,12 @@ down-counter from 2^53 by −1 reads `diverging` with no other predicate true.
 
 **The predicates after R3.1:**
 
+(Round 3's design, as built. The reveal of 2026-11-18 (#1758, RULING R30R-2;
+the tag `phase2-r3-reveal`) shipped `improving`, `oscillating` and
+`diverging` from this table and kept the incumbent's tests for `converged`,
+`stable` and `equilibrium`; #2407 restored v0.47.0's `converged` and `stable`
+on the branch's observations. `docs/PREDICATES.md` states what ships.)
+
 | predicate | its test after R3.1 | signal | MAP rows |
 |---|---|---|---|
 | `converged` | **STD_converged**: full window of W + 1 finite values; window diameter ≤ τ(x), τ = 1e-3·max(\|x\|, 1e-3) (the windowed Cauchy test, as reference.py `converged`); an all-exact window uses τ_abs = 1e-6 | O1 + the int mechanism | `O2.int-counter-2p53`, `O2.int-down-counter-2p53`, `O2.harmonic-not-converged`, `O2.inverse-growth-not-converged`, `O2.counter-pause-not-converged` (invariant) |

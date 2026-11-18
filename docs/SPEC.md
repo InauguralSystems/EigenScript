@@ -1989,21 +1989,20 @@ true
 true
 ```
 
-For a **numeric** binding, R3.1 implements arm R3-STD. Over ten steps
-(eleven values), `converged` is the windowed Cauchy test: finite values
-whose diameter is at most `0.001·max(abs(current), 0.001)`. `stable` is
-D1: a finite window fits a 1% ball about its midrange, calculated as
-`hi/2 + lo/2`. `improving` is D2: a significant new running lower best
+For a **numeric** binding, over ten steps (eleven finite values) with
+relative steps `r = Δv / max(abs(v), abs(v_prev), 0.001)`, `converged` holds
+when every `abs(r) < 0.001` and `stable` when every `abs(r) < 0.01` with no
+two steps in a row of opposite sign both above 0.001; neither holds for a
+window whose raw steps run away or swing (v0.47.0's tests, kept by the
+Round 3 reveal, #2407). `improving` is D2: a significant new running lower best
 within ten steps, with relative `min_delta = 0.001·max(abs(best), 0.001)`
 and the reference boundedness approximation. The first finite value is the
 baseline, never an improvement; non-finite values never become best, and
 any non-finite value in the current window suppresses improvement.
 
 Both-int displacements that fit int64 are exact. If every step in a window
-is exact, incumbent raw-motion tests use zero noise floor and the settled
-tests use absolute tolerances: diameter `1e-6` for `converged`, radius
-`1e-5` for `stable`. Otherwise the floating rules apply. Relative steps
-`r = Δv / max(abs(v), abs(v_prev), 0.001)` remain available for the
+is exact, incumbent raw-motion tests use zero noise floor. Otherwise the
+floating noise floor applies. The relative steps `r` also serve the
 incumbent oscillation/divergence/equilibrium tests and numeric `how`.
 See [PREDICATES.md](PREDICATES.md) for the cited rules and their residuals.
 
