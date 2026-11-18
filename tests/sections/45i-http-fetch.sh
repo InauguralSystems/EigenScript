@@ -18,8 +18,9 @@ else
     HF_SKIPS=0
     if [ "$(uname -s)" != Linux ]; then
         HF_SKIPS=$((HF_SKIPS + 5))
-    elif [ ! -d /proc/self/task ]; then
-        HF_SKIPS=$((HF_SKIPS + 2))
+    else
+        HF_NO_CHILD_SKIPS=$(python3 "$TESTS_DIR/test_http_fetch.py" --no-children-skip-count)
+        HF_SKIPS=$((HF_SKIPS + HF_NO_CHILD_SKIPS))
     fi
     if ! command -v openssl >/dev/null 2>&1; then HF_SKIPS=$((HF_SKIPS + 3)); fi
     # The release of the curl library the rows run against, asked of the
@@ -50,5 +51,5 @@ else
     fi
     printf '%s\n' "$HF_TEST"
 fi
-unset HF_PROBE HF_PROBE_OUT HF_PROBE_RC HF_SKIPS HF_LIB_TEXT HF_LIB_MAJOR HF_LIB_RC HF_PASSES HF_WANT HF_TEST HF_TEST_RC
+unset HF_PROBE HF_PROBE_OUT HF_PROBE_RC HF_SKIPS HF_NO_CHILD_SKIPS HF_LIB_TEXT HF_LIB_MAJOR HF_LIB_RC HF_PASSES HF_WANT HF_TEST HF_TEST_RC
 echo ""

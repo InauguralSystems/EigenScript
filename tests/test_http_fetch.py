@@ -48,6 +48,19 @@ OTHER_NAMES = ('X-Connection', 'Trailer', 'Via', 'Origin', 'Sec-X')
 PROXY_VARIABLES = ('http_proxy', 'https_proxy', 'all_proxy', 'no_proxy',
                    'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY')
 RUNTIME_TMP = None
+PROC_CHILDREN_PATH = None
+
+
+def proc_children_path(pid=None, tid=None):
+    if PROC_CHILDREN_PATH is not None:
+        return Path(PROC_CHILDREN_PATH)
+    pid = os.getpid() if pid is None else pid
+    tid = threading.get_native_id() if tid is None else tid
+    return Path(f'/proc/{pid}/task/{tid}/children')
+
+
+def no_children_skip_count():
+    return 0 if proc_children_path().is_file() else 2
 
 
 class Refusal(Exception):
@@ -591,8 +604,9 @@ def curlrc(binary, folder, version, legacy=False):
 
 
 def no_children(binary, folder, version, legacy=False):
-    if not Path('/proc/self/task').exists():
-        raise Skipped('Linux /proc is unavailable')
+    capability = proc_children_path()
+    if not capability.is_file():
+        raise Skipped(f'{capability} is unavailable')
     with Peer([Plan(delay=2), Plan(delay=2)]) as peer:
         arg = [peer.url+'/', '{"Authorization":"marker-2375"}', 'x'] if legacy else {
             'url': peer.url+'/', 'headers': {'Authorization': 'marker-2375'}}
@@ -607,7 +621,10 @@ def no_children(binary, folder, version, legacy=False):
                 require(all(not future.done() for future in calls),'calls completed before child inspection')
                 pids = set()
                 for task in Path(f'/proc/{proc.pid}/task').iterdir():
-                    pids.update((task/'children').read_text().split())
+                    children = proc_children_path(proc.pid, task.name)
+                    if not children.is_file():
+                        raise Skipped(f'{children} is unavailable')
+                    pids.update(children.read_text().split())
                 require(not pids, f'#2354 child process(es): {sorted(pids)}')
                 for future in calls:
                     require(future.result().endswith(b'done'), 'held call body')
@@ -642,7 +659,14 @@ def main():
     parser.add_argument('--base', action='store_true')
     parser.add_argument('--leak', action='store_true')
     parser.add_argument('--list', action='store_true')
+    parser.add_argument('--no-children-skip-count', action='store_true')
+    parser.add_argument('--proc-children-path', help=argparse.SUPPRESS)
     args = parser.parse_args()
+    global PROC_CHILDREN_PATH
+    PROC_CHILDREN_PATH = args.proc_children_path
+    if args.no_children_skip_count:
+        print(no_children_skip_count())
+        return 0
     binary = str(Path(args.binary).resolve())
     version = subprocess.check_output([binary, '--version'],env=environment()).decode().strip()
     print(f'HTTP_FETCH seed={SEED} arrives_seed={SEED} refused_seed={SEED+1} answers_seed={SEED+2} binary={binary} version={version}', flush=True)
