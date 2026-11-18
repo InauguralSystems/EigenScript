@@ -5,12 +5,9 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 EIGS=${EIGS:-$ROOT/src/eigenscript}
 . "$ROOT/tests/lsan_classify.sh" || exit 1
 
-# clean_exit WANT RC OUTPUT: the exit status is WANT and the output holds no
-# sanitizer report of any kind. These rows tolerate no report, a leak-only one
-# included, as the suite's other child scripts do (.claude/rules/test-suite.md:
-# the sites that call lsan_classify and require "none"). The suite's ledger of
-# tolerated leak reports is filled by rc_ok and rc_expect in the runner; a
-# child script cannot add to it, so it does not tolerate what it cannot record.
+# clean_exit WANT RC OUTPUT: the exit status is WANT, and tests/lsan_classify.sh
+# finds no sanitizer report of any kind in OUTPUT (a leak-only report fails the
+# row as well).
 clean_exit() {
     class=0
     lsan_classify "$3" || class=$?
