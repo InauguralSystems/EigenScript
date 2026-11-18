@@ -24,7 +24,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/eigs_fs_rng.XXXXXX") || exit 2
 trap 'rm -rf "$WORK"' EXIT
 REAL_GIT=$(command -v git) || { echo "  FAIL: git is required"; exit 1; }
-echo "PLAN: 25"
+echo "PLAN: 27"
 pass=0; fail=0
 
 # A fresh HOME with no global or system config: a developer's own
@@ -132,6 +132,13 @@ int planted(void) { return RNG(); }
 extended_plant eigenlsp src/eigenlsp.c \
     '#include <stdlib.h>
 int planted(void) { int (*p)(void) = rand; return p(); }' 'eigenlsp.c function-pointer plant'
+# A lone quote mark on an earlier line (legal in the text of #error) must not
+# put the scan into a literal that swallows the lines after it.
+extended_plant lone-quote src/ext_net.c \
+    '#if 0
+#error this build can'"'"'t work
+#endif
+int planted(void) { int (*p)(void) = rand; return p(); }' 'function-pointer plant after a lone quote mark'
 
 # 2-3. Planted calls, same owner: red and named.
 make_repo "$WORK/rand"
@@ -190,4 +197,4 @@ case_ "no tracked runtime sources is red (vacuous)" "$WORK/empty" 1 \
     "FAIL: hosted RNG check examined no runtime sources"
 
 echo "freestanding RNG selftest: $pass passed, $fail failed"
-[ "$fail" -eq 0 ] && [ "$pass" -eq 25 ]
+[ "$fail" -eq 0 ] && [ "$pass" -eq 27 ]

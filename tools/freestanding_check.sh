@@ -27,7 +27,7 @@ trap 'rm -rf "$ROOT_BUILD"' EXIT
 # conditionals.  It rejects the bare C identifiers `rand` and `srand`, so it
 # covers calls, macro bodies, header inlines, aliases and function pointers.
 # Comments, string/character literals and src/freestanding are deliberately
-# ignored.  Similar names such as random, rand_r and drand48 are out of scope:
+# ignored; a literal is taken to end with its line.  Similar names such as random, rand_r and drand48 are out of scope:
 # issue #2309 names only rand and srand.
 #
 # `--rng-only` stops after this check (tests/test_freestanding_rng_2308.sh uses
@@ -56,7 +56,9 @@ while IFS= read -r rng_file; do
     [ -n "$rng_file" ] || continue
     awk -v FILE="$rng_file" '
     {
-        out = ""; i = 1
+        # A string or character literal ends with its line: a lone quote mark
+        # (as in `#error can'"'"'t`) must not hide the lines after it.
+        out = ""; i = 1; quote = ""
         while (i <= length($0)) {
             c = substr($0, i, 1); n = substr($0, i + 1, 1)
             if (block) { if (c == "*" && n == "/") { block = 0; i += 2 } else i++; continue }
