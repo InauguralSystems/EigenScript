@@ -4,6 +4,8 @@ echo "PLAN: 3"
 set -eu
 
 EIGS=${EIGS:-${EIGENSCRIPT:-$(cd "$(dirname "$0")/.." && pwd)/src/eigenscript}}
+TESTS_DIR=$(cd "$(dirname "$0")" && pwd)
+. "$TESTS_DIR/lsan_classify.sh" || exit 1
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 mkdir "$TMP/pass" "$TMP/fail"
@@ -12,6 +14,13 @@ printf 'assert of [false, "plant: expected failure"]\n' > "$TMP/fail/test_bad.ei
 
 fail() { echo "FAIL: $*"; exit 1; }
 ok() { echo "PASS: $*"; }
+rc_expect() {
+    local class=0
+    lsan_classify "$3" || class=$?
+    [ "$class" -eq 1 ] && return 1
+    [ "$class" -eq 0 ] && return 0
+    [ "$2" -eq "$1" ]
+}
 
 # Clean control: the same kind of test file without the failing assertion.
 set +e
@@ -28,7 +37,8 @@ set +e
 "$EIGS" --test "$TMP/fail" >"$TMP/fail.out" 2>&1
 fail_rc=$?
 set -e
-[ "$fail_rc" -eq 1 ] || fail "failing run exited $fail_rc, expected 1"
+fail_output=$(cat "$TMP/fail.out")
+rc_expect 1 "$fail_rc" "$fail_output" || fail "failing run exited $fail_rc or emitted a sanitizer diagnostic"
 [ "$(tail -n 1 "$TMP/fail.out")" = "Files: 1 | Passed: 0 | Failed: 1" ] ||
     fail "failing run did not end with its summary"
 ! grep -F 'lib/test_runner.eigs' "$TMP/fail.out" >/dev/null || fail "failing run printed a runner trace"
@@ -39,7 +49,8 @@ set +e
 "$EIGS" --test --json "$TMP/fail" >"$TMP/fail.json" 2>"$TMP/fail-json.err"
 json_rc=$?
 set -e
-[ "$json_rc" -eq 1 ] || fail "failing JSON run exited $json_rc, expected 1"
+json_output=$(cat "$TMP/fail.json" "$TMP/fail-json.err")
+rc_expect 1 "$json_rc" "$json_output" || fail "failing JSON run exited $json_rc or emitted a sanitizer diagnostic"
 ! grep -F 'lib/test_runner.eigs' "$TMP/fail-json.err" >/dev/null || fail "failing JSON run printed a runner trace"
 ! grep -F 'test file(s) failed' "$TMP/fail-json.err" >/dev/null || fail "failing JSON run raised a runner assertion"
 python3 - "$TMP/fail.json" <<'PY' || fail "JSON stdout was not exactly one document"
