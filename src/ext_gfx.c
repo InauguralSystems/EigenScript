@@ -2286,9 +2286,11 @@ static int audio_noise_take(Value **out) {
  * #1803: the samples are a nondeterministic return. They are drawn from the
  * shared drand48 stream behind `random` (eigs_random_double), so `seed_random`
  * pins them, and they are recorded on the tape (audio_noise_record), so
- * EIGS_REPLAY serves the recorded samples. They used to come from libc's rand,
- * seeded by main from the clock and recorded nowhere, so a replay drew new
- * samples at rc 0. #960 moved random_normal off libc's rand for the same reason. */
+ * EIGS_REPLAY serves the recorded samples. They used to come from the C
+ * library's default generator (the one tools/freestanding_check.sh refuses
+ * by name), seeded by main from the clock and recorded nowhere, so a replay
+ * drew new samples at rc 0. #960 moved random_normal off that generator for
+ * the same reason. */
 Value* builtin_audio_noise(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "audio_noise");
     /* #1007 round 2, the arity/shape half — see builtin_audio_sine. */
