@@ -10,6 +10,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 import contextlib
 import hashlib
+import itertools
 import json
 import math
 import os
@@ -1484,23 +1485,27 @@ def table_message(code):
 def status_library(binary,folder,version):
     # Each status line with the status it says by the rule of "Errors" (None: none).
     lines=[(b'HTTP/1.1\t404 Not Found',404),(b'HTTP/1.1 200OK',200),(b'HTTP/2 404',404),(b'http/1.1 404 Not Found',None),
-           (b'HTTP/2.0 404 Not Found',404),(b'HTTP/3.0 500 Oops',500),(b'HTTP/2x 404 Not Found',404),(b'Http/1.1 200 OK',None)]
-    answers=[(line,said,line+b'\r\nX-A: 1\r\nContent-Length: 4\r\n\r\nbody',{'x-a':'1','content-length':'4'},b'body') for line,said in lines]
+           (b'HTTP/2.0 404 Not Found',404),(b'HTTP/3.0 500 Oops',500),(b'HTTP/2x 404 Not Found',404),(b'Http/1.1 200 OK',None),
+           # Three for the place where the build calls its reader: a build
+           # that cuts two bytes off the line as its end, or reads the number
+           # another way when the reader says none, takes each for a 200.
+           (b'HTTP/2 2000\n',None),(b'HTTP/2 +200 OK',None),(b'HTTP/2 0200 OK',None)]
+    answers=[(line,said,line+(b'' if line.endswith(b'\n') else b'\r\n')+b'X-A: 1\r\nContent-Length: 4\r\n\r\nbody',{'x-a':'1','content-length':'4'},b'body') for line,said in lines]
     answers.append((b'HTTP/1.1 200 OK',200,b'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nok\r\n0\r\nHTTP/1.1: v\r\nX-T: t\r\n\r\n',
                     {'transfer-encoding':'chunked'},b'ok'))
-    equal(len(answers),9,'status-line answers')
+    equal(len(answers),12,'status-line answers')
     # The library reads the proxy variables when it performs: the request of
     # the row's own runs without them, as every row's program does.
     saved={k:os.environ.pop(k) for k in PROXY_VARIABLES if k in os.environ}
     try:
         with Peer([Plan(wire) for _,_,wire,_,_ in answers]) as peer:
             library=[library_outcome(peer.url+f'/{i}') for i in range(len(answers))]
-            equal(peer.accepted,9,'library requests')
+            equal(peer.accepted,12,'library requests')
     finally:
         os.environ.update(saved)
     with Peer([Plan(wire) for _,_,wire,_,_ in answers]) as peer:
         got=run_calls(binary,folder,[{'url':peer.url+f'/{i}'} for i in range(len(answers))])
-        equal(peer.accepted,9,'program requests')
+        equal(peer.accepted,12,'program requests')
     compared,failures=0,[]
     for (line,said,wire,headers,body),(code,status),value in zip(answers,library,got):
         print(f'STATUS_LINE {line!r} says={said} library_error={code} library_status={status} program={value[:3]}',flush=True)
@@ -1510,8 +1515,76 @@ def status_library(binary,folder,version):
             else: expect_error(value,'io','the answer ended early')
         except AssertionError as exc: failures.append(f'{line!r}: {exc}')
         compared+=1
-    equal(compared,9,'status-line comparisons')
-    require(not failures,f'{len(failures)} of 9: '+' | '.join(failures))
+    equal(compared,12,'status-line comparisons')
+    require(not failures,f'{len(failures)} of 12: '+' | '.join(failures))
+
+
+STATUS_RULE=re.compile(rb'HTTP/[^ \t]*[ \t]+([0-9]{3})(?![0-9])')
+
+
+def status_reader_alone(binary,folder,version):
+    # The runtime's reader of the status a status line says, cut from the
+    # source and built by itself, against the rule of "Errors" written a
+    # second time, as the pattern above: the line begins with the bytes
+    # HTTP/; then come bytes, if any, that are neither a space nor a tab;
+    # then a run of spaces or tabs; then three digits and no fourth. Where
+    # the rule reads none, the reader gives a negative number. In memory
+    # each line is followed by a digit and a NUL that are not part of it,
+    # so a reader that reads past the line's length reads a digit, and one
+    # that looks for a NUL finds it there.
+    import ctypes
+    source=(ROOT/'src/ext_http.c').read_text()
+    found=re.findall(r'^static int fetch_status_said\(const char \*bytes, size_t n\) \{\n.*?^\}\n',source,re.S|re.M)
+    equal(len(found),1,'the status reader in the source')
+    # The reader has one call: in the header callback, with the line and
+    # the length the library gave, neither changed before the call.
+    named=[line.strip() for line in source.splitlines() if 'fetch_status_said' in line and not line.lstrip().startswith(('/*','*','//'))]
+    equal(named,['static int fetch_status_said(const char *bytes, size_t n) {','a->said = fetch_status_said(bytes, n);'],'the lines that name the status reader')
+    callback=re.findall(r'^static size_t fetch_header_write\(char \*bytes, size_t size, size_t count, void \*opaque\) \{\n(.*?)^ *a->said = fetch_status_said\(bytes, n\);\n',source,re.S|re.M)
+    equal(len(callback),1,'the header callback up to its call of the status reader')
+    before=callback[0].splitlines()
+    equal([line.strip() for line in before if re.search(r'\b(bytes|n)\b\s*([-+*/%&|^]|<<|>>)?=(?!=)|\b(bytes|n)\s*(\+\+|--)|(\+\+|--)\s*(bytes|n)\b',line)],
+          ['size_t n = size * count;'],'what the callback sets of the line and its length before the call')
+    helper=compile_shim(folder,'status-reader','#include <ctype.h>\n#include <stddef.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n'+found[0]+
+        'void status_reader_many(const char *lines, const size_t *ends, size_t count, int *said) {\n'
+        '    size_t start = 0;\n'
+        '    for (size_t k = 0; k < count; k++) { said[k] = fetch_status_said(lines + start, ends[k] - start); start = ends[k] + 2; }\n'
+        '}\n')
+    ends=(b'\r\n',b'\n',b' OK\r\n',b'')
+    # Made of parts.
+    begins=(b'HTTP/',b'HTTP/2',b'HTTP/1.1',b'Http/2',b'HTTP',b' HTTP/2')
+    runs=(b'',b' ',b'\t',b'  ',b' \t',b'\t ',b'\v',b' \v')
+    tokens=[bytes(t) for k in range(4) for t in itertools.product(b'0129/:&x+-',repeat=k)]+[bytes(t) for t in itertools.product(b'029:x+',repeat=4)]
+    stems=[b+r+t+s for b in begins for r in runs for t in tokens for s in (b'',b' 200',b'\t2000')]
+    equal(len(stems),346608,'status reader: the lines made of parts')
+    # Every byte value in every place of a line that says 200.
+    for value in range(256):
+        v=bytes([value])
+        stems+=[b'HTTP/2'+v+b'200',b'HTTP/2'+v+b'2000',b'HTTP/2 '+v+b'200',b'HTTP/2'+v+b' 200',b'HTTP/2 '+v+b'00',b'HTTP/2 2'+v+b'0',
+                b'HTTP/2 20'+v,b'HTTP/2 200'+v,b'HTTP/2 200'+v+b' OK',b'HTTP/'+v+b' 200',b'HTTP'+v+b'2 200',v+b'HTTP/2 200',
+                v+b'TTP/2 200',b'H'+v+b'TP/2 200',b'HT'+v+b'P/2 200',b'HTT'+v+b'/2 200']
+    equal(len(stems),346608+4096,'status reader: every byte in every place')
+    # A version of every length around the sizes a buffer has.
+    lengths=list(range(301))+[size+d for size in (512,1000,1024,2048,4096,8192,10000,16384,32768,65536) for d in range(-16,5)]
+    stems+=[b'HTTP/'+b'y'*length+s for length in lengths for s in (b' 200',b' 2000')]
+    equal(len(stems),346608+4096+1022,'status reader: the lengths')
+    # And lines dealt from the seed: about half of their bytes digits, a
+    # quarter spaces and tabs, a quarter any byte.
+    rng=random.Random(SEED+3)
+    drawn=b'0123456789'*52+b' \t'*130+bytes(range(256))
+    stems+=[rng.choice(begins)+bytes(rng.choices(drawn,k=rng.randint(0,300))) for _ in range(20000)]
+    lines=[stem+end for stem in stems for end in ends]
+    wanted=[int(m.group(1)) if m else None for m in map(STATUS_RULE.match,lines)]
+    offsets=[end+2*k for k,end in enumerate(itertools.accumulate(map(len,lines)))]
+    said=(ctypes.c_int*len(lines))()
+    lib=ctypes.CDLL(str(helper))
+    lib.status_reader_many.restype=None
+    lib.status_reader_many(ctypes.c_char_p(b'7\0'.join(lines)+b'7\0'*8),(ctypes.c_size_t*len(lines))(*offsets),ctypes.c_size_t(len(lines)),said)
+    wrong=[i for i,(got,want) in enumerate(zip(said,wanted)) if (got>=0 if want is None else got!=want)]
+    statuses=sum(want is not None for want in wanted)
+    print(f'STATUS_READER lines={len(lines)} with_a_status={statuses} without={len(lines)-statuses} wrong={len(wrong)}',flush=True)
+    require(statuses>=50000 and len(lines)-statuses>=500000,'status reader: a population with too few lines of one kind')
+    require(not wrong,f'{len(wrong)} of {len(lines)} lines: '+' | '.join(f'{lines[i][:80]!r} ({len(lines[i])} bytes): the reader says {said[i]}, the rule {wanted[i]}' for i in wrong[:3]))
 
 
 def https_proxy(binary,folder,version):
@@ -2065,7 +2138,7 @@ ROWS=[
     ('limit-endless-and-head',immediate_limit_head),
 ]+[(f'body-env-{i:02}',lambda *args,s=setting:body_environment(*args,s)) for i,setting in enumerate(BODY_ENV_VALUES)]+[
     ('keylog',keylog),('https-certificates',https_certificates),('https-proxy',https_proxy),('connection-errors',connection_errors),('timeouts',timeouts),
-    ('default-timeouts',default_timeouts),('early-answers',early_answers),('answer-status-library',status_library),('nul-body',nul_body),('nul-header',nul_header),
+    ('default-timeouts',default_timeouts),('early-answers',early_answers),('answer-status-library',status_library),('status-reader-alone',status_reader_alone),('nul-body',nul_body),('nul-header',nul_header),
     ('no-library',no_library),('refused-option',refused_option),('timeout-edges',timeout_edges),
     ('no-child',no_children),('concurrent-calls',concurrent_calls),('tape-three',tape_three),
     ('tape-refusals',tape_refusals),('tape-large-limit',tape_large),('tape-kinds-docs',tape_kinds_docs),
