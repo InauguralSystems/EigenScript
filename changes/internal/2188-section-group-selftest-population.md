@@ -1,0 +1,1 @@
+- Derive the section-group self-test population from the validator enumeration instead of pinning it. (#2188)

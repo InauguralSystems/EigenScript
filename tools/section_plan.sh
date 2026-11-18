@@ -387,9 +387,9 @@ derive_chunk_groups() {
 # Independently audit the section/group contract after grouping.  This is in
 # --check (rather than only the emitter) so a future grouping regression is a
 # planner failure before any shard can run a header without its body.
-check_section_groups() {
-    local table="$1" groups="$2" bad
-    bad=$(awk '
+section_group_violations() {
+    local table="$1" groups="$2"
+    awk '
         FNR == NR { n++; start[n]=$1; header[n]=(NF>2); label[n]=$3; next }
         { group[$1]=$2 }
         END {
@@ -404,10 +404,16 @@ check_section_groups() {
                         witnesses = witnesses sprintf("%s%s", witnesses ? ", " : "", witness)
                 }
             }
-            if (bad) { printf "count=%d; %s; %s\n", bad, named, witnesses; exit 1 }
-        }' "$table" "$groups") || {
+            if (bad) printf "count=%d; %s; %s\n", bad, named, witnesses
+        }' "$table" "$groups"
+}
+
+check_section_groups() {
+    local table="$1" groups="$2" bad
+    bad=$(section_group_violations "$table" "$groups")
+    if [ -n "$bad" ]; then
         die "section grouping split headerless chunks from their nearest preceding header: $bad"
-    }
+    fi
     echo "section groups: every headerless chunk shares the nearest preceding header group"
 }
 
@@ -1099,13 +1105,16 @@ selftest() {
     expect_red 'check_chunk_count: vacuous chunk population falls below floor' 'chunk enumeration examined' \
         "$dir/bad-count.sh" --root "$SP_ROOT" --chunks --quiet
     expect_ok 'control: complete, disjoint shard assignment and count sync' "$0" --root "$SP_ROOT" --shards 3 --check --quiet
-    # The first split pair is [114]'s header and the line after it. Derive the
-    # line from the runner rather than pinning it: a fixed '@1749' turned this
-    # plant into a "wrong red" for every PR that added preamble lines (hq#58).
-    sp_114=$(grep -n '^echo "\[114\] ' "$RUNNER" | head -1 | cut -d: -f1)
-    [ -n "$sp_114" ] || { echo "  FAIL: section groups: [114] header not found in $RUNNER"; fail=$((fail + 1)); }
-    expect_red 'section groups: headerless body split from nearest header is refused' "count=213; [114] header @${sp_114:-none} body @$(( ${sp_114:-0} + 1 ))" \
-        env SP_SECTION_GROUP_MUTATE=split "$0" --root "$SP_ROOT" --shards 3 --check --quiet
+    # Derive the planted population with the validator's own enumeration.
+    # Neither physical coordinates nor the number of headerless chunks belong
+    # in this expectation: both legitimately move as the runner grows.
+    derive_chunks "$RUNNER" > "$dir/group-chunks"
+    awk '{ print $1, $1 }' "$dir/group-chunks" > "$dir/group-split"
+    group_bad=$(section_group_violations "$dir/group-chunks" "$dir/group-split")
+    group_population=${group_bad%%;*}
+    [ -n "$group_population" ] || { echo "  FAIL: section groups: planted split population is empty"; fail=$((fail + 1)); }
+    expect_red 'section groups: headerless body split from nearest header is refused' "section grouping split headerless chunks from their nearest preceding header: ${group_population:-count=none};" \
+        env SP_SECTION_GROUP_MUTATE=split "$0" --root "$SP_ROOT" --runner "$RUNNER_SOURCE" --shards 3 --check --quiet
     expect_red 'shard_check: missing chunk makes union != full' 'union != full' \
         env SP_SHARD_MUTATE=drop "$0" --root "$SP_ROOT" --shards 3 --check --quiet
     expect_red 'shard_check: duplicate chunk makes shards OVERLAP' 'shards OVERLAP' \
