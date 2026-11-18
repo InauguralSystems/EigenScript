@@ -311,6 +311,26 @@ def read_all(peer):
     return b''.join(chunks)
 
 
+def read_answer(peer, bound):
+    """Bytes of one answer, read until its head and the Content-Length bytes
+    after it are in, the stream ends, or `bound` seconds have passed."""
+    got, until = b'', time.monotonic() + bound
+    while True:
+        head, sep, rest = got.partition(b'\r\n\r\n')
+        if sep:
+            length = [l.split(b':', 1)[1] for l in head.split(b'\r\n')[1:]
+                      if l.lower().startswith(b'content-length:')]
+            if len(length) == 1 and len(rest) >= int(length[0]):
+                return got
+        left = until - time.monotonic()
+        if left <= 0 or not select.select([peer], [], [], left)[0]:
+            return got
+        chunk = peer.recv(1 << 20)
+        if not chunk:
+            return got
+        got += chunk
+
+
 def judge(data, d, r, label):
     """The server's answer r against the reference decision d."""
     if d.kind == 'none':
@@ -740,6 +760,29 @@ def chunks_of(body, n):
     return lines
 
 
+def linger_held(port, data):
+    """D07's linger check: `data` is served on a second connection while the
+    first, answered with bytes after its request and its client open, lingers.
+    The first's answer is written before its head and body are given back
+    (#2412), so a 503 of the second is tried again 100 ms later while within
+    1 s of that answer; the second must be served within 1.5 s of it, while the
+    first still lingers (2 s). Returns (ok, detail)."""
+    with socket.create_connection(('127.0.0.1', port), timeout=10) as first:
+        first.sendall(data + b'GET /v HTTP/1.1\r\n')
+        r1 = parse(read_answer(first, 5))
+        answered, seconds = time.monotonic(), []
+        while True:
+            r2 = exchange(port, data, wait=5)
+            seconds.append(f'{r2 and r2[0]}@{time.monotonic() - answered:.2f}s')
+            if not (r2 and r2[0] == 503) or time.monotonic() - answered > 1:
+                break
+            time.sleep(.1)
+        late = time.monotonic() - answered
+        more = read_all(first)
+    ok = r1 and r1[0] == 200 and r2 and r2[0] == 200 and late < 1.5 and more == b''
+    return ok, f'held during the linger: first {r1 and r1[0]}, second {seconds}, after the bytes {len(more)}'
+
+
 def row_body_limit(ctx):
     limit = 65536
     problems, checked = [], 0
@@ -804,13 +847,9 @@ def row_body_limit(ctx):
     with server(ctx.binary, ctx.folder / 'linger', {'EIGS_HTTP_MAX_BODY_TOTAL': '120000'}) as port:
         body = bytes(rng.randint(1, 255) for _ in range(40000))
         data = b'POST /v HTTP/1.1\r\nHost: h\r\nContent-Length: 40000\r\n\r\n' + body
-        with socket.create_connection(('127.0.0.1', port), timeout=10) as first:
-            first.sendall(data + b'GET /v HTTP/1.1\r\n')
-            r1 = parse(first.recv(1 << 20) if select.select([first], [], [], 5)[0] else b'')
-            r2 = exchange(port, data, wait=5)
-            more = read_all(first)
-        if not (r1 and r1[0] == 200 and r2 and r2[0] == 200 and more == b''):
-            problems.append(f'held during the linger: first {r1 and r1[0]}, second {r2 and r2[0]}')
+        ok, detail = linger_held(port, data)
+        if not ok:
+            problems.append(detail)
         checked += 1
     require(not problems, '; '.join(problems[:6]))
     print(f'COUNTS: body limit checks={checked}/8', flush=True)
