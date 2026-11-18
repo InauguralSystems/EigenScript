@@ -723,6 +723,15 @@ Value* builtin_http_static(Value *arg) {
         rt_error(EK_VALUE, 0, "http_static: prefix must not be empty");
         return make_null();
     }
+    for (const unsigned char *p = (const unsigned char *)prefix; *p; p++) {
+        if (*p == '?' || *p == '#' || *p <= 0x20 || *p == 0x7f) {
+            rt_error(EK_VALUE, 0,
+                     "http_static: prefix '%s' must not contain '?', '#', bytes at or below 0x20, or 0x7F",
+                     prefix);
+            free(prefix);
+            return make_null();
+        }
+    }
     if (prefix[0] != '/') {
         free(prefix);
         rt_error(EK_VALUE, 0, "http_static: prefix must begin with '/'");

@@ -54,7 +54,11 @@ def program(folder, source):
 
 
 def registration(prefix):
-    return f'http_static of [{json.dumps(prefix)}, "{FILES}"]\n'
+    literal = json.dumps(prefix)
+    # EigenScript string literals preserve raw non-newline control bytes; JSON's
+    # \u spelling is deliberately not part of the language.
+    literal = literal.replace('\\u001f', '\x1f').replace('\\u007f', '\x7f')
+    return f'http_static of [{literal}, "{FILES}"]\n'
 
 
 def request(port, path):
@@ -112,6 +116,15 @@ def fetch(source, cases):
             require(actual == expected, f'{path}: got {actual!r}, want {expected!r}')
 
 
+def accepted(source):
+    with tempfile.TemporaryDirectory(prefix='static-accepted-') as directory:
+        path = program(Path(directory), source + 'print of "REGISTERED"\n')
+        result = subprocess.run([EIGS, str(path)], capture_output=True, text=True, timeout=10)
+        clean(result.stdout + result.stderr)
+        require(result.returncode == 0 and not result.stderr and result.stdout == 'REGISTERED\n',
+                f'rc={result.returncode} output={result.stdout!r} stderr={result.stderr!r}')
+
+
 def refusal(source, kind, message, before=''):
     with tempfile.TemporaryDirectory(prefix='static-refusal-') as directory:
         path = program(Path(directory), before + 'try:\n' +
@@ -144,12 +157,53 @@ with tempfile.TemporaryDirectory(prefix='static-prefixes-') as directory:
     (OTHER / 'escape').symlink_to(Path(directory) / 'secret')
     for prefix, name in [('/s1', 'plain'), ('/s1/', 'trailing'), ('/s1///', 'many-trailing')]:
         row('SP2356-' + name, lambda p=prefix: fetch(registration(p), [('/s1/a.txt', (200, 'first'))]))
+    row('SP2363-percent-encoded', lambda: fetch(registration('/s%201'),
+        [('/s%201/a.txt', (200, 'first'))]))
     for prefix, name, message in [
         ('', 'empty', 'http_static: prefix must not be empty'),
         ('/', 'root', 'http_static: prefix must name a path segment (not only slashes)'),
         ('///', 'slashes', 'http_static: prefix must name a path segment (not only slashes)'),
         ('s1', 'relative', "http_static: prefix must begin with '/'")]:
         row('SP2356-' + name, lambda p=prefix, m=message: refusal(registration(p), 'value', m))
+    forbidden_reason = "must not contain '?', '#', bytes at or below 0x20, or 0x7F"
+    for prefix, name in [('/s?x', 'question'), ('/s#x', 'fragment'), ('/s x', 'space'),
+                         ('/s\x1fx', 'control'), ('/s\x7fx', 'delete')]:
+        message = f"http_static: prefix '{prefix}' {forbidden_reason}"
+        row('SP2363-' + name, lambda p=prefix, m=message:
+            refusal(registration(p), 'value', m))
+
+    def later_segment():
+        # The rows above put the byte in the first segment of the prefix.
+        for prefix in ['/a/b?c', '/a/b c', '/a/b/c#']:
+            refusal(registration(prefix), 'value',
+                    f"http_static: prefix '{prefix}' {forbidden_reason}")
+    row('SP2363-later-segment', later_segment)
+
+    def every_control_byte():
+        # The rows above take one control byte. Each of 0x01 to 0x1F is refused;
+        # a string of this language cannot hold a NUL.
+        for byte in range(1, 0x20):
+            source = f'http_static of ["/s" + (chr of {byte}) + "x", "{FILES}"]\n'
+            refusal(source, 'value', f"http_static: prefix '/s{chr(byte)}x' {forbidden_reason}")
+    row('SP2363-every-control-byte', every_control_byte)
+
+    def other_bytes_register():
+        # Bytes the rule does not name are still accepted: a percent sign, a
+        # plus, the byte after the space (0x21), the byte before DEL (0x7E), and
+        # bytes of 0x80 and above (the UTF-8 of a non-ASCII letter).
+        for prefix in ['/a%41b', '/a+b', '/a!b', '/a~b', '/caf\u00e9']:
+            accepted(f'http_static of [{json.dumps(prefix, ensure_ascii=False)}, "{FILES}"]\n')
+    row('SP2363-other-bytes-register', other_bytes_register)
+
+    def refused_is_atomic():
+        source = registration('/good') + 'try:\n' + \
+            '    ' + registration('/bad#x').rstrip() + '\ncatch e:\n' + \
+            '    print of e.kind\n' + \
+            ''.join(registration('/fill' + str(i)) for i in range(15))
+        fetch(source, [('/good/a.txt', (200, 'first')),
+                       ('/fill14/a.txt', (200, 'first')),
+                       ('/bad#x/a.txt', (404, '{"error": "not_found"}'))])
+    row('SP2363-refusal-is-atomic', refused_is_atomic)
     two = registration('/s1') + f'http_static of ["/s2", "{OTHER}"]\n'
     row('SP2357-two', lambda: fetch(two, [('/s1/a.txt', (200, 'first')), ('/s2/a.txt', (200, 'second'))]))
     parent = registration('/assets')
