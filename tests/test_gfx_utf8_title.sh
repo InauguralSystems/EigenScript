@@ -2,7 +2,6 @@
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-DISPLAY_NUM=":$((90 + ($$ % 900)))"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/eigs-1681-title.XXXXXX")
 export LC_ALL=C.UTF-8
 
@@ -15,24 +14,10 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-# -noreset (#2204): without it Xvfb resets whenever its last client
-# disconnects, which happens between every two cases here. A case whose
-# program connects during that reset dies with "SDL_Init failed: x11 not
-# available"; a loaded box widens the window enough to hit it.
-Xvfb "$DISPLAY_NUM" -screen 0 640x480x24 -noreset >"$TMP/xvfb.log" 2>&1 &
-XVFB_PID=$!
-i=0
-while [ "$i" -lt 100 ]; do
-    kill -0 "$XVFB_PID" 2>/dev/null || break
-    xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1 && break
-    sleep 0.1
-    i=$((i + 1))
-done
-if ! xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1; then
-    echo "  FAIL: Xvfb did not become ready"
-    cat "$TMP/xvfb.log"
-    exit 1
-fi
+# The server is started by tests/xvfb.sh, which keeps it from resetting when
+# its last client leaves (#2215): a reset closes a handshake that is pending.
+. "$ROOT/tests/xvfb.sh" || exit 1
+xvfb_start || exit 1
 
 # Each wait is bounded by a deadline, not a count of short sleeps: on a
 # loaded box one xdotool or xprop call can take most of a fixed budget

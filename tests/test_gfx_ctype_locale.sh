@@ -6,7 +6,6 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 # tests do; CI's compiler guard rejects a compile without them.
 WERROR_FLAGS_FILE="$ROOT/tools/werror_flags.txt"
 . "$ROOT/tools/read_werror_flags.sh" || exit 1
-DISPLAY_NUM=":$((190 + ($$ % 700)))"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/eigs-1681-ctype.XXXXXX")
 cleanup() {
     [ -n "${XVFB_PID:-}" ] && kill "$XVFB_PID" 2>/dev/null || true
@@ -15,18 +14,10 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-Xvfb "$DISPLAY_NUM" -screen 0 640x480x24 >"$TMP/xvfb.log" 2>&1 &
-XVFB_PID=$!
-for _ in $(seq 1 100); do
-    xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1 && break
-    kill -0 "$XVFB_PID" 2>/dev/null || break
-    sleep 0.1
-done
-if ! xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1; then
-    echo "  FAIL: Xvfb did not become ready"
-    cat "$TMP/xvfb.log"
-    exit 1
-fi
+# The server is started by tests/xvfb.sh, which keeps it from resetting when
+# its last client leaves (#2215): a reset closes a handshake that is pending.
+. "$ROOT/tests/xvfb.sh" || exit 1
+xvfb_start || exit 1
 
 if ! ${CC:-cc} $WERROR_FLAGS -shared -fPIC -Wall -Wextra -Werror \
         "$ROOT/tests/gfx_locale_probe.c" -ldl -o "$TMP/locale-probe.so" \
