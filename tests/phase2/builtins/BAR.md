@@ -42,7 +42,7 @@ in `../builtins_changes.md`; the four R2.4 additions use that same exact-hash
 mechanism with their own authority. Existing frozen expectations stay fixed.
 
 ## Files
-- `builtins.tsv`, 308 rows: `builtin file class loss q7 round closed_in
+- `builtins.tsv`, 309 rows: `builtin file class loss q7 round closed_in
   profile hook stdin changes_vs_pre changes_vs_tag`. `make_table.py` writes
   it. Rows come from the §6 table, checked both ways against the inventory's
   `## Builtins` list, field by field. Both files and `src/` are extracted with
@@ -52,8 +52,8 @@ mechanism with their own authority. Existing frozen expectations stay fixed.
   checkout's state; `EIGS_TREE` overrides it for the plants. `file` is the
   `src/*.c` file that defines the inventory's C function. `round` follows the
   plan's rule, and the counts are checked against b 46, c 75, d 52, e 38,
-  f 20 and g 77 (R1.6b-D3, R1.6-S2, R1.6g-D1, S10-D2, sync11 retirement,
-  the four NEW R2.4/N12 rows and the NEW HTTP2351 row). The other columns:
+  f 21 and g 77 (R1.6b-D3, R1.6-S2, R1.6g-D1, S10-D2, sync11 retirement,
+  the four NEW R2.4/N12 rows and the NEW HTTP2351 and HTTP2375 rows). The other columns:
   - `closed_in` (ruling A2) and `profile` (A3) come from `rowmeta.tsv`;
   - `hook` (A4) and `stdin` (A5) list the hooks and the stdin fixtures of the
     row's cases, in case order. `-` means none, and stdin `-` is `/dev/null`;
@@ -65,7 +65,7 @@ mechanism with their own authority. Existing frozen expectations stay fixed.
     original one. It is recorded as an observation and never checked, because
     the tag has no `num_type`, and `set_exit_code` also postdates the tag.
 - `rowmeta.tsv`: `builtin closed_in profile`, one line per table row.
-- `cases.tsv`: `case builtin hook stdin`, 309 cases. A row's primary case is
+- `cases.tsv`: `case builtin hook stdin`, 310 cases. A row's primary case is
   `builtins/<b>`. The surviving second case is `gfx_poll.empty` (B3).
   S10-D2 explicitly retires both `proc_read_buf` cases (A5/C10).
 - `builtins/<case>.eigs` is the probe. `<case>.branch` is the pre-registered
@@ -1203,3 +1203,29 @@ Both reference builds completed with zero warnings; the focused table runner
 compares the candidate with the unchanged preregistered expectation and the
 tag with its observed transcript. `make_table.py --write --final` reports
 308 rows, 309 cases, 217 guarded rows and zero vacuous rows.
+
+## HTTP2375 outbound exchange addition
+
+The #2375 Decision adds `http_fetch`. Its timeout reads and integer status
+make it numeric under the unchanged inventory rule. It is an `other`,
+`magnitude` row in ext_http.c's f bucket, server profile. Its probe and
+`.branch` were preregistered before candidate observations: timeout 0,
+0.0009, 300.0001, -1, infinity and NaN each raise `value`; accepted timeout
+0.001, 300 and 300.0 reach the invalid port's `io` error, exactly
+`http_fetch: curl failed (curl error 3)`. This fixes the result without a
+listener, live clock, port or path in stdout. The HTTP socket suite checks
+integer response status and actual timeouts separately.
+
+The accepted start is `3450dff5c3bd5e9222ef6e0b05cef738cd0182e3`; exact new-source
+and expectation hashes are in `../builtins_changes.md` and the additions
+overlay. No existing transcript is changed. Current totals are 309 rows,
+310 cases; b 46, c 75, d 52, e 38, f 21, g 77; profiles release 287,
+server 18, db 3 and zlib 1. Matched reference observations use the same
+server builds recorded for HTTP2351.
+
+Both repaired-probe reference transcripts now print nine caught
+`undefined_name` observations and end `rc=0`, with common SHA-256
+`f3c967517acccfd287906271742048fe2f313891f1f2b00094eec240c102b5fd`.
+The unchanged preregistered `.branch` matches the candidate. The focused
+runner checks `http_fetch` and the untouched `http_post` case together;
+the table checker reports 309 rows, 310 cases, 218 guarded and zero vacuous.

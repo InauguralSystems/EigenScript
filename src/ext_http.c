@@ -21,6 +21,10 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <poll.h>
+#include <dlfcn.h>
+#ifndef EIGENSCRIPT_VERSION
+#define EIGENSCRIPT_VERSION "dev"
+#endif
 
 /* Phase 2.75 — HTTP nondet capture.
  *
@@ -1004,157 +1008,670 @@ static int http_url_is_allowed(const char *url) {
     return strncmp(url, "http://", 7) == 0 || strncmp(url, "https://", 8) == 0;
 }
 
-Value* builtin_http_post(Value *arg) {
+/* Outbound client: one exchange behind both public builtins. This is the
+ * public libcurl ABI, not its header: option numbers are stable enum values.
+ * See docs/BUILTINS.md for the introduction releases and runtime dependency. */
+typedef struct FetchSlist { char *data; struct FetchSlist *next; } FetchSlist;
+static struct {
+    void *lib;
+    int init_error;
+    int (*global_init)(long);
+    void *(*easy_init)(void);
+    void (*easy_cleanup)(void *);
+    int (*easy_setopt)(void *, int, ...);
+    int (*easy_perform)(void *);
+    int (*easy_getinfo)(void *, int, ...);
+    FetchSlist *(*slist_append)(FetchSlist *, const char *);
+    void (*slist_free_all)(FetchSlist *);
+} fetch_curl;
+static pthread_once_t fetch_curl_once = PTHREAD_ONCE_INIT;
+static pthread_once_t fetch_config_once = PTHREAD_ONCE_INIT;
+static size_t fetch_body_limit = 16777216;
+static char *fetch_ca_file, *fetch_ca_dir;
+
+static void fetch_read_config(void) {
+    const char *s = getenv("EIGS_HTTP_FETCH_MAX_BODY");
+    if (s) {
+        size_t n = strlen(s), v = 0;
+        int ok = n >= 1 && n <= 10;
+        for (size_t i = 0; ok && i < n; i++) {
+            if (s[i] < '0' || s[i] > '9') ok = 0;
+            else {
+                unsigned digit = (unsigned)(s[i] - '0');
+                if (v > (2147483647u - digit) / 10) ok = 0;
+                else v = v * 10 + digit;
+            }
+        }
+        if (ok && v) fetch_body_limit = v;
+    }
+    s = getenv("CURL_CA_BUNDLE");
+    if (s && *s) fetch_ca_file = xstrdup(s);
+    else {
+        s = getenv("SSL_CERT_FILE");
+        if (s && *s) fetch_ca_file = xstrdup(s);
+        s = getenv("SSL_CERT_DIR");
+        if (s && *s) fetch_ca_dir = xstrdup(s);
+    }
+}
+
+static void fetch_load_curl(void) {
+#ifdef __APPLE__
+    const char *names[] = {"libcurl.4.dylib", "libcurl.dylib"};
+#else
+    const char *names[] = {"libcurl.so.4", "libcurl.so"};
+#endif
+    for (size_t i = 0; i < sizeof names / sizeof names[0] && !fetch_curl.lib; i++)
+        fetch_curl.lib = dlopen(names[i], RTLD_NOW | RTLD_LOCAL);
+    if (!fetch_curl.lib) return;
+    int ok = 1;
+#define FETCH_LOAD(member, symbol) do { \
+    fetch_curl.member = dlsym(fetch_curl.lib, #symbol); \
+    if (!fetch_curl.member) ok = 0; \
+} while (0)
+    FETCH_LOAD(global_init, curl_global_init);
+    FETCH_LOAD(easy_init, curl_easy_init);
+    FETCH_LOAD(easy_cleanup, curl_easy_cleanup);
+    FETCH_LOAD(easy_setopt, curl_easy_setopt);
+    FETCH_LOAD(easy_perform, curl_easy_perform);
+    FETCH_LOAD(easy_getinfo, curl_easy_getinfo);
+    FETCH_LOAD(slist_append, curl_slist_append);
+    FETCH_LOAD(slist_free_all, curl_slist_free_all);
+#undef FETCH_LOAD
+    if (!ok) {
+        dlclose(fetch_curl.lib);
+        fetch_curl.lib = NULL;
+        return;
+    }
+    /* CURL_GLOBAL_ALL = 3. Once includes global init: no other curl function
+     * can run until this publishes the complete table and initialized state.
+     * Retain for process lifetime; cleanup could race another state's call. */
+    fetch_curl.init_error = fetch_curl.global_init(3L);
+}
+
+/* Stable public enum values, from curl 8.5.0's public curl.h. */
+enum {
+    FETCH_CURLOPT_WRITEDATA = 10001,
+    FETCH_CURLOPT_URL = 10002,
+    FETCH_CURLOPT_WRITEFUNCTION = 20011,
+    FETCH_CURLOPT_POSTFIELDS = 10015,
+    FETCH_CURLOPT_HTTPHEADER = 10023,
+    FETCH_CURLOPT_HEADERDATA = 10029,
+    FETCH_CURLOPT_CUSTOMREQUEST = 10036,
+    FETCH_CURLOPT_NOBODY = 44,
+    FETCH_CURLOPT_NETRC = 51,
+    FETCH_CURLOPT_FOLLOWLOCATION = 52,
+    FETCH_CURLOPT_POSTFIELDSIZE = 60,
+    FETCH_CURLOPT_SSL_VERIFYPEER = 64,
+    FETCH_CURLOPT_CAINFO = 10065,
+    FETCH_CURLOPT_HEADERFUNCTION = 20079,
+    FETCH_CURLOPT_SSL_VERIFYHOST = 81,
+    FETCH_CURLOPT_HTTP_VERSION = 84,
+    FETCH_CURLOPT_CAPATH = 10097,
+    FETCH_CURLOPT_NOSIGNAL = 99,
+    FETCH_CURLOPT_TIMEOUT_MS = 155,
+    FETCH_CURLOPT_HTTP_CONTENT_DECODING = 158,
+    FETCH_CURLOPT_PATH_AS_IS = 234,
+    FETCH_CURLINFO_RESPONSE_CODE = 0x200002
+};
+#define FETCH_HEADER_LIMIT 65536u
+/* The runtime's own limit on lines, below curl's 5000 (from 8.14.0), so that
+ * the same answer decides the same way on every release. */
+#define FETCH_HEADER_LINE_LIMIT 4096u
+
+typedef struct {
+    const char *name, *value;
+    size_t name_len, value_len;
+} FetchHeader;
+typedef struct {
+    const char *url, *method, *body;
+    size_t url_len, body_len, authority_end;
+    long timeout_ms;
+    FetchHeader *headers;
+    size_t header_count;
+    int own_headers, post;
+} FetchRequest;
+
+static void fetch_request_clear(FetchRequest *r) {
+    if (r->own_headers) {
+        for (size_t i = 0; i < r->header_count; i++) {
+            free((char *)r->headers[i].name);
+            free((char *)r->headers[i].value);
+        }
+    }
+    free(r->headers);
+}
+
+static int fetch_error(const char *fn, ErrKind kind, const char *rule) {
+    rt_error(kind, 0, "%s: %s", fn, rule);
+    return 0;
+}
+static unsigned char fetch_lower(unsigned char c) {
+    return c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c;
+}
+static int fetch_token(unsigned char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || (c && strchr("!#$%&'*+-.^_`|~", c));
+}
+static int fetch_name_cmp(const void *a, const void *b) {
+    const FetchHeader *ha = *(const FetchHeader *const *)a;
+    const FetchHeader *hb = *(const FetchHeader *const *)b;
+    return strcasecmp(ha->name, hb->name);
+}
+static int fetch_url_valid(FetchRequest *r, const char *fn) {
+    size_t start = strncmp(r->url, "http://", 7) == 0 ? 7 :
+                   strncmp(r->url, "https://", 8) == 0 ? 8 : 0;
+    if (!start) return fetch_error(fn, EK_VALUE, "url must begin http:// or https://");
+    for (size_t i = 0; i < r->url_len; i++) {
+        unsigned char c = (unsigned char)r->url[i];
+        if (c < 0x21 || c > 0x7e)
+            return fetch_error(fn, EK_VALUE, "url must contain only visible ASCII");
+    }
+    size_t end = start;
+    while (end < r->url_len && !strchr("/?#", r->url[end])) end++;
+    if (end == start) return fetch_error(fn, EK_VALUE, "url authority must not be empty");
+    for (size_t i = start; i < end; i++) {
+        unsigned char c = (unsigned char)r->url[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || strchr(".-_:[]", c)))
+            return fetch_error(fn, EK_VALUE, "url authority has a forbidden character");
+    }
+    r->authority_end = end;
+    return 1;
+}
+static int fetch_headers_valid(FetchRequest *r, const char *fn) {
+    size_t total = 0;
+    for (size_t i = 0; i < r->header_count; i++) {
+        FetchHeader *h = &r->headers[i];
+        if (h->name_len < 1 || h->name_len > 64)
+            return fetch_error(fn, EK_VALUE, "header name must be 1 to 64 token bytes");
+        for (size_t j = 0; j < h->name_len; j++)
+            if (!fetch_token((unsigned char)h->name[j]))
+                return fetch_error(fn, EK_VALUE, "header name must contain only token bytes");
+        if (!strcasecmp(h->name, "Content-Length") ||
+            !strcasecmp(h->name, "Transfer-Encoding") || !strcasecmp(h->name, "Expect"))
+            return fetch_error(fn, EK_VALUE, "Content-Length, Transfer-Encoding and Expect are reserved headers");
+        /* The connection is the runtime's: one for each call, closed at its
+         * end, and the Connection line written by the runtime. */
+        if (!strcasecmp(h->name, "Connection") || !strcasecmp(h->name, "Keep-Alive") ||
+            !strcasecmp(h->name, "Proxy-Connection") || !strcasecmp(h->name, "TE") ||
+            !strcasecmp(h->name, "Upgrade"))
+            return fetch_error(fn, EK_VALUE, "Connection, Keep-Alive, Proxy-Connection, TE and Upgrade are reserved headers: the connection is the runtime's");
+        for (size_t j = 0; j < h->value_len; j++) {
+            unsigned char c = (unsigned char)h->value[j];
+            if (c != '\t' && (c < 0x20 || c > 0x7e))
+                return fetch_error(fn, EK_VALUE, "header value must contain visible ASCII, space or tab");
+        }
+        if (h->value_len && (strchr(" \t", h->value[0]) ||
+                            strchr(" \t", h->value[h->value_len - 1])))
+            return fetch_error(fn, EK_VALUE, "header value must not begin or end with space or tab");
+        /* Subtraction bounds both the sum and individual lengths. */
+        size_t base = h->name_len + 4;
+        if (base > FETCH_HEADER_LIMIT - total ||
+            h->value_len > FETCH_HEADER_LIMIT - total - base)
+            return fetch_error(fn, EK_LIMIT, "request headers are longer than 65536 bytes");
+        total += base + h->value_len;
+    }
+    if (r->header_count > 1) {
+        FetchHeader **sorted = xmalloc(r->header_count * sizeof *sorted);
+        for (size_t i = 0; i < r->header_count; i++) sorted[i] = &r->headers[i];
+        qsort(sorted, r->header_count, sizeof *sorted, fetch_name_cmp);
+        int duplicate = 0;
+        for (size_t i = 1; i < r->header_count; i++)
+            if (!strcasecmp(sorted[i - 1]->name, sorted[i]->name)) { duplicate = 1; break; }
+        free(sorted);
+        if (duplicate) return fetch_error(fn, EK_VALUE, "header names must be unique ignoring case");
+    }
+    return 1;
+}
+
+static int fetch_request_dict(Value *arg, FetchRequest *r) {
+    const char *fn = "http_fetch";
+    if (!arg || arg->type != VAL_DICT) return fetch_error(fn, EK_TYPE, "request must be a dict");
+    r->method = "GET"; r->body = ""; r->timeout_ms = 15000;
+    DICT_FOR_EACH(arg, i) {
+        const char *k = arg->data.dict.keys[i];
+        EigsView view;
+        Value *v = dict_value_get_view(arg, i, &view);
+        if (!strcmp(k, "url") || !strcmp(k, "method") || !strcmp(k, "body")) {
+            if (v->type != VAL_STR) return fetch_error(fn, EK_TYPE, "url, method and body must be strings");
+            if (!strcmp(k, "url")) { r->url = v->data.str; r->url_len = val_str_len(v); }
+            else if (!strcmp(k, "body")) { r->body = v->data.str; r->body_len = val_str_len(v); }
+            else {
+                r->method = v->data.str;
+                /* Text cannot embed NUL; keep the length guard explicit here. */
+                if (val_str_len(v) != strlen(r->method)) return fetch_error(fn, EK_VALUE, "invalid method");
+            }
+        } else if (!strcmp(k, "headers")) {
+            if (v->type != VAL_DICT) return fetch_error(fn, EK_TYPE, "headers must be a dict");
+            size_t n = (size_t)v->data.dict.count;
+            r->headers = n ? xcalloc(n, sizeof *r->headers) : NULL;
+            DICT_FOR_EACH(v, j) {
+                EigsView hv;
+                Value *value = dict_value_get_view(v, j, &hv);
+                if (value->type != VAL_STR) return fetch_error(fn, EK_TYPE, "header value must be a string");
+                const char *name = v->data.dict.keys[j];
+                r->headers[r->header_count++] = (FetchHeader){name, value->data.str, strlen(name), val_str_len(value)};
+            }
+        } else if (!strcmp(k, "timeout")) {
+            if (!val_is_number(v)) return fetch_error(fn, EK_TYPE, "timeout must be an int or a float");
+            EigsNum n;
+            if (!eigs_number_read(v, &n, "http_fetch")) return 0;
+            double seconds = n.is_int ? (double)n.value.i64 : n.value.f64;
+            if (!isfinite(seconds) || seconds < 0.001 || seconds > 300)
+                return fetch_error(fn, EK_VALUE, "timeout must be finite and between 0.001 and 300 seconds");
+            r->timeout_ms = (long)ceil(seconds * 1000.0);
+        } else return fetch_error(fn, EK_VALUE, "unknown request key");
+    }
+    if (!r->url) return fetch_error(fn, EK_VALUE, "url is required");
+    if (strcmp(r->method, "GET") && strcmp(r->method, "HEAD") &&
+        strcmp(r->method, "POST") && strcmp(r->method, "PUT") &&
+        strcmp(r->method, "PATCH") && strcmp(r->method, "DELETE"))
+        return fetch_error(fn, EK_VALUE, "method must be GET, HEAD, POST, PUT, PATCH or DELETE");
+    if ((!strcmp(r->method, "GET") || !strcmp(r->method, "HEAD")) && r->body_len)
+        return fetch_error(fn, EK_VALUE, "GET and HEAD must have an empty body");
+    return fetch_url_valid(r, fn) && fetch_headers_valid(r, fn);
+}
+
+/* Errors use a shape no success can have (a two-string list). Validate taped
+ * payloads before interpreting them; replay never falls through to live I/O. */
+static int fetch_replay(const char *fn, Value **out) {
+    if (!__builtin_expect(g_replay_enabled, 0)) return 0;
+    Value *v = NULL;
+    int took = !strcmp(fn, "http_post") ? trace_replay_take("http_post", &v) :
+                                         trace_replay_take("http_fetch", &v);
+    if (!took) {
+        if (!g_has_error) rt_error(EK_IO, 0, "%s: unservable replay record", fn);
+        *out = make_null(); return 1;
+    }
+    if (v->type == VAL_LIST) {
+        if (v->data.list.count == 2 && list_elem_type(v, 0) == VAL_STR && list_elem_type(v, 1) == VAL_STR) {
+            const char *kind = list_get_ref(v, 0)->data.str;
+            if (!strcmp(kind, "io") || !strcmp(kind, "limit")) {
+                rt_error(!strcmp(kind, "io") ? EK_IO : EK_LIMIT, 0, "%s", list_get_ref(v, 1)->data.str);
+                goto refused;
+            }
+        }
+        rt_error(EK_IO, 0, "%s: invalid replay error record", fn);
+        goto refused;
+    }
+    int valid = !strcmp(fn, "http_post") ? v->type == VAL_STR : v->type == VAL_DICT;
+    if (valid && v->type == VAL_DICT) {
+        EigsView sv, hv, bv;
+        Value *s = dict_get_view(v, "status", &sv), *h = dict_get_view(v, "headers", &hv), *b = dict_get_view(v, "body", &bv);
+        int64_t code;
+        valid = v->data.dict.count == 3 && s && s->type == VAL_INT &&
+                eigs_int_arg_range(s, 200, 999, &code, fn) && h && h->type == VAL_DICT && b && b->type == VAL_STR;
+        if (valid) DICT_FOR_EACH(h, i) { if (dict_value_type(h, i) != VAL_STR) { valid = 0; break; } }
+    }
+    if (!valid) {
+        if (!g_has_error) rt_error(EK_IO, 0, "%s: invalid replay answer record", fn);
+        goto refused;
+    }
+    *out = v;
+    return 1;
+refused:
+    val_decref(v);
+    *out = make_null();
+    return 1;
+}
+static Value *fetch_attempt_error(const char *fn, ErrKind kind, const char *suffix) {
+    char message[256];
+    snprintf(message, sizeof message, "%s: %s", fn, suffix);
+    if (__builtin_expect(g_trace_enabled, 0)) {
+        Value *v = make_list(2);
+        list_append_owned(v, make_str(err_kind_name(kind)));
+        list_append_owned(v, make_str(message));
+        trace_nondet_value(fn, v);
+        val_decref(v);
+    }
+    rt_error(kind, 0, "%s", message);
+    return make_null();
+}
+static Value *fetch_curl_error(const char *fn, int code) {
+    const char *message = NULL;
+    switch (code) {
+        case 6: message = "could not resolve the host (curl error 6)"; break;
+        case 7: message = "could not connect (curl error 7)"; break;
+        case 28: message = "timed out (curl error 28)"; break;
+        case 18: case 52: case 56: message = "the answer ended early"; break;
+        default: break;
+    }
+    char text[80];
+    if (!message) { snprintf(text, sizeof text, "curl failed (curl error %d)", code); message = text; }
+    return fetch_attempt_error(fn, EK_IO, message);
+}
+
+typedef struct {
+    char *body, *headers;
+    size_t body_len, body_room, header_len, header_bytes, header_lines;
+    size_t exchange_lines; /* every header line of the exchange; never reset */
+    int status, final_complete, limit;
+    int mid_block; /* 0 when the next line opens a block: the first line, or one after an empty line */
+    int said;      /* the status the block's status line says, or -1 when it says none */
+    int unsaid;    /* the final block's status line did not say the library's status */
+    void *easy;    /* the call's own handle, asked for the code at a block's empty line */
+} FetchAnswer;
+
+static size_t fetch_body_write(char *bytes, size_t size, size_t count, void *opaque) {
+    FetchAnswer *a = opaque;
+    if (size && count > SIZE_MAX / size) { a->limit = 2; return 0; }
+    size_t n = size * count;
+    if (n > fetch_body_limit - a->body_len) { a->limit = 2; return 0; }
+    size_t needed = a->body_len + n + 1;
+    if (needed > a->body_room) {
+        size_t room = a->body_room ? a->body_room : 4096;
+        while (room < needed) {
+            if (room > (fetch_body_limit + 1) / 2) { room = fetch_body_limit + 1; break; }
+            room *= 2;
+        }
+        a->body = xrealloc(a->body, room);
+        a->body_room = room;
+    }
+    if (n) memcpy(a->body + a->body_len, bytes, n);
+    a->body_len += n;
+    a->body[a->body_len] = '\0';
+    return n;
+}
+/* The status a status line says: the line begins with the bytes HTTP/, and
+ * the first run of spaces or tabs in it is followed by three digits and no
+ * fourth. -1 when the line says none. */
+static int fetch_status_said(const char *bytes, size_t n) {
+    if (n < 5 || memcmp(bytes, "HTTP/", 5)) return -1;
+    size_t i = 5;
+    while (i < n && bytes[i] != ' ' && bytes[i] != '\t') i++;
+    while (i < n && (bytes[i] == ' ' || bytes[i] == '\t')) i++;
+    if (i + 3 > n) return -1;
+    for (size_t j = i; j < i + 3; j++) if (bytes[j] < '0' || bytes[j] > '9') return -1;
+    if (i + 3 < n && bytes[i + 3] >= '0' && bytes[i + 3] <= '9') return -1;
+    return (bytes[i] - '0') * 100 + (bytes[i + 1] - '0') * 10 + bytes[i + 2] - '0';
+}
+/* Which block is final is the library's: at the empty line that ends a block
+ * it reports the block's status (0 for a proxy's answer to CONNECT). A block
+ * at 200 or more is final, and the answer it starts is one only when its
+ * status line said that same status. Up to then the first line of a block is
+ * its status line; after the final block every line is a trailer line. */
+static size_t fetch_header_write(char *bytes, size_t size, size_t count, void *opaque) {
+    FetchAnswer *a = opaque;
+    if (size && count > SIZE_MAX / size) { a->limit = 1; return 0; }
+    size_t n = size * count;
+    int empty = (n == 2 && bytes[0] == '\r' && bytes[1] == '\n') || (n == 1 && bytes[0] == '\n');
+    if (!a->final_complete) {
+        if (!a->mid_block) {
+            a->mid_block = 1;
+            a->header_len = 0; a->header_lines = 0;
+            a->said = fetch_status_said(bytes, n);
+            return n;
+        }
+        if (empty) {
+            long code = 0;
+            a->mid_block = 0;
+            if (fetch_curl.easy_getinfo(a->easy, FETCH_CURLINFO_RESPONSE_CODE, &code) || code < 200) return n;
+            a->final_complete = 1;
+            if (code != a->said) { a->unsaid = 1; return 0; }
+            return n;
+        }
+    } else if (empty) return n;
+    if (n > FETCH_HEADER_LIMIT - a->header_bytes) { a->limit = 1; return 0; }
+    if (a->exchange_lines >= FETCH_HEADER_LINE_LIMIT) { a->limit = 3; return 0; }
+    a->header_bytes += n;
+    a->exchange_lines++;
+    if (!a->final_complete) {
+        if (!a->headers) a->headers = xmalloc(FETCH_HEADER_LIMIT + 1);
+        memcpy(a->headers + a->header_len, bytes, n);
+        a->header_len += n;
+        a->headers[a->header_len] = '\0';
+        a->header_lines++;
+    }
+    return n;
+}
+
+typedef struct {
+    char *name, *value;
+    size_t length, joined;
+    size_t next, last, group;
+} FetchField;
+/* Parse only the retained final header block. A hash index groups duplicates;
+ * one allocation/copy per final value avoids rescanning/copied prefixes. */
+static Value *fetch_answer_headers(FetchAnswer *a) {
+    Value *dict = make_dict(0);
+    if (!a->header_lines) return dict;
+    FetchField *fields = xcalloc(a->header_lines, sizeof *fields);
+    size_t room = 1;
+    while (room < a->header_lines * 2) room *= 2;
+    size_t *index = xcalloc(room, sizeof *index);
+    size_t used = 0, pos = 0;
+    while (pos < a->header_len) {
+        char *line = a->headers + pos, *end = memchr(line, '\n', a->header_len - pos);
+        if (!end) break;
+        pos = (size_t)(end - a->headers) + 1;
+        if (end > line && end[-1] == '\r') end--;
+        char *colon = memchr(line, ':', (size_t)(end - line));
+        if (!colon) continue; /* malformed lines remain the library's decision */
+        uint32_t hash = 2166136261u;
+        for (char *p = line; p < colon; p++) { *p = (char)fetch_lower((unsigned char)*p); hash = (hash ^ (unsigned char)*p) * 16777619u; }
+        *colon = '\0';
+        char *value = colon + 1;
+        while (value < end && (*value == ' ' || *value == '\t')) value++;
+        while (end > value && (end[-1] == ' ' || end[-1] == '\t')) end--;
+        *end = '\0';
+        size_t bucket = hash & (room - 1);
+        while (index[bucket] && strcmp(fields[index[bucket] - 1].name, line)) bucket = (bucket + 1) & (room - 1);
+        size_t i = used++, group = index[bucket] ? index[bucket] - 1 : i;
+        fields[i] = (FetchField){line, value, (size_t)(end - value), (size_t)(end - value), SIZE_MAX, i, group};
+        if (group == i) index[bucket] = i + 1;
+        else {
+            fields[fields[group].last].next = i;
+            fields[group].last = i;
+            fields[group].joined += 2 + fields[i].length;
+        }
+    }
+    for (size_t i = 0; i < used; i++) if (fields[i].group == i) {
+        char *value = xmalloc(fields[i].joined + 1), *p = value;
+        for (size_t j = i; j != SIZE_MAX; j = fields[j].next) {
+            if (j != i) { *p++ = ','; *p++ = ' '; }
+            memcpy(p, fields[j].value, fields[j].length); p += fields[j].length;
+        }
+        *p = '\0';
+        dict_set_owned(dict, fields[i].name, make_str_owned_len(value, fields[i].joined));
+    }
+    free(index);
+    free(fields);
+    return dict;
+}
+
+/* curl_slist_append traverses its argument. Create one library-owned node at
+ * a time, and link at our tail; curl_slist_free_all remains its sole owner. */
+static int fetch_line(FetchSlist **head, FetchSlist **tail, const char *line) {
+    FetchSlist *node = fetch_curl.slist_append(NULL, line);
+    if (!node) return 0;
+    if (*tail) (*tail)->next = node;
+    else *head = node;
+    *tail = node;
+    return 1;
+}
+static int fetch_header_line(FetchSlist **head, FetchSlist **tail, const FetchHeader *h) {
+    char *line = xmalloc(h->name_len + h->value_len + 3);
+    memcpy(line, h->name, h->name_len);
+    size_t pos = h->name_len;
+    /* name; is libcurl's documented spelling of an explicitly empty value. */
+    line[pos++] = h->value_len ? ':' : ';';
+    if (h->value_len) { line[pos++] = ' '; memcpy(line + pos, h->value, h->value_len); pos += h->value_len; }
+    line[pos] = '\0';
+    int ok = fetch_line(head, tail, line);
+    free(line);
+    return ok;
+}
+
+static Value *fetch_exchange(FetchRequest *r, const char *fn) {
+    Value *replayed;
+    if (fetch_replay(fn, &replayed)) return replayed;
+    pthread_once(&fetch_curl_once, fetch_load_curl);
+    if (!fetch_curl.lib) return fetch_attempt_error(fn, EK_IO, "could not load the curl library");
+    if (fetch_curl.init_error) return fetch_curl_error(fn, fetch_curl.init_error);
+    pthread_once(&fetch_config_once, fetch_read_config);
+    void *easy = fetch_curl.easy_init();
+    if (!easy) return fetch_curl_error(fn, 2); /* CURLE_FAILED_INIT */
+    FetchAnswer a = {0};
+    a.easy = easy;
+    FetchSlist *head = NULL, *tail = NULL;
+    int code = 0, host = -1, content_type = 0, user_agent = 0, accept = 0;
+    for (size_t i = 0; i < r->header_count; i++) {
+        if (!strcasecmp(r->headers[i].name, "Host")) host = (int)i;
+        if (!strcasecmp(r->headers[i].name, "Content-Type")) content_type = 1;
+        if (!strcasecmp(r->headers[i].name, "User-Agent")) user_agent = 1;
+        if (!strcasecmp(r->headers[i].name, "Accept")) accept = 1;
+    }
+    if (!fetch_line(&head, &tail, "Expect:") ||
+        (!content_type && !r->post && !fetch_line(&head, &tail, "Content-Type:"))) { code = 27; goto done; }
+    /* Clear curl's generated Host first, then emit the caller's spelling.
+     * All other generated fields are supplied in this list too, so they
+     * cannot precede this Host in curl's earlier, generated-field block. */
+    if (host >= 0 && (!fetch_line(&head, &tail, "Host:") || !fetch_header_line(&head, &tail, &r->headers[host]))) { code = 27; goto done; }
+    for (size_t i = 0; i < r->header_count; i++)
+        if ((int)i != host && !fetch_header_line(&head, &tail, &r->headers[i])) { code = 27; goto done; }
+    if ((!user_agent && !fetch_line(&head, &tail, "User-Agent: EigenScript/" EIGENSCRIPT_VERSION)) ||
+        (!accept && !fetch_line(&head, &tail, "Accept: */*")) ||
+        (!content_type && r->post && !fetch_line(&head, &tail, "Content-Type: application/x-www-form-urlencoded"))) { code = 27; goto done; }
+    if (!strcmp(r->method, "POST") || !strcmp(r->method, "PUT") ||
+        !strcmp(r->method, "PATCH") || (!strcmp(r->method, "DELETE") && r->body_len)) {
+        char length[64];
+        snprintf(length, sizeof length, "Content-Length: %zu", r->body_len);
+        if (!fetch_line(&head, &tail, length)) { code = 27; goto done; }
+    }
+    /* RFC 9112, 9.3: a client that keeps no connection sends close. From
+     * curl 8.16.0 the library moves this line to the end of the request. */
+    if (!fetch_line(&head, &tail, "Connection: close")) { code = 27; goto done; }
+#define FETCH_SET(option, value) do { \
+    code = fetch_curl.easy_setopt(easy, FETCH_CURLOPT_##option, (value)); \
+    if (code) goto done; \
+} while (0)
+    FETCH_SET(URL, r->url);
+    FETCH_SET(PATH_AS_IS, 1L);
+    FETCH_SET(HTTP_VERSION, 2L); /* CURL_HTTP_VERSION_1_1 */
+    FETCH_SET(NOSIGNAL, 1L);
+    FETCH_SET(TIMEOUT_MS, r->timeout_ms);
+    FETCH_SET(FOLLOWLOCATION, 0L);
+    FETCH_SET(NETRC, 0L); /* CURL_NETRC_IGNORED */
+    FETCH_SET(SSL_VERIFYPEER, 1L);
+    FETCH_SET(SSL_VERIFYHOST, 2L);
+    FETCH_SET(HTTP_CONTENT_DECODING, 0L);
+    if (fetch_ca_file) FETCH_SET(CAINFO, fetch_ca_file);
+    if (fetch_ca_dir) FETCH_SET(CAPATH, fetch_ca_dir);
+    FETCH_SET(HTTPHEADER, head);
+    FETCH_SET(WRITEFUNCTION, fetch_body_write);
+    FETCH_SET(WRITEDATA, &a);
+    FETCH_SET(HEADERFUNCTION, fetch_header_write);
+    FETCH_SET(HEADERDATA, &a);
+    if (!strcmp(r->method, "HEAD")) FETCH_SET(NOBODY, 1L);
+    else if (!strcmp(r->method, "POST") || !strcmp(r->method, "PUT") || !strcmp(r->method, "PATCH") || r->body_len) {
+        FETCH_SET(POSTFIELDSIZE, (long)r->body_len);
+        FETCH_SET(POSTFIELDS, r->body);
+    }
+    FETCH_SET(CUSTOMREQUEST, r->method);
+#undef FETCH_SET
+    code = fetch_curl.easy_perform(easy);
+    if (!code) {
+        long status = 0;
+        code = fetch_curl.easy_getinfo(easy, FETCH_CURLINFO_RESPONSE_CODE, &status);
+        if (!code && a.final_complete) a.status = (int)status;
+    }
+done:
+    fetch_curl.easy_cleanup(easy);
+    fetch_curl.slist_free_all(head);
+    Value *result;
+    if (a.limit == 1) result = fetch_attempt_error(fn, EK_LIMIT, "the answer's headers are longer than 65536 bytes");
+    else if (a.limit == 3) result = fetch_attempt_error(fn, EK_LIMIT, "the answer has more than 4096 header lines");
+    else if (a.limit == 2) {
+        char text[128];
+        snprintf(text, sizeof text, "the answer's body is longer than %zu bytes (EIGS_HTTP_FETCH_MAX_BODY)", fetch_body_limit);
+        result = fetch_attempt_error(fn, EK_LIMIT, text);
+    } else if (a.unsaid) result = fetch_attempt_error(fn, EK_IO, "the answer ended early");
+    else if (code) result = fetch_curl_error(fn, code);
+    else if (!a.final_complete) result = fetch_attempt_error(fn, EK_IO, "the answer ended early");
+    else if (a.body_len && memchr(a.body, '\0', a.body_len)) result = fetch_attempt_error(fn, EK_IO, "the answer holds a NUL byte, which text cannot carry");
+    else {
+        Value *body = a.body ? make_str_owned_len(a.body, a.body_len) : make_str("");
+        a.body = NULL;
+        if (r->post) result = body;
+        else {
+            result = make_dict(0);
+            dict_set_owned(result, "status", make_int(a.status));
+            dict_set_owned(result, "headers", fetch_answer_headers(&a));
+            dict_set_owned(result, "body", body);
+        }
+        if (__builtin_expect(g_trace_enabled, 0)) trace_nondet_value(fn, result);
+    }
+    free(a.body);
+    free(a.headers);
+    return result;
+}
+
+/* http_fetch of request -> {status, headers, body}; one HTTP exchange. */
+Value *builtin_http_fetch(Value *arg) {
+    FetchRequest r = {0};
+    int ok = fetch_request_dict(arg, &r);
+    Value *out = ok ? fetch_exchange(&r, "http_fetch") : make_null();
+    fetch_request_clear(&r);
+    return out;
+}
+
+/* http_post of [url, headers, body] -> response body string; POST through http_fetch's exchange. */
+Value *builtin_http_post(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "http_post");
-    /* http_post of [url, headers_json, body_string] -> response body string
-     * Uses fork/execvp to invoke curl — no shell involved, no injection risk. */
-    int request_ok = arg && arg->type == VAL_LIST && arg->data.list.count >= 3;
-    const char *url = "", *headers_json = "", *body = "";
-    if (request_ok) {
-        if (list_get_view(arg, 0, &(EigsView){{0}})->type == VAL_STR) url = list_get_view(arg, 0, &(EigsView){{0}})->data.str;
-        if (list_get_view(arg, 1, &(EigsView){{0}})->type == VAL_STR) headers_json = list_get_view(arg, 1, &(EigsView){{0}})->data.str;
-        if (list_get_view(arg, 2, &(EigsView){{0}})->type == VAL_STR) body = list_get_view(arg, 2, &(EigsView){{0}})->data.str;
-    }
-
-    /* Build argv array for curl — no shell interpolation */
-    /* Max 96 args: curl -s --max-time 15 --proto ... [-H "k: v"]... -d @file -- url */
-    char *argv[96];
-    int argc = 0;
-    argv[argc++] = "curl";
-    argv[argc++] = "-s";
-    argv[argc++] = "--max-time";
-    argv[argc++] = "15";
-    argv[argc++] = "--proto";
-    argv[argc++] = "=http,https";
-    argv[argc++] = "--proto-redir";
-    argv[argc++] = "=http,https";
-
-    /* Parse headers JSON and add -H flags */
-    char header_bufs[32][256]; /* up to 32 headers */
-    int hdr_count = 0;
-    Value *hdr_obj = NULL;
-    if (request_ok && http_url_is_allowed(url)) {
-        /* N14/R2.5: header decoding is deterministic. Refuse numeric
-         * overflow before consuming a replay value or starting request I/O. */
-        int jpos = 0;
-        hdr_obj = eigs_json_parse_root(headers_json, &jpos);   /* #777 */
-        if (g_has_error) {
-            val_decref(hdr_obj);
-            return make_null();
-        }
-    }
-    ValType wrong_header_type = VAL_NULL;
-    /* #755: a JSON OBJECT is the shape a caller reaches for first, and it used
-     * to send NO headers at all — this tested only VAL_LIST, while
-     * eigs_json_parse_object returns a VAL_DICT, so the loop never ran and the
-     * request went out bare with no error and a normal-looking response. An
-     * Authorization header silently not sent is the worst version of that. Both
-     * shapes are accepted now: object (natural) and flat alternating array
-     * (what already worked). Anything else that PARSED is a caller mistake, not
-     * a no-header request — it says so instead of dropping the headers. */
-    if (hdr_obj && hdr_obj->type == VAL_DICT) {
-        DICT_FOR_EACH(hdr_obj, i) {
-            if (hdr_count >= 32 || argc >= 90) break;
-            char *hk = xstrdup(hdr_obj->data.dict.keys[i]);
-            char *hv = value_to_string(dict_value_get_view(hdr_obj, i, &(EigsView){{0}}));
-            http_strip_crlf(hk);
-            http_strip_crlf(hv);
-            snprintf(header_bufs[hdr_count], sizeof(header_bufs[0]), "%s: %s", hk, hv);
-            free(hk); free(hv);
-            argv[argc++] = "-H";
-            argv[argc++] = header_bufs[hdr_count];
-            hdr_count++;
-        }
-    } else if (hdr_obj && hdr_obj->type == VAL_LIST) {
-        for (int i = 0; i + 1 < hdr_obj->data.list.count && hdr_count < 32 && argc < 90; i += 2) {
-            char *hk = value_to_string(list_get_view(hdr_obj, i, &(EigsView){{0}}));
-            char *hv = value_to_string(list_get_view(hdr_obj, i + 1, &(EigsView){{0}}));
-            /* Both halves reach curl's -H verbatim, so a CR/LF in either injects
-             * extra headers into the outbound request. Script-controlled and so
-             * not a vulnerability on its own under SECURITY.md's threat model,
-             * but a `code` route that forwards a client-supplied header value
-             * into an http_post makes it one. */
-            http_strip_crlf(hk);
-            http_strip_crlf(hv);
-            snprintf(header_bufs[hdr_count], sizeof(header_bufs[0]), "%s: %s", hk, hv);
-            free(hk); free(hv);
-            argv[argc++] = "-H";
-            argv[argc++] = header_bufs[hdr_count];
-            hdr_count++;
-        }
-    } else if (hdr_obj && hdr_obj->type != VAL_NULL) {
-        /* Parsed, but neither shape — e.g. a bare string or number. Silently
-         * sending nothing is the #755 failure mode; say so. An unparseable
-         * headers argument (including "") still means "no headers", which is
-         * the documented idiom. */
-        wrong_header_type = hdr_obj->type;
-    }
-    /* Header argv owns no parsed Values. Release before TAKE, whose replay
-     * return bypasses the live path, and keep wrong-shape recording unchanged. */
-    val_decref(hdr_obj);
-    TRACE_NONDET_TAKE("http_post");
-    if (!request_ok || !http_url_is_allowed(url))
-        TRACE_NONDET_RECORD("http_post", make_str(""));
-    if (wrong_header_type != VAL_NULL) {
-        rt_error(EK_TYPE, 0,
-                 "http_post: headers must be a JSON object or a flat "
-                 "[key, value, ...] array (got %s)",
-                 val_type_name(wrong_header_type));
+    /* These legacy defaults are decided first, before header/body validation. */
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
+        TRACE_NONDET_TAKE("http_post");
         TRACE_NONDET_RECORD("http_post", make_str(""));
     }
-
-    /* Write body to temp file only after deterministic header validation. */
-    char req_path[] = "/tmp/eigen_http_XXXXXX";
-    int req_fd = mkstemp(req_path);
-    if (req_fd < 0) TRACE_NONDET_RECORD("http_post", make_str(""));
-    FILE *reqf = fdopen(req_fd, "w");
-    if (!reqf) { close(req_fd); unlink(req_path); TRACE_NONDET_RECORD("http_post", make_str("")); }
-    fprintf(reqf, "%s", body);
-    fclose(reqf);
-
-    char data_arg[512];
-    snprintf(data_arg, sizeof(data_arg), "@%s", req_path);
-    argv[argc++] = "-d";
-    argv[argc++] = data_arg;
-    argv[argc++] = "--";
-    argv[argc++] = (char *)url;
-    argv[argc] = NULL;
-
-    /* Fork and exec curl, capture stdout via pipe */
-    int pipefd[2];
-    if (pipe(pipefd) < 0) { unlink(req_path); TRACE_NONDET_RECORD("http_post", make_str("")); }
-
-    pid_t pid = fork();
-    if (pid < 0) { close(pipefd[0]); close(pipefd[1]); unlink(req_path); TRACE_NONDET_RECORD("http_post", make_str("")); }
-
-    if (pid == 0) {
-        /* Child: redirect stdout to pipe, close stderr */
-        close(pipefd[0]);
-        dup2(pipefd[1], STDOUT_FILENO);
-        close(pipefd[1]);
-        int devnull = open("/dev/null", O_WRONLY);
-        if (devnull >= 0) { dup2(devnull, STDERR_FILENO); close(devnull); }
-        execvp("curl", argv);
-        _exit(127);
+    EigsView uv, hv, bv;
+    Value *u = list_get_view(arg, 0, &uv), *h = list_get_view(arg, 1, &hv), *b = list_get_view(arg, 2, &bv);
+    if (u->type != VAL_STR || !http_url_is_allowed(u->data.str)) {
+        TRACE_NONDET_TAKE("http_post");
+        TRACE_NONDET_RECORD("http_post", make_str(""));
     }
-
-    /* Parent: read response from pipe */
-    close(pipefd[1]);
-    char buf[16384] = {0};
-    int total = 0;
-    while (total < 16383) {
-        int n = read(pipefd[0], buf + total, 16383 - total);
-        if (n <= 0) break;
-        total += n;
+    if (h->type != VAL_STR || b->type != VAL_STR) {
+        fetch_error("http_post", EK_TYPE, "headers and body must be strings");
+        return make_null();
     }
-    buf[total] = '\0';
-    close(pipefd[0]);
-
-    int status;
-    waitpid(pid, &status, 0);
-    unlink(req_path);
-
-    TRACE_NONDET_RECORD("http_post", make_str(buf));
+    FetchRequest r = { .url = u->data.str, .url_len = val_str_len(u), .method = "POST",
+        .body = b->data.str, .body_len = val_str_len(b), .timeout_ms = 15000, .post = 1, .own_headers = 1 };
+    int pos = 0;
+    Value *parsed = eigs_json_parse_complete(h->data.str, &pos);
+    /* parse_complete releases its partial value on every raised error. */
+    if (g_has_error) return make_null();
+    if (parsed && parsed->type != VAL_DICT && parsed->type != VAL_LIST) {
+        val_decref(parsed);
+        fetch_error("http_post", EK_TYPE, "headers must be a JSON object or flat array");
+        return make_null();
+    }
+    if (parsed && parsed->type == VAL_LIST && parsed->data.list.count % 2) {
+        val_decref(parsed);
+        fetch_error("http_post", EK_VALUE, "headers array must hold key/value pairs");
+        return make_null();
+    }
+    if (parsed) {
+        size_t n = parsed->type == VAL_DICT ? (size_t)parsed->data.dict.count : (size_t)parsed->data.list.count / 2;
+        r.headers = n ? xcalloc(n, sizeof *r.headers) : NULL;
+        for (size_t i = 0, j = 0; i < n; i++) {
+            EigsView kv, vv;
+            char *name, *value;
+            if (parsed->type == VAL_DICT) {
+                while (j < (size_t)parsed->data.dict.count && !parsed->data.dict.keys[j]) j++;
+                name = xstrdup(parsed->data.dict.keys[j]);
+                value = value_to_string(dict_value_get_view(parsed, (int)j++, &vv));
+            } else {
+                name = value_to_string(list_get_view(parsed, (int)(i * 2), &kv));
+                value = value_to_string(list_get_view(parsed, (int)(i * 2 + 1), &vv));
+            }
+            http_strip_crlf(name); http_strip_crlf(value);
+            r.headers[r.header_count++] = (FetchHeader){name, value, strlen(name), strlen(value)};
+        }
+        val_decref(parsed);
+    }
+    int ok = fetch_url_valid(&r, "http_post") && fetch_headers_valid(&r, "http_post");
+    Value *out = ok ? fetch_exchange(&r, "http_post") : make_null();
+    fetch_request_clear(&r);
+    return out;
 }
 
 Value* builtin_http_request_headers(Value *arg) {

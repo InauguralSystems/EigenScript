@@ -314,7 +314,7 @@ something nothing records (#2200).
 | Tensor files | `tensor_load` (#1393) |
 | Module sources | `import_source`, `import_source_chunk`, `load_file_source`, `load_file_source_chunk`, `import_warning` |
 | Observer gate sources | `observer_source`, `observer_source_chunk` (#915) |
-| HTTP extension | `http_post`, `http_request_body`, `http_session_id`, `http_request_header`, `http_request_headers` |
+| HTTP extension | `http_fetch`, `http_post`, `http_request_body`, `http_session_id`, `http_request_header`, `http_request_headers` |
 | Network extension | `net_listen`, `net_port`, `net_accept`, `net_dial`, `net_recv`, `net_send` (#414) |
 | Graphics extension | `gfx_read` (#823), `gfx_ticks` |
 | Audio (graphics extension) | `audio_capture_open`, `audio_capture_read` (#579), `audio_stream_queued`, `audio_noise` (#1803) |
@@ -388,8 +388,19 @@ Notes on the families:
 - **Process:** `args` (command-line arguments — differ across
   invocations, so the recorded list is served on replay regardless of
   the live argv; #471)
-- **HTTP extension:** `http_post` records its success and all its error
-  paths. `http_respond` reads only program values and sets the current response;
+- **HTTP extension:** `http_fetch` records one `N` value: its complete
+  `{status, headers, body}` dict on success, or `[kind, message]` on an
+  attempted exchange's error (`kind` is `"io"` or `"limit"`). `http_post`
+  records its body string, or the same error-list shape with its own message
+  prefix. Neither successful result can be confused with an error list.
+  Large values use the existing `C` continuations; the format version does
+  not change. Argument-only refusals precede the tape seam and write no
+  record; replay raises them again from the arguments. `http_post`'s two
+  legacy early returns (invalid outer shape and non-HTTP URL prefix) still
+  record `""`. Replay returns a recorded answer or raises the recorded
+  kind and whole message before library loading, sockets or file creation;
+  an unservable record raises and never falls back to live I/O.
+  `http_respond` reads only program values and sets the current response;
   it writes no tape record. The request-reading builtins, including
   `http_request_body`, retain their own nondeterministic input records.
   Each returning `http_request_header` call records its whole list in one

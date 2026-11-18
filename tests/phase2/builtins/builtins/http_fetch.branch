@@ -1,0 +1,10 @@
+["refused-timeout", "value"]
+["refused-timeout", "value"]
+["refused-timeout", "value"]
+["refused-timeout", "value"]
+["refused-timeout", "value"]
+["refused-timeout", "value"]
+["accepted-timeout", "io", "http_fetch: curl failed (curl error 3)"]
+["accepted-timeout", "io", "http_fetch: curl failed (curl error 3)"]
+["accepted-timeout", "io", "http_fetch: curl failed (curl error 3)"]
+rc=0

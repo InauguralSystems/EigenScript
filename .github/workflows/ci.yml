@@ -1853,7 +1853,8 @@ jobs:
   # with $(DEFS_OFF), so the race detector never saw the repo's most concurrent
   # code; #1137 was found only by an ad-hoc tsan+http build while that lane
   # stayed green. This lane runs the HTTP slice of the suite ([44], [45a] —
-  # 256 concurrent connections —, [45b]) through the real runner under
+  # 256 concurrent connections —, [45b], and [45i], the outbound client)
+  # through the real runner under
   # halt_on_error=1, so a race kills the server and its section goes red.
   tsan-http:
     name: tsan-http (race gate over ext_http)
@@ -1888,7 +1889,7 @@ jobs:
         name: HTTP sections under TSan (setarch -R, halt_on_error=1)
         env:
           TSAN_OPTIONS: halt_on_error=1
-          EIGS_SUITE_SECTIONS: 44 45a 45b
+          EIGS_SUITE_SECTIONS: 44 45a 45b 45i
         run: |
           set -o pipefail
           setarch -R bash tests/run_all_tests.sh 2>&1 | tee "$RUNNER_TEMP/tsan-http.log"
@@ -1897,14 +1898,15 @@ jobs:
           # without ext_http as a skip, which here means the lane measured
           # nothing).
           awk '
-            /^\[[0-9a-z]+\/[0-9]+\] / { sec = $1; sub(/\/.*/, "", sec); sub(/^\[/, "", sec) }
-            sec == "44" || sec == "45a" || sec == "45b" {
+            # A header is "[44/47] " (inline) or "[45i] " (a tests/sections/ fragment).
+            /^\[[0-9a-z]+(\/[0-9]+)?\] / { sec = $1; sub(/\/.*/, "", sec); sub(/^\[/, "", sec); sub(/\]$/, "", sec) }
+            sec == "44" || sec == "45a" || sec == "45b" || sec == "45i" {
               # "PASS: all 0 ..." is a relay of a child that ran nothing (e.g. a SKIP it swallowed).
               if ($0 ~ /^  PASS: / && $0 !~ /^  PASS: all 0 /) pass[sec]++
               if ($0 ~ /^  SKIP: /) { print "ERROR: [" sec "] skipped: " $0; bad = 1 }
             }
             END {
-              n = split("44 45a 45b", want, " ")
+              n = split("44 45a 45b 45i", want, " ")
               for (i = 1; i <= n; i++) {
                 if (pass[want[i]] < 1) { print "ERROR: [" want[i] "] printed no PASS line -- it did not run"; bad = 1 }
                 else print "OK: [" want[i] "] ran (" pass[want[i]] " PASS line(s))"

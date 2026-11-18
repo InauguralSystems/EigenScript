@@ -491,5 +491,24 @@ else
     fail "RSS4 http_request_header" "rc=$QH_RSS_RC; the row said: ${QH_RSS_SAID:-no verdict line}"
 fi
 
+# #2375: the raw-peer rows size their work from the outbound allocation
+# census. Keep one verdict line here: the child row's marker is shown without
+# a colon only when this wrapper reports a failure (as RSS4 does above).
+for HF_RSS_ROW in leak-success leak-error; do
+    HF_RSS=$(python3 "$TESTS_DIR/test_http_fetch.py" --leak --row "^$HF_RSS_ROW$" 2>&1)
+    HF_RSS_RC=$?
+    HF_RSS_SAID=$(grep -E '^[[:space:]]*(PASS|FAIL|SKIP): ' <<< "$HF_RSS")
+    HF_RSS_SAID=${HF_RSS_SAID/: / }
+    grep -vE '^[[:space:]]*(PASS|FAIL|SKIP): ' <<< "$HF_RSS"
+    if [ "$HF_RSS_RC" -eq 0 ] && grep -qxF 'HTTP_FETCH: 1 passed, 0 failed, 0 skipped' <<< "$HF_RSS"; then
+        ok "RSS http_fetch $HF_RSS_ROW"
+    elif [ "$HF_RSS_RC" -eq 0 ] && grep -qxF 'HTTP_FETCH: 0 passed, 0 failed, 1 skipped' <<< "$HF_RSS"; then
+        echo "  SKIP: RSS http_fetch $HF_RSS_ROW: ${HF_RSS_SAID:-unavailable on this build}"
+    else
+        fail "RSS http_fetch $HF_RSS_ROW" "rc=$HF_RSS_RC; the row said: ${HF_RSS_SAID:-no verdict line}"
+    fi
+done
+unset HF_RSS_ROW HF_RSS HF_RSS_RC HF_RSS_SAID
+
 echo "HTTP_RSS: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
