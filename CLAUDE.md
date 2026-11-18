@@ -193,9 +193,6 @@ model — don't work around a gap, surface it).
   the native-perf path. Changing it → the **`aot-differential`** skill.
 - **Consumer / forcing-function projects** (validate the language, drive
   primitives):
-  - **iLambdaAi** — research system whose ternary transformer *generates*
-    EigenScript, validated against the runtime's own parser/compiler (the
-    no-oracle research project)
   - **Tidepool** — Spore-inspired cell-stage evolution game (AI/physics/gameplay)
   - **dynamics** — observer-rich dynamical-systems lab
   - **liferaft** — deterministic simulation tester (DST) for Raft (durable
