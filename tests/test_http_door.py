@@ -1159,9 +1159,12 @@ def row_budget(ctx):
 
 
 def row_leak(ctx):
-    """RSS5 of tests/test_http_rss_growth.sh: refused named rows in turn, and
-    chunked requests of 2,000 bytes. RSS leg only: on this branch the heap
-    sample fixtures read 0 (#2364)."""
+    """RSS5 of tests/test_http_rss_growth.sh. Counting the requests of each
+    batch anew from 0, request i is: when i is even, the refused named row
+    i/2 (the 74 in the table's order, again from the first after the last);
+    when i leaves 1 on division by 4, a chunked request of 2,000 bytes; when
+    it leaves 3, one of 60,000 bytes; each body in chunks of 8 bytes. RSS leg
+    only: on this branch the heap sample fixtures read 0 (#2364)."""
     if not Path('/proc/self/status').exists():
         raise Skipped('requires Linux /proc RSS')
     if ctx.sanitizer:
@@ -1170,31 +1173,38 @@ def row_leak(ctx):
     refused = [(data, d) for data, d in refused if d.kind == 'refused']
     require(len(refused) == 74, f'refused rows {len(refused)}')
     rng = random.Random(ctx.seed + 2)
-    body = bytes(rng.randint(1, 255) for _ in range(2000))
-    chunk = (b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n' +
-             b''.join(chunks_of(body, 8)) + b'0\r\n\r\n')
-    dc = ctx.ref.decide(chunk)
+    chunked = {}
+    for size in (2000, 60000):
+        body = bytes(rng.randint(1, 255) for _ in range(size))
+        data = (b'POST /v HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n' +
+                b''.join(chunks_of(body, size // 8)) + b'0\r\n\r\n')
+        d = ctx.ref.decide(data)
+        require(d.kind == 'served' and d.body == body, f'chunked {size}: the reference says {d.line[:80]}')
+        chunked[size] = (data, d)
     ids = []
     with server(ctx.binary, ctx.folder / 'leak', pid_out=ids) as port:
         def batch(n):
-            done = 0
+            counts = Counter()
             for i in range(n):
-                if i % 2:
-                    judge(chunk, dc, exchange(port, chunk), 'leak chunked')
-                else:
+                if i % 2 == 0:
                     data, d = refused[(i // 2) % len(refused)]
-                    judge(data, d, exchange(port, data), 'leak refused')
-                done += 1
-            require(done == n, f'batch {done}/{n}')
+                    kind = 'refused'
+                else:
+                    kind = 2000 if i % 4 == 1 else 60000
+                    data, d = chunked[kind]
+                judge(data, d, exchange(port, data), f'leak {kind}')
+                counts[kind] += 1
+            require(sum(counts.values()) == n, f'batch {counts}/{n}')
+            return f'refused={counts["refused"]} chunked2000={counts[2000]} chunked60000={counts[60000]}'
 
         def rss():
             for line in Path(f'/proc/{ids[0]}/status').read_text().splitlines():
                 if line.startswith('VmRSS:'):
                     return int(line.split()[1])
-        batch(1000)
+        print(f'RSS5 warm-up: {batch(1000)}', flush=True)
         samples = [rss()]
-        for _ in range(3):
-            batch(2000)
+        for k in range(3):
+            print(f'RSS5 batch {k + 1}: {batch(2000)}', flush=True)
             samples.append(rss())
     growth = [b - a for a, b in zip(samples, samples[1:])]
     median = statistics.median(growth)
