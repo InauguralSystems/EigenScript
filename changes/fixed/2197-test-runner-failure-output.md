@@ -1,0 +1,1 @@
+- Failed `--test` runs now exit nonzero without appending a runner assertion trace after the summary or JSON document (#2197).
