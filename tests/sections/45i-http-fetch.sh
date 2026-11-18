@@ -16,11 +16,17 @@ else
     # 79 named rows include the whole-run TMPDIR check. The five /proc/loader
     # rows, three openssl rows and curl-8 header-NUL row have explicit skips.
     HF_SKIPS=0
+    HF_NO_CHILD_RC=0
     if [ "$(uname -s)" != Linux ]; then
         HF_SKIPS=$((HF_SKIPS + 5))
     else
-        HF_NO_CHILD_SKIPS=$(python3 "$TESTS_DIR/test_http_fetch.py" --no-children-skip-count)
-        HF_SKIPS=$((HF_SKIPS + HF_NO_CHILD_SKIPS))
+        # The count is 0 or 2. Anything else (the command failed, or printed
+        # something else) fails the section; it is not read as 0.
+        HF_NO_CHILD_SKIPS=$(python3 "$TESTS_DIR/test_http_fetch.py" --no-children-skip-count 2>&1); HF_NO_CHILD_RC=$?
+        case "$HF_NO_CHILD_RC:$HF_NO_CHILD_SKIPS" in
+            0:0|0:2) HF_SKIPS=$((HF_SKIPS + HF_NO_CHILD_SKIPS)) ;;
+            *) HF_NO_CHILD_RC=5 ;;
+        esac
     fi
     if ! command -v openssl >/dev/null 2>&1; then HF_SKIPS=$((HF_SKIPS + 3)); fi
     # The release of the curl library the rows run against, asked of the
@@ -40,7 +46,7 @@ else
     HF_PASSES=$((79 - HF_SKIPS))
     HF_WANT="HTTP_FETCH: $HF_PASSES passed, 0 failed, $HF_SKIPS skipped"
     HF_TEST=$(python3 "$TESTS_DIR/test_http_fetch.py" 2>&1); HF_TEST_RC=$?
-    if [ "$HF_LIB_RC" -eq 0 ] && rc_ok "$HF_TEST_RC" "$HF_TEST" && grep -qxF "$HF_WANT" <<< "$HF_TEST"; then
+    if [ "$HF_LIB_RC" -eq 0 ] && [ "$HF_NO_CHILD_RC" -eq 0 ] && rc_ok "$HF_TEST_RC" "$HF_TEST" && grep -qxF "$HF_WANT" <<< "$HF_TEST"; then
         PASS=$((PASS + 1))
         echo "  PASS: http_fetch contract"
     else
@@ -48,8 +54,9 @@ else
         echo "  FAIL: http_fetch contract (probe=$HF_PROBE_RC rows=$HF_TEST_RC; wanted: $HF_WANT)"
         printf '%s\n' "$HF_PROBE_OUT"
         if [ "$HF_LIB_RC" -ne 0 ]; then echo "  curl library release not read (code $HF_LIB_RC)"; printf '%s\n' "$HF_LIB_TEXT" | sed 's/^/    /'; fi
+        if [ "$HF_NO_CHILD_RC" -ne 0 ]; then echo "  the count of no-child rows to skip was not 0 or 2"; fi
     fi
     printf '%s\n' "$HF_TEST"
 fi
-unset HF_PROBE HF_PROBE_OUT HF_PROBE_RC HF_SKIPS HF_NO_CHILD_SKIPS HF_LIB_TEXT HF_LIB_MAJOR HF_LIB_RC HF_PASSES HF_WANT HF_TEST HF_TEST_RC
+unset HF_PROBE HF_PROBE_OUT HF_PROBE_RC HF_SKIPS HF_NO_CHILD_SKIPS HF_NO_CHILD_RC HF_LIB_TEXT HF_LIB_MAJOR HF_LIB_RC HF_PASSES HF_WANT HF_TEST HF_TEST_RC
 echo ""

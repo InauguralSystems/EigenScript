@@ -660,10 +660,7 @@ def main():
     parser.add_argument('--leak', action='store_true')
     parser.add_argument('--list', action='store_true')
     parser.add_argument('--no-children-skip-count', action='store_true')
-    parser.add_argument('--proc-children-path', help=argparse.SUPPRESS)
     args = parser.parse_args()
-    global PROC_CHILDREN_PATH
-    PROC_CHILDREN_PATH = args.proc_children_path
     if args.no_children_skip_count:
         print(no_children_skip_count())
         return 0
