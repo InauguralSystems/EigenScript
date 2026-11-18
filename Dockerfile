@@ -32,6 +32,7 @@ RUN apt-get update \
 COPY --from=builder /out/bin/eigenscript  /usr/local/bin/eigenscript
 COPY --from=builder /out/bin/eigenlsp     /usr/local/bin/eigenlsp
 COPY --from=builder /out/lib/eigenscript  /usr/local/lib/eigenscript
+COPY --from=builder /src/LICENSE /usr/share/doc/eigenscript/LICENSE
 
 USER eigen
 WORKDIR /work
