@@ -3,16 +3,12 @@
 Performance as an executable, regression-gated fact rather than a README claim.
 Everything here regenerates from `bench/`.
 
-## Three metrics, on purpose
+## Two published metrics, on purpose
 
-Wall-clock, instruction count and complexity SHAPE answer different questions,
-and only two of the three can gate CI honestly:
+Instruction count and complexity SHAPE answer different questions, and both
+can gate CI honestly. Wall-clock samples swing with machine and load, so this
+page does not publish them.
 
-- **Wall-clock medians** (below) are what a user feels, but they swing with
-  machine and load — a shared CI runner under a noisy neighbour can differ 2x
-  from one run to the next. So they are **published, not gated**: representative
-  numbers, regenerated with `bash bench/run_bench.sh` (n=5 medians, the house
-  rule).
 - **Instruction counts** (cachegrind `Ir`) are deterministic — the same binary
   on the same input executes the same number of instructions every run, on any
   machine. So the **regression gate** (`bench/check_regression.sh`, the CI `bench`
@@ -156,19 +152,6 @@ cannot both be had from one gate. Tracked as
 [#1192](https://github.com/InauguralSystems/EigenScript/issues/1192), which
 suggests a deterministic `Ir` comparison instead of a wall clock.
 
-## Wall-clock medians
-
-Representative n=5 medians (a 2020-era x86-64 Linux dev box; **your numbers will
-differ** — regenerate with `bash bench/run_bench.sh`):
-
-| workload | median | what it exercises |
-|---|---|---|
-| `scalar_loop` | ~26 ms | arithmetic dispatch + env-slot reuse (40k iters) |
-| `dict_ops` | ~54 ms | hash insert + lookup under churn (12k keys) |
-| `string_build` | ~28 ms | native text builder (15k appends) |
-| `observed_loop` | ~6 ms | numeric loop, statically observer-gated |
-| `unobserved_loop` | ~6 ms | the same loop inside `unobserved:` |
-
 ## The observer overhead, measured
 
 `observed_loop` and `unobserved_loop` contain the same arithmetic, with the
@@ -283,7 +266,7 @@ make && codspeed run -m simulation --cycle-estimation=false   # every target in 
 
 ```bash
 make                              # build the release interpreter
-bash bench/run_bench.sh           # wall-clock n=5 medians (this table)
+bash bench/run_bench.sh           # local wall-clock diagnostics (median and min..max, microseconds)
 bash bench/check_regression.sh    # deterministic Ir gate vs bench/baseline.txt
 bash bench/check_regression.sh --selftest   # prove the gate catches a 2x pessimization
 bash bench/check_regression.sh --update     # regenerate the baseline after an intentional change
