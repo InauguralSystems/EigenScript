@@ -1890,16 +1890,15 @@ jobs:
         name: HTTP sections under TSan (setarch -R, halt_on_error=1)
         env:
           TSAN_OPTIONS: halt_on_error=1
-          # [45a] left out: its R3 global-cap baseline timed out locally after
-          # 45.21 seconds, so it did not produce a trustworthy passing run.
           # [45c] left out: its RSS gate deliberately skips sanitizer builds.
-          EIGS_SUITE_SECTIONS: 44 45 45b 45f 45g 45h 45i 45j
+          EIGS_SUITE_SECTIONS: 44 45 45a 45b 45f 45g 45h 45i 45j
         run: |
           set -o pipefail
           setarch -R bash tests/run_all_tests.sh 2>&1 | tee "$RUNNER_TEMP/tsan-http.log"
           # Each named section must have EXECUTED: at least one PASS line
-          # under its header. A section-level skip with no pass therefore
-          # fails, while [45i] may still report intentional child skips.
+          # under its header, and no SKIP (the [44] probe gate reports a build
+          # without ext_http as a skip, which here means the lane measured
+          # nothing).
           awk '
             BEGIN {
               n = split(ENVIRON["EIGS_SUITE_SECTIONS"], want, " ")
@@ -1910,6 +1909,7 @@ jobs:
             selected[sec] {
               # "PASS: all 0 ..." is a relay of a child that ran nothing (e.g. a SKIP it swallowed).
               if ($0 ~ /^  PASS: / && $0 !~ /^  PASS: all 0 /) pass[sec]++
+              if ($0 ~ /^  SKIP: /) { print "ERROR: [" sec "] skipped: " $0; bad = 1 }
             }
             END {
               for (i = 1; i <= n; i++) {
