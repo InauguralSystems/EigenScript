@@ -116,6 +116,15 @@ def fetch(source, cases):
             require(actual == expected, f'{path}: got {actual!r}, want {expected!r}')
 
 
+def accepted(source):
+    with tempfile.TemporaryDirectory(prefix='static-accepted-') as directory:
+        path = program(Path(directory), source + 'print of "REGISTERED"\n')
+        result = subprocess.run([EIGS, str(path)], capture_output=True, text=True, timeout=10)
+        clean(result.stdout + result.stderr)
+        require(result.returncode == 0 and not result.stderr and result.stdout == 'REGISTERED\n',
+                f'rc={result.returncode} output={result.stdout!r} stderr={result.stderr!r}')
+
+
 def refusal(source, kind, message, before=''):
     with tempfile.TemporaryDirectory(prefix='static-refusal-') as directory:
         path = program(Path(directory), before + 'try:\n' +
@@ -163,14 +172,29 @@ with tempfile.TemporaryDirectory(prefix='static-prefixes-') as directory:
         row('SP2363-' + name, lambda p=prefix, m=message:
             refusal(registration(p), 'value', m))
 
+    def every_control_byte():
+        # The rows above take one control byte. Each of 0x01 to 0x1F is refused;
+        # a string of this language cannot hold a NUL.
+        for byte in range(1, 0x20):
+            source = f'http_static of ["/s" + (chr of {byte}) + "x", "{FILES}"]\n'
+            refusal(source, 'value', f"http_static: prefix '/s{chr(byte)}x' {forbidden_reason}")
+    row('SP2363-every-control-byte', every_control_byte)
+
+    def other_bytes_register():
+        # Bytes the rule does not name are still accepted: a percent sign, a
+        # plus, and bytes of 0x80 and above (the UTF-8 of a non-ASCII letter).
+        for prefix in ['/a%41b', '/a+b', '/caf\u00e9']:
+            accepted(f'http_static of [{json.dumps(prefix, ensure_ascii=False)}, "{FILES}"]\n')
+    row('SP2363-other-bytes-register', other_bytes_register)
+
     def refused_is_atomic():
         source = registration('/good') + 'try:\n' + \
-            '    ' + registration('/bad?x').rstrip() + '\ncatch e:\n' + \
+            '    ' + registration('/bad#x').rstrip() + '\ncatch e:\n' + \
             '    print of e.kind\n' + \
             ''.join(registration('/fill' + str(i)) for i in range(15))
         fetch(source, [('/good/a.txt', (200, 'first')),
                        ('/fill14/a.txt', (200, 'first')),
-                       ('/bad?x/a.txt', (404, '{"error": "not_found"}'))])
+                       ('/bad#x/a.txt', (404, '{"error": "not_found"}'))])
     row('SP2363-refusal-is-atomic', refused_is_atomic)
     two = registration('/s1') + f'http_static of ["/s2", "{OTHER}"]\n'
     row('SP2357-two', lambda: fetch(two, [('/s1/a.txt', (200, 'first')), ('/s2/a.txt', (200, 'second'))]))
