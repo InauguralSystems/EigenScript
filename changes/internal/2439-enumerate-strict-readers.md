@@ -1,0 +1,1 @@
+- Enumerate every strict-mode flag reader and continuously verify that its independent behavioral check detects flag drift (#2439).

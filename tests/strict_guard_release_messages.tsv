@@ -169,4 +169,6 @@
 179|gfx_text_width|gfx|plain|quiet|rc=1 Error <file>:1: gfx_text_width: expected string text or [string text, number scale]\n     1 | print of (gfx_text_width of 5)\n       |                          ^\n  at <module> (<file>:1)
 180|gfx_title|gfx|plain|quiet|rc=1 Error <file>:1: gfx_title: expected string title\n     1 | print of (gfx_title of 42)\n       |                     ^\n  at <module> (<file>:1)
 181|ppu_render_frame|gfx|plain|quiet|rc=1 Error <file>:1: ppu_render_frame: expected [buffer mem of at least 65536, buffer fb]\n     1 | print of (ppu_render_frame of [1, 2])\n       |                            ^\n  at <module> (<file>:1)
-182|str_from_bytes|core|plain|quiet|rc=0 A [different on purpose: byte-list element guards now raise by default]
+182|str_from_bytes|core|plain|quiet|rc=1 Error <file>:1: str_from_bytes: expected numeric byte values\n     1 | print of (str_from_bytes of [65, "x", 66])\n       |                          ^\n  at <module> (<file>:1)
+183|write_bytes|core|plain|quiet|rc=1 Error <file>:1: write_bytes: expected every element to be a number\n     1 | print of (write_bytes of ["<tmp>/wb.bin", ([65, "x", 66])])\n       |                       ^\n  at <module> (<file>:1)
+184|audio_play|gfx|plain|quiet|rc=1 Error <file>:2: audio samples: element 1 is str, expected a number\n     2 | print of (audio_play of [0.1, "x", 0.2])\n       |                      ^\n  at <module> (<file>:2)

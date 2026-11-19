@@ -76,8 +76,14 @@ SHAPES_ONLY=0
 if [ "${1:-}" = --shapes-only ]; then SHAPES_ONLY=1; shift; fi
 NEW="${EIGS_DIFF_NEW:-./src/eigenscript}"
 RELEASE_MESSAGES="${EIGS_STRICT_RELEASE_MESSAGES:-tests/strict_guard_release_messages.tsv}"
+RELEASE_BIN=""
+if [ "${1:-}" = --release ]; then
+    [ -n "${2:-}" ] || { echo "usage: strict_differential.sh --release <v0.48.0-binary>"; exit 2; }
+    RELEASE_BIN=$2; shift 2
+fi
 BASE="${1:-}"
 NO_BASELINE=0
+[ -n "$RELEASE_BIN" ] && [ -z "$BASE" ] && NO_BASELINE=1
 COMMON_CAPABILITIES=0
 if [ "$BASE" = "--common-capabilities" ]; then
     COMMON_CAPABILITIES=1; BASE="${2:-}"
@@ -109,6 +115,12 @@ run_capture() {   # <binary> <strict-or-dash> <file> -> "rc\noutput"
 # rows alike: one run with EIGS_STRICT unset and two with EIGS_STRICT=0.
 # Leaves the three captures in UEP_UNSET, UEP_PLAIN and UEP_PLAIN_AGAIN and
 # their class in UEP_CLASS (#1399).
+canonical_receipt() { # captured rc/output, fixture path
+    python3 -c 'import sys
+s=sys.argv[1].replace(sys.argv[2],"<file>").replace(sys.argv[3],"<tmp>")
+print("rc="+s.replace("\\","\\\\").replace("\n","\\n"))' "$1" "$2" "$TMP"
+}
+
 unset_equals_plain() {   # <binary> <file>
     UEP_UNSET="$(run_capture "$1" - "$2")"
     UEP_PLAIN="$(run_capture "$1" 0 "$2")"
@@ -260,6 +272,15 @@ shape_selftest() {
             echo "  FAIL: $label"; failed=$((failed + 1))
         fi
     }
+    TMP=/owned/tmp
+    shape_case 'release receipt canonicalizes fixture and scratch paths' 0 "$(
+        [ "$(canonical_receipt $'1\nError /owned/tmp/p.eigs:1: bad /owned/tmp/x' /owned/tmp/p.eigs)" = 'rc=1\nError <file>:1: bad <tmp>/x' ] && printf '0\nshape-complete' || printf '1\nmismatch')"
+    shape_case 'release receipt preserves a quiet value' 0 "$(
+        [ "$(canonical_receipt $'0\nA' /owned/tmp/p.eigs)" = 'rc=0\nA' ] && printf '0\nshape-complete' || printf '1\nmismatch')"
+    shape_case 'release receipt escapes multiple output lines' 0 "$(
+        [ "$(canonical_receipt $'1\none\ntwo' /owned/tmp/p.eigs)" = 'rc=1\none\ntwo' ] && printf '0\nshape-complete' || printf '1\nmismatch')"
+    shape_case 'strict flag sweep selftest is enrolled' 0 "$(
+        bash tools/strict_flag_sweep.sh --selftest >/dev/null && printf '0\nshape-complete' || printf '1\nfailed')"
     shape_case 'healthy completed receipt' 0 $'0\nshape-complete'
     shape_case 'ordinary nonzero' 1 $'1\nshape-complete'
     shape_case 'timeout is not success' 1 $'124\nshape-complete'
@@ -571,7 +592,7 @@ shape-backend: true' Linux
     live_case 'live captures: output that follows the flag is a flag difference' flag-difference 'echo "strict=${EIGS_STRICT-unset}"'
     live_case 'live captures: an exit status that follows the flag is a flag difference' flag-difference '[ -n "${EIGS_STRICT+x}" ] || exit 3'
     live_case 'live captures: output that changes from run to run is nondeterministic' nondeterministic 'echo "$$"'
-    echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 95 declared"
+    echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 99 declared"
     [ "$failed" = 0 ] && [ "$passed" = 95 ]
 }
 if [ "$BASE" = --selftest ]; then shape_selftest; exit $?; fi
@@ -857,6 +878,10 @@ guard|gfx_text_width|print of (gfx_text_width of 5)
 guard|gfx_title|print of (gfx_title of 42)
 guard|ppu_render_frame|print of (ppu_render_frame of [1, 2])
 guard|str_from_bytes|print of (str_from_bytes of [65, "x", 66])|str_from_bytes: expected numeric byte values
+guard|write_bytes|print of (write_bytes of ["@TMP@/wb.bin", ([65, "x", 66])])|write_bytes: expected every element to be a number
+guard|audio_play|audio_open of [44100, 1]\nprint of (audio_play of [0.1, "x", 0.2])|audio samples: element 1 is str, expected a number
+arithmetic|asin|print of (asin of 2)|asin: argument out of domain
+arithmetic|acos|print of (acos of 2)|acos: argument out of domain
 EOF
 )
 PROBES="${PROBES//@TMP@/$TMP}"
@@ -1131,7 +1156,71 @@ check_absent_call() { # each omitted row must reach its exact error contract
 }
 
 rc=0
-n_probe=0; probe_id=0; guard_probe_ids=""; n_guard=0; n_arithmetic=0; n_release_examined=0; n_release_same=0; n_release_different=0; n_release_capability_skipped=0; n_guard_off_quiet=0; n_guard_off_raises=0; release_list=""; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_default_ok=0; default_list=""
+# Enumerate the two flag-reader populations from source, then join them to the
+# reviewed table.  Function ownership is derived from comment-stripped C brace
+# ranges; continued preprocessor definitions are attributed to their macro.
+printf '%s\n' "$PROBES" > "$TMP/strict-probes.tsv"
+python3 - tests/strict_flag_readers.tsv "$TMP/strict-probes.tsv" <<'PY_READERS' || rc=1
+from pathlib import Path
+import re,sys
+table,probe_file=sys.argv[1:]
+def source_sites():
+ for p in sorted(Path('src').glob('*')):
+  if not p.is_file() or p.name in {'embed_smoke.c','state.c'}: continue
+  raw=p.read_text(errors='ignore'); clean=re.sub(r'/\*.*?\*/',lambda m:'\n'*m.group().count('\n'),raw,flags=re.S); lines=clean.splitlines(); funcs=[]
+  pat=r'(?m)^[ \t]*(?!if\b|for\b|while\b|switch\b)(?:[A-Za-z_]\w*[ \t\n*]+)+([A-Za-z_]\w*)\s*\([^;{}]*\)\s*\{'
+  for m in re.finditer(pat,clean):
+   a=clean.count('\n',0,m.start())+1; depth=0; b=len(lines)
+   for n,c in enumerate(clean[m.end()-1:],m.end()-1):
+    if c=='{': depth+=1
+    elif c=='}':
+     depth-=1
+     if depth==0: b=clean.count('\n',0,n)+1; break
+   funcs.append((a,b,m.group(1)))
+  for i,line in enumerate(lines,1):
+   for symbol,flag in (('g_strict_guards','guards'),('g_strict_arithmetic','arithmetic')):
+    if symbol not in line: continue
+    if p.name=='eigenscript.h' and re.match(r'\s*#define\s+'+symbol+r'\b',line): continue
+    macro=None
+    for j in range(i-1,-1,-1):
+     mm=re.match(r'\s*#define\s+(\w+)',lines[j])
+     if mm:
+      if all(lines[k-1].rstrip().endswith('\\') for k in range(j+1,i)): macro=mm.group(1)
+      break
+    owners=[name for a,b,name in funcs if a<=i<=b]
+    owner=macro or (owners[-1] if owners else '<unknown>')
+    yield (str(p),owner),flag
+src=dict(source_sites()); rows={}; faults=[]
+lines=Path(table).read_text().splitlines()
+if not lines or lines[0]!='file\treader\tflag\tcheck': faults.append('invalid table header')
+for line in lines[1:]:
+ parts=line.split('\t')
+ if len(parts)!=4: faults.append('malformed row: '+line); continue
+ f,reader,flag,check=parts; key=(f,reader)
+ if key in rows: faults.append(f'duplicate row: {f}:{reader}')
+ rows[key]=(flag,check)
+probes={}
+for n,line in enumerate(Path(probe_file).read_text().splitlines(),1):
+ parts=line.split('|',2)
+ if len(parts)>=2: probes[str(n)]=parts[0]
+for key,flag in src.items():
+ label=':'.join(key)
+ if key not in rows: faults.append(f'reader in source has no row: {label}'); continue
+ declared,check=rows[key]
+ if declared!=flag: faults.append(f'wrong flag: {label} source={flag} table={declared}')
+ if not check: faults.append(f'row has no check: {label}')
+ elif check.isdigit():
+  if check not in probes: faults.append(f'probe id does not exist: {label} id={check}')
+  elif probes[check]!=flag[:-1] if flag=='guards' else probes[check]!=flag:
+   faults.append(f'wrong-class probe: {label} flag={flag} id={check}')
+ elif not Path(check).is_file(): faults.append(f'fixture does not exist: {label} check={check}')
+for key in rows.keys()-src.keys(): faults.append('row has no reader: '+':'.join(key))
+for fault in faults: print('  FAIL flag reader: '+fault)
+g=sum(v=='guards' for v in src.values()); a=sum(v=='arithmetic' for v in src.values())
+print(f'  flag readers: examined={len(src)} declared={len(rows)} guard={g} arithmetic={a}')
+raise SystemExit(bool(faults))
+PY_READERS
+n_probe=0; probe_id=0; guard_probe_ids=""; n_guard=0; n_arithmetic=0; n_rederived=0; n_rederived_same=0; n_rederived_different=0; n_rederived_absent=0; n_release_examined=0; n_release_same=0; n_release_different=0; n_release_capability_skipped=0; n_guard_off_quiet=0; n_guard_off_raises=0; release_list=""; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_default_ok=0; default_list=""
 n_pin=0; n_pin_ok=0; n_pin_broke=0; n_misattr=0; n_unrun=0; n_skipped=0
 differ_list=""; silent_list=""; pin_list=""; misattr_list=""; unrun_list=""; skipped_list=""
 NEW_CAPS=""; BASE_CAPS=""; profile_transitions=""; n_profile_rows=0
@@ -1296,6 +1385,24 @@ while IFS='|' read -r kind who prog expect; do
                 n_release_capability_skipped=$((n_release_capability_skipped + 1))
             else
             n_release_examined=$((n_release_examined + 1))
+            marked=0; release_expected=$release_receipt
+            case "$release_receipt" in *' [different on purpose:'*) marked=1; release_expected=${release_receipt%%' [different on purpose:'*} ;; esac
+            subject_receipt=$(canonical_receipt "$u" "$TMP/p.eigs")
+            if [ "$marked" = 1 ] && [ "$release_expected" = "$subject_receipt" ]; then
+                release_list="$release_list
+    $who — the different-on-purpose mark is false"
+                n_release_different=$((n_release_different + 1))
+            fi
+            if [ -n "$RELEASE_BIN" ]; then
+                release_actual=$(run_capture "$RELEASE_BIN" - "$TMP/p.eigs")
+                release_actual_receipt=$(canonical_receipt "$release_actual" "$TMP/p.eigs")
+                case "$release_actual" in *"undefined variable"*|*"unavailable in this build"*) n_rederived_absent=$((n_rederived_absent + 1)) ;;
+                *) n_rederived=$((n_rederived + 1)); if [ "$release_actual_receipt" = "$release_expected" ]; then n_rederived_same=$((n_rederived_same + 1)); else n_rederived_different=$((n_rederived_different + 1)); release_list="$release_list
+    $who — stored release receipt differs from re-derived receipt
+      stored : $(clip "$release_expected" 120)
+      derived: $(clip "$release_actual_receipt" 120)"; fi ;;
+                esac
+            fi
             off_rc="${off%%$'\n'*}"
             if [ "$release_off" = quiet ]; then
                 n_guard_off_quiet=$((n_guard_off_quiet + 1))
@@ -1453,6 +1560,7 @@ if [ -n "$BASE" ]; then echo "  identical-when-off: $n_ident   differing: $n_dif
 else echo "  identical-when-off: SKIPPED (--no-baseline)"; fi
 echo "  default contract: $n_default_ok / $n_probe (guards unset==1; arithmetic unset==0)"
 echo "  release guard messages: examined=$n_release_examined same=$n_release_same different=$n_release_different capability_skipped=$n_release_capability_skipped"
+[ -n "$RELEASE_BIN" ] && echo "  release re-derived: examined=$n_rederived same=$n_rederived_same different=$n_rederived_different not_in_this_binary=$n_rederived_absent"
 echo "  guard EIGS_STRICT=0: quiet=$n_guard_off_quiet raises=$n_guard_off_raises"
 echo "  raises-under-strict: $n_raise   silent: $n_silent   misattributed: $n_misattr"
 [ "$n_unrun" -gt 0 ] && echo "  probes that did not run: $n_unrun"
