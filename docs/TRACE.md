@@ -530,12 +530,9 @@ fail-soft shape this language refuses, so the configuration rides the tape:
   runs emit no `O cfg` records. The writer and reader remain for the tape
   machinery (#2198). R3.2 removes `h_low` from the record within unreleased
   format 10; the version stays 10.
-- **`O win`** carries the per-binding window override, which lives on an
-  `Env` slot rather than on the state and so has no cheap diff. It is
-  its own frame's `S` record — the override belongs to the frame that
-  *resolved the name*, and that frame may not have assigned anything yet
-  (widening a parameter's window before the body writes it), so the scope
-  transition cannot be left to the next `A` record.
+- **`O win`** carries the per-binding window override. No live run has written
+  one since v0.46.0 (#1687). `--step` still applies one when a tape holds it;
+  `EIGS_REPLAY` skips it. Its removal is tracked in #2198.
 - Both are recorded **as events, in place**, not stamped into the header.
   That is the whole point: a program that changes a knob **mid-run** — one
   phase `moving`, the next `converged` — steps back correctly at both
