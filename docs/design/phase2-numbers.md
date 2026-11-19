@@ -3305,6 +3305,37 @@ the reader; the critic's prior (e)/(f) results are not extra registered plants.
 | extent one short | `nan-window-edge` | `r317-stall-window-extent`; one long is equivalent because the ring holds W+1 |
 | wrap modulus and source of the count | `nan-window-edge` and `nan-prefix-jitter` | critic (e), wrapping by `v_cap` instead of `values_cap`, is killed by `nan-window-edge`; critic (f), using `v_window_count` instead of `values_count`, is killed by both rows |
 
+**Witness deviation (#2407).** The restored `converged` ends a loop whose
+subject settles without oscillating before the stall counter can reach 100,
+so the witnesses that settled (`quiet`, `nan-prefix`, `nan-newest`, and
+`additive` with its one zero step) now certify at 10, 11, 16 and 9 and no
+longer reach the rule. Nine cases carry what they pinned:
+
+| case(s) | what moves | what it pins |
+|---|---|---|
+| `quiet-jitter`, `nan-prefix-jitter`, `nan-newest-jitter` | a fixed ±1 pattern, which the restored test reads as raw-oscillating and never certifies | the quiet threshold (steps of 994 around 1e6: the largest relative step is 994/994036, as the replaced case's first step was 1/1001) and the two index witnesses with their exact counts, 100 and 101 |
+| `quiet-jitter-small`, `nan-prefix-jitter-small`, `nan-newest-jitter-small` | the same patterns under the state floor (values around 5e-4, where the floor is 1e-3) | the relative step's denominator when it is the floor and not the value: a quiet clause that asked for a magnitude would pass every case at 1e6 |
+| `additive-single` | a runaway of 0.02% a step from its first assignment; `stable` is false throughout | the quiet clause counts a window that does not jitter: exactly 100 |
+| `additive-run-in` | the same runaway after eleven shrinking steps of 0.94% down to 0.14%; for nine iterations `stable` is true and the last step is quiet | the quiet clause does not ask `stable`: exactly 100, where a clause that also required `!stable` stalls at 109 |
+| `monotone-decay` | steps that shrink from 0.89% and stay above the quiet threshold through iteration 135, `stable` true from the first full window | the quiet clause reads the step and not the predicate: it certifies at 145, where a clause that fell back on `stable` stalls at 109 |
+
+The set was sized by measurement, not by argument. @@SWEEP@@
+
+The set was sized by measurement, not by argument. 1,030 single edits of the
+stall reader, of the loop's counter and of the 24 functions the reader calls
+were each built on both sides of #2407 and run against that side's contract
+(#2427 has the population's rules, the table and the run). 956 build to a
+changed binary. The contract before #2407 sees 405 of them; this one sees 397
+of those 405, and 40 that the earlier one does not. Of the other eight, seven
+change when the loop's own condition ends the loop and not what the stall
+reader decides (at every call that the clean and the edited build both make,
+it decides the same), and that condition is the `converged` test #2407
+replaces. The eighth deletes the only assignment of a variable that is then
+read: the compiler reports it, and two compilers build it to different
+behaviour. What the
+population does not hold (an edit of two places, a gate of two comparisons,
+an integer subject, the entropy route of the quiet test) is on #2434.
+
 R31-5 pins the three alternation exits to `stalled` in 100..112, allowing
 the incumbent oscillator to fill before counting. The damped control stays
 `1454 normal converged`.
