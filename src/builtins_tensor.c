@@ -264,7 +264,7 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols,
             }
         } else {
             for (int r = 0; r < v->data.list.count && !bad; r++) {
-                /* NULL for an immediate number (double or small int), boxed ints are non-NULL: test the type first. */
+                /* list_get_ref is NULL for an immediate number (a double or a small int), not for a boxed int: test the type first. */
                 ValType rt = list_elem_type(v, r);
                 /* A scalar where a row belongs is a structural error,
                  * independent of the arithmetic/legacy coercion mode. */
@@ -298,7 +298,7 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols,
         }
     } else {
         for (int r = 0; r < *rows; r++) {
-            /* NULL for an immediate number (double or small int), boxed ints are non-NULL: test the type first. */
+            /* list_get_ref is NULL for an immediate number (a double or a small int), not for a boxed int: test the type first. */
             Value *row = (list_elem_type(v, r) == VAL_LIST) ? list_get_ref(v, r) : NULL;
             int rc = row ? row->data.list.count : 0;
             for (int c = 0; c < *cols && c < rc; c++) {
@@ -1668,7 +1668,7 @@ Value* builtin_tensor_gather(Value *arg) {
               ? tensor->data.list.count : indices->data.list.count;
         Value *out = make_list(n);
         for (int i = 0; i < n; i++) {
-            /* NULL for an immediate number (double or small int), boxed ints are non-NULL: test the type first. */
+            /* list_get_ref is NULL for an immediate number (a double or a small int), not for a boxed int: test the type first. */
             ValType row_t = list_elem_type(tensor, i);
             if (row_t != VAL_LIST) {   /* not a matrix row — shape, not index */
                 /* #1637: a bool where a row belongs raises, in every mode. */
