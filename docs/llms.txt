@@ -3,7 +3,7 @@
 Non-finite float text uses `inf`, `-inf`, and unsigned `nan` in `print`,
 `str`, f-strings, and fixed-decimal number formatting. These are output
 words, not JSON literals: JSON decoding of `1e400` (including a nested
-number) raises `value` in default and strict modes. Source exponent literals
+number) raises `value` in every `EIGS_STRICT` state. Source exponent literals
 use binary64 floats, so source `1e400` and default `num of "1e400"` remain
 `inf`; JSON applies its separate finite-number rule. Ordinary non-finite
 buffer reads still raise; use the explicit bits APIs to inspect raw cells. Replay accepts IEEE tape tokens only when the
@@ -362,7 +362,7 @@ false
   raises a `value` error; it is never truncated.
   `EIGS_STRICT` has three states. Unset or empty raises wrong-typed builtin arguments (`abs of "x"`) and malformed `json_path` documents, while arithmetic keeps IEEE results. `1` adds traps for non-finite arithmetic results. `0` keeps IEEE results and legacy argument stand-ins (`abs of "x"` is `0.0`).
   Indexing and iteration refuse stored NaN and infinity with `value` in
-  every strict mode, matching `get_at` (N13). Strict NaN keeps its first
+  every `EIGS_STRICT` state, matching `get_at` (N13). Strict NaN keeps its first
   diagnostic and sets `math_flags.invalid`; every execution tier agrees on
   the error kind, message and source line.
   The other scalar reductions, mixed buffer/list materialization
@@ -371,7 +371,7 @@ false
   (N5/Q1); other byte converters retain truncation and wrapping at this stage;
   raw copies, serialization and buffer-only work areas preserve representation.
   `str_from_bytes` and `inflate` (a `make zlib` build) reject a non-numeric
-  list element with a builtin-named `type_mismatch` error in strict mode; `EIGS_STRICT=0` retains numeric-zero
+  list element with a builtin-named `type_mismatch` error unless `EIGS_STRICT=0`, which retains numeric-zero
   substitution. `str_from_bytes` stops at numeric NUL without inspecting later
   elements; byte codecs consume the complete list.
 
@@ -477,7 +477,7 @@ An all-int `sum` returns an exact int, while a
 float anywhere in a nested input selects float addition for the entire
 reduction. A buffer selects float addition too. An empty list's sum is int
 zero, in both call forms. `sum` refuses non-finite buffer elements with a
-`value` error in every strict mode (N13). In strict mode, it stops at the first NaN with a "not a number" diagnostic and sets `math_flags.invalid`; later elements are not read (#1417).
+`value` error in every `EIGS_STRICT` state (N13). In every `EIGS_STRICT` state, it stops at the first NaN with a "not a number" diagnostic and sets `math_flags.invalid`; later elements are not read (#1417).
 
 ```eigenscript
 exact is sum of [9007199254740993, 1]
@@ -513,7 +513,7 @@ returns `null` (R24-1). Bits inputs and indices follow N5: exact int64s and
 integral floats in range are accepted; fractions, non-finite inputs and
 out-of-range floats raise `value`. Wrong types or missing buffer arguments
 raise `type_mismatch`; negative or out-of-range indices raise `index_range`.
-These rules apply in either strict mode. Bit inspection and reconstruction
+These rules apply in every `EIGS_STRICT` state. Bit inspection and reconstruction
 do not trigger arithmetic traps or change `math_flags`.
 
 Ordinary `buf_get`, indexing and iteration still refuse non-finite cells
@@ -685,7 +685,7 @@ value
 value
 ```
 
-Fixed- or optional-shape builtin argument lists reject surplus outer elements in strict mode with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
+By default, fixed- or optional-shape builtin argument lists reject surplus outer elements with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
 
 Runtime-published counts and indices are exact ints (S9-K1): `__loop_iterations__`, live and historical `when` assignment counts, aggregate `what` lengths, trajectory `window`, error `line`, and scheduler trace `seq` and task ids. Scheduler `tick` remains a continuous virtual time.
 
@@ -950,7 +950,7 @@ Tensor sizes and indices follow N5: an integral float is accepted and a
 fraction raises `value`. `gather` keeps the selected list cell's int/float
 kind; buffer elements and numeric tensor calculations are floats. `shape`
 returns integer dimension counts. `mean` and `norm` refuse non-finite buffer
-cells with `value` in both strict modes.
+cells with `value` in every `EIGS_STRICT` state.
 
 ```eigenscript
 g is gather of [[[1, 2], [3, 4]], [1.0, 0]]
@@ -973,7 +973,7 @@ buffer storage and scalar buffer reads are floats. `buf_get`, `buf_peak`,
 `buf_dot` and the byte/PCM codecs refuse non-finite input cells with `value`.
 
 Audio playback (`audio_play`, `audio_play_loop`, `audio_stream_push`) refuses
-stored non-finite buffer samples at the scalar boundary in both strict modes
+stored non-finite buffer samples at the scalar boundary in every `EIGS_STRICT` state
 (N13). Strict NaN preserves the first diagnostic and INVALID flag. Finite
 samples clamp to [-1,1], then round PCM16 half away from zero (Q7/Q4).
 Channel indices and loop counts follow N5; continuous mixer gain stays
@@ -994,7 +994,7 @@ value
 ### Stored buffer data boundary
 
 Buffer kernels can retain non-finite data. Scalar indexing and iteration
-raise `value` when that data is read, in every strict mode (N13).
+raise `value` when that data is read, in every `EIGS_STRICT` state (N13).
 
 ```eigenscript
 p is buf_from_list of ([1e308])
@@ -1013,7 +1013,7 @@ value
 
 Buffers compare their stored doubles with IEEE equality: NaN differs from
 everything, even itself; infinities compare by sign; signed zeros are equal.
-Equality never raises or changes math flags, including under strict mode.
+Equality never raises or changes math flags, including in every `EIGS_STRICT` state.
 
 ```eigenscript
 p is buf_from_list of ([1e308])

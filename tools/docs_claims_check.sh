@@ -133,6 +133,34 @@ def strict_opt_in_wording():
                     'EIGS_STRICT=1 raises, and EIGS_STRICT=0 stand-ins (#2439)')
     print(f'  STRICT OPT-IN: examined {examined} section(s), declared {len(headings)}')
 
+
+def stale_guard_state_wording():
+    """Reject two-state wording that makes argument guards opt-in."""
+    guard = (r'(?:argument|wrong[- ]type|wrong[- ]arity|non[- ]?(?:numeric|string|number|list)|'
+             r'short|surplus|additional list item|fixed[- ]shape|optional[- ]shape)')
+    condition = (r'(?:raises?|rejects?).{0,120}(?:under|with) `EIGS_STRICT=1`|'
+                 r'(?:raises?|rejects?).{0,120}\bin strict mode\b|'
+                 r'(?:under|with) `EIGS_STRICT=1`.{0,80}(?:raises?|rejects?)|'
+                 r'\bin strict mode\b.{0,80}(?:raises?|rejects?)')
+    stale = re.compile(rf'(?:{guard}).{{0,240}}(?:{condition})|'
+                       rf'(?:{condition}).{{0,240}}(?:{guard})', re.I | re.S)
+    files = ('README.md', *[str(p) for p in sorted(Path('docs').glob('*.md'))],
+             'docs/llms.txt')
+    examined = hits = 0
+    for file in files:
+        prose = Path(file).read_text(encoding='utf-8')
+        for sentence in re.split(r'(?<=[.!?])(?:\s+|(?=\s*\|))', prose):
+            examined += 1
+            if stale.search(sentence):
+                hits += 1
+                line = prose.count('\n', 0, prose.find(sentence)) + 1
+                red(f'{file}:{line}: makes an argument guard conditional on '
+                    'EIGS_STRICT=1 or strict mode; say by default or unless '
+                    'EIGS_STRICT=0 (#2439)')
+    print(f'  STALE GUARD STATE WORDING: examined {examined} sentence(s), {hits} hit(s)')
+    if not examined:
+        red('STALE GUARD STATE WORDING examined 0 sentences')
+
 def bool_result_wording():
     """Reject numeric result prose for builtins whose C constructors are bool.
 
@@ -582,7 +610,7 @@ def selftest():
                  '## Audio (additional)\nInvalid input answers quietly by default.', 'describes argument guards as quiet by default'),
                 ('strict-core-row', '## Core Language',
                  '## Core Language\nStrict mode is off by default for bad arguments.', 'describes argument guards as quiet by default'),
-                ('strict-audio-short', 'A **short or non-list** argument also raises under `EIGS_STRICT=1`;',
+                ('strict-audio-short', 'A **short or non-list** argument also raises unless `EIGS_STRICT=0`;',
                  'A **short or non-list** argument answers quietly by default;', 'describes argument guards as quiet by default'),
                 ('strict-section-missing', '## Audio (additional)',
                  '## Removed audio heading', "strict-opt-in section 'Audio (additional)' must exist exactly once"),
@@ -612,6 +640,14 @@ def selftest():
             if not ok:
                 print(result.stdout)
             p.write_text(original)
+            p.write_text(original + '\nA wrong-type argument raises under `EIGS_STRICT=1`.\n')
+            result = gate()
+            ok = result.returncode != 0 and 'makes an argument guard conditional' in result.stdout
+            passed += ok
+            print(f'SELFTEST: stale-guard-state: {"PASS" if ok else "FAIL"}')
+            if not ok:
+                print(result.stdout)
+            p.write_text(original)
             p = tree / 'tests/test_doc_examples.py'
             original = p.read_text()
             p.write_text(original.replace('"README.md":', '# "README.md":', 1))
@@ -632,8 +668,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 20 case(s) run, {passed} passed, {20-passed} failed')
-            return 0 if passed == 20 else 1
+            print(f'SELFTEST: 21 case(s) run, {passed} passed, {21-passed} failed')
+            return 0 if passed == 21 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 
@@ -667,6 +703,7 @@ def main():
     changelog_version()
     derived_counts()
     strict_opt_in_wording()
+    stale_guard_state_wording()
     bool_result_wording()
     check_floors()
     for kind in ('PATHS', 'FLAGS', 'TARGETS', 'NAMES', 'DOC ENROLMENT'):
