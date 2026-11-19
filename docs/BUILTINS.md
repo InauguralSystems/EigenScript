@@ -1260,10 +1260,10 @@ type-checked their scale slot before this change, so a wrong-typed scale there
 is a *coercion*: under `EIGS_STRICT=0` they still measure at scale 1.
 `gfx_text` did not — its scale slot was one of the unchecked reads — so a
 wrong-typed scale refuses the call and draws nothing. With `EIGS_STRICT=1`,
-all three raise. Layout code that sizes a box with `gfx_text_width` and then
-draws with `gfx_text` therefore sees a box with no text in it if it passes a
-stringy scale. Set `EIGS_STRICT=1` to get the error instead of the `EIGS_STRICT=0`
-stand-in.
+all three raise. Under `EIGS_STRICT=0`, layout code that sizes a box with `gfx_text_width` and
+then draws with `gfx_text` therefore sees a box with no text in it if it passes
+a stringy scale. With `EIGS_STRICT` unset or set to `1`, the invalid scale
+raises instead.
 
 A few values are deliberately left quiet because they are the *answer*, not a
 rejected argument: a drawing call with no window open answers `null` (that is

@@ -75,11 +75,18 @@ int main(int argc, char **argv) {
     CHECK(list_values_storage(list)[3].u == SLOT_FALSE_BITS);
     /* The NaN guard: the default x86 NaN must never be stored as null bits. */
     {
-        int strict = g_strict_guards;
-        g_strict_guards = 0;
-        list_set_f64(list, 4, -__builtin_nan(""));
-        g_strict_guards = strict;
-        CHECK(slot_is_f64(list_values_storage(list)[4]));
+        int saved_guards = g_strict_guards;
+        int saved_arithmetic = g_strict_arithmetic;
+        for (int guards = 0; guards < 2; guards++) {
+            for (int arithmetic = 0; arithmetic < 2; arithmetic++) {
+                g_strict_guards = guards;
+                g_strict_arithmetic = arithmetic;
+                list_set_f64(list, 4, -__builtin_nan(""));
+                CHECK(slot_is_f64(list_values_storage(list)[4]));
+            }
+        }
+        g_strict_guards = saved_guards;
+        g_strict_arithmetic = saved_arithmetic;
     }
     EigsSlot taken = list_take_slot(list, 0);
     CHECK(eigs_slot_float(taken, "test") == 4.0);
@@ -125,6 +132,6 @@ int main(int argc, char **argv) {
 
     val_decref(zeros); val_decref(dict); val_decref(sort); val_decref(list);
     eigs_close(state);
-    puts("container slots: PASS");
+    puts(failed ? "container slots: FAIL" : "container slots: PASS");
     return failed;
 }

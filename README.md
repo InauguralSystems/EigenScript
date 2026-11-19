@@ -60,7 +60,9 @@ number) raises `value` in default and strict modes. Source exponent literals
 use binary64 floats, so source `1e400` and default `num of "1e400"` remain
 `inf`; JSON applies its separate finite-number rule.
 
-`EIGS_STRICT` unset or empty enables argument guards while retaining IEEE non-finite arithmetic values; `1` also traps non-finite arithmetic, and `0` selects the quiet legacy guard answers while retaining IEEE values. Ordinary non-finite
+`EIGS_STRICT` unset or empty enables argument guards while retaining IEEE non-finite arithmetic values; `1` also traps non-finite arithmetic, and `0` selects the quiet legacy guard answers while retaining IEEE values.
+
+Ordinary non-finite
 buffer reads still raise; use the explicit bits APIs to inspect raw cells. Replay accepts IEEE tape tokens only when the
 recorded source can produce them: finite random, clock, byte and sample
 domains refuse non-finite values by name; normal samples may overflow to

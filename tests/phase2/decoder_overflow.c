@@ -107,9 +107,14 @@ static void query_caller(int mode) {
 int main(void) {
     EigsState *st = eigs_open();
     if (!st) return 2;
+    int saved_guards = g_strict_guards;
+    int saved_arithmetic = g_strict_arithmetic;
     const char *bad[] = {"1e400", "-1e400", "[1,1e400,2]", "{\"v\":-1e400}"};
-    for (int mode = 0; mode < 2; mode++) {
-        g_strict_arithmetic = mode;
+    for (int guards = 0; guards < 2; guards++) {
+      for (int arithmetic = 0; arithmetic < 2; arithmetic++) {
+        g_strict_guards = guards;
+        g_strict_arithmetic = arithmetic;
+        int mode = guards * 2 + arithmetic;
         for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
             eigs_clear_error();
             int pos = 0;
@@ -153,7 +158,10 @@ int main(void) {
         val_decref(arg);
         catalog_callers(mode);
         query_caller(mode);
+      }
     }
+    g_strict_guards = saved_guards;
+    g_strict_arithmetic = saved_arithmetic;
     eigs_clear_error();
     eigs_close(st);
     printf("decoder-overflow: checks=%d failures=%d\n", checks, failures);

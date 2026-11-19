@@ -91,6 +91,12 @@ def strict_opt_in_wording():
     Unset EIGS_STRICT enables argument guards while leaving arithmetic traps
     off. Numeric N5/Q7 validation remains separate from legacy stand-ins.
     """
+    stale_opt_in = re.compile(r'`EIGS_STRICT=1` opts into catchable errors for non-finite\s+arithmetic and invalid argument types; (?:by default|it is off by default)', re.I)
+    for file in ('README.md', *[str(p) for p in sorted(Path('docs').glob('*.md'))], 'docs/llms.txt'):
+        prose = Path(file).read_text(encoding='utf-8')
+        if stale_opt_in.search(prose):
+            red(f'{file}: says EIGS_STRICT=1 opts into invalid-argument errors; unset already enables guards (#2439)')
+
     text = Path('docs/BUILTINS.md').read_text(encoding='utf-8')
     quiet_default = re.compile(
         r'\b(?:answers?|stays?)\s+quiet(?:ly)?\s+by\s+default\b|'
@@ -590,11 +596,11 @@ def selftest():
                 passed += ok
                 print(f'SELFTEST: {label}: {"PASS" if ok else "FAIL"}')
                 p.write_text(original)
-            p.write_text(original + '\nAn explicit `EIGS_STRICT=1` setting opts into strict mode.\n')
+            p.write_text(original + '\n`EIGS_STRICT=1` opts into catchable errors for non-finite arithmetic and invalid argument types; by default IEEE values remain.\n')
             result = gate()
-            ok = result.returncode == 0
+            ok = result.returncode != 0 and 'opts into invalid-argument errors' in result.stdout
             passed += ok
-            print(f'SELFTEST: strict-explicit-setting: {"PASS" if ok else "FAIL"}')
+            print(f'SELFTEST: stale-strict-opt-in: {"PASS" if ok else "FAIL"}')
             if not ok:
                 print(result.stdout)
             p.write_text(original)

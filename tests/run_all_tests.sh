@@ -3547,6 +3547,7 @@ echo "[133] Gfx Argument-Type Guards"
 if ! echo "$GA_PROBE_OUT" | grep -q "undefined variable"; then
     # #1361 EIGS_STRICT=0: the plain pass pins the ext_gfx wrong-type stand-ins (0/null); the strict pass below raises.
     GA_PLAIN=$(suite_program_run test_gfx_argtypes.eigs gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_PLAIN_RC=$?
+    GA_DEFAULT=$(suite_program_run test_gfx_argtypes.eigs gfx_headless_run 30 env -u EIGS_STRICT SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_DEFAULT_RC=$?
     GA_STRICT=$(suite_program_run test_gfx_argtypes.eigs gfx_headless_run 30 env EIGS_STRICT=1 SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_STRICT_RC=$?
 
     # THIRD PASS: the tape. audio_capture_open is trace-recorded, so a guard
@@ -3650,6 +3651,7 @@ DFLTREAD
     # skipped and the pass would still print "All tests passed".
     if rc_ok "$GA_PLAIN_RC" "$GA_PLAIN" && echo "$GA_PLAIN" | grep -q "All tests passed" \
        && echo "$GA_PLAIN" | grep -q "strict-pass: 0" \
+       && [ "$GA_DEFAULT_RC" -ne 0 ] && echo "$GA_DEFAULT" | grep -q "gfx_open: expected \[number width, number height, title\]" \
        && rc_ok "$GA_STRICT_RC" "$GA_STRICT" && echo "$GA_STRICT" | grep -q "All tests passed" \
        && echo "$GA_STRICT" | grep -q "strict-pass: 1" \
        && [ "$GA_GOT_PLAIN" = "$GA_WANT_PLAIN" ] && [ "$GA_GOT_STRICT" = "$GA_WANT_STRICT" ] \
@@ -3676,6 +3678,7 @@ DFLTREAD
         echo "    tape: capture==replay $GA_TAPE_OK (want 1), N records $GA_TAPE_N (want 1)"
         echo "    gfx_read tape: capture==replay $GA_READ_OK (want 1), N gfx_read records $GA_READ_N (want 1)"
         echo "    strict-mode tape: capture==replay+raised $GA_DFLT_OK (want 1), N audio_capture_open $GA_DFLT_CAP_N, N gfx_read $GA_DFLT_READ_N (want 1 each)"
+        echo "$GA_DEFAULT" | grep -iE "assert|error|FAIL" | head -3
         echo "$GA_PLAIN"  | grep -iE "assert|error|FAIL" | head -3
         echo "$GA_STRICT" | grep -iE "assert|error|FAIL" | head -3
     fi
