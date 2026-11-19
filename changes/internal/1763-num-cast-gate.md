@@ -1,1 +1,1 @@
-- Replaced the textual number-cast scanner with a Clang-AST census of hosted build profiles; unreviewed compiler-listed conversions now remain red (#1763).
+- Added a Clang-AST census that keeps unclassified floating-to-C-integer conversions red in the Linux Clang CI job (#1763).
