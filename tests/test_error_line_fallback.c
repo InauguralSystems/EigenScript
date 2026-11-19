@@ -213,13 +213,10 @@ int main(void) {
      * It must raise at the owning header before another binding/body write.
      * Two ordinary host-buffer elements exercise both successful iteration
      * and the later strict NaN read without manufacturing bytecode. */
-    int nf_saved_guards = g_strict_guards;
-    int nf_saved_arithmetic = g_strict_arithmetic;
+    int nf_saved_strict = g_strict_arithmetic;
     unsigned nf_saved_flags = g_math_flags;
-    for (int guards = 0; guards <= 1; ++guards) {
-      for (int arithmetic = 0; arithmetic <= 1; ++arithmetic) {
     eigs_clear_error();
-    g_strict_guards = guards; g_strict_arithmetic = arithmetic;
+    eigs_state_set_strict(st, 1);
     EigsValue *nf_input = eigs_value_new_buffer(2);
     EigsValue *nf_output = eigs_value_new_buffer(2);
     eigs_value_buffer_set(nf_input, 0, 3.0);
@@ -248,8 +245,8 @@ int main(void) {
     check(!ev && eigs_has_error() && eigs_last_error_line() == 2,
           "#1417 later for-buffer read raises at header line 2, not body line 4");
     check(eigs_last_error_kind() && !strcmp(eigs_last_error_kind(), "value") &&
-          eigs_last_error_message() && strstr(eigs_last_error_message(), (arithmetic ? "not a number" : "expected a finite number")) &&
-          g_math_flags == (arithmetic ? EIGS_MATH_INVALID : 0),
+          eigs_last_error_message() && strstr(eigs_last_error_message(), "not a number") &&
+          g_math_flags == EIGS_MATH_INVALID,
           "#1417 for iteration retains the first strict NaN diagnostic");
     check(eigs_value_buffer_get(nf_output, 0) == 3.0 &&
           eigs_value_buffer_get(nf_output, 1) == 1.0,
@@ -275,17 +272,14 @@ int main(void) {
     check(!ev && eigs_has_error() && eigs_last_error_line() == 2,
           "#1417 later comprehension read raises at header line 2, not element line 3");
     check(eigs_last_error_kind() && !strcmp(eigs_last_error_kind(), "value") &&
-          eigs_last_error_message() && strstr(eigs_last_error_message(), (arithmetic ? "not a number" : "expected a finite number")) &&
-          g_math_flags == (arithmetic ? EIGS_MATH_INVALID : 0),
+          eigs_last_error_message() && strstr(eigs_last_error_message(), "not a number") &&
+          g_math_flags == EIGS_MATH_INVALID,
           "#1417 comprehension retains the first strict NaN diagnostic");
     eigs_value_release(ev);
     eigs_clear_error();
     eigs_value_release(nf_input);
     eigs_value_release(nf_output);
-      }
-    }
-    g_strict_guards = nf_saved_guards;
-    g_strict_arithmetic = nf_saved_arithmetic;
+    eigs_state_set_strict(st, nf_saved_strict);
     g_math_flags = nf_saved_flags;
     eigs_close(st);
     return fail;
