@@ -3262,8 +3262,7 @@ procedure. The named check must go red on its own message.
 RULING R31-4 adds five separately counted stall-clause/order plants to that
 once-at-acceptance run. R31-7 replaces R31-6's sixth plant with three
 retained-window/finite-overflow plants. R31-8 adds the prefix index plant
-and R31-9 adds its opposite direction, for ten stall plants in total
-(the original 19 retain their own count):
+and R31-9 adds its opposite direction, for ten stall plants in total:
 
 | stall-clause/order plant | named check that must go red |
 |---|---|
@@ -3278,19 +3277,11 @@ and R31-9 adds its opposite direction, for ten stall plants in total
 | non-finite reader starts at `values_head - i`, one slot ahead | `stall-contract: FAIL nan-prefix-jitter tier=...` |
 | non-finite reader starts at `values_head - 2 - i`, one slot back | `stall-contract: FAIL nan-newest-jitter tier=...` |
 
-R31-8's prefix witness starts with `n is 1000`, an initial NaN subject,
-then assigns `n is n + 1` and finally `x is 1.0 / n` in each iteration.
-It pins exactly `100 stalled`, not certified, in all four tiers. R31-9's
-`nan-newest` starts with `x is 5.0`, then assigns the NaN at n = 1005
-before assigning x last; it pins exactly `101 stalled`, not certified.
-The current contract has 68 readings; the 64 readings established before
-R31-9 retain their exits and counts.
-
 **Witness deviation (R31-8).** The three R31-7 witnesses did not distinguish
 a one-slot index error. The ring holds exactly W+1 inputs, so a full scan
 reads the same set from any starting slot once the ring fills. The periodic
 witnesses start with a finite oldest prefix input, and the overflow witness
-has only finite inputs. `nan-prefix` instead places the NaN in the oldest
+has only finite inputs. `nan-prefix-jitter` instead places the NaN in the oldest
 available prefix slot: the correct reader counts its first iteration, while
 the wrong index drops it and stalls at 101. No W+2 row is added: the read
 length is capped by the W+1 ring, making that change equivalent at the
@@ -3299,8 +3290,8 @@ default window. Runtime rules, arms, split and decision rule are unchanged.
 **Witness deviation (R31-9).** R31-8 covered dropping the oldest prefix
 input, but the opposite index error drops the newest. It moves
 `nan-alternating` from 100 to 101 and `nan-period3` from 101 to 102, both
-inside their unchanged `100..112` bands. `nan-newest` places one NaN in the
-newest prefix slot at iteration 5: the correct reader stalls at 101, while
+inside their unchanged `100..112` bands. `nan-newest-jitter` places one NaN in the
+newest prefix slot at iteration 5: the correct reader stalls at 100, while
 the reader starting at `values_head - 2 - i` stalls at 105. The two exact
 rows carry the starting index; the R31-5 periodic bands remain unchanged.
 
@@ -3316,7 +3307,7 @@ the reader; the critic's prior (e)/(f) results are not extra registered plants.
 
 R31-5 pins the three alternation exits to `stalled` in 100..112, allowing
 the incumbent oscillator to fill before counting. The damped control stays
-`1454 normal converged`. HD1b and LE1b each pin their amended-rule count100.
+`1454 normal converged`.
 The ordering plant moves the actual early return, not commutative OR terms;
 its finite-only amplitude test must not suppress a current infinity.
 

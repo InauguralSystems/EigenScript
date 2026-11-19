@@ -14,8 +14,7 @@
   four tiers. Three named plants replace `r316-stall-step-nonfinite`;
   R31-8 adds the initial-NaN prefix witness and forward index plant, and
   R31-9 adds the newest-NaN prefix witness and backward index plant, for
-  ten stall plants and 68 contract readings. The 64 readings established
-  before R31-9 retain their exits and counts.
+  ten stall plants.
 
   A period-12 cycle with one NaN can leave a finite window and reset the
   counter at default W = 10. R31-7 records this residual alongside
