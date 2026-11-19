@@ -856,6 +856,7 @@ guard|gfx_text_height|print of (gfx_text_height of "2")
 guard|gfx_text_width|print of (gfx_text_width of 5)
 guard|gfx_title|print of (gfx_title of 42)
 guard|ppu_render_frame|print of (ppu_render_frame of [1, 2])
+guard|str_from_bytes|print of (str_from_bytes of [65, "x", 66])|str_from_bytes: expected numeric byte values
 EOF
 )
 PROBES="${PROBES//@TMP@/$TMP}"
@@ -1130,7 +1131,7 @@ check_absent_call() { # each omitted row must reach its exact error contract
 }
 
 rc=0
-n_probe=0; probe_id=0; n_guard=0; n_arithmetic=0; n_release_examined=0; n_release_same=0; n_release_different=0; n_release_capability_skipped=0; release_list=""; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_default_ok=0; default_list=""
+n_probe=0; probe_id=0; guard_probe_ids=""; n_guard=0; n_arithmetic=0; n_release_examined=0; n_release_same=0; n_release_different=0; n_release_capability_skipped=0; n_guard_off_quiet=0; n_guard_off_raises=0; release_list=""; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_default_ok=0; default_list=""
 n_pin=0; n_pin_ok=0; n_pin_broke=0; n_misattr=0; n_unrun=0; n_skipped=0
 differ_list=""; silent_list=""; pin_list=""; misattr_list=""; unrun_list=""; skipped_list=""
 NEW_CAPS=""; BASE_CAPS=""; profile_transitions=""; n_profile_rows=0
@@ -1206,6 +1207,7 @@ while IFS='|' read -r kind who prog expect; do
         *) default_list="$default_list\n    ${who:-unnamed} — missing or invalid probe kind: $kind"; rc=1; continue ;;
     esac
     expect="${expect:-$who: expected}"
+    [ "$kind" = guard ] && guard_probe_ids="$guard_probe_ids $probe_id"
     printf '%b\n' "$prog" > "$TMP/p.eigs"
     cap="$(cap_for_name "$who")"
     if ! probe_builtin_present "$who"; then
@@ -1276,7 +1278,8 @@ while IFS='|' read -r kind who prog expect; do
             release_rest=${release_row#*|}
             release_name=${release_rest%%|*}; release_rest=${release_rest#*|}
             release_cap=${release_rest%%|*}; release_rest=${release_rest#*|}
-            release_build=${release_rest%%|*}; release_receipt=${release_rest#*|}
+            release_build=${release_rest%%|*}; release_rest=${release_rest#*|}
+            release_off=${release_rest%%|*}; release_receipt=${release_rest#*|}
             if [ "$release_name" != "$who" ]; then
                 release_list="$release_list
     $who — message-table row names $release_name"; n_release_different=$((n_release_different + 1))
@@ -1286,13 +1289,23 @@ while IFS='|' read -r kind who prog expect; do
             elif [ "$release_cap" = core ] && [ -n "$cap" ]; then
                 release_list="$release_list
     $who — message-table capability is core, derived capability is $cap"; n_release_different=$((n_release_different + 1))
-            elif [ -z "$release_build" ] || [ -z "$release_receipt" ]; then
+            elif [ -z "$release_build" ] || { [ "$release_off" != quiet ] && [ "$release_off" != raises ]; } || [ -z "$release_receipt" ]; then
                 release_list="$release_list
     $who — incomplete release message-table provenance"; n_release_different=$((n_release_different + 1))
             elif [ "$release_cap" != core ] && [ "$(state_for subject "$release_cap")" != implemented ]; then
                 n_release_capability_skipped=$((n_release_capability_skipped + 1))
             else
             n_release_examined=$((n_release_examined + 1))
+            off_rc="${off%%$'\n'*}"
+            if [ "$release_off" = quiet ]; then
+                n_guard_off_quiet=$((n_guard_off_quiet + 1))
+                [ "$off_rc" = 0 ] || { release_list="$release_list
+    $who — EIGS_STRICT=0 now raises but release row says quiet"; n_release_different=$((n_release_different + 1)); }
+            else
+                n_guard_off_raises=$((n_guard_off_raises + 1))
+                [ "$off_rc" != 0 ] || { release_list="$release_list
+    $who — EIGS_STRICT=0 is now quiet but release row says raises"; n_release_different=$((n_release_different + 1)); }
+            fi
             if str_has "$release_receipt" "[new in branch; no v0.48.0 guard message]" || str_has "$release_receipt" "[different on purpose:"; then
                 n_release_same=$((n_release_same + 1))
             else
@@ -1411,6 +1424,14 @@ if [ -n "$BASE" ]; then
     done <<<"$VALID"
 fi
 
+printf '%s\n' $guard_probe_ids > "$TMP/guard-probe-ids"
+table_unmatched=$(awk -F'|' 'NR==FNR {seen[$1]=1; next} FNR > 1 && !($1 in seen) {print $1 ":" $2}' "$TMP/guard-probe-ids" "$RELEASE_MESSAGES")
+if [ -n "$table_unmatched" ]; then
+    release_list="$release_list
+    message-table row has no matching probe: $table_unmatched"
+    n_release_different=$((n_release_different + 1))
+fi
+
 guarded="$(extract_guard_names src/*.c | sed '/^$/d' | sort -u)"
 probed="$(printf '%s\n' "$PROBES" | cut -d'|' -f2 | sed '/^$/d' | sort -u)"
 n_guarded=$(printf '%s\n' "$guarded" | sed '/^$/d' | wc -l | tr -d ' ')
@@ -1432,6 +1453,7 @@ if [ -n "$BASE" ]; then echo "  identical-when-off: $n_ident   differing: $n_dif
 else echo "  identical-when-off: SKIPPED (--no-baseline)"; fi
 echo "  default contract: $n_default_ok / $n_probe (guards unset==1; arithmetic unset==0)"
 echo "  release guard messages: examined=$n_release_examined same=$n_release_same different=$n_release_different capability_skipped=$n_release_capability_skipped"
+echo "  guard EIGS_STRICT=0: quiet=$n_guard_off_quiet raises=$n_guard_off_raises"
 echo "  raises-under-strict: $n_raise   silent: $n_silent   misattributed: $n_misattr"
 [ "$n_unrun" -gt 0 ] && echo "  probes that did not run: $n_unrun"
 echo "  answer-pins held: $n_pin_ok   broken: $n_pin_broke"

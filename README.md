@@ -57,10 +57,10 @@ Non-finite float text uses `inf`, `-inf`, and unsigned `nan` in `print`,
 `str`, f-strings, and fixed-decimal number formatting. These are output
 words, not JSON literals: JSON decoding of `1e400` (including a nested
 number) raises `value` in default and strict modes. Source exponent literals
-
-`EIGS_STRICT` unset or empty enables argument guards while retaining IEEE non-finite arithmetic values; `1` also traps non-finite arithmetic, and `0` selects the quiet legacy guard answers while retaining IEEE values.
 use binary64 floats, so source `1e400` and default `num of "1e400"` remain
-`inf`; JSON applies its separate finite-number rule. Ordinary non-finite
+`inf`; JSON applies its separate finite-number rule.
+
+`EIGS_STRICT` unset or empty enables argument guards while retaining IEEE non-finite arithmetic values; `1` also traps non-finite arithmetic, and `0` selects the quiet legacy guard answers while retaining IEEE values. Ordinary non-finite
 buffer reads still raise; use the explicit bits APIs to inspect raw cells. Replay accepts IEEE tape tokens only when the
 recorded source can produce them: finite random, clock, byte and sample
 domains refuse non-finite values by name; normal samples may overflow to
