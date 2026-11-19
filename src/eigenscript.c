@@ -905,10 +905,19 @@ static ObserverNumber observer_slot_value_get(const ObserverSlot *s, size_t back
 /* Capacity growth is cold: keep its allocation/copy register setup out of
  * the per-sample recorder (R31 round4 cost attribution). */
 static __attribute__((noinline)) void observer_slot_v_grow(ObserverSlot *s, int n) {
-    double *nv = xcalloc((size_t)n, sizeof(double));
-    double *nr = xcalloc((size_t)n, sizeof(double));
-    uint8_t *ne = xcalloc((size_t)n, sizeof(uint8_t));
-    ObserverNumber *nx = xcalloc((size_t)n + 1, sizeof(*nx));
+    /* #2433 prototype: one owner/allocation, while every typed sub-array
+     * starts at its natural alignment.  v_rel is the owner/base pointer. */
+    size_t off_raw = (size_t)n * sizeof(double);
+    size_t off_exact = off_raw + (size_t)n * sizeof(double);
+    size_t off_values = off_exact + (size_t)n * sizeof(uint8_t);
+    size_t a = _Alignof(ObserverNumber);
+    off_values = (off_values + a - 1) & ~(a - 1);
+    size_t bytes = off_values + ((size_t)n + 1) * sizeof(ObserverNumber);
+    unsigned char *block = xcalloc(1, bytes);
+    double *nv = (double *)block;
+    double *nr = (double *)(block + off_raw);
+    uint8_t *ne = block + off_exact;
+    ObserverNumber *nx = (ObserverNumber *)(block + off_values);
     int cnt = s->v_rel ? s->v_window_count : 0;
     if (cnt > n) cnt = n;
     for (int i = 0; i < cnt; i++) {
@@ -920,7 +929,7 @@ static __attribute__((noinline)) void observer_slot_v_grow(ObserverSlot *s, int 
     if (xc > n + 1) xc = n + 1;
     for (int i = 0; i < xc; i++)
         nx[i] = observer_slot_value_get(s, (size_t)(xc - 1 - i));
-    free(s->v_rel); free(s->v_raw); free(s->v_exact); free(s->v_values);
+    free(s->v_rel);
     s->v_rel = nv; s->v_raw = nr; s->v_exact = ne; s->v_values = nx;
     s->v_cap = (uint8_t)n;
     s->values_cap = (uint8_t)(n + 1);
@@ -1396,10 +1405,7 @@ void observer_slot_reset_bounded(Env *e, int max_retain_cap) {
     vm_obs_slot_dropped(e);   /* invalidate the VM's last-observed-slot tracker */
     for (int i = 0; i < e->obs_cap; i++) {
         free(e->obs[i].dh_window);
-        free(e->obs[i].v_rel);   /* #294 value-signal window */
-        free(e->obs[i].v_exact);
-        free(e->obs[i].v_values);
-        free(e->obs[i].v_raw);  /* #422 raw-step window */
+        free(e->obs[i].v_rel);   /* #2433 owns all four value arrays */
         val_decref(e->obs[i].eq_last);
         free(e->obs[i].eq_window);
     }
@@ -1987,7 +1993,7 @@ Value *observer_slot_trajectory(const ObserverSlot *s) {
 }
 
 void observer_slot_dispose(ObserverSlot *s) {
-    free(s->v_rel); free(s->v_raw); free(s->v_exact); free(s->v_values);
+    free(s->v_rel); /* #2433 owns v_raw, v_exact, and v_values too */
     free(s->dh_window); free(s->eq_window); val_decref(s->eq_last);
     memset(s, 0, sizeof *s);
 }
