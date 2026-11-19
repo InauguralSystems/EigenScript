@@ -1,9 +1,9 @@
 # Scratch: the measurement for #2427. This branch is deleted when #2434 closes.
 name: scratch sweep 2407
 
-# Parked: the measurement for #2427 is made. The tool under .github/sweep/ is kept here
-# for #2434 (stall cases for an integer subject and for the entropy route), whose end
-# asks for this tool's "seen by neither contract" count before and after.
+# The measurement for #2434's first box: the whole population, read by the contract of
+# c96498d9 (arm B, as in the measurement for #2427) and by the contract of #2440's head
+# (arm H). The "seen by neither" count is compared with the 521 of the run for #2427.
 on:
   workflow_dispatch:
 
@@ -13,17 +13,17 @@ permissions:
 env:
   BASE: c96498d978a94eaa70ff2f71a481c0659fa20bc2
   H0: 045c8a1c37c17b7709300386c765920e884c7fdb
-  CAND: c6b96d76c501559abddc23bc23177ac54c1a3fe2
+  CAND: 2b8bf74c12858631522c0239354d9e17084a36aa
 
 jobs:
   sweep:
-    name: stall-rule mutants ${{ matrix.shard }}/4
+    name: stall-rule mutants ${{ matrix.shard }}/16
     runs-on: ubuntu-latest
     timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -41,8 +41,8 @@ jobs:
           done
       - name: sweep
         run: |
-          SWEEP_S="$RUNNER_TEMP/sw" SWEEP_OUT="$RUNNER_TEMP/out" SWEEP_GENV= SWEEP_ONLY_FILE="$GITHUB_WORKSPACE/.github/sweep/only.txt" \
-            python3 -u .github/sweep/sweep2.py run --shard "${{ matrix.shard }}/4"
+          SWEEP_S="$RUNNER_TEMP/sw" SWEEP_OUT="$RUNNER_TEMP/out" SWEEP_GENV= \
+            python3 -u .github/sweep/sweep2.py run --shard "${{ matrix.shard }}/16"
       - name: trace classification of every mutant that is red on the base and green on the head
         run: |
           set -eu
@@ -88,29 +88,4 @@ jobs:
         if: always()
         with:
           name: control
-          path: ${{ runner.temp }}/out
-
-  judge:
-    name: the mutant filed as undefined behaviour, under three judges
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: trees, tools, and the three judges
-        run: |
-          set -u
-          S="$RUNNER_TEMP/sw"; mkdir -p "$S/B" "$S/H" "$RUNNER_TEMP/out"
-          git archive "$BASE" | tar -x -C "$S/B"
-          git archive "$CAND" | tar -x -C "$S/H"
-          sudo apt-get update -qq >/dev/null 2>&1 || true
-          sudo apt-get install -y -qq valgrind clang >/dev/null 2>&1 || true
-          gcc --version | head -1; clang --version | head -1; valgrind --version
-          SWEEP_S="$S" SWEEP_OUT="$RUNNER_TEMP/out" SWEEP_GENV= python3 -u .github/sweep/judge_az.py | tee "$RUNNER_TEMP/out/judge.txt"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
-        if: always()
-        with:
-          name: judge
           path: ${{ runner.temp }}/out
