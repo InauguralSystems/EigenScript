@@ -1,0 +1,1 @@
+- Pin sign-extension range checks, clarify boxed tensor numbers, and document legacy observer-window trace replay (#1742, #1863, #2198).
