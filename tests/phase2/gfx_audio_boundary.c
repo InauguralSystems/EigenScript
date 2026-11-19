@@ -21,6 +21,7 @@ static Value *phase2_reader_probe(Value *arg) {
     (void)arg;
     for (int strict=0;strict<=1;++strict) {
         g_strict_guards=strict;
+        g_strict_arithmetic=strict;
         for (int k=0;k<4;++k) {
             Value *b=buffer(2);
             double first=k==0 || k==3 ? NAN : k==1 ? INFINITY : -INFINITY;

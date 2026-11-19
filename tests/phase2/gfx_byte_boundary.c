@@ -88,6 +88,7 @@ static void gfx_byte_exercise(int ppu, int strict, const GfxByteCase *c,
                        "real renderer starts white");
     }
     g_strict_guards = strict;
+    g_strict_arithmetic = strict;
     gfx_byte_clear_error();
     int arg_refs = args->refcount, source_refs = source->refcount;
     int frame_refs = frame ? frame->refcount : 0;
@@ -139,6 +140,7 @@ static void gfx_byte_exercise(int ppu, int strict, const GfxByteCase *c,
 static Value *phase2_reader_probe(Value *arg) {
     (void)arg;
     g_strict_guards = 1;
+    g_strict_arithmetic = 1;
     Value *pixels = NULL, *memory = NULL, *frame = NULL;
     Value *gfx_args = NULL, *ppu_args = NULL;
     gfx_byte_check(setenv("SDL_VIDEODRIVER", "dummy", 1) == 0,

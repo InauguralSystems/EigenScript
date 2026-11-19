@@ -197,8 +197,8 @@ Float arithmetic produces IEEE results by default: overflow gives infinity,
 `1 / 0` gives `inf`, `0.0 / 0` and float `% 0` give NaN, `sqrt of -1` and
 out-of-domain `asin`/`acos` give NaN, and `log of 0` gives `-inf`. There is
 no `1e308` clamp. Int `// 0` and `% 0` still raise `value`.
-`EIGS_STRICT=1` opts into catchable errors for non-finite arithmetic and
-wrong-typed builtin arguments; strict mode is off by default. NaN compares
+`EIGS_STRICT=1` opts into catchable errors for non-finite arithmetic;
+wrong-typed builtin arguments already raise when the variable is unset. NaN compares
 unequal to everything, including itself and through container structure,
 without raising or changing math flags.
 

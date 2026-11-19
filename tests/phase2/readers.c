@@ -779,10 +779,12 @@ static void container_and_buffer(void) {
         check(k < 8 ? !g_has_error && f == cells[k] : g_has_error && g_error_kind == EK_VALUE,
               "buffer_read_f64 finite data and nonfinite refusal");
     }
-    int saved_strict = g_strict_guards;
+    int saved_guards = g_strict_guards;
+    int saved_arithmetic = g_strict_arithmetic;
     unsigned saved_flags = g_math_flags;
     for (int strict = 0; strict <= 1; strict++) {
         g_strict_guards = strict;
+        g_strict_arithmetic = strict;
         g_math_flags = 0;
         reset_error();
         f = buffer_read_f64(&buf, 8);
@@ -793,7 +795,8 @@ static void container_and_buffer(void) {
         check(strstr(g_error_raw, strict ? "not a number" : "expected a finite number") != NULL,
               "buffer_read_f64 strict NaN retains its diagnostic");
     }
-    g_strict_guards = saved_strict;
+    g_strict_guards = saved_guards;
+    g_strict_arithmetic = saved_arithmetic;
     g_math_flags = saved_flags;
     reset_error(); check(!buffer_index_at(&buf, -1, &i, "reader") && g_error_kind == EK_INDEX, "buffer negative index");
     reset_error(); check(!buffer_byte_at(&buf, buf.data.buffer.count, (uint8_t *)&i, "reader") && g_error_kind == EK_INDEX, "buffer upper index");
@@ -807,7 +810,8 @@ static void container_and_buffer(void) {
 /* Sync #10: #1697's tombstones must not hide a non-reflexive descendant
  * from Phase2's R1.6z-D2 structural self-equality traversal. */
 static void tombstoned_dict_equality(void) {
-    int saved_strict = g_strict_guards;
+    int saved_guards = g_strict_guards;
+    int saved_arithmetic = g_strict_arithmetic;
     unsigned saved_flags = g_math_flags;
     Value *nanbuf = eigs_value_new_buffer(1);
     eigs_value_buffer_set(nanbuf, 0, NAN); /* public raw setter preserves bits */
@@ -820,6 +824,7 @@ static void tombstoned_dict_equality(void) {
           "tombstone leaves NaN buffer beyond live count");
     for (int strict = 0; strict <= 1; strict++) {
         g_strict_guards = strict;
+        g_strict_arithmetic = strict;
         g_math_flags = EIGS_MATH_UNDERFLOW;
         reset_error();
         check(!values_equal(dict, dict),
@@ -829,7 +834,8 @@ static void tombstoned_dict_equality(void) {
     }
     val_decref(dict);
     val_decref(nanbuf);
-    g_strict_guards = saved_strict;
+    g_strict_guards = saved_guards;
+    g_strict_arithmetic = saved_arithmetic;
     g_math_flags = saved_flags;
     reset_error();
 }

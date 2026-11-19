@@ -86,21 +86,21 @@ def derived_counts():
 
 
 def strict_opt_in_wording():
-    """Keep graphics/audio argument prose aligned with N11's strict opt-in.
+    """Keep graphics/audio argument prose aligned with #2439's split defaults.
 
-    R2.2 changes the shared state.c strict default to 0. Numeric N5/Q7
-    validation that raises in both modes remains separate from these legacy
-    type/shape guards; this policy retains its two graphics/audio sections.
+    Unset EIGS_STRICT enables argument guards while leaving arithmetic traps
+    off. Numeric N5/Q7 validation remains separate from legacy stand-ins.
     """
     text = Path('docs/BUILTINS.md').read_text(encoding='utf-8')
-    default_strict = re.compile(
-        r'\bstrict(?:\s+mode)?\s+is\s+(?:the\s+)?default\b|'
-        r'\bstrict[- ]by[- ]default\b|\bdefault\s+strict(?:\s+mode)?\b', re.I)
+    quiet_default = re.compile(
+        r'\b(?:answers?|stays?)\s+quiet(?:ly)?\s+by\s+default\b|'
+        r'\bstrict\s+mode\s+is\s+off\s+by\s+default\s+for\s+bad\s+arguments\b|'
+        r'\bby\s+default\s+or\s+under\s+`?EIGS_STRICT=0`?', re.I)
     lines = text.splitlines()
     for lineno, line in enumerate(lines, 1):
-        if default_strict.search(line):
-            red(f'docs/BUILTINS.md:{lineno}: describes strict mode as the default; '
-                'EIGS_STRICT=1 is opt-in (N11, R2.2)')
+        if quiet_default.search(line):
+            red(f'docs/BUILTINS.md:{lineno}: describes argument guards as quiet by default; '
+                'unset EIGS_STRICT enables guards (#2439)')
     print(f'  STRICT OPT-IN ROWS: examined {len(lines)} line(s)')
     if not lines:
         red('STRICT OPT-IN ROWS examined 0 lines')
@@ -116,20 +116,15 @@ def strict_opt_in_wording():
             continue
         examined += 1
         section = sections[heading][0]
-        stale = re.findall(r'\braises?\s+by\s+default\b|'
-                           r'\bby\s+default\s+every\s+wrong-typed\s+row\s+must\s+raise\b',
-                           section, re.I)
-        if stale:
-            red(f'docs/BUILTINS.md: {heading} describes strict argument errors as default: ' + ', '.join(stale))
         if heading == headings[0]:
             paragraph = re.search(r'\*\*Wrong-typed and wrong-arity arguments \(#1007\)\.\*\*(.*?)(?=\n\n|\Z)', section, re.S)
             if not paragraph:
                 red('docs/BUILTINS.md: gfx wrong-argument paragraph is missing')
             elif ('`EIGS_STRICT=1`' not in paragraph[1] or
                   '`EIGS_STRICT=0`' not in paragraph[1] or
-                  not re.search(r'\bby default\b', paragraph[1], re.I)):
-                red('docs/BUILTINS.md: gfx paragraph must name explicit EIGS_STRICT=1 '
-                    'and the default EIGS_STRICT=0 stand-ins (N11, R2.2)')
+                  not re.search(r'\bunset\b', paragraph[1], re.I)):
+                red('docs/BUILTINS.md: gfx paragraph must name unset guards, explicit '
+                    'EIGS_STRICT=1 raises, and EIGS_STRICT=0 stand-ins (#2439)')
     print(f'  STRICT OPT-IN: examined {examined} section(s), declared {len(headings)}')
 
 def bool_result_wording():
@@ -574,15 +569,15 @@ def selftest():
             original = p.read_text()
             for label, anchor, replacement, witness in [
                 ('strict-intro', '**Wrong-typed and wrong-arity arguments (#1007).**',
-                 '**Wrong-typed and wrong-arity arguments (#1007).** Invalid input raises by default.', 'describes strict argument errors as default'),
+                 '**Wrong-typed and wrong-arity arguments (#1007).** Invalid input answers quietly by default.', 'describes argument guards as quiet by default'),
                 ('strict-later-gfx', '**Text rendering and fonts (#593).**',
-                 '**Text rendering and fonts (#593).** Invalid input raises by default.', 'describes strict argument errors as default'),
+                 '**Text rendering and fonts (#593).** Invalid input answers quietly by default.', 'describes argument guards as quiet by default'),
                 ('strict-audio', '## Audio (additional)',
-                 '## Audio (additional)\nInvalid input raises by default.', 'describes strict argument errors as default'),
+                 '## Audio (additional)\nInvalid input answers quietly by default.', 'describes argument guards as quiet by default'),
                 ('strict-core-row', '## Core Language',
-                 '## Core Language\nStrict mode is the default for bad arguments.', 'describes strict mode as the default'),
+                 '## Core Language\nStrict mode is off by default for bad arguments.', 'describes argument guards as quiet by default'),
                 ('strict-audio-short', 'A **short or non-list** argument also raises under `EIGS_STRICT=1`;',
-                 'A **short or non-list** argument also raises by default;', 'describes strict argument errors as default'),
+                 'A **short or non-list** argument answers quietly by default;', 'describes argument guards as quiet by default'),
                 ('strict-section-missing', '## Audio (additional)',
                  '## Removed audio heading', "strict-opt-in section 'Audio (additional)' must exist exactly once"),
                 ('strict-gfx-section-missing', '## Graphics (SDL2) Extension',

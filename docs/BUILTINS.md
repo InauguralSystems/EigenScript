@@ -108,7 +108,7 @@ tokens, and raises `value` naming any integer token outside int64.
 | `list_slice` | `list_slice of [list, start, end]` | New list with the elements of [start, end) — dual of `copy_into`. Negative indices count from the end, like `[]`; bounds then clamp to [0, len]. `start >= end` gives `[]`. Clamped integer bounds remain valid. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
 | `num_copy` | `num_copy of value` | Create an independent numeric copy, preserving int/float kind and every int64 bit |
 | `hex` | `hex of n` or `hex of [n, nibbles]` | Exact uppercase hex digits for any non-negative int64. Value and optional nibble count follow N5; fractions raise, integral floats convert. Width clamps to 0..16, never truncating digits. |
-| `sort` | `sort of list` | Stably sort an all-number or all-string list in-place (numeric / lexicographic); equal elements keep their input order on every platform. Mixed or non-scalar elements raise — use `sort_by` for records. Returns the list. A non-list argument raises with `EIGS_STRICT=1`; by default or under `EIGS_STRICT=0` it is handed back unchanged (#971). |
+| `sort` | `sort of list` | Stably sort an all-number or all-string list in-place (numeric / lexicographic); equal elements keep their input order on every platform. Mixed or non-scalar elements raise — use `sort_by` for records. Returns the list. A non-list argument raises with `EIGS_STRICT=1`; under `EIGS_STRICT=0` it is handed back unchanged (#971). |
 | `list_truncate` | `list_truncate of [list, new_len]` | Shrink list in-place to new_len items. No-op if new_len >= length. Returns the list. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
 | `list_remove_at` | `list_remove_at of [list, index]` | Remove element at index, shift tail down (mutates). No-op if out of bounds. Returns the list. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
 | `list_insert_at` | `list_insert_at of [list, index, value]` | Insert value at index, shift tail up (mutates) — dual of `list_remove_at`. `index == len` appends; any other out-of-bounds index is a no-op. Returns the list. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
@@ -130,7 +130,7 @@ tokens, and raises `value` naming any integer token outside int64.
 | `ends_with` | `ends_with of [s, suffix]` | `true` if s ends with suffix, else `false` |
 | `index_of` | `index_of of [haystack, needle]` | First byte index as an int, or int -1 when absent (legacy non-string fallback is -1) |
 | `substr` | `substr of [s, start, length]` | Extract substring. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-| `split` | `split of [s, delim]` | Split string by delimiter into list. A non-string `s` or `delim` raises with `EIGS_STRICT=1`; by default or under `EIGS_STRICT=0`, `s` splits as `""` (so answers `[""]`) and `delim` falls back to `" "` (#971). |
+| `split` | `split of [s, delim]` | Split string by delimiter into list. A non-string `s` or `delim` raises with `EIGS_STRICT=1`; under `EIGS_STRICT=0`, `s` splits as `""` (so answers `[""]`) and `delim` falls back to `" "` (#971). |
 | `scan_int_tokens` | `scan_int_tokens of s` or `scan_int_tokens of [s, comment_marker]` | Token rows `[text, line, col, start, end, is_int, value]`; all numeric fields are ints. Integer text beyond int64 raises `value` naming the token (C3). |
 | `trim` | `trim of s` | Strip leading/trailing whitespace |
 | `str_replace` | `str_replace of [s, old, new]` | Replace all occurrences of old with new |
@@ -279,7 +279,7 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `buffer` | `buffer of count` | Dimensions and size follow N5, then the C int range. Create zero-filled buffer of given size (or `buffer of [rows, cols]` for a shaped one). A non-numeric size raises with `EIGS_STRICT=1`; by default or under `EIGS_STRICT=0` it makes an empty buffer (#971). |
+| `buffer` | `buffer of count` | Dimensions and size follow N5, then the C int range. Create zero-filled buffer of given size (or `buffer of [rows, cols]` for a shaped one). A non-numeric size raises with `EIGS_STRICT=1`; under `EIGS_STRICT=0` it makes an empty buffer (#971). |
 | `buf_get` | `buf_get of [buf, index]` | The index follows N5; the returned element is float. Non-finite cells raise `value` in either strict mode (N13). Out-of-range raises `index_range` (#502 — folding to 0 was indistinguishable from a real stored 0), matching the `buf[i]` operator. |
 | `buf_get_bits` | `buf_get_bits of [buf, index]` | Return a cell's raw IEEE bits as signed int64, preserving every NaN payload. Index validation mirrors `buf_get`: N5, then `index_range` for negative/out-of-range indices. Wrong types or missing arguments raise `type_mismatch` in either strict mode (N12, R24-1). |
 | `buf_set` | `buf_set of [buf, index, value]` | The index follows N5; stored values convert to float (Q2). Write element and return `null`. |
@@ -336,8 +336,8 @@ For serialization: reconstruct strings/floats from raw bytes (the inverse of an
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `str_from_bytes` | `str_from_bytes of <list\|buffer>` | Input bytes follow N5, then 0..255; fractions/out-of-range bytes raise `value`. Build a string from raw byte values (0–255) — the list form of `chr` (`chr of n` == `str_from_bytes of [n]` for 1–255), inverting an `ord`-over-bytes loop. Nonnumeric list elements raise `type_mismatch` with `EIGS_STRICT=1` and convert to numeric zero by default or under `EIGS_STRICT=0`. Strings are NUL-terminated: a numeric byte that converts to `0` ends conversion, and later elements are not inspected — keep NUL-bearing binary in a buffer. |
-| `f64_to_bytes` | `f64_to_bytes of x` | An integer input first converts to nearest f64 (Q2). List of 8 ints: the big-endian IEEE-754 encoding of double `x` (network byte order, portable across host endianness). A non-number raises with `EIGS_STRICT=1`; by default or under `EIGS_STRICT=0` it encodes as `0.0` (#971). |
+| `str_from_bytes` | `str_from_bytes of <list\|buffer>` | Input bytes follow N5, then 0..255; fractions/out-of-range bytes raise `value`. Build a string from raw byte values (0–255) — the list form of `chr` (`chr of n` == `str_from_bytes of [n]` for 1–255), inverting an `ord`-over-bytes loop. Nonnumeric list elements raise `type_mismatch` with `EIGS_STRICT=1` and convert to numeric zero under `EIGS_STRICT=0`. Strings are NUL-terminated: a numeric byte that converts to `0` ends conversion, and later elements are not inspected — keep NUL-bearing binary in a buffer. |
+| `f64_to_bytes` | `f64_to_bytes of x` | An integer input first converts to nearest f64 (Q2). List of 8 ints: the big-endian IEEE-754 encoding of double `x` (network byte order, portable across host endianness). A non-number raises with `EIGS_STRICT=1`; under `EIGS_STRICT=0` it encodes as `0.0` (#971). |
 | `f64_from_bytes` | `f64_from_bytes of <list\|buffer>` | Input bytes follow N5, then 0..255; fractions/out-of-range bytes raise `value`. Decode a double from the first 8 big-endian IEEE-754 bytes; the input must contain at least 8 bytes. Inverse of `f64_to_bytes`. A `NaN` bit pattern produces canonical NaN and sets `math_flags.invalid`; `EIGS_STRICT=1` raises a `value` error (#971, R2.2). |
 
 Buffers also support direct indexing (`buf[i]`, `buf[i] is val`) and
@@ -372,7 +372,7 @@ Requires the `zlib` build (`make zlib`, `-DEIGENSCRIPT_EXT_ZLIB=1
 |------|-----------|-------------|
 | `json_encode` | `json_encode of value` | Serialize value to JSON string. Raises on a value nested deeper than 200 levels — which includes any **cyclic** value (`dict_set of [d, "self", d]`, `append of [a, a]`), since a cycle has no depth. Catchable. |
 | `json_decode` | `json_decode of s` | Parse JSON string to value. Integer text fitting int64 decodes exactly as int; decimal overflow, a point or exponent produces float (N14). Raises past the same 200-level limit, so a document that decodes always re-encodes. `\uXXXX` surrogate pairs are combined into one code point; unpaired surrogates, an escaped NUL, and malformed `\u` escapes raise (strict decode — lenient callers such as `json_path` receive the complete document with U+FFFD in place of the bad scalar). |
-| `json_build` | `json_build of [k1, v1, k2, v2, ...]` | Build JSON object from key-value pairs. `json_build of null` is `{}`; any other non-list raises with `EIGS_STRICT=1` and answers `{}` by default or under `EIGS_STRICT=0` (#971). |
+| `json_build` | `json_build of [k1, v1, k2, v2, ...]` | Build JSON object from key-value pairs. `json_build of null` is `{}`; any other non-list raises with `EIGS_STRICT=1` and answers `{}` under `EIGS_STRICT=0` (#971). |
 | `json_path` | `json_path of [json_str, "dot.path"]` | Extract nested value as text by dot-notation path, with exact int64 digits (N14); `""` when there is no value at that path (absent key, index out of range, JSON `null`). The document is parsed leniently: a malformed document is walked as far as it parsed, so a parse failure also answers `""` or a partial value. By default, a document that `json_decode` would reject (structural error, a repaired `\u` scalar, trailing garbage) raises a catchable `value` error `json_path: invalid JSON at position N` instead (#971 Phase C); JSON `false`/`null`/absent keys stay answers in both modes. |
 
 ## Dictionaries
@@ -489,7 +489,7 @@ floats `[0.001, 0.01, 0.1]`; the last is the compiled-in non-numeric
 | `dir_sync` | `dir_sync of path` | Flush a directory with `fsync(2)`; trace replay does not sync |
 | `exec_capture` | `exec_capture of ["cmd", "arg1", ...]` | Run subprocess, return [exit_code, stdout_text]. No shell (direct exec). Child stdin is /dev/null. Returns [-1, ""] on failure, [-2, partial] on timeout. 10 MB output cap. Timeout form: `exec_capture of [["cmd", ...], seconds]`. Exit statuses are ints. Seconds convert to milliseconds rounded half away from zero; an interval outside the poll API C int range raises `value` before starting the child (Q7 magnitude). |
 | `env_get` | `env_get of "VAR_NAME"` | Get environment variable (empty string if unset) |
-| `random_hex` | `random_hex of n` | Generate n random hex characters from /dev/urandom (`""` for `n <= 0` or `n > 256`). A non-number `n` raises with `EIGS_STRICT=1`; by default or under `EIGS_STRICT=0` it answers `""` (#971). The count follows N5, then the C int range: integral floats convert; fractions raise `value` before replay or randomness. |
+| `random_hex` | `random_hex of n` | Generate n random hex characters from /dev/urandom (`""` for `n <= 0` or `n > 256`). A non-number `n` raises with `EIGS_STRICT=1`; under `EIGS_STRICT=0` it answers `""` (#971). The count follows N5, then the C int range: integral floats convert; fractions raise `value` before replay or randomness. |
 | `try_parse` | `try_parse of code_string` | `true` if string is valid EigenScript syntax, `false` otherwise |
 | `mkdir` | `mkdir of "path"` | Create directory (and parents). `true` on success; I/O failure raises `io` with the path and OS reason. Trace-recorded: replay serves the recorded result and does not re-create the directory (#585) |
 | `ls` | `ls of "path"` | List non-hidden directory entries as bytewise-sorted strings (the order of `LC_ALL=C ls -1`). I/O failure raises `io` with the path and OS reason. Trace-recorded, so replay is deterministic (#585) |
@@ -538,7 +538,7 @@ stdlib roots. See [Modules](SPEC.md#modules) for import collision handling.
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `random` | `random of null` | Random float in [0, 1). Numeric inputs convert to float; numeric results are floats. |
-| `random_int` | `random_int of [lo, hi]` | Random int in [lo, hi] inclusive. Bounds follow N5: integral floats convert; fractions and out-of-int64 values raise `value`. The existing span limit is 2^31; a larger span raises `value`. Malformed arguments raise with `EIGS_STRICT=1` and return int 0 by default or under `EIGS_STRICT=0`. |
+| `random_int` | `random_int of [lo, hi]` | Random int in [lo, hi] inclusive. Bounds follow N5: integral floats convert; fractions and out-of-int64 values raise `value`. The existing span limit is 2^31; a larger span raises `value`. Malformed arguments raise with `EIGS_STRICT=1` and return int 0 under `EIGS_STRICT=0`. |
 | `seed_random` | `seed_random of n` | Seed the RNG from an exact int64 (N5); fractional floats raise. The existing srand48 generator uses the low 32 seed bits. `random` is not cryptographic. The `eigenscript` CLI reads `EIGS_SEED_RANDOM=<integer>` at startup and seeds the shared stream with it before the program runs, which makes it predictable for the whole process (for differential testing and reproduction); an unset or empty value does nothing. A nonempty value is accepted when `strtol` parses the entire value as a representable decimal `long`; leading whitespace and a sign (such as `+7`) are accepted, but trailing characters and out-of-range values are startup errors (exit 2). This environment variable is CLI-only: embedders call `seed_random`. Under `EIGS_TRACE` seeded draws are recorded; under `EIGS_REPLAY` recorded values are served and this knob is irrelevant. |
 
 ## Time
@@ -707,7 +707,7 @@ Buffer arithmetic stops at its first raised kernel result and releases its parti
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `token_name` | `token_name of id` | Return token type name by ID (`"?"` for an unknown id). A non-number raises with `EIGS_STRICT=1`; by default or under `EIGS_STRICT=0` it answers `"?"` too (#971). Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
+| `token_name` | `token_name of id` | Return token type name by ID (`"?"` for an unknown id). A non-number raises with `EIGS_STRICT=1`; under `EIGS_STRICT=0` it answers `"?"` too (#971). Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
 
 ## Optional: Network Extension (TCP sockets)
 
@@ -1211,10 +1211,10 @@ the framebuffer blit, the PPU renderer, and the whole audio surface below —
 type-checks its arguments *before* reading them. Under `EIGS_STRICT=1`, a
 wrong type, a short argument list, or a wrong-shaped argument *container* (a
 number or a string where a list belonged) raises a catchable `type_mismatch`
-error naming the builtin and the shape it wanted. This paragraph describes the
-legacy type/shape guards. Numeric N5, Q1 and Q7 validation instead raises `value`
-in both strict modes, as specified above and in each row. By default (or with
-`EIGS_STRICT=0`), the type/shape guards retain their legacy stand-ins: the drawing
+error naming the builtin and the shape it wanted. With `EIGS_STRICT` unset,
+the same guard raises; this paragraph describes the legacy type/shape guards. Numeric N5, Q1 and Q7 validation instead raises `value`
+in both strict modes, as specified above and in each row. With
+`EIGS_STRICT=0`, the type/shape guards retain their legacy stand-ins: the drawing
 calls still answer `null`, the generators still answer an empty list, and the
 device calls still answer `0` or the device id they already answered.
 
@@ -1262,7 +1262,7 @@ is a *coercion*: under `EIGS_STRICT=0` they still measure at scale 1.
 wrong-typed scale refuses the call and draws nothing. With `EIGS_STRICT=1`,
 all three raise. Layout code that sizes a box with `gfx_text_width` and then
 draws with `gfx_text` therefore sees a box with no text in it if it passes a
-stringy scale. Set `EIGS_STRICT=1` to get the error instead of the default
+stringy scale. Set `EIGS_STRICT=1` to get the error instead of the `EIGS_STRICT=0`
 stand-in.
 
 A few values are deliberately left quiet because they are the *answer*, not a
@@ -1420,7 +1420,7 @@ for a non-admin; NULL and `''` were both `""`; and `9 > 10` was true because
 | `try_recv` | `try_recv of channel` | Non-blocking receive. Returns the value if available, `null` if the channel is empty. Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
 | `recv_timeout` | `recv_timeout of [channel, ms]` | Bounded-wait receive. Returns the value if one arrives before `ms` milliseconds elapse, else `null`. A close while waiting also returns `null`. negative `ms` degenerates to a `try_recv`. The timeout rounds half away from zero to milliseconds (Q7 magnitude); values outside the C long range raise `value`. The previous one-year cap is removed. |
 | `close_channel` | `close_channel of channel` | Close the channel. Wakes all blocked senders/receivers. Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
-| `channel_closed` | `channel_closed of channel` | Returns `true` if closed, `false` otherwise. An unknown or reclaimed channel is closed (`true`). A value that is not a channel handle raises with `EIGS_STRICT=1`; by default or under `EIGS_STRICT=0` it answers `true` (#971). Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
+| `channel_closed` | `channel_closed of channel` | Returns `true` if closed, `false` otherwise. An unknown or reclaimed channel is closed (`true`). A value that is not a channel handle raises with `EIGS_STRICT=1`; under `EIGS_STRICT=0` it answers `true` (#971). Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
 | `task_spawn` | `task_spawn of fn` or `task_spawn of [fn, arg1, ...]` | Create a cooperative task (#408) running `fn` on the single OS thread — deterministic by construction, unlike `spawn`'s OS thread. Args are deep-COPIED (share-nothing, like channel sends), not shared by reference. Returns a numeric task id. A ready task can run when the current task explicitly yields, suspends in a blocking scheduler operation, or finishes. |
 | `task_alive` | `task_alive of id` | Returns `true` while the task is runnable or suspended, `false` once it has finished (or for an unknown id). Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
 | `task_self` | `task_self of null` | The **running task's own id** (a number, in the same integer space `task_spawn` returns; the main task is 0, including before any task has been spawned). Lets a worker hand out its own id as a reply address — the message-link pattern a mailbox otherwise cannot express (#526). Deterministic — reads scheduler state, records no nondeterminism. |

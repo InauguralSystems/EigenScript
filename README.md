@@ -498,9 +498,9 @@ ints to floats. Float overflow gives infinity, without a `1e308` clamp.
 `/` returns float: a nonzero number divided by zero gives signed infinity;
 `0 / 0` and float `% 0` give NaN. `sqrt of -1` and `asin`/`acos` outside
 `[-1, 1]` give NaN; `log of 0` gives `-inf`. Int `// 0` and `% 0` still
-raise `value`. Set `EIGS_STRICT=1` to opt into catchable errors for
-non-finite arithmetic results and wrong-typed builtin arguments; it is off
-by default.
+raise `value`. Argument guards raise by default. Set `EIGS_STRICT=1` to also
+trap non-finite arithmetic results, or `EIGS_STRICT=0` for quiet legacy
+argument answers while retaining IEEE arithmetic values.
 
 ```eigenscript
 not_a_number is 0.0 / 0
