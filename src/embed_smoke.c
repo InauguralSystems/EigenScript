@@ -1011,7 +1011,8 @@ int main(void) {
      * raise before later elements are read, and a speculative leaf must
      * fall back while its callee source/frame can still be reported. */
     {
-        int nf_saved_strict = g_strict;
+        int nf_saved_strict = g_strict_arithmetic;
+        int nf_saved_guards = g_strict_guards;
         unsigned nf_saved_flags = g_math_flags;
         const char *ieee_results[] = {"0.0 / 0.0", "1.0 / 0.0", "-1.0 / 0.0"};
         for (size_t ieee_i = 0; ieee_i < sizeof ieee_results / sizeof ieee_results[0]; ++ieee_i) {
@@ -1338,7 +1339,8 @@ int main(void) {
         }
         if (nf_stderr >= 0) close(nf_stderr);
         if (nf_capture) fclose(nf_capture);
-        eigs_state_set_strict(st, nf_saved_strict);
+        st->strict_arithmetic = nf_saved_strict;
+        st->strict_guards = nf_saved_guards;
         g_math_flags = nf_saved_flags;
     }
 

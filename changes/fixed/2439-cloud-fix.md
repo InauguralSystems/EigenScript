@@ -1,0 +1,1 @@
+- Document argument guards and IEEE trap changes (#2439).

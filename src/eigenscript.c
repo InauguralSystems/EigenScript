@@ -265,7 +265,7 @@ void eigs_strict_nan_raise(const char *who) {
 }
 double eigs_math_nonfinite(double x, const char *who) {
     g_math_flags |= isnan(x) ? EIGS_MATH_INVALID : EIGS_MATH_OVERFLOW;
-    if (g_strict && !g_has_error) {
+    if (g_strict_arithmetic && !g_has_error) {
         if (isnan(x)) eigs_strict_nan_raise(who);
         else rt_error(EK_VALUE, 0, "%s: non-finite arithmetic result (infinity)",
                       who ? who : "arithmetic");
@@ -2672,7 +2672,7 @@ static const Value *eigs_reader_list_arg(const Value *list, int i,
     return NULL;
 }
 static int eigs_reader_elem_default(const Value *v) {
-    return !g_strict && (!v || (!val_is_number(v) && v->type != VAL_BOOL));
+    return !g_strict_guards && (!v || (!val_is_number(v) && v->type != VAL_BOOL));
 }
 
 EigsNum eigs_list_number(const Value *list, int i, const char *who) {
@@ -2785,7 +2785,7 @@ double buffer_read_f64(const Value *buffer, int64_t index) {
      * INVALID flag. Do this before the generic nonfinite refusal; callers
      * must stop before reading a later infinity. The finite-only refusal in
      * non-strict mode and the infinity refusal remain unchanged. */
-    if (g_strict && x != x && !g_has_error) {
+    if (g_strict_arithmetic && x != x && !g_has_error) {
         g_math_flags |= EIGS_MATH_INVALID;
         eigs_strict_nan_raise(NULL);
         return 0.0;

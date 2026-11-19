@@ -950,17 +950,11 @@ struct EigsState {
     double          obs_dh_small;   /* |dH| < this → "small change" (default 0.01)  */
     int             obs_window;     /* #1044 default value/dH window depth (default OBSERVER_WINDOW_N) */
     double          obs_scale;      /* #1045 characteristic scale: rel = Δv / max(|v|, |v_prev|, obs_scale) (default 0.001) */
-    /* #971/#1361: strict mode. ON by default (read once at creation; only
-     * EIGS_STRICT=0 turns it off): a wrong-typed or out-of-domain argument,
-     * or a NaN result, RAISES instead of getting a finite stand-in. Off
-     * (EIGS_STRICT=0), the stand-ins apply (NaN→0, domain clamps substitute,
-     * `cos of "hello"` → 0). Overflow saturates in both modes.
-     * Per-state config, like the observer thresholds.
-     *
-     * Named `strict`, not `strict_math`: since Phase A of #971 it governs
-     * argument-TYPE guards as well as arithmetic domains, and the env var
-     * (EIGS_STRICT) was always the general name. */
-    int             strict;
+    /* EIGS_STRICT has two independent effects. Guards retain the historical
+     * default-on policy, while arithmetic non-finite traps are opt-in. The
+     * two explicit names prevent a new reader from silently coupling them. */
+    int             strict_guards;
+    int             strict_arithmetic;
     /* Ordinary CLI --json is a property of the whole run/state, not of an
      * OS-thread attachment. Spawn workers have fresh EigsThread objects but
      * share this state, like the other per-run CLI configuration. */
@@ -1438,7 +1432,8 @@ extern __thread EigsThread *eigs_current;
 #define g_last_obs_slot_idx (eigs_current->last_obs_slot_idx)
 #define g_unobserved_depth  (eigs_current->unobserved_depth)
 #define g_math_flags        (eigs_current->math_flags)
-#define g_strict            (eigs_current->state->strict)
+#define g_strict_guards     (eigs_current->state->strict_guards)
+#define g_strict_arithmetic (eigs_current->state->strict_arithmetic)
 
 /* #971 Phase A: a builtin's argument-TYPE guard.
  *
@@ -1540,7 +1535,7 @@ void eigs_bool_gate_exempt(BuiltinFn fn);   /* a host function: never gated */
         }                                                                     \
     } while (0)
 #define EIGS_GUARD_RAISES(want)                                               \
-    ((void)(want), g_strict || eigs_arg_has_bool(arg))
+    ((void)(want), g_strict_guards || eigs_arg_has_bool(arg))
 
 #define ARG_GUARD(cond, who, want, soft)                                      \
     do {                                                                      \
@@ -1624,7 +1619,7 @@ void eigs_bool_gate_exempt(BuiltinFn fn);   /* a host function: never gated */
  * with independently discovered input-list surfaces and reviewed contracts. */
 #define STRICT_LIST_MAX(arg, max_count, who)                                  \
     do {                                                                      \
-        if (g_strict && (arg) && (arg)->type == VAL_LIST                      \
+        if (g_strict_guards && (arg) && (arg)->type == VAL_LIST               \
             && (arg)->data.list.count > (max_count)) {                        \
             rt_error(EK_TYPE, 0, "%s: expected a fixed-shape list with at "   \
                      "most %d elements", (who), (max_count));                 \
@@ -2003,7 +1998,7 @@ int buffer_index_at(const Value *buffer, int64_t index, int64_t *out, const char
  * `who` is the source-derived strict-differential probe key. */
 #define STRICT_DOMAIN(cond, who, what)                                       \
     do {                                                                      \
-        if (g_strict && (cond))                                               \
+        if (g_strict_arithmetic && (cond))                                    \
             rt_error(EK_VALUE, 0, "%s: %s", (who), (what));                   \
     } while (0)
 

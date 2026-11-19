@@ -252,7 +252,7 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols,
      * Check even when the first element or row gives no usable shape. */
     /* #1637: a bool element is refused in every strict mode. */
 #define FLAT_BAD(t) ((t) == VAL_LIST || (t) == VAL_BUFFER || \
-                     (((t) != VAL_FLOAT && (t) != VAL_INT) && (g_strict || (t) == VAL_BOOL)))
+                     (((t) != VAL_FLOAT && (t) != VAL_INT) && (g_strict_guards || (t) == VAL_BOOL)))
     if (v && v->type == VAL_LIST) {
         int bad = 0;
         if (ndim == 1) {
@@ -1912,7 +1912,7 @@ static double numerical_loss(Value *loss_fn, Value *arg, const char *who,
         return result;
     }
     if (loss) val_decref(loss);
-    if (g_strict) {
+    if (g_strict_guards) {
         if (!g_has_error)
             rt_error(EK_TYPE, 0, "%s: expected loss function to return a number", who);
         *loss_valid = 0;
