@@ -3267,7 +3267,7 @@ and R31-9 adds its opposite direction, for ten stall plants in total
 
 | stall-clause/order plant | named check that must go red |
 |---|---|
-| quiet last relative step | `stall-contract: FAIL quiet tier=...` on a shrinking tail seeded at n = 1000 |
+| quiet last relative step | `stall-contract: FAIL quiet-jitter tier=...` |
 | the whole retained-input non-finite clause | `stall-contract: FAIL nan tier=...` |
 | diverging window | `stall-contract: FAIL doubling tier=...` |
 | oscillating with a non-contracting amplitude | `stall-contract: FAIL alternating tier=...` |
@@ -3275,8 +3275,8 @@ and R31-9 adds its opposite direction, for ten stall plants in total
 | non-finite clause narrowed to the current input only | `stall-contract: FAIL nan-period3 tier=...` |
 | non-finite window shortened by one input | `stall-contract: FAIL nan-window-edge tier=...` |
 | R31-6's non-finite-step half restored | `stall-contract: FAIL overflow-contracting tier=...` |
-| non-finite reader starts at `values_head - i`, one slot ahead | `stall-contract: FAIL nan-prefix tier=...` |
-| non-finite reader starts at `values_head - 2 - i`, one slot back | `stall-contract: FAIL nan-newest tier=...` |
+| non-finite reader starts at `values_head - i`, one slot ahead | `stall-contract: FAIL nan-prefix-jitter tier=...` |
+| non-finite reader starts at `values_head - 2 - i`, one slot back | `stall-contract: FAIL nan-newest-jitter tier=...` |
 
 R31-8's prefix witness starts with `n is 1000`, an initial NaN subject,
 then assigns `n is n + 1` and finally `x is 1.0 / n` in each iteration.
@@ -3309,10 +3309,10 @@ the reader; the critic's prior (e)/(f) results are not extra registered plants.
 
 | degree of freedom | witness row(s) | plant that distinguishes it |
 |---|---|---|
-| start slot one too far forward, dropping the oldest prefix input | `nan-prefix` | `r318-stall-window-index` |
-| start slot one too far back, dropping the newest prefix input | `nan-newest` | `r319-stall-window-newest` |
+| start slot one too far forward, dropping the oldest prefix input | `nan-prefix-jitter` | `r318-stall-window-index` |
+| start slot one too far back, dropping the newest prefix input | `nan-newest-jitter` | `r319-stall-window-newest` |
 | extent one short | `nan-window-edge` | `r317-stall-window-extent`; one long is equivalent because the ring holds W+1 |
-| wrap modulus and source of the count | `nan-window-edge` and `nan-prefix` | critic (e), wrapping by `v_cap` instead of `values_cap`, is killed by `nan-window-edge`; critic (f), using `v_window_count` instead of `values_count`, is killed by both rows (prior R31-9 critic evidence) |
+| wrap modulus and source of the count | `nan-window-edge` and `nan-prefix-jitter` | critic (e), wrapping by `v_cap` instead of `values_cap`, is killed by `nan-window-edge`; critic (f), using `v_window_count` instead of `values_count`, is killed by both rows |
 
 R31-5 pins the three alternation exits to `stalled` in 100..112, allowing
 the incumbent oscillator to fill before counting. The damped control stays
