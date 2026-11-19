@@ -48,6 +48,15 @@ else
     printf '%s\n' "$BOOL_NR_OUT"
 fi
 unset BOOL_NR_OUT BOOL_NR_RC
+TOTAL=$((TOTAL + 1))
+BOOL_NC_OUT=$(python3 "$TESTS_DIR/../tools/num_cast_check.py" 2>&1); BOOL_NC_RC=$?
+if [ "$BOOL_NC_RC" = 0 ] && grep -q '^num-cast: PASS$' <<< "$BOOL_NC_OUT"; then
+    PASS=$((PASS + 1)); echo "  PASS: number-to-integer casts are reviewed ($(grep '^num-cast: examined' <<< "$BOOL_NC_OUT"))"
+else
+    FAIL=$((FAIL + 1)); echo "  FAIL: number-to-integer casts are reviewed (rc=$BOOL_NC_RC)"
+    printf '%s\n' "$BOOL_NC_OUT"
+fi
+unset BOOL_NC_OUT BOOL_NC_RC
 # Tape (#1637): a recorded bool replays as a bool, from the tape —
 # the probed file is deleted between record and replay, so a live re-probe
 # would answer false. A prior-format header is refused (exit 3).

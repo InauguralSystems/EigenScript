@@ -1,0 +1,1 @@
+- Added a source gate that inventories and reviews builtin number-reader conversions to C integer types (#1763).

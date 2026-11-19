@@ -1,0 +1,2 @@
+# file|function|count|reason -- exact count of reviewed unchecked conversions.
+embed_smoke.c|test_worker_exit_lifecycle|2|Test-only join handles originate as bounded internal worker id/generation values, not builtin arguments.
