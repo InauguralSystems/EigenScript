@@ -473,6 +473,43 @@ def ub_suspect(m):
     return m["id"] in UB_HAND
 
 
+# Undefined behaviour that the compiler itself reports for the mutant's build and not for the
+# clean one: a value-returning function that can end without a return, and a variable that is
+# read with nothing assigned to it. Filed apart and not counted; no sanitizer sees the second.
+UB_WARN = ("[-Wreturn-type]", "[-Wmaybe-uninitialized]", "[-Wuninitialized]")
+
+
+def refile(dirs):
+    """Recompute the undefined-behaviour filing of every record from the kept build logs."""
+    state = load_state()
+    pop = {m["id"]: m for m in population()}
+    n = changed = 0
+    for mid, rec in state.items():
+        if mid == "clean":
+            continue
+        logs = ""
+        for d in dirs:
+            for t in ("B", "H"):
+                f = Path(d) / "logs" / ("%s.%s.build.log" % (mid, t))
+                if f.exists():
+                    logs += f.read_text()
+        if not logs:
+            continue
+        n += 1
+        ub = any(w in logs for w in UB_WARN)
+        sus = ub or ub_suspect(pop[mid])
+        if (rec.get("ub"), rec.get("ub_suspect")) != (ub, sus):
+            changed += 1
+        rec["ub"], rec["ub_suspect"] = ub, sus
+    for d in dirs:
+        for t in ("B", "H"):
+            f = Path(d) / "logs" / ("clean.%s.build.log" % t)
+            if f.exists():
+                assert not any(w in f.read_text() for w in UB_WARN), "the clean build of %s draws one of the warnings" % f
+    (OUT / "state.json").write_text(json.dumps(state, indent=1))
+    print("refiled %d record(s) from their build logs; %d changed" % (n, changed))
+
+
 def sh(cmd, log, timeout):
     with open(log, "w") as f:
         try:
@@ -568,7 +605,7 @@ def run(only, shard=None):
             apply(t, m)
         rcs = build_both(m["id"])
         logs = "".join((OUT / "logs" / ("%s.%s.build.log" % (m["id"], t))).read_text() for t in ("B", "H"))
-        rec["ub"] = "control reaches end of non-void function" in logs
+        rec["ub"] = any(w in logs for w in UB_WARN)
         # A mutant of a ring index or of an array subscript can read outside the array with no
         # warning: marked as a suspect by its line, and reported apart.
         rec["ub_suspect"] = rec["ub"] or ub_suspect(m)
@@ -646,9 +683,11 @@ def table():
     print("red on B: %d; of those red on H: %d; red on H and not on B: %d; red on neither: %d" % (
         len(b), sum(1 for m, r in b if red(r, "H")), sum(1 for m, r in ran if red(r, "H") and not red(r, "B")),
         sum(1 for m, r in ran if not red(r, "H") and not red(r, "B"))))
-    for ub in (False, True):
-        sel = [(m, r) for m, r in b if not red(r, "H") and bool(r.get("ub_suspect", r.get("ub"))) == ub]
-        print("\n## red on B and green on H%s: %d" % (" (undefined-behaviour suspects, apart)" if ub else "", len(sel)))
+    kind = lambda r: "ub" if r.get("ub") else ("suspect" if r.get("ub_suspect") else "plain")
+    for k, title in (("plain", ""), ("suspect", " (undefined-behaviour suspects by their line, apart)"),
+                     ("ub", " (undefined behaviour by the compiler's own warning: listed, not counted)")):
+        sel = [(m, r) for m, r in b if not red(r, "H") and kind(r) == k]
+        print("\n## red on B and green on H%s: %d" % (title, len(sel)))
         for m, r in sel:
             print("  %s | %s | %s => %s | B red: %s" % (m["id"], m["func"] or m["file"], m["old"], m["new_line"].strip(),
                                                        ", ".join(r["B"]["red_cases"])))
@@ -668,7 +707,7 @@ def table():
     for row in mixed:
         print("  %s %s %s" % row)
     ubs = [m["id"] for m in muts if m["id"] in state and state[m["id"]].get("ub")]
-    print("mutants whose build warns that control reaches the end of a non-void function: %d %s" % (len(ubs), " ".join(ubs)))
+    print("mutants whose build draws a warning of undefined behaviour that the clean build does not (a missing return, an uninitialised read): %d %s" % (len(ubs), " ".join(ubs)))
     sus = [m["id"] for m in muts if m["id"] in state and state[m["id"]].get("ub_suspect")]
     print("undefined-behaviour suspects in all (that warning, or an index or subscript on the edited line): %d" % len(sus))
     lo = [(m["id"], a) for m, r in ran for a in ARMS if "first_rc" in r[a]]
@@ -691,6 +730,8 @@ if __name__ == "__main__":
             run(None, (int(i), int(n)))
         else:
             run(set(a[1:]) if a[:1] == ["--only"] else None)
+    elif cmd == "refile":
+        refile(a)
     elif cmd == "merge":
         merge(a)
     elif cmd == "table":

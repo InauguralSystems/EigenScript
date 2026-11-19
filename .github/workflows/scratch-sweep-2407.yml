@@ -1,9 +1,11 @@
-# Scratch: a one-off measurement for #2427. This branch is deleted afterwards.
+# Scratch: the measurement for #2427. This branch is deleted when #2434 closes.
 name: scratch sweep 2407
 
+# Parked: the measurement for #2427 is made. The tool under .github/sweep/ is kept here
+# for #2434 (stall cases for an integer subject and for the entropy route), whose end
+# asks for this tool's "seen by neither contract" count before and after.
 on:
-  push:
-    branches: ['scratch/sweep-2407']
+  workflow_dispatch:
 
 permissions:
   contents: read
