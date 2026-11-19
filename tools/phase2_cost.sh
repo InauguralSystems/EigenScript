@@ -5,6 +5,7 @@
 # TSV: workload, tier, max_local, max_ci, recover_round, reason (no header).
 # #1939: this gate measures and enforces max_local; CI measures max_ci.
 # Each column is ceil(delta+0.2, 0.1) from its own gate, never the other method.
+# A finite maximum may be negative when the candidate is cheaper than main.
 # A declared row is bounded on BOTH sides. Above its max it fails (OVER).
 # More than STALE_TOLERANCE points below its max it also fails (STALE): a
 # round recovered cost and the declaration must come down, or a NEW
@@ -283,8 +284,8 @@ for workload in sorted(workloads):
         reason = declaration.reason if declaration else None
         over += verdict == 'OVER'
         stale += verdict == 'STALE'
-        print('%-34s %-3s base=%12d cand=%12d delta=%+.4f%% max=+%s%% %s%s' %
-              (workload, tier, base, cand, delta, maximum, verdict,
+        print('%-34s %-3s base=%12d cand=%12d delta=%+.4f%% max=%s%s%% %s%s' %
+              (workload, tier, base, cand, delta, '' if maximum < 0 else '+', maximum, verdict,
                (' recover_round=%s reason=%s' % (recover_round, reason)) if recover_round else ''), flush=True)
 print('phase2-cost: workloads=%d rows=%d over_declared_max=%d stale_declarations=%d %s' %
       (len(workloads), len(workloads) * 2, over, stale, 'FAIL' if over or stale else 'PASS'))

@@ -121,6 +121,8 @@ def _lit(xs):
 
 
 CASES = {
+    "int-stopped-boxed": ("n is 0\nx is 10000000000000000", "n is n + 1\ny is x\nif n < 20:\n    y is x + 1\nx is y"),
+    "int-alternating-boxed": ("vals is [10000000000000000, 10000000000000001]\ni is 0\nx is 10000000000000000", "i is 1 - i\nx is vals[i]"),
     "doubling": ("x is 10.0\nx is 10.0", "x is x * 2.0"),
     "loop-exit": ("x is 1\nx is 100.0", "x is x * 2.0"),
     "additive": ("x is 1000000.0\nx is 1000000.0", "x is x + 200.0"),
@@ -172,6 +174,18 @@ def correct(case, value):
     if case == "harmonic":
         return True  # R31-2 requests a measurement, without a requirement.
     count, reason, report, certified = value
+    if case == "int-stopped-boxed":
+        # The first 19 exact +1 steps are raw-diverging even though their
+        # relative size is below 0.1%; the zero step at iteration 20 makes
+        # that raw test non-vanishing-false and `converged` ends the loop. A double window's
+        # magnitude-scaled noise floor hides the raw steps and certifies at 10.
+        return count == 20 and reason == "normal" and certified is True
+    if case == "int-alternating-boxed":
+        # Exact +/-1 steps keep the loop oscillating, so 100 qualifying
+        # iterations end at the stall counter.  On the double route the
+        # magnitude-scaled noise floor hides those sub-0.1% raw steps, allowing
+        # the full ten-step relative window to certify instead.
+        return count == 100 and reason == "stalled" and certified is False
     if case == "damped":
         return reason == "normal" and certified is True and count == 1454
     if case == "overflow-contracting":

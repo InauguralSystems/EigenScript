@@ -1,0 +1,1 @@
+- Integer freelist tests now distinguish builds with number pools disabled and diagnose cross-pool releases and incomplete drains directly (#2433).

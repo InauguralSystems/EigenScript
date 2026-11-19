@@ -38,7 +38,7 @@ else
             printf '%s\n' "$__pp_build" | sed 's/^/      /'
         else
             PASS=$((PASS + 1)); echo "  PASS: [0fg] plants built against the $__pp_variant objects"
-            for __pp_mode in num env envfield; do
+            for __pp_mode in num int env envfield; do
                 TOTAL=$((TOTAL + 1))
                 __pp_out=$(ASAN_OPTIONS=detect_leaks=0 $EIGS_TMO "$__pp_bin" "$__pp_mode" </dev/null 2>&1); __pp_rc=$?
                 __pp_addr=$(sed -n "s/^ARMED $__pp_mode: .*, reading \(0x[0-9a-f]*\)\$/\1/p" <<< "$__pp_out")
