@@ -1,0 +1,21 @@
+# #2433 B7: every worker retains 5,000 boxed integers, then drops the burst.
+define boxed_burst(worker_id) as:
+    local held is []
+    local i is 0
+    loop while i < 5000:
+        append of [held, 281474976710656 + worker_id * 5000 + i]
+        i is i + 1
+    return i
+
+handles is []
+i is 0
+loop while i < 64:
+    append of [handles, spawn of [boxed_burst, i]]
+    i is i + 1
+
+total is 0
+i is 0
+loop while i < 64:
+    total is total + thread_join of handles[i]
+    i is i + 1
+print of f"PASS: integer freelist 64-thread burst boxes={total}"

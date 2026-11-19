@@ -1,0 +1,24 @@
+# #2433 B2: lifecycle paths for heap boxed integers (> 2^47 - 1).
+exit_global is 281474976710657
+exit_list is [281474976710658]
+exit_dict is {"boxed": 281474976710659}
+
+define compiled_constant() as:
+    return 281474976710660
+constant_result is compiled_constant of []
+print of "PASS: boxed integer held in global at exit"
+print of "PASS: boxed integers held in list and dict at exit"
+print of "PASS: boxed integer is a compiled-function constant"
+
+define create_for_main(n) as:
+    return 281474976710661 + n
+from_ended_worker is thread_join of (spawn of [create_for_main, 0])
+from_ended_worker is null
+print of "PASS: boxed integer created on worker and released by main after join"
+
+define release_on_worker(n) as:
+    local worker_owned is 281474976710662 + n
+    return null
+h is spawn of [release_on_worker, 0]
+thread_join of h
+print of "PASS: boxed integer released by worker immediately before exit"
