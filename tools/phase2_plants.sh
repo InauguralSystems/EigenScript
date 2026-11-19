@@ -64,9 +64,10 @@ while [ $# -gt 0 ]; do
                 r31-zero-floor|r31-jit-inline-double|\
                 r31-nan-diverging|r31-inf-sign|r31-improving-incumbent|\
                 r31-nan-report|r31-where-entropy|r31-how-infinite|\
-                r312-stall-nonfinite|r312-stall-diverging|\
+                r312-stall-quiet|r312-stall-nonfinite|r312-stall-diverging|\
                 r314-stall-oscillating|r314-stall-nonfinite-order|\
                 r317-stall-window-current|r317-stall-window-extent|r317-stall-step-overflow|\
+                r318-stall-window-index|r319-stall-window-newest|\
                 r32-cfg-legacy-five|r32-cfg-at-least-four|r32-cfg-at-most-four|\
                 r32-cfg-binding|r32-cfg-window-base|r32-cfg-drop-dh-zero|\
                 r32-cfg-drop-dh-small|r32-cfg-drop-window|r32-cfg-drop-scale|\
@@ -121,7 +122,7 @@ plants=0; killed=0; survived=0; broken=0; transverse=0; available=0; observer_gr
 oracle_red=0; oracle_green=0
 EXPECTED_ORACLE=3
 stall_plants=0; stall_killed=0; stall_survived=0; stall_broken=0; stall_green=0; stall_available=0
-EXPECTED_STALL=7
+EXPECTED_STALL=10
 ocfg_plants=0; ocfg_killed=0; ocfg_survived=0; ocfg_broken=0; ocfg_green=0; ocfg_transverse=0; ocfg_available=0
 EXPECTED_OCFG=37
 PRISTINE="$WORK/observer-pristine"
@@ -507,13 +508,8 @@ run_observer_plant r31-how-infinite src/eigenscript.c \
     '    /* PLANT: apply the relative-step formula even for an infinite step. */' \
     O4.how-infinite-step
 
-# R31-9: ten independently named clause/order/index plants; seven remain. The
-# quiet-arm plant and the two NaN window-index plants retired with the
-# restored converged test (#2407; reverted by the reveal (RULING R30R-2)):
-# their named cases (quiet, nan-prefix, nan-newest) now exit through
-# `converged` before the stall counter can reach 100, so the planted reader
-# cannot change their result (each run on #2407's tree: SURVIVED). The first
-# two retain their original witnesses. Finite constant alternation isolates the
+# R31-9: ten independently named clause/order/index plants. The first two
+# retain their original witnesses. Finite constant alternation isolates the
 # oscillation arm; infinite alternation witnesses non-finite priority, and
 # period-three and period-eleven NaN cycles isolate the retained-input window.
 # A finite contracting alternation protects against counting overflowed steps.
@@ -605,6 +601,42 @@ run_stall_plant r317-stall-step-overflow overflow-contracting \
     '    if (obs_stall_window_nonfinite(s) ||
         (s->v_window_count && s->v_rel &&
          !isfinite(s->v_rel[s->v_window_head ? s->v_window_head - 1 : s->v_cap - 1]))) return 1; /* PLANT: count overflowed finite-input step */'
+
+run_stall_plant r312-stall-quiet quiet-jitter \
+    '    if (observer_slot_quiet(s)) return 1;' \
+    '    if (0 && observer_slot_quiet(s)) return 1; /* PLANT: no quiet arm */'
+
+run_stall_plant r318-stall-window-index nan-prefix-jitter \
+    'static int obs_stall_window_nonfinite(const ObserverSlot *s) {
+    size_t n = s->values_count;
+    size_t full = (size_t)observer_slot_window(s) + 1;
+    if (n > full) n = full;
+    if (!s->v_values) return 0;
+    for (size_t i = 0; i < n; i++) {
+        int idx = (int)s->values_head - 1 - (int)i;' \
+    'static int obs_stall_window_nonfinite(const ObserverSlot *s) {
+    size_t n = s->values_count;
+    size_t full = (size_t)observer_slot_window(s) + 1;
+    if (n > full) n = full;
+    if (!s->v_values) return 0;
+    for (size_t i = 0; i < n; i++) {
+        int idx = (int)s->values_head - (int)i;'
+
+run_stall_plant r319-stall-window-newest nan-newest-jitter \
+    'static int obs_stall_window_nonfinite(const ObserverSlot *s) {
+    size_t n = s->values_count;
+    size_t full = (size_t)observer_slot_window(s) + 1;
+    if (n > full) n = full;
+    if (!s->v_values) return 0;
+    for (size_t i = 0; i < n; i++) {
+        int idx = (int)s->values_head - 1 - (int)i;' \
+    'static int obs_stall_window_nonfinite(const ObserverSlot *s) {
+    size_t n = s->values_count;
+    size_t full = (size_t)observer_slot_window(s) + 1;
+    if (n > full) n = full;
+    if (!s->v_values) return 0;
+    for (size_t i = 0; i < n; i++) {
+        int idx = (int)s->values_head - 2 - (int)i;'
 
 # O3: count both sides of four, decimal window syntax and each installed
 # field, using the same exact MAP transcript. R32-1 deliberately permits a
