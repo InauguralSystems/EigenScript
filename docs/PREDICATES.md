@@ -16,9 +16,10 @@ replaces. ([`docs/OBSERVER.md`](OBSERVER.md) is the model; this is the
 operational target the runtime enforces.)
 
 These are **trajectory claims, not proofs about the future**. Numeric
-`converged` tests the diameter of a full recent window; `stable` tests a 1%
-ball about its midrange; `improving` uses a running lower best and a ten-step
-patience, following Keras' loss convention. A noisy tick need not erase a
+`converged` asks that each of the last ten steps be under 0.1% of the value;
+`stable` that each be under 1% with no strong back-and-forth (both refuse a
+window whose raw steps run away or swing); `improving` uses a running lower
+best and a ten-step patience, following Keras' loss convention. A noisy tick need not erase a
 recent improvement. Non-numeric bindings retain the entropy and bounded
 snapshot rules below. Prefer the named forms in code that assigns more than
 one binding.
@@ -52,12 +53,54 @@ beside `converged` but not scored: no windowed observer can decide it at n.
 are false and `report`/`report_value` return `"undefined"`. This is #1758's
 O2 convention, not a mathematical verdict about the whole sequence.
 
-**Finite windows cannot establish the labelled future.** R3.1 implements
-arm R3-STD: STD_converged, the registered STD′_stable (Deviation D1), and
-Keras' running-best test (Deviation D2). The incumbent `oscillating`,
-`diverging` and `equilibrium` tests remain, with the exact-int noise floor
-and non-finite alignments described below. The per-predicate tables printed
-by `make observer-oracle` measure the remaining disagreements.
+**Finite windows cannot establish the labelled future.** Round 3 built arm
+R3-STD: STD_converged, the registered STD′_stable (Deviation D1), and Keras'
+running-best test (Deviation D2). The reveal below decided what ships:
+`improving` is D2, `oscillating` and `diverging` are Round 3's, and
+`converged`, `stable` and `equilibrium` keep the incumbent's (v0.47.0's)
+tests, on this release's observations (exact-int steps and their zero noise
+floor, and the non-finite rules described below). The per-predicate tables
+printed by `make observer-oracle` measure the remaining disagreements.
+
+### The reveal's decision (the record of 2026-11-18)
+
+Round 3 was judged once, on the held-out set H1 drawn on 2026-11-18, by the
+rules fixed before the data existed (#1758, comments 6430031838 and
+6430139845; RULING R30R-2). The record is the tag `phase2-r3-reveal`, folder
+`reveal-r3/` (`result/decision.json` is the table below, `result/raw.json`
+every reading). This table is the record of that day, printed from
+`decision.json`; it does not change when the runtime does.
+
+| predicate | Round 3's build (R3): the six rules | R3 | R3-STD | ships | `kind:silent-wrong` |
+|---|---|---|---|---|---|
+| `converged` | 1 standard parity PASS; 2 vs INC FAIL; 2 vs R3-STD FAIL; 3 safety FAIL; 4 trivial floor PASS; 5 unit invariance PASS; 6 existing gates PASS | FAIL | FAIL | the incumbent (v0.47.0) | no |
+| `stable` | 1 standard parity PASS; 2 vs INC PASS; 2 vs R3-STD FAIL; 3 safety FAIL; 4 trivial floor PASS; 5 unit invariance PASS; 6 existing gates PASS | FAIL | FAIL | the incumbent (v0.47.0) | no |
+| `improving` | 1 standard parity PASS; 2 vs INC PASS; 4 trivial floor PASS; 5 unit invariance PASS; 6 existing gates PASS | PASS | PASS | Round 3's | no |
+| `oscillating` | 1 standard parity PASS; 2 vs INC PASS; 4 trivial floor PASS; 5 unit invariance PASS; 6 existing gates PASS | PASS | PASS | Round 3's | no |
+| `diverging` | 1 standard parity PASS; 2 vs INC PASS; 3 safety PASS; 4 trivial floor PASS; 5 unit invariance PASS; 6 existing gates PASS | PASS | PASS | Round 3's | no |
+| `equilibrium` | 1 standard parity FAIL; 2 vs INC PASS; 3 safety PASS; 4 trivial floor FAIL; 5 unit invariance PASS; 6 existing gates PASS | FAIL | FAIL | the incumbent (v0.47.0) | yes |
+
+R3 is Round 3's build and R3-STD the arm of the standard tests (#1758); a
+rule the record does not evaluate for a predicate is not listed. `ships` is what this release
+answers with: for `converged` and `stable` that is v0.47.0's test (each of the
+last ten relative steps under the band, no raw runaway or swing; #2407), and
+v0.47.0's refusal of a value at or above 1e308 is not restored, because 1e308
+is a finite number. `tests/phase2/reveal_restored_expected.json` holds the
+5,712 answers this decision implies on the reveal's three sets, and
+`tools/observer_oracle/reveal_restored_check.py` holds the build to them.
+
+**`equilibrium` on held-out data (#2406).** On H1 (738 readings), Round 3's
+build scored a balanced accuracy of 0.5581 for `equilibrium` (47 true
+positives, 25 false positives, 229 false negatives, 437 true negatives),
+where 0.65 was the registered floor; v0.47.0 scored the same within 0.0002,
+and Round 3 did not change the test, so the incumbent's test stays (#2406
+records why). In plain words: the build said `equilibrium` at 72 of the 738
+readings and was right at 47 of them, so a yes is right about two times in
+three; of the 276 readings that are at equilibrium by the label it missed
+229, so a no says little. Trust a yes as a hint that the value has stopped
+trending; do not read a no as evidence that it is still moving. These counts
+are the arm `R3` on H1 in `reveal-r3/result/raw.json` and
+`reveal-r3/result/H1/labels.json` of the tag.
 
 ### How Round 3 is judged (#1758)
 
@@ -195,19 +238,21 @@ for motion. Entropy and dH are still computed and exposed for non-numeric
 bindings. They do not decide equality-routed convergence or finite-snapshot
 stability; they do decide stability for the bounded NaN-containing snapshot exception.
 
-**The numeric definitions (R3.1, arm R3-STD).** The fixed window holds
-`W = 10` steps and their `W + 1 = 11` values. Let `hi` and `lo` be its
-maximum and minimum, `c = hi/2 + lo/2` its midrange, and `x` the current
-value. The characteristic scale is `scale = 0.001`.
+**The numeric definitions (after the reveal).** The fixed window holds
+`W = 10` steps and their `W + 1 = 11` values. Each step's relative size is
+`r = Δv / max(|v|, |v_prev|, scale)`, and the characteristic scale is
+`scale = 0.001`. "Raw runaway" and "raw swing" are the incumbent raw tests
+below (`diverging` and `oscillating`'s raw halves): non-vanishing raw steps
+of one sign, or non-vanishing raw steps that alternate.
 
 | band | fires when | source |
 |---|---|---|
-| `converged` | full finite window, `hi − lo ≤ 0.001·max(\|x\|, scale)` | `standard.py:std_converged`, `reference.py:converged`; Rudin, *Principles of Mathematical Analysis*, 3rd ed., Def. 3.8 / Thm. 3.11 (windowed Cauchy criterion) |
-| `stable` | full finite window, `hi/2 − lo/2 ≤ 0.01·max(\|c\|, scale)` | D1, `standard.py:stdp_stable` = `reference.py:stable`; the registered 1% settling band (STD′), rather than STD's 2% band |
+| `converged` | full finite window, every `\|r\| < 0.001`, no raw runaway or swing | v0.47.0's `obs_num_converged`, restored by the reveal (RULING R30R-2, #2407); `tools/reveal_restored_reference.py` is its independent reference |
+| `stable` | full finite window, every `\|r\| < 0.01`, no two steps in a row of opposite sign both above 0.001, no raw runaway or swing | v0.47.0's `obs_num_stable`, restored the same way |
 | `improving` | a significant new running lower best in the last `W` steps; finite current window; not `reference.py:diverging`, nor a full window with `reference.py:_expanding` | D2, `standard.py:d2_improving`; [Keras EarlyStopping, v3.6.0](https://github.com/keras-team/keras/blob/v3.6.0/keras/src/callbacks/early_stopping.py), `mode='min'`, running `best` and patience, with the registered relative `min_delta` |
 | `diverging` | incumbent non-vanishing same-sign raw steps, or the infinity rule below | #422/#674/#1891, `obs_num_diverging` |
 | `oscillating` | incumbent relative sign flips, non-vanishing raw alternation, or window-scale folding | #422/#1044, `obs_num_oscillating` |
-| `equilibrium` | incumbent near-zero relative-step mean and variance, excluding raw oscillation and a one-direction raw trend | #1899, `obs_num_equilibrium` |
+| `equilibrium` | incumbent near-zero relative-step mean and variance, excluding raw oscillation and a one-direction raw trend; on held-out data a yes is right about two times in three and a no says little (balanced accuracy 0.5581, above) | #1899, `obs_num_equilibrium` |
 
 **D2's history.** The binding keeps `best` and `since` across the whole
 numeric history, including samples inside `unobserved:`. A later value
@@ -225,11 +270,10 @@ baseline rule. It does not require four samples or a full window to fire.
 fits int64, the displacement is exact and its ring entry is flagged exact.
 An overflowing int difference, mixed int/float pair, or float pair uses a
 double displacement. One shared per-window test decides whether every step
-is exact. Such a window uses zero noise floor in the incumbent raw tests
-and absolute tolerances in the settled tests: `1e-6` for `converged`, and
-radius `1e-5` for `stable`. A moving exact-int counter therefore cannot
+is exact. Such a window uses zero noise floor in the incumbent raw tests,
+so a moving exact-int counter's unit steps are a raw runaway and it cannot
 settle merely because its magnitude is large. A window containing even one
-inexact step keeps the floating rules.
+inexact step keeps the floating noise floor.
 
 **Modulated raw steps (#1891).** The historical half-window mean rule is
 kept. With only `N = 10` samples, it cannot separate a slowly modulated decay
@@ -245,59 +289,52 @@ These scored disagreements are the documented residual, not waived oracle
 floor losses. More observer memory than `N = 10` is the open direction on
 #1891.
 
-The three standard tests do not inherit the incumbent motion-band vetoes.
-Their verdicts can overlap with a motion predicate; `report` keeps its
-priority `oscillating → diverging → improving → converged → equilibrium →
-stable → moving`. A true `converged` predicate can therefore coexist with
-`report == "improving"`. `converged` implies `stable`; `equilibrium` retains
-its separate raw-trend and raw-oscillation exclusions.
+`converged` and `stable` refuse a raw runaway or swing; `improving` does not
+inherit those vetoes. Verdicts can overlap with a motion predicate; `report`
+keeps its priority `oscillating → diverging → improving → converged →
+equilibrium → stable → moving`. A true `converged` predicate can therefore
+coexist with `report == "improving"`. `converged` implies `stable`;
+`equilibrium` retains its separate raw-trend and raw-oscillation exclusions.
 
 **The relative signal.** The observer records
 `r = Δv / max(\|v\|, \|v_prev\|, scale)` alongside each raw displacement.
-This remains the signal for the incumbent motion/equilibrium tests, numeric
-`how`, and the stall backstop. The standard `converged` and `stable` tests
-compare the window's value span, rather than testing each `r` separately.
-Below the scale their floating tolerances become absolute. Exact-int
-windows use the absolute tolerances regardless of magnitude.
+This is the signal for `converged`, `stable`, the incumbent
+motion/equilibrium tests, numeric `how`, and the stall backstop. Below the
+scale the tolerances become absolute (`|Δv| < 0.001·scale` for
+`converged`).
 
-**Documented residuals of R3-STD.** These are finite-window limitations,
-not new acceptance exceptions:
+**Documented residuals of the restored test.** These are finite-window
+limitations, not acceptance exceptions. The numbers are those of
+`tools/reveal_restored_reference.py` and of the build, which agree:
 
-- Sublinear tails settle before reaching the limit: the p-series with
-  `p = 2` first certifies at `n = 82` with error `7.3 × eps`; `p = 1.5`
-  at `257`, `47.6 × eps`; `1 + n^−0.5` at `286`, `59 × eps`.
-- Harmonic sums first read `converged` at `n = 1295` (706 of 2001
-  prefixes), and never read `diverging`. Harmonic sums with ±0.001 noise
-  first certify at `1094` (1675 of 3000 prefixes). The harmonic stable
-  band starts at `101` (1900 of 2001 prefixes). A finite Cauchy window
-  cannot decide the infinite Cauchy condition.
-- D1's stable false positives include the harmonic 300/2000, log 300,
-  sqrt 300, inverse-log 300, power-law ML loss 2000 and sine-iteration 2000
-  rows. The incumbent diverging test still misses harmonic 60/300/2000,
-  log 300, sqrt 300, Hardy XXIV.5 and the upward sawtooth.
-- A mixed window around an int counter can still use floating tolerances:
-  the `int64_count` float at index 25 leaves `converged` and `stable` true
-  through index 35; index 36 is the first all-exact window.
-- A float counter settles once it is large. The settled tests compare the
-  window's span with its size, and ten steps of a counter become small
-  beside its value. With unit steps, `stable` is true once the value has
-  passed about 500, and `converged` once it has reached 10,000. `diverging`
-  is true as well and wins in `report`, until a step is only a few units
-  in the last place: from 2^50 a unit-step float counter no longer reads
-  `diverging`, and `report` says `converged`. An exact int counter is not
-  affected (above). A rule for same-sign runs of such small steps was
-  designed and withdrawn before it was built: inside ten steps, a counter
-  at the resolution of a double and a sequence still converging there are
-  the same data (#1580, RULING R33-1; #2326 holds the rows).
+- Sublinear tails settle before reaching the limit, because each of ten
+  small steps is under the band: the p-series with `p = 2` first reads
+  `converged` at `n = 33`, still 1.8% short of its limit; `p = 1.5` at
+  `n = 65`, 9.4% short.
+- Harmonic sums read `stable` from `n = 34` and `converged` from `n = 183`,
+  and never `diverging`. A finite window cannot decide an infinite limit.
+  The incumbent diverging test misses harmonic 60/300/2000, log 300,
+  sqrt 300, Hardy XXIV.5 and the upward sawtooth.
+- One zero step in the window hides a same-sign runaway from the raw guard:
+  `x is 1000000.0` twice, then `x is x + 200.0` in a bare
+  `loop while not converged`, exits as `converged` after nine steps
+  (`tests/test_halting_descent.eigs` HD1b pins it).
+- A float counter settles once its unit steps are within its noise floor.
+  At 20,000 a unit-step float counter is a raw runaway, so neither
+  `converged` nor `stable` holds; from 2^50 the steps are no larger than
+  `4·eps·(1 + |x|)`, the guard no longer sees them, and `report` says
+  `converged`. An exact int counter is not affected (above). A rule for
+  same-sign runs of such small steps was designed and withdrawn before it
+  was built: inside ten steps, a counter at the resolution of a double and
+  a sequence still converging there are the same data (#1580, RULING R33-1;
+  #2326 holds the rows).
 - `x_n = 1e-160 − n·1e-170`, which tends to −∞, reads `converged` and
   `stable` from its tenth step on, and never `diverging` (the corpus row
-  `issue1891_underflow_tail`). Ten of its steps travel a billionth of its
-  value, and the product of two adjacent raw steps underflows to zero. None
-  of the eleven scale rules measured in #1580's experiment reads it
-  differently.
-- Near the scale a verdict can change with the unit. In #1580's experiment
-  the absolute scale gave another verdict for 7 of 194 comparisons of a
-  checkpoint with its copy rescaled by 1e-3 or 1e3: each of the seven
+  `issue1891_underflow_tail`): each step is 1e-10 of the value, and the
+  product of two adjacent raw steps underflows to zero.
+- Near the scale a verdict can change with the unit. In #1580's experiment,
+  run on Round 3's tests, the absolute scale gave another verdict for 7 of
+  194 comparisons of a checkpoint with its copy rescaled by 1e-3 or 1e3: each of the seven
   against the 1e-3 copy, in a window that holds a value below 0.01. Of the
   50 comparisons whose windows hold no such value, none changed. No rule
   that was tested replaced it (a floor that follows the binding's largest
@@ -306,8 +343,8 @@ not new acceptance exceptions:
   open.
 - A one-step pause alone does not fill the convergence window. The
   `ieee_nan_recover@13 stable` label disagreement is a windowed-band
-  residual: the NaN leaves at 14 and D1 first fires at 20; the NaN-free
-  infinity-recovery twin first fires at 19.
+  residual: the NaN leaves the window at 14 and `stable` first holds at 20;
+  the NaN-free infinity-recovery twin first holds at 19.
 
 - The bare-loop stall backstop can miss constant-amplitude cycles whose
   peaks do not fall in both halves of the retained window. At default
@@ -457,8 +494,7 @@ ceiling. A held finite `1e308` can converge like any finite constant.
 | ±inf, without an opposite-sign infinity in that window | false | true | false | `diverging` |
 
 These rules also apply on partial histories. A non-finite value still in a
-finite-current window prevents STD convergence, D1 stability, and D2
-improvement. The original runaway and finite-constant scenarios remain in
+finite-current window prevents `converged`, `stable` and D2 improvement. The original runaway and finite-constant scenarios remain in
 `tests/test_observer_saturation.eigs`.
 
 ## Implementation status
@@ -678,8 +714,9 @@ otherwise monotone descent.
 
 ## Overlaps and report priority
 
-On numeric bindings, STD convergence and D1 stability answer their standard
-window questions independently of the incumbent raw-motion predicates.
+On numeric bindings, `converged` and `stable` refuse a raw runaway or swing,
+so they never hold together with the raw half of `diverging` or
+`oscillating`; they can hold together with `improving`.
 D2 can remain true for ten steps after a significant lower best, including
 steps that also certify convergence. These overlaps are intentional;
 `report`'s ranking remains unchanged. Do not infer that every true predicate
@@ -741,8 +778,8 @@ value route reads motion, so magnitude is irrelevant.
 
 ### Newton's sqrt certifies `converged` (#861)
 
-`sqrt(2)` settles to `1.41421…`; once the full window
-fits the Cauchy tolerance it reports **`converged`** — the textbook example of
+`sqrt(2)` settles to `1.41421…`; once ten successive
+relative steps are under 0.1% it reports **`converged`** — the textbook example of
 convergence is certifiable. (Before #861 the `entropy < h_low` clause
 blocked every limit in `[~0.013, 76]`, and this section documented the
 blindness as intended behavior: "it reports `equilibrium`, not
@@ -813,12 +850,12 @@ loop while not converged of w:
     grad is (loss_plus - loss_minus) / (2 * h)
     w is w - lr * grad
     steps is steps + 1
-assert of [steps == 14, f"probe-write trajectory took {steps} steps"]
-assert of [(when is w) == 57, f"probe-write trajectory recorded {when is w} observations"]
+assert of [steps == 13, f"probe-write trajectory took {steps} steps"]
+assert of [(when is w) == 53, f"probe-write trajectory recorded {when is w} observations"]
 ```
 
-On this trajectory, the probed version stops after 14 updates with
-`when is w` equal to 57. Compute probe values through a helper instead, so
+On this trajectory, the probed version stops after 13 updates with
+`when is w` equal to 53. Compute probe values through a helper instead, so
 only the real update writes `w`:
 
 ```eigenscript fragment
@@ -831,11 +868,11 @@ loop while not converged of w:
     grad is ((loss_at of (w + h)) - (loss_at of (w - h))) / (2 * h)
     w is w - lr * grad
     steps is steps + 1
-assert of [steps == 21, f"helper trajectory took {steps} steps"]
-assert of [(when is w) == 22, f"helper trajectory recorded {when is w} observations"]
+assert of [steps == 20, f"helper trajectory took {steps} steps"]
+assert of [(when is w) == 21, f"helper trajectory recorded {when is w} observations"]
 ```
 
-The helper version takes 21 updates and `when is w` is 22: the initial
+The helper version takes 20 updates and `when is w` is 21: the initial
 assignment plus one assignment per update. The runnable full-batch example is
 [`examples/gradient_descent.eigs`](../examples/gradient_descent.eigs).
 
@@ -845,32 +882,34 @@ assignment plus one assignment per update. The runnable full-batch example is
 since #861 it is correct for any numeric value that actually settles —
 subject to its finite-window tolerance and exact-int rules. What
 remains worth knowing: the tolerance semantics (settled ≠ arrived), the
-observation-cadence rule, and the divergent-input guard. Fence expectations below follow R3-STD; hosted doc-fence execution
-checks the runtime results.
+observation-cadence rule, and the divergent-input guard. Fence expectations
+below follow the restored test (#2407); hosted doc-fence execution checks
+the runtime results.
 
-### A small step alone does not certify convergence
+### Small steps certify convergence, even short of the limit
 
-The Cauchy test measures the span of the whole window, rather than each
-step separately. Twenty 0.05% decreases still span about 0.5% over the
-last ten steps, so this trajectory remains `improving`:
+The restored test (#2407) reads each step. Twenty 0.05% decreases put every
+one of the last ten steps under 0.1%, so `converged` is true while the value
+is still moving toward its limit; `report` says `improving`, which has
+priority:
 
 ```eigenscript
 x is 100.0
 for i in range of 20:
     x is x * 0.9995
-print of (report of x)
+print of [converged of x, stable of x, report of x]
 ```
 ```output
-improving
+[true, true, "improving"]
 ```
 
-A sufficiently slow unbounded drift can nevertheless fit a finite Cauchy
-window. The residuals above state that limit. `unobserved:` does not alter
-numeric sampling cadence: its numeric steps still enter the window.
+A slow drift whose steps shrink passes the test too, unbounded or not (the
+harmonic sums in the residuals above). `unobserved:` does not alter numeric
+sampling cadence: its numeric steps still enter the window.
 
-A float counter is the plainest such drift. Once it is large, ten of its
-steps are small beside it, and the settled tests pass while it moves. An int
-counter of the same size does not settle, because its steps are exact:
+A float counter's steps do not shrink, so its unit steps are a raw runaway
+and neither settled test holds, at any size where the steps are larger than
+its noise floor; an int counter's exact steps never are:
 
 ```eigenscript
 x is 20000.0
@@ -882,13 +921,13 @@ print of [converged of x, stable of x, diverging of x, report of x]
 print of [converged of k, stable of k, diverging of k, report of k]
 ```
 ```output
-[true, true, true, "diverging"]
+[false, false, true, "diverging"]
 [false, false, true, "diverging"]
 ```
 
-`report` still says `diverging` for the float counter, because that test
-is true too and has priority. It stops being true when a step is only a few
-units in the last place of the value, and then the report is wrong:
+Once a step is only a few units in the last place of the value, the raw
+guard no longer sees it: `diverging` is false, `converged` true, and the
+report is wrong:
 
 ```eigenscript
 y is 1125899906842624.0
@@ -1002,7 +1041,7 @@ loop while not (converged of x):
         throw of "did not settle"
 ```
 
-- **Tolerance tighter than the fixed value.** `converged` tests the window diameter
+- **Tolerance tighter than the fixed value.** `converged` tests each relative step
   (`dh_zero`, fixed at 0.1% relative with an absolute floor). It is not configurable;
   read the authoritative value at `OBSERVER_DH_ZERO_DEFAULT` in
   `src/eigenscript.h`. For a tighter answer, calculate and test the desired

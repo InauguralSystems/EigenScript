@@ -1,8 +1,7 @@
 - Numeric observer bindings now expose their value, last displacement and
   relative-step settledness through `where`, `why` and `how`, and preserve
   exact int64 displacement across interpreter, JIT, snapshots and replay.
-  Numeric convergence uses the windowed Cauchy test, stability the registered
-  1% midrange band, and improvement Keras' running lower best with relative
+  Numeric improvement uses Keras' running lower best with relative
   significant improvement and ten-step patience. A current NaN reports
   `undefined` with all six predicates false; opposite-sign infinities in the
   window report `oscillating`. Numeric trajectory snapshots carry exact flags

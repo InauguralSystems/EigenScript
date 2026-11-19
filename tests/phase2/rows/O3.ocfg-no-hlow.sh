@@ -307,13 +307,16 @@ live_case cfg-entropy-es-above es_above
 live_case cfg-entropy-report-partial rp_part
 
 # R32-3: the fold's start values, bracketed. The trajectory is one value,
-# one bump and nine returns, so the 11-value window's diameter is the bump.
-# converged needs bump <= dh_zero * max(|x|, scale); stable needs
-# bump / 2 <= dh_small * max(|midrange|, scale). The two bumps of each pair
-# sit 2e-8 (relative) either side of the threshold the default implies, so
-# a start dh_zero, dh_small or scale that is off by more than that, or held
-# in a float, is red. The window is pinned exactly: ten repeats do not fill
-# an 11-value window, eleven do.
+# one bump and nine returns. The pairs were built for Round 3's window
+# diameter test (converged: bump <= dh_zero * max(|x|, scale); stable: bump / 2
+# <= dh_small * max(|midrange|, scale)), each bump 2e-8 (relative) either side
+# of the threshold. The reveal reverted that test (#1758, RULING R30R-2;
+# #2407): converged and stable compare each relative step, bump / max(|x|,
+# |x + bump|, scale), with the threshold, and they refuse a strong up-and-down
+# pair. So the dh_zero pair now reads converged on both sides and the
+# dh_small pair moving on both sides; the labels below are the restored
+# test's (tools/reveal_restored_reference.py). The window is pinned exactly:
+# ten repeats do not fill the window, eleven do.
 cat > dz_in.eigs <<'EOF'
 x is 1.0
 x is 1.00099999998
@@ -537,12 +540,15 @@ live_case cfg-entropy-dict-es-below dict_es_lt
 printf 'print of (get_observer_thresholds of null)\n' > thresholds.eigs
 live_case cfg-thresholds-builtin thresholds
 
-# R32-5: the fold's start values at exact equality. With the window at
-# zero the thresholds are the products dh_zero * scale and dh_small * scale;
-# the bump equals the product (converged / stable) or is the next double
-# above it. At |x| = 1000 and a midrange of 100 the thresholds are
-# dh_zero * 1000 = 1.0 and dh_small * 100 = 1.0, and the bump is 1.0 or the
-# next representable diameter above it.
+# R32-5: the fold's start values at exact equality, built for Round 3's
+# diameter test: with the window at zero its thresholds were the products
+# dh_zero * scale and dh_small * scale, and the bump equals the product or is
+# the next double above it; at |x| = 1000 and a midrange of 100 they were
+# dh_zero * 1000 = 1.0 and dh_small * 100 = 1.0. Under the restored test
+# (#2407) each relative step is compared with the threshold, so these
+# products no longer mark the boundary and each pair reads the same label on
+# both sides; the labels are the restored test's
+# (tools/reveal_restored_reference.py).
 cat > xp_eq.eigs <<'EOF'
 x is 0.0
 x is 1e-06

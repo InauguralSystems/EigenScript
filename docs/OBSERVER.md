@@ -152,12 +152,13 @@ variable first so there is a binding history to inspect. Dict fields such as
 ### Two signals: entropy vs. value (`report` vs. `report_value`)
 
 Numeric `report`, `report_value` and predicates share the value channel.
-`converged` is STD's windowed Cauchy test; `stable` is D1's 1% midrange
-ball; `improving` is D2's running lower best with a relative significant
-improvement and ten-step patience. The incumbent oscillation, divergence
-and equilibrium tests retain the relative and raw step signals. An
-all-exact int64 window uses zero raw noise floor and absolute settled
-thresholds. [PREDICATES.md](PREDICATES.md#which-channel-answers-861) gives
+`converged` asks that each of the last ten relative steps be under 0.1%,
+and `stable` that each be under 1% with no strong back-and-forth, neither
+holding for a raw runaway or swing (v0.47.0's tests, kept by the Round 3
+reveal, #2407); `improving` is D2's running lower best with a relative
+significant improvement and ten-step patience. The incumbent oscillation,
+divergence and equilibrium tests retain the relative and raw step signals.
+An all-exact int64 window uses zero raw noise floor. [PREDICATES.md](PREDICATES.md#which-channel-answers-861) gives
 the exact formulas and the differences between these tests and their
 infinite-sequence questions.
 
@@ -258,15 +259,16 @@ can improve on either side of 1.0. Entropy's magnitude symmetries remain
 relevant to non-numeric containers and their scalar leaves, where that
 measurement is still used.
 
-Numeric `converged` asks whether eleven recent values fit the Cauchy
-tolerance; `stable` asks whether they fit a 1% midrange ball. Neither can
-look beyond the current window. A slow unbounded sequence can fit either
-band, and a slow convergent sequence can certify with a substantial tail
+Numeric `converged` asks whether each of ten recent relative steps is
+under 0.1%; `stable` whether each is under 1%. Neither can look beyond the
+current window. A slow unbounded sequence whose steps shrink can pass
+either, and a slow convergent sequence can certify with a substantial tail
 remaining. The harmonic series and sublinear tails are documented residuals,
-not proofs of convergence. Exact integer displacement prevents magnitude
-from hiding a moving exact-int counter. Mixed and float windows keep the
-floating tolerances, so a large float counter reads as settled: see the
-documented residuals in [PREDICATES.md](PREDICATES.md).
+not proofs of convergence. Exact integer displacement keeps a moving
+exact-int counter a raw runaway at any magnitude. A float counter is one
+too, until its unit steps fall within its noise floor (from 2^50), where it
+reads as settled: see the documented residuals in
+[PREDICATES.md](PREDICATES.md).
 
 The window measures assignments, not time. Observe at a cadence that
 resolves the dynamics of interest. `unobserved:` still records every numeric
@@ -338,7 +340,7 @@ point, not an accident:
   this bullet used to warn about is now enforced by the runtime rather
   than left to the caller's channel choice.
 
-- **Contract-convergence means "inside the windowed Cauchy tolerance"
+- **Contract-convergence means "ten relative steps inside the tolerance"
   (`dh_zero`, default `1e-3` relative with an absolute floor), not arbitrary
   precision.** Newton reaches machine-epsilon
   because it converges *quadratically*; a linearly-convergent fixed point rests

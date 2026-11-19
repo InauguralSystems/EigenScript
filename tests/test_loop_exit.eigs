@@ -12,7 +12,10 @@ print of __loop_exit__
 print of __loop_iterations__
 
 print of ""
-print of "--- LE1b: Additive runaway also exits via stall ---"
+# LE1b: as HD1b in tests/test_halting_descent.eigs, the zero step of the
+# repeated `x is 1000000.0` hides this additive runaway from the restored
+# test's raw same-sign guard (#2407), so it exits normally after nine steps.
+print of "--- LE1b: Additive runaway behind one zero step exits normally ---"
 x is 1000000.0
 x is 1000000.0
 loop while not converged:
@@ -20,8 +23,8 @@ loop while not converged:
 print of __loop_exit__
 print of __loop_iterations__
 print of ""
-assert of [__loop_iterations__ == 100, "LE1b loop iteration count"]
-assert of [__loop_exit__ == "stalled", "LE1b stall exit"]
+assert of [__loop_iterations__ == 9, "LE1b loop iteration count"]
+assert of [__loop_exit__ == "normal", "LE1b normal exit at the first full window"]
 print of "--- LE2: Constant certifies converged, exits normally ---"
 y is 42
 y is 42

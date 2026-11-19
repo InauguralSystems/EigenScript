@@ -22,10 +22,10 @@ print of ("Status: " + status)
 # The observer classifies value trajectories:
 #   "improving"   — a significant new running lower best within the last ten steps
 #   "diverging"   — non-vanishing same-direction displacement
-#   "stable"      — a full window fits the 1% band about its midrange
+#   "stable"      — ten small relative steps (each under 1%), no strong flips
 #   "equilibrium" — a settled window without persistent one-direction motion
 #   "oscillating" — alternating or folding value motion
-#   "converged"   — a full window's diameter fits the settled tolerance
+#   "converged"   — ten relative steps, each under 0.1%, no raw runaway or swing
 # Predicates can overlap; report keeps its documented priority order.
 
 # A repeated value; three assignments still leave the full window incomplete.

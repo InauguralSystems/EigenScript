@@ -1248,7 +1248,7 @@ check_eigs_suite "windowed oscillating: flip-count threshold + dh_zero deadband 
 echo ""
 
 echo "[8g] Windowed Stable"
-check_eigs_suite "windowed stable: full-window finite midrange ball + one-percent band" \
+check_eigs_suite "windowed stable: full window of small relative steps + one-percent band" \
     "test_windowed_stable.eigs" "WINDOWED_STABLE_ALL_PASS"
 echo ""
 

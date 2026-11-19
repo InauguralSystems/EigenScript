@@ -151,11 +151,11 @@ per step, and D2's running `best`/`since`. Numeric bindings do not compute
 or store entropy. Non-numeric bindings retain entropy/dH plus bounded
 comparison snapshots for converged/stable.
 
-The numeric tests are STD's windowed Cauchy convergence, D1's 1% midrange
-stability band, D2's Keras running lower best with relative significant
-improvement and ten-step patience, and the incumbent raw/relative tests
-for oscillating, diverging and equilibrium. An all-exact int64 window uses
-zero raw noise floor and absolute settled tolerances. At a current NaN all
+The numeric tests are v0.47.0's relative-step bands for converged (0.1%)
+and stable (1%), kept by the Round 3 reveal (#2407), D2's Keras running
+lower best with relative significant improvement and ten-step patience, and
+the incumbent raw/relative tests for oscillating, diverging and equilibrium.
+An all-exact int64 window uses zero raw noise floor. At a current NaN all
 six are false and report is `undefined`; infinity follows the signed-window
 rule in [PREDICATES.md](PREDICATES.md).
 

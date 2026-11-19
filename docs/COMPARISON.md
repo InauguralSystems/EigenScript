@@ -754,11 +754,10 @@ print of ("sqrt(2) = " + (str of (newton_sqrt of 2)))
 sqrt(2) = 1.414213562373095
 ```
 
-`converged` reads the loop's last-assigned binding and applies the
-windowed Cauchy test: eleven finite values with diameter at most
-`0.001·max(abs(current), 0.001)`. This run exits through the predicate
-itself in 13 iterations. Numeric all-exact int64 windows instead use the
-absolute tolerance `1e-6`. The tolerance is fixed. This is a finite-window
+`converged` reads the loop's last-assigned binding and asks that each of
+its last ten steps be under `0.001·max(abs(v), abs(v_prev), 0.001)`, with no
+raw runaway or swing. This run exits through the predicate itself in 13
+iterations. The tolerance is fixed. This is a finite-window
 stopping rule; slow divergence can still fit its band. The named form needs
 an explicit cap. The bare observer loop also has a stall backstop that
 counts iterations with `abs(r) < dh_zero`; it does not prove a result for

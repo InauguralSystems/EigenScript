@@ -21,7 +21,14 @@ print of __loop_exit__
 print of why is x
 
 print of ""
-print of "--- HD1b: additive quiet-relative runaway also stalls ---"
+# HD1b: under the test the reveal restored (#2407, v0.47.0's relative-step
+# band), the one zero step that `x is 1000000.0` twice puts in the window
+# breaks the raw same-sign test, so the first full window (nine +200 steps
+# after it) certifies `converged` and the loop exits normally. That is the
+# restored test's answer (tools/reveal_restored_reference.py gives the same
+# 9), and a known blind spot of it: an additive runaway is called converged.
+# This pins the answer, so a later fix of the blind spot moves it loudly.
+print of "--- HD1b: additive runaway behind one zero step exits as converged ---"
 counter is 0
 x is 1000000.0
 x is 1000000.0
@@ -33,6 +40,6 @@ print of report of x
 print of __loop_exit__
 print of why is x
 print of ""
-assert of [counter == 100, "HD1b loop iteration count"]
-assert of [__loop_exit__ == "stalled", "HD1b stall exit"]
+assert of [counter == 9, "HD1b loop iteration count"]
+assert of [__loop_exit__ == "normal", "HD1b normal exit at the first full window"]
 print of "=== RUNAWAY LOOP CONTRACT COMPLETE ==="
