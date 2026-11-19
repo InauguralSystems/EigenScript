@@ -1,1 +1,1 @@
-- Pin sign-extension range checks, clarify boxed tensor numbers, and document legacy observer-window trace replay (#1742, #1863, #2198).
+- Pin `sign_extend` range checks, correct three tensor comments about boxed ints, and correct the `O win` bullet of `docs/TRACE.md` (#1742, #1863, #2198).
