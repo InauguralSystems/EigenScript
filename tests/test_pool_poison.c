@@ -423,6 +423,9 @@ static int control(void) {
 
 int main(int argc, char **argv) {
     const char *mode = argc > 1 ? argv[1] : "";
+    /* A verdict must reach the output before a sanitizer can end the process:
+     * unbuffered, so no mode's own FAIL line is lost behind a leak report. */
+    setvbuf(stdout, NULL, _IONBF, 0);
     EigsState *st = eigs_open();
     if (!st) { fputs("SETUP FAIL: eigs_open\n", stderr); return 2; }
     int rc;

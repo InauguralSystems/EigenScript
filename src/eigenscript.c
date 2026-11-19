@@ -2186,7 +2186,7 @@ void env_retain_intern_table(Env *env, EnvInternTable *table) {
 void free_value(Value *v) {
     if (!v) return;
     env_intern_release_value(v);
-    if (v->type == VAL_FLOAT) {   /* the freelist recycles float boxes; an int box is freed */
+    if (v->type == VAL_FLOAT) {   /* this list recycles float boxes; an int box has its own, in case VAL_INT below */
 #ifndef EIGS_POOL_OFF_NUM
         /* Route freed NUMs to freelist for reuse by make_float */
         if (g_num_freelist_count < NUM_FREELIST_CAP) {

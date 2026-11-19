@@ -406,6 +406,10 @@ void          eigs_value_buffer_set(EigsValue *v, int i, double x); /* OOB: no-o
 `EIGS_TYPE_NUM` covers signed int64 and float, like Lua's `LUA_TNUMBER`.
 `eigs_value_new_int` constructs an exact signed int64, like `lua_pushinteger`;
 `eigs_value_new_num` constructs a float, like `lua_pushnumber`.
+Both take their box from the calling thread's freelist, so both must be
+called on a thread that is attached to a state; called with no state
+attached, either one crashes (#2433 brought the integer constructor in
+line with the float one, which already required it).
 R2.4 canonicalizes every NaN at the C double boundary to
 `0x7ff8000000000000`, on both input and output; finite values, infinities
 and signed zeros keep their bits. `eigs_value_as_num` converts either kind to `double`,

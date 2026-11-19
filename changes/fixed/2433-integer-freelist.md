@@ -1,0 +1,2 @@
+- Boxed integers are recycled on a bounded freelist of their thread, separate from the float freelist; a boxed integer no longer goes through the system allocator each time it is made and dropped (#2433).
+- Embedding: `eigs_value_new_int` now requires a thread attached to a state, as `eigs_value_new_num` already did; called with none attached it crashes where it used to return a box (#2433).
