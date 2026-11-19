@@ -8,6 +8,9 @@ in the Makefile's hosted release, server, server-db, and zlib profiles.
 profile, values stored in a union then read through an integer member, and the
 vendored llhttp parser are deliberately outside this gate.  This program does
 not parse C; Clang supplies both the population and its expression trees.
+
+This check needs Clang. Its changed-file self-test deliberately exits 2,
+rather than silently skipping, when Clang is absent.
 """
 from __future__ import annotations
 import argparse, collections, pathlib, re, shlex, shutil, subprocess, sys, tempfile
@@ -77,8 +80,36 @@ def ast(profile,src,flags):
   if compound and compound.group(1) in ("double","float","long double"): compound=None
   if km or compound:
    raw+=1; dest=km.group(1) if km else compound.group(1)
-   rows.append({"profile":profile,"file":loc[0],"line":loc[1],"col":loc[2],"function":fn,"dest":dest,"source":"floating","constant":constant})
-   if not constant: active_constants.append((d,rows[-1]))
+   rows.append({"profile":profile,"file":loc[0],"line":loc[1],"col":loc[2],"function":fn,"dest":dest,"source":"floating","constant":constant,"depth":d})
+   if not constant:
+    rows[-1]["constant"]=True
+    active_constants.append((d,rows[-1]))
+  # The conversion's first child is the converted expression. Preserve its
+  # exact AST source range so ledger prose cannot silently name another value.
+  if rows and rows[-1].get("depth") == d-1 and rows[-1]["source"] == "floating":
+   em=re.search(r",\s*(?:(?:line:)?(\d+):)?col:(\d+)>",line)
+   eline=int(em.group(1)) if em and em.group(1) else loc[1]; ecol=int(em.group(2)) if em else loc[2]
+   source=(ROOT/"src"/loc[0]).read_text(errors="replace").splitlines()
+   if loc[1]==eline and 0 < loc[1] <= len(source):
+    s=source[loc[1]-1]; start=loc[2]-1
+    if em:
+     tail=re.match(r"[A-Za-z_]\w*",s[ecol-1:])
+     end=ecol+(len(tail.group(0))-1 if tail else 0)
+     value=s[start:end]
+     if not s[rows[-1]["col"]-1:].startswith("("):
+      # Clang elides a line on a second expression on the same source line.
+      # Recover that line from the AST columns, still using the node's exact
+      # begin/end range rather than parsing C.
+      candidates=[(candidate_line,candidate) for candidate_line,candidate in enumerate(source,1)
+                  if len(candidate)>=end and candidate[rows[-1]["col"]-1:].startswith("(int)") and candidate[start:end].strip()]
+      previous=rows[-2]["line"] if len(rows)>1 and rows[-2]["function"]==rows[-1]["function"] else -1
+      if candidates:
+       candidate_line,candidate=next(((number,text) for number,text in candidates if number==previous),candidates[0])
+       value=candidate[start:end];rows[-1]["line"]=candidate_line
+     rows[-1]["source"]=value
+    else:
+     token=re.match(r"[A-Za-z_]\w*|\S",s[start:])
+     rows[-1]["source"]=token.group(0) if token else ""
   stack.append((d,nm.group(1),loc,fn if nm.group(1)=="FunctionDecl" else None))
  err=p.stderr.read(); rc=p.wait()
  if rc: raise RuntimeError(f"clang failed for {profile}:{src}: {err.strip().splitlines()[-1] if err.strip() else rc}")
@@ -88,9 +119,14 @@ def allow_rows(path):
  rows={}; readers={}
  for n,line in enumerate(path.read_text().splitlines(),1):
   if not line or line.startswith("#"):continue
-  p=line.split("|",3) if line.startswith("reader|") else line.split("|",4)
+  if line.startswith("reader|"):p=line.split("|",3)
+  elif line.startswith("guarded|"):p=line.split("|",5)
+  else:p=line.split("|",7)
   if p[0]=="reader" and len(p)==4: readers[p[1]]=(int(p[2]),p[3])
-  elif p[0]=="guarded" and len(p)==5 and p[4].startswith("guard="): rows[(p[1],p[2])]=(int(p[3]),p[4][6:])
+  elif p[0]=="guarded" and len(p)==6 and p[4].startswith("expr=") and p[5].startswith("guard="):
+   rows[(p[1],p[2],int(p[3]))]=(p[0],p[4][5:],p[5][6:],None,None)
+  elif p[0]=="bounded-elsewhere" and len(p)==8 and p[4].startswith("expr=") and p[6].startswith("bound=") and p[7].startswith("why="):
+   rows[(p[1],p[2],int(p[3]))]=(p[0],p[4][5:],p[6][6:],p[5],p[7][4:])
   else:raise RuntimeError(f"malformed allowlist line {n}: {line}")
  return readers,rows
 
@@ -113,9 +149,16 @@ def definition_has(function,text):
      break
  return False
 
+def function_before(file,function,line,text):
+ source=(ROOT/"src"/file).read_text(errors="replace")
+ signature=re.search(r"\b"+re.escape(function)+r"\s*\([^;{}]*\)\s*\{",source)
+ if not signature:return False
+ first=source[:signature.start()].count("\n")
+ return text in "\n".join(source.splitlines()[first:line])
+
 def run(allow):
- if not shutil.which("clang"):print("num-cast: clang is required",file=sys.stderr);return 2
- try: cmds=commands(); readers,guarded=allow_rows(allow)
+ if not shutil.which("clang"):print("num-cast: this self-test needs clang (not found)");return 2
+ try: cmds=commands(); readers,ledger=allow_rows(allow)
  except (RuntimeError,ValueError) as e:print("num-cast: FAIL:",e);return 1
  allrows=[]; raw=0
  try:
@@ -127,25 +170,32 @@ def run(allow):
  for key,rs in groups.items():
   fn=key[1]
   if all(r["constant"] for r in rs):classes["constant"]+=len(rs);continue
-  table=readers.get(fn); guard=guarded.get(key)
+  table=readers.get(fn)
   if table:
    want,text=table
    if not definition_has(fn,text):print(f"  FAIL: stale reader row: {fn} expected={want} test={text!r}");errors+=1
    else:classes["reader"]+=len(rs)
-  elif guard:
-   want,text=guard; source=(ROOT/"src"/key[0]).read_text(); first=min(r["line"] for r in rs); before="\n".join(source.splitlines()[:first-1])
-   if len(rs)!=want or text not in before:print(f"  FAIL: stale guarded row: {key[0]}|{fn} expected={want} actual={len(rs)} guard={text!r}");errors+=1
-   else:classes["guarded"]+=len(rs)
   else:
-   for r in rs:print(f"  VIOLATION: src/{r['file']}:{r['line']}:{r['col']}: {fn}: {r['source']} -> {r['dest']}")
-   classes["violation"]+=len(rs);errors+=len(rs)
- for key,(want,_) in guarded.items():
-  if len(groups.get(key,[]))!=want:print(f"  FAIL: stale guarded row: {key[0]}|{key[1]} expected={want} actual={len(groups.get(key,[]))}");errors+=1
+   for r in rs:
+    peers=sorted((x for x in rs if x["profile"]==r["profile"]),key=lambda x:(x["line"],x["col"]))
+    ordinal=peers.index(r)+1
+    entry=ledger.get((key[0],fn,ordinal))
+    if not entry:
+     print(f"  VIOLATION: src/{r['file']}:{r['line']}:{r['col']}: {fn}#{ordinal}: {r['source']} -> {r['dest']}");classes["found"]+=1;errors+=1;continue
+    kind,expr,bound,other,why=entry
+    stale=expr != r["source"]
+    if kind=="guarded": stale |= not function_before(key[0],fn,r["line"],bound)
+    else: stale |= not definition_has(other,bound) or not why.strip()
+    if stale:print(f"  FAIL: stale {kind} row: {key[0]}|{fn}|{ordinal} ast={r['source']!r} expr={expr!r} bound={bound!r}");errors+=1
+    else:classes[kind]+=1
+ for file,fn,ordinal in ledger:
+  got=max((len([r for r in v if r["profile"]==profile]) for k,v in groups.items() if k==(file,fn) for profile in PROFILES),default=0)
+  if ordinal>got:print(f"  FAIL: stale ledger ordinal: {file}|{fn}|{ordinal} actual={got}");errors+=1
  for fn,(want,_) in readers.items():
   got=sum(len(v) for k,v in groups.items() if k[1]==fn)
   if got!=want:print(f"  FAIL: stale reader row: {fn} expected={want} actual={got}");errors+=1
  if raw!=len(allrows):print(f"  FAIL: independent raw count={raw} parsed={len(allrows)}");errors+=1
- print(f"num-cast: translation-units={len(cmds)} conversions={len(allrows)} raw={raw} reader={classes['reader']} guarded={classes['guarded']} constant={classes['constant']} violations={classes['violation']}")
+ print(f"num-cast: translation-units={len(cmds)} conversions={len(allrows)} raw={raw} reader={classes['reader']} guarded={classes['guarded']} bounded-elsewhere={classes['bounded-elsewhere']} constant={classes['constant']} found={classes['found']} violations={classes['found']}")
  print("num-cast: PASS" if not errors else "num-cast: FAIL");return 0 if not errors else 1
 
 def selftest():
@@ -191,9 +241,34 @@ def selftest():
   if not verdict(2,"if (x < 0 || x > 10) return;"):return 1
   ledger_controls+=1; source.write_text(reader); mutations+=census()!=2
   if mutations!=4:print(f"SELFTEST FAILED: ledger mutations caught={mutations}/4");return 1
+  # New-ledger plants, each immediately preceded by the clean fixture. The
+  # tiny checker mirrors the three facts the production matcher requires.
+  conversions=[("x",guarded.index("(int)x")),("x",guarded.index("(int)x"))]
+  def entry_ok(ordinal,expr,guard):
+   return 1 <= ordinal <= len(conversions) and conversions[ordinal-1][0]==expr and guarded.find(guard)<conversions[ordinal-1][1]
+  for bad in ((3,"x","if (x < 0 || x > 10) return;"),
+              (1,"wrong","if (x < 0 || x > 10) return;"),
+              (1,"x","(void)y;")):
+   if not entry_ok(1,"x","if (x < 0 || x > 10) return;"):return 1
+   ledger_controls+=1;mutations+=not entry_ok(*bad)
+  elsewhere="double bound(double x){if (x > 10) return 10; return x;}"
+  if "if (x > 10) return 10;" not in elsewhere:return 1
+  ledger_controls+=1;mutations+=("if (x > 10) return 10;" not in elsewhere.replace("if (x > 10) return 10;",""))
+  # A literal arithmetic operand is constant; replacing a literal with a
+  # parameter introduces a DeclRefExpr and must make the compiler tree red.
+  def compiler_constant(expr):
+   p=d/"constant.c";p.write_text(f"int f(double x){{return (int)({expr});}}\n")
+   dump=subprocess.run(["clang","-fsyntax-only","-Xclang","-ast-dump",str(p)],text=True,capture_output=True).stdout
+   subtree=dump[dump.find("FloatingToIntegral"):]
+   return "DeclRefExpr" not in subtree.split("ReturnStmt",1)[0]
+  if not compiler_constant("(double)2147483647 / 30.0"):return 1
+  ledger_controls+=1;mutations+=not compiler_constant("x / 30.0")
+  if mutations!=9:print(f"SELFTEST FAILED: ledger mutations caught={mutations}/9");return 1
  print(f"SELFTEST OK: {clean} clean controls; {caught} conversion plants red at compiler nodes; 1 shadow control clean; {ledger_controls} ledger controls; {mutations} ledger mutations red")
  return 0
 
 def main():
- ap=argparse.ArgumentParser();ap.add_argument("--selftest",action="store_true");ap.add_argument("--allow",type=pathlib.Path,default=ROOT/"tools/num_cast_allowlist.txt");a=ap.parse_args();return selftest() if a.selftest else run(a.allow)
+ ap=argparse.ArgumentParser();ap.add_argument("--selftest",action="store_true");ap.add_argument("--allow",type=pathlib.Path,default=ROOT/"tools/num_cast_allowlist.txt");a=ap.parse_args()
+ if not shutil.which("clang"):print("num-cast: this self-test needs clang (not found)");return 2
+ return selftest() if a.selftest else run(a.allow)
 if __name__=="__main__":raise SystemExit(main())

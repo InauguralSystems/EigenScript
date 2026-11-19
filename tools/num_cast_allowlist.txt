@@ -1,13 +1,48 @@
-# kind|file/function|count|guard/test
-# Readers are conversion functions and quote their exact range test. Guarded
-# rows quote the exact in-function bound before every conversion they cover.
-# Counts include every hosted profile instance; missing/new conversions and
-# missing tests/guards make rows stale. Unclassified compiler nodes stay red.
+# reader|function|profile-instance-count|test, or
+# class|file|function|source-order ordinal|expr=converted source|guard=bound.
+# Ordinals count AST conversion nodes by line then column (left to right when
+# two occur on one line), so moving lines above a function does not change it.
+# bounded-elsewhere rows additionally name the bounding function, its exact
+# bound text, and why that bound reaches this conversion. Constants are proved
+# from Clang's expression subtree and never listed. Every conversion in a
+# non-reader function needs its own row; missing/new nodes and stale text fail.
 reader|num_to_i64_exact|129|if (!(x >= -9223372036854775808.0 && x < 9223372036854775808.0)) return 0;
 reader|eigs_cmp_int_float|129|if (f >= 9223372036854775808.0) return -1;
 reader|eigs_bounded_arg|4|if (!(x >= (double)INT_MIN && x <= (double)INT_MAX)) {
 reader|eigs_num_text|8|if (fabs(n) < 1e16 && n == (int64_t)n) {
 reader|task_handle_unpack|4|if (!(packed > 0) || packed > 9007199254740992.0) return 0;
-guarded|compiler.c|literal_index_u16|4|guard=if (!(d >= 0.0 && d <= 65535.0) || floor(d) != d) return 0;
-guarded|vm.c|vm_iter_index|4|guard=if (!(f >= INT_MIN && f <= INT_MAX)) return 0;
-guarded|ext_http.c|fetch_request_dict|2|guard=if (!isfinite(seconds) || seconds < 0.001 || seconds > 300)
+guarded|compiler.c|literal_index_u16|1|expr=d|guard=if (!(d >= 0.0 && d <= 65535.0) || floor(d) != d) return 0;
+guarded|vm.c|vm_iter_index|1|expr=f|guard=if (!(f >= INT_MIN && f <= INT_MAX)) return 0;
+guarded|ext_http.c|fetch_request_dict|1|expr=ceil(seconds * 1000.0)|guard=if (!isfinite(seconds) || seconds < 0.001 || seconds > 300)
+guarded|eigenscript.c|observer_slot_from_trajectory|1|expr=n|guard=if (!isfinite(n) || n < OBSERVER_WINDOW_MIN || n > OBSERVER_WINDOW_MAX || n != floor(n)) return 0;
+guarded|eigenscript.c|observer_slot_from_trajectory|2|expr=age|guard=if (!isfinite(age) || age < 0 || age > UINT8_MAX || age != floor(age)) goto bad;
+guarded|eigenscript.c|eigs_geom_line|1|expr=round(x0)|guard=if (!dx && !dy) {
+guarded|eigenscript.c|eigs_geom_line|2|expr=round(y0)|guard=if (!dx && !dy) {
+guarded|eigenscript.c|eigs_geom_line|3|expr=round(eigs_geom_max(left,eigs_geom_min(right,ex)))|guard=eigs_geom_max(left,eigs_geom_min(right,ex))
+guarded|eigenscript.c|eigs_geom_line|4|expr=round(eigs_geom_max(top,eigs_geom_min(bottom,ey)))|guard=eigs_geom_max(top,eigs_geom_min(bottom,ey))
+guarded|eigenscript.c|eigs_geom_line|5|expr=round(eigs_geom_max(left,eigs_geom_min(right,lx)))|guard=eigs_geom_max(left,eigs_geom_min(right,lx))
+guarded|eigenscript.c|eigs_geom_line|6|expr=round(eigs_geom_max(top,eigs_geom_min(bottom,ly)))|guard=eigs_geom_max(top,eigs_geom_min(bottom,ly))
+guarded|eigenscript.c|eigs_geom_shape|1|expr=round(x)|guard=if (x < left || x >= right || y < top || y >= bottom) return 1;
+guarded|eigenscript.c|eigs_geom_shape|2|expr=round(y)|guard=if (x < left || x >= right || y < top || y >= bottom) return 1;
+guarded|eigenscript.c|eigs_geom_shape|3|expr=round(x)|guard=x = eigs_geom_max(left, x); y = eigs_geom_max(top, y);
+guarded|eigenscript.c|eigs_geom_shape|4|expr=round(y)|guard=x = eigs_geom_max(left, x); y = eigs_geom_max(top, y);
+guarded|eigenscript.c|eigs_geom_shape|5|expr=round(x2)|guard=x2 = eigs_geom_min(right, x2); y2 = eigs_geom_min(bottom, y2);
+guarded|eigenscript.c|eigs_geom_shape|6|expr=round(y2)|guard=x2 = eigs_geom_min(right, x2); y2 = eigs_geom_min(bottom, y2);
+bounded-elsewhere|builtins.c|builtin_task_spawn|1|expr=task_handle_pack(id, tgen)|task_handle_pack|bound=return (double)id + (double)gen * (double)HANDLE_TABLE_SIZE;|why=handle_register supplies a slot below HANDLE_TABLE_SIZE and a uint32_t generation, so the packed integer fits int64_t.
+bounded-elsewhere|builtins.c|builtin_task_self|1|expr=task_current_id()|task_current_id|bound=return t ? task_handle_pack(t->id, t->hgen) : 0;|why=task_current_id returns zero or the same bounded packed handle used by task_spawn.
+guarded|builtins_buf.c|builtin_buf_resample_linear|1|expr=lo_f|guard=if (dst_len > (long long)INT_MAX) {
+guarded|ext_gfx.c|builtin_gfx_text|1|expr=scale|guard=if (*text && scale <= (INT_MAX-2)/6 && scale == floor(scale) &&
+guarded|ext_gfx.c|builtin_gfx_text|2|expr=((long double)shape.x-roundl(x))|guard=if (!gfx_rect_ld(x, y, tw, th, &area, &shape, __func__)) {
+guarded|ext_gfx.c|builtin_gfx_text|3|expr=((long double)shape.y-roundl(y))|guard=if (!gfx_rect_ld(x, y, tw, th, &area, &shape, __func__)) {
+bounded-elsewhere|ext_gfx.c|audio_mix_callback|1|expr=((double)ch->samples[ch->pos++] * ch->volume)|builtin_audio_volume|bound=if (!eigs_list_bounded(arg,1,0,4,&vol,"audio_volume")) return make_int(0);|why=the only volume writer stores that validated 0..4 integer, and samples are int16_t, so their product fits int32_t.
+bounded-elsewhere|task.c|task_sched_trace_read|1|expr=e->task|task_handle_pack|bound=return (double)id + (double)gen * (double)HANDLE_TABLE_SIZE;|why=trace entries store only zero or the packed bounded slot and uint32_t generation from task_handle_pack.
+guarded|ext_gfx.c|builtin_gfx_fb|1|expr=rx|guard=rx >= area.x && ry >= area.y &&
+guarded|ext_gfx.c|builtin_gfx_fb|2|expr=ry|guard=rx >= area.x && ry >= area.y &&
+guarded|ext_gfx.c|builtin_gfx_fb|3|expr=rw|guard=rw > 0 && rh > 0 && rw <= INT_MAX && rh <= INT_MAX
+guarded|ext_gfx.c|builtin_gfx_fb|4|expr=rh|guard=rw > 0 && rh > 0 && rw <= INT_MAX && rh <= INT_MAX
+guarded|ext_gfx.c|builtin_gfx_fb|5|expr=sy|guard=if (sy < 0 || sy >= hi) continue;
+guarded|ext_gfx.c|builtin_gfx_fb|6|expr=sx|guard=if (sx < 0 || sx >= wi) { ++x; continue; }
+guarded|ext_gfx.c|builtin_gfx_fb|7|expr=sy|guard=if (sy < 0 || sy >= hi) continue;
+guarded|ext_gfx.c|builtin_gfx_fb|8|expr=next|guard=if (next < 0 || next >= wi || pixels[(int64_t)sy*wi+(int64_t)next] != pixel) break;
+guarded|ext_http.c|door_linger|1|expr=(left * 1000)|guard=if (left <= 0) break;
+guarded|ext_http.c|door_read|1|expr=(wait * 1000)|guard=if (wait <= 0) {
