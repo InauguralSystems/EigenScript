@@ -3319,22 +3319,21 @@ longer reach the rule. Nine cases carry what they pinned:
 | `additive-run-in` | the same runaway after eleven shrinking steps of 0.94% down to 0.14%; for nine iterations `stable` is true and the last step is quiet | the quiet clause does not ask `stable`: exactly 100, where a clause that also required `!stable` stalls at 109 |
 | `monotone-decay` | steps that shrink from 0.89% and stay above the quiet threshold through iteration 135, `stable` true from the first full window | the quiet clause reads the step and not the predicate: it certifies at 145, where a clause that fell back on `stable` stalls at 109 |
 
-The set was sized by measurement, not by argument. @@SWEEP@@
-
-The set was sized by measurement, not by argument. 1,030 single edits of the
-stall reader, of the loop's counter and of the 24 functions the reader calls
-were each built on both sides of #2407 and run against that side's contract
-(#2427 has the population's rules, the table and the run). 956 build to a
-changed binary. The contract before #2407 sees 405 of them; this one sees 397
-of those 405, and 40 that the earlier one does not. Of the other eight, seven
-change when the loop's own condition ends the loop and not what the stall
-reader decides (at every call that the clean and the edited build both make,
-it decides the same), and that condition is the `converged` test #2407
-replaces. The eighth deletes the only assignment of a variable that is then
-read: the compiler reports it, and two compilers build it to different
-behaviour. What the
-population does not hold (an edit of two places, a gate of two comparisons,
-an integer subject, the entropy route of the quiet test) is on #2434.
+The set was sized by measurement, not by argument. 1,045 edits of the stall
+reader, of the loop's counter and of the 24 functions the reader calls (994
+single edits made by rule, and 51 written by hand, a few of which move a
+whole arm) were each built on both sides of #2407 and run against that side's
+contract (#2427 has the population's rules, the table and the runs). 971
+build to a changed binary. The contract before #2407 sees 407 of them; this
+one sees 399 of those 407, and 43 that the earlier one does not. Of the other
+eight, seven change when the loop's own condition ends the loop and not what
+the stall reader decides (at every call that the clean and the edited build
+both make, it decides the same), and that condition is the `converged` test
+#2407 replaces. The eighth deletes the only assignment of a variable that is
+then read: the compiler reports it, and two compilers build it to different
+behaviour. What the population does not hold (an edit of two places, a gate
+of two comparisons, an integer subject, the entropy route of the quiet test)
+is on #2434.
 
 R31-5 pins the three alternation exits to `stalled` in 100..112, allowing
 the incumbent oscillator to fill before counting. The damped control stays
