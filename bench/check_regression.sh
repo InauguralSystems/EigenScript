@@ -141,7 +141,9 @@ declarations = parse_declarations((root / 'tests/phase2/cost_expect.txt').read_t
 declaration = declarations.get((workload, tier))
 count = 1000000
 if binary.name == 'current' and declaration:
-    delta = max(Decimal(0), declaration.max_ci - NOISE)
+    # A maximum may be negative (a row below main, #2433): stay inside the
+    # band on that side too instead of clamping the synthetic delta at zero.
+    delta = declaration.max_ci - NOISE
     count = int(Decimal(count) * (1 + delta / 100))
 print(f'I refs: {count}')
 EOF

@@ -433,6 +433,15 @@ build/$(EMBED_MULTIATTACH_VARIANT)/test_embed_multiattach: tests/test_embed_mult
 embed-multiattach-test: build/$(EMBED_MULTIATTACH_VARIANT)/test_embed_multiattach
 	@echo "Embed multi-attach test built: $<"
 
+# #2433: a public-API boxed integer spans the host's first and last program.
+EMBED_INT_FREELIST_VARIANT ?= release
+EMBED_INT_FREELIST_OBJ := $(filter-out build/$(EMBED_INT_FREELIST_VARIANT)/main.o,$(OBJ_$(EMBED_INT_FREELIST_VARIANT)))
+build/$(EMBED_INT_FREELIST_VARIANT)/test_embed_integer_freelist: tests/test_embed_integer_freelist.c $(EMBED_INT_FREELIST_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(EMBED_INT_FREELIST_VARIANT)) -I$(SRC_DIR) -o $@ $< $(EMBED_INT_FREELIST_OBJ) $(LIBS_$(EMBED_INT_FREELIST_VARIANT))
+.PHONY: embed-int-freelist-test
+embed-int-freelist-test: build/$(EMBED_INT_FREELIST_VARIANT)/test_embed_integer_freelist
+	@echo "Embed integer freelist test built: $<"
+
 # #1171: one-writer compatibility and real setter routing; reuse the owning
 # variant without changing the CLI alias. GNU-style --wrap is test-only and
 # confined to Linux linking; portable runtime objects are unchanged.

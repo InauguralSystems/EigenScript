@@ -1,0 +1,1 @@
+- Boxed integers are recycled on a bounded freelist of their thread, separate from the float freelist; a boxed integer no longer goes through the system allocator each time it is made and dropped (#2433).

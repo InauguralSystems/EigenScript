@@ -4,7 +4,7 @@ Status: design round 3, with R1.1/R1.2 implementation notes and R1.2
 fix-round verification in §12. §8's Round 3 section is design sub-round
 R3.0 (written on `r3` @ `968d9fe4`, after R2.6's acceptance; rewritten in its
 design round 3 around #1758's Round 3 pre-registration). The first program-visible int producer
-remains R1.3. Inventory and prototype measurements below describe the
+remains R1.3. Integer boxes are recycled through a list of their own and still never enter the float list. Inventory and prototype measurements below describe the
 original design tree. Spec: issue #1758 (Revision 1), its owner decisions (A), (B), (C), the
 Q1-Q6 decisions
 ([comment](https://github.com/InauguralSystems/EigenScript/issues/1758#issuecomment-6171744498))
@@ -2227,7 +2227,8 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
      declared maximum fails, and so does a row more than 0.5 points below it
      (STALE, the R1.3 CI fix): a round that recovers cost must bring the
      declaration down, or a new regression hides under it. Each method’s
-     maximum is its own measured delta plus 0.2 points (the largest measured
+     maximum, which may be negative when the candidate is cheaper than main,
+     is its own measured delta plus 0.2 points (the largest measured
      shift: a different workload path moves `alloc_heavy` by 0.16 points), rounded up
      to 0.1. A row whose cost another round moves names that component with
      its measurement: R1.6's int `range` alone removes 58% (jit) and 66%

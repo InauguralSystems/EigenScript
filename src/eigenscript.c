@@ -2110,6 +2110,19 @@ void eigs_thread_drain_caches(EigsThread *th) {
     }
     th->num_freelist = NULL;
     th->num_freelist_count = 0;
+    /* The thread owns both disjoint box pools; detach ends every parked
+     * integer's lifetime just as it does every parked float's. */
+    vn = th->int_freelist;
+    while (vn) {
+        Value *next;
+        eigs_num_park_unpoison(vn);
+        EIGS_VG_DEFINED(vn, sizeof(*vn));
+        memcpy(&next, EIGS_NUM_LINK(vn), sizeof(next));
+        free(vn);
+        vn = next;
+    }
+    th->int_freelist = NULL;
+    th->int_freelist_count = 0;
 
     /* Private promoted keys are Value-owned in the state registry; detaching
      * their creator must not release keys still borrowed by surviving Values. */
@@ -2173,7 +2186,7 @@ void env_retain_intern_table(Env *env, EnvInternTable *table) {
 void free_value(Value *v) {
     if (!v) return;
     env_intern_release_value(v);
-    if (v->type == VAL_FLOAT) {   /* the freelist recycles float boxes; an int box is freed */
+    if (v->type == VAL_FLOAT) {   /* this list recycles float boxes; an int box has its own, in case VAL_INT below */
 #ifndef EIGS_POOL_OFF_NUM
         /* Route freed NUMs to freelist for reuse by make_float */
         if (g_num_freelist_count < NUM_FREELIST_CAP) {
@@ -2254,8 +2267,21 @@ void free_value(Value *v) {
         /* No owned memory. Enumerated rather than covered by a `default:` so
          * that -Werror=switch (Makefile CFLAGS) makes a new ValType a build
          * error here instead of a silent leak. */
+        case VAL_INT:
+#ifndef EIGS_POOL_OFF_NUM
+            /* The final reference parks this integer box on its thread's
+             * integer-only list for make_int to reuse. */
+            if (g_int_freelist_count < INT_FREELIST_CAP) {
+                memcpy(EIGS_NUM_LINK(v), &g_int_freelist, sizeof(Value *));
+                g_int_freelist = v;
+                g_int_freelist_count++;
+                EIGS_VG_NOACCESS(&v->refcount, sizeof(v->refcount));
+                eigs_num_park_poison(v);
+                return;
+            }
+#endif
+            break;
         case VAL_FLOAT:
-        case VAL_INT:      /* #1758 R1.2a: an int box owns nothing */
         case VAL_BUILTIN:
         case VAL_NULL:
         case VAL_BOOL:
@@ -2291,10 +2317,24 @@ static inline Value *make_float_pooled(double n) {
  * Arithmetic producers report their result before constructing the value. */
 Value *make_float(double n) { return make_float_pooled(n); }
 
-/* #1758 R1.3: large int slots and Value API boundaries own ordinary heap
- * Values. Int boxes never enter the float freelist and own no GC edges. */
+/* Large int slots and Value API boundaries own ordinary heap Values.
+ * make_int takes a dead box from the integer-only list and restores it as a
+ * fresh integer box; integer boxes never enter the float list. */
 Value* make_int(int64_t n) {
-    Value *v = xcalloc(1, sizeof(Value));
+    Value *v;
+#ifndef EIGS_POOL_OFF_NUM
+    if (g_int_freelist) {
+        v = g_int_freelist;
+        memcpy(&g_int_freelist, EIGS_NUM_LINK(v), sizeof(Value *));
+        g_int_freelist_count--;
+        EIGS_VG_DEFINED(&v->refcount, sizeof(v->refcount));
+        eigs_num_park_unpoison(v);
+        memset(v, 0, sizeof(Value));
+    } else
+#endif
+    {
+        v = xcalloc(1, sizeof(Value));
+    }
     v->type = VAL_INT;
     VAL_I64_RAW(v) = n;
     v->refcount = 1;

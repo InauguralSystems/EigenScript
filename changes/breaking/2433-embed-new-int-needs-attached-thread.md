@@ -1,0 +1,1 @@
+- Embedding: `eigs_value_new_int` now requires a thread attached to a state, as `eigs_value_new_num` already did; called with none attached it crashes where it used to return a box. Attach before constructing a value (#2433).

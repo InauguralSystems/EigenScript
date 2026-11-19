@@ -138,13 +138,22 @@ class CostMethods(unittest.TestCase):
         good = 'bench/scalar_loop.eigs\tjit\t27.0\t27.3\tR5\tmeasured\n'
         bad = [good.replace('\t27.3', ''), good + good]
         for column in ('27.0', '27.3'):
-            bad.extend(good.replace(column, value) for value in ('-1', 'NaN', 'Infinity', ''))
+            bad.extend(good.replace(column, value) for value in ('NaN', 'Infinity', ''))
         for text in bad:
             with self.subTest(text=text):
                 with self.assertRaises(ValueError):
                     costs.parse_declarations(text)
         with self.assertRaises(ValueError):
             costs.parse_declarations(good, {'bench/missing.eigs'})
+
+    def test_negative_maximum_has_same_two_sided_verdicts(self):
+        table = costs.parse_declarations(
+            'bench/scalar_loop.eigs\tjit\t-1\t-1\tR5\tbelow main\n')
+        for cand, verdict in ((9895, 'ok'), (9901, 'OVER'), (9849, 'STALE')):
+            with self.subTest(cand=cand):
+                self.assertEqual(costs.assess_row(
+                    table, 'bench/scalar_loop.eigs', 'jit', 'local', 10000, cand)[2],
+                    verdict)
 
     def test_method_selection_cannot_change_local_measurement(self):
         self.declaration()

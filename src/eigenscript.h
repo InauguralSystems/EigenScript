@@ -875,6 +875,7 @@ typedef struct {
  * can carry the storage inline and so state.c can drain at detach.
  * (Phase 8: these moved off file-static __thread storage in eigenscript.c.) */
 #define NUM_FREELIST_CAP          4096
+#define INT_FREELIST_CAP          4096
 #define ENV_NAME_INTERN_BUCKETS   4096
 
 typedef struct EnvNameIntern {
@@ -1277,6 +1278,8 @@ struct EigsThread {
      * recyclable Value memory until thread detach; interns own their names. */
     Value               *num_freelist;
     int                  num_freelist_count;
+    Value               *int_freelist;       /* VAL_INT boxes recycle separately. */
+    int                  int_freelist_count;
     /* #1674 round 2: the env birth counter is no longer here. Round 1 kept a
      * per-thread uint32 `env_version_ctr`; two per-thread counters could mint
      * EQUAL versions, and a uint32 wrapped at ~2^32 births (reachable in ~1.7h
@@ -1688,6 +1691,8 @@ void eigs_bool_gate_exempt(BuiltinFn fn);   /* a host function: never gated */
 #define g_in_gc               (eigs_current->in_gc)
 #define g_num_freelist        (eigs_current->num_freelist)
 #define g_num_freelist_count  (eigs_current->num_freelist_count)
+#define g_int_freelist        (eigs_current->int_freelist)
+#define g_int_freelist_count  (eigs_current->int_freelist_count)
 #define g_env_name_interns    (eigs_current->intern_tbl->buckets)
 #define g_sandbox_intern_scope (eigs_current->sandbox_intern_scope)
 #define g_sandbox_intern_scope_next (eigs_current->sandbox_intern_scope_next)
