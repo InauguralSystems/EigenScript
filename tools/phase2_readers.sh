@@ -54,25 +54,25 @@ if [ "$FIXTURE" = const_dedup_bits ]; then
     exit 0
 fi
 if [ "$FIXTURE" = embed_buffer_get_raw ]; then
-    [ "$(grep -cE '^phase2-embed-buffer: PASS checks=36 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete getter PASS'
+    [ "$(grep -cE '^phase2-embed-buffer: PASS checks=72 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete getter PASS'
     [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected getter output'
     echo "$LABEL: PASS variant=$VARIANT"
     exit 0
 fi
 if [ "$FIXTURE" = net_byte_boundary ]; then
-    [ "$(grep -cE '^phase2-net-byte: PASS checks=72 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete net-byte-boundary PASS'
+    [ "$(grep -cE '^phase2-net-byte: PASS checks=144 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete net-byte-boundary PASS'
     [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected net-byte-boundary fixture output'
     echo "$LABEL: PASS variant=$VARIANT"
     exit 0
 fi
 if [ "$FIXTURE" = gfx_byte_boundary ]; then
-    [ "$(grep -cE '^phase2-gfx-byte-test: PASS checks=247 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete byte-boundary PASS'
+    [ "$(grep -cE '^phase2-gfx-byte-test: PASS checks=485 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete byte-boundary PASS'
     [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected byte-boundary fixture output'
     echo "$LABEL: PASS variant=$VARIANT"
     exit 0
 fi
 if [ "$FIXTURE" = gfx_audio_boundary ]; then
-    [ "$(grep -cE '^phase2-gfx-audio-test: PASS checks=44 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete audio-boundary PASS'
+    [ "$(grep -cE '^phase2-gfx-audio-test: PASS checks=88 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete audio-boundary PASS'
     [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected audio-boundary fixture output'
     echo "$LABEL: PASS variant=$VARIANT"
     exit 0
