@@ -1278,7 +1278,7 @@ struct EigsThread {
      * recyclable Value memory until thread detach; interns own their names. */
     Value               *num_freelist;
     int                  num_freelist_count;
-    Value               *int_freelist;       /* #2433 prototype: VAL_INT owners recycle separately */
+    Value               *int_freelist;       /* VAL_INT boxes recycle separately. */
     int                  int_freelist_count;
     /* #1674 round 2: the env birth counter is no longer here. Round 1 kept a
      * per-thread uint32 `env_version_ctr`; two per-thread counters could mint

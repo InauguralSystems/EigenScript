@@ -2110,8 +2110,8 @@ void eigs_thread_drain_caches(EigsThread *th) {
     }
     th->num_freelist = NULL;
     th->num_freelist_count = 0;
-    /* #2433 prototype: the thread owns both disjoint box pools; detach ends
-     * every parked int's lifetime just as it does every parked float's. */
+    /* The thread owns both disjoint box pools; detach ends every parked
+     * integer's lifetime just as it does every parked float's. */
     vn = th->int_freelist;
     while (vn) {
         Value *next;
@@ -2202,23 +2202,6 @@ void free_value(Value *v) {
         free(v);
         return;
     }
-    if (v->type == VAL_INT) {
-#ifndef EIGS_POOL_OFF_NUM
-        /* #2433 prototype: free_value owns the final ref and transfers that
-         * dead VAL_INT box to the INT-only pool. It never enters the FLOAT
-         * freelist, preserving R1.3's representation separation. */
-        if (g_int_freelist_count < INT_FREELIST_CAP) {
-            memcpy(EIGS_NUM_LINK(v), &g_int_freelist, sizeof(Value *));
-            g_int_freelist = v;
-            g_int_freelist_count++;
-            EIGS_VG_NOACCESS(&v->refcount, sizeof(v->refcount));
-            eigs_num_park_poison(v);
-            return;
-        }
-#endif
-        free(v);
-        return;
-    }
     switch (v->type) {
         case VAL_STR:
             if (v->data.str) free(v->data.str);
@@ -2284,8 +2267,21 @@ void free_value(Value *v) {
         /* No owned memory. Enumerated rather than covered by a `default:` so
          * that -Werror=switch (Makefile CFLAGS) makes a new ValType a build
          * error here instead of a silent leak. */
+        case VAL_INT:
+#ifndef EIGS_POOL_OFF_NUM
+            /* The final reference parks this integer box on its thread's
+             * integer-only list for make_int to reuse. */
+            if (g_int_freelist_count < INT_FREELIST_CAP) {
+                memcpy(EIGS_NUM_LINK(v), &g_int_freelist, sizeof(Value *));
+                g_int_freelist = v;
+                g_int_freelist_count++;
+                EIGS_VG_NOACCESS(&v->refcount, sizeof(v->refcount));
+                eigs_num_park_poison(v);
+                return;
+            }
+#endif
+            break;
         case VAL_FLOAT:
-        case VAL_INT:      /* #1758 R1.2a: an int box owns nothing */
         case VAL_BUILTIN:
         case VAL_NULL:
         case VAL_BOOL:
@@ -2321,10 +2317,9 @@ static inline Value *make_float_pooled(double n) {
  * Arithmetic producers report their result before constructing the value. */
 Value *make_float(double n) { return make_float_pooled(n); }
 
-/* #1758 R1.3: large int slots and Value API boundaries own ordinary heap
- * Values. #2433 prototype: they reuse a separate INT-only list, never the
- * float freelist, and still own no GC edges. make_int takes sole ownership
- * of a dead box from that list and restores a fresh refcount. */
+/* Large int slots and Value API boundaries own ordinary heap Values.
+ * make_int takes a dead box from the integer-only list and restores it as a
+ * fresh integer box; integer boxes never enter the float list. */
 Value* make_int(int64_t n) {
     Value *v;
 #ifndef EIGS_POOL_OFF_NUM

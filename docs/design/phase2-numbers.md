@@ -4,7 +4,7 @@ Status: design round 3, with R1.1/R1.2 implementation notes and R1.2
 fix-round verification in §12. §8's Round 3 section is design sub-round
 R3.0 (written on `r3` @ `968d9fe4`, after R2.6's acceptance; rewritten in its
 design round 3 around #1758's Round 3 pre-registration). The first program-visible int producer
-remains R1.3. Inventory and prototype measurements below describe the
+remains R1.3. Integer boxes are recycled through a list of their own and still never enter the float list. Inventory and prototype measurements below describe the
 original design tree. Spec: issue #1758 (Revision 1), its owner decisions (A), (B), (C), the
 Q1-Q6 decisions
 ([comment](https://github.com/InauguralSystems/EigenScript/issues/1758#issuecomment-6171744498))

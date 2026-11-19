@@ -1,1 +1,1 @@
-- Measure and prototype allocations in loops (#2433).
+- Recycled boxed integers on a bounded per-thread freelist without mixing them with float boxes (#2433).
