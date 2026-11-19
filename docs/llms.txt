@@ -256,19 +256,19 @@ false
 - `report of x` returns the routed state string (value channel for numeric
   bindings, entropy channel otherwise); `report_value of x` uses the value
   channel explicitly. Both read the named binding's trajectory.
-- Numeric `converged` is STD's windowed Cauchy test: ten steps / eleven
-  finite values with diameter ≤ `0.001·max(abs(current), 0.001)`. `stable`
-  is D1's 1% ball about the window's midrange. `improving` is D2's Keras
+- Numeric `converged`: ten steps over eleven finite values, each relative
+  step `abs(r) < 0.001`, no raw runaway or swing. `stable`: each
+  `abs(r) < 0.01`, no two steps in a row of opposite sign both above 0.001,
+  no raw runaway or swing. `improving` is D2's Keras
   running lower best with relative `min_delta = 0.001·max(abs(best), 0.001)`
   and ten-step patience, with the reference boundedness approximation.
   The first finite value is a baseline, never an improvement; non-finite
   values never become best, and any non-finite value still in the current
   window suppresses improvement. Other three numeric predicates retain
   their incumbent relative/raw-step rules. An all-exact int64 step window
-  uses zero raw noise floor and absolute settled tolerances (`1e-6` for
-  convergence, radius `1e-5` for stability). Float or mixed windows keep
-  the floating rules. Finite windows cannot prove a limit; slow divergence
-  can fit their bands. See docs/PREDICATES.md for citations and residuals.
+  uses zero raw noise floor. Float or mixed windows keep the floating noise
+  floor. Finite windows cannot prove a limit; slow divergence can fit their
+  bands. See docs/PREDICATES.md for citations and residuals.
 - Numeric `where is x` is x's value, `why is x` its last raw displacement
   (exact int if checked int64 subtraction fits), and finite-step `how is x`
   is `0.001 / (0.001 + abs(r))`, where

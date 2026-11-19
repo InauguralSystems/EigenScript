@@ -2738,6 +2738,12 @@ down-counter from 2^53 by −1 reads `diverging` with no other predicate true.
 
 **The predicates after R3.1:**
 
+(Round 3's design, as built. The reveal of 2026-11-18 (#1758, RULING R30R-2;
+the tag `phase2-r3-reveal`) shipped `improving`, `oscillating` and
+`diverging` from this table and kept the incumbent's tests for `converged`,
+`stable` and `equilibrium`; #2407 restored v0.47.0's `converged` and `stable`
+on the branch's observations. `docs/PREDICATES.md` states what ships.)
+
 | predicate | its test after R3.1 | signal | MAP rows |
 |---|---|---|---|
 | `converged` | **STD_converged**: full window of W + 1 finite values; window diameter ≤ τ(x), τ = 1e-3·max(\|x\|, 1e-3) (the windowed Cauchy test, as reference.py `converged`); an all-exact window uses τ_abs = 1e-6 | O1 + the int mechanism | `O2.int-counter-2p53`, `O2.int-down-counter-2p53`, `O2.harmonic-not-converged`, `O2.inverse-growth-not-converged`, `O2.counter-pause-not-converged` (invariant) |
@@ -3256,12 +3262,11 @@ procedure. The named check must go red on its own message.
 RULING R31-4 adds five separately counted stall-clause/order plants to that
 once-at-acceptance run. R31-7 replaces R31-6's sixth plant with three
 retained-window/finite-overflow plants. R31-8 adds the prefix index plant
-and R31-9 adds its opposite direction, for ten stall plants in total
-(the original 19 retain their own count):
+and R31-9 adds its opposite direction, for ten stall plants in total:
 
 | stall-clause/order plant | named check that must go red |
 |---|---|
-| quiet last relative step | `stall-contract: FAIL quiet tier=...` on a shrinking tail seeded at n = 1000 |
+| quiet last relative step | `stall-contract: FAIL quiet-jitter tier=...` |
 | the whole retained-input non-finite clause | `stall-contract: FAIL nan tier=...` |
 | diverging window | `stall-contract: FAIL doubling tier=...` |
 | oscillating with a non-contracting amplitude | `stall-contract: FAIL alternating tier=...` |
@@ -3269,22 +3274,14 @@ and R31-9 adds its opposite direction, for ten stall plants in total
 | non-finite clause narrowed to the current input only | `stall-contract: FAIL nan-period3 tier=...` |
 | non-finite window shortened by one input | `stall-contract: FAIL nan-window-edge tier=...` |
 | R31-6's non-finite-step half restored | `stall-contract: FAIL overflow-contracting tier=...` |
-| non-finite reader starts at `values_head - i`, one slot ahead | `stall-contract: FAIL nan-prefix tier=...` |
-| non-finite reader starts at `values_head - 2 - i`, one slot back | `stall-contract: FAIL nan-newest tier=...` |
-
-R31-8's prefix witness starts with `n is 1000`, an initial NaN subject,
-then assigns `n is n + 1` and finally `x is 1.0 / n` in each iteration.
-It pins exactly `100 stalled`, not certified, in all four tiers. R31-9's
-`nan-newest` starts with `x is 5.0`, then assigns the NaN at n = 1005
-before assigning x last; it pins exactly `101 stalled`, not certified.
-The current contract has 68 readings; the 64 readings established before
-R31-9 retain their exits and counts.
+| non-finite reader starts at `values_head - i`, one slot ahead | `stall-contract: FAIL nan-prefix-jitter tier=...` |
+| non-finite reader starts at `values_head - 2 - i`, one slot back | `stall-contract: FAIL nan-newest-jitter tier=...` |
 
 **Witness deviation (R31-8).** The three R31-7 witnesses did not distinguish
 a one-slot index error. The ring holds exactly W+1 inputs, so a full scan
 reads the same set from any starting slot once the ring fills. The periodic
 witnesses start with a finite oldest prefix input, and the overflow witness
-has only finite inputs. `nan-prefix` instead places the NaN in the oldest
+has only finite inputs. `nan-prefix-jitter` instead places the NaN in the oldest
 available prefix slot: the correct reader counts its first iteration, while
 the wrong index drops it and stalls at 101. No W+2 row is added: the read
 length is capped by the W+1 ring, making that change equivalent at the
@@ -3293,7 +3290,7 @@ default window. Runtime rules, arms, split and decision rule are unchanged.
 **Witness deviation (R31-9).** R31-8 covered dropping the oldest prefix
 input, but the opposite index error drops the newest. It moves
 `nan-alternating` from 100 to 101 and `nan-period3` from 101 to 102, both
-inside their unchanged `100..112` bands. `nan-newest` places one NaN in the
+inside their unchanged `100..112` bands. `nan-newest-jitter` places one NaN in the
 newest prefix slot at iteration 5: the correct reader stalls at 101, while
 the reader starting at `values_head - 2 - i` stalls at 105. The two exact
 rows carry the starting index; the R31-5 periodic bands remain unchanged.
@@ -3303,14 +3300,44 @@ the reader; the critic's prior (e)/(f) results are not extra registered plants.
 
 | degree of freedom | witness row(s) | plant that distinguishes it |
 |---|---|---|
-| start slot one too far forward, dropping the oldest prefix input | `nan-prefix` | `r318-stall-window-index` |
-| start slot one too far back, dropping the newest prefix input | `nan-newest` | `r319-stall-window-newest` |
+| start slot one too far forward, dropping the oldest prefix input | `nan-prefix-jitter` | `r318-stall-window-index` |
+| start slot one too far back, dropping the newest prefix input | `nan-newest-jitter` | `r319-stall-window-newest` |
 | extent one short | `nan-window-edge` | `r317-stall-window-extent`; one long is equivalent because the ring holds W+1 |
-| wrap modulus and source of the count | `nan-window-edge` and `nan-prefix` | critic (e), wrapping by `v_cap` instead of `values_cap`, is killed by `nan-window-edge`; critic (f), using `v_window_count` instead of `values_count`, is killed by both rows (prior R31-9 critic evidence) |
+| wrap modulus and source of the count | `nan-window-edge` and `nan-prefix-jitter` | critic (e), wrapping by `v_cap` instead of `values_cap`, is killed by `nan-window-edge`; critic (f), using `v_window_count` instead of `values_count`, is killed by both rows |
+
+**Witness deviation (#2407).** The restored `converged` ends a loop whose
+subject settles without oscillating before the stall counter can reach 100,
+so the witnesses that settled (`quiet`, `nan-prefix`, `nan-newest`, and
+`additive` with its one zero step) now certify at 10, 11, 16 and 9 and no
+longer reach the rule. Nine cases carry what they pinned:
+
+| case(s) | what moves | what it pins |
+|---|---|---|
+| `quiet-jitter`, `nan-prefix-jitter`, `nan-newest-jitter` | a fixed ±1 pattern, which the restored test reads as raw-oscillating and never certifies | the quiet threshold (steps of 994 around 1e6: the largest relative step is 994/994036, as the replaced case's first step was 1/1001) and the two index witnesses with their exact counts, 100 and 101 |
+| `quiet-jitter-small`, `nan-prefix-jitter-small`, `nan-newest-jitter-small` | the same patterns under the state floor (values around 5e-4, where the floor is 1e-3) | the relative step's denominator when it is the floor and not the value: a quiet clause that asked for a magnitude would pass every case at 1e6 |
+| `additive-single` | a runaway of 0.02% a step from its first assignment; `stable` is false throughout | the quiet clause counts a window that does not jitter: exactly 100 |
+| `additive-run-in` | the same runaway after eleven shrinking steps of 0.94% down to 0.14%; for nine iterations `stable` is true and the last step is quiet | the quiet clause does not ask `stable`: exactly 100, where a clause that also required `!stable` stalls at 109 |
+| `monotone-decay` | steps that shrink from 0.89% and stay above the quiet threshold through iteration 135, `stable` true from the first full window | the quiet clause reads the step and not the predicate: it certifies at 145, where a clause that fell back on `stable` stalls at 109 |
+
+The set was sized by measurement, not by argument. 1,045 edits of the stall
+reader, of the loop's counter and of the 24 functions the reader calls (994
+single edits made by rule, and 51 written by hand, a few of which move a
+whole arm) were each built on both sides of #2407 and run against that side's
+contract (#2427 has the population's rules, the table and the runs). 971
+build to a changed binary. The contract before #2407 sees 407 of them; this
+one sees 399 of those 407, and 43 that the earlier one does not. Of the other
+eight, seven change when the loop's own condition ends the loop and not what
+the stall reader decides (at every call that the clean and the edited build
+both make, it decides the same), and that condition is the `converged` test
+#2407 replaces. The eighth deletes the only assignment of a variable that is
+then read: the compiler reports it, and two compilers build it to different
+behaviour. What the population does not hold (an edit of two places, a gate
+of two comparisons, an integer subject, the entropy route of the quiet test)
+is on #2434.
 
 R31-5 pins the three alternation exits to `stalled` in 100..112, allowing
 the incumbent oscillator to fill before counting. The damped control stays
-`1454 normal converged`. HD1b and LE1b each pin their amended-rule count100.
+`1454 normal converged`.
 The ordering plant moves the actual early return, not commutative OR terms;
 its finite-only amplitude test must not suppress a current infinity.
 

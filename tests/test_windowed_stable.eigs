@@ -1,5 +1,7 @@
-# R3.1 D1: stable requires a full finite W+1-value window inside the 1%
-# ball about its midrange; all-exact windows use the absolute tolerance.
+# stable (restored by the Round 3 reveal, #2407): a full window of ten finite
+# steps, each under 1% of the larger value it joins, no two steps in a row of
+# opposite sign both above 0.1%, and no raw runaway or swing. Each reason
+# below is tools/reveal_restored_reference.py's (branch mode).
 # get_observer_thresholds retains compiled h_low for nonnumeric bindings.
 
 print of "=== WINDOWED STABLE (docs/PREDICATES.md, #205) ==="
@@ -8,7 +10,7 @@ define want(tag, got, exp) as:
     assert of [got == exp, f"{tag}: stable expected {exp} got {got}"]
     print of f"  PASS: {tag} (stable={got})"
 
-# WS1: broad finite drift is outside the midrange ball.
+# WS1: a +2 linear climb is a raw runaway (and 2/32 > 1%).
 a is 30.0
 a is 32.0
 a is 34.0
@@ -21,9 +23,9 @@ a is 46.0
 a is 48.0
 a is 50.0
 # #861 re-pin: value route: +2/step linear climb -> diverging; entropy small-dH "stable" was the additive-runaway blindness (#422)
-want of ["WS1 broad full-window drift is outside midrange band", stable, false]
+want of ["WS1 linear climb is not stable", stable, false]
 
-# WS2: constant2 is inside the ball.
+# WS2: constant2: every step is 0.
 b is 2.0
 b is 2.0
 b is 2.0
@@ -50,7 +52,7 @@ c is 46.0
 c is 48.0
 want of ["WS3 partial window does not fire", stable, false]
 
-# WS4: the jump makes the full value window exceed the midrange ball.
+# WS4: the jump to 200 is a step of 71%.
 d is 40.0
 d is 42.0
 d is 44.0
@@ -62,9 +64,9 @@ d is 54.0
 d is 56.0
 d is 58.0
 d is 200.0
-want of ["WS4 window with a jump is outside midrange band", stable, false]
+want of ["WS4 window with a jump is not stable", stable, false]
 
-# WS5: constant1e6 is inside the ball at any magnitude.
+# WS5: constant1e6 is stable at any magnitude.
 e is 1000000.0
 e is 1000000.0
 e is 1000000.0
@@ -78,7 +80,7 @@ e is 1000000.0
 e is 1000000.0
 want of ["WS5 constant1e6 is stable", stable, true]
 
-# WS6: the 70..75 range exceeds the midrange ball.
+# WS6: the 70/75 swing is a raw oscillation (and 5/75 > 1%).
 f is 70.0
 f is 75.0
 f is 70.0

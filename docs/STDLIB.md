@@ -939,9 +939,9 @@ function and assert a property of the resulting trajectory.
 | `expect_monotone` | `expect_monotone of [x0, step_fn, max_obs, msg]` | Throws on a sign-flipping (oscillating) value trajectory |
 | `invariant_stable` | `invariant_stable of [x0, step_fn, max_obs, msg]` | Throws if the value ever begins moving or oscillating |
 
-Convergence uses the numeric windowed Cauchy test; numeric bindings no
-longer maintain an entropy channel. D1 stability uses the 1% midrange band,
-and D2 improvement uses a significant lower running best within ten steps.
+Convergence uses the numeric 0.1% relative-step band over ten steps;
+numeric bindings no longer maintain an entropy channel. Stability uses the
+1% relative-step band, and D2 improvement uses a significant lower running best within ten steps.
 These tests can overlap; report keeps its existing priority. Convergence is not correctness: pair with `ensure` on the final
 residual. See docs/OBSERVER.md "Contracts" and
 `examples/stem/contract_solver.eigs`.

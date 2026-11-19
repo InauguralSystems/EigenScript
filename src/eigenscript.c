@@ -1550,19 +1550,6 @@ static int obs_num_opposite_inf(const ObserverSlot *s) {
     return 0;
 }
 
-static double obs_num_exact_diameter(const ObserverSlot *s) {
-    int64_t lo = observer_slot_value_get(s, 0).integer, hi = lo;
-    size_t n = obs_num_value_count(s);
-    for (size_t i = 1; i < n; i++) {
-        int64_t v = observer_slot_value_get(s, i).integer;
-        if (v < lo) lo = v;
-        if (v > hi) hi = v;
-    }
-    /* Unsigned subtraction represents the exact nonnegative diameter even
-     * when it exceeds INT64_MAX. Conversion happens only for the tolerance. */
-    return (double)((uint64_t)hi - (uint64_t)lo);
-}
-
 static int obs_num_oscillating(const ObserverSlot *s) {
     if (isnan(s->last_value)) return 0;
     if (isinf(s->last_value)) return obs_num_opposite_inf(s);
@@ -1630,22 +1617,21 @@ static int obs_num_improving(const ObserverSlot *s) {
         && !(n >= full && obs_num_reference_expanding(w, n));
 }
 
-/* STD_converged: windowed Cauchy diameter (Rudin 3.8/3.11), with
- * #1830's absolute tolerance for an all-exact int window. */
+/* Converged, the incumbent's test (v0.47.0, restored by the Round 3 reveal,
+ * #1758 RULING R30R-2, #2407) on this build's observations: a full window of
+ * relative steps (each taken relative to the larger of the two values it
+ * joins and of the scale, an exact-integer step exactly), every one under
+ * dh_zero, and the window neither raw-diverging nor raw-oscillating (a
+ * linear runaway's relative steps vanish while its raw steps do not). A
+ * window holding a value that is not finite is refused. */
 static int obs_num_converged(const ObserverSlot *s) {
-    size_t n = obs_num_value_count(s);
-    if (n < (size_t)observer_slot_window(s) + 1
+    if (obs_v_count(s) < (size_t)observer_slot_window(s)
         || !obs_num_finite_window(s)) return 0;
-    double scale = obs_floor_scale(s);
-    if (observer_slot_all_exact(s))
-        return obs_num_exact_diameter(s) <= g_obs_dh_zero * scale;
-    double lo = s->last_value, hi = lo;
-    for (size_t i = 1; i < n; i++) {
-        double v = observer_slot_value_get(s, i).value;
-        if (v < lo) lo = v;
-        if (v > hi) hi = v;
-    }
-    return hi - lo <= g_obs_dh_zero * obs_fmax(fabs(s->last_value), scale);
+    int all_zero, all_small;
+    obs_num_flags(s, &all_zero, &all_small);
+    if (!all_zero) return 0;
+    if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
+    return 1;
 }
 
 /* A trend needs evidence of motion: exact-zero steps are neutral because
@@ -1687,23 +1673,26 @@ static int obs_num_equilibrium(const ObserverSlot *s) {
     return (var < g_obs_dh_zero * g_obs_dh_zero) ? 1 : 0;
 }
 
-/* D1 = STD'_stable = reference.py stable: the 1% ball is centred
- * at the midrange, not at the mean. Halves first avoid hi+lo overflow. */
+/* Stable, the incumbent's test (v0.47.0, restored by the reveal, #2407) on
+ * this build's observations: small motion. A full window of relative steps,
+ * every one under dh_small, no two steps in a row of opposite sign that are
+ * both above dh_zero, and the window neither raw-diverging nor
+ * raw-oscillating. It may carry steady drift (a harmonic-class crawl reads
+ * stable). A window holding a value that is not finite is refused.
+ * converged implies stable. */
 static int obs_num_stable(const ObserverSlot *s) {
-    size_t n = obs_num_value_count(s);
-    if (n < (size_t)observer_slot_window(s) + 1
-        || !obs_num_finite_window(s)) return 0;
-    double scale = obs_floor_scale(s);
-    if (observer_slot_all_exact(s))
-        return obs_num_exact_diameter(s) <= 2.0 * g_obs_dh_small * scale;
-    double lo = s->last_value, hi = lo;
-    for (size_t i = 1; i < n; i++) {
-        double v = observer_slot_value_get(s, i).value;
-        if (v < lo) lo = v;
-        if (v > hi) hi = v;
+    size_t N = (size_t)observer_slot_window(s);
+    if (obs_v_count(s) < N || !obs_num_finite_window(s)) return 0;
+    if (observer_slot_raw_diverging(s) || observer_slot_raw_oscillating(s)) return 0;
+    int all_zero, all_small;
+    obs_num_flags(s, &all_zero, &all_small);
+    if (!all_small) return 0;
+    for (size_t i = 0; i + 1 < N; i++) {
+        double a = observer_slot_v_get(s, i);
+        double b = observer_slot_v_get(s, i + 1);
+        if (a * b < 0.0 && fabs(a) > g_obs_dh_zero && fabs(b) > g_obs_dh_zero) return 0;
     }
-    return hi / 2.0 - lo / 2.0
-        <= g_obs_dh_small * obs_fmax(fabs(hi / 2.0 + lo / 2.0), scale);
+    return 1;
 }
 
 /* Numeric `report`: the canonical priority order over the family above,
