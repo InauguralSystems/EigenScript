@@ -3291,7 +3291,7 @@ default window. Runtime rules, arms, split and decision rule are unchanged.
 input, but the opposite index error drops the newest. It moves
 `nan-alternating` from 100 to 101 and `nan-period3` from 101 to 102, both
 inside their unchanged `100..112` bands. `nan-newest-jitter` places one NaN in the
-newest prefix slot at iteration 5: the correct reader stalls at 100, while
+newest prefix slot at iteration 5: the correct reader stalls at 101, while
 the reader starting at `values_head - 2 - i` stalls at 105. The two exact
 rows carry the starting index; the R31-5 periodic bands remain unchanged.
 

@@ -121,11 +121,11 @@ CASES = {
     "quiet": ("n is 1000\nx is 1.0 / n", "n is n + 1\nx is 1.0 / n"),
     "harmonic": ("n is 1\nx is 1.0 / n", "n is n + 1\nx is 1.0 / n"),
     "quiet-jitter": ("pat is " + _lit(JITTER_STEPS) + "\ni is 0\nx is 1000000.0\nx is 1000000.0",
-                     "i is i + 1\nx is x + pat[i]"),
+                     "i is i + 1\nx is x + 994.0 * pat[i]"),
     "nan-prefix-jitter": ("vals is " + _lit(JITTER_VALUES) + "\nnan is f64_from_bits of 0x7ff8000000000000"
                           "\ni is 0\nx is nan", "i is i + 1\nx is vals[i]"),
     "nan-newest-jitter": ("vals is " + _lit(JITTER_VALUES) + "\nnan is f64_from_bits of 0x7ff8000000000000"
-                          "\ni is 0\nx is 1000000.0",
+                          "\ni is 0\nx is 5.0",
                           "i is i + 1\ny is vals[i]\nif i == 5:\n    y is nan\nx is y"),
 }
 TIERS = {"off": {"EIGS_JIT_OFF": "1"}, "default": {},
@@ -162,6 +162,8 @@ def correct(case, value):
         return count == 11 and reason == "normal" and certified is True
     if case == "nan-newest":
         return count == 16 and reason == "normal" and certified is True
+    if case == "nan-newest-jitter":
+        return count == 101 and reason == "stalled" and certified is False
     if case in ("alternating", "growing-alternating", "infinite-alternating", "nan-alternating",
                 "nan-period3", "nan-window-edge"):
         return 100 <= count <= 112 and reason == "stalled" and certified is False

@@ -1,4 +1,4 @@
-- Add `nan-newest-jitter`, pinned to exactly 100 stalled iterations without
+- Add `nan-newest-jitter`, pinned to a stall at exactly 101 iterations without
   certification in all four tiers, and the named
   `r319-stall-window-newest` plant under RULING R31-9. A finite subject
   receives one NaN at iteration 5, with x assigned last. Moving the reader
