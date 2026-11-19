@@ -8,13 +8,12 @@ for __ifp_candidate in "$__ifp_root"/build/*/eigenscript; do
     fi
 done
 case "$__ifp_variant" in
-    asan*) ;;
-    *) section_skip "[70ek] requires the hosted asan sanitizer job (current variant: ${__ifp_variant:-direct})"
-       unset __ifp_root __ifp_variant __ifp_candidate
-       echo ""
-       return ;;
+    asan*) __ifp_run=1 ;;
+    *) __ifp_run=0
+       section_skip "[70ek] requires the hosted asan sanitizer job (current variant: ${__ifp_variant:-direct})" ;;
 esac
 
+if [ "$__ifp_run" -eq 1 ]; then
 for __ifp_row in \
     "integer_freelist_paths.eigs:five language lifecycle paths" \
     "integer_freelist_threads.eigs:64-thread detach burst"; do
@@ -56,5 +55,6 @@ else
     FAIL=$((FAIL + 1)); echo "  FAIL: [70ek] attached-host embedding lifecycle (rc=$__ifp_rc, sanitizer=$(lsan_classify_name "$__ifp_out"))"
     printf '%s\n' "$__ifp_out" | eigs_failure_output
 fi
-unset __ifp_root __ifp_variant __ifp_candidate __ifp_row __ifp_file __ifp_name __ifp_out __ifp_rc __ifp_build __ifp_bin __ifp_markers __ifp_exact
+fi
+unset __ifp_root __ifp_variant __ifp_candidate __ifp_run __ifp_row __ifp_file __ifp_name __ifp_out __ifp_rc __ifp_build __ifp_bin __ifp_markers __ifp_exact
 echo ""
