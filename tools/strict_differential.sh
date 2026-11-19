@@ -75,6 +75,7 @@ fi
 SHAPES_ONLY=0
 if [ "${1:-}" = --shapes-only ]; then SHAPES_ONLY=1; shift; fi
 NEW="${EIGS_DIFF_NEW:-./src/eigenscript}"
+RELEASE_MESSAGES="${EIGS_STRICT_RELEASE_MESSAGES:-tests/strict_guard_release_messages.tsv}"
 BASE="${1:-}"
 NO_BASELINE=0
 COMMON_CAPABILITIES=0
@@ -1129,7 +1130,7 @@ check_absent_call() { # each omitted row must reach its exact error contract
 }
 
 rc=0
-n_probe=0; probe_id=0; n_guard=0; n_arithmetic=0; n_release_examined=0; n_release_same=0; n_release_different=0; release_list=""; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_default_ok=0; default_list=""
+n_probe=0; probe_id=0; n_guard=0; n_arithmetic=0; n_release_examined=0; n_release_same=0; n_release_different=0; n_release_capability_skipped=0; release_list=""; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_default_ok=0; default_list=""
 n_pin=0; n_pin_ok=0; n_pin_broke=0; n_misattr=0; n_unrun=0; n_skipped=0
 differ_list=""; silent_list=""; pin_list=""; misattr_list=""; unrun_list=""; skipped_list=""
 NEW_CAPS=""; BASE_CAPS=""; profile_transitions=""; n_profile_rows=0
@@ -1216,6 +1217,22 @@ while IFS='|' read -r kind who prog expect; do
                 check_absent_call "$BASE" "$(state_for baseline "$cap")" "$cap" "${who%%/*}" "$TMP/p.eigs" || rc=1
             fi
         fi
+        if [ "$kind" = guard ]; then
+            release_row=$(awk -F'|' -v id="$probe_id" '$1 == id {print; exit}' "$RELEASE_MESSAGES")
+            if [ -z "$release_row" ]; then
+                release_list="$release_list
+    $who — no v0.48.0 message-table row"; n_release_different=$((n_release_different + 1))
+            else
+                release_rest=${release_row#*|}; release_name=${release_rest%%|*}; release_rest=${release_rest#*|}
+                release_cap=${release_rest%%|*}
+                if [ "$release_name" != "$who" ] || [ "$release_cap" != "$cap" ]; then
+                    release_list="$release_list
+    $who — invalid unavailable-capability message-table provenance"; n_release_different=$((n_release_different + 1))
+                else
+                    n_release_capability_skipped=$((n_release_capability_skipped + 1))
+                fi
+            fi
+        fi
         continue
     fi
     n_probe=$((n_probe + 1))
@@ -1251,13 +1268,31 @@ while IFS='|' read -r kind who prog expect; do
       =1   : $(clip "$s" 90)"; fi
         [ "$trap_message" = 0 ] || default_list="$default_list
     $who — labelled guard but strict error is an arithmetic/domain trap"
-        release_row=$(awk -F'|' -v id="$probe_id" '$1 == id {print; exit}' tests/strict_guard_release_messages.tsv)
+        release_row=$(awk -F'|' -v id="$probe_id" '$1 == id {print; exit}' "$RELEASE_MESSAGES")
         if [ -z "$release_row" ]; then
             release_list="$release_list
     $who — no v0.48.0 message-table row"; n_release_different=$((n_release_different + 1))
         else
+            release_rest=${release_row#*|}
+            release_name=${release_rest%%|*}; release_rest=${release_rest#*|}
+            release_cap=${release_rest%%|*}; release_rest=${release_rest#*|}
+            release_build=${release_rest%%|*}; release_receipt=${release_rest#*|}
+            if [ "$release_name" != "$who" ]; then
+                release_list="$release_list
+    $who — message-table row names $release_name"; n_release_different=$((n_release_different + 1))
+            elif [ "$release_cap" != core ] && [ "$release_cap" != "$cap" ]; then
+                release_list="$release_list
+    $who — message-table capability is $release_cap, derived capability is ${cap:-core}"; n_release_different=$((n_release_different + 1))
+            elif [ "$release_cap" = core ] && [ -n "$cap" ]; then
+                release_list="$release_list
+    $who — message-table capability is core, derived capability is $cap"; n_release_different=$((n_release_different + 1))
+            elif [ -z "$release_build" ] || [ -z "$release_receipt" ]; then
+                release_list="$release_list
+    $who — incomplete release message-table provenance"; n_release_different=$((n_release_different + 1))
+            elif [ "$release_cap" != core ] && [ "$(state_for subject "$release_cap")" != implemented ]; then
+                n_release_capability_skipped=$((n_release_capability_skipped + 1))
+            else
             n_release_examined=$((n_release_examined + 1))
-            release_receipt=${release_row#*|}; release_receipt=${release_receipt#*|}
             if str_has "$release_receipt" "[new in branch; no v0.48.0 guard message]" || str_has "$release_receipt" "[different on purpose:"; then
                 n_release_same=$((n_release_same + 1))
             else
@@ -1269,6 +1304,7 @@ while IFS='|' read -r kind who prog expect; do
     $who
       v0.48.0: $release_first
       current : $current_first"; fi
+            fi
             fi
         fi
     else
@@ -1395,7 +1431,7 @@ fi
 if [ -n "$BASE" ]; then echo "  identical-when-off: $n_ident   differing: $n_differ"
 else echo "  identical-when-off: SKIPPED (--no-baseline)"; fi
 echo "  default contract: $n_default_ok / $n_probe (guards unset==1; arithmetic unset==0)"
-echo "  release guard messages: examined=$n_release_examined same=$n_release_same different=$n_release_different"
+echo "  release guard messages: examined=$n_release_examined same=$n_release_same different=$n_release_different capability_skipped=$n_release_capability_skipped"
 echo "  raises-under-strict: $n_raise   silent: $n_silent   misattributed: $n_misattr"
 [ "$n_unrun" -gt 0 ] && echo "  probes that did not run: $n_unrun"
 echo "  answer-pins held: $n_pin_ok   broken: $n_pin_broke"

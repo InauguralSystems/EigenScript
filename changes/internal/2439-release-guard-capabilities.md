@@ -1,0 +1,1 @@
+- Strict differential release-message checks now use capability-matched release profiles and skip unavailable capability rows (#2439).
