@@ -764,6 +764,10 @@ jobs:
       - name: Verify binary
         run: ./src/eigenscript --version
 
+      - name: Classify compiler-listed floating-to-integer conversions
+        if: matrix.cc == 'clang'
+        run: python3 tools/num_cast_check.py
+
       - name: Run release suite on gcc
         if: github.event_name != 'pull_request' || matrix.cc == 'gcc'
         run: |

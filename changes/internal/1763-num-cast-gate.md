@@ -1,1 +1,1 @@
-- Added a recursive source census and exact review ledger for floating-point conversions to C integer types (#1763).
+- Replaced the textual number-cast scanner with a Clang-AST census of hosted build profiles; unreviewed compiler-listed conversions now remain red (#1763).
