@@ -604,6 +604,14 @@ def selftest():
             if not ok:
                 print(result.stdout)
             p.write_text(original)
+            p.write_text(original + '\nAn explicit `EIGS_STRICT=1` setting opts into strict mode.\n')
+            result = gate()
+            ok = result.returncode == 0
+            passed += ok
+            print(f'SELFTEST: strict-explicit-setting: {"PASS" if ok else "FAIL"}')
+            if not ok:
+                print(result.stdout)
+            p.write_text(original)
             p = tree / 'tests/test_doc_examples.py'
             original = p.read_text()
             p.write_text(original.replace('"README.md":', '# "README.md":', 1))
@@ -624,8 +632,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 19 case(s) run, {passed} passed, {19-passed} failed')
-            return 0 if passed == 19 else 1
+            print(f'SELFTEST: 20 case(s) run, {passed} passed, {20-passed} failed')
+            return 0 if passed == 20 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 
