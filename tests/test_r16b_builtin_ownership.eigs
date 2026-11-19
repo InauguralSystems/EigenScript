@@ -22,13 +22,13 @@ for iteration in range of 30:
     assert_eq of [num_type of decoded[0], "int", "decoded heap kind"]
     assert_eq of [scan_ints of "9007199254740993 -9223372036854775808", [big, imin], "C3 exact scanners"]
     caught is 0
-    for thunk in [(x) => hex of (0 - x), (x) => range of x, (x) => abs of imin, (x) => scan_ints of "9007199254740993 9223372036854775808", (x) => scan_int_tokens of "9007199254740993 9223372036854775808", (x) => sign_extend of [-9223372036854775553, 8], (x) => min of [], (x) => max of ([])]:
+    for thunk in [(x) => hex of (0 - x), (x) => range of x, (x) => abs of imin, (x) => scan_ints of "9007199254740993 9223372036854775808", (x) => scan_int_tokens of "9007199254740993 9223372036854775808", (x) => sign_extend of [-9223372036854775553, 8], (x) => sign_extend of [1e30, 8], (x) => sign_extend of [255, 1e30], (x) => min of [], (x) => max of ([])]:
         try:
             thunk of big
         catch e:
             assert_eq of [e.kind, "value", "exact-reader refusal kind"]
             caught += 1
-    assert_eq of [caught, 8, "all reader raises reached"]
+    assert_eq of [caught, 10, "all reader raises reached"]
     ch is channel of null
     send of [ch, big]
     assert_eq of [recv of ch, big, "heap int through channel with int handle"]
