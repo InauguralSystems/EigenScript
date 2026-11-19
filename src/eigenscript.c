@@ -2121,6 +2121,19 @@ void eigs_thread_drain_caches(EigsThread *th) {
     }
     th->num_freelist = NULL;
     th->num_freelist_count = 0;
+    /* #2433 prototype: the thread owns both disjoint box pools; detach ends
+     * every parked int's lifetime just as it does every parked float's. */
+    vn = th->int_freelist;
+    while (vn) {
+        Value *next;
+        eigs_num_park_unpoison(vn);
+        EIGS_VG_DEFINED(vn, sizeof(*vn));
+        memcpy(&next, EIGS_NUM_LINK(vn), sizeof(next));
+        free(vn);
+        vn = next;
+    }
+    th->int_freelist = NULL;
+    th->int_freelist_count = 0;
 
     /* Private promoted keys are Value-owned in the state registry; detaching
      * their creator must not release keys still borrowed by surviving Values. */
@@ -2197,6 +2210,23 @@ void free_value(Value *v) {
         }
 #endif  /* EIGS_POOL_OFF_NUM (#1665): never park — a refcount-0 NUM is free()d so
          * ASan sees its lifetime end at the real system-allocator boundary. */
+        free(v);
+        return;
+    }
+    if (v->type == VAL_INT) {
+#ifndef EIGS_POOL_OFF_NUM
+        /* #2433 prototype: free_value owns the final ref and transfers that
+         * dead VAL_INT box to the INT-only pool. It never enters the FLOAT
+         * freelist, preserving R1.3's representation separation. */
+        if (g_int_freelist_count < INT_FREELIST_CAP) {
+            memcpy(EIGS_NUM_LINK(v), &g_int_freelist, sizeof(Value *));
+            g_int_freelist = v;
+            g_int_freelist_count++;
+            EIGS_VG_NOACCESS(&v->refcount, sizeof(v->refcount));
+            eigs_num_park_poison(v);
+            return;
+        }
+#endif
         free(v);
         return;
     }
@@ -2303,9 +2333,24 @@ static inline Value *make_float_pooled(double n) {
 Value *make_float(double n) { return make_float_pooled(n); }
 
 /* #1758 R1.3: large int slots and Value API boundaries own ordinary heap
- * Values. Int boxes never enter the float freelist and own no GC edges. */
+ * Values. #2433 prototype: they reuse a separate INT-only list, never the
+ * float freelist, and still own no GC edges. make_int takes sole ownership
+ * of a dead box from that list and restores a fresh refcount. */
 Value* make_int(int64_t n) {
-    Value *v = xcalloc(1, sizeof(Value));
+    Value *v;
+#ifndef EIGS_POOL_OFF_NUM
+    if (g_int_freelist) {
+        v = g_int_freelist;
+        memcpy(&g_int_freelist, EIGS_NUM_LINK(v), sizeof(Value *));
+        g_int_freelist_count--;
+        EIGS_VG_DEFINED(&v->refcount, sizeof(v->refcount));
+        eigs_num_park_unpoison(v);
+        memset(v, 0, sizeof(Value));
+    } else
+#endif
+    {
+        v = xcalloc(1, sizeof(Value));
+    }
     v->type = VAL_INT;
     VAL_I64_RAW(v) = n;
     v->refcount = 1;
