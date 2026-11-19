@@ -2473,7 +2473,7 @@ Value* builtin_json_path(Value *arg) {
             return make_null();
         }
     }
-    /* fs:STRICT the g_strict block above raised on a parse failure; the soft
+    /* fs:STRICT the strict-guard block above raised on a parse failure; the soft
      * "" is the flag-off path (unchanged since before #971 Phase C). */
     if (!root) return make_str("");
     Value *current = root;   /* walks borrowed children of root */

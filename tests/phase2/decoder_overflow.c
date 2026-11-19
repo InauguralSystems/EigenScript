@@ -109,7 +109,7 @@ int main(void) {
     if (!st) return 2;
     const char *bad[] = {"1e400", "-1e400", "[1,1e400,2]", "{\"v\":-1e400}"};
     for (int mode = 0; mode < 2; mode++) {
-        g_strict = mode;
+        g_strict_arithmetic = mode;
         for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
             eigs_clear_error();
             int pos = 0;

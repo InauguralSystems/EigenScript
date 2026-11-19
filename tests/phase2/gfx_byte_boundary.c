@@ -87,7 +87,7 @@ static void gfx_byte_exercise(int ppu, int strict, const GfxByteCase *c,
         gfx_byte_check(rc == 0 && clear_rc == 0, client, strict, c->name,
                        "real renderer starts white");
     }
-    g_strict = strict;
+    g_strict_guards = strict;
     gfx_byte_clear_error();
     int arg_refs = args->refcount, source_refs = source->refcount;
     int frame_refs = frame ? frame->refcount : 0;
@@ -138,7 +138,7 @@ static void gfx_byte_exercise(int ppu, int strict, const GfxByteCase *c,
  * Cleanup finishes inside the callback; the state outlives VM execution. */
 static Value *phase2_reader_probe(Value *arg) {
     (void)arg;
-    g_strict = 1;
+    g_strict_guards = 1;
     Value *pixels = NULL, *memory = NULL, *frame = NULL;
     Value *gfx_args = NULL, *ppu_args = NULL;
     gfx_byte_check(setenv("SDL_VIDEODRIVER", "dummy", 1) == 0,

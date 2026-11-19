@@ -146,7 +146,7 @@ Value* builtin_regex_replace(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "regex_replace requires [string, pattern, replacement]");
         /* fs:CHANNEL the rt_error above already raised on g_has_error (it is
-         * unconditional, not gated on g_strict), so this builtin is ALREADY
+         * unconditional, not gated on strict-guard), so this builtin is ALREADY
          * loud in both modes; the "" only satisfies the C signature, and the VM
          * discards it at the CHECK_ERROR seam. */
         return make_str("");

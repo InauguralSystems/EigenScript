@@ -16,7 +16,7 @@ int main(void) {
     const uint64_t want_bits[] = {UINT64_C(0x7ff8000000000000), UINT64_C(0x7ff8000000000000),
         UINT64_C(0x7ff0000000000000), UINT64_C(0xfff0000000000000), UINT64_C(0x8000000000000000)};
     for (int strict = 0; strict <= 1; ++strict) {
-        g_strict = strict;
+        g_strict_guards = strict;
         EigsValue *b = eigs_value_new_buffer(5);
         for (int i = 0; i < 5; ++i) {
             double x; memcpy(&x, &bits[i], sizeof x);

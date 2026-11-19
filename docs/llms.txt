@@ -360,11 +360,7 @@ false
   (-64,64) give zero (Lua 5.4).
   A bit-op operand that is not an exact integer (`1.5 | 0`, `1e30 & 1`)
   raises a `value` error; it is never truncated.
-  Strict mode is opt-in: `EIGS_STRICT=1` traps non-finite arithmetic
-  results, wrong-typed builtin arguments (`abs of "x"`) and malformed
-  `json_path` documents with catchable errors. With the variable unset or
-  set to `0`, arithmetic keeps its IEEE results and the legacy argument
-  stand-ins remain (`abs of "x"` is `0.0`).
+  `EIGS_STRICT` has three states. Unset or empty raises wrong-typed builtin arguments (`abs of "x"`) and malformed `json_path` documents, while arithmetic keeps IEEE results. `1` adds traps for non-finite arithmetic results. `0` keeps IEEE results and legacy argument stand-ins (`abs of "x"` is `0.0`).
   Indexing and iteration refuse stored NaN and infinity with `value` in
   every strict mode, matching `get_at` (N13). Strict NaN keeps its first
   diagnostic and sets `math_flags.invalid`; every execution tier agrees on

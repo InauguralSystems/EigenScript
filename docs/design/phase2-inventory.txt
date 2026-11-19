@@ -1816,68 +1816,68 @@ eigenscript.h:329 #define VAL_I64_RAW VAL_I64_RAW RAW b
 eigenscript.h:329 #define VAL_I64_RAW i64_ RAW b
 eigenscript.h:330 #define VAL_F64_OFFSET VAL_F64_OFFSET RAW b
 eigenscript.h:330 #define VAL_F64_OFFSET f64_ RAW b
-eigenscript.h:1473 <file scope> eigs_number_read READ b
-eigenscript.h:1480 <file scope> eigs_number_arg READ b
-eigenscript.h:1481 <file scope> eigs_list_number READ b
-eigenscript.h:1482 <file scope> eigs_elem_number READ b
-eigenscript.h:1483 <file scope> eigs_opt_number READ b
-eigenscript.h:1484 <file scope> eigs_float_arg READ b
-eigenscript.h:1485 <file scope> eigs_list_float READ b
-eigenscript.h:1486 <file scope> eigs_elem_float READ b
-eigenscript.h:1487 <file scope> eigs_opt_float READ b
-eigenscript.h:1488 <file scope> eigs_int_arg READ b
-eigenscript.h:1489 <file scope> eigs_list_int READ b
-eigenscript.h:1490 <file scope> eigs_elem_int READ b
-eigenscript.h:1491 <file scope> eigs_opt_int READ b
-eigenscript.h:1492 <file scope> eigs_byte_arg READ b
-eigenscript.h:1493 <file scope> eigs_list_byte READ b
-eigenscript.h:1494 <file scope> eigs_elem_byte READ b
-eigenscript.h:1495 <file scope> eigs_opt_byte READ b
-eigenscript.h:1496 <file scope> eigs_int_arg_range READ b
-eigenscript.h:1497 <file scope> eigs_list_int_range READ b
-eigenscript.h:1498 <file scope> eigs_elem_int_range READ b
-eigenscript.h:1499 <file scope> eigs_opt_int_range READ b
-eigenscript.h:1509 <file scope> eigs_geom_shape READ b
-eigenscript.h:1511 <file scope> eigs_bounded_arg READ b
-eigenscript.h:1512 <file scope> eigs_list_bounded READ b
-eigenscript.h:1513 <file scope> eigs_elem_bounded READ b
-eigenscript.h:1514 <file scope> eigs_opt_bounded READ b
-eigenscript.h:1515 <file scope> eigs_magnitude_arg READ b
-eigenscript.h:1516 <file scope> eigs_list_magnitude READ b
-eigenscript.h:1517 <file scope> eigs_elem_magnitude READ b
-eigenscript.h:1518 <file scope> eigs_opt_magnitude READ b
-eigenscript.h:1892 <file scope> make_float PRODUCE c
-eigenscript.h:1893 <file scope> make_float_permanent PRODUCE c
-eigenscript.h:1894 <file scope> make_int PRODUCE c
-eigenscript.h:1963 eigs_math_result_named eigs_math_result_named GUARD c
-eigenscript.h:1967 eigs_math_result eigs_math_result GUARD c
-eigenscript.h:1968 eigs_math_result eigs_math_result_named GUARD c
-eigenscript.h:1976 num_to_i64_exact num_to_i64_exact READ b
-eigenscript.h:1995 <file scope> buffer_read_f64 READ b
-eigenscript.h:1996 <file scope> buffer_byte_at READ b
-eigenscript.h:1997 <file scope> buffer_index_at READ b
-eigenscript.h:2311 <file scope> eigs_num_text FORMAT e
-eigs_embed.c:381 embed_f64 number RAW j
-eigs_embed.c:382 embed_f64 number RAW j
-eigs_embed.c:382 embed_f64 slot_from_f64 PRODUCE j
-eigs_embed.c:383 embed_f64 SLOT_F64_RAW RAW j
-eigs_embed.c:386 eigs_value_new_num make_float PRODUCE j
-eigs_embed.c:387 eigs_value_new_int make_int PRODUCE j
-eigs_embed.c:400 eigs_value_type VAL_FLOAT CASE j
-eigs_embed.c:401 eigs_value_type VAL_INT CASE j
-eigs_embed.c:445 eigs_value_as_num eigs_value_as_num READ j
-eigs_embed.c:451 eigs_value_as_num VAL_I64_RAW RAW j
-eigs_embed.c:451 eigs_value_as_num VAL_INT TEST j
-eigs_embed.c:452 eigs_value_as_num VAL_F64_RAW RAW j
-eigs_embed.c:452 eigs_value_as_num VAL_FLOAT TEST j
-eigs_embed.c:459 eigs_value_as_int VAL_INT TEST j
-eigs_embed.c:461 eigs_value_as_int VAL_I64_RAW RAW j
-eigs_embed.c:463 eigs_value_as_int VAL_FLOAT TEST j
-eigs_embed.c:469 eigs_value_as_int VAL_F64_RAW RAW j
-eigs_embed.c:469 eigs_value_as_int num_to_i64_exact READ j
-eigs_embed.c:479 eigs_value_is_int VAL_INT TEST j
-eigs_embed.c:682 eigs_trace_declare_kind VAL_FLOAT DATA j
-eigs_embed.c:682 eigs_trace_declare_kind VAL_INT DATA j
+eigenscript.h:1468 <file scope> eigs_number_read READ b
+eigenscript.h:1475 <file scope> eigs_number_arg READ b
+eigenscript.h:1476 <file scope> eigs_list_number READ b
+eigenscript.h:1477 <file scope> eigs_elem_number READ b
+eigenscript.h:1478 <file scope> eigs_opt_number READ b
+eigenscript.h:1479 <file scope> eigs_float_arg READ b
+eigenscript.h:1480 <file scope> eigs_list_float READ b
+eigenscript.h:1481 <file scope> eigs_elem_float READ b
+eigenscript.h:1482 <file scope> eigs_opt_float READ b
+eigenscript.h:1483 <file scope> eigs_int_arg READ b
+eigenscript.h:1484 <file scope> eigs_list_int READ b
+eigenscript.h:1485 <file scope> eigs_elem_int READ b
+eigenscript.h:1486 <file scope> eigs_opt_int READ b
+eigenscript.h:1487 <file scope> eigs_byte_arg READ b
+eigenscript.h:1488 <file scope> eigs_list_byte READ b
+eigenscript.h:1489 <file scope> eigs_elem_byte READ b
+eigenscript.h:1490 <file scope> eigs_opt_byte READ b
+eigenscript.h:1491 <file scope> eigs_int_arg_range READ b
+eigenscript.h:1492 <file scope> eigs_list_int_range READ b
+eigenscript.h:1493 <file scope> eigs_elem_int_range READ b
+eigenscript.h:1494 <file scope> eigs_opt_int_range READ b
+eigenscript.h:1504 <file scope> eigs_geom_shape READ b
+eigenscript.h:1506 <file scope> eigs_bounded_arg READ b
+eigenscript.h:1507 <file scope> eigs_list_bounded READ b
+eigenscript.h:1508 <file scope> eigs_elem_bounded READ b
+eigenscript.h:1509 <file scope> eigs_opt_bounded READ b
+eigenscript.h:1510 <file scope> eigs_magnitude_arg READ b
+eigenscript.h:1511 <file scope> eigs_list_magnitude READ b
+eigenscript.h:1512 <file scope> eigs_elem_magnitude READ b
+eigenscript.h:1513 <file scope> eigs_opt_magnitude READ b
+eigenscript.h:1887 <file scope> make_float PRODUCE c
+eigenscript.h:1888 <file scope> make_float_permanent PRODUCE c
+eigenscript.h:1889 <file scope> make_int PRODUCE c
+eigenscript.h:1958 eigs_math_result_named eigs_math_result_named GUARD c
+eigenscript.h:1962 eigs_math_result eigs_math_result GUARD c
+eigenscript.h:1963 eigs_math_result eigs_math_result_named GUARD c
+eigenscript.h:1971 num_to_i64_exact num_to_i64_exact READ b
+eigenscript.h:1990 <file scope> buffer_read_f64 READ b
+eigenscript.h:1991 <file scope> buffer_byte_at READ b
+eigenscript.h:1992 <file scope> buffer_index_at READ b
+eigenscript.h:2306 <file scope> eigs_num_text FORMAT e
+eigs_embed.c:384 embed_f64 number RAW j
+eigs_embed.c:385 embed_f64 number RAW j
+eigs_embed.c:385 embed_f64 slot_from_f64 PRODUCE j
+eigs_embed.c:386 embed_f64 SLOT_F64_RAW RAW j
+eigs_embed.c:389 eigs_value_new_num make_float PRODUCE j
+eigs_embed.c:390 eigs_value_new_int make_int PRODUCE j
+eigs_embed.c:403 eigs_value_type VAL_FLOAT CASE j
+eigs_embed.c:404 eigs_value_type VAL_INT CASE j
+eigs_embed.c:448 eigs_value_as_num eigs_value_as_num READ j
+eigs_embed.c:454 eigs_value_as_num VAL_I64_RAW RAW j
+eigs_embed.c:454 eigs_value_as_num VAL_INT TEST j
+eigs_embed.c:455 eigs_value_as_num VAL_F64_RAW RAW j
+eigs_embed.c:455 eigs_value_as_num VAL_FLOAT TEST j
+eigs_embed.c:462 eigs_value_as_int VAL_INT TEST j
+eigs_embed.c:464 eigs_value_as_int VAL_I64_RAW RAW j
+eigs_embed.c:466 eigs_value_as_int VAL_FLOAT TEST j
+eigs_embed.c:472 eigs_value_as_int VAL_F64_RAW RAW j
+eigs_embed.c:472 eigs_value_as_int num_to_i64_exact READ j
+eigs_embed.c:482 eigs_value_is_int VAL_INT TEST j
+eigs_embed.c:685 eigs_trace_declare_kind VAL_FLOAT DATA j
+eigs_embed.c:685 eigs_trace_declare_kind VAL_INT DATA j
 eigs_embed.h:176 <file scope> eigs_value_as_num READ j
 embed_concurrent.c:106 global_worker eigs_value_as_num READ j
 embed_concurrent.c:768 take_drain eigs_value_as_num READ j
@@ -1915,37 +1915,37 @@ embed_smoke.c:913 main eigs_value_as_num READ j
 embed_smoke.c:931 main eigs_value_as_num READ j
 embed_smoke.c:940 main eigs_value_as_num READ j
 embed_smoke.c:1004 main eigs_value_as_num READ j
-embed_smoke.c:1020 main eigs_value_as_num READ j
-embed_smoke.c:1309 main eigs_value_as_num READ j
-embed_smoke.c:1352 main eigs_value_as_num READ j
-embed_smoke.c:1358 main eigs_value_as_num READ j
-embed_smoke.c:1362 main eigs_value_as_num READ j
-embed_smoke.c:1396 main eigs_value_as_num READ j
-embed_smoke.c:1474 main eigs_value_as_num READ j
-embed_smoke.c:1485 main eigs_value_as_num READ j
-embed_smoke.c:1515 main SLOT_F64_RAW WRITE j
-embed_smoke.c:1546 main eigs_value_as_num READ j
-embed_smoke.c:1556 main eigs_value_as_num READ j
-embed_smoke.c:1568 main eigs_value_as_num READ j
-embed_smoke.c:1568 main eigs_value_as_num READ j
-embed_smoke.c:1580 main eigs_value_as_num READ j
-embed_smoke.c:1589 main eigs_value_as_num READ j
-embed_smoke.c:1607 main eigs_value_as_num READ j
-embed_smoke.c:1667 main eigs_value_as_num READ j
-embed_smoke.c:1679 main eigs_value_as_num READ j
-embed_smoke.c:1683 main eigs_value_as_num READ j
-embed_smoke.c:1688 main eigs_value_as_num READ j
-embed_smoke.c:1730 main eigs_value_as_num READ j
-embed_smoke.c:1735 main eigs_value_as_num READ j
-embed_smoke.c:1744 main eigs_value_as_num READ j
-embed_smoke.c:1763 main eigs_value_as_num READ j
-embed_smoke.c:1767 main eigs_value_as_num READ j
-embed_smoke.c:1776 main eigs_value_as_num READ j
-embed_smoke.c:1785 main eigs_value_as_num READ j
-embed_smoke.c:1792 main eigs_value_as_num READ j
-embed_smoke.c:1848 main eigs_value_as_num READ j
-embed_smoke.c:1872 main eigs_value_as_num READ j
-embed_smoke.c:1899 main eigs_value_as_num READ j
+embed_smoke.c:1021 main eigs_value_as_num READ j
+embed_smoke.c:1310 main eigs_value_as_num READ j
+embed_smoke.c:1354 main eigs_value_as_num READ j
+embed_smoke.c:1360 main eigs_value_as_num READ j
+embed_smoke.c:1364 main eigs_value_as_num READ j
+embed_smoke.c:1398 main eigs_value_as_num READ j
+embed_smoke.c:1476 main eigs_value_as_num READ j
+embed_smoke.c:1487 main eigs_value_as_num READ j
+embed_smoke.c:1517 main SLOT_F64_RAW WRITE j
+embed_smoke.c:1548 main eigs_value_as_num READ j
+embed_smoke.c:1558 main eigs_value_as_num READ j
+embed_smoke.c:1570 main eigs_value_as_num READ j
+embed_smoke.c:1570 main eigs_value_as_num READ j
+embed_smoke.c:1582 main eigs_value_as_num READ j
+embed_smoke.c:1591 main eigs_value_as_num READ j
+embed_smoke.c:1609 main eigs_value_as_num READ j
+embed_smoke.c:1669 main eigs_value_as_num READ j
+embed_smoke.c:1681 main eigs_value_as_num READ j
+embed_smoke.c:1685 main eigs_value_as_num READ j
+embed_smoke.c:1690 main eigs_value_as_num READ j
+embed_smoke.c:1732 main eigs_value_as_num READ j
+embed_smoke.c:1737 main eigs_value_as_num READ j
+embed_smoke.c:1746 main eigs_value_as_num READ j
+embed_smoke.c:1765 main eigs_value_as_num READ j
+embed_smoke.c:1769 main eigs_value_as_num READ j
+embed_smoke.c:1778 main eigs_value_as_num READ j
+embed_smoke.c:1787 main eigs_value_as_num READ j
+embed_smoke.c:1794 main eigs_value_as_num READ j
+embed_smoke.c:1850 main eigs_value_as_num READ j
+embed_smoke.c:1874 main eigs_value_as_num READ j
+embed_smoke.c:1901 main eigs_value_as_num READ j
 ext_db.c:59 db_build_query VAL_INT TEST h
 ext_db.c:60 db_build_query VAL_I64_RAW RAW h
 ext_db.c:62 db_build_query VAL_FLOAT TEST h

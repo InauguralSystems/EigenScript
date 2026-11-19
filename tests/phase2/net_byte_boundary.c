@@ -30,7 +30,7 @@ static Value *phase2_reader_probe(Value *arg) {
             Value *args = make_list_heap(2);
             list_append(args, handle);
             list_append(args, buffer);
-            g_strict = strict;
+            g_strict_guards = strict;
             clear_error();
             Value *answer = builtin_net_send(args);
             int raised = g_has_error;

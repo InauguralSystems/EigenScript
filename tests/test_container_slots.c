@@ -75,10 +75,10 @@ int main(int argc, char **argv) {
     CHECK(list_values_storage(list)[3].u == SLOT_FALSE_BITS);
     /* The NaN guard: the default x86 NaN must never be stored as null bits. */
     {
-        int strict = g_strict;
-        g_strict = 0;
+        int strict = g_strict_guards;
+        g_strict_guards = 0;
         list_set_f64(list, 4, -__builtin_nan(""));
-        g_strict = strict;
+        g_strict_guards = strict;
         CHECK(slot_is_f64(list_values_storage(list)[4]));
     }
     EigsSlot taken = list_take_slot(list, 0);

@@ -213,7 +213,7 @@ int main(void) {
      * It must raise at the owning header before another binding/body write.
      * Two ordinary host-buffer elements exercise both successful iteration
      * and the later strict NaN read without manufacturing bytecode. */
-    int nf_saved_strict = g_strict;
+    int nf_saved_strict = g_strict_arithmetic;
     unsigned nf_saved_flags = g_math_flags;
     eigs_clear_error();
     eigs_state_set_strict(st, 1);

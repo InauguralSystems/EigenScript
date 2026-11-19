@@ -12,10 +12,9 @@
 #                           ARG_GUARD_PRETAKE / STRICT_REQUIRE / STRICT_DOMAIN /
 #                           eigs_math_result_named; a guarded name with no probe fails
 #   pins                    documented answers must not raise under strict
-#   unset-equals-plain      R2.2: strict is opt-in, so every probe row
-#                           (and every pixel row) run with EIGS_STRICT UNSET
-#                           must equal its EIGS_STRICT=0 run: stdout+stderr+rc.
-#                           Needs no baseline, so it runs in suite [99s] too.
+#   guard-default          every guard probe run with EIGS_STRICT unset must
+#                           raise exactly as under EIGS_STRICT=1. Arithmetic
+#                           probes (below) remain values when unset or 0.
 #   identical-when-off      baseline vs subject under an explicit EIGS_STRICT=0
 #                           (the default since R2.2), stdout+stderr+rc; valid-input rows in all
 #                           three modes (unset, 0, 1) when a baseline is given
@@ -1130,7 +1129,7 @@ check_absent_call() { # each omitted row must reach its exact error contract
 }
 
 rc=0
-n_probe=0; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_unset_eq=0; unset_list=""; nondeterministic_list=""
+n_probe=0; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_guard_default=0; guard_default_list=""
 n_pin=0; n_pin_ok=0; n_pin_broke=0; n_misattr=0; n_unrun=0; n_skipped=0
 differ_list=""; silent_list=""; pin_list=""; misattr_list=""; unrun_list=""; skipped_list=""
 NEW_CAPS=""; BASE_CAPS=""; profile_transitions=""; n_profile_rows=0
@@ -1234,17 +1233,21 @@ while IFS='|' read -r who prog expect; do
     fi
     s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
     s_rc="${s%%$'\n'*}"
-    unset_equals_plain "$NEW" "$TMP/p.eigs"
-    u="$UEP_UNSET"; plain="$UEP_PLAIN"; plain_again="$UEP_PLAIN_AGAIN"; comparison="$UEP_CLASS"
-    if [ "$comparison" = same ]; then n_unset_eq=$((n_unset_eq + 1))
-    elif [ "$comparison" = nondeterministic ]; then nondeterministic_list="$nondeterministic_list
-    $who
-      =0 run 1: $(clip "$plain" 90)
-      =0 run 2: $(clip "$plain_again" 90)"
-    else unset_list="$unset_list
+    u="$(run_capture "$NEW" - "$TMP/p.eigs")"
+    if [ "$u" = "$s" ]; then n_guard_default=$((n_guard_default + 1))
+    else guard_default_list="$guard_default_list
     $who
       unset: $(clip "$u" 90)
-      =0   : $(clip "$plain" 90)"; fi
+      =1   : $(clip "$s" 90)"; fi
+    # When the release oracle is supplied, its default guard message is the
+    # byte-for-byte contract as well as its raised status.
+    if [ -n "$BASE" ] && [ -z "$cap" ]; then
+        old_u="$(run_capture "$BASE" - "$TMP/p.eigs")"
+        [ "$u" = "$old_u" ] || guard_default_list="$guard_default_list
+    $who (last-release message differs)
+      old  : $(clip "$old_u" 90)
+      new  : $(clip "$u" 90)"
+    fi
     why="$(run_did_not_measure "$s_rc")"
     if [ -n "$why" ]; then
         n_unrun=$((n_unrun + 1))
@@ -1351,7 +1354,7 @@ if [ -n "$profile_transitions" ]; then
 fi
 if [ -n "$BASE" ]; then echo "  identical-when-off: $n_ident   differing: $n_differ"
 else echo "  identical-when-off: SKIPPED (--no-baseline)"; fi
-echo "  unset-equals-plain: $n_unset_eq / $n_probe"
+echo "  guard-default (unset equals =1): $n_guard_default / $n_probe"
 echo "  raises-under-strict: $n_raise   silent: $n_silent   misattributed: $n_misattr"
 [ "$n_unrun" -gt 0 ] && echo "  probes that did not run: $n_unrun"
 echo "  answer-pins held: $n_pin_ok   broken: $n_pin_broke"
@@ -1360,8 +1363,7 @@ if [ -n "$BASE" ]; then
     echo "  expanded valid rows mode-identical (subject rc=0, unset=0=1; baseline absence verified): $((n_valid_expanded - n_valid_expanded_bad)) / $n_valid_expanded"
     echo "  absent valid rows (exact absence verified; NOT valid successes): $n_valid_absent"
 fi
-[ -n "$unset_list" ] && { echo "  UNSET DIFFERS FROM EIGS_STRICT=0 (strict must be opt-in):$unset_list"; rc=1; }
-[ -n "$nondeterministic_list" ] && { echo "  NONDETERMINISTIC (not a flag difference):$nondeterministic_list"; rc=1; }
+[ -n "$guard_default_list" ] && { echo "  GUARD DEFAULT CONTRACT FAILED:$guard_default_list"; rc=1; }
 [ -n "$differ_list" ] && { echo "  DIFFERING (the EIGS_STRICT=0 path was NOT preserved):$differ_list"; rc=1; }
 [ -n "$silent_list" ] && { echo "  SILENT UNDER STRICT:$silent_list"; rc=1; }
 [ -n "$misattr_list" ] && { echo "  RAISED BY THE WRONG GUARD (probe does not reach its target):$misattr_list"; rc=1; }

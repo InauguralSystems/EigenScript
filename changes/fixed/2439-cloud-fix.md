@@ -1,1 +1,1 @@
-- Document argument guards and IEEE trap changes (#2439).
+- Wrong-typed builtin arguments raise again by default as in the last release, while float arithmetic retains IEEE values by default; `EIGS_STRICT=1` adds non-finite arithmetic traps and `EIGS_STRICT=0` selects quiet legacy argument answers (#2439).

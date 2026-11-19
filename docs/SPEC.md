@@ -360,13 +360,15 @@ The IEEE 754 default floating-point environment is part of number semantics.
   `asin`/`acos` outside `[-1, 1]` return NaN; `log of 0` returns `-inf`.
   NaN is unequal to every value, including itself, even inside a list, dict
   or buffer. Comparing NaN never raises or changes math flags.
-- **Strict mode is opt-in with `EIGS_STRICT=1`.** It raises a catchable
-  `value` error when arithmetic produces a non-finite result. With the
-  environment variable unset or set to `0`, these IEEE results remain
-  values. The same switch governs **argument-type guards**: builtins that
-  would answer a wrong-typed argument with a stand-in — `cos of "hello"` as
-  `0`, `str_upper of 42` as `""`, a type mistake read as a plausible value —
-  raise a catchable `type_mismatch` error naming the builtin, across the
+- **`EIGS_STRICT` has three states.** Unset or empty enables argument guards
+  but leaves non-finite IEEE arithmetic results as values. `EIGS_STRICT=1`
+  keeps those guards and additionally raises a catchable `value` error when
+  arithmetic on finite operands produces a non-finite result.
+  `EIGS_STRICT=0` leaves IEEE results as values and selects legacy quiet
+  stand-ins for argument guard failures. The guards cover builtins that would
+  otherwise answer a wrong-typed argument with a stand-in — `cos of "hello"`
+  as `0`, `str_upper of 42` as `""`, or a type mistake read as a plausible
+  value — and raise `type_mismatch` naming the builtin, across the
   whole builtin surface (`builtins.c`, the host builtins, the tensor ops, the
   embedded store, and — since #1007 — the graphics/audio extension, where the
   stand-in is usually `null` rather than `0`/`""`: `gfx_rect of [x, y, w, h,

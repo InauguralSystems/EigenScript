@@ -20,10 +20,7 @@ gfx, audio) require a full build or the `gfx` target.
 > dumps the full surface — every builtin, extension (by group), and lib
 > function with its parameter list — in one call.
 
-> **Strict mode is opt-in (`EIGS_STRICT=1`).** It traps non-finite arithmetic
-> results and enables strict argument guards. By default arithmetic preserves
-> IEEE values; rows with argument-type stand-ins state those results (`0`, `""`,
-> `[]`, `-1`, or another value) explicitly.
+> **`EIGS_STRICT` has three states.** Unset or empty raises argument-guard failures while preserving non-finite IEEE arithmetic values; `1` additionally traps those arithmetic results; `0` preserves IEEE results and selects legacy argument stand-ins (`0`, `""`, `[]`, `-1`, or another value).
 > Documented answers for valid-but-absent input (`index_of` miss `-1`,
 > `file_exists` of a missing path `0`) are the same in both modes
 > (docs/SPEC.md, *Strict mode*).

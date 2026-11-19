@@ -140,10 +140,7 @@ the state is destroyed or the thread exits.
 
 ### Per-state strict mode
 
-Strict mode is opt-in. At creation, each state independently snapshots
-`EIGS_STRICT`; unset, empty or `0` keeps default IEEE arithmetic and the
-legacy argument-type stand-ins. `EIGS_STRICT=1` traps non-finite arithmetic
-and enables strict argument guards. An embedder can supersede that
+At creation, each state independently snapshots `EIGS_STRICT`. Unset or empty enables argument guards while preserving IEEE arithmetic results; `0` disables guards and preserves IEEE results; `1` enables guards and traps non-finite arithmetic. Thus the host setter intentionally sets both properties together. An embedder can supersede that
 creation-time value for one state:
 
 ```c

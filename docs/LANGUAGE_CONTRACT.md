@@ -58,6 +58,8 @@ frame from the failure to the top level, innermost first) is printed to
 stderr after the error line. Programs never continue past an
 unrecovered error or report success on failure. IEEE float division by zero
 produces signed infinity or NaN by default (R2.2); `EIGS_STRICT=1` traps the
+
+`EIGS_STRICT` unset or empty enables argument guards while retaining IEEE non-finite arithmetic values; `1` also traps non-finite arithmetic, and `0` selects the quiet legacy guard answers while retaining IEEE values.
 non-finite result. Exact integer `// 0` and `% 0` remain value errors.
 
 **What `catch` binds (#406):** a **built-in** runtime error binds a small
