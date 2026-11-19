@@ -31,7 +31,7 @@ else
                     ;;
                 decoder-overflow)
                     IEEE_IO_OUT=$(make --no-print-directory -C "$TESTS_DIR/.." "IEEE_IO_VARIANT=$IEEE_IO_VARIANT" decoder-overflow-test 2>&1); IEEE_IO_RC=$?
-                    IEEE_IO_WANT='decoder-overflow: checks=70 failures=0'
+                    IEEE_IO_WANT='decoder-overflow: checks=140 failures=0'
                     ;;
             esac
             IEEE_IO_CLASS=0
