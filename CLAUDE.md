@@ -43,7 +43,7 @@ make asan       # ASan+UBSan -> build/asan/eigenscript; gfx on, HTTP/NET/DB off
 make gfx        # compatibility alias for make (no build/gfx/ artifact)
 make asan-gfx   # compatibility alias for make asan (no build/asan-gfx/ artifact)
 make asan-http  # alias for make asan-server: ASan+UBSan *with* ext_http+net (CI gate; leaks still need RSS, see #731)
-make tsan-http  # alias for make tsan-server: TSan *with* ext_http+net (CI gate: EIGS_SUITE_SECTIONS='44 45a 45b 45i 45j', #1139)
+make tsan-http  # alias for make tsan-server: TSan *with* ext_http+net (CI gate: the sections listed once in the `tsan-http` job's step in ci.yml, #1139)
 make http       # alias for make server (http+net) — run tests/test_http_server.sh
 make zlib       # DEFLATE decompression (`inflate`) via system zlib (-lz)
 make jit-smoke  # standalone emitter tests (jit_smoke.c stubs all helpers)

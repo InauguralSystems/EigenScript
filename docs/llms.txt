@@ -798,7 +798,9 @@ line and header lines through the empty line without the body; if no empty
 line was found, it keeps the old request text up to NUL or end.
 
 `http_static` adds a folder at an absolute path-segment prefix, drops trailing
-slashes, and refuses empty, root-only, relative or duplicate prefixes. The
+slashes, and refuses empty, root-only, relative or duplicate prefixes, and a
+prefix that holds `?`, `#`, a byte at or below 0x20, or 0x7F. A prefix is
+compared with the request's path as it arrived, without percent-decoding. The
 longest matching segment prefix serves a request; registration freezes when
 serving starts. See [HTTP builtins](BUILTINS.md#optional-http-extension).
 `db_connect` accepts libpq URIs and keyword/value `DATABASE_URL` strings,

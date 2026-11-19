@@ -3074,6 +3074,9 @@ limits and reserved names (#1128, #1129).
 `http_static` adds up to 16 folders at prefixes that begin with `/` and name
 path segments. Trailing slashes are dropped; empty, root-only, relative and
 duplicate normalized prefixes raise `value`, and the 17th raises `limit`.
+A prefix that holds `?`, `#`, a byte at or below 0x20, or 0x7F raises `value`
+too, and a prefix is compared with the request's path as it arrived, without
+percent-decoding (#2363).
 The longest prefix matching at a segment boundary serves the request, retaining
 folder confinement and returning 404 for a missing file without fallback.
 Routes and the static roots are fixed once `http_serve` starts: `http_route`,
