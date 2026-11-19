@@ -610,6 +610,9 @@ static void boundaries(void) {
 }
 
 static void optional_and_types(void) {
+    int saved_guards = g_strict_guards, saved_arithmetic = g_strict_arithmetic;
+    for (int arithmetic = 0; arithmetic <= 1; ++arithmetic) {
+    g_strict_arithmetic = arithmetic;
     Value *bad = make_str("heap-type-control");
     const char *who = "reader";
     int refs = bad->refcount;
@@ -719,6 +722,8 @@ static void optional_and_types(void) {
         check(bad->refcount == refs, "magnitude heap refusal ownership");
     }
     reset_error(); val_decref(bad);
+    }
+    g_strict_guards = saved_guards; g_strict_arithmetic = saved_arithmetic;
 }
 
 static void container_and_buffer(void) {
@@ -782,18 +787,20 @@ static void container_and_buffer(void) {
     int saved_guards = g_strict_guards;
     int saved_arithmetic = g_strict_arithmetic;
     unsigned saved_flags = g_math_flags;
-    for (int strict = 0; strict <= 1; strict++) {
-        g_strict_guards = strict;
-        g_strict_arithmetic = strict;
+    for (int guards = 0; guards <= 1; guards++) {
+      for (int arithmetic = 0; arithmetic <= 1; arithmetic++) {
+        g_strict_guards = guards;
+        g_strict_arithmetic = arithmetic;
         g_math_flags = 0;
         reset_error();
         f = buffer_read_f64(&buf, 8);
         check(g_has_error && g_error_kind == EK_VALUE && f == 0.0,
               "buffer_read_f64 NaN refusal in both modes");
-        check(g_math_flags == (strict ? EIGS_MATH_INVALID : 0),
+        check(g_math_flags == (arithmetic ? EIGS_MATH_INVALID : 0),
               "buffer_read_f64 strict NaN retains INVALID only");
-        check(strstr(g_error_raw, strict ? "not a number" : "expected a finite number") != NULL,
+        check(strstr(g_error_raw, arithmetic ? "not a number" : "expected a finite number") != NULL,
               "buffer_read_f64 strict NaN retains its diagnostic");
+      }
     }
     g_strict_guards = saved_guards;
     g_strict_arithmetic = saved_arithmetic;
@@ -822,15 +829,17 @@ static void tombstoned_dict_equality(void) {
     dict_remove(dict, "removed");
     check(dict->data.dict.count == 2 && dict->data.dict.used == 3,
           "tombstone leaves NaN buffer beyond live count");
-    for (int strict = 0; strict <= 1; strict++) {
-        g_strict_guards = strict;
-        g_strict_arithmetic = strict;
+    for (int guards = 0; guards <= 1; guards++) {
+      for (int arithmetic = 0; arithmetic <= 1; arithmetic++) {
+        g_strict_guards = guards;
+        g_strict_arithmetic = arithmetic;
         g_math_flags = EIGS_MATH_UNDERFLOW;
         reset_error();
         check(!values_equal(dict, dict),
               "tombstoned dict self-equality reaches NaN buffer");
         check(!g_has_error && g_math_flags == EIGS_MATH_UNDERFLOW,
               "tombstoned dict equality never raises or writes math flags");
+      }
     }
     val_decref(dict);
     val_decref(nanbuf);

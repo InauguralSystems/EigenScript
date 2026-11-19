@@ -16,7 +16,9 @@ static void clear_error(void) {
 static Value *phase2_reader_probe(Value *arg) {
     (void)arg;
     const double bad[] = { NAN, INFINITY, -INFINITY, NAN, 1.5, 256.0, 255.0 };
-    for (int strict = 0; strict <= 1; strict++) {
+    int saved_guards = g_strict_guards, saved_arithmetic = g_strict_arithmetic;
+    for (int guards = 0; guards <= 1; guards++) {
+      for (int arithmetic = 0; arithmetic <= 1; arithmetic++) {
         for (int i = 0; i < 7; i++) {
             int fd[2];
             if (socketpair(AF_UNIX, SOCK_STREAM, 0, fd) != 0) return make_bool(0);
@@ -30,8 +32,8 @@ static Value *phase2_reader_probe(Value *arg) {
             Value *args = make_list_heap(2);
             list_append(args, handle);
             list_append(args, buffer);
-            g_strict_guards = strict;
-            g_strict_arithmetic = strict;
+            g_strict_guards = guards;
+            g_strict_arithmetic = arithmetic;
             clear_error();
             Value *answer = builtin_net_send(args);
             int raised = g_has_error;
@@ -39,10 +41,10 @@ static Value *phase2_reader_probe(Value *arg) {
             ssize_t n = recv(fd[1], received, sizeof received, MSG_DONTWAIT);
             check(!!raised == (i < 6));
             check(i == 6 || g_error_kind == EK_VALUE);
-            unsigned flags = strict && (i == 0 || i == 3) ? EIGS_MATH_INVALID : 0;
+            unsigned flags = arithmetic && (i == 0 || i == 3) ? EIGS_MATH_INVALID : 0;
             check(g_math_flags == flags);
             const char *diagnostic = (i == 0 || i == 3)
-                ? (strict ? "not a number" : "expected a finite number")
+                ? (arithmetic ? "not a number" : "expected a finite number")
                 : (i == 1 || i == 2) ? "expected a finite number"
                 : i == 4 ? "no integer representation" : "outside [0, 255]";
             check(i == 6 || strstr(g_error_raw, diagnostic) != NULL);
@@ -61,7 +63,9 @@ static Value *phase2_reader_probe(Value *arg) {
             val_decref(buffer);
             val_decref(handle);
         }
+      }
     }
+    g_strict_guards = saved_guards; g_strict_arithmetic = saved_arithmetic;
     clear_error();
     return make_bool(1);
 }

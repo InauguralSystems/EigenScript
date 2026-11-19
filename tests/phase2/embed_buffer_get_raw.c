@@ -17,9 +17,10 @@ int main(void) {
         UINT64_C(0x7ff0000000000000), UINT64_C(0xfff0000000000000), UINT64_C(0x8000000000000000)};
     int saved_guards = g_strict_guards;
     int saved_arithmetic = g_strict_arithmetic;
-    for (int strict = 0; strict <= 1; ++strict) {
-        g_strict_guards = strict;
-        g_strict_arithmetic = strict;
+    for (int guards = 0; guards <= 1; ++guards) {
+      for (int arithmetic = 0; arithmetic <= 1; ++arithmetic) {
+        g_strict_guards = guards;
+        g_strict_arithmetic = arithmetic;
         EigsValue *b = eigs_value_new_buffer(5);
         for (int i = 0; i < 5; ++i) {
             double x; memcpy(&x, &bits[i], sizeof x);
@@ -49,6 +50,7 @@ int main(void) {
             eigs_value_release(r);
         }
         eigs_clear_error();
+      }
     }
     g_strict_guards = saved_guards;
     g_strict_arithmetic = saved_arithmetic;

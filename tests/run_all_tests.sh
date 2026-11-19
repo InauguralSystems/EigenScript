@@ -3645,13 +3645,15 @@ DFLTREAD
         GA_WANT_PLAIN=$((GA_WANT_PLAIN + 3)); GA_WANT_STRICT=$((GA_WANT_STRICT + 2))
     fi
     GA_GOT_PLAIN=$(echo "$GA_PLAIN"   | sed -n 's/^Tests: \([0-9]*\) .*/\1/p' | tail -1)
+    GA_GOT_DEFAULT=$(echo "$GA_DEFAULT" | sed -n 's/^Tests: \([0-9]*\) .*/\1/p' | tail -1)
     GA_GOT_STRICT=$(echo "$GA_STRICT" | sed -n 's/^Tests: \([0-9]*\) .*/\1/p' | tail -1)
     # `strict-pass` is a second vacuity guard: the strict assertions live behind
     # an env test inside the .eigs file, so without it the whole block could be
     # skipped and the pass would still print "All tests passed".
     if rc_ok "$GA_PLAIN_RC" "$GA_PLAIN" && echo "$GA_PLAIN" | grep -q "All tests passed" \
        && echo "$GA_PLAIN" | grep -q "strict-pass: 0" \
-       && [ "$GA_DEFAULT_RC" -ne 0 ] && echo "$GA_DEFAULT" | grep -q "gfx_open: expected \[number width, number height, title\]" \
+       && rc_ok "$GA_DEFAULT_RC" "$GA_DEFAULT" && echo "$GA_DEFAULT" | grep -q "All tests passed" \
+       && echo "$GA_DEFAULT" | grep -q "strict-pass: 1" && [ "$GA_GOT_DEFAULT" = "$GA_WANT_STRICT" ] \
        && rc_ok "$GA_STRICT_RC" "$GA_STRICT" && echo "$GA_STRICT" | grep -q "All tests passed" \
        && echo "$GA_STRICT" | grep -q "strict-pass: 1" \
        && [ "$GA_GOT_PLAIN" = "$GA_WANT_PLAIN" ] && [ "$GA_GOT_STRICT" = "$GA_WANT_STRICT" ] \

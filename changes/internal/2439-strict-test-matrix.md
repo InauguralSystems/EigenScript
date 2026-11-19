@@ -1,0 +1,1 @@
+- Expanded strict-mode regression coverage across independent guard and arithmetic settings (#2439).
