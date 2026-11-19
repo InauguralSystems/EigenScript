@@ -1,175 +1,122 @@
 #!/usr/bin/env python3
-"""Enumerate double-reader -> C-integer conversions in src/*.c.
+"""Inventory floating-point to C-integer conversions in ``src/`` recursively.
 
-The reader population is derived from ``double eigs_*(...)`` declarations in
-the headers.  Integer spellings are derived from declarations, casts and
-typedefs in the tree (the only built-in knowledge is C's integer keywords).
+``src/vendor`` is excluded because it is imported, separately maintained code.  Integer
+types, readers, fields and parameter types are derived from the scanned tree.  Within a
+function the gate lexically follows float/double locals and values assigned from a
+reader.  It records casts (including rounded expressions), integer initialisers and
+assignments, and calls to tree-declared integer parameters.
 
-Recognised checks are comparisons of the same reader call with both an integer type's MIN and MAX bound in
-the preceding 12 source lines, or a call to eigs_*_int (the exact readers).
-Two-sided comparisons are real checks: together they exclude every value
-outside the destination interval before C performs the conversion.  The
-scanner deliberately does not follow arbitrary dataflow: a reader stored in a
-double and cast on a later line is outside its stated limit and its self-test
-records that fact.
+This is a review ledger, not a range-proof heuristic: every (file,function) needs an
+exact count and a reason describing its source bounds.  Lexical analysis cannot follow
+a value passed through a pointer/aggregate to another function, or a cast hidden in an
+unavailable macro body.
 """
 from __future__ import annotations
-import argparse, pathlib, re, shutil, subprocess, sys, tempfile
-
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-BASE_INT = {"char", "short", "int", "long", "signed", "unsigned", "size_t", "ssize_t"}
-
-def scrub(s: str) -> str:
-    s = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group().count("\n"), s, flags=re.S)
-    s = re.sub(r"//[^\n]*", "", s)
-    s = re.sub(r'"(?:\\.|[^"\\])*"', '""', s)
-    return s
-
-def populations(src: pathlib.Path):
-    hs = "\n".join(scrub(p.read_text(errors="replace")) for p in src.glob("*.h"))
-    alltext = hs + "\n" + "\n".join(scrub(p.read_text(errors="replace")) for p in src.glob("*.c"))
-    # "Reader" is mechanically selected from the double-returning eigs API by
-    # its established *_float naming contract; arithmetic helpers such as
-    # eigs_math_result_named are not reads of builtin arguments.
-    readers = {n for n in re.findall(r"\bdouble\s+(eigs_[A-Za-z0-9_]+)\s*\(", hs) if "float" in n}
-    aliases = set(BASE_INT)
-    changed = True
-    while changed:
-        changed = False
-        for body, name in re.findall(r"\btypedef\s+([^;{}]+?)\s+([A-Za-z_]\w*)\s*;", alltext):
-            if any(re.search(r"\b" + re.escape(t) + r"\b", body) for t in aliases) and "double" not in body and "float" not in body:
-                if name not in aliases: aliases.add(name); changed = True
-    # Fixed-width and platform integer names are tree-derived candidates: only
-    # spellings actually used as a cast or declaration are admitted.
-    candidates = set(re.findall(r"\(\s*([A-Za-z_]\w*)\s*\)", alltext))
-    candidates |= set(re.findall(r"(?:^|[;{}])\s*([A-Za-z_]\w*)\s+[A-Za-z_]\w*\s*(?:[=;,[])" , alltext, re.M))
-    aliases |= {x for x in candidates if re.fullmatch(r"(?:u?int\d*_t|Uint\d+|size_t|ssize_t)", x)}
-    return readers, aliases, alltext
-
-def function_at(text: str, off: int) -> str:
-    prefix = text[:off]
-    matches = list(re.finditer(r"(?m)^([A-Za-z_]\w*(?:[ \t*]+[A-Za-z_]\w*)*)\s*\([^;{}]*\)\s*\{", prefix))
-    return matches[-1].group(1).split()[-1].lstrip("*") if matches else "<file scope>"
-
-def matching(s, op):
-    depth=0
-    for i in range(op,len(s)):
-        if s[i]=='(': depth+=1
-        elif s[i]==')':
-            depth-=1
-            if depth==0: return i
-    return -1
-
-def split_args(s):
-    out=[]; start=0; depth=0
-    for i,c in enumerate(s):
-        if c in '([{': depth+=1
-        elif c in ')]}': depth-=1
-        elif c==',' and depth==0: out.append((start,i,s[start:i])); start=i+1
-    out.append((start,len(s),s[start:])); return out
-
-def scan(src: pathlib.Path):
-    readers, ints, alltext = populations(src)
-    ralt = "|".join(map(re.escape, sorted(readers, key=len, reverse=True))) or r"(?!)"
-    talt = "|".join(map(re.escape, sorted(ints, key=len, reverse=True)))
-    found = []
-    # Derive integer parameter positions from declarations/definitions in the
-    # tree.  This enables the third conversion form without a hand-maintained
-    # callee list.
-    intparams={}
-    for m in re.finditer(r"\b([A-Za-z_]\w*)\s*\(([^(){};]*)\)\s*[;{]", alltext):
-        ps=split_args(m.group(2)); idx={i for i,(_,_,x) in enumerate(ps) if re.search(r"\b(?:"+talt+r")\b",x) and '*' not in x}
-        if idx: intparams[m.group(1)]=idx
-    for p in sorted(src.glob("*.c")):
-        raw = p.read_text(errors="replace"); text = scrub(raw)
-        seen = set()
-        patterns = [
-          ("explicit cast", re.compile(r"\(\s*(?P<typ>"+talt+r")\s*\)\s*(?P<expr>(?:"+ralt+r")\s*\([^;]+?\))", re.S)),
-          ("implicit integer assignment", re.compile(r"\b(?P<typ>"+talt+r")\s+[A-Za-z_]\w*\s*=\s*(?P<expr>(?:"+ralt+r")\s*\([^;]+?\))", re.S)),
-        ]
-        for kind, pat in patterns:
-            for m in pat.finditer(text):
-                key=(m.start(),m.group("expr").split("(")[0]);
-                if key in seen: continue
-                seen.add(key); line=text.count("\n",0,m.start())+1
-                before="\n".join(text[:m.start()].splitlines()[-12:])
-                typ=m.group("typ")
-                has_min=bool(re.search(r"\b(?:"+re.escape(typ.upper())+r"_MIN|(?:INT|UINT)(?:\d+)?_MIN)\b", before))
-                has_max=bool(re.search(r"\b(?:"+re.escape(typ.upper())+r"_MAX|(?:INT|UINT)(?:\d+)?_MAX|SIZE_MAX)\b", before))
-                expr_norm=re.sub(r"\s+","",m.group("expr"))
-                before_norm=re.sub(r"\s+","",before)
-                checked=has_min and has_max and before_norm.count(expr_norm) >= 2
-                found.append((p.name,function_at(text,m.start()),line,kind,typ,checked))
-        # Assignment to an already-declared integer variable.
-        for m in re.finditer(r"\b([A-Za-z_]\w*)\s*=\s*((?:"+ralt+r")\s*\([^;]+?\))", text, re.S):
-            if (m.start(),m.group(2).split("(")[0]) in seen: continue
-            # Resolve the nearest declaration in the current function rather
-            # than a same-named variable elsewhere in the translation unit.
-            fstarts=list(re.finditer(r"(?m)^[A-Za-z_]\w*(?:[ \t*]+[A-Za-z_]\w*)*\s*\([^;{}]*\)\s*\{", text[:m.start()]))
-            start=fstarts[-1].start() if fstarts else 0
-            decls=list(re.finditer(r"\b("+talt+r")\s+"+re.escape(m.group(1))+r"\s*(?:[=;,)[])" , text[start:m.start()]))
-            if not decls: continue
-            line=text.count("\n",0,m.start())+1
-            found.append((p.name,function_at(text,m.start()),line,"implicit integer assignment","declared integer",False))
-        # A reader used as a complete argument to an integer parameter.
-        for cm in re.finditer(r"\b([A-Za-z_]\w*)\s*\(",text):
-            callee=cm.group(1)
-            if callee not in intparams: continue
-            close=matching(text,cm.end()-1)
-            if close<0: continue
-            for i,(a,_,arg) in enumerate(split_args(text[cm.end():close])):
-                if i not in intparams[callee] or not re.fullmatch(r"\s*(?:"+ralt+r")\s*\(.*\)\s*",arg,re.S): continue
-                off=cm.end()+a; line=text.count("\n",0,off)+1
-                found.append((p.name,function_at(text,off),line,"integer parameter",callee,False))
-    return readers, ints, found
-
-def run(src: pathlib.Path, allow: pathlib.Path) -> int:
-    readers, ints, rows = scan(src); grouped={}
-    for row in rows: grouped.setdefault((row[0],row[1]),[]).append(row)
-    allowed={}; stale=0
-    if not allow.exists(): print(f"num-cast: FAIL: allowlist {allow} missing"); return 1
-    for line in allow.read_text().splitlines():
-        if not line or line.startswith("#"): continue
-        parts=line.split("|",3)
-        if len(parts)!=4 or not parts[3]: print(f"  FAIL: malformed allowlist row: {line}"); stale+=1; continue
-        allowed[(parts[0],parts[1])]=(int(parts[2]),parts[3])
-    violations=0
-    for key, rs in grouped.items():
-        unchecked=[r for r in rs if not r[5]]
-        if not unchecked: continue
-        if key not in allowed or allowed[key][0] != len(unchecked):
-            for r in unchecked: print(f"  VIOLATION: src/{r[0]}:{r[2]}: {r[1]}: unchecked {r[3]} to {r[4]}")
-            violations += len(unchecked)
-    for key,(count,_) in allowed.items():
-        actual=len([r for r in grouped.get(key,[]) if not r[5]])
-        if actual != count: print(f"  FAIL: stale allowlist row: {key[0]}|{key[1]} expected={count} actual={actual}"); stale+=1
-    print(f"num-cast: examined={len(rows)} readers={len(readers)} integer-types={len(ints)} violations={violations} stale={stale}")
-    if not rows or violations or stale: print("num-cast: FAIL"); return 1
-    print("num-cast: PASS"); return 0
-
-def selftest() -> int:
-    plants=[("cast", "int n = (int)eigs_float_arg(arg, __func__);"), ("implicit", "int n = eigs_float_arg(arg, __func__);"), ("uint", "Uint32 n = (Uint32)eigs_list_float(arg, 0, __func__);"), ("split", "int n = (int)\n eigs_float_arg(arg, __func__);")]
-    with tempfile.TemporaryDirectory(prefix="num_cast_selftest.") as d:
-        d=pathlib.Path(d); (d/"x.h").write_text("typedef unsigned int Uint32; double eigs_float_arg(void*,const char*); double eigs_list_float(void*,int,const char*);\n")
-        allow=d/"allow"; allow.write_text("")
-        (d/"clean.c").write_text("void builtin(void *arg) { double n = eigs_float_arg(arg, \"x\"); (void)n; }\n")
-        if run(d,allow)==0: print("SELFTEST FAILED: vacuous clean control passed"); return 1
-        for name,plant in plants:
-            # Every fault gets its own clean control immediately before it.
-            (d/"clean.c").write_text("void builtin(void *arg) { if (eigs_float_arg(arg, \"x\") < INT_MIN || eigs_float_arg(arg, \"x\") > INT_MAX) return; int n=(int)eigs_float_arg(arg, \"x\"); (void)n; }\n")
-            if run(d,allow): print(f"SELFTEST FAILED: {name} clean control rejected"); return 1
-            (d/"plant.c").write_text(f"void planted(void *arg) {{ {plant} (void)n; }}\n")
-            cp=subprocess.run([sys.executable,__file__,"--src",str(d),"--allow",str(allow)],text=True,capture_output=True)
-            line=1
-            if cp.returncode==0 or f"src/plant.c:{line}:" not in cp.stdout: print(f"SELFTEST FAILED: {name} plant not attributable\n{cp.stdout}"); return 1
-            (d/"plant.c").unlink()
-        (d/"limit.c").write_text("void limit(void *arg) { double x=eigs_float_arg(arg, \"x\"); int n=(int)x; (void)n; }\n")
-        _,_,rows=scan(d)
-        if any(r[0]=="limit.c" for r in rows): print("SELFTEST FAILED: stated dataflow limit unexpectedly changed"); return 1
-    print("SELFTEST OK: checked control passed; 4 direct plants caught at their lines; double-temporary limit confirmed")
-    return 0
-
+import argparse,pathlib,re,subprocess,sys,tempfile
+ROOT=pathlib.Path(__file__).resolve().parents[1]
+BASE={"char","short","int","long","long long","signed","unsigned","signed char","unsigned char","signed short","unsigned short","signed int","unsigned int","signed long","unsigned long","signed long long","unsigned long long","size_t","ssize_t"}
+SOURCES={"vm_number_f64","eigs_value_as_num","eigs_value_buffer_get","VAL_F64_RAW","SLOT_F64_RAW","eigs_number_read"}
+def scrub(s):
+ s=re.sub(r"/\*.*?\*/",lambda m:"\n"*m.group().count("\n"),s,flags=re.S);s=re.sub(r"//[^\n]*","",s);return re.sub(r'"(?:\\.|[^"\\])*"','""',s)
+def source_files(src):return [p for p in src.rglob("*") if p.suffix in (".c",".h") and "vendor" not in p.relative_to(src).parts]
+def split(s):
+ out=[];st=d=0
+ for i,c in enumerate(s):
+  if c in "([{":d+=1
+  elif c in ")]}":d-=1
+  elif c=="," and d==0:out.append(s[st:i]);st=i+1
+ out.append(s[st:]);return out
+def closing(s,op):
+ d=0
+ for i in range(op,len(s)):
+  d += (s[i]=="(")-(s[i]==")")
+  if d==0:return i
+ return -1
+def populations(src):
+ text="\n".join(scrub(p.read_text(errors="replace")) for p in source_files(src)); readers=set(SOURCES)
+ readers|={n for _,n in re.findall(r"\b(double|float)\s+([A-Za-z_]\w*)\s*\(",text) if "float" in n}
+ ints=set(BASE)|set(re.findall(r"\b(?:u?int\d+_t|intptr_t|uintptr_t|time_t|nfds_t|tcflag_t|useconds_t|Sint\d+|Uint\d+)\b",text));changed=True
+ while changed:
+  changed=False
+  for body,name in re.findall(r"\btypedef\s+([^;{}]+?)\s+([A-Za-z_]\w*)\s*;",text):
+   if "*" not in body and not re.search(r"\b(?:double|float)\b",body) and any(re.search(r"\b"+re.escape(t)+r"\b",body) for t in ints) and name not in ints:ints.add(name);changed=True
+ return readers,ints,text
+def funcs(text):
+ pat=re.compile(r"(?m)^[ \t]*(?:static\s+|inline\s+|extern\s+)*[A-Za-z_]\w*(?:[ \t*]+[A-Za-z_]\w*)*[ \t*]+([A-Za-z_]\w*)\s*\([^;{}]*\)\s*\{")
+ for m in pat.finditer(text):
+  d=0
+  for i in range(m.end()-1,len(text)):
+   d += (text[i]=="{")-(text[i]=="}")
+   if d==0:yield m.group(1),m.end(),i+1,text[m.end():i];break
+def tp(ints):return "(?:"+"|".join(re.escape(x).replace(r"\ ",r"\s+") for x in sorted(ints,key=len,reverse=True))+")"
+def isfloat(expr,floats,readers):return bool(set(re.findall(r"\b[A-Za-z_]\w*\b",expr))&(floats|readers))
+def scan(src):
+ readers,ints,alltext=populations(src);t=tp(ints)
+ fields={n for _,n in re.findall(r"\b("+t+r")\s+([A-Za-z_]\w*)\s*(?:[;:,\[])",alltext)};params={};keywords={"if","while","for","switch","return","sizeof","defined"}
+ for m in re.finditer(r"\b([A-Za-z_]\w*)\s*\(([^{};]*)\)\s*[;{]",alltext):
+  ix={i for i,p in enumerate(split(m.group(2))) if re.search(r"\b"+t+r"\b",p) and "*" not in p}
+  if ix and m.group(1) not in keywords:params.setdefault(m.group(1),set()).update(ix)
+ rows=[]
+ for p in sorted(source_files(src)):
+  if p.suffix!=".c":continue
+  text=scrub(p.read_text(errors="replace"));rel=str(p.relative_to(src))
+  for fn,bo,end,body in funcs(text):
+   floats=set(re.findall(r"\b(?:double|float)\s+([A-Za-z_]\w*)",body));ilocal={n for _,n in re.findall(r"\b("+t+r")\s+([A-Za-z_]\w*)",body)};changed=True
+   while changed:
+    changed=False
+    for m in re.finditer(r"\b([A-Za-z_]\w*)\s*=\s*([^;]+);",body):
+     if isfloat(m.group(2),floats,readers) and m.group(1) not in floats|ilocal:floats.add(m.group(1));changed=True
+   seen=set();cast_ranges=[]
+   def add(m,kind,dest):
+    key=(m.start(),kind)
+    if key not in seen:seen.add(key);rows.append((rel,fn,text.count("\n",0,bo+m.start())+1,kind,dest))
+   for m in re.finditer(r"\(\s*("+t+r")\s*\)\s*([^;,}]+)",body,re.S):
+    if isfloat(m.group(2),floats,readers):add(m,"explicit cast",m.group(1));cast_ranges.append((m.start(),m.end()))
+   for m in re.finditer(r"\b("+t+r")\s+([A-Za-z_]\w*)\s*=\s*([^;]+);",body,re.S):
+    if isfloat(m.group(3),floats,readers) and not re.search(r"\(\s*"+t+r"\s*\)",m.group(3)):add(m,"integer initialisation",m.group(1))
+   for m in re.finditer(r"(?<![=!<>])\b([A-Za-z_]\w*)(?:\s*(?:\.|->)\s*([A-Za-z_]\w*))?\s*=\s*([^;]+);",body,re.S):
+    dest=m.group(2) or m.group(1)
+    valid=(m.group(2) in fields) if m.group(2) else (dest in ilocal)
+    # A declaration/initialiser and an explicit cast are already one conversion.
+    prefix=body[max(0,m.start()-80):m.start()]
+    if valid and not re.search(r"\b"+t+r"\s+$",prefix) and isfloat(m.group(3),floats,readers) and not re.search(r"\(\s*"+t+r"\s*\)",m.group(3)):add(m,"integer assignment",dest)
+   for m in re.finditer(r"\b([A-Za-z_]\w*)\s*\(",body):
+    if m.group(1) not in params:continue
+    close=closing(body,m.end()-1)
+    if close<0:continue
+    for i,a in enumerate(split(body[m.end():close])):
+     if i in params[m.group(1)] and isfloat(a,floats,readers):add(m,"integer parameter",m.group(1))
+ return readers,ints,rows
+def run(src,allow):
+ readers,ints,rows=scan(src);groups={}
+ for r in rows:groups.setdefault((r[0],r[1]),[]).append(r)
+ allowed={};errors=0
+ if not allow.exists():print(f"num-cast: FAIL: allowlist {allow} missing");return 1
+ for line in allow.read_text().splitlines():
+  if not line or line.startswith("#"):continue
+  ps=line.split("|",3)
+  if len(ps)!=4 or not ps[3].strip():print("  FAIL: malformed allowlist row: "+line);errors+=1;continue
+  try:allowed[(ps[0],ps[1])]=(int(ps[2]),ps[3])
+  except ValueError:print("  FAIL: malformed allowlist count: "+line);errors+=1
+ for key,rs in groups.items():
+  if key not in allowed or allowed[key][0]!=len(rs):
+   for r in rs:print(f"  VIOLATION: src/{r[0]}:{r[2]}: {r[1]}: {r[3]} to {r[4]}")
+   errors+=1
+ for key,(want,_) in allowed.items():
+  got=len(groups.get(key,[]))
+  if got!=want:print(f"  FAIL: stale allowlist row: {key[0]}|{key[1]} expected={want} actual={got}");errors+=1
+ print(f"num-cast: examined={len(rows)} rows={len(groups)} readers={len(readers)} integer-types={len(ints)} violations={errors}");print("num-cast: PASS" if rows and not errors else "num-cast: FAIL");return 0 if rows and not errors else 1
+PLANTS=[("direct","int n=(int)eigs_float_arg(a,\"\");"),("space","int n=(int) eigs_float_arg(a,\"\");"),("parentheses","int n=(int)(eigs_float_arg(a,\"\"));"),("expression","int n=(int)(eigs_float_arg(a,\"\")*2);"),("round","int n=(int)round(eigs_float_arg(a,\"\"));"),("floor","int n=(int)floor(eigs_float_arg(a,\"\"));"),("long-long","long long n=(long long)eigs_float_arg(a,\"\");"),("unsigned-int","unsigned int n=(unsigned int)eigs_float_arg(a,\"\");"),("raw","int n=(int)VAL_F64_RAW(a);"),("stored","double x=eigs_float_arg(a,\"\");int n=(int)x;"),("implicit","int n=eigs_float_arg(a,\"\");"),("parameter","take(eigs_float_arg(a,\"\"));")]
+def selftest():
+ with tempfile.TemporaryDirectory(prefix="num_cast_selftest.") as x:
+  d=pathlib.Path(x);allow=d/"allow";allow.write_text("base.c|baseline|1|fixture value is bounded by its constant 1.0 source.\n");(d/"x.h").write_text("double eigs_float_arg(void*,const char*); void take(int);\n#define VAL_F64_RAW(x) (0.0)\n");(d/"base.c").write_text("void baseline(void){double x=1.0;int n=(int)x;(void)n;}\n")
+  for name,plant in PLANTS:
+   (d/"plant.c").write_text("void planted(void *a){(void)a;}\n")
+   if run(d,allow):print(f"SELFTEST FAILED: {name} clean control rejected");return 1
+   (d/"plant.c").write_text(f"void planted(void *a){{{plant}}}\n");cp=subprocess.run([sys.executable,__file__,"--src",str(d),"--allow",str(allow)],text=True,capture_output=True)
+   if cp.returncode==0 or "src/plant.c:1: planted:" not in cp.stdout:print(f"SELFTEST FAILED: {name} plant not attributable\n{cp.stdout}");return 1
+ print(f"SELFTEST OK: {len(PLANTS)} clean controls passed and plants failed at their planted lines; every detection form has a dedicated plant");return 0
 def main():
-    ap=argparse.ArgumentParser(); ap.add_argument("--selftest",action="store_true"); ap.add_argument("--src",type=pathlib.Path,default=ROOT/"src"); ap.add_argument("--allow",type=pathlib.Path,default=ROOT/"tools/num_cast_allowlist.txt"); a=ap.parse_args()
-    return selftest() if a.selftest else run(a.src,a.allow)
-if __name__ == "__main__": raise SystemExit(main())
+ ap=argparse.ArgumentParser();ap.add_argument("--selftest",action="store_true");ap.add_argument("--src",type=pathlib.Path,default=ROOT/"src");ap.add_argument("--allow",type=pathlib.Path,default=ROOT/"tools/num_cast_allowlist.txt");a=ap.parse_args();return selftest() if a.selftest else run(a.src,a.allow)
+if __name__=="__main__":raise SystemExit(main())

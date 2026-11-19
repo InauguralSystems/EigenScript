@@ -1,1 +1,1 @@
-- Added a source gate that inventories and reviews builtin number-reader conversions to C integer types (#1763).
+- Added a recursive source census and exact review ledger for floating-point conversions to C integer types (#1763).
