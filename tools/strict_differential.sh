@@ -593,7 +593,7 @@ shape-backend: true' Linux
     live_case 'live captures: an exit status that follows the flag is a flag difference' flag-difference '[ -n "${EIGS_STRICT+x}" ] || exit 3'
     live_case 'live captures: output that changes from run to run is nondeterministic' nondeterministic 'echo "$$"'
     echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 99 declared"
-    [ "$failed" = 0 ] && [ "$passed" = 95 ]
+    [ "$failed" = 0 ] && [ "$passed" = 99 ]
 }
 if [ "$BASE" = --selftest ]; then shape_selftest; exit $?; fi
 
