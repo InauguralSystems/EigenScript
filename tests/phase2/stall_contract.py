@@ -98,6 +98,24 @@ JITTER_VALUES = [
 ]
 
 
+# #2407: the quiet clause on windows that do not jitter. The restored `stable`
+# is never true of a jittering window, so a quiet clause that also consulted
+# `stable` would pass every jitter case. Three cases stand against that:
+#   additive-single  a quiet runaway from its first step (0.02% a step);
+#                    `stable` is false throughout. Exactly 100.
+#   additive-run-in  the same runaway after eleven shrinking steps of 0.94%
+#                    down to 0.14% (RUN_IN). For the first nine iterations
+#                    the window still holds some of them: `stable` is true
+#                    and the last step is quiet. The rule counts those nine
+#                    too: exactly 100, not 109.
+#   monotone-decay   steps that shrink from 0.89% and stay above the quiet
+#                    threshold through iteration 135; `stable` is true from
+#                    the first full window and the rule must not count. It
+#                    certifies at 145 (ten quiet steps, iterations 136..145).
+RUN_IN = [1000000.0, 1009500.0, 1018500.0, 1026500.0, 1033500.0, 1039500.0,
+          1044500.0, 1048500.0, 1051500.0, 1054000.0, 1056000.0, 1057500.0]
+
+
 def _lit(xs):
     return "[" + ", ".join(repr(x) for x in xs) + "]"
 
@@ -120,13 +138,23 @@ CASES = {
     "inf": ("x is 1e308\nx is 1e308", "x is x * 2.0"),
     "quiet": ("n is 1000\nx is 1.0 / n", "n is n + 1\nx is 1.0 / n"),
     "harmonic": ("n is 1\nx is 1.0 / n", "n is n + 1\nx is 1.0 / n"),
-    "quiet-jitter": ("pat is " + _lit(JITTER_STEPS) + "\ni is 0\nx is 1000000.0\nx is 1000000.0",
+    "quiet-jitter": ("pat is " + _lit(JITTER_STEPS) + "\ni is 0\nx is 1000000.0",
                      "i is i + 1\nx is x + 994.0 * pat[i]"),
     "nan-prefix-jitter": ("vals is " + _lit(JITTER_VALUES) + "\nnan is f64_from_bits of 0x7ff8000000000000"
                           "\ni is 0\nx is nan", "i is i + 1\nx is vals[i]"),
     "nan-newest-jitter": ("vals is " + _lit(JITTER_VALUES) + "\nnan is f64_from_bits of 0x7ff8000000000000"
                           "\ni is 0\nx is 5.0",
                           "i is i + 1\ny is vals[i]\nif i == 5:\n    y is nan\nx is y"),
+    "additive-single": ("x is 1000000.0", "x is x + 200.0"),
+    "additive-run-in": ("\n".join("x is %r" % v for v in RUN_IN), "x is x + 200.0"),
+    "monotone-decay": ("x is 0.9", "x is 0.5 + (x - 0.5) * 0.98"),
+    "quiet-jitter-small": ("pat is " + _lit(JITTER_STEPS) + "\ni is 0\nx is 0.0005",
+                           "i is i + 1\nx is x + 9.997e-07 * pat[i]"),
+    "nan-prefix-jitter-small": ("vals is " + _lit(JITTER_VALUES) + "\nnan is f64_from_bits of 0x7ff8000000000000"
+                                "\ni is 0\nx is nan", "i is i + 1\nx is vals[i] * 5e-10"),
+    "nan-newest-jitter-small": ("vals is " + _lit(JITTER_VALUES) + "\nnan is f64_from_bits of 0x7ff8000000000000"
+                                "\ni is 0\nx is 5.0",
+                                "i is i + 1\ny is vals[i] * 5e-10\nif i == 5:\n    y is nan\nx is y"),
 }
 TIERS = {"off": {"EIGS_JIT_OFF": "1"}, "default": {},
          "osr": {"EIGS_JIT_OSR_THRESHOLD": "1"}, "trace": {"EIGS_TRACE": "1"}}
@@ -162,7 +190,9 @@ def correct(case, value):
         return count == 11 and reason == "normal" and certified is True
     if case == "nan-newest":
         return count == 16 and reason == "normal" and certified is True
-    if case == "nan-newest-jitter":
+    if case == "monotone-decay":
+        return count == 145 and reason == "normal" and certified is True
+    if case in ("nan-newest-jitter", "nan-newest-jitter-small"):
         return count == 101 and reason == "stalled" and certified is False
     if case in ("alternating", "growing-alternating", "infinite-alternating", "nan-alternating",
                 "nan-period3", "nan-window-edge"):
