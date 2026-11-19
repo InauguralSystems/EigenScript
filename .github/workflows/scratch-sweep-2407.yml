@@ -1,0 +1,114 @@
+# Scratch: a one-off measurement for #2427. This branch is deleted afterwards.
+name: scratch sweep 2407
+
+on:
+  push:
+    branches: ['scratch/sweep-2407']
+
+permissions:
+  contents: read
+
+env:
+  BASE: c96498d978a94eaa70ff2f71a481c0659fa20bc2
+  H0: 045c8a1c37c17b7709300386c765920e884c7fdb
+  CAND: c6b96d76c501559abddc23bc23177ac54c1a3fe2
+
+jobs:
+  sweep:
+    name: stall-rule mutants ${{ matrix.shard }}/4
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: trees and clean builds
+        run: |
+          set -eu
+          S="$RUNNER_TEMP/sw"; mkdir -p "$S/B" "$S/H"
+          git archive "$BASE" | tar -x -C "$S/B"
+          git archive "$CAND" | tar -x -C "$S/H"
+          for t in B H; do
+            make -j4 -C "$S/$t" > "$S/$t.first.log" 2>&1 || { tail -40 "$S/$t.first.log"; exit 1; }
+            sha256sum "$S/$t/src/eigenscript"
+          done
+      - name: sweep
+        run: |
+          SWEEP_S="$RUNNER_TEMP/sw" SWEEP_OUT="$RUNNER_TEMP/out" SWEEP_GENV= SWEEP_ONLY_FILE="$GITHUB_WORKSPACE/.github/sweep/only.txt" \
+            python3 -u .github/sweep/sweep2.py run --shard "${{ matrix.shard }}/4"
+      - name: trace classification of every mutant that is red on the base and green on the head
+        run: |
+          set -eu
+          ids=$(python3 - <<'PY'
+          import json, os
+          s = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "out", "state.json")))
+          print(" ".join(k for k, r in sorted(s.items())
+                         if k != "clean" and r.get("status") == "ran" and r["B"]["rc"] and not r["H"]["rc"]))
+          PY
+          )
+          echo "to classify: ${ids:-none}"
+          if [ -n "$ids" ]; then
+            SWEEP_S="$RUNNER_TEMP/sw" SWEEP_OUT="$RUNNER_TEMP/out" SWEEP_GENV= \
+              python3 -u .github/sweep/classify.py $ids
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: sweep-${{ matrix.shard }}
+          path: ${{ runner.temp }}/out
+
+  controls:
+    name: positive control (the threshold at a tenth, against the contract of 045c8a1c)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: trees, clean builds, and the control
+        run: |
+          set -euo pipefail
+          S="$RUNNER_TEMP/sw"; mkdir -p "$S/B" "$S/H"
+          git archive "$BASE" | tar -x -C "$S/B"
+          git archive "$CAND" | tar -x -C "$S/H"
+          git show "$H0:tests/phase2/stall_contract.py" > "$S/H/tests/phase2/stall_contract_h0.py"
+          for t in B H; do make -j4 -C "$S/$t" > "$S/$t.first.log" 2>&1 || { tail -40 "$S/$t.first.log"; exit 1; }; done
+          SWEEP_S="$S" SWEEP_OUT="$RUNNER_TEMP/out" SWEEP_GENV= SWEEP_H_CONTRACT=tests/phase2/stall_contract_h0.py \
+            python3 -u .github/sweep/sweep2.py run --only t-x0.1 | tee "$RUNNER_TEMP/control.log"
+          grep -q 't-x0.1: B=red H=green' "$RUNNER_TEMP/control.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: control
+          path: ${{ runner.temp }}/out
+
+  judge:
+    name: the mutant filed as undefined behaviour, under three judges
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: trees, tools, and the three judges
+        run: |
+          set -u
+          S="$RUNNER_TEMP/sw"; mkdir -p "$S/B" "$S/H" "$RUNNER_TEMP/out"
+          git archive "$BASE" | tar -x -C "$S/B"
+          git archive "$CAND" | tar -x -C "$S/H"
+          sudo apt-get update -qq >/dev/null 2>&1 || true
+          sudo apt-get install -y -qq valgrind clang >/dev/null 2>&1 || true
+          gcc --version | head -1; clang --version | head -1; valgrind --version
+          SWEEP_S="$S" SWEEP_OUT="$RUNNER_TEMP/out" SWEEP_GENV= python3 -u .github/sweep/judge_az.py | tee "$RUNNER_TEMP/out/judge.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: judge
+          path: ${{ runner.temp }}/out

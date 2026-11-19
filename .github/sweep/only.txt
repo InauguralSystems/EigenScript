@@ -1,0 +1,15 @@
+R1-NEG-L88-727d86
+R1-NEG-L90-4301f6
+R3-CON-obs_num_flags+2-0fbbd3
+R3-CON-obs_num_flags+2-3b95bd
+R3-CON-obs_num_flags+2-76c9d0
+R3-CON-obs_num_flags+2-ae9dc5
+R3-DEL-obs_num_flags+2-200d20
+R3-RET-observer_slot_noise_floor+1-3b8c48
+R3-RET-observer_slot_noise_floor+1-f291dc
+R3-RET-obs_num_oscillating+3-3b8c48
+R3-RET-obs_num_oscillating+3-f291dc
+R3-TRU-observer_slot_noise_floor+1-20817c
+R3-TRU-obs_num_oscillating+3-50af51
+R3-TRU-obs_num_oscillating+3-bc578d
+R3-TRU-obs_num_oscillating+3-bef5c6
