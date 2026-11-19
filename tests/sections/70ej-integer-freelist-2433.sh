@@ -18,7 +18,7 @@ else
         printf '%s\n' "$__if_build" | sed 's/^/      /'
     else
         PASS=$((PASS + 1)); echo "  PASS: [70ej] integer freelist reader built for $__if_variant"
-        for __if_mode in int-bounds number-kinds int-drain; do
+        for __if_mode in int-bounds number-kinds int-drain int-fresh; do
             TOTAL=$((TOTAL + 1))
             __if_out=$(ASAN_OPTIONS=detect_leaks=1 $EIGS_TMO "$__if_bin" "$__if_mode" </dev/null 2>&1); __if_rc=$?
             if [ "$__if_rc" -eq 0 ] && grep -q '^PASS:' <<< "$__if_out" &&

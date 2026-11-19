@@ -1,6 +1,7 @@
 /* #1665 follow-up: planted stale reads of the two kept recycling pools.
  *
  *   test_pool_poison num      read a NUM parked on the per-thread freelist
+ *   test_pool_poison int      read an INT parked on the per-thread freelist
  *   test_pool_poison env      read values[0] of a call env parked on its chunk
  *   test_pool_poison envfield read a field (count) of that parked Env struct
  *   test_pool_poison leaf     a frameless leaf accessor allocates no call env
@@ -64,6 +65,35 @@ static int plant_num(void) {
     fflush(stdout);
     volatile double stale = VAL_F64_RAW(v);   /* the planted stale read */
     printf("UNDETECTED num: read %g from a parked NUM\n", stale);
+    return 0;
+}
+
+static int plant_int(void) {
+    Value *v = make_int(INT64_C(1) << 60);
+    val_decref(v);
+    if (g_int_freelist != v) { puts("NOT-ARMED int: value not parked"); return 3; }
+    printf("ARMED int: parked INT %p, reading %p\n", (void *)v,
+           (void *)&VAL_I64_RAW(v));
+    fflush(stdout);
+    volatile int64_t stale = VAL_I64_RAW(v);
+    printf("UNDETECTED int: read %lld from a parked INT\n", (long long)stale);
+    return 0;
+}
+
+static int int_reuse_is_fresh(void) {
+    Value *a = make_int((INT64_C(1) << 60) + 1);
+    Value *b = make_int((INT64_C(1) << 60) + 2);
+    val_decref(a);
+    val_decref(b);
+    if (g_int_freelist_count < 2) { puts("FAIL: fresh comparison parked fewer than two integer boxes"); return 1; }
+    Value *reused = make_int(INT64_C(1) << 60);
+    eigs_thread_drain_caches(eigs_current);
+    Value *fresh = make_int(INT64_C(1) << 60);
+    int same = memcmp(reused, fresh, sizeof(Value)) == 0;
+    val_decref(reused);
+    val_decref(fresh);
+    if (!same) { puts("FAIL: reused integer box differs byte-for-byte from fresh box"); return 1; }
+    puts("PASS: reused integer box equals fresh box byte-for-byte");
     return 0;
 }
 
@@ -266,6 +296,15 @@ static int control(void) {
     printf("control num reuse: %s\n", bad ? "WRONG" : "ok");
     val_decref(again);
 
+    /* INT pop: make_int hands its own parked Value back, readable again. */
+    v = make_int(INT64_C(1) << 60);
+    val_decref(v);
+    again = make_int((INT64_C(1) << 60) + 1);
+    if (again != v) { puts("NOT-ARMED control: integer freelist did not reuse"); return 3; }
+    if (VAL_I64_RAW(again) != (INT64_C(1) << 60) + 1 || again->refcount != 1) bad = 1;
+    printf("control int reuse: %s\n", bad ? "WRONG" : "ok");
+    val_decref(again);
+
     /* Env take: the second call takes the parked env (same struct). */
     if (!run_program()) return 3;
     EigsChunk *c = fn_chunk();
@@ -327,6 +366,8 @@ int main(int argc, char **argv) {
     if (!st) { fputs("SETUP FAIL: eigs_open\n", stderr); return 2; }
     int rc;
     if (!strcmp(mode, "num")) rc = plant_num();
+    else if (!strcmp(mode, "int")) rc = plant_int();
+    else if (!strcmp(mode, "int-fresh")) rc = int_reuse_is_fresh();
     else if (!strcmp(mode, "int-bounds")) rc = bounded_int_pool();
     else if (!strcmp(mode, "number-kinds")) rc = disjoint_number_pools();
     else if (!strcmp(mode, "int-drain")) rc = drain_int_pool();
@@ -334,7 +375,7 @@ int main(int argc, char **argv) {
     else if (!strcmp(mode, "envfield")) rc = plant_envfield();
     else if (!strcmp(mode, "leaf")) rc = leaf_control();
     else if (!strcmp(mode, "control")) rc = control();
-    else { fprintf(stderr, "usage: %s num|int-bounds|number-kinds|int-drain|env|envfield|leaf|control\n", argv[0]); rc = 2; }
+    else { fprintf(stderr, "usage: %s num|int|int-fresh|int-bounds|number-kinds|int-drain|env|envfield|leaf|control\n", argv[0]); rc = 2; }
     eigs_close(st);
     return rc;
 }
