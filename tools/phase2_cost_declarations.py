@@ -48,8 +48,8 @@ def parse_declarations(text, workloads=None):
                 maximum = Decimal(value)
             except InvalidOperation:
                 maximum = Decimal('NaN')
-            if not maximum.is_finite() or maximum < 0:
-                raise ValueError(where + column + ' must be finite and >= 0')
+            if not maximum.is_finite():
+                raise ValueError(where + column + ' must be finite')
             maxima.append(maximum)
         if not re.fullmatch(r'R[1-9][0-9]*(?:\.[1-9][0-9]*)?', recover_round) or not reason:
             raise ValueError(where + 'recover_round and reason are required')
