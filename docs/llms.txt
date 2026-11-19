@@ -477,7 +477,7 @@ An all-int `sum` returns an exact int, while a
 float anywhere in a nested input selects float addition for the entire
 reduction. A buffer selects float addition too. An empty list's sum is int
 zero, in both call forms. `sum` refuses non-finite buffer elements with a
-`value` error in every `EIGS_STRICT` state (N13). In every `EIGS_STRICT` state, it stops at the first NaN with a "not a number" diagnostic and sets `math_flags.invalid`; later elements are not read (#1417).
+`value` error in every `EIGS_STRICT` state (N13). Under `EIGS_STRICT=1`, it stops at the first NaN with a "not a number" diagnostic and sets `math_flags.invalid`; later elements are not read (#1417).
 
 ```eigenscript
 exact is sum of [9007199254740993, 1]
@@ -1013,7 +1013,7 @@ value
 
 Buffers compare their stored doubles with IEEE equality: NaN differs from
 everything, even itself; infinities compare by sign; signed zeros are equal.
-Equality never raises or changes math flags, including in every `EIGS_STRICT` state.
+Equality never raises or changes math flags, in every `EIGS_STRICT` state.
 
 ```eigenscript
 p is buf_from_list of ([1e308])

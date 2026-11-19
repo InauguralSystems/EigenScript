@@ -672,7 +672,7 @@ Buffer arithmetic stops at its first raised kernel result and releases its parti
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `mean` | `mean of t` | Non-finite buffer cells raise `value` in every `EIGS_STRICT` state (N13). Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`) A non-number list element raises an error naming its zero-based flattened index and type; a non-number in the argument-list form raises naming its 1-based argument position (#1649/#2112). |
-| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer). An all-int input returns an exact int and raises `value` on int64 overflow. A float anywhere in a nested input makes the reduction float from the start; buffers produce floats and refuse non-finite elements with `value` in every `EIGS_STRICT` state (N13). In every `EIGS_STRICT` state the first NaN sets `math_flags.invalid` and raises "not a number" before reading later elements (#1417). An empty list returns int `0`. A non-number list element raises an error naming its zero-based flattened index and type; a non-number in the argument-list form raises naming its 1-based argument position (#1649/#2112). |
+| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer). An all-int input returns an exact int and raises `value` on int64 overflow. A float anywhere in a nested input makes the reduction float from the start; buffers produce floats and refuse non-finite elements with `value` in every `EIGS_STRICT` state (N13). Under `EIGS_STRICT=1` the first NaN sets `math_flags.invalid` and raises "not a number" before reading later elements (#1417). An empty list returns int `0`. A non-number list element raises an error naming its zero-based flattened index and type; a non-number in the argument-list form raises naming its 1-based argument position (#1649/#2112). |
 | `norm` | `norm of t` | Euclidean norm of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its flattened index and type. |
 
 ### Construction
@@ -1541,7 +1541,7 @@ value
 
 Buffers compare their stored doubles with IEEE equality: NaN differs from
 everything, even itself; infinities compare by sign; signed zeros are equal.
-Equality never raises or changes math flags, including in every `EIGS_STRICT` state.
+Equality never raises or changes math flags, in every `EIGS_STRICT` state.
 
 ```eigenscript
 p is buf_from_list of ([1e308])
