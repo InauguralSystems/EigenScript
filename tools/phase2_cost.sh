@@ -284,8 +284,8 @@ for workload in sorted(workloads):
         reason = declaration.reason if declaration else None
         over += verdict == 'OVER'
         stale += verdict == 'STALE'
-        print('%-34s %-3s base=%12d cand=%12d delta=%+.4f%% max=+%s%% %s%s' %
-              (workload, tier, base, cand, delta, maximum, verdict,
+        print('%-34s %-3s base=%12d cand=%12d delta=%+.4f%% max=%s%s%% %s%s' %
+              (workload, tier, base, cand, delta, '' if maximum < 0 else '+', maximum, verdict,
                (' recover_round=%s reason=%s' % (recover_round, reason)) if recover_round else ''), flush=True)
 print('phase2-cost: workloads=%d rows=%d over_declared_max=%d stale_declarations=%d %s' %
       (len(workloads), len(workloads) * 2, over, stale, 'FAIL' if over or stale else 'PASS'))

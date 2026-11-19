@@ -94,8 +94,8 @@ def main():
     delta = Decimal((cand - base) * 100) / base
     label = ('REGRESSION' if verdict == 'OVER' else 'STALE DECLARATION' if verdict == 'STALE'
              else 'DECLARED' if declaration else 'ok')
-    print('  %s: %s tier=%s  Ir %d -> %d  delta=%+.4f%% max_%s=+%s%%%s' %
-          (label, workload, tier, base, cand, delta, args.method, maximum,
+    print('  %s: %s tier=%s  Ir %d -> %d  delta=%+.4f%% max_%s=%s%s%%%s' %
+          (label, workload, tier, base, cand, delta, args.method, '' if maximum < 0 else '+', maximum,
            (' recover_round=' + declaration.recover_round) if declaration else ''))
     return int(verdict != 'ok')
 
