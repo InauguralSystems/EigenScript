@@ -186,7 +186,8 @@ def correct(case, value):
         # the raw alternation prevents that verdict.
         return count == 10 and reason == "normal" and certified is True
     if case == "int-mixed-wrap":
-        # Tests 1..9 damp and do not advance the stall counter.  Test 99's
+        # Tests 1..9 damp, and test 10's jump to the integers does not
+        # qualify either: the stall counter first advances at test 11.  Test 99's
         # exact integer jump is the last relative-window blocker: at test 109
         # it has just aged out, while test 101's float step and test 102's
         # return-to-integer step remain in ring indices 0 and 1.  Reading the
