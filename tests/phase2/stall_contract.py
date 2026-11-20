@@ -121,6 +121,10 @@ def _lit(xs):
 
 
 CASES = {
+    "int-mixed-window": ("vals is [10000000000000000, 10000000000000001]\ni is 0\nx is 10000000000000000.0", "i is 1 - i\nx is vals[i]"),
+    "int-mixed-wrap": ("n is 0\nvals is [10000000000000000, 10000000000000001]\ni is 0\nx is 0.9", "n is n + 1\ny is 0.5 + (x - 0.5) * 0.5\nif n >= 10:\n    i is 1 - i\n    y is vals[i]\nif n >= 99:\n    y is 20000000000000000 + i\nif n == 101:\n    y is 20000000000000000.0\nx is y"),
+    "int-overflow-one-inexact": ("a is 0 - 4600000000000000000\nb is a + 10000\nvals is [a, b]\ni is 0\nn is 0\nx is b\nx is a\nx is b\nx is a\nx is b\nx is a\nx is b\nx is a\nx is b\nx is a",
+                                 "n is n + 1\ni is 1 - i\ny is vals[i]\nif n == 91:\n    y is 4600000000000000000\nif n == 92:\n    y is 0 - 4700000000000000000\nif n >= 93:\n    y is (0 - 4700000000000000000) + i\nx is y"),
     "int-stopped-boxed": ("n is 0\nx is 10000000000000000", "n is n + 1\ny is x\nif n < 20:\n    y is x + 1\nx is y"),
     "int-alternating-boxed": ("vals is [10000000000000000, 10000000000000001]\ni is 0\nx is 10000000000000000", "i is 1 - i\nx is vals[i]"),
     "doubling": ("x is 10.0\nx is 10.0", "x is x * 2.0"),
@@ -174,6 +178,49 @@ def correct(case, value):
     if case == "harmonic":
         return True  # R31-2 requests a measurement, without a requirement.
     count, reason, report, certified = value
+    if case == "int-mixed-window":
+        # The float-to-integer first step is inexact at ring index 0; the next nine
+        # boxed-integer unit steps are exact.  At test 10 the mixed full window
+        # hides unit motion below the double noise floor and converges.  A wrap
+        # that substitutes index 10 for index 0 calls the window all-exact, so
+        # the raw alternation prevents that verdict.
+        return count == 10 and reason == "normal" and certified is True
+    if case == "int-mixed-wrap":
+        # Tests 1..9 damp, and test 10's jump to the integers does not
+        # qualify either: the stall counter first advances at test 11.  Test 99's
+        # exact integer jump is the last relative-window blocker: at test 109
+        # it has just aged out, while test 101's float step and test 102's
+        # return-to-integer step remain in ring indices 0 and 1.  Reading the
+        # mixed window gives the double noise floor, hides the following unit
+        # steps, and converges at 109.  Reading forward from index 8 instead
+        # misses 0 and 1 and delays the verdict to the stall check at 110.
+        return count == 109 and reason == "normal" and certified is True
+    if case == "int-overflow-one-inexact":
+        # One inexact step in a window of exact ones.  a = -4.6e18 and b = a + 10000
+        # alternate (exact +/-10000 steps) through test 90; 91 is +4.6e18 (an exact
+        # step of 9.2e18, inside int64); 92 is -4.7e18, whose subtraction overflows
+        # int64, so it is the one inexact step; 93..100 alternate -4.7e18 + 1 and
+        # -4.7e18 (exact +/-1).  After 100 the ring has head 9: the inexact step at
+        # index 0, the other nine exact.
+        # Exit: tests 1..90 and 93..100 are quiet (|rel| <= 2.2e-15 < dh_zero); 91
+        # and 92 qualify as oscillating (the +/-10000 flips above the floor) with a
+        # non-contracting amplitude.  `converged` is false at every test: through
+        # 90 the all-exact window has floor 0 and its +/-10000 steps raw-oscillate;
+        # from 91 the relative steps of 91 (2.0) and 92 (-1.98) are in the window,
+        # above dh_zero, until test 101.  So the stall counter ends it at 100.
+        # Report on the window read correctly: floor 4*eps*(1 + 4.7e18) = 4174.4,
+        # since it is not all exact.  oscillating: no; the relative test sees one
+        # flip above dh_zero (92/91); the raw test needs non-vanishing steps, and
+        # the newest five are 1 <= floor; the bounded test counts reversals only
+        # of steps above the floor, 91 and 92: one reversal, under 2.  diverging:
+        # no, the raw steps vanish at the floor.  improving answers: the best
+        # moved to -4.7e18 at 92 (since = 8 < 10), the eleven values are finite,
+        # their steps are not all of one sign beyond tau, and they do not expand
+        # (two mean crossings, but the newer half's largest deviation 8.5e17 is
+        # under the older half's 8.4e18).  A window read as all exact has floor
+        # 0: the bounded test then counts the eight +/-1 steps, nine reversals,
+        # |net| = 1e17 <= 0.3 * path 1.85e19, and answers `oscillating` first.
+        return count == 100 and reason == "stalled" and report == "improving" and certified is False
     if case == "int-stopped-boxed":
         # The first 19 exact +1 steps are raw-diverging even though their
         # relative size is below 0.1%; the zero step at iteration 20 makes
