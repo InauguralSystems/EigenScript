@@ -20,7 +20,7 @@ gfx, audio) require a full build or the `gfx` target.
 > dumps the full surface — every builtin, extension (by group), and lib
 > function with its parameter list — in one call.
 
-> See [Argument guards and arithmetic traps](SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states. Documented answers for valid-but-absent input (`index_of` miss `-1` and `file_exists` of a missing path `0`) are unchanged by that setting.
+> See [Argument guards and arithmetic traps](SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states. Documented answers for valid-but-absent input (`index_of` miss `-1` and `file_exists` of a missing path `false`) are unchanged by that setting.
 
 New since 0.8.1: concurrency (`spawn`, `thread_join`, `channel`, `send`,
 `recv`, `try_recv`, `recv_timeout`, `close_channel`, `channel_closed`),

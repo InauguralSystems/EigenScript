@@ -409,14 +409,14 @@ Some guards raise in every state; for example, `abs of true` raises rather than 
     error naming the position; JSON `false`, `null` and an absent key are
     answers and stay quiet. Under `EIGS_STRICT=0` a malformed document is
     walked leniently and raises nothing.
-  - **The sentinel and falsy families.** `index_of`/`list_index_of`/`ord`
-    (`-1`), `file_exists`/`is_dir`/`is_file`/`read_text`/`read_bytes`/`ls`/
-    `mkdir`/`env_get` (`0`/`""`), and the wrong-type launderers the sweep
+  - **The sentinel and falsy families.** `index_of`/`list_index_of`/`ord`,
+    `file_exists`/`is_dir`/`is_file`/`read_text`/`read_bytes`/`ls`/
+    `mkdir`/`env_get`, and the wrong-type launderers the sweep
     found (`split`, `scan_ints`, `buffer`, `channel_closed`, `f64_to_bytes`,
     `json_build`, `sort`, `random_int`, `random_hex`, `token_name`, and
     `zlib_*`) raise for wrong-typed arguments unless `EIGS_STRICT=0`. A
     sentinel for a valid-but-absent input — `index_of` miss `-1`,
-    `file_exists` of a missing path `0` — is unchanged in every `EIGS_STRICT` state.
+    `file_exists` of a missing path `false` — is unchanged in every `EIGS_STRICT` state.
   Int overflow and int `// 0`/`% 0` raise in every `EIGS_STRICT` state.
   Byte consumers such as `str_from_bytes` and the `zlib_*` forms likewise
   reject a nonnumeric list element with a builtin-named `type_mismatch` error unless `EIGS_STRICT=0`, which retains the
