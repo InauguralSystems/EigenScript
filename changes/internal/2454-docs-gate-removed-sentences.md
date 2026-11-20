@@ -1,1 +1,0 @@
-- Make the documentation gate reject the six exact removed argument-guard opt-in claims regardless of wrapping (#2454).
