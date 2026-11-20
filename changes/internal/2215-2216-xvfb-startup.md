@@ -1,0 +1,1 @@
+- X11 graphics regressions now start an isolated, reset-safe Xvfb server. (#2215, #2216).

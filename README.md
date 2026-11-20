@@ -907,7 +907,7 @@ Full map: **[docs/README.md](docs/README.md)**. Highlights:
 - [docs/COMPARISON.md](docs/COMPARISON.md) — EigenScript next to
   Python/JS/Rust/Lisp, with a porting checklist (also suite-verified)
 - [docs/PERFORMANCE.md](docs/PERFORMANCE.md) — benchmarks as a regression-gated
-  fact: wall-clock medians for humans, deterministic instruction counts for CI
+  fact: deterministic instruction counts for CI
 - [docs/SYNTAX.md](docs/SYNTAX.md) — tutorial-style language guide
 - [docs/GRAMMAR.md](docs/GRAMMAR.md) — formal EBNF grammar
 - [docs/LANGUAGE_CONTRACT.md](docs/LANGUAGE_CONTRACT.md) — edge-case promises

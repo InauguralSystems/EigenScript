@@ -909,7 +909,7 @@ nearest_in_range is a position query and excludes no candidate implicitly.
 
 EigenScript is a low-training-data language: a generated program that "looks
 right" is often wrong at exactly the traps above. Grade it mechanically, cheapest
-check first — this is the same parse→compile→sandbox ladder iLambdaAi uses:
+check first with this parse→compile→sandbox ladder:
 
 1. **Parse / lint** (no execution): `eigenscript --lint --json prog.eigs`.
    Empty `[]` = clean; `E004` = the file parses but does not compile (lint
