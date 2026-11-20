@@ -2141,7 +2141,7 @@ static int vm_leaf_accessor_exec(EigsChunk *c, int argc) {
              * must publish neither flags nor errors. Strict arithmetic
              * still re-executes in the generic callee for its exact line. */
             if (!isfinite(r)) {
-                if (g_strict) return 0;
+                if (g_strict_arithmetic) return 0;
                 math_flags |= isnan(r) ? EIGS_MATH_INVALID : EIGS_MATH_OVERFLOW;
             }
             msp--;

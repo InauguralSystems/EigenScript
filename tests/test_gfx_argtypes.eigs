@@ -32,11 +32,11 @@ define strict_kind(thunk) as:
         k is e.kind
     return k
 
-# The runner runs this file TWICE — once plain, once under EIGS_STRICT=1 —
+# The runner runs this file three times: off, unset, and EIGS_STRICT=1;
 # and each pass asserts its own mode, because ARG_GUARD's two answers differ:
 # non-strict returns the stand-in, strict returns null and raises. Running one
 # set of assertions under both modes would fail half of them by construction.
-if env_get of "EIGS_STRICT" == "1":
+if env_get of "EIGS_STRICT" != "0":
     # The half that discriminates with or without SDL. The old code could not
     # raise from ext_gfx.c at all — `grep -c rt_error src/ext_gfx.c` was 0 —
     # so these rows are impossible to pass on an unfixed binary in any
@@ -343,7 +343,7 @@ dev is audio_open of [44100, 1]
 if dev >= 2:
     assert_eq of [audio_play of [0.1, 0.2, 0.3], 1, "#1007: a well-typed clip still plays"]
     audio_wait of null
-    if env_get of "EIGS_STRICT" == "1":
+    if env_get of "EIGS_STRICT" != "0":
         assert_eq of [strict_kind of ((_) => audio_play of ["a", "b", "c"]), "type_mismatch", "#1007 strict: a wrong-typed sample list raises instead of playing silence"]
     else:
         # With the flag OFF it must answer 0 — audio_play's documented "0 on

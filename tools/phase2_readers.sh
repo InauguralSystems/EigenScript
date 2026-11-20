@@ -54,25 +54,25 @@ if [ "$FIXTURE" = const_dedup_bits ]; then
     exit 0
 fi
 if [ "$FIXTURE" = embed_buffer_get_raw ]; then
-    [ "$(grep -cE '^phase2-embed-buffer: PASS checks=36 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete getter PASS'
+    [ "$(grep -cE '^phase2-embed-buffer: PASS checks=72 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete getter PASS'
     [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected getter output'
     echo "$LABEL: PASS variant=$VARIANT"
     exit 0
 fi
 if [ "$FIXTURE" = net_byte_boundary ]; then
-    [ "$(grep -cE '^phase2-net-byte: PASS checks=72 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete net-byte-boundary PASS'
+    [ "$(grep -cE '^phase2-net-byte: PASS checks=144 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete net-byte-boundary PASS'
     [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected net-byte-boundary fixture output'
     echo "$LABEL: PASS variant=$VARIANT"
     exit 0
 fi
 if [ "$FIXTURE" = gfx_byte_boundary ]; then
-    [ "$(grep -cE '^phase2-gfx-byte-test: PASS checks=247 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete byte-boundary PASS'
+    [ "$(grep -cE '^phase2-gfx-byte-test: PASS checks=485 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete byte-boundary PASS'
     [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected byte-boundary fixture output'
     echo "$LABEL: PASS variant=$VARIANT"
     exit 0
 fi
 if [ "$FIXTURE" = gfx_audio_boundary ]; then
-    [ "$(grep -cE '^phase2-gfx-audio-test: PASS checks=44 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete audio-boundary PASS'
+    [ "$(grep -cE '^phase2-gfx-audio-test: PASS checks=88 failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete audio-boundary PASS'
     [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected audio-boundary fixture output'
     echo "$LABEL: PASS variant=$VARIANT"
     exit 0
@@ -86,4 +86,17 @@ fi
 [ "$(grep -c '^phase2-readers-test: PASS cases=[1-9][0-9]* forms=49 checks=[1-9][0-9]* failures=0$' "$TMP/out")" -eq 1 ] || fail 'missing unique complete PASS'
 [ "$(wc -l < "$TMP/out" | tr -d ' ')" -eq 1 ] || fail 'unexpected fixture output'
 checks=$(sed -n 's/^phase2-readers-test: PASS .* checks=\([0-9][0-9]*\) failures=0$/\1/p' "$TMP/out")
-echo "phase2-readers: PASS variant=$VARIANT checks=$checks"
+if [ "$VARIANT" = asan ]; then
+    ASAN_OPTIONS=detect_leaks=1 env -u XAUTHORITY EIGS_STRICT=0 DISPLAY=:99 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$BIN" > "$TMP/out-off" 2> "$TMP/err-off"
+    rc=$?
+else
+    env -u XAUTHORITY EIGS_STRICT=0 DISPLAY=:99 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "$BIN" > "$TMP/out-off" 2> "$TMP/err-off"
+    rc=$?
+fi
+cat "$TMP/out-off"
+if [ -s "$TMP/err-off" ]; then cat "$TMP/err-off"; fail 'EIGS_STRICT=0 reader fixture wrote stderr'; fi
+[ "$rc" -eq 0 ] || fail "EIGS_STRICT=0 reader fixture rc=$rc"
+[ "$(grep -c '^phase2-readers-test: PASS cases=[1-9][0-9]* forms=49 checks=4467 failures=0$' "$TMP/out-off")" -eq 1 ] || fail 'missing unique complete EIGS_STRICT=0 PASS'
+[ "$(wc -l < "$TMP/out-off" | tr -d ' ')" -eq 1 ] || fail 'unexpected EIGS_STRICT=0 fixture output'
+checks_off=$(sed -n 's/^phase2-readers-test: PASS .* checks=\([0-9][0-9]*\) failures=0$/\1/p' "$TMP/out-off")
+echo "phase2-readers: PASS variant=$VARIANT default-checks=$checks EIGS_STRICT=0-checks=$checks_off"

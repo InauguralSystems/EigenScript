@@ -16,7 +16,8 @@ else
     echo "  test binary variant: $variant"
     TOTAL=$((TOTAL + 1))
     if make -s -C .. SLOT_TEST_VARIANT="$variant" container-slot-test && \
-       ../build/$variant/test_container_slots; then
+       ../build/$variant/test_container_slots && \
+       EIGS_STRICT=0 ../build/$variant/test_container_slots; then
         # Planted fault: a builtin result that is a numeric view must abort in
         # the real builtin-return compensation path (vm_borrow_scan).
         # Capture the expected abort without touching shell options: this file is

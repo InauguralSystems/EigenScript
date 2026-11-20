@@ -61,7 +61,7 @@ fail=0
 _check() { # label, expected_rc, matcher, wanted, program
     local label="$1" want_rc="$2" how="$3" want="$4" prog="$5"
     set +e
-    out=$("$BUILD/eigs_fs" "$prog" 2>&1); rc=$?
+    out=$(${FS_RUN:-} "$BUILD/eigs_fs" "$prog" 2>&1); rc=$?
     set -e
     if [ "$rc" = "$want_rc" ] && "$how" "$out" "$want"; then
         echo "  PASS: $label"
@@ -77,9 +77,16 @@ check()      { _check "$1" "$2" str_has      "$3" "$4"; }
 # label, expected_rc, expected WHOLE LINE (was the `^...$` form), program
 check_line() { _check "$1" "$2" str_has_line "$3" "$4"; }
 
-# Core language still executes (interpreter-only).
-check_line "strict setter controls both modes" 0 "strict setter works" '--strict-api'
+# The creation default is checked with EIGS_STRICT removed from the environment,
+# whatever the caller exported: a state reads the variable when it is created.
+FS_RUN="env -u EIGS_STRICT" check "strict creation default and setter control three states" 0 "strict creation default works
+strict off setter works
+strict on setter works" '--strict-api'
 
+# The program checks run twice: as the caller's environment has it, and with
+# EIGS_STRICT=0 (both flags off: the state they ran in before #2439).
+program_checks() {
+# Core language still executes (interpreter-only).
 check_line "core language runs" 0 "42" '
 define square(x) as:
     return x * x
@@ -110,6 +117,10 @@ check "exec is carved" 1 "exec_capture" 'x is exec_capture of "ls"'
 check_line "import resolves via the source provider" 0 "42" 'import tiny
 print of (tiny["answer"])'
 check "import raises profile error" 1 "no filesystem in the freestanding profile" 'import math'
+}
+program_checks
+echo "  second run of the program checks: EIGS_STRICT=0"
+EIGS_STRICT=0 program_checks
 
 echo "---"
 if [ "$fail" = 0 ]; then echo "freestanding smoke: ALL PASSED"; else echo "freestanding smoke: FAILURES"; exit 1; fi

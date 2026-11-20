@@ -19,8 +19,11 @@ static Value *buffer(int n) {
 /* Expected data-boundary raises run inside a real VM try (#1808/#2098). */
 static Value *phase2_reader_probe(Value *arg) {
     (void)arg;
-    for (int strict=0;strict<=1;++strict) {
-        g_strict=strict;
+    int saved_guards=g_strict_guards, saved_arithmetic=g_strict_arithmetic;
+    for (int guards=0;guards<=1;++guards) {
+      for (int arithmetic=0;arithmetic<=1;++arithmetic) {
+        g_strict_guards=guards;
+        g_strict_arithmetic=arithmetic;
         for (int k=0;k<4;++k) {
             Value *b=buffer(2);
             double first=k==0 || k==3 ? NAN : k==1 ? INFINITY : -INFINITY;
@@ -28,8 +31,8 @@ static Value *phase2_reader_probe(Value *arg) {
             reset_error();int n=-77;int16_t *pcm=audio_convert_samples(b,&n);
             check(!pcm && g_has_error && g_error_kind==EK_VALUE,"stored nonfinite refuses before conversion");
             check(n==-77,"refusal does not publish a sample count");
-            check(g_math_flags==(strict && isnan(first) ? EIGS_MATH_INVALID : 0),"strict first NaN flag only");
-            check(strstr(g_error_raw,strict && isnan(first) ? "not a number" : "finite number")!=NULL,"data boundary first diagnostic");
+            check(g_math_flags==(arithmetic && isnan(first) ? EIGS_MATH_INVALID : 0),"strict first NaN flag only");
+            check(strstr(g_error_raw,arithmetic && isnan(first) ? "not a number" : "finite number")!=NULL,"data boundary first diagnostic");
             check((isnan(first) ? isnan(b->data.buffer.data[0]) : b->data.buffer.data[0]==first) &&
                   b->data.buffer.data[1]==(k==3 ? INFINITY : 0.0),"reader leaves stored payload unchanged");
             free(pcm);reset_error();val_decref(b);
@@ -40,7 +43,9 @@ static Value *phase2_reader_probe(Value *arg) {
         check(pcm && n==4 && !g_has_error,"finite buffer conversion succeeds");
         check(pcm && pcm[0]==32767 && pcm[1]==-32767 && pcm[2]==16384 && pcm[3]==-16384,"PCM Q7 clamp then Q4 rounding");
         free(pcm);reset_error();val_decref(b);
+      }
     }
+    g_strict_guards=saved_guards; g_strict_arithmetic=saved_arithmetic;
     reset_error();
     return make_bool(1);
 }

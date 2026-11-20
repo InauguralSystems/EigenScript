@@ -66,7 +66,7 @@ static int gfx_byte_frame_is(const Value *frame, double expected) {
     return 1;
 }
 
-static void gfx_byte_exercise(int ppu, int strict, const GfxByteCase *c,
+static void gfx_byte_exercise(int ppu, int guards, int arithmetic, const GfxByteCase *c,
                               Value *args, Value *source, Value *frame) {
     const char *client = ppu ? "ppu_render_frame" : "gfx_fb";
     int first = ppu ? 0xFF40 : 0;
@@ -84,41 +84,42 @@ static void gfx_byte_exercise(int ppu, int strict, const GfxByteCase *c,
     } else {
         int rc = p_SDL_SetRenderDrawColor(g_renderer, 255, 255, 255, 255);
         int clear_rc = p_SDL_RenderClear(g_renderer);
-        gfx_byte_check(rc == 0 && clear_rc == 0, client, strict, c->name,
+        gfx_byte_check(rc == 0 && clear_rc == 0, client, arithmetic, c->name,
                        "real renderer starts white");
     }
-    g_strict = strict;
+    g_strict_guards = guards;
+    g_strict_arithmetic = arithmetic;
     gfx_byte_clear_error();
     int arg_refs = args->refcount, source_refs = source->refcount;
     int frame_refs = frame ? frame->refcount : 0;
     ++gfx_byte_calls;
     Value *answer = ppu ? builtin_ppu_render_frame(args) : builtin_gfx_fb(args);
 
-    gfx_byte_check(answer && answer->type == VAL_NULL, client, strict, c->name,
+    gfx_byte_check(answer && answer->type == VAL_NULL, client, arithmetic, c->name,
                    "builtin returns its null value");
-    gfx_byte_check(!!g_has_error == c->reject, client, strict, c->name,
+    gfx_byte_check(!!g_has_error == c->reject, client, arithmetic, c->name,
                    "stored payload is refused or accepted as declared");
-    gfx_byte_check(!c->reject || g_error_kind == EK_VALUE, client, strict, c->name,
+    gfx_byte_check(!c->reject || g_error_kind == EK_VALUE, client, arithmetic, c->name,
                    "refusal is value");
-    unsigned flags = strict && c->strict_nan ? EIGS_MATH_INVALID : 0;
-    gfx_byte_check(g_math_flags == flags, client, strict, c->name,
+    unsigned flags = arithmetic && c->strict_nan ? EIGS_MATH_INVALID : 0;
+    gfx_byte_check(g_math_flags == flags, client, arithmetic, c->name,
                    "only strict NaN sets INVALID, no overflow flag");
-    const char *diagnostic = strict && c->strict_nan ? "not a number" : c->diagnostic;
+    const char *diagnostic = arithmetic && c->strict_nan ? "not a number" : c->diagnostic;
     gfx_byte_check(diagnostic ? strstr(g_error_raw, diagnostic) != NULL
                               : g_error_raw[0] == 0,
-                   client, strict, c->name,
+                   client, arithmetic, c->name,
                    "first NaN diagnostic wins before any later infinity");
     gfx_byte_check(args->refcount == arg_refs && source->refcount == source_refs
                    && (!frame || frame->refcount == frame_refs),
-                   client, strict, c->name, "builtin borrows every buffer and argument");
+                   client, arithmetic, c->name, "builtin borrows every buffer and argument");
     gfx_byte_check(gfx_byte_raw_bits(&source->data.buffer.data[first]) == first_bits
                    && gfx_byte_raw_bits(&source->data.buffer.data[later]) == later_bits,
-                   client, strict, c->name, "read leaves stored raw payloads unchanged");
+                   client, arithmetic, c->name, "read leaves stored raw payloads unchanged");
     if (ppu) {
         /* LCDC=255 is a valid byte. Zero VRAM/palettes produce shade zero;
          * a refused first register must leave the framebuffer untouched. */
         gfx_byte_check(gfx_byte_frame_is(frame, c->reject ? -17.0 : 0.0),
-                       client, strict, c->name, "refusal preserves output; valid LCDC renders");
+                       client, arithmetic, c->name, "refusal preserves output; valid LCDC renders");
     } else {
         SDL_Rect pixel_rect = {0, 0, 1, 1};
         Uint32 pixel = 0;
@@ -127,7 +128,7 @@ static void gfx_byte_exercise(int ppu, int strict, const GfxByteCase *c,
                                         &pixel, (int)sizeof pixel);
         Uint32 expected = c->reject ? UINT32_C(0x00FFFFFF) : 0;
         gfx_byte_check(rc == 0 && (pixel & UINT32_C(0x00FFFFFF)) == expected,
-                       client, strict, c->name,
+                       client, arithmetic, c->name,
                        "refusal preserves real pixels; byte 255 selects black");
     }
     val_decref(answer);
@@ -138,7 +139,8 @@ static void gfx_byte_exercise(int ppu, int strict, const GfxByteCase *c,
  * Cleanup finishes inside the callback; the state outlives VM execution. */
 static Value *phase2_reader_probe(Value *arg) {
     (void)arg;
-    g_strict = 1;
+    g_strict_guards = 1;
+    g_strict_arithmetic = 1;
     Value *pixels = NULL, *memory = NULL, *frame = NULL;
     Value *gfx_args = NULL, *ppu_args = NULL;
     gfx_byte_check(setenv("SDL_VIDEODRIVER", "dummy", 1) == 0,
@@ -173,14 +175,18 @@ static Value *phase2_reader_probe(Value *arg) {
     ppu_args = make_list_heap(2);
     list_append(ppu_args, memory);
     list_append(ppu_args, frame);
-    for (int strict = 0; strict <= 1; ++strict) {
+    int saved_guards = g_strict_guards, saved_arithmetic = g_strict_arithmetic;
+    for (int guards = 0; guards <= 1; ++guards) {
+      for (int arithmetic = 0; arithmetic <= 1; ++arithmetic) {
         for (unsigned i = 0; i < sizeof gfx_byte_cases / sizeof gfx_byte_cases[0]; ++i) {
-            gfx_byte_exercise(0, strict, &gfx_byte_cases[i], gfx_args, pixels, NULL);
-            gfx_byte_exercise(1, strict, &gfx_byte_cases[i], ppu_args, memory, frame);
+            gfx_byte_exercise(0, guards, arithmetic, &gfx_byte_cases[i], gfx_args, pixels, NULL);
+            gfx_byte_exercise(1, guards, arithmetic, &gfx_byte_cases[i], ppu_args, memory, frame);
         }
+      }
     }
-    gfx_byte_check(gfx_byte_calls == 28, "population", 1, "both clients",
-                   "all seven fixtures run through both clients in both strict modes");
+    g_strict_guards = saved_guards; g_strict_arithmetic = saved_arithmetic;
+    gfx_byte_check(gfx_byte_calls == 56, "population", 1, "both clients",
+                   "all seven fixtures run through both clients in all four strict-flag combinations");
 
 cleanup:
     gfx_byte_clear_error();
