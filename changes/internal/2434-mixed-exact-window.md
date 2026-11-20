@@ -1,1 +1,1 @@
-- The stall contract gains two cases whose window mixes exact and inexact steps, so that an edit of the index or the wrap of the exact-window test is seen by what the window holds (#2434).
+- The stall contract gains three cases whose window mixes exact and inexact steps (#2434).
