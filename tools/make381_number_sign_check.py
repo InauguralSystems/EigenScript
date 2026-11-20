@@ -8,40 +8,83 @@ With no argument it reads every tracked makefile of the tree (git ls-files:
 Makefile, makefile, GNUmakefile, *.mk) and each file one of them includes by a
 literal name, looked up from the tree's root as make run there does; with
 arguments, those files and nothing else.  A file it cannot read, a literal
-`include` of a file that is not there and a define without its endef are
+`include` of a file that is not there and a define whose body never ends are
 errors (exit 2), not a pass.
 
-What is a finding: a number sign, with or without a backslash before it,
-inside an open $(...) or ${...} reference
-  - on a variable assignment (any operator; also after override or export) or
-    on a directive (ifeq, ifneq, ifdef, ifndef, also after else; include,
-    -include, sinclude; vpath; export; unexport): 3.81 cuts such a line at its
-    first unescaped number sign before it reads it;
-  - inside an $(eval ...) call, wherever the call stands (a bare line, a rule
-    line, a recipe);
-  - in the body of a define whose name is referenced inside an $(eval call of
-    the same file ($(NAME), ${NAME}, call NAME, value NAME), outside a comment:
-    that body is read as makefile text, and $$( and $${ open a reference there.  No other define body is read, and neither
-    is a define inside such a body.
-What is not: a rule line (targets, prerequisites, a target-specific
-assignment), a recipe line, a bare call that is not eval, a comment.
+3.81 cuts a line at its first unescaped number sign before it decides whether
+the line is a variable assignment or a directive; a rule line, a recipe line
+and a bare call it reads as current make does.  This check does not try to
+tell every assignment from every rule line.  It passes the lines it is sure
+3.81 reads as current make does, and judges every other line.
 
-Which lines are recipe lines: a line that starts with a tab while a rule is
-open.  A rule line opens a rule; a target-specific assignment does not, and
-closes one.  An assignment, an include, a vpath, an export, an unexport or a
-bare line closes the rule.  A conditional, an override line, a define and a
-comment leave it as it is.
+Lines it passes: an ordinary comment line, whatever it holds: no tab at its
+start, and a number sign as its first character after white space.  And, but
+for an eval call (below):
+  - a recipe line: a tab at its start while a rule is open (below);
+  - a rule line: before any ordinary comment it has a colon outside every
+    reference and no equals sign outside every reference, and its first word
+    is not a directive's (ifeq ifneq ifdef ifndef else endif include -include
+    sinclude vpath export unexport override define endef);
+  - a bare call: before any ordinary comment it has nothing but references
+    and white space.
+What is a finding:
+  - on every other line, a number sign, with or without a backslash before
+    it, inside an open $(...) or ${...} reference, before any ordinary
+    comment (an unescaped number sign outside every reference starts one);
+  - on every line but an ordinary comment line, a number sign anywhere inside
+    an $(eval ...) or $(call eval,...) call (with either kind of bracket),
+    wherever on the line the call stands;
+  - in the body of a define whose name is written as a word inside such a
+    call anywhere in the file (an ordinary comment line included; a word is
+    what stands between white space, dollar signs, brackets, commas and
+    colons): the body is read by the same rules, with $$( and $${ opening a
+    reference as $( and ${ do.  No other define body is read, and neither is
+    a define inside such a body;
+  - a line that the makes read by what stands around it, in a way this check
+    does not follow.  Four kinds: a define line with a tab at its start that
+    is not a recipe line; a recipe line whose first word is define or a
+    conditional's (ifeq ifneq ifdef ifndef else endif), inside a conditional,
+    unless a rule was open at the start of every conditional around it: it
+    is a recipe line only if the branch that opened its rule is taken, and
+    the directive if it is not; a define inside a
+    conditional whose body holds a define of its own or an endef with a tab
+    at its start: in a branch that is not taken 3.81 ends it at another line;
+    and, wherever it stands, a line whose first word is define or a
+    conditional's and whose second word starts with a colon, an equals sign,
+    a plus sign or a question mark: it may be a variable or a target of that
+    name.
 
-Stricter than the makes: an assignment nothing expands, a line in a branch of
-a conditional that is not taken, a number sign inside an $(eval call that both
-makes read as a comment, and a $$( in a body that reaches $(eval) only through
-$(value ...), which does not expand it first.  Looser: a define body that reaches $(eval)
-through another variable, and a sign that a variable carries into text $(eval)
-reads.  Not covered: !=, ::=, undefine, private, export define, $(file ...), a
-lone $ at the end of a value, a tab line after a define or an override line
-that follows a rule (the two makes disagree whether it is a recipe line),
-.ONESHELL, --output-sync, an include whose name holds a reference, and other
-makefile text that exists only after expansion.
+When a rule is open: after a rule line, and after a recipe line.  A blank
+line and an ordinary comment line leave it as it is.  After a conditional
+(ifeq, ifneq, ifdef or ifndef to its endif) a rule is open only if one was
+open before the conditional and one is open at the end of each of its
+branches; each branch starts as the conditional was entered.  A line refused
+as one of the four kinds leaves it as it is.  Every other line closes it: so
+a tab line after a define or an override line that follows
+a rule is judged, and there the two makes themselves disagree, whatever the
+line holds (3.81 still takes it as a recipe line of that rule; 4.3 does not).
+Inside a define's body a line with a tab at its start is neither a define nor
+an endef, as in make.
+
+Stricter than the makes (the makes agree, the check refuses; each kind is a
+case that says so): a target-specific assignment; a rule line with an equals
+sign outside a reference, as in a recipe after a semicolon, and the tab lines
+after such a line; the tab lines after a rule that a conditional opened or
+may have closed; an else, an endif or an override line with other text after
+it; a line of the four kinds above on which the makes happen to agree; an
+assignment nothing expands; a line in a branch of a conditional that is not
+taken; a line both makes stop on; a number sign inside an eval call that the
+makes happen to read alike (as a comment, escaped outside a reference, in
+text that is a rule line, in a call after an ordinary comment's sign); a body
+read because its name is a word in an eval call that never evaluates it (the
+call is in a comment, the word is not a reference, the body reaches eval only
+through $(value), the call comes before the define).
+Looser (the makes differ, the check passes): a define body that reaches eval
+through another variable or a computed name, a define inside an evaluated
+body, and a number sign that a variable carries into text eval reads.
+Not covered: !=, ::=, undefine, private, export define, $(file ...), a lone $
+at the end of a value, .ONESHELL, --output-sync, an include whose name holds a
+reference, and other makefile text that exists only after expansion.
 
 To write the sign inside a call: H := \# at the top level and $H in the call
 ($$H in text that $(eval) reads again), or the tool's own escape (printf '\043').
@@ -55,18 +98,17 @@ import subprocess
 import sys
 import tempfile
 
+SPACE = " \t\f\v\r"                     # what make skips at the start of a line
 CONDITIONALS = {"ifeq", "ifneq", "ifdef", "ifndef"}
-NO_EFFECT = {"else", "endif"}
-DIRECTIVES = {"include", "-include", "sinclude", "vpath", "export", "unexport"}
-MODIFIERS = {"override", "export", "private"}
+KEYWORDS = CONDITIONALS | {"else", "endif", "include", "-include", "sinclude", "vpath",
+                           "export", "unexport", "override", "define", "endef"}
 OPENERS = {"(": ")", "{": "}"}
-EVAL = re.compile(r"\$[({]eval\s")
-# A name in the place of a variable inside an eval call: $(NAME or ${NAME, and
-# the first argument of call and of value.
-REFERENCED = re.compile(r"\$[({]([A-Za-z_][A-Za-z0-9_.-]*)")
-ARGUMENT = re.compile(r"\b(?:call|value)\s+([A-Za-z_][A-Za-z0-9_.-]*)")
+EVAL = re.compile(r"\$[({](?:eval[ \t]|call[ \t]+eval[ \t]*,)")
+WORD = re.compile(r"[^\s$(){},:]+")
 MESSAGE = ("a number sign inside a $( or ${ reference: GNU Make 3.81 reads this "
            "line differently (tools/make381_number_sign_check.py)")
+UNCLEAR = ("a line that the makes read by what stands around it, which this check does not "
+           "follow: write it another way (tools/make381_number_sign_check.py)")
 
 
 def physical_lines(text):
@@ -160,36 +202,33 @@ def sign_in_reference(text, doubled):
     return None
 
 
-def first_operator(text, doubled):
-    """(kind, offset) of the first = or : outside every reference:
-    ("assignment", i) for =, :=, +=, ?=; ("rule", i) for another colon;
-    ("bare", None) when there is none."""
+def line_kind(text, doubled):
+    """"rule", "call" or "other", from the text before any ordinary comment:
+    "other" with an equals sign outside every reference; else "rule" with a
+    colon outside every reference; else "call" with nothing but references
+    and blanks; else "other"."""
+    colon = equals = more = False
     for i, c, depth in walk(text, doubled):
         if depth:
             continue
+        if c == "#" and not escaped(text, i):
+            break
         if c == "=":
-            return "assignment", i
-        if c == ":":
-            return ("assignment", i) if text[i + 1:i + 2] == "=" else ("rule", i)
-    return "bare", None
-
-
-def target_specific(text, colon, doubled):
-    """Is the rule line a target-specific assignment (target: [modifiers] VAR op value)?"""
-    rest = text[colon + 1:]
-    if rest.startswith(":"):
-        rest = rest[1:]
-    words = rest.split()
-    while words and words[0] in MODIFIERS:
-        rest = rest.split(words[0], 1)[1]
-        words = words[1:]
-    kind, at = first_operator(rest, doubled)
-    # The operator follows the first word directly: `t: b ; c=1` is a rule.
-    return kind == "assignment" and len(rest[:at].rstrip(":+?").split()) == 1
+            equals = True
+        elif c == ":":
+            colon = True
+        elif c not in SPACE:
+            more = True
+    if equals:
+        return "other"
+    if colon:
+        return "rule"
+    return "other" if more else "call"
 
 
 def eval_calls(text):
-    """The (start, end) of every $(eval ...) or ${eval ...} call in the text."""
+    """The (start, end) of every eval call in the text: $(eval ...), ${eval ...},
+    $(call eval,...); it ends at the bracket that closes it."""
     spans = []
     for m in EVAL.finditer(text):
         opener = text[m.start() + 1]
@@ -204,6 +243,15 @@ def eval_calls(text):
     return spans
 
 
+def sign_in_eval(text):
+    """Offset of the first number sign inside an eval call, or None."""
+    for start, end in eval_calls(text):
+        pos = text.find("#", start, end)
+        if pos >= 0:
+            return pos
+    return None
+
+
 def code_part(text):
     """The text before an ordinary comment: up to the first unescaped number
     sign outside every reference (none of it when the line is a comment)."""
@@ -214,23 +262,65 @@ def code_part(text):
 
 
 def evaluated_names(logical):
-    """Every name referenced inside an $(eval call that is not inside a comment."""
+    """Every word written inside an eval call, on any line of the file."""
     names = set()
-    for line, _ in logical:
-        text = code_part(line)
+    for text, _ in logical:
         for start, end in eval_calls(text):
-            names.update(REFERENCED.findall(text[start + 6:end]))
-            names.update(ARGUMENT.findall(text[start + 6:end]))
+            names.update(WORD.findall(text[start:end]))
     return names
 
 
-def define_name(words):
+def blank_words(text):
+    return [w for w in re.split("[ \t]+", text.strip(SPACE)) if w]
+
+
+def first_word(text):
+    """The line's first word as 3.81 has it once the comment is cut: up to a
+    blank or a number sign."""
+    return re.match("[^ \t#]*", text.strip(SPACE)).group(0)
+
+
+def define_name(text):
     """The name a define line defines, or None when the line is not a define."""
-    if words[:1] == ["define"]:
+    words = blank_words(text)
+    if first_word(text) == "define":
         return words[1] if len(words) > 1 else ""
-    if words[:2] == ["override", "define"]:
+    if words[:1] == ["override"] and len(words) > 1 and first_word(words[1]) == "define":
         return words[2] if len(words) > 2 else ""
     return None
+
+
+def define_body(logical, i):
+    """The lines of the define body that starts at index i, and the index of
+    its endef (len(logical) when it never ends).  A line with a tab at its
+    start neither nests nor ends, as in make."""
+    depth, body = 1, []
+    while i < len(logical):
+        text = logical[i][0]
+        if not text.startswith("\t"):
+            words = blank_words(text)
+            if words[:1] == ["define"]:
+                depth += 1
+            elif words[:1] == ["endef"]:
+                depth -= 1
+                if not depth:
+                    return body, i
+        body.append(logical[i])
+        i += 1
+    return body, i
+
+
+def split_differently(body):
+    """Does a define body hold a define of its own, or an endef with a tab
+    at its start?  In a branch that is not taken 3.81 ends such a define at
+    another line than in a branch that is taken."""
+    for text, _ in body:
+        words = blank_words(text)
+        if words[:1] == ["define"] and not text.startswith("\t"):
+            return True
+        if words[:1] == ["endef"] and text.startswith("\t"):
+            return True
+    return False
 
 
 class Checker:
@@ -249,84 +339,87 @@ class Checker:
                 logical = logical_lines(physical_lines(f.read()))
         except (OSError, UnicodeDecodeError) as exc:
             raise RuntimeError("cannot read %s: %s" % (path, exc))
-        evaluated = evaluated_names(logical)
-        top, i = [], 0
+        self.scan(path, logical, False, follow, evaluated_names(logical))
+
+    def scan(self, path, logical, doubled, follow, evaluated):
+        is_open = False                       # a rule is open, if every branch around this line is taken
+        conditionals = []                     # [open at entry, open at the end of each branch so far, certain at entry]
+        i = 0
         while i < len(logical):
             text, numbers = logical[i]
-            name = define_name(text.split())
-            if name is None:
-                top.append((text, numbers))
-                i += 1
-                continue
-            body, i, depth = [], i + 1, 1
-            while i < len(logical):               # a define inside a define nests
-                inner = logical[i][0].split()
-                if define_name(inner) is not None:
-                    depth += 1
-                elif inner[:1] == ["endef"]:
-                    depth -= 1
-                    if not depth:
-                        break
-                body.append(logical[i])
-                i += 1
-            if i == len(logical):
-                raise RuntimeError("%s:%d: define never ends" % (path, numbers[0]))
-            if name in evaluated:
-                self.scan(path, body, doubled=True, follow=False)
-            i += 1                                # a define leaves an open rule open
-        self.scan(path, top, doubled=False, follow=follow)
-
-    def scan(self, path, logical, doubled, follow):
-        rule_open = False
-        inner = 0                             # inside a define of the body being read
-        for text, numbers in logical:
-            stripped = text.strip()
+            i += 1
+            tab = text.startswith("\t")
+            stripped = text.strip(SPACE)
             if not stripped:
                 continue
-            words = stripped.split()
-            if define_name(words) is not None:
-                inner += 1                    # its body is a define body: not read
+            if stripped.startswith("#") and not tab:
+                continue                      # an ordinary comment line
+            # Open whether or not the branches around this line are taken.
+            certain = is_open and (not conditionals or conditionals[-1][2])
+            name = define_name(text)
+            word = first_word(text)
+            switches = name is not None or word in CONDITIONALS or word in ("else", "endif")
+            if switches and blank_words(text)[1:2] and blank_words(text)[1][0] in ":+?=":
+                self.findings.append((path, numbers[0], UNCLEAR))   # a variable or a target named like a directive
                 continue
-            if inner:
-                inner -= words[:1] == ["endef"]
+            if is_open and tab:               # a recipe line, whatever it looks like
+                if switches and not certain:  # ... unless its branch is not taken: then make reads the directive
+                    self.findings.append((path, numbers[0], UNCLEAR))
+                else:
+                    self.judge(path, text, numbers, doubled, strict=False)
                 continue
-            if rule_open and text.startswith("\t"):     # a recipe line, whatever it looks like
-                self.judge_eval(path, text, numbers)
+            if name is not None:
+                if tab:                       # a define, or a recipe line of a rule not followed here
+                    self.findings.append((path, numbers[0], UNCLEAR))
+                    continue
+                body, end = define_body(logical, i)
+                if end == len(logical):
+                    raise RuntimeError("%s:%d: define never ends" % (path, numbers[0]))
+                if conditionals and split_differently(body):
+                    self.findings.append((path, numbers[0], UNCLEAR))
+                else:
+                    self.judge(path, text, numbers, doubled, strict=True)
+                if name in evaluated and not doubled:
+                    self.scan(path, body, True, False, evaluated)
+                i = end + 1
+                is_open = False
                 continue
-            if stripped.startswith("#"):
-                continue
-            word = words[0]
-            if word in CONDITIONALS or (word == "else" and words[1:2] and words[1] in CONDITIONALS):
-                self.judge(path, text, numbers, doubled)      # read, and an open rule stays as it is
-                continue
-            if word in NO_EFFECT:
-                continue
-            kind, at = first_operator(text, doubled)
-            if word in DIRECTIVES or kind == "assignment":
-                self.judge(path, text, numbers, doubled)
-                if word != "override":        # 3.81 leaves a rule open across an override line
-                    rule_open = False
+            if word in CONDITIONALS:
+                self.judge(path, text, numbers, doubled, strict=True)
+                conditionals.append([is_open, True, certain])
+            elif word == "else":
+                self.judge(path, text, numbers, doubled, strict=True)
+                if conditionals:
+                    conditionals[-1][1] = conditionals[-1][1] and is_open
+                    is_open = conditionals[-1][0]
+                else:
+                    is_open = False
+            elif word == "endif":
+                self.judge(path, text, numbers, doubled, strict=True)
+                if conditionals:
+                    entry, branches, _ = conditionals.pop()
+                    is_open = entry and branches and is_open
+                else:
+                    is_open = False
+            elif word in KEYWORDS:
+                self.judge(path, text, numbers, doubled, strict=True)
+                is_open = False
                 if follow and word in ("include", "-include", "sinclude"):
                     self.follow_include(path, stripped[len(word):], word)
-            elif kind == "rule":
-                self.judge_eval(path, text, numbers)
-                rule_open = not target_specific(text, at, doubled)
             else:
-                self.judge_eval(path, text, numbers)
-                rule_open = False
+                kind = line_kind(text, doubled)
+                self.judge(path, text, numbers, doubled, strict=kind == "other")
+                is_open = kind == "rule"
 
-    def judge(self, path, text, numbers, doubled, start=0, end=None):
-        pos = sign_in_reference(text[start:end], doubled)
-        if pos is not None:
-            self.findings.append((path, numbers[min(start + pos, len(numbers) - 1)], MESSAGE))
-            return True
-        return False
-
-    def judge_eval(self, path, text, numbers):
-        """A number sign anywhere inside an $(eval call."""
-        for start, end in eval_calls(text):
-            if self.judge(path, text, numbers, True, start, end):
-                return
+    def judge(self, path, text, numbers, doubled, strict):
+        """At most one finding for the line: a number sign inside an eval
+        call, and on a line that is not passed, inside any reference."""
+        places = [sign_in_eval(text)]
+        if strict:
+            places.append(sign_in_reference(text, doubled))
+        places = [p for p in places if p is not None]
+        if places:
+            self.findings.append((path, numbers[min(min(places), len(numbers) - 1)], MESSAGE))
 
     def follow_include(self, path, rest, word):
         for name in code_part(rest).split():

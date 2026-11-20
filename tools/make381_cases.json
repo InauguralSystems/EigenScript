@@ -686,7 +686,7 @@
   },
   {
    "differ": false,
-   "expect": "clean",
+   "expect": "finding",
    "kind": "number-sign",
    "make381": {
     "err": "",
@@ -700,7 +700,7 @@
    },
    "name": "target-specific",
    "text": "X := ok\nall2: Z := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
-   "why": "the two makes agree"
+   "why": "stricter than the makes: a target-specific assignment: both makes read it from the uncut text; the check does not tell it from an assignment and judges it"
   },
   {
    "differ": false,
@@ -1028,7 +1028,7 @@
   },
   {
    "differ": false,
-   "expect": "clean",
+   "expect": "finding",
    "kind": "number-sign",
    "make381": {
     "err": "",
@@ -1042,7 +1042,7 @@
    },
    "name": "target-var-recursive",
    "text": "X := ok\nall2: Z = $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
-   "why": "the two makes agree"
+   "why": "stricter than the makes: a target-specific assignment: both makes read it from the uncut text; the check does not tell it from an assignment and judges it"
   },
   {
    "differ": false,
@@ -1550,7 +1550,7 @@
   },
   {
    "differ": false,
-   "expect": "clean",
+   "expect": "finding",
    "kind": "number-sign",
    "make381": {
     "err": "case.mk:5: *** commands commence before first target.  Stop.",
@@ -1564,7 +1564,7 @@
    },
    "name": "tab-after-bare-call",
    "text": "X := ok\nall2:\n\t@echo one\n$(info hi)\n\t@echo $(shell printf '%s' 'r#s')\n",
-   "why": "the two makes agree"
+   "why": "stricter than the makes: both makes stop at the tab line, which is no recipe line after a bare call; the check judges every line it does not pass"
   },
   {
    "differ": true,
@@ -1928,8 +1928,8 @@
   },
   {
    "differ": true,
-   "expect": "clean",
-   "kind": "other-construct",
+   "expect": "finding",
+   "kind": "number-sign",
    "make381": {
     "err": "/bin/sh: 1: Z: not found\nmake: *** [all2] Error 127",
     "out": "X=[ok] Z=[]\nV=[X]\none\nZ := a b#x",
@@ -1942,7 +1942,7 @@
    },
    "name": "tab-assign-after-define",
    "text": "X := ok\nall2:\n\t@echo one\ndefine F\nv\nendef\n\tZ := $(sort b#x a)\n",
-   "why": "not covered: a tab line after a define that follows a rule: 3.81 still takes it as a recipe line of that rule, 4.3 takes it as an assignment"
+   "why": "the two makes differ"
   },
   {
    "differ": true,
@@ -2090,7 +2090,7 @@
   },
   {
    "differ": false,
-   "expect": "clean",
+   "expect": "finding",
    "kind": "number-sign",
    "make381": {
     "err": "",
@@ -2104,11 +2104,11 @@
    },
    "name": "define-evaled-only-in-comment",
    "text": "define UNUSED\nY := $$(sort b#x a)\nendef\n# $(eval $(UNUSED))\nX := ok\n",
-   "why": "the two makes agree"
+   "why": "stricter than the makes: the eval call that names the define is in an ordinary comment line and never runs; the check reads a body whose name is a word inside any eval call of the file, comment lines included"
   },
   {
    "differ": false,
-   "expect": "clean",
+   "expect": "finding",
    "kind": "number-sign",
    "make381": {
     "err": "",
@@ -2122,7 +2122,7 @@
    },
    "name": "define-evaled-only-in-trailing-comment",
    "text": "define UNUSED\nY := $$(sort b#x a)\nendef\nX := ok # $(eval $(UNUSED))\n",
-   "why": "the two makes agree"
+   "why": "stricter than the makes: the eval call that names the define is after an ordinary comment sign and never runs; the check reads a body whose name is a word inside any eval call of the file"
   },
   {
    "differ": true,
@@ -2306,7 +2306,7 @@
   },
   {
    "differ": false,
-   "expect": "clean",
+   "expect": "finding",
    "kind": "number-sign",
    "make381": {
     "err": "",
@@ -2320,7 +2320,7 @@
    },
    "name": "rule-semicolon-recipe-assign-then-tab",
    "text": "X := ok\nall2: all3 ; @Q=1; echo $$Q\n\t@Z=$(shell printf '%s' 'r#s'); echo $$Z\nall3:\n",
-   "why": "the two makes agree"
+   "why": "stricter than the makes: the rule line has an equals sign outside a reference, in its recipe after the semicolon, so the check does not take it as a rule line and judges the tab line after it"
   },
   {
    "differ": true,
@@ -2351,7 +2351,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a\na b#x] Z=[]\nV=[X]",
+    "out": "X=[a\ra b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "lone-cr-inside-line",
@@ -2504,8 +2504,8 @@
   },
   {
    "differ": true,
-   "expect": "clean",
-   "kind": "other-construct",
+   "expect": "finding",
+   "kind": "number-sign",
    "make381": {
     "err": "",
     "out": "X=[ok] Z=[]\nV=[X]\nr\nr#s",
@@ -2518,7 +2518,7 @@
    },
    "name": "override-then-tab-assign-shaped",
    "text": "X := ok\nall2:\n\t@echo r\noverride Y := 1\n\t@Z=$(shell printf '%s' 'r#s'); echo $$Z\n",
-   "why": "not covered: a tab line after an override line that follows a rule: 3.81 still takes it as a recipe line of that rule, 4.3 takes it as an assignment"
+   "why": "the two makes differ"
   },
   {
    "differ": true,
@@ -2702,7 +2702,7 @@
   },
   {
    "differ": false,
-   "expect": "clean",
+   "expect": "finding",
    "kind": "number-sign",
    "make381": {
     "err": "",
@@ -2716,7 +2716,7 @@
    },
    "name": "define-named-like-eval-word",
    "text": "define N\nY := $$(sort b#x a)\nendef\n$(eval N := 1)\nX := ok\n",
-   "why": "the two makes agree"
+   "why": "stricter than the makes: the eval call assigns to a variable of the same name and never evaluates the body; the check reads a body whose name is a word inside any eval call"
   },
   {
    "differ": false,
@@ -2770,6 +2770,1608 @@
    },
    "name": "targetvar-value-with-semicolon",
    "text": "X := ok\nall2: Q := a;b\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)] [$(Q)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:6: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "body-tab-define-does-not-nest",
+   "text": "define F\nall3:\n\tdefine x\nX := $$(sort b#x a)\nendef\n$(eval $(F))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[a b_x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b_x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "body-tab-define-does-not-nest-twin",
+   "text": "define F\nall3:\n\tdefine x\nX := $$(sort b_x a)\nendef\n$(eval $(F))\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:6: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "body-tab-endef-does-not-end",
+   "text": "define F\nall3:\n\tendef\nX := $$(sort b#x a)\nendef\n$(eval $(F))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "rule-line-equals-inside-reference",
+   "text": "X :=\nall2: $(X:a=b) ; @echo [$(subst x,#,x)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "a:b",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "a:b\nX=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "bare-call-with-colon-then-tab-assign",
+   "text": "X := ok\n$(info a:b)\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:5: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "rule-in-untaken-branch-then-tab-assign",
+   "text": "X := ok\nifdef NOPE\nall3:\nendif\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "rule-then-untaken-assignment-then-recipe",
+   "text": "X := ok\nall2:\nifdef NOPE\nY := 1\nendif\n\t@echo [$(subst x,#,x)]\n",
+   "why": "stricter than the makes: the assignment is in a branch that is not taken here, so the rule stays open in both makes; the check holds a rule open after a conditional only if it is open at the end of every branch"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "rule-then-empty-conditional-then-recipe",
+   "text": "X := ok\nall2:\nifdef NOPE\nendif\n\t@echo [$(subst x,#,x)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:7: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "rule-then-else-assignment-then-tab-assign",
+   "text": "X := ok\nall3:\nifdef NOPE\nelse\nY := 1\nendif\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "rule-in-taken-branch-then-recipe",
+   "text": "X := ok\nifndef NOPE\nall2:\nendif\n\t@echo [$(subst x,#,x)]\n",
+   "why": "stricter than the makes: the rule line is in the branch that is taken here, so the tab line is its recipe in both makes; the check holds a rule open after a conditional only if one was open before it"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "rule-replaced-in-branch-then-recipe",
+   "text": "X := ok\nall3:\nifndef NOPE\nY := 1\nall2:\nendif\n\t@echo [$(subst x,#,x)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "name": "tab-define-at-top",
+   "text": "\tdefine F\nX := 1\nendef\n",
+   "why": "stricter than the makes: both makes read this as a define, because no rule is open; the check refuses a define line that starts with a tab wherever it has not followed a rule to that line"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "make: define: No such file or directory\nmake: *** [case.mk:3: all3] Error 127",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\ndefine F",
+    "rc": 2
+   },
+   "name": "tab-define-after-uncertain-rule",
+   "text": "X := ok\nall3: ; @Y=1 true\n\tdefine F\nZ := $(sort b#x a)\nifdef NOPE\nendef\nendif\nall2: all3\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** unterminated call to function 'strip': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-name-with-sign",
+   "text": "define F$(strip #)\nv\nendef\nX := ok\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** unterminated call to function 'strip': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "override-define-name-with-sign",
+   "text": "override define F$(strip #)\nv\nendef\nX := ok\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "targetvar-name-call-with-space-then-tab-assign",
+   "text": "X := ok\nnm = $(1)\nall2: $(call nm, Q) := 1\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "targetvar-name-equals-in-reference-then-tab-assign",
+   "text": "X := ok\nall2: Q$(if 1,=) := 1\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:5: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "define-evaled-from-recipe-after-shell-comment",
+   "text": "define F\nX := $$(sort b#x a)\nendef\nall2:\n\t@true # $(eval $(F))\n\t@echo [$(X)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "define-evaled-from-semicolon-recipe-after-shell-comment",
+   "text": "define F\nX := $$(sort b#x a)\nendef\nall2: ; @true # $(eval $(F))\n\t@echo [$(X)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[]",
+    "rc": 0
+   },
+   "name": "eval-in-comment-on-rule-line",
+   "text": "X := ok\nall2: # $(eval Z := $$(sort b#x a))\n\t@echo [$(Z)]\n",
+   "why": "stricter than the makes: the eval call stands after an ordinary comment sign on a rule line with no recipe, and neither make expands it; the check judges an eval call wherever it stands on a line"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "hi\nX=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "hi\nX=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "name": "eval-in-comment-on-bare-line",
+   "text": "$(info hi) # $(eval X := $$(sort b#x a))\n",
+   "why": "stricter than the makes: the eval call stands after an ordinary comment sign, and neither make expands it; the check judges an eval call wherever it stands on a line"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[a#b] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a#b] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "eval-escaped-sign-outside-reference",
+   "text": "$(eval X := a\\#b)\n",
+   "why": "stricter than the makes: the sign is escaped and outside every reference of the evaluated text, and both makes give a#b; the check refuses any number sign inside an eval call"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\na b#x",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\na b#x",
+    "rc": 0
+   },
+   "name": "eval-text-is-a-rule-line",
+   "text": "X := ok\n$(eval all3: ; @echo $$(sort b#x a))\nall2: all3\n",
+   "why": "stricter than the makes: the evaluated text is a rule line, which 3.81 reads as current make does; the check refuses any number sign inside an eval call"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-named-after-call-word",
+   "text": "define F\nX := $$(sort b#x a)\nendef\n$(eval Y := call F)\nX := ok\n",
+   "why": "stricter than the makes: the eval call holds the words call and F as text, not as a call, and never evaluates the body; the check reads a body whose name is a word inside any eval call"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-evaled-before-it-is-defined",
+   "text": "$(eval $(F))\ndefine F\nX := $$(sort b#x a)\nendef\nX := ok\n",
+   "why": "stricter than the makes: the eval call comes before the define, when the variable is still empty; the check reads a body whose name is a word inside any eval call of the file"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "double-colon-targetvar-then-tab-assign",
+   "text": "X := ok\nall2:: Q := 1\n\tZ := $(sort b#x a)\nall2::\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "double-colon-rule-then-recipe",
+   "text": "X := ok\nall2::\n\t@echo [$(subst x,#,x)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "export-targetvar-then-tab-assign",
+   "text": "X := ok\nall2: export Q := 1\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "eval-span-ends-at-its-bracket",
+   "text": "X := ok\nall2: ; $(eval Z := 1)@echo [$(subst x,#,x)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "semicolon-recipe-with-equals-and-sign",
+   "text": "X := ok\nall2: ; @Y=1 echo [$(subst x,#,x)]\n",
+   "why": "stricter than the makes: a rule line with an equals sign outside a reference, in its recipe after the semicolon: the check does not take it as a rule line and judges it"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: *** unterminated call to function 'subst': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "keyword-line-with-colon",
+   "text": "X := ok\nvpath %.zz a:b$(subst x,#,x)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "export-line-then-tab-assign",
+   "text": "X := ok\nexport Q\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: *** missing separator.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "case.mk:2: *** missing separator.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "name": "bare-text-line-with-sign",
+   "text": "X := ok\nfoo $(sort b#x a)\n",
+   "why": "stricter than the makes: both makes stop at this line (missing separator); the check judges every line it does not pass"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "rule-after-define-then-recipe",
+   "text": "X := ok\ndefine G\nv\nendef\nall2:\n\t@echo [$(subst x,#,x)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "rule-then-comment-then-recipe",
+   "text": "X := ok\nall2:\n# a comment\n\n\t@echo [$(subst x,#,x)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "rule-then-nested-conditional-then-recipe",
+   "text": "X := ok\nall2:\nifdef NOPE\nifdef NOPE2\nendif\nelse\nendif\n\t@echo [$(subst x,#,x)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "call-eval-deferred",
+   "text": "X := ok\n$(call eval,Z := $$(sort b#x a))\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n# \n[a b#x]",
+    "rc": 0
+   },
+   "name": "tab-comment-eval-after-uncertain-rule",
+   "text": "X := ok\nall2: ; @Y=1 true\n\t# $(eval Z := $$(sort b#x a))\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:5: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "endif-with-comment-attached",
+   "text": "X := ok\nifdef NOPE\nall3:\nendif#c\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:7: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "else-with-comment-attached",
+   "text": "X := ok\nall3:\nifdef NOPE\nelse#c\nY := 1\nendif\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "hi",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "hi\nX=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "comment-with-colon-then-tab-assign",
+   "text": "X := ok\n$(info hi) # a: b\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "endef-with-comment-after-space",
+   "text": "define F\nX := $$(sort b#x a)\nendef # c\n$(eval $(F))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:7: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "ifdef-with-comment-attached-then-tab-assign",
+   "text": "X := ok\nall3:\nifdef NOPE#c\nelse\nY := 1\nendif\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "rule-target-with-escaped-sign",
+   "text": "X := ok\nall2: a\\#b\na\\#b: ; @echo [$(subst x,#,x)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "a#b\nc\nX=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "a#b\nc\nX=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "bare-calls-with-blank-between",
+   "text": "$(info a#b) $(info c)\nX := ok\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "comment-line-with-eval-and-sign",
+   "text": "# $(eval X := $$(sort b#x a))\nX := ok\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:7: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-inside-evaluated-body-evaled",
+   "text": "define F\ndefine G\nX := $$$$(sort b#x a)\nendef\n$$(eval $$(G))\nendef\n$(eval $(F))\n",
+   "why": "looser than the makes: a define inside an evaluated body is not read, also when that body itself evaluates it"
+  },
+  {
+   "differ": true,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:5: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-evaled-through-computed-name",
+   "text": "define F_a\nX := $$(sort b#x a)\nendef\nK := a\n$(eval $(F_$(K)))\n",
+   "why": "looser than the makes: the name inside the eval call is computed, $(F_$(K)), so the name of the define is not a word of the call"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:7: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "rule-then-taken-assignment-else-empty-then-tab-assign",
+   "text": "X := ok\nall3:\nifndef NOPE\nY := 1\nelse\nendif\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:5: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "rule-in-untaken-branch-else-tab-assign",
+   "text": "X := ok\nifdef NOPE\nall3:\nelse\n\tZ := $(sort b#x a)\nendif\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** extraneous 'endif'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "case.mk:3: *** extraneous 'endif'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "name": "stray-endif-then-tab",
+   "text": "X := ok\nall2:\nendif\n\t@echo [$(subst x,#,x)]\n",
+   "why": "stricter than the makes: both makes stop at the endif, which ends no conditional; the check closes the rule there and judges the tab line after it"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** extraneous 'else'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "case.mk:3: *** extraneous 'else'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "name": "stray-else-then-tab",
+   "text": "X := ok\nall2:\nelse\n\t@echo [$(subst x,#,x)]\n",
+   "why": "stricter than the makes: both makes stop at the else, which belongs to no conditional; the check closes the rule there and judges the tab line after it"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** unterminated call to function 'subst': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "dash-include-name-with-colon",
+   "text": "-include no:such$(subst x,#,x)\nX := ok\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** unterminated call to function 'subst': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "sinclude-name-with-colon",
+   "text": "sinclude no:such$(subst x,#,x)\nX := ok\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** unterminated call to function 'subst': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "case.mk:1: no:such#: No such file or directory\nmake: *** No rule to make target 'no:such#'.  Stop.",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 2
+   },
+   "name": "include-name-with-colon",
+   "text": "include no:such$(subst x,#,x)\nX := ok\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** unterminated call to function 'subst': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "export-name-with-colon",
+   "text": "export A:B$(subst x,#,x)\nX := ok\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** unterminated call to function 'subst': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "unexport-name-with-colon",
+   "text": "unexport A:B$(subst x,#,x)\nX := ok\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: invalid 'override' directive",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "override-line-with-colon",
+   "text": "override a:b$(subst x,#,x)\nX := ok\n",
+   "why": "stricter than the makes: an override line that is no assignment: 3.81 warns and goes on, 4.3 says nothing, and neither reads the reference; the check judges every directive line"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: Extraneous text after 'else' directive",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "case.mk:2: extraneous text after 'else' directive",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "else-line-with-colon",
+   "text": "ifdef NOPE\nelse a:b$(subst x,#,x)\nendif\nX := ok\n",
+   "why": "stricter than the makes: text after else that is no conditional: both makes warn and go on; the check judges every else line"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** extraneous 'endef'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "stray-endef-with-colon",
+   "text": "endef a:b$(subst x,#,x)\nX := ok\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "rule-then-ifeq-then-recipe",
+   "text": "X := ok\nall2:\nifeq (a,b)\nendif\n\t@echo [$(subst x,#,x)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "rule-then-ifneq-then-recipe",
+   "text": "X := ok\nall2:\nifneq (a,a)\nendif\n\t@echo [$(subst x,#,x)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:10: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "nested-endif-with-comment-attached",
+   "text": "X := ok\nall3:\nifndef NOPE\nY := 1\nelse\nifdef NOPE2\nendif#c\nall4:\nendif\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "5\nX=[ok] Z=[1]\nV=[X Z]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "5\nX=[ok] Z=[1]\nV=[X Z]",
+    "rc": 0
+   },
+   "name": "define-named-outside-the-eval-call",
+   "text": "define G\nY := $$(sort b#x a)\nendef\n$(eval Z := 1)$(info $(words $(G)))\nX := ok\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a a b#x]\nV=[X Z]\n[a a b#x]",
+    "rc": 0
+   },
+   "name": "eval-nested-call-then-deferred-sign",
+   "text": "X := ok\n$(eval Z := $(strip a) $$(sort b#x a))\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "rule-then-export-then-tab-assign",
+   "text": "X := ok\nall3:\nexport Q\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "two-eval-calls-second-deferred",
+   "text": "X := ok\n$(eval Y := 1)$(eval Z := $$(sort b#x a))\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "form-feed-before-comment-with-eval",
+   "text": "\f# $(eval Z := $$(sort b#x a))\nX := ok\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "reference-named-like-eval",
+   "text": "$(evalx a#b)\nX := ok\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-evaled-by-brace-reference",
+   "text": "define F\nX := $$(sort b#x a)\nendef\n$(eval ${F})\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#y] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-evaled-name-before-colon",
+   "text": "define F\nX := $$(sort b#x a)\nendef\n$(eval $(F:x=y))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:5: Extraneous text after 'else' directive",
+    "out": "X=[ok] Z=[]\nV=[X]\n[]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "else-named-variable-then-tab-assign",
+   "text": "X := ok\nall3:\nifndef NOPE\nY := 1\nelse = 1\n\tZ := $(sort b#x a)\nendif\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:5: Extraneous text after 'else' directive",
+    "out": "X=[ok] Z=[]\nV=[X]\n[]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "case.mk:5: extraneous text after 'else' directive",
+    "out": "X=[ok] Z=[]\nV=[X]\n[]",
+    "rc": 0
+   },
+   "name": "else-named-target-then-tab-assign",
+   "text": "X := ok\nall3:\nifndef NOPE\nY := 1\nelse : all5\n\tZ := $(sort b#x a)\nendif\nall2:\n\t@echo [$(Z)]\nall5: ; @:\n",
+   "why": "stricter than the makes: both makes read \"else : all5\" as an else with text after it and go on alike; the check refuses a directive word followed by an operator, which may also be a variable or a target of that name"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: Extraneous text after 'endif' directive\ncase.mk:2: *** extraneous 'endif'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "endif-named-variable-append",
+   "text": "X := ok\nendif += 1\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: Extraneous text after 'endif' directive\ncase.mk:2: *** extraneous 'endif'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "endif-named-variable-conditional",
+   "text": "X := ok\nendif ?= 1\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:5: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "tab-endif-after-rule-in-untaken-branch",
+   "text": "X := ok\nifneq (a,a)\nall3::\n\tendif\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "tab-endif-is-a-recipe-line",
+   "text": "X := ok\nall2:\n\t@echo [$(subst x,#,x)]\n\t@: endif\nall3:\n\tendif\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[#]",
+    "rc": 0
+   },
+   "name": "tab-endif-under-rule-open-before-conditional",
+   "text": "X := ok\nall2:\nifdef NOPE\n\tendif\nendif\n\t@echo [$(subst x,#,x)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:7: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "tab-endif-in-conditional-inside-untaken-branch",
+   "text": "X := ok\nifdef NOPE\nall3:\nifdef NOPE2\n\tendif\nendif\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "tab-define-after-rule-in-untaken-branch",
+   "text": "X := ok\nifdef NOPE\nall3:\n\tdefine D\nendif\nendef\nendif\n",
+   "why": "stricter than the makes: the branch is not taken here, so in both makes the define with a tab takes the lines to its endef; the check refuses a define line with a tab at its start under a rule that a branch of a conditional opened"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:5: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "tab-else-after-rule-in-untaken-branch",
+   "text": "X := ok\nifdef NOPE\nall3:\n\telse\n\tZ := $(sort b#x a)\nendif\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "tab-ifdef-after-rule-in-untaken-branch",
+   "text": "X := ok\nifdef NOPE\nall3:\n\tifdef NOPE2\nendif\nall4:\n\t@echo [$(subst x,#,x)]\nendif\n",
+   "why": "stricter than the makes: the branch is not taken here, so both makes skip all of it; the check refuses a conditional with a tab at its start under a rule that a branch of a conditional opened"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[a b_x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b_x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-with-tab-define-line-in-taken-branch",
+   "text": "ifndef NOPE\ndefine F\nall3:\n\tdefine x\nX := $$(sort b_x a)\nendef\nendif\n$(eval $(F))\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:8: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "case.mk:9: *** missing separator.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "name": "define-with-inner-define-in-untaken-branch",
+   "text": "X := ok\nifdef NOPE\ndefine D\ndefine E\nv\nendef\nendif\n\tZ := $(sort b#x a)\nendef\nall2:\n\t@echo [$(Z)]\n",
+   "why": "stricter than the makes: both makes stop, at different lines: in a branch that is not taken 3.81 ends the define at its first endef; the check refuses a define inside a conditional whose body holds a define"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:6: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "case.mk:7: *** missing separator.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "name": "define-with-tab-endef-in-untaken-branch",
+   "text": "X := ok\nifdef NOPE\ndefine D\n\tendef\nendif\n\tZ := $(sort b#x a)\nendef\nall2:\n\t@echo [$(Z)]\n",
+   "why": "stricter than the makes: both makes stop, at different lines: in a branch that is not taken 3.81 ends the define at the endef with a tab; the check refuses a define inside a conditional whose body holds such a line"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-in-untaken-branch",
+   "text": "ifdef NOPE\ndefine D\nv\nendef\nendif\nX := ok\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:6: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-in-taken-branch-evaled",
+   "text": "ifndef NOPE\ndefine F\nX := $$(sort b#x a)\nendef\nendif\n$(eval $(F))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: Extraneous text after 'endif' directive",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "case.mk:2: extraneous text after 'endif' directive",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "endif-line-with-text",
+   "text": "ifdef NOPE\nendif a:b$(subst x,#,x)\nX := ok\n",
+   "why": "stricter than the makes: text after endif: both makes warn and go on; the check judges every endif line"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-evaled-by-single-letter-reference",
+   "text": "define F\nX := $$(sort b#x a)\nendef\n$(eval $F)\n",
    "why": "the two makes differ"
   },
   {
@@ -2864,7 +4466,7 @@
   },
   {
    "differ": false,
-   "expect": "clean",
+   "expect": "finding",
    "kind": "number-sign",
    "make381": {
     "err": "",
@@ -2878,7 +4480,7 @@
    },
    "name": "pattern-specific-assign",
    "text": "X := ok\nall%: Z := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
-   "why": "the two makes agree"
+   "why": "stricter than the makes: a pattern-specific assignment: both makes read it from the uncut text; the check does not tell it from an assignment and judges it"
   },
   {
    "differ": true,

@@ -64,11 +64,14 @@ def run(make, path):
     # A fixed environment: make takes every environment variable as a variable
     # of its own, and the cases print variables by name.
     q = subprocess.run([make, '-f', path, 'all'], capture_output=True,
-                       text=True, timeout=30, cwd=os.path.dirname(path),
+                       timeout=30, cwd=os.path.dirname(path),
                        env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'})
+    # Decoded here, not by subprocess: its text mode turns a carriage return
+    # that make printed into a newline.
+    out = q.stdout.decode('utf-8', 'replace').strip(' \t\n')
     # 3.81 quotes with a grave accent where later makes use an apostrophe.
-    err = q.stderr.strip().replace(path, 'case.mk').replace('`', "'")
-    return {'rc': q.returncode, 'out': q.stdout.strip(), 'err': err}
+    err = q.stderr.decode('utf-8', 'replace').strip(' \t\n').replace(path, 'case.mk').replace('`', "'")
+    return {'rc': q.returncode, 'out': out, 'err': err}
 
 
 def results_differ(r381, r4):
