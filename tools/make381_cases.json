@@ -1,0 +1,1286 @@
+{
+ "cases": [
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'shell': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "shell-simple",
+   "text": "X := $(shell printf '%s' 'a#b')\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'shell': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "shell-recursive",
+   "text": "X = $(shell printf '%s' 'a#b')\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]",
+    "rc": 0
+   },
+   "name": "shell-recursive-unused",
+   "text": "Y = $(shell printf '%s' 'a#b')\nX := ok\n",
+   "why": "stricter than the makes: the makes agree only because nothing expands the variable; see recursive-then-use"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'shell': missing '}'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "brace-shell",
+   "text": "X := ${shell printf '%s' 'a#b'}\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'if': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "if",
+   "text": "X := $(if 1,a#b,c)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "sort",
+   "text": "X := $(sort b#x a)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'filter-out': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[c]",
+    "rc": 0
+   },
+   "name": "filter-out",
+   "text": "X := $(filter-out a#b,a#b c)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'addprefix': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[p#a p#b]",
+    "rc": 0
+   },
+   "name": "addprefix",
+   "text": "X := $(addprefix p#,a b)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'strip': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "strip",
+   "text": "X := $(strip  a#b )\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'word': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "word",
+   "text": "X := $(word 1,a#b c)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'or': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "or",
+   "text": "X := $(or a#b,c)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'findstring': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[#]",
+    "rc": 0
+   },
+   "name": "findstring",
+   "text": "X := $(findstring #,a#b)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'notdir': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "notdir",
+   "text": "X := $(notdir d/a#b)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:2: *** unterminated variable reference.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a#.o b#.o]",
+    "rc": 0
+   },
+   "name": "subst-ref",
+   "text": "SRCS := a.c b.c\nX := $(SRCS:.c=#.o)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'strip': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "nested",
+   "text": "X := $(strip $(sort b#x a))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a#x b c]",
+    "rc": 0
+   },
+   "name": "three-lines",
+   "text": "X := $(sort b \\\n  a#x \\\n  c)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a\\#b]",
+    "rc": 0
+   },
+   "name": "escaped-in-call",
+   "text": "X := $(shell printf '%s' 'a\\#b')\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a b\\#x]",
+    "rc": 0
+   },
+   "name": "escaped-in-sort",
+   "text": "X := $(sort b\\#x a)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "hash-variable",
+   "text": "H := \\#\nX := $(shell printf '%s' 'a$Hb')\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "hash-variable-sort",
+   "text": "H := \\#\nX := $(sort b$Hx a)\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "octal-printf",
+   "text": "X := $(shell printf 'a\\043b')\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[a b ]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a b ]",
+    "rc": 0
+   },
+   "name": "comment-after-call",
+   "text": "X := $(sort b a) # c $(x\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]",
+    "rc": 0
+   },
+   "name": "ordinary-comment",
+   "text": "# a comment with $(shell echo #) in it\nX := ok\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]\nr#s",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]\nr#s",
+    "rc": 0
+   },
+   "name": "recipe-shell",
+   "text": "X := ok\nall2:\n\t@echo $(shell printf '%s' 'r#s')\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]\nr#s",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]\nr#s",
+    "rc": 0
+   },
+   "name": "recipe-plain",
+   "text": "X := ok\nall2:\n\t@echo 'r#s' # shell comment\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]\nr#s u#v",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]\nr#s u#v",
+    "rc": 0
+   },
+   "name": "semicolon-recipe",
+   "text": "X := ok\nall2: ; @echo 'r#s' $(shell printf '%s' 'u#v')\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]\nmake: *** No rule to make target 'a', needed by 'all2'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[ok]\nmake: *** No rule to make target 'a', needed by 'all2'.  Stop.",
+    "rc": 2
+   },
+   "name": "semicolon-prereq-call",
+   "text": "X := ok\nall2: $(sort b#x a) ; @echo hi\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "define-call",
+   "text": "define F\n$(shell printf '%s' 'a#b')\nendef\nX := $(call F)\n",
+   "why": "stricter than the makes: a define body: 3.81 differs only when the body reaches $(eval), which the check does not trace"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "define-direct",
+   "text": "define F\n$(shell printf '%s' 'a#b')\nendef\nX := $(F)\n",
+   "why": "stricter than the makes: a define body: 3.81 differs only when the body reaches $(eval), which the check does not trace"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:4: *** unterminated call to function 'shell': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "define-eval",
+   "text": "define F\nX := $$(shell printf '%s' 'a#b')\nendef\n$(eval $(F))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:4: *** unterminated call to function 'shell': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "define-eval-value",
+   "text": "define F\nX := $(shell printf '%s' 'a#b')\nendef\n$(eval $(value F))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]\nr#s",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]\nr#s",
+    "rc": 0
+   },
+   "name": "define-recipe",
+   "text": "X := ok\ndefine R\n@echo $(shell printf '%s' 'r#s')\nendef\nall2:\n\t$(R)\n",
+   "why": "stricter than the makes: a define body: 3.81 differs only when the body reaches $(eval), which the check does not trace"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[7]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[7]",
+    "rc": 0
+   },
+   "name": "define-comment-line",
+   "text": "define F\n# not a comment here $(sort b a)\nendef\nX := $(words $(F))\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** invalid syntax in conditional.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[no]",
+    "rc": 0
+   },
+   "name": "ifeq-call",
+   "text": "ifeq ($(strip a#b),a)\nX := yes\nelse\nX := no\nendif\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** invalid syntax in conditional.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "case.mk:1: *** invalid syntax in conditional.  Stop.",
+    "rc": 2
+   },
+   "name": "ifeq-plain",
+   "text": "ifeq (a#b,a)\nX := yes\nelse\nX := no\nendif\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "export-assign",
+   "text": "export X := $(sort b#x a)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:2: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[s a b#x]",
+    "rc": 0
+   },
+   "name": "append",
+   "text": "X := s\nX += $(sort b#x a)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "cond-assign",
+   "text": "X ?= $(sort b#x a)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]\n[a b#x]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "target-specific",
+   "text": "X := ok\nall2: Z := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]\nhi",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]\nhi",
+    "rc": 0
+   },
+   "name": "prereq-call",
+   "text": "X := ok\nall2: $(sort b#x a)\n\t@echo hi\nb%:\n\t@true\na:\n\t@true\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:2: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[ok]",
+    "rc": 0
+   },
+   "name": "include-arg",
+   "text": "X := ok\n-include $(sort nofile#x)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=['a]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=['a]",
+    "rc": 0
+   },
+   "name": "quoted-outside",
+   "text": "X := 'a#b'\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "escaped-outside",
+   "text": "X := a\\#b\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[$(shell echo a]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[$(shell echo a]",
+    "rc": 0
+   },
+   "name": "dollar-dollar",
+   "text": "X := $$(shell echo a#b)\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'shell': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "paren-shell-cmd",
+   "text": "X := $(shell (printf '%s' 'a#b'))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "i#j\nX=[ok]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "i#j\nX=[ok]",
+    "rc": 0
+   },
+   "name": "info-call",
+   "text": "$(info i#j)\nX := ok\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:2: *** unterminated call to function 'call': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[[a#b]]",
+    "rc": 0
+   },
+   "name": "call-user-fn",
+   "text": "F = [$(1)]\nX := $(call F,a#b)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'foreach': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a# b#]",
+    "rc": 0
+   },
+   "name": "foreach",
+   "text": "X := $(foreach v,a b,$(v)#)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'patsubst': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a#o]",
+    "rc": 0
+   },
+   "name": "patsubst",
+   "text": "X := $(patsubst %.c,%#o,a.c)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "recursive-then-use",
+   "text": "Y = $(sort b#x a)\nX := $(Y)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[a]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a]",
+    "rc": 0
+   },
+   "name": "bare-eval-assign",
+   "text": "$(eval X := $(shell printf '%s' 'a#b'))\n",
+   "why": "stricter than the makes: a bare $(eval line: the check refuses any number sign inside it; here both makes drop the text after the sign"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'shell': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "bare-eval-deferred",
+   "text": "$(eval X := $$(shell printf '%s' 'a#b'))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "override-assign",
+   "text": "override X := $(sort b#x a)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** invalid syntax in conditional.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[yes]",
+    "rc": 0
+   },
+   "name": "ifneq-findstring",
+   "text": "ifneq ($(findstring #,a#b),)\nX := yes\nelse\nX := no\nendif\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:2: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[ok]",
+    "rc": 0
+   },
+   "name": "vpath-call",
+   "text": "X := ok\nvpath %.c $(sort d#x)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:3: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[ok]",
+    "rc": 0
+   },
+   "name": "export-list",
+   "text": "A := 1\nX := ok\nexport $(sort A#B)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]\nhi",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]\nhi",
+    "rc": 0
+   },
+   "name": "rule-continuation",
+   "text": "X := ok\nall2: \\\n  $(sort b#x a)\n\t@echo hi\nb%:\n\t@true\na:\n\t@true\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]\n[a b#x]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "target-var-recursive",
+   "text": "X := ok\nall2: Z = $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]\nhi",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]\nhi",
+    "rc": 0
+   },
+   "name": "double-colon-rule",
+   "text": "X := ok\nall2:: $(sort b#x a)\n\t@echo hi\nb%:\n\t@true\na:\n\t@true\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]\nmade",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]\nmade",
+    "rc": 0
+   },
+   "name": "target-name-call",
+   "text": "X := ok\nall2: t$(subst #,,#)x\ntx:\n\t@echo made\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "space-indented-assign",
+   "text": "  X := $(sort b#x a)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[]",
+    "rc": 0
+   },
+   "name": "comment-continuation",
+   "text": "# a comment \\\nX := $(sort b#x a)\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a b\\\\#x]",
+    "rc": 0
+   },
+   "name": "double-backslash-hash",
+   "text": "X := $(sort b\\\\#x a)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "hash-variable-recursive",
+   "text": "H := \\#\nY = $(sort b$Hx a)\nX := $(Y)\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:1: *** unterminated call to function 'strip': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[a b c#d]",
+    "rc": 0
+   },
+   "name": "assign-two-calls",
+   "text": "X := $(sort b a) $(strip c#d)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[a b]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a b]",
+    "rc": 0
+   },
+   "name": "assign-call-then-comment",
+   "text": "X := $(sort b a)# c\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "case.mk:2: *** unterminated call to function 'strip': missing ')'.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[no]",
+    "rc": 0
+   },
+   "name": "ifdef-name-call",
+   "text": "A := 1\nifdef $(strip A#B)\nX := yes\nelse\nX := no\nendif\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]",
+    "rc": 0
+   },
+   "name": "define-name-line",
+   "text": "define F#G\nv\nendef\nX := ok\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "clean",
+   "kind": "other-construct",
+   "make381": {
+    "out": "X=[]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a]",
+    "rc": 0
+   },
+   "name": "bang-assign",
+   "text": "X != printf 'a'\n",
+   "why": "not covered: the != assignment: 3.81 reads the line another way and X is empty, with no error"
+  },
+  {
+   "differ": true,
+   "expect": "clean",
+   "kind": "other-construct",
+   "make381": {
+    "out": "X=[]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a]",
+    "rc": 0
+   },
+   "name": "colon-colon-eq",
+   "text": "X ::= a\n",
+   "why": "not covered: the ::= assignment: 3.81 reads the line another way and X is empty, with no error"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "other-construct",
+   "make381": {
+    "out": "X=[[]ok]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[[]ok]",
+    "rc": 0
+   },
+   "name": "file-function",
+   "text": "X := [$(file >/dev/null,t)]ok\n",
+   "why": "not covered: the $(file ...) function: 3.81 expands it to nothing (no difference shows in this case)"
+  },
+  {
+   "differ": true,
+   "expect": "clean",
+   "kind": "other-construct",
+   "make381": {
+    "out": "case.mk:2: *** missing separator.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[b]",
+    "rc": 0
+   },
+   "name": "undefine-directive",
+   "text": "X := a\nundefine X\nX ?= b\n",
+   "why": "not covered: the undefine directive: 3.81 stops with \"missing separator\""
+  },
+  {
+   "differ": true,
+   "expect": "clean",
+   "kind": "other-construct",
+   "make381": {
+    "out": "case.mk:2: *** multiple target patterns.  Stop.",
+    "rc": 2
+   },
+   "make4": {
+    "out": "X=[ok]\n[1]",
+    "rc": 0
+   },
+   "name": "private-modifier",
+   "text": "X := ok\nall2: private Z := 1\nall2:\n\t@echo [$(Z)]\n",
+   "why": "not covered: the private modifier: 3.81 stops with \"multiple target patterns\""
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]\n[a b#x]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "escaped-in-rule-call",
+   "text": "X := ok\nall2: $(sort b\\#x a)\n\t@echo [$^]\nb%:\n\t@true\na:\n\t@true\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]\nr#s",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]\nr#s",
+    "rc": 0
+   },
+   "name": "escaped-in-recipe",
+   "text": "X := ok\nall2:\n\t@echo $(shell printf '%s' 'r\\#s')\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "i\\#j\nX=[ok]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "i\\#j\nX=[ok]",
+    "rc": 0
+   },
+   "name": "escaped-in-bare-info",
+   "text": "$(info i\\#j)\nX := ok\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[yes]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[no]",
+    "rc": 0
+   },
+   "name": "escaped-in-ifeq",
+   "text": "ifeq ($(strip a\\#b),a\\#b)\nX := yes\nelse\nX := no\nendif\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[ok]\n[a b#x]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[ok]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "rule-call-prereqs-shown",
+   "text": "X := ok\nall2: $(sort b#x a)\n\t@echo [$^]\nb%:\n\t@true\na:\n\t@true\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[a]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a]",
+    "rc": 0
+   },
+   "name": "define-eval-plain-hash",
+   "text": "define F\nX := a#b\nendef\n$(eval $(F))\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "make4": {
+    "out": "X=[a#b]",
+    "rc": 0
+   },
+   "name": "hash-variable-in-define-eval",
+   "text": "H := \\#\ndefine F\nX := $$(shell printf '%s' 'a$$Hb')\nendef\n$(eval $(F))\n",
+   "why": "the two makes agree"
+  }
+ ],
+ "oracle": "GNU Make 3.81 built from the GNU source archive, against GNU Make 4.3",
+ "tail": "every case is its text followed by a line that prints X and an \"all\" rule; see tools/make381_oracle.py"
+}
