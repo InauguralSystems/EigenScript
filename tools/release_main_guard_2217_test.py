@@ -9,6 +9,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 GUARD = ROOT / "tools/release_main_guard.sh"
 REVIEW_GUARD = ROOT / "tools/release_review_guard.sh"
+RELEASE_WORKFLOW = ROOT / ".github/workflows/release.yml"
+DOCKERFILE = ROOT / "Dockerfile"
 failures = 0
 checks = 0
 
@@ -47,8 +49,37 @@ def review_guard(repo: Path, tag: str):
                           text=True, capture_output=True)
 
 
+def distribution_checks(release_path: Path, dockerfile_path: Path) -> int:
+    release = release_path.read_text()
+    dockerfile = dockerfile_path.read_text()
+    problems = []
+    release_job = release.split("\n  release:\n", 1)[-1]
+    if ("uses: actions/checkout@" not in release_job or
+            "ref: ${{ needs.tag.outputs.tag }}" not in release_job):
+        problems.append("release job does not check out the tagged LICENSE")
+    if "            LICENSE\n" not in release.split("files: |", 1)[-1]:
+        problems.append("release upload list does not include LICENSE")
+    checksum = release.split("name: Generate CHECKSUMS", 1)[-1].split(
+        "name: Attest build provenance", 1)[0]
+    if "sha256sum eigenscript-* LICENSE > CHECKSUMS" not in checksum:
+        problems.append("CHECKSUMS does not cover LICENSE")
+    attestation = release.split("name: Attest build provenance", 1)[-1].split(
+        "name: Stage attestation bundle", 1)[0]
+    if ("subject-path: |" not in attestation or
+            "          LICENSE\n" not in attestation):
+        problems.append("build provenance does not cover LICENSE")
+    expected_copy = "COPY --from=builder /src/LICENSE /usr/share/doc/eigenscript/LICENSE"
+    if expected_copy not in dockerfile:
+        problems.append("final Docker stage does not install LICENSE at the standard path")
+    for problem in problems:
+        print(f"RED: {problem}")
+    if not problems:
+        print("distribution licenses: OK")
+    return 1 if problems else 0
+
+
 def workflow_checks() -> None:
-    release = (ROOT / ".github/workflows/release.yml").read_text()
+    release = RELEASE_WORKFLOW.read_text()
     docker = (ROOT / ".github/workflows/docker.yml").read_text()
     release_guard = release.find("name: Require commit on main")
     create_tag = release.find("name: Create tag")
@@ -72,15 +103,45 @@ def workflow_checks() -> None:
     check(all(path in review for path in ("docs/release-reviews/**", "VERSION",
                                           "CHANGELOG.md")),
           "post-review allowlist is limited to documented release bookkeeping")
+    check(distribution_checks(RELEASE_WORKFLOW, DOCKERFILE) == 0,
+          "release assets and final Docker stage carry LICENSE")
 
 
 def main() -> int:
+    if len(sys.argv) == 4 and sys.argv[1] == "--check-distribution":
+        return distribution_checks(Path(sys.argv[2]), Path(sys.argv[3]))
     if len(sys.argv) != 2 or sys.argv[1] != "--selftest":
         print(f"usage: {Path(sys.argv[0]).name} --selftest", file=sys.stderr)
         return 2
     workflow_checks()
     with tempfile.TemporaryDirectory(prefix="eigs-2217-") as tmp:
         root = Path(tmp)
+        release_plant = root / "release.yml"
+        docker_plant = root / "Dockerfile"
+        release_text = RELEASE_WORKFLOW.read_text()
+        docker_text = DOCKERFILE.read_text()
+        upload_license = "            eigenscript-*\n            LICENSE\n"
+        before_upload, separator, after_upload = release_text.rpartition(upload_license)
+        planted_release = (before_upload + "            eigenscript-*\n" + after_upload
+                           if separator else release_text)
+        release_plant.write_text(planted_release)
+        docker_plant.write_text(docker_text)
+        release_result = subprocess.run(
+            [sys.executable, __file__, "--check-distribution",
+             str(release_plant), str(docker_plant)], text=True, capture_output=True)
+        check(release_result.returncode == 1 and
+              "release upload list does not include LICENSE" in release_result.stdout,
+              "removing LICENSE from the release upload list is RED")
+        release_plant.write_text(release_text)
+        docker_plant.write_text(docker_text.replace(
+            "COPY --from=builder /src/LICENSE /usr/share/doc/eigenscript/LICENSE\n",
+            "", 1))
+        docker_result = subprocess.run(
+            [sys.executable, __file__, "--check-distribution",
+             str(release_plant), str(docker_plant)], text=True, capture_output=True)
+        check(docker_result.returncode == 1 and
+              "final Docker stage does not install LICENSE" in docker_result.stdout,
+              "removing LICENSE from the final Docker stage is RED")
         remote = root / "remote.git"
         work = root / "work"
         subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)

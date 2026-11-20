@@ -59,22 +59,10 @@ trap 'on_signal TERM' TERM
 echo "GFX_SIGNAL_READY tmp=$TMP"
 if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = before-server ]; then while :; do sleep 1; done; fi
 
-display_file="$TMP/display"
-Xvfb -displayfd 3 -screen 0 640x480x24 >"$TMP/xvfb.log" 2>&1 3>"$display_file" &
-XVFB_PID=$!
-for _ in $(seq 1 100); do
-    if [ -s "$display_file" ]; then
-        DISPLAY_NUM=":$(sed -n '1p' "$display_file")"
-        xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1 && break
-    fi
-    kill -0 "$XVFB_PID" 2>/dev/null || break
-    sleep 0.1
-done
-if [ -z "$DISPLAY_NUM" ] || ! xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1; then
-    echo "  FAIL: Xvfb did not become ready"
-    cat "$TMP/xvfb.log"
-    exit 1
-fi
+# The server is started by tests/xvfb.sh, which keeps it from resetting when
+# its last client leaves (#2215): a reset closes a handshake that is pending.
+. "$ROOT/tests/xvfb.sh" || exit 1
+xvfb_start || exit 1
 echo "GFX_SIGNAL_SERVER pid=$XVFB_PID"
 if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = server ]; then while :; do sleep 1; done; fi
 

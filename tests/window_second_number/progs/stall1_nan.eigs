@@ -1,0 +1,4 @@
+x is f64_from_bits of 0x7ff8000000000000
+loop while not converged:
+    print of "."
+print of [__loop_exit__, report of x, converged of x]

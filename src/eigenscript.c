@@ -897,6 +897,11 @@ static int observer_slot_exact_get(const ObserverSlot *s, size_t back) {
 }
 
 static ObserverNumber observer_slot_value_get(const ObserverSlot *s, size_t back) {
+    if (!s->v_values) {
+        ObserverNumber retained = { .value = s->last_value, .integer = s->last_int,
+                                    .is_int = s->last_is_int };
+        return retained;
+    }
     int i = (int)s->values_head - 1 - (int)back;
     while (i < 0) i += s->values_cap;
     return s->v_values[i];
@@ -905,6 +910,7 @@ static ObserverNumber observer_slot_value_get(const ObserverSlot *s, size_t back
 /* Capacity growth is cold: keep its allocation/copy register setup out of
  * the per-sample recorder (R31 round4 cost attribution). */
 static __attribute__((noinline)) void observer_slot_v_grow(ObserverSlot *s, int n) {
+    if (!s->v_rel && s->v_cap > n) n = s->v_cap;
     double *nv = xcalloc((size_t)n, sizeof(double));
     double *nr = xcalloc((size_t)n, sizeof(double));
     uint8_t *ne = xcalloc((size_t)n, sizeof(uint8_t));
@@ -1078,8 +1084,8 @@ static ObserverNumber observer_number(EigsSlot v) {
 
 void observer_slot_record_num(ObserverSlot *s, EigsSlot value) {
     ObserverNumber v = observer_number(value);
-    observer_slot_v_ensure(s, obs_win(s));
     if (s->v_used) {
+        observer_slot_v_ensure(s, obs_win(s));
         int64_t delta = 0;
         int exact = v.is_int && s->last_is_int &&
             !__builtin_sub_overflow(v.integer, s->last_int, &delta);
@@ -1093,10 +1099,21 @@ void observer_slot_record_num(ObserverSlot *s, EigsSlot value) {
         s->last_step_int = delta;
         if (++s->v_window_head >= s->v_cap) s->v_window_head = 0;
         if (s->v_window_count < s->v_cap) s->v_window_count++;
-    } else s->since = UINT8_MAX;
-    s->v_values[s->values_head] = v;
-    if (++s->values_head >= s->values_cap) s->values_head = 0;
-    if (s->values_count < s->values_cap) s->values_count++;
+        s->v_values[s->values_head] = v;
+        if (++s->values_head >= s->values_cap) s->values_head = 0;
+        if (s->values_count < s->values_cap) s->values_count++;
+    } else {
+        s->since = UINT8_MAX;
+        if (s->v_rel || !(v.is_int || isfinite(v.value))) {
+            observer_slot_v_ensure(s, obs_win(s));
+            s->v_values[s->values_head] = v;
+            if (++s->values_head >= s->values_cap) s->values_head = 0;
+            if (s->values_count < s->values_cap) s->values_count++;
+        } else {
+            s->v_cap = (uint8_t)obs_win(s); /* the first number's window */
+            s->values_count = 1;
+        }
+    }
     double scale = obs_floor_scale(s);
     if (!s->best_used && isfinite(v.value)) {
         s->best = v.value; s->best_used = 1;
