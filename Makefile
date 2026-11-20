@@ -632,8 +632,8 @@ $(SRC_DIR)/lsp_stdlib_index.h: $(wildcard lib/*.eigs) tools/gen_lsp_stdlib_index
 # Builtin half of the same idea (#742): names from the registration seams +
 # ext_names.h, hover detail from the signature comments. Reserved report
 # forms are excluded using lexer.c. Commit the generated header for review.
-$(SRC_DIR)/lsp_builtin_index.h: $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_int.c $(SRC_DIR)/builtins_host.c \
-		$(SRC_DIR)/hash.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/ext_names.h \
+LSP_BUILTIN_DOC_SRCS := $(shell sed -n 's/^[[:space:]]*\([^#][^[:space:]]*\)[[:space:]]*$$/\1/p' tools/lsp_builtin_index_sources.txt)
+$(SRC_DIR)/lsp_builtin_index.h: $(LSP_BUILTIN_DOC_SRCS) $(SRC_DIR)/ext_names.h \
 		$(SRC_DIR)/lexer.c tools/gen_lsp_builtin_index.sh
 	bash tools/gen_lsp_builtin_index.sh
 
@@ -799,7 +799,8 @@ gfx-x11-regressions: build
 	status=0; bash tests/test_gfx_ctype_locale.sh >"$$output" 2>&1 || status=$$?; \
 	cat "$$output"; [ "$$status" -eq 0 ]; \
 	grep -q '^  PASS: gfx leaves byte-oriented ctype answers replay-deterministic$$' "$$output"; \
-	grep -q '^  PASS: LC_CTYPE after SDL loading is C.UTF-8$$' "$$output"
+	grep -q '^  PASS: LC_CTYPE after SDL loading is C.UTF-8$$' "$$output"; \
+	python3 tests/test_gfx_signal_cleanup.py
 
 # AddressSanitizer + UndefinedBehaviorSanitizer build. Catches
 # use-after-free, buffer overflow, leaks, and undefined behavior that

@@ -265,11 +265,13 @@ def parse(raw):
 def send_way(peer, data, way, cuts):
     if way == 0:
         peer.sendall(data)
-    elif way == 1:
+    elif way in (1, 3):
         a, b = cuts
         for part in (data[:a], data[a:b], data[b:]):
             if part:
                 peer.sendall(part)
+                if way == 3:
+                    time.sleep(.05)
     else:
         for i in range(len(data)):
             peer.sendall(data[i:i + 1])
@@ -1033,23 +1035,23 @@ def budget_request(body, framing):
             b''.join(b'%x\r\n' % len(p) + p + b'\r\n' for p in parts) + b'0\r\n\r\n')
 
 
-def budget_try(port, data):
+def budget_try(port, data, way=0, cuts=None):
     """One try on a connection of its own, read to the end of the stream and
     closed. Returns the status, or a word for no answer."""
     try:
-        r = exchange(port, data, wait=30)
+        r = exchange(port, data, way=way, cuts=cuts, wait=30)
     except (AssertionError, OSError) as exc:
         return f'error {exc}'[:120]
     return r[0] if r else 'no answer'
 
 
-def budget_served(port, data, want_body):
+def budget_served(port, data, want_body, way=0, cuts=None):
     """Served: tries again 500 ms after closing a failed try, for 10 s at
     most. Returns (ok, the answers with their times)."""
     start, answers = time.monotonic(), []
     while True:
         try:
-            r = exchange(port, data, wait=30)
+            r = exchange(port, data, way=way, cuts=cuts, wait=30)
             said = r[0] if r else 'no answer'
             ok = bool(r) and r[0] == 200 and r[2] == want_body
         except (AssertionError, OSError) as exc:
@@ -1060,13 +1062,13 @@ def budget_served(port, data, want_body):
         time.sleep(.5)
 
 
-def budget_refused(port, data):
+def budget_refused(port, data, way=0, cuts=None):
     """503: each of five tries, 100 ms apart, is answered 503."""
     answers = []
     for i in range(5):
         if i:
             time.sleep(.1)
-        answers.append(budget_try(port, data))
+        answers.append(budget_try(port, data, way, cuts))
     return all(a == 503 for a in answers), answers
 
 
@@ -1102,17 +1104,23 @@ def row_budget(ctx):
         charge = BUDGET_READ + 1024 + room
         d = ctx.ref.decide(data, head=BUDGET_HEAD, body=BUDGET_BODY)
         require(d.kind == 'served' and d.body == part, f'{name}: the reference says {d.line[:80]}')
+        way, cuts = 0, None
+        if name == 'under its room' and framing == 'announced':
+            # Hold 16,383 body bytes before the final 16,384: the last read
+            # makes bytes-held-plus-one exactly 32,768.
+            head = data.index(b'\r\n\r\n') + 4
+            way, cuts = 3, (head + 16383, len(data))
         with at(charge, 'served') as port:
-            ok1, got1 = budget_served(port, data, str(len(part)).encode())
+            ok1, got1 = budget_served(port, data, str(len(part)).encode(), way, cuts)
         with at(charge - 1, 'refused') as port:
-            ok2, got2 = budget_refused(port, data)
+            ok2, got2 = budget_refused(port, data, way, cuts)
         verdict(ok1 and ok2, f'{name} ({framing}, body {len(part)}): {charge} served {got1}; '
                              f'{charge - 1} answered {got2}')
 
     for framing in ('announced', 'chunked'):
         served_and_refused('at the limit', body, framing, BUDGET_BODY + 1)
     for framing in ('announced', 'chunked'):
-        served_and_refused('under its room', body[:30000], framing, 32768)
+        served_and_refused('under its room', body[:32767], framing, 32768)
 
     pad = BUDGET_HEAD - len(small) - len(b'X-Pad: \r\n\r\n')
     padded = small + b'X-Pad: ' + b'p' * pad + b'\r\n\r\n'

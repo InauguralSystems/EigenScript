@@ -1,0 +1,1 @@
+- Re-bracket observer start-value checks around the restored relative-step thresholds (#2429).

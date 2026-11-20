@@ -1,0 +1,1 @@
+- Run the Phase 2 corpus and replay differentials with a fixed headless SDL environment instead of a caller's display (#1860).

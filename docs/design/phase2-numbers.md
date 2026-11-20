@@ -3595,7 +3595,7 @@ Rk, in the order R1.1 < ... < R1.5 < R1.6a < R1.6b < R1.6c < R1.6d <
 R1.6e < R1.6f < R1.6g < R1.6z < R1.7 < R1.8 < R2.1 < ... < R2.6 < R3; controls
 run in every mode; the default is the whole plan. A round is checked against
 exactly its landed rows, so R1.3's check cannot fail on an R1.7 row, and the
-final check runs all of them. Each round has a non-zero set of its own rows,
+final check runs all of them. `--baseline` is consumed only by R1.1, R1.2, and R2.1, whose tables include `corpus-diff`; `--smi-trap` is consumed only by R1.1 and R1.2, whose tables include `smi-trap`. Supplying either flag to any other `--through` round is an error. Each round has a non-zero set of its own rows,
 or a mechanical guarantee stated here, which `--through` runs instead of
 failing on zero rows:
 

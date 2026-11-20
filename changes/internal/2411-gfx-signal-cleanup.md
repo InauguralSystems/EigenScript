@@ -1,0 +1,1 @@
+- Make the X11 regression checks stop cleanly when interrupted instead of reporting unfinished checks as failures (#2411).

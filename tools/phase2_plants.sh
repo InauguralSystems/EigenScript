@@ -50,12 +50,14 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REF=HEAD
 ONLY=""
+ANCHORS=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --ref)
             [ $# -gt 1 ] || { echo "phase2-plants: FAIL: --ref needs a value"; exit 2; }
             REF="$2"; shift 2 ;;
         --selftest) shift ;;
+        --anchors) ANCHORS=1; shift ;;
         --only)
             [ $# -gt 1 ] || { echo "phase2-plants: FAIL: --only needs a plant id"; exit 2; }
             [ -z "$ONLY" ] || { echo "phase2-plants: FAIL: --only may be given once"; exit 2; }
@@ -98,6 +100,20 @@ VERDICT_DONE=0
 # it was running (the #988 rule).
 trap 'rc=$?; [ "$VERDICT_DONE" = 1 ] || echo "phase2-plants: FAIL: exited ($rc) before a verdict, at: $BASH_COMMAND"; rm -rf "$WORK"' EXIT
 
+# anchor_one PLANT FILE TEXT: verify one plant anchor without modifying it.
+anchor_one() {
+    python3 -W error - "$1" "$2" "$3" <<'PY'
+import sys
+plant, path, old = sys.argv[1:]
+with open(path, encoding='utf-8') as f:
+    count = f.read().count(old)
+if count != 1:
+    print('plant-anchors: FAIL: %s: %s anchor occurs %d times, want exactly 1' %
+          (plant, path, count))
+    sys.exit(1)
+PY
+}
+
 # replace FILE OLD NEW: exactly one OLD before, NEW present after.
 replace() {
     python3 -W error - "$1" "$2" "$3" <<'PY'
@@ -134,9 +150,14 @@ EXPECTED_OBSERVER=8
 observer_second_edit() {
     case "$1" in
         r31-inf-sign)
-            replace "$2/src/eigenscript.c" \
-                '    if (isinf(s->last_value)) return !obs_num_opposite_inf(s);' \
-                '    if (isinf(s->last_value)) return 1; /* PLANT: no polarity rule */' ;;
+            if [ "$ANCHORS" -eq 1 ]; then
+                anchor_one "$1 (second edit)" "$2/src/eigenscript.c" \
+                    '    if (isinf(s->last_value)) return !obs_num_opposite_inf(s);'
+            else
+                replace "$2/src/eigenscript.c" \
+                    '    if (isinf(s->last_value)) return !obs_num_opposite_inf(s);' \
+                    '    if (isinf(s->last_value)) return 1; /* PLANT: no polarity rule */'
+            fi ;;
     esac
 }
 
@@ -212,6 +233,12 @@ run_plant() {
     available=$((available + 1))
     [ -z "$ONLY" ] || [ "$ONLY" = "$id" ] || return 0
     plants=$((plants + 1))
+    if [ "$ANCHORS" -eq 1 ]; then
+        if ! anchor_one "$id" "$ROOT/$file" "$old"; then broken=$((broken + 1)); fi
+        observer_second_edit "$id" "$ROOT" || broken=$((broken + 1))
+        printf 'plant-anchor-target: %s\n' "$file"
+        return 0
+    fi
     local verdict="" trans="" observer=0 modes="plant transverse"
     case "$id" in r31-*) observer=1; modes="green plant transverse" ;; esac
     for mode in $modes; do
@@ -507,6 +534,16 @@ run_observer_plant r31-how-infinite src/eigenscript.c \
     '    if (isinf(raw)) return 0.0;' \
     '    /* PLANT: apply the relative-step formula even for an infinite step. */' \
     O4.how-infinite-step
+
+if [ "$ANCHORS" -eq 1 ]; then
+    VERDICT_DONE=1
+    if [ "$plants" -gt 0 ] && [ "$broken" -eq 0 ]; then
+        echo "plant-anchors: examined=$plants missing=0 ambiguous=0"
+        exit 0
+    fi
+    echo "plant-anchors: examined=$plants missing=$broken ambiguous=0"
+    exit 1
+fi
 
 # R31-9: ten independently named clause/order/index plants. The first two
 # retain their original witnesses. Finite constant alternation isolates the

@@ -7522,6 +7522,10 @@ echo ""
 # Final guard (#681): if the binary changed during the last block, results are invalid.
 check_binary_fingerprint
 
+# Close the timer on the final selected section before shared epilogue checks
+# add outcomes of their own (#1589).
+__eigs_section_close
+
 # A tolerated report is not merely counted: its section identity must match the
 # reviewed, justified baseline. This belongs to the shared epilogue so every
 # section-plan run enforces the policy too (#1725).
@@ -7531,9 +7535,6 @@ else
     PASS=$((PASS + 1)); TOTAL=$((TOTAL + 1))
 fi
 rm -f "$TOLERATED_LSAN_REPORTS"
-
-# Close the timer on the final section so the last row is not lost (#1160 r4).
-__eigs_section_close
 
 if [ "$SECTION_OUTCOME_VIOLATIONS" -ne 0 ]; then
     echo "  FAIL: $SECTION_OUTCOME_VIOLATIONS started section(s) reported no assertion or section-level skip"

@@ -13,7 +13,14 @@ cleanup() {
     [ -n "${XVFB_PID:-}" ] && wait "$XVFB_PID" 2>/dev/null || true
     rm -rf "$TMP"
 }
-trap cleanup EXIT HUP INT TERM
+signal_exit() {
+    trap - HUP INT TERM
+    exit "$1"
+}
+trap cleanup EXIT
+trap 'signal_exit 129' HUP
+trap 'signal_exit 130' INT
+trap 'signal_exit 143' TERM
 
 Xvfb "$DISPLAY_NUM" -screen 0 640x480x24 >"$TMP/xvfb.log" 2>&1 &
 XVFB_PID=$!

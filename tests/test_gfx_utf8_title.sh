@@ -13,7 +13,14 @@ cleanup() {
     [ -n "${XVFB_PID:-}" ] && wait "$XVFB_PID" 2>/dev/null || true
     rm -rf "$TMP"
 }
-trap cleanup EXIT HUP INT TERM
+signal_exit() {
+    trap - HUP INT TERM
+    exit "$1"
+}
+trap cleanup EXIT
+trap 'signal_exit 129' HUP
+trap 'signal_exit 130' INT
+trap 'signal_exit 143' TERM
 
 # -noreset (#2204): without it Xvfb resets whenever its last client
 # disconnects, which happens between every two cases here. A case whose
