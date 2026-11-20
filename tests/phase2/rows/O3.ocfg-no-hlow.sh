@@ -306,14 +306,20 @@ live_case cfg-entropy-es-below es_below
 live_case cfg-entropy-es-above es_above
 live_case cfg-entropy-report-partial rp_part
 
-# R32-3: restored relative-step brackets. For endpoint A + b,
-# r = b / (A + b), so b = r*A/(1-r). Each dh_zero witness uses
-# r = 0.001 +/- 1e-8; each one-sided dh_small witness uses
-# r = 0.01 +/- 1e-8. The scale pair uses b = r*0.001. Thus every
-# threshold margin is 1e-8 in relative-step space.
+# R32-3: the fold's start values, bracketed. The trajectory is one value,
+# one bump and nine returns. The pairs were built for Round 3's window
+# diameter test (converged: bump <= dh_zero * max(|x|, scale); stable: bump / 2
+# <= dh_small * max(|midrange|, scale)), each bump 2e-8 (relative) either side
+# of the threshold. The reveal reverted that test (#1758, RULING R30R-2;
+# #2407): converged and stable compare each relative step, bump / max(|x|,
+# |x + bump|, scale), with the threshold, and they refuse a strong up-and-down
+# pair. So the dh_zero pair now reads converged on both sides and the
+# dh_small pair moving on both sides; the labels below are the restored
+# test's (tools/reveal_restored_reference.py). The window is pinned exactly:
+# ten repeats do not fill the window, eleven do.
 cat > dz_in.eigs <<'EOF'
 x is 1.0
-x is 1.001000990990981
+x is 1.00099999998
 x is 1.0
 x is 1.0
 x is 1.0
@@ -327,7 +333,7 @@ print of (report of x)
 EOF
 cat > dz_out.eigs <<'EOF'
 x is 1.0
-x is 1.001001011011021
+x is 1.00100000002
 x is 1.0
 x is 1.0
 x is 1.0
@@ -341,35 +347,35 @@ print of (report of x)
 EOF
 cat > ds_in.eigs <<'EOF'
 x is 1.0
-x is 1.0101009998979807
-x is 1.0101009998979807
-x is 1.0101009998979807
-x is 1.0101009998979807
-x is 1.0101009998979807
-x is 1.0101009998979807
-x is 1.0101009998979807
-x is 1.0101009998979807
-x is 1.0101009998979807
-x is 1.0101009998979807
+x is 1.02020202
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
 print of (report of x)
 EOF
 cat > ds_out.eigs <<'EOF'
 x is 1.0
-x is 1.0101010203040508
-x is 1.0101010203040508
-x is 1.0101010203040508
-x is 1.0101010203040508
-x is 1.0101010203040508
-x is 1.0101010203040508
-x is 1.0101010203040508
-x is 1.0101010203040508
-x is 1.0101010203040508
-x is 1.0101010203040508
+x is 1.0202020204040405
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
+x is 1.0
 print of (report of x)
 EOF
 cat > sc_in.eigs <<'EOF'
 x is 0.0
-x is 9.9999e-7
+x is 9.999999799999999e-07
 x is 0.0
 x is 0.0
 x is 0.0
@@ -383,7 +389,7 @@ print of (report of x)
 EOF
 cat > sc_out.eigs <<'EOF'
 x is 0.0
-x is 1.00001e-6
+x is 1.00000002e-06
 x is 0.0
 x is 0.0
 x is 0.0
@@ -534,14 +540,18 @@ live_case cfg-entropy-dict-es-below dict_es_lt
 printf 'print of (get_observer_thresholds of null)\n' > thresholds.eigs
 live_case cfg-thresholds-builtin thresholds
 
-# R32-5: restored relative-step brackets at scale, 1000, and 100.
-# The arithmetic is b = r*scale below scale, or b = r*A/(1-r) when
-# the endpoint is the denominator. Here too r is threshold +/- 1e-8.
-# Stable uses a one-sided bump followed by repeats, avoiding a strong
-# up/down pair that the restored classifier correctly calls moving.
+# R32-5: the fold's start values at exact equality, built for Round 3's
+# diameter test: with the window at zero its thresholds were the products
+# dh_zero * scale and dh_small * scale, and the bump equals the product or is
+# the next double above it; at |x| = 1000 and a midrange of 100 they were
+# dh_zero * 1000 = 1.0 and dh_small * 100 = 1.0. Under the restored test
+# (#2407) each relative step is compared with the threshold, so these
+# products no longer mark the boundary and each pair reads the same label on
+# both sides; the labels are the restored test's
+# (tools/reveal_restored_reference.py).
 cat > xp_eq.eigs <<'EOF'
 x is 0.0
-x is 9.9999e-7
+x is 1e-06
 x is 0.0
 x is 0.0
 x is 0.0
@@ -555,7 +565,7 @@ print of (report of x)
 EOF
 cat > xp_gt.eigs <<'EOF'
 x is 0.0
-x is 1.00001e-6
+x is 1.0000000000000002e-06
 x is 0.0
 x is 0.0
 x is 0.0
@@ -569,35 +579,35 @@ print of (report of x)
 EOF
 cat > xq_eq.eigs <<'EOF'
 x is 0.0
-x is 9.99999e-6
-x is 9.99999e-6
-x is 9.99999e-6
-x is 9.99999e-6
-x is 9.99999e-6
-x is 9.99999e-6
-x is 9.99999e-6
-x is 9.99999e-6
-x is 9.99999e-6
-x is 9.99999e-6
+x is 2e-05
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
 print of (report of x)
 EOF
 cat > xq_gt.eigs <<'EOF'
 x is 0.0
-x is 1.000001e-5
-x is 1.000001e-5
-x is 1.000001e-5
-x is 1.000001e-5
-x is 1.000001e-5
-x is 1.000001e-5
-x is 1.000001e-5
-x is 1.000001e-5
-x is 1.000001e-5
-x is 1.000001e-5
+x is 2.0000000000000005e-05
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
+x is 0.0
 print of (report of x)
 EOF
 cat > xz_eq.eigs <<'EOF'
 x is 1000.0
-x is 1001.000990990981
+x is 1001.0
 x is 1000.0
 x is 1000.0
 x is 1000.0
@@ -611,7 +621,7 @@ print of (report of x)
 EOF
 cat > xz_gt.eigs <<'EOF'
 x is 1000.0
-x is 1001.001011011021
+x is 1001.0000000000001
 x is 1000.0
 x is 1000.0
 x is 1000.0
@@ -624,31 +634,31 @@ x is 1000.0
 print of (report of x)
 EOF
 cat > xs_eq.eigs <<'EOF'
-x is 100.0
-x is 101.01009998979807
-x is 101.01009998979807
-x is 101.01009998979807
-x is 101.01009998979807
-x is 101.01009998979807
-x is 101.01009998979807
-x is 101.01009998979807
-x is 101.01009998979807
-x is 101.01009998979807
-x is 101.01009998979807
+x is 99.0
+x is 101.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
 print of (report of x)
 EOF
 cat > xs_gt.eigs <<'EOF'
-x is 100.0
-x is 101.01010203040508
-x is 101.01010203040508
-x is 101.01010203040508
-x is 101.01010203040508
-x is 101.01010203040508
-x is 101.01010203040508
-x is 101.01010203040508
-x is 101.01010203040508
-x is 101.01010203040508
-x is 101.01010203040508
+x is 99.0
+x is 101.00000000000001
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
+x is 99.0
 print of (report of x)
 EOF
 for program in xp_eq xp_gt xq_eq xq_gt xz_eq xz_gt xs_eq xs_gt; do

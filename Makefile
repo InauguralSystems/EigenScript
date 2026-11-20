@@ -801,8 +801,7 @@ gfx-x11-regressions: build
 	status=0; bash tests/test_gfx_ctype_locale.sh >"$$output" 2>&1 || status=$$?; \
 	cat "$$output"; [ "$$status" -eq 0 ]; \
 	grep -q '^  PASS: gfx leaves byte-oriented ctype answers replay-deterministic$$' "$$output"; \
-	grep -q '^  PASS: LC_CTYPE after SDL loading is C.UTF-8$$' "$$output"; \
-	python3 tests/test_gfx_signal_cleanup.py
+	grep -q '^  PASS: LC_CTYPE after SDL loading is C.UTF-8$$' "$$output"
 
 # AddressSanitizer + UndefinedBehaviorSanitizer build. Catches
 # use-after-free, buffer overflow, leaks, and undefined behavior that

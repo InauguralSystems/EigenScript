@@ -108,9 +108,9 @@ cfg-entropy-report-partial rc=0 last=stable
 cfg-entropy-report-partial first-stderr=<empty>
 cfg-start-dh-zero-in rc=0 label=[converged]
 cfg-start-dh-zero-in first-stderr=<empty>
-cfg-start-dh-zero-out rc=0 label=[equilibrium]
+cfg-start-dh-zero-out rc=0 label=[converged]
 cfg-start-dh-zero-out first-stderr=<empty>
-cfg-start-dh-small-in rc=0 label=[stable]
+cfg-start-dh-small-in rc=0 label=[moving]
 cfg-start-dh-small-in first-stderr=<empty>
 cfg-start-dh-small-out rc=0 label=[moving]
 cfg-start-dh-small-out first-stderr=<empty>
@@ -146,19 +146,19 @@ cfg-entropy-dict-es-below rc=0 last=moving
 cfg-entropy-dict-es-below first-stderr=<empty>
 cfg-thresholds-builtin rc=0 last=[0.001, 0.01, 0.1]
 cfg-thresholds-builtin first-stderr=<empty>
-cfg-start-zero-scale-equal rc=0 label=[converged]
+cfg-start-zero-scale-equal rc=0 label=[equilibrium]
 cfg-start-zero-scale-equal first-stderr=<empty>
 cfg-start-zero-scale-above rc=0 label=[equilibrium]
 cfg-start-zero-scale-above first-stderr=<empty>
-cfg-start-small-scale-equal rc=0 label=[stable]
+cfg-start-small-scale-equal rc=0 label=[moving]
 cfg-start-small-scale-equal first-stderr=<empty>
 cfg-start-small-scale-above rc=0 label=[moving]
 cfg-start-small-scale-above first-stderr=<empty>
 cfg-start-zero-1000-equal rc=0 label=[converged]
 cfg-start-zero-1000-equal first-stderr=<empty>
-cfg-start-zero-1000-above rc=0 label=[equilibrium]
+cfg-start-zero-1000-above rc=0 label=[converged]
 cfg-start-zero-1000-above first-stderr=<empty>
-cfg-start-small-100-equal rc=0 label=[stable]
+cfg-start-small-100-equal rc=0 label=[moving]
 cfg-start-small-100-equal first-stderr=<empty>
 cfg-start-small-100-above rc=0 label=[moving]
 cfg-start-small-100-above first-stderr=<empty>

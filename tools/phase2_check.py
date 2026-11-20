@@ -140,17 +140,6 @@ def rindex(r):
     return ROUNDS.index(r)
 
 
-def unused_mechanical_flags(through, baseline=None, smi_trap=None):
-    """Return supplied binary flags that the selected round cannot consume."""
-    gates = MECHANICAL.get(through, ())
-    unused = []
-    if baseline and 'corpus-diff' not in gates:
-        unused.append('--baseline')
-    if smi_trap and 'smi-trap' not in gates:
-        unused.append('--smi-trap')
-    return unused
-
-
 def read_text(path, **kw):
     with open(path, encoding='utf-8', **kw) as f:
         return f.read()
@@ -1050,11 +1039,6 @@ def calibrate(args, out):
     def quiet(_):
         pass
 
-    case('--baseline is refused when R1.3 has no corpus-diff gate',
-         unused_mechanical_flags('R1.3', baseline='/bin/true'), ['--baseline'])
-    case('--smi-trap is refused when R1.3 has no smi-trap gate',
-         unused_mechanical_flags('R1.3', smi_trap='/bin/true'), ['--smi-trap'])
-
     lines = []
     case('tool stderr policy, process rc and embed counter/OK plants',
          tool_contract_calibration(lines.append), True, detail=lines)
@@ -1540,11 +1524,6 @@ def main():
     args = ap.parse_args()
     if args.selftest:
         print('phase2-check: FAIL: --selftest takes no other argument')
-        return 2
-    unused = unused_mechanical_flags(args.through, args.baseline, args.smi_trap)
-    if unused:
-        print('phase2-check: FAIL: %s is unused for --through %s (that round has no matching mechanical gate)' %
-              (' and '.join(unused), args.through))
         return 2
     for b in (args.tag, args.branch, args.baseline, args.smi_trap, args.planted_leaf_scan,
               args.planted_leaf_mul, args.planted_random_int, args.planted_value_eq):

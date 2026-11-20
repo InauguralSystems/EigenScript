@@ -36,10 +36,6 @@
 #   REPLAY_DIFF_BASE=FILE    ledger (default: tests/replay_diff_expected.txt)
 #   REPLAY_DIFF_FLOOR=N      vacuity floor on the program count (default 100)
 set -u
-# Match jit_diff's process policy: programs never inherit a caller's display.
-# Per-program conditions from suite_program_env.txt are applied afterwards.
-unset DISPLAY WAYLAND_DISPLAY XAUTHORITY
-export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; SELF="$ROOT/tools/$(basename "$0")"; cd "$ROOT/src" || exit 1
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 # The bound is optional: macOS runners ship no coreutils `timeout`, and a
@@ -54,10 +50,6 @@ elif command -v gtimeout >/dev/null 2>&1; then TMO="gtimeout 300"; fi
 # differential's), so a fail-soft test is replayed past its first strict raise.
 export EIGS_TEST_DIR="$ROOT/tests"
 . "$ROOT/tests/suite_program_env.sh" || exit 1
-if [ -n "${REPLAY_DIFF_HEADLESS_PROBE:-}" ]; then
-    suite_program_run test_audio.eigs "$REPLAY_DIFF_HEADLESS_PROBE"
-    exit $?
-fi
 corpus_dir() { printf '%s' "${REPLAY_DIFF_CORPUS:-$ROOT/tests}"; }
 eig_bin()    { printf '%s' "${REPLAY_DIFF_EIG:-./eigenscript}"; }
 norm() { sed -E 's/0x[0-9a-f]+/0xADDR/g' "$1"; }
@@ -99,23 +91,6 @@ if [ "${1:-}" = "--selftest" ]; then
     REAL="$ROOT/src/eigenscript"
     [ -x "$REAL" ] || { echo "replay_diff selftest: no binary at $REAL"; exit 1; }
     ST_RC=0
-    cat > "$T/record-env" <<'EOF'
-#!/usr/bin/env bash
-printf 'DISPLAY=%s WAYLAND_DISPLAY=%s XAUTHORITY=%s VIDEO=%s AUDIO=%s\n' \
-  "${DISPLAY-<unset>}" "${WAYLAND_DISPLAY-<unset>}" "${XAUTHORITY-<unset>}" \
-  "${SDL_VIDEODRIVER-<unset>}" "${SDL_AUDIODRIVER-<unset>}"
-EOF
-    chmod +x "$T/record-env"
-    env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY REPLAY_DIFF_HEADLESS_PROBE="$T/record-env" bash "$SELF" > "$T/env-unset" || ST_RC=1
-    DISPLAY=:99 WAYLAND_DISPLAY=wayland-9 XAUTHORITY=/tmp/foreign REPLAY_DIFF_HEADLESS_PROBE="$T/record-env" bash "$SELF" > "$T/env-set" || ST_RC=1
-    expected='DISPLAY=<unset> WAYLAND_DISPLAY=<unset> XAUTHORITY=<unset> VIDEO=dummy AUDIO=dummy'
-    if [ "$(cat "$T/env-unset")" = "$expected" ] && [ "$(cat "$T/env-set")" = "$expected" ]; then
-        echo "  selftest ok: unset and set caller displays give the same headless program environment"
-    else
-        echo "SELFTEST FAIL: replay program inherited a caller display" >&2
-        cat "$T/env-unset" "$T/env-set" >&2
-        ST_RC=1
-    fi
     # The wrapper is the "binary": it forwards to the real one, except for two
     # planted programs. test_boundary_crash: the REPLAY arm prints the real
     # diagnostic text and dies by SIGSEGV (the #1112 shape). test_both_crash:

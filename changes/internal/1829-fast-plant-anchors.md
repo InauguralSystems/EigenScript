@@ -1,1 +1,0 @@
-- Phase 2 plant anchors now have a fast product-triggered exact-once check (#1829).

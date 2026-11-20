@@ -1,1 +1,0 @@
-- Phase 2 now refuses unused baseline and SMI-trap binaries for rounds without their mechanical gates (#1850).

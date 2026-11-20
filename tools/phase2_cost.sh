@@ -28,8 +28,6 @@ set -eu
 cd "$(dirname "$0")/.."
 exec python3 - "$@" <<'PY'
 import argparse
-import contextlib
-import io
 import math
 import struct
 from decimal import Decimal
@@ -47,11 +45,6 @@ from phase2_cost_declarations import (STALE_TOLERANCE, UNDECLARED_MAX,
                                       assess_row, parse_declarations)
 
 THRESHOLD_PCT = UNDECLARED_MAX['local']
-
-
-def instrument_fail(message):
-    print('phase2-cost: FAIL: ' + message, file=sys.stderr)
-    raise SystemExit(2)
 # N6 is an explicit cost-only comparison mode. Corpus diffs remain exact.
 # Legacy unadorned integer text can denote an integral float; allow its .0 or
 # scientific repr only when conversion retains its exact integer value.
@@ -152,18 +145,7 @@ def output_self_test():
         if compare_result_text(elapsed_text(b'x=3 time=1.25ms\n'),
                                elapsed_text(b'x=3 time=999ms\n'), n6_text) != 0:
             raise ValueError('self-test elapsed milliseconds handling failed')
-    instrument_plants = [('ghost-entry', 'CodSpeed workload coverage stale ghost'),
-                         ('crashing-workload', 'bench/crash.eigs jit cand rc=1')]
-    for label, message in instrument_plants:
-        try:
-            with contextlib.redirect_stderr(io.StringIO()):
-                instrument_fail(message)
-        except SystemExit as error:
-            if error.code == 2:
-                continue
-            raise ValueError('%s instrument plant returned %r, not 2' % (label, error.code))
-        raise ValueError('%s instrument plant did not exit' % label)
-    print('phase2-cost-self-test: positive=%d rejected=%d instrument=ghost:2,crash:2 strict=PASS elapsed=PASS PASS' % (len(good), len(bad)))
+    print('phase2-cost-self-test: positive=%d rejected=%d strict=PASS elapsed=PASS PASS' % (len(good), len(bad)))
 
 
 root = Path.cwd()
@@ -195,15 +177,15 @@ if args.n6_text and (not args.base or not args.cand or args.declared):
     ap.error('--n6-text requires <base-bin> <cand-bin>')
 expect_path = root / 'tests/phase2/cost_expect.txt'
 if not expect_path.is_file():
-    instrument_fail('missing tests/phase2/cost_expect.txt')
+    sys.exit('phase2-cost: FAIL: missing tests/phase2/cost_expect.txt')
 expect_text = expect_path.read_text()
 if args.final and expect_text:
-    instrument_fail('--final requires an empty tests/phase2/cost_expect.txt')
+    sys.exit('phase2-cost: FAIL: --final requires an empty tests/phase2/cost_expect.txt')
 oracle_path = root / 'tests/phase2/oracle_expect.txt'
 if args.final and not oracle_path.is_file():
-    instrument_fail('missing tests/phase2/oracle_expect.txt')
+    sys.exit('phase2-cost: FAIL: missing tests/phase2/oracle_expect.txt')
 if args.final and oracle_path.read_text():
-    instrument_fail('--final requires an empty tests/phase2/oracle_expect.txt'
+    sys.exit('phase2-cost: FAIL: --final requires an empty tests/phase2/oracle_expect.txt'
              ' (%d observer-oracle declaration(s) remain)' % len(oracle_path.read_text().splitlines()))
 if bool(args.base) != bool(args.cand) or (not args.base and not args.final and not args.declared) \
         or (args.declared and (args.base or args.final)):
@@ -221,20 +203,20 @@ for line in (root / 'codspeed.yml').read_text().splitlines():
     local = [p for p in argv if local_workload.fullmatch(p)]
     if local:
         if len(local) != 1 or argv[-2:] != ['./src/eigenscript', local[0]]:
-            instrument_fail('unsupported local CodSpeed command: ' + m[1])
+            sys.exit('phase2-cost: FAIL: unsupported local CodSpeed command: ' + m[1])
         workloads.add(local[0])
 if not workloads:
-    instrument_fail('no in-repo CodSpeed workloads')
+    sys.exit('phase2-cost: FAIL: no in-repo CodSpeed workloads')
 # The execution list has one home; tracked sources anchor its coverage.
 tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=root).decode().split('\0')
 expected = {p for p in tracked if local_workload.fullmatch(p)}
 if workloads != expected:
-    instrument_fail('CodSpeed workload coverage missing=%s stale=%s' %
+    sys.exit('phase2-cost: FAIL: CodSpeed workload coverage missing=%s stale=%s' %
              (sorted(expected - workloads), sorted(workloads - expected)))
 try:
     expectations = parse_declarations(expect_text, workloads)
 except ValueError as error:
-    instrument_fail(str(error))
+    sys.exit('phase2-cost: FAIL: ' + str(error))
 if args.declared:
     for (workload, tier), declaration in sorted(expectations.items()):
         if tier == args.declared or args.declared == 'all':
@@ -245,14 +227,14 @@ if args.declared:
             print('\t'.join(fields))
     sys.exit(0)
 if not shutil.which('valgrind'):
-    instrument_fail('valgrind is required')
+    sys.exit('phase2-cost: FAIL: valgrind is required')
 bins = [str(Path(p).resolve(strict=True)) for p in (args.base, args.cand)]
 for binary in bins:
     if not os.access(binary, os.X_OK):
-        instrument_fail('not executable: ' + binary)
+        sys.exit('phase2-cost: FAIL: not executable: ' + binary)
     symbols = subprocess.run(['nm', '-D', binary], capture_output=True, text=True, check=True).stdout
     if re.search(r'__(?:asan|ubsan)', symbols):
-        instrument_fail('sanitizer binary: ' + binary)
+        sys.exit('phase2-cost: FAIL: sanitizer binary: ' + binary)
 logdir = Path(tempfile.mkdtemp(prefix='phase2-cost-'))
 print('phase2-cost: source=codspeed.yml workloads=%d tiers=2 undeclared_max=+%s%% declarations=%d '
       'stale_below_max=%s logs=%s method=local column=max_local' %
@@ -275,11 +257,11 @@ for workload in sorted(workloads):
                     binary, workload], cwd=root, env=env, stdin=subprocess.DEVNULL,
                     stdout=stdout, stderr=stderr, timeout=900)
             if run.returncode:
-                instrument_fail('%s %s %s rc=%d (see %s)' %
+                sys.exit('phase2-cost: FAIL: %s %s %s rc=%d (see %s)' %
                          (workload, tier, arm, run.returncode, prefix))
             summary = re.findall(r'^summary:\s*(\d+)\s*$', Path(str(prefix) + '.cg').read_text(), re.M)
             if len(summary) != 1 or int(summary[0]) <= 0:
-                instrument_fail('missing/ambiguous Ir: ' + str(prefix))
+                sys.exit('phase2-cost: FAIL: missing/ambiguous Ir: ' + str(prefix))
             out = Path(str(prefix) + '.stdout').read_bytes()
             # The bench prints elapsed milliseconds; compare every result field.
             out = elapsed_text(out)
@@ -291,7 +273,7 @@ for workload in sorted(workloads):
             changed = compare_result_text(out_a, out_b, args.n6_text)
             changed += compare_result_text(err_a.encode(), err_b.encode(), args.n6_text)
         except (ValueError, OverflowError) as error:
-            instrument_fail('output differs: %s %s: %s (see %s)' %
+            sys.exit('phase2-cost: FAIL: output differs: %s %s: %s (see %s)' %
                      (workload, tier, error, logdir))
         if args.n6_text and changed:
             print('phase2-cost: n6-text workload=%s tier=%s changed_tokens=%d' %
