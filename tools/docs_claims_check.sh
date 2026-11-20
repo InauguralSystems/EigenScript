@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 # Front-door documentation references, checked against the sources that own them.
-# The removed-sentence check holds the six #2439 sentences by their exact words.
-# It ignores wrapping and indentation, but a reworded sentence passes.
+# The removed-text check (#2454) holds six texts that the documents of #2439
+# removed (REMOVED_STRICT_SENTENCES: four single sentences, one passage of two
+# sentences, one box of four), each stored whole. A document is red when all the
+# words of one text occur in it consecutively. Words are found line by line: one
+# leading "> " or one leading pair of spaces is dropped, then the line is split
+# at whitespace, and nothing else is dropped. So a new wrapping or a blank line
+# does not hide a text. A part of a text and a reworded text are not found. A
+# marker that is left over (a second ">", a ">" with no space after it) counts
+# as a word, so a text wrapped over lines that each start with one is not found.
+# Two patterns stand beside it: stale_opt_in (one spelling of "EIGS_STRICT=1
+# opts into ... invalid argument types") and stale_guard_state_wording (a guard
+# word near "raises" or "rejects" with "EIGS_STRICT=1" or "in strict mode").
+# None of the three reads meaning.
 cd "$(dirname "$0")/.." || exit 1
 exec python3 - "$@" <<'PY'
 import collections
@@ -191,7 +202,7 @@ wrong-typed builtin arguments; strict mode is off by default.'''),
 
 
 def removed_strict_sentences():
-    """Reject the exact removed #2439 claims, independent of line wrapping."""
+    """Reject a removed #2439 text that reappears whole (the rule is in the header)."""
     files = ('README.md', *[str(p) for p in sorted(Path('docs').glob('*.md'))],
              'docs/llms.txt')
 
@@ -217,13 +228,13 @@ def removed_strict_sentences():
                     continue
                 hits += 1
                 preview = ' '.join(needle[:6])
-                red(f'{file}:{lines[start]}: removed sentence reappeared: {preview} (#2439)')
-    print(f'  REMOVED SENTENCES: examined {examined} sentence(s) in {len(files)} file(s), '
+                red(f'{file}:{lines[start]}: removed text reappeared: {preview} (#2439)')
+    print(f'  REMOVED TEXTS: examined {examined} text(s) in {len(files)} file(s), '
           f'{hits} hit(s)')
     if examined < 6:
-        red(f'REMOVED SENTENCES examined only {examined} sentence(s), expected at least 6')
+        red(f'REMOVED TEXTS examined only {examined} text(s), expected at least 6')
     if not files:
-        red('REMOVED SENTENCES examined 0 files')
+        red('REMOVED TEXTS examined 0 files')
 
 def bool_result_wording():
     """Reject numeric result prose for builtins whose C constructors are bool.
@@ -581,8 +592,6 @@ def changelog_version():
 def selftest():
     root = Path.cwd()
     index = run('git', '-c', 'safe.directory=*', 'ls-files', '--stage')
-    index = '\n'.join(row for row in index.splitlines()
-                      if not row.split('\t', 1)[1].startswith('evidence/')) + '\n'
     tracked = {row.split('\t', 1)[1] for row in index.splitlines()}
     content = set(DOCS) | {str(p) for p in Path('docs').glob('*.md')}
     content |= {str(p) for p in Path('lib').glob('*.eigs')}
@@ -665,8 +674,8 @@ def selftest():
             p.write_text(original + '\nArgument guards are opt-in.\n')
             result = gate()
             ok = (result.returncode == 0 and
-                  'REMOVED SENTENCES: examined 6 sentence(s)' in result.stdout and
-                  'removed sentence reappeared' not in result.stdout)
+                  'REMOVED TEXTS: examined 6 text(s)' in result.stdout and
+                  'removed text reappeared' not in result.stdout)
             passed += ok
             print(f'SELFTEST: removed-sentence-reword-limit: {"PASS" if ok else "FAIL"}')
             p.write_text(original)
