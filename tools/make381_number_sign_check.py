@@ -40,7 +40,8 @@ What is a finding:
     call makes it text and not a call ($$(eval ...) in a recipe is printed),
     except in a body that is read as below, where it is a call again;
   - in the body of a define whose name is written as a word inside such a
-    call anywhere in the files read in the same run (an ordinary comment line
+    call anywhere in the files read in the same run (the files are read until
+    a reading finds no new word in an eval call; an ordinary comment line is
     included, and $$(eval too; a word is what stands between white space,
     dollar signs, brackets, commas and colons; a number sign attached to a
     define's name starts a comment): the body is read by the same rules, with
@@ -499,16 +500,20 @@ def include_names(rest):
 
 
 def check_files(paths, root=None, follow=False):
-    """Read the files twice: once to learn every file reached and every word
-    written inside an eval call in any of them, and again with those words,
-    so that a define in one file is read when another file evaluates it."""
-    first = Checker(root)
-    for path in paths:
-        first.check_file(path, follow)
-    second = Checker(root, first.words)
-    for path in paths:
-        second.check_file(path, follow)
-    return second
+    """Read the files again and again, each time with the words of every eval
+    call of every file reached so far, until a reading finds no new word (the
+    next one would then be the same): a define in one file is read when
+    another file evaluates it, and a file that only an evaluated body
+    includes is reached and its eval calls counted.  The last reading's
+    findings are the answer."""
+    names = set()
+    while True:
+        checker = Checker(root, names)
+        for path in paths:
+            checker.check_file(path, follow)
+        if checker.words <= names:
+            return checker
+        names = names | checker.words
 
 
 def check_tree(root):
@@ -552,8 +557,11 @@ def tree_selftest():
         put("inc2/wild.mk", bad)                    # tracked as a makefile too: read once
         put("a#b.inc", bad)                         # only through the escaped name
         # Its body is evaluated by the Makefile, not by itself.
-        put("defs.inc", "define F\nX := $$(sort b#x a)\ninclude inc/body.inc\nendef\n")
-        put("inc/body.inc", bad)                    # only through the include line of that body
+        put("defs.inc", "define F\nX := $$(sort b#x a)\ninclude inc/body.inc\nendef\n"
+                        "define G\nZ := $$(sort b#x a)\nendef\n")
+        # Reached only through the include line of F's body; it evaluates G,
+        # so G's body is read only on a third reading.
+        put("inc/body.inc", bad + "$(eval $(G))\n")
         put("home/t.inc", bad)                      # only through the tilde
         # Looked up from the root, not from sub/; the sign is on the third line of the file.
         put("sub/other.mk", "include Makefile\nX := $(sort b \\\n  a#x \\\n  c)\n")
@@ -575,7 +583,7 @@ def tree_selftest():
             else:
                 os.environ["HOME"] = home
         got = sorted((os.path.relpath(p, root), n) for p, n, _ in checker.findings)
-        want = [("a#b.inc", 1), ("defs.inc", 2), ("home/t.inc", 1), ("inc/body.inc", 1),
+        want = [("a#b.inc", 1), ("defs.inc", 2), ("defs.inc", 6), ("home/t.inc", 1), ("inc/body.inc", 1),
                 ("inc/optional.inc", 1), ("inc/rules.inc", 2), ("inc/s.inc", 3), ("inc2/wild.mk", 1),
                 ("sub/other.mk", 3)]
         if got != want:
