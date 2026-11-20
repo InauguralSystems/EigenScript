@@ -7,27 +7,41 @@ GNU Make 4.3 by tools/make381_oracle.py; --selftest holds this check to them.
 With no argument it reads every tracked makefile of the tree (git ls-files:
 Makefile, makefile, GNUmakefile, *.mk) and each file one of them includes by a
 literal name, looked up from the tree's root as make run there does; with
-arguments, those files and nothing else.
+arguments, those files and nothing else.  A file it cannot read, a literal
+`include` of a file that is not there and a define without its endef are
+errors (exit 2), not a pass.
 
-3.81 cuts a variable assignment or a directive at its first unescaped number
-sign before it reads the line, also when the sign stands inside an open $(...)
-or ${...}.  So on such a line a number sign inside a reference is a finding,
-with or without a backslash before it (3.81 and 4.3 disagree on the backslash).
-A rule line is read from the uncut text and a recipe line is not read by make:
-no finding there.  A line that starts with a tab is a recipe line only while a
-rule is open; an assignment, a directive other than a conditional, or a bare
-line closes the rule, and a define does not.  The body of a define is read as makefile text, with $$(
-and $${ opening a reference too, only when the define's name is written inside
-an $(eval call of the same file; no other body is read.
+What is a finding: a number sign, with or without a backslash before it,
+inside an open $(...) or ${...} reference
+  - on a variable assignment (any operator; also after override or export) or
+    on a directive (ifeq, ifneq, ifdef, ifndef, also after else; include,
+    -include, sinclude; vpath; export; unexport): 3.81 cuts such a line at its
+    first unescaped number sign before it reads it;
+  - inside an $(eval ...) call, wherever the call stands (a bare line, a rule
+    line, a recipe);
+  - in the body of a define whose name is referenced inside an $(eval call of
+    the same file ($(NAME), ${NAME}, call NAME, value NAME), outside a comment:
+    that body is read as makefile text, and $$( and $${ open a reference there.  No other define body is read, and neither
+    is a define inside such a body.
+What is not: a rule line (targets, prerequisites, a target-specific
+assignment), a recipe line, a bare call that is not eval, a comment.
+
+Which lines are recipe lines: a line that starts with a tab while a rule is
+open.  A rule line opens a rule; a target-specific assignment does not, and
+closes one.  An assignment, an include, a vpath, an export, an unexport or a
+bare line closes the rule.  A conditional, an override line, a define and a
+comment leave it as it is.
 
 Stricter than the makes: an assignment nothing expands, a line in a branch of
-a conditional that is not taken, and any number sign inside a reference on a
-bare line or a recipe line that calls $(eval.  Looser:
-a define body that reaches $(eval) through another variable, and a sign that a
-variable carries into text $(eval) reads.  Not covered: !=, ::=, undefine,
-private, $(file ...), a lone $ at the end of a value, .ONESHELL, --output-sync,
-an include whose name holds a reference, and other makefile text that exists
-only after expansion.
+a conditional that is not taken, a number sign inside an $(eval call that both
+makes read as a comment, and a $$( in a body that reaches $(eval) only through
+$(value ...), which does not expand it first.  Looser: a define body that reaches $(eval)
+through another variable, and a sign that a variable carries into text $(eval)
+reads.  Not covered: !=, ::=, undefine, private, export define, $(file ...), a
+lone $ at the end of a value, a tab line after a define or an override line
+that follows a rule (the two makes disagree whether it is a recipe line),
+.ONESHELL, --output-sync, an include whose name holds a reference, and other
+makefile text that exists only after expansion.
 
 To write the sign inside a call: H := \# at the top level and $H in the call
 ($$H in text that $(eval) reads again), or the tool's own escape (printf '\043').
@@ -43,9 +57,25 @@ import tempfile
 
 CONDITIONALS = {"ifeq", "ifneq", "ifdef", "ifndef"}
 NO_EFFECT = {"else", "endif"}
-DIRECTIVES = {"include", "-include", "sinclude", "vpath", "export", "unexport", "override"}
+DIRECTIVES = {"include", "-include", "sinclude", "vpath", "export", "unexport"}
+MODIFIERS = {"override", "export", "private"}
 OPENERS = {"(": ")", "{": "}"}
 EVAL = re.compile(r"\$[({]eval\s")
+# A name in the place of a variable inside an eval call: $(NAME or ${NAME, and
+# the first argument of call and of value.
+REFERENCED = re.compile(r"\$[({]([A-Za-z_][A-Za-z0-9_.-]*)")
+ARGUMENT = re.compile(r"\b(?:call|value)\s+([A-Za-z_][A-Za-z0-9_.-]*)")
+MESSAGE = ("a number sign inside a $( or ${ reference: GNU Make 3.81 reads this "
+           "line differently (tools/make381_number_sign_check.py)")
+
+
+def physical_lines(text):
+    """The file's lines as make has them: ended by a newline (with or without
+    a carriage return before it); a lone carriage return ends nothing."""
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return [line[:-1] if line.endswith("\r") else line for line in lines]
 
 
 def logical_lines(lines):
@@ -55,7 +85,7 @@ def logical_lines(lines):
     while i < len(lines):
         parts, numbers = [], []
         while i < len(lines):
-            raw = lines[i].rstrip("\n")
+            raw = lines[i]
             i += 1
             # An odd number of final backslashes continues the logical line.
             if (len(raw) - len(raw.rstrip("\\"))) % 2 and i < len(lines):
@@ -130,40 +160,77 @@ def sign_in_reference(text, doubled):
     return None
 
 
-def line_kind(text, doubled):
-    """assignment, rule or bare, as 3.81 decides it: on the text cut at the
-    first unescaped number sign, the first = (also :=, +=, ?=) or : met
-    outside every reference."""
-    cut = len(text)
-    for i, c in enumerate(text):
-        if c == "#" and not escaped(text, i):
-            cut = i
-            break
-    head = text[:cut]
-    for i, c, depth in walk(head, doubled):
+def first_operator(text, doubled):
+    """(kind, offset) of the first = or : outside every reference:
+    ("assignment", i) for =, :=, +=, ?=; ("rule", i) for another colon;
+    ("bare", None) when there is none."""
+    for i, c, depth in walk(text, doubled):
         if depth:
             continue
         if c == "=":
-            return "assignment"
+            return "assignment", i
         if c == ":":
-            return "assignment" if head[i + 1:i + 2] == "=" else "rule"
-    return "bare"
+            return ("assignment", i) if text[i + 1:i + 2] == "=" else ("rule", i)
+    return "bare", None
 
 
-def evaluated_names(text):
-    """Every name written inside an $(eval ...) or ${eval ...} call."""
-    names = set()
+def target_specific(text, colon, doubled):
+    """Is the rule line a target-specific assignment (target: [modifiers] VAR op value)?"""
+    rest = text[colon + 1:]
+    if rest.startswith(":"):
+        rest = rest[1:]
+    words = rest.split()
+    while words and words[0] in MODIFIERS:
+        rest = rest.split(words[0], 1)[1]
+        words = words[1:]
+    kind, at = first_operator(rest, doubled)
+    # The operator follows the first word directly: `t: b ; c=1` is a rule.
+    return kind == "assignment" and len(rest[:at].rstrip(":+?").split()) == 1
+
+
+def eval_calls(text):
+    """The (start, end) of every $(eval ...) or ${eval ...} call in the text."""
+    spans = []
     for m in EVAL.finditer(text):
-        close = OPENERS[text[m.start() + 1]]
+        opener = text[m.start() + 1]
         depth, j = 1, m.end()
         while j < len(text) and depth:
-            if text[j] == text[m.start() + 1]:
+            if text[j] == opener:
                 depth += 1
-            elif text[j] == close:
+            elif text[j] == OPENERS[opener]:
                 depth -= 1
             j += 1
-        names.update(re.findall(r"[A-Za-z_][A-Za-z0-9_.-]*", text[m.end():j]))
+        spans.append((m.start(), j))
+    return spans
+
+
+def code_part(text):
+    """The text before an ordinary comment: up to the first unescaped number
+    sign outside every reference (none of it when the line is a comment)."""
+    for i, c, depth in walk(text, False):
+        if c == "#" and not depth and not escaped(text, i):
+            return text[:i]
+    return text
+
+
+def evaluated_names(logical):
+    """Every name referenced inside an $(eval call that is not inside a comment."""
+    names = set()
+    for line, _ in logical:
+        text = code_part(line)
+        for start, end in eval_calls(text):
+            names.update(REFERENCED.findall(text[start + 6:end]))
+            names.update(ARGUMENT.findall(text[start + 6:end]))
     return names
+
+
+def define_name(words):
+    """The name a define line defines, or None when the line is not a define."""
+    if words[:1] == ["define"]:
+        return words[1] if len(words) > 1 else ""
+    if words[:2] == ["override", "define"]:
+        return words[2] if len(words) > 2 else ""
+    return None
 
 
 class Checker:
@@ -178,80 +245,91 @@ class Checker:
             return
         self.seen.add(path)
         try:
-            with open(path, encoding="utf-8") as f:
-                lines = f.readlines()
+            with open(path, encoding="utf-8", newline="") as f:
+                logical = logical_lines(physical_lines(f.read()))
         except (OSError, UnicodeDecodeError) as exc:
             raise RuntimeError("cannot read %s: %s" % (path, exc))
-        evaluated = evaluated_names("".join(lines))
-        logical = logical_lines(lines)
+        evaluated = evaluated_names(logical)
         top, i = [], 0
         while i < len(logical):
             text, numbers = logical[i]
-            words = text.split()
-            if words[:1] == ["define"] or words[:2] == ["override", "define"]:
-                name = words[1] if words[0] == "define" else (words[2] if len(words) > 2 else "")
-                body, i, depth = [], i + 1, 1
-                while i < len(logical):               # a define inside a define nests
-                    inner = logical[i][0].split()
-                    if inner[:1] == ["define"] or inner[:2] == ["override", "define"]:
-                        depth += 1
-                    elif inner[:1] == ["endef"]:
-                        depth -= 1
-                        if not depth:
-                            break
-                    body.append(logical[i])
-                    i += 1
-                if i == len(logical):
-                    raise RuntimeError("%s:%d: define never ends" % (path, numbers[0]))
-                if name in evaluated:
-                    self.scan(path, body, doubled=True, follow=False)
-                # 3.81 leaves a rule open across a define (case tab-assign-after-define).
-            else:
+            name = define_name(text.split())
+            if name is None:
                 top.append((text, numbers))
-            i += 1
+                i += 1
+                continue
+            body, i, depth = [], i + 1, 1
+            while i < len(logical):               # a define inside a define nests
+                inner = logical[i][0].split()
+                if define_name(inner) is not None:
+                    depth += 1
+                elif inner[:1] == ["endef"]:
+                    depth -= 1
+                    if not depth:
+                        break
+                body.append(logical[i])
+                i += 1
+            if i == len(logical):
+                raise RuntimeError("%s:%d: define never ends" % (path, numbers[0]))
+            if name in evaluated:
+                self.scan(path, body, doubled=True, follow=False)
+            i += 1                                # a define leaves an open rule open
         self.scan(path, top, doubled=False, follow=follow)
 
     def scan(self, path, logical, doubled, follow):
         rule_open = False
+        inner = 0                             # inside a define of the body being read
         for text, numbers in logical:
             stripped = text.strip()
             if not stripped:
                 continue
+            words = stripped.split()
+            if define_name(words) is not None:
+                inner += 1                    # its body is a define body: not read
+                continue
+            if inner:
+                inner -= words[:1] == ["endef"]
+                continue
             if rule_open and text.startswith("\t"):     # a recipe line, whatever it looks like
-                if EVAL.search(text):
-                    self.judge(path, text, numbers, True)
+                self.judge_eval(path, text, numbers)
                 continue
             if stripped.startswith("#"):
                 continue
-            word = stripped.split()[0]
+            word = words[0]
+            if word in CONDITIONALS or (word == "else" and words[1:2] and words[1] in CONDITIONALS):
+                self.judge(path, text, numbers, doubled)      # read, and an open rule stays as it is
+                continue
             if word in NO_EFFECT:
                 continue
-            if word in CONDITIONALS:          # read, and an open rule stays open
-                self.judge(path, text, numbers, doubled)
-                continue
-            kind = line_kind(text, doubled)
+            kind, at = first_operator(text, doubled)
             if word in DIRECTIVES or kind == "assignment":
                 self.judge(path, text, numbers, doubled)
-                rule_open = False
+                if word != "override":        # 3.81 leaves a rule open across an override line
+                    rule_open = False
                 if follow and word in ("include", "-include", "sinclude"):
                     self.follow_include(path, stripped[len(word):], word)
             elif kind == "rule":
-                rule_open = True
+                self.judge_eval(path, text, numbers)
+                rule_open = not target_specific(text, at, doubled)
             else:
-                if EVAL.search(text):
-                    self.judge(path, text, numbers, True)
+                self.judge_eval(path, text, numbers)
                 rule_open = False
 
-    def judge(self, path, text, numbers, doubled):
-        pos = sign_in_reference(text, doubled)
+    def judge(self, path, text, numbers, doubled, start=0, end=None):
+        pos = sign_in_reference(text[start:end], doubled)
         if pos is not None:
-            self.findings.append((path, numbers[min(pos, len(numbers) - 1)],
-                                  "a number sign inside a $( or ${ reference: GNU Make 3.81 "
-                                  "reads this line differently (tools/make381_number_sign_check.py)"))
+            self.findings.append((path, numbers[min(start + pos, len(numbers) - 1)], MESSAGE))
+            return True
+        return False
+
+    def judge_eval(self, path, text, numbers):
+        """A number sign anywhere inside an $(eval call."""
+        for start, end in eval_calls(text):
+            if self.judge(path, text, numbers, True, start, end):
+                return
 
     def follow_include(self, path, rest, word):
-        names = rest.split("#", 1)[0].split()
-        for name in names:
+        for name in code_part(rest).split():
             if "$" in name:
                 continue                      # a computed name: not followed (header)
             # make looks an include up from its working directory: the tree's root here.
@@ -266,7 +344,10 @@ class Checker:
 
 def tracked_makefiles(root):
     """Every tracked makefile of the tree at root, by git's own list."""
-    q = subprocess.run(["git", "-C", root, "ls-files", "-z"], capture_output=True)
+    try:
+        q = subprocess.run(["git", "-C", root, "ls-files", "-z"], capture_output=True)
+    except OSError as exc:
+        raise RuntimeError("cannot list the tracked files of %s: %s" % (root, exc))
     if q.returncode != 0:
         raise RuntimeError("cannot list the tracked files of %s: %s" % (
             root, q.stderr.decode("utf-8", "replace").strip()))
@@ -287,18 +368,22 @@ def check_tree(root):
 
 
 def tree_selftest():
-    """The tree mode on a small git tree: two tracked makefiles, a file reached
-    only through an include, a text file that is not a makefile, an untracked
-    makefile; and the same folder before it is a git tree."""
+    """The tree mode on a small git tree: two tracked makefiles; files reached
+    only through an include, a -include and a sinclude; a text file that is
+    not a makefile; an untracked makefile; the same folder before it is a git
+    tree; and the three errors (a missing literal include, a define without
+    its endef, a file that is not text)."""
     faults = []
     with tempfile.TemporaryDirectory() as root:
         def put(name, text):
             path = os.path.join(root, name)
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
+            with open(path, "w", encoding="utf-8", newline="") as f:
                 f.write(text)
+            return path
         bad = "X := $(sort b#x a)\n"
-        put("Makefile", "Y := 1\ninclude inc/rules.inc\n-include $(Y).mk\n")
+        put("Makefile", "Y := 1\ninclude inc/rules.inc\n-include $(Y).mk\n"
+                        "-include inc/optional.inc nosuch.inc\nsinclude inc/s.inc\n")
         try:
             check_tree(root)
             faults.append("a folder that is not a git tree was read")
@@ -306,7 +391,10 @@ def tree_selftest():
             if "tracked files" not in str(exc):
                 faults.append("a folder that is not a git tree was refused for another reason: %s" % exc)
         put("inc/rules.inc", "Y := 2\n" + bad)      # reached only through the include
-        put("sub/other.mk", "include Makefile\n" + bad)      # looked up from the root, not from sub/
+        put("inc/optional.inc", bad)                # only through the -include
+        put("inc/s.inc", "\n\n" + bad)              # only through the sinclude
+        # Looked up from the root, not from sub/; the sign is on the third line of the file.
+        put("sub/other.mk", "include Makefile\nX := $(sort b \\\n  a#x \\\n  c)\n")
         put("sub/notes.txt", bad)
         git = ["git", "-C", root, "-c", "user.name=selftest", "-c", "user.email=selftest@example.invalid"]
         for args in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "fixture"]):
@@ -318,10 +406,25 @@ def tree_selftest():
         except RuntimeError as exc:
             return faults + ["the fixture tree was refused: %s" % exc]
         got = sorted((os.path.relpath(p, root), n) for p, n, _ in checker.findings)
-        if got != [("inc/rules.inc", 2), ("sub/other.mk", 2)]:
-            faults.append("findings were %r" % (got,))
-        if len(checker.seen) != 3:
-            faults.append("%d file(s) read, not 3" % len(checker.seen))
+        want = [("inc/optional.inc", 1), ("inc/rules.inc", 2), ("inc/s.inc", 3), ("sub/other.mk", 3)]
+        if got != want:
+            faults.append("findings were %r, not %r" % (got, want))
+        if len(checker.seen) != 5:
+            faults.append("%d file(s) read, not 5" % len(checker.seen))
+        errors = [
+            ("a missing literal include", put("e1.mk", "include nosuch.mk\n"), "not at the tree's root"),
+            ("a define without its endef", put("e2.mk", "define F\nX := 1\n"), "define never ends"),
+            ("a file that is not text", None, "cannot read"),
+        ]
+        with open(os.path.join(root, "e3.mk"), "wb") as f:
+            f.write(b"X := \xe9\n")
+        for label, path, want_text in errors:
+            try:
+                Checker(root).check_file(path or os.path.join(root, "e3.mk"), follow=True)
+                faults.append("%s was not an error" % label)
+            except RuntimeError as exc:
+                if want_text not in str(exc):
+                    faults.append("%s was refused for another reason: %s" % (label, exc))
     return faults
 
 
@@ -345,7 +448,7 @@ def selftest():
                 continue
             finding += expect == "finding"
             clean += expect == "clean"
-            with open(path, "w", encoding="utf-8") as f:
+            with open(path, "w", encoding="utf-8", newline="") as f:
                 f.write(case["text"])
             checker = Checker()
             try:

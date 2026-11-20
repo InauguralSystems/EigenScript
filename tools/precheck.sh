@@ -82,8 +82,7 @@ SHARDS=$(sed -n 's/^[[:space:]]*ASAN_SHARDS:[[:space:]]*\([0-9][0-9]*\)[[:space:
 BASE=${PRECHECK_BASE:-origin/main}
 
 # class | command   (lane = alternate rows; the slow ones are spread by order)
-GATES="run|tools/make381_number_sign_check.py
-run|tools/core_ext_boundary_check.sh
+GATES="run|tools/core_ext_boundary_check.sh
 run|tools/pipefail_verdict_check.sh
 bin|tools/docs_claims_check.sh
 run|tools/section_plan.sh --shards $SHARDS --check
@@ -108,7 +107,8 @@ run|tools/lsp_builtin_index_check.sh
 run|tools/section_fragments_check.sh --no-new-inline $BASE
 run|tools/changelog_fragments.sh check $BASE
 portability|tools/portability_parse_check.sh
-selftest|tools/selftests.sh --changed $BASE"
+selftest|tools/selftests.sh --changed $BASE
+run|tools/make381_number_sign_check.py"
 
 if [ "${1:-}" = "--list" ]; then printf '%s\n' "$GATES" | tr '|' ' '; exit 0; fi
 [ -z "${1:-}" ] || { echo "usage: tools/precheck.sh [--list|--selftest]" >&2; exit 2; }

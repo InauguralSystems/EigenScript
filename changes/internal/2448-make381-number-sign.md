@@ -1,1 +1,1 @@
-- Refuse Makefile number signs that GNU Make 3.81 parses incompatibly (#2448).
+- A precheck row refuses the Makefile lines on which GNU Make 3.81 (the macOS runners' make) is known to read a number sign differently from current make; what it knows is the cases of `tools/make381_cases.json`, each run through a real 3.81 (#2448).

@@ -27,8 +27,10 @@ Usage:
     make381_oracle.py --update MAKE381 [--make4 MAKE]   rewrite the file's results
     make381_oracle.py --selftest                        the file against itself
 
-A case is its "text" followed by a line that prints the variable X and by an
-"all" rule (and an empty "all2" rule when the text has none).  "differ" is
+A case is its "text" followed by two lines that print the variables X and Z
+and the names of the variables that begin with X, Z or N (so that a variable
+defined under another name than the one meant is seen), and by an "all" rule
+(and an empty "all2" rule when the text has none).  "differ" is
 true when the two makes' exit codes differ or their standard output differs;
 what they write to standard error is recorded and not compared (the two word
 their messages differently).  The fields "kind", "expect" and "why" are
@@ -52,14 +54,18 @@ NOT_COVERED = 'not covered: '
 
 def case_makefile(text):
     """The makefile a case is run as."""
-    if 'all2:' in text:
-        return text + "\n$(info X=[$(X)])\nall: all2 ; @:\n"
-    return text + "\n$(info X=[$(X)])\nall: all2 ; @:\nall2:\n"
+    tail = ("\n$(info X=[$(X)] Z=[$(Z)])"
+            "\n$(info V=[$(sort $(filter X% Z% N%,$(.VARIABLES)))])"
+            "\nall: all2 ; @:\n")
+    return text + tail + ("" if "all2:" in text else "all2:\n")
 
 
 def run(make, path):
+    # A fixed environment: make takes every environment variable as a variable
+    # of its own, and the cases print variables by name.
     q = subprocess.run([make, '-f', path, 'all'], capture_output=True,
-                       text=True, timeout=30, cwd=os.path.dirname(path))
+                       text=True, timeout=30, cwd=os.path.dirname(path),
+                       env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'})
     # 3.81 quotes with a grave accent where later makes use an apostrophe.
     err = q.stderr.strip().replace(path, 'case.mk').replace('`', "'")
     return {'rc': q.returncode, 'out': q.stdout.strip(), 'err': err}

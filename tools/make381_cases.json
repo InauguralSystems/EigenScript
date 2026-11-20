@@ -11,7 +11,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "shell-simple",
@@ -29,7 +29,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "shell-recursive",
@@ -42,12 +42,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]",
+    "out": "X=[ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]",
+    "out": "X=[ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "shell-recursive-unused",
@@ -65,7 +65,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "brace-shell",
@@ -83,7 +83,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "if",
@@ -101,7 +101,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "sort",
@@ -119,7 +119,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[c]",
+    "out": "X=[c] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "filter-out",
@@ -137,7 +137,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[p#a p#b]",
+    "out": "X=[p#a p#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "addprefix",
@@ -155,7 +155,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "strip",
@@ -173,7 +173,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "word",
@@ -191,7 +191,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "or",
@@ -209,7 +209,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[#]",
+    "out": "X=[#] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "findstring",
@@ -227,7 +227,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "notdir",
@@ -245,7 +245,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#.o b#.o]",
+    "out": "X=[a#.o b#.o] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "subst-ref",
@@ -263,7 +263,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "nested",
@@ -281,7 +281,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#x b c]",
+    "out": "X=[a#x b c] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "three-lines",
@@ -294,12 +294,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a\\#b]",
+    "out": "X=[a\\#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "escaped-in-call",
@@ -312,12 +312,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a b\\#x]",
+    "out": "X=[a b\\#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "escaped-in-sort",
@@ -330,12 +330,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "hash-variable",
@@ -348,12 +348,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "hash-variable-sort",
@@ -366,12 +366,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "octal-printf",
@@ -384,12 +384,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a b ]",
+    "out": "X=[a b ] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a b ]",
+    "out": "X=[a b ] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "comment-after-call",
@@ -402,12 +402,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]",
+    "out": "X=[ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]",
+    "out": "X=[ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "ordinary-comment",
@@ -420,12 +420,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "name": "recipe-shell",
@@ -438,12 +438,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "name": "recipe-plain",
@@ -456,12 +456,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nr#s u#v",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s u#v",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nr#s u#v",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s u#v",
     "rc": 0
    },
    "name": "semicolon-recipe",
@@ -474,12 +474,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "make: *** No rule to make target 'a', needed by 'all2'.  Stop.",
-    "out": "X=[ok]",
+    "out": "X=[ok] Z=[]\nV=[X]",
     "rc": 2
    },
    "make4": {
     "err": "make: *** No rule to make target 'a', needed by 'all2'.  Stop.",
-    "out": "X=[ok]",
+    "out": "X=[ok] Z=[]\nV=[X]",
     "rc": 2
    },
    "name": "semicolon-prereq-call",
@@ -492,12 +492,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "define-call",
@@ -510,12 +510,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "define-direct",
@@ -533,7 +533,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "define-eval",
@@ -551,7 +551,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "define-eval-value",
@@ -564,12 +564,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "name": "define-recipe",
@@ -582,12 +582,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[7]",
+    "out": "X=[7] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[7]",
+    "out": "X=[7] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "define-comment-line",
@@ -605,7 +605,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[no]",
+    "out": "X=[no] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "ifeq-call",
@@ -641,7 +641,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "export-assign",
@@ -659,7 +659,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[s a b#x]",
+    "out": "X=[s a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "append",
@@ -677,7 +677,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "cond-assign",
@@ -690,12 +690,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\n[a b#x]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b#x]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\n[a b#x]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b#x]",
     "rc": 0
    },
    "name": "target-specific",
@@ -708,12 +708,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nhi",
+    "out": "X=[ok] Z=[]\nV=[X]\nhi",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nhi",
+    "out": "X=[ok] Z=[]\nV=[X]\nhi",
     "rc": 0
    },
    "name": "prereq-call",
@@ -731,7 +731,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]",
+    "out": "X=[ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "include-arg",
@@ -744,12 +744,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=['a]",
+    "out": "X=['a] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=['a]",
+    "out": "X=['a] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "quoted-outside",
@@ -762,12 +762,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "escaped-outside",
@@ -780,12 +780,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[$(shell echo a]",
+    "out": "X=[$(shell echo a] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[$(shell echo a]",
+    "out": "X=[$(shell echo a] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "dollar-dollar",
@@ -803,7 +803,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "paren-shell-cmd",
@@ -816,12 +816,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "i#j\nX=[ok]",
+    "out": "i#j\nX=[ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "i#j\nX=[ok]",
+    "out": "i#j\nX=[ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "info-call",
@@ -839,7 +839,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[[a#b]]",
+    "out": "X=[[a#b]] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "call-user-fn",
@@ -857,7 +857,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a# b#]",
+    "out": "X=[a# b#] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "foreach",
@@ -875,7 +875,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#o]",
+    "out": "X=[a#o] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "patsubst",
@@ -893,7 +893,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "recursive-then-use",
@@ -906,17 +906,17 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a]",
+    "out": "X=[a] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a]",
+    "out": "X=[a] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "bare-eval-assign",
    "text": "$(eval X := $(shell printf '%s' 'a#b'))\n",
-   "why": "stricter than the makes: a bare line that calls $(eval: the check refuses any number sign inside a reference on it; here both makes drop the text after the sign"
+   "why": "stricter than the makes: a number sign inside an $(eval call: here both makes read it as a comment and drop the text after it"
   },
   {
    "differ": true,
@@ -929,7 +929,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "bare-eval-deferred",
@@ -947,7 +947,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "override-assign",
@@ -965,7 +965,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[yes]",
+    "out": "X=[yes] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "ifneq-findstring",
@@ -983,7 +983,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]",
+    "out": "X=[ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "vpath-call",
@@ -1001,7 +1001,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]",
+    "out": "X=[ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "export-list",
@@ -1014,12 +1014,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nhi",
+    "out": "X=[ok] Z=[]\nV=[X]\nhi",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nhi",
+    "out": "X=[ok] Z=[]\nV=[X]\nhi",
     "rc": 0
    },
    "name": "rule-continuation",
@@ -1032,12 +1032,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\n[a b#x]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b#x]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\n[a b#x]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b#x]",
     "rc": 0
    },
    "name": "target-var-recursive",
@@ -1050,12 +1050,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nhi",
+    "out": "X=[ok] Z=[]\nV=[X]\nhi",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nhi",
+    "out": "X=[ok] Z=[]\nV=[X]\nhi",
     "rc": 0
    },
    "name": "double-colon-rule",
@@ -1068,12 +1068,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nmade",
+    "out": "X=[ok] Z=[]\nV=[X]\nmade",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nmade",
+    "out": "X=[ok] Z=[]\nV=[X]\nmade",
     "rc": 0
    },
    "name": "target-name-call",
@@ -1091,7 +1091,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "space-indented-assign",
@@ -1104,12 +1104,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[]",
+    "out": "X=[] Z=[]\nV=[]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[]",
+    "out": "X=[] Z=[]\nV=[]",
     "rc": 0
    },
    "name": "comment-continuation",
@@ -1127,7 +1127,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b\\\\#x]",
+    "out": "X=[a b\\\\#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "double-backslash-hash",
@@ -1140,12 +1140,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "hash-variable-recursive",
@@ -1163,7 +1163,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b c#d]",
+    "out": "X=[a b c#d] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "assign-two-calls",
@@ -1176,12 +1176,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a b]",
+    "out": "X=[a b] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a b]",
+    "out": "X=[a b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "assign-call-then-comment",
@@ -1199,7 +1199,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[no]",
+    "out": "X=[no] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "ifdef-name-call",
@@ -1212,12 +1212,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]",
+    "out": "X=[ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]",
+    "out": "X=[ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "define-name-line",
@@ -1230,12 +1230,12 @@
    "kind": "other-construct",
    "make381": {
     "err": "",
-    "out": "X=[]",
+    "out": "X=[] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a]",
+    "out": "X=[a] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "bang-assign",
@@ -1248,12 +1248,12 @@
    "kind": "other-construct",
    "make381": {
     "err": "",
-    "out": "X=[]",
+    "out": "X=[] Z=[]\nV=[]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a]",
+    "out": "X=[a] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "colon-colon-eq",
@@ -1266,12 +1266,12 @@
    "kind": "other-construct",
    "make381": {
     "err": "",
-    "out": "X=[[]ok]",
+    "out": "X=[[]ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[[]ok]",
+    "out": "X=[[]ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "file-function",
@@ -1289,7 +1289,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[b]",
+    "out": "X=[b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "undefine-directive",
@@ -1307,7 +1307,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\n[1]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[1]",
     "rc": 0
    },
    "name": "private-modifier",
@@ -1320,12 +1320,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\n[a b#x]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b#x]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\n[a b#x]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b#x]",
     "rc": 0
    },
    "name": "escaped-in-rule-call",
@@ -1338,12 +1338,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "name": "escaped-in-recipe",
@@ -1356,12 +1356,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "i\\#j\nX=[ok]",
+    "out": "i\\#j\nX=[ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "i\\#j\nX=[ok]",
+    "out": "i\\#j\nX=[ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "escaped-in-bare-info",
@@ -1374,12 +1374,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[yes]",
+    "out": "X=[yes] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[no]",
+    "out": "X=[no] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "escaped-in-ifeq",
@@ -1392,12 +1392,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\n[a b#x]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b#x]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\n[a b#x]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b#x]",
     "rc": 0
    },
    "name": "rule-call-prereqs-shown",
@@ -1410,12 +1410,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a]",
+    "out": "X=[a] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a]",
+    "out": "X=[a] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "define-eval-plain-hash",
@@ -1428,12 +1428,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "hash-variable-in-define-eval",
@@ -1451,7 +1451,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "tab-assign-after-assign",
@@ -1469,7 +1469,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "tab-assign-in-ifeq",
@@ -1487,7 +1487,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]\nhi",
+    "out": "X=[a b#x] Z=[]\nV=[X]\nhi",
     "rc": 0
    },
    "name": "tab-assign-after-rule-then-assign",
@@ -1500,12 +1500,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "name": "tab-recipe-after-comment-and-blank",
@@ -1518,12 +1518,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "name": "tab-recipe-inside-ifeq-after-rule",
@@ -1536,12 +1536,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "/bin/sh: 1: Z: not found\nmake: *** [all2] Error 127",
-    "out": "X=[ok]\nZ := r#s true",
+    "out": "X=[ok] Z=[]\nV=[X]\nZ := r#s true",
     "rc": 2
    },
    "make4": {
     "err": "/bin/sh: 1: Z: not found\nmake: *** [case.mk:4: all2] Error 127",
-    "out": "X=[ok]\nZ := r#s true",
+    "out": "X=[ok] Z=[]\nV=[X]\nZ := r#s true",
     "rc": 2
    },
    "name": "tab-recipe-looks-like-assign",
@@ -1577,7 +1577,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b a d#c]",
+    "out": "X=[a#b a d#c] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "escaped-then-ref",
@@ -1590,12 +1590,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\npre-#825 r#s",
+    "out": "X=[ok] Z=[]\nV=[X]\npre-#825 r#s",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\npre-#825 r#s",
+    "out": "X=[ok] Z=[]\nV=[X]\npre-#825 r#s",
     "rc": 0
    },
    "name": "define-canned-recipe-tabbed",
@@ -1608,12 +1608,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "name": "define-untabbed-shell-assign",
@@ -1626,12 +1626,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "name": "define-eval-rule-recipe",
@@ -1644,12 +1644,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nhi",
+    "out": "X=[ok] Z=[]\nV=[X]\nhi",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nhi",
+    "out": "X=[ok] Z=[]\nV=[X]\nhi",
     "rc": 0
    },
    "name": "define-eval-rule-line",
@@ -1667,7 +1667,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "define-eval-tab-assign",
@@ -1685,7 +1685,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[no]",
+    "out": "X=[no] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "define-with-ifeq-call",
@@ -1703,7 +1703,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "override-define-eval",
@@ -1721,7 +1721,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "paren-inside-call-then-sign",
@@ -1739,7 +1739,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "brace-inside-brace-call-then-sign",
@@ -1757,7 +1757,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a#b]",
+    "out": "X=[a#b] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "bare-foreach-eval-deferred",
@@ -1775,7 +1775,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "define-eval-indirect",
@@ -1793,7 +1793,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "define-eval-call",
@@ -1811,7 +1811,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[$a b#x]",
+    "out": "X=[$a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "dollar-dollar-then-ref",
@@ -1829,7 +1829,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "tab-assign-first-line",
@@ -1842,12 +1842,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a b ]",
+    "out": "X=[a b ] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a b ]",
+    "out": "X=[a b ] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "comment-with-reference-and-sign",
@@ -1860,12 +1860,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "name": "tab-recipe-assign-shaped-inside-ifeq",
@@ -1883,7 +1883,7 @@
    },
    "make4": {
     "err": "",
-    "out": "hi\nX=[ok]\none",
+    "out": "hi\nX=[ok] Z=[a b#x]\nV=[X Z]\none",
     "rc": 0
    },
    "name": "tab-assign-after-bare-call",
@@ -1896,12 +1896,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "name": "tab-recipe-assign-shaped-after-comment",
@@ -1909,22 +1909,22 @@
    "why": "the two makes agree"
   },
   {
-   "differ": false,
-   "expect": "clean",
+   "differ": true,
+   "expect": "finding",
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[]",
+    "out": "X=[] Z=[]\nV=[]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[]",
+    "out": "X=[] Z=[]\nV=[X#]",
     "rc": 0
    },
    "name": "sign-before-operator",
    "text": "X$(strip #) := v\n",
-   "why": "the two makes agree"
+   "why": "the two makes differ"
   },
   {
    "differ": true,
@@ -1932,12 +1932,12 @@
    "kind": "other-construct",
    "make381": {
     "err": "/bin/sh: 1: Z: not found\nmake: *** [all2] Error 127",
-    "out": "X=[ok]\none\nZ := a b#x",
+    "out": "X=[ok] Z=[]\nV=[X]\none\nZ := a b#x",
     "rc": 2
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\none",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\none",
     "rc": 0
    },
    "name": "tab-assign-after-define",
@@ -1950,12 +1950,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "case.mk:3: *** unterminated call to function 'sort': missing ')'.  Stop.",
-    "out": "X=[ok]",
+    "out": "X=[ok] Z=[]\nV=[X]",
     "rc": 2
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\n[a b#x]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b#x]",
     "rc": 0
    },
    "name": "recipe-eval-deferred",
@@ -1968,12 +1968,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\n[a b]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\n[a b]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b]",
     "rc": 0
    },
    "name": "recipe-eval-no-sign",
@@ -1991,7 +1991,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "eval-later-hash-variable",
@@ -2004,16 +2004,718 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "eval-later-doubled-hash-variable",
    "text": "H := \\#\n$(eval X := $$(sort b$$Hx a))\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[two] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[three] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "else-ifeq-escaped",
+   "text": "ifeq (a,b)\nX := one\nelse ifeq ($(strip a\\#b),a\\#b)\nX := two\nelse\nX := three\nendif\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[two] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[two] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "else-ifeq-no-sign",
+   "text": "ifeq (a,b)\nX := one\nelse ifeq ($(strip a),a)\nX := two\nelse\nX := three\nendif\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** unterminated call to function 'strip': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[three] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "else-ifdef-call",
+   "text": "ifeq (a,b)\nX := one\nelse ifdef $(strip A#B)\nX := two\nelse\nX := three\nendif\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "evaled-define-with-inner-define",
+   "text": "define OUTER\ndefine INNER\nY := $$(sort b#x a)\nendef\nendef\n$(eval $(OUTER))\nX := ok\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-evaled-only-in-comment",
+   "text": "define UNUSED\nY := $$(sort b#x a)\nendef\n# $(eval $(UNUSED))\nX := ok\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok ] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok ] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-evaled-only-in-trailing-comment",
+   "text": "define UNUSED\nY := $$(sort b#x a)\nendef\nX := ok # $(eval $(UNUSED))\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "semicolon-recipe-eval-deferred",
+   "text": "X := ok\nall2: ; $(eval Z := $$(sort b#x a)) @echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b]",
+    "rc": 0
+   },
+   "name": "semicolon-recipe-eval-no-sign",
+   "text": "X := ok\nall2: ; $(eval Z := $$(sort b a)) @echo [$(Z)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[1] [a b#x]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n[1] [a b#x]",
+    "rc": 0
+   },
+   "name": "semicolon-recipe-eval-sign-in-prereqs",
+   "text": "X := ok\nall2: $(sort b#x a) ; $(eval Z := 1) @echo [$(Z)] [$^]\nb%: ; @:\na: ; @:\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "targetvar-then-tab-assign",
+   "text": "X := ok\nall2: Q := 1\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[a b]\nV=[X Z]\n[a b]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b]\nV=[X Z]\n[a b]",
+    "rc": 0
+   },
+   "name": "targetvar-then-tab-assign-no-sign",
+   "text": "X := ok\nall2: Q := 1\n\tZ := $(sort b a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "patternvar-then-tab-assign",
+   "text": "X := ok\n%2: Q := 1\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\nr",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\nr",
+    "rc": 0
+   },
+   "name": "targetvar-after-open-rule-then-tab",
+   "text": "X := ok\nall2:\n\t@echo r\nall2: Q := 1\n\t@Z=$(shell printf '%s' 'r#s'); echo $$Z\n",
+   "why": "stricter than the makes: the tab line is an assignment that nothing expands: a target-specific line closes the rule before it in both makes"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "prereq-eval-deferred",
+   "text": "all2: $(eval X := $$(sort b#x a))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[a b] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "prereq-eval-no-sign",
+   "text": "all2: $(eval X := $$(sort b a))\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "targetvar-value-eval-deferred",
+   "text": "all2: Q := $(eval X := $$(sort b#x a))\nall2:\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n1\nr#s",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n1\nr#s",
+    "rc": 0
+   },
+   "name": "rule-semicolon-recipe-assign-then-tab",
+   "text": "X := ok\nall2: all3 ; @Q=1; echo $$Q\n\t@Z=$(shell printf '%s' 'r#s'); echo $$Z\nall3:\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[N]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[N X#]",
+    "rc": 0
+   },
+   "name": "name-ref-sign-before-operator",
+   "text": "N := X\n$(N)$(strip #) := v\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a\na b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "lone-cr-inside-line",
+   "text": "X := a\r$(sort b#x a)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "unexport-call",
+   "text": "A := 1\nX := ok\nunexport $(sort A#B)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "sinclude-arg",
+   "text": "X := ok\nsinclude $(sort nofile#x)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** unterminated call to function 'strip': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[yes] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "ifndef-call",
+   "text": "ifndef $(strip A#B)\nX := yes\nelse\nX := no\nendif\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** unterminated call to function 'shell': missing '}'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a#b] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "brace-eval-deferred",
+   "text": "${eval X := $${shell printf '%s' 'a#b'}}\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "comment-even-backslashes-then-assign",
+   "text": "# c \\\\\nX := $(sort b#x a)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-indented-endef-evaled",
+   "text": "define F\nX := $$(sort b#x a)\n  endef\n$(eval $(F))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
+    "rc": 0
+   },
+   "name": "tab-recipe-assign-shaped-after-blank",
+   "text": "X := ok\nall2:\n\n\t@Z=$(shell printf '%s' 'r#s'); echo $$Z\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "clean",
+   "kind": "other-construct",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\nr\ns",
+    "rc": 0
+   },
+   "make4": {
+    "err": "case.mk:5: *** recipe commences before first target.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "name": "override-then-tab-recipe",
+   "text": "X := ok\nall2:\n\t@echo r\noverride Y := 1\n\t@echo s\n",
+   "why": "not covered: a tab line after an override line that follows a rule: 3.81 still takes it as a recipe line of that rule, 4.3 does not"
+  },
+  {
+   "differ": true,
+   "expect": "clean",
+   "kind": "other-construct",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\nr\nr#s",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\nr",
+    "rc": 0
+   },
+   "name": "override-then-tab-assign-shaped",
+   "text": "X := ok\nall2:\n\t@echo r\noverride Y := 1\n\t@Z=$(shell printf '%s' 'r#s'); echo $$Z\n",
+   "why": "not covered: a tab line after an override line that follows a rule: 3.81 still takes it as a recipe line of that rule, 4.3 takes it as an assignment"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: invalid 'override' directive",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[X#]",
+    "rc": 0
+   },
+   "name": "override-sign-before-operator",
+   "text": "override X$(strip #) := v\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: Extraneous text after 'else' directive\ncase.mk:13: *** missing 'endif'.  Stop.",
+    "out": "X=[two] Z=[]\nV=[X]",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[two] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "else-ifneq-findstring",
+   "text": "ifeq (a,b)\nX := one\nelse ifneq ($(findstring #,a#b),)\nX := two\nelse\nX := three\nendif\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]\nr",
+    "rc": 0
+   },
+   "name": "export-then-tab-assign",
+   "text": "all2:\n\t@echo r\nexport Y := 1\n\tX := $(sort b#x a)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]\nr",
+    "rc": 0
+   },
+   "name": "vpath-then-tab-assign",
+   "text": "all2:\n\t@echo r\nvpath %.c d\n\tX := $(sort b#x a)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]\nr",
+    "rc": 0
+   },
+   "name": "include-then-tab-assign",
+   "text": "all2:\n\t@echo r\n-include nofile\n\tX := $(sort b#x a)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]\nr",
+    "rc": 0
+   },
+   "name": "unexport-then-tab-assign",
+   "text": "all2:\n\t@echo r\nunexport Y\n\tX := $(sort b#x a)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "targetvar-override-then-tab-assign",
+   "text": "X := ok\nall2: override Q := 1\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a#x b] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "crlf-continuation",
+   "text": "X := $(sort b \\\r\n  a#x)\r\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[a b] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "crlf-continuation-no-sign",
+   "text": "X := $(sort b \\\r\n  a)\r\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "clean",
+   "kind": "other-construct",
+   "make381": {
+    "err": "case.mk:3: *** extraneous 'endef'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "export-define-evaled",
+   "text": "export define F\nX := $$(sort b#x a)\nendef\n$(eval $(F))\n",
+   "why": "not covered: export define: 3.81 does not know it and stops at the endef"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[N X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[N X]",
+    "rc": 0
+   },
+   "name": "define-named-like-eval-word",
+   "text": "define N\nY := $$(sort b#x a)\nendef\n$(eval N := 1)\nX := ok\n",
    "why": "the two makes agree"
   },
   {
@@ -2022,12 +2724,66 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]",
+    "out": "X=[$(sort b] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]",
+    "out": "X=[$(sort b] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-evaled-through-value",
+   "text": "define F\nX := $$(sort b#x a)\nendef\n$(eval $(value F))\n",
+   "why": "stricter than the makes: the body reaches $(eval) only through $(value), which does not expand it first, so its $$( opens nothing and both makes read the sign as a comment; the check reads every evaluated body as expanded once"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\nhi\n[a b#x]",
+    "rc": 0
+   },
+   "name": "recipe-eval-after-shell-comment",
+   "text": "X := ok\nall2:\n\t@echo hi # $(eval Z := $$(sort b#x a))\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "/bin/sh: 1: b]: not found\nmake: *** [case.mk:5: all2] Error 127",
+    "out": "X=[ok] Z=[a b#x]\nV=[X Z]\n[a b#x] [a",
+    "rc": 2
+   },
+   "name": "targetvar-value-with-semicolon",
+   "text": "X := ok\nall2: Q := a;b\n\tZ := $(sort b#x a)\nall2:\n\t@echo [$(Z)] [$(Q)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "skipped-branch",
@@ -2045,7 +2801,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "taken-branch",
@@ -2063,7 +2819,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "nested-define-evaled",
@@ -2076,12 +2832,12 @@
    "kind": "other-construct",
    "make381": {
     "err": "",
-    "out": "X=[a]",
+    "out": "X=[a] Z=[]\nV=[X]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[a$]",
+    "out": "X=[a$] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "dollar-at-end",
@@ -2094,12 +2850,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\n[a b#x]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b#x]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\n[a b#x]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b#x]",
     "rc": 0
    },
    "name": "static-pattern-rule",
@@ -2112,12 +2868,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\n[a b#x]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b#x]",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\n[a b#x]",
+    "out": "X=[ok] Z=[]\nV=[X]\n[a b#x]",
     "rc": 0
    },
    "name": "pattern-specific-assign",
@@ -2135,7 +2891,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[N X]",
     "rc": 0
    },
    "name": "name-with-reference",
@@ -2153,7 +2909,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "crlf-line-end",
@@ -2171,7 +2927,7 @@
    },
    "make4": {
     "err": "",
-    "out": "X=[a b#x]",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
     "rc": 0
    },
    "name": "no-final-newline",
@@ -2184,12 +2940,12 @@
    "kind": "number-sign",
    "make381": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "make4": {
     "err": "",
-    "out": "X=[ok]\nr#s",
+    "out": "X=[ok] Z=[]\nV=[X]\nr#s",
     "rc": 0
    },
    "name": "tab-recipe-assign-shaped-after-else",
