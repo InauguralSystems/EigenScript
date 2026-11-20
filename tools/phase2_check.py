@@ -140,6 +140,44 @@ def rindex(r):
     return ROUNDS.index(r)
 
 
+def unused_mechanical_flags(through, baseline=None, smi_trap=None):
+    """Return supplied binary flags that the selected round cannot consume."""
+    gates = MECHANICAL.get(through, ())
+    unused = []
+    if baseline and 'corpus-diff' not in gates:
+        unused.append('--baseline')
+    if smi_trap and 'smi-trap' not in gates:
+        unused.append('--smi-trap')
+    return unused
+
+
+def unused_flag_cli_calibration(remove_refusal=False):
+    """Exercise the real command entry, optionally with its refusal planted out."""
+    checker = os.path.abspath(__file__)
+    planted = None
+    if remove_refusal:
+        source = read_text(checker)
+        refusal = """    unused = unused_mechanical_flags(args.through, args.baseline, args.smi_trap)\n    if unused:\n        print('phase2-check: FAIL: %s is unused for --through %s (that round has no matching mechanical gate)' %\n              (' and '.join(unused), args.through))\n        return 2\n"""
+        if source.count(refusal) != 1:
+            return None
+        fd, planted = tempfile.mkstemp(prefix='.phase2_check_unused_flag_plant-',
+                                       suffix='.py', dir=os.path.dirname(checker))
+        os.close(fd)
+        write_text(planted, source.replace(refusal, ''))
+        checker = planted
+    try:
+        result = subprocess.run(
+            [sys.executable, checker, '/bin/true', '/bin/true', '--through', 'R1.3',
+             '--baseline', '/not/executable'], capture_output=True, text=True)
+        return result.returncode, result.stdout.strip()
+    finally:
+        if planted:
+            try:
+                os.unlink(planted)
+            except FileNotFoundError:
+                pass
+
+
 def read_text(path, **kw):
     with open(path, encoding='utf-8', **kw) as f:
         return f.read()
@@ -1039,6 +1077,17 @@ def calibrate(args, out):
     def quiet(_):
         pass
 
+    case('--baseline is refused when R1.3 has no corpus-diff gate',
+         unused_mechanical_flags('R1.3', baseline='/bin/true'), ['--baseline'])
+    case('--smi-trap is refused when R1.3 has no smi-trap gate',
+         unused_mechanical_flags('R1.3', smi_trap='/bin/true'), ['--smi-trap'])
+    refused = (2, 'phase2-check: FAIL: --baseline is unused for --through R1.3 '
+                  '(that round has no matching mechanical gate)')
+    case('--baseline refusal goes through the command line',
+         unused_flag_cli_calibration(), refused)
+    case('command-line refusal plant is caught',
+         unused_flag_cli_calibration(remove_refusal=True) != refused, True)
+
     lines = []
     case('tool stderr policy, process rc and embed counter/OK plants',
          tool_contract_calibration(lines.append), True, detail=lines)
@@ -1524,6 +1573,11 @@ def main():
     args = ap.parse_args()
     if args.selftest:
         print('phase2-check: FAIL: --selftest takes no other argument')
+        return 2
+    unused = unused_mechanical_flags(args.through, args.baseline, args.smi_trap)
+    if unused:
+        print('phase2-check: FAIL: %s is unused for --through %s (that round has no matching mechanical gate)' %
+              (' and '.join(unused), args.through))
         return 2
     for b in (args.tag, args.branch, args.baseline, args.smi_trap, args.planted_leaf_scan,
               args.planted_leaf_mul, args.planted_random_int, args.planted_value_eq):
