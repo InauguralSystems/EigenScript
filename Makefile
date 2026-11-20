@@ -795,6 +795,7 @@ ui-sdl-input-gfx: build/$(UI_INPUT_VARIANT)/ui_sdl_input
 # Real-X11 regressions belong in the Linux extensions lane, not the portable
 # suite. Require both scripts' success and their promised positive evidence.
 gfx-x11-regressions: build
+	python3 tests/test_gfx_signal_cleanup.py
 	@set -eu; output=$$(mktemp); trap 'rm -f "$$output"' EXIT HUP INT TERM; \
 	status=0; bash tests/test_gfx_utf8_title.sh >"$$output" 2>&1 || status=$$?; \
 	cat "$$output"; [ "$$status" -eq 0 ]; \

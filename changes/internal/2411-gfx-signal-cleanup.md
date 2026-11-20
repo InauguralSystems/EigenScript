@@ -1,0 +1,1 @@
+- Made the X11 regression harnesses terminate cleanly and promptly when interrupted (#2411).
