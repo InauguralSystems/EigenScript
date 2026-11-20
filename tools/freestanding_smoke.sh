@@ -78,7 +78,9 @@ check()      { _check "$1" "$2" str_has      "$3" "$4"; }
 check_line() { _check "$1" "$2" str_has_line "$3" "$4"; }
 
 # Core language still executes (interpreter-only).
-check_line "strict setter controls both modes" 0 "strict setter works" '--strict-api'
+check "strict creation default and setter control three states" 0 "strict creation default works
+strict off setter works
+strict on setter works" '--strict-api'
 
 check_line "core language runs" 0 "42" '
 define square(x) as:

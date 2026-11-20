@@ -21,23 +21,34 @@ int main(int argc, char **argv) {
         argv[1][5] == 'i' && argv[1][6] == 'c' && argv[1][7] == 't' &&
         argv[1][8] == '-' && argv[1][9] == 'a' && argv[1][10] == 'p' &&
         argv[1][11] == 'i' && argv[1][12] == 0) {
+        EigsState *defaults = eigs_open();
+        if (!defaults) return 2;
+        EigsValue *v = eigs_eval_string("abs of \"x\"");
+        if (v || !eigs_has_error()) return 1;
+        eigs_value_release(v);
+        eigs_close(defaults);
+        puts("strict creation default works");
+
         EigsState *soft = eigs_open();
         if (!soft) return 2;
         eigs_state_set_strict(soft, 0);
-        EigsValue *v = eigs_eval_string("abs of \"x\"");
+        v = eigs_eval_string("abs of \"x\"");
         if (!v || eigs_has_error() || eigs_value_as_num(v) != 0.0) return 1;
         eigs_value_release(v);
         eigs_close(soft);
 
         EigsState *strict = eigs_state_new();
         if (!strict) return 2;
+        /* Zero first, so that the nonzero call below is what turns the guards on. */
+        eigs_state_set_strict(strict, 0);
         eigs_state_set_strict(strict, 2);
         if (!eigs_thread_attach(strict) || eigs_state_init_runtime(strict) != 0) return 2;
         v = eigs_eval_string("abs of \"x\"");
         if (v || !eigs_has_error()) return 1;
         eigs_value_release(v);
         eigs_close(strict);
-        puts("strict setter works");
+        puts("strict off setter works");
+        puts("strict on setter works");
         return 0;
     }
     EigsState *st = eigs_open();
