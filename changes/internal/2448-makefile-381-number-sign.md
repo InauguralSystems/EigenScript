@@ -1,0 +1,1 @@
+- Added a precheck that rejects GNU make 3.81-incompatible number signs inside Makefile function calls (#2448).
