@@ -360,26 +360,18 @@ The IEEE 754 default floating-point environment is part of number semantics.
   `asin`/`acos` outside `[-1, 1]` return NaN; `log of 0` returns `-inf`.
   NaN is unequal to every value, including itself, even inside a list, dict
   or buffer. Comparing NaN never raises or changes math flags.
-- **`EIGS_STRICT` has three states.** Unset or empty enables argument guards
-  but leaves non-finite IEEE arithmetic results as values. `EIGS_STRICT=1`
-  keeps those guards and additionally raises a catchable `value` error when
-  arithmetic on finite operands produces a non-finite result.
-  `EIGS_STRICT=0` leaves IEEE results as values and selects legacy quiet
-  stand-ins for argument guard failures. The guards cover builtins that would
-  otherwise answer a wrong-typed argument with a stand-in — `cos of "hello"`
-  as `0`, `str_upper of 42` as `""`, or a type mistake read as a plausible
-  value — and raise `type_mismatch` naming the builtin, across the
-  whole builtin surface (`builtins.c`, the host builtins, the tensor ops, the
-  embedded store, and — since #1007 — the graphics/audio extension, where the
-  stand-in is usually `null` rather than `0`/`""`: `gfx_rect of [x, y, w, h,
-  "255", 0, 0]` drew a BLACK rectangle where red was asked for, in silence).
-  A guard covers the argument's **container** as well as its elements — a
-  short argument list, or a scalar where a list belonged, is a caller mistake
-  and raises. That half is the one an element-typed probe cannot see, and in
-  the extension it was the difference between "drew nothing" and a silent
-  *success*: `audio_stream_open of [48000]` opened the device at the 44100/1
-  defaults and answered a real device id, so the caller that asked for 48000
-  was told it got 48000.
+### Argument guards and arithmetic traps
+
+An argument guard rejects a wrong type, a short or surplus argument list, a wrong container, or a non-numeric element; an arithmetic trap rejects a non-finite arithmetic result, including one produced from an already non-finite operand. The `EIGS_STRICT` setting has three states and controls these two properties:
+
+| `EIGS_STRICT` state | argument guards | non-finite arithmetic |
+|---|---|---|
+| unset or empty (default) | raise | IEEE value |
+| `0` | legacy quiet stand-in | IEEE value |
+| `1` | raise | raise |
+
+Some guards raise in every state; for example, `abs of true` raises rather than treating a bool as a number.
+
 
   ```eigenscript
   not_a_number is sqrt of -1
@@ -407,16 +399,16 @@ The IEEE 754 default floating-point environment is part of number semantics.
 
   Buffer storage may retain a raw non-finite kernel result. Indexing and
   iteration, like `get_at`, still refuse a stored NaN or infinity with `value`
-  in every `EIGS_STRICT` state (N13). Strict NaN preserves the first-NaN diagnostic
+  in every `EIGS_STRICT` state (N13). Under `EIGS_STRICT=1` a NaN preserves the first-NaN diagnostic
   and sets `math_flags.invalid`; other non-finite data refusals leave flags
   alone. The interpreter, JIT and leaf fallback agree on kind, message and line.
 
-  Two further classes are loud in strict mode and unchanged under `EIGS_STRICT=0`:
-  - **JSON parse failure in `json_path`.** Under `EIGS_STRICT=0` a malformed
-    document is walked leniently and a parse failure answers the same `""`
-    an absent key does. Under strict `json_path` applies `json_decode`'s
-    acceptance test and raises a catchable `value` error naming the position;
-    JSON `false`, `null` and an absent key are answers and stay quiet.
+  Two further classes raise unless `EIGS_STRICT=0`:
+  - **JSON parse failure in `json_path`.** Unless `EIGS_STRICT=0`, `json_path`
+    applies `json_decode`'s acceptance test and raises a catchable `value`
+    error naming the position; JSON `false`, `null` and an absent key are
+    answers and stay quiet. Under `EIGS_STRICT=0` a malformed document is
+    walked leniently and raises nothing.
   - **The sentinel and falsy families.** `index_of`/`list_index_of`/`ord`
     (`-1`), `file_exists`/`is_dir`/`is_file`/`read_text`/`read_bytes`/`ls`/
     `mkdir`/`env_get` (`0`/`""`), and the wrong-type launderers the sweep
@@ -3118,7 +3110,7 @@ buffer storage and scalar buffer reads are floats. `buf_get`, `buf_peak`,
 
 Audio playback (`audio_play`, `audio_play_loop`, `audio_stream_push`) refuses
 stored non-finite buffer samples at the scalar boundary in every `EIGS_STRICT` state
-(N13). Strict NaN preserves the first diagnostic and INVALID flag. Finite
+(N13). Under `EIGS_STRICT=1` a NaN preserves the first diagnostic and INVALID flag. Finite
 samples clamp to [-1,1], then round PCM16 half away from zero (Q7/Q4).
 Channel indices and loop counts follow N5; continuous mixer gain stays
 fractional after clamping to [0,4].

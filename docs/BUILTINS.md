@@ -20,10 +20,7 @@ gfx, audio) require a full build or the `gfx` target.
 > dumps the full surface — every builtin, extension (by group), and lib
 > function with its parameter list — in one call.
 
-> **`EIGS_STRICT` has three states.** Unset or empty raises argument-guard failures while preserving non-finite IEEE arithmetic values; `1` additionally traps those arithmetic results; `0` preserves IEEE results and selects legacy argument stand-ins (`0`, `""`, `[]`, `-1`, or another value).
-> Documented answers for valid-but-absent input (`index_of` miss `-1`,
-> `file_exists` of a missing path `0`) are the same in every `EIGS_STRICT` state
-> (docs/SPEC.md, *Strict mode*).
+> See [Argument guards and arithmetic traps](SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states. Documented answers for valid-but-absent input (`index_of` miss `-1` and `file_exists` of a missing path `0`) are unchanged by that setting.
 
 New since 0.8.1: concurrency (`spawn`, `thread_join`, `channel`, `send`,
 `recv`, `try_recv`, `recv_timeout`, `close_channel`, `channel_closed`),
@@ -180,8 +177,8 @@ builtin-call forms below are retained for backward compatibility.
 
 Binary width operations take exactly `[a, b]`. Integral floats convert by N5;
 fractions, floats outside int64 and operands outside the named type raise
-`value`. Wrong shapes and non-number operands raise `type_mismatch` in both
-strict modes. There is no operand masking. `i64` and `u64` accept every int64;
+`value`. Wrong shapes and non-number operands raise `type_mismatch` in every
+`EIGS_STRICT` state. There is no operand masking. `i64` and `u64` accept every int64;
 a `u64` uses its int64 bit pattern (`-1` is unsigned max). Wrapping reduces
 modulo the width; checked overflow raises `value` naming the builtin;
 saturating clamps to the type range. Width results are ints. Unsigned division
@@ -659,7 +656,7 @@ in a buffer first converts it to float and can round it.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `matmul` | `matmul of [a, b]` | Matrix multiplication. Two shaped buffers multiply on the flat data and give a buffer; a 1-D left operand gives a 1-D result. Mixed list/buffer operands give a list. An accumulation that reaches `inf - inf` is `NaN`; that sets `invalid` and remains NaN by default; `EIGS_STRICT=1` raises a catchable `value` error naming `matmul` (#971, R2.2). Kernels may retain raw non-finite values in buffer storage. Indexing and iteration, like `get_at`, refuse stored NaN and infinity with `value` in every `EIGS_STRICT` state (N13). Strict NaN keeps the first-NaN diagnostic and INVALID flag; the interpreter, JIT and leaf fallback agree on the error source line. |
+| `matmul` | `matmul of [a, b]` | Matrix multiplication. Two shaped buffers multiply on the flat data and give a buffer; a 1-D left operand gives a 1-D result. Mixed list/buffer operands give a list. An accumulation that reaches `inf - inf` is `NaN`; that sets `invalid` and remains NaN by default; `EIGS_STRICT=1` raises a catchable `value` error naming `matmul` (#971, R2.2). Kernels may retain raw non-finite values in buffer storage. Indexing and iteration, like `get_at`, refuse stored NaN and infinity with `value` in every `EIGS_STRICT` state (N13). Under `EIGS_STRICT=1` a NaN keeps the first-NaN diagnostic and INVALID flag; the interpreter, JIT and leaf fallback agree on the error source line. |
 | `matmul_at` | `matmul_at of [a, b]` | `aᵀ·b` without materialising the transpose: `a` is `(m × k)`, `b` is `(m × n)`, result `(k × n)` — the weight gradient `dW = Xᵀ·dY` of a linear layer. Buffers and nested lists; byte-identical to `matmul` of the explicitly transposed operand (same tiled kernel order). Two 1-D operands give their `(k × n)` outer product. Shape/type/size errors raise like `matmul` (#973) |
 | `matmul_bt` | `matmul_bt of [a, b]` | `a·bᵀ`: `a` is `(m × k)`, `b` is `(n × k)`, result `(m × n)` — the input gradient `dX = dY·Wᵀ`. A 1-D left operand is a row vector and yields a 1-D result, as for `matmul` (#973) |
 | `gather` | `gather of [matrix, indices, dim]` | N5 exact indices (integral floats accepted; fractions raise `value`). Selected list cells retain their numeric kind; buffer elements are floats. Gather one element per row: `out[i] = matrix[i][indices[i]]`. `matrix` may be a shaped buffer and `indices` a list or a buffer; a shaped-buffer `matrix` gives a buffer. `gather of [vec, i]` on a 1-D tensor returns element `i`. An **out-of-range index raises `index_range`** — in every form, list or buffer (#973/#1093, settled at integration: there is no element there, and `scatter_add` raises on the same index). A row that is not a row (a 1-D tensor in the per-row form) still answers `0.0` for that row |
@@ -1208,11 +1205,12 @@ API. Fractional drawing scales also use this continuous bitmap-cell path.
 **Wrong-typed and wrong-arity arguments (#1007).** Every builtin in this
 extension that takes an argument at all — the drawing calls, the text calls,
 the framebuffer blit, the PPU renderer, and the whole audio surface below —
-type-checks its arguments *before* reading them. Under `EIGS_STRICT=1`, a
-wrong type, a short argument list, or a wrong-shaped argument *container* (a
-number or a string where a list belonged) raises a catchable `type_mismatch`
-error naming the builtin and the shape it wanted. With `EIGS_STRICT` unset,
-the same guard raises; this paragraph describes the legacy type/shape guards. Numeric N5, Q1 and Q7 validation instead raises `value`
+type-checks its arguments *before* reading them. With `EIGS_STRICT` unset,
+and under `EIGS_STRICT=1`, a wrong type, a short argument list, or a
+wrong-shaped argument *container* (a number or a string where a list belonged)
+raises a catchable `type_mismatch` error naming the builtin and the shape it
+wanted.
+Numeric N5, Q1 and Q7 validation instead raises `value`
 in every `EIGS_STRICT` state, as specified above and in each row. With
 `EIGS_STRICT=0`, the type/shape guards retain their legacy stand-ins: the drawing
 calls still answer `null`, the generators still answer an empty list, and the
@@ -1259,11 +1257,10 @@ text builtins differ on purpose.** `gfx_text_width` and `gfx_text_height`
 type-checked their scale slot before this change, so a wrong-typed scale there
 is a *coercion*: under `EIGS_STRICT=0` they still measure at scale 1.
 `gfx_text` did not — its scale slot was one of the unchecked reads — so a
-wrong-typed scale refuses the call and draws nothing. With `EIGS_STRICT=1`,
-all three raise. Under `EIGS_STRICT=0`, layout code that sizes a box with `gfx_text_width` and
+wrong-typed scale refuses the call and draws nothing. By default and with
+`EIGS_STRICT=1`, all three raise. Under `EIGS_STRICT=0`, layout code that sizes a box with `gfx_text_width` and
 then draws with `gfx_text` therefore sees a box with no text in it if it passes
-a stringy scale. With `EIGS_STRICT` unset or set to `1`, the invalid scale
-raises instead.
+a stringy scale.
 
 A few values are deliberately left quiet because they are the *answer*, not a
 rejected argument: a drawing call with no window open answers `null` (that is

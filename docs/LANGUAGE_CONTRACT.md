@@ -60,7 +60,7 @@ unrecovered error or report success on failure. IEEE float division by zero
 produces signed infinity or NaN by default (R2.2); `EIGS_STRICT=1` traps the
 non-finite result. Exact integer `// 0` and `% 0` remain value errors.
 
-`EIGS_STRICT` unset or empty enables argument guards while retaining IEEE non-finite arithmetic values; `1` also traps non-finite arithmetic, and `0` selects the quiet legacy guard answers while retaining IEEE values.
+See [Argument guards and arithmetic traps](SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states.
 
 **What `catch` binds (#406):** a **built-in** runtime error binds a small
 dict `{kind, message, file, line}` — `kind` is drawn from a closed vocabulary
@@ -154,9 +154,7 @@ examples (executed by the suite).
   `1 / 0` gives `inf`, `0.0 / 0` and float `% 0` give NaN, `sqrt of -1`
   and out-of-domain `asin`/`acos` give NaN, and `log of 0` gives `-inf`.
   There is no `1e308` clamp. Int `// 0` and `% 0` still raise `value`.
-  With `EIGS_STRICT` unset, invalid argument types raise catchable errors while
-  non-finite arithmetic remains IEEE values. `EIGS_STRICT=1` also traps
-  non-finite arithmetic; `EIGS_STRICT=0` selects legacy quiet guard answers.
+  See [Argument guards and arithmetic traps](SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states.
 - **Arithmetic status is sticky.** `math_flags of null` reports `overflow`
   when an arithmetic result is infinite and `invalid` when it is NaN.
   These flags remain set for the state's lifetime; later finite arithmetic

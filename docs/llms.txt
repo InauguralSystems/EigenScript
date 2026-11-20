@@ -360,9 +360,9 @@ false
   (-64,64) give zero (Lua 5.4).
   A bit-op operand that is not an exact integer (`1.5 | 0`, `1e30 & 1`)
   raises a `value` error; it is never truncated.
-  `EIGS_STRICT` has three states. Unset or empty raises wrong-typed builtin arguments (`abs of "x"`) and malformed `json_path` documents, while arithmetic keeps IEEE results. `1` adds traps for non-finite arithmetic results. `0` keeps IEEE results and legacy argument stand-ins (`abs of "x"` is `0.0`).
+  See [Argument guards and arithmetic traps](SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states.
   Indexing and iteration refuse stored NaN and infinity with `value` in
-  every `EIGS_STRICT` state, matching `get_at` (N13). Strict NaN keeps its first
+  every `EIGS_STRICT` state, matching `get_at` (N13). Under `EIGS_STRICT=1` a NaN keeps its first
   diagnostic and sets `math_flags.invalid`; every execution tier agrees on
   the error kind, message and source line.
   The other scalar reductions, mixed buffer/list materialization
@@ -974,7 +974,7 @@ buffer storage and scalar buffer reads are floats. `buf_get`, `buf_peak`,
 
 Audio playback (`audio_play`, `audio_play_loop`, `audio_stream_push`) refuses
 stored non-finite buffer samples at the scalar boundary in every `EIGS_STRICT` state
-(N13). Strict NaN preserves the first diagnostic and INVALID flag. Finite
+(N13). Under `EIGS_STRICT=1` a NaN preserves the first diagnostic and INVALID flag. Finite
 samples clamp to [-1,1], then round PCM16 half away from zero (Q7/Q4).
 Channel indices and loop counts follow N5; continuous mixer gain stays
 fractional after clamping to [0,4].

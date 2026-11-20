@@ -62,10 +62,10 @@ EigsState  *eigs_state_new(void);
 void        eigs_state_destroy(EigsState *st);
 EigsThread *eigs_thread_attach(EigsState *st);
 
-/* Override this state's creation-time EIGS_STRICT setting: zero selects
- * finite stand-ins and every nonzero value selects strict errors. NULL is a
- * no-op. Call after eigs_state_new or eigs_open, but before the state's first
- * eval, and never concurrently with evaluation of that state. */
+/* With no setter call, this state keeps the default EIGS_STRICT behavior.
+ * Zero selects the EIGS_STRICT=0 state (quiet guards; not the default), and a
+ * nonzero value selects EIGS_STRICT=1. NULL is a no-op. Call after state
+ * creation but before its first eval, never concurrently with evaluation. */
 void        eigs_state_set_strict(EigsState *st, int enabled);
 
 /* Single-thread multi-state switching: park the calling thread's current

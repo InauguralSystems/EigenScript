@@ -15,7 +15,7 @@ value or a line outside the C `int` range raises `value` instead of being
 truncated. Audio generators round `duration * rate` half away from zero to get
 their sample count.
 
-`EIGS_STRICT` unset or empty enables argument guards while retaining IEEE non-finite arithmetic values; `1` also traps non-finite arithmetic, and `0` selects the quiet legacy guard answers while retaining IEEE values.
+See [Argument guards and arithmetic traps](SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states.
 
 
 Width arithmetic uses explicit wrapping, checked and saturating builtins.
@@ -511,7 +511,7 @@ before adding it to the accumulator, in ascending inner-index order, on both
 containers. They do not fuse the multiplication and addition.
 Raw non-finite results may remain in a buffer's internal work area, but every
 ordinary indexed read and iteration step refuse stored NaN or infinity with
-`value` in every `EIGS_STRICT` state, matching `get_at` (N13). Strict NaN retains
+`value` in every `EIGS_STRICT` state, matching `get_at` (N13). Under `EIGS_STRICT=1` a NaN retains
 its first-NaN diagnostic and invalid flag. All execution tiers report the
 same error kind, message and source line.
 Structural buffer equality compares stored doubles with IEEE equality, without
