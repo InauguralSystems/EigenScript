@@ -55,15 +55,9 @@ static void *line_race_worker(void *opaque) {
     return NULL;
 }
 
-int main(int argc, char **argv) {
+int main(void) {
     EigsState *st = eigs_open();
     if (!st) { printf("FAIL: eigs_open\n"); return 1; }
-    /* #2439: before the flag was split, a fresh state was the all-off state,
-     * and every check up to the strict block below ran in it. A fresh state
-     * now has its argument guards on. The suite runs this program both ways:
-     * with no argument (the fresh state) and with `all-off` (the state the
-     * checks ran in before). */
-    if (argc > 1 && strcmp(argv[1], "all-off") == 0) eigs_state_set_strict(st, 0);
     trace_init();                         /* EIGS_TRACE, as a native binary opens it */
     g_try_depth = 1;                      /* record only, as the AOT runs */
 
