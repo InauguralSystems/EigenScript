@@ -732,10 +732,17 @@ if [ "$ERRLINE_BUILD_RC" -ne 0 ]; then
     echo "$ERRLINE_BUILD" | tail -12
 else
   EL_WANT=$(grep -c '^ *check(' ../tests/test_error_line_fallback.c)   # every check must report
-  for EL_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
-    EL_ENV="EIGS_JIT_STATS=1"; [ "$EL_TIER" = JIT ] || EL_ENV="$EL_ENV $EL_TIER"
+  # The fourth run is the all-off state (#2439): before the strict flag was
+  # split a fresh state was all-off, so that is the state these checks ran in.
+  for EL_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1" "JIT all-off"; do
+    EL_ENV="EIGS_JIT_STATS=1"; EL_ARG=""; EL_WITNESS="$EL_TIER"
+    case "$EL_TIER" in
+        JIT) ;;
+        "JIT all-off") EL_ARG=all-off; EL_WITNESS=JIT ;;
+        *) EL_ENV="$EL_ENV $EL_TIER" ;;
+    esac
     EL_TAPE=$(mktemp /tmp/eigs_errline_XXXXXX.tape); rm -f "$EL_TAPE"
-    ERRLINE_OUT=$($EIGS_TMO env $EL_ENV EIGS_TRACE="$EL_TAPE" ../build/release/test_error_line_fallback 2>&1)
+    ERRLINE_OUT=$($EIGS_TMO env $EL_ENV EIGS_TRACE="$EL_TAPE" ../build/release/test_error_line_fallback $EL_ARG 2>&1)
     ERRLINE_RC=$?
     # #1434: `eigs step` files the store after the callbacks under the same
     # line live history does (the test prints the live line; its tape stop 95
@@ -755,7 +762,7 @@ else
     TOTAL=$((TOTAL + EL_PASS + EL_FAIL + 1))
     PASS=$((PASS + EL_PASS))
     FAIL=$((FAIL + EL_FAIL))
-    if [ "$(lar_jit_witness "$EL_TIER" "$ERRLINE_OUT")" != ok ]; then
+    if [ "$(lar_jit_witness "$EL_WITNESS" "$ERRLINE_OUT")" != ok ]; then
         FAIL=$((FAIL + 1)); echo "  FAIL: error-line fallback ($EL_TIER): compiled nothing, so it measured the interpreter"
     elif [ "$ERRLINE_RC" -eq 0 ] && [ "$EL_FAIL" -eq 0 ] && [ "$EL_PASS" -eq "$EL_WANT" ] && [ "$EL_WANT" -gt 0 ]; then
         PASS=$((PASS + 1)); echo "  PASS: all $EL_PASS error-line fallback checks ($EL_TIER)"
@@ -3547,6 +3554,7 @@ echo "[133] Gfx Argument-Type Guards"
 if ! echo "$GA_PROBE_OUT" | grep -q "undefined variable"; then
     # #1361 EIGS_STRICT=0: the plain pass pins the ext_gfx wrong-type stand-ins (0/null); the strict pass below raises.
     GA_PLAIN=$(suite_program_run test_gfx_argtypes.eigs gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_PLAIN_RC=$?
+    GA_DEFAULT=$(suite_program_run test_gfx_argtypes.eigs gfx_headless_run 30 env -u EIGS_STRICT SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_DEFAULT_RC=$?
     GA_STRICT=$(suite_program_run test_gfx_argtypes.eigs gfx_headless_run 30 env EIGS_STRICT=1 SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_STRICT_RC=$?
 
     # THIRD PASS: the tape. audio_capture_open is trace-recorded, so a guard
@@ -3644,12 +3652,15 @@ DFLTREAD
         GA_WANT_PLAIN=$((GA_WANT_PLAIN + 3)); GA_WANT_STRICT=$((GA_WANT_STRICT + 2))
     fi
     GA_GOT_PLAIN=$(echo "$GA_PLAIN"   | sed -n 's/^Tests: \([0-9]*\) .*/\1/p' | tail -1)
+    GA_GOT_DEFAULT=$(echo "$GA_DEFAULT" | sed -n 's/^Tests: \([0-9]*\) .*/\1/p' | tail -1)
     GA_GOT_STRICT=$(echo "$GA_STRICT" | sed -n 's/^Tests: \([0-9]*\) .*/\1/p' | tail -1)
     # `strict-pass` is a second vacuity guard: the strict assertions live behind
     # an env test inside the .eigs file, so without it the whole block could be
     # skipped and the pass would still print "All tests passed".
     if rc_ok "$GA_PLAIN_RC" "$GA_PLAIN" && echo "$GA_PLAIN" | grep -q "All tests passed" \
        && echo "$GA_PLAIN" | grep -q "strict-pass: 0" \
+       && rc_ok "$GA_DEFAULT_RC" "$GA_DEFAULT" && echo "$GA_DEFAULT" | grep -q "All tests passed" \
+       && echo "$GA_DEFAULT" | grep -q "strict-pass: 1" && [ "$GA_GOT_DEFAULT" = "$GA_WANT_STRICT" ] \
        && rc_ok "$GA_STRICT_RC" "$GA_STRICT" && echo "$GA_STRICT" | grep -q "All tests passed" \
        && echo "$GA_STRICT" | grep -q "strict-pass: 1" \
        && [ "$GA_GOT_PLAIN" = "$GA_WANT_PLAIN" ] && [ "$GA_GOT_STRICT" = "$GA_WANT_STRICT" ] \
@@ -3676,6 +3687,7 @@ DFLTREAD
         echo "    tape: capture==replay $GA_TAPE_OK (want 1), N records $GA_TAPE_N (want 1)"
         echo "    gfx_read tape: capture==replay $GA_READ_OK (want 1), N gfx_read records $GA_READ_N (want 1)"
         echo "    strict-mode tape: capture==replay+raised $GA_DFLT_OK (want 1), N audio_capture_open $GA_DFLT_CAP_N, N gfx_read $GA_DFLT_READ_N (want 1 each)"
+        echo "$GA_DEFAULT" | grep -iE "assert|error|FAIL" | head -3
         echo "$GA_PLAIN"  | grep -iE "assert|error|FAIL" | head -3
         echo "$GA_STRICT" | grep -iE "assert|error|FAIL" | head -3
     fi
