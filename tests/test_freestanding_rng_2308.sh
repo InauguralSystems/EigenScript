@@ -19,7 +19,7 @@
 #
 # Usage: tests/test_freestanding_rng_2308.sh --selftest
 set -u
-case ${1:-} in ''|--selftest) ;; *) echo "usage: $0 [--selftest]" >&2; exit 2;; esac
+[ "${1:-}" = "--selftest" ] || { echo "usage: $0 --selftest" >&2; exit 2; }
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/eigs_fs_rng.XXXXXX") || exit 2
 trap 'rm -rf "$WORK"' EXIT
