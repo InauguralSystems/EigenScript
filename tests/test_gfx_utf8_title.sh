@@ -2,36 +2,89 @@
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-DISPLAY_NUM=":$((90 + ($$ % 900)))"
+DISPLAY_NUM=
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/eigs-1681-title.XXXXXX")
 export LC_ALL=C.UTF-8
 
+SIGNAL_STATUS=
+CLEANING=
+signal_status() {
+    case $1 in HUP) SIGNAL_STATUS=129;; INT) SIGNAL_STATUS=130;; TERM) SIGNAL_STATUS=143;; esac
+}
+wait_bounded() {
+    pid=$1
+    [ -n "$pid" ] || return 0
+    kill "$pid" 2>/dev/null || true
+    n=0
+    while kill -0 "$pid" 2>/dev/null && [ "$n" -lt 5 ]; do
+        sleep 0.1
+        n=$((n + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        kill -KILL "$pid" 2>/dev/null || true
+    fi
+    wait "$pid" 2>/dev/null || true
+}
 cleanup() {
-    [ -n "${PROGRAM_PID:-}" ] && kill "$PROGRAM_PID" 2>/dev/null || true
-    [ -n "${XVFB_PID:-}" ] && kill "$XVFB_PID" 2>/dev/null || true
-    [ -n "${PROGRAM_PID:-}" ] && wait "$PROGRAM_PID" 2>/dev/null || true
-    [ -n "${XVFB_PID:-}" ] && wait "$XVFB_PID" 2>/dev/null || true
+    [ -n "$CLEANING" ] && return
+    CLEANING=1
+    echo "GFX_SIGNAL_CLEANUP tmp=$TMP"
+    if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = cleanup ]; then
+        while [ -z "$SIGNAL_STATUS" ]; do sleep 0.1; done
+    fi
+    wait_bounded "${PROGRAM_PID:-}"
+    PROGRAM_PID=
+    wait_bounded "${XVFB_PID:-}"
+    XVFB_PID=
     rm -rf "$TMP"
 }
-trap cleanup EXIT HUP INT TERM
+on_signal() {
+    signal_status "$1"
+    [ -n "$CLEANING" ] && return
+    cleanup
+    exit "$SIGNAL_STATUS"
+}
+on_exit() {
+    status=$?
+    cleanup
+    [ -n "$SIGNAL_STATUS" ] && exit "$SIGNAL_STATUS"
+    return "$status"
+}
+trap on_exit EXIT
+trap 'on_signal HUP' HUP
+trap 'on_signal INT' INT
+trap 'on_signal TERM' TERM
+
+echo "GFX_SIGNAL_READY tmp=$TMP"
+if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = before-server ]; then
+    while :; do sleep 1; done
+fi
 
 # -noreset (#2204): without it Xvfb resets whenever its last client
 # disconnects, which happens between every two cases here. A case whose
 # program connects during that reset dies with "SDL_Init failed: x11 not
 # available"; a loaded box widens the window enough to hit it.
-Xvfb "$DISPLAY_NUM" -screen 0 640x480x24 -noreset >"$TMP/xvfb.log" 2>&1 &
+display_file="$TMP/display"
+Xvfb -displayfd 3 -screen 0 640x480x24 -noreset >"$TMP/xvfb.log" 2>&1 3>"$display_file" &
 XVFB_PID=$!
 i=0
 while [ "$i" -lt 100 ]; do
     kill -0 "$XVFB_PID" 2>/dev/null || break
-    xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1 && break
+    if [ -s "$display_file" ]; then
+        DISPLAY_NUM=":$(sed -n '1p' "$display_file")"
+        xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1 && break
+    fi
     sleep 0.1
     i=$((i + 1))
 done
-if ! xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1; then
+if [ -z "$DISPLAY_NUM" ] || ! xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1; then
     echo "  FAIL: Xvfb did not become ready"
     cat "$TMP/xvfb.log"
     exit 1
+fi
+echo "GFX_SIGNAL_SERVER pid=$XVFB_PID"
+if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = server ]; then
+    while :; do sleep 1; done
 fi
 
 # Each wait is bounded by a deadline, not a count of short sleeps: on a
@@ -62,6 +115,10 @@ run_case() {
         "$ROOT/src/eigenscript" "$ROOT/tests/test_gfx_utf8_title.eigs" \
         >"$log" 2>&1 &
     PROGRAM_PID=$!
+    echo "GFX_SIGNAL_CASE pid=$PROGRAM_PID"
+    if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = case ]; then
+        while :; do sleep 1; done
+    fi
 
     timed_out=
     window_id=
