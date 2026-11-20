@@ -46,7 +46,7 @@ export LC_ALL
 CORE_SRCS="src/builtins.c src/builtins_host.c src/hash.c src/ext_store.c"
 # TUs scanned for `name of ...` signature comments (core + every extension).
 # Make reads the same list for the generated header's prerequisites.
-DOC_SRCS=$(sed -n 's/^[[:space:]]*\([^#][^[:space:]]*\)[[:space:]]*$/\1/p' tools/lsp_builtin_index_sources.txt | tr '\n' ' ')
+DOC_SRCS=$(awk 'NF == 1 && substr($1, 1, 1) != "#" { print $1 }' tools/lsp_builtin_index_sources.txt | tr '\n' ' ')
 
 TMP_NAMES=$(mktemp)
 TMP_OUT=$(mktemp)

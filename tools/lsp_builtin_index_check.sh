@@ -24,22 +24,23 @@ check_index() {
 
 if [ "${1:-}" = --selftest ]; then
     [ "$#" -eq 1 ] || exit 2
-    original=$(mktemp "${TMPDIR:-/tmp}/eigs_lsp_header.XXXXXX") || exit 2
-    cp src/lsp_builtin_index.h "$original" || exit 2
-    trap 'cp "$original" src/lsp_builtin_index.h; rm -f "$original"' EXIT
+    # Every plant is made in a copy. The checkout's own header and sources are
+    # never written, so an interrupted self-test (or a build running beside
+    # it) cannot meet a planted file.
+    work=$(mktemp -d "${TMPDIR:-/tmp}/eigs_lsp_selftest.XXXXXX") || exit 2
+    trap 'rm -rf "$work"' EXIT
+    mkdir -p "$work/src" "$work/tools" || exit 2
+    cp src/*.c src/*.h "$work/src/" || exit 2
+    cp tools/gen_lsp_builtin_index.sh tools/lsp_builtin_index_sources.txt "$work/tools/" || exit 2
     pass=0
-    check_index >/dev/null && { echo "  PASS: clean generated index"; pass=$((pass + 1)); }
+    (cd "$work" && check_index >/dev/null) && { echo "  PASS: clean generated index"; pass=$((pass + 1)); }
     awk '!planted && /\{"/ { sub(/\{"/, "{\"planted_2387_"); planted=1 } { print }' \
-        "$original" > src/lsp_builtin_index.h
-    out=$(check_index 2>&1); rc=$?
+        src/lsp_builtin_index.h > "$work/src/lsp_builtin_index.h"
+    out=$(cd "$work" && check_index 2>&1); rc=$?
     [ "$rc" -ne 0 ] && case "$out" in *"first differing line"*) echo "  PASS: committed-header plant caught"; pass=$((pass + 1));; esac
-    cp "$original" src/lsp_builtin_index.h
-    source_file=src/builtins.c
-    source_original=$(mktemp "${TMPDIR:-/tmp}/eigs_lsp_source.XXXXXX") || exit 2
-    cp "$source_file" "$source_original"
-    awk '!removed && /\/\* type of value/ { removed=1; next } { print }' "$source_original" > "$source_file"
-    out=$(check_index 2>&1); rc=$?
-    cp "$source_original" "$source_file"; rm -f "$source_original"
+    cp src/lsp_builtin_index.h "$work/src/lsp_builtin_index.h" || exit 2
+    awk '!removed && /\/\* type of value/ { removed=1; next } { print }' src/builtins.c > "$work/src/builtins.c"
+    out=$(cd "$work" && check_index 2>&1); rc=$?
     [ "$rc" -ne 0 ] && case "$out" in *"first differing line"*) echo "  PASS: signature-comment plant caught"; pass=$((pass + 1));; esac
     echo "lsp-builtin-index selftest: $pass passed, $((3-pass)) failed"
     [ "$pass" -eq 3 ]

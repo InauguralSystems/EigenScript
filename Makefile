@@ -636,7 +636,8 @@ $(SRC_DIR)/lsp_stdlib_index.h: $(wildcard lib/*.eigs) tools/gen_lsp_stdlib_index
 # comment at one even inside a function call. Octal 043 is that character.
 LSP_BUILTIN_DOC_SRCS := $(shell awk 'NF == 1 && substr($$1, 1, 1) != "\043" { print $$1 }' tools/lsp_builtin_index_sources.txt)
 $(SRC_DIR)/lsp_builtin_index.h: $(LSP_BUILTIN_DOC_SRCS) $(SRC_DIR)/ext_names.h \
-		$(SRC_DIR)/lexer.c tools/gen_lsp_builtin_index.sh
+		$(SRC_DIR)/lexer.c tools/gen_lsp_builtin_index.sh \
+		tools/lsp_builtin_index_sources.txt
 	bash tools/gen_lsp_builtin_index.sh
 
 # Real file targets (#825): rebuilt when their sources, any header, the
