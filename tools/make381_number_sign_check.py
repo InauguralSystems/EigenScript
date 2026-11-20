@@ -7,8 +7,10 @@ GNU Make 4.3 by tools/make381_oracle.py; --selftest holds this check to them.
 With no argument it reads every tracked makefile of the tree (git ls-files:
 Makefile, makefile, GNUmakefile, *.mk) and each file one of them includes by a
 literal name, looked up from the tree's root as make run there does (a
-wildcard in the name is expanded; a backslash before a blank or a number sign
-is taken away); with arguments, those files and nothing else.  A file it cannot read, a literal
+wildcard in the name is expanded; a tilde at its start is the home directory;
+a backslash before a blank or a number sign is taken away; an include line in
+a body that is read as below is followed too); with arguments, those files
+and nothing else.  A file it cannot read, a literal
 `include` of a file that is not there and a define whose body never ends are
 errors (exit 2), not a pass.
 
@@ -91,7 +93,9 @@ through another variable or a computed name, a define inside an evaluated
 body, and a number sign that a variable carries into text eval reads.
 Not covered: !=, ::=, undefine, private, export define, $(file ...), a lone $
 at the end of a value, .ONESHELL, --output-sync, an include whose name holds a
-reference, and other makefile text that exists only after expansion.
+reference, an include that make finds only in its search directories (-I,
+/usr/include), an include written inside an eval call, and other makefile
+text that exists only after expansion.
 
 To write the sign inside a call: H := \# at the top level and $H in the call
 ($$H in text that $(eval) reads again), or the tool's own escape (printf '\043').
@@ -401,7 +405,7 @@ class Checker:
                 else:
                     self.judge(path, text, numbers, doubled, strict=True)
                 if name in evaluated and not doubled:
-                    self.scan(path, body, True, False, evaluated)
+                    self.scan(path, body, True, follow, evaluated)
                 i = end + 1
                 is_open = False
                 continue
@@ -447,7 +451,7 @@ class Checker:
             if "$" in name:
                 continue                      # a computed name: not followed (header)
             # make looks an include up from its working directory: the tree's root here.
-            child = os.path.join(self.root, name)
+            child = os.path.join(self.root, os.path.expanduser(name))
             found = [child] if os.path.exists(child) else sorted(glob.glob(child))
             for one in found:
                 self.check_file(one, follow=True)
@@ -515,8 +519,9 @@ def check_tree(root):
 def tree_selftest():
     """The tree mode on a small git tree: three tracked makefiles; files
     reached only through an include, a -include (the second name of its line)
-    and a sinclude, through a wildcard and through a name with an escaped
-    number sign; a define that another file evaluates; a text file that is
+    and a sinclude, through a wildcard, through a name with an escaped number
+    sign, through a tilde and through an include line of an evaluated body; a
+    define that another file evaluates; a text file that is
     not a makefile; an untracked makefile; the same folder before it is a git
     tree; and the three errors (a missing literal include, a define without
     its endef, a file that is not text)."""
@@ -531,7 +536,8 @@ def tree_selftest():
         bad = "X := $(sort b#x a)\n"
         put("Makefile", "Y := 1\ninclude inc/rules.inc\n-include $(Y).mk\n"
                         "-include nosuch.inc inc/optional.inc\nsinclude inc/s.inc\n"
-                        "include inc2/*.mk\n-include a\\#b.inc\ninclude defs.inc\n$(eval $(F))\n")
+                        "include inc2/*.mk\n-include a\\#b.inc\ninclude defs.inc\n$(eval $(F))\n"
+                        "-include ~/t.inc\n")
         try:
             check_tree(root)
             faults.append("a folder that is not a git tree was read")
@@ -546,7 +552,9 @@ def tree_selftest():
         put("inc2/wild.mk", bad)                    # tracked as a makefile too: read once
         put("a#b.inc", bad)                         # only through the escaped name
         # Its body is evaluated by the Makefile, not by itself.
-        put("defs.inc", "define F\nX := $$(sort b#x a)\nendef\n")
+        put("defs.inc", "define F\nX := $$(sort b#x a)\ninclude inc/body.inc\nendef\n")
+        put("inc/body.inc", bad)                    # only through the include line of that body
+        put("home/t.inc", bad)                      # only through the tilde
         # Looked up from the root, not from sub/; the sign is on the third line of the file.
         put("sub/other.mk", "include Makefile\nX := $(sort b \\\n  a#x \\\n  c)\n")
         put("sub/notes.txt", bad)
@@ -555,17 +563,25 @@ def tree_selftest():
             if subprocess.run(git + args, capture_output=True).returncode != 0:
                 return ["git %s failed in the fixture" % args[0]]
         put("stray.mk", bad)                  # not tracked: not read
+        home = os.environ.get("HOME")
+        os.environ["HOME"] = os.path.join(root, "home")   # where the fixture's tilde leads
         try:
             checker = check_tree(root)
         except RuntimeError as exc:
             return faults + ["the fixture tree was refused: %s" % exc]
+        finally:
+            if home is None:
+                del os.environ["HOME"]
+            else:
+                os.environ["HOME"] = home
         got = sorted((os.path.relpath(p, root), n) for p, n, _ in checker.findings)
-        want = [("a#b.inc", 1), ("defs.inc", 2), ("inc/optional.inc", 1), ("inc/rules.inc", 2),
-                ("inc/s.inc", 3), ("inc2/wild.mk", 1), ("sub/other.mk", 3)]
+        want = [("a#b.inc", 1), ("defs.inc", 2), ("home/t.inc", 1), ("inc/body.inc", 1),
+                ("inc/optional.inc", 1), ("inc/rules.inc", 2), ("inc/s.inc", 3), ("inc2/wild.mk", 1),
+                ("sub/other.mk", 3)]
         if got != want:
             faults.append("findings were %r, not %r" % (got, want))
-        if len(checker.seen) != 8:
-            faults.append("%d file(s) read, not 8" % len(checker.seen))
+        if len(checker.seen) != 10:
+            faults.append("%d file(s) read, not 10" % len(checker.seen))
         errors = [
             ("a missing literal include", put("e1.mk", "include nosuch.mk\n"), "not at the tree's root"),
             ("a define without its endef", put("e2.mk", "define F\nX := 1\n"), "define never ends"),
