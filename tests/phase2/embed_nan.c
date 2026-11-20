@@ -261,6 +261,10 @@ int main(void) {
         printf("embed-nan: FAIL open\n");
         return 1;
     }
+    EigsValue *default_nan = eigs_eval_string("0.0 / 0.0");
+    check(default_nan != NULL && !eigs_has_error(),
+          "creation default evaluates IEEE NaN", 0, -1);
+    eigs_value_release(default_nan);
     for (int strict = 0; strict <= 1; strict++) {
         eigs_state_set_strict(state, strict);
         for (size_t i = 0; i < sizeof inputs / sizeof inputs[0]; i++)

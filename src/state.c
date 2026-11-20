@@ -57,7 +57,8 @@ EigsState *eigs_state_new(void) {
     st->obs_scale    = OBSERVER_SCALE_DEFAULT;   /* #1045 */
     /* R2.2: IEEE arithmetic by default; strict is an explicit per-state trap.
      * Keep the existing flag parser and its nonzero aliases. */
-    st->strict = eigs_env_flag_default("EIGS_STRICT", 0);
+    st->strict_guards = eigs_env_flag_default("EIGS_STRICT", 1);
+    st->strict_arithmetic = eigs_env_flag_default("EIGS_STRICT", 0);
     /* Filesystem anchor defaults; main/eigenlsp overwrite after attach. */
     st->script_dir[0] = '.'; st->script_dir[1] = '\0';
     st->exe_dir[0]    = '.'; st->exe_dir[1]    = '\0';

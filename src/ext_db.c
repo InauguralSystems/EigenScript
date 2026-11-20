@@ -286,7 +286,7 @@ Value* builtin_db_query_value(Value *arg) {
     if (!arg || (arg->type != VAL_STR && arg->type != VAL_LIST)) {
         rt_error(EK_TYPE, 0, "db_query_value expects a string or [sql, params...] (got %s)",
                  arg ? val_type_name(arg->type) : "null");
-        return make_str("");  /* fs:STRICT the rt_error above is unconditional (not g_strict-gated), so the error latch is already armed and the VM raises; "" is the never-consumed soft value */
+        return make_str("");  /* fs:STRICT the rt_error above is unconditional (not strict-guard-gated), so the error latch is already armed and the VM raises; "" is the never-consumed soft value */
     }
     if (!db_require_conn()) return make_str("");  /* fs:STRICT db_require_conn raised EK_IO before returning 0 (ext_db.c:132) */
     PGresult *res = db_exec_from_arg(arg);

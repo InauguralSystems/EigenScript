@@ -321,7 +321,7 @@ static int strict_numeric_byte_list(Value *arg, const char *who, int nul_ends) {
         EIGS_VIEW(item_view);
         Value *item = list_get_view(arg, i, &item_view);
         /* #1637: a bool byte is refused in every strict mode. */
-        if (!item || (!val_is_number(item) && (g_strict || item->type == VAL_BOOL))) {
+        if (!item || (!val_is_number(item) && (g_strict_guards || item->type == VAL_BOOL))) {
             rt_error(EK_TYPE, 0, "%s: expected numeric byte values", who);
             return 0;
         }

@@ -2063,7 +2063,7 @@ Value* builtin_asin(Value *arg) {
     /* R2.2: IEEE NaN outside the domain; strict retains its named error. */
     if (x < -1.0 || x > 1.0) {
         /* Keep the established strict diagnostic. */
-        if (g_strict) { rt_error(EK_VALUE, 0, "asin: argument out of domain [-1, 1]"); return make_float(0); }
+        if (g_strict_arithmetic) { rt_error(EK_VALUE, 0, "asin: argument out of domain [-1, 1]"); return make_float(0); }
         g_math_flags |= EIGS_MATH_INVALID;
     }
     return make_float(eigs_math_result_named(asin(x), "asin"));
@@ -2075,7 +2075,7 @@ Value* builtin_acos(Value *arg) {
     /* R2.2: IEEE NaN outside the domain; strict retains its named error. */
     if (x < -1.0 || x > 1.0) {
         /* Keep the established strict diagnostic. */
-        if (g_strict) { rt_error(EK_VALUE, 0, "acos: argument out of domain [-1, 1]"); return make_float(0); }
+        if (g_strict_arithmetic) { rt_error(EK_VALUE, 0, "acos: argument out of domain [-1, 1]"); return make_float(0); }
         g_math_flags |= EIGS_MATH_INVALID;
     }
     return make_float(eigs_math_result_named(acos(x), "acos"));
@@ -2463,7 +2463,7 @@ Value* builtin_json_path(Value *arg) {
      * catalog) rely on and which this raise does not touch — they never
      * pass through json_path. JSON `false`/`null`/literals are answers and
      * stay quiet in both modes. */
-    if (g_strict) {
+    if (g_strict_guards) {
         int end = pos;
         eigs_json_skip_ws(json_str, &end);
         if (!root || g_json_parse_err || g_json_parse_recoverable ||
@@ -2473,7 +2473,7 @@ Value* builtin_json_path(Value *arg) {
             return make_null();
         }
     }
-    /* fs:STRICT the g_strict block above raised on a parse failure; the soft
+    /* fs:STRICT the strict-guard block above raised on a parse failure; the soft
      * "" is the flag-off path (unchanged since before #971 Phase C). */
     if (!root) return make_str("");
     Value *current = root;   /* walks borrowed children of root */

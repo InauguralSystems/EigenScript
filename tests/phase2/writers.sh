@@ -37,7 +37,7 @@ else
         echo "writers: FAIL build rc=$build_rc"; exit 1
     fi
     run_case c-json "build/$variant/test_writer_json" || exit 1
-    grep -qx 'writer-json: refused=15 finite=5 checks=78 failures=0' "$work/c-json.log" || exit 1
+    grep -qx 'writer-json: refused=15 finite=6 checks=81 failures=0' "$work/c-json.log" || exit 1
     c_checks=78
 fi
 mkdir "$work/store" "$work/legacy" || exit 2

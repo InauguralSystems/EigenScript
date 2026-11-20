@@ -146,7 +146,7 @@ Value* builtin_regex_replace(Value *arg) {
     if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) {
         rt_error(EK_TYPE, 0, "regex_replace requires [string, pattern, replacement]");
         /* fs:CHANNEL the rt_error above already raised on g_has_error (it is
-         * unconditional, not gated on g_strict), so this builtin is ALREADY
+         * unconditional, not gated on strict-guard), so this builtin is ALREADY
          * loud in both modes; the "" only satisfies the C signature, and the VM
          * discards it at the CHECK_ERROR seam. */
         return make_str("");
@@ -1478,7 +1478,7 @@ Value* builtin_write_bytes(Value *arg) {
          * — no stand-in return, so invisible to the classifier. The free()
          * matters: STRICT_REQUIRE returns, and `out` is already allocated. */
         if (data->type == VAL_LIST && (list_elem_type(data, i) != VAL_FLOAT && list_elem_type(data, i) != VAL_INT)
-            && (g_strict || list_elem_type(data, i) == VAL_BOOL)) {   /* #1637: a bool in every mode */
+            && (g_strict_guards || list_elem_type(data, i) == VAL_BOOL)) {   /* #1637: a bool in every mode */
             free(out);
             rt_error(EK_TYPE, 0, "write_bytes: expected every element to be a number");
             return make_null();

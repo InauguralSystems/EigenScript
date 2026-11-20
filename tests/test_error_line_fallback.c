@@ -55,9 +55,15 @@ static void *line_race_worker(void *opaque) {
     return NULL;
 }
 
-int main(void) {
+int main(int argc, char **argv) {
     EigsState *st = eigs_open();
     if (!st) { printf("FAIL: eigs_open\n"); return 1; }
+    /* #2439: before the flag was split, a fresh state was the all-off state,
+     * and every check up to the strict block below ran in it. A fresh state
+     * now has its argument guards on. The suite runs this program both ways:
+     * with no argument (the fresh state) and with `all-off` (the state the
+     * checks ran in before). */
+    if (argc > 1 && strcmp(argv[1], "all-off") == 0) eigs_state_set_strict(st, 0);
     trace_init();                         /* EIGS_TRACE, as a native binary opens it */
     g_try_depth = 1;                      /* record only, as the AOT runs */
 
@@ -213,7 +219,8 @@ int main(void) {
      * It must raise at the owning header before another binding/body write.
      * Two ordinary host-buffer elements exercise both successful iteration
      * and the later strict NaN read without manufacturing bytecode. */
-    int nf_saved_strict = g_strict;
+    int nf_saved_guards = g_strict_guards;
+    int nf_saved_arithmetic = g_strict_arithmetic;
     unsigned nf_saved_flags = g_math_flags;
     eigs_clear_error();
     eigs_state_set_strict(st, 1);
@@ -279,7 +286,8 @@ int main(void) {
     eigs_clear_error();
     eigs_value_release(nf_input);
     eigs_value_release(nf_output);
-    eigs_state_set_strict(st, nf_saved_strict);
+    g_strict_guards = nf_saved_guards;         /* the setter writes both fields: */
+    g_strict_arithmetic = nf_saved_arithmetic; /* restore each as it was */
     g_math_flags = nf_saved_flags;
     eigs_close(st);
     return fail;
