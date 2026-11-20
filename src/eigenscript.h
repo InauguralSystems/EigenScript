@@ -401,11 +401,13 @@ typedef struct ObserverSlot {
      * either, so a live binding classifies at OBSERVER_WINDOW_N; only a
      * replayed tape's `O cfg`/`O win` record (tape_read.c) or a trajectory
      * snapshot handed to `classify` carries another depth (#2198). A ring
-     * is allocated at that depth on first push and re-grown (samples
-     * preserved, oldest first) when the depth in force exceeds the capacity;
+     * is allocated at that depth on first push (the value rings at the
+     * second number if the first is finite, at least the first's depth)
+     * and re-grown (samples preserved, oldest first) when the depth in
+     * force exceeds the capacity;
      * a depth SMALLER than the capacity simply reads the newest `depth`
      * samples. So the common case — default depth, never touched —
-     * allocates exactly what it did before #1044. */
+     * allocates no more than it did before #1044. */
     uint8_t v_cap, dh_cap;
     uint8_t win_override;       /* 0 = follow the state default */
     uint8_t v_used;             /* 1 once a numeric value has been recorded */
