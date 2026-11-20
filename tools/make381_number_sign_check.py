@@ -4,6 +4,10 @@ r"""Refuse a number sign that GNU Make 3.81 reads differently from current make 
 Written against GNU Make 3.81, the make of the macOS runners.  Its answers are
 the cases of tools/make381_cases.json, each run through a real 3.81 and through
 GNU Make 4.3 by tools/make381_oracle.py; --selftest holds this check to them.
+With no argument it reads every tracked makefile of the tree (git ls-files:
+Makefile, makefile, GNUmakefile, *.mk) and each file one of them includes by a
+literal name, looked up from the tree's root as make run there does; with
+arguments, those files and nothing else.
 
 3.81 cuts a variable assignment or a directive at its first unescaped number
 sign before it reads the line, also when the sign stands inside an open $(...)
@@ -31,6 +35,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 
@@ -160,9 +165,10 @@ def evaluated_names(text):
 
 
 class Checker:
-    def __init__(self):
+    def __init__(self, root=None):
         self.findings = []
         self.seen = set()
+        self.root = root                      # where an include's name is looked up
 
     def check_file(self, path, follow=False):
         path = os.path.abspath(path)
@@ -239,11 +245,75 @@ class Checker:
         for name in names:
             if "$" in name:
                 continue                      # a computed name: not followed (header)
-            child = os.path.join(os.path.dirname(path), name)
+            # make looks an include up from its working directory: the tree's root here.
+            child = os.path.join(self.root, name)
             if os.path.exists(child):
                 self.check_file(child, follow=True)
             elif word == "include":
-                raise RuntimeError("%s includes %s, which is not there" % (path, name))
+                raise RuntimeError("%s includes %s, which is not at the tree's root "
+                                   "(names are looked up from there, as make run at the root does)"
+                                   % (path, name))
+
+
+def tracked_makefiles(root):
+    """Every tracked makefile of the tree at root, by git's own list."""
+    q = subprocess.run(["git", "-C", root, "ls-files", "-z"], capture_output=True)
+    if q.returncode != 0:
+        raise RuntimeError("cannot list the tracked files of %s: %s" % (
+            root, q.stderr.decode("utf-8", "replace").strip()))
+    names = [n for n in q.stdout.decode("utf-8", "replace").split("\0") if n]
+    picked = [n for n in names
+              if os.path.basename(n) in ("Makefile", "makefile", "GNUmakefile") or n.endswith(".mk")]
+    if not picked:
+        raise RuntimeError("%s has no tracked makefile" % root)
+    return [os.path.join(root, n) for n in picked]
+
+
+def check_tree(root):
+    """Read every tracked makefile of the tree and what each includes by a literal name."""
+    checker = Checker(root)
+    for path in tracked_makefiles(root):
+        checker.check_file(path, follow=True)
+    return checker
+
+
+def tree_selftest():
+    """The tree mode on a small git tree: two tracked makefiles, a file reached
+    only through an include, a text file that is not a makefile, an untracked
+    makefile; and the same folder before it is a git tree."""
+    faults = []
+    with tempfile.TemporaryDirectory() as root:
+        def put(name, text):
+            path = os.path.join(root, name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+        bad = "X := $(sort b#x a)\n"
+        put("Makefile", "Y := 1\ninclude inc/rules.inc\n-include $(Y).mk\n")
+        try:
+            check_tree(root)
+            faults.append("a folder that is not a git tree was read")
+        except RuntimeError as exc:
+            if "tracked files" not in str(exc):
+                faults.append("a folder that is not a git tree was refused for another reason: %s" % exc)
+        put("inc/rules.inc", "Y := 2\n" + bad)      # reached only through the include
+        put("sub/other.mk", "include Makefile\n" + bad)      # looked up from the root, not from sub/
+        put("sub/notes.txt", bad)
+        git = ["git", "-C", root, "-c", "user.name=selftest", "-c", "user.email=selftest@example.invalid"]
+        for args in (["init", "-q"], ["add", "-A"], ["commit", "-q", "-m", "fixture"]):
+            if subprocess.run(git + args, capture_output=True).returncode != 0:
+                return ["git %s failed in the fixture" % args[0]]
+        put("stray.mk", bad)                  # not tracked: not read
+        try:
+            checker = check_tree(root)
+        except RuntimeError as exc:
+            return faults + ["the fixture tree was refused: %s" % exc]
+        got = sorted((os.path.relpath(p, root), n) for p, n, _ in checker.findings)
+        if got != [("inc/rules.inc", 2), ("sub/other.mk", 2)]:
+            faults.append("findings were %r" % (got,))
+        if len(checker.seen) != 3:
+            faults.append("%d file(s) read, not 3" % len(checker.seen))
+    return faults
 
 
 def selftest():
@@ -279,9 +349,12 @@ def selftest():
     declared = len(cases)
     if not examined or examined != declared:
         failures += 1
-    print("MAKE381_NUMBER_SIGN_SELFTEST: examined=%d declared=%d finding=%d clean=%d failures=%d" %
-          (examined, declared, finding, clean, failures))
-    return 1 if failures else 0
+    tree_faults = tree_selftest()
+    for fault in tree_faults:
+        print("FAIL: tree mode: %s" % fault)
+    print("MAKE381_NUMBER_SIGN_SELFTEST: examined=%d declared=%d finding=%d clean=%d failures=%d tree-mode=%s" %
+          (examined, declared, finding, clean, failures, "FAIL" if tree_faults else "ok"))
+    return 1 if failures or tree_faults else 0
 
 
 def main():
@@ -292,11 +365,13 @@ def main():
     if args.selftest:
         return selftest()
     here = os.path.dirname(os.path.abspath(__file__))
-    files = args.files or [os.path.join(here, "..", "Makefile")]
-    checker = Checker()
     try:
-        for path in files:
-            checker.check_file(path, follow=not args.files)
+        if args.files:
+            checker = Checker()
+            for path in args.files:
+                checker.check_file(path)
+        else:
+            checker = check_tree(os.path.normpath(os.path.join(here, "..")))
     except RuntimeError as exc:
         print("make381-number-sign: ERROR: %s" % exc, file=sys.stderr)
         return 2
@@ -309,7 +384,8 @@ def main():
         print("make381-number-sign: FAIL: %d finding(s) in %d file(s) read, the first at %s:%d" % (
             len(checker.findings), len(checker.seen), os.path.relpath(path, root), line))
         return 1
-    print("make381-number-sign: OK: %d file(s) read, no finding" % len(checker.seen))
+    print("make381-number-sign: OK: %d file(s) read (%s), no finding" % (
+        len(checker.seen), " ".join(sorted(os.path.relpath(p, root) for p in checker.seen))))
     return 0
 
 
