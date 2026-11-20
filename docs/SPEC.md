@@ -360,24 +360,18 @@ The IEEE 754 default floating-point environment is part of number semantics.
   `asin`/`acos` outside `[-1, 1]` return NaN; `log of 0` returns `-inf`.
   NaN is unequal to every value, including itself, even inside a list, dict
   or buffer. Comparing NaN never raises or changes math flags.
-- **Strict mode is opt-in with `EIGS_STRICT=1`.** It raises a catchable
-  `value` error when arithmetic produces a non-finite result. With the
-  environment variable unset or set to `0`, these IEEE results remain
-  values. The same switch governs **argument-type guards**: builtins that
-  would answer a wrong-typed argument with a stand-in — `cos of "hello"` as
-  `0`, `str_upper of 42` as `""`, a type mistake read as a plausible value —
-  raise a catchable `type_mismatch` error naming the builtin, across the
-  whole builtin surface (`builtins.c`, the host builtins, the tensor ops, the
-  embedded store, and — since #1007 — the graphics/audio extension, where the
-  stand-in is usually `null` rather than `0`/`""`: `gfx_rect of [x, y, w, h,
-  "255", 0, 0]` drew a BLACK rectangle where red was asked for, in silence).
-  A guard covers the argument's **container** as well as its elements — a
-  short argument list, or a scalar where a list belonged, is a caller mistake
-  and raises. That half is the one an element-typed probe cannot see, and in
-  the extension it was the difference between "drew nothing" and a silent
-  *success*: `audio_stream_open of [48000]` opened the device at the 44100/1
-  defaults and answered a real device id, so the caller that asked for 48000
-  was told it got 48000.
+### Argument guards and arithmetic traps
+
+An argument guard rejects a wrong type, a short or surplus argument list, a wrong container, or a non-numeric element; an arithmetic trap rejects a non-finite arithmetic result, including one produced from an already non-finite operand. The `EIGS_STRICT` setting has three states and controls these two properties:
+
+| `EIGS_STRICT` state | argument guards | non-finite arithmetic |
+|---|---|---|
+| unset or empty (default) | raise | IEEE value |
+| `0` | legacy quiet stand-in | IEEE value |
+| `1` | raise | raise |
+
+Some guards raise in every state; for example, `abs of true` raises rather than treating a bool as a number.
+
 
   ```eigenscript
   not_a_number is sqrt of -1
