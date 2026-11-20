@@ -12,4 +12,8 @@ print of (scan_int_tokens of input)
 print of (len of (trim of (str_from_bytes of [160, 65, 160])))
 
 if env_get of "EIGS_OPEN_GFX" == "1":
+    release is env_get of "EIGS_RELEASE_FILE"
+    started is monotonic_ms of null
+    loop while release != "" and not (file_exists of release) and (monotonic_ms of null) - started < 60000:
+        gfx_delay of 50
     gfx_close of null
