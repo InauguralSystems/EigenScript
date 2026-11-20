@@ -59,6 +59,8 @@ trap 'on_signal TERM' TERM
 echo "GFX_SIGNAL_READY tmp=$TMP"
 if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = before-server ]; then while :; do sleep 1; done; fi
 
+# The server is started by tests/xvfb.sh, which keeps it from resetting when
+# its last client leaves (#2215): a reset closes a handshake that is pending.
 . "$ROOT/tests/xvfb.sh" || exit 1
 xvfb_start || exit 1
 echo "GFX_SIGNAL_SERVER pid=$XVFB_PID"

@@ -60,8 +60,8 @@ if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = before-server ]; then
     while :; do sleep 1; done
 fi
 
-# Start the shared, free-display, no-reset X server while retaining the signal
-# protocol used by test_gfx_signal_cleanup.py.
+# The server is started by tests/xvfb.sh, which keeps it from resetting when
+# its last client leaves (#2215): a reset closes a handshake that is pending.
 . "$ROOT/tests/xvfb.sh" || exit 1
 xvfb_start || exit 1
 echo "GFX_SIGNAL_SERVER pid=$XVFB_PID"
