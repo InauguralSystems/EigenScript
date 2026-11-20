@@ -1,5 +1,5 @@
 /*
- * EigenScript hash builtins — SHA-256, MD5, HMAC-SHA256.
+ * EigenScript hash builtins — SHA-256 and MD5.
  * Zero-dependency implementations of FIPS 180-4 and RFC 1321.
  */
 

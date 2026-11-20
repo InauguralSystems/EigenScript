@@ -1,0 +1,1 @@
+- Add the Round 3 reveal driver, serial window-four recipe, blind manual-label review inventory, canonical raw-log extraction and dispatch workflow. Preserve the frozen instrument and enforce roster completeness, preflight refusals, control voiding and the R30R-2 outcome order.

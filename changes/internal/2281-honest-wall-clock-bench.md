@@ -1,0 +1,1 @@
+- Make the wall-clock benchmark reject failed workloads, report sample spread, and stop publishing its unstable figures (#2281).

@@ -36,12 +36,11 @@ row.  Run from clean checkouts at the revisions recorded in the result table.
 | DMG | command printed by `bash tools/consumer_acceptance.sh plan` for DMG |
 | EigenMiniSat | command printed by `bash tools/consumer_acceptance.sh plan` for EigenMiniSat |
 | Tidepool | command printed by `bash tools/consumer_acceptance.sh plan` for Tidepool |
-| iLambdaAi | command printed by `bash tools/consumer_acceptance.sh plan` for iLambdaAi |
 
 The plan output is authoritative for consumer revisions and CI commands; copy
 those expanded commands into the result table before executing them.  Also
-inventory the launch surfaces used by ouroboros, EigenOS, ext_http, the
-iLambdaAi grader, `tools/jit_diff.sh`, and consumer acceptance.  Do not add an
+inventory the launch surfaces used by ouroboros, EigenOS, ext_http,
+`tools/jit_diff.sh`, and consumer acceptance.  Do not add an
 environment, CLI, or embedding cap surface until that inventory is complete.
 
 ## Pre-recorded decision criteria

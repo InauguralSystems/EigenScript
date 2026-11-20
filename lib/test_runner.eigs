@@ -181,4 +181,4 @@ else:
 
 # ---- exit status: nonzero if any file failed ----
 if failed_files > 0:
-    assert of [0, (str of failed_files) + " test file(s) failed"]
+    set_exit_code of 1
