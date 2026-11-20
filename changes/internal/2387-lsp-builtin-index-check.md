@@ -1,0 +1,1 @@
+- Check that the committed LSP builtin index matches its generator and all generator inputs trigger rebuilding (#2387).

@@ -293,8 +293,13 @@ def targets(docs):
     rules = set(re.findall(r'^([a-z][a-z0-9-]*):', Path('Makefile').read_text(), re.M))
     for file in docs:
         n = 0
+        fenced = False
         for lineno, line in enumerate(Path(file).read_text().splitlines(), 1):
-            for token in matches(r'make [a-z][a-z0-9-]*', line):
+            if re.match(r'^\s*```', line):
+                fenced = not fenced
+                continue
+            command_text = line if fenced else ' '.join(matches(r'`[^`]+`', line))
+            for token in matches(r'make [a-z][a-z0-9-]*', command_text):
                 target = token.split()[1]
                 if target in TARGET_PROSE:
                     continue
@@ -488,6 +493,7 @@ def selftest():
     content |= {str(p) for p in Path('lib').glob('*.eigs')}
     content |= {'Makefile', 'VERSION', 'CHANGELOG.md',
                 'tools/docs_claims_check.sh', 'tools/docs_claims_populations.txt',
+                'tools/lsp_builtin_index_sources.txt',
                 'tools/werror_flags.txt', 'tests/test_doc_examples.py',
                 'src/builtins.c', 'src/compiler.c', 'src/eigenscript.c',
                 'src/lexer.c'}
@@ -563,6 +569,14 @@ def selftest():
                 p.write_text(original)
             p = tree / 'docs/BUILTINS.md'
             original = p.read_text()
+            p.write_text(original + '\nA diagnostic option can make those libraries write messages.\n')
+            result = gate()
+            ok = result.returncode == 0
+            passed += ok
+            print(f'SELFTEST: target-prose: {"PASS" if ok else "FAIL"}')
+            p.write_text(original)
+            p = tree / 'docs/BUILTINS.md'
+            original = p.read_text()
             p.write_text(original.replace('Returns `true` on success or `false` when libSDL2 is unavailable.',
                                           'Returns 1 on success or `false` when libSDL2 is unavailable.', 1))
             result = gate()
@@ -623,8 +637,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 19 case(s) run, {passed} passed, {19-passed} failed')
-            return 0 if passed == 19 else 1
+            print(f'SELFTEST: 20 case(s) run, {passed} passed, {20-passed} failed')
+            return 0 if passed == 20 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 
