@@ -1,0 +1,1 @@
+- Restore release-compatible tensor coercion when strict guards are explicitly disabled (#2439).

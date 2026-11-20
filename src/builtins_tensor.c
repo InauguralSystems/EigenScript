@@ -246,6 +246,12 @@ static int tensor_dims(Value *v, int *rows, int *cols) {
 static double* tensor_to_flat(Value *v, int *rows, int *cols,
                               const char *who) {
     int ndim = tensor_dims(v, rows, cols);
+    /* A scalar first element gives no shape. Preserve the release's explicit
+     * strict-off null, but do not soften structural list/buffer mismatches. */
+    if (ndim == 0 && !g_strict_guards && v && v->type == VAL_LIST &&
+        v->data.list.count > 0 &&
+        list_elem_type(v, 0) != VAL_LIST && list_elem_type(v, 0) != VAL_BUFFER)
+        return NULL;
     /* Historically every non-number slot became 0.0 below. Explicit strict
      * rejects that lossy conversion before allocating; default/strict-off
      * retains the old element stand-in. Structural row errors are separate.
