@@ -20,12 +20,14 @@ line closes the rule, and a define does not.  The body of a define is read as ma
 and $${ opening a reference too, only when the define's name is written inside
 an $(eval call of the same file; no other body is read.
 
-Stricter than the makes: an assignment nothing expands, and any number sign
-inside a reference on a bare line or a recipe line that calls $(eval.  Looser:
+Stricter than the makes: an assignment nothing expands, a line in a branch of
+a conditional that is not taken, and any number sign inside a reference on a
+bare line or a recipe line that calls $(eval.  Looser:
 a define body that reaches $(eval) through another variable, and a sign that a
 variable carries into text $(eval) reads.  Not covered: !=, ::=, undefine,
-private, $(file ...), .ONESHELL, --output-sync, an include whose name holds a
-reference, and other makefile text that exists only after expansion.
+private, $(file ...), a lone $ at the end of a value, .ONESHELL, --output-sync,
+an include whose name holds a reference, and other makefile text that exists
+only after expansion.
 
 To write the sign inside a call: H := \# at the top level and $H in the call
 ($$H in text that $(eval) reads again), or the tool's own escape (printf '\043').
@@ -188,8 +190,15 @@ class Checker:
             words = text.split()
             if words[:1] == ["define"] or words[:2] == ["override", "define"]:
                 name = words[1] if words[0] == "define" else (words[2] if len(words) > 2 else "")
-                body, i = [], i + 1
-                while i < len(logical) and logical[i][0].split()[:1] != ["endef"]:
+                body, i, depth = [], i + 1, 1
+                while i < len(logical):               # a define inside a define nests
+                    inner = logical[i][0].split()
+                    if inner[:1] == ["define"] or inner[:2] == ["override", "define"]:
+                        depth += 1
+                    elif inner[:1] == ["endef"]:
+                        depth -= 1
+                        if not depth:
+                            break
                     body.append(logical[i])
                     i += 1
                 if i == len(logical):

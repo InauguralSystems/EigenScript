@@ -2018,6 +2018,168 @@
   },
   {
    "differ": false,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok]",
+    "rc": 0
+   },
+   "name": "skipped-branch",
+   "text": "ifdef NOPE\nX := $(sort b#x a)\nelse\nX := ok\nendif\n",
+   "why": "stricter than the makes: the line is in a branch that is not taken here, so neither make reads it; taken-branch is the same line read"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "taken-branch",
+   "text": "ifndef NOPE\nX := $(sort b#x a)\nelse\nX := ok\nendif\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:7: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "nested-define-evaled",
+   "text": "define F\ndefine G\nv\nendef\nX := $$(sort b#x a)\nendef\n$(eval $(F))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "clean",
+   "kind": "other-construct",
+   "make381": {
+    "err": "",
+    "out": "X=[a]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a$]",
+    "rc": 0
+   },
+   "name": "dollar-at-end",
+   "text": "X := a$\n",
+   "why": "not covered: a lone dollar at the end of a value: 3.81 drops it, 4.3 keeps it"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok]\n[a b#x]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "static-pattern-rule",
+   "text": "X := ok\nall2: all3.o\nall3.o: %.o: $(sort b#x a)\n\t@echo [$^]\nb%: ; @:\na: ; @:\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok]\n[a b#x]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "pattern-specific-assign",
+   "text": "X := ok\nall%: Z := $(sort b#x a)\nall2:\n\t@echo [$(Z)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "name-with-reference",
+   "text": "N := X\n$(N) := $(sort b#x a)\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "crlf-line-end",
+   "text": "X := $(sort b#x a)\r\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:1: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "no-final-newline",
+   "text": "X := $(sort b#x a)",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
    "expect": "clean",
    "kind": "number-sign",
    "make381": {
