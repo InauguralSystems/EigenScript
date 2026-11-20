@@ -1,0 +1,3 @@
+["equilibrium", false, {"kind": "trajectory", "rel": [], "raw": [], "exact": [], "values": [41], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 41, "best": 41.0, "since": null, "observed": true, "numeric": true, "window": 10}]
+["equilibrium", false, {"kind": "trajectory", "rel": [], "raw": [], "exact": [], "values": [41], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 41, "best": 41.0, "since": null, "observed": true, "numeric": true, "window": 10}]
+rc=0

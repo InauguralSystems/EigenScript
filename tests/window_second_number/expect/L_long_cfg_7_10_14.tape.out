@@ -1,0 +1,334 @@
+tape L_long_cfg_7_10_14.tape: 32 steps, 31 assigns (1 bindings), 0 nondet records
+step 1/32  line 1
+  A x=1.0
+step 2/32  line 2
+  A x=2.0
+x = 2.0  [moving]  (2 assigns)
+step 3/32  line 3
+  A x=2.0
+x = 2.0  [moving]  (3 assigns)
+step 4/32  line 4
+  A x=2.0
+x = 2.0  [moving]  (4 assigns)
+step 5/32  line 5
+  A x=2.0
+x = 2.0  [moving]  (5 assigns)
+step 6/32  line 6
+  A x=2.0
+x = 2.0  [moving]  (6 assigns)
+step 7/32  line 7
+  A x=2.0
+x = 2.0  [moving]  (7 assigns)
+step 8/32  line 8
+  A x=2.0
+x = 2.0  [moving]  (8 assigns)
+step 9/32  line 9
+  A x=2.0
+x = 2.0  [converged]  (9 assigns)
+step 10/32  line 10
+  A x=2.0
+x = 2.0  [converged]  (10 assigns)
+step 11/32  line 11
+  A x=2.0
+x = 2.0  [converged]  (11 assigns)
+step 12/32  line 12
+  A x=2.0
+x = 2.0  [converged]  (12 assigns)
+step 13/32  line 13
+  A x=2.0
+x = 2.0  [converged]  (13 assigns)
+step 14/32  line 14
+  A x=2.0
+x = 2.0  [converged]  (14 assigns)
+step 15/32  line 15
+  A x=2.0
+x = 2.0  [converged]  (15 assigns)
+step 16/32  line 16
+  A x=2.0
+x = 2.0  [converged]  (16 assigns)
+step 17/32  line 17
+  A x=2.0
+x = 2.0  [converged]  (17 assigns)
+step 18/32  line 18
+  A x=2.0
+x = 2.0  [converged]  (18 assigns)
+step 19/32  line 19
+  A x=2.0
+x = 2.0  [converged]  (19 assigns)
+step 20/32  line 20
+  A x=2.0
+x = 2.0  [converged]  (20 assigns)
+step 21/32  line 21
+  A x=2.0
+x = 2.0  [converged]  (21 assigns)
+step 22/32  line 22
+  A x=2.0
+x = 2.0  [converged]  (22 assigns)
+step 23/32  line 23
+  A x=2.0
+x = 2.0  [converged]  (23 assigns)
+step 24/32  line 24
+  A x=2.0
+x = 2.0  [converged]  (24 assigns)
+step 25/32  line 25
+  A x=2.0
+x = 2.0  [converged]  (25 assigns)
+step 26/32  line 26
+  A x=2.0
+x = 2.0  [converged]  (26 assigns)
+step 27/32  line 27
+  A x=2.0
+x = 2.0  [converged]  (27 assigns)
+step 28/32  line 28
+  A x=2.0
+x = 2.0  [converged]  (28 assigns)
+step 29/32  line 29
+  A x=2.0
+x = 2.0  [converged]  (29 assigns)
+step 30/32  line 30
+  A x=2.0
+x = 2.0  [converged]  (30 assigns)
+step 31/32  line 31
+  A x=2.0
+x = 2.0  [converged]  (31 assigns)
+step 32/32  line 32
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+at end of tape
+x = 2.0  [converged]  (31 assigns)
+rc=0

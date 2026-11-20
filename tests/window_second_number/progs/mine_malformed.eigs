@@ -1,0 +1,10 @@
+nan is f64_from_bits of 0x7ff8000000000000
+a is {"kind": "trajectory", "rel": [], "raw": [], "exact": [], "values": [nan], "dh": [], "numeric": false, "observed": true, "window": 4}
+print of (classify of a)
+b is {"kind": "trajectory", "rel": [], "raw": [], "exact": [], "values": [3], "dh": [0.5, 0.25], "numeric": false, "observed": true}
+print of (classify of b)
+c is {"kind": "trajectory", "rel": [], "raw": [], "exact": [], "values": [3], "dh": [], "numeric": true, "observed": false}
+print of (classify of c)
+print of (classify of [c, "value"])
+d is {"kind": "trajectory", "rel": [0.5], "raw": [1], "exact": [true], "values": [2, 3], "dh": [], "numeric": true, "window": 4}
+print of (classify of d)

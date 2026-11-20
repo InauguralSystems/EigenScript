@@ -1,0 +1,11 @@
+[false, false, false, false, false, false]
+stable
+stable
+["stable", 2.0, nan, null]
+2.0
+nan
+nan
+{"kind": "trajectory", "rel": [nan], "raw": [nan], "exact": [false], "values": [nan, 2.0], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 2.0, "best": 2.0, "since": null, "observed": true, "numeric": true, "window": 10}
+stable
+stable
+rc=0

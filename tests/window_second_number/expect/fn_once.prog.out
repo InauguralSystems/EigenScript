@@ -1,0 +1,4 @@
+{"kind": "trajectory", "rel": [], "raw": [], "exact": [], "values": [1998], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 1998, "best": 1998.0, "since": null, "observed": true, "numeric": true, "window": 10}
+equilibrium
+diverging
+rc=0

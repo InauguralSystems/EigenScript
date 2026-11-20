@@ -1,0 +1,11 @@
+[false, false, false, false, false, false]
+moving
+moving
+["moving", 7, 2, null]
+7
+2
+0.003487792725460887
+{"kind": "trajectory", "rel": [0.2857142857142857], "raw": [2], "exact": [true], "values": [5, 7], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 7, "best": 5.0, "since": null, "observed": true, "numeric": true, "window": 10}
+moving
+moving
+rc=0

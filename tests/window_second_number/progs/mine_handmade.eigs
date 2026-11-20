@@ -1,0 +1,5 @@
+t is {"kind": "trajectory", "rel": [], "raw": [], "exact": [], "values": [7], "dh": [], "numeric": true, "observed": true, "window": 4}
+print of (classify of t)
+print of (classify of [t, "value"])
+u is {"kind": "trajectory", "rel": [], "raw": [], "exact": [], "values": [f64_from_bits of 0x7ff8000000000000], "dh": [], "numeric": true, "observed": true, "window": 64}
+print of (classify of u)
