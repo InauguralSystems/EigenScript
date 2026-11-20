@@ -1,0 +1,1 @@
+- Template rendering now scales linearly with template size, and Valgrind timeouts are reported separately from memory errors (#2344).

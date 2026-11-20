@@ -1,0 +1,1 @@
+- Release binary assets and the Docker image now include the MIT license text (#2283).

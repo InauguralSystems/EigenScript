@@ -2,7 +2,10 @@
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+<<<<<<< HEAD
 DISPLAY_NUM=
+=======
+>>>>>>> origin/main
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/eigs-1681-title.XXXXXX")
 export LC_ALL=C.UTF-8
 
@@ -60,6 +63,7 @@ if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = before-server ]; then
     while :; do sleep 1; done
 fi
 
+<<<<<<< HEAD
 # -noreset (#2204): without it Xvfb resets whenever its last client
 # disconnects, which happens between every two cases here. A case whose
 # program connects during that reset dies with "SDL_Init failed: x11 not
@@ -86,6 +90,12 @@ echo "GFX_SIGNAL_SERVER pid=$XVFB_PID"
 if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = server ]; then
     while :; do sleep 1; done
 fi
+=======
+# The server is started by tests/xvfb.sh, which keeps it from resetting when
+# its last client leaves (#2215): a reset closes a handshake that is pending.
+. "$ROOT/tests/xvfb.sh" || exit 1
+xvfb_start || exit 1
+>>>>>>> origin/main
 
 # Each wait is bounded by a deadline, not a count of short sleeps: on a
 # loaded box one xdotool or xprop call can take most of a fixed budget

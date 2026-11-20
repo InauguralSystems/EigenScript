@@ -6,7 +6,7 @@ been resolved in later releases:
 
 - **Concurrency**: spawn/thread_join/channels added in 0.9.0
 - **Pattern matching / lambdas / regex / imports**: added in 0.7.0
-- **Hashing**: SHA-256, MD5, HMAC-SHA256 added in 0.9.2
+- **Hashing**: SHA-256, MD5, and HMAC-SHA256 were added in 0.9.2; HMAC-SHA256 was later removed after the zero-use audit (#1677).
 - **LSP**: eigenlsp + VS Code extension shipped in 0.9.1
 - **Debugger**: graphical debugger with observer-aware inspection in 0.9.0
 - **UI**: 44-widget GUI toolkit added in 0.9.0

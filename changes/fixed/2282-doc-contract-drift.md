@@ -1,0 +1,1 @@
+- Correct performance-instrument counts and thresholds, document and test `secure_equals` type errors, and remove archived iLambdaAi from current-consumer guidance (#2282, #2252, #2335).

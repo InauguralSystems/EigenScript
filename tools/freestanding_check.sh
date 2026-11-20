@@ -20,14 +20,29 @@ trap 'rm -rf "$ROOT_BUILD"' EXIT
 # out, so git refused the repository ("dubious ownership", rc 128) and the old
 # `|| true` turned that refusal into an empty result and an OK (#2308, hq#58
 # ES-CIB-1). Trust exactly this checkout, as tools/enrolment_check.sh does, and
-# treat any other git failure, or an empty population, as FAIL. The population
-# floor is "non-empty", not a pinned count. Headers, macro aliases and function
-# pointers are not covered by this textual check (#2309).
+# treat as FAIL any other git failure, an empty population, a tracked file
+# that is not there to be read, and anything git grep says on its error stream.
+# The floor is a non-empty tracked population, not a pinned count. This half
+# is a word search with no lexing: a line of a tracked hosted source or header
+# (src/ and extensions/, outside src/freestanding) that holds the word `rand`
+# or `srand` fails, whether the word stands in code, in a comment or in a
+# string. So it sees a call, a macro body, an inline in a header, an alias and
+# a function pointer in every file, built or not, and inside every
+# EIGENSCRIPT_EXT_* block. It also refuses a member or a local that is named
+# rand. It does not see a name the preprocessor puts together (`ra##nd`, or
+# the name split over a line end): the object check below sees those in the
+# code it compiles (the Makefile's SOURCES with every extension off), and
+# nothing sees them in the other files or inside an extension's block. random, rand_r and
+# drand48 are not searched for: issue #2309 names rand and srand.
 #
 # `--rng-only` stops after this check (tests/test_freestanding_rng_2308.sh uses
 # it to drive the real check cheaply); `make freestanding-check` and CI pass no
-# argument and run the whole gate.
-RNG_PATHSPEC=('src/*.c' 'extensions/*.c' ':(exclude)src/freestanding/*')
+# argument and run the whole gate. The word search covers the whole tracked
+# population and runs wherever git does. The object check below compiles the
+# Makefile's SOURCES with the extensions off and reads their undefined
+# symbols; its compile rows run on the Linux lanes, and its match takes the
+# leading underscore that nm prints on macOS.
+RNG_PATHSPEC=('src/*.c' 'src/*.h' 'extensions/*.c' 'extensions/*.h' ':(exclude)src/freestanding/*')
 RNG_GIT=(git -c safe.directory="$(pwd -P)")
 RNG_ERR="$ROOT_BUILD/rng_ls_files.err"
 RNG_LIST="$ROOT_BUILD/rng_ls_files"
@@ -46,6 +61,7 @@ if [ "$rng_rc" -ne 0 ] || [ "$RNG_EXAMINED" -eq 0 ]; then
     cat "$RNG_ERR" >&2
     exit 1
 fi
+<<<<<<< HEAD
 if [ -n "$RNG_UNREADABLE" ]; then
     echo "FAIL: hosted RNG check cannot read tracked runtime source(s):" >&2
     printf '%s\n' "$RNG_UNREADABLE" >&2
@@ -54,21 +70,44 @@ fi
 rng_rc=0
 HOSTED_RNG_CALLS=$("${RNG_GIT[@]}" -c core.quotePath=false grep -n -E '\b(rand|srand)[[:space:]]*\(' -- \
     "${RNG_PATHSPEC[@]}" 2>&1) || rng_rc=$?
+=======
+RNG_EXAMINED=$(printf '%s\n' "$RNG_FILES" | wc -l | tr -d ' ')
+# git grep passes over a tracked file it cannot open with a message and "no
+# match", and says nothing of one that is not in the working tree. So every
+# tracked file of the population must be there and readable first.
+while IFS= read -r rng_file; do
+    [ -n "$rng_file" ] || continue
+    if [ ! -f "$rng_file" ] || [ ! -r "$rng_file" ]; then
+        echo "FAIL: hosted RNG check cannot read the tracked file $rng_file" >&2
+        exit 1
+    fi
+done <<RNG_LIST
+$RNG_FILES
+RNG_LIST
+RNG_GREP_ERR="$ROOT_BUILD/rng_grep.err"
+rng_rc=0
+RNG_HITS=$("${RNG_GIT[@]}" grep -n -w -E 'rand|srand' -- "${RNG_PATHSPEC[@]}" 2>"$RNG_GREP_ERR") || rng_rc=$?
+if [ -s "$RNG_GREP_ERR" ] && [ "$rng_rc" -le 1 ]; then
+    echo "FAIL: hosted RNG check: git grep reported a problem while searching the runtime sources:" >&2
+    cat "$RNG_GREP_ERR" >&2
+    exit 1
+fi
+>>>>>>> origin/main
 if [ "$rng_rc" -eq 0 ]; then
-    echo "FAIL: hosted runtime calls libc rand/srand outside the taped random stream:" >&2
-    echo "$HOSTED_RNG_CALLS" >&2
+    echo "FAIL: the word rand or srand appears in a hosted runtime source or header (code, comment or string); the runtime draws from the taped random stream:" >&2
+    echo "$RNG_HITS" >&2
     exit 1
 elif [ "$rng_rc" -ne 1 ]; then
     echo "FAIL: hosted RNG check could not search the runtime sources (git grep rc=$rng_rc):" >&2
-    echo "$HOSTED_RNG_CALLS" >&2
+    cat "$RNG_GREP_ERR" >&2
     exit 1
 fi
-echo "OK hosted RNG: no libc rand/srand calls in $RNG_EXAMINED tracked runtime source file(s) outside src/freestanding"
-[ "${1:-}" != "--rng-only" ] || exit 0
+echo "OK hosted RNG: the words rand and srand appear in none of the $RNG_EXAMINED tracked hosted C source/header file(s)"
 
 # Anchor the population to the Makefile's source lists, as amalgamate does.
 SRC=$(make --no-print-directory print-SOURCES |
       tr ' ' '\n' | sed -n 's#^src/\(.*\)\.c$#\1#p')
+HOSTED_SRC=$SRC
 CLI_ONLY=$(make --no-print-directory print-CLI_ONLY |
       tr ' ' '\n' | sed -n 's#^src/\(.*\)\.c$#\1#p')
 for u in $CLI_ONLY; do SRC=$(printf '%s\n' $SRC | grep -vx "$u"); done
@@ -76,6 +115,42 @@ if [ -z "$SRC" ]; then
     echo "FAIL: derived an EMPTY source list from the Makefile" >&2
     exit 1
 fi
+
+command -v nm >/dev/null 2>&1 || {
+    echo "FAIL: hosted RNG object check requires nm" >&2
+    exit 1
+}
+HOSTED_RNG_BUILD="$ROOT_BUILD/hosted-rng"
+mkdir "$HOSTED_RNG_BUILD"
+HOSTED_RNG_OBJECTS=0
+for f in $HOSTED_SRC; do
+    obj="$HOSTED_RNG_BUILD/$f.o"
+    if ! gcc -O0 $WERROR_FLAGS -DEIGENSCRIPT_EXT_HTTP=0 -DEIGENSCRIPT_EXT_DB=0 \
+        -DEIGENSCRIPT_EXT_NET=0 -DEIGENSCRIPT_EXT_GFX=0 \
+        -c "src/$f.c" -o "$obj"; then
+        echo "FAIL: hosted RNG check could not build src/$f.c" >&2
+        exit 1
+    fi
+    HOSTED_RNG_OBJECTS=$((HOSTED_RNG_OBJECTS + 1))
+done
+if [ "$HOSTED_RNG_OBJECTS" -eq 0 ]; then
+    echo "FAIL: hosted RNG check examined 0 hosted objects" >&2
+    exit 1
+fi
+HOSTED_RNG_UNDEFINED="$HOSTED_RNG_BUILD/undefined.txt"
+nm -u "$HOSTED_RNG_BUILD"/*.o 2>"$HOSTED_RNG_BUILD/nm.err" \
+    | awk '{print $NF}' | sort -u > "$HOSTED_RNG_UNDEFINED" || {
+        echo "FAIL: hosted RNG check could not read hosted objects with nm" >&2
+        cat "$HOSTED_RNG_BUILD/nm.err" >&2
+        exit 1
+    }
+if grep -E '^_?(rand|srand)$' "$HOSTED_RNG_UNDEFINED" > "$HOSTED_RNG_BUILD/violations.txt"; then
+    echo "FAIL: hosted runtime objects import libc rand/srand outside the taped random stream:" >&2
+    cat "$HOSTED_RNG_BUILD/violations.txt" >&2
+    exit 1
+fi
+echo "OK hosted RNG objects: no libc rand/srand imports in $HOSTED_RNG_OBJECTS hosted object(s)"
+[ "${1:-}" != "--rng-only" ] || exit 0
 
 run_row() {
     local label=$1 cc=$2 opt=$3

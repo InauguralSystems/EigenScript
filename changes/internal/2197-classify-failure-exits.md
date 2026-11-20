@@ -1,0 +1,1 @@
+- Test-runner failure regressions now reject sanitizer diagnostics before accepting expected exit statuses (#2197).
