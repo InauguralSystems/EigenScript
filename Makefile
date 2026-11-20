@@ -632,7 +632,9 @@ $(SRC_DIR)/lsp_stdlib_index.h: $(wildcard lib/*.eigs) tools/gen_lsp_stdlib_index
 # Builtin half of the same idea (#742): names from the registration seams +
 # ext_names.h, hover detail from the signature comments. Reserved report
 # forms are excluded using lexer.c. Commit the generated header for review.
-LSP_BUILTIN_DOC_SRCS := $(shell sed -n 's/^[[:space:]]*\([^#][^[:space:]]*\)[[:space:]]*$$/\1/p' tools/lsp_builtin_index_sources.txt)
+# No number sign may appear in this line: GNU make 3.81 (macOS) starts a
+# comment at one even inside a function call. Octal 043 is that character.
+LSP_BUILTIN_DOC_SRCS := $(shell awk 'NF == 1 && substr($$1, 1, 1) != "\043" { print $$1 }' tools/lsp_builtin_index_sources.txt)
 $(SRC_DIR)/lsp_builtin_index.h: $(LSP_BUILTIN_DOC_SRCS) $(SRC_DIR)/ext_names.h \
 		$(SRC_DIR)/lexer.c tools/gen_lsp_builtin_index.sh
 	bash tools/gen_lsp_builtin_index.sh

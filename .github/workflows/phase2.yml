@@ -34,7 +34,7 @@ jobs:
     env:
       DATABASE_URL: postgres://eigs:eigs_test@127.0.0.1:5432/eigs_test
     steps:
-      # Every branch and tag is needed: origin/main, v0.46.0 and the accepted R3.1 baseline.
+      # Every branch and tag is needed: origin/main and v0.46.0.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
@@ -54,14 +54,11 @@ jobs:
           export XDG_CACHE_HOME="$RUNNER_TEMP/cache"
           make --no-print-directory observer-anchor
           anchor="$XDG_CACHE_HOME/eigs-oracle-anchor/$(sha256sum tools/observer_oracle/build_anchor.sh | cut -d' ' -f1)/src/eigenscript"
-          mkdir -p "$RUNNER_TEMP/main" "$RUNNER_TEMP/tag-profiles" "$RUNNER_TEMP/r31-baseline"
+          mkdir -p "$RUNNER_TEMP/main" "$RUNNER_TEMP/tag-profiles"
           git archive origin/main | tar -x -C "$RUNNER_TEMP/main"
           git archive v0.46.0 | tar -x -C "$RUNNER_TEMP/tag-profiles"
-          git archive c8e596161912fa3c0e19bb5bd0beea7c87e4ed32 | tar -x -C "$RUNNER_TEMP/r31-baseline"
           make -C "$RUNNER_TEMP/main" > "$RUNNER_TEMP/main-build.log" 2>&1 \
             || { tail -n 50 "$RUNNER_TEMP/main-build.log"; echo "::error::the origin/main build failed"; exit 1; }
-          make -C "$RUNNER_TEMP/r31-baseline" > "$RUNNER_TEMP/r31-baseline-build.log" 2>&1 \
-            || { tail -n 50 "$RUNNER_TEMP/r31-baseline-build.log"; echo "::error::the R3.1 baseline build failed"; exit 1; }
           # The table uses matching capability builds; a capability-unavailable
           # transcript is a failure, including on the tag (ruling A3).
           for profile in server zlib db; do
@@ -90,7 +87,10 @@ jobs:
           # Restore the release alias before the MAP and library checks.
           PATH="$PWD/tools/cc-guard-bin:$PATH" make build
           bash tools/cc_guard.sh --report
-          bash tools/phase2_ci.sh --through R3.2 --baseline "$RUNNER_TEMP/r31-baseline/src/eigenscript" \
+          # No --baseline: R3.2 has no gate that reads one, and the checker
+          # refuses the flag for such a round (#1850). This job used to build
+          # an R3.1 baseline and pass it; no gate read it.
+          bash tools/phase2_ci.sh --through R3.2 \
             "$anchor" "$RUNNER_TEMP/main/src/eigenscript" src/eigenscript
 
       - name: R2.3 encoder failure and no-mutation proofs
