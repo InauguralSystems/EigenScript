@@ -151,8 +151,12 @@ def unused_mechanical_flags(through, baseline=None, smi_trap=None):
     return unused
 
 
-def unused_flag_cli_calibration(remove_refusal=False):
-    """Exercise the real command entry, optionally with its refusal planted out."""
+def unused_flag_cli_calibration(remove_refusal=False, through='R1.3', flag='--baseline'):
+    """Exercise the real command entry, optionally with its refusal planted out.
+
+    Returns (exit status, first line) of the checker run as a process, or None
+    when the plant could not be applied; a caller compares with the EXPECTED
+    planted outcome, so a plant that did not apply is a failed case."""
     checker = os.path.abspath(__file__)
     planted = None
     if remove_refusal:
@@ -167,8 +171,8 @@ def unused_flag_cli_calibration(remove_refusal=False):
         checker = planted
     try:
         result = subprocess.run(
-            [sys.executable, checker, '/bin/true', '/bin/true', '--through', 'R1.3',
-             '--baseline', '/not/executable'], capture_output=True, text=True)
+            [sys.executable, checker, '/bin/true', '/bin/true', '--through', through,
+             flag, '/not/executable'], capture_output=True, text=True)
         return result.returncode, result.stdout.strip()
     finally:
         if planted:
@@ -1085,8 +1089,18 @@ def calibrate(args, out):
                   '(that round has no matching mechanical gate)')
     case('--baseline refusal goes through the command line',
          unused_flag_cli_calibration(), refused)
+    # Without the refusal the same call goes on to the next check. Compared
+    # with that outcome, not with "anything but the refusal": a plant whose
+    # text is no longer found returns None and fails here.
+    not_executable = (2, 'phase2-check: FAIL: /not/executable is not an executable')
     case('command-line refusal plant is caught',
-         unused_flag_cli_calibration(remove_refusal=True) != refused, True)
+         unused_flag_cli_calibration(remove_refusal=True), not_executable)
+    case('a round that has the gate is let through to the next check',
+         unused_flag_cli_calibration(through='R2.1'), not_executable)
+    case('a round is refused for the one flag it has no gate for',
+         unused_flag_cli_calibration(through='R2.1', flag='--smi-trap'),
+         (2, 'phase2-check: FAIL: --smi-trap is unused for --through R2.1 '
+             '(that round has no matching mechanical gate)'))
 
     lines = []
     case('tool stderr policy, process rc and embed counter/OK plants',
