@@ -923,7 +923,7 @@ def mechanical(through, baseline, branch, out, smi_trap=None, tag=None):
         elif g == 'reader-test':
             res[g], text = tool(['bash', 'tools/phase2_readers.sh', 'release'], out,
                                  r'^phase2-readers: ')
-            res[g] = res[g] and len(re.findall(r'^phase2-readers: PASS variant=release checks=[1-9][0-9]*$',
+            res[g] = res[g] and len(re.findall(r'^phase2-readers: PASS variant=release default-checks=[1-9][0-9]* EIGS_STRICT=0-checks=[1-9][0-9]*$',
                                                text, re.M)) == 1
         elif g == 'q7-readers':
             res[g], text = tool(['bash', 'tools/phase2_readers.sh', 'release', 'q7_readers'], out, r'.*')

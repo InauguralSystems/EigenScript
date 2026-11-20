@@ -732,15 +732,14 @@ if [ "$ERRLINE_BUILD_RC" -ne 0 ]; then
     echo "$ERRLINE_BUILD" | tail -12
 else
   EL_WANT=$(grep -c '^ *check(' ../tests/test_error_line_fallback.c)   # every check must report
-  # The fourth run is the all-off state (#2439): before the strict flag was
-  # split a fresh state was all-off, so that is the state these checks ran in.
-  for EL_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1" "JIT all-off"; do
+  # Before the strict flag was split a fresh state was all-off.  Exercise that
+  # historical state in every execution tier as well as the new default.
+  for EL_TIER in "JIT" "EIGS_JIT_OFF=1" "EIGS_JIT_OSR_THRESHOLD=1"; do
+   for EL_STRICT in default all-off; do
     EL_ENV="EIGS_JIT_STATS=1"; EL_ARG=""; EL_WITNESS="$EL_TIER"
-    case "$EL_TIER" in
-        JIT) ;;
-        "JIT all-off") EL_ARG=all-off; EL_WITNESS=JIT ;;
-        *) EL_ENV="$EL_ENV $EL_TIER" ;;
-    esac
+    [ "$EL_TIER" = JIT ] || EL_ENV="$EL_ENV $EL_TIER"
+    [ "$EL_STRICT" = default ] || EL_ENV="$EL_ENV EIGS_STRICT=0"
+    EL_LABEL="$EL_TIER $EL_STRICT"
     EL_TAPE=$(mktemp /tmp/eigs_errline_XXXXXX.tape); rm -f "$EL_TAPE"
     ERRLINE_OUT=$($EIGS_TMO env $EL_ENV EIGS_TRACE="$EL_TAPE" ../build/release/test_error_line_fallback $EL_ARG 2>&1)
     ERRLINE_RC=$?
@@ -763,13 +762,14 @@ else
     PASS=$((PASS + EL_PASS))
     FAIL=$((FAIL + EL_FAIL))
     if [ "$(lar_jit_witness "$EL_WITNESS" "$ERRLINE_OUT")" != ok ]; then
-        FAIL=$((FAIL + 1)); echo "  FAIL: error-line fallback ($EL_TIER): compiled nothing, so it measured the interpreter"
+        FAIL=$((FAIL + 1)); echo "  FAIL: error-line fallback ($EL_LABEL): compiled nothing, so it measured the interpreter"
     elif [ "$ERRLINE_RC" -eq 0 ] && [ "$EL_FAIL" -eq 0 ] && [ "$EL_PASS" -eq "$EL_WANT" ] && [ "$EL_WANT" -gt 0 ]; then
-        PASS=$((PASS + 1)); echo "  PASS: all $EL_PASS error-line fallback checks ($EL_TIER)"
+        PASS=$((PASS + 1)); echo "  PASS: all $EL_PASS error-line fallback checks ($EL_LABEL)"
     else
-        FAIL=$((FAIL + 1)); echo "  FAIL: error-line fallback ($EL_TIER, rc=$ERRLINE_RC, $EL_PASS/$EL_WANT passed)"
+        FAIL=$((FAIL + 1)); echo "  FAIL: error-line fallback ($EL_LABEL, rc=$ERRLINE_RC, $EL_PASS/$EL_WANT passed)"
         echo "$ERRLINE_OUT" | grep "^FAIL:"
     fi
+   done
   done
 fi
 echo ""

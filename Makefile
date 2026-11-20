@@ -763,6 +763,7 @@ embed-smoke: amalgamation
 	$(CC) $(CFLAGS) -Ibuild -o /tmp/embed_smoke $(SRC_DIR)/embed_smoke.c build/eigenscript_all.c \
 		-lm -lpthread
 	/tmp/embed_smoke
+	EIGS_STRICT=0 /tmp/embed_smoke
 
 # The amalgamation smoke above is a release control, not a leak check.  Link
 # the same owning host against the real sanitizer objects so state teardown is
@@ -772,6 +773,8 @@ embed-smoke-asan embed-smoke-asan-server: embed-smoke-%: %
 		$(filter-out build/$*/main.o,$(OBJ_$*)) $(LIBS_$*)
 	@readelf -Ws /tmp/embed_smoke_$* | grep -q '__asan_init'
 	ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+		/tmp/embed_smoke_$*
+	ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 EIGS_STRICT=0 \
 		/tmp/embed_smoke_$*
 
 # Same smoke against the gfx variant's objects: pins that the embed API's
@@ -783,6 +786,7 @@ embed-smoke-gfx: build
 		$(filter-out build/release/main.o,$(OBJ_release)) \
 		-lm -lpthread $(LIBS_release)
 	/tmp/embed_smoke_gfx
+	EIGS_STRICT=0 /tmp/embed_smoke_gfx
 
 # Exercise the actual polling builtin using the owning graphics-capable variant.
 UI_INPUT_VARIANT ?= release
