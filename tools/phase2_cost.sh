@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Compare release Ir on the in-repo CodSpeed workload set, in BOTH VM tiers.
+# Exit 2 means the instrument could not produce a comparison; exit 1 means a
+# completed comparison exceeded its cost threshold; exit 0 means PASS.
 # The target list has one home: codspeed.yml. Consumer targets live elsewhere.
 # Undeclared rows allow +0.3%; declared temporary costs are bounded per row.
 # TSV: workload, tier, max_local, max_ci, recover_round, reason (no header).
@@ -26,6 +28,9 @@
 # #1830) as well: #1776 merges only when neither declares anything.
 set -eu
 cd "$(dirname "$0")/.."
+if [ "${1-}" = "--self-test" ]; then
+    bash tools/phase2_cost_cli.sh --selftest
+fi
 exec python3 - "$@" <<'PY'
 import argparse
 import math
@@ -45,6 +50,11 @@ from phase2_cost_declarations import (STALE_TOLERANCE, UNDECLARED_MAX,
                                       assess_row, parse_declarations)
 
 THRESHOLD_PCT = UNDECLARED_MAX['local']
+
+
+def instrument_fail(message):
+    print('phase2-cost: FAIL: ' + message, file=sys.stderr)
+    raise SystemExit(2)
 # N6 is an explicit cost-only comparison mode. Corpus diffs remain exact.
 # Legacy unadorned integer text can denote an integral float; allow its .0 or
 # scientific repr only when conversion retains its exact integer value.
@@ -168,8 +178,8 @@ if args.self_test:
         ap.error('--self-test runs alone')
     try:
         output_self_test()
-    except (AssertionError, ValueError, OverflowError) as error:
-        sys.exit('phase2-cost-self-test: FAIL: ' + str(error))
+    except (AssertionError, ValueError, OverflowError, subprocess.CalledProcessError) as error:
+        instrument_fail('self-test: ' + str(error))
     sys.exit(0)
 if args.method and not args.declared:
     ap.error('--method requires --declared; cost runs enforce max_local')
@@ -177,15 +187,15 @@ if args.n6_text and (not args.base or not args.cand or args.declared):
     ap.error('--n6-text requires <base-bin> <cand-bin>')
 expect_path = root / 'tests/phase2/cost_expect.txt'
 if not expect_path.is_file():
-    sys.exit('phase2-cost: FAIL: missing tests/phase2/cost_expect.txt')
+    instrument_fail('missing tests/phase2/cost_expect.txt')
 expect_text = expect_path.read_text()
 if args.final and expect_text:
-    sys.exit('phase2-cost: FAIL: --final requires an empty tests/phase2/cost_expect.txt')
+    instrument_fail('--final requires an empty tests/phase2/cost_expect.txt')
 oracle_path = root / 'tests/phase2/oracle_expect.txt'
 if args.final and not oracle_path.is_file():
-    sys.exit('phase2-cost: FAIL: missing tests/phase2/oracle_expect.txt')
+    instrument_fail('missing tests/phase2/oracle_expect.txt')
 if args.final and oracle_path.read_text():
-    sys.exit('phase2-cost: FAIL: --final requires an empty tests/phase2/oracle_expect.txt'
+    instrument_fail('--final requires an empty tests/phase2/oracle_expect.txt'
              ' (%d observer-oracle declaration(s) remain)' % len(oracle_path.read_text().splitlines()))
 if bool(args.base) != bool(args.cand) or (not args.base and not args.final and not args.declared) \
         or (args.declared and (args.base or args.final)):
@@ -203,20 +213,20 @@ for line in (root / 'codspeed.yml').read_text().splitlines():
     local = [p for p in argv if local_workload.fullmatch(p)]
     if local:
         if len(local) != 1 or argv[-2:] != ['./src/eigenscript', local[0]]:
-            sys.exit('phase2-cost: FAIL: unsupported local CodSpeed command: ' + m[1])
+            instrument_fail('unsupported local CodSpeed command: ' + m[1])
         workloads.add(local[0])
 if not workloads:
-    sys.exit('phase2-cost: FAIL: no in-repo CodSpeed workloads')
+    instrument_fail('no in-repo CodSpeed workloads')
 # The execution list has one home; tracked sources anchor its coverage.
 tracked = subprocess.check_output(['git', 'ls-files', '-z'], cwd=root).decode().split('\0')
 expected = {p for p in tracked if local_workload.fullmatch(p)}
 if workloads != expected:
-    sys.exit('phase2-cost: FAIL: CodSpeed workload coverage missing=%s stale=%s' %
+    instrument_fail('CodSpeed workload coverage missing=%s stale=%s' %
              (sorted(expected - workloads), sorted(workloads - expected)))
 try:
     expectations = parse_declarations(expect_text, workloads)
 except ValueError as error:
-    sys.exit('phase2-cost: FAIL: ' + str(error))
+    instrument_fail(str(error))
 if args.declared:
     for (workload, tier), declaration in sorted(expectations.items()):
         if tier == args.declared or args.declared == 'all':
@@ -227,14 +237,21 @@ if args.declared:
             print('\t'.join(fields))
     sys.exit(0)
 if not shutil.which('valgrind'):
-    sys.exit('phase2-cost: FAIL: valgrind is required')
-bins = [str(Path(p).resolve(strict=True)) for p in (args.base, args.cand)]
+    instrument_fail('valgrind is required')
+try:
+    bins = [str(Path(p).resolve(strict=True)) for p in (args.base, args.cand)]
+except (OSError, RuntimeError) as error:
+    instrument_fail('binary path does not exist or cannot be resolved: ' + str(error))
 for binary in bins:
     if not os.access(binary, os.X_OK):
-        sys.exit('phase2-cost: FAIL: not executable: ' + binary)
-    symbols = subprocess.run(['nm', '-D', binary], capture_output=True, text=True, check=True).stdout
+        instrument_fail('not executable: ' + binary)
+    try:
+        symbols = subprocess.run(['nm', '-D', binary], capture_output=True,
+                                 text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        instrument_fail('not an ELF executable of this runtime: %s (%s)' % (binary, error))
     if re.search(r'__(?:asan|ubsan)', symbols):
-        sys.exit('phase2-cost: FAIL: sanitizer binary: ' + binary)
+        instrument_fail('sanitizer binary: ' + binary)
 logdir = Path(tempfile.mkdtemp(prefix='phase2-cost-'))
 print('phase2-cost: source=codspeed.yml workloads=%d tiers=2 undeclared_max=+%s%% declarations=%d '
       'stale_below_max=%s logs=%s method=local column=max_local' %
@@ -257,11 +274,11 @@ for workload in sorted(workloads):
                     binary, workload], cwd=root, env=env, stdin=subprocess.DEVNULL,
                     stdout=stdout, stderr=stderr, timeout=900)
             if run.returncode:
-                sys.exit('phase2-cost: FAIL: %s %s %s rc=%d (see %s)' %
+                instrument_fail('%s %s %s rc=%d (see %s)' %
                          (workload, tier, arm, run.returncode, prefix))
             summary = re.findall(r'^summary:\s*(\d+)\s*$', Path(str(prefix) + '.cg').read_text(), re.M)
             if len(summary) != 1 or int(summary[0]) <= 0:
-                sys.exit('phase2-cost: FAIL: missing/ambiguous Ir: ' + str(prefix))
+                instrument_fail('missing/ambiguous Ir: ' + str(prefix))
             out = Path(str(prefix) + '.stdout').read_bytes()
             # The bench prints elapsed milliseconds; compare every result field.
             out = elapsed_text(out)
@@ -273,7 +290,7 @@ for workload in sorted(workloads):
             changed = compare_result_text(out_a, out_b, args.n6_text)
             changed += compare_result_text(err_a.encode(), err_b.encode(), args.n6_text)
         except (ValueError, OverflowError) as error:
-            sys.exit('phase2-cost: FAIL: output differs: %s %s: %s (see %s)' %
+            instrument_fail('output differs: %s %s: %s (see %s)' %
                      (workload, tier, error, logdir))
         if args.n6_text and changed:
             print('phase2-cost: n6-text workload=%s tier=%s changed_tokens=%d' %

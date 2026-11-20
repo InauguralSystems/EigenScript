@@ -1,0 +1,1 @@
+- Phase 2 cost instrumentation failures now use an exit distinct from measured cost verdicts (#1826).

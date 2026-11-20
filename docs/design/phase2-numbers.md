@@ -2258,6 +2258,19 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
      real-valued formulas must not: `tools/phase2_lib_diff.sh` (§9.5, #1848)
      runs every exported lib function with int arguments on main and the
      branch, from R1.3 in every round.
+
+     **Cost-gate dispatch decision (#1826).** The cost comparison remains an
+     operator tool: the orchestrator runs it on every round tip from R1.3
+     onward, using BASE from a fresh release build of `origin/main`, because it
+     needs two release builds and Valgrind runs of every workload in both
+     tiers. There are 16 workloads (derived from `codspeed.yml`); on the hosted
+     task, `TIMEFORMAT='wall=%R seconds'; time valgrind --tool=cachegrind
+     --cache-sim=no --branch-sim=no --cachegrind-out-file=/tmp/g1826.cg
+     ./src/eigenscript bench/scalar_loop.eigs` measured 1.143 seconds for one
+     workload in one tier, so even the repeatable lower-bound estimate is
+     16 × 2 × 2 × 1.143 = 73.152 seconds, before the two builds, over the
+     60-second product-triggered self-test-row cap. Its fast command-line
+     self-test is nevertheless enrolled in `tools/selftests.txt`.
 4. **R1.4, N4.** `//` (token, parser, `OP_IDIV` appended,
    `op_name`/`op_stack_effect`/obs marker/ABI test), `//=` beside `/=` (Q6),
    `%` floor modulo for ints and floats, int division by zero raises,
