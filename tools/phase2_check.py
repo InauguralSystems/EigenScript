@@ -778,7 +778,9 @@ def tool(cmd, out, tail_re, env=None, allow_test_diagnostics=False):
 
 
 def embed_int_result(ok, text, out):
-    """Require one positive, failure-free counter and the host's final OK."""
+    """Require the host's two runs (as created, and with EIGS_STRICT=0: #2439),
+    each with a positive, failure-free counter and its final OK, the two
+    counters equal."""
     counters = re.findall(r'^gate\.N7\.embed-int:.*$', text, re.M)
     valid = re.findall(r'^gate\.N7\.embed-int: checks=([1-9][0-9]*) failures=0$', text, re.M)
     smoke = re.findall(r'^embed_smoke:.*$', text, re.M)
@@ -786,11 +788,11 @@ def embed_int_result(ok, text, out):
     out('  embed-int witnesses: counter_lines=%d valid_counters=%d checks=%s '
         'smoke_lines=%d smoke_ok=%d' % (
             len(counters), len(valid), ','.join(valid) or '<none>', len(smoke), len(final)))
-    if len(counters) != 1 or len(valid) != 1:
-        out('  embed-int: FAIL: expected exactly one checks>0 failures=0 counter; got %r' % counters)
-    if len(smoke) != 1 or len(final) != 1:
-        out('  embed-int: FAIL: expected exactly one embed_smoke: OK; got %r' % smoke)
-    return ok and len(counters) == len(valid) == len(smoke) == len(final) == 1
+    if len(counters) != 2 or len(valid) != 2 or len(set(valid)) != 1:
+        out('  embed-int: FAIL: expected exactly two equal checks>0 failures=0 counters; got %r' % counters)
+    if len(smoke) != 2 or len(final) != 2:
+        out('  embed-int: FAIL: expected exactly two embed_smoke: OK; got %r' % smoke)
+    return ok and len(counters) == len(valid) == len(smoke) == len(final) == 2 and len(set(valid)) == 1
 
 
 def embed_int_gate(out):
@@ -804,7 +806,8 @@ def embed_int_gate(out):
 
 def tool_contract_calibration(out):
     """Small result plants, through the same evaluator used by live tools."""
-    good = 'gate.N7.embed-int: checks=219 failures=0\nembed_smoke: OK\n'
+    one_run = 'gate.N7.embed-int: checks=219 failures=0\nembed_smoke: OK\n'
+    good = one_run + one_run
     wrong_type = 'Error line 0: eigs_value_as_int: expected a number\n'
     cases = [
         ('checker clean control', 0, good, '', False, False, True, None),
@@ -815,17 +818,20 @@ def tool_contract_calibration(out):
         ('embed nonzero rc despite witnesses', 7, good, '', True, True, False, 'rc=7'),
         ('embed empty stdout', 0, '', '', True, True, False, 'counter_lines=0'),
         ('embed zero checks', 0, good.replace('checks=219', 'checks=0'), '', True, True, False,
-         'expected exactly one checks>0 failures=0 counter'),
+         'expected exactly two equal checks>0 failures=0 counters'),
         ('embed failed assertion counter', 0, good.replace('failures=0', 'failures=1'), '',
          True, True, False, 'failures=1'),
         ('embed absent final OK', 0, good.split('embed_smoke:')[0], '', True, True, False,
          'smoke_ok=0'),
         ('embed duplicate counter', 0, good + good.splitlines()[0] + '\n', '', True, True, False,
-         'counter_lines=2'),
+         'counter_lines=3'),
         ('embed duplicate final OK', 0, good + 'embed_smoke: OK\n', '', True, True, False,
-         'smoke_ok=2'),
+         'smoke_ok=3'),
         ('embed malformed extra counter', 0, good + 'gate.N7.embed-int: truncated\n', '',
-         True, True, False, 'counter_lines=2'),
+         True, True, False, 'counter_lines=3'),
+        ('embed one run only', 0, one_run, '', True, True, False, 'counter_lines=1'),
+        ('embed unequal counters', 0, one_run + one_run.replace('checks=219', 'checks=218'), '',
+         True, True, False, 'expected exactly two equal checks>0 failures=0 counters'),
         ('embed UBSan at rc zero', 0, good, 'fixture.c:1: runtime error: signed integer overflow\n',
          True, True, False, 'sanitizer output rejected at rc=0'),
         ('embed ASan at rc zero', 0, good, 'ERROR: AddressSanitizer: heap-use-after-free\n',
