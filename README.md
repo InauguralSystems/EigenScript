@@ -431,7 +431,6 @@ unobserved:
         i is i + 1
 ```
 
-<<<<<<< HEAD
 Numeric relative/raw steps, exact flags, running-best state and history
 snapshots still update inside the block. Numeric `report`, predicates and
 `where`/`why`/`how` after the block give the same answers as the observed
@@ -439,16 +438,6 @@ version. Non-numeric entropy and comparison samples are elided. Programs
 with no observer/history reader can skip bookkeeping automatically through
 the observer gate; historical speedups from removing numeric entropy walks
 do not describe R3.1's numeric path.
-=======
-Inside the block, assignments to plain variables skip the observer's
-entropy walk and mutate the existing `Value` in place. Outside, normal
-behavior resumes. Measured 2.7x on a 2M-iteration accumulator loop
-(834ms → 307ms, n=5 medians); the archived iLambdaAi project measured
-~22% end-to-end on an 18-hour training run. A scalar assignment inside the block still drops its
-O(1) sample into the value window (#1049), so the verdicts `report` and the
-predicates give a numeric binding are the same with the block as without
-it — only the entropy channel (`why`/`how`, the dH window) is elided.
->>>>>>> origin/main
 
 The block only helps **plain variables** — `x is ...`. A dict field or
 list element (`d.k is ...`, `xs[i] is ...`) is never observed in the
@@ -916,7 +905,7 @@ Full map: **[docs/README.md](docs/README.md)**. Highlights:
 - [docs/COMPARISON.md](docs/COMPARISON.md) — EigenScript next to
   Python/JS/Rust/Lisp, with a porting checklist (also suite-verified)
 - [docs/PERFORMANCE.md](docs/PERFORMANCE.md) — benchmarks as a regression-gated
-  fact: deterministic instruction counts for CI
+  fact: wall-clock medians for humans, deterministic instruction counts for CI
 - [docs/SYNTAX.md](docs/SYNTAX.md) — tutorial-style language guide
 - [docs/GRAMMAR.md](docs/GRAMMAR.md) — formal EBNF grammar
 - [docs/LANGUAGE_CONTRACT.md](docs/LANGUAGE_CONTRACT.md) — edge-case promises

@@ -43,34 +43,16 @@ trap 'rm -rf "$ROOT_BUILD"' EXIT
 # symbols; its compile rows run on the Linux lanes, and its match takes the
 # leading underscore that nm prints on macOS.
 RNG_PATHSPEC=('src/*.c' 'src/*.h' 'extensions/*.c' 'extensions/*.h' ':(exclude)src/freestanding/*')
-RNG_GIT=(git -c safe.directory="$(pwd -P)")
+RNG_GIT=(git -c safe.directory="$(pwd -P)" -c core.quotePath=false)
 RNG_ERR="$ROOT_BUILD/rng_ls_files.err"
-RNG_LIST="$ROOT_BUILD/rng_ls_files"
 rng_rc=0
 # stderr kept apart so a git warning is never counted as an examined file.
-"${RNG_GIT[@]}" ls-files -z -- "${RNG_PATHSPEC[@]}" >"$RNG_LIST" 2>"$RNG_ERR" || rng_rc=$?
-RNG_EXAMINED=0
-RNG_UNREADABLE=
-while IFS= read -r -d '' file; do
-    RNG_EXAMINED=$((RNG_EXAMINED + 1))
-    [ -r "$file" ] || RNG_UNREADABLE="${RNG_UNREADABLE}${RNG_UNREADABLE:+
-}$file"
-done < "$RNG_LIST"
-if [ "$rng_rc" -ne 0 ] || [ "$RNG_EXAMINED" -eq 0 ]; then
+RNG_FILES=$("${RNG_GIT[@]}" ls-files -- "${RNG_PATHSPEC[@]}" 2>"$RNG_ERR") || rng_rc=$?
+if [ "$rng_rc" -ne 0 ] || [ -z "$RNG_FILES" ]; then
     echo "FAIL: hosted RNG check examined no runtime sources (git ls-files rc=$rng_rc):" >&2
     cat "$RNG_ERR" >&2
     exit 1
 fi
-<<<<<<< HEAD
-if [ -n "$RNG_UNREADABLE" ]; then
-    echo "FAIL: hosted RNG check cannot read tracked runtime source(s):" >&2
-    printf '%s\n' "$RNG_UNREADABLE" >&2
-    exit 1
-fi
-rng_rc=0
-HOSTED_RNG_CALLS=$("${RNG_GIT[@]}" -c core.quotePath=false grep -n -E '\b(rand|srand)[[:space:]]*\(' -- \
-    "${RNG_PATHSPEC[@]}" 2>&1) || rng_rc=$?
-=======
 RNG_EXAMINED=$(printf '%s\n' "$RNG_FILES" | wc -l | tr -d ' ')
 # git grep passes over a tracked file it cannot open with a message and "no
 # match", and says nothing of one that is not in the working tree. So every
@@ -92,7 +74,6 @@ if [ -s "$RNG_GREP_ERR" ] && [ "$rng_rc" -le 1 ]; then
     cat "$RNG_GREP_ERR" >&2
     exit 1
 fi
->>>>>>> origin/main
 if [ "$rng_rc" -eq 0 ]; then
     echo "FAIL: the word rand or srand appears in a hosted runtime source or header (code, comment or string); the runtime draws from the taped random stream:" >&2
     echo "$RNG_HITS" >&2

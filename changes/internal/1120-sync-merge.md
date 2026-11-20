@@ -1,0 +1,1 @@
+- Resolve the November 20 branch synchronization conflicts and generated merge metadata (#1120).

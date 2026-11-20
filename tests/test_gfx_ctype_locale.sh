@@ -6,10 +6,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 # tests do; CI's compiler guard rejects a compile without them.
 WERROR_FLAGS_FILE="$ROOT/tools/werror_flags.txt"
 . "$ROOT/tools/read_werror_flags.sh" || exit 1
-<<<<<<< HEAD
 DISPLAY_NUM=
-=======
->>>>>>> origin/main
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/eigs-1681-ctype.XXXXXX")
 SIGNAL_STATUS=
 CLEANING=
@@ -59,34 +56,13 @@ trap 'on_signal HUP' HUP
 trap 'on_signal INT' INT
 trap 'on_signal TERM' TERM
 
-<<<<<<< HEAD
 echo "GFX_SIGNAL_READY tmp=$TMP"
 if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = before-server ]; then while :; do sleep 1; done; fi
 
-display_file="$TMP/display"
-Xvfb -displayfd 3 -screen 0 640x480x24 >"$TMP/xvfb.log" 2>&1 3>"$display_file" &
-XVFB_PID=$!
-for _ in $(seq 1 100); do
-    if [ -s "$display_file" ]; then
-        DISPLAY_NUM=":$(sed -n '1p' "$display_file")"
-        xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1 && break
-    fi
-    kill -0 "$XVFB_PID" 2>/dev/null || break
-    sleep 0.1
-done
-if [ -z "$DISPLAY_NUM" ] || ! xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1; then
-    echo "  FAIL: Xvfb did not become ready"
-    cat "$TMP/xvfb.log"
-    exit 1
-fi
-echo "GFX_SIGNAL_SERVER pid=$XVFB_PID"
-if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = server ]; then while :; do sleep 1; done; fi
-=======
-# The server is started by tests/xvfb.sh, which keeps it from resetting when
-# its last client leaves (#2215): a reset closes a handshake that is pending.
 . "$ROOT/tests/xvfb.sh" || exit 1
 xvfb_start || exit 1
->>>>>>> origin/main
+echo "GFX_SIGNAL_SERVER pid=$XVFB_PID"
+if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = server ]; then while :; do sleep 1; done; fi
 
 if ! ${CC:-cc} $WERROR_FLAGS -shared -fPIC -Wall -Wextra -Werror \
         "$ROOT/tests/gfx_locale_probe.c" -ldl -o "$TMP/locale-probe.so" \

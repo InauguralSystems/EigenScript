@@ -804,15 +804,11 @@ file:
 | `deploy` (`pages.yml`) | advisory | runs only on push and `workflow_dispatch` — it publishes, it does not test |
 | `codspeed (simulation)` (`codspeed.yml`), and the CodSpeed app's `CodSpeed Performance Analysis` | advisory | path-filtered (`paths-ignore: '**.md'`), so it never reports on a docs-only PR; the instruction-count gate that blocks is `bench`. The lane's Value is modeled cycles, not instructions (runner pinned; `tools/codspeed_unit_guard.py` fails the job if that unit drifts; see INSTRUMENTS.md) |
 | `build` (`docker.yml`) | advisory | runs on push to `main`, `v*` tags and `workflow_dispatch`, never on a PR |
-<<<<<<< HEAD
-=======
 | `observer reveal (sealed / dry H-cal)` (`observer-reveal.yml`) | advisory | path-filtered (`tools/observer_oracle/**` and the workflow itself), so it reports only on a PR that touches the oracle; on `workflow_dispatch` it runs the sealed reveal (**Observer oracle**, above) |
->>>>>>> origin/main
 | `valgrind cache (main)` (`valgrind-cache.yml`) | advisory | runs on push to `main`, daily and on `workflow_dispatch`, never on a PR: it installs Valgrind and saves the `.deb` cache on `main`, where the merge queue's `valgrind` and `bench` jobs can restore it, and fails when what it would save holds no Valgrind or no `libc6-dbg` archive (#2341) |
 | `Scorecard analysis` (`scorecard.yml`) | advisory | runs on push, schedule and `branch_protection_rule`, never on a PR; a posture score |
 | `Analyze (python)`, `Analyze (javascript-typescript)` | advisory | CodeQL *default setup* (a GitHub app, not a workflow file) over the repo's non-C code; the C analysis that blocks is `Analyze C` |
 | `issue-triage / …` (`issue-triage.yml`), `release.yml` jobs | advisory | not triggered by PRs or pushes to `main` |
-| `phase2 (MAP rows + lib differential)` (`phase2.yml`) | advisory | #1758's integration branch only: a push to `phase2-numbers` or `workflow_dispatch`, never a PR or the queue; `tools/phase2_ci.sh` checks the MAP rows of every landed round and the stdlib int differential |
 
 ## Coverage on pull requests
 
@@ -835,10 +831,8 @@ result pins; changing it or the driver selects every row.
 
 The formatter suite uses `eigenscript --dump-tokens FILE` as its safe-mode
 oracle.  The command performs no execution and writes one tab-separated row
-per lexer token: numeric token type, value, and one-based source line.
-Strings and identifiers use hexadecimal bytes. Numeric values carry their
-kind: `i` followed by exact signed decimal digits for an int, or `f` followed
-by C hexadecimal floating-point text for a float.
+per lexer token: numeric token type, value (strings/identifiers as hexadecimal
+bytes and numbers as hexadecimal floating point), and one-based source line.
 Columns are deliberately absent, while `INDENT` and `DEDENT` remain tokens;
 this makes horizontal whitespace and comment-column changes immaterial but
 detects changes to literal bytes, physical lines, or block structure.  Lexer
@@ -872,9 +866,7 @@ need no suite run — plus changed-gate self-tests, exit 1 on any failure; the d
 joins when a binary exists. Its gate list is the only copy: the
 `gate-selftests` CI job runs the same script. Among them,
 `tools/enrolment_check.sh` (also suite `[99ab]`) fails when a `tests/*.sh` or
-`tests/*.py` is invoked by no suite section, workflow step or enrolled script,
-and when a `tools/` entry point (a top-level `tools/*.sh` or `tools/*.py`, or a
-`tools/<dir>/` package) is reached from no workflow step that way; exceptions
-live in `tests/enrolment_exemptions.txt` with a reason each.
+`tests/*.py` is invoked by no suite section, workflow step or enrolled script;
+exceptions live in `tests/enrolment_exemptions.txt` with a reason each.
 Counts that grow with the suite (child-script sites, doc-claim populations)
 are floors: adding a test needs no count edit, a drop is red.
