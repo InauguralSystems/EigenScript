@@ -1,0 +1,1 @@
+- Document argument guards as enabled by default, arithmetic traps as `EIGS_STRICT=1`-only, and state-independent refusals as applying in every `EIGS_STRICT` state (#2439).

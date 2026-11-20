@@ -86,21 +86,27 @@ def derived_counts():
 
 
 def strict_opt_in_wording():
-    """Keep graphics/audio argument prose aligned with N11's strict opt-in.
+    """Keep graphics/audio argument prose aligned with #2439's split defaults.
 
-    R2.2 changes the shared state.c strict default to 0. Numeric N5/Q7
-    validation that raises in both modes remains separate from these legacy
-    type/shape guards; this policy retains its two graphics/audio sections.
+    Unset EIGS_STRICT enables argument guards while leaving arithmetic traps
+    off. Numeric N5/Q7 validation remains separate from legacy stand-ins.
     """
+    stale_opt_in = re.compile(r'`EIGS_STRICT=1` opts into catchable errors for non-finite\s+arithmetic and invalid argument types; (?:by default|it is off by default)', re.I)
+    for file in ('README.md', *[str(p) for p in sorted(Path('docs').glob('*.md'))], 'docs/llms.txt'):
+        prose = Path(file).read_text(encoding='utf-8')
+        if stale_opt_in.search(prose):
+            red(f'{file}: says EIGS_STRICT=1 opts into invalid-argument errors; unset already enables guards (#2439)')
+
     text = Path('docs/BUILTINS.md').read_text(encoding='utf-8')
-    default_strict = re.compile(
-        r'\bstrict(?:\s+mode)?\s+is\s+(?:the\s+)?default\b|'
-        r'\bstrict[- ]by[- ]default\b|\bdefault\s+strict(?:\s+mode)?\b', re.I)
+    quiet_default = re.compile(
+        r'\b(?:answers?|stays?)\s+quiet(?:ly)?\s+by\s+default\b|'
+        r'\bstrict\s+mode\s+is\s+off\s+by\s+default\s+for\s+bad\s+arguments\b|'
+        r'\bby\s+default\s+or\s+under\s+`?EIGS_STRICT=0`?', re.I)
     lines = text.splitlines()
     for lineno, line in enumerate(lines, 1):
-        if default_strict.search(line):
-            red(f'docs/BUILTINS.md:{lineno}: describes strict mode as the default; '
-                'EIGS_STRICT=1 is opt-in (N11, R2.2)')
+        if quiet_default.search(line):
+            red(f'docs/BUILTINS.md:{lineno}: describes argument guards as quiet by default; '
+                'unset EIGS_STRICT enables guards (#2439)')
     print(f'  STRICT OPT-IN ROWS: examined {len(lines)} line(s)')
     if not lines:
         red('STRICT OPT-IN ROWS examined 0 lines')
@@ -116,21 +122,44 @@ def strict_opt_in_wording():
             continue
         examined += 1
         section = sections[heading][0]
-        stale = re.findall(r'\braises?\s+by\s+default\b|'
-                           r'\bby\s+default\s+every\s+wrong-typed\s+row\s+must\s+raise\b',
-                           section, re.I)
-        if stale:
-            red(f'docs/BUILTINS.md: {heading} describes strict argument errors as default: ' + ', '.join(stale))
         if heading == headings[0]:
             paragraph = re.search(r'\*\*Wrong-typed and wrong-arity arguments \(#1007\)\.\*\*(.*?)(?=\n\n|\Z)', section, re.S)
             if not paragraph:
                 red('docs/BUILTINS.md: gfx wrong-argument paragraph is missing')
             elif ('`EIGS_STRICT=1`' not in paragraph[1] or
                   '`EIGS_STRICT=0`' not in paragraph[1] or
-                  not re.search(r'\bby default\b', paragraph[1], re.I)):
-                red('docs/BUILTINS.md: gfx paragraph must name explicit EIGS_STRICT=1 '
-                    'and the default EIGS_STRICT=0 stand-ins (N11, R2.2)')
+                  not re.search(r'\bunset\b', paragraph[1], re.I)):
+                red('docs/BUILTINS.md: gfx paragraph must name unset guards, explicit '
+                    'EIGS_STRICT=1 raises, and EIGS_STRICT=0 stand-ins (#2439)')
     print(f'  STRICT OPT-IN: examined {examined} section(s), declared {len(headings)}')
+
+
+def stale_guard_state_wording():
+    """Reject two-state wording that makes argument guards opt-in."""
+    guard = (r'(?:argument|wrong[- ]type|wrong[- ]arity|non[- ]?(?:numeric|string|number|list)|'
+             r'short|surplus|additional list item|fixed[- ]shape|optional[- ]shape)')
+    condition = (r'(?:raises?|rejects?).{0,120}(?:under|with) `EIGS_STRICT=1`|'
+                 r'(?:raises?|rejects?).{0,120}\bin strict mode\b|'
+                 r'(?:under|with) `EIGS_STRICT=1`.{0,80}(?:raises?|rejects?)|'
+                 r'\bin strict mode\b.{0,80}(?:raises?|rejects?)')
+    stale = re.compile(rf'(?:{guard}).{{0,240}}(?:{condition})|'
+                       rf'(?:{condition}).{{0,240}}(?:{guard})', re.I | re.S)
+    files = ('README.md', *[str(p) for p in sorted(Path('docs').glob('*.md'))],
+             'docs/llms.txt')
+    examined = hits = 0
+    for file in files:
+        prose = Path(file).read_text(encoding='utf-8')
+        for sentence in re.split(r'(?<=[.!?])(?:\s+|(?=\s*\|))', prose):
+            examined += 1
+            if stale.search(sentence):
+                hits += 1
+                line = prose.count('\n', 0, prose.find(sentence)) + 1
+                red(f'{file}:{line}: makes an argument guard conditional on '
+                    'EIGS_STRICT=1 or strict mode; say by default or unless '
+                    'EIGS_STRICT=0 (#2439)')
+    print(f'  STALE GUARD STATE WORDING: examined {examined} sentence(s), {hits} hit(s)')
+    if not examined:
+        red('STALE GUARD STATE WORDING examined 0 sentences')
 
 def bool_result_wording():
     """Reject numeric result prose for builtins whose C constructors are bool.
@@ -588,15 +617,15 @@ def selftest():
             original = p.read_text()
             for label, anchor, replacement, witness in [
                 ('strict-intro', '**Wrong-typed and wrong-arity arguments (#1007).**',
-                 '**Wrong-typed and wrong-arity arguments (#1007).** Invalid input raises by default.', 'describes strict argument errors as default'),
+                 '**Wrong-typed and wrong-arity arguments (#1007).** Invalid input answers quietly by default.', 'describes argument guards as quiet by default'),
                 ('strict-later-gfx', '**Text rendering and fonts (#593).**',
-                 '**Text rendering and fonts (#593).** Invalid input raises by default.', 'describes strict argument errors as default'),
+                 '**Text rendering and fonts (#593).** Invalid input answers quietly by default.', 'describes argument guards as quiet by default'),
                 ('strict-audio', '## Audio (additional)',
-                 '## Audio (additional)\nInvalid input raises by default.', 'describes strict argument errors as default'),
+                 '## Audio (additional)\nInvalid input answers quietly by default.', 'describes argument guards as quiet by default'),
                 ('strict-core-row', '## Core Language',
-                 '## Core Language\nStrict mode is the default for bad arguments.', 'describes strict mode as the default'),
-                ('strict-audio-short', 'A **short or non-list** argument also raises under `EIGS_STRICT=1`;',
-                 'A **short or non-list** argument also raises by default;', 'describes strict argument errors as default'),
+                 '## Core Language\nStrict mode is off by default for bad arguments.', 'describes argument guards as quiet by default'),
+                ('strict-audio-short', 'A **short or non-list** argument also raises unless `EIGS_STRICT=0`;',
+                 'A **short or non-list** argument answers quietly by default;', 'describes argument guards as quiet by default'),
                 ('strict-section-missing', '## Audio (additional)',
                  '## Removed audio heading', "strict-opt-in section 'Audio (additional)' must exist exactly once"),
                 ('strict-gfx-section-missing', '## Graphics (SDL2) Extension',
@@ -609,11 +638,27 @@ def selftest():
                 passed += ok
                 print(f'SELFTEST: {label}: {"PASS" if ok else "FAIL"}')
                 p.write_text(original)
+            p.write_text(original + '\n`EIGS_STRICT=1` opts into catchable errors for non-finite arithmetic and invalid argument types; by default IEEE values remain.\n')
+            result = gate()
+            ok = result.returncode != 0 and 'opts into invalid-argument errors' in result.stdout
+            passed += ok
+            print(f'SELFTEST: stale-strict-opt-in: {"PASS" if ok else "FAIL"}')
+            if not ok:
+                print(result.stdout)
+            p.write_text(original)
             p.write_text(original + '\nAn explicit `EIGS_STRICT=1` setting opts into strict mode.\n')
             result = gate()
             ok = result.returncode == 0
             passed += ok
             print(f'SELFTEST: strict-explicit-setting: {"PASS" if ok else "FAIL"}')
+            if not ok:
+                print(result.stdout)
+            p.write_text(original)
+            p.write_text(original + '\nA wrong-type argument raises under `EIGS_STRICT=1`.\n')
+            result = gate()
+            ok = result.returncode != 0 and 'makes an argument guard conditional' in result.stdout
+            passed += ok
+            print(f'SELFTEST: stale-guard-state: {"PASS" if ok else "FAIL"}')
             if not ok:
                 print(result.stdout)
             p.write_text(original)
@@ -637,8 +682,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 20 case(s) run, {passed} passed, {20-passed} failed')
-            return 0 if passed == 20 else 1
+            print(f'SELFTEST: 22 case(s) run, {passed} passed, {22-passed} failed')
+            return 0 if passed == 22 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 
@@ -672,6 +717,7 @@ def main():
     changelog_version()
     derived_counts()
     strict_opt_in_wording()
+    stale_guard_state_wording()
     bool_result_wording()
     check_floors()
     for kind in ('PATHS', 'FLAGS', 'TARGETS', 'NAMES', 'DOC ENROLMENT'):
