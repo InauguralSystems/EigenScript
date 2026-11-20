@@ -1945,6 +1945,78 @@
    "why": "not covered: a tab line after a define that follows a rule: 3.81 still takes it as a recipe line of that rule, 4.3 takes it as an assignment"
   },
   {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:3: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "X=[ok]",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok]\n[a b#x]",
+    "rc": 0
+   },
+   "name": "recipe-eval-deferred",
+   "text": "X := ok\nall2:\n\t$(eval Z := $$(sort b#x a))\n\t@echo [$(Z)]\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok]\n[a b]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok]\n[a b]",
+    "rc": 0
+   },
+   "name": "recipe-eval-no-sign",
+   "text": "X := ok\nall2:\n\t$(eval Z := $$(sort b a))\n\t@echo [$(Z)]\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:2: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "eval-later-hash-variable",
+   "text": "H := \\#\n$(eval X := $$(sort b$Hx a))\n",
+   "why": "looser than the makes: the sign reaches the text only when $H is expanded, before $(eval) reads it; $$H is the portable form there"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x]",
+    "rc": 0
+   },
+   "name": "eval-later-doubled-hash-variable",
+   "text": "H := \\#\n$(eval X := $$(sort b$$Hx a))\n",
+   "why": "the two makes agree"
+  },
+  {
    "differ": false,
    "expect": "clean",
    "kind": "number-sign",

@@ -9,7 +9,7 @@ GNU Make 4.3 by tools/make381_oracle.py; --selftest holds this check to them.
 sign before it reads the line, also when the sign stands inside an open $(...)
 or ${...}.  So on such a line a number sign inside a reference is a finding,
 with or without a backslash before it (3.81 and 4.3 disagree on the backslash).
-A rule line is read from the uncut text and a recipe line is not read at all:
+A rule line is read from the uncut text and a recipe line is not read by make:
 no finding there.  A line that starts with a tab is a recipe line only while a
 rule is open; an assignment, a directive other than a conditional, or a bare
 line closes the rule, and a define does not.  The body of a define is read as makefile text, with $$(
@@ -17,13 +17,14 @@ and $${ opening a reference too, only when the define's name is written inside
 an $(eval call of the same file; no other body is read.
 
 Stricter than the makes: an assignment nothing expands, and any number sign
-inside a reference on a bare line that calls $(eval.  Looser: a define body
-that reaches $(eval) through another variable.  Not covered: !=, ::=, undefine,
+inside a reference on a bare line or a recipe line that calls $(eval.  Looser:
+a define body that reaches $(eval) through another variable, and a sign that a
+variable carries into text $(eval) reads.  Not covered: !=, ::=, undefine,
 private, $(file ...), .ONESHELL, --output-sync, an include whose name holds a
-reference, and makefile text that exists only after expansion.
+reference, and other makefile text that exists only after expansion.
 
-To write the sign inside a call: H := \# at the top level and $H in the call,
-or the tool's own escape (printf '\043').
+To write the sign inside a call: H := \# at the top level and $H in the call
+($$H in text that $(eval) reads again), or the tool's own escape (printf '\043').
 """
 
 import argparse
@@ -37,6 +38,7 @@ CONDITIONALS = {"ifeq", "ifneq", "ifdef", "ifndef"}
 NO_EFFECT = {"else", "endif"}
 DIRECTIVES = {"include", "-include", "sinclude", "vpath", "export", "unexport", "override"}
 OPENERS = {"(": ")", "{": "}"}
+EVAL = re.compile(r"\$[({]eval\s")
 
 
 def logical_lines(lines):
@@ -144,7 +146,7 @@ def line_kind(text, doubled):
 def evaluated_names(text):
     """Every name written inside an $(eval ...) or ${eval ...} call."""
     names = set()
-    for m in re.finditer(r"\$[({]eval[\s]", text):
+    for m in EVAL.finditer(text):
         close = OPENERS[text[m.start() + 1]]
         depth, j = 1, m.end()
         while j < len(text) and depth:
@@ -200,8 +202,10 @@ class Checker:
             stripped = text.strip()
             if not stripped:
                 continue
-            if rule_open and text.startswith("\t"):
-                continue                      # a recipe line, whatever it looks like
+            if rule_open and text.startswith("\t"):     # a recipe line, whatever it looks like
+                if EVAL.search(text):
+                    self.judge(path, text, numbers, True)
+                continue
             if stripped.startswith("#"):
                 continue
             word = stripped.split()[0]
@@ -219,7 +223,7 @@ class Checker:
             elif kind == "rule":
                 rule_open = True
             else:
-                if re.search(r"\$[({]eval\s", text):
+                if EVAL.search(text):
                     self.judge(path, text, numbers, True)
                 rule_open = False
 
