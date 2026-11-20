@@ -154,7 +154,8 @@ eigs_state_set_strict_arithmetic(st, 0);
 calls, zero disables and any nonzero value enables the selected properties.
 The calls are null-safe and may be made after `eigs_state_new` or `eigs_open`,
 before the state's first evaluation, and never concurrently with evaluation
-of that state.
+of that state. Changing one state does not affect any other state or the
+process environment.
 
 ## Source eval
 

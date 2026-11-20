@@ -1,6 +1,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "eigs_embed.h"
 
 typedef void (*Setter)(EigsState *, int);
@@ -75,8 +76,37 @@ static void creation(void) {
     else { printf("FAIL: creation want=%d,%d seen=%d,%d\n", wg, wa, g, a); failures++; }
     eigs_close(st);
 }
+/* Two states alive together: a call on one does not move the other, and no
+ * call writes the process environment. */
+static void two_states(void) {
+    const char *before = getenv("EIGS_STRICT");
+    EigsState *a = eigs_state_new(), *b = eigs_state_new();
+    if (!a || !b) { printf("FAIL: two states creation\n"); failures++; return; }
+    eigs_state_set_strict(a, 0);
+    eigs_state_set_strict(b, 0);
+    eigs_state_set_strict_guards(a, 1);
+    eigs_state_set_strict_arithmetic(b, 1);
+    const char *after = getenv("EIGS_STRICT");
+    int env_same = (before == after) || (before && after && !strcmp(before, after));
+    int ok = env_same;
+    if (!eigs_thread_attach(a) || eigs_state_init_runtime(a)) ok = 0;
+    else {
+        ok = ok && probe("try:\n    abs of \"x\"\ncatch e:\n    -777\n", 1, 1)
+                && probe("try:\n    1.0 / 0.0\ncatch e:\n    -777\n", 0, 0);
+    }
+    eigs_close(a);
+    if (!eigs_thread_attach(b) || eigs_state_init_runtime(b)) ok = 0;
+    else {
+        ok = ok && probe("try:\n    abs of \"x\"\ncatch e:\n    -777\n", 0, 1)
+                && probe("try:\n    1.0 / 0.0\ncatch e:\n    -777\n", 1, 0);
+    }
+    eigs_close(b);
+    if (ok) printf("PASS: two states keep their own positions\n");
+    else { printf("FAIL: two states keep their own positions\n"); failures++; }
+}
 int main(void) {
     creation();
+    two_states();
     eigs_state_set_strict_guards(NULL, -1);
     eigs_state_set_strict_arithmetic(NULL, 2);
     transition("guards 1->0 other=0",0,1,0,eigs_state_set_strict_guards,0,0,0);
