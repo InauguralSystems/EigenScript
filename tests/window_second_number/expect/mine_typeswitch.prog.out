@@ -1,0 +1,5 @@
+equilibrium
+moving
+{"kind": "trajectory", "rel": [0.16666666666666666], "raw": [1], "exact": [true], "values": [5, 6], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 6, "best": 5.0, "since": null, "observed": true, "numeric": true, "window": 10}
+["moving", 6, 1, null]
+rc=0

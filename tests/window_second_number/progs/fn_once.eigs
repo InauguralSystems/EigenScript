@@ -1,0 +1,11 @@
+define f(a) as:
+    y is a * 2
+    return trajectory of y
+last is null
+i is 0
+loop while i < 1000:
+    last is f of [i]
+    i is i + 1
+print of last
+print of (classify of last)
+print of (report of i)

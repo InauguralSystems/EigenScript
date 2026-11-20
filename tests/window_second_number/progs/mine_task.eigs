@@ -1,0 +1,7 @@
+g is 41
+define reader(k) as:
+    return [report of g, converged of g, trajectory of g]
+t is task_spawn of [reader, 0]
+print of (task_join of t)
+th is spawn of [reader, 0]
+print of (thread_join of th)
