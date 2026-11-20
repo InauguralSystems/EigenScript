@@ -109,6 +109,14 @@ void eigs_state_set_strict(EigsState *st, int enabled) {
     }
 }
 
+void eigs_state_set_strict_guards(EigsState *st, int enabled) {
+    if (st) st->strict_guards = enabled != 0;
+}
+
+void eigs_state_set_strict_arithmetic(EigsState *st, int enabled) {
+    if (st) st->strict_arithmetic = enabled != 0;
+}
+
 void eigs_close(EigsState *st) {
     EmbedFenv fenv;
     embed_fenv_enter(&fenv);

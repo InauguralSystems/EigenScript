@@ -7,4 +7,8 @@
 
 void eigenos_configure_eigs_state(EigsState *state, int strict) {
     eigs_state_set_strict(state, strict);
+    eigs_state_set_strict_guards(state, strict);
+    eigs_state_set_strict_arithmetic(state, strict);
+    eigs_state_set_strict_guards(NULL, strict);
+    eigs_state_set_strict_arithmetic(NULL, strict);
 }

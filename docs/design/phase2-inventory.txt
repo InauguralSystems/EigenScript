@@ -1857,28 +1857,28 @@ eigenscript.h:1997 <file scope> buffer_read_f64 READ b
 eigenscript.h:1998 <file scope> buffer_byte_at READ b
 eigenscript.h:1999 <file scope> buffer_index_at READ b
 eigenscript.h:2313 <file scope> eigs_num_text FORMAT e
-eigs_embed.c:384 embed_f64 number RAW j
-eigs_embed.c:385 embed_f64 number RAW j
-eigs_embed.c:385 embed_f64 slot_from_f64 PRODUCE j
-eigs_embed.c:386 embed_f64 SLOT_F64_RAW RAW j
-eigs_embed.c:389 eigs_value_new_num make_float PRODUCE j
-eigs_embed.c:390 eigs_value_new_int make_int PRODUCE j
-eigs_embed.c:403 eigs_value_type VAL_FLOAT CASE j
-eigs_embed.c:404 eigs_value_type VAL_INT CASE j
-eigs_embed.c:448 eigs_value_as_num eigs_value_as_num READ j
-eigs_embed.c:454 eigs_value_as_num VAL_I64_RAW RAW j
-eigs_embed.c:454 eigs_value_as_num VAL_INT TEST j
-eigs_embed.c:455 eigs_value_as_num VAL_F64_RAW RAW j
-eigs_embed.c:455 eigs_value_as_num VAL_FLOAT TEST j
-eigs_embed.c:462 eigs_value_as_int VAL_INT TEST j
-eigs_embed.c:464 eigs_value_as_int VAL_I64_RAW RAW j
-eigs_embed.c:466 eigs_value_as_int VAL_FLOAT TEST j
-eigs_embed.c:472 eigs_value_as_int VAL_F64_RAW RAW j
-eigs_embed.c:472 eigs_value_as_int num_to_i64_exact READ j
-eigs_embed.c:482 eigs_value_is_int VAL_INT TEST j
-eigs_embed.c:685 eigs_trace_declare_kind VAL_FLOAT DATA j
-eigs_embed.c:685 eigs_trace_declare_kind VAL_INT DATA j
-eigs_embed.h:176 <file scope> eigs_value_as_num READ j
+eigs_embed.c:392 embed_f64 number RAW j
+eigs_embed.c:393 embed_f64 number RAW j
+eigs_embed.c:393 embed_f64 slot_from_f64 PRODUCE j
+eigs_embed.c:394 embed_f64 SLOT_F64_RAW RAW j
+eigs_embed.c:397 eigs_value_new_num make_float PRODUCE j
+eigs_embed.c:398 eigs_value_new_int make_int PRODUCE j
+eigs_embed.c:411 eigs_value_type VAL_FLOAT CASE j
+eigs_embed.c:412 eigs_value_type VAL_INT CASE j
+eigs_embed.c:456 eigs_value_as_num eigs_value_as_num READ j
+eigs_embed.c:462 eigs_value_as_num VAL_I64_RAW RAW j
+eigs_embed.c:462 eigs_value_as_num VAL_INT TEST j
+eigs_embed.c:463 eigs_value_as_num VAL_F64_RAW RAW j
+eigs_embed.c:463 eigs_value_as_num VAL_FLOAT TEST j
+eigs_embed.c:470 eigs_value_as_int VAL_INT TEST j
+eigs_embed.c:472 eigs_value_as_int VAL_I64_RAW RAW j
+eigs_embed.c:474 eigs_value_as_int VAL_FLOAT TEST j
+eigs_embed.c:480 eigs_value_as_int VAL_F64_RAW RAW j
+eigs_embed.c:480 eigs_value_as_int num_to_i64_exact READ j
+eigs_embed.c:490 eigs_value_is_int VAL_INT TEST j
+eigs_embed.c:693 eigs_trace_declare_kind VAL_FLOAT DATA j
+eigs_embed.c:693 eigs_trace_declare_kind VAL_INT DATA j
+eigs_embed.h:180 <file scope> eigs_value_as_num READ j
 embed_concurrent.c:106 global_worker eigs_value_as_num READ j
 embed_concurrent.c:768 take_drain eigs_value_as_num READ j
 embed_concurrent.c:1268 test_sink_only_buffer_bounded eigs_value_as_num READ j
