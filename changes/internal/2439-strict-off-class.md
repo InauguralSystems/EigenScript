@@ -1,0 +1,1 @@
+- The strict differential holds each guard row to the release binary under EIGS_STRICT=0 as well (answers or raises), and four rows record that a list or buffer where a number belongs is refused in every state (#2439).

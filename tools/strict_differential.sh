@@ -884,6 +884,10 @@ guard|audio_play|audio_open of [44100, 1]\nprint of (audio_play of [0.1, "x", 0.
 arithmetic|asin|print of (asin of 2)|asin: argument out of domain
 arithmetic|acos|print of (acos of 2)|acos: argument out of domain
 arithmetic|buf_get|local b is buffer of 1\nbuf_set_bits of [b, 0, 9221120237041090560]\ntry:\n    print of (buf_get of [b, 0])\ncatch e:\n    if e.message == "buffer_read_f64: expected a finite number":\n        print of "nan"\n    else:\n        throw of e|arithmetic: result is not a number
+guard|softmax|print of (softmax of [1.0, [2.0], 3.0])|softmax: expected a tensor containing only numbers
+guard|log_softmax|print of (log_softmax of [1.0, [2.0], 3.0])|log_softmax: expected a tensor containing only numbers
+guard|relu|print of (relu of [1.0, [2.0], 3.0])|relu: expected a tensor containing only numbers
+guard|leaky_relu|print of (leaky_relu of [1.0, [2.0], 3.0])|leaky_relu: expected a tensor containing only numbers
 EOF
 )
 PROBES="${PROBES//@TMP@/$TMP}"
@@ -1159,7 +1163,7 @@ check_absent_call() { # each omitted row must reach its exact error contract
 
 rc=0
 rc=0
-n_probe=0; probe_id=0; guard_probe_ids=""; n_guard=0; n_arithmetic=0; n_rederived=0; n_rederived_same=0; n_rederived_different=0; n_rederived_absent=0; n_release_examined=0; n_release_same=0; n_release_different=0; n_release_exempt=0; n_release_capability_skipped=0; n_rederived_exempt=0; n_guard_off_quiet=0; n_guard_off_raises=0; release_list=""; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_default_ok=0; default_list=""
+n_probe=0; probe_id=0; guard_probe_ids=""; n_guard=0; n_arithmetic=0; n_rederived=0; n_rederived_same=0; n_rederived_different=0; n_rederived_absent=0; n_release_examined=0; n_release_same=0; n_release_different=0; n_release_exempt=0; n_off_examined=0; n_off_same=0; n_off_different=0; n_off_exempt=0; n_release_capability_skipped=0; n_rederived_exempt=0; n_guard_off_quiet=0; n_guard_off_raises=0; release_list=""; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_default_ok=0; default_list=""
 n_pin=0; n_pin_ok=0; n_pin_broke=0; n_misattr=0; n_unrun=0; n_skipped=0
 differ_list=""; silent_list=""; pin_list=""; misattr_list=""; unrun_list=""; skipped_list=""
 NEW_CAPS=""; BASE_CAPS=""; profile_transitions=""; n_profile_rows=0
@@ -1345,8 +1349,13 @@ while IFS='|' read -r kind who prog expect; do
                 n_release_capability_skipped=$((n_release_capability_skipped + 1))
             else
                 n_release_examined=$((n_release_examined + 1))
-                marked=0; release_expected=$release_receipt
+                # Three marks. The first two say the first line with no variable
+                # differs from the release's on purpose. The third says the
+                # first line is the release's and the CLASS under EIGS_STRICT=0
+                # (raises or answers) differs on purpose.
+                marked=0; off_marked=0; release_expected=$release_receipt
                 case "$release_receipt" in
+                    *' [EIGS_STRICT=0 differs on purpose:'*) off_marked=1; release_expected=${release_receipt%%' [EIGS_STRICT=0 differs on purpose:'*} ;;
                     *' [different on purpose:'*) marked=1; release_expected=${release_receipt%%' [different on purpose:'*} ;;
                     *' [new in branch; no v0.48.0 guard message]') marked=1; release_expected=${release_receipt%%' [new in branch; no v0.48.0 guard message]'*} ;;
                 esac
@@ -1377,6 +1386,24 @@ while IFS='|' read -r kind who prog expect; do
                     n_guard_off_raises=$((n_guard_off_raises + 1))
                     if [ "$off_rc" = 0 ]; then release_list="$release_list
     $who — EIGS_STRICT=0 is now quiet but release row says raises"; row_faults=$((row_faults + 1)); fi
+                fi
+                # With the release binary: the class under EIGS_STRICT=0 is
+                # the release's, unless the row is marked. A row marked for
+                # its EIGS_STRICT=0 class must differ there, or its mark is
+                # false; a row marked for its first line is not compared here.
+                if [ -n "$RELEASE_BIN" ] && ! str_has "${release_actual:-}" "unavailable in this build"; then
+                    rel_off=$(run_capture "$RELEASE_BIN" 0 "$TMP/p.eigs"); rel_off_rc="${rel_off%%$'\n'*}"
+                    head_class=raises; [ "$off_rc" = 0 ] && head_class=answers
+                    rel_class=raises; [ "$rel_off_rc" = 0 ] && rel_class=answers
+                    n_off_examined=$((n_off_examined + 1))
+                    if [ "$marked" = 1 ]; then n_off_exempt=$((n_off_exempt + 1))
+                    elif [ "$off_marked" = 1 ]; then
+                        if [ "$head_class" != "$rel_class" ]; then n_off_exempt=$((n_off_exempt + 1))
+                        else n_off_different=$((n_off_different + 1)); row_faults=$((row_faults + 1)); release_list="$release_list
+    $who — the EIGS_STRICT=0 mark is false: the release $rel_class there and so does this build"; fi
+                    elif [ "$head_class" = "$rel_class" ]; then n_off_same=$((n_off_same + 1))
+                    else n_off_different=$((n_off_different + 1)); row_faults=$((row_faults + 1)); release_list="$release_list
+    $who — under EIGS_STRICT=0 the release $rel_class and this build $head_class, with no mark"; fi
                 fi
                 current_first=$(printf '%s\n' "$u" | sed -n '2p' | sed 's|^Error [^:]*:\([0-9][0-9]*\): |Error <file>:\1: |')
                 release_first=${release_expected#rc=* }
@@ -1537,6 +1564,7 @@ else echo "  identical-when-off: SKIPPED (--no-baseline)"; fi
 echo "  default contract: $n_default_ok / $n_probe (guards unset==1; arithmetic unset==0)"
 echo "  release guard messages: examined=$n_release_examined same=$n_release_same different=$n_release_different exempt=$n_release_exempt capability_skipped=$n_release_capability_skipped"
 [ -n "$RELEASE_BIN" ] && echo "  release re-derived: examined=$n_rederived same=$n_rederived_same different=$n_rederived_different exempt=$n_rederived_exempt not_in_this_binary=$n_rederived_absent"
+[ -n "$RELEASE_BIN" ] && echo "  release EIGS_STRICT=0 class: examined=$n_off_examined same=$n_off_same different=$n_off_different exempt=$n_off_exempt"
 echo "  guard EIGS_STRICT=0: quiet=$n_guard_off_quiet raises=$n_guard_off_raises"
 echo "  raises-under-strict: $n_raise   silent: $n_silent   misattributed: $n_misattr"
 [ "$n_unrun" -gt 0 ] && echo "  probes that did not run: $n_unrun"
