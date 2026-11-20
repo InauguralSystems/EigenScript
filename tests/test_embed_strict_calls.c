@@ -1,5 +1,6 @@
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "eigs_embed.h"
 
 typedef void (*Setter)(EigsState *, int);
@@ -59,7 +60,23 @@ static void run_fourth(void) {
         fourth_count++; if(v)eigs_value_release(v); eigs_clear_error(); eigs_close(st);
     }
 }
+/* A state with no call made on it has the position its environment gives:
+ * EIGS_STRICT unset or empty: guards 1, arithmetic 0; "0": both 0; any other
+ * value: both 1. The suite runs this program in each of the three. */
+static void creation(void) {
+    const char *e = getenv("EIGS_STRICT");
+    int set = e && e[0], off = set && e[0] == '0' && e[1] == 0;
+    int wg = set ? !off : 1, wa = set ? !off : 0;
+    EigsState *st = eigs_open();
+    if (!st) { printf("FAIL: creation state\n"); failures++; return; }
+    int g = probe("try:\n    abs of \"x\"\ncatch e:\n    -777\n", wg, 1);
+    int a = probe("try:\n    1.0 / 0.0\ncatch e:\n    -777\n", wa, 0);
+    if (g && a) printf("PASS: creation guards=%d arithmetic=%d\n", wg, wa);
+    else { printf("FAIL: creation want=%d,%d seen=%d,%d\n", wg, wa, g, a); failures++; }
+    eigs_close(st);
+}
 int main(void) {
+    creation();
     eigs_state_set_strict_guards(NULL, -1);
     eigs_state_set_strict_arithmetic(NULL, 2);
     transition("guards 1->0 other=0",0,1,0,eigs_state_set_strict_guards,0,0,0);
