@@ -1270,7 +1270,9 @@ its answer on every path), `gfx_poll` answers `null` for "no event",
 when libSDL2 or the device is unavailable — environment state, not a caller
 mistake. The distinction is recorded per site in `src/ext_gfx.c`. What is
 checked against the binary is `tools/strict_differential.sh`: a guard probe
-raises unless `EIGS_STRICT=0`, and a pinned documented answer does not.
+raises with no variable and under `EIGS_STRICT=1` (under `EIGS_STRICT=0` most
+answer with their legacy stand-in and the rest raise in every state), and a
+pinned documented answer does not raise.
 
 **Text rendering and fonts (#593).** `gfx_text` lazily loads
 `libSDL2_ttf-2.0.so.0` on first use and renders proportional antialiased
