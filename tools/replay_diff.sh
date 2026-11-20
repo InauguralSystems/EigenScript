@@ -36,10 +36,6 @@
 #   REPLAY_DIFF_BASE=FILE    ledger (default: tests/replay_diff_expected.txt)
 #   REPLAY_DIFF_FLOOR=N      vacuity floor on the program count (default 100)
 set -u
-# Match jit_diff's process policy: programs never inherit a caller's display.
-# Per-program conditions from suite_program_env.txt are applied afterwards.
-unset DISPLAY WAYLAND_DISPLAY XAUTHORITY
-export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; SELF="$ROOT/tools/$(basename "$0")"; cd "$ROOT/src" || exit 1
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 # The bound is optional: macOS runners ship no coreutils `timeout`, and a
@@ -54,14 +50,6 @@ elif command -v gtimeout >/dev/null 2>&1; then TMO="gtimeout 300"; fi
 # differential's), so a fail-soft test is replayed past its first strict raise.
 export EIGS_TEST_DIR="$ROOT/tests"
 . "$ROOT/tests/suite_program_env.sh" || exit 1
-replay_program_start() {
-    local program="$1"; shift
-    suite_program_run "$program" env "$@"
-}
-if [ -n "${REPLAY_DIFF_HEADLESS_PROBE:-}" ]; then
-    replay_program_start test_audio.eigs "$ROOT/src/eigenscript" "$REPLAY_DIFF_HEADLESS_PROBE"
-    exit $?
-fi
 corpus_dir() { printf '%s' "${REPLAY_DIFF_CORPUS:-$ROOT/tests}"; }
 eig_bin()    { printf '%s' "${REPLAY_DIFF_EIG:-./eigenscript}"; }
 norm() { sed -E 's/0x[0-9a-f]+/0xADDR/g' "$1"; }
@@ -83,7 +71,7 @@ run() {
     local out="$1" rc; shift
     suite_program_check "$b" > /dev/null || { echo "replay_diff: FAIL: run-condition lookup failed for $b" >&2; exit 1; }
     ( if grep -Eq '(gfx|ui|audio)_[a-z_]+' "$(corpus_dir)/$b"; then ulimit -v 1500000; fi
-      replay_program_start "$b" -u EIGS_JIT_OSR_THRESHOLD EIGS_JIT_OFF=1 "$@" $TMO "$(eig_bin)" "$(corpus_dir)/$b"
+      suite_program_run "$b" env -u EIGS_JIT_OSR_THRESHOLD EIGS_JIT_OFF=1 "$@" $TMO "$(eig_bin)" "$(corpus_dir)/$b"
     ) > "$out" 2>&1 </dev/null
     rc=$?; echo "rc=$rc" >> "$out"
     # Runs include self-check and second adjudication arms. Never compare,
@@ -103,23 +91,6 @@ if [ "${1:-}" = "--selftest" ]; then
     REAL="$ROOT/src/eigenscript"
     [ -x "$REAL" ] || { echo "replay_diff selftest: no binary at $REAL"; exit 1; }
     ST_RC=0
-    cat > "$T/record-env.eigs" <<'EOF'
-print of (env_get of "DISPLAY")
-print of (env_get of "WAYLAND_DISPLAY")
-print of (env_get of "XAUTHORITY")
-print of (env_get of "SDL_VIDEODRIVER")
-print of (env_get of "SDL_AUDIODRIVER")
-EOF
-    env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY REPLAY_DIFF_HEADLESS_PROBE="$T/record-env.eigs" bash "$SELF" > "$T/env-unset" || ST_RC=1
-    DISPLAY=:99 WAYLAND_DISPLAY=wayland-9 XAUTHORITY=/tmp/foreign REPLAY_DIFF_HEADLESS_PROBE="$T/record-env.eigs" bash "$SELF" > "$T/env-set" || ST_RC=1
-    expected=$(printf '\n\n\ndummy\ndummy')
-    if [ "$(cat "$T/env-unset")" = "$expected" ] && [ "$(cat "$T/env-set")" = "$expected" ]; then
-        echo "  selftest ok: unset and set caller displays give the same headless program environment"
-    else
-        echo "SELFTEST FAIL: replay program environment variable differs (DISPLAY/WAYLAND_DISPLAY/XAUTHORITY/SDL_VIDEODRIVER/SDL_AUDIODRIVER)" >&2
-        cat "$T/env-unset" "$T/env-set" >&2
-        ST_RC=1
-    fi
     # The wrapper is the "binary": it forwards to the real one, except for two
     # planted programs. test_boundary_crash: the REPLAY arm prints the real
     # diagnostic text and dies by SIGSEGV (the #1112 shape). test_both_crash:

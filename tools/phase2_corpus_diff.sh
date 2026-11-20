@@ -10,8 +10,9 @@
 # all four runs from the branch tree's src/ (the suite's cwd) as
 # `../tests/<file>`, so a file and whatever it loads by a relative path are the
 # same bytes for both; only the binary and the stdlib next to it differ.
-# stdin /dev/null, a 60 s bound, and the same display-independent dummy SDL
-# environment as jit_diff (dummy audio also avoids timing-dependent capture;
+# stdin /dev/null, a 60 s bound, `env -u XAUTHORITY DISPLAY=:99
+# SDL_AUDIODRIVER=dummy` (the X server is Xvfb; SDL's dummy audio device
+# because a real capture device delivers samples or not by timing, so
 # test_audio.eigs printed a SKIP on some runs and two agreeing baseline runs
 # did not make it deterministic: a branch run that differed read as a DIFF).
 # stdout, stderr and the exit code are compared byte for byte after one
@@ -101,54 +102,6 @@
 # exact diagnostic. Replay differences also keep the tape. No verdict or
 # counter depends on the contents of the evidence; retention errors are loud.
 set -u
-# Phase 2 R1.3: every arm is headless, independent of the caller's display.
-# Per-program conditions from suite_program_env.txt are applied afterwards.
-unset DISPLAY WAYLAND_DISPLAY XAUTHORITY
-export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
-
-phase2_program_start() {
-    local program="$1"; shift
-    suite_program_run "$program" env "$@"
-}
-
-if [ -n "${PHASE2_DIFF_HEADLESS_PROBE:-}" ]; then
-    ROOT=$(cd "$(dirname "$0")/.." && pwd)
-    export EIGS_TEST_DIR="$ROOT/tests"
-    . "$ROOT/tests/suite_program_env.sh" || exit 1
-    phase2_program_start test_audio.eigs "$ROOT/src/eigenscript" "$PHASE2_DIFF_HEADLESS_PROBE"
-    exit $?
-fi
-if [ "${1:-}" = "--selftest" ]; then
-    T=$(mktemp -d "${TMPDIR:-/tmp}/eigs-phase2-env.XXXXXX") || exit 1
-    trap 'rm -rf "$T"' EXIT
-    cat > "$T/record-env.eigs" <<'EOF'
-print of (env_get of "DISPLAY")
-print of (env_get of "WAYLAND_DISPLAY")
-print of (env_get of "XAUTHORITY")
-print of (env_get of "SDL_VIDEODRIVER")
-print of (env_get of "SDL_AUDIODRIVER")
-EOF
-    env -u DISPLAY -u WAYLAND_DISPLAY -u XAUTHORITY PHASE2_DIFF_HEADLESS_PROBE="$T/record-env.eigs" bash "$0" > "$T/unset" || exit 1
-    DISPLAY=:99 WAYLAND_DISPLAY=wayland-9 XAUTHORITY=/tmp/foreign PHASE2_DIFF_HEADLESS_PROBE="$T/record-env.eigs" bash "$0" > "$T/set" || exit 1
-    check_env() {
-        local file="$1" label="$2" line variable got expected
-        while IFS='|' read -r line variable expected; do
-            got=$(sed -n "${line}p" "$file")
-            [ "$got" = "$expected" ] || { echo "SELFTEST FAIL: $label: $variable was '$got', want '$expected'"; return 1; }
-        done <<'EOF'
-1|DISPLAY|
-2|WAYLAND_DISPLAY|
-3|XAUTHORITY|
-4|SDL_VIDEODRIVER|dummy
-5|SDL_AUDIODRIVER|dummy
-EOF
-    }
-    check_env "$T/unset" unset && check_env "$T/set" set || exit 1
-    echo "  selftest ok: unset and set caller displays give the same headless program environment"
-    echo "  selftest ok: test_audio.eigs policy row still supplies its dummy audio driver"
-    echo "SELFTEST: phase2 corpus headless environment passed"
-    exit 0
-fi
 [ $# -eq 2 ] || { echo "usage: tools/phase2_corpus_diff.sh <baseline-binary> <branch-binary>"; exit 2; }
 abspath() { (cd "$(dirname "$1")" && printf '%s/%s\n' "$(pwd -P)" "$(basename "$1")"); }
 BASE_BIN=$(abspath "$1") || exit 2
@@ -349,7 +302,7 @@ run() {
         (
             cd "$BR_ROOT/src" || exit 99
             [ "$cap" = 1 ] && ulimit -v 1500000
-            phase2_program_start "$rel" LD_PRELOAD="$SHIM" \
+            suite_program_run "$rel" env -u XAUTHORITY DISPLAY=:99 SDL_AUDIODRIVER=dummy LD_PRELOAD="$SHIM" \
                 PHASE2_URANDOM_MARK="$out.urandom" "$extra" timeout 60 "$bin" "../$rel"
         ) < /dev/null > "$out.rawout" 2> "$out.rawerr"
         rc=$?

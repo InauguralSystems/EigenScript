@@ -109,6 +109,9 @@ def run_cell(script, sig, moment, no_signs=False):
         return False, "case program descendant missing" if no_signs else "readiness sign missing"
     if moment == "case":
         time.sleep(1.0)
+    if proc.poll() is not None:
+        reader.join()
+        return False, "cell not run: the script ended before the signal was sent"
     os.kill(proc.pid, sig)
     exit_timeout = 6
     try:
