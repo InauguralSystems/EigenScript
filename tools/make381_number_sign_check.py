@@ -6,8 +6,9 @@ the cases of tools/make381_cases.json, each run through a real 3.81 and through
 GNU Make 4.3 by tools/make381_oracle.py; --selftest holds this check to them.
 With no argument it reads every tracked makefile of the tree (git ls-files:
 Makefile, makefile, GNUmakefile, *.mk) and each file one of them includes by a
-literal name, looked up from the tree's root as make run there does; with
-arguments, those files and nothing else.  A file it cannot read, a literal
+literal name, looked up from the tree's root as make run there does (a
+wildcard in the name is expanded; a backslash before a blank or a number sign
+is taken away); with arguments, those files and nothing else.  A file it cannot read, a literal
 `include` of a file that is not there and a define whose body never ends are
 errors (exit 2), not a pass.
 
@@ -33,13 +34,16 @@ What is a finding:
     comment (an unescaped number sign outside every reference starts one);
   - on every line but an ordinary comment line, a number sign anywhere inside
     an $(eval ...) or $(call eval,...) call (with either kind of bracket),
-    wherever on the line the call stands;
+    wherever on the line the call stands.  A doubled dollar sign before the
+    call makes it text and not a call ($$(eval ...) in a recipe is printed),
+    except in a body that is read as below, where it is a call again;
   - in the body of a define whose name is written as a word inside such a
-    call anywhere in the file (an ordinary comment line included; a word is
-    what stands between white space, dollar signs, brackets, commas and
-    colons): the body is read by the same rules, with $$( and $${ opening a
-    reference as $( and ${ do.  No other define body is read, and neither is
-    a define inside such a body;
+    call anywhere in the files read in the same run (an ordinary comment line
+    included, and $$(eval too; a word is what stands between white space,
+    dollar signs, brackets, commas and colons; a number sign attached to a
+    define's name starts a comment): the body is read by the same rules, with
+    $$( and $${ opening a reference as $( and ${ do.  No other define body is
+    read, and neither is a define inside such a body;
   - a line that the makes read by what stands around it, in a way this check
     does not follow.  Four kinds: a define line with a tab at its start that
     is not a recipe line; a recipe line whose first word is define or a
@@ -78,7 +82,10 @@ makes happen to read alike (as a comment, escaped outside a reference, in
 text that is a rule line, in a call after an ordinary comment's sign); a body
 read because its name is a word in an eval call that never evaluates it (the
 call is in a comment, the word is not a reference, the body reaches eval only
-through $(value), the call comes before the define).
+through $(value), the call comes before the define).  Not a case, because a
+case is one file: a body is also read when the eval call that names it is in
+another file of the same run, whether or not make ever reads the two
+together.
 Looser (the makes differ, the check passes): a define body that reaches eval
 through another variable or a computed name, a define inside an evaluated
 body, and a number sign that a variable carries into text eval reads.
@@ -91,6 +98,7 @@ To write the sign inside a call: H := \# at the top level and $H in the call
 """
 
 import argparse
+import glob
 import json
 import os
 import re
@@ -226,11 +234,17 @@ def line_kind(text, doubled):
     return "other" if more else "call"
 
 
-def eval_calls(text):
+def eval_calls(text, doubled):
     """The (start, end) of every eval call in the text: $(eval ...), ${eval ...},
-    $(call eval,...); it ends at the bracket that closes it."""
+    $(call eval,...); it ends at the bracket that closes it.  A dollar sign
+    doubled before it makes it text, not a call ($$(eval ...) in a recipe is
+    printed); with `doubled`, text that $(eval) expands once more, $$(eval is
+    a call again."""
     spans = []
     for m in EVAL.finditer(text):
+        dollars = m.start() + 1 - len(text[:m.start() + 1].rstrip("$"))
+        if not (dollars % 2 or (doubled and (dollars // 2) % 2)):
+            continue
         opener = text[m.start() + 1]
         depth, j = 1, m.end()
         while j < len(text) and depth:
@@ -243,9 +257,9 @@ def eval_calls(text):
     return spans
 
 
-def sign_in_eval(text):
+def sign_in_eval(text, doubled):
     """Offset of the first number sign inside an eval call, or None."""
-    for start, end in eval_calls(text):
+    for start, end in eval_calls(text, doubled):
         pos = text.find("#", start, end)
         if pos >= 0:
             return pos
@@ -262,10 +276,12 @@ def code_part(text):
 
 
 def evaluated_names(logical):
-    """Every word written inside an eval call, on any line of the file."""
+    """Every word written inside an eval call, on any line of the file (a
+    line may be text that $(eval) expands once more: a body's lines are not
+    told apart here, so $$(eval counts too)."""
     names = set()
     for text, _ in logical:
-        for start, end in eval_calls(text):
+        for start, end in eval_calls(text, True):
             names.update(WORD.findall(text[start:end]))
     return names
 
@@ -281,12 +297,13 @@ def first_word(text):
 
 
 def define_name(text):
-    """The name a define line defines, or None when the line is not a define."""
+    """The name a define line defines, or None when the line is not a define.
+    A number sign attached to the name starts a comment, as on any line."""
     words = blank_words(text)
     if first_word(text) == "define":
-        return words[1] if len(words) > 1 else ""
+        return first_word(words[1]) if len(words) > 1 else ""
     if words[:1] == ["override"] and len(words) > 1 and first_word(words[1]) == "define":
-        return words[2] if len(words) > 2 else ""
+        return first_word(words[2]) if len(words) > 2 else ""
     return None
 
 
@@ -324,10 +341,12 @@ def split_differently(body):
 
 
 class Checker:
-    def __init__(self, root=None):
+    def __init__(self, root=None, names=None):
         self.findings = []
         self.seen = set()
         self.root = root                      # where an include's name is looked up
+        self.names = names                    # the words of the eval calls of every file read; None: each file's own
+        self.words = set()                    # those words, gathered while reading
 
     def check_file(self, path, follow=False):
         path = os.path.abspath(path)
@@ -339,7 +358,9 @@ class Checker:
                 logical = logical_lines(physical_lines(f.read()))
         except (OSError, UnicodeDecodeError) as exc:
             raise RuntimeError("cannot read %s: %s" % (path, exc))
-        self.scan(path, logical, False, follow, evaluated_names(logical))
+        own = evaluated_names(logical)
+        self.words |= own
+        self.scan(path, logical, False, follow, own if self.names is None else self.names)
 
     def scan(self, path, logical, doubled, follow, evaluated):
         is_open = False                       # a rule is open, if every branch around this line is taken
@@ -414,7 +435,7 @@ class Checker:
     def judge(self, path, text, numbers, doubled, strict):
         """At most one finding for the line: a number sign inside an eval
         call, and on a line that is not passed, inside any reference."""
-        places = [sign_in_eval(text)]
+        places = [sign_in_eval(text, doubled)]
         if strict:
             places.append(sign_in_reference(text, doubled))
         places = [p for p in places if p is not None]
@@ -422,14 +443,15 @@ class Checker:
             self.findings.append((path, numbers[min(min(places), len(numbers) - 1)], MESSAGE))
 
     def follow_include(self, path, rest, word):
-        for name in code_part(rest).split():
+        for name in include_names(rest):
             if "$" in name:
                 continue                      # a computed name: not followed (header)
             # make looks an include up from its working directory: the tree's root here.
             child = os.path.join(self.root, name)
-            if os.path.exists(child):
-                self.check_file(child, follow=True)
-            elif word == "include":
+            found = [child] if os.path.exists(child) else sorted(glob.glob(child))
+            for one in found:
+                self.check_file(one, follow=True)
+            if not found and word == "include":
                 raise RuntimeError("%s includes %s, which is not at the tree's root "
                                    "(names are looked up from there, as make run at the root does)"
                                    % (path, name))
@@ -452,17 +474,49 @@ def tracked_makefiles(root):
     return [os.path.join(root, n) for n in picked]
 
 
+def include_names(rest):
+    """The names on an include line: split at blanks; a backslash before a
+    blank, a number sign or a backslash is taken away, as make does."""
+    names, name, i, text = [], "", 0, code_part(rest)
+    while i < len(text):
+        c = text[i]
+        if c == "\\" and text[i + 1:i + 2] and text[i + 1] in " \t#\\":
+            name += text[i + 1]
+            i += 2
+            continue
+        if c in " \t":
+            if name:
+                names.append(name)
+            name = ""
+        else:
+            name += c
+        i += 1
+    return names + ([name] if name else [])
+
+
+def check_files(paths, root=None, follow=False):
+    """Read the files twice: once to learn every file reached and every word
+    written inside an eval call in any of them, and again with those words,
+    so that a define in one file is read when another file evaluates it."""
+    first = Checker(root)
+    for path in paths:
+        first.check_file(path, follow)
+    second = Checker(root, first.words)
+    for path in paths:
+        second.check_file(path, follow)
+    return second
+
+
 def check_tree(root):
     """Read every tracked makefile of the tree and what each includes by a literal name."""
-    checker = Checker(root)
-    for path in tracked_makefiles(root):
-        checker.check_file(path, follow=True)
-    return checker
+    return check_files(tracked_makefiles(root), root, True)
 
 
 def tree_selftest():
-    """The tree mode on a small git tree: two tracked makefiles; files reached
-    only through an include, a -include and a sinclude; a text file that is
+    """The tree mode on a small git tree: three tracked makefiles; files
+    reached only through an include, a -include (the second name of its line)
+    and a sinclude, through a wildcard and through a name with an escaped
+    number sign; a define that another file evaluates; a text file that is
     not a makefile; an untracked makefile; the same folder before it is a git
     tree; and the three errors (a missing literal include, a define without
     its endef, a file that is not text)."""
@@ -476,7 +530,8 @@ def tree_selftest():
             return path
         bad = "X := $(sort b#x a)\n"
         put("Makefile", "Y := 1\ninclude inc/rules.inc\n-include $(Y).mk\n"
-                        "-include inc/optional.inc nosuch.inc\nsinclude inc/s.inc\n")
+                        "-include nosuch.inc inc/optional.inc\nsinclude inc/s.inc\n"
+                        "include inc2/*.mk\n-include a\\#b.inc\ninclude defs.inc\n$(eval $(F))\n")
         try:
             check_tree(root)
             faults.append("a folder that is not a git tree was read")
@@ -486,6 +541,12 @@ def tree_selftest():
         put("inc/rules.inc", "Y := 2\n" + bad)      # reached only through the include
         put("inc/optional.inc", bad)                # only through the -include
         put("inc/s.inc", "\n\n" + bad)              # only through the sinclude
+        put("inc2/w.mk.in", bad)                    # not matched by the wildcard
+        put("inc2/w.inc", bad)                      # not matched either
+        put("inc2/wild.mk", bad)                    # tracked as a makefile too: read once
+        put("a#b.inc", bad)                         # only through the escaped name
+        # Its body is evaluated by the Makefile, not by itself.
+        put("defs.inc", "define F\nX := $$(sort b#x a)\nendef\n")
         # Looked up from the root, not from sub/; the sign is on the third line of the file.
         put("sub/other.mk", "include Makefile\nX := $(sort b \\\n  a#x \\\n  c)\n")
         put("sub/notes.txt", bad)
@@ -499,11 +560,12 @@ def tree_selftest():
         except RuntimeError as exc:
             return faults + ["the fixture tree was refused: %s" % exc]
         got = sorted((os.path.relpath(p, root), n) for p, n, _ in checker.findings)
-        want = [("inc/optional.inc", 1), ("inc/rules.inc", 2), ("inc/s.inc", 3), ("sub/other.mk", 3)]
+        want = [("a#b.inc", 1), ("defs.inc", 2), ("inc/optional.inc", 1), ("inc/rules.inc", 2),
+                ("inc/s.inc", 3), ("inc2/wild.mk", 1), ("sub/other.mk", 3)]
         if got != want:
             faults.append("findings were %r, not %r" % (got, want))
-        if len(checker.seen) != 5:
-            faults.append("%d file(s) read, not 5" % len(checker.seen))
+        if len(checker.seen) != 8:
+            faults.append("%d file(s) read, not 8" % len(checker.seen))
         errors = [
             ("a missing literal include", put("e1.mk", "include nosuch.mk\n"), "not at the tree's root"),
             ("a define without its endef", put("e2.mk", "define F\nX := 1\n"), "define never ends"),
@@ -572,9 +634,7 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     try:
         if args.files:
-            checker = Checker()
-            for path in args.files:
-                checker.check_file(path)
+            checker = check_files(args.files)
         else:
             checker = check_tree(os.path.normpath(os.path.join(here, "..")))
     except RuntimeError as exc:

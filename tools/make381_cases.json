@@ -4339,6 +4339,132 @@
    "why": "the two makes differ"
   },
   {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-name-with-comment-attached",
+   "text": "define F# c\nX := $$(sort b#x a)\nendef\n$(eval $(F))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "override-define-name-with-comment-attached",
+   "text": "override define F# c\nX := $$(sort b#x a)\nendef\n$(eval $(F))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "number-sign",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n$(eval Z := $(sort b#x a))",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n$(eval Z := $(sort b#x a))",
+    "rc": 0
+   },
+   "name": "recipe-prints-escaped-eval-text",
+   "text": "X := ok\nall2:\n\t@printf '%s\\n' '$$(eval Z := $$(sort b#x a))'\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-evaled-name-with-dot",
+   "text": "define .RULE\nX := $$(sort b#x a)\nendef\n$(eval $(.RULE))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-evaled-name-with-slash",
+   "text": "define rules/build\nX := $$(sort b#x a)\nendef\n$(eval $(rules/build))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:4: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "body-escaped-eval-call-evaled",
+   "text": "define F\n$$(eval X := $$$$(sort b#x a))\nendef\n$(eval $(F))\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "number-sign",
+   "make381": {
+    "err": "case.mk:7: *** unterminated call to function 'sort': missing ')'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a b#x] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "define-evaled-from-inside-an-evaluated-body",
+   "text": "define F\n$$(eval $$(G))\nendef\ndefine G\nX := $$(sort b#x a)\nendef\n$(eval $(F))\n",
+   "why": "the two makes differ"
+  },
+  {
    "differ": false,
    "expect": "finding",
    "kind": "number-sign",
