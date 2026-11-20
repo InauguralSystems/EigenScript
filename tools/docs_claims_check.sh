@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Front-door documentation references, checked against the sources that own them.
+# The removed-sentence check holds the six #2439 sentences by their exact words.
+# It ignores wrapping and indentation, but a reworded sentence passes.
 cd "$(dirname "$0")/.." || exit 1
 exec python3 - "$@" <<'PY'
 import collections
@@ -160,6 +162,68 @@ def stale_guard_state_wording():
     print(f'  STALE GUARD STATE WORDING: examined {examined} sentence(s), {hits} hit(s)')
     if not examined:
         red('STALE GUARD STATE WORDING examined 0 sentences')
+
+
+REMOVED_STRICT_SENTENCES = (
+    ('README.md', '''Set `EIGS_STRICT=1` to opt into catchable errors for
+non-finite arithmetic results and wrong-typed builtin arguments; it is off
+by default.'''),
+    ('docs/llms.txt', '''  Strict mode is opt-in: `EIGS_STRICT=1` traps non-finite arithmetic
+  results, wrong-typed builtin arguments (`abs of "x"`) and malformed
+  `json_path` documents with catchable errors. With the variable unset or
+  set to `0`, arithmetic keeps its IEEE results and the legacy argument
+  stand-ins remain (`abs of "x"` is `0.0`).'''),
+    ('docs/SYNTAX.md', '''`EIGS_STRICT=1` opts into catchable errors for non-finite
+arithmetic and invalid argument types; by default IEEE arithmetic results
+remain values.'''),
+    ('docs/LANGUAGE_CONTRACT.md', '''  `EIGS_STRICT=1` opts into catchable errors for non-finite arithmetic and
+  invalid argument types; it is off by default.'''),
+    ('docs/COMPARISON.md', '''`EIGS_STRICT=1` opts into catchable errors for non-finite arithmetic and
+wrong-typed builtin arguments; strict mode is off by default.'''),
+    ('docs/BUILTINS.md', '''> **Strict mode is opt-in (`EIGS_STRICT=1`).** It traps non-finite arithmetic
+> results and enables strict argument guards. By default arithmetic preserves
+> IEEE values; rows with argument-type stand-ins state those results (`0`, `""`,
+> `[]`, `-1`, or another value) explicitly.
+> Documented answers for valid-but-absent input (`index_of` miss `-1`,
+> `file_exists` of a missing path `0`) are the same in both modes
+> (docs/SPEC.md, *Strict mode*).'''),
+)
+
+
+def removed_strict_sentences():
+    """Reject the exact removed #2439 claims, independent of line wrapping."""
+    files = ('README.md', *[str(p) for p in sorted(Path('docs').glob('*.md'))],
+             'docs/llms.txt')
+
+    def words_and_lines(prose):
+        words = []
+        lines = []
+        for lineno, line in enumerate(prose.splitlines(), 1):
+            line = re.sub(r'^(?:> | {2})', '', line)
+            tokens = line.split()
+            words.extend(tokens)
+            lines.extend([lineno] * len(tokens))
+        return words, lines
+
+    examined = len(REMOVED_STRICT_SENTENCES)
+    hits = 0
+    for file in files:
+        words, lines = words_and_lines(Path(file).read_text(encoding='utf-8'))
+        for _origin, removed in REMOVED_STRICT_SENTENCES:
+            needle, _ = words_and_lines(removed)
+            width = len(needle)
+            for start in range(len(words) - width + 1):
+                if words[start:start + width] != needle:
+                    continue
+                hits += 1
+                preview = ' '.join(needle[:6])
+                red(f'{file}:{lines[start]}: removed sentence reappeared: {preview} (#2439)')
+    print(f'  REMOVED SENTENCES: examined {examined} sentence(s) in {len(files)} file(s), '
+          f'{hits} hit(s)')
+    if examined < 6:
+        red(f'REMOVED SENTENCES examined only {examined} sentence(s), expected at least 6')
+    if not files:
+        red('REMOVED SENTENCES examined 0 files')
 
 def bool_result_wording():
     """Reject numeric result prose for builtins whose C constructors are bool.
@@ -517,6 +581,8 @@ def changelog_version():
 def selftest():
     root = Path.cwd()
     index = run('git', '-c', 'safe.directory=*', 'ls-files', '--stage')
+    index = '\n'.join(row for row in index.splitlines()
+                      if not row.split('\t', 1)[1].startswith('evidence/')) + '\n'
     tracked = {row.split('\t', 1)[1] for row in index.splitlines()}
     content = set(DOCS) | {str(p) for p in Path('docs').glob('*.md')}
     content |= {str(p) for p in Path('lib').glob('*.eigs')}
@@ -571,6 +637,39 @@ def selftest():
             print(f'SELFTEST: control: {"PASS" if ok else "FAIL"}')
             if not ok:
                 print('\n'.join(x for x in result.stdout.splitlines() if x.startswith(('RED:', 'docs-claims:'))))
+            for origin, plant in REMOVED_STRICT_SENTENCES:
+                p = tree / origin
+                original = p.read_text()
+                p.write_text(original + '\n' + plant + '\n')
+                result = gate()
+                preview = ' '.join(plant.replace('> ', '').split()[:6])
+                witness = f'RED: {origin}:'
+                ok = (result.returncode != 0 and witness in result.stdout and
+                      preview in result.stdout)
+                passed += ok
+                print(f'SELFTEST: removed-sentence-{Path(origin).name}: '
+                      f'{"PASS" if ok else "FAIL"}')
+                p.write_text(original)
+            p = tree / 'README.md'
+            original = p.read_text()
+            cross_wrap = '''  `EIGS_STRICT=1` opts into catchable errors for
+  non-finite arithmetic and invalid argument types; it is off
+  by default.'''
+            p.write_text(original + '\n' + cross_wrap + '\n')
+            result = gate()
+            ok = (result.returncode != 0 and 'RED: README.md:' in result.stdout and
+                  '`EIGS_STRICT=1` opts into catchable errors for' in result.stdout)
+            passed += ok
+            print(f'SELFTEST: removed-sentence-cross-file-wrap: {"PASS" if ok else "FAIL"}')
+            p.write_text(original)
+            p.write_text(original + '\nArgument guards are opt-in.\n')
+            result = gate()
+            ok = (result.returncode == 0 and
+                  'REMOVED SENTENCES: examined 6 sentence(s)' in result.stdout and
+                  'removed sentence reappeared' not in result.stdout)
+            passed += ok
+            print(f'SELFTEST: removed-sentence-reword-limit: {"PASS" if ok else "FAIL"}')
+            p.write_text(original)
             for label, file, plant, witness in [
                 ('path', 'README.md', '\n`docs/NO_SUCH_1275.md`\n', 'references'),
                 ('flag', 'docs/llms.txt', '\n`eigenscript --no-such-1275`\n', '--no-such-1275'),
@@ -682,8 +781,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 22 case(s) run, {passed} passed, {22-passed} failed')
-            return 0 if passed == 22 else 1
+            print(f'SELFTEST: 30 case(s) run, {passed} passed, {30-passed} failed')
+            return 0 if passed == 30 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 
@@ -718,6 +817,7 @@ def main():
     derived_counts()
     strict_opt_in_wording()
     stale_guard_state_wording()
+    removed_strict_sentences()
     bool_result_wording()
     check_floors()
     for kind in ('PATHS', 'FLAGS', 'TARGETS', 'NAMES', 'DOC ENROLMENT'):
