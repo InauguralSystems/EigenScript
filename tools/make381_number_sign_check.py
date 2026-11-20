@@ -304,8 +304,10 @@ def main():
     for path, line, what in checker.findings:
         print("%s:%d: %s" % (os.path.relpath(path, root), line, what))
     if checker.findings:
-        print("make381-number-sign: FAIL: %d finding(s) in %d file(s) read" % (
-            len(checker.findings), len(checker.seen)))
+        # precheck shows a failing row's last line: it names the first place.
+        path, line, _ = checker.findings[0]
+        print("make381-number-sign: FAIL: %d finding(s) in %d file(s) read, the first at %s:%d" % (
+            len(checker.findings), len(checker.seen), os.path.relpath(path, root), line))
         return 1
     print("make381-number-sign: OK: %d file(s) read, no finding" % len(checker.seen))
     return 0
