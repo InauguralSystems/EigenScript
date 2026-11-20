@@ -3,7 +3,7 @@
 Non-finite float text uses `inf`, `-inf`, and unsigned `nan` in `print`,
 `str`, f-strings, and fixed-decimal number formatting. These are output
 words, not JSON literals: JSON decoding of `1e400` (including a nested
-number) raises `value` in default and strict modes. Source exponent literals
+number) raises `value` in every `EIGS_STRICT` state. Source exponent literals
 use binary64 floats, so source `1e400` and default `num of "1e400"` remain
 `inf`; JSON applies its separate finite-number rule. Ordinary non-finite
 buffer reads still raise; use the explicit bits APIs to inspect raw cells. Replay accepts IEEE tape tokens only when the
@@ -387,39 +387,39 @@ Some guards raise in every state; for example, `abs of true` raises rather than 
 
   With `EIGS_STRICT=1`, each out-of-domain call above instead raises `value`.
   A `false`, `0`, `""` or `null` that is a genuine *answer* is untouched
-  in both modes: `try_parse` of invalid syntax still returns `false`, `task_alive`
+  in every `EIGS_STRICT` state: `try_parse` of invalid syntax still returns `false`, `task_alive`
   of an unknown id still returns `false`, `char_at` past the end is still `""`,
   and `num` still *coerces* (`num of ([1, 2])` is float `0.0` — that is its documented
   contract, not a guard).
   A return expression alone does not distinguish a type guard from a
   documented answer. `tools/strict_differential.sh` checks the distinction
-  that can be executed: a guard probe must raise with `EIGS_STRICT=1`,
+  that can be executed: a guard probe must raise unless `EIGS_STRICT=0`,
   and a pinned documented answer must not.
-  Fixed- or optional-shape builtin argument lists reject surplus outer elements in strict mode with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
+  By default, fixed- or optional-shape builtin argument lists reject surplus outer elements with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
 
   Buffer storage may retain a raw non-finite kernel result. Indexing and
   iteration, like `get_at`, still refuse a stored NaN or infinity with `value`
-  in every strict mode (N13). Strict NaN preserves the first-NaN diagnostic
+  in every `EIGS_STRICT` state (N13). Under `EIGS_STRICT=1` a NaN preserves the first-NaN diagnostic
   and sets `math_flags.invalid`; other non-finite data refusals leave flags
   alone. The interpreter, JIT and leaf fallback agree on kind, message and line.
 
-  Two further classes are loud in strict mode and unchanged under `EIGS_STRICT=0`:
-  - **JSON parse failure in `json_path`.** Under `EIGS_STRICT=0` a malformed
-    document is walked leniently and a parse failure answers the same `""`
-    an absent key does. Under strict `json_path` applies `json_decode`'s
-    acceptance test and raises a catchable `value` error naming the position;
-    JSON `false`, `null` and an absent key are answers and stay quiet.
-  - **The sentinel and falsy families.** `index_of`/`list_index_of`/`ord`
-    (`-1`), `file_exists`/`is_dir`/`is_file`/`read_text`/`read_bytes`/`ls`/
-    `mkdir`/`env_get` (`0`/`""`), and the wrong-type launderers the sweep
+  Two further classes raise unless `EIGS_STRICT=0`:
+  - **JSON parse failure in `json_path`.** Unless `EIGS_STRICT=0`, `json_path`
+    applies `json_decode`'s acceptance test and raises a catchable `value`
+    error naming the position; JSON `false`, `null` and an absent key are
+    answers and stay quiet. Under `EIGS_STRICT=0` a malformed document is
+    walked leniently and raises nothing.
+  - **The sentinel and falsy families.** `index_of`/`list_index_of`/`ord`,
+    `file_exists`/`is_dir`/`is_file`/`read_text`/`read_bytes`/`ls`/
+    `mkdir`/`env_get`, and the wrong-type launderers the sweep
     found (`split`, `scan_ints`, `buffer`, `channel_closed`, `f64_to_bytes`,
     `json_build`, `sort`, `random_int`, `random_hex`, `token_name`, and
-    `zlib_*`) raise for wrong-typed arguments in strict mode. A
+    `zlib_*`) raise for wrong-typed arguments unless `EIGS_STRICT=0`. A
     sentinel for a valid-but-absent input — `index_of` miss `-1`,
-    `file_exists` of a missing path `0` — is unchanged in both modes.
-  Int overflow and int `// 0`/`% 0` raise in both modes.
+    `file_exists` of a missing path `false` — is unchanged in every `EIGS_STRICT` state.
+  Int overflow and int `// 0`/`% 0` raise in every `EIGS_STRICT` state.
   Byte consumers such as `str_from_bytes` and the `zlib_*` forms likewise
-  reject a nonnumeric list element with a builtin-named `type_mismatch` error in strict mode; `EIGS_STRICT=0` retains the
+  reject a nonnumeric list element with a builtin-named `type_mismatch` error unless `EIGS_STRICT=0`, which retains the
   numeric-zero substitution. `str_from_bytes` ends at a numeric byte that
   converts to NUL, so elements after that terminator are not inspected.
 - **Integer bitwise ops act on int64, exact past 2^32.** `&` `|` `^` `~` `<<`
@@ -506,7 +506,7 @@ exactly the numeric-literal grammar, with an optional sign and surrounding
 ASCII whitespace (N10). Decimal integer text fitting int64 gives an int;
 hex integers wrap modulo 2^64. A point/exponent or decimal overflow gives
 a float. Partial or empty text, `_`, `0b`/`0o`, hex floats, `inf` and `nan`
-raise `value` in every strict mode. Unlike Lua's `tonumber`, hex floats are
+raise `value` in every `EIGS_STRICT` state. Unlike Lua's `tonumber`, hex floats are
 refused because the language lexer refuses them:
 
 ```eigenscript
@@ -649,7 +649,7 @@ true
 bool
 ```
 
-A bool is not a number. The exact rule, in every strict mode
+A bool is not a number. The exact rule, in every `EIGS_STRICT` state
 (`EIGS_STRICT=0` keeps its soft stand-ins for other wrong types, never for a
 bool):
 
@@ -2744,7 +2744,7 @@ An all-int `sum` returns an exact int, while a
 float anywhere in a nested input selects float addition for the entire
 reduction. A buffer selects float addition too. An empty list's sum is int
 zero, in both call forms. `sum` refuses non-finite buffer elements with a
-`value` error in every strict mode (N13). In strict mode, it stops at the first NaN with a "not a number" diagnostic and sets `math_flags.invalid`; later elements are not read (#1417).
+`value` error in every `EIGS_STRICT` state (N13). Under `EIGS_STRICT=1`, it stops at the first NaN with a "not a number" diagnostic and sets `math_flags.invalid`; later elements are not read (#1417).
 
 ```eigenscript
 exact is sum of [9007199254740993, 1]
@@ -2817,7 +2817,7 @@ A buffer can carry a 2-D shape, making it a flat-backed matrix. `buffer of
 match). `shape of buf` returns `[rows, cols]` for a shaped buffer, or `[count]`
 when unshaped. Indexing stays flat (`buf[r*cols + c]`).
 At the buffer/scalar boundary, `sum`, `get_at`, indexing, iteration, `dot` and `write_bytes` refuse
-non-finite elements in every strict mode (N13). Structural buffer equality compares
+non-finite elements in every `EIGS_STRICT` state (N13). Structural buffer equality compares
 stored doubles directly with IEEE equality; list/dict self-equality follows
 that rule through nested and cyclic containers, including NaN float elements.
 The other scalar reductions retain their declared data boundaries.
@@ -2876,8 +2876,7 @@ Changed in this release (#973/#1093): the list form used to answer `0.0` for
 an out-of-range index and the buffer form was added folding the same way. A
 tensor that is not a matrix in the per-row form still answers `0.0` for that
 row — that is the shape reading, not the index one — and a wrong-typed
-argument raises in strict mode and answers `0.0` under
-`EIGS_STRICT=0`.
+argument raises unless `EIGS_STRICT=0`, where it answers `0.0`.
 
 Every tensor builtin that accepts a flat numeric list accepts a buffer in the
 same position, and returns a buffer when **every** tensor operand was a buffer:
@@ -3087,7 +3086,7 @@ Tensor sizes and indices follow N5: an integral float is accepted and a
 fraction raises `value`. `gather` keeps the selected list cell's int/float
 kind; buffer elements and numeric tensor calculations are floats. `shape`
 returns integer dimension counts. `mean` and `norm` refuse non-finite buffer
-cells with `value` in both strict modes.
+cells with `value` in every `EIGS_STRICT` state.
 
 ```eigenscript
 g is gather of [[[1, 2], [3, 4]], [1.0, 0]]
@@ -3110,8 +3109,8 @@ buffer storage and scalar buffer reads are floats. `buf_get`, `buf_peak`,
 `buf_dot` and the byte/PCM codecs refuse non-finite input cells with `value`.
 
 Audio playback (`audio_play`, `audio_play_loop`, `audio_stream_push`) refuses
-stored non-finite buffer samples at the scalar boundary in both strict modes
-(N13). Strict NaN preserves the first diagnostic and INVALID flag. Finite
+stored non-finite buffer samples at the scalar boundary in every `EIGS_STRICT` state
+(N13). Under `EIGS_STRICT=1` a NaN preserves the first diagnostic and INVALID flag. Finite
 samples clamp to [-1,1], then round PCM16 half away from zero (Q7/Q4).
 Channel indices and loop counts follow N5; continuous mixer gain stays
 fractional after clamping to [0,4].
@@ -3143,7 +3142,7 @@ preserving every NaN payload. `buf_set_bits of [buffer, index, bits]`
 stores those bits verbatim and returns `null` (R24-1). The setter's bits
 and both indices follow N5. Negative or out-of-range indices raise
 `index_range`; a non-buffer, non-number argument or missing buffer/index/bits
-raises `type_mismatch`, in either strict mode. The buffer forms retain
+raises `type_mismatch`, in every `EIGS_STRICT` state. The buffer forms retain
 `buf_get`/`buf_set` argument validation, including strict surplus-argument
 rejection.
 
@@ -3180,7 +3179,7 @@ value
 ### Stored buffer data boundary
 
 Buffer kernels can retain non-finite data. Scalar indexing and iteration
-raise `value` when that data is read, in every strict mode (N13).
+raise `value` when that data is read, in every `EIGS_STRICT` state (N13).
 
 ```eigenscript
 p is buf_from_list of ([1e308])
@@ -3199,7 +3198,7 @@ value
 
 Buffers compare their stored doubles with IEEE equality: NaN differs from
 everything, even itself; infinities compare by sign; signed zeros are equal.
-Equality never raises or changes math flags, including under strict mode.
+Equality never raises or changes math flags, in every `EIGS_STRICT` state.
 
 ```eigenscript
 p is buf_from_list of ([1e308])

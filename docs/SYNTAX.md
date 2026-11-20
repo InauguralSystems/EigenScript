@@ -55,9 +55,7 @@ mixed `// 0` follows `floor(x / 0)`. Integer `// 0` and `% 0` still raise
 
 `sqrt of -1` and `asin`/`acos` outside `[-1, 1]` produce NaN; `log of 0`
 produces `-inf`. NaN is unequal to itself, including through container
-structure. `EIGS_STRICT=1` opts into catchable errors for non-finite
-arithmetic and invalid argument types; by default IEEE arithmetic results
-remain values. `num of "nan"` and `num of "inf"` still raise `value` in
+structure. See [Argument guards and arithmetic traps](SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states. `num of "nan"` and `num of "inf"` still raise `value` in
 every mode because they are not numeric-literal text.
 
 ### Compound Assignment
