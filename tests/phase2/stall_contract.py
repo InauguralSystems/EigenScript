@@ -123,6 +123,8 @@ def _lit(xs):
 CASES = {
     "int-mixed-window": ("vals is [10000000000000000, 10000000000000001]\ni is 0\nx is 10000000000000000.0", "i is 1 - i\nx is vals[i]"),
     "int-mixed-wrap": ("n is 0\nvals is [10000000000000000, 10000000000000001]\ni is 0\nx is 0.9", "n is n + 1\ny is 0.5 + (x - 0.5) * 0.5\nif n >= 10:\n    i is 1 - i\n    y is vals[i]\nif n >= 99:\n    y is 20000000000000000 + i\nif n == 101:\n    y is 20000000000000000.0\nx is y"),
+    "int-overflow-one-inexact": ("a is 0 - 4600000000000000000\nb is a + 10000\nvals is [a, b]\ni is 0\nn is 0\nx is b\nx is a\nx is b\nx is a\nx is b\nx is a\nx is b\nx is a\nx is b\nx is a",
+                                 "n is n + 1\ni is 1 - i\ny is vals[i]\nif n == 91:\n    y is 4600000000000000000\nif n == 92:\n    y is 0 - 4700000000000000000\nif n >= 93:\n    y is (0 - 4700000000000000000) + i\nx is y"),
     "int-stopped-boxed": ("n is 0\nx is 10000000000000000", "n is n + 1\ny is x\nif n < 20:\n    y is x + 1\nx is y"),
     "int-alternating-boxed": ("vals is [10000000000000000, 10000000000000001]\ni is 0\nx is 10000000000000000", "i is 1 - i\nx is vals[i]"),
     "doubling": ("x is 10.0\nx is 10.0", "x is x * 2.0"),
@@ -192,6 +194,9 @@ def correct(case, value):
         # steps, and converges at 109.  Reading forward from index 8 instead
         # misses 0 and 1 and delays the verdict to the stall check at 110.
         return count == 109 and reason == "normal" and certified is True
+    if case == "int-overflow-one-inexact":
+        # PROVISIONAL (to be derived).
+        return count == 100 and reason == "stalled" and report == "improving" and certified is False
     if case == "int-stopped-boxed":
         # The first 19 exact +1 steps are raw-diverging even though their
         # relative size is below 0.1%; the zero step at iteration 20 makes
