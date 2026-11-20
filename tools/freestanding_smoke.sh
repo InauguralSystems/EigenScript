@@ -81,7 +81,8 @@ check_line() { _check "$1" "$2" str_has_line "$3" "$4"; }
 # whatever the caller exported: a state reads the variable when it is created.
 FS_RUN="env -u EIGS_STRICT" check "strict state created with EIGS_STRICT unset and setters control three states" 0 "strict creation default works
 strict off setter works
-strict on setter works" '--strict-api'
+strict on setter works
+strict one-property setters work" '--strict-api'
 
 # The program checks run twice: as the caller's environment has it, and with
 # EIGS_STRICT=0 (both flags off: the state they ran in before #2439).
