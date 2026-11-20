@@ -1615,193 +1615,193 @@ eigenscript.c:674 values_equal_for_observation VAL_FLOAT CASE a
 eigenscript.c:675 values_equal_for_observation VAL_I64_RAW RAW b
 eigenscript.c:675 values_equal_for_observation VAL_I64_RAW RAW b
 eigenscript.c:675 values_equal_for_observation VAL_INT CASE a
-eigenscript.c:1071 observer_number slot_is_f64 TEST i
-eigenscript.c:1073 observer_number VAL_I64_RAW RAW i
-eigenscript.c:1073 observer_number slot_is_smi TEST i
-eigenscript.c:1073 observer_number slot_smi_val RAW i
-eigenscript.c:1075 observer_number SLOT_F64_RAW RAW i
-eigenscript.c:1133 observer_number_slot slot_from_f64 PRODUCE i
-eigenscript.c:1133 observer_number_slot slot_from_int PRODUCE i
-eigenscript.c:1137 observer_number_value make_float PRODUCE i
-eigenscript.c:1137 observer_number_value make_int PRODUCE i
-eigenscript.c:1161 observer_snapshot_query slot_from_f64 PRODUCE i
-eigenscript.c:1165 observer_snapshot_query slot_from_f64 PRODUCE i
-eigenscript.c:1175 observer_slot_readout make_float PRODUCE i
-eigenscript.c:1324 observer_slot_update val_is_number TEST i
-eigenscript.c:1325 observer_slot_update VAL_I64_RAW RAW i
-eigenscript.c:1325 observer_slot_update VAL_INT TEST i
-eigenscript.c:1325 observer_slot_update slot_from_int PRODUCE i
-eigenscript.c:1326 observer_slot_update VAL_F64_RAW RAW i
-eigenscript.c:1326 observer_slot_update slot_from_f64 PRODUCE i
-eigenscript.c:1351 observer_slot_sample_gated val_is_number TEST i
-eigenscript.c:1352 observer_slot_sample_gated VAL_I64_RAW RAW i
-eigenscript.c:1352 observer_slot_sample_gated VAL_INT TEST i
-eigenscript.c:1352 observer_slot_sample_gated slot_from_int PRODUCE i
-eigenscript.c:1353 observer_slot_sample_gated VAL_F64_RAW RAW i
-eigenscript.c:1353 observer_slot_sample_gated slot_from_f64 PRODUCE i
-eigenscript.c:1932 observer_entropy_now val_is_number TEST i
-eigenscript.c:1962 observer_slot_trajectory make_float PRODUCE i
-eigenscript.c:1971 observer_slot_trajectory make_float PRODUCE i
-eigenscript.c:1976 observer_slot_trajectory make_float PRODUCE i
-eigenscript.c:1977 observer_slot_trajectory make_float PRODUCE i
-eigenscript.c:1978 observer_slot_trajectory make_float PRODUCE i
-eigenscript.c:1981 observer_slot_trajectory make_float PRODUCE i
-eigenscript.c:1982 observer_slot_trajectory make_int PRODUCE i
-eigenscript.c:1985 observer_slot_trajectory make_int PRODUCE i
-eigenscript.c:1998 observer_snapshot_number observer_snapshot_number READ i
-eigenscript.c:2000 observer_snapshot_number eigs_number_read READ i
-eigenscript.c:2020 observer_slot_from_trajectory val_is_number TEST i
-eigenscript.c:2021 observer_slot_from_trajectory observer_snapshot_number READ i
-eigenscript.c:2068 observer_slot_from_trajectory val_is_number TEST i
-eigenscript.c:2069 observer_slot_from_trajectory observer_snapshot_number READ i
-eigenscript.c:2077 observer_slot_from_trajectory val_is_number TEST i
-eigenscript.c:2078 observer_slot_from_trajectory observer_snapshot_number READ i
-eigenscript.c:2189 free_value VAL_FLOAT TEST a
-eigenscript.c:2270 free_value VAL_INT CASE a
-eigenscript.c:2284 free_value VAL_FLOAT CASE a
-eigenscript.c:2310 make_float_pooled VAL_FLOAT TAGSET c
-eigenscript.c:2311 make_float_pooled VAL_F64_RAW WRITE c
-eigenscript.c:2318 make_float make_float PRODUCE c
-eigenscript.c:2323 make_int make_int PRODUCE c
-eigenscript.c:2338 make_int VAL_INT TAGSET c
-eigenscript.c:2339 make_int VAL_I64_RAW WRITE c
-eigenscript.c:2345 recycle_intermediate VAL_FLOAT TEST a
-eigenscript.c:2367 make_float_permanent make_float_permanent PRODUCE c
-eigenscript.c:2369 make_float_permanent VAL_FLOAT TAGSET c
-eigenscript.c:2370 make_float_permanent VAL_F64_RAW WRITE c
-eigenscript.c:2402 eigs_number_read eigs_number_read READ b
-eigenscript.c:2403 eigs_number_read VAL_INT TEST a
-eigenscript.c:2404 eigs_number_read VAL_I64_RAW RAW b
-eigenscript.c:2406 eigs_number_read VAL_FLOAT TEST a
-eigenscript.c:2407 eigs_number_read VAL_F64_RAW RAW b
-eigenscript.c:2415 eigs_number_arg eigs_number_arg READ b
-eigenscript.c:2417 eigs_number_arg eigs_number_read READ b
-eigenscript.c:2426 eigs_float_arg eigs_float_arg READ b
-eigenscript.c:2427 eigs_float_arg eigs_number_arg READ b
-eigenscript.c:2431 eigs_int_arg eigs_int_arg READ b
-eigenscript.c:2433 eigs_int_arg eigs_number_read READ b
-eigenscript.c:2436 eigs_int_arg num_to_i64_exact READ b
-eigenscript.c:2442 <file scope> eigs_int_arg_range READ b
-eigenscript.c:2444 eigs_int_arg_range eigs_int_arg READ b
-eigenscript.c:2455 eigs_byte_arg eigs_byte_arg READ b
-eigenscript.c:2457 eigs_byte_arg eigs_int_arg_range READ b
-eigenscript.c:2621 <file scope> eigs_geom_shape READ b
-eigenscript.c:2628 eigs_geom_shape eigs_list_float READ b
-eigenscript.c:2668 eigs_bounded_arg eigs_bounded_arg READ b
-eigenscript.c:2669 eigs_bounded_arg eigs_float_arg READ b
-eigenscript.c:2685 <file scope> eigs_magnitude_arg READ b
-eigenscript.c:2687 eigs_magnitude_arg eigs_number_arg READ b
-eigenscript.c:2691 eigs_magnitude_arg num_to_i64_exact READ b
-eigenscript.c:2715 eigs_reader_elem_default val_is_number TEST a
-eigenscript.c:2718 eigs_list_number eigs_list_number READ b
-eigenscript.c:2721 eigs_list_number eigs_number_arg READ b
-eigenscript.c:2723 eigs_elem_number eigs_elem_number READ b
-eigenscript.c:2724 eigs_elem_number eigs_number_arg READ b
-eigenscript.c:2726 eigs_opt_number eigs_opt_number READ b
-eigenscript.c:2728 eigs_opt_number eigs_number_arg READ b
-eigenscript.c:2733 eigs_list_float eigs_list_float READ b
-eigenscript.c:2736 eigs_list_float eigs_float_arg READ b
-eigenscript.c:2738 eigs_elem_float eigs_elem_float READ b
-eigenscript.c:2739 eigs_elem_float eigs_float_arg READ b
-eigenscript.c:2741 eigs_opt_float eigs_opt_float READ b
-eigenscript.c:2743 eigs_opt_float eigs_float_arg READ b
-eigenscript.c:2748 eigs_list_int eigs_list_int READ b
-eigenscript.c:2751 eigs_list_int eigs_int_arg READ b
-eigenscript.c:2753 eigs_elem_int eigs_elem_int READ b
-eigenscript.c:2754 eigs_elem_int eigs_int_arg READ b
-eigenscript.c:2756 eigs_opt_int eigs_opt_int READ b
-eigenscript.c:2758 eigs_opt_int eigs_int_arg READ b
-eigenscript.c:2763 eigs_list_byte eigs_list_byte READ b
-eigenscript.c:2766 eigs_list_byte eigs_byte_arg READ b
-eigenscript.c:2768 eigs_elem_byte eigs_elem_byte READ b
-eigenscript.c:2769 eigs_elem_byte eigs_byte_arg READ b
-eigenscript.c:2771 eigs_opt_byte eigs_opt_byte READ b
-eigenscript.c:2773 eigs_opt_byte eigs_byte_arg READ b
-eigenscript.c:2778 eigs_list_int_range eigs_list_int_range READ b
-eigenscript.c:2781 eigs_list_int_range eigs_int_arg_range READ b
-eigenscript.c:2783 eigs_elem_int_range eigs_elem_int_range READ b
-eigenscript.c:2784 eigs_elem_int_range VAL_INT TAGSET c
-eigenscript.c:2785 eigs_elem_int_range eigs_int_arg_range READ b
-eigenscript.c:2787 eigs_opt_int_range eigs_opt_int_range READ b
-eigenscript.c:2789 eigs_opt_int_range eigs_int_arg_range READ b
-eigenscript.c:2792 eigs_list_bounded eigs_list_bounded READ b
-eigenscript.c:2795 eigs_list_bounded eigs_bounded_arg READ b
-eigenscript.c:2797 eigs_elem_bounded eigs_elem_bounded READ b
-eigenscript.c:2798 eigs_elem_bounded VAL_INT TAGSET c
-eigenscript.c:2799 eigs_elem_bounded eigs_bounded_arg READ b
-eigenscript.c:2801 eigs_opt_bounded eigs_opt_bounded READ b
-eigenscript.c:2803 eigs_opt_bounded eigs_bounded_arg READ b
-eigenscript.c:2806 eigs_list_magnitude eigs_list_magnitude READ b
-eigenscript.c:2809 eigs_list_magnitude eigs_magnitude_arg READ b
-eigenscript.c:2811 eigs_elem_magnitude eigs_elem_magnitude READ b
-eigenscript.c:2812 eigs_elem_magnitude VAL_INT TAGSET c
-eigenscript.c:2813 eigs_elem_magnitude eigs_magnitude_arg READ b
-eigenscript.c:2815 eigs_opt_magnitude eigs_opt_magnitude READ b
-eigenscript.c:2817 eigs_opt_magnitude eigs_magnitude_arg READ b
-eigenscript.c:2822 buffer_read_f64 buffer_read_f64 READ b
-eigenscript.c:2840 buffer_index_at buffer_index_at READ b
-eigenscript.c:2848 buffer_index_at buffer_read_f64 READ b
-eigenscript.c:2850 buffer_index_at VAL_FLOAT TAGSET c
-eigenscript.c:2851 buffer_index_at VAL_F64_RAW WRITE c
-eigenscript.c:2852 buffer_index_at eigs_int_arg READ b
-eigenscript.c:2856 buffer_byte_at buffer_byte_at READ b
-eigenscript.c:2858 buffer_byte_at buffer_index_at READ b
-eigenscript.c:2898 slot_from_value VAL_FLOAT TEST a
-eigenscript.c:2902 slot_from_value VAL_F64_RAW RAW b
-eigenscript.c:2904 slot_from_value slot_from_f64 PRODUCE c
-eigenscript.c:2908 slot_from_value VAL_INT TEST a
-eigenscript.c:2909 slot_from_value VAL_I64_RAW RAW b
-eigenscript.c:2912 slot_from_value slot_from_int PRODUCE c
-eigenscript.c:2932 slot_to_value SLOT_F64_RAW RAW b
-eigenscript.c:2932 slot_to_value make_float PRODUCE c
-eigenscript.c:2932 slot_to_value slot_is_f64 TEST a
-eigenscript.c:2940 slot_to_value make_int PRODUCE c
-eigenscript.c:2940 slot_to_value slot_is_smi TEST a
-eigenscript.c:2940 slot_to_value slot_smi_val RAW b
-eigenscript.c:3434 module_ns_project slot_is_f64 TEST a
-eigenscript.c:3434 module_ns_project slot_is_f64 TEST a
-eigenscript.c:3439 module_ns_project SLOT_F64_RAW RAW b
-eigenscript.c:3439 module_ns_project dict_value_rewrite_f64 PRODUCE c
-eigenscript.c:3699 chan_clone_rec VAL_FLOAT TEST a
-eigenscript.c:3699 chan_clone_rec VAL_INT TEST a
-eigenscript.c:3702 chan_clone_rec VAL_F64_RAW RAW b
-eigenscript.c:3702 chan_clone_rec VAL_FLOAT CASE a
-eigenscript.c:3702 chan_clone_rec make_float PRODUCE c
-eigenscript.c:3703 chan_clone_rec VAL_I64_RAW RAW b
-eigenscript.c:3703 chan_clone_rec VAL_INT CASE a
-eigenscript.c:3703 chan_clone_rec make_int PRODUCE c
-eigenscript.c:3906 is_truthy VAL_F64_RAW RAW b
-eigenscript.c:3906 is_truthy VAL_FLOAT CASE a
-eigenscript.c:3907 is_truthy VAL_I64_RAW RAW b
-eigenscript.c:3907 is_truthy VAL_INT CASE a
-eigenscript.c:3964 equal_scan_push VAL_FLOAT TEST a
-eigenscript.c:3968 equal_scan_push eigs_number_read READ b
-eigenscript.c:4034 values_equal_impl VAL_FLOAT TEST f
-eigenscript.c:4044 values_equal_impl VAL_FLOAT TEST f
-eigenscript.c:4044 values_equal_impl VAL_INT TEST f
-eigenscript.c:4045 values_equal_impl VAL_F64_RAW RAW f
-eigenscript.c:4045 values_equal_impl VAL_I64_RAW RAW f
-eigenscript.c:4046 values_equal_impl VAL_FLOAT TEST f
-eigenscript.c:4046 values_equal_impl VAL_INT TEST f
-eigenscript.c:4047 values_equal_impl VAL_F64_RAW RAW f
-eigenscript.c:4047 values_equal_impl VAL_I64_RAW RAW f
-eigenscript.c:4048 values_equal_impl val_is_number TEST f
-eigenscript.c:4049 values_equal_impl val_is_number TEST f
-eigenscript.c:4063 values_equal_impl VAL_F64_RAW RAW f
-eigenscript.c:4063 values_equal_impl VAL_F64_RAW RAW f
-eigenscript.c:4063 values_equal_impl VAL_FLOAT CASE f
+eigenscript.c:1077 observer_number slot_is_f64 TEST i
+eigenscript.c:1079 observer_number VAL_I64_RAW RAW i
+eigenscript.c:1079 observer_number slot_is_smi TEST i
+eigenscript.c:1079 observer_number slot_smi_val RAW i
+eigenscript.c:1081 observer_number SLOT_F64_RAW RAW i
+eigenscript.c:1150 observer_number_slot slot_from_f64 PRODUCE i
+eigenscript.c:1150 observer_number_slot slot_from_int PRODUCE i
+eigenscript.c:1154 observer_number_value make_float PRODUCE i
+eigenscript.c:1154 observer_number_value make_int PRODUCE i
+eigenscript.c:1178 observer_snapshot_query slot_from_f64 PRODUCE i
+eigenscript.c:1182 observer_snapshot_query slot_from_f64 PRODUCE i
+eigenscript.c:1192 observer_slot_readout make_float PRODUCE i
+eigenscript.c:1341 observer_slot_update val_is_number TEST i
+eigenscript.c:1342 observer_slot_update VAL_I64_RAW RAW i
+eigenscript.c:1342 observer_slot_update VAL_INT TEST i
+eigenscript.c:1342 observer_slot_update slot_from_int PRODUCE i
+eigenscript.c:1343 observer_slot_update VAL_F64_RAW RAW i
+eigenscript.c:1343 observer_slot_update slot_from_f64 PRODUCE i
+eigenscript.c:1368 observer_slot_sample_gated val_is_number TEST i
+eigenscript.c:1369 observer_slot_sample_gated VAL_I64_RAW RAW i
+eigenscript.c:1369 observer_slot_sample_gated VAL_INT TEST i
+eigenscript.c:1369 observer_slot_sample_gated slot_from_int PRODUCE i
+eigenscript.c:1370 observer_slot_sample_gated VAL_F64_RAW RAW i
+eigenscript.c:1370 observer_slot_sample_gated slot_from_f64 PRODUCE i
+eigenscript.c:1949 observer_entropy_now val_is_number TEST i
+eigenscript.c:1979 observer_slot_trajectory make_float PRODUCE i
+eigenscript.c:1988 observer_slot_trajectory make_float PRODUCE i
+eigenscript.c:1993 observer_slot_trajectory make_float PRODUCE i
+eigenscript.c:1994 observer_slot_trajectory make_float PRODUCE i
+eigenscript.c:1995 observer_slot_trajectory make_float PRODUCE i
+eigenscript.c:1998 observer_slot_trajectory make_float PRODUCE i
+eigenscript.c:1999 observer_slot_trajectory make_int PRODUCE i
+eigenscript.c:2002 observer_slot_trajectory make_int PRODUCE i
+eigenscript.c:2015 observer_snapshot_number observer_snapshot_number READ i
+eigenscript.c:2017 observer_snapshot_number eigs_number_read READ i
+eigenscript.c:2037 observer_slot_from_trajectory val_is_number TEST i
+eigenscript.c:2038 observer_slot_from_trajectory observer_snapshot_number READ i
+eigenscript.c:2085 observer_slot_from_trajectory val_is_number TEST i
+eigenscript.c:2086 observer_slot_from_trajectory observer_snapshot_number READ i
+eigenscript.c:2094 observer_slot_from_trajectory val_is_number TEST i
+eigenscript.c:2095 observer_slot_from_trajectory observer_snapshot_number READ i
+eigenscript.c:2206 free_value VAL_FLOAT TEST a
+eigenscript.c:2287 free_value VAL_INT CASE a
+eigenscript.c:2301 free_value VAL_FLOAT CASE a
+eigenscript.c:2327 make_float_pooled VAL_FLOAT TAGSET c
+eigenscript.c:2328 make_float_pooled VAL_F64_RAW WRITE c
+eigenscript.c:2335 make_float make_float PRODUCE c
+eigenscript.c:2340 make_int make_int PRODUCE c
+eigenscript.c:2355 make_int VAL_INT TAGSET c
+eigenscript.c:2356 make_int VAL_I64_RAW WRITE c
+eigenscript.c:2362 recycle_intermediate VAL_FLOAT TEST a
+eigenscript.c:2384 make_float_permanent make_float_permanent PRODUCE c
+eigenscript.c:2386 make_float_permanent VAL_FLOAT TAGSET c
+eigenscript.c:2387 make_float_permanent VAL_F64_RAW WRITE c
+eigenscript.c:2419 eigs_number_read eigs_number_read READ b
+eigenscript.c:2420 eigs_number_read VAL_INT TEST a
+eigenscript.c:2421 eigs_number_read VAL_I64_RAW RAW b
+eigenscript.c:2423 eigs_number_read VAL_FLOAT TEST a
+eigenscript.c:2424 eigs_number_read VAL_F64_RAW RAW b
+eigenscript.c:2432 eigs_number_arg eigs_number_arg READ b
+eigenscript.c:2434 eigs_number_arg eigs_number_read READ b
+eigenscript.c:2443 eigs_float_arg eigs_float_arg READ b
+eigenscript.c:2444 eigs_float_arg eigs_number_arg READ b
+eigenscript.c:2448 eigs_int_arg eigs_int_arg READ b
+eigenscript.c:2450 eigs_int_arg eigs_number_read READ b
+eigenscript.c:2453 eigs_int_arg num_to_i64_exact READ b
+eigenscript.c:2459 <file scope> eigs_int_arg_range READ b
+eigenscript.c:2461 eigs_int_arg_range eigs_int_arg READ b
+eigenscript.c:2472 eigs_byte_arg eigs_byte_arg READ b
+eigenscript.c:2474 eigs_byte_arg eigs_int_arg_range READ b
+eigenscript.c:2638 <file scope> eigs_geom_shape READ b
+eigenscript.c:2645 eigs_geom_shape eigs_list_float READ b
+eigenscript.c:2685 eigs_bounded_arg eigs_bounded_arg READ b
+eigenscript.c:2686 eigs_bounded_arg eigs_float_arg READ b
+eigenscript.c:2702 <file scope> eigs_magnitude_arg READ b
+eigenscript.c:2704 eigs_magnitude_arg eigs_number_arg READ b
+eigenscript.c:2708 eigs_magnitude_arg num_to_i64_exact READ b
+eigenscript.c:2732 eigs_reader_elem_default val_is_number TEST a
+eigenscript.c:2735 eigs_list_number eigs_list_number READ b
+eigenscript.c:2738 eigs_list_number eigs_number_arg READ b
+eigenscript.c:2740 eigs_elem_number eigs_elem_number READ b
+eigenscript.c:2741 eigs_elem_number eigs_number_arg READ b
+eigenscript.c:2743 eigs_opt_number eigs_opt_number READ b
+eigenscript.c:2745 eigs_opt_number eigs_number_arg READ b
+eigenscript.c:2750 eigs_list_float eigs_list_float READ b
+eigenscript.c:2753 eigs_list_float eigs_float_arg READ b
+eigenscript.c:2755 eigs_elem_float eigs_elem_float READ b
+eigenscript.c:2756 eigs_elem_float eigs_float_arg READ b
+eigenscript.c:2758 eigs_opt_float eigs_opt_float READ b
+eigenscript.c:2760 eigs_opt_float eigs_float_arg READ b
+eigenscript.c:2765 eigs_list_int eigs_list_int READ b
+eigenscript.c:2768 eigs_list_int eigs_int_arg READ b
+eigenscript.c:2770 eigs_elem_int eigs_elem_int READ b
+eigenscript.c:2771 eigs_elem_int eigs_int_arg READ b
+eigenscript.c:2773 eigs_opt_int eigs_opt_int READ b
+eigenscript.c:2775 eigs_opt_int eigs_int_arg READ b
+eigenscript.c:2780 eigs_list_byte eigs_list_byte READ b
+eigenscript.c:2783 eigs_list_byte eigs_byte_arg READ b
+eigenscript.c:2785 eigs_elem_byte eigs_elem_byte READ b
+eigenscript.c:2786 eigs_elem_byte eigs_byte_arg READ b
+eigenscript.c:2788 eigs_opt_byte eigs_opt_byte READ b
+eigenscript.c:2790 eigs_opt_byte eigs_byte_arg READ b
+eigenscript.c:2795 eigs_list_int_range eigs_list_int_range READ b
+eigenscript.c:2798 eigs_list_int_range eigs_int_arg_range READ b
+eigenscript.c:2800 eigs_elem_int_range eigs_elem_int_range READ b
+eigenscript.c:2801 eigs_elem_int_range VAL_INT TAGSET c
+eigenscript.c:2802 eigs_elem_int_range eigs_int_arg_range READ b
+eigenscript.c:2804 eigs_opt_int_range eigs_opt_int_range READ b
+eigenscript.c:2806 eigs_opt_int_range eigs_int_arg_range READ b
+eigenscript.c:2809 eigs_list_bounded eigs_list_bounded READ b
+eigenscript.c:2812 eigs_list_bounded eigs_bounded_arg READ b
+eigenscript.c:2814 eigs_elem_bounded eigs_elem_bounded READ b
+eigenscript.c:2815 eigs_elem_bounded VAL_INT TAGSET c
+eigenscript.c:2816 eigs_elem_bounded eigs_bounded_arg READ b
+eigenscript.c:2818 eigs_opt_bounded eigs_opt_bounded READ b
+eigenscript.c:2820 eigs_opt_bounded eigs_bounded_arg READ b
+eigenscript.c:2823 eigs_list_magnitude eigs_list_magnitude READ b
+eigenscript.c:2826 eigs_list_magnitude eigs_magnitude_arg READ b
+eigenscript.c:2828 eigs_elem_magnitude eigs_elem_magnitude READ b
+eigenscript.c:2829 eigs_elem_magnitude VAL_INT TAGSET c
+eigenscript.c:2830 eigs_elem_magnitude eigs_magnitude_arg READ b
+eigenscript.c:2832 eigs_opt_magnitude eigs_opt_magnitude READ b
+eigenscript.c:2834 eigs_opt_magnitude eigs_magnitude_arg READ b
+eigenscript.c:2839 buffer_read_f64 buffer_read_f64 READ b
+eigenscript.c:2857 buffer_index_at buffer_index_at READ b
+eigenscript.c:2865 buffer_index_at buffer_read_f64 READ b
+eigenscript.c:2867 buffer_index_at VAL_FLOAT TAGSET c
+eigenscript.c:2868 buffer_index_at VAL_F64_RAW WRITE c
+eigenscript.c:2869 buffer_index_at eigs_int_arg READ b
+eigenscript.c:2873 buffer_byte_at buffer_byte_at READ b
+eigenscript.c:2875 buffer_byte_at buffer_index_at READ b
+eigenscript.c:2915 slot_from_value VAL_FLOAT TEST a
+eigenscript.c:2919 slot_from_value VAL_F64_RAW RAW b
+eigenscript.c:2921 slot_from_value slot_from_f64 PRODUCE c
+eigenscript.c:2925 slot_from_value VAL_INT TEST a
+eigenscript.c:2926 slot_from_value VAL_I64_RAW RAW b
+eigenscript.c:2929 slot_from_value slot_from_int PRODUCE c
+eigenscript.c:2949 slot_to_value SLOT_F64_RAW RAW b
+eigenscript.c:2949 slot_to_value make_float PRODUCE c
+eigenscript.c:2949 slot_to_value slot_is_f64 TEST a
+eigenscript.c:2957 slot_to_value make_int PRODUCE c
+eigenscript.c:2957 slot_to_value slot_is_smi TEST a
+eigenscript.c:2957 slot_to_value slot_smi_val RAW b
+eigenscript.c:3451 module_ns_project slot_is_f64 TEST a
+eigenscript.c:3451 module_ns_project slot_is_f64 TEST a
+eigenscript.c:3456 module_ns_project SLOT_F64_RAW RAW b
+eigenscript.c:3456 module_ns_project dict_value_rewrite_f64 PRODUCE c
+eigenscript.c:3716 chan_clone_rec VAL_FLOAT TEST a
+eigenscript.c:3716 chan_clone_rec VAL_INT TEST a
+eigenscript.c:3719 chan_clone_rec VAL_F64_RAW RAW b
+eigenscript.c:3719 chan_clone_rec VAL_FLOAT CASE a
+eigenscript.c:3719 chan_clone_rec make_float PRODUCE c
+eigenscript.c:3720 chan_clone_rec VAL_I64_RAW RAW b
+eigenscript.c:3720 chan_clone_rec VAL_INT CASE a
+eigenscript.c:3720 chan_clone_rec make_int PRODUCE c
+eigenscript.c:3923 is_truthy VAL_F64_RAW RAW b
+eigenscript.c:3923 is_truthy VAL_FLOAT CASE a
+eigenscript.c:3924 is_truthy VAL_I64_RAW RAW b
+eigenscript.c:3924 is_truthy VAL_INT CASE a
+eigenscript.c:3981 equal_scan_push VAL_FLOAT TEST a
+eigenscript.c:3985 equal_scan_push eigs_number_read READ b
+eigenscript.c:4051 values_equal_impl VAL_FLOAT TEST f
+eigenscript.c:4061 values_equal_impl VAL_FLOAT TEST f
+eigenscript.c:4061 values_equal_impl VAL_INT TEST f
+eigenscript.c:4062 values_equal_impl VAL_F64_RAW RAW f
+eigenscript.c:4062 values_equal_impl VAL_I64_RAW RAW f
+eigenscript.c:4063 values_equal_impl VAL_FLOAT TEST f
+eigenscript.c:4063 values_equal_impl VAL_INT TEST f
+eigenscript.c:4064 values_equal_impl VAL_F64_RAW RAW f
 eigenscript.c:4064 values_equal_impl VAL_I64_RAW RAW f
-eigenscript.c:4064 values_equal_impl VAL_I64_RAW RAW f
-eigenscript.c:4064 values_equal_impl VAL_INT CASE f
-eigenscript.c:4134 eigs_num_text eigs_num_text FORMAT e
-eigenscript.c:4196 eigs_num_text strtod PARSE e
-eigenscript.c:4251 value_to_string VAL_FLOAT CASE e
-eigenscript.c:4252 value_to_string VAL_F64_RAW RAW e
-eigenscript.c:4252 value_to_string eigs_num_text FORMAT e
-eigenscript.c:4255 value_to_string VAL_INT CASE e
-eigenscript.c:4256 value_to_string VAL_I64_RAW RAW e
-eigenscript.c:5630 gc_value_is_node VAL_FLOAT CASE a
-eigenscript.c:5631 gc_value_is_node VAL_INT CASE a
+eigenscript.c:4065 values_equal_impl val_is_number TEST f
+eigenscript.c:4066 values_equal_impl val_is_number TEST f
+eigenscript.c:4080 values_equal_impl VAL_F64_RAW RAW f
+eigenscript.c:4080 values_equal_impl VAL_F64_RAW RAW f
+eigenscript.c:4080 values_equal_impl VAL_FLOAT CASE f
+eigenscript.c:4081 values_equal_impl VAL_I64_RAW RAW f
+eigenscript.c:4081 values_equal_impl VAL_I64_RAW RAW f
+eigenscript.c:4081 values_equal_impl VAL_INT CASE f
+eigenscript.c:4151 eigs_num_text eigs_num_text FORMAT e
+eigenscript.c:4213 eigs_num_text strtod PARSE e
+eigenscript.c:4268 value_to_string VAL_FLOAT CASE e
+eigenscript.c:4269 value_to_string VAL_F64_RAW RAW e
+eigenscript.c:4269 value_to_string eigs_num_text FORMAT e
+eigenscript.c:4272 value_to_string VAL_INT CASE e
+eigenscript.c:4273 value_to_string VAL_I64_RAW RAW e
+eigenscript.c:5647 gc_value_is_node VAL_FLOAT CASE a
+eigenscript.c:5648 gc_value_is_node VAL_INT CASE a
 eigenscript.h:193 <file scope> number RAW b
 eigenscript.h:223 <file scope> AST_NUM DATA a
 eigenscript.h:249 <file scope> number RAW b
@@ -1816,47 +1816,47 @@ eigenscript.h:329 #define VAL_I64_RAW VAL_I64_RAW RAW b
 eigenscript.h:329 #define VAL_I64_RAW i64_ RAW b
 eigenscript.h:330 #define VAL_F64_OFFSET VAL_F64_OFFSET RAW b
 eigenscript.h:330 #define VAL_F64_OFFSET f64_ RAW b
-eigenscript.h:1471 <file scope> eigs_number_read READ b
-eigenscript.h:1478 <file scope> eigs_number_arg READ b
-eigenscript.h:1479 <file scope> eigs_list_number READ b
-eigenscript.h:1480 <file scope> eigs_elem_number READ b
-eigenscript.h:1481 <file scope> eigs_opt_number READ b
-eigenscript.h:1482 <file scope> eigs_float_arg READ b
-eigenscript.h:1483 <file scope> eigs_list_float READ b
-eigenscript.h:1484 <file scope> eigs_elem_float READ b
-eigenscript.h:1485 <file scope> eigs_opt_float READ b
-eigenscript.h:1486 <file scope> eigs_int_arg READ b
-eigenscript.h:1487 <file scope> eigs_list_int READ b
-eigenscript.h:1488 <file scope> eigs_elem_int READ b
-eigenscript.h:1489 <file scope> eigs_opt_int READ b
-eigenscript.h:1490 <file scope> eigs_byte_arg READ b
-eigenscript.h:1491 <file scope> eigs_list_byte READ b
-eigenscript.h:1492 <file scope> eigs_elem_byte READ b
-eigenscript.h:1493 <file scope> eigs_opt_byte READ b
-eigenscript.h:1494 <file scope> eigs_int_arg_range READ b
-eigenscript.h:1495 <file scope> eigs_list_int_range READ b
-eigenscript.h:1496 <file scope> eigs_elem_int_range READ b
-eigenscript.h:1497 <file scope> eigs_opt_int_range READ b
-eigenscript.h:1507 <file scope> eigs_geom_shape READ b
-eigenscript.h:1509 <file scope> eigs_bounded_arg READ b
-eigenscript.h:1510 <file scope> eigs_list_bounded READ b
-eigenscript.h:1511 <file scope> eigs_elem_bounded READ b
-eigenscript.h:1512 <file scope> eigs_opt_bounded READ b
-eigenscript.h:1513 <file scope> eigs_magnitude_arg READ b
-eigenscript.h:1514 <file scope> eigs_list_magnitude READ b
-eigenscript.h:1515 <file scope> eigs_elem_magnitude READ b
-eigenscript.h:1516 <file scope> eigs_opt_magnitude READ b
-eigenscript.h:1892 <file scope> make_float PRODUCE c
-eigenscript.h:1893 <file scope> make_float_permanent PRODUCE c
-eigenscript.h:1894 <file scope> make_int PRODUCE c
-eigenscript.h:1963 eigs_math_result_named eigs_math_result_named GUARD c
-eigenscript.h:1967 eigs_math_result eigs_math_result GUARD c
-eigenscript.h:1968 eigs_math_result eigs_math_result_named GUARD c
-eigenscript.h:1976 num_to_i64_exact num_to_i64_exact READ b
-eigenscript.h:1995 <file scope> buffer_read_f64 READ b
-eigenscript.h:1996 <file scope> buffer_byte_at READ b
-eigenscript.h:1997 <file scope> buffer_index_at READ b
-eigenscript.h:2311 <file scope> eigs_num_text FORMAT e
+eigenscript.h:1473 <file scope> eigs_number_read READ b
+eigenscript.h:1480 <file scope> eigs_number_arg READ b
+eigenscript.h:1481 <file scope> eigs_list_number READ b
+eigenscript.h:1482 <file scope> eigs_elem_number READ b
+eigenscript.h:1483 <file scope> eigs_opt_number READ b
+eigenscript.h:1484 <file scope> eigs_float_arg READ b
+eigenscript.h:1485 <file scope> eigs_list_float READ b
+eigenscript.h:1486 <file scope> eigs_elem_float READ b
+eigenscript.h:1487 <file scope> eigs_opt_float READ b
+eigenscript.h:1488 <file scope> eigs_int_arg READ b
+eigenscript.h:1489 <file scope> eigs_list_int READ b
+eigenscript.h:1490 <file scope> eigs_elem_int READ b
+eigenscript.h:1491 <file scope> eigs_opt_int READ b
+eigenscript.h:1492 <file scope> eigs_byte_arg READ b
+eigenscript.h:1493 <file scope> eigs_list_byte READ b
+eigenscript.h:1494 <file scope> eigs_elem_byte READ b
+eigenscript.h:1495 <file scope> eigs_opt_byte READ b
+eigenscript.h:1496 <file scope> eigs_int_arg_range READ b
+eigenscript.h:1497 <file scope> eigs_list_int_range READ b
+eigenscript.h:1498 <file scope> eigs_elem_int_range READ b
+eigenscript.h:1499 <file scope> eigs_opt_int_range READ b
+eigenscript.h:1509 <file scope> eigs_geom_shape READ b
+eigenscript.h:1511 <file scope> eigs_bounded_arg READ b
+eigenscript.h:1512 <file scope> eigs_list_bounded READ b
+eigenscript.h:1513 <file scope> eigs_elem_bounded READ b
+eigenscript.h:1514 <file scope> eigs_opt_bounded READ b
+eigenscript.h:1515 <file scope> eigs_magnitude_arg READ b
+eigenscript.h:1516 <file scope> eigs_list_magnitude READ b
+eigenscript.h:1517 <file scope> eigs_elem_magnitude READ b
+eigenscript.h:1518 <file scope> eigs_opt_magnitude READ b
+eigenscript.h:1894 <file scope> make_float PRODUCE c
+eigenscript.h:1895 <file scope> make_float_permanent PRODUCE c
+eigenscript.h:1896 <file scope> make_int PRODUCE c
+eigenscript.h:1965 eigs_math_result_named eigs_math_result_named GUARD c
+eigenscript.h:1969 eigs_math_result eigs_math_result GUARD c
+eigenscript.h:1970 eigs_math_result eigs_math_result_named GUARD c
+eigenscript.h:1978 num_to_i64_exact num_to_i64_exact READ b
+eigenscript.h:1997 <file scope> buffer_read_f64 READ b
+eigenscript.h:1998 <file scope> buffer_byte_at READ b
+eigenscript.h:1999 <file scope> buffer_index_at READ b
+eigenscript.h:2313 <file scope> eigs_num_text FORMAT e
 eigs_embed.c:384 embed_f64 number RAW j
 eigs_embed.c:385 embed_f64 number RAW j
 eigs_embed.c:385 embed_f64 slot_from_f64 PRODUCE j

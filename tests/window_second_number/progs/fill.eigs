@@ -1,0 +1,8 @@
+x is 10000000000000000
+i is 0
+loop while i < 30:
+    x is x + 1
+    i is i + 1
+    r is report of x
+print of r
+print of [converged of x, stable of x, oscillating of x, diverging of x]

@@ -1,0 +1,1 @@
+- A binding that only ever holds one finite number no longer allocates observer value windows: they are made when its second number arrives. Program answers are unchanged (#2433).

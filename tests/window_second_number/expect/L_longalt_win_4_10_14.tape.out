@@ -1,0 +1,334 @@
+tape L_longalt_win_4_10_14.tape: 32 steps, 31 assigns (1 bindings), 0 nondet records
+step 1/32  line 1
+  A x=1.0
+step 2/32  line 2
+  A x=1.5
+x = 1.5  [moving]  (2 assigns)
+step 3/32  line 3
+  A x=0.55
+x = 0.55  [improving]  (3 assigns)
+step 4/32  line 4
+  A x=1.405
+x = 1.405  [oscillating]  (4 assigns)
+step 5/32  line 5
+  A x=0.6355
+x = 0.6355  [oscillating]  (5 assigns)
+step 6/32  line 6
+  A x=1.32805
+x = 1.32805  [oscillating]  (6 assigns)
+step 7/32  line 7
+  A x=0.704755
+x = 0.704755  [oscillating]  (7 assigns)
+step 8/32  line 8
+  A x=1.2657205
+x = 1.2657205  [oscillating]  (8 assigns)
+step 9/32  line 9
+  A x=0.7608515499999999
+x = 0.7608515499999999  [oscillating]  (9 assigns)
+step 10/32  line 10
+  A x=1.215233605
+x = 1.215233605  [oscillating]  (10 assigns)
+step 11/32  line 11
+  A x=0.8062897554999999
+x = 0.8062897554999999  [oscillating]  (11 assigns)
+step 12/32  line 12
+  A x=1.17433922005
+x = 1.17433922005  [oscillating]  (12 assigns)
+step 13/32  line 13
+  A x=0.8430947019549999
+x = 0.8430947019549999  [oscillating]  (13 assigns)
+step 14/32  line 14
+  A x=1.1412147682405
+x = 1.1412147682405  [oscillating]  (14 assigns)
+step 15/32  line 15
+  A x=0.87290670858355
+x = 0.87290670858355  [oscillating]  (15 assigns)
+step 16/32  line 16
+  A x=1.114383962274805
+x = 1.114383962274805  [oscillating]  (16 assigns)
+step 17/32  line 17
+  A x=0.8970544339526755
+x = 0.8970544339526755  [oscillating]  (17 assigns)
+step 18/32  line 18
+  A x=1.092651009442592
+x = 1.092651009442592  [oscillating]  (18 assigns)
+step 19/32  line 19
+  A x=0.9166140915016672
+x = 0.9166140915016672  [oscillating]  (19 assigns)
+step 20/32  line 20
+  A x=1.0750473176484996
+x = 1.0750473176484996  [oscillating]  (20 assigns)
+step 21/32  line 21
+  A x=0.9324574141163504
+x = 0.9324574141163504  [oscillating]  (21 assigns)
+step 22/32  line 22
+  A x=1.0607883272952847
+x = 1.0607883272952847  [oscillating]  (22 assigns)
+step 23/32  line 23
+  A x=0.9452905054342438
+x = 0.9452905054342438  [oscillating]  (23 assigns)
+step 24/32  line 24
+  A x=1.0492385451091806
+x = 1.0492385451091806  [oscillating]  (24 assigns)
+step 25/32  line 25
+  A x=0.9556853094017375
+x = 0.9556853094017375  [oscillating]  (25 assigns)
+step 26/32  line 26
+  A x=1.0398832215384364
+x = 1.0398832215384364  [oscillating]  (26 assigns)
+step 27/32  line 27
+  A x=0.9641051006154073
+x = 0.9641051006154073  [oscillating]  (27 assigns)
+step 28/32  line 28
+  A x=1.0323054094461335
+x = 1.0323054094461335  [oscillating]  (28 assigns)
+step 29/32  line 29
+  A x=0.9709251314984799
+x = 0.9709251314984799  [oscillating]  (29 assigns)
+step 30/32  line 30
+  A x=1.0261673816513681
+x = 1.0261673816513681  [oscillating]  (30 assigns)
+step 31/32  line 31
+  A x=0.9764493565137687
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+step 32/32  line 32
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+at end of tape
+x = 0.9764493565137687  [oscillating]  (31 assigns)
+rc=0

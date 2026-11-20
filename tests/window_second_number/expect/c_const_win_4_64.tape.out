@@ -1,0 +1,324 @@
+tape c_const_win_4_64.tape: 22 steps, 21 assigns (1 bindings), 0 nondet records
+step 1/22  line 1
+  A x=1.0
+step 2/22  line 2
+  A x=2.0
+x = 2.0  [moving]  (2 assigns)
+step 3/22  line 3
+  A x=2.0
+x = 2.0  [moving]  (3 assigns)
+step 4/22  line 4
+  A x=2.0
+x = 2.0  [moving]  (4 assigns)
+step 5/22  line 5
+  A x=2.0
+x = 2.0  [moving]  (5 assigns)
+step 6/22  line 6
+  A x=2.0
+x = 2.0  [converged]  (6 assigns)
+step 7/22  line 7
+  A x=2.0
+x = 2.0  [moving]  (7 assigns)
+step 8/22  line 8
+  A x=2.0
+x = 2.0  [moving]  (8 assigns)
+step 9/22  line 9
+  A x=2.0
+x = 2.0  [moving]  (9 assigns)
+step 10/22  line 10
+  A x=2.0
+x = 2.0  [moving]  (10 assigns)
+step 11/22  line 11
+  A x=2.0
+x = 2.0  [moving]  (11 assigns)
+step 12/22  line 12
+  A x=2.0
+x = 2.0  [moving]  (12 assigns)
+step 13/22  line 13
+  A x=2.0
+x = 2.0  [moving]  (13 assigns)
+step 14/22  line 14
+  A x=2.0
+x = 2.0  [moving]  (14 assigns)
+step 15/22  line 15
+  A x=2.0
+x = 2.0  [moving]  (15 assigns)
+step 16/22  line 16
+  A x=2.0
+x = 2.0  [moving]  (16 assigns)
+step 17/22  line 17
+  A x=2.0
+x = 2.0  [moving]  (17 assigns)
+step 18/22  line 18
+  A x=2.0
+x = 2.0  [moving]  (18 assigns)
+step 19/22  line 19
+  A x=2.0
+x = 2.0  [moving]  (19 assigns)
+step 20/22  line 20
+  A x=2.0
+x = 2.0  [moving]  (20 assigns)
+step 21/22  line 21
+  A x=2.0
+x = 2.0  [moving]  (21 assigns)
+step 22/22  line 22
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+at end of tape
+x = 2.0  [moving]  (21 assigns)
+rc=0
