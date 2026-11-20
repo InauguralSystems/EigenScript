@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove the embedding strict-call test rejects fourteen single faults."""
+"""Prove the embedding strict-call test rejects embedding strict-call faults."""
 import os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -16,20 +16,47 @@ B='''void eigs_state_set_strict(EigsState *st, int enabled) {
     }
 }'''
 variants = [
- ('guards-noop-disable',G,G.replace('if (st) st->strict_guards = enabled != 0;','if (st && enabled) st->strict_guards = 1;'),'guards 1->0 other=0'),
- ('guards-noop-enable',G,G.replace('if (st) st->strict_guards = enabled != 0;','if (st && !enabled) st->strict_guards = 0;'),'guards 0->1 other=0'),
- ('arithmetic-noop-disable',A,A.replace('if (st) st->strict_arithmetic = enabled != 0;','if (st && enabled) st->strict_arithmetic = 1;'),'arithmetic 1->0 other=0'),
- ('arithmetic-noop-enable',A,A.replace('if (st) st->strict_arithmetic = enabled != 0;','if (st && !enabled) st->strict_arithmetic = 0;'),'arithmetic 0->1 other=0'),
- ('guards-writes-arithmetic',G,G.replace('st->strict_guards','st->strict_arithmetic'),'guards 0->1 other=0'),
- ('arithmetic-writes-guards',A,A.replace('st->strict_arithmetic','st->strict_guards'),'arithmetic 0->1 other=0'),
- ('both-leaves-guards',B,B.replace('        st->strict_guards = enabled != 0;\n',''),'both 01->11'),
- ('both-leaves-arithmetic',B,B.replace('        st->strict_arithmetic = enabled != 0;\n',''),'both 10->11'),
- ('guards-resets-arithmetic-default',G,G.replace('if (st) st->strict_guards = enabled != 0;','if (st) { st->strict_guards = enabled != 0; st->strict_arithmetic = 0; }'),'guards 1->0 other=1'),
- ('arithmetic-only-before-init',A,A.replace('if (st) st->strict_arithmetic = enabled != 0;','if (st && !st->threads) st->strict_arithmetic = enabled != 0;'),'arithmetic 0->1 other=0'),
+ ('guards-noop-disable',G,G.replace('if (st) st->strict_guards = enabled != 0;','if (st && enabled) st->strict_guards = 1;'),'open guards 1->0 other=0'),
+ ('guards-noop-enable',G,G.replace('if (st) st->strict_guards = enabled != 0;','if (st && !enabled) st->strict_guards = 0;'),'new guards 0->1 other=0'),
+ ('arithmetic-noop-disable',A,A.replace('if (st) st->strict_arithmetic = enabled != 0;','if (st && enabled) st->strict_arithmetic = 1;'),'open arithmetic 1->0 other=0'),
+ ('arithmetic-noop-enable',A,A.replace('if (st) st->strict_arithmetic = enabled != 0;','if (st && !enabled) st->strict_arithmetic = 0;'),'new arithmetic 0->1 other=0'),
+ ('guards-writes-arithmetic',G,G.replace('st->strict_guards','st->strict_arithmetic'),'new guards 0->1 other=0'),
+ ('arithmetic-writes-guards',A,A.replace('st->strict_arithmetic','st->strict_guards'),'new arithmetic 0->1 other=0'),
+ ('both-leaves-guards',B,B.replace('        st->strict_guards = enabled != 0;\n',''),'new both 01->11'),
+ ('both-leaves-arithmetic',B,B.replace('        st->strict_arithmetic = enabled != 0;\n',''),'open both 10->11'),
+ ('guards-resets-arithmetic-default',G,G.replace('if (st) st->strict_guards = enabled != 0;','if (st) { st->strict_guards = enabled != 0; st->strict_arithmetic = 0; }'),'new guards 1->0 other=1'),
+ ('arithmetic-only-before-init',A,A.replace('if (st) st->strict_arithmetic = enabled != 0;','if (st && !st->threads) st->strict_arithmetic = enabled != 0;'),'open arithmetic 0->1 other=1'),
  ('guards-no-null-guard',G,G.replace('if (st) st->strict_guards = enabled != 0;','st->strict_guards = enabled != 0;'),'CRASH null guards'),
  ('arithmetic-no-null-guard',A,A.replace('if (st) st->strict_arithmetic = enabled != 0;','st->strict_arithmetic = enabled != 0;'),'CRASH null arithmetic'),
- ('guards-enables-only-one',G,G.replace('enabled != 0','enabled == 1'),'guards 0->1 other=0'),
- ('arithmetic-enables-only-one',A,A.replace('enabled != 0','enabled == 1'),'arithmetic 0->1 other=0'),
+ ('guards-enables-only-one',G,G.replace('enabled != 0','enabled == 1'),'new guards 0->1 other=0'),
+ ('arithmetic-enables-only-one',A,A.replace('enabled != 0','enabled == 1'),'new arithmetic 0->1 other=0'),
+]
+
+# A call returning without writing for one state kind and one direction.
+# None duplicates the fourteen broader or orthogonal edits above: in particular,
+# arithmetic-only-before-init suppresses both directions on an open state.
+def one_place(name, source, field, opened, enabled, want):
+    condition = ("st->threads" if opened else "!st->threads") + (" && enabled" if enabled else " && !enabled")
+    assignment = f"if (st) st->{field} = enabled != 0;"
+    if source == B:
+        replacement = source.replace("    if (st) {", f"    if (st) {{\n        if ({condition}) return;", 1)
+    else:
+        replacement = source.replace(assignment, f"if (st && {condition}) return;\n    {assignment}", 1)
+    return (name, source, replacement, want)
+
+variants += [
+ one_place('guards-open-zero', G, 'strict_guards', True, False, 'open guards 1->0 other=0'),
+ one_place('guards-open-nonzero', G, 'strict_guards', True, True, 'open guards 0->1 other=1'),
+ one_place('guards-new-zero', G, 'strict_guards', False, False, 'new guards 1->0 other=1'),
+ one_place('guards-new-nonzero', G, 'strict_guards', False, True, 'new guards 0->1 other=0'),
+ one_place('arithmetic-open-zero', A, 'strict_arithmetic', True, False, 'open arithmetic 1->0 other=0'),
+ one_place('arithmetic-open-nonzero', A, 'strict_arithmetic', True, True, 'open arithmetic 0->1 other=1'),
+ one_place('arithmetic-new-zero', A, 'strict_arithmetic', False, False, 'new arithmetic 1->0 other=1'),
+ one_place('arithmetic-new-nonzero', A, 'strict_arithmetic', False, True, 'new arithmetic 0->1 other=0'),
+ one_place('both-open-zero', B, '', True, False, 'open both 01->00'),
+ one_place('both-open-nonzero', B, '', True, True, 'open both 10->11'),
+ one_place('both-new-zero', B, '', False, False, 'new both 10->00'),
+ one_place('both-new-nonzero', B, '', False, True, 'new both 01->11'),
 ]
 def run(cwd, env):
     return subprocess.run([str(cwd/'build/release/test_embed_strict_calls')],cwd=cwd,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)

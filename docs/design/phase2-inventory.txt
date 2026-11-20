@@ -1878,7 +1878,7 @@ eigs_embed.c:480 eigs_value_as_int num_to_i64_exact READ j
 eigs_embed.c:490 eigs_value_is_int VAL_INT TEST j
 eigs_embed.c:693 eigs_trace_declare_kind VAL_FLOAT DATA j
 eigs_embed.c:693 eigs_trace_declare_kind VAL_INT DATA j
-eigs_embed.h:180 <file scope> eigs_value_as_num READ j
+eigs_embed.h:181 <file scope> eigs_value_as_num READ j
 embed_concurrent.c:106 global_worker eigs_value_as_num READ j
 embed_concurrent.c:768 take_drain eigs_value_as_num READ j
 embed_concurrent.c:1268 test_sink_only_buffer_bounded eigs_value_as_num READ j

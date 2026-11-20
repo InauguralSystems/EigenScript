@@ -70,10 +70,11 @@ static void creation(void) {
     int wg = set ? !off : 1, wa = set ? !off : 0;
     EigsState *st = eigs_open();
     if (!st) { printf("FAIL: creation state\n"); failures++; return; }
-    int g = probe("try:\n    abs of \"x\"\ncatch e:\n    -777\n", wg, 1);
-    int a = probe("try:\n    1.0 / 0.0\ncatch e:\n    -777\n", wa, 0);
-    if (g && a) printf("PASS: creation guards=%d arithmetic=%d\n", wg, wa);
-    else { printf("FAIL: creation want=%d,%d seen=%d,%d\n", wg, wa, g, a); failures++; }
+    int seen_g = probe("try:\n    abs of \"x\"\ncatch e:\n    -777\n", 1, 1);
+    int seen_a = probe("try:\n    1.0 / 0.0\ncatch e:\n    -777\n", 1, 0);
+    if (seen_g == wg && seen_a == wa)
+        printf("PASS: creation guards=%d arithmetic=%d\n", wg, wa);
+    else { printf("FAIL: creation want=%d,%d seen=%d,%d\n", wg, wa, seen_g, seen_a); failures++; }
     eigs_close(st);
 }
 /* Two states alive together: a call on one does not move the other, and no
@@ -109,18 +110,18 @@ int main(void) {
     two_states();
     eigs_state_set_strict_guards(NULL, -1);
     eigs_state_set_strict_arithmetic(NULL, 2);
-    transition("guards 1->0 other=0",0,1,0,eigs_state_set_strict_guards,0,0,0);
-    transition("guards 0->1 other=0",0,0,0,eigs_state_set_strict_guards,-1,1,0);
-    transition("arithmetic 1->0 other=0",0,0,1,eigs_state_set_strict_arithmetic,0,0,0);
-    transition("arithmetic 0->1 other=0",0,0,0,eigs_state_set_strict_arithmetic,2,0,1);
-    transition("guards 1->0 other=1",0,1,1,eigs_state_set_strict_guards,0,0,1);
-    transition("guards 0->1 other=1",0,0,1,eigs_state_set_strict_guards,1,1,1);
-    transition("arithmetic 1->0 other=1",1,1,1,eigs_state_set_strict_arithmetic,0,1,0);
-    transition("arithmetic 0->1 other=1",1,1,0,eigs_state_set_strict_arithmetic,1,1,1);
-    transition("both 01->00",1,0,1,eigs_state_set_strict,0,0,0);
-    transition("both 10->00",1,1,0,eigs_state_set_strict,0,0,0);
-    transition("both 01->11",1,0,1,eigs_state_set_strict,-1,1,1);
-    transition("both 10->11",1,1,0,eigs_state_set_strict,2,1,1);
+    transition("open guards 1->0 other=0",0,1,0,eigs_state_set_strict_guards,0,0,0);
+    transition("new guards 0->1 other=0",1,0,0,eigs_state_set_strict_guards,-1,1,0);
+    transition("new guards 1->0 other=1",1,1,1,eigs_state_set_strict_guards,0,0,1);
+    transition("open guards 0->1 other=1",0,0,1,eigs_state_set_strict_guards,1,1,1);
+    transition("open arithmetic 1->0 other=0",0,0,1,eigs_state_set_strict_arithmetic,0,0,0);
+    transition("new arithmetic 0->1 other=0",1,0,0,eigs_state_set_strict_arithmetic,2,0,1);
+    transition("new arithmetic 1->0 other=1",1,1,1,eigs_state_set_strict_arithmetic,0,1,0);
+    transition("open arithmetic 0->1 other=1",0,1,0,eigs_state_set_strict_arithmetic,1,1,1);
+    transition("open both 01->00",0,0,1,eigs_state_set_strict,0,0,0);
+    transition("new both 10->00",1,1,0,eigs_state_set_strict,0,0,0);
+    transition("new both 01->11",1,0,1,eigs_state_set_strict,-1,1,1);
+    transition("open both 10->11",0,1,0,eigs_state_set_strict,2,1,1);
     run_fourth();
     printf("embed-strict-calls: %s transitions=%d fourth=%d failures=%d\n",failures?"FAIL":"PASS",transitions,fourth_count,failures);
     return failures != 0;

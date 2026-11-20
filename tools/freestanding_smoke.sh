@@ -79,7 +79,7 @@ check_line() { _check "$1" "$2" str_has_line "$3" "$4"; }
 
 # The creation default is checked with EIGS_STRICT removed from the environment,
 # whatever the caller exported: a state reads the variable when it is created.
-FS_RUN="env -u EIGS_STRICT" check "strict state created with EIGS_STRICT unset and setters control three states" 0 "strict creation default works
+FS_RUN="env -u EIGS_STRICT" check "strict state created with EIGS_STRICT unset and setters control states" 0 "strict creation default works
 strict off setter works
 strict on setter works
 strict one-property setters work" '--strict-api'
