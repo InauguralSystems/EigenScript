@@ -121,6 +121,8 @@ def _lit(xs):
 
 
 CASES = {
+    "int-mixed-window": ("vals is [10000000000000000, 10000000000000001]\ni is 0\nx is 10000000000000000.0", "i is 1 - i\nx is vals[i]"),
+    "int-mixed-wrap": ("n is 0\nvals is [10000000000000000, 10000000000000001]\ni is 0\nx is 0.9", "n is n + 1\ny is 0.5 + (x - 0.5) * 0.5\nif n >= 10:\n    i is 1 - i\n    y is vals[i]\nif n >= 99:\n    y is 20000000000000000 + i\nif n == 101:\n    y is 20000000000000000.0\nx is y"),
     "int-stopped-boxed": ("n is 0\nx is 10000000000000000", "n is n + 1\ny is x\nif n < 20:\n    y is x + 1\nx is y"),
     "int-alternating-boxed": ("vals is [10000000000000000, 10000000000000001]\ni is 0\nx is 10000000000000000", "i is 1 - i\nx is vals[i]"),
     "doubling": ("x is 10.0\nx is 10.0", "x is x * 2.0"),
@@ -174,6 +176,22 @@ def correct(case, value):
     if case == "harmonic":
         return True  # R31-2 requests a measurement, without a requirement.
     count, reason, report, certified = value
+    if case == "int-mixed-window":
+        # The float-to-integer first step is inexact at ring index 0; the next nine
+        # boxed-integer unit steps are exact.  At test 10 the mixed full window
+        # hides unit motion below the double noise floor and converges.  A wrap
+        # that substitutes index 10 for index 0 calls the window all-exact, so
+        # the raw alternation prevents that verdict.
+        return count == 10 and reason == "normal" and certified is True
+    if case == "int-mixed-wrap":
+        # Tests 1..9 damp and do not advance the stall counter.  Test 99's
+        # exact integer jump is the last relative-window blocker: at test 109
+        # it has just aged out, while test 101's float step and test 102's
+        # return-to-integer step remain in ring indices 0 and 1.  Reading the
+        # mixed window gives the double noise floor, hides the following unit
+        # steps, and converges at 109.  Reading forward from index 8 instead
+        # misses 0 and 1 and delays the verdict to the stall check at 110.
+        return count == 109 and reason == "normal" and certified is True
     if case == "int-stopped-boxed":
         # The first 19 exact +1 steps are raw-diverging even though their
         # relative size is below 0.1%; the zero step at iteration 20 makes
