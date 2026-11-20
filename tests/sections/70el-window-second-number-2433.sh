@@ -2,7 +2,7 @@
 # one-number programs against outputs taken from the base build.
 echo "[70el] Value windows at the second number (#2433)"
 TOTAL=$((TOTAL + 1))
-WSN_OUT=$(EIGS="$EIGS" bash "$TESTS_DIR/test_window_second_number.sh" 2>&1); WSN_RC=$?
+WSN_OUT=$(EIGS="$EIGS" EIGS_TMO="$EIGS_TMO" bash "$TESTS_DIR/test_window_second_number.sh" 2>&1); WSN_RC=$?
 WSN_SUM=$(grep '^window-second-number: ' <<< "$WSN_OUT")
 WSN_RE='^window-second-number: tapes=([0-9]+)/([0-9]+) programs=([0-9]+)/([0-9]+) runs=([0-9]+) expectations=[0-9]+ failures=0$'
 if [ "$WSN_RC" -eq 0 ] && [[ $WSN_SUM =~ $WSN_RE ]] && [ "${BASH_REMATCH[1]}" -gt 0 ] &&

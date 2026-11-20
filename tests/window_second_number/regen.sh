@@ -7,8 +7,12 @@
 set -eu
 bin=$1; out=$2; here=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$out"
-for p in alt const long longalt; do
+for p in alt alt31 const long longalt; do
     env EIGS_TRACE="$out/$p.rec" "$bin" "$here/$p.eigs" > /dev/null
+done
+for form in cfg win; do
+    python3 "$here/splice.py" "$out/longalt.rec" "$out/M_longalt_${form}.tape" "$form" 1 64 2 4 30 64
+    python3 "$here/splice.py" "$out/alt31.rec" "$out/F_alt31_${form}.tape" "$form" 0 30 1 5 29 64
 done
 for prog in alt const; do
     for form in cfg win; do

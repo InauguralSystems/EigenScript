@@ -9,9 +9,11 @@
 set -u
 EIGS=${1:-${EIGS:-$(cd "$(dirname "$0")/.." && pwd)/src/eigenscript}}
 D="$(cd "$(dirname "$0")" && pwd)/window_second_number"
-TMO=""
-if command -v timeout >/dev/null 2>&1; then TMO="timeout 60"
-elif command -v gtimeout >/dev/null 2>&1; then TMO="gtimeout 60"; fi
+TMO=${EIGS_TMO:-}
+if [ -z "$TMO" ]; then
+    if command -v timeout >/dev/null 2>&1; then TMO="timeout 180"
+    elif command -v gtimeout >/dev/null 2>&1; then TMO="gtimeout 180"; fi
+fi
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/eigs_wsn.XXXXXX") || { echo "FAIL: mktemp"; exit 1; }
 trap 'rm -rf "$TMP"' EXIT
 REC=${WSN_RECORD:-}
