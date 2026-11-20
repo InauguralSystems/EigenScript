@@ -1,9 +1,17 @@
 #!/bin/sh
-# regen.sh <eigenscript> <outdir>: re-records the four programs and splices
-# the 30 lowered-window tapes (#2433) into <outdir>. A tape gets `O 0 cfg` or
-# `O 0 win x` records lowering x's window after its first assignment and
-# raising it after a later one (splice.py); the _nostream tape drops the
-# stream number, which the reader refuses. The recordings stay as *.rec.
+# regen.sh <eigenscript> <outdir>: re-records the generator programs named in
+# the first loop below and splices the tapes of #2433 into <outdir>. A tape
+# gets `O 0 cfg` or `O 0 win x` records that set the window at chosen
+# assignments of x (splice.py):
+#   c_*, L_* and const_win_lr: lowered after the first assignment, raised
+#     after a later one;
+#   M_*: raised after the first, lowered after the second, raised again after
+#     the thirtieth;
+#   F_*: set before the first, lowered after it, raised after the
+#     twenty-ninth;
+#   const_win_lr_nostream: const_win_lr without the stream number, which the
+#     reader refuses.
+# The recordings stay as *.rec.
 set -eu
 bin=$1; out=$2; here=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$out"

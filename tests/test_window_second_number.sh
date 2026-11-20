@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # #2433: a binding's value windows are made at its second number. This replays
-# the 30 lowered-window tapes (stepped one stop at a time) and the one-number
-# programs (four tiers) on the binary under test and compares each output and
-# exit code with window_second_number/expect/, written from a release build of
-# beeb3991 (the commit before #2433) by this file with WSN_RECORD=<dir>.
-# The tapes are remade by window_second_number/regen.sh <eigenscript> <dir>.
+# every tape of window_second_number/tapes/ (stepped one stop at a time) and
+# runs every program of window_second_number/progs/ (four tiers) on the binary
+# under test and compares each output and exit code with
+# window_second_number/expect/, written by this file with WSN_RECORD=<dir> from
+# a release build of the base (beeb3991 when they were recorded).
+# The tapes are remade by window_second_number/regen.sh <eigenscript> <dir>;
+# its header says where each tape's window records sit.
 # stall1_fin.eigs of the given program set is left out: it loops without end.
 set -u
 EIGS=${1:-${EIGS:-$(cd "$(dirname "$0")/.." && pwd)/src/eigenscript}}

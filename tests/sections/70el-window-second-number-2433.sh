@@ -1,5 +1,5 @@
-# #2433: value windows made at the second number; lowered-window tapes and
-# one-number programs against outputs taken from the base build.
+# #2433: value windows made at the second number; the tapes and programs of
+# tests/window_second_number/ against outputs taken from the base build.
 echo "[70el] Value windows at the second number (#2433)"
 TOTAL=$((TOTAL + 1))
 WSN_OUT=$(EIGS="$EIGS" EIGS_TMO="$EIGS_TMO" bash "$TESTS_DIR/test_window_second_number.sh" 2>&1); WSN_RC=$?
