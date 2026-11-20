@@ -10,8 +10,14 @@ ln -s /usr/bin/nm "$tmp/novg/nm"
 ln -s /usr/bin/git "$tmp/novg/git"
 ln -s /usr/bin/dirname "$tmp/novg/dirname"
 cp "$repo/tools/phase2_cost.sh" "$repo/tools/phase2_cost_declarations.py" "$tmp/tree/tools/"
-cp "$repo/src/eigenscript" "$tmp/tree/base"
-cp "$repo/src/eigenscript" "$tmp/tree/cand"
+# The fake Valgrind cases need only binaries that pass phase2_cost.sh's honest
+# executable/ELF/sanitizer inspection; they never execute the binaries.  Keep
+# their calibration independent of whichever runtime variant the tree selects.
+cat >"$tmp/fixture.c" <<'EOF'
+int main(void) { return 0; }
+EOF
+cc "$tmp/fixture.c" -o "$tmp/tree/base"
+cp "$tmp/tree/base" "$tmp/tree/cand"
 : >"$tmp/tree/tests/phase2/cost_expect.txt"
 : >"$tmp/tree/tests/phase2/oracle_expect.txt"
 printf 'print of 1\n' >"$tmp/tree/bench/one.eigs"
@@ -35,6 +41,7 @@ EOF
 chmod +x "$tmp/bin/valgrind"
 
 pass=0
+skipped=0
 run_case() {
   label=$1 code=$2 message=$3 path=$4; shift 4
   set +e
@@ -85,4 +92,4 @@ PY
   [ "$rc" -eq 1 ] || { echo "FAIL: $plant plant did not expose exit 1"; exit 1; }
   pass=$((pass + 1))
 done
-printf 'phase2-cost-cli-self-test: cases=%d instrument=7 verdict=1 plants=ghost:red,crash:red PASS\n' "$pass"
+printf 'phase2-cost-cli-self-test: cases=%d instrument=7 verdict=1 plants=ghost:red,crash:red skipped=%d PASS\n' "$pass" "$skipped"

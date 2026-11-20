@@ -5,6 +5,7 @@ GNU make 3.81's manual, section "What Makefiles Contain", says that a number
 sign starts a comment unless escaped with a backslash; a recipe line (one that
 starts with a tab) is instead passed to the shell.  In particular, 3.81 applies
 that rule inside function arguments where newer GNU make accepts some uses.
+Within a reference, only plain delimiters of the same kind as its opener are counted.
 
 Covered calls: shell, if, foreach, call, subst, patsubst, filter, wildcard,
 eval, info, warning, and error, with both $(...) and ${...} spelling.  This
@@ -60,8 +61,8 @@ def logical_lines(path: Path):
 
 
 def unescaped_hash_in_call(text: str) -> bool:
-    # Each entry is (closing delimiter, is one of the calls covered above).
-    stack: list[tuple[str, bool]] = []
+    # Each entry is [opener, closer, covered, plain-delimiter depth].
+    stack: list[list[str | bool | int]] = []
     i = 0
     while i < len(text):
         char = text[i]
@@ -72,7 +73,7 @@ def unescaped_hash_in_call(text: str) -> bool:
                 slashes += 1
                 j -= 1
             if slashes % 2 == 0:
-                return any(covered for _, covered in stack)
+                return any(bool(entry[2]) for entry in stack)
         if char == "$" and i + 1 < len(text) and text[i + 1] in "({":
             opener = text[i + 1]
             closer = ")" if opener == "(" else "}"
@@ -82,11 +83,16 @@ def unescaped_hash_in_call(text: str) -> bool:
             start = j
             while j < len(text) and text[j] not in " \t,)}":
                 j += 1
-            stack.append((closer, text[start:j] in FUNCTIONS))
+            stack.append([opener, closer, text[start:j] in FUNCTIONS, 0])
             i += 2
             continue
         if stack and char == stack[-1][0]:
-            stack.pop()
+            stack[-1][3] += 1
+        elif stack and char == stack[-1][1]:
+            if stack[-1][3]:
+                stack[-1][3] -= 1
+            else:
+                stack.pop()
         i += 1
     return False
 
@@ -163,6 +169,13 @@ def selftest() -> int:
         ("real-shell", r"X := $(shell sed -n 's/^\([^#]*\)$/\1/p' input)" + "\n", 1),
         ("if", "X := $(if yes,#bad,good)\n", 1),
         ("continued", "X := $(foreach x,one two,\\\n  $(if $x,\\\n  #bad))\n", 1),
+        ("plain-parens-if", "X := $(if (ok),#bad,good)\n", 1),
+        ("multiple-plain-parens", "X := $(shell echo (a) (b) #c)\n", 1),
+        ("plain-braces-if", "X := ${if {ok},#bad,good}\n", 1),
+        ("continued-plain-paren", "X := $(if (ok\\\n),#bad,good)\n", 1),
+        ("comment-after-call", "X := $(if (ok),good) # a real comment after the call\n", 0),
+        ("other-kind-reference", "X := $(if ${X},a,b) # comment\n", 0),
+        ("recipe-unbalanced-paren", "all:\n\t@echo unexpected ) # shell comment\n", 0),
     ]
     passed = 0
     with tempfile.TemporaryDirectory(prefix="make381-selftest-") as tmp:
@@ -187,8 +200,8 @@ def selftest() -> int:
             passed += 1
         else:
             print(f"FAIL: recursively included file: files={len(files)} findings={len(findings)}")
-    print(f"MAKE381_NUMBER_SIGN_SELFTEST: {passed}/9 passed")
-    return int(passed != 9)
+    print(f"MAKE381_NUMBER_SIGN_SELFTEST: {passed}/16 passed")
+    return int(passed != 16)
 
 
 def main() -> int:
