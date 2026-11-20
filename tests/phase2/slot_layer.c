@@ -1026,6 +1026,11 @@ static int part_g(EigsState *st) {
 int main(void) {
     EigsState *st = eigs_open();
     if (!st) { printf("slot-layer-test: FAIL eigs_open\n"); return 1; }
+    Value *default_left = make_int(1), *default_right = make_int(1);
+    if (!values_equal(default_left, default_right))
+        FAILF("creation-default integer equality");
+    val_decref(default_left);
+    val_decref(default_right);
     /* R2.2 N11/N12: Part B expects canonical NaN bits through every
      * transport. Strict arithmetic is independent of these pure writers. */
     eigs_state_set_strict(st, 0);

@@ -1,1 +1,1 @@
-- Expanded strict-mode regression coverage across independent guard and arithmetic settings (#2439).
+- C test programs that set a strict flag also run their default checks on a fresh state, and the error-line program runs in the all-off state as well as the fresh one (#2439).

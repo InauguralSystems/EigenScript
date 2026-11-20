@@ -85,6 +85,7 @@ static void finite_control(int shape) {
 int main(void) {
     EigsState *state = eigs_open();
     if (!state) return 2;
+    finite_control(0); /* Creation default (strict guards, IEEE arithmetic). */
     eigs_state_set_strict(state, 0);
     for (int shape = 0; shape < 5; shape++) {
         refused(NAN, "nan", shape);

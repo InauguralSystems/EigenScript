@@ -1016,7 +1016,13 @@ int main(void) {
         unsigned nf_saved_flags = g_math_flags;
         const char *ieee_results[] = {"0.0 / 0.0", "1.0 / 0.0", "-1.0 / 0.0"};
         for (size_t ieee_i = 0; ieee_i < sizeof ieee_results / sizeof ieee_results[0]; ++ieee_i) {
-            eigs_state_set_strict(st, 0);  /* R2.2 default mode */
+            /* R2.2 creation default: no setter has selected another mode. */
+            EigsState *default_state = eigs_state_new();
+            CHECK(default_state != NULL, "R22-2 create default arithmetic state");
+            CHECK(eigs_thread_switch(default_state) != NULL,
+                  "R22-2 switch to default arithmetic state");
+            CHECK(eigs_state_init_runtime(default_state) == 0,
+                  "R22-2 initialize default arithmetic state");
             r = eigs_eval_string(ieee_results[ieee_i]);
             double ieee_value = r ? eigs_value_as_num(r) : 0.0;
             CHECK(r && !eigs_has_error() &&
@@ -1025,13 +1031,16 @@ int main(void) {
                   "R22-2 default arithmetic returns its IEEE value without an error");
             eigs_value_release(r);
             eigs_clear_error();
-            eigs_state_set_strict(st, 1);  /* opt in for this state */
+            eigs_state_set_strict(default_state, 1);  /* opt in for this state */
             r = eigs_eval_string(ieee_results[ieee_i]);
             CHECK(r == NULL && eigs_has_error() && eigs_last_error_kind() &&
                       strcmp(eigs_last_error_kind(), "value") == 0,
                   "R22-2 explicit strict arithmetic traps the paired non-finite result");
             eigs_value_release(r);
             eigs_clear_error();
+            eigs_close(default_state);
+            CHECK(eigs_thread_switch(st) != NULL,
+                  "R22-2 restore host state after arithmetic pair");
         }
         EigsValue *nf_raw = eigs_value_new_buffer(2);
         EigsValue *nf_finite = eigs_value_new_buffer(2);
