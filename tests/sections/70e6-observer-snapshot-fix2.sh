@@ -17,7 +17,8 @@ if [ -e ../build/asan/eigenscript ] && [ ./eigenscript -ef ../build/asan/eigensc
     variant=asan
 fi
 if make -s -C .. NUM_GUARD_VALUE_VARIANT="$variant" num-guard-value-test && \
-   ../build/$variant/test_num_guard_value; then
+   ../build/$variant/test_num_guard_value && \
+   EIGS_STRICT=0 ../build/$variant/test_num_guard_value; then
     PASS=$((PASS + 1))
     echo "  PASS: IEEE results canonicalize NaNs, raw buffer bits survive, and strict VM arithmetic traps"
 else

@@ -22,7 +22,7 @@ else
         lsan_classify "$BITS_C_OUT" || BITS_C_CLASS=$?
         if [ "$BITS_C_RC" -eq 0 ] && [ "$BITS_C_CLASS" -eq 2 ] &&
            ! grep -q 'warning:' <<< "$BITS_C_OUT" &&
-           grep -qx 'embed-nan: PASS inputs=20 modes=2 cases=40 callbacks=20 arithmetic=4 constructors=2 checks=1020 failures=0' <<< "$BITS_C_OUT"; then
+           grep -qx 'embed-nan: PASS inputs=20 modes=2 cases=40 callbacks=20 arithmetic=4 constructors=2 checks=1021 failures=0' <<< "$BITS_C_OUT"; then
             PASS=$((PASS + 1)); echo "  PASS: C double boundaries and physical NaN storage are canonical"
         else
             FAIL=$((FAIL + 1)); echo "  FAIL: embed NaN fixture (rc=$BITS_C_RC, sanitizer-class=$BITS_C_CLASS)"

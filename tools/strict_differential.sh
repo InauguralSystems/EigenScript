@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# strict_differential.sh — one argument-guard differential.
+# strict_differential.sh — strict-mode behavioral differential.
 #
 # Subject binary: ./src/eigenscript, or EIGS_DIFF_NEW. Optional baseline
 # argument is the other binary. --no-baseline skips only identical-when-off
@@ -12,10 +12,9 @@
 #                           ARG_GUARD_PRETAKE / STRICT_REQUIRE / STRICT_DOMAIN /
 #                           eigs_math_result_named; a guarded name with no probe fails
 #   pins                    documented answers must not raise under strict
-#   unset-equals-plain      R2.2: strict is opt-in, so every probe row
-#                           (and every pixel row) run with EIGS_STRICT UNSET
-#                           must equal its EIGS_STRICT=0 run: stdout+stderr+rc.
-#                           Needs no baseline, so it runs in suite [99s] too.
+#   guard-default          every guard probe run with EIGS_STRICT unset must
+#                           raise exactly as under EIGS_STRICT=1. Arithmetic
+#                           probes (below) remain values when unset or 0.
 #   identical-when-off      baseline vs subject under an explicit EIGS_STRICT=0
 #                           (the default since R2.2), stdout+stderr+rc; valid-input rows in all
 #                           three modes (unset, 0, 1) when a baseline is given
@@ -24,6 +23,8 @@
 #                           row is compared with the flag off; a flag-off
 #                           canvas change is a difference, with no waiver.
 #   binary-held-still       cksum+size+mtime of the subject (and baseline)
+# Editing tests/strict_guard_release_messages.tsv requires PR evidence from both plain and server --release runs described below.
+# --release <v0.48.0-binary> re-derives every runnable stored receipt; only unavailable capabilities are omitted.
 # --common-capabilities <baseline> explicitly permits a baseline without a
 # newly implemented extension, or with unbound names replaced by unavailable
 # stubs. Such rows are checked separately and NEVER counted as byte-identical.
@@ -76,8 +77,15 @@ fi
 SHAPES_ONLY=0
 if [ "${1:-}" = --shapes-only ]; then SHAPES_ONLY=1; shift; fi
 NEW="${EIGS_DIFF_NEW:-./src/eigenscript}"
+RELEASE_MESSAGES="${EIGS_STRICT_RELEASE_MESSAGES:-tests/strict_guard_release_messages.tsv}"
+RELEASE_BIN=""
+if [ "${1:-}" = --release ]; then
+    [ -n "${2:-}" ] || { echo "usage: strict_differential.sh --release <v0.48.0-binary>"; exit 2; }
+    RELEASE_BIN=$2; shift 2
+fi
 BASE="${1:-}"
 NO_BASELINE=0
+[ -n "$RELEASE_BIN" ] && [ -z "$BASE" ] && NO_BASELINE=1
 COMMON_CAPABILITIES=0
 if [ "$BASE" = "--common-capabilities" ]; then
     COMMON_CAPABILITIES=1; BASE="${2:-}"
@@ -109,6 +117,13 @@ run_capture() {   # <binary> <strict-or-dash> <file> -> "rc\noutput"
 # rows alike: one run with EIGS_STRICT unset and two with EIGS_STRICT=0.
 # Leaves the three captures in UEP_UNSET, UEP_PLAIN and UEP_PLAIN_AGAIN and
 # their class in UEP_CLASS (#1399).
+canonical_receipt() { # captured rc/output, fixture path -> "rc=<status> <output>", the stored table's form
+    python3 -c 'import sys
+s=sys.argv[1].replace(sys.argv[2],"<file>").replace(sys.argv[3],"<tmp>")
+rc,_,rest=s.partition("\n")
+print("rc="+rc+" "+rest.replace("\\","\\\\").replace("\n","\\n"))' "$1" "$2" "$TMP"
+}
+
 unset_equals_plain() {   # <binary> <file>
     UEP_UNSET="$(run_capture "$1" - "$2")"
     UEP_PLAIN="$(run_capture "$1" 0 "$2")"
@@ -260,6 +275,13 @@ shape_selftest() {
             echo "  FAIL: $label"; failed=$((failed + 1))
         fi
     }
+    TMP=/owned/tmp
+    shape_case 'release receipt canonicalizes fixture and scratch paths' 0 "$(
+        [ "$(canonical_receipt $'1\nError /owned/tmp/p.eigs:1: bad /owned/tmp/x' /owned/tmp/p.eigs)" = 'rc=1 Error <file>:1: bad <tmp>/x' ] && printf '0\nshape-complete' || printf '1\nmismatch')"
+    shape_case 'release receipt preserves a quiet value' 0 "$(
+        [ "$(canonical_receipt $'0\nA' /owned/tmp/p.eigs)" = 'rc=0 A' ] && printf '0\nshape-complete' || printf '1\nmismatch')"
+    shape_case 'release receipt escapes multiple output lines' 0 "$(
+        [ "$(canonical_receipt $'1\none\ntwo' /owned/tmp/p.eigs)" = 'rc=1 one\ntwo' ] && printf '0\nshape-complete' || printf '1\nmismatch')"
     shape_case 'healthy completed receipt' 0 $'0\nshape-complete'
     shape_case 'ordinary nonzero' 1 $'1\nshape-complete'
     shape_case 'timeout is not success' 1 $'124\nshape-complete'
@@ -571,8 +593,8 @@ shape-backend: true' Linux
     live_case 'live captures: output that follows the flag is a flag difference' flag-difference 'echo "strict=${EIGS_STRICT-unset}"'
     live_case 'live captures: an exit status that follows the flag is a flag difference' flag-difference '[ -n "${EIGS_STRICT+x}" ] || exit 3'
     live_case 'live captures: output that changes from run to run is nondeterministic' nondeterministic 'echo "$$"'
-    echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 95 declared"
-    [ "$failed" = 0 ] && [ "$passed" = 95 ]
+    echo "SHAPE_CAPTURE_SELFTEST: $passed passed, $failed failed, 98 declared"
+    [ "$failed" = 0 ] && [ "$passed" = 98 ]
 }
 if [ "$BASE" = --selftest ]; then shape_selftest; exit $?; fi
 
@@ -673,189 +695,199 @@ for fixture in (root / 'shapes/sandbox_run').glob('*/*/*/case.eigs'):
     fixture.write_text(source.replace('@DESCRIPTOR@', text))
 PY
 
-# name|program[|expect]  — wrong-typed call; expect defaults to "<name>: expected"
+# kind|name|program[|expect] — kind is guard or arithmetic; expect defaults to "<name>: expected"
 PROBES=$(cat <<'EOF'
-abs|print of (abs of "x")
-acos|print of (acos of "x")
-asin|print of (asin of "x")
-atan|print of (atan of "x")
-atan2|print of (atan2 of ["y", 1])
-buf_get_bits|print of (buf_get_bits of ["x", 0])|buf_get_bits: first argument must be a buffer
-buf_set_bits|print of (buf_set_bits of ["x", 0, 0])|buf_set_bits: first argument must be a buffer
-buf_len|print of (buf_len of "x")
-ceil|print of (ceil of "x")
-char_at|print of (char_at of [42, 0])
-contains|print of (contains of [[1, 2, 3], 2])
-dict_remove|print of (dict_remove of ([]))
-dict_set|print of (dict_set of ([]))
-cos|print of (cos of "hello")
-dot|print of (dot of [1, 2])
-ends_with|print of (ends_with of [42, "x"])
-f64_from_bytes|print of (f64_from_bytes of "x")
-f64_bits|print of (f64_bits of "x")
-f64_from_bits|print of (f64_from_bits of "x")
-floor|print of (floor of "x")
-gather|print of (gather of ["hello", [0]])
-has_key|print of (has_key of [42, "k"])
-join|print of (join of [42, ","])
-json_path|print of (json_path of 42)
-list_contains|print of (list_contains of [42, 1])
-max|print of (max of [1, "x", 3])|max: element 1 is str
-sum|print of (sum of [1, "x", 3])|sum: element 1 is str
-mean|print of (mean of [1, "x", 3])|mean: element 1 is str
-norm|print of (norm of [1, "x", 3])|norm: element 1 is str
-path_base|print of (path_base of 42)
-path_dir|print of (path_dir of 42)
-path_ext|print of (path_ext of 42)
-path_join|print of (path_join of [42, "b"])
-remove_file|print of (remove_file of 42)
-round|print of (round of "x")
-secure_equals|print of (secure_equals of [42, "x"])
-seed_random|print of (seed_random of "x")
-shared_delete|print of (shared_delete of [1, 2])
-shared_get|print of (shared_get of 5)
-shared_has|print of (shared_has of 5)
-shared_incr|print of (shared_incr of ["k", "x"])
-shared_set|print of (shared_set of [1, 2])
-sign_extend|print of (sign_extend of ["x", 8])
-sin|print of (sin of "x")
-sqrt/exp/log/negative|print of (sqrt of "x")
-starts_with|print of (starts_with of [42, "x"])
-store_delete|print of (store_delete of [42, "col", "k"])|store_delete: invalid store
-index_of|print of (index_of of [42, "x"])
-list_index_of|print of (list_index_of of [42, 1])
-list_insert_at|print of (list_insert_at of [[1, 2], "i", 9])
-list_remove_at|print of (list_remove_at of [[1, 2], "i"])
-ord|print of (ord of 42)
-exec_capture|print of (exec_capture of 42)
-str_from_bytes|print of (str_from_bytes of 42)
-str_lower|print of (str_lower of 42)
-str_replace|print of (str_replace of [42, "a", "b"])
-str_upper|print of (str_upper of 42)
-stream_write|print of (stream_write of "x")
-substr|print of (substr of [42, 0, 1])
-tan|print of (tan of "x")
-task_alive|print of (task_alive of "x")
-file_exists|print of (file_exists of 42)
-is_dir|print of (is_dir of 42)
-is_file|print of (is_file of 42)
-file_sync|print of (file_sync of 42)
-dir_sync|print of (dir_sync of 42)
-read_text|print of (read_text of 42)
-read_bytes|print of (read_bytes of 42)
-read_bytes_buf|print of (read_bytes_buf of 42)
-ls|print of (ls of 42)
-mkdir|print of (mkdir of 42)
-env_get|print of (env_get of 42)
-task_kill|print of (task_kill of "x")
-task_send|print of (task_send of ["x", 1])
-tensor_save|print of (tensor_save of 42)
-text_builder_to_string|print of (text_builder_to_string of 42)
-trim|print of (trim of 42)
-try_parse|print of (try_parse of 42)
-write_bytes|print of (write_bytes of 42)
-zeros_like|print of (zeros_like of "x")
-sum|print of (sum of "hello")
-mean|print of (mean of "hello")
-norm|print of (norm of "hello")
-join|print of (join of [["a", "b"], 42])
-rename|print of (rename of [42, "b"])
-store_count|print of (store_count of [42, "col"])|store_count: invalid store
-store_drop|print of (store_drop of [42, "col"])|store_drop: invalid store
-store_update|print of (store_update of [42, "col", "k", {"a": 1}])|store_update: invalid store
-store_update|print of (store_update of [(store_open of "@TMP@/probe.db"), "col", ([1, 2]), {"a": 1}])
-stream_open|print of (stream_open of [42, 1])
-write_text|print of (write_text of [42, "x"])
-add/subtract/multiply/divide/pow|print of (add of ["x", 1])
-gfx_open|print of (gfx_open of ["800", "600", "t"])
-audio_open|print of (audio_open of ["44100", "1"])
-audio_capture_open|print of (audio_capture_open of ["44100", "1"])
-audio_stream_open|print of (audio_stream_open of ["44100", "1"])
-audio_open|print of (audio_open of [44100])
-audio_capture_open|print of (audio_capture_open of [44100])
-audio_stream_open|print of (audio_stream_open of [48000])
-audio_open|print of (audio_open of 44100)
-audio_play|print of (audio_play of 42)
-audio_stream_push|print of (audio_stream_push of 42)
-audio_play_loop|print of (audio_play_loop of [42, 2])
-audio_sine|print of (len of (audio_sine of ["440", 0.01, 0.5]))
-audio_saw|print of (len of (audio_saw of ["440", 0.01, 0.5]))
-audio_square|print of (len of (audio_square of ["440", 0.01, 0.5]))
-audio_sweep|print of (len of (audio_sweep of ["100", 200, 0.01, 0.5, 0]))
-audio_noise|print of (len of (audio_noise of [0.001, "0.5"]))
-audio_envelope|print of (len of (audio_envelope of [([0.1, 0.2]), "0.01", 0.01, 0.5, 0.01]))
-audio_gain|print of (len of (audio_gain of [([1.0]), "2.0"]))
-json_path|print of (json_path of ["{\"a\": 1e", "a"])|json_path: invalid JSON at position
-pow|print of (pow of [0 - 8, 0.5])|pow: result is not a number
-matmul|local m1 is buffer of [1, 2]\nm1[0] is 1e200\nm1[1] is 1e200\nlocal m2 is buffer of [2, 1]\nm2[0] is 1e200\nm2[1] is 1e200\nlocal r is matmul of [m1, m2]\nprint of (r[0] > 1e308)|matmul: non-finite arithmetic result
-fround|print of (fround of 1e39)|fround: non-finite arithmetic result
-sqrt|print of (sqrt of -1)|sqrt: argument out of domain
-log|print of (log of 0)|log: argument out of domain
-exp|print of (exp of 999999)|exp: non-finite arithmetic result
-negative|local p is buf_from_list of ([1e308])\nsgd_update of [p, p, 1e308]\nsgd_update of [p, p, 1.0]\nprint of (negative of p)|negative: result is not a number
-min|print of (min of [])|min: expected at least one number
-min|print of (min of ([]))|min: expected at least one number
-max|print of (max of [])|max: expected at least one number
-max|print of (max of ([]))|max: expected at least one number
-num|print of (num of "nan")|num: expected complete numeric-literal text
-num|print of (num of "inf")|num: expected complete numeric-literal text
-f64_from_bytes|print of (f64_from_bytes of ([127, 248, 0, 0, 0, 0, 0, 0]))|f64_from_bytes: result is not a number
-matmul|local m1 is buffer of [1, 2]\nm1[0] is 1e200\nm1[1] is 1e200\nlocal m2 is buffer of [2, 1]\nm2[0] is 1e200\nm2[1] is 0 - 1e200\nlocal r is matmul of [m1, m2]\nprint of (r[0])|matmul: result is not a number
-matmul|print of (matmul of [[[1, "x"]], [[1], [1]]])|matmul: expected a tensor containing only numbers
-matmul_at|print of (matmul_at of [[[1, "x"]], [[1, 2]]])|matmul_at: expected a tensor containing only numbers
-matmul_bt|print of (matmul_bt of [[[1, "x"]], [[1, 2]]])|matmul_bt: expected a tensor containing only numbers
-softmax|print of (softmax of [1, "x"])|softmax: expected a tensor containing only numbers
-log_softmax|print of (log_softmax of [1, "x"])|log_softmax: expected a tensor containing only numbers
-relu|print of (relu of [1, "x", -2])|relu: expected a tensor containing only numbers
-leaky_relu|print of (leaky_relu of [1, "x", -2])|leaky_relu: expected a tensor containing only numbers
-tensor_save|print of (tensor_save of [[1, "x"], "@TMP@/bad.tensor"])|tensor_save: expected a tensor containing only numbers
-softmax|print of (softmax of ["x", 1])|softmax: expected a tensor containing only numbers
-log_softmax|print of (log_softmax of ["x", 1])|log_softmax: expected a tensor containing only numbers
-relu|print of (relu of ["x", 1])|relu: expected a tensor containing only numbers
-leaky_relu|print of (leaky_relu of ["x", 1])|leaky_relu: expected a tensor containing only numbers
-softmax|print of (softmax of [[], ["x"]])|softmax: expected a tensor containing only numbers
-log_softmax|print of (log_softmax of [[], ["x"]])|log_softmax: expected a tensor containing only numbers
-relu|print of (relu of [[], ["x"]])|relu: expected a tensor containing only numbers
-leaky_relu|print of (leaky_relu of [[], ["x"]])|leaky_relu: expected a tensor containing only numbers
-tensor_save|print of (tensor_save of [[[], ["x"]], "@TMP@/bad.tensor"])|tensor_save: expected a tensor containing only numbers
-tensor_load|write_bytes of ["@TMP@/nan.tensor", [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 248, 127, 0, 0, 0, 0, 0, 0, 4, 64]]\nprint of (tensor_load of "@TMP@/nan.tensor")|tensor_load: result is not a number
-numerical_grad|define bad(_) as:\n    return "bad"\np is [1.0]\nprint of (numerical_grad of [bad, p, 0.001])|numerical_grad: expected loss function to return a number
-numerical_grad_rows|define bad(_) as:\n    return "bad"\nm is [[1.0]]\nprint of (numerical_grad_rows of [bad, m, [0], 0.001])|numerical_grad_rows: expected loss function to return a number
-numerical_grad_cols|define bad(_) as:\n    return "bad"\nm is [[1.0]]\nprint of (numerical_grad_cols of [bad, m, [0], 0.001])|numerical_grad_cols: expected loss function to return a number
-divide|print of (divide of [[1], [0]])|divide: division by zero
-split|print of (split of 42)
-scan_ints|print of (scan_ints of ({"k": 1}))
-scan_int_tokens|print of (scan_int_tokens of ({"k": 1}))
-token_name|print of (token_name of "x")
-channel_closed|print of (channel_closed of 42)
-f64_to_bytes|print of (f64_to_bytes of "x")
-buffer|print of (buffer of "x")
-json_build|print of (json_build of ({"a": 1}))
-sort|print of (sort of ({"a": 1}))
-random_int|print of (random_int of ["a", 3])
-random_hex|print of (random_hex of "x")
-audio_mix|print of (len of (audio_mix of [42, ([0.1])]))
-audio_music_play|print of (audio_music_play of [42])
-audio_music_volume|print of (audio_music_volume of "loud")
-audio_pause|print of (audio_pause of "x")
-audio_play_loop|print of (audio_play_loop of [([0.1]), "2"])
-audio_stop|print of (audio_stop of "x")
-audio_volume|print of (audio_volume of ["1", 1])
-gfx_circle|print of (gfx_circle of ["1", 2, 3, 4, 5, 6])
-gfx_clear|print of (gfx_clear of ["1", 2, 3])
-gfx_clip|print of (gfx_clip of ["1", 2, 3, 4])
-gfx_delay|print of (gfx_delay of "5")
-gfx_fb|print of (gfx_fb of [42, 4, 4, 0, 0, 1])
-gfx_line|print of (gfx_line of ["0", 0, 10, 10, 1, 2, 3])
-gfx_point|print of (gfx_point of ["1", 2, 3, 4, 5])
-gfx_read|print of (gfx_read of ["1", 1])
-gfx_rect|print of (gfx_rect of ["10", 10, 50, 50, 255, 0, 0])
-gfx_rrect|print of (gfx_rrect of ["1", 2, 3, 4, 5, 6, 7, 8])
-gfx_text|print of (gfx_text of [1, 2, "hi", "255", 0, 0])
-gfx_text_height|print of (gfx_text_height of "2")
-gfx_text_width|print of (gfx_text_width of 5)
-gfx_title|print of (gfx_title of 42)
-ppu_render_frame|print of (ppu_render_frame of [1, 2])
+guard|abs|print of (abs of "x")
+guard|acos|print of (acos of "x")
+guard|asin|print of (asin of "x")
+guard|atan|print of (atan of "x")
+guard|atan2|print of (atan2 of ["y", 1])
+guard|buf_get_bits|print of (buf_get_bits of ["x", 0])|buf_get_bits: first argument must be a buffer
+guard|buf_set_bits|print of (buf_set_bits of ["x", 0, 0])|buf_set_bits: first argument must be a buffer
+guard|buf_len|print of (buf_len of "x")
+guard|ceil|print of (ceil of "x")
+guard|char_at|print of (char_at of [42, 0])
+guard|contains|print of (contains of [[1, 2, 3], 2])
+guard|dict_remove|print of (dict_remove of ([]))
+guard|dict_set|print of (dict_set of ([]))
+guard|cos|print of (cos of "hello")
+guard|dot|print of (dot of [1, 2])
+guard|ends_with|print of (ends_with of [42, "x"])
+guard|f64_from_bytes|print of (f64_from_bytes of "x")
+guard|f64_bits|print of (f64_bits of "x")
+guard|f64_from_bits|print of (f64_from_bits of "x")
+guard|floor|print of (floor of "x")
+guard|gather|print of (gather of ["hello", [0]])
+guard|has_key|print of (has_key of [42, "k"])
+guard|join|print of (join of [42, ","])
+guard|json_path|print of (json_path of 42)
+guard|list_contains|print of (list_contains of [42, 1])
+guard|max|print of (max of [1, "x", 3])|max: element 1 is str
+guard|sum|print of (sum of [1, "x", 3])|sum: element 1 is str
+guard|mean|print of (mean of [1, "x", 3])|mean: element 1 is str
+guard|norm|print of (norm of [1, "x", 3])|norm: element 1 is str
+guard|path_base|print of (path_base of 42)
+guard|path_dir|print of (path_dir of 42)
+guard|path_ext|print of (path_ext of 42)
+guard|path_join|print of (path_join of [42, "b"])
+guard|remove_file|print of (remove_file of 42)
+guard|round|print of (round of "x")
+guard|secure_equals|print of (secure_equals of [42, "x"])
+guard|seed_random|print of (seed_random of "x")
+guard|shared_delete|print of (shared_delete of [1, 2])
+guard|shared_get|print of (shared_get of 5)
+guard|shared_has|print of (shared_has of 5)
+guard|shared_incr|print of (shared_incr of ["k", "x"])
+guard|shared_set|print of (shared_set of [1, 2])
+guard|sign_extend|print of (sign_extend of ["x", 8])
+guard|sin|print of (sin of "x")
+guard|sqrt/exp/log/negative|print of (sqrt of "x")
+guard|starts_with|print of (starts_with of [42, "x"])
+guard|store_delete|print of (store_delete of [42, "col", "k"])|store_delete: invalid store
+guard|index_of|print of (index_of of [42, "x"])
+guard|list_index_of|print of (list_index_of of [42, 1])
+guard|list_insert_at|print of (list_insert_at of [[1, 2], "i", 9])
+guard|list_remove_at|print of (list_remove_at of [[1, 2], "i"])
+guard|ord|print of (ord of 42)
+guard|exec_capture|print of (exec_capture of 42)
+guard|str_from_bytes|print of (str_from_bytes of 42)
+guard|str_lower|print of (str_lower of 42)
+guard|str_replace|print of (str_replace of [42, "a", "b"])
+guard|str_upper|print of (str_upper of 42)
+guard|stream_write|print of (stream_write of "x")
+guard|substr|print of (substr of [42, 0, 1])
+guard|tan|print of (tan of "x")
+guard|task_alive|print of (task_alive of "x")
+guard|file_exists|print of (file_exists of 42)
+guard|is_dir|print of (is_dir of 42)
+guard|is_file|print of (is_file of 42)
+guard|file_sync|print of (file_sync of 42)
+guard|dir_sync|print of (dir_sync of 42)
+guard|read_text|print of (read_text of 42)
+guard|read_bytes|print of (read_bytes of 42)
+guard|read_bytes_buf|print of (read_bytes_buf of 42)
+guard|ls|print of (ls of 42)
+guard|mkdir|print of (mkdir of 42)
+guard|env_get|print of (env_get of 42)
+guard|task_kill|print of (task_kill of "x")
+guard|task_send|print of (task_send of ["x", 1])
+guard|tensor_save|print of (tensor_save of 42)
+guard|text_builder_to_string|print of (text_builder_to_string of 42)
+guard|trim|print of (trim of 42)
+guard|try_parse|print of (try_parse of 42)
+guard|write_bytes|print of (write_bytes of 42)
+guard|zeros_like|print of (zeros_like of "x")
+guard|sum|print of (sum of "hello")
+guard|mean|print of (mean of "hello")
+guard|norm|print of (norm of "hello")
+guard|join|print of (join of [["a", "b"], 42])
+guard|rename|print of (rename of [42, "b"])
+guard|store_count|print of (store_count of [42, "col"])|store_count: invalid store
+guard|store_drop|print of (store_drop of [42, "col"])|store_drop: invalid store
+guard|store_update|print of (store_update of [42, "col", "k", {"a": 1}])|store_update: invalid store
+guard|store_update|print of (store_update of [(store_open of "@TMP@/probe.db"), "col", ([1, 2]), {"a": 1}])
+guard|stream_open|print of (stream_open of [42, 1])
+guard|write_text|print of (write_text of [42, "x"])
+guard|add/subtract/multiply/divide/pow|print of (add of ["x", 1])
+guard|gfx_open|print of (gfx_open of ["800", "600", "t"])
+guard|audio_open|print of (audio_open of ["44100", "1"])
+guard|audio_capture_open|print of (audio_capture_open of ["44100", "1"])
+guard|audio_stream_open|print of (audio_stream_open of ["44100", "1"])
+guard|audio_open|print of (audio_open of [44100])
+guard|audio_capture_open|print of (audio_capture_open of [44100])
+guard|audio_stream_open|print of (audio_stream_open of [48000])
+guard|audio_open|print of (audio_open of 44100)
+guard|audio_play|print of (audio_play of 42)
+guard|audio_stream_push|print of (audio_stream_push of 42)
+guard|audio_play_loop|print of (audio_play_loop of [42, 2])
+guard|audio_sine|print of (len of (audio_sine of ["440", 0.01, 0.5]))
+guard|audio_saw|print of (len of (audio_saw of ["440", 0.01, 0.5]))
+guard|audio_square|print of (len of (audio_square of ["440", 0.01, 0.5]))
+guard|audio_sweep|print of (len of (audio_sweep of ["100", 200, 0.01, 0.5, 0]))
+guard|audio_noise|print of (len of (audio_noise of [0.001, "0.5"]))
+guard|audio_envelope|print of (len of (audio_envelope of [([0.1, 0.2]), "0.01", 0.01, 0.5, 0.01]))
+guard|audio_gain|print of (len of (audio_gain of [([1.0]), "2.0"]))
+guard|json_path|print of (json_path of ["{\"a\": 1e", "a"])|json_path: invalid JSON at position
+arithmetic|pow|print of (pow of [0 - 8, 0.5])|pow: result is not a number
+arithmetic|matmul|local m1 is buffer of [1, 2]\nm1[0] is 1e200\nm1[1] is 1e200\nlocal m2 is buffer of [2, 1]\nm2[0] is 1e200\nm2[1] is 1e200\nlocal r is matmul of [m1, m2]\nprint of (r[0] > 1e308)|matmul: non-finite arithmetic result
+arithmetic|fround|print of (fround of 1e39)|fround: non-finite arithmetic result
+arithmetic|sqrt|print of (sqrt of -1)|sqrt: argument out of domain
+arithmetic|log|print of (log of 0)|log: argument out of domain
+arithmetic|exp|print of (exp of 999999)|exp: non-finite arithmetic result
+arithmetic|negative|local p is buf_from_list of ([1e308])\nsgd_update of [p, p, 1e308]\nsgd_update of [p, p, 1.0]\nprint of (negative of p)|negative: result is not a number
+guard|min|print of (min of [])|min: expected at least one number
+guard|min|print of (min of ([]))|min: expected at least one number
+guard|max|print of (max of [])|max: expected at least one number
+guard|max|print of (max of ([]))|max: expected at least one number
+guard|num|print of (num of "nan")|num: expected complete numeric-literal text
+guard|num|print of (num of "inf")|num: expected complete numeric-literal text
+arithmetic|f64_from_bytes|print of (f64_from_bytes of ([127, 248, 0, 0, 0, 0, 0, 0]))|f64_from_bytes: result is not a number
+arithmetic|matmul|local m1 is buffer of [1, 2]\nm1[0] is 1e200\nm1[1] is 1e200\nlocal m2 is buffer of [2, 1]\nm2[0] is 1e200\nm2[1] is 0 - 1e200\nlocal r is matmul of [m1, m2]\nprint of (r[0])|matmul: result is not a number
+guard|matmul|print of (matmul of [[[1, "x"]], [[1], [1]]])|matmul: expected a tensor containing only numbers
+guard|matmul_at|print of (matmul_at of [[[1, "x"]], [[1, 2]]])|matmul_at: expected a tensor containing only numbers
+guard|matmul_bt|print of (matmul_bt of [[[1, "x"]], [[1, 2]]])|matmul_bt: expected a tensor containing only numbers
+guard|softmax|print of (softmax of [1, "x"])|softmax: expected a tensor containing only numbers
+guard|log_softmax|print of (log_softmax of [1, "x"])|log_softmax: expected a tensor containing only numbers
+guard|relu|print of (relu of [1, "x", -2])|relu: expected a tensor containing only numbers
+guard|leaky_relu|print of (leaky_relu of [1, "x", -2])|leaky_relu: expected a tensor containing only numbers
+guard|tensor_save|print of (tensor_save of [[1, "x"], "@TMP@/bad.tensor"])|tensor_save: expected a tensor containing only numbers
+guard|softmax|print of (softmax of ["x", 1])|softmax: expected a tensor containing only numbers
+guard|log_softmax|print of (log_softmax of ["x", 1])|log_softmax: expected a tensor containing only numbers
+guard|relu|print of (relu of ["x", 1])|relu: expected a tensor containing only numbers
+guard|leaky_relu|print of (leaky_relu of ["x", 1])|leaky_relu: expected a tensor containing only numbers
+guard|softmax|print of (softmax of [[], ["x"]])|softmax: expected a tensor containing only numbers
+guard|log_softmax|print of (log_softmax of [[], ["x"]])|log_softmax: expected a tensor containing only numbers
+guard|relu|print of (relu of [[], ["x"]])|relu: expected a tensor containing only numbers
+guard|leaky_relu|print of (leaky_relu of [[], ["x"]])|leaky_relu: expected a tensor containing only numbers
+guard|tensor_save|print of (tensor_save of [[[], ["x"]], "@TMP@/bad.tensor"])|tensor_save: expected a tensor containing only numbers
+arithmetic|tensor_load|write_bytes of ["@TMP@/nan.tensor", [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 248, 127, 0, 0, 0, 0, 0, 0, 4, 64]]\nprint of (tensor_load of "@TMP@/nan.tensor")|tensor_load: result is not a number
+guard|numerical_grad|define bad(_) as:\n    return "bad"\np is [1.0]\nprint of (numerical_grad of [bad, p, 0.001])|numerical_grad: expected loss function to return a number
+guard|numerical_grad_rows|define bad(_) as:\n    return "bad"\nm is [[1.0]]\nprint of (numerical_grad_rows of [bad, m, [0], 0.001])|numerical_grad_rows: expected loss function to return a number
+guard|numerical_grad_cols|define bad(_) as:\n    return "bad"\nm is [[1.0]]\nprint of (numerical_grad_cols of [bad, m, [0], 0.001])|numerical_grad_cols: expected loss function to return a number
+arithmetic|divide|print of (divide of [[1], [0]])|divide: division by zero
+guard|split|print of (split of 42)
+guard|scan_ints|print of (scan_ints of ({"k": 1}))
+guard|scan_int_tokens|print of (scan_int_tokens of ({"k": 1}))
+guard|token_name|print of (token_name of "x")
+guard|channel_closed|print of (channel_closed of 42)
+guard|f64_to_bytes|print of (f64_to_bytes of "x")
+guard|buffer|print of (buffer of "x")
+guard|json_build|print of (json_build of ({"a": 1}))
+guard|sort|print of (sort of ({"a": 1}))
+guard|random_int|print of (random_int of ["a", 3])
+guard|random_hex|print of (random_hex of "x")
+guard|audio_mix|print of (len of (audio_mix of [42, ([0.1])]))
+guard|audio_music_play|print of (audio_music_play of [42])
+guard|audio_music_volume|print of (audio_music_volume of "loud")
+guard|audio_pause|print of (audio_pause of "x")
+guard|audio_play_loop|print of (audio_play_loop of [([0.1]), "2"])
+guard|audio_stop|print of (audio_stop of "x")
+guard|audio_volume|print of (audio_volume of ["1", 1])
+guard|gfx_circle|print of (gfx_circle of ["1", 2, 3, 4, 5, 6])
+guard|gfx_clear|print of (gfx_clear of ["1", 2, 3])
+guard|gfx_clip|print of (gfx_clip of ["1", 2, 3, 4])
+guard|gfx_delay|print of (gfx_delay of "5")
+guard|gfx_fb|print of (gfx_fb of [42, 4, 4, 0, 0, 1])
+guard|gfx_line|print of (gfx_line of ["0", 0, 10, 10, 1, 2, 3])
+guard|gfx_point|print of (gfx_point of ["1", 2, 3, 4, 5])
+guard|gfx_read|print of (gfx_read of ["1", 1])
+guard|gfx_rect|print of (gfx_rect of ["10", 10, 50, 50, 255, 0, 0])
+guard|gfx_rrect|print of (gfx_rrect of ["1", 2, 3, 4, 5, 6, 7, 8])
+guard|gfx_text|print of (gfx_text of [1, 2, "hi", "255", 0, 0])
+guard|gfx_text_height|print of (gfx_text_height of "2")
+guard|gfx_text_width|print of (gfx_text_width of 5)
+guard|gfx_title|print of (gfx_title of 42)
+guard|ppu_render_frame|print of (ppu_render_frame of [1, 2])
+guard|str_from_bytes|print of (str_from_bytes of [65, "x", 66])|str_from_bytes: expected numeric byte values
+guard|write_bytes|print of (write_bytes of ["@TMP@/wb.bin", ([65, "x", 66])])|write_bytes: expected every element to be a number
+guard|audio_play|audio_open of [44100, 1]\nprint of (audio_play of [0.1, "x", 0.2])|audio samples: element 1 is str, expected a number
+arithmetic|asin|print of (asin of 2)|asin: argument out of domain
+arithmetic|acos|print of (acos of 2)|acos: argument out of domain
+arithmetic|buf_get|local b is buffer of 1\nbuf_set_bits of [b, 0, 9221120237041090560]\ntry:\n    print of (buf_get of [b, 0])\ncatch e:\n    if e.message == "buffer_read_f64: expected a finite number":\n        print of "nan"\n    else:\n        throw of e|arithmetic: result is not a number
+guard|softmax|print of (softmax of [1.0, [2.0], 3.0])|softmax: expected a tensor containing only numbers
+guard|log_softmax|print of (log_softmax of [1.0, [2.0], 3.0])|log_softmax: expected a tensor containing only numbers
+guard|relu|print of (relu of [1.0, [2.0], 3.0])|relu: expected a tensor containing only numbers
+guard|leaky_relu|print of (leaky_relu of [1.0, [2.0], 3.0])|leaky_relu: expected a tensor containing only numbers
 EOF
 )
 PROBES="${PROBES//@TMP@/$TMP}"
@@ -1130,7 +1162,8 @@ check_absent_call() { # each omitted row must reach its exact error contract
 }
 
 rc=0
-n_probe=0; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_unset_eq=0; unset_list=""; nondeterministic_list=""
+rc=0
+n_probe=0; probe_id=0; guard_probe_ids=""; n_guard=0; n_arithmetic=0; n_rederived=0; n_rederived_same=0; n_rederived_different=0; n_rederived_absent=0; n_release_examined=0; n_release_same=0; n_release_different=0; n_release_exempt=0; n_off_examined=0; n_off_same=0; n_off_different=0; n_off_exempt=0; n_release_capability_skipped=0; n_rederived_exempt=0; n_guard_off_quiet=0; n_guard_off_raises=0; release_list=""; n_ident=0; n_differ=0; n_raise=0; n_silent=0; n_default_ok=0; default_list=""
 n_pin=0; n_pin_ok=0; n_pin_broke=0; n_misattr=0; n_unrun=0; n_skipped=0
 differ_list=""; silent_list=""; pin_list=""; misattr_list=""; unrun_list=""; skipped_list=""
 NEW_CAPS=""; BASE_CAPS=""; profile_transitions=""; n_profile_rows=0
@@ -1197,10 +1230,24 @@ probe_builtin_present() {
     return 0
 }
 
+# A probe whose program opens the audio device needs one. The macOS runners
+# have no SDL library to load (the shape rows' documented absent-sdl state),
+# so such a probe cannot reach its guard there: it is listed as not examined
+# and is in no count of passes. On every other platform a device that cannot
+# be opened is a probe that did not run, and the run is red.
+audio_device=present; n_device_absent=0; device_absent_list=""
 if [ "$SHAPES_ONLY" = 0 ]; then
-while IFS='|' read -r who prog expect; do
-    [ -z "${who:-}" ] && continue
+printf 'print of (audio_open of [44100, 1])\n' > "$TMP/audio-device.eigs"
+[ "$(run_capture "$NEW" - "$TMP/audio-device.eigs")" = $'0\n0' ] && audio_device=absent
+while IFS='|' read -r kind who prog expect; do
+    [ -z "${kind:-}" ] && continue
+    probe_id=$((probe_id + 1))
+    case "$kind" in
+        guard|arithmetic) ;;
+        *) default_list="$default_list\n    ${who:-unnamed} — missing or invalid probe kind: $kind"; rc=1; continue ;;
+    esac
     expect="${expect:-$who: expected}"
+    [ "$kind" = guard ] && guard_probe_ids="$guard_probe_ids $probe_id"
     printf '%b\n' "$prog" > "$TMP/p.eigs"
     cap="$(cap_for_name "$who")"
     if ! probe_builtin_present "$who"; then
@@ -1212,9 +1259,37 @@ while IFS='|' read -r who prog expect; do
                 check_absent_call "$BASE" "$(state_for baseline "$cap")" "$cap" "${who%%/*}" "$TMP/p.eigs" || rc=1
             fi
         fi
+        if [ "$kind" = guard ]; then
+            release_row=$(awk -F'|' -v id="$probe_id" '$1 == id {print; exit}' "$RELEASE_MESSAGES")
+            if [ -z "$release_row" ]; then
+                release_list="$release_list
+    $who — no v0.48.0 message-table row"; n_release_different=$((n_release_different + 1))
+            else
+                release_rest=${release_row#*|}; release_name=${release_rest%%|*}; release_rest=${release_rest#*|}
+                release_cap=${release_rest%%|*}
+                if [ "$release_name" != "$who" ] || [ "$release_cap" != "$cap" ]; then
+                    release_list="$release_list
+    $who — invalid unavailable-capability message-table provenance"; n_release_different=$((n_release_different + 1))
+                else
+                    n_release_capability_skipped=$((n_release_capability_skipped + 1))
+                fi
+            fi
+        fi
         continue
     fi
+    case "$prog" in 'audio_open of '*)
+        if [ "$audio_device" = absent ]; then
+            if [ "$SHAPE_BACKEND_PLATFORM" = Darwin ]; then
+                n_device_absent=$((n_device_absent + 1)); device_absent_list="$device_absent_list $who"
+                [ "$kind" = guard ] && n_release_capability_skipped=$((n_release_capability_skipped + 1))
+                continue
+            fi
+            unrun_list="$unrun_list
+    $who — the probe opens the audio device and none could be opened"
+        fi ;;
+    esac
     n_probe=$((n_probe + 1))
+    if [ "$kind" = guard ]; then n_guard=$((n_guard + 1)); else n_arithmetic=$((n_arithmetic + 1)); fi
     if [ -n "$BASE" ]; then
         if [ -n "$cap" ] && [ "$(state_for baseline "$cap")" != implemented ]; then
             n_profile_rows=$((n_profile_rows + 1))
@@ -1234,17 +1309,138 @@ while IFS='|' read -r who prog expect; do
     fi
     s="$(run_capture "$NEW" 1 "$TMP/p.eigs")"
     s_rc="${s%%$'\n'*}"
-    unset_equals_plain "$NEW" "$TMP/p.eigs"
-    u="$UEP_UNSET"; plain="$UEP_PLAIN"; plain_again="$UEP_PLAIN_AGAIN"; comparison="$UEP_CLASS"
-    if [ "$comparison" = same ]; then n_unset_eq=$((n_unset_eq + 1))
-    elif [ "$comparison" = nondeterministic ]; then nondeterministic_list="$nondeterministic_list
-    $who
-      =0 run 1: $(clip "$plain" 90)
-      =0 run 2: $(clip "$plain_again" 90)"
-    else unset_list="$unset_list
-    $who
+    u="$(run_capture "$NEW" - "$TMP/p.eigs")"
+    off="$(run_capture "$NEW" 0 "$TMP/p.eigs")"
+    trap_message=0
+    case "$s" in *"non-finite arithmetic result"*|*"argument out of domain"*|*"result is not a number"*|*"division by zero"*) trap_message=1 ;; esac
+    if [ "$kind" = guard ]; then
+        if [ "$u" = "$s" ]; then n_default_ok=$((n_default_ok + 1));
+        else default_list="$default_list
+    $who [guard]
       unset: $(clip "$u" 90)
-      =0   : $(clip "$plain" 90)"; fi
+      =1   : $(clip "$s" 90)"; fi
+        [ "$trap_message" = 0 ] || default_list="$default_list
+    $who — labelled guard but strict error is an arithmetic/domain trap"
+        release_row=$(awk -F'|' -v id="$probe_id" '$1 == id {print; exit}' "$RELEASE_MESSAGES")
+        if [ -z "$release_row" ]; then
+            release_list="$release_list
+    $who — no v0.48.0 message-table row"; n_release_different=$((n_release_different + 1))
+        else
+            release_rest=${release_row#*|}
+            release_name=${release_rest%%|*}; release_rest=${release_rest#*|}
+            release_cap=${release_rest%%|*}; release_rest=${release_rest#*|}
+            release_build=${release_rest%%|*}; release_rest=${release_rest#*|}
+            release_off=${release_rest%%|*}; release_receipt=${release_rest#*|}
+            row_faults=0
+            if [ "$release_name" != "$who" ]; then
+                release_list="$release_list
+    $who — message-table row names $release_name"; row_faults=$((row_faults + 1))
+            fi
+            derived_cap=${cap:-core}
+            if [ "$release_cap" != "$derived_cap" ]; then
+                release_list="$release_list
+    $who — message-table capability is $release_cap, derived capability is $derived_cap"; row_faults=$((row_faults + 1))
+            fi
+            if [ -z "$release_build" ] || { [ "$release_off" != quiet ] && [ "$release_off" != raises ]; } || [ -z "$release_receipt" ]; then
+                release_list="$release_list
+    $who — incomplete release message-table provenance"; row_faults=$((row_faults + 1))
+            fi
+            if [ "$derived_cap" != core ] && [ "$(state_for subject "$derived_cap")" != implemented ]; then
+                n_release_capability_skipped=$((n_release_capability_skipped + 1))
+            else
+                n_release_examined=$((n_release_examined + 1))
+                # Three marks. The first two say the first line with no variable
+                # differs from the release's on purpose. The third says the
+                # first line is the release's and the CLASS under EIGS_STRICT=0
+                # (raises or answers) differs on purpose.
+                marked=0; off_marked=0; release_expected=$release_receipt
+                case "$release_receipt" in
+                    *' [EIGS_STRICT=0 differs on purpose:'*) off_marked=1; release_expected=${release_receipt%%' [EIGS_STRICT=0 differs on purpose:'*} ;;
+                    *' [different on purpose:'*) marked=1; release_expected=${release_receipt%%' [different on purpose:'*} ;;
+                    *' [new in branch; no v0.48.0 guard message]') marked=1; release_expected=${release_receipt%%' [new in branch; no v0.48.0 guard message]'*} ;;
+                esac
+                if [ -n "$RELEASE_BIN" ]; then
+                    release_actual=$(run_capture "$RELEASE_BIN" - "$TMP/p.eigs")
+                    release_actual_receipt=$(canonical_receipt "$release_actual" "$TMP/p.eigs")
+                    if str_has "$release_actual" "unavailable in this build"; then
+                        n_rederived_absent=$((n_rederived_absent + 1))
+                        release_list="$release_list
+    $who — not in release binary (capability $release_cap)"
+                    else
+                        n_rederived=$((n_rederived + 1))
+                        if [ "$release_actual_receipt" != "$release_expected" ]; then
+                            n_rederived_different=$((n_rederived_different + 1)); release_list="$release_list
+    $who — stored release receipt differs from re-derived receipt
+      stored : $(clip "$release_expected" 120)
+      derived: $(clip "$release_actual_receipt" 120)"
+                        elif [ "$marked" = 1 ]; then n_rederived_exempt=$((n_rederived_exempt + 1))
+                        else n_rederived_same=$((n_rederived_same + 1)); fi
+                    fi
+                fi
+                off_rc="${off%%$'\n'*}"
+                if [ "$release_off" = quiet ]; then
+                    n_guard_off_quiet=$((n_guard_off_quiet + 1))
+                    if [ "$off_rc" != 0 ]; then release_list="$release_list
+    $who — EIGS_STRICT=0 now raises but release row says quiet"; row_faults=$((row_faults + 1)); fi
+                elif [ "$release_off" = raises ]; then
+                    n_guard_off_raises=$((n_guard_off_raises + 1))
+                    if [ "$off_rc" = 0 ]; then release_list="$release_list
+    $who — EIGS_STRICT=0 is now quiet but release row says raises"; row_faults=$((row_faults + 1)); fi
+                fi
+                # With the release binary: the class under EIGS_STRICT=0 is
+                # the release's, unless the row is marked. A row marked for
+                # its EIGS_STRICT=0 class must differ there, or its mark is
+                # false; a row marked for its first line is not compared here.
+                if [ -n "$RELEASE_BIN" ] && ! str_has "${release_actual:-}" "unavailable in this build"; then
+                    rel_off=$(run_capture "$RELEASE_BIN" 0 "$TMP/p.eigs"); rel_off_rc="${rel_off%%$'\n'*}"
+                    head_class=raises; [ "$off_rc" = 0 ] && head_class=answers
+                    rel_class=raises; [ "$rel_off_rc" = 0 ] && rel_class=answers
+                    n_off_examined=$((n_off_examined + 1))
+                    if [ "$marked" = 1 ]; then n_off_exempt=$((n_off_exempt + 1))
+                    elif [ "$off_marked" = 1 ]; then
+                        if [ "$head_class" != "$rel_class" ]; then n_off_exempt=$((n_off_exempt + 1))
+                        else n_off_different=$((n_off_different + 1)); row_faults=$((row_faults + 1)); release_list="$release_list
+    $who — the EIGS_STRICT=0 mark is false: the release $rel_class there and so does this build"; fi
+                    elif [ "$head_class" = "$rel_class" ]; then n_off_same=$((n_off_same + 1))
+                    else n_off_different=$((n_off_different + 1)); row_faults=$((row_faults + 1)); release_list="$release_list
+    $who — under EIGS_STRICT=0 the release $rel_class and this build $head_class, with no mark"; fi
+                fi
+                current_first=$(printf '%s\n' "$u" | sed -n '2p' | sed 's|^Error [^:]*:\([0-9][0-9]*\): |Error <file>:\1: |')
+                release_first=${release_expected#rc=* }
+                release_first=$(printf '%s\n' "$release_first" | sed 's/\\n.*//')
+                # An unmarked row says "the same first line as the release"; a
+                # marked row says "a different one, on purpose". Each is a fault
+                # when the run says the opposite.
+                if [ "$marked" = 0 ] && [ "$current_first" != "$release_first" ]; then row_faults=$((row_faults + 1)); release_list="$release_list
+    $who
+      v0.48.0: $release_first
+      current : $current_first"; fi
+                if [ "$marked" = 1 ] && [ "$current_first" = "$release_first" ]; then row_faults=$((row_faults + 1)); release_list="$release_list
+    $who — the exemption mark is false: the first line equals the release's
+      both    : $current_first"; fi
+                n_release_different=$((n_release_different + row_faults))
+                if [ "$row_faults" = 0 ]; then
+                    if [ "$marked" = 1 ]; then n_release_exempt=$((n_release_exempt + 1)); else n_release_same=$((n_release_same + 1)); fi
+                fi
+            fi
+        fi
+    else
+        if [ "$u" = "$off" ]; then n_default_ok=$((n_default_ok + 1));
+        else default_list="$default_list
+    $who [arithmetic]
+      unset: $(clip "$u" 90)
+      =0   : $(clip "$off" 90)"; fi
+        {
+            echo 'try:'
+            sed 's/^/    /' "$TMP/p.eigs"
+            printf 'catch e:\n    print of e.kind\n'
+        } > "$TMP/arithmetic-kind.eigs"
+        arithmetic_kind=$(run_capture "$NEW" 1 "$TMP/arithmetic-kind.eigs")
+        if [ "$trap_message" != 1 ] || [ "$arithmetic_kind" != $'0\nvalue' ]; then
+            default_list="$default_list
+    $who — labelled arithmetic but strict error is not the arithmetic/domain value trap: message=$(clip "$s" 70) kind=$(clip "$arithmetic_kind" 30)"
+        fi
+    fi
     why="$(run_did_not_measure "$s_rc")"
     if [ -n "$why" ]; then
         n_unrun=$((n_unrun + 1))
@@ -1332,15 +1528,29 @@ if [ -n "$BASE" ]; then
     done <<<"$VALID"
 fi
 
+printf '%s\n' $guard_probe_ids > "$TMP/guard-probe-ids"
+table_unmatched=$(awk -F'|' 'NR==FNR {seen[$1]=1; next} FNR > 1 && !($1 in seen) {print $1 ":" $2}' "$TMP/guard-probe-ids" "$RELEASE_MESSAGES")
+if [ -n "$table_unmatched" ]; then
+    release_list="$release_list
+    message-table row has no matching probe: $table_unmatched"
+    n_release_different=$((n_release_different + 1))
+fi
+
 guarded="$(extract_guard_names src/*.c | sed '/^$/d' | sort -u)"
-probed="$(printf '%s\n' "$PROBES" | cut -d'|' -f1 | sed '/^$/d' | sort -u)"
+probed="$(printf '%s\n' "$PROBES" | cut -d'|' -f2 | sed '/^$/d' | sort -u)"
 n_guarded=$(printf '%s\n' "$guarded" | sed '/^$/d' | wc -l | tr -d ' ')
 missing="$(comm -23 <(printf '%s\n' "$guarded") <(printf '%s\n' "$probed") \
     | grep -vxF -f <(printf '%s\n' $absent_here) || true)"
-stale="$(comm -13 <(printf '%s\n' "$guarded") <(printf '%s\n' "$probed"))"
+# A probe is stale when it names a builtin that carries no guard. That is
+# asked of the guard probes only: an arithmetic probe may reach its trap
+# through a shared reader the extractor does not see (buf_get reaches
+# buffer_read_f64), and it is held by its own check below: it must raise
+# under EIGS_STRICT=1 with its own message, or it is SILENT UNDER STRICT.
+probed_guard="$(printf '%s\n' "$PROBES" | awk -F'|' '$1 == "guard" {print $2}' | sed '/^$/d' | sort -u)"
+stale="$(comm -13 <(printf '%s\n' "$guarded") <(printf '%s\n' "$probed_guard"))"
 
 echo "== strict differential =="
-echo "  probes=$n_probe pins=$n_pin guarded-names=$n_guarded"
+echo "  probes=$n_probe guard=$n_guard arithmetic=$n_arithmetic pins=$n_pin guarded-names=$n_guarded"
 if [ "$n_skipped" -gt 0 ]; then
     echo "  implementation guards omitted (exact absent-call contracts checked for registered extensions): $n_skipped —$skipped_list"
 fi
@@ -1351,7 +1561,11 @@ if [ -n "$profile_transitions" ]; then
 fi
 if [ -n "$BASE" ]; then echo "  identical-when-off: $n_ident   differing: $n_differ"
 else echo "  identical-when-off: SKIPPED (--no-baseline)"; fi
-echo "  unset-equals-plain: $n_unset_eq / $n_probe"
+echo "  default contract: $n_default_ok / $n_probe (guards unset==1; arithmetic unset==0)"
+echo "  release guard messages: examined=$n_release_examined same=$n_release_same different=$n_release_different exempt=$n_release_exempt capability_skipped=$n_release_capability_skipped"
+[ -n "$RELEASE_BIN" ] && echo "  release re-derived: examined=$n_rederived same=$n_rederived_same different=$n_rederived_different exempt=$n_rederived_exempt not_in_this_binary=$n_rederived_absent"
+[ -n "$RELEASE_BIN" ] && echo "  release EIGS_STRICT=0 class: examined=$n_off_examined same=$n_off_same different=$n_off_different exempt=$n_off_exempt"
+echo "  guard EIGS_STRICT=0: quiet=$n_guard_off_quiet raises=$n_guard_off_raises"
 echo "  raises-under-strict: $n_raise   silent: $n_silent   misattributed: $n_misattr"
 [ "$n_unrun" -gt 0 ] && echo "  probes that did not run: $n_unrun"
 echo "  answer-pins held: $n_pin_ok   broken: $n_pin_broke"
@@ -1360,11 +1574,12 @@ if [ -n "$BASE" ]; then
     echo "  expanded valid rows mode-identical (subject rc=0, unset=0=1; baseline absence verified): $((n_valid_expanded - n_valid_expanded_bad)) / $n_valid_expanded"
     echo "  absent valid rows (exact absence verified; NOT valid successes): $n_valid_absent"
 fi
-[ -n "$unset_list" ] && { echo "  UNSET DIFFERS FROM EIGS_STRICT=0 (strict must be opt-in):$unset_list"; rc=1; }
-[ -n "$nondeterministic_list" ] && { echo "  NONDETERMINISTIC (not a flag difference):$nondeterministic_list"; rc=1; }
+[ -n "$default_list" ] && { echo "  STRICT DEFAULT CONTRACT FAILED:$default_list"; rc=1; }
+[ -n "$release_list" ] && { echo "  RELEASE GUARD MESSAGE CONTRACT FAILED:$release_list"; rc=1; }
 [ -n "$differ_list" ] && { echo "  DIFFERING (the EIGS_STRICT=0 path was NOT preserved):$differ_list"; rc=1; }
 [ -n "$silent_list" ] && { echo "  SILENT UNDER STRICT:$silent_list"; rc=1; }
 [ -n "$misattr_list" ] && { echo "  RAISED BY THE WRONG GUARD (probe does not reach its target):$misattr_list"; rc=1; }
+[ "$n_device_absent" -gt 0 ] && echo "  NOT EXAMINED, no audio device on this platform ($n_device_absent):$device_absent_list"
 [ -n "$unrun_list" ] && { echo "  DID NOT RUN (the environment, not a guard — nothing is retried):$unrun_list"; rc=1; }
 [ -n "$valid_list" ] && { echo "  VALID INPUT CHANGED:$valid_list"; rc=1; }
 [ -n "$pin_list" ] && { echo "  PIN BROKEN (strict raised on a documented answer):$pin_list"; rc=1; }
@@ -1383,7 +1598,7 @@ fi # historical wrong-type/valid-input halves
 # ------------------------------------------------ typed fixed-shape controls (#1398)
 # Candidate discovery is independent of the guards and reviewed contract data.
 # Every process/form owns fresh files; no universal malformed numeric prefix.
-shape_rows=0; shape_pass=0; shape_absent=0; shape_backend_absent=0; shape_pending=0; shape_fail=0
+shape_rows=0; shape_release_examined=0; shape_release_different=0; shape_release_list=""; shape_pass=0; shape_absent=0; shape_backend_absent=0; shape_pending=0; shape_fail=0
 SHAPE_SUBJECT_SDL=unmeasured; SHAPE_SUBJECT_MIXER=unmeasured
 SHAPE_BASELINE_SDL=unmeasured; SHAPE_BASELINE_MIXER=unmeasured
 if [ -f "$TMP/shapes/rows" ]; then
@@ -1403,6 +1618,7 @@ if [ -f "$TMP/shapes/rows" ]; then
                 echo "  SHAPE ABSENCE UNCLASSIFIED: $who"; row_good=0
             fi
             if [ "$row_good" = 1 ]; then
+                shape_release_examined=$((shape_release_examined + 1))
                 shape_absent=$((shape_absent + 1)); echo "  UNAVAILABLE shape: $who (not a valid-operation pass)"
             else
                 shape_fail=$((shape_fail + 1)); rc=1; break
@@ -1478,9 +1694,14 @@ if [ -f "$TMP/shapes/rows" ]; then
         fi
         on="$(shape_capture "$NEW" 1 "$TMP/shapes/$who/$shape_subject/1/strict/case.eigs" "$cap")"
         if ! shape_done "$on"; then shape_abort "$who" "strict surplus" "$on"; break; fi
-        default="$(shape_capture "$NEW" - "$TMP/shapes/$who/$shape_subject/default/surplus/case.eigs" "$cap")"
+        default="$(shape_capture "$NEW" - "$TMP/shapes/$who/$shape_subject/default/strict/case.eigs" "$cap")"
         if ! shape_receipt_ok "$default"; then shape_abort "$who" "default surplus" "$default"; break; fi
-        shape_done "$on" && [ "$soft" = "$default" ] || row_good=0
+        shape_release_examined=$((shape_release_examined + 1))
+        if ! shape_done "$on" || [ "$on" != "$default" ]; then
+            shape_release_different=$((shape_release_different + 1))
+            shape_release_list="$shape_release_list $who"
+            row_good=0
+        fi
         if [ -n "$shape_absence_output" ] && [ "$on" != $'0\nshape-complete' ]; then row_good=0; fi
         if [ "$row_good" = 1 ]; then
             if [ -n "$shape_absence_output" ]; then
@@ -1502,6 +1723,7 @@ fi
 shape_declared=$(python3 -c 'import json; print(len(json.load(open("tests/strict_shape_cases.json"))))')
 shape_unrun=$((shape_declared - shape_rows))
 echo "== typed fixed-shape controls =="
+echo "  shape rows examined=$shape_release_examined differ_from_release_default=$shape_release_different${shape_release_list:+ rows:$shape_release_list}"
 echo "  declared=$shape_declared examined=$shape_rows passed=$shape_pass failed=$shape_fail unavailable=$shape_absent backend_absent=$shape_backend_absent pending=$shape_pending unrun=$shape_unrun"
 [ "$shape_rows" = "$shape_declared" ] && [ "$shape_rows" = "$((shape_pass + shape_absent + shape_backend_absent + shape_fail + shape_pending))" ] && [ "$shape_fail" = 0 ] && [ "$shape_pending" = 0 ] || rc=1
 [ -n "$BASE" ] || echo "  NOTE: shape baseline equality was NOT measured."
@@ -1774,8 +1996,10 @@ while IFS='|' read -r label who slot prog; do
     $label
       =0 run 1: $(clip "$UEP_PLAIN" 90)
       =0 run 2: $(clip "$UEP_PLAIN_AGAIN" 90)"; rc=1
-    elif [ "$UEP_CLASS" = flag-difference ]; then pdiffer="$pdiffer
-    $label [unset vs EIGS_STRICT=0, same binary] — strict must be opt-in"; rc=1; fi
+    elif [ "$slot" = "-" ] && [ "$UEP_CLASS" = flag-difference ]; then pdiffer="$pdiffer
+    $label [valid input, unset vs EIGS_STRICT=0] — the flag changed a legitimate call"; rc=1
+    elif [ "$slot" != "-" ] && [ "$u" != "$s" ]; then pdiffer="$pdiffer
+    $label [guard, unset vs EIGS_STRICT=1] — guard default contract failed"; rc=1; fi
     if [ "$slot" = "-" ]; then
         n_pvalid=$((n_pvalid + 1))
         if [ "$NO_RENDERER" = 0 ] && [ "$who" != "gfx_read" ] && [ "${b#*$'\n'}" = "$blank_digest" ]; then

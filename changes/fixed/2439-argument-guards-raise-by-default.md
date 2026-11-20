@@ -1,0 +1,1 @@
+- Argument guards now raise by default while arithmetic keeps IEEE values; `EIGS_STRICT=1` enables both and `EIGS_STRICT=0` disables guard and arithmetic traps (#2439).

@@ -112,7 +112,7 @@ jobs:
             echo "::error::R2.4 release embed proof emitted a compiler warning"
             exit 1
           fi
-          grep -qx 'embed-nan: PASS inputs=20 modes=2 cases=40 callbacks=20 arithmetic=4 constructors=2 checks=1020 failures=0' "$RUNNER_TEMP/r24-embed-release.log"
+          grep -qx 'embed-nan: PASS inputs=20 modes=2 cases=40 callbacks=20 arithmetic=4 constructors=2 checks=1021 failures=0' "$RUNNER_TEMP/r24-embed-release.log"
           bash tools/cc_guard.sh --report
       - name: R2.3 writer proofs under ASan and UBSan
         run: |
@@ -139,7 +139,7 @@ jobs:
             echo "::error::R2.4 ASan embed proof emitted a compiler warning"
             exit 1
           fi
-          grep -qx 'embed-nan: PASS inputs=20 modes=2 cases=40 callbacks=20 arithmetic=4 constructors=2 checks=1020 failures=0' "$RUNNER_TEMP/r24-embed-asan.log"
+          grep -qx 'embed-nan: PASS inputs=20 modes=2 cases=40 callbacks=20 arithmetic=4 constructors=2 checks=1021 failures=0' "$RUNNER_TEMP/r24-embed-asan.log"
           bash tools/cc_guard.sh --report
       - name: R2.4 named payload row under ASan and UBSan
         run: |

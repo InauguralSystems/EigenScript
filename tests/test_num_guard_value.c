@@ -138,7 +138,6 @@ static void leaf_cases(void) {
 int main(void) {
     EigsState *state = eigs_open();
     if (!state) return 2;
-    eigs_state_set_strict(state, 0);
     static const uint64_t nan_payloads[] = {
         UINT64_C(0x7ff8000000000000), UINT64_C(0x7ff0000000000001),
         UINT64_C(0xfff8000000000000), UINT64_C(0xfff9000000000001),
@@ -172,6 +171,10 @@ int main(void) {
             "buf_set_bits of [ieee_bits_buffer, 0, ieee_bits_payload]\n"
             "(buf_get_bits of [ieee_bits_buffer, 0]) == ieee_bits_payload\n", 0);
     leaf_cases();
+
+    eigs_state_set_strict(state, 0);
+    vm_bool("strict-off finite quotient from infinity operand",
+            "(7 / ieee_inf) == 0.0\n", 0);
 
     eigs_state_set_strict(state, 1);
     strict_catch("strict NEG infinity", "-ieee_inf", EIGS_MATH_OVERFLOW);

@@ -21,7 +21,7 @@ else
         lsan_classify "$WRITER_C_OUT" || WRITER_C_CLASS=$?
         if [ "$WRITER_C_RC" -eq 0 ] && [ "$WRITER_C_CLASS" -eq 2 ] &&
            ! grep -q 'warning:' <<< "$WRITER_C_OUT" &&
-           grep -qx 'writer-json: refused=15 finite=5 checks=78 failures=0' <<< "$WRITER_C_OUT"; then
+           grep -qx 'writer-json: refused=15 finite=6 checks=81 failures=0' <<< "$WRITER_C_OUT"; then
             PASS=$((PASS + 1)); echo "  PASS: C encoder returns failure for non-finite payloads without losing ownership"
         else
             FAIL=$((FAIL + 1)); echo "  FAIL: C encoder failure-return fixture (rc=$WRITER_C_RC, sanitizer-class=$WRITER_C_CLASS)"
