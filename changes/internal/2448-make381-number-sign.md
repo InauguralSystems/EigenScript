@@ -1,0 +1,1 @@
+- Refuse Makefile number signs that GNU Make 3.81 parses incompatibly (#2448).

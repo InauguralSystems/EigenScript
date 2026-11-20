@@ -82,7 +82,8 @@ SHARDS=$(sed -n 's/^[[:space:]]*ASAN_SHARDS:[[:space:]]*\([0-9][0-9]*\)[[:space:
 BASE=${PRECHECK_BASE:-origin/main}
 
 # class | command   (lane = alternate rows; the slow ones are spread by order)
-GATES="run|tools/core_ext_boundary_check.sh
+GATES="run|tools/make381_number_sign_check.py
+run|tools/core_ext_boundary_check.sh
 run|tools/pipefail_verdict_check.sh
 bin|tools/docs_claims_check.sh
 run|tools/section_plan.sh --shards $SHARDS --check
