@@ -58,6 +58,32 @@ variants += [
  one_place('both-new-zero', B, '', False, False, 'new both 10->00'),
  one_place('both-new-nonzero', B, '', False, True, 'new both 01->11'),
 ]
+# A call that enables only for the value 1 on one kind of state (an
+# independent review's D4 and D5, and the four others of their class).
+def only_one(name, source, opened, want):
+    kind = "st->threads" if opened else "!st->threads"
+    return (name, source, source.replace("enabled != 0", f"({kind} ? enabled == 1 : enabled != 0)"), want)
+
+variants += [
+ only_one('guards-open-enables-only-one', G, True, 'open guards 0->1 other=1'),
+ only_one('guards-new-enables-only-one', G, False, 'new guards 0->1 other=0'),
+ only_one('arithmetic-open-enables-only-one', A, True, 'open arithmetic 0->1 other=1'),
+ only_one('arithmetic-new-enables-only-one', A, False, 'new arithmetic 0->1 other=0'),
+ only_one('both-open-enables-only-one', B, True, 'open both 10->11'),
+ only_one('both-new-enables-only-one', B, False, 'new both 01->11'),
+]
+
+# Two faults in one cell each, which none of the twelve named transitions
+# reaches: only the matrix of every cell names them.
+variants += [
+ ('guards-new-ignores-two-when-arithmetic-off', G,
+  G.replace('if (st) st->strict_guards = enabled != 0;',
+            'if (st && !st->threads && enabled == 2 && !st->strict_arithmetic) return;\n    if (st) st->strict_guards = enabled != 0;'),
+  'matrix new guards start=0,0 value=2'),
+ ('both-open-ignores-zero-from-both-on', B,
+  B.replace('    if (st) {', '    if (st) {\n        if (st->threads && !enabled && st->strict_guards && st->strict_arithmetic) return;', 1),
+  'matrix open both start=1,1 value=0'),
+]
 def run(cwd, env):
     return subprocess.run([str(cwd/'build/release/test_embed_strict_calls')],cwd=cwd,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
 def main():
@@ -67,7 +93,8 @@ def main():
     subprocess.run(['make','-s','embed-strict-calls-test'],cwd=dst,check=True)
     env={k:v for k,v in os.environ.items() if k!='EIGS_STRICT'}
     clean=run(dst,env)
-    if clean.returncode or 'embed-strict-calls: PASS transitions=12 fourth=20 failures=0' not in clean.stdout:
+    if (clean.returncode or 'embed-strict-calls: PASS transitions=12 fourth=20 failures=0' not in clean.stdout
+            or 'PASS: matrix of 96 cells' not in clean.stdout):
       print('embed-strict-variants: clean control FAIL'); return 1
     print('clean-control: GREEN')
     p=dst/'src/eigs_embed.c'; original=p.read_text(); red=0

@@ -27,7 +27,12 @@ else
             else
                 strict_out=$(EIGS_STRICT=$strict_env ../build/$variant/test_embed_strict_calls 2>&1) || strict_rc=$?
             fi
-            if [ "$strict_rc" != 0 ] || ! rc_ok "$strict_rc" "$strict_out"; then
+            # ... and it must have said so itself: its summary line and the
+            # line of its matrix, whole (a program that prints nothing and
+            # exits 0 has shown nothing).
+            if [ "$strict_rc" != 0 ] || ! rc_ok "$strict_rc" "$strict_out" ||
+               ! grep -qxF 'embed-strict-calls: PASS transitions=12 fourth=20 failures=0' <<< "$strict_out" ||
+               ! grep -qxF 'PASS: matrix of 96 cells (3 calls, 2 kinds of state, 4 start positions, 4 values)' <<< "$strict_out"; then
                 strict_calls_bad="$strict_calls_bad $strict_env"
                 echo "  EIGS_STRICT $strict_env: rc=$strict_rc"
                 printf '%s\n' "$strict_out" | tail -5
