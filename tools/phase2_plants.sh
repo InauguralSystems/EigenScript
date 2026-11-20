@@ -50,12 +50,14 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REF=HEAD
 ONLY=""
+ANCHORS=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --ref)
             [ $# -gt 1 ] || { echo "phase2-plants: FAIL: --ref needs a value"; exit 2; }
             REF="$2"; shift 2 ;;
         --selftest) shift ;;
+        --anchors) ANCHORS=1; shift ;;
         --only)
             [ $# -gt 1 ] || { echo "phase2-plants: FAIL: --only needs a plant id"; exit 2; }
             [ -z "$ONLY" ] || { echo "phase2-plants: FAIL: --only may be given once"; exit 2; }
@@ -98,8 +100,29 @@ VERDICT_DONE=0
 # it was running (the #988 rule).
 trap 'rc=$?; [ "$VERDICT_DONE" = 1 ] || echo "phase2-plants: FAIL: exited ($rc) before a verdict, at: $BASH_COMMAND"; rm -rf "$WORK"' EXIT
 
+# anchor_one PLANT FILE TEXT: queue one plant anchor without modifying it.  One
+# Python process checks the complete manifest after the normal registration
+# path has visited every plant; starting one interpreter per anchor is too slow
+# on the macOS self-test workers.
+ANCHOR_MANIFEST="$WORK/anchors"
+mkdir -p "$ANCHOR_MANIFEST"
+anchor_serial=0
+anchor_one() {
+    anchor_serial=$((anchor_serial + 1))
+    printf '%s\n%s\n' "$1" "$2" > "$ANCHOR_MANIFEST/$anchor_serial.meta"
+    printf '%s' "$3" > "$ANCHOR_MANIFEST/$anchor_serial.old"
+}
+
 # replace FILE OLD NEW: exactly one OLD before, NEW present after.
 replace() {
+    if [ "$ANCHORS" -eq 1 ]; then
+        anchor_one "$ANCHOR_ID" "$1" "$2"
+        case "$1" in
+            "$ROOT"/*) printf 'plant-anchor-target: %s\n' "${1#"$ROOT"/}" ;;
+            *) printf 'plant-anchor-target: %s\n' "$1" ;;
+        esac
+        return 0
+    fi
     python3 -W error - "$1" "$2" "$3" <<'PY'
 import sys
 path, old, new = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -134,9 +157,14 @@ EXPECTED_OBSERVER=8
 observer_second_edit() {
     case "$1" in
         r31-inf-sign)
-            replace "$2/src/eigenscript.c" \
-                '    if (isinf(s->last_value)) return !obs_num_opposite_inf(s);' \
-                '    if (isinf(s->last_value)) return 1; /* PLANT: no polarity rule */' ;;
+            if [ "$ANCHORS" -eq 1 ]; then
+                anchor_one "$1 (second edit)" "$2/src/eigenscript.c" \
+                    '    if (isinf(s->last_value)) return !obs_num_opposite_inf(s);'
+            else
+                replace "$2/src/eigenscript.c" \
+                    '    if (isinf(s->last_value)) return !obs_num_opposite_inf(s);' \
+                    '    if (isinf(s->last_value)) return 1; /* PLANT: no polarity rule */'
+            fi ;;
     esac
 }
 
@@ -212,6 +240,12 @@ run_plant() {
     available=$((available + 1))
     [ -z "$ONLY" ] || [ "$ONLY" = "$id" ] || return 0
     plants=$((plants + 1))
+    if [ "$ANCHORS" -eq 1 ]; then
+        if ! anchor_one "$id" "$ROOT/$file" "$old"; then broken=$((broken + 1)); fi
+        observer_second_edit "$id" "$ROOT" || broken=$((broken + 1))
+        printf 'plant-anchor-target: %s\n' "$file"
+        return 0
+    fi
     local verdict="" trans="" observer=0 modes="plant transverse"
     case "$id" in r31-*) observer=1; modes="green plant transverse" ;; esac
     for mode in $modes; do
@@ -518,6 +552,10 @@ run_stall_plant() {
     stall_available=$((stall_available + 1))
     [ -z "$ONLY" ] || [ "$ONLY" = "$id" ] || return 0
     stall_plants=$((stall_plants + 1))
+    if [ "$ANCHORS" -eq 1 ]; then
+        ANCHOR_ID="$id" replace "$ROOT/src/vm.c" "$old" "$new"
+        return 0
+    fi
     for mode in green plant; do
         if [ "$mode" = green ]; then dir="$PRISTINE"; else dir="$WORK/$id-plant"; fi
         if [ ! -d "$dir" ]; then
@@ -798,6 +836,10 @@ run_ocfg_plant() {
     ocfg_available=$((ocfg_available + 1))
     [ -z "$ONLY" ] || [ "$ONLY" = "$id" ] || return 0
     ocfg_plants=$((ocfg_plants + 1))
+    if [ "$ANCHORS" -eq 1 ]; then
+        ANCHOR_ID="$id" mutate_ocfg "$id" "$ROOT"
+        return 0
+    fi
     for mode in green plant transverse; do
         if [ "$mode" = green ]; then dir="$PRISTINE"; else dir="$OCFG_TREE"; fi
         if [ ! -d "$dir" ]; then
@@ -924,6 +966,39 @@ run_ocfg_plant r327-refuse-count-table cfg-stream1-5-fields
 run_ocfg_plant r327-refuse-parse-table cfg-stream1-window-text
 run_ocfg_plant r327-refuse-range-table cfg-stream1-window-3
 run_ocfg_plant r327-record-next cfg-install-inner-next
+
+if [ "$ANCHORS" -eq 1 ]; then
+    python3 -W error - "$ANCHOR_MANIFEST" \
+        "$plants" "$stall_plants" "$ocfg_plants" \
+        "$EXPECTED_PLANTS" "$EXPECTED_STALL" "$EXPECTED_OCFG" <<'PY'
+import pathlib
+import sys
+
+manifest = pathlib.Path(sys.argv[1])
+groups = [int(value) for value in sys.argv[2:5]]
+expected_groups = [int(value) for value in sys.argv[5:8]]
+examined = sum(groups)
+expected = sum(expected_groups)
+missing = ambiguous = 0
+for meta in sorted(manifest.glob('*.meta'), key=lambda p: int(p.stem)):
+    plant, path = meta.read_text(encoding='utf-8').splitlines()
+    old = meta.with_suffix('.old').read_text(encoding='utf-8')
+    count = pathlib.Path(path).read_text(encoding='utf-8').count(old)
+    if count == 0:
+        missing += 1
+        print(f'plant-anchors: FAIL: {plant}: {path} anchor is missing')
+    elif count != 1:
+        ambiguous += 1
+        print(f'plant-anchors: FAIL: {plant}: {path} anchor is ambiguous ({count} occurrences)')
+if examined != expected:
+    print(f'plant-anchors: FAIL: population examined={examined} expected={expected}')
+print(f'plant-anchors: examined={examined} missing={missing} ambiguous={ambiguous}')
+sys.exit(0 if examined == expected and missing == 0 and ambiguous == 0 else 1)
+PY
+    rc=$?
+    VERDICT_DONE=1
+    exit "$rc"
+fi
 
 echo "plants=$plants killed=$killed survived=$survived broken=$broken transverse=$transverse"
 echo "observer-unplanted=$observer_green expected=$EXPECTED_OBSERVER"
