@@ -1,0 +1,1 @@
+- The strict differential compares its stored release receipts in the form the table holds, counts a marked row apart from an equal one, and counts each fault of a row (#2439).

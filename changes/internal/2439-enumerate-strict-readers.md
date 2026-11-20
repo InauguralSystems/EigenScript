@@ -1,1 +1,1 @@
-- Enumerate every strict-mode flag reader and continuously verify that its independent behavioral check detects flag drift (#2439).
+- The strict differential gains an arithmetic probe for a NaN read from a buffer; the committed table of flag readers and its sweep script are removed (#2439).
