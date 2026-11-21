@@ -183,7 +183,7 @@ examples (executed by the suite).
   `json_encode`, `json_build`, `json_path`, and the SIGUSR1 observer dump
   all share one implementation (`eigs_num_text`), so a JSON round-trip
   returns the same double and `json_encode of x` equals `str of x` for
-  every float (#875).
+  every finite float; a non-finite float raises `value` (N13) (#875).
 - `%` uses floor modulo: a nonzero remainder follows the divisor's sign
   (`-7 % 3 == 2`). `//` is floor division; `/` always returns a float (N4).
 
@@ -247,8 +247,9 @@ the interpreter executes them with these same rules.
 
 ## Truthiness
 
-**Promise:** Falsy values are `0`, `""`, `[]`, `{}`, and `null`. Everything
-else is truthy (including functions).
+**Promise:** Falsy values are `0`, `false`, `""`, `[]`, `{}`, `null`, an empty
+buffer and an empty text builder. Everything else is truthy (including
+functions).
 
 **Status:** Enforced — `tests/test_coverage_v2.eigs` (CV2-87/88).
 
@@ -467,7 +468,7 @@ unary and `of` are right-associative.
 - A non-integer index **raises** (`a[1.5]` → error). Integer-valued doubles
   are accepted (`a[2.0]` works), since ints and floats share the numeric surface type;
   but a fractional value is never silently truncated. Because `/` always
-  yields a double, a division-derived index must be collapsed explicitly —
+  yields a double, a division-derived index that may be fractional must be collapsed explicitly —
   `a[floor of ((lo + hi) / 2)]` — which keeps the rounding decision in the
   programmer's hands. A value that is fractional only through float drift
   (`2.9999998`) also raises, surfacing the sloppy arithmetic rather than
@@ -488,7 +489,7 @@ every dynamic index site in `OP_INDEX_GET`/`OP_INDEX_SET` and
   (end = len), `a[:end]` (start = 0), `a[:]` (the whole sequence).
 - **Slice bounds are positions between elements**, so the valid range is
   `0 <= start <= end <= len` (note `<=` on the upper end): `a[len:]` and
-  `a[start:len]` are legal and yield an empty slice — even though the bare
+  `a[len:len]` are legal and yield an empty slice — even though the bare
   index `a[len]` raises.
 - **Out-of-range slice bounds raise** (they do not clamp), consistent with
   the single-index rule and with Rust/Go; only the coercion-happy languages

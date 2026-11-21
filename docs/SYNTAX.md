@@ -274,7 +274,7 @@ catch err:
 ```
 
 Errors inside a `try` block are caught and bound to the variable after
-`catch`: runtime errors bind their message string; a `throw`n value
+`catch`: runtime errors bind a dict with `kind`, `message`, `line` and `file`; a `throw`n value
 binds **unchanged**, so errors can carry data:
 
 ```eigenscript
@@ -475,8 +475,7 @@ global scope; inside a function, new names stay in that function's scope.
 
 `import name` loads a module into a **namespace** — a dict named
 `name` holding the module's top-level definitions. It resolves
-`lib/name.eigs` (the standard library) first, then `name.eigs`
-relative to your script. Nothing leaks into the global scope; names
+`name.eigs` relative to your script first, then `lib/name.eigs` (the standard library), and warns when both exist. Nothing leaks into the global scope; names
 starting with `_` stay private to the module.
 
 ```eigenscript
@@ -723,12 +722,9 @@ Inside the block:
   assignments whose right-hand side is pure arithmetic over numbers
   update the existing `Value`'s data, keeping pointer identity. No
   intermediate allocation.
-- **Observer tracking is skipped.** Entropy / dH / obs_age on touched
-  values stay frozen at whatever the last observed write left them.
-  Interrogatives (`why is game.px`, `how is game.px`) will return
-  stale answers until the next observed assignment.
-- **The last-observer pointer is not updated.** Predicates in scope
-  continue to report whatever was last observed outside the block.
+- **Entropy tracking is skipped.** Entropy / dH / obs_age on touched
+  values stay frozen at whatever the last observed write left them; a numeric assignment to a name still updates that name's value trajectory, so its `when`, `where`, `why` and `how` stay current.
+- **Observer predicates raise.** A predicate asked inside the block, or in a function called from it, raises `value` (#871).
 
 Outside the block, normal observed behavior resumes. Nested `unobserved`
 blocks compose — the inner block doesn't re-enable observation.
@@ -756,8 +752,7 @@ See [BUILTINS.md](BUILTINS.md) for the complete builtin reference.
 
 ## Gotchas
 
-**The one-element spread trap:** `f of [x]` (a one-element list) binds the whole
-list to the first parameter — it does **not** spread. For a single argument to a
+**The one-element spread trap:** `f of [x]` (a one-element list) passes `x`, not the list — write `f of ([x])` to pass the list whole. For a single argument to a
 multi-parameter (or defaulted) function, write `f of (x)`; `f of ([a, b])` passes
 a literal list whole. (`f of x` for a bare value is fine.)
 

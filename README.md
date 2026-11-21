@@ -288,7 +288,7 @@ print of [bit_shr of [-1, 1], bit_shl of [8, -1], num_type of (3.0 & 1)]
 
 `//` floors the quotient; `%` has the divisor's sign. `//=` applies the same
 operation to its assignment target, like `/=`. Zero divisors raise `value`
-for int, float and mixed operands. Two ints produce an int for
+for int `//` and `%`; float forms follow IEEE arithmetic. Two ints produce an int for
 `//` and `%`; a float operand produces a float. `/` always produces a float.
 Float and mixed `//` use Python’s `divmod` quotient correction: `1.0 // 0.1`
 is `9.0`, and `1e-300 // -1e300` is `-1.0`. `//=` uses the same rule.
@@ -482,8 +482,11 @@ File reads follow Python's exception model: `read_text`, `read_bytes`, and
 system reason when a path is missing, unreadable, or a directory. Empty files
 remain successful empty values.
 
-Each of them takes a nested list, a flat list, or a flat numeric **`buffer`**,
-and returns a buffer when every tensor operand was one. `zeros of n` returns a
+Those of them that take a tensor take a nested list, a flat list, or a flat
+numeric **`buffer`**. `matmul`, `add`, `subtract`, `multiply`, `divide`,
+`softmax`, `log_softmax`, `relu`, `leaky_relu`, `numerical_grad` and
+`sgd_update` return a buffer when every tensor operand was one; `shape`
+returns a list. `zeros of n` returns a
 buffer (`zeros of [rows, cols]` still returns the nested list) — numeric work
 wants the flat container, and that is the name it reaches for.
 
@@ -1034,7 +1037,7 @@ Codespace and a green CI run can't drift.
 
 Tensor sizes and indices follow N5: an integral float is accepted and a
 fraction raises `value`. `gather` keeps the selected list cell's int/float
-kind; buffer elements and numeric tensor calculations are floats. `shape`
+kind, and `add`, `subtract`, `multiply`, `negative` and all-int `sum` keep ints on all-int lists; buffer elements and other numeric tensor calculations are floats. `shape`
 returns integer dimension counts. `mean` and `norm` refuse non-finite buffer
 cells with `value` in every `EIGS_STRICT` state.
 
