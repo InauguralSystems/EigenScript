@@ -789,7 +789,8 @@ container entropy walks stop at references (#685). Functions classify as
 predicates false.
 
 `unobserved:` elides non-numeric entropy/comparison bookkeeping. Numeric
-samples, interrogation/history snapshots and D2 state remain complete;
+samples, live interrogatives and D2 state remain complete; line-qualified
+observer-history snapshots at an elided line are not written;
 numeric answers after the block agree with the observed version. Assignment
 counts and ordinals remain complete too. A predicate asked inside the block
 raises; the bare last-observed alias is not moved by elided scratch writes.

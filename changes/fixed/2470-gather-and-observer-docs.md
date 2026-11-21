@@ -1,0 +1,1 @@
+- Accepted buffer index vectors for `gather` on nested-list matrices and corrected observer-history and channel-copy documentation (#2470).
