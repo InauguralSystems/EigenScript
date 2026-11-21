@@ -206,6 +206,14 @@ EOF
         echo "SELFTEST FAILED: a workload/tier was skipped or measured more than once"; exit 1
     fi
     echo "SELFTEST OK: every derived workload/tier is measured once"
+    BENCH_SELFTEST_ROOT="$st" MEASURE_LOG="$measure_log" VALGRIND="$profiler" EIGENSCRIPT="$current" \
+      "$gate" --vs "$reference" >"$scratch/one-binary.out" 2>&1
+    got_rc=$?
+    if [ "$got_rc" -ne 2 ] || ! grep -q 'requires base and named-reference binaries' "$scratch/one-binary.out"; then
+        cat "$scratch/one-binary.out"
+        echo "SELFTEST FAILED: --vs with one binary was not refused (rc=$got_rc)"; exit 1
+    fi
+    echo "SELFTEST OK: --vs with one binary is refused (no named reference)"
     run_plant() { # environment value, expected verdict, row (workload TAB tier), expected rc
         plant_name=$1 verdict=$2 row=$3 want_rc=$4
         BENCH_SELFTEST_PLANT="$plant_name" BENCH_SELFTEST_ROOT="$st" \
