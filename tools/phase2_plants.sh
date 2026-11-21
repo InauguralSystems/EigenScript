@@ -335,36 +335,9 @@ run_plant() {
 # tier's own; the row's output against its .out file. The full checker also
 # needs the historical tag and the whole MAP, which a plant has no use for.
 phase2_named_row() {
-    local row="$1" root="$PWD" src="tests/phase2/rows/$1" bin="$PWD/src/eigenscript"
-    local ext tiers tier rc got want tmp v
-    [ -f "$src.eigs" ] && ext=eigs || ext=sh
-    src="$src.$ext"; want="${src%.*}.out"
+    local row="$1" bin="$PWD/src/eigenscript"
     make -s >/dev/null || return 2
-    tiers=$(sed -n 's/^# TIERS: //p' "$src")
-    [ -n "$tiers" ] || tiers='off default osr trace'
-    tmp=$(mktemp -d "${TMPDIR:-/tmp}/eigs-phase2-row.XXXXXX") || return 2
-    for tier in $tiers; do
-        rc=0
-        (
-            for v in $(env | sed -n 's/^\(EIGS_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
-            case "$tier" in
-                off) export EIGS_JIT_OFF=1 ;;
-                default) ;;
-                osr) export EIGS_JIT_OSR_THRESHOLD=1 ;;
-                trace) export EIGS_TRACE="$tmp/t.tape" ;;
-                *) echo "phase2-row: $row names a tier this runner does not have: $tier" >&2; exit 2 ;;
-            esac
-            cd "$tmp" || exit 2
-            if [ "$ext" = eigs ]; then "$bin" "$root/$src"; else bash "$root/$src" "$bin"; fi
-        ) > "$tmp/out" || rc=$?
-        if [ "$rc" -ne 0 ] || ! cmp -s "$tmp/out" "$want"; then
-            got=$(tr '\n' ' ' < "$tmp/out")
-            echo "phase2-row: FAIL $row tier=$tier rc=$rc got=$got"
-            rm -rf "$tmp"; return 1
-        fi
-    done
-    echo "phase2-row: PASS $row tiers=$tiers"
-    rm -rf "$tmp"
+    python3 -W error tools/phase2_check.py --row "$row" "$bin"
 }
 export -f phase2_named_row
 

@@ -471,8 +471,9 @@ entropy-step window, plus the bounded comparison snapshots described above.
 `where` recomputes their entropy from the current contents at query time;
 `why` records assignment-time change. Asking never writes observer state.
 
-**`unobserved:` (#1049).** Numeric value records remain complete, including
-exact flags, D2 state, the interrogation triple, and history snapshots. The
+**`unobserved:` (#1049).** Numeric live value, exact flags, D2 state, and the
+live interrogation triple remain complete; line-qualified observer-history
+snapshots at an elided line are not written. The
 six named predicates, numeric `report`, `observe`, `trajectory`, and numeric
 `where`/`why`/`how` therefore retain their answers after the block. A
 predicate asked inside the block still raises. Non-numeric entropy and

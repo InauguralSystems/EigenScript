@@ -43,7 +43,7 @@ report_rows() {
             PASS) pass=$((pass + 1)) ;;
             SKIP) skip=$((skip + 1)) ;;
             *)    fail=$((fail + 1))
-                  grep -E 'FAIL|ERROR|RED|ABORT|BROKEN' "$OUT/$i.log" 2>/dev/null | head -6 | sed 's/^/        /'
+                  grep -E 'FAIL|ERROR|RED|ABORT|BROKEN|^#' "$OUT/$i.log" 2>/dev/null | head -6 | sed 's/^/        /'
                   print_full_output_hint "$cmd" ;;
         esac
         i=$((i + 1))
@@ -110,7 +110,7 @@ if [ "${1:-}" = --selftest ]; then
     py_stub="$OUT/failing.py"
     printf '%s\n' 'import sys' \
         'for line in ("planted FAIL in python", "an ERROR line", "a RED line", "an ABORT line",' \
-        '             "a BROKEN line", "an ordinary line", "sixth FAIL line", "seventh FAIL line"):' \
+        '             "a BROKEN line", "# section-plan detail", "an ordinary line", "sixth FAIL line", "seventh FAIL line"):' \
         '    print(line)' 'sys.exit(7)' > "$py_stub"
     BIN=selftest-binary
     py_cmd="$py_stub --flag"
@@ -131,7 +131,7 @@ if [ "${1:-}" = --selftest ]; then
                report_rows; echo "counted: $pass passed, $fail failed, $skip skipped of $i"; } 2>&1)
     row() { printf '  %-4s %-46s %3ss  %s\n' "$1" "$2" "$3" "$4"; }
     want=$(row FAIL "$py_cmd" 11 'exit 7'
-           printf '        %s\n' 'planted FAIL in python' 'an ERROR line' 'a RED line' 'an ABORT line' 'a BROKEN line' 'sixth FAIL line'
+           printf '        %s\n' 'planted FAIL in python' 'an ERROR line' 'a RED line' 'an ABORT line' 'a BROKEN line' '# section-plan detail'
            echo "        (full output: python3 $py_cmd)"
            row FAIL "$sh_cmd" 12 'exit 7'
            echo '        planted-FAIL'

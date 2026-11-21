@@ -1,0 +1,1 @@
+- Align phase-two row plants and strengthen gate diagnostics and view cleanup checks (#2479).

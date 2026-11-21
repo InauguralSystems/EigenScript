@@ -1,0 +1,7 @@
+[[1.0, 4.0], "list"]
+[<buffer:2>, "buffer"]
+[<buffer:2>, "buffer"]
+[[1.0, 4.0], "list"]
+["value", "'gather': number 0.5 has no integer representation"]
+["index_range", "gather: column index 5 out of range for row 1 (cols 2)"]
+[[], "list"]

@@ -6648,7 +6648,9 @@ echo "[99zb0] Precheck row-classification self-test"
 TOTAL=$((TOTAL + 1))
 PRECHECK_CLASS_OUTPUT=$(bash "$TESTS_DIR/../tools/precheck.sh" --selftest 2>&1)
 PRECHECK_CLASS_RC=$?
-if [ "$PRECHECK_CLASS_RC" -eq 0 ] && printf '%s\n' "$PRECHECK_CLASS_OUTPUT" | grep -q '^precheck-selftest: 11/11 passed, 0 failed$'; then
+PRECHECK_CLASS_PASS=$(printf '%s\n' "$PRECHECK_CLASS_OUTPUT" | grep -c '^PASS:' || true)
+PRECHECK_CLASS_SUMMARY=$(printf '%s\n' "$PRECHECK_CLASS_OUTPUT" | sed -n 's/^precheck-selftest: \([0-9][0-9]*\)\/\([0-9][0-9]*\) passed, 0 failed$/\1 \2/p')
+if [ "$PRECHECK_CLASS_RC" -eq 0 ] && [ "$PRECHECK_CLASS_SUMMARY" = "$PRECHECK_CLASS_PASS $PRECHECK_CLASS_PASS" ]; then
     PASS=$((PASS + 1)); echo "  PASS: run-gate pass/fail/skip/no-verdict/identity/platform/no-binary cases"
 else
     FAIL=$((FAIL + 1)); echo "  FAIL: precheck row classifier self-test (rc=$PRECHECK_CLASS_RC)"

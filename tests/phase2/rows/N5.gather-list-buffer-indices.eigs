@@ -1,0 +1,21 @@
+# ROW: N5.gather-list-buffer-indices
+# ITEMS: N5
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+nl is [[1.0, 2.0], [3.0, 4.0]]
+sb is reshape of [buf_from_list of ([1.0, 2.0, 3.0, 4.0]), 2, 2]
+il is [0, 1]
+ib is buf_from_list of ([0.0, 1.0])
+print of [gather of [nl, il], type of (gather of [nl, il])]
+print of [gather of [sb, il], type of (gather of [sb, il])]
+print of [gather of [sb, ib], type of (gather of [sb, ib])]
+print of [gather of [nl, ib], type of (gather of [nl, ib])]
+for bad in [buf_from_list of ([0.5, 1.0]), buf_from_list of ([0.0, 5.0])]:
+    try:
+        print of (gather of [nl, bad])
+    catch e:
+        print of [e.kind, e.message]
+empty is buffer of 0
+print of [gather of [nl, empty], type of (gather of [nl, empty])]
