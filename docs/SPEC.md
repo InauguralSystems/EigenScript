@@ -2887,8 +2887,7 @@ shaped-buffer matrix,
 (including the `_rows`/`_cols` variants, whose index vector may also be a
 buffer). Mixing a buffer with a list in `add`/`subtract`/`multiply`/`divide`/`pow`
 or `matmul` yields a list. `shape` accepts a buffer and always returns a list,
-`tensor_save` accepts one and returns `true` once the file is written (`false`
-when it cannot write it), and `gather of [vec, i]` on a 1-D tensor returns
+`tensor_save` accepts one, and `gather of [vec, i]` on a 1-D tensor returns
 element `i`, a number. The reductions
 (`sum`, `mean`, `norm`) return a number from either container. A 1-D buffer
 reads as a 1-D tensor and a shaped buffer as its `rows x cols` 2-D tensor, so

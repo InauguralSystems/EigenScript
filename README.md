@@ -486,8 +486,7 @@ Those of them that take a tensor take a nested list, a flat list, or a flat
 numeric **`buffer`**. `matmul`, `add`, `subtract`, `multiply`, `divide`,
 `softmax`, `log_softmax`, `relu`, `leaky_relu`, `numerical_grad` and
 `sgd_update` return a buffer when every tensor operand was one; `shape`
-returns a list, and `tensor_save` returns `true` once the file is written
-(`false` when it cannot write it). `zeros of n` returns a
+returns a list. `zeros of n` returns a
 buffer (`zeros of [rows, cols]` still returns the nested list) — numeric work
 wants the flat container, and that is the name it reaches for.
 
