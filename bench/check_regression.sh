@@ -8,12 +8,14 @@
 #   bench/check_regression.sh            # gate: compare vs bench/baseline.txt
 #   bench/check_regression.sh --update   # regenerate the baseline
 #   bench/check_regression.sh --selftest # prove a 2x-work pessimization is caught
+#   bench/check_regression.sh --vs BASE NAMED # compare using base and named reference builds
 #   bench/check_regression.sh --list-vs  # derived --vs workload/tier population
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 EIGS="${EIGENSCRIPT:-$DIR/../src/eigenscript}"
 BASELINE="${BASELINE_OVERRIDE:-$DIR/baseline.txt}"
 VALGRIND="${VALGRIND:-valgrind}"
+PYTHON3="${PYTHON3:-$(python3 -c 'import sys; print(sys.executable)')}"
 THRESHOLD_PCT=0.5
 # Integer arithmetic keeps the boundary exact: 0.5 percent is 5 permille.
 # Keep this derived rather than maintaining a second threshold declaration.
@@ -115,14 +117,16 @@ case "${1:-}" in
     scratch=$(mktemp -d)
     measure_log="$scratch/measure.log"
     profiler="$scratch/valgrind"
+    profiler_source="$scratch/valgrind.py"
     current="$scratch/current"
     reference="$scratch/reference"
+    named_reference="$scratch/named-reference"
     printf '#!/bin/sh\nexit 0\n' > "$current"
     cp "$current" "$reference"
+    cp "$current" "$named_reference"
     # Equal synthetic counts would make real declared costs STALE. Keep the
     # full population and give each declared row counts inside its own band.
-    cat > "$profiler" <<'EOF'
-#!/usr/bin/env python3
+    cat > "$profiler_source" <<'EOF'
 from decimal import Decimal
 import os
 from pathlib import Path
@@ -141,45 +145,116 @@ declarations = parse_declarations((root / 'tests/phase2/cost_expect.txt').read_t
 declaration = declarations.get((workload, tier))
 count = 1000000
 if binary.name == 'current' and declaration:
-    # A maximum may be negative (a row below main, #2433): stay inside the
+    # A maximum may be negative (a row below the named reference, #2433): stay inside the
     # band on that side too instead of clamping the synthetic delta at zero.
     delta = declaration.max_ci - NOISE
     count = int(Decimal(count) * (1 + delta / 100))
+plant = os.environ.get('BENCH_SELFTEST_PLANT', '')
+target = workload == 'tests/bench_idxset.eigs' and tier == 'jit'
+undeclared = workload == 'bench/observer_gate_soft_keyword.eigs' and tier == 'off'
+if target and binary.name == 'current' and plant == 'declared-over':
+    count = int(Decimal(1000000) * (1 + (declaration.max_ci + 1) / 100))
+if target and binary.name == 'current' and plant == 'declared-stale':
+    count = int(Decimal(1000000) * (1 + (declaration.max_ci - Decimal('1.5')) / 100))
+if target and binary.name == 'current' and plant == 'deleted-declaration':
+    count = 3100000
+if undeclared and plant == 'undeclared-base-fail':
+    count = 2000000 if binary.name in ('current', 'named-reference') else 1000000
+if undeclared and plant == 'undeclared-pass':
+    count = 960000 if binary.name == 'named-reference' else 1000000
+if undeclared and plant == 'undeclared-named-fail':
+    count = 1000000 if binary.name == 'named-reference' else 1300000
 print(f'I refs: {count}')
 EOF
-    chmod +x "$profiler" "$current" "$reference"
-    if ! BENCH_SELFTEST_ROOT="$DIR/.." MEASURE_LOG="$measure_log" VALGRIND="$profiler" EIGENSCRIPT="$current" "$0" --vs "$reference" >"$scratch/population.out" 2>&1; then
+    python_executable=$(python3 -c 'import sys; print(sys.executable)') || exit 1
+    printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' "$python_executable" "$profiler_source" > "$profiler"
+    chmod +x "$profiler" "$current" "$reference" "$named_reference"
+    if ! BENCH_SELFTEST_ROOT="$DIR/.." MEASURE_LOG="$measure_log" VALGRIND="$profiler" EIGENSCRIPT="$current" "$0" --vs "$reference" "$named_reference" >"$scratch/population.out" 2>&1; then
         cat "$scratch/population.out"
         rm -rf "$scratch"
         echo "SELFTEST FAILED: valid derived benchmark population was rejected"; exit 1
     fi
+    if ! grep -Fxq "no instruction-count regressions vs reference (threshold ${THRESHOLD_PCT}%; declared rows applied=31; measured rows=32)" "$scratch/population.out"; then
+        cat "$scratch/population.out"
+        echo "SELFTEST FAILED: clean control did not retain the population summary"; exit 1
+    fi
     expected="$scratch/expected"
     "$0" --list-vs > "$scratch/population" || exit 1
     while IFS=$'\t' read -r workload tier; do
-        printf 'current\t%s\t%s\nreference\t%s\t%s\n' "$workload" "$tier" "$workload" "$tier"
+        printf 'current\t%s\t%s\nnamed-reference\t%s\t%s\n' "$workload" "$tier" "$workload" "$tier"
+        if [ "$workload $tier" = "bench/observer_gate_soft_keyword.eigs off" ]; then
+            printf 'reference\t%s\t%s\n' "$workload" "$tier"
+        fi
     done < "$scratch/population" | sort > "$expected"
     if ! sort "$measure_log" | cmp -s - "$expected"; then
         rm -rf "$scratch"
         echo "SELFTEST FAILED: a workload/tier was skipped or measured more than once"; exit 1
     fi
+    run_plant() { # environment value, expected verdict, workload, expected rc
+        plant_name=$1 verdict=$2 row_name=$3 want_rc=$4
+        : > "$measure_log"
+        BENCH_SELFTEST_PLANT="$plant_name" BENCH_SELFTEST_ROOT="$DIR/.." \
+          MEASURE_LOG="$measure_log" VALGRIND="$profiler" EIGENSCRIPT="$current" \
+          "$0" --vs "$reference" "$named_reference" >"$scratch/$plant_name.out" 2>&1
+        got_rc=$?
+        if [ "$got_rc" -ne "$want_rc" ] || ! grep -q "$verdict: $row_name" "$scratch/$plant_name.out"; then
+            cat "$scratch/$plant_name.out"
+            echo "SELFTEST FAILED: $plant_name did not produce $verdict for $row_name (rc=$got_rc)"; exit 1
+        fi
+        echo "SELFTEST OK: $plant_name produces $verdict for $row_name"
+    }
+    run_plant declared-over REGRESSION tests/bench_idxset.eigs 1
+    run_plant declared-stale 'STALE DECLARATION' tests/bench_idxset.eigs 1
+    run_plant undeclared-base-fail REGRESSION bench/observer_gate_soft_keyword.eigs 1
+    run_plant undeclared-pass ok bench/observer_gate_soft_keyword.eigs 0
+    run_plant undeclared-named-fail REGRESSION bench/observer_gate_soft_keyword.eigs 1
+    deleted_tree="$scratch/deleted-tree"
+    # The scratch tree is a checkout (the population is derived with `git ls-files`), and it must be
+    # the tree this script runs from, not only its last commit: what differs from HEAD is brought
+    # over, so a gate that is not committed yet tests itself and not its predecessor. A failed case
+    # leaves no registered worktree behind.
+    trap 'git -C "$DIR/.." worktree remove --force "$deleted_tree" >/dev/null 2>&1; rm -rf "$scratch"' EXIT
+    git -C "$DIR/.." worktree add --quiet --detach "$deleted_tree" HEAD || exit 1
+    { git -C "$DIR/.." diff --name-only -z HEAD; git -C "$DIR/.." ls-files -o --exclude-standard -z; } |
+        while IFS= read -r -d '' changed; do
+            if [ -e "$DIR/../$changed" ]; then
+                mkdir -p "$deleted_tree/$(dirname "$changed")" && cp -p "$DIR/../$changed" "$deleted_tree/$changed" || exit 1
+            else
+                rm -f "$deleted_tree/$changed"
+            fi
+        done || exit 1
+    awk -F'\t' '!($1 == "tests/bench_idxset.eigs" && $2 == "jit")' \
+        "$deleted_tree/tests/phase2/cost_expect.txt" > "$scratch/cost-with-row-deleted"
+    mv "$scratch/cost-with-row-deleted" "$deleted_tree/tests/phase2/cost_expect.txt"
+    BENCH_SELFTEST_PLANT=deleted-declaration BENCH_SELFTEST_ROOT="$deleted_tree" \
+      MEASURE_LOG="$measure_log" VALGRIND="$profiler" EIGENSCRIPT="$current" \
+      "$deleted_tree/bench/check_regression.sh" --vs "$reference" "$named_reference" \
+      >"$scratch/deleted-declaration.out" 2>&1
+    deleted_rc=$?
+    if [ "$deleted_rc" -ne 1 ] || ! grep -q 'REGRESSION: tests/bench_idxset.eigs' "$scratch/deleted-declaration.out"; then
+        cat "$scratch/deleted-declaration.out"
+        echo "SELFTEST FAILED: deleted declaration row was not measured and rejected"; exit 1
+    fi
+    git -C "$DIR/.." worktree remove --force "$deleted_tree" || exit 1
+    echo "SELFTEST OK: a deleted declaration stays measured and is rejected"
+    trap - EXIT
     rm -rf "$scratch"
     echo "SELFTEST OK: every derived workload/tier is measured once"
     exit 0 ;;
 --vs|--list-vs)
     # Base and candidate use this gate's own measurement recipe. Its CI
     # counts, including off-tier declarations, are the source of max_ci.
-    ref="${2:-}"; fail=0; used=0
-    if [ "$1" = --vs ] && [ -z "$ref" ]; then echo "  FAIL: --vs requires a reference binary"; exit 2; fi
+    ref="${2:-}"; named="${3:-}"; fail=0; used=0; named_rows=0; base_rows=0
+    if [ "$1" = --vs ] && { [ -z "$ref" ] || [ -z "$named" ]; }; then
+        echo "  FAIL: --vs requires base and named-reference binaries"; exit 2
+    fi
     decl=$(bash "$DIR/../tools/phase2_cost.sh" --declared all --method ci) \
         || { echo "  FAIL: cannot read the declared costs (tools/phase2_cost.sh --declared all --method ci)"; exit 2; }
     ndecl=$(awk 'NF {n++} END {print n+0}' <<< "$decl")
     work=$(mktemp -d "${TMPDIR:-/tmp}/eigs-bench-vs.XXXXXX") || exit 2
     trap 'rm -rf "$work"' EXIT
-    for f in "$DIR"/*.eigs; do
-        printf 'bench/%s\tjit\n' "$(basename "$f")" >> "$work/population.unsorted"
-    done
-    awk -F'\t' 'NF {print $1 "\t" $2}' <<< "$decl" >> "$work/population.unsorted"
-    LC_ALL=C sort -u "$work/population.unsorted" > "$work/population"
+    bash "$DIR/../tools/phase2_cost.sh" --population > "$work/population" \
+        || { echo "  FAIL: cannot derive the CodSpeed population"; exit 2; }
     if [ "$1" = --list-vs ]; then cat "$work/population"; exit 0; fi
     nrows=$(wc -l < "$work/population")
     echo "  tiers: explicit jit/off (caller EIGS_* unset); column: max_ci; stale_below_max=0.5; declared rows: $ndecl; measured rows: $nrows"
@@ -187,22 +262,34 @@ EOF
         f="$DIR/../$workload"
         [ -f "$f" ] || { echo "  FAIL: missing workload: $workload"; exit 2; }
         a=$(ir_of "$EIGS" "$f" "$tier") || exit $?
-        b=$(ir_of "$ref" "$f" "$tier") || exit $?
-        [[ "$a" =~ ^[1-9][0-9]*$ && "$b" =~ ^[1-9][0-9]*$ ]] \
-            || { echo "  FAIL: $workload $tier: no instruction count (cand='$a' ref='$b')"; exit 2; }
         row=$(awk -F'\t' -v w="$workload" -v t="$tier" '$1 == w && $2 == t' <<< "$decl")
-        if [ -n "$row" ]; then used=$((used + 1)); fi
-        # One exact two-sided predicate; selects max_ci for both tiers.
-        python3 "$DIR/../tools/phase2_cost_declarations.py" --method ci \
-            --row "$workload" "$tier" "$b" "$a"
+        n=$(ir_of "$named" "$f" "$tier") || exit $?
+        [[ "$a" =~ ^[1-9][0-9]*$ && "$n" =~ ^[1-9][0-9]*$ ]] \
+            || { echo "  FAIL: $workload $tier: no instruction count (cand='$a' named='$n')"; exit 2; }
+        if [ -n "$row" ]; then used=$((used + 1)); else
+            b=$(ir_of "$ref" "$f" "$tier") || exit $?
+            [[ "$b" =~ ^[1-9][0-9]*$ ]] || { echo "  FAIL: $workload $tier: no base instruction count"; exit 2; }
+            "$PYTHON3" "$DIR/../tools/phase2_cost_declarations.py" --method ci \
+                --row "$workload" "$tier" "$b" "$a"
+            rc=$?; [ "$rc" -le 1 ] || exit "$rc"; [ "$rc" -eq 0 ] || fail=1
+            base_rows=$((base_rows + 1))
+        fi
+        # Declared rows use the named pre-number-model build; undeclared rows
+        # must pass both that comparison and the candidate-base comparison.
+        "$PYTHON3" "$DIR/../tools/phase2_cost_declarations.py" --method ci \
+            --row "$workload" "$tier" "$n" "$a"
         rc=$?
+        named_rows=$((named_rows + 1))
         [ "$rc" -le 1 ] || exit "$rc"
         [ "$rc" -eq 0 ] || fail=1
     done < "$work/population"
     # Every declaration was measured exactly once, regardless of workload dir
     # or tier. The union's population is derived, never hand-maintained.
     [ "$used" -eq "$ndecl" ] || { echo "  FAIL: declared rows=$ndecl applied=$used"; exit 2; }
-    [ "$fail" -eq 0 ] && echo "no instruction-count regressions vs reference (threshold ${THRESHOLD_PCT}%; declared rows applied=$used; measured rows=$nrows)"
+    if [ "$fail" -eq 0 ]; then
+        echo "no instruction-count regressions vs reference (threshold ${THRESHOLD_PCT}%; declared rows applied=$used; measured rows=$nrows)"
+        echo "judged rows: named reference=$named_rows; candidate base=$base_rows"
+    fi
     exit $fail ;;
 
 esac

@@ -2230,7 +2230,7 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
      declared maximum fails, and so does a row more than 0.5 points below it
      (STALE, the R1.3 CI fix): a round that recovers cost must bring the
      declaration down, or a new regression hides under it. Each method’s
-     maximum, which may be negative when the candidate is cheaper than main,
+     maximum, which may be negative when the candidate is cheaper than the named pre-number-model reference,
      is its own measured delta plus 0.2 points (the largest measured
      shift: a different workload path moves `alloc_heavy` by 0.16 points), rounded up
      to 0.1. A row whose cost another round moves names that component with
@@ -3226,7 +3226,7 @@ makes 0.
 - **Unchanged elsewhere.** STD_p runs per query, O(W).
 
 A decrease is reported, not declared. A rise above +0.3% is a defect R3 fixes,
-because `cost_expect.txt` must be empty at the merge. The measurement is
+because the 2026-11-19 #1758 decision keeps `cost_expect.txt` through the landing; it must be empty when the next release is cut. The measurement is
 hosted (CodSpeed).
 
 #### Gates and plants (R3.1, R3.2)

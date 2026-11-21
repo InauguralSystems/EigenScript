@@ -2039,9 +2039,8 @@ jobs:
 
   # Performance regression gate (#398). Wall-clock flakes on shared runners, so
   # the gate compares deterministic cachegrind instruction counts (Ir) of THIS
-  # commit against origin/main — both built in the same runner, so the diff is a
-  # pure code-change signal, never machine noise. A self-test proves a 2x-work
-  # pessimization is caught.
+  # commit against its queue base and the named pre-number-model commit. All
+  # builds share a runner, so the differences are never machine noise.
   bench:
     name: bench (instruction-count regression gate)
     env:
@@ -2103,12 +2102,19 @@ jobs:
           fi
           echo "baseline: $base"
           git worktree add /tmp/main-ref "$base"
-          ( cd /tmp/main-ref && ./build.sh )
+          /tmp/main-ref/build.sh
+          named=$(bash tools/phase2_cost_reference.sh --fetch-name)
+          git fetch --no-tags --depth=1 origin "$named"
+          bash tools/phase2_cost_reference.sh >/dev/null
+          echo "named reference: building $named"
+          git worktree add /tmp/number-model-ref "$named"
+          git -C /tmp/number-model-ref status --short >/dev/null
+          /tmp/number-model-ref/build.sh
 
 
       - if: github.event_name != 'pull_request' && (needs.scope.outputs.code == 'true')
         name: Regression gate — Ir of this commit vs its baseline
-        run: EIGENSCRIPT="$PWD/src/eigenscript" bash bench/check_regression.sh --vs /tmp/main-ref/src/eigenscript
+        run: EIGENSCRIPT="$PWD/src/eigenscript" bash bench/check_regression.sh --vs /tmp/main-ref/src/eigenscript /tmp/number-model-ref/src/eigenscript
 
       - name: Require compiler guard activity
         if: github.event_name != 'pull_request' && (always() && needs.scope.outputs.code == 'true')

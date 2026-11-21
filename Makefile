@@ -605,7 +605,7 @@ observer-anchor:
 # and the anchor. EXPECT=ieee,int64 fails when an expected capability is absent
 # (#1758). Both pass --declared tests/phase2/oracle_expect.txt: Phase 2's known-
 # wrong capability verdicts, each with its recover round (#1830); an undeclared
-# wrong verdict or a stale declaration fails, and #1776 merges only when the file
+# wrong verdict or a stale declaration fails; the rows stay through #1758 landing and are removed before the next release
 # is empty (tools/phase2_cost.sh --final). CI calls score.py directly, through
 # tools/observer_oracle/ci_lane.sh (the required check `observer oracle (floor)`).
 .PHONY: observer-oracle

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # The stdlib's int differential (#1848, #1758 Phase 2): every exported function
-# of every tracked lib/*.eigs module, called with INT arguments on origin/main
+# of every tracked lib/*.eigs module, called with INT arguments on the named pre-number-model runtime
 # and on the branch. Both binaries run the SAME lib source (a copy of this
 # tree's lib/ under a scratch project root), so only the runtime differs.
-#   bash tools/phase2_lib_diff.sh <main-bin> <branch-bin>
+#   bash tools/phase2_lib_diff.sh <named-reference-bin> <branch-bin>
 # The stated range: every int n in [-3, 110]; arity 1 calls f(n), arity k >= 2
 # calls the diagonal f(n, ..., n) and, per position, n there with 1 elsewhere.
 # A `define f as:` takes the implicit parameter n (arity 1); arity 0 is not
 # called. The population is the module's import namespace (its `fn` keys),
 # checked against the module's column-0 `define` lines in both directions.
-# A call LISTED is one main completes and the branch raises or never reaches.
+# A call LISTED is one named reference completes and the branch raises or never reaches.
 # Each listed function must be an integer-domain function declared in
 # tests/phase2/lib_int_domain.txt (decision (A): int overflow raises), and each
 # declaration must be listed (a stale one fails). Every other listing fails.

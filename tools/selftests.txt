@@ -10,7 +10,7 @@
 # row's timeout bound is <= 60s.
 # The runner-guard calibrations [99c]/[99d] stay in the suite: they exercise
 # the suite runner's own timeout and binary-fingerprint guards in their real calling context.
-bench/check_regression.sh bench/*.eigs | timeout 60 bash bench/check_regression.sh --selftest | [{"pattern":"^SELFTEST OK:","count":4},{"pattern":"^SELFTEST FAILED:","count":0}]
+bench/check_regression.sh bench/*.eigs | timeout 300 bash bench/check_regression.sh --selftest | [{"pattern":"^SELFTEST OK:","count":10},{"pattern":"^SELFTEST FAILED:","count":0}]
 bench/run_bench.sh tools/run_bench_selftest.sh | timeout 60 bash tools/run_bench_selftest.sh --selftest | [{"pattern":"^SELFTEST OK:","count":1},{"pattern":"^SELFTEST FAILED:","count":0}]
 tests/http_readiness.py tests/test_http_readiness.sh | timeout 60 python3 tests/http_readiness.py --selftest | [{"pattern":"PASS:","count":510},{"pattern":"^HTTP_READINESS_SELFTEST: 510 passed, 0 failed$","count":1},{"pattern":"FAIL:","count":0}]
 tests/test_arming_mt.sh tests/arming_mt_fixtures/* | timeout 30 bash tests/test_arming_mt.sh --selftest | [{"pattern":"  PASS:","count":5},{"pattern":"  FAIL:","count":0}]
@@ -104,3 +104,4 @@ tools/lsp_builtin_index_check.sh tools/gen_lsp_builtin_index.sh tools/lsp_builti
 tools/observer_oracle/reveal.py tools/observer_oracle/reveal_selftest.py tools/observer_oracle/manual_review.py tools/observer_oracle/manual_review.json tools/observer_oracle/reveal_commitment.json tools/observer_oracle/reveal_fixtures.json | timeout 60 python3 -I tools/observer_oracle/reveal.py --selftest | [{"pattern":"^CHECK ok: ","count":663},{"pattern":"^CHECK FAIL: ","count":0},{"pattern":"^reveal checks: 663 examined, 663 ok, 0 failed$","count":1}]
 tools/make381_number_sign_check.py tools/make381_cases.json | timeout 60 python3 tools/make381_number_sign_check.py --selftest | [{"pattern":"^PASS:","count":274},{"pattern":"^FAIL:","count":0},{"pattern":"^MAKE381_NUMBER_SIGN_SELFTEST: examined=274 declared=274 finding=181 clean=93 failures=0 tree-mode=ok$","count":1}]
 tools/make381_oracle.py tools/make381_cases.json | timeout 30 python3 tools/make381_oracle.py --selftest | [{"pattern":"^FAIL:","count":0},{"pattern":"^MAKE381_ORACLE_SELFTEST: cases=274 faults=0 planted=4 caught=4 controls=4 accepted=4 PASS$","count":1}]
+tests/phase2/test_cost_reference.sh tools/phase2_cost_reference.sh tests/phase2/cost_reference.txt | timeout 30 bash tests/phase2/test_cost_reference.sh --selftest | [{"pattern":"^PASS:","count":6},{"pattern":"^FAIL:","count":0},{"pattern":"^cost-reference-selftest: 6 passed, 0 failed$","count":1}]
