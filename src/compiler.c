@@ -1992,8 +1992,13 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
              * of a function-local slot below; it must never turn a slot into
              * an outward OP_SET_NAME, nor turn an outward write local. */
             int local_eligible = !captured && !interrogated && !in_outer && !in_module && !in_globals;
+            int outward = !local_only && (in_outer || in_module || in_globals);
 
-            if (local_eligible) {
+            if (outward) {
+                int idx = add_string_constant(c, name);
+                set_op = OP_SET_NAME; set_arg = (uint16_t)idx;
+                obs_op = OP_OBSERVE_ASSIGN; obs_arg = (uint16_t)idx;
+            } else if (local_eligible) {
                 int new_slot = env_bound ? -1 : add_local(c, name, h);
                 if (!env_bound && new_slot >= 0) {
                     UserLocalStore route = user_local_store(c, name, new_slot);

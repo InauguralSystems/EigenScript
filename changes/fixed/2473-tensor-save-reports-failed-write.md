@@ -1,0 +1,1 @@
+- Made `tensor_save` raise a catchable `io` error instead of reporting success when opening, writing, or closing its output fails (#2473).

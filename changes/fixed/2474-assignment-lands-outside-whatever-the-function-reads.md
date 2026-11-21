@@ -1,0 +1,1 @@
+- A function's assignment now updates an existing outer binding whatever history it reads or closures it contains; functions relying on the old accidental binding must declare the name with `local` (#2474).
