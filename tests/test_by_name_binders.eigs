@@ -49,17 +49,22 @@ define binder_local_in_for() as:
     return seen
 assert_eq of [binder_local_in_for of [], 7, "binder: local assignment in loop env"]
 
-# Function-local-write classification (question (b)).  Each row writes outside
-# the binder's temporary execution scope and pins the parent commit's answer.
-# Only comprehension and catch are in the parent's static function-local set.
+# Where a write lands AFTER a binder of the same name (question (b)).  Each row
+# writes outside the binder's temporary execution scope.
+# A comprehension variable and a catch name have the scope of their expression
+# and of their handler (docs/SPEC.md) and make no binding of the function's, so
+# the write lands on the enclosing name, as it does without the binder.  Until
+# #2474 these two rows pinned the answer of the commit before them, 1: the
+# compiler kept such a write in the function because the function also held a
+# comprehension or a catch of that name.
 # Define/import writes resolve dynamically; loop binders live in loop envs.
 write_comp is 1
 define write_comp_fn() as:
     ignored is [write_comp for write_comp in [7, 8]]
     write_comp is 2
     return write_comp
-assert_eq of [write_comp_fn of [], 2, "function-local write: comprehension return"]
-assert_eq of [write_comp, 1, "function-local write: comprehension module"]
+assert_eq of [write_comp_fn of [], 2, "write after a comprehension of the name: return"]
+assert_eq of [write_comp, 2, "write after a comprehension of the name: the module's"]
 
 write_catch is 1
 define write_catch_fn() as:
@@ -69,8 +74,8 @@ define write_catch_fn() as:
         ignored is write_catch.kind
     write_catch is 2
     return write_catch
-assert_eq of [write_catch_fn of [], 2, "function-local write: catch return"]
-assert_eq of [write_catch, 1, "function-local write: catch module"]
+assert_eq of [write_catch_fn of [], 2, "write after a catch of the name: return"]
+assert_eq of [write_catch, 2, "write after a catch of the name: the module's"]
 
 write_define_before is 1
 define write_define_before_fn() as:

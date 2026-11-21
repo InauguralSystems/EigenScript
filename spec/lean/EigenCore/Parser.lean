@@ -329,10 +329,11 @@ private def unsupportedStmts (functions : List String) (insideFunction : Bool) :
             else unsupportedStmts functions true fuel body
       here.orElse (fun _ => unsupportedStmts functions insideFunction fuel rest)
 
-/-- A non-local assignment in a function is function-local in C when a nested
-function captures that name.  Until EigenCore models that compiler routing,
-keep this shape outside the modeled subset rather than writing through to an
-enclosing environment. -/
+/-- Until #2474 a non-local assignment in a function was function-local in C
+when a nested function captured that name, and this shape was kept outside the
+modeled subset for that reason.  The C runtime now writes through to the
+enclosing environment.  The exclusion stays until the model's parity on this
+shape is shown; removing it is its own change. -/
 private def hasCapturedAssignment (parameters : List String) : Nat → List Stmt → Bool
   | 0, _ => false
   | _, [] => false

@@ -100,8 +100,9 @@ typedef struct Compiler {
                                      * env by name (OP_SET_NAME_LOCAL) in this scope. A same-named
                                      * plain `x is ...` must NOT slot-promote, or the slot and the
                                      * env binding diverge and a slot read returns a stale value. */
-    NameSet           fn_env_bound; /* by-name binders which live in this function's env and
-                                     * therefore make ordinary writes function-local */
+    NameSet           fn_env_bound; /* a comprehension variable or a catch name of this function.
+                                     * Collected, and since #2474 read by nothing: it no longer
+                                     * decides where an ordinary write lands. */
     /* #1074: names bound by an ACTIVE loop env in this function (a `for`
      * binder on the LOOP_ENV_FRESH/persist path, i.e. interrogated or
      * shadowing an outer/module name). A body write of such a name must
@@ -1665,8 +1666,9 @@ enum { BINDER_NO_SLOT = 1, BINDER_FUNCTION_LOCAL = 2 };
 
 /* The single predicate/enumeration for binders whose emitters write an
  * environment by name.  The property bits keep the two questions separate:
- * every binder forbids a same-named slot, but only binders which survive in
- * the function env make an ordinary write function-local. */
+ * every binder forbids a same-named slot; BINDER_FUNCTION_LOCAL marks a
+ * comprehension variable and a catch name, which until #2474 made an ordinary
+ * write to the same name function-local and now decide nothing. */
 static int by_name_binder(ASTNode *node, int in_loop_env, const char **name) {
     *name = NULL;
     switch (node->type) {
@@ -1978,7 +1980,6 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
             int captured     = name_set_has(&c->captured, name);
             int interrogated = name_set_has(&c->interrogated, name);
             int env_bound    = name_set_has(&c->env_bound, name);
-            int fn_env_bound = name_set_has(&c->fn_env_bound, name);
             int in_outer     = name_in_enclosing(c, name);
             int in_module    = c->module_names && name_set_has(c->module_names, name);
             /* #373: whether a pre-existing env binding is a write-through
@@ -1992,8 +1993,18 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
              * of a function-local slot below; it must never turn a slot into
              * an outward OP_SET_NAME, nor turn an outward write local. */
             int local_eligible = !captured && !interrogated && !in_outer && !in_module && !in_globals;
+            /* #2474: where a write lands is decided by whether the name exists outside, and by
+             * `local`.  It is not decided by what the function READS (`interrogated`), by an inner
+             * function that mentions the name (`captured`), or by a comprehension variable or a
+             * catch name of the same name: docs/SPEC.md gives those two the scope of their
+             * expression and of their handler, and no binding of the function's. */
+            int outward = !local_only && (in_outer || in_module || in_globals);
 
-            if (local_eligible) {
+            if (outward) {
+                int idx = add_string_constant(c, name);
+                set_op = OP_SET_NAME; set_arg = (uint16_t)idx;
+                obs_op = OP_OBSERVE_ASSIGN; obs_arg = (uint16_t)idx;
+            } else if (local_eligible) {
                 int new_slot = env_bound ? -1 : add_local(c, name, h);
                 if (!env_bound && new_slot >= 0) {
                     UserLocalStore route = user_local_store(c, name, new_slot);
@@ -2004,13 +2015,12 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
                     set_op = OP_SET_FN_NAME_LOCAL; set_arg = (uint16_t)idx;
                     obs_op = OP_OBSERVE_ASSIGN; obs_arg = (uint16_t)idx;
                 }
-            } else if (local_only || captured || interrogated || fn_env_bound) {
+            } else {
+                /* `local` over a name that exists outside, or a name with no binding outside
+                 * that the function reads or an inner function mentions: the function's own,
+                 * kept by name. */
                 int idx = add_string_constant(c, name);
                 set_op = OP_SET_FN_NAME_LOCAL; set_arg = (uint16_t)idx;
-                obs_op = OP_OBSERVE_ASSIGN; obs_arg = (uint16_t)idx;
-            } else {
-                int idx = add_string_constant(c, name);
-                set_op = OP_SET_NAME; set_arg = (uint16_t)idx;
                 obs_op = OP_OBSERVE_ASSIGN; obs_arg = (uint16_t)idx;
             }
         }
