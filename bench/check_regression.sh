@@ -169,17 +169,45 @@ EOF
     python_executable=$(python3 -c 'import sys; print(sys.executable)') || exit 1
     printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' "$python_executable" "$profiler_source" > "$profiler"
     chmod +x "$profiler" "$current" "$reference" "$named_reference"
-    if ! BENCH_SELFTEST_ROOT="$DIR/.." MEASURE_LOG="$measure_log" VALGRIND="$profiler" EIGENSCRIPT="$current" "$0" --vs "$reference" "$named_reference" >"$scratch/population.out" 2>&1; then
+    # The cases below run in a scratch checkout of THIS tree (the population is derived with
+    # `git ls-files`, so it must be a checkout; what differs from HEAD is brought over, so a gate
+    # that is not committed yet tests itself and not its predecessor). There one declaration is
+    # removed, so the cases of a row with no declaration have their row whatever the real file
+    # declares, and the counts they expect are derived from that tree, not written here. A failed
+    # case leaves no registered worktree behind.
+    st="$scratch/selftest-tree"
+    trap 'git -C "$DIR/.." worktree remove --force "$st" >/dev/null 2>&1; rm -rf "$scratch"' EXIT
+    git -C "$DIR/.." worktree add --quiet --detach "$st" HEAD || exit 1
+    { git -C "$DIR/.." diff --name-only -z HEAD; git -C "$DIR/.." ls-files -o --exclude-standard -z; } |
+        while IFS= read -r -d '' changed; do
+            if [ -e "$DIR/../$changed" ]; then
+                mkdir -p "$st/$(dirname "$changed")" && cp -p "$DIR/../$changed" "$st/$changed" || exit 1
+            else
+                rm -f "$st/$changed"
+            fi
+        done || exit 1
+    gate="$st/bench/check_regression.sh"
+    drop_declaration() { # workload tier : remove that row from the scratch tree's declarations
+        awk -F'\t' -v w="$1" -v t="$2" '!($1 == w && $2 == t)' "$st/tests/phase2/cost_expect.txt" > "$scratch/cost.next" \
+            && mv "$scratch/cost.next" "$st/tests/phase2/cost_expect.txt"
+    }
+    drop_declaration bench/observer_gate_soft_keyword.eigs off || exit 1
+    want_decl=$(bash "$st/tools/phase2_cost.sh" --declared all --method ci | awk 'NF {n++} END {print n+0}') || exit 1
+    # The population's size, derived apart from the gate's own derivation: every tracked workload, two tiers.
+    want_rows=$(( 2 * $(git -C "$st" ls-files ':(glob)bench/*.eigs' ':(glob)tests/bench_*.eigs' | wc -l) ))
+    [ "$want_decl" -gt 0 ] && [ "$want_rows" -gt "$want_decl" ] \
+        || { echo "SELFTEST FAILED: scratch tree has $want_decl declarations for $want_rows rows"; exit 1; }
+    if ! BENCH_SELFTEST_ROOT="$st" MEASURE_LOG="$measure_log" VALGRIND="$profiler" EIGENSCRIPT="$current" "$gate" --vs "$reference" "$named_reference" >"$scratch/population.out" 2>&1; then
         cat "$scratch/population.out"
-        rm -rf "$scratch"
         echo "SELFTEST FAILED: valid derived benchmark population was rejected"; exit 1
     fi
-    if ! grep -Fxq "no instruction-count regressions vs reference (threshold ${THRESHOLD_PCT}%; declared rows applied=31; measured rows=32)" "$scratch/population.out"; then
+    if ! grep -Fxq "no instruction-count regressions vs reference (threshold ${THRESHOLD_PCT}%; declared rows applied=${want_decl}; measured rows=${want_rows})" "$scratch/population.out"; then
         cat "$scratch/population.out"
-        echo "SELFTEST FAILED: clean control did not retain the population summary"; exit 1
+        echo "SELFTEST FAILED: clean control did not print declared rows applied=${want_decl}; measured rows=${want_rows}"; exit 1
     fi
+    echo "SELFTEST OK: a base that holds the candidate's tree passes (declared rows applied=${want_decl}; measured rows=${want_rows})"
     expected="$scratch/expected"
-    "$0" --list-vs > "$scratch/population" || exit 1
+    "$gate" --list-vs > "$scratch/population" || exit 1
     while IFS=$'\t' read -r workload tier; do
         printf 'current\t%s\t%s\nnamed-reference\t%s\t%s\n' "$workload" "$tier" "$workload" "$tier"
         if [ "$workload $tier" = "bench/observer_gate_soft_keyword.eigs off" ]; then
@@ -187,15 +215,14 @@ EOF
         fi
     done < "$scratch/population" | sort > "$expected"
     if ! sort "$measure_log" | cmp -s - "$expected"; then
-        rm -rf "$scratch"
         echo "SELFTEST FAILED: a workload/tier was skipped or measured more than once"; exit 1
     fi
     run_plant() { # environment value, expected verdict, workload, expected rc
         plant_name=$1 verdict=$2 row_name=$3 want_rc=$4
         : > "$measure_log"
-        BENCH_SELFTEST_PLANT="$plant_name" BENCH_SELFTEST_ROOT="$DIR/.." \
+        BENCH_SELFTEST_PLANT="$plant_name" BENCH_SELFTEST_ROOT="$st" \
           MEASURE_LOG="$measure_log" VALGRIND="$profiler" EIGENSCRIPT="$current" \
-          "$0" --vs "$reference" "$named_reference" >"$scratch/$plant_name.out" 2>&1
+          "$gate" --vs "$reference" "$named_reference" >"$scratch/$plant_name.out" 2>&1
         got_rc=$?
         if [ "$got_rc" -ne "$want_rc" ] || ! grep -q "$verdict: $row_name" "$scratch/$plant_name.out"; then
             cat "$scratch/$plant_name.out"
@@ -208,35 +235,18 @@ EOF
     run_plant undeclared-base-fail REGRESSION bench/observer_gate_soft_keyword.eigs 1
     run_plant undeclared-pass ok bench/observer_gate_soft_keyword.eigs 0
     run_plant undeclared-named-fail REGRESSION bench/observer_gate_soft_keyword.eigs 1
-    deleted_tree="$scratch/deleted-tree"
-    # The scratch tree is a checkout (the population is derived with `git ls-files`), and it must be
-    # the tree this script runs from, not only its last commit: what differs from HEAD is brought
-    # over, so a gate that is not committed yet tests itself and not its predecessor. A failed case
-    # leaves no registered worktree behind.
-    trap 'git -C "$DIR/.." worktree remove --force "$deleted_tree" >/dev/null 2>&1; rm -rf "$scratch"' EXIT
-    git -C "$DIR/.." worktree add --quiet --detach "$deleted_tree" HEAD || exit 1
-    { git -C "$DIR/.." diff --name-only -z HEAD; git -C "$DIR/.." ls-files -o --exclude-standard -z; } |
-        while IFS= read -r -d '' changed; do
-            if [ -e "$DIR/../$changed" ]; then
-                mkdir -p "$deleted_tree/$(dirname "$changed")" && cp -p "$DIR/../$changed" "$deleted_tree/$changed" || exit 1
-            else
-                rm -f "$deleted_tree/$changed"
-            fi
-        done || exit 1
-    awk -F'\t' '!($1 == "tests/bench_idxset.eigs" && $2 == "jit")' \
-        "$deleted_tree/tests/phase2/cost_expect.txt" > "$scratch/cost-with-row-deleted"
-    mv "$scratch/cost-with-row-deleted" "$deleted_tree/tests/phase2/cost_expect.txt"
-    BENCH_SELFTEST_PLANT=deleted-declaration BENCH_SELFTEST_ROOT="$deleted_tree" \
+    # A declaration deleted without its cost being recovered: the row stays measured and fails.
+    drop_declaration tests/bench_idxset.eigs jit || exit 1
+    BENCH_SELFTEST_PLANT=deleted-declaration BENCH_SELFTEST_ROOT="$st" \
       MEASURE_LOG="$measure_log" VALGRIND="$profiler" EIGENSCRIPT="$current" \
-      "$deleted_tree/bench/check_regression.sh" --vs "$reference" "$named_reference" \
-      >"$scratch/deleted-declaration.out" 2>&1
+      "$gate" --vs "$reference" "$named_reference" >"$scratch/deleted-declaration.out" 2>&1
     deleted_rc=$?
     if [ "$deleted_rc" -ne 1 ] || ! grep -q 'REGRESSION: tests/bench_idxset.eigs' "$scratch/deleted-declaration.out"; then
         cat "$scratch/deleted-declaration.out"
         echo "SELFTEST FAILED: deleted declaration row was not measured and rejected"; exit 1
     fi
-    git -C "$DIR/.." worktree remove --force "$deleted_tree" || exit 1
     echo "SELFTEST OK: a deleted declaration stays measured and is rejected"
+    git -C "$DIR/.." worktree remove --force "$st" || exit 1
     trap - EXIT
     rm -rf "$scratch"
     echo "SELFTEST OK: every derived workload/tier is measured once"
