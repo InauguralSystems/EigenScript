@@ -320,6 +320,14 @@ build/$(NUM_GUARD_VALUE_VARIANT)/test_num_guard_value: tests/test_num_guard_valu
 num-guard-value-test: build/$(NUM_GUARD_VALUE_VARIANT)/test_num_guard_value
 	@echo "IEEE result/status test built: $<"
 
+EMBED_STRICT_VARIANT ?= release
+EMBED_STRICT_OBJ := $(filter-out build/$(EMBED_STRICT_VARIANT)/main.o,$(OBJ_$(EMBED_STRICT_VARIANT)))
+build/$(EMBED_STRICT_VARIANT)/test_embed_strict_calls: tests/test_embed_strict_calls.c $(EMBED_STRICT_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(EMBED_STRICT_VARIANT)) -I$(SRC_DIR) -o $@ $< $(EMBED_STRICT_OBJ) $(LIBS_$(EMBED_STRICT_VARIANT))
+.PHONY: embed-strict-calls-test
+embed-strict-calls-test: build/$(EMBED_STRICT_VARIANT)/test_embed_strict_calls
+	@echo "embed strict calls test built: $<"
+
 # R23-1: encoder failure-return is observable below the public VM error.
 WRITER_JSON_VARIANT ?= release
 WRITER_JSON_OBJ := $(filter-out build/$(WRITER_JSON_VARIANT)/main.o,$(OBJ_$(WRITER_JSON_VARIANT)))
