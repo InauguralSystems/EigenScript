@@ -690,8 +690,8 @@ Buffer arithmetic stops at its first raised kernel result and releases its parti
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `tensor_save` | `tensor_save of [tensor, "path"]` | Save a list or buffer tensor of at most 10,000,000 elements to a binary file (preserves observer state). An over-cap tensor raises a catchable `limit` error before opening the file, including under `EIGS_STRICT=0` |
-| `tensor_load` | `tensor_load of "path"` | Load a tensor of at most 10,000,000 elements from a binary file (restores observer state). An over-cap header never returns `null`: it raises a catchable `limit` error naming the path, offending dimension, and cap, including under `EIGS_STRICT=0`. `NaN` bytes in the file remain NaN and set `math_flags.invalid`; `EIGS_STRICT=1` raises a `value` error naming `tensor_load` (#971, R2.2). |
+| `tensor_save` | `tensor_save of [tensor, "path"]` | Save a list or buffer tensor of at most 10,000,000 elements to a binary file and answer `true`. A file that cannot be opened, written or closed raises a catchable `io` error with the system's reason; what was written before the failure is left on disk, as `write_text` leaves it. An over-cap tensor raises a catchable `limit` error before opening the file, including under `EIGS_STRICT=0`. A wrong-typed argument follows the guard rule at the top of this page: for example `tensor_save of [5, "x.bin"]` raises `type_mismatch`, and answers `false` under `EIGS_STRICT=0` |
+| `tensor_load` | `tensor_load of "path"` | Load a tensor of at most 10,000,000 elements from a binary file. An over-cap header never returns `null`: it raises a catchable `limit` error naming the path, offending dimension, and cap, including under `EIGS_STRICT=0`. `NaN` bytes in the file remain NaN and set `math_flags.invalid`; `EIGS_STRICT=1` raises a `value` error naming `tensor_load` (#971, R2.2). |
 
 ### Gradients & SGD
 

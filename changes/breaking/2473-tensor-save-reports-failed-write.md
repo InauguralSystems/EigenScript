@@ -1,0 +1,1 @@
+- `tensor_save` raises a catchable `io` error when its file cannot be opened, written or closed. Before, it answered `false` for a path it could not open, and `true` after a write or a close that failed, leaving a short file. A caller that tested the answer for `false` must catch the error (#2473).
