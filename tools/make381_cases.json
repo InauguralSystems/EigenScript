@@ -5255,6 +5255,187 @@
    "name": "colon-colon-after-comment",
    "text": "X := a # ::=\n",
    "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\nrecipe",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\nrecipe",
+    "rc": 0
+   },
+   "name": "semicolon-recipe-bang",
+   "text": "X := ok\nall2: ; @if [ \"a\" != \"b\" ]; then printf recipe; fi\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n::=",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\n::=",
+    "rc": 0
+   },
+   "name": "semicolon-recipe-colon-colon",
+   "text": "X := ok\nall2: ; @printf \"%s\" \"::=\"\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\nrecipe",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\nrecipe",
+    "rc": 0
+   },
+   "name": "semicolon-recipe-after-prerequisite",
+   "text": "X := ok\nall2: dep ; @if [ \"a\" != \"b\" ]; then printf recipe; fi\ndep: ; @:\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\nrecipe",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]\nrecipe",
+    "rc": 0
+   },
+   "name": "double-colon-rule-semicolon-bang",
+   "text": "X := ok\nall2:: ; @if [ \"a\" != \"b\" ]; then printf recipe; fi\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "case.mk:1: *** missing separator.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[X;Y]",
+    "rc": 0
+   },
+   "name": "semicolon-in-name-colon-colon",
+   "text": "X;Y ::= a\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "make: *** No rule to make target 'X', needed by 'all2'.  Stop.",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]\nT[a]",
+    "rc": 0
+   },
+   "name": "target-specific-bang",
+   "text": "all2: X != printf a\nall2: ; @printf 'T[%s]' '$(X)'\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "case.mk:1: *** target pattern contains no '%'.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]\nT[a]",
+    "rc": 0
+   },
+   "name": "target-specific-colon-colon",
+   "text": "all2: X ::= a\nall2: ; @printf 'T[%s]' '$(X)'\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[a] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "bang-doubled-reference-in-define",
+   "text": "define F\nX$$(subst !=,,) := a\nendef\n$(eval $(F))\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "assignment-form",
+   "line": 2,
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "bang-continued-line",
+   "text": "X \\\n != printf a\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "case.mk:1: *** empty variable name.  Stop.",
+    "out": "",
+    "rc": 2
+   },
+   "name": "escaped-sign-in-name-colon-colon",
+   "text": "X\\#Y ::= a\n",
+   "why": "the two makes differ"
   }
  ],
  "oracle": "GNU Make 3.81 built from the GNU source archive, against GNU Make 4.3",
