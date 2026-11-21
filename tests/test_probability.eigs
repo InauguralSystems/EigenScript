@@ -81,6 +81,23 @@ assert_eq of [probability.poisson_pmf of [10, 2.5], 0.0002157251844958517, "pois
 assert_near of [probability.poisson_pmf of [170, 170.0], 0.030582481093917844, 3.0582481093917844e-14, "poisson_pmf(170, 170) log domain"]
 assert_near of [probability.poisson_pmf of [500, 480.0], 0.011826570883129252, 1.1826570883129252e-14, "poisson_pmf(500, 480) log domain"]
 assert_near of [probability.poisson_pmf of [1000, 1000.0], 0.012614611348719664, 1.2614611348719664e-14, "poisson_pmf(1000, 1000) log domain"]
+
+# #2494: a fractional count on the direct formula and a negative count raise, as before the number model. The float
+# factorial that poisson_pmf uses had dropped factorial's check, and answered 0.38278598604164377
+# for a count of 1.5 and inf for a count of -1.
+try:
+    probability.poisson_pmf of [1.5, 2]
+    assert_eq of [true, false, "poisson_pmf(1.5, 2) did not raise"]
+catch _poisson_fraction_error:
+    assert_eq of [_poisson_fraction_error, "factorial: input must be an integer", "poisson_pmf(1.5, 2) raises"]
+try:
+    probability.poisson_pmf of [0 - 1, 2]
+    assert_eq of [true, false, "poisson_pmf(-1, 2) did not raise"]
+catch _poisson_negative_error:
+    assert_eq of [_poisson_negative_error, "poisson_pmf: the count must not be negative", "poisson_pmf(-1, 2) raises"]
+assert_eq of [probability.poisson_pmf of [2, 2], 0.2706705664732254, "poisson_pmf(2, 2) unchanged"]
+assert_eq of [probability.poisson_pmf of [25, 2], 2.9276236643549914e-19, "poisson_pmf(25, 2) unchanged"]
+assert_eq of [probability.poisson_pmf of [171, 2], 3.264090485263421e-259, "poisson_pmf(171, 2) unchanged"]
 assert_near of [probability.poisson_cdf of [200, 190.0], 0.7784236536636114, 7.784236536636114e-13, "poisson_cdf(200, 190) log domain"]
 # A large lambda underflows e^-lambda to 0 even when the probability is a
 # normal double, so the direct formula would return exactly 0.

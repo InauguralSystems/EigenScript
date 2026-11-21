@@ -1336,7 +1336,7 @@ Combinatorics, distributions (binomial, Poisson, normal, exponential, uniform â€
 | `permutations` | `permutations of [n, k]` | P(n, k) = n! / (n-k)! |
 | `binomial_pmf` | `binomial_pmf of [n, k, p]` | P(X=k) = C(n,k) * p^k * (1-p)^(n-k) |
 | `binomial_cdf` | `binomial_cdf of [n, k, p]` | P(X <= k) = sum_{i=0}^{k} binomial_pmf(n, i, p) |
-| `poisson_pmf` | `poisson_pmf of [k, lam]` | P(X=k) = lambda^k * e^(-lambda) / k! |
+| `poisson_pmf` | `poisson_pmf of [k, lam]` | P(X=k) = lambda^k * e^(-lambda) / k!. A negative count `k` raises, and so does a fractional count where the direct formula is used (`poisson_pmf of [1.5, 2]`) |
 | `poisson_cdf` | `poisson_cdf of [k, lam]` | P(X <= k) = sum_{i=0}^{k} poisson_pmf(i, lambda) |
 | `normal_pdf` | `normal_pdf of [x, mu, sigma]` | phi(x) = (1 / (sigma * sqrt(2*pi))) * exp(-(x-mu)^2 / (2*sigma^2)) |
 | `normal_cdf_approx` | `normal_cdf_approx of x` | Abramowitz & Stegun approximation for Phi(x) (standard normal CDF) |

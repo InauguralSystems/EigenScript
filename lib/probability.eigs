@@ -79,6 +79,10 @@ define binomial_cdf(n, k, p) as:
 # sentinel as factorial (0 for a negative n); its product is a float, so an int
 # n past 20 does not raise as `factorial of 21` does (decision (A), #1758).
 define _factorial_real(n) as:
+    # #2494: the same check as factorial's. Without it a fractional n ran the loop to its floor
+    # and poisson_pmf answered a number for a count that is not an integer.
+    if n != (floor of n):
+        throw of "factorial: input must be an integer"
     if n < 0:
         return 0.0
     result is 1.0
@@ -91,6 +95,10 @@ define _factorial_real(n) as:
 # poisson_pmf: P(X=k) = lambda^k * e^(-lambda) / k!
 # A probability is real-valued: k! is a float denominator (#1848).
 define poisson_pmf(k, lam) as:
+    # #2494: a negative count raised before the number model, where k! was the int sentinel 0 and
+    # the division raised; with a float k! the same division is inf. Say it by name.
+    if k < 0:
+        throw of "poisson_pmf: the count must not be negative"
     # Preserve the direct calculation (and its exact rounding) whenever all
     # three intermediates (lambda^k, e^-lambda, k!) are normal doubles.
     # Otherwise compute log(k!) alongside the exponent, so an intermediate
