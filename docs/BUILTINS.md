@@ -267,7 +267,7 @@ to double. Float32 overflow produces signed infinity and sets
 | `u64_div` | `u64_div of [a, b]` | N9: N5 int64 bit patterns; unsigned quotient as int64 bits; zero raises value (Rust std). |
 | `u64_rem` | `u64_rem of [a, b]` | N9: N5 int64 bit patterns; unsigned remainder as int64 bits; zero raises value (Rust std). |
 | `u64_to_string` | `u64_to_string of x` | N9: N5 int64 bit pattern to unsigned decimal string (Rust std). |
-| `fround` | `fround of x` | N9: int converts to f64 first; f64 to f32 to f64, float result; current result guard until R2.2. |
+| `fround` | `fround of x` | N9: int converts to f64 first; f64 to f32 to f64, returning a float (see [Scalar Math](#scalar-math) for non-finite arguments and result traps). |
 
 ### Buffers
 
@@ -572,6 +572,8 @@ automatically at exit.
 
 ## Scalar Math
 
+Scalar arithmetic and its existing list forms accept infinity and NaN. With `EIGS_STRICT` unset or `0`, results follow IEEE 754 and C libm. With `EIGS_STRICT=1`, a non-finite result raises through the existing arithmetic or domain trap, while a finite result answers. `floor`, `ceil` and `round` return a non-finite result as a float when arithmetic traps are off. List `sum`, `mean` and `norm` accumulate doubles from left to right (the squares for `norm`); an all-int `sum` retains checked int64 arithmetic. `min`, `max` and `num_copy` pass values through without arithmetic flags in all three states. Buffer cell reads and buffer reductions retain their finite-only data boundary.
+
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `abs` | `abs of x` | Absolute value, preserving int or float kind. `abs` of INT64_MIN raises `value` because its positive magnitude does not fit in int64 (#1758 N4b). |
@@ -590,6 +592,8 @@ automatically at exit.
 | `pi` | `pi of null` | The constant &pi; (3.14159265...). Numeric inputs convert to float; numeric results are floats. |
 
 ## Tensor Math
+
+The [Scalar Math](#scalar-math) argument rule also applies to the element-wise arithmetic and list reductions below; other tensor functions retain their documented guards.
 
 **Numeric work wants a `buffer`.** A tensor argument (`t`, `a`, `b`, `matrix`)
 is any of: a number, a flat list of numbers, a nested list of lists (the 2-D

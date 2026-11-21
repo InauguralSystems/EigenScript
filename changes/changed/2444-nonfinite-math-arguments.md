@@ -1,0 +1,1 @@
+- Scalar math, list arithmetic and list reductions accept IEEE non-finite arguments; strict arithmetic traps on non-finite results, and `num_copy` preserves values without flags (#2444).

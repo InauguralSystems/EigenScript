@@ -194,6 +194,18 @@ double eigs_pow(double x, double y) {
     if (y == 0.0) return 1.0;
     if (x == 1.0) return 1.0;
     if (is_nan(x) || is_nan(y)) return mk_nan();
+    /* Infinite exponents depend on magnitude, including negative bases. */
+    if (is_inf(y)) {
+        double ax = eigs_fabs(x);
+        if (ax == 1.0) return 1.0;
+        return (ax > 1.0) == (y > 0.0) ? mk_inf() : 0.0;
+    }
+    if (is_inf(x)) {
+        double magnitude = y > 0.0 ? mk_inf() : 0.0;
+        /* At and above 2^53 every representable integer is even. */
+        int odd = eigs_fabs(y) < 0x1p53 && eigs_fmod(eigs_fabs(y), 2.0) == 1.0;
+        return x < 0.0 && odd ? -magnitude : magnitude;
+    }
     int y_int = (y == eigs_floor(y) && eigs_fabs(y) <= 1e15);
     int y_odd = y_int && (eigs_fmod(eigs_fabs(y), 2.0) == 1.0);
     /* tiny integer exponents: repeated squaring is within ~1 ulp and
@@ -217,12 +229,6 @@ double eigs_pow(double x, double y) {
         return y_odd ? -r : r;
     }
     if (x == 0.0) return y > 0.0 ? 0.0 : mk_inf();
-    if (is_inf(x)) return y > 0.0 ? x : 0.0;
-    if (is_inf(y)) {
-        double ax = eigs_fabs(x);
-        if (ax == 1.0) return 1.0;
-        return (ax > 1.0) == (y > 0.0) ? mk_inf() : 0.0;
-    }
     /* log2(x) in double-double so the y-scaled exponent keeps ~2^-90
      * of precision — the single-double version's error grows linearly
      * with |y| (measured ~34 ulp at y=300 before this). */
@@ -415,6 +421,10 @@ double eigs_atan(double x) {
 
 double eigs_atan2(double y, double x) {
     if (is_nan(x) || is_nan(y)) return mk_nan();
+    if (is_inf(x) && is_inf(y)) {
+        double angle = x > 0.0 ? PI_D * 0.25 : PI_D * 0.75;
+        return y > 0.0 ? angle : -angle;
+    }
     if (x > 0.0) {
         if (y == 0.0) return y;                        /* +-0 keeps its sign */
         if (is_inf(x) && !is_inf(y)) return y > 0 ? 0.0 : -0.0;

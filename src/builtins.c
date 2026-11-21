@@ -2044,22 +2044,22 @@ Value* builtin_index_of(Value *arg) {
 
 Value* builtin_sin(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "sin", "a number", make_float(0));
-    return make_float(sin(eigs_float_arg(arg, __func__)));
+    return make_float(eigs_math_result_named(sin(eigs_arithmetic_float(arg, __func__)), "sin"));
 }
 
 Value* builtin_cos(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "cos", "a number", make_float(0));
-    return make_float(cos(eigs_float_arg(arg, __func__)));
+    return make_float(eigs_math_result_named(cos(eigs_arithmetic_float(arg, __func__)), "cos"));
 }
 
 Value* builtin_tan(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "tan", "a number", make_float(0));
-    return make_float(tan(eigs_float_arg(arg, __func__)));
+    return make_float(eigs_math_result_named(tan(eigs_arithmetic_float(arg, __func__)), "tan"));
 }
 
 Value* builtin_asin(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "asin", "a number", make_float(0));
-    double x = eigs_float_arg(arg, __func__);
+    double x = eigs_arithmetic_float(arg, __func__);
     /* R2.2: IEEE NaN outside the domain; strict retains its named error. */
     if (x < -1.0 || x > 1.0) {
         /* Keep the established strict diagnostic. */
@@ -2071,7 +2071,7 @@ Value* builtin_asin(Value *arg) {
 
 Value* builtin_acos(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "acos", "a number", make_float(0));
-    double x = eigs_float_arg(arg, __func__);
+    double x = eigs_arithmetic_float(arg, __func__);
     /* R2.2: IEEE NaN outside the domain; strict retains its named error. */
     if (x < -1.0 || x > 1.0) {
         /* Keep the established strict diagnostic. */
@@ -2083,7 +2083,7 @@ Value* builtin_acos(Value *arg) {
 
 Value* builtin_atan(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "atan", "a number", make_float(0));
-    return make_float(atan(eigs_float_arg(arg, __func__)));
+    return make_float(eigs_math_result_named(atan(eigs_arithmetic_float(arg, __func__)), "atan"));
 }
 
 Value* builtin_atan2(Value *arg) {
@@ -2092,42 +2092,45 @@ Value* builtin_atan2(Value *arg) {
     Value *y = BUILTIN_LIST_VIEW(arg, 0);
     Value *x = BUILTIN_LIST_VIEW(arg, 1);
     ARG_GUARD(!y || !val_is_number(y) || !x || !val_is_number(x), "atan2", "two numbers", make_float(0));
-    return make_float(atan2(eigs_float_arg(y, __func__), eigs_float_arg(x, __func__)));
+    return make_float(eigs_math_result_named(atan2(eigs_arithmetic_float(y, __func__), eigs_arithmetic_float(x, __func__)), "atan2"));
 }
 
 Value* builtin_floor(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "floor", "a number", make_float(0));
-    EigsNum n = eigs_number_arg(arg, "floor");
+    EigsNum n = eigs_arithmetic_number(arg, "floor");
     if (g_has_error) return make_null();
     if (n.is_int) return make_int(n.value.i64);
-    double result = floor(n.value.f64);
+    double result = eigs_math_result_named(floor(n.value.f64), "floor");
+    if (g_has_error) return make_null();
     int64_t integer;
     return num_to_i64_exact(result, &integer) ? make_int(integer) : make_float(result);
 }
 
 Value* builtin_ceil(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "ceil", "a number", make_float(0));
-    EigsNum n = eigs_number_arg(arg, "ceil");
+    EigsNum n = eigs_arithmetic_number(arg, "ceil");
     if (g_has_error) return make_null();
     if (n.is_int) return make_int(n.value.i64);
-    double result = ceil(n.value.f64);
+    double result = eigs_math_result_named(ceil(n.value.f64), "ceil");
+    if (g_has_error) return make_null();
     int64_t integer;
     return num_to_i64_exact(result, &integer) ? make_int(integer) : make_float(result);
 }
 
 Value* builtin_round(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "round", "a number", make_float(0));
-    EigsNum n = eigs_number_arg(arg, "round");
+    EigsNum n = eigs_arithmetic_number(arg, "round");
     if (g_has_error) return make_null();
     if (n.is_int) return make_int(n.value.i64);
-    double result = round(n.value.f64);
+    double result = eigs_math_result_named(round(n.value.f64), "round");
+    if (g_has_error) return make_null();
     int64_t integer;
     return num_to_i64_exact(result, &integer) ? make_int(integer) : make_float(result);
 }
 
 Value* builtin_abs(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "abs", "a number", make_float(0));
-    EigsNum n = eigs_number_arg(arg, "abs");
+    EigsNum n = eigs_arithmetic_number(arg, "abs");
     if (g_has_error) return make_null();
     if (n.is_int) {
         if (n.value.i64 == INT64_MIN) {
@@ -2136,7 +2139,7 @@ Value* builtin_abs(Value *arg) {
         }
         return make_int(n.value.i64 < 0 ? -n.value.i64 : n.value.i64);
     }
-    return make_float(fabs(n.value.f64));
+    return make_float(eigs_math_result_named(fabs(n.value.f64), "abs"));
 }
 
 /* Q8 / RULING R22-1: exact numeric order, with -0.0 before the equivalent
@@ -4173,7 +4176,7 @@ Value* builtin_list_slice(Value *arg) {
 Value* builtin_num_copy(Value *arg) {
     BOOL_REFUSE(arg, "num_copy");
     if (!arg || !val_is_number(arg)) return make_null();
-    EigsNum n = eigs_number_arg(arg, "num_copy");
+    EigsNum n = eigs_arithmetic_number(arg, "num_copy");
     return g_has_error ? make_null() : builtin_number_value(n);
 }
 

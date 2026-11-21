@@ -105,6 +105,8 @@ VOCAB = {
     'eigs_math_result': 'GUARD', # R2.2 status/trap; R2.4 canonical NaN through the single writer
     'eigs_math_result_named': 'GUARD',
     'eigs_number_read': 'READ', # exact kind + IEEE payload for numeric consumers
+    'eigs_arithmetic_number': 'READ', # #2444 arithmetic/pass-through opt-in; kind preserved
+    'eigs_arithmetic_float': 'READ', # #2444 arithmetic Q2 promotion; IEEE payload retained
     'observer_snapshot_number': 'READ', # R3.1 validated snapshot scalars retain IEEE payloads
     'vm_number_f64': 'READ', # R2.2 arithmetic-only Q2 int promotion / unchanged IEEE float
     'num_guard': 'GUARD',

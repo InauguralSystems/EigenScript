@@ -517,7 +517,7 @@ print of (log of 0)
 NaN is unequal to everything, including itself and through lists, dicts and
 buffers; comparing it never raises or changes math flags. `sum`, `get_at`,
 indexing, iteration, `dot` and `write_bytes` still refuse non-finite buffer
-elements in every `EIGS_STRICT` state (N13). The other scalar reductions, mixed
+elements in every `EIGS_STRICT` state (N13). The buffer reductions, mixed
 buffer/list materialization and numeric byte or sample conversions retain
 their declared data boundaries. `write_bytes` requires exact bytes in 0..255
 (N5/Q1). A raised read stops subsequent work. By default, byte consumers

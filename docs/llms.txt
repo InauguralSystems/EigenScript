@@ -365,7 +365,7 @@ false
   every `EIGS_STRICT` state, matching `get_at` (N13). Under `EIGS_STRICT=1` a NaN keeps its first
   diagnostic and sets `math_flags.invalid`; every execution tier agrees on
   the error kind, message and source line.
-  The other scalar reductions, mixed buffer/list materialization
+  Buffer reductions, mixed buffer/list materialization
   and numeric byte/sample/device conversions normalize their inputs and stop at
   the first raised read. `write_bytes` requires exact bytes in 0..255
   (N5/Q1); other byte converters retain truncation and wrapping at this stage;

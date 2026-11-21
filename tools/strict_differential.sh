@@ -888,6 +888,30 @@ guard|softmax|print of (softmax of [1.0, [2.0], 3.0])|softmax: expected a tensor
 guard|log_softmax|print of (log_softmax of [1.0, [2.0], 3.0])|log_softmax: expected a tensor containing only numbers
 guard|relu|print of (relu of [1.0, [2.0], 3.0])|relu: expected a tensor containing only numbers
 guard|leaky_relu|print of (leaky_relu of [1.0, [2.0], 3.0])|leaky_relu: expected a tensor containing only numbers
+arithmetic|abs|nf is f64_from_bits of 9218868437227405312\ndefine nf_abs(x) as:\n    return abs of x\nfor warmup in range of 80:\n    nf_abs of 0.5\nprint of (nf_abs of nf)|abs: non-finite arithmetic result (infinity)
+arithmetic|negative|nf is f64_from_bits of 9218868437227405312\nprint of (negative of nf)|negative: non-finite arithmetic result (infinity)
+arithmetic|floor|nf is f64_from_bits of 9218868437227405312\nprint of (floor of nf)|floor: non-finite arithmetic result (infinity)
+arithmetic|ceil|nf is f64_from_bits of 9218868437227405312\nprint of (ceil of nf)|ceil: non-finite arithmetic result (infinity)
+arithmetic|round|nf is f64_from_bits of 9218868437227405312\nprint of (round of nf)|round: non-finite arithmetic result (infinity)
+arithmetic|fround|nf is f64_from_bits of 9218868437227405312\nprint of (fround of nf)|fround: non-finite arithmetic result (infinity)
+arithmetic|sqrt|nf is f64_from_bits of 9218868437227405312\nprint of (sqrt of nf)|sqrt: non-finite arithmetic result (infinity)
+arithmetic|exp|nf is f64_from_bits of 9218868437227405312\nprint of (exp of nf)|exp: non-finite arithmetic result (infinity)
+arithmetic|log|nf is f64_from_bits of 9218868437227405312\nprint of (log of nf)|log: non-finite arithmetic result (infinity)
+arithmetic|sin|nf is f64_from_bits of 9221120237041090560\nprint of (sin of nf)|sin: result is not a number (NaN has no defined value)
+arithmetic|cos|nf is f64_from_bits of 9221120237041090560\nprint of (cos of nf)|cos: result is not a number (NaN has no defined value)
+arithmetic|tan|nf is f64_from_bits of 9221120237041090560\nprint of (tan of nf)|tan: result is not a number (NaN has no defined value)
+arithmetic|asin|nf is f64_from_bits of 9221120237041090560\nprint of (asin of nf)|asin: result is not a number (NaN has no defined value)
+arithmetic|acos|nf is f64_from_bits of 9221120237041090560\nprint of (acos of nf)|acos: result is not a number (NaN has no defined value)
+arithmetic|atan|nf is f64_from_bits of 9221120237041090560\nprint of (atan of nf)|atan: result is not a number (NaN has no defined value)
+arithmetic|atan2|nf is f64_from_bits of 9221120237041090560\nprint of (atan2 of [nf, 2.0])|atan2: result is not a number (NaN has no defined value)
+arithmetic|pow|nf is f64_from_bits of 9218868437227405312\nprint of (pow of [nf, 2.0])|pow: non-finite arithmetic result (infinity)
+arithmetic|add|nf is f64_from_bits of 9218868437227405312\nprint of (add of [nf, 2.0])|arithmetic: non-finite arithmetic result (infinity)
+arithmetic|subtract|nf is f64_from_bits of 9218868437227405312\nprint of (subtract of [nf, 2.0])|arithmetic: non-finite arithmetic result (infinity)
+arithmetic|multiply|nf is f64_from_bits of 9218868437227405312\nprint of (multiply of [nf, 2.0])|arithmetic: non-finite arithmetic result (infinity)
+arithmetic|divide|nf is f64_from_bits of 9218868437227405312\nprint of (divide of [nf, 2.0])|divide: non-finite arithmetic result (infinity)
+arithmetic|sum|nf is f64_from_bits of 9218868437227405312\nprint of (sum of [nf, 2.0, -2.0])|arithmetic: non-finite arithmetic result (infinity)
+arithmetic|mean|nf is f64_from_bits of 9218868437227405312\nprint of (mean of [nf, 2.0, -2.0])|arithmetic: non-finite arithmetic result (infinity)
+arithmetic|norm|nf is f64_from_bits of 9218868437227405312\nprint of (norm of [nf, 2.0, -2.0])|arithmetic: non-finite arithmetic result (infinity)
 EOF
 )
 PROBES="${PROBES//@TMP@/$TMP}"

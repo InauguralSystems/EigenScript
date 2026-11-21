@@ -372,6 +372,8 @@ An argument guard rejects a wrong type, a short or surplus argument list, a wron
 
 Some guards raise in every state; for example, `abs of true` raises rather than treating a bool as a number.
 
+Numeric conversion arguments (indices, counts, bytes, durations, stored or encoded numbers) and a buffer's stored cells refuse non-finite values in every state; scalar math, its list forms and list reductions are arithmetic positions.
+
 
   ```eigenscript
   not_a_number is sqrt of -1
@@ -2800,7 +2802,9 @@ print of (dot of [a, b])
 25.0
 ```
 
-For the floating forms of these reductions (`sum`, `norm`, `dot`), the
+Floating list `sum` and list `mean` accumulate doubles from left to right; list `norm` accumulates squared doubles in that order, then takes the square root.
+
+For the buffer forms of these reductions (`sum`, `norm`, `dot`), the
 summation **order (association) is unspecified**: callers must not depend on
 the exact low-bit rounding of the result. This is a deliberate opt-in — it licenses an
 optimizing backend (such as the AOT native compiler) to reassociate the sum

@@ -1,0 +1,2136 @@
+{
+  "records": [
+    {
+      "title": "buffer/sum/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (sum of b)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (sum of b)\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/sum/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (sum of b)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (sum of b)\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/sum/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (sum of b)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (sum of b)\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/sum/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nprint of (sum of b)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (sum of b)\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/sum/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nprint of (sum of b)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (sum of b)\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/sum/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nprint of (sum of b)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: arithmetic: result is not a number (NaN has no defined value)\n     3 | print of (sum of b)\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/mean/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (mean of b)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (mean of b)\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/mean/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (mean of b)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (mean of b)\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/mean/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (mean of b)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (mean of b)\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/mean/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nprint of (mean of b)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (mean of b)\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/mean/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nprint of (mean of b)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (mean of b)\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/mean/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nprint of (mean of b)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: arithmetic: result is not a number (NaN has no defined value)\n     3 | print of (mean of b)\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/norm/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (norm of b)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (norm of b)\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/norm/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (norm of b)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (norm of b)\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/norm/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (norm of b)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (norm of b)\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/norm/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nprint of (norm of b)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (norm of b)\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/norm/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nprint of (norm of b)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (norm of b)\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/norm/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nprint of (norm of b)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: arithmetic: result is not a number (NaN has no defined value)\n     3 | print of (norm of b)\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/dot/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [b, b])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (dot of [b, b])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/dot/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [b, b])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (dot of [b, b])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/dot/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [b, b])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (dot of [b, b])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/dot/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nprint of (dot of [b, b])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (dot of [b, b])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/dot/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nprint of (dot of [b, b])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: buffer_read_f64: expected a finite number\n     3 | print of (dot of [b, b])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/dot/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nprint of (dot of [b, b])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: arithmetic: result is not a number (NaN has no defined value)\n     3 | print of (dot of [b, b])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/negative/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is negative of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[-4503599627370496, -4611686018427387904]"
+    },
+    {
+      "title": "buffer/negative/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is negative of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[-4503599627370496, -4611686018427387904]"
+    },
+    {
+      "title": "buffer/negative/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is negative of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: negative: non-finite arithmetic result (infinity)\n     3 | r is negative of b\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/negative/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is negative of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9221120237041090560, -4611686018427387904]"
+    },
+    {
+      "title": "buffer/negative/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is negative of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9221120237041090560, -4611686018427387904]"
+    },
+    {
+      "title": "buffer/negative/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is negative of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: negative: result is not a number (NaN has no defined value)\n     3 | r is negative of b\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/sqrt/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is sqrt of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9218868437227405312, 4609047870845172685]"
+    },
+    {
+      "title": "buffer/sqrt/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is sqrt of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9218868437227405312, 4609047870845172685]"
+    },
+    {
+      "title": "buffer/sqrt/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is sqrt of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: sqrt: non-finite arithmetic result (infinity)\n     3 | r is sqrt of b\n       |           ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/sqrt/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is sqrt of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9221120237041090560, 4609047870845172685]"
+    },
+    {
+      "title": "buffer/sqrt/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is sqrt of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9221120237041090560, 4609047870845172685]"
+    },
+    {
+      "title": "buffer/sqrt/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is sqrt of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: sqrt: result is not a number (NaN has no defined value)\n     3 | r is sqrt of b\n       |           ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/exp/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is exp of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9218868437227405312, 4620005356000828846]"
+    },
+    {
+      "title": "buffer/exp/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is exp of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9218868437227405312, 4620005356000828846]"
+    },
+    {
+      "title": "buffer/exp/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is exp of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: exp: non-finite arithmetic result (infinity)\n     3 | r is exp of b\n       |          ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/exp/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is exp of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9221120237041090560, 4620005356000828846]"
+    },
+    {
+      "title": "buffer/exp/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is exp of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9221120237041090560, 4620005356000828846]"
+    },
+    {
+      "title": "buffer/exp/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is exp of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: exp: result is not a number (NaN has no defined value)\n     3 | r is exp of b\n       |          ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/log/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is log of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9218868437227405312, 4604418534313441775]"
+    },
+    {
+      "title": "buffer/log/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is log of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9218868437227405312, 4604418534313441775]"
+    },
+    {
+      "title": "buffer/log/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is log of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: log: non-finite arithmetic result (infinity)\n     3 | r is log of b\n       |          ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/log/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is log of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9221120237041090560, 4604418534313441775]"
+    },
+    {
+      "title": "buffer/log/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is log of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9221120237041090560, 4604418534313441775]"
+    },
+    {
+      "title": "buffer/log/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is log of b\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: log: argument out of domain (must be > 0)\n     3 | r is log of b\n       |          ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/add/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is add of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9218868437227405312, 4616189618054758400]"
+    },
+    {
+      "title": "buffer/add/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is add of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9218868437227405312, 4616189618054758400]"
+    },
+    {
+      "title": "buffer/add/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is add of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: arithmetic: non-finite arithmetic result (infinity)\n     3 | r is add of [b, 2.0]\n       |          ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/add/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is add of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9221120237041090560, 4616189618054758400]"
+    },
+    {
+      "title": "buffer/add/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is add of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9221120237041090560, 4616189618054758400]"
+    },
+    {
+      "title": "buffer/add/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is add of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: arithmetic: result is not a number (NaN has no defined value)\n     3 | r is add of [b, 2.0]\n       |          ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/subtract/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is subtract of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9218868437227405312, 0]"
+    },
+    {
+      "title": "buffer/subtract/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is subtract of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9218868437227405312, 0]"
+    },
+    {
+      "title": "buffer/subtract/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is subtract of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: arithmetic: non-finite arithmetic result (infinity)\n     3 | r is subtract of [b, 2.0]\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/subtract/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is subtract of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9221120237041090560, 0]"
+    },
+    {
+      "title": "buffer/subtract/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is subtract of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9221120237041090560, 0]"
+    },
+    {
+      "title": "buffer/subtract/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is subtract of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: arithmetic: result is not a number (NaN has no defined value)\n     3 | r is subtract of [b, 2.0]\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/multiply/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is multiply of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9218868437227405312, 4616189618054758400]"
+    },
+    {
+      "title": "buffer/multiply/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is multiply of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9218868437227405312, 4616189618054758400]"
+    },
+    {
+      "title": "buffer/multiply/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is multiply of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: arithmetic: non-finite arithmetic result (infinity)\n     3 | r is multiply of [b, 2.0]\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/multiply/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is multiply of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9221120237041090560, 4616189618054758400]"
+    },
+    {
+      "title": "buffer/multiply/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is multiply of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9221120237041090560, 4616189618054758400]"
+    },
+    {
+      "title": "buffer/multiply/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is multiply of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: arithmetic: result is not a number (NaN has no defined value)\n     3 | r is multiply of [b, 2.0]\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/divide/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is divide of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9218868437227405312, 4607182418800017408]"
+    },
+    {
+      "title": "buffer/divide/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is divide of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9218868437227405312, 4607182418800017408]"
+    },
+    {
+      "title": "buffer/divide/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is divide of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: divide: non-finite arithmetic result (infinity)\n     3 | r is divide of [b, 2.0]\n       |             ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/divide/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is divide of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9221120237041090560, 4607182418800017408]"
+    },
+    {
+      "title": "buffer/divide/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is divide of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9221120237041090560, 4607182418800017408]"
+    },
+    {
+      "title": "buffer/divide/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is divide of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: divide: result is not a number (NaN has no defined value)\n     3 | r is divide of [b, 2.0]\n       |             ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/pow/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is pow of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9218868437227405312, 4616189618054758400]"
+    },
+    {
+      "title": "buffer/pow/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is pow of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9218868437227405312, 4616189618054758400]"
+    },
+    {
+      "title": "buffer/pow/inf",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nr is pow of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: pow: non-finite arithmetic result (infinity)\n     3 | r is pow of [b, 2.0]\n       |          ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "buffer/pow/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is pow of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": null,
+      "rc": 0,
+      "output": "[9221120237041090560, 4616189618054758400]"
+    },
+    {
+      "title": "buffer/pow/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is pow of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[9221120237041090560, 4616189618054758400]"
+    },
+    {
+      "title": "buffer/pow/nan",
+      "source": "b is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9221120237041090560]\nr is pow of [b, 2.0]\nprint of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:3: pow: result is not a number (NaN has no defined value)\n     3 | r is pow of [b, 2.0]\n       |          ^\n  at <module> (@SCRATCH@/row.eigs:3)"
+    },
+    {
+      "title": "conversion/softmax/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (softmax of [v, 1.0])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: softmax: expected a finite number\n     4 | print of (softmax of [v, 1.0])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/softmax/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (softmax of [v, 1.0])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: softmax: expected a finite number\n     4 | print of (softmax of [v, 1.0])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/softmax/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (softmax of [v, 1.0])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: softmax: expected a finite number\n     4 | print of (softmax of [v, 1.0])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/softmax/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (softmax of [v, 1.0])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: softmax: expected a finite number\n     4 | print of (softmax of [v, 1.0])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/softmax/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (softmax of [v, 1.0])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: softmax: expected a finite number\n     4 | print of (softmax of [v, 1.0])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/softmax/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (softmax of [v, 1.0])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: softmax: expected a finite number\n     4 | print of (softmax of [v, 1.0])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/softmax/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (softmax of [v, 1.0])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: softmax: expected a finite number\n     4 | print of (softmax of [v, 1.0])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/softmax/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (softmax of [v, 1.0])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: softmax: expected a finite number\n     4 | print of (softmax of [v, 1.0])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/softmax/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (softmax of [v, 1.0])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: softmax: expected a finite number\n     4 | print of (softmax of [v, 1.0])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/log_softmax/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (log_softmax of [v, 1.0])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: log_softmax: expected a finite number\n     4 | print of (log_softmax of [v, 1.0])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/log_softmax/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (log_softmax of [v, 1.0])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: log_softmax: expected a finite number\n     4 | print of (log_softmax of [v, 1.0])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/log_softmax/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (log_softmax of [v, 1.0])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: log_softmax: expected a finite number\n     4 | print of (log_softmax of [v, 1.0])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/log_softmax/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (log_softmax of [v, 1.0])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: log_softmax: expected a finite number\n     4 | print of (log_softmax of [v, 1.0])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/log_softmax/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (log_softmax of [v, 1.0])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: log_softmax: expected a finite number\n     4 | print of (log_softmax of [v, 1.0])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/log_softmax/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (log_softmax of [v, 1.0])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: log_softmax: expected a finite number\n     4 | print of (log_softmax of [v, 1.0])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/log_softmax/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (log_softmax of [v, 1.0])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: log_softmax: expected a finite number\n     4 | print of (log_softmax of [v, 1.0])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/log_softmax/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (log_softmax of [v, 1.0])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: log_softmax: expected a finite number\n     4 | print of (log_softmax of [v, 1.0])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/log_softmax/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (log_softmax of [v, 1.0])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: log_softmax: expected a finite number\n     4 | print of (log_softmax of [v, 1.0])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/dot-left/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [b, c])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [b, c])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-left/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [b, c])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [b, c])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-left/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [b, c])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [b, c])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-left/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [b, c])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [b, c])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-left/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [b, c])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [b, c])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-left/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [b, c])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [b, c])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-left/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [b, c])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [b, c])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-left/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [b, c])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [b, c])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-left/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [b, c])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [b, c])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-right/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [c, b])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [c, b])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-right/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [c, b])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [c, b])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-right/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [c, b])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [c, b])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-right/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [c, b])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [c, b])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-right/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [c, b])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [c, b])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-right/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [c, b])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [c, b])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-right/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [c, b])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [c, b])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-right/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [c, b])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [c, b])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/dot-right/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nbuf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [c, b])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer_read_f64: expected a finite number\n     5 | print of (dot of [c, b])\n       |               ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/buffer-store/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nfor i in range of 2:\n    b[i] is v\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer store: expected a finite number\n     5 |     b[i] is v\n       |     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/buffer-store/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nfor i in range of 2:\n    b[i] is v\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer store: expected a finite number\n     5 |     b[i] is v\n       |     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/buffer-store/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nfor i in range of 2:\n    b[i] is v\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer store: expected a finite number\n     5 |     b[i] is v\n       |     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/buffer-store/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nfor i in range of 2:\n    b[i] is v\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer store: expected a finite number\n     5 |     b[i] is v\n       |     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/buffer-store/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nfor i in range of 2:\n    b[i] is v\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer store: expected a finite number\n     5 |     b[i] is v\n       |     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/buffer-store/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nfor i in range of 2:\n    b[i] is v\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer store: expected a finite number\n     5 |     b[i] is v\n       |     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/buffer-store/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nfor i in range of 2:\n    b[i] is v\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer store: expected a finite number\n     5 |     b[i] is v\n       |     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/buffer-store/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nfor i in range of 2:\n    b[i] is v\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer store: expected a finite number\n     5 |     b[i] is v\n       |     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/buffer-store/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nfor i in range of 2:\n    b[i] is v\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: buffer store: expected a finite number\n     5 |     b[i] is v\n       |     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/copy_into/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (copy_into of [b, 0, [v]])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: copy_into: expected a finite number\n     4 | print of (copy_into of [b, 0, [v]])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/copy_into/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (copy_into of [b, 0, [v]])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: copy_into: expected a finite number\n     4 | print of (copy_into of [b, 0, [v]])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/copy_into/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (copy_into of [b, 0, [v]])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: copy_into: expected a finite number\n     4 | print of (copy_into of [b, 0, [v]])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/copy_into/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (copy_into of [b, 0, [v]])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: copy_into: expected a finite number\n     4 | print of (copy_into of [b, 0, [v]])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/copy_into/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (copy_into of [b, 0, [v]])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: copy_into: expected a finite number\n     4 | print of (copy_into of [b, 0, [v]])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/copy_into/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (copy_into of [b, 0, [v]])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: copy_into: expected a finite number\n     4 | print of (copy_into of [b, 0, [v]])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/copy_into/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (copy_into of [b, 0, [v]])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: copy_into: expected a finite number\n     4 | print of (copy_into of [b, 0, [v]])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/copy_into/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (copy_into of [b, 0, [v]])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: copy_into: expected a finite number\n     4 | print of (copy_into of [b, 0, [v]])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/copy_into/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (copy_into of [b, 0, [v]])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: copy_into: expected a finite number\n     4 | print of (copy_into of [b, 0, [v]])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/stream_write/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nstream_open of [\"@SCRATCH@/stream\", 1]\nprint of (stream_write of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: stream_write: expected a finite number\n     5 | print of (stream_write of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/stream_write/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nstream_open of [\"@SCRATCH@/stream\", 1]\nprint of (stream_write of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: stream_write: expected a finite number\n     5 | print of (stream_write of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/stream_write/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nstream_open of [\"@SCRATCH@/stream\", 1]\nprint of (stream_write of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: stream_write: expected a finite number\n     5 | print of (stream_write of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/stream_write/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nstream_open of [\"@SCRATCH@/stream\", 1]\nprint of (stream_write of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: stream_write: expected a finite number\n     5 | print of (stream_write of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/stream_write/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nstream_open of [\"@SCRATCH@/stream\", 1]\nprint of (stream_write of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: stream_write: expected a finite number\n     5 | print of (stream_write of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/stream_write/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nstream_open of [\"@SCRATCH@/stream\", 1]\nprint of (stream_write of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: stream_write: expected a finite number\n     5 | print of (stream_write of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/stream_write/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nstream_open of [\"@SCRATCH@/stream\", 1]\nprint of (stream_write of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: stream_write: expected a finite number\n     5 | print of (stream_write of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/stream_write/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nstream_open of [\"@SCRATCH@/stream\", 1]\nprint of (stream_write of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: stream_write: expected a finite number\n     5 | print of (stream_write of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/stream_write/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nstream_open of [\"@SCRATCH@/stream\", 1]\nprint of (stream_write of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: stream_write: expected a finite number\n     5 | print of (stream_write of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/set_at/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (set_at of [b, 0, v])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: set_at: expected a finite number\n     4 | print of (set_at of [b, 0, v])\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/set_at/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (set_at of [b, 0, v])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: set_at: expected a finite number\n     4 | print of (set_at of [b, 0, v])\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/set_at/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (set_at of [b, 0, v])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: set_at: expected a finite number\n     4 | print of (set_at of [b, 0, v])\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/set_at/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (set_at of [b, 0, v])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: set_at: expected a finite number\n     4 | print of (set_at of [b, 0, v])\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/set_at/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (set_at of [b, 0, v])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: set_at: expected a finite number\n     4 | print of (set_at of [b, 0, v])\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/set_at/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (set_at of [b, 0, v])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: set_at: expected a finite number\n     4 | print of (set_at of [b, 0, v])\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/set_at/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (set_at of [b, 0, v])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: set_at: expected a finite number\n     4 | print of (set_at of [b, 0, v])\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/set_at/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (set_at of [b, 0, v])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: set_at: expected a finite number\n     4 | print of (set_at of [b, 0, v])\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/set_at/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (set_at of [b, 0, v])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: set_at: expected a finite number\n     4 | print of (set_at of [b, 0, v])\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buf_set/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (buf_set of [b, 0, v])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: buf_set: expected a finite number\n     4 | print of (buf_set of [b, 0, v])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buf_set/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (buf_set of [b, 0, v])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: buf_set: expected a finite number\n     4 | print of (buf_set of [b, 0, v])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buf_set/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (buf_set of [b, 0, v])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: buf_set: expected a finite number\n     4 | print of (buf_set of [b, 0, v])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buf_set/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (buf_set of [b, 0, v])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: buf_set: expected a finite number\n     4 | print of (buf_set of [b, 0, v])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buf_set/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (buf_set of [b, 0, v])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: buf_set: expected a finite number\n     4 | print of (buf_set of [b, 0, v])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buf_set/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (buf_set of [b, 0, v])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: buf_set: expected a finite number\n     4 | print of (buf_set of [b, 0, v])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buf_set/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (buf_set of [b, 0, v])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: buf_set: expected a finite number\n     4 | print of (buf_set of [b, 0, v])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buf_set/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (buf_set of [b, 0, v])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: buf_set: expected a finite number\n     4 | print of (buf_set of [b, 0, v])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buf_set/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (buf_set of [b, 0, v])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: buf_set: expected a finite number\n     4 | print of (buf_set of [b, 0, v])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/fill-value/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [2, v])\n",
+      "state": null,
+      "rc": 0,
+      "output": "[inf, inf]"
+    },
+    {
+      "title": "conversion/fill-value/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [2, v])\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[inf, inf]"
+    },
+    {
+      "title": "conversion/fill-value/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [2, v])\n",
+      "state": "1",
+      "rc": 0,
+      "output": "[inf, inf]"
+    },
+    {
+      "title": "conversion/fill-value/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [2, v])\n",
+      "state": null,
+      "rc": 0,
+      "output": "[-inf, -inf]"
+    },
+    {
+      "title": "conversion/fill-value/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [2, v])\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[-inf, -inf]"
+    },
+    {
+      "title": "conversion/fill-value/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [2, v])\n",
+      "state": "1",
+      "rc": 0,
+      "output": "[-inf, -inf]"
+    },
+    {
+      "title": "conversion/fill-value/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [2, v])\n",
+      "state": null,
+      "rc": 0,
+      "output": "[nan, nan]"
+    },
+    {
+      "title": "conversion/fill-value/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [2, v])\n",
+      "state": "0",
+      "rc": 0,
+      "output": "[nan, nan]"
+    },
+    {
+      "title": "conversion/fill-value/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [2, v])\n",
+      "state": "1",
+      "rc": 0,
+      "output": "[nan, nan]"
+    },
+    {
+      "title": "conversion/fill-count/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [v, 1])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'fill': number inf has no integer representation\n     4 | print of (fill of [v, 1])\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/fill-count/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [v, 1])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'fill': number inf has no integer representation\n     4 | print of (fill of [v, 1])\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/fill-count/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [v, 1])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'fill': number inf has no integer representation\n     4 | print of (fill of [v, 1])\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/fill-count/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [v, 1])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'fill': number -inf has no integer representation\n     4 | print of (fill of [v, 1])\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/fill-count/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [v, 1])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'fill': number -inf has no integer representation\n     4 | print of (fill of [v, 1])\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/fill-count/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [v, 1])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'fill': number -inf has no integer representation\n     4 | print of (fill of [v, 1])\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/fill-count/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [v, 1])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'fill': number nan has no integer representation\n     4 | print of (fill of [v, 1])\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/fill-count/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [v, 1])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'fill': number nan has no integer representation\n     4 | print of (fill of [v, 1])\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/fill-count/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (fill of [v, 1])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'fill': number nan has no integer representation\n     4 | print of (fill of [v, 1])\n       |                ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_encode/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_encode of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: eigs_json_encode_value: expected a finite number\n     4 | print of (json_encode of v)\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_encode/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_encode of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: eigs_json_encode_value: expected a finite number\n     4 | print of (json_encode of v)\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_encode/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_encode of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: eigs_json_encode_value: expected a finite number\n     4 | print of (json_encode of v)\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_encode/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_encode of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: eigs_json_encode_value: expected a finite number\n     4 | print of (json_encode of v)\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_encode/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_encode of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: eigs_json_encode_value: expected a finite number\n     4 | print of (json_encode of v)\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_encode/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_encode of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: eigs_json_encode_value: expected a finite number\n     4 | print of (json_encode of v)\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_encode/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_encode of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: eigs_json_encode_value: expected a finite number\n     4 | print of (json_encode of v)\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_encode/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_encode of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: eigs_json_encode_value: expected a finite number\n     4 | print of (json_encode of v)\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_encode/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_encode of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: eigs_json_encode_value: expected a finite number\n     4 | print of (json_encode of v)\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_build/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_build of [\"k\", v])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: json_build: expected a finite number\n     4 | print of (json_build of [\"k\", v])\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_build/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_build of [\"k\", v])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: json_build: expected a finite number\n     4 | print of (json_build of [\"k\", v])\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_build/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_build of [\"k\", v])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: json_build: expected a finite number\n     4 | print of (json_build of [\"k\", v])\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_build/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_build of [\"k\", v])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: json_build: expected a finite number\n     4 | print of (json_build of [\"k\", v])\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_build/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_build of [\"k\", v])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: json_build: expected a finite number\n     4 | print of (json_build of [\"k\", v])\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_build/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_build of [\"k\", v])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: json_build: expected a finite number\n     4 | print of (json_build of [\"k\", v])\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_build/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_build of [\"k\", v])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: json_build: expected a finite number\n     4 | print of (json_build of [\"k\", v])\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_build/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_build of [\"k\", v])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: json_build: expected a finite number\n     4 | print of (json_build of [\"k\", v])\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/json_build/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (json_build of [\"k\", v])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: json_build: expected a finite number\n     4 | print of (json_build of [\"k\", v])\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/f64_to_bytes/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (f64_to_bytes of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: f64_to_bytes: expected a finite number\n     4 | print of (f64_to_bytes of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/f64_to_bytes/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (f64_to_bytes of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: f64_to_bytes: expected a finite number\n     4 | print of (f64_to_bytes of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/f64_to_bytes/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (f64_to_bytes of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: f64_to_bytes: expected a finite number\n     4 | print of (f64_to_bytes of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/f64_to_bytes/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (f64_to_bytes of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: f64_to_bytes: expected a finite number\n     4 | print of (f64_to_bytes of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/f64_to_bytes/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (f64_to_bytes of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: f64_to_bytes: expected a finite number\n     4 | print of (f64_to_bytes of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/f64_to_bytes/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (f64_to_bytes of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: f64_to_bytes: expected a finite number\n     4 | print of (f64_to_bytes of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/f64_to_bytes/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (f64_to_bytes of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: f64_to_bytes: expected a finite number\n     4 | print of (f64_to_bytes of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/f64_to_bytes/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (f64_to_bytes of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: f64_to_bytes: expected a finite number\n     4 | print of (f64_to_bytes of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/f64_to_bytes/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (f64_to_bytes of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: f64_to_bytes: expected a finite number\n     4 | print of (f64_to_bytes of v)\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'write_bytes': number inf has no integer representation\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'write_bytes': number inf has no integer representation\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'write_bytes': number inf has no integer representation\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'write_bytes': number -inf has no integer representation\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'write_bytes': number -inf has no integer representation\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'write_bytes': number -inf has no integer representation\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'write_bytes': number nan has no integer representation\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'write_bytes': number nan has no integer representation\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'write_bytes': number nan has no integer representation\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [v]])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes-append/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: write_bytes: expected a finite number\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes-append/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: write_bytes: expected a finite number\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes-append/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: write_bytes: expected a finite number\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes-append/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: write_bytes: expected a finite number\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes-append/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: write_bytes: expected a finite number\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes-append/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: write_bytes: expected a finite number\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes-append/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: write_bytes: expected a finite number\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes-append/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: write_bytes: expected a finite number\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/write_bytes-append/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: write_bytes: expected a finite number\n     4 | print of (write_bytes of [\"@SCRATCH@/bytes\", [65], v])\n       |                       ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/index/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nxs is [1, 2]\nprint of xs[v]\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: index must be an integer, got 0\n     5 | print of xs[v]\n       |            ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/index/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nxs is [1, 2]\nprint of xs[v]\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: index must be an integer, got 0\n     5 | print of xs[v]\n       |            ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/index/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nxs is [1, 2]\nprint of xs[v]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: index must be an integer, got 0\n     5 | print of xs[v]\n       |            ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/index/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nxs is [1, 2]\nprint of xs[v]\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: index must be an integer, got 0\n     5 | print of xs[v]\n       |            ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/index/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nxs is [1, 2]\nprint of xs[v]\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: index must be an integer, got 0\n     5 | print of xs[v]\n       |            ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/index/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nxs is [1, 2]\nprint of xs[v]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: index must be an integer, got 0\n     5 | print of xs[v]\n       |            ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/index/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nxs is [1, 2]\nprint of xs[v]\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: index must be an integer, got 0\n     5 | print of xs[v]\n       |            ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/index/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nxs is [1, 2]\nprint of xs[v]\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: index must be an integer, got 0\n     5 | print of xs[v]\n       |            ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/index/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nxs is [1, 2]\nprint of xs[v]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: index must be an integer, got 0\n     5 | print of xs[v]\n       |            ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/buffer-index/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of b[v]\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: index must be an integer, got 0\n     4 | print of b[v]\n       |           ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buffer-index/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of b[v]\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: index must be an integer, got 0\n     4 | print of b[v]\n       |           ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buffer-index/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of b[v]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: index must be an integer, got 0\n     4 | print of b[v]\n       |           ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buffer-index/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of b[v]\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: index must be an integer, got 0\n     4 | print of b[v]\n       |           ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buffer-index/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of b[v]\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: index must be an integer, got 0\n     4 | print of b[v]\n       |           ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buffer-index/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of b[v]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: index must be an integer, got 0\n     4 | print of b[v]\n       |           ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buffer-index/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of b[v]\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: index must be an integer, got 0\n     4 | print of b[v]\n       |           ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buffer-index/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of b[v]\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: index must be an integer, got 0\n     4 | print of b[v]\n       |           ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/buffer-index/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of b[v]\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: index must be an integer, got 0\n     4 | print of b[v]\n       |           ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/count/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (range of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'range': number inf has no integer representation\n     4 | print of (range of v)\n       |                 ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/count/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (range of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'range': number inf has no integer representation\n     4 | print of (range of v)\n       |                 ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/count/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (range of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'range': number inf has no integer representation\n     4 | print of (range of v)\n       |                 ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/count/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (range of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'range': number -inf has no integer representation\n     4 | print of (range of v)\n       |                 ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/count/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (range of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'range': number -inf has no integer representation\n     4 | print of (range of v)\n       |                 ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/count/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (range of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'range': number -inf has no integer representation\n     4 | print of (range of v)\n       |                 ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/count/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (range of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'range': number nan has no integer representation\n     4 | print of (range of v)\n       |                 ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/count/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (range of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'range': number nan has no integer representation\n     4 | print of (range of v)\n       |                 ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/count/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (range of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'range': number nan has no integer representation\n     4 | print of (range of v)\n       |                 ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit-operand/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (v & 1)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: '&': number inf has no integer representation\n     4 | print of (v & 1)\n       |             ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit-operand/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (v & 1)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: '&': number inf has no integer representation\n     4 | print of (v & 1)\n       |             ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit-operand/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (v & 1)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: '&': number inf has no integer representation\n     4 | print of (v & 1)\n       |             ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit-operand/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (v & 1)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: '&': number -inf has no integer representation\n     4 | print of (v & 1)\n       |             ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit-operand/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (v & 1)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: '&': number -inf has no integer representation\n     4 | print of (v & 1)\n       |             ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit-operand/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (v & 1)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: '&': number -inf has no integer representation\n     4 | print of (v & 1)\n       |             ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit-operand/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (v & 1)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: '&': number nan has no integer representation\n     4 | print of (v & 1)\n       |             ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit-operand/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (v & 1)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: '&': number nan has no integer representation\n     4 | print of (v & 1)\n       |             ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit-operand/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (v & 1)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: '&': number nan has no integer representation\n     4 | print of (v & 1)\n       |             ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit_and/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (bit_and of [v, 1])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'bit_and': number inf has no integer representation\n     4 | print of (bit_and of [v, 1])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit_and/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (bit_and of [v, 1])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'bit_and': number inf has no integer representation\n     4 | print of (bit_and of [v, 1])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit_and/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (bit_and of [v, 1])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'bit_and': number inf has no integer representation\n     4 | print of (bit_and of [v, 1])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit_and/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (bit_and of [v, 1])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'bit_and': number -inf has no integer representation\n     4 | print of (bit_and of [v, 1])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit_and/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (bit_and of [v, 1])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'bit_and': number -inf has no integer representation\n     4 | print of (bit_and of [v, 1])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit_and/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (bit_and of [v, 1])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'bit_and': number -inf has no integer representation\n     4 | print of (bit_and of [v, 1])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit_and/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (bit_and of [v, 1])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'bit_and': number nan has no integer representation\n     4 | print of (bit_and of [v, 1])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit_and/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (bit_and of [v, 1])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'bit_and': number nan has no integer representation\n     4 | print of (bit_and of [v, 1])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/bit_and/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (bit_and of [v, 1])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: 'bit_and': number nan has no integer representation\n     4 | print of (bit_and of [v, 1])\n       |                   ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/duration/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (usleep of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: usleep: expected a finite number\n     4 | print of (usleep of v)\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/duration/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (usleep of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: usleep: expected a finite number\n     4 | print of (usleep of v)\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/duration/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (usleep of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: usleep: expected a finite number\n     4 | print of (usleep of v)\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/duration/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (usleep of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: usleep: expected a finite number\n     4 | print of (usleep of v)\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/duration/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (usleep of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: usleep: expected a finite number\n     4 | print of (usleep of v)\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/duration/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (usleep of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: usleep: expected a finite number\n     4 | print of (usleep of v)\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/duration/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (usleep of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: usleep: expected a finite number\n     4 | print of (usleep of v)\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/duration/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (usleep of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: usleep: expected a finite number\n     4 | print of (usleep of v)\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/duration/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (usleep of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: usleep: expected a finite number\n     4 | print of (usleep of v)\n       |                  ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/task_sleep/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (task_sleep of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: task_sleep: expected a finite number\n     4 | print of (task_sleep of v)\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/task_sleep/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (task_sleep of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: task_sleep: expected a finite number\n     4 | print of (task_sleep of v)\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/task_sleep/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (task_sleep of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: task_sleep: expected a finite number\n     4 | print of (task_sleep of v)\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/task_sleep/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (task_sleep of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: task_sleep: expected a finite number\n     4 | print of (task_sleep of v)\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/task_sleep/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (task_sleep of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: task_sleep: expected a finite number\n     4 | print of (task_sleep of v)\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/task_sleep/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (task_sleep of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: task_sleep: expected a finite number\n     4 | print of (task_sleep of v)\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/task_sleep/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (task_sleep of v)\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: task_sleep: expected a finite number\n     4 | print of (task_sleep of v)\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/task_sleep/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (task_sleep of v)\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: task_sleep: expected a finite number\n     4 | print of (task_sleep of v)\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/task_sleep/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nprint of (task_sleep of v)\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:4: task_sleep: expected a finite number\n     4 | print of (task_sleep of v)\n       |                      ^\n  at <module> (@SCRATCH@/row.eigs:4)"
+    },
+    {
+      "title": "conversion/store_update/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nk is store_put of [st, \"c\", {\"a\": 1}]\nprint of (store_update of [st, \"c\", k, {\"a\": v}])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:6: store: cannot encode a non-finite number\n     6 | print of (store_update of [st, \"c\", k, {\"a\": v}])\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:6)"
+    },
+    {
+      "title": "conversion/store_update/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nk is store_put of [st, \"c\", {\"a\": 1}]\nprint of (store_update of [st, \"c\", k, {\"a\": v}])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:6: store: cannot encode a non-finite number\n     6 | print of (store_update of [st, \"c\", k, {\"a\": v}])\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:6)"
+    },
+    {
+      "title": "conversion/store_update/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nk is store_put of [st, \"c\", {\"a\": 1}]\nprint of (store_update of [st, \"c\", k, {\"a\": v}])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:6: store: cannot encode a non-finite number\n     6 | print of (store_update of [st, \"c\", k, {\"a\": v}])\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:6)"
+    },
+    {
+      "title": "conversion/store_update/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nk is store_put of [st, \"c\", {\"a\": 1}]\nprint of (store_update of [st, \"c\", k, {\"a\": v}])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:6: store: cannot encode a non-finite number\n     6 | print of (store_update of [st, \"c\", k, {\"a\": v}])\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:6)"
+    },
+    {
+      "title": "conversion/store_update/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nk is store_put of [st, \"c\", {\"a\": 1}]\nprint of (store_update of [st, \"c\", k, {\"a\": v}])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:6: store: cannot encode a non-finite number\n     6 | print of (store_update of [st, \"c\", k, {\"a\": v}])\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:6)"
+    },
+    {
+      "title": "conversion/store_update/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nk is store_put of [st, \"c\", {\"a\": 1}]\nprint of (store_update of [st, \"c\", k, {\"a\": v}])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:6: store: cannot encode a non-finite number\n     6 | print of (store_update of [st, \"c\", k, {\"a\": v}])\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:6)"
+    },
+    {
+      "title": "conversion/store_update/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nk is store_put of [st, \"c\", {\"a\": 1}]\nprint of (store_update of [st, \"c\", k, {\"a\": v}])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:6: store: cannot encode a non-finite number\n     6 | print of (store_update of [st, \"c\", k, {\"a\": v}])\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:6)"
+    },
+    {
+      "title": "conversion/store_update/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nk is store_put of [st, \"c\", {\"a\": 1}]\nprint of (store_update of [st, \"c\", k, {\"a\": v}])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:6: store: cannot encode a non-finite number\n     6 | print of (store_update of [st, \"c\", k, {\"a\": v}])\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:6)"
+    },
+    {
+      "title": "conversion/store_update/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nk is store_put of [st, \"c\", {\"a\": 1}]\nprint of (store_update of [st, \"c\", k, {\"a\": v}])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:6: store: cannot encode a non-finite number\n     6 | print of (store_update of [st, \"c\", k, {\"a\": v}])\n       |                        ^\n  at <module> (@SCRATCH@/row.eigs:6)"
+    },
+    {
+      "title": "conversion/store_put/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nprint of (store_put of [st, \"c\", {\"a\": v}])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: store: cannot encode a non-finite number\n     5 | print of (store_put of [st, \"c\", {\"a\": v}])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/store_put/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nprint of (store_put of [st, \"c\", {\"a\": v}])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: store: cannot encode a non-finite number\n     5 | print of (store_put of [st, \"c\", {\"a\": v}])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/store_put/inf",
+      "source": "v is (f64_from_bits of 9218868437227405312)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nprint of (store_put of [st, \"c\", {\"a\": v}])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: store: cannot encode a non-finite number\n     5 | print of (store_put of [st, \"c\", {\"a\": v}])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/store_put/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nprint of (store_put of [st, \"c\", {\"a\": v}])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: store: cannot encode a non-finite number\n     5 | print of (store_put of [st, \"c\", {\"a\": v}])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/store_put/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nprint of (store_put of [st, \"c\", {\"a\": v}])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: store: cannot encode a non-finite number\n     5 | print of (store_put of [st, \"c\", {\"a\": v}])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/store_put/-inf",
+      "source": "v is (f64_from_bits of -4503599627370496)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nprint of (store_put of [st, \"c\", {\"a\": v}])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: store: cannot encode a non-finite number\n     5 | print of (store_put of [st, \"c\", {\"a\": v}])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/store_put/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nprint of (store_put of [st, \"c\", {\"a\": v}])\n",
+      "state": null,
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: store: cannot encode a non-finite number\n     5 | print of (store_put of [st, \"c\", {\"a\": v}])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/store_put/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nprint of (store_put of [st, \"c\", {\"a\": v}])\n",
+      "state": "0",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: store: cannot encode a non-finite number\n     5 | print of (store_put of [st, \"c\", {\"a\": v}])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    },
+    {
+      "title": "conversion/store_put/nan",
+      "source": "v is (f64_from_bits of 9221120237041090560)\nb is buf_from_list of [1.0, 2.0]\nc is buf_from_list of [1.0, 2.0]\nst is store_open of \"@SCRATCH@/store\"\nprint of (store_put of [st, \"c\", {\"a\": v}])\n",
+      "state": "1",
+      "rc": 1,
+      "output": "Error @SCRATCH@/row.eigs:5: store: cannot encode a non-finite number\n     5 | print of (store_put of [st, \"c\", {\"a\": v}])\n       |                     ^\n  at <module> (@SCRATCH@/row.eigs:5)"
+    }
+  ],
+  "mapped": [
+    "negative",
+    "sqrt",
+    "exp",
+    "log",
+    "pow",
+    "add",
+    "subtract",
+    "multiply",
+    "divide"
+  ]
+}

@@ -516,9 +516,8 @@ its first-NaN diagnostic and invalid flag. All execution tiers report the
 same error kind, message and source line.
 Structural buffer equality compares stored doubles with IEEE equality, without
 raises or math flags; NaN differs from everything, including itself, infinities
-compare by sign, and signed zeros are equal. The remaining scalar reductions
-retain their declared data boundaries; the reduction
-association contracts remain unchanged. Mixed buffer/list tensor operations and
+compare by sign, and signed zeros are equal. Buffer reductions retain their
+declared data boundaries and association contracts. Mixed buffer/list tensor operations and
 numeric byte/sample/device conversions also normalize reads and stop on the
 first error. `write_bytes` requires exact bytes in 0..255 (N5/Q1); other byte
 converters retain truncation and wrapping at this stage.
