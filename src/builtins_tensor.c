@@ -2122,6 +2122,22 @@ matrix_grad_failed:
     return make_null();
 }
 
+/* #2495: one cell of an SGD step, `param - lr * grad`. The readers are finite-only: on a cell that is
+ * not finite they raise and hand back a zero placeholder, and the result writer raises under
+ * EIGS_STRICT=1 for a result that is not finite. Returns 0 when any of the three raised, and writes
+ * only when `write` is set. Every loop below runs twice over its cells, first with write == 0, so a
+ * step that cannot finish leaves the parameter as it was. */
+static int sgd_cell(Value *prow, int pi, Value *grow, int gi, double lr, const char *who, int write) {
+    double pv = eigs_slot_float(list_slot(prow, pi), who);
+    if (g_has_error) return 0;
+    double gv = eigs_slot_float(list_slot(grow, gi), who);
+    if (g_has_error) return 0;
+    double out = eigs_math_result(pv - lr * gv);
+    if (g_has_error) return 0;
+    if (write) list_set_f64(prow, pi, out);
+    return 1;
+}
+
 /* ==== BUILTIN: sgd_update ==== */
 /* sgd_update of [param, grad, lr] — in-place param = param - lr * grad */
 Value* builtin_sgd_update(Value *arg) {
@@ -2154,25 +2170,22 @@ Value* builtin_sgd_update(Value *arg) {
         /* 1D */
         int len = param->data.list.count < grad->data.list.count
                 ? param->data.list.count : grad->data.list.count;
-        for (int i = 0; i < len; i++) {
-            double pv = eigs_slot_float(list_slot(param, i), __func__);
-            double gv = eigs_slot_float(list_slot(grad, i), __func__);
-            list_set_f64(param, i, eigs_math_result(pv - lr * gv));
-        }
+        for (int write = 0; write < 2; write++)
+            for (int i = 0; i < len; i++)
+                if (!sgd_cell(param, i, grad, i, lr, __func__, write)) return make_null();
     } else {
         /* 2D */
         int rows = param->data.list.count < grad->data.list.count
                  ? param->data.list.count : grad->data.list.count;
-        for (int r = 0; r < rows; r++) {
-            Value *pr = list_get_ref(param, r);
-            Value *gr = list_get_ref(grad, r);
-            if (!pr || pr->type != VAL_LIST || !gr || gr->type != VAL_LIST) continue;
-            int cols = pr->data.list.count < gr->data.list.count
-                     ? pr->data.list.count : gr->data.list.count;
-            for (int c = 0; c < cols; c++) {
-                double pv = eigs_slot_float(list_slot(pr, c), __func__);
-                double gv = eigs_slot_float(list_slot(gr, c), __func__);
-                list_set_f64(pr, c, eigs_math_result(pv - lr * gv));
+        for (int write = 0; write < 2; write++) {
+            for (int r = 0; r < rows; r++) {
+                Value *pr = list_get_ref(param, r);
+                Value *gr = list_get_ref(grad, r);
+                if (!pr || pr->type != VAL_LIST || !gr || gr->type != VAL_LIST) continue;
+                int cols = pr->data.list.count < gr->data.list.count
+                         ? pr->data.list.count : gr->data.list.count;
+                for (int c = 0; c < cols; c++)
+                    if (!sgd_cell(pr, c, gr, c, lr, __func__, write)) return make_null();
             }
         }
     }
@@ -2351,18 +2364,21 @@ Value* builtin_sgd_update_rows(Value *arg) {
                                "sgd_update_rows", "row", &row_snapshot, &nidx))
         return make_null();
 
-    for (int ri = 0; ri < nidx; ri++) {
-        int r = row_snapshot[ri];
-        Value *mrow = list_get_ref(matrix, r);
-        Value *grow = list_get_ref(grad, r);
-        if (!mrow || mrow->type != VAL_LIST || !grow || grow->type != VAL_LIST) continue;
+    for (int write = 0; write < 2; write++) {
+        for (int ri = 0; ri < nidx; ri++) {
+            int r = row_snapshot[ri];
+            Value *mrow = list_get_ref(matrix, r);
+            Value *grow = list_get_ref(grad, r);
+            if (!mrow || mrow->type != VAL_LIST || !grow || grow->type != VAL_LIST) continue;
 
-        int cols = mrow->data.list.count < grow->data.list.count
-                 ? mrow->data.list.count : grow->data.list.count;
-        for (int c = 0; c < cols; c++) {
-            double pv = eigs_slot_float(list_slot(mrow, c), __func__);
-            double gv = eigs_slot_float(list_slot(grow, c), __func__);
-            list_set_f64(mrow, c, eigs_math_result(pv - lr * gv));
+            int cols = mrow->data.list.count < grow->data.list.count
+                     ? mrow->data.list.count : grow->data.list.count;
+            for (int c = 0; c < cols; c++) {
+                if (!sgd_cell(mrow, c, grow, c, lr, __func__, write)) {
+                    free(row_snapshot);
+                    return make_null();
+                }
+            }
         }
     }
     free(row_snapshot);
@@ -2557,17 +2573,20 @@ Value* builtin_sgd_update_cols(Value *arg) {
         return make_null();
     }
 
-    for (int ci = 0; ci < nidx; ci++) {
-        int col = col_snapshot[ci];
-        for (int r = 0; r < rows; r++) {
-            Value *mrow = list_get_ref(matrix, r);
-            Value *grow = list_get_ref(grad, r);
-            if (!mrow || mrow->type != VAL_LIST || col >= mrow->data.list.count) continue;
-            if (!grow || grow->type != VAL_LIST || col >= grow->data.list.count) continue;
+    for (int write = 0; write < 2; write++) {
+        for (int ci = 0; ci < nidx; ci++) {
+            int col = col_snapshot[ci];
+            for (int r = 0; r < rows; r++) {
+                Value *mrow = list_get_ref(matrix, r);
+                Value *grow = list_get_ref(grad, r);
+                if (!mrow || mrow->type != VAL_LIST || col >= mrow->data.list.count) continue;
+                if (!grow || grow->type != VAL_LIST || col >= grow->data.list.count) continue;
 
-            double pv = eigs_slot_float(list_slot(mrow, col), __func__);
-            double gv = eigs_slot_float(list_slot(grow, col), __func__);
-            list_set_f64(mrow, col, eigs_math_result(pv - lr * gv));
+                if (!sgd_cell(mrow, col, grow, col, lr, __func__, write)) {
+                    free(col_snapshot);
+                    return make_null();
+                }
+            }
         }
     }
     free(col_snapshot);

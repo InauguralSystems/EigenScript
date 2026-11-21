@@ -700,9 +700,9 @@ Buffer arithmetic stops at its first raised kernel result and releases its parti
 | `numerical_grad` | `numerical_grad of [loss_fn, params, eps]` | Central finite-difference gradient. `params` is a 1-D/2-D list **or a shaped buffer** (#973: each element is perturbed in place and restored; the gradient comes back with the parameter's shape). O(params) forward passes — the gradient-check oracle for `lib/autograd.eigs`, not a training path |
 | `numerical_grad_rows` | `numerical_grad_rows of [loss_fn, params, rows, eps]` | Gradient for specific rows. Every row index must be in `[0, row_count)`; otherwise raises `index_range` before perturbing any parameter. |
 | `numerical_grad_cols` | `numerical_grad_cols of [loss_fn, params, cols, eps]` | Gradient for specific columns. Every column index must be in `[0, column_count)`; otherwise raises `index_range` before perturbing any parameter. |
-| `sgd_update` | `sgd_update of [params, grad, lr]` | In-place SGD: params -= lr * grad |
-| `sgd_update_rows` | `sgd_update_rows of [params, grad, rows, lr]` | SGD for specific rows. Every row index must exist in both `params` and `grad` (`[0, min(params_rows, grad_rows))`); otherwise raises `index_range` before any update. |
-| `sgd_update_cols` | `sgd_update_cols of [params, grad, cols, lr]` | SGD for specific columns. Every column index must exist in both `params` and `grad` (`[0, min(params_cols, grad_cols))`); otherwise raises `index_range` before any update. |
+| `sgd_update` | `sgd_update of [params, grad, lr]` | In-place SGD: params -= lr * grad. A list cell of `params` or `grad` that is not finite raises `value` before any update. |
+| `sgd_update_rows` | `sgd_update_rows of [params, grad, rows, lr]` | SGD for specific rows. Every row index must exist in both `params` and `grad` (`[0, min(params_rows, grad_rows))`); otherwise raises `index_range` before any update. A cell that is not finite raises `value` before any update. |
+| `sgd_update_cols` | `sgd_update_cols of [params, grad, cols, lr]` | SGD for specific columns. Every column index must exist in both `params` and `grad` (`[0, min(params_cols, grad_cols))`); otherwise raises `index_range` before any update. A cell that is not finite raises `value` before any update. |
 
 ## Tokenizer Introspection
 

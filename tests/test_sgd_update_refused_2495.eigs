@@ -1,0 +1,55 @@
+load_file of "lib/test.eigs"
+
+# #2495: an SGD step that raises writes nothing. The finite-only readers raise on a cell that is not
+# finite; before the fix the loop wrote on, so the refused parameter cell became `0 - lr * grad` and
+# every later cell was updated. Each row below holds the WHOLE parameter after the caught raise, and
+# fails when the call returns instead of raising.
+inf is 1e400
+
+define refused(label, step, param, expected) as:
+    try:
+        step of param
+        assert_true of [false, label + ": the step did not raise"]
+    catch e:
+        assert_true of [e.kind == "value", label + ": kind " + (str of e.kind)]
+    assert_true of [param == expected, label + ": the parameter after the raise is " + (str of param)]
+
+# sgd_update, 1-D: a parameter cell that is not finite, first and last; a gradient cell that is not.
+refused of ["1-D, first parameter cell", (p) => sgd_update of [p, [1, 1, 1], 0.1], [inf, 20, 30], [inf, 20, 30]]
+refused of ["1-D, last parameter cell", (p) => sgd_update of [p, [1, 1, 1], 0.1], [10, 20, inf], [10, 20, inf]]
+refused of ["1-D, middle gradient cell", (p) => sgd_update of [p, [1, inf, 1], 0.1], [10, 20, 30], [10, 20, 30]]
+refused of ["1-D, last gradient cell", (p) => sgd_update of [p, [1, 1, inf], 0.1], [10.5, 20.5, 30.5], [10.5, 20.5, 30.5]]
+
+# sgd_update, 2-D: the refused cell in the last row, so that the rows before it were once written.
+refused of ["2-D, parameter cell in the last row", (p) => sgd_update of [p, [[1, 1], [1, 1]], 0.1], [[1, 2], [3, inf]], [[1, 2], [3, inf]]]
+refused of ["2-D, gradient cell in the last row", (p) => sgd_update of [p, [[1, 1], [1, inf]], 0.1], [[1, 2], [3, 4]], [[1, 2], [3, 4]]]
+
+# sgd_update_rows and sgd_update_cols.
+refused of ["rows, gradient cell in the second listed row", (p) => sgd_update_rows of [p, [[1, 1], [1, inf]], [0, 1], 0.1], [[1, 2], [3, 4]], [[1, 2], [3, 4]]]
+refused of ["rows, parameter cell", (p) => sgd_update_rows of [p, [[1, 1], [1, 1]], [0, 1], 0.1], [[1, 2], [inf, 4]], [[1, 2], [inf, 4]]]
+refused of ["cols, gradient cell in the last row", (p) => sgd_update_cols of [p, [[1, 1], [1, inf]], [0, 1], 0.1], [[1, 2], [3, 4]], [[1, 2], [3, 4]]]
+refused of ["cols, parameter cell", (p) => sgd_update_cols of [p, [[1, 1], [1, 1]], [0, 1], 0.1], [[1, 2], [3, inf]], [[1, 2], [3, inf]]]
+
+# A refused step keeps each cell's kind too: the ints are still ints.
+k is [inf, 20, 30]
+try:
+    sgd_update of [k, [1, 1, 1], 0.1]
+    assert_true of [false, "kinds: the step did not raise"]
+catch e:
+    assert_true of [(num_type of k[1]) == "int" and (num_type of k[2]) == "int", "kinds after the raise"]
+
+# The steps that do not raise are what they were.
+a is [10, 20, 30]
+sgd_update of [a, [1, 2, 3], 0.5]
+assert_true of [a == [9.5, 19.0, 28.5], "1-D step: " + (str of a)]
+m is [[1, 2], [3, 4]]
+sgd_update of [m, [[1, 1], [2, 2]], 0.5]
+assert_true of [m == [[0.5, 1.5], [2.0, 3.0]], "2-D step: " + (str of m)]
+mr is [[1, 2], [3, 4]]
+sgd_update_rows of [mr, [[1, 1], [2, 2]], [1], 0.5]
+assert_true of [mr == [[1, 2], [2.0, 3.0]], "rows step: " + (str of mr)]
+mc is [[1, 2], [3, 4]]
+sgd_update_cols of [mc, [[1, 1], [2, 2]], [1], 0.5]
+assert_true of [mc == [[1, 1.5], [3, 3.0]], "cols step: " + (str of mc)]
+
+test_summary of null

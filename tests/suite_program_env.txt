@@ -26,3 +26,4 @@ test_line_after_return.eigs EIGS_STRICT=1
 
 # R22-2: fixed-shape rejection/aliasing assertions opt into their strict contract.
 test_call_semantics.eigs EIGS_STRICT=1
+test_sgd_update_refused_strict_2495.eigs EIGS_STRICT=1
