@@ -42,13 +42,24 @@ static int probe(const char *src, int strict, int guard) {
  *             calling thread. That state is put, through calls on it, at the
  *             opposite of what the call writes; it is read back before the
  *             switch and must still be there (*kept).
+ * EIGS_STRICT in the process environment is read before the first call and
+ * after each call, and must not have changed (*env_same).
  * Returns 0 when a state could not be made. */
 enum { OPEN, NEW, ATTACHED, OTHER, KINDS };
 static const char *const kind_names[KINDS] = {"open", "new", "attached", "other"};
-static int cell(int kind, int sg, int sa, Setter setter, int enabled, int *g, int *a, int *kept) {
+/* Does EIGS_STRICT hold what `was` holds (`had`: it was set at all)? */
+static int env_is(int had, const char *was) {
+    const char *now = getenv("EIGS_STRICT");
+    return had ? (now && !strcmp(now, was)) : !now;
+}
+static int cell(int kind, int sg, int sa, Setter setter, int enabled, int *g, int *a, int *kept, int *env_same) {
     EigsState *other = NULL, *st;
     int off = enabled == 0;
-    *g = *a = -1; *kept = 1;
+    const char *e = getenv("EIGS_STRICT");
+    char was[64] = "";
+    int had = e != NULL;
+    if (e) snprintf(was, sizeof was, "%s", e);
+    *g = *a = -1; *kept = 1; *env_same = 1;
     if (kind == OTHER) {
         other = eigs_open();
         if (!other) return 0;
@@ -57,10 +68,14 @@ static int cell(int kind, int sg, int sa, Setter setter, int enabled, int *g, in
     st = new_state(kind);
     if (!st) return 0;
     eigs_state_set_strict(st, 0);
+    *env_same = *env_same && env_is(had, was);
     eigs_state_set_strict_guards(st, sg);
+    *env_same = *env_same && env_is(had, was);
     eigs_state_set_strict_arithmetic(st, sa);
+    *env_same = *env_same && env_is(had, was);
     if (kind == ATTACHED && !eigs_thread_attach(st)) { eigs_state_destroy(st); return 0; }
     setter(st, enabled);
+    *env_same = *env_same && env_is(had, was);
     if (kind == OTHER) {
         *kept = position(GUARD_SRC, 1) == off && position(ARITH_SRC, 0) == off;
         if (!eigs_thread_switch(st)) return 0;
@@ -78,8 +93,8 @@ static int cell(int kind, int sg, int sa, Setter setter, int enabled, int *g, in
 }
 static void transition(const char *name, int fine, int sg, int sa,
                        Setter setter, int enabled, int wg, int wa) {
-    int g, a, kept;
-    if (!cell(fine ? NEW : OPEN, sg, sa, setter, enabled, &g, &a, &kept)) {
+    int g, a, kept, env_same;
+    if (!cell(fine ? NEW : OPEN, sg, sa, setter, enabled, &g, &a, &kept, &env_same)) {
         printf("FAIL: %s state creation or initialization\n", name); failures++; return;
     }
     transitions++;
@@ -91,8 +106,8 @@ static void transition(const char *name, int fine, int sg, int sa,
  * four start positions, with each of the values 0, 1, -1 and 2. The call's
  * own property takes the value's truth; the other property stays (the
  * existing call has no other); a state that was attached while the call was
- * made on another has not moved. One line for all of them; a wrong cell is
- * named. */
+ * made on another has not moved; EIGS_STRICT in the process environment is
+ * what it was. One line for all of them; a wrong cell is named. */
 static void matrix(void) {
     static const int values[] = {0, 1, -1, 2};
     static const char *const calls[] = {"guards", "arithmetic", "both"};
@@ -103,14 +118,16 @@ static void matrix(void) {
             for (int sg = 0; sg < 2; sg++)
                 for (int sa = 0; sa < 2; sa++)
                     for (unsigned v = 0; v < sizeof values / sizeof values[0]; v++) {
-                        int on = values[v] != 0, g, a, kept;
+                        int on = values[v] != 0, g, a, kept, env_same;
                         int wg = c == 1 ? sg : on, wa = c == 0 ? sa : on;
                         cells++;
-                        if (!cell(kind, sg, sa, setters[c], values[v], &g, &a, &kept) || g != wg || a != wa || !kept) {
+                        if (!cell(kind, sg, sa, setters[c], values[v], &g, &a, &kept, &env_same)
+                            || g != wg || a != wa || !kept || !env_same) {
                             wrong++;
-                            printf("FAIL: matrix %s %s start=%d,%d value=%d want=%d,%d seen=%d,%d%s\n",
+                            printf("FAIL: matrix %s %s start=%d,%d value=%d want=%d,%d seen=%d,%d%s%s\n",
                                    kind_names[kind], calls[c], sg, sa, values[v], wg, wa, g, a,
-                                   kept ? "" : " and the attached state moved");
+                                   kept ? "" : " and the attached state moved",
+                                   env_same ? "" : " and EIGS_STRICT in the environment changed");
                         }
                     }
     failures += wrong;
@@ -183,12 +200,20 @@ static void two_states(void) {
     if (ok) printf("PASS: two states keep their own positions\n");
     else { printf("FAIL: two states keep their own positions\n"); failures++; }
 }
+/* Each of the three calls with a null state and each of the four values:
+ * twelve calls, none of which may crash. */
+static void null_calls(void) {
+    static const int values[] = {0, 1, -1, 2};
+    for (unsigned v = 0; v < sizeof values / sizeof values[0]; v++) {
+        eigs_state_set_strict_guards(NULL, values[v]);
+        eigs_state_set_strict_arithmetic(NULL, values[v]);
+        eigs_state_set_strict(NULL, values[v]);
+    }
+}
 int main(void) {
     creation();
     two_states();
-    eigs_state_set_strict_guards(NULL, -1);
-    eigs_state_set_strict_arithmetic(NULL, 2);
-    eigs_state_set_strict(NULL, 1);
+    null_calls();
     transition("open guards 1->0 other=0",0,1,0,eigs_state_set_strict_guards,0,0,0);
     transition("new guards 0->1 other=0",1,0,0,eigs_state_set_strict_guards,-1,1,0);
     transition("new guards 1->0 other=1",1,1,1,eigs_state_set_strict_guards,0,0,1);

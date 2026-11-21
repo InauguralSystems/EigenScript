@@ -125,6 +125,19 @@ variants += [
   B.replace('    if (st) {', '    if (st) {\n        setenv("EIGS_STRICT", enabled ? "1" : "0", 1);', 1),
   'two states keep their own positions'),
 ]
+# Two variants of an independent review of the closed list: the guards call
+# crashing on a null state for the value 0 only, and writing the environment
+# only on a state that is attached.
+variants += [
+ ('guards-null-crash-on-zero', G,
+  G.replace('if (st) st->strict_guards = enabled != 0;',
+            'if (!enabled) st->strict_guards = 0; else if (st) st->strict_guards = 1;'),
+  'CRASH null guards with 0'),
+ ('guards-writes-environment-when-attached', G,
+  G.replace('if (st) st->strict_guards = enabled != 0;',
+            'if (st) { st->strict_guards = enabled != 0; if (st->threads) setenv("EIGS_STRICT", enabled ? "1" : "0", 1); }'),
+  'matrix open guards start=0,0 value=0'),
+]
 # What a state reads when it is created (src/state.c): each default the
 # other way, red by the creation check (the tool runs with the variable unset).
 STATE_G = '    st->strict_guards = eigs_env_flag_default("EIGS_STRICT", 1);'
@@ -155,7 +168,8 @@ def main():
       subprocess.run(['make','-s','embed-strict-calls-test'],cwd=dst,check=True)
       cp=run(dst,env)
       planted = cp.returncode != 0
-      attributable = want.startswith('CRASH') or (f'FAIL: {want}' in cp.stdout)
+      # A CRASH variant must die by a signal, not merely exit nonzero.
+      attributable = (cp.returncode < 0) if want.startswith('CRASH') else (f'FAIL: {want}' in cp.stdout)
       if planted and attributable: red += 1; print(f'{name}: RED ({want})')
       else: print(f'{name}: WRONG rc={cp.returncode} expected={want}')
       p.write_text(original)

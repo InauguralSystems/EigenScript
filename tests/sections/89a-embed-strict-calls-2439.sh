@@ -20,10 +20,12 @@ else
         # Each run's whole output goes through rc_ok: a sanitizer's hard
         # diagnostic fails the run at any exit code, and the program itself
         # must exit 0 (a leak-only nonzero exit is not accepted here).
-        for strict_env in unset 0 1; do
+        for strict_env in unset empty 0 1; do
             strict_rc=0
             if [ "$strict_env" = unset ]; then
                 strict_out=$(env -u EIGS_STRICT ../build/$variant/test_embed_strict_calls 2>&1) || strict_rc=$?
+            elif [ "$strict_env" = empty ]; then
+                strict_out=$(EIGS_STRICT= ../build/$variant/test_embed_strict_calls 2>&1) || strict_rc=$?
             else
                 strict_out=$(EIGS_STRICT=$strict_env ../build/$variant/test_embed_strict_calls 2>&1) || strict_rc=$?
             fi
