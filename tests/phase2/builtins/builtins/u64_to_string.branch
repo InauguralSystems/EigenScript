@@ -1,0 +1,8 @@
+["1", "str"]
+["18446744073709551615", "str"]
+["9223372036854775808", "str"]
+["9223372036854775807", "str"]
+["fraction", "value"]
+["float-outside-int64", "value"]
+["non-number", "type_mismatch"]
+rc=0

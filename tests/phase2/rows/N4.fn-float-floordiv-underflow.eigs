@@ -1,0 +1,16 @@
+# ROW: N4.fn-float-floordiv-underflow
+# ITEMS: N4
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop ud IDIV
+# OPS: IDIV
+define ud(a, b) as:
+    warm is 0.5
+    t is a // b
+    return t
+r is null
+i is 0.0
+loop while i < 60.0:
+    r is ud of [1e-300, -1e300]
+    i is i + 1.0
+print of [r, ud of [-1e-300, 1e300], num_type of r]

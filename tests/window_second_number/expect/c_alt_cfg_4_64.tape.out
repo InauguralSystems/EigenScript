@@ -1,0 +1,328 @@
+tape c_alt_cfg_4_64.tape: 26 steps, 25 assigns (1 bindings), 0 nondet records
+step 1/26  line 1
+  A x=1.0
+step 2/26  line 2
+  A x=2.0
+x = 2.0  [moving]  (2 assigns)
+step 3/26  line 3
+  A x=1.0
+x = 1.0  [moving]  (3 assigns)
+step 4/26  line 4
+  A x=2.0
+x = 2.0  [oscillating]  (4 assigns)
+step 5/26  line 5
+  A x=1.0
+x = 1.0  [oscillating]  (5 assigns)
+step 6/26  line 6
+  A x=2.0
+x = 2.0  [oscillating]  (6 assigns)
+step 7/26  line 7
+  A x=1.0
+x = 1.0  [moving]  (7 assigns)
+step 8/26  line 8
+  A x=2.0
+x = 2.0  [moving]  (8 assigns)
+step 9/26  line 9
+  A x=1.0
+x = 1.0  [moving]  (9 assigns)
+step 10/26  line 10
+  A x=2.0
+x = 2.0  [moving]  (10 assigns)
+step 11/26  line 11
+  A x=1.0
+x = 1.0  [moving]  (11 assigns)
+step 12/26  line 12
+  A x=2.0
+x = 2.0  [moving]  (12 assigns)
+step 13/26  line 13
+  A x=1.0
+x = 1.0  [moving]  (13 assigns)
+step 14/26  line 14
+  A x=2.0
+x = 2.0  [moving]  (14 assigns)
+step 15/26  line 15
+  A x=1.0
+x = 1.0  [moving]  (15 assigns)
+step 16/26  line 16
+  A x=2.0
+x = 2.0  [moving]  (16 assigns)
+step 17/26  line 17
+  A x=1.0
+x = 1.0  [moving]  (17 assigns)
+step 18/26  line 18
+  A x=2.0
+x = 2.0  [moving]  (18 assigns)
+step 19/26  line 19
+  A x=1.0
+x = 1.0  [moving]  (19 assigns)
+step 20/26  line 20
+  A x=2.0
+x = 2.0  [moving]  (20 assigns)
+step 21/26  line 21
+  A x=1.0
+x = 1.0  [moving]  (21 assigns)
+step 22/26  line 22
+  A x=2.0
+x = 2.0  [moving]  (22 assigns)
+step 23/26  line 23
+  A x=1.0
+x = 1.0  [moving]  (23 assigns)
+step 24/26  line 24
+  A x=2.0
+x = 2.0  [oscillating]  (24 assigns)
+step 25/26  line 25
+  A x=1.0
+x = 1.0  [oscillating]  (25 assigns)
+step 26/26  line 26
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+at end of tape
+x = 1.0  [oscillating]  (25 assigns)
+rc=0

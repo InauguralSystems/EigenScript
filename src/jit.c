@@ -566,7 +566,7 @@ static void ensure_layout(void) {
  *   OP_ADD / OP_SUB /
  *   OP_MUL / OP_DIV          — load both, type-check (immediate-num),
  *                              addsd/subsd/mulsd/divsd, NaN/overflow
- *                              check via abs-bits >|1e308|; bail on any
+ *                              check via abs-bits >= infinity; bail on any
  *                              check fail. Div-by-zero produces ±Inf
  *                              or NaN, both caught by the overflow
  *                              check — no separate divisor guard.
@@ -574,8 +574,8 @@ static void ensure_layout(void) {
  *   OP_GT / OP_LE / OP_GE    — load both, type-check (immediate-num),
  *                              ucomisd + cmovcc to materialize the
  *                              false/true bool slot bits (#1637). No output
- *                              overflow check needed (bounded). Type-
- *                              check is the only bail.
+ *                              overflow check needed (bounded). Type and
+ *                              unordered checks bail to the interpreter.
  *   OP_POP                   — peephole `dec %ecx`, valid only when the
  *                              most recent push was an immediate whose
  *                              slot_decref is a no-op. GET_LOCAL/DUP/
@@ -763,8 +763,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
         } else if (op == OP_DUP2) {
             i += 1; ops++; non_line_ops++;
         } else if (op == OP_ADD || op == OP_SUB ||
-                   op == OP_MUL || op == OP_DIV ||
-                   op == OP_MOD) {
+                   op == OP_MUL || op == OP_DIV) {
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
             /* Stage 5e: the tracked-operand loaders + commit decrefs
@@ -779,15 +778,10 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
             *extra_size += 320;   /* Stage 5e loaders + decrefs */
             /* #1637: the result is the false/true TAG_BOOL immediate, so
              * OP_POP after a comparison remains a no-op peephole. */
-        } else if (op == OP_BAND || op == OP_BOR || op == OP_BXOR ||
-                   op == OP_SHL || op == OP_SHR) {
+        } else if (op == OP_NEG || op == OP_NOT) {
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
-            /* Result is a double (whole-number-valued), so a subsequent
-             * OP_POP stays a no-op peephole. */
-        } else if (op == OP_NEG || op == OP_NOT || op == OP_BNOT) {
-            i += 1; ops++; non_line_ops++;
-            *has_bail_op = 1;
+            if (op == OP_NEG) *extra_size += 32; /* R2.1 NaN guard */
         } else if (op == OP_JUMP || op == OP_JUMP_BACK) {
             if (i + 3 > chunk->code_len) { *stop_op = op; *stop_offset = i; break; }
             /* #267: an OSR thunk (entry_offset > 0) is invoked at a hot loop
@@ -1572,8 +1566,8 @@ static uint8_t *emit_store_rdx_at_disp_stack(uint8_t *w, int32_t disp) {
 
 /* ucomisd %xmm0, %xmm1  (4 bytes: 66 0F 2E C8) — AT&T order: compares
  * %xmm1 (= a) with %xmm0 (= b). Sets ZF/PF/CF per IEEE-754 ordered
- * comparison (PF=1 if either is NaN — accepted imprecision: num_guard
- * prevents NaN from reaching the stack in normal operation). */
+ * comparison. PF=1 if either is NaN; the comparison emitter bails on
+ * that flag before materializing or committing a bool result. */
 static uint8_t *emit_ucomisd_xmm0_xmm1(uint8_t *w) {
     *w++ = 0x66; *w++ = 0x0F; *w++ = 0x2E; *w++ = 0xC8; return w;
 }
@@ -1595,12 +1589,6 @@ static uint8_t *emit_cmovcc_rdx_rax(uint8_t *w, uint8_t cc_byte) {
 /* jae rel32  (6 bytes): 0F 83 disp32. Returns patch pointer to disp32. */
 static uint8_t *emit_jae_rel32(uint8_t *w, uint8_t **patch) {
     *w++ = 0x0F; *w++ = 0x83; *patch = w;
-    *w++ = 0; *w++ = 0; *w++ = 0; *w++ = 0;
-    return w;
-}
-/* ja rel32  (6 bytes): 0F 87 disp32 */
-static uint8_t *emit_ja_rel32(uint8_t *w, uint8_t **patch) {
-    *w++ = 0x0F; *w++ = 0x87; *patch = w;
     *w++ = 0; *w++ = 0; *w++ = 0; *w++ = 0;
     return w;
 }
@@ -1681,15 +1669,16 @@ static uint8_t *emit_immediate_num_check_rdx(uint8_t *w, uint8_t **patch) {
     return emit_jae_rel32(w, patch);
 }
 
-/* Emit overflow/NaN check on result in %rax: copy to %rdx, clear sign
- * bit, compare to bits-of-1e308; ja rel32 → bail. (3+5+10+3+6 = 27 b.) */
+/* Emit non-finite result check in %rax: clear sign in a copy and compare
+ * magnitude to infinity bits; jae bails so the interpreter publishes math
+ * status and opt-in strict errors. Every finite f64 remains native. */
 static uint8_t *emit_overflow_check_rax(uint8_t *w, uint64_t max_bits,
                                         uint8_t **patch) {
     w = emit_mov_rax_rdx(w);
     w = emit_btr_63_rdx(w);
     w = emit_movabs_rsi(w, max_bits);
     w = emit_cmp_rsi_rdx(w);
-    return emit_ja_rel32(w, patch);
+    return emit_jae_rel32(w, patch);
 }
 
 /* emit_conditional_decref_rsi / emit_decref_tail_rdi live after the
@@ -1754,18 +1743,6 @@ static uint8_t *emit_cvttsd2si_xmm0_r8d(uint8_t *w) {
  * round-trip test ((double)(int)d == d). */
 static uint8_t *emit_cvtsi2sd_r8d_xmm1(uint8_t *w) {
     *w++ = 0xF2; *w++ = 0x41; *w++ = 0x0F; *w++ = 0x2A; *w++ = 0xC8; return w;
-}
-/* cvttsd2si %xmm0, %edx  (4 bytes) — 32-bit, mirrors `(int)val_s.d`.
- * No longer used by OP_INDEX_SET (buffer stores keep the raw double now)
- * but kept for future int-conversion fast paths. */
-__attribute__((unused))
-static uint8_t *emit_cvttsd2si_xmm0_edx(uint8_t *w) {
-    *w++ = 0xF2; *w++ = 0x0F; *w++ = 0x2C; *w++ = 0xD0; return w;
-}
-/* cvtsi2sd %edx, %xmm0  (4 bytes) — 32-bit source. */
-__attribute__((unused))
-static uint8_t *emit_cvtsi2sd_edx_xmm0(uint8_t *w) {
-    *w++ = 0xF2; *w++ = 0x0F; *w++ = 0x2A; *w++ = 0xC2; return w;
 }
 /* jp rel32  (6 bytes): 0F 8A — jump if PF=1 (unordered ucomisd). */
 static uint8_t *emit_jp_rel32(uint8_t *w, uint8_t **patch) {
@@ -2375,9 +2352,9 @@ static uint8_t *emit_mov_disp32_rdi_to_rdx(uint8_t *w, int32_t disp) {
 
 /* Stage 5e: numeric-operand loader for the arith/compare templates.
  *
- * Accepts what the interpreter's slot_as_double accepts MINUS the
+ * Accepts what the interpreter's slot_f64_value accepts MINUS the
  * NUM_REUSE candidates: an immediate double, or a heap/tracked pointer
- * to a VAL_NUM with refcount >= 2 (refcount 1 would make the
+ * to a VAL_FLOAT with refcount >= 2 (refcount 1 would make the
  * interpreter's NUM_REUSE in-place branch fire, so it routes to the
  * interpreter to keep observer-value identity semantics exact).
  *
@@ -2401,17 +2378,17 @@ static uint8_t *emit_load_numeric_operand(uint8_t *w, int is_b,
     /* Tag 0xFFFD+ (reserved/sentinel): not a pointer we may chase. */
     w = emit_cmp_imm32_esi(w, 0xFFFD);
     w = emit_jae_rel32(w, &lp[*lp_n]); (*lp_n)++;
-    /* Heap or tracked pointer: must be a non-REUSE VAL_NUM. */
+    /* Heap or tracked pointer: must be a non-REUSE VAL_FLOAT. */
     w = is_b ? emit_mov_rax_rdi(w) : emit_mov_rdx_rdi(w);
     w = emit_shl_16_rdi(w);
     w = emit_shr_16_rdi(w);
     w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, type),
-                                   (uint32_t)VAL_NUM);
+                                   (uint32_t)VAL_FLOAT);
     w = emit_jne_rel32(w, &lp[*lp_n]); (*lp_n)++;
     w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, refcount), 2);
     w = emit_jl_rel32(w, &lp[*lp_n]); (*lp_n)++;
-    w = is_b ? emit_mov_disp32_rdi_to_rax(w, (int32_t)VAL_NUM_OFFSET)
-             : emit_mov_disp32_rdi_to_rdx(w, (int32_t)VAL_NUM_OFFSET);
+    w = is_b ? emit_mov_disp32_rdi_to_rax(w, (int32_t)VAL_F64_OFFSET)
+             : emit_mov_disp32_rdi_to_rdx(w, (int32_t)VAL_F64_OFFSET);
     /* .imm: bits (immediate or loaded data.num) → xmm. */
     {
         int rel = (int)(w - imm_after);
@@ -2673,11 +2650,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
 
     uint8_t *w = code;
 
-    /* Bit pattern of EIGS_NUM_MAX — the maximum finite value num_guard
-     * allows. Any addsd/subsd result whose magnitude bits exceed this
-     * (incl. ±Inf / NaN) bails to the slow interpreter path. */
-    uint64_t max_normal_bits;
-    { double d = EIGS_NUM_MAX; memcpy(&max_normal_bits, &d, 8); }
+    /* R21-1: raise the bound with R2.2's clamp retirement. Infinity and
+     * NaN still bail for interpreter status/strict handling, not clamping. */
+    const uint64_t max_normal_bits = UINT64_C(0x7ff0000000000000);
 
     /* Bail-jump rel32 patch sites collected during body emission and
      * resolved against the epilogue once we know its address. */
@@ -2865,10 +2840,12 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             Value *v = chunk->constants[idx];
             uint64_t bits;
             int needs_incref = 0;
-            if (v->type == VAL_NUM) {
+            if (v->type == VAL_FLOAT) {
                 /* Immediate-num: same shape as NUM_ZERO. (#262 Step E: a
                  * constant num never carries observer state.) */
-                memcpy(&bits, &VAL_NUM_RAW(v), 8);
+                /* R2.1: a host-provided constant may contain any NaN payload.
+                 * The single writer prevents emitted tag-spelling doubles. */
+                bits = slot_from_f64(VAL_F64_RAW(v)).u;
             } else {
                 /* Heap slot: TAG_HEAP | payload. */
                 bits = 0xFFFB000000000000ULL |
@@ -3456,7 +3433,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
         } else if (op == OP_SET_LOCAL) {
             /* Stage 5e: mirror CASE(SET_LOCAL) exactly, including its
              * in-place branch — writing an immediate into a slot whose
-             * existing Value is an exclusive non-observed VAL_NUM
+             * existing Value is an exclusive non-observed VAL_FLOAT
              * rewrites data.num instead of swapping pointers. This is
              * load-bearing beyond speed: the observer's g_last_observer
              * can point at that Value, and the swap path would free it
@@ -3465,9 +3442,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              *   tos imm?         no  → .swap
              *   old slot ptr?    no  → .plain   (imm/sentinel old:
              *                                    incref+decref both no-op)
-             *   old is VAL_NUM && rc==1 && obs_age==0?
+             *   old is VAL_FLOAT && rc==1 && obs_age==0?
              *                    no  → .swap
-             *   in-place: VAL_NUM_RAW(old) = tos bits; → .done
+             *   in-place: VAL_F64_RAW(old) = tos bits; → .done
              *   .plain: values[slot] = tos; → .done
              *   .swap:  values[slot] = tos; incref tos; decref old
              *   .done:                                            */
@@ -3508,13 +3485,13 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_shl_16_rdi(w);
             w = emit_shr_16_rdi(w);
             w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, type),
-                                           (uint32_t)VAL_NUM);
+                                           (uint32_t)VAL_FLOAT);
             w = emit_jne_rel32(w, &swap_p[swap_n]); swap_n++;
             w = emit_cmpl_imm32_disp32_rdi(w, (int32_t)offsetof(Value, refcount), 1);
             w = emit_jne_rel32(w, &swap_p[swap_n]); swap_n++;
             /* #262 Step E: obs_age guard removed — nums are never tracked. */
-            /* in-place: VAL_NUM_RAW(existing) = tos bits. */
-            w = emit_mov_rax_to_disp32_rdi(w, (int32_t)VAL_NUM_OFFSET);
+            /* in-place: VAL_F64_RAW(existing) = tos bits. */
+            w = emit_mov_rax_to_disp32_rdi(w, (int32_t)VAL_F64_OFFSET);
             w = emit_jmp_rel32(w, &done_p[done_n]); done_n++;
             /* .plain: store only (both refcount sides are no-ops). */
             for (int k = 0; k < plain_n; k++) patch_rel32(plain_p[k], w);
@@ -3581,7 +3558,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             if (ab) {
                 JIT_BAIL_AND_RETURN();
             }
-            /* Divisor zero check. The VM compares `VAL_NUM_RAW(b) != 0.0`,
+            /* Divisor zero check. The VM compares `VAL_F64_RAW(b) != 0.0`,
              * which under IEEE-754 treats +0.0 and -0.0 as equal — so
              * we must also bail when b == -0.0 (bits = 0x8000…0).
              * Strategy: copy b's bits to %rsi (dead scratch after the
@@ -3632,7 +3609,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
         } else if (op == OP_ADD || op == OP_SUB ||
                    op == OP_MUL || op == OP_DIV) {
             /* Stage 5e: operands may be immediates OR heap/tracked
-             * VAL_NUM pointers with refcount >= 2 (the loader bails
+             * VAL_FLOAT pointers with refcount >= 2 (the loader bails
              * the rc==1 case so the interpreter's NUM_REUSE branch
              * keeps its in-place semantics). All guard failures route
              * through one per-op trampoline so the epilogue patch
@@ -3674,8 +3651,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             }
             /* Result -> %rax for storage + overflow check. */
             w = emit_movq_xmm1_rax(w);
-            /* |result| > 1e308 → bail (catches NaN, ±Inf, num_guard
-             * clamp boundary). Stack is still untouched here, so bail
+            /* Non-finite result → status/strict fallback. Finite values above
+             * the former 1e308 rail stay native. Stack is untouched, so bail
              * leaves the operands in place for the slow path. */
             w = emit_overflow_check_rax(w, max_normal_bits, &lp[lp_n]);
             lp_n++;
@@ -3697,13 +3674,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             i += 1;
         } else if (op == OP_EQ || op == OP_NE || op == OP_LT ||
                    op == OP_GT || op == OP_LE || op == OP_GE) {
-            /* Stage 5e: tracked/heap VAL_NUM operands accepted via the
+            /* Stage 5e: tracked/heap VAL_FLOAT operands accepted via the
              * shared loader (rc==1 bails — NUM_CMP/EQ/NE all have the
              * same NUM_REUSE branch as ARITH_FAST). One trampoline
-             * slot. NaN inputs would give incorrect comparison results
-             * (PF=1 makes setcc paths fire), but num_guard prevents
-             * NaN from reaching a stack slot in normal operation — so
-             * we accept the same input-NaN imprecision as ADD/SUB do. */
+             * slot. An unordered comparison must bail with its operands
+             * untouched so the interpreter decides the IEEE result. */
             if (bail_count + 1 > (int)(sizeof bail_patches /
                                        sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
@@ -3734,6 +3709,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_movabs_rax(w, SLOT_FALSE_BITS);  /* rax = false */
             w = emit_movabs_rdx(w, SLOT_TRUE_BITS);   /* rdx = true */
             w = emit_ucomisd_xmm0_xmm1(w);
+            w = emit_jp_rel32(w, &lp[lp_n++]); /* R2.1 unordered: interpret */
             /* cmovcc %rdx → %rax when condition holds. */
             uint8_t cc_byte;
             switch (op) {
@@ -3815,9 +3791,9 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             i += 1;
         } else if (op == OP_NEG || op == OP_NOT || op == OP_BNOT) {
             /* Unary: load TOS, type-check, compute in place, store
-             * back at TOS. One bail slot (BNOT: three, #1740), sp
+             * back at TOS. One bail slot (NEG: two; BNOT: three), sp
              * unchanged. */
-            if (bail_count + (op == OP_BNOT ? 3 : 1) > (int)(sizeof bail_patches /
+            if (bail_count + (op == OP_BNOT ? 3 : op == OP_NEG ? 2 : 1) > (int)(sizeof bail_patches /
                                        sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
             }
@@ -3841,6 +3817,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_immediate_num_check_rax(w, &p_t);
             bail_patches[bail_count++] = p_t;
             if (op == OP_NEG) {
+                /* Sign-flipping canonical NaN would spell NULL. NaN and
+                 * infinity defer to interpreter status/strict handling;
+                 * every finite operand, including >1e308, stays native. */
+                w = emit_overflow_check_rax(w, max_normal_bits,
+                                            &bail_patches[bail_count++]);
                 /* Flip the IEEE-754 sign bit: rax ^= 0x8000…0. */
                 w = emit_movabs_rdx(w, 0x8000000000000000ULL);
                 w = emit_xor_rdx_rax(w);
@@ -4479,7 +4460,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             uint16_t idx = (uint16_t)(chunk->code[op_start + 1] |
                                       ((uint16_t)chunk->code[op_start + 2] << 8));
             Value *v = chunk->constants[idx];
-            last_imm = (v && v->type == VAL_NUM);
+            last_imm = (v && v->type == VAL_FLOAT);
             break;
         }
         case OP_LINE: case OP_BINARY_LINE: case OP_BINARY_LINE_END:

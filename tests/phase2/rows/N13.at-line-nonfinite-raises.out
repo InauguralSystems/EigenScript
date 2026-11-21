@@ -1,0 +1,6 @@
+["value", "'at' line must be a whole number, got nan"]
+["value", "'at' line must be a whole number, got inf"]
+["value", "'at' line must be a whole number, got -inf"]
+["value", "'at' line must be a whole number, got 1e+300"]
+["value", "'at' line 3000000000 is out of range"]
+["value", "'at' line 3000000000 is out of range"]

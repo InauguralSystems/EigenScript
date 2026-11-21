@@ -1,0 +1,10 @@
+# ROW: N9.checked-raises
+# ITEMS: N9
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+try:
+    print of (u8_checked_add of [200, 100])
+catch e:
+    print of [e.kind, (index_of of [e.message, "u8_checked_add"]) >= 0]

@@ -1,0 +1,4 @@
+5	integer
+9007199254740993	integer
+false	bad argument #1 to 'math.random' (number has no integer representation)
+2	integer

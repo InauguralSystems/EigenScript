@@ -1,0 +1,7 @@
+# profile witness: server-db = server + DB compiled in, with DATABASE_URL naming a live PostgreSQL.
+try:
+    c is db_connect of null
+    if (db_query_value of "SELECT 1") == 1:
+        print of "profile-ok"
+catch e:
+    print of ["db-unavailable", e.message]

@@ -3,7 +3,7 @@ Verifies report of x agrees with predicate vocabulary
 
 --- RA1: Diverging (low H -> high H) ---
 false
-moving
+improving
 
 --- RA2: Improving (primed, high H -> low H) ---
 false
@@ -15,7 +15,7 @@ stable
 
 --- RA4: Oscillating (sign change in dH) ---
 false
-moving
+improving
 
 --- RA5: Equilibrium (dH~0, moderate H) ---
 false

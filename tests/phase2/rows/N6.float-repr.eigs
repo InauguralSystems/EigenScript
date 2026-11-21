@@ -1,0 +1,7 @@
+# ROW: N6.float-repr
+# ITEMS: N6
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [3.0, 1e3, -0.0, 0.1 + 0.2, 1e15, 1e16, 1e-05, 0.0001]

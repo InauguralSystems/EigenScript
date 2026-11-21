@@ -38,7 +38,7 @@
 #
 #   RSS1  shared_incr: the counter path the builtin exists for. Leaked two
 #         Values per call (a parsed JSON Value on both the success and the
-#         type-mismatch path, plus the make_num handed to eigs_json_encode).
+#         type-mismatch path, plus the make_float handed to eigs_json_encode).
 #   RSS2  http_route_authed with a shared-store auth source: leaked the parsed
 #         `require_auth` Value on every authenticated request. Same class, found
 #         while auditing the other eigs_json_parse_value call sites for #731.
@@ -306,9 +306,11 @@ pick_port() {
     echo $(( (RANDOM % (hi - lo + 1)) + lo ))
 }
 
-# $1 = label, $2 = route path, $3 = server script body
+# $1 = label, $2 = route path, $3 = server script body,
+# $4 = rss-only when the row has no heap sample to judge (optional)
 run_growth_check() {
     local label="$1" route="$2" body="$3"
+    local metric=${4:-both}
     local port srv_file srv_pid
     port=$(pick_port)
     srv_file=$(mktemp /tmp/eigs_rss_srv_XXXXXX.eigs)
@@ -343,7 +345,7 @@ run_growth_check() {
     local heap_reason heap_rc rss_reason rss_rc
     warm=$(batch_200s "http://127.0.0.1:$port$route?[1-$WARMUP]")
     ha=$(heap_of "$port"); ra=$(rss_of "$srv_pid")
-    heap_sample_ok "$label" "$ha" "$srv_pid"
+    if [ "$metric" != rss-only ]; then heap_sample_ok "$label" "$ha" "$srv_pid"; fi
     m1=$(batch_200s "http://127.0.0.1:$port$route?[1-$MEASURE]")
     hb=$(heap_of "$port"); rb=$(rss_of "$srv_pid")
     m2=$(batch_200s "http://127.0.0.1:$port$route?[1-$MEASURE]")
@@ -362,14 +364,22 @@ run_growth_check() {
         return
     fi
 
+    rss_reason=$(leak_verdict "$RSS_THRESHOLD_KB" "$((rb - ra))" "$((rc_ - rb))" "$((rd - rc_))")
+    rss_rc=$?
+    if [ "$metric" = rss-only ]; then
+        if [ "$rss_rc" -eq 0 ]; then
+            ok "$label rss: $rss_reason; heap unavailable (#2364)"
+        else
+            fail "$label rss: $rss_reason; heap unavailable (#2364)"
+        fi
+        return
+    fi
     case "$hb$hc$hd" in *[!0-9]*|'')
         fail "$label could not read live heap" "ha='$ha' hb='$hb' hc='$hc' hd='$hd'"
         return ;;
     esac
     heap_reason=$(leak_verdict "$THRESHOLD_KB" "$(( (hb - ha) / 1024 ))" "$(( (hc - hb) / 1024 ))" "$(( (hd - hc) / 1024 ))")
     heap_rc=$?
-    rss_reason=$(leak_verdict "$RSS_THRESHOLD_KB" "$((rb - ra))" "$((rc_ - rb))" "$((rd - rc_))")
-    rss_rc=$?
     if [ "$heap_rc" -eq 0 ] && [ "$rss_rc" -eq 0 ]; then
         ok "$label heap: $heap_reason | rss: $rss_reason"
     else
@@ -447,6 +457,77 @@ kill "$AUTH_PID" 2>/dev/null || true
 wait "$AUTH_PID" 2>/dev/null || true
 rm -f "$AUTH_SRV" "/tmp/eigs_rss_auth_$$.log"
 
+# #2351: the response state a route sets with http_respond is allocated and freed
+# for each request. On this branch the /heap_sample fixtures return the literal 0
+# (#2364), so this row has the RSS leg alone, and RSS shows a leak only when it
+# passes 4096 kB over 2000 requests: 2,098 bytes for each request. The route
+# therefore repeats every allocation 1,000 times: 1,000 names and values set,
+# all 1,000 set again (each value replaced), 1,000 cookies, and a third call that
+# is refused at its last item, after its names have been sorted. The smallest
+# allocation is 4 bytes for each entry of an array, so the smallest thing that
+# can be left unfreed is at least 4,000 bytes for each request. Status 200
+# also pins batch completion.
+run_growth_check "RSS3 http_respond" "/respond" \
+'r is http_route of ["GET", "/respond", "code", "h is {}\nc is []\ni is 0\nloop while i < 1000:\n    h[\"h\" + (str of i)] is \"v\"\n    append of [c, \"c\" + (str of i) + \"=1\"]\n    i is i + 1\nhttp_respond of {\"status\": 200, \"headers\": h, \"cookies\": c}\nhttp_respond of {\"headers\": h}\ncaught is false\ntry:\n    http_respond of {\"headers\": h, \"cookies\": [\"refused \"]}\ncatch e:\n    caught is true\nassert of [caught, \"the third call must be refused\"]\n\"ok\""]
+h is http_route of ["GET", "/heap_sample", "code", "0"]
+n is http_route of ["GET", "/gate_nonce", "code", "\"__NONCE__\""]
+s is http_serve of __PORT__' rss-only
+
+
+# #2373 uses raw Python sockets and pick_port; minimum allocation per request
+# is 128 * 64 = 8192 bytes (list slots), above twice 4096 KiB / 2000.
+# The check is row QH17-leak of tests/test_http_request_header.py. This file
+# prints one PASS: or FAIL: line for each check and the suite counts those
+# lines, so the verdict line of the row is not printed beside the line of
+# RSS4: a failing RSS4 carries it, without the colon after its first word.
+QH_RSS=$(python3 "$TESTS_DIR/test_http_request_header.py" --row QH17-leak 2>&1)
+QH_RSS_RC=$?
+QH_RSS_SAID=$(grep -E '^(PASS|FAIL|SKIP): ' <<< "$QH_RSS")
+QH_RSS_SAID=${QH_RSS_SAID/: / }
+grep -vE '^(PASS|FAIL|SKIP): ' <<< "$QH_RSS"
+if [ "$QH_RSS_RC" -eq 0 ] && grep -qxF 'HTTP_REQUEST_HEADER: 1 passed, 0 failed, 0 skipped' <<< "$QH_RSS"; then
+    ok "RSS4 http_request_header"
+else
+    fail "RSS4 http_request_header" "rc=$QH_RSS_RC; the row said: ${QH_RSS_SAID:-no verdict line}"
+fi
+
+# #2375: the raw-peer rows size their work from the outbound allocation
+# census. Keep one verdict line here: the child row's marker is shown without
+# a colon only when this wrapper reports a failure (as RSS4 does above).
+for HF_RSS_ROW in leak-success leak-error; do
+    HF_RSS=$(python3 "$TESTS_DIR/test_http_fetch.py" --leak --row "^$HF_RSS_ROW$" 2>&1)
+    HF_RSS_RC=$?
+    HF_RSS_SAID=$(grep -E '^[[:space:]]*(PASS|FAIL|SKIP): ' <<< "$HF_RSS")
+    HF_RSS_SAID=${HF_RSS_SAID/: / }
+    grep -vE '^[[:space:]]*(PASS|FAIL|SKIP): ' <<< "$HF_RSS"
+    if [ "$HF_RSS_RC" -eq 0 ] && grep -qxF 'HTTP_FETCH: 1 passed, 0 failed, 0 skipped' <<< "$HF_RSS"; then
+        ok "RSS http_fetch $HF_RSS_ROW"
+    elif [ "$HF_RSS_RC" -eq 0 ] && grep -qxF 'HTTP_FETCH: 0 passed, 0 failed, 1 skipped' <<< "$HF_RSS"; then
+        echo "  SKIP: RSS http_fetch $HF_RSS_ROW: ${HF_RSS_SAID:-unavailable on this build}"
+    else
+        fail "RSS http_fetch $HF_RSS_ROW" "rc=$HF_RSS_RC; the row said: ${HF_RSS_SAID:-no verdict line}"
+    fi
+done
+unset HF_RSS_ROW HF_RSS HF_RSS_RC HF_RSS_SAID
+
+# RSS5 (#2370): the door's read path. Counting each batch's requests from 0,
+# request i is the refused named row i/2 of #2370 when i is even, a chunked
+# request of 2,000 bytes when i leaves 1 on division by 4, and one of 60,000
+# bytes when it leaves 3 (bodies in chunks of 8 bytes); 1,000 to warm up, three
+# batches of 2,000, the median of the three against 4,096 kB. The check is row
+# D14-leak of tests/test_http_door.py (raw sockets: the refused rows hold bytes
+# curl does not send). RSS leg alone, as RSS3: on this branch the /heap_sample
+# fixtures read 0 (#2364). Its verdict line is carried as RSS4's is.
+DOOR_RSS=$(python3 "$TESTS_DIR/test_http_door.py" --row D14-leak 2>&1)
+DOOR_RSS_RC=$?
+DOOR_RSS_SAID=$(grep -E '^(PASS|FAIL|SKIP): ' <<< "$DOOR_RSS")
+DOOR_RSS_SAID=${DOOR_RSS_SAID/: / }
+grep -vE '^(PASS|FAIL|SKIP): ' <<< "$DOOR_RSS"
+if [ "$DOOR_RSS_RC" -eq 0 ] && grep -qxF 'HTTP_DOOR: 1 passed, 0 failed, 0 skipped' <<< "$DOOR_RSS"; then
+    ok "RSS5 llhttp door"
+else
+    fail "RSS5 llhttp door" "rc=$DOOR_RSS_RC; the row said: ${DOOR_RSS_SAID:-no verdict line}"
+fi
 
 echo "HTTP_RSS: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -1,8 +1,5 @@
-# Tests for the 'unobserved' block — opt-out of observer tracking.
-# Semantics: inside the block, numeric assignments may mutate Values
-# in place, and update_observer is not called. Values keep their
-# identity; their entropy/dH/obs_age go stale until the next
-# observed write.
+# Numeric samples and assignment age are retained inside unobserved.
+# Nonnumeric entropy bookkeeping is elided; predicates inside still raise.
 load_file of "lib/test.eigs"
 
 # Values computed inside unobserved are still correct
@@ -141,8 +138,8 @@ assert of [after > 0, "UO-871 predicates work again after the block"]
 # The probe: a value that IS moving must report as moving.
 define moving_probe as:
     y is 3.0
-    y is y * 0.5
-    y is y * 0.5
+    y is y * 2.0
+    y is y * 2.0
     return report of y
 
 assert of [(moving_probe of 0) == "moving", "UO-871L baseline: a moving value reports moving"]
@@ -202,10 +199,10 @@ unobserved:  # lint: allow W020 -- checking the block is still functional
     m is m * 0.5
     seen_inside is report of m
     traj_inside is trajectory of m
-assert of [seen_inside == "moving", "UO-871L/1049 the elided samples are in the value window"]
+assert of [seen_inside == "improving", "UO-871L/1049 the elided samples are in the value window"]
 assert of [(len of traj_inside.rel) == 2, "UO-871L/1049 both elided steps were recorded"]
 assert of [(len of traj_inside.dh) == 0, "UO-871L/1049 the block still elides the entropy channel (no dH window)"]
-assert of [(why is m) == 0, "UO-871L/1049 dH was never computed for the elided steps"]
+assert of [(why is m) == (0 - 2.25), "UO-871L/1049 elided numeric steps retain their displacement"]
 assert of [(moving_probe of 0) == "moving", "UO-871L and normal observation resumes after it"]
 
 # ---- #908: `when is x` counts assignments made inside the block ----
@@ -245,3 +242,13 @@ define counted908() as:
 assert of [(counted908 of 0) == 4, "UO-908 fn-local count includes the block"]
 
 test_summary of null
+
+# R31-2 F7: elided numeric samples update the live slot, not observer history.
+# The ordinal still names the assignment, but its observer triple is absent,
+# matching the c8e59616 base and the elided-line witness in the same suite.
+uhist is 1
+unobserved:
+    uhist is 2
+assert of [(where is uhist when 2) == null, "unobserved numeric historical value is absent"]
+assert of [(why is uhist when 2) == null, "unobserved numeric historical step is absent"]
+assert of [(how is uhist when 2) == null, "unobserved numeric historical settledness is absent"]

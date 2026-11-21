@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: audio_music_play (int-requiring; loop count: N5, then the C int range (Q1); a 4-sample WAV the probe writes); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":2}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+wav is p + "/m.wav"
+write_bytes of [wav, [82, 73, 70, 70, 44, 0, 0, 0, 87, 65, 86, 69, 102, 109, 116, 32, 16, 0, 0, 0, 1, 0, 1, 0, 68, 172, 0, 0, 136, 88, 1, 0, 2, 0, 16, 0, 100, 97, 116, 97, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
+try:
+    print of ["fraction-answer", audio_music_play of [wav, 2.5]]
+catch e:
+    print of ["loops-fraction", e.kind]
+print of (audio_music_play of [wav, 2.0])

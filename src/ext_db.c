@@ -56,8 +56,14 @@ static int db_build_query(Value *arg, const char **sql, int *nparams,
             types[i] = DB_PARAM_OID_BOOL;
         } else if (v && v->type == VAL_STR) {
             params[i] = v->data.str;
-        } else if (v && v->type == VAL_NUM) {
-            eigs_num_text(numbuf[i], 64, eigs_num_arg(v, __func__));
+        } else if (v && v->type == VAL_INT) {
+            eigs_int_text(numbuf[i], 64, VAL_I64_RAW(v));
+            params[i] = numbuf[i];
+        } else if (v && v->type == VAL_FLOAT) {
+            /* N6/N14: exact round-trip parameter text, shared with display/JSON. */
+            double f = eigs_float_arg(v, __func__);
+            if (g_has_error) return 0;
+            eigs_num_text(numbuf[i], 64, f);
             params[i] = numbuf[i];
         } else {
             rt_error(EK_TYPE, 0, "db: parameter %d is not a string, number or bool (got %s)",
@@ -80,6 +86,17 @@ static PGresult* db_exec_from_arg(Value *arg) {
     return PQexecParams(g_db_conn, sql, nparams, (const Oid *)types, params, NULL, NULL, 0);
 }
 
+static Value *db_connect_error(const char *message) {
+    strbuf sb;
+    strbuf_init(&sb);
+    strbuf_append(&sb, "{\"status\": \"error\", \"error\": ");
+    eigs_json_escape_string(&sb, message);
+    strbuf_append_char(&sb, '}');
+    Value *result = make_str(sb.data);
+    strbuf_free(&sb);
+    return result;
+}
+
 Value* builtin_db_connect(Value *arg) {
     (void)arg;
     if (replay_blocks("db_connect", "database")) return make_null();
@@ -88,24 +105,43 @@ Value* builtin_db_connect(Value *arg) {
         return make_str("{\"status\": \"no_database\", \"message\": \"DATABASE_URL not set\"}");
     }
 
-    char conn_str[4096];
-    if (strchr(url, '?')) {
-        snprintf(conn_str, sizeof(conn_str), "%s&connect_timeout=3", url);
-    } else {
-        snprintf(conn_str, sizeof(conn_str), "%s?connect_timeout=3", url);
+    /* libpq owns both grammars (URI and keyword/value). Preserve its parsed
+     * values, including an explicitly supplied timeout, without rewriting or
+     * truncating the connection string. expand_dbname=0 keeps a parsed dbname
+     * literal even when it contains '=' or looks like another connection URI. */
+    char *parse_error = NULL;
+    PQconninfoOption *options = PQconninfoParse(url, &parse_error);
+    if (!options) {
+        Value *result = db_connect_error(parse_error ? parse_error : "libpq could not parse DATABASE_URL");
+        PQfreemem(parse_error);
+        return result;
     }
-    g_db_conn = PQconnectdb(conn_str);
+    size_t count = 0;
+    while (options[count].keyword) count++;
+    const char **keywords = xcalloc(count + 2, sizeof(*keywords));
+    const char **values = xcalloc(count + 2, sizeof(*values));
+    size_t used = 0;
+    int has_timeout = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (!options[i].val) continue;
+        keywords[used] = options[i].keyword;
+        values[used++] = options[i].val;
+        if (strcmp(options[i].keyword, "connect_timeout") == 0) has_timeout = 1;
+    }
+    if (!has_timeout) {
+        keywords[used] = "connect_timeout";
+        values[used++] = "3";
+    }
+    /* calloc supplies the terminating NULL pair, including after the default. */
+    g_db_conn = PQconnectdbParams(keywords, values, 0);
+    free(keywords);
+    free(values);
+    PQconninfoFree(options);
 
     if (PQstatus(g_db_conn) != CONNECTION_OK) {
-        strbuf sb;
-        strbuf_init(&sb);
-        strbuf_append(&sb, "{\"status\": \"error\", \"error\": ");
-        eigs_json_escape_string(&sb, PQerrorMessage(g_db_conn));
-        strbuf_append_char(&sb, '}');
+        Value *result = db_connect_error(PQerrorMessage(g_db_conn));
         PQfinish(g_db_conn);
         g_db_conn = NULL;
-        Value *result = make_str(sb.data);
-        strbuf_free(&sb);
         return result;
     }
 
@@ -173,11 +209,7 @@ static int db_require_conn(void) {
 #define DB_OID_FLOAT8  701
 #define DB_OID_NUMERIC 1700
 
-/* The largest integer a double represents exactly. A bigint past this cannot
- * round-trip through an EigenScript number. */
-#define DB_EXACT_INT_MAX 9007199254740992LL
-
-typedef enum { DBT_STR, DBT_NUM, DBT_BOOL } DbColType;
+typedef enum { DBT_STR, DBT_INT, DBT_FLOAT, DBT_BOOL } DbColType;
 
 /* ONE classifier, shared by db_query_json and db_query_value, so the two
  * cannot drift on what a column's type is.
@@ -196,57 +228,36 @@ typedef enum { DBT_STR, DBT_NUM, DBT_BOOL } DbColType;
  * in to a number. int8 does NOT get that treatment: count(*), sum(int) and
  * every serial key are int8, so leaving it a string would leave the filed
  * bug unfixed for the majority of real numeric queries — instead it emits a
- * number and RAISES on the values a double cannot represent (below). */
+ * signed int64 without a conversion through double (N14, Q-DB253). */
 static DbColType db_classify(unsigned int oid) {
     switch (oid) {
         case DB_OID_BOOL:   return DBT_BOOL;
         case DB_OID_INT2:
         case DB_OID_INT4:
         case DB_OID_OID:
-        case DB_OID_INT8:
+        case DB_OID_INT8:   return DBT_INT;
         case DB_OID_FLOAT4:
-        case DB_OID_FLOAT8: return DBT_NUM;
+        case DB_OID_FLOAT8: return DBT_FLOAT;
         default:            return DBT_STR;   /* numeric, text, date, json, ... */
     }
 }
 
-/* An exact-integer column whose value is past 2^53. Raising beats rounding:
- * the value genuinely has no representation as an EigenScript number, and a
- * silently rounded primary key is unrecoverable downstream. The message names
- * the column and the fix. Returns 0 and raises; 1 when representable. */
-static int db_check_exact_int(unsigned int oid, const char *text, const char *colname) {
-    if (oid != DB_OID_INT8 && oid != DB_OID_INT4 && oid != DB_OID_INT2 && oid != DB_OID_OID)
-        return 1;
-    /* strtoLL, not strtod: converting to a double FIRST rounds 9007199254740993
-     * to exactly 2^53, so a strtod-based comparison cannot see the one thing
-     * this check exists to detect. (It shipped that way to CI once — the live
-     * postgres job is what caught it.) An out-of-int64 literal saturates at
-     * LLONG_MAX, which is past the bound, so it still raises. */
-    char *end = NULL;
-    long long v = strtoll(text, &end, 10);
-    if (end == text) return 1;            /* not a plain integer literal; leave it */
-    if (v > DB_EXACT_INT_MAX || v < -DB_EXACT_INT_MAX) {
-        rt_error(EK_VALUE, 0,
-                 "db: column '%s' value %s exceeds the exact-integer range of a "
-                 "number (2^53); select it as text (%s::text) to keep the digits",
-                 colname ? colname : "?", text, colname ? colname : "col");
-        return 0;
-    }
-    return 1;
-}
-
-/* Emit one column value as JSON. Returns 0 when it raised. */
-static int db_emit_json_value(strbuf *sb, unsigned int oid, int isnull,
-                              const char *text, const char *colname) {
-    if (isnull) { strbuf_append(sb, "null"); return 1; }
+/* Emit one column value as JSON, retaining PostgreSQL's decimal text. */
+static void db_emit_json_value(strbuf *sb, unsigned int oid, int isnull,
+                              const char *text) {
+    if (isnull) { strbuf_append(sb, "null"); return; }
     if (!text) text = "";
     switch (db_classify(oid)) {
         case DBT_BOOL:
             /* libpq text mode renders bool as exactly "t" or "f". */
             strbuf_append(sb, text[0] == 't' ? "true" : "false");
-            return 1;
-        case DBT_NUM:
-            if (!db_check_exact_int(oid, text, colname)) return 0;
+            return;
+        case DBT_INT:
+            /* PostgreSQL's integer types fit int64 and arrive as exact decimal
+             * digits. Preserve that text; the N14 JSON reader produces ints. */
+            strbuf_append(sb, text);
+            return;
+        case DBT_FLOAT:
             /* float8/float4 can be NaN / Infinity / -Infinity, which JSON has
              * no literal for. Emitting them as `null` would collide with SQL
              * NULL — the very confusion this issue removes — so they stay
@@ -255,15 +266,14 @@ static int db_emit_json_value(strbuf *sb, unsigned int oid, int isnull,
             if (text[0] == 'N' || text[0] == 'I' ||
                 (text[0] == '-' && text[1] == 'I')) {
                 eigs_json_escape_string(sb, text);
-                return 1;
+                return;
             }
             strbuf_append(sb, text);   /* libpq's decimal text is valid JSON */
-            return 1;
+            return;
         case DBT_STR:
             break;
     }
     eigs_json_escape_string(sb, text);
-    return 1;
 }
 
 /* ---- DB query builtins ---- */
@@ -276,7 +286,7 @@ Value* builtin_db_query_value(Value *arg) {
     if (!arg || (arg->type != VAL_STR && arg->type != VAL_LIST)) {
         rt_error(EK_TYPE, 0, "db_query_value expects a string or [sql, params...] (got %s)",
                  arg ? val_type_name(arg->type) : "null");
-        return make_str("");  /* fs:STRICT the rt_error above is unconditional (not g_strict-gated), so the error latch is already armed and the VM raises; "" is the never-consumed soft value */
+        return make_str("");  /* fs:STRICT the rt_error above is unconditional (not strict-guard-gated), so the error latch is already armed and the VM raises; "" is the never-consumed soft value */
     }
     if (!db_require_conn()) return make_str("");  /* fs:STRICT db_require_conn raised EK_IO before returning 0 (ext_db.c:132) */
     PGresult *res = db_exec_from_arg(arg);
@@ -293,25 +303,28 @@ Value* builtin_db_query_value(Value *arg) {
 
     unsigned int oid = (unsigned int)PQftype(res, 0);
     const char *text = PQgetvalue(res, 0, 0);
-    const char *colname = PQfname(res, 0);
     if (!text) text = "";
     Value *result = NULL;
     switch (db_classify(oid)) {
         case DBT_BOOL:
             result = make_bool(text[0] == 't');   /* #1637 */
             break;
-        case DBT_NUM:
-            if (!db_check_exact_int(oid, text, colname)) { PQclear(res); return make_str(""); }  /* fs:STRICT db_check_exact_int raised EK_VALUE for a past-2^53 integer (ext_db.c:211) */
-            /* Same rule as the JSON emitter: float4/float8 can be NaN /
-             * Infinity / -Infinity, and make_num's num_guard would turn
-             * those into 0 and 1e308 — a silently wrong number. Hand back
-             * the text so the caller sees what the column holds. */
+        case DBT_INT:
+            /* PostgreSQL validates its int2/int4/int8/oid text and range before
+             * sending it. Decode directly, including both int64 edges, rather
+             * than rounding through strtod (N14, Q-DB253). */
+            result = make_int((int64_t)strtoll(text, NULL, 10));
+            break;
+        case DBT_FLOAT:
+            /* Preserve the existing DB boundary: non-finite float4/float8
+             * columns are returned as text. R2.2 arithmetic does not change
+             * this interface or the finite query-parameter policy. */
             if (text[0] == 'N' || text[0] == 'I' ||
                 (text[0] == '-' && text[1] == 'I')) {
                 result = make_str(text);
                 break;
             }
-            result = make_num(strtod(text, NULL));
+            result = make_float(strtod(text, NULL));
             break;
         case DBT_STR:
             result = make_str(text);
@@ -375,13 +388,8 @@ Value* builtin_db_query_json(Value *arg) {
             if (c > 0) strbuf_append(&sb, ", ");
             eigs_json_escape_string(&sb, PQfname(res, c));
             strbuf_append(&sb, ": ");
-            if (!db_emit_json_value(&sb, (unsigned int)PQftype(res, c),
-                                    PQgetisnull(res, r, c), PQgetvalue(res, r, c),
-                                    PQfname(res, c))) {
-                strbuf_free(&sb);
-                PQclear(res);
-                return make_str("[]");
-            }
+            db_emit_json_value(&sb, (unsigned int)PQftype(res, c),
+                               PQgetisnull(res, r, c), PQgetvalue(res, r, c));
         }
         strbuf_append_char(&sb, '}');
     }

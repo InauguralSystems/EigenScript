@@ -1,0 +1,11 @@
+# R1.6 behaviour-table probe: stream_write (float-producing; writes a raw f64, an int converts (Q2))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+f is p + "/s.tensor"
+print of [stream_open of [f, 2], stream_write of 3, stream_write of 2.5, stream_close of null]
+t is tensor_load of f
+print of [t, nt of t[0], nt of t[1]]

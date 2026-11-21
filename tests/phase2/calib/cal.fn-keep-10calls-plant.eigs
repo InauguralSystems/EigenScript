@@ -1,0 +1,20 @@
+# ROW: cal.fn-keep-10calls-plant
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn keep
+# OPS: SET_LOCAL
+# plant: 10 calls instead of 60, so the JIT never compiles keep
+define keep(q) as:
+    t is q
+    return t
+k is 0
+r is 0
+loop while k < 10:
+    r is keep of 2.5
+    k is k + 1
+print of r
+try:
+    print of (5.5 & 1)
+catch e:
+    print of e.kind

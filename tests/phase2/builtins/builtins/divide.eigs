@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: divide (float-producing; mirrors / (Lua 3.4.1: always float))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is divide of [7, 2]
+print of [a, nt of a]
+b is divide of [6, 3]
+print of [b, nt of b]

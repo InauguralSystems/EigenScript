@@ -1,0 +1,15 @@
+# ROW: N1.fn-dot-fields
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn setx
+# OPS: LOCAL_DOT_SET LOCAL_DOT_GET
+define setx(p, q) as:
+    p.x is q
+    return p.x
+r is null
+i is 0.0
+loop while i < 60.0:
+    r is setx of [{"x": 1}, 9007199254740993]
+    i is i + 1.0
+print of r

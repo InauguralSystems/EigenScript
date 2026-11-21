@@ -1,0 +1,1 @@
+- Align the IEEE result C fixture with R2.4 canonical NaNs while preserving math flags and testing raw buffer-bit payload fidelity. Guard all four N12 bit builtins through the existing strict type checks without changing their default numeric rules.

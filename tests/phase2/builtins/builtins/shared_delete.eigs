@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: shared_delete (int-preserving; removed count; PROFILE server (make server))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    shared_set of ["k", 1]
+catch e:
+    print of ["capability", e.kind, e.message]
+    exit of 0
+a is shared_delete of "k"
+b is shared_delete of "k"
+print of [a, nt of a, b, nt of b]

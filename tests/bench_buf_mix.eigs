@@ -1,7 +1,10 @@
 # bench_buf_mix.eigs — the #597 mix-down micro-bench.
 #
-# Workload: mixing 220,500 stereo samples (5 s @ 44.1 kHz interleaved =
-# 441,000 doubles), the DeslanStudio arr_mix_stems / ab_mix_into kernel
+# CodSpeed sizing (SYNC11 cont4): frames 220,500 -> 110,250; n 441,000 ->
+# 220,500. The original took 42 s in hosted CPU simulation; half the samples
+# leaves headroom below ~60 s per target without changing the mix path.
+# Workload: mixing 110,250 stereo frames (2.5 s @ 44.1 kHz interleaved =
+# 220,500 doubles), the DeslanStudio arr_mix_stems / ab_mix_into kernel
 # that measured 9.6 s for a 5 s arrangement on the N3350.
 #
 # Modes (first CLI arg; time each externally, n=5 medians):
@@ -19,7 +22,7 @@ a is args of null
 if (len of a) > 0:
     mode is a[0]
 
-frames is 220500
+frames is 110250
 n is frames * 2
 gain is 0.7071
 

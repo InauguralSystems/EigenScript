@@ -1,0 +1,1 @@
+- Add floor division `//` and `//=`, returning an exact int for two ints and a float otherwise. `%` now uses floor modulo with the divisor's sign. Integer floor-division overflow raises; `INT64_MIN % -1` is 0. Zero divisors still raise for every numeric kind until N11 (#1758).

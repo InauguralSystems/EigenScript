@@ -1,0 +1,8 @@
+# ROW: N6.nonfinite
+# ITEMS: N6
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: DIV NEG
+# TIERS: off default osr
+print of [1.0 / 0, -1.0 / 0, 0.0 / 0, -(0.0 / 0)]

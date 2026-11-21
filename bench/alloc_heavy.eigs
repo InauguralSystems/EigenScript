@@ -2,7 +2,10 @@
 # Reconstruction of #1675's workload of the same name (its scratch file was
 # never committed; see poollayers-REPORT.md "alloc_heavy reconstruction").
 # Each call allocates a fresh env (Env freelist + call-env recycling), short-lived
-# NUMs (Value freelist), and a short string. Driven 20000x for a heavy churn.
+# NUMs (Value freelist), and a short string.
+# CodSpeed sizing (SYNC11 cont4): outer calls 20,000 -> 5,000; inner work(50)
+# unchanged. The original took 101 s in hosted CPU simulation; one quarter
+# of the calls keeps the same allocation churn below ~60 s per target.
 define work(n) as:
     s is 0
     j is 0
@@ -14,6 +17,6 @@ define work(n) as:
         j is j + 1
     return s
 total is 0
-for i in range of 20000:
+for i in range of 5000:
     total is total + (work of 50)
 print of total

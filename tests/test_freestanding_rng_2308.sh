@@ -24,7 +24,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/eigs_fs_rng.XXXXXX") || exit 2
 trap 'rm -rf "$WORK"' EXIT
 REAL_GIT=$(command -v git) || { echo "  FAIL: git is required"; exit 1; }
-echo "PLAN: 37"
+echo "PLAN: 42"
 pass=0; fail=0
 
 # A fresh HOME with no global or system config: a developer's own
@@ -240,6 +240,31 @@ case_ "git ls-files stderr warning is not counted as a file" "$WORK/clean" 0 \
     "OK hosted RNG: the words rand and srand appear in none of the 2 tracked hosted C source/header file(s)" \
     PATH="$WORK/warnshim:$PATH"
 
+# The complete tracked population remains mandatory, including paths Git
+# would otherwise quote for display.
+make_repo "$WORK/missing-ext"
+rm "$WORK/missing-ext/extensions/e.c"
+case_ "a tracked file outside Makefile SOURCES missing from the working tree is red" "$WORK/missing-ext" 1 \
+    "FAIL: hosted RNG check cannot read the tracked file extensions/e.c"
+# Git's display-oriented default quotes a path containing a double quote. The
+# population reader must instead consume Git's unambiguous NUL-delimited form.
+make_repo "$WORK/quote-clean"
+commit_plant "$WORK/quote-clean" 'src/a"b.c' 'int quote_clean(void) { return 6; }'
+case_ "a clean tracked source name containing a double quote passes" "$WORK/quote-clean" 0 \
+    "OK hosted RNG: the words rand and srand appear in none of the 3 tracked hosted C source/header file(s)"
+make_repo "$WORK/quote-rand"
+commit_plant "$WORK/quote-rand" 'src/a"b.c' 'int quote_bad(void) { return rand(); }'
+case_ "rand in a source name containing a double quote is red and named literally" "$WORK/quote-rand" 1 \
+    'src/a"b.c:1:int quote_bad(void) { return rand(); }'
+make_repo "$WORK/unicode-clean"
+commit_plant "$WORK/unicode-clean" 'src/café.c' 'int cafe_clean(void) { return 6; }'
+case_ "a clean tracked non-ASCII source name passes" "$WORK/unicode-clean" 0 \
+    "OK hosted RNG: the words rand and srand appear in none of the 3 tracked hosted C source/header file(s)"
+make_repo "$WORK/unicode-rand"
+commit_plant "$WORK/unicode-rand" 'src/café.c' 'int cafe_bad(void) { return rand(); }'
+case_ "rand in a tracked non-ASCII source is red and named" "$WORK/unicode-rand" 1 \
+    'src/café.c:1:int cafe_bad(void) { return rand(); }'
+
 # 8. An empty population is not a pass.
 mkdir -p "$WORK/empty"
 make_repo "$WORK/empty"
@@ -250,4 +275,4 @@ case_ "no tracked runtime sources is red (vacuous)" "$WORK/empty" 1 \
     "FAIL: hosted RNG check examined no runtime sources"
 
 echo "freestanding RNG selftest: $pass passed, $fail failed"
-[ "$fail" -eq 0 ] && [ "$pass" -eq 37 ]
+[ "$fail" -eq 0 ] && [ "$pass" -eq 42 ]

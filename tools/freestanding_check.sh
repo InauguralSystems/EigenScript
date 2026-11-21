@@ -43,32 +43,33 @@ trap 'rm -rf "$ROOT_BUILD"' EXIT
 # symbols; its compile rows run on the Linux lanes, and its match takes the
 # leading underscore that nm prints on macOS.
 RNG_PATHSPEC=('src/*.c' 'src/*.h' 'extensions/*.c' 'extensions/*.h' ':(exclude)src/freestanding/*')
-RNG_GIT=(git -c safe.directory="$(pwd -P)")
+RNG_GIT=(git -c safe.directory="$(pwd -P)" -c core.quotePath=false)
 RNG_ERR="$ROOT_BUILD/rng_ls_files.err"
+RNG_FILES="$ROOT_BUILD/rng_files"
 rng_rc=0
 # stderr kept apart so a git warning is never counted as an examined file.
-RNG_FILES=$("${RNG_GIT[@]}" ls-files -- "${RNG_PATHSPEC[@]}" 2>"$RNG_ERR") || rng_rc=$?
-if [ "$rng_rc" -ne 0 ] || [ -z "$RNG_FILES" ]; then
+"${RNG_GIT[@]}" ls-files -z -- "${RNG_PATHSPEC[@]}" >"$RNG_FILES" 2>"$RNG_ERR" || rng_rc=$?
+if [ "$rng_rc" -ne 0 ] || [ ! -s "$RNG_FILES" ]; then
     echo "FAIL: hosted RNG check examined no runtime sources (git ls-files rc=$rng_rc):" >&2
     cat "$RNG_ERR" >&2
     exit 1
 fi
-RNG_EXAMINED=$(printf '%s\n' "$RNG_FILES" | wc -l | tr -d ' ')
+RNG_EXAMINED=0
 # git grep passes over a tracked file it cannot open with a message and "no
 # match", and says nothing of one that is not in the working tree. So every
 # tracked file of the population must be there and readable first.
-while IFS= read -r rng_file; do
-    [ -n "$rng_file" ] || continue
+while IFS= read -r -d '' rng_file; do
+    RNG_EXAMINED=$((RNG_EXAMINED + 1))
     if [ ! -f "$rng_file" ] || [ ! -r "$rng_file" ]; then
         echo "FAIL: hosted RNG check cannot read the tracked file $rng_file" >&2
         exit 1
     fi
-done <<RNG_LIST
-$RNG_FILES
-RNG_LIST
+done <"$RNG_FILES"
 RNG_GREP_ERR="$ROOT_BUILD/rng_grep.err"
+RNG_HITS="$ROOT_BUILD/rng_hits"
 rng_rc=0
-RNG_HITS=$("${RNG_GIT[@]}" grep -n -w -E 'rand|srand' -- "${RNG_PATHSPEC[@]}" 2>"$RNG_GREP_ERR") || rng_rc=$?
+"${RNG_GIT[@]}" grep -z -n -w -E 'rand|srand' -- "${RNG_PATHSPEC[@]}" \
+    >"$RNG_HITS" 2>"$RNG_GREP_ERR" || rng_rc=$?
 if [ -s "$RNG_GREP_ERR" ] && [ "$rng_rc" -le 1 ]; then
     echo "FAIL: hosted RNG check: git grep reported a problem while searching the runtime sources:" >&2
     cat "$RNG_GREP_ERR" >&2
@@ -76,7 +77,9 @@ if [ -s "$RNG_GREP_ERR" ] && [ "$rng_rc" -le 1 ]; then
 fi
 if [ "$rng_rc" -eq 0 ]; then
     echo "FAIL: the word rand or srand appears in a hosted runtime source or header (code, comment or string); the runtime draws from the taped random stream:" >&2
-    echo "$RNG_HITS" >&2
+    # With -z Git writes the filename literally and terminates it with NUL.
+    # Restore the familiar filename:line display without asking Git to quote.
+    tr '\0' ':' <"$RNG_HITS" >&2
     exit 1
 elif [ "$rng_rc" -ne 1 ]; then
     echo "FAIL: hosted RNG check could not search the runtime sources (git grep rc=$rng_rc):" >&2

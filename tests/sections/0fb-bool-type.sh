@@ -1,8 +1,8 @@
 echo "[0fb] Boolean type (#1637)"
 check_eigs_suite "bool type: semantics 1-7, default tier" test_bool.eigs "All tests passed"
 EIGS_JIT_OFF=1 check_eigs_suite "bool type: semantics 1-7, interpreter tier" test_bool.eigs "All tests passed"
-# A bool never takes a builtin's EIGS_STRICT=0 soft path (#1637).
-EIGS_STRICT=0 check_eigs_suite "bool type: semantics 1-7, EIGS_STRICT=0" test_bool.eigs "All tests passed"
+# R2.2: default is 0; explicit strict must retain the same bool refusals.
+EIGS_STRICT=1 check_eigs_suite "bool type: semantics 1-7, EIGS_STRICT=1" test_bool.eigs "All tests passed"
 # true and false in every argument slot of every builtin `--api --json` lists,
 # and in the VM operand positions, raise in both strict modes unless the slot
 # is on the reviewed any-value list (tests/test_bool_fuzz.sh; it prints its
@@ -36,7 +36,7 @@ else
 fi
 unset BOOL_JIT_OUT BOOL_JIT_RC
 # The class gate (#1637 round 4): the number members are renamed, so a raw
-# read is a VAL_NUM_RAW / SLOT_NUM_RAW token; every token sits in a reviewed
+# read is a VAL_NUM_RAW / SLOT_F64_RAW token; every token sits in a reviewed
 # function with its exact count, and every builtin call passes the bool gate
 # (tools/num_read_check.sh).
 TOTAL=$((TOTAL + 1))
@@ -48,7 +48,7 @@ else
     printf '%s\n' "$BOOL_NR_OUT"
 fi
 unset BOOL_NR_OUT BOOL_NR_RC
-# Tape (#1637, format v8): a recorded bool replays as a bool, from the tape —
+# Tape (#1637): a recorded bool replays as a bool, from the tape —
 # the probed file is deleted between record and replay, so a live re-probe
 # would answer false. A prior-format header is refused (exit 3).
 check_binary_fingerprint
@@ -66,16 +66,20 @@ if [ "$BOOL_TP_RC" = 0 ] && [ "$BOOL_TP_REC" = '[true, "bool", false]' ] &&
 else
     FAIL=$((FAIL + 1)); echo "  FAIL: a recorded bool replays as a bool (rc=$BOOL_TP_RC rec='$BOOL_TP_REC' rep='$BOOL_TP_REP')"
 fi
-sed '1s/^V 8 /V 7 /' "$BOOL_TP_DIR/p.tape" > "$BOOL_TP_DIR/p7.tape"
-BOOL_TP_OUT=$(EIGS_REPLAY="$BOOL_TP_DIR/p7.tape" $EIGS_TMO ./eigenscript "$BOOL_TP_DIR/p.eigs" </dev/null 2>&1); BOOL_TP_RC=$?
-TOTAL=$((TOTAL + 1))
-if [ "$BOOL_TP_RC" = 3 ] && grep -q "tape format v7, this binary reads v8" <<< "$BOOL_TP_OUT"; then
-    PASS=$((PASS + 1)); echo "  PASS: a v7 tape is refused with exit 3"
-else
-    FAIL=$((FAIL + 1)); echo "  FAIL: a v7 tape is refused with exit 3 (rc=$BOOL_TP_RC)"
-    printf '%s\n' "$BOOL_TP_OUT" | eigs_failure_output
-fi
-# Tamper: a v8 tape whose bool record was hand-edited to a number (and a
+BOOL_TP_FORMAT=$(awk '/^#define TRACE_FORMAT_VERSION / { print $3; exit }' "$TESTS_DIR/../src/trace.h")
+# All prior typed/streamed formats, including the finite-only v9, are refused.
+for BOOL_TP_OLD in 5 6 7 8 9; do
+    sed "1s/^V [0-9][0-9]* /V $BOOL_TP_OLD /" "$BOOL_TP_DIR/p.tape" > "$BOOL_TP_DIR/old.tape"
+    BOOL_TP_OUT=$(EIGS_REPLAY="$BOOL_TP_DIR/old.tape" $EIGS_TMO ./eigenscript "$BOOL_TP_DIR/p.eigs" </dev/null 2>&1); BOOL_TP_RC=$?
+    TOTAL=$((TOTAL + 1))
+    if rc_expect 3 "$BOOL_TP_RC" "$BOOL_TP_OUT" && grep -q "tape format v$BOOL_TP_OLD, this binary reads v$BOOL_TP_FORMAT" <<< "$BOOL_TP_OUT"; then
+        PASS=$((PASS + 1)); echo "  PASS: a v$BOOL_TP_OLD tape is refused with exit 3"
+    else
+        FAIL=$((FAIL + 1)); echo "  FAIL: a v$BOOL_TP_OLD tape is refused with exit 3 (rc=$BOOL_TP_RC)"
+        printf '%s\n' "$BOOL_TP_OUT" | eigs_failure_output
+    fi
+done
+# Tamper: a current tape whose bool record was hand-edited to a number (and a
 # number record edited to a bool) is refused with exit 3, naming the builtin,
 # the record and the tape version -- never replayed as the other kind.
 printf 'x is file_exists of "%s"\nr is random of null\nn is random_normal of [2, 1.0]\nprint of [x, type of x, type of r, type of n]\n' \
@@ -89,8 +93,8 @@ for BOOL_TP_CASE in "t1:file_exists returns a bool, the tape holds a num" "t2:ra
     TOTAL=$((TOTAL + 1))
     BOOL_TP_T=${BOOL_TP_CASE%%:*}; BOOL_TP_WANT=${BOOL_TP_CASE#*:}
     BOOL_TP_OUT=$(EIGS_REPLAY="$BOOL_TP_DIR/$BOOL_TP_T.tape" $EIGS_TMO ./eigenscript "$BOOL_TP_DIR/t.eigs" </dev/null 2>&1); BOOL_TP_RC=$?
-    if ! cmp -s "$BOOL_TP_DIR/t.tape" "$BOOL_TP_DIR/$BOOL_TP_T.tape" && [ "$BOOL_TP_RC" = 3 ] &&
-       grep -q "tape format v8 record 'N [0-9]* .*': $BOOL_TP_WANT; refusing to replay" <<< "$BOOL_TP_OUT"; then
+    if ! cmp -s "$BOOL_TP_DIR/t.tape" "$BOOL_TP_DIR/$BOOL_TP_T.tape" && rc_expect 3 "$BOOL_TP_RC" "$BOOL_TP_OUT" &&
+       grep -q "tape format v$BOOL_TP_FORMAT record 'N [0-9]* .*': $BOOL_TP_WANT; refusing to replay" <<< "$BOOL_TP_OUT"; then
         PASS=$((PASS + 1)); echo "  PASS: a tampered tape is refused: $BOOL_TP_WANT"
     else
         FAIL=$((FAIL + 1)); echo "  FAIL: a tampered tape is refused: $BOOL_TP_WANT (rc=$BOOL_TP_RC)"

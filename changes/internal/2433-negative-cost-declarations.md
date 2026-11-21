@@ -1,0 +1,1 @@
+- Phase 2 cost declarations now accept finite negative maxima for rows that are cheaper than `main` (#2433).

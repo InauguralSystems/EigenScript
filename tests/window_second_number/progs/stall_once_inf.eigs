@@ -1,0 +1,5 @@
+counter is 0
+x is f64_from_bits of 0x7ff0000000000000
+loop while not converged:
+    counter is counter + 1
+print of [counter, __loop_exit__, report of x, converged of x]

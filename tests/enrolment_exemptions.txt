@@ -1,8 +1,13 @@
-# Test scripts nothing in CI runs, on purpose (tools/enrolment_check.sh, #1264).
-# `path | reason`. A row for a missing or invoked file fails; prefer a section.
+# Test scripts and tools/ entry points that no workflow invokes, as tools/enrolment_check.sh
+# reads "invoked" (#1264; tools/ since #1758 R1.3). `path | reason`: the reason says how the
+# script does run. A row for a missing or invoked file fails; prefer a section or a workflow step.
+tests/http_respond_reference.py | imported byte oracle used by tests/test_http_respond.py in suite section 45g; it is a helper module, not a standalone test
 tests/test_gc_runner_controls.py | manual deferred control for the GC traversal runner (tests/GC_TRAVERSAL.md); forks child sessions and must run with the heavy slot released, so it is run by hand
-tools/builtin_usage.sh | maintainer-only source audit that reports builtin use sites; it is not an executable CI check
-tools/doc_coupling_hook.sh | optional local Git pre-commit hook installed by a contributor, not a CI entry point
-tools/mutants.sh | manual mutation-train driver documented in concurrency and trace guides; individual product tests run in CI
+tools/builtin_usage.sh | a report over local consumer checkouts (counts builtin references), not a gate; run by hand
+tools/doc_coupling_hook.sh | a Claude Code hook (.claude/settings.json) for agent sessions, not a CI gate
+tools/mutants.sh | the manual mutation trains (its header); its --selftest is a tools/selftests.txt row
 tests/test_gfx_utf8_title.eigs | alternate oracle: test_gfx_utf8_title.sh checks WM_NAME and _NET_WM_NAME on the live X11 window, covering the fixture's sole "X11 window opens" assertion
 tests/test_variant_stdlib.eigs | alternate oracle: 18f-variant-stdlib-1679.sh runs a byte-for-byte temporary copy from outside the checkout and requires rc 0 plus its exact Tests: 1 | Pass: 1 | Fail: 0 summary, covering the fixture's stdlib-load assertion
+tests/http_request_header_reference.py | imported #2373 byte oracle used by tests/test_http_request_header.py in suite section 45h; helper module, not a standalone test
+tests/http_fetch_peer.py | imported raw socket peer used by tests/test_http_fetch.py in suite section 45i; its listener is exercised by the contract rows
+tools/embed_strict_variants.py | manual embedding API mutation gate, run by hand when the three strict calls or their test program change; it builds the runtime once for each wrong variant, which takes minutes where no compiler cache is configured

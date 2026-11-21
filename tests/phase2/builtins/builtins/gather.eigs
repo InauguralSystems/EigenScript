@@ -1,0 +1,25 @@
+# R1.6 behaviour-table probe: gather (int-requiring; each index is integer-valued (N5); returns elements unchanged); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":2}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+t is reshape of [buf_from_list of [10, 11, 12, 20, 21, 22], 2, 3]
+ib is buffer of 2
+ib[0] is 1.5
+ib[1] is 2.0
+try:
+    g is gather of [t, ib]
+    print of ["fraction-answer", g[0], g[1]]
+catch e:
+    print of ["index-fraction", e.kind]
+ib[0] is 1.0
+h is gather of [t, ib]
+print of [h[0], h[1], nt of h[0]]
+xs is [[1, 2], [3, 4]]
+k is gather of [xs, [1, 0]]
+print of [k, nt of k[0]]
+try:
+    print of ["fraction-answer", gather of [xs, [0.5, 0]]]
+catch e:
+    print of ["list-index-fraction", e.kind]

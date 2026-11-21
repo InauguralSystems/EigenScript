@@ -1,0 +1,8 @@
+# ROW: N11.sqrt-neg-nan
+# ITEMS: N11
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+x is sqrt of -1
+print of [x == x, num_type of x]

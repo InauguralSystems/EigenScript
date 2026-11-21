@@ -1,0 +1,22 @@
+# R1.6 behaviour-table probe: send (int-requiring; channel handle ids); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+c is channel of null
+id is c["_channel_id"]
+gen is c["_channel_gen"]
+try:
+    send of [{"_channel_id": id + 0.5, "_channel_gen": gen}, 1]
+    print of "id fraction accepted"
+catch e:
+    print of ["id-fraction", e.kind]
+try:
+    send of [{"_channel_id": id, "_channel_gen": gen + 0.5}, 2]
+    print of "gen fraction accepted"
+catch e:
+    print of ["gen-fraction", e.kind]
+send of [{"_channel_id": id + 0.0, "_channel_gen": gen + 0.0}, 7]
+v is recv of c
+print of [v, nt of v]

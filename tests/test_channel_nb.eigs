@@ -118,40 +118,43 @@ if err != null:
 else:
     print of "MISMATCH 12a: expected error for non-number ms"
 
-# 13. Issue #151 — huge ms above LONG_MAX must not invoke UB in the
-#     (long) cast. With a value already buffered, the call returns at
-#     once instead of computing a garbage deadline (which used to fire
-#     immediately as a spurious timeout, or wait essentially forever).
+# 13. N5/Q7 (#1758 R1.6c): an unrepresentable duration raises before
+# consuming a queued value; no cast or silent one-year cap.
 ch_big is channel of null
 send of [ch_big, 11]
 t0 is monotonic_ms of null
-v is recv_timeout of [ch_big, 1e30]
+err is null
+try:
+    v is recv_timeout of [ch_big, 1e30]
+catch e:
+    err is e.kind
 elapsed is monotonic_ms of null - t0
-check of ["13a", v, 11]
-check of ["13b", elapsed < 100, true]
+check of ["13a N5/Q7 magnitude", err, "value"]
+check of ["13b refusal preserves queue", try_recv of ch_big, 11]
 
-# 14. Same with an even larger value that saturates the runtime's double
-#     range — still must not overflow the long cast or the deadline.
+# 14. The larger finite value also raises before the receive effect.
 ch_huge is channel of null
 send of [ch_huge, 22]
 t0 is monotonic_ms of null
-v is recv_timeout of [ch_huge, 1e308]
+err is null
+try:
+    v is recv_timeout of [ch_huge, 1e308]
+catch e:
+    err is e.kind
 elapsed is monotonic_ms of null - t0
-check of ["14a", v, 22]
-check of ["14b", elapsed < 100, true]
+check of ["14a N5/Q7 magnitude", err, "value"]
+check of ["14b refusal preserves queue", try_recv of ch_huge, 22]
 
-# 15. Empty channel + huge ms must use the clamped ceiling. We bound
-#     the elapsed time to prove the deadline didn't degenerate to "wait
-#     forever" — the wait runs in its own thread that we kill via close.
+# 15. Empty channel + huge duration refuses without waiting (Q7).
 ch_giant is channel of null
-define giant_closer() as:
-    usleep of 30000
-    close_channel of ch_giant
-spawn of giant_closer
 t0 is monotonic_ms of null
-v is recv_timeout of [ch_giant, 1e30]
+err is null
+try:
+    v is recv_timeout of [ch_giant, 1e30]
+catch e:
+    err is e.kind
 elapsed is monotonic_ms of null - t0
-check of ["15a", v, null]
+check of ["15a N5/Q7 magnitude", err, "value"]
 check of ["15b", elapsed < 500, true]
 
 if passed == checks:

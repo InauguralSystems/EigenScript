@@ -1,0 +1,12 @@
+x is 10000000000000000
+print of [converged of x, stable of x, improving of x, oscillating of x, diverging of x, equilibrium of x]
+print of (report of x)
+print of (report_value of x)
+print of (observe of x)
+print of (where is x)
+print of (why is x)
+print of (how is x)
+t is trajectory of x
+print of t
+print of (classify of t)
+print of (classify of [t, "value"])

@@ -2071,7 +2071,8 @@ rm -f "$TMPFILE"
 
 # Runtime proof that the rule is about a real verdict, not style: the same
 # program answers `oscillating` for the DECAYING entity through the shared
-# binding and `improving` through a named one.
+# binding and `moving` through a named one. The named binding starts at 0.0,
+# so its positive decay never beats D2's history-wide running minimum.
 TMPFILE=$(mktemp /tmp/lint_test_XXXXXX.eigs)
 cat > "$TMPFILE" << 'EIGS'
 fleet is [["a", 0, 100.0], ["b", 0, 1.0]]
@@ -2092,7 +2093,7 @@ print of ("named " + (report_value of qa))
 EIGS
 RUN=$($EIGS "$TMPFILE" 2>&1 || true)
 check_contains "#1048 shared binding manufactures 'oscillating' for a decaying entity" "$RUN" "^shared oscillating$"
-check_contains "#1048 named binding answers 'improving' for the same entity" "$RUN" "^named improving$"
+check_contains "#1048 named binding answers 'moving' above its initial minimum" "$RUN" "^named moving$"
 rm -f "$TMPFILE"
 
 # The closure-per-entity recipe is EXTRACTED from docs/PREDICATES.md, not
@@ -2123,9 +2124,9 @@ check_contains "#1048 PREDICATES.md closure recipe extracts (non-vacuous)" "$(ca
 check_contains "#1048 PREDICATES.md closure recipe extracts the whole block" "$(cat "$TMPFILE")" "print of (a + \" \" + b)"
 # Pin the paired output block rather than an unchecked value comment in the
 # executable source. This is the documentation gate's checked-value form.
-check_contains "#1048 PREDICATES.md paired output states the recipe's output" "$(cat "$OUTFILE")" "^improving oscillating$"
+check_contains "#1048 PREDICATES.md paired output states the recipe's output" "$(cat "$OUTFILE")" "^moving oscillating$"
 RUN=$($EIGS "$TMPFILE" 2>&1 || true)
-check_contains "#1048 PREDICATES.md closure recipe prints one verdict per entity" "$RUN" "^improving oscillating$"
+check_contains "#1048 PREDICATES.md closure recipe prints one verdict per entity" "$RUN" "^moving oscillating$"
 OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_not_contains "#1048 PREDICATES.md closure recipe lints clean" "$OUTPUT" "W024"
 rm -f "$TMPFILE" "$OUTFILE"
@@ -2365,6 +2366,7 @@ define f as:
 f of []
 EIGS
 RUN=$($EIGS "$TMPFILE" 2>&1 || true)
+# S9-K1 (#1758): assignment counts retain their values as exact ints.
 check_contains "#1048 module-level for-body local is fresh per iteration (when=1)" "$RUN" "^module when=1$"
 check_contains "#1048 function for-body local persists across iterations (when=30)" "$RUN" "^function when=30$"
 rm -f "$TMPFILE"
@@ -2654,6 +2656,40 @@ OUTPUT=$($EIGS --lint "$TMPFILE" 2>&1 || true)
 check_contains "#1251 W016 names the bare predicate's own line" "$OUTPUT" ":3: warning\[W016\]"
 check_contains "#1251 W019 names the interrogative's own line" "$OUTPUT" ":6: warning\[W019\]: 'what is"
 check_contains "#1251 W019 names 'prev of's own line" "$OUTPUT" ":8: warning\[W019\]: interrogative 'prev of"
+rm -f "$TMPFILE"
+
+# #1758 N4/Q6: lint uses the same parser; retain diagnostics for the new tokens.
+TMPFILE=$(mktemp /tmp/eigs_floor_lint_XXXXXX.eigs)
+printf 'x is -7 // 2\nx //= 2\nprint of x\n' > "$TMPFILE"
+FLOOR_LINT_RC=0
+OUTPUT=$("$EIGS" --lint "$TMPFILE" 2>&1) || FLOOR_LINT_RC=$?
+check_status "// and //= lint clean" "$FLOOR_LINT_RC" 0
+printf 'x is // 2\n' > "$TMPFILE"
+OUTPUT=$("$EIGS" --lint "$TMPFILE" 2>&1) || true
+check_contains "unexpected // diagnostic names the token" "$OUTPUT" "unexpected '//'"
+rm -f "$TMPFILE"
+
+# #1758 R1.8: the lint walkers treat both numeric kinds as literal leaves.
+# Preserve clean numeric code and the existing W017 answer for each kind;
+# there is no numeric type-inference rule to add or a type system to invent.
+TMPFILE=$(mktemp /tmp/eigs_numeric_lint_XXXXXX.eigs)
+cat > "$TMPFILE" << 'EIGS'
+whole is 9007199254740993
+fraction is 1.5
+integral is 3.0
+outside is 9223372036854775808
+wrapped is 0xffffffffffffffff
+print of [whole, fraction, integral, outside, wrapped]
+EIGS
+NUMERIC_LINT_RC=0
+OUTPUT=$("$EIGS" --lint "$TMPFILE" 2>&1) || NUMERIC_LINT_RC=$?
+check_status "int and float literal leaves lint clean" "$NUMERIC_LINT_RC" 0
+check_contains "int and float literal leaves report no issues" "$OUTPUT" "no issues found"
+for LITERAL in 9007199254740993 3.0 1.5 9223372036854775808 0xffffffffffffffff; do
+    printf 'print of [%s]\n' "$LITERAL" > "$TMPFILE"
+    OUTPUT=$("$EIGS" --lint "$TMPFILE" 2>&1) || true
+    check_contains "W017 retains its answer for $LITERAL" "$OUTPUT" "W017.*passes one argument"
+done
 rm -f "$TMPFILE"
 
 # --- #1121 ledger: no child of this file may have tripped a sanitizer ---

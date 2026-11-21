@@ -1,0 +1,1 @@
+- Make the freestanding RNG gate reject missing tracked files and preserve non-ASCII paths (#2413).

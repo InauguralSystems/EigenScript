@@ -1,0 +1,7 @@
+# ROW: ctl.N6.small-ints
+# ITEMS: N6
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [1, 2, 3, -4, 100000]

@@ -1,0 +1,8 @@
+# R1.6 behaviour-table probe: audio_gain (float-producing; float samples)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+g is audio_gain of [[1, -0.5, 0.25], 2]
+print of [g, nt of g[2]]

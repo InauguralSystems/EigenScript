@@ -1,0 +1,12 @@
+# Translation units whose signature comments feed lsp_builtin_index.h.
+src/builtins.c
+src/builtins_int.c
+src/builtins_buf.c
+src/builtins_host.c
+src/builtins_tensor.c
+src/hash.c
+src/ext_store.c
+src/ext_gfx.c
+src/ext_http.c
+src/ext_db.c
+src/ext_net.c

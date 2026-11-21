@@ -1,1 +1,4 @@
+# tests/replay_diff_expected.txt -- the programs whose record-vs-replay output
+# diverges reproducibly (tools/replay_diff.sh). A ledger to work down: a row
+# is a fidelity hole, with its issue on the line above it.
 test_store_corruption.eigs

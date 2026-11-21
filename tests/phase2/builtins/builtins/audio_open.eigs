@@ -1,0 +1,17 @@
+# R1.6 behaviour-table probe: audio_open (int-requiring; freq and channels are counts: N5, then the C int range (Q1); returns a device id); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    print of ["fraction-answer", audio_open of [44100.5, 1]]
+catch e:
+    print of ["freq-fraction", e.kind]
+try:
+    print of ["fraction-answer", audio_open of [44100, 1.5]]
+catch e:
+    print of ["channels-fraction", e.kind]
+d is audio_open of [44100.0, 1.0]
+print of [d >= 2, nt of d]
+audio_close of null

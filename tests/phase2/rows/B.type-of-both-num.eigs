@@ -1,0 +1,7 @@
+# ROW: B.type-of-both-num
+# ITEMS: B
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [type of 3, type of 3.0, (type of 3) == (type of 3.0), num_type of 3]

@@ -1,0 +1,10 @@
+# ROW: N1.leaf-dot-get
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: L
+# WITNESS: leaf px
+# OPS: LOCAL_DOT_GET
+define px(p) as:
+    return p.x
+d is {"x": 9007199254740993}
+print of (px of d)

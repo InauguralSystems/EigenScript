@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: cos (float-producing; Lua math.cos)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is cos of 0
+print of [a, nt of a]
+b is cos of 1
+print of [b, nt of b]

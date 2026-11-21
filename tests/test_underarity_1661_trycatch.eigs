@@ -1,19 +1,22 @@
 # #1661: the try/catch variant — the same under-arity recursion inside a
 # try, then a raise and catch. The stale slot read was freed again on the
 # way out (release: "free(): double free detected in tcache 2").
-n is {"d": 0}
+# g writes FLOAT literals so the JIT compiles it: the JIT refuses int code
+# until R5 (docs/design/phase2-numbers.md section 3). Its int twin returns
+# at R5 (round plan, Round 5 obligations).
+n is {"d": 0.0}
 define g(A, Q) as:
-    if Q == 1:
-        return 0
-    n.d is n.d + 1
-    if n.d > 3000:
+    if Q == 1.0:
+        return 0.0
+    n.d is n.d + 1.0
+    if n.d > 3000.0:
         throw of "deep"
     local args is [A]
     return g of (args)
 
 caught is 0
 for round in [1, 2, 3]:
-    n.d is 0
+    n.d is 0.0
     try:
         g of ([1])
     catch err:

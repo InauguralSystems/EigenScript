@@ -1,0 +1,9 @@
+# ROW: N1.negative-past-int64-is-float
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+x is -9223372036854775809
+print of [x == -9223372036854775807 - 1, num_type of x]
+print of -9223372036854775809

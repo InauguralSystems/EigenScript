@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: index_of (int-preserving; byte index or -1)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is index_of of ["hello", "l"]
+print of [a, nt of a]
+b is index_of of ["hello", "z"]
+print of [b, nt of b]

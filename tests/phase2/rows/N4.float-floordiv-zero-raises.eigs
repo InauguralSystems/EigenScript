@@ -1,0 +1,11 @@
+# ROW: N4.float-floordiv-zero-raises
+# ITEMS: N4
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+for pair in [[1.0, 0], [0.0, 0.0], [7, 0.0], [1.0, -0.0]]:
+    try:
+        print of (pair[0] // pair[1])
+    catch e:
+        print of [e.kind, e.message]

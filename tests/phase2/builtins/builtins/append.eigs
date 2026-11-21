@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: append (other; appends any value)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+xs is [1]
+append of [xs, 9007199254740993]
+append of [xs, 2.5]
+print of [xs, nt of xs[1], nt of xs[2]]

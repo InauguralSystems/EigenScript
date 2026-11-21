@@ -13,7 +13,7 @@
 #   detect_regimes of values
 #
 # These tools use the observer to analyze experimental data:
-# entropy spikes reveal anomalies, trajectory classification
+# routed displacement spikes reveal anomalies, trajectory classification
 # identifies behavioral regimes, and convergence detection
 # determines when measurements have stabilized.
 #
@@ -27,6 +27,8 @@
 # cannot change a verdict), the only seed that is never sampled is a
 # non-numeric one: `null` (and booleans) are skipped by the observe ops.
 
+# R3.1: compatibility keys entropy/dH mean routed where/why: numeric
+# value/displacement (first displacement null), nonnumeric entropy/dH.
 # ---- track_measurements: annotate each measurement with observer state ----
 define track_measurements(values) as:
     tracker is null         # a declaration, never sampled — see the note above
@@ -60,7 +62,7 @@ define is_measurement_stable(values, min_stable_count) as:
 
     return stable_count >= min_stable_count
 
-# ---- detect_entropy_spikes: find anomalies via entropy derivative ----
+# ---- detect_entropy_spikes: compatibility name for routed-step outliers ----
 define detect_entropy_spikes(values, threshold) as:
     tracker is null         # a declaration, never sampled — see the note above
     spikes is []
@@ -69,7 +71,7 @@ define detect_entropy_spikes(values, threshold) as:
         tracker is values[i]
         obs is observe of tracker
         dH is obs[2]
-        if dH > threshold or dH < (0 - threshold):
+        if dH != null and (dH > threshold or dH < (0 - threshold)):
             append of [spikes, {"index": i, "value": values[i], "dH": dH}]
 
     return spikes
@@ -89,13 +91,18 @@ define convergence_rate(values) as:
     if start >= n:
         start is 0
     dH_total is 0
-    count is n - start
-    for i in range of count:
+    local sample_count is 0
+    for i in range of (n - start):
         d is dH_values[start + i]
-        if d < 0:
-            d is 0 - d
-        dH_total is dH_total + d
-    avg_dH is dH_total / count
+        if d != null:
+            if d < 0:
+                d is 0 - d
+            dH_total is dH_total + d
+            sample_count is sample_count + 1
+    # No step is not a zero step: do not manufacture a convergence rate.
+    if sample_count == 0:
+        return {"average_dH": null, "final_status": report of tracker, "is_converging": false}
+    avg_dH is dH_total / sample_count
 
     return {"average_dH": avg_dH, "final_status": report of tracker, "is_converging": avg_dH < 0.01}
 

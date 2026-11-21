@@ -1,0 +1,13 @@
+# R1.6 behaviour-table probe: text_builder_append (other; formats via value_to_string (N6))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+tb is text_builder_new of null
+text_builder_append of [tb, 9007199254740993]
+text_builder_append of [tb, "|"]
+text_builder_append of [tb, 2.5]
+text_builder_append of [tb, "|"]
+text_builder_append of [tb, 3.0]
+print of (text_builder_to_string of tb)

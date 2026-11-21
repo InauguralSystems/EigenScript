@@ -1,0 +1,9 @@
+# ROW: N3.leaf-mul-exact
+# ITEMS: N3
+# EXPECT-RC: 0
+# SHAPE: L
+# WITNESS: leaf-gen sq
+# OPS: MUL
+define sq(x) as:
+    return x * x
+print of (sq of 94906267)

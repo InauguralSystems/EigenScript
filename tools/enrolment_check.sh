@@ -16,6 +16,21 @@
 # program operand of an "$EIGS"/eigenscript run; a glob in a differential is
 # not invocation enrolment.
 #
+# The same scan enrols tools/ (mechanical-gates section 151, #1758 R1.3: Phase
+# 2's two gate tools had run only on builders' machines). Every top-level
+# tools/*.sh and tools/*.py is an entry point, and so is each tools/<dir>/
+# package holding a script, by the directory listing, never a hand-kept list.
+# Each must be reached from a .github/workflows/*.yml step through invocations
+# (the suite, a top-level tests/, tools/ or bench/ shell script, a script beside it
+# called as "$(dirname "$0")/x"), Make recipe dependencies, and Python imports
+# or execution calls, or be listed in the same exemptions file as local-only
+# with its reason. A package counts as reached when CI runs any of its
+# scripts. Static local uses: ./... steps also reach composite action manifests
+# (action.yml or action.yaml), including nested local actions. Action manifests
+# are graph sources, never roots: an unused action cannot enrol a tool.
+# bench/*.sh also provide graph edges when reached; they are not new
+# enrollment candidates (the candidate population remains tests/ and tools/).
+#
 # Usage: tools/enrolment_check.sh [--selftest]    exit 0 pass, 1 fail, 2 no instrument
 # ENROL_ROOT overrides the repository root (the selftest points it at a copy).
 set -u
@@ -30,7 +45,8 @@ if [ "${1:-}" = "--selftest" ]; then
     mkdir -p "$ST/tests/sections" "$ST/tools" "$ST/.github" "$ST/bench"
     cp tests/*.sh tests/*.py "$EXEMPT" "$ST/tests/" && cp tests/sections/*.sh "$ST/tests/sections/" \
         && cp tools/*.sh tools/*.py tools/selftests.txt "$ST/tools/" && cp -R .github/. "$ST/.github/" \
-        && cp Makefile "$ST/"
+        && cp Makefile "$ST/" && cp -R bench/. "$ST/bench/"
+    for d in tools/*/; do cp -R "${d%/}" "$ST/tools/"; done
     cp tests/*.eigs "$ST/tests/"
     (cd "$ST" && git init -q && git add .)
     # #2060 is not present on every base branch; keep that known integration
@@ -46,6 +62,10 @@ if [ "${1:-}" = "--selftest" ]; then
         else echo "  SELFTEST FAIL: $1 (rc=$rc, want $2 + '$3')"; printf '%s\n' "$out" | sed 's/^/      /'; bad=1; fi
     }
     case_ "control: the unmodified tree passes" 0 "PASS: test-enrolment"
+    cp "$ST/tools/enrolment_edges.py" "$ST/tools/enrolment_edges.py.good"
+    printf 'raise SystemExit(7)\n' > "$ST/tools/enrolment_edges.py"
+    case_ "a failed edge extractor aborts instead of passing an empty graph" 2 "edge derivation failed"
+    mv "$ST/tools/enrolment_edges.py.good" "$ST/tools/enrolment_edges.py"
     # A linked checkout has a .git file, not a directory.  It must be exactly
     # as acceptable to the population derivation as the primary checkout.
     (cd "$ST" && git -c user.name=selftest -c user.email=selftest@example.invalid commit -qm control)
@@ -65,6 +85,33 @@ if [ "${1:-}" = "--selftest" ]; then
     else
         echo "  SELFTEST FAIL: non-repository directory was not aborted (rc=$nonrepo_rc)"; bad=1
     fi
+    mkdir -p "$ST/.github/actions/zz_enrol_leaf" "$ST/.github/actions/zz_enrol_parent"
+    printf 'raise SystemExit(0)\n' > "$ST/tools/zz_plant_gate.py"
+    # Keep fixture commands in printf arguments: literal run: lines in this
+    # shell source would themselves be scanned as invocations.
+    printf '%s\n' 'name: planted leaf' 'runs:' '  using: composite' '  steps:' \
+        '    - shell: bash' '      run: python3 "$GITHUB_WORKSPACE/tools/zz_plant_gate.py"' \
+        > "$ST/.github/actions/zz_enrol_leaf/action.yaml"
+    printf '%s\n' 'name: planted parent' 'runs:' '  using: composite' '  steps:' \
+        '  - uses: ./.github/actions/zz_enrol_leaf' \
+        > "$ST/.github/actions/zz_enrol_parent/action.yml"
+    printf '%s\n' 'name: planted workflow' 'on: push' 'jobs:' '  plant:' \
+        '    runs-on: ubuntu-latest' '    steps:' \
+        '      - uses: "./.github/actions/zz_enrol_parent"' \
+        > "$ST/.github/workflows/zz_enrol.yaml"
+    case_ "control: workflow and nested local actions reach their helpers" 0 "PASS: test-enrolment"
+    # A bench script is an intermediate edge, never a root by itself.
+    printf 'raise SystemExit(0)\n' > "$ST/tools/zz_bench_gate.py"
+    printf '%s\n' '#!/bin/bash' 'python3 "$(dirname "$0")/../tools/zz_bench_gate.py"' \
+        > "$ST/bench/zz_enrol.sh"
+    printf '%s\n' 'name: planted bench workflow' 'on: push' 'jobs:' '  bench:' \
+        '    runs-on: ubuntu-latest' '    steps:' \
+        '      - run: bash bench/zz_enrol.sh' \
+        > "$ST/.github/workflows/zz_enrol_bench.yaml"
+    case_ "workflow reaches a helper through its bench script" 0 "PASS: test-enrolment"
+    rm "$ST/.github/workflows/zz_enrol_bench.yaml"
+    case_ "an orphan bench script cannot enrol its helper" 1 "tools/zz_bench_gate.py is invoked by nothing"
+    rm "$ST/bench/zz_enrol.sh" "$ST/tools/zz_bench_gate.py"
     printf '#!/bin/bash\necho "PASS: x"\n' > "$ST/tests/test_zz_plant.sh"
     case_ "an uninvoked tests/test_zz_plant.sh is red and named" 1 "tests/test_zz_plant.sh is invoked by nothing"
     rm "$ST/tests/test_zz_plant.sh"
@@ -75,6 +122,31 @@ if [ "${1:-}" = "--selftest" ]; then
     rm "$ST/tests/test_clean.sh"
     echo 'tests/test_cli.sh | planted: test_cli.sh IS invoked' >> "$ST/$EXEMPT"
     case_ "an exemption for an invoked script is stale: red" 1 "exempts tests/test_cli.sh, which IS invoked"
+    sed -i.bak '$d' "$ST/$EXEMPT" && rm -f "$ST/$EXEMPT.bak"
+    printf '#!/bin/bash\nexit 1\n' > "$ST/tools/zz_plant_gate.sh"
+    mkdir -p "$ST/.github/actions/zz_enrol_orphan"
+    printf '%s\n' 'name: planted orphan' 'runs:' '  using: composite' '  steps:' \
+        '    - shell: bash' '      run: bash tools/zz_plant_gate.sh' \
+        > "$ST/.github/actions/zz_enrol_orphan/action.yml"
+    printf '%s\n' '      - run: true' '        env:' \
+        '          uses: ./.github/actions/zz_enrol_orphan' \
+        '      - run: |' '          cat <<TEXT' '          steps:' \
+        '            - uses: ./.github/actions/zz_enrol_orphan' '          TEXT' \
+        >> "$ST/.github/workflows/zz_enrol.yaml"
+    # A scalar before any real steps makes scalar suppression independent of
+    # the active-steps filter: dropping either guard must expose this orphan.
+    printf '%s\n' 'name: |' '  steps:' \
+        '    - uses: ./.github/actions/zz_enrol_orphan' 'on: push' 'jobs:' \
+        '  noop:' '    runs-on: ubuntu-latest' '    steps:' '      - run: true' \
+        > "$ST/.github/workflows/zz_enrol_scalar.yml"
+    case_ "env and scalar text do not invoke an orphan action" 1 "tools/zz_plant_gate.sh is invoked by nothing"
+    rm "$ST/tools/zz_plant_gate.sh"
+    sed -i.bak 's#uses: "./.github/actions/zz_enrol_parent"#run: true#' "$ST/.github/workflows/zz_enrol.yaml"
+    rm -f "$ST/.github/workflows/zz_enrol.yaml.bak"
+    case_ "removing workflow uses leaves tools/zz_plant_gate.py unenrolled" 1 "tools/zz_plant_gate.py is invoked by nothing"
+    rm "$ST/tools/zz_plant_gate.py"; mkdir "$ST/tools/zz_pkg"; printf 'raise SystemExit(1)\n' > "$ST/tools/zz_pkg/gate.py"
+    case_ "an uninvoked package tools/zz_pkg/ is red and named" 1 "tools/zz_pkg is invoked by nothing"
+    rm -rf "$ST/tools/zz_pkg"
     sed -i.bak '/tests\/test_cli.sh | planted/d' "$ST/$EXEMPT" && rm "$ST/$EXEMPT.bak"
     printf 'test_summary of null\n' > "$ST/tests/test_zz_asserting.eigs"
     (cd "$ST" && git add tests/test_zz_asserting.eigs)
@@ -104,11 +176,14 @@ fi
 
 [ -f tests/run_all_tests.sh ] || { echo "test-enrolment: ABORTED: no tests/run_all_tests.sh"; exit 2; }
 EDGES=$(mktemp "${TMPDIR:-/tmp}/eigs_enrol.XXXXXX") || exit 2
-trap 'rm -f "$EDGES"' EXIT
-# Derive the graph before taking its transitive closure.  Keeping extraction
-# separate makes every supported edge independently observable in self-tests.
-python3 tools/enrolment_edges.py . | sort -u > "$EDGES" || {
+trap 'rm -f "$EDGES" "$EDGES.raw"' EXIT
+# Derive the graph before taking its transitive closure. Keep the extractor's
+# exit status: a successful sort cannot stand in for a failed Python process.
+python3 tools/enrolment_edges.py . > "$EDGES.raw" || {
     echo "test-enrolment: ABORTED: edge derivation failed"; exit 2;
+}
+sort -u "$EDGES.raw" > "$EDGES" || {
+    echo "test-enrolment: ABORTED: edge sorting failed"; exit 2;
 }
 # Commands in the self-test table are reachable through its driver.
 awk -F '[|]' '$0 !~ /^#/ {
@@ -118,7 +193,7 @@ awk -F '[|]' '$0 !~ /^#/ {
 REACHED=$(awk -F'\t' '{ adj[$1] = adj[$1] " " $2 }
     END { q[1] = "tests/run_all_tests.sh"; n = 1
           for (f in adj) if (f ~ /^tests\/sections\/[^\/]+\.sh$/) q[++n] = f
-          for (f in adj) if (f ~ /^\.github\//) q[++n] = f
+          for (f in adj) if (f ~ /^\.github\/workflows\/[^\/]+\.ya?ml$/) q[++n] = f
           for (h = 1; h <= n; h++) { m = split(adj[q[h]], t, " ")
               for (j = 1; j <= m; j++) if (!(t[j] in seen)) { seen[t[j]] = 1; q[++n] = t[j]; print t[j] } } }' \
     "$EDGES") || { echo "test-enrolment: ABORTED: reachability scan failed"; exit 2; }
@@ -153,7 +228,12 @@ INSIDE_WORK_TREE=$(git -c safe.directory="$PWD" rev-parse --is-inside-work-tree 
 [ "$INSIDE_WORK_TREE" = true ] || {
     echo "test-enrolment: ABORTED: git work tree required for asserting-test population (git rev-parse said: $INSIDE_WORK_TREE; cwd: $PWD)"; exit 2;
 }
-ASSERTING=$(git -c safe.directory="$PWD" ls-files 'tests/*.eigs' | while IFS= read -r f; do
+ASSERT_FILES=$(git -c safe.directory="$PWD" ls-files 'tests/*.eigs') || {
+    echo "test-enrolment: ABORTED: asserting-test path enumeration failed"; exit 2;
+}
+# During an unresolved merge git lists one pathname per index stage. Count
+# test programs once, exactly as the same tree will be counted after staging.
+ASSERTING=$(printf '%s\n' "$ASSERT_FILES" | sort -u | while IFS= read -r f; do
     grep -q 'test_summary of' "$f" && printf '%s\n' "$f"
 done)
 assert_total=0; assert_ok=0; assert_ex=0

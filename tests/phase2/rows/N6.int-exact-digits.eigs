@@ -1,0 +1,7 @@
+# ROW: N6.int-exact-digits
+# ITEMS: N6
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [9007199254740993, -9223372036854775807 - 1]

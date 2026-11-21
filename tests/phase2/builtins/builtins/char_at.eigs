@@ -1,0 +1,12 @@
+# R1.6 behaviour-table probe: char_at (int-requiring; string position (Lua string.sub)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of (char_at of ["hello", 1])
+try:
+    print of ["fraction-answer", char_at of ["hello", 1.5]]
+catch e:
+    print of ["index-fraction", e.kind]
+print of [char_at of ["hello", 1.0], char_at of ["hello", -1.0]]

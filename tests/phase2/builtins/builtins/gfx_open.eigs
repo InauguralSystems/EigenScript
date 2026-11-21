@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: gfx_open (other, Q7 magnitude; window sizes round, a size the C int cannot hold raises); phase2-exercises: {"q7":["magnitude"]}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    print of ["huge-size-answer", gfx_open of [3e9, 48, "r16"]]
+catch e:
+    print of ["size-magnitude", e.kind]
+ok is gfx_open of [64.4, 47.6, "r16"]
+print of ["open", ok]
+gfx_clear of [0, 0, 0]
+gfx_rect of [0, 0, 64, 48, 0, 255, 0]
+print of [gfx_read of [63, 47], gfx_read of [0, 0]]
+gfx_close of null

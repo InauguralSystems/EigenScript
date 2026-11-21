@@ -1,0 +1,1 @@
+- Restrict documented make-target claims to inline code and fenced code blocks (#2393).

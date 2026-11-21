@@ -1,0 +1,7 @@
+# ROW: N12.nan-canonical-bits
+# ITEMS: N12
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+print of (f64_bits of (0.0 / 0))

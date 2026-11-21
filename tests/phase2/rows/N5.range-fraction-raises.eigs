@@ -1,0 +1,10 @@
+# ROW: N5.range-fraction-raises
+# ITEMS: N5
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+try:
+    print of (range of 2.5)
+catch e:
+    print of e.kind

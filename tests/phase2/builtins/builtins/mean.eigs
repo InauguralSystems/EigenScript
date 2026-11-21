@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: mean (float-producing; arithmetic mean)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is mean of [1, 2]
+print of [a, nt of a]
+b is mean of [2, 4]
+print of [b, nt of b]

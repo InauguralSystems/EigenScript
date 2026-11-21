@@ -36,7 +36,7 @@ LDFLAGS := -pie -Wl,-z,relro,-z,now -lm -lpthread
 endif
 
 SRC_DIR := src
-SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_buf.c $(SRC_DIR)/builtins_host.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/fsutil.c $(SRC_DIR)/hash.c $(SRC_DIR)/alloc.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/lint_host.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/task.c $(SRC_DIR)/jit.c $(SRC_DIR)/jit_checked.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c $(SRC_DIR)/main.c
+SOURCES := $(SRC_DIR)/eigenscript.c $(SRC_DIR)/lexer.c $(SRC_DIR)/parser.c $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_int.c $(SRC_DIR)/builtins_buf.c $(SRC_DIR)/builtins_host.c $(SRC_DIR)/builtins_tensor.c $(SRC_DIR)/fsutil.c $(SRC_DIR)/hash.c $(SRC_DIR)/alloc.c $(SRC_DIR)/state.c $(SRC_DIR)/strbuf.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/fmt.c $(SRC_DIR)/lint.c $(SRC_DIR)/lint_host.c $(SRC_DIR)/chunk.c $(SRC_DIR)/compiler.c $(SRC_DIR)/vm.c $(SRC_DIR)/task.c $(SRC_DIR)/jit.c $(SRC_DIR)/jit_checked.c $(SRC_DIR)/trace.c $(SRC_DIR)/eigs_embed.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c $(SRC_DIR)/main.c
 HOSTED_SOURCES := $(SOURCES) $(SRC_DIR)/ext_gfx.c
 BINARY  := $(SRC_DIR)/eigenscript
 
@@ -46,7 +46,11 @@ BINARY  := $(SRC_DIR)/eigenscript
 # --step tape-stepper, stdio+isatty, same footing).
 CLI_ONLY := $(SRC_DIR)/main.c $(SRC_DIR)/repl.c $(SRC_DIR)/step.c $(SRC_DIR)/tape_read.c $(SRC_DIR)/bundle.c
 
-SERVER_SOURCES := $(HOSTED_SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c
+# llhttp v9.4.4, vendored unchanged (#2370): compiled in exactly the builds that
+# compile ext_http.c. Its objects get -Wno-unused-parameter (the generated
+# parser has unused callback parameters; those files are never edited).
+LLHTTP_SOURCES := $(SRC_DIR)/vendor/llhttp/llhttp.c $(SRC_DIR)/vendor/llhttp/api.c $(SRC_DIR)/vendor/llhttp/http.c
+SERVER_SOURCES := $(HOSTED_SOURCES) $(SRC_DIR)/ext_http.c $(SRC_DIR)/ext_net.c $(LLHTTP_SOURCES)
 SERVER_DB_SOURCES := $(SERVER_SOURCES) $(SRC_DIR)/ext_db.c
 
 PREFIX  := $(HOME)/.local
@@ -96,7 +100,7 @@ define AUX_REFRESH
 	done
 endef
 
-.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent fsync-test-hooks asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx gfx-x11-regressions pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked jit-checked-plant
+.PHONY: db-params-test all build server server-db full http net gfx zlib lib amalgamation tsan test test-changed precheck sandbox-intern-test install install-gfx clean coverage coverage-clean fuzz fuzz-run lsp lsp-asan dap jit-smoke embed-smoke embed-smoke-asan embed-smoke-asan-server embed-smoke-gfx embed-concurrent asan asan-server valgrind pgo poison freestanding-check freestanding-libc-diff asan-http asan-gfx tsan-server tsan-http nativefn-test arming-mt-test embed-roads print-% sigpipe-contract-test sigpipe-partial-test ui-sdl-input-gfx gfx-x11-regressions pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked jit-checked-plant smi-trap fsync-test-hooks
 
 # ---- Per-variant objdir engine (#740) -------------------------------------
 # The engine's rules are defined before `all`, so pin the default goal.
@@ -202,12 +206,23 @@ SRC_V_jit-checked := $(HOSTED_SOURCES)
 FLAGS_jit-checked := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_JIT_CHECKED $(VERDEF)
 LIBS_jit-checked  := $(LDFLAGS) -ldl
 
-VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked
+# #1758: compatibility target for the pre-R1.3 int-source gate. R1.3 retires
+# EIGS_SMI_TRAP now that integer literals are producers; slot_as_ptr still
+# checks tags through EIGS_SLOT_CHECKED. Historical R1.1/R1.2 calibrations
+# build their pinned pre-flip source rather than treating this as a trap.
+SRC_V_smi-trap := $(HOSTED_SOURCES)
+FLAGS_smi-trap := $(CFLAGS) $(DEFS_OFF) -DEIGENSCRIPT_EXT_GFX=1 -DEIGS_SMI_TRAP -DEIGS_SLOT_CHECKED $(VERDEF)
+LIBS_smi-trap  := $(LDFLAGS) -ldl
+
+VARIANTS := release server server-db zlib asan asan-server tsan tsan-server valgrind poison pool-off asan-pool-off pool-off-num pool-off-callenv jit-checked smi-trap
 
 # Objects depend on Makefile+VERSION so a flag or version-string change
 # rebuilds; header edits are covered by the generated .d files.
 define VARIANT_RULES
 OBJ_$(1) := $$(patsubst $(SRC_DIR)/%.c,build/$(1)/%.o,$$(SRC_V_$(1)))
+build/$(1)/vendor/llhttp/%.o: $(SRC_DIR)/vendor/llhttp/%.c Makefile VERSION tools/werror_flags.txt | build/$(1)
+	@mkdir -p $$(@D)
+	$$(CC) $$(FLAGS_$(1)) -Wno-unused-parameter -MMD -MP -c $$< -o $$@
 build/$(1)/%.o: $(SRC_DIR)/%.c Makefile VERSION tools/werror_flags.txt | build/$(1)
 	$$(CC) $$(FLAGS_$(1)) -MMD -MP -c $$< -o $$@
 build/$(1)/eigenscript: $$(OBJ_$(1))
@@ -250,16 +265,77 @@ build/$(SLOT_TEST_VARIANT)/test_container_slots: tests/test_container_slots.c $(
 container-slot-test: build/$(SLOT_TEST_VARIANT)/test_container_slots
 	@echo "Container slot API test built: $<"
 
-# #1992: side-effect-free observer normalization must stay bit-identical to
-# num_guard's non-strict VALUE mapping.  Link the selected suite variant so
-# the test exercises the real thread-local flags and strict-mode state.
+# #1758 R1.1: the C slot test (docs/design/phase2-numbers.md 2.5). It includes
+# the single-file amalgamation so the static slot classifiers are reachable;
+# tests/phase2/slot_layer.sh runs it and compares the entries it examined with
+# the population tools/phase2_inventory.py derives. The release flavour turns
+# on slot_as_ptr's refusal with -DEIGS_SLOT_CHECKED; ASan turns it on itself.
+# Both carry -Wall -Wextra, and the runner fails on any warning: release
+# compiles the amalgamation at -O0 and ASan at -O1, the two levels #1775
+# found warnings at (and -O0 is about 41 s against -O2's 162 s).
+PHASE2_SLOT_VARIANT ?= release
+PHASE2_SLOT_FLAGS_release := -Wall -Wextra $(WERROR_FLAGS) -O0 -g -DEIGS_SLOT_CHECKED
+PHASE2_SLOT_FLAGS_asan := -Wall -Wextra $(ASAN_FLAGS)
+build/phase2/eigenscript_all.c: $(filter-out $(CLI_ONLY),$(SOURCES)) $(wildcard $(SRC_DIR)/*.h) tools/amalgamate.sh Makefile
+	bash tools/amalgamate.sh build/phase2
+build/phase2/slot_layer_%: tests/phase2/slot_layer.c build/phase2/eigenscript_all.c tools/werror_flags.txt
+	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread
+.PHONY: phase2-slot-test
+phase2-slot-test: build/phase2/slot_layer_$(PHASE2_SLOT_VARIANT)
+	@echo "phase2 slot test built: $<"
+
+# #1758 R1.6a: final reader C fixture, through the no-SDL amalgamation.
+PHASE2_READERS_VARIANT ?= release
+PHASE2_READERS_FIXTURE ?= readers
+build/phase2/readers_%: tests/phase2/readers.c build/phase2/eigenscript_all.c tools/werror_flags.txt
+	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread
+# R1.6d-D1: raw stored payloads through the actual graphics/audio readers.
+build/phase2/gfx_audio_boundary_%: tests/phase2/gfx_audio_boundary.c src/ext_gfx.c build/phase2/eigenscript_all.c tools/werror_flags.txt
+	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread -ldl
+build/phase2/gfx_byte_boundary_%: tests/phase2/gfx_byte_boundary.c src/ext_gfx.c build/phase2/eigenscript_all.c tools/werror_flags.txt
+	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread -ldl
+# R1.6z-D1 public getter bit-round-trip gate; compile outside timed MAP rows.
+build/phase2/embed_buffer_get_raw_%: tests/phase2/embed_buffer_get_raw.c build/phase2/eigenscript_all.c tools/werror_flags.txt
+	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread
+# Q7 lands in R1.6e; an absent source is a build failure once selected.
+build/phase2/q7_readers_%: tests/phase2/q7_readers.c build/phase2/eigenscript_all.c tools/werror_flags.txt
+	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread
+# N6: actual shared writer plus Python repr/bit/truncation oracle cases.
+build/phase2/num_text_%: tests/phase2/num_text.c build/phase2/eigenscript_all.c tools/werror_flags.txt
+	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread
+# R1.7-D4: signed-zero constant keys are compared by bits.
+build/phase2/const_dedup_bits_%: tests/phase2/const_dedup_bits.c build/phase2/eigenscript_all.c tools/werror_flags.txt
+	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread
+.PHONY: phase2-readers-test
+phase2-readers-test: build/phase2/$(PHASE2_READERS_FIXTURE)_$(PHASE2_READERS_VARIANT)
+	@echo "phase2 reader test built: $<"
+# R2.2: non-clamping IEEE results, sticky math status and opt-in strict
+# arithmetic use the real embed VM. Keep the historical target for suite
+# variants; link their actual runtime/thread state, not duplicated helpers.
 NUM_GUARD_VALUE_VARIANT ?= release
 NUM_GUARD_VALUE_OBJ := $(filter-out build/$(NUM_GUARD_VALUE_VARIANT)/main.o,$(OBJ_$(NUM_GUARD_VALUE_VARIANT)))
 build/$(NUM_GUARD_VALUE_VARIANT)/test_num_guard_value: tests/test_num_guard_value.c $(NUM_GUARD_VALUE_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
 	$(CC) $(FLAGS_$(NUM_GUARD_VALUE_VARIANT)) -I$(SRC_DIR) -o $@ $< $(NUM_GUARD_VALUE_OBJ) $(LIBS_$(NUM_GUARD_VALUE_VARIANT))
 .PHONY: num-guard-value-test
 num-guard-value-test: build/$(NUM_GUARD_VALUE_VARIANT)/test_num_guard_value
-	@echo "num_guard_value mapping test built: $<"
+	@echo "IEEE result/status test built: $<"
+
+EMBED_STRICT_VARIANT ?= release
+EMBED_STRICT_OBJ := $(filter-out build/$(EMBED_STRICT_VARIANT)/main.o,$(OBJ_$(EMBED_STRICT_VARIANT)))
+build/$(EMBED_STRICT_VARIANT)/test_embed_strict_calls: tests/test_embed_strict_calls.c $(EMBED_STRICT_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(EMBED_STRICT_VARIANT)) -I$(SRC_DIR) -o $@ $< $(EMBED_STRICT_OBJ) $(LIBS_$(EMBED_STRICT_VARIANT))
+.PHONY: embed-strict-calls-test
+embed-strict-calls-test: build/$(EMBED_STRICT_VARIANT)/test_embed_strict_calls
+	@echo "embed strict calls test built: $<"
+
+# R23-1: encoder failure-return is observable below the public VM error.
+WRITER_JSON_VARIANT ?= release
+WRITER_JSON_OBJ := $(filter-out build/$(WRITER_JSON_VARIANT)/main.o,$(OBJ_$(WRITER_JSON_VARIANT)))
+build/$(WRITER_JSON_VARIANT)/test_writer_json: tests/phase2/writer_json.c $(WRITER_JSON_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(WRITER_JSON_VARIANT)) -I$(SRC_DIR) -o $@ $< $(WRITER_JSON_OBJ) $(LIBS_$(WRITER_JSON_VARIANT))
+.PHONY: writer-json-test
+writer-json-test: build/$(WRITER_JSON_VARIANT)/test_writer_json
+	@echo "JSON writer failure test built: $<"
 
 # Focused lifetime regression for sandbox descriptor interns (#964). Link the
 # public embedding/runtime surface without CLI-only translation units so the
@@ -339,6 +415,14 @@ sigpipe-partial-test: build/$(SIGPIPE_VARIANT)/test_sigpipe_partial
 	@echo "SIGPIPE partial test built: $<"
 
 # #1038/#1028: same runtime variant as the suite; never repoint the CLI alias.
+EMBED_NAN_VARIANT ?= release
+EMBED_NAN_OBJ := $(filter-out build/$(EMBED_NAN_VARIANT)/main.o,$(OBJ_$(EMBED_NAN_VARIANT)))
+build/$(EMBED_NAN_VARIANT)/test_embed_nan: tests/phase2/embed_nan.c $(EMBED_NAN_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(EMBED_NAN_VARIANT)) -I$(SRC_DIR) -o $@ $< $(EMBED_NAN_OBJ) $(LIBS_$(EMBED_NAN_VARIANT))
+.PHONY: embed-nan-test
+embed-nan-test: build/$(EMBED_NAN_VARIANT)/test_embed_nan
+	build/$(EMBED_NAN_VARIANT)/test_embed_nan
+
 EMBED_OBSERVER_VARIANT ?= release
 EMBED_OBSERVER_OBJ := $(filter-out build/$(EMBED_OBSERVER_VARIANT)/main.o,$(OBJ_$(EMBED_OBSERVER_VARIANT)))
 build/$(EMBED_OBSERVER_VARIANT)/test_embed_observer: tests/test_embed_observer.c $(EMBED_OBSERVER_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
@@ -356,6 +440,15 @@ build/$(EMBED_MULTIATTACH_VARIANT)/test_embed_multiattach: tests/test_embed_mult
 .PHONY: embed-multiattach-test
 embed-multiattach-test: build/$(EMBED_MULTIATTACH_VARIANT)/test_embed_multiattach
 	@echo "Embed multi-attach test built: $<"
+
+# #2433: a public-API boxed integer spans the host's first and last program.
+EMBED_INT_FREELIST_VARIANT ?= release
+EMBED_INT_FREELIST_OBJ := $(filter-out build/$(EMBED_INT_FREELIST_VARIANT)/main.o,$(OBJ_$(EMBED_INT_FREELIST_VARIANT)))
+build/$(EMBED_INT_FREELIST_VARIANT)/test_embed_integer_freelist: tests/test_embed_integer_freelist.c $(EMBED_INT_FREELIST_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(EMBED_INT_FREELIST_VARIANT)) -I$(SRC_DIR) -o $@ $< $(EMBED_INT_FREELIST_OBJ) $(LIBS_$(EMBED_INT_FREELIST_VARIANT))
+.PHONY: embed-int-freelist-test
+embed-int-freelist-test: build/$(EMBED_INT_FREELIST_VARIANT)/test_embed_integer_freelist
+	@echo "Embed integer freelist test built: $<"
 
 # #1171: one-writer compatibility and real setter routing; reuse the owning
 # variant without changing the CLI alias. GNU-style --wrap is test-only and
@@ -391,6 +484,20 @@ build/server-db/test_db_params: tests/test_db_params.c $(SRC_DIR)/ext_db.c $(DB_
 .PHONY: db-params-test
 db-params-test: build/server-db/test_db_params
 	@echo "DB params test built: $<"
+
+# R2.5: actual nonfinite tape round trips and production JSON/store decoders.
+IEEE_IO_VARIANT ?= release
+IEEE_TAPE_OBJ := $(filter-out build/$(IEEE_IO_VARIANT)/main.o,$(OBJ_$(IEEE_IO_VARIANT)))
+IEEE_DECODER_OBJ := $(filter-out build/$(IEEE_IO_VARIANT)/ext_store.o,$(IEEE_TAPE_OBJ))
+build/$(IEEE_IO_VARIANT)/test_nonfinite_tape: tests/phase2/nonfinite_tape.c $(IEEE_TAPE_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(IEEE_IO_VARIANT)) -I$(SRC_DIR) -o $@ $< $(IEEE_TAPE_OBJ) $(LIBS_$(IEEE_IO_VARIANT))
+build/$(IEEE_IO_VARIANT)/test_decoder_overflow: tests/phase2/decoder_overflow.c $(SRC_DIR)/ext_store.c $(IEEE_DECODER_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(IEEE_IO_VARIANT)) -I$(SRC_DIR) -o $@ $< $(IEEE_DECODER_OBJ) $(LIBS_$(IEEE_IO_VARIANT))
+.PHONY: nonfinite-tape-test decoder-overflow-test
+nonfinite-tape-test: build/$(IEEE_IO_VARIANT)/test_nonfinite_tape
+	$<
+decoder-overflow-test: build/$(IEEE_IO_VARIANT)/test_decoder_overflow
+	$<
 
 TRACE_CONTEXT_VARIANT ?= release
 TRACE_CONTEXT_OBJ := $(filter-out build/$(TRACE_CONTEXT_VARIANT)/main.o,$(OBJ_$(TRACE_CONTEXT_VARIANT)))
@@ -496,13 +603,16 @@ observer-anchor:
 # observer-anchor builds, or reuses, in the user cache. FLOOR=<file>, on the command
 # line or in the environment, names another floor; an empty FLOOR skips the floor
 # and the anchor. EXPECT=ieee,int64 fails when an expected capability is absent
-# (#1758). CI calls score.py directly, through tools/observer_oracle/ci_lane.sh
-# (the required check `observer oracle (floor)`).
+# (#1758). Both pass --declared tests/phase2/oracle_expect.txt: Phase 2's known-
+# wrong capability verdicts, each with its recover round (#1830); an undeclared
+# wrong verdict or a stale declaration fails, and #1776 merges only when the file
+# is empty (tools/phase2_cost.sh --final). CI calls score.py directly, through
+# tools/observer_oracle/ci_lane.sh (the required check `observer oracle (floor)`).
 .PHONY: observer-oracle
 observer-oracle: FLOOR ?= tools/observer_oracle/floor.json
 observer-oracle: build
 	$(if $(FLOOR),$(OBSERVER_ANCHOR))
-	python3 tools/observer_oracle/score.py src/eigenscript $(if $(FLOOR),--floor $(FLOOR)) $(if $(EXPECT),--expect $(EXPECT))
+	python3 tools/observer_oracle/score.py src/eigenscript $(if $(FLOOR),--floor $(FLOOR)) $(if $(EXPECT),--expect $(EXPECT)) --declared tests/phase2/oracle_expect.txt
 
 install-gfx: install
 	@echo "NOTE: 'make install-gfx' is a compatibility alias for 'make install'."
@@ -530,9 +640,12 @@ $(SRC_DIR)/lsp_stdlib_index.h: $(wildcard lib/*.eigs) tools/gen_lsp_stdlib_index
 # Builtin half of the same idea (#742): names from the registration seams +
 # ext_names.h, hover detail from the signature comments. Reserved report
 # forms are excluded using lexer.c. Commit the generated header for review.
-$(SRC_DIR)/lsp_builtin_index.h: $(SRC_DIR)/builtins.c $(SRC_DIR)/builtins_host.c \
-		$(SRC_DIR)/hash.c $(SRC_DIR)/ext_store.c $(SRC_DIR)/ext_names.h \
-		$(SRC_DIR)/lexer.c tools/gen_lsp_builtin_index.sh
+# No number sign may appear in this line: GNU make 3.81 (macOS) starts a
+# comment at one even inside a function call. Octal 043 is that character.
+LSP_BUILTIN_DOC_SRCS := $(shell awk 'NF == 1 && substr($$1, 1, 1) != "\043" { print $$1 }' tools/lsp_builtin_index_sources.txt)
+$(SRC_DIR)/lsp_builtin_index.h: $(LSP_BUILTIN_DOC_SRCS) $(SRC_DIR)/ext_names.h \
+		$(SRC_DIR)/lexer.c tools/gen_lsp_builtin_index.sh \
+		tools/lsp_builtin_index_sources.txt
 	bash tools/gen_lsp_builtin_index.sh
 
 # Real file targets (#825): rebuilt when their sources, any header, the
@@ -658,6 +771,7 @@ embed-smoke: amalgamation
 	$(CC) $(CFLAGS) -Ibuild -o /tmp/embed_smoke $(SRC_DIR)/embed_smoke.c build/eigenscript_all.c \
 		-lm -lpthread
 	/tmp/embed_smoke
+	EIGS_STRICT=0 /tmp/embed_smoke
 
 # The amalgamation smoke above is a release control, not a leak check.  Link
 # the same owning host against the real sanitizer objects so state teardown is
@@ -667,6 +781,8 @@ embed-smoke-asan embed-smoke-asan-server: embed-smoke-%: %
 		$(filter-out build/$*/main.o,$(OBJ_$*)) $(LIBS_$*)
 	@readelf -Ws /tmp/embed_smoke_$* | grep -q '__asan_init'
 	ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+		/tmp/embed_smoke_$*
+	ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 EIGS_STRICT=0 \
 		/tmp/embed_smoke_$*
 
 # Same smoke against the gfx variant's objects: pins that the embed API's
@@ -678,6 +794,7 @@ embed-smoke-gfx: build
 		$(filter-out build/release/main.o,$(OBJ_release)) \
 		-lm -lpthread $(LIBS_release)
 	/tmp/embed_smoke_gfx
+	EIGS_STRICT=0 /tmp/embed_smoke_gfx
 
 # Exercise the actual polling builtin using the owning graphics-capable variant.
 UI_INPUT_VARIANT ?= release
@@ -690,6 +807,7 @@ ui-sdl-input-gfx: build/$(UI_INPUT_VARIANT)/ui_sdl_input
 # Real-X11 regressions belong in the Linux extensions lane, not the portable
 # suite. Require both scripts' success and their promised positive evidence.
 gfx-x11-regressions: build
+	python3 tests/test_gfx_signal_cleanup.py
 	@set -eu; output=$$(mktemp); trap 'rm -f "$$output"' EXIT HUP INT TERM; \
 	status=0; bash tests/test_gfx_utf8_title.sh >"$$output" 2>&1 || status=$$?; \
 	cat "$$output"; [ "$$status" -eq 0 ]; \
@@ -783,6 +901,12 @@ pool-off-callenv: build/pool-off-callenv/eigenscript
 jit-checked: build/jit-checked/eigenscript
 	$(call RELINK,jit-checked)
 	@echo "EigenScript $(VERSION) (jit-checked: emitted slot witnesses) built. Binary: $(BINARY)"
+
+# #1758 R1.1 (see FLAGS_smi-trap): build it in a scratch tree, then
+#   tools/phase2_check.sh --through R1.1 --smi-trap <tree>/src/eigenscript ...
+smi-trap: build/smi-trap/eigenscript
+	$(call RELINK,smi-trap)
+	@echo "EigenScript $(VERSION) (smi-trap compatibility: checked slots; source trap retired in R1.3) built. Binary: $(BINARY)"
 
 
 # Profile-guided optimization. Builds an instrumented binary, runs the
@@ -939,6 +1063,10 @@ build/$(HISTORY_BOUNDARY_VARIANT)/test_trace_history_boundary: tests/test_trace_
 .PHONY: trace-history-boundary-test
 trace-history-boundary-test: build/$(HISTORY_BOUNDARY_VARIANT)/test_trace_history_boundary
 	@echo "Trace history boundary test built: $<"
+
+# R1.6d-D1: actual net_send client with raw stored bytes and a real socketpair.
+build/phase2/net_byte_boundary_%: tests/phase2/net_byte_boundary.c src/ext_net.c build/phase2/eigenscript_all.c tools/werror_flags.txt
+	$(CC) $(PHASE2_SLOT_FLAGS_$*) -Ibuild/phase2 -o $@ $< -lm -lpthread
 
 # Witnesses for tools/make_lock_check.sh (#1940). With AFTER set, the recipe
 # refuses to run unless that file exists, so a second make proves it started

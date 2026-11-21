@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: db_query_value (other, LOSS; PROFILE server-db (make server-db) plus DATABASE_URL naming a live PostgreSQL)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    c is db_connect of null
+    v is db_query_value of "SELECT 9007199254740993::bigint"
+    print of [v, nt of v]
+    w is db_query_value of ["SELECT $1::bigint + 0", 9007199254740993]
+    print of [w, nt of w]
+    f is db_query_value of "SELECT 2.5::float8"
+    print of [f, nt of f]
+catch e:
+    print of [e.kind, e.message]

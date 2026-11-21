@@ -1336,6 +1336,19 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning) {
      * diagnostics vanish from both human and JSON output. */
     {
         Value *ej_allow = eigs_json_lint_allow_for(path);
+        /* R2.5: numeric overflow in the manifest's shared JSON decoder
+         * raises independently of the lenient malformed-config policy.
+         * A direct C parse does not unwind us; stop before reporting a clean
+         * lint result, and release everything the checks allocated. */
+        if (g_has_error) {
+            val_decref(ej_allow);
+            free(ctx.warnings);
+            free_ast(ast);
+            free_tokenlist(&tl);
+            free(source);
+            eigs_lint_builtin_name_env_free();
+            return 1;
+        }
         int kept = 0;
         for (int w = 0; w < ctx.warning_count; w++) {
             if (!lint_file_allows(source, ctx.warnings[w].code) &&

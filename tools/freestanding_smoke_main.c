@@ -14,6 +14,25 @@ static const char *fs_smoke_provider(const char *name, void *ud) {
     return 0;
 }
 
+/* One program on a new state: both properties set to `start` by the call that
+ * sets both, then each property set by its own call unless its argument is
+ * negative. 1 when the program raised, 0 when it answered, -1 when the state
+ * could not be made. */
+static int strict_probe(int start, int guards, int arithmetic, const char *src) {
+    EigsState *st = eigs_state_new();
+    if (!st) return -1;
+    eigs_state_set_strict(st, start);
+    if (guards >= 0) eigs_state_set_strict_guards(st, guards);
+    if (arithmetic >= 0) eigs_state_set_strict_arithmetic(st, arithmetic);
+    if (!eigs_thread_attach(st) || eigs_state_init_runtime(st) != 0) return -1;
+    EigsValue *v = eigs_eval_string(src);
+    int raised = eigs_has_error() != 0;
+    if (v) eigs_value_release(v);
+    eigs_clear_error();
+    eigs_close(st);
+    return raised;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) { fprintf(stderr, "usage: %s '<eigenscript source>'\n", argv[0]); return 2; }
     if (argc == 2 && argv[1][0] == '-' && argv[1][1] == '-' &&
@@ -21,23 +40,45 @@ int main(int argc, char **argv) {
         argv[1][5] == 'i' && argv[1][6] == 'c' && argv[1][7] == 't' &&
         argv[1][8] == '-' && argv[1][9] == 'a' && argv[1][10] == 'p' &&
         argv[1][11] == 'i' && argv[1][12] == 0) {
+        eigs_state_set_strict_guards(NULL, 1);
+        eigs_state_set_strict_arithmetic(NULL, 1);
+        EigsState *defaults = eigs_open();
+        if (!defaults) return 2;
+        EigsValue *v = eigs_eval_string("abs of \"x\"");
+        if (v || !eigs_has_error()) return 1;
+        eigs_value_release(v);
+        eigs_close(defaults);
+        puts("strict creation default works");
+
         EigsState *soft = eigs_open();
         if (!soft) return 2;
         eigs_state_set_strict(soft, 0);
-        EigsValue *v = eigs_eval_string("abs of \"x\"");
+        v = eigs_eval_string("abs of \"x\"");
         if (!v || eigs_has_error() || eigs_value_as_num(v) != 0.0) return 1;
         eigs_value_release(v);
         eigs_close(soft);
 
         EigsState *strict = eigs_state_new();
         if (!strict) return 2;
+        /* Zero first, so that the nonzero call below is what turns the guards on. */
+        eigs_state_set_strict(strict, 0);
         eigs_state_set_strict(strict, 2);
         if (!eigs_thread_attach(strict) || eigs_state_init_runtime(strict) != 0) return 2;
         v = eigs_eval_string("abs of \"x\"");
         if (v || !eigs_has_error()) return 1;
         eigs_value_release(v);
         eigs_close(strict);
-        puts("strict setter works");
+        puts("strict off setter works");
+        puts("strict on setter works");
+
+        /* The calls that set one property each (#2439). From both off, each
+         * turns its own property on and leaves the other off; from both on,
+         * each turns its own off and leaves the other on. */
+        if (strict_probe(0, 2, -1, "abs of \"x\"") != 1 || strict_probe(0, 2, -1, "1.0 / 0.0") != 0) return 1;
+        if (strict_probe(0, -1, 2, "abs of \"x\"") != 0 || strict_probe(0, -1, 2, "1.0 / 0.0") != 1) return 1;
+        if (strict_probe(2, 0, -1, "abs of \"x\"") != 0 || strict_probe(2, 0, -1, "1.0 / 0.0") != 1) return 1;
+        if (strict_probe(2, -1, 0, "abs of \"x\"") != 1 || strict_probe(2, -1, 0, "1.0 / 0.0") != 0) return 1;
+        puts("strict one-property setters work");
         return 0;
     }
     EigsState *st = eigs_open();

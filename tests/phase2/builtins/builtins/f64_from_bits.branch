@@ -1,0 +1,10 @@
+["integral-float", 1.0, "float"]
+["negative-zero", -9223372036854775808, "float"]
+["tag-nan", false, 9221120237041090560, "float"]
+["fraction", "value"]
+["outside-int64", "value"]
+["nan-argument", "value"]
+["infinity-argument", "value"]
+["non-number", "type_mismatch"]
+["bool", "type_mismatch"]
+rc=0

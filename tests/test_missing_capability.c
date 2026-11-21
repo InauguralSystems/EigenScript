@@ -122,7 +122,8 @@ int main(void) {
     EIGS_NET_BUILTINS(M_NET)
 #endif
 
-    check(omitted + present == 30, "independent extension population pin");
+    /* #2375 adds http_fetch to the prior 32 names. */
+    check(omitted + present == 33, "independent extension population pin");
     check(!eigs_is_registered_builtin("cold_unknown_name"), "ordinary unknown discovery control");
     EigsValue *v = eigs_eval_string("# line control\ncold_unknown_name\n");
     check(!v && eigs_has_error() && eigs_last_error_kind() &&

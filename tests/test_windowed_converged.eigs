@@ -10,7 +10,7 @@ c1 is converged
 print of c1
 
 print of ""
-print of "--- WC2: Full N quiet assigns at low H -> converged ---"
+print of "--- WC2: Full N zero steps -> converged ---"
 b is 1000000
 b is 1000000
 b is 1000000
@@ -43,8 +43,8 @@ c3 is converged
 print of c3
 
 print of ""
-print of "--- WC4: Newton's sqrt of 2 reaches equilibrium, not converged ---"
-print of "(trajectory accumulates entropy from distinct intermediates, so dH~0 alone is not enough)"
+print of "--- WC4: Newton's sqrt of 2 certifies converged and equilibrium ---"
+print of "(the full finite value window fits the convergence tolerance)"
 x is 2.0
 x is (x + 2.0 / x) / 2
 x is (x + 2.0 / x) / 2

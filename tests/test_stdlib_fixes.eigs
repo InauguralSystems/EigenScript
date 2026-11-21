@@ -224,9 +224,10 @@ assert of [(log10 of 1) == 0, "SF97 log10 of 1"]
 assert of [(math_abs of ((log10 of 1000) - 3)) < 0.0000001, "SF98 log10 of 1000"]
 assert of [(pow of [2, log2 of 8]) == 8, "SF99 log2/pow round trip"]
 assert of [(math_abs of ((pow of [10, log10 of 1000]) - 1000)) < 0.0000001, "SF100 log10/pow round trip"]
-# x <= 0 inherits the log builtin's input floor at 1e-10 — no error.
-assert of [(log10 of 0) == -10, "SF101 log10 floored at 0"]
-assert of [(math_abs of ((log2 of -1) + 33.219280948873624)) < 0.0000001, "SF102 log2 floored below 0"]
+# R2.2: non-positive input inherits the log builtin's IEEE results.
+assert of [(log10 of 0) == (-1.0 / 0), "SF101 log10 of zero is negative infinity"]
+negative_log2 is log2 of -1
+assert of [negative_log2 != negative_log2, "SF102 log2 of negative is NaN"]
 # Element-wise, like the log they wrap: log of [8, 4] works, so these
 # must too. Built on `divide`, not `/`, which is scalar-only.
 lg2 is log2 of [8, 4, 1]
@@ -335,7 +336,8 @@ assert of [(read_lines of io_roundtrip_path) == io_roundtrip_lines, "SF132 write
 
 # --- log levels (#2247) ---
 load_file of "lib/log.eigs"
-silent_probe is exec_capture of ["./eigenscript", "../tests/fixtures/log_2247_silent.eigs"]
+# This independent child must not truncate or consume its parent's trace tape.
+silent_probe is exec_capture of ["env", "-u", "EIGS_TRACE", "-u", "EIGS_REPLAY", "./eigenscript", "../tests/fixtures/log_2247_silent.eigs"]
 assert of [silent_probe[0] == 0 and silent_probe[1] == "", "SF133 log silent threshold suppresses named silent messages"]
 
 unknown_threshold_raised is 0

@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: round (int-preserving, LOSS; Q4: half away from zero, an int when it fits int64)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is round of 9007199254740993
+print of [a, nt of a]
+b is round of -2.5
+print of [b, nt of b]
+c is round of 2.5
+print of [c, nt of c]
+d is round of 1e300
+print of [d, nt of d]

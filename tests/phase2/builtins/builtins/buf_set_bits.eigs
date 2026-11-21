@@ -1,0 +1,61 @@
+# R2.4/N12 new builtin, R24-1; phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":1}}
+b is buf_from_list of ([1.5])
+try:
+    r is buf_set_bits of [b, 0.0, 4607182418800017408.0]
+    print of ["integral-float", r, buf_get_bits of [b, 0]]
+catch e:
+    print of ["integral-float", e.kind]
+try:
+    r is buf_set_bits of [b, 0, 9218868437227405313]
+    print of ["payload", r, buf_get_bits of [b, 0]]
+catch e:
+    print of ["payload", e.kind]
+try:
+    r is buf_set_bits of [b, 0, -9223372036854775807 - 1]
+    print of ["negative-zero", r, buf_get_bits of [b, 0]]
+catch e:
+    print of ["negative-zero", e.kind]
+try:
+    print of ["fraction-answer", buf_set_bits of [b, 0.5, 0]]
+catch e:
+    print of ["index-fraction", e.kind]
+try:
+    print of ["bits-fraction-answer", buf_set_bits of [b, 0, 0.5]]
+catch e:
+    print of ["bits-fraction", e.kind]
+try:
+    print of ["outside-answer", buf_set_bits of [b, 0, 1e100]]
+catch e:
+    print of ["bits-outside-int64", e.kind]
+try:
+    print of ["nan-answer", buf_set_bits of [b, 0, f64_from_bits of 0x7FF8000000000000]]
+catch e:
+    print of ["bits-nan", e.kind]
+try:
+    print of ["negative-answer", buf_set_bits of [b, -1, 0]]
+catch e:
+    print of ["index-negative", e.kind]
+try:
+    print of ["high-answer", buf_set_bits of [b, 1, 0]]
+catch e:
+    print of ["index-high", e.kind]
+try:
+    print of ["index-type", buf_set_bits of [b, "x", 0]]
+catch e:
+    print of ["index-type", e.kind]
+try:
+    print of ["bits-type", buf_set_bits of [b, 0, "x"]]
+catch e:
+    print of ["bits-type", e.kind]
+try:
+    print of ["buffer-type", buf_set_bits of ["x", 0, 0]]
+catch e:
+    print of ["buffer-type", e.kind]
+try:
+    print of ["few", buf_set_bits of [b, 0]]
+catch e:
+    print of ["few", e.kind]
+try:
+    print of ["unchanged", buf_get_bits of [b, 0]]
+catch e:
+    print of ["unchanged", e.kind]

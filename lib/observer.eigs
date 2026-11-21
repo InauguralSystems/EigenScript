@@ -5,8 +5,8 @@
 # How to use:
 #   load_file of "lib/observer.eigs"
 #
-#   entropy_of of x                         # current entropy
-#   delta_of of x                           # current dH (rate of change)
+#   entropy_of of x                         # routed where (numeric value / entropy)
+#   delta_of of x                           # routed displacement / dH
 #   is_converged of x                       # true if converged, else false
 #   is_stable of x                          # true if stable or converged
 #   is_improving of x                       # true if improving
@@ -15,17 +15,20 @@
 #   track_regimes of [x, update_fn, max_steps]
 #   threshold_alert of [x, lo, hi]
 
-# ---- entropy_of: extract entropy from observer state ----
+# Compatibility names retain observe's routed fields: numeric value and
+# displacement, nonnumeric entropy and dH. These ordinary wrappers observe
+# their own fresh parameter; use trajectory/classify to carry caller history.
+# ---- entropy_of: extract routed where from observer state ----
 define entropy_of(x) as:
     state is observe of x
     return state[1]
 
-# ---- delta_of: extract dH (rate of change) ----
+# ---- delta_of: extract last routed step (null before a numeric step) ----
 define delta_of(x) as:
     state is observe of x
     return state[2]
 
-# ---- prev_delta_of: extract previous dH ----
+# ---- prev_delta_of: extract previous routed step ----
 define prev_delta_of(x) as:
     state is observe of x
     return state[3]
@@ -43,15 +46,15 @@ define is_stable(x) as:
         return true
     return false
 
-# ---- is_improving: check if entropy is decreasing ----
+# ---- is_improving: check the routed improving report label ----
 define is_improving(x) as:
     return (report of x) == "improving"
 
-# ---- is_diverging: check if entropy is increasing ----
+# ---- is_diverging: check the routed diverging report label ----
 define is_diverging(x) as:
     return (report of x) == "diverging"
 
-# ---- is_oscillating: check if dH is sign-flipping ----
+# ---- is_oscillating: check the routed oscillating report label ----
 define is_oscillating(x) as:
     return (report of x) == "oscillating"
 
@@ -99,7 +102,7 @@ define threshold_alert(val, lo, hi) as:
     return "ok"
 
 # ---- snapshot: capture full observer state as a named record ----
-# snapshot of value -> [value, status, entropy, dH, prev_dH]
+# snapshot of value -> [value, status, where, why, previous why]
 define snapshot(x) as:
     state is observe of x
     return [x, state[0], state[1], state[2], state[3]]

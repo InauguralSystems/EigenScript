@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: buf_scale_range (float-producing; float storage; offsets and counts by N5 (Q1))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+b is buf_from_list of [1, 2, 3]
+buf_scale_range of [b, 1, 2, 2]
+print of [b[0], b[1], b[2], nt of b[1]]
+try:
+    buf_scale_range of [b, 0.5, 1, 10]
+    print of ["fraction accepted", b[0]]
+catch e:
+    print of ["offset-fraction", e.kind]
+buf_scale_range of [b, 0.0, 1.0, 3]
+print of b[0]

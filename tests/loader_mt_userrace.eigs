@@ -14,14 +14,18 @@
 # cannot lean on it (#1489).
 #
 # The deliberate race is the racer pair: two closures each write ONCE to the
-# the same element of a list they share, a race docs/CONCURRENCY.md still
+# same double in a buffer they share, a race docs/CONCURRENCY.md still
 # leaves to the program. A ready channel plus
 # separate release channels form a real rendezvous: main observes both workers
 # at the barrier before releasing either, and neither release orders one
 # worker's victim write before the other's. The
 # racing word is not a spin/handshake word, so repeated polling cannot evict
 # the first conflicting access from TSan's short per-word history (#1489).
-# It cannot corrupt memory because both stores are immediate numbers.
+# Capture each worker's local buffer reference BEFORE the rendezvous, and use
+# float index/value literals. Phase 2's integer literals take a boxing path;
+# its allocation/cleanup and shared closure lookups must not sit between the
+# release and the deliberately unsynchronized payload write. The float buffer
+# arm writes the shared double directly without changing any heap ownership.
 define lm_ur_worker(k) as:
     local i is 0
     local n is 0
@@ -32,20 +36,22 @@ define lm_ur_worker(k) as:
     return n
 
 define lm_ur_race_pair() as:
-    local victim is [0]
+    local victim is buffer of 1
     local ready is channel of null
     local release_a is channel of null
     local release_b is channel of null
     define racer_a as:
+        local cell is victim
         send of [ready, 1]
         recv of release_a
-        victim[0] is 1
-        return victim[0]
+        cell[0.0] is 1.0
+        return 0
     define racer_b as:
+        local cell is victim
         send of [ready, 1]
         recv of release_b
-        victim[0] is 2
-        return victim[0]
+        cell[0.0] is 2.0
+        return 0
     return [racer_a, racer_b, ready, release_a, release_b]
 
 racers is lm_ur_race_pair of null

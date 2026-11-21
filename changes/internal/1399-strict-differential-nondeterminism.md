@@ -1,0 +1,1 @@
+- The strict differential now distinguishes nondeterministic probe output from a strict-flag difference (#1399).

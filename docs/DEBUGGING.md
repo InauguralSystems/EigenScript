@@ -92,7 +92,10 @@ records, [TRACE.md](TRACE.md#observer-configuration-10441045)). A knob moved
 after a binding's last assignment still counts: `p` answers "what would
 `report of x` say *here*", and `t`'s per-assignment rows name the settled
 label on a line of their own when it differs. Non-numeric bindings show their
-value with no label.
+value with no label. Numeric current NaN reports `undefined`; infinity is
+diverging unless its window includes the opposite-sign infinity, when it
+is oscillating. Numeric trajectories carry exact flags and D2 running-best
+state so snapshot classification agrees with the original binding.
 
 ### Scope and honesty
 
@@ -119,7 +122,10 @@ query (see [TRACE.md](TRACE.md) for the compile gate, and
 - `prev of x` — the previous value of `x`
 - `what is x at 42` — `x`'s value when line 42 last ran
 - `when is x at 42` — how many times `x` had been assigned by then
-- `where/why/how is x at 42` — the observer's verdict at that moment
+- `where/why/how is x at 42` — numeric value, raw displacement and
+  relative-step settledness at that moment; non-numeric entropy/dH/settledness.
+  Numeric why/how are null before a step. Snapshots also retain D2's
+  running `best`/`since`.
 - `state_at of 42` — every binding's value at line 42, as a dict
 
 Under replay these read the *failing* run's history — the interrogatives

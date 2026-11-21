@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: shared_size (int-preserving; entry count; PROFILE server (make server))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    shared_set of ["k1", 1]
+catch e:
+    print of ["capability", e.kind, e.message]
+    exit of 0
+shared_set of ["k2", 2]
+n is shared_size of null
+print of [n, nt of n]

@@ -1,0 +1,24 @@
+# R2.5/N6: Python-repr nonfinite words throughout text formatting.
+# JSON stays a refusing writer; source/num float syntax follows N1/N10.
+load_file of "lib/test.eigs"
+load_file of "lib/format.eigs"
+values is [1.0 / 0, -1.0 / 0, 0.0 / 0, -(0.0 / 0)]
+words is ["inf", "-inf", "nan", "nan"]
+for j in range of 4:
+    x is values[j]
+    word is words[j]
+    assert_eq of [str of x, word, "str nonfinite"]
+    assert_eq of [f"{x}", word, "f-string nonfinite"]
+    assert_eq of [fmt_num of [x, 0], word, "fmt_num zero decimals nonfinite"]
+    assert_eq of [fmt_num of [x, 3], word, "fmt_num fixed decimals nonfinite"]
+    caught is false
+    try:
+        json_encode of x
+    catch e:
+        caught is e.kind == "value"
+    assert_true of [caught, "JSON remains a refusing encoder"]
+assert_eq of [fmt_num of [1.25, 2], "1.25", "finite fixed-decimal control"]
+assert_eq of [fmt_num of [9007199254740993, 2], "9007199254740993.00", "exact integer control"]
+assert_eq of [str of 1e400, "inf", "N1 source exponent selects binary64 float"]
+assert_eq of [str of (num of "1e400"), "inf", "N10 source-literal grammar float control"]
+test_summary of null

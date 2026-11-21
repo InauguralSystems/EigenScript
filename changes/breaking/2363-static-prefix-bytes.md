@@ -1,0 +1,1 @@
+- Programs must replace `http_static` prefixes containing `?`, `#`, bytes at or below 0x20, or 0x7F; registration now raises `value` instead of accepting an unreachable browser path (#2363).

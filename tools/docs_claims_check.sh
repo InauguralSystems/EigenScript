@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Front-door documentation references, checked against the sources that own them.
+# The removed-text check refuses the six stored texts when one is put back whole.
+# Its specification is the removed-text-found-*, removed-text-not-found-*, and
+# removed-text-scope-* self-test cases.
+# Those cases are the specification.
 cd "$(dirname "$0")/.." || exit 1
 exec python3 - "$@" <<'PY'
 import collections
@@ -85,20 +89,31 @@ def derived_counts():
         red('COUNTS examined 0')
 
 
-def strict_default_wording():
-    """Keep builtin error rows and graphics/audio strict-by-default."""
+def strict_opt_in_wording():
+    """Keep graphics/audio argument prose aligned with #2439's split defaults.
+
+    Unset EIGS_STRICT enables argument guards while leaving arithmetic traps
+    off. Numeric N5/Q7 validation remains separate from legacy stand-ins.
+    """
+    stale_opt_in = re.compile(r'`EIGS_STRICT=1` opts into catchable errors for non-finite\s+arithmetic and invalid argument types; (?:by default|it is off by default)', re.I)
+    for file in ('README.md', *[str(p) for p in sorted(Path('docs').glob('*.md'))], 'docs/llms.txt'):
+        prose = Path(file).read_text(encoding='utf-8')
+        if stale_opt_in.search(prose):
+            red(f'{file}: says EIGS_STRICT=1 opts into invalid-argument errors; unset already enables guards (#2439)')
+
     text = Path('docs/BUILTINS.md').read_text(encoding='utf-8')
-    conditional = re.compile(
-        r'\braises?\s+under\s+(?:strict\b|`EIGS_STRICT=1`)|'
-        r'\bunder\s+`EIGS_STRICT=1`\s+(?:(?:it|both|they)\s+)?raises?\b', re.I)
+    quiet_default = re.compile(
+        r'\b(?:answers?|stays?)\s+quiet(?:ly)?\s+by\s+default\b|'
+        r'\bstrict\s+mode\s+is\s+off\s+by\s+default\s+for\s+bad\s+arguments\b|'
+        r'\bby\s+default\s+or\s+under\s+`?EIGS_STRICT=0`?', re.I)
     lines = text.splitlines()
     for lineno, line in enumerate(lines, 1):
-        if conditional.search(line):
-            red(f'docs/BUILTINS.md:{lineno}: describes strict errors as conditional; '
-                'state the default first and the EIGS_STRICT=0 fallback second (#1396)')
-    print(f'  STRICT DEFAULT ROWS: examined {len(lines)} line(s)')
+        if quiet_default.search(line):
+            red(f'docs/BUILTINS.md:{lineno}: describes argument guards as quiet by default; '
+                'unset EIGS_STRICT enables guards (#2439)')
+    print(f'  STRICT OPT-IN ROWS: examined {len(lines)} line(s)')
     if not lines:
-        red('STRICT DEFAULT ROWS examined 0 lines')
+        red('STRICT OPT-IN ROWS examined 0 lines')
     headings = ('Graphics (SDL2) Extension', 'Audio (additional)')
     sections = collections.defaultdict(list)
     for match in re.finditer(r'^## ([^\n]+)\n(.*?)(?=^## |\Z)', text, re.M | re.S):
@@ -107,22 +122,110 @@ def strict_default_wording():
     examined = 0
     for heading in headings:
         if len(sections[heading]) != 1:
-            red(f'docs/BUILTINS.md: strict-default section {heading!r} must exist exactly once')
+            red(f'docs/BUILTINS.md: strict-opt-in section {heading!r} must exist exactly once')
             continue
         examined += 1
         section = sections[heading][0]
-        stale = re.findall(r'(?:under|with)\s+`EIGS_STRICT=1`|with the flag off', section, re.I)
-        if stale:
-            red(f'docs/BUILTINS.md: {heading} describes strict as opt-in: ' + ', '.join(stale))
         if heading == headings[0]:
-            paragraph = re.search(r'\*\*Wrong-typed and wrong-arity arguments \(#1007\)\.\*\*(.*?)(?=\nTwo shapes are deliberately|\Z)', section, re.S)
+            paragraph = re.search(r'\*\*Wrong-typed and wrong-arity arguments \(#1007\)\.\*\*(.*?)(?=\n\n|\Z)', section, re.S)
             if not paragraph:
                 red('docs/BUILTINS.md: gfx wrong-argument paragraph is missing')
-            elif not re.search(r'\bby default\b', paragraph[1], re.I) or '`EIGS_STRICT=0`' not in paragraph[1]:
-                red('docs/BUILTINS.md: gfx paragraph must name the strict default and '
-                    'EIGS_STRICT=0 compatibility mode (#1428)')
-    print(f'  STRICT DEFAULT: examined {examined} section(s), declared {len(headings)}')
+            elif ('`EIGS_STRICT=1`' not in paragraph[1] or
+                  '`EIGS_STRICT=0`' not in paragraph[1] or
+                  not re.search(r'\bunset\b', paragraph[1], re.I)):
+                red('docs/BUILTINS.md: gfx paragraph must name unset guards, explicit '
+                    'EIGS_STRICT=1 raises, and EIGS_STRICT=0 stand-ins (#2439)')
+    print(f'  STRICT OPT-IN: examined {examined} section(s), declared {len(headings)}')
 
+
+def stale_guard_state_wording():
+    """Reject two-state wording that makes argument guards opt-in."""
+    guard = (r'(?:argument|wrong[- ]type|wrong[- ]arity|non[- ]?(?:numeric|string|number|list)|'
+             r'short|surplus|additional list item|fixed[- ]shape|optional[- ]shape)')
+    condition = (r'(?:raises?|rejects?).{0,120}(?:under|with) `EIGS_STRICT=1`|'
+                 r'(?:raises?|rejects?).{0,120}\bin strict mode\b|'
+                 r'(?:under|with) `EIGS_STRICT=1`.{0,80}(?:raises?|rejects?)|'
+                 r'\bin strict mode\b.{0,80}(?:raises?|rejects?)')
+    stale = re.compile(rf'(?:{guard}).{{0,240}}(?:{condition})|'
+                       rf'(?:{condition}).{{0,240}}(?:{guard})', re.I | re.S)
+    files = ('README.md', *[str(p) for p in sorted(Path('docs').glob('*.md'))],
+             'docs/llms.txt')
+    examined = hits = 0
+    for file in files:
+        prose = Path(file).read_text(encoding='utf-8')
+        for sentence in re.split(r'(?<=[.!?])(?:\s+|(?=\s*\|))', prose):
+            examined += 1
+            if stale.search(sentence):
+                hits += 1
+                line = prose.count('\n', 0, prose.find(sentence)) + 1
+                red(f'{file}:{line}: makes an argument guard conditional on '
+                    'EIGS_STRICT=1 or strict mode; say by default or unless '
+                    'EIGS_STRICT=0 (#2439)')
+    print(f'  STALE GUARD STATE WORDING: examined {examined} sentence(s), {hits} hit(s)')
+    if not examined:
+        red('STALE GUARD STATE WORDING examined 0 sentences')
+
+
+REMOVED_STRICT_SENTENCES = (
+    ('README.md', '''Set `EIGS_STRICT=1` to opt into catchable errors for
+non-finite arithmetic results and wrong-typed builtin arguments; it is off
+by default.'''),
+    ('docs/llms.txt', '''  Strict mode is opt-in: `EIGS_STRICT=1` traps non-finite arithmetic
+  results, wrong-typed builtin arguments (`abs of "x"`) and malformed
+  `json_path` documents with catchable errors. With the variable unset or
+  set to `0`, arithmetic keeps its IEEE results and the legacy argument
+  stand-ins remain (`abs of "x"` is `0.0`).'''),
+    ('docs/SYNTAX.md', '''`EIGS_STRICT=1` opts into catchable errors for non-finite
+arithmetic and invalid argument types; by default IEEE arithmetic results
+remain values.'''),
+    ('docs/LANGUAGE_CONTRACT.md', '''  `EIGS_STRICT=1` opts into catchable errors for non-finite arithmetic and
+  invalid argument types; it is off by default.'''),
+    ('docs/COMPARISON.md', '''`EIGS_STRICT=1` opts into catchable errors for non-finite arithmetic and
+wrong-typed builtin arguments; strict mode is off by default.'''),
+    ('docs/BUILTINS.md', '''> **Strict mode is opt-in (`EIGS_STRICT=1`).** It traps non-finite arithmetic
+> results and enables strict argument guards. By default arithmetic preserves
+> IEEE values; rows with argument-type stand-ins state those results (`0`, `""`,
+> `[]`, `-1`, or another value) explicitly.
+> Documented answers for valid-but-absent input (`index_of` miss `-1`,
+> `file_exists` of a missing path `0`) are the same in both modes
+> (docs/SPEC.md, *Strict mode*).'''),
+)
+
+
+def removed_strict_sentences():
+    """Reject a removed #2439 text that reappears whole (the cases the header names specify it)."""
+    files = ('README.md', *[str(p) for p in sorted(Path('docs').glob('*.md'))],
+             'docs/llms.txt')
+
+    def words_and_lines(prose):
+        words = []
+        lines = []
+        for lineno, line in enumerate(prose.splitlines(), 1):
+            line = re.sub(r'^(?:> | {2})', '', line)
+            tokens = line.split()
+            words.extend(tokens)
+            lines.extend([lineno] * len(tokens))
+        return words, lines
+
+    examined = len(REMOVED_STRICT_SENTENCES)
+    hits = 0
+    for file in files:
+        words, lines = words_and_lines(Path(file).read_text(encoding='utf-8'))
+        for _origin, removed in REMOVED_STRICT_SENTENCES:
+            needle, _ = words_and_lines(removed)
+            width = len(needle)
+            for start in range(len(words) - width + 1):
+                if words[start:start + width] != needle:
+                    continue
+                hits += 1
+                preview = ' '.join(needle[:6])
+                red(f'{file}:{lines[start]}: removed text reappeared: {preview} (#2439)')
+    print(f'  REMOVED TEXTS: examined {examined} text(s) in {len(files)} file(s), '
+          f'{hits} hit(s)')
+    if examined < 6:
+        red(f'REMOVED TEXTS examined only {examined} text(s), expected at least 6')
+    if not files:
+        red('REMOVED TEXTS examined 0 files')
 
 def bool_result_wording():
     """Reject numeric result prose for builtins whose C constructors are bool.
@@ -285,8 +388,13 @@ def targets(docs):
     rules = set(re.findall(r'^([a-z][a-z0-9-]*):', Path('Makefile').read_text(), re.M))
     for file in docs:
         n = 0
+        fenced = False
         for lineno, line in enumerate(Path(file).read_text().splitlines(), 1):
-            for token in matches(r'make [a-z][a-z0-9-]*', line):
+            if re.match(r'^\s*```', line):
+                fenced = not fenced
+                continue
+            command_text = line if fenced else ' '.join(matches(r'`[^`]+`', line))
+            for token in matches(r'make [a-z][a-z0-9-]*', command_text):
                 target = token.split()[1]
                 if target in TARGET_PROSE:
                     continue
@@ -480,6 +588,7 @@ def selftest():
     content |= {str(p) for p in Path('lib').glob('*.eigs')}
     content |= {'Makefile', 'VERSION', 'CHANGELOG.md',
                 'tools/docs_claims_check.sh', 'tools/docs_claims_populations.txt',
+                'tools/lsp_builtin_index_sources.txt',
                 'tools/werror_flags.txt', 'tests/test_doc_examples.py',
                 'src/builtins.c', 'src/compiler.c', 'src/eigenscript.c',
                 'src/lexer.c'}
@@ -528,6 +637,54 @@ def selftest():
             print(f'SELFTEST: control: {"PASS" if ok else "FAIL"}')
             if not ok:
                 print('\n'.join(x for x in result.stdout.splitlines() if x.startswith(('RED:', 'docs-claims:'))))
+            def removed_case(name, file, plant, should_red):
+                nonlocal passed
+                p = tree / file
+                original = p.read_text()
+                p.write_text(original + '\n' + plant + '\n')
+                result = gate()
+                red_for_file = (f'RED: {file}:' in result.stdout and
+                                'removed text reappeared:' in result.stdout)
+                ok = ((result.returncode != 0 and red_for_file) if should_red
+                      else result.returncode == 0)
+                passed += ok
+                print(f'SELFTEST: removed-text-{name}: {"PASS" if ok else "FAIL"}')
+                if not ok:
+                    print('\n'.join(x for x in result.stdout.splitlines()
+                                    if x.startswith(('RED:', 'docs-claims:'))))
+                p.write_text(original)
+
+            short = REMOVED_STRICT_SENTENCES[3][1]
+            words = short.split()
+            removed_case('found-rewrapped', 'README.md',
+                         ' '.join(words[:5]) + '\n' + ' '.join(words[5:]), True)
+            removed_case('found-another-read-file', 'docs/CI.md', short, True)
+            removed_case('found-list-item', 'README.md', '- ' + short, True)
+            removed_case('found-quoted-lines', 'README.md',
+                         '\n'.join('> ' + line for line in short.splitlines()), True)
+            removed_case('found-blank-line', 'README.md',
+                         ' '.join(words[:6]) + '\n\n' + ' '.join(words[6:]), True)
+            removed_case('found-double-quote-one-line', 'README.md',
+                         '> > ' + ' '.join(words), True)
+
+            removed_case('not-found-part', 'README.md', ' '.join(words[:-2]), False)
+            removed_case('not-found-reworded', 'README.md', short.replace('off', 'disabled'), False)
+            removed_case('not-found-double-quote-lines', 'README.md',
+                         '\n'.join('> > ' + line for line in short.splitlines()), False)
+            removed_case('not-found-list-quote-lines', 'README.md',
+                         '\n'.join('- > ' + line for line in short.splitlines()), False)
+            box = REMOVED_STRICT_SENTENCES[5][1]
+            box_words = box.replace('> ', '').split()
+            # A quote sign stuck to the next word, over the box's own lines and on one line.
+            removed_case('not-found-tight-quote-lines-and-single', 'README.md',
+                         '\n'.join('>' + line[2:] for line in box.splitlines()) +
+                         '\n>' + ' '.join(box_words), False)
+            box_lines = box.splitlines()
+            removed_case('not-found-box-bare-quote', 'README.md',
+                         '\n'.join(box_lines[:3] + ['>'] + box_lines[3:]), False)
+
+            removed_case('scope-read-file', 'docs/CI.md', short, True)
+            removed_case('scope-unread-changelog', 'CHANGELOG.md', short, False)
             for label, file, plant, witness in [
                 ('path', 'README.md', '\n`docs/NO_SUCH_1275.md`\n', 'references'),
                 ('flag', 'docs/llms.txt', '\n`eigenscript --no-such-1275`\n', '--no-such-1275'),
@@ -555,6 +712,14 @@ def selftest():
                 p.write_text(original)
             p = tree / 'docs/BUILTINS.md'
             original = p.read_text()
+            p.write_text(original + '\nA diagnostic option can make those libraries write messages.\n')
+            result = gate()
+            ok = result.returncode == 0
+            passed += ok
+            print(f'SELFTEST: target-prose: {"PASS" if ok else "FAIL"}')
+            p.write_text(original)
+            p = tree / 'docs/BUILTINS.md'
+            original = p.read_text()
             p.write_text(original.replace('Returns `true` on success or `false` when libSDL2 is unavailable.',
                                           'Returns 1 on success or `false` when libSDL2 is unavailable.', 1))
             result = gate()
@@ -566,19 +731,19 @@ def selftest():
             original = p.read_text()
             for label, anchor, replacement, witness in [
                 ('strict-intro', '**Wrong-typed and wrong-arity arguments (#1007).**',
-                 '**Wrong-typed and wrong-arity arguments (#1007).** Under `EIGS_STRICT=1` invalid input raises.', 'describes strict as opt-in'),
+                 '**Wrong-typed and wrong-arity arguments (#1007).** Invalid input answers quietly by default.', 'describes argument guards as quiet by default'),
                 ('strict-later-gfx', '**Text rendering and fonts (#593).**',
-                 '**Text rendering and fonts (#593).** With `EIGS_STRICT=1` invalid input raises.', 'describes strict as opt-in'),
+                 '**Text rendering and fonts (#593).** Invalid input answers quietly by default.', 'describes argument guards as quiet by default'),
                 ('strict-audio', '## Audio (additional)',
-                 '## Audio (additional)\nUnder `EIGS_STRICT=1` invalid input raises.', 'describes strict as opt-in'),
+                 '## Audio (additional)\nInvalid input answers quietly by default.', 'describes argument guards as quiet by default'),
                 ('strict-core-row', '## Core Language',
-                 '## Core Language\nA bad argument answers `0`; under `EIGS_STRICT=1` it raises.', 'describes strict errors as conditional'),
-                ('strict-audio-short', 'A **short or non-list** argument also raises by default;',
-                 'A **short or non-list** argument also raises under strict;', 'describes strict errors as conditional'),
+                 '## Core Language\nStrict mode is off by default for bad arguments.', 'describes argument guards as quiet by default'),
+                ('strict-audio-short', 'A **short or non-list** argument also raises unless `EIGS_STRICT=0`;',
+                 'A **short or non-list** argument answers quietly by default;', 'describes argument guards as quiet by default'),
                 ('strict-section-missing', '## Audio (additional)',
-                 '## Removed audio heading', "strict-default section 'Audio (additional)' must exist exactly once"),
+                 '## Removed audio heading', "strict-opt-in section 'Audio (additional)' must exist exactly once"),
                 ('strict-gfx-section-missing', '## Graphics (SDL2) Extension',
-                 '## Removed graphics heading', "strict-default section 'Graphics (SDL2) Extension' must exist exactly once"),
+                 '## Removed graphics heading', "strict-opt-in section 'Graphics (SDL2) Extension' must exist exactly once"),
             ]:
                 assert original.count(anchor) == 1, (label, anchor)
                 p.write_text(original.replace(anchor, replacement, 1))
@@ -587,11 +752,27 @@ def selftest():
                 passed += ok
                 print(f'SELFTEST: {label}: {"PASS" if ok else "FAIL"}')
                 p.write_text(original)
-            p.write_text(original + '\nAn explicit `EIGS_STRICT=1` setting keeps the default strict mode.\n')
+            p.write_text(original + '\n`EIGS_STRICT=1` opts into catchable errors for non-finite arithmetic and invalid argument types; by default IEEE values remain.\n')
+            result = gate()
+            ok = result.returncode != 0 and 'opts into invalid-argument errors' in result.stdout
+            passed += ok
+            print(f'SELFTEST: stale-strict-opt-in: {"PASS" if ok else "FAIL"}')
+            if not ok:
+                print(result.stdout)
+            p.write_text(original)
+            p.write_text(original + '\nAn explicit `EIGS_STRICT=1` setting opts into strict mode.\n')
             result = gate()
             ok = result.returncode == 0
             passed += ok
             print(f'SELFTEST: strict-explicit-setting: {"PASS" if ok else "FAIL"}')
+            if not ok:
+                print(result.stdout)
+            p.write_text(original)
+            p.write_text(original + '\nA wrong-type argument raises under `EIGS_STRICT=1`.\n')
+            result = gate()
+            ok = result.returncode != 0 and 'makes an argument guard conditional' in result.stdout
+            passed += ok
+            print(f'SELFTEST: stale-guard-state: {"PASS" if ok else "FAIL"}')
             if not ok:
                 print(result.stdout)
             p.write_text(original)
@@ -615,8 +796,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 19 case(s) run, {passed} passed, {19-passed} failed')
-            return 0 if passed == 19 else 1
+            print(f'SELFTEST: 36 case(s) run, {passed} passed, {36-passed} failed')
+            return 0 if passed == 36 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 
@@ -649,7 +830,9 @@ def main():
     stdlib_headings()
     changelog_version()
     derived_counts()
-    strict_default_wording()
+    strict_opt_in_wording()
+    stale_guard_state_wording()
+    removed_strict_sentences()
     bool_result_wording()
     check_floors()
     for kind in ('PATHS', 'FLAGS', 'TARGETS', 'NAMES', 'DOC ENROLMENT'):

@@ -42,7 +42,7 @@ define gradient_descent(f, x0, lr, max_iter) as:
 
         # Settled = converged OR equilibrium, debounced: a single settled
         # reading is not enough (the very first observation reads equilibrium —
-        # dH is 0 before the loss has a trajectory — and the loss can be
+        # no numeric step exists before a second observation — and the loss can be
         # momentarily flat mid-descent). Require it to hold for 3 consecutive
         # iterations; any motion resets the count. See docs/PREDICATES.md
         # "Convergence loops in practice".

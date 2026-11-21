@@ -1,6 +1,7 @@
 /* #1665 follow-up: planted stale reads of the two kept recycling pools.
  *
  *   test_pool_poison num      read a NUM parked on the per-thread freelist
+ *   test_pool_poison int      read an INT parked on the per-thread freelist
  *   test_pool_poison env      read values[0] of a call env parked on its chunk
  *   test_pool_poison envfield read a field (count) of that parked Env struct
  *   test_pool_poison leaf     a frameless leaf accessor allocates no call env
@@ -56,14 +57,220 @@ static int run_program(void) {
 }
 
 static int plant_num(void) {
-    Value *v = make_num(42.5);
+    Value *v = make_float(42.5);
     val_decref(v);                       /* refcount 0 -> parked on the freelist */
     if (g_num_freelist != v) { puts("NOT-ARMED num: value not parked"); return 3; }
     printf("ARMED num: parked NUM %p, reading %p\n", (void *)v,
-           (void *)&VAL_NUM_RAW(v));
+           (void *)&VAL_F64_RAW(v));
     fflush(stdout);
-    volatile double stale = VAL_NUM_RAW(v);   /* the planted stale read */
+    volatile double stale = VAL_F64_RAW(v);   /* the planted stale read */
     printf("UNDETECTED num: read %g from a parked NUM\n", stale);
+    return 0;
+}
+
+static int plant_int(void) {
+    Value *v = make_int(INT64_C(1) << 60);
+    val_decref(v);
+    if (g_int_freelist != v) { puts("NOT-ARMED int: value not parked"); return 3; }
+    printf("ARMED int: parked INT %p, reading %p\n", (void *)v,
+           (void *)&VAL_I64_RAW(v));
+    fflush(stdout);
+    volatile int64_t stale = VAL_I64_RAW(v);
+    printf("UNDETECTED int: read %lld from a parked INT\n", (long long)stale);
+    return 0;
+}
+
+static int int_reuse_is_fresh(void) {
+    Value *a = make_int((INT64_C(1) << 60) + 1);
+    Value *b = make_int((INT64_C(1) << 60) + 2);
+    memset(&a->data, 0x5a, sizeof(a->data));
+    VAL_I64_RAW(a) = (INT64_C(1) << 60) + 1;
+    memset(&b->data, 0x5a, sizeof(b->data));
+    VAL_I64_RAW(b) = (INT64_C(1) << 60) + 2;
+    val_decref(a);
+    val_decref(b);
+    if (g_int_freelist_count < 2) { puts("FAIL: fresh comparison parked fewer than two integer boxes"); return 1; }
+    Value *reused = make_int(INT64_C(1) << 60);
+    eigs_thread_drain_caches(eigs_current);
+    Value *fresh = make_int(INT64_C(1) << 60);
+    int same = memcmp(reused, fresh, sizeof(Value)) == 0;
+    val_decref(reused);
+    val_decref(fresh);
+    if (!same) { puts("FAIL: reused integer box differs byte-for-byte from fresh box"); return 1; }
+    puts("PASS: reused integer box equals fresh box byte-for-byte");
+    return 0;
+}
+
+static int fill_int_pool(size_t n) {
+    Value **held = calloc(n, sizeof(*held));
+    if (!held) return 0;
+    for (size_t i = 0; i < n; i++) held[i] = make_int(INT64_C(1) << 60);
+    for (size_t i = 0; i < n; i++) val_decref(held[i]);
+    free(held);
+    return 1;
+}
+
+#ifndef EIGS_POOL_OFF_NUM
+static int int_pool_types_are_int(void) {
+#if defined(EIGS_ASAN_POOL_POISON)
+    return 1; /* Parked type words are deliberately poisoned in this build. */
+#else
+    int seen = 0;
+    for (Value *v = g_int_freelist; v; ) {
+        Value *next;
+        if (v->type != VAL_INT) return 0;
+        memcpy(&next, EIGS_NUM_LINK(v), sizeof(next));
+        v = next;
+        seen++;
+    }
+    return seen == g_int_freelist_count;
+#endif
+}
+
+static int float_pool_types_are_float(void) {
+#if defined(EIGS_ASAN_POOL_POISON)
+    return 1;
+#else
+    int seen = 0;
+    for (Value *v = g_num_freelist; v; ) {
+        Value *next;
+        if (v->type != VAL_FLOAT) return 0;
+        memcpy(&next, EIGS_NUM_LINK(v), sizeof(next));
+        v = next;
+        seen++;
+    }
+    return seen == g_num_freelist_count;
+#endif
+}
+#endif
+
+static int number_pools_compiled_state(void) {
+#ifdef EIGS_POOL_OFF_NUM
+    puts("POOLS: num=off");
+#else
+    puts("POOLS: num=on");
+#endif
+    return 0;
+}
+
+static int bounded_int_pool(void) {
+#ifdef EIGS_POOL_OFF_NUM
+    if (!fill_int_pool(3 * INT_FREELIST_CAP) || g_int_freelist_count != 0) {
+        puts("FAIL: pool-off-num integer count changed"); return 1;
+    }
+    puts("PASS: pool-off-num integer count stays 0 through burst");
+    return 0;
+#else
+    const int takes[] = {1, 100, INT_FREELIST_CAP};
+    if (INT_FREELIST_CAP != NUM_FREELIST_CAP) { puts("FAIL: pool caps differ"); return 1; }
+    for (size_t t = 0; t < sizeof(takes) / sizeof(takes[0]); t++) {
+        if (!fill_int_pool(3 * INT_FREELIST_CAP) ||
+            g_int_freelist_count != INT_FREELIST_CAP) {
+            printf("FAIL: int burst count=%d cap=%d\n", g_int_freelist_count, INT_FREELIST_CAP); return 1;
+        }
+        Value **held = calloc((size_t)takes[t] + 1, sizeof(*held));
+        if (!held) return 2;
+        for (int i = 0; i < takes[t]; i++) held[i] = make_int(INT64_C(1) << 60);
+        if (g_int_freelist_count != INT_FREELIST_CAP - takes[t]) {
+            printf("FAIL: after K=%d count=%d expected=%d\n", takes[t], g_int_freelist_count, INT_FREELIST_CAP - takes[t]); free(held); return 1;
+        }
+        held[takes[t]] = make_int(INT64_C(1) << 60);
+        if (takes[t] == INT_FREELIST_CAP && g_int_freelist_count != 0) {
+            puts("FAIL: allocation after empty pool changed count"); free(held); return 1;
+        }
+        printf("PASS: integer pool burst=%d K=%d count=%d\n", 3 * INT_FREELIST_CAP, takes[t], INT_FREELIST_CAP - takes[t]);
+        for (int i = 0; i <= takes[t]; i++) val_decref(held[i]);
+        free(held);
+        eigs_thread_drain_caches(eigs_current);
+    }
+    return 0;
+#endif
+}
+
+static int disjoint_number_pools(void) {
+#ifdef EIGS_POOL_OFF_NUM
+    puts("SKIP: number pools disabled"); return 0;
+#else
+    Value *seed_float = make_float(.5);
+    val_decref(seed_float);
+    Value *float_head = g_num_freelist;
+    int float_count = g_num_freelist_count;
+    Value *int_head = g_int_freelist;
+    int int_count = g_int_freelist_count;
+    Value *i = make_int(INT64_C(1) << 60);
+    val_decref(i);
+    if (g_num_freelist != float_head || g_num_freelist_count != float_count) {
+        puts("FAIL: releasing integer box changed float list"); return 1;
+    }
+    if (g_int_freelist_count != int_count + 1) {
+        puts("FAIL: releasing integer box did not grow integer list"); return 1;
+    }
+    Value *next;
+    memcpy(&next, EIGS_NUM_LINK(g_int_freelist), sizeof(next));
+    if (next != int_head) {
+        memcpy(EIGS_NUM_LINK(g_int_freelist), &int_head, sizeof(int_head));
+        puts("FAIL: releasing integer box linked it to wrong list"); return 1;
+    }
+    eigs_thread_drain_caches(eigs_current);
+
+    Value *seed_int = make_int((INT64_C(1) << 60) + 1);
+    val_decref(seed_int);
+    int_head = g_int_freelist;
+    int_count = g_int_freelist_count;
+    float_head = g_num_freelist;
+    float_count = g_num_freelist_count;
+    Value *f = make_float(1.5);
+    val_decref(f);
+    if (g_int_freelist != int_head || g_int_freelist_count != int_count) {
+        puts("FAIL: releasing float box changed integer list"); return 1;
+    }
+    if (g_num_freelist_count != float_count + 1) {
+        puts("FAIL: releasing float box did not grow float list"); return 1;
+    }
+    memcpy(&next, EIGS_NUM_LINK(g_num_freelist), sizeof(next));
+    if (next != float_head) {
+        memcpy(EIGS_NUM_LINK(g_num_freelist), &float_head, sizeof(float_head));
+        puts("FAIL: releasing float box linked it to wrong list"); return 1;
+    }
+    eigs_thread_drain_caches(eigs_current);
+    Value **held = calloc(NUM_FREELIST_CAP + 1, sizeof(*held));
+    if (!held) return 2;
+    for (int n = 0; n <= NUM_FREELIST_CAP; n++) held[n] = make_float(n + .5);
+    for (int n = 0; n <= NUM_FREELIST_CAP; n++) val_decref(held[n]);
+    if (g_num_freelist_count != NUM_FREELIST_CAP || g_int_freelist_count != 0 ||
+        !float_pool_types_are_float() || !int_pool_types_are_int()) { puts("FAIL: full float pool changed integer pool"); free(held); return 1; }
+    eigs_thread_drain_caches(eigs_current);
+    for (int n = 0; n <= INT_FREELIST_CAP; n++) held[n] = make_int((INT64_C(1) << 60) + n);
+    for (int n = 0; n <= INT_FREELIST_CAP; n++) val_decref(held[n]);
+    free(held);
+    if (g_int_freelist_count != INT_FREELIST_CAP || g_num_freelist_count != 0 ||
+        !int_pool_types_are_int() || !float_pool_types_are_float()) { puts("FAIL: full integer pool changed float pool"); return 1; }
+    puts("PASS: integer and float pools remain disjoint in both directions and at both caps");
+    return 0;
+#endif
+}
+
+static int drain_int_pool(void) {
+    if (!fill_int_pool(8) || g_int_freelist_count == 0) { puts("FAIL: integer pool did not fill before drain"); return 1; }
+    eigs_thread_drain_caches(eigs_current);
+    if (g_int_freelist || g_int_freelist_count) {
+        puts("FAIL: drain left integer boxes parked");
+        fflush(stdout);
+        Value *v = g_int_freelist;
+        g_int_freelist = NULL;
+        g_int_freelist_count = 0;
+        while (v) {
+            Value *next;
+#ifdef EIGS_ASAN_POOL_POISON
+            eigs_num_park_unpoison(v);
+#endif
+            memcpy(&next, EIGS_NUM_LINK(v), sizeof(next));
+            free(v);
+            v = next;
+        }
+        return 1;
+    }
+    puts("PASS: drain empties integer pool and resets its count");
     return 0;
 }
 
@@ -127,7 +334,7 @@ static int leaf_control(void) {
     r = eigs_eval_string("pool_poison_leaf_r is pool_poison_leaf of [7]\n");
     if (r) eigs_value_release(r);
     Value *res = eigs_get_global("pool_poison_leaf_r");
-    int result_ok = res && res->type == VAL_NUM && VAL_NUM_RAW(res) == 7.0;
+    int result_ok = res && res->type == VAL_INT && VAL_I64_RAW(res) == 7;
     if (res) eigs_value_release(res);
     no_env = no_env && c && !c->env_cache;
     if (classified && no_env && result_ok) {
@@ -141,13 +348,22 @@ static int leaf_control(void) {
 
 static int control(void) {
     int bad = 0;
-    /* NUM pop: make_num hands the parked Value back, readable again. */
-    Value *v = make_num(1.5);
+    /* NUM pop: make_float hands the parked Value back, readable again. */
+    Value *v = make_float(1.5);
     val_decref(v);
-    Value *again = make_num(2.5);
+    Value *again = make_float(2.5);
     if (again != v) { puts("NOT-ARMED control: freelist did not reuse"); return 3; }
-    if (VAL_NUM_RAW(again) != 2.5 || again->refcount != 1) bad = 1;
+    if (VAL_F64_RAW(again) != 2.5 || again->refcount != 1) bad = 1;
     printf("control num reuse: %s\n", bad ? "WRONG" : "ok");
+    val_decref(again);
+
+    /* INT pop: make_int hands its own parked Value back, readable again. */
+    v = make_int(INT64_C(1) << 60);
+    val_decref(v);
+    again = make_int((INT64_C(1) << 60) + 1);
+    if (again != v) { puts("NOT-ARMED control: integer freelist did not reuse"); return 3; }
+    if (VAL_I64_RAW(again) != (INT64_C(1) << 60) + 1 || again->refcount != 1) bad = 1;
+    printf("control int reuse: %s\n", bad ? "WRONG" : "ok");
     val_decref(again);
 
     /* Env take: the second call takes the parked env (same struct). */
@@ -177,7 +393,8 @@ static int control(void) {
     if (!r) { puts("control take: eval failed"); return 1; }
     eigs_value_release(r);
     Value *res = eigs_get_global("pool_poison_r");
-    int ok = res && res->type == VAL_NUM && VAL_NUM_RAW(res) == 8.0;
+    /* #1758 N1/N3: this natural integer program returns the exact int 8. */
+    int ok = res && res->type == VAL_INT && VAL_I64_RAW(res) == 8;
     if (res) eigs_value_release(res);
     int same = c->env_cache == first;
     printf("control env take: %s (re-parked same env: %s)\n",
@@ -206,15 +423,24 @@ static int control(void) {
 
 int main(int argc, char **argv) {
     const char *mode = argc > 1 ? argv[1] : "";
+    /* A verdict must reach the output before a sanitizer can end the process:
+     * unbuffered, so no mode's own FAIL line is lost behind a leak report. */
+    setvbuf(stdout, NULL, _IONBF, 0);
     EigsState *st = eigs_open();
     if (!st) { fputs("SETUP FAIL: eigs_open\n", stderr); return 2; }
     int rc;
     if (!strcmp(mode, "num")) rc = plant_num();
+    else if (!strcmp(mode, "int")) rc = plant_int();
+    else if (!strcmp(mode, "pool-state")) rc = number_pools_compiled_state();
+    else if (!strcmp(mode, "int-fresh")) rc = int_reuse_is_fresh();
+    else if (!strcmp(mode, "int-bounds")) rc = bounded_int_pool();
+    else if (!strcmp(mode, "number-kinds")) rc = disjoint_number_pools();
+    else if (!strcmp(mode, "int-drain")) rc = drain_int_pool();
     else if (!strcmp(mode, "env")) rc = plant_env();
     else if (!strcmp(mode, "envfield")) rc = plant_envfield();
     else if (!strcmp(mode, "leaf")) rc = leaf_control();
     else if (!strcmp(mode, "control")) rc = control();
-    else { fprintf(stderr, "usage: %s num|env|envfield|leaf|control\n", argv[0]); rc = 2; }
+    else { fprintf(stderr, "usage: %s num|int|pool-state|int-fresh|int-bounds|number-kinds|int-drain|env|envfield|leaf|control\n", argv[0]); rc = 2; }
     eigs_close(st);
     return rc;
 }

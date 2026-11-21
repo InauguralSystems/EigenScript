@@ -1,0 +1,1 @@
+- The stall contract gains three cases whose window mixes exact and inexact steps (#2434).

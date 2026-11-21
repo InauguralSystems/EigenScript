@@ -44,7 +44,7 @@ _dbg_output is []
 _dbg_done is 0
 _dbg_quit is 0
 _dbg_scroll_y is 0
-_dbg_entropy_history is []
+_dbg_how_history is []
 _dbg_status is "Ready"
 
 # ---- Step-back history ----------------------------------------------------
@@ -87,8 +87,8 @@ define _debug_hook(info) as:
     _dbg_current_line is line
     _dbg_current_env is env
 
-    # Collect entropy snapshot for chart
-    _snapshot_entropy of env
+    # Collect numeric settledness scores for the chart
+    _snapshot_how of env
 
     # Capture (line, env-snapshot) for step-back history. A new live step
     # always resets the view cursor — historical view is one-shot.
@@ -134,8 +134,8 @@ define _debug_hook(info) as:
     if _dbg_running == 0:
         throw of "__debugger_stop__"
 
-# ---- Entropy snapshot -----------------------------------------------------
-define _snapshot_entropy(env) as:
+# ---- Numeric how snapshot -------------------------------------------------
+define _snapshot_how(env) as:
     if env == null:
         return null
     total is 0
@@ -146,15 +146,21 @@ define _snapshot_entropy(env) as:
         name is b[0]
         if (has_key of [_eigen_obs, name]):
             obs is _eigen_obs[name]
-            total is total + obs[1]
-            count is count + 1
-    avg is 0
+            # Numeric how is null before a step and NaN on undefined steps.
+            # Average only defined numeric scores; nonnumeric entropy has
+            # different units and stays out of this chart.
+            if obs[5]:
+                score is obs[4]
+                if score != null:
+                    if score == score:
+                        total is total + score
+                        count is count + 1
     if count > 0:
         avg is total / count
-    append of [_dbg_entropy_history, avg]
-    # Keep chart data in sync
-    if (len of _entropy_chart.series) > 0:
-        append of [_entropy_chart.series[0].data, avg]
+        append of [_dbg_how_history, avg]
+        # Keep chart data in sync; a fresh/undefined sample adds no point.
+        if (len of _how_chart.series) > 0:
+            append of [_how_chart.series[0].data, avg]
 
 # ---- Window setup ---------------------------------------------------------
 WINDOW_W is 1200
@@ -349,9 +355,9 @@ _var_columns is [
     {"name": "Value", "width": 100},
     {"name": "Type", "width": 50},
     {"name": "When", "width": 45},
-    {"name": "Entropy", "width": 65},
-    {"name": "dH", "width": 55},
-    {"name": "Status", "width": 70}
+    {"name": "Where", "width": 65},
+    {"name": "Why", "width": 55},
+    {"name": "How", "width": 70}
 ]
 _var_table is ui.table of ["var_table", 4, 4, WINDOW_W - SPLIT_POS - 12, MAIN_H - 8, _var_columns, null]
 ui.add_child of [_inspector_panel, _var_table]
@@ -359,7 +365,7 @@ ui.add_child of [_inspector_panel, _var_table]
 _main_split.panel_a is _source_panel
 _main_split.panel_b is _inspector_panel
 
-# ---- Bottom panel: output + entropy chart --------------------------------
+# ---- Bottom panel: output + numeric settledness chart ---------------------
 _bottom is ui.panel of ["bottom", 0, TOOLBAR_H + MAIN_H, WINDOW_W, BOTTOM_H]
 _bottom.bg is [25, 25, 35]
 _bottom.border is [40, 40, 55]
@@ -373,17 +379,17 @@ _output_view is ui.code_view of ["output", 4, 22, 590, BOTTOM_H - 26, ""]
 _output_view.line_numbers is 0
 ui.add_child of [_bottom, _output_view]
 
-# Entropy chart (right half)
-_chart_label is ui.label of ["chart_label", 604, 4, "Avg Entropy"]
+# Numeric how chart (right half)
+_chart_label is ui.label of ["chart_label", 604, 4, "Mean numeric how"]
 _chart_label.color is [120, 120, 150]
 ui.add_child of [_bottom, _chart_label]
 
-_entropy_chart is ui.chart of ["entropy_chart", 600, 22, WINDOW_W - 608, BOTTOM_H - 26]
-_entropy_chart.y_label is "H"
-_entropy_chart.x_label is "step"
+_how_chart is ui.chart of ["how_chart", 600, 22, WINDOW_W - 608, BOTTOM_H - 26]
+_how_chart.y_label is "how"
+_how_chart.x_label is "sample"
 # Initialize with one series
-_entropy_chart.series is [{"label": "Avg H", "data": [], "color": [80, 180, 220]}]
-ui.add_child of [_bottom, _entropy_chart]
+_how_chart.series is [{"label": "Mean how", "data": [], "color": [80, 180, 220]}]
+ui.add_child of [_bottom, _how_chart]
 
 # Status bar at very bottom (re-use a label)
 _status_label is ui.label of ["status_lbl", 8, BOTTOM_H - 18, "Ready"]
@@ -435,25 +441,29 @@ define _update_var_table() as:
             type_str is type of val
             # Observer data
             obs_count is ""
-            entropy_str is ""
-            dh_str is ""
-            status is ""
+            where_str is ""
+            why_str is ""
+            how_str is ""
             if (has_key of [_eigen_obs, name]):
                 obs is _eigen_obs[name]
                 obs_count is str of obs[0]
-                ent is obs[1]
-                dh is obs[2]
-                entropy_str is str of (floor of (ent * 1000) / 1000)
-                dh_str is str of (floor of (dh * 1000) / 1000)
-                if dh < -0.01:
-                    status is "improving"
-                elif dh > 0.01:
-                    status is "diverging"
-                elif ent < 0.01:
-                    status is "converged"
+                # str preserves exact int displacements and renders null/IEEE
+                # edges without numeric operations on an absent first step.
+                where_str is str of obs[1]
+                why_str is str of obs[2]
+                if obs[5]:
+                    how_str is str of obs[4]
                 else:
-                    status is "stable"
-            row is [name, val_str, type_str, obs_count, entropy_str, dh_str, status]
+                    # Preserve the meta-interpreter's nonnumeric how rule.
+                    ent is obs[1]
+                    initial is obs[3]
+                    if initial <= 0:
+                        initial is 1.0
+                    score is 1.0
+                    if ent > 0:
+                        score is 1.0 - (ent / initial)
+                    how_str is str of score
+            row is [name, val_str, type_str, obs_count, where_str, why_str, how_str]
             append of [rows, row]
         env is env[1]
     _var_table.rows is rows
@@ -480,12 +490,12 @@ define _start_debug() as:
     _dbg_current_line is 0
     _dbg_current_env is null
     _dbg_output is []
-    _dbg_entropy_history is []
+    _dbg_how_history is []
     _dbg_done is 0
     _dbg_status is "Running..."
     _output_view.text is ""
     # Reset chart data
-    _entropy_chart.series is [{"label": "Avg H", "data": [], "color": [80, 180, 220]}]
+    _how_chart.series is [{"label": "Mean how", "data": [], "color": [80, 180, 220]}]
     # Reset observer state
     _eigen_obs is {}
 

@@ -60,28 +60,29 @@ print of step2
 print of "EXPECT: 3"
 
 print of ""
-print of "--- WHERE: entropy (spatial) ---"
+print of "--- WHERE: current numeric value ---"
 p is 100
-entropy is where is p
-print of "WHERE returns entropy (number >= 0):"
-print of entropy
+position is where is p
+print of "WHERE returns current value (number):"
+print of position
 
 print of ""
-print of "--- WHY: gradient (dH/dt) ---"
+print of "--- WHY: displacement (null on first sample) ---"
 q is 50
 grad is why is q
-print of "WHY returns gradient (number):"
+print of "WHY returns displacement (null on first sample):"
 print of grad
 
 print of ""
-print of "--- HOW: stability (0-1) ---"
+print of "--- HOW: settledness (null on first sample) ---"
 rr is 75
 quality is how is rr
-print of "HOW returns stability (0-1 range):"
+print of "HOW returns settledness (null on first sample):"
 print of quality
 
 print of ""
 print of "--- ARITHMETIC COMPOSITION ---"
+y is 100
 y is 100
 w1 is what is y
 g1 is why is y

@@ -25,7 +25,7 @@ define keyfn(x) as:
     return y
 define safe(x) as:
     try:
-        w is 1 / 0
+        w is 1 // 0
     catch e:
         inner_line is e.line
     y is x - x
@@ -142,7 +142,7 @@ catch e:
     got is e.line
 assert_eq of [got, 125, "compiled caller: / after a native RETURN_NULL callee"]
 # #1434: a callback that ends by ERROR-HALT, not RETURN. sandbox_run swallows
-# its chunk's error; the chunk stamped line 77 first (OP_LINE 77, then 1 / 0),
+# its chunk's error; the chunk stamped line 77 first (OP_LINE 77, then strict 1.0 / 0.0),
 # so pre-fix the caller's next builtin raise reported 77. Descriptor opcodes:
 # LINE 68, NUM_ONE 3, NUM_ZERO 2, DIV 7, RETURN 40 (src/vm.h enum order).
 # ok77 stamps 77 and returns 1 (a RETURN, restored since #1424).

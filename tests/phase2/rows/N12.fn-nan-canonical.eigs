@@ -1,0 +1,16 @@
+# ROW: N12.fn-nan-canonical
+# ITEMS: N12
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop nz SUB
+# OPS: SUB
+define nz(a) as:
+    local t is a - a
+    return t
+x is 1e308 * 10
+answer is 0.0
+calls is 0
+loop while calls < 60:
+    answer is nz of x
+    calls is calls + 1
+print of (f64_bits of answer)

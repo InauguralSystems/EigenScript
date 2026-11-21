@@ -1,0 +1,7 @@
+# ROW: ctl.N3.small-ints
+# ITEMS: N3
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [1 + 2, 10 - 3, 6 * 7, -4]

@@ -1,0 +1,9 @@
+# R1.6 behaviour-table probe: observe (other; observer readouts (O4))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+x is 5
+r is observe of (x + 0)
+print of [r, nt of r[1], nt of r[2], nt of r[3]]

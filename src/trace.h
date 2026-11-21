@@ -20,7 +20,7 @@
  * with the same sentinel value_slot.h uses to avoid a re-typedef. */
 #ifndef EIGENSCRIPT_EIGSSLOT_UNION_DEFINED
 #define EIGENSCRIPT_EIGSSLOT_UNION_DEFINED
-typedef union { double d_; uint64_t u; } EigsSlot;   /* d_: read via SLOT_NUM_RAW (#1637) */
+typedef union { double d_; uint64_t u; } EigsSlot;   /* d_: read via SLOT_F64_RAW (#1637) */
 #endif
 
 /* Tape format version (#411). Every tape's first line is a header record:
@@ -29,8 +29,12 @@ typedef union { double d_; uint64_t u; } EigsSlot;   /* d_: read via SLOT_NUM_RA
  * value serialization, escaping, truncation markers, the header itself.
  * Replay refuses a tape whose format or runtime version differs from the
  * running binary: version-and-reject, never migrate (docs/TRACE.md). */
-#define TRACE_FORMAT_VERSION 8   /* v8: length-framed, continued N records (#1816) */
+#define TRACE_FORMAT_VERSION 10  /* R2.5: explicit IEEE tokens and exact raw-NaN buffer cells; reject older schemas */
 #define TRACE_STREAM_KEY_MAX 1024
+
+/* Parse one v10 float token (finite decimal, inf, -inf, nan). Advances only
+ * on success; also shared by the non-executing step/DAP reader. */
+int trace_parse_float_token(const char **cursor, double *out);
 
 /* B payload parser shared with the non-executing tape reader. key_hex points
  * into the caller's NUL-terminated payload; it is borrowed, never freed here. */
@@ -301,13 +305,12 @@ void trace_assign_filtered_at_line(const char *name, EigsSlot value, int line);
  * name the owning chunk does not interrogate (EigsChunk.local_traced). */
 void trace_assign_tape_only(const char *name, EigsSlot value);
 
-/* #262 Phase-3 D2: overwrite the observer snapshot of `name`'s most recent
- * history entry with slot-sourced entropy/dH/last_entropy. Called from
- * OBSERVE_NAME_POST under g_trace_obs_hist so `where/why/how is x at L` reads
- * the Env slot, decoupling the temporal feature from the Value observer
- * fields. `name` must be the interned constant. */
-void trace_record_obs(const char *name, double entropy, double dH,
-                      double last_entropy);
+/* The observer snapshot is a by-value numeric triple plus running
+ * best/patience state, or the non-numeric entropy channel. No retained refs.
+ * OBSERVE_NAME_POST patches the most recent assignment under g_trace_obs_hist.
+ * `name` must be the interned constant. Full definition: eigenscript.h. */
+struct ObsSnapshot;
+void trace_record_obs(const char *name, struct ObsSnapshot snapshot);
 
 /* Forward decl; Value is fully defined in eigenscript.h. */
 struct Value;
@@ -353,7 +356,7 @@ int trace_query_prev(const char *interned_name, EigsSlot *out);
  *
  * `kind` mirrors the interrogative encoding:
  *   0 (what), 6 (prev)  → return historical slot
- *   2 (when)             → return assignment count up to that line (as immediate num)
+ *   2 (when)             → return exact int assignment count (SMI or owned box)
  *   1 (who)              → return binding name (string)
  *   3/4/5 (where/why/how)→ observer snapshot captured at that assign
  *                          (requires g_trace_obs_hist; miss returns 0)

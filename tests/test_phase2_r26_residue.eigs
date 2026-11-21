@@ -1,0 +1,120 @@
+# R2.6 (#1758, #1746 residue): internal double-to-integer conversions.
+# LINE-SENSITIVE: x is assigned on lines 4 and 5; the `at` checks name them.
+load_file of "lib/test.eigs"
+x is 10
+x is 20
+big is 1e308 * 10
+nan_v is big - big
+
+define raised_kind(f) as:
+    try:
+        f of null
+    catch e:
+        return [e.kind, e.message]
+    return ["answered", null]
+
+# `at`: N5 exact rule for a float line; non-finite and out-of-range raise.
+assert_eq of [what is x at 4.0, 10, "at integral float line"]
+assert_eq of [what is x at 5.0, 20, "at integral float line 5"]
+assert_eq of [what is x at 4, 10, "at int line control"]
+define at_frac(_) as:
+    return what is x at 4.5
+assert_eq of [raised_kind of at_frac, ["value", "'at' line must be a whole number, got 4.5"], "at fractional line raises"]
+define at_nan(_) as:
+    return what is x at nan_v
+assert_eq of [raised_kind of at_nan, ["value", "'at' line must be a whole number, got nan"], "at nan line raises"]
+define at_inf(_) as:
+    return what is x at big
+assert_eq of [raised_kind of at_inf, ["value", "'at' line must be a whole number, got inf"], "at inf line raises"]
+define at_ninf(_) as:
+    return what is x at (0.0 - big)
+assert_eq of [raised_kind of at_ninf, ["value", "'at' line must be a whole number, got -inf"], "at -inf line raises"]
+define at_huge(_) as:
+    return what is x at 1e300
+assert_eq of [raised_kind of at_huge, ["value", "'at' line must be a whole number, got 1e+300"], "at 1e300 line raises"]
+define at_wide(_) as:
+    return what is x at 3000000000.0
+assert_eq of [raised_kind of at_wide, ["value", "'at' line 3000000000 is out of range"], "at float beyond C int raises like the int"]
+define at_wide_int(_) as:
+    return what is x at 3000000000
+assert_eq of [raised_kind of at_wide_int, ["value", "'at' line 3000000000 is out of range"], "at int beyond C int control"]
+
+# `when`: the ordinal's conversion is checked before the cast.
+assert_eq of [what is x when 2.0, 20, "when integral float ordinal"]
+define when_frac(_) as:
+    return what is x when 1.5
+assert_eq of [raised_kind of when_frac, ["value", "'when' ordinal must be a whole number, got 1.5"], "when fraction raises"]
+define when_nan(_) as:
+    return what is x when nan_v
+assert_eq of [raised_kind of when_nan, ["value", "'when' ordinal must be a whole number, got nan"], "when nan raises"]
+define when_inf(_) as:
+    return what is x when big
+assert_eq of [raised_kind of when_inf, ["value", "'when' ordinal must be a whole number, got inf"], "when inf raises"]
+define when_ninf(_) as:
+    return what is x when (0.0 - big)
+assert_eq of [raised_kind of when_ninf, ["value", "'when' ordinal must be a whole number, got -inf"], "when -inf raises"]
+define when_huge(_) as:
+    return what is x when 1e300
+assert_eq of [raised_kind of when_huge, ["value", "'when' ordinal must be a whole number, got 1e+300"], "when 1e300 raises"]
+
+# Audio generators: sample count = dur * rate rounded half away from zero (Q7
+# magnitude, Q4). No device is opened, so rate is 44100.
+define gen_lens(d) as:
+    return [len of (audio_sine of [440, d, 0.5]), len of (audio_saw of [440, d, 0.5]), len of (audio_square of [440, d, 0.5]), len of (audio_noise of [d, 0.5]), len of (audio_sweep of [100, 200, d, 0.5, 0])]
+assert_eq of [gen_lens of (0.4 / 44100), [0, 0, 0, 0, 0], "0.4 samples round to 0"]
+assert_eq of [gen_lens of (0.5 / 44100), [1, 1, 1, 1, 1], "0.5 samples round half away to 1"]
+assert_eq of [gen_lens of (2.4 / 44100), [2, 2, 2, 2, 2], "2.4 samples round to 2"]
+assert_eq of [gen_lens of (2.5 / 44100), [3, 3, 3, 3, 3], "2.5 samples round half away to 3"]
+assert_eq of [gen_lens of (2.6 / 44100), [3, 3, 3, 3, 3], "2.6 samples round to 3"]
+assert_eq of [gen_lens of (0.0 - 1.0), [0, 0, 0, 0, 0], "negative duration is empty"]
+define gen_nan(_) as:
+    return audio_sine of [440, nan_v, 0.5]
+assert_eq of [raised_kind of gen_nan, ["value", "audio_sine: expected a finite number"], "generator nan duration raises by name"]
+define gen_inf(_) as:
+    return audio_noise of [big, 0.5]
+assert_eq of [raised_kind of gen_inf, ["value", "audio_noise: expected a finite number"], "generator inf duration raises by name"]
+
+# buf_to_pcm16le: a non-finite sample is refused before any result exists;
+# finite out-of-range samples saturate to [-1, 1] (Q7 bounded).
+define pcm_bits(bits) as:
+    b is buffer of 1
+    buf_set_bits of [b, 0, bits]
+    try:
+        o is buf_to_pcm16le of [b, 0, 1]
+        return ["answered", o[0], o[1]]
+    catch e:
+        return [e.kind, e.message]
+assert_eq of [pcm_bits of 9221120237041090560, ["value", "buffer_read_f64: expected a finite number"], "pcm16 NaN sample refused"]
+assert_eq of [pcm_bits of 9221120237041090561, ["value", "buffer_read_f64: expected a finite number"], "pcm16 NaN payload sample refused"]
+assert_eq of [pcm_bits of 9218868437227405312, ["value", "buffer_read_f64: expected a finite number"], "pcm16 inf sample refused"]
+assert_eq of [pcm_bits of -4503599627370496, ["value", "buffer_read_f64: expected a finite number"], "pcm16 -inf sample refused"]
+mid is buffer of 3
+mid[0] is 0.5
+buf_set_bits of [mid, 1, 9221120237041090560]
+mid[2] is 0.5
+mid_out is "unset"
+try:
+    mid_out is buf_to_pcm16le of [mid, 0, 3]
+catch e:
+    assert_eq of [e.kind, "value", "pcm16 mid-buffer NaN refused"]
+assert_eq of [mid_out, "unset", "pcm16 refusal returns no partial result"]
+sat is buf_from_list of ([2.0, -2.0, 1e300, -1e300, 0.5, -1.0])
+so is buf_to_pcm16le of [sat, 0, 6]
+assert_eq of [[so[0], so[1], so[2], so[3], so[4], so[5], so[6], so[7], so[8], so[9], so[10], so[11]], [255.0, 127.0, 1.0, 128.0, 255.0, 127.0, 1.0, 128.0, 0.0, 64.0, 1.0, 128.0], "pcm16 finite out-of-range samples saturate"]
+
+# numerical_grad_rows/_cols: the #1746 waiver ended with the entry selector
+# snapshot; a NaN written into the selector mid-loop is never read.
+calls is 0
+idx is [0, 1]
+define loss(_) as:
+    calls is calls + 1
+    idx[1] is nan_v
+    return 1.0
+m is [[1.0, 2.0], [3.0, 4.0]]
+assert_eq of [numerical_grad_rows of [loss, m, idx, 0.001], [[0.0, 0.0], [0.0, 0.0]], "grad rows ignores selector mutation"]
+assert_eq of [calls, 8, "grad rows differentiates both entry rows"]
+calls is 0
+idx is [0, 1]
+assert_eq of [numerical_grad_cols of [loss, m, idx, 0.001], [[0.0, 0.0], [0.0, 0.0]], "grad cols ignores selector mutation"]
+assert_eq of [calls, 8, "grad cols differentiates both entry columns"]
+test_summary of null

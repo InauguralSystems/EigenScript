@@ -1,0 +1,12 @@
+# R1.6 behaviour-table probe: http_static (other; formats via value_to_string; PROFILE server (make server))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+try:
+    print of (http_static of ["/s", p])
+catch e:
+    print of ["capability", e.kind, e.message]
+    exit of 0

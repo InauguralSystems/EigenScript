@@ -1,0 +1,17 @@
+# R1.6 behaviour-table probe: channel_closed (int-requiring; channel handle ids); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+c is channel of null
+id is c["_channel_id"]
+gen is c["_channel_gen"]
+print of (channel_closed of c)
+try:
+    print of ["fraction-answer", channel_closed of {"_channel_id": id + 0.5, "_channel_gen": gen}]
+catch e:
+    print of ["id-fraction", e.kind]
+print of (channel_closed of {"_channel_id": id + 0.0, "_channel_gen": gen + 0.0})
+close_channel of c
+print of (channel_closed of c)

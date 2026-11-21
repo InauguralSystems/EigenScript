@@ -1,0 +1,16 @@
+x is 1.0
+unobserved:  # lint: allow W020 -- elided-line history is the witness
+    x is 2.0
+missing_a is [where is x at 3, why is x at 3, how is x at 3]
+i is 0
+loop while i < 1000:
+    i is i + 1
+    unobserved:  # lint: allow W020 -- loop name-post path
+        x is 3.0
+missing_b is [where is x at 9, why is x at 9, how is x at 9]
+load_file of "lib/test.eigs"
+assert_eq of [str of missing_a, "[null, null, null]", "elided first line has no observer history"]
+assert_eq of [str of missing_b, "[null, null, null]", "elided loop line has no observer history"]
+assert_eq of [where is x, 3.0, "elided numeric sample still updates live value"]
+assert_eq of [why is x, 0.0, "elided numeric sample still updates live step"]
+test_summary of null

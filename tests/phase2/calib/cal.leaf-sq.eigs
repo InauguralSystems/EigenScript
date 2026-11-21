@@ -1,0 +1,14 @@
+# ROW: cal.leaf-sq
+# ITEMS: N3
+# EXPECT-RC: 0
+# SHAPE: L
+# WITNESS: leaf sq
+# OPS: MUL
+# the leaf computes sq: no entries normally, 1 under trace
+define sq(x) as:
+    return x * x
+print of (sq of 1.5)
+try:
+    print of (5.5 & 1)
+catch e:
+    print of e.kind

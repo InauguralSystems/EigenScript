@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: monotonic_ns (int-preserving, LOSS; exact below 2^53 ns, an exact int under N1; HOOK clock: CLOCK_MONOTONIC answers 2^53 + 1 ns (ruling B2))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+log is env_get of "R16_HOOK_LOG"
+n is monotonic_ns of null
+print of [n, nt of n, n == 9007199254740993]
+write of (read_text of log)

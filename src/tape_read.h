@@ -40,7 +40,7 @@ typedef struct {
 typedef struct {
     int      rec;
     int      binding;       /* 0 = state-level `O cfg`; 1 = per-binding `O win` */
-    double   dh_zero, dh_small, h_low, scale;   /* binding == 0 */
+    double   dh_zero, dh_small, scale;   /* binding == 0 */
     int      window;        /* binding == 0: state default; 1: the override */
     const char *name;       /* binding == 1: the overridden binding */
     uint32_t scope;         /* binding == 1: frame instance the call resolved from */
@@ -138,7 +138,7 @@ const Assign *tape_latest_at(const NameHist *h, int pos);
  * because a verdict is reported there and not at the last assign.
  *
  * Requires eigenscript.h (ObserverSlot); every caller includes it first. */
-typedef struct { double dh_zero, dh_small, h_low, scale; int window; } TapeObsCfg;
+typedef struct { double dh_zero, dh_small, scale; int window; } TapeObsCfg;
 
 typedef struct {
     struct ObserverSlot slot;

@@ -10,6 +10,25 @@ ri is random_int of [5, 10]
 assert of [ri >= 5, "RI1 random_int >= lo"]
 assert of [ri <= 10, "RI2 random_int <= hi"]
 
+# One draw sees an off-by-one in the range one time in six (#1758 R1.1 critic,
+# plant D: random_int answering lo+1..hi+1 passed). 300 draws stay inside
+# [5, 10] and reach both ends; missing an end by chance is about 2^-78.
+ri_out is 0
+ri_lo is 0
+ri_hi is 0
+ri_k is 0
+loop while ri_k < 300:
+    ri_v is random_int of [5, 10]
+    if ri_v < 5 or ri_v > 10:
+        ri_out is ri_out + 1
+    if ri_v == 5:
+        ri_lo is 1
+    if ri_v == 10:
+        ri_hi is 1
+    ri_k is ri_k + 1
+assert of [ri_out == 0, "RI5 300 draws stay in [5, 10]"]
+assert of [ri_lo == 1 and ri_hi == 1, "RI6 300 draws reach both 5 and 10"]
+
 # #725: span exactly 2^31 is the widest range lrand48 can serve — must NOT raise
 ri_max is random_int of [0, 2147483647]
 assert of [ri_max >= 0, "RI3 random_int boundary span >= lo"]
