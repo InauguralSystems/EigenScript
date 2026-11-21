@@ -1,0 +1,1 @@
+- `http_respond` no longer ends the server process when its response dictionary or its `headers` dictionary had a key removed with `dict_remove`: it reads the live keys in their insertion order, as for the same dictionary built without the removed key (#2482).

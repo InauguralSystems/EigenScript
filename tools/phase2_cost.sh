@@ -5,7 +5,7 @@
 # TSV: workload, tier, max_local, max_ci, recover_round, reason (no header).
 # #1939: this gate measures and enforces max_local; CI measures max_ci.
 # Each column is ceil(delta+0.2, 0.1) from its own gate, never the other method.
-# A finite maximum may be negative when the candidate is cheaper than main.
+# A finite maximum may be negative when the candidate is cheaper than the supplied base.
 # A declared row is bounded on BOTH sides. Above its max it fails (OVER).
 # More than STALE_TOLERANCE points below its max it also fails (STALE): a
 # round recovered cost and the declaration must come down, or a NEW
@@ -17,13 +17,13 @@
 # the same binaries a different workload path moved bench/alloc_heavy by
 # 0.160 points (the heap layout shifts a short string across a strlen
 # alignment boundary, a million times).
+# --population prints the CodSpeed-derived workload/tier population.
 # --declared TIER --method METHOD prints validated rows of one tier
 # (workload, that method's max, recover_round); all includes tier as field 2.
 # METHOD defaults to local.
 # bench/check_regression.sh explicitly requests ci, and STALE-checks max_ci.
-# --final requires the declarations file to be empty before integration merges,
-# and the observer oracle's (tests/phase2/oracle_expect.txt, score.py --declared,
-# #1830) as well: #1776 merges only when neither declares anything.
+# --final is the release-cut check: cost and observer-oracle declarations stay
+# through #1758's landing (decision 2026-11-19), then must be empty for release.
 set -eu
 cd "$(dirname "$0")/.."
 exec python3 - "$@" <<'PY'
@@ -155,11 +155,13 @@ ap.add_argument('--n6-text', action='store_true',
 ap.add_argument('--self-test', action='store_true',
                 help='one-time output-comparator calibration; runs no workload or build')
 ap.add_argument('--final', action='store_true',
-                help='require empty cost_expect.txt and oracle_expect.txt (the pre-merge condition)')
+                help='require empty cost_expect.txt and oracle_expect.txt before a release is cut')
 ap.add_argument('--declared', choices=('jit', 'off', 'all'),
                 help='print validated declarations (workload, method max, recover_round); all includes tier as field 2')
 ap.add_argument('--method', choices=('local', 'ci'),
                 help='column for --declared only (default: local); cost runs always enforce max_local')
+ap.add_argument('--population', action='store_true',
+                help='print each CodSpeed-derived workload and tier as TSV')
 ap.add_argument('base', nargs='?')
 ap.add_argument('cand', nargs='?')
 args = ap.parse_args()
@@ -187,10 +189,11 @@ if args.final and not oracle_path.is_file():
 if args.final and oracle_path.read_text():
     sys.exit('phase2-cost: FAIL: --final requires an empty tests/phase2/oracle_expect.txt'
              ' (%d observer-oracle declaration(s) remain)' % len(oracle_path.read_text().splitlines()))
-if bool(args.base) != bool(args.cand) or (not args.base and not args.final and not args.declared) \
-        or (args.declared and (args.base or args.final)):
-    ap.error('supply <base-bin> <cand-bin>, or --final alone, or --declared TIER alone')
-if not args.base and not args.declared:
+if bool(args.base) != bool(args.cand) or (not args.base and not args.final and not args.declared and not args.population) \
+        or ((args.declared or args.population) and (args.base or args.final)) \
+        or (args.declared and args.population):
+    ap.error('supply <base-bin> <cand-bin>, --final, --population, or --declared TIER')
+if not args.base and not args.declared and not args.population:
     print('phase2-cost: final declarations=0 oracle_declarations=0 PASS')
     sys.exit(0)
 local_workload = re.compile(r'(?:bench/[^/]+|tests/bench_[^/]+)\.eigs')
@@ -213,6 +216,11 @@ expected = {p for p in tracked if local_workload.fullmatch(p)}
 if workloads != expected:
     sys.exit('phase2-cost: FAIL: CodSpeed workload coverage missing=%s stale=%s' %
              (sorted(expected - workloads), sorted(workloads - expected)))
+if args.population:
+    for workload in sorted(workloads):
+        for tier in ('jit', 'off'):
+            print(workload + '\t' + tier)
+    sys.exit(0)
 try:
     expectations = parse_declarations(expect_text, workloads)
 except ValueError as error:
