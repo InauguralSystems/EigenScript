@@ -28,10 +28,20 @@ if [ -z "$PARENT" ]; then
         echo "formatter differential: incumbent ref is not a commit in this clone" >&2
         exit 1
     }
-    git -C "$ROOT" merge-base --is-ancestor "$PARENT_REF" HEAD || {
-        echo "formatter differential: incumbent $PARENT_REF is not an ancestor of HEAD" >&2
-        exit 1
-    }
+    if ! git -C "$ROOT" merge-base --is-ancestor "$PARENT_REF" HEAD; then
+        # The long branch lands on main as ONE squashed commit, and the commits of the branch are not
+        # ancestors of that commit: the pinned incumbent is one of them. It is then accepted when it
+        # belongs to the landed branch, whose history the tag phase2-landed keeps. Nothing else is:
+        # an incumbent named by FMT_PARENT_REF, or a pin outside that history, is still refused.
+        if [ "$PARENT_SOURCE" = tests/phase2/fmt_parent_ref.txt ] &&
+           git -C "$ROOT" rev-parse -q --verify 'refs/tags/phase2-landed^{commit}' >/dev/null 2>&1 &&
+           git -C "$ROOT" merge-base --is-ancestor "$PARENT_REF" refs/tags/phase2-landed; then
+            echo "formatter differential: incumbent $PARENT_REF is not an ancestor of HEAD; accepted as part of the landed branch (an ancestor of the tag phase2-landed)"
+        else
+            echo "formatter differential: incumbent $PARENT_REF is not an ancestor of HEAD" >&2
+            exit 1
+        fi
+    fi
     echo "formatter differential: incumbent=$PARENT_REF source=$PARENT_SOURCE"
     if [ -n "${FMT_PARENT_BINARY:-}" ]; then
         # Borrow the already-built reviewed oracle in its owning checkout;
