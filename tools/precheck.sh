@@ -17,6 +17,19 @@ set -u
 cd "$(dirname "$0")/.." || exit 2
 . tools/portability_verdict.sh
 
+set_tool_runner() { # set the interpreter used for a tool path
+    case "$1" in
+        *.py) TOOL_RUNNER=python3 ;;
+        *) TOOL_RUNNER=bash ;;
+    esac
+}
+
+print_full_output_hint() { # <command string>
+    local cmd="$1"
+    set_tool_runner "${cmd%% *}"
+    printf '        (full output: %s %s)\n' "$TOOL_RUNNER" "$cmd"
+}
+
 run_gate() {   # run_gate <index> <class> <command...>
     local i="$1" class="$2" s rc; shift 2
     if { [ "$class" = bin ] || [ "$class" = portability ] || [ "$class" = selftest ]; } && [ -z "$BIN" ]; then
@@ -24,10 +37,8 @@ run_gate() {   # run_gate <index> <class> <command...>
         echo "SKIP|0|no eigenscript binary (run make to include this gate)" > "$OUT/$i.st"; return
     fi
     s=$(date +%s)
-    case "$1" in
-        *.py) python3 "$@" > "$OUT/$i.log" 2>&1; rc=$? ;;
-        *) bash "$@" > "$OUT/$i.log" 2>&1; rc=$? ;;
-    esac
+    set_tool_runner "$1"
+    "$TOOL_RUNNER" "$@" > "$OUT/$i.log" 2>&1; rc=$?
     if [ "$class" = portability ]; then
         portability_verdict "$rc" "$(cat "$OUT/$i.log")" "${PRECHECK_KERNEL:-$(uname -s)}"
         echo "$PORT_VERDICT|$(( $(date +%s) - s ))|$PORT_VERDICT_REASON" > "$OUT/$i.st"
@@ -71,7 +82,25 @@ if [ "${1:-}" = --selftest ]; then
     BIN=""; run_gate no-binary selftest "$stub" 99 'must not run'
     IFS='|' read -r got _ _ < "$OUT/no-binary.st"
     [ "$got" = SKIP ] && [ -f "$OUT/no-binary.log" ] && [ ! -s "$OUT/no-binary.log" ] && echo 'PASS: no binary -> SKIP with empty log' || { echo "FAIL: no binary wanted SKIP with empty log, got $got"; fail=$((fail + 1)); }
-    echo "precheck-selftest: $((10 - fail))/10 passed, $fail failed"
+    py_stub="$OUT/failing.py"
+    printf '%s\n' 'import sys' 'sys.exit(7)' > "$py_stub"
+    BIN=selftest-binary
+    run_gate hint-python run "$py_stub"
+    run_gate hint-shell run "$stub" 7 'planted failure'
+    IFS='|' read -r py_status _ _ < "$OUT/hint-python.st"
+    IFS='|' read -r sh_status _ _ < "$OUT/hint-shell.st"
+    py_hint=$(print_full_output_hint "$py_stub")
+    sh_cmd="$stub 7 planted failure"
+    sh_hint=$(print_full_output_hint "$sh_cmd")
+    want_py="        (full output: python3 $py_stub)"
+    want_sh="        (full output: bash $sh_cmd)"
+    if [ "$py_status" = FAIL ] && [ "$sh_status" = FAIL ] && [ "$py_hint" = "$want_py" ] && [ "$sh_hint" = "$want_sh" ]; then
+        echo 'PASS: failure hints name Python and shell commands'
+    else
+        echo "FAIL: failure hints: expected '$want_py', got '$py_hint'; expected '$want_sh', got '$sh_hint'"
+        fail=$((fail + 1))
+    fi
+    echo "precheck-selftest: $((11 - fail))/11 passed, $fail failed"
     [ "$fail" -eq 0 ]; exit
 fi
 
@@ -154,7 +183,7 @@ while IFS='|' read -r class cmd; do
         SKIP) skip=$((skip + 1)) ;;
         *)    fail=$((fail + 1))
               grep -E 'FAIL|ERROR|RED|ABORT|BROKEN' "$OUT/$i.log" 2>/dev/null | head -6 | sed 's/^/        /'
-              echo "        (full output: bash $cmd)" ;;
+              print_full_output_hint "$cmd" ;;
     esac
     i=$((i + 1))
 done <<< "$GATES"
