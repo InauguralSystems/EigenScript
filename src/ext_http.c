@@ -1668,7 +1668,7 @@ Value *builtin_http_post(Value *arg) {
             EigsView kv = {{0}}, vv = {{0}};
             char *name, *value;
             if (parsed->type == VAL_DICT) {
-                while (j < (size_t)parsed->data.dict.count && !parsed->data.dict.keys[j]) j++;
+                while (j < (size_t)parsed->data.dict.used && !parsed->data.dict.keys[j]) j++;  /* to `used`: n counts live keys (#2482) */
                 name = xstrdup(parsed->data.dict.keys[j]);
                 value = value_to_string(dict_value_get_view(parsed, (int)j++, &vv));
             } else {
