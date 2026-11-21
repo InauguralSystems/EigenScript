@@ -32,7 +32,7 @@ print_full_output_hint() { # <command string>
 
 # One line for each row of $GATES from its $OUT/<index>.st; under a failing row its
 # red lines and the hint. Sets pass, fail, skip and i. The self-test calls this same
-# function on two failing rows, so the hint is tested where it is printed.
+# function on six rows, so the report is tested where it is printed.
 report_rows() {
     pass=0; fail=0; skip=0; i=0
     while IFS='|' read -r class cmd; do
@@ -102,27 +102,40 @@ if [ "${1:-}" = --selftest ]; then
     BIN=""; run_gate no-binary selftest "$stub" 99 'must not run'
     IFS='|' read -r got _ _ < "$OUT/no-binary.st"
     [ "$got" = SKIP ] && [ -f "$OUT/no-binary.log" ] && [ ! -s "$OUT/no-binary.log" ] && echo 'PASS: no binary -> SKIP with empty log' || { echo "FAIL: no binary wanted SKIP with empty log, got $got"; fail=$((fail + 1)); }
+    # The report of a failing precheck, from the function the precheck itself calls: a
+    # failing Python row with an argument, a failing shell row, a passing row, a failing
+    # row of another class, a row that left no result, and a skipped row.
     py_stub="$OUT/failing.py"
-    printf '%s\n' 'import sys' 'sys.exit(7)' > "$py_stub"
+    printf '%s\n' 'import sys' 'print("planted FAIL in python")' 'sys.exit(7)' > "$py_stub"
     BIN=selftest-binary
-    sh_cmd="$stub 7 planted failure"
-    run_gate 0 run "$py_stub"
+    py_cmd="$py_stub --flag"
+    sh_cmd="$stub 7 planted-FAIL"
+    other_cmd="$stub 7 portability:-FAIL:-planted"
+    lost_cmd="$stub 9 never-ran"
+    run_gate 0 run $py_cmd
     run_gate 1 run $sh_cmd
     run_gate 2 run "$stub" 0 ok
-    # The report itself, as a failing precheck prints it: two failing rows, each with its
-    # hint, and a passing row with none.
-    report=$(GATES="run|$py_stub"$'\n'"run|$sh_cmd"$'\n'"run|$stub 0 ok"; report_rows; echo "counted: $pass passed, $fail failed, $skip skipped of $i")
-    want_py="        (full output: python3 $py_stub)"
-    want_sh="        (full output: bash $sh_cmd)"
-    if [ "$(printf '%s\n' "$report" | grep -c '^        (full output: ')" -eq 2 ] \
-       && [ "$(printf '%s\n' "$report" | grep -cxF -- "$want_py")" -eq 1 ] \
-       && [ "$(printf '%s\n' "$report" | grep -cxF -- "$want_sh")" -eq 1 ] \
-       && [ "$(printf '%s\n' "$report" | grep -c '^  FAIL ')" -eq 2 ] \
+    PRECHECK_KERNEL=Linux run_gate 3 portability $other_cmd
+    BIN="" run_gate 5 selftest "$stub" 99 must-not-run
+    report=$(GATES="run|$py_cmd"$'\n'"run|$sh_cmd"$'\n'"run|$stub 0 ok"$'\n'"portability|$other_cmd"$'\n'"run|$lost_cmd"$'\n'"selftest|$stub 99 must-not-run"
+             report_rows; echo "counted: $pass passed, $fail failed, $skip skipped of $i")
+    has() { [ "$(printf '%s\n' "$report" | grep -cxF -- "$1")" -eq 1 ]; }
+    if [ "$(printf '%s\n' "$report" | grep -c '^        (full output: ')" -eq 4 ] \
+       && has "        (full output: python3 $py_cmd)" \
+       && has "        (full output: bash $sh_cmd)" \
+       && has "        (full output: bash $other_cmd)" \
+       && has "        (full output: bash $lost_cmd)" \
+       && has '        planted FAIL in python' \
+       && has '        planted-FAIL' \
+       && has '        portability:-FAIL:-planted' \
+       && [ "$(printf '%s\n' "$report" | grep -c '^  FAIL ')" -eq 4 ] \
        && [ "$(printf '%s\n' "$report" | grep -c '^  PASS ')" -eq 1 ] \
-       && [ "$(printf '%s\n' "$report" | tail -1)" = 'counted: 1 passed, 2 failed, 0 skipped of 3' ]; then
+       && [ "$(printf '%s\n' "$report" | grep -c '^  SKIP ')" -eq 1 ] \
+       && [ "$(printf '%s\n' "$report" | grep -c '^  FAIL .* no result: the lane died$')" -eq 1 ] \
+       && [ "$(printf '%s\n' "$report" | tail -1)" = 'counted: 1 passed, 4 failed, 1 skipped of 6' ]; then
         echo 'PASS: failure hints name Python and shell commands'
     else
-        echo "FAIL: failure hints: the report of two failing rows and a passing one was:"; printf '%s\n' "$report" | sed 's/^/    | /'
+        echo "FAIL: failure hints: the report of four failing rows, a passing and a skipped one was:"; printf '%s\n' "$report" | sed 's/^/    | /'
         fail=$((fail + 1))
     fi
     echo "precheck-selftest: $((11 - fail))/11 passed, $fail failed"
