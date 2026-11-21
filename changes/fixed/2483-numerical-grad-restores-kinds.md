@@ -1,1 +1,1 @@
-- `numerical_grad`, `numerical_grad_rows` and `numerical_grad_cols` put an integer parameter back as the exact integer it was; they put back a float, so `[1, 2, 3]` came back as `[1.0, 2.0, 3.0]` (#2483).
+- `numerical_grad`, `numerical_grad_rows` and `numerical_grad_cols` put an integer parameter back as the exact integer it was; before, they put back a float, so `[1, 2, 3]` came back as `[1.0, 2.0, 3.0]`. When the loss function inserts or removes an element before the one being perturbed, the call raises and that element is left as perturbed, as before (#2483).
