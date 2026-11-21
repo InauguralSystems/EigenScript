@@ -84,6 +84,56 @@ variants += [
   B.replace('    if (st) {', '    if (st) {\n        if (st->threads && !enabled && st->strict_guards && st->strict_arithmetic) return;', 1),
   'matrix open both start=1,1 value=0'),
 ]
+# A call made on one state while another is attached on the calling thread
+# writes the attached state (an independent review's E3, for each call): red
+# by a cell of the matrix's kind `other`.
+def writes_attached(name, source, want):
+    return (name, source,
+            source.replace("if (st)", "if (st && eigs_current && eigs_current->state) st = eigs_current->state;\n    if (st)", 1),
+            want)
+
+variants += [
+ writes_attached('guards-writes-attached-state', G, 'matrix other guards start=0,0 value=1'),
+ writes_attached('arithmetic-writes-attached-state', A, 'matrix other arithmetic start=0,0 value=1'),
+ writes_attached('both-writes-attached-state', B, 'matrix other both start=0,0 value=1'),
+]
+# A call ignored on a state that is attached and not yet initialised (the
+# review's E4, for each call): red by a cell of the kind `attached`.
+def ignored_before_init(name, source, want):
+    return (name, source,
+            source.replace("if (st)", "if (st && st->threads && !st->global_env) return;\n    if (st)", 1),
+            want)
+
+variants += [
+ ignored_before_init('guards-ignored-between-attach-and-init', G, 'matrix attached guards start=0,0 value=1'),
+ ignored_before_init('arithmetic-ignored-between-attach-and-init', A, 'matrix attached arithmetic start=0,0 value=1'),
+ ignored_before_init('both-ignored-between-attach-and-init', B, 'matrix attached both start=0,0 value=1'),
+]
+# The existing call without its null guard, and each call writing the
+# process environment.
+variants += [
+ ('both-no-null-guard', B, B.replace('    if (st) {', '    {', 1), 'CRASH null both'),
+ ('guards-writes-environment', G,
+  G.replace('if (st) st->strict_guards = enabled != 0;',
+            'if (st) { st->strict_guards = enabled != 0; setenv("EIGS_STRICT", enabled ? "1" : "0", 1); }'),
+  'two states keep their own positions'),
+ ('arithmetic-writes-environment', A,
+  A.replace('if (st) st->strict_arithmetic = enabled != 0;',
+            'if (st) { st->strict_arithmetic = enabled != 0; setenv("EIGS_STRICT", enabled ? "1" : "0", 1); }'),
+  'two states keep their own positions'),
+ ('both-writes-environment', B,
+  B.replace('    if (st) {', '    if (st) {\n        setenv("EIGS_STRICT", enabled ? "1" : "0", 1);', 1),
+  'two states keep their own positions'),
+]
+# What a state reads when it is created (src/state.c): each default the
+# other way, red by the creation check (the tool runs with the variable unset).
+STATE_G = '    st->strict_guards = eigs_env_flag_default("EIGS_STRICT", 1);'
+STATE_A = '    st->strict_arithmetic = eigs_env_flag_default("EIGS_STRICT", 0);'
+IN_STATE_C = {'creation-guards-default-off', 'creation-arithmetic-default-on'}
+variants += [
+ ('creation-guards-default-off', STATE_G, STATE_G.replace('", 1)', '", 0)'), 'creation want=1,0 seen=0,0'),
+ ('creation-arithmetic-default-on', STATE_A, STATE_A.replace('", 0)', '", 1)'), 'creation want=1,0 seen=1,1'),
+]
 def run(cwd, env):
     return subprocess.run([str(cwd/'build/release/test_embed_strict_calls')],cwd=cwd,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
 def main():
@@ -94,11 +144,12 @@ def main():
     env={k:v for k,v in os.environ.items() if k!='EIGS_STRICT'}
     clean=run(dst,env)
     if (clean.returncode or 'embed-strict-calls: PASS transitions=12 fourth=20 failures=0' not in clean.stdout
-            or 'PASS: matrix of 96 cells' not in clean.stdout):
+            or 'PASS: matrix of 192 cells' not in clean.stdout):
       print('embed-strict-variants: clean control FAIL'); return 1
     print('clean-control: GREEN')
-    p=dst/'src/eigs_embed.c'; original=p.read_text(); red=0
+    red=0
     for name,anchor,replacement,want in variants:
+      p=dst/('src/state.c' if name in IN_STATE_C else 'src/eigs_embed.c'); original=p.read_text()
       if original.count(anchor)!=1: raise SystemExit(f'{name}: anchor count {original.count(anchor)}, wanted 1')
       p.write_text(original.replace(anchor,replacement,1))
       subprocess.run(['make','-s','embed-strict-calls-test'],cwd=dst,check=True)

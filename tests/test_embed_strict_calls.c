@@ -10,8 +10,8 @@ static int failures, transitions, fourth_count;
 static const char GUARD_SRC[] = "try:\n    abs of \"x\"\ncatch e:\n    -777\n";
 static const char ARITH_SRC[] = "try:\n    1.0 / 0.0\ncatch e:\n    -777\n";
 
-static EigsState *new_state(int fine) {
-    return fine ? eigs_state_new() : eigs_open();
+static EigsState *new_state(int kind) {
+    return kind ? eigs_state_new() : eigs_open();
 }
 /* The position a property is in on the current state: 1 when the program
  * raises, 0 when it gives the quiet answer (0 for the guard program, inf for
@@ -30,29 +30,56 @@ static int probe(const char *src, int strict, int guard) {
     return position(src, guard) == strict;
 }
 /* One call on one fresh state: the state starts at (sg, sa), set there
- * through calls, then `setter(st, enabled)`; a state from eigs_state_new
- * (`fine`) is attached and initialised only after the call. Both properties
- * are read back. Returns 0 when the state could not be made. */
-static int cell(int fine, int sg, int sa, Setter setter, int enabled, int *g, int *a) {
-    EigsState *st = new_state(fine);
-    *g = *a = -1;
+ * through calls, then `setter(st, enabled)`; both properties are read back.
+ * The kind says where the state is in its life when the calls are made:
+ *   OPEN      from eigs_open: attached and initialised.
+ *   NEW       from eigs_state_new: attached and initialised only after the
+ *             call.
+ *   ATTACHED  from eigs_state_new: the start is set before it is attached,
+ *             and the call is made after eigs_thread_attach and before
+ *             eigs_state_init_runtime.
+ *   OTHER     as NEW, while another state is attached and initialised on the
+ *             calling thread. That state is put, through calls on it, at the
+ *             opposite of what the call writes; it is read back before the
+ *             switch and must still be there (*kept).
+ * Returns 0 when a state could not be made. */
+enum { OPEN, NEW, ATTACHED, OTHER, KINDS };
+static const char *const kind_names[KINDS] = {"open", "new", "attached", "other"};
+static int cell(int kind, int sg, int sa, Setter setter, int enabled, int *g, int *a, int *kept) {
+    EigsState *other = NULL, *st;
+    int off = enabled == 0;
+    *g = *a = -1; *kept = 1;
+    if (kind == OTHER) {
+        other = eigs_open();
+        if (!other) return 0;
+        eigs_state_set_strict(other, off);
+    }
+    st = new_state(kind);
     if (!st) return 0;
     eigs_state_set_strict(st, 0);
     eigs_state_set_strict_guards(st, sg);
     eigs_state_set_strict_arithmetic(st, sa);
+    if (kind == ATTACHED && !eigs_thread_attach(st)) { eigs_state_destroy(st); return 0; }
     setter(st, enabled);
-    if (fine && (!eigs_thread_attach(st) || eigs_state_init_runtime(st))) {
-        eigs_state_destroy(st); return 0;
+    if (kind == OTHER) {
+        *kept = position(GUARD_SRC, 1) == off && position(ARITH_SRC, 0) == off;
+        if (!eigs_thread_switch(st)) return 0;
     }
+    if (kind == NEW && !eigs_thread_attach(st)) { eigs_state_destroy(st); return 0; }
+    if (kind != OPEN && eigs_state_init_runtime(st)) return 0;
     *g = position(GUARD_SRC, 1);
     *a = position(ARITH_SRC, 0);
     eigs_close(st);
+    if (other) {
+        if (!eigs_thread_switch(other)) return 0;
+        eigs_close(other);
+    }
     return 1;
 }
 static void transition(const char *name, int fine, int sg, int sa,
                        Setter setter, int enabled, int wg, int wa) {
-    int g, a;
-    if (!cell(fine, sg, sa, setter, enabled, &g, &a)) {
+    int g, a, kept;
+    if (!cell(fine ? NEW : OPEN, sg, sa, setter, enabled, &g, &a, &kept)) {
         printf("FAIL: %s state creation or initialization\n", name); failures++; return;
     }
     transitions++;
@@ -63,7 +90,8 @@ static void transition(const char *name, int fine, int sg, int sa,
  * chosen: each of the three calls, on each kind of state, from each of the
  * four start positions, with each of the values 0, 1, -1 and 2. The call's
  * own property takes the value's truth; the other property stays (the
- * existing call has no other). One line for all of them; a wrong cell is
+ * existing call has no other); a state that was attached while the call was
+ * made on another has not moved. One line for all of them; a wrong cell is
  * named. */
 static void matrix(void) {
     static const int values[] = {0, 1, -1, 2};
@@ -71,21 +99,22 @@ static void matrix(void) {
     const Setter setters[] = {eigs_state_set_strict_guards, eigs_state_set_strict_arithmetic, eigs_state_set_strict};
     int cells = 0, wrong = 0;
     for (int c = 0; c < 3; c++)
-        for (int fine = 0; fine < 2; fine++)
+        for (int kind = 0; kind < KINDS; kind++)
             for (int sg = 0; sg < 2; sg++)
                 for (int sa = 0; sa < 2; sa++)
                     for (unsigned v = 0; v < sizeof values / sizeof values[0]; v++) {
-                        int on = values[v] != 0, g, a;
+                        int on = values[v] != 0, g, a, kept;
                         int wg = c == 1 ? sg : on, wa = c == 0 ? sa : on;
                         cells++;
-                        if (!cell(fine, sg, sa, setters[c], values[v], &g, &a) || g != wg || a != wa) {
+                        if (!cell(kind, sg, sa, setters[c], values[v], &g, &a, &kept) || g != wg || a != wa || !kept) {
                             wrong++;
-                            printf("FAIL: matrix %s %s start=%d,%d value=%d want=%d,%d seen=%d,%d\n",
-                                   fine ? "new" : "open", calls[c], sg, sa, values[v], wg, wa, g, a);
+                            printf("FAIL: matrix %s %s start=%d,%d value=%d want=%d,%d seen=%d,%d%s\n",
+                                   kind_names[kind], calls[c], sg, sa, values[v], wg, wa, g, a,
+                                   kept ? "" : " and the attached state moved");
                         }
                     }
     failures += wrong;
-    if (!wrong) printf("PASS: matrix of %d cells (3 calls, 2 kinds of state, 4 start positions, 4 values)\n", cells);
+    if (!wrong) printf("PASS: matrix of %d cells (3 calls, 4 kinds of state, 4 start positions, 4 values)\n", cells);
 }
 static const Fourth fourth_cases[] = {
  {"abs-string","abs of \"x\"",0},{"floor-string","floor of \"x\"",0},
@@ -159,6 +188,7 @@ int main(void) {
     two_states();
     eigs_state_set_strict_guards(NULL, -1);
     eigs_state_set_strict_arithmetic(NULL, 2);
+    eigs_state_set_strict(NULL, 1);
     transition("open guards 1->0 other=0",0,1,0,eigs_state_set_strict_guards,0,0,0);
     transition("new guards 0->1 other=0",1,0,0,eigs_state_set_strict_guards,-1,1,0);
     transition("new guards 1->0 other=1",1,1,1,eigs_state_set_strict_guards,0,0,1);
