@@ -1,0 +1,1 @@
+- Made the hosted RNG source check handle tracked filenames without Git display quoting (#2461).
