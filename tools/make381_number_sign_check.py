@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 r"""Refuse a number sign that GNU Make 3.81 reads differently from current make (#2448).
+This check is a tripwire for the shapes represented in tools/make381_cases.json. It conservatively refuses the uncertain forms represented there. Passing this check does not establish that GNU Make 3.81 and GNU Make 4.3 read a makefile alike.
 
 Written against GNU Make 3.81, the make of the macOS runners.  Its answers are
 the cases of tools/make381_cases.json, each run through a real 3.81 and through
@@ -35,7 +36,8 @@ What is a finding:
     it, inside an open $(...) or ${...} reference, before any ordinary
     comment (an unescaped number sign outside every reference starts one);
   - on every line but an ordinary comment line, a number sign anywhere inside
-    an $(eval ...) or $(call eval,...) call (with either kind of bracket),
+    an $(eval ...) or $(call eval,...) call, or a call whose function name
+    holds a reference (a dollar sign before its first comma), with either kind of bracket,
     wherever on the line the call stands.  A doubled dollar sign before the
     call makes it text and not a call ($$(eval ...) in a recipe is printed),
     except in a body that is read as below, where it is a call again;
@@ -82,16 +84,28 @@ it; a line of the four kinds above on which the makes happen to agree; an
 assignment nothing expands; a line in a branch of a conditional that is not
 taken; a line both makes stop on; a number sign inside an eval call that the
 makes happen to read alike (as a comment, escaped outside a reference, in
-text that is a rule line, in a call after an ordinary comment's sign); a body
+text that is a rule line, in a call after an ordinary comment's sign); a call
+through a computed name that is not eval; the lines after a conditional's
+word that a vertical tab follows (the word is taken only before a blank or a
+tab); a body
 read because its name is a word in an eval call that never evaluates it (the
 call is in a comment, the word is not a reference, the body reaches eval only
 through $(value), the call comes before the define).  Not a case, because a
 case is one file: a body is also read when the eval call that names it is in
 another file of the same run, whether or not make ever reads the two
 together.
-Looser (the makes differ, the check passes): a define body that reaches eval
-through another variable or a computed name, a define inside an evaluated
-body, and a number sign that a variable carries into text eval reads.
+Looser (the makes differ, the check passes), one entry for each such case of
+the case file, by its name:
+Looser:
+define-eval-indirect:  the define body reaches $(eval) through another variable; the check reads a body only when its name is written inside an $(eval call
+eval-later-hash-variable:  the sign reaches the text only when $H is expanded, before $(eval) reads it; $$H is the portable form there
+define-inside-evaluated-body-evaled:  a define inside an evaluated body is not read, also when that body itself evaluates it
+define-evaled-through-computed-name:  the name inside the eval call is computed, $(F_$(K)), so the name of the define is not a word of the call
+eval-through-user-function:  the check does not follow an eval reached through a user function
+define-name-is-a-reference:  the check does not expand a reference in the name on a define line
+define-evaled-through-foreach:  the check does not expand the foreach variable to the name of the define
+define-evaled-through-call-argument:  the check does not expand the call argument to the name of the define
+
 Not covered: !=, ::=, undefine, private, export define, $(file ...), a lone $
 at the end of a value, .ONESHELL, --output-sync, an include whose name holds a
 reference, an include that make finds only in its search directories (-I,
@@ -115,8 +129,9 @@ SPACE = " \t\f\v\r"                     # what make skips at the start of a line
 CONDITIONALS = {"ifeq", "ifneq", "ifdef", "ifndef"}
 KEYWORDS = CONDITIONALS | {"else", "endif", "include", "-include", "sinclude", "vpath",
                            "export", "unexport", "override", "define", "endef"}
+INCLUDES = ("include", "-include", "sinclude")
 OPENERS = {"(": ")", "{": "}"}
-EVAL = re.compile(r"\$[({](?:eval[ \t]|call[ \t]+eval[ \t]*,)")
+EVAL = re.compile(r"\$[({](?:eval[ \t]|call[ \t]+(?:eval[ \t]*,|(?=[^,]*\$)))")
 WORD = re.compile(r"[^\s$(){},:]+")
 MESSAGE = ("a number sign inside a $( or ${ reference: GNU Make 3.81 reads this "
            "line differently (tools/make381_number_sign_check.py)")
@@ -241,7 +256,7 @@ def line_kind(text, doubled):
 
 def eval_calls(text, doubled):
     """The (start, end) of every eval call in the text: $(eval ...), ${eval ...},
-    $(call eval,...); it ends at the bracket that closes it.  A dollar sign
+    $(call eval,...), or a call through a computed name; it ends at the bracket that closes it.  A dollar sign
     doubled before it makes it text, not a call ($$(eval ...) in a recipe is
     printed); with `doubled`, text that $(eval) expands once more, $$(eval is
     a call again."""
@@ -301,14 +316,26 @@ def first_word(text):
     return re.match("[^ \t#]*", text.strip(SPACE)).group(0)
 
 
+def space_words(text):
+    """The line's words where any white space of SPACE parts them: used only
+    for a define line and for the word of an include line."""
+    return [w for w in re.split("[" + SPACE + "]+", text.strip(SPACE)) if w]
+
+
+def space_first_word(text):
+    return re.match("[^" + SPACE + "#]*", text.strip(SPACE)).group(0)
+
+
 def define_name(text):
     """The name a define line defines, or None when the line is not a define.
-    A number sign attached to the name starts a comment, as on any line."""
-    words = blank_words(text)
-    if first_word(text) == "define":
-        return first_word(words[1]) if len(words) > 1 else ""
-    if words[:1] == ["override"] and len(words) > 1 and first_word(words[1]) == "define":
-        return first_word(words[2]) if len(words) > 2 else ""
+    A number sign attached to the name starts a comment, as on any line.
+    The name is taken as one token: make lets a define's name hold white
+    space, and this check does not follow that."""
+    words = space_words(text)
+    if space_first_word(text) == "define":
+        return space_first_word(words[1]) if len(words) > 1 else ""
+    if words[:1] == ["override"] and len(words) > 1 and space_first_word(words[1]) == "define":
+        return space_first_word(words[2]) if len(words) > 2 else ""
     return None
 
 
@@ -384,6 +411,8 @@ class Checker:
             certain = is_open and (not conditionals or conditionals[-1][2])
             name = define_name(text)
             word = first_word(text)
+            if space_first_word(text) in INCLUDES:
+                word = space_first_word(text)
             switches = name is not None or word in CONDITIONALS or word in ("else", "endif")
             if switches and blank_words(text)[1:2] and blank_words(text)[1][0] in ":+?=":
                 self.findings.append((path, numbers[0], UNCLEAR))   # a variable or a target named like a directive
@@ -430,7 +459,7 @@ class Checker:
             elif word in KEYWORDS:
                 self.judge(path, text, numbers, doubled, strict=True)
                 is_open = False
-                if follow and word in ("include", "-include", "sinclude"):
+                if follow and word in INCLUDES:
                     self.follow_include(path, stripped[len(word):], word)
             else:
                 kind = line_kind(text, doubled)
@@ -448,7 +477,7 @@ class Checker:
             self.findings.append((path, numbers[min(min(places), len(numbers) - 1)], MESSAGE))
 
     def follow_include(self, path, rest, word):
-        for name in include_names(rest):
+        for name in include_names(rest.lstrip(SPACE)):
             if "$" in name:
                 continue                      # a computed name: not followed (header)
             # make looks an include up from its working directory: the tree's root here.
@@ -542,6 +571,8 @@ def tree_selftest():
         put("Makefile", "Y := 1\ninclude inc/rules.inc\n-include $(Y).mk\n"
                         "-include nosuch.inc inc/optional.inc\nsinclude inc/s.inc\n"
                         "include inc2/*.mk\n-include a\\#b.inc\ninclude defs.inc\n$(eval $(F))\n"
+                        "include\vinc/vt.inc\n-include\vinc/vt-opt.inc\nsinclude\vinc/vt-s.inc\n"
+                        "include\finc/ff.inc\n-include\finc/ff-opt.inc\nsinclude\finc/ff-s.inc\n"
                         "-include ~/t.inc\n")
         try:
             check_tree(root)
@@ -552,6 +583,12 @@ def tree_selftest():
         put("inc/rules.inc", "Y := 2\n" + bad)      # reached only through the include
         put("inc/optional.inc", bad)                # only through the -include
         put("inc/s.inc", "\n\n" + bad)              # only through the sinclude
+        put("inc/vt.inc", bad)
+        put("inc/vt-opt.inc", bad)
+        put("inc/vt-s.inc", bad)
+        put("inc/ff.inc", bad)
+        put("inc/ff-opt.inc", bad)
+        put("inc/ff-s.inc", bad)
         put("inc2/w.mk.in", bad)                    # not matched by the wildcard
         put("inc2/w.inc", bad)                      # not matched either
         put("inc2/wild.mk", bad)                    # tracked as a makefile too: read once
@@ -586,10 +623,27 @@ def tree_selftest():
         want = [("a#b.inc", 1), ("defs.inc", 2), ("defs.inc", 6), ("home/t.inc", 1), ("inc/body.inc", 1),
                 ("inc/optional.inc", 1), ("inc/rules.inc", 2), ("inc/s.inc", 3), ("inc2/wild.mk", 1),
                 ("sub/other.mk", 3)]
+        want = sorted(want + [("inc/%s.inc" % n, 1) for n in ("vt", "vt-opt", "vt-s", "ff", "ff-opt", "ff-s")])
         if got != want:
             faults.append("findings were %r, not %r" % (got, want))
-        if len(checker.seen) != 10:
-            faults.append("%d file(s) read, not 10" % len(checker.seen))
+        if len(checker.seen) != 16:
+            faults.append("%d file(s) read, not 16" % len(checker.seen))
+        # The six files included after a vertical tab or a form feed, without
+        # their number sign: read again, and none of them is a finding.
+        twins = ["inc/%s.inc" % n for n in ("vt", "vt-opt", "vt-s", "ff", "ff-opt", "ff-s")]
+        for name in twins:
+            put(name, "X := $(sort b_x a)\n")
+        os.environ["HOME"] = os.path.join(root, "home")
+        try:
+            again = check_tree(root)
+        finally:
+            if home is None:
+                del os.environ["HOME"]
+            else:
+                os.environ["HOME"] = home
+        got = sorted((os.path.relpath(p, root), n) for p, n, _ in again.findings)
+        if got != [w for w in want if w[0] not in twins] or len(again.seen) != 16:
+            faults.append("with the six files clean: findings %r in %d file(s)" % (got, len(again.seen)))
         errors = [
             ("a missing literal include", put("e1.mk", "include nosuch.mk\n"), "not at the tree's root"),
             ("a define without its endef", put("e2.mk", "define F\nX := 1\n"), "define never ends"),
