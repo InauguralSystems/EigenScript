@@ -559,6 +559,65 @@ assert of [r.error.kind == "sandbox", "sandbox error kind"]
             equal(raw_request(port, '/sandbox'), response_bytes([], 'sandbox'), 'sandbox refuses http_respond')
 
 
+# #2482: a dictionary that had a key removed keeps a tombstone in its order array.
+# The route rebuilds each call from the JSON body, applies the listed removals and
+# puts, then answers; the reference gets the same call with the same edits applied
+# to a Python dict, so a removed key counts as never set and a key put back is last.
+REMOVED = """d is json_decode of (http_request_body of null)
+for item in d.calls:
+    r is item.response
+    for op in item.ops:
+        target is r
+        if op[1] == "headers":
+            target is r.headers
+        if op[0] == "remove":
+            dict_remove of [target, op[2]]
+        else:
+            dict_set of [target, op[2], op[3]]
+    http_respond of r
+d.body"""
+FULL = {'status': 201, 'headers': {'X-A': '1', 'X-B': '2', 'X-C': '3'}, 'cookies': ['k=v']}
+REMOVED_CASES = {
+    'response-first': [(FULL, [['remove', '', 'status']])],
+    'response-middle': [(FULL, [['remove', '', 'headers']])],
+    'response-last': [(FULL, [['remove', '', 'cookies']])],
+    'response-all': [(FULL, [['remove', '', 'status'], ['remove', '', 'headers'],
+                             ['remove', '', 'cookies']])],
+    'response-putback': [(FULL, [['remove', '', 'status'], ['set', '', 'status', 404]])],
+    'headers-first': [(FULL, [['remove', 'headers', 'X-A']])],
+    'headers-middle': [(FULL, [['remove', 'headers', 'X-B']])],
+    'headers-last': [(FULL, [['remove', 'headers', 'X-C']])],
+    'headers-all': [(FULL, [['remove', 'headers', 'X-A'], ['remove', 'headers', 'X-B'],
+                            ['remove', 'headers', 'X-C']])],
+    'headers-putback': [(FULL, [['remove', 'headers', 'X-A'], ['set', 'headers', 'X-A', '9']])],
+    'merge': [({'headers': {'X-A': '1', 'X-B': '2'}}, []),
+              ({'status': 404, 'headers': {'X-Drop': 'd', 'X-B': 'replaced', 'X-C': '3'}},
+               [['remove', 'headers', 'X-Drop'], ['remove', '', 'status']])],
+}
+
+
+def edited(response, ops):
+    out = json.loads(json.dumps(response))
+    for op in ops:
+        target = out['headers'] if op[1] == 'headers' else out
+        if op[0] == 'remove':
+            del target[op[2]]
+        else:
+            target[op[2]] = op[3]
+    return out
+
+
+def removed(binary, folder, name):
+    items = REMOVED_CASES[name]
+    with server(binary, folder, route('/removed', REMOVED)) as port:
+        calls = [{'response': response, 'ops': ops} for response, ops in items]
+        body = 'removed-' + name
+        expected = response_bytes([edited(r, ops) for r, ops in items], body)
+        equal(raw_request(port, '/removed', json.dumps({'calls': calls, 'body': body})),
+              expected, 'removed ' + name)
+        equal(raw_request(port, '/plain'), response_bytes([], 'plain'), 'alive after removed ' + name)
+
+
 def tape(binary, folder):
     source = '''http_respond of {"status": 404, "headers": {"X-Tape": "yes"}, "cookies": ["tape=1"]}
 request_marker is http_request_body of null
@@ -610,6 +669,8 @@ def main():
             ('HR19-sandbox', lambda b,p: exceptional(b,p,'sandbox')),
             ('HR20-tape', tape), ('HR21-docs-api', docs_api), ('HR22-alphabet', alphabet),
             ('HR23-many-names', many_names)]
+    rows += [(f'HR{24 + i}-removed-{name}', lambda b, p, n=name: removed(b, p, n))
+             for i, name in enumerate(REMOVED_CASES)]
     if args.row:
         selected = set(args.row)
         require(selected <= {name for name, _ in rows}, f'unknown rows {selected - {name for name, _ in rows}}')

@@ -6,8 +6,14 @@ name: phase2
 # R3.1 implements arm R3-STD under R31-1; R3.2 lands the four-field O cfg.
 on:
   push:
-    branches: [phase2-numbers]
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('phase2-pr-{0}', github.event.pull_request.number) || format('phase2-{0}', github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -34,7 +40,7 @@ jobs:
     env:
       DATABASE_URL: postgres://eigs:eigs_test@127.0.0.1:5432/eigs_test
     steps:
-      # Every branch and tag is needed: origin/main and v0.46.0.
+      # Full history provides the tag; the cost reference is fetched by name.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
@@ -48,17 +54,21 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libpq-dev zlib1g-dev libsdl2-2.0-0 libsdl2-mixer-2.0-0 libsdl2-ttf-2.0-0
-      - name: Build tag, main and branch profiles serially; run the phase2 lane
+      - name: Build tag, named reference and branch profiles serially; run the phase2 lane
         run: |
           set -euo pipefail
           export XDG_CACHE_HOME="$RUNNER_TEMP/cache"
           make --no-print-directory observer-anchor
           anchor="$XDG_CACHE_HOME/eigs-oracle-anchor/$(sha256sum tools/observer_oracle/build_anchor.sh | cut -d' ' -f1)/src/eigenscript"
-          mkdir -p "$RUNNER_TEMP/main" "$RUNNER_TEMP/tag-profiles"
-          git archive origin/main | tar -x -C "$RUNNER_TEMP/main"
+          named=$(bash tools/phase2_cost_reference.sh --fetch-name)
+          git fetch --no-tags --depth=1 origin "$named"
+          bash tools/phase2_cost_reference.sh >/dev/null
+          echo "named reference: building $named"
+          mkdir -p "$RUNNER_TEMP/named-reference" "$RUNNER_TEMP/tag-profiles"
+          git archive "$named" | tar -x -C "$RUNNER_TEMP/named-reference"
           git archive v0.46.0 | tar -x -C "$RUNNER_TEMP/tag-profiles"
-          make -C "$RUNNER_TEMP/main" > "$RUNNER_TEMP/main-build.log" 2>&1 \
-            || { tail -n 50 "$RUNNER_TEMP/main-build.log"; echo "::error::the origin/main build failed"; exit 1; }
+          make -C "$RUNNER_TEMP/named-reference" > "$RUNNER_TEMP/named-reference-build.log" 2>&1 \
+            || { tail -n 50 "$RUNNER_TEMP/named-reference-build.log"; echo "::error::the named reference build failed"; exit 1; }
           # The table uses matching capability builds; a capability-unavailable
           # transcript is a failure, including on the tag (ruling A3).
           for profile in server zlib db; do
@@ -88,7 +98,7 @@ jobs:
           PATH="$PWD/tools/cc-guard-bin:$PATH" make build
           bash tools/cc_guard.sh --report
           bash tools/phase2_ci.sh --through R3.2 \
-            "$anchor" "$RUNNER_TEMP/main/src/eigenscript" src/eigenscript
+            "$anchor" "$RUNNER_TEMP/named-reference/src/eigenscript" src/eigenscript
 
       - name: R2.3 encoder failure and no-mutation proofs
         run: |

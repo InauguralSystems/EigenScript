@@ -1940,9 +1940,15 @@ static double gradient_perturb(Value *container, int index, double value) {
     return stored;
 }
 
+/* Restore the exact owned numeric slot saved before a perturbation.  Copy it
+ * into the container so the caller can release its pin on every exit path. */
+static void gradient_restore(Value *container, int index, EigsSlot old_slot) {
+    list_set_slot_owned(container, index, slot_read_owned(old_slot));
+}
+
 static int gradient_container_unchanged(Value *container, int expected_len,
                                         const Value *parent, int expected_parent_len,
-                                        int row, int index, double old_val,
+                                        int row, int index, EigsSlot old_slot,
                                         double written_val) {
     int unchanged = container && container->type == VAL_LIST &&
                     container->data.list.count == expected_len;
@@ -1961,7 +1967,7 @@ static int gradient_container_unchanged(Value *container, int expected_len,
     if (container && container->type == VAL_LIST && index >= 0 &&
         index < container->data.list.count &&
         list_get_f64(container, index, &current_val) && current_val == written_val)
-        list_set_f64(container, index, old_val);
+        gradient_restore(container, index, old_slot);
     rt_error(EK_VALUE, 0, "param mutated during gradient");
     return 0;
 }
@@ -2046,16 +2052,22 @@ Value* builtin_numerical_grad(Value *arg) {
         int len = param->data.list.count;
         Value *grad = make_list(len);
         for (int i = 0; i < len; i++) {
+            EigsSlot old_slot = slot_read_owned(list_slot(param, i));
             double old_val = eigs_slot_float(list_slot(param, i), __func__);
             double written = gradient_perturb(param, i, eigs_math_result(old_val + eps));
             double lp = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            if (!gradient_container_unchanged(param, len, NULL, 0, -1, i, old_val, written))
+            if (!gradient_container_unchanged(param, len, NULL, 0, -1, i, old_slot, written)) {
+                slot_decref(old_slot);
                 goto list_grad_failed;
+            }
             written = gradient_perturb(param, i, eigs_math_result(old_val - eps));
             double lm = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            if (!gradient_container_unchanged(param, len, NULL, 0, -1, i, old_val, written))
+            if (!gradient_container_unchanged(param, len, NULL, 0, -1, i, old_slot, written)) {
+                slot_decref(old_slot);
                 goto list_grad_failed;
-            list_set_f64(param, i, old_val);
+            }
+            gradient_restore(param, i, old_slot);
+            slot_decref(old_slot);
             /* Central difference */
             list_append_owned(grad, make_float(eigs_math_result((lp - lm) / (2.0 * eps))));
         }
@@ -2079,19 +2091,21 @@ list_grad_failed:
         Value *grad_row = make_list(cols);
         unfinished_grad_row = grad_row;
         for (int c = 0; c < cols; c++) {
+            EigsSlot old_slot = slot_read_owned(list_slot(row, c));
             double old_val = eigs_slot_float(list_slot(row, c), __func__);
             val_incref(row);
             double written = gradient_perturb(row, c, eigs_math_result(old_val + eps));
             double lp = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            if (!gradient_container_unchanged(row, cols, param, rows, r, c, old_val, written)) {
-                val_decref(row); goto matrix_grad_failed;
+            if (!gradient_container_unchanged(row, cols, param, rows, r, c, old_slot, written)) {
+                slot_decref(old_slot); val_decref(row); goto matrix_grad_failed;
             }
             written = gradient_perturb(row, c, eigs_math_result(old_val - eps));
             double lm = numerical_loss(loss_fn, nul, "numerical_grad", &loss_valid);
-            if (!gradient_container_unchanged(row, cols, param, rows, r, c, old_val, written)) {
-                val_decref(row); goto matrix_grad_failed;
+            if (!gradient_container_unchanged(row, cols, param, rows, r, c, old_slot, written)) {
+                slot_decref(old_slot); val_decref(row); goto matrix_grad_failed;
             }
-            list_set_f64(row, c, old_val);
+            gradient_restore(row, c, old_slot);
+            slot_decref(old_slot);
             val_decref(row);
             list_append_owned(grad_row, make_float(eigs_math_result((lp - lm) / (2.0 * eps))));
         }
@@ -2256,19 +2270,21 @@ Value* builtin_numerical_grad_rows(Value *arg) {
         Value *grad_row = list_get_ref(grad, r);
 
         for (int c = 0; c < cols && c < row->data.list.count; c++) {
+            EigsSlot old_slot = slot_read_owned(list_slot(row, c));
             double old_val = eigs_slot_float(list_slot(row, c), __func__);
             val_incref(row);
             double written = gradient_perturb(row, c, eigs_math_result(old_val + eps));
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
-            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, c, old_val, written)) {
-                val_decref(row); goto rows_grad_failed;
+            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, c, old_slot, written)) {
+                slot_decref(old_slot); val_decref(row); goto rows_grad_failed;
             }
             written = gradient_perturb(row, c, eigs_math_result(old_val - eps));
             double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_rows", &loss_valid);
-            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, c, old_val, written)) {
-                val_decref(row); goto rows_grad_failed;
+            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, c, old_slot, written)) {
+                slot_decref(old_slot); val_decref(row); goto rows_grad_failed;
             }
-            list_set_f64(row, c, old_val);
+            gradient_restore(row, c, old_slot);
+            slot_decref(old_slot);
             val_decref(row);
             /* gradient — release the zero placeholder this slot held */
             list_set_f64(grad_row, c, eigs_math_result((loss_plus - loss_minus) / (2.0 * eps)));
@@ -2443,22 +2459,24 @@ Value* builtin_numerical_grad_cols(Value *arg) {
             if (!row || row->type != VAL_LIST || col >= row->data.list.count) continue;
             int row_len = row->data.list.count;
 
+            EigsSlot old_slot = slot_read_owned(list_slot(row, col));
             double old_val = eigs_slot_float(list_slot(row, col), __func__);
             val_incref(row);
             /* +eps */
             double written = gradient_perturb(row, col, eigs_math_result(old_val + eps));
             double loss_plus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
-            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, col, old_val, written)) {
-                val_decref(row); goto cols_grad_failed;
+            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, col, old_slot, written)) {
+                slot_decref(old_slot); val_decref(row); goto cols_grad_failed;
             }
             /* -eps */
             written = gradient_perturb(row, col, eigs_math_result(old_val - eps));
             double loss_minus = numerical_loss(loss_fn, nul, "numerical_grad_cols", &loss_valid);
-            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, col, old_val, written)) {
-                val_decref(row); goto cols_grad_failed;
+            if (!gradient_container_unchanged(row, row_len, matrix, rows, r, col, old_slot, written)) {
+                slot_decref(old_slot); val_decref(row); goto cols_grad_failed;
             }
             /* restore */
-            list_set_f64(row, col, old_val);
+            gradient_restore(row, col, old_slot);
+            slot_decref(old_slot);
             val_decref(row);
             /* gradient — release the zero placeholder this slot held */
             Value *grad_row = list_get_ref(grad, r);

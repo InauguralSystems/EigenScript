@@ -2230,7 +2230,7 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
      declared maximum fails, and so does a row more than 0.5 points below it
      (STALE, the R1.3 CI fix): a round that recovers cost must bring the
      declaration down, or a new regression hides under it. Each method’s
-     maximum, which may be negative when the candidate is cheaper than main,
+     maximum, which may be negative when the candidate is cheaper than the named pre-number-model reference,
      is its own measured delta plus 0.2 points (the largest measured
      shift: a different workload path moves `alloc_heavy` by 0.16 points), rounded up
      to 0.1. A row whose cost another round moves names that component with
@@ -2251,15 +2251,16 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
      whose predicate definitions make `int64_count` its acceptance row.
      `make observer-oracle` and CI's lane pass it to `score.py --declared`; an
      undeclared wrong verdict fails, and so does a stale declaration (its verdict
-     is right now, or was not examined). **Pre-merge condition (#1776):**
-     `tools/phase2_cost.sh --final BASE CAND` must pass, which requires both
+     is right now, or was not examined). **Release condition:**
+     `tools/phase2_cost.sh --final` must pass before the next release is cut, which requires both
      `tests/phase2/cost_expect.txt` and `tests/phase2/oracle_expect.txt` to be
-     empty; temporary costs and known-wrong verdicts must be recovered before
-     integration merges.
+     empty; the rows stay through the landing of #1776 (decision of 2026-11-19
+     on #1758).
      Consumer hashes that relied on double rounding now raise
      ((A)); they move to the N9 wrapping builtins. The stdlib's own
      real-valued formulas must not: `tools/phase2_lib_diff.sh` (§9.5, #1848)
-     runs every exported lib function with int arguments on main and the
+     runs every exported lib function with int arguments on the named
+     pre-number-model commit (`tests/phase2/cost_reference.txt`) and the
      branch, from R1.3 in every round.
 4. **R1.4, N4.** `//` (token, parser, `OP_IDIV` appended,
    `op_name`/`op_stack_effect`/obs marker/ABI test), `//=` beside `/=` (Q6),
@@ -3225,8 +3226,8 @@ makes 0.
 - **A small rise on `unobserved_armed_loop`.**
 - **Unchanged elsewhere.** STD_p runs per query, O(W).
 
-A decrease is reported, not declared. A rise above +0.3% is a defect R3 fixes,
-because `cost_expect.txt` must be empty at the merge. The measurement is
+A decrease is reported, not declared. A rise above +0.3% is declared and recovered before the next release is cut
+(the decision of 2026-11-19 keeps the rows through the landing). The measurement is
 hosted (CodSpeed).
 
 #### Gates and plants (R3.1, R3.2)
@@ -3994,7 +3995,7 @@ tag recording continues to use v0.46.0.
 The int-fuzz sweep, if kept, is only a crash sweep: each builtin fed ints
 in numeric slots must raise or return, never crash.
 
-### 9.5 `tools/phase2_lib_diff.sh <main-binary> <branch-binary>` (#1848, from R1.3)
+### 9.5 `tools/phase2_lib_diff.sh <named-commit-binary> <branch-binary>` (#1848, from R1.3)
 
 A real-valued stdlib formula can compute in int64 through an int literal of
 its own and an int argument: `rest_energy of 103` (an int speed of light)

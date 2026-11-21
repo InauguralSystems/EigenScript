@@ -1,0 +1,163 @@
+load_file of "lib/test.eigs"
+
+define loss(_) as:
+    return 1.0
+
+define check_flat(label, w, expected, kind) as:
+    assert_true of [w == expected, label + " values"]
+    assert_true of [(num_type of w[0]) == kind, label + " kind"]
+
+# numerical_grad, including both its flat and matrix paths.
+w is [1, 2, 3]
+g is numerical_grad of [loss, w, 0.001]
+check_flat of ["numerical_grad ints", w, [1, 2, 3], "int"]
+w is [1, 2.5, 3]
+g is numerical_grad of [loss, w, 0.001]
+check_flat of ["numerical_grad mixed", w, [1, 2.5, 3], "int"]
+w2 is [[1, 2], [3, 4]]
+g is numerical_grad of [loss, w2, 0.001]
+assert_true of [w2 == [[1, 2], [3, 4]] and (num_type of w2[0][0]) == "int", "numerical_grad matrix"]
+w is [9007199254740993]
+g is numerical_grad of [loss, w, 0.001]
+check_flat of ["numerical_grad above 2^53", w, [9007199254740993], "int"]
+w is [9223372036854775807]
+g is numerical_grad of [loss, w, 0.001]
+check_flat of ["numerical_grad INT64_MAX", w, [9223372036854775807], "int"]
+w is [(-9223372036854775807 - 1)]
+g is numerical_grad of [loss, w, 0.001]
+check_flat of ["numerical_grad INT64_MIN", w, [(-9223372036854775807 - 1)], "int"]
+wf is [1.0, 2.5]
+g is numerical_grad of [loss, wf, 0.001]
+check_flat of ["numerical_grad float control", wf, [1.0, 2.5], "float"]
+b is buffer of 2
+b[0] is 1.0
+b[1] is 2.5
+g is numerical_grad of [loss, b, 0.001]
+check_flat of ["numerical_grad buffer control", [b[0], b[1]], [1.0, 2.5], "float"]
+
+define check_variant(label, which, matrix, expected) as:
+    if which == 0:
+        local g is numerical_grad_rows of [loss, matrix, [0], 0.001]
+    else:
+        local g is numerical_grad_cols of [loss, matrix, [0], 0.001]
+    assert_true of [matrix == expected and (num_type of matrix[0][0]) == (num_type of expected[0][0]), label]
+
+define check_variant_set(prefix, which) as:
+    local m is [[1, 2, 3]]
+    check_variant of [prefix + " ints", which, m, [[1, 2, 3]]]
+    m is [[1, 2.5, 3]]
+    check_variant of [prefix + " mixed", which, m, [[1, 2.5, 3]]]
+    m is [[1, 2], [3, 4]]
+    check_variant of [prefix + " matrix ints", which, m, [[1, 2], [3, 4]]]
+    m is [[9007199254740993]]
+    check_variant of [prefix + " above 2^53", which, m, [[9007199254740993]]]
+    m is [[9223372036854775807]]
+    check_variant of [prefix + " INT64_MAX", which, m, [[9223372036854775807]]]
+    m is [[(-9223372036854775807 - 1)]]
+    check_variant of [prefix + " INT64_MIN", which, m, [[(-9223372036854775807 - 1)]]]
+    m is [[1.0, 2.5]]
+    check_variant of [prefix + " float control", which, m, [[1.0, 2.5]]]
+
+check_variant_set of ["numerical_grad_rows", 0]
+check_variant_set of ["numerical_grad_cols", 1]
+
+# A raised loss is latched after the second callback, but restoration still runs.
+calls is 0
+raise_param is [9007199254740993]
+define raising_loss(_) as:
+    calls is calls + 1
+    if calls == 2:
+        assert of [false, "second call"]
+    return 1.0
+try:
+    numerical_grad of [raising_loss, raise_param, 0.001]
+    assert_true of [false, "numerical_grad did not raise"]
+catch e:
+    assert_true of [raise_param == [9007199254740993] and (num_type of raise_param[0]) == "int", "raise restore"]
+
+rows_calls is 0
+rows_raise_param is [[9007199254740993]]
+define rows_raising_loss(_) as:
+    rows_calls is rows_calls + 1
+    if rows_calls == 2:
+        assert of [false, "second rows call"]
+    return 1.0
+try:
+    numerical_grad_rows of [rows_raising_loss, rows_raise_param, [0], 0.001]
+    assert_true of [false, "numerical_grad_rows did not raise"]
+catch e:
+    assert_true of [rows_raise_param == [[9007199254740993]] and (num_type of rows_raise_param[0][0]) == "int", "rows raise restore"]
+
+cols_calls is 0
+cols_raise_param is [[9007199254740993]]
+define cols_raising_loss(_) as:
+    cols_calls is cols_calls + 1
+    if cols_calls == 2:
+        assert of [false, "second cols call"]
+    return 1.0
+try:
+    numerical_grad_cols of [cols_raising_loss, cols_raise_param, [0], 0.001]
+    assert_true of [false, "numerical_grad_cols did not raise"]
+catch e:
+    assert_true of [cols_raise_param == [[9007199254740993]] and (num_type of cols_raise_param[0][0]) == "int", "cols raise restore"]
+
+# The gradient's VALUES (#2483, its third box). For a loss that is the sum of the squares of the
+# parameters, the central difference is twice each parameter, up to rounding: a closed form, so
+# these rows need no second build to compare with. A change to how a parameter is perturbed or
+# put back that moved a gradient turns them red; the rows above cannot (their loss is constant).
+define gv_near(a, b) as:
+    return (abs of (a - b)) < 0.000001
+define gv_near_list(got, want) as:
+    if (len of got) != (len of want):
+        return false
+    for i in range of (len of want):
+        if (gv_near of [got[i], want[i]]) == false:
+            return false
+    return true
+
+gv_q is [1, 2, 3]
+define gv_sq_q(_) as:
+    local s is 0.0
+    for v in gv_q:
+        s is s + v * v
+    return s
+gv_g is numerical_grad of [gv_sq_q, gv_q, 0.001]
+assert_true of [gv_near_list of [gv_g, [2.0, 4.0, 6.0]], "gradient values, int list"]
+assert_true of [gv_q == [1, 2, 3] and (num_type of gv_q[0]) == "int", "gradient values, int list restored"]
+
+gv_f is [1.5, -2.0, 0.25]
+define gv_sq_f(_) as:
+    local s is 0.0
+    for v in gv_f:
+        s is s + v * v
+    return s
+gv_g is numerical_grad of [gv_sq_f, gv_f, 0.001]
+assert_true of [gv_near_list of [gv_g, [3.0, -4.0, 0.5]], "gradient values, float list"]
+assert_true of [gv_f == [1.5, -2.0, 0.25] and (num_type of gv_f[0]) == "float", "gradient values, float list restored"]
+
+gv_b is buf_from_list of ([1.5, -2.0, 0.25])
+define gv_sq_b(_) as:
+    local s is 0.0
+    for v in gv_b:
+        s is s + v * v
+    return s
+gv_g is numerical_grad of [gv_sq_b, gv_b, 0.001]
+assert_true of [(gv_near of [gv_g[0], 3.0]) and (gv_near of [gv_g[1], -4.0]) and (gv_near of [gv_g[2], 0.5]), "gradient values, buffer"]
+assert_true of [(gv_b[0] == 1.5) and (gv_b[1] == -2.0) and (gv_b[2] == 0.25), "gradient values, buffer restored"]
+
+gv_m is [[1, 2], [3, 4]]
+define gv_sq_m(_) as:
+    local s is 0.0
+    for row in gv_m:
+        for v in row:
+            s is s + v * v
+    return s
+gv_g is numerical_grad of [gv_sq_m, gv_m, 0.001]
+assert_true of [(gv_near_list of [gv_g[0], [2.0, 4.0]]) and (gv_near_list of [gv_g[1], [6.0, 8.0]]), "gradient values, int matrix"]
+gv_g is numerical_grad_rows of [gv_sq_m, gv_m, [1], 0.001]
+assert_true of [(gv_near_list of [gv_g[0], [0.0, 0.0]]) and (gv_near_list of [gv_g[1], [6.0, 8.0]]), "gradient values, rows"]
+gv_g is numerical_grad_cols of [gv_sq_m, gv_m, [0], 0.001]
+assert_true of [(gv_near_list of [gv_g[0], [2.0, 0.0]]) and (gv_near_list of [gv_g[1], [6.0, 0.0]]), "gradient values, cols"]
+assert_true of [gv_m == [[1, 2], [3, 4]] and (num_type of gv_m[1][0]) == "int", "gradient values, int matrix restored"]
+
+test_summary of null

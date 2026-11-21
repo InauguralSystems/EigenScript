@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# tools/phase2_ci.sh [--through Rk] [--baseline BIN] <tag-binary> <main-binary> <branch-binary>
+# tools/phase2_ci.sh [--through Rk] [--baseline BIN] <tag-binary> <named-reference-binary> <branch-binary>
 # #1758 Phase 2's CI lane (.github/workflows/phase2.yml): the MAP rows that have
 # landed (tools/phase2_check.sh, design 9.2) and the stdlib int differential
 # (tools/phase2_lib_diff.sh, design 9.5). The three positional binaries are
-# the v0.46.0 anchor (make observer-anchor), origin/main and this commit;
+# the v0.46.0 anchor (make observer-anchor), the named pre-number-model commit and this commit;
 # a mechanical round's baseline is passed separately.
 #
 # By default --through is DERIVED by phase2_check.py's shared helper. A round needs
@@ -20,7 +20,7 @@
 # after its last successful command never prints it.
 set -u
 usage() {
-    echo "usage: tools/phase2_ci.sh [--through Rk] [--baseline BIN] <tag-binary> <main-binary> <branch-binary>"
+    echo "usage: tools/phase2_ci.sh [--through Rk] [--baseline BIN] <tag-binary> <named-reference-binary> <branch-binary>"
 }
 through=""
 baseline=""

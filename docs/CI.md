@@ -782,7 +782,7 @@ triggers) are listed in #1278.
 | `tsan (concurrency race gate)` | 1 | gate |
 | `tsan-http (race gate over ext_http)` | 1 | gate: the HTTP sections ([44], [45a], [45b]) under a TSan build with ext_http compiled in, which the stock `tsan` build compiles out (#1139) |
 | `install.sh (interpreter + eigenlsp on PATH)` | 1 | gate |
-| `bench (instruction-count regression gate)` | 1 | gate (baseline: `origin/main` on a PR; the candidate's `merge_group.base_sha` in the queue, so a PR is never charged for the PRs queued ahead of it) |
+| `bench (instruction-count regression gate)` | 1 | gate (undeclared rows also use the candidate base; declared rows use the named pre-number-model runtime; the queue base is `merge_group.base_sha`, so a PR is never charged for PRs queued ahead of it) |
 | `nightly / macos-15-intel full suite` | **2** (`nightly.yml`) | port lane, slow: hit its timeout on nearly every main push (#1265) |
 | `nightly / gate self-tests` | **2** (`nightly.yml`) | calibrates every checker |
 | `nightly / valgrind (full corpus, JIT off)` | **2** (`nightly.yml`) | slow; the PR and main lanes run the smoke spread |
@@ -809,7 +809,7 @@ file:
 | `Scorecard analysis` (`scorecard.yml`) | advisory | runs on push, schedule and `branch_protection_rule`, never on a PR; a posture score |
 | `Analyze (python)`, `Analyze (javascript-typescript)` | advisory | CodeQL *default setup* (a GitHub app, not a workflow file) over the repo's non-C code; the C analysis that blocks is `Analyze C` |
 | `issue-triage / …` (`issue-triage.yml`), `release.yml` jobs | advisory | not triggered by PRs or pushes to `main` |
-| `phase2 (MAP rows + lib differential)` (`phase2.yml`) | advisory | #1758's integration branch only: a push to `phase2-numbers` or `workflow_dispatch`, never a PR or the queue; `tools/phase2_ci.sh` checks the MAP rows of every landed round and the stdlib int differential |
+| `phase2 (MAP rows + lib differential)` (`phase2.yml`) | advisory | every pull request to `main`, every push to `main`, or `workflow_dispatch` (never the merge queue); `tools/phase2_ci.sh` compares the named pre-number-model runtime and checks the MAP rows of every landed round and the stdlib int differential |
 
 ## Coverage on pull requests
 
