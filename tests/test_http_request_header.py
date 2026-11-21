@@ -494,9 +494,12 @@ def leak(binary, folder):
     if not Path('/proc/self/status').exists():
         raise Skipped('requires Linux /proc RSS')
     # ASan quarantine and TSan metadata measure the detector, not live leaks.
-    symbols = subprocess.run(['nm', '-D', binary], capture_output=True, text=True, timeout=20)
-    require(symbols.returncode == 0, 'cannot identify sanitizer build')
-    if '__asan_init' in symbols.stdout or '__tsan_init' in symbols.stdout:
+    # A sanitizer build is told by the detector's init symbol in the binary's
+    # own bytes, the test the suite section and tests/test_http_rss_growth.sh
+    # make. (An `nm -D` under a 20-second bound ran out of time on a loaded
+    # runner and read as a failure of this contract: #2459.)
+    image = Path(binary).read_bytes()
+    if b'__asan_init' in image or b'__tsan_init' in image:
         raise Skipped('RSS on a sanitizer build (the release RSS gate owns this row)')
     code = 'i is 0\nloop while i < 128:\n    vals is http_request_header of "x-a"\n    assert of [len of vals == 1, "RSS lookup must allocate a value"]\n    assert of [len of vals[0] == 64, "RSS value allocation must be 65 bytes"]\n    i is i + 1\n"ok"'
     ids = []
