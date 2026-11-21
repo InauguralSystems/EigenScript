@@ -42,7 +42,7 @@ The other languages' blocks are illustrative only.
 The one-paragraph summary: EigenScript reads like Python (indentation
 blocks, dynamic types), applies functions with a keyword like a
 concatenative language (`f of x`), is a Lisp-like single-value-kind
-world underneath (everything is one of eight runtime types, code runs
+world underneath (everything is one of a fixed set of runtime types that `type of` names, code runs
 top to bottom, no static pass), and differs from all of them in one
 fundamental way: **every assignment is observed**, and the language has
 first-class constructs (`converged`, `what is x`, `prev of x`) for
@@ -66,7 +66,7 @@ print of [bit_shr of [-1, 1], bit_shl of [8, -1], num_type of (3.0 & 1)]
 
 `//` floors the quotient; `%` has the divisor's sign. `//=` applies the same
 operation to its assignment target, like `/=`. Zero divisors raise `value`
-for int, float and mixed operands. Two ints produce an int for
+for int `//` and `%`; float forms follow IEEE arithmetic. Two ints produce an int for
 `//` and `%`; a float operand produces a float. `/` always produces a float.
 Float and mixed `//` use Python’s `divmod` quotient correction: `1.0 // 0.1`
 is `9.0`, and `1e-300 // -1e300` is `-1.0`. `//=` uses the same rule.
@@ -505,7 +505,7 @@ list
 `zeros of [rows, cols]` still builds the nested list (the 2-D tensor form);
 `buffer of [rows, cols]` and `reshape of [buf, rows, cols]` build the
 flat-backed matrix. `matmul`, `softmax`, `sum`, `mean`, `norm`, `gather` and
-the rest accept either, and hand back a buffer when every operand was one.
+the rest accept either, and hand back a buffer when every operand was one; `sum`, `mean` and `norm` return a number.
 `matmul`, `matmul_at`, and `matmul_bt` round each multiplication to binary64
 before adding it to the accumulator, in ascending inner-index order, on both
 containers. They do not fuse the multiplication and addition.
@@ -520,8 +520,7 @@ compare by sign, and signed zeros are equal. The remaining scalar reductions
 retain their declared data boundaries; the reduction
 association contracts remain unchanged. Mixed buffer/list tensor operations and
 numeric byte/sample/device conversions also normalize reads and stop on the
-first error. `write_bytes` requires exact bytes in 0..255 (N5/Q1); other byte
-converters retain truncation and wrapping at this stage.
+first error. `write_bytes`, `str_from_bytes`, `f64_from_bytes`, `inflate` and `buf_from_pcm16le` require exact bytes in 0..255 (N5/Q1).
 Raw copies, typed serialization and buffer-only work areas preserve their data.
 `type_mismatch` error unless `EIGS_STRICT=0`, which retains numeric-zero
 substitution. `str_from_bytes` stops at numeric NUL and does not inspect later
@@ -1077,7 +1076,7 @@ the `error` status with libpq's message.
 
 Tensor sizes and indices follow N5: an integral float is accepted and a
 fraction raises `value`. `gather` keeps the selected list cell's int/float
-kind; buffer elements and numeric tensor calculations are floats. `shape`
+kind, and `add`, `subtract`, `multiply`, `negative` and all-int `sum` keep ints on all-int lists; buffer elements and other numeric tensor calculations are floats. `shape`
 returns integer dimension counts. `mean` and `norm` refuse non-finite buffer
 cells with `value` in every `EIGS_STRICT` state.
 
