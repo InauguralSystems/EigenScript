@@ -1,0 +1,105 @@
+define loss(_) as:
+    return 1.0
+
+define check_flat(label, w, expected, kind) as:
+    assert of [w == expected, label + " values"]
+    assert of [(num_type of w[0]) == kind, label + " kind"]
+    print of ("PASS: " + label)
+
+# numerical_grad, including both its flat and matrix paths.
+w is [1, 2, 3]
+g is numerical_grad of [loss, w, 0.001]
+check_flat of ["numerical_grad ints", w, [1, 2, 3], "int"]
+w is [1, 2.5, 3]
+g is numerical_grad of [loss, w, 0.001]
+check_flat of ["numerical_grad mixed", w, [1, 2.5, 3], "int"]
+w2 is [[1, 2], [3, 4]]
+g is numerical_grad of [loss, w2, 0.001]
+assert of [w2 == [[1, 2], [3, 4]] and (num_type of w2[0][0]) == "int", "numerical_grad matrix"]
+print of "PASS: numerical_grad matrix ints"
+w is [9007199254740993]
+g is numerical_grad of [loss, w, 0.001]
+check_flat of ["numerical_grad above 2^53", w, [9007199254740993], "int"]
+w is [9223372036854775807]
+g is numerical_grad of [loss, w, 0.001]
+check_flat of ["numerical_grad INT64_MAX", w, [9223372036854775807], "int"]
+w is [(-9223372036854775807 - 1)]
+g is numerical_grad of [loss, w, 0.001]
+check_flat of ["numerical_grad INT64_MIN", w, [(-9223372036854775807 - 1)], "int"]
+wf is [1.0, 2.5]
+g is numerical_grad of [loss, wf, 0.001]
+check_flat of ["numerical_grad float control", wf, [1.0, 2.5], "float"]
+b is buffer of 2
+b[0] is 1.0
+b[1] is 2.5
+g is numerical_grad of [loss, b, 0.001]
+check_flat of ["numerical_grad buffer control", b, b, "float"]
+
+define check_variant(label, which, matrix, expected) as:
+    if which == 0:
+        local g is numerical_grad_rows of [loss, matrix, [0], 0.001]
+    else:
+        local g is numerical_grad_cols of [loss, matrix, [0], 0.001]
+    assert of [matrix == expected and (num_type of matrix[0][0]) == (num_type of expected[0][0]), label]
+    print of ("PASS: " + label)
+
+define check_variant_set(prefix, which) as:
+    local m is [[1, 2, 3]]
+    check_variant of [prefix + " ints", which, m, [[1, 2, 3]]]
+    m is [[1, 2.5, 3]]
+    check_variant of [prefix + " mixed", which, m, [[1, 2.5, 3]]]
+    m is [[1, 2], [3, 4]]
+    check_variant of [prefix + " matrix ints", which, m, [[1, 2], [3, 4]]]
+    m is [[9007199254740993]]
+    check_variant of [prefix + " above 2^53", which, m, [[9007199254740993]]]
+    m is [[9223372036854775807]]
+    check_variant of [prefix + " INT64_MAX", which, m, [[9223372036854775807]]]
+    m is [[(-9223372036854775807 - 1)]]
+    check_variant of [prefix + " INT64_MIN", which, m, [[(-9223372036854775807 - 1)]]]
+    m is [[1.0, 2.5]]
+    check_variant of [prefix + " float control", which, m, [[1.0, 2.5]]]
+
+check_variant_set of ["numerical_grad_rows", 0]
+check_variant_set of ["numerical_grad_cols", 1]
+
+# A raised loss is latched after the second callback, but restoration still runs.
+calls is 0
+raise_param is [9007199254740993]
+define raising_loss(_) as:
+    calls is calls + 1
+    if calls == 2:
+        assert of [false, "second call"]
+    return 1.0
+try:
+    numerical_grad of [raising_loss, raise_param, 0.001]
+catch e:
+    assert of [raise_param == [9007199254740993] and (num_type of raise_param[0]) == "int", "raise restore"]
+    print of "PASS: numerical_grad raised loss restore"
+
+rows_calls is 0
+rows_raise_param is [[9007199254740993]]
+define rows_raising_loss(_) as:
+    rows_calls is rows_calls + 1
+    if rows_calls == 2:
+        assert of [false, "second rows call"]
+    return 1.0
+try:
+    numerical_grad_rows of [rows_raising_loss, rows_raise_param, [0], 0.001]
+catch e:
+    assert of [rows_raise_param == [[9007199254740993]] and (num_type of rows_raise_param[0][0]) == "int", "rows raise restore"]
+    print of "PASS: numerical_grad_rows raised loss restore"
+
+cols_calls is 0
+cols_raise_param is [[9007199254740993]]
+define cols_raising_loss(_) as:
+    cols_calls is cols_calls + 1
+    if cols_calls == 2:
+        assert of [false, "second cols call"]
+    return 1.0
+try:
+    numerical_grad_cols of [cols_raising_loss, cols_raise_param, [0], 0.001]
+catch e:
+    assert of [cols_raise_param == [[9007199254740993]] and (num_type of cols_raise_param[0][0]) == "int", "cols raise restore"]
+    print of "PASS: numerical_grad_cols raised loss restore"
+
+print of "NUMERICAL GRAD KINDS 2483 ALL PASS"

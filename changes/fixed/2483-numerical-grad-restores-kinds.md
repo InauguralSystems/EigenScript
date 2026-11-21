@@ -1,0 +1,1 @@
+- Preserved exact integer values and numeric kinds after numerical-gradient perturbations (#2483).
