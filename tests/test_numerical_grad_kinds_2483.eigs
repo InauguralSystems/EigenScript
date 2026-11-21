@@ -33,7 +33,7 @@ b is buffer of 2
 b[0] is 1.0
 b[1] is 2.5
 g is numerical_grad of [loss, b, 0.001]
-check_flat of ["numerical_grad buffer control", b, b, "float"]
+check_flat of ["numerical_grad buffer control", [b[0], b[1]], [1.0, 2.5], "float"]
 
 define check_variant(label, which, matrix, expected) as:
     if which == 0:
@@ -71,6 +71,7 @@ define raising_loss(_) as:
     return 1.0
 try:
     numerical_grad of [raising_loss, raise_param, 0.001]
+    assert_true of [false, "numerical_grad did not raise"]
 catch e:
     assert_true of [raise_param == [9007199254740993] and (num_type of raise_param[0]) == "int", "raise restore"]
 
@@ -83,6 +84,7 @@ define rows_raising_loss(_) as:
     return 1.0
 try:
     numerical_grad_rows of [rows_raising_loss, rows_raise_param, [0], 0.001]
+    assert_true of [false, "numerical_grad_rows did not raise"]
 catch e:
     assert_true of [rows_raise_param == [[9007199254740993]] and (num_type of rows_raise_param[0][0]) == "int", "rows raise restore"]
 
@@ -95,6 +97,7 @@ define cols_raising_loss(_) as:
     return 1.0
 try:
     numerical_grad_cols of [cols_raising_loss, cols_raise_param, [0], 0.001]
+    assert_true of [false, "numerical_grad_cols did not raise"]
 catch e:
     assert_true of [cols_raise_param == [[9007199254740993]] and (num_type of cols_raise_param[0][0]) == "int", "cols raise restore"]
 
