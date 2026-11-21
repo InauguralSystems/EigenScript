@@ -30,6 +30,26 @@ print_full_output_hint() { # <command string>
     printf '        (full output: %s %s)\n' "$TOOL_RUNNER" "$cmd"
 }
 
+# One line for each row of $GATES from its $OUT/<index>.st; under a failing row its
+# red lines and the hint. Sets pass, fail, skip and i. The self-test calls this same
+# function on two failing rows, so the hint is tested where it is printed.
+report_rows() {
+    pass=0; fail=0; skip=0; i=0
+    while IFS='|' read -r class cmd; do
+        if [ -f "$OUT/$i.st" ]; then IFS='|' read -r st secs msg < "$OUT/$i.st"
+        else st=FAIL; secs=0; msg="no result: the lane died"; fi
+        printf '  %-4s %-46s %3ss  %s\n' "$st" "$cmd" "$secs" "$msg"
+        case "$st" in
+            PASS) pass=$((pass + 1)) ;;
+            SKIP) skip=$((skip + 1)) ;;
+            *)    fail=$((fail + 1))
+                  grep -E 'FAIL|ERROR|RED|ABORT|BROKEN' "$OUT/$i.log" 2>/dev/null | head -6 | sed 's/^/        /'
+                  print_full_output_hint "$cmd" ;;
+        esac
+        i=$((i + 1))
+    done <<< "$GATES"
+}
+
 run_gate() {   # run_gate <index> <class> <command...>
     local i="$1" class="$2" s rc; shift 2
     if { [ "$class" = bin ] || [ "$class" = portability ] || [ "$class" = selftest ]; } && [ -z "$BIN" ]; then
@@ -85,19 +105,24 @@ if [ "${1:-}" = --selftest ]; then
     py_stub="$OUT/failing.py"
     printf '%s\n' 'import sys' 'sys.exit(7)' > "$py_stub"
     BIN=selftest-binary
-    run_gate hint-python run "$py_stub"
-    run_gate hint-shell run "$stub" 7 'planted failure'
-    IFS='|' read -r py_status _ _ < "$OUT/hint-python.st"
-    IFS='|' read -r sh_status _ _ < "$OUT/hint-shell.st"
-    py_hint=$(print_full_output_hint "$py_stub")
     sh_cmd="$stub 7 planted failure"
-    sh_hint=$(print_full_output_hint "$sh_cmd")
+    run_gate 0 run "$py_stub"
+    run_gate 1 run $sh_cmd
+    run_gate 2 run "$stub" 0 ok
+    # The report itself, as a failing precheck prints it: two failing rows, each with its
+    # hint, and a passing row with none.
+    report=$(GATES="run|$py_stub"$'\n'"run|$sh_cmd"$'\n'"run|$stub 0 ok"; report_rows; echo "counted: $pass passed, $fail failed, $skip skipped of $i")
     want_py="        (full output: python3 $py_stub)"
     want_sh="        (full output: bash $sh_cmd)"
-    if [ "$py_status" = FAIL ] && [ "$sh_status" = FAIL ] && [ "$py_hint" = "$want_py" ] && [ "$sh_hint" = "$want_sh" ]; then
+    if [ "$(printf '%s\n' "$report" | grep -c '^        (full output: ')" -eq 2 ] \
+       && [ "$(printf '%s\n' "$report" | grep -cxF -- "$want_py")" -eq 1 ] \
+       && [ "$(printf '%s\n' "$report" | grep -cxF -- "$want_sh")" -eq 1 ] \
+       && [ "$(printf '%s\n' "$report" | grep -c '^  FAIL ')" -eq 2 ] \
+       && [ "$(printf '%s\n' "$report" | grep -c '^  PASS ')" -eq 1 ] \
+       && [ "$(printf '%s\n' "$report" | tail -1)" = 'counted: 1 passed, 2 failed, 0 skipped of 3' ]; then
         echo 'PASS: failure hints name Python and shell commands'
     else
-        echo "FAIL: failure hints: expected '$want_py', got '$py_hint'; expected '$want_sh', got '$sh_hint'"
+        echo "FAIL: failure hints: the report of two failing rows and a passing one was:"; printf '%s\n' "$report" | sed 's/^/    | /'
         fail=$((fail + 1))
     fi
     echo "precheck-selftest: $((11 - fail))/11 passed, $fail failed"
@@ -173,20 +198,7 @@ while IFS='|' read -r class cmd; do
     i=$((i + 1))
 done <<< "$GATES"
 
-pass=0; fail=0; skip=0; i=0
-while IFS='|' read -r class cmd; do
-    if [ -f "$OUT/$i.st" ]; then IFS='|' read -r st secs msg < "$OUT/$i.st"
-    else st=FAIL; secs=0; msg="no result: the lane died"; fi
-    printf '  %-4s %-46s %3ss  %s\n' "$st" "$cmd" "$secs" "$msg"
-    case "$st" in
-        PASS) pass=$((pass + 1)) ;;
-        SKIP) skip=$((skip + 1)) ;;
-        *)    fail=$((fail + 1))
-              grep -E 'FAIL|ERROR|RED|ABORT|BROKEN' "$OUT/$i.log" 2>/dev/null | head -6 | sed 's/^/        /'
-              print_full_output_hint "$cmd" ;;
-    esac
-    i=$((i + 1))
-done <<< "$GATES"
+report_rows
 # Every row must have produced a verdict (a gate that ran nothing is not a pass).
 [ $((pass + fail + skip)) -eq "$i" ] && [ "$i" -gt 0 ] || { echo "precheck: ABORTED: $((pass + fail + skip)) results for $i gates"; exit 2; }
 echo "precheck: $pass passed, $fail failed, $skip skipped in $(( $(date +%s) - T0 ))s"

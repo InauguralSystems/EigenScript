@@ -675,15 +675,16 @@ def selftest():
                          '\n'.join('- > ' + line for line in short.splitlines()), False)
             box = REMOVED_STRICT_SENTENCES[5][1]
             box_words = box.replace('> ', '').split()
+            # A quote sign stuck to the next word, over the box's own lines and on one line.
             removed_case('not-found-tight-quote-lines-and-single', 'README.md',
-                         '\n'.join('>' + line for line in box.splitlines()) +
+                         '\n'.join('>' + line[2:] for line in box.splitlines()) +
                          '\n>' + ' '.join(box_words), False)
             box_lines = box.splitlines()
             removed_case('not-found-box-bare-quote', 'README.md',
                          '\n'.join(box_lines[:3] + ['>'] + box_lines[3:]), False)
 
             removed_case('scope-read-file', 'docs/CI.md', short, True)
-            removed_case('scope-unread-design', 'CHANGELOG.md', short, False)
+            removed_case('scope-unread-changelog', 'CHANGELOG.md', short, False)
             for label, file, plant, witness in [
                 ('path', 'README.md', '\n`docs/NO_SUCH_1275.md`\n', 'references'),
                 ('flag', 'docs/llms.txt', '\n`eigenscript --no-such-1275`\n', '--no-such-1275'),

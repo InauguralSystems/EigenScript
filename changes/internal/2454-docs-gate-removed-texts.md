@@ -1,1 +1,1 @@
-- Make the documentation gate reject the six exact removed argument-guard opt-in claims regardless of wrapping (#2454).
+- Make the documentation gate reject the six removed argument-guard opt-in claims again, in the forms its named self-test cases hold (#2454).
