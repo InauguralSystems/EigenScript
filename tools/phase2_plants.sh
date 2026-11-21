@@ -62,7 +62,7 @@ while [ $# -gt 0 ]; do
             [ $# -gt 1 ] || { echo "phase2-plants: FAIL: --only needs a plant id"; exit 2; }
             [ -z "$ONLY" ] || { echo "phase2-plants: FAIL: --only may be given once"; exit 2; }
             case "$2" in
-                1|2|3-json|3-store|overflow-wrap|stderr-noise|stdout-noise|return-type|\
+                1|2|3-json|3-store|5|6|7|overflow-wrap|stderr-noise|stdout-noise|return-type|\
                 r31-zero-floor|r31-jit-inline-double|\
                 r31-nan-diverging|r31-inf-sign|r31-improving-incumbent|\
                 r31-nan-report|r31-where-entropy|r31-how-infinite|\
@@ -149,7 +149,7 @@ EXPECTED_STALL=10
 ocfg_plants=0; ocfg_killed=0; ocfg_survived=0; ocfg_broken=0; ocfg_green=0; ocfg_transverse=0; ocfg_available=0
 EXPECTED_OCFG=37
 PRISTINE="$WORK/observer-pristine"
-EXPECTED_PLANTS=16
+EXPECTED_PLANTS=19
 EXPECTED_OBSERVER=8
 
 # One registered concept has two production sites. The second edit
@@ -247,7 +247,10 @@ run_plant() {
         return 0
     fi
     local verdict="" trans="" observer=0 modes="plant transverse"
-    case "$id" in r31-*) observer=1; modes="green plant transverse" ;; esac
+    case "$id" in
+        r31-*) observer=1; modes="green plant transverse" ;;
+        5|6|7) modes="green plant transverse" ;;
+    esac
     for mode in $modes; do
         local dir="$WORK/$id-$mode" fresh=1
         # Observer greens share one untouched archive. A transverse check
@@ -285,10 +288,10 @@ run_plant() {
             break
         fi
         if [ "$mode" = green ]; then
-            if [ "$rc" -ne 0 ] || ! grep -q '^observer-map: PASS ' "$log"; then
+            if [ "$rc" -ne 0 ] || ! grep -Eq '^(observer-map|phase2-row): PASS ' "$log"; then
                 verdict=BROKEN; echo "  $id: unplanted named check did not pass (rc=$rc):"; tail -20 "$log" | sed 's/^/    | /'; break
             fi
-            observer_green=$((observer_green + 1))
+            [ "$observer" -eq 0 ] || observer_green=$((observer_green + 1))
             tail -1 "$log" | sed 's/^/    unplanted: /'
             if ! observer_oracle "$id" "$mode" "$dir"; then verdict=BROKEN; break; fi
         elif [ "$mode" = plant ]; then
@@ -325,6 +328,45 @@ run_plant() {
     [ "$trans" = TRANSVERSE ] && transverse=$((transverse + 1))
     echo "plant $id: $verdict transverse=${trans:-not-run}"
 }
+
+# Run one MAP row against one freshly built binary, in the tiers its header
+# names, or in all four. It runs a row the way tools/phase2_check.py does
+# (its TIERS, TIER_ENV and run()): no EIGS_ variable of the caller, then the
+# tier's own; the row's output against its .out file. The full checker also
+# needs the historical tag and the whole MAP, which a plant has no use for.
+phase2_named_row() {
+    local row="$1" root="$PWD" src="tests/phase2/rows/$1" bin="$PWD/src/eigenscript"
+    local ext tiers tier rc got want tmp v
+    [ -f "$src.eigs" ] && ext=eigs || ext=sh
+    src="$src.$ext"; want="${src%.*}.out"
+    make -s >/dev/null || return 2
+    tiers=$(sed -n 's/^# TIERS: //p' "$src")
+    [ -n "$tiers" ] || tiers='off default osr trace'
+    tmp=$(mktemp -d "${TMPDIR:-/tmp}/eigs-phase2-row.XXXXXX") || return 2
+    for tier in $tiers; do
+        rc=0
+        (
+            for v in $(env | sed -n 's/^\(EIGS_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
+            case "$tier" in
+                off) export EIGS_JIT_OFF=1 ;;
+                default) ;;
+                osr) export EIGS_JIT_OSR_THRESHOLD=1 ;;
+                trace) export EIGS_TRACE="$tmp/t.tape" ;;
+                *) echo "phase2-row: $row names a tier this runner does not have: $tier" >&2; exit 2 ;;
+            esac
+            cd "$tmp" || exit 2
+            if [ "$ext" = eigs ]; then "$bin" "$root/$src"; else bash "$root/$src" "$bin"; fi
+        ) > "$tmp/out" || rc=$?
+        if [ "$rc" -ne 0 ] || ! cmp -s "$tmp/out" "$want"; then
+            got=$(tr '\n' ' ' < "$tmp/out")
+            echo "phase2-row: FAIL $row tier=$tier rc=$rc got=$got"
+            rm -rf "$tmp"; return 1
+        fi
+    done
+    echo "phase2-row: PASS $row tiers=$tiers"
+    rm -rf "$tmp"
+}
+export -f phase2_named_row
 
 # Plant 1 (9.3): an int that fits inline stored boxed. slot_from_int, the one
 # int writer, skips the small-int rule and allocates a real VAL_INT box.
@@ -402,6 +444,45 @@ run_plant overflow-wrap src/vm.c \
     '        if (0) {' \
     "^slot-layer-test: FAIL arm overflow_add with an int: got " \
     bash tests/phase2/slot_layer.sh release
+
+# Plant 5: unary negation wraps INT64_MIN instead of reporting overflow.
+run_plant 5 src/vm.c \
+    '            if (i == INT64_MIN) {
+                rt_error(EK_VALUE, current_line, "integer overflow in unary '\''-'\''");
+                g_vm.stack[g_vm.sp - 1] = slot_null();
+            } else g_vm.stack[g_vm.sp - 1] = slot_from_int(-i);' \
+    '            g_vm.stack[g_vm.sp - 1] = slot_from_int((int64_t)(0ULL - (uint64_t)i)); /* PLANT 5: wrap INT64_MIN */' \
+    tests/phase2/rows/N4b.neg-min-raises.out \
+    '["value", true]' \
+    '-9223372036854775808' \
+    '^phase2-row: FAIL N4b\.neg-min-raises tier=' \
+    bash -c 'phase2_named_row "$1"' phase2-row N4b.neg-min-raises
+
+# Plant 6: misclassify the exactly integral float 3.0 as an integer.
+run_plant 6 src/builtins.c \
+    '    if (arg && arg->type == VAL_FLOAT) return make_str("float");' \
+    '    if (arg && arg->type == VAL_FLOAT) return make_str(VAL_F64_RAW(arg) == 3.0 ? "int" : "float"); /* PLANT 6 */' \
+    tests/phase2/rows/N7.num-type-float.out \
+    '["float", "float", "float", "float"]' \
+    '["int", "float", "float", "float"]' \
+    '^phase2-row: FAIL N7\.num-type-float tier=' \
+    bash -c 'phase2_named_row "$1"' phase2-row N7.num-type-float
+
+# Plant 7: admit the obsolete format-6 tape in replay_vline_ok.
+run_plant 7 src/trace.c \
+    '    if (fmt != TRACE_FORMAT_VERSION) {' \
+    '    if (fmt != TRACE_FORMAT_VERSION && fmt != 6) { /* PLANT 7: accept v6 */' \
+    tests/phase2/rows/T1.v6-refused.sh \
+    'if [ "$rc" -eq 0 ]; then
+    printf '\''v6 accepted\n'\''
+    exit 1
+fi' \
+    'if [ "$rc" -eq 0 ]; then
+    printf '\''rc!=0 names-6\n'\''
+    exit 0
+fi' \
+    '^phase2-row: FAIL T1\.v6-refused tier=' \
+    bash -c 'phase2_named_row "$1"' phase2-row T1.v6-refused
 
 # The critic's class: a population scan whose diagnostics reach the parser.
 # Named checks: the runner's stderr refusal, and its grammar whitelist.
