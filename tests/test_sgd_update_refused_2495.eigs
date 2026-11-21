@@ -1,18 +1,26 @@
 load_file of "lib/test.eigs"
 
-# #2495: an SGD step that raises writes nothing. The finite-only readers raise on a cell that is not
-# finite; before the fix the loop wrote on, so the refused parameter cell became `0 - lr * grad` and
-# every later cell was updated. Each row below holds the WHOLE parameter after the caught raise, and
+# #2495: an SGD step that raises leaves the parameter as it was. The finite-only readers raise on a
+# cell that is not finite; before the fix the loop wrote on, so the refused parameter cell became
+# `0 - lr * grad` and every later cell was updated. Each row below holds the WHOLE parameter after the
+# caught raise, every cell's value and every cell's kind (`==` alone takes 20 and 20.0 for equal), and
 # fails when the call returns instead of raising.
 inf is 1e400
 
+define kinds_of(v) as:
+    if (type of v) == "list":
+        return [kinds_of of c for c in v]
+    return num_type of v
+
 define refused(label, step, param, expected) as:
+    local kinds_before is kinds_of of param
     try:
         step of param
         assert_true of [false, label + ": the step did not raise"]
     catch e:
         assert_true of [e.kind == "value", label + ": kind " + (str of e.kind)]
     assert_true of [param == expected, label + ": the parameter after the raise is " + (str of param)]
+    assert_true of [(kinds_of of param) == kinds_before, label + ": the kinds after the raise are " + (str of (kinds_of of param))]
 
 # sgd_update, 1-D: a parameter cell that is not finite, first and last; a gradient cell that is not.
 refused of ["1-D, first parameter cell", (p) => sgd_update of [p, [1, 1, 1], 0.1], [inf, 20, 30], [inf, 20, 30]]
@@ -29,6 +37,17 @@ refused of ["rows, gradient cell in the second listed row", (p) => sgd_update_ro
 refused of ["rows, parameter cell", (p) => sgd_update_rows of [p, [[1, 1], [1, 1]], [0, 1], 0.1], [[1, 2], [inf, 4]], [[1, 2], [inf, 4]]]
 refused of ["cols, gradient cell in the last row", (p) => sgd_update_cols of [p, [[1, 1], [1, inf]], [0, 1], 0.1], [[1, 2], [3, 4]], [[1, 2], [3, 4]]]
 refused of ["cols, parameter cell", (p) => sgd_update_cols of [p, [[1, 1], [1, 1]], [0, 1], 0.1], [[1, 2], [3, inf]], [[1, 2], [3, inf]]]
+
+# Cells the step reads AFTER it has written them: the same row object twice in a parameter, and an
+# index list that names a row or a column twice. 1e308 - 1 * (0 - 1e308) is inf, which the step may
+# write; reading that cell again raises. Checking every cell before the first write does not see it
+# (a fix of that shape passed every row above); the written cells have to be put back.
+shared is [1e308, 5]
+refused of ["2-D, the same row object twice", (p) => sgd_update of [p, [[0 - 1e308, 1], [0 - 1e308, 1]], 1], [shared, shared], [[1e308, 5], [1e308, 5]]]
+shared_r is [1e308, 5]
+refused of ["rows, the same row object twice", (p) => sgd_update_rows of [p, [[0 - 1e308, 1], [0 - 1e308, 1]], [0, 1], 1], [shared_r, shared_r], [[1e308, 5], [1e308, 5]]]
+refused of ["rows, one row index twice", (p) => sgd_update_rows of [p, [[0 - 1e308, 1], [1, 1]], [0, 0], 1], [[1e308, 5], [1, 2]], [[1e308, 5], [1, 2]]]
+refused of ["cols, one column index twice", (p) => sgd_update_cols of [p, [[0 - 1e308, 1], [1, 1]], [0, 0], 1], [[1e308, 5], [1, 2]], [[1e308, 5], [1, 2]]]
 
 # A refused step keeps each cell's kind too: the ints are still ints.
 k is [inf, 20, 30]

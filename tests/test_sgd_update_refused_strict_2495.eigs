@@ -19,4 +19,38 @@ catch e:
     assert_true of [e.kind == "value", "strict result, 2-D: kind " + (str of e.kind)]
 assert_true of [m == [[1, 2], [1e308, 5]], "strict result, 2-D: the parameter after the raise is " + (str of m)]
 
+# The rows and cols variants, and the cells a step reads after it has written them.
+mr is [[1, 2], [1e308, 5]]
+try:
+    sgd_update_rows of [mr, [[1, 1], [0 - 1e308, 1]], [0, 1], 10]
+    assert_true of [false, "strict result, rows: the step did not raise"]
+catch e:
+    assert_true of [e.kind == "value", "strict result, rows: kind " + (str of e.kind)]
+assert_true of [mr == [[1, 2], [1e308, 5]] and (num_type of mr[0][0]) == "int", "strict result, rows: the parameter after the raise is " + (str of mr)]
+
+mc is [[1, 2], [1e308, 5]]
+try:
+    sgd_update_cols of [mc, [[1, 1], [0 - 1e308, 1]], [1, 0], 10]
+    assert_true of [false, "strict result, cols: the step did not raise"]
+catch e:
+    assert_true of [e.kind == "value", "strict result, cols: kind " + (str of e.kind)]
+assert_true of [mc == [[1, 2], [1e308, 5]] and (num_type of mc[0][1]) == "int", "strict result, cols: the parameter after the raise is " + (str of mc)]
+
+shared is [6e307, 5]
+ms is [shared, shared]
+try:
+    sgd_update of [ms, [[0 - 6e307, 1], [0 - 6e307, 1]], 1]
+    assert_true of [false, "strict result, the same row twice: the step did not raise"]
+catch e:
+    assert_true of [e.kind == "value", "strict result, the same row twice: kind " + (str of e.kind)]
+assert_true of [ms == [[6e307, 5], [6e307, 5]] and (num_type of ms[0][1]) == "int", "strict result, the same row twice: the parameter after the raise is " + (str of ms)]
+
+md is [[6e307, 5], [1, 2]]
+try:
+    sgd_update_rows of [md, [[0 - 6e307, 1], [1, 1]], [0, 0], 1]
+    assert_true of [false, "strict result, one row index twice: the step did not raise"]
+catch e:
+    assert_true of [e.kind == "value", "strict result, one row index twice: kind " + (str of e.kind)]
+assert_true of [md == [[6e307, 5], [1, 2]] and (num_type of md[0][1]) == "int", "strict result, one row index twice: the parameter after the raise is " + (str of md)]
+
 test_summary of null

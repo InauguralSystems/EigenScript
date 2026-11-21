@@ -2122,20 +2122,46 @@ matrix_grad_failed:
     return make_null();
 }
 
-/* #2495: one cell of an SGD step, `param - lr * grad`. The readers are finite-only: on a cell that is
- * not finite they raise and hand back a zero placeholder, and the result writer raises under
- * EIGS_STRICT=1 for a result that is not finite. Returns 0 when any of the three raised, and writes
- * only when `write` is set. Every loop below runs twice over its cells, first with write == 0, so a
- * step that cannot finish leaves the parameter as it was. */
-static int sgd_cell(Value *prow, int pi, Value *grow, int gi, double lr, const char *who, int write) {
+/* #2495: an SGD step is all or nothing. The readers are finite-only: on a cell that is not finite
+ * they raise and hand back a zero placeholder, and the result writer raises under EIGS_STRICT=1 for a
+ * result that is not finite. Before a cell is written, the row, the index and an owned copy of the
+ * slot are remembered; when anything raises, sgd_step_end puts the written cells back, newest first.
+ * Checking every cell before the first write would not be enough: a parameter that holds the same row
+ * twice, or an index list that names a row twice, reads cells the step has already written. */
+typedef struct { Value *row; int index; EigsSlot old; } SgdUndo;
+typedef struct { SgdUndo *log; int n, cap; } SgdStep;
+
+/* One cell: `param - lr * grad`. Returns 0, having written nothing for this cell, when a reader or
+ * the result writer raised. */
+static int sgd_cell(SgdStep *step, Value *prow, int pi, Value *grow, int gi, double lr, const char *who) {
     double pv = eigs_slot_float(list_slot(prow, pi), who);
     if (g_has_error) return 0;
     double gv = eigs_slot_float(list_slot(grow, gi), who);
     if (g_has_error) return 0;
     double out = eigs_math_result(pv - lr * gv);
     if (g_has_error) return 0;
-    if (write) list_set_f64(prow, pi, out);
+    if (step->n == step->cap) {
+        step->cap = step->cap ? step->cap * 2 : 64;
+        step->log = xrealloc_array(step->log, (size_t)step->cap, sizeof(*step->log));
+    }
+    step->log[step->n].row = prow;
+    step->log[step->n].index = pi;
+    step->log[step->n].old = slot_read_owned(list_slot(prow, pi));
+    step->n++;
+    list_set_f64(prow, pi, out);
     return 1;
+}
+
+/* End a step. With ok == 0 every cell it wrote gets its old slot back, value and kind, newest first
+ * (a cell written twice passes through its first written value on the way). Returns ok. */
+static int sgd_step_end(SgdStep *step, int ok) {
+    for (int i = step->n - 1; i >= 0; i--) {
+        if (!ok) list_set_slot_owned(step->log[i].row, step->log[i].index, slot_read_owned(step->log[i].old));
+        slot_decref(step->log[i].old);
+    }
+    free(step->log);
+    step->log = NULL; step->n = step->cap = 0;
+    return ok;
 }
 
 /* ==== BUILTIN: sgd_update ==== */
@@ -2165,30 +2191,37 @@ Value* builtin_sgd_update(Value *arg) {
     if (param->type != VAL_LIST || grad->type != VAL_LIST) return list_get_return(arg, 0);
 
     int is_2d = (param->data.list.count > 0 && list_elem_type(param, 0) == VAL_LIST);
+    SgdStep step = {NULL, 0, 0};
 
     if (!is_2d) {
         /* 1D */
         int len = param->data.list.count < grad->data.list.count
                 ? param->data.list.count : grad->data.list.count;
-        for (int write = 0; write < 2; write++)
-            for (int i = 0; i < len; i++)
-                if (!sgd_cell(param, i, grad, i, lr, __func__, write)) return make_null();
+        for (int i = 0; i < len; i++) {
+            if (!sgd_cell(&step, param, i, grad, i, lr, __func__)) {
+                sgd_step_end(&step, 0);
+                return make_null();
+            }
+        }
     } else {
         /* 2D */
         int rows = param->data.list.count < grad->data.list.count
                  ? param->data.list.count : grad->data.list.count;
-        for (int write = 0; write < 2; write++) {
-            for (int r = 0; r < rows; r++) {
-                Value *pr = list_get_ref(param, r);
-                Value *gr = list_get_ref(grad, r);
-                if (!pr || pr->type != VAL_LIST || !gr || gr->type != VAL_LIST) continue;
-                int cols = pr->data.list.count < gr->data.list.count
-                         ? pr->data.list.count : gr->data.list.count;
-                for (int c = 0; c < cols; c++)
-                    if (!sgd_cell(pr, c, gr, c, lr, __func__, write)) return make_null();
+        for (int r = 0; r < rows; r++) {
+            Value *pr = list_get_ref(param, r);
+            Value *gr = list_get_ref(grad, r);
+            if (!pr || pr->type != VAL_LIST || !gr || gr->type != VAL_LIST) continue;
+            int cols = pr->data.list.count < gr->data.list.count
+                     ? pr->data.list.count : gr->data.list.count;
+            for (int c = 0; c < cols; c++) {
+                if (!sgd_cell(&step, pr, c, gr, c, lr, __func__)) {
+                    sgd_step_end(&step, 0);
+                    return make_null();
+                }
             }
         }
     }
+    sgd_step_end(&step, 1);
     return list_get_return(arg, 0);
 }
 
@@ -2364,23 +2397,24 @@ Value* builtin_sgd_update_rows(Value *arg) {
                                "sgd_update_rows", "row", &row_snapshot, &nidx))
         return make_null();
 
-    for (int write = 0; write < 2; write++) {
-        for (int ri = 0; ri < nidx; ri++) {
-            int r = row_snapshot[ri];
-            Value *mrow = list_get_ref(matrix, r);
-            Value *grow = list_get_ref(grad, r);
-            if (!mrow || mrow->type != VAL_LIST || !grow || grow->type != VAL_LIST) continue;
+    SgdStep step = {NULL, 0, 0};
+    for (int ri = 0; ri < nidx; ri++) {
+        int r = row_snapshot[ri];
+        Value *mrow = list_get_ref(matrix, r);
+        Value *grow = list_get_ref(grad, r);
+        if (!mrow || mrow->type != VAL_LIST || !grow || grow->type != VAL_LIST) continue;
 
-            int cols = mrow->data.list.count < grow->data.list.count
-                     ? mrow->data.list.count : grow->data.list.count;
-            for (int c = 0; c < cols; c++) {
-                if (!sgd_cell(mrow, c, grow, c, lr, __func__, write)) {
-                    free(row_snapshot);
-                    return make_null();
-                }
+        int cols = mrow->data.list.count < grow->data.list.count
+                 ? mrow->data.list.count : grow->data.list.count;
+        for (int c = 0; c < cols; c++) {
+            if (!sgd_cell(&step, mrow, c, grow, c, lr, __func__)) {
+                sgd_step_end(&step, 0);
+                free(row_snapshot);
+                return make_null();
             }
         }
     }
+    sgd_step_end(&step, 1);
     free(row_snapshot);
     return list_get_return(arg, 0);
 }
@@ -2573,22 +2607,23 @@ Value* builtin_sgd_update_cols(Value *arg) {
         return make_null();
     }
 
-    for (int write = 0; write < 2; write++) {
-        for (int ci = 0; ci < nidx; ci++) {
-            int col = col_snapshot[ci];
-            for (int r = 0; r < rows; r++) {
-                Value *mrow = list_get_ref(matrix, r);
-                Value *grow = list_get_ref(grad, r);
-                if (!mrow || mrow->type != VAL_LIST || col >= mrow->data.list.count) continue;
-                if (!grow || grow->type != VAL_LIST || col >= grow->data.list.count) continue;
+    SgdStep step = {NULL, 0, 0};
+    for (int ci = 0; ci < nidx; ci++) {
+        int col = col_snapshot[ci];
+        for (int r = 0; r < rows; r++) {
+            Value *mrow = list_get_ref(matrix, r);
+            Value *grow = list_get_ref(grad, r);
+            if (!mrow || mrow->type != VAL_LIST || col >= mrow->data.list.count) continue;
+            if (!grow || grow->type != VAL_LIST || col >= grow->data.list.count) continue;
 
-                if (!sgd_cell(mrow, col, grow, col, lr, __func__, write)) {
-                    free(col_snapshot);
-                    return make_null();
-                }
+            if (!sgd_cell(&step, mrow, col, grow, col, lr, __func__)) {
+                sgd_step_end(&step, 0);
+                free(col_snapshot);
+                return make_null();
             }
         }
     }
+    sgd_step_end(&step, 1);
     free(col_snapshot);
     return list_get_return(arg, 0);
 }

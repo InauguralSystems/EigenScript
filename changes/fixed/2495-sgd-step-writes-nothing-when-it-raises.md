@@ -1,1 +1,0 @@
-- `sgd_update`, `sgd_update_rows` and `sgd_update_cols` write nothing when they raise. A list cell that is not finite raised `value` after the step had overwritten that cell and gone on updating the cells after it (#2495).
