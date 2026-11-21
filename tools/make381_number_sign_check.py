@@ -110,8 +110,9 @@ On a judged line, != or ::= outside every reference and before any other
 assignment operator is a finding: GNU Make 3.81 does not know the form and
 reads the line as something else (at the top level it leaves the variable
 empty and exits 0).  The scan stops at a comment sign, and after a rule's
-colon at a semicolon: what follows it is a recipe.  This also refuses != in a
-conditional's arguments, where the makes agree.
+colon at a semicolon: what follows it is a recipe.  A judged line that is not
+an assignment is refused too when it holds one of the forms there, as in a
+conditional's arguments or on a vpath line, where the makes agree.
 
 Not covered: undefine, private, export define, $(file ...), a lone $
 at the end of a value, .ONESHELL, --output-sync, an include whose name holds a

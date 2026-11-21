@@ -5436,6 +5436,42 @@
    "name": "escaped-sign-in-name-colon-colon",
    "text": "X\\#Y ::= a\n",
    "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[b] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[b] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "colon-colon-conditional-argument",
+   "text": "A := a\nifneq ($(A),::=)\nX := b\nendif\n",
+   "why": "stricter than the makes: ::= in a conditional argument is on a judged line, outside every reference and before any other assignment operator"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[ok] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "bang-vpath-line",
+   "text": "X := ok\nvpath %.q a!=b\n",
+   "why": "stricter than the makes: != on a vpath line is on a judged line, outside every reference and before any other assignment operator"
   }
  ],
  "oracle": "GNU Make 3.81 built from the GNU source archive, against GNU Make 4.3",
