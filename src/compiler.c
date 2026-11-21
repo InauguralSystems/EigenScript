@@ -1992,7 +1992,12 @@ static void emit_assign_for_tos(Compiler *c, const char *name, uint32_t name_has
              * of a function-local slot below; it must never turn a slot into
              * an outward OP_SET_NAME, nor turn an outward write local. */
             int local_eligible = !captured && !interrogated && !in_outer && !in_module && !in_globals;
-            int outward = !local_only && (in_outer || in_module || in_globals);
+            /* #2474: where a write lands is decided by whether the name exists outside (and by
+             * `local`), never by what the function READS (`interrogated`) or by an inner function
+             * that mentions it (`captured`).  A by-name binder of this function (a comprehension
+             * variable, a catch name: `fn_env_bound`) is a binding of the function's own, so a
+             * write to that name stays function-local, as test_by_name_binders.eigs pins. */
+            int outward = !local_only && !fn_env_bound && (in_outer || in_module || in_globals);
 
             if (outward) {
                 int idx = add_string_constant(c, name);
