@@ -102,4 +102,69 @@ catch e:
     assert of [cols_raise_param == [[9007199254740993]] and (num_type of cols_raise_param[0][0]) == "int", "cols raise restore"]
     print of "PASS: numerical_grad_cols raised loss restore"
 
+# The gradient's VALUES (#2483, its third box). For a loss that is the sum of the squares of the
+# parameters, the central difference is twice each parameter, up to rounding: a closed form, so
+# these rows need no second build to compare with. A change to how a parameter is perturbed or
+# put back that moved a gradient turns them red; the rows above cannot (their loss is constant).
+define gv_near(a, b) as:
+    return (abs of (a - b)) < 0.000001
+define gv_near_list(got, want) as:
+    if (len of got) != (len of want):
+        return false
+    for i in range of (len of want):
+        if (gv_near of [got[i], want[i]]) == false:
+            return false
+    return true
+
+gv_q is [1, 2, 3]
+define gv_sq_q(_) as:
+    local s is 0.0
+    for v in gv_q:
+        s is s + v * v
+    return s
+gv_g is numerical_grad of [gv_sq_q, gv_q, 0.001]
+assert of [gv_near_list of [gv_g, [2.0, 4.0, 6.0]], "gradient values, int list"]
+assert of [gv_q == [1, 2, 3] and (num_type of gv_q[0]) == "int", "gradient values, int list restored"]
+print of "PASS: gradient values, int list"
+
+gv_f is [1.5, -2.0, 0.25]
+define gv_sq_f(_) as:
+    local s is 0.0
+    for v in gv_f:
+        s is s + v * v
+    return s
+gv_g is numerical_grad of [gv_sq_f, gv_f, 0.001]
+assert of [gv_near_list of [gv_g, [3.0, -4.0, 0.5]], "gradient values, float list"]
+assert of [gv_f == [1.5, -2.0, 0.25] and (num_type of gv_f[0]) == "float", "gradient values, float list restored"]
+print of "PASS: gradient values, float list"
+
+gv_b is buf_from_list of ([1.5, -2.0, 0.25])
+define gv_sq_b(_) as:
+    local s is 0.0
+    for v in gv_b:
+        s is s + v * v
+    return s
+gv_g is numerical_grad of [gv_sq_b, gv_b, 0.001]
+assert of [(gv_near of [gv_g[0], 3.0]) and (gv_near of [gv_g[1], -4.0]) and (gv_near of [gv_g[2], 0.5]), "gradient values, buffer"]
+assert of [(gv_b[0] == 1.5) and (gv_b[1] == -2.0) and (gv_b[2] == 0.25), "gradient values, buffer restored"]
+print of "PASS: gradient values, buffer"
+
+gv_m is [[1, 2], [3, 4]]
+define gv_sq_m(_) as:
+    local s is 0.0
+    for row in gv_m:
+        for v in row:
+            s is s + v * v
+    return s
+gv_g is numerical_grad of [gv_sq_m, gv_m, 0.001]
+assert of [(gv_near_list of [gv_g[0], [2.0, 4.0]]) and (gv_near_list of [gv_g[1], [6.0, 8.0]]), "gradient values, int matrix"]
+print of "PASS: gradient values, int matrix"
+gv_g is numerical_grad_rows of [gv_sq_m, gv_m, [1], 0.001]
+assert of [(gv_near_list of [gv_g[0], [0.0, 0.0]]) and (gv_near_list of [gv_g[1], [6.0, 8.0]]), "gradient values, rows"]
+print of "PASS: gradient values, numerical_grad_rows"
+gv_g is numerical_grad_cols of [gv_sq_m, gv_m, [0], 0.001]
+assert of [(gv_near_list of [gv_g[0], [2.0, 0.0]]) and (gv_near_list of [gv_g[1], [6.0, 0.0]]), "gradient values, cols"]
+assert of [gv_m == [[1, 2], [3, 4]] and (num_type of gv_m[1][0]) == "int", "gradient values, int matrix restored"]
+print of "PASS: gradient values, numerical_grad_cols"
+
 print of "NUMERICAL GRAD KINDS 2483 ALL PASS"
