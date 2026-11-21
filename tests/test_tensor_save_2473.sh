@@ -18,9 +18,15 @@ def limited():
     signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
 p = subprocess.run([os.environ['EIGS_BIN'], os.path.join(os.environ['CASE_DIR'], 'save.eigs')],
                    cwd=os.environ['CASE_DIR'], preexec_fn=limited)
+print('child returncode:', p.returncode)
 raise SystemExit(0 if p.returncode != 0 else 1)
 PY
-if [ $? -eq 0 ] && grep -q "tensor_save: 't.bin':" "$tmp/limit.err"; then pass "tensor_save raises io on a size-limit short write"; else fail "tensor_save size-limit failure"; fi
+if [ $? -eq 0 ] && grep -q "tensor_save: 't.bin':" "$tmp/limit.err"; then pass "tensor_save raises io on a size-limit short write"; else
+    fail "tensor_save size-limit failure"
+    # What the child did, so a failure on another platform can be read from the log.
+    sed 's/^/    limit.out: /' "$tmp/limit.out"; sed 's/^/    limit.err: /' "$tmp/limit.err" | head -8
+    echo "    t.bin bytes: $(wc -c <"$tmp/t.bin" 2>/dev/null | tr -d ' ')"
+fi
 if [ -f "$tmp/t.bin" ] && [ "$(wc -c <"$tmp/t.bin" | tr -d ' ')" -eq 64 ]; then pass "tensor_save matches write_text by leaving the partial file"; else fail "tensor_save partial-file policy"; fi
 
 if [ -e /dev/full ]; then
