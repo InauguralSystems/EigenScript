@@ -44,7 +44,8 @@ blocks, dynamic types), applies functions with a keyword like a
 concatenative language (`f of x`), is a Lisp-like single-value-kind
 world underneath (everything is one of a fixed set of runtime types that `type of` names, code runs
 top to bottom, no static pass), and differs from all of them in one
-fundamental way: **every assignment is observed**, and the language has
+fundamental way: **every assignment to a name (`x is ...`) is observed**
+(unless an `unobserved:` block elides it), and the language has
 first-class constructs (`converged`, `what is x`, `prev of x`) for
 asking the running program about its own state and history.
 

@@ -723,7 +723,7 @@ Inside the block:
   update the existing `Value`'s data, keeping pointer identity. No
   intermediate allocation.
 - **Entropy tracking is skipped.** Entropy / dH / obs_age on touched
-  values stay frozen at whatever the last observed write left them; numeric assignments still update the value trajectory, so `when`, `where`, `why` and `how` of a number stay current.
+  values stay frozen at whatever the last observed write left them; a numeric assignment to a name still updates that name's value trajectory, so its `when`, `where`, `why` and `how` stay current.
 - **Observer predicates raise.** A predicate asked inside the block, or in a function called from it, raises `value` (#871).
 
 Outside the block, normal observed behavior resumes. Nested `unobserved`
