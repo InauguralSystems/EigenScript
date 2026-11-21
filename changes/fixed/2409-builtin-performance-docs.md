@@ -1,0 +1,1 @@
+- Correct builtin lenient-stand-in and performance-gate documentation (#2409).

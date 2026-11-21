@@ -20,7 +20,17 @@ gfx, audio) require a full build or the `gfx` target.
 > dumps the full surface — every builtin, extension (by group), and lib
 > function with its parameter list — in one call.
 
-> See [Argument guards and arithmetic traps](SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states. Documented answers for valid-but-absent input (`index_of` miss `-1` and `file_exists` of a missing path `false`) are unchanged by that setting.
+> See [Argument guards and arithmetic traps](SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states. Documented answers for valid-but-absent input (`index_of` miss `-1` and `file_exists` of a missing path `false`) are unchanged by that setting. A bool in a guarded argument, including one held directly by an argument list, raises `type_mismatch` in every state; it never receives the lenient stand-in.
+
+```eigenscript
+try:
+    print of (split of [true, ","])
+catch e:
+    print of e.kind
+```
+```output
+type_mismatch
+```
 
 New since 0.8.1: concurrency (`spawn`, `thread_join`, `channel`, `send`,
 `recv`, `try_recv`, `recv_timeout`, `close_channel`, `channel_closed`),
@@ -137,7 +147,7 @@ tokens, and raises `value` naming any integer token outside int64.
 | `text_builder_append` | `text_builder_append of [builder, value]` | Append one value as text |
 | `text_builder_append_line` | `text_builder_append_line of [builder, value]` | Append one value and a newline |
 | `text_builder_to_string` | `text_builder_to_string of builder` | Render buffered text |
-| `secure_equals` | `secure_equals of [a, b]` | Constant-time string equality (`true`/`false`). Compares every byte regardless of where a mismatch occurs, so comparison time doesn't leak how much of a secret matched. Non-string arguments raise `secure_equals: expected two strings` by default; under `EIGS_STRICT=0`, they return `false` |
+| `secure_equals` | `secure_equals of [a, b]` | Constant-time string equality (`true`/`false`). Compares every byte regardless of where a mismatch occurs, so comparison time doesn't leak how much of a secret matched. Non-string arguments raise `secure_equals: expected two strings` by default; under `EIGS_STRICT=0`, arguments that hold no bool return `false`; a bool, including one held directly by the argument list, raises `type_mismatch` there too. |
 
 ### Regex
 
@@ -171,7 +181,7 @@ builtin-call forms below are retained for backward compatibility.
 | `bit_not` | `bit_not of x` | Bitwise NOT (prefer `~x`) |
 | `bit_shl` | `bit_shl of [a, b]` | Left shift (prefer `a << b`) |
 | `bit_shr` | `bit_shr of [a, b]` | Unsigned right shift (prefer `a >> b`) |
-| `sign_extend` | `sign_extend of [val, bits]` | Exact int64 result from the existing 1..32-bit sign-extension operation; value and width follow N5 (integral floats convert, fractions raise). Its subtraction is checked: int64 underflow raises `value`, naming `sign_extend` (R1.6b-D1). Bits above the width retain the existing behavior (#1896 is separate). |
+| `sign_extend` | `sign_extend of [val, bits]` | Exact int64 result from the existing 1..32-bit sign-extension operation; value and width follow N5 (integral floats convert, fractions raise). Its subtraction is checked: int64 underflow raises `value`, naming `sign_extend` (R1.6b-D1). Bits above the width retain the existing behavior (#1896 is separate). A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
 
 ### Width arithmetic (N9)
 
@@ -297,7 +307,7 @@ Compact typed arrays of doubles with O(1) indexed access. Iterable with
 | `write_bytes` | `write_bytes of [path, <list\|buffer> {, append}]` | Write raw bytes to a file. Binary-clean (NUL written verbatim, unlike `write_text`). `append` (default 0): 0 truncates, nonzero appends. Returns bytes written; I/O failure raises `io` with the path and OS reason. Trace-recorded result. Every byte follows N5 then 0..255; fractions and out-of-range bytes raise `value` before I/O or replay. The written count is an int. |
 | `rename` | `rename of [old, new]` | Rename/replace a file. Atomic on POSIX (`rename(2)`) — a crash leaves either the old or the new file whole, never a mix; basis for crash-safe swaps. Returns `true`; I/O failure raises `io` with both paths and the OS reason. Trace-recorded result. |
 | `remove_file` | `remove_file of path` | Delete a file. Returns `true`; I/O failure raises `io` with the path and OS reason. Trace-recorded result. |
-| `dot` | `dot of [a, b]` | Dot product of float buffers, returning a float; summation association is unspecified. Non-finite input cells raise `value` in every `EIGS_STRICT` state (N13). |
+| `dot` | `dot of [a, b]` | Dot product of float buffers, returning a float; summation association is unspecified. Non-finite input cells raise `value` in every `EIGS_STRICT` state (N13). A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
 | `file_sync` | `file_sync of path` | Flush a regular file's data and metadata with `fsync(2)`. A missing path or non-file raises `io`. Trace-recorded; replay returns the recorded result without opening or syncing the path. |
 | `dir_sync` | `dir_sync of path` | Flush directory-entry changes with `fsync(2)`. A missing path or non-directory raises `io`. Trace-recorded; replay returns the recorded result without opening or syncing the path. |
 
@@ -576,19 +586,19 @@ Scalar arithmetic and its existing list forms accept infinity and NaN. With `EIG
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `abs` | `abs of x` | Absolute value, preserving int or float kind. `abs` of INT64_MIN raises `value` because its positive magnitude does not fit in int64 (#1758 N4b). |
-| `min` | `min of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. NaN propagates in any position. For zero ties, `-0.0` precedes the equivalent class `{0, 0.0}`; the first ordering-equivalent argument wins (R22-1). A non-number element raises an error naming its index and type. Empty input raises `value`, naming the builtin, in both call forms and every `EIGS_STRICT` state (R1.6b-D2). |
-| `max` | `max of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. NaN propagates in any position. For zero ties, `-0.0` precedes the equivalent class `{0, 0.0}`; the first ordering-equivalent argument wins (R22-1). A non-number element raises an error naming its index and type. Empty input raises `value`, naming the builtin, in both call forms and every `EIGS_STRICT` state (R1.6b-D2). |
-| `floor` | `floor of x` | Round down; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
-| `ceil` | `ceil of x` | Round up; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
-| `round` | `round of x` | Round half away from zero; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
-| `sin` | `sin of x` | Sine (radians). Numeric inputs convert to float; numeric results are floats. |
-| `cos` | `cos of x` | Cosine (radians). Numeric inputs convert to float; numeric results are floats. |
-| `tan` | `tan of x` | Tangent (radians). Numeric inputs convert to float; numeric results are floats. |
-| `asin` | `asin of x` | Inverse sine; input outside [-1, 1] gives NaN by default and raises `value` under `EIGS_STRICT=1`. Numeric inputs convert to float; numeric results are floats. |
-| `acos` | `acos of x` | Inverse cosine; input outside [-1, 1] gives NaN by default and raises `value` under `EIGS_STRICT=1`. Numeric inputs convert to float; numeric results are floats. |
-| `atan` | `atan of x` | Inverse tangent. Numeric inputs convert to float; numeric results are floats. |
-| `atan2` | `atan2 of [y, x]` | Two-argument inverse tangent. Numeric inputs convert to float; numeric results are floats. |
+| `abs` | `abs of x` | Absolute value, preserving int or float kind. `abs` of INT64_MIN raises `value` because its positive magnitude does not fit in int64 (#1758 N4b). A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
+| `min` | `min of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. NaN propagates in any position. For zero ties, `-0.0` precedes the equivalent class `{0, 0.0}`; the first ordering-equivalent argument wins (R22-1). A non-number element raises an error naming its index and type. Empty input raises `value`, naming the builtin, in both call forms and every `EIGS_STRICT` state (R1.6b-D2). A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
+| `max` | `max of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. NaN propagates in any position. For zero ties, `-0.0` precedes the equivalent class `{0, 0.0}`; the first ordering-equivalent argument wins (R22-1). A non-number element raises an error naming its index and type. Empty input raises `value`, naming the builtin, in both call forms and every `EIGS_STRICT` state (R1.6b-D2). A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
+| `floor` | `floor of x` | Round down; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
+| `ceil` | `ceil of x` | Round up; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
+| `round` | `round of x` | Round half away from zero; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
+| `sin` | `sin of x` | Sine (radians). Numeric inputs convert to float; numeric results are floats. A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
+| `cos` | `cos of x` | Cosine (radians). Numeric inputs convert to float; numeric results are floats. A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
+| `tan` | `tan of x` | Tangent (radians). Numeric inputs convert to float; numeric results are floats. A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
+| `asin` | `asin of x` | Inverse sine; input outside [-1, 1] gives NaN by default and raises `value` under `EIGS_STRICT=1`. Numeric inputs convert to float; numeric results are floats. A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
+| `acos` | `acos of x` | Inverse cosine; input outside [-1, 1] gives NaN by default and raises `value` under `EIGS_STRICT=1`. Numeric inputs convert to float; numeric results are floats. A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
+| `atan` | `atan of x` | Inverse tangent. Numeric inputs convert to float; numeric results are floats. A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
+| `atan2` | `atan2 of [y, x]` | Two-argument inverse tangent. Numeric inputs convert to float; numeric results are floats. A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
 | `pi` | `pi of null` | The constant &pi; (3.14159265...). Numeric inputs convert to float; numeric results are floats. |
 
 ## Tensor Math
@@ -663,7 +673,11 @@ in a buffer first converts it to float and can round it.
 | `matmul` | `matmul of [a, b]` | Matrix multiplication. Two shaped buffers multiply on the flat data and give a buffer; a 1-D left operand gives a 1-D result. Mixed list/buffer operands give a list. An accumulation that reaches `inf - inf` is `NaN`; that sets `invalid` and remains NaN by default; `EIGS_STRICT=1` raises a catchable `value` error naming `matmul` (#971, R2.2). Kernels may retain raw non-finite values in buffer storage. Indexing and iteration, like `get_at`, refuse stored NaN and infinity with `value` in every `EIGS_STRICT` state (N13). Under `EIGS_STRICT=1` a NaN keeps the first-NaN diagnostic and INVALID flag; the interpreter, JIT and leaf fallback agree on the error source line. |
 | `matmul_at` | `matmul_at of [a, b]` | `aᵀ·b` without materialising the transpose: `a` is `(m × k)`, `b` is `(m × n)`, result `(k × n)` — the weight gradient `dW = Xᵀ·dY` of a linear layer. Buffers and nested lists; byte-identical to `matmul` of the explicitly transposed operand (same tiled kernel order). Two 1-D operands give their `(k × n)` outer product. Shape/type/size errors raise like `matmul` (#973) |
 | `matmul_bt` | `matmul_bt of [a, b]` | `a·bᵀ`: `a` is `(m × k)`, `b` is `(n × k)`, result `(m × n)` — the input gradient `dX = dY·Wᵀ`. A 1-D left operand is a row vector and yields a 1-D result, as for `matmul` (#973) |
+<<<<<<< ours
 | `gather` | `gather of [matrix, indices, dim]` | N5 exact indices (integral floats accepted; fractions raise `value`). Selected list cells retain their numeric kind; buffer elements are floats. Gather one element per row: `out[i] = matrix[i][indices[i]]`. `matrix` may be a nested list or shaped buffer, and `indices` may be a list or buffer; a nested-list `matrix` gives a list and a shaped-buffer `matrix` gives a buffer. `gather of [vec, i]` on a 1-D tensor returns element `i`. An **out-of-range index raises `index_range`** — in every form, list or buffer (#973/#1093, settled at integration: there is no element there, and `scatter_add` raises on the same index). A row that is not a row (a 1-D tensor in the per-row form) still answers `0.0` for that row |
+=======
+| `gather` | `gather of [matrix, indices, dim]` | N5 exact indices (integral floats accepted; fractions raise `value`). Selected list cells retain their numeric kind; buffer elements are floats. Gather one element per row: `out[i] = matrix[i][indices[i]]`. `matrix` may be a shaped buffer and `indices` a list or a buffer; a shaped-buffer `matrix` gives a buffer. `gather of [vec, i]` on a 1-D tensor returns element `i`. An **out-of-range index raises `index_range`** — in every form, list or buffer (#973/#1093, settled at integration: there is no element there, and `scatter_add` raises on the same index). A row that is not a row (a 1-D tensor in the per-row form) still answers `0.0` for that row A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
+>>>>>>> theirs
 | `scatter_add` | `scatter_add of [dst, indices, values]` | N5 exact indices (fractions raise `value`). The gradient of `gather`, accumulated **in place** into the buffer `dst` (returned). A shaped `[rows × cols]` dst does `dst[i][indices[i]] += values[i]` per row; a 1-D dst does the flat `dst[indices[j]] += values[j]`. `values` is a buffer, a list of numbers, or one number broadcast to every index; repeats accumulate. Lengths must line up exactly — a non-scalar `values` shorter or longer than `indices`, or a per-row `dst` whose row count differs from the index count, raises `value` rather than truncating (a dropped gradient entry is a silent wrong number). Every index is validated **before** anything is written, so a raise (`index_range`, `value`, or `type_mismatch` for a non-buffer dst / non-numeric index or value) leaves `dst` untouched (#973) |
 
 Buffer arithmetic stops at its first raised kernel result and releases its partial output; later elements are not read (#1417).
@@ -674,14 +688,14 @@ Buffer arithmetic stops at its first raised kernel result and releases its parti
 |------|-----------|-------------|
 | `mean` | `mean of t` | Non-finite buffer cells raise `value` in every `EIGS_STRICT` state (N13). Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`) A non-number element raises an error naming its zero-based flattened index and type, in either call form; a bool directly in the top-level list raises naming its 1-based position instead (`mean: argument 2 is a bool, which mean does not take there`) (#1649/#2112). |
 | `sum` | `sum of t` | Sum of all elements (list, nested list or buffer). An all-int input returns an exact int and raises `value` on int64 overflow. A float anywhere in a nested input makes the reduction float from the start; buffers produce floats and refuse non-finite elements with `value` in every `EIGS_STRICT` state (N13). Under `EIGS_STRICT=1` the first NaN sets `math_flags.invalid` and raises "not a number" before reading later elements (#1417). An empty list returns int `0`. A non-number element raises an error naming its zero-based flattened index and type, in either call form; a bool directly in the top-level list raises naming its 1-based position instead (`sum: argument 2 is a bool, which sum does not take there`) (#1649/#2112). |
-| `norm` | `norm of t` | Euclidean norm of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its flattened index and type. |
+| `norm` | `norm of t` | Euclidean norm of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its flattened index and type. A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
 
 ### Construction
 
 | Name | Signature | Description |
 |------|-----------|-------------|
 | `zeros` | `zeros of n` or `zeros of [rows, cols]` | `zeros of n` returns a **buffer** of `n` zeros (`type of` is `buffer`, `print of` shows `<buffer:n>`); `zeros of [rows, cols]` returns the nested-list 2-D tensor. Breaking change in #1093 — `zeros of n` used to return a list; write `[0 for i in range of n]` if you need that. Both spellings cap at 10,000,000 elements and charge the sandbox budget |
-| `zeros_like` | `zeros_like of t` | Zero tensor matching `t`'s shape **and container**: a buffer gives a buffer (shape preserved), a list gives a list, a number gives `0.0` |
+| `zeros_like` | `zeros_like of t` | Zero tensor matching `t`'s shape **and container**: a buffer gives a buffer (shape preserved), a list gives a list, a number gives `0.0` A wrong-typed guarded argument raises by default; under `EIGS_STRICT=0` its stand-in is `0.0`. |
 | `random_normal` | `random_normal of [rows, cols, scale]` | Gaussian random float tensor; dimensions follow N5 (integral floats accepted; fractions raise `value`). Dimension refusal precedes the trace-tape boundary |
 | `shape` | `shape of t` | Return dimensions as a list of exact integers |
 | `reshape` | `reshape of [buffer, rows, cols]` | Rows/columns follow N5, then the C int range. New numeric buffer with the same data reinterpreted as `rows`×`cols` (requires `rows*cols == count`; `null` otherwise) |

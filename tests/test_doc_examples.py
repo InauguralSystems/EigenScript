@@ -342,7 +342,7 @@ POPULATION = {
     "docs/PREDICATES.md":        ( 17,    7,     9,      1,      0),   # #1580: +2 paired (a large float counter settles; an int counter does not)
     "docs/DIAGNOSTICS.md":       (  6,    1,     5,      0,      0),
     "docs/OBSERVER.md":          (  2,    0,     2,      0,      0),
-    "docs/BUILTINS.md":          (5, 4, 1, 0, 0), # Phase2 + main atomic-save fragment (#2186)
+    "docs/BUILTINS.md":          (6, 5, 1, 0, 0), # Phase2 + main atomic-save fragment + bool guard (#2409)
     "docs/LANGUAGE_CONTRACT.md": (  1,    0,     1,      0,      0),
 }
 
