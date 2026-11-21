@@ -106,21 +106,26 @@ define-name-is-a-reference:  the check does not expand a reference in the name o
 define-evaled-through-foreach:  the check does not expand the foreach variable to the name of the define
 define-evaled-through-call-argument:  the check does not expand the call argument to the name of the define
 
-On a judged line, != or ::= outside every reference and before any other
-assignment operator is a finding: GNU Make 3.81 does not know the form and
-reads the line as something else (at the top level it leaves the variable
-empty and exits 0).  The scan stops at a comment sign, and after a rule's
-colon at a semicolon: what follows it is a recipe.  A judged line that is not
-an assignment is refused too when it holds one of the forms there, as in a
-conditional's arguments or on a vpath line, where the makes agree.
+An assignment written with != or ::= on a judged line is a finding: GNU Make
+3.81 does not know the form and reads the line as something else.  The line
+is such an assignment when its first assignment operator outside every
+reference is the form and exactly one word, the variable's name, stands
+before it, after any of export, override and private and after a rule's
+colon.  The scan stops at a comment sign, and after a rule's colon at a
+semicolon: what follows it is a recipe.  Among the lines refused are some the
+makes read alike in their cases: such an assignment on a tab line outside a
+rule, after a pattern rule's colon, and after a static pattern rule's second
+colon.
 
-Not covered: undefine, private, export define, $(file ...), a lone $
+Not covered: undefine, private, export define, an assignment operator on a
+define line, $(file ...), a lone $
 at the end of a value, .ONESHELL, --output-sync, an include whose name holds a
 reference, an include that make finds only in its search directories (-I,
 /usr/include), an include written inside an eval call, and other makefile
 text that exists only after expansion.
-3.81 refuses undefine and private with a message, so the macOS jobs fail on
-them by themselves.
+3.81 refuses the undefine directive and private before an assignment it knows
+with a message (the cases undefine-directive and private-modifier), so the
+macOS jobs fail on them by themselves.
 
 To write the sign inside a call: H := \# at the top level and $H in the call
 ($$H in text that $(eval) reads again), or the tool's own escape (printf '\043').
@@ -382,6 +387,34 @@ def split_differently(body):
     return False
 
 
+MODIFIERS = ("export", "override", "private")
+
+
+def assignment_form(text, doubled):
+    """("!=" or "::=", its offset) when the line assigns with that form, else
+    (None, 0): the first assignment operator outside every reference is the
+    form, and exactly one word, the variable's name, stands before it, after
+    any of export, override and private and after a rule's colon.  The scan
+    stops at a comment sign, and after a rule's colon at a semicolon: what
+    follows it is a recipe."""
+    head, rule = [], False
+    for i, c, depth in walk(text, doubled):
+        if depth:
+            head.append("x")
+            continue
+        if c == "=" or (c == "#" and not escaped(text, i)) or (c == ";" and rule):
+            form = "!=" if text[i - 1:i + 1] == "!=" else "::=" if text[i - 2:i + 1] == "::=" else None
+            if not form:
+                break
+            words = "".join(head)[:1 - len(form)].rsplit(":", 1)[-1].split()
+            while words and words[0] in MODIFIERS:
+                del words[0]
+            return (form, i) if len(words) == 1 else (None, 0)
+        rule = rule or c == ":"
+        head.append(c)
+    return None, 0
+
+
 class Checker:
     def __init__(self, root=None, names=None):
         self.findings = []
@@ -482,16 +515,9 @@ class Checker:
         such a line, a != or ::= assignment."""
         places = [sign_in_eval(text, doubled)]
         if strict:
-            rule = False
-            for i, c, depth in walk(text, doubled):
-                if depth:
-                    continue
-                rule = rule or c == ":"
-                if c == "=" or (c == "#" and not escaped(text, i)) or (c == ";" and rule):
-                    form = "!=" if text[i - 1:i + 1] == "!=" else "::=" if text[i - 2:i + 1] == "::=" else None
-                    if form:
-                        return self.findings.append((path, numbers[i], "%s assignment: GNU Make 3.81 does not know it and reads the line as something else" % form))
-                    break
+            form, at = assignment_form(text, doubled)
+            if form:
+                return self.findings.append((path, numbers[at], "%s assignment: GNU Make 3.81 does not know it and reads the line as something else" % form))
             places.append(sign_in_reference(text, doubled))
         places = [p for p in places if p is not None]
         if places:
@@ -710,8 +736,13 @@ def selftest():
                 got = "finding" if checker.findings else "clean"
             except RuntimeError as exc:
                 got = "error (%s)" % exc
-            if got == expect == "finding" and case.get("line", checker.findings[0][1]) != checker.findings[0][1]:
+            places = [(p, n) for p, n, _ in checker.findings]
+            if got == "finding" and (len(set(places)) != len(places) or any(p != path for p, _ in places)):
+                got = "findings %r: two on one line, or not in the case's file" % places
+            elif got == expect == "finding" and case.get("line", checker.findings[0][1]) != checker.findings[0][1]:
                 got = "finding at line %d, not %d" % (checker.findings[0][1], case["line"])
+            elif got == expect == "finding" and not checker.findings[0][2].startswith(case.get("says", "")):
+                got = "finding that says %r, not %r" % (checker.findings[0][2][:24], case["says"])
             print("%s: %s expected %s, got %s" % ("PASS" if got == expect else "FAIL", name, expect, got))
             failures += got != expect
     declared = len(cases)
