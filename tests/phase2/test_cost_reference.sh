@@ -21,6 +21,9 @@ echo 'PASS: valid named pre-number-model commit'; pass=$((pass+1))
 check_fail missing 'missing or unreadable'
 check_fail empty 'empty name file' ''
 check_fail short 'exactly 40 lowercase hex' '123456789012345678901234567890123456789'
+upper=$(printf '%s' "$valid" | tr a-f A-F); [ "$upper" != "$valid" ] || { echo "FAIL: upper: $valid has no a-f"; exit 1; }
+check_fail upper 'exactly 40 lowercase hex' "$upper"
+check_fail relative 'exactly 40 lowercase hex' '1c2890b3~0000000000000000000000000000001'
 check_fail noncommit 'not a commit of this clone' '0000000000000000000000000000000000000000'
 head=$(git -C "$root" rev-parse HEAD)
 check_fail model 'already holds tests/phase2/cost_expect.txt' "$head"
