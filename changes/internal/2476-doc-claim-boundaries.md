@@ -1,0 +1,1 @@
+- Keep Markdown block boundaries from joining unrelated documentation claims (#2476).

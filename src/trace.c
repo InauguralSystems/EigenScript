@@ -2014,12 +2014,12 @@ static int replay_numbers_valid(const Value *v, int allow_infinity) {
         }
     } else if (v->type == VAL_LIST) {
         for (int i = 0; i < v->data.list.count; i++) {
-            EigsView view = {{0}};
+            EIGS_VIEW(view);
             if (!replay_numbers_valid(list_get_view(v, i, &view), allow_infinity)) return 0;
         }
     } else if (v->type == VAL_DICT) {
         DICT_FOR_EACH(v, i) {
-            EigsView view = {{0}};
+            EIGS_VIEW(view);
             if (!replay_numbers_valid(dict_value_get_view(v, i, &view), allow_infinity)) return 0;
         }
     }

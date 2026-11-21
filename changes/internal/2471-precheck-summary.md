@@ -1,0 +1,1 @@
+- Derive the precheck suite verdict from its reported checks instead of a duplicate count (#2471).
