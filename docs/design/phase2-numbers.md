@@ -1038,6 +1038,9 @@ catches a miss:
   - C casts of a double to an integer type (undefined on NaN or inf): every
     builtin argument goes through a §2.6 reader, which refuses a non-finite
     value (N13); the internal casts left are the #1746 residue (R2.6);
+    **2026-11-20 (#2444, step one):** Scalar math, its existing list forms and
+    list `sum`/`mean`/`norm` now use arithmetic readers that accept non-finite
+    values; conversion readers and stored buffer-cell reads retain N13.
   - the sort comparators and `min`/`max` (Q8, decided): `sort` and `sort_by`
     order floats by IEEE 754 `totalOrder`, the canonical NaN after +inf;
     `min` and `max` propagate NaN. Gate: `N11.sort-total-order`,

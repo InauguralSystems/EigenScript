@@ -6,6 +6,7 @@
  */
 
 #include "eigenscript.h"
+#include "builtins_internal.h"
 #include "vm.h"
 #include "trace.h"
 
@@ -397,7 +398,7 @@ static int tensor_total(Value *v, const char *who, int *index) {
  * Return failure at the first raised read; callers own and free the workspace. */
 static int tensor_flatten_recursive(Value *v, double *out, int *idx) {
     if (!v) return 1;
-    if (val_is_number(v)) { out[(*idx)++] = eigs_float_arg(v, __func__); return !g_has_error; }
+    if (val_is_number(v)) { out[(*idx)++] = eigs_arithmetic_float(v, __func__); return !g_has_error; }
     if (v->type == VAL_BUFFER) {                              /* #1093 */
         for (int i = 0; i < v->data.buffer.count; i++) {
             double x = buffer_read_f64(v, i);
@@ -527,9 +528,9 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
     if (val_is_number(a) && val_is_number(b)) {
         const char *who = fn == op_add ? "add" : fn == op_sub ? "subtract" :
                           fn == op_mul ? "multiply" : "divide/pow";
-        EigsNum x = eigs_number_arg(a, who);
+        EigsNum x = eigs_arithmetic_number(a, who);
         if (g_has_error) return make_null();
-        EigsNum y = eigs_number_arg(b, who);
+        EigsNum y = eigs_arithmetic_number(b, who);
         if (g_has_error) return make_null();
         if (x.is_int && y.is_int && (fn == op_add || fn == op_sub || fn == op_mul)) {
             int64_t result;
@@ -746,7 +747,7 @@ static double op_neg(double x);
 static Value* tensor_unary(Value *v, UnaryOpFn fn) {
     Value *arg = v;   /* what the guard macros test for a bool (#1637) */
     if (val_is_number(v)) {
-        EigsNum n = eigs_number_arg(v, fn == op_neg ? "negative" : "sqrt/exp/log");
+        EigsNum n = eigs_arithmetic_number(v, fn == op_neg ? "negative" : "sqrt/exp/log");
         if (g_has_error) return make_null();
         if (fn == op_neg && n.is_int) {
             if (n.value.i64 == INT64_MIN) {
@@ -1324,9 +1325,8 @@ Value* builtin_tensor_mean(Value *arg) {
 }
 
 /* ==== BUILTIN: sum ==== */
-/* sum / norm are association-unspecified reductions (see docs/SPEC.md
- * "Reductions"): the summation order is not guaranteed, which lets an
- * optimizing backend reassociate across SIMD lanes. no-NaN/Inf preserved. */
+/* List reductions consume doubles from left to right (#2444); retain the
+ * existing exact-integer sum and the buffer data boundary. */
 /* C2/C4 and (A): decide the reduction kind before adding. A later float
  * makes the whole reduction floating, so an int prefix must not overflow. */
 static int tensor_sum_has_float(Value *v) {
@@ -1344,7 +1344,7 @@ static int tensor_sum_has_float(Value *v) {
 static int tensor_sum_into(Value *v, EigsNum *sum) {
     if (!v) return 1;
     if (val_is_number(v)) {
-        EigsNum n = eigs_number_arg(v, "sum");
+        EigsNum n = eigs_arithmetic_number(v, "sum");
         if (g_has_error) return 0;
         if (sum->is_int) {
             int64_t result;

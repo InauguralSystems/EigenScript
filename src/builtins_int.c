@@ -569,7 +569,7 @@ Value* builtin_fround(Value *arg) {
     EigsView view = {{0}};
     if (arg && arg->type == VAL_LIST && arg->data.list.count == 1)
         arg = list_get_view(arg, 0, &view);
-    double value = eigs_float_arg(arg, "fround");
+    double value = eigs_arithmetic_float(arg, "fround");
     if (g_has_error) return make_null();
     /* Preserve int -> f64 -> f32 -> f64 double rounding, including an IEEE
      * infinity result. Strict arithmetic remains an opt-in trap. */

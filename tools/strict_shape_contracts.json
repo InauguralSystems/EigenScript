@@ -2298,7 +2298,7 @@
         "55f0129b970addd257aa61f5c0f87c0604d2534ad5cbf5404b2f0504678bdaf5"
       ],
       "tensor_unary": [
-        "76ea67a37aac2aeaa33a78e2f30c5f998403752e7109e13d791e284d44f3c389"
+        "b395f374d267caf8bb7fba79e4c21d29fbbf45120c92c4c826ce44ff697ab1e4"
       ]
     }
   },
@@ -2385,7 +2385,7 @@
         "b4a539220becdecfac11ef2593b2da1b485db0397c1790217a22bde526ff7290"
       ],
       "tensor_unary": [
-        "76ea67a37aac2aeaa33a78e2f30c5f998403752e7109e13d791e284d44f3c389"
+        "b395f374d267caf8bb7fba79e4c21d29fbbf45120c92c4c826ce44ff697ab1e4"
       ]
     }
   },
@@ -2451,7 +2451,7 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "List is the whole value/data input, not a bounded tuple. R1.6d review: Final float readers refuse nonfinite scalar data without imposing a list arity; the whole list is reduced.",
+    "reason": "List is the whole value/data input, not a bounded tuple. #2444: scalar/list arithmetic accepts nonfinite values; buffer cells retain their finite-only reader. The whole list is reduced.",
     "public_names": [
       "mean"
     ],
@@ -2467,7 +2467,7 @@
         "098667c61831052efd5876759aad465f927b44517f4188322a94554aed5d730c"
       ],
       "tensor_flatten_recursive": [
-        "fa55a91461d8a3791b0c4520b063faa164cd50b8c4da1c4e20cbccd2ab929c91"
+        "229aeee1022977ce413fb1dc139575727adf38f94e00a74eb204e10c2e7f458d"
       ],
       "tensor_total": [
         "309b8235701347551651091820df50ed8b7afa8f64598b94f2aaaa5b65d1a2cd"
@@ -2505,7 +2505,7 @@
         "1197e210c14cfbfda2e6cb1316245d316693dadce0aee086ebd830c96c10be4b"
       ],
       "tensor_unary": [
-        "76ea67a37aac2aeaa33a78e2f30c5f998403752e7109e13d791e284d44f3c389"
+        "b395f374d267caf8bb7fba79e4c21d29fbbf45120c92c4c826ce44ff697ab1e4"
       ]
     }
   },
@@ -2515,7 +2515,7 @@
     "category": "unary_data",
     "minimum": null,
     "maximum": null,
-    "reason": "List is the whole value/data input, not a bounded tuple. R1.6d review: Final float readers refuse nonfinite scalar data without imposing a list arity; the whole list is reduced.",
+    "reason": "List is the whole value/data input, not a bounded tuple. #2444: scalar/list arithmetic accepts nonfinite values; buffer cells retain their finite-only reader. The whole list is reduced.",
     "public_names": [
       "norm"
     ],
@@ -2531,7 +2531,7 @@
         "ede3429bf171ce84fa68dfed98bcd1899397dc2b5881e1a5ae1b5ff8e641fb53"
       ],
       "tensor_flatten_recursive": [
-        "fa55a91461d8a3791b0c4520b063faa164cd50b8c4da1c4e20cbccd2ab929c91"
+        "229aeee1022977ce413fb1dc139575727adf38f94e00a74eb204e10c2e7f458d"
       ],
       "tensor_total": [
         "309b8235701347551651091820df50ed8b7afa8f64598b94f2aaaa5b65d1a2cd"
@@ -2674,7 +2674,7 @@
         "62a668ee5f0d2e59177d0bcc41818a1a2c07dca2862e9dbeca2366f3d6f37f06"
       ],
       "tensor_unary": [
-        "76ea67a37aac2aeaa33a78e2f30c5f998403752e7109e13d791e284d44f3c389"
+        "b395f374d267caf8bb7fba79e4c21d29fbbf45120c92c4c826ce44ff697ab1e4"
       ]
     }
   },
@@ -2712,7 +2712,7 @@
         "7b754441747db5227a2f92136d335123a055ea229472ff6ed660d88051e4f3c9"
       ],
       "tensor_sum_into": [
-        "62cdee510784e9540c15b984eb4091ae18b2705fe90c7fd992455344f311bc6a"
+        "80beee1947a03958ab1d585c650db2af620399a675365dc71fd3c505a3453bbc"
       ],
       "tensor_total": [
         "309b8235701347551651091820df50ed8b7afa8f64598b94f2aaaa5b65d1a2cd"
@@ -4899,14 +4899,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "5d654f845292c0da1458661a11a541d2a5b197f9d38607e88755e5e5a88043bf"
+      "796b3ac4d3931bae1abea3885a0dfce8d2795d576b2e58663140a42a36041b11"
     ],
     "source_sha256": {
       "builtin_fround": [
-        "5d654f845292c0da1458661a11a541d2a5b197f9d38607e88755e5e5a88043bf"
-      ],
-      "eigs_float_arg": [
-        "628eed4fed7515fe2738a26153798fcb173cb23a350d8436f78215f7d1f4c4a8"
+        "796b3ac4d3931bae1abea3885a0dfce8d2795d576b2e58663140a42a36041b11"
       ]
     }
   },

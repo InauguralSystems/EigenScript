@@ -9,6 +9,19 @@
 
 #include "eigenscript.h"
 
+/* #2444: opt-in readers for arithmetic and numeric pass-throughs only.
+ * Conversion/data readers keep their finite-only contract. These borrow the
+ * argument and preserve its kind; callers stop on g_has_error. */
+static inline EigsNum eigs_arithmetic_number(const Value *v, const char *who) {
+    EigsNum n = { .is_int = 0, .value = { .f64 = 0.0 } };
+    (void)eigs_number_read(v, &n, who);
+    return n;
+}
+static inline double eigs_arithmetic_float(const Value *v, const char *who) {
+    EigsNum n = eigs_arithmetic_number(v, who);
+    return n.is_int ? (double)n.value.i64 : n.value.f64;
+}
+
 /* #1758 N9 — builtins_int.c, shared table-driven width engine. */
 Value* builtin_i8_wrapping_add(Value *arg);
 Value* builtin_i8_wrapping_sub(Value *arg);
