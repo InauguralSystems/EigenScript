@@ -1,0 +1,1 @@
+- `sgd_update`, `sgd_update_rows` and `sgd_update_cols` read every cell before they write one, so a list cell of the parameter or of the gradient that is not finite raises `value` before any update. It raised after the step had overwritten that cell and gone on updating the cells after it (#2495).

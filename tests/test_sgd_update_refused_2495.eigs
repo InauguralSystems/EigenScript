@@ -1,10 +1,10 @@
 load_file of "lib/test.eigs"
 
-# #2495: an SGD step that raises leaves the parameter as it was. The finite-only readers raise on a
-# cell that is not finite; before the fix the loop wrote on, so the refused parameter cell became
-# `0 - lr * grad` and every later cell was updated. Each row below holds the WHOLE parameter after the
-# caught raise, every cell's value and every cell's kind (`==` alone takes 20 and 20.0 for equal), and
-# fails when the call returns instead of raising.
+# #2495: an SGD step reads every cell before it writes one. The finite-only readers raise on a cell
+# that is not finite; before the fix the loop wrote on, so the refused parameter cell became
+# `0 - lr * grad` and every later cell was updated. Each `refused` row below holds the WHOLE parameter
+# after the caught raise, every cell's value and every cell's kind (`==` alone takes 20 and 20.0 for
+# equal), and fails when the call returns instead of raising.
 inf is 1e400
 
 define kinds_of(v) as:
@@ -38,16 +38,35 @@ refused of ["rows, parameter cell", (p) => sgd_update_rows of [p, [[1, 1], [1, 1
 refused of ["cols, gradient cell in the last row", (p) => sgd_update_cols of [p, [[1, 1], [1, inf]], [0, 1], 0.1], [[1, 2], [3, 4]], [[1, 2], [3, 4]]]
 refused of ["cols, parameter cell", (p) => sgd_update_cols of [p, [[1, 1], [1, 1]], [0, 1], 0.1], [[1, 2], [3, inf]], [[1, 2], [3, inf]]]
 
-# Cells the step reads AFTER it has written them: the same row object twice in a parameter, and an
-# index list that names a row or a column twice. 1e308 - 1 * (0 - 1e308) is inf, which the step may
-# write; reading that cell again raises. Checking every cell before the first write does not see it
-# (a fix of that shape passed every row above); the written cells have to be put back.
-shared is [1e308, 5]
-refused of ["2-D, the same row object twice", (p) => sgd_update of [p, [[0 - 1e308, 1], [0 - 1e308, 1]], 1], [shared, shared], [[1e308, 5], [1e308, 5]]]
-shared_r is [1e308, 5]
-refused of ["rows, the same row object twice", (p) => sgd_update_rows of [p, [[0 - 1e308, 1], [0 - 1e308, 1]], [0, 1], 1], [shared_r, shared_r], [[1e308, 5], [1e308, 5]]]
-refused of ["rows, one row index twice", (p) => sgd_update_rows of [p, [[0 - 1e308, 1], [1, 1]], [0, 0], 1], [[1e308, 5], [1, 2]], [[1e308, 5], [1, 2]]]
-refused of ["cols, one column index twice", (p) => sgd_update_cols of [p, [[0 - 1e308, 1], [1, 1]], [0, 0], 1], [[1e308, 5], [1, 2]], [[1e308, 5], [1, 2]]]
+# A cell the step updates twice: the same row object twice in a parameter, an index list that names a
+# row or a column twice. A cell that is not finite BEFORE the step is refused before any update, here
+# too, because every cell is read before the first is written.
+shared is [1e400, 5]
+refused of ["2-D, the same row object twice, a cell that is not finite", (p) => sgd_update of [p, [[1, 1], [1, 1]], 1], [shared, shared], [[inf, 5], [inf, 5]]]
+refused of ["rows, one row index twice, a gradient cell that is not finite", (p) => sgd_update_rows of [p, [[1, inf], [1, 1]], [0, 0], 1], [[10, 20], [1, 2]], [[10, 20], [1, 2]]]
+refused of ["cols, one column index twice, a cell that is not finite", (p) => sgd_update_cols of [p, [[1, 1], [1, 1]], [0, 0], 1], [[10, 20], [inf, 2]], [[10, 20], [inf, 2]]]
+
+# A result the step itself wrote is not refused when the step reads that cell again: 1e308 - 1 * (0 -
+# 1e308) is inf by the IEEE rules, the second update of the cell goes on from it, and the step ends.
+# (Raising at the second read would leave the first update written.) The next step is the one that
+# refuses the cell, before any update.
+define completes(label, step, param, expected) as:
+    try:
+        step of param
+    catch e:
+        assert_true of [false, label + ": the step raised " + (str of e)]
+    assert_true of [param == expected, label + ": the parameter after the step is " + (str of param)]
+
+twice is [1e308, 5]
+tied is [twice, twice]
+completes of ["the same row object twice, a result that is not finite", (p) => sgd_update of [p, [[0 - 1e308, 1], [0 - 1e308, 1]], 1], tied, [[inf, 3.0], [inf, 3.0]]]
+refused of ["the step after it", (p) => sgd_update of [p, [[1, 1], [1, 1]], 1], tied, [[inf, 3.0], [inf, 3.0]]]
+again is [[1e308, 5], [1, 2]]
+completes of ["one row index twice, a result that is not finite", (p) => sgd_update_rows of [p, [[0 - 1e308, 1], [1, 1]], [0, 0], 1], again, [[inf, 3.0], [1, 2]]]
+assert_true of [(num_type of again[1][0]) == "int", "one row index twice: the row the step does not name keeps its kind"]
+col2 is [[1e308, 5], [1, 2]]
+completes of ["one column index twice, a result that is not finite", (p) => sgd_update_cols of [p, [[0 - 1e308, 1], [1, 1]], [0, 0], 1], col2, [[inf, 5], [-1.0, 2]]]
+assert_true of [(num_type of col2[0][1]) == "int", "one column index twice: the column the step does not name keeps its kind"]
 
 # A refused step keeps each cell's kind too: the ints are still ints.
 k is [inf, 20, 30]
