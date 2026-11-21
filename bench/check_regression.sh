@@ -112,8 +112,8 @@ case "${1:-}" in
     rm -f "$bad" "$plant" "$diagnostic"
     echo "SELFTEST OK: nonzero runtime with a positive Ir summary is rejected"
 
-    # Derive the workload population from the same source glob as the gate and
-    # prove each of the current/reference tiers is measured exactly once.
+    # The --vs cases run in a scratch checkout against a ledger written there, so no case depends on
+    # what tests/phase2/cost_expect.txt declares today (its rows leave one by one; it is empty at a release).
     scratch=$(mktemp -d)
     measure_log="$scratch/measure.log"
     profiler="$scratch/valgrind"
@@ -124,57 +124,40 @@ case "${1:-}" in
     printf '#!/bin/sh\nexit 0\n' > "$current"
     cp "$current" "$reference"
     cp "$current" "$named_reference"
-    # Equal synthetic counts would make real declared costs STALE. Keep the
-    # full population and give each declared row counts inside its own band.
+    # The stand-in profiler: every count is 1000000 except the planted row's. Which row is planted is
+    # passed in (BENCH_SELFTEST_DECLARED / _UNDECLARED, chosen below by position), never written here.
     cat > "$profiler_source" <<'EOF'
-from decimal import Decimal
 import os
 from pathlib import Path
 import sys
 
 root = Path(os.environ['BENCH_SELFTEST_ROOT']).resolve()
-sys.path.insert(0, str(root / 'tools'))
-from phase2_cost_declarations import NOISE, parse_declarations
-
 binary, file = map(Path, sys.argv[-2:])
-workload = file.resolve().relative_to(root).as_posix()
 tier = 'off' if os.environ.get('EIGS_JIT_OFF') == '1' else 'jit'
+row = file.resolve().relative_to(root).as_posix() + '\t' + tier
 with open(os.environ['MEASURE_LOG'], 'a') as log:
-    log.write(f'{binary.name}\t{workload}\t{tier}\n')
-declarations = parse_declarations((root / 'tests/phase2/cost_expect.txt').read_text())
-declaration = declarations.get((workload, tier))
-count = 1000000
-if binary.name == 'current' and declaration:
-    # A maximum may be negative (a row below the named reference, #2433): stay inside the
-    # band on that side too instead of clamping the synthetic delta at zero.
-    delta = declaration.max_ci - NOISE
-    count = int(Decimal(count) * (1 + delta / 100))
+    log.write(f'{binary.name}\t{row}\n')
 plant = os.environ.get('BENCH_SELFTEST_PLANT', '')
-target = workload == 'tests/bench_idxset.eigs' and tier == 'jit'
-undeclared = workload == 'bench/observer_gate_soft_keyword.eigs' and tier == 'off'
-if target and binary.name == 'current' and plant == 'declared-over':
-    count = int(Decimal(1000000) * (1 + (declaration.max_ci + 1) / 100))
-if target and binary.name == 'current' and plant == 'declared-stale':
-    count = int(Decimal(1000000) * (1 + (declaration.max_ci - Decimal('1.5')) / 100))
-if target and binary.name == 'current' and plant == 'deleted-declaration':
-    count = 3100000
-if undeclared and plant == 'undeclared-base-fail':
-    count = 2000000 if binary.name in ('current', 'named-reference') else 1000000
-if undeclared and plant == 'undeclared-pass':
-    count = 960000 if binary.name == 'named-reference' else 1000000
-if undeclared and plant == 'undeclared-named-fail':
-    count = 1000000 if binary.name == 'named-reference' else 1300000
+# (current, reference = the base, named-reference); a declared row's max is 0.3 in both columns.
+counts = {
+    'declared-over': (1013000, 1000000, 1000000),        # +1.3% > 0.3
+    'declared-stale': (990000, 1000000, 1000000),        # -1.0% < 0.3 - 0.5
+    'deleted-declaration': (1060000, 1060000, 1000000),  # base holds the candidate's tree: +6% vs named only
+    'undeclared-base-fail': (2000000, 1000000, 2000000),
+    'undeclared-pass': (1000000, 1000000, 960000),
+    'undeclared-named-fail': (1300000, 1300000, 1000000),
+}.get(plant)
+target = os.environ['BENCH_SELFTEST_' + ('UNDECLARED' if plant.startswith('undeclared') else 'DECLARED')]
+count = 1000000
+if counts and row == target:
+    count = counts[('current', 'reference', 'named-reference').index(binary.name)]
 print(f'I refs: {count}')
 EOF
     python_executable=$(python3 -c 'import sys; print(sys.executable)') || exit 1
     printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' "$python_executable" "$profiler_source" > "$profiler"
     chmod +x "$profiler" "$current" "$reference" "$named_reference"
-    # The cases below run in a scratch checkout of THIS tree (the population is derived with
-    # `git ls-files`, so it must be a checkout; what differs from HEAD is brought over, so a gate
-    # that is not committed yet tests itself and not its predecessor). There one declaration is
-    # removed, so the cases of a row with no declaration have their row whatever the real file
-    # declares, and the counts they expect are derived from that tree, not written here. A failed
-    # case leaves no registered worktree behind.
+    # A checkout of THIS tree (the population is derived with `git ls-files`); what differs from HEAD
+    # is brought over, so a gate that is not committed yet tests itself. No registered worktree stays.
     st="$scratch/selftest-tree"
     trap 'git -C "$DIR/.." worktree remove --force "$st" >/dev/null 2>&1; rm -rf "$scratch"' EXIT
     git -C "$DIR/.." worktree add --quiet --detach "$st" HEAD || exit 1
@@ -187,16 +170,23 @@ EOF
             fi
         done || exit 1
     gate="$st/bench/check_regression.sh"
-    drop_declaration() { # workload tier : remove that row from the scratch tree's declarations
-        awk -F'\t' -v w="$1" -v t="$2" '!($1 == w && $2 == t)' "$st/tests/phase2/cost_expect.txt" > "$scratch/cost.next" \
-            && mv "$scratch/cost.next" "$st/tests/phase2/cost_expect.txt"
-    }
-    drop_declaration bench/observer_gate_soft_keyword.eigs off || exit 1
-    want_decl=$(bash "$st/tools/phase2_cost.sh" --declared all --method ci | awk 'NF {n++} END {print n+0}') || exit 1
+    ledger="$st/tests/phase2/cost_expect.txt"
+    "$gate" --list-vs > "$scratch/population" || exit 1
     # The population's size, derived apart from the gate's own derivation: every tracked workload, two tiers.
     want_rows=$(( 2 * $(git -C "$st" ls-files ':(glob)bench/*.eigs' ':(glob)tests/bench_*.eigs' | wc -l) ))
-    [ "$want_decl" -gt 0 ] && [ "$want_rows" -gt "$want_decl" ] \
-        || { echo "SELFTEST FAILED: scratch tree has $want_decl declarations for $want_rows rows"; exit 1; }
+    [ "$want_rows" -ge 2 ] && [ "$(wc -l < "$scratch/population")" -eq "$want_rows" ] \
+        || { echo "SELFTEST FAILED: --list-vs printed $(wc -l < "$scratch/population") rows, tracked workloads give $want_rows"; exit 1; }
+    # The written ledger declares every row (max 0.3 in both columns, so equal counts are ok) except the
+    # population's second row; its first row is the declared row the plants move.
+    export BENCH_SELFTEST_DECLARED BENCH_SELFTEST_UNDECLARED
+    BENCH_SELFTEST_DECLARED=$(sed -n 1p "$scratch/population"); BENCH_SELFTEST_UNDECLARED=$(sed -n 2p "$scratch/population")
+    write_ledger() { # the rows (workload TAB tier) that get no declaration
+        awk -v a="$1" -v b="${2:-}" '$0 != a && $0 != b { print $0 "\t0.3\t0.3\tR5\tbench self-test declaration" }' \
+            "$scratch/population" > "$ledger"
+    }
+    write_ledger "$BENCH_SELFTEST_UNDECLARED" || exit 1
+    want_decl=$(bash "$st/tools/phase2_cost.sh" --declared all --method ci | awk 'NF {n++} END {print n+0}') || exit 1
+    [ "$want_decl" -eq $(( want_rows - 1 )) ] || { echo "SELFTEST FAILED: the written ledger gives $want_decl declarations for $want_rows rows"; exit 1; }
     if ! BENCH_SELFTEST_ROOT="$st" MEASURE_LOG="$measure_log" VALGRIND="$profiler" EIGENSCRIPT="$current" "$gate" --vs "$reference" "$named_reference" >"$scratch/population.out" 2>&1; then
         cat "$scratch/population.out"
         echo "SELFTEST FAILED: valid derived benchmark population was rejected"; exit 1
@@ -206,50 +196,40 @@ EOF
         echo "SELFTEST FAILED: clean control did not print declared rows applied=${want_decl}; measured rows=${want_rows}"; exit 1
     fi
     echo "SELFTEST OK: a base that holds the candidate's tree passes (declared rows applied=${want_decl}; measured rows=${want_rows})"
-    expected="$scratch/expected"
-    "$gate" --list-vs > "$scratch/population" || exit 1
-    while IFS=$'\t' read -r workload tier; do
-        printf 'current\t%s\t%s\nnamed-reference\t%s\t%s\n' "$workload" "$tier" "$workload" "$tier"
-        if [ "$workload $tier" = "bench/observer_gate_soft_keyword.eigs off" ]; then
-            printf 'reference\t%s\t%s\n' "$workload" "$tier"
-        fi
-    done < "$scratch/population" | sort > "$expected"
-    if ! sort "$measure_log" | cmp -s - "$expected"; then
+    # Expected measurements: every row on the candidate and the named reference, the base only for
+    # rows with no declaration. Both lists come from the population and the written ledger.
+    while IFS= read -r row; do
+        printf 'current\t%s\nnamed-reference\t%s\n' "$row" "$row"
+        [ "$row" != "$BENCH_SELFTEST_UNDECLARED" ] || printf 'reference\t%s\n' "$row"
+    done < "$scratch/population" | sort > "$scratch/expected"
+    if ! sort "$measure_log" | cmp -s - "$scratch/expected"; then
         echo "SELFTEST FAILED: a workload/tier was skipped or measured more than once"; exit 1
     fi
-    run_plant() { # environment value, expected verdict, workload, expected rc
-        plant_name=$1 verdict=$2 row_name=$3 want_rc=$4
-        : > "$measure_log"
+    echo "SELFTEST OK: every derived workload/tier is measured once"
+    run_plant() { # environment value, expected verdict, row (workload TAB tier), expected rc
+        plant_name=$1 verdict=$2 row=$3 want_rc=$4
         BENCH_SELFTEST_PLANT="$plant_name" BENCH_SELFTEST_ROOT="$st" \
           MEASURE_LOG="$measure_log" VALGRIND="$profiler" EIGENSCRIPT="$current" \
           "$gate" --vs "$reference" "$named_reference" >"$scratch/$plant_name.out" 2>&1
         got_rc=$?
-        if [ "$got_rc" -ne "$want_rc" ] || ! grep -q "$verdict: $row_name" "$scratch/$plant_name.out"; then
+        if [ "$got_rc" -ne "$want_rc" ] || ! grep -qF "$verdict: ${row%$'\t'*} tier=${row#*$'\t'} " "$scratch/$plant_name.out"; then
             cat "$scratch/$plant_name.out"
-            echo "SELFTEST FAILED: $plant_name did not produce $verdict for $row_name (rc=$got_rc)"; exit 1
+            echo "SELFTEST FAILED: $plant_name did not produce $verdict for ${row/$'\t'/ } (rc=$got_rc)"; exit 1
         fi
-        echo "SELFTEST OK: $plant_name produces $verdict for $row_name"
+        echo "SELFTEST OK: $plant_name produces $verdict for ${row/$'\t'/ }"
     }
-    run_plant declared-over REGRESSION tests/bench_idxset.eigs 1
-    run_plant declared-stale 'STALE DECLARATION' tests/bench_idxset.eigs 1
-    run_plant undeclared-base-fail REGRESSION bench/observer_gate_soft_keyword.eigs 1
-    run_plant undeclared-pass ok bench/observer_gate_soft_keyword.eigs 0
-    run_plant undeclared-named-fail REGRESSION bench/observer_gate_soft_keyword.eigs 1
-    # A declaration deleted without its cost being recovered: the row stays measured and fails.
-    drop_declaration tests/bench_idxset.eigs jit || exit 1
-    BENCH_SELFTEST_PLANT=deleted-declaration BENCH_SELFTEST_ROOT="$st" \
-      MEASURE_LOG="$measure_log" VALGRIND="$profiler" EIGENSCRIPT="$current" \
-      "$gate" --vs "$reference" "$named_reference" >"$scratch/deleted-declaration.out" 2>&1
-    deleted_rc=$?
-    if [ "$deleted_rc" -ne 1 ] || ! grep -q 'REGRESSION: tests/bench_idxset.eigs' "$scratch/deleted-declaration.out"; then
-        cat "$scratch/deleted-declaration.out"
-        echo "SELFTEST FAILED: deleted declaration row was not measured and rejected"; exit 1
-    fi
-    echo "SELFTEST OK: a deleted declaration stays measured and is rejected"
+    run_plant declared-over REGRESSION "$BENCH_SELFTEST_DECLARED" 1
+    run_plant declared-stale 'STALE DECLARATION' "$BENCH_SELFTEST_DECLARED" 1
+    run_plant undeclared-base-fail REGRESSION "$BENCH_SELFTEST_UNDECLARED" 1
+    run_plant undeclared-pass ok "$BENCH_SELFTEST_UNDECLARED" 0
+    run_plant undeclared-named-fail REGRESSION "$BENCH_SELFTEST_UNDECLARED" 1
+    # A declaration deleted without its cost being recovered: the base equals the candidate, so only
+    # the named reference can reject the row.
+    write_ledger "$BENCH_SELFTEST_UNDECLARED" "$BENCH_SELFTEST_DECLARED" || exit 1
+    run_plant deleted-declaration REGRESSION "$BENCH_SELFTEST_DECLARED" 1
     git -C "$DIR/.." worktree remove --force "$st" || exit 1
     trap - EXIT
     rm -rf "$scratch"
-    echo "SELFTEST OK: every derived workload/tier is measured once"
     exit 0 ;;
 --vs|--list-vs)
     # Base and candidate use this gate's own measurement recipe. Its CI
