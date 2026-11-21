@@ -15,7 +15,6 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 EIGS="${EIGENSCRIPT:-$DIR/../src/eigenscript}"
 BASELINE="${BASELINE_OVERRIDE:-$DIR/baseline.txt}"
 VALGRIND="${VALGRIND:-valgrind}"
-PYTHON3="${PYTHON3:-$(python3 -c 'import sys; print(sys.executable)')}"
 THRESHOLD_PCT=0.5
 # Integer arithmetic keeps the boundary exact: 0.5 percent is 5 permille.
 # Keep this derived rather than maintaining a second threshold declaration.
@@ -124,8 +123,9 @@ case "${1:-}" in
     printf '#!/bin/sh\nexit 0\n' > "$current"
     cp "$current" "$reference"
     cp "$current" "$named_reference"
-    # The stand-in profiler: every count is 1000000 except the planted row's. Which row is planted is
-    # passed in (BENCH_SELFTEST_DECLARED / _UNDECLARED, chosen below by position), never written here.
+    # The stand-in profiler: every count is 1000000 except the planted row's and the candidate's count of
+    # the row whose two maxima differ. Which rows those are is passed in (BENCH_SELFTEST_DECLARED,
+    # _UNDECLARED and _SPLIT, chosen below by position), never written here.
     cat > "$profiler_source" <<'EOF'
 import os
 from pathlib import Path
@@ -138,7 +138,8 @@ row = file.resolve().relative_to(root).as_posix() + '\t' + tier
 with open(os.environ['MEASURE_LOG'], 'a') as log:
     log.write(f'{binary.name}\t{row}\n')
 plant = os.environ.get('BENCH_SELFTEST_PLANT', '')
-# (current, reference = the base, named-reference); a declared row's max is 0.3 in both columns.
+# (current, reference = the base, named-reference); a declared row's max is 0.3 in both columns,
+# except the split row's (0.3 local, 5.8 CI), whose candidate is always +5.5% over the named reference.
 counts = {
     'declared-over': (1013000, 1000000, 1000000),        # +1.3% > 0.3
     'declared-stale': (990000, 1000000, 1000000),        # -1.0% < 0.3 - 0.5
@@ -148,7 +149,7 @@ counts = {
     'undeclared-named-fail': (1300000, 1300000, 1000000),
 }.get(plant)
 target = os.environ['BENCH_SELFTEST_' + ('UNDECLARED' if plant.startswith('undeclared') else 'DECLARED')]
-count = 1000000
+count = 1055000 if row == os.environ['BENCH_SELFTEST_SPLIT'] and binary.name == 'current' else 1000000
 if counts and row == target:
     count = counts[('current', 'reference', 'named-reference').index(binary.name)]
 print(f'I refs: {count}')
@@ -157,7 +158,8 @@ EOF
     printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' "$python_executable" "$profiler_source" > "$profiler"
     chmod +x "$profiler" "$current" "$reference" "$named_reference"
     # A checkout of THIS tree (the population is derived with `git ls-files`); what differs from HEAD
-    # is brought over, so a gate that is not committed yet tests itself. No registered worktree stays.
+    # is brought over and staged there, so a gate, or a workload added or removed, that is not committed
+    # yet tests itself. No registered worktree stays.
     st="$scratch/selftest-tree"
     trap 'git -C "$DIR/.." worktree remove --force "$st" >/dev/null 2>&1; rm -rf "$scratch"' EXIT
     git -C "$DIR/.." worktree add --quiet --detach "$st" HEAD || exit 1
@@ -169,19 +171,23 @@ EOF
                 rm -f "$st/$changed"
             fi
         done || exit 1
+    git -C "$st" add -A || exit 1
     gate="$st/bench/check_regression.sh"
     ledger="$st/tests/phase2/cost_expect.txt"
     "$gate" --list-vs > "$scratch/population" || exit 1
     # The population's size, derived apart from the gate's own derivation: every tracked workload, two tiers.
     want_rows=$(( 2 * $(git -C "$st" ls-files ':(glob)bench/*.eigs' ':(glob)tests/bench_*.eigs' | wc -l) ))
-    [ "$want_rows" -ge 2 ] && [ "$(wc -l < "$scratch/population")" -eq "$want_rows" ] \
+    [ "$want_rows" -ge 4 ] && [ "$(wc -l < "$scratch/population")" -eq "$want_rows" ] \
         || { echo "SELFTEST FAILED: --list-vs printed $(wc -l < "$scratch/population") rows, tracked workloads give $want_rows"; exit 1; }
     # The written ledger declares every row (max 0.3 in both columns, so equal counts are ok) except the
-    # population's second row; its first row is the declared row the plants move.
-    export BENCH_SELFTEST_DECLARED BENCH_SELFTEST_UNDECLARED
+    # population's second row; its first row is the declared row the plants move, and its third is
+    # declared 0.3 local and 5.8 CI, so the control holds which column judges a declared row.
+    export BENCH_SELFTEST_DECLARED BENCH_SELFTEST_UNDECLARED BENCH_SELFTEST_SPLIT
     BENCH_SELFTEST_DECLARED=$(sed -n 1p "$scratch/population"); BENCH_SELFTEST_UNDECLARED=$(sed -n 2p "$scratch/population")
+    BENCH_SELFTEST_SPLIT=$(sed -n 3p "$scratch/population")
     write_ledger() { # the rows (workload TAB tier) that get no declaration
-        awk -v a="$1" -v b="${2:-}" '$0 != a && $0 != b { print $0 "\t0.3\t0.3\tR5\tbench self-test declaration" }' \
+        awk -v a="$1" -v b="${2:-}" -v s="$BENCH_SELFTEST_SPLIT" '$0 != a && $0 != b {
+            print $0 "\t0.3\t" ($0 == s ? "5.8" : "0.3") "\tR5\tbench self-test declaration" }' \
             "$scratch/population" > "$ledger"
     }
     write_ledger "$BENCH_SELFTEST_UNDECLARED" || exit 1
@@ -196,8 +202,13 @@ EOF
         echo "SELFTEST FAILED: clean control did not print declared rows applied=${want_decl}; measured rows=${want_rows}"; exit 1
     fi
     echo "SELFTEST OK: a base that holds the candidate's tree passes (declared rows applied=${want_decl}; measured rows=${want_rows})"
+    if ! grep -qF "DECLARED: ${BENCH_SELFTEST_SPLIT%$'\t'*} tier=${BENCH_SELFTEST_SPLIT#*$'\t'} " "$scratch/population.out"; then
+        cat "$scratch/population.out"
+        echo "SELFTEST FAILED: the row declared 0.3 local and 5.8 CI did not print DECLARED at +5.5%"; exit 1
+    fi
+    echo "SELFTEST OK: a declared row is judged by its CI maximum (0.3 local, 5.8 CI: +5.5% is DECLARED)"
     # Expected measurements: every row on the candidate and the named reference, the base only for
-    # rows with no declaration. Both lists come from the population and the written ledger.
+    # rows with no declaration. Both lists come from the population and the row the ledger leaves undeclared.
     while IFS= read -r row; do
         printf 'current\t%s\nnamed-reference\t%s\n' "$row" "$row"
         [ "$row" != "$BENCH_SELFTEST_UNDECLARED" ] || printf 'reference\t%s\n' "$row"
@@ -267,14 +278,14 @@ EOF
         if [ -n "$row" ]; then used=$((used + 1)); else
             b=$(ir_of "$ref" "$f" "$tier") || exit $?
             [[ "$b" =~ ^[1-9][0-9]*$ ]] || { echo "  FAIL: $workload $tier: no base instruction count"; exit 2; }
-            "$PYTHON3" "$DIR/../tools/phase2_cost_declarations.py" --method ci \
+            python3 "$DIR/../tools/phase2_cost_declarations.py" --method ci \
                 --row "$workload" "$tier" "$b" "$a"
             rc=$?; [ "$rc" -le 1 ] || exit "$rc"; [ "$rc" -eq 0 ] || fail=1
             base_rows=$((base_rows + 1))
         fi
         # Declared rows use the named pre-number-model build; undeclared rows
         # must pass both that comparison and the candidate-base comparison.
-        "$PYTHON3" "$DIR/../tools/phase2_cost_declarations.py" --method ci \
+        python3 "$DIR/../tools/phase2_cost_declarations.py" --method ci \
             --row "$workload" "$tier" "$n" "$a"
         rc=$?
         named_rows=$((named_rows + 1))
