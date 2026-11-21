@@ -13,7 +13,7 @@ else
     TOTAL=$((TOTAL + 1))
     HR_TEST=$(python3 "$TESTS_DIR/test_http_respond.py" 2>&1); HR_TEST_RC=$?
     if rc_ok "$HR_RC" "$HR_OUT" && rc_ok "$HR_TEST_RC" "$HR_TEST" &&
-       grep -qxF 'HTTP_RESPOND: 23 passed, 0 failed' <<< "$HR_TEST"; then
+       grep -qxF 'HTTP_RESPOND: 34 passed, 0 failed' <<< "$HR_TEST"; then
         PASS=$((PASS + 1))
         echo "  PASS: http_respond contract"
     else

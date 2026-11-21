@@ -167,7 +167,7 @@ Value *builtin_http_respond(Value *arg) {
     RouteResponse *r = tls_response;
     Value *headers = NULL, *cookies = NULL;
     int64_t status = r->status;
-    for (int i = 0; i < arg->data.dict.count; i++) {
+    DICT_FOR_EACH(arg, i) {
         const char *key = arg->data.dict.keys[i];
         EIGS_VIEW(view);
         Value *value = dict_value_get_view(arg, i, &view);
@@ -196,7 +196,8 @@ Value *builtin_http_respond(Value *arg) {
     size_t bytes = r->bytes;
     if (hn) {
         names = xmalloc_array((size_t)hn, sizeof *names);
-        for (int i = 0; i < hn; i++) {
+        int ni = 0;  /* names is packed; the dict's index skips removed keys (#2482) */
+        DICT_FOR_EACH(headers, i) {
             const char *name = headers->data.dict.keys[i];
             EIGS_VIEW(view);
             Value *value = dict_value_get_view(headers, i, &view);
@@ -207,7 +208,7 @@ Value *builtin_http_respond(Value *arg) {
             else if (!route_header_value_valid(value->data.str, val_str_len(value)))
                 refused = route_response_error(EK_VALUE, "invalid header value");
             if (refused) goto done;
-            names[i] = name;
+            names[ni++] = name;
             int old = route_header_find(r, name, NULL);
             if (old >= 0)
                 bytes -= strlen(r->headers[old].name) + strlen(r->headers[old].value) + 4;
@@ -218,7 +219,7 @@ Value *builtin_http_respond(Value *arg) {
                 refused = route_response_error(EK_VALUE, "duplicate header name");
                 goto done;
             }
-        for (int i = 0; i < hn; i++) {
+        DICT_FOR_EACH(headers, i) {
             EIGS_VIEW(view);
             Value *value = dict_value_get_view(headers, i, &view);
             size_t n = strlen(headers->data.dict.keys[i]) + 4;
@@ -255,7 +256,7 @@ Value *builtin_http_respond(Value *arg) {
         r->by_name = xrealloc_array(r->by_name, (size_t)room, sizeof *r->by_name);
         r->header_room = room;
     }
-    for (int i = 0; i < hn; i++) {
+    if (headers) DICT_FOR_EACH(headers, i) {
         const char *name = headers->data.dict.keys[i];
         EIGS_VIEW(view);
         Value *value = dict_value_get_view(headers, i, &view);
