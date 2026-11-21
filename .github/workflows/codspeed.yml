@@ -1,7 +1,8 @@
 name: CodSpeed
 
 # The hosted twin of the CI `bench` job. That job DIFFS cachegrind Ir of the PR
-# binary against its queue base and the named pre-number-model commit and is the merge gate. This lane runs
+# binary against the named pre-number-model commit, and the rows with no declaration also against its
+# queue base, and is the merge gate. This lane runs
 # the same class of measurement (valgrind CPU simulation, deterministic) on
 # the targets in codspeed.yml and uploads per-commit results, so every PR gets
 # a differential flamegraph per target and a trend line lives somewhere other

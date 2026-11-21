@@ -2251,15 +2251,16 @@ written earlier (R1.1, R1.2) that goes live, or by code R1.3 adds:
      whose predicate definitions make `int64_count` its acceptance row.
      `make observer-oracle` and CI's lane pass it to `score.py --declared`; an
      undeclared wrong verdict fails, and so does a stale declaration (its verdict
-     is right now, or was not examined). **Pre-merge condition (#1776):**
-     `tools/phase2_cost.sh --final BASE CAND` must pass, which requires both
+     is right now, or was not examined). **Release condition:**
+     `tools/phase2_cost.sh --final` must pass before the next release is cut, which requires both
      `tests/phase2/cost_expect.txt` and `tests/phase2/oracle_expect.txt` to be
-     empty; temporary costs and known-wrong verdicts must be recovered before
-     integration merges.
+     empty; the rows stay through the landing of #1776 (decision of 2026-11-19
+     on #1758).
      Consumer hashes that relied on double rounding now raise
      ((A)); they move to the N9 wrapping builtins. The stdlib's own
      real-valued formulas must not: `tools/phase2_lib_diff.sh` (§9.5, #1848)
-     runs every exported lib function with int arguments on main and the
+     runs every exported lib function with int arguments on the named
+     pre-number-model commit (`tests/phase2/cost_reference.txt`) and the
      branch, from R1.3 in every round.
 4. **R1.4, N4.** `//` (token, parser, `OP_IDIV` appended,
    `op_name`/`op_stack_effect`/obs marker/ABI test), `//=` beside `/=` (Q6),
@@ -3225,8 +3226,8 @@ makes 0.
 - **A small rise on `unobserved_armed_loop`.**
 - **Unchanged elsewhere.** STD_p runs per query, O(W).
 
-A decrease is reported, not declared. A rise above +0.3% is a defect R3 fixes,
-because the 2026-11-19 #1758 decision keeps `cost_expect.txt` through the landing; it must be empty when the next release is cut. The measurement is
+A decrease is reported, not declared. A rise above +0.3% is declared and recovered before the next release is cut
+(the decision of 2026-11-19 keeps the rows through the landing). The measurement is
 hosted (CodSpeed).
 
 #### Gates and plants (R3.1, R3.2)
@@ -3994,7 +3995,7 @@ tag recording continues to use v0.46.0.
 The int-fuzz sweep, if kept, is only a crash sweep: each builtin fed ints
 in numeric slots must raise or return, never crash.
 
-### 9.5 `tools/phase2_lib_diff.sh <main-binary> <branch-binary>` (#1848, from R1.3)
+### 9.5 `tools/phase2_lib_diff.sh <named-commit-binary> <branch-binary>` (#1848, from R1.3)
 
 A real-valued stdlib formula can compute in int64 through an int literal of
 its own and an int argument: `rest_energy of 103` (an int speed of light)

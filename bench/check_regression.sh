@@ -34,8 +34,8 @@ FILE_THRESHOLD_PERMILLE=$(( FILE_THRESHOLD_PCT * 10 ))
 pct() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f", (a - b) * 100 / b }'; }
 
 # Drop caller EIGS_* settings, then select the requested tier explicitly.
-# --vs measures the union of bench/*.eigs (default JIT) and every declared
-# workload/tier pair, so its own CI log can re-declare every max_ci (#1939).
+# --vs measures every codspeed.yml workload in both tiers
+# (tools/phase2_cost.sh --population), so its own CI log can re-declare every max_ci (#1939).
 ir_of() {  # ir_of <binary> <file> [jit|off] -> instruction count
     local tier="${3:-jit}" tier_env=
     case "$tier" in jit) ;; off) tier_env=EIGS_JIT_OFF=1 ;; *) return 2 ;; esac
