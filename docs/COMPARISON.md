@@ -504,8 +504,10 @@ list
 
 `zeros of [rows, cols]` still builds the nested list (the 2-D tensor form);
 `buffer of [rows, cols]` and `reshape of [buf, rows, cols]` build the
-flat-backed matrix. `matmul`, `softmax`, `sum`, `mean`, `norm`, `gather` and
-the rest accept either, and hand back a buffer when every operand was one; `sum`, `mean` and `norm` return a number.
+flat-backed matrix. `matmul`, `softmax`, `sum`, `mean`, `norm` and `gather`
+accept either; `matmul`, `softmax`, and `gather` on a shaped-buffer matrix,
+hand back a buffer when every tensor operand was one, and `sum`, `mean`,
+`norm`, and `gather of [vec, i]` on a 1-D tensor, return a number.
 `matmul`, `matmul_at`, and `matmul_bt` round each multiplication to binary64
 before adding it to the accumulator, in ascending inner-index order, on both
 containers. They do not fuse the multiplication and addition.

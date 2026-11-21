@@ -549,9 +549,12 @@ value
   fast path for the JIT and the AOT. `str of` a buffer is `<buffer:n>`.
 - `zeros of [rows, cols]` still builds the nested LIST tensor; `buffer of
   [r, c]` / `reshape of [buf, r, c]` build the flat-backed matrix.
-- Every tensor builtin (`add` … `pow`, `sqrt`/`exp`/`log`/`negative`, `matmul`,
-  `softmax`, `relu`, `sum`/`mean`/`norm`, `gather`, `zeros_like`) takes either
-  container and returns a buffer iff every tensor operand was one; `sum`/`mean`/`norm` return a number.
+- These tensor builtins (`add`/`subtract`/`multiply`/`divide`/`pow`,
+  `sqrt`/`exp`/`log`/`negative`, `matmul`, `softmax`, `relu`, `gather`,
+  `zeros_like`) take either container and, given a tensor, return a buffer iff
+  every tensor operand was one (`gather`'s index vector is not one);
+  `sum`/`mean`/`norm` take either and return a number, as does
+  `gather of [vec, i]` on a 1-D tensor.
 
 read_text, read_bytes, and read_bytes_buf use Python-style failure semantics:
 missing, unreadable, and directory paths raise catchable io errors containing

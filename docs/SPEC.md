@@ -616,8 +616,9 @@ every predicate builtin and `lib/` predicate return a `bool`. `print` and
 `or`, `not`; `and`/`or` return one of their operands (not necessarily a bool),
 and `not` always returns a bool.
 
-Truthiness is unchanged: `0`, `0.0`, `null`, `""`, `[]`, `{}` and `false` are
-falsy; every other value, including `true`, is truthy.
+Truthiness is unchanged: `0`, `0.0`, `null`, `""`, `[]`, `{}`, `false`, an
+empty buffer and an empty text builder are falsy; every other value,
+including `true`, is truthy.
 
 Operator precedence from tighter to looser is: calls/postfix operations;
 arithmetic unary `-` and bitwise unary `~`; multiplicative, additive, shift
@@ -2876,13 +2877,18 @@ tensor that is not a matrix in the per-row form still answers `0.0` for that
 row — that is the shape reading, not the index one — and a wrong-typed
 argument raises unless `EIGS_STRICT=0`, where it answers `0.0`.
 
-Every tensor builtin that accepts a flat numeric list accepts a buffer in the
-same position, and returns a buffer when **every** tensor operand was a buffer:
+These tensor builtins accept a buffer wherever they accept a flat numeric
+list as a tensor operand, and return a buffer when **every** tensor operand
+was a buffer:
 `add`/`subtract`/`multiply`/`divide`/`pow`, `sqrt`/`exp`/`log`/`negative`,
-`matmul`, `softmax`/`log_softmax`/`relu`/`leaky_relu`, `gather`,
-`zeros_like`, `tensor_save`, and the `numerical_grad`/`sgd_update` family
+`matmul`, `softmax`/`log_softmax`/`relu`/`leaky_relu`, `gather` on a
+shaped-buffer matrix,
+`zeros_like`, and the `numerical_grad`/`sgd_update` family
 (including the `_rows`/`_cols` variants, whose index vector may also be a
-buffer). Mixing a buffer with a list yields a list; `shape` accepts a buffer and always returns a list. The reductions
+buffer). Mixing a buffer with a list in `add`/`subtract`/`multiply`/`divide`/`pow`
+or `matmul` yields a list. `shape` accepts a buffer and always returns a list,
+`tensor_save` accepts one and returns `true`, and `gather of [vec, i]` on a
+1-D tensor returns element `i`, a number. The reductions
 (`sum`, `mean`, `norm`) return a number from either container. A 1-D buffer
 reads as a 1-D tensor and a shaped buffer as its `rows x cols` 2-D tensor, so
 the numbers agree element for element with the equivalent list.
@@ -3009,8 +3015,9 @@ The facts that govern every program, in one place:
    shared `num` type; `num_type` distinguishes their kinds. Strings
    are immutable; lists, dicts, and buffers are mutable and passed
    by reference; `==` is structural.
-6. **Truthiness**: `0`, `false`, `null`, `""`, `[]`, `{}` are falsy; everything
-   else is truthy. Comparisons yield `true`/`false` (type `bool`).
+6. **Truthiness**: `0`, `false`, `null`, `""`, `[]`, `{}`, an empty buffer and
+   an empty text builder are falsy; everything else is truthy. Comparisons
+   yield `true`/`false` (type `bool`).
 7. **Errors**: runtime errors unwind to the nearest `try`; uncaught
    they halt the program with exit code 1. Integer floor division and integer
    modulo by zero raise a `value` error; float arithmetic follows IEEE 754.

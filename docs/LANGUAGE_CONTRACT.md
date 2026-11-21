@@ -247,8 +247,9 @@ the interpreter executes them with these same rules.
 
 ## Truthiness
 
-**Promise:** Falsy values are `0`, `false`, `""`, `[]`, `{}`, and `null`. Everything
-else is truthy (including functions).
+**Promise:** Falsy values are `0`, `false`, `""`, `[]`, `{}`, `null`, an empty
+buffer and an empty text builder. Everything else is truthy (including
+functions).
 
 **Status:** Enforced — `tests/test_coverage_v2.eigs` (CV2-87/88).
 
