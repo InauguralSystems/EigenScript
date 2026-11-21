@@ -1226,8 +1226,8 @@
   },
   {
    "differ": true,
-   "expect": "clean",
-   "kind": "other-construct",
+   "expect": "finding",
+   "kind": "assignment-form",
    "make381": {
     "err": "",
     "out": "X=[] Z=[]\nV=[X]",
@@ -1240,12 +1240,12 @@
    },
    "name": "bang-assign",
    "text": "X != printf 'a'\n",
-   "why": "not covered: the != assignment: 3.81 reads the line another way and X is empty, with no error"
+   "why": "the two makes differ"
   },
   {
    "differ": true,
-   "expect": "clean",
-   "kind": "other-construct",
+   "expect": "finding",
+   "kind": "assignment-form",
    "make381": {
     "err": "",
     "out": "X=[] Z=[]\nV=[]",
@@ -1258,7 +1258,7 @@
    },
    "name": "colon-colon-eq",
    "text": "X ::= a\n",
-   "why": "not covered: the ::= assignment: 3.81 reads the line another way and X is empty, with no error"
+   "why": "the two makes differ"
   },
   {
    "differ": false,
@@ -4931,6 +4931,330 @@
    "name": "conditional-word-before-vertical-tab",
    "text": "all3:\nifdef\u000bNOPE\n\tZ := $(sort b#x a)\nendif\n",
    "why": "stricter than the makes: both makes skip the branch; the check takes a conditional's word only before a blank or a tab, and judges the tab line after this one"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[a] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "bang-reference-before-assign",
+   "text": "X$(subst !=,,) := a\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "name": "bang-after-directive-comment",
+   "text": "export # !=\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "name": "colon-colon-after-directive-comment",
+   "text": "export # ::=\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "bang-taken",
+   "text": "ifeq (a,a)\nX != printf a\nendif\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "colon-colon-taken",
+   "text": "ifeq (a,a)\nX ::= a\nendif\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "bang-override",
+   "text": "override X != printf a\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": true,
+   "expect": "finding",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "colon-colon-export",
+   "text": "export X ::= a\n",
+   "why": "the two makes differ"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]\nrecipe",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]\nrecipe",
+    "rc": 0
+   },
+   "name": "bang-recipe",
+   "text": "all2:\n\t@if [ \"a\" != \"b\" ]; then printf recipe; fi\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]\n::=",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]\n::=",
+    "rc": 0
+   },
+   "name": "colon-colon-recipe",
+   "text": "all2:\n\t@printf \"%s\" \"::=\"\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[a] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "bang-shell-argument",
+   "text": "X := $(shell printf 'a\\n' | awk 'NF == 1 && substr($$1, 1, 1) != \"\\043\" { print $$1 }')\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[::=] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[::=] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "colon-colon-shell-argument",
+   "text": "X := $(shell printf '%s' '::=')\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "name": "bang-comment",
+   "text": "# X != printf a\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "name": "colon-colon-comment",
+   "text": "# X ::= a\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "finding",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[] Z=[]\nV=[]",
+    "rc": 0
+   },
+   "name": "bang-conditional-argument",
+   "text": "A := a\nifeq ($(A),!=)\nX := b\nendif\n",
+   "why": "stricter than the makes: != in a conditional argument is on a judged line, outside every reference and before any other assignment operator"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[!=] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[!=] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "bang-value",
+   "text": "X := !=\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[::=] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[::=] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "colon-colon-value",
+   "text": "X = ::=\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[a ] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a ] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "bang-after-comment",
+   "text": "X := a # !=\n",
+   "why": "the two makes agree"
+  },
+  {
+   "differ": false,
+   "expect": "clean",
+   "kind": "assignment-form",
+   "make381": {
+    "err": "",
+    "out": "X=[a ] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "make4": {
+    "err": "",
+    "out": "X=[a ] Z=[]\nV=[X]",
+    "rc": 0
+   },
+   "name": "colon-colon-after-comment",
+   "text": "X := a # ::=\n",
+   "why": "the two makes agree"
   }
  ],
  "oracle": "GNU Make 3.81 built from the GNU source archive, against GNU Make 4.3",

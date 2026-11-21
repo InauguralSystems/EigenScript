@@ -81,7 +81,7 @@ def results_differ(r381, r4):
 def expectation_fault(case):
     """Why a case's hand-written fields contradict its results, or None."""
     kind, expect, why = case.get('kind'), case.get('expect'), case.get('why', '')
-    if kind not in ('number-sign', 'other-construct'):
+    if kind not in ('number-sign', 'assignment-form', 'other-construct'):
         return 'kind is %r' % kind
     if expect not in ('finding', 'clean'):
         return 'expect is %r' % expect

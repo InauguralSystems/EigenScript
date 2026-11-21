@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-r"""Refuse a number sign that GNU Make 3.81 reads differently from current make (#2448).
+r"""Refuse a number sign or assignment that GNU Make 3.81 reads differently from current make (#2448, #2456).
 This check is a tripwire for the shapes represented in tools/make381_cases.json. It conservatively refuses the uncertain forms represented there. Passing this check does not establish that GNU Make 3.81 and GNU Make 4.3 read a makefile alike.
 
 Written against GNU Make 3.81, the make of the macOS runners.  Its answers are
@@ -106,11 +106,18 @@ define-name-is-a-reference:  the check does not expand a reference in the name o
 define-evaled-through-foreach:  the check does not expand the foreach variable to the name of the define
 define-evaled-through-call-argument:  the check does not expand the call argument to the name of the define
 
-Not covered: !=, ::=, undefine, private, export define, $(file ...), a lone $
+On a judged line, != or ::= outside every reference and before any other
+assignment operator is a finding: GNU Make 3.81 reads the line as something
+else and leaves the variable empty.  This also refuses != in a conditional's
+arguments, where the makes agree.
+
+Not covered: undefine, private, export define, $(file ...), a lone $
 at the end of a value, .ONESHELL, --output-sync, an include whose name holds a
 reference, an include that make finds only in its search directories (-I,
 /usr/include), an include written inside an eval call, and other makefile
 text that exists only after expansion.
+3.81 refuses undefine and private with a message, so the macOS jobs fail on
+them by themselves.
 
 To write the sign inside a call: H := \# at the top level and $H in the call
 ($$H in text that $(eval) reads again), or the tool's own escape (printf '\043').
@@ -468,9 +475,16 @@ class Checker:
 
     def judge(self, path, text, numbers, doubled, strict):
         """At most one finding for the line: a number sign inside an eval
-        call, and on a line that is not passed, inside any reference."""
+        call, and on a line that is not passed, inside any reference; or, on
+        such a line, a != or ::= assignment."""
         places = [sign_in_eval(text, doubled)]
         if strict:
+            for i, c, depth in walk(text, doubled):
+                if not depth and (c == "=" or (c == "#" and not escaped(text, i))):
+                    form = "!=" if text[i - 1:i + 1] == "!=" else "::=" if text[i - 2:i + 1] == "::=" else None
+                    if c == "=" and form:
+                        return self.findings.append((path, numbers[i], "%s assignment: GNU Make 3.81 reads the line as something else and leaves the variable empty" % form))
+                    break
             places.append(sign_in_reference(text, doubled))
         places = [p for p in places if p is not None]
         if places:

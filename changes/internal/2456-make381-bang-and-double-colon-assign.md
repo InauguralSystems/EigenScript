@@ -1,0 +1,1 @@
+- Refuse != and ::= assignments on lines judged by the GNU Make 3.81 compatibility precheck (#2456).
