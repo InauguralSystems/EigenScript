@@ -1,0 +1,1 @@
+- The request-header contract's leak row tells a sanitizer build from the binary's own bytes instead of running `nm` under a time bound, so a loaded runner no longer reads as a contract failure (#2459).

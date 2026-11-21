@@ -17,6 +17,39 @@ set -u
 cd "$(dirname "$0")/.." || exit 2
 . tools/portability_verdict.sh
 
+set_tool_runner() { # set the interpreter used for a tool path
+    case "$1" in
+        *.py) TOOL_RUNNER=python3 ;;
+        *) TOOL_RUNNER=bash ;;
+    esac
+}
+
+print_full_output_hint() { # <command string>
+    local cmd="$1"
+    set_tool_runner "${cmd%% *}"
+    printf '        (full output: %s %s)\n' "$TOOL_RUNNER" "$cmd"
+}
+
+# One line for each row of $GATES from its $OUT/<index>.st; under a failing row its
+# red lines and the hint. Sets pass, fail, skip and i. The self-test calls this same
+# function on seven rows and compares the whole report with its expected text.
+report_rows() {
+    pass=0; fail=0; skip=0; i=0
+    while IFS='|' read -r class cmd; do
+        if [ -f "$OUT/$i.st" ]; then IFS='|' read -r st secs msg < "$OUT/$i.st"
+        else st=FAIL; secs=0; msg="no result: the lane died"; fi
+        printf '  %-4s %-46s %3ss  %s\n' "$st" "$cmd" "$secs" "$msg"
+        case "$st" in
+            PASS) pass=$((pass + 1)) ;;
+            SKIP) skip=$((skip + 1)) ;;
+            *)    fail=$((fail + 1))
+                  grep -E 'FAIL|ERROR|RED|ABORT|BROKEN' "$OUT/$i.log" 2>/dev/null | head -6 | sed 's/^/        /'
+                  print_full_output_hint "$cmd" ;;
+        esac
+        i=$((i + 1))
+    done <<< "$GATES"
+}
+
 run_gate() {   # run_gate <index> <class> <command...>
     local i="$1" class="$2" s rc; shift 2
     if { [ "$class" = bin ] || [ "$class" = portability ] || [ "$class" = selftest ]; } && [ -z "$BIN" ]; then
@@ -24,10 +57,8 @@ run_gate() {   # run_gate <index> <class> <command...>
         echo "SKIP|0|no eigenscript binary (run make to include this gate)" > "$OUT/$i.st"; return
     fi
     s=$(date +%s)
-    case "$1" in
-        *.py) python3 "$@" > "$OUT/$i.log" 2>&1; rc=$? ;;
-        *) bash "$@" > "$OUT/$i.log" 2>&1; rc=$? ;;
-    esac
+    set_tool_runner "$1"
+    "$TOOL_RUNNER" "$@" > "$OUT/$i.log" 2>&1; rc=$?
     if [ "$class" = portability ]; then
         portability_verdict "$rc" "$(cat "$OUT/$i.log")" "${PRECHECK_KERNEL:-$(uname -s)}"
         echo "$PORT_VERDICT|$(( $(date +%s) - s ))|$PORT_VERDICT_REASON" > "$OUT/$i.st"
@@ -71,7 +102,57 @@ if [ "${1:-}" = --selftest ]; then
     BIN=""; run_gate no-binary selftest "$stub" 99 'must not run'
     IFS='|' read -r got _ _ < "$OUT/no-binary.st"
     [ "$got" = SKIP ] && [ -f "$OUT/no-binary.log" ] && [ ! -s "$OUT/no-binary.log" ] && echo 'PASS: no binary -> SKIP with empty log' || { echo "FAIL: no binary wanted SKIP with empty log, got $got"; fail=$((fail + 1)); }
-    echo "precheck-selftest: $((10 - fail))/10 passed, $fail failed"
+    # The report of a failing precheck, from the function the precheck itself calls, compared
+    # whole with the text written out here: seven rows (a failing Python row with an argument
+    # whose log holds each word the red-line filter knows, an ordinary line and a seventh red
+    # line; a failing shell row; a passing row; a failing row of class portability; a row that
+    # left no result; a skipped row; a passing row of class bin), with the times set by hand.
+    py_stub="$OUT/failing.py"
+    printf '%s\n' 'import sys' \
+        'for line in ("planted FAIL in python", "an ERROR line", "a RED line", "an ABORT line",' \
+        '             "a BROKEN line", "an ordinary line", "sixth FAIL line", "seventh FAIL line"):' \
+        '    print(line)' 'sys.exit(7)' > "$py_stub"
+    BIN=selftest-binary
+    py_cmd="$py_stub --flag"
+    sh_cmd="$stub 7 planted-FAIL"
+    other_cmd="$stub 7 portability:-FAIL:-planted"
+    lost_cmd="$stub 9 never-ran"
+    run_gate 0 run $py_cmd
+    run_gate 1 run $sh_cmd
+    run_gate 2 run "$stub" 0 ok
+    PRECHECK_KERNEL=Linux run_gate 3 portability $other_cmd
+    BIN="" run_gate 5 selftest "$stub" 99 must-not-run
+    run_gate 6 bin "$stub" 0 bin-ok
+    for n in 0 1 2 3 5 6; do
+        IFS='|' read -r st _ msg < "$OUT/$n.st"
+        echo "$st|$((n + 11))|$msg" > "$OUT/$n.st"
+    done
+    report=$({ GATES="run|$py_cmd"$'\n'"run|$sh_cmd"$'\n'"run|$stub 0 ok"$'\n'"portability|$other_cmd"$'\n'"run|$lost_cmd"$'\n'"selftest|$stub 99 must-not-run"$'\n'"bin|$stub 0 bin-ok"
+               report_rows; echo "counted: $pass passed, $fail failed, $skip skipped of $i"; } 2>&1)
+    row() { printf '  %-4s %-46s %3ss  %s\n' "$1" "$2" "$3" "$4"; }
+    want=$(row FAIL "$py_cmd" 11 'exit 7'
+           printf '        %s\n' 'planted FAIL in python' 'an ERROR line' 'a RED line' 'an ABORT line' 'a BROKEN line' 'sixth FAIL line'
+           echo "        (full output: python3 $py_cmd)"
+           row FAIL "$sh_cmd" 12 'exit 7'
+           echo '        planted-FAIL'
+           echo "        (full output: bash $sh_cmd)"
+           row PASS "$stub 0 ok" 13 'ok'
+           row FAIL "$other_cmd" 14 'portability gate exited 7'
+           echo '        portability:-FAIL:-planted'
+           echo "        (full output: bash $other_cmd)"
+           row FAIL "$lost_cmd" 0 'no result: the lane died'
+           echo "        (full output: bash $lost_cmd)"
+           row SKIP "$stub 99 must-not-run" 16 'no eigenscript binary (run make to include this gate)'
+           row PASS "$stub 0 bin-ok" 17 'bin-ok'
+           echo 'counted: 2 passed, 4 failed, 1 skipped of 7')
+    if [ "$report" = "$want" ]; then
+        echo 'PASS: failure hints name Python and shell commands'
+    else
+        echo "FAIL: failure hints: the report of seven rows was:"; printf '%s\n' "$report" | sed 's/^/    | /'
+        echo "    wanted:"; printf '%s\n' "$want" | sed 's/^/    | /'
+        fail=$((fail + 1))
+    fi
+    echo "precheck-selftest: $((11 - fail))/11 passed, $fail failed"
     [ "$fail" -eq 0 ]; exit
 fi
 
@@ -145,20 +226,7 @@ while IFS='|' read -r class cmd; do
     i=$((i + 1))
 done <<< "$GATES"
 
-pass=0; fail=0; skip=0; i=0
-while IFS='|' read -r class cmd; do
-    if [ -f "$OUT/$i.st" ]; then IFS='|' read -r st secs msg < "$OUT/$i.st"
-    else st=FAIL; secs=0; msg="no result: the lane died"; fi
-    printf '  %-4s %-46s %3ss  %s\n' "$st" "$cmd" "$secs" "$msg"
-    case "$st" in
-        PASS) pass=$((pass + 1)) ;;
-        SKIP) skip=$((skip + 1)) ;;
-        *)    fail=$((fail + 1))
-              grep -E 'FAIL|ERROR|RED|ABORT|BROKEN' "$OUT/$i.log" 2>/dev/null | head -6 | sed 's/^/        /'
-              echo "        (full output: bash $cmd)" ;;
-    esac
-    i=$((i + 1))
-done <<< "$GATES"
+report_rows
 # Every row must have produced a verdict (a gate that ran nothing is not a pass).
 [ $((pass + fail + skip)) -eq "$i" ] && [ "$i" -gt 0 ] || { echo "precheck: ABORTED: $((pass + fail + skip)) results for $i gates"; exit 2; }
 echo "precheck: $pass passed, $fail failed, $skip skipped in $(( $(date +%s) - T0 ))s"

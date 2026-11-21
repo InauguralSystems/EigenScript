@@ -245,7 +245,9 @@ gates (design §9.2).
 ### A
 - `A.add-overflow-raises` [R1.3] `{try print of (9223372036854775807 + 1) catch}`, printing `[e.kind, (index_of of [e.message, "+"]) >= 0]`
   -> `["value", true]`
-  tag: prints a rounded double, no raise (read). **Plant 4's named check.**
+  tag: prints a rounded double, no raise (read). **Plant 4's named check is the
+  `overflow_add` assertion in `tests/phase2/slot_layer.c`; this row is its MAP
+  semantic counterpart.**
 - `A.sub-overflow-raises` [R1.3] `{try print of (-9223372036854775807 - 2) catch}`, the same print with `"-"`
   -> `["value", true]`
   tag: a double, no raise

@@ -102,7 +102,7 @@ static int n9_pair(Value *arg, int64_t lo, int64_t hi,
         rt_error(EK_TYPE, 0, "%s: expected a fixed-shape list with at most 2 elements", who);
         return 0;
     }
-    EigsView av, bv;
+    EigsView av = {{0}}, bv = {{0}};
     return eigs_int_arg_range(list_get_view(arg, 0, &av), lo, hi, a, who)
         && eigs_int_arg_range(list_get_view(arg, 1, &bv), lo, hi, b, who);
 }
@@ -555,7 +555,7 @@ Value* builtin_u64_rem(Value *arg) {
 }
 /* u64_to_string of x — unsigned decimal text from an int64 bit pattern */
 Value* builtin_u64_to_string(Value *arg) {
-    EigsView view;
+    EigsView view = {{0}};
     if (arg && arg->type == VAL_LIST && arg->data.list.count == 1)
         arg = list_get_view(arg, 0, &view);
     int64_t value = eigs_int_arg(arg, "u64_to_string");
@@ -566,7 +566,7 @@ Value* builtin_u64_to_string(Value *arg) {
 }
 /* fround of x — binary64 to binary32 to binary64, returning float kind */
 Value* builtin_fround(Value *arg) {
-    EigsView view;
+    EigsView view = {{0}};
     if (arg && arg->type == VAL_LIST && arg->data.list.count == 1)
         arg = list_get_view(arg, 0, &view);
     double value = eigs_arithmetic_float(arg, "fround");

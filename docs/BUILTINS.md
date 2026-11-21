@@ -65,7 +65,7 @@ examples are `tests/phase2/rows/N6.float-repr.eigs` and
 | `len` | `len of value` | Exact int length of string, list, dict, buffer or text builder |
 | `str` | `str of value` | Convert to string representation |
 | `num` | `num of value` | Parse complete numeric-literal text (N10): decimal integer text fitting int64 and wrapped hex integers give ints; a point/exponent or decimal overflow gives a float. Optional sign and surrounding ASCII whitespace are accepted. Partial/empty text, separators, 0b/0o, hex floats, inf and nan raise `value` in every `EIGS_STRICT` state. Numbers retain their kind; existing non-text coercions remain. |
-| `type` | `type of value` | Return type name: "num", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "null" (the null value; the type label matches the literal) |
+| `type` | `type of value` | Return type name: "num", "bool", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "null" (the null value; the type label matches the literal) |
 | `num_type` | `num_type of value` | Return "int" for an int64, "float" for a binary64, or `null` for any other value. Both numeric kinds still have `type of` "num" (#1758 N7). |
 | `f64_bits` | `f64_bits of number` | Return IEEE-754 binary64 bits as signed int64 two's complement; `-0.0` gives `-9223372036854775808`. An int input first converts to float (Q2). Accepts infinity and canonical NaN without changing `math_flags`. Non-numbers raise `type_mismatch` in every `EIGS_STRICT` state (N12). |
 | `f64_from_bits` | `f64_from_bits of bits` | Reconstruct a float from exact int64 bits (N5 accepts integral floats in int64 range). All NaN payloads canonicalize to `0x7FF8000000000000`; other representations retain their bits. No arithmetic trap or `math_flags` change. Fractions, non-finite inputs and out-of-range floats raise `value`; non-numbers raise `type_mismatch` in every `EIGS_STRICT` state (N12). |
@@ -122,7 +122,7 @@ tokens, and raises `value` naming any integer token outside int64.
 | `str_lower` | `str_lower of s` | Convert to lowercase |
 | `str_upper` | `str_upper of s` | Convert to uppercase |
 | `char_at` | `char_at of [s, index]` | Single character at index as string ("" if out of range); negative indices count from the end, like `[]`. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-| `contains` | `contains of [haystack, needle]` | `true` if haystack contains needle, else `false` (non-string operands are `false`, never a spurious match) |
+| `contains` | `contains of [haystack, needle]` | `true` if haystack contains needle, else `false`; a non-string operand raises `type_mismatch` unless `EIGS_STRICT=0`, where one that holds no bool is `false` (never a spurious match); a bool raises `type_mismatch` there too |
 | `starts_with` | `starts_with of [s, prefix]` | `true` if s starts with prefix, else `false` |
 | `ends_with` | `ends_with of [s, suffix]` | `true` if s ends with suffix, else `false` |
 | `index_of` | `index_of of [haystack, needle]` | First byte index as an int, or int -1 when absent (legacy non-string fallback is -1) |
@@ -333,7 +333,7 @@ For serialization: reconstruct strings/floats from raw bytes (the inverse of an
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `str_from_bytes` | `str_from_bytes of <list\|buffer>` | Input bytes follow N5, then 0..255; fractions/out-of-range bytes raise `value`. Build a string from raw byte values (0–255) — the list form of `chr` (`chr of n` == `str_from_bytes of [n]` for 1–255), inverting an `ord`-over-bytes loop. Nonnumeric list elements raise `type_mismatch` unless `EIGS_STRICT=0`, where they convert to numeric zero. Strings are NUL-terminated: a numeric byte that converts to `0` ends conversion, and later elements are not inspected — keep NUL-bearing binary in a buffer. |
+| `str_from_bytes` | `str_from_bytes of <list\|buffer>` | Input bytes follow N5, then 0..255; fractions/out-of-range bytes raise `value`. Build a string from raw byte values (0–255) — the list form of `chr` (`chr of n` == `str_from_bytes of ([n])` for 1–255), inverting an `ord`-over-bytes loop. Nonnumeric list elements raise `type_mismatch` unless `EIGS_STRICT=0`, where they convert to numeric zero. Strings are NUL-terminated: a numeric byte that converts to `0` ends conversion, and later elements are not inspected — keep NUL-bearing binary in a buffer. |
 | `f64_to_bytes` | `f64_to_bytes of x` | An integer input first converts to nearest f64 (Q2). List of 8 ints: the big-endian IEEE-754 encoding of double `x` (network byte order, portable across host endianness). A non-number raises unless `EIGS_STRICT=0`; under `EIGS_STRICT=0` it encodes as `0.0` (#971). |
 | `f64_from_bytes` | `f64_from_bytes of <list\|buffer>` | Input bytes follow N5, then 0..255; fractions/out-of-range bytes raise `value`. Decode a double from the first 8 big-endian IEEE-754 bytes; the input must contain at least 8 bytes. Inverse of `f64_to_bytes`. A `NaN` bit pattern produces canonical NaN and sets `math_flags.invalid`; `EIGS_STRICT=1` raises a `value` error (#971, R2.2). |
 
@@ -477,7 +477,7 @@ floats `[0.001, 0.01, 0.1]`; the last is the compiled-in non-numeric
 | `load_file` | `load_file of "path.eigs"` | Execute a file in the current scope, yielding its top-level return value. Uses the same file-based resolution chain as `import` (below). A missing/unreadable path raises a catchable `io` error naming the roots tried; a parse/compile failure raises `parse`. |
 | `file_exists` | `file_exists of "path"` | `true` if the path exists (any kind: file, directory, device, fifo), `false` otherwise. A `stat` probe — never blocks (#1070: the old `fopen` probe hung on a reader-less fifo). Trace-recorded, so replay is deterministic (#585) |
 | `is_dir` | `is_dir of "path"` | `true` if the path names a directory, `false` for a plain file / missing path (#576 — replaces the `file_exists of "path/."` probe). Trace-recorded, so replay is deterministic |
-| `is_file` | `is_file of "path"` | `true` iff the path names a REGULAR file (`S_ISREG`); `false` for a directory, a device/fifo/socket, a missing path, or a non-string. `read_file_util` admits only regular files, so this is the probe a driver uses to match that contract (#1058). Trace-recorded, so replay is deterministic |
+| `is_file` | `is_file of "path"` | `true` iff the path names a REGULAR file (`S_ISREG`); `false` for a directory, a device/fifo/socket or a missing path; a non-string raises `type_mismatch` unless `EIGS_STRICT=0`, where one that holds no bool is `false`; a bool raises `type_mismatch` there too. `read_file_util` admits only regular files, so this is the probe a driver uses to match that contract (#1058). Trace-recorded, so replay is deterministic |
 | `read_text` | `read_text of path` / `read_text of [path, max_bytes]` | Read file or stream contents as a string. The default cap is 10 MiB; `max_bytes` raises it up to the shared 512 MiB hard ceiling. Unseekable streams (including `/dev/stdin`, pipes, and FIFOs) are read in chunks to EOF. Missing, unreadable, directory, and over-cap paths raise `io`; over-cap errors name the size, active cap, and `[path, max_bytes]` escape. An empty input returns `""`. The cap follows N5: integral floats convert; fractions raise `value`. |
 | `read_line` | `read_line of null` | Blocking byte-exact line read from **stdin**: the returned string includes its line terminator (`\n`, with a preceding `\r` preserved), or `null` at EOF. Thus a terminated final line differs from an unterminated one, and an empty line is `"\n"`. Pipes and redirected regular files have identical semantics. Trace-recorded, so replay is deterministic |
 | `read_bytes` | `read_bytes of path` / `read_bytes of [path, max_bytes]` | Read a file's or stream's raw bytes as a list of integers 0–255. The default cap is 10 MiB; `max_bytes` raises it up to the shared 512 MiB hard ceiling. Unseekable streams are read in chunks to EOF. Missing, unreadable, directory, and over-cap paths raise `io`; over-cap errors name the size, active cap, and `[path, max_bytes]` escape. An empty input returns `[]`. Trace-recorded, so replay is deterministic. The cap follows N5: integral floats convert; fractions raise `value`. Returned byte values are ints (N1/Q1). |
@@ -648,7 +648,7 @@ in a buffer first converts it to float and can round it.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `sqrt` | `sqrt of t` | Element-wise square root; negative input returns 0 |
+| `sqrt` | `sqrt of t` | Element-wise square root; negative input returns NaN and sets `math_flags.invalid` (`EIGS_STRICT=1` raises `value`) |
 | `exp` | `exp of t` | Element-wise e^x; overflow gives infinity by default and raises `value` under `EIGS_STRICT=1` |
 | `log` | `log of t` | Element-wise natural log. Positive input, however small, is exact (`log of 1e-15` = -34.538…); zero gives `-inf` and sets `overflow`; negative input gives NaN and sets `invalid`. `EIGS_STRICT=1` traps non-finite results (#865, #1041, R2.2) |
 | `softmax` | `softmax of t` | Row-wise softmax normalization (a scalar is the one-element case → `1.0`). A shaped buffer computes row-wise on its shape and returns a buffer of the same shape (a 1-D buffer is one row) — #973 |
@@ -672,8 +672,8 @@ Buffer arithmetic stops at its first raised kernel result and releases its parti
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `mean` | `mean of t` | Non-finite buffer cells raise `value` in every `EIGS_STRICT` state (N13). Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`) A non-number list element raises an error naming its zero-based flattened index and type; a non-number in the argument-list form raises naming its 1-based argument position (#1649/#2112). |
-| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer). An all-int input returns an exact int and raises `value` on int64 overflow. A float anywhere in a nested input makes the reduction float from the start; buffers produce floats and refuse non-finite elements with `value` in every `EIGS_STRICT` state (N13). Under `EIGS_STRICT=1` the first NaN sets `math_flags.invalid` and raises "not a number" before reading later elements (#1417). An empty list returns int `0`. A non-number list element raises an error naming its zero-based flattened index and type; a non-number in the argument-list form raises naming its 1-based argument position (#1649/#2112). |
+| `mean` | `mean of t` | Non-finite buffer cells raise `value` in every `EIGS_STRICT` state (N13). Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`) A non-number element raises an error naming its zero-based flattened index and type, in either call form; a bool directly in the top-level list raises naming its 1-based position instead (`mean: argument 2 is a bool, which mean does not take there`) (#1649/#2112). |
+| `sum` | `sum of t` | Sum of all elements (list, nested list or buffer). An all-int input returns an exact int and raises `value` on int64 overflow. A float anywhere in a nested input makes the reduction float from the start; buffers produce floats and refuse non-finite elements with `value` in every `EIGS_STRICT` state (N13). Under `EIGS_STRICT=1` the first NaN sets `math_flags.invalid` and raises "not a number" before reading later elements (#1417). An empty list returns int `0`. A non-number element raises an error naming its zero-based flattened index and type, in either call form; a bool directly in the top-level list raises naming its 1-based position instead (`sum: argument 2 is a bool, which sum does not take there`) (#1649/#2112). |
 | `norm` | `norm of t` | Euclidean norm of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its flattened index and type. |
 
 ### Construction
@@ -1440,10 +1440,7 @@ for a non-admin; NULL and `''` were both `""`; and `9 > 10` was true because
 `thread_join`) are deep-COPIED via `val_clone_for_send` — messages are
 share-nothing. Numbers, strings, and nested lists/dicts arrive as independent
 copies, so mutating the original after a send cannot be observed by the other
-thread (see `docs/CONCURRENCY.md`). The exceptions are handle-like values —
-`buffer`, `text_builder`, `fn`, and `builtin` — which remain shared by
-reference across a send; do not mutate those concurrently from sender and
-receiver.
+thread (see `docs/CONCURRENCY.md`). Buffers and text builders are copied too (#1148/#1153). Handles stay shared, and so does what a sent closure captured: do not mutate that concurrently from sender and receiver. `docs/CONCURRENCY.md` measures the list.
 
 ## Spatial Queries
 
@@ -1493,9 +1490,7 @@ print of [neighbors[0].index, neighbors[1].index, neighbors[2]]
 | `audio_stream_close` | `audio_stream_close of null` | Stop and close the live stream device, dropping buffered audio. Safe to call twice or with no device open. |
 
 The sine, saw, square, noise and sweep generators reject non-finite durations
-and rounded sample counts outside the C int range. Their validated counts
-still truncate: at 44100 Hz, 0.00101 seconds produces 44 samples. The sample
-count rounding change is staged for R2.6 (RULINGS B5).
+and rounded sample counts outside the C int range. Their validated counts round half away from zero: at 44100 Hz, 0.00101 seconds produces 45 samples.
 
 ## Internal (sanitizer builds only)
 

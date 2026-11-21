@@ -1241,7 +1241,7 @@ static int fetch_request_dict(Value *arg, FetchRequest *r) {
     r->method = "GET"; r->body = ""; r->timeout_ms = 15000;
     DICT_FOR_EACH(arg, i) {
         const char *k = arg->data.dict.keys[i];
-        EigsView view;
+        EigsView view = {{0}};
         Value *v = dict_value_get_view(arg, i, &view);
         if (!strcmp(k, "url") || !strcmp(k, "method") || !strcmp(k, "body")) {
             if (v->type != VAL_STR) return fetch_error(fn, EK_TYPE, "url, method and body must be strings");
@@ -1257,7 +1257,7 @@ static int fetch_request_dict(Value *arg, FetchRequest *r) {
             size_t n = (size_t)v->data.dict.count;
             r->headers = n ? xcalloc(n, sizeof *r->headers) : NULL;
             DICT_FOR_EACH(v, j) {
-                EigsView hv;
+                EigsView hv = {{0}};
                 Value *value = dict_value_get_view(v, j, &hv);
                 if (value->type != VAL_STR) return fetch_error(fn, EK_TYPE, "header value must be a string");
                 const char *name = v->data.dict.keys[j];
@@ -1307,7 +1307,7 @@ static int fetch_replay(const char *fn, Value **out) {
     }
     int valid = !strcmp(fn, "http_post") ? v->type == VAL_STR : v->type == VAL_DICT;
     if (valid && v->type == VAL_DICT) {
-        EigsView sv, hv, bv;
+        EigsView sv = {{0}}, hv = {{0}}, bv = {{0}};
         Value *s = dict_get_view(v, "status", &sv), *h = dict_get_view(v, "headers", &hv), *b = dict_get_view(v, "body", &bv);
         int64_t code;
         valid = v->data.dict.count == 3 && s && s->type == VAL_INT &&
@@ -1634,7 +1634,7 @@ Value *builtin_http_post(Value *arg) {
         TRACE_NONDET_TAKE("http_post");
         TRACE_NONDET_RECORD("http_post", make_str(""));
     }
-    EigsView uv, hv, bv;
+    EigsView uv = {{0}}, hv = {{0}}, bv = {{0}};
     Value *u = list_get_view(arg, 0, &uv), *h = list_get_view(arg, 1, &hv), *b = list_get_view(arg, 2, &bv);
     if (u->type != VAL_STR || !http_url_is_allowed(u->data.str)) {
         TRACE_NONDET_TAKE("http_post");
@@ -1664,7 +1664,7 @@ Value *builtin_http_post(Value *arg) {
         size_t n = parsed->type == VAL_DICT ? (size_t)parsed->data.dict.count : (size_t)parsed->data.list.count / 2;
         r.headers = n ? xcalloc(n, sizeof *r.headers) : NULL;
         for (size_t i = 0, j = 0; i < n; i++) {
-            EigsView kv, vv;
+            EigsView kv = {{0}}, vv = {{0}};
             char *name, *value;
             if (parsed->type == VAL_DICT) {
                 while (j < (size_t)parsed->data.dict.count && !parsed->data.dict.keys[j]) j++;

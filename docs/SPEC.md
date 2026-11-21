@@ -618,8 +618,9 @@ every predicate builtin and `lib/` predicate return a `bool`. `print` and
 `or`, `not`; `and`/`or` return one of their operands (not necessarily a bool),
 and `not` always returns a bool.
 
-Truthiness is unchanged: `0`, `0.0`, `null`, `""`, `[]`, `{}` and `false` are
-falsy; every other value, including `true`, is truthy.
+Truthiness is unchanged: `0`, `0.0`, `null`, `""`, `[]`, `{}`, `false`, an
+empty buffer and an empty text builder are falsy; every other value,
+including `true`, is truthy.
 
 Operator precedence from tighter to looser is: calls/postfix operations;
 arithmetic unary `-` and bitwise unary `~`; multiplicative, additive, shift
@@ -2080,7 +2081,7 @@ otherwise — #861), resolving `oscillating` → `diverging` → `improving` →
 an implication lattice: a converged one-direction tail is not `equilibrium`.
 For a numeric binding, at a full window it agrees with the
 bare predicates by construction: it either names a band whose predicate is
-true, or — when a full window matches none of them — returns `moving`.
+true, or — when a full window matches none of them — returns `moving`; a NaN current value returns `undefined`.
 For a non-numeric binding it reports the entropy classification and need not
 agree with the snapshot-based `converged` or `stable` test. The
 bands are not exhaustive, and `moving` is the honest answer for the gap
@@ -2508,8 +2509,7 @@ task boundary deep-copied (share-nothing, like channel sends).
 
 `task_join of id` blocks until task `id` finishes and returns its
 result (or re-raises its uncaught error as the same `{kind, message,
-line}` dict — see [Error handling](#error-handling)). `task_alive of
-id` is 1 until the task finishes.
+line}` dict — see [Error handling](#error-handling)). `task_alive of id` is `true` until the task finishes.
 
 Tasks are scoped to the OS thread that spawned them: each thread has its
 own scheduler and its own ready queue, so `task_yield` hands control to
@@ -2828,8 +2828,7 @@ The other scalar reductions retain their declared data boundaries.
 A strict read that raises inside a function retains that
 function's source location and call frame. Buffer-to-list tensor materialization
 and numeric byte/sample/device conversions apply the same read rule, stopping
-at the first raised read. `write_bytes` requires exact bytes in 0..255 (N5/Q1);
-the remaining byte converters retain truncation and wrapping at this stage.
+at the first raised read. `write_bytes`, `str_from_bytes`, `f64_from_bytes`, `inflate` and `buf_from_pcm16le` require exact bytes in 0..255 (N5/Q1).
 Audio samples clamp to their documented sample range.
 Raw buffer copies, typed serialization and internal buffer-only kernel work
 areas retain their stored representation.
@@ -2882,13 +2881,18 @@ tensor that is not a matrix in the per-row form still answers `0.0` for that
 row — that is the shape reading, not the index one — and a wrong-typed
 argument raises unless `EIGS_STRICT=0`, where it answers `0.0`.
 
-Every tensor builtin that accepts a flat numeric list accepts a buffer in the
-same position, and returns a buffer when **every** tensor operand was a buffer:
+These tensor builtins accept a buffer wherever they accept a flat numeric
+list as a tensor operand, and return a buffer when **every** tensor operand
+was a buffer:
 `add`/`subtract`/`multiply`/`divide`/`pow`, `sqrt`/`exp`/`log`/`negative`,
-`matmul`, `softmax`/`log_softmax`/`relu`/`leaky_relu`, `gather`, `shape`,
-`zeros_like`, `tensor_save`, and the `numerical_grad`/`sgd_update` family
+`matmul`, `softmax`/`log_softmax`/`relu`/`leaky_relu`, `gather` on a
+shaped-buffer matrix,
+`zeros_like`, and the `numerical_grad`/`sgd_update` family
 (including the `_rows`/`_cols` variants, whose index vector may also be a
-buffer). Mixing a buffer with a list yields a list. The reductions
+buffer). Mixing a buffer with a list in `add`/`subtract`/`multiply`/`divide`/`pow`
+or `matmul` yields a list. `shape` accepts a buffer and always returns a list,
+`tensor_save` accepts one, and `gather of [vec, i]` on a 1-D tensor returns
+element `i`, a number. The reductions
 (`sum`, `mean`, `norm`) return a number from either container. A 1-D buffer
 reads as a 1-D tensor and a shaped buffer as its `rows x cols` 2-D tensor, so
 the numbers agree element for element with the equivalent list.
@@ -3003,9 +3007,7 @@ The facts that govern every program, in one place:
    JIT-compiled on x86-64. None of this changes semantics.
 2. **Application**: `of` is function application and binds tighter than
    arithmetic: `f of x + 1` is `(f of x) + 1`.
-3. **Argument spreading**: a *literal* list argument with 2+ elements
-   spreads into parameters; a 1-element literal list does **not**; a
-   list passed via a variable never spreads. Exception: a 1-parameter,
+3. **Argument spreading**: a *literal* list argument is an argument list at every count: 2+ elements spread into parameters and a 1-element literal list passes its element; a list passed via a variable never spreads. Exception: a 1-parameter,
    non-defaulted callee has only one parameter to spread into, so a
    2+-element list doesn't spread there either — it re-collects whole
    and binds to that one parameter (`one of [3, 4]` binds `a = [3, 4]`
@@ -3017,8 +3019,9 @@ The facts that govern every program, in one place:
    shared `num` type; `num_type` distinguishes their kinds. Strings
    are immutable; lists, dicts, and buffers are mutable and passed
    by reference; `==` is structural.
-6. **Truthiness**: `0`, `null`, `""`, `[]`, `{}` are falsy; everything
-   else is truthy. Comparisons yield `1`/`0`.
+6. **Truthiness**: `0`, `false`, `null`, `""`, `[]`, `{}`, an empty buffer and
+   an empty text builder are falsy; everything else is truthy. Comparisons
+   yield `true`/`false` (type `bool`).
 7. **Errors**: runtime errors unwind to the nearest `try`; uncaught
    they halt the program with exit code 1. Integer floor division and integer
    modulo by zero raise a `value` error; float arithmetic follows IEEE 754.
@@ -3087,8 +3090,7 @@ explicit timeouts are preserved and connection strings have no fixed-length copy
 Parser refusals return the `error` status with libpq's message.
 
 Tensor sizes and indices follow N5: an integral float is accepted and a
-fraction raises `value`. `gather` keeps the selected list cell's int/float
-kind; buffer elements and numeric tensor calculations are floats. `shape`
+fraction raises `value`. `gather` keeps the selected list cell's int/float kind, and `add`, `subtract`, `multiply`, `negative` and all-int `sum` keep ints on all-int lists; buffer elements and other numeric tensor calculations are floats. `shape`
 returns integer dimension counts. `mean` and `norm` refuse non-finite buffer
 cells with `value` in every `EIGS_STRICT` state.
 

@@ -1,0 +1,1 @@
+- Initialise container view locals to keep Clang freestanding-check logs free of unsafe default-const-init warnings (#2462).
