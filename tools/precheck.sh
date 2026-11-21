@@ -32,7 +32,7 @@ print_full_output_hint() { # <command string>
 
 # One line for each row of $GATES from its $OUT/<index>.st; under a failing row its
 # red lines and the hint. Sets pass, fail, skip and i. The self-test calls this same
-# function on six rows, so the report is tested where it is printed.
+# function on seven rows and compares the whole report with its expected text.
 report_rows() {
     pass=0; fail=0; skip=0; i=0
     while IFS='|' read -r class cmd; do
@@ -102,11 +102,16 @@ if [ "${1:-}" = --selftest ]; then
     BIN=""; run_gate no-binary selftest "$stub" 99 'must not run'
     IFS='|' read -r got _ _ < "$OUT/no-binary.st"
     [ "$got" = SKIP ] && [ -f "$OUT/no-binary.log" ] && [ ! -s "$OUT/no-binary.log" ] && echo 'PASS: no binary -> SKIP with empty log' || { echo "FAIL: no binary wanted SKIP with empty log, got $got"; fail=$((fail + 1)); }
-    # The report of a failing precheck, from the function the precheck itself calls: a
-    # failing Python row with an argument, a failing shell row, a passing row, a failing
-    # row of another class, a row that left no result, and a skipped row.
+    # The report of a failing precheck, from the function the precheck itself calls, compared
+    # whole with the text written out here: seven rows (a failing Python row with an argument
+    # whose log holds each word the red-line filter knows, an ordinary line and a seventh red
+    # line; a failing shell row; a passing row; a failing row of class portability; a row that
+    # left no result; a skipped row; a passing row of class bin), with the times set by hand.
     py_stub="$OUT/failing.py"
-    printf '%s\n' 'import sys' 'print("planted FAIL in python")' 'sys.exit(7)' > "$py_stub"
+    printf '%s\n' 'import sys' \
+        'for line in ("planted FAIL in python", "an ERROR line", "a RED line", "an ABORT line",' \
+        '             "a BROKEN line", "an ordinary line", "sixth FAIL line", "seventh FAIL line"):' \
+        '    print(line)' 'sys.exit(7)' > "$py_stub"
     BIN=selftest-binary
     py_cmd="$py_stub --flag"
     sh_cmd="$stub 7 planted-FAIL"
@@ -117,25 +122,34 @@ if [ "${1:-}" = --selftest ]; then
     run_gate 2 run "$stub" 0 ok
     PRECHECK_KERNEL=Linux run_gate 3 portability $other_cmd
     BIN="" run_gate 5 selftest "$stub" 99 must-not-run
-    report=$(GATES="run|$py_cmd"$'\n'"run|$sh_cmd"$'\n'"run|$stub 0 ok"$'\n'"portability|$other_cmd"$'\n'"run|$lost_cmd"$'\n'"selftest|$stub 99 must-not-run"
-             report_rows; echo "counted: $pass passed, $fail failed, $skip skipped of $i")
-    has() { [ "$(printf '%s\n' "$report" | grep -cxF -- "$1")" -eq 1 ]; }
-    if [ "$(printf '%s\n' "$report" | grep -c '^        (full output: ')" -eq 4 ] \
-       && has "        (full output: python3 $py_cmd)" \
-       && has "        (full output: bash $sh_cmd)" \
-       && has "        (full output: bash $other_cmd)" \
-       && has "        (full output: bash $lost_cmd)" \
-       && has '        planted FAIL in python' \
-       && has '        planted-FAIL' \
-       && has '        portability:-FAIL:-planted' \
-       && [ "$(printf '%s\n' "$report" | grep -c '^  FAIL ')" -eq 4 ] \
-       && [ "$(printf '%s\n' "$report" | grep -c '^  PASS ')" -eq 1 ] \
-       && [ "$(printf '%s\n' "$report" | grep -c '^  SKIP ')" -eq 1 ] \
-       && [ "$(printf '%s\n' "$report" | grep -c '^  FAIL .* no result: the lane died$')" -eq 1 ] \
-       && [ "$(printf '%s\n' "$report" | tail -1)" = 'counted: 1 passed, 4 failed, 1 skipped of 6' ]; then
+    run_gate 6 bin "$stub" 0 bin-ok
+    for n in 0 1 2 3 5 6; do
+        IFS='|' read -r st _ msg < "$OUT/$n.st"
+        echo "$st|$((n + 11))|$msg" > "$OUT/$n.st"
+    done
+    report=$({ GATES="run|$py_cmd"$'\n'"run|$sh_cmd"$'\n'"run|$stub 0 ok"$'\n'"portability|$other_cmd"$'\n'"run|$lost_cmd"$'\n'"selftest|$stub 99 must-not-run"$'\n'"bin|$stub 0 bin-ok"
+               report_rows; echo "counted: $pass passed, $fail failed, $skip skipped of $i"; } 2>&1)
+    row() { printf '  %-4s %-46s %3ss  %s\n' "$1" "$2" "$3" "$4"; }
+    want=$(row FAIL "$py_cmd" 11 'exit 7'
+           printf '        %s\n' 'planted FAIL in python' 'an ERROR line' 'a RED line' 'an ABORT line' 'a BROKEN line' 'sixth FAIL line'
+           echo "        (full output: python3 $py_cmd)"
+           row FAIL "$sh_cmd" 12 'exit 7'
+           echo '        planted-FAIL'
+           echo "        (full output: bash $sh_cmd)"
+           row PASS "$stub 0 ok" 13 'ok'
+           row FAIL "$other_cmd" 14 'portability gate exited 7'
+           echo '        portability:-FAIL:-planted'
+           echo "        (full output: bash $other_cmd)"
+           row FAIL "$lost_cmd" 0 'no result: the lane died'
+           echo "        (full output: bash $lost_cmd)"
+           row SKIP "$stub 99 must-not-run" 16 'no eigenscript binary (run make to include this gate)'
+           row PASS "$stub 0 bin-ok" 17 'bin-ok'
+           echo 'counted: 2 passed, 4 failed, 1 skipped of 7')
+    if [ "$report" = "$want" ]; then
         echo 'PASS: failure hints name Python and shell commands'
     else
-        echo "FAIL: failure hints: the report of four failing rows, a passing and a skipped one was:"; printf '%s\n' "$report" | sed 's/^/    | /'
+        echo "FAIL: failure hints: the report of seven rows was:"; printf '%s\n' "$report" | sed 's/^/    | /'
+        echo "    wanted:"; printf '%s\n' "$want" | sed 's/^/    | /'
         fail=$((fail + 1))
     fi
     echo "precheck-selftest: $((11 - fail))/11 passed, $fail failed"
