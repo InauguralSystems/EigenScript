@@ -95,9 +95,7 @@ define _factorial_real(n) as:
 # poisson_pmf: P(X=k) = lambda^k * e^(-lambda) / k!
 # A probability is real-valued: k! is a float denominator (#1848).
 define poisson_pmf(k, lam) as:
-    # #2494: a negative count is refused by name. On the direct formula it raised before the number
-    # model (k! was the int sentinel 0, and the division raised) and answered inf with it (a float
-    # divisor); on the log-domain path it answered 0.
+    # #2494: a negative count is refused by name (with the float factorial it had answered a number).
     if k < 0:
         throw of "poisson_pmf: the count must not be negative"
     # Preserve the direct calculation (and its exact rounding) whenever all

@@ -2129,14 +2129,15 @@ matrix_grad_failed:
  * not finite. Nothing is written, so a step that refuses one of its cells has changed none.
  *
  * With write == 1 a float cell is read as it is. Every cell passed the first pass, so a float that
- * is not finite here is a result this same step wrote: a cell the step updates twice (a row or a
- * column named twice, the same row object twice in the parameter). The arithmetic goes on from it by
- * the IEEE rules instead of raising halfway through the writes.
+ * is not finite here is a result this same step wrote and reads again: the cells alias (a row or a
+ * column named twice, the same row object twice in the parameter, a gradient row that is a parameter
+ * row). The arithmetic goes on from it by the IEEE rules instead of raising halfway through the writes.
  *
- * Returns 0 when something raised. What is left: under EIGS_STRICT=1 a cell that is updated twice
- * can raise in the second pass, when its second result is not finite; the cells written until then
- * stay written (#2444). An undo log would close that, and was withdrawn: it grows with the number
- * of writes, which a caller inside sandbox_run controls and the sandbox budget does not see. */
+ * Returns 0 when something raised. What is left: under EIGS_STRICT=1, when the cells alias, the
+ * second pass computes from cells this step already wrote, and a result that is not finite there
+ * raises with the cells written until then left written (#2444). An undo log would close that, and
+ * was withdrawn: it grows with the number of writes, which a caller inside sandbox_run controls and
+ * the sandbox budget does not see. */
 static int sgd_cell(Value *prow, int pi, Value *grow, int gi, double lr, const char *who, int write) {
     double pv, gv;
     if (!write || !list_get_f64(prow, pi, &pv)) {
