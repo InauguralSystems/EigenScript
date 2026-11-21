@@ -12,12 +12,16 @@ p is buf_from_list of ([1, 2])
 print of (tensor_save of [p, "t.bin"])
 EOF
 EIGS_BIN=$eigs CASE_DIR=$tmp python3 - <<'PY' >"$tmp/limit.out" 2>"$tmp/limit.err"
-import os, resource, signal, subprocess
+import os, resource, signal, subprocess, sys
 def limited():
     resource.setrlimit(resource.RLIMIT_FSIZE, (64, 64))
     signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+# The child's stderr comes back through a pipe: the size limit holds for every regular file the child
+# writes, so a stderr sent straight to a file was cut at 64 bytes too, and the message was only whole
+# where the scratch folder's path was short.
 p = subprocess.run([os.environ['EIGS_BIN'], os.path.join(os.environ['CASE_DIR'], 'save.eigs')],
-                   cwd=os.environ['CASE_DIR'], preexec_fn=limited)
+                   cwd=os.environ['CASE_DIR'], preexec_fn=limited, stderr=subprocess.PIPE)
+sys.stderr.buffer.write(p.stderr)
 print('child returncode:', p.returncode)
 raise SystemExit(0 if p.returncode != 0 else 1)
 PY
