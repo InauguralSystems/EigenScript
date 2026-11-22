@@ -2722,7 +2722,7 @@ static void restore_observer_2d(Value *tensor, double *obs_data, int rows, int c
 
 /* ==== BUILTIN: tensor_load ==== */
 /* tensor_load of path — load 1D or 2D tensor from binary file.
- * Restores observer state if present in the file. */
+ * Reads legacy observer blocks without restoring observation history. */
 #if !EIGENSCRIPT_FREESTANDING
 static void tensor_load_limit_raise(const char *path, uint32_t rows,
                                     uint32_t cols) {
@@ -2874,7 +2874,7 @@ Value* builtin_tensor_load(Value *arg) {
         return make_null();
     }
 
-    /* Restore observer state */
+    /* Consume legacy observer metadata; the restore hooks are compatibility no-ops. */
     if (obs_data && result) {
         if (ndim == 1)
             restore_observer_1d(result, obs_data, total);

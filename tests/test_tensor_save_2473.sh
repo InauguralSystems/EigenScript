@@ -68,8 +68,8 @@ EOF2
 limited "$tmp/kind.eigs" "$tmp/kind.out" "$tmp/kind.err" "$tmp/kind.rc"
 if [ "$(cat "$tmp/kind.rc")" = 0 ] && [ "$(cat "$tmp/kind.out")" = io ]; then pass "a failed write is caught with kind io"; else fail "a failed write's caught kind (exit code $(cat "$tmp/kind.rc"), printed '$(cat "$tmp/kind.out")')"; fi
 show "$tmp/kind.err"
-# The two rows above fail when the close flushes: 112 bytes fit the stream's buffer. 48,016 bytes do not,
-# so here a write itself comes back short.
+# The two rows above fail when close flushes: 112 bytes fit the stream's buffer. A 6000-element buffer
+# writes 288,016 bytes (16 + 6000*8 + 6000*40), so here a write itself comes back short.
 cat >"$tmp/big.eigs" <<'EOF2'
 p is buffer of 6000
 print of (tensor_save of [p, "big.bin"])
