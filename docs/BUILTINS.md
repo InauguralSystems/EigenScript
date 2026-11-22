@@ -20,7 +20,7 @@ gfx, audio) require a full build or the `gfx` target.
 > dumps the full surface — every builtin, extension (by group), and lib
 > function with its parameter list — in one call.
 
-> See [Argument guards and arithmetic traps](SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states. Under `EIGS_STRICT=0` the answer a wrong-typed argument gets is not part of the contract unless its row names it. Documented answers for valid-but-absent input (`index_of` miss `-1` and `file_exists` of a missing path `false`) are unchanged by that setting. A bool passed directly, or held in either of the first two list levels of a guarded argument, raises `type_mismatch` in every state. A bool deeper than those two levels, or held by a dict, can receive the lenient stand-in; this shallow runtime check is tracked as a fault.
+> See [Argument guards and arithmetic traps](SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states. Under `EIGS_STRICT=0` the answer a wrong-typed argument gets is not part of the contract unless its row names it. Documented answers for valid-but-absent input (`index_of` miss `-1` and `file_exists` of a missing path `false`) are unchanged by that setting. A bool passed directly as an argument whose type a builtin checks raises `type_mismatch` by default and under `EIGS_STRICT=0`; `write_bytes` is the exception, because its `append` flag takes a bool. A bool inside a list or a dict can get an answer instead under `EIGS_STRICT=0`: `numerical_grad of [[true], [1.0], 0.001]` answers `[0.0]` and `json_path of [[true], "a"]` answers `""` (by default the first raises `type_mismatch` and the second raises `value`). The runtime check that lets a nested bool through is tracked as #2502.
 
 ```eigenscript
 try:
@@ -149,7 +149,7 @@ tokens, and raises `value` naming any integer token outside int64.
 | `text_builder_append` | `text_builder_append of [builder, value]` | Append one value as text |
 | `text_builder_append_line` | `text_builder_append_line of [builder, value]` | Append one value and a newline |
 | `text_builder_to_string` | `text_builder_to_string of builder` | Render buffered text. A wrong-typed argument that raises `type_mismatch` by default can get an answer instead under `EIGS_STRICT=0`; that answer is `""`. |
-| `secure_equals` | `secure_equals of [a, b]` | Constant-time string equality (`true`/`false`). Compares every byte regardless of where a mismatch occurs, so comparison time doesn't leak how much of a secret matched. Non-string arguments raise `secure_equals: expected two strings` by default; under `EIGS_STRICT=0`, a direct bool or one held in the first list level raises `type_mismatch`; a bool two list levels deep or held by a dict returns `false`, which is the same shallow-check fault described above. A wrong-typed argument that raises `type_mismatch` by default can get an answer instead under `EIGS_STRICT=0`; that answer is `false`. |
+| `secure_equals` | `secure_equals of [a, b]` | Constant-time string equality (`true`/`false`). Compares every byte regardless of where a mismatch occurs, so comparison time doesn't leak how much of a secret matched. Non-string arguments raise `secure_equals: expected two strings` by default; under `EIGS_STRICT=0`, a direct bool or one held in the first list level raises `type_mismatch`; a bool two list levels deep or held by a dict returns `false` (#2502). A wrong-typed argument that raises `type_mismatch` by default can get an answer instead under `EIGS_STRICT=0`; that answer is `false`. |
 
 ### Regex
 
