@@ -789,7 +789,9 @@ def selftest():
             p.write_text(original + arithmetic)
             result = gate(); ok = result.returncode == 0; passed += ok
             print(f'SELFTEST: stale-guard-block-boundary: {"PASS" if ok else "FAIL"}')
-            heading = ('\nA wrong-type argument raises by default.\n### Arithmetic result\n'
+            # No full stop ends the guard wording, so only the heading boundary keeps it out of
+            # the sentence below the heading.
+            heading = ('\nWrong-type argument handling\n### Arithmetic result\n'
                        'With `EIGS_STRICT=1`, a non-finite result raises.\n')
             p.write_text(original + heading)
             result = gate(); ok = result.returncode == 0; passed += ok
