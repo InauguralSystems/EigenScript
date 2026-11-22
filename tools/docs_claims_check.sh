@@ -142,9 +142,9 @@ def stale_guard_state_wording():
     """Reject two-state wording that makes argument guards opt-in."""
     guard = (r'(?:argument|wrong[- ]type|wrong[- ]arity|non[- ]?(?:numeric|string|number|list)|'
              r'short|surplus|additional list item|fixed[- ]shape|optional[- ]shape)')
-    condition = (r'(?:raises?|rejects?).{0,120}(?:under|with) `EIGS_STRICT=1`|'
+    condition = (r'(?:raises?|rejects?|refused).{0,120}(?:under|with)\s+`EIGS_STRICT=1`|'
                  r'(?:raises?|rejects?).{0,120}\bin strict mode\b|'
-                 r'(?:under|with) `EIGS_STRICT=1`.{0,80}(?:raises?|rejects?)|'
+                 r'(?:under|with)\s+`EIGS_STRICT=1`.{0,80}(?:raises?|rejects?|refused)|'
                  r'\bin strict mode\b.{0,80}(?:raises?|rejects?)')
     stale = re.compile(rf'(?:{guard}).{{0,240}}(?:{condition})|'
                        rf'(?:{condition}).{{0,240}}(?:{guard})', re.I | re.S)
@@ -155,7 +155,8 @@ def stale_guard_state_wording():
         prose = Path(file).read_text(encoding='utf-8')
         # Markdown block boundaries are prose boundaries.  In particular, a
         # table row without a full stop must not consume the paragraph below.
-        blocks = re.split(r'\n[ \t]*\n|(?=^#{1,6} )|(?=^\s*\|)', prose, flags=re.M)
+        bounded = re.sub(r'(^#{1,6} .*$|^\s*[|].*[|]\s*$)', r'\n\1\n', prose, flags=re.M)
+        blocks = re.split(r'\n[ \t]*\n', bounded)
         for sentence in (s for block in blocks for s in
                          re.split(r'(?<=[.!?])(?:\s+|(?=\s*\|))', block)):
             examined += 1
@@ -780,14 +781,19 @@ def selftest():
             if not ok:
                 print(result.stdout)
             p.write_text(original)
-            arithmetic = ('\n## Self-test boundary\n| Mode | Result |\n|---|---|\n| unset | IEEE 754\n\n'
+            arithmetic = ('\n## Self-test boundary\n| Mode | Result |\n|---|---|\n| wrong-type argument | accepted by default |\n'
                           'Scalar arithmetic and its existing list forms accept infinity and NaN: with\n'
-                          '`EIGS_STRICT` unset or `0`, the result follows IEEE 754 and C libm; with\n'
+                          '`EIGS_STRICT` unset or `0`, the result follows IEEE 754 and C libm; with '
                           '`EIGS_STRICT=1`, a non-finite result raises through the existing arithmetic or\n'
                           'domain trap, while a finite result answers.\n')
             p.write_text(original + arithmetic)
             result = gate(); ok = result.returncode == 0; passed += ok
             print(f'SELFTEST: stale-guard-block-boundary: {"PASS" if ok else "FAIL"}')
+            heading = ('\nA wrong-type argument raises by default.\n### Arithmetic result\n'
+                       'With `EIGS_STRICT=1`, a non-finite result raises.\n')
+            p.write_text(original + heading)
+            result = gate(); ok = result.returncode == 0; passed += ok
+            print(f'SELFTEST: stale-guard-heading-boundary: {"PASS" if ok else "FAIL"}')
             p.write_text(original + '\n| Wrong type | raises under `EIGS_STRICT=1` |\n')
             result = gate()
             ok = result.returncode != 0 and 'makes an argument guard conditional' in result.stdout
@@ -822,8 +828,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 39 case(s) run, {passed} passed, {39-passed} failed')
-            return 0 if passed == 39 else 1
+            print(f'SELFTEST: 40 case(s) run, {passed} passed, {40-passed} failed')
+            return 0 if passed == 40 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 

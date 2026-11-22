@@ -43,7 +43,7 @@ report_rows() {
             PASS) pass=$((pass + 1)) ;;
             SKIP) skip=$((skip + 1)) ;;
             *)    fail=$((fail + 1))
-                  grep -E 'FAIL|ERROR|RED|ABORT|BROKEN|^#' "$OUT/$i.log" 2>/dev/null | head -6 | sed 's/^/        /'
+                  grep -E 'FAIL|ERROR|RED|ABORT|BROKEN|^# section-plan detail$' "$OUT/$i.log" 2>/dev/null | head -6 | sed 's/^/        /'
                   print_full_output_hint "$cmd" ;;
         esac
         i=$((i + 1))
@@ -152,7 +152,15 @@ if [ "${1:-}" = --selftest ]; then
         echo "    wanted:"; printf '%s\n' "$want" | sed 's/^/    | /'
         fail=$((fail + 1))
     fi
-    echo "precheck-selftest: $((11 - fail))/11 passed, $fail failed"
+    synthetic="$OUT/synthetic.log"
+    printf '%s\n' '# comment one' '# comment two' '# comment three' '# comment four' '# comment five' '# comment six' 'real FAIL line' 'real ERROR line' > "$synthetic"
+    shown=$(grep -E 'FAIL|ERROR|RED|ABORT|BROKEN|^# section-plan detail$' "$synthetic" | head -6)
+    if grep -q 'real FAIL line' "$synthetic" && printf '%s\n' "$shown" | grep -q 'real FAIL line'; then
+        echo 'PASS: comment lines cannot crowd real failures from the report'
+    else
+        echo 'FAIL: comment lines crowded real failures from the report'; fail=$((fail + 1))
+    fi
+    echo "precheck-selftest: $((12 - fail))/12 passed, $fail failed"
     [ "$fail" -eq 0 ]; exit
 fi
 

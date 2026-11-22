@@ -1057,6 +1057,10 @@ def named_row(row, binary, out):
     want = read_text(path.rsplit('.', 1)[0] + '.out')
     want_rc = int(h.get('EXPECT-RC', '0'))
     tiers = h.get('TIERS', ' '.join(TIERS)).split()
+    unknown = [tier for tier in tiers if tier not in TIER_ENV]
+    if not tiers or unknown:
+        out('phase2-row: FAIL %s: invalid TIERS: %s' % (row, ' '.join(unknown) if unknown else '(empty)'))
+        return 2
     with tempfile.TemporaryDirectory(prefix='eigs-p2-row-') as scratch:
         for tier in tiers:
             rc, stdout, stderr = run(binary, path, TIER_ENV[tier], scratch)

@@ -209,10 +209,11 @@ dedicated spawn/channel bench workload is future work here.
 ## CodSpeed: the hosted twin of the Ir gate
 
 The `bench` job answers one yes/no question per PR — did this change cost more
-than 0.5% of instructions on any one of the ten `bench/*.eigs` workloads — and throws the
-numbers away. `codspeed.yml` at the repository root declares six of those workloads
-plus the JIT's own shapes (`tests/bench_perf.eigs`, `tests/bench_dmg_shape.eigs`,
-`tests/bench_idxset.eigs`) as CodSpeed **exec-harness** targets, and the
+than 0.5% of instructions on any workload-and-tier row printed by
+`bash bench/check_regression.sh --list-vs` — and throws the numbers away.
+`codspeed.yml` at the repository root declares the hosted workload set, including
+the JIT's own shapes (`tests/bench_perf.eigs`, `tests/bench_dmg_shape.eigs`,
+`tests/bench_idxset.eigs`), as CodSpeed **exec-harness** targets, and the
 `.github/workflows/codspeed.yml` lane runs them under the same valgrind CPU
 simulation and uploads the result per commit. What that buys that the gate
 cannot: a per-target differential flamegraph on every PR, and a history
@@ -225,8 +226,8 @@ workflow. The in-repo `bench_dmg_shape` flatters the JIT about 10x against the
 emulator it names — under cachegrind the JIT removes 48% of that bench's
 instructions and 11.8% of DMG's (2026-09-21), and the fleet matrix on
 [#1178](https://github.com/InauguralSystems/EigenScript/issues/1178) reads
-+5% wall. Three of the other nine targets are the JIT's own shapes, so without
-the consumer row the lane could show a JIT change as large while the fleet
++5% wall. The in-repository proxy targets are named in `codspeed.yml`; without
+the consumer rows the lane could show a JIT change as large while the fleet
 calls it a coin flip.
 `tools/codspeed_targets_check.sh` pins the target set in the lane itself (count,
 consumer ids, a 40-hex pin, paths under the fetched dir), with a self-test that

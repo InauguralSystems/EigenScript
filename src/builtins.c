@@ -816,7 +816,7 @@ Value* builtin_classify(Value *arg) {
      * classifying an arbitrary value would silently mean "no trajectory". */
     Value *t = arg;
     const char *channel = "value";
-    EigsView t_view = {{0}};   /* function scope: t is read after the if-block (#1665) */
+    EIGS_VIEW(t_view);   /* function scope: t is read after the if-block (#1665) */
     if (arg && arg->type == VAL_LIST && arg->data.list.count >= 1) {
         t = slot_view(list_slot(arg, 0), &t_view);
         if (arg->data.list.count >= 2) {
@@ -5892,7 +5892,7 @@ Value* builtin_nearest_in_range(Value *arg) {
      * us skip the hash probe entirely on every subsequent entity. */
     int hint_active = -1, hint_px = -1, hint_py = -1;
 
-    EigsView av_view = {{0}}, ex_view = {{0}}, ey_view = {{0}};
+    EIGS_VIEW(av_view); EIGS_VIEW(ex_view); EIGS_VIEW(ey_view);
 
     /* Each entity dict is a separate heap allocation — touching n of them
      * pulls in ~12-15 cache lines per iteration. Prefetch the dict header
@@ -6024,7 +6024,7 @@ Value* builtin_nearest_in_range_all(Value *arg) {
     uint32_t h_py = env_hash_name(ipy);
     int hint_active = -1, hint_px = -1, hint_py = -1;
 
-    EigsView av_view = {{0}}, ex_view = {{0}}, ey_view = {{0}};
+    EIGS_VIEW(av_view); EIGS_VIEW(ex_view); EIGS_VIEW(ey_view);
     enum { PFDIST = 8 };
     for (int i = 0; i < n; i++) {
         if (i + PFDIST < n)

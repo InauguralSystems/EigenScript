@@ -620,7 +620,7 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
             if (b->data.list.count == cols) {
                 Value *out = make_list(rows);
                 for (int i = 0; i < rows; i++) {
-                    EigsView ai_view = {{0}};   /* a ragged row may be a number: view, not get_ref (NULL) */
+                    EIGS_VIEW(ai_view);   /* a ragged row may be a number: view, not get_ref (NULL) */
                     Value *row = tensor_elementwise(list_get_view(a, i, &ai_view), b, fn);
                     if (g_has_error) {
                         val_decref(row); val_decref(out); return make_null();
@@ -650,7 +650,7 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
             if (a->data.list.count == cols) {
                 Value *out = make_list(rows);
                 for (int i = 0; i < rows; i++) {
-                    EigsView bi_view = {{0}};   /* a ragged row may be a number: view, not get_ref (NULL) */
+                    EIGS_VIEW(bi_view);   /* a ragged row may be a number: view, not get_ref (NULL) */
                     Value *row = tensor_elementwise(a, list_get_view(b, i, &bi_view), fn);
                     if (g_has_error) {
                         val_decref(row); val_decref(out); return make_null();

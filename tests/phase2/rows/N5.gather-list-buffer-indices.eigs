@@ -9,8 +9,10 @@ sb is reshape of [buf_from_list of ([1.0, 2.0, 3.0, 4.0]), 2, 2]
 il is [0, 1]
 ib is buf_from_list of ([0.0, 1.0])
 print of [gather of [nl, il], type of (gather of [nl, il])]
-print of [gather of [sb, il], type of (gather of [sb, il])]
-print of [gather of [sb, ib], type of (gather of [sb, ib])]
+g1 is gather of [sb, il]
+print of [[buf_get of [g1, 0], buf_get of [g1, 1]], type of g1]
+g2 is gather of [sb, ib]
+print of [[buf_get of [g2, 0], buf_get of [g2, 1]], type of g2]
 print of [gather of [nl, ib], type of (gather of [nl, ib])]
 for bad in [buf_from_list of ([0.5, 1.0]), buf_from_list of ([0.0, 5.0])]:
     try:
