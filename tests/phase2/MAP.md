@@ -389,7 +389,6 @@ gates (design §9.2).
 - `N5.gather-list-buffer-indices` [R1.6d] nested-list and shaped-buffer matrices with list and buffer index vectors; buffer indices also cover fractional, out-of-range, and empty vectors
   -> all four container combinations agree by matrix container; invalid indices raise the list-index messages; an empty vector gives an empty list
   tag: the nested-list matrix with a buffer index vector raises `type_mismatch`
-
 - `N5.pcm16-byte-raises` [R1.6d] `b is buffer of 2 / b[0] is 300 / b[1] is 0 / {try buf_from_pcm16le of [b, 0, 1] catch}` printing `e.kind`, then the same with `b[0] is 1.5`
   -> `value` twice (byte values: N5, then 0..255; #1758 comment 6174964306)
   tag: no raise, samples `0.009155552842799158` and `4.577776421399579e-05` (probed main)

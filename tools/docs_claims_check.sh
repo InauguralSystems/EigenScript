@@ -212,23 +212,32 @@ def removed_strict_sentences():
             lines.extend([lineno] * len(tokens))
         return words, lines
 
-    examined = 0
+    # A text is examined in a file when its comparison runs there.  A file whose plain
+    # whitespace split has fewer tokens than the text cannot hold it and is counted apart;
+    # that split is not the one compared, so an emptied haystack cannot pass as short.
+    examined = short = 0
     hits = 0
     for file in files:
-        words, lines = words_and_lines(Path(file).read_text(encoding='utf-8'))
+        prose = Path(file).read_text(encoding='utf-8')
+        words, lines = words_and_lines(prose)
         for _origin, removed in REMOVED_STRICT_SENTENCES:
-            examined += 1
             needle, _ = words_and_lines(removed)
             width = len(needle)
+            if len(prose.split()) < width:
+                short += 1
+                continue
+            compared = False
             for start in range(len(words) - width + 1):
+                compared = True
                 if words[start:start + width] != needle:
                     continue
                 hits += 1
                 preview = ' '.join(needle[:6])
                 red(f'{file}:{lines[start]}: removed text reappeared: {preview} (#2439)')
+            examined += compared
     print(f'  REMOVED TEXTS: examined {examined} text(s) in {len(files)} file(s), '
-          f'{hits} hit(s)')
-    expected = len(REMOVED_STRICT_SENTENCES) * len(files)
+          f'{short} shorter than the text, {hits} hit(s)')
+    expected = len(REMOVED_STRICT_SENTENCES) * len(files) - short
     if examined != expected or not files:
         red(f'REMOVED TEXTS examined {examined} text(s), expected {expected}')
 
