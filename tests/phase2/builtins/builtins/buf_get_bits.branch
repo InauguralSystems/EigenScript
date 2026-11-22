@@ -1,0 +1,11 @@
+["integral-float", 4609434218613702656, "int"]
+["negative-zero", -9223372036854775808]
+["payload", 9218868437227405313]
+["index-fraction", "value"]
+["index-negative", "index_range"]
+["index-high", "index_range"]
+["index-outside-int64", "value"]
+["index-type", "type_mismatch"]
+["buffer-type", "type_mismatch"]
+["few", "type_mismatch"]
+rc=0

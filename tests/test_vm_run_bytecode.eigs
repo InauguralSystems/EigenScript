@@ -50,6 +50,20 @@ define assert_bad_descriptor(desc, reason, label) as:
 # 2 + 3 -> 5
 assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], [2, 3]], 5, "arith add"]
 
+# #1758 R1.3: new int opcodes append to the ABI; INT_CONST validates its
+# pool entry before execution, while the old numeric zero/one remain floats.
+INT_ZERO is 97
+INT_ONE is 98
+INT_CONST is 99
+assert_eq of [num_type of (vm_run_bytecode of [ABI, [2, RETURN], []]), "float", "#1758: legacy NUM_ZERO remains float"]
+assert_eq of [num_type of (vm_run_bytecode of [ABI, [3, RETURN], []]), "float", "#1758: legacy NUM_ONE remains float"]
+assert_eq of [num_type of (vm_run_bytecode of [ABI, [CONST,0,0, RETURN], [3.0]]), "float", "#1758: legacy CONST preserves a float constant"]
+assert_eq of [num_type of (vm_run_bytecode of [ABI, [INT_ZERO, RETURN], []]), "int", "#1758: appended INT_ZERO produces int"]
+assert_eq of [num_type of (vm_run_bytecode of [ABI, [INT_ONE, RETURN], []]), "int", "#1758: appended INT_ONE produces int"]
+assert_eq of [vm_run_bytecode of [ABI, [INT_CONST,0,0, RETURN], [9007199254740993]], 9007199254740993, "#1758: INT_CONST preserves exact large int"]
+assert_bad_descriptor of [[ABI, [INT_CONST,0,0, RETURN], [3.0]], "not an int", "#1758: INT_CONST rejects a float pool entry"]
+assert_bad_descriptor of [[ABI, [INT_CONST,0,0, RETURN], ["3"]], "not an int", "#1758: INT_CONST rejects a string pool entry"]
+
 # string concat "a" + "b" -> "ab"
 assert_eq of [vm_run_bytecode of [ABI, [CONST,0,0, CONST,1,0, ADD, RETURN], ["a", "b"]], "ab", "string concat via ADD"]
 
@@ -215,11 +229,11 @@ JUMP_BACK is 30
 RETURN_NULL is 41
 LOOP_STALL_CHECK is 62
 LOOP_CAP_CHECK is 63
-LOOP_ENTER is 97
-LOOP_STALL_NAMED is 98
-LOOP_CAP_NAMED is 99
-LOOP_ENTER_NAMED is 100
-LOOP_EXIT_NAMED is 101
+LOOP_ENTER is 101
+LOOP_STALL_NAMED is 102
+LOOP_CAP_NAMED is 103
+LOOP_ENTER_NAMED is 104
+LOOP_EXIT_NAMED is 105
 
 # Each of the four *_NAMED opcodes is refused with a reason that names it.
 assert_bad_descriptor of [[ABI, [LOOP_ENTER_NAMED,0,0, RETURN_NULL], []], "compiler-only", "verify: LOOP_ENTER_NAMED is compiler-only"]
@@ -233,11 +247,11 @@ assert_bad_descriptor of [[ABI, [NUM_ZERO, NUM_ZERO, LOOP_EXIT_NAMED,0,0, POP, R
 sr_exit_named is sandbox_run of [[ABI, [NUM_ZERO, NUM_ZERO, LOOP_EXIT_NAMED,0,0, POP, RETURN_NULL], []], 5]
 assert_eq of [sr_exit_named["ok"], false, "sandbox: LOOP_EXIT_NAMED descriptor refused (ok=0, no crash)"]
 
-# Legacy no-slot loop opcodes (62/63/97) are NOT compiler-only and still run.
-# OP_LOOP_ENTER (97) resets the shared counter and publishes zero; a bounded
+# Legacy no-slot loop opcodes (62/63/101) are NOT compiler-only and still run.
+# OP_LOOP_ENTER (101) resets the shared counter and publishes zero; a bounded
 # loop guarded by OP_LOOP_CAP_CHECK (63) / OP_LOOP_STALL_CHECK (62) still runs.
 le_ok is vm_run_bytecode of [ABI, [LOOP_ENTER, NUM_ONE, RETURN], []]
-assert_eq of [le_ok, 1, "legacy LOOP_ENTER (97) still runs in assembled bytecode"]
+assert_eq of [le_ok, 1, "legacy LOOP_ENTER (101) still runs in assembled bytecode"]
 # NUM_ONE; JUMP_IF_FALSE +6; LOOP_CAP_CHECK +3; JUMP_BACK 10; RETURN_NULL —
 # a runaway bounded by the sandbox cap: still accepted (ok reported capped).
 cap_legacy is sandbox_run of [[ABI, [NUM_ONE, JUMP_IF_FALSE,6,0, LOOP_CAP_CHECK,3,0, JUMP_BACK,10,0, RETURN_NULL], []], 50]
@@ -284,7 +298,7 @@ assert_bad_descriptor of [[ABI, [LINE,7,0,0], []], "truncated LINE operand", "ve
 # #1425 fix2: the shared-temporal sandbox walker must use the verifier's
 # operand width. Before the fix it decoded BINARY_LINE's line bytes as opcodes
 # and dereferenced constant index 65535, crashing the whole process.
-binary_line_walk is sandbox_run of [[ABI, [0,0,0, 0,1,0, 102,25,255,255,0, 4,103,40], [2,3]], 1000]
+binary_line_walk is sandbox_run of [[ABI, [0,0,0, 0,1,0, 106,25,255,255,0, 4,107,40], [2,3]], 1000]
 assert_eq of [binary_line_walk["ok"], false, "sandbox refuses malformed BINARY_LINE descriptor without crashing (#1425 fix2)"]
 
 # --- #704: the ABI revision stamp itself ---

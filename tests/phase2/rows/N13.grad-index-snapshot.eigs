@@ -1,0 +1,20 @@
+# ROW: N13.grad-index-snapshot
+# ITEMS: N13
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+# R2.6 (R23-1 invariant): the #1746 numerical_grad_rows/_cols waiver ended
+# with the entry-time selector snapshot (#1889): a loss callback that writes
+# NaN into the selector list cannot make an in-loop index read fail.
+calls is 0
+idx is [0, 1]
+define loss(_) as:
+    calls is calls + 1
+    idx[1] is (1e308 * 10) - (1e308 * 10)
+    return 1.0
+m is [[1.0, 2.0], [3.0, 4.0]]
+print of [numerical_grad_rows of [loss, m, idx, 0.001], calls, idx[1]]
+calls is 0
+idx is [0, 1]
+print of [numerical_grad_cols of [loss, m, idx, 0.001], calls, idx[1]]

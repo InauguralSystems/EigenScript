@@ -1,0 +1,7 @@
+# ROW: N1.literal-kind
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+print of [num_type of 3, num_type of 3.0, num_type of 1e3, num_type of 0x10]

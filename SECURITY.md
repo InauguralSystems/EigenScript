@@ -40,6 +40,17 @@ In-scope security issues:
 - HTTP server vulnerabilities in the extension build: request-parsing bugs,
   path traversal out of the configured `static_dir`, response splitting,
   unbounded resource consumption.
+  The server reads every request through llhttp, the HTTP/1.1 parser of
+  Node's `http`, at release v9.4.4, vendored unchanged under
+  `src/vendor/llhttp/` (its MIT licence is `src/vendor/llhttp/LICENSE-MIT`)
+  and compiled only into the builds with the HTTP extension. A fault in that
+  parser is in scope here as well as upstream. To replace it with a later
+  release, copy the release's `src/llhttp.c`, `src/api.c`, `src/http.c`,
+  `include/llhttp.h` and `LICENSE-MIT` over the five files, put their sha256
+  in `tools/vendor_llhttp_check.sh` (a `make precheck` row that fails when a
+  vendored file is not the recorded release), and run the HTTP sections of the
+  suite, `[45j]` above all, which judges the server against a reference built
+  from the same parser.
 - Deserialization flaws in `model_io` when loading untrusted weight files.
 - SQL injection in the DB extension's own code paths. (Callers that
   concatenate untrusted data into SQL via the `db_query*` string argument are
@@ -49,16 +60,24 @@ Out of scope:
 - Anything an EigenScript program can already do by virtue of running on the
   host (reading `~/.ssh/id_rsa`, deleting files, etc.). If the threat is
   "malicious script", the fix is "do not run malicious scripts".
-- **The destination of an outbound request.** `http_get`/`http_post` check only
-  that the URL is `http://` or `https://` and is not a curl option; there is no
+- **The destination of an outbound request.** `http_fetch` and `http_post`
+  accept only HTTP(S) URLs and refuse URL credentials; `http_get` retains its
+  separate URL-prefix check. There is no
   loopback, link-local, or private-range blocklist. A script that builds a URL
   out of request data is therefore an SSRF pivot — reaching `127.0.0.1` or
   `169.254.169.254` is the script's decision, and the script is trusted.
-  Stated explicitly because the transport side *is* guarded (`--proto` and
-  `--proto-redir` are pinned to `http,https`, which closes `file://` via
-  redirect), and a half-guarded client invites the assumption that the
-  destination is guarded too. **If you write a route that forwards a
-  client-supplied URL, you must validate the destination yourself.**
+  `http_fetch` and `http_post` do not follow redirects. The curl library
+  interprets `127.1`, `0x7f.0.0.1` and `2130706433` as `127.0.0.1`, so a
+  destination policy cannot rely on comparing the URL's text. The C
+  library's `HOSTALIASES` can also send a name to another host. **If you
+  write a route that forwards a client-supplied URL, you must validate the
+  destination yourself.**
+
+`SSLKEYLOGFILE` in a runtime's environment makes the curl/TLS library write
+the secrets of that runtime's TLS connections to the file it names. Do not
+start a server with `SSLKEYLOGFILE` set. The runtime leaves library and TLS
+environment settings untouched; see [outbound HTTP](docs/BUILTINS.md#outbound-http)
+for certificate, configuration and diagnostic settings.
 
 ## Supported Versions
 

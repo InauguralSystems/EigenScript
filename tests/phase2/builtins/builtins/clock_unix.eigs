@@ -1,0 +1,8 @@
+# R1.6 behaviour-table probe: clock_unix (float-producing; fractional seconds)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+c is clock_unix of null
+print of [nt of c, c > 1000000000]

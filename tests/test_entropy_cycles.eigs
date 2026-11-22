@@ -91,7 +91,7 @@ check of ["shared scalar leaves count per path", sdiff < 0.000000000001]
 
 # --- scalars unchanged ---
 x is 1.0
-check of ["scalar entropy unchanged: |1.0| is the formula max", (where is x) == 1.0]
+check of ["numeric where returns the scalar value", (where is x) == 1.0]
 
 # --- big graph: > 16 distinct containers spills the visited set to the
 # --- heap; must complete and stay finite (ASan run covers the free) ---

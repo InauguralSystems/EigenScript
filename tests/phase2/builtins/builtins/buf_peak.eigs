@@ -1,0 +1,14 @@
+# R1.6 behaviour-table probe: buf_peak (float-producing; float max abs; offsets and counts by N5 (Q1))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+b is buf_from_list of [1, -5, 3]
+p is buf_peak of [b, 0, 3]
+print of [p, nt of p]
+try:
+    print of ["fraction-answer", buf_peak of [b, 0.5, 1]]
+catch e:
+    print of ["offset-fraction", e.kind]
+print of (buf_peak of [b, 2.0, 1.0])

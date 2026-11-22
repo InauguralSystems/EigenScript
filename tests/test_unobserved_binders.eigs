@@ -7,7 +7,7 @@ load_file of "lib/test.eigs"
 
 unobserved:  # lint: allow W020 -- storage transparency is the subject
     try:
-        catch_only_value is 1 / 0
+        catch_only_value is 1 // 0
     catch catch_only:
         assert_eq of [catch_only.kind, "value", "1883 catch-only binding is the error dictionary"]
 
@@ -16,7 +16,7 @@ repeated_kinds is []
 unobserved:  # lint: allow W020 -- storage transparency is the subject
     for catch_iteration in range of 8:
         try:
-            repeated_value is catch_iteration / 0
+            repeated_value is catch_iteration // 0
         catch repeated_error:
             append of [repeated_kinds, repeated_error.kind]
 assert_eq of [repeated_kinds,
@@ -29,7 +29,7 @@ assert_eq of [repeated_kinds,
 # binder reads the storage its binding opcode wrote.
 unobserved:  # lint: allow W020 -- storage transparency is the subject
     try:
-        escaping_value is 1 / 0
+        escaping_value is 1 // 0
     catch escaping_error:
         escaping_seen_inside is escaping_error.kind
 escaping_after_kind is "none"
@@ -96,7 +96,7 @@ assert_eq of [module_fn_target_in_block, 42, "1883 a function's write reaches a 
 # and a function's write still reaches that module name (#1883).
 module_catch_target is 0
 try:
-    module_catch_value is 1 / 0
+    module_catch_value is 1 // 0
 catch module_catch_target:
     module_catch_kind is module_catch_target.kind
 assert_eq of [module_catch_target, 0, "1737 a handler-local catch binder leaves the module binding untouched"]
@@ -110,7 +110,7 @@ assert_eq of [module_catch_target, 42, "1883 a function's write reaches a module
 module_catch_target_in_block is 0
 unobserved:
     try:
-        module_catch_value_in_block is 1 / 0
+        module_catch_value_in_block is 1 // 0
     catch module_catch_target_in_block:
         module_catch_kind_in_block is module_catch_target_in_block.kind
 assert_eq of [module_catch_target_in_block, 0, "1737 a handler-local catch binder in an unobserved block leaves the module binding untouched"]
@@ -125,7 +125,7 @@ assert_eq of [module_catch_target_in_block, 42, "1883 a function's write reaches
 # used only inside its block, which is what makes it a promotion candidate.
 unobserved:
     try:
-        self_catch_value is 1 / 0
+        self_catch_value is 1 // 0
     catch self_catch_error:
         self_catch_error is self_catch_error
         self_catch_seen is self_catch_error
@@ -140,7 +140,7 @@ kind_catch_seen is "unset"
 try:
     unobserved:
         try:
-            kind_catch_value is 1 / 0
+            kind_catch_value is 1 // 0
         catch kind_catch_error:
             kind_catch_error is kind_catch_error.kind
             kind_catch_seen is kind_catch_error

@@ -1,0 +1,1 @@
+- Publish runtime counts and indices as exact ints (S9-K1): loop and assignment counts, historical assignment ordinals, aggregate interrogative lengths, trajectory window sizes, error source lines and scheduler sequence/task metadata. Hidden iterator positions and index-miss sentinels also keep their integer kind.

@@ -1,0 +1,22 @@
+# R1.6 behaviour-table probe: vm_run_bytecode (int-requiring; opcode bytes and ABI numbers); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":5}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+r is vm_run_bytecode of [1, [0, 0, 0, 0, 1, 0, 4, 40], [2, 3]]
+print of [r, nt of r]
+try:
+    print of ["fraction-answer", vm_run_bytecode of [1.5, [0, 0, 0, 40], [7]]]
+catch e:
+    print of ["abi-fraction", e.kind]
+try:
+    print of ["fraction-answer", vm_run_bytecode of [1, [0.5, 0, 0, 40], [7]]]
+catch e:
+    print of ["byte-fraction", e.kind]
+try:
+    print of ["256-answer", vm_run_bytecode of [1, [256, 0, 0, 40], [7]]]
+catch e:
+    print of ["byte-256", e.kind]
+f is vm_run_bytecode of [1.0, [0.0, 0.0, 0.0, 40.0], [7]]
+print of [f, nt of f]

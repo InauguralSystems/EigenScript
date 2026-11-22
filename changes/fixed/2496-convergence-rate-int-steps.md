@@ -1,0 +1,1 @@
+- `experiment.convergence_rate` adds the magnitudes of the steps as floats, so int measurements near the int64 limits have a rate: `convergence_rate of ([0, 5000000000000000000, 0, 5000000000000000000, 0, 5000000000000000000, 0, 5000000000000000000])` raised `integer overflow in '+'` and its `average_dH` is `5e+18` (#2496).

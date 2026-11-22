@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: atan (float-producing; Lua math.atan)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is atan of 1
+print of [a, nt of a]
+b is atan of 0
+print of [b, nt of b]

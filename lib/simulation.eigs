@@ -74,6 +74,8 @@ define analyze_stability(time_series) as:
 
     obs is observe of tracker
 
+    # Compatibility keys entropy/dH carry numeric value/displacement here.
+    # The displacement is null before a second numeric observation.
     return {
         "dominant": dominant,
         "phases": phase_counts,

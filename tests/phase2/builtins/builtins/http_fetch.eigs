@@ -1,0 +1,14 @@
+# #2375 new exchange builtin; phase2-exercises: {"q7":["magnitude"]}
+# Port outside the TCP range fixes the attempt's error without a listener.
+for get_seconds in [() => 0, () => 0.0009, () => 300.0001, () => -1, () => (1.0 / 0.0), () => (0.0 / 0.0)]:
+    try:
+        http_fetch of {"url": "http://127.0.0.1:99999/", "timeout": get_seconds of 0}
+        print of ["refused-timeout", "unexpected-answer"]
+    catch e:
+        print of ["refused-timeout", e.kind]
+for seconds in [0.001, 300, 300.0]:
+    try:
+        http_fetch of {"url": "http://127.0.0.1:99999/", "timeout": seconds}
+        print of ["accepted-timeout", "unexpected-answer"]
+    catch e:
+        print of ["accepted-timeout", e.kind, e.message]

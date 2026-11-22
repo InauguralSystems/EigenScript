@@ -1,0 +1,8 @@
+# R1.6 behaviour-table probe: log_softmax (float-producing; ML (float))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+r is log_softmax of [0, 0]
+print of [r, nt of r[0]]

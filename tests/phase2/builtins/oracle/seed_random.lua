@@ -1,0 +1,7 @@
+math.randomseed(9007199254740993); local a = math.random(0, 1000000)
+math.randomseed(9007199254740992); local b = math.random(0, 1000000)
+print("seeds-2^53+1-and-2^53-differ", a ~= b)
+print(pcall(math.randomseed, 1.5))
+math.randomseed(42.0); local x = math.random(0, 1000000)
+math.randomseed(42); local y = math.random(0, 1000000)
+print("integral-float-seed", x == y)

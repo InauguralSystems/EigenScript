@@ -1,0 +1,21 @@
+# R1.6 behaviour-table probe: buf_fill (float-producing; fills float storage; offsets by N5)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+b is buffer of 4
+buf_fill of [b, 1, 2, 7]
+print of [b[0], b[1], b[2], b[3], nt of b[1]]
+try:
+    buf_fill of [b, 0.5, 1, 9]
+    print of ["fraction accepted", b[0]]
+catch e:
+    print of ["offset-fraction", e.kind]
+try:
+    buf_fill of [b, 0, 1.5, 9]
+    print of ["fraction accepted", b[0]]
+catch e:
+    print of ["count-fraction", e.kind]
+buf_fill of [b, 3.0, 1.0, 5]
+print of [b[0], b[3]]

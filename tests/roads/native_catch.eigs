@@ -1,14 +1,14 @@
 # road-bind: v total
 # road-native: required
-v is 100
-total is 0
-for i in range of 1200:
+v is 100.0
+total is 0.0
+for i in range of 1200.0:
     try:
-        throw of 10
+        throw of 10.0
     catch v:
-        k is 0
-        loop while k < 12:
-            v is v + 1
+        k is 0.0
+        loop while k < 12.0:
+            v is v + 1.0
             total is total + v
-            k is k + 1
+            k is k + 1.0
 print of [v, total]

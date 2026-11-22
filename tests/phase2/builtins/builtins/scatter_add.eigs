@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: scatter_add (float-producing; indices through the N5 index reader (value); float accumulation)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+d is buffer of 3
+scatter_add of [d, [0, 2], [1, 5]]
+print of [d[0], d[1], d[2], nt of d[0]]
+try:
+    scatter_add of [d, [1.5, 0], [1, 1]]
+    print of ["fraction accepted", d[1]]
+catch e:
+    print of ["index-fraction", e.kind]
+scatter_add of [d, [1.0, 1.0], [2, 3]]
+print of [d[0], d[1]]

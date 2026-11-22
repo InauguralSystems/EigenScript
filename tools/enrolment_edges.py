@@ -12,12 +12,13 @@ import ast
 import re
 import shlex
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
 
 from _python_execution import EXECUTION_CALL_NAMES, name_of
-from _derive_variants import shell_lines
+from _derive_variants import _subst_bodies, shell_lines
 
 
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
@@ -76,68 +77,66 @@ def eigs_program_path(word: str, source: Path) -> str | None:
     return None
 
 
-def _substitutions(words):
-    """Commands run by a `$(...)` embedded in the words of one command.
-
-    `x=$("$TESTS_DIR/../tools/t.sh" arg)` is one shlex word starting with an
-    assignment, so the caller would discard it as an env prefix; the command it
-    substitutes still executes and is an edge (#1679's resolver call)."""
-    for i, w in enumerate(words):
-        if "$(" not in w:
-            continue
-        sub = [w.split("$(")[-1]] + list(words[i + 1:])
-        for j, x in enumerate(sub):
-            if x.endswith(")"):
-                sub = sub[:j + 1]
-                sub[-1] = sub[-1].rstrip(")")
-                break
-        sub = [x for x in sub if x]
-        if sub:
-            yield sub
-
-
 def shell_commands(text: str):
-    """Yield shell simple commands with wrappers removed."""
+    """Yield fresh command lists; heredoc state belongs to this text scan."""
     logical = re.sub(r"\\\n\s*", " ", text)
     for _, raw in shell_lines(logical):
-        try:
-            parts, start, quote, escaped = [], 0, None, False
-            i = 0
-            while i < len(raw):
-                char = raw[i]
-                if escaped:
-                    escaped = False
-                elif char == "\\" and quote != "'":
-                    escaped = True
-                elif quote:
-                    if char == quote:
-                        quote = None
-                elif char in "'\"":
-                    quote = char
-                elif char in ";|`" or raw[i:i + 2] == "&&":
-                    parts.append(raw[start:i]); i += 1 if raw[i:i + 2] == "&&" else 0; start = i + 1
-                i += 1
-            parts.append(raw[start:])
-            for part in parts:
-                words = shlex.split(part, comments=True)
-                yield from _substitutions(words)
-                while words and (re.match(r"^[A-Za-z_]\w*=", words[0]) or words[0] in {"if", "then", "elif", "else", "do", "while", "until", "time", "!", "{", "command", "exec", "nohup", "sudo", "xvfb-run"}):
+        for words in shell_line_commands(raw):
+            yield list(words)
+
+
+@lru_cache(maxsize=8192)
+def shell_line_commands(raw: str) -> tuple[tuple[str, ...], ...]:
+    """Cache only pure parsing, never filesystem lookups or mutable generators.
+
+    Suite recovery windows overlap and repeat command lines. shell_lines still
+    decides which lines are executable in each window; the same resulting raw
+    line always parses identically. Callers receive fresh lists so removing
+    launcher options cannot mutate a later cache hit.
+    """
+    commands = []
+    # Extract before shlex removes single-quote provenance. Only balanced
+    # executable bodies are commands; suffix path text is an outer operand.
+    for body in _subst_bodies(raw):
+        commands.extend(tuple(words) for words in shell_commands(body))
+    try:
+        parts, start, quote, escaped = [], 0, None, False
+        i = 0
+        while i < len(raw):
+            char = raw[i]
+            if escaped:
+                escaped = False
+            elif char == "\\" and quote != "'":
+                escaped = True
+            elif quote:
+                if char == quote:
+                    quote = None
+            elif char in "'\"":
+                quote = char
+            elif char in ";|`" or raw[i:i + 2] == "&&":
+                parts.append(raw[start:i]); i += 1 if raw[i:i + 2] == "&&" else 0; start = i + 1
+            i += 1
+        parts.append(raw[start:])
+        for part in parts:
+            words = shlex.split(part, comments=True)
+            while words and (re.match(r"^[A-Za-z_]\w*=", words[0]) or words[0] in {"if", "then", "elif", "else", "do", "while", "until", "time", "!", "{", "command", "exec", "nohup", "sudo", "xvfb-run"}):
+                words.pop(0)
+            if words and words[0] == "env":
+                words.pop(0)
+                while words and (words[0].startswith("-")
+                                 or re.match(r"^[A-Za-z_]\w*=", words[0])
+                                 or (re.match(r'^\$\{?[A-Za-z_]\w*(?:\[@\])?\}?$', words[0])
+                                     and words[0] not in {"$EIGS", "${EIGS}"})):
                     words.pop(0)
-                if words and words[0] == "env":
+            if words and words[0] == "timeout":
+                words.pop(0)
+                while words and (words[0].startswith("-") or re.match(r"^\d+(?:\.\d+)?[smhd]?$", words[0])):
                     words.pop(0)
-                    while words and (words[0].startswith("-")
-                                     or re.match(r"^[A-Za-z_]\w*=", words[0])
-                                     or (re.match(r'^\$\{?[A-Za-z_]\w*(?:\[@\])?\}?$', words[0])
-                                         and words[0] not in {"$EIGS", "${EIGS}"})):
-                        words.pop(0)
-                if words and words[0] == "timeout":
-                    words.pop(0)
-                    while words and (words[0].startswith("-") or re.match(r"^\d+(?:\.\d+)?[smhd]?$", words[0])):
-                        words.pop(0)
-                if words:
-                    yield words
-        except ValueError:
-            continue
+            if words:
+                commands.append(tuple(words))
+    except ValueError:
+        pass
+    return tuple(commands)
 
 
 def normalized_command_index(words: list[str], defined: frozenset[str]) -> int:
@@ -160,6 +159,12 @@ def normalized_command_index(words: list[str], defined: frozenset[str]) -> int:
     if words[0] in metadata and words[0] not in defined:
         return 0
     i = 1 + metadata.get(words[0], -1)
+    # Phase 2 launchers may be nested. Apply main's definition-scope rule to
+    # each further wrapper rather than treating its metadata as a command.
+    while i < len(words) and words[i] in metadata:
+        if words[i] not in defined:
+            return i
+        i += 1 + metadata[words[i]]
     while i < len(words) and re.match(r"^[A-Za-z_]\w*=", words[i]):
         i += 1
     if i < len(words) and words[i] == "$EIGS_TMO":
@@ -270,7 +275,9 @@ def shell_edges(source: Path, text: str, src_name: str | None = None) -> None:
         if words[0] in {"bash", "sh", "dash", "python", "python3", "source", "."}:
             words = words[1:]
             while words and words[0].startswith("-"):
-                words.pop(0)
+                option = words.pop(0)
+                if option in {"-W", "-X"} and words:
+                    words.pop(0)
         if words:
             dst = executable_path(words[0], source)
             if dst:
@@ -422,12 +429,32 @@ for source in sorted(sources):
         # members is reached.  The package directory itself is the candidate.
         emit(source.as_posix(), "/".join(source.parts[:2]))
     if source.parts and source.parts[0] == ".github":
-        for action in re.findall(r"uses:\s*\./([^\s#]+)", text):
-            target = Path(action)
-            if (ROOT / target).is_dir():
-                target /= "action.yml"
-            if (ROOT / target).is_file():
-                emit(source.as_posix(), target.as_posix())
+        # Only real step uses entries create local-action edges. YAML scalar
+        # contents and env mappings are data, even if they spell `uses:`.
+        data = yaml.safe_load(text)
+        groups = []
+        if isinstance(data, dict):
+            jobs = data.get("jobs", {})
+            if isinstance(jobs, dict):
+                groups.extend(job.get("steps", []) for job in jobs.values() if isinstance(job, dict))
+            runs = data.get("runs", {})
+            if isinstance(runs, dict):
+                groups.append(runs.get("steps", []))
+        for steps in groups:
+            if not isinstance(steps, list):
+                continue
+            for step in steps:
+                action = step.get("uses") if isinstance(step, dict) else None
+                if not isinstance(action, str) or not action.startswith("./"):
+                    continue
+                target = Path(action)
+                if ".." in target.parts:
+                    continue
+                targets = [target / "action.yml", target / "action.yaml"] if (ROOT / target).is_dir() else [target]
+                for manifest in targets:
+                    if (ROOT / manifest).is_file():
+                        emit(source.as_posix(), manifest.as_posix())
+                        break
 
 makefile = ROOT / "Makefile"
 if makefile.is_file():

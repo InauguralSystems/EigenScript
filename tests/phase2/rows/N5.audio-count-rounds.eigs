@@ -1,0 +1,11 @@
+# ROW: N5.audio-count-rounds
+# ITEMS: N5
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+# R2.6 (Q7 magnitude): a generator's sample count is dur * rate ROUNDED half
+# away from zero (Q4), not truncated. No device is opened: rate is 44100.
+for n in [0.4, 0.5, 2.4, 2.5, 2.6]:
+    d is n / 44100
+    print of [n, len of (audio_sine of [440, d, 0.5]), len of (audio_saw of [440, d, 0.5]), len of (audio_square of [440, d, 0.5]), len of (audio_noise of [d, 0.5]), len of (audio_sweep of [100, 200, d, 0.5, 0])]

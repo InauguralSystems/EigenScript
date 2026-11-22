@@ -14,25 +14,26 @@ static void check(int ok, const char *name) {
     printf("%s: %s\n", ok ? "PASS" : "FAIL", name);
 }
 
-int main(void) {
-    EigsState *st = eigs_open();
-    if (!st) return 2;
+/* #1808/#2098: intentional refusals need a handler on the active VM.
+ * Keep the existing Phase 2 assertions inside that real catch context. */
+static Value *db_params_probe(Value *probe_arg) {
+    (void)probe_arg;
     Value *arg = make_list(8);
     list_append_owned(arg, make_str("select $1, $2, $3, $4, $5, $6, $7"));
     list_append(arg, make_bool(1));
-    list_append_owned(arg, make_num(3));
+    list_append_owned(arg, make_float(3));
     list_append_owned(arg, make_str("s"));
     list_append(arg, make_bool(0));
-    list_append_owned(arg, make_num(1234567));
-    list_append_owned(arg, make_num(0.1 + 0.2));
-    list_append_owned(arg, make_num(9007199254740991.0));
+    list_append_owned(arg, make_int(1234567));
+    list_append_owned(arg, make_float(0.1 + 0.2));
+    list_append_owned(arg, make_int(INT64_C(9007199254740991)));
     const char *sql = NULL; const char *params[DB_MAX_PARAMS];
     char numbuf[DB_MAX_PARAMS][64]; unsigned int types[DB_MAX_PARAMS];
     int n = -1;
     int ok = db_build_query(arg, &sql, &n, params, numbuf, types);
     check(ok && n == 7, "seven parameters built");
     check(ok && strcmp(params[0], "true") == 0 && types[0] == 16, "true binds as SQL boolean 'true' (OID 16)");
-    check(ok && strcmp(params[1], "3") == 0 && types[1] == 0, "a number keeps the inferred type");
+    check(ok && strcmp(params[1], "3.0") == 0 && types[1] == 0, "a number keeps the inferred type");
     check(ok && strcmp(params[2], "s") == 0 && types[2] == 0, "a string keeps the inferred type");
     check(ok && strcmp(params[3], "false") == 0 && types[3] == 16, "false binds as SQL boolean 'false' (OID 16)");
     check(ok && strcmp(params[4], "1234567") == 0, "1234567 binds without losing digits");
@@ -47,7 +48,39 @@ int main(void) {
           "a dict parameter still raises");
     eigs_clear_error();
     val_decref(bad);
+    /* R1.7 N6/N14: exact int digits and Python-repr float text. */
+    Value *numbers = make_list(8);
+    list_append_owned(numbers, make_str("select $1, $2, $3, $4, $5, $6, $7"));
+    list_append_owned(numbers, make_int(1234567));
+    list_append_owned(numbers, make_int(INT64_C(9007199254740993)));
+    list_append_owned(numbers, make_float(0.1 + 0.2));
+    list_append_owned(numbers, make_float(3.0));
+    list_append_owned(numbers, make_float(-0.0));
+    list_append_owned(numbers, make_float(0.1));
+    list_append_owned(numbers, make_int(INT64_MIN));
+    const char *expected[] = {"1234567", "9007199254740993",
+        "0.30000000000000004", "3.0", "-0.0", "0.1", "-9223372036854775808"};
+    ok = db_build_query(numbers, &sql, &n, params, numbuf, types);
+    for (int i = 0; i < 7; i++) {
+        char label[96];
+        snprintf(label, sizeof(label), "N6/N14 parameter %d: %s", i + 1, expected[i]);
+        check(ok && n == 7 && strcmp(params[i], expected[i]) == 0 && types[i] == 0, label);
+    }
+    val_decref(numbers);
+    return make_bool(1);
+}
+
+int main(void) {
+    EigsState *st = eigs_open();
+    if (!st) return 2;
+    Value *probe = make_builtin(db_params_probe);
+    eigs_set_global("db_params_probe", probe);
+    val_decref(probe);
+    Value *result = eigs_eval_string("try:\n    db_params_probe of null\ncatch e:\n    false\n");
+    int probe_ok = result && result->type == VAL_BOOL && result->data.boolean && !eigs_has_error();
+    if (!probe_ok) fprintf(stderr, "db params: VM probe execution failed\n");
+    val_decref(result);
     eigs_close(st);
-    printf("db params: %d passed, %d failed (10 declared)\n", passed, failed);
-    return failed || passed != 10;
+    printf("db params: %d passed, %d failed (17 declared)\n", passed, failed);
+    return !probe_ok || failed || passed != 17;
 }

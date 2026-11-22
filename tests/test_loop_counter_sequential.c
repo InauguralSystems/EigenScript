@@ -4,6 +4,7 @@
  */
 #include "eigs_embed.h"
 #include "eigenscript.h"
+#include "vm.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -40,18 +41,20 @@ static void step(Env *env, const char *label, int stall,
      * so sequential reads do not defeat the ordinary warm-cache path.
      * This getter returns a borrowed slot: do not decrement its ownership. */
     EigsSlot value = env_get_hashed_slot(env, counter, 0, &found);
-    int numeric = slot_is_num(value) ||
-        (slot_is_ptr(value) && slot_as_ptr(value)->type == VAL_NUM);
-    double actual = slot_is_num(value) ? SLOT_NUM_RAW(value) :
-        (numeric ? VAL_NUM_RAW(slot_as_ptr(value)) : -1);
+    /* S9-K1 (#1758) replaces the old float-only expectation: a count is
+     * an int, including boxed counts beyond the SMI range and 2^53. */
+    int integer = slot_is_smi(value) ||
+        (slot_is_ptr(value) && slot_as_ptr(value)->type == VAL_INT);
+    int64_t actual = slot_is_smi(value) ? slot_smi_val(value) :
+        (integer ? VAL_I64_RAW(slot_as_ptr(value)) : -1);
     int assignments = env_get_assign_count(env, counter, 0);
-    int ok = rc == 0 && !g_has_error && found && numeric &&
-        actual == (double)expected_iterations &&
+    int ok = rc == 0 && !g_has_error && found && integer &&
+        actual == expected_iterations &&
         g_loop_iterations == expected_iterations &&
         assignments == expected_assignments && (!require_setter || calls == 1);
-    printf("ROW %s step=%s mt=%d shared=%d value=%.0f expected=%lld assignments=%d expected_assignments=%d rc=%d setter_calls=%u setter_required=%d\n",
+    printf("ROW %s step=%s mt=%d shared=%d value=%lld expected=%lld assignments=%d expected_assignments=%d rc=%d setter_calls=%u setter_required=%d\n",
            label, stall ? "stall" : "cap", g_vm_multithreaded,
-           env->mt_shared, actual, expected_iterations, assignments,
+           env->mt_shared, (long long)actual, expected_iterations, assignments,
            expected_assignments, rc, calls, require_setter);
     check(ok, label);
 }
@@ -65,7 +68,7 @@ static void grow_env(Env *env, const char *label) {
     for (int i = 0; i <= before; ++i) {
         char name[64];
         snprintf(name, sizeof(name), "sequential_growth_%d", i);
-        Value *value = make_num(i);
+        Value *value = make_float(i);
         env_set_local(env, name, value);
         val_decref(value);
     }
@@ -95,6 +98,43 @@ static int exercise(Env *env, const char *label, long long *iterations) {
     step(env, label, 0, ++*iterations, ++assignments);
     step(env, label, 1, ++*iterations, ++assignments);
     return assignments;
+}
+
+static void scheduler_metadata(void) {
+    /* The trace reader has no script builtin; inspect its real returned
+     * dicts after running an ordinary task, including fractional sleep. */
+    g_task_trace_on = 1;
+    Value *result = (Value *)eigs_eval_string(
+        "define count_metadata_worker() as:\n"
+        "    task_sleep of 0.5\n"
+        "    return 7\n"
+        "task_join of (task_spawn of count_metadata_worker)\n");
+    check(result && !g_has_error, "ordinary task produces scheduler metadata");
+    if (result) val_decref(result);
+    Value *trace = task_sched_trace_read();
+    int metadata_ok = trace && trace->type == VAL_LIST && trace->data.list.count > 0;
+    int saw_task = 0, saw_fraction = 0;
+    if (metadata_ok) {
+        for (int i = 0; i < trace->data.list.count; ++i) {
+            Value *row = list_get_ref(trace, i);
+            if (!row || row->type != VAL_DICT) { metadata_ok = 0; break; }
+            EIGS_VIEW(seq_view); EIGS_VIEW(task_view); EIGS_VIEW(tick_view);
+            Value *seq = dict_get_view(row, "seq", &seq_view);
+            Value *task = dict_get_view(row, "task", &task_view);
+            Value *tick = dict_get_view(row, "tick", &tick_view);
+            if (!seq || seq->type != VAL_INT || VAL_I64_RAW(seq) != i ||
+                !task || task->type != VAL_INT || VAL_I64_RAW(task) < 0 ||
+                !tick || tick->type != VAL_FLOAT) {
+                metadata_ok = 0; break;
+            }
+            saw_task |= VAL_I64_RAW(task) > 0;
+            saw_fraction |= VAL_F64_RAW(tick) == 0.5;
+        }
+    }
+    check(metadata_ok && saw_task, "scheduler sequence and task ids publish exact ints");
+    check(metadata_ok && saw_fraction, "scheduler virtual time preserves fractional float ticks");
+    if (trace) val_decref(trace);
+    g_task_trace_on = 0;
 }
 
 int main(void) {
@@ -133,7 +173,17 @@ int main(void) {
           "reattach resets thread counter and preserves restored state mode");
     g_unobserved_depth = 1;
     step(g_global_env, "reattached-root", 0, 1, root_assignments + 1);
+    /* Exercise cached SMI publication, the first boxed count and a count
+     * binary64 cannot represent; no loop budget or convergence is involved. */
+    g_loop_iterations = SLOT_SMI_MAX - 1;
+    step(g_global_env, "last-smi-count", 0, SLOT_SMI_MAX, root_assignments + 2);
+    step(g_global_env, "first-boxed-count", 1, SLOT_SMI_MAX + 1, root_assignments + 3);
+    step(g_global_env, "next-boxed-count", 0, SLOT_SMI_MAX + 2, root_assignments + 4);
+    g_loop_iterations = INT64_C(9007199254740992);
+    step(g_global_env, "exact-count-above-2pow53", 0,
+         INT64_C(9007199254740993), root_assignments + 5);
     g_unobserved_depth = saved_unobserved;
+    scheduler_metadata();
 
     /* Dynamic chunks share the root environment but must not reserve a hidden
      * binding for each loop. Exercise compilation above MAX_LOCALS and verify

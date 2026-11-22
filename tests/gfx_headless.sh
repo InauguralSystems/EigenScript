@@ -44,9 +44,10 @@ gfx_headless_run() {
     platform=$(uname -s) || return 125
 
     (
-        unset DISPLAY WAYLAND_DISPLAY
         export SDL_VIDEODRIVER=dummy
         gfx_address_space_apply "$binary" "$instrumentation" "$platform" "$cap_kib" || exit 125
-        exec "$timeout_cmd" "$seconds" "$@"
+        # Unsetting a function's temporary DISPLAY assignment can expose the
+        # caller's exported value. Remove it at the child process boundary.
+        exec env -u DISPLAY -u WAYLAND_DISPLAY "$timeout_cmd" "$seconds" "$@"
     )
 }

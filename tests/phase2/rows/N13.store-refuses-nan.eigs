@@ -1,0 +1,15 @@
+# ROW: N13.store-refuses-nan
+# ITEMS: N13
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+# TIERS: off default osr
+x is (1e308 * 10) - (1e308 * 10)
+s is store_open of "r23-map.db"
+try:
+    k is store_put of [s, "c", {"v": x}]  # lint: allow W001
+catch e:
+    print of e.kind
+print of (store_count of [s, "c"])
+store_close of s

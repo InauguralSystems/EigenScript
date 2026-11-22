@@ -4,7 +4,23 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT" || exit 2
 if [ "${1:-}" = "--no-new-inline" ]; then
     [ "$#" -eq 2 ] || { echo "usage: $0 --no-new-inline <base>" >&2; exit 2; }
-    base=$2
+    requested_base=$2
+    # A dispatch can compare an older branch with a newer main that moved an
+    # inherited section into a fragment. Only labels added since the common
+    # ancestor are new on this branch (the changelog gate uses the same base).
+    case "$requested_base" in -*)
+        echo "section_fragments_check: base must name a commit, not an option" >&2
+        exit 2 ;;
+    esac
+    resolved_base=$(git rev-parse --verify "$requested_base^{commit}") || {
+        echo "section_fragments_check: cannot resolve base $requested_base as a commit" >&2
+        exit 2
+    }
+    base=$(git merge-base "$resolved_base" HEAD) || {
+        echo "section_fragments_check: no merge-base with $requested_base" >&2
+        exit 2
+    }
+    echo "section-fragments base: requested=$requested_base commit=$resolved_base merge_base=$base"
     work=$(mktemp -d "${TMPDIR:-/tmp}/eigs_inline_sections.XXXXXX") || exit 2
     trap 'rm -rf "$work"' EXIT
     if ! git show "$base:tests/run_all_tests.sh" > "$work/base-runner.sh"; then
@@ -111,5 +127,56 @@ else
     checks=$((checks + 1)); echo '  FAIL: mutation failed for a reason other than fragment blindness'
     printf '%s\n' "$out" | sed 's/^/    /'; bad=1
 fi
+# A section inherited from the common ancestor is not newly introduced by
+# this branch when a later main has moved it out of the inline runner.
+fixture="$work/ancestry"
+mkdir -p "$fixture/tools" "$fixture/tests/sections" || exit 2
+cp tools/section_fragments_check.sh tools/section_plan.sh tools/runner_text.sh "$fixture/tools/" || exit 2
+printf '%s\n' 'echo "[inherited] existing section"' > "$fixture/tests/run_all_tests.sh"
+git -C "$fixture" init -q || exit 2
+git -C "$fixture" config user.name 'Section gate selftest' || exit 2
+git -C "$fixture" config user.email 'selftest@example.invalid' || exit 2
+git -C "$fixture" add . || exit 2
+git -C "$fixture" commit -qm 'common ancestor has inline section' || exit 2
+ancestor=$(git -C "$fixture" rev-parse HEAD) || exit 2
+printf '%s\n' '# section moved into a fragment on later main' > "$fixture/tests/run_all_tests.sh"
+git -C "$fixture" commit -qam 'main moved the inherited section' || exit 2
+main_tip=$(git -C "$fixture" rev-parse HEAD) || exit 2
+git -C "$fixture" checkout -q --detach "$ancestor" || exit 2
+printf '%s\n' '# independent branch work' >> "$fixture/tests/run_all_tests.sh"
+git -C "$fixture" commit -qam 'branch retains inherited section' || exit 2
+name='ancestry: later main removal does not invent a new branch label'
+check bash "$fixture/tools/section_fragments_check.sh" --no-new-inline "$main_tip"
+printf '%s\n' 'echo "[newinline] genuinely new inline section"' >> "$fixture/tests/run_all_tests.sh"
+inline_rejected() {
+    local output rc
+    output=$(bash "$fixture/tools/section_fragments_check.sh" --no-new-inline "$main_tip" 2>&1); rc=$?
+    [ "$rc" -eq 1 ] && printf '%s\n' "$output" | grep -qF 'FAIL: new inline section label [newinline]'
+}
+name='ancestry: a genuinely new inline label is still rejected'
+check inline_rejected
+bad_base_rejected() {
+    local output rc
+    output=$(bash "$fixture/tools/section_fragments_check.sh" --no-new-inline nonexistent-selftest-ref 2>&1); rc=$?
+    [ "$rc" -eq 2 ] && printf '%s\n' "$output" | grep -qF 'cannot resolve base nonexistent-selftest-ref as a commit'
+}
+name='ancestry: an unreadable base is a loud failure'
+check bad_base_rejected
+tree=$(git -C "$fixture" rev-parse 'HEAD^{tree}') || exit 2
+unrelated=$(git -C "$fixture" commit-tree "$tree" -m 'unrelated root') || exit 2
+unrelated_base_rejected() {
+    local output rc
+    output=$(bash "$fixture/tools/section_fragments_check.sh" --no-new-inline "$unrelated" 2>&1); rc=$?
+    [ "$rc" -eq 2 ] && printf '%s\n' "$output" | grep -qF 'no merge-base with'
+}
+name='ancestry: unrelated histories fail loudly'
+check unrelated_base_rejected
+option_base_rejected() {
+    local output rc
+    output=$(bash "$fixture/tools/section_fragments_check.sh" --no-new-inline --all 2>&1); rc=$?
+    [ "$rc" -eq 2 ] && printf '%s\n' "$output" | grep -qF 'base must name a commit, not an option'
+}
+name='ancestry: option-like base is rejected'
+check option_base_rejected
 echo "section fragments selftest: checks=$checks failures=$bad"
 exit "$bad"

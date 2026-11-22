@@ -581,6 +581,39 @@ static void t_libm_ulp(void) {
     }
     printf("  pow   max ulp %" PRIu64 " (worst x=%a y=%a)\n", maxu, wx, wy);
     CHECK(maxu <= 8, "pow exceeds 8 ulp");
+    /* #2444: an infinite or NaN argument has the system library's answer,
+     * exactly (the same bits, or both NaN). Every one-argument function of
+     * the table above at the three values; atan2 and pow on every pair of the
+     * set below that holds one of them. */
+    {
+        const double nf[3] = { INFINITY, -INFINITY, NAN };
+        const double set[13] = { INFINITY, -INFINITY, NAN, 0.0, -0.0, 1.0, -1.0,
+                                 2.0, -2.0, 3.0, -3.0, 0.5, -0.5 };
+        int examined = 0;
+        for (size_t f = 0; f < sizeof(F) / sizeof(F[0]); f++)
+            for (int i = 0; i < 3; i++) {
+                double want = F[f].ref(nf[i]), got = F[f].mine(nf[i]);
+                examined++;
+                CHECK((isnan(want) && isnan(got)) || bits_of(want) == bits_of(got),
+                      "%s(%g): %a, the system library %a", F[f].name, nf[i], got, want);
+            }
+        for (int i = 0; i < 13; i++)
+            for (int j = 0; j < 13; j++) {
+                double a = set[i], b = set[j];
+                if (isfinite(a) && isfinite(b)) continue;
+                double w1 = atan2(a, b), g1 = eigs_atan2(a, b);
+                double w2 = pow(a, b), g2 = eigs_pow(a, b);
+                examined += 2;
+                CHECK((isnan(w1) && isnan(g1)) || bits_of(w1) == bits_of(g1),
+                      "atan2(%g, %g): %a, the system library %a", a, b, g1, w1);
+                CHECK((isnan(w2) && isnan(g2)) || bits_of(w2) == bits_of(g2),
+                      "pow(%g, %g): %a, the system library %a", a, b, g2, w2);
+            }
+        printf("  non-finite arguments: examined %d (declared %d)\n", examined,
+               (int)(sizeof(F) / sizeof(F[0])) * 3 + (13 * 13 - 10 * 10) * 2);
+        CHECK(examined == (int)(sizeof(F) / sizeof(F[0])) * 3 + (13 * 13 - 10 * 10) * 2,
+              "non-finite arguments: examined %d", examined);
+    }
     /* integer-exponent pow must be close to exact */
     for (int it = 0; it < 100000; it++) {
         double x = rnd_range(-100.0, 100.0);

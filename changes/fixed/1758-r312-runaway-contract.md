@@ -1,0 +1,1 @@
+- Elided numeric samples inside `unobserved:` retain live value and running-best updates without writing line-qualified observer-history snapshots (RULING R31-2, #1758)

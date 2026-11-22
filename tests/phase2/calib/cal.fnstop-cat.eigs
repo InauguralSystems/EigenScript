@@ -1,0 +1,20 @@
+# ROW: cal.fnstop-cat
+# ITEMS: N3
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop cat ADD
+# OPS: ADD
+# the ADD guard bails on two strings
+define cat(a, b) as:
+    t is a + b
+    return t
+k is 0
+r is 0
+loop while k < 60:
+    r is cat of ["x", "y"]
+    k is k + 1
+print of r
+try:
+    print of (5.5 & 1)
+catch e:
+    print of e.kind

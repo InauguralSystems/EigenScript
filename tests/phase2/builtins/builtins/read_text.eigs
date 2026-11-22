@@ -1,0 +1,30 @@
+# R1.6 behaviour-table probe: read_text (other; string result; numeric over-cap size is internal tape metadata (#1668), with no numeric argument or successful numeric result; ruling R1.6a-D1; over-cap REPLAY, #1890, is not exercised)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+try:
+    print of ["missing-answer", read_text of (p + "/missing.txt")]
+catch e:
+    print of ["missing", e.kind]
+s is "x"
+i is 0
+loop while i < 20:
+    s is s + s
+    i is i + 1
+big is s + s + s + s + s + s + s + s + s + s + "x"
+f is p + "/big.txt"
+write_text of [f, big]
+print of ["written", len of big]
+try:
+    print of ["over-cap-answer", len of (read_text of f)]
+catch e:
+    prefix_text is "read_text: '" + f + "'"
+    print of ["over-cap", e.kind, starts_with of [e.message, prefix_text]]
+    print of ["over-cap-tail", substr of [e.message, len of prefix_text, 1000]]
+w is p + "/small.txt"
+write_text of [w, "hi"]
+t is read_text of w
+print of [t, type of t]

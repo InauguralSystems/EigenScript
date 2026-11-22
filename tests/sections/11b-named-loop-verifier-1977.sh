@@ -1,5 +1,5 @@
 echo "[11b] Private-loop-counter opcodes are compiler-only (#1977; interpreter/default/OSR)"
-# A sandbox descriptor that abuses OP_LOOP_EXIT_NAMED (101) must be refused by
+# A sandbox descriptor that abuses OP_LOOP_EXIT_NAMED (105) must be refused by
 # the verifier, not run: before the fix the standalone form double-freed the
 # host's value (SIGABRT) and the nested form corrupted the host loop's own
 # private counter ("loop counter depth 0 out of range"). Run across all three

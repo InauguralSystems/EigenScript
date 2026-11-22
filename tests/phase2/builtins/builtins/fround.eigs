@@ -1,0 +1,32 @@
+# phase2-exercises: {"q7": []}
+try:
+    x is fround of 0.1
+    print of [x, num_type of x]
+catch e:
+    print of ["float", e.kind, (index_of of [e.message, "fround"]) >= 0]
+try:
+    x is fround of 1e39
+    print of [x, num_type of x]
+catch e:
+    print of ["float", e.kind, (index_of of [e.message, "fround"]) >= 0]
+try:
+    x is fround of -1e39
+    print of [x, num_type of x]
+catch e:
+    print of ["float", e.kind, (index_of of [e.message, "fround"]) >= 0]
+try:
+    x is fround of 16777217
+    print of [x, num_type of x]
+catch e:
+    print of ["float", e.kind, (index_of of [e.message, "fround"]) >= 0]
+try:
+    x is fround of 9007199254740993
+    print of [x, num_type of x]
+catch e:
+    print of ["float", e.kind, (index_of of [e.message, "fround"]) >= 0]
+try:
+    x is fround of "bad"
+    print of ["non-number-ANSWER", x]
+catch e:
+    print of ["non-number", e.kind]
+print of (math_flags of null).overflow

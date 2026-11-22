@@ -1,0 +1,36 @@
+# ROW: N13.binary-line-int-errors
+# ITEMS: N13 N3 N4 A
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop binary_add ADD
+# OPS: BINARY_LINE ADD
+# Sync10 #1425/#2035 + S9-K1: line scopes do not convert exact int operands.
+# LINE-NUMBER SENSITIVE: error lines are literal physical operator lines.
+define binary_add(a, b) as:
+    local answer is a + (
+        b)
+    return answer
+
+define binary_idiv(a, b) as:
+    local answer is a // (
+        b)
+    return answer
+
+local i is 0.0
+loop while i < 60.0:
+    local answer is binary_add of [2, 3]
+    i is i + 1.0
+try:
+    local answer is binary_add of [9223372036854775807, 1]
+catch e:
+    print of [e.kind, e.line == 10, num_type of e.line]
+try:
+    local answer is binary_idiv of [-9223372036854775807 - 1, -1]
+catch e:
+    print of [e.kind, e.line == 15, num_type of e.line]
+try:
+    local answer is binary_idiv of [7, 0]
+catch e:
+    print of [e.kind, e.line == 15, num_type of e.line]
+local quotient is binary_idiv of [-7, 2]
+print of [quotient, num_type of quotient]

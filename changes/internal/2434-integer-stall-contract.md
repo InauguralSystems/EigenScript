@@ -1,0 +1,1 @@
+- Exercise exact boxed-integer subjects in the observer stall contract (#2434).

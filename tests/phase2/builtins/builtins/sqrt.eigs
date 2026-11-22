@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: sqrt (float-producing; Lua math.sqrt)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is sqrt of 4
+print of [a, nt of a]
+b is sqrt of 2
+print of [b, nt of b]

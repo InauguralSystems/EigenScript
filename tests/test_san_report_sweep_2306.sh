@@ -39,7 +39,9 @@ SECTIONS='0g 103b 104 105b 114 114b 115 120 87 90 99f 99h 99j'
 JUDGED='[0g] [9/15] [16/16] [114] [114b] [120] [103b] [104] [105b] [87] [90] [115] [99f] [99h] [99j]'
 # Exact count of rows in JUDGED that pass the leak control. Update this pin in
 # the same change when a judged section gains or loses a row.
-WANT_CONTROL_ROWS=84
+# R31-6 adds one Assert completion row plus eight task capture-status rows:
+# DET1/DET2, VTA/VTB/VTR and SSA/SSB/SSR. The passing-control population is 84 + 1 + 8.
+WANT_CONTROL_ROWS=93
 
 PASS=0
 FAIL=0

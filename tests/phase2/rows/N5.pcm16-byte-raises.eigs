@@ -1,0 +1,18 @@
+# ROW: N5.pcm16-byte-raises
+# ITEMS: N5
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+b is buffer of 2
+b[0] is 300
+b[1] is 0
+try:
+    buf_from_pcm16le of [b, 0, 1]
+catch e:
+    print of e.kind
+b[0] is 1.5
+try:
+    buf_from_pcm16le of [b, 0, 1]
+catch e:
+    print of e.kind

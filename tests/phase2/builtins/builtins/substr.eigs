@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: substr (int-requiring; start and length (Lua string.sub)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of (substr of ["hello", 1, 2])
+try:
+    print of ["fraction-answer", substr of ["hello", 1.5, 2]]
+catch e:
+    print of ["start-fraction", e.kind]
+try:
+    print of ["fraction-answer", substr of ["hello", 1, 2.5]]
+catch e:
+    print of ["length-fraction", e.kind]
+print of (substr of ["hello", 1.0, 2.0])

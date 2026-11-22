@@ -1,0 +1,1 @@
+- Add independent per-state embedding calls for strict argument guards and arithmetic traps (#2439).

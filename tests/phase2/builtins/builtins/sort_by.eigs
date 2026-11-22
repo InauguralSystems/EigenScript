@@ -1,0 +1,11 @@
+# R1.6 behaviour-table probe: sort_by (other, LOSS; numeric keys compared exactly from R1.3)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define key(r) as:
+    return r[1]
+rows is [["a", 9007199254740993], ["b", 9007199254740992], ["c", 2.5]]
+s is sort_by of [rows, key]
+print of s

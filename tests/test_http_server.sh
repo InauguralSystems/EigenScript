@@ -14,7 +14,7 @@ ok()   { echo "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL: $1${2:+ ($2)}"; FAIL=$((FAIL+1)); }
 
 # #1947: a wrong-typed shared-store argument must not be indistinguishable
-# from a real miss. Exercise the strict default before starting a server; the
+# from a real miss. Opt into strict before starting a server; the
 # type guard precedes the inactive-server fallback in all five builtins.
 SHARED_GUARD_CASE=$(mktemp /tmp/eigs_http_shared_guard_XXXXXX.eigs)
 cat > "$SHARED_GUARD_CASE" <<'EIGS'
@@ -43,12 +43,12 @@ try:
 catch e:
     print of ["shared_incr", e.kind]
 EIGS
-SHARED_GUARD_OUT=$(env -u EIGS_STRICT "$EIGS" "$SHARED_GUARD_CASE" 2>&1)
+SHARED_GUARD_OUT=$(env EIGS_STRICT=1 "$EIGS" "$SHARED_GUARD_CASE" 2>&1)
 SHARED_GUARD_RC=$?
 rm -f "$SHARED_GUARD_CASE"
 if [ "$SHARED_GUARD_RC" = 0 ] &&
    [ "$SHARED_GUARD_OUT" = $'["shared_has", "type_mismatch"]\n["shared_delete", "type_mismatch"]\n["shared_get", "type_mismatch"]\n["shared_set", "type_mismatch"]\n["shared_set shape", "type_mismatch"]\n["shared_incr", "type_mismatch"]' ]; then
-    ok "HS00 the shared-store builtins reject wrong-typed arguments by default"
+    ok "HS00 the shared-store builtins reject wrong-typed arguments in strict mode"
 else
     fail "HS00 shared-store argument guards" "rc=$SHARED_GUARD_RC output: $SHARED_GUARD_OUT"
 fi

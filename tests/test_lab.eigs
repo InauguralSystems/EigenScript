@@ -29,8 +29,8 @@ assert_near of [st.mean, 44.89, 0.1, "mean temperature"]
 assert_true of [st.min < 44.8, "min tracked"]
 assert_true of [st.max > 45.1, "max tracked"]
 
-# Stability
-assert_true of [is_stable of [exp, "temperature"], "temperature is stable"]
+# STD stability needs a full window of eleven finite values.
+assert_false of [is_stable of [exp, "temperature"], "five measurements do not fill the stability window"]
 
 # Record an outlier
 record of [exp, "temperature", 72.1]

@@ -1,0 +1,5 @@
+[36, "undefined_name"]
+18
+["huge-scale-answer", 18]
+24
+rc=0

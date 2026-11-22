@@ -31,6 +31,8 @@ _variable_data is {}
 _variable_units is {}
 
 # Observer tracker (shared; observer state reflects most recent record call)
+# Compatibility record fields entropy/dH carry routed where/why: numeric
+# value/displacement (null before a step), nonnumeric entropy/change.
 _obs_tracker is 0
 
 # DB path
@@ -209,7 +211,7 @@ define status(exp, variable) as:
     entropy is last_obs.entropy
     dH is last_obs.dH
 
-    # Detect outliers via entropy spikes
+    # Detect outliers via routed-step spikes (numeric displacement / entropy dH)
     spikes is detect_entropy_spikes of [vals, 0.5]
     outlier_vals is []
     for i in range of (len of spikes):

@@ -42,6 +42,15 @@ indirect1 is dsp of [table, 1, 5]
 check of ["dispatch indirect agrees k=0", indirect0 == direct0]
 check of ["dispatch indirect agrees k=1", indirect1 == direct1]
 
+# N5 / R1.6c: the C fallback must balance a returned numeric child. A SMI
+# hides double-retention by the outer borrow scan; this int is a HEAP value.
+boxed_arg is 1152921504606846977
+check of ["dispatch input is boxed int", (num_type of boxed_arg) == "int"]
+identity_table is [num]
+boxed_result is dsp of [identity_table, 0, boxed_arg]
+check of ["dispatch boxed result kind", (num_type of boxed_result) == "int"]
+check of ["dispatch boxed result exact", boxed_result == boxed_arg]
+
 # Out-of-range key: both paths return null.
 check of ["dispatch direct OOR null", (dispatch of [table, 9, 5]) == null]
 check of ["dispatch indirect OOR null", (dsp of [table, 9, 5]) == null]

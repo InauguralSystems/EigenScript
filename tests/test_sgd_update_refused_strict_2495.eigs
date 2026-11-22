@@ -1,0 +1,39 @@
+load_file of "lib/test.eigs"
+
+# #2495, under EIGS_STRICT=1 (this file's row in tests/suite_program_env.txt): a RESULT that is not finite
+# raises there. 1e308 - 10 * (0 - 1e308) is past the largest double, so the first cell's result is refused;
+# the step must then have written neither that cell nor the one after it.
+p is [1e308, 5]
+try:
+    sgd_update of [p, [0 - 1e308, 1], 10]
+    assert_true of [false, "strict result: the step did not raise"]
+catch e:
+    assert_true of [e.kind == "value", "strict result: kind " + (str of e.kind)]
+assert_true of [p == [1e308, 5], "strict result: the parameter after the raise is " + (str of p)]
+
+m is [[1, 2], [1e308, 5]]
+try:
+    sgd_update of [m, [[1, 1], [0 - 1e308, 1]], 10]
+    assert_true of [false, "strict result, 2-D: the step did not raise"]
+catch e:
+    assert_true of [e.kind == "value", "strict result, 2-D: kind " + (str of e.kind)]
+assert_true of [m == [[1, 2], [1e308, 5]], "strict result, 2-D: the parameter after the raise is " + (str of m)]
+
+# The rows and cols variants.
+mr is [[1, 2], [1e308, 5]]
+try:
+    sgd_update_rows of [mr, [[1, 1], [0 - 1e308, 1]], [0, 1], 10]
+    assert_true of [false, "strict result, rows: the step did not raise"]
+catch e:
+    assert_true of [e.kind == "value", "strict result, rows: kind " + (str of e.kind)]
+assert_true of [mr == [[1, 2], [1e308, 5]] and (num_type of mr[0][0]) == "int", "strict result, rows: the parameter after the raise is " + (str of mr)]
+
+mc is [[1, 2], [1e308, 5]]
+try:
+    sgd_update_cols of [mc, [[1, 1], [0 - 1e308, 1]], [1, 0], 10]
+    assert_true of [false, "strict result, cols: the step did not raise"]
+catch e:
+    assert_true of [e.kind == "value", "strict result, cols: kind " + (str of e.kind)]
+assert_true of [mc == [[1, 2], [1e308, 5]] and (num_type of mc[0][1]) == "int", "strict result, cols: the parameter after the raise is " + (str of mc)]
+
+test_summary of null

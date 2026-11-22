@@ -259,6 +259,10 @@ def main():
     r = converse([INIT, did_open("x is 5\nprint of x\n"), SHUTDOWN, EXIT])
     check("clean document → empty diagnostics", diagnostics(r) == [])
 
+    # #1758 N4/Q6: shared tokenizer/parser/compiler accept both new spellings.
+    r = converse([INIT, did_open("x is -7 // 2\nx //= 2\nprint of x\n"), SHUTDOWN, EXIT])
+    check("floor division and compound assignment have clean diagnostics", diagnostics(r) == [])
+
     # #1366: these are capacity/stack invariants rather than observable LSP
     # semantics at today's 16-parameter parser cap. Pin the shared bound and
     # heap allocation so neither can silently regress while behavior stays green.
@@ -585,6 +589,38 @@ def main():
           value == builtin_expected and "\\n" not in value)
     if value != builtin_expected or "\\n" in value:
         print("    decoded contents.value: %r" % value)
+
+    # #1758 R1.8: the lexer already records the literal kind exactly. Hover
+    # must report that kind, including integer-looking floats and decimal
+    # overflow, rather than guess from a double or the displayed digits.
+    numeric_literals = [
+        ("0", "int"),
+        ("42", "int"),
+        ("9007199254740993", "int"),
+        ("9223372036854775807", "int"),
+        ("0xffffffffffffffff", "int"),
+        ("0x10000000000000000", "int"),
+        ("0.0", "float"),
+        ("3.0", "float"),
+        ("1.5", "float"),
+        ("1e3", "float"),
+        (".5", "float"),
+        ("9223372036854775808", "float"),
+    ]
+    numeric_doc = "".join("print of " + literal + "\n"
+                          for literal, _ in numeric_literals)
+    numeric_requests = [
+        {"jsonrpc": "2.0", "id": 8000 + i, "method": "textDocument/hover",
+         "params": {"textDocument": {"uri": URI},
+                    "position": {"line": i, "character": 9}}}
+        for i in range(len(numeric_literals))
+    ]
+    r = converse([INIT, did_open(numeric_doc)] + numeric_requests + [SHUTDOWN, EXIT])
+    for i, (literal, kind) in enumerate(numeric_literals):
+        result = (by_id(r, 8000 + i) or {}).get("result") or {}
+        check("numeric literal hover: " + literal + " is " + kind,
+              result.get("contents", {}).get("value") ==
+              "```eigenscript\n" + kind + "\n```")
 
     # --- definition of a used symbol returns a location ---
     define_doc = "define helper(a) as:\n    return a\nr is helper of 5\n"

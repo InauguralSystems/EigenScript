@@ -1,9 +1,10 @@
 # Observer interaction tests — the observer model under stress.
-# Tests that predicates, entropy tracking, and thresholds interact
+# Tests that predicates, numeric trajectories, nonnumeric entropy and thresholds interact
 # correctly with loops, functions, and the unobserved block.
 
 # === PREDICATE CONSISTENCY ===
-# A converged value should NOT also be diverging/improving.
+# This fast-decay witness reaches convergence after its last D2 improvement
+# expires; convergence and improving can overlap on other histories.
 
 # Drive a value to convergence
 x is 100
@@ -30,7 +31,7 @@ assert of [type of rep == "str", "OI4 report after function call is string"]
 
 # === UNOBSERVED BLOCK SEMANTICS ===
 
-# Inside unobserved, assignments skip update_observer
+# Inside unobserved, numeric assignments still update their value trajectory.
 a is 50
 obs_before is observe of a
 
@@ -39,7 +40,7 @@ unobserved:
     a is a + 1
     a is a + 1
 
-# After unobserved, the observer state should be stale (from before)
+# The final numeric value and its observations survive unobserved.
 assert of [a == 53, "OI5 unobserved block still mutates value"]
 
 # Re-observe by assigning
@@ -49,7 +50,7 @@ assert of [type of obs_after == "list", "OI6 observe returns list after re-assig
 
 # === OBSERVER TRACKING ACROSS LOOP ===
 
-# Verify that repeated halving drives entropy toward convergence.
+# Verify repeated halving reduces the numeric value toward convergence.
 # Use a counter to track iterations and check the value afterward.
 z is 1000
 for iter in range of 20:
@@ -109,7 +110,7 @@ assert of [(p == false) or (p == true), "OI16 predicate after observed free"]
 # promoted: an optimization may not change an answer, and it may
 # certainly not turn one into an error. (The literal answers moved with
 # #1049: the block no longer drops the samples from the value window, so
-# a 9.0 -> 4.5 step reads "moving" and the binding counts as observed;
+# a 9.0 -> 4.5 step reads "improving" under D2 and the binding counts as observed;
 # the invariant under test — promoted == env-bound — is unchanged.)
 
 unobserved:  # lint: allow W020 -- promotion of a block-local name is the point
@@ -122,10 +123,10 @@ unobserved:  # lint: allow W020 -- promotion of a block-local name is the point
     plain895 is m895
 
 assert of [plain895 == 4.5, "OI-895 the plain read still works"]
-assert of [rep895 == "moving", "OI-895 report of a promoted name resolves"]
-assert of [repv895 == "moving", "OI-895 report_value of a promoted name resolves"]
+assert of [rep895 == "improving", "OI-895 report of a promoted name resolves"]
+assert of [repv895 == "improving", "OI-895 report_value of a promoted name resolves"]
 assert of [traj895.observed, "OI-895 trajectory of a promoted name resolves"]
-assert of [obs895[0] == "moving", "OI-895 observe of a promoted name resolves"]
+assert of [obs895[0] == "improving", "OI-895 observe of a promoted name resolves"]
 
 # Same block, but the name escapes it, so nothing is promoted and the
 # *_NAME opcodes run. The answers must be identical.

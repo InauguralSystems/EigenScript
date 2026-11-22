@@ -1,0 +1,7 @@
+# R1.6 behaviour-table probe: list_contains (other; equality via values_equal (N2))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of [list_contains of [[9007199254740992], 9007199254740993], list_contains of [[2.0], 2], list_contains of [[9007199254740993], 9007199254740993]]

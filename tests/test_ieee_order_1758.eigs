@@ -1,0 +1,68 @@
+# R2.2 Q8 / RULING R22-1: one mixed numeric order, stable equivalent ties.
+# Run with strict off: the test deliberately constructs IEEE NaN/infinity.
+load_file of "lib/test.eigs"
+
+zero_cases is [
+    [[0.0, 0, -0.0], "[-0.0, 0.0, 0]"],
+    [[0.0, -0.0, 0], "[-0.0, 0.0, 0]"],
+    [[0, 0.0, -0.0], "[-0.0, 0, 0.0]"],
+    [[0, -0.0, 0.0], "[-0.0, 0, 0.0]"],
+    [[-0.0, 0.0, 0], "[-0.0, 0.0, 0]"],
+    [[-0.0, 0, 0.0], "[-0.0, 0, 0.0]"]
+]
+for zero_case in zero_cases:
+    local numeric_input is zero_case[0]
+    local keyed is sort_by of [numeric_input, (v) => v]
+    assert_eq of [str of keyed, zero_case[1], "R22-1 sort_by all mixed-zero permutations"]
+    assert_eq of [str of (sort of numeric_input), zero_case[1], "R22-1 sort all mixed-zero permutations"]
+
+assert_true of [0 == -0.0, "integer and negative float zero remain equal"]
+assert_true of [0.0 == -0.0, "float signed zeros remain equal"]
+assert_eq of [str of (sort of [9007199254740993, 9007199254740992.0, 9007199254740992]), "[9007199254740992.0, 9007199254740992, 9007199254740993]", "nonzero mixed ordering retains exact int comparison and stable ties"]
+
+assert_eq of [str of (min of [0, -0.0]), "-0.0", "min chooses negative zero after integer zero"]
+assert_eq of [str of (min of [-0.0, 0]), "-0.0", "min keeps negative zero before integer zero"]
+assert_eq of [str of (max of [-0.0, 0]), "0", "max chooses integer zero after negative zero"]
+assert_eq of [str of (max of [0, -0.0]), "0", "max keeps integer zero before negative zero"]
+assert_eq of [str of (min of [0.0, -0.0]), "-0.0", "min follows IEEE signed-zero order"]
+assert_eq of [str of (max of [-0.0, 0.0]), "0.0", "max follows IEEE signed-zero order"]
+for reducer in [min, max]:
+    assert_eq of [num_type of (reducer of [0, 0.0]), "int", "equivalent zero tie keeps first int"]
+    assert_eq of [num_type of (reducer of [0.0, 0]), "float", "equivalent zero tie keeps first float"]
+
+not_a_number is 0.0 / 0.0
+positive_infinity is 1.0 / 0.0
+negative_infinity is -1.0 / 0.0
+ordered is sort of [3, not_a_number, 1, positive_infinity, 2, negative_infinity]
+assert_eq of [[ordered[0], ordered[1], ordered[2], ordered[3], ordered[4]], [negative_infinity, 1, 2, 3, positive_infinity], "sort orders finite mixed numeric_input between infinities"]
+assert_false of [ordered[5] == ordered[5], "sort puts NaN after positive infinity"]
+
+records is [[not_a_number, "first_nan"], [0.0, "plus_zero"], [0, "int_zero"], [-0.0, "minus_zero"], [not_a_number, "second_nan"], [positive_infinity, "positive_inf"], [negative_infinity, "negative_inf"]]
+calls is 0
+define ieee_key(record) as:
+    calls is calls + 1
+    return record[0]
+keyed is sort_by of [records, ieee_key]
+assert_eq of [[record[1] for record in keyed], ["negative_inf", "minus_zero", "plus_zero", "int_zero", "positive_inf", "first_nan", "second_nan"], "sort_by keeps equivalent zeros and NaN keys stable"]
+assert_eq of [calls, 7, "sort_by evaluates every IEEE key once"]
+assert_eq of [records[0][1], "first_nan", "sort_by leaves input order intact"]
+
+for reducer in [min, max]:
+    for numeric_input in [[not_a_number, 1, 2], [1, not_a_number, 2], [1, 2, not_a_number]]:
+        local result is reducer of numeric_input
+        assert_false of [result == result, "min/max propagates NaN from every position"]
+    local caught is false
+    try:
+        reducer of [not_a_number, "bad"]
+    catch e:
+        caught is (e.kind == "type_mismatch") and (contains of [e.message, "element 1 is str"])
+    assert_true of [caught, "NaN does not hide a later non-number"]
+    for empty_thunk in [(v) => reducer of [], (v) => reducer of ([])]:
+        local empty_kind is ""
+        try:
+            empty_thunk of null
+        catch e:
+            empty_kind is e.kind
+        assert_eq of [empty_kind, "value", "empty min/max value errors still stand"]
+
+test_summary of null

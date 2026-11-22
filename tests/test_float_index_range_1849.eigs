@@ -19,15 +19,15 @@ define expect_error(label, expected_kind, expected_message, thunk) as:
     assert_eq of [caught.kind, expected_kind, label + " kind"]
     assert_eq of [caught.message, expected_message, label + " message"]
 
-expect_error of ["positive list index", "index_range", "index 10000000000 out of range (list length 3)", (_) => xs[huge]]
-expect_error of ["negative list index", "index_range", "index -3000000000 out of range (list length 3)", (_) => xs[very_negative]]
-expect_error of ["positive string index", "index_range", "string index 10000000000 out of range (length 3)", (_) => s[huge]]
-expect_error of ["positive buffer index", "index_range", "buffer index 10000000000 out of range (length 3)", (_) => b[huge]]
-expect_error of ["negative buf_get index", "index_range", "buffer index -3000000000 out of range (length 3)", (_) => buf_get of [b, very_negative]]
-expect_error of ["positive dispatch key", "index_range", "dispatch key 10000000000 out of range", (_) => dispatch of [table, huge, null]]
-expect_error of ["negative dispatch key", "index_range", "dispatch key -3000000000 out of range", (_) => dispatch of [table, very_negative, null]]
-expect_error of ["positive slice bound", "index_range", "slice 0:10000000000 out of range (length 3)", (_) => xs[0:huge]]
-expect_error of ["negative slice bound", "index_range", "slice -3000000000:3 out of range (length 3)", (_) => xs[very_negative:]]
+expect_error of ["positive list index", "index_range", "index 10000000000.0 out of range (list length 3)", (_) => xs[huge]]
+expect_error of ["negative list index", "index_range", "index -3000000000.0 out of range (list length 3)", (_) => xs[very_negative]]
+expect_error of ["positive string index", "index_range", "string index 10000000000.0 out of range (length 3)", (_) => s[huge]]
+expect_error of ["positive buffer index", "index_range", "buffer index 10000000000.0 out of range (length 3)", (_) => b[huge]]
+expect_error of ["negative buf_get index", "index_range", "buffer index -3000000000.0 out of range (length 3)", (_) => buf_get of [b, very_negative]]
+expect_error of ["positive dispatch key", "index_range", "dispatch key 10000000000.0 out of range", (_) => dispatch of [table, huge, null]]
+expect_error of ["negative dispatch key", "index_range", "dispatch key -3000000000.0 out of range", (_) => dispatch of [table, very_negative, null]]
+expect_error of ["positive slice bound", "index_range", "slice 0:10000000000.0 out of range (length 3)", (_) => xs[0:huge]]
+expect_error of ["negative slice bound", "index_range", "slice -3000000000.0:3 out of range (length 3)", (_) => xs[very_negative:]]
 
 # Regression for printf %g's six-digit rounding: diagnostics use exactly the
 # same integral spelling as `print of`, for both signs and every indexable type.
@@ -44,8 +44,8 @@ expect_error of ["precise negative buffer index", "index_range", "buffer index -
 # list non-literal at the call site.
 positive_args is [table, huge, null]
 negative_args is [table, very_negative, null]
-expect_error of ["positive builtin dispatch key", "index_range", "dispatch key 10000000000 out of range", (_) => dispatch of positive_args]
-expect_error of ["negative builtin dispatch key", "index_range", "dispatch key -3000000000 out of range", (_) => dispatch of negative_args]
+expect_error of ["positive builtin dispatch key", "index_range", "dispatch key 10000000000.0 out of range", (_) => dispatch of positive_args]
+expect_error of ["negative builtin dispatch key", "index_range", "dispatch key -3000000000.0 out of range", (_) => dispatch of negative_args]
 
 expect_error of ["fractional list index", "value", "index must be an integer, got 1.5", (_) => xs[1.5]]
 expect_error of ["fractional dispatch key", "value", "dispatch key must be an integer, got 1.5", (_) => dispatch of [table, 1.5, null]]
@@ -56,5 +56,50 @@ expect_error of ["fractional dispatch key below int range", "value", "dispatch k
 frac_args is [table, 2147483647.5, null]
 expect_error of ["fractional builtin dispatch key above int range", "value", "dispatch key must be an integer, got 2.14748e+09", (_) => dispatch of frac_args]
 expect_error of ["fractional slice bound", "value", "slice bound must be an integer, got 1.5", (_) => xs[1.5:]]
+
+# Sync #10: main's range diagnostic also applies to exact Phase2 integers.
+# Keep the index-domain check in int64 rather than rounding an int to float.
+huge_int is 1099511627776
+negative_int is -1099511627776
+buf is buffer of 2
+text is "ab"
+
+define write_list(index) as:
+    xs[index] is 99.0
+
+define write_buffer(index) as:
+    buf[index] is 99.0
+
+expect_error of ["positive int list index", "index_range", "index 1099511627776 out of range (list length 3)", (_) => xs[huge_int]]
+expect_error of ["negative int list index", "index_range", "index -1099511627776 out of range (list length 3)", (_) => xs[negative_int]]
+expect_error of ["positive int buffer index", "index_range", "buffer index 1099511627776 out of range (length 2)", (_) => buf[huge_int]]
+expect_error of ["negative int buffer index", "index_range", "buffer index -1099511627776 out of range (length 2)", (_) => buf[negative_int]]
+expect_error of ["positive int string index", "index_range", "string index 1099511627776 out of range (length 2)", (_) => text[huge_int]]
+expect_error of ["negative int string index", "index_range", "string index -1099511627776 out of range (length 2)", (_) => text[negative_int]]
+expect_error of ["positive int list store", "index_range", "index 1099511627776 out of range (list length 3)", (_) => write_list of huge_int]
+expect_error of ["negative int list store", "index_range", "index -1099511627776 out of range (list length 3)", (_) => write_list of negative_int]
+expect_error of ["positive int buffer store", "index_range", "buffer index 1099511627776 out of range (length 2)", (_) => write_buffer of huge_int]
+expect_error of ["negative int buffer store", "index_range", "buffer index -1099511627776 out of range (length 2)", (_) => write_buffer of negative_int]
+
+# N5 refuses a float without a signed-int64 representation before the C-int
+# range path. This Phase2 boundary precedes main's old double-only clamp.
+outside_i64 is 9223372036854775808.0
+expect_error of ["outside int64 list index", "value", "index must be an integer, got 9.22337e+18", (_) => xs[outside_i64]]
+expect_error of ["outside int64 buffer index", "value", "index must be an integer, got 9.22337e+18", (_) => buf[outside_i64]]
+expect_error of ["outside int64 string index", "value", "index must be an integer, got 9.22337e+18", (_) => text[outside_i64]]
+expect_error of ["outside int64 list store", "value", "index must be an integer, got 9.22337e+18", (_) => write_list of outside_i64]
+expect_error of ["outside int64 buffer store", "value", "index must be an integer, got 9.22337e+18", (_) => write_buffer of outside_i64]
+
+# A boxed int above 2^53 must retain its supplied digits in every tier.
+boxed_index is 9007199254740993
+expect_error of ["boxed int list index", "index_range", "index 9007199254740993 out of range (list length 3)", (_) => xs[boxed_index]]
+expect_error of ["boxed int buffer store", "index_range", "buffer index 9007199254740993 out of range (length 2)", (_) => write_buffer of boxed_index]
+
+assert_eq of [xs[-1], 3.5, "valid exact negative list index"]
+assert_eq of [text[-1], "b", "valid exact negative string index"]
+xs[0] is 7.5
+buf[0] is 8.5
+assert_eq of [xs[0], 7.5, "valid exact list store"]
+assert_eq of [buf[0], 8.5, "valid exact buffer store"]
 
 test_summary of null

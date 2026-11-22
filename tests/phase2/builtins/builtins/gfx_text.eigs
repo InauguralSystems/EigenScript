@@ -1,0 +1,18 @@
+# R1.6 behaviour-table probe: gfx_text (other, Q7 geometry,bounded; each glyph cell is clipped in float space, then rounded (bitmap font: EIGS_GFX_FONT is a nonexistent path)); phase2-exercises: {"q7":["geometry","bounded"]}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+ok is gfx_open of [64, 48, "r16"]
+print of ["open", ok]
+gfx_clear of [0, 0, 0]
+gfx_text of [0.6, 0, "T", 0, 255, 0]
+print of [gfx_read of [0, 0], gfx_read of [5, 0], gfx_read of [3, 3]]
+gfx_clear of [0, 0, 0]
+gfx_text of [0, 0, "T", 0, 255, 0, 3e9]
+print of (gfx_read of [32, 24])
+gfx_clear of [0, 0, 0]
+gfx_text of [10, 10, "T", 300, -20, 127.6]
+print of (gfx_read of [12, 12])
+gfx_close of null

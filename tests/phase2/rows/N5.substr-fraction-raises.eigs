@@ -1,0 +1,10 @@
+# ROW: N5.substr-fraction-raises
+# ITEMS: N5
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS:
+try:
+    print of (substr of ["hello", 1.5, 2])
+catch e:
+    print of e.kind

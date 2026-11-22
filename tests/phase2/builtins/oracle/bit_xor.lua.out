@@ -1,0 +1,3 @@
+9007199254740992	integer
+false	bit_xor.lua:3: number has no integer representation
+5	integer

@@ -1,0 +1,23 @@
+# R1.6 behaviour-table probe: max (int-preserving, LOSS; Lua math.max returns the winning argument)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is max of [9007199254740993, 9007199254740992]
+print of [a, nt of a]
+b is max of [3, 2.5]
+print of [b, nt of b]
+c is max of [2, 2.5]
+print of [c, nt of c]
+d is max of 7
+print of [d, nt of d]
+print of [max of [3, 3.0], nt of (max of [3, 3.0]), max of [3.0, 3], nt of (max of [3.0, 3])]
+try:
+    print of ["empty-answer", max of []]
+catch e:
+    print of ["empty", e.kind]
+try:
+    print of ["empty-list-answer", max of ([])]
+catch e:
+    print of ["empty-list", e.kind]

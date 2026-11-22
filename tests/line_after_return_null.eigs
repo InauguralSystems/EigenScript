@@ -7,14 +7,14 @@ define nothing(x) as:
     y is x
 define one(x) as:
     y is x
-    return 1
+    return 1.0
 define hot_null(g, x) as:
-    q is x + 1
+    q is x + 1.0
     r is x / (g of x)
     return r
-k is 0
-loop while k < 6000:
+k is 0.0
+loop while k < 6000.0:
     w is nothing of k
     w is hot_null of [one, k]
-    k is k + 1
-w is hot_null of [nothing, 4]
+    k is k + 1.0
+w is hot_null of [nothing, 4.0]

@@ -1,0 +1,15 @@
+# R1.6 behaviour-table probe: task_sleep (other; virtual milliseconds kept as a float, no C integer conversion)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define sleeper(args) as:
+    task_sleep of args[0]
+    task_send of [0, args[1]]
+    return 0
+a is task_spawn of [sleeper, [2.5, "slept-2.5"]]
+b is task_spawn of [sleeper, [2, "slept-2"]]
+r1 is task_recv of null
+r2 is task_recv of null
+print of [r1, r2]

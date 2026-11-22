@@ -2,8 +2,8 @@
 --- SB1: Stable is reachable (small drift, moderate H) ---
 false
 moving
-0.15374218032876188
--0.002748882576939643
+44
+1
 
 --- SB2: Converged is NOT stable ---
 false

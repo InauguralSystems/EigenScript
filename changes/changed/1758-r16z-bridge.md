@@ -1,0 +1,1 @@
+- Buffer indexing and iteration refuse stored non-finite elements in every strict mode. Buffer equality compares stored doubles with IEEE equality, without raises or math flags. The transitional numeric bridge and caller-less helpers are removed (R1.6z, #1758)

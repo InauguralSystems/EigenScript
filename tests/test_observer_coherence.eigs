@@ -1,13 +1,5 @@
-# test_observer_coherence.eigs — #412: the two settled decisions.
-#
-# 1. Unity is the HORIZON: entropy(|x| = 1.0) is the formula's smooth
-#    maximum (1.0), not the old special-cased 0 — so a value placed exactly
-#    at 1.0 never reads `converged` (a flat run there is `equilibrium`:
-#    steady, but not at a low-entropy home). entropy(0) stays 0 (home point).
-# 2. `how` is deadband-normalized settledness of the last step:
-#    1 - min(1, |dH| / dh_zero) — a real 0..1 gradient of the ENTROPY
-#    trajectory (value-channel readings are report_value's job, #294),
-#    pure in the recorded dH so `how is x at L` matches the live reading.
+# R3.1: numeric interrogations read value, displacement and relative-step
+# settledness. First samples have no displacement or settledness.
 
 pass_count is 0
 fail_count is 0
@@ -21,27 +13,24 @@ define check(args) as:
         fail_count is fail_count + 1
         print of ("FAIL: " + label)
 
-# --- unity horizon ---
+# --- numeric value channel ---
 x is 1.0
-check of ["entropy at exactly 1.0 is the formula max", (where is x) == 1.0]
+check of ["first why is null", (why is x) == null]
+check of ["first how is null", (how is x) == null]
+check of ["numeric where preserves 1.0", (where is x) == 1.0]
 nx is 0 - 1.0
-check of ["entropy at exactly -1.0 too", (where is nx) == 1.0]
+check of ["numeric where preserves negative sign", (where is nx) == (0 - 1.0)]
 z is 0.0
-check of ["entropy at 0 stays 0 (home point)", (where is z) == 0.0]
+check of ["numeric where preserves zero", (where is z) == 0.0]
 
 y is 1.0
 i is 0
 loop while i < 12:
     y is 1.0
     i is i + 1
-# #861: a constant at 1.0 is SETTLED — the value route certifies it like any
-# other constant. #412's horizon insight survives where it belongs: in the
-# MEASUREMENT — entropy(1.0) is still the formula maximum (checked below) —
-# but it no longer vetoes the settle verdict, which is about motion, not
-# information content.
-check of ["flat run AT 1.0 certifies converged (value route)", (report of y) == "converged"]
-check of ["converged predicate fires at the horizon too", (converged of y)]
-check of ["the horizon property lives in the measurement: H(1.0) is max", (where is y) == 1.0]
+check of ["flat run at 1.0 certifies converged", (report of y) == "converged"]
+check of ["constant 1.0 is converged", (converged of y)]
+check of ["constant where is its current value", (where is y) == 1.0]
 
 # a genuine convergence to the home region still classifies converged
 c is 100.0
@@ -61,8 +50,8 @@ check of ["settled binding: how == 1", (how is s) == 1.0]
 
 b is 5.0
 b is 1.0
-check of ["entropy step >= deadband: how == 0", (how is b) == 0.0]
-check of ["how tracks the recorded dH", (why is b) > 0.001]
+check of ["how normalizes the relative step", (abs of ((how is b) - (0.001 / (0.001 + 0.8)))) < 0.000000000000001]
+check of ["why records the displacement", (why is b) == (0 - 4.0)]
 
 # in [0, 1] always
 q is 3.0

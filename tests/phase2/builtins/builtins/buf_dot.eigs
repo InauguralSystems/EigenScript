@@ -1,0 +1,15 @@
+# R1.6 behaviour-table probe: buf_dot (float-producing; buffer dot product; offsets and counts by N5 (Q1))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+a is buf_from_list of [1, 2, 3]
+b is buf_from_list of [4, 5, 6]
+d is buf_dot of [a, b, 0, 0, 3]
+print of [d, nt of d]
+try:
+    print of ["fraction-answer", buf_dot of [a, b, 0.5, 0, 1]]
+catch e:
+    print of ["offset-fraction", e.kind]
+print of (buf_dot of [a, b, 1.0, 1.0, 2.0])

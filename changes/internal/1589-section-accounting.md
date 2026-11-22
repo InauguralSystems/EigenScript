@@ -1,0 +1,1 @@
+- Keep shared suite epilogue checks outside the final selected section's assertion accounting (#1589).

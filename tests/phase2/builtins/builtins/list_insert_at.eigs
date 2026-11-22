@@ -1,0 +1,16 @@
+# R1.6 behaviour-table probe: list_insert_at (int-requiring; position (Lua table.insert)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":3}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+xs is [1, 2, 3]
+list_insert_at of [xs, 1, 9]
+print of xs
+try:
+    list_insert_at of [xs, 1.5, 8]
+    print of ["fraction accepted", xs]
+catch e:
+    print of ["index-fraction", e.kind]
+list_insert_at of [xs, 0.0, 7]
+print of xs

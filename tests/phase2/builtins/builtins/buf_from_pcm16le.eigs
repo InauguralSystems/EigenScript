@@ -1,0 +1,27 @@
+# R1.6 behaviour-table probe: buf_from_pcm16le (int-requiring; byte values through the Q1 byte reader (#1758 comment 6174964306)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+b is buffer of 2
+b[0] is 300
+b[1] is 0
+try:
+    r is buf_from_pcm16le of [b, 0, 1]
+    print of ["300-answer", r[0]]
+catch e:
+    print of ["byte-300", e.kind]
+b[0] is 1.5
+try:
+    r is buf_from_pcm16le of [b, 0, 1]
+    print of ["fraction-answer", r[0]]
+catch e:
+    print of ["byte-fraction", e.kind]
+b[0] is 255
+b[1] is 127
+u is buf_from_pcm16le of [b, 0, 1]
+print of [u[0], nt of u[0]]
+c is buf_from_list of [0, 128, 0, 0]
+s is buf_from_pcm16le of [c, 0.0, 2.0]
+print of [s[0], s[1]]

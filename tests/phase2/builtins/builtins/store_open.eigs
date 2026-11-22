@@ -1,0 +1,10 @@
+# R1.6 behaviour-table probe: store_open (int-preserving; handle dict with int id/gen fields)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+s is store_open of (p + "/db")
+print of [s["_type"], nt of s["_store_id"], nt of s["_store_gen"]]
+store_close of s

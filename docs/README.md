@@ -22,7 +22,7 @@ WASM build, no install required.
 |---|---|
 | [BUILTINS.md](BUILTINS.md) | Every built-in function: signature, behavior, errors. |
 | [STDLIB.md](STDLIB.md) | The 73 standard-library modules under `lib/`. |
-| [OBSERVER.md](OBSERVER.md) | Observer semantics in depth: entropy, dH, predicates, `unobserved`. |
+| [OBSERVER.md](OBSERVER.md) | Observer semantics: numeric value/displacement, non-numeric entropy/dH, predicates, `unobserved`. |
 | [TRACE.md](TRACE.md) | Temporal interrogatives, the trace tape, deterministic replay, and replay's nondeterminism boundary. |
 | [DEBUGGING.md](DEBUGGING.md) | The failure→replay→interrogate loop and the `--step` tape-stepper (step back, trajectories, breakpoints). |
 | [DIAGNOSTICS.md](DIAGNOSTICS.md) | Error messages, the linter, and the formatter. |

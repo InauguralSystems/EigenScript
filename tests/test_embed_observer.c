@@ -10,6 +10,15 @@
 #include "eigenscript.h"
 #include "vm.h"
 
+/* The direct baseline lane compiles this fixture against the pre-R3 API. */
+static void observe_native_num(Env *env, int idx, double x) {
+#ifdef EIGS_OBS_BASELINE_ONLY
+    observer_slot_update_num(env, idx, x);
+#else
+    observer_slot_update_numeric(env, idx, slot_from_f64(x));
+#endif
+}
+
 static int passed, failed;
 static void check(int ok, const char *name) {
     printf("%s: %s\n", ok ? "PASS" : "FAIL", name);
@@ -34,12 +43,12 @@ static void raw_host(void) {
         return;
     }
     Env *env = env_new(NULL);
-    env_set_local_owned(env, "raw_x", make_num(100));
+    env_set_local_owned(env, "raw_x", make_float(100));
     double x = 100;
     for (int i = 0; i < 12; i++) {
         x *= 0.5;
-        env_set_local_owned(env, "raw_x", make_num(x));
-        observer_slot_update_num(env, 0, x);
+        env_set_local_owned(env, "raw_x", make_float(x));
+        observe_native_num(env, 0, x);
     }
     int answer = observer_predicate_at(env, 0, 2 /* improving */, 1);
     printf("raw host: obs_needed=%d improving=%d\n", g_obs_needed, answer);
@@ -53,13 +62,13 @@ static void direct(void) {
     EigsState *st = eigs_open();
     if (!st) { check(0, "open direct state"); return; }
     Env *env = g_global_env;
-    env_set_local_owned(env, "native_x", make_num(100));
+    env_set_local_owned(env, "native_x", make_float(100));
     int idx = env->count - 1;
     double x = 100;
     for (int i = 0; i < 12; i++) {
         x *= 0.5;
-        env_set_local_owned(env, "native_x", make_num(x));
-        observer_slot_update_num(env, idx, x);
+        env_set_local_owned(env, "native_x", make_float(x));
+        observe_native_num(env, idx, x);
     }
     int answer = observer_predicate_at(env, idx, 2 /* improving opcode operand */, 1);
     printf("native improving=%d\n", answer);
@@ -70,7 +79,7 @@ static void direct(void) {
     x = 100;
     for (int i = 0; i < 12; i++) {
         x *= 0.5;
-        emit(c, OP_CONST, (uint16_t)constant(c, make_num(x)));
+        emit(c, OP_CONST, (uint16_t)constant(c, make_float(x)));
         emit(c, OP_SET_NAME, (uint16_t)name);
         emit(c, OP_OBSERVE_NAME_POST, (uint16_t)name);
         chunk_emit(c, OP_POP, 1);
@@ -203,16 +212,16 @@ static void gap(const char *source, const char *name) {
 static EigsValue *host_reader(EigsValue *arg) {
     (void)arg;
     Env *env = env_new(NULL);
-    env_set_local_owned(env, "x", make_num(100));
+    env_set_local_owned(env, "x", make_float(100));
     double x = 100;
     for (int i = 0; i < 12; i++) {
         x *= 0.5;
-        env_set_local_owned(env, "x", make_num(x));
-        observer_slot_update_num(env, 0, x);
+        env_set_local_owned(env, "x", make_float(x));
+        observe_native_num(env, 0, x);
     }
     int answer = observer_predicate_at(env, 0, 2 /* improving */, 1);
     env_decref(env);
-    return make_num(answer);
+    return make_float(answer);
 }
 /* Execute the documented explicit-host-arm recipe. No compiled predicate
  * may rescue the read-free unit: interrogate its slot directly from C. */
@@ -260,6 +269,30 @@ static void isolated_gap_truth(void) {
     check(g_obs_history_gap,
           "isolated gap: flag is set before the next eval boundary");
     gap("improving of x", "isolated gap: eval-unit read after the direct read still raises");
+    eigs_close(st);
+}
+/* R32-4 (#1758): a direct read answers exactly 1, not merely nonzero, when
+ * the answer comes from the entropy route. A binding reaches that route
+ * with a full window of a constant string, then a number (which clears the
+ * equality route), then the string again as an unobserved sample. A reader
+ * that returned 2 or -1 passed every program-level check, because a
+ * predicate word is a bool there; a host sees the int. */
+static void entropy_direct(void) {
+    EigsState *st = eigs_open();
+    if (!st) { check(0, "entropy host: open state"); return; }
+    eval_ok("x is \"aaaa\"\nx is \"aaaa\"\nx is \"aaaa\"\nx is \"aaaa\"\n"
+            "x is \"aaaa\"\nx is \"aaaa\"\nx is \"aaaa\"\nx is \"aaaa\"\n"
+            "x is \"aaaa\"\nx is \"aaaa\"\nx is \"aaaa\"\nx is \"aaaa\"\n"
+            "x is 5\n"
+            "unobserved:\n    x is \"aaaa\"\n"
+            "c is converged of x\nc\n",
+            "entropy host: unit executes");
+    int slot = -1;
+    for (int i = 0; i < g_global_env->count; i++)
+        if (!strcmp(g_global_env->names[i], "x")) { slot = i; break; }
+    int answer = slot < 0 ? -1 : observer_predicate_at(g_global_env, slot, 0 /* converged */, 1);
+    printf("entropy host: DIRECT converged=%d\n", answer);
+    check(answer == 1, "entropy host: the entropy route answers exactly 1");
     eigs_close(st);
 }
 static void eval_contract(void) {
@@ -360,6 +393,7 @@ int main(int argc, char **argv) {
         eval_contract();
         isolated_host();
         isolated_gap_truth();
+        entropy_direct();
     }
 #endif
     printf("embed observer: %d passed, %d failed\n", passed, failed);

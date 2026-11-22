@@ -9,6 +9,98 @@
 
 #include "eigenscript.h"
 
+/* #2444: opt-in readers for arithmetic and numeric pass-throughs only.
+ * Conversion/data readers keep their finite-only contract. These borrow the
+ * argument and preserve its kind; callers stop on g_has_error. */
+static inline EigsNum eigs_arithmetic_number(const Value *v, const char *who) {
+    EigsNum n = { .is_int = 0, .value = { .f64 = 0.0 } };
+    (void)eigs_number_read(v, &n, who);
+    return n;
+}
+static inline double eigs_arithmetic_float(const Value *v, const char *who) {
+    EigsNum n = eigs_arithmetic_number(v, who);
+    return n.is_int ? (double)n.value.i64 : n.value.f64;
+}
+
+/* #1758 N9 — builtins_int.c, shared table-driven width engine. */
+Value* builtin_i8_wrapping_add(Value *arg);
+Value* builtin_i8_wrapping_sub(Value *arg);
+Value* builtin_i8_wrapping_mul(Value *arg);
+Value* builtin_i8_checked_add(Value *arg);
+Value* builtin_i8_checked_sub(Value *arg);
+Value* builtin_i8_checked_mul(Value *arg);
+Value* builtin_i8_saturating_add(Value *arg);
+Value* builtin_i8_saturating_sub(Value *arg);
+Value* builtin_i8_saturating_mul(Value *arg);
+Value* builtin_i16_wrapping_add(Value *arg);
+Value* builtin_i16_wrapping_sub(Value *arg);
+Value* builtin_i16_wrapping_mul(Value *arg);
+Value* builtin_i16_checked_add(Value *arg);
+Value* builtin_i16_checked_sub(Value *arg);
+Value* builtin_i16_checked_mul(Value *arg);
+Value* builtin_i16_saturating_add(Value *arg);
+Value* builtin_i16_saturating_sub(Value *arg);
+Value* builtin_i16_saturating_mul(Value *arg);
+Value* builtin_i32_wrapping_add(Value *arg);
+Value* builtin_i32_wrapping_sub(Value *arg);
+Value* builtin_i32_wrapping_mul(Value *arg);
+Value* builtin_i32_checked_add(Value *arg);
+Value* builtin_i32_checked_sub(Value *arg);
+Value* builtin_i32_checked_mul(Value *arg);
+Value* builtin_i32_saturating_add(Value *arg);
+Value* builtin_i32_saturating_sub(Value *arg);
+Value* builtin_i32_saturating_mul(Value *arg);
+Value* builtin_i64_wrapping_add(Value *arg);
+Value* builtin_i64_wrapping_sub(Value *arg);
+Value* builtin_i64_wrapping_mul(Value *arg);
+Value* builtin_i64_checked_add(Value *arg);
+Value* builtin_i64_checked_sub(Value *arg);
+Value* builtin_i64_checked_mul(Value *arg);
+Value* builtin_i64_saturating_add(Value *arg);
+Value* builtin_i64_saturating_sub(Value *arg);
+Value* builtin_i64_saturating_mul(Value *arg);
+Value* builtin_u8_wrapping_add(Value *arg);
+Value* builtin_u8_wrapping_sub(Value *arg);
+Value* builtin_u8_wrapping_mul(Value *arg);
+Value* builtin_u8_checked_add(Value *arg);
+Value* builtin_u8_checked_sub(Value *arg);
+Value* builtin_u8_checked_mul(Value *arg);
+Value* builtin_u8_saturating_add(Value *arg);
+Value* builtin_u8_saturating_sub(Value *arg);
+Value* builtin_u8_saturating_mul(Value *arg);
+Value* builtin_u16_wrapping_add(Value *arg);
+Value* builtin_u16_wrapping_sub(Value *arg);
+Value* builtin_u16_wrapping_mul(Value *arg);
+Value* builtin_u16_checked_add(Value *arg);
+Value* builtin_u16_checked_sub(Value *arg);
+Value* builtin_u16_checked_mul(Value *arg);
+Value* builtin_u16_saturating_add(Value *arg);
+Value* builtin_u16_saturating_sub(Value *arg);
+Value* builtin_u16_saturating_mul(Value *arg);
+Value* builtin_u32_wrapping_add(Value *arg);
+Value* builtin_u32_wrapping_sub(Value *arg);
+Value* builtin_u32_wrapping_mul(Value *arg);
+Value* builtin_u32_checked_add(Value *arg);
+Value* builtin_u32_checked_sub(Value *arg);
+Value* builtin_u32_checked_mul(Value *arg);
+Value* builtin_u32_saturating_add(Value *arg);
+Value* builtin_u32_saturating_sub(Value *arg);
+Value* builtin_u32_saturating_mul(Value *arg);
+Value* builtin_u64_wrapping_add(Value *arg);
+Value* builtin_u64_wrapping_sub(Value *arg);
+Value* builtin_u64_wrapping_mul(Value *arg);
+Value* builtin_u64_checked_add(Value *arg);
+Value* builtin_u64_checked_sub(Value *arg);
+Value* builtin_u64_checked_mul(Value *arg);
+Value* builtin_u64_saturating_add(Value *arg);
+Value* builtin_u64_saturating_sub(Value *arg);
+Value* builtin_u64_saturating_mul(Value *arg);
+Value* builtin_u64_compare(Value *arg);
+Value* builtin_u64_div(Value *arg);
+Value* builtin_u64_rem(Value *arg);
+Value* builtin_u64_to_string(Value *arg);
+Value* builtin_fround(Value *arg);
+
 /* Tensor builtins — implemented in builtins_tensor.c */
 Value* builtin_tensor_add(Value *arg);
 Value* builtin_tensor_subtract(Value *arg);
@@ -51,11 +143,15 @@ Value* builtin_buffer(Value *arg);
 Value* builtin_reshape(Value *arg);
 Value* builtin_buf_len(Value *arg);
 Value* builtin_buf_get(Value *arg);
+Value* builtin_buf_get_bits(Value *arg);
 Value* builtin_buf_set(Value *arg);
+Value* builtin_buf_set_bits(Value *arg);
 Value* builtin_buf_from_list(Value *arg);
 Value* builtin_str_from_bytes(Value *arg);
 Value* builtin_f64_to_bytes(Value *arg);
 Value* builtin_f64_from_bytes(Value *arg);
+Value* builtin_f64_bits(Value *arg);
+Value* builtin_f64_from_bits(Value *arg);
 Value* builtin_buf_copy(Value *arg);
 Value* builtin_buf_mix(Value *arg);
 Value* builtin_buf_scale_range(Value *arg);

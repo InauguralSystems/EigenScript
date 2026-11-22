@@ -1,0 +1,13 @@
+[2, "int"]
+[9223372036854775807, "int"]
+[-9223372036854775808, "int"]
+["fraction", "value"]
+["float-outside-int64", "value"]
+["fraction-right", "value"]
+["non-number", "type_mismatch"]
+["non-number-right", "type_mismatch"]
+["few", "type_mismatch"]
+["empty", "type_mismatch"]
+["many", "type_mismatch"]
+["scalar", "type_mismatch"]
+rc=0

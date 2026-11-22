@@ -1,0 +1,7 @@
+# R1.6 behaviour-table probe: num_type (other; N7: int/float kind, null for a non-number)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+print of [num_type of 3, num_type of 3.0, num_type of 9007199254740993, num_type of "3", num_type of null]

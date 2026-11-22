@@ -1,0 +1,1 @@
+- Non-finite floats use `inf`, `-inf` and unsigned `nan` across text formatters. Tape format 10 records and strictly replays those values, preserving raw buffer NaN payloads with explicit bit tokens; older tape formats are refused. JSON number decoding now raises `value` on decimal overflow instead of returning infinity.

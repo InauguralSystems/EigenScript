@@ -1,0 +1,5 @@
+# #2351 new response builtin: a standalone probe is not an HTTP request.
+try:
+    print of ["no-request", http_respond of {"status": 404.0}]
+catch e:
+    print of ["no-request", e.kind, e.message]

@@ -41,4 +41,16 @@ r.n is 0
 assert_eq of [(bump_n of r), 1, "numeric rewrite after remove"]
 assert_eq of [r.m, 0, "other numeric field unaffected"]
 
+# Phase2 keeps a separate immediate-f64 rewrite lane. Float operands force
+# that lane; integer literals now exercise the int/boxed set path instead.
+rf is {"n": 1.0, "m": 0.0}
+for warm in range of 50:
+    bump_n of rf
+assert_eq of [rf.n, 51.0, "float rewrite warmed"]
+dict_remove of [rf, "n"]
+rf.n is 0.0
+assert_eq of [(bump_n of rf), 1.0, "float rewrite re-adds after tombstone"]
+assert_eq of [num_type of rf.n, "float", "rewrite keeps the f64 lane"]
+assert_eq of [rf.m, 0.0, "float neighbour unaffected"]
+
 test_summary of null

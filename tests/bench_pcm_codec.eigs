@@ -1,8 +1,11 @@
 # bench_pcm_codec.eigs — the #602 PCM16LE codec micro-bench.
 #
-# Workload: 2,400,000 stereo-interleaved samples (25 s @ 48 kHz x 2ch,
-# half the 50 s import that measured 10.8 s in wav_read on the N3350 —
-# sized so the interpreted leg stays a single-digit-seconds run).
+# CodSpeed sizing (SYNC11 cont4): nsamp 2,400,000 -> 60,000. The original
+# took 508 s in hosted CPU simulation (other runs exceeded 720 s). One
+# fortieth of the samples keeps the same PCM16LE decode/encode/stride paths
+# below ~60 s; it still spans every byte value and both PCM signs.
+# Workload: 60,000 stereo-interleaved samples (0.625 s @ 48 kHz x 2ch),
+# from the 50 s import that measured 10.8 s in wav_read on the N3350.
 #
 # Modes (first CLI arg; time each externally, n=5 medians):
 #   base         setup only — startup+alloc floor to subtract
@@ -19,7 +22,7 @@ a is args of null
 if (len of a) > 0:
     mode is a[0]
 
-nsamp is 2400000
+nsamp is 60000
 nbytes is nsamp * 2
 
 bytes is buffer of nbytes

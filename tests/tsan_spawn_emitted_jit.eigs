@@ -3,16 +3,19 @@
 # native RET diagnostic after 80 warm calls. Spawn occurs at module level,
 # followed by hot calls while MT mode is on; this does not cover spawn from
 # inside an active native caller.
+# Every literal and argument is a FLOAT: the JIT refuses int code until R5
+# (design phase2-numbers.md section 3), and this fixture exists to race a
+# spawn against EMITTED code. Its int twin returns at R5 (round plan, R5).
 define hot(v) as:
-    local doubled is v * 2
-    return doubled + 1
-i is 0
-loop while i < 80:
+    local doubled is v * 2.0
+    return doubled + 1.0
+i is 0.0
+loop while i < 80.0:
     hot of i
-    i is i + 1
+    i is i + 1.0
 define worker() as:
-    return hot of 20
+    return hot of 20.0
 h is spawn of worker
-main_value is hot of 10
-if (thread_join of h) != 41 or main_value != 21:
+main_value is hot of 10.0
+if (thread_join of h) != 41.0 or main_value != 21.0:
     throw of "emitted JIT call returned wrong value"

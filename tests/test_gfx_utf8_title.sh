@@ -2,22 +2,72 @@
 set -u
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+DISPLAY_NUM=
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/eigs-1681-title.XXXXXX")
 export LC_ALL=C.UTF-8
 
+SIGNAL_STATUS=
+CLEANING=
+signal_status() {
+    case $1 in HUP) SIGNAL_STATUS=129;; INT) SIGNAL_STATUS=130;; TERM) SIGNAL_STATUS=143;; esac
+}
+wait_bounded() {
+    pid=$1
+    [ -n "$pid" ] || return 0
+    kill "$pid" 2>/dev/null || true
+    n=0
+    while kill -0 "$pid" 2>/dev/null && [ "$n" -lt 5 ]; do
+        sleep 0.1
+        n=$((n + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+        kill -KILL "$pid" 2>/dev/null || true
+    fi
+    wait "$pid" 2>/dev/null || true
+}
 cleanup() {
-    [ -n "${PROGRAM_PID:-}" ] && kill "$PROGRAM_PID" 2>/dev/null || true
-    [ -n "${XVFB_PID:-}" ] && kill "$XVFB_PID" 2>/dev/null || true
-    [ -n "${PROGRAM_PID:-}" ] && wait "$PROGRAM_PID" 2>/dev/null || true
-    [ -n "${XVFB_PID:-}" ] && wait "$XVFB_PID" 2>/dev/null || true
+    [ -n "$CLEANING" ] && return
+    CLEANING=1
+    echo "GFX_SIGNAL_CLEANUP tmp=$TMP"
+    if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = cleanup ]; then
+        while [ -z "$SIGNAL_STATUS" ]; do sleep 0.1; done
+    fi
+    wait_bounded "${PROGRAM_PID:-}"
+    PROGRAM_PID=
+    wait_bounded "${XVFB_PID:-}"
+    XVFB_PID=
     rm -rf "$TMP"
 }
-trap cleanup EXIT HUP INT TERM
+on_signal() {
+    signal_status "$1"
+    [ -n "$CLEANING" ] && return
+    cleanup
+    exit "$SIGNAL_STATUS"
+}
+on_exit() {
+    status=$?
+    cleanup
+    [ -n "$SIGNAL_STATUS" ] && exit "$SIGNAL_STATUS"
+    return "$status"
+}
+trap on_exit EXIT
+trap 'on_signal HUP' HUP
+trap 'on_signal INT' INT
+trap 'on_signal TERM' TERM
+
+echo "GFX_SIGNAL_READY tmp=$TMP"
+if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = before-server ]; then
+    while :; do sleep 1; done
+fi
 
 # The server is started by tests/xvfb.sh, which keeps it from resetting when
 # its last client leaves (#2215): a reset closes a handshake that is pending.
 . "$ROOT/tests/xvfb.sh" || exit 1
 xvfb_start || exit 1
+echo "GFX_SIGNAL_SERVER pid=$XVFB_PID"
+if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = server ]; then
+    while :; do sleep 1; done
+fi
 
 # Each wait is bounded by a deadline, not a count of short sleeps: on a
 # loaded box one xdotool or xprop call can take most of a fixed budget
@@ -47,6 +97,10 @@ run_case() {
         "$ROOT/src/eigenscript" "$ROOT/tests/test_gfx_utf8_title.eigs" \
         >"$log" 2>&1 &
     PROGRAM_PID=$!
+    echo "GFX_SIGNAL_CASE pid=$PROGRAM_PID"
+    if [ "${EIGS_SIGNAL_TEST_MOMENT:-}" = case ]; then
+        while :; do sleep 1; done
+    fi
 
     timed_out=
     window_id=

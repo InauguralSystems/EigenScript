@@ -1,5 +1,5 @@
 print of "=== HALTING: SETTLED CONSTANT TEST (#861) ==="
-print of "--- HS1: a constant at moderate H certifies converged ---"
+print of "--- HS1: a constant certifies converged ---"
 # Pre-#861 this pinned the dead zone: H(42) ~ 0.16 sat above h_low, so the
 # entropy `converged` could never fire on a constant at 42 and the strongest
 # claim was "equilibrium". The value route certifies a settled value at ANY
@@ -25,7 +25,7 @@ print of hs1[0]
 print of hs1[1]
 
 print of ""
-print of "--- HS2: the entropy MEASUREMENT is unchanged ---"
+print of "--- HS2: numeric value and displacement ---"
 
 print of where is x
 print of why is x

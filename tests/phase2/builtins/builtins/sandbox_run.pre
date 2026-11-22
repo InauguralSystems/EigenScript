@@ -1,0 +1,5 @@
+{"ok": true, "result": 7}
+["fraction-answer", {"ok": true, "result": 7}]
+{"ok": true, "result": 7}
+[false, "type_mismatch", "float"]
+rc=0

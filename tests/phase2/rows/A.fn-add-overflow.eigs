@@ -1,0 +1,19 @@
+# ROW: A.fn-add-overflow
+# ITEMS: A
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn-stop inc INT_ONE
+# OPS: INT_ONE
+define inc(a) as:
+    warm is 0.5
+    t is a + 1
+    return t
+r is null
+i is 0.0
+loop while i < 60.0:
+    r is inc of 2
+    i is i + 1.0
+try:
+    print of (inc of 9223372036854775807)
+catch e:
+    print of e.kind

@@ -1,0 +1,6 @@
+["buffer", 256, "value"]
+["list", 256, "value"]
+["buffer", 1.5, "value"]
+["list", 1.5, "value"]
+[2, "int"]
+ok

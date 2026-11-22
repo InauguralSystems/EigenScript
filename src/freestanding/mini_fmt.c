@@ -258,6 +258,8 @@ static void fmt_f(Sink *s, const Spec *sp, const BigDec *b) {
     emit_padded(s, &sp2, sign, "", body, n, 0);
 }
 
+/* N6 uses this correctly-rounded %e operation to select shortest decimal
+ * candidates. Keep printf semantics here; eigs_num_text owns language text. */
 static void fmt_e(Sink *s, const Spec *sp, const BigDec *b, int upper) {
     int P = (sp->prec >= 0) ? sp->prec : 6;
     int is_zero;

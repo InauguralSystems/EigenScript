@@ -1,0 +1,15 @@
+# ROW: N1.fn-int-local
+# ITEMS: N1
+# EXPECT-RC: 0
+# SHAPE: F
+# WITNESS: fn keep
+# OPS: SET_LOCAL POP
+define keep(q) as:
+    t is q
+    return t
+r is null
+i is 0.0
+loop while i < 60.0:
+    r is keep of 9007199254740993
+    i is i + 1.0
+print of r

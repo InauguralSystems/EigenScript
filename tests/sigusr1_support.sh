@@ -63,7 +63,7 @@ sigusr1_result_check() {
     done <<'CHECKS'
 sigusr1: child reached its loop (READY barrier)
 sigusr1: dump arrived at a loop safepoint
-sigusr1: module row shape (name|value|when|entropy|dH|trajectory) with settled when
+sigusr1: module row shape (name|value|when|delta|trajectory) with settled when
 sigusr1: live-frame row with fresh when=1 binding (distinguishable from settled)
 sigusr1: fn-local row carries its accumulated when count
 sigusr1: program completed (DONE) after the dump

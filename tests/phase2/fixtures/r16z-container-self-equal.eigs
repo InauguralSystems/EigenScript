@@ -1,0 +1,29 @@
+# R1.6z-D2 cost witness: only 41 distinct lists/buffers, not 2^40 paths.
+unobserved:
+    x is buffer of 1
+    for i in range of 40:
+        x is [x, x]
+    print of (x == x)
+
+# SGD's raw buffer kernel stores -inf; self-SGD then stores NaN.
+a is buf_from_list of ([1e308])
+g is buf_from_list of ([1e308])
+sgd_update of [a, g, 1e308]
+sgd_update of [a, a, 1.0]
+l is [a]
+d is {"x": a}
+nested is [[a]]
+finite is [buffer of 1]
+cycle is []
+append of [cycle, cycle]
+append of [cycle, a]
+finite_cycle is []
+append of [finite_cycle, finite_cycle]
+before is math_flags of null
+try:
+    print of [l == l, d == d, nested == nested, finite == finite]
+    print of [cycle == cycle, finite_cycle == finite_cycle, l != l, d != d]
+    print of [list_contains of [[l], l], list_index_of of [[l], l]]
+    print of ((math_flags of null) == before)
+catch e:
+    print of ["unexpected-equality-raise", e.kind, e.message]

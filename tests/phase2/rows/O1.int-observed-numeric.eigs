@@ -1,0 +1,18 @@
+# ROW: O1.int-observed-numeric
+# ITEMS: O1
+# EXPECT-RC: 0
+# SHAPE: S
+# WITNESS: none
+# OPS: 
+a is 3
+b is 140737488355328
+af is 3.0
+bf is 140737488355328.0
+i is 0.0
+loop while i < 12.0:
+    a is a * 2
+    b is b * 2
+    af is af * 2.0
+    bf is bf * 2.0
+    i is i + 1.0
+print of [report of a, report of af, report of b, report of bf, num_type of b]

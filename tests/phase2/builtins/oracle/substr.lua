@@ -1,0 +1,5 @@
+-- substr of [s, start, len] is 0-based; Lua string.sub(s, start + 1, start + len)
+print(string.sub("hello", 2, 3))
+print(pcall(string.sub, "hello", 2.5, 3))
+print(pcall(string.sub, "hello", 2, 3.5))
+print(string.sub("hello", 2.0, 3.0))

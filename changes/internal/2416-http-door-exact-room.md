@@ -1,0 +1,1 @@
+- Make the HTTP door budget check cover a body that exactly fills its allocation room (#2416).

@@ -1,0 +1,11 @@
+# R1.6 behaviour-table probe: tensor_save (float-producing; writes float cells)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+f is p + "/t.bin"
+print of (tensor_save of [[1, 9007199254740993, 2.5], f])
+t is tensor_load of f
+print of [t, nt of t[0], nt of t[1]]

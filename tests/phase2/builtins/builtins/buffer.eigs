@@ -1,0 +1,20 @@
+# R1.6 behaviour-table probe: buffer (int-requiring; size or [rows, cols]); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"integral-float-success":{"stdout-line":4}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+b is buffer of 3
+print of [buf_len of b, nt of b[0]]
+try:
+    c is buffer of 2.5
+    print of ["fraction accepted", buf_len of c]
+catch e:
+    print of ["size-fraction", e.kind]
+try:
+    d is buffer of [2, 1.5]
+    print of ["fraction accepted", buf_len of d]
+catch e:
+    print of ["cols-fraction", e.kind]
+f is buffer of [2.0, 3.0]
+print of (shape of f)

@@ -1,0 +1,12 @@
+# R1.6 behaviour-table probe: http_route_authed (other; formats via value_to_string; PROFILE server (make server))
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+try:
+    print of (http_route_authed of ["GET", "/n", 9007199254740993])
+catch e:
+    print of ["capability", e.kind, e.message]
+    exit of 0
+print of (http_route_authed of ["GET", "/f", 2.5])

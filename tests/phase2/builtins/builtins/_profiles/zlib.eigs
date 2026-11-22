@@ -1,0 +1,6 @@
+# profile witness: zlib = EIGENSCRIPT_EXT_ZLIB compiled in (Makefile FLAGS_zlib).
+try:
+    if (str_from_bytes of (inflate of [203, 200, 4, 0])) == "hi":
+        print of "profile-ok"
+catch e:
+    print of ["zlib-unavailable", e.message]

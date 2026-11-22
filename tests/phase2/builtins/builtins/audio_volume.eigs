@@ -1,0 +1,29 @@
+# R1.6 behaviour-table probe: audio_volume (int-requiring, Q7 bounded; channel index by N5; the volume clamps to the mixer's range [0, 4]; HOOK mix: the delivered mixer PCM (rulings B1, C1)); phase2-exercises: {"int-requiring":["fractional","integral-float-success"],"q7":["bounded"],"integral-float-success":{"stdout-line":2}}
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+define wait_for(path, want) as:
+    local i is 0
+    loop while i < 200:
+        if contains of [read_text of path, want]:
+            return true
+        usleep of 20000
+        i is i + 1
+    return false
+log is env_get of "R16_HOOK_LOG"
+d is audio_open of [44100, 1]
+audio_pause of 1
+c is audio_play_loop of [[0.1, -0.1], -1]
+try:
+    print of ["fraction-answer", audio_volume of [c + 0.5, 1.0]]
+catch e:
+    print of ["channel-fraction", e.kind]
+v is audio_volume of [c + 0.0, 9.0]
+print of [v, nt of v]
+audio_pause of 0
+print of ["mixed", wait_for of [log, "mix:"]]
+audio_stop of c
+audio_close of null
+write of (read_text of log)

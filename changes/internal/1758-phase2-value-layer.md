@@ -1,0 +1,1 @@
+- #1758 Phase 2 round R1.2, the Value layer: the number Value type is renamed (`VAL_FLOAT`), an exact int64 Value type (`VAL_INT`) exists, and every switch and type test over a value's type decides what an int does there; nothing produces an int yet (R1.3), so no program behaves differently.

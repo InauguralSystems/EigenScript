@@ -1,0 +1,71 @@
+# RULING R23-1: failed encoding must precede every store/record mutation.
+# Each case uses ordinary IEEE arithmetic, never an induced runtime fault.
+load_file of "lib/test.eigs"
+root is env_get of "EIGS_PROBE_TMP"
+assert of [root != "", "store writer fixture needs an owned scratch directory"]
+
+define refusal_case(value, label) as:
+    local path is root + "/put-" + label + ".db"
+    local db is store_open of path
+    store_close of db
+    db is store_open of path
+    local before is read_bytes of path
+    local record is {"v": value}
+    local caught is false
+    try:
+        store_put of [db, "c", record]
+    catch e:
+        caught is e.kind == "value"
+    assert_true of [caught, label + " put raises value"]
+    assert_eq of [store_count of [db, "c"], 0, label + " put leaves count zero"]
+    assert_eq of [store_collections of db, [], label + " put leaves catalog empty"]
+    assert_false of [has_key of [record, "_id"], label + " put leaves record untouched"]
+    store_close of db
+    assert_true of [(read_bytes of path) == before, label + " put leaves file byte-identical"]
+    db is store_open of path
+    local key is store_put of [db, "c", {"v": 7}]
+    assert_eq of [key, "1", label + " put consumes no automatic id"]
+    store_close of db
+
+    path is root + "/update-" + label + ".db"
+    db is store_open of path
+    store_put of [db, "c", {"_id": "old", "v": 23}]
+    store_close of db
+    db is store_open of path
+    before is read_bytes of path
+    record is {"v": value}
+    caught is false
+    try:
+        store_update of [db, "c", "old", record]
+    catch e:
+        caught is e.kind == "value"
+    assert_true of [caught, label + " update raises value"]
+    local old is null
+    try:
+        old is store_get of [db, "c", "old"]
+    catch e:
+        old is null
+    local old_intact is false
+    if old != null:
+        old_intact is old.v == 23
+    assert_true of [old_intact, label + " update retains the old record"]
+    assert_eq of [store_count of [db, "c"], 1, label + " update leaves count one"]
+    assert_false of [has_key of [record, "_id"], label + " update leaves replacement untouched"]
+    store_close of db
+    assert_true of [(read_bytes of path) == before, label + " update leaves file byte-identical"]
+
+# Scalar, recursive list/dict and native-buffer serializer arms all refuse.
+nan_value is 0.0 / 0.0
+positive is 1.0 / 0.0
+negative_inf is -1.0 / 0.0
+refusal_case of [nan_value, "nan"]
+refusal_case of [positive, "positive-infinity"]
+refusal_case of [negative_inf, "negative-infinity"]
+refusal_case of [[7, nan_value], "list-nan"]
+refusal_case of [{"nested": positive}, "dict-infinity"]
+raw is buf_from_list of ([1e308])
+buf_scale_range of [raw, 0, 1, 1e308]
+refusal_case of [raw, "buffer-infinity"]
+buf_scale_range of [raw, 0, 1, 0.0]
+refusal_case of [raw, "buffer-nan"]
+test_summary of null

@@ -56,7 +56,8 @@ def main():
     all_objects=variable('OBJ_'+a.variant)
     sources=variable('SRC_V_'+a.variant)
     verify_inputs(configuration)
-    assert all_objects==[str(Path('build')/a.variant/(Path(s).stem+'.o')) for s in sources]
+    # A source in a folder of src/ (src/vendor/llhttp/, #2370) builds into the same folder of the objdir.
+    assert all_objects==[str(Path('build')/a.variant/Path(s).relative_to('src').with_suffix('.o')) for s in sources]
     objects=[ROOT/p for p in all_objects if Path(p).name not in ['main.o','eigenscript.o']]
     assert objects and all(p.is_file() for p in objects),'build selected runtime variant first'
     flags=[f for f in flags if not f.startswith('-DEIGENSCRIPT_VERSION=')]

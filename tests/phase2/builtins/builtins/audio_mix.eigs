@@ -1,0 +1,8 @@
+# R1.6 behaviour-table probe: audio_mix (float-producing; float samples)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+m is audio_mix of [[0.5, 1], [0.25, 0.5]]
+print of [m, nt of m[0]]

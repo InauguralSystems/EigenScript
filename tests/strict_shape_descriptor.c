@@ -7,7 +7,7 @@
 #include "vm.h"
 
 int main(void) {
-    const char *source = "return 42\n";
+    const char *source = "return 42.0\n";
     EigsState *state = eigs_open();
     if (!state) return 1;
     TokenList tokens = tokenize(source);
@@ -24,17 +24,17 @@ int main(void) {
     if (chunk->code_len <= 0 || chunk->code_len > 64 ||
         chunk->fn_count || chunk->local_count || chunk->param_count ||
         chunk->const_count != 1 || !chunk->constants[0] ||
-        chunk->constants[0]->type != VAL_NUM ||
-        VAL_NUM_RAW(chunk->constants[0]) != 42) goto done;
+        chunk->constants[0]->type != VAL_FLOAT ||
+        VAL_F64_RAW(chunk->constants[0]) != 42) goto done;
 
     descriptor = make_list(3);
     Value *code = make_list(chunk->code_len);
     Value *constants = make_list(chunk->const_count);
     for (int i = 0; i < chunk->code_len; i++)
-        list_append_owned(code, make_num(chunk->code[i]));
+        list_append_owned(code, make_float(chunk->code[i]));
     /* list_append takes its own reference before chunk_free releases its copy. */
     list_append(constants, chunk->constants[0]);
-    list_append_owned(descriptor, make_num(EIGS_BYTECODE_ABI));
+    list_append_owned(descriptor, make_float(EIGS_BYTECODE_ABI));
     list_append_owned(descriptor, code);
     list_append_owned(descriptor, constants);
     json = eigs_json_encode(descriptor);

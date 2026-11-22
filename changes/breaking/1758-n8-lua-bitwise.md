@@ -1,0 +1,1 @@
+- Bitwise operators and `bit_*` builtins now return exact int64 values. Shifts follow Lua 5.4: right shifts zero-fill, negative counts reverse direction, and counts outside (-64, 64) give zero. Fractional or out-of-range operands still raise `value` (#1740, #1758 N8).

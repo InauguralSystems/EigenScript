@@ -1,0 +1,22 @@
+# R1.6 behaviour-table probe: store_update (other, LOSS; key as store_delete; re-puts through the record encoder)
+define nt(x) as:
+    try:
+        return num_type of x
+    catch e:
+        return e.kind
+p is env_get of "EIGS_PROBE_TMP"
+s is store_open of (p + "/db")
+k is store_put of [s, "c", {"v": 1}]
+try:
+    print of (store_update of [s, "c", 1.9, {"v": 2}])
+catch e:
+    print of ["key-fraction", e.kind]
+u is store_update of [s, "c", 1.0, {"v": 9007199254740993}]
+print of u
+r is store_get of [s, "c", "1"]
+print of [r["v"], nt of r["v"]]
+k2 is store_put of [s, "c", {"_id": "9007199254740993", "v": 1}]
+u2 is store_update of [s, "c", 9007199254740993, {"v": 2}]
+r2 is store_get of [s, "c", "9007199254740993"]
+print of ["update-big-key", u2, r2["v"]]
+store_close of s

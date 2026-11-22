@@ -96,12 +96,17 @@ def compare_one(label, source, vm, ref, runtime_version, td, oracle_seed, timeou
 
 
 def hot_programs(seed):
-    """Return a named, single-loop function called above the JIT threshold."""
+    """Return a float-lane loop called above the JIT threshold.
+
+    Phase 2 integer literals select INT_* opcodes, which remain interpreted
+    until R5. The cold generator retains its pinned integer sources; this
+    separate fixture must exercise the native path it claims to witness.
+    """
     lines = [f"# ref-diff hot seed: {seed}", "define hot_probe(limit) as:",
-             "    value is 0", "    loop while value < limit:",
-             "        value is value + 1", "    return value", "answer is 0"]
-    lines.extend("answer is hot_probe of 0" for _ in range(60 + seed % 7))
-    lines.append(f"answer is hot_probe of {3 + seed % 7}")
+             "    value is 0.0", "    loop while value < limit:",
+             "        value is value + 1.0", "    return value", "answer is 0.0"]
+    lines.extend("answer is hot_probe of 0.0" for _ in range(60 + seed % 7))
+    lines.append(f"answer is hot_probe of {float(3 + seed % 7)!r}")
     lines.append("print of answer")
     return ((f"hot:{seed}", "\n".join(lines) + "\n"),)
 

@@ -1,0 +1,11 @@
+[false, false, false, false, false, false]
+equilibrium
+equilibrium
+["equilibrium", 5, null, null]
+5
+null
+null
+{"kind": "trajectory", "rel": [], "raw": [], "exact": [], "values": [5], "dh": [], "entropy": null, "dH": null, "last_entropy": null, "last_value": 5, "best": 5.0, "since": null, "observed": true, "numeric": true, "window": 10}
+equilibrium
+equilibrium
+rc=0

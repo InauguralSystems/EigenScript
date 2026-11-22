@@ -1,0 +1,1 @@
+- `probability.poisson_pmf of [1.5, 2]` raises again, as a fractional count on the direct formula did before the number model, and a negative count raises. With the number model the two had answered `0.38278598604164377` and `inf` (#2494).

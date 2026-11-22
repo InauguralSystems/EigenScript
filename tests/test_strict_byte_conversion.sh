@@ -1,7 +1,7 @@
 #!/bin/bash
 echo "PLAN: $(awk '/^run "/ { n++ } END { print n+0 }' "$0")"
-# #1590: list-backed byte conversions reject nonnumeric elements by default,
-# retain the exact compatibility conversion with EIGS_STRICT=0, and preserve
+# #1590: explicit strict mode rejects nonnumeric list-backed byte elements,
+# EIGS_STRICT=0 retains the exact compatibility conversion, and both preserve
 # str_from_bytes' terminating numeric NUL contract. Probe codec availability
 # so the zlib CI suite automatically exercises the codec rows.
 
@@ -39,7 +39,7 @@ run() {
     fi
 }
 
-run "default rejects a mixed byte list" unset 1 \
+run "explicit strict rejects a mixed byte list" 1 1 \
     "str_from_bytes: expected numeric byte values" \
     'print of (str_from_bytes of [65, "x", 66])'
 run "explicit strict rejects after ordinary bytes" 1 1 \
