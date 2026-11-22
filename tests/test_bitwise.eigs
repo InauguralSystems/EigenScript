@@ -194,7 +194,7 @@ assert_eq of [1 << (0 - 1), 0, "N8 negative exact count reverses direction"]
 # --- All execution settings must raise exactly where the VM does ---
 # R1.3 intentionally scanner-refuses these operators until R5. The hot
 # entry/OSR scaffolds below verify interpreted fallback in each setting;
-# Phase 2's ctl.scan.* rows independently witness the scanner refusals.
+# Phase 2's ctl.N8.refuse-* rows (tests/phase2/MAP.md) independently witness the scanner refusals.
 define hot_or(a, b) as:
     return a | b
 define hot_shl(a, b) as:

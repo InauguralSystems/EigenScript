@@ -433,8 +433,9 @@ unobserved:
         i is i + 1
 ```
 
-Numeric relative/raw steps, exact flags, running-best state and history
-snapshots still update inside the block. Numeric `report`, predicates and
+Numeric relative/raw steps, exact flags, running-best state and live
+interrogatives still update inside the block; line-qualified observer-history
+snapshots at an elided line are not written. Numeric `report`, predicates and
 `where`/`why`/`how` after the block give the same answers as the observed
 version. Non-numeric entropy and comparison samples are elided. Programs
 with no observer/history reader can skip bookkeeping automatically through

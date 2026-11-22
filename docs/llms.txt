@@ -315,8 +315,9 @@ false
   reports the source file and physical line of the faulting sub-expression.
   File, eval, stdin, and unnamed embed units use their loader path, `<eval>`,
   `<stdin>`, and `<embed>` respectively; sandbox-synthesized errors use `<sandbox>`; the browser playground uses `<playground>`. `unobserved:` skips non-numeric entropy/comparison bookkeeping. Numeric
-  samples, exact flags, running-best state and interrogation snapshots
-  remain complete; numeric why/how and post-block verdicts do not change.
+  samples, exact flags, running-best state and live interrogatives remain
+  complete; line-qualified observer-history snapshots at an elided line are
+  not written. Numeric why/how and post-block verdicts do not change.
   A predicate asked inside the block still raises. The bare last-observed
   alias is not moved by elided scratch assignments.
 

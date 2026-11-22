@@ -620,7 +620,7 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
             if (b->data.list.count == cols) {
                 Value *out = make_list(rows);
                 for (int i = 0; i < rows; i++) {
-                    EigsView ai_view = {{0}};   /* a ragged row may be a number: view, not get_ref (NULL) */
+                    EIGS_VIEW(ai_view);   /* a ragged row may be a number: view, not get_ref (NULL) */
                     Value *row = tensor_elementwise(list_get_view(a, i, &ai_view), b, fn);
                     if (g_has_error) {
                         val_decref(row); val_decref(out); return make_null();
@@ -650,7 +650,7 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
             if (a->data.list.count == cols) {
                 Value *out = make_list(rows);
                 for (int i = 0; i < rows; i++) {
-                    EigsView bi_view = {{0}};   /* a ragged row may be a number: view, not get_ref (NULL) */
+                    EIGS_VIEW(bi_view);   /* a ragged row may be a number: view, not get_ref (NULL) */
                     Value *row = tensor_elementwise(a, list_get_view(b, i, &bi_view), fn);
                     if (g_has_error) {
                         val_decref(row); val_decref(out); return make_null();
@@ -1669,9 +1669,10 @@ Value* builtin_tensor_gather(Value *arg) {
         }
     }
     /* Simple case: 2D tensor, 1D indices → select one element per row */
-    if (tensor->type == VAL_LIST && indices->type == VAL_LIST) {
-        int n = tensor->data.list.count < indices->data.list.count
-              ? tensor->data.list.count : indices->data.list.count;
+    if (tensor->type == VAL_LIST && flat_is_vector(indices)) {
+        int icount = flat_count(indices);
+        int n = tensor->data.list.count < icount
+              ? tensor->data.list.count : icount;
         Value *out = make_list(n);
         for (int i = 0; i < n; i++) {
             /* list_get_ref is NULL for an immediate number (a double or a small int), not for a boxed int: test the type first. */
@@ -1687,13 +1688,13 @@ Value* builtin_tensor_gather(Value *arg) {
                 continue;
             }
             Value *row = list_get_ref(tensor, i);
-            if ((list_elem_type(indices, i) != VAL_FLOAT && list_elem_type(indices, i) != VAL_INT)) {
+            if (!flat_index_is_num(indices, i)) {
                 val_decref(out);
                 rt_error(EK_TYPE, 0, "gather: index %d is %s (expected a number)",
                          i, val_type_name(list_elem_type(indices, i)));
                 return make_null();
             }
-            int64_t idx = eigs_slot_int(list_slot(indices, i), "gather");
+            int64_t idx = flat_index_at(indices, i, "gather");
             if (g_has_error) { val_decref(out); return make_null(); }
             if (idx < 0 || idx >= row->data.list.count) {
                 val_decref(out);

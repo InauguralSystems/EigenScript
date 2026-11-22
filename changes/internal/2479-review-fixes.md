@@ -1,0 +1,1 @@
+- Standardize internal view initialization while closing the documents-and-gates review findings (#2479).

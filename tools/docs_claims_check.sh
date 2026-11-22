@@ -142,9 +142,9 @@ def stale_guard_state_wording():
     """Reject two-state wording that makes argument guards opt-in."""
     guard = (r'(?:argument|wrong[- ]type|wrong[- ]arity|non[- ]?(?:numeric|string|number|list)|'
              r'short|surplus|additional list item|fixed[- ]shape|optional[- ]shape)')
-    condition = (r'(?:raises?|rejects?).{0,120}(?:under|with) `EIGS_STRICT=1`|'
+    condition = (r'(?:raises?|rejects?|refused).{0,120}(?:under|with)\s+`EIGS_STRICT=1`|'
                  r'(?:raises?|rejects?).{0,120}\bin strict mode\b|'
-                 r'(?:under|with) `EIGS_STRICT=1`.{0,80}(?:raises?|rejects?)|'
+                 r'(?:under|with)\s+`EIGS_STRICT=1`.{0,80}(?:raises?|rejects?|refused)|'
                  r'\bin strict mode\b.{0,80}(?:raises?|rejects?)')
     stale = re.compile(rf'(?:{guard}).{{0,240}}(?:{condition})|'
                        rf'(?:{condition}).{{0,240}}(?:{guard})', re.I | re.S)
@@ -153,7 +153,12 @@ def stale_guard_state_wording():
     examined = hits = 0
     for file in files:
         prose = Path(file).read_text(encoding='utf-8')
-        for sentence in re.split(r'(?<=[.!?])(?:\s+|(?=\s*\|))', prose):
+        # Markdown block boundaries are prose boundaries.  In particular, a
+        # table row without a full stop must not consume the paragraph below.
+        bounded = re.sub(r'(^#{1,6} .*$|^\s*[|].*[|]\s*$)', r'\n\1\n', prose, flags=re.M)
+        blocks = re.split(r'\n[ \t]*\n', bounded)
+        for sentence in (s for block in blocks for s in
+                         re.split(r'(?<=[.!?])(?:\s+|(?=\s*\|))', block)):
             examined += 1
             if stale.search(sentence):
                 hits += 1
@@ -207,25 +212,34 @@ def removed_strict_sentences():
             lines.extend([lineno] * len(tokens))
         return words, lines
 
-    examined = len(REMOVED_STRICT_SENTENCES)
+    # A text is examined in a file when its comparison runs there.  A file whose plain
+    # whitespace split has fewer tokens than the text cannot hold it and is counted apart;
+    # that split is not the one compared, so an emptied haystack cannot pass as short.
+    examined = short = 0
     hits = 0
     for file in files:
-        words, lines = words_and_lines(Path(file).read_text(encoding='utf-8'))
+        prose = Path(file).read_text(encoding='utf-8')
+        words, lines = words_and_lines(prose)
         for _origin, removed in REMOVED_STRICT_SENTENCES:
             needle, _ = words_and_lines(removed)
             width = len(needle)
+            if len(prose.split()) < width:
+                short += 1
+                continue
+            compared = False
             for start in range(len(words) - width + 1):
+                compared = True
                 if words[start:start + width] != needle:
                     continue
                 hits += 1
                 preview = ' '.join(needle[:6])
                 red(f'{file}:{lines[start]}: removed text reappeared: {preview} (#2439)')
+            examined += compared
     print(f'  REMOVED TEXTS: examined {examined} text(s) in {len(files)} file(s), '
-          f'{hits} hit(s)')
-    if examined < 6:
-        red(f'REMOVED TEXTS examined only {examined} text(s), expected at least 6')
-    if not files:
-        red('REMOVED TEXTS examined 0 files')
+          f'{short} shorter than the text, {hits} hit(s)')
+    expected = len(REMOVED_STRICT_SENTENCES) * len(files) - short
+    if examined != expected or not files:
+        red(f'REMOVED TEXTS examined {examined} text(s), expected {expected}')
 
 def bool_result_wording():
     """Reject numeric result prose for builtins whose C constructors are bool.
@@ -776,6 +790,35 @@ def selftest():
             if not ok:
                 print(result.stdout)
             p.write_text(original)
+            arithmetic = ('\n## Self-test boundary\n| Mode | Result |\n|---|---|\n| wrong-type argument | accepted by default |\n'
+                          'Scalar arithmetic and its existing list forms accept infinity and NaN: with\n'
+                          '`EIGS_STRICT` unset or `0`, the result follows IEEE 754 and C libm; with '
+                          '`EIGS_STRICT=1`, a non-finite result raises through the existing arithmetic or\n'
+                          'domain trap, while a finite result answers.\n')
+            p.write_text(original + arithmetic)
+            result = gate(); ok = result.returncode == 0; passed += ok
+            print(f'SELFTEST: stale-guard-block-boundary: {"PASS" if ok else "FAIL"}')
+            # No full stop ends the guard wording, so only the heading boundary keeps it out of
+            # the sentence below the heading.
+            heading = ('\nWrong-type argument handling\n### Arithmetic result\n'
+                       'With `EIGS_STRICT=1`, a non-finite result raises.\n')
+            p.write_text(original + heading)
+            result = gate(); ok = result.returncode == 0; passed += ok
+            print(f'SELFTEST: stale-guard-heading-boundary: {"PASS" if ok else "FAIL"}')
+            p.write_text(original + '\n| Wrong type | raises under `EIGS_STRICT=1` |\n')
+            result = gate()
+            ok = result.returncode != 0 and 'makes an argument guard conditional' in result.stdout
+            passed += ok
+            print(f'SELFTEST: stale-guard-table-cell: {"PASS" if ok else "FAIL"}')
+            p.write_text(original)
+            script = tree / 'tools/docs_claims_check.sh'
+            script_text = script.read_text()
+            planted = script_text.replace("files = ('README.md', *[str(p) for p in sorted(Path('docs').glob('*.md'))],\n             'docs/llms.txt')\n\n    def words_and_lines", "files = ()\n\n    def words_and_lines", 1)
+            assert planted != script_text
+            script.write_text(planted); result = gate(); script.write_text(script_text)
+            ok = result.returncode != 0 and 'REMOVED TEXTS examined 0 text(s)' in result.stdout
+            passed += ok
+            print(f'SELFTEST: removed-text-empty-files: {"PASS" if ok else "FAIL"}')
             p = tree / 'tests/test_doc_examples.py'
             original = p.read_text()
             p.write_text(original.replace('"README.md":', '# "README.md":', 1))
@@ -796,8 +839,8 @@ def selftest():
             print(f'SELFTEST: declared-set: {"PASS" if ok else "FAIL"}')
             print('\n'.join(x for x in result.stdout.splitlines()
                             if x.startswith('RED: docs/PREDICATES.md')))
-            print(f'SELFTEST: 36 case(s) run, {passed} passed, {36-passed} failed')
-            return 0 if passed == 36 else 1
+            print(f'SELFTEST: 40 case(s) run, {passed} passed, {40-passed} failed')
+            return 0 if passed == 40 else 1
     finally:
         signal.signal(signal.SIGTERM, previous)
 

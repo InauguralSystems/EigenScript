@@ -104,13 +104,14 @@ if [ "${1:-}" = --selftest ]; then
     [ "$got" = SKIP ] && [ -f "$OUT/no-binary.log" ] && [ ! -s "$OUT/no-binary.log" ] && echo 'PASS: no binary -> SKIP with empty log' || { echo "FAIL: no binary wanted SKIP with empty log, got $got"; fail=$((fail + 1)); }
     # The report of a failing precheck, from the function the precheck itself calls, compared
     # whole with the text written out here: seven rows (a failing Python row with an argument
-    # whose log holds each word the red-line filter knows, an ordinary line and a seventh red
-    # line; a failing shell row; a passing row; a failing row of class portability; a row that
+    # whose log holds each word the red-line filter knows, a red line that begins with `#` as
+    # tools/section_plan.sh prints them, an ordinary line and two more red lines; a failing shell row; a passing row; a failing row of class portability; a row that
     # left no result; a skipped row; a passing row of class bin), with the times set by hand.
     py_stub="$OUT/failing.py"
     printf '%s\n' 'import sys' \
         'for line in ("planted FAIL in python", "an ERROR line", "a RED line", "an ABORT line",' \
-        '             "a BROKEN line", "an ordinary line", "sixth FAIL line", "seventh FAIL line"):' \
+        '             "a BROKEN line", "# a FAIL line that begins with a hash", "an ordinary line",' \
+        '             "seventh FAIL line", "eighth FAIL line"):' \
         '    print(line)' 'sys.exit(7)' > "$py_stub"
     BIN=selftest-binary
     py_cmd="$py_stub --flag"
@@ -131,7 +132,7 @@ if [ "${1:-}" = --selftest ]; then
                report_rows; echo "counted: $pass passed, $fail failed, $skip skipped of $i"; } 2>&1)
     row() { printf '  %-4s %-46s %3ss  %s\n' "$1" "$2" "$3" "$4"; }
     want=$(row FAIL "$py_cmd" 11 'exit 7'
-           printf '        %s\n' 'planted FAIL in python' 'an ERROR line' 'a RED line' 'an ABORT line' 'a BROKEN line' 'sixth FAIL line'
+           printf '        %s\n' 'planted FAIL in python' 'an ERROR line' 'a RED line' 'an ABORT line' 'a BROKEN line' '# a FAIL line that begins with a hash'
            echo "        (full output: python3 $py_cmd)"
            row FAIL "$sh_cmd" 12 'exit 7'
            echo '        planted-FAIL'
@@ -152,7 +153,22 @@ if [ "${1:-}" = --selftest ]; then
         echo "    wanted:"; printf '%s\n' "$want" | sed 's/^/    | /'
         fail=$((fail + 1))
     fi
-    echo "precheck-selftest: $((11 - fail))/11 passed, $fail failed"
+    # A failing row whose log starts with six `#` lines that hold no red word, then its red
+    # line: the same report_rows must show the red line, so `#` lines cannot crowd it out.
+    crowd=$(OUT="$OUT/crowd"; mkdir -p "$OUT" || exit 1
+            crowd_stub="$OUT/crowded.py"
+            printf '%s\n' 'import sys' 'for n in range(6):' '    print("# comment %d" % n)' \
+                'print("the real FAIL line")' 'sys.exit(3)' > "$crowd_stub"
+            run_gate 0 run "$crowd_stub"
+            GATES="run|$crowd_stub"; report_rows 2>&1)
+    if printf '%s\n' "$crowd" | grep -Fxq '        the real FAIL line' \
+       && [ "$(printf '%s\n' "$crowd" | grep -c '^        # comment')" -eq 0 ]; then
+        echo 'PASS: comment lines cannot crowd real failures from the report'
+    else
+        echo "FAIL: comment lines crowded the report of a failing row:"; printf '%s\n' "$crowd" | sed 's/^/    | /'
+        fail=$((fail + 1))
+    fi
+    echo "precheck-selftest: $((12 - fail))/12 passed, $fail failed"
     [ "$fail" -eq 0 ]; exit
 fi
 

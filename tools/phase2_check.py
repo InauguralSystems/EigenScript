@@ -1047,6 +1047,37 @@ def main_check(args, out):
     return 0 if verdict else 1
 
 
+def named_row(row, binary, out):
+    """Run one branch row with the full checker's execution contract."""
+    path = row_file(os.path.join(ROOT, 'tests/phase2/rows'), row)
+    if not path:
+        out('phase2-row: FAIL %s: no row file' % row)
+        return 2
+    h = header(path)
+    want = read_text(path.rsplit('.', 1)[0] + '.out')
+    want_rc = int(h.get('EXPECT-RC', '0'))
+    tiers = h.get('TIERS', ' '.join(TIERS)).split()
+    unknown = [tier for tier in tiers if tier not in TIER_ENV]
+    if not tiers or unknown:
+        out('phase2-row: FAIL %s: invalid TIERS: %s' % (row, ' '.join(unknown) if unknown else '(empty)'))
+        return 2
+    with tempfile.TemporaryDirectory(prefix='eigs-p2-row-') as scratch:
+        for tier in tiers:
+            rc, stdout, stderr = run(binary, path, TIER_ENV[tier], scratch)
+            if rc != want_rc or stdout != want:
+                out('phase2-row: FAIL %s tier=%s rc=%d expected=%d stderr=%r' %
+                    (row, tier, rc, want_rc, stderr))
+                return 1
+        w = parse_witness(h.get('WITNESS', 'none'))
+        if w and w['kind'] != 'none':
+            holds, evidence = witness(binary, path, w, scratch)
+            if not holds:
+                out('phase2-row: FAIL %s witness %s' % (row, evidence))
+                return 1
+    out('phase2-row: PASS %s tiers=%s rc=%d' % (row, ' '.join(tiers), want_rc))
+    return 0
+
+
 # ---- calibration (design 9.2, one-time) -------------------------------------------
 def calibrate(args, out):
     cal = os.path.join(ROOT, 'tests/phase2/calib')
@@ -1572,6 +1603,9 @@ def main():
         finally:
             for d in _PLANT_DIR:
                 shutil.rmtree(d, ignore_errors=True)
+    if len(sys.argv) == 4 and sys.argv[1] == '--row':
+        return named_row(sys.argv[2], os.path.abspath(sys.argv[3]),
+                         lambda s: print(s, flush=True))
     ap = argparse.ArgumentParser(prog='tools/phase2_check.sh')
     ap.add_argument('--selftest', action='store_true',
                     help='the calibration with every plant built (alone: a tools/selftests.txt row)')
