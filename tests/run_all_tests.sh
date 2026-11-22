@@ -6832,9 +6832,15 @@ echo ""
 # EIGS_JIT_OFF=1 must turn it off, EIGS_JIT_STATS=0 must print nothing --
 # tests/test_env_flags.sh (oracle: the JIT's own compiled= stats line).
 echo "[99y] boolean env-flag convention (#1032)"
-EF_OUTPUT=$(bash "$TESTS_DIR/test_env_flags.sh" 2>&1)
+EF_OUTPUT=$(bash "$TESTS_DIR/test_env_flags.sh" 2>&1); EF_RC=$?
 EF_PASS=$(echo "$EF_OUTPUT" | grep -c "PASS:" || true)
 EF_FAIL=$(echo "$EF_OUTPUT" | grep -c "FAIL:" || true)
+# A nonzero exit or a run that printed no check is a failure, never "all 0".
+if [ "$EF_RC" -ne 0 ] || [ $((EF_PASS + EF_FAIL)) -eq 0 ]; then
+    EF_FAIL=$((EF_FAIL + 1))
+    EF_OUTPUT="$EF_OUTPUT
+FAIL: test_env_flags.sh exited $EF_RC after $((EF_PASS + EF_FAIL - 1)) check(s)"
+fi
 TOTAL=$((TOTAL + EF_PASS + EF_FAIL))
 PASS=$((PASS + EF_PASS))
 FAIL=$((FAIL + EF_FAIL))

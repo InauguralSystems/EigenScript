@@ -15,7 +15,7 @@ c_on=$(compiled -u EIGS_JIT_OFF)
 c_zero=$(compiled EIGS_JIT_OFF=0)
 c_empty=$(compiled EIGS_JIT_OFF=)
 c_off=$(compiled EIGS_JIT_OFF=1)
-JIT_BACKEND=$("$EIGS" --build-info) || exit 1
+JIT_BACKEND=$("$EIGS" --build-info) || { echo "FAIL: --build-info probe failed (rc=$?), the JIT_OFF checks cannot run"; exit 1; }
 if [ "$JIT_BACKEND" = jit-backend=none ]; then
     echo "PASS: JIT_OFF checks n/a (no JIT backend)"; c_on=""
 elif [ "$c_on" = compiled=0 ] || [ -z "$c_on" ]; then
