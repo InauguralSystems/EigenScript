@@ -1,0 +1,1 @@
+- `exit` raises catchable `type_mismatch` for a non-numeric code in every strict mode, before requesting a stop. `null` and empty lists still default to code 0; a one-number list still supplies its code.
