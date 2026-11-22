@@ -138,7 +138,10 @@ print of (g of 7)
 
 - `name is expr` **updates an existing binding up the scope chain** if one
   exists (it mutates the caller's/module's variable); it creates a new local
-  only if no such binding exists.
+  only if no such binding exists. Nothing else changes where it lands: reading
+  the name's history (`prev of x`, `when is x`), mentioning it in an inner
+  function or lambda, or a comprehension or `catch` name of the same name
+  elsewhere in the function does not make the write local.
 - **Inside any library/helper function, prefix internal variables with `local`**
   (`local total is 0`) so you don't clobber a same-named caller/module variable.
   This is the single most common scope bug. `local` binds from its line onward.
@@ -555,6 +558,9 @@ value
   every tensor operand was one (`gather`'s index vector is not one);
   `sum`/`mean`/`norm` take either and return a number, as does
   `gather of [vec, i]` on a 1-D tensor.
+- `tensor_save` answers `true` once the file is written; a path it cannot
+  open, a short write or a failed close raises a catchable `io` error naming
+  the path and the reason (the partial file is left, as `write_text` leaves it).
 
 read_text, read_bytes, and read_bytes_buf use Python-style failure semantics:
 missing, unreadable, and directory paths raise catchable io errors containing

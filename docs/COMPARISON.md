@@ -402,7 +402,7 @@ function makeCounter() {
 ```
 
 EigenScript — no `nonlocal` needed: assignment is outward-mutable, so
-inner functions write outer variables directly:
+inner functions write outer variables directly. Where `name is expr` lands depends only on whether the name exists outside and on `local`: reading the name's history (`prev of x`, `when is x`), mentioning it in an inner function or lambda, or using it as a comprehension or `catch` name elsewhere in the function does not make the write local.
 
 ```eigenscript
 define make_counter as:
@@ -509,6 +509,7 @@ flat-backed matrix. `matmul`, `softmax`, `sum`, `mean`, `norm` and `gather`
 accept either; `matmul`, `softmax`, and `gather` on a shaped-buffer matrix,
 hand back a buffer when every tensor operand was one, and `sum`, `mean`,
 `norm`, and `gather of [vec, i]` on a 1-D tensor, return a number.
+`tensor_save` answers `true` once the file is written; a path it cannot open, a write that comes back short, or a close that fails raises a catchable `io` error naming the path and the system's reason, and the partial file is left where the write stopped, as `write_text` leaves it.
 `matmul`, `matmul_at`, and `matmul_bt` round each multiplication to binary64
 before adding it to the accumulator, in ascending inner-index order, on both
 containers. They do not fuse the multiplication and addition.

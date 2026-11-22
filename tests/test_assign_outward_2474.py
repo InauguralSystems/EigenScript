@@ -231,9 +231,17 @@ def build():
         cells.append((tag, init, new, read == "LOCAL", x, ox, rk, f, vk, pos))
     return "\n".join(lines) + "\n", cells
 
+def write_file(path, text):
+    with open(path, "w", encoding="utf-8") as f: f.write(text)
+
 def run(src, env, stats=None):
     p = subprocess.run([EIGS, src], text=True, capture_output=True,
                        env={**os.environ, **env}, timeout=180)
+    # Every child's stderr reaches the section's output, where rc_ok classifies it: a UBSan report
+    # exits 0 under the ASan profile, so a sanitizer report must not stop here (.claude/rules/test-suite.md).
+    # Only the JIT's own statistics and debug lines, which the entry run asks for, are left out.
+    rest = "".join(l for l in p.stderr.splitlines(True) if not l.startswith("[jit] "))
+    if rest: sys.stderr.write(rest)
     if p.returncode: raise RuntimeError(p.stderr or f"exit {p.returncode}")
     if stats is not None: stats.append(p.stderr)
     return p.stdout
@@ -287,7 +295,7 @@ def main():
     failed = 0
     with tempfile.TemporaryDirectory() as td:
         src = os.path.join(td, "matrix.eigs")
-        open(src, "w", encoding="utf-8").write(source)
+        write_file(src, source)
         for name, env in tiers:
             stats = []
             bad = check(run(src, env, stats), cells); note = ""
@@ -296,13 +304,13 @@ def main():
             failed += len(bad)
             print(("PASS" if not bad else "FAIL") + f": assignment matrix {name}{note}")
             for msg in bad[:20]: print("  " + msg)
-            open(src, "w", encoding="utf-8").write(EXTRA)
+            write_file(src, EXTRA)
             extra = run(src, env).splitlines()
             missing = [line for line in EXTRA_WANTS if line not in extra]
             failed += len(missing)
             print(("PASS" if not missing else "FAIL") + f": assignment regressions {name}")
             for line in missing[:20]: print("  missing: " + line)
-            open(src, "w", encoding="utf-8").write(source)
+            write_file(src, source)
         tape = os.path.join(td, "matrix.trace")
         recorded = run(src, {"EIGS_TRACE": tape})
         for name, env in (("record", {"EIGS_TRACE": tape}), ("replay", {"EIGS_REPLAY": tape})):

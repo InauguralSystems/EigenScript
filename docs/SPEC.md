@@ -201,6 +201,10 @@ Assignment uses `is`. It is outward-mutable: if the name exists in an
 enclosing scope, that binding is updated; otherwise a new binding is
 created in the enclosing scope. `local name is expr` forces the binding
 into the current scope even when an outer scope has the same name.
+Nothing else decides where a write lands: reading the name's history
+(`prev of x`, `when is x`), mentioning it in an inner function or lambda,
+or a comprehension or `catch` name of the same name elsewhere in the
+function does not make the write local.
 
 This holds at **every** block form. A name first bound inside an `if`
 body, a `loop while` body or a `for` body is visible after the block, in
@@ -2896,6 +2900,7 @@ element `i`, a number. The reductions
 (`sum`, `mean`, `norm`) return a number from either container. A 1-D buffer
 reads as a 1-D tensor and a shaped buffer as its `rows x cols` 2-D tensor, so
 the numbers agree element for element with the equivalent list.
+`tensor_save` answers `true` once the file is written; a path it cannot open, a write that comes back short, or a close that fails raises a catchable `io` error naming the path and the system's reason, and the partial file is left where the write stopped, as `write_text` leaves it.
 
 `read_text`, `read_bytes`, and `read_bytes_buf` follow Python's exception
 model: a missing or unreadable path, or a directory in place of a file, raises
