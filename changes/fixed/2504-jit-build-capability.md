@@ -1,0 +1,1 @@
+- `--build-info` reports `jit-backend=none` when built with `EIGENSCRIPT_JIT_FORCE_OFF`. Native test expectations use the binary's build capability, including on x86-64 hosts with an interpreter-only binary.

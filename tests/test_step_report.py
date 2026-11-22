@@ -3,7 +3,6 @@
 import argparse
 import json
 import os
-import platform
 from pathlib import Path
 import re
 import subprocess
@@ -26,7 +25,7 @@ def main():
     args = ap.parse_args()
     binary = str(args.binary.resolve())
     base = {k: v for k, v in os.environ.items() if not k.startswith('EIGS_')}
-    native_required = args.require_native or platform.machine().lower() in ('x86_64', 'amd64')
+    native_required = args.require_native or 'jit-backend=x86-64' in checked([binary, '--build-info'], base).splitlines()
     rows, recordings = [], []
     with tempfile.TemporaryDirectory(prefix='step-report-') as tmp:
         tmp = Path(tmp)
@@ -80,7 +79,7 @@ def main():
                 for n, label in expected.items(): assert labels[n] == label, (fixture, tier, n, labels[n])
     if args.out: args.out.write_text(json.dumps(rows, indent=2) + '\n')
     if args.diagnostics: args.diagnostics.write_text(json.dumps(dict(contract_rows=len(rows), p_and_t_comparisons=2*len(rows), native_required=native_required, trace_recordings=recordings), indent=2) + '\n')
-    print(f'PASS: step-report rows={len(rows)} p={len(rows)} t={len(rows)} tiers=2 mismatches=0')
+    print(f'PASS: step-report rows={len(rows)} p={len(rows)} t={len(rows)} tiers=2 mismatches=0 native={"required" if native_required else "n/a (no backend)"}')
 
 
 if __name__ == '__main__':

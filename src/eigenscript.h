@@ -64,10 +64,10 @@
 #define EIGENSCRIPT_FREESTANDING 0
 #endif
 
-/* The JIT is x86-64-only and compiled out of the freestanding profile
+/* The JIT is x86-64-only, compiled out when forced off or freestanding
  * (executable pages are a deferred HAL root). All arch gates in jit.c /
- * vm.c go through this so the two conditions can't drift. */
-#if defined(__x86_64__) && !EIGENSCRIPT_FREESTANDING
+ * vm.c go through this so availability cannot drift. */
+#if defined(__x86_64__) && !EIGENSCRIPT_FREESTANDING && !(defined(EIGENSCRIPT_JIT_FORCE_OFF) && EIGENSCRIPT_JIT_FORCE_OFF)
 #define EIGS_JIT_ENABLED 1
 #else
 #define EIGS_JIT_ENABLED 0

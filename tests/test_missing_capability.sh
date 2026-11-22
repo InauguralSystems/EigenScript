@@ -15,8 +15,10 @@ if [[ -z "$variant" ]]; then
     echo "missing capability: build.sh layout; checking release objects"
 fi
 make --no-print-directory -C "$ROOT" -f tests/missing-capability.mk \
-    "COLD_VARIANT=$variant" "build/$variant/test_missing_capability"
+    "COLD_VARIANT=$variant" "build/$variant/eigenscript" "build/$variant/test_missing_capability"
 source "$ROOT/tests/lsan_classify.sh"
+JIT_BACKEND=$("$ROOT/build/$variant/eigenscript" --build-info)
+NATIVE_NOTE=""; if [[ "$JIT_BACKEND" == jit-backend=none ]]; then NATIVE_NOTE=" native=n/a (no backend)"; fi
 # Match the suite's portable timeout/gtimeout/direct fallback convention.
 mc_tmo() {
     local seconds="$1"; shift
@@ -35,7 +37,7 @@ for strict in unset 0 1; do
             if [[ "$strict" != unset ]]; then export EIGS_STRICT="$strict"; fi
             if [[ "$jit" == off ]]; then export EIGS_JIT_OFF=1; fi
             if [[ "$jit" == osr ]]; then export EIGS_JIT_OSR_THRESHOLD=1; fi
-            mc_tmo 30 "$ROOT/build/$variant/test_missing_capability"
+            mc_tmo 30 "$ROOT/build/$variant/test_missing_capability" "$JIT_BACKEND"
         ) > "$output" 2>&1 || rc=$?
         cat "$output"
         classification=0
@@ -46,8 +48,8 @@ for strict in unset 0 1; do
         [[ "$summary" =~ $summary_pattern ]]
         [[ $((BASH_REMATCH[1] + BASH_REMATCH[2])) -eq 33 ]]  # #2375 adds http_fetch after #2373's http_request_header
         extra=0
-        if [[ "$(uname -m)" == x86_64 && "$jit" != off && "${BASH_REMATCH[1]}" -gt 0 ]]; then extra=1; fi
+        if [[ "$JIT_BACKEND" == jit-backend=x86-64 && "$jit" != off && "${BASH_REMATCH[1]}" -gt 0 ]]; then extra=1; fi
         [[ "${BASH_REMATCH[3]}" -eq $((4 + 12 * BASH_REMATCH[1] + 2 * BASH_REMATCH[2] + (BASH_REMATCH[1] > 0) + extra)) ]]
-        echo "PASS: missing capability strict=$strict jit=$jit"
+        echo "PASS: missing capability strict=$strict jit=$jit$NATIVE_NOTE"
     done
 done

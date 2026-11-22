@@ -658,9 +658,12 @@ check_eigs_suite() {
     fi
 }
 
+JIT_BACKEND=$(./eigenscript --build-info) || exit 1
+case "$JIT_BACKEND" in jit-backend=x86-64|jit-backend=none) ;; *) echo "FAIL: invalid --build-info: $JIT_BACKEND"; exit 1 ;; esac
+[ "$JIT_BACKEND" != jit-backend=none ] || echo "JIT native expectations: n/a (no backend)"
 # A JIT/OSR row that compiled nothing measured the interpreter ([0b], [0g]).
 lar_jit_witness() {   # lar_jit_witness <tier> <output>: prints ok | none
-    if [ "$1" = "EIGS_JIT_OFF=1" ] || [ "$(uname -m)" != x86_64 ] ||
+    if [ "$1" = "EIGS_JIT_OFF=1" ] || [ "$JIT_BACKEND" = jit-backend=none ] ||
        grep -qE '^\[jit\] scanned=[0-9]+ compiled=[1-9]' <<< "$2"; then echo ok; else echo none; fi
 }
 
@@ -5111,13 +5114,13 @@ obs_hoist_verdict() {
     : "${OHV_CALLS:=missing}"
     if [ "$OHV_CALLS" != missing ] && [ "$OHV_CALLS" -ge 1000 ] 2>/dev/null; then OHV_CALLS=populated; fi
     if [ "$OHV_MODE" = jit ]; then
-        if [ "$(uname -m)" != x86_64 ]; then OHV_JIT="n/a"
+        if [ "$JIT_BACKEND" = jit-backend=none ]; then OHV_JIT="n/a"
         elif printf '%s\n' "$OHV_OUT" | grep -qE '^\[jit\] scanned=[0-9]+ compiled=[1-9]'; then OHV_JIT=compiled
         else OHV_JIT=none; fi
     else OHV_JIT=off; fi
     echo "$OHV_ANS/calls=$OHV_CALLS/jit=$OHV_JIT"
 }
-OBS_HOIST_JIT_EXPECT=compiled; [ "$(uname -m)" = x86_64 ] || OBS_HOIST_JIT_EXPECT="n/a"
+OBS_HOIST_JIT_EXPECT=compiled; [ "$JIT_BACKEND" = jit-backend=x86-64 ] || OBS_HOIST_JIT_EXPECT="n/a"
 # 45. Interpreter, module-level names (OBSERVE_NAME_POST): closed -> no calls.
 OBS_G44=$(obs_hoist_verdict interp "$OBS_GATE_TMP/hoist_mod.eigs")
 check "gate closed: OBSERVE_NAME_POST never enters the observer (interpreter)" "$OBS_G44" "1500.0/calls=0/jit=off"
@@ -5696,7 +5699,7 @@ TOTAL=$((TOTAL + 1))
 # prologue (the dict-field inline cache stays off — slow-path helper
 # runs instead — but every other fast path emits). Same thunk-gate as
 # Linux x86_64.
-if [ "$(uname -m)" = "x86_64" ]; then
+if [ "$JIT_BACKEND" = jit-backend=x86-64 ]; then
     if echo "$JPATH_OUTPUT" | grep -qE "\[jit\] scanned=[0-9]+ compiled=[1-9]"; then
         PASS=$((PASS + 1))
         echo "  PASS: JIT thunks compiled (fast paths ran native)"
@@ -5718,7 +5721,7 @@ TOTAL=$((TOTAL + 1))
 # measuring nothing while the JIT track needed exactly that number.
 # Assert real rows, not just a header: a data row AND a nonzero
 # executed-bytes total.
-if [ "$(uname -m)" = "x86_64" ]; then
+if [ "$JIT_BACKEND" = jit-backend=x86-64 ]; then
     JHOT_OUTPUT=$(EIGS_JIT_HOT=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1 >/dev/null)
     JHOT_RC=$?
     JHOT_BYTES=$(echo "$JHOT_OUTPUT" | sed -n 's/.*bytes native: [0-9]* \/ total: \([0-9]*\).*/\1/p' | head -1)
@@ -5780,7 +5783,7 @@ TOTAL=$((TOTAL + 1))
 # A one-page cache deterministically exhausts on this corpus.  Space rejection
 # is not an unsupported-bytecode verdict: every rejected hot row must say
 # "full", and those rows must not enter the stop-opcode histogram.
-if [ "$(uname -m)" = "x86_64" ]; then
+if [ "$JIT_BACKEND" = jit-backend=x86-64 ]; then
     JFULL_OUTPUT=$(EIGS_JIT_CACHE_PAGES=1 EIGS_JIT_STATS=1 EIGS_JIT_STOPS=1 EIGS_JIT_HOT=1 \
         ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1 >/dev/null)
     JFULL_RC=$?
