@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """#2474: reads and captures never turn an outward assignment local."""
-import json, os, re, subprocess, sys, tempfile
+import json, os, platform, re, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EIGS = os.environ.get("EIGS", os.path.join(ROOT, "src", "eigenscript"))
@@ -299,7 +299,11 @@ def main():
         for name, env in tiers:
             stats = []
             bad = check(run(src, env, stats), cells); note = ""
-            if name == "entry":
+            # The JIT is an x86-64 backend; elsewhere (the arm64 macOS runner) nothing compiles and
+            # the entry run is one more interpreted arm, as the runner's other JIT rows label it.
+            if name == "entry" and platform.machine().lower() not in ("x86_64", "amd64"):
+                note = f" (jit=n/a on {platform.machine()}: no JIT backend)"
+            elif name == "entry":
                 more, said = jit_problems(stats[0], cells); bad += more; note = f" ({said})"
             failed += len(bad)
             print(("PASS" if not bad else "FAIL") + f": assignment matrix {name}{note}")
