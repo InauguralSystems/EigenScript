@@ -658,8 +658,18 @@ check_eigs_suite() {
     fi
 }
 
-JIT_BACKEND=$(./eigenscript --build-info) || exit 1
-case "$JIT_BACKEND" in jit-backend=x86-64|jit-backend=none) ;; *) echo "FAIL: invalid --build-info: $JIT_BACKEND"; exit 1 ;; esac
+# The binary's own answer decides the JIT expectations (#2504). A probe that
+# fails is one counted FAIL, never the end of the run: a gate's plant may wrap
+# the binary to exit nonzero on every call (test_san_report_sweep_2306.sh), and
+# the sections still owe their rows. A failed probe keeps every native
+# expectation required (the x86-64 value), so no JIT row turns into n/a or SKIP.
+JIT_BACKEND=$(./eigenscript --build-info 2>/dev/null); JIT_BACKEND_RC=$?
+case "$JIT_BACKEND_RC:$JIT_BACKEND" in
+    0:jit-backend=x86-64|0:jit-backend=none) ;;
+    *) TOTAL=$((TOTAL + 1)); FAIL=$((FAIL + 1))
+       echo "  FAIL: --build-info probe (rc=$JIT_BACKEND_RC, output: ${JIT_BACKEND:-none}); JIT native expectations stay required"
+       JIT_BACKEND=jit-backend=x86-64 ;;
+esac
 [ "$JIT_BACKEND" != jit-backend=none ] || echo "JIT native expectations: n/a (no backend)"
 # A JIT/OSR row that compiled nothing measured the interpreter ([0b], [0g]).
 lar_jit_witness() {   # lar_jit_witness <tier> <output>: prints ok | none
@@ -5129,10 +5139,10 @@ OBS_G45=$(obs_hoist_verdict interp "$OBS_GATE_TMP/hoist_fn.eigs")
 check "gate closed: OBSERVE_ASSIGN_LOCAL never enters the observer (interpreter)" "$OBS_G45" "1500.0/calls=0/jit=off"
 # 47. JIT, module-level names: the emitter's inline gate test skips the helper.
 OBS_G46=$(obs_hoist_verdict jit "$OBS_GATE_TMP/hoist_mod.eigs")
-check "gate closed: the JIT skips jit_helper_observe_name_post (thunk witnessed)" "$OBS_G46" "1500.0/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
+check "gate closed: the JIT skips jit_helper_observe_name_post (thunk witnessed where a backend exists)" "$OBS_G46" "1500.0/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
 # 48. JIT, fn-local slots.
 OBS_G47=$(obs_hoist_verdict jit "$OBS_GATE_TMP/hoist_fn.eigs")
-check "gate closed: the JIT skips jit_helper_observe_assign_local (thunk witnessed)" "$OBS_G47" "1500.0/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
+check "gate closed: the JIT skips jit_helper_observe_assign_local (thunk witnessed where a backend exists)" "$OBS_G47" "1500.0/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
 # 49. Control — a reader opens the gate at compile time and the same JIT'd loop
 #     must then RECORD (populated tally, `diverging` verdict on the ramp). A
 #     do-nothing counter or a gate test that skips the call unconditionally
