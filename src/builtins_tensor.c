@@ -2609,6 +2609,12 @@ Value* builtin_sgd_update_cols(Value *arg) {
     return list_get_return(arg, 0);
 }
 #if !EIGENSCRIPT_FREESTANDING
+static Value *tensor_save_io_error(const char *path, int err, int short_write) {
+    rt_error(EK_IO, 0, "tensor_save: '%s': %s", path,
+             err ? strerror(err) : (short_write ? "short write" : strerror(EIO)));
+    return make_null();
+}
+
 Value* builtin_tensor_save(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "tensor_save");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
@@ -2659,18 +2665,24 @@ Value* builtin_tensor_save(Value *arg) {
     if (!flat && g_has_error) return make_bool(0);
 
     FILE *f = xfopen_write(path_val->data.str, "wb");
-    /* fs:ANSWER both arguments were accepted by the guards above; a NULL FILE*
-     * is xfopen_write failing, and 0 is this builtin's failure bit (the success
-     * path ends in make_bool(1)). */
-    if (!f) { free(flat); return make_bool(0); }
+    if (!f) {
+        int err = errno;
+        free(flat);
+        return tensor_save_io_error(path_val->data.str, err, 0);
+    }
 
     uint32_t header[4] = { (uint32_t)ndim, (uint32_t)rows, (uint32_t)cols, 1 /* flags: has observer */ };
-    fwrite(header, sizeof(uint32_t), 4, f);
+    int write_failed = fwrite(header, sizeof(uint32_t), 4, f) != 4;
+    int write_err = write_failed ? errno : 0;
 
     int total = rows * cols;
 
     /* Write numeric data */
-    if (total > 0) fwrite(flat, sizeof(double), total, f);
+    if (!write_failed && total > 0 &&
+        fwrite(flat, sizeof(double), (size_t)total, f) != (size_t)total) {
+        write_failed = 1;
+        write_err = errno;
+    }
     free(flat);
 
     /* #262 Step E: tensor elements are list items, not bindings, so they never
@@ -2679,10 +2691,20 @@ Value* builtin_tensor_save(Value *arg) {
     {
         double obs[5] = {0, 0, 0, 0, 0};
         int n = (ndim == 1) ? cols : rows * cols;
-        for (int i = 0; i < n; i++) fwrite(obs, sizeof(double), 5, f);
+        for (int i = 0; i < n && !write_failed; i++) {
+            if (fwrite(obs, sizeof(double), 5, f) != 5) {
+                write_failed = 1;
+                write_err = errno;
+            }
+        }
     }
 
-    fclose(f);
+    int close_ok = fclose(f) == 0;
+    int close_err = close_ok ? 0 : errno;
+    if (write_failed || !close_ok)
+        return tensor_save_io_error(path_val->data.str,
+                                    write_err ? write_err : close_err,
+                                    write_failed);
     return make_bool(1);
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */

@@ -476,6 +476,7 @@ probs is softmax of h
 Builtins: `matmul`, `add`, `subtract`, `multiply`, `divide`, `softmax`,
 `log_softmax`, `relu`, `leaky_relu`, `zeros`, `random_normal`, `shape`,
 `numerical_grad`, `sgd_update`, `tensor_save`, `tensor_load`.
+`tensor_save` answers `true` once the file is written; a path it cannot open, a write that comes back short, or a close that fails raises a catchable `io` error naming the path and the system's reason, and the partial file is left where the write stopped, as `write_text` leaves it.
 
 File reads follow Python's exception model: `read_text`, `read_bytes`, and
 `read_bytes_buf` raise a catchable `io` error naming the path and the operating
