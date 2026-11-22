@@ -1,0 +1,1 @@
+- Make UI widget-state flags consistently use `true`/`false`, validate boolean constructor/setter inputs, and migrate UI examples and tests (#1653).

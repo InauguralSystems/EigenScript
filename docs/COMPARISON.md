@@ -1212,3 +1212,7 @@ A refused `shared_set`, overflowing `shared_incr`, `store_put` or
 create a collection, consume an automatic ID, change the caller's record or
 write file bytes. Historical stores containing quoted non-finite buffer
 sentinels remain readable; new writes of those payloads refuse.
+
+### UI state booleans
+
+Like Python, Lua, Go, and Rust, EigenScript's UI library uses boolean values for two-state widget fields rather than numeric `0`/`1` flags. Unlike permissive legacy conventions, public boolean-valued UI constructor and setter arguments reject numbers.

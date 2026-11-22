@@ -31,6 +31,9 @@ define _ease_in_out(t) as:
 # ---- Tween API ----
 
 define tween(widget, field, target, duration, easing) as:
+    # Interpolation is numeric; never enqueue a write to a boolean value.
+    if field == "value" and (widget.type == "checkbox" or widget.type == "toggle" or widget.type == "toggle_button"):
+        throw of "tween: boolean widget values cannot be animated"
     now is gfx_ticks of null
     # Read start value from widget field
     start_val is _tween_get of [widget, field]
@@ -100,6 +103,8 @@ define _tween_set(widget, field, val) as:
     elif field == "h":
         widget.h is val
     elif field == "value":
+        if widget.type == "checkbox" or widget.type == "toggle" or widget.type == "toggle_button":
+            _ui_require_bool of [val, widget.type, "value"]
         widget.value is val
     elif field == "split_pos":
         widget.split_pos is val

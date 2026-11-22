@@ -1169,3 +1169,5 @@ A refused `shared_set`, overflowing `shared_incr`, `store_put` or
 create a collection, consume an automatic ID, change the caller's record or
 write file bytes. Historical stores containing quoted non-finite buffer
 sentinels remain readable; new writes of those payloads refuse.
+
+UI widget flags use `true`/`false`: for example, `button.visible is false` hides a button and `button.enabled is true` permits interaction. Checkbox, toggle, and toggle-button `value` fields are also booleans; numeric values and selection indices remain numeric. See [`docs/UI.md`](docs/UI.md).
