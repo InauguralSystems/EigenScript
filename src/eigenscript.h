@@ -1987,7 +1987,8 @@ static inline void val_decref(Value *v) {
 typedef enum {
     EIGS_OP_ADD, EIGS_OP_SUB, EIGS_OP_MUL, EIGS_OP_DIV, EIGS_OP_IDIV,
     EIGS_OP_MOD, EIGS_OP_EQ, EIGS_OP_NE, EIGS_OP_LT, EIGS_OP_LE,
-    EIGS_OP_GT, EIGS_OP_GE, EIGS_OP_NEG, EIGS_OP_NOT
+    EIGS_OP_GT, EIGS_OP_GE, EIGS_OP_BAND, EIGS_OP_BOR, EIGS_OP_BXOR,
+    EIGS_OP_SHL, EIGS_OP_SHR, EIGS_OP_NEG, EIGS_OP_NOT, EIGS_OP_BNOT
 } EigsOperator;
 EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b);
 EigsSlot eigs_op_unary(EigsOperator op, EigsSlot a);

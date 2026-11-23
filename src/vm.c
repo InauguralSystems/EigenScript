@@ -1050,6 +1050,27 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
     const char *name = "?";
     if (ia) ad = (double)ai;
     if (ib) bd = (double)bi;
+    if (op >= EIGS_OP_BAND && op <= EIGS_OP_SHR) {
+        static const char *names[] = {"&", "|", "^", "<<", ">>"};
+        int64_t av, bv;
+        int ak = vm_bit_operand(a, &av), bk = vm_bit_operand(b, &bv);
+        if (ak == 1 && bk == 1) {
+            if (op == EIGS_OP_BAND) return slot_from_int(av & bv);
+            if (op == EIGS_OP_BOR) return slot_from_int(av | bv);
+            if (op == EIGS_OP_BXOR) return slot_from_int(av ^ bv);
+            return slot_from_int(eigs_bit_shift(av, bv, op == EIGS_OP_SHR));
+        }
+        name = names[op - EIGS_OP_BAND];
+        if (ak < 0 || bk < 0)
+            rt_error(EK_TYPE, line, "cannot apply '%s' to %s and %s", name,
+                     slot_type_name(a), slot_type_name(b));
+        else {
+            double bad = 0.0;
+            slot_f64_value(ak == 0 ? a : b, &bad);
+            rt_error(EK_VALUE, line, EIGS_NO_INT_REP_FMT, name, bad);
+        }
+        return slot_null();
+    }
     if (op == EIGS_OP_EQ || op == EIGS_OP_NE) {
         Value *av = slot_to_value(a), *bv = slot_to_value(b);
         int eq = values_equal_op(av, bv, op == EIGS_OP_EQ ? "==" : "!=");
@@ -1138,7 +1159,17 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
 
 EigsSlot eigs_op_unary(EigsOperator op, EigsSlot a) {
     if (op == EIGS_OP_NOT) return slot_from_bool(!slot_truthy(a));
-    int64_t i; double d;
+    int64_t i; double d = 0.0;
+    if (op == EIGS_OP_BNOT) {
+        int k = vm_bit_operand(a, &i);
+        if (k == 1) return slot_from_int(~i);
+        if (k < 0) rt_error(EK_TYPE, op_line(), "cannot apply '~' to %s", slot_type_name(a));
+        else {
+            slot_f64_value(a, &d);
+            rt_error(EK_VALUE, op_line(), EIGS_NO_INT_REP_FMT, "~", d);
+        }
+        return slot_null();
+    }
     if (slot_f64_value(a, &d)) return slot_from_f64(eigs_math_result(-d));
     if (slot_int_value(a, &i)) {
         if (i == INT64_MIN) { rt_error(EK_VALUE, op_line(), "integer overflow in unary '-'"); return slot_null(); }
@@ -3873,34 +3904,22 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
 /* #1758 N8: exact int64 operands (#1740), integer results, Lua shifts.
  * Both popped operands are owned, including boxed ints on raise paths. */
-#define INT_BINOP_R(NAME, OPNAME, EXPR) \
+#define INT_BINOP_R(NAME, PUBLIC_OP) \
     CASE(NAME): { \
         EigsSlot _bs = g_vm.stack[g_vm.sp - 1]; \
         EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
-        int64_t _ai, _bi; \
-        int _ak = vm_bit_operand(_as, &_ai), _bk = vm_bit_operand(_bs, &_bi); \
-        EigsSlot _r = slot_null(); \
-        if (_ak == 1 && _bk == 1) { \
-            _r = slot_from_int(EXPR); \
-        } else if (_ak < 0 || _bk < 0) { \
-            rt_error(EK_TYPE, current_line, "cannot apply '%s' to %s and %s", \
-                     OPNAME, slot_type_name(_as), slot_type_name(_bs)); \
-        } else { \
-            double _bad = 0.0; \
-            slot_f64_value(_ak == 0 ? _as : _bs, &_bad); \
-            rt_error(EK_VALUE, current_line, EIGS_NO_INT_REP_FMT, OPNAME, _bad); \
-        } \
+        EigsSlot _r = eigs_op_binary((PUBLIC_OP), _as, _bs); \
         slot_decref(_as); slot_decref(_bs); \
         g_vm.stack[g_vm.sp - 2] = _r; \
         g_vm.sp--; \
         DISPATCH(); \
     }
 
-    INT_BINOP_R(BAND, "&", _ai & _bi)
-    INT_BINOP_R(BOR, "|", _ai | _bi)
-    INT_BINOP_R(BXOR, "^", _ai ^ _bi)
-    INT_BINOP_R(SHL, "<<", eigs_bit_shift(_ai, _bi, 0))
-    INT_BINOP_R(SHR, ">>", eigs_bit_shift(_ai, _bi, 1))
+    INT_BINOP_R(BAND, EIGS_OP_BAND)
+    INT_BINOP_R(BOR, EIGS_OP_BOR)
+    INT_BINOP_R(BXOR, EIGS_OP_BXOR)
+    INT_BINOP_R(SHL, EIGS_OP_SHL)
+    INT_BINOP_R(SHR, EIGS_OP_SHR)
 
     /* ---- Unary ---- */
 
@@ -3912,17 +3931,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     CASE(BNOT): {
         EigsSlot s = g_vm.stack[g_vm.sp - 1];
-        int64_t i;
-        int k = vm_bit_operand(s, &i);
-        EigsSlot r = slot_null();
-        if (k == 1) r = slot_from_int(~i);
-        else if (k < 0)
-            rt_error(EK_TYPE, current_line, "cannot apply '~' to %s", slot_type_name(s));
-        else {
-            double bad = 0.0;
-            slot_f64_value(s, &bad);
-            rt_error(EK_VALUE, current_line, EIGS_NO_INT_REP_FMT, "~", bad);
-        }
+        EigsSlot r = eigs_op_unary(EIGS_OP_BNOT, s);
         slot_decref(s);
         g_vm.stack[g_vm.sp - 1] = r;
         DISPATCH();

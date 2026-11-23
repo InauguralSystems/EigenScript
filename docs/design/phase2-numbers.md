@@ -753,7 +753,6 @@ result).**
 | `value_slot.h:slot_truthy_immediate` | smi-arm | an int is truthy when it is not 0, like a double (D1) |
 | `vm.c:#define ARITH_FAST` | guarded | an int is not a float (`slot_f64_value`): the arm's slow path pops it through `slot_bridge_unwrap`; R1.3 gives that path int arithmetic (D1) |
 | `vm.c:#define INT_ARITH` | smi-arm | two exact integer slots use checked int64 arithmetic; the result is an SMI when it fits and an owned int box otherwise, and overflow raises (R1.3) (D1) |
-| `vm.c:#define INT_BINOP_R` | smi-arm | both operands use `vm_bit_operand`; R1.5 returns the int kind and uses `eigs_bit_shift` for Lua counts and logical right shift (D1) |
 | `vm.c:#define READ_SLICE_BOUND` | smi-arm | an int bound is its value when a C `int` holds it, else a value error (D1) |
 | `vm.c:jit_helper_dot_get` | guarded | a non-null field is pushed as its bits; an SMI is a valid stack slot (D3) |
 | `vm.c:jit_helper_dot_set` | guarded | an int value skips the immediate store: the slow path pops it through `slot_bridge_unwrap` (D1) |
@@ -787,7 +786,6 @@ result).**
 | `vm.c:vm_leaf_accessor_exec/OP_LOCAL_DOT_GET` | guarded | a non-pointer target bails (`return 0`); a non-null field is borrowed as its bits, an SMI included (D2) |
 | `vm.c:vm_local_is_null` | guarded | exact null test (D3) |
 | `vm.c:vm_local_lift` | guarded | a non-pointer, non-null slot goes through `slot_to_value` (compile-forced) and is boxed on purpose (D2) |
-| `vm.c:vm_run_ex/CASE(BNOT)` | smi-arm | an int64 operand is read exactly; R1.5 returns its exact complement as the int kind (D1) |
 | `vm.c:vm_run_ex/CASE(DESTRUCTURE_UNPACK)` | guarded | a non-pointer source takes the error path, which names the type through `slot_type_name` (D2) |
 | `vm.c:vm_run_ex/CASE(DISPATCH)` | smi-arm | an int key is its exact value; a key outside C `int` raises `index_range` under main #1849/#2032, after N5's exact int64 check; the result returns through `slot_bridge_unwrap` (D1) |
 | `vm.c:vm_run_ex/CASE(DOT_GET)` | guarded | exact null test of a field (D3) |
@@ -802,8 +800,8 @@ result).**
 | `vm.c:vm_slot_lift` | smi-arm | an SMI is boxed through `slot_to_value`; a reserved tag refuses (R1.3) (D1) |
 | `vm.c:vm_slot_value_opaque` | guarded | only a pointer can be a fn or builtin; an SMI answers "not opaque", which is right (D2) |
 | `vm.c:vm_store_local_slot` | guarded | an int skips the in-place float store; the generic swap stores the SMI (D1) |
-| `vm.c:eigs_op_binary` | smi-arm | exported generic binary operations preserve exact integers and mixed comparison (D1) |
-| `vm.c:eigs_op_unary` | smi-arm | exported negation handles exact integers; truthiness handles every slot kind (D1) |
+| `vm.c:eigs_op_binary` | smi-arm | exported generic binary operations preserve exact integers, bitwise operands and mixed comparison (D1) |
+| `vm.c:eigs_op_unary` | smi-arm | exported negation and complement handle exact integers; truthiness handles every slot kind (D1) |
 <!-- slot-table:end -->
 
 ### 2.6 The accessor API after round 1 (Alt 1R)
