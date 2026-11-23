@@ -610,7 +610,7 @@ static void boundaries(void) {
 }
 
 static void optional_and_types(void) {
-    int saved_guards = g_strict_guards, saved_arithmetic = g_strict_arithmetic;
+    int saved_arithmetic = g_strict_arithmetic;
     for (int arithmetic = 0; arithmetic <= 1; ++arithmetic) {
     g_strict_arithmetic = arithmetic;
     Value *bad = make_str("heap-type-control");
@@ -624,10 +624,10 @@ static void optional_and_types(void) {
         check(!eigs_slot_opt_number(slot_null(), &out, who) && !g_has_error && (out.is_int && out.value.i64 == 73), "eigs_slot_opt_number null");
         reset_error();
         check(!eigs_opt_number(bad, &out, who) && g_has_error && g_error_kind == EK_TYPE && (out.is_int && out.value.i64 == 73), "eigs_opt_number wrong type");
-        g_strict_guards = 0; reset_error();
-        out = eigs_elem_number(bad, who); check((out.is_int == 0 && out.value.f64 == 0) && !g_has_error, "eigs_elem_number non-strict zero");
+        reset_error();
+        out = eigs_elem_number(bad, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_number wrong type always raises");
         reset_error(); (void)eigs_elem_number(make_bool(1), who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_number bool always refuses");
-        g_strict_guards = 1; reset_error(); (void)eigs_elem_number(bad, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_number strict wrong type");
+        reset_error(); (void)eigs_elem_number(bad, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_number strict wrong type");
         reset_error(); (void)eigs_list_number(NULL, 0, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_list_number missing argument");
         check(bad->refcount == refs, "number heap refusal ownership");
     }
@@ -639,10 +639,10 @@ static void optional_and_types(void) {
         check(!eigs_slot_opt_float(slot_null(), &out, who) && !g_has_error && (out == 73), "eigs_slot_opt_float null");
         reset_error();
         check(!eigs_opt_float(bad, &out, who) && g_has_error && g_error_kind == EK_TYPE && (out == 73), "eigs_opt_float wrong type");
-        g_strict_guards = 0; reset_error();
-        out = eigs_elem_float(bad, who); check((out == 0) && !g_has_error, "eigs_elem_float non-strict zero");
+        reset_error();
+        out = eigs_elem_float(bad, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_float wrong type always raises");
         reset_error(); (void)eigs_elem_float(make_bool(1), who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_float bool always refuses");
-        g_strict_guards = 1; reset_error(); (void)eigs_elem_float(bad, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_float strict wrong type");
+        reset_error(); (void)eigs_elem_float(bad, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_float strict wrong type");
         reset_error(); (void)eigs_list_float(NULL, 0, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_list_float missing argument");
         check(bad->refcount == refs, "float heap refusal ownership");
     }
@@ -654,10 +654,10 @@ static void optional_and_types(void) {
         check(!eigs_slot_opt_int(slot_null(), &out, who) && !g_has_error && (out == 73), "eigs_slot_opt_int null");
         reset_error();
         check(!eigs_opt_int(bad, &out, who) && g_has_error && g_error_kind == EK_TYPE && (out == 73), "eigs_opt_int wrong type");
-        g_strict_guards = 0; reset_error();
-        out = eigs_elem_int(bad, who); check((out == 0) && !g_has_error, "eigs_elem_int non-strict zero");
+        reset_error();
+        out = eigs_elem_int(bad, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_int wrong type always raises");
         reset_error(); (void)eigs_elem_int(make_bool(1), who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_int bool always refuses");
-        g_strict_guards = 1; reset_error(); (void)eigs_elem_int(bad, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_int strict wrong type");
+        reset_error(); (void)eigs_elem_int(bad, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_int strict wrong type");
         reset_error(); (void)eigs_list_int(NULL, 0, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_list_int missing argument");
         check(bad->refcount == refs, "int heap refusal ownership");
     }
@@ -669,10 +669,10 @@ static void optional_and_types(void) {
         check(!eigs_slot_opt_byte(slot_null(), &out, who) && !g_has_error && (out == 73), "eigs_slot_opt_byte null");
         reset_error();
         check(!eigs_opt_byte(bad, &out, who) && g_has_error && g_error_kind == EK_TYPE && (out == 73), "eigs_opt_byte wrong type");
-        g_strict_guards = 0; reset_error();
-        out = eigs_elem_byte(bad, who); check((out == 0) && !g_has_error, "eigs_elem_byte non-strict zero");
+        reset_error();
+        out = eigs_elem_byte(bad, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_byte wrong type always raises");
         reset_error(); (void)eigs_elem_byte(make_bool(1), who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_byte bool always refuses");
-        g_strict_guards = 1; reset_error(); (void)eigs_elem_byte(bad, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_byte strict wrong type");
+        reset_error(); (void)eigs_elem_byte(bad, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_byte strict wrong type");
         reset_error(); (void)eigs_list_byte(NULL, 0, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_list_byte missing argument");
         check(bad->refcount == refs, "byte heap refusal ownership");
     }
@@ -684,10 +684,10 @@ static void optional_and_types(void) {
         check(!eigs_slot_opt_int_range(slot_null(), -10, 10, &out, who) && !g_has_error && (out == 73), "eigs_slot_opt_int_range null");
         reset_error();
         check(!eigs_opt_int_range(bad, -10, 10, &out, who) && g_has_error && g_error_kind == EK_TYPE && (out == 73), "eigs_opt_int_range wrong type");
-        g_strict_guards = 0; reset_error();
-        check(eigs_elem_int_range(bad, -10, 10, &out, who) && (out == 0) && !g_has_error, "eigs_elem_int_range non-strict zero");
+        reset_error();
+        check(!eigs_elem_int_range(bad, -10, 10, &out, who) && g_has_error && g_error_kind == EK_TYPE, "eigs_elem_int_range wrong type always raises");
         reset_error(); (void)eigs_elem_int_range(make_bool(1), -10, 10, &out, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_int_range bool always refuses");
-        g_strict_guards = 1; reset_error(); (void)eigs_elem_int_range(bad, -10, 10, &out, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_int_range strict wrong type");
+        reset_error(); (void)eigs_elem_int_range(bad, -10, 10, &out, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_int_range strict wrong type");
         reset_error(); (void)eigs_list_int_range(NULL, 0, -10, 10, &out, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_list_int_range missing argument");
         check(bad->refcount == refs, "int_range heap refusal ownership");
     }
@@ -699,10 +699,10 @@ static void optional_and_types(void) {
         check(!eigs_slot_opt_bounded(slot_null(), 0, 255, &out, who) && !g_has_error && (out == 73), "eigs_slot_opt_bounded null");
         reset_error();
         check(!eigs_opt_bounded(bad, 0, 255, &out, who) && g_has_error && g_error_kind == EK_TYPE && (out == 73), "eigs_opt_bounded wrong type");
-        g_strict_guards = 0; reset_error();
-        check(eigs_elem_bounded(bad, 0, 255, &out, who) && (out == 0) && !g_has_error, "eigs_elem_bounded non-strict zero");
+        reset_error();
+        check(!eigs_elem_bounded(bad, 0, 255, &out, who) && g_has_error && g_error_kind == EK_TYPE, "eigs_elem_bounded wrong type always raises");
         reset_error(); (void)eigs_elem_bounded(make_bool(1), 0, 255, &out, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_bounded bool always refuses");
-        g_strict_guards = 1; reset_error(); (void)eigs_elem_bounded(bad, 0, 255, &out, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_bounded strict wrong type");
+        reset_error(); (void)eigs_elem_bounded(bad, 0, 255, &out, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_bounded strict wrong type");
         reset_error(); (void)eigs_list_bounded(NULL, 0, 0, 255, &out, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_list_bounded missing argument");
         check(bad->refcount == refs, "bounded heap refusal ownership");
     }
@@ -714,16 +714,15 @@ static void optional_and_types(void) {
         check(!eigs_slot_opt_magnitude(slot_null(), -10, 10, &out, who) && !g_has_error && (out == 73), "eigs_slot_opt_magnitude null");
         reset_error();
         check(!eigs_opt_magnitude(bad, -10, 10, &out, who) && g_has_error && g_error_kind == EK_TYPE && (out == 73), "eigs_opt_magnitude wrong type");
-        g_strict_guards = 0; reset_error();
-        check(eigs_elem_magnitude(bad, -10, 10, &out, who) && (out == 0) && !g_has_error, "eigs_elem_magnitude non-strict zero");
+        reset_error();
+        check(!eigs_elem_magnitude(bad, -10, 10, &out, who) && g_has_error && g_error_kind == EK_TYPE, "eigs_elem_magnitude wrong type always raises");
         reset_error(); (void)eigs_elem_magnitude(make_bool(1), -10, 10, &out, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_magnitude bool always refuses");
-        g_strict_guards = 1; reset_error(); (void)eigs_elem_magnitude(bad, -10, 10, &out, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_magnitude strict wrong type");
+        reset_error(); (void)eigs_elem_magnitude(bad, -10, 10, &out, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_elem_magnitude strict wrong type");
         reset_error(); (void)eigs_list_magnitude(NULL, 0, -10, 10, &out, who); check(g_has_error && g_error_kind == EK_TYPE, "eigs_list_magnitude missing argument");
         check(bad->refcount == refs, "magnitude heap refusal ownership");
     }
     reset_error(); val_decref(bad);
-    }
-    g_strict_guards = saved_guards; g_strict_arithmetic = saved_arithmetic;
+    } g_strict_arithmetic = saved_arithmetic;
 }
 
 static void container_and_buffer(void) {
@@ -784,12 +783,10 @@ static void container_and_buffer(void) {
         check(k < 8 ? !g_has_error && f == cells[k] : g_has_error && g_error_kind == EK_VALUE,
               "buffer_read_f64 finite data and nonfinite refusal");
     }
-    int saved_guards = g_strict_guards;
-    int saved_arithmetic = g_strict_arithmetic;
+        int saved_arithmetic = g_strict_arithmetic;
     unsigned saved_flags = g_math_flags;
-    for (int guards = 0; guards <= 1; guards++) {
+    {
       for (int arithmetic = 0; arithmetic <= 1; arithmetic++) {
-        g_strict_guards = guards;
         g_strict_arithmetic = arithmetic;
         g_math_flags = 0;
         reset_error();
@@ -802,7 +799,6 @@ static void container_and_buffer(void) {
               "buffer_read_f64 strict NaN retains its diagnostic");
       }
     }
-    g_strict_guards = saved_guards;
     g_strict_arithmetic = saved_arithmetic;
     g_math_flags = saved_flags;
     reset_error(); check(!buffer_index_at(&buf, -1, &i, "reader") && g_error_kind == EK_INDEX, "buffer negative index");
@@ -817,8 +813,7 @@ static void container_and_buffer(void) {
 /* Sync #10: #1697's tombstones must not hide a non-reflexive descendant
  * from Phase2's R1.6z-D2 structural self-equality traversal. */
 static void tombstoned_dict_equality(void) {
-    int saved_guards = g_strict_guards;
-    int saved_arithmetic = g_strict_arithmetic;
+        int saved_arithmetic = g_strict_arithmetic;
     unsigned saved_flags = g_math_flags;
     Value *nanbuf = eigs_value_new_buffer(1);
     eigs_value_buffer_set(nanbuf, 0, NAN); /* public raw setter preserves bits */
@@ -829,9 +824,8 @@ static void tombstoned_dict_equality(void) {
     dict_remove(dict, "removed");
     check(dict->data.dict.count == 2 && dict->data.dict.used == 3,
           "tombstone leaves NaN buffer beyond live count");
-    for (int guards = 0; guards <= 1; guards++) {
+    {
       for (int arithmetic = 0; arithmetic <= 1; arithmetic++) {
-        g_strict_guards = guards;
         g_strict_arithmetic = arithmetic;
         g_math_flags = EIGS_MATH_UNDERFLOW;
         reset_error();
@@ -843,7 +837,6 @@ static void tombstoned_dict_equality(void) {
     }
     val_decref(dict);
     val_decref(nanbuf);
-    g_strict_guards = saved_guards;
     g_strict_arithmetic = saved_arithmetic;
     g_math_flags = saved_flags;
     reset_error();

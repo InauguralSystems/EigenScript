@@ -3660,7 +3660,8 @@ DFLTREAD
     rm -rf "$GA_DDIR"
     # Derive device-only assertion counts from the file's explicit marker.
     GA_WANT_PLAIN=84; GA_WANT_STRICT=84
-    echo "$GA_PLAIN"  | grep -q "pixel-proof: 1"  && GA_WANT_PLAIN=$((GA_WANT_PLAIN + 6))
+    echo "$GA_PLAIN"  | grep -q "pixel-proof: 1"  && GA_WANT_PLAIN=$((GA_WANT_PLAIN + 8))
+    echo "$GA_STRICT" | grep -q "pixel-proof: 1"  && GA_WANT_STRICT=$((GA_WANT_STRICT + 8))
     if echo "$GA_STRICT" | grep -q "audio-device: 1"; then
         GA_WANT_PLAIN=$((GA_WANT_PLAIN + 3)); GA_WANT_STRICT=$((GA_WANT_STRICT + 3))
     fi
@@ -3687,7 +3688,7 @@ DFLTREAD
         # Say out loud what this environment could NOT exercise, rather than
         # letting a green line imply full coverage.
         echo "$GA_PLAIN" | grep -q "pixel-proof: 1" \
-            || echo "  NOTE: legacy quiet-argument pixel answers are retired; typed rejections are checked in all three states."
+            || echo "  NOTE: dummy SDL unavailable — rejected-draw framebuffer preservation was not exercised."
         echo "$GA_STRICT" | grep -q "audio-device: 1" \
             || echo "  NOTE: no audio device — the sample-element coercion rows did not run."
     else

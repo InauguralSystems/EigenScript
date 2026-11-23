@@ -1468,8 +1468,7 @@ readers refuse non-finite buffer cells with `value` in every `EIGS_STRICT` state
 
 `gfx_fb` palette values and `ppu_render_frame` memory bytes use the Q1 byte
 reader: exact integers in 0..255. Fractions and out-of-range values raise
-`value`; a stored NaN or infinity raises at the data boundary in both strict
-and lenient modes, without normalising the stored payload again.
+`value`; a stored NaN or infinity raises at the data boundary in every `EIGS_STRICT` state, without normalising the stored payload again.
 
 ### Stored buffer data boundary
 

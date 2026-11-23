@@ -191,11 +191,44 @@ assert_eq of [strict_kind of ((_) => audio_play of [0.1, 0.2]), "none", "#1007 s
 assert_eq of [strict_kind of ((_) => audio_play_loop of [([0.1, 0.2]), 2]), "none", "#1007 strict: a well-typed audio_play_loop does not raise"]
 # The optional trailing slot of gfx_text. Its wrong-typed scale was an
 # unchecked `items[6]->data.num` read on the parent, so it is refused —
-# and the refusal is loud here. The plain-mode half of the same rule is
-# the pixel row below.
+# and the refusal is loud here. The pixel proof below verifies that the
+# rejected call leaves the framebuffer unchanged in every state.
 assert_eq of [strict_kind of ((_) => gfx_text of [0, 0, "H", 255, 255, 255, "2"]), "type_mismatch", "#1007 strict: gfx_text raises on a wrong-typed optional scale"]
 assert_eq of [strict_kind of ((_) => gfx_text of [0, 0, "H", 255, 255, 255, 2]), "none", "#1007 strict: a well-typed gfx_text scale does not raise"]
 print of "strict-pass: 1" # Guards are unconditional.
+
+# Rejected drawing calls must raise before touching the framebuffer. This block
+# runs under each of the runner's unset, 0 and 1 EIGS_STRICT states.
+sdl_open is gfx_open of [80, 60, "eigs #1007 pixel preservation"]
+print of ("sdl-present: " + (str of sdl_open))
+if sdl_open:
+    gfx_clear of [7, 8, 9]
+    assert_eq of [strict_kind of ((_) => gfx_rect of [0, 0, 32, 32, "255", 0, 0]), "type_mismatch", "#1007: rejected gfx_rect raises"]
+    rect_px is gfx_read of [4, 4]
+    assert_true of [rect_px[0] == 7 and rect_px[1] == 8, "#1007: rejected gfx_rect leaves its pixel unchanged"]
+    gfx_rect of [0, 0, 32, 32, 255, 0, 0]
+    rect_control is gfx_read of [4, 4]
+    assert_eq of [rect_control[0], 255, "#1007 control: well-typed gfx_rect paints"]
+
+    gfx_clear of [7, 8, 9]
+    assert_eq of [strict_kind of ((_) => gfx_clear of "not a colour"), "type_mismatch", "#1007: rejected gfx_clear raises"]
+    clear_px is gfx_read of [4, 4]
+    assert_true of [clear_px[0] == 7 and clear_px[1] == 8, "#1007: rejected gfx_clear leaves its pixel unchanged"]
+    gfx_clear of [0, 0, 0]
+    assert_eq of [strict_kind of ((_) => gfx_text of [0, 0, "H", 255, 255, 255, "2"]), "type_mismatch", "#1007: rejected gfx_text raises"]
+    text_px is gfx_read of [1, 1]
+    assert_eq of [text_px[0], 0, "#1007: rejected gfx_text leaves its pixel unchanged"]
+    gfx_text of [0, 0, "H", 255, 255, 255, 2]
+    lit_control is 0
+    for ty in range of 16:
+        for tx in range of 16:
+            text_control is gfx_read of [tx, ty]
+            if text_control[0] > 100:
+                lit_control is lit_control + 1
+    assert_true of [lit_control > 0, "#1007 control: well-typed gfx_text paints"]
+    print of "pixel-proof: 1"
+else:
+    print of "pixel-proof: 0"
 
 # ---- the sample-element coercion, when a device is actually available ----
 #

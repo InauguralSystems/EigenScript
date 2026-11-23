@@ -330,8 +330,7 @@ false
 - `bool` is its own type: `true`/`false`. Comparisons, `not`, the observer
   predicates and every predicate builtin/lib function return a bool; `and`/`or`
   return an operand. A bool is NOT a number: `true + 1`, `abs of true`,
-  `xs[true]`, `xs[(n > 1):]` and `range of true` raise (even under
-  `EIGS_STRICT=0`), and so does `(pred of x) == 1` (bool vs number). Any
+  `xs[true]`, `xs[(n > 1):]` and `range of true` raise in every `EIGS_STRICT` state, and so does `(pred of x) == 1` (bool vs number). Any
   builtin raises on a bool where it does not take one -- the few slots that
   do (print/str/type/json_encode, assert's condition, container element
   slots like `append of [xs, true]`) are listed in

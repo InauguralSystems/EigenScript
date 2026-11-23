@@ -88,7 +88,7 @@ out=$(bash tools/phase2_builtins.sh "${bins[0]}" "${bins[2]}" 2>&1); rc=$?
 verdict phase2-builtins "$rc" "$out" '^phase2-builtins: PASS rows=[1-9][0-9]* landed=[^ ]+ migrated=[0-9]+ unchanged=[0-9]+$'
 for variant in release asan; do
     out=$(ASAN_OPTIONS=detect_leaks=1 bash tools/phase2_readers.sh "$variant" 2>&1); rc=$?
-    verdict "phase2-readers-$variant" "$rc" "$out" "^phase2-readers: PASS variant=$variant default-checks=[1-9][0-9]* EIGS_STRICT=0-checks=[1-9][0-9]*$"
+    verdict "phase2-readers-$variant" "$rc" "$out" "^phase2-readers: PASS variant=$variant checks=[1-9][0-9]* converted-element-raise-checks=7$"
 done
 if [ -n "$fails" ]; then
     echo "phase2-ci: FAIL:$fails"

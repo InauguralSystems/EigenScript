@@ -106,6 +106,12 @@ def legacy_writers(p):
         'sgd_update_rows': ('x is [[41.0, 42.0]]\n', 'sgd_update_rows of [x, [[1.0, "wrong"]], [0], 0.1]', 'print of x\n'),
         'sgd_update_cols': ('x is [[41.0], [42.0]]\n', 'sgd_update_cols of [x, [[1.0], ["wrong"]], [0], 0.1]', 'print of x\n'),
         'sort': ('x is [3, "wrong", 1]\n', 'sort of x', 'print of x\n'),
+        'store_count': (f's is store_open of "{p}.db"\n', 'store_count of [s, 7]',
+                        'store_close of s\n'),
+        'store_get': (f's is store_open of "{p}.db"\n', 'store_get of [s, 7, 1]',
+                      'store_close of s\n'),
+        'store_query': (f's is store_open of "{p}.db"\n', 'store_query of [s, 7]',
+                        'store_close of s\n'),
         'store_put': (f's is store_open of "{p}.db"\n', 'store_put of [s, "items", 7]',
                       'print of (store_count of [s, "items"])\nstore_close of s\n'),
         'store_update': (f's is store_open of "{p}.db"\nk is store_put of [s, "items", {"{"}"v": 41{"}"}]\n',
@@ -266,8 +272,14 @@ def measure_shape_writers(binary, scratch, selected=None):
     assert cases
     rows = []
     for case_no, case in enumerate(cases):
-        requirements = [r for r in case.get('requirements', []) if r != 'owned_temp']
+        requirements = [r for r in case.get('requirements', [])
+                        if r not in ('owned_temp', 'store_compiled')]
         candidates = wrong_typed_args(case['args'])
+        # These writers must mutate the DATA candidate rather than merely
+        # changing a path or append flag.
+        data_arg = {'tensor_save': 0, 'write_bytes': 1}.get(case['name'])
+        if data_arg is not None:
+            candidates.sort(key=lambda item: not item[1].startswith(f'arg{data_arg + 1}:'))
         changed = description = None
         if not requirements:
             for candidate_no, (candidate, label) in enumerate(candidates):
@@ -313,6 +325,13 @@ def measure_shape_writers(binary, scratch, selected=None):
             unchanged = 'yes' if 'state:unchanged\n' in r['out'] and same_snapshots else 'no'
             tape = tape_call_record(owned / 'probe.tape', call_line)
             rows.append((case['name'], description, mode, raised, unchanged, tape))
+    if selected == 'all':
+        legacy = measure_legacy_writers(binary, scratch)
+        for result in legacy:
+            raised = 'yes' if 'error:type_mismatch\n' in result['out'] else 'no'
+            unchanged = 'yes' if result['unchanged'] else 'no'
+            rows.append((result['name'], 'legacy-data-or-mutation', result['mode'],
+                         raised, unchanged, 'no record'))
     return cases, rows
 
 

@@ -15,11 +15,9 @@ int main(void) {
         UINT64_C(0x7ff0000000000000), UINT64_C(0xfff0000000000000), UINT64_C(0x8000000000000000)};
     const uint64_t want_bits[] = {UINT64_C(0x7ff8000000000000), UINT64_C(0x7ff8000000000000),
         UINT64_C(0x7ff0000000000000), UINT64_C(0xfff0000000000000), UINT64_C(0x8000000000000000)};
-    int saved_guards = g_strict_guards;
-    int saved_arithmetic = g_strict_arithmetic;
-    for (int guards = 0; guards <= 1; ++guards) {
+        int saved_arithmetic = g_strict_arithmetic;
+    {
       for (int arithmetic = 0; arithmetic <= 1; ++arithmetic) {
-        g_strict_guards = guards;
         g_strict_arithmetic = arithmetic;
         EigsValue *b = eigs_value_new_buffer(5);
         for (int i = 0; i < 5; ++i) {
@@ -52,7 +50,6 @@ int main(void) {
         eigs_clear_error();
       }
     }
-    g_strict_guards = saved_guards;
     g_strict_arithmetic = saved_arithmetic;
     eigs_close(st);
     printf("phase2-embed-buffer: %s checks=%d failures=%d\n", failures ? "FAIL" : "PASS", checks, failures);

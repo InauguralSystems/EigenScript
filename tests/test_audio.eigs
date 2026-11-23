@@ -7,7 +7,6 @@ define guard_kind(thunk, expected_kind, label) as:
         seen_kind is guard_error.kind
     assert of [seen_kind == expected_kind, label]
 
-# Streaming tensor I/O tests — stream_open / stream_write / stream_close
 load_file of "lib/test.eigs"
 
 # Sine generates correct number of samples (at default 44100Hz)
