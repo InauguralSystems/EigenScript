@@ -62,15 +62,14 @@ EigsState  *eigs_state_new(void);
 void        eigs_state_destroy(EigsState *st);
 EigsThread *eigs_thread_attach(EigsState *st);
 
-/* A state reads EIGS_STRICT once for each property when created: when unset,
- * argument guards default to 1 and arithmetic traps default to 0.  These
- * calls override both properties or either property independently.  Zero
- * disables and every nonzero value enables.  Each call is valid after either
- * eigs_state_new or eigs_open, but must be called before that state's first
- * evaluation.  It is null-safe.  Never call a setter concurrently with
- * evaluation of that state. */
+/* A state reads EIGS_STRICT once for the arithmetic trap when created.
+ * Argument guards always raise and have no configurable property. Both
+ * calls below change only arithmetic traps. Zero disables the trap and
+ * every nonzero value enables it. Each call is valid after eigs_state_new
+ * or eigs_open, but must precede that state's first evaluation. Each is
+ * null-safe. Never call a setter concurrently with evaluation of its
+ * state. */
 void        eigs_state_set_strict(EigsState *st, int enabled);
-void        eigs_state_set_strict_guards(EigsState *st, int enabled);
 void        eigs_state_set_strict_arithmetic(EigsState *st, int enabled);
 
 /* Single-thread multi-state switching: park the calling thread's current

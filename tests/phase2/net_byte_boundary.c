@@ -16,8 +16,8 @@ static void clear_error(void) {
 static Value *phase2_reader_probe(Value *arg) {
     (void)arg;
     const double bad[] = { NAN, INFINITY, -INFINITY, NAN, 1.5, 256.0, 255.0 };
-    int saved_guards = g_strict_guards, saved_arithmetic = g_strict_arithmetic;
-    for (int guards = 0; guards <= 1; guards++) {
+    int saved_arithmetic = g_strict_arithmetic;
+    {
       for (int arithmetic = 0; arithmetic <= 1; arithmetic++) {
         for (int i = 0; i < 7; i++) {
             int fd[2];
@@ -32,7 +32,6 @@ static Value *phase2_reader_probe(Value *arg) {
             Value *args = make_list_heap(2);
             list_append(args, handle);
             list_append(args, buffer);
-            g_strict_guards = guards;
             g_strict_arithmetic = arithmetic;
             clear_error();
             Value *answer = builtin_net_send(args);
@@ -64,8 +63,7 @@ static Value *phase2_reader_probe(Value *arg) {
             val_decref(handle);
         }
       }
-    }
-    g_strict_guards = saved_guards; g_strict_arithmetic = saved_arithmetic;
+    } g_strict_arithmetic = saved_arithmetic;
     clear_error();
     return make_bool(1);
 }

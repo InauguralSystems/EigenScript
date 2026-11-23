@@ -214,10 +214,8 @@ assert_eq of [shape of (add of [(buffer of [2, 3]), (buffer of 4)]), [4],
               "non-broadcastable buffer pair truncates to the shorter (the list rule), it does not raise"]
 assert_eq of [shape of (add of [[1.0, 2.0, 3.0], [1.0, 2.0]]), [2],
               "the list pair it mirrors truncates the same way"]
-assert_eq of [multiply of [(buffer of 3), "x"], 0.0,
-              "buffer op string answers 0 by default, exactly as list op string does"]
-assert_eq of [multiply of [[1.0, 2.0, 3.0], "x"], 0.0,
-              "list op string answers 0 by default (the answer the buffer path now shares)"]
+raises of ["buffer op rejects a string", (_) => multiply of [(buffer of 3), "x"], "type_mismatch"]
+raises of ["list op rejects a string", (_) => multiply of [[1.0, 2.0, 3.0], "x"], "type_mismatch"]
 
 print of "=== softmax / log_softmax / leaky_relu / mean on buffers ==="
 S is rnd_list of [3, 40]

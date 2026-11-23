@@ -912,6 +912,8 @@ arithmetic|divide|nf is f64_from_bits of 9218868437227405312\nprint of (divide o
 arithmetic|sum|nf is f64_from_bits of 9218868437227405312\nprint of (sum of [nf, 2.0, -2.0])|arithmetic: non-finite arithmetic result (infinity)
 arithmetic|mean|nf is f64_from_bits of 9218868437227405312\nprint of (mean of [nf, 2.0, -2.0])|arithmetic: non-finite arithmetic result (infinity)
 arithmetic|norm|nf is f64_from_bits of 9218868437227405312\nprint of (norm of [nf, 2.0, -2.0])|arithmetic: non-finite arithmetic result (infinity)
+guard|store_get|print of (store_get of [42, "col", "k"])|store_get: invalid store
+guard|store_query|print of (store_query of [42, "col", 3])|store_query: expected a fixed-shape list with at most 2 elements
 EOF
 )
 PROBES="${PROBES//@TMP@/$TMP}"
@@ -1319,7 +1321,8 @@ while IFS='|' read -r kind who prog expect; do
             n_profile_rows=$((n_profile_rows + 1))
             check_absent_call "$BASE" "$(state_for baseline "$cap")" "$cap" "${who%%/*}" "$TMP/p.eigs" || rc=1
         else
-            a="$(run_capture "$BASE" 0 "$TMP/p.eigs")"
+            baseline_mode=0; [ "$kind" != guard ] || baseline_mode=-
+            a="$(run_capture "$BASE" "$baseline_mode" "$TMP/p.eigs")"
             b="$(run_capture "$NEW" 0 "$TMP/p.eigs")"
             if [ "$a" = "$b" ]; then n_ident=$((n_ident + 1))
             else
@@ -1338,7 +1341,7 @@ while IFS='|' read -r kind who prog expect; do
     trap_message=0
     case "$s" in *"non-finite arithmetic result"*|*"argument out of domain"*|*"result is not a number"*|*"division by zero"*) trap_message=1 ;; esac
     if [ "$kind" = guard ]; then
-        if [ "$u" = "$s" ]; then n_default_ok=$((n_default_ok + 1));
+        if [ "$u" = "$s" ] && [ "$off" = "$s" ]; then n_default_ok=$((n_default_ok + 1));
         else default_list="$default_list
     $who [guard]
       unset: $(clip "$u" 90)
@@ -1401,33 +1404,25 @@ while IFS='|' read -r kind who prog expect; do
                         else n_rederived_same=$((n_rederived_same + 1)); fi
                     fi
                 fi
+                # The stored column describes v0.48.0's historical flag-off
+                # class. Current guards are unconditional (#2502), checked
+                # above as unset == 0 == 1. Re-derive the historical class
+                # only when the caller supplies the release binary.
                 off_rc="${off%%$'\n'*}"
-                if [ "$release_off" = quiet ]; then
-                    n_guard_off_quiet=$((n_guard_off_quiet + 1))
-                    if [ "$off_rc" != 0 ]; then release_list="$release_list
-    $who — EIGS_STRICT=0 now raises but release row says quiet"; row_faults=$((row_faults + 1)); fi
-                elif [ "$release_off" = raises ]; then
-                    n_guard_off_raises=$((n_guard_off_raises + 1))
-                    if [ "$off_rc" = 0 ]; then release_list="$release_list
-    $who — EIGS_STRICT=0 is now quiet but release row says raises"; row_faults=$((row_faults + 1)); fi
-                fi
-                # With the release binary: the class under EIGS_STRICT=0 is
-                # the release's, unless the row is marked. A row marked for
-                # its EIGS_STRICT=0 class must differ there, or its mark is
-                # false; a row marked for its first line is not compared here.
+                if [ "$release_off" = quiet ]; then n_guard_off_quiet=$((n_guard_off_quiet + 1))
+                else n_guard_off_raises=$((n_guard_off_raises + 1)); fi
                 if [ -n "$RELEASE_BIN" ] && ! str_has "${release_actual:-}" "unavailable in this build"; then
                     rel_off=$(run_capture "$RELEASE_BIN" 0 "$TMP/p.eigs"); rel_off_rc="${rel_off%%$'\n'*}"
-                    head_class=raises; [ "$off_rc" = 0 ] && head_class=answers
-                    rel_class=raises; [ "$rel_off_rc" = 0 ] && rel_class=answers
+                    rel_expected=1; [ "$release_off" != quiet ] || rel_expected=0
                     n_off_examined=$((n_off_examined + 1))
-                    if [ "$marked" = 1 ]; then n_off_exempt=$((n_off_exempt + 1))
-                    elif [ "$off_marked" = 1 ]; then
-                        if [ "$head_class" != "$rel_class" ]; then n_off_exempt=$((n_off_exempt + 1))
-                        else n_off_different=$((n_off_different + 1)); row_faults=$((row_faults + 1)); release_list="$release_list
-    $who — the EIGS_STRICT=0 mark is false: the release $rel_class there and so does this build"; fi
-                    elif [ "$head_class" = "$rel_class" ]; then n_off_same=$((n_off_same + 1))
-                    else n_off_different=$((n_off_different + 1)); row_faults=$((row_faults + 1)); release_list="$release_list
-    $who — under EIGS_STRICT=0 the release $rel_class and this build $head_class, with no mark"; fi
+                    if { [ "$rel_expected" = 0 ] && [ "$rel_off_rc" = 0 ]; } ||
+                       { [ "$rel_expected" = 1 ] && [ "$rel_off_rc" != 0 ]; }; then
+                        n_off_same=$((n_off_same + 1))
+                    else
+                        n_off_different=$((n_off_different + 1)); row_faults=$((row_faults + 1))
+                        release_list="$release_list
+    $who — archived strict-off class differs from the supplied release"
+                    fi
                 fi
                 current_first=$(printf '%s\n' "$u" | sed -n '2p' | sed 's|^Error [^:]*:\([0-9][0-9]*\): |Error <file>:\1: |')
                 release_first=${release_expected#rc=* }
@@ -1585,7 +1580,7 @@ if [ -n "$profile_transitions" ]; then
 fi
 if [ -n "$BASE" ]; then echo "  identical-when-off: $n_ident   differing: $n_differ"
 else echo "  identical-when-off: SKIPPED (--no-baseline)"; fi
-echo "  default contract: $n_default_ok / $n_probe (guards unset==1; arithmetic unset==0)"
+echo "  default contract: $n_default_ok / $n_probe (guards unset==0==1; arithmetic unset==0)"
 echo "  release guard messages: examined=$n_release_examined same=$n_release_same different=$n_release_different exempt=$n_release_exempt capability_skipped=$n_release_capability_skipped"
 [ -n "$RELEASE_BIN" ] && echo "  release re-derived: examined=$n_rederived same=$n_rederived_same different=$n_rederived_different exempt=$n_rederived_exempt not_in_this_binary=$n_rederived_absent"
 [ -n "$RELEASE_BIN" ] && echo "  release EIGS_STRICT=0 class: examined=$n_off_examined same=$n_off_same different=$n_off_different exempt=$n_off_exempt"
@@ -1706,14 +1701,11 @@ if [ -f "$TMP/shapes/rows" ]; then
             fi
             [ "$form" != max ] || maximum=$off
         done
-        soft="$(shape_capture "$NEW" 0 "$TMP/shapes/$who/$shape_subject/0/surplus/case.eigs" "$cap")"
-        if ! shape_receipt_ok "$soft"; then shape_abort "$who" "strict-off surplus" "$soft"; break; fi
-        shape_receipt_ok "$soft" || row_good=0
-        if [ "$legacy" = 0 ]; then [ "$soft" = "$maximum" ] || row_good=0
-        else shape_done "$soft" || row_good=0; fi
+        soft="$(shape_capture "$NEW" 0 "$TMP/shapes/$who/$shape_subject/0/strict/case.eigs" "$cap")"
+        if ! shape_done "$soft"; then shape_abort "$who" "arithmetic-off surplus" "$soft"; break; fi
         if [ -n "$BASE" ] && [ "$shape_base" = 1 ]; then
-            old="$(shape_capture "$BASE" 0 "$TMP/shapes/$who/$shape_baseline/0/surplus/case.eigs" "$cap")"
-            if ! shape_receipt_ok "$old"; then shape_abort "$who" "baseline surplus" "$old"; break; fi
+            old="$(shape_capture "$BASE" - "$TMP/shapes/$who/$shape_baseline/default/strict/case.eigs" "$cap")"
+            if ! shape_done "$old"; then shape_abort "$who" "baseline default surplus" "$old"; break; fi
             [ "$old" = "$soft" ] || row_good=0
         fi
         on="$(shape_capture "$NEW" 1 "$TMP/shapes/$who/$shape_subject/1/strict/case.eigs" "$cap")"
@@ -1721,7 +1713,7 @@ if [ -f "$TMP/shapes/rows" ]; then
         default="$(shape_capture "$NEW" - "$TMP/shapes/$who/$shape_subject/default/strict/case.eigs" "$cap")"
         if ! shape_receipt_ok "$default"; then shape_abort "$who" "default surplus" "$default"; break; fi
         shape_release_examined=$((shape_release_examined + 1))
-        if ! shape_done "$on" || [ "$on" != "$default" ]; then
+        if ! shape_done "$on" || [ "$on" != "$default" ] || [ "$on" != "$soft" ]; then
             shape_release_different=$((shape_release_different + 1))
             shape_release_list="$shape_release_list $who"
             row_good=0
@@ -2022,7 +2014,7 @@ while IFS='|' read -r label who slot prog; do
       =0 run 2: $(clip "$UEP_PLAIN_AGAIN" 90)"; rc=1
     elif [ "$slot" = "-" ] && [ "$UEP_CLASS" = flag-difference ]; then pdiffer="$pdiffer
     $label [valid input, unset vs EIGS_STRICT=0] — the flag changed a legitimate call"; rc=1
-    elif [ "$slot" != "-" ] && [ "$u" != "$s" ]; then pdiffer="$pdiffer
+    elif [ "$slot" != "-" ] && { [ "$u" != "$s" ] || [ "$b" != "$s" ]; }; then pdiffer="$pdiffer
     $label [guard, unset vs EIGS_STRICT=1] — guard default contract failed"; rc=1; fi
     if [ "$slot" = "-" ]; then
         n_pvalid=$((n_pvalid + 1))
@@ -2051,7 +2043,8 @@ while IFS='|' read -r label who slot prog; do
         fi
     fi
     [ -z "$PIXBASE" ] && continue
-    a="$(run_capture "$PIXBASE" 0 "$TMP/p.eigs")"
+    baseline_mode=0; [ "$slot" = "-" ] || baseline_mode=-
+    a="$(run_capture "$PIXBASE" "$baseline_mode" "$TMP/p.eigs")"
     if [ "$a" = "$b" ]; then n_pident=$((n_pident + 1))
     else
         n_pdiffer=$((n_pdiffer + 1))

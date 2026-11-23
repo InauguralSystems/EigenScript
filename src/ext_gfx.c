@@ -1384,7 +1384,7 @@ static int16_t* audio_convert_samples(Value *samples, int *out_n) {
         } else {
             EigsSlot sample=list_slot(samples,i);
             if ((slot_type(sample)!=VAL_FLOAT && slot_type(sample)!=VAL_INT)) {
-                if (g_strict_guards) rt_error(EK_TYPE,0,"audio samples: element %d is %s, expected a number\n",i,val_type_name(slot_type(sample)));
+                rt_error(EK_TYPE,0,"audio samples: element %d is %s, expected a number\n",i,val_type_name(slot_type(sample)));
                 free(buf);return NULL;
             }
             s=eigs_slot_float(sample,__func__);

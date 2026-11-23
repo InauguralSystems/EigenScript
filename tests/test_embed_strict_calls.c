@@ -30,7 +30,7 @@ static int probe(const char *src, int strict, int guard) {
     return position(src, guard) == strict;
 }
 /* One call on one fresh state: the state starts at (sg, sa), set there
- * through calls, then `setter(st, enabled)`; both properties are read back.
+ * through calls, then `setter(st, enabled)`; guards stay on and both are probed.
  * The kind says where the state is in its life when the calls are made:
  *   OPEN      from eigs_open: attached and initialised.
  *   NEW       from eigs_state_new: attached and initialised only after the
@@ -69,7 +69,7 @@ static int cell(int kind, int sg, int sa, Setter setter, int enabled, int *g, in
     if (!st) return 0;
     eigs_state_set_strict(st, 0);
     *env_same = *env_same && env_is(had, was);
-    eigs_state_set_strict_guards(st, sg);
+    (void)sg; /* Guards are unconditional; retained in transition labels. */
     *env_same = *env_same && env_is(had, was);
     eigs_state_set_strict_arithmetic(st, sa);
     *env_same = *env_same && env_is(had, was);
@@ -77,7 +77,7 @@ static int cell(int kind, int sg, int sa, Setter setter, int enabled, int *g, in
     setter(st, enabled);
     *env_same = *env_same && env_is(had, was);
     if (kind == OTHER) {
-        *kept = position(GUARD_SRC, 1) == off && position(ARITH_SRC, 0) == off;
+        *kept = position(GUARD_SRC, 1) == 1 && position(ARITH_SRC, 0) == off;
         if (!eigs_thread_switch(st)) return 0;
     }
     if (kind == NEW && !eigs_thread_attach(st)) { eigs_state_destroy(st); return 0; }
@@ -101,25 +101,25 @@ static void transition(const char *name, int fine, int sg, int sa,
     if (g == wg && a == wa) printf("PASS: %s\n", name);
     else { printf("FAIL: %s want=%d,%d seen=%d,%d\n", name, wg, wa, g, a); failures++; }
 }
-/* Every cell, so that no combination is held only by which twelve were
- * chosen: each of the three calls, on each kind of state, from each of the
- * four start positions, with each of the values 0, 1, -1 and 2. The call's
+/* Every cell: both arithmetic setters, on each kind of state, from both
+ * arithmetic start positions, with values 0, 1, -1 and 2. Argument guards
+ * stay on in every cell. The call's
  * own property takes the value's truth; the other property stays (the
  * existing call has no other); a state that was attached while the call was
  * made on another has not moved; EIGS_STRICT in the process environment is
  * what it was. One line for all of them; a wrong cell is named. */
 static void matrix(void) {
     static const int values[] = {0, 1, -1, 2};
-    static const char *const calls[] = {"guards", "arithmetic", "both"};
-    const Setter setters[] = {eigs_state_set_strict_guards, eigs_state_set_strict_arithmetic, eigs_state_set_strict};
+    static const char *const calls[] = {"arithmetic", "strict"};
+    const Setter setters[] = {eigs_state_set_strict_arithmetic, eigs_state_set_strict};
     int cells = 0, wrong = 0;
-    for (int c = 0; c < 3; c++)
+    for (int c = 0; c < 2; c++)
         for (int kind = 0; kind < KINDS; kind++)
-            for (int sg = 0; sg < 2; sg++)
+            for (int sg = 1; sg < 2; sg++)
                 for (int sa = 0; sa < 2; sa++)
                     for (unsigned v = 0; v < sizeof values / sizeof values[0]; v++) {
                         int on = values[v] != 0, g, a, kept, env_same;
-                        int wg = c == 1 ? sg : on, wa = c == 0 ? sa : on;
+                        int wg = 1, wa = on;
                         cells++;
                         if (!cell(kind, sg, sa, setters[c], values[v], &g, &a, &kept, &env_same)
                             || g != wg || a != wa || !kept || !env_same) {
@@ -131,14 +131,14 @@ static void matrix(void) {
                         }
                     }
     failures += wrong;
-    if (!wrong) printf("PASS: matrix of %d cells (3 calls, 4 kinds of state, 4 start positions, 4 values)\n", cells);
+    if (!wrong) printf("PASS: matrix of %d cells (2 calls, 4 kinds of state, 2 arithmetic start positions, 4 values)\n", cells);
 }
 static const Fourth fourth_cases[] = {
- {"abs-string","abs of \"x\"",0},{"floor-string","floor of \"x\"",0},
- {"ceil-string","ceil of \"x\"",0},{"round-string","round of \"x\"",0},
- {"sin-string","sin of \"x\"",0},{"cos-string","cos of \"x\"",0},
- {"sqrt-string","sqrt of \"x\"",0},{"tan-string","tan of \"x\"",0},
- {"num-invalid","num of \"abc\"",1},{"max-string","max of \"x\"",0},
+ {"abs-string","abs of \"x\"",1},{"floor-string","floor of \"x\"",1},
+ {"ceil-string","ceil of \"x\"",1},{"round-string","round of \"x\"",1},
+ {"sin-string","sin of \"x\"",1},{"cos-string","cos of \"x\"",1},
+ {"sqrt-string","sqrt of \"x\"",1},{"tan-string","tan of \"x\"",1},
+ {"num-invalid","num of \"abc\"",1},{"max-string","max of \"x\"",1},
  {"sqrt-negative","sqrt of -1",1},{"divide-zero","1.0 / 0.0",1},
  {"multiply-overflow","1e308 * 10.0",1},{"sum-overflow","sum of [1e308, 1e308]",1},
  {"norm-overflow","norm of [1e308, 1e308]",1},{"exp-overflow","exp of 1000",1},
@@ -148,7 +148,7 @@ static const Fourth fourth_cases[] = {
 static void run_fourth(void) {
     for (unsigned i=0; i < sizeof fourth_cases / sizeof fourth_cases[0]; i++) {
         EigsState *st=eigs_open(); if (!st) { failures++; return; }
-        eigs_state_set_strict_guards(st,0); eigs_state_set_strict_arithmetic(st,1);
+        eigs_state_set_strict_arithmetic(st,1);
         if (i==19) { EigsValue *b=eigs_value_new_buffer(1); eigs_value_buffer_set(b,0,NAN); eigs_set_global("b",b); eigs_value_release(b); }
         EigsValue *v=eigs_eval_string(fourth_cases[i].src);
         int seen=eigs_has_error()!=0;
@@ -157,12 +157,12 @@ static void run_fourth(void) {
     }
 }
 /* A state with no call made on it has the position its environment gives:
- * EIGS_STRICT unset or empty: guards 1, arithmetic 0; "0": both 0; any other
- * value: both 1. The suite runs this program in each of the three. */
+ * Guards stay on. EIGS_STRICT unset, empty or "0" means arithmetic 0; any
+ * other value means arithmetic 1. The suite runs all three settings. */
 static void creation(void) {
     const char *e = getenv("EIGS_STRICT");
     int set = e && e[0], off = set && e[0] == '0' && e[1] == 0;
-    int wg = set ? !off : 1, wa = set ? !off : 0;
+    int wg = 1, wa = set ? !off : 0;
     EigsState *st = eigs_open();
     if (!st) { printf("FAIL: creation state\n"); failures++; return; }
     int seen_g = position(GUARD_SRC, 1);
@@ -180,7 +180,6 @@ static void two_states(void) {
     if (!a || !b) { printf("FAIL: two states creation\n"); failures++; return; }
     eigs_state_set_strict(a, 0);
     eigs_state_set_strict(b, 0);
-    eigs_state_set_strict_guards(a, 1);
     eigs_state_set_strict_arithmetic(b, 1);
     const char *after = getenv("EIGS_STRICT");
     int env_same = (before == after) || (before && after && !strcmp(before, after));
@@ -193,7 +192,7 @@ static void two_states(void) {
     eigs_close(a);
     if (!eigs_thread_attach(b) || eigs_state_init_runtime(b)) ok = 0;
     else {
-        ok = ok && probe("try:\n    abs of \"x\"\ncatch e:\n    -777\n", 0, 1)
+        ok = ok && probe("try:\n    abs of \"x\"\ncatch e:\n    -777\n", 1, 1)
                 && probe("try:\n    1.0 / 0.0\ncatch e:\n    -777\n", 1, 0);
     }
     eigs_close(b);
@@ -205,7 +204,6 @@ static void two_states(void) {
 static void null_calls(void) {
     static const int values[] = {0, 1, -1, 2};
     for (unsigned v = 0; v < sizeof values / sizeof values[0]; v++) {
-        eigs_state_set_strict_guards(NULL, values[v]);
         eigs_state_set_strict_arithmetic(NULL, values[v]);
         eigs_state_set_strict(NULL, values[v]);
     }
@@ -214,16 +212,12 @@ int main(void) {
     creation();
     two_states();
     null_calls();
-    transition("open guards 1->0 other=0",0,1,0,eigs_state_set_strict_guards,0,0,0);
-    transition("new guards 0->1 other=0",1,0,0,eigs_state_set_strict_guards,-1,1,0);
-    transition("new guards 1->0 other=1",1,1,1,eigs_state_set_strict_guards,0,0,1);
-    transition("open guards 0->1 other=1",0,0,1,eigs_state_set_strict_guards,2,1,1);
-    transition("open arithmetic 1->0 other=0",0,0,1,eigs_state_set_strict_arithmetic,0,0,0);
-    transition("new arithmetic 0->1 other=0",1,0,0,eigs_state_set_strict_arithmetic,2,0,1);
+    transition("open arithmetic 1->0 other=0",0,0,1,eigs_state_set_strict_arithmetic,0,1,0);
+    transition("new arithmetic 0->1 other=0",1,0,0,eigs_state_set_strict_arithmetic,2,1,1);
     transition("new arithmetic 1->0 other=1",1,1,1,eigs_state_set_strict_arithmetic,0,1,0);
     transition("open arithmetic 0->1 other=1",0,1,0,eigs_state_set_strict_arithmetic,-1,1,1);
-    transition("open both 01->00",0,0,1,eigs_state_set_strict,0,0,0);
-    transition("new both 10->00",1,1,0,eigs_state_set_strict,0,0,0);
+    transition("open both 01->00",0,0,1,eigs_state_set_strict,0,1,0);
+    transition("new both 10->00",1,1,0,eigs_state_set_strict,0,1,0);
     transition("new both 01->11",1,0,1,eigs_state_set_strict,-1,1,1);
     transition("open both 10->11",0,1,0,eigs_state_set_strict,2,1,1);
     matrix();

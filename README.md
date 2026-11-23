@@ -80,7 +80,7 @@ a task's unjoined uncaught error fails the run on main or a spawned worker,
 a GUI toolkit, embedded database, tensor math,
 and a standard library with STEM modules — all in a single zero-dependency C binary.
 
-`exit` accepts a numeric code (N5, then the C int range), or a one-number list. `null`, `[]` and `([])` mean no argument and code 0. Other types raise a catchable `type_mismatch` naming `exit` before any stop request, in every `EIGS_STRICT` state. A surplus list retains its existing guard: by default it raises; under `EIGS_STRICT=0` its first element must be numeric and supplies the code.
+`exit` accepts a numeric code (N5, then the C int range), or a one-number list. `null`, `[]` and `([])` mean no argument and code 0. Other types raise a catchable `type_mismatch` naming `exit` before any stop request, in every `EIGS_STRICT` state. A surplus list raises `type_mismatch` in every `EIGS_STRICT` state.
 
 `exit of N` is state-wide even when a spawned worker calls it: VM threads stop,
 blocked concurrency calls wake, and the process exits with status `N` after
@@ -505,9 +505,8 @@ ints to floats. Float overflow gives infinity, without a `1e308` clamp.
 `/` returns float: a nonzero number divided by zero gives signed infinity;
 `0 / 0` and float `% 0` give NaN. `sqrt of -1` and `asin`/`acos` outside
 `[-1, 1]` give NaN; `log of 0` gives `-inf`. Int `// 0` and `% 0` still
-raise `value`. Argument guards raise by default. Set `EIGS_STRICT=1` to also
-trap non-finite arithmetic results, or `EIGS_STRICT=0` for quiet legacy
-argument answers while retaining IEEE arithmetic values.
+raise `value`. Argument guards raise in every state. Set `EIGS_STRICT=1` to opt into
+non-finite arithmetic traps; unset and `0` retain IEEE arithmetic values.
 
 ```eigenscript
 not_a_number is 0.0 / 0
@@ -527,12 +526,11 @@ indexing, iteration, `dot` and `write_bytes` still refuse non-finite buffer
 elements in every `EIGS_STRICT` state (N13). The buffer reductions, mixed
 buffer/list materialization and numeric byte or sample conversions retain
 their declared data boundaries. `write_bytes` requires exact bytes in 0..255
-(N5/Q1). A raised read stops subsequent work. By default, byte consumers
-raise `type_mismatch` for a nonnumeric element; `EIGS_STRICT=0` retains
-numeric-zero substitution. `str_from_bytes` stops at numeric NUL, without
+(N5/Q1). A raised read stops subsequent work. Byte consumers raise `type_mismatch` for a nonnumeric element in every
+`EIGS_STRICT` state. `str_from_bytes` stops at numeric NUL, without
 inspecting later elements; byte codecs consume the complete list.
 
-By default, fixed- or optional-shape builtin argument lists reject surplus outer elements with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
+Fixed- or optional-shape builtin argument lists reject surplus outer elements with a catchable `type_mismatch` error naming the builtin and maximum width, in every `EIGS_STRICT` state. Every argument guard raises before the call's mutation, I/O and tape effects. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
 
 Empty `min`/`max` raises `value` in both call forms (R1.6b-D2); empty
 `sum` remains int zero (C2). `sign_extend` reads exact int64 arguments and
@@ -1171,5 +1169,9 @@ A refused `shared_set`, overflowing `shared_incr`, `store_put` or
 create a collection, consume an automatic ID, change the caller's record or
 write file bytes. Historical stores containing quoted non-finite buffer
 sentinels remain readable; new writes of those payloads refuse.
+
+Argument type errors raise `type_mismatch` before mutation, I/O or tape effects,
+in every `EIGS_STRICT` state. `EIGS_STRICT` controls only the opt-in IEEE
+arithmetic/domain trap; unset and `0` retain IEEE results.
 
 UI widget flags use `true`/`false`: for example, `button.visible is false` hides a button and `button.enabled is true` permits interaction. Checkbox, toggle, and toggle-button `value` fields are also booleans; numeric values and selection indices remain numeric. See [`docs/UI.md`](docs/UI.md).

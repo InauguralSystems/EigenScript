@@ -1229,7 +1229,8 @@ static Value* builtin_store_get(Value *arg) {
     if (replay_blocks("store_get", "store")) return make_null();
     Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
     Value *key_val = list_get_view(arg, 2, &(EigsView){{0}});
-    if (!col_val || col_val->type != VAL_STR) return make_null();
+    ARG_GUARD(!col_val || col_val->type != VAL_STR,
+              "store_get", "[store handle, string collection, key]", make_null());
 
     const char *collection = col_val->data.str;
     char key_buf[STORE_MAX_KEY_LEN];
@@ -1241,7 +1242,7 @@ static Value* builtin_store_get(Value *arg) {
         if (g_has_error) return make_null();
         eigs_int_text(key_buf, sizeof(key_buf), key);
     } else {
-        return make_null();
+        ARG_GUARD(1, "store_get", "a string or integer key", make_null());
     }
 
     Value *col_info = store_dict_get_view(store->catalog, collection, &(EigsView){{0}});
@@ -1448,7 +1449,8 @@ static Value* builtin_store_query(Value *arg) {
     if (!store) return make_list(0);
     if (replay_blocks("store_query", "store")) return make_list(0);
     Value *col_val = list_get_view(arg, 1, &(EigsView){{0}});
-    if (!col_val || col_val->type != VAL_STR) return make_list(0);
+    ARG_GUARD(!col_val || col_val->type != VAL_STR,
+              "store_query", "[store handle, string collection]", make_list(0));
 
     const char *collection = col_val->data.str;
     Value *col_info = store_dict_get_view(store->catalog, collection, &(EigsView){{0}});

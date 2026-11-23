@@ -50,7 +50,7 @@ run "strict byte-list error is catchable and typed" 1 0 "type_mismatch" \
     print of (str_from_bytes of [65, "x"])
 catch err:
     print of err.kind'
-run "compatibility mode keeps the legacy truncation" 0 0 "[A]" \
+run "arithmetic-off rejects a wrong-typed byte" 0 1 "str_from_bytes: expected numeric byte values" \
     'print of f"[{str_from_bytes of [65, "x", 66]}]"'
 run "numeric-only bytes remain accepted" unset 0 "[AB]" \
     'print of f"[{str_from_bytes of [65, 66]}]"'
@@ -63,7 +63,7 @@ run "elements after numeric NUL are not inspected" 1 0 "[A]" \
 run "strict non-list diagnostic is unchanged" 1 1 \
     "str_from_bytes: expected a list or buffer of byte values" \
     'print of (str_from_bytes of 42)'
-run "compatibility non-list stand-in is unchanged" 0 0 "[]" \
+run "arithmetic-off rejects a non-list" 0 1 "str_from_bytes: expected a list or buffer of byte values" \
     'print of f"[{str_from_bytes of 42}]"'
 
 run "numeric buffer conversion remains accepted" unset 0 "[AB]" \

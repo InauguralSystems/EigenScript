@@ -321,7 +321,7 @@ false
   A predicate asked inside the block still raises. The bare last-observed
   alias is not moved by elided scratch assignments.
 
-`exit` accepts a numeric code (N5, then the C int range), or a one-number list. `null`, `[]` and `([])` mean no argument and code 0. Other types raise a catchable `type_mismatch` naming `exit` before any stop request, in every `EIGS_STRICT` state. A surplus list retains its existing guard: by default it raises; under `EIGS_STRICT=0` its first element must be numeric and supplies the code.
+`exit` accepts a numeric code (N5, then the C int range), or a one-number list. `null`, `[]` and `([])` mean no argument and code 0. Other types raise a catchable `type_mismatch` naming `exit` before any stop request, in every `EIGS_STRICT` state. A surplus list raises `type_mismatch` in every `EIGS_STRICT` state.
 
 ## Values and strings
 
@@ -330,8 +330,7 @@ false
 - `bool` is its own type: `true`/`false`. Comparisons, `not`, the observer
   predicates and every predicate builtin/lib function return a bool; `and`/`or`
   return an operand. A bool is NOT a number: `true + 1`, `abs of true`,
-  `xs[true]`, `xs[(n > 1):]` and `range of true` raise (even under
-  `EIGS_STRICT=0`), and so does `(pred of x) == 1` (bool vs number). Any
+  `xs[true]`, `xs[(n > 1):]` and `range of true` raise in every `EIGS_STRICT` state, and so does `(pred of x) == 1` (bool vs number). Any
   builtin raises on a bool where it does not take one -- the few slots that
   do (print/str/type/json_encode, assert's condition, container element
   slots like `append of [xs, true]`) are listed in
@@ -376,8 +375,7 @@ false
   the first raised read. `write_bytes`, `str_from_bytes`, `f64_from_bytes`, `inflate` and `buf_from_pcm16le` require exact bytes in 0..255
   (N5/Q1); raw copies, serialization and buffer-only work areas preserve representation.
   `str_from_bytes` and `inflate` (a `make zlib` build) reject a non-numeric
-  list element with a builtin-named `type_mismatch` error unless `EIGS_STRICT=0`, which retains numeric-zero
-  substitution. `str_from_bytes` stops at numeric NUL without inspecting later
+  list element with a builtin-named `type_mismatch` error in every `EIGS_STRICT` state. `str_from_bytes` stops at numeric NUL without inspecting later
   elements; byte codecs consume the complete list.
 
 Bitwise operators and `bit_*` builtins return ints, including when an
@@ -696,7 +694,7 @@ value
 value
 ```
 
-By default, fixed- or optional-shape builtin argument lists reject surplus outer elements with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
+Fixed- or optional-shape builtin argument lists reject surplus outer elements with a catchable `type_mismatch` error naming the builtin and maximum width, in every `EIGS_STRICT` state. Every argument guard raises before the call's mutation, I/O and tape effects. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
 
 Runtime-published counts and indices are exact ints (S9-K1): `__loop_iterations__`, live and historical `when` assignment counts, aggregate `what` lengths, trajectory `window`, error `line`, and scheduler trace `seq` and task ids. Scheduler `tick` remains a continuous virtual time.
 
@@ -1059,5 +1057,9 @@ A refused `shared_set`, overflowing `shared_incr`, `store_put` or
 create a collection, consume an automatic ID, change the caller's record or
 write file bytes. Historical stores containing quoted non-finite buffer
 sentinels remain readable; new writes of those payloads refuse.
+
+Argument type errors raise `type_mismatch` before mutation, I/O or tape effects,
+in every `EIGS_STRICT` state. `EIGS_STRICT` controls only the opt-in IEEE
+arithmetic/domain trap; unset and `0` retain IEEE results.
 
 UI widget-state contract (#1653): binary fields (`visible`, `enabled`, interaction flags, expansion/collapse flags, and checkbox/toggle/toggle-button `value`) are bools written as `true`/`false` and read by truthiness. Numeric values, selection indices, bitmasks, and explicit `null` sentinels are not coerced to bool. Boolean-valued public constructors/setters reject numeric arguments before UI effects.

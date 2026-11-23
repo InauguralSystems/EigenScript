@@ -1,3 +1,12 @@
+# #2502: invalid argument types raise independently of arithmetic traps.
+define guard_kind(thunk, expected_kind, label) as:
+    local seen_kind is "none"
+    try:
+        thunk of null
+    catch guard_error:
+        seen_kind is guard_error.kind
+    assert of [seen_kind == expected_kind, label]
+
 load_file of "lib/test.eigs"
 
 # Sine generates correct number of samples (at default 44100Hz)
@@ -70,13 +79,9 @@ assert_true of [abs of g[100] <= abs of s[100] + 0.0001, "gain reduces amplitude
 bad is audio_sine of [440, 0, 0.5]
 assert_eq of [len of bad, 0, "zero duration = empty"]
 
-bad2 is audio_sine of ([440])
-assert_eq of [len of bad2, 0, "too few args = empty"]
+guard_kind of [(_) => (audio_sine of ([440])), "type_mismatch", "audio_sine rejects short arguments"]
+guard_kind of [(_) => (audio_mix of [42, 43]), "type_mismatch", "audio_mix rejects non-lists"]
 
-bad3 is audio_mix of [42, 43]
-assert_eq of [len of bad3, 0, "non-list mix = empty"]
-
-# Mix of different lengths uses longer
 short is audio_sine of [220, 0.05, 0.5]
 long is audio_sine of [440, 0.1, 0.5]
 mixed is audio_mix of [short, long]
@@ -95,15 +100,15 @@ if ok != 0:
     assert_eq of [(n1 > 0), true, "audio_play_loop 1 loop plays"]
     # Invalid: 0 loops, non-number, empty samples — all 0. loops=-1 is
     # now the infinite form (GAP-002) — the mixer rewinds, no memory cost.
-    assert_eq of [audio_play_loop of [short_clip, 0], 0, "loops=0 rejected"]
+    guard_kind of [(_) => (audio_play_loop of [short_clip, 0]), "type_mismatch", "audio loop count rejects 0"]
     ch_inf is audio_play_loop of [short_clip, -1]
     assert_eq of [(ch_inf > 0), true, "loops=-1 plays forever on a channel (GAP-002)"]
     assert_eq of [audio_stop of ch_inf, 1, "infinite channel stoppable"]
-    assert_eq of [audio_play_loop of [short_clip, "many"], 0, "non-number loops rejected"]
+    guard_kind of [(_) => (audio_play_loop of [short_clip, "many"]), "type_mismatch", "audio loop count rejects a string"]
     assert_eq of [audio_play_loop of [[], 5], 0, "empty samples rejected"]
     # #152: hard ceiling at 10000 loops rejects huge counts (and prevents
     # the (int) cast UB that hit at INT_MAX+).
-    assert_eq of [audio_play_loop of [short_clip, 10001], 0, "loops>10000 rejected (#152 hard cap)"]
+    guard_kind of [(_) => (audio_play_loop of [short_clip, 10001]), "type_mismatch", "audio loop count rejects 10001"]
     # #1758 N5: an unrepresentable loop count raises before the mixer.
     huge_loop_kind is "none"
     try:
@@ -242,7 +247,7 @@ if sdev != 0:
     assert_eq of [audio_stream_push of bb, true, "push a buffer block returns 1"]
     # Bad shapes rejected while open; the device stays usable.
     assert_eq of [audio_stream_push of [], false, "empty block rejected"]
-    assert_eq of [audio_stream_push of 42, false, "non-list/buffer block rejected"]
+    guard_kind of [(_) => (audio_stream_push of 42), "type_mismatch", "non-list/buffer block rejected"]
     # Clear flushes the queue.
     audio_stream_clear of null
     assert_eq of [audio_stream_queued of null, 0, "clear empties the stream queue"]

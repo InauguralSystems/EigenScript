@@ -1,3 +1,12 @@
+# #2502: invalid argument types raise independently of arithmetic traps.
+define guard_kind(thunk, expected_kind, label) as:
+    local seen_kind is "none"
+    try:
+        thunk of null
+    catch guard_error:
+        seen_kind is guard_error.kind
+    assert of [seen_kind == expected_kind, label]
+
 # rename / remove_file — file management primitives. rename is atomic on POSIX,
 # the basis for crash-safe log compaction (write a temp, then swap it in).
 
@@ -54,7 +63,7 @@ assert_eq of [is_dir of "/tmp/eigs_isdir_probe", true, "is_dir: directory -> 1"]
 assert_eq of [is_dir of D, true, "is_dir: nested directory -> 1"]
 assert_eq of [is_dir of F, false, "is_dir: plain file -> 0"]
 assert_eq of [is_dir of "/tmp/eigs_no_such_dir_zzz", false, "is_dir: missing path -> 0"]
-assert_eq of [is_dir of 42, false, "is_dir: non-string -> 0"]
+guard_kind of [(_) => (is_dir of 42), "type_mismatch", "is_dir rejects wrong argument types"]
 # #1058: is_file is the S_ISREG probe -- the admission contract read_file_util
 # enforces. A device passes file_exists AND fails is_dir; only is_file says no.
 assert_eq of [is_file of F, true, "is_file: plain file -> 1"]
@@ -62,7 +71,7 @@ assert_eq of [is_file of "/tmp/eigs_isdir_probe", false, "is_file: directory -> 
 assert_eq of [is_file of "/dev/null", false, "is_file: device -> 0 (file_exists says 1)"]
 assert_eq of [file_exists of "/dev/null", true, "control: file_exists admits the device"]
 assert_eq of [is_file of "/tmp/eigs_no_such_file_zzz", false, "is_file: missing path -> 0"]
-assert_eq of [is_file of 42, false, "is_file: non-string -> 0"]
+guard_kind of [(_) => (is_file of 42), "type_mismatch", "is_file rejects wrong argument types"]
 remove_file of F
 
 test_summary of null

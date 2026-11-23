@@ -104,13 +104,8 @@ out:
 
 void eigs_state_set_strict(EigsState *st, int enabled) {
     if (st) {
-        st->strict_guards = enabled != 0;
         st->strict_arithmetic = enabled != 0;
     }
-}
-
-void eigs_state_set_strict_guards(EigsState *st, int enabled) {
-    if (st) st->strict_guards = enabled != 0;
 }
 
 void eigs_state_set_strict_arithmetic(EigsState *st, int enabled) {

@@ -321,14 +321,10 @@ static int strict_numeric_byte_list(Value *arg, const char *who, int nul_ends) {
         EIGS_VIEW(item_view);
         Value *item = list_get_view(arg, i, &item_view);
         /* #1637: a bool byte is refused in every strict mode. */
-        if (!item || (!val_is_number(item) && (g_strict_guards || item->type == VAL_BOOL))) {
+        if (!item || !val_is_number(item)) {
             rt_error(EK_TYPE, 0, "%s: expected numeric byte values", who);
             return 0;
         }
-        /* EIGS_STRICT=0 legacy: a non-number element (a bool never reaches
-         * here) ends the string as a NUL would -- the documented truncation
-         * the compatibility mode keeps. It is never read as a number. */
-        if (nul_ends && !val_is_number(item)) break;
         if (val_is_number(item)) {
             uint8_t byte = eigs_byte_arg(item, who);
             if (g_has_error) return 0;
@@ -625,7 +621,7 @@ Value* builtin_inflate(Value *arg)      { (void)arg; return zlib_unavailable("in
  * a clamped audio mix is a silently wrong render. */
 static int buf_count_arg(const char *who, EigsSlot cnt, long long *out) {
     if ((slot_type(cnt) != VAL_FLOAT && slot_type(cnt) != VAL_INT)) {
-        rt_error(EK_VALUE, 0, "%s: count must be a number", who);
+        rt_error(EK_TYPE, 0, "%s: count must be a number", who);
         return 0;
     }
     long long c = eigs_slot_int(cnt, who);
@@ -642,7 +638,7 @@ static int buf_count_arg(const char *who, EigsSlot cnt, long long *out) {
 static int buf_float_arg(const char *who, const char *what, EigsSlot s,
                        double *out) {
     if ((slot_type(s) != VAL_FLOAT && slot_type(s) != VAL_INT)) {
-        rt_error(EK_VALUE, 0, "%s: %s must be a number", who, what);
+        rt_error(EK_TYPE, 0, "%s: %s must be a number", who, what);
         return 0;
     }
     *out = eigs_slot_float(s, who);
@@ -659,7 +655,7 @@ static int buf_window_arg(const char *who, Value *buf, EigsSlot off,
         return 0;
     }
     if ((slot_type(off) != VAL_FLOAT && slot_type(off) != VAL_INT)) {
-        rt_error(EK_VALUE, 0, "%s: offset must be a number", who);
+        rt_error(EK_TYPE, 0, "%s: offset must be a number", who);
         return 0;
     }
     long long offset = eigs_slot_int(off, who);

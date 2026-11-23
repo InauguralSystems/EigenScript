@@ -1,3 +1,12 @@
+# #2502: invalid argument types raise independently of arithmetic traps.
+define guard_kind(thunk, expected_kind, label) as:
+    local seen_kind is "none"
+    try:
+        thunk of null
+    catch guard_error:
+        seen_kind is guard_error.kind
+    assert of [seen_kind == expected_kind, label]
+
 # ============================================================
 # gfx_text_width / gfx_text_height metric tests (#593)
 # ============================================================
@@ -35,7 +44,7 @@ assert_true of [h2 > h1, "height monotonic in scale"]
 
 # ---- Degenerate inputs (both modes) ----
 assert_eq of [gfx_text_width of ["", 1], 0, "empty string has width 0"]
-assert_eq of [gfx_text_width of (5), 0, "non-string arg yields width 0"]
+guard_kind of [(_) => (gfx_text_width of 5), "type_mismatch", "gfx width rejects non-string text"]
 assert_eq of [gfx_text_width of ("x"), gfx_text_width of ["x", 1], "scale defaults to 1"]
 
 # ---- Mode detection ----

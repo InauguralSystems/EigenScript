@@ -5,8 +5,23 @@ EIGS=${EIGS:-${EIGENSCRIPT:-$(cd "$(dirname "$0")/.." && pwd)/src/eigenscript}}
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
+TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$TESTS_DIR/lsan_classify.sh" || exit 1
+
 pass() { printf 'PASS: %s\n' "$1"; }
 fail() { printf 'FAIL: %s\n' "$1"; exit 1; }
+
+# A rejected call must exit 1 with no hard sanitizer diagnostic in its output
+# (.claude/rules/test-suite.md: a hard diagnostic fails at any exit code, and
+# 1 is also ASan's and UBSan's halt code). A leak-only report is tolerated as
+# the runner's rc_expect tolerates it. reject_ok <rc> <stdout> <stderr> <msg>
+reject_ok() {
+    local cls
+    cls=$(lsan_classify_name "$(cat "$2" "$3")")
+    [ "$cls" = hard ] && fail "$4: sanitizer diagnostic in a rejected call: $(head -3 "$3" | tr '\n' ' ')"
+    [ "$1" -ne 0 ] || fail "$4"
+    [ "$cls" = leak ] || [ "$1" -eq 1 ] || fail "$4 (exit $1, wanted 1)"
+}
 
 # Real large files, generated outside the tree.  Avoid sparse-file and GNU
 # userland assumptions because this section also runs in the macOS merge queue.
@@ -17,24 +32,18 @@ pathlib.Path(sys.argv[2]).write_bytes(b'y' * (15 * 1024 * 1024))
 PY
 printf 'abc' >"$TMP/three.bin"
 
-# Non-strict mode permits surplus list elements, but readers must still honor
-# the supplied cap in the second slot.  Strict mode owns surplus rejection.
+# Surplus list elements are type errors in every state.  The supplied cap is
+# still pinned separately below by the successful and over-cap two-slot rows.
 for reader in read_text read_bytes read_bytes_buf; do
     cat >"$TMP/surplus.eigs" <<EOF
 value is $reader of ["$TMP/three.bin", 1, 0]
 EOF
-    if EIGS_STRICT=0 "$EIGS" "$TMP/surplus.eigs" >"$TMP/out" 2>"$TMP/err"
-    then
-        fail "$reader ignored max_bytes when surplus arguments were present"
-    fi
-    grep -F "3 bytes, over the 1-byte cap" "$TMP/err" >/dev/null ||
-        fail "$reader surplus-list refusal did not enforce the supplied cap"
-    pass "$reader honors max_bytes with a non-strict surplus argument"
+    EIGS_STRICT=0 "$EIGS" "$TMP/surplus.eigs" >"$TMP/out" 2>"$TMP/err"; reject_ok $? "$TMP/out" "$TMP/err" "$reader ignored max_bytes when surplus arguments were present"
+    grep -F "$reader: expected a fixed-shape list with at most 2 elements" "$TMP/err" >/dev/null ||
+        fail "$reader EIGS_STRICT=0 surplus rejection lacked reader attribution"
+    pass "$reader rejects a surplus argument under EIGS_STRICT=0"
 
-    if EIGS_STRICT=1 "$EIGS" "$TMP/surplus.eigs" >"$TMP/out" 2>"$TMP/err"
-    then
-        fail "strict $reader accepted a surplus argument"
-    fi
+    EIGS_STRICT=1 "$EIGS" "$TMP/surplus.eigs" >"$TMP/out" 2>"$TMP/err"; reject_ok $? "$TMP/out" "$TMP/err" "strict $reader accepted a surplus argument"
     grep -F "$reader: expected a fixed-shape list with at most 2 elements" "$TMP/err" >/dev/null ||
         fail "strict $reader surplus rejection lacked reader attribution"
     pass "strict $reader rejects the surplus argument at its shape guard"
@@ -44,10 +53,7 @@ for reader in read_text read_bytes read_bytes_buf; do
     cat >"$TMP/case.eigs" <<EOF
 value is $reader of "$TMP/default.bin"
 EOF
-    if "$EIGS" "$TMP/case.eigs" >"$TMP/out" 2>"$TMP/err"
-    then
-        fail "$reader default accepted 10 MiB + 1 byte"
-    fi
+    "$EIGS" "$TMP/case.eigs" >"$TMP/out" 2>"$TMP/err"; reject_ok $? "$TMP/out" "$TMP/err" "$reader default accepted 10 MiB + 1 byte"
     grep -F "10485761 bytes, over the 10485760-byte cap" "$TMP/err" >/dev/null ||
         fail "$reader default refusal did not name size and cap"
     grep -F "pass $reader of [path, max_bytes]" "$TMP/err" >/dev/null ||
@@ -68,40 +74,29 @@ EOF
     cat >"$TMP/case.eigs" <<EOF
 value is $reader of ["$TMP/default.bin", 512 * 1024 * 1024 + 1]
 EOF
-    if "$EIGS" "$TMP/case.eigs" >"$TMP/out" 2>"$TMP/err"
-    then
-        fail "$reader accepted a cap above the hard ceiling"
-    fi
+    "$EIGS" "$TMP/case.eigs" >"$TMP/out" 2>"$TMP/err"; reject_ok $? "$TMP/out" "$TMP/err" "$reader accepted a cap above the hard ceiling"
     grep -F "1..536870912" "$TMP/err" >/dev/null ||
         fail "$reader hard-ceiling refusal lacked the ceiling"
     pass "$reader refuses a cap above the hard ceiling"
 done
 
-# Argument guards remain fail-soft outside strict mode, including when the
-# path is wrapped in the new capped form.  These guards execute before the
-# trace take, preserving the historical fallback records.
+# Argument guards raise outside strict mode too, before any trace record.
 for reader in read_text read_bytes read_bytes_buf; do
-    expected=null
-    [ "$reader" = read_text ] && expected=str
     for arg in '42' '[42, 1024]' '["unused", "bad-cap"]' '["unused", -1]'; do
         cat >"$TMP/guard.eigs" <<EOF
 print of type of ($reader of $arg)
 EOF
-        got=$(EIGS_STRICT=0 "$EIGS" "$TMP/guard.eigs" 2>"$TMP/err") ||
-            fail "$reader guard for $arg raised outside strict mode"
-        [ "$got" = "$expected" ] ||
-            fail "$reader guard for $arg returned type '$got', expected '$expected'"
+        EIGS_STRICT=0 "$EIGS" "$TMP/guard.eigs" >"$TMP/out" 2>"$TMP/err"; reject_ok $? "$TMP/out" "$TMP/err" "$reader guard for $arg returned outside strict mode"
+        grep -F "$reader:" "$TMP/err" >/dev/null ||
+            fail "$reader guard for $arg lacked reader attribution"
     done
-    pass "$reader path and max_bytes guards retain the historical fallback"
+    pass "$reader path and max_bytes guards raise under EIGS_STRICT=0"
 done
 
 cat >"$TMP/strict.eigs" <<'EOF'
 value is read_text of 42
 EOF
-if EIGS_STRICT=1 "$EIGS" "$TMP/strict.eigs" >"$TMP/out" 2>"$TMP/err"
-then
-    fail "strict read_text accepted a non-string path"
-fi
+EIGS_STRICT=1 "$EIGS" "$TMP/strict.eigs" >"$TMP/out" 2>"$TMP/err"; reject_ok $? "$TMP/out" "$TMP/err" "strict read_text accepted a non-string path"
 grep -F "read_text: expected a string path" "$TMP/err" >/dev/null ||
     fail "strict read_text did not raise its historical type guard"
 pass "strict read_text raises for a non-string path"
@@ -109,12 +104,11 @@ pass "strict read_text raises for a non-string path"
 cat >"$TMP/guard.eigs" <<'EOF'
 print of read_text of 42
 EOF
-EIGS_STRICT=0 EIGS_TRACE="$TMP/guard.tape" "$EIGS" "$TMP/guard.eigs" >"$TMP/record" 2>"$TMP/record.err" ||
-    fail "non-string guard trace recording failed"
-EIGS_STRICT=0 EIGS_REPLAY="$TMP/guard.tape" "$EIGS" "$TMP/guard.eigs" >"$TMP/replay-guard" 2>"$TMP/replay-guard.err" ||
-    fail "non-string guard replay failed"
-cmp "$TMP/record" "$TMP/replay-guard" >/dev/null || fail "non-string guard replay diverged"
-pass "a fail-soft argument guard records and replays the same fallback"
+EIGS_STRICT=0 EIGS_TRACE="$TMP/guard.tape" "$EIGS" "$TMP/guard.eigs" >"$TMP/record" 2>"$TMP/record.err"; reject_ok $? "$TMP/record" "$TMP/record.err" "non-string guard trace recording returned"
+if grep -q '^N .* read_text=' "$TMP/guard.tape"; then
+    fail "rejected read_text call wrote a nondeterministic tape record"
+fi
+pass "a rejected argument records no nondeterministic result"
 
 # Record a successful read under a raised cap, remove the live input, and prove
 # replay retains the call's cap while serving the recorded value.

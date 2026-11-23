@@ -8,7 +8,7 @@ trap 'rm -f "$TMP"' EXIT
 pass=0; fail=0
 run() {
     name="$1"; prog="$2"; printf '%s\n' "$prog" > "$TMP"
-    out=$(EIGS_STRICT=0 "$EIGS" "$TMP" 2>&1); rc=$?
+    out=$(env -u EIGS_STRICT "$EIGS" "$TMP" 2>&1); rc=$?
     if [ "$rc" -eq 0 ]; then echo "  PASS: $name"; pass=$((pass+1));
     else echo "  FAIL: $name (rc=$rc: $out)"; fail=$((fail+1)); fi
 }

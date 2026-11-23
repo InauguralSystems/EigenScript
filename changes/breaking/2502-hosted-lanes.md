@@ -1,0 +1,1 @@
+- Programs must handle builtin argument type and surplus-shape errors in every `EIGS_STRICT` state; `nearest_in_range` key slots no longer accept `null` or numbers as default keys, and rejected calls no longer return lenient stand-ins or perform effects (#2502).

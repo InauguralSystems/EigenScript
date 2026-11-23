@@ -211,10 +211,13 @@ empty is buffer of 0
 assert of [(sum of empty) == 0, "NG45 empty sum"]
 assert of [(mean of empty) == 0, "NG45 empty mean"]
 assert of [(norm of empty) == 0, "NG45 empty norm"]
-# N3/C2: empty sum becomes int, while a wrong-type soft stand-in keeps its
-# original float kind. This fixture runs with EIGS_STRICT=0.
-sum_soft_wrong_type is sum of "hello"
-assert of [sum_soft_wrong_type == 0 and (num_type of sum_soft_wrong_type) == "float", "NG45 N3 sum preserves the legacy float-zero type fallback"]
+# #2502: the numeric type guard has no float-zero compatibility result.
+sum_type_kind is "none"
+try:
+    sum of "hello"
+catch sum_error:
+    sum_type_kind is sum_error.kind
+assert of [sum_type_kind == "type_mismatch", "NG45 sum rejects a non-number in every state"]
 short is buffer of 1
 short[0] is 2
 assert of [(dot of [finite, short]) == 6, "NG46 dot retains shorter-length policy"]

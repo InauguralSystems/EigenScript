@@ -66,7 +66,7 @@ static int gfx_byte_frame_is(const Value *frame, double expected) {
     return 1;
 }
 
-static void gfx_byte_exercise(int ppu, int guards, int arithmetic, const GfxByteCase *c,
+static void gfx_byte_exercise(int ppu, int arithmetic, const GfxByteCase *c,
                               Value *args, Value *source, Value *frame) {
     const char *client = ppu ? "ppu_render_frame" : "gfx_fb";
     int first = ppu ? 0xFF40 : 0;
@@ -87,7 +87,6 @@ static void gfx_byte_exercise(int ppu, int guards, int arithmetic, const GfxByte
         gfx_byte_check(rc == 0 && clear_rc == 0, client, arithmetic, c->name,
                        "real renderer starts white");
     }
-    g_strict_guards = guards;
     g_strict_arithmetic = arithmetic;
     gfx_byte_clear_error();
     int arg_refs = args->refcount, source_refs = source->refcount;
@@ -139,7 +138,6 @@ static void gfx_byte_exercise(int ppu, int guards, int arithmetic, const GfxByte
  * Cleanup finishes inside the callback; the state outlives VM execution. */
 static Value *phase2_reader_probe(Value *arg) {
     (void)arg;
-    g_strict_guards = 1;
     g_strict_arithmetic = 1;
     Value *pixels = NULL, *memory = NULL, *frame = NULL;
     Value *gfx_args = NULL, *ppu_args = NULL;
@@ -175,18 +173,17 @@ static Value *phase2_reader_probe(Value *arg) {
     ppu_args = make_list_heap(2);
     list_append(ppu_args, memory);
     list_append(ppu_args, frame);
-    int saved_guards = g_strict_guards, saved_arithmetic = g_strict_arithmetic;
-    for (int guards = 0; guards <= 1; ++guards) {
+    int saved_arithmetic = g_strict_arithmetic;
+    {
       for (int arithmetic = 0; arithmetic <= 1; ++arithmetic) {
         for (unsigned i = 0; i < sizeof gfx_byte_cases / sizeof gfx_byte_cases[0]; ++i) {
-            gfx_byte_exercise(0, guards, arithmetic, &gfx_byte_cases[i], gfx_args, pixels, NULL);
-            gfx_byte_exercise(1, guards, arithmetic, &gfx_byte_cases[i], ppu_args, memory, frame);
+            gfx_byte_exercise(0, arithmetic, &gfx_byte_cases[i], gfx_args, pixels, NULL);
+            gfx_byte_exercise(1, arithmetic, &gfx_byte_cases[i], ppu_args, memory, frame);
         }
       }
-    }
-    g_strict_guards = saved_guards; g_strict_arithmetic = saved_arithmetic;
-    gfx_byte_check(gfx_byte_calls == 56, "population", 1, "both clients",
-                   "all seven fixtures run through both clients in all four strict-flag combinations");
+    } g_strict_arithmetic = saved_arithmetic;
+    gfx_byte_check(gfx_byte_calls == 28, "population", 1, "both clients",
+                   "all seven fixtures run through both clients in both arithmetic states");
 
 cleanup:
     gfx_byte_clear_error();

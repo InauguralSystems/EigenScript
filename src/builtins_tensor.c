@@ -247,19 +247,8 @@ static int tensor_dims(Value *v, int *rows, int *cols) {
 static double* tensor_to_flat(Value *v, int *rows, int *cols,
                               const char *who) {
     int ndim = tensor_dims(v, rows, cols);
-    /* A scalar first element gives no shape. Preserve the release's explicit
-     * strict-off null, but do not soften structural list/buffer mismatches. */
-    if (ndim == 0 && !g_strict_guards && v && v->type == VAL_LIST &&
-        v->data.list.count > 0 &&
-        list_elem_type(v, 0) != VAL_LIST && list_elem_type(v, 0) != VAL_BUFFER)
-        return NULL;
-    /* Historically every non-number slot became 0.0 below. Explicit strict
-     * rejects that lossy conversion before allocating; default/strict-off
-     * retains the old element stand-in. Structural row errors are separate.
-     * Check even when the first element or row gives no usable shape. */
-    /* #1637: a bool element is refused in every strict mode. */
-#define FLAT_BAD(t) ((t) == VAL_LIST || (t) == VAL_BUFFER || \
-                     (((t) != VAL_FLOAT && (t) != VAL_INT) && (g_strict_guards || (t) == VAL_BOOL)))
+    /* Validate every consumed cell before allocating or writing (#2502). */
+#define FLAT_BAD(t) ((t) != VAL_FLOAT && (t) != VAL_INT)
     if (v && v->type == VAL_LIST) {
         int bad = 0;
         if (ndim == 1) {
@@ -520,7 +509,6 @@ static Value* tensor_elementwise(Value *a, Value *b, BinOpFn fn) {
     /* Shared by add/subtract/multiply/divide/pow (and by its own recursion on
      * nested elements), so the guard names that surface rather than one call.
      * `arg` is what the guard macros test for a bool (#1637): either operand. */
-    Value *arg = (a && a->type == VAL_BOOL) ? a : b;
     ARG_GUARD(!a || !b, "add/subtract/multiply/divide/pow",
               "two tensor operands", make_float(0.0));
 
@@ -745,7 +733,6 @@ Value* builtin_tensor_pow(Value *arg) {
 typedef double (*UnaryOpFn)(double);
 static double op_neg(double x);
 static Value* tensor_unary(Value *v, UnaryOpFn fn) {
-    Value *arg = v;   /* what the guard macros test for a bool (#1637) */
     if (val_is_number(v)) {
         EigsNum n = eigs_arithmetic_number(v, fn == op_neg ? "negative" : "sqrt/exp/log");
         if (g_has_error) return make_null();
@@ -1919,11 +1906,9 @@ static double numerical_loss(Value *loss_fn, Value *arg, const char *who,
         return result;
     }
     if (loss) val_decref(loss);
-    if (g_strict_guards) {
-        if (!g_has_error)
-            rt_error(EK_TYPE, 0, "%s: expected loss function to return a number", who);
-        *loss_valid = 0;
-    }
+    if (!g_has_error)
+        rt_error(EK_TYPE, 0, "%s: expected loss function to return a number", who);
+    *loss_valid = 0;
     return 0.0;
 }
 

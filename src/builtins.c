@@ -2470,7 +2470,7 @@ Value* builtin_json_path(Value *arg) {
      * catalog) rely on and which this raise does not touch — they never
      * pass through json_path. JSON `false`/`null`/literals are answers and
      * stay quiet in both modes. */
-    if (g_strict_guards) {
+    {
         int end = pos;
         eigs_json_skip_ws(json_str, &end);
         if (!root || g_json_parse_err || g_json_parse_recoverable ||
@@ -4111,6 +4111,14 @@ Value* builtin_copy_into(Value *arg) {
         }
         if (src && src->type == VAL_LIST) {
             for (int i = 0; i < src->data.list.count && offset + i < dest->data.buffer.count; i++) {
+                ValType type = list_elem_type(src, i);
+                if (type != VAL_FLOAT && type != VAL_INT) {
+                    rt_error(EK_TYPE, 0, "cannot store %s in a buffer (copy_into element %d; buffers hold numbers)",
+                             val_type_name(type), i);
+                    return make_null();
+                }
+            }
+            for (int i = 0; i < src->data.list.count && offset + i < dest->data.buffer.count; i++) {
                 Value *it = BUILTIN_LIST_VIEW(src, i);
                 if (!it || !val_is_number(it)) {
                     rt_error(EK_TYPE, 0, "cannot store %s in a buffer (copy_into element %d; buffers hold numbers)",
@@ -4333,7 +4341,7 @@ Value* builtin_fill(Value *arg) {
 static int at_index(Value *idx_val, int count, const char *what,
                     int *out) {
     if (!idx_val || !val_is_number(idx_val)) {
-        rt_error(EK_VALUE, 0, "%s index must be an integer", what);
+        rt_error(EK_TYPE, 0, "%s index must be an integer", what);
         return 0;
     }
     int idx = builtin_c_int(idx_val, what);
@@ -4353,7 +4361,7 @@ static int at_index(Value *idx_val, int count, const char *what,
  * [buf, 9, v]` and `buf[9]` do not report the same fault two different ways. */
 static int buf_at_index(Value *idx_val, int count, int *out, const char *who) {
     if (!idx_val || !val_is_number(idx_val)) {
-        rt_error(EK_VALUE, 0, "buffer index must be a number, got %s",
+        rt_error(EK_TYPE, 0, "buffer index must be a number, got %s",
                  val_type_name(idx_val ? idx_val->type : VAL_NULL));
         return 0;
     }
@@ -5860,7 +5868,8 @@ Value* builtin_nearest_in_range(Value *arg) {
     }
     Value *entities = BUILTIN_LIST_VIEW(arg, 0);
     if (!entities || entities->type != VAL_LIST) return make_null();
-    BOOL_REFUSE(arg, "nearest_in_range");   /* x, y, range, world: numbers */
+    /* Typed scalar readers validate numeric positions; entity flags and
+     * unrelated dict metadata are any-value data and must not be scanned. */
     double px = eigs_list_float(arg, 1, __func__);
     double py = eigs_list_float(arg, 2, __func__);
     double range = eigs_list_float(arg, 3, __func__);
@@ -5868,12 +5877,21 @@ Value* builtin_nearest_in_range(Value *arg) {
     double wh = eigs_list_float(arg, 5, __func__);
     if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     const char *px_key = "px", *py_key = "py", *active_key = "active";
-    if (arg->data.list.count >= 7 && BUILTIN_LIST_VIEW(arg, 6)->type == VAL_STR)
-        px_key = BUILTIN_LIST_VIEW(arg, 6)->data.str;
-    if (arg->data.list.count >= 8 && BUILTIN_LIST_VIEW(arg, 7)->type == VAL_STR)
-        py_key = BUILTIN_LIST_VIEW(arg, 7)->data.str;
-    if (arg->data.list.count >= 9 && BUILTIN_LIST_VIEW(arg, 8)->type == VAL_STR)
-        active_key = BUILTIN_LIST_VIEW(arg, 8)->data.str;
+    if (arg->data.list.count >= 7) {
+        Value *key = BUILTIN_LIST_VIEW(arg, 6);
+        if (key->type != VAL_STR) { rt_error(EK_TYPE, 0, "nearest_in_range: expected string keys"); return make_null(); }
+        px_key = key->data.str;
+    }
+    if (arg->data.list.count >= 8) {
+        Value *key = BUILTIN_LIST_VIEW(arg, 7);
+        if (key->type != VAL_STR) { rt_error(EK_TYPE, 0, "nearest_in_range: expected string keys"); return make_null(); }
+        py_key = key->data.str;
+    }
+    if (arg->data.list.count >= 9) {
+        Value *key = BUILTIN_LIST_VIEW(arg, 8);
+        if (key->type != VAL_STR) { rt_error(EK_TYPE, 0, "nearest_in_range: expected string keys"); return make_null(); }
+        active_key = key->data.str;
+    }
 
     double range_sq = range * range;
     double best_sq = range_sq;
@@ -5994,18 +6012,28 @@ Value* builtin_nearest_in_range_all(Value *arg) {
     }
     Value *entities = BUILTIN_LIST_VIEW(arg, 0);
     if (!entities || entities->type != VAL_LIST) return make_null();
-    BOOL_REFUSE(arg, "nearest_in_range_all");   /* range, world: numbers */
+    /* Typed scalar readers validate numeric positions; entity flags and
+     * unrelated dict metadata are any-value data and must not be scanned. */
     double range = eigs_list_float(arg, 1, __func__);
     double ww = eigs_list_float(arg, 2, __func__);
     double wh = eigs_list_float(arg, 3, __func__);
     if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     const char *px_key = "px", *py_key = "py", *active_key = "active";
-    if (arg->data.list.count >= 5 && BUILTIN_LIST_VIEW(arg, 4)->type == VAL_STR)
-        px_key = BUILTIN_LIST_VIEW(arg, 4)->data.str;
-    if (arg->data.list.count >= 6 && BUILTIN_LIST_VIEW(arg, 5)->type == VAL_STR)
-        py_key = BUILTIN_LIST_VIEW(arg, 5)->data.str;
-    if (arg->data.list.count >= 7 && BUILTIN_LIST_VIEW(arg, 6)->type == VAL_STR)
-        active_key = BUILTIN_LIST_VIEW(arg, 6)->data.str;
+    if (arg->data.list.count >= 5) {
+        Value *key = BUILTIN_LIST_VIEW(arg, 4);
+        if (key->type != VAL_STR) { rt_error(EK_TYPE, 0, "nearest_in_range_all: expected string keys"); return make_null(); }
+        px_key = key->data.str;
+    }
+    if (arg->data.list.count >= 6) {
+        Value *key = BUILTIN_LIST_VIEW(arg, 5);
+        if (key->type != VAL_STR) { rt_error(EK_TYPE, 0, "nearest_in_range_all: expected string keys"); return make_null(); }
+        py_key = key->data.str;
+    }
+    if (arg->data.list.count >= 7) {
+        Value *key = BUILTIN_LIST_VIEW(arg, 6);
+        if (key->type != VAL_STR) { rt_error(EK_TYPE, 0, "nearest_in_range_all: expected string keys"); return make_null(); }
+        active_key = key->data.str;
+    }
 
     int n = entities->data.list.count;
     double range_sq = range * range;

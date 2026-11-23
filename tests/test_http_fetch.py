@@ -1909,10 +1909,10 @@ def post_arguments_tape(binary,folder,version):
     with Peer() as peer:
         extra=[peer.url+'/','{}','x','ignored']
         value=run_calls(binary,folder,[extra],legacy=True)[0]
-        equal(value,['body',2,hashlib.sha256(b'ok').hexdigest()],'post ignores surplus default argument')
+        equal(value[:2],['error','type_mismatch'],'post surplus default argument kind')
         strict=run_calls(binary,folder,[extra],{'EIGS_STRICT':'1'},legacy=True)[0]
         equal(strict[:2],['error','type_mismatch'],'post surplus strict argument kind')
-        equal(peer.accepted,1,'strict surplus sends nothing')
+        equal(peer.accepted,0,'surplus sends nothing in every state')
 
 
 def post_integer_header(binary,folder,version):

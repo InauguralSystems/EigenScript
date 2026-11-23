@@ -116,7 +116,7 @@ be an integer from 0 through 255, the last call wins, and an explicit
 `exit of N` decides its own status. Uncaught runtime errors and unobserved task
 or worker failures remain nonzero rather than being replaced by this setting.
 
-`exit` accepts a numeric code (N5, then the C int range), or a one-number list. `null`, `[]` and `([])` mean no argument and code 0. Other types raise a catchable `type_mismatch` naming `exit` before any stop request, in every `EIGS_STRICT` state. A surplus list retains its existing guard: by default it raises; under `EIGS_STRICT=0` its first element must be numeric and supplies the code.
+`exit` accepts a numeric code (N5, then the C int range), or a one-number list. `null`, `[]` and `([])` mean no argument and code 0. Other types raise a catchable `type_mismatch` naming `exit` before any stop request, in every `EIGS_STRICT` state. A surplus list raises `type_mismatch` in every `EIGS_STRICT` state.
 
 ```eigenscript
 set_exit_code of 0
@@ -368,15 +368,15 @@ The IEEE 754 default floating-point environment is part of number semantics.
   or buffer. Comparing NaN never raises or changes math flags.
 ### Argument guards and arithmetic traps
 
-An argument guard rejects a wrong type, a short or surplus argument list, a wrong container, or a non-numeric element; an arithmetic trap rejects a non-finite arithmetic result, including one produced from an already non-finite operand. The `EIGS_STRICT` setting has three states and controls these two properties:
+An argument guard rejects a wrong type, a short or surplus argument list, a wrong container, or a non-numeric element; an arithmetic trap rejects a non-finite arithmetic result, including one produced from an already non-finite operand. Argument guards are unconditional; `EIGS_STRICT` controls only the arithmetic trap:
 
 | `EIGS_STRICT` state | argument guards | non-finite arithmetic |
 |---|---|---|
 | unset or empty (default) | raise | IEEE value |
-| `0` | legacy quiet stand-in | IEEE value |
+| `0` | raise | IEEE value |
 | `1` | raise | raise |
 
-Some guards raise in every state; for example, `abs of true` raises rather than treating a bool as a number.
+No answer to a type error depends on `EIGS_STRICT`: argument guards raise in every state. Builtins that still answer `null` for a wrong-typed argument in every state are tracked in #2509. Bools rejected by numeric argument contracts raise at any list or dictionary depth; valid any-value container positions keep their documented meaning.
 
 Numeric conversion arguments (indices, counts, bytes, durations, stored or encoded numbers) and a buffer's stored cells refuse non-finite values in every state; scalar math, its list forms and list reductions are arithmetic positions.
 
@@ -401,9 +401,9 @@ Numeric conversion arguments (indices, counts, bytes, durations, stored or encod
   contract, not a guard).
   A return expression alone does not distinguish a type guard from a
   documented answer. `tools/strict_differential.sh` checks the distinction
-  that can be executed: a guard probe must raise unless `EIGS_STRICT=0`,
+  that can be executed: a guard probe must raise in every `EIGS_STRICT` state,
   and a pinned documented answer must not.
-  By default, fixed- or optional-shape builtin argument lists reject surplus outer elements with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
+  Fixed- or optional-shape builtin argument lists reject surplus outer elements with a catchable `type_mismatch` error naming the builtin and maximum width, in every `EIGS_STRICT` state. Every argument guard raises before the call's mutation, I/O and tape effects. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
 
   Buffer storage may retain a raw non-finite kernel result. Indexing and
   iteration, like `get_at`, still refuse a stored NaN or infinity with `value`
@@ -411,24 +411,13 @@ Numeric conversion arguments (indices, counts, bytes, durations, stored or encod
   and sets `math_flags.invalid`; other non-finite data refusals leave flags
   alone. The interpreter, JIT and leaf fallback agree on kind, message and line.
 
-  Two further classes raise unless `EIGS_STRICT=0`:
-  - **JSON parse failure in `json_path`.** Unless `EIGS_STRICT=0`, `json_path`
-    applies `json_decode`'s acceptance test and raises a catchable `value`
-    error naming the position; JSON `false`, `null` and an absent key are
-    answers and stay quiet. Under `EIGS_STRICT=0` a malformed document is
-    walked leniently and raises nothing.
-  - **The sentinel and falsy families.** `index_of`/`list_index_of`/`ord`,
-    `file_exists`/`is_dir`/`is_file`/`read_text`/`read_bytes`/`ls`/
-    `mkdir`/`env_get`, and the wrong-type launderers the sweep
-    found (`split`, `scan_ints`, `buffer`, `channel_closed`, `f64_to_bytes`,
-    `json_build`, `sort`, `random_int`, `random_hex`, `token_name`, and
-    `zlib_*`) raise for wrong-typed arguments unless `EIGS_STRICT=0`. A
-    sentinel for a valid-but-absent input — `index_of` miss `-1`,
-    `file_exists` of a missing path `false` — is unchanged in every `EIGS_STRICT` state.
+  JSON parse failure in `json_path` raises a catchable `value` error naming
+  the position in every state. JSON `false`, `null` and absent keys remain
+  answers. Wrong-typed arguments in the sentinel and falsy families raise
+  `type_mismatch`; a sentinel for valid-but-absent input is unchanged.
   Int overflow and int `// 0`/`% 0` raise in every `EIGS_STRICT` state.
   Byte consumers such as `str_from_bytes` and the `zlib_*` forms likewise
-  reject a nonnumeric list element with a builtin-named `type_mismatch` error unless `EIGS_STRICT=0`, which retains the
-  numeric-zero substitution. `str_from_bytes` ends at a numeric byte that
+  reject a nonnumeric list element with a builtin-named `type_mismatch` error in every `EIGS_STRICT` state. `str_from_bytes` ends at a numeric byte that
   converts to NUL, so elements after that terminator are not inspected.
 - **Integer bitwise ops act on int64, exact past 2^32.** `&` `|` `^` `~` `<<`
   `>>` and their `bit_*` builtin forms interpret operands as 64-bit integers, so
@@ -658,9 +647,7 @@ true
 bool
 ```
 
-A bool is not a number. The exact rule, in every `EIGS_STRICT` state
-(`EIGS_STRICT=0` keeps its soft stand-ins for other wrong types, never for a
-bool):
+A bool is not a number. Type guards raise in every `EIGS_STRICT` state:
 
 - Arithmetic, ordering (`<`, `sort`), indexing, slice bounds, `range`, an
   `at` line and a `when` ordinal raise on a bool, and so do `==` and `!=`
@@ -2885,7 +2872,7 @@ Changed in this release (#973/#1093): the list form used to answer `0.0` for
 an out-of-range index and the buffer form was added folding the same way. A
 tensor that is not a matrix in the per-row form still answers `0.0` for that
 row — that is the shape reading, not the index one — and a wrong-typed
-argument raises unless `EIGS_STRICT=0`, where it answers `0.0`.
+argument raises `type_mismatch` in every `EIGS_STRICT` state.
 
 These tensor builtins accept a buffer wherever they accept a flat numeric
 list as a tensor operand, and return a buffer when **every** tensor operand
