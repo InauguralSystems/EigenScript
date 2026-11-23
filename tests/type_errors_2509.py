@@ -11,7 +11,7 @@ def kind_of(s):
 def program(setup,expr): return setup+'\ntry:\n    answer is '+expr+'\n    print of ("ANSWER:" + (str of answer))\ncatch e:\n    if ((type of e) == "dict") and (has_key of [e, "kind"]):\n        print of ("ERR:" + e.kind)\n    else:\n        print of "THROWN"\nprint of "'+MARK+'"\n'
 def run(binary,src,mode):
  with tempfile.TemporaryDirectory() as d:
-  p=Path(d)/'p.eigs';p.write_text(src);env={k:v for k,v in os.environ.items() if not k.startswith('EIGS_')};env.update(SDL_VIDEODRIVER='dummy',SDL_AUDIODRIVER='dummy',DISPLAY='')
+  p=Path(d)/'p.eigs';p.write_text(src.replace('@TMP@',d));env={k:v for k,v in os.environ.items() if not k.startswith('EIGS_')};env.update(SDL_VIDEODRIVER='dummy',SDL_AUDIODRIVER='dummy',DISPLAY='')
   if mode is not None:env['EIGS_STRICT']=mode
   try:r=subprocess.run([binary,str(p)],cwd=d,env=env,input='',capture_output=True,text=True,timeout=5)
   except subprocess.TimeoutExpired:return 'TIMEOUT'
@@ -28,7 +28,11 @@ def main():
  for n in sorted(set(api['builtins'])):
   if n!='exit':
    for k,w in WRONG.items():jobs.append((n,'whole','-',k,'',n+' of '+w))
+ # A case runs only when its builtin is in this binary (gfx, http and the
+ # other extensions are optional builds); allowed rows of absent builtins are not expected.
+ present=set(api['builtins'])|{x for v in api.get('extensions',{}).values() for x in v}
  for c in json.loads((ROOT/'tests/strict_shape_cases.json').read_text()):
+  if c['name'] not in present: continue
   for i,a in enumerate(c['args']):
    for k,w in WRONG.items():
     if k!=kind_of(a):
@@ -61,7 +65,7 @@ def main():
   if not valid:
    print('FAIL: invalid allowed-row classification:', *key, reason)
    reason_ok=False
-  expected[key]=reason
+  if c[0] in present: expected[key]=reason
  broken={tuple(j[:4])+(j[5],) for j,v in rr if any(x=='BROKEN' for x in v) and not j[4]}
  for key in sorted(broken)[:20]: print('FAIL: broken probe:', *key)
  actual={tuple(r[:5]) for r in rows}
