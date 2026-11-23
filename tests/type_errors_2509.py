@@ -43,6 +43,12 @@ def main():
      q=list(c['args']);q[i]=w;jobs.append((c['name'],'pos',str(i),k,c.get('setup',''),c['name']+' of '+(q[0] if len(q)==1 else '['+', '.join(q)+']')))
  def one(j):return j,[run(b,program(j[4],j[5]),m) for m in MODES]
  with ThreadPoolExecutor(1) as ex: rr=list(ex.map(one,jobs))
+ # A case whose fixture needs the running environment (an audio device, a loopback
+ # server) may be unreachable on a box without it. Such a probe, unreached in all
+ # three states, is SKIPPED and counted; a build flag (gfx_compiled) is not a fixture.
+ fixture_names={c['name'] for c in json.loads((ROOT/'tests/strict_shape_cases.json').read_text())
+                if any(not r.endswith('_compiled') for r in c.get('requirements',[]))}
+ skipped={tuple(j[:4])+(j[5],) for j,v in rr if j[1]=='pos' and j[0] in fixture_names and all(x=='UNREACHED' for x in v)}
  required=[]
  for line in (ROOT/'tests/type_errors_2509_required.tsv').read_text().splitlines()[1:]:
   name,setup,expr=line.split('\t'); setup=setup.replace('\\n','\n')
@@ -85,11 +91,14 @@ def main():
  broken={tuple(j[:4])+(j[5],) for j,v in rr if any(x=='BROKEN' for x in v)}
  for key in sorted(broken)[:20]: print('FAIL: broken probe:', *key)
  actual={tuple(r[:5]) for r in rows}
- missing=set(expected)-actual; extra=actual-set(expected)
+ missing=set(expected)-actual-skipped; extra=actual-set(expected)
+ # An allowed answer is never a type error in another EIGS_STRICT state (the
+ # IEEE trap, kind value under EIGS_STRICT=1, is the one state-dependent raise).
+ mixed=[(tuple(r[:5]),r[5:]) for r in rows if any(x not in ('ANSWER','ERR:value') for x in r[5:])]
  unreached={tuple(j[:4])+(j[5],) for j,v in rr if any(x=='UNREACHED' for x in v)}
  reached_pin={tuple(line.split('\t')) for line in
               (ROOT/'tests/type_errors_2509_reached.tsv').read_text().splitlines()[1:]}
- newly_unreached=reached_pin & unreached
+ newly_unreached=(reached_pin & unreached)-skipped
  wrong_kind=[]
  for j,v in rr:
   key=tuple(j[:4])+(j[5],)
@@ -100,11 +109,13 @@ def main():
  required_bad=[(j,v) for j,v in required if any(x!='ERR:type_mismatch' for x in v)]
  for key in sorted(extra)[:20]: print('FAIL: unclassified silent answer:', *key)
  for key in sorted(missing)[:20]: print('FAIL: allowed row now raises:', *key)
- for key in sorted(set(expected)&unreached)[:20]: print('FAIL: previously reached allowed row is now UNREACHED:',*key)
+ for key in sorted((set(expected)&unreached)-skipped)[:20]: print('FAIL: previously reached allowed row is now UNREACHED:',*key)
  for key in sorted(newly_unreached)[:20]: print('FAIL: committed REACHED row is now UNREACHED:',*key)
  for key,v,kind in wrong_kind[:20]: print('FAIL: wrong error kind:',*key,'expected='+kind,'actual='+','.join(v))
+ for key,v in mixed[:20]: print('FAIL: answer depends on EIGS_STRICT:',*key,'results='+','.join(v))
+ for key in sorted(skipped)[:20]: print('SKIP: fixture unavailable here:',*key)
  for key,v in required_bad: print('FAIL: required type mismatch:',*key,'actual='+','.join(v))
- ok=not missing and not extra and not broken and not newly_unreached and not wrong_kind and not required_bad and reason_ok
- print(f"{'PASS' if ok else 'FAIL'}: type_errors_2509 examined={len(rr)} population={len(jobs)} answering={len(rows)} allowed={len(expected)} unreached={len(unreached)}")
+ ok=not mixed and not missing and not extra and not broken and not newly_unreached and not wrong_kind and not required_bad and reason_ok
+ print(f"{'PASS' if ok else 'FAIL'}: type_errors_2509 examined={len(rr)} population={len(jobs)} answering={len(rows)} allowed={len(expected)} unreached={len(unreached)} skipped={len(skipped)}")
  return int(ns.check and not ok)
 raise SystemExit(main())
