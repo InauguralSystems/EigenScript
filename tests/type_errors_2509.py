@@ -152,7 +152,9 @@ def main():
   wanted='THROWN' if allowed_kind == 'THROWN' else 'ERR:'+allowed_kind
   # type_mismatch is always right for a wrong-typed argument; an other-kind row adds one more
   # accepted kind (a capability stub raises value on a build without the extension).
-  if any(x not in (wanted,'ERR:type_mismatch') for x in v): wrong_kind.append((key,v,allowed_kind))
+  # The kind is one kind in all three EIGS_STRICT states: a type error that depends
+  # on the state is red even where either kind alone is accepted.
+  if any(x not in (wanted,'ERR:type_mismatch') for x in v) or len(set(v))>1: wrong_kind.append((key,v,allowed_kind))
  required_bad=[(j,v) for j,v in required if any(x!='ERR:type_mismatch' for x in v)]
  for key in sorted(extra)[:20]: print('FAIL: unclassified silent answer:', *key)
  for key in sorted(missing)[:20]: print('FAIL: allowed row now raises:', *key)

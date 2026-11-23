@@ -89,7 +89,7 @@ examples are `tests/phase2/rows/N6.float-repr.eigs` and
 | `exit` | `exit of N` | Terminate the program with a numeric code `N`, or a one-number list. `null`, `[]` and `([])` default to 0. Other types raise catchable `type_mismatch` before any exit request in every `EIGS_STRICT` state. A surplus list raises `type_mismatch` in every `EIGS_STRICT` state. **Uncatchable** — a `try`/`catch` does not intercept it — and unwinds through normal teardown, so it is leak-clean even with live closures. Code after it does not run. The request is scoped to the evaluating thread and cleared at each host eval entry, so under the embedding API a script that calls `exit` does not disable `try`/`catch` for the host's *next* eval (#739). A supplied numeric code follows N5, then the C int range; invalid codes raise catchably before requesting exit. |
 | `set_exit_code` | `set_exit_code of N` | Set the status (integer 0..255) used when the process ends gracefully, without ending it. The last call wins. Explicit `exit` and runtime failures retain their own status. Integral floats are accepted; fractions raise `value` (N5). |
 | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
-| `eval` | `eval of code_string` | Execute EigenScript code, return result The documented operation can report `undefined_name`. |
+| `eval` | `eval of code_string` | Execute EigenScript code, return result. The documented operation can report `undefined_name`. |
 | `throw` | `throw of message` | Raise catchable error The documented operation can report `THROWN`. |
 
 Float arithmetic preserves IEEE NaN and infinity by default, without a
