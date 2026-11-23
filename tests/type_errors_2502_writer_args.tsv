@@ -1,6 +1,6 @@
 add	arg2:list-element->string
 append	NO_WRONG_TYPE
-assert	arg2:string->number
+assert	NO_WRONG_TYPE
 atan2	arg2:number->string
 bit_and	arg2:number->string
 bit_or	arg2:number->string

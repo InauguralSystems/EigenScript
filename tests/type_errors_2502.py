@@ -21,7 +21,7 @@ MARK = '2502:done'
 # Core builtins whose shape case has no argument that can be made
 # wrong-typed (measured at #2502's head; --writer all fails if it changes).
 NO_WRONG_TYPE_EXPECTED = frozenset((
-    'append', 'classify', 'coalesce', 'concat', 'dot',
+    'append', 'assert', 'classify', 'coalesce', 'concat', 'dot',
     'list_contains', 'list_index_of', 'send',
     'text_builder_append', 'text_builder_append_line'))
 BAD = ('AddressSanitizer', 'LeakSanitizer', 'UndefinedBehaviorSanitizer',
