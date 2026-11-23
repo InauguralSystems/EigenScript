@@ -1,0 +1,479 @@
+# population: every numeric position in tests/strict_shape_cases.json
+builtin	arg	kind	value	producer	unset	s0	s1
+add	0	elem	inf	direct	val([inf, 6])	val([inf, 6])	TRAP
+add	0	elem	ninf	direct	val([-inf, 6])	val([-inf, 6])	TRAP
+add	0	elem	nan	direct	val([nan, 6])	val([nan, 6])	TRAP
+add	1	elem	inf	direct	val([inf, 6])	val([inf, 6])	TRAP
+add	1	elem	ninf	direct	val([-inf, 6])	val([-inf, 6])	TRAP
+add	1	elem	nan	direct	val([nan, 6])	val([nan, 6])	TRAP
+append	1	scalar	inf	direct	val([1, 2, inf])	val([1, 2, inf])	val([1, 2, inf])
+append	1	scalar	ninf	direct	val([1, 2, -inf])	val([1, 2, -inf])	val([1, 2, -inf])
+append	1	scalar	nan	direct	val([1, 2, nan])	val([1, 2, nan])	val([1, 2, nan])
+assert	0	scalar	inf	direct	val(null)	val(null)	val(null)
+assert	0	scalar	ninf	direct	val(null)	val(null)	val(null)
+assert	0	scalar	nan	direct	val(null)	val(null)	val(null)
+atan2	0	scalar	inf	direct	val(1.5707963267948966)	val(1.5707963267948966)	val(1.5707963267948966)
+atan2	0	scalar	ninf	direct	val(-1.5707963267948966)	val(-1.5707963267948966)	val(-1.5707963267948966)
+atan2	0	scalar	nan	direct	val(nan)	val(nan)	TRAP
+atan2	1	scalar	inf	direct	val(0.0)	val(0.0)	val(0.0)
+atan2	1	scalar	ninf	direct	val(3.141592653589793)	val(3.141592653589793)	val(3.141592653589793)
+atan2	1	scalar	nan	direct	val(nan)	val(nan)	TRAP
+audio_envelope	0	elem	inf	direct	REFUSE	REFUSE	REFUSE
+audio_envelope	0	elem	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_envelope	0	elem	nan	direct	REFUSE	REFUSE	REFUSE
+audio_envelope	1	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_envelope	1	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_envelope	1	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_envelope	2	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_envelope	2	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_envelope	2	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_envelope	3	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_envelope	3	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_envelope	3	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_envelope	4	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_envelope	4	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_envelope	4	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_gain	0	elem	inf	direct	REFUSE	REFUSE	REFUSE
+audio_gain	0	elem	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_gain	0	elem	nan	direct	REFUSE	REFUSE	REFUSE
+audio_gain	1	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_gain	1	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_gain	1	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_mix	0	elem	inf	direct	REFUSE	REFUSE	REFUSE
+audio_mix	0	elem	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_mix	0	elem	nan	direct	REFUSE	REFUSE	REFUSE
+audio_mix	1	elem	inf	direct	REFUSE	REFUSE	REFUSE
+audio_mix	1	elem	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_mix	1	elem	nan	direct	REFUSE	REFUSE	REFUSE
+audio_noise	0	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_noise	0	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_noise	0	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_noise	1	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_noise	1	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_noise	1	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_saw	0	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_saw	0	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_saw	0	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_saw	1	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_saw	1	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_saw	1	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_saw	2	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_saw	2	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_saw	2	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_sine	0	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_sine	0	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_sine	0	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_sine	1	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_sine	1	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_sine	1	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_sine	2	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_sine	2	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_sine	2	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_square	0	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_square	0	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_square	0	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_square	1	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_square	1	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_square	1	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_square	2	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_square	2	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_square	2	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_sweep	0	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_sweep	0	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_sweep	0	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_sweep	1	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_sweep	1	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_sweep	1	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_sweep	2	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_sweep	2	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_sweep	2	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_sweep	3	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+audio_sweep	3	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+audio_sweep	3	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+audio_sweep	4	scalar	inf	direct	NOINT	NOINT	NOINT
+audio_sweep	4	scalar	ninf	direct	NOINT	NOINT	NOINT
+audio_sweep	4	scalar	nan	direct	NOINT	NOINT	NOINT
+bit_and	0	scalar	inf	direct	NOINT	NOINT	NOINT
+bit_and	0	scalar	ninf	direct	NOINT	NOINT	NOINT
+bit_and	0	scalar	nan	direct	NOINT	NOINT	NOINT
+bit_and	1	scalar	inf	direct	NOINT	NOINT	NOINT
+bit_and	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+bit_and	1	scalar	nan	direct	NOINT	NOINT	NOINT
+bit_or	0	scalar	inf	direct	NOINT	NOINT	NOINT
+bit_or	0	scalar	ninf	direct	NOINT	NOINT	NOINT
+bit_or	0	scalar	nan	direct	NOINT	NOINT	NOINT
+bit_or	1	scalar	inf	direct	NOINT	NOINT	NOINT
+bit_or	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+bit_or	1	scalar	nan	direct	NOINT	NOINT	NOINT
+bit_shl	0	scalar	inf	direct	NOINT	NOINT	NOINT
+bit_shl	0	scalar	ninf	direct	NOINT	NOINT	NOINT
+bit_shl	0	scalar	nan	direct	NOINT	NOINT	NOINT
+bit_shl	1	scalar	inf	direct	NOINT	NOINT	NOINT
+bit_shl	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+bit_shl	1	scalar	nan	direct	NOINT	NOINT	NOINT
+bit_shr	0	scalar	inf	direct	NOINT	NOINT	NOINT
+bit_shr	0	scalar	ninf	direct	NOINT	NOINT	NOINT
+bit_shr	0	scalar	nan	direct	NOINT	NOINT	NOINT
+bit_shr	1	scalar	inf	direct	NOINT	NOINT	NOINT
+bit_shr	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+bit_shr	1	scalar	nan	direct	NOINT	NOINT	NOINT
+bit_xor	0	scalar	inf	direct	NOINT	NOINT	NOINT
+bit_xor	0	scalar	ninf	direct	NOINT	NOINT	NOINT
+bit_xor	0	scalar	nan	direct	NOINT	NOINT	NOINT
+bit_xor	1	scalar	inf	direct	NOINT	NOINT	NOINT
+bit_xor	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+bit_xor	1	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_copy	1	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_copy	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_copy	1	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_copy	3	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_copy	3	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_copy	3	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_copy	4	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_copy	4	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_copy	4	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_deinterleave	1	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_deinterleave	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_deinterleave	1	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_deinterleave	2	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_deinterleave	2	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_deinterleave	2	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_deinterleave	3	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_deinterleave	3	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_deinterleave	3	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_dot	2	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_dot	2	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_dot	2	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_dot	3	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_dot	3	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_dot	3	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_dot	4	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_dot	4	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_dot	4	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_fill	1	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_fill	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_fill	1	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_fill	2	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_fill	2	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_fill	2	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_fill	3	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+buf_fill	3	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+buf_fill	3	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+buf_from_pcm16le	1	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_from_pcm16le	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_from_pcm16le	1	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_from_pcm16le	2	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_from_pcm16le	2	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_from_pcm16le	2	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_get	1	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+buf_get	1	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+buf_get	1	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+buf_get_bits	1	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+buf_get_bits	1	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+buf_get_bits	1	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+buf_mix	2	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_mix	2	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_mix	2	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_mix	3	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_mix	3	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_mix	3	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_mix	4	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_mix	4	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_mix	4	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_mix	5	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+buf_mix	5	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+buf_mix	5	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+buf_peak	1	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_peak	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_peak	1	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_peak	2	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_peak	2	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_peak	2	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_resample_linear	1	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_resample_linear	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_resample_linear	1	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_scale_range	1	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_scale_range	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_scale_range	1	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_scale_range	2	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_scale_range	2	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_scale_range	2	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_scale_range	3	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+buf_scale_range	3	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+buf_scale_range	3	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+buf_set	1	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_set	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_set	1	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_set	2	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+buf_set	2	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+buf_set	2	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+buf_set_bits	1	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_set_bits	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_set_bits	1	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_set_bits	2	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_set_bits	2	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_set_bits	2	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_to_pcm16le	1	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_to_pcm16le	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_to_pcm16le	1	scalar	nan	direct	NOINT	NOINT	NOINT
+buf_to_pcm16le	2	scalar	inf	direct	NOINT	NOINT	NOINT
+buf_to_pcm16le	2	scalar	ninf	direct	NOINT	NOINT	NOINT
+buf_to_pcm16le	2	scalar	nan	direct	NOINT	NOINT	NOINT
+char_at	1	scalar	inf	direct	NOINT	NOINT	NOINT
+char_at	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+char_at	1	scalar	nan	direct	NOINT	NOINT	NOINT
+coalesce	1	scalar	inf	direct	val(inf)	val(inf)	val(inf)
+coalesce	1	scalar	ninf	direct	val(-inf)	val(-inf)	val(-inf)
+coalesce	1	scalar	nan	direct	val(nan)	val(nan)	val(nan)
+concat	0	elem	inf	direct	val([inf, 2, 3])	val([inf, 2, 3])	val([inf, 2, 3])
+concat	0	elem	ninf	direct	val([-inf, 2, 3])	val([-inf, 2, 3])	val([-inf, 2, 3])
+concat	0	elem	nan	direct	val([nan, 2, 3])	val([nan, 2, 3])	val([nan, 2, 3])
+concat	1	elem	inf	direct	val([1, 2, inf])	val([1, 2, inf])	val([1, 2, inf])
+concat	1	elem	ninf	direct	val([1, 2, -inf])	val([1, 2, -inf])	val([1, 2, -inf])
+concat	1	elem	nan	direct	val([1, 2, nan])	val([1, 2, nan])	val([1, 2, nan])
+copy_into	1	scalar	inf	direct	NOINT	NOINT	NOINT
+copy_into	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+copy_into	1	scalar	nan	direct	NOINT	NOINT	NOINT
+copy_into	2	elem	inf	direct	val([1, inf])	val([1, inf])	val([1, inf])
+copy_into	2	elem	ninf	direct	val([1, -inf])	val([1, -inf])	val([1, -inf])
+copy_into	2	elem	nan	direct	val([1, nan])	val([1, nan])	val([1, nan])
+dict_set	2	scalar	inf	direct	val({"k": inf})	val({"k": inf})	val({"k": inf})
+dict_set	2	scalar	ninf	direct	val({"k": -inf})	val({"k": -inf})	val({"k": -inf})
+dict_set	2	scalar	nan	direct	val({"k": nan})	val({"k": nan})	val({"k": nan})
+dispatch	1	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+dispatch	1	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+dispatch	1	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+dispatch	2	scalar	inf	direct	val(inf)	val(inf)	TRAP
+dispatch	2	scalar	ninf	direct	val(-inf)	val(-inf)	TRAP
+dispatch	2	scalar	nan	direct	val(nan)	val(nan)	TRAP
+divide	0	elem	inf	direct	val([inf, 0.5])	val([inf, 0.5])	TRAP
+divide	0	elem	ninf	direct	val([-inf, 0.5])	val([-inf, 0.5])	TRAP
+divide	0	elem	nan	direct	val([nan, 0.5])	val([nan, 0.5])	TRAP
+divide	1	elem	inf	direct	val([0.0, 0.5])	val([0.0, 0.5])	val([0.0, 0.5])
+divide	1	elem	ninf	direct	val([-0.0, 0.5])	val([-0.0, 0.5])	val([-0.0, 0.5])
+divide	1	elem	nan	direct	val([nan, 0.5])	val([nan, 0.5])	TRAP
+exit	0	scalar	inf	direct	ERR(exit-entered)	ERR(exit-entered)	ERR(exit-entered)
+exit	0	scalar	ninf	direct	ERR(exit-entered)	ERR(exit-entered)	ERR(exit-entered)
+exit	0	scalar	nan	direct	ERR(exit-entered)	ERR(exit-entered)	ERR(exit-entered)
+fill	0	scalar	inf	direct	NOINT	NOINT	NOINT
+fill	0	scalar	ninf	direct	NOINT	NOINT	NOINT
+fill	0	scalar	nan	direct	NOINT	NOINT	NOINT
+gather	0	elem2	inf	direct	val([3])	val([3])	val([3])
+gather	0	elem2	ninf	direct	val([3])	val([3])	val([3])
+gather	0	elem2	nan	direct	val([3])	val([3])	val([3])
+gather	1	elem	inf	direct	NOINT	NOINT	NOINT
+gather	1	elem	ninf	direct	NOINT	NOINT	NOINT
+gather	1	elem	nan	direct	NOINT	NOINT	NOINT
+gfx_text_height	0	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+gfx_text_height	0	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+gfx_text_height	0	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+gfx_text_width	1	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+gfx_text_width	1	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+gfx_text_width	1	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+hex	0	scalar	inf	direct	NOINT	NOINT	NOINT
+hex	0	scalar	ninf	direct	NOINT	NOINT	NOINT
+hex	0	scalar	nan	direct	NOINT	NOINT	NOINT
+hex	1	scalar	inf	direct	NOINT	NOINT	NOINT
+hex	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+hex	1	scalar	nan	direct	NOINT	NOINT	NOINT
+list_contains	0	elem	inf	direct	val(true)	val(true)	val(true)
+list_contains	0	elem	ninf	direct	val(true)	val(true)	val(true)
+list_contains	0	elem	nan	direct	val(true)	val(true)	val(true)
+list_contains	1	scalar	inf	direct	val(false)	val(false)	val(false)
+list_contains	1	scalar	ninf	direct	val(false)	val(false)	val(false)
+list_contains	1	scalar	nan	direct	val(false)	val(false)	val(false)
+list_index_of	0	elem	inf	direct	val(1)	val(1)	val(1)
+list_index_of	0	elem	ninf	direct	val(1)	val(1)	val(1)
+list_index_of	0	elem	nan	direct	val(1)	val(1)	val(1)
+list_index_of	1	scalar	inf	direct	val(-1)	val(-1)	val(-1)
+list_index_of	1	scalar	ninf	direct	val(-1)	val(-1)	val(-1)
+list_index_of	1	scalar	nan	direct	val(-1)	val(-1)	val(-1)
+list_insert_at	1	scalar	inf	direct	NOINT	NOINT	NOINT
+list_insert_at	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+list_insert_at	1	scalar	nan	direct	NOINT	NOINT	NOINT
+list_insert_at	2	scalar	inf	direct	val([1, inf, 2])	val([1, inf, 2])	val([1, inf, 2])
+list_insert_at	2	scalar	ninf	direct	val([1, -inf, 2])	val([1, -inf, 2])	val([1, -inf, 2])
+list_insert_at	2	scalar	nan	direct	val([1, nan, 2])	val([1, nan, 2])	val([1, nan, 2])
+list_remove_at	1	scalar	inf	direct	NOINT	NOINT	NOINT
+list_remove_at	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+list_remove_at	1	scalar	nan	direct	NOINT	NOINT	NOINT
+list_slice	0	elem	inf	direct	val([inf, 2])	val([inf, 2])	val([inf, 2])
+list_slice	0	elem	ninf	direct	val([-inf, 2])	val([-inf, 2])	val([-inf, 2])
+list_slice	0	elem	nan	direct	val([nan, 2])	val([nan, 2])	val([nan, 2])
+list_slice	1	scalar	inf	direct	NOINT	NOINT	NOINT
+list_slice	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+list_slice	1	scalar	nan	direct	NOINT	NOINT	NOINT
+list_slice	2	scalar	inf	direct	NOINT	NOINT	NOINT
+list_slice	2	scalar	ninf	direct	NOINT	NOINT	NOINT
+list_slice	2	scalar	nan	direct	NOINT	NOINT	NOINT
+list_truncate	1	scalar	inf	direct	NOINT	NOINT	NOINT
+list_truncate	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+list_truncate	1	scalar	nan	direct	NOINT	NOINT	NOINT
+matmul	0	elem2	inf	direct	REFUSE	REFUSE	REFUSE
+matmul	0	elem2	ninf	direct	REFUSE	REFUSE	REFUSE
+matmul	0	elem2	nan	direct	REFUSE	REFUSE	REFUSE
+matmul	1	elem2	inf	direct	REFUSE	REFUSE	REFUSE
+matmul	1	elem2	ninf	direct	REFUSE	REFUSE	REFUSE
+matmul	1	elem2	nan	direct	REFUSE	REFUSE	REFUSE
+matmul_at	0	elem2	inf	direct	REFUSE	REFUSE	REFUSE
+matmul_at	0	elem2	ninf	direct	REFUSE	REFUSE	REFUSE
+matmul_at	0	elem2	nan	direct	REFUSE	REFUSE	REFUSE
+matmul_at	1	elem2	inf	direct	REFUSE	REFUSE	REFUSE
+matmul_at	1	elem2	ninf	direct	REFUSE	REFUSE	REFUSE
+matmul_at	1	elem2	nan	direct	REFUSE	REFUSE	REFUSE
+matmul_bt	0	elem2	inf	direct	REFUSE	REFUSE	REFUSE
+matmul_bt	0	elem2	ninf	direct	REFUSE	REFUSE	REFUSE
+matmul_bt	0	elem2	nan	direct	REFUSE	REFUSE	REFUSE
+matmul_bt	1	elem2	inf	direct	REFUSE	REFUSE	REFUSE
+matmul_bt	1	elem2	ninf	direct	REFUSE	REFUSE	REFUSE
+matmul_bt	1	elem2	nan	direct	REFUSE	REFUSE	REFUSE
+multiply	0	elem	inf	direct	val([inf, 8])	val([inf, 8])	TRAP
+multiply	0	elem	ninf	direct	val([-inf, 8])	val([-inf, 8])	TRAP
+multiply	0	elem	nan	direct	val([nan, 8])	val([nan, 8])	TRAP
+multiply	1	elem	inf	direct	val([inf, 8])	val([inf, 8])	TRAP
+multiply	1	elem	ninf	direct	val([-inf, 8])	val([-inf, 8])	TRAP
+multiply	1	elem	nan	direct	val([nan, 8])	val([nan, 8])	TRAP
+nearest_in_range	1	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range	1	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range	1	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range	2	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range	2	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range	2	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range	3	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range	3	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range	3	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range	4	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range	4	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range	4	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range	5	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range	5	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range	5	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range_all	1	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range_all	1	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range_all	1	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range_all	2	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range_all	2	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range_all	2	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range_all	3	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range_all	3	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+nearest_in_range_all	3	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+numerical_grad	2	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+numerical_grad	2	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+numerical_grad	2	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+numerical_grad_cols	2	elem	inf	direct	NOINT	NOINT	NOINT
+numerical_grad_cols	2	elem	ninf	direct	NOINT	NOINT	NOINT
+numerical_grad_cols	2	elem	nan	direct	NOINT	NOINT	NOINT
+numerical_grad_cols	3	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+numerical_grad_cols	3	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+numerical_grad_cols	3	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+numerical_grad_rows	2	elem	inf	direct	NOINT	NOINT	NOINT
+numerical_grad_rows	2	elem	ninf	direct	NOINT	NOINT	NOINT
+numerical_grad_rows	2	elem	nan	direct	NOINT	NOINT	NOINT
+numerical_grad_rows	3	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+numerical_grad_rows	3	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+numerical_grad_rows	3	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+pow	0	elem	inf	direct	val([inf, 16.0])	val([inf, 16.0])	TRAP
+pow	0	elem	ninf	direct	val([-inf, 16.0])	val([-inf, 16.0])	TRAP
+pow	0	elem	nan	direct	val([nan, 16.0])	val([nan, 16.0])	TRAP
+pow	1	elem	inf	direct	val([1.0, 16.0])	val([1.0, 16.0])	val([1.0, 16.0])
+pow	1	elem	ninf	direct	val([1.0, 16.0])	val([1.0, 16.0])	val([1.0, 16.0])
+pow	1	elem	nan	direct	val([1.0, 16.0])	val([1.0, 16.0])	val([1.0, 16.0])
+random_int	0	scalar	inf	direct	NOINT	NOINT	NOINT
+random_int	0	scalar	ninf	direct	NOINT	NOINT	NOINT
+random_int	0	scalar	nan	direct	NOINT	NOINT	NOINT
+random_int	1	scalar	inf	direct	NOINT	NOINT	NOINT
+random_int	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+random_int	1	scalar	nan	direct	NOINT	NOINT	NOINT
+random_normal	0	scalar	inf	direct	NOINT	NOINT	NOINT
+random_normal	0	scalar	ninf	direct	NOINT	NOINT	NOINT
+random_normal	0	scalar	nan	direct	NOINT	NOINT	NOINT
+random_normal	1	scalar	inf	direct	NOINT	NOINT	NOINT
+random_normal	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+random_normal	1	scalar	nan	direct	NOINT	NOINT	NOINT
+random_normal	2	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+random_normal	2	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+random_normal	2	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+range	0	scalar	inf	direct	NOINT	NOINT	NOINT
+range	0	scalar	ninf	direct	NOINT	NOINT	NOINT
+range	0	scalar	nan	direct	NOINT	NOINT	NOINT
+range	1	scalar	inf	direct	NOINT	NOINT	NOINT
+range	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+range	1	scalar	nan	direct	NOINT	NOINT	NOINT
+range	2	scalar	inf	direct	NOINT	NOINT	NOINT
+range	2	scalar	ninf	direct	NOINT	NOINT	NOINT
+range	2	scalar	nan	direct	NOINT	NOINT	NOINT
+recv_timeout	1	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+recv_timeout	1	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+recv_timeout	1	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+reshape	1	scalar	inf	direct	NOINT	NOINT	NOINT
+reshape	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+reshape	1	scalar	nan	direct	NOINT	NOINT	NOINT
+reshape	2	scalar	inf	direct	NOINT	NOINT	NOINT
+reshape	2	scalar	ninf	direct	NOINT	NOINT	NOINT
+reshape	2	scalar	nan	direct	NOINT	NOINT	NOINT
+scatter_add	1	elem	inf	direct	NOINT	NOINT	NOINT
+scatter_add	1	elem	ninf	direct	NOINT	NOINT	NOINT
+scatter_add	1	elem	nan	direct	NOINT	NOINT	NOINT
+scatter_add	2	elem	inf	direct	REFUSE	REFUSE	REFUSE
+scatter_add	2	elem	ninf	direct	REFUSE	REFUSE	REFUSE
+scatter_add	2	elem	nan	direct	REFUSE	REFUSE	REFUSE
+send	1	scalar	inf	direct	val(null)	val(null)	val(null)
+send	1	scalar	ninf	direct	val(null)	val(null)	val(null)
+send	1	scalar	nan	direct	val(null)	val(null)	val(null)
+sgd_update	1	elem	inf	direct	REFUSE	REFUSE	REFUSE
+sgd_update	1	elem	ninf	direct	REFUSE	REFUSE	REFUSE
+sgd_update	1	elem	nan	direct	REFUSE	REFUSE	REFUSE
+sgd_update	2	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+sgd_update	2	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+sgd_update	2	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+sgd_update_cols	1	elem2	inf	direct	REFUSE	REFUSE	REFUSE
+sgd_update_cols	1	elem2	ninf	direct	REFUSE	REFUSE	REFUSE
+sgd_update_cols	1	elem2	nan	direct	REFUSE	REFUSE	REFUSE
+sgd_update_cols	2	elem	inf	direct	NOINT	NOINT	NOINT
+sgd_update_cols	2	elem	ninf	direct	NOINT	NOINT	NOINT
+sgd_update_cols	2	elem	nan	direct	NOINT	NOINT	NOINT
+sgd_update_cols	3	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+sgd_update_cols	3	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+sgd_update_cols	3	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+sgd_update_rows	1	elem2	inf	direct	REFUSE	REFUSE	REFUSE
+sgd_update_rows	1	elem2	ninf	direct	REFUSE	REFUSE	REFUSE
+sgd_update_rows	1	elem2	nan	direct	REFUSE	REFUSE	REFUSE
+sgd_update_rows	2	elem	inf	direct	NOINT	NOINT	NOINT
+sgd_update_rows	2	elem	ninf	direct	NOINT	NOINT	NOINT
+sgd_update_rows	2	elem	nan	direct	NOINT	NOINT	NOINT
+sgd_update_rows	3	scalar	inf	direct	REFUSE	REFUSE	REFUSE
+sgd_update_rows	3	scalar	ninf	direct	REFUSE	REFUSE	REFUSE
+sgd_update_rows	3	scalar	nan	direct	REFUSE	REFUSE	REFUSE
+sign_extend	0	scalar	inf	direct	NOINT	NOINT	NOINT
+sign_extend	0	scalar	ninf	direct	NOINT	NOINT	NOINT
+sign_extend	0	scalar	nan	direct	NOINT	NOINT	NOINT
+sign_extend	1	scalar	inf	direct	NOINT	NOINT	NOINT
+sign_extend	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+sign_extend	1	scalar	nan	direct	NOINT	NOINT	NOINT
+sort_by	0	elem	inf	direct	val([1, inf])	val([1, inf])	val([1, inf])
+sort_by	0	elem	ninf	direct	val([-inf, 1])	val([-inf, 1])	val([-inf, 1])
+sort_by	0	elem	nan	direct	val([1, nan])	val([1, nan])	val([1, nan])
+substr	1	scalar	inf	direct	NOINT	NOINT	NOINT
+substr	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+substr	1	scalar	nan	direct	NOINT	NOINT	NOINT
+substr	2	scalar	inf	direct	NOINT	NOINT	NOINT
+substr	2	scalar	ninf	direct	NOINT	NOINT	NOINT
+substr	2	scalar	nan	direct	NOINT	NOINT	NOINT
+subtract	0	elem	inf	direct	val([inf, -2])	val([inf, -2])	TRAP
+subtract	0	elem	ninf	direct	val([-inf, -2])	val([-inf, -2])	TRAP
+subtract	0	elem	nan	direct	val([nan, -2])	val([nan, -2])	TRAP
+subtract	1	elem	inf	direct	val([-inf, -2])	val([-inf, -2])	TRAP
+subtract	1	elem	ninf	direct	val([inf, -2])	val([inf, -2])	TRAP
+subtract	1	elem	nan	direct	val([nan, -2])	val([nan, -2])	TRAP
+task_send	0	scalar	inf	direct	NOINT	NOINT	NOINT
+task_send	0	scalar	ninf	direct	NOINT	NOINT	NOINT
+task_send	0	scalar	nan	direct	NOINT	NOINT	NOINT
+task_send	1	scalar	inf	direct	val(true)	val(true)	val(true)
+task_send	1	scalar	ninf	direct	val(true)	val(true)	val(true)
+task_send	1	scalar	nan	direct	val(true)	val(true)	val(true)
+zeros	0	scalar	inf	direct	NOINT	NOINT	NOINT
+zeros	0	scalar	ninf	direct	NOINT	NOINT	NOINT
+zeros	0	scalar	nan	direct	NOINT	NOINT	NOINT
+zeros	1	scalar	inf	direct	NOINT	NOINT	NOINT
+zeros	1	scalar	ninf	direct	NOINT	NOINT	NOINT
+zeros	1	scalar	nan	direct	NOINT	NOINT	NOINT

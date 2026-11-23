@@ -1,0 +1,87 @@
+# population: buffer-taking names are the intersection of --api --json and buffer variables in tests/strict_shape_cases.json
+# producers: buf_scale_range,f64_from_bits_store
+builtin	arg	kind	value	producer	unset	s0	s1
+buf_copy	0	buffer	inf	f64_from_bits_store	ERR(buf_copy: window offset 0 count 2 out )	ERR(buf_copy: window offset 0 count 2 out )	ERR(buf_copy: window offset 0 count 2 out )
+buf_copy	0	buffer	inf	buf_scale_range	ERR(buf_copy: window offset 0 count 2 out )	ERR(buf_copy: window offset 0 count 2 out )	TRAP
+buf_copy	0	buffer	ninf	f64_from_bits_store	ERR(buf_copy: window offset 0 count 2 out )	ERR(buf_copy: window offset 0 count 2 out )	ERR(buf_copy: window offset 0 count 2 out )
+buf_copy	0	buffer	nan	f64_from_bits_store	ERR(buf_copy: window offset 0 count 2 out )	ERR(buf_copy: window offset 0 count 2 out )	ERR(buf_copy: window offset 0 count 2 out )
+buf_copy	2	buffer	inf	f64_from_bits_store	ERR(buf_copy: window offset 1 count 2 out )	ERR(buf_copy: window offset 1 count 2 out )	ERR(buf_copy: window offset 1 count 2 out )
+buf_copy	2	buffer	inf	buf_scale_range	ERR(buf_copy: window offset 1 count 2 out )	ERR(buf_copy: window offset 1 count 2 out )	TRAP
+buf_copy	2	buffer	ninf	f64_from_bits_store	ERR(buf_copy: window offset 1 count 2 out )	ERR(buf_copy: window offset 1 count 2 out )	ERR(buf_copy: window offset 1 count 2 out )
+buf_copy	2	buffer	nan	f64_from_bits_store	ERR(buf_copy: window offset 1 count 2 out )	ERR(buf_copy: window offset 1 count 2 out )	ERR(buf_copy: window offset 1 count 2 out )
+buf_deinterleave	0	buffer	inf	f64_from_bits_store	ERR(buf_deinterleave: count 2 over the 0 s)	ERR(buf_deinterleave: count 2 over the 0 s)	ERR(buf_deinterleave: count 2 over the 0 s)
+buf_deinterleave	0	buffer	inf	buf_scale_range	ERR(buf_deinterleave: count 2 over the 0 s)	ERR(buf_deinterleave: count 2 over the 0 s)	TRAP
+buf_deinterleave	0	buffer	ninf	f64_from_bits_store	ERR(buf_deinterleave: count 2 over the 0 s)	ERR(buf_deinterleave: count 2 over the 0 s)	ERR(buf_deinterleave: count 2 over the 0 s)
+buf_deinterleave	0	buffer	nan	f64_from_bits_store	ERR(buf_deinterleave: count 2 over the 0 s)	ERR(buf_deinterleave: count 2 over the 0 s)	ERR(buf_deinterleave: count 2 over the 0 s)
+buf_dot	0	buffer	inf	f64_from_bits_store	ERR(buf_dot: window offset 0 count 2 out o)	ERR(buf_dot: window offset 0 count 2 out o)	ERR(buf_dot: window offset 0 count 2 out o)
+buf_dot	0	buffer	inf	buf_scale_range	ERR(buf_dot: window offset 0 count 2 out o)	ERR(buf_dot: window offset 0 count 2 out o)	TRAP
+buf_dot	0	buffer	ninf	f64_from_bits_store	ERR(buf_dot: window offset 0 count 2 out o)	ERR(buf_dot: window offset 0 count 2 out o)	ERR(buf_dot: window offset 0 count 2 out o)
+buf_dot	0	buffer	nan	f64_from_bits_store	ERR(buf_dot: window offset 0 count 2 out o)	ERR(buf_dot: window offset 0 count 2 out o)	ERR(buf_dot: window offset 0 count 2 out o)
+buf_dot	1	buffer	inf	f64_from_bits_store	ERR(buf_dot: window offset 0 count 2 out o)	ERR(buf_dot: window offset 0 count 2 out o)	ERR(buf_dot: window offset 0 count 2 out o)
+buf_dot	1	buffer	inf	buf_scale_range	ERR(buf_dot: window offset 0 count 2 out o)	ERR(buf_dot: window offset 0 count 2 out o)	TRAP
+buf_dot	1	buffer	ninf	f64_from_bits_store	ERR(buf_dot: window offset 0 count 2 out o)	ERR(buf_dot: window offset 0 count 2 out o)	ERR(buf_dot: window offset 0 count 2 out o)
+buf_dot	1	buffer	nan	f64_from_bits_store	ERR(buf_dot: window offset 0 count 2 out o)	ERR(buf_dot: window offset 0 count 2 out o)	ERR(buf_dot: window offset 0 count 2 out o)
+buf_fill	0	buffer	inf	f64_from_bits_store	ERR(buf_fill: window offset 1 count 2 out )	ERR(buf_fill: window offset 1 count 2 out )	ERR(buf_fill: window offset 1 count 2 out )
+buf_fill	0	buffer	inf	buf_scale_range	ERR(buf_fill: window offset 1 count 2 out )	ERR(buf_fill: window offset 1 count 2 out )	TRAP
+buf_fill	0	buffer	ninf	f64_from_bits_store	ERR(buf_fill: window offset 1 count 2 out )	ERR(buf_fill: window offset 1 count 2 out )	ERR(buf_fill: window offset 1 count 2 out )
+buf_fill	0	buffer	nan	f64_from_bits_store	ERR(buf_fill: window offset 1 count 2 out )	ERR(buf_fill: window offset 1 count 2 out )	ERR(buf_fill: window offset 1 count 2 out )
+buf_from_pcm16le	0	buffer	inf	f64_from_bits_store	ERR(buf_from_pcm16le: window offset 0 coun)	ERR(buf_from_pcm16le: window offset 0 coun)	ERR(buf_from_pcm16le: window offset 0 coun)
+buf_from_pcm16le	0	buffer	inf	buf_scale_range	ERR(buf_from_pcm16le: window offset 0 coun)	ERR(buf_from_pcm16le: window offset 0 coun)	TRAP
+buf_from_pcm16le	0	buffer	ninf	f64_from_bits_store	ERR(buf_from_pcm16le: window offset 0 coun)	ERR(buf_from_pcm16le: window offset 0 coun)	ERR(buf_from_pcm16le: window offset 0 coun)
+buf_from_pcm16le	0	buffer	nan	f64_from_bits_store	ERR(buf_from_pcm16le: window offset 0 coun)	ERR(buf_from_pcm16le: window offset 0 coun)	ERR(buf_from_pcm16le: window offset 0 coun)
+buf_get	0	buffer	inf	f64_from_bits_store	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))
+buf_get	0	buffer	inf	buf_scale_range	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	TRAP
+buf_get	0	buffer	ninf	f64_from_bits_store	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))
+buf_get	0	buffer	nan	f64_from_bits_store	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))
+buf_get_bits	0	buffer	inf	f64_from_bits_store	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))
+buf_get_bits	0	buffer	inf	buf_scale_range	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	TRAP
+buf_get_bits	0	buffer	ninf	f64_from_bits_store	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))
+buf_get_bits	0	buffer	nan	f64_from_bits_store	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))
+buf_mix	0	buffer	inf	f64_from_bits_store	ERR(buf_mix: window offset 0 count 2 out o)	ERR(buf_mix: window offset 0 count 2 out o)	ERR(buf_mix: window offset 0 count 2 out o)
+buf_mix	0	buffer	inf	buf_scale_range	ERR(buf_mix: window offset 0 count 2 out o)	ERR(buf_mix: window offset 0 count 2 out o)	TRAP
+buf_mix	0	buffer	ninf	f64_from_bits_store	ERR(buf_mix: window offset 0 count 2 out o)	ERR(buf_mix: window offset 0 count 2 out o)	ERR(buf_mix: window offset 0 count 2 out o)
+buf_mix	0	buffer	nan	f64_from_bits_store	ERR(buf_mix: window offset 0 count 2 out o)	ERR(buf_mix: window offset 0 count 2 out o)	ERR(buf_mix: window offset 0 count 2 out o)
+buf_mix	1	buffer	inf	f64_from_bits_store	ERR(buf_mix: window offset 0 count 2 out o)	ERR(buf_mix: window offset 0 count 2 out o)	ERR(buf_mix: window offset 0 count 2 out o)
+buf_mix	1	buffer	inf	buf_scale_range	ERR(buf_mix: window offset 0 count 2 out o)	ERR(buf_mix: window offset 0 count 2 out o)	TRAP
+buf_mix	1	buffer	ninf	f64_from_bits_store	ERR(buf_mix: window offset 0 count 2 out o)	ERR(buf_mix: window offset 0 count 2 out o)	ERR(buf_mix: window offset 0 count 2 out o)
+buf_mix	1	buffer	nan	f64_from_bits_store	ERR(buf_mix: window offset 0 count 2 out o)	ERR(buf_mix: window offset 0 count 2 out o)	ERR(buf_mix: window offset 0 count 2 out o)
+buf_peak	0	buffer	inf	f64_from_bits_store	ERR(buf_peak: window offset 0 count 4 out )	ERR(buf_peak: window offset 0 count 4 out )	ERR(buf_peak: window offset 0 count 4 out )
+buf_peak	0	buffer	inf	buf_scale_range	ERR(buf_peak: window offset 0 count 4 out )	ERR(buf_peak: window offset 0 count 4 out )	TRAP
+buf_peak	0	buffer	ninf	f64_from_bits_store	ERR(buf_peak: window offset 0 count 4 out )	ERR(buf_peak: window offset 0 count 4 out )	ERR(buf_peak: window offset 0 count 4 out )
+buf_peak	0	buffer	nan	f64_from_bits_store	ERR(buf_peak: window offset 0 count 4 out )	ERR(buf_peak: window offset 0 count 4 out )	ERR(buf_peak: window offset 0 count 4 out )
+buf_resample_linear	0	buffer	inf	f64_from_bits_store	val(<buffer:3>)	val(<buffer:3>)	TRAP
+buf_resample_linear	0	buffer	inf	buf_scale_range	val(<buffer:3>)	val(<buffer:3>)	TRAP
+buf_resample_linear	0	buffer	ninf	f64_from_bits_store	val(<buffer:3>)	val(<buffer:3>)	TRAP
+buf_resample_linear	0	buffer	nan	f64_from_bits_store	val(<buffer:3>)	val(<buffer:3>)	TRAP
+buf_scale_range	0	buffer	inf	f64_from_bits_store	ERR(buf_scale_range: window offset 1 count)	ERR(buf_scale_range: window offset 1 count)	ERR(buf_scale_range: window offset 1 count)
+buf_scale_range	0	buffer	inf	buf_scale_range	ERR(buf_scale_range: window offset 1 count)	ERR(buf_scale_range: window offset 1 count)	TRAP
+buf_scale_range	0	buffer	ninf	f64_from_bits_store	ERR(buf_scale_range: window offset 1 count)	ERR(buf_scale_range: window offset 1 count)	ERR(buf_scale_range: window offset 1 count)
+buf_scale_range	0	buffer	nan	f64_from_bits_store	ERR(buf_scale_range: window offset 1 count)	ERR(buf_scale_range: window offset 1 count)	ERR(buf_scale_range: window offset 1 count)
+buf_set	0	buffer	inf	f64_from_bits_store	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))
+buf_set	0	buffer	inf	buf_scale_range	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	TRAP
+buf_set	0	buffer	ninf	f64_from_bits_store	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))
+buf_set	0	buffer	nan	f64_from_bits_store	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))
+buf_set_bits	0	buffer	inf	f64_from_bits_store	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))
+buf_set_bits	0	buffer	inf	buf_scale_range	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	TRAP
+buf_set_bits	0	buffer	ninf	f64_from_bits_store	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))
+buf_set_bits	0	buffer	nan	f64_from_bits_store	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))	ERR(buffer index 1 out of range (length 1))
+buf_to_pcm16le	0	buffer	inf	f64_from_bits_store	ERR(buf_to_pcm16le: window offset 0 count )	ERR(buf_to_pcm16le: window offset 0 count )	ERR(buf_to_pcm16le: window offset 0 count )
+buf_to_pcm16le	0	buffer	inf	buf_scale_range	ERR(buf_to_pcm16le: window offset 0 count )	ERR(buf_to_pcm16le: window offset 0 count )	TRAP
+buf_to_pcm16le	0	buffer	ninf	f64_from_bits_store	ERR(buf_to_pcm16le: window offset 0 count )	ERR(buf_to_pcm16le: window offset 0 count )	ERR(buf_to_pcm16le: window offset 0 count )
+buf_to_pcm16le	0	buffer	nan	f64_from_bits_store	ERR(buf_to_pcm16le: window offset 0 count )	ERR(buf_to_pcm16le: window offset 0 count )	ERR(buf_to_pcm16le: window offset 0 count )
+dot	0	buffer	inf	f64_from_bits_store	REFUSE	REFUSE	REFUSE
+dot	0	buffer	inf	buf_scale_range	REFUSE	REFUSE	TRAP
+dot	0	buffer	ninf	f64_from_bits_store	REFUSE	REFUSE	REFUSE
+dot	0	buffer	nan	f64_from_bits_store	REFUSE	REFUSE	TRAP
+dot	1	buffer	inf	f64_from_bits_store	REFUSE	REFUSE	REFUSE
+dot	1	buffer	inf	buf_scale_range	REFUSE	REFUSE	TRAP
+dot	1	buffer	ninf	f64_from_bits_store	REFUSE	REFUSE	REFUSE
+dot	1	buffer	nan	f64_from_bits_store	REFUSE	REFUSE	TRAP
+reshape	0	buffer	inf	f64_from_bits_store	val(null)	val(null)	val(null)
+reshape	0	buffer	inf	buf_scale_range	val(null)	val(null)	TRAP
+reshape	0	buffer	ninf	f64_from_bits_store	val(null)	val(null)	val(null)
+reshape	0	buffer	nan	f64_from_bits_store	val(null)	val(null)	val(null)
+scatter_add	0	buffer	inf	f64_from_bits_store	ERR(scatter_add: index 1 out of range (len)	ERR(scatter_add: index 1 out of range (len)	ERR(scatter_add: index 1 out of range (len)
+scatter_add	0	buffer	inf	buf_scale_range	ERR(scatter_add: index 1 out of range (len)	ERR(scatter_add: index 1 out of range (len)	TRAP
+scatter_add	0	buffer	ninf	f64_from_bits_store	ERR(scatter_add: index 1 out of range (len)	ERR(scatter_add: index 1 out of range (len)	ERR(scatter_add: index 1 out of range (len)
+scatter_add	0	buffer	nan	f64_from_bits_store	ERR(scatter_add: index 1 out of range (len)	ERR(scatter_add: index 1 out of range (len)	ERR(scatter_add: index 1 out of range (len)
