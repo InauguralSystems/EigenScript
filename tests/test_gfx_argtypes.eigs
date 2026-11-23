@@ -216,8 +216,15 @@ if sdl_open:
     assert_true of [clear_px[0] == 7 and clear_px[1] == 8, "#1007: rejected gfx_clear leaves its pixel unchanged"]
     gfx_clear of [0, 0, 0]
     assert_eq of [strict_kind of ((_) => gfx_text of [0, 0, "H", 255, 255, 255, "2"]), "type_mismatch", "#1007: rejected gfx_text raises"]
-    text_px is gfx_read of [1, 1]
-    assert_eq of [text_px[0], 0, "#1007: rejected gfx_text leaves its pixel unchanged"]
+    # Count lit pixels over the glyph's whole cell, as the control below
+    # does: a correct "H" leaves (1, 1) dark, so one pixel cannot witness it.
+    lit_rejected is 0
+    for ty in range of 16:
+        for tx in range of 16:
+            text_px is gfx_read of [tx, ty]
+            if text_px[0] > 100:
+                lit_rejected is lit_rejected + 1
+    assert_eq of [lit_rejected, 0, "#1007: rejected gfx_text lights no pixel"]
     gfx_text of [0, 0, "H", 255, 255, 255, 2]
     lit_control is 0
     for ty in range of 16:
