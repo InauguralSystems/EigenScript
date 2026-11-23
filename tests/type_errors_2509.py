@@ -8,7 +8,7 @@ ROOT=Path(__file__).resolve().parents[1]
 WRONG={'string':'"zz_census_2509"','number':'0','dict':'{"a": 1}','list':'[]'}; MODES=(None,'0','1'); MARK='CENSUS_DONE'
 def kind_of(s):
  s=s.strip(); return 'string' if s.startswith('"') else 'dict' if s.startswith('{') else 'list' if s.startswith('[') else 'number' if re.fullmatch(r'-?\d+(\.\d+)?([eE][-+]?\d+)?',s) else 'other'
-def program(setup,expr): return setup+'\ntry:\n    answer is '+expr+'\n    print of ("ANSWER:" + (str of answer))\ncatch e:\n    if ((type of e) == "dict") and (has_key of [e, "kind"]):\n        print of ("ERR:" + e.kind)\n    else:\n        print of "THROWN"\nprint of "'+MARK+'"\n'
+def program(setup,expr): return setup+'\ntry:\n    answer is '+expr+'\n    print of ("ANSWER:" + (str of answer))\ncatch e:\n    if ((type of e) == "dict") and (has_key of [e, "kind"]):\n        print of ("ERR:" + e.kind)\n        print of ("MSG:" + e.message)\n    else:\n        print of "THROWN"\nprint of "'+MARK+'"\n'
 def run(binary,src,mode):
  with tempfile.TemporaryDirectory() as d:
   p=Path(d)/'p.eigs';p.write_text(src.replace('@TMP@',d));env={k:v for k,v in os.environ.items() if not k.startswith('EIGS_')};env.update(SDL_VIDEODRIVER='dummy',SDL_AUDIODRIVER='dummy',DISPLAY='')
@@ -23,6 +23,8 @@ def run(binary,src,mode):
   if hard or ((MARK not in lines or r.returncode != 0) and x.startswith('ANSWER:')):return 'BROKEN'
   if MARK not in lines:return 'UNREACHED'
   if r.returncode != 0:return 'BROKEN'
+  # A build without an extension registers stubs that raise one capability message.
+  if x.startswith('ERR:') and re.search(r'^MSG:.*(capability unavailable|unavailable in this build)',r.stdout,re.M):return 'STUB'
   return 'ANSWER' if x.startswith('ANSWER:') else x
 def main():
  import argparse
@@ -91,6 +93,10 @@ def main():
  broken={tuple(j[:4])+(j[5],) for j,v in rr if any(x=='BROKEN' for x in v)}
  for key in sorted(broken)[:20]: print('FAIL: broken probe:', *key)
  actual={tuple(r[:5]) for r in rows}
+ # A builtin that is a stub on every probe is not in this build: its rows are not expected.
+ ext_names={x for v in api.get('extensions',{}).values() for x in v}
+ stub_names={n for n in {j[0] for j,v in rr} & ext_names if all(x=='STUB' for j,v in rr if j[0]==n for x in v)}
+ expected={k:v for k,v in expected.items() if k[0] not in stub_names}
  missing=set(expected)-actual-skipped; extra=actual-set(expected)
  # An allowed answer is never a type error in another EIGS_STRICT state (the
  # IEEE trap, kind value under EIGS_STRICT=1, is the one state-dependent raise).
@@ -102,10 +108,12 @@ def main():
  wrong_kind=[]
  for j,v in rr:
   key=tuple(j[:4])+(j[5],)
-  if key in actual or key in unreached: continue
+  if key in actual or key in unreached or j[0] in stub_names: continue
   allowed_kind=other.get(key,'type_mismatch')
   wanted='THROWN' if allowed_kind == 'THROWN' else 'ERR:'+allowed_kind
-  if any(x != wanted for x in v): wrong_kind.append((key,v,allowed_kind))
+  # type_mismatch is always right for a wrong-typed argument; an other-kind row adds one more
+  # accepted kind (a capability stub raises value on a build without the extension).
+  if any(x not in (wanted,'ERR:type_mismatch') for x in v): wrong_kind.append((key,v,allowed_kind))
  required_bad=[(j,v) for j,v in required if any(x!='ERR:type_mismatch' for x in v)]
  for key in sorted(extra)[:20]: print('FAIL: unclassified silent answer:', *key)
  for key in sorted(missing)[:20]: print('FAIL: allowed row now raises:', *key)
@@ -116,6 +124,6 @@ def main():
  for key in sorted(skipped)[:20]: print('SKIP: fixture unavailable here:',*key)
  for key,v in required_bad: print('FAIL: required type mismatch:',*key,'actual='+','.join(v))
  ok=not mixed and not missing and not extra and not broken and not newly_unreached and not wrong_kind and not required_bad and reason_ok
- print(f"{'PASS' if ok else 'FAIL'}: type_errors_2509 examined={len(rr)} population={len(jobs)} answering={len(rows)} allowed={len(expected)} unreached={len(unreached)} skipped={len(skipped)}")
+ print(f"{'PASS' if ok else 'FAIL'}: type_errors_2509 examined={len(rr)} population={len(jobs)} answering={len(rows)} allowed={len(expected)} unreached={len(unreached)} skipped={len(skipped)} stub_builtins={len(stub_names)}")
  return int(ns.check and not ok)
 raise SystemExit(main())

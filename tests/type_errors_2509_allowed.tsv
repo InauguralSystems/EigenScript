@@ -76,6 +76,12 @@ getcwd	whole	-	list	getcwd of []	IGNORED: getcwd of null
 getcwd	whole	-	number	getcwd of 0	IGNORED: getcwd of null
 getcwd	whole	-	string	getcwd of "zz_census_2509"	IGNORED: getcwd of null
 hex	whole	-	number	hex of 0	ANY: | `hex` | `hex of n` or `hex of [n, nibbles]` | Exact uppercase hex digits for any non-negative int64. Value and optional nibble count follow N5; fractions raise, integral floats convert. Width clamps to 0..16, never truncating digits. |
+http_route	pos	3	dict	http_route of ["GET", "/shape", "static", {"a": 1}]	ANY: `body` is a literal response body
+http_route	pos	3	list	http_route of ["GET", "/shape", "static", []]	ANY: `body` is a literal response body
+http_route	pos	3	number	http_route of ["GET", "/shape", "static", 0]	ANY: `body` is a literal response body
+http_route_authed	pos	3	dict	http_route_authed of ["GET", "/shape", "static", {"a": 1}]	ANY: `http_route_authed of [method, path, body]`
+http_route_authed	pos	3	list	http_route_authed of ["GET", "/shape", "static", []]	ANY: `http_route_authed of [method, path, body]`
+http_route_authed	pos	3	number	http_route_authed of ["GET", "/shape", "static", 0]	ANY: `http_route_authed of [method, path, body]`
 is_dir	whole	-	string	is_dir of "zz_census_2509"	KIND: | `is_dir` | `is_dir of "path"` | `true` if the path names a directory, `false` for a plain file / missing path (#576 — replaces the `file_exists of "path/."` probe). Trace-recorded, so replay is deterministic. |
 is_file	whole	-	string	is_file of "zz_census_2509"	KIND: | `is_file` | `is_file of "path"` | `true` iff the path names a REGULAR file (`S_ISREG`); `false` for a directory, a device/fifo/socket or a missing path. `read_file_util` admits only regular files, so this is the probe a driver uses to match that contract (#1058). Trace-recorded, so replay is deterministic. |
 json_build	whole	-	list	json_build of []	ANY: | `json_build` | `json_build of [k1, v1, k2, v2, ...]` | Build JSON object from key-value pairs. `json_build of null` is `{}`. |
@@ -189,6 +195,9 @@ sgd_update	pos	0	list	sgd_update of [[], [2], 0.5]	ANY: | `sgd_update` | `sgd_up
 sha256	whole	-	string	sha256 of "zz_census_2509"	KIND: | `sha256` | `sha256 of string` | Return the lowercase hexadecimal SHA-256 digest of a string. |
 shape	whole	-	list	shape of []	ANY: | `shape` | `shape of t` | Return dimensions as a list of exact integers |
 shape	whole	-	number	shape of 0	ANY: | `shape` | `shape of t` | Return dimensions as a list of exact integers |
+shared_set	pos	1	dict	shared_set of ["shape-key", {"a": 1}]	ANY: Store `value` (JSON-encoded).
+shared_set	pos	1	list	shared_set of ["shape-key", []]	ANY: Store `value` (JSON-encoded).
+shared_set	pos	1	string	shared_set of ["shape-key", "zz_census_2509"]	ANY: Store `value` (JSON-encoded).
 sin	whole	-	number	sin of 0	KIND: | `sin` | `sin of x` | Sine (radians). Numeric inputs convert to float; numeric results are floats. |
 softmax	whole	-	list	softmax of []	KIND: | `softmax` | `softmax of t` | Row-wise softmax normalization (a scalar is the one-element case → `1.0`). A shaped buffer computes row-wise on its shape and returns a buffer of the same shape (a 1-D buffer is one row) — #973. |
 softmax	whole	-	number	softmax of 0	KIND: | `softmax` | `softmax of t` | Row-wise softmax normalization (a scalar is the one-element case → `1.0`). A shaped buffer computes row-wise on its shape and returns a buffer of the same shape (a 1-D buffer is one row) — #973. |

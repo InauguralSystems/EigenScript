@@ -674,6 +674,29 @@ static Value *http_route_register(Value *arg, int requires_auth) {
         return make_null();
     }
 
+    /* #2509: method, path, the four-element form's kind, and a "code" route's
+     * source are strings; a wrong-typed one raises before anything is stored.
+     * The literal body (the three-element form's third slot, and a "static"
+     * route's payload) stays any value: it is stringified for the client. */
+    {
+        const char *names[3] = {"method", "path", "kind"};
+        int n = arg->data.list.count >= 4 ? 3 : 2;
+        for (int i = 0; i < n; i++) {
+            if (list_get_view(arg, i, &(EigsView){{0}})->type != VAL_STR) {
+                rt_error(EK_TYPE, 0, "http_route: %s must be a string", names[i]);
+                return make_null();
+            }
+        }
+        if (arg->data.list.count >= 4) {
+            Value *kind = list_get_view(arg, 2, &(EigsView){{0}});
+            if (strcmp(kind->data.str, "code") == 0 &&
+                list_get_view(arg, 3, &(EigsView){{0}})->type != VAL_STR) {
+                rt_error(EK_TYPE, 0, "http_route: a code route's source must be a string");
+                return make_null();
+            }
+        }
+    }
+
     Route *r = &g_server.routes[g_server.route_count];
     char *method_s = value_to_string(list_get_view(arg, 0, &(EigsView){{0}}));
     char *path_s = value_to_string(list_get_view(arg, 1, &(EigsView){{0}}));
@@ -717,7 +740,10 @@ Value* builtin_http_route_authed(Value *arg) {
 Value* builtin_http_static(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "http_static");
     if (http_config_frozen("http_static")) return make_null();
-    if (arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    ARG_GUARD(arg->type != VAL_LIST || arg->data.list.count < 2 ||
+              list_get_view(arg, 0, &(EigsView){{0}})->type != VAL_STR ||
+              list_get_view(arg, 1, &(EigsView){{0}})->type != VAL_STR,
+              "http_static", "[prefix string, directory string]", make_null());
     char *prefix = value_to_string(list_get_view(arg, 0, &(EigsView){{0}}));
     if (!prefix[0]) {
         free(prefix);
