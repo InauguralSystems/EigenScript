@@ -2160,8 +2160,7 @@
     ],
     "form_asserts": {
       "optional:0": "(len of shape_result) == 2"
-    },
-    "legacy_surplus_null": true
+    }
   },
   {
     "name": "range",

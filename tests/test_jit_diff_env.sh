@@ -7,23 +7,11 @@ export EIGS_TEST_DIR="$TESTS_DIR"
 . "$TESTS_DIR/suite_program_env.sh" || exit 1
 
 expected='test_audio.eigs
-test_buffer_nonfinite_read.eigs
-test_builtin_contracts.eigs
-test_builtin_indirect.eigs
-test_call_semantics.eigs
-test_coalesce_legacy.eigs
-test_file_io.eigs
-test_file_rename.eigs
 test_gfx_argtypes.eigs
 test_gfx_text.eigs
-test_json_hard.eigs
 test_line_after_return.eigs
-test_numeric_guard.eigs
 test_phase2_gfx_q7.eigs
 test_sgd_update_refused_strict_2495.eigs
-test_stdlib_fixes.eigs
-test_stream_io.eigs
-test_tensor_buffer_ops.eigs
 test_ui_containment_gfx.eigs'
 actual=$(awk '$0 !~ /^[[:space:]]*#/ && NF { print $1 }' "$TESTS_DIR/suite_program_env.txt" | LC_ALL=C sort)
 [ "$actual" = "$expected" ] || { echo "FAIL: suite environment population changed:"; printf '%s\n' "$actual"; exit 1; }

@@ -1,3 +1,12 @@
+# #2502: invalid argument types raise independently of arithmetic traps.
+define guard_kind(thunk, expected_kind, label) as:
+    local seen_kind is "none"
+    try:
+        thunk of null
+    catch guard_error:
+        seen_kind is guard_error.kind
+    assert of [seen_kind == expected_kind, label]
+
 # JSON hard cases — the tests that would have caught the original bugs.
 # Every assertion checks an EXACT VALUE, not just "didn't crash".
 
@@ -296,34 +305,14 @@ assert of [len of closed_bs == 2, "JH105 escaped-backslash string is 2 chars"]
 closed_nl is json_decode of "\"a\\n\""
 assert of [closed_nl == "a\n", "JH106 trailing \\n escape before closing quote decodes"]
 
-# --- #724: lenient callers (json_path) get the COMPLETE document with ---
-# U+FFFD in the one bad string. A recoverable substitution must not abort
-# the enclosing container parse: before the two-flag split, the substituted
-# string set the structural flag and the #495 propagation checks silently
-# dropped every sibling after it (k2 below decoded to "").
 len_obj is "{\"k\": \"x\\ude00y\", \"k2\": \"v2\"}"
-assert of [json_path of [len_obj, "k2"] == "v2", "JH81 sibling after bad string survives"]
-
-len_k is json_path of [len_obj, "k"]
-assert of [len_k == "x�y", "JH82 bad string carries U+FFFD for lenient callers"]
-assert of [len of len_k == 5, "JH83 lenient value is 5 bytes"]
-assert of [ord of (char_at of [len_k, 0]) == 120, "JH84 byte 0 is 'x'"]
-assert of [ord of (char_at of [len_k, 1]) == 239, "JH85 byte 1 is 0xEF"]
-assert of [ord of (char_at of [len_k, 2]) == 191, "JH86 byte 2 is 0xBF"]
-assert of [ord of (char_at of [len_k, 3]) == 189, "JH87 byte 3 is 0xBD"]
-assert of [ord of (char_at of [len_k, 4]) == 121, "JH88 byte 4 is 'y'"]
-
 len_arr is "[\"a\\u0000b\", 42]"
-assert of [json_path of [len_arr, "1"] == "42", "JH89 array sibling after escaped NUL survives"]
-len_a0 is json_path of [len_arr, "0"]
-assert of [len_a0 == "a�b", "JH90 NUL case carries U+FFFD, no truncation"]
-assert of [len of len_a0 == 5, "JH91 NUL-case value is 5 bytes"]
-
 len_hex is "{\"k\": \"\\uzzzz\", \"k2\": \"ok\"}"
-assert of [json_path of [len_hex, "k2"] == "ok", "JH92 sibling after malformed escape survives"]
-
 len_before is "{\"k0\": \"v0\", \"k\": \"x\\ude00y\"}"
-assert of [json_path of [len_before, "k0"] == "v0", "JH93 sibling before bad string survives"]
+guard_kind of [(_) => (json_path of [len_obj, "k"]), "value", "json_path refuses repaired JSON"]
+guard_kind of [(_) => (json_path of [len_arr, "k"]), "value", "json_path refuses repaired JSON"]
+guard_kind of [(_) => (json_path of [len_hex, "k"]), "value", "json_path refuses repaired JSON"]
+guard_kind of [(_) => (json_path of [len_before, "k"]), "value", "json_path refuses repaired JSON"]
 
 # --- #777: one malformed parse must not poison the NEXT parse in the same ---
 # thread. g_json_parse_err is thread-global and the parser CHECKS it mid-parse
@@ -333,10 +322,10 @@ assert of [json_path of [len_before, "k0"] == "v0", "JH93 sibling before bad str
 # first, then parses a fresh, well-formed document through json_path.
 
 # Shape: lenient-after-lenient (the issue's own repro).
-pois1 is json_path of ["{\"a\": \"unterminated", "a"]
+guard_kind of [(_) => (json_path of ["{\"a\": \"unterminated", "a"]), "value", "json_path refuses malformed input before the clean parse"]
 assert of [json_path of ["{\"user\": {\"name\": \"bob\"}}", "user.name"] == "bob", "JH118 lenient json_path after malformed json_path"]
 
-pois2 is json_path of ["{\"a\": \"unterminated", "a"]
+guard_kind of [(_) => (json_path of ["{\"a\": \"unterminated", "a"]), "value", "json_path refuses malformed input before the clean parse"]
 assert of [json_path of ["[10, 20, 30]", "2"] == "30", "JH119 array element after malformed json_path"]
 
 # Shape: lenient-after-strict-raise — a raising json_decode leaves the flag
@@ -359,27 +348,27 @@ assert of [(pois4_err == 1) == (json_path of ["[7, 8, 9]", "1"] == "8"), "JH121 
 
 # Shape: object-empty — the stale flag fired the object first-key guard, so
 # a well-formed object decoded to an EMPTY dict and every lookup missed.
-pois5 is json_path of ["{\"k\": ", "k"]
+guard_kind of [(_) => (json_path of ["{\"k\": ", "k"]), "value", "json_path refuses malformed input before the clean parse"]
 assert of [json_path of ["{\"k1\": \"v1\", \"k2\": \"v2\"}", "k1"] == "v1", "JH122 first key of object survives"]
 
 # Shape: array-truncate — the stale flag fired the array element guard after
 # the first element, so a well-formed array decoded to a ONE-ELEMENT list.
-pois6 is json_path of ["{\"k\": ", "k"]
+guard_kind of [(_) => (json_path of ["{\"k\": ", "k"]), "value", "json_path refuses malformed input before the clean parse"]
 assert of [json_path of ["[\"x\", \"y\"]", "1"] == "y", "JH123 second element of array survives"]
 
 # The poison source can be any malformed document shape — a truncated array
 # sets the flag just like an unterminated string does.
-pois7 is json_path of ["[1, 2", "0"]
+guard_kind of [(_) => (json_path of ["[1, 2", "0"]), "value", "json_path refuses malformed input before the clean parse"]
 assert of [json_path of ["{\"ok\": \"yes\"}", "ok"] == "yes", "JH124 object survives poison from truncated array"]
 
 # Two malformed parses in a row must not compound: the next good parse is
 # still a fresh one.
-pois8a is json_path of ["{\"a\": ", "a"]
-pois8b is json_path of ["[", "0"]
+guard_kind of [(_) => (json_path of ["{\"a\": ", "a"]), "value", "json_path refuses malformed input before the clean parse"]
+guard_kind of [(_) => (json_path of ["[", "0"]), "value", "json_path refuses malformed input before the clean parse"]
 assert of [json_path of ["{\"deep\": {\"leaf\": 42}}", "deep.leaf"] == "42", "JH125 nested path after double poison"]
 
 # A bare non-JSON token poisons too; a three-level path must still resolve.
-pois9 is json_path of ["not json at all", "x"]
+guard_kind of [(_) => (json_path of ["not json at all", "x"]), "value", "json_path refuses malformed input before the clean parse"]
 assert of [json_path of ["{\"m\": {\"n\": {\"o\": \"end\"}}}", "m.n.o"] == "end", "JH126 three-level path after poison"]
 
 # The RECOVERABLE channel is load-bearing in the wrapper too: a lenient
@@ -391,7 +380,7 @@ assert of [json_path of ["{\"m\": {\"n\": {\"o\": \"end\"}}}", "m.n.o"] == "end"
 # its own entry, so this exact scenario was safe then — this test guards the
 # wrapper, not the old reset site.)
 rec_doc is "{\"k\": \"x\\ude00y\"}"
-rec_lenient is json_path of [rec_doc, "k"]
+guard_kind of [(_) => (json_path of [rec_doc, "k"]), "value", "json_path refuses malformed input before the clean parse"]
 rec_strict_err is 0
 try:
     rec_strict is json_decode of "{\"clean\": 1}"

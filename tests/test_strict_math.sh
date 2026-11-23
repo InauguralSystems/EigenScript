@@ -104,7 +104,7 @@ run "SM03i EIGS_STRICT=00 is strict (only exactly 0 is off)" 00 1 "sqrt: argumen
 run "SM03d strict abs(str) raises" 1 1 "abs: expected a number" 'print of (abs of "x")'
 run "SM03e strict abs(list) raises" 1 1 "abs: expected a number" 'print of (abs of ([-3, 7]))'
 run "SM03f strict floor(list) raises" 1 1 "floor: expected a number" 'print of (floor of [1.5, 2.5])'
-run "SM03g non-strict abs(str) -> 0" 0 0 "0" 'print of (abs of "x")'
+run "SM03g arithmetic-off abs(str) raises" 0 1 "abs: expected a number" 'print of (abs of "x")'
 
 # --- Strict on: out-of-domain raises EK_VALUE ---
 run "SM04 strict sqrt(-1) raises"     1 1 "sqrt: argument out of domain"  'print of (sqrt of -1)'
@@ -130,8 +130,8 @@ run "SM10 strict tensor sqrt raises"  1 1 "out of domain"              'print of
 # mistake became a plausible value: `cos of "hello"` was 0, `str_upper of 42`
 # was "". Under EIGS_STRICT=0 that is unchanged (SM11/SM12 pin it); strict
 # raises a catchable `type` error naming the builtin.
-run "SM11 opt-out cos(str) still 0"    0 0 "0"    'print of (cos of "hello")'
-run "SM12 opt-out str_upper(num) is empty" 0 0 "[]" 'print of f"[{str_upper of 42}]"'
+run "SM11 arithmetic-off cos(str) raises" 0 1 "cos: expected a number"    'print of (cos of "hello")'
+run "SM12 arithmetic-off str_upper(num) raises" 0 1 "str_upper: expected a string" 'print of f"[{str_upper of 42}]"'
 run "SM13 strict cos(str) raises"      1 1 "cos: expected a number"        'print of (cos of "hello")'
 run "SM14 strict str_upper(num) raises" 1 1 "str_upper: expected a string" 'print of (str_upper of 42)'
 run "SM15 strict arity guard raises"   1 1 "substr: expected"              'print of (substr of 42)'
@@ -174,7 +174,7 @@ run "SM27 strict write_bytes type raises"     1 1 "write_bytes: expected" 'print
 # `return make_float(0)` to convert, so it is invisible to the classifier and
 # needed STRICT_REQUIRE (raise under strict, no-op otherwise). Found by the
 # differential, not by the classifier: SM29 is why both harnesses exist.
-run "SM28 opt-out str_replace(num,..) unchanged" 0 0 "[]" \
+run "SM28 arithmetic-off str_replace(num) raises" 0 1 "str_replace: expected" \
 'local r is str_replace of [42, "a", "b"]
 print of f"[{r}]"'
 run "SM29 strict str_replace coercion raises"  1 1 "str_replace: expected a string" \
@@ -202,9 +202,9 @@ run "SM35 strict: JSON false decodes to false (#1637)" 1 0 "false" \
 # error, repaired scalar, trailing garbage) as a catchable `value` error naming
 # the position. EIGS_STRICT=0: byte-identical (SM36/SM37 pin the lenient walk). JSON
 # `false`/`null`/absent-key are ANSWERS and stay quiet in both modes.
-run "SM36 opt-out json_path(bad number) still walks partial" 0 0 "[0.0]" \
+run "SM36 arithmetic-off json_path(bad number) raises" 0 1 "json_path: invalid JSON" \
     'print of f"[{json_path of ["{\"a\": 1e", "a"]}]"'
-run "SM37 opt-out json_path(truncated array) still partial" 0 0 "[[1,2]]" \
+run "SM37 arithmetic-off json_path(truncated array) raises" 0 1 "json_path: invalid JSON" \
     'print of f"[{json_path of ["{\"a\": [1, 2", "a"]}]"'
 run "SM38 strict json_path(bad number) raises with position" 1 1 "json_path: invalid JSON at position 8" \
     'print of (json_path of ["{\"a\": 1e", "a"])'
@@ -306,15 +306,15 @@ catch e:
 # --- #1438: finite-difference losses must be scalar numbers -----------------
 BAD_LOSS='define bad(_) as:
     return "bad"'
-run "T1438a opt-out numerical_grad keeps zero stand-in" 0 0 "[0.0]" \
+run "T1438a arithmetic-off numerical_grad raises" 0 1 "numerical_grad: expected loss function to return a number" \
 "$BAD_LOSS
 p is [1.0]
 print of (numerical_grad of [bad, p, 0.001])"
-run "T1438b opt-out numerical_grad_rows keeps zero stand-in" 0 0 "[[0.0]]" \
+run "T1438b arithmetic-off numerical_grad_rows raises" 0 1 "numerical_grad_rows: expected loss function to return a number" \
 "$BAD_LOSS
 m is [[1.0]]
 print of (numerical_grad_rows of [bad, m, [0], 0.001])"
-run "T1438c opt-out numerical_grad_cols keeps zero stand-in" 0 0 "[[0.0]]" \
+run "T1438c arithmetic-off numerical_grad_cols raises" 0 1 "numerical_grad_cols: expected loss function to return a number" \
 "$BAD_LOSS
 m is [[1.0]]
 print of (numerical_grad_cols of [bad, m, [0], 0.001])"
@@ -362,7 +362,7 @@ run "SM67 strict file_exists(num) raises"               1 1 "file_exists: expect
 # a plausible answer: `split of 42` -> [""], `buffer of "x"` -> an empty
 # buffer, `channel_closed of 42` -> 1 "closed", `f64_to_bytes of "x"` -> the
 # bytes of 0.0, `random_int of "x"` -> 0, `json_build of {..}` -> "{}").
-run "SM68 opt-out split(num) still [\"\"]"              0 0 '[""]' 'print of (split of 42)'
+run "SM68 arithmetic-off split(num) raises" 0 1 "split: expected" 'print of (split of 42)'
 run "SM69 strict split(num) raises"                     1 1 "split: expected"       'print of (split of 42)'
 run "SM70 strict split with a non-string delimiter raises" 1 1 "split: expected a string delimiter" 'print of (split of ["a b", 42])'
 run "SM71 strict scan_ints(dict) raises"                1 1 "scan_ints: expected"   'print of (scan_ints of ({"k": 1}))'
@@ -385,7 +385,7 @@ run "SM84 strict: random_hex of 0 is still empty"       1 0 "[]" 'print of f"[{r
 # raise itself already exits 1, so only `leak_clean` can see a regression).
 run "SM86 strict scan_int_tokens(num) raises"           1 1 "scan_int_tokens: expected" 'print of (scan_int_tokens of 42)'
 # Flag-off pins: the wrong type still reads as "no tokens" -> an empty list.
-run "SM88 opt-out scan_int_tokens(num) is still []" 0 0 "[]" 'print of f"[{scan_int_tokens of 42}]"'
+run "SM88 arithmetic-off scan_int_tokens(num) raises" 0 1 "scan_int_tokens: expected" 'print of f"[{scan_int_tokens of 42}]"'
 
 # #1131: every f64 matmul rounds the product before adding it. These exact
 # binary64 operands give -1 + round((1 + 2^-27) * (1 - 2^-27)) = 0;
@@ -432,8 +432,8 @@ print of f"zero:{r[0] == 0}:end"'
 done
 
 # R1.6b N5: final readers preserve existing nonnumeric soft guards.
-run "sign_extend soft invalid value" 0 0 'float' 'print of (num_type of (sign_extend of ["x", 8]))'
-run "sign_extend soft invalid width" 0 0 'float' 'print of (num_type of (sign_extend of [255, "x"]))'
+run "sign_extend arithmetic-off invalid value raises" 0 1 'sign_extend: expected two numbers' 'print of (num_type of (sign_extend of ["x", 8]))'
+run "sign_extend arithmetic-off invalid width raises" 0 1 'sign_extend: expected two numbers' 'print of (num_type of (sign_extend of [255, "x"]))'
 run "sign_extend bool remains a type error" 0 1 'bool' 'print of (sign_extend of [true, 8])'
 # R1.6b-D2 / #1895 is unconditional in both call forms, unlike type guards.
 for mode in 0 1; do

@@ -1,0 +1,1750 @@
+{
+  "append": {
+    "function": "builtin_append",
+    "direct": [
+      "list_append_slot(target, item);"
+    ],
+    "calls": [
+      "builtin_append"
+    ]
+  },
+  "args": {
+    "function": "builtin_args",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"args\", list);",
+      "TRACE_NONDET_TAKE(\"args\");",
+      "list_append_owned(list, make_str(g_argv[i]));"
+    ],
+    "calls": [
+      "builtin_args",
+      "list_append_owned"
+    ]
+  },
+  "assert": {
+    "function": "builtin_assert",
+    "direct": [],
+    "calls": [
+      "builtin_assert",
+      "is_truthy",
+      "value_to_string"
+    ]
+  },
+  "audio_capture_open": {
+    "function": "builtin_audio_capture_open",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"audio_capture_open\", make_int(0));",
+      "TRACE_NONDET_RECORD(\"audio_capture_open\", make_int(g_capture_device));",
+      "TRACE_NONDET_TAKE(\"audio_capture_open\");",
+      "if (!load_sdl2()) TRACE_NONDET_RECORD(\"audio_capture_open\", make_int(0));"
+    ],
+    "calls": [
+      "builtin_audio_capture_open"
+    ]
+  },
+  "audio_capture_read": {
+    "function": "builtin_audio_capture_read",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"audio_capture_read\",",
+      "TRACE_NONDET_RECORD(\"audio_capture_read\", make_null());",
+      "TRACE_NONDET_TAKE(\"audio_capture_read\");"
+    ],
+    "calls": [
+      "builtin_audio_capture_read",
+      "capture_samples_to_buffer"
+    ]
+  },
+  "audio_envelope": {
+    "function": "builtin_audio_envelope",
+    "direct": [
+      "list_append_owned(out, make_float(eigs_math_result(s)));"
+    ],
+    "calls": [
+      "builtin_audio_envelope",
+      "list_append_owned"
+    ]
+  },
+  "audio_gain": {
+    "function": "builtin_audio_gain",
+    "direct": [
+      "list_append_owned(out, make_float(s));"
+    ],
+    "calls": [
+      "builtin_audio_gain",
+      "list_append_owned"
+    ]
+  },
+  "audio_mix": {
+    "function": "builtin_audio_mix",
+    "direct": [
+      "list_append_owned(out, make_float(mixed));"
+    ],
+    "calls": [
+      "builtin_audio_mix",
+      "list_append_owned"
+    ]
+  },
+  "audio_noise": {
+    "function": "builtin_audio_noise",
+    "direct": [
+      "list_append_owned(list, make_float(s));"
+    ],
+    "calls": [
+      "audio_noise_record",
+      "audio_noise_take",
+      "builtin_audio_noise",
+      "list_append_owned"
+    ]
+  },
+  "audio_saw": {
+    "function": "builtin_audio_saw",
+    "direct": [
+      "list_append_owned(list, make_float(eigs_math_result(s)));"
+    ],
+    "calls": [
+      "builtin_audio_saw",
+      "list_append_owned"
+    ]
+  },
+  "audio_sine": {
+    "function": "builtin_audio_sine",
+    "direct": [
+      "list_append_owned(list, make_float(eigs_math_result(s)));"
+    ],
+    "calls": [
+      "builtin_audio_sine",
+      "list_append_owned"
+    ]
+  },
+  "audio_square": {
+    "function": "builtin_audio_square",
+    "direct": [
+      "list_append_owned(list, make_float(s));"
+    ],
+    "calls": [
+      "builtin_audio_square",
+      "list_append_owned"
+    ]
+  },
+  "audio_stream_queued": {
+    "function": "builtin_audio_stream_queued",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"audio_stream_queued\",",
+      "TRACE_NONDET_RECORD(\"audio_stream_queued\", make_int(0));",
+      "TRACE_NONDET_TAKE(\"audio_stream_queued\");"
+    ],
+    "calls": [
+      "builtin_audio_stream_queued"
+    ]
+  },
+  "audio_sweep": {
+    "function": "builtin_audio_sweep",
+    "direct": [
+      "list_append_owned(list, make_float(eigs_math_result(s)));"
+    ],
+    "calls": [
+      "builtin_audio_sweep",
+      "list_append_owned"
+    ]
+  },
+  "buf_deinterleave": {
+    "function": "builtin_buf_deinterleave",
+    "direct": [],
+    "calls": [
+      "buf_alloc_flat",
+      "builtin_buf_deinterleave"
+    ]
+  },
+  "buf_from_list": {
+    "function": "builtin_buf_from_list",
+    "direct": [
+      "v->data.buffer.data = xcalloc(n > 0 ? n : 1, sizeof(double));",
+      "v->data.buffer.data[i] = eigs_slot_float(list_slot(arg, i), \"buf_from_list\");"
+    ],
+    "calls": [
+      "builtin_buf_from_list"
+    ]
+  },
+  "buf_from_pcm16le": {
+    "function": "builtin_buf_from_pcm16le",
+    "direct": [],
+    "calls": [
+      "buf_alloc_flat",
+      "builtin_buf_from_pcm16le"
+    ]
+  },
+  "buf_resample_linear": {
+    "function": "builtin_buf_resample_linear",
+    "direct": [],
+    "calls": [
+      "buf_alloc_flat",
+      "builtin_buf_resample_linear"
+    ]
+  },
+  "buf_set": {
+    "function": "builtin_buf_set",
+    "direct": [
+      "buf->data.buffer.data[idx] = val;"
+    ],
+    "calls": [
+      "builtin_buf_set"
+    ]
+  },
+  "buf_to_pcm16le": {
+    "function": "builtin_buf_to_pcm16le",
+    "direct": [],
+    "calls": [
+      "buf_alloc_flat",
+      "builtin_buf_to_pcm16le"
+    ]
+  },
+  "buffer": {
+    "function": "builtin_buffer",
+    "direct": [
+      "v->data.buffer.data = xcalloc(count, sizeof(double));",
+      "v->data.buffer.data = xcalloc(total > 0 ? (size_t)total : 1, sizeof(double));"
+    ],
+    "calls": [
+      "builtin_buffer"
+    ]
+  },
+  "channel": {
+    "function": "builtin_channel",
+    "direct": [
+      "dict_set_owned(d, \"_channel_gen\", make_int(cgen));",
+      "dict_set_owned(d, \"_channel_id\", make_int(hid));"
+    ],
+    "calls": [
+      "builtin_channel",
+      "dict_set_owned"
+    ]
+  },
+  "clock_unix": {
+    "function": "builtin_clock_unix",
+    "direct": [
+      "TRACE_NONDET_RET(\"clock_unix\", make_float((double)ts.tv_sec + (double)ts.tv_nsec / 1e9));"
+    ],
+    "calls": [
+      "builtin_clock_unix"
+    ]
+  },
+  "concat": {
+    "function": "builtin_concat",
+    "direct": [
+      "list_append_slot(result, list_slot(a, i));",
+      "list_append_slot(result, list_slot(b, i));"
+    ],
+    "calls": [
+      "builtin_concat"
+    ]
+  },
+  "copy_into": {
+    "function": "builtin_copy_into",
+    "direct": [
+      "dest->data.buffer.data[offset + i] = src->data.buffer.data[i];",
+      "dest->data.buffer.data[offset + i] = value;",
+      "list_set_slot_owned(dest, offset + i, slot_read_owned(list_slot(src, i)));"
+    ],
+    "calls": [
+      "builtin_copy_into"
+    ]
+  },
+  "dict_remove": {
+    "function": "builtin_dict_remove",
+    "direct": [
+      "dict_remove(d, dict_key);"
+    ],
+    "calls": [
+      "builtin_dict_remove",
+      "dict_remove"
+    ]
+  },
+  "dict_set": {
+    "function": "builtin_dict_set",
+    "direct": [
+      "dict_set(d, dict_key, val);"
+    ],
+    "calls": [
+      "builtin_dict_set",
+      "dict_set"
+    ]
+  },
+  "dir_sync": {
+    "function": "builtin_dir_sync",
+    "direct": [],
+    "calls": [
+      "builtin_dir_sync",
+      "sync_path"
+    ]
+  },
+  "dispatch": {
+    "function": "builtin_dispatch",
+    "direct": [],
+    "calls": [
+      "builtin_dispatch",
+      "vm_execute_argc"
+    ]
+  },
+  "env_get": {
+    "function": "builtin_env_get",
+    "direct": [
+      "TRACE_NONDET_RET(\"env_get\", make_str(val ? val : \"\"));"
+    ],
+    "calls": [
+      "builtin_env_get"
+    ]
+  },
+  "eval": {
+    "function": "builtin_eval",
+    "direct": [],
+    "calls": [
+      "builtin_eval",
+      "compile_ast",
+      "vm_execute"
+    ]
+  },
+  "exe_path": {
+    "function": "builtin_exe_path",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"exe_path\", make_str(g_exe_path ? g_exe_path : \"eigenscript\"));",
+      "TRACE_NONDET_TAKE(\"exe_path\");"
+    ],
+    "calls": [
+      "builtin_exe_path"
+    ]
+  },
+  "exec_capture": {
+    "function": "builtin_exec_capture",
+    "direct": [],
+    "calls": [
+      "builtin_exec_capture",
+      "exec_capture_result"
+    ]
+  },
+  "f64_to_bytes": {
+    "function": "builtin_f64_to_bytes",
+    "direct": [
+      "list_append_owned(list, make_int((int64_t)((bits >> shift) & 0xFFu)));"
+    ],
+    "calls": [
+      "builtin_f64_to_bytes",
+      "list_append_owned"
+    ]
+  },
+  "file_exists": {
+    "function": "builtin_file_exists",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"file_exists\", make_bool(ex));",
+      "TRACE_NONDET_TAKE(\"file_exists\");"
+    ],
+    "calls": [
+      "builtin_file_exists"
+    ]
+  },
+  "file_sync": {
+    "function": "builtin_file_sync",
+    "direct": [],
+    "calls": [
+      "builtin_file_sync",
+      "sync_path"
+    ]
+  },
+  "fill": {
+    "function": "builtin_fill",
+    "direct": [
+      "list_append_slot(result, val);"
+    ],
+    "calls": [
+      "builtin_fill"
+    ]
+  },
+  "get_observer_thresholds": {
+    "function": "builtin_get_observer_thresholds",
+    "direct": [
+      "list_append_owned(result, make_float(OBSERVER_H_LOW_DEFAULT));",
+      "list_append_owned(result, make_float(g_obs_dh_small));",
+      "list_append_owned(result, make_float(g_obs_dh_zero));"
+    ],
+    "calls": [
+      "builtin_get_observer_thresholds",
+      "list_append_owned"
+    ]
+  },
+  "getcwd": {
+    "function": "builtin_getcwd",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"getcwd\", make_str(\"\"));",
+      "TRACE_NONDET_TAKE(\"getcwd\");",
+      "if (getcwd(buf, sizeof(buf))) TRACE_NONDET_RECORD(\"getcwd\", make_str(buf));"
+    ],
+    "calls": [
+      "builtin_getcwd"
+    ]
+  },
+  "gfx_poll": {
+    "function": "builtin_gfx_poll",
+    "direct": [
+      "dict_set_owned(d, \"button\", make_int(ev.button.button));",
+      "dict_set_owned(d, \"h\", make_int(ev.window.data2));",
+      "dict_set_owned(d, \"key\", make_str(scancode_name(ev.key.keysym.scancode)));",
+      "dict_set_owned(d, \"mx\", make_int(wmx));",
+      "dict_set_owned(d, \"my\", make_int(wmy));",
+      "dict_set_owned(d, \"scancode\", make_int(ev.key.keysym.scancode));",
+      "dict_set_owned(d, \"type\", make_str(\"keydown\"));",
+      "dict_set_owned(d, \"type\", make_str(\"keyup\"));",
+      "dict_set_owned(d, \"type\", make_str(\"mousedown\"));",
+      "dict_set_owned(d, \"type\", make_str(\"mousemove\"));",
+      "dict_set_owned(d, \"type\", make_str(\"mouseup\"));",
+      "dict_set_owned(d, \"type\", make_str(\"quit\"));",
+      "dict_set_owned(d, \"type\", make_str(\"resize\"));",
+      "dict_set_owned(d, \"type\", make_str(\"wheel\"));",
+      "dict_set_owned(d, \"w\", make_int(ev.window.data1));",
+      "dict_set_owned(d, \"x\", make_int(ev.button.x));",
+      "dict_set_owned(d, \"x\", make_int(ev.motion.x));",
+      "dict_set_owned(d, \"x\", make_int(ev.wheel.x));",
+      "dict_set_owned(d, \"y\", make_int(ev.button.y));",
+      "dict_set_owned(d, \"y\", make_int(ev.motion.y));",
+      "dict_set_owned(d, \"y\", make_int(ev.wheel.y));"
+    ],
+    "calls": [
+      "builtin_gfx_poll",
+      "dict_set_owned",
+      "poll_set_mods"
+    ]
+  },
+  "gfx_read": {
+    "function": "builtin_gfx_read",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"gfx_read\", make_null());",
+      "TRACE_NONDET_RECORD(\"gfx_read\", out);",
+      "TRACE_NONDET_TAKE(\"gfx_read\");",
+      "if (shape.empty) TRACE_NONDET_RECORD(\"gfx_read\", make_null());",
+      "list_append_owned(out, make_int((px >> 16) & 0xFF));",
+      "list_append_owned(out, make_int((px >> 8) & 0xFF));",
+      "list_append_owned(out, make_int(px & 0xFF));"
+    ],
+    "calls": [
+      "builtin_gfx_read",
+      "list_append_owned"
+    ]
+  },
+  "gfx_ticks": {
+    "function": "builtin_gfx_ticks",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"gfx_ticks\",",
+      "TRACE_NONDET_TAKE(\"gfx_ticks\");"
+    ],
+    "calls": [
+      "builtin_gfx_ticks"
+    ]
+  },
+  "http_fetch": {
+    "function": "builtin_http_fetch",
+    "direct": [],
+    "calls": [
+      "builtin_http_fetch",
+      "fetch_exchange"
+    ]
+  },
+  "http_post": {
+    "function": "builtin_http_post",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"http_post\", make_str(\"\"));",
+      "TRACE_NONDET_TAKE(\"http_post\");"
+    ],
+    "calls": [
+      "builtin_http_post",
+      "eigs_json_parse_complete",
+      "fetch_exchange",
+      "value_to_string"
+    ]
+  },
+  "http_request_body": {
+    "function": "builtin_http_request_body",
+    "direct": [
+      "TRACE_NONDET_RET(\"http_request_body\", make_str(\"{}\"));",
+      "TRACE_NONDET_RET(\"http_request_body\", make_str(tls_request_body));"
+    ],
+    "calls": [
+      "builtin_http_request_body"
+    ]
+  },
+  "http_request_header": {
+    "function": "builtin_http_request_header",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"http_request_header\", values);",
+      "TRACE_NONDET_TAKE(\"http_request_header\");",
+      "list_append_owned(values, make_str_len(value, (size_t)(eol - value)));"
+    ],
+    "calls": [
+      "builtin_http_request_header",
+      "list_append_owned"
+    ]
+  },
+  "http_request_headers": {
+    "function": "builtin_http_request_headers",
+    "direct": [
+      "TRACE_NONDET_RET(\"http_request_headers\",",
+      "TRACE_NONDET_RET(\"http_request_headers\", make_str(\"\"));",
+      "TRACE_NONDET_RET(\"http_request_headers\", make_str(tls_request_headers));"
+    ],
+    "calls": [
+      "builtin_http_request_headers"
+    ]
+  },
+  "http_route": {
+    "function": "builtin_http_route",
+    "direct": [],
+    "calls": [
+      "builtin_http_route",
+      "http_route_register"
+    ]
+  },
+  "http_route_authed": {
+    "function": "builtin_http_route_authed",
+    "direct": [],
+    "calls": [
+      "builtin_http_route_authed",
+      "http_route_register"
+    ]
+  },
+  "http_session_id": {
+    "function": "builtin_http_session_id",
+    "direct": [
+      "TRACE_NONDET_RET(\"http_session_id\", make_str(\"anonymous\"));",
+      "TRACE_NONDET_RET(\"http_session_id\", make_str(tls_session_id));"
+    ],
+    "calls": [
+      "builtin_http_session_id"
+    ]
+  },
+  "http_static": {
+    "function": "builtin_http_static",
+    "direct": [],
+    "calls": [
+      "builtin_http_static",
+      "value_to_string"
+    ]
+  },
+  "inflate": {
+    "function": "builtin_inflate",
+    "direct": [],
+    "calls": [
+      "builtin_inflate",
+      "zlib_inflate_impl"
+    ]
+  },
+  "is_dir": {
+    "function": "builtin_is_dir",
+    "direct": [
+      "TRACE_NONDET_RET(\"is_dir\","
+    ],
+    "calls": [
+      "builtin_is_dir"
+    ]
+  },
+  "is_file": {
+    "function": "builtin_is_file",
+    "direct": [
+      "TRACE_NONDET_RET(\"is_file\","
+    ],
+    "calls": [
+      "builtin_is_file"
+    ]
+  },
+  "join": {
+    "function": "builtin_join",
+    "direct": [],
+    "calls": [
+      "builtin_join",
+      "value_to_string"
+    ]
+  },
+  "json_build": {
+    "function": "builtin_json_build",
+    "direct": [],
+    "calls": [
+      "builtin_json_build",
+      "value_to_string"
+    ]
+  },
+  "json_decode": {
+    "function": "builtin_json_decode",
+    "direct": [],
+    "calls": [
+      "builtin_json_decode",
+      "eigs_json_parse_root"
+    ]
+  },
+  "json_encode": {
+    "function": "builtin_json_encode",
+    "direct": [],
+    "calls": [
+      "builtin_json_encode",
+      "eigs_json_encode_value"
+    ]
+  },
+  "json_path": {
+    "function": "builtin_json_path",
+    "direct": [],
+    "calls": [
+      "builtin_json_path",
+      "eigs_json_encode_value",
+      "eigs_json_parse_root"
+    ]
+  },
+  "keys": {
+    "function": "builtin_keys",
+    "direct": [
+      "list_append_owned(list, make_str(arg->data.dict.keys[i]));"
+    ],
+    "calls": [
+      "builtin_keys",
+      "eigs_module_ns_sync",
+      "list_append_owned"
+    ]
+  },
+  "len": {
+    "function": "builtin_len",
+    "direct": [],
+    "calls": [
+      "builtin_len",
+      "eigs_module_ns_sync"
+    ]
+  },
+  "list_contains": {
+    "function": "builtin_list_contains",
+    "direct": [],
+    "calls": [
+      "builtin_list_contains",
+      "values_equal_op"
+    ]
+  },
+  "list_index_of": {
+    "function": "builtin_list_index_of",
+    "direct": [],
+    "calls": [
+      "builtin_list_index_of",
+      "values_equal_op"
+    ]
+  },
+  "list_insert_at": {
+    "function": "builtin_list_insert_at",
+    "direct": [
+      "list_append_slot(list, list_slot(arg, 2));",
+      "list_append_slot(list, list_slot(list, count - 1));",
+      "list_set_owned(list, idx, val);"
+    ],
+    "calls": [
+      "builtin_list_insert_at"
+    ]
+  },
+  "list_slice": {
+    "function": "builtin_list_slice",
+    "direct": [
+      "list_append_slot(result, list_slot(list, i));"
+    ],
+    "calls": [
+      "builtin_list_slice"
+    ]
+  },
+  "list_truncate": {
+    "function": "builtin_list_truncate",
+    "direct": [
+      "list_set_owned(list, i, NULL);"
+    ],
+    "calls": [
+      "builtin_list_truncate"
+    ]
+  },
+  "load_file": {
+    "function": "builtin_load_file",
+    "direct": [],
+    "calls": [
+      "builtin_load_file",
+      "compile_ast",
+      "trace_source_record",
+      "trace_source_replay",
+      "vm_execute"
+    ]
+  },
+  "ls": {
+    "function": "builtin_ls",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"ls\", list);",
+      "list_append_owned(list, make_str(entry->d_name));",
+      "list_sort(list, ls_entry_cmp);"
+    ],
+    "calls": [
+      "builtin_ls",
+      "file_io_error",
+      "file_io_replay",
+      "list_append_owned"
+    ]
+  },
+  "regex_match": {
+    "function": "builtin_match",
+    "direct": [
+      "list_append_owned(result, make_null());",
+      "list_append_owned(result, make_str(buf));"
+    ],
+    "calls": [
+      "builtin_match",
+      "list_append_owned"
+    ]
+  },
+  "regex_find": {
+    "function": "builtin_match_all",
+    "direct": [
+      "list_append_owned(result, make_str(buf));"
+    ],
+    "calls": [
+      "builtin_match_all",
+      "list_append_owned"
+    ]
+  },
+  "math_flags": {
+    "function": "builtin_math_flags",
+    "direct": [
+      "dict_set_owned(d, \"invalid\", iv);",
+      "dict_set_owned(d, \"overflow\", ov);",
+      "dict_set_owned(d, \"underflow\", uv);"
+    ],
+    "calls": [
+      "builtin_math_flags",
+      "dict_set_owned"
+    ]
+  },
+  "md5_file": {
+    "function": "builtin_md5_file",
+    "direct": [
+      "if (__builtin_expect(g_trace_enabled, 0)) trace_nondet_value(\"md5_file\", result);",
+      "list_append_owned(record, make_str(message));",
+      "trace_nondet_value(\"md5_file\", record);"
+    ],
+    "calls": [
+      "builtin_md5_file",
+      "list_append_owned",
+      "trace_nondet_value",
+      "trace_replay_take"
+    ]
+  },
+  "mkdir": {
+    "function": "builtin_mkdir",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"mkdir\", make_bool(1));"
+    ],
+    "calls": [
+      "builtin_mkdir",
+      "file_io_error",
+      "file_io_replay"
+    ]
+  },
+  "monotonic_ms": {
+    "function": "builtin_monotonic_ms",
+    "direct": [
+      "TRACE_NONDET_RET(\"monotonic_ms\", make_float((double)ts.tv_sec * 1e3 + (double)ts.tv_nsec / 1e6));"
+    ],
+    "calls": [
+      "builtin_monotonic_ms"
+    ]
+  },
+  "monotonic_ns": {
+    "function": "builtin_monotonic_ns",
+    "direct": [
+      "TRACE_NONDET_RET(\"monotonic_ns\", make_int(nanos));"
+    ],
+    "calls": [
+      "builtin_monotonic_ns"
+    ]
+  },
+  "must_not_yield": {
+    "function": "builtin_must_not_yield",
+    "direct": [],
+    "calls": [
+      "builtin_must_not_yield",
+      "call_eigs_fn"
+    ]
+  },
+  "nearest_in_range": {
+    "function": "builtin_nearest_in_range",
+    "direct": [
+      "dict_set_owned(result, \"dist\", make_float(sqrt(best_sq)));",
+      "dict_set_owned(result, \"dx\", make_float(best_dx));",
+      "dict_set_owned(result, \"dy\", make_float(best_dy));",
+      "dict_set_owned(result, \"index\", make_int(best_idx));"
+    ],
+    "calls": [
+      "builtin_nearest_in_range",
+      "dict_set_owned"
+    ]
+  },
+  "nearest_in_range_all": {
+    "function": "builtin_nearest_in_range_all",
+    "direct": [
+      "dict_set_owned(r, \"dist\", make_float(sqrt(best_sq)));",
+      "dict_set_owned(r, \"dx\", make_float(best_dx));",
+      "dict_set_owned(r, \"dy\", make_float(best_dy));",
+      "dict_set_owned(r, \"index\", make_int(best_idx));",
+      "list_append_owned(result, make_null());",
+      "list_append_owned(result, r);  /* adopt the freshly-built dict */"
+    ],
+    "calls": [
+      "builtin_nearest_in_range_all",
+      "dict_set_owned",
+      "list_append_owned"
+    ]
+  },
+  "net_accept": {
+    "function": "builtin_net_accept",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"net_accept\", make_int(id));",
+      "TRACE_NONDET_RECORD(\"net_accept\", make_null());",
+      "TRACE_NONDET_TAKE(\"net_accept\");",
+      "if (!s) TRACE_NONDET_RECORD(\"net_accept\", make_null());",
+      "if (cfd < 0) TRACE_NONDET_RECORD(\"net_accept\", make_null());",
+      "if (id < 0) TRACE_NONDET_RECORD(\"net_accept\", make_null());"
+    ],
+    "calls": [
+      "builtin_net_accept"
+    ]
+  },
+  "net_dial": {
+    "function": "builtin_net_dial",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"net_dial\", make_int(id));",
+      "TRACE_NONDET_RECORD(\"net_dial\", make_null());",
+      "TRACE_NONDET_TAKE(\"net_dial\");",
+      "if (fd < 0) { freeaddrinfo(res); TRACE_NONDET_RECORD(\"net_dial\", make_null()); }",
+      "if (id < 0) TRACE_NONDET_RECORD(\"net_dial\", make_null());"
+    ],
+    "calls": [
+      "builtin_net_dial"
+    ]
+  },
+  "net_listen": {
+    "function": "builtin_net_listen",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"net_listen\", make_int(id));",
+      "TRACE_NONDET_RECORD(\"net_listen\", make_null());",
+      "TRACE_NONDET_TAKE(\"net_listen\");",
+      "if (fd < 0) TRACE_NONDET_RECORD(\"net_listen\", make_null());",
+      "if (id < 0) TRACE_NONDET_RECORD(\"net_listen\", make_null());"
+    ],
+    "calls": [
+      "builtin_net_listen"
+    ]
+  },
+  "net_port": {
+    "function": "builtin_net_port",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"net_port\", make_int(ntohs(addr.sin_port)));",
+      "TRACE_NONDET_RECORD(\"net_port\", make_null());",
+      "TRACE_NONDET_TAKE(\"net_port\");",
+      "if (!s) TRACE_NONDET_RECORD(\"net_port\", make_null());"
+    ],
+    "calls": [
+      "builtin_net_port"
+    ]
+  },
+  "net_recv": {
+    "function": "builtin_net_recv",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"net_recv\", make_null());",
+      "TRACE_NONDET_RECORD(\"net_recv\", net_bytes_to_buffer(buf, (int)n));",
+      "TRACE_NONDET_TAKE(\"net_recv\");",
+      "if (!s) TRACE_NONDET_RECORD(\"net_recv\", make_null());"
+    ],
+    "calls": [
+      "builtin_net_recv",
+      "net_bytes_to_buffer"
+    ]
+  },
+  "net_send": {
+    "function": "builtin_net_send",
+    "direct": [],
+    "calls": [
+      "builtin_net_send",
+      "net_send_bytes"
+    ]
+  },
+  "numerical_grad": {
+    "function": "builtin_numerical_grad",
+    "direct": [
+      "grad->data.buffer.data[i] = (loss_plus - loss_minus) / (2.0 * eps);",
+      "if (!row || row->type != VAL_LIST) { list_append_owned(grad, make_list(0)); continue; }",
+      "list_append_owned(grad, grad_row);",
+      "list_append_owned(grad, make_float(eigs_math_result((lp - lm) / (2.0 * eps))));",
+      "list_append_owned(grad_row, make_float(eigs_math_result((lp - lm) / (2.0 * eps))));",
+      "param->data.buffer.data[i] = old_val + eps;",
+      "param->data.buffer.data[i] = old_val - eps;",
+      "param->data.buffer.data[i] = old_val;"
+    ],
+    "calls": [
+      "builtin_numerical_grad",
+      "gradient_container_unchanged",
+      "gradient_perturb",
+      "gradient_restore",
+      "list_append_owned",
+      "make_buffer_like",
+      "numerical_loss"
+    ]
+  },
+  "numerical_grad_cols": {
+    "function": "builtin_numerical_grad_cols",
+    "direct": [
+      "bgrad->data.buffer.data[k] = (loss_plus - loss_minus) / (2.0 * eps);",
+      "list_append_owned(grad, grow);",
+      "list_append_owned(grow, make_float(0.0));",
+      "list_set_f64(grad_row, col, eigs_math_result((loss_plus - loss_minus) / (2.0 * eps)));",
+      "matrix->data.buffer.data[k] = old_val + eps;",
+      "matrix->data.buffer.data[k] = old_val - eps;",
+      "matrix->data.buffer.data[k] = old_val;"
+    ],
+    "calls": [
+      "builtin_numerical_grad_cols",
+      "gradient_container_unchanged",
+      "gradient_perturb",
+      "gradient_restore",
+      "list_append_owned",
+      "make_buffer_like",
+      "numerical_loss"
+    ]
+  },
+  "numerical_grad_rows": {
+    "function": "builtin_numerical_grad_rows",
+    "direct": [
+      "bgrad->data.buffer.data[k] = (loss_plus - loss_minus) / (2.0 * eps);",
+      "list_append_owned(grad, grow);",
+      "list_append_owned(grow, make_float(0.0));",
+      "list_set_f64(grad_row, c, eigs_math_result((loss_plus - loss_minus) / (2.0 * eps)));",
+      "matrix->data.buffer.data[k] = old_val + eps;",
+      "matrix->data.buffer.data[k] = old_val - eps;",
+      "matrix->data.buffer.data[k] = old_val;"
+    ],
+    "calls": [
+      "builtin_numerical_grad_rows",
+      "gradient_container_unchanged",
+      "gradient_perturb",
+      "gradient_restore",
+      "list_append_owned",
+      "make_buffer_like",
+      "numerical_loss"
+    ]
+  },
+  "observe": {
+    "function": "builtin_observe",
+    "direct": [
+      "list_append_owned(list, make_float(0.0));",
+      "list_append_owned(list, make_str(\"equilibrium\"));"
+    ],
+    "calls": [
+      "builtin_observe",
+      "list_append_owned"
+    ]
+  },
+  "print": {
+    "function": "builtin_print",
+    "direct": [],
+    "calls": [
+      "builtin_print",
+      "value_to_string"
+    ]
+  },
+  "random": {
+    "function": "builtin_random",
+    "direct": [
+      "TRACE_NONDET_RET(\"random\", make_float(eigs_random_double()));"
+    ],
+    "calls": [
+      "builtin_random"
+    ]
+  },
+  "random_hex": {
+    "function": "builtin_random_hex",
+    "direct": [
+      "TRACE_NONDET_RET(\"random_hex\", make_str(hex));",
+      "if (!urand) TRACE_NONDET_RET(\"random_hex\", make_str(\"\"));",
+      "if ((int)got < bytes_needed) TRACE_NONDET_RET(\"random_hex\", make_str(\"\"));",
+      "if (n <= 0 || n > 256) TRACE_NONDET_RET(\"random_hex\", make_str(\"\"));"
+    ],
+    "calls": [
+      "builtin_random_hex"
+    ]
+  },
+  "random_int": {
+    "function": "builtin_random_int",
+    "direct": [
+      "TRACE_NONDET_RET(\"random_int\", make_int(lo_i + (eigs_random_long() % (int64_t)span)));",
+      "if (hi_i < lo_i) TRACE_NONDET_RET(\"random_int\", make_int(lo_i));"
+    ],
+    "calls": [
+      "builtin_random_int"
+    ]
+  },
+  "random_normal": {
+    "function": "builtin_random_normal",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"random_normal\", make_null());",
+      "TRACE_NONDET_RECORD(\"random_normal\", out);",
+      "TRACE_NONDET_RECORD(\"random_normal\", outer);",
+      "TRACE_NONDET_TAKE(\"random_normal\");",
+      "list_append_owned(out, make_float(eigs_math_result(z * scale)));",
+      "list_append_owned(outer, row);",
+      "list_append_owned(row, make_float(eigs_math_result(z * scale)));"
+    ],
+    "calls": [
+      "builtin_random_normal",
+      "list_append_owned"
+    ]
+  },
+  "range": {
+    "function": "builtin_range",
+    "direct": [
+      "list_append(result, v);"
+    ],
+    "calls": [
+      "builtin_range",
+      "list_append"
+    ]
+  },
+  "read_bytes": {
+    "function": "builtin_read_bytes",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"read_bytes\", result);",
+      "if (!buf) { fclose(f); TRACE_NONDET_RECORD(\"read_bytes\", make_null()); }",
+      "list_append_owned(result, make_int(buf[i]));"
+    ],
+    "calls": [
+      "builtin_read_bytes",
+      "file_io_error",
+      "file_io_replay",
+      "list_append_owned",
+      "reader_cap_raise"
+    ]
+  },
+  "read_bytes_buf": {
+    "function": "builtin_read_bytes_buf",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"read_bytes_buf\", v);",
+      "for (size_t i = 0; i < nread; i++) v->data.buffer.data[i] = (double)buf[i];",
+      "if (!buf) { fclose(f); TRACE_NONDET_RECORD(\"read_bytes_buf\", make_null()); }",
+      "v->data.buffer.data = xcalloc(nread > 0 ? nread : 1, sizeof(double));",
+      "v->data.buffer.data = xcalloc(nread ? nread : 1, sizeof(double));",
+      "v->data.buffer.data[i] = (double)buf[i];"
+    ],
+    "calls": [
+      "builtin_read_bytes_buf",
+      "file_io_error",
+      "file_io_replay",
+      "reader_cap_raise"
+    ]
+  },
+  "read_line": {
+    "function": "builtin_read_line",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"read_line\", make_null());",
+      "TRACE_NONDET_RECORD(\"read_line\", v);",
+      "TRACE_NONDET_TAKE(\"read_line\");"
+    ],
+    "calls": [
+      "builtin_read_line"
+    ]
+  },
+  "read_text": {
+    "function": "builtin_read_text",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"read_text\", result);",
+      "if (!buf) { fclose(f); TRACE_NONDET_RECORD(\"read_text\", make_str(\"\")); }"
+    ],
+    "calls": [
+      "builtin_read_text",
+      "file_io_error",
+      "file_io_replay",
+      "reader_cap_raise"
+    ]
+  },
+  "remove_file": {
+    "function": "builtin_remove_file",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"remove_file\", make_bool(1));"
+    ],
+    "calls": [
+      "builtin_remove_file",
+      "file_io_error",
+      "file_io_replay"
+    ]
+  },
+  "rename": {
+    "function": "builtin_rename",
+    "direct": [
+      "TRACE_NONDET_RECORD(\"rename\", make_bool(1));"
+    ],
+    "calls": [
+      "builtin_rename",
+      "file_io_error",
+      "file_io_replay"
+    ]
+  },
+  "reshape": {
+    "function": "builtin_reshape",
+    "direct": [
+      "v->data.buffer.data = xcalloc(b->data.buffer.count > 0 ? (size_t)b->data.buffer.count : 1, sizeof(double));"
+    ],
+    "calls": [
+      "builtin_reshape"
+    ]
+  },
+  "sandbox_run": {
+    "function": "builtin_sandbox_run",
+    "direct": [
+      "dict_set(out, \"ok\", make_bool(0));   /* #1637: ok is a bool */",
+      "dict_set(out, \"ok\", make_bool(ok != 0));   /* #1637: ok is a bool (immortal) */",
+      "dict_set_owned(ev, \"file\", make_str(\"<sandbox>\"));",
+      "dict_set_owned(ev, \"file\", make_str(g_error_file));",
+      "dict_set_owned(ev, \"file\", make_str(g_sandbox_refusal_file));",
+      "dict_set_owned(ev, \"kind\",",
+      "dict_set_owned(ev, \"kind\", make_str(\"sandbox\"));",
+      "dict_set_owned(ev, \"kind\", make_str(err_kind_name((ErrKind)g_error_kind)));",
+      "dict_set_owned(ev, \"kind\", make_str(err_kind_name(EK_SANDBOX)));",
+      "dict_set_owned(ev, \"kind\", make_str(err_kind_name(EK_VALUE)));",
+      "dict_set_owned(ev, \"line\", make_int(0));",
+      "dict_set_owned(ev, \"line\", make_int(g_error_line));",
+      "dict_set_owned(ev, \"line\", make_int(g_sandbox_refusal_line));",
+      "dict_set_owned(ev, \"message\",",
+      "dict_set_owned(ev, \"message\", make_str(capmsg));",
+      "dict_set_owned(ev, \"message\", make_str(g_error_raw));",
+      "dict_set_owned(ev, \"message\", make_str(g_sandbox_refusal_msg));",
+      "dict_set_owned(out, \"error\", ev);",
+      "if (result) { dict_set(out, \"result\", result); val_decref(result); }"
+    ],
+    "calls": [
+      "builtin_sandbox_run",
+      "compile_ast",
+      "dict_set",
+      "dict_set_owned",
+      "vm_build_chunk_desc",
+      "vm_execute"
+    ]
+  },
+  "scan_int_tokens": {
+    "function": "builtin_scan_int_tokens",
+    "direct": [
+      "list_append_owned(out, row);  /* adopt the freshly-built row */",
+      "list_append_owned(row, make_int((p - base)));",
+      "list_append_owned(row, make_int((start - base)));",
+      "list_append_owned(row, make_int(int_value));",
+      "list_append_owned(row, make_int(is_int));",
+      "list_append_owned(row, make_int(token_col));",
+      "list_append_owned(row, make_int(token_line));",
+      "list_append_owned(row, make_str(token));"
+    ],
+    "calls": [
+      "builtin_scan_int_tokens",
+      "list_append_owned"
+    ]
+  },
+  "scan_ints": {
+    "function": "builtin_scan_ints",
+    "direct": [
+      "if (valid) list_append_owned(out, make_int(value));"
+    ],
+    "calls": [
+      "builtin_scan_ints",
+      "list_append_owned"
+    ]
+  },
+  "send": {
+    "function": "builtin_send",
+    "direct": [],
+    "calls": [
+      "builtin_send",
+      "val_clone_for_send"
+    ]
+  },
+  "set_at": {
+    "function": "builtin_set_at",
+    "direct": [
+      "buf->data.buffer.data[off] = value;",
+      "list_set_slot_owned(list, idx, slot_read_owned(list_slot(arg, 2)));",
+      "list_set_slot_owned(rowv, col, slot_read_owned(list_slot(arg, 3)));"
+    ],
+    "calls": [
+      "builtin_set_at"
+    ]
+  },
+  "sgd_update": {
+    "function": "builtin_sgd_update",
+    "direct": [
+      "param->data.buffer.data[i] -= lr * grad->data.buffer.data[i];"
+    ],
+    "calls": [
+      "builtin_sgd_update",
+      "sgd_cell"
+    ]
+  },
+  "sgd_update_cols": {
+    "function": "builtin_sgd_update_cols",
+    "direct": [
+      "matrix->data.buffer.data[(int64_t)r * matrix->data.buffer.cols + col] -="
+    ],
+    "calls": [
+      "builtin_sgd_update_cols",
+      "sgd_cell"
+    ]
+  },
+  "sgd_update_rows": {
+    "function": "builtin_sgd_update_rows",
+    "direct": [
+      "matrix->data.buffer.data[(int64_t)r * matrix->data.buffer.cols + c] -="
+    ],
+    "calls": [
+      "builtin_sgd_update_rows",
+      "sgd_cell"
+    ]
+  },
+  "shared_get": {
+    "function": "builtin_shared_get",
+    "direct": [],
+    "calls": [
+      "builtin_shared_get",
+      "eigs_json_parse_root"
+    ]
+  },
+  "shared_incr": {
+    "function": "builtin_shared_incr",
+    "direct": [],
+    "calls": [
+      "builtin_shared_incr",
+      "eigs_json_encode",
+      "eigs_json_parse_root"
+    ]
+  },
+  "shared_keys": {
+    "function": "builtin_shared_keys",
+    "direct": [
+      "list_append_owned(list, make_str(s->shared[i].key));"
+    ],
+    "calls": [
+      "builtin_shared_keys",
+      "list_append_owned"
+    ]
+  },
+  "shared_set": {
+    "function": "builtin_shared_set",
+    "direct": [],
+    "calls": [
+      "builtin_shared_set",
+      "eigs_json_encode"
+    ]
+  },
+  "sort": {
+    "function": "builtin_sort",
+    "direct": [
+      "list_sort(arg, (t == VAL_FLOAT || t == VAL_INT) ? sort_cmp_num : sort_cmp_str);"
+    ],
+    "calls": [
+      "builtin_sort"
+    ]
+  },
+  "sort_by": {
+    "function": "builtin_sort_by",
+    "direct": [
+      "list_append_slot(result, list_slot(list, pairs[i].index));"
+    ],
+    "calls": [
+      "builtin_sort_by",
+      "call_eigs_fn"
+    ]
+  },
+  "spawn": {
+    "function": "builtin_spawn",
+    "direct": [
+      "dict_set_owned(d, \"_handle_gen\", make_int(hgen));",
+      "dict_set_owned(d, \"_handle_id\", make_int(hid));",
+      "dict_set_owned(d, \"done\", make_int(0));"
+    ],
+    "calls": [
+      "builtin_spawn",
+      "dict_set_owned",
+      "trace_spawn_prepare"
+    ]
+  },
+  "split": {
+    "function": "builtin_split",
+    "direct": [
+      "list_append_owned(list, make_str_owned(seg));",
+      "list_append_owned(list, make_str_owned(xstrdup(p)));",
+      "list_append_owned(list, make_str_owned(xstrdup(str)));"
+    ],
+    "calls": [
+      "builtin_split",
+      "list_append_owned"
+    ]
+  },
+  "state_at": {
+    "function": "builtin_state_at",
+    "direct": [],
+    "calls": [
+      "builtin_state_at",
+      "trace_state_at"
+    ]
+  },
+  "store_close": {
+    "function": "builtin_store_close",
+    "direct": [],
+    "calls": [
+      "builtin_store_close",
+      "store_flush_catalog"
+    ]
+  },
+  "store_collections": {
+    "function": "builtin_store_collections",
+    "direct": [
+      "list_append_owned(list, make_str(store->catalog->data.dict.keys[i]));"
+    ],
+    "calls": [
+      "builtin_store_collections",
+      "list_append_owned"
+    ]
+  },
+  "store_delete": {
+    "function": "builtin_store_delete",
+    "direct": [],
+    "calls": [
+      "builtin_store_delete",
+      "store_tombstone"
+    ]
+  },
+  "store_drop": {
+    "function": "builtin_store_drop",
+    "direct": [
+      "dict_set_owned(new_catalog, store->catalog->data.dict.keys[i],",
+      "store_write_page(store, pg, &page);"
+    ],
+    "calls": [
+      "builtin_store_drop",
+      "dict_set_owned",
+      "store_flush_catalog",
+      "store_write_page"
+    ]
+  },
+  "store_get": {
+    "function": "builtin_store_get",
+    "direct": [],
+    "calls": [
+      "builtin_store_get",
+      "store_json_decode"
+    ]
+  },
+  "store_open": {
+    "function": "builtin_store_open",
+    "direct": [
+      "dict_set_owned(handle, \"_store_gen\", make_int(sgen));",
+      "dict_set_owned(handle, \"_store_id\", make_int(hid));",
+      "dict_set_owned(handle, \"_type\", make_str(\"eigenstore\"));",
+      "fp = xfopen_write(path, \"w+b\");",
+      "store_write_header(store);",
+      "store_write_page(store, 0, &page);"
+    ],
+    "calls": [
+      "builtin_store_open",
+      "dict_set_owned",
+      "store_load_catalog",
+      "store_write_header",
+      "store_write_page",
+      "xfopen_write"
+    ]
+  },
+  "store_put": {
+    "function": "builtin_store_put",
+    "direct": [],
+    "calls": [
+      "builtin_store_put",
+      "store_dict_to_json",
+      "store_put_encoded"
+    ]
+  },
+  "store_query": {
+    "function": "builtin_store_query",
+    "direct": [
+      "if (val) list_append_owned(results, val);  /* adopt parser's ref */"
+    ],
+    "calls": [
+      "builtin_store_query",
+      "list_append_owned",
+      "store_json_decode"
+    ]
+  },
+  "store_update": {
+    "function": "builtin_store_update",
+    "direct": [],
+    "calls": [
+      "builtin_store_update",
+      "store_dict_to_json",
+      "store_put_encoded",
+      "store_tombstone",
+      "store_untombstone"
+    ]
+  },
+  "str": {
+    "function": "builtin_str",
+    "direct": [],
+    "calls": [
+      "builtin_str",
+      "value_to_string"
+    ]
+  },
+  "stream_open": {
+    "function": "builtin_stream_open",
+    "direct": [
+      "/* fs:ANSWER a short fwrite(3) of the header \u2014 an I/O failure after the",
+      "g_stream_file = xfopen_write(path_val->data.str, \"wb\");",
+      "if (fwrite(header, sizeof(uint32_t), 4, g_stream_file) != 4) {"
+    ],
+    "calls": [
+      "builtin_stream_open",
+      "xfopen_write"
+    ]
+  },
+  "stream_write": {
+    "function": "builtin_stream_write",
+    "direct": [
+      "/* fs:ANSWER a short fwrite(3) of one float64 \u2014 an I/O failure, not an",
+      "if (fwrite(&val, sizeof(double), 1, g_stream_file) != 1) {"
+    ],
+    "calls": [
+      "builtin_stream_write"
+    ]
+  },
+  "task_detach": {
+    "function": "builtin_task_detach",
+    "direct": [],
+    "calls": [
+      "builtin_task_detach",
+      "task_do_detach"
+    ]
+  },
+  "task_kill": {
+    "function": "builtin_task_kill",
+    "direct": [],
+    "calls": [
+      "builtin_task_kill",
+      "task_do_kill"
+    ]
+  },
+  "task_send": {
+    "function": "builtin_task_send",
+    "direct": [],
+    "calls": [
+      "builtin_task_send",
+      "val_clone_for_send"
+    ]
+  },
+  "task_spawn": {
+    "function": "builtin_task_spawn",
+    "direct": [],
+    "calls": [
+      "builtin_task_spawn",
+      "val_clone_for_send"
+    ]
+  },
+  "add": {
+    "function": "builtin_tensor_add",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_add",
+      "tensor_elementwise_slots"
+    ]
+  },
+  "divide": {
+    "function": "builtin_tensor_divide",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_divide",
+      "tensor_elementwise_slots"
+    ]
+  },
+  "exp": {
+    "function": "builtin_tensor_exp",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_exp",
+      "tensor_unary"
+    ]
+  },
+  "gather": {
+    "function": "builtin_tensor_gather",
+    "direct": [
+      "if (!shaped) { out->data.buffer.data[i] = 0.0; continue; }",
+      "list_append_owned(out, cell.is_int ? make_int(cell.value.i64) : make_float(cell.value.f64));",
+      "list_append_owned(out, make_float(0.0));",
+      "out->data.buffer.data[i] = tensor->data.buffer.data[(int64_t)i * cols + idx];"
+    ],
+    "calls": [
+      "builtin_tensor_gather",
+      "list_append_owned",
+      "make_shaped_buffer"
+    ]
+  },
+  "leaky_relu": {
+    "function": "builtin_tensor_leaky_relu",
+    "direct": [
+      "res->data.buffer.data[i] = (x < 0.0) ? 0.01 * x : x;"
+    ],
+    "calls": [
+      "builtin_tensor_leaky_relu",
+      "flat_to_like",
+      "make_buffer_like"
+    ]
+  },
+  "tensor_load": {
+    "function": "builtin_tensor_load",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_load",
+      "flat_to_tensor_1d",
+      "flat_to_tensor_2d",
+      "tensor_load_record_verdict",
+      "trace_replay_take"
+    ]
+  },
+  "log": {
+    "function": "builtin_tensor_log",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_log",
+      "tensor_unary"
+    ]
+  },
+  "log_softmax": {
+    "function": "builtin_tensor_log_softmax",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_log_softmax",
+      "flat_to_like",
+      "make_buffer_like"
+    ]
+  },
+  "matmul": {
+    "function": "builtin_tensor_matmul",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_matmul",
+      "flat_to_tensor_1d",
+      "flat_to_tensor_2d",
+      "make_shaped_buffer"
+    ]
+  },
+  "matmul_at": {
+    "function": "builtin_tensor_matmul_at",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_matmul_at",
+      "flat_to_tensor_2d",
+      "make_shaped_buffer"
+    ]
+  },
+  "matmul_bt": {
+    "function": "builtin_tensor_matmul_bt",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_matmul_bt",
+      "flat_to_tensor_1d",
+      "flat_to_tensor_2d",
+      "make_shaped_buffer"
+    ]
+  },
+  "multiply": {
+    "function": "builtin_tensor_multiply",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_multiply",
+      "tensor_elementwise_slots"
+    ]
+  },
+  "negative": {
+    "function": "builtin_tensor_negative",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_negative",
+      "tensor_unary"
+    ]
+  },
+  "pow": {
+    "function": "builtin_tensor_pow",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_pow",
+      "tensor_elementwise_slots"
+    ]
+  },
+  "relu": {
+    "function": "builtin_tensor_relu",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_relu",
+      "flat_to_like"
+    ]
+  },
+  "tensor_save": {
+    "function": "builtin_tensor_save",
+    "direct": [
+      "FILE *f = xfopen_write(path_val->data.str, \"wb\");",
+      "fwrite(flat, sizeof(double), (size_t)total, f) != (size_t)total) {",
+      "if (fwrite(obs, sizeof(double), 5, f) != 5) {",
+      "int write_failed = fwrite(header, sizeof(uint32_t), 4, f) != 4;"
+    ],
+    "calls": [
+      "builtin_tensor_save",
+      "xfopen_write"
+    ]
+  },
+  "shape": {
+    "function": "builtin_tensor_shape",
+    "direct": [
+      "list_append_owned(out, make_int(0));",
+      "list_append_owned(out, make_int(arg->data.buffer.cols));",
+      "list_append_owned(out, make_int(arg->data.buffer.count));",
+      "list_append_owned(out, make_int(arg->data.buffer.rows));",
+      "list_append_owned(out, make_int(arg->data.list.count));",
+      "list_append_owned(out, make_int(first->data.list.count));"
+    ],
+    "calls": [
+      "builtin_tensor_shape",
+      "list_append_owned"
+    ]
+  },
+  "softmax": {
+    "function": "builtin_tensor_softmax",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_softmax",
+      "flat_to_like",
+      "make_buffer_like"
+    ]
+  },
+  "sqrt": {
+    "function": "builtin_tensor_sqrt",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_sqrt",
+      "tensor_unary"
+    ]
+  },
+  "subtract": {
+    "function": "builtin_tensor_subtract",
+    "direct": [],
+    "calls": [
+      "builtin_tensor_subtract",
+      "tensor_elementwise_slots"
+    ]
+  },
+  "zeros": {
+    "function": "builtin_tensor_zeros",
+    "direct": [
+      "for (int c = 0; c < cols; c++) list_append_owned(row, make_float(0.0));",
+      "list_append_owned(outer, row);"
+    ],
+    "calls": [
+      "builtin_tensor_zeros",
+      "list_append_owned",
+      "make_shaped_buffer"
+    ]
+  },
+  "zeros_like": {
+    "function": "builtin_tensor_zeros_like",
+    "direct": [
+      "list_append_owned(out, builtin_tensor_zeros_like(list_get_view(arg, i, &child_view)));"
+    ],
+    "calls": [
+      "builtin_tensor_zeros_like",
+      "list_append_owned",
+      "make_buffer_like"
+    ]
+  },
+  "text_builder_append": {
+    "function": "builtin_text_builder_append",
+    "direct": [
+      "text_builder_append_value(builder, BUILTIN_LIST_VIEW(arg, 1));"
+    ],
+    "calls": [
+      "builtin_text_builder_append",
+      "text_builder_append_value"
+    ]
+  },
+  "text_builder_append_line": {
+    "function": "builtin_text_builder_append_line",
+    "direct": [
+      "text_builder_append_raw(builder, \"\\n\", 1);",
+      "text_builder_append_value(builder, BUILTIN_LIST_VIEW(arg, 1));"
+    ],
+    "calls": [
+      "builtin_text_builder_append_line",
+      "text_builder_append_raw",
+      "text_builder_append_value"
+    ]
+  },
+  "throw": {
+    "function": "builtin_throw",
+    "direct": [],
+    "calls": [
+      "builtin_throw",
+      "value_to_string"
+    ]
+  },
+  "values": {
+    "function": "builtin_values",
+    "direct": [
+      "list_append_slot(list, dict_value_slot(arg, i));"
+    ],
+    "calls": [
+      "builtin_values",
+      "eigs_module_ns_sync"
+    ]
+  },
+  "vm_run_bytecode": {
+    "function": "builtin_vm_run_bytecode",
+    "direct": [],
+    "calls": [
+      "builtin_vm_run_bytecode",
+      "vm_build_chunk_desc",
+      "vm_execute"
+    ]
+  },
+  "write": {
+    "function": "builtin_write",
+    "direct": [],
+    "calls": [
+      "builtin_write",
+      "value_to_string"
+    ]
+  },
+  "write_bytes": {
+    "function": "builtin_write_bytes",
+    "direct": [
+      "FILE *f = xfopen_write(path_val->data.str, append ? \"ab\" : \"wb\");",
+      "TRACE_NONDET_RECORD(\"write_bytes\", make_int((int64_t)written));",
+      "size_t written = fwrite(out, 1, (size_t)n, f);"
+    ],
+    "calls": [
+      "builtin_write_bytes",
+      "file_io_error",
+      "file_io_replay",
+      "xfopen_write"
+    ]
+  },
+  "write_text": {
+    "function": "builtin_write_text",
+    "direct": [
+      "FILE *f = xfopen_write(path_val->data.str, \"w\");",
+      "TRACE_NONDET_RECORD(\"write_text\", make_bool(1));",
+      "size_t written = fwrite(text_val->data.str, 1, len, f);"
+    ],
+    "calls": [
+      "builtin_write_text",
+      "file_io_error",
+      "file_io_replay",
+      "xfopen_write"
+    ]
+  }
+}

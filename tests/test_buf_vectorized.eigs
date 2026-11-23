@@ -109,7 +109,7 @@ expect_kind of ["non-buffer raises", "type_mismatch", bad_type]
 
 define bad_gain as:
     buf_mix of [d, s, 0, 0, 1, "loud"]
-expect_kind of ["non-numeric gain raises", "value", bad_gain]
+expect_kind of ["non-numeric gain raises", "type_mismatch", bad_gain]
 
 define bad_dot as:
     buf_dot of [p, p, 2, 0, 2]

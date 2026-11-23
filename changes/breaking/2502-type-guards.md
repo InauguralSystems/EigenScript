@@ -1,0 +1,1 @@
+- Type errors and surplus fixed-shape arguments raise in every `EIGS_STRICT` state, before mutation, I/O or tape effects. Nested bool checks traverse list/dictionary graphs without C recursion. `EIGS_STRICT` and `eigs_state_set_strict` control only IEEE arithmetic traps; the embedding guard setter has been removed.

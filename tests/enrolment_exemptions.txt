@@ -11,3 +11,4 @@ tests/test_variant_stdlib.eigs | alternate oracle: 18f-variant-stdlib-1679.sh ru
 tests/http_request_header_reference.py | imported #2373 byte oracle used by tests/test_http_request_header.py in suite section 45h; helper module, not a standalone test
 tests/http_fetch_peer.py | imported raw socket peer used by tests/test_http_fetch.py in suite section 45i; its listener is exercised by the contract rows
 tools/embed_strict_variants.py | manual embedding API mutation gate, run by hand when the three strict calls or their test program change; it builds the runtime once for each wrong variant, which takes minutes where no compiler cache is configured
+tests/type_errors_2502_plants.py | One-time #2502 source fault plants, run explicitly by the builder gate plan; deliberately rebuilds mutated units, not a routine suite program.

@@ -1,3 +1,12 @@
+# #2502: invalid argument types raise independently of arithmetic traps.
+define guard_kind(thunk, expected_kind, label) as:
+    local seen_kind is "none"
+    try:
+        thunk of null
+    catch guard_error:
+        seen_kind is guard_error.kind
+    assert of [seen_kind == expected_kind, label]
+
 # Tests for read_text, write_text, exec_capture
 
 # ---- read_text ----
@@ -19,9 +28,7 @@ catch e:
 assert of [missing_kind == "io", "RT2 missing file should raise io"]
 assert of [contains of [missing_message, "No such file or directory"], "RT2 should expose OS reason"]
 
-# RT3: read with non-string arg returns empty string
-bad is read_text of 42
-assert of [bad == "", "RT3 non-string arg should return empty string"]
+guard_kind of [(_) => (read_text of 42), "type_mismatch", "read_text rejects non-string path"]
 
 # ---- write_text ----
 # WT1: write and read back
@@ -36,10 +43,9 @@ assert of [ok2, "WT2 write empty should succeed"]
 readback2 is read_text of "/tmp/eigen_test_wt2.txt"
 assert of [readback2 == "", "WT2 read back empty should match"]
 
-# WT3: bad args return 0
-assert of [(not (write_text of 42)), "WT3 non-list arg"]
-assert of [(not (write_text of [42, "text"])), "WT3 non-string path"]
-assert of [(not (write_text of ["/tmp/x", 42])), "WT3 non-string text"]
+guard_kind of [(_) => (write_text of 42), "type_mismatch", "write_text rejects wrong types"]
+guard_kind of [(_) => (write_text of [42, "text"]), "type_mismatch", "write_text rejects wrong types"]
+guard_kind of [(_) => (write_text of ["/tmp/x", 42]), "type_mismatch", "write_text rejects wrong types"]
 
 # ---- exec_capture ----
 # EC1: basic command
@@ -51,14 +57,8 @@ assert of [(contains of [result[1], "test123"]), "EC1 echo stdout"]
 result2 is exec_capture of ["ls", "/nonexistent_eigen_xyz"]
 assert of [result2[0] != 0, "EC2 failing command exit code"]
 
-# EC3: bad args return [-1, ""]
-result3 is exec_capture of 42
-assert of [result3[0] == -1, "EC3 bad arg exit code"]
-assert of [result3[1] == "", "EC3 bad arg stdout"]
-
-# EC4: non-string in arg list
-result4 is exec_capture of ["echo", 42]
-assert of [result4[0] == -1, "EC4 non-string arg"]
+guard_kind of [(_) => (exec_capture of 42), "type_mismatch", "exec_capture rejects non-list"]
+guard_kind of [(_) => (exec_capture of ["echo", 42]), "type_mismatch", "exec_capture rejects non-string element"]
 
 # EC5: cat without stdin should exit immediately (stdin is /dev/null)
 result5 is exec_capture of (["cat"])

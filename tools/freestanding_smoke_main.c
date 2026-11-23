@@ -18,11 +18,10 @@ static const char *fs_smoke_provider(const char *name, void *ud) {
  * sets both, then each property set by its own call unless its argument is
  * negative. 1 when the program raised, 0 when it answered, -1 when the state
  * could not be made. */
-static int strict_probe(int start, int guards, int arithmetic, const char *src) {
+static int strict_probe(int start, int arithmetic, const char *src) {
     EigsState *st = eigs_state_new();
     if (!st) return -1;
     eigs_state_set_strict(st, start);
-    if (guards >= 0) eigs_state_set_strict_guards(st, guards);
     if (arithmetic >= 0) eigs_state_set_strict_arithmetic(st, arithmetic);
     if (!eigs_thread_attach(st) || eigs_state_init_runtime(st) != 0) return -1;
     EigsValue *v = eigs_eval_string(src);
@@ -40,7 +39,6 @@ int main(int argc, char **argv) {
         argv[1][5] == 'i' && argv[1][6] == 'c' && argv[1][7] == 't' &&
         argv[1][8] == '-' && argv[1][9] == 'a' && argv[1][10] == 'p' &&
         argv[1][11] == 'i' && argv[1][12] == 0) {
-        eigs_state_set_strict_guards(NULL, 1);
         eigs_state_set_strict_arithmetic(NULL, 1);
         EigsState *defaults = eigs_open();
         if (!defaults) return 2;
@@ -54,7 +52,7 @@ int main(int argc, char **argv) {
         if (!soft) return 2;
         eigs_state_set_strict(soft, 0);
         v = eigs_eval_string("abs of \"x\"");
-        if (!v || eigs_has_error() || eigs_value_as_num(v) != 0.0) return 1;
+        if (v || !eigs_has_error()) return 1;
         eigs_value_release(v);
         eigs_close(soft);
 
@@ -71,13 +69,8 @@ int main(int argc, char **argv) {
         puts("strict off setter works");
         puts("strict on setter works");
 
-        /* The calls that set one property each (#2439). From both off, each
-         * turns its own property on and leaves the other off; from both on,
-         * each turns its own off and leaves the other on. */
-        if (strict_probe(0, 2, -1, "abs of \"x\"") != 1 || strict_probe(0, 2, -1, "1.0 / 0.0") != 0) return 1;
-        if (strict_probe(0, -1, 2, "abs of \"x\"") != 0 || strict_probe(0, -1, 2, "1.0 / 0.0") != 1) return 1;
-        if (strict_probe(2, 0, -1, "abs of \"x\"") != 0 || strict_probe(2, 0, -1, "1.0 / 0.0") != 1) return 1;
-        if (strict_probe(2, -1, 0, "abs of \"x\"") != 1 || strict_probe(2, -1, 0, "1.0 / 0.0") != 0) return 1;
+        if (strict_probe(0, 2, "abs of \"x\"") != 1 || strict_probe(0, 2, "1.0 / 0.0") != 1) return 1;
+        if (strict_probe(2, 0, "abs of \"x\"") != 1 || strict_probe(2, 0, "1.0 / 0.0") != 0) return 1;
         puts("strict one-property setters work");
         return 0;
     }

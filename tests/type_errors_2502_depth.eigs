@@ -1,0 +1,43 @@
+load_file of "lib/test.eigs"
+
+define refuses_nested(value, label) as:
+    local caught is false
+    try:
+        usleep of value
+    catch err:
+        caught is err.kind == "type_mismatch"
+    assert_true of [caught, label]
+
+cycle is []
+append of [cycle, cycle]
+usleep of cycle
+assert_true of [true, "self-referencing list without a bool terminates"]
+append of [cycle, {"nested": true}]
+refuses_nested of [cycle, "bool reached through a dict after a cycle"]
+cycle[0] is null
+cycle[1] is null
+
+refuses_nested of [{"nested": true}, "direct dictionary value"]
+refuses_nested of [[{"nested": true}], "dictionary inside a list"]
+
+nodes is []
+current is true
+for i in range of 10000:
+    local next_node is [current]
+    append of [nodes, next_node]
+    current is next_node
+refuses_nested of [current, "10000-deep list reaches its bool without C recursion"]
+# Keep all nodes pinned and detach their edges before teardown: this row tests
+# the argument scanner, independently of recursive refcount destruction.
+for node in nodes:
+    node[0] is null
+current is null
+print of "DEPTH2502: complete"
+# Recursive validation must respect positions that hold ordinary user data.
+entities is [{"px": 1, "py": 1, "active": true, "metadata": {"nested": true}}, {"px": 4, "py": 1, "active": true}]
+near is nearest_in_range of [entities, 0, 0, 10, 100, 100]
+assert_true of [near.index == 0, "entity bool flags and unrelated metadata remain valid"]
+neighbors is nearest_in_range_all of [entities, 10, 100, 100]
+assert_true of [neighbors[0].index == 1, "batched entity bool flags remain valid"]
+
+test_summary of null

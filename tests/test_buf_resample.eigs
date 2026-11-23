@@ -108,7 +108,7 @@ expect_kind of ["empty src with dst_len > 0 raises", "value", bad_empty_src]
 
 define bad_count_type as:
     buf_resample_linear of [src, "many"]
-expect_kind of ["non-numeric dst_len raises", "value", bad_count_type]
+expect_kind of ["non-numeric dst_len raises", "type_mismatch", bad_count_type]
 
 # ============================================================
 # 3. Differential — builtin == interpreted loop, exactly

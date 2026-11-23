@@ -140,20 +140,12 @@ the state is destroyed or the thread exits.
 
 ### Per-state strict mode
 
-When a state is created, it reads `EIGS_STRICT` once for argument guards and
-once for arithmetic traps; what each value gives is the table under
-[Argument guards and arithmetic traps](SPEC.md#argument-guards-and-arithmetic-traps).
-The purposeful defaults when it is unset are:
-
-```c
-eigs_state_set_strict_guards(st, 1);
-eigs_state_set_strict_arithmetic(st, 0);
-```
-
-`eigs_state_set_strict_guards` changes only argument guards,
-`eigs_state_set_strict_arithmetic` changes only arithmetic traps, and
-`eigs_state_set_strict` changes both properties together.  For all three
-calls, zero disables and any nonzero value enables the selected properties.
+When a state is created, it reads `EIGS_STRICT` once for the opt-in IEEE
+arithmetic trap. Argument type guards always raise and cannot be disabled.
+`eigs_state_set_strict_guards` has been removed. Both remaining setters,
+`eigs_state_set_strict` and `eigs_state_set_strict_arithmetic`, change only
+arithmetic traps: zero disables them and any nonzero value enables them.
+The unset default is equivalent to `eigs_state_set_strict(st, 0)`.
 Each call is valid after either `eigs_state_new` or `eigs_open`, but must be
 called before that state's first evaluation. It is null-safe. Strictness is
 plain state-local configuration, not a synchronized runtime control: never

@@ -715,19 +715,19 @@ int main(void) {
 
         CHECK(eigs_thread_switch(st) != NULL, "#1394 switch to non-strict state");
         EigsValue *soft_result = eigs_eval_string("abs of \"x\"");
-        CHECK(soft_result != NULL && eigs_value_type(soft_result) == EIGS_TYPE_NUM &&
-                  eigs_value_as_num(soft_result) == 0.0 && !eigs_has_error(),
-              "#1394 non-strict state returns the finite stand-in");
+        CHECK(soft_result == NULL && eigs_has_error(),
+              "#2502 guards raise with arithmetic off");
         eigs_value_release(soft_result);
+        eigs_clear_error();
 
         CHECK(eigs_thread_switch(strict) != NULL, "#1394 switch back to strict state");
         eigs_close(strict);
         CHECK(eigs_thread_switch(st) != NULL, "#1394 restore non-strict state");
         soft_result = eigs_eval_string("abs of \"x\"");
-        CHECK(soft_result != NULL && eigs_value_as_num(soft_result) == 0.0 &&
-                  !eigs_has_error(),
-              "#1394 non-strict state remains non-strict after switching");
+        CHECK(soft_result == NULL && eigs_has_error(),
+              "#2502 guards remain unconditional after switching");
         eigs_value_release(soft_result);
+        eigs_clear_error();
     }
 
     /* --- Eval a script that defines a global. ------------------------ */
@@ -1012,7 +1012,6 @@ int main(void) {
      * fall back while its callee source/frame can still be reported. */
     {
         int nf_saved_strict = g_strict_arithmetic;
-        int nf_saved_guards = g_strict_guards;
         unsigned nf_saved_flags = g_math_flags;
         const char *ieee_results[] = {"0.0 / 0.0", "1.0 / 0.0", "-1.0 / 0.0"};
         for (size_t ieee_i = 0; ieee_i < sizeof ieee_results / sizeof ieee_results[0]; ++ieee_i) {
@@ -1349,7 +1348,6 @@ int main(void) {
         if (nf_stderr >= 0) close(nf_stderr);
         if (nf_capture) fclose(nf_capture);
         st->strict_arithmetic = nf_saved_strict;
-        st->strict_guards = nf_saved_guards;
         g_math_flags = nf_saved_flags;
     }
 

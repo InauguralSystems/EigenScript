@@ -3565,7 +3565,7 @@ rm -f "$GA_PROBE_FILE"
 
 echo "[133] Gfx Argument-Type Guards"
 if ! echo "$GA_PROBE_OUT" | grep -q "undefined variable"; then
-    # #1361 EIGS_STRICT=0: the plain pass pins the ext_gfx wrong-type stand-ins (0/null); the strict pass below raises.
+    # #2502: all three arithmetic settings refuse wrong-typed arguments.
     GA_PLAIN=$(suite_program_run test_gfx_argtypes.eigs gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_PLAIN_RC=$?
     GA_DEFAULT=$(suite_program_run test_gfx_argtypes.eigs gfx_headless_run 30 env -u EIGS_STRICT SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_DEFAULT_RC=$?
     GA_STRICT=$(suite_program_run test_gfx_argtypes.eigs gfx_headless_run 30 env EIGS_STRICT=1 SDL_AUDIODRIVER=dummy ./eigenscript ../tests/test_gfx_argtypes.eigs 2>&1); GA_STRICT_RC=$?
@@ -3581,11 +3581,14 @@ if ! echo "$GA_PROBE_OUT" | grep -q "undefined variable"; then
     # the same program must produce identical output.
     GA_TDIR=$(mktemp -d /tmp/eigs_ga_tape_XXXXXX)
     cat > "$GA_TDIR/tape.eigs" <<'TAPEPROG'
-print of (audio_capture_open of ["44100", "1"])
+try:
+    audio_capture_open of ["44100", "1"]
+catch e:
+    print of e.kind
 print of (audio_capture_open of [44100, 1])
 print of (audio_capture_close of null)
 TAPEPROG
-    # #1361 EIGS_STRICT=0: the rejected call must answer its stand-in 0 and run on, so line 2 reaches the tape.
+    # The rejected call raises into catch; only the valid call reaches the tape.
     gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_TDIR/r.tape" ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/first.out" 2>&1
     gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_TDIR/r.tape" ./eigenscript "$GA_TDIR/tape.eigs" > "$GA_TDIR/second.out" 2>&1
     if cmp -s "$GA_TDIR/first.out" "$GA_TDIR/second.out"; then GA_TAPE_OK=1; else GA_TAPE_OK=0; fi
@@ -3608,11 +3611,14 @@ TAPEPROG
     cat > "$GA_RDIR/tape.eigs" <<'READPROG'
 o is gfx_open of [32, 32, "eigs #1007 gfx_read tape"]
 ignore is gfx_clear of [1, 2, 3]
-print of (gfx_read of ["1", 1])
+try:
+    gfx_read of ["1", 1]
+catch e:
+    print of e.kind
 print of (gfx_read of [1, 1])
 ignore is gfx_close of null
 READPROG
-    # #1361 EIGS_STRICT=0: gfx_read of ["1", 1] must answer its stand-in and run on to the well-typed read.
+    # The rejected read raises into catch before the well-typed read.
     gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy EIGS_TRACE="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/first.out" 2>&1
     gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy EIGS_REPLAY="$GA_RDIR/r.tape" ./eigenscript "$GA_RDIR/tape.eigs" > "$GA_RDIR/second.out" 2>&1
     if cmp -s "$GA_RDIR/first.out" "$GA_RDIR/second.out"; then GA_READ_OK=1; else GA_READ_OK=0; fi
@@ -3652,26 +3658,18 @@ DFLTREAD
     GA_DFLT_CAP_N=$(grep -c '^N [0-9][0-9]* audio_capture_open=' "$GA_DDIR/cap.tape" 2>/dev/null); GA_DFLT_CAP_N=${GA_DFLT_CAP_N:-0}
     GA_DFLT_READ_N=$(grep -c '^N [0-9][0-9]* gfx_read=' "$GA_DDIR/read.tape" 2>/dev/null); GA_DFLT_READ_N=${GA_DFLT_READ_N:-0}
     rm -rf "$GA_DDIR"
-    # TWO environment axes now, each derived from the file's own marker so
-    # neither branch is a floor: an audio device adds 3 rows to the plain pass
-    # and 2 to the strict one, and a real renderer adds the 6 pixel-proof rows
-    # (plain only — the strict pass raises before it can draw). Counting only
-    # the audio axis, which is what this did while the pixel proof was being
-    # added, made the plain pin wrong by exactly 3 on a machine WITH libSDL2
-    # and right on one without.
-    GA_WANT_PLAIN=30; GA_WANT_STRICT=84
+    # Derive device-only assertion counts from the file's explicit marker.
+    GA_WANT_PLAIN=84; GA_WANT_STRICT=84
     echo "$GA_PLAIN"  | grep -q "pixel-proof: 1"  && GA_WANT_PLAIN=$((GA_WANT_PLAIN + 6))
     if echo "$GA_STRICT" | grep -q "audio-device: 1"; then
-        GA_WANT_PLAIN=$((GA_WANT_PLAIN + 3)); GA_WANT_STRICT=$((GA_WANT_STRICT + 2))
+        GA_WANT_PLAIN=$((GA_WANT_PLAIN + 3)); GA_WANT_STRICT=$((GA_WANT_STRICT + 3))
     fi
     GA_GOT_PLAIN=$(echo "$GA_PLAIN"   | sed -n 's/^Tests: \([0-9]*\) .*/\1/p' | tail -1)
     GA_GOT_DEFAULT=$(echo "$GA_DEFAULT" | sed -n 's/^Tests: \([0-9]*\) .*/\1/p' | tail -1)
     GA_GOT_STRICT=$(echo "$GA_STRICT" | sed -n 's/^Tests: \([0-9]*\) .*/\1/p' | tail -1)
-    # `strict-pass` is a second vacuity guard: the strict assertions live behind
-    # an env test inside the .eigs file, so without it the whole block could be
-    # skipped and the pass would still print "All tests passed".
+    # Require both the completion marker and the exact assertion count.
     if rc_ok "$GA_PLAIN_RC" "$GA_PLAIN" && echo "$GA_PLAIN" | grep -q "All tests passed" \
-       && echo "$GA_PLAIN" | grep -q "strict-pass: 0" \
+       && echo "$GA_PLAIN" | grep -q "strict-pass: 1" \
        && rc_ok "$GA_DEFAULT_RC" "$GA_DEFAULT" && echo "$GA_DEFAULT" | grep -q "All tests passed" \
        && echo "$GA_DEFAULT" | grep -q "strict-pass: 1" && [ "$GA_GOT_DEFAULT" = "$GA_WANT_STRICT" ] \
        && rc_ok "$GA_STRICT_RC" "$GA_STRICT" && echo "$GA_STRICT" | grep -q "All tests passed" \
@@ -3689,7 +3687,7 @@ DFLTREAD
         # Say out loud what this environment could NOT exercise, rather than
         # letting a green line imply full coverage.
         echo "$GA_PLAIN" | grep -q "pixel-proof: 1" \
-            || echo "  NOTE: libSDL2 absent — the pixel proof did not run, so the non-strict rows are not discriminating here; the strict pass is."
+            || echo "  NOTE: legacy quiet-argument pixel answers are retired; typed rejections are checked in all three states."
         echo "$GA_STRICT" | grep -q "audio-device: 1" \
             || echo "  NOTE: no audio device — the sample-element coercion rows did not run."
     else
@@ -3746,11 +3744,24 @@ if ! echo "$GD_PROBE_OUT" | grep -q "undefined variable"; then
     GD_DIR=$(mktemp -d /tmp/eigs_gd_XXXXXX)
     GD_LEAKS=""; GD_RUN=0; GD_EMPTY=""
     gd_probe() {   # <name> <program> <expect: same|differ>
-        local nm="$1" prog="$2" want="$3" a b
-        printf '%s\n' "$prog" > "$GD_DIR/p.eigs"
-        # #1361 EIGS_STRICT=0: each probe reads the wrong-type stand-in's returned data; under the default it raises instead.
-        a=$(gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
-        b=$(gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1 | head -1)
+        local nm="$1" prog="$2" want="$3" a b a_full b_full a_rc b_rc
+        case "$nm" in
+            audio_mix|random_control) printf '%s\n' "$prog" > "$GD_DIR/p.eigs" ;;
+            *) printf 'try:\n    %s\ncatch err:\n    print of err.kind\n' "$prog" > "$GD_DIR/p.eigs" ;;
+        esac
+        a_full=$(gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1); a_rc=$?
+        b_full=$(gfx_headless_run 30 env EIGS_STRICT=0 SDL_AUDIODRIVER=dummy ./eigenscript "$GD_DIR/p.eigs" 2>&1); b_rc=$?
+        a=${a_full%%$'\n'*}; b=${b_full%%$'\n'*}
+        if ! rc_ok "$a_rc" "$a_full" || ! rc_ok "$b_rc" "$b_full" ||
+           [ "$a_rc" -ne 0 ] || [ "$b_rc" -ne 0 ]; then
+            GD_EMPTY="$GD_EMPTY $nm(exit)"
+        fi
+        case "$nm" in
+            audio_mix|random_control) ;;
+            *) if [ "$a" != type_mismatch ] || [ "$b" != type_mismatch ]; then
+                   GD_EMPTY="$GD_EMPTY $nm(type)"
+               fi ;;
+        esac
         GD_RUN=$((GD_RUN + 1))
         # A probe that produced nothing measured nothing — two empty strings
         # compare equal and would score as "no disclosure". Nor is a stable

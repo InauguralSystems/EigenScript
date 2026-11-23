@@ -525,8 +525,7 @@ declared data boundaries and association contracts. Mixed buffer/list tensor ope
 numeric byte/sample/device conversions also normalize reads and stop on the
 first error. `write_bytes`, `str_from_bytes`, `f64_from_bytes`, `inflate` and `buf_from_pcm16le` require exact bytes in 0..255 (N5/Q1).
 Raw copies, typed serialization and buffer-only work areas preserve their data.
-`type_mismatch` error unless `EIGS_STRICT=0`, which retains numeric-zero
-substitution. `str_from_bytes` stops at numeric NUL and does not inspect later
+`type_mismatch` error in every `EIGS_STRICT` state. `str_from_bytes` stops at numeric NUL and does not inspect later
 elements, while compression codecs consume and validate the complete list.
 
 One place EigenScript is louder than NumPy: an out-of-range index in `gather`
@@ -535,7 +534,7 @@ One place EigenScript is louder than NumPy: an out-of-range index in `gather`
 an `IndexError` there as well, so this matches. It is `gather`'s own history
 that changed: the list form used to answer `0.0` (#973/#1093).
 
-By default, fixed- or optional-shape builtin argument lists reject surplus outer elements with a catchable `type_mismatch` error naming the builtin and maximum width. The check precedes the call's mutation, I/O and tape effects. `EIGS_STRICT=0` keeps each builtin's legacy result, including existing null/error stand-ins. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
+Fixed- or optional-shape builtin argument lists reject surplus outer elements with a catchable `type_mismatch` error naming the builtin and maximum width, in every `EIGS_STRICT` state. Every argument guard raises before the call's mutation, I/O and tape effects. Scalar overloads, lists used as data and genuinely variadic arguments keep their documented meaning.
 
 ## Dictionaries / objects
 
@@ -711,7 +710,7 @@ error.
 A *detached* cooperative task goes further, like a goroutine's panic in Go:
 nothing can ever join it, so its uncaught error stops the program at once
 (`docs/CONCURRENCY.md`, #1736).
-`exit` accepts a numeric code (N5, then the C int range), or a one-number list. `null`, `[]` and `([])` mean no argument and code 0. Other types raise a catchable `type_mismatch` naming `exit` before any stop request, in every `EIGS_STRICT` state. A surplus list retains its existing guard: by default it raises; under `EIGS_STRICT=0` its first element must be numeric and supplies the code.
+`exit` accepts a numeric code (N5, then the C int range), or a one-number list. `null`, `[]` and `([])` mean no argument and code 0. Other types raise a catchable `type_mismatch` naming `exit` before any stop request, in every `EIGS_STRICT` state. A surplus list raises `type_mismatch` in every `EIGS_STRICT` state.
 
 A worker's `exit of N` requests an uncatchable stop of the whole state:
 blocked concurrency calls wake, and VM threads unwind when they observe the

@@ -2728,9 +2728,6 @@ static const Value *eigs_reader_list_arg(const Value *list, int i,
                  num_who(who), i);
     return NULL;
 }
-static int eigs_reader_elem_default(const Value *v) {
-    return !g_strict_guards && (!v || (!val_is_number(v) && v->type != VAL_BOOL));
-}
 
 EigsNum eigs_list_number(const Value *list, int i, const char *who) {
     EIGS_VIEW(view);
@@ -2738,7 +2735,7 @@ EigsNum eigs_list_number(const Value *list, int i, const char *who) {
     return g_has_error ? (EigsNum){ .is_int = 0, .value = { .f64 = 0.0 } } : eigs_number_arg(v, who);
 }
 EigsNum eigs_elem_number(const Value *v, const char *who) {
-    return eigs_reader_elem_default(v) ? (EigsNum){ .is_int = 0, .value = { .f64 = 0.0 } } : eigs_number_arg(v, who);
+    return eigs_number_arg(v, who);
 }
 int eigs_opt_number(const Value *v, EigsNum *out, const char *who) {
     if (!v || v->type == VAL_NULL) return 0;
@@ -2753,7 +2750,7 @@ double eigs_list_float(const Value *list, int i, const char *who) {
     return g_has_error ? 0 : eigs_float_arg(v, who);
 }
 double eigs_elem_float(const Value *v, const char *who) {
-    return eigs_reader_elem_default(v) ? 0 : eigs_float_arg(v, who);
+    return eigs_float_arg(v, who);
 }
 int eigs_opt_float(const Value *v, double *out, const char *who) {
     if (!v || v->type == VAL_NULL) return 0;
@@ -2768,7 +2765,7 @@ int64_t eigs_list_int(const Value *list, int i, const char *who) {
     return g_has_error ? 0 : eigs_int_arg(v, who);
 }
 int64_t eigs_elem_int(const Value *v, const char *who) {
-    return eigs_reader_elem_default(v) ? 0 : eigs_int_arg(v, who);
+    return eigs_int_arg(v, who);
 }
 int eigs_opt_int(const Value *v, int64_t *out, const char *who) {
     if (!v || v->type == VAL_NULL) return 0;
@@ -2783,7 +2780,7 @@ uint8_t eigs_list_byte(const Value *list, int i, const char *who) {
     return g_has_error ? 0 : eigs_byte_arg(v, who);
 }
 uint8_t eigs_elem_byte(const Value *v, const char *who) {
-    return eigs_reader_elem_default(v) ? 0 : eigs_byte_arg(v, who);
+    return eigs_byte_arg(v, who);
 }
 int eigs_opt_byte(const Value *v, uint8_t *out, const char *who) {
     if (!v || v->type == VAL_NULL) return 0;
@@ -2798,8 +2795,7 @@ int eigs_list_int_range(const Value *list, int i, int64_t lo, int64_t hi, int64_
     return g_has_error ? 0 : eigs_int_arg_range(v, lo, hi, out, who);
 }
 int eigs_elem_int_range(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who) {
-    const Value zero = { .type = VAL_INT };
-    return eigs_int_arg_range(eigs_reader_elem_default(v) ? &zero : v, lo, hi, out, who);
+    return eigs_int_arg_range(v, lo, hi, out, who);
 }
 int eigs_opt_int_range(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who) {
     if (!v || v->type == VAL_NULL) return 0;
@@ -2812,8 +2808,7 @@ int eigs_list_bounded(const Value *list, int i, double lo, double hi, int *out, 
     return g_has_error ? 0 : eigs_bounded_arg(v, lo, hi, out, who);
 }
 int eigs_elem_bounded(const Value *v, double lo, double hi, int *out, const char *who) {
-    const Value zero = { .type = VAL_INT };
-    return eigs_bounded_arg(eigs_reader_elem_default(v) ? &zero : v, lo, hi, out, who);
+    return eigs_bounded_arg(v, lo, hi, out, who);
 }
 int eigs_opt_bounded(const Value *v, double lo, double hi, int *out, const char *who) {
     if (!v || v->type == VAL_NULL) return 0;
@@ -2826,8 +2821,7 @@ int eigs_list_magnitude(const Value *list, int i, int64_t lo, int64_t hi, int64_
     return g_has_error ? 0 : eigs_magnitude_arg(v, lo, hi, out, who);
 }
 int eigs_elem_magnitude(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who) {
-    const Value zero = { .type = VAL_INT };
-    return eigs_magnitude_arg(eigs_reader_elem_default(v) ? &zero : v, lo, hi, out, who);
+    return eigs_magnitude_arg(v, lo, hi, out, who);
 }
 int eigs_opt_magnitude(const Value *v, int64_t lo, int64_t hi, int64_t *out, const char *who) {
     if (!v || v->type == VAL_NULL) return 0;
@@ -2877,25 +2871,6 @@ int buffer_byte_at(const Value *buffer, int64_t index, uint8_t *out, const char 
         rt_error(EK_VALUE, 0, "%s: byte is outside [0, 255]", num_who(who)); return 0;
     }
     *out = (uint8_t)i; return 1;
-}
-
-/* Two levels: the argument, an element of the argument list, or an element
- * of a list argument (`audio_mix of [[true, 1], [1]]`'s samples). Called on a
- * failed guard only, so the walk is off the success path. */
-int eigs_arg_has_bool(const Value *arg) {
-    if (!arg) return 0;
-    if (arg->type == VAL_BOOL) return 1;
-    if (arg->type == VAL_LIST)
-        for (int i = 0; i < arg->data.list.count; i++) {
-            if (list_elem_type(arg, i) == VAL_BOOL) return 1;
-            EIGS_VIEW(view);
-            const Value *e = list_get_view(arg, i, &view);
-            if (e && e->type == VAL_LIST)
-                for (int j = 0; j < e->data.list.count; j++)
-                    if (list_elem_type(e, j) == VAL_BOOL)
-                        return 1;
-        }
-    return 0;
 }
 
 /* ---- NaN-boxing boundary shims ----
@@ -4027,6 +4002,41 @@ static int equal_structure_reflexive(Value *root) {
     free(scan.todo);
     free(scan.seen);
     return reflexive;
+}
+
+/* #2502: scan borrowed list/dict graphs at arbitrary depth. Reuse the
+ * equality walk's growing work stack and open-addressed pointer set: cycles
+ * and shared subgraphs terminate without C recursion or owning new edges. */
+int eigs_arg_has_bool(const Value *arg) {
+    if (!arg) return 0;
+    if (arg->type == VAL_BOOL) return 1;
+    if (arg->type != VAL_LIST && arg->type != VAL_DICT) return 0;
+    EqualScan scan = {0};
+    int found = 0;
+    equal_scan_push(&scan, (Value *)arg);
+    while (scan.count && !found) {
+        Value *v = scan.todo[--scan.count];
+        if (equal_scan_seen(&scan, v)) continue;
+        if (v->type == VAL_LIST) {
+            for (int i = 0; i < v->data.list.count; i++) {
+                ValType type = list_elem_type(v, i);
+                if (type == VAL_BOOL) { found = 1; break; }
+                if (type == VAL_LIST || type == VAL_DICT)
+                    equal_scan_push(&scan, list_get_ref(v, i));
+            }
+        } else {
+            eigs_module_ns_sync(v);
+            DICT_FOR_EACH(v, i) {
+                ValType type = slot_type(dict_value_slot(v, i));
+                if (type == VAL_BOOL) { found = 1; break; }
+                if (type == VAL_LIST || type == VAL_DICT)
+                    equal_scan_push(&scan, dict_value_get_ref(v, i));
+            }
+        }
+    }
+    free(scan.todo);
+    free(scan.seen);
+    return found;
 }
 
 /* Structural equality for `==` / `!=`.

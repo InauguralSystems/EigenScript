@@ -953,10 +953,7 @@ struct EigsState {
     double          obs_dh_small;   /* |dH| < this → "small change" (default 0.01)  */
     int             obs_window;     /* #1044 default value/dH window depth (default OBSERVER_WINDOW_N) */
     double          obs_scale;      /* #1045 characteristic scale: rel = Δv / max(|v|, |v_prev|, obs_scale) (default 0.001) */
-    /* EIGS_STRICT has two independent effects. Guards retain the historical
-     * default-on policy, while arithmetic non-finite traps are opt-in. The
-     * two explicit names prevent a new reader from silently coupling them. */
-    int             strict_guards;
+    /* EIGS_STRICT controls only the opt-in IEEE arithmetic trap. */
     int             strict_arithmetic;
     /* Ordinary CLI --json is a property of the whole run/state, not of an
      * OS-thread attachment. Spawn workers have fresh EigsThread objects but
@@ -1437,32 +1434,31 @@ extern __thread EigsThread *eigs_current;
 #define g_last_obs_slot_idx (eigs_current->last_obs_slot_idx)
 #define g_unobserved_depth  (eigs_current->unobserved_depth)
 #define g_math_flags        (eigs_current->math_flags)
-#define g_strict_guards     (eigs_current->state->strict_guards)
 #define g_strict_arithmetic (eigs_current->state->strict_arithmetic)
 
-/* #971 Phase A: a builtin's argument-TYPE guard.
+/* #971/#2502: a builtin's argument-type guard.
  *
- * ~50 builtins answered a wrong-typed argument with a soft stand-in —
- * `cos of "hello"` was 0, `str_upper of 42` was "" — so a type mistake became
- * a plausible value and flowed on indistinguishable from a real one. That is
- * the fail-soft default the #975 reform exists to remove.
+ * Wrong-typed arguments once produced plausible finite stand-ins:
+ * `cos of "hello"` returned zero and `str_upper of 42` returned "".
+ * Type errors now raise in every EIGS_STRICT state instead of yielding
+ * a value that the caller could mistake for a valid result.
  *
- * Strict mode, the default since #1361, raises a catchable `type_mismatch`
- * error naming the builtin and what it wanted. Under EIGS_STRICT=0 the
- * stand-in is returned, byte-identical to the pre-#971 behaviour.
+ * Each failed guard raises a catchable `type_mismatch` naming the builtin
+ * and the expected argument. EIGS_STRICT configures only IEEE arithmetic
+ * traps; it never changes this argument contract.
  *
- * `soft` is evaluated only on the non-strict path, so it may allocate.
- * Deliberately a macro rather than a helper: each call site keeps its own
- * early `return`, which is what makes the conversion reviewable one guard at
- * a time instead of a control-flow rewrite. */
-/* #1637: a bool a builtin does not take raises in EVERY strict mode. The
- * EIGS_STRICT=0 opt-out keeps the soft stand-in for other wrong types, but a
- * soft answer for a bool is a silent wrong value (`abs of true` was 0, so true
- * read as 0 -- the old 1/0 idiom flipping without a word). So a failed guard
- * raises under EIGS_STRICT=0 too when the argument, or a top-level element of
- * the argument list, is a bool. The oracle is tests/test_bool_fuzz.sh: true
- * and false in every argument slot of every builtin must raise unless the
- * slot is on its reviewed any-value list. */
+ * The obsolete `soft` parameter is retained but never evaluated.
+ * A macro keeps the early return visible at each call site. Place guards
+ * before owning allocations, mutation, I/O and tape effects; if validation
+ * requires an allocation first, release it before raising and returning. */
+/* #1637/#2502: a bool rejected by a numeric argument contract is a type
+ * error at any depth. BOOL_REFUSE walks borrowed list and dict graphs;
+ * its work stack and visited set bound C stack use and terminate cycles.
+ * Required, element and optional readers likewise reject wrong types.
+ * Any-value positions retain their documented bool/container behavior;
+ * validate the typed positions instead of scanning unrelated user data.
+ * tests/test_bool_fuzz.sh checks true and false in builtin argument slots
+ * against its reviewed any-value list; #2502 adds deep and cyclic inputs. */
 int eigs_arg_has_bool(const Value *arg);
 /* #1637/#1758: required, element and optional checked readers are split
  * by numeric contract below. Raw payload macros require a reviewed kind
@@ -1539,92 +1535,23 @@ void eigs_bool_gate_exempt(BuiltinFn fn);   /* a host function: never gated */
             return make_null();                                               \
         }                                                                     \
     } while (0)
-#define EIGS_GUARD_RAISES(want)                                               \
-    ((void)(want), g_strict_guards || eigs_arg_has_bool(arg))
-
+/* Argument guards always raise before allocation, mutation, I/O or tape
+ * effects. The obsolete soft parameter remains unevaluated at call sites;
+ * it is a post-error placeholder, never a language answer (#2502). */
 #define ARG_GUARD(cond, who, want, soft)                                      \
-    do {                                                                      \
-        if (cond) {                                                           \
-            if (EIGS_GUARD_RAISES(want)) {                                    \
-                rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));       \
-                return make_null();                                           \
-            }                                                                 \
-            return (soft);                                                    \
-        }                                                                     \
+    do {                                                                     \
+        if (cond) {                                                          \
+            rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));           \
+            return make_null();                                              \
+        }                                                                    \
     } while (0)
+#define ARG_GUARD_TAPED(cond, who, want, soft) ARG_GUARD(cond, who, want, soft)
+#define ARG_GUARD_PRETAKE(cond, who, want, soft) ARG_GUARD(cond, who, want, soft)
 
-/* #1008: ARG_GUARD for a TAPED builtin. The soft half must stay a
- * TRACE_NONDET_RET so the recorded answer is served under EIGS_REPLAY
- * exactly as before; the strict half raises BEFORE the tape is touched, so
- * record and replay agree in either mode (a strict run never records the
- * wrong-typed call). Used by the falsy-path family -- file_exists, is_dir,
- * is_file, read_text, read_bytes, ls, mkdir, env_get -- where a wrong-typed
- * path read as "not there": `file_exists of 42` was 0 in both modes and
- * indistinguishable from an absent path. Non-strict is byte-identical. */
-#define ARG_GUARD_TAPED(cond, who, want, soft)                                \
-    do {                                                                      \
-        if (cond) {                                                           \
-            if (EIGS_GUARD_RAISES(want)) {                                                   \
-                rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));       \
-                return make_null();                                           \
-            }                                                                 \
-            TRACE_NONDET_RET(who, soft);                                      \
-        }                                                                     \
-    } while (0)
-
-/* #1008, the early-take shape: read_text / read_bytes TAKE before doing real
- * work, so the type check must sit before the take (a strict raise neither
- * consumes nor records a tape entry) and the soft half must still take-then-
- * record exactly as the original TAKE/RECORD pair did. */
-#define ARG_GUARD_PRETAKE(cond, who, want, soft)                              \
-    do {                                                                      \
-        if (cond) {                                                           \
-            if (EIGS_GUARD_RAISES(want)) {                                                   \
-                rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));       \
-                return make_null();                                           \
-            }                                                                 \
-            TRACE_NONDET_TAKE(who);                                           \
-            TRACE_NONDET_RECORD(who, soft);                                   \
-        }                                                                     \
-    } while (0)
-
-/* #971 Phase B: the COERCION shape, which ARG_GUARD cannot express.
- *
- * ARG_GUARD fits a guard that answers a wrong argument with one stand-in.
- * Some builtins instead coerce in place and carry on — `str_replace`'s
- * `if (items[0]->type == VAL_STR) str = ...` leaves `str` as "" for a
- * number, so `str_replace of [42, "a", "b"]` silently searches an empty
- * string. There is no single stand-in to name: the non-strict result is
- * whatever the rest of the function computes from the coerced value.
- *
- * So this raises under strict and does NOTHING otherwise — the non-strict
- * path is byte-identical BY CONSTRUCTION rather than by inspection, which
- * is what makes it safe to apply to a site whose soft behaviour is not a
- * simple early return. The raise still returns, so the caller stops before
- * consuming the coerced value.
- *
- * These sites have no `return make_float(0)` to enumerate. A probe that
- * stays silent under strict is what tools/strict_differential.sh catches. */
-/* PLACEMENT IS LOAD-BEARING: this RETURNS, so it must sit BEFORE anything the
- * function has allocated and still owns, or the raise abandons it. Put the
- * guard above the allocation where the inputs allow it (the three scan_*
- * builtins each sat one line below a `make_list(128)` and leaked 1096 bytes
- * per strict raise); where they do not, free explicitly first, as
- * builtin_write_bytes does with its raw buffer.
- *
- * Nothing about the ordinary run catches that mistake: a strict raise ALREADY
- * exits non-zero, so LeakSanitizer does not change the process status and a
- * leaking guard is indistinguishable from an expected raise. The check that
- * does catch it is `leak_clean` in tests/test_strict_math.sh, which reads the
- * LeakSanitizer text out of the output it already captures — so every strict
- * raise needs a row there, and a new guard without one is unguarded. */
-/* A fixed-shape list may keep its legacy prefix-consuming behaviour with
- * EIGS_STRICT=0, but the strict default rejects trailing elements.  Keeping
- * this as a named guard lets the strict-shape checker compare implementations
- * with independently discovered input-list surfaces and reviewed contracts. */
+/* The fixed-shape guard belongs before the call's effects too. */
 #define STRICT_LIST_MAX(arg, max_count, who)                                  \
     do {                                                                      \
-        if (g_strict_guards && (arg) && (arg)->type == VAL_LIST               \
+        if ((arg) && (arg)->type == VAL_LIST               \
             && (arg)->data.list.count > (max_count)) {                        \
             rt_error(EK_TYPE, 0, "%s: expected a fixed-shape list with at "   \
                      "most %d elements", (who), (max_count));                 \
@@ -1634,7 +1561,7 @@ void eigs_bool_gate_exempt(BuiltinFn fn);   /* a host function: never gated */
 
 #define STRICT_REQUIRE(cond, who, want)                                       \
     do {                                                                      \
-        if ((cond) && EIGS_GUARD_RAISES(want)) {                              \
+        if (cond) {                              \
             rt_error(EK_TYPE, 0, "%s: expected %s", (who), (want));           \
             return make_null();                                               \
         }                                                                     \

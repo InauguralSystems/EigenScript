@@ -524,11 +524,6 @@ def render_program(row, form, operands, operation, scalar=False):
     else:
         assertion = row.get('form_asserts', {}).get(form, row['valid_assert'])
         observation = row['observe']
-        if surplus and row.get('legacy_surplus_null'):
-            assertion, observation = 'shape_result == null', 'print of shape_result'
-        if surplus and row.get('legacy_surplus_assert'):
-            assertion = row['legacy_surplus_assert']
-            observation = row.get('legacy_surplus_observe', 'print of shape_result')
         parts += ['shape_result is ' + expression,
                   'assert of [' + assertion + ', "valid shape result"]', observation]
     cleanup = row.get('strict_cleanup', row.get('cleanup', '')) if operation == 'strict' else row.get('cleanup', '')
@@ -559,7 +554,7 @@ def render(directory, cases):
         for suffix, active in variants:
             for which in ('subject' + suffix, 'baseline' + suffix):
                 for mode in ('0', '1', 'default'):
-                    for form, values, scalar in forms + [('surplus', row['args'], False), ('strict', row['args'], False)]:
+                    for form, values, scalar in forms + [('strict', row['args'], False)]:
                         owned = directory / name / which / mode / form
                         owned.mkdir(parents=True)
                         operation = form if form in ('surplus', 'strict') else 'valid'
@@ -577,7 +572,7 @@ def render(directory, cases):
                             (owned / 'http-context').write_text(active['http_context'] + '\n')
                         if 'stdin_bytes' in active.get('requirements', []):
                             (owned / 'stdin-context').write_text('abc')
-        legacy = int(bool(row.get('legacy_surplus_null') or row.get('legacy_surplus_assert')))
+        legacy = 0  # Retired strict-off surplus answers (#2502).
         manifest.append('|'.join([name, str(len(row['args'])), ','.join(f[0] for f in forms), str(legacy), str(int(bool(row.get('exits')))), str(int(bool(pending))), row.get('backend', 'none')]))
     (directory / 'rows').write_text('\n'.join(manifest) + '\n')
     # Ordinary dependency witnesses use the same owning runtime and dummy drivers.

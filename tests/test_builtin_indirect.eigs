@@ -1,3 +1,12 @@
+# #2502: invalid argument types raise independently of arithmetic traps.
+define guard_kind(thunk, expected_kind, label) as:
+    local seen_kind is "none"
+    try:
+        thunk of null
+    catch guard_error:
+        seen_kind is guard_error.kind
+    assert of [seen_kind == expected_kind, label]
+
 # test_builtin_indirect.eigs — direct vs indirect calls to builtins
 # that the compiler lowers to dedicated opcodes (or that were only ever
 # exercised by benchmarks).
@@ -107,7 +116,8 @@ blen is buf_len
 b2 is bfl of [1.5, 2.5, 3.5]
 check of ["buf_from_list indirect", (blen of b2) == 3]
 check of ["buf_get indirect agrees", (bget of [b2, 1]) == (buf_get of [b, 1])]
-check of ["buf_len on non-buffer", (buf_len of [1, 2]) == 2 or (buf_len of "x") == 0]
+guard_kind of [(_) => (buf_len of [1, 2]), "type_mismatch", "buf_len rejects a list"]
+guard_kind of [(_) => (blen of "x"), "type_mismatch", "indirect buf_len rejects a string"]
 
 # Index-assignment must store the full double, agreeing with buf_set.
 # (It used to truncate to int — `b[i] is 1.5` stored 1.0 while

@@ -1477,8 +1477,7 @@ Value* builtin_write_bytes(Value *arg) {
          * two zero bytes and reported success. Same class as join/str_replace
          * — no stand-in return, so invisible to the classifier. The free()
          * matters: STRICT_REQUIRE returns, and `out` is already allocated. */
-        if (data->type == VAL_LIST && (list_elem_type(data, i) != VAL_FLOAT && list_elem_type(data, i) != VAL_INT)
-            && (g_strict_guards || list_elem_type(data, i) == VAL_BOOL)) {   /* #1637: a bool in every mode */
+        if (data->type == VAL_LIST && (list_elem_type(data, i) != VAL_FLOAT && list_elem_type(data, i) != VAL_INT)) {   /* #1637: a bool in every mode */
             free(out);
             rt_error(EK_TYPE, 0, "write_bytes: expected every element to be a number");
             return make_null();

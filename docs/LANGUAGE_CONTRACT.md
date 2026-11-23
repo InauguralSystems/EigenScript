@@ -60,6 +60,10 @@ unrecovered error or report success on failure. IEEE float division by zero
 produces signed infinity or NaN by default (R2.2); `EIGS_STRICT=1` traps the
 non-finite result. Exact integer `// 0` and `% 0` remain value errors.
 
+Argument type errors raise `type_mismatch` before mutation, I/O or tape effects,
+in every `EIGS_STRICT` state. `EIGS_STRICT` controls only the opt-in IEEE
+arithmetic/domain trap; unset and `0` retain IEEE results.
+
 See [Argument guards and arithmetic traps](SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states.
 
 **What `catch` binds (#406):** a **built-in** runtime error binds a small
