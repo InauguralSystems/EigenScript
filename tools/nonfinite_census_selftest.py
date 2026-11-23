@@ -22,12 +22,14 @@ if "--api" in sys.argv: print(json.dumps({"builtins":[{"name":"fakebuf","args":[
 s=open(sys.argv[1]).read(); open(os.environ["CENSUS_LOG"],"a").write(s+"\\n---\\n")
 if os.environ.get("EMPTY"): print("Error fake:1: no"); raise SystemExit(1)
 if os.environ.get("SLOW"): time.sleep(1)
-if "buf_get_bits" in s:
+if "print of ((buf_get_bits" in s:
  if os.environ.get("EIGS_STRICT") == "1" and "buf_scale_range" in s:
   print("Error fake:1: non-finite arithmetic result",file=sys.stderr); raise SystemExit(1)
  print("true"); raise SystemExit
 if os.environ.get("CONTROL_ERROR") and "fakebuf of b" in s and "nf is" not in s:
  print("Error fake:1: planted control error"); raise SystemExit(1)
+if "define __census_snapshot" in s:
+ print("ok"); print("CENSUS:b:" + ("changed" if os.environ.get("BUFFER_FAULT") else "stable") + ":0"); raise SystemExit
 if "of 2.5" in s or "of 2)" in s: print("ok"); raise SystemExit
 if os.environ.get("DIAGNOSTIC"):
  print("exit-entered"); print("Error fake:1: no integer representation",file=sys.stderr); raise SystemExit(1)
@@ -56,7 +58,12 @@ print("fault" if os.environ.get("FAULT") else "ok")
     scale=[line for line in buffer.read_text().splitlines() if "\tbuf_scale_range\t" in line]
     check(produced.returncode==0 and scale and all(line.split("\t")[-1] == "PRODUCER_FAIL" for line in scale),
           "each mode verifies its producer before classifying the target")
-    diagnostic=subprocess.run(cmd+[str(head)],env=dict(env,DIAGNOSTIC="1"),capture_output=True,text=True)
+    buffer_base=d/"buffer-base.tsv"; buffer_head=d/"buffer-head.tsv"
+    subprocess.run([sys.executable,str(tool),"buffer-forms",str(fake),"--out",str(buffer_base)],env=env,check=True)
+    subprocess.run([sys.executable,str(tool),"buffer-forms",str(fake),"--out",str(buffer_head)],env=dict(env,BUFFER_FAULT="1"),check=True)
+    buffer_delta=subprocess.run([sys.executable,str(tool),"--diff",str(buffer_base),str(buffer_head)],capture_output=True,text=True)
+    check("differ=0" not in buffer_delta.stdout,"changed buffer cells change a row when the return value does not")
+    subprocess.run(cmd+[str(head)],env=dict(env,DIAGNOSTIC="1"),capture_output=True,text=True)
     check("NOINT" in head.read_text() and "exit-entered" not in head.read_text(),
           "a failing probe is classified from the stderr Error diagnostic")
     streamed=subprocess.run([sys.executable,str(tool),"one-number",str(fake)],env=env,capture_output=True,text=True)
@@ -67,4 +74,4 @@ print("fault" if os.environ.get("FAULT") else "ok")
     check("with open(p) as f:" in tool.read_text(),"diff closes each input file")
     text=log.read_text()
     check(not any((name+" of") in text for name in ("clock_unix","mktemp","monotonic_ms","monotonic_ns","random","random_hex","exe_path","getcwd")),"excluded builtins are not probed")
-print("NONFINITE_CENSUS_SELFTEST: 10 passed, 0 failed")
+print("NONFINITE_CENSUS_SELFTEST: 11 passed, 0 failed")

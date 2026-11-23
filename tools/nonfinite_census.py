@@ -25,7 +25,8 @@ def classify(stdout, stderr, rc):
     for name, needles in CLASS_PATTERNS:
         if any(x in text for x in needles): return name
     if first.startswith("Error") or rc: return "ERR(" + text[:38] + ")"
-    return "val(" + first[:22] + ")"
+    snapshots = "|".join(line for line in lines[1:] if line.startswith("CENSUS:"))
+    return "val(" + first[:22] + ")" + ("|" + snapshots if snapshots else "")
 
 class Runner:
     def __init__(self, binary, timeout, allow_timeout):
@@ -55,6 +56,24 @@ def positions(args):
 
 def cases(root): return json.loads((root / "tests/strict_shape_cases.json").read_text())
 def call(name, args): return name + " of " + (args[0] if len(args) == 1 else "[" + ", ".join(args) + "]")
+
+def snapshot_call(setup, expression, bufvars):
+    snapshots = "".join(f'__census_snapshot of ["{v}", {v}]\n' for v in sorted(bufvars))
+    return f'''{setup}
+define __census_snapshot(__name, __buf) as:
+    __bits is []
+    __nonfinite is 0
+    for __i in range of (len of __buf):
+        __bit is f64_bits of (f64_from_bits of (buf_get_bits of [__buf, __i]))
+        append of [__bits, __bit]
+        if ((__bit >> 52) & 2047) == 2047:
+            __nonfinite is __nonfinite + 1
+    print of ("CENSUS:" + __name + ":" + (sha256 of (str of __bits)) + ":" + (str of __nonfinite))
+__answer is {expression}
+print of __answer
+if (type of __answer) == "buffer":
+    __census_snapshot of ["return", __answer]
+{snapshots}'''
 
 def write_tsv(path, header, rows):
     f = open(path, "w") if path else sys.stdout
@@ -122,7 +141,7 @@ def buffer_forms(ns, root, run):
         for i,a in enumerate(c["args"]):
             var=a.strip()
             if var not in bufvars: continue
-            control_prog=setup+f"\nprint of ({call(n,c['args'])})\n"
+            control_prog=snapshot_call(setup, call(n,c["args"]), bufvars)
             control=tuple(run.run(control_prog,m) for _,m in MODES)
             control_error=any(not x.startswith("val(") for x in control)
             controls[(n,i)]=not control_error
@@ -133,7 +152,7 @@ def buffer_forms(ns, root, run):
             for vn,ve in VALUES.items():
                 for pn,body in PRODUCER_CANDIDATES.items():
                     step=body.format(buffer=var,index=0)
-                    prog=f"{setup}\nnf is {ve}\n{step}\nprint of ({call(n,c['args'])})\n"
+                    prog=snapshot_call(f"{setup}\nnf is {ve}\n{step}", call(n,c["args"]), bufvars)
                     cells=[]
                     for _,m in MODES:
                         probe=f"{setup}\nnf is {ve}\n{step}\nprint of ((buf_get_bits of [{var}, 0]) == {BITS[vn]})\n"
