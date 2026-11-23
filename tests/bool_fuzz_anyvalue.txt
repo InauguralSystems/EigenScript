@@ -34,6 +34,7 @@ coalesce|a0|picks the first non-null of any values
 coalesce|a1|picks the first non-null of any values
 len|e0|counts elements whatever they are
 len|e1|counts elements whatever they are
+assert|u|the condition is a bool
 assert|a0|the condition is a bool
 append|a1|a list element may be any value
 list_insert_at|a2|a list element may be any value
