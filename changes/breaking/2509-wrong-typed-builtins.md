@@ -1,0 +1,1 @@
+- Pass values matching builtin signatures; wrong-typed arguments now raise `type_mismatch` in every `EIGS_STRICT` state (#2509, #2511).

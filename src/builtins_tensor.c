@@ -276,7 +276,10 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols,
             return NULL;
         }
     }
-    if (ndim == 0 || *rows <= 0 || *cols <= 0) return NULL;
+    if (ndim == 0 || *rows <= 0 || *cols <= 0) {
+        rt_error(EK_TYPE, 0, "%s: expected a non-empty numeric tensor", who);
+        return NULL;
+    }
     size_t total = safe_size_mul((size_t)*rows, (size_t)*cols);
     if (total > EIGS_TENSOR_MAX_ELEMENTS) {
         fprintf(stderr, "Error: tensor too large (%d x %d)\n", *rows, *cols);
@@ -691,7 +694,8 @@ static Value* tensor_elementwise_slots(EigsSlot a, EigsSlot b, BinOpFn fn) {
 /* ==== BUILTIN: add ==== */
 Value* builtin_tensor_add(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "add");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "add", "[left, right]", make_null());
     /* #1093: the buffer fast path moved into tensor_elementwise, so all five
      * elementwise builtins share one implementation. #973 arrived with a
      * second one (`buffer_elementwise`, called ahead of this); reconciled at
@@ -2144,7 +2148,8 @@ static int sgd_cell(Value *prow, int pi, Value *grow, int gi, double lr, const c
 /* sgd_update of [param, grad, lr] — in-place param = param - lr * grad */
 Value* builtin_sgd_update(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "sgd_update");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
+              "sgd_update", "[parameter tensor, gradient tensor, learning rate]", make_null());
     EIGS_VIEW(param_view);
     Value *param = list_get_view(arg, 0, &param_view);
     EIGS_VIEW(grad_view);
@@ -2164,7 +2169,8 @@ Value* builtin_sgd_update(Value *arg) {
             param->data.buffer.data[i] -= lr * grad->data.buffer.data[i];
         return list_get_return(arg, 0);
     }
-    if (param->type != VAL_LIST || grad->type != VAL_LIST) return list_get_return(arg, 0);
+    ARG_GUARD(param->type != VAL_LIST || grad->type != VAL_LIST,
+              "sgd_update", "list or buffer tensors", make_null());
 
     int is_2d = (param->data.list.count > 0 && list_elem_type(param, 0) == VAL_LIST);
 
@@ -2739,7 +2745,7 @@ static void tensor_load_record_verdict(uint32_t rows, uint32_t cols) {
 }
 
 Value* builtin_tensor_load(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_STR, "tensor_load", "a path string", make_null());
 
     if (__builtin_expect(g_replay_enabled, 0)) {
         /* Consume and structurally validate the v8 verdict so stream order and

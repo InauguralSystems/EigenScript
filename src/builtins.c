@@ -168,7 +168,7 @@ Value* builtin_flush(Value *arg) {
 /* usleep of microseconds — pause execution */
 Value* builtin_usleep(Value *arg) {
     BOOL_REFUSE(arg, "usleep");
-    if (!arg || !val_is_number(arg)) return make_null();
+    ARG_GUARD(!arg || !val_is_number(arg), "usleep", "a number", make_null());
     int64_t us;
     if (!eigs_magnitude_arg(arg, INT_MIN, INT_MAX, &us, "usleep")) return make_null();
     if (us > 0) {
@@ -515,7 +515,7 @@ Value* builtin_num(Value *arg) {
         rt_error(EK_TYPE, 0, "num: cannot convert a bool to a number (use `if b:` to choose one)");
         return make_null();
     }
-    if (arg->type != VAL_STR) return make_float(0); /* existing non-text coercion */
+    ARG_GUARD(arg->type != VAL_STR, "num", "a number or numeric string", make_float(0));
     const char *start = arg->data.str, *end = start + val_str_len(arg);
     while (start < end && builtin_ascii_space((unsigned char)*start)) start++;
     while (end > start && builtin_ascii_space((unsigned char)end[-1])) end--;
@@ -737,6 +737,7 @@ Value* builtin_throw(Value *arg) {
 /* ==== Dict builtins ==== */
 
 Value* builtin_keys(Value *arg) {
+    ARG_GUARD(!arg || arg->type != VAL_DICT, "keys", "a dict", make_list(0));
     if (arg->type == VAL_DICT) {
         eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
         Value *list = make_list(arg->data.dict.count);
@@ -748,6 +749,7 @@ Value* builtin_keys(Value *arg) {
 }
 
 Value* builtin_values(Value *arg) {
+    ARG_GUARD(!arg || arg->type != VAL_DICT, "values", "a dict", make_list(0));
     if (arg->type == VAL_DICT) {
         eigs_module_ns_sync(arg);        /* #1057 whole-dict reader */
         Value *list = make_list(arg->data.dict.count);
@@ -773,7 +775,7 @@ Value* builtin_dict_set(Value *arg) {
               "dict_set", "[dict, key, value]", make_null());
     Value *d = list_get_ref(arg, 0);
     Value *key = BUILTIN_LIST_VIEW(arg, 1);
-    if (!d || d->type != VAL_DICT) return make_null();
+    ARG_GUARD(!d || d->type != VAL_DICT, "dict_set", "[dict, key, value]", make_null());
     const char *dict_key = dict_assignment_key(d, key, 0);
     if (!dict_key) return make_null();
     Value *val = list_get_owned(arg, 2);
@@ -788,7 +790,7 @@ Value* builtin_dict_remove(Value *arg) {
               "dict_remove", "[dict, key]", make_null());
     Value *d = list_get_ref(arg, 0);
     Value *key = BUILTIN_LIST_VIEW(arg, 1);
-    if (!d || d->type != VAL_DICT) return make_null();
+    ARG_GUARD(!d || d->type != VAL_DICT, "dict_remove", "[dict, key]", make_null());
     const char *dict_key = dict_assignment_key(d, key, 0);
     if (!dict_key) return make_null();
     dict_remove(d, dict_key);

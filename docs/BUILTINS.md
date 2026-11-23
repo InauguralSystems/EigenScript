@@ -4,6 +4,12 @@ Builtins are organized by module. `eigenscript --api` prints the live index.
 Core builtins are always available; extension builtins (HTTP, net, DB,
 gfx, audio) require a full build or the `gfx` target.
 
+A signature written `name of null` takes no meaningful argument and ignores
+the value supplied in that position. Otherwise a wrong-typed argument raises
+`type_mismatch` in every `EIGS_STRICT` state, except for positions explicitly
+documented as accepting any value; the executable census and classifications
+are in `tests/type_errors_2509.py` and `tests/type_errors_2509_allowed.tsv`.
+
 > **Builtins vs. library.** This file is the **compiled-in** surface —
 > functions the binary provides directly. The pure-EigenScript `lib/`
 > layer (DataFrames, stats, distributions, matrices, sets, sorting,
@@ -74,7 +80,7 @@ examples are `tests/phase2/rows/N6.float-repr.eigs` and
 | `print` | `print of value` | Output value to stdout with newline |
 | `len` | `len of value` | Exact int length of string, list, dict, buffer or text builder |
 | `str` | `str of value` | Convert to string representation |
-| `num` | `num of value` | Parse complete numeric-literal text (N10): decimal integer text fitting int64 and wrapped hex integers give ints; a point/exponent or decimal overflow gives a float. Optional sign and surrounding ASCII whitespace are accepted. Partial/empty text, separators, 0b/0o, hex floats, inf and nan raise `value` in every `EIGS_STRICT` state. Numbers retain their kind; existing non-text coercions remain. |
+| `num` | `num of number_or_text` | Numbers retain their kind; strings parse as complete numeric-literal text (N10): decimal integer text fitting int64 and wrapped hex integers give ints; a point/exponent or decimal overflow gives a float. Optional sign and surrounding ASCII whitespace are accepted. Partial/empty text, separators, 0b/0o, hex floats, inf and nan raise `value` in every `EIGS_STRICT` state. Every other kind raises `type_mismatch`. |
 | `type` | `type of value` | Return type name: "num", "bool", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "null" (the null value; the type label matches the literal) |
 | `num_type` | `num_type of value` | Return "int" for an int64, "float" for a binary64, or `null` for any other value. Both numeric kinds still have `type of` "num" (#1758 N7). |
 | `f64_bits` | `f64_bits of number` | Return IEEE-754 binary64 bits as signed int64 two's complement; `-0.0` gives `-9223372036854775808`. An int input first converts to float (Q2). Accepts infinity and canonical NaN without changing `math_flags`. Non-numbers raise `type_mismatch` in every `EIGS_STRICT` state (N12). |

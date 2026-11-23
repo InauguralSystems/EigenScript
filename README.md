@@ -68,7 +68,7 @@ value or a line outside the C `int` range raises `value` instead of being
 truncated. Audio generators round `duration * rate` half away from zero to get
 their sample count.
 
-See [Argument guards and arithmetic traps](docs/SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states.
+See [Argument guards and arithmetic traps](docs/SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states; wrong-typed builtin arguments raise `type_mismatch` in all three.
 
 A complete, standalone programming language with native observer semantics,
 OS-thread concurrency (`spawn`/`channel`/`thread_join`), a cooperative task

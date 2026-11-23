@@ -1,0 +1,461 @@
+builtin	pop	pos	wrong	expr	classification
+abs	whole	-	number	abs of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+acos	whole	-	number	acos of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+args	whole	-	string	args of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+args	whole	-	number	args of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+args	whole	-	dict	args of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+args	whole	-	list	args of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+asin	whole	-	number	asin of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+assert	whole	-	string	assert of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+assert	whole	-	dict	assert of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+atan	whole	-	number	atan of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+bit_not	whole	-	number	bit_not of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+buf_from_list	whole	-	string	buf_from_list of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+buf_from_list	whole	-	number	buf_from_list of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+buf_from_list	whole	-	dict	buf_from_list of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+buf_from_list	whole	-	list	buf_from_list of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+buffer	whole	-	number	buffer of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+ceil	whole	-	number	ceil of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+channel	whole	-	number	channel of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+clock_unix	whole	-	string	clock_unix of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+clock_unix	whole	-	number	clock_unix of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+clock_unix	whole	-	dict	clock_unix of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+clock_unix	whole	-	list	clock_unix of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+coalesce	whole	-	string	coalesce of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+coalesce	whole	-	number	coalesce of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+coalesce	whole	-	dict	coalesce of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+coalesce	whole	-	list	coalesce of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+concat	whole	-	string	concat of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+concat	whole	-	number	concat of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+concat	whole	-	dict	concat of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+concat	whole	-	list	concat of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+cos	whole	-	number	cos of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+divide	whole	-	string	divide of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+divide	whole	-	number	divide of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+divide	whole	-	dict	divide of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+divide	whole	-	list	divide of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+env_get	whole	-	string	env_get of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+eval	whole	-	number	eval of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+eval	whole	-	dict	eval of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+eval	whole	-	list	eval of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+exe_path	whole	-	string	exe_path of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+exe_path	whole	-	number	exe_path of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+exe_path	whole	-	dict	exe_path of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+exe_path	whole	-	list	exe_path of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+exp	whole	-	number	exp of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+exp	whole	-	list	exp of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+f64_bits	whole	-	number	f64_bits of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+f64_from_bits	whole	-	number	f64_from_bits of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+f64_to_bytes	whole	-	number	f64_to_bytes of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+file_exists	whole	-	string	file_exists of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+floor	whole	-	number	floor of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+flush	whole	-	string	flush of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+flush	whole	-	number	flush of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+flush	whole	-	dict	flush of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+flush	whole	-	list	flush of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+fround	whole	-	number	fround of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+gather	whole	-	string	gather of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+gather	whole	-	number	gather of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+gather	whole	-	dict	gather of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+gather	whole	-	list	gather of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+get_observer_thresholds	whole	-	string	get_observer_thresholds of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+get_observer_thresholds	whole	-	number	get_observer_thresholds of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+get_observer_thresholds	whole	-	dict	get_observer_thresholds of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+get_observer_thresholds	whole	-	list	get_observer_thresholds of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+getcwd	whole	-	string	getcwd of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+getcwd	whole	-	number	getcwd of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+getcwd	whole	-	dict	getcwd of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+getcwd	whole	-	list	getcwd of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+hex	whole	-	number	hex of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+is_dir	whole	-	string	is_dir of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+is_file	whole	-	string	is_file of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+json_build	whole	-	list	json_build of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+json_encode	whole	-	string	json_encode of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+json_encode	whole	-	number	json_encode of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+json_encode	whole	-	dict	json_encode of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+json_encode	whole	-	list	json_encode of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+keys	whole	-	dict	keys of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+leaky_relu	whole	-	number	leaky_relu of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+len	whole	-	string	len of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+len	whole	-	dict	len of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+len	whole	-	list	len of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_insert_at	whole	-	string	list_insert_at of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_insert_at	whole	-	number	list_insert_at of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_insert_at	whole	-	dict	list_insert_at of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_insert_at	whole	-	list	list_insert_at of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_remove_at	whole	-	string	list_remove_at of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_remove_at	whole	-	number	list_remove_at of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_remove_at	whole	-	dict	list_remove_at of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_remove_at	whole	-	list	list_remove_at of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_slice	whole	-	string	list_slice of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_slice	whole	-	number	list_slice of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_slice	whole	-	dict	list_slice of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_slice	whole	-	list	list_slice of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+log	whole	-	number	log of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+log	whole	-	list	log of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+log_softmax	whole	-	number	log_softmax of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+math_flags	whole	-	string	math_flags of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+math_flags	whole	-	number	math_flags of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+math_flags	whole	-	dict	math_flags of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+math_flags	whole	-	list	math_flags of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+max	whole	-	number	max of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+md5	whole	-	string	md5 of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+mean	whole	-	number	mean of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+mean	whole	-	list	mean of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+min	whole	-	number	min of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+mkdir	whole	-	string	mkdir of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+mktemp	whole	-	string	mktemp of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+mktemp	whole	-	number	mktemp of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+mktemp	whole	-	dict	mktemp of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+mktemp	whole	-	list	mktemp of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+monotonic_ms	whole	-	string	monotonic_ms of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+monotonic_ms	whole	-	number	monotonic_ms of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+monotonic_ms	whole	-	dict	monotonic_ms of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+monotonic_ms	whole	-	list	monotonic_ms of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+monotonic_ns	whole	-	string	monotonic_ns of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+monotonic_ns	whole	-	number	monotonic_ns of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+monotonic_ns	whole	-	dict	monotonic_ns of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+monotonic_ns	whole	-	list	monotonic_ns of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+multiply	whole	-	string	multiply of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+multiply	whole	-	number	multiply of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+multiply	whole	-	dict	multiply of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+multiply	whole	-	list	multiply of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+negative	whole	-	number	negative of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+negative	whole	-	list	negative of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+norm	whole	-	number	norm of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+norm	whole	-	list	norm of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+num	whole	-	number	num of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+num_copy	whole	-	string	num_copy of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+num_copy	whole	-	number	num_copy of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+num_copy	whole	-	dict	num_copy of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+num_copy	whole	-	list	num_copy of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+num_type	whole	-	string	num_type of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+num_type	whole	-	number	num_type of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+num_type	whole	-	dict	num_type of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+num_type	whole	-	list	num_type of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad	whole	-	string	numerical_grad of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad	whole	-	number	numerical_grad of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad	whole	-	dict	numerical_grad of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad	whole	-	list	numerical_grad of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_cols	whole	-	string	numerical_grad_cols of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_cols	whole	-	number	numerical_grad_cols of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_cols	whole	-	dict	numerical_grad_cols of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_cols	whole	-	list	numerical_grad_cols of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_rows	whole	-	string	numerical_grad_rows of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_rows	whole	-	number	numerical_grad_rows of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_rows	whole	-	dict	numerical_grad_rows of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_rows	whole	-	list	numerical_grad_rows of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+observe	whole	-	string	observe of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+observe	whole	-	number	observe of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+observe	whole	-	dict	observe of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+observe	whole	-	list	observe of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+ord	whole	-	string	ord of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+path_base	whole	-	string	path_base of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+path_dir	whole	-	string	path_dir of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+path_ext	whole	-	string	path_ext of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+pi	whole	-	string	pi of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+pi	whole	-	number	pi of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+pi	whole	-	dict	pi of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+pi	whole	-	list	pi of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+pow	whole	-	string	pow of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+pow	whole	-	number	pow of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+pow	whole	-	dict	pow of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+pow	whole	-	list	pow of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+print	whole	-	string	print of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+print	whole	-	number	print of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+print	whole	-	dict	print of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+print	whole	-	list	print of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+random	whole	-	string	random of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+random	whole	-	number	random of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+random	whole	-	dict	random of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+random	whole	-	list	random of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+random_hex	whole	-	number	random_hex of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+random_normal	whole	-	string	random_normal of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+random_normal	whole	-	number	random_normal of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+random_normal	whole	-	dict	random_normal of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+random_normal	whole	-	list	random_normal of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+range	whole	-	number	range of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+range	whole	-	list	range of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+read_line	whole	-	string	read_line of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+read_line	whole	-	number	read_line of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+read_line	whole	-	dict	read_line of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+read_line	whole	-	list	read_line of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+record_history	whole	-	number	record_history of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+relu	whole	-	number	relu of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+reshape	whole	-	string	reshape of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+reshape	whole	-	number	reshape of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+reshape	whole	-	dict	reshape of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+reshape	whole	-	list	reshape of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+round	whole	-	number	round of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sandbox_run	whole	-	string	sandbox_run of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sandbox_run	whole	-	number	sandbox_run of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sandbox_run	whole	-	dict	sandbox_run of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sandbox_run	whole	-	list	sandbox_run of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+scan_int_tokens	whole	-	string	scan_int_tokens of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+scan_ints	whole	-	string	scan_ints of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+seed_random	whole	-	number	seed_random of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+set_exit_code	whole	-	number	set_exit_code of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_cols	whole	-	string	sgd_update_cols of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_cols	whole	-	number	sgd_update_cols of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_cols	whole	-	dict	sgd_update_cols of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_cols	whole	-	list	sgd_update_cols of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_rows	whole	-	string	sgd_update_rows of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_rows	whole	-	number	sgd_update_rows of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_rows	whole	-	dict	sgd_update_rows of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_rows	whole	-	list	sgd_update_rows of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sha256	whole	-	string	sha256 of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+shape	whole	-	string	shape of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+shape	whole	-	number	shape of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+shape	whole	-	dict	shape of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+shape	whole	-	list	shape of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sin	whole	-	number	sin of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+softmax	whole	-	number	softmax of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sort	whole	-	list	sort of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sort_by	whole	-	string	sort_by of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sort_by	whole	-	number	sort_by of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sort_by	whole	-	dict	sort_by of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sort_by	whole	-	list	sort_by of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+split	whole	-	string	split of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sqrt	whole	-	number	sqrt of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sqrt	whole	-	list	sqrt of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+state_at	whole	-	string	state_at of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+state_at	whole	-	number	state_at of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+state_at	whole	-	dict	state_at of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+state_at	whole	-	list	state_at of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+store_open	whole	-	string	store_open of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+str	whole	-	string	str of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+str	whole	-	number	str of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+str	whole	-	dict	str of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+str	whole	-	list	str of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+str_from_bytes	whole	-	list	str_from_bytes of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+str_lower	whole	-	string	str_lower of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+str_upper	whole	-	string	str_upper of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+stream_close	whole	-	string	stream_close of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+stream_close	whole	-	number	stream_close of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+stream_close	whole	-	dict	stream_close of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+stream_close	whole	-	list	stream_close of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+stream_write	whole	-	number	stream_write of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+subtract	whole	-	string	subtract of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+subtract	whole	-	number	subtract of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+subtract	whole	-	dict	subtract of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+subtract	whole	-	list	subtract of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sum	whole	-	number	sum of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sum	whole	-	list	sum of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+tan	whole	-	number	tan of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_alive	whole	-	number	task_alive of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_detach	whole	-	number	task_detach of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_join	whole	-	string	task_join of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_join	whole	-	number	task_join of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_join	whole	-	dict	task_join of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_join	whole	-	list	task_join of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_kill	whole	-	number	task_kill of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_recv	whole	-	string	task_recv of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_recv	whole	-	number	task_recv of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_recv	whole	-	dict	task_recv of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_recv	whole	-	list	task_recv of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_sched_seed	whole	-	number	task_sched_seed of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_self	whole	-	string	task_self of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_self	whole	-	number	task_self of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_self	whole	-	dict	task_self of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_self	whole	-	list	task_self of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_sleep	whole	-	number	task_sleep of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_yield	whole	-	string	task_yield of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_yield	whole	-	number	task_yield of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_yield	whole	-	dict	task_yield of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_yield	whole	-	list	task_yield of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+tensor_load	whole	-	string	tensor_load of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append	whole	-	string	text_builder_append of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append	whole	-	number	text_builder_append of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append	whole	-	dict	text_builder_append of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append	whole	-	list	text_builder_append of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append_line	whole	-	string	text_builder_append_line of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append_line	whole	-	number	text_builder_append_line of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append_line	whole	-	dict	text_builder_append_line of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append_line	whole	-	list	text_builder_append_line of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_new	whole	-	string	text_builder_new of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_new	whole	-	number	text_builder_new of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_new	whole	-	dict	text_builder_new of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_new	whole	-	list	text_builder_new of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+token_name	whole	-	number	token_name of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+trim	whole	-	string	trim of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+try_parse	whole	-	string	try_parse of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+type	whole	-	string	type of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+type	whole	-	number	type of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+type	whole	-	dict	type of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+type	whole	-	list	type of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+u64_to_string	whole	-	number	u64_to_string of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+usleep	whole	-	number	usleep of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+values	whole	-	dict	values of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+zeros	whole	-	string	zeros of "zz_census_2509"	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+zeros	whole	-	number	zeros of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+zeros	whole	-	dict	zeros of {"a": 1}	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+zeros	whole	-	list	zeros of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+zeros_like	whole	-	number	zeros_like of 0	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+zeros_like	whole	-	list	zeros_like of []	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+add	pos	0	number	add of [0, [3, 4]]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+add	pos	1	number	add of [[1, 2], 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+append	pos	0	list	append of [[], 3]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+append	pos	1	string	append of [xs, "zz_census_2509"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+append	pos	1	dict	append of [xs, {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+append	pos	1	list	append of [xs, []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+assert	pos	0	string	assert of ["zz_census_2509", "ordinary true assertion"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+assert	pos	0	dict	assert of [{"a": 1}, "ordinary true assertion"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+assert	pos	1	number	assert of [1, 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+assert	pos	1	dict	assert of [1, {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+assert	pos	1	list	assert of [1, []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+coalesce	pos	0	string	coalesce of ["zz_census_2509", 4]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+coalesce	pos	0	number	coalesce of [0, 4]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+coalesce	pos	0	dict	coalesce of [{"a": 1}, 4]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+coalesce	pos	0	list	coalesce of [[], 4]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+coalesce	pos	1	string	coalesce of [null, "zz_census_2509"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+coalesce	pos	1	dict	coalesce of [null, {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+coalesce	pos	1	list	coalesce of [null, []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+concat	pos	0	string	concat of ["zz_census_2509", [3]]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+concat	pos	0	number	concat of [0, [3]]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+concat	pos	0	dict	concat of [{"a": 1}, [3]]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+concat	pos	1	string	concat of [[1, 2], "zz_census_2509"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+concat	pos	1	number	concat of [[1, 2], 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+concat	pos	1	dict	concat of [[1, 2], {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+copy_into	pos	0	list	copy_into of [[], 1, [3]]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+dict_remove	pos	0	dict	dict_remove of [{"a": 1}, "k"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+dict_set	pos	0	dict	dict_set of [{"a": 1}, "k", 3]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+dict_set	pos	2	string	dict_set of [d, "k", "zz_census_2509"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+dict_set	pos	2	dict	dict_set of [d, "k", {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+dict_set	pos	2	list	dict_set of [d, "k", []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+divide	pos	0	number	divide of [0, [3, 4]]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+divide	pos	1	number	divide of [[1, 2], 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+fill	pos	1	number	fill of [2, 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+fill	pos	1	dict	fill of [2, {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+fill	pos	1	list	fill of [2, []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+gfx_open	pos	2	number	gfx_open of [16, 16, 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+gfx_open	pos	2	dict	gfx_open of [16, 16, {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+gfx_open	pos	2	list	gfx_open of [16, 16, []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+json_path	pos	1	number	json_path of ["{\"k\":2}", 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+json_path	pos	1	dict	json_path of ["{\"k\":2}", {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+json_path	pos	1	list	json_path of ["{\"k\":2}", []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_contains	pos	1	string	list_contains of [[1, 2], "zz_census_2509"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_contains	pos	1	dict	list_contains of [[1, 2], {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_contains	pos	1	list	list_contains of [[1, 2], []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_index_of	pos	1	string	list_index_of of [[1, 2], "zz_census_2509"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_index_of	pos	1	dict	list_index_of of [[1, 2], {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_index_of	pos	1	list	list_index_of of [[1, 2], []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_insert_at	pos	0	string	list_insert_at of ["zz_census_2509", 1, 3]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_insert_at	pos	0	number	list_insert_at of [0, 1, 3]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_insert_at	pos	0	dict	list_insert_at of [{"a": 1}, 1, 3]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_insert_at	pos	0	list	list_insert_at of [[], 1, 3]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_insert_at	pos	2	string	list_insert_at of [xs, 1, "zz_census_2509"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_insert_at	pos	2	dict	list_insert_at of [xs, 1, {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_insert_at	pos	2	list	list_insert_at of [xs, 1, []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_remove_at	pos	0	string	list_remove_at of ["zz_census_2509", 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_remove_at	pos	0	number	list_remove_at of [0, 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_remove_at	pos	0	dict	list_remove_at of [{"a": 1}, 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_remove_at	pos	0	list	list_remove_at of [[], 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_slice	pos	0	string	list_slice of ["zz_census_2509", 0, 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_slice	pos	0	number	list_slice of [0, 0, 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_slice	pos	0	dict	list_slice of [{"a": 1}, 0, 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_slice	pos	1	string	list_slice of [[1, 2, 3], "zz_census_2509", 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_slice	pos	1	dict	list_slice of [[1, 2, 3], {"a": 1}, 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_slice	pos	1	list	list_slice of [[1, 2, 3], [], 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_slice	pos	2	string	list_slice of [[1, 2, 3], 0, "zz_census_2509"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_slice	pos	2	dict	list_slice of [[1, 2, 3], 0, {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_slice	pos	2	list	list_slice of [[1, 2, 3], 0, []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+list_truncate	pos	0	list	list_truncate of [[], 1]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+multiply	pos	0	number	multiply of [0, [3, 4]]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+multiply	pos	1	number	multiply of [[1, 2], 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+nearest_in_range	pos	0	string	nearest_in_range of ["zz_census_2509", 0, 0, 4, 8, 8, "px", "py", "active"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+nearest_in_range	pos	0	number	nearest_in_range of [0, 0, 0, 4, 8, 8, "px", "py", "active"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+nearest_in_range	pos	0	dict	nearest_in_range of [{"a": 1}, 0, 0, 4, 8, 8, "px", "py", "active"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+nearest_in_range_all	pos	0	string	nearest_in_range_all of ["zz_census_2509", 4, 8, 8, "px", "py", "active"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+nearest_in_range_all	pos	0	number	nearest_in_range_all of [0, 4, 8, 8, "px", "py", "active"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+nearest_in_range_all	pos	0	dict	nearest_in_range_all of [{"a": 1}, 4, 8, 8, "px", "py", "active"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad	pos	1	string	numerical_grad of [loss, "zz_census_2509", 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad	pos	1	number	numerical_grad of [loss, 0, 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad	pos	1	dict	numerical_grad of [loss, {"a": 1}, 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad	pos	1	list	numerical_grad of [loss, [], 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_cols	pos	1	string	numerical_grad_cols of [loss, "zz_census_2509", [0], 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_cols	pos	1	number	numerical_grad_cols of [loss, 0, [0], 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_cols	pos	1	dict	numerical_grad_cols of [loss, {"a": 1}, [0], 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_cols	pos	1	list	numerical_grad_cols of [loss, [], [0], 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_cols	pos	2	string	numerical_grad_cols of [loss, p, "zz_census_2509", 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_cols	pos	2	number	numerical_grad_cols of [loss, p, 0, 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_cols	pos	2	dict	numerical_grad_cols of [loss, p, {"a": 1}, 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_rows	pos	1	string	numerical_grad_rows of [loss, "zz_census_2509", [0], 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_rows	pos	1	number	numerical_grad_rows of [loss, 0, [0], 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_rows	pos	1	dict	numerical_grad_rows of [loss, {"a": 1}, [0], 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_rows	pos	1	list	numerical_grad_rows of [loss, [], [0], 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_rows	pos	2	string	numerical_grad_rows of [loss, p, "zz_census_2509", 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_rows	pos	2	number	numerical_grad_rows of [loss, p, 0, 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+numerical_grad_rows	pos	2	dict	numerical_grad_rows of [loss, p, {"a": 1}, 0.001]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+pow	pos	0	number	pow of [0, [3, 4]]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+pow	pos	1	number	pow of [[1, 2], 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+reshape	pos	0	string	reshape of ["zz_census_2509", 2, 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+reshape	pos	0	number	reshape of [0, 2, 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+reshape	pos	0	dict	reshape of [{"a": 1}, 2, 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+reshape	pos	0	list	reshape of [[], 2, 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+reshape	pos	1	string	reshape of [a, "zz_census_2509", 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+reshape	pos	1	dict	reshape of [a, {"a": 1}, 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+reshape	pos	1	list	reshape of [a, [], 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+reshape	pos	2	string	reshape of [a, 2, "zz_census_2509"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+reshape	pos	2	dict	reshape of [a, 2, {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+reshape	pos	2	list	reshape of [a, 2, []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+scan_int_tokens	pos	1	number	scan_int_tokens of ["2 3", 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+scan_int_tokens	pos	1	dict	scan_int_tokens of ["2 3", {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+scan_int_tokens	pos	1	list	scan_int_tokens of ["2 3", []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+scan_ints	pos	1	number	scan_ints of ["2 3", 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+scan_ints	pos	1	dict	scan_ints of ["2 3", {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+scan_ints	pos	1	list	scan_ints of ["2 3", []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+scatter_add	pos	2	number	scatter_add of [a, [1], 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+send	pos	1	string	send of [ch, "zz_census_2509"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+send	pos	1	dict	send of [ch, {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+send	pos	1	list	send of [ch, []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update	pos	0	list	sgd_update of [[], [2], 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_cols	pos	0	string	sgd_update_cols of ["zz_census_2509", [[2]], [0], 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_cols	pos	0	number	sgd_update_cols of [0, [[2]], [0], 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_cols	pos	0	dict	sgd_update_cols of [{"a": 1}, [[2]], [0], 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_cols	pos	1	string	sgd_update_cols of [p, "zz_census_2509", [0], 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_cols	pos	1	number	sgd_update_cols of [p, 0, [0], 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_cols	pos	1	dict	sgd_update_cols of [p, {"a": 1}, [0], 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_cols	pos	2	string	sgd_update_cols of [p, [[2]], "zz_census_2509", 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_cols	pos	2	number	sgd_update_cols of [p, [[2]], 0, 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_cols	pos	2	dict	sgd_update_cols of [p, [[2]], {"a": 1}, 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_rows	pos	0	string	sgd_update_rows of ["zz_census_2509", [[2]], [0], 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_rows	pos	0	number	sgd_update_rows of [0, [[2]], [0], 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_rows	pos	0	dict	sgd_update_rows of [{"a": 1}, [[2]], [0], 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_rows	pos	1	string	sgd_update_rows of [p, "zz_census_2509", [0], 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_rows	pos	1	number	sgd_update_rows of [p, 0, [0], 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_rows	pos	1	dict	sgd_update_rows of [p, {"a": 1}, [0], 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_rows	pos	2	string	sgd_update_rows of [p, [[2]], "zz_census_2509", 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_rows	pos	2	number	sgd_update_rows of [p, [[2]], 0, 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sgd_update_rows	pos	2	dict	sgd_update_rows of [p, [[2]], {"a": 1}, 0.5]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sort_by	pos	0	string	sort_by of ["zz_census_2509", (v) => v]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sort_by	pos	0	number	sort_by of [0, (v) => v]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sort_by	pos	0	dict	sort_by of [{"a": 1}, (v) => v]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sort_by	pos	1	string	sort_by of [[2, 1], "zz_census_2509"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sort_by	pos	1	number	sort_by of [[2, 1], 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sort_by	pos	1	dict	sort_by of [[2, 1], {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+sort_by	pos	1	list	sort_by of [[2, 1], []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+subtract	pos	0	number	subtract of [0, [3, 4]]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+subtract	pos	1	number	subtract of [[1, 2], 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_send	pos	1	string	task_send of [0, "zz_census_2509"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_send	pos	1	dict	task_send of [0, {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+task_send	pos	1	list	task_send of [0, []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append	pos	0	string	text_builder_append of ["zz_census_2509", "b"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append	pos	0	number	text_builder_append of [0, "b"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append	pos	0	dict	text_builder_append of [{"a": 1}, "b"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append	pos	0	list	text_builder_append of [[], "b"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append	pos	1	number	text_builder_append of [tb, 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append	pos	1	dict	text_builder_append of [tb, {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append	pos	1	list	text_builder_append of [tb, []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append_line	pos	0	string	text_builder_append_line of ["zz_census_2509", "b"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append_line	pos	0	number	text_builder_append_line of [0, "b"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append_line	pos	0	dict	text_builder_append_line of [{"a": 1}, "b"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append_line	pos	0	list	text_builder_append_line of [[], "b"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append_line	pos	1	number	text_builder_append_line of [tb, 0]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append_line	pos	1	dict	text_builder_append_line of [tb, {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+text_builder_append_line	pos	1	list	text_builder_append_line of [tb, []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+zeros	pos	0	string	zeros of ["zz_census_2509", 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+zeros	pos	0	dict	zeros of [{"a": 1}, 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+zeros	pos	0	list	zeros of [[], 2]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+zeros	pos	1	string	zeros of [1, "zz_census_2509"]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+zeros	pos	1	dict	zeros of [1, {"a": 1}]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
+zeros	pos	1	list	zeros of [1, []]	ALLOWED: documented signature accepts this kind or the argument is documented as any-valued/ignored
