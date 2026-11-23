@@ -336,7 +336,9 @@ def measure_shape_writers(binary, scratch, selected=None):
     if selected == 'all':
         legacy = measure_legacy_writers(binary, scratch)
         for result in legacy:
-            raised = 'yes' if 'error:type_mismatch\n' in result['out'] else 'no'
+            # The same rule as the generic rows: a broken run fails its row.
+            raised = ('broken' if result['broken'] else
+                      'yes' if 'error:type_mismatch\n' in result['out'] else 'no')
             unchanged = 'yes' if result['unchanged'] else 'no'
             rows.append((result['name'], 'legacy-data-or-mutation', result['mode'],
                          raised, unchanged, 'no record'))
