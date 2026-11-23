@@ -312,9 +312,17 @@ def measure_shape_writers(binary, scratch, selected=None):
             snapshots = setup_snapshots(setup)
             source = (setup + '\n' + snapshots + '\nprint of "snapshot:call"\n'
                       + call(expression) + snapshots + '\n' + invariant).replace('@TMP@', str(owned))
-            call_line = setup.count('\n') + 3
+            # The invocation's own line in the program as written, after the
+            # setup, its snapshots, the snapshot:call print and the try: line.
+            source_lines = source.split('\n')
+            call_line = next(i + 1 for i, line in enumerate(source_lines)
+                             if i > source_lines.index('print of "snapshot:call"')
+                             and line.startswith('    answer is '))
             r = probe(binary, source, mode, owned, trace=True)
-            raised = 'yes' if 'error:type_mismatch\n' in r['out'] else 'no'
+            # A sanitizer report, an abnormal exit or a missing end marker
+            # fails the row, whatever the markers before it said.
+            raised = ('broken' if r['broken'] else
+                      'yes' if 'error:type_mismatch\n' in r['out'] else 'no')
             snapshot_lines = [line for line in r['out'].splitlines()
                               if line.startswith('snapshot:')]
             try:
