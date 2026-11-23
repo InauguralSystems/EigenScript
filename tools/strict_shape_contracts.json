@@ -2326,14 +2326,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "a1292b048721a9844c56b64062b62aa0e4f8d27894663050ad7fd826e2952976"
+      "aeed047ad89035dd9e9a627bc9ee7ba04717310513365cd15d4377d6ecadc1ed"
     ],
     "source_sha256": {
       "builtin_tensor_leaky_relu": [
-        "a1292b048721a9844c56b64062b62aa0e4f8d27894663050ad7fd826e2952976"
-      ],
-      "eigs_float_arg": [
-        "628eed4fed7515fe2738a26153798fcb173cb23a350d8436f78215f7d1f4c4a8"
+        "aeed047ad89035dd9e9a627bc9ee7ba04717310513365cd15d4377d6ecadc1ed"
       ],
       "flat_to_like": [
         "244c127abae1a7bf7fa14097cf4c4930239ba42febae9d6d8f3264ea974d4dd1"
@@ -2342,7 +2339,7 @@
         "65240f647516c2717f73e1df84f89fa46da785a5ff51062d545adca210986100"
       ],
       "tensor_to_flat": [
-        "5671d8751c6f549311a699cbf7f57843d027258e9d2207e3b36e26af3ab30e4d"
+        "6c376aa7efd1f7b581f747c4cd71631430db315800961a8c7d53dff9f6f880ac"
       ]
     }
   },
@@ -2401,11 +2398,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "c5b0db982ab8a21b82f550fcf2a656327d7dd4f43a399f44143574b6c2f1bec2"
+      "2d9bb42c10efc8fb8448db237e15a94138da5dd7ba6b66aaba839fe09a933338"
     ],
     "source_sha256": {
       "builtin_tensor_log_softmax": [
-        "c5b0db982ab8a21b82f550fcf2a656327d7dd4f43a399f44143574b6c2f1bec2"
+        "2d9bb42c10efc8fb8448db237e15a94138da5dd7ba6b66aaba839fe09a933338"
       ]
     }
   },
@@ -2562,20 +2559,17 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "fede7ab91590ccf3da9a1a9d3342c20ff168044c6e8128c51a6ac1f737a9a042"
+      "e38f48cfbc713d68ac2961842dcd2d69ac1dbc8eefaa10e4bc5fd3f114a6e2c0"
     ],
     "source_sha256": {
       "builtin_tensor_relu": [
-        "fede7ab91590ccf3da9a1a9d3342c20ff168044c6e8128c51a6ac1f737a9a042"
-      ],
-      "eigs_float_arg": [
-        "628eed4fed7515fe2738a26153798fcb173cb23a350d8436f78215f7d1f4c4a8"
+        "e38f48cfbc713d68ac2961842dcd2d69ac1dbc8eefaa10e4bc5fd3f114a6e2c0"
       ],
       "flat_to_like": [
         "244c127abae1a7bf7fa14097cf4c4930239ba42febae9d6d8f3264ea974d4dd1"
       ],
       "tensor_to_flat": [
-        "5671d8751c6f549311a699cbf7f57843d027258e9d2207e3b36e26af3ab30e4d"
+        "6c376aa7efd1f7b581f747c4cd71631430db315800961a8c7d53dff9f6f880ac"
       ]
     }
   },
@@ -2635,14 +2629,14 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "2ef8ddf9912c6d979ad9b8a4921a626812cea76645e9654ffad8455331a3427e"
+      "851156c034aa27e8e50e66db67818c5fed754b9a25f31904bfa85fe499089245"
     ],
     "source_sha256": {
       "buf_dims": [
         "eed52bb80872976c3f6c755c1ef9677c5c990de16e492d4856d23fbf3f20615b"
       ],
       "builtin_tensor_softmax": [
-        "2ef8ddf9912c6d979ad9b8a4921a626812cea76645e9654ffad8455331a3427e"
+        "851156c034aa27e8e50e66db67818c5fed754b9a25f31904bfa85fe499089245"
       ],
       "flat_to_like": [
         "244c127abae1a7bf7fa14097cf4c4930239ba42febae9d6d8f3264ea974d4dd1"
@@ -2651,7 +2645,7 @@
         "65240f647516c2717f73e1df84f89fa46da785a5ff51062d545adca210986100"
       ],
       "tensor_to_flat": [
-        "5671d8751c6f549311a699cbf7f57843d027258e9d2207e3b36e26af3ab30e4d"
+        "6c376aa7efd1f7b581f747c4cd71631430db315800961a8c7d53dff9f6f880ac"
       ]
     }
   },

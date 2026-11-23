@@ -567,6 +567,19 @@ value
   open, a short write or a failed close raises a catchable `io` error naming
   the path and the reason (the partial file is left, as `write_text` leaves it).
 
+`softmax`, `log_softmax`, `relu`, `leaky_relu`, `matmul`, `matmul_at` and
+`matmul_bt` accept infinity and NaN elements as IEEE arithmetic in all their
+container forms. With `EIGS_STRICT` unset or `0`, IEEE results and their
+arithmetic flags are retained; `EIGS_STRICT=1` raises only when a result is
+non-finite. `relu` of `-inf` still answers `0.0`. `softmax` uses
+`exp(x[j] - m) / s`; `log_softmax` uses `(x[j] - m) - log(s)`, with the
+first-maximum scan `m` and `s = sum(exp(x - m))`, without a fallback or
+probability floor. Thus `log_softmax` of `[0, -1000]` is `[0.0, -1000.0]`.
+Scalar `softmax` / `log_softmax` are the one-element row: finite input gives
+`1.0` / `0.0`, non-finite input gives NaN. `tensor_save` remains a storage
+boundary: non-finite list elements raise in every strict state before a
+file is written (#2444).
+
 read_text, read_bytes, and read_bytes_buf use Python-style failure semantics:
 missing, unreadable, and directory paths raise catchable io errors containing
 the path and OS reason. Empty files successfully return empty values.

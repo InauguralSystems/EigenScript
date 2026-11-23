@@ -914,6 +914,13 @@ arithmetic|mean|nf is f64_from_bits of 9218868437227405312\nprint of (mean of [n
 arithmetic|norm|nf is f64_from_bits of 9218868437227405312\nprint of (norm of [nf, 2.0, -2.0])|arithmetic: non-finite arithmetic result (infinity)
 guard|store_get|print of (store_get of [42, "col", "k"])|store_get: invalid store
 guard|store_query|print of (store_query of [42, "col", 3])|store_query: expected a fixed-shape list with at most 2 elements
+arithmetic|softmax|nf is f64_from_bits of 9218868437227405312\nprint of (softmax of [nf, 0.0])|softmax: result is not a number (NaN has no defined value)
+arithmetic|log_softmax|nf is f64_from_bits of 9218868437227405312\nprint of (log_softmax of [nf, 0.0])|log_softmax: result is not a number (NaN has no defined value)
+arithmetic|relu|nf is f64_from_bits of 9218868437227405312\nprint of (relu of [nf, -1.0])|relu: non-finite arithmetic result (infinity)
+arithmetic|leaky_relu|nf is f64_from_bits of 9218868437227405312\nprint of (leaky_relu of [nf, -1.0])|leaky_relu: non-finite arithmetic result (infinity)
+arithmetic|matmul|nf is f64_from_bits of 9218868437227405312\nprint of (matmul of [[[nf, 1.0]], [[1.0], [1.0]]])|matmul: non-finite arithmetic result (infinity)
+arithmetic|matmul_at|nf is f64_from_bits of 9218868437227405312\nprint of (matmul_at of [[[nf], [1.0]], [[1.0], [1.0]]])|arithmetic: non-finite arithmetic result (infinity)
+arithmetic|matmul_bt|nf is f64_from_bits of 9218868437227405312\nprint of (matmul_bt of [[[nf, 1.0]], [[1.0, 1.0]]])|arithmetic: non-finite arithmetic result (infinity)
 guard|assert|print of (assert of [])|assert: expected a condition or [condition, optional message]
 guard|buf_from_list|print of (buf_from_list of 42)|buf_from_list: expected a list
 guard|concat|print of (concat of 42)|concat: expected [list, list]
