@@ -178,7 +178,7 @@
 191|leaky_relu|core|plain|raises|rc=1 Error <file>:1: leaky_relu: expected a tensor containing only numbers\n     1 | print of (leaky_relu of [1.0, [2.0], 3.0])\n       |                      ^\n  at <module> (<file>:1) [EIGS_STRICT=0 differs on purpose: a list or buffer where a number belongs is refused in every state since 938b2547 (#1758, structural row mixtures); the release read it as zero]
 216|store_get|core|plain|raises|rc=1 Error <file>:1: store_get: invalid store\n     1 | print of (store_get of [42, "col", "k"])\n       |                     ^\n  at <module> (<file>:1)
 217|store_query|core|plain|raises|rc=1 Error <file>:1: store_query: expected a fixed-shape list with at most 2 elements\n     1 | print of (store_query of [42, "col", 3])\n       |                       ^\n  at <module> (<file>:1)
-218|assert|core|plain|quiet|rc=0 null [different on purpose: #2509, a wrong-typed argument raises type_mismatch in every state; v0.48.0 answered quietly or took a bare string]
+218|assert|core|plain|raises|rc=1 Error <file>:1: ASSERT FAIL\n     1 | print of (assert of [])\n       |                  ^\n  at <module> (<file>:1) [different on purpose: #2509, an empty argument list is a type error, not a failed assertion]
 219|buf_from_list|core|plain|quiet|rc=0 null [different on purpose: #2509, a wrong-typed argument raises type_mismatch in every state; v0.48.0 answered quietly or took a bare string]
 220|concat|core|plain|quiet|rc=0 null [different on purpose: #2509, a wrong-typed argument raises type_mismatch in every state; v0.48.0 answered quietly or took a bare string]
 221|eval|core|plain|quiet|rc=0 null [different on purpose: #2509, a wrong-typed argument raises type_mismatch in every state; v0.48.0 answered quietly or took a bare string]

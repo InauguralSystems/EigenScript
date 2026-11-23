@@ -682,10 +682,9 @@ Value* builtin_assert(Value *arg) {
      * assert failures are now catchable in `try`/`catch`, matching `throw`. */
     EIGS_VIEW(cond_view);
     Value *cond = arg;
-    if (arg && arg->type == VAL_LIST) { ARG_GUARD(arg->data.list.count < 1, "assert", "a condition or [condition, optional message string]", make_null()); cond = list_get_view(arg, 0, &cond_view); } else goto assert_check;
+    if (arg && arg->type == VAL_LIST) { ARG_GUARD(arg->data.list.count < 1, "assert", "a condition or [condition, optional message]", make_null()); cond = list_get_view(arg, 0, &cond_view); } else goto assert_check;
     if (arg->data.list.count >= 2) {
         Value *msg = BUILTIN_LIST_VIEW(arg, 1);
-        ARG_GUARD(!msg || msg->type != VAL_STR, "assert", "a string message", make_null());
         if (!is_truthy(cond)) {
             char *msg_str = value_to_string(msg);
             rt_error(EK_ASSERT, 0, "ASSERT FAIL: %s", msg_str);

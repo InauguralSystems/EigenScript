@@ -1,7 +1,7 @@
 print of "=== ASSERT TEST ==="
 
 print of "--- AS1: Assert true passes ---"
-assert of [1, "truthy numeric condition"]
+assert of 1
 print of "pass1"
 
 print of "--- AS2: Assert with message passes ---"

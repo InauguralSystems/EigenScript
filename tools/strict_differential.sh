@@ -914,7 +914,7 @@ arithmetic|mean|nf is f64_from_bits of 9218868437227405312\nprint of (mean of [n
 arithmetic|norm|nf is f64_from_bits of 9218868437227405312\nprint of (norm of [nf, 2.0, -2.0])|arithmetic: non-finite arithmetic result (infinity)
 guard|store_get|print of (store_get of [42, "col", "k"])|store_get: invalid store
 guard|store_query|print of (store_query of [42, "col", 3])|store_query: expected a fixed-shape list with at most 2 elements
-guard|assert|print of (assert of [1, 42])|assert: expected a string message
+guard|assert|print of (assert of [])|assert: expected a condition or [condition, optional message]
 guard|buf_from_list|print of (buf_from_list of 42)|buf_from_list: expected a list
 guard|concat|print of (concat of 42)|concat: expected [list, list]
 guard|eval|print of (eval of 42)|eval: expected a source string

@@ -12,10 +12,13 @@ args	whole	-	list	args of []	IGNORED: args of null
 args	whole	-	number	args of 0	IGNORED: args of null
 args	whole	-	string	args of "zz_census_2509"	IGNORED: args of null
 asin	whole	-	number	asin of 0	ANY: | `asin` | `asin of x` | Inverse sine; input outside [-1, 1] gives NaN by default and raises `value` under `EIGS_STRICT=1`. Numeric inputs convert to float; numeric results are floats. |
-assert	pos	0	dict	assert of [{"a": 1}, "ordinary true assertion"]	ANY: | `assert` | `assert of condition` or `assert of [condition, optional string message]` | Read the condition by truthiness, as `if` does. A bare condition and a one-item or two-item argument list are accepted; a supplied non-string message raises `type_mismatch`; otherwise raise catchable error `"ASSERT FAIL: <msg>"` if the condition is false. |
-assert	pos	0	string	assert of ["zz_census_2509", "ordinary true assertion"]	ANY: | `assert` | `assert of condition` or `assert of [condition, optional string message]` | Read the condition by truthiness, as `if` does. A bare condition and a one-item or two-item argument list are accepted; a supplied non-string message raises `type_mismatch`; otherwise raise catchable error `"ASSERT FAIL: <msg>"` if the condition is false. |
-assert	whole	-	dict	assert of {"a": 1}	ANY: | `assert` | `assert of condition` or `assert of [condition, optional string message]` | Read the condition by truthiness, as `if` does. A bare condition and a one-item or two-item argument list are accepted; a supplied non-string message raises `type_mismatch`; otherwise raise catchable error `"ASSERT FAIL: <msg>"` if the condition is false. |
-assert	whole	-	string	assert of "zz_census_2509"	ANY: | `assert` | `assert of condition` or `assert of [condition, optional string message]` | Read the condition by truthiness, as `if` does. A bare condition and a one-item or two-item argument list are accepted; a supplied non-string message raises `type_mismatch`; otherwise raise catchable error `"ASSERT FAIL: <msg>"` if the condition is false. |
+assert	pos	0	dict	assert of [{"a": 1}, "ordinary true assertion"]	ANY: Read the condition by truthiness, as `if` does.
+assert	pos	0	string	assert of ["zz_census_2509", "ordinary true assertion"]	ANY: Read the condition by truthiness, as `if` does.
+assert	pos	1	dict	assert of [1, {"a": 1}]	ANY: the message may be any value and is shown as text (N6)
+assert	pos	1	list	assert of [1, []]	ANY: the message may be any value and is shown as text (N6)
+assert	pos	1	number	assert of [1, 0]	ANY: the message may be any value and is shown as text (N6)
+assert	whole	-	dict	assert of {"a": 1}	ANY: Read the condition by truthiness, as `if` does.
+assert	whole	-	string	assert of "zz_census_2509"	ANY: Read the condition by truthiness, as `if` does.
 atan	whole	-	number	atan of 0	KIND: | `atan` | `atan of x` | Inverse tangent. Numeric inputs convert to float; numeric results are floats. |
 audio_volume	pos	0	number	audio_volume of [0, 0.5]	KIND: `audio_volume of [channel, vol]`
 bit_not	whole	-	number	bit_not of 0	KIND: | `bit_not` | `bit_not of x` | Bitwise NOT (prefer `~x`) |
