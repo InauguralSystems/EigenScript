@@ -912,6 +912,8 @@ arithmetic|divide|nf is f64_from_bits of 9218868437227405312\nprint of (divide o
 arithmetic|sum|nf is f64_from_bits of 9218868437227405312\nprint of (sum of [nf, 2.0, -2.0])|arithmetic: non-finite arithmetic result (infinity)
 arithmetic|mean|nf is f64_from_bits of 9218868437227405312\nprint of (mean of [nf, 2.0, -2.0])|arithmetic: non-finite arithmetic result (infinity)
 arithmetic|norm|nf is f64_from_bits of 9218868437227405312\nprint of (norm of [nf, 2.0, -2.0])|arithmetic: non-finite arithmetic result (infinity)
+guard|store_get|print of (store_get of [42, "col", "k"])|store_get: invalid store
+guard|store_query|print of (store_query of [42, "col", 3])|store_query: expected a fixed-shape list with at most 2 elements
 EOF
 )
 PROBES="${PROBES//@TMP@/$TMP}"
