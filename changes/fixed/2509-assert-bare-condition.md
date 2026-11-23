@@ -1,0 +1,1 @@
+- Accept a bare condition in `assert` and require an optional message to be a string (#2509).

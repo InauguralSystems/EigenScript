@@ -178,3 +178,26 @@
 191|leaky_relu|core|plain|raises|rc=1 Error <file>:1: leaky_relu: expected a tensor containing only numbers\n     1 | print of (leaky_relu of [1.0, [2.0], 3.0])\n       |                      ^\n  at <module> (<file>:1) [EIGS_STRICT=0 differs on purpose: a list or buffer where a number belongs is refused in every state since 938b2547 (#1758, structural row mixtures); the release read it as zero]
 216|store_get|core|plain|raises|rc=1 Error <file>:1: store_get: invalid store\n     1 | print of (store_get of [42, "col", "k"])\n       |                     ^\n  at <module> (<file>:1)
 217|store_query|core|plain|raises|rc=1 Error <file>:1: store_query: expected a fixed-shape list with at most 2 elements\n     1 | print of (store_query of [42, "col", 3])\n       |                       ^\n  at <module> (<file>:1)
+218|assert|core|plain|quiet|rc=0 null
+219|buf_from_list|core|plain|quiet|rc=0 null
+220|concat|core|plain|quiet|rc=0 null
+221|eval|core|plain|quiet|rc=0 null
+222|keys|core|plain|quiet|rc=0 []
+223|list_slice|core|plain|quiet|rc=0 null
+224|nearest_in_range|core|plain|quiet|rc=0 null
+225|nearest_in_range_all|core|plain|quiet|rc=0 null
+226|num_copy|core|plain|quiet|rc=0 null
+227|random_normal|core|plain|quiet|rc=0 null
+228|reshape|core|plain|quiet|rc=0 null
+229|sgd_update|core|plain|quiet|rc=0 null
+230|sgd_update_cols|core|plain|quiet|rc=0 null
+231|sgd_update_rows|core|plain|quiet|rc=0 null
+232|shape|core|plain|quiet|rc=0 null
+233|sort_by|core|plain|quiet|rc=0 null
+234|state_at|core|plain|quiet|rc=0 null
+235|task_join|core|plain|quiet|rc=0 null
+236|text_builder_append|core|plain|quiet|rc=0 null
+237|text_builder_append_line|core|plain|quiet|rc=0 null
+238|usleep|core|plain|quiet|rc=0 null
+239|values|core|plain|quiet|rc=0 []
+240|zeros|core|plain|quiet|rc=0 null

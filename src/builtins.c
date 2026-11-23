@@ -680,10 +680,10 @@ Value* builtin_assert(Value *arg) {
      * standard teardown (env_decref, gc_collect_at_exit, chunk_free). Direct
      * exit leaked the global env and every registered builtin. Side effect:
      * assert failures are now catchable in `try`/`catch`, matching `throw`. */
-    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 1,
-              "assert", "[condition, optional message string]", make_null());
-    if (arg->type == VAL_LIST && arg->data.list.count >= 2) {
-        Value *cond = BUILTIN_LIST_VIEW(arg, 0);
+    EIGS_VIEW(cond_view);
+    Value *cond = arg;
+    if (arg && arg->type == VAL_LIST) { ARG_GUARD(arg->data.list.count < 1, "assert", "a condition or [condition, optional message string]", make_null()); cond = list_get_view(arg, 0, &cond_view); } else goto assert_check;
+    if (arg->data.list.count >= 2) {
         Value *msg = BUILTIN_LIST_VIEW(arg, 1);
         ARG_GUARD(!msg || msg->type != VAL_STR, "assert", "a string message", make_null());
         if (!is_truthy(cond)) {
@@ -693,7 +693,7 @@ Value* builtin_assert(Value *arg) {
         }
         return make_null();
     }
-    Value *cond = BUILTIN_LIST_VIEW(arg, 0);
+assert_check:
     if (!is_truthy(cond)) {
         rt_error(EK_ASSERT, 0, "ASSERT FAIL");
     }
