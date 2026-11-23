@@ -3242,3 +3242,7 @@ A refused `shared_set`, overflowing `shared_incr`, `store_put` or
 create a collection, consume an automatic ID, change the caller's record or
 write file bytes. Historical stores containing quoted non-finite buffer
 sentinels remain readable; new writes of those payloads refuse.
+
+### UI boolean state
+
+The standard UI library represents binary widget state with `true` and `false` and reads it by truthiness. Numeric values, selection indices, bitmasks, and `null` absence sentinels remain distinct. Constructors and setters reject `0` and `1` for a boolean field; a number assigned to a field directly is read by truthiness. See [UI widget state](UI.md).

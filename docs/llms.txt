@@ -1059,3 +1059,5 @@ A refused `shared_set`, overflowing `shared_incr`, `store_put` or
 create a collection, consume an automatic ID, change the caller's record or
 write file bytes. Historical stores containing quoted non-finite buffer
 sentinels remain readable; new writes of those payloads refuse.
+
+UI widget-state contract (#1653): binary fields (`visible`, `enabled`, interaction flags, expansion/collapse flags, and checkbox/toggle/toggle-button `value`) are bools written as `true`/`false` and read by truthiness. Numeric values, selection indices, bitmasks, and explicit `null` sentinels are not coerced to bool. Boolean-valued public constructors/setters reject numeric arguments before UI effects.
