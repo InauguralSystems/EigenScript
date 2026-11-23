@@ -58,7 +58,6 @@ def cases(root): return json.loads((root / "tests/strict_shape_cases.json").read
 def call(name, args): return name + " of " + (args[0] if len(args) == 1 else "[" + ", ".join(args) + "]")
 
 def snapshot_call(setup, expression, bufvars):
-    snapshots = "".join(f'__census_snapshot of ["{v}", {v}]\n' for v in sorted(bufvars))
     before=""
     changes=""
     for v in sorted(bufvars):
@@ -66,7 +65,7 @@ def snapshot_call(setup, expression, bufvars):
         changes += f'''__census_changed_{v} is []
 for __i in range of (len of {v}):
     if (buf_get_bits of [{v}, __i]) != __census_before_{v}[__i]:
-        append of [__census_changed_{v}, __i]
+        append of [__census_changed_{v}, [__i, buf_get_bits of [{v}, __i]]]
 print of ("CENSUS_CHANGE:{v}:" + (str of __census_changed_{v}))
 '''
     return f'''{setup}
@@ -84,7 +83,6 @@ __answer is {expression}
 print of __answer
 if (type of __answer) == "buffer":
     __census_snapshot of ["return", __answer]
-{snapshots}
 {changes}'''
 
 def write_tsv(path, header, rows):
@@ -101,9 +99,12 @@ def summary(rows, runner, extra=""):
     control_errors=sum(1 for r in rows[1:] if r[4] == "control" and any(x.startswith("CONTROL_ERR(") for x in r[-3:]))
     if control_errors: counts["CONTROL_ERR"] = control_errors
     counts["TIMEOUT"] = runner.timed_out
-    fields = [f"examined={len(rows)-1}"] + [f"{k}={counts[k]}" for k in sorted(counts)]
+    producer=rows[0].index("producer")
+    measured=sum(1 for r in rows[1:] if r[producer] != "control"
+                 for x in r[-3:] if x.startswith("val("))
+    fields = [f"examined={len(rows)-1}", f"measured={measured}"] + [f"{k}={counts[k]}" for k in sorted(counts)]
     print("summary " + " ".join(fields) + " excluded=" + ",".join(EXCLUDED) + (" " + extra if extra else ""), file=sys.stderr)
-    return 1 if len(rows) == 1 or (runner.timed_out and not runner.allow) else 0
+    return 1 if len(rows) == 1 or measured == 0 or (runner.timed_out and not runner.allow) else 0
 
 def one_number(ns, root, run):
     names = sorted(set(re.findall(r"^\| `([a-z_0-9]+)` \|", (root/"docs/BUILTINS.md").read_text(), re.M)))
@@ -146,35 +147,29 @@ def buffer_length(run, setup, var):
     m=re.match(r"val\((\d+)\)",answer)
     return int(m.group(1)) if m else 0
 
+def buffer_conversion(source, var):
+    """Build a flat or 1x1 shaped numeric buffer from a case argument."""
+    # Matrix builtins require a shaped buffer, just as their implementation tests do.
+    matrix=re.fullmatch(r"\[\s*\[\s*(-?\d+(?:\.\d+)?)\s*\]\s*\]",source)
+    return (f"{var} is reshape of [buf_from_list of ([{matrix.group(1)}]), 1, 1]" if matrix else
+            f"{var} is buf_from_list of ({source})")
+
 def candidate_buffer(run, c, i):
     """Execute the case shape with argument i converted to a numeric buffer."""
     args=list(c["args"]); source=args[i]
     args[i]="__census_candidate"
-    program=(c.get("setup") or "")+f"\n__census_candidate is buf_from_list of ({source})\nprint of ({call(c['name'],args)})\n"
+    make=buffer_conversion(source,"__census_candidate")
+    program=(c.get("setup") or "")+f"\n{make}\nprint of ({call(c['name'],args)})\n"
     return all(run.run(program,mode).startswith("val(") for _,mode in MODES)
-
-def read_cells(name, arg, args, length):
-    """Indices explicitly selected by buffer calls; other consumers read the whole value."""
-    def integer(i):
-        try: return int(args[i].strip())
-        except (ValueError, IndexError): return None
-    if name in ("buf_get","buf_get_bits","buf_set","buf_set_bits"):
-        x=integer(1); return {x} if arg == 0 and x is not None else set()
-    if name in ("buf_fill","buf_scale_range","buf_deinterleave") and arg == 0:
-        start,count=integer(1),integer(2)
-        return set(range(start,start+count)) if start is not None and count is not None else set()
-    if name == "buf_copy":
-        start=integer(1 if arg == 0 else 3); count=integer(4)
-        return set(range(start,start+count)) if arg in (0,2) and start is not None and count is not None else set()
-    if name == "buf_len": return set()
-    return set(range(length))
 
 def buffer_forms(ns, root, run):
     api=json.loads(subprocess.run([run.binary,"--api","--json"],capture_output=True,text=True,check=True).stdout)
     entries=api if isinstance(api,list) else api.get("builtins",[])
     api_names={x if isinstance(x,str) else x["name"] for x in entries}
+    if isinstance(api,dict):
+        api_names.update(name for group in api.get("extensions",{}).values() for name in group)
     cs=cases(root); rows=[("builtin","arg","cell","touch","value","producer","unset","s0","s1")]
-    controls, clean_controls, used_producers = {}, set(), set()
+    controls, clean_controls, used_producers, touched_cells = {}, set(), set(), set()
     for c in cs:
         n=c["name"]
         if n in EXCLUDED or n not in api_names: continue
@@ -190,57 +185,75 @@ def buffer_forms(ns, root, run):
                 requirement=",".join(c["requirements"])
                 rows.append((n,i,"-","SKIPPED("+requirement+")","control","control",*("SKIPPED("+requirement+")",)*3))
                 continue
-            if not is_existing and not candidate_buffer(run,c,i): continue
+            if not is_existing and not candidate_buffer(run,c,i):
+                reason="buffer conversion or shaped call failed"
+                rows.append((n,i,"-","SKIPPED("+reason+")","control","control",*("SKIPPED("+reason+")",)*3))
+                continue
             if not is_existing:
                 var="__census_buffer"
-                setup += f"\n{var} is buf_from_list of ({a})"
+                setup += "\n"+buffer_conversion(a,var)
                 case_args=list(c["args"]); case_args[i]=var
             else: case_args=c["args"]
             length=buffer_length(run,setup,var)
-            touched=read_cells(n,i,case_args,length)
             control_prog=snapshot_call(setup, call(n,c["args"]), bufvars)
             if not is_existing:
-                control_prog=snapshot_call(setup,call(n,case_args),{var})
+                control_prog=snapshot_call(setup,call(n,case_args),bufvars|{var})
             control=tuple(run.run(control_prog,m) for _,m in MODES)
             control_error=any(not x.startswith("val(") for x in control)
             controls[(n,i)]=not control_error
             if not control_error: clean_controls.add((n,i))
             recorded=tuple("CONTROL_ERR("+x+")" if control_error else x for x in control)
+            touched=set()
             rows.append((n,i,"-","read="+",".join(map(str,sorted(touched))),"control","control",*recorded))
             if control_error: continue
+            probes=[]
             for vn,ve in VALUES.items():
                 for pn,body in PRODUCER_CANDIDATES.items():
                     cells=[]
                     for cell in range(length):
                         step=body.format(buffer=var,index=cell)
-                        prog=snapshot_call(f"{setup}\nnf is {ve}\n{step}",call(n,case_args),{var})
+                        prog=snapshot_call(f"{setup}\nnf is {ve}\n{step}",call(n,case_args),bufvars|{var})
                         answers=[]
                         for _,m in MODES:
                             probe=f"{setup}\nnf is {ve}\n{step}\nprint of ((buf_get_bits of [{var}, {cell}]) == {BITS[vn]})\n"
                             if not run.run(probe,m).startswith("val(true"):
                                 answers.append("NO_PRODUCER")
-                            elif cell not in touched:
-                                answers.append("UNTOUCHED")
                             else:
                                 answers.append(run.run(prog,m)); used_producers.add(pn)
-                        rows.append((n,i,cell,"read" if cell in touched else "none",vn,pn,*answers))
+                        probes.append((cell,vn,pn,answers))
+            # Touch is observed, never inferred: a cell is read iff at least one
+            # successfully planted value changes the call's return/error/stdout or
+            # a post-call buffer/change snapshot from the matching control run.
+            touched={cell for cell,_,_,answers in probes
+                     if any(a not in ("NO_PRODUCER", control[j]) for j,a in enumerate(answers))}
+            touched_cells.update((n,i,cell) for cell in touched)
+            rows[-1]=(n,i,"-","read="+",".join(map(str,sorted(touched))),"control","control",*recorded)
+            for cell,vn,pn,answers in probes:
+                observed=tuple("UNTOUCHED" if a == control[j] else a for j,a in enumerate(answers))
+                rows.append((n,i,cell,"read" if cell in touched else "none",vn,pn,*observed))
     producers=sorted(used_producers)
-    write_tsv(ns.out,["population: every core builtin case in tests/strict_shape_cases.json whose list-literal or list-variable argument answers when replaced at runtime by a buffer of the same numbers; requirement-gated cases are SKIPPED", "producers: "+",".join(producers)],rows)
+    write_tsv(ns.out,["population: every API builtin case in tests/strict_shape_cases.json whose list-literal or list-variable argument answers when replaced at runtime by a buffer of the same numbers; requirement-gated and failed conversions are SKIPPED", "touch: read iff at least one planted value changes the observable call result versus its mode-matched control (return bits/snapshots, changed-buffer snapshots, stdout, or error class); UNTOUCHED is written only after the probe runs", "producers: "+",".join(producers)],rows)
     probed_builtins={n for n,_ in controls}; clean_builtins={n for n,_ in clean_controls}
     bad=sorted(probed_builtins-clean_builtins)
     extra=(f"producers={','.join(producers)} clean_controls={len(clean_controls)}/{len(controls)} "
            f"clean_builtins={len(clean_builtins)}/{len(probed_builtins)} control_errors={','.join(bad) or '-'}")
     rc=summary(rows,run,extra)
     if probed_builtins and len(clean_builtins)*5 < len(probed_builtins)*4: rc=1
+    if clean_controls and not touched_cells: rc=1
     return rc
 
 def diff(a,b):
     def load(p):
         with open(p) as f:
             lines=[x.rstrip("\n").split("\t") for x in f if not x.startswith("#")]
-        return {tuple(r[:6]):tuple(r[-3:]) for r in lines[1:]}
-    x,y=load(a),load(b); keys=sorted(set(x)|set(y)); changed=[k for k in keys if x.get(k)!=y.get(k)]
-    print("builtin\targ\tcell\ttouch\tvalue\tproducer\tbase\thead")
+        header=lines[0]
+        identity=("builtin","arg","kind","value","producer") if "kind" in header else ("builtin","arg","cell","touch","value","producer")
+        indexes=tuple(header.index(x) for x in identity)
+        return identity,{tuple(r[i] for i in indexes):tuple(r[-3:]) for r in lines[1:]}
+    ix,x=load(a); iy,y=load(b)
+    if ix != iy: raise SystemExit("cannot diff different census kinds")
+    keys=sorted(set(x)|set(y)); changed=[k for k in keys if x.get(k)!=y.get(k)]
+    print("\t".join(ix+("base","head")))
     for k in changed: print("\t".join(k+("/".join(x.get(k,("MISSING",))),"/".join(y.get(k,("MISSING",))))))
     print(f"differ={len(changed)}"); return 0
 
