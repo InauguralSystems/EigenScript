@@ -18,6 +18,12 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MODES = ('unset', '0', '1')
 MARK = '2502:done'
+# Core builtins whose shape case has no argument that can be made
+# wrong-typed (measured at #2502's head; --writer all fails if it changes).
+NO_WRONG_TYPE_EXPECTED = frozenset((
+    'append', 'assert', 'classify', 'coalesce', 'concat', 'dot', 'json_path',
+    'list_contains', 'list_index_of', 'list_slice', 'reshape', 'send',
+    'text_builder_append', 'text_builder_append_line', 'zeros'))
 BAD = ('AddressSanitizer', 'LeakSanitizer', 'UndefinedBehaviorSanitizer',
        'ThreadSanitizer', 'runtime error:', 'undefined variable')
 
@@ -215,7 +221,11 @@ def wrong_typed_args(args):
             changed = args[:]
             changed[i] = value[:m.start()] + '2502' + value[m.end():]
             choices.append((changed, f'arg{i + 1}:string->number'))
-        numbers = list(re.finditer(r'(?<![A-Za-z_])(?:\d+(?:\.\d+)?)(?![A-Za-z_])', value))
+        # A digit inside a string literal is text, not a number: changing it
+        # makes a malformed program, not a wrong-typed argument.
+        spans = [(sm.start(), sm.end()) for sm in strings]
+        numbers = [nm for nm in re.finditer(r'(?<![A-Za-z_])(?:\d+(?:\.\d+)?)(?![A-Za-z_])', value)
+                   if not any(lo <= nm.start() < hi for lo, hi in spans)]
         if numbers:
             m = numbers[-1]
             changed = args[:]
@@ -281,6 +291,7 @@ def measure_shape_writers(binary, scratch, selected=None):
         if data_arg is not None:
             candidates.sort(key=lambda item: not item[1].startswith(f'arg{data_arg + 1}:'))
         changed = description = None
+        trial_broken = None
         if not requirements:
             for candidate_no, (candidate, label) in enumerate(candidates):
                 trial = scratch / f'trial-{case_no}-{candidate_no}'
@@ -289,9 +300,19 @@ def measure_shape_writers(binary, scratch, selected=None):
                 expression = case['name'] + ' of ([' + ', '.join(candidate) + '])'
                 trial_source = (setup + '\n' + call(expression)).replace('@TMP@', str(trial))
                 result = probe(binary, trial_source, 'unset', trial)
+                # A crash or sanitizer report while choosing the argument is
+                # a failure of this builtin, never a reason to try the next
+                # candidate (or to call it NO_WRONG_TYPE).
+                if result['broken']:
+                    trial_broken = label
+                    break
                 if 'error:type_mismatch\n' in result['out']:
                     changed, description = candidate, label
                     break
+        if trial_broken is not None:
+            for mode in MODES:
+                rows.append((case['name'], trial_broken, mode, 'broken', '-', '-'))
+            continue
         modes = MODES if not requirements and changed else ('-',)
         for mode in modes:
             if requirements:
@@ -449,12 +470,22 @@ def main():
         skipped = sum(r[2].startswith('SKIPPED(') for r in rows)
         no_type = sum(r[2] == 'NO_WRONG_TYPE' for r in rows)
         run = len(rows) - skipped - no_type
+        # The builtins with no wrong-typed argument, pinned by name for the
+        # whole population: a builtin that drops into this class is a
+        # change to review, not a silent skip.
+        no_type_names = sorted(r[0] for r in rows if r[2] == 'NO_WRONG_TYPE')
+        pin_ok = (args.writer != 'all' or no_type_names == sorted(NO_WRONG_TYPE_EXPECTED))
+        if not pin_ok:
+            print('FAIL: NO_WRONG_TYPE set differs from the pinned set: '
+                  f'extra={sorted(set(no_type_names) - NO_WRONG_TYPE_EXPECTED)} '
+                  f'missing={sorted(NO_WRONG_TYPE_EXPECTED - set(no_type_names))}')
         bad = [r for r in rows if r[2] in MODES and
                (r[3] != 'yes' or r[4] != 'yes' or r[5] != 'no record')]
-        print(f"{'FAIL' if bad else 'PASS'}: writers2502 examined={len(cases)} "
+        verdict_ok = not bad and pin_ok and run > 0
+        print(f"{'PASS' if verdict_ok else 'FAIL'}: writers2502 examined={len(cases)} "
               f"rows={len(rows)} run={run} skipped={skipped} "
               f"no_wrong_type={no_type} failed={len(bad)}")
-        return int(bool(bad))
+        return int(not verdict_ok)
     with tempfile.TemporaryDirectory(prefix='eigs2502-') as tmp:
         data = measure(args.binary.resolve(), Path(tmp), args.only)
         cleanup_mktemp(data['rows'])
