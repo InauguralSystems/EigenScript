@@ -4,7 +4,7 @@
 All other objects come from the candidate release build; the candidate source
 and binary stay byte-identical. The Makefile supplies compile and link flags.
 """
-import hashlib,json,os,shlex,subprocess,tempfile
+import hashlib,json,os,re,shlex,subprocess,tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -78,9 +78,9 @@ def main():
                     caught = caught and 'FAIL: direct dictionary value' in result.stdout and 'FAIL: dictionary inside a list' in result.stdout
             else:
                 result=run(['python3',str(ROOT/'tests/type_errors_2502.py'),'--binary',str(binary),'--writer',test])
-                caught=result.returncode==1 and 'FAIL: writer write_text' in result.stdout
+                caught=result.returncode==1 and re.search(r'failed=[1-9][0-9]*$', result.stdout.rstrip()) is not None
                 if name == 'write-before-guard':
-                    caught = caught and 'unchanged=False' in result.stdout
+                    caught = caught and '\tyes\tno\tno record' in result.stdout
             if caught:passed+=1;print('PASS: plant',name,'RED in',test,flush=True)
             else: print('FAIL: plant',name,'rc',result.returncode,result.stdout,result.stderr,flush=True)
     assert hashlib.sha256((ROOT/'build/release/eigenscript').read_bytes()).hexdigest()==original_hash
