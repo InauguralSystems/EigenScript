@@ -74,7 +74,7 @@ define toggle(id, x, y, value, on_change) as:
 # rather than throwing.
 
 define _draw_hover_shade(widget, ax, ay, w, h, radius) as:
-    if not widget.enabled:
+    if widget.enabled != null and not widget.enabled:
         return null
     shade is null
     if widget.pressed:
@@ -95,7 +95,7 @@ define _render_button(widget, ax, ay) as:
     custom is 1
     if widget.bg == null:
         custom is 0
-    if not widget.enabled:
+    if widget.enabled != null and not widget.enabled:
         bg is _theme.btn_disabled
         tc is _theme.btn_text_disabled
     elif custom == 0 and widget.pressed:

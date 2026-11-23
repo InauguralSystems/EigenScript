@@ -44,6 +44,8 @@ define label(id, x, y, text) as:
 
 define separator(id, x, y, length, vertical) as:
     # Geometry code, not a stored widget-state field: 1 vertical, 0 horizontal.
+    if (type of vertical) != "num":
+        throw of f"separator: vertical must be num, got {type of vertical}"
     if vertical == 1:
         sw is 1
         sh is length

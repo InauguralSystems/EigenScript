@@ -23,7 +23,7 @@ define _layout(widget, ox, oy) as:
         # lays out against must match what actually gets drawn (#561).
         # Unless the app owns the box: auto_size false means a size it
         # stamped itself, and remeasuring would silently overwrite it.
-        if widget.auto_size:
+        if widget.auto_size == null or widget.auto_size:
             _label_measure of widget
     if widget.type == "grid":
         # The row-label gutter lives INSIDE the grid's rect (#859), so the

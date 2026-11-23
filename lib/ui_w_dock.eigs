@@ -161,7 +161,7 @@ define dock_view(dk) as:
             local rr is v[reg]
             local n_open is 0
             for i in range of n:
-                if not ps[i].collapsed:
+                if ps[i].collapsed != null and not ps[i].collapsed:
                     n_open is n_open + 1
             local body_total is rr[3] - n * th
             if body_total < 0:
@@ -174,7 +174,7 @@ define dock_view(dk) as:
                 local p is ps[i]
                 local pe is {"p": p, "title": [rr[0], y, rr[2], th], "body": null}
                 y is y + th
-                if not p.collapsed:
+                if p.collapsed != null and not p.collapsed:
                     local bh is share
                     if bh > 0:
                         pe.body is [rr[0], y, rr[2], bh]
@@ -192,7 +192,7 @@ define dock_view(dk) as:
             if i == ns2 - 1:
                 cw2 is sr[0] + sr[2] - x
             local pe is {"p": p, "title": [x, sr[1], cw2, th], "body": null}
-            if not p.collapsed:
+            if p.collapsed != null and not p.collapsed:
                 local bh2 is sr[3] - th
                 if bh2 > 0:
                     pe.body is [x, sr[1] + th, cw2, bh2]
@@ -332,7 +332,7 @@ define _hit_test_dock(widget, ax, ay, mx, my) as:
     return widget
 
 define _mousedown_dock(hit, root, mx, my, ev) as:
-    if not hit.interactive:
+    if hit.interactive != null and not hit.interactive:
         return null
     local v is dock_view of hit
     if (_dock_in_handle of [v.hw, mx, my, 0]):

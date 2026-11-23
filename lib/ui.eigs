@@ -210,7 +210,7 @@ define _render_toasts() as:
 # Rendering — registry-driven ui_dispatch
 
 define render(widget, ox, oy) as:
-    if not widget.visible:
+    if widget.visible != null and not widget.visible:
         return null
     ax is ox + widget.x
     ay is oy + widget.y
@@ -291,7 +291,7 @@ define _render_tooltip() as:
 # Hit testing — registry-driven ui_dispatch
 
 define _hit_test(widget, ox, oy, mx, my) as:
-    if not widget.visible:
+    if widget.visible != null and not widget.visible:
         return null
     ax is ox + widget.x
     ay is oy + widget.y
@@ -378,7 +378,7 @@ define _scroll_panels(widget, dx, dy) as:
 # Find scrollable at point — registry-driven
 
 define _find_scrollable_at(widget, ox, oy, mx, my) as:
-    if not widget.visible:
+    if widget.visible != null and not widget.visible:
         return null
     ax is ox + widget.x
     ay is oy + widget.y
@@ -416,7 +416,7 @@ define _find_scrollable_at(widget, ox, oy, mx, my) as:
 # DnD render overlay
 
 define _render_dnd() as:
-    if not _ui.dnd_state.active:
+    if _ui.dnd_state.active != null and not _ui.dnd_state.active:
         return null
     tx is _ui.dnd_state.mx + 10
     ty is _ui.dnd_state.my - 10

@@ -258,7 +258,7 @@ define _hit_test_menu_bar(widget, ax, ay, mx, my) as:
     return null
 
 define _mousedown_menu_bar(hit, root, mx, my, ev) as:
-    if not hit.enabled:
+    if hit.enabled != null and not hit.enabled:
         return null
     # A click in the open pull-down selects by its own y — no mousemove
     # need precede it (the #577 lesson).
@@ -583,7 +583,7 @@ define _close_menu_bars(widget, keep) as:
 # landed on the menu to whatever the menu is covering.
 
 define _find_open_popup_at(widget, mx, my) as:
-    if not widget.visible:
+    if widget.visible != null and not widget.visible:
         return null
     if widget.type == "menu_bar":
         if widget.open_index >= 0:
@@ -634,7 +634,7 @@ define _find_open_popup_at(widget, mx, my) as:
     return null
 
 define _render_popups(widget) as:
-    if not widget.visible:
+    if widget.visible != null and not widget.visible:
         return null
     if widget.type == "menu_bar":
         _render_menu_bar_popup of widget

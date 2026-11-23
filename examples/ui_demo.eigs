@@ -319,19 +319,19 @@ extras_panel.border is null
 
 # Tree view
 tree_nodes is [
-    {"id": "instruments", "text": "Instruments", "expanded": 1, "children": [
-        {"id": "synths", "text": "Synths", "expanded": 0, "children": [
+    {"id": "instruments", "text": "Instruments", "expanded": true, "children": [
+        {"id": "synths", "text": "Synths", "expanded": false, "children": [
             {"id": "analog", "text": "Analog", "children": []},
             {"id": "fm", "text": "FM", "children": []},
             {"id": "wavetable", "text": "Wavetable", "children": []}
         ]},
-        {"id": "samplers", "text": "Samplers", "expanded": 0, "children": [
+        {"id": "samplers", "text": "Samplers", "expanded": false, "children": [
             {"id": "drums", "text": "Drums", "children": []},
             {"id": "strings", "text": "Strings", "children": []}
         ]},
         {"id": "piano", "text": "Piano", "children": []}
     ]},
-    {"id": "effects", "text": "Effects", "expanded": 1, "children": [
+    {"id": "effects", "text": "Effects", "expanded": true, "children": [
         {"id": "reverb", "text": "Reverb", "children": []},
         {"id": "delay", "text": "Delay", "children": []},
         {"id": "eq", "text": "Equalizer", "children": []}
@@ -354,7 +354,7 @@ ui.add_child of [extras_panel, cpick]
 # Draggable item list (drag to reorder)
 reorder_items is ["Kick", "Snare", "Hi-hat", "Clap", "Rim", "Tom", "Crash", "Ride"]
 reorder_list is ui.item_list of ["reorder_list", 460, 10, 180, 300, reorder_items, null]
-reorder_list.draggable is 1
+reorder_list.draggable is true
 reorder_list.on_reorder is on_reorder
 ui.add_child of [extras_panel, ui.label of ["reorder_lbl", 460, 318, "Drag to reorder"]]
 ui.add_child of [extras_panel, reorder_list]

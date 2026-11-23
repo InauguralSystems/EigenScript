@@ -163,7 +163,7 @@ define _chart_extend(ch, si, vx, vy) as:
     local s is ch.series[si]
     if s._scanned == null:
         return null
-    if not ch._have_bounds:
+    if ch._have_bounds != null and not ch._have_bounds:
         return null
     s._scanned is s._scanned + 1
     s._last_y is vy
@@ -193,7 +193,7 @@ define chart_invalidate(ch) as:
 define _chart_scan(ch) as:
     local ns is len of ch.series
     local full is 0
-    if not ch._have_bounds:
+    if ch._have_bounds != null and not ch._have_bounds:
         full is 1
     for si in range of ns:
         local s is ch.series[si]
@@ -220,7 +220,7 @@ define _chart_scan(ch) as:
                 if xs != null:
                     vx is xs[di]
                 local vy is s.data[di]
-                if not ch._have_bounds:
+                if ch._have_bounds != null and not ch._have_bounds:
                     ch._bx0 is vx
                     ch._bx1 is vx
                     ch._by0 is vy
@@ -246,7 +246,7 @@ define chart_bounds(ch) as:
     local bx1 is 1
     local by0 is 0
     local by1 is 1
-    if ch.auto_scale and ch._have_bounds:
+    if (ch.auto_scale == null or ch.auto_scale) and ch._have_bounds:
         bx0 is ch._bx0
         bx1 is ch._bx1
         by0 is ch._by0
@@ -1060,7 +1060,7 @@ define _render_code_view(widget, ax, ay) as:
 define _mousemove_chart(hit, root, mx, my) as:
     hit.hover_index is -1
     hit.hover_series is -1
-    if not hit.hover_enabled:
+    if hit.hover_enabled != null and not hit.hover_enabled:
         return null
     local v is chart_view of hit
     if mx < v.px:
@@ -1103,7 +1103,7 @@ define _mousemove_chart(hit, root, mx, my) as:
 # Drag to pan. The chart claims the pointer so every following mousemove
 # and the terminating mouseup route here (#567).
 define _mousedown_chart(hit, root, mx, my, ev) as:
-    if not hit.interactive:
+    if hit.interactive != null and not hit.interactive:
         return null
     _ui.drag_widget is hit
     _ui.drag_ox is mx
@@ -1121,7 +1121,7 @@ define _drag_chart(w, ev) as:
 # state — reachable from here, so a consumer never shadows mousemove to
 # get it (#822). ev.mx/ev.my are preferred when an event carries them.
 define _wheel_chart(w, ev) as:
-    if not w.interactive:
+    if w.interactive != null and not w.interactive:
         return null
     local mx is _ui.last_mouse_x
     local my is _ui.last_mouse_y
@@ -1364,12 +1364,12 @@ define _tl_scan(tl) as:
         tl._have_bounds is false
     if ns < tl._scan_s:
         tl._have_bounds is false
-    if not tl._have_bounds:
+    if tl._have_bounds != null and not tl._have_bounds:
         tl._scan_m is 0
         tl._scan_s is 0
     for mi in range of [tl._scan_m, nm]:
         local m is tl.markers[mi]
-        if not tl._have_bounds:
+        if tl._have_bounds != null and not tl._have_bounds:
             tl._bt0 is m.t
             tl._bt1 is m.t
             tl._have_bounds is true
@@ -1380,7 +1380,7 @@ define _tl_scan(tl) as:
                 tl._bt1 is m.t
     for si in range of [tl._scan_s, ns]:
         local s is tl.spans[si]
-        if not tl._have_bounds:
+        if tl._have_bounds != null and not tl._have_bounds:
             tl._bt0 is s.t0
             tl._bt1 is s.t1
             tl._have_bounds is true
@@ -1665,7 +1665,7 @@ define _tl_scrub_to(tl, sx) as:
 # Ruler press = scrub; body press = pan. Both claim the pointer so the
 # following mousemoves and the terminating mouseup route here (#567).
 define _mousedown_timeline(hit, root, mx, my, ev) as:
-    if not hit.interactive:
+    if hit.interactive != null and not hit.interactive:
         return null
     local v is timeline_view of hit
     _ui.drag_widget is hit
@@ -1689,7 +1689,7 @@ define _drag_timeline(w, ev) as:
 # Wheel zooms about the pointer, read from the event or the toolkit's
 # cached position (#822) — never from consumer-shadowed state.
 define _wheel_timeline(w, ev) as:
-    if not w.interactive:
+    if w.interactive != null and not w.interactive:
         return null
     local mx is _ui.last_mouse_x
     if ev.mx != null:
@@ -1710,7 +1710,7 @@ define _wheel_timeline(w, ev) as:
 # hover_enabled false.
 define _mousemove_timeline(hit, root, mx, my) as:
     hit.hover_item is null
-    if not hit.hover_enabled:
+    if hit.hover_enabled != null and not hit.hover_enabled:
         return null
     local v is timeline_view of hit
     if mx < v.px or mx > v.px + v.pw:

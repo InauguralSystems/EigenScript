@@ -337,6 +337,7 @@ POPULATION = {
     "docs/COMPARISON.md":        (31, 30, 1, 0, 0), # R2.4: +1 paired IEEE bits and N13 reconstruction example
     "docs/CONCURRENCY.md":       (  9,    9,     0,      0,      0),   # #1879: +1 paired (thread handle crosses a channel)
     "docs/STDLIB.md":            ( 16,   11,     5,      0,      0),
+    "docs/UI.md":                (  1,    1,     0,      0,      0),
     "docs/SYNTAX.md":            ( 35,   24,    11,      0,      0),
     # #1991: these observer documents are part of the executable doc gate.
     "docs/PREDICATES.md":        ( 17,    7,     9,      1,      0),   # #1580: +2 paired (a large float counter settles; an int counter does not)

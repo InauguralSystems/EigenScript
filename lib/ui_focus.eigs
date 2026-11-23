@@ -4,7 +4,7 @@
 # ============================================================
 
 define _build_focus_list(widget) as:
-    if not widget.visible:
+    if widget.visible != null and not widget.visible:
         return null
     if (_is_focusable of widget):
         append of [_ui.focus_list, widget]
@@ -171,7 +171,7 @@ define _handle_focus_key(root, ev) as:
             if w.hover_row >= 0 and w.hover_col >= 0:
                 # Mirror the mouse path's ownership rule (#572), or
                 # keyboard and mouse would disagree about who flips.
-                if w.owns_cells:
+                if w.owns_cells == null or w.owns_cells:
                     if w.cells[w.hover_row][w.hover_col] > 0:
                         w.cells[w.hover_row][w.hover_col] is 0
                     else:

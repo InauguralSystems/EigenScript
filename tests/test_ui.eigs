@@ -4319,4 +4319,162 @@ for bool_state in [false, true]:
     assert_eq of [bool_dock_events.layouts, bool_dock_expected * 2, "dock interactive bool controls collapse callback"]
 _ui.drag_widget is null
 
+
+# ---- Boolean read-site and constructor contract review (#1653 / #2012) ----
+# Each case below reaches one of the eight previously unplanted truthiness
+# reads. Replacing that read with its v0.48.0 numeric comparison makes its
+# assertion fail while the surrounding fixture remains unchanged.
+_bool_scrolls is {"n": 0}
+define _bool_scroll(widget, dx, dy) as:
+    _bool_scrolls.n += 1
+_widget_registry["bool-scroll-parent"] is {"container": true, "scroll": null}
+_widget_registry["bool-scroll-child"] is {"container": false, "scroll": _bool_scroll}
+_bool_scroll_parent is {"type": "bool-scroll-parent", "children": [{"type": "bool-scroll-child"}]}
+_scroll_panels of [_bool_scroll_parent, 1, 1]
+assert_eq of [_bool_scrolls.n, 1, "container bool recurses while finding scroll panels"]
+dict_remove of [_widget_registry, "bool-scroll-parent"]
+dict_remove of [_widget_registry, "bool-scroll-child"]
+
+_bool_combo is combobox of ["bool-read-combo", 0, 0, 100, ["Alpha"], null]
+_bool_combo.open is true
+_bool_combo.filter_text is ""
+_bool_combo.cursor is 0
+_ui.focused_widget is _bool_combo
+_ui.focused_input is null
+assert_eq of [handle_key of [_bool_combo, {"type": "keydown", "key": "a", "shift": false, "ctrl": false, "alt": false}], true, "open bool routes combobox keyboard input"]
+assert_eq of [_bool_combo.filter_text, "a", "open bool reaches combobox key handler"]
+
+_bool_toggle_key is toggle_button of ["bool-read-toggle", 0, 0, 20, 20, "T", null]
+_bool_toggle_key.value is true
+_ui.focused_widget is _bool_toggle_key
+_handle_focus_key of [_bool_toggle_key, {"key": "space", "shift": false}]
+assert_eq of [_bool_toggle_key.value, false, "toggle-button true bool toggles off from keyboard"]
+
+_bool_key_tree is tree of ["bool-read-key-tree", 0, 0, 100, 80, [{"id": "p", "text": "P", "expanded": true, "children": [{"id": "c", "text": "C"}]}], null]
+_bool_key_tree.selected_id is "p"
+_ui.focused_widget is _bool_key_tree
+_handle_focus_key of [_bool_key_tree, {"key": "left", "shift": false}]
+assert_eq of [_bool_key_tree.nodes[0].expanded, false, "expanded bool collapses selected tree node"]
+_handle_focus_key of [_bool_key_tree, {"key": "right", "shift": false}]
+assert_eq of [_bool_key_tree.nodes[0].expanded, true, "has_children bool expands selected tree node"]
+
+_bool_sort_table is table of ["bool-read-table", 0, 0, 100, 80, [{"title": "A", "width": 100}], null]
+_bool_sort_table._ax is 0
+_bool_sort_table._ay is 0
+_bool_sort_table.sort_col is 0
+_bool_sort_table.sort_asc is true
+_mousedown_table of [_bool_sort_table, _bool_sort_table, 1, 1, {"type": "mousedown"}]
+assert_eq of [_bool_sort_table.sort_asc, false, "sort_asc bool reverses an already-selected column"]
+
+_bool_mouse_tree is tree of ["bool-read-mouse-tree", 0, 0, 100, 80, [{"id": "p", "text": "P", "expanded": true, "children": [{"id": "c", "text": "C"}]}], null]
+_bool_mouse_tree._ax is 0
+_bool_mouse_tree._ay is 0
+_mousedown_tree of [_bool_mouse_tree, _bool_mouse_tree, 1, 1, {"type": "mousedown"}]
+assert_eq of [_bool_mouse_tree.nodes[0].expanded, false, "expanded bool controls pointer tree collapse"]
+
+# app_loop performs one frame: on_tick requests exit, but the modal visibility
+# read still governs that frame's modal render.
+_bool_modal is dialog of ["bool-read-modal", 80, 50, "Modal", "Body", [], null]
+_bool_modal.visible is true
+_ui.modal_stack is [_bool_modal]
+_gfx_rec is 1
+_gfx_log is []
+define _bool_stop_after_frame(root) as:
+    request_quit of null
+app_loop of [panel of ["bool-app-root", 0, 0, 200, 100], null, _bool_stop_after_frame]
+_bool_modal_drew is false
+for _bool_draw_entry in _gfx_log:
+    if _bool_draw_entry[0] == "rrect":
+        _bool_modal_drew is true
+assert_eq of [_bool_modal_drew, true, "visible bool renders modal in app loop"]
+_ui.modal_stack is []
+_gfx_rec is 0
+
+# Missing fields retain the exact v0.48.0 comparison result at each flag
+# family: == 0 and == 1 were both false for null, while != 0 was true.
+_missing_visible is button of ["missing-visible", 0, 0, 20, 20, "V", null]
+dict_remove of [_missing_visible, "visible"]
+assert_eq of [(_hit_test of [_missing_visible, 0, 0, 1, 1]) != null, true, "missing visible does not hide during hit-test"]
+_missing_enabled is button of ["missing-enabled", 0, 0, 20, 20, "E", null]
+dict_remove of [_missing_enabled, "enabled"]
+_missing_enabled.pressed is false
+_mousedown_button of [_missing_enabled, _missing_enabled, 1, 1, {"type": "mousedown"}]
+assert_eq of [_missing_enabled.pressed, false, "missing enabled does not take positive activation path"]
+assert_eq of [(_hit_test of [_missing_enabled, 0, 0, 1, 1]) != null, true, "missing enabled does not take disabled rejection path"]
+_missing_label is label of ["missing-auto-size", 0, 0, "A"]
+dict_remove of [_missing_label, "auto_size"]
+_missing_label.text is "AAAA"
+_layout of [_missing_label, 0, 0]
+assert_eq of [_missing_label.w, 48, "missing auto_size remeasures like v0.48.0"]
+_missing_grid is grid of ["missing-owns", 0, 0, 1, 1, 10, 10, null]
+dict_remove of [_missing_grid, "owns_cells"]
+_missing_grid._ax is 0
+_missing_grid._ay is 0
+_mousedown_grid of [_missing_grid, _missing_grid, 1, 1, {"type": "mousedown"}]
+assert_eq of [_missing_grid.cells[0][0], 1, "missing owns_cells retains widget-owned mutation"]
+_missing_chart is chart of ["missing-chart-flags", 0, 0, 200, 100]
+chart_add_series of [_missing_chart, chart_series of ["s", [-2, 4], [1, 2], [1, 2, 3]]]
+dict_remove of [_missing_chart, "auto_scale"]
+assert_true of [(chart_bounds of _missing_chart).x0 < 0, "missing auto_scale still derives data bounds"]
+dict_remove of [_missing_chart, "fixed_aspect"]
+_missing_view is chart_view of _missing_chart
+assert_eq of [_missing_view.x0, (chart_bounds of _missing_chart).x0, "missing fixed_aspect skips aspect correction"]
+_missing_tree_node is {"id": "p", "text": "P", "children": [{"id": "c", "text": "C"}]}
+_missing_tree_flat is []
+_flatten_tree of [([_missing_tree_node]), 0, _missing_tree_flat]
+assert_eq of [len of _missing_tree_flat, 1, "missing expanded keeps descendants collapsed"]
+_missing_list is item_list of ["missing-draggable", 0, 0, 80, 40, ["A"], null]
+dict_remove of [_missing_list, "draggable"]
+_missing_list._ax is 0
+_missing_list._ay is 0
+_ui.dnd_state.active is false
+_mousedown_item_list of [_missing_list, _missing_list, 1, 1, {"type": "mousedown"}]
+assert_eq of [_ui.dnd_state.active, false, "missing draggable does not start drag"]
+
+# One population test builds every constructor whose body returns a dictionary
+# holding a widget flag. The population is mechanically derived in the review
+# evidence; every non-null flag on every result must remain a bool.
+_bool_constructor_widgets is [
+    text_input of ["bc-ti", 0, 0, 80, "", null],
+    editable_label of ["bc-el", 0, 0, "", null],
+    spinbox of ["bc-sp", 0, 0, 80, 0, 10, 5, 1, null],
+    combobox of ["bc-cb", 0, 0, 80, ["A"], null],
+    slider of ["bc-sl", 0, 0, 80, 0, 10, 5, null], vslider of ["bc-vs", 0, 0, 80, 0, 10, 5, null],
+    knob of ["bc-kn", 0, 0, 30, 0, 10, 5, null], scrollbar of ["bc-sb", 0, 0, 80, false, null],
+    panel of ["bc-pa", 0, 0, 80, 60], hbox of ["bc-hb", 0, 0, 80, 60], vbox of ["bc-vb", 0, 0, 80, 60],
+    toolbar of ["bc-tb", 0, 0, 80], statusbar of ["bc-st", 0, 0, 80], scroll_panel of ["bc-sc", 0, 0, 80, 60],
+    splitter of ["bc-split", 0, 0, 80, 60, 40, null], piano_keyboard of ["bc-piano", 0, 0, 2, null],
+    dropdown of ["bc-dd", 0, 0, 80, ["A"], 0, null], menu of ["bc-menu", ["A"], null],
+    menu_bar of ["bc-mb", 0, 0, 80, []], radio_group of ["bc-rg", 0, 0, ["A"], 0, null], tabs of ["bc-tabs", 0, 0, 80, 60, ["A"], null],
+    label of ["bc-label", 0, 0, "A"], separator of ["bc-sep", 0, 0, 10, 0], section of ["bc-sec", 0, 0, 80, "S"],
+    color_dot of ["bc-dot", 0, 0, 8, [1, 2, 3]], badge of ["bc-badge", 0, 0, "B", [1, 2, 3]], progress_bar of ["bc-prog", 0, 0, 80, 0.5],
+    dialog of ["bc-dialog", 80, 60, "D", "M", [], null], color_picker of ["bc-color", 0, 0, null],
+    button of ["bc-button", 0, 0, 30, 20, "B", null], toggle_button of ["bc-tb2", 0, 0, 30, 20, "T", null],
+    checkbox of ["bc-check", 0, 0, "C", false, null], toggle of ["bc-toggle", 0, 0, false, null],
+    dock of ["bc-dock", 0, 0, 200, 100], dock_panel of ["P", panel of ["bc-dock-child", 0, 0, 10, 10]],
+    table of ["bc-table", 0, 0, 80, 60, [], null], tree of ["bc-tree", 0, 0, 80, 60, [], null],
+    item_list of ["bc-list", 0, 0, 80, 60, [], null], grid of ["bc-grid", 0, 0, 2, 2, 10, 10, null],
+    hex_view of ["bc-hex", 0, 0, 80, 60, null, 0], chart of ["bc-chart", 0, 0, 80, 60],
+    bar_chart of ["bc-bar", 0, 0, 80, 60, ["A"], [1], null], gauge of ["bc-gauge", 0, 0, 30, 0, 10, 5, "G"],
+    meter of ["bc-meter", 0, 0, 20, 60], canvas of ["bc-canvas", 0, 0, 80, 60, null, null],
+    waveform_view of ["bc-wave", 0, 0, 80, 60], code_view of ["bc-code", 0, 0, 80, 60, "x"], timeline of ["bc-time", 0, 0, 80, 60]
+]
+_bool_flag_fields is ["visible", "enabled", "hover", "pressed", "open", "focused", "dragging", "collapsed", "expanded", "interactive", "hover_enabled", "auto_size", "vertical", "auto_scale", "grid", "axes", "legend", "fixed_aspect", "line_numbers", "sort_asc", "draggable", "owns_cells"]
+for _bool_constructor_widget in _bool_constructor_widgets:
+    for _bool_flag_field in _bool_flag_fields:
+        if _bool_constructor_widget[_bool_flag_field] != null:
+            assert_eq of [type of _bool_constructor_widget[_bool_flag_field], "bool", "constructor flag is bool"]
+    if _bool_constructor_widget.type == "checkbox" or _bool_constructor_widget.type == "toggle" or _bool_constructor_widget.type == "toggle_button":
+        assert_eq of [type of _bool_constructor_widget.value, "bool", "constructor value flag is bool"]
+
+_bool_separator_rejected is false
+_bool_separator_message is ""
+try:
+    separator of ["bad-separator", 0, 0, 10, true]
+catch _bool_separator_error:
+    _bool_separator_rejected is true
+    _bool_separator_message is _bool_separator_error
+assert_eq of [_bool_separator_rejected, true, "separator rejects bool orientation"]
+assert_eq of [_bool_separator_message, "separator: vertical must be num, got bool", "separator names invalid vertical argument"]
+
 test_summary of null

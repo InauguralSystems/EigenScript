@@ -1,1 +1,1 @@
-- Make UI widget-state flags consistently use `true`/`false`, validate boolean constructor/setter inputs, and migrate UI examples and tests (#1653).
+- Make UI widget-state flags consistently use `true`/`false`, preserve v0.48.0 missing-field behavior, validate boolean constructor/setter inputs, and migrate UI examples and tests (#1653).

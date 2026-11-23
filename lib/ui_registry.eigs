@@ -19,7 +19,7 @@ define _is_focusable(widget) as:
     if entry != null and entry.focusable:
         if widget.enabled != null and not widget.enabled:
             return false
-        if not widget.visible:
+        if widget.visible != null and not widget.visible:
             return false
         return true
     return false

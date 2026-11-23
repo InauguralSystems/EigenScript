@@ -425,7 +425,7 @@ define _mousedown_grid(hit, root, mx, my, ev) as:
     if gc >= 0 and gc < hit.cols and gr >= 0 and gr < hit.rows:
         # Toggle only if the widget owns the pattern (#572) — otherwise
         # report the hit and let on_cell decide against the app's model.
-        if hit.owns_cells:
+        if hit.owns_cells == null or hit.owns_cells:
             if hit.cells[gr][gc] > 0:
                 hit.cells[gr][gc] is 0
             else:
