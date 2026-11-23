@@ -741,19 +741,19 @@ both axes, not y-vs-index. Everything else is set on the returned dict.
 | `chart_pan_by(ch, dpx, dpy)` / `chart_zoom_at(ch, factor, sx, sy)` / `chart_reset_view(ch)` | The view transform, by pixel delta and about an anchor pixel |
 
 Range: an explicit non-null `x_min`/`x_max`/`y_min`/`y_max` always wins;
-otherwise `auto_scale` 1 (the default) derives the range from the data,
-padding y by `pad_frac` (0.1). `fixed_aspect` 1 makes one data unit the
+otherwise `auto_scale` true (the default) derives the range from the data,
+padding y by `pad_frac` (0.1). `fixed_aspect` true makes one data unit the
 same number of pixels on both axes — a circle stays circular — by
 *growing* the denser axis, so nothing is pushed out of view.
 
-**Interaction is built in.** `interactive` (default 1) gives drag-to-pan
+**Interaction is built in.** `interactive` (default true) gives drag-to-pan
 and wheel-to-zoom-about-the-cursor. The widget reads the pointer out of
 the toolkit's own state, so a consumer never has to shadow `mousemove`
 to answer "where was the cursor when the user scrolled?" (#822).
 `hover_index`/`hover_series` report the nearest sample *in pixel space*
 (data-coordinate samples are not evenly spaced, so an index-from-x
 formula would pick the wrong one); that scan is one pass over the
-plotted points, so a long live history sets `hover_enabled` to 0.
+plotted points, so a long live history sets `hover_enabled` to false.
 
 **Live data is incremental.** `add_point`/`add_xy` widen the cached data
 bounds in O(1) and the render-time scan only visits samples appended
@@ -817,9 +817,9 @@ toolkit's cached position — never consumer-shadowed state), and drag in
 the time RULER strip **scrubs** — `tl.cursor` follows the pointer
 (clamped to the visible window) and `on_scrub(tl, t)` fires per move.
 That ruler-scrub/cursor seam is what a seed-replay or anomaly scrubber
-sits on. `interactive` 0 disables all three gestures. Hover sets
+sits on. `interactive` false disables all three gestures. Hover sets
 `tl.hover_item` to the item dict under the pointer (markers win over
-spans); `hover_enabled` 0 skips the scan for a long history.
+spans); `hover_enabled` false skips the scan for a long history.
 
 **It is clipped, theme-keyed and allocation-lean by construction.** No
 item, at any pan or zoom, paints outside the widget rect — every
@@ -841,7 +841,7 @@ Notes on widget state, where the toolkit could otherwise shadow yours:
   text changes each frame (a BPM or time display) keeps a box matching
   what is drawn. A label draws no chrome, so its box is exactly its text;
   space between labels in an `hbox`/`toolbar` comes from the container's
-  `gap`. Set **`auto_size`** to 0 to own the box yourself — a fixed-width
+  `gap`. Set **`auto_size`** to false to own the box yourself — a fixed-width
   slot for changing text, a padded caption, or a label used as a plain
   sized rect (an invisible full-window click-catcher backing an overlay,
   since containers are hit-transparent where no child sits). The
@@ -851,9 +851,9 @@ Notes on widget state, where the toolkit could otherwise shadow yours:
   than its column crops at the column edge instead of drawing over the
   neighbouring chrome. To size deliberately rather than discover
   truncation in a screenshot, measure first with `text_width`.
-- **`grid.owns_cells`** (default 1) decides who owns the pattern. Leave it
-  1 and the widget flips `cells[r][c]` itself, then calls `on_cell`. Set
-  it 0 and mouse/keyboard report `(row, col)` without touching `cells` —
+- **`grid.owns_cells`** (default true) decides who owns the pattern. Leave it
+  true and the widget flips `cells[r][c]` itself, then calls `on_cell`. Set
+  it false and mouse/keyboard report `(row, col)` without touching `cells` —
   for an app whose model is the source of truth (undo history, pattern
   switching, randomize), so both sides don't keep copies that drift.
   `row_label_w` (60) and `row_label_scale` (1) size the row-label gutter.
@@ -1909,6 +1909,7 @@ Internal names below are implementation contracts for maintainers, not a stable 
 | `_combo_matches(combo, ctrl, shift, alt, key)` | Internal hotkey match requires exact modifiers and key. |
 | `_ev_flag(v)` | Internal: an event modifier as a bool; accepts a bool or the older 1/0 number, anything else is false. |
 | `_ev_stop(r)` | Internal: whether an on_key answer stops the loop; false or the older 0 stops, anything else continues. |
+| `_ui_require_bool(value, widget_type, field)` | Internal: return a boolean UI argument unchanged, or raise before widget construction or mutation. |
 | `label(id, x, y, text)` | Creates a visible automatically measured text widget with theme color and scale. |
 | `separator(id, x, y, length, vertical)` | Creates a one-pixel line whose requested length is its height when vertical. |
 | `section(id, x, y, w, text)` | Creates a 20-pixel-high section caption with the requested width. |
@@ -2298,7 +2299,7 @@ Internal names below are implementation contracts for maintainers, not a stable 
 | `theme_light()` | Return the built-in light theme palette. |
 | `toggle(id, x, y, value, on_change)` | Create a compact on/off pill with the supplied value and change callback. |
 | `toggle_button(id, x, y, w, h, text, on_click)` | Create an initially inactive labeled toggle button with on/off theme colors. |
-| `tween(widget, field, target, duration, easing)` | Replace the widget field's prior animation and return its new timed interpolation record. |
+| `tween(widget, field, target, duration, easing)` | Replace a numeric widget field's prior animation and return its new timed interpolation record. Boolean checkbox/toggle values raise before queue changes; assign them directly. |
 | `ui_clip_pop()` | Remove the top clip and restore its parent rectangle or clear the backend clip. |
 | `ui_clip_push(x, y, w, h)` | Intersect a new rectangle with its parent and push the resulting backend clip. |
 | `unregister_hotkey(combo)` | Remove registrations whose key combination exactly matches the supplied string. |

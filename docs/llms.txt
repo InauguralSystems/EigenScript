@@ -1061,3 +1061,5 @@ sentinels remain readable; new writes of those payloads refuse.
 Argument type errors raise `type_mismatch` before mutation, I/O or tape effects,
 in every `EIGS_STRICT` state. `EIGS_STRICT` controls only the opt-in IEEE
 arithmetic/domain trap; unset and `0` retain IEEE results.
+
+UI widget-state contract (#1653): binary fields (`visible`, `enabled`, interaction flags, expansion/collapse flags, and checkbox/toggle/toggle-button `value`) are bools written as `true`/`false` and read by truthiness. Numeric values, selection indices, bitmasks, and explicit `null` sentinels are not coerced to bool. Boolean-valued public constructors/setters reject numeric arguments before UI effects.

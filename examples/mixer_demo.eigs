@@ -27,13 +27,13 @@ define on_pan(w) as:
     status_text is f"{w.id}: {floor of w.value}"
 
 define on_mute(w) as:
-    if w.value == 1:
+    if w.value:
         status_text is f"{w.id}: Muted"
     else:
         status_text is f"{w.id}: Unmuted"
 
 define on_solo(w) as:
-    if w.value == 1:
+    if w.value:
         status_text is f"{w.id}: Solo"
     else:
         status_text is f"{w.id}: Solo off"
@@ -187,10 +187,10 @@ define on_key(ev) as:
             return 0
         if ev.key == "space":
             tb is ui.find_by_id of [root, "tb_play"]
-            if tb.value == 1:
-                tb.value is 0
+            if tb.value:
+                tb.value is false
             else:
-                tb.value is 1
+                tb.value is true
         if ev.key == "e":
             ui.show_dialog of [confirm_dlg, WINDOW_W, WINDOW_H]
     return 1

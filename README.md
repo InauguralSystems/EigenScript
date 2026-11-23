@@ -1173,3 +1173,5 @@ sentinels remain readable; new writes of those payloads refuse.
 Argument type errors raise `type_mismatch` before mutation, I/O or tape effects,
 in every `EIGS_STRICT` state. `EIGS_STRICT` controls only the opt-in IEEE
 arithmetic/domain trap; unset and `0` retain IEEE results.
+
+UI widget flags use `true`/`false`: for example, `button.visible is false` hides a button and `button.enabled is true` permits interaction. Checkbox, toggle, and toggle-button `value` fields are also booleans; numeric values and selection indices remain numeric. See [`docs/UI.md`](docs/UI.md).

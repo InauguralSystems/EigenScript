@@ -11,7 +11,7 @@ define panel(id, x, y, w, h) as:
         "bg": _theme.panel_bg,
         "border": _theme.panel_border,
         "children": [],
-        "visible": 1
+        "visible": true
     }
 
 define hbox(id, x, y, w, h) as:
@@ -25,7 +25,7 @@ define hbox(id, x, y, w, h) as:
         "gap": 0,
         "padding": 0,
         "align": "start",
-        "visible": 1
+        "visible": true
     }
 
 define vbox(id, x, y, w, h) as:
@@ -39,7 +39,7 @@ define vbox(id, x, y, w, h) as:
         "gap": 0,
         "padding": 0,
         "align": "start",
-        "visible": 1
+        "visible": true
     }
 
 define toolbar(id, x, y, w) as:
@@ -51,7 +51,7 @@ define toolbar(id, x, y, w) as:
         "children": [],
         "gap": 4,
         "padding": 8,
-        "visible": 1
+        "visible": true
     }
 
 define statusbar(id, x, y, w) as:
@@ -61,7 +61,7 @@ define statusbar(id, x, y, w) as:
         "x": x, "y": y, "w": w, "h": 24,
         "bg": _theme.tab_bg,
         "sections": [],
-        "visible": 1
+        "visible": true
     }
 
 define scroll_panel(id, x, y, w, h) as:
@@ -76,7 +76,7 @@ define scroll_panel(id, x, y, w, h) as:
         "scroll_y": 0,
         "content_w": 0,
         "content_h": 0,
-        "visible": 1
+        "visible": true
     }
 
 # ---- Render functions ----
@@ -232,8 +232,8 @@ _register_widget of ["panel", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 1,
-    "focusable": 0
+    "container": true,
+    "focusable": false
 }]
 
 _register_widget of ["hbox", {
@@ -244,8 +244,8 @@ _register_widget of ["hbox", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 1,
-    "focusable": 0
+    "container": true,
+    "focusable": false
 }]
 
 _register_widget of ["vbox", {
@@ -256,8 +256,8 @@ _register_widget of ["vbox", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 1,
-    "focusable": 0
+    "container": true,
+    "focusable": false
 }]
 
 _register_widget of ["toolbar", {
@@ -268,8 +268,8 @@ _register_widget of ["toolbar", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 1,
-    "focusable": 0
+    "container": true,
+    "focusable": false
 }]
 
 _register_widget of ["statusbar", {
@@ -280,8 +280,8 @@ _register_widget of ["statusbar", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": null,
-    "container": 0,
-    "focusable": 0
+    "container": false,
+    "focusable": false
 }]
 
 _register_widget of ["scroll_panel", {
@@ -292,6 +292,6 @@ _register_widget of ["scroll_panel", {
     "clear_hover": null,
     "clear_pressed": null,
     "scroll": _scroll_scroll_panel,
-    "container": 1,
-    "focusable": 0
+    "container": true,
+    "focusable": false
 }]
