@@ -8,15 +8,11 @@ TEMP=
 cleanup() { [ -z "$TEMP" ] || rm -rf "$TEMP"; }
 trap cleanup EXIT
 if [ -z "$PARENT" ]; then
-    # A language branch may have syntax absent from its main merge-base.
-    # Prefer an explicit reviewed incumbent, then this numeric branch's pin;
-    # ordinary branches retain merge-base. Never compare unrelated trees.
+    # Use an explicit reviewed incumbent or the merge-base with main.
+    # Never compare unrelated trees.
     if [ -n "${FMT_PARENT_REF:-}" ]; then
         PARENT_REF=$FMT_PARENT_REF
         PARENT_SOURCE=FMT_PARENT_REF
-    elif [ -e "$ROOT/tests/phase2/fmt_parent_ref.txt" ]; then
-        PARENT_REF=$(python3 -c 'import re,sys; from pathlib import Path; lines=[line.strip() for line in Path(sys.argv[1]).read_text().splitlines() if line.strip() and not line.lstrip().startswith("#")]; (len(lines)==1 and re.fullmatch(r"[0-9a-f]{40}",lines[0])) or sys.exit("formatter differential: Phase 2 incumbent pin must contain exactly one 40-hex commit"); print(lines[0])' "$ROOT/tests/phase2/fmt_parent_ref.txt") || exit 1
-        PARENT_SOURCE=tests/phase2/fmt_parent_ref.txt
     else
         PARENT_REF=$(git -C "$ROOT" merge-base HEAD origin/main 2>/dev/null) || {
             echo "formatter differential: the parent commit is not in this clone; fetch history (cannot merge-base HEAD origin/main)" >&2
@@ -29,18 +25,8 @@ if [ -z "$PARENT" ]; then
         exit 1
     }
     if ! git -C "$ROOT" merge-base --is-ancestor "$PARENT_REF" HEAD; then
-        # The long branch lands on main as ONE squashed commit, and the commits of the branch are not
-        # ancestors of that commit: the pinned incumbent is one of them. It is then accepted when it
-        # belongs to the landed branch, whose history the tag phase2-landed keeps. Nothing else is:
-        # an incumbent named by FMT_PARENT_REF, or a pin outside that history, is still refused.
-        if [ "$PARENT_SOURCE" = tests/phase2/fmt_parent_ref.txt ] &&
-           git -C "$ROOT" rev-parse -q --verify 'refs/tags/phase2-landed^{commit}' >/dev/null 2>&1 &&
-           git -C "$ROOT" merge-base --is-ancestor "$PARENT_REF" refs/tags/phase2-landed; then
-            echo "formatter differential: incumbent $PARENT_REF is not an ancestor of HEAD; accepted as part of the landed branch (an ancestor of the tag phase2-landed)"
-        else
-            echo "formatter differential: incumbent $PARENT_REF is not an ancestor of HEAD" >&2
-            exit 1
-        fi
+        echo "formatter differential: incumbent $PARENT_REF is not an ancestor of HEAD" >&2
+        exit 1
     fi
     echo "formatter differential: incumbent=$PARENT_REF source=$PARENT_SOURCE"
     if [ -n "${FMT_PARENT_BINARY:-}" ]; then

@@ -80,6 +80,8 @@ a task's unjoined uncaught error fails the run on main or a spawned worker,
 a GUI toolkit, embedded database, tensor math,
 and a standard library with STEM modules — all in a single zero-dependency C binary.
 
+`exit` accepts a numeric code (N5, then the C int range), or a one-number list. `null`, `[]` and `([])` mean no argument and code 0. Other types raise a catchable `type_mismatch` naming `exit` before any stop request, in every `EIGS_STRICT` state. A surplus list retains its existing guard: by default it raises; under `EIGS_STRICT=0` its first element must be numeric and supplies the code.
+
 `exit of N` is state-wide even when a spawned worker calls it: VM threads stop,
 blocked concurrency calls wake, and the process exits with status `N` after
 worker teardown. Native I/O must return before teardown completes. Embedded

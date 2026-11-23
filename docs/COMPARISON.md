@@ -711,6 +711,8 @@ error.
 A *detached* cooperative task goes further, like a goroutine's panic in Go:
 nothing can ever join it, so its uncaught error stops the program at once
 (`docs/CONCURRENCY.md`, #1736).
+`exit` accepts a numeric code (N5, then the C int range), or a one-number list. `null`, `[]` and `([])` mean no argument and code 0. Other types raise a catchable `type_mismatch` naming `exit` before any stop request, in every `EIGS_STRICT` state. A surplus list retains its existing guard: by default it raises; under `EIGS_STRICT=0` its first element must be numeric and supplies the code.
+
 A worker's `exit of N` requests an uncatchable stop of the whole state:
 blocked concurrency calls wake, and VM threads unwind when they observe the
 request at a loop back edge or builtin return. The first request sets the

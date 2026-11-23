@@ -3,7 +3,8 @@
 # CI runners, so the GATE uses cachegrind instruction counts (Ir) instead:
 # same binary + same input in one environment gives a diffable instruction
 # count; glibc ifunc selection can vary across hosts (#1939). The --vs
-# threshold is THRESHOLD_PCT; checked-in files use FILE_THRESHOLD_PCT.
+# verdict uses declared max_ci bounds or the undeclared CI threshold;
+# checked-in files use FILE_THRESHOLD_PCT.
 #
 #   bench/check_regression.sh            # gate: compare vs bench/baseline.txt
 #   bench/check_regression.sh --update   # regenerate the baseline
@@ -15,21 +16,10 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 EIGS="${EIGENSCRIPT:-$DIR/../src/eigenscript}"
 BASELINE="${BASELINE_OVERRIDE:-$DIR/baseline.txt}"
 VALGRIND="${VALGRIND:-valgrind}"
-THRESHOLD_PCT=0.5
-# Integer arithmetic keeps the boundary exact: 0.5 percent is 5 permille.
-# Keep this derived rather than maintaining a second threshold declaration.
-THRESHOLD_PERMILLE=$(awk -v pct="$THRESHOLD_PCT" 'BEGIN { printf "%.0f", pct * 10 }')
-# THRESHOLD_PCT (0.5) is measured for SAME-JOB comparisons only (#2072: --vs,
-# base and candidate on one machine). The checked-in baseline file is compared
-# across hosts, where glibc's CPU-specific strlen/memcpy ifuncs move Ir by up to
-# 0.72% (Intel vs EPYC, #2002). That term is unmeasured, so the file mode keeps
-# its own wider threshold until a cross-host measurement sets it.
 FILE_THRESHOLD_PCT=5
 FILE_THRESHOLD_PERMILLE=$(( FILE_THRESHOLD_PCT * 10 ))
-# Printed deltas carry 3 decimals. Integer percent printed "+0% > 0.5%" for a
-# +0.61% regression and "0% vs ref" for every passing row, hiding the deltas the
-# 0.5% gate decides on (#2075's ejection, 2026-10-28). Display only: the verdicts
-# above and below stay exact integer permille comparisons.
+# Printed deltas carry 3 decimals; the declaration and file-mode verdicts
+# retain their exact arithmetic.
 pct() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.3f", (a - b) * 100 / b }'; }
 
 # Drop caller EIGS_* settings, then select the requested tier explicitly.
@@ -75,11 +65,17 @@ case "${1:-}" in
     printf 'total is 0\nfor i in range of 80000:\n    total is total + (i * 2) - 1\nprint of total\n' > "$tmp"
     doubled=$(ir_of "$EIGS" "$tmp") || { status=$?; rm -f "$tmp"; exit "$status"; }; rm -f "$tmp"
     inc=$(pct "$doubled" "$base")
-    if [ $(( (doubled - base) * 1000 )) -gt $(( THRESHOLD_PERMILLE * base )) ]; then
-        echo "SELFTEST OK: a 2x-work pessimization is flagged (+${inc}% Ir > ${THRESHOLD_PCT}%)"
+    diagnostic=$(mktemp)
+    python3 "$DIR/../tools/phase2_cost_declarations.py" --method ci \
+        --row bench/scalar_loop.eigs jit "$base" "$doubled" >"$diagnostic" 2>&1
+    status=$?
+    if [ "$status" -eq 1 ] && grep -q '^  REGRESSION:' "$diagnostic"; then
+        echo "SELFTEST OK: a 2x-work pessimization is flagged by max_ci (+${inc}% Ir)"
     else
-        echo "SELFTEST FAILED: 2x pessimization not flagged (+${inc}%) — gate is vacuous"; exit 1
+        cat "$diagnostic"; rm -f "$diagnostic"
+        echo "SELFTEST FAILED: 2x pessimization not flagged by max_ci (+${inc}%) — gate is vacuous"; exit 1
     fi
+    rm -f "$diagnostic"
     # Second plant, the stale direction: a baseline 2x ABOVE the real count
     # must make the default gate fail, not print ok (the decay the two-sided
     # check exists to stop).
@@ -197,10 +193,11 @@ EOF
         cat "$scratch/population.out"
         echo "SELFTEST FAILED: valid derived benchmark population was rejected"; exit 1
     fi
-    if ! grep -Fxq "no instruction-count regressions vs reference (threshold ${THRESHOLD_PCT}%; declared rows applied=${want_decl}; measured rows=${want_rows})" "$scratch/population.out"; then
+    if ! grep -Fxq "no instruction-count regressions vs reference (declared max_ci; undeclared CI threshold; declared rows applied=${want_decl}; measured rows=${want_rows})" "$scratch/population.out"; then
         cat "$scratch/population.out"
         echo "SELFTEST FAILED: clean control did not print declared rows applied=${want_decl}; measured rows=${want_rows}"; exit 1
     fi
+    sed -n '/^no instruction-count regressions vs reference /p' "$scratch/population.out"
     echo "SELFTEST OK: a base that holds the candidate's tree passes (declared rows applied=${want_decl}; measured rows=${want_rows})"
     if ! grep -qF "DECLARED: ${BENCH_SELFTEST_SPLIT%$'\t'*} tier=${BENCH_SELFTEST_SPLIT#*$'\t'} " "$scratch/population.out"; then
         cat "$scratch/population.out"
@@ -296,7 +293,7 @@ EOF
     # or tier. The union's population is derived, never hand-maintained.
     [ "$used" -eq "$ndecl" ] || { echo "  FAIL: declared rows=$ndecl applied=$used"; exit 2; }
     if [ "$fail" -eq 0 ]; then
-        echo "no instruction-count regressions vs reference (threshold ${THRESHOLD_PCT}%; declared rows applied=$used; measured rows=$nrows)"
+        echo "no instruction-count regressions vs reference (declared max_ci; undeclared CI threshold; declared rows applied=$used; measured rows=$nrows)"
         echo "judged rows: named reference=$named_rows; candidate base=$base_rows"
     fi
     exit $fail ;;

@@ -658,9 +658,22 @@ check_eigs_suite() {
     fi
 }
 
+# The binary's own answer decides the JIT expectations (#2504). A probe that
+# fails is one counted FAIL, never the end of the run: a gate's plant may wrap
+# the binary to exit nonzero on every call (test_san_report_sweep_2306.sh), and
+# the sections still owe their rows. A failed probe keeps every native
+# expectation required (the x86-64 value), so no JIT row turns into n/a or SKIP.
+JIT_BACKEND=$(./eigenscript --build-info 2>/dev/null); JIT_BACKEND_RC=$?
+case "$JIT_BACKEND_RC:$JIT_BACKEND" in
+    0:jit-backend=x86-64|0:jit-backend=none) ;;
+    *) TOTAL=$((TOTAL + 1)); FAIL=$((FAIL + 1))
+       echo "  FAIL: --build-info probe (rc=$JIT_BACKEND_RC, output: ${JIT_BACKEND:-none}); JIT native expectations stay required"
+       JIT_BACKEND=jit-backend=x86-64 ;;
+esac
+[ "$JIT_BACKEND" != jit-backend=none ] || echo "JIT native expectations: n/a (no backend)"
 # A JIT/OSR row that compiled nothing measured the interpreter ([0b], [0g]).
 lar_jit_witness() {   # lar_jit_witness <tier> <output>: prints ok | none
-    if [ "$1" = "EIGS_JIT_OFF=1" ] || [ "$(uname -m)" != x86_64 ] ||
+    if [ "$1" = "EIGS_JIT_OFF=1" ] || [ "$JIT_BACKEND" = jit-backend=none ] ||
        grep -qE '^\[jit\] scanned=[0-9]+ compiled=[1-9]' <<< "$2"; then echo ok; else echo none; fi
 }
 
@@ -5111,13 +5124,13 @@ obs_hoist_verdict() {
     : "${OHV_CALLS:=missing}"
     if [ "$OHV_CALLS" != missing ] && [ "$OHV_CALLS" -ge 1000 ] 2>/dev/null; then OHV_CALLS=populated; fi
     if [ "$OHV_MODE" = jit ]; then
-        if [ "$(uname -m)" != x86_64 ]; then OHV_JIT="n/a"
+        if [ "$JIT_BACKEND" = jit-backend=none ]; then OHV_JIT="n/a"
         elif printf '%s\n' "$OHV_OUT" | grep -qE '^\[jit\] scanned=[0-9]+ compiled=[1-9]'; then OHV_JIT=compiled
         else OHV_JIT=none; fi
     else OHV_JIT=off; fi
     echo "$OHV_ANS/calls=$OHV_CALLS/jit=$OHV_JIT"
 }
-OBS_HOIST_JIT_EXPECT=compiled; [ "$(uname -m)" = x86_64 ] || OBS_HOIST_JIT_EXPECT="n/a"
+OBS_HOIST_JIT_EXPECT=compiled; [ "$JIT_BACKEND" = jit-backend=x86-64 ] || OBS_HOIST_JIT_EXPECT="n/a"
 # 45. Interpreter, module-level names (OBSERVE_NAME_POST): closed -> no calls.
 OBS_G44=$(obs_hoist_verdict interp "$OBS_GATE_TMP/hoist_mod.eigs")
 check "gate closed: OBSERVE_NAME_POST never enters the observer (interpreter)" "$OBS_G44" "1500.0/calls=0/jit=off"
@@ -5126,10 +5139,10 @@ OBS_G45=$(obs_hoist_verdict interp "$OBS_GATE_TMP/hoist_fn.eigs")
 check "gate closed: OBSERVE_ASSIGN_LOCAL never enters the observer (interpreter)" "$OBS_G45" "1500.0/calls=0/jit=off"
 # 47. JIT, module-level names: the emitter's inline gate test skips the helper.
 OBS_G46=$(obs_hoist_verdict jit "$OBS_GATE_TMP/hoist_mod.eigs")
-check "gate closed: the JIT skips jit_helper_observe_name_post (thunk witnessed)" "$OBS_G46" "1500.0/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
+check "gate closed: the JIT skips jit_helper_observe_name_post (thunk witnessed where a backend exists)" "$OBS_G46" "1500.0/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
 # 48. JIT, fn-local slots.
 OBS_G47=$(obs_hoist_verdict jit "$OBS_GATE_TMP/hoist_fn.eigs")
-check "gate closed: the JIT skips jit_helper_observe_assign_local (thunk witnessed)" "$OBS_G47" "1500.0/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
+check "gate closed: the JIT skips jit_helper_observe_assign_local (thunk witnessed where a backend exists)" "$OBS_G47" "1500.0/calls=0/jit=$OBS_HOIST_JIT_EXPECT"
 # 49. Control — a reader opens the gate at compile time and the same JIT'd loop
 #     must then RECORD (populated tally, `diverging` verdict on the ramp). A
 #     do-nothing counter or a gate test that skips the call unconditionally
@@ -5696,7 +5709,7 @@ TOTAL=$((TOTAL + 1))
 # prologue (the dict-field inline cache stays off — slow-path helper
 # runs instead — but every other fast path emits). Same thunk-gate as
 # Linux x86_64.
-if [ "$(uname -m)" = "x86_64" ]; then
+if [ "$JIT_BACKEND" = jit-backend=x86-64 ]; then
     if echo "$JPATH_OUTPUT" | grep -qE "\[jit\] scanned=[0-9]+ compiled=[1-9]"; then
         PASS=$((PASS + 1))
         echo "  PASS: JIT thunks compiled (fast paths ran native)"
@@ -5718,7 +5731,7 @@ TOTAL=$((TOTAL + 1))
 # measuring nothing while the JIT track needed exactly that number.
 # Assert real rows, not just a header: a data row AND a nonzero
 # executed-bytes total.
-if [ "$(uname -m)" = "x86_64" ]; then
+if [ "$JIT_BACKEND" = jit-backend=x86-64 ]; then
     JHOT_OUTPUT=$(EIGS_JIT_HOT=1 ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1 >/dev/null)
     JHOT_RC=$?
     JHOT_BYTES=$(echo "$JHOT_OUTPUT" | sed -n 's/.*bytes native: [0-9]* \/ total: \([0-9]*\).*/\1/p' | head -1)
@@ -5780,7 +5793,7 @@ TOTAL=$((TOTAL + 1))
 # A one-page cache deterministically exhausts on this corpus.  Space rejection
 # is not an unsupported-bytecode verdict: every rejected hot row must say
 # "full", and those rows must not enter the stop-opcode histogram.
-if [ "$(uname -m)" = "x86_64" ]; then
+if [ "$JIT_BACKEND" = jit-backend=x86-64 ]; then
     JFULL_OUTPUT=$(EIGS_JIT_CACHE_PAGES=1 EIGS_JIT_STATS=1 EIGS_JIT_STOPS=1 EIGS_JIT_HOT=1 \
         ./eigenscript ../tests/test_jit_paths.eigs </dev/null 2>&1 >/dev/null)
     JFULL_RC=$?
@@ -6819,9 +6832,15 @@ echo ""
 # EIGS_JIT_OFF=1 must turn it off, EIGS_JIT_STATS=0 must print nothing --
 # tests/test_env_flags.sh (oracle: the JIT's own compiled= stats line).
 echo "[99y] boolean env-flag convention (#1032)"
-EF_OUTPUT=$(bash "$TESTS_DIR/test_env_flags.sh" 2>&1)
+EF_OUTPUT=$(bash "$TESTS_DIR/test_env_flags.sh" 2>&1); EF_RC=$?
 EF_PASS=$(echo "$EF_OUTPUT" | grep -c "PASS:" || true)
 EF_FAIL=$(echo "$EF_OUTPUT" | grep -c "FAIL:" || true)
+# A nonzero exit or a run that printed no check is a failure, never "all 0".
+if [ "$EF_RC" -ne 0 ] || [ $((EF_PASS + EF_FAIL)) -eq 0 ]; then
+    EF_FAIL=$((EF_FAIL + 1))
+    EF_OUTPUT="$EF_OUTPUT
+FAIL: test_env_flags.sh exited $EF_RC after $((EF_PASS + EF_FAIL - 1)) check(s)"
+fi
 TOTAL=$((TOTAL + EF_PASS + EF_FAIL))
 PASS=$((PASS + EF_PASS))
 FAIL=$((FAIL + EF_FAIL))

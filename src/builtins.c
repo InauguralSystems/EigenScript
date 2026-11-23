@@ -642,6 +642,10 @@ Value* builtin_exit(Value *arg) {
                BUILTIN_LIST_VIEW(arg, 0) &&
                val_is_number(BUILTIN_LIST_VIEW(arg, 0))) {
         code = builtin_c_int(BUILTIN_LIST_VIEW(arg, 0), "exit");
+    } else if (arg && arg->type != VAL_NULL &&
+               !(arg->type == VAL_LIST && arg->data.list.count == 0)) {
+        rt_error(EK_TYPE, 0, "exit: expected a number or no argument");
+        return make_null();
     }
     if (g_has_error) return make_null();
     g_exit_code = code;

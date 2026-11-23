@@ -1,5 +1,0 @@
-# Phase 2 literal syntax (including //) is absent from the main merge-base.
-# Compare the complete formatter corpus against the reviewed R1.8 bank.
-# After the squashed landing this commit is not an ancestor of main; the differential accepts it as an
-# ancestor of the tag phase2-landed. On main this file goes once a commit of main can be the incumbent.
-ed09f908603a414f77ead78e241fa10aff7f2f38

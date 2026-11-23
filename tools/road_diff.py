@@ -6,7 +6,6 @@ line must not read as a missing native mechanism (adf529c, #1057).
 import argparse
 import difflib
 import os
-import platform
 from pathlib import Path
 import shutil
 import subprocess
@@ -72,7 +71,7 @@ def jit_stats(stderr):
     rest = b"".join(lines[:hits[0]] + lines[hits[0] + 1:])
     return compiled, rest, raw
 def run_gate(binary, fixtures, only=None):
-    architecture = platform.machine().lower()
+    backend = subprocess.check_output([str(binary), "--build-info"], text=True).strip()
     from phase2_corpus_exclude import filter_paths
     try:
         allowed, _ = filter_paths(ROOT, sorted(p.relative_to(ROOT).as_posix()
@@ -124,9 +123,9 @@ def run_gate(binary, fixtures, only=None):
             outputs = []
             cwds = metadata(source, "cwd") or [".", "__unrelated_cwd"]
             tiers = ("ref", "jit", "osr") if native else ("ambient",)
-            if native and architecture in ("arm64", "aarch64"):
+            if native and backend == "jit-backend=none":
                 tiers = ("ref",)
-                print(f"road_diff: {fixture.name}: native tiers unavailable on ARM64; interpreter only")
+                print(f"road_diff: {fixture.name}: native tiers n/a (no JIT backend); interpreter only")
             for tier in tiers:
                 for road in ("main", "load_file", "import"):
                     for ci, cwd in enumerate(cwds):

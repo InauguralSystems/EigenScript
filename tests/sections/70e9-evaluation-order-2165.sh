@@ -1,6 +1,6 @@
 echo "[70e9] Evaluation order is identical across native tiers (#2165)"
-if [ "$(uname -m)" != x86_64 ]; then
-    section_skip "JIT not built on $(uname -m): evaluation-order native witnesses need the x86-64 JIT"
+if [ "$JIT_BACKEND" = jit-backend=none ]; then
+    section_skip "JIT n/a (no backend): evaluation-order native witnesses need the x86-64 JIT"
 else
     EO_DIR=$(mktemp -d "${TMPDIR:-/tmp}/eigs-eval-order-2165.XXXXXX")
     for EO_TIER in ref jit osr; do

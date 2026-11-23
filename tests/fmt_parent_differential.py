@@ -10,60 +10,6 @@ import sys
 import tempfile
 
 
-def classify(label, old, new):
-    """Name the intentional formatter defect classes present in one delta."""
-    old_lines, new_lines = old.splitlines(), new.splitlines()
-    old_nonblank = [line for line in old_lines if line.strip()]
-    new_nonblank = [line for line in new_lines if line.strip()]
-    categories = []
-    if [line.lstrip() for line in old_nonblank] == [
-        line.lstrip() for line in new_nonblank
-    ]:
-        if len(old_lines) != len(new_lines):
-            # This also covers extracted Markdown fences nested in list items:
-            # extraction removes the list prefix before the formatter sees the
-            # program, but preserving its physical source lines is the same
-            # semantic-line correction as it is for a regular source file.
-            categories.append("semantic-line preservation")
-        changed = [(a, b) for a, b in zip(old_nonblank, new_nonblank) if a != b]
-        if (
-            all(
-                a.lstrip().startswith(b"#") and b.lstrip().startswith(b"#")
-                for a, b in changed
-            )
-            and changed
-        ):
-            categories.append("standalone-comment depth")
-        elif changed:
-            categories.append("unequal indentation")
-    elif label == "tests/test_fstrings.eigs":
-        # This corpus file is the incumbent's exhaustive f-string fixture;
-        # its substantive delta is the lexer-owned literal-byte fix.
-        categories.append("literal bytes")
-        categories.append("unequal indentation")
-        if len(old_lines) != len(new_lines):
-            categories.append("semantic-line preservation")
-    return categories
-
-
-def selftest():
-    # The doc executor strips Markdown's list prefix.  This is the exact pair
-    # of programs the differential receives for a list-item fence containing
-    # adjacent definitions, so keep the classifier independent of a filename.
-    old = b"define a() as:\n    return 1\n\ndefine b() as:\n    return 2\n"
-    new = b"define a() as:\n    return 1\ndefine b() as:\n    return 2\n"
-    got = classify("doc-fence:synthetic-list-item", old, new)
-    expected = ["semantic-line preservation"]
-    if got != expected:
-        print(f"classifier selftest: got={got!r} expected={expected!r}")
-        return 1
-    print("classifier selftest: list-item fence is semantic-line preservation")
-    return 0
-
-
-if sys.argv[1:] == ["--selftest"]:
-    sys.exit(selftest())
-
 parent, candidate, root = map(os.path.abspath, sys.argv[1:4])
 os.chdir(root)
 
@@ -119,14 +65,7 @@ with tempfile.TemporaryDirectory(prefix="fmt-parent-diff-") as temp:
     if os.environ.get("FMT_DIFFERENTIAL_PROBE_ONLY"):
         files = [("normalization-probe", probe)]
 
-    counts = {
-        "identical": 0,
-        "literal bytes": 0,
-        "unequal indentation": 0,
-        "standalone-comment depth": 0,
-        "semantic-line preservation": 0,
-        "normalization improvement": 0,
-    }
+    identical = examined = 0
     failures = []
 
     def compare_file(item):
@@ -139,43 +78,30 @@ with tempfile.TemporaryDirectory(prefix="fmt-parent-diff-") as temp:
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         compared = pool.map(compare_file, files)
         for label, path, old, new in compared:
-            if label == "normalization-probe":
-                if new != b'print of "a" + "b"\n':
-                    print(f"Formatter differential: {label}: REGRESSION")
-                    failures.append(label)
-                    continue
-                if old != new:
-                    counts["normalization improvement"] += 1
-                    print(f"Formatter differential: {label}: normalization improvement")
-                    continue
-            if old == new:
-                counts["identical"] += 1
-                continue
-
-            categories = classify(label, old, new)
-
-            category = " + ".join(categories) if categories else "REGRESSION"
-            print(f"Formatter differential: {label}: {category}")
-            if category == "REGRESSION":
+            examined += 1
+            if label == "normalization-probe" and new != b'print of "a" + "b"\n':
+                print(f"Formatter differential: {label}: REGRESSION")
                 failures.append(label)
-                sys.stdout.buffer.writelines(
-                    difflib.diff_bytes(
-                        difflib.unified_diff,
-                        old.splitlines(keepends=True),
-                        new.splitlines(keepends=True),
-                        fromfile=b"parent",
-                        tofile=b"branch",
-                    )
+                continue
+            if old == new:
+                identical += 1
+                continue
+            print(f"Formatter differential: {label}: REGRESSION")
+            failures.append(label)
+            sys.stdout.buffer.writelines(
+                difflib.diff_bytes(
+                    difflib.unified_diff,
+                    old.splitlines(keepends=True),
+                    new.splitlines(keepends=True),
+                    fromfile=b"parent",
+                    tofile=b"branch",
                 )
-            else:
-                for item in categories:
-                    counts[item] += 1
+            )
 
-print(
-    "Formatter differential counts: "
-    + " ".join(f"{name.replace(' ', '_')}={count}" for name, count in counts.items())
-    + f" regressions={len(failures)} examined={len(files)}"
-)
+assert examined == len(files) > 0
+
+print(f"Formatter differential counts: identical={identical} "
+      f"regressions={len(failures)} examined={examined}")
 if failures:
     print("Unexpected formatter differences: " + " ".join(failures), file=sys.stderr)
     sys.exit(1)

@@ -1,0 +1,1 @@
+- Correct the tensor-save test's file-size arithmetic and tensor-load comments; runtime behavior is unchanged.

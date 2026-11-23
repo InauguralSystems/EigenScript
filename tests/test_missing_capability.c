@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static int passed, failed, omitted, present;
+static int passed, failed, omitted, present, native_required;
 static void check(int ok, const char *label) {
     if (ok) passed++; else { failed++; printf("FAIL: %s\n", label); }
 }
@@ -71,8 +71,7 @@ static void missing(const char *name, const char *message) {
             "    assert of [caught.kind == \"value\", \"hot missing kind\"]\n"
             "    hot_caught is 1\nassert of [hot_caught == 1, \"hot caught\"]\n", name);
         succeeds(source, "hot GET_NAME then controlled missing path");
-#if defined(__x86_64__) && !EIGENSCRIPT_FREESTANDING
-        if (!eigs_env_flag("EIGS_JIT_OFF")) {
+        if (native_required && !eigs_env_flag("EIGS_JIT_OFF")) {
             v = eigs_get_global("hot_read");
             /* Match the VM's explicit bytecode-function sentinel before
              * reading its owned chunk (vm.c DEFINE_FN representation). */
@@ -83,7 +82,6 @@ static void missing(const char *name, const char *message) {
                 "hot GET_NAME function owns a compiled native thunk and 65 entries");
             if (v) eigs_value_release(v);
         }
-#endif
     }
     /* A host-bound null is successful resolution, not an absent binding. */
     v = eigs_value_new_null(); eigs_set_global(name, v); eigs_value_release(v);
@@ -98,7 +96,13 @@ static void available(const char *name) {
     if (v) eigs_value_release(v);
     check(eigs_is_registered_builtin(name), "present discovery membership");
 }
-int main(void) {
+int main(int argc, char **argv) {
+    if (argc != 2 || (strcmp(argv[1], "jit-backend=x86-64") != 0 &&
+                      strcmp(argv[1], "jit-backend=none") != 0)) {
+        fprintf(stderr, "missing capability: pass the owning CLI's --build-info\n");
+        return 2;
+    }
+    native_required = strcmp(argv[1], "jit-backend=x86-64") == 0;
     (void)missing; (void)available;
     EigsState *st = eigs_open();
     if (!st) return 1;
