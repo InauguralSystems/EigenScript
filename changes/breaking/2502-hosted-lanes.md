@@ -1,0 +1,1 @@
+- Programs must handle builtin argument type and surplus-shape errors in every `EIGS_STRICT` state; rejected calls no longer return lenient stand-ins or perform effects (#2502).

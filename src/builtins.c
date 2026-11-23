@@ -5877,12 +5877,21 @@ Value* builtin_nearest_in_range(Value *arg) {
     double wh = eigs_list_float(arg, 5, __func__);
     if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     const char *px_key = "px", *py_key = "py", *active_key = "active";
-    if (arg->data.list.count >= 7 && BUILTIN_LIST_VIEW(arg, 6)->type == VAL_STR)
-        px_key = BUILTIN_LIST_VIEW(arg, 6)->data.str;
-    if (arg->data.list.count >= 8 && BUILTIN_LIST_VIEW(arg, 7)->type == VAL_STR)
-        py_key = BUILTIN_LIST_VIEW(arg, 7)->data.str;
-    if (arg->data.list.count >= 9 && BUILTIN_LIST_VIEW(arg, 8)->type == VAL_STR)
-        active_key = BUILTIN_LIST_VIEW(arg, 8)->data.str;
+    if (arg->data.list.count >= 7) {
+        Value *key = BUILTIN_LIST_VIEW(arg, 6);
+        if (key->type != VAL_STR) { rt_error(EK_TYPE, 0, "nearest_in_range: expected string keys"); return make_null(); }
+        px_key = key->data.str;
+    }
+    if (arg->data.list.count >= 8) {
+        Value *key = BUILTIN_LIST_VIEW(arg, 7);
+        if (key->type != VAL_STR) { rt_error(EK_TYPE, 0, "nearest_in_range: expected string keys"); return make_null(); }
+        py_key = key->data.str;
+    }
+    if (arg->data.list.count >= 9) {
+        Value *key = BUILTIN_LIST_VIEW(arg, 8);
+        if (key->type != VAL_STR) { rt_error(EK_TYPE, 0, "nearest_in_range: expected string keys"); return make_null(); }
+        active_key = key->data.str;
+    }
 
     double range_sq = range * range;
     double best_sq = range_sq;
@@ -6010,12 +6019,21 @@ Value* builtin_nearest_in_range_all(Value *arg) {
     double wh = eigs_list_float(arg, 3, __func__);
     if (g_has_error) return make_null();   /* #1637: a non-number slot raised */
     const char *px_key = "px", *py_key = "py", *active_key = "active";
-    if (arg->data.list.count >= 5 && BUILTIN_LIST_VIEW(arg, 4)->type == VAL_STR)
-        px_key = BUILTIN_LIST_VIEW(arg, 4)->data.str;
-    if (arg->data.list.count >= 6 && BUILTIN_LIST_VIEW(arg, 5)->type == VAL_STR)
-        py_key = BUILTIN_LIST_VIEW(arg, 5)->data.str;
-    if (arg->data.list.count >= 7 && BUILTIN_LIST_VIEW(arg, 6)->type == VAL_STR)
-        active_key = BUILTIN_LIST_VIEW(arg, 6)->data.str;
+    if (arg->data.list.count >= 5) {
+        Value *key = BUILTIN_LIST_VIEW(arg, 4);
+        if (key->type != VAL_STR) { rt_error(EK_TYPE, 0, "nearest_in_range_all: expected string keys"); return make_null(); }
+        px_key = key->data.str;
+    }
+    if (arg->data.list.count >= 6) {
+        Value *key = BUILTIN_LIST_VIEW(arg, 5);
+        if (key->type != VAL_STR) { rt_error(EK_TYPE, 0, "nearest_in_range_all: expected string keys"); return make_null(); }
+        py_key = key->data.str;
+    }
+    if (arg->data.list.count >= 7) {
+        Value *key = BUILTIN_LIST_VIEW(arg, 6);
+        if (key->type != VAL_STR) { rt_error(EK_TYPE, 0, "nearest_in_range_all: expected string keys"); return make_null(); }
+        active_key = key->data.str;
+    }
 
     int n = entities->data.list.count;
     double range_sq = range * range;

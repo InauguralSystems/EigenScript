@@ -107,14 +107,14 @@ static void query_caller(int mode) {
 int main(void) {
     EigsState *st = eigs_open();
     if (!st) return 2;
-    int saved_guards = g_strict_guards;
     int saved_arithmetic = g_strict_arithmetic;
     const char *bad[] = {"1e400", "-1e400", "[1,1e400,2]", "{\"v\":-1e400}"};
-    for (int guards = 0; guards < 2; guards++) {
+    /* Retain the historical four-cell population while the former guard-state
+     * axis now repeats the same unconditional type semantics. */
+    for (int former_guards = 0; former_guards < 2; former_guards++) {
       for (int arithmetic = 0; arithmetic < 2; arithmetic++) {
-        g_strict_guards = guards;
         g_strict_arithmetic = arithmetic;
-        int mode = guards * 2 + arithmetic;
+        int mode = former_guards * 2 + arithmetic;
         for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
             eigs_clear_error();
             int pos = 0;
@@ -160,7 +160,6 @@ int main(void) {
         query_caller(mode);
       }
     }
-    g_strict_guards = saved_guards;
     g_strict_arithmetic = saved_arithmetic;
     eigs_clear_error();
     eigs_close(st);

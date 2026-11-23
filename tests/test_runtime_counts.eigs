@@ -33,12 +33,21 @@ assert_eq of [index_kinds, ["int", "int", "int"], "comprehension index kinds"]
 for index_probe in (range of 3):
     assert_eq of [num_type of index_probe, "int", "for index kind"]
 
-# The non-strict form keeps the documented miss sentinel as an int too.
+# EIGS_STRICT no longer changes type errors.  Convert the former fail-soft
+# assertions into caught raises while retaining the count/index assertions.
 if (env_get of "EIGS_STRICT") == "0":
-    count_is of [index_of of null, -1, "index_of malformed argument miss"]
-    count_is of [index_of of [3, "x"], -1, "index_of wrong operand miss"]
-    count_is of [list_index_of of null, -1, "list_index_of malformed argument miss"]
-    count_is of [list_index_of of [3, 1], -1, "list_index_of wrong operand miss"]
+    for bad_index_call in [
+        (_) => index_of of null,
+        (_) => index_of of [3, "x"],
+        (_) => list_index_of of null,
+        (_) => list_index_of of [3, 1]
+    ]:
+        raised_type is false
+        try:
+            bad_index_call of null
+        catch bad_index_error:
+            raised_type is bad_index_error.kind == "type_mismatch"
+        assert_true of [raised_type, "malformed index lookup raises under EIGS_STRICT=0"]
 
 define count_victim() as:
     task_recv of null

@@ -213,7 +213,6 @@ int main(void) {
      * It must raise at the owning header before another binding/body write.
      * Two ordinary host-buffer elements exercise both successful iteration
      * and the later strict NaN read without manufacturing bytecode. */
-    int nf_saved_guards = g_strict_guards;
     int nf_saved_arithmetic = g_strict_arithmetic;
     unsigned nf_saved_flags = g_math_flags;
     eigs_clear_error();
@@ -280,8 +279,7 @@ int main(void) {
     eigs_clear_error();
     eigs_value_release(nf_input);
     eigs_value_release(nf_output);
-    g_strict_guards = nf_saved_guards;         /* the setter writes both fields: */
-    g_strict_arithmetic = nf_saved_arithmetic; /* restore each as it was */
+    g_strict_arithmetic = nf_saved_arithmetic;
     g_math_flags = nf_saved_flags;
     eigs_close(st);
     return fail;

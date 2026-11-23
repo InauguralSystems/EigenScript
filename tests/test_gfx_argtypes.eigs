@@ -29,6 +29,11 @@ define strict_kind(thunk) as:
     try:
         thunk of null
     catch e:
+        # Do not turn the documented font file-read replay boundary into a
+        # caught value: replay_diff classifies the uncaught boundary, whereas
+        # swallowing it makes the remainder of this test diverge from record.
+        if e.kind == "io" and (contains of [e.message, "not replayable under EIGS_REPLAY"]):
+            throw of e.message
         k is e.kind
     return k
 
