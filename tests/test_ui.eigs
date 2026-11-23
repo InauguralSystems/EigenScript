@@ -4378,15 +4378,23 @@ _bool_modal is dialog of ["bool-read-modal", 80, 50, "Modal", "Body", [], null]
 _bool_modal.visible is true
 _ui.modal_stack is [_bool_modal]
 _gfx_rec is 1
-_gfx_log is []
 define _bool_stop_after_frame(root) as:
     request_quit of null
-app_loop of [panel of ["bool-app-root", 0, 0, 200, 100], null, _bool_stop_after_frame]
-_bool_modal_drew is false
-for _bool_draw_entry in _gfx_log:
-    if _bool_draw_entry[0] == "rrect":
-        _bool_modal_drew is true
-assert_eq of [_bool_modal_drew, true, "visible bool renders modal in app loop"]
+# Count the frame's rounded rects with the modal shown and with it hidden:
+# the root panel draws one in both, so only the modal's own draw differs.
+define _bool_modal_rrects(shown) as:
+    _bool_modal.visible is shown
+    _ui.modal_stack is [_bool_modal]
+    _gfx_log is []
+    app_loop of [panel of ["bool-app-root", 0, 0, 200, 100], null, _bool_stop_after_frame]
+    local n is 0
+    for _bool_draw_entry in _gfx_log:
+        if _bool_draw_entry[0] == "rrect":
+            n is n + 1
+    return n
+_bool_shown_rrects is _bool_modal_rrects of true
+_bool_hidden_rrects is _bool_modal_rrects of false
+assert_eq of [_bool_shown_rrects > _bool_hidden_rrects, true, "visible bool renders modal in app loop"]
 _ui.modal_stack is []
 _gfx_rec is 0
 
@@ -4459,7 +4467,7 @@ _bool_constructor_widgets is [
     meter of ["bc-meter", 0, 0, 20, 60], canvas of ["bc-canvas", 0, 0, 80, 60, null, null],
     waveform_view of ["bc-wave", 0, 0, 80, 60], code_view of ["bc-code", 0, 0, 80, 60, "x"], timeline of ["bc-time", 0, 0, 80, 60]
 ]
-_bool_flag_fields is ["visible", "enabled", "hover", "pressed", "open", "focused", "dragging", "collapsed", "expanded", "interactive", "hover_enabled", "auto_size", "vertical", "auto_scale", "grid", "axes", "legend", "fixed_aspect", "line_numbers", "sort_asc", "draggable", "owns_cells"]
+_bool_flag_fields is ["visible", "enabled", "hover", "pressed", "open", "focused", "dragging", "collapsed", "expanded", "interactive", "hover_enabled", "auto_size", "vertical", "auto_scale", "grid", "axes", "legend", "fixed_aspect", "line_numbers", "sort_asc", "draggable", "owns_cells", "editing"]
 for _bool_constructor_widget in _bool_constructor_widgets:
     for _bool_flag_field in _bool_flag_fields:
         if _bool_constructor_widget[_bool_flag_field] != null:
