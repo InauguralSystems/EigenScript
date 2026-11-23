@@ -513,6 +513,23 @@ hand back a buffer when every tensor operand was one, and `sum`, `mean`,
 `matmul`, `matmul_at`, and `matmul_bt` round each multiplication to binary64
 before adding it to the accumulator, in ascending inner-index order, on both
 containers. They do not fuse the multiplication and addition.
+`softmax`, `log_softmax`, `relu`, `leaky_relu`, `matmul`, `matmul_at` and
+`matmul_bt` treat infinity and NaN elements as arithmetic in list, scalar
+(where supported) and buffer forms. With `EIGS_STRICT` unset or `0`, each
+result retains its IEEE value and the arithmetic flags derived from it;
+`EIGS_STRICT=1` raises on a non-finite result, while a finite result still
+answers (for example, `relu` of `-inf` is `0.0`). A raise returns no result
+and leaves the input unchanged. `softmax` uses `exp(x[j] - m) / s` and
+`log_softmax` uses `(x[j] - m) - log(s)`, where `m` is the first-maximum
+scan (`x[j] > m`) and `s = sum(exp(x - m))`. There is no uniform fallback
+or probability floor: `log_softmax` of `[0, -1000]` is `[0.0, -1000.0]`.
+A scalar is a one-element row: finite input gives `1.0` / `0.0` for
+`softmax` / `log_softmax`, and non-finite input gives NaN. `relu` is
+`x < 0 ? 0.0 : x`; `leaky_relu` is `x < 0 ? 0.01 * x : x`, so both
+propagate NaN. `tensor_save` retains its storage guard: a list containing a
+non-finite element raises in every strict state before a file is written
+(#2444).
+
 Raw non-finite results may remain in a buffer's internal work area, but every
 ordinary indexed read and iteration step refuse stored NaN or infinity with
 `value` in every `EIGS_STRICT` state, matching `get_at` (N13). Under `EIGS_STRICT=1` a NaN retains

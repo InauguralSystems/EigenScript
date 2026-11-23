@@ -274,9 +274,10 @@ def boundary_sources():
             operation = ('r is ' + name + ' of ' + arg + '\n'
                          'print of [buf_get_bits of [r, 0], buf_get_bits of [r, 1]]\n')
         table.append(('buffer/' + name + '/' + value, setup + operation))
+    # #2444 step two (a): softmax/log_softmax are arithmetic. Their eighteen
+    # former refusal records moved to nonfinite_tensor.py's C-reference table;
+    # they no longer belong in this unchanged storage/conversion population.
     calls = {
-        'softmax': 'print of (softmax of [v, 1.0])',
-        'log_softmax': 'print of (log_softmax of [v, 1.0])',
         'dot-left': 'buf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [b, c])',
         'dot-right': 'buf_set_bits of [b, 0, 9218868437227405312]\nprint of (dot of [c, b])',
         'buffer-store': 'for i in range of 2:\n    b[i] is v',

@@ -494,6 +494,19 @@ returns a list. `zeros of n` returns a
 buffer (`zeros of [rows, cols]` still returns the nested list) — numeric work
 wants the flat container, and that is the name it reaches for.
 
+`softmax`, `log_softmax`, `relu`, `leaky_relu`, `matmul`, `matmul_at` and
+`matmul_bt` accept infinity and NaN elements as IEEE arithmetic in all their
+container forms. With `EIGS_STRICT` unset or `0`, IEEE results and their
+arithmetic flags are retained; `EIGS_STRICT=1` raises only when a result is
+non-finite. `relu` of `-inf` still answers `0.0`. `softmax` uses
+`exp(x[j] - m) / s`; `log_softmax` uses `(x[j] - m) - log(s)`, with the
+first-maximum scan `m` and `s = sum(exp(x - m))`, without a fallback or
+probability floor. Thus `log_softmax` of `[0, -1000]` is `[0.0, -1000.0]`.
+Scalar `softmax` / `log_softmax` are the one-element row: finite input gives
+`1.0` / `0.0`, non-finite input gives NaN. `tensor_save` remains a storage
+boundary: non-finite list elements raise in every strict state before a
+file is written (#2444).
+
 EigenScript has exact signed int64 values and IEEE-754 float64 numbers.
 Decimal integer literals fitting int64 are exact; a point, exponent or
 out-of-range decimal literal gives a float. Hex integer literals wrap
