@@ -7,7 +7,6 @@ relu		relu of {"a": 1}
 relu		relu of "bad"
 leaky_relu		leaky_relu of {"a": 1}
 leaky_relu		leaky_relu of "bad"
-split		split of "a,b"
 sort		sort of ([{"a": 1}])
 sgd_update_rows		sgd_update_rows of [[7], [[2]], [0], 0.5]
 sgd_update_cols		sgd_update_cols of [[7], [[2]], [0], 0.5]

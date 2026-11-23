@@ -146,7 +146,7 @@ tokens, and raises `value` naming any integer token outside int64.
 | `ends_with` | `ends_with of [s, suffix]` | `true` if s ends with suffix, else `false`. |
 | `index_of` | `index_of of [haystack, needle]` | First byte index as an int, or int -1 when absent. |
 | `substr` | `substr of [s, start, length]` | Extract substring. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-| `split` | `split of [s, delim]` | Split string by delimiter into list. |
+| `split` | `split of [s, delim]` or `split of s` | Split string by delimiter into list; `split of s` splits on a single space. A non-string subject or delimiter raises `type_mismatch`. |
 | `scan_ints` | `scan_ints of string` or `scan_ints of [string, string comment_marker]` | Whitespace-delimited signed integer tokens of `s` as exact int64 values; tokens that are not integers are skipped, and so is a line whose first non-whitespace character is the first byte of a non-empty `comment_marker`. An integer token outside int64 raises `value` naming it. |
 | `scan_int_tokens` | `scan_int_tokens of string` or `scan_int_tokens of [string, string comment_marker]` | Token rows `[text, line, col, start, end, is_int, value]`; all numeric fields are ints. Integer text beyond int64 raises `value` naming the token (C3). |
 | `trim` | `trim of s` | Strip leading/trailing whitespace. |

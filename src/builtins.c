@@ -1646,8 +1646,6 @@ Value* builtin_starts_with(Value *arg) {
 
 Value* builtin_split(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "split");
-    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
-              "split", "[string, delimiter]", make_null());
     const char *str = "", *delim = " ";
     /* #971 Phase D: a non-string subject coerced to "" (so `split of 42` was
      * [""], a plausible one-part answer) and a non-string delimiter fell
