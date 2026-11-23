@@ -150,9 +150,9 @@ log	0	scalar	nan	direct	val(nan)	val(nan)	TRAP
 log_softmax	0	scalar	inf	direct	val(0.0)	val(0.0)	val(0.0)
 log_softmax	0	scalar	ninf	direct	val(0.0)	val(0.0)	val(0.0)
 log_softmax	0	scalar	nan	direct	val(0.0)	val(0.0)	val(0.0)
-math_flags	0	scalar	inf	direct	val({"overflow": false, "i)	val({"overflow": false, "i)	val({"overflow": false, "i)
-math_flags	0	scalar	ninf	direct	val({"overflow": false, "i)	val({"overflow": false, "i)	val({"overflow": false, "i)
-math_flags	0	scalar	nan	direct	val({"overflow": false, "i)	val({"overflow": false, "i)	val({"overflow": false, "i)
+math_flags	0	scalar	inf	direct	val({"overflow": false, "invalid": false, "underflow": false})	val({"overflow": false, "invalid": false, "underflow": false})	val({"overflow": false, "invalid": false, "underflow": false})
+math_flags	0	scalar	ninf	direct	val({"overflow": false, "invalid": false, "underflow": false})	val({"overflow": false, "invalid": false, "underflow": false})	val({"overflow": false, "invalid": false, "underflow": false})
+math_flags	0	scalar	nan	direct	val({"overflow": false, "invalid": false, "underflow": false})	val({"overflow": false, "invalid": false, "underflow": false})	val({"overflow": false, "invalid": false, "underflow": false})
 max	0	scalar	inf	direct	val(inf)	val(inf)	val(inf)
 max	0	scalar	ninf	direct	val(-inf)	val(-inf)	val(-inf)
 max	0	scalar	nan	direct	val(nan)	val(nan)	val(nan)
@@ -189,9 +189,9 @@ numerical_grad_cols	0	scalar	nan	direct	val(null)	val(null)	val(null)
 numerical_grad_rows	0	scalar	inf	direct	val(null)	val(null)	val(null)
 numerical_grad_rows	0	scalar	ninf	direct	val(null)	val(null)	val(null)
 numerical_grad_rows	0	scalar	nan	direct	val(null)	val(null)	val(null)
-observe	0	scalar	inf	direct	val(["diverging", inf, nul)	val(["diverging", inf, nul)	val(["diverging", inf, nul)
-observe	0	scalar	ninf	direct	val(["diverging", -inf, nu)	val(["diverging", -inf, nu)	val(["diverging", -inf, nu)
-observe	0	scalar	nan	direct	val(["undefined", nan, nul)	val(["undefined", nan, nul)	val(["undefined", nan, nul)
+observe	0	scalar	inf	direct	val(["diverging", inf, null, null])	val(["diverging", inf, null, null])	val(["diverging", inf, null, null])
+observe	0	scalar	ninf	direct	val(["diverging", -inf, null, null])	val(["diverging", -inf, null, null])	val(["diverging", -inf, null, null])
+observe	0	scalar	nan	direct	val(["undefined", nan, null, null])	val(["undefined", nan, null, null])	val(["undefined", nan, null, null])
 pi	0	scalar	inf	direct	val(3.141592653589793)	val(3.141592653589793)	val(3.141592653589793)
 pi	0	scalar	ninf	direct	val(3.141592653589793)	val(3.141592653589793)	val(3.141592653589793)
 pi	0	scalar	nan	direct	val(3.141592653589793)	val(3.141592653589793)	val(3.141592653589793)
@@ -222,9 +222,9 @@ reshape	0	scalar	nan	direct	val(null)	val(null)	val(null)
 round	0	scalar	inf	direct	val(inf)	val(inf)	TRAP
 round	0	scalar	ninf	direct	val(-inf)	val(-inf)	TRAP
 round	0	scalar	nan	direct	val(nan)	val(nan)	TRAP
-sandbox_run	0	scalar	inf	direct	val({"ok": false, "error":)	val({"ok": false, "error":)	val({"ok": false, "error":)
-sandbox_run	0	scalar	ninf	direct	val({"ok": false, "error":)	val({"ok": false, "error":)	val({"ok": false, "error":)
-sandbox_run	0	scalar	nan	direct	val({"ok": false, "error":)	val({"ok": false, "error":)	val({"ok": false, "error":)
+sandbox_run	0	scalar	inf	direct	val({"ok": false, "error": {"kind": "value", "message": "chunk descriptor must be a list", "line": 0, "file": "<sandbox>"}})	val({"ok": false, "error": {"kind": "value", "message": "chunk descriptor must be a list", "line": 0, "file": "<sandbox>"}})	val({"ok": false, "error": {"kind": "value", "message": "chunk descriptor must be a list", "line": 0, "file": "<sandbox>"}})
+sandbox_run	0	scalar	ninf	direct	val({"ok": false, "error": {"kind": "value", "message": "chunk descriptor must be a list", "line": 0, "file": "<sandbox>"}})	val({"ok": false, "error": {"kind": "value", "message": "chunk descriptor must be a list", "line": 0, "file": "<sandbox>"}})	val({"ok": false, "error": {"kind": "value", "message": "chunk descriptor must be a list", "line": 0, "file": "<sandbox>"}})
+sandbox_run	0	scalar	nan	direct	val({"ok": false, "error": {"kind": "value", "message": "chunk descriptor must be a list", "line": 0, "file": "<sandbox>"}})	val({"ok": false, "error": {"kind": "value", "message": "chunk descriptor must be a list", "line": 0, "file": "<sandbox>"}})	val({"ok": false, "error": {"kind": "value", "message": "chunk descriptor must be a list", "line": 0, "file": "<sandbox>"}})
 seed_random	0	scalar	inf	direct	NOINT	NOINT	NOINT
 seed_random	0	scalar	ninf	direct	NOINT	NOINT	NOINT
 seed_random	0	scalar	nan	direct	NOINT	NOINT	NOINT
