@@ -1646,6 +1646,8 @@ Value* builtin_starts_with(Value *arg) {
 
 Value* builtin_split(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "split");
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "split", "[string, delimiter]", make_null());
     const char *str = "", *delim = " ";
     /* #971 Phase D: a non-string subject coerced to "" (so `split of 42` was
      * [""], a plausible one-part answer) and a non-string delimiter fell
@@ -5981,10 +5983,10 @@ Value* builtin_nearest_in_range(Value *arg) {
             ey = (idx >= 0) ? slot_view(dict_value_slot(e, idx), &ey_view) : NULL;
         }
 
-        /* #1637 round 4: a bool coordinate raises (any other non-number
-         * keeps the documented skip). */
-        if ((ex && ex->type == VAL_BOOL) || (ey && ey->type == VAL_BOOL)) {
-            eigs_float_arg((ex && ex->type == VAL_BOOL) ? ex : ey, "nearest_in_range");
+        /* A present position field is numeric data, regardless of the key
+         * chosen by the caller.  Missing fields still mean "not an entity". */
+        if ((ex && !val_is_number(ex)) || (ey && !val_is_number(ey))) {
+            eigs_float_arg((ex && !val_is_number(ex)) ? ex : ey, "nearest_in_range");
             return make_null();
         }
         if (!ex || !ey || !val_is_number(ex) || !val_is_number(ey)) continue;
@@ -6120,8 +6122,8 @@ Value* builtin_nearest_in_range_all(Value *arg) {
             if (idx >= 0 && hint_py < 0) hint_py = idx;
             ey = (idx >= 0) ? slot_view(dict_value_slot(e, idx), &ey_view) : NULL;
         }
-        if ((ex && ex->type == VAL_BOOL) || (ey && ey->type == VAL_BOOL)) {   /* #1637 round 4 */
-            eigs_float_arg((ex && ex->type == VAL_BOOL) ? ex : ey, "nearest_in_range_all");
+        if ((ex && !val_is_number(ex)) || (ey && !val_is_number(ey))) {
+            eigs_float_arg((ex && !val_is_number(ex)) ? ex : ey, "nearest_in_range_all");
             break;
         }
         if (!ex || !ey || !val_is_number(ex) || !val_is_number(ey)) {
@@ -6451,7 +6453,7 @@ static int sort_cmp_str(const void *a, const void *b) {
 Value* builtin_sort(Value *arg) {
     /* #971 Phase D: a non-list was handed back unchanged, as if sorted. */
     STRICT_REQUIRE(arg && arg->type != VAL_LIST, "sort", "a list");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2)
+    if (!arg || arg->type != VAL_LIST || arg->data.list.count == 0)
         return arg ? arg : make_null();
     ValType t = BUILTIN_LIST_VIEW(arg, 0) ? BUILTIN_LIST_VIEW(arg, 0)->type
                                         : VAL_NULL;

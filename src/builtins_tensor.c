@@ -1148,6 +1148,8 @@ Value* builtin_tensor_scatter_add(Value *arg) {
 /* ==== BUILTIN: softmax ==== */
 Value* builtin_tensor_softmax(Value *arg) {
     BOOL_REFUSE(arg, "softmax");
+    ARG_GUARD(arg && !val_is_number(arg) && arg->type != VAL_LIST && arg->type != VAL_BUFFER,
+              "softmax", "a number or tensor", make_null());
     /* #632: softmax of a single element normalizes to 1.0. */
     if (arg && val_is_number(arg)) return make_float(1.0);
     /* flat-buffer fast path (#973): row-wise on the shape, 1-D is one row;
@@ -1173,6 +1175,8 @@ Value* builtin_tensor_softmax(Value *arg) {
 /* ==== BUILTIN: log_softmax ==== */
 Value* builtin_tensor_log_softmax(Value *arg) {
     BOOL_REFUSE(arg, "log_softmax");
+    ARG_GUARD(arg && !val_is_number(arg) && arg->type != VAL_LIST && arg->type != VAL_BUFFER,
+              "log_softmax", "a number or tensor", make_null());
     /* Accept: log_softmax of tensor  OR  log_softmax of [tensor, dim].
      * #973: the [tensor, dim] form is recognised only as exactly [list, num].
      * The old test ("first element is a list") was satisfied by EVERY 2-D
@@ -1222,6 +1226,8 @@ Value* builtin_tensor_log_softmax(Value *arg) {
 /* relu of tensor → element-wise max(0, x). Works on 1D or 2D. */
 Value* builtin_tensor_relu(Value *arg) {
     BOOL_REFUSE(arg, "relu");
+    ARG_GUARD(arg && !val_is_number(arg) && arg->type != VAL_LIST && arg->type != VAL_BUFFER,
+              "relu", "a number or tensor", make_null());
     /* #632: a scalar is the degenerate element-wise case, like sqrt/exp/log. */
     if (arg && val_is_number(arg)) {
         double x = eigs_float_arg(arg, __func__);
@@ -1243,6 +1249,8 @@ Value* builtin_tensor_relu(Value *arg) {
 /* leaky_relu of tensor → element-wise max(0.01*x, x). Works on 1D or 2D. */
 Value* builtin_tensor_leaky_relu(Value *arg) {
     BOOL_REFUSE(arg, "leaky_relu");
+    ARG_GUARD(arg && !val_is_number(arg) && arg->type != VAL_LIST && arg->type != VAL_BUFFER,
+              "leaky_relu", "a number or tensor", make_null());
     /* #632: scalar is the degenerate element-wise case. */
     if (arg && val_is_number(arg)) {
         double x = eigs_float_arg(arg, __func__);
@@ -2234,6 +2242,9 @@ Value* builtin_numerical_grad_rows(Value *arg) {
     eigs_slot_opt_float(list_slot(arg, 3), &eps, __func__);
     if (g_has_error) return make_null();
     if (!tensor_cells_numeric(matrix, "numerical_grad_rows") || !tensor_cells_numeric(row_indices, "numerical_grad_rows")) return make_null();
+    ARG_GUARD(matrix->type == VAL_LIST &&
+              (matrix->data.list.count == 0 || list_elem_type(matrix, 0) != VAL_LIST),
+              "numerical_grad_rows", "a matrix with list rows", make_null());
     if (eps <= 0) eps = 0.001;
     int loss_valid = 1;
 
@@ -2359,6 +2370,9 @@ Value* builtin_sgd_update_rows(Value *arg) {
     eigs_slot_opt_float(list_slot(arg, 3), &lr, __func__);
     if (g_has_error) return make_null();
     if (!tensor_cells_numeric(matrix, "sgd_update_rows") || !tensor_cells_numeric(grad, "sgd_update_rows") || !tensor_cells_numeric(row_indices, "sgd_update_rows")) return make_null();
+    ARG_GUARD((matrix->type == VAL_LIST && (matrix->data.list.count == 0 || list_elem_type(matrix, 0) != VAL_LIST)) ||
+              (grad->type == VAL_LIST && (grad->data.list.count == 0 || list_elem_type(grad, 0) != VAL_LIST)),
+              "sgd_update_rows", "parameter and gradient matrices with list rows", make_null());
 
     /* #1093: shaped-buffer matrix + shaped-buffer gradient, index vector as a
      * list or a buffer — update the named rows' doubles in place. */
@@ -2438,6 +2452,9 @@ Value* builtin_numerical_grad_cols(Value *arg) {
     eigs_slot_opt_float(list_slot(arg, 3), &eps, __func__);
     if (g_has_error) return make_null();
     if (!tensor_cells_numeric(matrix, "numerical_grad_cols") || !tensor_cells_numeric(col_indices, "numerical_grad_cols")) return make_null();
+    ARG_GUARD(matrix->type == VAL_LIST &&
+              (matrix->data.list.count == 0 || list_elem_type(matrix, 0) != VAL_LIST),
+              "numerical_grad_cols", "a matrix with list rows", make_null());
     if (eps <= 0) eps = 0.001;
     int loss_valid = 1;
 
@@ -2566,6 +2583,9 @@ Value* builtin_sgd_update_cols(Value *arg) {
     eigs_slot_opt_float(list_slot(arg, 3), &lr, __func__);
     if (g_has_error) return make_null();
     if (!tensor_cells_numeric(matrix, "sgd_update_cols") || !tensor_cells_numeric(grad, "sgd_update_cols") || !tensor_cells_numeric(col_indices, "sgd_update_cols")) return make_null();
+    ARG_GUARD((matrix->type == VAL_LIST && (matrix->data.list.count == 0 || list_elem_type(matrix, 0) != VAL_LIST)) ||
+              (grad->type == VAL_LIST && (grad->data.list.count == 0 || list_elem_type(grad, 0) != VAL_LIST)),
+              "sgd_update_cols", "parameter and gradient matrices with list rows", make_null());
 
     /* #1093: shaped-buffer matrix + gradient, list-or-buffer index vector. */
     if (matrix->type == VAL_BUFFER && grad->type == VAL_BUFFER

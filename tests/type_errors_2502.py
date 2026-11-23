@@ -475,13 +475,15 @@ def main():
         # change to review, not a silent skip.
         no_type_names = sorted(r[0] for r in rows if r[2] == 'NO_WRONG_TYPE')
         pin_ok = (args.writer != 'all' or no_type_names == sorted(NO_WRONG_TYPE_EXPECTED))
-        if args.writer == 'all':
-            chosen = {}
-            for row in rows:
-                chosen.setdefault(row[0], row[1])
-            pin_path = ROOT / 'tests/type_errors_2502_writer_args.tsv'
-            pinned = dict(line.split('\t', 1) for line in pin_path.read_text().splitlines())
-            args_ok = chosen == pinned
+        chosen = {}
+        for row in rows:
+            chosen.setdefault(row[0], row[1])
+        pin_path = ROOT / 'tests/type_errors_2502_writer_args.tsv'
+        pinned = dict(line.split('\t', 1) for line in pin_path.read_text().splitlines())
+        expected_chosen = pinned if args.writer == 'all' else {
+            args.writer: pinned[args.writer]} if args.writer in pinned else {}
+        args_ok = chosen == expected_chosen
+        if args.writer == 'all' or expected_chosen:
             if not args_ok:
                 print('FAIL: chosen writer arguments differ from pin')
             pin_ok = pin_ok and args_ok
