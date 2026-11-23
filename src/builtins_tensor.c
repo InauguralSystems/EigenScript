@@ -31,18 +31,26 @@ void ne_softmax_buf(double *data, int64_t rows, int64_t cols) {
             row[j] = exp(row[j] - max_val);
             sum += row[j];
         }
-        /* With numerically stable max-subtract, at least one term is
-         * exp(0)=1, so sum should always be >= 1. Guard anyway: on NaN
-         * inputs max_val may itself be NaN and all terms underflow,
-         * leaving sum=0. Fall back to a uniform distribution. */
-        if (!(sum > 0.0)) {
-            double u = 1.0 / (double)cols;
-            for (int64_t j = 0; j < cols; j++) row[j] = u;
-            continue;
-        }
         for (int64_t j = 0; j < cols; j++) {
             row[j] /= sum;
         }
+    }
+}
+
+/* #2444: keep the logits until the final subtraction. Taking log of a
+ * normalized probability loses finite tails when exp underflows to zero. */
+static void ne_log_softmax_buf(double *data, int64_t rows, int64_t cols) {
+    for (int64_t i = 0; i < rows; i++) {
+        double *row = data + i * cols;
+        if (cols <= 0) continue;
+        double max_val = row[0];
+        for (int64_t j = 1; j < cols; j++) {
+            if (row[j] > max_val) max_val = row[j];
+        }
+        double sum = 0.0;
+        for (int64_t j = 0; j < cols; j++) sum += exp(row[j] - max_val);
+        double log_sum = log(sum);
+        for (int64_t j = 0; j < cols; j++) row[j] = (row[j] - max_val) - log_sum;
     }
 }
 
@@ -243,9 +251,12 @@ static int tensor_dims(Value *v, int *rows, int *cols) {
 /* --- Tensor helper: flatten nested list to double* (caller must free) ---
  * #1416 callers (kept explicit so strict_differential can enumerate them):
  * matmul (two operands), matmul_at (two), matmul_bt (two), softmax,
- * log_softmax, relu, leaky_relu, and tensor_save. */
+ * log_softmax, relu, leaky_relu, and tensor_save. The caller selects the
+ * numeric reader: arithmetic accepts IEEE values; storage stays finite-only. */
+typedef enum { TENSOR_STORAGE, TENSOR_ARITHMETIC } TensorReadMode;
 static double* tensor_to_flat(Value *v, int *rows, int *cols,
-                              const char *who) {
+                              const char *who,
+                              TensorReadMode mode) {
     int ndim = tensor_dims(v, rows, cols);
     /* Validate every consumed cell before allocating or writing (#2502). */
 #define FLAT_BAD(t) ((t) != VAL_FLOAT && (t) != VAL_INT)
@@ -289,7 +300,9 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols,
     }
     if (ndim == 1) {
         for (int i = 0; i < *cols; i++) {
-            out[i] = ((list_elem_type(v, i) == VAL_FLOAT || list_elem_type(v, i) == VAL_INT)) ? eigs_slot_float(list_slot(v, i), who) : 0.0;
+            EIGS_VIEW(cell);
+            out[i] = mode == TENSOR_ARITHMETIC ? eigs_arithmetic_float(list_get_view(v, i, &cell), who)
+                                : eigs_float_arg(list_get_view(v, i, &cell), who);
             if (g_has_error) { free(out); return NULL; }
         }
     } else {
@@ -298,7 +311,9 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols,
             Value *row = (list_elem_type(v, r) == VAL_LIST) ? list_get_ref(v, r) : NULL;
             int rc = row ? row->data.list.count : 0;
             for (int c = 0; c < *cols && c < rc; c++) {
-                out[r * (*cols) + c] = ((list_elem_type(row, c) == VAL_FLOAT || list_elem_type(row, c) == VAL_INT)) ? eigs_slot_float(list_slot(row, c), who) : 0.0;
+                EIGS_VIEW(cell);
+                out[r * (*cols) + c] = mode == TENSOR_ARITHMETIC ? eigs_arithmetic_float(list_get_view(row, c, &cell), who)
+                                                    : eigs_float_arg(list_get_view(row, c, &cell), who);
                 if (g_has_error) { free(out); return NULL; }
             }
         }
@@ -355,6 +370,16 @@ static Value* flat_to_like(Value *src, double *data, int rows, int cols) {
     }
     return (rows == 1) ? flat_to_tensor_1d(data, cols)
                        : flat_to_tensor_2d(data, rows, cols);
+}
+
+/* Result checking belongs to the arithmetic caller, including raw buffer
+ * outputs. Never publish a partially checked result after a strict raise. */
+static int tensor_math_results(double *data, int64_t count, const char *who) {
+    for (int64_t i = 0; i < count; i++) {
+        data[i] = eigs_math_result_named(data[i], who);
+        if (g_has_error) return 0;
+    }
+    return 1;
 }
 
 /* --- Reduction helper: validate and count scalar elements recursively.
@@ -838,13 +863,13 @@ Value* builtin_tensor_matmul(Value *arg) {
          * opt-in trap are reported without rewriting the kernel's output. */
         for (int i = 0; i < res->data.buffer.count; i++) {
             (void)eigs_math_result_named(res->data.buffer.data[i], "matmul");
-            if (g_has_error) break;
+            if (g_has_error) { val_decref(res); return make_null(); }
         }
         return res;
     }
     int ar, ac, br, bc;
-    double *af = tensor_to_flat(a, &ar, &ac, "matmul");
-    double *bf = tensor_to_flat(b, &br, &bc, "matmul");
+    double *af = tensor_to_flat(a, &ar, &ac, "matmul", TENSOR_ARITHMETIC);
+    double *bf = tensor_to_flat(b, &br, &bc, "matmul", TENSOR_ARITHMETIC);
     if (!af || !bf) {
         free(af); free(bf);
         if (!g_has_error)
@@ -923,8 +948,8 @@ Value* builtin_tensor_matmul_at(Value *arg) {
         return res;
     }
     int ar, ac, br, bc;
-    double *af = tensor_to_flat(a, &ar, &ac, "matmul_at");
-    double *bf = tensor_to_flat(b, &br, &bc, "matmul_at");
+    double *af = tensor_to_flat(a, &ar, &ac, "matmul_at", TENSOR_ARITHMETIC);
+    double *bf = tensor_to_flat(b, &br, &bc, "matmul_at", TENSOR_ARITHMETIC);
     if (!af || !bf) {
         free(af); free(bf);
         if (!g_has_error)
@@ -990,8 +1015,8 @@ Value* builtin_tensor_matmul_bt(Value *arg) {
         return res;
     }
     int ar, ac, br, bc;
-    double *af = tensor_to_flat(a, &ar, &ac, "matmul_bt");
-    double *bf = tensor_to_flat(b, &br, &bc, "matmul_bt");
+    double *af = tensor_to_flat(a, &ar, &ac, "matmul_bt", TENSOR_ARITHMETIC);
+    double *bf = tensor_to_flat(b, &br, &bc, "matmul_bt", TENSOR_ARITHMETIC);
     if (!af || !bf) {
         free(af); free(bf);
         if (!g_has_error)
@@ -1143,8 +1168,14 @@ Value* builtin_tensor_scatter_add(Value *arg) {
 /* ==== BUILTIN: softmax ==== */
 Value* builtin_tensor_softmax(Value *arg) {
     BOOL_REFUSE(arg, "softmax");
-    /* #632: softmax of a single element normalizes to 1.0. */
-    if (arg && val_is_number(arg)) return make_float(1.0);
+    /* A scalar is a one-element row, including its IEEE arithmetic. */
+    if (arg && val_is_number(arg)) {
+        double x = eigs_arithmetic_float(arg, "softmax");
+        if (g_has_error) return make_null();
+        ne_softmax_buf(&x, 1, 1);
+        x = eigs_math_result_named(x, "softmax");
+        return g_has_error ? make_null() : make_float(x);
+    }
     /* flat-buffer fast path (#973): row-wise on the shape, 1-D is one row;
      * same ne_softmax_buf kernel as the list path, so byte-identical. */
     if (arg && arg->type == VAL_BUFFER) {
@@ -1154,12 +1185,18 @@ Value* builtin_tensor_softmax(Value *arg) {
         buf_dims(arg, &br, &bc);
         memcpy(res->data.buffer.data, arg->data.buffer.data, (size_t)arg->data.buffer.count * sizeof(double));
         ne_softmax_buf(res->data.buffer.data, br, bc);
+        if (!tensor_math_results(res->data.buffer.data, arg->data.buffer.count, "softmax")) {
+            val_decref(res); return make_null();
+        }
         return res;
     }
     int rows, cols;
-    double *flat = tensor_to_flat(arg, &rows, &cols, "softmax");
+    double *flat = tensor_to_flat(arg, &rows, &cols, "softmax", TENSOR_ARITHMETIC);
     if (!flat) return make_null();
     ne_softmax_buf(flat, rows, cols);
+    if (!tensor_math_results(flat, (int64_t)rows * cols, "softmax")) {
+        free(flat); return make_null();
+    }
     Value *result = flat_to_like(arg, flat, rows, cols);   /* #1093 */
     free(flat);
     return result ? result : make_null();
@@ -1180,12 +1217,16 @@ Value* builtin_tensor_log_softmax(Value *arg) {
         list_elem_type(arg, 0) == VAL_LIST &&
         (list_elem_type(arg, 1) == VAL_FLOAT || list_elem_type(arg, 1) == VAL_INT))
         tensor = list_get_ref(arg, 0);   /* [tensor, dim] form */
-    /* #632: log(softmax(scalar)) = log(1) = 0. */
-    /* fs:ANSWER softmax of a single element is 1 and log(1) is 0, so 0.0 is
-     * the arithmetic result for a scalar argument — a NUMBER is a valid
-     * argument here, which is what makes this not a type guard (#632). */
-    if (tensor && val_is_number(tensor)) return make_float(0.0);
-    /* Flat-buffer fast path: same kernel and probability-floor algorithm. */
+    /* #632/#2444: a number is a valid one-element row. Use the same
+     * formula, so a non-finite scalar gives NaN rather than a finite default. */
+    if (tensor && val_is_number(tensor)) {
+        double x = eigs_arithmetic_float(tensor, "log_softmax");
+        if (g_has_error) return make_null();
+        ne_log_softmax_buf(&x, 1, 1);
+        x = eigs_math_result_named(x, "log_softmax");
+        return g_has_error ? make_null() : make_float(x);
+    }
+    /* Flat-buffer fast path: the same max-subtracted log formula. */
     if (tensor && tensor->type == VAL_BUFFER) {
         Value *res = make_buffer_like(tensor);
         if (!res) return make_null();
@@ -1193,20 +1234,18 @@ Value* builtin_tensor_log_softmax(Value *arg) {
         buf_dims(tensor, &br, &bc);
         double *d = res->data.buffer.data;
         memcpy(d, tensor->data.buffer.data, (size_t)tensor->data.buffer.count * sizeof(double));
-        ne_softmax_buf(d, br, bc);
-        for (int i = 0; i < tensor->data.buffer.count; i++) {
-            if (!(d[i] > 0.0)) g_math_flags |= EIGS_MATH_INVALID;
-            d[i] = log(d[i] > 0.0 ? d[i] : 1e-10);
+        ne_log_softmax_buf(d, br, bc);
+        if (!tensor_math_results(d, tensor->data.buffer.count, "log_softmax")) {
+            val_decref(res); return make_null();
         }
         return res;
     }
     int rows, cols;
-    double *flat = tensor_to_flat(tensor, &rows, &cols, "log_softmax");
+    double *flat = tensor_to_flat(tensor, &rows, &cols, "log_softmax", TENSOR_ARITHMETIC);
     if (!flat) return make_null();
-    ne_softmax_buf(flat, rows, cols);
-    for (int i = 0; i < rows * cols; i++) {
-        if (!(flat[i] > 0.0)) g_math_flags |= EIGS_MATH_INVALID;   /* #865 / #1041 */
-        flat[i] = log(flat[i] > 0.0 ? flat[i] : 1e-10);
+    ne_log_softmax_buf(flat, rows, cols);
+    if (!tensor_math_results(flat, (int64_t)rows * cols, "log_softmax")) {
+        free(flat); return make_null();
     }
     Value *result = flat_to_like(tensor, flat, rows, cols);   /* #1093 */
     free(flat);
@@ -1214,34 +1253,41 @@ Value* builtin_tensor_log_softmax(Value *arg) {
 }
 
 /* ==== BUILTIN: relu ==== */
-/* relu of tensor → element-wise max(0, x). Works on 1D or 2D. */
+/* relu of tensor → x < 0 ? 0 : x (preserving NaN). Works on 1D or 2D. */
 Value* builtin_tensor_relu(Value *arg) {
     BOOL_REFUSE(arg, "relu");
     /* #632: a scalar is the degenerate element-wise case, like sqrt/exp/log. */
     if (arg && val_is_number(arg)) {
-        double x = eigs_float_arg(arg, __func__);
-        return make_float(x < 0.0 ? 0.0 : x);
+        double x = eigs_arithmetic_float(arg, "relu");
+        if (g_has_error) return make_null();
+        double result = eigs_math_result_named(x < 0.0 ? 0.0 : x, "relu");
+        return g_has_error ? make_null() : make_float(result);
     }
     /* #1093: buffers go through the same flatten path and come back as
      * buffers via flat_to_like — one implementation, not two. */
     int rows, cols;
-    double *flat = tensor_to_flat(arg, &rows, &cols, "relu");
+    double *flat = tensor_to_flat(arg, &rows, &cols, "relu", TENSOR_ARITHMETIC);
     if (!flat) return make_null();
     for (int i = 0; i < rows * cols; i++)
         if (flat[i] < 0.0) flat[i] = 0.0;
+    if (!tensor_math_results(flat, (int64_t)rows * cols, "relu")) {
+        free(flat); return make_null();
+    }
     Value *result = flat_to_like(arg, flat, rows, cols);
     free(flat);
     return result ? result : make_null();
 }
 
 /* ==== BUILTIN: leaky_relu ==== */
-/* leaky_relu of tensor → element-wise max(0.01*x, x). Works on 1D or 2D. */
+/* leaky_relu of tensor → x < 0 ? 0.01*x : x. Works on 1D or 2D. */
 Value* builtin_tensor_leaky_relu(Value *arg) {
     BOOL_REFUSE(arg, "leaky_relu");
     /* #632: scalar is the degenerate element-wise case. */
     if (arg && val_is_number(arg)) {
-        double x = eigs_float_arg(arg, __func__);
-        return make_float(x < 0.0 ? 0.01 * x : x);
+        double x = eigs_arithmetic_float(arg, "leaky_relu");
+        if (g_has_error) return make_null();
+        double result = eigs_math_result_named(x < 0.0 ? 0.01 * x : x, "leaky_relu");
+        return g_has_error ? make_null() : make_float(result);
     }
     /* flat-buffer fast path (#973), the twin of relu's. */
     if (arg && arg->type == VAL_BUFFER) {
@@ -1249,15 +1295,19 @@ Value* builtin_tensor_leaky_relu(Value *arg) {
         if (!res) return make_null();
         for (int i = 0; i < arg->data.buffer.count; i++) {
             double x = arg->data.buffer.data[i];
-            res->data.buffer.data[i] = (x < 0.0) ? 0.01 * x : x;
+            res->data.buffer.data[i] = eigs_math_result_named((x < 0.0) ? 0.01 * x : x, "leaky_relu");
+            if (g_has_error) { val_decref(res); return make_null(); }
         }
         return res;
     }
     int rows, cols;
-    double *flat = tensor_to_flat(arg, &rows, &cols, "leaky_relu");
+    double *flat = tensor_to_flat(arg, &rows, &cols, "leaky_relu", TENSOR_ARITHMETIC);
     if (!flat) return make_null();
     for (int i = 0; i < rows * cols; i++)
         if (flat[i] < 0.0) flat[i] *= 0.01;
+    if (!tensor_math_results(flat, (int64_t)rows * cols, "leaky_relu")) {
+        free(flat); return make_null();
+    }
     Value *result = flat_to_like(arg, flat, rows, cols);   /* #1093 */
     free(flat);
     return result ? result : make_null();
@@ -2641,7 +2691,7 @@ Value* builtin_tensor_save(Value *arg) {
     /* Flatten before opening the file: a strict #1416 rejection must not
      * leave a partial file behind, and a direct C helper raise does not
      * unwind this builtin by itself. */
-    double *flat = tensor_to_flat(tensor, &rows, &cols, "tensor_save");
+    double *flat = tensor_to_flat(tensor, &rows, &cols, "tensor_save", TENSOR_STORAGE);
     /* A 2-D tensor may legitimately have zero columns. tensor_to_flat has
      * still performed strict element validation above, but has no allocation
      * to return for that shape. Preserve the historical save format: write

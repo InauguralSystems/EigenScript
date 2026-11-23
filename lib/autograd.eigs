@@ -361,7 +361,7 @@ define ag_mean(t, a) as:
 
 # ag_softmax_ce of [t, logits, targets]: logits [rows x cols], targets a
 # list/buffer of class indices (one per row). Value is the MEAN over rows of
-# -log softmax(logits)[i][targets[i]] (the same 1e-10 floor as log_softmax).
+# -log softmax(logits)[i][targets[i]] with its own 1e-10 probability floor.
 define ag_softmax_ce(t, logits, targets) as:
     local p is softmax of logits.value
     local d is _ag_dims of logits.value

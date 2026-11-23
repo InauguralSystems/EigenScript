@@ -1,7 +1,7 @@
-# Regression: softmax must not divide by zero on degenerate inputs.
-# Prior to the guard, if all row values produced exp-underflow after
-# max-subtract, sum could be 0, leading to NaN/Inf propagation. Now
-# the kernel falls back to a uniform distribution when sum <= 0.
+# Regression: max-subtraction keeps finite softmax rows stable.
+# Equal finite elements normalize to a uniform distribution. Non-finite
+# arithmetic propagates IEEE results; there is no uniform fallback (#2444).
+# tests/nonfinite_tensor.py checks those results against a C reference.
 
 # Normal path: ordinary input still sums to 1.
 s is softmax of [1.0, 2.0, 3.0]
