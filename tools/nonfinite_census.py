@@ -17,8 +17,10 @@ VALUES = {"inf": "f64_from_bits of 9218868437227405312",
 MODES = (("unset", None), ("s0", "0"), ("s1", "1"))
 NUM = re.compile(r"^-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?$")
 
-def classify(output, rc):
-    first = output.strip().splitlines()[0] if output.strip() else ""
+def classify(stdout, stderr, rc):
+    output = stderr if rc and stderr else stdout
+    lines = output.strip().splitlines()
+    first = next((line for line in lines if line.startswith("Error")), lines[0] if lines else "")
     text = re.sub(r"^Error [^ ]+:\d+: ", "", first)
     for name, needles in CLASS_PATTERNS:
         if any(x in text for x in needles): return name
@@ -38,8 +40,7 @@ class Runner:
                                stdin=subprocess.DEVNULL, env=env, timeout=self.timeout)
         except subprocess.TimeoutExpired:
             self.timed_out += 1; return "TIMEOUT"
-        out = r.stdout if r.returncode == 0 and r.stdout else r.stdout + r.stderr
-        return classify(out, r.returncode)
+        return classify(r.stdout, r.stderr, r.returncode)
 
 def positions(args):
     result = []
@@ -70,7 +71,7 @@ def summary(rows, runner, extra=""):
     if control_errors: counts["CONTROL_ERR"] = control_errors
     counts["TIMEOUT"] = runner.timed_out
     fields = [f"examined={len(rows)-1}"] + [f"{k}={counts[k]}" for k in sorted(counts)]
-    print("summary " + " ".join(fields) + " excluded=" + ",".join(EXCLUDED) + (" " + extra if extra else ""))
+    print("summary " + " ".join(fields) + " excluded=" + ",".join(EXCLUDED) + (" " + extra if extra else ""), file=sys.stderr)
     return 1 if len(rows) == 1 or (runner.timed_out and not runner.allow) else 0
 
 def one_number(ns, root, run):
@@ -132,12 +133,12 @@ def buffer_forms(ns, root, run):
             for vn,ve in VALUES.items():
                 for pn,body in PRODUCER_CANDIDATES.items():
                     step=body.format(buffer=var,index=0)
-                    probe=f"{setup}\nnf is {ve}\n{step}\nprint of ((buf_get_bits of [{var}, 0]) == {BITS[vn]})\n"
-                    if not run.run(probe).startswith("val(true"):
-                        rows.append((n,i,"buffer",vn,pn,"NO_PRODUCER","NO_PRODUCER","NO_PRODUCER"))
-                        continue
                     prog=f"{setup}\nnf is {ve}\n{step}\nprint of ({call(n,c['args'])})\n"
-                    rows.append((n,i,"buffer",vn,pn,*[run.run(prog,m) for _,m in MODES]))
+                    cells=[]
+                    for _,m in MODES:
+                        probe=f"{setup}\nnf is {ve}\n{step}\nprint of ((buf_get_bits of [{var}, 0]) == {BITS[vn]})\n"
+                        cells.append(run.run(prog,m) if run.run(probe,m).startswith("val(true") else "PRODUCER_FAIL")
+                    rows.append((n,i,"buffer",vn,pn,*cells))
     producers=sorted(PRODUCER_CANDIDATES)
     write_tsv(ns.out,["population: buffer-taking names are the intersection of --api --json and buffer variables in tests/strict_shape_cases.json", "producers: "+",".join(producers)],rows)
     probed_builtins={n for n,_ in controls}; clean_builtins={n for n,_ in clean_controls}
@@ -150,7 +151,8 @@ def buffer_forms(ns, root, run):
 
 def diff(a,b):
     def load(p):
-        lines=[x.rstrip("\n").split("\t") for x in open(p) if not x.startswith("#")]
+        with open(p) as f:
+            lines=[x.rstrip("\n").split("\t") for x in f if not x.startswith("#")]
         return {tuple(r[:5]):tuple(r[-3:]) for r in lines[1:]}
     x,y=load(a),load(b); keys=sorted(set(x)|set(y)); changed=[k for k in keys if x.get(k)!=y.get(k)]
     print("builtin\targ\tkind\tvalue\tproducer\tbase\thead")

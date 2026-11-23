@@ -252,9 +252,9 @@ divide	0	elem	nan	direct	val([nan, 0.5])	val([nan, 0.5])	TRAP
 divide	1	elem	inf	direct	val([0.0, 0.5])	val([0.0, 0.5])	val([0.0, 0.5])
 divide	1	elem	ninf	direct	val([-0.0, 0.5])	val([-0.0, 0.5])	val([-0.0, 0.5])
 divide	1	elem	nan	direct	val([nan, 0.5])	val([nan, 0.5])	TRAP
-exit	0	scalar	inf	direct	ERR(exit-entered)	ERR(exit-entered)	ERR(exit-entered)
-exit	0	scalar	ninf	direct	ERR(exit-entered)	ERR(exit-entered)	ERR(exit-entered)
-exit	0	scalar	nan	direct	ERR(exit-entered)	ERR(exit-entered)	ERR(exit-entered)
+exit	0	scalar	inf	direct	NOINT	NOINT	NOINT
+exit	0	scalar	ninf	direct	NOINT	NOINT	NOINT
+exit	0	scalar	nan	direct	NOINT	NOINT	NOINT
 fill	0	scalar	inf	direct	NOINT	NOINT	NOINT
 fill	0	scalar	ninf	direct	NOINT	NOINT	NOINT
 fill	0	scalar	nan	direct	NOINT	NOINT	NOINT
