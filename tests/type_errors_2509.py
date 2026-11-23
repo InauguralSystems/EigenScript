@@ -134,9 +134,19 @@ def main():
  stub_names={n for n in {j[0] for j,v in rr} & ext_names if all(x=='STUB' for j,v in rr if j[0]==n for x in v)}
  expected={k:v for k,v in expected.items() if k[0] not in stub_names}
  missing=set(expected)-actual-skipped; extra=actual-set(expected)
- # An allowed answer is never a type error in another EIGS_STRICT state (the
- # IEEE trap, kind value under EIGS_STRICT=1, is the one state-dependent raise).
- mixed=[(tuple(r[:5]),r[5:]) for r in rows if any(x not in ('ANSWER','ERR:value') for x in r[5:])]
+ # Every probe gives the same result in all three EIGS_STRICT states (unset, 0, 1).
+ # The one exception is the IEEE trap: these pinned rows answer, and raise value
+ # under EIGS_STRICT=1 only, and must give exactly that pattern. Any other
+ # difference between states, of any result (answer, kind, stub, crash), is red.
+ TRAP={('log','whole','-','number','log of 0'):('ANSWER','ANSWER','ERR:value'),
+       ('divide','pos','1','number','divide of [[1, 2], 0]'):('ANSWER','ANSWER','ERR:value')}
+ mixed=[]
+ for j,v in rr:
+  key=tuple(j[:4])+(j[5],)
+  if key in TRAP:
+   if tuple(v)!=TRAP[key]: mixed.append((key,v))
+  elif len(set(v))>1: mixed.append((key,v))
+ trap_absent=[k for k in TRAP if k[0] in present and k not in {tuple(j[:4])+(j[5],) for j,v in rr}]
  unreached={tuple(j[:4])+(j[5],) for j,v in rr if any(x=='UNREACHED' for x in v)}
  reached_pin={tuple(line.split('\t')) for line in
               (ROOT/'tests/type_errors_2509_reached.tsv').read_text().splitlines()[1:]}
@@ -162,13 +172,14 @@ def main():
  for key in sorted(newly_unreached)[:20]: print('FAIL: committed REACHED row is now UNREACHED:',*key)
  for key in partial[:20]: print('FAIL: probe reaches its builtin in some EIGS_STRICT states and not in another:',*key)
  for key,v,kind in wrong_kind[:20]: print('FAIL: wrong error kind:',*key,'expected='+kind,'actual='+','.join(v))
- for key,v in mixed[:20]: print('FAIL: answer depends on EIGS_STRICT:',*key,'results='+','.join(v))
- for key in sorted(skipped-device_skipped)[:20]: print('SKIP: fixture unavailable here:',*key)
+ for key,v in mixed: print('FAIL: result depends on EIGS_STRICT:',*key,'results='+','.join(v))
+ for key in trap_absent: print('FAIL: pinned IEEE trap row is not in the population:',*key)
+ for key in sorted(skipped-device_skipped): print('SKIP: fixture unavailable here:',*key)
  for n,reqs in sorted(device_down.items()): print('SKIP: device unavailable here ('+','.join(reqs)+'): its setup fails alone, so every probe of',n,'is skipped')
  for key in device_bad[:20]: print('FAIL: device skip on Linux, where the census must reach it:',*key)
  for key,v in required_bad: print('FAIL: required type mismatch:',*key,'actual='+','.join(v))
  for key in unreached_bad[:20]: print('FAIL: probe never reached its builtin (not in the fixture list):',*key)
- ok=not unreached_bad and not device_bad and not partial and not mixed and not missing and not extra and not broken and not newly_unreached and not wrong_kind and not required_bad and reason_ok
+ ok=not unreached_bad and not device_bad and not partial and not mixed and not trap_absent and not missing and not extra and not broken and not newly_unreached and not wrong_kind and not required_bad and reason_ok
  print(f"{'PASS' if ok else 'FAIL'}: type_errors_2509 examined={len(rr)} population={len(jobs)} answering={len(rows)} allowed={len(expected)} unreached={len(unreached)} skipped={len(skipped)} stub_builtins={len(stub_names)}")
  return int(ns.check and not ok)
 raise SystemExit(main())
