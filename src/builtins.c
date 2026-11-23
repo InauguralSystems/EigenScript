@@ -3627,8 +3627,12 @@ Value* builtin_sandbox_run(Value *arg) {
     int source_form = desc && desc->type == VAL_STR;
     const char *source = source_form ? desc->data.str : NULL;
     /* #2509: a limit that is given is a number; a wrong-typed one used to fall
-     * back to the default silently. A limit is optional by omission. */
-    if (arg && arg->type == VAL_LIST) {
+     * back to the default silently. A limit is optional by omission. Only the
+     * [descriptor_or_source, limits...] form has limits: its first element is a
+     * source string or a descriptor list. A list whose first element is not
+     * (a bare descriptor such as [1, code, consts]) is the descriptor itself,
+     * refused below as a reported {ok: false} value. */
+    if (arg && arg->type == VAL_LIST && desc && (desc->type == VAL_STR || desc->type == VAL_LIST)) {
         for (int i = 1; i < arg->data.list.count && i <= 3; i++) {
             Value *limit = BUILTIN_LIST_VIEW(arg, i);
             ARG_GUARD(!limit || !val_is_number(limit), "sandbox_run",
